@@ -1211,6 +1211,7 @@ a {
   font-size: 1.85rem;
   font-weight: 700;
   line-height: 1.05;
+  text-align: center;
   color: var(--ink);
   cursor: text;
 }
