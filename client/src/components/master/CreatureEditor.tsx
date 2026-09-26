@@ -56,6 +56,10 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
     creature.derived.modifiers.dexterity,
   );
 
+  // Mesmo destaque da ficha: a cor é do valor crítico, não do card.
+  const hpRatio = creature.hpMax > 0 ? creature.hpCurrent / creature.hpMax : 0;
+  const hpClass = hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
+
   return (
     <div className="creature-editor">
       <div className="detail-head">
@@ -129,10 +133,10 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
 
       <Section title="Vida e Defesa" icon="heart">
         <div className="grid grid-4">
-          <div className="vital vital-hp">
+          <div className="vital">
             <span className="vital-label">HP atual</span>
             <InlineField
-              className="vital-value"
+              className={`vital-value${hpClass}`}
               value={creature.hpCurrent}
               mode="number"
               min={-999}

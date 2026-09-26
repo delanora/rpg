@@ -9,6 +9,11 @@ import type { SheetSectionProps } from './common';
 export function VitalsSection({ character, update }: SheetSectionProps) {
   const { derived } = character;
 
+  // O destaque é do valor, não do card: só o HP entra em estado crítico.
+  const hpRatio = character.hpMax > 0 ? character.hpCurrent / character.hpMax : 0;
+  const hpClass =
+    hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
+
   return (
     <Section title="Vida e Defesa" icon="heart">
       <div className="vitals-hp">
@@ -16,12 +21,12 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
       </div>
 
       <div className="grid grid-4">
-        <div className="vital vital-hp">
+        <div className="vital">
           <span className="vital-label">
             <Icon name="heart" size={13} /> HP atual
           </span>
           <InlineField
-            className="vital-value"
+            className={`vital-value${hpClass}`}
             value={character.hpCurrent}
             mode="number"
             min={-999}

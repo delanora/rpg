@@ -57,16 +57,22 @@ export function SheetView({ character, update, readOnly = false }: SheetViewProp
   return (
     <ReadOnlyProvider value={readOnly}>
       <div className="sheet">
-        {/* HUD fixo: o essencial do personagem nunca sai da tela. */}
+        {/*
+         * Duas colunas de largura fixa e alinhada em toda a tela:
+         * à esquerda a identidade, os atributos e as abas; à direita a vida
+         * e as anotações. Os dois blocos usam o mesmo template de grade, então
+         * as colunas nunca "escorregam" uma em relação à outra.
+         */}
         <div className="sheet-hud">
-          <IdentitySection character={character} update={update} />
-          <div className="sheet-hud-row">
+          <div className="sheet-hud-main">
+            <IdentitySection character={character} update={update} />
             <AbilitiesSection character={character} update={update} />
+          </div>
+          <div className="sheet-hud-side">
             <VitalsSection character={character} update={update} />
           </div>
         </div>
 
-        {/* Área de trabalho: abas à esquerda, anotações sempre à direita. */}
         <div className="sheet-work">
           <div className="sheet-work-main">
             <div className="sheet-tabs" role="tablist" aria-label="Seções da ficha">

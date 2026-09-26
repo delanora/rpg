@@ -53,6 +53,12 @@
   --font-body: 'EB Garamond', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
 
   --radius: 4px;
+
+  /* Escala de espaçamento — múltiplos de 8px para um ritmo visual consistente. */
+  --space-1: 0.5rem; /* 8px */
+  --space-2: 1rem; /* 16px */
+  --space-3: 1.5rem; /* 24px */
+
   --shadow: 0 1px 2px rgba(43, 33, 21, 0.1), 0 6px 16px rgba(43, 33, 21, 0.1);
   --shadow-deep: 0 14px 34px -18px rgba(43, 33, 21, 0.75);
 
@@ -826,8 +832,8 @@ a {
 .sheet {
   position: relative;
   display: grid;
-  gap: 1.1rem;
-  padding: 1.1rem;
+  gap: var(--space-3);
+  padding: var(--space-2);
   background:
     linear-gradient(180deg, var(--surface), var(--surface-2) 70%, var(--surface-3));
   border: 1px solid var(--line-strong);
@@ -867,22 +873,27 @@ a {
 .sheet-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  padding: 0.4rem;
+  align-items: stretch;
+  gap: var(--space-1);
+  padding: var(--space-1);
   border: 1px solid var(--line);
   border-radius: 5px;
   background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
   box-shadow: inset 0 1px 4px rgba(43, 33, 21, 0.16);
 }
 
+/* Todas as abas têm exatamente a mesma caixa — a ativa não cresce. */
 .sheet-tab {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 2.5rem;
   font-family: var(--font-display);
   font-size: 0.8rem;
+  line-height: 1;
   letter-spacing: 0.04em;
-  padding: 0.42rem 0.66rem;
+  padding: 0 var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -891,23 +902,16 @@ a {
   transition:
     color 0.18s ease,
     background 0.18s ease,
-    box-shadow 0.22s ease,
-    transform 0.12s ease;
+    box-shadow 0.22s ease;
 }
 
 .sheet-tab .icon {
   color: var(--gold-deep);
-  transition: transform 0.2s ease;
 }
 
 .sheet-tab:hover {
   color: var(--ink);
   background: rgba(184, 145, 42, 0.14);
-  transform: translateY(-1px);
-}
-
-.sheet-tab:hover .icon {
-  transform: translateY(-1px) scale(1.08);
 }
 
 .sheet-tab.active {
@@ -927,50 +931,51 @@ a {
 
 /* --- HUD da ficha: o essencial sempre à vista ----------------------------- */
 
-.sheet-hud {
+/*
+ * Template único de colunas: esquerda fluida, direita fixa (300–360px).
+ * HUD (identidade/atributos/vida) e área de trabalho (abas/anotações) usam o
+ * mesmo template, então a coluna esquerda e a direita ficam alinhadas em toda
+ * a extensão da ficha.
+ */
+.sheet-hud,
+.sheet-work {
   display: grid;
-  gap: 1rem;
-}
-
-.sheet-hud-row {
-  display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(340px, 1.05fr);
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) minmax(18.75rem, 22.5rem);
+  gap: var(--space-2);
   align-items: start;
 }
 
-/* Identidade ocupa a largura toda e se distribui em uma faixa. */
-.sheet-hud > .sheet-section .grid-3 {
-  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+.sheet-hud-main,
+.sheet-hud-side,
+.sheet-work-main,
+.sheet-work-side {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+/* Identidade ocupa a coluna esquerda e nunca deixa um campo órfão. */
+.sheet-hud-main .grid-3 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .sheet-hud .section-header {
-  padding: 0.6rem 0.9rem 0.55rem;
+  padding: var(--space-1) var(--space-2);
 }
 
 .sheet-hud .section-body {
-  padding: 0.85rem;
+  padding: var(--space-2);
 }
 
-/* Área de trabalho: abas à esquerda, anotações sempre à direita. */
-.sheet-work {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
-  gap: 1rem;
-  align-items: start;
-}
-
-.sheet-work-main {
-  min-width: 0;
-  display: grid;
-  gap: 0.9rem;
+/* Cards de vida com a mesma altura, apesar de o conteúdo de cada um variar. */
+.sheet-hud-side .grid-4 {
+  grid-auto-rows: 1fr;
 }
 
 .sheet-work-side {
   position: sticky;
   top: 5.2rem;
-  display: grid;
-  gap: 1rem;
 }
 
 .sheet-work-side .notes-area {
@@ -1023,12 +1028,17 @@ a {
 .section-header h2 {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-1);
+  min-height: 1.75rem;
+  line-height: 1.1;
   font-size: 1.12rem;
   color: var(--ink);
 }
 
+/* Ícone e título compartilham a mesma linha de base óptica. */
 .section-header h2 .icon {
+  display: block;
+  align-self: center;
   color: var(--gold-deep);
 }
 
@@ -1120,9 +1130,16 @@ a {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
+/* Seis atributos: 3×2 por padrão e 6×1 nas telas largas — nunca um órfão. */
 .grid-abilities {
-  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-  gap: 0.55rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+@media (min-width: 1280px) {
+  .grid-abilities {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 .grid-slots {
@@ -1211,25 +1228,21 @@ a {
    12. Vida e defesa
    ========================================================================== */
 
+/*
+ * Todos os cards de Vida e Defesa têm a mesma caixa (padding, altura,
+ * espaçamento). O destaque de cor fica reservado ao valor crítico, não ao card.
+ */
 .vital {
   position: relative;
-  padding: 0.65rem 0.7rem;
+  min-height: 5.5rem;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   display: grid;
-  gap: 0.2rem;
+  gap: var(--space-1);
   align-content: start;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-.vital-hp {
-  border-color: var(--wine);
-  background: linear-gradient(180deg, #fbeae6, #f3d6d0);
-}
-
-[data-theme='dark'] .vital-hp {
-  background: linear-gradient(180deg, #3a1d1c, #2a1312);
 }
 
 .vital-label {
@@ -1251,12 +1264,26 @@ a {
   font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 700;
+  line-height: 1.15;
   color: var(--ink);
 }
 
-.vital .inline-display.vital-value {
+/* Só valores críticos recebem cor: HP muito baixo (vermelho) ou zerado. */
+.vital-value.is-critical {
+  color: var(--danger);
+}
+
+.vital-value.is-down {
+  color: var(--wine-bright);
+  text-shadow: 0 0 12px rgba(163, 38, 38, 0.35);
+}
+
+/* Editável e estático ocupam a mesma caixa, para a grade não tremer. */
+.vital .inline-display.vital-value,
+.vital .inline-static.vital-value {
   padding: 0;
   min-height: 0;
+  line-height: inherit;
 }
 
 .vital-hint {
@@ -2745,9 +2772,13 @@ input[type='checkbox']:disabled {
     position: static;
   }
 
-  .sheet-hud-row,
+  .sheet-hud,
   .sheet-work {
     grid-template-columns: 1fr;
+  }
+
+  .sheet-hud-main .grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .sheet-work-side {
@@ -2791,7 +2822,7 @@ input[type='checkbox']:disabled {
 
 @media (max-width: 420px) {
   .grid-abilities {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .grid-slots {
