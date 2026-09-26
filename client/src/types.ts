@@ -494,6 +494,8 @@ export interface SheetUpdatedPayload {
   version: number;
   changes: Record<string, unknown>;
   character: Character;
+  /** Presente quando quem editou não é o dono da ficha (o mestre). */
+  editedBy?: string;
   at: string;
 }
 

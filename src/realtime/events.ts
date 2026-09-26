@@ -53,12 +53,18 @@ export interface PresenceUpdatePayload {
  * calculada, para o painel do mestre apenas substituir o estado.
  */
 export interface SheetUpdatedPayload {
+  /** Dono da ficha (e destino do evento), nunca quem editou. */
   userId: string;
   username: string;
   characterId: string;
   version: number;
   changes: Record<string, unknown>;
   character: CharacterDto;
+  /**
+   * Nome de exibição de quem editou quando não é o dono da ficha — ou seja,
+   * o mestre. Ausente nas edições do próprio jogador.
+   */
+  editedBy?: string;
   at: string;
 }
 

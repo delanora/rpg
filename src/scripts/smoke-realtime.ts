@@ -1177,7 +1177,7 @@ async function main(): Promise<void> {
   );
 
   // --- Itens, ícones e avatar ------------------------------------------------
-  console.log('\n10) Itens, ícones e avatar');
+  console.log('\n9) Itens, ícones e avatar');
 
   const itemCreatedEvent = waitFor<any>(playerSocket, 'item:created');
   const itemCreated = await api('/api/items', {
@@ -1452,8 +1452,8 @@ async function main(): Promise<void> {
     (await api('/api/combat/end', { method: 'POST', token: playerToken })).status === 403,
   );
 
-  // --- 9. Apresentação de imagens ("mostrar aos jogadores") -----------------
-  console.log('\n9) Apresentação de imagens para a mesa');
+  // --- 10. Apresentação de imagens ("mostrar aos jogadores") ----------------
+  console.log('\n10) Apresentação de imagens para a mesa');
 
   check(
     'jogador NÃO apresenta imagem (403)',
@@ -1527,8 +1527,84 @@ async function main(): Promise<void> {
     (await api('/api/presentation', { token: playerToken })).data.presentation === null,
   );
 
-  // --- 10. Presença ao desconectar ------------------------------------------
-  console.log('\n10) Presença ao desconectar');
+  // --- 11. Mestre edita a ficha do jogador ----------------------------------
+  console.log('\n11) Mestre edita a ficha do jogador');
+  const playerSheetId = (await api('/api/characters/me', { token: playerToken })).data.character.id;
+
+  check(
+    'jogador NÃO edita a ficha de ninguém por id (403)',
+    (
+      await api(`/api/characters/${playerSheetId}`, {
+        method: 'PATCH',
+        token: playerToken,
+        body: { name: 'Invadido' },
+      })
+    ).status === 403,
+  );
+  check(
+    'PATCH vazio do mestre é recusado (400)',
+    (
+      await api(`/api/characters/${playerSheetId}`, {
+        method: 'PATCH',
+        token: masterToken,
+        body: {},
+      })
+    ).status === 400,
+  );
+  check(
+    'mestre NÃO edita ficha inexistente (404)',
+    (
+      await api('/api/characters/ficha-que-nao-existe', {
+        method: 'PATCH',
+        token: masterToken,
+        body: { name: 'Fantasma' },
+      })
+    ).status === 404,
+  );
+
+  const masterEditEvent = waitFor<any>(playerSocket, 'sheet:updated');
+  const masterEdit = await api(`/api/characters/${playerSheetId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { notes: 'ajustado pelo mestre', level: 6, strength: 10 },
+  });
+  check('mestre edita a ficha do jogador (200)', masterEdit.status === 200, JSON.stringify(masterEdit.data));
+  check(
+    'resposta recalcula os valores derivados',
+    masterEdit.data.character?.level === 6 && masterEdit.data.character?.derived?.modifiers?.strength === 0,
+    `nível ${masterEdit.data.character?.level}, mod FOR ${masterEdit.data.character?.derived?.modifiers?.strength}`,
+  );
+
+  const masterEditPayload = await masterEditEvent.catch(() => null);
+  check('jogador é avisado da edição do mestre', masterEditPayload !== null);
+  check(
+    'evento marca quem editou (editedBy)',
+    masterEditPayload?.editedBy === 'Mestre Teste',
+    `recebido: ${masterEditPayload?.editedBy}`,
+  );
+  check('a ficha continua sendo do jogador', masterEditPayload?.username === playerUsername);
+  check(
+    'alteração do mestre aparece na ficha do jogador',
+    (await api('/api/characters/me', { token: playerToken })).data.character?.notes ===
+      'ajustado pelo mestre',
+  );
+
+  // A edição do próprio jogador não traz `editedBy`.
+  const ownEditEvent = waitFor<any>(playerSocket, 'sheet:updated');
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: { notes: 'anotação do jogador' },
+  });
+  const ownEditPayload = await ownEditEvent.catch(() => null);
+  check(
+    'edição do próprio jogador não marca editedBy',
+    ownEditPayload !== null && ownEditPayload?.editedBy === undefined,
+    `recebido: ${ownEditPayload?.editedBy}`,
+  );
+
+  // --- 12. Presença ao desconectar ------------------------------------------
+  console.log('\n12) Presença ao desconectar');
   const offlinePromise = waitForPresence(
     masterSocket,
     (online) => !online.some((u) => u.username === playerUsername),

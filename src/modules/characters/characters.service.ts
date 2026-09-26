@@ -12,6 +12,14 @@ import { normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
 export interface Actor {
   userId: string;
   username: string;
+  /** Nome de exibição — é ele que aparece para o jogador quando o mestre edita. */
+  displayName: string;
+}
+
+/** Dono da ficha: recebe o evento e assina o DTO entregue à mesa. */
+interface SheetOwner {
+  userId: string;
+  username: string;
 }
 
 /** Campos escalares copiados diretamente do PATCH para o banco. */
@@ -45,28 +53,33 @@ function emptySpells(): Prisma.InputJsonValue {
 
 /**
  * Publica a alteração para o mestre (que enxerga tudo) e para as demais
- * sessões do próprio jogador. Falha de tempo real nunca deve derrubar a
- * requisição HTTP que já foi persistida.
+ * sessões do dono da ficha — inclusive quando quem editou foi o mestre, para
+ * o jogador ver a mudança na tela na hora.
+ *
+ * `editedBy` só é preenchido quando o editor não é o dono. Falha de tempo real
+ * nunca deve derrubar a requisição HTTP que já foi persistida.
  */
 function publishChange(
-  actor: Actor,
+  owner: SheetOwner,
   character: Character,
   changes: Record<string, unknown>,
+  editedBy?: string,
 ): void {
   try {
     const payload: SheetUpdatedPayload = {
-      userId: actor.userId,
-      username: actor.username,
+      userId: owner.userId,
+      username: owner.username,
       characterId: character.id,
       version: character.version,
       changes,
-      character: toCharacterDto(character, actor.username),
+      character: toCharacterDto(character, owner.username),
+      editedBy,
       at: new Date().toISOString(),
     };
 
     const broadcaster = getBroadcaster();
     broadcaster.toMasters(ServerEvents.SHEET_UPDATED, payload);
-    broadcaster.toUser(actor.userId, ServerEvents.SHEET_UPDATED, payload);
+    broadcaster.toUser(owner.userId, ServerEvents.SHEET_UPDATED, payload);
   } catch (error) {
     console.error('[characters] falha ao publicar alteração em tempo real:', error);
   }
@@ -115,16 +128,17 @@ export function getCharacterByUserId(userId: string): Promise<Character | null> 
 }
 
 /**
- * Aplica uma atualização parcial (edição inline).
- * As coleções enviadas substituem integralmente o valor anterior.
+ * Núcleo da edição: valida o patch contra a classe, grava e publica.
+ * Serve tanto ao dono da ficha quanto ao mestre que a está editando.
  */
-export async function updateCharacter(
-  actor: Actor,
+async function applyCharacterPatch(
+  owner: SheetOwner,
   patch: UpdateCharacterInput,
+  editedBy?: string,
 ): Promise<CharacterDto> {
-  const existing = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  const existing = await prisma.character.findUnique({ where: { userId: owner.userId } });
   if (!existing) {
-    throw new HttpError('Você ainda não criou sua ficha.', 404);
+    throw new HttpError('Esta ficha ainda não foi criada.', 404);
   }
 
   const data: Record<string, unknown> = { version: { increment: 1 } };
@@ -186,12 +200,48 @@ export async function updateCharacter(
   if (patch.classState !== undefined) data.classState = patch.classState;
 
   const character = await prisma.character.update({
-    where: { userId: actor.userId },
+    where: { userId: owner.userId },
     data: data as Prisma.CharacterUpdateInput,
   });
 
-  publishChange(actor, character, patch as Record<string, unknown>);
-  return toCharacterDto(character, actor.username);
+  publishChange(owner, character, patch as Record<string, unknown>, editedBy);
+  return toCharacterDto(character, owner.username);
+}
+
+/**
+ * Aplica uma atualização parcial na ficha do próprio autor.
+ * As coleções enviadas substituem integralmente o valor anterior.
+ */
+export function updateCharacter(actor: Actor, patch: UpdateCharacterInput): Promise<CharacterDto> {
+  return applyCharacterPatch({ userId: actor.userId, username: actor.username }, patch);
+}
+
+/**
+ * O mestre edita a ficha de um jogador (PATCH /api/characters/:id).
+ *
+ * O dono continua sendo o jogador: o evento vai para as sessões dele e o DTO
+ * segue assinado com o nome do dono, mas com `editedBy` marcando quem mexeu.
+ * Só o mestre chega aqui — a rota exige o papel MASTER.
+ */
+export async function updateCharacterAsMaster(
+  characterId: string,
+  master: Actor,
+  patch: UpdateCharacterInput,
+): Promise<CharacterDto> {
+  const target = await prisma.character.findUnique({
+    where: { id: characterId },
+    include: { user: { select: { username: true } } },
+  });
+
+  if (!target) {
+    throw new HttpError('Ficha não encontrada.', 404);
+  }
+
+  return applyCharacterPatch(
+    { userId: target.userId, username: target.user.username },
+    patch,
+    master.displayName,
+  );
 }
 
 /** Lista todas as fichas da mesa (uso exclusivo do mestre). */

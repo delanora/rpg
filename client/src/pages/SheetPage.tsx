@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
+import { Icon } from '../components/Icon';
 import { PresentationOverlay } from '../components/PresentationOverlay';
 import { SheetView } from '../components/SheetView';
 import { CombatTracker } from '../combat/CombatTracker';
@@ -16,6 +17,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [presentation, setPresentation] = useState<Presentation | null>(null);
+  // Aviso de que o mestre mexeu na ficha (com quem e quando).
+  const [masterNotice, setMasterNotice] = useState<string | null>(null);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -30,6 +33,12 @@ export function SheetPage({ user }: { user: SessionUser }) {
         if (!prev || prev.id !== payload.character.id) return prev;
         return payload.character.version >= prev.version ? payload.character : prev;
       });
+
+      // `editedBy` só vem quando quem salvou não foi o próprio jogador.
+      if (payload.editedBy) {
+        const time = new Date(payload.at).toLocaleTimeString('pt-BR');
+        setMasterNotice(`${payload.editedBy} (mestre) alterou sua ficha às ${time}.`);
+      }
     },
 
     // Imagem que o mestre está mostrando para a mesa.
@@ -136,6 +145,17 @@ export function SheetPage({ user }: { user: SessionUser }) {
         <div className="banner banner-error">
           {error}
           <button type="button" className="btn btn-small" onClick={() => setError(null)}>
+            fechar
+          </button>
+        </div>
+      ) : null}
+
+      {masterNotice ? (
+        <div className="banner banner-info">
+          <span className="banner-line">
+            <Icon name="quill" size={15} /> {masterNotice}
+          </span>
+          <button type="button" className="btn btn-small" onClick={() => setMasterNotice(null)}>
             fechar
           </button>
         </div>

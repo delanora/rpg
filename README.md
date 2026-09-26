@@ -392,8 +392,9 @@ Implementadas em `src/modules/shared/dnd5e.ts` e devolvidas em `derived` (nunca 
 | `POST` | `/api/characters/me` | autenticado | Cria a própria ficha (409 se já existir). |
 | `PATCH` | `/api/characters/me` | autenticado | Edição inline: aceita qualquer subconjunto de campos. |
 | `GET` | `/api/characters` | **mestre** | Todas as fichas da mesa (base do painel da Etapa 3). |
+| `PATCH` | `/api/characters/:id` | **mestre** | Edita a ficha de um jogador. A ficha continua pertencendo a ele. |
 
-O autor vem sempre do token. Não existe rota que receba um `userId` — logo, não há como acessar a ficha de outra pessoa.
+O autor vem sempre do token. Não existe rota que receba um `userId` — logo, um jogador não consegue acessar a ficha de outra pessoa, e a única escrita em ficha alheia é o `PATCH /api/characters/:id`, que exige o papel `MASTER`.
 
 ### Sincronização em tempo real
 
@@ -419,13 +420,13 @@ O papel decide: `PLAYER` entra na própria ficha, `MASTER` entra no painel. A de
 npm run create-master -- --username mestre --password "uma-senha-forte" --name "Seu Nome"
 ```
 
-### Fichas dos jogadores (somente leitura)
+### Fichas dos jogadores
 
-A aba **Fichas dos jogadores** lista todas as fichas e abre cada uma com exatamente a mesma ficha do jogador, em modo somente leitura: os campos não são clicáveis, os checkboxes ficam desabilitados e os botões de adicionar/remover não aparecem.
+A aba **Fichas dos jogadores** lista todas as fichas e abre cada uma com exatamente a mesma ficha do jogador. Ela abre em **somente leitura** (campos não clicáveis, checkboxes desabilitados, botões de adicionar/remover escondidos) e o botão **editar ficha** troca para o modo de edição, com todos os controles disponíveis. Cada alteração é salva na hora em `PATCH /api/characters/:id`; **concluir edição** (ou selecionar outra ficha) volta ao modo leitura.
 
-O modo leitura é garantido no **servidor**: o mestre só tem `GET /api/characters`, e a edição da ficha existe apenas em `/api/characters/me` (do dono). Não há como o mestre alterar a ficha de um jogador.
+A ficha continua sendo do jogador — o mestre só ganha acesso de escrita, e a rota exige o papel `MASTER`. O evento publicado continua sendo `sheet:updated`, indo para os mestres e para as sessões do **dono**, que vê a mudança na tela na hora junto de um aviso de quem editou. Nas edições do próprio jogador esse aviso não aparece.
 
-**Atualização em tempo real:** cada alteração do jogador publica `sheet:updated` e o painel substitui a ficha na lista e no detalhe já aberto, sem recarregar. Eventos com `version` menor que a atual são ignorados, evitando respostas fora de ordem.
+**Atualização em tempo real:** cada alteração (do jogador ou do mestre) publica `sheet:updated` e o painel substitui a ficha na lista e no detalhe já aberto, sem recarregar. Eventos com `version` menor que a atual são ignorados, evitando respostas fora de ordem.
 
 ### Criaturas e NPCs
 

@@ -15,6 +15,7 @@ import { closePresentation } from '../presentationApi';
 import type {
   Attack,
   Character,
+  CharacterPatch,
   Creature,
   CreatureKind,
   CreaturePatch,
@@ -233,6 +234,42 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /**
+   * Edição da ficha de um jogador pelo mestre.
+   *
+   * Otimista como as demais: a tela muda na hora e a resposta do servidor
+   * (com os valores derivados recalculados) confirma. Se outra alteração mais
+   * nova chegar antes, ela prevalece.
+   */
+  const patchCharacter = useCallback(async (id: string, patch: CharacterPatch) => {
+    setCharacters((prev) =>
+      prev.map((character) => (character.id === id ? { ...character, ...patch } : character)),
+    );
+
+    try {
+      const { character } = await api<{ character: Character }>(`/api/characters/${id}`, {
+        method: 'PATCH',
+        body: patch,
+      });
+      setCharacters((prev) =>
+        prev.map((entry) =>
+          entry.id === id && character.version >= entry.version ? character : entry,
+        ),
+      );
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar a ficha do jogador.');
+
+      // Recarrega a lista para desfazer a alteração otimista que não subiu.
+      try {
+        const fresh = await api<{ characters: Character[] }>('/api/characters');
+        setCharacters(fresh.characters);
+      } catch {
+        // Sem rede: mantém o estado local e mostra o erro acima.
+      }
+    }
+  }, []);
+
   const createItem = useCallback(async (): Promise<Item> => {
     const { item } = await api<{ item: Item }>('/api/items', {
       method: 'POST',
@@ -406,7 +443,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onError={setError}
           />
         ) : tab === 'sheets' ? (
-          <SheetsTab characters={characters} />
+          <SheetsTab characters={characters} onUpdate={patchCharacter} />
         ) : tab === 'localities' ? (
           <LocalitiesTab
             localities={localities}

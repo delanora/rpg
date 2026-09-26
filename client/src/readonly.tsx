@@ -3,9 +3,10 @@ import { createContext, useContext, type ReactNode } from 'react';
 /**
  * Modo somente leitura da ficha.
  *
- * O mestre enxerga as fichas dos jogadores sem poder editá-las. Em vez de
+ * Vale para a visão do mestre quando ele está só conferindo a ficha. Em vez de
  * propagar um prop `readOnly` por todas as seções, o contexto é consumido
- * diretamente pelo `InlineField` e pelos controles (checkboxes e botões).
+ * diretamente pelo `InlineField` e pelos controles (checkboxes e botões) — o
+ * painel do mestre simplesmente deixa de ativá-lo quando entra em edição.
  */
 const ReadOnlyContext = createContext(false);
 

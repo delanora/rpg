@@ -7,14 +7,21 @@ import {
   getCharacterByUserId,
   listCharacters,
   updateCharacter,
+  updateCharacterAsMaster,
   type Actor,
 } from './characters.service.js';
 
 export const charactersRouter = Router();
 
 /** Extrai o autor da requisição (sempre do token, jamais do corpo). */
-function actorFrom(req: { user?: { sub: string; username: string } }): Actor {
-  return { userId: req.user!.sub, username: req.user!.username };
+function actorFrom(req: {
+  user?: { sub: string; username: string; displayName: string };
+}): Actor {
+  return {
+    userId: req.user!.sub,
+    username: req.user!.username,
+    displayName: req.user!.displayName,
+  };
 }
 
 /**
@@ -74,4 +81,35 @@ charactersRouter.patch('/me', authenticate, async (req, res) => {
 charactersRouter.get('/', authenticate, requireRole('MASTER'), async (_req, res) => {
   const characters = await listCharacters();
   res.json({ characters });
+});
+
+/**
+ * PATCH /api/characters/:id — o mestre ajusta a ficha de um jogador.
+ *
+ * A ficha continua pertencendo ao jogador: o mestre recebe o resultado, o
+ * dono é avisado em tempo real (com `editedBy` marcando quem mexeu) e a
+ * própria ficha segue sendo a do jogador — nada muda de dono.
+ */
+charactersRouter.patch('/:id', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = updateCharacterSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  if (Object.keys(parsed.data).length === 0) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Nada para atualizar.' });
+    return;
+  }
+
+  const character = await updateCharacterAsMaster(
+    String(req.params.id),
+    actorFrom(req),
+    parsed.data,
+  );
+  res.json({ character });
 });

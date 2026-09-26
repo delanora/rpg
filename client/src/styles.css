@@ -342,6 +342,30 @@ a {
   color: #f0b8b0;
 }
 
+/* Aviso neutro (ex.: "o mestre alterou sua ficha"). */
+.banner-info {
+  background: linear-gradient(180deg, #f6efd8, #ece0c2);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  box-shadow: 0 0 16px -8px var(--gold-hair);
+}
+
+[data-theme='dark'] .banner-info {
+  background: linear-gradient(180deg, #2b1f16, #221811);
+  color: var(--ink-soft);
+}
+
+.banner-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.banner-line .icon {
+  color: var(--gold);
+  flex: 0 0 auto;
+}
+
 /* ==========================================================================
    4. Autenticação
    ========================================================================== */
@@ -1999,6 +2023,14 @@ input[type='checkbox']:disabled {
   font-size: 0.82rem;
   color: var(--ink-soft);
   font-style: italic;
+}
+
+/* Cabeçalho do detalhe com metadados e uma ação (ex.: editar a ficha). */
+.detail-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .creature-editor,

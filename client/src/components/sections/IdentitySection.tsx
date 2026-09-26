@@ -19,7 +19,10 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  /** O jogador define o próprio avatar (gravado em `uploads/characters/`). */
+  /**
+   * Avatar da ficha (gravado em `uploads/characters/`). O dono define o
+   * próprio; o mestre também pode trocar quando está editando a ficha dele.
+   */
   async function handleAvatar(files: FileList | null): Promise<void> {
     const file = files?.[0];
     if (!file) return;
