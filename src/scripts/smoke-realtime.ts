@@ -1452,8 +1452,83 @@ async function main(): Promise<void> {
     (await api('/api/combat/end', { method: 'POST', token: playerToken })).status === 403,
   );
 
-  // --- 9. Presença ao desconectar -------------------------------------------
-  console.log('\n9) Presença ao desconectar');
+  // --- 9. Apresentação de imagens ("mostrar aos jogadores") -----------------
+  console.log('\n9) Apresentação de imagens para a mesa');
+
+  check(
+    'jogador NÃO apresenta imagem (403)',
+    (
+      await api('/api/presentation', {
+        method: 'POST',
+        token: playerToken,
+        body: { imageUrl: '/uploads/characters/qualquer.png' },
+      })
+    ).status === 403,
+  );
+  check(
+    'endereço de imagem inválido é recusado (400)',
+    (
+      await api('/api/presentation', {
+        method: 'POST',
+        token: masterToken,
+        body: { imageUrl: 'javascript:alert(1)' },
+      })
+    ).status === 400,
+  );
+
+  const presented = waitFor<any>(playerSocket, 'presentation:shown');
+  const presentResponse = await api('/api/presentation', {
+    method: 'POST',
+    token: masterToken,
+    body: { imageUrl: '/uploads/localities/mapa.png', alt: 'Mapa da masmorra' },
+  });
+  check('mestre apresenta a imagem (201)', presentResponse.status === 201, JSON.stringify(presentResponse.data));
+
+  const presentedPayload = await presented.catch(() => null);
+  check('jogador recebe a imagem apresentada', presentedPayload !== null);
+  check(
+    'imagem apresentada chega com o rótulo',
+    presentedPayload?.presentation?.alt === 'Mapa da masmorra' &&
+      presentedPayload?.presentation?.imageUrl === '/uploads/localities/mapa.png',
+  );
+  check(
+    'quem apresentou é carimbado pelo token, não pelo corpo',
+    presentedPayload?.presentation?.presentedBy === 'Mestre Teste',
+    `recebido: ${presentedPayload?.presentation?.presentedBy}`,
+  );
+  check(
+    'apresentação em andamento fica disponível na API',
+    (await api('/api/presentation', { token: playerToken })).data.presentation?.id ===
+      presentedPayload?.presentation?.id,
+  );
+
+  // Quem entra no meio da apresentação recebe a imagem já aberta.
+  const lateSocket = connect(playerToken);
+  const latePresentation = await waitFor<any>(lateSocket, 'presentation:shown').catch(() => null);
+  check(
+    'quem conecta depois recebe a apresentação em andamento',
+    latePresentation?.presentation?.id === presentedPayload?.presentation?.id,
+  );
+  lateSocket.close();
+
+  check(
+    'jogador NÃO fecha a imagem (403)',
+    (await api('/api/presentation/close', { method: 'POST', token: playerToken })).status === 403,
+  );
+
+  const closed = waitFor<any>(playerSocket, 'presentation:closed');
+  check(
+    'mestre fecha a imagem (204)',
+    (await api('/api/presentation/close', { method: 'POST', token: masterToken })).status === 204,
+  );
+  check('mesa é avisada do fechamento', (await closed.catch(() => null)) !== null);
+  check(
+    'não há mais apresentação em andamento',
+    (await api('/api/presentation', { token: playerToken })).data.presentation === null,
+  );
+
+  // --- 10. Presença ao desconectar ------------------------------------------
+  console.log('\n10) Presença ao desconectar');
   const offlinePromise = waitForPresence(
     masterSocket,
     (online) => !online.some((u) => u.username === playerUsername),

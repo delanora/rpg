@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
+import { PresentationOverlay } from '../components/PresentationOverlay';
 import { SheetView } from '../components/SheetView';
 import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
-import type { Character, CharacterPatch, SessionUser } from '../types';
+import { closePresentation } from '../presentationApi';
+import type { Character, CharacterPatch, Presentation, SessionUser } from '../types';
 import { useRealtime } from '../useRealtime';
 
 export function SheetPage({ user }: { user: SessionUser }) {
@@ -13,6 +15,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [presentation, setPresentation] = useState<Presentation | null>(null);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -28,6 +31,10 @@ export function SheetPage({ user }: { user: SessionUser }) {
         return payload.character.version >= prev.version ? payload.character : prev;
       });
     },
+
+    // Imagem que o mestre está mostrando para a mesa.
+    onPresentationShown: (payload) => setPresentation(payload.presentation),
+    onPresentationClosed: () => setPresentation(null),
   });
 
   // Carrega a ficha do usuário e o eventual combate em andamento.
@@ -86,6 +93,11 @@ export function SheetPage({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /** Fechamento da imagem apresentada (só o mestre chega aqui na prática). */
+  const closePresentedImage = useCallback(() => {
+    void closePresentation().catch(() => setPresentation(null));
+  }, []);
+
   const createSheet = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -105,6 +117,12 @@ export function SheetPage({ user }: { user: SessionUser }) {
 
   return (
     <div className={combat ? 'app-shell combat-active' : 'app-shell'}>
+      <PresentationOverlay
+        presentation={presentation}
+        isMaster={user.role === 'MASTER'}
+        onClose={closePresentedImage}
+      />
+
       <AppHeader
         title={combat ? `${character?.name ?? 'Sem ficha'} · em combate` : character ? character.name : 'Sem ficha'}
         avatarUrl={character?.avatarUrl}

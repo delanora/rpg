@@ -1,6 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { corsOrigins } from '../config/env.js';
+import { getCurrentPresentation } from '../modules/presentation/presentation.service.js';
 import type { AppServer, AppSocket } from '../types/socket.js';
 import { socketAuth } from './auth.js';
 import { createBroadcaster } from './broadcast.js';
@@ -56,6 +57,12 @@ export function createRealtimeServer(httpServer: HttpServer): AppServer {
       connectedAt: new Date().toISOString(),
       user: { userId, username, role },
     });
+
+    // Quem entra no meio de uma apresentação recebe a imagem já aberta.
+    const presentation = getCurrentPresentation();
+    if (presentation) {
+      socket.emit(ServerEvents.PRESENTATION_SHOWN, { presentation });
+    }
 
     console.log(`[socket] conectado: ${username} (${role}) — ${socket.id}`);
     if (becameOnline) {

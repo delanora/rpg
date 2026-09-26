@@ -103,6 +103,13 @@ export const ServerEvents = {
   /** Item removido do catálogo pelo mestre. */
   ITEM_DELETED: 'item:deleted',
 
+  // Apresentação de imagens (entrega para toda a mesa: o mestre mostra uma
+  // imagem no centro da tela dos jogadores até mandar fechar)
+  /** O mestre começou a apresentar uma imagem para a mesa. */
+  PRESENTATION_SHOWN: 'presentation:shown',
+  /** O mestre encerrou a apresentação. */
+  PRESENTATION_CLOSED: 'presentation:closed',
+
   // Combate (entrega para toda a mesa: jogadores e mestre participam)
   /** Combate iniciado — também é o gatilho do pedido de iniciativa. */
   COMBAT_STARTED: 'combat:started',
@@ -158,6 +165,31 @@ export interface ItemUpdatedPayload {
 
 export interface ItemDeletedPayload {
   itemId: string;
+}
+
+/**
+ * Imagem que o mestre está mostrando para a mesa.
+ *
+ * A apresentação é efêmera (não vai para o banco): vive na memória do
+ * servidor enquanto o mestre quiser e é reenviada a quem conectar depois.
+ */
+export interface PresentationDto {
+  id: string;
+  /** URL da imagem (`/uploads/...`). */
+  imageUrl: string;
+  /** Texto alternativo/rótulo mostrado abaixo da imagem. */
+  alt: string;
+  /** Nome de quem apresentou (o mestre). */
+  presentedBy: string;
+  at: string;
+}
+
+export interface PresentationShownPayload {
+  presentation: PresentationDto;
+}
+
+export interface PresentationClosedPayload {
+  presentationId: string;
 }
 
 /** --- Combate ----------------------------------------------------------------- */

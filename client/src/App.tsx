@@ -1,5 +1,6 @@
 import { AuthProvider, useAuth } from './auth';
 import { AuthPage } from './components/AuthPage';
+import { LightboxProvider } from './components/Lightbox';
 import { MasterPanel } from './pages/MasterPanel';
 import { SheetPage } from './pages/SheetPage';
 
@@ -16,7 +17,9 @@ function Shell() {
 export function App() {
   return (
     <AuthProvider>
-      <Shell />
+      <LightboxProvider>
+        <Shell />
+      </LightboxProvider>
     </AuthProvider>
   );
 }

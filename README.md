@@ -553,6 +553,33 @@ O tema é um atributo `data-theme` no `<html>`; o CSS troca todas as cores por v
 
 ---
 
+## 🖼️ Imagens ampliadas e apresentação para a mesa
+
+### Clique para ampliar
+
+Todo ícone/retrato do sistema (criaturas, NPCs, jogadores, itens, componentes de combate) e as imagens das localidades são **clicáveis**: a imagem abre ampliada no centro da tela, com o fundo escurecido, uma moldura no tema da página e um botão de fechar. Clicar fora da moldura ou pressionar **Esc** também fecha.
+
+O lightbox é único para o app inteiro (`client/src/components/Lightbox.tsx`): o `Portrait` e a galeria da localidade apenas chamam `useLightbox().open(...)`. Como o ícone costuma ficar dentro de um cartão clicável, o clique no ícone amplia a imagem em vez de acionar o cartão.
+
+### “Mostrar aos jogadores” (mestre)
+
+Quando quem abre a imagem é o **mestre**, aparece o botão **mostrar aos jogadores**: a mesma imagem surge na tela de **todos** os participantes, no centro, e só sai quando o mestre clicar em **fechar imagem** — ou seja, fica no ar pelo tempo que ele quiser. Para o jogador o overlay não tem botão de fechar (nem Esc); é o mestre quem encerra.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/presentation` | autenticado | Apresentação em andamento (ou `null`). |
+| `POST` | `/api/presentation` | **mestre** | Mostra `{ imageUrl, alt }` na tela da mesa. |
+| `POST` | `/api/presentation/close` | **mestre** | Fecha a imagem na tela de todos. |
+
+| Evento | Destino | Conteúdo |
+|--------|---------|----------|
+| `presentation:shown` | mesa | Imagem que o mestre está mostrando. |
+| `presentation:closed` | mesa | Fim da apresentação. |
+
+A apresentação é **efêmera** (não vai para o banco): vive na memória do servidor enquanto o mestre quiser e é reenviada a quem conectar no meio dela. Quem apresentou e quando vem do **token**, nunca do corpo da requisição, e só aceitamos `/uploads/...`, `data:image/` ou `http(s)` como endereço de imagem.
+
+---
+
 ## 📌 Escopo
 
 - Sistema pensado para **uma única mesa fixa** (sem suporte a múltiplas campanhas/salas por enquanto)

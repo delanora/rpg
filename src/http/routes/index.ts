@@ -5,6 +5,7 @@ import { combatRouter } from '../../modules/combat/combat.routes.js';
 import { creaturesRouter } from '../../modules/creatures/creatures.routes.js';
 import { itemsRouter } from '../../modules/items/items.routes.js';
 import { localitiesRouter, uploadsRouter } from '../../modules/localities/localities.routes.js';
+import { presentationRouter } from '../../modules/presentation/presentation.routes.js';
 import { usersRouter } from '../../modules/users/users.routes.js';
 import { healthRouter } from './health.js';
 
@@ -22,4 +23,5 @@ apiRouter.use('/creatures', creaturesRouter);
 apiRouter.use('/localities', localitiesRouter);
 apiRouter.use('/items', itemsRouter);
 apiRouter.use('/uploads', uploadsRouter);
+apiRouter.use('/presentation', presentationRouter);
 apiRouter.use('/combat', combatRouter);

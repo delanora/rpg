@@ -8,6 +8,8 @@ import type {
   LocalityCreatedPayload,
   LocalityDeletedPayload,
   LocalityUpdatedPayload,
+  PresentationClosedPayload,
+  PresentationShownPayload,
   Role,
   SheetUpdatedPayload,
 } from './types';
@@ -22,6 +24,8 @@ export type {
   LocalityCreatedPayload,
   LocalityDeletedPayload,
   LocalityUpdatedPayload,
+  PresentationClosedPayload,
+  PresentationShownPayload,
   SheetUpdatedPayload,
 };
 

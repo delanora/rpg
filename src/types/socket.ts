@@ -11,6 +11,8 @@ import type {
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
   DiceRolledPayload,
+  PresentationClosedPayload,
+  PresentationShownPayload,
   PresenceUpdatePayload,
   SheetUpdatedPayload,
 } from '../realtime/events.js';
@@ -28,6 +30,10 @@ export interface ServerToClientEvents {
   'creature:created': (payload: CreatureCreatedPayload) => void;
   'creature:updated': (payload: CreatureUpdatedPayload) => void;
   'creature:deleted': (payload: CreatureDeletedPayload) => void;
+
+  // Apresentação de imagens
+  'presentation:shown': (payload: PresentationShownPayload) => void;
+  'presentation:closed': (payload: PresentationClosedPayload) => void;
 
   // Combate
   'combat:started': (payload: CombatStartedPayload) => void;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
+import { PresentationOverlay } from '../components/PresentationOverlay';
 import { CreaturesTab } from '../components/master/CreaturesTab';
 import { ItemsTab } from '../components/master/ItemsTab';
 import { LocalitiesTab } from '../components/master/LocalitiesTab';
@@ -10,6 +11,7 @@ import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
+import { closePresentation } from '../presentationApi';
 import type {
   Attack,
   Character,
@@ -20,6 +22,7 @@ import type {
   ItemPatch,
   Locality,
   LocalityPatch,
+  Presentation,
   SessionUser,
 } from '../types';
 import { useRealtime } from '../useRealtime';
@@ -37,6 +40,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showStartDialog, setShowStartDialog] = useState(false);
+  const [presentation, setPresentation] = useState<Presentation | null>(null);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -103,6 +107,11 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     onItemDeleted: (payload) => {
       setItems((prev) => prev.filter((item) => item.id !== payload.itemId));
     },
+
+    // Imagem que este mestre mostrou para a mesa (também aparece para ele,
+    // que é quem fecha).
+    onPresentationShown: (payload) => setPresentation(payload.presentation),
+    onPresentationClosed: () => setPresentation(null),
   });
 
   // Carga inicial: fichas, bestiário, localidades e eventual combate em andamento.
@@ -135,6 +144,11 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Fechamento da imagem apresentada — só o mestre tem esta ação. */
+  const closePresentedImage = useCallback(() => {
+    void closePresentation().catch(() => setPresentation(null));
   }, []);
 
   const createCreature = useCallback(
@@ -299,6 +313,12 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
   return (
     <div className={combat ? 'app-shell theme-master combat-active' : 'app-shell theme-master'}>
+      <PresentationOverlay
+        presentation={presentation}
+        isMaster={user.role === 'MASTER'}
+        onClose={closePresentedImage}
+      />
+
       <AppHeader
         title={combat ? 'Modo de combate' : 'Painel do Mestre'}
         subtitle={

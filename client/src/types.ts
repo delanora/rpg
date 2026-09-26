@@ -591,6 +591,26 @@ export interface ItemDeletedPayload {
   itemId: string;
 }
 
+/** --- Apresentação de imagens ------------------------------------------------ */
+
+/** Imagem que o mestre está mostrando para a mesa. */
+export interface Presentation {
+  id: string;
+  imageUrl: string;
+  alt: string;
+  presentedBy: string;
+  at: string;
+}
+
+export interface PresentationShownPayload {
+  presentation: Presentation;
+}
+
+export interface PresentationClosedPayload {
+  /** `null` quando o servidor reenvia um fechamento sem apresentação aberta. */
+  presentationId: string | null;
+}
+
 /** --- Combate ---------------------------------------------------------------- */
 
 export type CombatStatus = 'PENDING_INITIATIVE' | 'ACTIVE' | 'ENDED';

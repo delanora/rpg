@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import type { Creature, Locality, LocalityPatch } from '../../types';
 import { Icon } from '../Icon';
+import { useLightbox } from '../Lightbox';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
@@ -18,6 +19,7 @@ interface LocalityEditorProps {
 export function LocalityEditor({ locality, creatures, onPatch, onDelete }: LocalityEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { open } = useLightbox();
 
   async function handleFiles(files: FileList | null): Promise<void> {
     if (!files || files.length === 0) return;
@@ -101,7 +103,15 @@ export function LocalityEditor({ locality, creatures, onPatch, onDelete }: Local
           <ul className="image-grid">
             {locality.images.map((image) => (
               <li key={image.url} className="image-card">
-                <img src={image.url} alt={image.name || locality.name} loading="lazy" />
+                <button
+                  type="button"
+                  className="image-zoom"
+                  title="Ampliar imagem"
+                  aria-label={`Ampliar imagem${image.name ? `: ${image.name}` : ''}`}
+                  onClick={() => open(image.url, image.name || locality.name)}
+                >
+                  <img src={image.url} alt="" loading="lazy" />
+                </button>
                 <button
                   type="button"
                   className="image-remove"
