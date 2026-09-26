@@ -1079,6 +1079,71 @@ async function main(): Promise<void> {
     JSON.stringify(sorcererSheet.derived.preparedSpellCount),
   );
 
+  // --- Mago: grimório, Recuperação Arcana, Couraça Arcana e Presságio ------
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: { classKey: 'wizard', level: 6 },
+  });
+  const wizardSheet = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { subclass: 'Escola de Abjuração' },
+    })
+  ).data.character;
+  check('dado de vida do Mago é d6', wizardSheet.derived.hitDie === 6, String(wizardSheet.derived.hitDie));
+  check(
+    'salvaguardas INT e SAB fixas',
+    wizardSheet.derived.lockedSaves.includes('intelligence') &&
+      wizardSheet.derived.lockedSaves.includes('wisdom'),
+    JSON.stringify(wizardSheet.derived.lockedSaves),
+  );
+  check(
+    'Mago prepara mod. de INT + nível magias do grimório',
+    wizardSheet.derived.preparedSpellCount ===
+      Math.max(1, wizardSheet.derived.modifiers.intelligence + 6),
+    JSON.stringify({ prepared: wizardSheet.derived.preparedSpellCount }),
+  );
+  const ward = wizardSheet.classAdjustments.resources.find((r: any) => r.id === 'arcane-ward');
+  check(
+    'Couraça Arcana = 2 × nível + mod. de INT (no nível 6)',
+    ward?.max === 2 * 6 + wizardSheet.derived.modifiers.intelligence &&
+      ward?.remaining === ward?.max,
+    JSON.stringify(ward),
+  );
+
+  const diviner = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { subclass: 'Escola de Adivinhação' },
+    })
+  ).data.character;
+  check(
+    'Presságio tem 2 dados no nível 6',
+    diviner.classAdjustments.resources.find((r: any) => r.id === 'portent')?.max === 2,
+    JSON.stringify(diviner.classAdjustments.resources),
+  );
+
+  const divinerHigh = (
+    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 14 } })
+  ).data.character;
+  check(
+    'Presságio Maior eleva para 3 dados no nível 14',
+    divinerHigh.classAdjustments.resources.find((r: any) => r.id === 'portent')?.max === 3,
+    JSON.stringify(divinerHigh.classAdjustments.resources.find((r: any) => r.id === 'portent')),
+  );
+
+  const wizard20 = (
+    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 20 } })
+  ).data.character;
+  check(
+    'Magias Assinatura aparece no nível 20',
+    wizard20.activeFeatures.some((f: any) => f.id === 'signature-spells'),
+    JSON.stringify(wizard20.activeFeatures.map((f: any) => f.id)),
+  );
+
   // Os ataques acima mudaram o HP da criatura; atualiza a referência usada
   // pelos checks de dano manual abaixo.
   Object.assign(

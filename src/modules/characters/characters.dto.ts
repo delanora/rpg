@@ -149,17 +149,6 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
   );
   const sneakDice = hasSneakAttack ? sneakAttackDice(character.level) : 0;
 
-  // Estado de classe (Fúria, etc.) e os ajustes mecânicos que ele liga.
-  const classState = normalizeClassState(character.classState);
-  const classAdjustments = computeClassAdjustments(activeFeatures, character.level, classState);
-  const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
-  const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
-    list: [],
-    slots: {},
-  });
-  const attacks = parseJson<AttackDto[]>(attackListSchema, character.attacks, []);
-  const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
-
   const abilities: Record<AbilityKey, number> = {
     strength: character.strength,
     dexterity: character.dexterity,
@@ -168,6 +157,23 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     wisdom: character.wisdom,
     charisma: character.charisma,
   };
+
+  // Estado de classe (Fúria, etc.) e os ajustes mecânicos que ele liga. Os
+  // atributos entram no cálculo de recursos como a Couraça Arcana (2×nível + INT).
+  const classState = normalizeClassState(character.classState);
+  const classAdjustments = computeClassAdjustments(
+    activeFeatures,
+    character.level,
+    classState,
+    abilities,
+  );
+  const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
+  const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
+    list: [],
+    slots: {},
+  });
+  const attacks = parseJson<AttackDto[]>(attackListSchema, character.attacks, []);
+  const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
 
   // Bônus de atributo de features (ex.: Campeão Primitivo) entram nos valores
   // efetivos usados por todos os cálculos derivados; a pontuação gravada segue

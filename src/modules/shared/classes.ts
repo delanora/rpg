@@ -1,4 +1,4 @@
-import type { AbilityKey } from './dnd5e.js';
+import { abilityModifier, type AbilityKey } from './dnd5e.js';
 
 /**
  * Registro das 12 classes do Livro do Jogador (PHB 2014).
@@ -26,6 +26,10 @@ export interface ClassFeatureResource {
   maxByLevel?: { level: number; value: number }[];
   /** Máximo igual ao nível do personagem (ex.: pontos de Ki do monge). */
   perLevel?: boolean;
+  /** Multiplicador do máximo por nível quando `perLevel` (padrão 1; Couraça Arcana usa 2). */
+  perLevelMultiplier?: number;
+  /** Somado ao máximo o modificador deste atributo (ex.: Couraça Arcana usa INT). */
+  abilityMod?: AbilityKey;
 }
 
 /**
@@ -1214,6 +1218,228 @@ const SORCERER_SUBCLASSES: SubclassDefinition[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Mago (Wizard) — PHB 2014
+// ---------------------------------------------------------------------------
+
+const WIZARD_FEATURES: ClassFeatureDefinition[] = [
+  {
+    id: 'arcane-recovery',
+    name: 'Recuperação Arcana',
+    level: 1,
+    description:
+      'Uma vez por dia, durante um descanso curto, recupere espaços de magia gastos totalizando metade do seu nível de mago, arredondado para cima. Nenhum espaço de 6º nível ou superior pode ser recuperado assim.',
+  },
+  {
+    id: 'spell-mastery',
+    name: 'Maestria em Magia',
+    level: 18,
+    description:
+      'Escolha uma magia de 1º nível e uma de 2º nível do seu grimório. Você pode lançá-las à vontade, no nível mais baixo, sem gastar espaços de magia.',
+  },
+  {
+    id: 'signature-spells',
+    name: 'Magias Assinatura',
+    level: 20,
+    description:
+      'Escolha duas magias de 3º nível do seu grimório: elas ficam sempre preparadas e podem ser lançadas gratuitamente, cada uma uma vez, repondo os usos num descanso curto ou longo.',
+  },
+];
+
+const WIZARD_SUBCLASSES: SubclassDefinition[] = [
+  {
+    id: 'abjuration',
+    name: 'Escola de Abjuração',
+    description: 'Especialista em magias de proteção, barreiras e banimento.',
+    features: [
+      {
+        id: 'abjuration-savant',
+        name: 'Especialista em Abjuração',
+        level: 2,
+        description:
+          'Copiar uma magia de Abjuração para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'arcane-ward',
+        name: 'Couraça Arcana',
+        level: 2,
+        description:
+          'Ao lançar uma magia de Abjuração de 1º nível ou superior, crie uma couraça mágica que absorve dano. Os pontos são 2 × nível de mago + mod. de Inteligência. A couraça se recarrega quando você lança magias de Abjuração e se esvazia num descanso longo.',
+        effect: {
+          type: 'resource',
+          id: 'arcane-ward',
+          name: 'Couraça Arcana',
+          resource: {
+            name: 'Couraça Arcana',
+            recharge: 'long',
+            perLevel: true,
+            perLevelMultiplier: 2,
+            abilityMod: 'intelligence',
+          },
+        },
+      },
+      {
+        id: 'projected-ward',
+        name: 'Couraça Projetada',
+        level: 6,
+        description:
+          'Quando uma criatura a até 9 m (30 pés) sofrer dano, use sua reação para projetar sua Couraça Arcana sobre ela, absorvendo o dano com seus pontos.',
+      },
+      {
+        id: 'improved-abjuration',
+        name: 'Abjuração Aprimorada',
+        level: 10,
+        description:
+          'Você soma seu nível de mago às checagens de atributo ao lançar Contramágica ou Dissipar Magia.',
+      },
+      {
+        id: 'spell-resistance',
+        name: 'Resistência a Magia',
+        level: 14,
+        description: 'Você tem vantagem em testes de resistência contra magias.',
+      },
+    ],
+  },
+  {
+    id: 'conjuration',
+    name: 'Escola de Conjuração',
+    description: 'Especialista em invocar criaturas e transportar objetos e pessoas.',
+    features: [
+      {
+        id: 'conjuration-savant',
+        name: 'Especialista em Conjuração',
+        level: 2,
+        description:
+          'Copiar uma magia de Conjuração para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'minor-conjuration',
+        name: 'Conjuração Menor',
+        level: 2,
+        description:
+          'Como ação, crie um objeto inanimado não mágico de até 30 cm (1 pé) que dure 1 hora, ou faça surgir um item de até 3 m de distância.',
+      },
+      {
+        id: 'benign-transposition',
+        name: 'Transposição Benigna',
+        level: 6,
+        description:
+          'Como ação bônus, teleporte-se até 9 m (30 pés) para um espaço desocupado que possa ver. Alternativamente, troque de lugar com uma criatura voluntária a até 9 m.',
+      },
+      {
+        id: 'focused-conjuration',
+        name: 'Conjuração Focada',
+        level: 10,
+        description:
+          'Sua concentração em magias de Conjuração não pode ser interrompida por dano.',
+      },
+      {
+        id: 'durable-summons',
+        name: 'Invocações Duráveis',
+        level: 14,
+        description:
+          'Criaturas que você invoca ou cria com magias de Conjuração ganham 30 pontos de vida temporários.',
+      },
+    ],
+  },
+  {
+    id: 'divination',
+    name: 'Escola de Adivinhação',
+    description: 'Especialista em enxergar o futuro e obter informações ocultas.',
+    features: [
+      {
+        id: 'divination-savant',
+        name: 'Especialista em Adivinhação',
+        level: 2,
+        description:
+          'Copiar uma magia de Adivinhação para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'portent',
+        name: 'Presságio',
+        level: 2,
+        description:
+          'Ao terminar um descanso longo, role 2d20 e registre os valores. Você pode substituir qualquer jogada de ataque, teste de atributo ou salvaguarda (sua ou de uma criatura que veja) por um desses valores, gastando-o. No nível 14 você rola 3d20.',
+        effect: {
+          type: 'resource',
+          id: 'portent',
+          name: 'Dados de Presságio',
+          resource: {
+            name: 'Dados de Presságio',
+            recharge: 'long',
+            maxByLevel: [
+              { level: 2, value: 2 },
+              { level: 14, value: 3 },
+            ],
+          },
+        },
+      },
+      {
+        id: 'expert-divination',
+        name: 'Adivinhação Especialista',
+        level: 6,
+        description:
+          'Ao lançar uma magia de Adivinhação de 2º nível ou superior, recupere um espaço de magia gasto de nível inferior a ela.',
+      },
+      {
+        id: 'the-third-eye',
+        name: 'O Terceiro Olho',
+        level: 10,
+        description:
+          'Como ação, escolha um destes sentidos até um descanso longo: visão no escuro (18 m), ler qualquer idioma, ver criaturas invisíveis a até 3 m ou ver o Plano Etéreo a até 18 m.',
+      },
+      {
+        id: 'greater-portent',
+        name: 'Presságio Maior',
+        level: 14,
+        description: 'Você passa a rolar 3 dados de Presságio a cada descanso longo.',
+      },
+    ],
+  },
+  {
+    id: 'enchantment',
+    name: 'Escola de Encantamento',
+    description: 'Especialista em controlar mentes e encantar criaturas.',
+    features: [
+      {
+        id: 'enchantment-savant',
+        name: 'Especialista em Encantamento',
+        level: 2,
+        description:
+          'Copiar uma magia de Encantamento para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'hypnotic-gaze',
+        name: 'Olhar Hipnótico',
+        level: 2,
+        description:
+          'Como ação, escolha uma criatura a até 9 m (30 pés) que veja; ela faz uma salvaguarda de Sabedoria ou fica enfeitiçada e incapacitada até o fim do seu próximo turno.',
+      },
+      {
+        id: 'instinctive-charm',
+        name: 'Encanto Instintivo',
+        level: 6,
+        description:
+          'Usando sua reação, desvie um ataque que teria como alvo você para outra criatura a até 9 m (30 pés), redirecionando o ataque.',
+      },
+      {
+        id: 'split-enchantment',
+        name: 'Encantamento Dividido',
+        level: 10,
+        description:
+          'Ao lançar uma magia de Encantamento de alvo único, você pode escolher um segundo alvo para a mesma magia.',
+      },
+      {
+        id: 'alter-memories',
+        name: 'Alterar Memórias',
+        level: 14,
+        description:
+          'Você pode apagar até 1 hora das memórias de uma criatura enfeitiçada por você, como a magia Modificar Memória.',
+      },
+    ],
+  },
+];
+
 /**
  * As 12 classes. Os níveis de subclasse seguem o PHB 2014:
  * Clérigo, Bruxo e Feiticeiro escolhem no nível 1; Druida e Mago no 2;
@@ -1287,8 +1513,8 @@ export const CLASS_DEFINITIONS: readonly ClassDefinition[] = [
     savingThrows: ['intelligence', 'wisdom'],
     subclassLevel: 2, // Tradição Arcana
     spellcasting: { type: 'full', ability: 'intelligence', learning: 'prepared' },
-    features: NO_FEATURES,
-    subclasses: NO_SUBCLASSES,
+    features: WIZARD_FEATURES,
+    subclasses: WIZARD_SUBCLASSES,
   },
   {
     key: 'monk',
@@ -1442,15 +1668,22 @@ export function effectValueAtLevel(
 export function resourceMaxAtLevel(
   resource: ClassFeatureResource,
   level: number,
+  abilities?: Record<AbilityKey, number>,
 ): number {
-  if (resource.perLevel) return Math.max(0, level);
-  if (resource.maxByLevel && resource.maxByLevel.length > 0) {
+  let value: number;
+  if (resource.perLevel) {
+    value = Math.max(0, level) * (resource.perLevelMultiplier ?? 1);
+  } else if (resource.maxByLevel && resource.maxByLevel.length > 0) {
     const sorted = [...resource.maxByLevel].sort((a, b) => a.level - b.level);
-    let value = sorted[0]?.value ?? 0;
+    value = sorted[0]?.value ?? 0;
     for (const step of sorted) if (step.level <= level) value = step.value;
-    return value;
+  } else {
+    value = resource.max ?? 0;
   }
-  return resource.max ?? 0;
+  if (resource.abilityMod && abilities) {
+    value += abilityModifier(abilities[resource.abilityMod]);
+  }
+  return value;
 }
 
 /** Total de espaços de Expertise concedidos pelas features ativas. */
@@ -1550,6 +1783,7 @@ export function computeClassAdjustments(
   features: ActiveClassFeature[],
   level: number,
   state: ClassState,
+  abilities?: Record<AbilityKey, number>,
 ): ClassAdjustments {
   const activeSet = new Set(state.active);
   const toggles: ActiveToggle[] = [];
@@ -1584,7 +1818,7 @@ export function computeClassAdjustments(
         case 'resource': {
           const resource = effect.resource;
           if (!resource) break;
-          const max = resourceMaxAtLevel(resource, level);
+          const max = resourceMaxAtLevel(resource, level, abilities);
           const used = Math.max(0, state.used[effectId] ?? 0);
           resources.push({
             id: effectId,

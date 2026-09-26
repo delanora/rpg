@@ -130,6 +130,8 @@ export interface ClassFeatureResource {
   max?: number;
   maxByLevel?: { level: number; value: number }[];
   perLevel?: boolean;
+  perLevelMultiplier?: number;
+  abilityMod?: AbilityKey;
 }
 
 /** Efeito mecânico opcional de uma característica de classe. */
