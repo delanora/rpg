@@ -1438,6 +1438,175 @@ const WIZARD_SUBCLASSES: SubclassDefinition[] = [
       },
     ],
   },
+  {
+    id: 'evocation',
+    name: 'Escola de Evocação',
+    description: 'Especialista em magias de energia bruta, como fogo, raio e frio.',
+    features: [
+      {
+        id: 'evocation-savant',
+        name: 'Especialista em Evocação',
+        level: 2,
+        description:
+          'Copiar uma magia de Evocação para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'sculpt-spells',
+        name: 'Moldar Magias',
+        level: 2,
+        description:
+          'Ao lançar uma magia de Evocação que afeta outras criaturas que você possa ver, escolha um número delas igual a 1 + o nível da magia; as escolhidas passam automaticamente na salvaguarda e não sofrem dano.',
+      },
+      {
+        id: 'potent-cantrip',
+        name: 'Truque Potente',
+        level: 6,
+        description:
+          'Quando uma criatura passa numa salvaguarda contra um de seus truques, ela ainda sofre metade do dano, mas nenhum efeito adicional.',
+      },
+      {
+        id: 'empowered-evocation',
+        name: 'Evocação Fortalecida',
+        level: 10,
+        description:
+          'Você soma o mod. de Inteligência ao dano de qualquer magia de Evocação de mago que lançar.',
+      },
+      {
+        id: 'overchannel',
+        name: 'Sobrecarregar',
+        level: 14,
+        description:
+          'Ao lançar uma magia de Evocação de 1º a 5º nível, você pode causar o dano máximo. Na primeira vez não sofre nada; a cada uso seguinte antes de um descanso longo, sofre 2d12 de dano necrótico por nível da magia (ignora resistência/imunidade).',
+      },
+    ],
+  },
+  {
+    id: 'illusion',
+    name: 'Escola de Ilusão',
+    description: 'Especialista em enganar os sentidos com imagens e sons falsos.',
+    features: [
+      {
+        id: 'illusion-savant',
+        name: 'Especialista em Ilusão',
+        level: 2,
+        description:
+          'Copiar uma magia de Ilusão para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'improved-minor-illusion',
+        name: 'Ilusão Menor Aprimorada',
+        level: 2,
+        description:
+          'Você aprende Disfarce Menor e pode criar tanto um som quanto uma imagem com uma única conjuração dela.',
+      },
+      {
+        id: 'malleable-illusions',
+        name: 'Ilusões Maleáveis',
+        level: 6,
+        description:
+          'Como ação, você altera a natureza de uma ilusão já criada por uma magia de Ilusão (desde que continue dentro do alcance e você possa vê-la).',
+      },
+      {
+        id: 'illusory-self',
+        name: 'Eu Ilusório',
+        level: 10,
+        description:
+          'Usando sua reação quando uma criatura o ataca, você cria uma duplicata ilusória e se torna invisível até o fim do seu próximo turno, fazendo o ataque errar.',
+      },
+      {
+        id: 'illusory-reality',
+        name: 'Realidade Ilusória',
+        level: 14,
+        description:
+          'Como ação, transforme parte de uma ilusão em realidade por 1 minuto, tornando real um objeto inanimado não mágico de até 1,5 m (5 pés) de lado.',
+      },
+    ],
+  },
+  {
+    id: 'necromancy',
+    name: 'Escola de Necromancia',
+    description: 'Especialista em manipular a vida e a morte, energias necróticas e mortos-vivos.',
+    features: [
+      {
+        id: 'necromancy-savant',
+        name: 'Especialista em Necromancia',
+        level: 2,
+        description:
+          'Copiar uma magia de Necromancia para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'grim-harvest',
+        name: 'Colheita Sombria',
+        level: 2,
+        description:
+          'Uma vez por turno, ao matar uma criatura com uma magia, recupere PV iguais a 2 × nível da magia (3 × se for Necromancia). Formas de vitalidade recuperam o máximo.',
+      },
+      {
+        id: 'undead-thralls',
+        name: 'Servos Mortos-Vivos',
+        level: 6,
+        description:
+          'Ao lançar Animar Mortos, você anima um esqueleto ou zumbi extra e ele não conta no limite de criaturas controladas. Esses servos somam seu mod. de Inteligência ao dano e ganham +1 PV por nível de mago.',
+      },
+      {
+        id: 'inured-to-death',
+        name: 'Resistente à Morte-em-Vida',
+        level: 10,
+        description:
+          'Você ganha resistência a dano necrótico e não pode ter sua pontuação máxima de PV reduzida por efeitos necróticos.',
+        effect: { type: 'resistance', damageTypes: ['Necrótico'] },
+      },
+      {
+        id: 'command-undead',
+        name: 'Comandar Mortos-Vivos',
+        level: 14,
+        description:
+          'Como ação, escolha um morto-vivo a até 18 m (60 pés): ele faz uma salvaguarda de Carisma ou fica sob seu controle por 24 horas (ou até você usar esta ação de novo).',
+      },
+    ],
+  },
+  {
+    id: 'transmutation',
+    name: 'Escola de Transmutação',
+    description: 'Especialista em alterar a matéria e a forma das coisas e criaturas.',
+    features: [
+      {
+        id: 'transmutation-savant',
+        name: 'Especialista em Transmutação',
+        level: 2,
+        description:
+          'Copiar uma magia de Transmutação para o grimório custa metade do tempo e do ouro normais.',
+      },
+      {
+        id: 'minor-alchemy',
+        name: 'Alquimia Menor',
+        level: 2,
+        description:
+          'Como ação, transmute temporariamente um objeto não mágico de um material em outro (madeira, pedra, ferro, cobre, prata) por até 1 hora.',
+      },
+      {
+        id: 'transmuters-stone',
+        name: 'Pedra do Transmutador',
+        level: 6,
+        description:
+          'Como ação, crie uma pedra mágica que concede um benefício escolhido (visão no escuro; proficiência em salvaguardas de CON; deslocamento +3 m; ou resistência a ácido, frio, fogo, elétrico ou trovão). O benefício dura até ser trocado.',
+      },
+      {
+        id: 'shapechanger',
+        name: 'Metamorfo',
+        level: 10,
+        description:
+          'Como ação, assuma a forma de uma fera de CR 1 ou menos, ou use Alterar Forma como ação, por até 1 hora.',
+      },
+      {
+        id: 'master-transmuter',
+        name: 'Mestre Transmutador',
+        level: 14,
+        description:
+          'Você pode usar a Pedra do Transmutador para conceder benefícios a outras criaturas e, ao usá-la, pode reverter transformações, venenos e doenças, além de reviver criaturas mortas há menos de 1 hora (como Ressuscitar).',
+      },
+    ],
+  },
 ];
 
 /**

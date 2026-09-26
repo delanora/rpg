@@ -283,9 +283,8 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
             {classAdjustments.critExtraDice > 0
               ? `Crítico Brutal: +${classAdjustments.critExtraDice} dado(s) no crítico. `
               : ''}
-            {classAdjustments.activeToggleIds.length > 0 &&
-            classAdjustments.resistances.length > 0
-              ? `Resistências ativas: ${classAdjustments.resistances.join(', ')}.`
+            {classAdjustments.resistances.length > 0
+              ? `Resistências: ${classAdjustments.resistances.join(', ')}.`
               : ''}
           </p>
         </section>

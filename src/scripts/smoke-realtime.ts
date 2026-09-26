@@ -1143,6 +1143,37 @@ async function main(): Promise<void> {
     wizard20.activeFeatures.some((f: any) => f.id === 'signature-spells'),
     JSON.stringify(wizard20.activeFeatures.map((f: any) => f.id)),
   );
+  check(
+    'Mago tem as 8 Escolas de Magia',
+    wizard20.classDefinition?.subclasses.length === 8,
+    JSON.stringify(wizard20.classDefinition?.subclasses.map((s: any) => s.name)),
+  );
+
+  const evoker = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { subclass: 'Escola de Evocação' },
+    })
+  ).data.character;
+  check(
+    'Evocação libera Moldar Magias no nível 2',
+    evoker.activeFeatures.some((f: any) => f.id === 'sculpt-spells'),
+    JSON.stringify(evoker.activeFeatures.map((f: any) => f.id)),
+  );
+
+  const necromancer = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { subclass: 'Escola de Necromancia' },
+    })
+  ).data.character;
+  check(
+    'Necromancia concede resistência a dano necrótico no nível 10',
+    necromancer.classAdjustments.resistances.includes('Necrótico'),
+    JSON.stringify(necromancer.classAdjustments.resistances),
+  );
 
   // Os ataques acima mudaram o HP da criatura; atualiza a referência usada
   // pelos checks de dano manual abaixo.
