@@ -107,6 +107,8 @@ export interface DerivedStats {
   sneakAttack: { dice: number; expression: string } | null;
   /** Espaços de Expertise (dobrar proficiência) concedidos pelas features. */
   expertiseSlots: number;
+  /** Máximo de magias preparadas (conjuradores preparados) ou nulo. */
+  preparedSpellCount: number | null;
   initiative: number;
   passivePerception: number;
   armorClassHint: number;
@@ -145,6 +147,8 @@ export interface ClassFeatureEffect {
     | 'critDice'
     | 'unarmoredDefense'
     | 'martialArts'
+    | 'wildShape'
+    | 'hpBonus'
     | 'abilityBonus'
     | 'other';
   id?: string;
@@ -152,6 +156,9 @@ export interface ClassFeatureEffect {
   name?: string;
   target?: string;
   value?: number;
+  base?: number;
+  perLevel?: boolean;
+  override?: boolean;
   scaling?: { level: number; value: number }[];
   ability?: AbilityKey;
   max?: number;
@@ -306,7 +313,11 @@ export interface ClassAdjustments {
   critExtraDice: number;
   unarmoredDefense: boolean;
   unarmoredDefenseAbility: AbilityKey | null;
+  unarmoredDefenseBase: number;
   martialArtsDie: number;
+  hpBonus: number;
+  wildShapeCr: number | null;
+  wildShapeFlying: boolean;
   abilityBonuses: Partial<Record<AbilityKey, number>>;
   abilityCaps: Partial<Record<AbilityKey, number>>;
 }

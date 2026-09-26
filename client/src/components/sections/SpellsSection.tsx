@@ -10,6 +10,9 @@ import type { SheetSectionProps } from './common';
 const SLOT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 const EMPTY_SLOT: SpellSlot = { max: 0, used: 0 };
 
+/** Custo em pontos de feitiçaria para criar um espaço de magia (Fonte de Magia). */
+const SORCERY_SLOT_COSTS: Record<number, number> = { 1: 2, 2: 3, 3: 5, 4: 6, 5: 7 };
+
 interface SlotPipsProps {
   level: number;
   slot: SpellSlot;
@@ -88,6 +91,43 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
     update({ spells: { ...character.spells, list: list.filter((spell) => spell.id !== id) } });
   }
 
+  // Fonte de Magia (Feiticeiro): converte pontos de feitiçaria em espaços de
+  // magia gastos e vice-versa, usando os campos já existentes (used/total).
+  const sorcery = character.classAdjustments.resources.find(
+    (resource) => resource.id === 'sorcery-points',
+  );
+
+  function spendPointsForSlot(level: number, cost: number): void {
+    if (!sorcery) return;
+    const key = String(level);
+    const slot = slots[key] ?? EMPTY_SLOT;
+    if (sorcery.remaining < cost || slot.used <= 0) return;
+    update({
+      classState: {
+        ...character.classState,
+        used: { ...character.classState.used, [sorcery.id]: (character.classState.used[sorcery.id] ?? 0) + cost },
+      },
+      spells: { ...character.spells, slots: { ...slots, [key]: { ...slot, used: slot.used - 1 } } },
+    });
+  }
+
+  function convertSlotToPoints(level: number): void {
+    if (!sorcery) return;
+    const key = String(level);
+    const slot = slots[key] ?? EMPTY_SLOT;
+    if (slot.used >= slot.max || sorcery.remaining + level > sorcery.max) return;
+    update({
+      classState: {
+        ...character.classState,
+        used: {
+          ...character.classState.used,
+          [sorcery.id]: Math.max(0, (character.classState.used[sorcery.id] ?? 0) - level),
+        },
+      },
+      spells: { ...character.spells, slots: { ...slots, [key]: { ...slot, used: slot.used + 1 } } },
+    });
+  }
+
   // Agrupa as magias por nível (0 = truques) para exibir em blocos.
   const levels = [...new Set(list.map((spell) => spell.level))].sort((a, b) => a - b);
 
@@ -153,7 +193,51 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
         })}
       </div>
 
-      <h3 className="subsection-title">Magias conhecidas e preparadas</h3>
+      {sorcery ? (
+        <>
+          <h3 className="subsection-title">Fonte de Magia</h3>
+          <p className="section-note">
+            Pontos de feitiçaria: {sorcery.remaining}/{sorcery.max}. Converta pontos em espaços de
+            magia gastos ou espaços em pontos (1º = 2, 2º = 3, 3º = 5, 4º = 6, 5º = 7; sem 6º+).
+          </p>
+          <div className="sorcery-convert">
+            {SLOT_LEVELS.filter((level) => level <= 5).map((level) => {
+              const cost = SORCERY_SLOT_COSTS[level];
+              const slot = slots[String(level)] ?? EMPTY_SLOT;
+              return (
+                <div className="sorcery-row" key={level}>
+                  <span className="sorcery-level">{SPELL_LEVEL_LABELS[level]}</span>
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={readOnly || sorcery.remaining < cost || slot.used <= 0}
+                    onClick={() => spendPointsForSlot(level, cost)}
+                  >
+                    {cost} pts → recuperar 1 espaço
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={
+                      readOnly || slot.used >= slot.max || sorcery.remaining + level > sorcery.max
+                    }
+                    onClick={() => convertSlotToPoints(level)}
+                  >
+                    espaço → +{level} pts
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+
+      <h3 className="subsection-title">
+        Magias conhecidas e preparadas
+        {character.derived.preparedSpellCount !== null
+          ? ` — até ${character.derived.preparedSpellCount} preparadas`
+          : ''}
+      </h3>
 
       {list.length === 0 ? (
         <p className="empty-hint">Nenhuma magia cadastrada.</p>

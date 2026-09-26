@@ -970,6 +970,115 @@ async function main(): Promise<void> {
     JSON.stringify(diamondSoul.derived.lockedSaves),
   );
 
+  // --- Druida: Forma Selvagem, limite de CR e magias preparadas -------------
+  const druidSheet = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { classKey: 'druid', level: 2, subclass: '' },
+    })
+  ).data.character;
+  check('dado de vida do Druida é d8', druidSheet.derived.hitDie === 8, String(druidSheet.derived.hitDie));
+  check(
+    'salvaguardas INT e SAB fixas',
+    druidSheet.derived.lockedSaves.includes('intelligence') &&
+      druidSheet.derived.lockedSaves.includes('wisdom'),
+    JSON.stringify(druidSheet.derived.lockedSaves),
+  );
+  const wildShape = druidSheet.classAdjustments.resources.find((r: any) => r.id === 'wild-shape');
+  check(
+    'Forma Selvagem tem 2 usos e recarga curta no nível 2',
+    wildShape?.max === 2 && wildShape?.remaining === 2 && wildShape?.recharge === 'short',
+    JSON.stringify(wildShape),
+  );
+  check(
+    'limite de CR da Forma Selvagem é 1/4 no nível 2 e sem voo',
+    druidSheet.classAdjustments.wildShapeCr === 0.25 &&
+      druidSheet.classAdjustments.wildShapeFlying === false,
+    JSON.stringify({ cr: druidSheet.classAdjustments.wildShapeCr, fly: druidSheet.classAdjustments.wildShapeFlying }),
+  );
+  check(
+    'Druida prepara mod. de SAB + nível magias (mínimo 1)',
+    druidSheet.derived.preparedSpellCount ===
+      Math.max(1, druidSheet.derived.modifiers.wisdom + 2),
+    JSON.stringify({ prepared: druidSheet.derived.preparedSpellCount, wis: druidSheet.derived.modifiers.wisdom }),
+  );
+
+  const druidHigh = (
+    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 8 } })
+  ).data.character;
+  check(
+    'Forma Selvagem sobe para CR 1 e libera voo no nível 8',
+    druidHigh.classAdjustments.wildShapeCr === 1 && druidHigh.classAdjustments.wildShapeFlying === true,
+    JSON.stringify({ cr: druidHigh.classAdjustments.wildShapeCr, fly: druidHigh.classAdjustments.wildShapeFlying }),
+  );
+
+  const moonDruid = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { level: 6, subclass: 'Círculo da Lua' },
+    })
+  ).data.character;
+  check(
+    'Círculo da Lua eleva o limite de CR para 2 no nível 6',
+    moonDruid.classAdjustments.wildShapeCr === 2,
+    String(moonDruid.classAdjustments.wildShapeCr),
+  );
+
+  const archdruid = (
+    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 20 } })
+  ).data.character;
+  check(
+    'Arquidruida torna a Forma Selvagem ilimitada',
+    archdruid.classAdjustments.resources.find((r: any) => r.id === 'wild-shape')?.unlimited === true,
+    JSON.stringify(archdruid.classAdjustments.resources),
+  );
+
+  // --- Feiticeiro: Pontos de Feitiçaria e Linhagem Dracônica ----------------
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: { classKey: 'sorcerer', level: 6 },
+  });
+  const sorcererSheet = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { subclass: 'Linhagem Dracônica' },
+    })
+  ).data.character;
+  check('dado de vida do Feiticeiro é d6', sorcererSheet.derived.hitDie === 6, String(sorcererSheet.derived.hitDie));
+  check(
+    'salvaguardas CON e CAR fixas',
+    sorcererSheet.derived.lockedSaves.includes('constitution') &&
+      sorcererSheet.derived.lockedSaves.includes('charisma'),
+    JSON.stringify(sorcererSheet.derived.lockedSaves),
+  );
+  const sorceryPoints = sorcererSheet.classAdjustments.resources.find(
+    (r: any) => r.id === 'sorcery-points',
+  );
+  check(
+    'pontos de feitiçaria iguais ao nível (6) e recarga longa',
+    sorceryPoints?.max === 6 && sorceryPoints?.remaining === 6 && sorceryPoints?.recharge === 'long',
+    JSON.stringify(sorceryPoints),
+  );
+  check(
+    'Resiliência Dracônica soma +1 PV por nível (+6 no nível 6)',
+    sorcererSheet.classAdjustments.hpBonus === 6,
+    String(sorcererSheet.classAdjustments.hpBonus),
+  );
+  check(
+    'CA sem armadura dracônica é 13 + DES',
+    sorcererSheet.derived.armorClassHint === 13 + sorcererSheet.derived.modifiers.dexterity,
+    String(sorcererSheet.derived.armorClassHint),
+  );
+  check(
+    'Feiticeiro (conjurador conhecido) não tem limite de preparadas',
+    sorcererSheet.derived.preparedSpellCount === null,
+    JSON.stringify(sorcererSheet.derived.preparedSpellCount),
+  );
+
   // Os ataques acima mudaram o HP da criatura; atualiza a referência usada
   // pelos checks de dano manual abaixo.
   Object.assign(

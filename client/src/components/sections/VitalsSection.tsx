@@ -1,4 +1,4 @@
-import { ABILITY_ABBREVIATIONS, formatModifier } from '../../dnd';
+import { ABILITY_ABBREVIATIONS, formatChallengeRating, formatModifier } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import type { ActiveResource, ActiveToggle, ClassState } from '../../types';
 import { clampInt } from '../../utils';
@@ -57,7 +57,9 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     classAdjustments.unarmoredDefense ||
     classAdjustments.speedBonus > 0 ||
     classAdjustments.critExtraDice > 0 ||
-    classAdjustments.martialArtsDie > 0;
+    classAdjustments.martialArtsDie > 0 ||
+    classAdjustments.hpBonus > 0 ||
+    classAdjustments.wildShapeCr !== null;
 
   return (
     <Section title="Vida e Defesa" icon="heart">
@@ -254,14 +256,26 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
           </div>
 
           <p className="section-note">
-            {classAdjustments.unarmoredDefense && classAdjustments.unarmoredDefenseAbility
-              ? `CA sem armadura: 10 + DES + ${ABILITY_ABBREVIATIONS[classAdjustments.unarmoredDefenseAbility]}. `
+            {classAdjustments.unarmoredDefense
+              ? `CA sem armadura: ${classAdjustments.unarmoredDefenseBase} + DES${
+                  classAdjustments.unarmoredDefenseAbility
+                    ? ` + ${ABILITY_ABBREVIATIONS[classAdjustments.unarmoredDefenseAbility]}`
+                    : ''
+                }. `
               : ''}
             {classAdjustments.martialArtsDie > 0
               ? `Artes Marciais: dado desarmado 1d${classAdjustments.martialArtsDie}, usa Destreza e permite um ataque desarmado extra como ação bônus. `
               : ''}
             {kiResource
               ? `CD de ki: ${8 + derived.proficiencyBonus + derived.modifiers.wisdom}. `
+              : ''}
+            {classAdjustments.wildShapeCr !== null
+              ? `Forma Selvagem: até CR ${formatChallengeRating(classAdjustments.wildShapeCr)}${
+                  classAdjustments.wildShapeFlying ? ' (inclui deslocamento de voo)' : ''
+                }. `
+              : ''}
+            {classAdjustments.hpBonus > 0
+              ? `Resiliência Dracônica: +${classAdjustments.hpBonus} PV (some ao HP máximo). `
               : ''}
             {classAdjustments.speedBonus > 0
               ? `Deslocamento +${classAdjustments.speedBonus} pés. `

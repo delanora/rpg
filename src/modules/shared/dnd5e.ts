@@ -230,6 +230,8 @@ export interface DerivedStats {
   sneakAttack: { dice: number; expression: string } | null;
   /** Espaços de Expertise (dobrar proficiência) concedidos pelas features. */
   expertiseSlots: number;
+  /** Máximo de magias preparadas (conjuradores preparados) ou nulo. */
+  preparedSpellCount: number | null;
   initiative: number;
   passivePerception: number;
   armorClassHint: number;
@@ -263,9 +265,16 @@ export interface DerivedInput {
   expertiseSlots?: number;
   /**
    * Defesa sem Armadura: atributo somado à CA junto de Destreza (Bárbaro usa
-   * Constituição; Monge usa Sabedoria). Nulo/ausente = CA padrão 10 + DES.
+   * Constituição; Monge usa Sabedoria). Nulo/ausente = só Destreza.
    */
   unarmoredDefenseAbility?: AbilityKey | null;
+  /**
+   * Base da CA sem armadura (padrão 10; Linhagem Dracônica usa 13). Nulo/ausente
+   * = CA padrão 10 + DES.
+   */
+  unarmoredDefenseBase?: number | null;
+  /** Máximo de magias preparadas (conjuradores preparados), quando aplicável. */
+  preparedSpellCount?: number | null;
 }
 
 /** Calcula todos os valores derivados exibidos na ficha. */
@@ -322,11 +331,15 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     lockedSaves: input.lockedSaves ?? [],
     sneakAttack: input.sneakAttack ?? null,
     expertiseSlots: input.expertiseSlots ?? 0,
+    preparedSpellCount: input.preparedSpellCount ?? null,
     initiative: initiative(input.abilities.dexterity, input.initiativeBonus),
     passivePerception: 10 + (perception?.total ?? modifiers.wisdom),
-    armorClassHint: input.unarmoredDefenseAbility
-      ? 10 + modifiers.dexterity + modifiers[input.unarmoredDefenseAbility]
-      : unarmoredArmorClass(input.abilities.dexterity),
+    armorClassHint:
+      input.unarmoredDefenseBase !== undefined && input.unarmoredDefenseBase !== null
+        ? input.unarmoredDefenseBase +
+          modifiers.dexterity +
+          (input.unarmoredDefenseAbility ? modifiers[input.unarmoredDefenseAbility] : 0)
+        : unarmoredArmorClass(input.abilities.dexterity),
     carryingCapacity: carryingCapacity(input.abilities.strength),
     totalWeight: Math.round(totalWeight * 100) / 100,
     saves,

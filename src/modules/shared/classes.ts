@@ -47,12 +47,20 @@ export interface ClassFeatureEffect {
     | 'critDice'
     | 'unarmoredDefense'
     | 'martialArts'
+    | 'wildShape'
+    | 'hpBonus'
     | 'abilityBonus'
     | 'other';
   /** Identificador do toggle/recurso (ex.: 'rage'). Vazio = id da feature. */
   id?: string;
   /** Recurso consumido pelo toggle (ex.: 'ki'); vazio = recurso de mesmo id. */
   resourceId?: string;
+  /** Valor base em `type: 'unarmoredDefense'` (padrão 10; Linhagem Dracônica usa 13). */
+  base?: number;
+  /** Multiplica o valor pelo nível do personagem (ex.: +1 PV por nível). */
+  perLevel?: boolean;
+  /** Substitui efeitos anteriores do mesmo tipo (ex.: CR da Forma Selvagem do Círculo da Lua). */
+  override?: boolean;
   /** Rótulo do toggle (ex.: 'Fúria'). */
   name?: string;
   /** Alvo do bônus quando `type: 'bonus'`. */
@@ -895,6 +903,317 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Druida (Druid) — PHB 2014
+// ---------------------------------------------------------------------------
+
+const DRUID_FEATURES: ClassFeatureDefinition[] = [
+  {
+    id: 'druidic',
+    name: 'Druídico',
+    level: 1,
+    description:
+      'Você conhece a língua secreta dos druidas e pode usá-la para deixar mensagens escondidas. Outros druidas identificam essas mensagens automaticamente.',
+  },
+  {
+    id: 'wild-shape',
+    name: 'Forma Selvagem',
+    level: 2,
+    description:
+      'Como ação, transforme-se numa fera já vista. Usos por descanso curto ou longo: 2 (níveis 2-19) e ilimitado no 20º. Formas permitidas: até CR 1/4 sem deslocamento de voo/natação (nível 2), até CR 1/2 ainda sem voo (nível 4) e até CR 1, agora podendo voar, a partir do nível 8.',
+    effects: [
+      {
+        type: 'resource',
+        id: 'wild-shape',
+        name: 'Forma Selvagem',
+        resource: {
+          name: 'Forma Selvagem',
+          recharge: 'short',
+          maxByLevel: [
+            { level: 2, value: 2 },
+            { level: 20, value: -1 },
+          ],
+        },
+      },
+      {
+        type: 'wildShape',
+        scaling: [
+          { level: 2, value: 0.25 },
+          { level: 4, value: 0.5 },
+          { level: 8, value: 1 },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'timeless-body',
+    name: 'Corpo Atemporal',
+    level: 18,
+    description:
+      'Você envelhece apenas 1 ano para cada 10 anos de vida e não pode ser envelhecido magicamente.',
+  },
+  {
+    id: 'beast-spells',
+    name: 'Magias da Fera',
+    level: 18,
+    description:
+      'Você pode lançar magias enquanto estiver na forma selvagem, realizando os gestos e a fala apesar da forma de fera.',
+  },
+  {
+    id: 'archdruid',
+    name: 'Arquidruida',
+    level: 20,
+    description:
+      'Você usa a Forma Selvagem um número ilimitado de vezes. Além disso, ignora componentes verbais e somáticos de magias de druida e os componentes materiais sem custo.',
+  },
+];
+
+const DRUID_SUBCLASSES: SubclassDefinition[] = [
+  {
+    id: 'land',
+    name: 'Círculo da Terra',
+    description:
+      'Druida que canaliza a magia do território onde foi iniciado, ganhando magias de círculo ligadas ao terreno e recuperação de espaços.',
+    features: [
+      {
+        id: 'bonus-cantrip',
+        name: 'Truque Adicional',
+        level: 2,
+        description: 'Você aprende um truque de druida adicional.',
+      },
+      {
+        id: 'circle-spells',
+        name: 'Magias do Círculo',
+        level: 2,
+        description:
+          'Escolha um terreno: Ártico (Imobilizar Pessoa, Crescer Espinhos / Nevasca, Lentidão / Liberdade de Movimento, Tempestade de Gelo / Comungar com a Natureza, Cone de Frio); Costa (Imagem Espelhada, Passo Enevoado / Respirar na Água, Caminhar na Água / Controlar Água, Liberdade de Movimento / Conjurar Elemental, Vidência); Deserto (Desfoque, Silêncio / Criar Comida e Água, Proteção contra Energia / Apodrecer, Terreno Alucinatório / Praga de Insetos, Muralha de Pedra); Floresta (Pele de Casca, Escalada de Aranha / Invocar Relâmpagos, Crescer Plantas / Adivinhação, Liberdade de Movimento / Comungar com a Natureza, Passo de Árvore); Charco (Escuridão, Flecha Ácida / Caminhar na Água, Nuvem Fétida / Liberdade de Movimento, Localizar Criatura / Praga de Insetos, Vidência); Montanha (Escalada de Aranha, Crescer Espinhos / Relâmpago, Fundir-se à Pedra / Moldar Pedra, Pele de Pedra / Passagem de Parede, Muralha de Pedra); Campina (Invisibilidade, Passar sem Deixar Rastros / Luz do Dia, Pressa / Adivinhação, Liberdade de Movimento / Sonho, Praga de Insetos); Selva (Escalada de Aranha, Teia / Forma Gasosa, Nuvem Fétida / Invisibilidade Maior, Moldar Pedra / Nuvem Venenosa, Praga de Insetos). As magias do terreno estão sempre preparadas e não contam no limite de magias preparadas.',
+      },
+      {
+        id: 'natural-recovery',
+        name: 'Recuperação Natural',
+        level: 2,
+        description:
+          'Uma vez por dia, durante um descanso curto, recupere espaços de magia gastos totalizando metade do seu nível de druida, arredondado para cima. Nenhum espaço de 6º nível ou superior pode ser recuperado assim.',
+      },
+      {
+        id: 'lands-stride',
+        name: 'Passada da Natureza',
+        level: 6,
+        description:
+          'Mover-se por terreno difícil não mágico não custa movimento extra. Você também atravessa plantas não mágicas sem ser retardado e tem vantagem em salvaguardas contra plantas criadas magicamente.',
+      },
+      {
+        id: 'natures-ward',
+        name: 'Proteção da Natureza',
+        level: 10,
+        description:
+          'Você é imune a enfeitiçado e amedrontado por elementais e feéricos, e é imune a doenças e veneno.',
+      },
+      {
+        id: 'natures-sanctuary',
+        name: 'Santuário da Natureza',
+        level: 14,
+        description:
+          'Criaturas que tentarem atacar você devem antes passar num teste de resistência de Sabedoria (CD = CD de magia). Se falharem, não conseguem atacar e devem escolher outro alvo (ou perdem o ataque).',
+      },
+    ],
+  },
+  {
+    id: 'moon',
+    name: 'Círculo da Lua',
+    description:
+      'Druida guardião que domina a Forma Selvagem e assume formas de fera muito mais poderosas.',
+    features: [
+      {
+        id: 'combat-wild-shape',
+        name: 'Forma Selvagem de Combate',
+        level: 2,
+        description:
+          'Você pode usar a Forma Selvagem como ação bônus. Enquanto transformado, pode gastar um espaço de magia para recuperar 1d8 pontos de vida por nível do espaço gasto.',
+      },
+      {
+        id: 'circle-forms',
+        name: 'Formas Circulares',
+        level: 2,
+        description:
+          'Você pode usar a Forma Selvagem para assumir formas de fera de CR igual ou inferior a 1 já no nível 2, escalando pelo seu nível de druida: CR 1 (nível 2), CR 2 (6º), CR 3 (9º), CR 4 (12º), CR 5 (15º) e CR 6 (18º).',
+        effect: {
+          type: 'wildShape',
+          override: true,
+          scaling: [
+            { level: 2, value: 1 },
+            { level: 6, value: 2 },
+            { level: 9, value: 3 },
+            { level: 12, value: 4 },
+            { level: 15, value: 5 },
+            { level: 18, value: 6 },
+          ],
+        },
+      },
+      {
+        id: 'primal-strike',
+        name: 'Golpe Primordial',
+        level: 6,
+        description:
+          'Seus ataques na Forma Selvagem contam como mágicos para superar resistência e imunidade a dano não mágico.',
+      },
+      {
+        id: 'elemental-wild-shape',
+        name: 'Forma Selvagem Elemental',
+        level: 10,
+        description:
+          'Gaste 2 usos de Forma Selvagem para assumir a forma de um elemental (ar, água, fogo ou terra).',
+      },
+      {
+        id: 'thousand-forms',
+        name: 'Mil Formas',
+        level: 14,
+        description:
+          'Você pode lançar a magia Disfarce (Alterar Personagem) à vontade.',
+      },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Feiticeiro (Sorcerer) — PHB 2014
+// ---------------------------------------------------------------------------
+
+const SORCERER_FEATURES: ClassFeatureDefinition[] = [
+  {
+    id: 'font-of-magic',
+    name: 'Fonte de Magia',
+    level: 2,
+    description:
+      'Você ganha pontos de feitiçaria iguais ao seu nível de feiticeiro, repostos num descanso longo. Como ação bônus, converta pontos em espaços de magia (1º nível = 2 pontos, 2º = 3, 3º = 5, 4º = 6, 5º = 7) ou converta um espaço de magia em pontos iguais ao nível do espaço. Não é possível criar nem converter espaços de 6º nível ou superiores.',
+    effect: {
+      type: 'resource',
+      id: 'sorcery-points',
+      name: 'Pontos de Feitiçaria',
+      resource: { name: 'Pontos de Feitiçaria', recharge: 'long', perLevel: true },
+    },
+  },
+  {
+    id: 'metamagic',
+    name: 'Metamagia',
+    level: 3,
+    description:
+      'Escolha 2 opções de Metamagia. Cuidadosa (1 ponto: exclui até o mod. de Carisma de criaturas da área), Distante (1: dobra o alcance ou transforma toque em 9 m), Fortalecida (1: rerrola até o mod. de Carisma de dados de dano), Estendida (1: dobra a duração, máx. 24h), Elevada (2: desvantagem na primeira salvaguarda do alvo), Acelerada (2: magia de ação vira ação bônus, 1x por turno), Sutil (1: sem componentes verbais/somáticos) e Geminada (nível da magia em pontos, mín. 1: atinge um segundo alvo).',
+  },
+  {
+    id: 'metamagic-improvement',
+    name: 'Metamagia Aprimorada',
+    level: 10,
+    description: 'Você aprende 1 opção adicional de Metamagia.',
+  },
+  {
+    id: 'metamagic-master',
+    name: 'Mestre da Metamagia',
+    level: 17,
+    description: 'Você aprende 1 opção adicional de Metamagia.',
+  },
+  {
+    id: 'sorcerous-restoration',
+    name: 'Restauração Feiticeira',
+    level: 20,
+    description: 'Ao terminar um descanso curto, recupere 4 pontos de feitiçaria gastos.',
+  },
+];
+
+const SORCERER_SUBCLASSES: SubclassDefinition[] = [
+  {
+    id: 'draconic',
+    name: 'Linhagem Dracônica',
+    description:
+      'Sua magia vem de um ancestral dragão, concedendo resistência natural e poder elemental.',
+    features: [
+      {
+        id: 'dragon-ancestor',
+        name: 'Ancestral Dracônico',
+        level: 1,
+        description:
+          'Escolha um tipo de dragão (Negro/Ácido, Azul/Elétrico, Branco/Frio, Bronze/Elétrico, Cobre/Ácido, Latão/Fogo, Ouro/Fogo, Prata/Frio, Verde/Veneno, Vermelho/Fogo). Você pode falar, ler e escrever Dracônico e dobra o bônus de proficiência em testes de Carisma ao interagir com dragões.',
+      },
+      {
+        id: 'draconic-resilience',
+        name: 'Resiliência Dracônica',
+        level: 1,
+        description:
+          'Sua pele ganha escamas. Seu HP máximo aumenta em 1 por nível de feiticeiro e, quando não usa armadura, sua CA é 13 + mod. de Destreza.',
+        effects: [
+          { type: 'hpBonus', id: 'draconic-resilience', value: 1, perLevel: true },
+          { type: 'unarmoredDefense', base: 13 },
+        ],
+      },
+      {
+        id: 'elemental-affinity',
+        name: 'Afinidade Elemental',
+        level: 6,
+        description:
+          'Escolha um tipo de dano (ácido, elétrico, frio, fogo ou veneno). Você soma o mod. de Carisma ao dano de uma magia que cause esse tipo de dano. Também ganha resistência a esse tipo de dano.',
+      },
+      {
+        id: 'dragon-wings',
+        name: 'Asas Dracônicas',
+        level: 14,
+        description:
+          'Como ação bônus, brote asas nas costas e ganhe deslocamento de voo igual ao seu deslocamento atual até guardá-las.',
+      },
+      {
+        id: 'draconic-presence',
+        name: 'Presença Dracônica',
+        level: 18,
+        description:
+          'Como ação, exale uma aura de 18 m (60 pés). Escolha entre amedrontar ou cativar criaturas na área (salvaguarda de Sabedoria evita), por 1 minuto ou até você perder a concentração.',
+      },
+    ],
+  },
+  {
+    id: 'wild-magic',
+    name: 'Magia Selvagem',
+    description:
+      'Sua magia brota de forças do caos, com surtos imprevisíveis de efeitos aleatórios.',
+    features: [
+      {
+        id: 'wild-magic-surge',
+        name: 'Surto de Magia Selvagem',
+        level: 1,
+        description:
+          'Imediatamente após lançar uma magia de 1º nível ou superior, o mestre pode pedir que você role 1d20; num resultado 1, role na tabela de Surto de Magia Selvagem.',
+      },
+      {
+        id: 'tides-of-chaos',
+        name: 'Marés do Caos',
+        level: 1,
+        description:
+          'Você pode ganhar vantagem em um ataque, teste de atributo ou salvaguarda. Ao usar, o mestre pode então pedir que você role na tabela de Surto de Magia Selvagem. Repõe-se num descanso longo.',
+        effect: { type: 'resource', id: 'tides-of-chaos', name: 'Marés do Caos', resource: { name: 'Marés do Caos', max: 1, recharge: 'long' } },
+      },
+      {
+        id: 'bend-luck',
+        name: 'Dobrar a Sorte',
+        level: 6,
+        description:
+          'Usando sua reação e gastando 2 pontos de feitiçaria, some ou subtraia 1d4 de um teste de atributo, ataque ou salvaguarda seu ou de uma criatura que você possa ver.',
+      },
+      {
+        id: 'controlled-chaos',
+        name: 'Caos Controlado',
+        level: 14,
+        description:
+          'Ao rolar na tabela de Surto de Magia Selvagem, role duas vezes e escolha qual dos dois efeitos ocorre.',
+      },
+      {
+        id: 'spell-bombardment',
+        name: 'Bombardeio Mágico',
+        level: 18,
+        description:
+          'Quando rolar o valor máximo num dado de dano de uma magia, role outro dado e some ao dano. Você pode continuar rolando enquanto tirar o valor máximo, até rolar o surto e o mestre pedir para sair da tabela.',
+      },
+    ],
+  },
+];
+
 /**
  * As 12 classes. Os níveis de subclasse seguem o PHB 2014:
  * Clérigo, Bruxo e Feiticeiro escolhem no nível 1; Druida e Mago no 2;
@@ -938,8 +1257,8 @@ export const CLASS_DEFINITIONS: readonly ClassDefinition[] = [
     savingThrows: ['intelligence', 'wisdom'],
     subclassLevel: 2, // Círculo Druídico
     spellcasting: { type: 'full', ability: 'wisdom', learning: 'prepared' },
-    features: NO_FEATURES,
-    subclasses: NO_SUBCLASSES,
+    features: DRUID_FEATURES,
+    subclasses: DRUID_SUBCLASSES,
   },
   {
     key: 'fighter',
@@ -1018,8 +1337,8 @@ export const CLASS_DEFINITIONS: readonly ClassDefinition[] = [
     savingThrows: ['constitution', 'charisma'],
     subclassLevel: 1, // Origem de Feitiçaria
     spellcasting: { type: 'full', ability: 'charisma', learning: 'known' },
-    features: NO_FEATURES,
-    subclasses: NO_SUBCLASSES,
+    features: SORCERER_FEATURES,
+    subclasses: SORCERER_SUBCLASSES,
   },
 ];
 
@@ -1209,8 +1528,16 @@ export interface ClassAdjustments {
   unarmoredDefense: boolean;
   /** Atributo somado à CA na Defesa sem Armadura (null quando não há). */
   unarmoredDefenseAbility: AbilityKey | null;
+  /** Base da CA na Defesa sem Armadura (10 no Bárbaro/Monge; 13 na Linhagem Dracônica). */
+  unarmoredDefenseBase: number;
   /** Faces do dado de dano desarmado de Artes Marciais (0 = sem a feature). */
   martialArtsDie: number;
+  /** PV extras concedidos por features (ex.: +1 por nível de feiticeiro dracônico). */
+  hpBonus: number;
+  /** Limite de CR da Forma Selvagem (null = sem a feature). 0.25 = CR 1/4. */
+  wildShapeCr: number | null;
+  /** Forma Selvagem já permite deslocamento de voo (a partir do 8º nível). */
+  wildShapeFlying: boolean;
   abilityBonuses: Partial<Record<AbilityKey, number>>;
   abilityCaps: Partial<Record<AbilityKey, number>>;
 }
@@ -1233,7 +1560,11 @@ export function computeClassAdjustments(
   let critExtraDice = 0;
   let unarmoredDefense = false;
   let unarmoredDefenseAbility: AbilityKey | null = null;
+  let unarmoredDefenseBase = 10;
   let martialArtsDie = 0;
+  let hpBonus = 0;
+  let baseWildShapeCr = 0;
+  let overrideWildShapeCr: number | null = null;
   const abilityBonuses: Partial<Record<AbilityKey, number>> = {};
   const abilityCaps: Partial<Record<AbilityKey, number>> = {};
 
@@ -1282,12 +1613,23 @@ export function computeClassAdjustments(
           break;
         case 'unarmoredDefense':
           unarmoredDefense = true;
-          // Bárbaro não informa o atributo (usa CON); Monge usa SAB.
-          unarmoredDefenseAbility = effect.unarmoredDefenseAbility ?? unarmoredDefenseAbility ?? 'constitution';
+          if (effect.unarmoredDefenseAbility) unarmoredDefenseAbility = effect.unarmoredDefenseAbility;
+          unarmoredDefenseBase = Math.max(unarmoredDefenseBase, effect.base ?? 10);
           break;
         case 'martialArts':
           martialArtsDie = Math.max(martialArtsDie, effectValueAtLevel(effect, level) ?? 0);
           break;
+        case 'hpBonus': {
+          const value = effectValueAtLevel(effect, level) ?? 0;
+          hpBonus += value * (effect.perLevel ? level : 1);
+          break;
+        }
+        case 'wildShape': {
+          const value = effectValueAtLevel(effect, level) ?? 0;
+          if (effect.override) overrideWildShapeCr = Math.max(overrideWildShapeCr ?? 0, value);
+          else baseWildShapeCr = Math.max(baseWildShapeCr, value);
+          break;
+        }
         case 'abilityBonus': {
           const ability = effect.ability;
           if (!ability) break;
@@ -1317,7 +1659,11 @@ export function computeClassAdjustments(
     critExtraDice,
     unarmoredDefense,
     unarmoredDefenseAbility,
+    unarmoredDefenseBase,
     martialArtsDie,
+    hpBonus,
+    wildShapeCr: overrideWildShapeCr ?? (baseWildShapeCr > 0 ? baseWildShapeCr : null),
+    wildShapeFlying: (overrideWildShapeCr ?? baseWildShapeCr) > 0 && level >= 8,
     abilityBonuses,
     abilityCaps,
   };

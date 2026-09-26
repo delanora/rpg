@@ -151,3 +151,12 @@ export const SPELL_LEVEL_LABELS: Record<number, string> = {
 export function formatModifier(value: number): string {
   return value >= 0 ? `+${value}` : String(value);
 }
+
+/** Formata um Valor de Desafio (CR): 0.25 -> "1/4", 0.5 -> "1/2", 1 -> "1". */
+export function formatChallengeRating(value: number): string {
+  if (value === 0) return '0';
+  if (value === 0.125) return '1/8';
+  if (value === 0.25) return '1/4';
+  if (value === 0.5) return '1/2';
+  return String(value);
+}

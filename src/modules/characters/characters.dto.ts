@@ -22,6 +22,7 @@ import {
   type AbilityKey,
   type DerivedStats,
   type SkillsState,
+  abilityModifier,
   deriveStats,
   normalizeSaves,
   normalizeSkills,
@@ -178,6 +179,17 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     effectiveAbilities[key] = Math.min(effectiveAbilities[key] + bonus, cap);
   }
 
+  // Conjuradores preparados (Druida, Clérigo, Mago) recalculam as magias
+  // preparadas por descanso: mod. do atributo + nível, mínimo 1.
+  const castingAbility = spellcasting?.ability ?? null;
+  const preparedSpellCount =
+    castingAbility &&
+    spellcasting &&
+    spellcasting.learning === 'prepared' &&
+    spellcasting.type === 'full'
+      ? Math.max(1, abilityModifier(effectiveAbilities[castingAbility]) + character.level)
+      : null;
+
   const derived = deriveStats({
     level: character.level,
     abilities: effectiveAbilities,
@@ -192,6 +204,8 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     sneakAttack: sneakDice > 0 ? { dice: sneakDice, expression: `${sneakDice}d6` } : null,
     expertiseSlots: expertiseSlots(activeFeatures),
     unarmoredDefenseAbility: classAdjustments.unarmoredDefenseAbility,
+    unarmoredDefenseBase: classAdjustments.unarmoredDefense ? classAdjustments.unarmoredDefenseBase : null,
+    preparedSpellCount,
   });
 
   return {
