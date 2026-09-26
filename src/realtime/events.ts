@@ -1,5 +1,6 @@
 import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
+import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
 
 /**
  * Contrato central de eventos do Socket.io.
@@ -76,9 +77,29 @@ export const ServerEvents = {
   PRESENCE_UPDATE: 'presence:update',
   /** Ficha alterada — entregue aos mestres e às sessões do autor. */
   SHEET_UPDATED: 'sheet:updated',
+  /** Criatura cadastrada pelo mestre. */
+  CREATURE_CREATED: 'creature:created',
+  /** Criatura alterada pelo mestre. */
+  CREATURE_UPDATED: 'creature:updated',
+  /** Criatura removida pelo mestre. */
+  CREATURE_DELETED: 'creature:deleted',
   // Próximas etapas:
   //   combat:started / combat:turn / combat:ended  (Etapa 4)
 } as const;
+
+/** Eventos de criaturas (entregues apenas à sala dos mestres). */
+export interface CreatureCreatedPayload {
+  creature: CreatureDto;
+}
+
+export interface CreatureUpdatedPayload {
+  creature: CreatureDto;
+  changes: Record<string, unknown>;
+}
+
+export interface CreatureDeletedPayload {
+  creatureId: string;
+}
 
 export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];
 export type ServerEvent = (typeof ServerEvents)[keyof typeof ServerEvents];

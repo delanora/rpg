@@ -1,3 +1,4 @@
+import { useReadOnly } from '../../readonly';
 import type { InventoryItem } from '../../types';
 import { clampFloat, clampInt, newId } from '../../utils';
 import { InlineField } from '../InlineField';
@@ -5,6 +6,7 @@ import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 export function InventorySection({ character, update }: SheetSectionProps) {
+  const readOnly = useReadOnly();
   const inventory = character.inventory;
 
   function patchItem(id: string, patch: Partial<InventoryItem>): void {
@@ -36,13 +38,15 @@ export function InventorySection({ character, update }: SheetSectionProps) {
       title="Inventário"
       subtitle={`Peso total: ${character.derived.totalWeight} lb · capacidade ${character.derived.carryingCapacity} lb`}
       actions={
-        <button type="button" className="btn btn-small" onClick={addItem}>
-          + item
-        </button>
+        readOnly ? undefined : (
+          <button type="button" className="btn btn-small" onClick={addItem}>
+            + item
+          </button>
+        )
       }
     >
       {inventory.length === 0 ? (
-        <p className="empty-hint">Nenhum item ainda. Use “+ item” para adicionar.</p>
+        <p className="empty-hint">Nenhum item ainda.</p>
       ) : (
         <div className="table-wrap">
           <table className="sheet-table">
@@ -53,7 +57,7 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                 <th className="col-narrow">Peso</th>
                 <th>Descrição</th>
                 <th className="col-narrow">Equip.</th>
-                <th className="col-narrow" />
+                {!readOnly ? <th className="col-narrow" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -103,20 +107,23 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                     <input
                       type="checkbox"
                       checked={item.equipped}
+                      disabled={readOnly}
                       aria-label={`Equipado: ${item.name}`}
                       onChange={(event) => patchItem(item.id, { equipped: event.target.checked })}
                     />
                   </td>
-                  <td className="col-center">
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-small"
-                      onClick={() => removeItem(item.id)}
-                      aria-label={`Remover ${item.name}`}
-                    >
-                      ×
-                    </button>
-                  </td>
+                  {!readOnly ? (
+                    <td className="col-center">
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-small"
+                        onClick={() => removeItem(item.id)}
+                        aria-label={`Remover ${item.name}`}
+                      >
+                        ×
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

@@ -1,6 +1,17 @@
-import type { Role, SheetUpdatedPayload } from './types';
+import type {
+  CreatureCreatedPayload,
+  CreatureDeletedPayload,
+  CreatureUpdatedPayload,
+  Role,
+  SheetUpdatedPayload,
+} from './types';
 
-export type { SheetUpdatedPayload };
+export type {
+  CreatureCreatedPayload,
+  CreatureDeletedPayload,
+  CreatureUpdatedPayload,
+  SheetUpdatedPayload,
+};
 
 export interface ConnectionReadyPayload {
   socketId: string;

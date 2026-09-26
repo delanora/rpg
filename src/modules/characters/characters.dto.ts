@@ -1,13 +1,6 @@
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
-import {
-  attackSchema,
-  featureSchema,
-  inventoryItemSchema,
-  spellSchema,
-  spellSlotSchema,
-  spellsStateSchema,
-} from './characters.schema.js';
+import { attackSchema, type Attack } from '../shared/attacks.js';
 import {
   type AbilityKey,
   type DerivedStats,
@@ -15,7 +8,15 @@ import {
   deriveStats,
   normalizeSaves,
   normalizeSkills,
-} from './dnd5e.js';
+} from '../shared/dnd5e.js';
+import { parseJson } from '../shared/json.js';
+import {
+  featureSchema,
+  inventoryItemSchema,
+  spellSchema,
+  spellSlotSchema,
+  spellsStateSchema,
+} from './characters.schema.js';
 
 export interface InventoryItemDto {
   id: string;
@@ -33,7 +34,7 @@ export interface SpellsStateDto {
   slots: Record<string, SpellSlotDto>;
 }
 
-export type AttackDto = z.infer<typeof attackSchema>;
+export type AttackDto = Attack;
 export type FeatureDto = z.infer<typeof featureSchema>;
 
 /** Formato enviado ao frontend. Inclui os valores derivados, nunca gravados. */
@@ -87,22 +88,16 @@ const inventoryListSchema = z.array(inventoryItemSchema);
 const attackListSchema = z.array(attackSchema);
 const featureListSchema = z.array(featureSchema);
 
-/** Faz o parse com fallback seguro — protege contra dados antigos/corrompidos. */
-function parseOr<T>(schema: z.ZodTypeAny, value: unknown, fallback: T): T {
-  const result = schema.safeParse(value);
-  return (result.success ? result.data : fallback) as T;
-}
-
 export function toCharacterDto(character: Character, ownerUsername?: string): CharacterDto {
   const skills = normalizeSkills(character.skills);
   const saves = normalizeSaves(character.saves);
-  const inventory = parseOr<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
-  const spells = parseOr<SpellsStateDto>(spellsStateSchema, character.spells, {
+  const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
+  const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
     list: [],
     slots: {},
   });
-  const attacks = parseOr<AttackDto[]>(attackListSchema, character.attacks, []);
-  const features = parseOr<FeatureDto[]>(featureListSchema, character.features, []);
+  const attacks = parseJson<AttackDto[]>(attackListSchema, character.attacks, []);
+  const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
 
   const abilities: Record<AbilityKey, number> = {
     strength: character.strength,

@@ -2,6 +2,9 @@ import type { Role } from '@prisma/client';
 import type { Server, Socket } from 'socket.io';
 import type {
   ConnectionReadyPayload,
+  CreatureCreatedPayload,
+  CreatureDeletedPayload,
+  CreatureUpdatedPayload,
   PresenceUpdatePayload,
   SheetUpdatedPayload,
 } from '../realtime/events.js';
@@ -16,6 +19,9 @@ export interface ServerToClientEvents {
   'app:error': (payload: { message: string }) => void;
   'presence:update': (payload: PresenceUpdatePayload) => void;
   'sheet:updated': (payload: SheetUpdatedPayload) => void;
+  'creature:created': (payload: CreatureCreatedPayload) => void;
+  'creature:updated': (payload: CreatureUpdatedPayload) => void;
+  'creature:deleted': (payload: CreatureDeletedPayload) => void;
 }
 
 /** Mapa de eventos cliente → servidor. Deve espelhar `ClientEvents`. */

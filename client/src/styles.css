@@ -725,6 +725,173 @@ h4 {
   line-height: 1.5;
 }
 
+/* --- somente leitura ------------------------------------------------------ */
+
+.inline-static {
+  display: block;
+  padding: 0.35rem 0.45rem;
+  min-height: 2rem;
+  border: 1px solid transparent;
+}
+
+.notes-area[readonly] {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+
+/* --- barra de ações ------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* --- painel do mestre ----------------------------------------------------- */
+
+.app-main-wide {
+  max-width: 1400px;
+}
+
+.tabs-inline {
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  max-width: 1400px;
+  width: 100%;
+}
+
+.master-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.master-list {
+  position: sticky;
+  top: 4.5rem;
+}
+
+.master-detail {
+  min-width: 0;
+}
+
+.character-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.character-card {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.character-card:hover {
+  background: var(--surface-alt);
+}
+
+.character-card.active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: #fdf6f6;
+}
+
+.card-name {
+  font-weight: 700;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.card-owner,
+.card-line {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.card-hp {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.detail-head h2 {
+  font-size: 1.25rem;
+}
+
+.detail-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.creature-editor,
+.master-detail > .sheet {
+  display: grid;
+  gap: 1rem;
+}
+
+/* --- chips de resistências/imunidades ------------------------------------- */
+
+.chips-field {
+  margin-bottom: 0.75rem;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.chip {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--surface-alt);
+}
+
+.chip-on {
+  background: #f3e6c8;
+  border-color: var(--gold);
+  color: #6d5312;
+  font-weight: 600;
+}
+
 /* --- responsivo ----------------------------------------------------------- */
 
 @media (max-width: 640px) {
@@ -752,5 +919,17 @@ h4 {
 
   .feature-head {
     grid-template-columns: 1fr auto;
+  }
+
+  .master-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .master-list {
+    position: static;
+  }
+
+  .tabs-inline {
+    padding: 0 0.75rem;
   }
 }

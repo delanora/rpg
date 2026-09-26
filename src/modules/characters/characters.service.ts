@@ -5,7 +5,7 @@ import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toCharacterDto, type CharacterDto } from './characters.dto.js';
 import type { CreateCharacterInput, UpdateCharacterInput } from './characters.schema.js';
-import { normalizeSaves, normalizeSkills } from './dnd5e.js';
+import { normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
 
 /** Quem está alterando a ficha (vem do token, nunca do corpo da requisição). */
 export interface Actor {

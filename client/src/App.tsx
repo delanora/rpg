@@ -1,5 +1,6 @@
 import { AuthProvider, useAuth } from './auth';
 import { AuthPage } from './components/AuthPage';
+import { MasterPanel } from './pages/MasterPanel';
 import { SheetPage } from './pages/SheetPage';
 
 function Shell() {
@@ -8,7 +9,8 @@ function Shell() {
   if (loading) return <p className="splash">Abrindo o grimório...</p>;
   if (!user) return <AuthPage />;
 
-  return <SheetPage user={user} />;
+  // O mestre tem o painel exclusivo; o jogador, a própria ficha.
+  return user.role === 'MASTER' ? <MasterPanel user={user} /> : <SheetPage user={user} />;
 }
 
 export function App() {

@@ -182,6 +182,61 @@ export interface CharacterPatch {
   notes?: string;
 }
 
+/** Criatura/NPC cadastrado pelo mestre. */
+export interface Creature {
+  id: string;
+  name: string;
+  type: string;
+  challengeRating: string;
+
+  strength: number;
+  dexterity: number;
+  constitution: number;
+  intelligence: number;
+  wisdom: number;
+  charisma: number;
+
+  hpCurrent: number;
+  hpMax: number;
+  armorClass: number;
+  speed: number;
+
+  attacks: Attack[];
+  resistances: string[];
+  immunities: string[];
+  description: string;
+
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+
+  derived: { modifiers: Record<AbilityKey, number> };
+}
+
+/** Campos enviados no PATCH de criatura. */
+export interface CreaturePatch {
+  name?: string;
+  type?: string;
+  challengeRating?: string;
+
+  strength?: number;
+  dexterity?: number;
+  constitution?: number;
+  intelligence?: number;
+  wisdom?: number;
+  charisma?: number;
+
+  hpCurrent?: number;
+  hpMax?: number;
+  armorClass?: number;
+  speed?: number;
+
+  attacks?: Attack[];
+  resistances?: string[];
+  immunities?: string[];
+  description?: string;
+}
+
 /** Payload do evento `sheet:updated` recebido pelo WebSocket. */
 export interface SheetUpdatedPayload {
   userId: string;
@@ -202,4 +257,17 @@ export interface OnlineUser {
 
 export interface PresencePayload {
   online: OnlineUser[];
+}
+
+export interface CreatureCreatedPayload {
+  creature: Creature;
+}
+
+export interface CreatureUpdatedPayload {
+  creature: Creature;
+  changes: Record<string, unknown>;
+}
+
+export interface CreatureDeletedPayload {
+  creatureId: string;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useReadOnly } from '../readonly';
 
 type Mode = 'text' | 'number' | 'textarea' | 'select';
 
@@ -15,6 +16,8 @@ interface InlineFieldProps {
   ariaLabel?: string;
   /** Renderização customizada do valor quando não está em edição. */
   render?: (value: string | number) => ReactNode;
+  /** Força somente leitura (além do contexto), escondendo a edição. */
+  readOnly?: boolean;
 }
 
 /**
@@ -32,7 +35,11 @@ export function InlineField({
   className = '',
   ariaLabel,
   render,
+  readOnly,
 }: InlineFieldProps) {
+  const readOnlyContext = useReadOnly();
+  const isReadOnly = readOnly ?? readOnlyContext;
+
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -66,6 +73,21 @@ export function InlineField({
   function cancel(): void {
     skipCommit.current = true;
     setEditing(false);
+  }
+
+  // No modo somente leitura nada é clicável: mostra apenas o valor.
+  if (isReadOnly) {
+    return (
+      <span className={`inline-static ${className}`} aria-label={ariaLabel}>
+        {current === '' ? (
+          <span className="placeholder">{placeholder}</span>
+        ) : render ? (
+          render(value)
+        ) : (
+          current
+        )}
+      </span>
+    );
   }
 
   // O select já é, por natureza, edição direta.

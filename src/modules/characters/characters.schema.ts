@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { attackSchema } from '../shared/attacks.js';
 import {
   ABILITY_SCORE_MAX,
   ABILITY_SCORE_MIN,
   FEATURE_SOURCES,
   LEVEL_MAX,
   LEVEL_MIN,
-} from './dnd5e.js';
+} from '../shared/dnd5e.js';
 
 /**
  * Schemas da ficha.
@@ -63,14 +64,7 @@ export const spellsStateSchema = z.object({
   slots: z.record(z.string(), spellSlotSchema).default({}),
 });
 
-export const attackSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().trim().min(1, 'O ataque precisa de um nome.').max(120),
-  damage: shortText(120).default(''),
-  damageType: shortText(60).default(''),
-  attackBonus: z.number().int().min(-30).max(30).default(0),
-  notes: shortText(1000).default(''),
-});
+// `attackSchema` vem de ../shared/attacks.ts — o formato é compartilhado com as criaturas.
 
 export const featureSchema = z.object({
   id: z.string().min(1),

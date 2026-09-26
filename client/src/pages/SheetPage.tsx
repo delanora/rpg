@@ -1,30 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
-import { useAuth } from '../auth';
-import { AbilitiesSection } from '../components/sections/AbilitiesSection';
-import { AttacksSection } from '../components/sections/AttacksSection';
-import { FeaturesSection } from '../components/sections/FeaturesSection';
-import { IdentitySection } from '../components/sections/IdentitySection';
-import { InventorySection } from '../components/sections/InventorySection';
-import { NotesSection } from '../components/sections/NotesSection';
-import { SkillsSavesSection } from '../components/sections/SkillsSavesSection';
-import { SpellsSection } from '../components/sections/SpellsSection';
-import { VitalsSection } from '../components/sections/VitalsSection';
-import { createSocket } from '../socket';
-import type { Character, CharacterPatch, PresencePayload, SessionUser } from '../types';
-
-type ConnectionState = 'connecting' | 'online' | 'offline';
+import { AppHeader } from '../components/AppHeader';
+import { SheetView } from '../components/SheetView';
+import type { Character, CharacterPatch, SessionUser } from '../types';
+import { useRealtime } from '../useRealtime';
 
 export function SheetPage({ user }: { user: SessionUser }) {
-  const { logout } = useAuth();
-
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [connection, setConnection] = useState<ConnectionState>('connecting');
-  const [online, setOnline] = useState<PresencePayload['online']>([]);
-  const [lastEvent, setLastEvent] = useState<string | null>(null);
+
+  const { connection, online, lastEventAt } = useRealtime({
+    onSheetUpdated: (payload) => {
+      // Só aceita a própria ficha e versões mais novas (evita respostas fora de ordem).
+      setCharacter((prev) => {
+        if (!prev || prev.id !== payload.character.id) return prev;
+        return payload.character.version >= prev.version ? payload.character : prev;
+      });
+    },
+  });
 
   // Carrega a ficha do usuário autenticado.
   useEffect(() => {
@@ -43,29 +38,6 @@ export function SheetPage({ user }: { user: SessionUser }) {
 
     return () => {
       active = false;
-    };
-  }, []);
-
-  // Conexão de tempo real: presença da mesa e alterações da própria ficha.
-  useEffect(() => {
-    const socket = createSocket();
-
-    socket.on('connect', () => setConnection('online'));
-    socket.on('disconnect', () => setConnection('offline'));
-    socket.on('connect_error', () => setConnection('offline'));
-    socket.on('presence:update', (payload) => setOnline(payload.online));
-
-    socket.on('sheet:updated', (payload) => {
-      setLastEvent(new Date(payload.at).toLocaleTimeString('pt-BR'));
-      setCharacter((prev) => {
-        // Só aceita a própria ficha e versões mais novas (evita respostas fora de ordem).
-        if (!prev || prev.id !== payload.character.id) return prev;
-        return payload.character.version >= prev.version ? payload.character : prev;
-      });
-    });
-
-    return () => {
-      socket.close();
     };
   }, []);
 
@@ -117,38 +89,15 @@ export function SheetPage({ user }: { user: SessionUser }) {
     }
   }, []);
 
-  const connectionLabel: Record<ConnectionState, string> = {
-    connecting: 'conectando...',
-    online: 'tempo real ativo',
-    offline: 'sem conexão em tempo real',
-  };
-
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="app-header-title">
-          <h1>🐉 Grimório Digital</h1>
-          {character ? <span className="character-name">{character.name}</span> : null}
-        </div>
-
-        <div className="app-header-meta">
-          <span className={`connection ${connection}`} title={lastEvent ? `Último evento: ${lastEvent}` : undefined}>
-            ● {connectionLabel[connection]}
-          </span>
-          {online.length > 0 ? (
-            <span className="online-list" title="Online na mesa">
-              {online.map((person) => person.displayName).join(' · ')}
-            </span>
-          ) : null}
-          <span className="user-chip">
-            {user.displayName}
-            <em className={`role role-${user.role.toLowerCase()}`}>{user.role === 'MASTER' ? 'Mestre' : 'Jogador'}</em>
-          </span>
-          <button type="button" className="btn btn-small" onClick={logout}>
-            sair
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        title={character ? character.name : 'Sem ficha'}
+        connection={connection}
+        online={online}
+        lastEventAt={lastEventAt}
+        user={user}
+      />
 
       {error ? (
         <div className="banner banner-error">
@@ -171,17 +120,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
             </button>
           </div>
         ) : (
-          <div className="sheet">
-            <IdentitySection character={character} update={update} />
-            <AbilitiesSection character={character} update={update} />
-            <VitalsSection character={character} update={update} />
-            <SkillsSavesSection character={character} update={update} />
-            <InventorySection character={character} update={update} />
-            <SpellsSection character={character} update={update} />
-            <AttacksSection character={character} update={update} />
-            <FeaturesSection character={character} update={update} />
-            <NotesSection character={character} update={update} />
-          </div>
+          <SheetView character={character} update={update} />
         )}
       </main>
     </div>

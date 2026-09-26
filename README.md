@@ -68,7 +68,9 @@ src/
 ├── middlewares/    # tratamento central de erros
 ├── modules/        # domínio, um diretório por área
 │   ├── auth/       # cadastro, login, middlewares de autenticação/autorização
-│   ├── characters/ # ficha: regras de D&D 5e, validação e rotas
+│   ├── characters/ # ficha do jogador
+│   ├── creatures/  # criaturas/NPCs cadastrados pelo mestre
+│   ├── shared/     # regras de D&D 5e, ataques e utilidades compartilhadas
 │   └── users/      # listagem de usuários (mestre)
 ├── realtime/       # Socket.io: auth, salas, presença e broadcast
 ├── scripts/        # utilitários (criar mestre, smoke test)
@@ -83,11 +85,14 @@ client/             # app React (Vite + TypeScript)
 ├── index.html
 ├── vite.config.ts  # proxy de /api e /socket.io para o backend em dev
 └── src/
-    ├── components/ # InlineField, Section, AuthPage e seções da ficha
-    ├── pages/      # SheetPage (orquestra a ficha e a sincronização)
+    ├── components/ # InlineField, Section, SheetView, AuthPage e seções
+    │   └── master/ # painel do mestre: fichas (leitura) e criaturas
+    ├── pages/      # SheetPage (jogador) e MasterPanel (mestre)
     ├── api.ts      # cliente HTTP com token
     ├── auth.tsx    # contexto de autenticação
-    └── socket.ts   # conexão Socket.io
+    ├── readonly.tsx# modo somente leitura (visão do mestre)
+    ├── socket.ts   # conexão Socket.io
+    └── useRealtime.ts # hook de eventos em tempo real
 ```
 
 ---
@@ -125,7 +130,7 @@ O projeto foi planejado em etapas sequenciais:
 - [x] **Etapa 0** — Definição de stack e estrutura inicial do projeto
 - [x] **Etapa 1** — Autenticação, papéis de usuário e canais de tempo real
 - [x] **Etapa 2** — Ficha de personagem completa (jogador)
-- [ ] **Etapa 3** — Painel do mestre e cadastro de criaturas
+- [x] **Etapa 3** — Painel do mestre e cadastro de criaturas
 - [ ] **Etapa 4** — Sistema de combate com iniciativa automática
 - [ ] **Etapa 5** — Design visual (fantasia medieval / pergaminho)
 - [ ] **Etapa 6** — Otimização e performance
@@ -359,6 +364,46 @@ Cada alteração incrementa `version`; o frontend só aceita eventos com versão
 Nenhum formulário abre em outra tela: clicar no valor transforma o campo em edição; **Enter** ou sair do campo salva, **Esc** cancela. A alteração aparece na hora (otimista) e é confirmada pela resposta do servidor, que é a fonte de verdade dos valores derivados.
 
 Seções da ficha: Identidade, Atributos, Vida e Defesa, Perícias e Salvaguardas, Inventário, Magias, Ataques, Características e Anotações/História.
+
+---
+
+## 🎲 Etapa 3 — Painel do mestre e criaturas
+
+### Qual tela aparece
+
+O papel decide: `PLAYER` entra na própria ficha, `MASTER` entra no painel. A decisão vem do `role` do token, não de uma rota escolhida pelo usuário. Para criar um mestre:
+
+```bash
+npm run create-master -- --username mestre --password "uma-senha-forte" --name "Seu Nome"
+```
+
+### Fichas dos jogadores (somente leitura)
+
+A aba **Fichas dos jogadores** lista todas as fichas e abre cada uma com exatamente a mesma ficha do jogador, em modo somente leitura: os campos não são clicáveis, os checkboxes ficam desabilitados e os botões de adicionar/remover não aparecem.
+
+O modo leitura é garantido no **servidor**: o mestre só tem `GET /api/characters`, e a edição da ficha existe apenas em `/api/characters/me` (do dono). Não há como o mestre alterar a ficha de um jogador.
+
+**Atualização em tempo real:** cada alteração do jogador publica `sheet:updated` e o painel substitui a ficha na lista e no detalhe já aberto, sem recarregar. Eventos com `version` menor que a atual são ignorados, evitando respostas fora de ordem.
+
+### Criaturas e NPCs
+
+Cadastro com nome, tipo, Nível de Desafio, os 6 atributos (com modificadores calculados), HP atual/máximo, CA, deslocamento, ataques, resistências, imunidades e descrição livre.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/creatures` | **mestre** | Bestiário completo. |
+| `GET` | `/api/creatures/:id` | **mestre** | Uma criatura. |
+| `POST` | `/api/creatures` | **mestre** | Cadastra (HP inicial = máximo). |
+| `PATCH` | `/api/creatures/:id` | **mestre** | Edição inline. |
+| `DELETE` | `/api/creatures/:id` | **mestre** | Remove. |
+
+Resistências e imunidades aceitam apenas os **tipos de dano canônicos** (`Cortante`, `Fogo`, `Veneno`...), selecionados por “chips” clicáveis — assim o combate consegue compará-las. Um tipo desconhecido devolve **400**.
+
+Os eventos `creature:created`, `creature:updated` e `creature:deleted` vão **somente para a sala dos mestres**: os jogadores não enxergam o bestiário antes de as criaturas entrarem no combate (Etapa 4).
+
+### Prontas para o combate
+
+As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a iniciativa), HP atual/máximo e ataques no **mesmo formato** usado pelas fichas (`src/modules/shared/attacks.ts`), além de resistências e imunidades tipadas.
 
 ---
 

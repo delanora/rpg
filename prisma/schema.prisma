@@ -93,7 +93,51 @@ model Character {
 }
 
 // -----------------------------------------------------------------------------
+// Etapa 3 — Criaturas e NPCs (cadastrados pelo mestre)
+//
+// Segue a mesma modelagem híbrida da ficha: atributos e vitais em colunas,
+// ataques/resistências/imunidades em JSONB. As criaturas ficam disponíveis
+// para o sistema de combate da Etapa 4.
+// -----------------------------------------------------------------------------
+
+model Creature {
+  id String @id @default(cuid())
+
+  // Identificação
+  name            String
+  type            String @default("") // ex.: Humanoide, Besta, Dragão
+  challengeRating String @default("") // Nível de Desafio (ND), ex.: "1/2", "5"
+
+  // Atributos (1 a 30)
+  strength     Int @default(10)
+  dexterity    Int @default(10)
+  constitution Int @default(10)
+  intelligence Int @default(10)
+  wisdom       Int @default(10)
+  charisma     Int @default(10)
+
+  // Pontos de vida e defesa
+  hpCurrent  Int @default(1)
+  hpMax      Int @default(1)
+  armorClass Int @default(10)
+  speed      Int @default(30)
+
+  // Coleções (JSONB) — ver src/modules/shared/attacks.ts
+  attacks     Json @default("[]") // [{ id, name, damage, damageType, attackBonus, notes }]
+  resistances Json @default("[]") // tipos de dano resistidos
+  immunities  Json @default("[]") // tipos de dano imunes
+  description String @default("")
+
+  /// Incrementado a cada alteração; ajuda a ordenar eventos em tempo real.
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@map("creatures")
+}
+
+// -----------------------------------------------------------------------------
 // Próximas etapas:
-//   Etapa 3 — Creature / NPC
 //   Etapa 4 — Combat, Combatant, InitiativeOrder, Turn
 // -----------------------------------------------------------------------------

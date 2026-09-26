@@ -1,4 +1,5 @@
 import { ABILITY_ABBREVIATIONS, ABILITY_KEYS, ABILITY_LABELS, SKILLS, formatModifier } from '../../dnd';
+import { useReadOnly } from '../../readonly';
 import type { AbilityKey, SkillEntry } from '../../types';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
@@ -6,6 +7,7 @@ import type { SheetSectionProps } from './common';
 const DEFAULT_ENTRY: SkillEntry = { proficient: false, expertise: false };
 
 export function SkillsSavesSection({ character, update }: SheetSectionProps) {
+  const readOnly = useReadOnly();
   const { derived } = character;
 
   function setSkill(key: string, patch: Partial<SkillEntry>): void {
@@ -37,13 +39,14 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
                   <input
                     type="checkbox"
                     checked={entry.proficient}
+                    disabled={readOnly}
                     aria-label={`Proficiência em ${skill.label}`}
                     onChange={(event) => setSkill(skill.key, { proficient: event.target.checked })}
                   />
                   <input
                     type="checkbox"
                     checked={entry.expertise}
-                    disabled={!entry.proficient}
+                    disabled={readOnly || !entry.proficient}
                     aria-label={`Especialização em ${skill.label}`}
                     title="Especialização (dobra o bônus de proficiência)"
                     onChange={(event) => setSkill(skill.key, { expertise: event.target.checked })}
@@ -73,6 +76,7 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
                   <input
                     type="checkbox"
                     checked={character.saves[ability] ?? false}
+                    disabled={readOnly}
                     aria-label={`Proficiência em salvaguarda de ${ABILITY_LABELS[ability]}`}
                     onChange={(event) => setSave(ability, event.target.checked)}
                   />

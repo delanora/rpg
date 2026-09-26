@@ -1,6 +1,12 @@
 import { io, type Socket } from 'socket.io-client';
 import { getToken } from './api';
-import type { ConnectionReadyPayload, SheetUpdatedPayload } from './events';
+import type {
+  ConnectionReadyPayload,
+  CreatureCreatedPayload,
+  CreatureDeletedPayload,
+  CreatureUpdatedPayload,
+  SheetUpdatedPayload,
+} from './events';
 import type { PresencePayload } from './types';
 
 /** Mapa de eventos espelhando o backend (src/types/socket.ts). */
@@ -9,6 +15,9 @@ export interface ServerToClientEvents {
   'app:error': (payload: { message: string }) => void;
   'presence:update': (payload: PresencePayload) => void;
   'sheet:updated': (payload: SheetUpdatedPayload) => void;
+  'creature:created': (payload: CreatureCreatedPayload) => void;
+  'creature:updated': (payload: CreatureUpdatedPayload) => void;
+  'creature:deleted': (payload: CreatureDeletedPayload) => void;
 }
 
 export interface ClientToServerEvents {

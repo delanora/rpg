@@ -382,8 +382,107 @@ async function main(): Promise<void> {
   const otherMe = await api('/api/characters/me', { token: otherReg.data?.token });
   check('outro jogador não vê a ficha alheia (null)', otherMe.data?.character === null);
 
-  // --- 7. Presença ao desconectar -------------------------------------------
-  console.log('\n7) Presença ao desconectar');
+  // --- 7. Criaturas / NPCs ---------------------------------------------------
+  console.log('\n7) Criaturas/NPCs (bestiário do mestre)');
+
+  check(
+    'bestiário exige autenticação (401)',
+    (await api('/api/creatures')).status === 401,
+  );
+  check(
+    'jogador NÃO acessa o bestiário (403)',
+    (await api('/api/creatures', { token: playerToken })).status === 403,
+  );
+
+  const createdEvent = waitFor<any>(masterSocket, 'creature:created');
+  const createdCreature = await api('/api/creatures', {
+    method: 'POST',
+    token: masterToken,
+    body: { name: 'Goblin', type: 'Humanoide', challengeRating: '1/4', hpMax: 7, armorClass: 15 },
+  });
+  check('mestre cadastra criatura (201)', createdCreature.status === 201, JSON.stringify(createdCreature.data));
+
+  const creature = createdCreature.data?.creature;
+  check('criatura nasce com HP atual = máximo', creature?.hpCurrent === 7 && creature?.hpMax === 7);
+  check('criatura traz os 6 modificadores derivados', Object.keys(creature?.derived?.modifiers ?? {}).length === 6);
+  check('mestre recebe creature:created em tempo real', (await createdEvent.catch(() => null))?.creature?.id === creature?.id);
+
+  const updatedEvent = waitFor<any>(masterSocket, 'creature:updated');
+  const updatedCreature = await api(`/api/creatures/${creature.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      hpCurrent: 3,
+      strength: 8,
+      dexterity: 14,
+      attacks: [
+        { id: 'g1', name: 'Cimitarra', damage: '1d6+2', damageType: 'Cortante', attackBonus: 4, notes: '' },
+      ],
+      resistances: ['Fogo'],
+      immunities: ['Veneno'],
+      description: 'Pequeno e covarde.',
+    },
+  });
+  const goblin = updatedCreature.data?.creature;
+  check('PATCH atualiza a criatura', goblin?.hpCurrent === 3 && goblin?.strength === 8);
+  check('modificador de FOR 8 é -1', goblin?.derived?.modifiers?.strength === -1);
+  check('modificador de DES 14 é +2', goblin?.derived?.modifiers?.dexterity === 2);
+  check('ataques da criatura são gravados', goblin?.attacks?.length === 1 && goblin?.attacks?.[0]?.damage === '1d6+2');
+  check('resistências são gravadas', goblin?.resistances?.[0] === 'Fogo');
+  check('imunidades são gravadas', goblin?.immunities?.[0] === 'Veneno');
+  check('versão da criatura incrementa', (goblin?.version ?? 0) > (creature?.version ?? 0));
+  check('mestre recebe creature:updated em tempo real', (await updatedEvent.catch(() => null))?.creature?.hpCurrent === 3);
+
+  check(
+    'tipo de dano inválido é rejeitado (400)',
+    (
+      await api(`/api/creatures/${creature.id}`, {
+        method: 'PATCH',
+        token: masterToken,
+        body: { resistances: ['Sonoro'] },
+      })
+    ).status === 400,
+  );
+  check(
+    'atributo fora de 1–30 é rejeitado (400)',
+    (
+      await api(`/api/creatures/${creature.id}`, {
+        method: 'PATCH',
+        token: masterToken,
+        body: { strength: 50 },
+      })
+    ).status === 400,
+  );
+  check(
+    'jogador NÃO edita criatura (403)',
+    (
+      await api(`/api/creatures/${creature.id}`, {
+        method: 'PATCH',
+        token: playerToken,
+        body: { hpCurrent: 1 },
+      })
+    ).status === 403,
+  );
+
+  const bestiary = await api('/api/creatures', { token: masterToken });
+  check(
+    'mestre lista as criaturas',
+    (bestiary.data?.creatures ?? []).some((item: any) => item.id === creature.id),
+  );
+
+  const deletedEvent = waitFor<any>(masterSocket, 'creature:deleted');
+  check(
+    'mestre remove criatura (204)',
+    (await api(`/api/creatures/${creature.id}`, { method: 'DELETE', token: masterToken })).status === 204,
+  );
+  check('mestre recebe creature:deleted em tempo real', (await deletedEvent.catch(() => null))?.creatureId === creature.id);
+  check(
+    'criatura removida devolve 404',
+    (await api(`/api/creatures/${creature.id}`, { token: masterToken })).status === 404,
+  );
+
+  // --- 8. Presença ao desconectar -------------------------------------------
+  console.log('\n8) Presença ao desconectar');
   const offlinePromise = waitForPresence(
     masterSocket,
     (online) => !online.some((u) => u.username === playerUsername),

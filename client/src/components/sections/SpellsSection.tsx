@@ -1,4 +1,5 @@
 import { SPELL_LEVEL_LABELS, SPELL_SCHOOLS, formatModifier } from '../../dnd';
+import { useReadOnly } from '../../readonly';
 import type { Spell, SpellSlot } from '../../types';
 import { clampInt, newId } from '../../utils';
 import { InlineField } from '../InlineField';
@@ -9,6 +10,7 @@ const SLOT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 const EMPTY_SLOT: SpellSlot = { max: 0, used: 0 };
 
 export function SpellsSection({ character, update }: SheetSectionProps) {
+  const readOnly = useReadOnly();
   const { list, slots } = character.spells;
   const spellcasting = character.derived.spellcasting;
 
@@ -52,9 +54,11 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
           : 'Informe uma classe conjuradora para calcular CD e ataque'
       }
       actions={
-        <button type="button" className="btn btn-small" onClick={addSpell}>
-          + magia
-        </button>
+        readOnly ? undefined : (
+          <button type="button" className="btn btn-small" onClick={addSpell}>
+            + magia
+          </button>
+        )
       }
     >
       <h3 className="subsection-title">Espaços de magia</h3>
@@ -110,6 +114,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                     <input
                       type="checkbox"
                       checked={spell.prepared}
+                      disabled={readOnly}
                       aria-label={`Preparada: ${spell.name}`}
                       title="Preparada"
                       onChange={(event) => patchSpell(spell.id, { prepared: event.target.checked })}
@@ -146,14 +151,16 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                       ariaLabel="Descrição da magia"
                       onCommit={(value) => patchSpell(spell.id, { description: value })}
                     />
-                    <button
-                      type="button"
-                      className="btn btn-danger btn-small"
-                      onClick={() => removeSpell(spell.id)}
-                      aria-label={`Remover ${spell.name}`}
-                    >
-                      ×
-                    </button>
+                    {readOnly ? null : (
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-small"
+                        onClick={() => removeSpell(spell.id)}
+                        aria-label={`Remover ${spell.name}`}
+                      >
+                        ×
+                      </button>
+                    )}
                   </li>
                 ))}
             </ul>

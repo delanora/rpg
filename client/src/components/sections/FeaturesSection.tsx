@@ -1,4 +1,5 @@
 import { FEATURE_SOURCES, FEATURE_SOURCE_LABELS } from '../../dnd';
+import { useReadOnly } from '../../readonly';
 import type { Feature, FeatureSource } from '../../types';
 import { newId } from '../../utils';
 import { InlineField } from '../InlineField';
@@ -6,6 +7,7 @@ import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 export function FeaturesSection({ character, update }: SheetSectionProps) {
+  const readOnly = useReadOnly();
   const features = character.features;
 
   function patchFeature(id: string, patch: Partial<Feature>): void {
@@ -39,9 +41,11 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
       title="Características"
       subtitle="Traços de raça, classe, antecedente e talentos"
       actions={
-        <button type="button" className="btn btn-small" onClick={addFeature}>
-          + característica
-        </button>
+        readOnly ? undefined : (
+          <button type="button" className="btn btn-small" onClick={addFeature}>
+            + característica
+          </button>
+        )
       }
     >
       {features.length === 0 ? (
@@ -66,14 +70,16 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
                   ariaLabel="Origem da característica"
                   onCommit={(value) => patchFeature(feature.id, { source: sourceFromLabel(value) })}
                 />
-                <button
-                  type="button"
-                  className="btn btn-danger btn-small"
-                  onClick={() => removeFeature(feature.id)}
-                  aria-label={`Remover ${feature.name}`}
-                >
-                  ×
-                </button>
+                {readOnly ? null : (
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-small"
+                    onClick={() => removeFeature(feature.id)}
+                    aria-label={`Remover ${feature.name}`}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
               <InlineField
                 value={feature.description}
