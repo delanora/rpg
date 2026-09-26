@@ -832,7 +832,9 @@ a {
 .sheet {
   position: relative;
   display: grid;
-  gap: var(--space-3);
+  /* Duas colunas: esquerda fluida, direita fixa (300–360px). */
+  grid-template-columns: minmax(0, 1fr) minmax(18.75rem, 22.5rem);
+  gap: var(--space-2);
   padding: var(--space-2);
   background:
     linear-gradient(180deg, var(--surface), var(--surface-2) 70%, var(--surface-3));
@@ -929,26 +931,10 @@ a {
   animation: ink-in 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-/* --- HUD da ficha: o essencial sempre à vista ----------------------------- */
+/* --- Ficha: duas colunas que fluem sem buracos ---------------------------- */
 
-/*
- * Template único de colunas: esquerda fluida, direita fixa (300–360px).
- * HUD (identidade/atributos/vida) e área de trabalho (abas/anotações) usam o
- * mesmo template, então a coluna esquerda e a direita ficam alinhadas em toda
- * a extensão da ficha.
- */
-.sheet-hud,
-.sheet-work {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(18.75rem, 22.5rem);
-  gap: var(--space-2);
-  align-items: start;
-}
-
-.sheet-hud-main,
-.sheet-hud-side,
-.sheet-work-main,
-.sheet-work-side {
+.sheet-main,
+.sheet-side {
   min-width: 0;
   display: grid;
   align-content: start;
@@ -956,29 +942,16 @@ a {
 }
 
 /* Identidade ocupa a coluna esquerda e nunca deixa um campo órfão. */
-.sheet-hud-main .grid-3 {
+.sheet-main .grid-3 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.sheet-hud .section-header {
-  padding: var(--space-1) var(--space-2);
-}
-
-.sheet-hud .section-body {
-  padding: var(--space-2);
-}
-
 /* Cards de vida com a mesma altura, apesar de o conteúdo de cada um variar. */
-.sheet-hud-side .grid-4 {
+.sheet-side .grid-4 {
   grid-auto-rows: 1fr;
 }
 
-.sheet-work-side {
-  position: sticky;
-  top: 5.2rem;
-}
-
-.sheet-work-side .notes-area {
+.sheet-side .notes-area {
   min-height: 14rem;
 }
 
@@ -2772,17 +2745,12 @@ input[type='checkbox']:disabled {
     position: static;
   }
 
-  .sheet-hud,
-  .sheet-work {
+  .sheet {
     grid-template-columns: 1fr;
   }
 
-  .sheet-hud-main .grid-3 {
+  .sheet-main .grid-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .sheet-work-side {
-    position: static;
   }
 
   .tabs-inline {
