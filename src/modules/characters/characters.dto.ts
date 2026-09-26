@@ -28,6 +28,7 @@ import {
   normalizeSkills,
 } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
+import type { ItemDetails } from '../shared/item-details.js';
 import {
   featureSchema,
   inventoryItemSchema,
@@ -47,6 +48,10 @@ export interface InventoryItemDto {
   imageUrl: string;
   /** Id do item no catálogo do mestre ('' quando é avulso). */
   itemId: string;
+  /** Categoria do item no catálogo ('' quando avulso). */
+  category: string;
+  /** Atributos da categoria (dano, CA, rolagem de efeito...). */
+  details: ItemDetails;
 }
 
 export type SpellDto = z.infer<typeof spellSchema>;

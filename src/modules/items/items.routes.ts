@@ -18,12 +18,12 @@ itemsRouter.use(authenticate);
  * O catálogo é visível a todos: os jogadores o usam para buscar itens ao
  * montar o inventário. A gestão (criar/editar/remover/enviar) é do mestre.
  */
-itemsRouter.get('/', async (_req, res) => {
-  res.json({ items: await listItems() });
+itemsRouter.get('/', async (req, res) => {
+  res.json({ items: await listItems(req.user?.role ?? 'PLAYER') });
 });
 
 itemsRouter.get('/:id', async (req, res) => {
-  res.json({ item: await getItem(req.params.id) });
+  res.json({ item: await getItem(String(req.params.id), req.user?.role ?? 'PLAYER') });
 });
 
 itemsRouter.post('/', requireRole('MASTER'), async (req, res) => {

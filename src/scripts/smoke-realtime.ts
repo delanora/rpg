@@ -1199,6 +1199,79 @@ async function main(): Promise<void> {
   createdItemIds.push(catalogItem.id);
   check('item guarda a categoria e o peso', catalogItem?.category === 'Poção' && catalogItem?.weight === 0.5);
 
+  // Cada categoria aceita atributos próprios; o preço é exclusivo do mestre.
+  const weaponCreated = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Espada Longa ${suffix}`,
+      category: 'Arma',
+      weight: 3,
+      details: { damageCount: 2, damageDie: 6, damageType: 'Cortante', attackBonus: 5 },
+      price: { gold: 15, silver: 0, copper: 0 },
+    },
+  });
+  const weapon = weaponCreated.data?.item;
+  createdItemIds.push(weapon.id);
+  check(
+    'arma guarda dano (qtd/tipo/dado) e bônus de ataque',
+    weapon?.details?.damageCount === 2 &&
+      weapon?.details?.damageDie === 6 &&
+      weapon?.details?.damageType === 'Cortante' &&
+      weapon?.details?.attackBonus === 5,
+    JSON.stringify(weapon?.details),
+  );
+  check(
+    'preço em PO/PP/PC volta para o mestre',
+    weapon?.price?.gold === 15 && weapon?.price?.silver === 0 && weapon?.price?.copper === 0,
+    JSON.stringify(weapon?.price),
+  );
+  check(
+    'jogador NÃO vê o preço ao buscar o item',
+    (await api(`/api/items/${weapon.id}`, { token: playerToken })).data?.item?.price === null,
+  );
+  check(
+    'jogador NÃO vê o preço na listagem do catálogo',
+    (await api('/api/items', { token: playerToken })).data.items.find(
+      (item: any) => item.id === weapon.id,
+    )?.price === null,
+  );
+
+  const armorCreated = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Cota de Malha ${suffix}`,
+      category: 'Armadura',
+      weight: 55,
+      // `damageCount` não pertence a Armadura — deve ser descartado ao salvar.
+      details: { armorClassBonus: 4, damageCount: 2 },
+      price: { gold: 75, silver: 0, copper: 0 },
+    },
+  });
+  const armor = armorCreated.data?.item;
+  createdItemIds.push(armor.id);
+  check(
+    'armadura guarda a CA adicional e descarta atributos de outra categoria',
+    armor?.details?.armorClassBonus === 4 && armor?.details?.damageCount === undefined,
+    JSON.stringify(armor?.details),
+  );
+
+  const recategorized = await api(`/api/items/${armor.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { category: 'Poção' },
+  });
+  check(
+    'trocar a categoria limpa os atributos antigos',
+    recategorized.status === 200 && recategorized.data?.item?.details?.armorClassBonus === undefined,
+    JSON.stringify(recategorized.data?.item?.details),
+  );
+  check(
+    'jogador NÃO edita o item do catálogo (403)',
+    (await api(`/api/items/${armor.id}`, { method: 'PATCH', token: playerToken, body: { name: 'x' } })).status === 403,
+  );
+
   check(
     'jogador NÃO cria item no catálogo (403)',
     (await api('/api/items', { method: 'POST', token: playerToken, body: { name: 'x' } })).status === 403,
@@ -1231,6 +1304,26 @@ async function main(): Promise<void> {
     JSON.stringify(received),
   );
   check('item enviado guarda o vínculo com o catálogo', received?.itemId === catalogItem.id);
+
+  await api(`/api/items/${weapon.id}/send`, {
+    method: 'POST',
+    token: masterToken,
+    body: { characterId: playerSheetBefore.id, quantity: 1 },
+  });
+  const afterWeaponSend = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const weaponInInventory = afterWeaponSend.inventory.find((entry: any) => entry.itemId === weapon.id);
+  check(
+    'item enviado leva categoria e atributos ao inventário',
+    weaponInInventory?.category === 'Arma' &&
+      weaponInInventory?.details?.damageCount === 2 &&
+      weaponInInventory?.details?.attackBonus === 5,
+    JSON.stringify(weaponInInventory),
+  );
+  check(
+    'preço NUNCA entra no inventário do jogador',
+    weaponInInventory !== undefined && weaponInInventory.price === undefined,
+    JSON.stringify(weaponInInventory),
+  );
 
   await api(`/api/items/${catalogItem.id}/send`, {
     method: 'POST',

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api';
+import { describeItemDetails } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import type { InventoryItem, Item } from '../../types';
 import { clampFloat, clampInt, newId } from '../../utils';
@@ -62,6 +63,8 @@ export function InventorySection({ character, update }: SheetSectionProps) {
           equipped: false,
           imageUrl: '',
           itemId: '',
+          category: '',
+          details: {},
         },
       ],
     });
@@ -85,6 +88,8 @@ export function InventorySection({ character, update }: SheetSectionProps) {
             weight: item.weight,
             equipped: false,
             imageUrl: item.imageUrl,
+            category: item.category,
+            details: item.details,
           },
         ],
       });
@@ -141,6 +146,9 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                       <span className="suggestion-name">{item.name}</span>
                       <span className="muted">
                         {item.category}
+                        {describeItemDetails(item.category, item.details)
+                          ? ` · ${describeItemDetails(item.category, item.details)}`
+                          : ''}
                         {item.weight > 0 ? ` · ${item.weight} lb` : ''}
                       </span>
                     </button>
@@ -173,14 +181,21 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                   <td>
                     <span className="item-cell">
                       <Portrait src={item.imageUrl} alt={item.name} size="sm" icon="flask" />
-                      <InlineField
-                        value={item.name}
-                        ariaLabel="Nome do item"
-                        onCommit={(value) => {
-                          const name = value.trim();
-                          if (name) patchItem(item.id, { name });
-                        }}
-                      />
+                      <span className="item-cell-body">
+                        <InlineField
+                          value={item.name}
+                          ariaLabel="Nome do item"
+                          onCommit={(value) => {
+                            const name = value.trim();
+                            if (name) patchItem(item.id, { name });
+                          }}
+                        />
+                        {describeItemDetails(item.category, item.details) ? (
+                          <span className="item-detail-hint">
+                            {describeItemDetails(item.category, item.details)}
+                          </span>
+                        ) : null}
+                      </span>
                     </span>
                   </td>
                   <td>

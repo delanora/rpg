@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
+import { DAMAGE_TYPES } from '../../dnd';
 import { ITEM_CATEGORIES } from '../../types';
-import type { Character, Item, ItemPatch } from '../../types';
-import { clampFloat } from '../../utils';
+import type { Character, Item, ItemDetails, ItemPatch, ItemPrice } from '../../types';
+import { clampFloat, clampInt } from '../../utils';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
+
+const DIE_OPTIONS = ['4', '6', '8', '10', '12', '20'] as const;
 
 interface ItemEditorProps {
   item: Item;
@@ -16,7 +19,161 @@ interface ItemEditorProps {
   onSend: (characterId: string, quantity: number) => Promise<void>;
 }
 
-/** Editor de um item: identidade, sprite e envio direto para um jogador. */
+/** Campos numéricos/selects específicos da categoria do item. */
+function CategoryFields({
+  item,
+  onPatchDetails,
+}: {
+  item: Item;
+  onPatchDetails: (patch: ItemDetails) => void;
+}) {
+  const details = item.details;
+
+  if (item.category === 'Arma' || item.category === 'Cajado') {
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Dados de dano</span>
+          <InlineField
+            value={details.damageCount ?? 0}
+            mode="number"
+            min={0}
+            max={20}
+            ariaLabel="Quantidade de dados de dano"
+            onCommit={(value) => onPatchDetails({ damageCount: clampInt(value, 0, 20, 0) })}
+          />
+        </label>
+
+        <label className="field">
+          <span>Dado</span>
+          <InlineField
+            value={details.damageDie ? String(details.damageDie) : ''}
+            mode="select"
+            options={DIE_OPTIONS}
+            ariaLabel="Tipo do dado de dano"
+            onCommit={(value) => onPatchDetails({ damageDie: value ? Number(value) : 0 })}
+          />
+        </label>
+
+        <label className="field">
+          <span>Tipo de dano</span>
+          <InlineField
+            value={details.damageType ?? ''}
+            mode="select"
+            options={DAMAGE_TYPES}
+            ariaLabel="Tipo de dano"
+            onCommit={(value) => onPatchDetails({ damageType: value })}
+          />
+        </label>
+
+        <label className="field">
+          <span>Bônus de ataque</span>
+          <InlineField
+            value={details.attackBonus ?? 0}
+            mode="number"
+            min={-30}
+            max={30}
+            ariaLabel="Bônus de ataque"
+            onCommit={(value) => onPatchDetails({ attackBonus: clampInt(value, -30, 30, 0) })}
+          />
+          <span className="field-hint">
+            dano resumido:{' '}
+            <strong>
+              {details.damageCount && details.damageDie
+                ? `${details.damageCount}d${details.damageDie}`
+                : '—'}
+            </strong>
+          </span>
+        </label>
+
+        {item.category === 'Cajado' ? (
+          <label className="field field-check">
+            <span>Foco de conjuração</span>
+            <input
+              type="checkbox"
+              checked={Boolean(details.spellcastingFocus)}
+              aria-label="Foco de conjuração"
+              onChange={(event) => onPatchDetails({ spellcastingFocus: event.target.checked })}
+            />
+          </label>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (item.category === 'Armadura' || item.category === 'Escudo') {
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>CA adicional</span>
+          <InlineField
+            value={details.armorClassBonus ?? 0}
+            mode="number"
+            min={-10}
+            max={30}
+            ariaLabel="Bônus de CA"
+            onCommit={(value) => onPatchDetails({ armorClassBonus: clampInt(value, -10, 30, 0) })}
+          />
+          <span className="field-hint">some à CA sugerida da ficha informativamente</span>
+        </label>
+      </div>
+    );
+  }
+
+  if (item.category === 'Poção') {
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Rolagem do efeito</span>
+          <InlineField
+            value={details.effectRoll ?? ''}
+            placeholder="ex.: 2d4+2"
+            ariaLabel="Rolagem do efeito da poção"
+            onCommit={(value) => onPatchDetails({ effectRoll: value.trim() })}
+          />
+        </label>
+        <label className="field">
+          <span>Duração</span>
+          <InlineField
+            value={details.duration ?? ''}
+            placeholder="ex.: 1 hora"
+            ariaLabel="Duração da poção"
+            onCommit={(value) => onPatchDetails({ duration: value.trim() })}
+          />
+        </label>
+      </div>
+    );
+  }
+
+  if (item.category === 'Anel') {
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Rolagem do efeito</span>
+          <InlineField
+            value={details.effectRoll ?? ''}
+            placeholder="ex.: 1d6"
+            ariaLabel="Rolagem do efeito do anel"
+            onCommit={(value) => onPatchDetails({ effectRoll: value.trim() })}
+          />
+        </label>
+        <label className="field field-check">
+          <span>Exige sintonização</span>
+          <input
+            type="checkbox"
+            checked={Boolean(details.attunement)}
+            aria-label="Exige sintonização"
+            onChange={(event) => onPatchDetails({ attunement: event.target.checked })}
+          />
+        </label>
+      </div>
+    );
+  }
+
+  return <p className="section-note">Esta categoria não tem atributos especiais além do preço.</p>;
+}
+
+/** Editor de um item: identidade, atributos por categoria, preço e envio. */
 export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: ItemEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +181,15 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
   const [quantity, setQuantity] = useState('1');
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+
+  function patchDetails(patch: ItemDetails): void {
+    onPatch({ details: { ...item.details, ...patch } });
+  }
+
+  function patchPrice(patch: Partial<ItemPrice>): void {
+    const base = item.price ?? { gold: 0, silver: 0, copper: 0 };
+    onPatch({ price: { ...base, ...patch } });
+  }
 
   async function handleFile(files: FileList | null): Promise<void> {
     const file = files?.[0];
@@ -59,6 +225,8 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
     }
   }
 
+  const price = item.price ?? { gold: 0, silver: 0, copper: 0 };
+
   return (
     <div className="creature-editor">
       <div className="detail-head">
@@ -92,7 +260,9 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
               mode="select"
               options={[...ITEM_CATEGORIES]}
               ariaLabel="Categoria do item"
-              onCommit={(value) => onPatch({ category: value as ItemPatch['category'] })}
+              onCommit={(value) =>
+                onPatch({ category: value as ItemPatch['category'], details: {} })
+              }
             />
           </label>
 
@@ -118,11 +288,60 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
         />
       </Section>
 
+      <Section
+        title={`Atributos — ${item.category}`}
+        icon="sword"
+        subtitle="Os campos mudam conforme a categoria escolhida"
+      >
+        <CategoryFields item={item} onPatchDetails={patchDetails} />
+      </Section>
+
+      <Section title="Valor (PO / PP / PC)" icon="crown" subtitle="Visível apenas para o mestre">
+        <div className="grid grid-3">
+          <label className="field">
+            <span>PO (ouro)</span>
+            <InlineField
+              value={price.gold}
+              mode="number"
+              min={0}
+              ariaLabel="Preço em peças de ouro"
+              onCommit={(value) => patchPrice({ gold: clampInt(value, 0, 9_999_999, price.gold) })}
+            />
+          </label>
+          <label className="field">
+            <span>PP (prata)</span>
+            <InlineField
+              value={price.silver}
+              mode="number"
+              min={0}
+              ariaLabel="Preço em peças de prata"
+              onCommit={(value) =>
+                patchPrice({ silver: clampInt(value, 0, 9_999_999, price.silver) })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>PC (cobre)</span>
+            <InlineField
+              value={price.copper}
+              mode="number"
+              min={0}
+              ariaLabel="Preço em peças de cobre"
+              onCommit={(value) =>
+                patchPrice({ copper: clampInt(value, 0, 9_999_999, price.copper) })
+              }
+            />
+          </label>
+        </div>
+      </Section>
+
       <Section title="Sprite" icon="star" subtitle="PNG, JPEG, WEBP ou GIF · até 5 MB">
         <div className="item-sprite-row">
           <Portrait src={item.imageUrl} alt={item.name} size="lg" icon="flask" />
           <div className="toolbar">
-            <label className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}>
+            <label
+              className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}
+            >
               {uploading ? 'enviando...' : item.imageUrl ? 'trocar sprite' : '+ adicionar sprite'}
               <input
                 type="file"
@@ -136,7 +355,11 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
               />
             </label>
             {item.imageUrl ? (
-              <button type="button" className="btn btn-small" onClick={() => onPatch({ imageUrl: '' })}>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => onPatch({ imageUrl: '' })}
+              >
                 remover sprite
               </button>
             ) : null}

@@ -1,7 +1,18 @@
 import { useState } from 'react';
+import { describeItemDetails } from '../../dnd';
 import type { Character, Item, ItemPatch } from '../../types';
 import { Portrait } from '../Portrait';
 import { ItemEditor } from './ItemEditor';
+
+/** Preço resumido (PO/PP/PC) — visível apenas no painel do mestre. */
+function priceLabel(item: Item): string {
+  if (!item.price) return '';
+  const parts: string[] = [];
+  if (item.price.gold) parts.push(`${item.price.gold} PO`);
+  if (item.price.silver) parts.push(`${item.price.silver} PP`);
+  if (item.price.copper) parts.push(`${item.price.copper} PC`);
+  return parts.length > 0 ? parts.join(' · ') : 'sem valor';
+}
 
 interface ItemsTabProps {
   items: Item[];
@@ -61,6 +72,12 @@ export function ItemsTab({ items, characters, onCreate, onPatch, onDelete, onSen
                       {item.category}
                       {item.weight > 0 ? ` · ${item.weight} lb` : ''}
                     </span>
+                    {describeItemDetails(item.category, item.details) ? (
+                      <span className="card-line">
+                        {describeItemDetails(item.category, item.details)}
+                      </span>
+                    ) : null}
+                    <span className="card-owner">{priceLabel(item)}</span>
                   </span>
                 </button>
               </li>

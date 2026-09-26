@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { attackSchema } from '../shared/attacks.js';
 import { getClassDefinition } from '../shared/classes.js';
+import { itemDetailsSchema } from '../shared/item-details.js';
 import {
   ABILITY_SCORE_MAX,
   ABILITY_SCORE_MIN,
@@ -55,6 +56,10 @@ export const inventoryItemSchema = z.object({
   imageUrl: shortText(500).default(''),
   /** Id do item no catálogo do mestre, quando o item veio de lá. */
   itemId: shortText(60).default(''),
+  /** Categoria do item no catálogo ('' quando avulso). */
+  category: shortText(40).default(''),
+  /** Atributos da categoria (dano, CA, rolagem de efeito...). */
+  details: itemDetailsSchema.default({}),
 });
 
 export const spellSchema = z.object({

@@ -191,10 +191,17 @@ model Item {
   description String   @default("")
   /// Peso em libras (aceita frações, como 0.5).
   weight      Float    @default(0)
-  /// Categoria livre validada na aplicação (ex.: Arma, Poção, Tesouro).
+  /// Categoria validada na aplicação (ex.: Arma, Poção, Tesouro).
   category    String   @default("Item Geral")
   /// URL pública do sprite do item (`uploads/items/...`).
   imageUrl    String   @default("")
+  /// Atributos específicos da categoria: dano, CA adicional, rolagem de efeito...
+  /// Ver src/modules/shared/item-details.ts.
+  details     Json     @default("{}")
+  /// Preço em peças de ouro, prata e cobre (informação exclusiva do mestre).
+  priceGold   Int      @default(0)
+  priceSilver Int      @default(0)
+  priceCopper Int      @default(0)
   version     Int      @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

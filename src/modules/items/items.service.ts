@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import type { Item, Prisma, Role } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
@@ -8,6 +8,7 @@ import { ServerEvents, type ServerEvent } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toCharacterDto, type InventoryItemDto } from '../characters/characters.dto.js';
 import { inventoryItemSchema } from '../characters/characters.schema.js';
+import { sanitizeItemDetails } from '../shared/item-details.js';
 import { parseJson } from '../shared/json.js';
 import { toItemDto, type ItemDto } from './items.dto.js';
 import type { CreateItemInput, UpdateItemInput } from './items.schema.js';
@@ -15,20 +16,34 @@ import type { CreateItemInput, UpdateItemInput } from './items.schema.js';
 const inventoryListSchema = z.array(inventoryItemSchema);
 
 /**
- * O catálogo é compartilhado: o mestre o gerencia e os jogadores o consultam
- * para preencher o inventário. Por isso os eventos vão para toda a mesa.
+ * O catálogo é compartilhado, mas o preço é exclusivo do mestre: os mestres
+ * recebem o item completo e os jogadores uma versão sem valor de mercado.
  */
-function broadcast(event: ServerEvent, payload: unknown): void {
+function broadcastItem(event: ServerEvent, item: Item, changes?: Record<string, unknown>): void {
   try {
-    getBroadcaster().toTable(event, payload);
+    const broadcaster = getBroadcaster();
+    const full = toItemDto(item, 'MASTER');
+    const stripped = toItemDto(item, 'PLAYER');
+    broadcaster.toMasters(event, changes ? { item: full, changes } : { item: full });
+    broadcaster.toPlayers(event, changes ? { item: stripped, changes } : { item: stripped });
   } catch (error) {
     console.error('[items] falha ao publicar evento em tempo real:', error);
   }
 }
 
-export async function listItems(): Promise<ItemDto[]> {
+function broadcastDeleted(itemId: string): void {
+  try {
+    const broadcaster = getBroadcaster();
+    broadcaster.toMasters(ServerEvents.ITEM_DELETED, { itemId });
+    broadcaster.toPlayers(ServerEvents.ITEM_DELETED, { itemId });
+  } catch (error) {
+    console.error('[items] falha ao publicar evento em tempo real:', error);
+  }
+}
+
+export async function listItems(viewer: Role): Promise<ItemDto[]> {
   const items = await prisma.item.findMany({ orderBy: { name: 'asc' } });
-  return items.map(toItemDto);
+  return items.map((item) => toItemDto(item, viewer));
 }
 
 async function findItem(id: string) {
@@ -37,24 +52,30 @@ async function findItem(id: string) {
   return item;
 }
 
-export async function getItem(id: string): Promise<ItemDto> {
-  return toItemDto(await findItem(id));
+export async function getItem(id: string, viewer: Role): Promise<ItemDto> {
+  return toItemDto(await findItem(id), viewer);
 }
 
 export async function createItem(input: CreateItemInput): Promise<ItemDto> {
+  const category = input.category ?? 'Item Geral';
+  const price = input.price ?? {};
+
   const item = await prisma.item.create({
     data: {
       name: input.name,
       description: input.description ?? '',
       weight: input.weight ?? 0,
-      category: input.category ?? 'Item Geral',
+      category,
       imageUrl: input.imageUrl ?? '',
+      details: sanitizeItemDetails(category, input.details) as Prisma.InputJsonValue,
+      priceGold: price.gold ?? 0,
+      priceSilver: price.silver ?? 0,
+      priceCopper: price.copper ?? 0,
     },
   });
 
-  const dto = toItemDto(item);
-  broadcast(ServerEvents.ITEM_CREATED, { item: dto });
-  return dto;
+  broadcastItem(ServerEvents.ITEM_CREATED, item);
+  return toItemDto(item, 'MASTER');
 }
 
 export async function updateItem(id: string, patch: UpdateItemInput): Promise<ItemDto> {
@@ -67,28 +88,46 @@ export async function updateItem(id: string, patch: UpdateItemInput): Promise<It
   if (patch.category !== undefined) data.category = patch.category;
   if (patch.imageUrl !== undefined) data.imageUrl = patch.imageUrl;
 
+  // Atributos são re-normalizados com a categoria final (a troca de categoria
+  // limpa os campos que não se aplicam mais).
+  if (patch.details !== undefined || patch.category !== undefined) {
+    const category = patch.category ?? current.category;
+    data.details = sanitizeItemDetails(
+      category,
+      patch.details ?? current.details,
+    ) as Prisma.InputJsonValue;
+  }
+
+  if (patch.price !== undefined) {
+    if (patch.price.gold !== undefined) data.priceGold = patch.price.gold;
+    if (patch.price.silver !== undefined) data.priceSilver = patch.price.silver;
+    if (patch.price.copper !== undefined) data.priceCopper = patch.price.copper;
+  }
+
   const item = await prisma.item.update({ where: { id }, data });
 
   if (patch.imageUrl !== undefined && patch.imageUrl !== current.imageUrl && current.imageUrl) {
     await deleteUploadedImage(current.imageUrl);
   }
 
-  const dto = toItemDto(item);
-  broadcast(ServerEvents.ITEM_UPDATED, { item: dto, changes: patch });
-  return dto;
+  broadcastItem(ServerEvents.ITEM_UPDATED, item, patch as Record<string, unknown>);
+  return toItemDto(item, 'MASTER');
 }
 
 export async function deleteItem(id: string): Promise<void> {
   const current = await findItem(id);
   await prisma.item.delete({ where: { id } });
   if (current.imageUrl) await deleteUploadedImage(current.imageUrl);
-  broadcast(ServerEvents.ITEM_DELETED, { itemId: id });
+  broadcastDeleted(id);
 }
 
 /**
  * Envia um item do catálogo para o inventário de um personagem. Sem limite de
  * quantidade: o mestre pode mandar quantos itens quiser. Se o personagem já
  * tiver o mesmo item do catálogo, as quantidades se somam.
+ *
+ * O item leva sprite, peso, descrição e os atributos da categoria (dano, CA,
+ * rolagem de efeito...) — mas nunca o preço, que é informação do mestre.
  */
 export async function sendItemToCharacter(
   itemId: string,
@@ -117,6 +156,8 @@ export async function sendItemToCharacter(
       equipped: false,
       imageUrl: item.imageUrl,
       itemId: item.id,
+      category: item.category,
+      details: sanitizeItemDetails(item.category, item.details),
     });
   }
 

@@ -1,4 +1,4 @@
-import type { AbilityKey, FeatureSource, SpellLearning, SpellcastingType } from './types';
+import type { AbilityKey, FeatureSource, ItemDetails, SpellLearning, SpellcastingType } from './types';
 
 /**
  * Constantes de D&D 5e usadas apenas para exibição/labels no frontend.
@@ -150,6 +150,34 @@ export const SPELL_LEVEL_LABELS: Record<number, string> = {
 
 export function formatModifier(value: number): string {
   return value >= 0 ? `+${value}` : String(value);
+}
+
+/**
+ * Resume os atributos de um item por categoria (ex.: "2d6 Cortante · acerto +5",
+ * "CA +2", "efeito 2d4+2 · 10 min"). Vazio quando o item não tem atributos.
+ */
+export function describeItemDetails(category: string, details: ItemDetails | undefined): string {
+  if (!details) return '';
+  const parts: string[] = [];
+
+  if (category === 'Arma' || category === 'Cajado') {
+    if (details.damageCount && details.damageDie) {
+      parts.push(`${details.damageCount}d${details.damageDie}`);
+    }
+    if (details.damageType) parts.push(details.damageType);
+    if (details.attackBonus) parts.push(`acerto ${formatModifier(details.attackBonus)}`);
+    if (category === 'Cajado' && details.spellcastingFocus) parts.push('foco de conjuração');
+  } else if (category === 'Armadura' || category === 'Escudo') {
+    if (details.armorClassBonus) parts.push(`CA ${formatModifier(details.armorClassBonus)}`);
+  } else if (category === 'Poção') {
+    if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
+    if (details.duration) parts.push(details.duration);
+  } else if (category === 'Anel') {
+    if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
+    if (details.attunement) parts.push('sintonização');
+  }
+
+  return parts.join(' · ');
 }
 
 /** Formata um Valor de Desafio (CR): 0.25 -> "1/4", 0.5 -> "1/2", 1 -> "1". */

@@ -1,19 +1,21 @@
 import { z } from 'zod';
+import {
+  ITEM_CATEGORIES,
+  itemDetailsSchema,
+  itemPriceSchema,
+  sanitizeItemDetails,
+} from '../shared/item-details.js';
 
-/** Categorias do catálogo central de itens. */
-export const ITEM_CATEGORIES = [
-  'Arma',
-  'Armadura',
-  'Escudo',
-  'Poção',
-  'Anel',
-  'Cajado',
-  'Item Geral',
-  'Tesouro',
-  'Outro',
-] as const;
+export { ITEM_CATEGORIES };
+export type { ItemCategory } from '../shared/item-details.js';
 
 export const itemCategorySchema = z.enum(ITEM_CATEGORIES);
+
+/** Atributos específicos da categoria (dano, CA, rolagem de efeito, etc.). */
+export const itemDetailsInputSchema = itemDetailsSchema;
+
+/** Preço em peças de ouro/prata/cobre. */
+export const itemPriceInputSchema = itemPriceSchema;
 
 /** Campos editáveis de um item do catálogo. */
 const itemFields = z.object({
@@ -23,6 +25,8 @@ const itemFields = z.object({
   category: itemCategorySchema,
   /** URL do sprite (`/uploads/items/...`); vazio = sem imagem. */
   imageUrl: z.string().trim().max(500),
+  details: itemDetailsInputSchema,
+  price: itemPriceInputSchema,
 });
 
 /** Criação: só o nome é obrigatório. */
@@ -32,6 +36,8 @@ export const createItemSchema = z.object({
   weight: z.number().min(0).max(100000).optional(),
   category: itemCategorySchema.optional(),
   imageUrl: z.string().trim().max(500).optional(),
+  details: itemDetailsInputSchema.optional(),
+  price: itemPriceInputSchema.partial().optional(),
 });
 
 /** Edição: aceita qualquer subconjunto de campos. */
@@ -49,4 +55,5 @@ export const sendItemSchema = z.object({
 export type CreateItemInput = z.infer<typeof createItemSchema>;
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
 export type SendItemInput = z.infer<typeof sendItemSchema>;
-export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
+
+export { sanitizeItemDetails };

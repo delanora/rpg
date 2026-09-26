@@ -30,6 +30,26 @@ export interface SkillEntry {
 export type SkillsState = Record<string, SkillEntry>;
 export type SavesState = Record<AbilityKey, boolean>;
 
+/** Atributos de item por categoria (espelha src/modules/shared/item-details.ts). */
+export interface ItemDetails {
+  damageCount?: number;
+  damageDie?: number;
+  damageType?: string;
+  attackBonus?: number;
+  spellcastingFocus?: boolean;
+  armorClassBonus?: number;
+  effectRoll?: string;
+  duration?: string;
+  attunement?: boolean;
+}
+
+/** Preço em peças de ouro (PO), prata (PP) e cobre (PC). */
+export interface ItemPrice {
+  gold: number;
+  silver: number;
+  copper: number;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -41,6 +61,10 @@ export interface InventoryItem {
   imageUrl: string;
   /** Id do item no catálogo do mestre ('' quando é avulso). */
   itemId: string;
+  /** Categoria do item no catálogo ('' quando avulso). */
+  category: string;
+  /** Atributos da categoria (dano, CA, rolagem de efeito...). */
+  details: ItemDetails;
 }
 
 export interface Spell {
@@ -535,6 +559,10 @@ export interface Item {
   weight: number;
   category: string;
   imageUrl: string;
+  /** Atributos específicos da categoria. */
+  details: ItemDetails;
+  /** Preço em PO/PP/PC; `null` para jogadores (valor é exclusivo do mestre). */
+  price: ItemPrice | null;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -546,6 +574,8 @@ export interface ItemPatch {
   weight?: number;
   category?: ItemCategory;
   imageUrl?: string;
+  details?: ItemDetails;
+  price?: ItemPrice;
 }
 
 export interface ItemCreatedPayload {
