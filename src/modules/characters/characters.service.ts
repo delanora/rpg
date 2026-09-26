@@ -35,6 +35,7 @@ const SCALAR_KEYS = [
   'armorClass',
   'initiativeBonus',
   'speed',
+  'avatarUrl',
   'notes',
 ] as const;
 

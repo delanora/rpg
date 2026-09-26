@@ -1,16 +1,24 @@
 import { useState } from 'react';
-import type { Locality, LocalityPatch } from '../../types';
+import type { Creature, Locality, LocalityPatch } from '../../types';
 import { Icon } from '../Icon';
 import { LocalityEditor } from './LocalityEditor';
 
 interface LocalitiesTabProps {
   localities: Locality[];
+  /** Criaturas/NPCs da mesa — usadas para listar quem vive em cada local. */
+  creatures: Creature[];
   onCreate: () => Promise<Locality>;
   onPatch: (id: string, patch: LocalityPatch) => void;
   onDelete: (id: string) => void;
 }
 
-export function LocalitiesTab({ localities, onCreate, onPatch, onDelete }: LocalitiesTabProps) {
+export function LocalitiesTab({
+  localities,
+  creatures,
+  onCreate,
+  onPatch,
+  onDelete,
+}: LocalitiesTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -77,6 +85,9 @@ export function LocalitiesTab({ localities, onCreate, onPatch, onDelete }: Local
         {selected ? (
           <LocalityEditor
             locality={selected}
+            creatures={creatures.filter((creature) =>
+              creature.localities.some((locality) => locality.id === selected.id),
+            )}
             onPatch={(patch) => onPatch(selected.id, patch)}
             onDelete={() => {
               onDelete(selected.id);

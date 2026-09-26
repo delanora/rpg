@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
+import { Portrait } from '../components/Portrait';
 import { formatModifier } from '../dnd';
 import type { Attack, CombatDto, CombatantDto, SessionUser } from '../types';
 import { clampInt } from '../utils';
@@ -237,7 +238,15 @@ export function CombatTracker({
         <ul className="combat-list">
           {combat.combatants.map((combatant) => (
             <li key={combatant.id} className="combat-row">
-              <span className="combat-name">{combatant.name}</span>
+              <span className="combat-name">
+                <Portrait
+                  src={combatant.imageUrl ?? ''}
+                  alt=""
+                  size="sm"
+                  icon={combatant.kind === 'CREATURE' ? 'flame' : 'users'}
+                />
+                <span className="name-text">{combatant.name}</span>
+              </span>
               <span className="combat-kind">
                 {combatant.kind === 'CREATURE' ? 'criatura' : 'personagem'}
               </span>
@@ -351,7 +360,13 @@ export function CombatTracker({
             >
               <span className="turn-index">{index + 1}</span>
               <span className="turn-name">
-                {combatant.name}
+                <Portrait
+                  src={combatant.imageUrl ?? ''}
+                  alt=""
+                  size="sm"
+                  icon={combatant.kind === 'CREATURE' ? 'flame' : 'users'}
+                />
+                <span className="name-text">{combatant.name}</span>
                 {combatant.missing ? <em className="tag">removido</em> : null}
               </span>
               <span className="turn-init">{combatant.initiative}</span>

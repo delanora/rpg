@@ -32,6 +32,9 @@ export interface CreatureDto {
   /** Localidades vinculadas (uma ou mais). */
   localities: LocalitySummaryDto[];
 
+  /** URL pública do ícone/retrato ('' = sem imagem). */
+  imageUrl: string;
+
   description: string;
   version: number;
   createdAt: string;
@@ -88,6 +91,7 @@ export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
     resistances,
     immunities,
     localities: (creature.localities ?? []).map(toLocalitySummary),
+    imageUrl: creature.imageUrl,
     description: creature.description,
     version: creature.version,
     createdAt: creature.createdAt.toISOString(),

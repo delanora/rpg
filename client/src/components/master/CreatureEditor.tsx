@@ -1,9 +1,12 @@
+import { useState } from 'react';
+import { fileToImagePayload, uploadImage } from '../../api';
 import { ABILITY_KEYS, ABILITY_LABELS, DAMAGE_TYPES, formatModifier } from '../../dnd';
 import type { Creature, CreaturePatch, Locality } from '../../types';
 import { clampInt } from '../../utils';
 import { AttacksTable } from '../AttacksTable';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
+import { Portrait } from '../Portrait';
 import { Section } from '../Section';
 
 interface DamageChipsProps {
@@ -56,6 +59,27 @@ export function CreatureEditor({
   onPatch,
   onDelete,
 }: CreatureEditorProps) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  /** Envia (ou troca) o ícone/retrato da criatura/NPC. */
+  async function handleFile(files: FileList | null): Promise<void> {
+    const file = files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const payload = await fileToImagePayload(file);
+      const image = await uploadImage(payload.dataUrl, payload.name, 'creatures');
+      onPatch({ imageUrl: image.url });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Falha ao enviar a imagem.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   // Bônus sugerido para um novo ataque: o melhor entre Força e Destreza.
   const attackBonus = Math.max(
     creature.derived.modifiers.strength,
@@ -87,6 +111,42 @@ export function CreatureEditor({
           remover {creature.kind === 'NPC' ? 'NPC' : 'criatura'}
         </button>
       </div>
+
+      <Section title="Ícone" icon="star" subtitle="PNG, JPEG, WEBP ou GIF · até 5 MB">
+        <div className="item-sprite-row">
+          <Portrait
+            src={creature.imageUrl}
+            alt={creature.name}
+            size="lg"
+            icon={creature.kind === 'NPC' ? 'crown' : 'flame'}
+          />
+          <div className="toolbar">
+            <label className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}>
+              {uploading ? 'enviando...' : creature.imageUrl ? 'trocar ícone' : '+ adicionar ícone'}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                disabled={uploading}
+                onChange={(event) => {
+                  void handleFile(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            {creature.imageUrl ? (
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => onPatch({ imageUrl: '' })}
+              >
+                remover ícone
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {uploadError ? <p className="form-error">{uploadError}</p> : null}
+      </Section>
 
       <Section title="Identificação" icon="scroll">
         <div className="grid grid-3">

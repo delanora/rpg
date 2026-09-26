@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Character } from '../../types';
+import { Portrait } from '../Portrait';
 import { SheetView } from '../SheetView';
 
 /** A visão do mestre é somente leitura: este callback nunca é chamado. */
@@ -29,7 +30,10 @@ export function SheetsTab({ characters }: SheetsTabProps) {
                 className={selected?.id === character.id ? 'character-card active' : 'character-card'}
                 onClick={() => setSelectedId(character.id)}
               >
-                <span className="card-name">{character.name}</span>
+                <span className="card-head">
+                  <Portrait src={character.avatarUrl} alt={character.name} icon="users" />
+                  <span className="card-name">{character.name}</span>
+                </span>
                 <span className="card-owner">{character.ownerUsername ?? '—'}</span>
                 <span className="card-line">
                   {character.className || 'sem classe'} · Nv {character.level} · CA{' '}

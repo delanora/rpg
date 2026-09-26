@@ -90,6 +90,9 @@ model Character {
   /// Estado de runtime da classe: toggles ativos (ex.: Fúria) e usos gastos.
   classState Json @default("{}") //  { active: string[], used: { [id]: number } }
 
+  /// URL pública do avatar enviado pelo próprio jogador (`uploads/characters/...`).
+  avatarUrl String @default("")
+
   /// Incrementado a cada alteração; ajuda a ordenar eventos em tempo real.
   version    Int         @default(1)
   createdAt  DateTime    @default(now())
@@ -163,6 +166,9 @@ model Creature {
   immunities  Json @default("[]") // tipos de dano imunes
   description String @default("")
 
+  /// URL pública do ícone/retrato da criatura/NPC (`uploads/creatures/...`).
+  imageUrl String @default("")
+
   /// Localidades às quais esta criatura/NPC pertence (uma ou mais).
   localities Locality[]
 
@@ -175,6 +181,27 @@ model Creature {
   @@index([name])
   @@index([kind])
   @@map("creatures")
+}
+
+/// Item do catálogo central gerenciado pelo mestre (armas, poções, tesouros...).
+/// Pode ter um sprite e ser enviado direto para o inventário de um jogador.
+model Item {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  /// Peso em libras (aceita frações, como 0.5).
+  weight      Float    @default(0)
+  /// Categoria livre validada na aplicação (ex.: Arma, Poção, Tesouro).
+  category    String   @default("Item Geral")
+  /// URL pública do sprite do item (`uploads/items/...`).
+  imageUrl    String   @default("")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+  @@index([category])
+  @@map("items")
 }
 
 // -----------------------------------------------------------------------------

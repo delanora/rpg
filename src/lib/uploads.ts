@@ -37,10 +37,23 @@ export interface StoredImage {
 }
 
 /**
+ * Pastas aceitas no armazenamento. Cada tipo de conteúdo tem a sua, o que
+ * mantém os arquivos organizados e a limpeza por recurso simples.
+ */
+export const UPLOAD_FOLDERS = ['localities', 'creatures', 'characters', 'items'] as const;
+
+export type UploadFolder = (typeof UPLOAD_FOLDERS)[number];
+
+/**
  * Grava uma imagem enviada como data URL e devolve a URL pública.
  * Lança `HttpError` 400 quando o formato não é suportado ou passa do limite.
  */
-export async function saveDataUrlImage(dataUrl: string, name: string): Promise<StoredImage> {
+export async function saveDataUrlImage(
+  dataUrl: string,
+  name: string,
+  folder: UploadFolder = 'localities',
+): Promise<StoredImage> {
+  const safeFolder = UPLOAD_FOLDERS.includes(folder) ? folder : 'localities';
   const match = DATA_URL.exec(dataUrl.trim());
   if (!match) {
     throw new HttpError('Formato de imagem inválido (use PNG, JPEG, WEBP ou GIF).', 400);
@@ -61,11 +74,11 @@ export async function saveDataUrlImage(dataUrl: string, name: string): Promise<S
   }
 
   const fileName = `${randomUUID()}.${extension}`;
-  const directory = path.join(UPLOADS_DIR, 'localities');
+  const directory = path.join(UPLOADS_DIR, safeFolder);
   await mkdir(directory, { recursive: true });
   await writeFile(path.join(directory, fileName), buffer);
 
-  return { url: `/uploads/localities/${fileName}`, name: name.trim().slice(0, 200) };
+  return { url: `/uploads/${safeFolder}/${fileName}`, name: name.trim().slice(0, 200) };
 }
 
 /** Remove um arquivo de upload a partir da URL pública (best-effort). */

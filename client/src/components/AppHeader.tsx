@@ -5,6 +5,7 @@ import { getTheme, toggleTheme, type Theme } from '../theme';
 import type { OnlineUser, SessionUser } from '../types';
 import type { ConnectionState } from '../useRealtime';
 import { Icon } from './Icon';
+import { Portrait } from './Portrait';
 
 const CONNECTION_LABELS: Record<ConnectionState, string> = {
   connecting: 'conectando...',
@@ -15,6 +16,8 @@ const CONNECTION_LABELS: Record<ConnectionState, string> = {
 interface AppHeaderProps {
   title: string;
   subtitle?: string;
+  /** Avatar do personagem exibido no topo ('' = sem avatar). */
+  avatarUrl?: string;
   connection: ConnectionState;
   online: OnlineUser[];
   lastEventAt: string | null;
@@ -25,6 +28,7 @@ interface AppHeaderProps {
 export function AppHeader({
   title,
   subtitle,
+  avatarUrl,
   connection,
   online,
   lastEventAt,
@@ -40,6 +44,7 @@ export function AppHeader({
         <h1>
           <Icon name="dragon" className="brand-mark" size={22} /> Codex do Aventureiro
         </h1>
+        {avatarUrl ? <Portrait src={avatarUrl} alt={title} size="sm" /> : null}
         <span className="character-name">{title}</span>
         {subtitle ? <span className="character-name">{subtitle}</span> : null}
       </div>

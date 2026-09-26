@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Creature, CreatureKind, CreaturePatch, Locality } from '../../types';
+import { Portrait } from '../Portrait';
 import { CreatureEditor } from './CreatureEditor';
 
 interface CreaturesTabProps {
@@ -95,7 +96,14 @@ export function CreaturesTab({
                   className={selected?.id === creature.id ? 'character-card active' : 'character-card'}
                   onClick={() => setSelectedId(creature.id)}
                 >
-                  <span className="card-name">{creature.name}</span>
+                  <span className="card-head">
+                    <Portrait
+                      src={creature.imageUrl}
+                      alt={creature.name}
+                      icon={kind === 'NPC' ? 'crown' : 'flame'}
+                    />
+                    <span className="card-name">{creature.name}</span>
+                  </span>
                   <span className="card-owner">{creature.type || 'sem tipo'}</span>
                   <span className="card-line">
                     {creature.challengeRating ? `ND ${creature.challengeRating} · ` : ''}

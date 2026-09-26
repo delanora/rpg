@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
+import { deleteUploadedImage } from '../../lib/uploads.js';
 import { ServerEvents, type ServerEvent } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { assertLocalitiesExist } from '../localities/localities.service.js';
@@ -24,6 +25,7 @@ const SCALAR_KEYS = [
   'armorClass',
   'speed',
   'description',
+  'imageUrl',
 ] as const;
 
 /** Toda leitura inclui as localidades vinculadas (usadas no editor e nos cards). */
@@ -90,7 +92,7 @@ export async function updateCreature(
   id: string,
   patch: UpdateCreatureInput,
 ): Promise<CreatureDto> {
-  await findCreature(id);
+  const current = await findCreature(id);
 
   const data: Record<string, unknown> = { version: { increment: 1 } };
 
@@ -114,13 +116,19 @@ export async function updateCreature(
     include: withLocalities,
   });
 
+  // Ícone trocado sai do disco (o antigo não é mais referenciado).
+  if (patch.imageUrl !== undefined && patch.imageUrl !== current.imageUrl && current.imageUrl) {
+    await deleteUploadedImage(current.imageUrl);
+  }
+
   const dto = toCreatureDto(creature);
   broadcast(ServerEvents.CREATURE_UPDATED, { creature: dto, changes: patch });
   return dto;
 }
 
 export async function deleteCreature(id: string): Promise<void> {
-  await findCreature(id);
+  const current = await findCreature(id);
   await prisma.creature.delete({ where: { id } });
+  if (current.imageUrl) await deleteUploadedImage(current.imageUrl);
   broadcast(ServerEvents.CREATURE_DELETED, { creatureId: id });
 }

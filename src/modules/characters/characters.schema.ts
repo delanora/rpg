@@ -51,6 +51,10 @@ export const inventoryItemSchema = z.object({
   quantity: nonNegativeInt.default(1),
   weight: z.number().min(0).max(100000).default(0),
   equipped: z.boolean().default(false),
+  /** Sprite do item (`/uploads/items/...`); vazio quando o item é avulso. */
+  imageUrl: shortText(500).default(''),
+  /** Id do item no catálogo do mestre, quando o item veio de lá. */
+  itemId: shortText(60).default(''),
 });
 
 export const spellSchema = z.object({
@@ -136,6 +140,9 @@ export const updateCharacterSchema = z
     attacks: z.array(attackSchema).max(100),
     features: z.array(featureSchema).max(200),
     classState: classStateSchema,
+
+    // Vínculo com o catálogo de itens do mestre
+    avatarUrl: shortText(500),
 
     // Texto livre
     notes: z.string().max(20000),

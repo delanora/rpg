@@ -28,6 +28,8 @@ export interface CombatantDto {
   name: string;
   ownerUserId: string | null;
   ownerUsername: string | null;
+  /** Avatar do personagem ou ícone da criatura (null = sem imagem). */
+  imageUrl: string | null;
   dexterityMod: number;
   initiative: number | null;
   initiativeRoll: number | null;
@@ -120,6 +122,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     name: combatant.name,
     ownerUserId: combatant.ownerUserId,
     ownerUsername: combatant.character?.user.username ?? null,
+    imageUrl: combatant.character?.avatarUrl || combatant.creature?.imageUrl || null,
     dexterityMod: combatant.dexterityMod,
     initiative: combatant.initiative,
     initiativeRoll: combatant.initiativeRoll,

@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { fileToImagePayload, uploadAvatar } from '../../api';
 import {
   ABILITY_ABBREVIATIONS,
   ALIGNMENTS,
@@ -5,12 +7,36 @@ import {
   SPELL_LEARNING_LABELS,
   hitDieLabel,
 } from '../../dnd';
+import { useReadOnly } from '../../readonly';
 import { clampInt } from '../../utils';
 import { InlineField } from '../InlineField';
+import { Portrait } from '../Portrait';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 export function IdentitySection({ character, update }: SheetSectionProps) {
+  const readOnly = useReadOnly();
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  /** O jogador define o próprio avatar (gravado em `uploads/characters/`). */
+  async function handleAvatar(files: FileList | null): Promise<void> {
+    const file = files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const payload = await fileToImagePayload(file);
+      const image = await uploadAvatar(payload.dataUrl, payload.name);
+      update({ avatarUrl: image.url });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Falha ao enviar o avatar.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const definition = character.classDefinition;
   const classNames = character.classCatalog.map((item) => item.name);
   const subclassEligible = definition !== null && character.level >= definition.subclassLevel;
@@ -29,6 +55,33 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
 
   return (
     <Section title="Identidade" icon="scroll" subtitle="Clique em qualquer campo para editar">
+      <div className="avatar-row">
+        <Portrait src={character.avatarUrl} alt={character.name} size="lg" icon="users" />
+        {readOnly ? null : (
+          <div className="toolbar">
+            <label className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}>
+              {uploading ? 'enviando...' : character.avatarUrl ? 'trocar avatar' : '+ adicionar avatar'}
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                disabled={uploading}
+                onChange={(event) => {
+                  void handleAvatar(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            {character.avatarUrl ? (
+              <button type="button" className="btn btn-small" onClick={() => update({ avatarUrl: '' })}>
+                remover avatar
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+      {uploadError ? <p className="form-error">{uploadError}</p> : null}
+
       <div className="grid grid-3">
         <label className="field">
           <span>Nome</span>

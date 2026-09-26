@@ -121,9 +121,27 @@ export async function fileToImagePayload(file: File): Promise<{ dataUrl: string;
   return { dataUrl, name: file.name };
 }
 
-/** Envia uma imagem (data URL) e recebe a URL pública em `/uploads/...`. */
-export async function uploadImage(dataUrl: string, name: string): Promise<StoredImage> {
+export type UploadFolder = 'localities' | 'creatures' | 'characters' | 'items';
+
+/**
+ * Envia uma imagem (data URL) e recebe a URL pública em `/uploads/<pasta>/...`.
+ * Exclusivo do mestre (localidades, criaturas e itens do catálogo).
+ */
+export async function uploadImage(
+  dataUrl: string,
+  name: string,
+  folder: UploadFolder = 'localities',
+): Promise<StoredImage> {
   const { image } = await api<{ image: StoredImage }>('/api/uploads/image', {
+    method: 'POST',
+    body: { dataUrl, name, folder },
+  });
+  return image;
+}
+
+/** Envia o avatar do próprio personagem (aberto a qualquer jogador conectado). */
+export async function uploadAvatar(dataUrl: string, name: string): Promise<StoredImage> {
+  const { image } = await api<{ image: StoredImage }>('/api/uploads/avatar', {
     method: 'POST',
     body: { dataUrl, name },
   });

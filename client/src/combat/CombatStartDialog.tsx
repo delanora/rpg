@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
+import { Portrait } from '../components/Portrait';
 import type { Creature, Locality } from '../types';
 import type { CombatCreatureEntry } from './combatApi';
 
@@ -138,7 +139,10 @@ export function CombatStartDialog({
                   {available.map((creature) => (
                     <li key={creature.id}>
                       <label className="check-row quantity-row">
-                        <span className="check-name">{creature.name}</span>
+                        <span className="check-name">
+                          <Portrait src={creature.imageUrl} alt="" size="sm" icon="flame" />
+                          <span className="name-text">{creature.name}</span>
+                        </span>
                         <span className="muted">
                           {creature.type || 'sem tipo'} · HP {creature.hpMax} · CA{' '}
                           {creature.armorClass}

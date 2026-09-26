@@ -22,6 +22,7 @@ const createdUsernames: string[] = [];
 const createdCreatureIds: string[] = [];
 const createdCombatIds: string[] = [];
 const createdLocalityIds: string[] = [];
+const createdItemIds: string[] = [];
 
 let failures = 0;
 
@@ -1175,6 +1176,110 @@ async function main(): Promise<void> {
     JSON.stringify(necromancer.classAdjustments.resistances),
   );
 
+  // --- Itens, ícones e avatar ------------------------------------------------
+  console.log('\n10) Itens, ícones e avatar');
+
+  const itemCreatedEvent = waitFor<any>(playerSocket, 'item:created');
+  const itemCreated = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Poção de Cura ${suffix}`,
+      category: 'Poção',
+      weight: 0.5,
+      description: 'Recupera 2d4+2 pontos de vida.',
+    },
+  });
+  check('mestre cadastra item no catálogo (201)', itemCreated.status === 201, JSON.stringify(itemCreated.data));
+  check(
+    'novo item do catálogo chega ao jogador em tempo real',
+    (await itemCreatedEvent.catch(() => null))?.item?.id === itemCreated.data?.item?.id,
+  );
+  const catalogItem = itemCreated.data?.item;
+  createdItemIds.push(catalogItem.id);
+  check('item guarda a categoria e o peso', catalogItem?.category === 'Poção' && catalogItem?.weight === 0.5);
+
+  check(
+    'jogador NÃO cria item no catálogo (403)',
+    (await api('/api/items', { method: 'POST', token: playerToken, body: { name: 'x' } })).status === 403,
+  );
+  check(
+    'jogador lista o catálogo (para o autocomplete)',
+    (await api('/api/items', { token: playerToken })).data.items.some((item: any) => item.id === catalogItem.id),
+  );
+
+  const playerSheetBefore = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const sendSheetEvent = waitFor<any>(playerSocket, 'sheet:updated');
+  const sentItem = await api(`/api/items/${catalogItem.id}/send`, {
+    method: 'POST',
+    token: masterToken,
+    body: { characterId: playerSheetBefore.id, quantity: 3 },
+  });
+  check('mestre envia item ao inventário do jogador (201)', sentItem.status === 201, JSON.stringify(sentItem.data));
+  const sendPayload = await sendSheetEvent.catch(() => null);
+  check(
+    'envio do item avisa a ficha do jogador em tempo real',
+    Boolean(sendPayload?.character?.inventory?.some((entry: any) => entry.itemId === catalogItem.id)),
+    JSON.stringify(sendPayload?.changes),
+  );
+
+  const afterSend = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const received = afterSend.inventory.find((entry: any) => entry.itemId === catalogItem.id);
+  check(
+    'item enviado chega ao inventário com nome/peso/descrição do catálogo',
+    Boolean(received) && received.quantity === 3 && received.weight === 0.5 && received.description.length > 0,
+    JSON.stringify(received),
+  );
+  check('item enviado guarda o vínculo com o catálogo', received?.itemId === catalogItem.id);
+
+  await api(`/api/items/${catalogItem.id}/send`, {
+    method: 'POST',
+    token: masterToken,
+    body: { characterId: playerSheetBefore.id, quantity: 1_000_000 },
+  });
+  const afterBulk = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'mestre envia grandes quantidades e os envios se acumulam',
+    afterBulk.inventory.find((entry: any) => entry.itemId === catalogItem.id)?.quantity === 3 + 1_000_000,
+  );
+
+  // Ícone de criatura e avatar de jogador refletem no combate.
+  await api(`/api/creatures/${wolf.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { imageUrl: '/uploads/creatures/teste.png' },
+  });
+  const combatWithIcons = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  check(
+    'ícone da criatura aparece no combatente',
+    combatWithIcons.combatants.find((item: any) => item.id === creatureCombatant.id)?.imageUrl === '/uploads/creatures/teste.png',
+  );
+
+  const avatarSheetEvent = waitFor<any>(masterSocket, 'sheet:updated');
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: { avatarUrl: '/uploads/characters/avatar.png' },
+  });
+  check(
+    'avatar do jogador avisa o mestre em tempo real',
+    (await avatarSheetEvent.catch(() => null))?.character?.avatarUrl === '/uploads/characters/avatar.png',
+  );
+  const combatWithAvatar = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  check(
+    'avatar do personagem aparece no combatente',
+    combatWithAvatar.combatants.find((item: any) => item.id === playerCombatant.id)?.imageUrl === '/uploads/characters/avatar.png',
+  );
+
+  check(
+    'upload de avatar é aberto ao jogador (400 de validação, não 403)',
+    (await api('/api/uploads/avatar', { method: 'POST', token: playerToken, body: {} })).status === 400,
+  );
+  check(
+    'upload de imagem geral continua exclusivo do mestre (403)',
+    (await api('/api/uploads/image', { method: 'POST', token: playerToken, body: { dataUrl: 'x' } })).status === 403,
+  );
+
   // Os ataques acima mudaram o HP da criatura; atualiza a referência usada
   // pelos checks de dano manual abaixo.
   Object.assign(
@@ -1286,6 +1391,10 @@ async function cleanup(): Promise<void> {
 
   if (createdLocalityIds.length > 0) {
     await prisma.locality.deleteMany({ where: { id: { in: createdLocalityIds } } });
+  }
+
+  if (createdItemIds.length > 0) {
+    await prisma.item.deleteMany({ where: { id: { in: createdItemIds } } });
   }
 
   if (createdUsernames.length > 0) {

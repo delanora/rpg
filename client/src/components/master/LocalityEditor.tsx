@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
-import type { Locality, LocalityPatch } from '../../types';
+import type { Creature, Locality, LocalityPatch } from '../../types';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
+import { Portrait } from '../Portrait';
 import { Section } from '../Section';
 
 interface LocalityEditorProps {
   locality: Locality;
+  /** Criaturas/NPCs vinculados a esta localidade (com seus ícones). */
+  creatures: Creature[];
   onPatch: (patch: LocalityPatch) => void;
   onDelete: () => void;
 }
 
-/** Editor de uma localidade: nome, descrição e uma ou mais imagens. */
-export function LocalityEditor({ locality, onPatch, onDelete }: LocalityEditorProps) {
+/** Editor de uma localidade: nome, descrição, imagens e criaturas do local. */
+export function LocalityEditor({ locality, creatures, onPatch, onDelete }: LocalityEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,6 +111,30 @@ export function LocalityEditor({ locality, onPatch, onDelete }: LocalityEditorPr
                 >
                   <Icon name="x" size={14} />
                 </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section
+        title="Criaturas e NPCs"
+        icon="flame"
+        subtitle="Quem habita este lugar (com seus ícones)"
+      >
+        {creatures.length === 0 ? (
+          <p className="empty-hint">Nenhuma criatura vinculada a esta localidade ainda.</p>
+        ) : (
+          <ul className="creature-mini-list">
+            {creatures.map((creature) => (
+              <li key={creature.id} className="creature-mini">
+                <Portrait
+                  src={creature.imageUrl}
+                  alt={creature.name}
+                  icon={creature.kind === 'NPC' ? 'crown' : 'flame'}
+                />
+                <span className="creature-mini-name">{creature.name}</span>
+                <span className="muted">{creature.kind === 'NPC' ? 'NPC' : creature.type || 'criatura'}</span>
               </li>
             ))}
           </ul>

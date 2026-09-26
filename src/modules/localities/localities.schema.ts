@@ -22,10 +22,14 @@ export const createLocalitySchema = z.object({
 /** Edição: aceita qualquer subconjunto de campos. */
 export const updateLocalitySchema = localityFields.partial();
 
-/** Upload de imagem: data URL + nome amigável. */
+/** Pastas de upload aceitas (espelha src/lib/uploads.ts). */
+export const uploadFolderSchema = z.enum(['localities', 'creatures', 'characters', 'items']);
+
+/** Upload de imagem: data URL + nome amigável + pasta de destino opcional. */
 export const uploadImageSchema = z.object({
   dataUrl: z.string().min(1, 'Envie uma imagem.'),
   name: z.string().trim().max(200).optional(),
+  folder: uploadFolderSchema.optional(),
 });
 
 export type CreateLocalityInput = z.infer<typeof createLocalitySchema>;

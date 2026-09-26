@@ -40,6 +40,8 @@ const creatureFields = z.object({
   resistances: damageTypeListSchema,
   immunities: damageTypeListSchema,
   description: z.string().max(20000),
+  /** Ícone/retrato da criatura/NPC (`/uploads/creatures/...`). */
+  imageUrl: z.string().trim().max(500),
 });
 
 /** Na criação só se informa o essencial; o resto vem dos padrões. */

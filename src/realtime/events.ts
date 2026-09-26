@@ -2,6 +2,7 @@ import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
+import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
 
 /**
@@ -94,6 +95,14 @@ export const ServerEvents = {
   /** Localidade removida pelo mestre. */
   LOCALITY_DELETED: 'locality:deleted',
 
+  // Catálogo de itens (entrega para toda a mesa: jogadores consultam na ficha)
+  /** Item cadastrado no catálogo pelo mestre. */
+  ITEM_CREATED: 'item:created',
+  /** Item alterado no catálogo pelo mestre. */
+  ITEM_UPDATED: 'item:updated',
+  /** Item removido do catálogo pelo mestre. */
+  ITEM_DELETED: 'item:deleted',
+
   // Combate (entrega para toda a mesa: jogadores e mestre participam)
   /** Combate iniciado — também é o gatilho do pedido de iniciativa. */
   COMBAT_STARTED: 'combat:started',
@@ -135,6 +144,20 @@ export interface LocalityUpdatedPayload {
 
 export interface LocalityDeletedPayload {
   localityId: string;
+}
+
+/** Eventos do catálogo de itens (entregues para toda a mesa). */
+export interface ItemCreatedPayload {
+  item: ItemDto;
+}
+
+export interface ItemUpdatedPayload {
+  item: ItemDto;
+  changes: Record<string, unknown>;
+}
+
+export interface ItemDeletedPayload {
+  itemId: string;
 }
 
 /** --- Combate ----------------------------------------------------------------- */

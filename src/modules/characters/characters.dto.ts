@@ -43,6 +43,10 @@ export interface InventoryItemDto {
   quantity: number;
   weight: number;
   equipped: boolean;
+  /** Sprite do item (`/uploads/items/...`); vazio quando é avulso. */
+  imageUrl: string;
+  /** Id do item no catálogo do mestre ('' quando é avulso). */
+  itemId: string;
 }
 
 export type SpellDto = z.infer<typeof spellSchema>;
@@ -83,6 +87,8 @@ export interface CharacterDto {
   background: string;
   alignment: string;
   experience: number;
+  /** URL pública do avatar do personagem ('' = sem avatar). */
+  avatarUrl: string;
 
   // Atributos
   strength: number;
@@ -232,6 +238,7 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     background: character.background,
     alignment: character.alignment,
     experience: character.experience,
+    avatarUrl: character.avatarUrl,
     strength: character.strength,
     dexterity: character.dexterity,
     constitution: character.constitution,

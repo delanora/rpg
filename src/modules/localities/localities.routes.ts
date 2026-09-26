@@ -68,11 +68,10 @@ localitiesRouter.delete('/:id', async (req, res) => {
 
 export const uploadsRouter = Router();
 
-/** Uploads também são exclusivos do mestre. */
-uploadsRouter.use(authenticate, requireRole('MASTER'));
+uploadsRouter.use(authenticate);
 
-/** POST /api/uploads/image — recebe uma data URL e devolve a URL pública. */
-uploadsRouter.post('/image', async (req, res) => {
+/** POST /api/uploads/image — upload do mestre (localidades, criaturas, itens). */
+uploadsRouter.post('/image', requireRole('MASTER'), async (req, res) => {
   const parsed = uploadImageSchema.safeParse(req.body ?? {});
 
   if (!parsed.success) {
@@ -80,6 +79,26 @@ uploadsRouter.post('/image', async (req, res) => {
     return;
   }
 
-  const image = await saveDataUrlImage(parsed.data.dataUrl, parsed.data.name ?? '');
+  const image = await saveDataUrlImage(
+    parsed.data.dataUrl,
+    parsed.data.name ?? '',
+    parsed.data.folder ?? 'localities',
+  );
+  res.status(201).json({ image });
+});
+
+/**
+ * POST /api/uploads/avatar — avatar do próprio jogador. Aberto a qualquer
+ * usuário autenticado, sempre gravado na pasta `characters`.
+ */
+uploadsRouter.post('/avatar', async (req, res) => {
+  const parsed = uploadImageSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const image = await saveDataUrlImage(parsed.data.dataUrl, parsed.data.name ?? '', 'characters');
   res.status(201).json({ image });
 });

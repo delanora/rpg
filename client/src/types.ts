@@ -37,6 +37,10 @@ export interface InventoryItem {
   quantity: number;
   weight: number;
   equipped: boolean;
+  /** Sprite do item (`/uploads/items/...`); vazio quando é avulso. */
+  imageUrl: string;
+  /** Id do item no catálogo do mestre ('' quando é avulso). */
+  itemId: string;
 }
 
 export interface Spell {
@@ -252,6 +256,8 @@ export interface Character {
   background: string;
   alignment: string;
   experience: number;
+  /** URL pública do avatar ('' = sem avatar). */
+  avatarUrl: string;
 
   strength: number;
   dexterity: number;
@@ -334,6 +340,7 @@ export interface CharacterPatch {
   background?: string;
   alignment?: string;
   experience?: number;
+  avatarUrl?: string;
 
   strength?: number;
   dexterity?: number;
@@ -418,6 +425,8 @@ export interface Creature {
   resistances: string[];
   immunities: string[];
   description: string;
+  /** URL pública do ícone/retrato ('' = sem imagem). */
+  imageUrl: string;
 
   version: number;
   createdAt: string;
@@ -450,6 +459,7 @@ export interface CreaturePatch {
   resistances?: string[];
   immunities?: string[];
   description?: string;
+  imageUrl?: string;
 }
 
 /** Payload do evento `sheet:updated` recebido pelo WebSocket. */
@@ -500,6 +510,57 @@ export interface LocalityDeletedPayload {
   localityId: string;
 }
 
+/** --- Catálogo de itens ------------------------------------------------------ */
+
+/** Categorias do catálogo (espelha src/modules/items/items.schema.ts). */
+export const ITEM_CATEGORIES = [
+  'Arma',
+  'Armadura',
+  'Escudo',
+  'Poção',
+  'Anel',
+  'Cajado',
+  'Item Geral',
+  'Tesouro',
+  'Outro',
+] as const;
+
+export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
+
+/** Item do catálogo central gerenciado pelo mestre. */
+export interface Item {
+  id: string;
+  name: string;
+  description: string;
+  weight: number;
+  category: string;
+  imageUrl: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ItemPatch {
+  name?: string;
+  description?: string;
+  weight?: number;
+  category?: ItemCategory;
+  imageUrl?: string;
+}
+
+export interface ItemCreatedPayload {
+  item: Item;
+}
+
+export interface ItemUpdatedPayload {
+  item: Item;
+  changes: Record<string, unknown>;
+}
+
+export interface ItemDeletedPayload {
+  itemId: string;
+}
+
 /** --- Combate ---------------------------------------------------------------- */
 
 export type CombatStatus = 'PENDING_INITIATIVE' | 'ACTIVE' | 'ENDED';
@@ -513,6 +574,8 @@ export interface CombatantDto {
   name: string;
   ownerUserId: string | null;
   ownerUsername: string | null;
+  /** Avatar do personagem ou ícone da criatura (null = sem imagem). */
+  imageUrl: string | null;
   dexterityMod: number;
   initiative: number | null;
   initiativeRoll: number | null;

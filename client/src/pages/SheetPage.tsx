@@ -107,6 +107,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
     <div className={combat ? 'app-shell combat-active' : 'app-shell'}>
       <AppHeader
         title={combat ? `${character?.name ?? 'Sem ficha'} · em combate` : character ? character.name : 'Sem ficha'}
+        avatarUrl={character?.avatarUrl}
         connection={connection}
         online={online}
         lastEventAt={lastEventAt}

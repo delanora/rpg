@@ -5,6 +5,9 @@ import type {
   CreatureCreatedPayload,
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
+  ItemCreatedPayload,
+  ItemDeletedPayload,
+  ItemUpdatedPayload,
   LocalityCreatedPayload,
   LocalityDeletedPayload,
   LocalityUpdatedPayload,
@@ -32,6 +35,9 @@ export interface ServerToClientEvents {
   'locality:created': (payload: LocalityCreatedPayload) => void;
   'locality:updated': (payload: LocalityUpdatedPayload) => void;
   'locality:deleted': (payload: LocalityDeletedPayload) => void;
+  'item:created': (payload: ItemCreatedPayload) => void;
+  'item:updated': (payload: ItemUpdatedPayload) => void;
+  'item:deleted': (payload: ItemDeletedPayload) => void;
   'combat:started': (payload: CombatStartedPayload) => void;
   'combat:updated': (payload: CombatUpdatedPayload) => void;
   'combat:turn': (payload: CombatTurnPayload) => void;

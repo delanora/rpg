@@ -3,6 +3,7 @@ import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
 import { CreaturesTab } from '../components/master/CreaturesTab';
+import { ItemsTab } from '../components/master/ItemsTab';
 import { LocalitiesTab } from '../components/master/LocalitiesTab';
 import { SheetsTab } from '../components/master/SheetsTab';
 import { CombatStartDialog } from '../combat/CombatStartDialog';
@@ -15,13 +16,15 @@ import type {
   Creature,
   CreatureKind,
   CreaturePatch,
+  Item,
+  ItemPatch,
   Locality,
   LocalityPatch,
   SessionUser,
 } from '../types';
 import { useRealtime } from '../useRealtime';
 
-type Tab = 'sheets' | 'creatures' | 'npcs' | 'localities';
+type Tab = 'sheets' | 'creatures' | 'npcs' | 'localities' | 'items';
 
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
@@ -30,6 +33,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [localities, setLocalities] = useState<Locality[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showStartDialog, setShowStartDialog] = useState(false);
@@ -85,6 +89,20 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     onLocalityDeleted: (payload) => {
       setLocalities((prev) => prev.filter((locality) => locality.id !== payload.localityId));
     },
+
+    onItemCreated: (payload) => {
+      setItems((prev) =>
+        prev.some((item) => item.id === payload.item.id)
+          ? prev
+          : [...prev, payload.item].sort(byName),
+      );
+    },
+    onItemUpdated: (payload) => {
+      setItems((prev) => prev.map((item) => (item.id === payload.item.id ? payload.item : item)));
+    },
+    onItemDeleted: (payload) => {
+      setItems((prev) => prev.filter((item) => item.id !== payload.itemId));
+    },
   });
 
   // Carga inicial: fichas, bestiário, localidades e eventual combate em andamento.
@@ -95,13 +113,15 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       api<{ characters: Character[] }>('/api/characters'),
       api<{ creatures: Creature[] }>('/api/creatures'),
       api<{ localities: Locality[] }>('/api/localities'),
+      api<{ items: Item[] }>('/api/items'),
       fetchActiveCombat(),
     ])
-      .then(([charactersResult, creaturesResult, localitiesResult, activeCombat]) => {
+      .then(([charactersResult, creaturesResult, localitiesResult, itemsResult, activeCombat]) => {
         if (!active) return;
         setCharacters(charactersResult.characters);
         setCreatures(creaturesResult.creatures);
         setLocalities(localitiesResult.localities);
+        setItems(itemsResult.items);
         combatState.setCombat(activeCombat);
       })
       .catch((err: unknown) => {
@@ -199,6 +219,53 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  const createItem = useCallback(async (): Promise<Item> => {
+    const { item } = await api<{ item: Item }>('/api/items', {
+      method: 'POST',
+      body: { name: 'Novo item' },
+    });
+    setItems((prev) =>
+      prev.some((entry) => entry.id === item.id) ? prev : [...prev, item].sort(byName),
+    );
+    return item;
+  }, []);
+
+  const patchItem = useCallback(async (id: string, patch: ItemPatch) => {
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+
+    try {
+      const { item } = await api<{ item: Item }>(`/api/items/${id}`, {
+        method: 'PATCH',
+        body: patch,
+      });
+      setItems((prev) => prev.map((entry) => (entry.id === id ? item : entry)));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar o item.');
+    }
+  }, []);
+
+  const deleteItem = useCallback(async (id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id));
+
+    try {
+      await api(`/api/items/${id}`, { method: 'DELETE' });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao remover o item.');
+    }
+  }, []);
+
+  const sendItem = useCallback(
+    async (itemId: string, characterId: string, quantity: number) => {
+      await api(`/api/items/${itemId}/send`, {
+        method: 'POST',
+        body: { characterId, quantity },
+      });
+    },
+    [],
+  );
+
   /** Localiza os ataques de qualquer combatente para o painel de ataque do mestre. */
   const attacksFor = useCallback(
     (combatantId: string): Attack[] => {
@@ -276,6 +343,13 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           >
             <Icon name="scroll" size={16} /> Localidades
           </button>
+          <button
+            type="button"
+            className={tab === 'items' ? 'tab active' : 'tab'}
+            onClick={() => setTab('items')}
+          >
+            <Icon name="flask" size={16} /> Itens
+          </button>
 
           <button
             type="button"
@@ -316,9 +390,19 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         ) : tab === 'localities' ? (
           <LocalitiesTab
             localities={localities}
+            creatures={creatures}
             onCreate={createLocality}
             onPatch={patchLocality}
             onDelete={deleteLocality}
+          />
+        ) : tab === 'items' ? (
+          <ItemsTab
+            items={items}
+            characters={characters}
+            onCreate={createItem}
+            onPatch={patchItem}
+            onDelete={deleteItem}
+            onSend={sendItem}
           />
         ) : (
           <CreaturesTab
