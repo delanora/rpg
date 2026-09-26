@@ -76,7 +76,7 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
               const detail = derived.saves.find((save) => save.ability === ability);
 
               return (
-                <li className="prof-row" key={ability}>
+                <li className="prof-row prof-row-save" key={ability}>
                   <input
                     type="checkbox"
                     checked={character.saves[ability] ?? false}

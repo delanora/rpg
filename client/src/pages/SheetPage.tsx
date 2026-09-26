@@ -122,7 +122,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
         </div>
       ) : null}
 
-      <main className="app-main">
+      <main className="app-main app-main-wide">
         {loading ? (
           <p className="splash">Carregando a ficha...</p>
         ) : (

@@ -12,20 +12,16 @@ import { SkillsSavesSection } from './sections/SkillsSavesSection';
 import { SpellsSection } from './sections/SpellsSection';
 import { VitalsSection } from './sections/VitalsSection';
 
-/** Abas da ficha, como as divisões de um grimório. */
-const TABS = [
-  { key: 'identity', label: 'Identidade', icon: 'scroll' },
-  { key: 'abilities', label: 'Atributos', icon: 'shield' },
-  { key: 'vitals', label: 'Vida & Defesa', icon: 'heart' },
+/** Seções que ficam nas abas — o resto do HUD nunca sai da tela. */
+const TAB_SECTIONS = [
   { key: 'skills', label: 'Perícias', icon: 'eye' },
   { key: 'inventory', label: 'Inventário', icon: 'flask' },
   { key: 'spells', label: 'Magias', icon: 'star' },
   { key: 'attacks', label: 'Ataques', icon: 'sword' },
   { key: 'features', label: 'Características', icon: 'book' },
-  { key: 'notes', label: 'Anotações', icon: 'quill' },
 ] as const satisfies readonly { key: string; label: string; icon: IconName }[];
 
-type TabKey = (typeof TABS)[number]['key'];
+type TabKey = (typeof TAB_SECTIONS)[number]['key'];
 
 interface SheetViewProps {
   character: Character;
@@ -34,15 +30,8 @@ interface SheetViewProps {
   readOnly?: boolean;
 }
 
-/** Renderiza a seção correspondente à aba ativa. */
-function renderSection(key: TabKey, character: Character, update: (patch: CharacterPatch) => void) {
+function renderTab(key: TabKey, character: Character, update: (patch: CharacterPatch) => void) {
   switch (key) {
-    case 'identity':
-      return <IdentitySection character={character} update={update} />;
-    case 'abilities':
-      return <AbilitiesSection character={character} update={update} />;
-    case 'vitals':
-      return <VitalsSection character={character} update={update} />;
     case 'skills':
       return <SkillsSavesSection character={character} update={update} />;
     case 'inventory':
@@ -53,38 +42,58 @@ function renderSection(key: TabKey, character: Character, update: (patch: Charac
       return <AttacksSection character={character} update={update} />;
     case 'features':
       return <FeaturesSection character={character} update={update} />;
-    case 'notes':
-      return <NotesSection character={character} update={update} />;
   }
 }
 
-/** Ficha completa, em abas. Reutilizada pelo jogador (editável) e pelo mestre (leitura). */
+/**
+ * Ficha em forma de HUD: identidade, atributos, vida e anotações ficam sempre
+ * à vista, e só as seções mais longas (perícias, inventário, magias, ataques,
+ * características) vivem em abas. Reutilizada pelo jogador e pelo mestre.
+ */
 export function SheetView({ character, update, readOnly = false }: SheetViewProps) {
-  const [tab, setTab] = useState<TabKey>('identity');
-  const active = TABS.find((item) => item.key === tab) ?? TABS[0];
+  const [tab, setTab] = useState<TabKey>('skills');
+  const active = TAB_SECTIONS.find((item) => item.key === tab) ?? TAB_SECTIONS[0];
 
   return (
     <ReadOnlyProvider value={readOnly}>
       <div className="sheet">
-        <div className="sheet-tabs" role="tablist" aria-label="Seções da ficha">
-          {TABS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              role="tab"
-              aria-selected={item.key === tab}
-              className={item.key === tab ? 'sheet-tab active' : 'sheet-tab'}
-              onClick={() => setTab(item.key)}
-            >
-              <Icon name={item.icon} size={16} />
-              <span>{item.label}</span>
-            </button>
-          ))}
+        {/* HUD fixo: o essencial do personagem nunca sai da tela. */}
+        <div className="sheet-hud">
+          <IdentitySection character={character} update={update} />
+          <div className="sheet-hud-row">
+            <AbilitiesSection character={character} update={update} />
+            <VitalsSection character={character} update={update} />
+          </div>
         </div>
 
-        {/* A `key` reinicia a animação de "virar a página" a cada troca de aba. */}
-        <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
-          {renderSection(tab, character, update)}
+        {/* Área de trabalho: abas à esquerda, anotações sempre à direita. */}
+        <div className="sheet-work">
+          <div className="sheet-work-main">
+            <div className="sheet-tabs" role="tablist" aria-label="Seções da ficha">
+              {TAB_SECTIONS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={item.key === tab}
+                  className={item.key === tab ? 'sheet-tab active' : 'sheet-tab'}
+                  onClick={() => setTab(item.key)}
+                >
+                  <Icon name={item.icon} size={16} />
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* A `key` reinicia a animação de "virar a página" a cada troca de aba. */}
+            <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
+              {renderTab(tab, character, update)}
+            </div>
+          </div>
+
+          <div className="sheet-work-side">
+            <NotesSection character={character} update={update} />
+          </div>
         </div>
       </div>
     </ReadOnlyProvider>

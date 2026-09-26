@@ -925,6 +925,58 @@ a {
   animation: ink-in 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* --- HUD da ficha: o essencial sempre à vista ----------------------------- */
+
+.sheet-hud {
+  display: grid;
+  gap: 1rem;
+}
+
+.sheet-hud-row {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(340px, 1.05fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+/* Identidade ocupa a largura toda e se distribui em uma faixa. */
+.sheet-hud > .sheet-section .grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+}
+
+.sheet-hud .section-header {
+  padding: 0.6rem 0.9rem 0.55rem;
+}
+
+.sheet-hud .section-body {
+  padding: 0.85rem;
+}
+
+/* Área de trabalho: abas à esquerda, anotações sempre à direita. */
+.sheet-work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 1rem;
+  align-items: start;
+}
+
+.sheet-work-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.sheet-work-side {
+  position: sticky;
+  top: 5.2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.sheet-work-side .notes-area {
+  min-height: 14rem;
+}
+
 /* ==========================================================================
    9. Seções da ficha
    ========================================================================== */
@@ -1350,6 +1402,11 @@ a {
 
 .prof-row:hover {
   background: rgba(184, 145, 42, 0.12);
+}
+
+/* Salvaguardas têm 4 colunas (sem a caixa de especialização). */
+.prof-list .prof-row-save {
+  grid-template-columns: 1.2rem 2.4rem 1fr auto;
 }
 
 .prof-ability {
@@ -2685,6 +2742,15 @@ input[type='checkbox']:disabled {
   }
 
   .master-list {
+    position: static;
+  }
+
+  .sheet-hud-row,
+  .sheet-work {
+    grid-template-columns: 1fr;
+  }
+
+  .sheet-work-side {
     position: static;
   }
 
