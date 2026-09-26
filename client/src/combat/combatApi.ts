@@ -7,10 +7,19 @@ export function fetchActiveCombat(): Promise<CombatDto | null> {
   return api<{ combat: CombatDto | null }>('/api/combat/active').then((result) => result.combat);
 }
 
-export function startCombat(creatureIds: string[]): Promise<CombatDto> {
+export interface CombatCreatureEntry {
+  creatureId: string;
+  quantity: number;
+}
+
+/** Inicia o combate na localidade escolhida, com N cópias de cada criatura. */
+export function startCombat(input: {
+  localityId?: string;
+  entries: CombatCreatureEntry[];
+}): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat', {
     method: 'POST',
-    body: { creatureIds },
+    body: input,
   }).then((result) => result.combat);
 }
 

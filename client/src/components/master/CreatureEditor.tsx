@@ -1,5 +1,5 @@
 import { ABILITY_KEYS, ABILITY_LABELS, DAMAGE_TYPES, formatModifier } from '../../dnd';
-import type { Creature, CreaturePatch } from '../../types';
+import type { Creature, CreaturePatch, Locality } from '../../types';
 import { clampInt } from '../../utils';
 import { AttacksTable } from '../AttacksTable';
 import { Icon } from '../Icon';
@@ -45,11 +45,17 @@ function DamageChips({ label, selected, onChange }: DamageChipsProps) {
 
 interface CreatureEditorProps {
   creature: Creature;
+  localities: Locality[];
   onPatch: (patch: CreaturePatch) => void;
   onDelete: () => void;
 }
 
-export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorProps) {
+export function CreatureEditor({
+  creature,
+  localities,
+  onPatch,
+  onDelete,
+}: CreatureEditorProps) {
   // Bônus sugerido para um novo ataque: o melhor entre Força e Destreza.
   const attackBonus = Math.max(
     creature.derived.modifiers.strength,
@@ -60,6 +66,17 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
   const hpRatio = creature.hpMax > 0 ? creature.hpCurrent / creature.hpMax : 0;
   const hpClass = hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
 
+  /** Alterna o vínculo com uma localidade — sempre mantendo ao menos uma. */
+  function toggleLocality(id: string): void {
+    const current = creature.localities.map((locality) => locality.id);
+    const next = current.includes(id)
+      ? current.filter((item) => item !== id)
+      : [...current, id];
+
+    if (next.length === 0) return;
+    onPatch({ localityIds: next });
+  }
+
   return (
     <div className="creature-editor">
       <div className="detail-head">
@@ -67,7 +84,7 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
           <Icon name="flame" size={22} /> {creature.name}
         </h2>
         <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
-          remover criatura
+          remover {creature.kind === 'NPC' ? 'NPC' : 'criatura'}
         </button>
       </div>
 
@@ -105,6 +122,48 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
             />
           </label>
         </div>
+      </Section>
+
+      <Section
+        title="Classificação"
+        icon="crown"
+        subtitle="Criaturas são monstros de combate; NPCs são personagens narrativos"
+      >
+        <label className="field field-inline">
+          <span>Tipo de entidade</span>
+          <select
+            value={creature.kind}
+            aria-label="Tipo de entidade"
+            onChange={(event) => onPatch({ kind: event.target.value as Creature['kind'] })}
+          >
+            <option value="CREATURE">Criatura (combate)</option>
+            <option value="NPC">NPC (narrativo)</option>
+          </select>
+        </label>
+
+        <h3 className="subsection-title">Localidades</h3>
+        {localities.length === 0 ? (
+          <p className="empty-hint">
+            Cadastre uma localidade na aba “Localidades” para poder vincular.
+          </p>
+        ) : (
+          <div className="chips">
+            {localities.map((locality) => {
+              const active = creature.localities.some((item) => item.id === locality.id);
+              return (
+                <button
+                  key={locality.id}
+                  type="button"
+                  className={active ? 'chip chip-on' : 'chip'}
+                  aria-pressed={active}
+                  onClick={() => toggleLocality(locality.id)}
+                >
+                  {locality.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </Section>
 
       <Section title="Atributos" icon="shield">

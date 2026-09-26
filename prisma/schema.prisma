@@ -99,13 +99,41 @@ model Character {
 // Segue a mesma modelagem híbrida da ficha: atributos e vitais em colunas,
 // ataques/resistências/imunidades em JSONB. As criaturas ficam disponíveis
 // para o sistema de combate da Etapa 4.
+//
+// Criaturas e NPCs compartilham os mesmos campos; o que os separa é o `kind`.
+// NPCs são entidades narrativas e podem ser vinculados a localidades.
 // -----------------------------------------------------------------------------
+
+/// Separa monstros de combate (CREATURE) de personagens narrativos (NPC).
+enum CreatureKind {
+  CREATURE
+  NPC
+}
+
+/// Local do mundo (cidade, masmorra, taverna...) com uma ou mais imagens.
+model Locality {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  /// Lista de imagens: [{ url, name }]. Os arquivos ficam em `uploads/`.
+  images      Json     @default("[]")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creatures Creature[]
+  combats   Combat[]
+
+  @@index([name])
+  @@map("localities")
+}
 
 model Creature {
   id String @id @default(cuid())
 
   // Identificação
   name            String
+  kind            CreatureKind @default(CREATURE)
   type            String @default("") // ex.: Humanoide, Besta, Dragão
   challengeRating String @default("") // Nível de Desafio (ND), ex.: "1/2", "5"
 
@@ -129,6 +157,9 @@ model Creature {
   immunities  Json @default("[]") // tipos de dano imunes
   description String @default("")
 
+  /// Localidades às quais esta criatura/NPC pertence (uma ou mais).
+  localities Locality[]
+
   /// Incrementado a cada alteração; ajuda a ordenar eventos em tempo real.
   version    Int         @default(1)
   createdAt  DateTime    @default(now())
@@ -136,6 +167,7 @@ model Creature {
   combatants Combatant[]
 
   @@index([name])
+  @@index([kind])
   @@map("creatures")
 }
 
@@ -164,10 +196,15 @@ model Combat {
   round        Int          @default(1)
   /// Posição na ordem calculada (ordenada por iniciativa).
   currentIndex Int          @default(0)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  endedAt      DateTime?
-  combatants   Combatant[]
+
+  /// Localidade onde o combate acontece (opcional, informada na preparação).
+  localityId String?
+  locality   Locality? @relation(fields: [localityId], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  endedAt    DateTime?
+  combatants Combatant[]
 
   @@index([status])
   @@map("combats")
@@ -188,10 +225,17 @@ model Combatant {
   creature    Creature?  @relation(fields: [creatureId], references: [id], onDelete: SetNull)
 
   /// Nome no momento da entrada em combate (a criatura pode ser renomeada depois).
+  /// Várias cópias da mesma criatura entram como "Goblin 1", "Goblin 2"...
   name         String
   ownerUserId  String?
   /// Modificador de Destreza fixado na entrada, usado na iniciativa e no desempate.
   dexterityMod Int     @default(0)
+
+  /// SNAPSHOT de vitais, usado pelas criaturas para que cada cópia tenha a
+  /// própria vida. Em personagens fica nulo e a vida é lida ao vivo da ficha.
+  hpCurrent  Int?
+  hpMax      Int?
+  armorClass Int?
 
   /// Resultados em `null` enquanto o combatente ainda não rolou a iniciativa.
   initiative     Int?

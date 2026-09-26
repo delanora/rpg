@@ -8,7 +8,6 @@ import {
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toCharacterDto } from '../characters/characters.dto.js';
-import { toCreatureDto } from '../creatures/creatures.dto.js';
 import { abilityModifier } from '../shared/dnd5e.js';
 import { rollD20, rollDice } from '../shared/dice.js';
 import {
@@ -39,6 +38,7 @@ function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }) {
   return prisma.combat.findFirst({
     where,
     include: {
+      locality: { select: { id: true, name: true } },
       combatants: {
         include: {
           character: { include: { user: { select: { username: true } } } },
@@ -140,19 +140,43 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
   }
 
   // Entram todos os personagens de jogador (a mesa é única e fixa) e as
-  // criaturas escolhidas pelo mestre.
+  // criaturas escolhidas pelo mestre, com a quantidade de cópias de cada uma.
   const characters = await prisma.character.findMany({
     include: { user: { select: { role: true } } },
     orderBy: { name: 'asc' },
   });
 
-  const creatures = input.creatureIds.length
-    ? await prisma.creature.findMany({ where: { id: { in: input.creatureIds } } })
+  const entries = input.entries.filter((entry) => entry.quantity > 0);
+  const creatureIds = [...new Set(entries.map((entry) => entry.creatureId))];
+  // NPCs são entidades narrativas e não entram em combate.
+  const creatures = creatureIds.length
+    ? await prisma.creature.findMany({
+        where: { id: { in: creatureIds }, kind: 'CREATURE' },
+      })
     : [];
+  const creatureById = new Map(creatures.map((creature) => [creature.id, creature]));
+
+  const creatureCombatants = entries.flatMap((entry) => {
+    const creature = creatureById.get(entry.creatureId);
+    if (!creature) return [];
+
+    return Array.from({ length: entry.quantity }, (_, index) => ({
+      kind: 'CREATURE' as const,
+      creatureId: creature.id,
+      // Cópias da mesma criatura recebem um sufixo para se distinguirem.
+      name: entry.quantity > 1 ? `${creature.name} ${index + 1}` : creature.name,
+      dexterityMod: abilityModifier(creature.dexterity),
+      // Snapshot de vitais: cada cópia rastreia a própria vida.
+      hpCurrent: creature.hpCurrent,
+      hpMax: creature.hpMax,
+      armorClass: creature.armorClass,
+    }));
+  });
 
   const created = await prisma.combat.create({
     data: {
       status: 'PENDING_INITIATIVE',
+      ...(input.localityId ? { localityId: input.localityId } : {}),
       combatants: {
         create: [
           ...characters
@@ -164,12 +188,7 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
               ownerUserId: character.userId,
               dexterityMod: abilityModifier(character.dexterity),
             })),
-          ...creatures.map((creature) => ({
-            kind: 'CREATURE' as const,
-            creatureId: creature.id,
-            name: creature.name,
-            dexterityMod: abilityModifier(creature.dexterity),
-          })),
+          ...creatureCombatants,
         ],
       },
     },
@@ -339,21 +358,19 @@ async function changeHp(
     return { hpCurrent: updated.hpCurrent, hpMax: updated.hpMax };
   }
 
-  if (combatant.kind === 'CREATURE' && combatant.creatureId && combatant.creature) {
-    const { creature } = combatant;
-    const nextHp = Math.max(0, Math.min(creature.hpCurrent + delta, Math.max(creature.hpMax, 0)));
+  if (combatant.kind === 'CREATURE') {
+    // A vida é do próprio combatente (snapshot): várias cópias iguais rastreiam
+    // o dano independentemente e o bestiário não é alterado pelo combate.
+    const hpMax = combatant.hpMax ?? combatant.creature?.hpMax ?? 0;
+    const hpCurrent = combatant.hpCurrent ?? combatant.creature?.hpCurrent ?? 0;
+    const nextHp = Math.max(0, Math.min(hpCurrent + delta, Math.max(hpMax, 0)));
 
-    const updated = await prisma.creature.update({
-      where: { id: creature.id },
-      data: { hpCurrent: nextHp, version: { increment: 1 } },
+    const updated = await prisma.combatant.update({
+      where: { id: combatant.id },
+      data: { hpCurrent: nextHp },
     });
 
-    getBroadcaster().toMasters(ServerEvents.CREATURE_UPDATED, {
-      creature: toCreatureDto(updated),
-      changes: { hpCurrent: updated.hpCurrent },
-    });
-
-    return { hpCurrent: updated.hpCurrent, hpMax: updated.hpMax };
+    return { hpCurrent: updated.hpCurrent ?? nextHp, hpMax };
   }
 
   return null;
@@ -398,7 +415,8 @@ export async function resolveAttack(
     throw new HttpError('Ataque não encontrado nesta ficha ou criatura.', 404);
   }
 
-  const targetArmorClass = target.character?.armorClass ?? target.creature?.armorClass ?? 10;
+  const targetArmorClass =
+    target.armorClass ?? target.character?.armorClass ?? target.creature?.armorClass ?? 10;
 
   const attackRoll = rollD20();
   const attackTotal = attackRoll + attack.attackBonus;

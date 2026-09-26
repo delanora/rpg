@@ -2,6 +2,7 @@ import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
+import type { LocalityDto } from '../modules/localities/localities.dto.js';
 
 /**
  * Contrato central de eventos do Socket.io.
@@ -85,6 +86,14 @@ export const ServerEvents = {
   /** Criatura removida pelo mestre. */
   CREATURE_DELETED: 'creature:deleted',
 
+  // Localidades (entrega apenas à sala dos mestres)
+  /** Localidade cadastrada pelo mestre. */
+  LOCALITY_CREATED: 'locality:created',
+  /** Localidade alterada pelo mestre. */
+  LOCALITY_UPDATED: 'locality:updated',
+  /** Localidade removida pelo mestre. */
+  LOCALITY_DELETED: 'locality:deleted',
+
   // Combate (entrega para toda a mesa: jogadores e mestre participam)
   /** Combate iniciado — também é o gatilho do pedido de iniciativa. */
   COMBAT_STARTED: 'combat:started',
@@ -112,6 +121,20 @@ export interface CreatureUpdatedPayload {
 
 export interface CreatureDeletedPayload {
   creatureId: string;
+}
+
+/** Eventos de localidades (entregues apenas à sala dos mestres). */
+export interface LocalityCreatedPayload {
+  locality: LocalityDto;
+}
+
+export interface LocalityUpdatedPayload {
+  locality: LocalityDto;
+  changes: Record<string, unknown>;
+}
+
+export interface LocalityDeletedPayload {
+  localityId: string;
 }
 
 /** --- Combate ----------------------------------------------------------------- */

@@ -10,6 +10,9 @@ import type {
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
   DiceRolledPayload,
+  LocalityCreatedPayload,
+  LocalityDeletedPayload,
+  LocalityUpdatedPayload,
   OnlineUser,
   SheetUpdatedPayload,
 } from './types';
@@ -21,6 +24,9 @@ export interface RealtimeHandlers {
   onCreatureCreated?: (payload: CreatureCreatedPayload) => void;
   onCreatureUpdated?: (payload: CreatureUpdatedPayload) => void;
   onCreatureDeleted?: (payload: CreatureDeletedPayload) => void;
+  onLocalityCreated?: (payload: LocalityCreatedPayload) => void;
+  onLocalityUpdated?: (payload: LocalityUpdatedPayload) => void;
+  onLocalityDeleted?: (payload: LocalityDeletedPayload) => void;
   onCombatStarted?: (payload: CombatStartedPayload) => void;
   onCombatUpdated?: (payload: CombatUpdatedPayload) => void;
   onCombatTurn?: (payload: CombatTurnPayload) => void;
@@ -59,6 +65,10 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('creature:created', (payload) => handlersRef.current.onCreatureCreated?.(payload));
     socket.on('creature:updated', (payload) => handlersRef.current.onCreatureUpdated?.(payload));
     socket.on('creature:deleted', (payload) => handlersRef.current.onCreatureDeleted?.(payload));
+
+    socket.on('locality:created', (payload) => handlersRef.current.onLocalityCreated?.(payload));
+    socket.on('locality:updated', (payload) => handlersRef.current.onLocalityUpdated?.(payload));
+    socket.on('locality:deleted', (payload) => handlersRef.current.onLocalityDeleted?.(payload));
 
     socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
     socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));

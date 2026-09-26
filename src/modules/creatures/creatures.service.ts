@@ -1,14 +1,16 @@
-import type { Creature, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
 import { ServerEvents, type ServerEvent } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { toCreatureDto, type CreatureDto } from './creatures.dto.js';
+import { assertLocalitiesExist } from '../localities/localities.service.js';
+import { toCreatureDto, type CreatureDto, type CreatureWithLocalities } from './creatures.dto.js';
 import type { CreateCreatureInput, UpdateCreatureInput } from './creatures.schema.js';
 
 /** Campos escalares copiados diretamente do PATCH para o banco. */
 const SCALAR_KEYS = [
   'name',
+  'kind',
   'type',
   'challengeRating',
   'strength',
@@ -24,6 +26,9 @@ const SCALAR_KEYS = [
   'description',
 ] as const;
 
+/** Toda leitura inclui as localidades vinculadas (usadas no editor e nos cards). */
+const withLocalities = { localities: { select: { id: true, name: true } } } as const;
+
 /**
  * Publica no painel dos mestres. Só os mestres recebem eventos de criaturas:
  * as criaturas ficam ocultas dos jogadores até entrarem no combate (Etapa 4).
@@ -37,12 +42,15 @@ function broadcast(event: ServerEvent, payload: unknown): void {
 }
 
 export async function listCreatures(): Promise<CreatureDto[]> {
-  const creatures = await prisma.creature.findMany({ orderBy: { name: 'asc' } });
+  const creatures = await prisma.creature.findMany({
+    orderBy: { name: 'asc' },
+    include: withLocalities,
+  });
   return creatures.map(toCreatureDto);
 }
 
-export async function findCreature(id: string): Promise<Creature> {
-  const creature = await prisma.creature.findUnique({ where: { id } });
+export async function findCreature(id: string): Promise<CreatureWithLocalities> {
+  const creature = await prisma.creature.findUnique({ where: { id }, include: withLocalities });
   if (!creature) throw new HttpError('Criatura não encontrada.', 404);
   return creature;
 }
@@ -52,11 +60,14 @@ export async function getCreature(id: string): Promise<CreatureDto> {
 }
 
 export async function createCreature(input: CreateCreatureInput): Promise<CreatureDto> {
+  await assertLocalitiesExist(input.localityIds);
+
   const hpMax = input.hpMax ?? 10;
 
   const creature = await prisma.creature.create({
     data: {
       name: input.name ?? 'Nova criatura',
+      kind: input.kind ?? 'CREATURE',
       type: input.type ?? '',
       challengeRating: input.challengeRating ?? '',
       hpMax,
@@ -65,7 +76,9 @@ export async function createCreature(input: CreateCreatureInput): Promise<Creatu
       attacks: [] as Prisma.InputJsonValue,
       resistances: [] as Prisma.InputJsonValue,
       immunities: [] as Prisma.InputJsonValue,
+      localities: { connect: input.localityIds.map((id) => ({ id })) },
     },
+    include: withLocalities,
   });
 
   const dto = toCreatureDto(creature);
@@ -90,9 +103,15 @@ export async function updateCreature(
   if (patch.resistances !== undefined) data.resistances = patch.resistances;
   if (patch.immunities !== undefined) data.immunities = patch.immunities;
 
+  if (patch.localityIds !== undefined) {
+    await assertLocalitiesExist(patch.localityIds);
+    data.localities = { set: patch.localityIds.map((localityId) => ({ id: localityId })) };
+  }
+
   const creature = await prisma.creature.update({
     where: { id },
     data: data as Prisma.CreatureUpdateInput,
+    include: withLocalities,
   });
 
   const dto = toCreatureDto(creature);

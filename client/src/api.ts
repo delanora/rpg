@@ -89,6 +89,47 @@ export async function register(input: RegisterInput): Promise<AuthResponse> {
 }
 
 /** Busca o usuário do token atual (usado ao recarregar a página). */
+export interface StoredImage {
+  url: string;
+  name: string;
+}
+
+/**
+ * Lê um arquivo de imagem e devolve uma data URL reduzida (máx. 1600px no
+ * maior lado). Diminuir antes de enviar evita trafegar fotos de vários MB.
+ */
+export async function fileToImagePayload(file: File): Promise<{ dataUrl: string; name: string }> {
+  const maxSide = 1600;
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Não foi possível processar a imagem.');
+
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+
+  // PNG/GIF mantêm transparência; o resto vira JPEG para ficar leve.
+  const keepPng = file.type === 'image/png' || file.type === 'image/gif';
+  const dataUrl = canvas.toDataURL(keepPng ? 'image/png' : 'image/jpeg', 0.85);
+
+  return { dataUrl, name: file.name };
+}
+
+/** Envia uma imagem (data URL) e recebe a URL pública em `/uploads/...`. */
+export async function uploadImage(dataUrl: string, name: string): Promise<StoredImage> {
+  const { image } = await api<{ image: StoredImage }>('/api/uploads/image', {
+    method: 'POST',
+    body: { dataUrl, name },
+  });
+  return image;
+}
+
 export async function fetchCurrentUser(): Promise<SessionUser> {
   const { user } = await api<{
     user: { sub: string; username: string; displayName: string; role: SessionUser['role'] };

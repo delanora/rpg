@@ -182,12 +182,47 @@ export interface CharacterPatch {
   notes?: string;
 }
 
+export type CreatureKind = 'CREATURE' | 'NPC';
+
+/** Imagem de uma localidade (arquivo servido em `/uploads/...`). */
+export interface LocalityImage {
+  url: string;
+  name: string;
+}
+
+/** Versão enxuta usada dentro de criaturas/NPCs e do combate. */
+export interface LocalitySummary {
+  id: string;
+  name: string;
+}
+
+/** Localidade do mundo (cidade, masmorra, taverna...). */
+export interface Locality {
+  id: string;
+  name: string;
+  description: string;
+  images: LocalityImage[];
+  creatureCount: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LocalityPatch {
+  name?: string;
+  description?: string;
+  images?: LocalityImage[];
+}
+
 /** Criatura/NPC cadastrado pelo mestre. */
 export interface Creature {
   id: string;
   name: string;
+  kind: CreatureKind;
   type: string;
   challengeRating: string;
+  /** Localidades vinculadas (uma ou mais). */
+  localities: LocalitySummary[];
 
   strength: number;
   dexterity: number;
@@ -216,8 +251,10 @@ export interface Creature {
 /** Campos enviados no PATCH de criatura. */
 export interface CreaturePatch {
   name?: string;
+  kind?: CreatureKind;
   type?: string;
   challengeRating?: string;
+  localityIds?: string[];
 
   strength?: number;
   dexterity?: number;
@@ -272,6 +309,19 @@ export interface CreatureDeletedPayload {
   creatureId: string;
 }
 
+export interface LocalityCreatedPayload {
+  locality: Locality;
+}
+
+export interface LocalityUpdatedPayload {
+  locality: Locality;
+  changes: Record<string, unknown>;
+}
+
+export interface LocalityDeletedPayload {
+  localityId: string;
+}
+
 /** --- Combate ---------------------------------------------------------------- */
 
 export type CombatStatus = 'PENDING_INITIATIVE' | 'ACTIVE' | 'ENDED';
@@ -304,6 +354,8 @@ export interface CombatDto {
   round: number;
   currentIndex: number;
   currentCombatantId: string | null;
+  localityId: string | null;
+  localityName: string | null;
   combatants: CombatantDto[];
   createdAt: string;
   endedAt: string | null;

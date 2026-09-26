@@ -2,6 +2,9 @@ import type {
   CreatureCreatedPayload,
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
+  LocalityCreatedPayload,
+  LocalityDeletedPayload,
+  LocalityUpdatedPayload,
   Role,
   SheetUpdatedPayload,
 } from './types';
@@ -10,6 +13,9 @@ export type {
   CreatureCreatedPayload,
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
+  LocalityCreatedPayload,
+  LocalityDeletedPayload,
+  LocalityUpdatedPayload,
   SheetUpdatedPayload,
 };
 

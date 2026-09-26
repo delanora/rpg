@@ -5,6 +5,7 @@ import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { corsOrigins } from '../config/env.js';
+import { UPLOADS_DIR } from '../lib/uploads.js';
 import { errorHandler, notFoundHandler } from '../middlewares/errorHandler.js';
 import { apiRouter } from './routes/index.js';
 
@@ -26,7 +27,7 @@ function securityMiddleware(): ReturnType<typeof helmet> {
         scriptSrc: ["'self'"],
         // O Vite injeta estilos no documento no modo de desenvolvimento.
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:'],
+        imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'", 'ws:', 'wss:'],
         // Removido de propósito: o sistema é acessado por IP em HTTP simples,
         // e o upgrade forçado para HTTPS quebraria o carregamento da página.
@@ -55,8 +56,12 @@ export function createApp(): Express {
     }),
   );
 
-  // Limite reduzido: as fichas de personagem são pequenas e trafegam por eventos.
-  app.use(express.json({ limit: '1mb' }));
+  // As fichas trafegam por eventos e são pequenas; o limite maior existe
+  // apenas para o upload de imagens de localidade (data URL em JSON).
+  app.use(express.json({ limit: '8mb' }));
+
+  // Imagens enviadas pelo mestre (localidades).
+  app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '7d', immutable: true }));
 
   app.use('/api', apiRouter);
 

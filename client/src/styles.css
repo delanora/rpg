@@ -2830,3 +2830,213 @@ input[type='checkbox']:disabled {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ==========================================================================
+   24. Localidades, imagens e preparação de combate
+   ========================================================================== */
+
+.toolbar-wrap {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Campo compacto usado em barras de ferramenta (ex.: escolher localidade). */
+.field-inline {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+  gap: 0.25rem;
+}
+
+.field-inline > span {
+  font-size: 0.62rem;
+}
+
+.modal-wide {
+  max-width: 44rem;
+}
+
+/* Autocomplete de localidade na preparação do combate. */
+.suggestion-list {
+  list-style: none;
+  margin: 0.4rem 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.suggestion {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.16s ease, box-shadow 0.2s ease;
+}
+
+.suggestion:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 14px -5px var(--glow);
+}
+
+.suggestion .icon {
+  color: var(--gold-deep);
+}
+
+.suggestion-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+/* Linha de quantidade: nome · dados · campo numérico (sem checkbox). */
+.quantity-row {
+  grid-template-columns: 1fr auto auto;
+  cursor: default;
+}
+
+.check-row input[type='number'] {
+  width: 4rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fffdf4;
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+}
+
+[data-theme='dark'] .check-row input[type='number'] {
+  background: #1d1510;
+}
+
+/* Cards de localidade no painel do mestre. */
+.locality-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.locality-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.16s ease, box-shadow 0.2s ease, transform 0.12s ease;
+}
+
+.locality-card:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 16px -6px var(--glow);
+  transform: translateY(-1px);
+}
+
+.locality-card.active {
+  border-color: var(--gold-deep);
+  box-shadow: 0 0 18px -5px var(--glow), inset 0 0 0 1px var(--gold-hair);
+}
+
+.locality-thumb {
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  overflow: hidden;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
+  color: var(--gold-deep);
+}
+
+.locality-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.locality-info {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.locality-desc {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Galeria de imagens do editor de localidade. */
+.image-grid {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.6rem;
+}
+
+.image-card {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
+}
+
+.image-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-remove {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: rgba(20, 12, 8, 0.72);
+  color: #fbeccb;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.image-remove:hover {
+  background: var(--wine-bright);
+}
+
+/* Botão de upload disfarçado de botão (o input de arquivo fica escondido). */
+.file-btn {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.file-btn.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}

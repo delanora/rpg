@@ -1,8 +1,20 @@
 import { z } from 'zod';
 
-/** Entrada do botão "COMBATE": quais criaturas entram na luta. */
+/**
+ * Entrada do botão "COMBATE": o mestre escolhe a localidade e quantas cópias
+ * de cada criatura entram na luta. Cada unidade vira um combatente próprio.
+ */
 export const startCombatSchema = z.object({
-  creatureIds: z.array(z.string().min(1)).max(100).default([]),
+  localityId: z.string().min(1).optional(),
+  entries: z
+    .array(
+      z.object({
+        creatureId: z.string().min(1),
+        quantity: z.number().int().min(1).max(30),
+      }),
+    )
+    .max(100)
+    .default([]),
 });
 
 /**

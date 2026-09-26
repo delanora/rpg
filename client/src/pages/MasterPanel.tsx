@@ -3,22 +3,33 @@ import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
 import { CreaturesTab } from '../components/master/CreaturesTab';
+import { LocalitiesTab } from '../components/master/LocalitiesTab';
 import { SheetsTab } from '../components/master/SheetsTab';
 import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
-import { fetchActiveCombat, startCombat } from '../combat/combatApi';
+import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
-import type { Attack, Character, Creature, CreaturePatch, SessionUser } from '../types';
+import type {
+  Attack,
+  Character,
+  Creature,
+  CreatureKind,
+  CreaturePatch,
+  Locality,
+  LocalityPatch,
+  SessionUser,
+} from '../types';
 import { useRealtime } from '../useRealtime';
 
-type Tab = 'sheets' | 'creatures';
+type Tab = 'sheets' | 'creatures' | 'npcs' | 'localities';
 
-const byName = (a: Creature, b: Creature): number => a.name.localeCompare(b.name);
+const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
 export function MasterPanel({ user }: { user: SessionUser }) {
   const [tab, setTab] = useState<Tab>('sheets');
   const [characters, setCharacters] = useState<Character[]>([]);
   const [creatures, setCreatures] = useState<Creature[]>([]);
+  const [localities, setLocalities] = useState<Locality[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showStartDialog, setShowStartDialog] = useState(false);
@@ -34,7 +45,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       setCharacters((prev) => {
         const index = prev.findIndex((character) => character.id === payload.character.id);
         if (index === -1) {
-          return [...prev, payload.character].sort((a, b) => a.name.localeCompare(b.name));
+          return [...prev, payload.character].sort(byName);
         }
 
         const next = [...prev];
@@ -58,21 +69,39 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     onCreatureDeleted: (payload) => {
       setCreatures((prev) => prev.filter((creature) => creature.id !== payload.creatureId));
     },
+
+    onLocalityCreated: (payload) => {
+      setLocalities((prev) =>
+        prev.some((locality) => locality.id === payload.locality.id)
+          ? prev
+          : [...prev, payload.locality].sort(byName),
+      );
+    },
+    onLocalityUpdated: (payload) => {
+      setLocalities((prev) =>
+        prev.map((locality) => (locality.id === payload.locality.id ? payload.locality : locality)),
+      );
+    },
+    onLocalityDeleted: (payload) => {
+      setLocalities((prev) => prev.filter((locality) => locality.id !== payload.localityId));
+    },
   });
 
-  // Carga inicial: fichas, bestiário e eventual combate em andamento.
+  // Carga inicial: fichas, bestiário, localidades e eventual combate em andamento.
   useEffect(() => {
     let active = true;
 
     Promise.all([
       api<{ characters: Character[] }>('/api/characters'),
       api<{ creatures: Creature[] }>('/api/creatures'),
+      api<{ localities: Locality[] }>('/api/localities'),
       fetchActiveCombat(),
     ])
-      .then(([charactersResult, creaturesResult, activeCombat]) => {
+      .then(([charactersResult, creaturesResult, localitiesResult, activeCombat]) => {
         if (!active) return;
         setCharacters(charactersResult.characters);
         setCreatures(creaturesResult.creatures);
+        setLocalities(localitiesResult.localities);
         combatState.setCombat(activeCombat);
       })
       .catch((err: unknown) => {
@@ -88,16 +117,20 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const createCreature = useCallback(async (): Promise<Creature> => {
-    const { creature } = await api<{ creature: Creature }>('/api/creatures', {
-      method: 'POST',
-      body: {},
-    });
-    setCreatures((prev) =>
-      prev.some((item) => item.id === creature.id) ? prev : [...prev, creature].sort(byName),
-    );
-    return creature;
-  }, []);
+  const createCreature = useCallback(
+    async (localityId: string): Promise<Creature> => {
+      const kind: CreatureKind = tab === 'npcs' ? 'NPC' : 'CREATURE';
+      const { creature } = await api<{ creature: Creature }>('/api/creatures', {
+        method: 'POST',
+        body: { kind, localityIds: [localityId] },
+      });
+      setCreatures((prev) =>
+        prev.some((item) => item.id === creature.id) ? prev : [...prev, creature].sort(byName),
+      );
+      return creature;
+    },
+    [tab],
+  );
 
   const patchCreature = useCallback(async (id: string, patch: CreaturePatch) => {
     setCreatures((prev) =>
@@ -127,6 +160,45 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  const createLocality = useCallback(async (): Promise<Locality> => {
+    const { locality } = await api<{ locality: Locality }>('/api/localities', {
+      method: 'POST',
+      body: { name: 'Nova localidade' },
+    });
+    setLocalities((prev) =>
+      prev.some((item) => item.id === locality.id) ? prev : [...prev, locality].sort(byName),
+    );
+    return locality;
+  }, []);
+
+  const patchLocality = useCallback(async (id: string, patch: LocalityPatch) => {
+    setLocalities((prev) =>
+      prev.map((locality) => (locality.id === id ? { ...locality, ...patch } : locality)),
+    );
+
+    try {
+      const { locality } = await api<{ locality: Locality }>(`/api/localities/${id}`, {
+        method: 'PATCH',
+        body: patch,
+      });
+      setLocalities((prev) => prev.map((item) => (item.id === id ? locality : item)));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar a localidade.');
+    }
+  }, []);
+
+  const deleteLocality = useCallback(async (id: string) => {
+    setLocalities((prev) => prev.filter((locality) => locality.id !== id));
+
+    try {
+      await api(`/api/localities/${id}`, { method: 'DELETE' });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao remover a localidade.');
+    }
+  }, []);
+
   /** Localiza os ataques de qualquer combatente para o painel de ataque do mestre. */
   const attacksFor = useCallback(
     (combatantId: string): Attack[] => {
@@ -146,11 +218,17 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     [combat, characters, creatures],
   );
 
-  async function handleStartCombat(creatureIds: string[]): Promise<void> {
-    const started = await startCombat(creatureIds);
+  async function handleStartCombat(input: {
+    localityId?: string;
+    entries: CombatCreatureEntry[];
+  }): Promise<void> {
+    const started = await startCombat(input);
     combatState.setCombat(started);
     setShowStartDialog(false);
   }
+
+  const monsters = creatures.filter((creature) => creature.kind === 'CREATURE');
+  const npcs = creatures.filter((creature) => creature.kind === 'NPC');
 
   return (
     <div className={combat ? 'app-shell theme-master combat-active' : 'app-shell theme-master'}>
@@ -159,7 +237,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         subtitle={
           combat
             ? `rodada ${combat.round} · ${combat.combatants.length} combatente(s)`
-            : `${characters.length} ficha(s) · ${creatures.length} criatura(s)`
+            : `${characters.length} ficha(s) · ${monsters.length} criatura(s) · ${npcs.length} NPC(s)`
         }
         connection={connection}
         online={online}
@@ -175,14 +253,28 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             className={tab === 'sheets' ? 'tab active' : 'tab'}
             onClick={() => setTab('sheets')}
           >
-            <Icon name="users" size={16} /> Fichas dos jogadores
+            <Icon name="users" size={16} /> Fichas
           </button>
           <button
             type="button"
             className={tab === 'creatures' ? 'tab active' : 'tab'}
             onClick={() => setTab('creatures')}
           >
-            <Icon name="flame" size={16} /> Criaturas e NPCs
+            <Icon name="flame" size={16} /> Criaturas
+          </button>
+          <button
+            type="button"
+            className={tab === 'npcs' ? 'tab active' : 'tab'}
+            onClick={() => setTab('npcs')}
+          >
+            <Icon name="crown" size={16} /> NPCs
+          </button>
+          <button
+            type="button"
+            className={tab === 'localities' ? 'tab active' : 'tab'}
+            onClick={() => setTab('localities')}
+          >
+            <Icon name="scroll" size={16} /> Localidades
           </button>
 
           <button
@@ -221,9 +313,18 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           />
         ) : tab === 'sheets' ? (
           <SheetsTab characters={characters} />
+        ) : tab === 'localities' ? (
+          <LocalitiesTab
+            localities={localities}
+            onCreate={createLocality}
+            onPatch={patchLocality}
+            onDelete={deleteLocality}
+          />
         ) : (
           <CreaturesTab
-            creatures={creatures}
+            kind={tab === 'npcs' ? 'NPC' : 'CREATURE'}
+            creatures={tab === 'npcs' ? npcs : monsters}
+            localities={localities}
             onCreate={createCreature}
             onPatch={patchCreature}
             onDelete={deleteCreature}
@@ -233,7 +334,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
       {showStartDialog ? (
         <CombatStartDialog
-          creatures={creatures}
+          localities={localities}
+          creatures={monsters}
           onCancel={() => setShowStartDialog(false)}
           onStart={handleStartCombat}
         />

@@ -4,6 +4,9 @@ node_modules/
 # Build
 dist/
 
+# Imagens enviadas pelo mestre (localidades)
+uploads/
+
 # Variáveis de ambiente
 .env
 .env.*

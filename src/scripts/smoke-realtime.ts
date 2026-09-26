@@ -21,6 +21,7 @@ const suffix = Date.now().toString(36);
 const createdUsernames: string[] = [];
 const createdCreatureIds: string[] = [];
 const createdCombatIds: string[] = [];
+const createdLocalityIds: string[] = [];
 
 let failures = 0;
 
@@ -387,6 +388,21 @@ async function main(): Promise<void> {
   // --- 7. Criaturas / NPCs ---------------------------------------------------
   console.log('\n7) Criaturas/NPCs (bestiário do mestre)');
 
+  check('localidades exigem autenticação (401)', (await api('/api/localities')).status === 401);
+  check(
+    'jogador NÃO acessa localidades (403)',
+    (await api('/api/localities', { token: playerToken })).status === 403,
+  );
+
+  const localityCreated = await api('/api/localities', {
+    method: 'POST',
+    token: masterToken,
+    body: { name: 'Caverna do Teste', description: 'Local usado pelo smoke test.' },
+  });
+  check('mestre cadastra localidade (201)', localityCreated.status === 201, JSON.stringify(localityCreated.data));
+  const locality = localityCreated.data?.locality;
+  createdLocalityIds.push(locality.id);
+
   check(
     'bestiário exige autenticação (401)',
     (await api('/api/creatures')).status === 401,
@@ -400,12 +416,32 @@ async function main(): Promise<void> {
   const createdCreature = await api('/api/creatures', {
     method: 'POST',
     token: masterToken,
-    body: { name: 'Goblin', type: 'Humanoide', challengeRating: '1/4', hpMax: 7, armorClass: 15 },
+    body: {
+      name: 'Goblin',
+      kind: 'CREATURE',
+      type: 'Humanoide',
+      challengeRating: '1/4',
+      hpMax: 7,
+      armorClass: 15,
+      localityIds: [locality.id],
+    },
   });
   check('mestre cadastra criatura (201)', createdCreature.status === 201, JSON.stringify(createdCreature.data));
+  check(
+    'criatura precisa de ao menos uma localidade (400)',
+    (
+      await api('/api/creatures', {
+        method: 'POST',
+        token: masterToken,
+        body: { name: 'Sem local', localityIds: [] },
+      })
+    ).status === 400,
+  );
 
   const creature = createdCreature.data?.creature;
   check('criatura nasce com HP atual = máximo', creature?.hpCurrent === 7 && creature?.hpMax === 7);
+  check('criatura nasce como CREATURE', creature?.kind === 'CREATURE');
+  check('criatura fica vinculada à localidade', creature?.localities?.[0]?.id === locality.id);
   check('criatura traz os 6 modificadores derivados', Object.keys(creature?.derived?.modifiers ?? {}).length === 6);
   check('mestre recebe creature:created em tempo real', (await createdEvent.catch(() => null))?.creature?.id === creature?.id);
 
@@ -502,7 +538,7 @@ async function main(): Promise<void> {
   const wolfCreated = await api('/api/creatures', {
     method: 'POST',
     token: masterToken,
-    body: { name: 'Lobo', type: 'Besta', hpMax: 20, armorClass: 12 },
+    body: { name: 'Lobo', type: 'Besta', hpMax: 20, armorClass: 12, localityIds: [locality.id] },
   });
   const wolf = wolfCreated.data.creature;
   createdCreatureIds.push(wolf.id);
@@ -528,7 +564,7 @@ async function main(): Promise<void> {
   const combatStarted = await api('/api/combat', {
     method: 'POST',
     token: masterToken,
-    body: { creatureIds: [wolf.id] },
+    body: { localityId: locality.id, entries: [{ creatureId: wolf.id, quantity: 2 }] },
   });
   check('mestre inicia o combate (201)', combatStarted.status === 201, JSON.stringify(combatStarted.data));
   check(
@@ -542,6 +578,17 @@ async function main(): Promise<void> {
   const creatureCombatant = combat.combatants.find((item: any) => item.kind === 'CREATURE');
   check('personagens de jogador entram automaticamente', Boolean(playerCombatant));
   check('criatura escolhida entra no combate', Boolean(creatureCombatant));
+  check('combate registra a localidade', combat.localityId === locality.id);
+  check(
+    'quantidade gera uma cópia por unidade',
+    combat.combatants.filter((item: any) => item.kind === 'CREATURE').length === 2,
+  );
+  check(
+    'cada cópia tem nome próprio',
+    combat.combatants.some((item: any) => item.name === 'Lobo 1') &&
+      combat.combatants.some((item: any) => item.name === 'Lobo 2'),
+  );
+  check('cada cópia tem a própria vida', creatureCombatant.hpCurrent === 20 && creatureCombatant.hpMax === 20);
   check('ninguém rolou iniciativa ainda', combat.combatants.every((item: any) => !item.rolled));
 
   check(
@@ -752,6 +799,10 @@ async function cleanup(): Promise<void> {
 
   if (createdCreatureIds.length > 0) {
     await prisma.creature.deleteMany({ where: { id: { in: createdCreatureIds } } });
+  }
+
+  if (createdLocalityIds.length > 0) {
+    await prisma.locality.deleteMany({ where: { id: { in: createdLocalityIds } } });
   }
 
   if (createdUsernames.length > 0) {

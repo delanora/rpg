@@ -11,6 +11,9 @@ export interface CombatDto {
   currentIndex: number;
   /** Combatente do turno atual (apenas quando o combate está ativo). */
   currentCombatantId: string | null;
+  /** Localidade onde o combate acontece (informada na preparação). */
+  localityId: string | null;
+  localityName: string | null;
   combatants: CombatantDto[];
   createdAt: string;
   endedAt: string | null;
@@ -53,6 +56,7 @@ export interface CombatSourced {
   currentIndex: number;
   createdAt: Date;
   endedAt: Date | null;
+  locality: { id: string; name: string } | null;
   combatants: CombatantSourced[];
 }
 
@@ -66,6 +70,10 @@ export interface CombatantSourced {
   dexterityMod: number;
   initiative: number | null;
   initiativeRoll: number | null;
+  /** SNAPSHOT de vitais das criaturas (cada cópia tem a própria vida). */
+  hpCurrent: number | null;
+  hpMax: number | null;
+  armorClass: number | null;
   character: (Character & { user: { username: string } }) | null;
   creature: Creature | null;
 }
@@ -98,6 +106,12 @@ export function combatantAttacks(combatant: CombatantSourced): Attack[] {
 function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const source = combatant.character ?? combatant.creature;
 
+  // Criaturas usam o snapshot do combatente (permite várias cópias iguais,
+  // cada uma com a própria vida). Personagens leem ao vivo da ficha.
+  const hpCurrent = combatant.hpCurrent ?? source?.hpCurrent ?? 0;
+  const hpMax = combatant.hpMax ?? source?.hpMax ?? 0;
+  const armorClass = combatant.armorClass ?? source?.armorClass ?? 0;
+
   return {
     id: combatant.id,
     kind: combatant.kind,
@@ -109,9 +123,9 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     dexterityMod: combatant.dexterityMod,
     initiative: combatant.initiative,
     initiativeRoll: combatant.initiativeRoll,
-    hpCurrent: source?.hpCurrent ?? 0,
-    hpMax: source?.hpMax ?? 0,
-    armorClass: source?.armorClass ?? 0,
+    hpCurrent,
+    hpMax,
+    armorClass,
     statsHidden: false,
     missing: source === null,
     rolled: combatant.initiative !== null,
@@ -138,6 +152,8 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     round: combat.round,
     currentIndex: combat.currentIndex,
     currentCombatantId: current?.id ?? null,
+    localityId: combat.locality?.id ?? null,
+    localityName: combat.locality?.name ?? null,
     combatants,
     createdAt: combat.createdAt.toISOString(),
     endedAt: combat.endedAt ? combat.endedAt.toISOString() : null,
