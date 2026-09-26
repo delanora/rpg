@@ -222,6 +222,36 @@ sudo pg_ctlcluster 17 main stop
 
 A aplicação é um único serviço Node que expõe HTTP e WebSocket na mesma porta — basta definir `PORT`, `DATABASE_URL`, `CORS_ORIGIN`, `JWT_SECRET` e `MASTER_INVITE_CODE` no provedor e rodar `npm run prisma:deploy && npm start`. O health check em `/api/health` serve para o monitoramento do provedor.
 
+### Serviço systemd (esta máquina)
+
+Nesta máquina o servidor web roda como um serviço systemd, habilitado no boot. O unit fica versionado em `deploy/grimorio.service` e é copiado para `/etc/systemd/system/`:
+
+```bash
+# Instalar/atualizar o serviço
+cp deploy/grimorio.service /etc/systemd/system/grimorio.service
+systemctl daemon-reload
+systemctl enable --now grimorio
+```
+
+O serviço executa a build compilada (`node dist/index.js`), então **rode `npm run build` (e `npm run build:client`) antes de reiniciar** depois de alterar o código:
+
+```bash
+npm run build && npm run build:client
+systemctl restart grimorio
+```
+
+Operando o serviço:
+
+```bash
+systemctl status grimorio      # estado atual (active/enabled)
+systemctl restart grimorio     # aplicar mudanças
+systemctl stop grimorio         # parar
+systemctl disable grimorio      # remover do boot
+journalctl -u grimorio -f       # acompanhar os logs
+```
+
+O unit define `NODE_ENV=production` e carrega as variáveis do `.env` via `EnvironmentFile`. **Importante:** neste systemd o `EnvironmentFile` tem precedência sobre `Environment`, então o `.env` **não** deve conter a linha `NODE_ENV` — caso contrário o serviço sobe como `development`. Sem ela, `npm run dev` continua usando `development` (padrão) e o serviço usa `production`.
+
 ---
 
 ## 🔐 Etapa 1 — Autenticação, papéis e tempo real

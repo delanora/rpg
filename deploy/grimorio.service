@@ -1,0 +1,26 @@
+[Unit]
+Description=Grimorio Digital - servidor web (D&D 5e)
+Documentation=https://github.com/delanora/rpg
+# Sobe depois da rede e do PostgreSQL, dos quais o servidor depende para iniciar.
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/rpg
+# As variaveis ficam no .env do projeto (DATABASE_URL, PORT, JWT_SECRET, ...).
+EnvironmentFile=/var/www/rpg/.env
+# IMPORTANTE: o .env NAO deve definir NODE_ENV, senao o EnvironmentFile vence
+# esta linha (neste systemd, EnvironmentFile sobrepoe Environment). Sem a variavel
+# no .env, o `npm run dev` assume development e o serviço assume production.
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/index.js
+# O app trata SIGTERM e fecha HTTP, WebSocket e o banco com calma.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
