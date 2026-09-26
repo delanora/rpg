@@ -127,6 +127,7 @@ export interface ClassFeatureResource {
   recharge: 'short' | 'long' | 'none';
   max?: number;
   maxByLevel?: { level: number; value: number }[];
+  perLevel?: boolean;
 }
 
 /** Efeito mecânico opcional de uma característica de classe. */
@@ -143,9 +144,11 @@ export interface ClassFeatureEffect {
     | 'damageBonus'
     | 'critDice'
     | 'unarmoredDefense'
+    | 'martialArts'
     | 'abilityBonus'
     | 'other';
   id?: string;
+  resourceId?: string;
   name?: string;
   target?: string;
   value?: number;
@@ -153,6 +156,7 @@ export interface ClassFeatureEffect {
   ability?: AbilityKey;
   max?: number;
   damageTypes?: string[];
+  unarmoredDefenseAbility?: AbilityKey;
   resource?: ClassFeatureResource;
   requiresActive?: string;
   notes?: string;
@@ -301,6 +305,8 @@ export interface ClassAdjustments {
   speedBonus: number;
   critExtraDice: number;
   unarmoredDefense: boolean;
+  unarmoredDefenseAbility: AbilityKey | null;
+  martialArtsDie: number;
   abilityBonuses: Partial<Record<AbilityKey, number>>;
   abilityCaps: Partial<Record<AbilityKey, number>>;
 }

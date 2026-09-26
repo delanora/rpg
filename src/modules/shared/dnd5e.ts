@@ -261,8 +261,11 @@ export interface DerivedInput {
   sneakAttack?: { dice: number; expression: string } | null;
   /** Total de espaços de Expertise. */
   expertiseSlots?: number;
-  /** Defesa sem Armadura (Bárbaro/Monge): CA = 10 + DES + CON. */
-  unarmoredDefense?: boolean;
+  /**
+   * Defesa sem Armadura: atributo somado à CA junto de Destreza (Bárbaro usa
+   * Constituição; Monge usa Sabedoria). Nulo/ausente = CA padrão 10 + DES.
+   */
+  unarmoredDefenseAbility?: AbilityKey | null;
 }
 
 /** Calcula todos os valores derivados exibidos na ficha. */
@@ -321,8 +324,8 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     expertiseSlots: input.expertiseSlots ?? 0,
     initiative: initiative(input.abilities.dexterity, input.initiativeBonus),
     passivePerception: 10 + (perception?.total ?? modifiers.wisdom),
-    armorClassHint: input.unarmoredDefense
-      ? 10 + modifiers.dexterity + modifiers.constitution
+    armorClassHint: input.unarmoredDefenseAbility
+      ? 10 + modifiers.dexterity + modifiers[input.unarmoredDefenseAbility]
       : unarmoredArmorClass(input.abilities.dexterity),
     carryingCapacity: carryingCapacity(input.abilities.strength),
     totalWeight: Math.round(totalWeight * 100) / 100,

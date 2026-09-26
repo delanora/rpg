@@ -880,6 +880,96 @@ async function main(): Promise<void> {
     JSON.stringify({ str: champion.strength, mod: champion.derived.modifiers.strength }),
   );
 
+  // --- Monge: Ki, Artes Marciais, Defesa sem Armadura e subclasses ----------
+  const monkSheet = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { classKey: 'monk', level: 9, subclass: '' },
+    })
+  ).data.character;
+  check('dado de vida do Monge é d8', monkSheet.derived.hitDie === 8, String(monkSheet.derived.hitDie));
+  check(
+    'salvaguardas FOR e DES fixas',
+    monkSheet.derived.lockedSaves.includes('strength') &&
+      monkSheet.derived.lockedSaves.includes('dexterity'),
+    JSON.stringify(monkSheet.derived.lockedSaves),
+  );
+  check(
+    'Defesa sem Armadura do Monge sugere 10 + DES + SAB',
+    monkSheet.derived.armorClassHint ===
+      10 + monkSheet.derived.modifiers.dexterity + monkSheet.derived.modifiers.wisdom,
+    JSON.stringify({ hint: monkSheet.derived.armorClassHint }),
+  );
+  check(
+    'Artes Marciais usa 1d6 no nível 9',
+    monkSheet.classAdjustments.martialArtsDie === 6,
+    String(monkSheet.classAdjustments.martialArtsDie),
+  );
+  const kiResource = monkSheet.classAdjustments.resources.find((r: any) => r.id === 'ki');
+  check(
+    'Ki tem pontos iguais ao nível (9) e recarga curta',
+    kiResource?.max === 9 && kiResource?.remaining === 9 && kiResource?.recharge === 'short',
+    JSON.stringify(kiResource),
+  );
+  check(
+    'Movimento sem Armadura dá +15 pés no nível 9',
+    monkSheet.classAdjustments.speedBonus === 15,
+    String(monkSheet.classAdjustments.speedBonus),
+  );
+  check(
+    'Rajada de Golpes consome do recurso Ki',
+    monkSheet.classAdjustments.toggles.find((t: any) => t.id === 'flurry-of-blows')?.resourceId === 'ki',
+  );
+
+  const monkSpent = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { classState: { active: ['flurry-of-blows'], used: { ki: 1 } } },
+    })
+  ).data.character;
+  check(
+    'gastar 1 ki deixa o contador em 8/9',
+    monkSpent.classAdjustments.resources.find((r: any) => r.id === 'ki')?.remaining === 8,
+    JSON.stringify(monkSpent.classAdjustments.resources),
+  );
+
+  // Subclasse do Monge (Mão Aberta) e nível alto.
+  const openHand = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { level: 17, subclass: 'Caminho da Mão Aberta' },
+    })
+  ).data.character;
+  check(
+    'Artes Marciais usa 1d10 no nível 17',
+    openHand.classAdjustments.martialArtsDie === 10,
+    String(openHand.classAdjustments.martialArtsDie),
+  );
+  check(
+    'Movimento sem Armadura dá +25 pés no nível 17',
+    openHand.classAdjustments.speedBonus === 25,
+    String(openHand.classAdjustments.speedBonus),
+  );
+  check(
+    'Totalidade do Corpo tem 1 uso por descanso longo',
+    openHand.classAdjustments.resources.find((r: any) => r.id === 'wholeness-of-body')?.max === 1,
+    JSON.stringify(openHand.classAdjustments.resources),
+  );
+
+  const diamondSoul = (
+    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 14 } })
+  ).data.character;
+  check(
+    'Alma de Diamante proficiência em todas as salvaguardas',
+    ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'].every(
+      (ability: string) => diamondSoul.derived.lockedSaves.includes(ability),
+    ),
+    JSON.stringify(diamondSoul.derived.lockedSaves),
+  );
+
   // Os ataques acima mudaram o HP da criatura; atualiza a referência usada
   // pelos checks de dano manual abaixo.
   Object.assign(

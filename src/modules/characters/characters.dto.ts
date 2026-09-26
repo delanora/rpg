@@ -191,7 +191,7 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     lockedSaves,
     sneakAttack: sneakDice > 0 ? { dice: sneakDice, expression: `${sneakDice}d6` } : null,
     expertiseSlots: expertiseSlots(activeFeatures),
-    unarmoredDefense: classAdjustments.unarmoredDefense,
+    unarmoredDefenseAbility: classAdjustments.unarmoredDefenseAbility,
   });
 
   return {

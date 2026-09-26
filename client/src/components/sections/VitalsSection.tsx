@@ -1,4 +1,4 @@
-import { formatModifier } from '../../dnd';
+import { ABILITY_ABBREVIATIONS, formatModifier } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import type { ActiveResource, ActiveToggle, ClassState } from '../../types';
 import { clampInt } from '../../utils';
@@ -37,6 +37,27 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     }
     applyClassState({ active: [...classState.active, toggle.id], used });
   }
+
+  /** Descanso curto: repõe apenas os recursos de recarga curta (ex.: Ki). */
+  function shortRest(): void {
+    const used = { ...classState.used };
+    for (const resource of classAdjustments.resources) {
+      if (resource.recharge === 'short') delete used[resource.id];
+    }
+    applyClassState({ active: classState.active, used });
+  }
+
+  const hasShortResource = classAdjustments.resources.some(
+    (resource) => resource.recharge === 'short',
+  );
+  const kiResource = classAdjustments.resources.find((resource) => resource.id === 'ki');
+  const hasClassPanel =
+    classAdjustments.toggles.length > 0 ||
+    classAdjustments.resources.length > 0 ||
+    classAdjustments.unarmoredDefense ||
+    classAdjustments.speedBonus > 0 ||
+    classAdjustments.critExtraDice > 0 ||
+    classAdjustments.martialArtsDie > 0;
 
   return (
     <Section title="Vida e Defesa" icon="heart">
@@ -168,54 +189,80 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
         </p>
       ) : null}
 
-      {classAdjustments.toggles.length > 0 ? (
+      {hasClassPanel ? (
         <section className="class-state">
           <h3 className="subsection-title">Recursos de Classe</h3>
-          <ul className="class-resources">
-            {classAdjustments.toggles.map((toggle) => {
-              const resource = classAdjustments.resources.find(
-                (item) => item.id === toggle.resourceId,
-              );
-              return (
-                <li key={toggle.id} className="class-resource">
-                  <span className="class-resource-name">{toggle.name}</span>
-                  {resource ? (
-                    <span className="class-resource-count">
-                      {resource.unlimited ? '∞' : `${resource.remaining}/${resource.max}`}
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    className={
-                      toggle.active ? 'btn btn-small btn-danger' : 'btn btn-small btn-primary'
-                    }
-                    disabled={
-                      readOnly ||
-                      (!toggle.active &&
-                        resource !== undefined &&
-                        !resource.unlimited &&
-                        resource.remaining <= 0)
-                    }
-                    onClick={() => toggleFeature(toggle, resource)}
-                  >
-                    {toggle.active ? 'Encerrar' : 'Ativar'}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
 
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={readOnly}
-            onClick={() => applyClassState({ active: [], used: {} })}
-          >
-            descanso longo
-          </button>
+          {classAdjustments.resources.length > 0 ? (
+            <ul className="class-resources">
+              {classAdjustments.resources.map((resource) => (
+                <li key={resource.id} className="class-resource">
+                  <span className="class-resource-name">{resource.name}</span>
+                  <span className="class-resource-count">
+                    {resource.unlimited ? '∞' : `${resource.remaining}/${resource.max}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {classAdjustments.toggles.length > 0 ? (
+            <ul className="class-resources">
+              {classAdjustments.toggles.map((toggle) => {
+                const resource = classAdjustments.resources.find(
+                  (item) => item.id === toggle.resourceId,
+                );
+                return (
+                  <li key={toggle.id} className="class-resource">
+                    <span className="class-resource-name">{toggle.name}</span>
+                    <button
+                      type="button"
+                      className={
+                        toggle.active ? 'btn btn-small btn-danger' : 'btn btn-small btn-primary'
+                      }
+                      disabled={
+                        readOnly ||
+                        (!toggle.active &&
+                          resource !== undefined &&
+                          !resource.unlimited &&
+                          resource.remaining <= 0)
+                      }
+                      onClick={() => toggleFeature(toggle, resource)}
+                    >
+                      {toggle.active ? 'Encerrar' : 'Ativar'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+
+          <div className="class-rest">
+            {hasShortResource ? (
+              <button type="button" className="btn btn-small" disabled={readOnly} onClick={shortRest}>
+                descanso curto
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={readOnly}
+              onClick={() => applyClassState({ active: [], used: {} })}
+            >
+              descanso longo
+            </button>
+          </div>
 
           <p className="section-note">
-            {classAdjustments.unarmoredDefense ? 'CA sem armadura: 10 + DES + CON. ' : ''}
+            {classAdjustments.unarmoredDefense && classAdjustments.unarmoredDefenseAbility
+              ? `CA sem armadura: 10 + DES + ${ABILITY_ABBREVIATIONS[classAdjustments.unarmoredDefenseAbility]}. `
+              : ''}
+            {classAdjustments.martialArtsDie > 0
+              ? `Artes Marciais: dado desarmado 1d${classAdjustments.martialArtsDie}, usa Destreza e permite um ataque desarmado extra como ação bônus. `
+              : ''}
+            {kiResource
+              ? `CD de ki: ${8 + derived.proficiencyBonus + derived.modifiers.wisdom}. `
+              : ''}
             {classAdjustments.speedBonus > 0
               ? `Deslocamento +${classAdjustments.speedBonus} pés. `
               : ''}

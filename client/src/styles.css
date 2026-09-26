@@ -1081,6 +1081,13 @@ a {
   color: var(--ink-soft);
 }
 
+.class-rest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.2rem 0 0.6rem;
+}
+
 
 .subsection-title {
   display: flex;
