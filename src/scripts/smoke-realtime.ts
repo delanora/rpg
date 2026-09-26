@@ -796,6 +796,90 @@ async function main(): Promise<void> {
     JSON.stringify(highRogue.activeFeatures.map((f: any) => f.id)),
   );
 
+  // --- Bárbaro: Fúria, contador de usos e efeitos automáticos ---------------
+  const barbarianSheet = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: {
+        classKey: 'barbarian',
+        level: 9,
+        attacks: [
+          { id: 'p1', name: 'Machado grande', damage: '1d12+3', damageType: 'Cortante', attackBonus: 10, notes: '', finesse: false, ranged: false },
+        ],
+      },
+    })
+  ).data.character;
+  check('dado de vida do Bárbaro é d12', barbarianSheet.derived.hitDie === 12, String(barbarianSheet.derived.hitDie));
+  check(
+    'salvaguardas FOR e CON fixas',
+    barbarianSheet.derived.lockedSaves.includes('strength') &&
+      barbarianSheet.derived.lockedSaves.includes('constitution'),
+    JSON.stringify(barbarianSheet.derived.lockedSaves),
+  );
+  check(
+    'Defesa sem Armadura sugere 10 + DES + CON',
+    barbarianSheet.derived.armorClassHint ===
+      10 + barbarianSheet.derived.modifiers.dexterity + barbarianSheet.derived.modifiers.constitution,
+    JSON.stringify({ hint: barbarianSheet.derived.armorClassHint }),
+  );
+  const rageResource = barbarianSheet.classAdjustments.resources.find((r: any) => r.id === 'rage');
+  check('Fúria tem 4 usos no nível 9', rageResource?.max === 4 && rageResource?.remaining === 4, JSON.stringify(rageResource));
+
+  const raging = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { classState: { active: ['rage'], used: { rage: 1 } } },
+    })
+  ).data.character;
+  check('Fúria ativa dá +3 de dano no nível 9', raging.classAdjustments.meleeDamageBonus === 3, String(raging.classAdjustments.meleeDamageBonus));
+  check(
+    'Fúria ativa concede resistência física',
+    ['Concussão', 'Perfurante', 'Cortante'].every((type: string) => raging.classAdjustments.resistances.includes(type)),
+    JSON.stringify(raging.classAdjustments.resistances),
+  );
+  const ragingResource = raging.classAdjustments.resources.find((r: any) => r.id === 'rage');
+  check('contador de Fúria mostra 1 uso gasto', ragingResource?.remaining === 3, JSON.stringify(ragingResource));
+  check(
+    'recurso é ligado ao toggle da Fúria',
+    raging.classAdjustments.toggles.find((t: any) => t.id === 'rage')?.resourceId === 'rage',
+  );
+
+  const rageAttack = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'p1', targetCombatantId: creatureCombatant.id },
+  });
+  check(
+    'Fúria soma o bônus de dano corpo a corpo',
+    rageAttack.data.result.hit ? rageAttack.data.result.damageRolled >= 7 : true,
+    JSON.stringify(rageAttack.data.result),
+  );
+
+  const longRest = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { classState: { active: [], used: {} } },
+    })
+  ).data.character;
+  check(
+    'descanso longo repõe os usos de Fúria',
+    longRest.classAdjustments.resources.find((r: any) => r.id === 'rage')?.remaining === 4,
+    JSON.stringify(longRest.classAdjustments.resources),
+  );
+
+  const champion = (
+    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 20 } })
+  ).data.character;
+  const effectiveStrength = Math.min(champion.strength + 4, 24);
+  check(
+    'Campeão Primitivo soma +4 de FOR (teto 24)',
+    champion.derived.modifiers.strength === Math.floor((effectiveStrength - 10) / 2),
+    JSON.stringify({ str: champion.strength, mod: champion.derived.modifiers.strength }),
+  );
+
   // Os ataques acima mudaram o HP da criatura; atualiza a referência usada
   // pelos checks de dano manual abaixo.
   Object.assign(

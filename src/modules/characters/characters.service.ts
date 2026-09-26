@@ -158,8 +158,9 @@ export async function updateCharacter(
   }
 
   if (classChanged) {
-    // Trocar de classe zera a subclasse e recomeça as salvaguardas do zero.
+    // Trocar de classe zera a subclasse, as salvaguardas e o estado de classe.
     data.subclass = '';
+    data.classState = { active: [], used: {} };
   } else if (patch.subclass !== undefined) {
     data.subclass = patch.subclass;
   }
@@ -181,6 +182,7 @@ export async function updateCharacter(
   if (patch.spells !== undefined) data.spells = patch.spells;
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
   if (patch.features !== undefined) data.features = patch.features;
+  if (patch.classState !== undefined) data.classState = patch.classState;
 
   const character = await prisma.character.update({
     where: { userId: actor.userId },

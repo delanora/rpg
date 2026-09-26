@@ -1045,6 +1045,42 @@ a {
   font-style: italic;
 }
 
+/* Recursos de classe (ex.: Fúria): toggles, contador de usos e descanso. */
+.class-state {
+  margin-top: 1rem;
+}
+
+.class-resources {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.class-resource {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.class-resource-name {
+  flex: 1;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.class-resource-count {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
 
 .subsection-title {
   display: flex;

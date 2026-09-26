@@ -8,9 +8,17 @@ import {
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toCharacterDto } from '../characters/characters.dto.js';
-import { getActiveClassFeatures, getClassDefinition, sneakAttackDice } from '../shared/classes.js';
+import {
+  computeClassAdjustments,
+  featureEffectsOf,
+  getActiveClassFeatures,
+  getClassDefinition,
+  normalizeClassState,
+  sneakAttackDice,
+  type ClassAdjustments,
+} from '../shared/classes.js';
 import { abilityModifier } from '../shared/dnd5e.js';
-import { rollD20, rollDice } from '../shared/dice.js';
+import { parseDiceExpression, rollD20, rollDice } from '../shared/dice.js';
 import {
   combatantAttacks,
   hideCreatureStats,
@@ -379,6 +387,30 @@ async function changeHp(
 
 /** --- Ataque -------------------------------------------------------------------- */
 
+/** Ajustes de features (Fúria, resistências...) de um personagem. */
+function characterAdjustments(character: {
+  classKey: string;
+  level: number;
+  subclass: string;
+  classState: unknown;
+}): ClassAdjustments {
+  const definition = getClassDefinition(character.classKey);
+  const features = getActiveClassFeatures(definition, character.level, character.subclass);
+  return computeClassAdjustments(features, character.level, normalizeClassState(character.classState));
+}
+
+/** Aplica a resistência do alvo a um tipo de dano (ex.: Fúria do bárbaro). */
+function applyDamageResistance(
+  target: CombatantSourced,
+  damageType: string,
+  total: number,
+): number {
+  if (target.kind !== 'CHARACTER' || !target.character || !damageType) return total;
+  const adjustments = characterAdjustments(target.character);
+  if (!adjustments.resistances.includes(damageType)) return total;
+  return Math.floor(total / 2);
+}
+
 /**
  * Calcula o dano extra de Ataque Furtivo, quando aplicável.
  *
@@ -399,7 +431,9 @@ function rollSneakAttack(
 
   const definition = getClassDefinition(character.classKey);
   const features = getActiveClassFeatures(definition, character.level, character.subclass);
-  if (!features.some((feature) => feature.effect?.type === 'sneakAttack')) return null;
+  if (!features.some((feature) => featureEffectsOf(feature).some((effect) => effect.type === 'sneakAttack'))) {
+    return null;
+  }
 
   const expression = `${sneakAttackDice(character.level)}d6`;
   const roll = rollDice(expression, { crit: critical });
@@ -473,7 +507,53 @@ export async function resolveAttack(
     const damage = rollDice(attack.damage, { crit: critical });
 
     if (damage) {
+      const attackerAdjustments =
+        attacker.kind === 'CHARACTER' && attacker.character
+          ? characterAdjustments(attacker.character)
+          : null;
+
       let total = damage.total;
+
+      // Crítico Brutal: dados de arma extras no crítico (só corpo a corpo).
+      if (critical && attackerAdjustments && attackerAdjustments.critExtraDice > 0) {
+        const spec = parseDiceExpression(attack.damage);
+        if (spec && spec.count > 0) {
+          const extra = rollDice(
+            `${spec.count * attackerAdjustments.critExtraDice}d${spec.sides}`,
+            { crit: false },
+          );
+          if (extra && extra.total > 0) {
+            total += extra.total;
+            announceRoll({
+              kind: 'damage',
+              actorName: `${attacker.name} — Crítico Brutal`,
+              expression: extra.expression,
+              rolls: extra.rolls,
+              sides: extra.sides,
+              modifier: 0,
+              total: extra.total,
+              crit: true,
+              at: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      // Bônus de dano corpo a corpo (Fúria) — não vale para armas à distância.
+      if (!attack.ranged && attackerAdjustments && attackerAdjustments.meleeDamageBonus > 0) {
+        total += attackerAdjustments.meleeDamageBonus;
+        announceRoll({
+          kind: 'damage',
+          actorName: `${attacker.name} — Fúria`,
+          expression: `+${attackerAdjustments.meleeDamageBonus}`,
+          rolls: [],
+          sides: 0,
+          modifier: attackerAdjustments.meleeDamageBonus,
+          total: attackerAdjustments.meleeDamageBonus,
+          crit: false,
+          at: new Date().toISOString(),
+        });
+      }
 
       // Ataque Furtivo: entra automaticamente em armas sutis ou à distância
       // quando a classe concede a feature. O jogador rola o ataque justamente
@@ -496,8 +576,6 @@ export async function resolveAttack(
         });
       }
 
-      damageRolled = total;
-
       announceRoll({
         kind: 'damage',
         actorName: attacker.name,
@@ -509,6 +587,10 @@ export async function resolveAttack(
         crit: critical,
         at: new Date().toISOString(),
       });
+
+      // Resistência do alvo (ex.: Fúria do bárbaro halva dano físico).
+      total = applyDamageResistance(target, attack.damageType, total);
+      damageRolled = total;
 
       await changeHp(target, -total);
     }

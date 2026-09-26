@@ -4,13 +4,18 @@ import { attackSchema, type Attack } from '../shared/attacks.js';
 import {
   CLASS_CATALOG,
   applySaveProficiencies,
+  computeClassAdjustments,
   expertiseSlots,
+  featureEffectsOf,
   findSubclass,
   getActiveClassFeatures,
   getClassDefinition,
+  normalizeClassState,
   sneakAttackDice,
   type ActiveClassFeature,
+  type ClassAdjustments,
   type ClassDefinition,
+  type ClassState,
   type ClassSummary,
 } from '../shared/classes.js';
 import {
@@ -69,6 +74,10 @@ export interface CharacterDto {
   classCatalog: ClassSummary[];
   /** Features de classe/subclasse já liberadas pelo nível atual. */
   activeFeatures: ActiveClassFeature[];
+  /** Estado de runtime da classe (toggles ativos e usos gastos). */
+  classState: ClassState;
+  /** Ajustes mecânicos derivados das features (Fúria, resistências, etc.). */
+  classAdjustments: ClassAdjustments;
   level: number;
   background: string;
   alignment: string;
@@ -127,15 +136,21 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
   const lockedSaves = [
     ...(classDefinition?.savingThrows ?? []),
     ...activeFeatures.flatMap((feature) =>
-      feature.effect?.type === 'save' && feature.effect.ability ? [feature.effect.ability] : [],
+      featureEffectsOf(feature).flatMap((effect) =>
+        effect.type === 'save' && effect.ability ? [effect.ability] : [],
+      ),
     ),
   ];
   const saves = applySaveProficiencies(normalizeSaves(character.saves), lockedSaves);
 
-  const hasSneakAttack = activeFeatures.some(
-    (feature) => feature.effect?.type === 'sneakAttack',
+  const hasSneakAttack = activeFeatures.some((feature) =>
+    featureEffectsOf(feature).some((effect) => effect.type === 'sneakAttack'),
   );
   const sneakDice = hasSneakAttack ? sneakAttackDice(character.level) : 0;
+
+  // Estado de classe (Fúria, etc.) e os ajustes mecânicos que ele liga.
+  const classState = normalizeClassState(character.classState);
+  const classAdjustments = computeClassAdjustments(activeFeatures, character.level, classState);
   const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
   const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
     list: [],
@@ -153,9 +168,19 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     charisma: character.charisma,
   };
 
+  // Bônus de atributo de features (ex.: Campeão Primitivo) entram nos valores
+  // efetivos usados por todos os cálculos derivados; a pontuação gravada segue
+  // sendo a base.
+  const effectiveAbilities: Record<AbilityKey, number> = { ...abilities };
+  for (const [ability, bonus] of Object.entries(classAdjustments.abilityBonuses)) {
+    const key = ability as AbilityKey;
+    const cap = classAdjustments.abilityCaps[key] ?? Number.POSITIVE_INFINITY;
+    effectiveAbilities[key] = Math.min(effectiveAbilities[key] + bonus, cap);
+  }
+
   const derived = deriveStats({
     level: character.level,
-    abilities,
+    abilities: effectiveAbilities,
     skills,
     saves,
     initiativeBonus: character.initiativeBonus,
@@ -166,6 +191,7 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     lockedSaves,
     sneakAttack: sneakDice > 0 ? { dice: sneakDice, expression: `${sneakDice}d6` } : null,
     expertiseSlots: expertiseSlots(activeFeatures),
+    unarmoredDefense: classAdjustments.unarmoredDefense,
   });
 
   return {
@@ -180,6 +206,8 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     classDefinition,
     classCatalog: CLASS_CATALOG,
     activeFeatures,
+    classState,
+    classAdjustments,
     level: character.level,
     background: character.background,
     alignment: character.alignment,

@@ -124,17 +124,37 @@ export type SpellLearning = 'known' | 'prepared' | 'none';
 
 export interface ClassFeatureResource {
   name: string;
-  max: number;
   recharge: 'short' | 'long' | 'none';
+  max?: number;
+  maxByLevel?: { level: number; value: number }[];
 }
 
 /** Efeito mecânico opcional de uma característica de classe. */
 export interface ClassFeatureEffect {
-  type: 'bonus' | 'resource' | 'save' | 'expertise' | 'sneakAttack' | 'other';
+  type:
+    | 'bonus'
+    | 'resource'
+    | 'save'
+    | 'expertise'
+    | 'sneakAttack'
+    | 'toggle'
+    | 'resistance'
+    | 'speed'
+    | 'damageBonus'
+    | 'critDice'
+    | 'unarmoredDefense'
+    | 'abilityBonus'
+    | 'other';
+  id?: string;
+  name?: string;
   target?: string;
   value?: number;
+  scaling?: { level: number; value: number }[];
   ability?: AbilityKey;
+  max?: number;
+  damageTypes?: string[];
   resource?: ClassFeatureResource;
+  requiresActive?: string;
   notes?: string;
 }
 
@@ -145,6 +165,7 @@ export interface ClassFeature {
   level: number;
   description: string;
   effect?: ClassFeatureEffect;
+  effects?: ClassFeatureEffect[];
 }
 
 export interface Subclass {
@@ -210,6 +231,10 @@ export interface Character {
   classCatalog: ClassSummary[];
   /** Features de classe/subclasse já liberadas pelo nível atual. */
   activeFeatures: ActiveClassFeature[];
+  /** Estado de runtime da classe (toggles ativos e usos gastos). */
+  classState: ClassState;
+  /** Ajustes mecânicos derivados das features (Fúria, resistências, etc.). */
+  classAdjustments: ClassAdjustments;
   level: number;
   background: string;
   alignment: string;
@@ -245,6 +270,41 @@ export interface Character {
 }
 
 /** Campos que podem ser enviados no PATCH (edição inline). */
+export interface ClassState {
+  active: string[];
+  used: Record<string, number>;
+}
+
+export interface ActiveToggle {
+  id: string;
+  name: string;
+  active: boolean;
+  resourceId: string | null;
+}
+
+export interface ActiveResource {
+  id: string;
+  name: string;
+  recharge: 'short' | 'long' | 'none';
+  max: number;
+  used: number;
+  remaining: number;
+  unlimited: boolean;
+}
+
+export interface ClassAdjustments {
+  toggles: ActiveToggle[];
+  resources: ActiveResource[];
+  activeToggleIds: string[];
+  meleeDamageBonus: number;
+  resistances: string[];
+  speedBonus: number;
+  critExtraDice: number;
+  unarmoredDefense: boolean;
+  abilityBonuses: Partial<Record<AbilityKey, number>>;
+  abilityCaps: Partial<Record<AbilityKey, number>>;
+}
+
 export interface CharacterPatch {
   name?: string;
   race?: string;
@@ -276,6 +336,7 @@ export interface CharacterPatch {
   spells?: SpellsState;
   attacks?: Attack[];
   features?: Feature[];
+  classState?: ClassState;
 
   notes?: string;
 }

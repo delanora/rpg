@@ -81,6 +81,12 @@ export const featureSchema = z.object({
   description: shortText(4000).default(''),
 });
 
+/** Estado de runtime da classe: toggles ativos e usos gastos por recurso. */
+export const classStateSchema = z.object({
+  active: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  used: z.record(z.string(), z.number().int().min(0).max(99)).default({}),
+});
+
 // --- Criação ----------------------------------------------------------------
 
 export const createCharacterSchema = z.object({
@@ -129,6 +135,7 @@ export const updateCharacterSchema = z
     spells: spellsStateSchema,
     attacks: z.array(attackSchema).max(100),
     features: z.array(featureSchema).max(200),
+    classState: classStateSchema,
 
     // Texto livre
     notes: z.string().max(20000),
