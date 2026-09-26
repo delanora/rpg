@@ -1,5 +1,6 @@
 import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
+import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
 
 /**
@@ -83,8 +84,20 @@ export const ServerEvents = {
   CREATURE_UPDATED: 'creature:updated',
   /** Criatura removida pelo mestre. */
   CREATURE_DELETED: 'creature:deleted',
-  // Próximas etapas:
-  //   combat:started / combat:turn / combat:ended  (Etapa 4)
+
+  // Combate (entrega para toda a mesa: jogadores e mestre participam)
+  /** Combate iniciado — também é o gatilho do pedido de iniciativa. */
+  COMBAT_STARTED: 'combat:started',
+  /** Estado completo do combate mudou (HP, rolagens, ordem...). */
+  COMBAT_UPDATED: 'combat:updated',
+  /** Virou o turno de alguém. */
+  COMBAT_TURN: 'combat:turn',
+  /** Combate encerrado pelo mestre. */
+  COMBAT_ENDED: 'combat:ended',
+  /** Um dado foi rolado (usado para o efeito sonoro e o log). */
+  DICE_ROLLED: 'dice:rolled',
+  /** Resultado de um ataque, com acerto/erro e dano aplicado. */
+  ATTACK_RESOLVED: 'combat:attack',
 } as const;
 
 /** Eventos de criaturas (entregues apenas à sala dos mestres). */
@@ -99,6 +112,61 @@ export interface CreatureUpdatedPayload {
 
 export interface CreatureDeletedPayload {
   creatureId: string;
+}
+
+/** --- Combate ----------------------------------------------------------------- */
+
+export interface CombatStartedPayload {
+  combat: CombatDto;
+}
+
+export interface CombatUpdatedPayload {
+  combat: CombatDto;
+}
+
+export interface CombatTurnPayload {
+  combatId: string;
+  combatantId: string;
+  combatantName: string;
+  /** Dono do turno, quando for um personagem de jogador. */
+  ownerUserId: string | null;
+  round: number;
+  index: number;
+}
+
+export interface CombatEndedPayload {
+  combatId: string;
+}
+
+/** Rolagem de dado divulgada para todos — dispara o efeito sonoro. */
+export interface DiceRolledPayload {
+  kind: 'initiative' | 'attack' | 'damage';
+  actorName: string;
+  expression: string;
+  rolls: number[];
+  sides: number;
+  modifier: number;
+  total: number;
+  crit: boolean;
+  at: string;
+}
+
+/** Resultado de um ataque, do teste de acerto ao dano aplicado. */
+export interface AttackResolvedPayload {
+  attackerName: string;
+  attackName: string;
+  targetName: string;
+  attackRoll: number;
+  attackBonus: number;
+  attackTotal: number;
+  targetArmorClass: number;
+  hit: boolean;
+  critical: boolean;
+  damageRolled: number;
+  damageType: string;
+  targetHpCurrent: number;
+  targetHpMax: number;
+  at: string;
 }
 
 export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];

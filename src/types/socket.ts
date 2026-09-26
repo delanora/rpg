@@ -1,10 +1,16 @@
 import type { Role } from '@prisma/client';
 import type { Server, Socket } from 'socket.io';
 import type {
+  AttackResolvedPayload,
+  CombatEndedPayload,
+  CombatStartedPayload,
+  CombatTurnPayload,
+  CombatUpdatedPayload,
   ConnectionReadyPayload,
   CreatureCreatedPayload,
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
+  DiceRolledPayload,
   PresenceUpdatePayload,
   SheetUpdatedPayload,
 } from '../realtime/events.js';
@@ -22,6 +28,14 @@ export interface ServerToClientEvents {
   'creature:created': (payload: CreatureCreatedPayload) => void;
   'creature:updated': (payload: CreatureUpdatedPayload) => void;
   'creature:deleted': (payload: CreatureDeletedPayload) => void;
+
+  // Combate
+  'combat:started': (payload: CombatStartedPayload) => void;
+  'combat:updated': (payload: CombatUpdatedPayload) => void;
+  'combat:turn': (payload: CombatTurnPayload) => void;
+  'combat:ended': (payload: CombatEndedPayload) => void;
+  'dice:rolled': (payload: DiceRolledPayload) => void;
+  'combat:attack': (payload: AttackResolvedPayload) => void;
 }
 
 /** Mapa de eventos cliente → servidor. Deve espelhar `ClientEvents`. */

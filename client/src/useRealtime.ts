@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { createSocket } from './socket';
 import type {
+  AttackResolvedPayload,
+  CombatEndedPayload,
+  CombatStartedPayload,
+  CombatTurnPayload,
+  CombatUpdatedPayload,
   CreatureCreatedPayload,
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
+  DiceRolledPayload,
+  OnlineUser,
   SheetUpdatedPayload,
 } from './types';
-import type { OnlineUser } from './types';
 
 export type ConnectionState = 'connecting' | 'online' | 'offline';
 
@@ -15,6 +21,12 @@ export interface RealtimeHandlers {
   onCreatureCreated?: (payload: CreatureCreatedPayload) => void;
   onCreatureUpdated?: (payload: CreatureUpdatedPayload) => void;
   onCreatureDeleted?: (payload: CreatureDeletedPayload) => void;
+  onCombatStarted?: (payload: CombatStartedPayload) => void;
+  onCombatUpdated?: (payload: CombatUpdatedPayload) => void;
+  onCombatTurn?: (payload: CombatTurnPayload) => void;
+  onCombatEnded?: (payload: CombatEndedPayload) => void;
+  onDiceRolled?: (payload: DiceRolledPayload) => void;
+  onAttackResolved?: (payload: AttackResolvedPayload) => void;
 }
 
 /**
@@ -44,15 +56,16 @@ export function useRealtime(handlers: RealtimeHandlers) {
       handlersRef.current.onSheetUpdated?.(payload);
     });
 
-    socket.on('creature:created', (payload) => {
-      handlersRef.current.onCreatureCreated?.(payload);
-    });
-    socket.on('creature:updated', (payload) => {
-      handlersRef.current.onCreatureUpdated?.(payload);
-    });
-    socket.on('creature:deleted', (payload) => {
-      handlersRef.current.onCreatureDeleted?.(payload);
-    });
+    socket.on('creature:created', (payload) => handlersRef.current.onCreatureCreated?.(payload));
+    socket.on('creature:updated', (payload) => handlersRef.current.onCreatureUpdated?.(payload));
+    socket.on('creature:deleted', (payload) => handlersRef.current.onCreatureDeleted?.(payload));
+
+    socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
+    socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));
+    socket.on('combat:turn', (payload) => handlersRef.current.onCombatTurn?.(payload));
+    socket.on('combat:ended', (payload) => handlersRef.current.onCombatEnded?.(payload));
+    socket.on('dice:rolled', (payload) => handlersRef.current.onDiceRolled?.(payload));
+    socket.on('combat:attack', (payload) => handlersRef.current.onAttackResolved?.(payload));
 
     return () => {
       socket.close();

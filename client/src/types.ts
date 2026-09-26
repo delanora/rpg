@@ -271,3 +271,87 @@ export interface CreatureUpdatedPayload {
 export interface CreatureDeletedPayload {
   creatureId: string;
 }
+
+/** --- Combate ---------------------------------------------------------------- */
+
+export type CombatStatus = 'PENDING_INITIATIVE' | 'ACTIVE' | 'ENDED';
+export type CombatantKind = 'CHARACTER' | 'CREATURE';
+
+export interface CombatantDto {
+  id: string;
+  kind: CombatantKind;
+  characterId: string | null;
+  creatureId: string | null;
+  name: string;
+  ownerUserId: string | null;
+  ownerUsername: string | null;
+  dexterityMod: number;
+  initiative: number | null;
+  initiativeRoll: number | null;
+  hpCurrent: number;
+  hpMax: number;
+  armorClass: number;
+  missing: boolean;
+  rolled: boolean;
+}
+
+export interface CombatDto {
+  id: string;
+  status: CombatStatus;
+  round: number;
+  currentIndex: number;
+  currentCombatantId: string | null;
+  combatants: CombatantDto[];
+  createdAt: string;
+  endedAt: string | null;
+}
+
+export interface CombatStartedPayload {
+  combat: CombatDto;
+}
+
+export interface CombatUpdatedPayload {
+  combat: CombatDto;
+}
+
+export interface CombatTurnPayload {
+  combatId: string;
+  combatantId: string;
+  combatantName: string;
+  ownerUserId: string | null;
+  round: number;
+  index: number;
+}
+
+export interface CombatEndedPayload {
+  combatId: string;
+}
+
+export interface DiceRolledPayload {
+  kind: 'initiative' | 'attack' | 'damage';
+  actorName: string;
+  expression: string;
+  rolls: number[];
+  sides: number;
+  modifier: number;
+  total: number;
+  crit: boolean;
+  at: string;
+}
+
+export interface AttackResolvedPayload {
+  attackerName: string;
+  attackName: string;
+  targetName: string;
+  attackRoll: number;
+  attackBonus: number;
+  attackTotal: number;
+  targetArmorClass: number;
+  hit: boolean;
+  critical: boolean;
+  damageRolled: number;
+  damageType: string;
+  targetHpCurrent: number;
+  targetHpMax: number;
+  at: string;
+}

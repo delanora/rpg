@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useAuth } from '../auth';
+import { isMuted, toggleMuted } from '../sound';
 import type { OnlineUser, SessionUser } from '../types';
 import type { ConnectionState } from '../useRealtime';
 
@@ -27,6 +29,7 @@ export function AppHeader({
   user,
 }: AppHeaderProps) {
   const { logout } = useAuth();
+  const [muted, setMuted] = useState(isMuted());
 
   return (
     <header className="app-header">
@@ -56,6 +59,16 @@ export function AppHeader({
             {user.role === 'MASTER' ? 'Mestre' : 'Jogador'}
           </em>
         </span>
+
+        <button
+          type="button"
+          className="btn btn-small"
+          title={muted ? 'Ativar sons' : 'Silenciar sons'}
+          aria-label={muted ? 'Ativar sons' : 'Silenciar sons'}
+          onClick={() => setMuted(toggleMuted())}
+        >
+          {muted ? '🔇' : '🔊'}
+        </button>
 
         <button type="button" className="btn btn-small" onClick={logout}>
           sair

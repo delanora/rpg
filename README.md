@@ -69,8 +69,9 @@ src/
 ├── modules/        # domínio, um diretório por área
 │   ├── auth/       # cadastro, login, middlewares de autenticação/autorização
 │   ├── characters/ # ficha do jogador
+│   ├── combat/     # combate: iniciativa, turnos, ataques e HP
 │   ├── creatures/  # criaturas/NPCs cadastrados pelo mestre
-│   ├── shared/     # regras de D&D 5e, ataques e utilidades compartilhadas
+│   ├── shared/     # regras de D&D 5e, dados, ataques e utilidades compartilhadas
 │   └── users/      # listagem de usuários (mestre)
 ├── realtime/       # Socket.io: auth, salas, presença e broadcast
 ├── scripts/        # utilitários (criar mestre, smoke test)
@@ -87,11 +88,13 @@ client/             # app React (Vite + TypeScript)
 └── src/
     ├── components/ # InlineField, Section, SheetView, AuthPage e seções
     │   └── master/ # painel do mestre: fichas (leitura) e criaturas
+    ├── combat/     # CombatTracker, CombatStartDialog e estado do combate
     ├── pages/      # SheetPage (jogador) e MasterPanel (mestre)
     ├── api.ts      # cliente HTTP com token
     ├── auth.tsx    # contexto de autenticação
     ├── readonly.tsx# modo somente leitura (visão do mestre)
     ├── socket.ts   # conexão Socket.io
+    ├── sound.ts    # efeitos sonoros sintetizados (dados, crítico, turno)
     └── useRealtime.ts # hook de eventos em tempo real
 ```
 
@@ -131,7 +134,7 @@ O projeto foi planejado em etapas sequenciais:
 - [x] **Etapa 1** — Autenticação, papéis de usuário e canais de tempo real
 - [x] **Etapa 2** — Ficha de personagem completa (jogador)
 - [x] **Etapa 3** — Painel do mestre e cadastro de criaturas
-- [ ] **Etapa 4** — Sistema de combate com iniciativa automática
+- [x] **Etapa 4** — Sistema de combate com iniciativa automática
 - [ ] **Etapa 5** — Design visual (fantasia medieval / pergaminho)
 - [ ] **Etapa 6** — Otimização e performance
 
@@ -330,7 +333,7 @@ Um usuário tem **uma ficha** (`userId` único), o que garante por construção 
 
 ### Regras de D&D 5e calculadas no servidor
 
-Implementadas em `src/modules/characters/dnd5e.ts` e devolvidas em `derived` (nunca gravadas):
+Implementadas em `src/modules/shared/dnd5e.ts` e devolvidas em `derived` (nunca gravadas):
 
 - **Modificador de atributo:** `floor((valor − 10) / 2)`
 - **Bônus de proficiência** por nível: +2 (1–4), +3 (5–8), +4 (9–12), +5 (13–16), +6 (17–20)
@@ -404,6 +407,66 @@ Os eventos `creature:created`, `creature:updated` e `creature:deleted` vão **so
 ### Prontas para o combate
 
 As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a iniciativa), HP atual/máximo e ataques no **mesmo formato** usado pelas fichas (`src/modules/shared/attacks.ts`), além de resistências e imunidades tipadas.
+
+---
+
+## ⚔️ Etapa 4 — Combate em tempo real
+
+### O fluxo, passo a passo
+
+1. **O mestre inicia o combate.** O botão **"⚔ COMBATE"** abre um modal com a lista de criaturas cadastradas; as marcadas entram na luta. O sistema adiciona automaticamente **todos os personagens de jogador**, cada criatura escolhida, e avisa a mesa inteira (`combat:started`). Só existe um combate por vez: iniciar outro devolve **409**.
+2. **Fase de iniciativa.** Cada jogador recebe um prompt na própria tela para rolar **1d20 + modificador de Destreza** (o modificador vem da ficha, calculado pelo servidor). Cada um rola quando quiser; a ordem só é montada quando **todos** tiverem rolado. O mestre rola pelas criaturas, uma a uma.
+3. **A ordem é montada automaticamente.** Quando o último combatente rola, o sistema ordena do maior para o menor resultado (empate desempatado pela Destreza e, depois, pelo nome) e divulga para todos (`combat:updated`).
+4. **Indicador de turno.** O combatente da vez fica destacado para toda a mesa; o mestre avança com **"Próximo turno"** (`combat:turn`). Ao passar do último, a ordem volta ao início e a **rodada** incrementa.
+5. **Ataques aplicam dano sozinhos.** Durante o combate o jogador escolhe, na própria ficha, um ataque e um alvo (personagem ou criatura). O servidor rola `1d20 + bônus` contra a **CA** do alvo: no acerto aplica o dano; no 20 natural é **crítico** (dobra os dados de dano); no 1 natural erra. O dano cai direto no HP do alvo e reflete na hora para o dono da ficha e para o mestre (`sheet:updated` / `creature:updated`).
+6. **Ajuste manual.** O mestre pode aplicar dano ou cura em qualquer combatente pelo painel (com piso em 0 e teto no HP máximo).
+7. **Encerrar.** A qualquer momento o mestre encerra o combate (`combat:ended`) e tudo volta ao estado normal.
+
+> **Importante:** o HP **não é duplicado** no combate. O `Combatant` guarda apenas a referência (`characterId`/`creatureId`), e o HP é sempre lido ao vivo da ficha ou da criatura — assim os dois nunca divergem.
+
+### Rolagem de dados
+
+O rolador fica em `src/modules/shared/dice.ts` e usa `crypto.randomInt` (não `Math.random`). Entende notações como `1d8`, `2d6+3` e valores fixos; o crítico dobra apenas os **dados** (não o bônus fixo). Todo resultado é divulgado como `dice:rolled`.
+
+### Endpoints
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/combat/active` | autenticado | O combate em andamento (ou `null`). |
+| `POST` | `/api/combat` | **mestre** | Inicia o combate (`{ creatureIds }`). |
+| `POST` | `/api/combat/initiative` | autenticado | O jogador rola a **própria** iniciativa. |
+| `POST` | `/api/combat/initiative/:combatantId` | **mestre** | O mestre rola por um combatente (criatura). |
+| `POST` | `/api/combat/next-turn` | **mestre** | Avança o turno. |
+| `POST` | `/api/combat/attack` | autenticado | `{ attackerCombatantId?, targetCombatantId, attackId }` — o serviço confere se o ataque pertence ao autor. |
+| `POST` | `/api/combat/hp` | **mestre** | Dano/cura manual (`{ combatantId, amount, mode }`). |
+| `POST` | `/api/combat/end` | **mestre** | Encerra o combate. |
+
+O atacante vem sempre da **ficha do usuário do token** — um jogador não consegue usar o ataque de outra ficha. A identidade nunca vem do corpo da requisição.
+
+### Eventos de tempo real
+
+| Evento | Destino | Conteúdo |
+|--------|---------|----------|
+| `combat:started` | mesa (`table:main`) | Combate criado, com todos os combatentes. |
+| `combat:updated` | mesa | Nova rolagem de iniciativa ou ordem definida. |
+| `combat:turn` | mesa | Turno/rodada atuais. |
+| `combat:attack` | mesa | Resultado do ataque (d20, total, CA, acerto, dano). |
+| `combat:ended` | mesa | Fim do combate. |
+| `dice:rolled` | mesa | Qualquer dado rolado (iniciativa, ataque, dano). |
+
+### Efeitos sonoros e alerta de turno
+
+O áudio é **sintetizado no navegador** (`client/src/sound.ts`, Web Audio API) — sem arquivos para carregar:
+
+- Som de dado ao rolar (iniciativa, ataque, dano).
+- Som especial no **crítico**.
+- Notificação sonora **e** visual destacada quando chega o **turno do jogador** (aviso piscante na tela).
+
+O botão 🔊/🔇 no cabeçalho liga e desliga o som (a preferência fica salva em `localStorage`). O navegador exige um gesto do usuário antes de liberar o áudio, então o som é destravado no primeiro clique/toque.
+
+### Combate em andamento persistido
+
+`Combat` e `Combatant` ficam no banco, então quem recarrega a página (ou reconecta) **volta direto para o combate em curso** — o frontend carrega o estado ativo no `mount`. As relações usam `onDelete: SetNull` para que apagar uma criatura ou ficha não quebre o combate.
 
 ---
 

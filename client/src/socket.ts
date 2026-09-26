@@ -7,7 +7,15 @@ import type {
   CreatureUpdatedPayload,
   SheetUpdatedPayload,
 } from './events';
-import type { PresencePayload } from './types';
+import type {
+  AttackResolvedPayload,
+  CombatEndedPayload,
+  CombatStartedPayload,
+  CombatTurnPayload,
+  CombatUpdatedPayload,
+  DiceRolledPayload,
+  PresencePayload,
+} from './types';
 
 /** Mapa de eventos espelhando o backend (src/types/socket.ts). */
 export interface ServerToClientEvents {
@@ -18,6 +26,12 @@ export interface ServerToClientEvents {
   'creature:created': (payload: CreatureCreatedPayload) => void;
   'creature:updated': (payload: CreatureUpdatedPayload) => void;
   'creature:deleted': (payload: CreatureDeletedPayload) => void;
+  'combat:started': (payload: CombatStartedPayload) => void;
+  'combat:updated': (payload: CombatUpdatedPayload) => void;
+  'combat:turn': (payload: CombatTurnPayload) => void;
+  'combat:ended': (payload: CombatEndedPayload) => void;
+  'dice:rolled': (payload: DiceRolledPayload) => void;
+  'combat:attack': (payload: AttackResolvedPayload) => void;
 }
 
 export interface ClientToServerEvents {

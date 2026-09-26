@@ -19,6 +19,8 @@ import { prisma } from '../config/prisma.js';
 const BASE_URL = process.env.SMOKE_BASE_URL ?? `http://localhost:${env.PORT}`;
 const suffix = Date.now().toString(36);
 const createdUsernames: string[] = [];
+const createdCreatureIds: string[] = [];
+const createdCombatIds: string[] = [];
 
 let failures = 0;
 
@@ -481,8 +483,220 @@ async function main(): Promise<void> {
     (await api(`/api/creatures/${creature.id}`, { token: masterToken })).status === 404,
   );
 
-  // --- 8. Presença ao desconectar -------------------------------------------
-  console.log('\n8) Presença ao desconectar');
+  // --- 8. Combate ------------------------------------------------------------
+  console.log('\n8) Combate');
+
+  // HP decente para o combate e um ataque no personagem.
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      hpMax: 30,
+      hpCurrent: 30,
+      attacks: [
+        { id: 'p1', name: 'Espada longa', damage: '1d8+3', damageType: 'Cortante', attackBonus: 10, notes: '' },
+      ],
+    },
+  });
+
+  const wolfCreated = await api('/api/creatures', {
+    method: 'POST',
+    token: masterToken,
+    body: { name: 'Lobo', type: 'Besta', hpMax: 20, armorClass: 12 },
+  });
+  const wolf = wolfCreated.data.creature;
+  createdCreatureIds.push(wolf.id);
+
+  await api(`/api/creatures/${wolf.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      dexterity: 14,
+      attacks: [
+        { id: 'c1', name: 'Mordida', damage: '1d6+2', damageType: 'Cortante', attackBonus: 10, notes: '' },
+      ],
+    },
+  });
+
+  check(
+    'jogador NÃO inicia combate (403)',
+    (await api('/api/combat', { method: 'POST', token: playerToken, body: { creatureIds: [] } })).status === 403,
+  );
+  check('sem combate ativo no início', (await api('/api/combat/active', { token: playerToken })).data.combat === null);
+
+  const combatStartedEvent = waitFor<any>(playerSocket, 'combat:started');
+  const combatStarted = await api('/api/combat', {
+    method: 'POST',
+    token: masterToken,
+    body: { creatureIds: [wolf.id] },
+  });
+  check('mestre inicia o combate (201)', combatStarted.status === 201, JSON.stringify(combatStarted.data));
+  check(
+    'jogadores recebem combat:started',
+    (await combatStartedEvent.catch(() => null))?.combat?.status === 'PENDING_INITIATIVE',
+  );
+
+  const combat = combatStarted.data.combat;
+  createdCombatIds.push(combat.id);
+  const playerCombatant = combat.combatants.find((item: any) => item.ownerUserId === playerId);
+  const creatureCombatant = combat.combatants.find((item: any) => item.kind === 'CREATURE');
+  check('personagens de jogador entram automaticamente', Boolean(playerCombatant));
+  check('criatura escolhida entra no combate', Boolean(creatureCombatant));
+  check('ninguém rolou iniciativa ainda', combat.combatants.every((item: any) => !item.rolled));
+
+  check(
+    'não é possível iniciar dois combates (409)',
+    (await api('/api/combat', { method: 'POST', token: masterToken, body: { creatureIds: [] } })).status === 409,
+  );
+  check(
+    'jogador NÃO rola a iniciativa de outro (403)',
+    (await api(`/api/combat/initiative/${creatureCombatant.id}`, { method: 'POST', token: playerToken })).status === 403,
+  );
+  check(
+    'jogador NÃO avança o turno (403)',
+    (await api('/api/combat/next-turn', { method: 'POST', token: playerToken })).status === 403,
+  );
+
+  const diceEvent = waitFor<any>(playerSocket, 'dice:rolled');
+  const playerRoll = await api('/api/combat/initiative', { method: 'POST', token: playerToken });
+  const rolledPlayer = playerRoll.data.combat.combatants.find((item: any) => item.id === playerCombatant.id);
+  check('jogador rola a própria iniciativa', rolledPlayer.initiative !== null);
+  check(
+    'iniciativa = 1d20 + modificador de Destreza',
+    rolledPlayer.initiative >= 1 + playerCombatant.dexterityMod &&
+      rolledPlayer.initiative <= 20 + playerCombatant.dexterityMod,
+    `valor ${rolledPlayer.initiative}, mod ${playerCombatant.dexterityMod}`,
+  );
+  check('rolagem é divulgada para a mesa (dice:rolled)', (await diceEvent.catch(() => null))?.kind === 'initiative');
+  check(
+    'combate continua pendente enquanto falta alguém',
+    playerRoll.data.combat.status === 'PENDING_INITIATIVE',
+  );
+  check(
+    'não é possível rolar duas vezes (409)',
+    (await api('/api/combat/initiative', { method: 'POST', token: playerToken })).status === 409,
+  );
+
+  const turnEvent = waitFor<any>(masterSocket, 'combat:turn');
+  const masterRoll = await api(`/api/combat/initiative/${creatureCombatant.id}`, {
+    method: 'POST',
+    token: masterToken,
+  });
+
+  const active = masterRoll.data.combat;
+  check('mestre rola pela criatura', active.combatants.find((item: any) => item.id === creatureCombatant.id)?.initiative !== null);
+  check('todos rolaram -> combate ativo', active.status === 'ACTIVE');
+  check(
+    'ordem montada do maior para o menor',
+    active.combatants.every((item: any, index: number) => index === 0 || active.combatants[index - 1].initiative >= item.initiative),
+    JSON.stringify(active.combatants.map((item: any) => item.initiative)),
+  );
+  check('turno começa no primeiro da ordem', active.currentIndex === 0 && active.currentCombatantId === active.combatants[0].id);
+  check('rodada começa em 1', active.round === 1);
+  check('mesa é avisada do primeiro turno', (await turnEvent.catch(() => null)) !== null);
+
+  const nextTurn = await api('/api/combat/next-turn', { method: 'POST', token: masterToken });
+  check('mestre avança o turno', nextTurn.data.combat.currentIndex === 1);
+  const wrapped = await api('/api/combat/next-turn', { method: 'POST', token: masterToken });
+  check(
+    'ao passar do último, volta ao início com nova rodada',
+    wrapped.data.combat.currentIndex === 0 && wrapped.data.combat.round === 2,
+    JSON.stringify({ index: wrapped.data.combat.currentIndex, round: wrapped.data.combat.round }),
+  );
+
+  // Ataque: o dano só entra quando acerta a CA.
+  const attack = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'p1', targetCombatantId: creatureCombatant.id },
+  });
+  const attackResult = attack.data.result;
+  check('ataque devolve a rolagem de acerto', attackResult.attackRoll >= 1 && attackResult.attackRoll <= 20);
+  check('total do ataque = d20 + bônus', attackResult.attackTotal === attackResult.attackRoll + attackResult.attackBonus);
+  check('CA considerada é a do alvo', attackResult.targetArmorClass === 12);
+  check('dano só existe quando acerta', attackResult.hit ? attackResult.damageRolled >= 1 : attackResult.damageRolled === 0, JSON.stringify(attackResult));
+  check(
+    'HP do alvo reflete o dano aplicado',
+    attackResult.hit ? attackResult.targetHpCurrent === 20 - attackResult.damageRolled : attackResult.targetHpCurrent === 20,
+    JSON.stringify({ hit: attackResult.hit, hp: attackResult.targetHpCurrent, dano: attackResult.damageRolled }),
+  );
+  check(
+    'HP atualizado aparece no estado do combate',
+    attack.data.combat.combatants.find((item: any) => item.id === creatureCombatant.id).hpCurrent === attackResult.targetHpCurrent,
+  );
+  check(
+    'jogador NÃO usa o ataque de outra ficha (404)',
+    (await api('/api/combat/attack', {
+      method: 'POST',
+      token: playerToken,
+      body: { attackId: 'c1', targetCombatantId: creatureCombatant.id },
+    })).status === 404,
+  );
+  check(
+    'não é possível atacar a si mesmo (400)',
+    (await api('/api/combat/attack', {
+      method: 'POST',
+      token: playerToken,
+      body: { attackId: 'p1', targetCombatantId: playerCombatant.id },
+    })).status === 400,
+  );
+
+  // Dano/cura manual do mestre.
+  const hpBefore = attackResult.targetHpCurrent;
+  const manualDamage = await api('/api/combat/hp', {
+    method: 'POST',
+    token: masterToken,
+    body: { combatantId: creatureCombatant.id, amount: 5, mode: 'damage' },
+  });
+  check(
+    'mestre aplica dano manual',
+    manualDamage.data.combat.combatants.find((item: any) => item.id === creatureCombatant.id).hpCurrent === Math.max(0, hpBefore - 5),
+  );
+  const healed = await api('/api/combat/hp', {
+    method: 'POST',
+    token: masterToken,
+    body: { combatantId: creatureCombatant.id, amount: 3, mode: 'heal' },
+  });
+  check(
+    'cura não passa do HP máximo',
+    healed.data.combat.combatants.find((item: any) => item.id === creatureCombatant.id).hpCurrent === Math.min(20, Math.max(0, hpBefore - 5) + 3),
+  );
+  check(
+    'jogador NÃO aplica dano manual (403)',
+    (await api('/api/combat/hp', {
+      method: 'POST',
+      token: playerToken,
+      body: { combatantId: creatureCombatant.id, amount: 1, mode: 'damage' },
+    })).status === 403,
+  );
+
+  // Dano em personagem precisa chegar à ficha dele em tempo real.
+  const sheetDamaged = waitFor<any>(playerSocket, 'sheet:updated');
+  const beforeSheet = (await api('/api/characters/me', { token: playerToken })).data.character.hpCurrent;
+  await api('/api/combat/hp', {
+    method: 'POST',
+    token: masterToken,
+    body: { combatantId: playerCombatant.id, amount: 4, mode: 'damage' },
+  });
+  const sheetPayload = await sheetDamaged.catch(() => null);
+  check('dano em personagem avisa a ficha do dono', sheetPayload !== null);
+  check(
+    'HP da ficha cai pelo dano do combate',
+    sheetPayload?.character?.hpCurrent === beforeSheet - 4,
+    `antes ${beforeSheet}, depois ${sheetPayload?.character?.hpCurrent}`,
+  );
+
+  const combatEndedEvent = waitFor<any>(playerSocket, 'combat:ended');
+  check('mestre encerra o combate', (await api('/api/combat/end', { method: 'POST', token: masterToken })).status === 200);
+  check('mesa é avisada do fim do combate', (await combatEndedEvent.catch(() => null)) !== null);
+  check('não há mais combate ativo', (await api('/api/combat/active', { token: playerToken })).data.combat === null);
+  check(
+    'jogador NÃO encerra combate (403)',
+    (await api('/api/combat/end', { method: 'POST', token: playerToken })).status === 403,
+  );
+
+  // --- 9. Presença ao desconectar -------------------------------------------
+  console.log('\n9) Presença ao desconectar');
   const offlinePromise = waitForPresence(
     masterSocket,
     (online) => !online.some((u) => u.username === playerUsername),
@@ -500,10 +714,22 @@ async function main(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
+  // Combates criados pelo teste (os combatentes somem em cascata).
+  if (createdCombatIds.length > 0) {
+    await prisma.combat.deleteMany({ where: { id: { in: createdCombatIds } } });
+  }
+  // Rede de segurança: se o teste abortou no meio de um combate, não deixa lixo.
+  await prisma.combat.deleteMany({ where: { status: { in: ['PENDING_INITIATIVE', 'ACTIVE'] } } });
+
+  if (createdCreatureIds.length > 0) {
+    await prisma.creature.deleteMany({ where: { id: { in: createdCreatureIds } } });
+  }
+
   if (createdUsernames.length > 0) {
     // A ficha é removida junto com o usuário (onDelete: Cascade).
     await prisma.user.deleteMany({ where: { username: { in: createdUsernames } } });
   }
+
   await prisma.$disconnect();
 }
 

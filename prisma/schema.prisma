@@ -85,9 +85,10 @@ model Character {
   notes     String @default("")
 
   /// Incrementado a cada alteração; ajuda a ordenar eventos em tempo real.
-  version   Int      @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  version    Int         @default(1)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  combatants Combatant[]
 
   @@map("characters")
 }
@@ -129,15 +130,76 @@ model Creature {
   description String @default("")
 
   /// Incrementado a cada alteração; ajuda a ordenar eventos em tempo real.
-  version   Int      @default(1)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  version    Int         @default(1)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  combatants Combatant[]
 
   @@index([name])
   @@map("creatures")
 }
 
 // -----------------------------------------------------------------------------
-// Próximas etapas:
-//   Etapa 4 — Combat, Combatant, InitiativeOrder, Turn
+// Etapa 4 — Combate
+//
+// Um combate ativo por vez. O HP NÃO é duplicado aqui: o combatente guarda
+// apenas identidade e iniciativa, e o HP é lido ao vivo da ficha ou da criatura.
+// Assim não existe segunda fonte de verdade para os pontos de vida.
 // -----------------------------------------------------------------------------
+
+enum CombatStatus {
+  PENDING_INITIATIVE // aguardando todas as iniciativas serem roladas
+  ACTIVE // ordem montada, turnos em andamento
+  ENDED
+}
+
+enum CombatantKind {
+  CHARACTER
+  CREATURE
+}
+
+model Combat {
+  id           String       @id @default(cuid())
+  status       CombatStatus @default(PENDING_INITIATIVE)
+  round        Int          @default(1)
+  /// Posição na ordem calculada (ordenada por iniciativa).
+  currentIndex Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  endedAt      DateTime?
+  combatants   Combatant[]
+
+  @@index([status])
+  @@map("combats")
+}
+
+model Combatant {
+  id       String  @id @default(cuid())
+  combatId String
+  combat   Combat  @relation(fields: [combatId], references: [id], onDelete: Cascade)
+
+  kind CombatantKind
+
+  // Se a ficha/criatura for removida no meio do combate, o combatente continua
+  // existindo (o id vira nulo) para não quebrar a ordem dos turnos.
+  characterId String?
+  character   Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  creatureId  String?
+  creature    Creature?  @relation(fields: [creatureId], references: [id], onDelete: SetNull)
+
+  /// Nome no momento da entrada em combate (a criatura pode ser renomeada depois).
+  name         String
+  ownerUserId  String?
+  /// Modificador de Destreza fixado na entrada, usado na iniciativa e no desempate.
+  dexterityMod Int     @default(0)
+
+  /// Resultados em `null` enquanto o combatente ainda não rolou a iniciativa.
+  initiative     Int?
+  initiativeRoll Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([combatId])
+  @@index([ownerUserId])
+  @@map("combatants")
+}

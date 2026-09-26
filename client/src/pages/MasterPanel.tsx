@@ -3,7 +3,11 @@ import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
 import { CreaturesTab } from '../components/master/CreaturesTab';
 import { SheetsTab } from '../components/master/SheetsTab';
-import type { Character, Creature, CreaturePatch, SessionUser } from '../types';
+import { CombatStartDialog } from '../combat/CombatStartDialog';
+import { CombatTracker } from '../combat/CombatTracker';
+import { fetchActiveCombat, startCombat } from '../combat/combatApi';
+import { useCombatState } from '../combat/useCombatState';
+import type { Attack, Character, Creature, CreaturePatch, SessionUser } from '../types';
 import { useRealtime } from '../useRealtime';
 
 type Tab = 'sheets' | 'creatures';
@@ -16,13 +20,21 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showStartDialog, setShowStartDialog] = useState(false);
+
+  const combatState = useCombatState(user.id);
+  const { combat, log, turnAlert, dismissTurnAlert } = combatState;
 
   const { connection, online, lastEventAt } = useRealtime({
+    ...combatState.handlers,
+
     // Fichas dos jogadores chegam ao vivo — é o requisito central do painel.
     onSheetUpdated: (payload) => {
       setCharacters((prev) => {
         const index = prev.findIndex((character) => character.id === payload.character.id);
-        if (index === -1) return [...prev, payload.character].sort((a, b) => a.name.localeCompare(b.name));
+        if (index === -1) {
+          return [...prev, payload.character].sort((a, b) => a.name.localeCompare(b.name));
+        }
 
         const next = [...prev];
         if (payload.character.version >= next[index].version) next[index] = payload.character;
@@ -47,18 +59,20 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     },
   });
 
-  // Carga inicial das fichas e do bestiário.
+  // Carga inicial: fichas, bestiário e eventual combate em andamento.
   useEffect(() => {
     let active = true;
 
     Promise.all([
       api<{ characters: Character[] }>('/api/characters'),
       api<{ creatures: Creature[] }>('/api/creatures'),
+      fetchActiveCombat(),
     ])
-      .then(([charactersResult, creaturesResult]) => {
+      .then(([charactersResult, creaturesResult, activeCombat]) => {
         if (!active) return;
         setCharacters(charactersResult.characters);
         setCreatures(creaturesResult.creatures);
+        combatState.setCombat(activeCombat);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : 'Falha ao carregar o painel.');
@@ -70,6 +84,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const createCreature = useCallback(async (): Promise<Creature> => {
@@ -111,33 +126,73 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /** Localiza os ataques de qualquer combatente para o painel de ataque do mestre. */
+  const attacksFor = useCallback(
+    (combatantId: string): Attack[] => {
+      const combatant = combat?.combatants.find((item) => item.id === combatantId);
+      if (!combatant) return [];
+
+      if (combatant.characterId) {
+        return (
+          characters.find((character) => character.id === combatant.characterId)?.attacks ?? []
+        );
+      }
+      if (combatant.creatureId) {
+        return creatures.find((creature) => creature.id === combatant.creatureId)?.attacks ?? [];
+      }
+      return [];
+    },
+    [combat, characters, creatures],
+  );
+
+  async function handleStartCombat(creatureIds: string[]): Promise<void> {
+    const started = await startCombat(creatureIds);
+    combatState.setCombat(started);
+    setShowStartDialog(false);
+  }
+
   return (
     <div className="app-shell">
       <AppHeader
-        title="Painel do Mestre"
-        subtitle={`${characters.length} ficha(s) · ${creatures.length} criatura(s)`}
+        title={combat ? 'Modo de combate' : 'Painel do Mestre'}
+        subtitle={
+          combat
+            ? `rodada ${combat.round} · ${combat.combatants.length} combatente(s)`
+            : `${characters.length} ficha(s) · ${creatures.length} criatura(s)`
+        }
         connection={connection}
         online={online}
         lastEventAt={lastEventAt}
         user={user}
       />
 
-      <nav className="tabs tabs-inline">
-        <button
-          type="button"
-          className={tab === 'sheets' ? 'tab active' : 'tab'}
-          onClick={() => setTab('sheets')}
-        >
-          Fichas dos jogadores
-        </button>
-        <button
-          type="button"
-          className={tab === 'creatures' ? 'tab active' : 'tab'}
-          onClick={() => setTab('creatures')}
-        >
-          Criaturas e NPCs
-        </button>
-      </nav>
+      {/* Em modo de combate o painel dá lugar ao combate. */}
+      {combat ? null : (
+        <nav className="tabs tabs-inline">
+          <button
+            type="button"
+            className={tab === 'sheets' ? 'tab active' : 'tab'}
+            onClick={() => setTab('sheets')}
+          >
+            Fichas dos jogadores
+          </button>
+          <button
+            type="button"
+            className={tab === 'creatures' ? 'tab active' : 'tab'}
+            onClick={() => setTab('creatures')}
+          >
+            Criaturas e NPCs
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-primary btn-combat"
+            onClick={() => setShowStartDialog(true)}
+          >
+            ⚔ COMBATE
+          </button>
+        </nav>
+      )}
 
       {error ? (
         <div className="banner banner-error">
@@ -151,6 +206,18 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       <main className="app-main app-main-wide">
         {loading ? (
           <p className="splash">Carregando o painel...</p>
+        ) : combat ? (
+          <CombatTracker
+            combat={combat}
+            log={log}
+            user={user}
+            turnAlert={turnAlert}
+            onDismissTurnAlert={dismissTurnAlert}
+            attacksFor={attacksFor}
+            onCombatChange={combatState.setCombat}
+            onCombatEnd={() => combatState.setCombat(null)}
+            onError={setError}
+          />
         ) : tab === 'sheets' ? (
           <SheetsTab characters={characters} />
         ) : (
@@ -162,6 +229,14 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           />
         )}
       </main>
+
+      {showStartDialog ? (
+        <CombatStartDialog
+          creatures={creatures}
+          onCancel={() => setShowStartDialog(false)}
+          onStart={handleStartCombat}
+        />
+      ) : null}
     </div>
   );
 }

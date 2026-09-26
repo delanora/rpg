@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
 import { SheetView } from '../components/SheetView';
+import { CombatTracker } from '../combat/CombatTracker';
+import { fetchActiveCombat } from '../combat/combatApi';
+import { useCombatState } from '../combat/useCombatState';
 import type { Character, CharacterPatch, SessionUser } from '../types';
 import { useRealtime } from '../useRealtime';
 
@@ -11,9 +14,15 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const combatState = useCombatState(user.id);
+  const { combat, log, turnAlert, dismissTurnAlert } = combatState;
+
   const { connection, online, lastEventAt } = useRealtime({
+    ...combatState.handlers,
+
     onSheetUpdated: (payload) => {
       // Só aceita a própria ficha e versões mais novas (evita respostas fora de ordem).
+      // Também é por aqui que o dano do combate chega ao HP do jogador.
       setCharacter((prev) => {
         if (!prev || prev.id !== payload.character.id) return prev;
         return payload.character.version >= prev.version ? payload.character : prev;
@@ -21,13 +30,18 @@ export function SheetPage({ user }: { user: SessionUser }) {
     },
   });
 
-  // Carrega a ficha do usuário autenticado.
+  // Carrega a ficha do usuário e o eventual combate em andamento.
   useEffect(() => {
     let active = true;
 
-    api<{ character: Character | null }>('/api/characters/me')
-      .then((result) => {
-        if (active) setCharacter(result.character);
+    Promise.all([
+      api<{ character: Character | null }>('/api/characters/me'),
+      fetchActiveCombat().catch(() => null),
+    ])
+      .then(([characterResult, activeCombat]) => {
+        if (!active) return;
+        setCharacter(characterResult.character);
+        combatState.setCombat(activeCombat);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : 'Não foi possível carregar a ficha.');
@@ -39,6 +53,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -58,7 +73,6 @@ export function SheetPage({ user }: { user: SessionUser }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao salvar a alteração.');
 
-      // Em caso de erro, recarrega para não deixar a tela divergente do servidor.
       try {
         const fresh = await api<{ character: Character | null }>('/api/characters/me');
         if (fresh.character) {
@@ -92,7 +106,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
   return (
     <div className="app-shell">
       <AppHeader
-        title={character ? character.name : 'Sem ficha'}
+        title={combat ? `${character?.name ?? 'Sem ficha'} · em combate` : character ? character.name : 'Sem ficha'}
         connection={connection}
         online={online}
         lastEventAt={lastEventAt}
@@ -111,16 +125,39 @@ export function SheetPage({ user }: { user: SessionUser }) {
       <main className="app-main">
         {loading ? (
           <p className="splash">Carregando a ficha...</p>
-        ) : !character ? (
-          <div className="empty-state">
-            <h2>Você ainda não tem uma ficha</h2>
-            <p>Crie sua ficha para começar a preencher seus dados de D&amp;D 5e.</p>
-            <button type="button" className="btn btn-primary" onClick={createSheet} disabled={busy}>
-              {busy ? 'Criando...' : 'Criar minha ficha'}
-            </button>
-          </div>
         ) : (
-          <SheetView character={character} update={update} />
+          <>
+            {combat ? (
+              <CombatTracker
+                combat={combat}
+                log={log}
+                user={user}
+                turnAlert={turnAlert}
+                onDismissTurnAlert={dismissTurnAlert}
+                characterAttacks={character?.attacks ?? []}
+                onCombatChange={combatState.setCombat}
+                onCombatEnd={() => combatState.setCombat(null)}
+                onError={setError}
+              />
+            ) : null}
+
+            {!character ? (
+              <div className="empty-state">
+                <h2>Você ainda não tem uma ficha</h2>
+                <p>Crie sua ficha para começar a preencher seus dados de D&amp;D 5e.</p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={createSheet}
+                  disabled={busy}
+                >
+                  {busy ? 'Criando...' : 'Criar minha ficha'}
+                </button>
+              </div>
+            ) : (
+              <SheetView character={character} update={update} />
+            )}
+          </>
         )}
       </main>
     </div>
