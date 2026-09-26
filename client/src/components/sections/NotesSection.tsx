@@ -27,6 +27,7 @@ export function NotesSection({ character, update }: SheetSectionProps) {
   return (
     <Section
       title="Anotações e História"
+      icon="quill"
       subtitle={
         readOnly
           ? undefined

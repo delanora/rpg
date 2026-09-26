@@ -6,7 +6,7 @@ import type { SheetSectionProps } from './common';
 
 export function AbilitiesSection({ character, update }: SheetSectionProps) {
   return (
-    <Section title="Atributos" subtitle="O modificador é calculado automaticamente">
+    <Section title="Atributos" icon="shield" subtitle="O modificador é calculado automaticamente">
       <div className="grid grid-abilities">
         {ABILITY_KEYS.map((ability) => {
           const modifier = character.derived.modifiers[ability];

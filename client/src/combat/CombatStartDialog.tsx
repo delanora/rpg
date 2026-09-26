@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Icon } from '../components/Icon';
 import type { Creature } from '../types';
 
 interface CombatStartDialogProps {
@@ -36,7 +37,9 @@ export function CombatStartDialog({ creatures, onCancel, onStart }: CombatStartD
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>⚔ Iniciar combate</h2>
+        <h2>
+          <Icon name="sword" size={20} /> Iniciar combate
+        </h2>
         <p className="section-subtitle">
           Todos os personagens de jogador entram automaticamente. Escolha as criaturas que
           participam:

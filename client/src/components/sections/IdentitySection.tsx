@@ -6,7 +6,7 @@ import type { SheetSectionProps } from './common';
 
 export function IdentitySection({ character, update }: SheetSectionProps) {
   return (
-    <Section title="Identidade" subtitle="Clique em qualquer campo para editar">
+    <Section title="Identidade" icon="scroll" subtitle="Clique em qualquer campo para editar">
       <div className="grid grid-3">
         <label className="field">
           <span>Nome</span>

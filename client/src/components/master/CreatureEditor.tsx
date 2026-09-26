@@ -2,6 +2,7 @@ import { ABILITY_KEYS, ABILITY_LABELS, DAMAGE_TYPES, formatModifier } from '../.
 import type { Creature, CreaturePatch } from '../../types';
 import { clampInt } from '../../utils';
 import { AttacksTable } from '../AttacksTable';
+import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 
@@ -58,13 +59,15 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
   return (
     <div className="creature-editor">
       <div className="detail-head">
-        <h2>{creature.name}</h2>
+        <h2>
+          <Icon name="flame" size={22} /> {creature.name}
+        </h2>
         <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
           remover criatura
         </button>
       </div>
 
-      <Section title="Identificação">
+      <Section title="Identificação" icon="scroll">
         <div className="grid grid-3">
           <label className="field">
             <span>Nome</span>
@@ -100,7 +103,7 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
         </div>
       </Section>
 
-      <Section title="Atributos">
+      <Section title="Atributos" icon="shield">
         <div className="grid grid-abilities">
           {ABILITY_KEYS.map((ability) => (
             <div className="ability-card" key={ability}>
@@ -124,7 +127,7 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
         </div>
       </Section>
 
-      <Section title="Vida e Defesa">
+      <Section title="Vida e Defesa" icon="heart">
         <div className="grid grid-4">
           <div className="vital vital-hp">
             <span className="vital-label">HP atual</span>
@@ -185,7 +188,7 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
         </div>
       </Section>
 
-      <Section title="Ataques">
+      <Section title="Ataques" icon="sword">
         <AttacksTable
           attacks={creature.attacks}
           defaultBonus={attackBonus}
@@ -193,7 +196,7 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
         />
       </Section>
 
-      <Section title="Resistências e Imunidades">
+      <Section title="Resistências e Imunidades" icon="flame">
         <DamageChips
           label="Resistências"
           selected={creature.resistances}
@@ -206,7 +209,7 @@ export function CreatureEditor({ creature, onPatch, onDelete }: CreatureEditorPr
         />
       </Section>
 
-      <Section title="Descrição">
+      <Section title="Descrição" icon="quill">
         <InlineField
           value={creature.description}
           mode="textarea"

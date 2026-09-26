@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
+import { Icon } from '../components/Icon';
 import { CreaturesTab } from '../components/master/CreaturesTab';
 import { SheetsTab } from '../components/master/SheetsTab';
 import { CombatStartDialog } from '../combat/CombatStartDialog';
@@ -152,7 +153,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   }
 
   return (
-    <div className="app-shell">
+    <div className={combat ? 'app-shell theme-master combat-active' : 'app-shell theme-master'}>
       <AppHeader
         title={combat ? 'Modo de combate' : 'Painel do Mestre'}
         subtitle={
@@ -174,14 +175,14 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             className={tab === 'sheets' ? 'tab active' : 'tab'}
             onClick={() => setTab('sheets')}
           >
-            Fichas dos jogadores
+            <Icon name="users" size={16} /> Fichas dos jogadores
           </button>
           <button
             type="button"
             className={tab === 'creatures' ? 'tab active' : 'tab'}
             onClick={() => setTab('creatures')}
           >
-            Criaturas e NPCs
+            <Icon name="flame" size={16} /> Criaturas e NPCs
           </button>
 
           <button
@@ -189,7 +190,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             className="btn btn-primary btn-combat"
             onClick={() => setShowStartDialog(true)}
           >
-            ⚔ COMBATE
+            <Icon name="sword" size={16} /> COMBATE
           </button>
         </nav>
       )}

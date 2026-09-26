@@ -52,7 +52,7 @@ Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada joga
 | Autenticação | **JWT** (`jsonwebtoken`) | Token assinado, enviado no header HTTP e no handshake do WebSocket. |
 | Validação | **Zod** | Valida todo payload de entrada (env, cadastro, login, eventos). |
 | Tempo real | **Socket.io** | Salas (`rooms`), reconexão automática e entrega garantida de eventos — essenciais para turnos e HP sincronizados. |
-| Frontend | **React 19 + Vite + TypeScript** | Edição inline exige interface reativa; Vite dá dev server rápido com proxy para a API. O tema visual (Etapa 5) é aplicado por cima. |
+| Frontend | **React 19 + Vite + TypeScript** | Edição inline exige interface reativa; Vite dá dev server rápido com proxy para a API. A identidade visual (Etapa 5) é aplicada por cima. |
 
 Camada de tempo real: HTTP e WebSocket compartilham a **mesma porta** (`http.Server` do Express + Socket.io), o que simplifica a hospedagem.
 
@@ -84,17 +84,21 @@ prisma/
 
 client/             # app React (Vite + TypeScript)
 ├── index.html
+├── public/fonts/   # fontes auto-hospedadas (Cinzel, EB Garamond, MedievalSharp)
 ├── vite.config.ts  # proxy de /api e /socket.io para o backend em dev
 └── src/
-    ├── components/ # InlineField, Section, SheetView, AuthPage e seções
+    ├── components/ # InlineField, Section, SheetView, Icon, HpBar, AuthPage e seções
     │   └── master/ # painel do mestre: fichas (leitura) e criaturas
-    ├── combat/     # CombatTracker, CombatStartDialog e estado do combate
+    ├── combat/     # CombatTracker, CombatIntro, CombatStartDialog e estado do combate
     ├── pages/      # SheetPage (jogador) e MasterPanel (mestre)
     ├── api.ts      # cliente HTTP com token
     ├── auth.tsx    # contexto de autenticação
+    ├── fonts.css   # @font-face das fontes locais (gerado)
     ├── readonly.tsx# modo somente leitura (visão do mestre)
     ├── socket.ts   # conexão Socket.io
     ├── sound.ts    # efeitos sonoros sintetizados (dados, crítico, turno)
+    ├── styles.css  # identidade visual (pergaminho + grimório amaldiçoado)
+    ├── theme.ts    # tema claro/escuro, salvo no navegador
     └── useRealtime.ts # hook de eventos em tempo real
 ```
 
@@ -102,14 +106,19 @@ client/             # app React (Vite + TypeScript)
 
 ## 🎨 Identidade visual
 
-- Tema: fantasia medieval / pergaminho antigo
-- Paleta: dourado, marrom-couro, vermelho vinho, preto entintado
-- Tipografia serifada/medieval nos títulos (ex: Cinzel, MedievalSharp)
-- Ficha de personagem estruturada como "páginas" de um grimório, com abas e transições suaves
-- Painel do mestre com identidade visual diferenciada ("de comando")
-- Modo de combate com transição visual marcante e indicador de turno em destaque
-- Totalmente responsivo (desktop, tablet e celular)
-- Modo claro (pergaminho) como padrão, com modo escuro alternável ("grimório amaldiçoado")
+O visual é o coração do projeto: a mesa inteira — ficha, painel e combate — foi desenhada para parecer um **grimório físico**, não um formulário.
+
+- **Pergaminho:** fundo com grão de papel, vinheta sépia e texturas em SVG — sem imagens externas.
+- **Paleta:** dourado (`#b8912a`), marrom-couro (`#3e2723` / `#5d4037`), vermelho vinho (`#7a1f1f`) e preto entintado.
+- **Tipografia:** **Cinzel** nos títulos, **MedievalSharp** na marca e **EB Garamond** no corpo — auto-hospedadas (funcionam offline).
+- **Molduras:** bordas douradas, hairlines internas e rosetas nos cantos, como a moldura de um livro.
+- **Ícones desenhados à mão** (espada, escudo, coração, poção, pergaminho, estrela, dado, pena...), no traço de tinta, em vez de ícones flat.
+- **Ficha em abas** que parecem divisões do grimório, com transição de "virar a página".
+- **Vida e magia visuais:** barra de HP que muda de cor com a gravidade e espaços de magia em estrelas clicáveis.
+- **Painel do mestre "de comando":** cabeçalho escuro e molduras imponentes dentro do mesmo tema.
+- **Combate:** a tela "se transforma" com um **brasão de batalha** ao começar, e o turno atual brilha em dourado pulsante.
+- **Modo claro (pergaminho)** como padrão e **modo escuro ("grimório amaldiçoado")** alternável no cabeçalho, com a escolha salva.
+- Totalmente **responsivo** (desktop, tablet e celular).
 
 ---
 
@@ -135,7 +144,7 @@ O projeto foi planejado em etapas sequenciais:
 - [x] **Etapa 2** — Ficha de personagem completa (jogador)
 - [x] **Etapa 3** — Painel do mestre e cadastro de criaturas
 - [x] **Etapa 4** — Sistema de combate com iniciativa automática
-- [ ] **Etapa 5** — Design visual (fantasia medieval / pergaminho)
+- [x] **Etapa 5** — Design visual (fantasia medieval / pergaminho)
 - [ ] **Etapa 6** — Otimização e performance
 
 ---
@@ -467,6 +476,50 @@ O botão 🔊/🔇 no cabeçalho liga e desliga o som (a preferência fica salva
 ### Combate em andamento persistido
 
 `Combat` e `Combatant` ficam no banco, então quem recarrega a página (ou reconecta) **volta direto para o combate em curso** — o frontend carrega o estado ativo no `mount`. As relações usam `onDelete: SetNull` para que apagar uma criatura ou ficha não quebre o combate.
+
+---
+
+## 🎨 Etapa 5 — Identidade visual
+
+### Fontes auto-hospedadas
+
+Para o visual não depender de CDN nem de internet, as fontes são servidas pela própria aplicação (`client/public/fonts`), com `@font-face` gerado em `client/src/fonts.css`:
+
+| Fonte | Uso |
+|-------|-----|
+| **Cinzel** | Títulos, botões e rótulos (cara de inscrição em pedra) |
+| **MedievalSharp** | Marca "Grimório Digital" |
+| **EB Garamond** | Corpo do texto (leitura confortável) |
+
+Todas de licença SIL Open Font License.
+
+### Tema claro e escuro
+
+O tema é um atributo `data-theme` no `<html>`; o CSS troca todas as cores por variáveis. O `index.html` aplica o tema salvo **antes da primeira pintura**, evitando o flash claro. O botão de lua/sol no cabeçalho alterna e grava a escolha (`client/src/theme.ts`).
+
+- **Pergaminho (claro):** bege/marfim, dourado e couro.
+- **Grimório amaldiçoado (escuro):** couro queimado e dourado mais vivo.
+
+### Anatomia do visual
+
+- **Texturas em SVG embutidas** (grão de papel e rosetas de canto) — sem arquivos de imagem.
+- **Ícones autorais** em `client/src/components/Icon.tsx` (traço de tinta, `currentColor`).
+- **Ficha em abas** (`SheetView`): Identidade, Atributos, Vida & Defesa, Perícias, Inventário, Magias, Ataques, Características e Anotações.
+- **Atributos em forma de escudo** e **barra de vida** com cor por gravidade (`components/HpBar.tsx`).
+- **Espaços de magia** como estrelas clicáveis (gastar/recuperar), além dos números.
+- **Microanimações:** brilho dourado no hover, tremulação de chama nos ícones e "virar de página" ao trocar de aba.
+- **Combate:** brasão de selo ao ativar (`combat/CombatIntro.tsx`) e turno atual com moldura dourada pulsante.
+- **Acessibilidade:** `@media (prefers-reduced-motion)` desliga as animações para quem precisa.
+
+### Componentes de estilo
+
+| Arquivo | Papel |
+|---------|-------|
+| `client/src/styles.css` | Todo o tema (tokens claro/escuro, layout e animações) |
+| `client/src/theme.ts` | Estado do tema e persistência |
+| `client/src/components/Icon.tsx` | Conjunto de ícones temáticos |
+| `client/src/components/HpBar.tsx` | Barra de vida visual |
+| `client/src/combat/CombatIntro.tsx` | Brasão de batalha |
 
 ---
 

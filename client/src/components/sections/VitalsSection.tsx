@@ -1,5 +1,7 @@
 import { formatModifier } from '../../dnd';
 import { clampInt } from '../../utils';
+import { HpBar } from '../HpBar';
+import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
@@ -8,10 +10,16 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
   const { derived } = character;
 
   return (
-    <Section title="Vida e Defesa">
+    <Section title="Vida e Defesa" icon="heart">
+      <div className="vitals-hp">
+        <HpBar current={character.hpCurrent} max={character.hpMax} temp={character.hpTemp} />
+      </div>
+
       <div className="grid grid-4">
         <div className="vital vital-hp">
-          <span className="vital-label">HP atual</span>
+          <span className="vital-label">
+            <Icon name="heart" size={13} /> HP atual
+          </span>
           <InlineField
             className="vital-value"
             value={character.hpCurrent}
@@ -39,7 +47,9 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
         </div>
 
         <div className="vital">
-          <span className="vital-label">HP temporário</span>
+          <span className="vital-label">
+            <Icon name="flask" size={13} /> HP temporário
+          </span>
           <InlineField
             className="vital-value"
             value={character.hpTemp}
@@ -52,7 +62,9 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
         </div>
 
         <div className="vital">
-          <span className="vital-label">Classe de Armadura</span>
+          <span className="vital-label">
+            <Icon name="shield" size={13} /> Classe de Armadura
+          </span>
           <InlineField
             className="vital-value"
             value={character.armorClass}
@@ -66,10 +78,10 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
         </div>
 
         <div className="vital">
-          <span className="vital-label">Iniciativa</span>
-          <strong className="vital-value">
-            {formatModifier(derived.initiative)}
-          </strong>
+          <span className="vital-label">
+            <Icon name="bolt" size={13} /> Iniciativa
+          </span>
+          <strong className="vital-value">{formatModifier(derived.initiative)}</strong>
           <span className="vital-hint">
             bônus extra:{' '}
             <InlineField
@@ -87,7 +99,9 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
         </div>
 
         <div className="vital">
-          <span className="vital-label">Deslocamento</span>
+          <span className="vital-label">
+            <Icon name="wind" size={13} /> Deslocamento
+          </span>
           <InlineField
             className="vital-value"
             value={character.speed}
@@ -101,12 +115,16 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
         </div>
 
         <div className="vital">
-          <span className="vital-label">Percepção passiva</span>
+          <span className="vital-label">
+            <Icon name="eye" size={13} /> Percepção passiva
+          </span>
           <strong className="vital-value">{derived.passivePerception}</strong>
         </div>
 
         <div className="vital">
-          <span className="vital-label">Carga</span>
+          <span className="vital-label">
+            <Icon name="weight" size={13} /> Carga
+          </span>
           <strong className="vital-value">
             {derived.totalWeight} / {derived.carryingCapacity}
           </strong>

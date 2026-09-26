@@ -36,6 +36,7 @@ export function InventorySection({ character, update }: SheetSectionProps) {
   return (
     <Section
       title="Inventário"
+      icon="flask"
       subtitle={`Peso total: ${character.derived.totalWeight} lb · capacidade ${character.derived.carryingCapacity} lb`}
       actions={
         readOnly ? undefined : (

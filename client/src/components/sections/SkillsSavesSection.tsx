@@ -25,7 +25,11 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
   }
 
   return (
-    <Section title="Perícias e Salvaguardas" subtitle="Marque a proficiência; o bônus é automático">
+    <Section
+      title="Perícias e Salvaguardas"
+      icon="eye"
+      subtitle="Marque a proficiência; o bônus é automático"
+    >
       <div className="grid grid-2">
         <div>
           <h3 className="subsection-title">Perícias</h3>

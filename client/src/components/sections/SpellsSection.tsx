@@ -2,12 +2,58 @@ import { SPELL_LEVEL_LABELS, SPELL_SCHOOLS, formatModifier } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import type { Spell, SpellSlot } from '../../types';
 import { clampInt, newId } from '../../utils';
+import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 const SLOT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 const EMPTY_SLOT: SpellSlot = { max: 0, used: 0 };
+
+interface SlotPipsProps {
+  level: number;
+  slot: SpellSlot;
+  readOnly: boolean;
+  onChange: (patch: Partial<SpellSlot>) => void;
+}
+
+/** Espaços de magia como estrelas clicáveis: gastas ficam apagadas. */
+function SlotPips({ level, slot, readOnly, onChange }: SlotPipsProps) {
+  if (slot.max <= 0) {
+    return (
+      <span className="slot-pips">
+        <span className="slot-empty">—</span>
+      </span>
+    );
+  }
+
+  const used = Math.min(slot.used, slot.max);
+
+  return (
+    <span
+      className="slot-pips"
+      role="group"
+      aria-label={`Espaços de ${level}º nível: ${used} de ${slot.max} usados`}
+    >
+      {Array.from({ length: slot.max }, (_, index) => {
+        const isUsed = index < used;
+        return (
+          <button
+            key={index}
+            type="button"
+            className={isUsed ? 'slot-pip used' : 'slot-pip'}
+            disabled={readOnly}
+            title={isUsed ? 'Marcar como disponível' : 'Marcar como gasto'}
+            aria-label={isUsed ? `Recuperar espaço ${index + 1}` : `Gastar espaço ${index + 1}`}
+            onClick={() => onChange({ used: isUsed ? index : index + 1 })}
+          >
+            <Icon name="sparkle" size={13} />
+          </button>
+        );
+      })}
+    </span>
+  );
+}
 
 export function SpellsSection({ character, update }: SheetSectionProps) {
   const readOnly = useReadOnly();
@@ -48,6 +94,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   return (
     <Section
       title="Magias"
+      icon="star"
       subtitle={
         spellcasting
           ? `CD ${spellcasting.saveDC} · ataque ${formatModifier(spellcasting.attackBonus)}`
@@ -69,6 +116,14 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
           return (
             <div className="slot-card" key={level}>
               <span className="slot-level">{SPELL_LEVEL_LABELS[level]}</span>
+
+              <SlotPips
+                level={level}
+                slot={slot}
+                readOnly={readOnly}
+                onChange={(patch) => setSlot(level, patch)}
+              />
+
               <label className="slot-field">
                 <span>usados</span>
                 <InlineField
@@ -105,7 +160,10 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
       ) : (
         levels.map((level) => (
           <div className="spell-group" key={level}>
-            <h4>{SPELL_LEVEL_LABELS[level]}</h4>
+            <h4>
+              <Icon name="sparkle" size={15} />
+              {SPELL_LEVEL_LABELS[level]}
+            </h4>
             <ul className="spell-list">
               {list
                 .filter((spell) => spell.level === level)

@@ -39,6 +39,7 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
   return (
     <Section
       title="Características"
+      icon="book"
       subtitle="Traços de raça, classe, antecedente e talentos"
       actions={
         readOnly ? undefined : (

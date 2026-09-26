@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Icon } from '../components/Icon';
 import { formatModifier } from '../dnd';
 import type { Attack, CombatDto, CombatantDto, SessionUser } from '../types';
 import { clampInt } from '../utils';
@@ -10,6 +11,7 @@ import {
   rollInitiativeFor,
   rollMyInitiative,
 } from './combatApi';
+import { CombatIntro } from './CombatIntro';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
 interface AttackPanelProps {
@@ -51,7 +53,9 @@ function AttackPanel({
 
   return (
     <section className="combat-block">
-      <h3>Atacar</h3>
+      <h3>
+        <Icon name="sword" size={15} /> Atacar
+      </h3>
 
       {attackerChoices ? (
         <label className="field">
@@ -117,7 +121,7 @@ function AttackPanel({
               });
             }}
           >
-            🎲 Rolar ataque
+            <Icon name="die" size={15} /> Rolar ataque
           </button>
         </>
       )}
@@ -181,8 +185,11 @@ export function CombatTracker({
   if (combat.status === 'PENDING_INITIATIVE') {
     return (
       <section className="combat-panel">
+        <CombatIntro combatId={combat.id} />
         <header className="combat-head">
-          <h2>⚔ Combate — iniciativa</h2>
+          <h2>
+            <Icon name="sword" size={20} /> Combate — iniciativa
+          </h2>
           <span className="combat-round">
             {rolledCount}/{combat.combatants.length} rolaram
           </span>
@@ -191,7 +198,8 @@ export function CombatTracker({
         {!isMaster && myCombatant && !myCombatant.rolled ? (
           <div className="initiative-prompt">
             <p>
-              Role sua iniciativa: <strong>1d20 {formatModifier(myCombatant.dexterityMod)}</strong>
+              <Icon name="bolt" size={16} /> Role sua iniciativa:{' '}
+              <strong>1d20 {formatModifier(myCombatant.dexterityMod)}</strong>
             </p>
             <button
               type="button"
@@ -199,7 +207,7 @@ export function CombatTracker({
               disabled={busy}
               onClick={() => void run(rollMyInitiative)}
             >
-              🎲 Rolar iniciativa
+              <Icon name="die" size={15} /> Rolar iniciativa
             </button>
           </div>
         ) : null}
@@ -256,9 +264,12 @@ export function CombatTracker({
 
   return (
     <section className="combat-panel">
+      <CombatIntro combatId={combat.id} />
+
       {turnAlert ? (
         <div className="turn-alert" role="alert">
-          <strong>⚔ É o seu turno!</strong>
+          <Icon name="sword" size={22} />
+          <strong>É o seu turno!</strong>
           <span>
             {turnAlert.combatantName} — rodada {turnAlert.round}
           </span>
@@ -269,7 +280,9 @@ export function CombatTracker({
       ) : null}
 
       <header className="combat-head">
-        <h2>⚔ Combate</h2>
+        <h2>
+          <Icon name="sword" size={20} /> Combate
+        </h2>
         <span className="combat-round">Rodada {combat.round}</span>
 
         {isMaster ? (
@@ -346,7 +359,9 @@ export function CombatTracker({
 
       {isMaster ? (
         <section className="combat-block">
-          <h3>Dano / cura manual</h3>
+          <h3>
+            <Icon name="heart" size={15} /> Dano / cura manual
+          </h3>
           <div className="hp-controls">
             <select value={hpTarget} onChange={(event) => setHpTarget(event.target.value)}>
               <option value="">escolha o combatente</option>
@@ -458,7 +473,9 @@ export function CombatTracker({
       ) : null}
 
       <section className="combat-block">
-        <h3>Registro</h3>
+        <h3>
+          <Icon name="scroll" size={15} /> Registro
+        </h3>
         {log.length === 0 ? (
           <p className="empty-hint">Sem rolagens ainda.</p>
         ) : (

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../auth';
+import { Icon } from './Icon';
 
 type Mode = 'login' | 'register';
 
@@ -45,7 +46,13 @@ export function AuthPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1>🐉 Grimório Digital</h1>
+        <div className="auth-crest">
+          <span className="auth-crest-swords">
+            <Icon name="sword" size={32} />
+            <Icon name="sword" size={32} />
+          </span>
+        </div>
+        <h1>Grimório Digital</h1>
         <p className="auth-subtitle">Ficha de D&amp;D 5e com sincronização em tempo real</p>
 
         <div className="tabs">
