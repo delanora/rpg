@@ -4,6 +4,7 @@ import type { Character, CharacterPatch } from '../types';
 import { Icon, type IconName } from './Icon';
 import { AbilitiesSection } from './sections/AbilitiesSection';
 import { AttacksSection } from './sections/AttacksSection';
+import { ClassSection } from './sections/ClassSection';
 import { FeaturesSection } from './sections/FeaturesSection';
 import { IdentitySection } from './sections/IdentitySection';
 import { InventorySection } from './sections/InventorySection';
@@ -64,6 +65,7 @@ export function SheetView({ character, update, readOnly = false }: SheetViewProp
          */}
         <div className="sheet-main">
           <IdentitySection character={character} update={update} />
+          <ClassSection character={character} update={update} />
           <AbilitiesSection character={character} update={update} />
           <SkillsSavesSection character={character} update={update} />
 

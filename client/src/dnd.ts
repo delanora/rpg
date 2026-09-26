@@ -1,4 +1,4 @@
-import type { AbilityKey, FeatureSource } from './types';
+import type { AbilityKey, FeatureSource, SpellLearning, SpellcastingType } from './types';
 
 /**
  * Constantes de D&D 5e usadas apenas para exibição/labels no frontend.
@@ -86,6 +86,27 @@ export const FEATURE_SOURCE_LABELS: Record<FeatureSource, string> = {
   feat: 'Talento',
   other: 'Outro',
 };
+
+/** Rótulos do tipo de conjuração de uma classe. */
+export const SPELLCASTING_TYPE_LABELS: Record<SpellcastingType, string> = {
+  none: 'Sem conjuração',
+  full: 'Conjurador completo',
+  half: 'Meio-conjurador',
+  third: 'Terço-conjurador',
+  pact: 'Magia de pacto',
+};
+
+/** Rótulos do modo de aprendizado das magias. */
+export const SPELL_LEARNING_LABELS: Record<SpellLearning, string> = {
+  known: 'Conhecidas',
+  prepared: 'Preparadas',
+  none: '—',
+};
+
+/** Formata o dado de vida (ex.: 10 -> "d10"). */
+export function hitDieLabel(die: number | null): string {
+  return die === null ? '—' : `d${die}`;
+}
 
 export const DAMAGE_TYPES = [
   'Cortante',

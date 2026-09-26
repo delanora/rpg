@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { attackSchema } from '../shared/attacks.js';
+import { getClassDefinition } from '../shared/classes.js';
 import {
   ABILITY_SCORE_MAX,
   ABILITY_SCORE_MIN,
@@ -24,6 +25,13 @@ const abilityScore = z
 
 const nonNegativeInt = z.number().int().min(0);
 const shortText = (max: number) => z.string().trim().max(max);
+
+/** Chave canônica de classe: vazia (sem classe) ou uma das 12 do registro. */
+const classKeySchema = z
+  .string()
+  .trim()
+  .max(40)
+  .refine((value) => value === '' || getClassDefinition(value) !== null, 'Classe desconhecida.');
 
 // --- Coleções ---------------------------------------------------------------
 
@@ -79,6 +87,7 @@ export const createCharacterSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   race: shortText(60).optional(),
   className: shortText(60).optional(),
+  classKey: classKeySchema.optional(),
   level: z.number().int().min(LEVEL_MIN).max(LEVEL_MAX).optional(),
 });
 
@@ -90,6 +99,8 @@ export const updateCharacterSchema = z
     name: z.string().trim().min(1, 'O nome não pode ficar vazio.').max(120),
     race: shortText(60),
     className: shortText(60),
+    classKey: classKeySchema,
+    subclass: shortText(120),
     level: z.number().int().min(LEVEL_MIN).max(LEVEL_MAX),
     background: shortText(120),
     alignment: shortText(60),

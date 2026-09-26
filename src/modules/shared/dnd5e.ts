@@ -222,6 +222,8 @@ export interface SkillDetail {
 export interface DerivedStats {
   proficiencyBonus: number;
   modifiers: Record<AbilityKey, number>;
+  /** Dado de vida da classe (6, 8, 10 ou 12) ou nulo se nenhuma classe foi escolhida. */
+  hitDie: number | null;
   initiative: number;
   passivePerception: number;
   armorClassHint: number;
@@ -240,6 +242,13 @@ export interface DerivedInput {
   initiativeBonus: number;
   className: string;
   inventory: Array<{ quantity: number; weight: number }>;
+  /**
+   * Atributo de conjuração vindo do registro de classes. Quando `undefined`,
+   * cai no mapa por nome de classe abaixo (compatibilidade com fichas antigas).
+   */
+  spellcastingAbility?: AbilityKey | null;
+  /** Dado de vida da classe escolhida. */
+  hitDie?: number | null;
 }
 
 /** Calcula todos os valores derivados exibidos na ficha. */
@@ -285,11 +294,14 @@ export function deriveStats(input: DerivedInput): DerivedStats {
   );
 
   const spellcastingAbility =
-    CLASS_SPELLCASTING_ABILITY[input.className.trim().toLowerCase()] ?? null;
+    input.spellcastingAbility !== undefined
+      ? input.spellcastingAbility
+      : (CLASS_SPELLCASTING_ABILITY[input.className.trim().toLowerCase()] ?? null);
 
   return {
     proficiencyBonus: prof,
     modifiers,
+    hitDie: input.hitDie ?? null,
     initiative: initiative(input.abilities.dexterity, input.initiativeBonus),
     passivePerception: 10 + (perception?.total ?? modifiers.wisdom),
     armorClassHint: unarmoredArmorClass(input.abilities.dexterity),

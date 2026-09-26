@@ -19,6 +19,9 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
   const readOnly = useReadOnly();
   const { derived } = character;
 
+  // As salvaguardas da classe são fixas: ficam sempre marcadas e travadas.
+  const classSaves = new Set<AbilityKey>(character.classDefinition?.savingThrows ?? []);
+
   function setSkill(key: string, patch: Partial<SkillEntry>): void {
     const current = character.skills[key] ?? DEFAULT_ENTRY;
     const next: SkillEntry = { ...current, ...patch };
@@ -85,18 +88,23 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
           <ul className="prof-list" key={columnIndex}>
             {column.map((ability) => {
               const detail = derived.saves.find((save) => save.ability === ability);
+              const locked = classSaves.has(ability);
 
               return (
                 <li className="prof-row prof-row-save" key={ability}>
                   <input
                     type="checkbox"
                     checked={character.saves[ability] ?? false}
-                    disabled={readOnly}
+                    disabled={readOnly || locked}
                     aria-label={`Proficiência em salvaguarda de ${ABILITY_LABELS[ability]}`}
+                    title={locked ? 'Concedida pela classe (fixa)' : undefined}
                     onChange={(event) => setSave(ability, event.target.checked)}
                   />
                   <span className="prof-ability">{ABILITY_ABBREVIATIONS[ability]}</span>
-                  <span className="prof-label">{ABILITY_LABELS[ability]}</span>
+                  <span className="prof-label">
+                    {ABILITY_LABELS[ability]}
+                    {locked ? <em className="tag">classe</em> : null}
+                  </span>
                   <span className="prof-value">{formatModifier(detail?.total ?? 0)}</span>
                 </li>
               );

@@ -95,6 +95,8 @@ export interface SkillDetail {
 export interface DerivedStats {
   proficiencyBonus: number;
   modifiers: Record<AbilityKey, number>;
+  /** Dado de vida da classe (6, 8, 10 ou 12) ou nulo se nenhuma classe foi escolhida. */
+  hitDie: number | null;
   initiative: number;
   passivePerception: number;
   armorClassHint: number;
@@ -103,6 +105,67 @@ export interface DerivedStats {
   saves: SaveDetail[];
   skills: Record<string, SkillDetail>;
   spellcasting: { ability: AbilityKey; saveDC: number; attackBonus: number } | null;
+}
+
+/** --- Classes (ver src/modules/shared/classes.ts) --------------------------- */
+
+export type SpellcastingType = 'none' | 'full' | 'half' | 'third' | 'pact';
+export type SpellLearning = 'known' | 'prepared' | 'none';
+
+export interface ClassFeatureResource {
+  name: string;
+  max: number;
+  recharge: 'short' | 'long' | 'none';
+}
+
+/** Efeito mecânico opcional de uma característica de classe. */
+export interface ClassFeatureEffect {
+  type: 'bonus' | 'resource' | 'other';
+  target?: string;
+  value?: number;
+  resource?: ClassFeatureResource;
+  notes?: string;
+}
+
+/** Característica de classe ou subclasse (ainda não populadas). */
+export interface ClassFeature {
+  id: string;
+  name: string;
+  level: number;
+  description: string;
+  effect?: ClassFeatureEffect;
+}
+
+export interface Subclass {
+  id: string;
+  name: string;
+  description: string;
+  features: ClassFeature[];
+}
+
+/** Definição completa de uma classe. */
+export interface ClassDefinition {
+  key: string;
+  name: string;
+  hitDie: number;
+  savingThrows: [AbilityKey, AbilityKey];
+  subclassLevel: number;
+  spellcasting: {
+    type: SpellcastingType;
+    ability: AbilityKey | null;
+    learning: SpellLearning;
+  };
+  features: ClassFeature[];
+  subclasses: Subclass[];
+}
+
+/** Resumo usado no seletor de classe. */
+export interface ClassSummary {
+  key: string;
+  name: string;
+  hitDie: number;
+  subclassLevel: number;
+  spellcastingType: SpellcastingType;
 }
 
 /** Ficha completa devolvida pela API. */
@@ -114,6 +177,14 @@ export interface Character {
   name: string;
   race: string;
   className: string;
+  /** Chave canônica da classe ('' = sem classe). */
+  classKey: string;
+  /** Subclasse escolhida ('' = nenhuma). */
+  subclass: string;
+  /** Definição completa da classe escolhida (nula se nenhuma). */
+  classDefinition: ClassDefinition | null;
+  /** Catálogo resumido das 12 classes. */
+  classCatalog: ClassSummary[];
   level: number;
   background: string;
   alignment: string;
@@ -153,6 +224,8 @@ export interface CharacterPatch {
   name?: string;
   race?: string;
   className?: string;
+  classKey?: string;
+  subclass?: string;
   level?: number;
   background?: string;
   alignment?: string;

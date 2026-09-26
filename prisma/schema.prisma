@@ -54,6 +54,10 @@ model Character {
   name       String @default("Novo Personagem")
   race       String @default("")
   className  String @default("")
+  /// Chave canônica da classe (ver src/modules/shared/classes.ts). Vazia = sem classe.
+  classKey   String @default("")
+  /// Subclasse escolhida (liberada a partir do nível de subclasse da classe).
+  subclass   String @default("")
   level      Int    @default(1)
   background String @default("")
   alignment  String @default("")

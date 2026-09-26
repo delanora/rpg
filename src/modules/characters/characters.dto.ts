@@ -2,6 +2,13 @@ import type { Character } from '@prisma/client';
 import { z } from 'zod';
 import { attackSchema, type Attack } from '../shared/attacks.js';
 import {
+  CLASS_CATALOG,
+  applyClassSavingThrows,
+  getClassDefinition,
+  type ClassDefinition,
+  type ClassSummary,
+} from '../shared/classes.js';
+import {
   type AbilityKey,
   type DerivedStats,
   type SkillsState,
@@ -47,6 +54,14 @@ export interface CharacterDto {
   name: string;
   race: string;
   className: string;
+  /** Chave canônica da classe ('' = sem classe). */
+  classKey: string;
+  /** Subclasse escolhida ('' = nenhuma). */
+  subclass: string;
+  /** Definição completa da classe escolhida (nula se nenhuma). */
+  classDefinition: ClassDefinition | null;
+  /** Catálogo resumido das 12 classes, usado pelo seletor da ficha. */
+  classCatalog: ClassSummary[];
   level: number;
   background: string;
   alignment: string;
@@ -90,7 +105,10 @@ const featureListSchema = z.array(featureSchema);
 
 export function toCharacterDto(character: Character, ownerUsername?: string): CharacterDto {
   const skills = normalizeSkills(character.skills);
-  const saves = normalizeSaves(character.saves);
+  const classDefinition = getClassDefinition(character.classKey);
+  // As salvaguardas de classe são fixas: aparecem sempre proficientes na ficha,
+  // mesmo que o valor gravado esteja desatualizado.
+  const saves = applyClassSavingThrows(normalizeSaves(character.saves), classDefinition);
   const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
   const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
     list: [],
@@ -116,6 +134,8 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     initiativeBonus: character.initiativeBonus,
     className: character.className,
     inventory,
+    hitDie: classDefinition?.hitDie ?? null,
+    spellcastingAbility: classDefinition ? classDefinition.spellcasting.ability : undefined,
   });
 
   return {
@@ -125,6 +145,10 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     name: character.name,
     race: character.race,
     className: character.className,
+    classKey: character.classKey,
+    subclass: character.subclass,
+    classDefinition,
+    classCatalog: CLASS_CATALOG,
     level: character.level,
     background: character.background,
     alignment: character.alignment,

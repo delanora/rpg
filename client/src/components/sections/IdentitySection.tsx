@@ -31,16 +31,6 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
         </label>
 
         <label className="field">
-          <span>Classe</span>
-          <InlineField
-            value={character.className}
-            ariaLabel="Classe"
-            placeholder="ex.: Mago"
-            onCommit={(value) => update({ className: value.trim() })}
-          />
-        </label>
-
-        <label className="field">
           <span>Nível</span>
           <InlineField
             value={character.level}

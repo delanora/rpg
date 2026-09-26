@@ -5,6 +5,7 @@ import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toCharacterDto, type CharacterDto } from './characters.dto.js';
 import type { CreateCharacterInput, UpdateCharacterInput } from './characters.schema.js';
+import { applyClassSavingThrows, getClassDefinition } from '../shared/classes.js';
 import { normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
 
 /** Quem está alterando a ficha (vem do token, nunca do corpo da requisição). */
@@ -80,15 +81,23 @@ export async function createCharacter(
     throw new HttpError('Você já possui uma ficha.', 409);
   }
 
+  const classKey = input.classKey ?? '';
+  const classDefinition = getClassDefinition(classKey);
+
   const character = await prisma.character.create({
     data: {
       userId: actor.userId,
       name: input.name ?? 'Novo Personagem',
       race: input.race ?? '',
-      className: input.className ?? '',
+      className: classDefinition?.name ?? input.className ?? '',
+      classKey,
+      subclass: '',
       level: input.level ?? 1,
       skills: normalizeSkills({}) as unknown as Prisma.InputJsonValue,
-      saves: normalizeSaves({}) as unknown as Prisma.InputJsonValue,
+      saves: applyClassSavingThrows(
+        normalizeSaves({}),
+        classDefinition,
+      ) as unknown as Prisma.InputJsonValue,
       inventory: [] as Prisma.InputJsonValue,
       spells: emptySpells(),
       attacks: [] as Prisma.InputJsonValue,
@@ -124,8 +133,50 @@ export async function updateCharacter(
     if (value !== undefined) data[key] = value;
   }
 
+  // --- Classe, subclasse e salvaguardas fixas ------------------------------
+  const nextClassKey = patch.classKey ?? existing.classKey;
+  const classDefinition = getClassDefinition(nextClassKey);
+  const classChanged = patch.classKey !== undefined && patch.classKey !== existing.classKey;
+  const nextLevel = patch.level ?? existing.level;
+
+  if (classDefinition && patch.classKey !== undefined) {
+    // A classe define o nome exibido (o campo livre `className` vira derivado).
+    data.className = classDefinition.name;
+  }
+  if (patch.classKey !== undefined) data.classKey = patch.classKey;
+
+  if (patch.subclass !== undefined && patch.subclass !== '') {
+    if (!classDefinition) {
+      throw new HttpError('Escolha uma classe antes de definir a subclasse.', 400);
+    }
+    if (nextLevel < classDefinition.subclassLevel) {
+      throw new HttpError(
+        `A subclasse de ${classDefinition.name} é escolhida a partir do nível ${classDefinition.subclassLevel}.`,
+        400,
+      );
+    }
+  }
+
+  if (classChanged) {
+    // Trocar de classe zera a subclasse e recomeça as salvaguardas do zero.
+    data.subclass = '';
+  } else if (patch.subclass !== undefined) {
+    data.subclass = patch.subclass;
+  }
+
+  const currentSaves = normalizeSaves(existing.saves);
+  const classSavesApplied =
+    classDefinition !== null &&
+    classDefinition.savingThrows.every((ability) => currentSaves[ability]);
+
+  if (patch.saves !== undefined || classChanged || (classDefinition !== null && !classSavesApplied)) {
+    const base = classChanged
+      ? normalizeSaves({})
+      : normalizeSaves(patch.saves ?? existing.saves);
+    data.saves = applyClassSavingThrows(base, classDefinition);
+  }
+
   if (patch.skills !== undefined) data.skills = normalizeSkills(patch.skills);
-  if (patch.saves !== undefined) data.saves = normalizeSaves(patch.saves);
   if (patch.inventory !== undefined) data.inventory = patch.inventory;
   if (patch.spells !== undefined) data.spells = patch.spells;
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
