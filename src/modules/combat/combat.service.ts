@@ -7,7 +7,7 @@ import {
   type DiceRolledPayload,
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { toCharacterDto } from '../characters/characters.dto.js';
+import { toSheetDto } from '../characters/characters.service.js';
 import {
   computeClassAdjustments,
   featureEffectsOf,
@@ -356,7 +356,7 @@ async function changeHp(
       characterId: updated.id,
       version: updated.version,
       changes: { hpCurrent: updated.hpCurrent },
-      character: toCharacterDto(updated, character.user.username),
+      character: await toSheetDto(updated, character.user.username),
       at: new Date().toISOString(),
     };
 

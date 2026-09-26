@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
-import { toCharacterDto } from './characters.dto.js';
 import { createCharacterSchema, updateCharacterSchema } from './characters.schema.js';
 import {
   createCharacter,
-  getCharacterByUserId,
+  getSheetByUserId,
   listCharacters,
   updateCharacter,
   updateCharacterAsMaster,
@@ -30,8 +29,7 @@ function actorFrom(req: {
  * O `userId` vem do token, então é impossível ler a ficha de outra pessoa.
  */
 charactersRouter.get('/me', authenticate, async (req, res) => {
-  const character = await getCharacterByUserId(req.user!.sub);
-  res.json({ character: character ? toCharacterDto(character) : null });
+  res.json({ character: await getSheetByUserId(req.user!.sub) });
 });
 
 /** POST /api/characters/me — cria a própria ficha. */

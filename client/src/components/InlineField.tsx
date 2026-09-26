@@ -18,6 +18,8 @@ interface InlineFieldProps {
   render?: (value: string | number) => ReactNode;
   /** Força somente leitura (além do contexto), escondendo a edição. */
   readOnly?: boolean;
+  /** Dica exibida ao passar o mouse (ex.: "definido pelo mestre"). */
+  title?: string;
 }
 
 /**
@@ -36,6 +38,7 @@ export function InlineField({
   ariaLabel,
   render,
   readOnly,
+  title,
 }: InlineFieldProps) {
   const readOnlyContext = useReadOnly();
   const isReadOnly = readOnly ?? readOnlyContext;
@@ -78,7 +81,7 @@ export function InlineField({
   // No modo somente leitura nada é clicável: mostra apenas o valor.
   if (isReadOnly) {
     return (
-      <span className={`inline-static ${className}`} aria-label={ariaLabel}>
+      <span className={`inline-static ${className}`} aria-label={ariaLabel} title={title}>
         {current === '' ? (
           <span className="placeholder">{placeholder}</span>
         ) : render ? (
@@ -116,7 +119,7 @@ export function InlineField({
         className={`inline-field inline-display ${className}`}
         onClick={startEditing}
         aria-label={ariaLabel}
-        title="Clique para editar"
+        title={title ?? 'Clique para editar'}
       >
         {current === '' ? (
           <span className="placeholder">{placeholder}</span>

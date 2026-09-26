@@ -4,6 +4,7 @@ import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
+import type { RegionDto } from '../modules/regions/regions.dto.js';
 
 /**
  * Contrato central de eventos do Socket.io.
@@ -93,6 +94,14 @@ export const ServerEvents = {
   /** Criatura removida pelo mestre. */
   CREATURE_DELETED: 'creature:deleted',
 
+  // Regiões (entrega apenas à sala dos mestres)
+  /** Região cadastrada pelo mestre. */
+  REGION_CREATED: 'region:created',
+  /** Região alterada pelo mestre. */
+  REGION_UPDATED: 'region:updated',
+  /** Região removida pelo mestre. */
+  REGION_DELETED: 'region:deleted',
+
   // Localidades (entrega apenas à sala dos mestres)
   /** Localidade cadastrada pelo mestre. */
   LOCALITY_CREATED: 'locality:created',
@@ -143,6 +152,20 @@ export interface CreatureUpdatedPayload {
 
 export interface CreatureDeletedPayload {
   creatureId: string;
+}
+
+/** Eventos de regiões (entregues apenas à sala dos mestres). */
+export interface RegionCreatedPayload {
+  region: RegionDto;
+}
+
+export interface RegionUpdatedPayload {
+  region: RegionDto;
+  changes: Record<string, unknown>;
+}
+
+export interface RegionDeletedPayload {
+  regionId: string;
 }
 
 /** Eventos de localidades (entregues apenas à sala dos mestres). */

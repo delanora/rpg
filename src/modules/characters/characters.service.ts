@@ -4,6 +4,11 @@ import { HttpError } from '../../lib/http-error.js';
 import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toCharacterDto, type CharacterDto } from './characters.dto.js';
+import {
+  catalogItemIds,
+  loadCatalogLookup,
+  type CatalogSnapshot,
+} from './inventory-sync.js';
 import type { CreateCharacterInput, UpdateCharacterInput } from './characters.schema.js';
 import { applyClassSavingThrows, getClassDefinition } from '../shared/classes.js';
 import { normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
@@ -59,12 +64,12 @@ function emptySpells(): Prisma.InputJsonValue {
  * `editedBy` só é preenchido quando o editor não é o dono. Falha de tempo real
  * nunca deve derrubar a requisição HTTP que já foi persistida.
  */
-function publishChange(
+async function publishChange(
   owner: SheetOwner,
   character: Character,
   changes: Record<string, unknown>,
   editedBy?: string,
-): void {
+): Promise<void> {
   try {
     const payload: SheetUpdatedPayload = {
       userId: owner.userId,
@@ -72,7 +77,7 @@ function publishChange(
       characterId: character.id,
       version: character.version,
       changes,
-      character: toCharacterDto(character, owner.username),
+      character: await toSheetDto(character, owner.username),
       editedBy,
       at: new Date().toISOString(),
     };
@@ -119,12 +124,54 @@ export async function createCharacter(
     },
   });
 
-  publishChange(actor, character, { created: true });
-  return toCharacterDto(character, actor.username);
+  await publishChange(actor, character, { created: true });
+  return toSheetDto(character, actor.username);
 }
 
 export function getCharacterByUserId(userId: string): Promise<Character | null> {
   return prisma.character.findUnique({ where: { userId } });
+}
+
+/**
+ * Monta o DTO da ficha já com o inventário espelhando o catálogo do mestre
+ * (nome, peso, descrição, sprite e atributos sempre como estão no catálogo).
+ */
+export async function toSheetDto(
+  character: Character,
+  ownerUsername?: string,
+): Promise<CharacterDto> {
+  const catalog = await loadCatalogLookup([character.inventory]);
+  return toCharacterDto(character, ownerUsername, catalog);
+}
+
+/** Ficha do usuário autenticado, no formato entregue ao frontend. */
+export async function getSheetByUserId(userId: string): Promise<CharacterDto | null> {
+  const character = await getCharacterByUserId(userId);
+  return character ? toSheetDto(character) : null;
+}
+
+/**
+ * Republica as fichas que têm um item do catálogo no inventário.
+ *
+ * É o que faz o jogador ver na hora a correção feita pelo mestre na aba de
+ * itens: o inventário espelha o catálogo, então basta reenviar a ficha.
+ */
+export async function republishSheetsWithCatalogItem(itemId: string): Promise<void> {
+  const characters = await prisma.character.findMany({
+    include: { user: { select: { username: true } } },
+  });
+
+  const affected = characters.filter((character) =>
+    catalogItemIds([character.inventory]).includes(itemId),
+  );
+
+  for (const character of affected) {
+    await publishChange(
+      { userId: character.userId, username: character.user.username },
+      character,
+      { itemSynced: itemId },
+    );
+  }
 }
 
 /**
@@ -204,8 +251,8 @@ async function applyCharacterPatch(
     data: data as Prisma.CharacterUpdateInput,
   });
 
-  publishChange(owner, character, patch as Record<string, unknown>, editedBy);
-  return toCharacterDto(character, owner.username);
+  await publishChange(owner, character, patch as Record<string, unknown>, editedBy);
+  return toSheetDto(character, owner.username);
 }
 
 /**
@@ -251,5 +298,12 @@ export async function listCharacters(): Promise<CharacterDto[]> {
     orderBy: { name: 'asc' },
   });
 
-  return characters.map((character) => toCharacterDto(character, character.user.username));
+  // Uma única consulta ao catálogo para todas as fichas da mesa.
+  const catalog: Map<string, CatalogSnapshot> = await loadCatalogLookup(
+    characters.map((character) => character.inventory),
+  );
+
+  return characters.map((character) =>
+    toCharacterDto(character, character.user.username, catalog),
+  );
 }

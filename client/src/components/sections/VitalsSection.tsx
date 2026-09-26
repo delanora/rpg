@@ -163,7 +163,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
             ariaLabel="Deslocamento"
             onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
           />
-          <span className="vital-hint">pés</span>
+          <span className="vital-hint">metros</span>
         </div>
 
         <div className="vital">
@@ -180,7 +180,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
           <strong className="vital-value">
             {derived.totalWeight} / {derived.carryingCapacity}
           </strong>
-          <span className="vital-hint">peso atual / capacidade (lb)</span>
+          <span className="vital-hint">peso atual / capacidade (kg)</span>
         </div>
       </div>
 
@@ -278,7 +278,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
               ? `Resiliência Dracônica: +${classAdjustments.hpBonus} PV (some ao HP máximo). `
               : ''}
             {classAdjustments.speedBonus > 0
-              ? `Deslocamento +${classAdjustments.speedBonus} pés. `
+              ? `Deslocamento +${classAdjustments.speedBonus} m. `
               : ''}
             {classAdjustments.critExtraDice > 0
               ? `Crítico Brutal: +${classAdjustments.critExtraDice} dado(s) no crítico. `

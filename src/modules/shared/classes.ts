@@ -449,8 +449,8 @@ const BARBARIAN_FEATURES: ClassFeatureDefinition[] = [
     name: 'Movimento Rápido',
     level: 5,
     description:
-      'Seu deslocamento aumenta em 3 metros (10 pés) enquanto você não usar armadura pesada.',
-    effect: { type: 'speed', value: 10 },
+      'Seu deslocamento aumenta em 3 metros enquanto você não usar armadura pesada.',
+    effect: { type: 'speed', value: 3 },
   },
   {
     id: 'feral-instinct',
@@ -651,15 +651,15 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
     name: 'Movimento sem Armadura',
     level: 2,
     description:
-      'Seu deslocamento aumenta enquanto você não usar armadura nem escudo: +3 m (10 pés) no 2º nível, +4,5 m (15) no 6º, +6 m (20) no 10º, +7,5 m (25) no 14º e +9 m (30) no 18º.',
+      'Seu deslocamento aumenta enquanto você não usar armadura nem escudo: +3 m no 2º nível, +4,5 m no 6º, +6 m no 10º, +7,5 m no 14º e +9 m no 18º.',
     effect: {
       type: 'speed',
       scaling: [
-        { level: 2, value: 10 },
-        { level: 6, value: 15 },
-        { level: 10, value: 20 },
-        { level: 14, value: 25 },
-        { level: 18, value: 30 },
+        { level: 2, value: 3 },
+        { level: 6, value: 4.5 },
+        { level: 10, value: 6 },
+        { level: 14, value: 7.5 },
+        { level: 18, value: 9 },
       ],
     },
   },

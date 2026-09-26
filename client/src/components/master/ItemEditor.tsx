@@ -267,7 +267,7 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
           </label>
 
           <label className="field">
-            <span>Peso (lb)</span>
+            <span>Peso (kg)</span>
             <InlineField
               value={item.weight}
               mode="number"

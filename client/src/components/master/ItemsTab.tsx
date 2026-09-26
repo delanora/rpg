@@ -70,7 +70,7 @@ export function ItemsTab({ items, characters, onCreate, onPatch, onDelete, onSen
                     <span className="card-name">{item.name}</span>
                     <span className="card-line">
                       {item.category}
-                      {item.weight > 0 ? ` · ${item.weight} lb` : ''}
+                      {item.weight > 0 ? ` · ${item.weight} kg` : ''}
                     </span>
                     {describeItemDetails(item.category, item.details) ? (
                       <span className="card-line">

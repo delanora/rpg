@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import type { Creature, Locality, LocalityPatch } from '../../types';
-import { Icon } from '../Icon';
-import { useLightbox } from '../Lightbox';
+import { ImageGallery } from './ImageGallery';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
@@ -19,7 +18,6 @@ interface LocalityEditorProps {
 export function LocalityEditor({ locality, creatures, onPatch, onDelete }: LocalityEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { open } = useLightbox();
 
   async function handleFiles(files: FileList | null): Promise<void> {
     if (!files || files.length === 0) return;
@@ -78,53 +76,15 @@ export function LocalityEditor({ locality, creatures, onPatch, onDelete }: Local
       </Section>
 
       <Section title="Imagens" icon="star" subtitle="PNG, JPEG, WEBP ou GIF · até 5 MB cada">
-        <div className="toolbar">
-          <label className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}>
-            {uploading ? 'enviando...' : '+ adicionar imagens'}
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              disabled={uploading}
-              onChange={(event) => {
-                void handleFiles(event.target.files);
-                event.target.value = '';
-              }}
-            />
-          </label>
-        </div>
-
-        {error ? <p className="form-error">{error}</p> : null}
-
-        {locality.images.length === 0 ? (
-          <p className="empty-hint">Nenhuma imagem adicionada ainda.</p>
-        ) : (
-          <ul className="image-grid">
-            {locality.images.map((image) => (
-              <li key={image.url} className="image-card">
-                <button
-                  type="button"
-                  className="image-zoom"
-                  title="Ampliar imagem"
-                  aria-label={`Ampliar imagem${image.name ? `: ${image.name}` : ''}`}
-                  onClick={() => open(image.url, image.name || locality.name)}
-                >
-                  <img src={image.url} alt="" loading="lazy" />
-                </button>
-                <button
-                  type="button"
-                  className="image-remove"
-                  title="Remover imagem"
-                  aria-label="Remover imagem"
-                  onClick={() => removeImage(image.url)}
-                >
-                  <Icon name="x" size={14} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <ImageGallery
+          images={locality.images}
+          addLabel="+ adicionar imagens"
+          uploading={uploading}
+          error={error}
+          altFallback={locality.name}
+          onAdd={(files) => void handleFiles(files)}
+          onRemove={removeImage}
+        />
       </Section>
 
       <Section

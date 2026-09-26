@@ -381,8 +381,14 @@ Implementadas em `src/modules/shared/dnd5e.ts` e devolvidas em `derived` (nunca 
 - **Salvaguardas:** modificador + proficiência
 - **Percepção passiva:** `10 + bônus de Percepção`
 - **CD de magia:** `8 + proficiência + mod. do atributo de conjuração` (por classe); **ataque mágico:** proficiência + mod.
-- **Carga:** Força × 15 lb; peso total somado do inventário
+- **Carga:** Força × 7,5 kg; peso total somado do inventário
 - **CA sugerida** sem armadura: `10 + mod. Destreza` (a CA da ficha é manual, pois armaduras ainda não são modeladas)
+
+### Sistema métrico
+
+O sistema usa **metros e quilogramas** em tudo: deslocamento de fichas e criaturas em **metros** (5 pés = 1,5 m, então o padrão de 30 pés virou 9 m) e peso de itens em **kg** (1 kg = 2 lb, então 3 lb = 1,5 kg). É a mesma convenção do livro em português, e os bônus de deslocamento das classes (Movimento Rápido, Movimento sem Armadura) também estão em metros.
+
+Os dados anteriores foram convertidos na migração `20260926170000_metric_system` (incluindo o peso das cópias que já estavam nos inventários).
 
 ### Endpoints
 
@@ -443,6 +449,36 @@ Cadastro com nome, tipo, Nível de Desafio, os 6 atributos (com modificadores ca
 Resistências e imunidades aceitam apenas os **tipos de dano canônicos** (`Cortante`, `Fogo`, `Veneno`...), selecionados por “chips” clicáveis — assim o combate consegue compará-las. Um tipo desconhecido devolve **400**.
 
 Os eventos `creature:created`, `creature:updated` e `creature:deleted` vão **somente para a sala dos mestres**: os jogadores não enxergam o bestiário antes de as criaturas entrarem no combate (Etapa 4).
+
+### Regiões e localidades
+
+O mundo do mestre é organizado em dois níveis: a **região** (reino, floresta, continente) e as **localidades** dentro dela (cidade, masmorra, taverna). As criaturas e NPCs ficam sempre presos a uma **localidade**, nunca soltos na região.
+
+A aba **Regiões** lista as regiões à esquerda; abrindo uma, há duas sub-abas:
+
+- **Visão geral** — nome, descrição, anotações do mestre e imagens (que podem ser ampliadas e mostradas aos jogadores pelo lightbox).
+- **Localidades** — a lista das localidades da região, com o editor de cada uma (imagens, descrição e **quem vive ali**), além de criar/remover.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/regions` | **mestre** | Regiões (com a contagem de localidades). |
+| `POST` | `/api/regions` | **mestre** | Cadastra uma região. |
+| `PATCH` | `/api/regions/:id` | **mestre** | Edição parcial (nome, descrição, anotações, imagens). |
+| `DELETE` | `/api/regions/:id` | **mestre** | Remove a região **e as localidades dentro dela** (as imagens saem do disco). |
+| `GET` | `/api/localities` | **mestre** | Localidades da mesa (cada uma com `regionId`). |
+| `POST` | `/api/localities` | **mestre** | Cadastra dentro de uma região (`regionId` obrigatório). |
+| `PATCH` | `/api/localities/:id` | **mestre** | Edição parcial (inclusive **mover de região**). |
+| `DELETE` | `/api/localities/:id` | **mestre** | Remove. |
+
+Os eventos `region:created` / `region:updated` / `region:deleted` e `locality:created` / `locality:updated` / `locality:deleted` vão **somente para a sala dos mestres**. Ao criar, apagar ou mover uma localidade, a região dela é republicada com a contagem atualizada.
+
+> A conversão dos dados antigos está na migração `20260926171000_add_regions`: cada localidade que já existia virou uma **região de mesmo nome** com a localidade dentro, então nada se perdeu.
+
+### Inventário espelha o catálogo
+
+O inventário guarda o que é do jogador (**quantidade**, **equipado** e o vínculo `itemId`) e lê do catálogo o resto — nome, descrição, peso, categoria, sprite e atributos. Na ficha, os campos que vêm do catálogo aparecem com o selo *catálogo* e não são editáveis (o servidor aplica o espelho ao montar o DTO, então edição local não sobrescreve o mestre).
+
+Quando o mestre corrige um item na aba **Itens**, o servidor encontra todas as fichas que possuem aquele item e republica cada uma (`sheet:updated`) — o jogador vê o nome/peso novos na hora, sem recarregar. Se o item for removido do catálogo, a cópia antiga permanece na ficha (ninguém perde o que já estava na mochila).
 
 ### Prontas para o combate
 
@@ -558,9 +594,9 @@ O tema é um atributo `data-theme` no `<html>`; o CSS troca todas as cores por v
 
 ### Clique para ampliar
 
-Todo ícone/retrato do sistema (criaturas, NPCs, jogadores, itens, componentes de combate) e as imagens das localidades são **clicáveis**: a imagem abre ampliada no centro da tela, com o fundo escurecido, uma moldura no tema da página e um botão de fechar. Clicar fora da moldura ou pressionar **Esc** também fecha.
+Todo ícone/retrato do sistema (criaturas, NPCs, jogadores, itens, componentes de combate) e as imagens das regiões e localidades são **clicáveis**: a imagem abre ampliada no centro da tela, com o fundo escurecido, uma moldura no tema da página e um botão de fechar. Clicar fora da moldura ou pressionar **Esc** também fecha.
 
-O lightbox é único para o app inteiro (`client/src/components/Lightbox.tsx`): o `Portrait` e a galeria da localidade apenas chamam `useLightbox().open(...)`. Como o ícone costuma ficar dentro de um cartão clicável, o clique no ícone amplia a imagem em vez de acionar o cartão.
+O lightbox é único para o app inteiro (`client/src/components/Lightbox.tsx`): o `Portrait` e a galeria (`ImageGallery`, usada por regiões e localidades) apenas chamam `useLightbox().open(...)`. Como o ícone costuma ficar dentro de um cartão clicável, o clique no ícone amplia a imagem em vez de acionar o cartão.
 
 ### “Mostrar aos jogadores” (mestre)
 

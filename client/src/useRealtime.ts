@@ -19,6 +19,9 @@ import type {
   OnlineUser,
   PresentationClosedPayload,
   PresentationShownPayload,
+  RegionCreatedPayload,
+  RegionDeletedPayload,
+  RegionUpdatedPayload,
   SheetUpdatedPayload,
 } from './types';
 
@@ -29,6 +32,9 @@ export interface RealtimeHandlers {
   onCreatureCreated?: (payload: CreatureCreatedPayload) => void;
   onCreatureUpdated?: (payload: CreatureUpdatedPayload) => void;
   onCreatureDeleted?: (payload: CreatureDeletedPayload) => void;
+  onRegionCreated?: (payload: RegionCreatedPayload) => void;
+  onRegionUpdated?: (payload: RegionUpdatedPayload) => void;
+  onRegionDeleted?: (payload: RegionDeletedPayload) => void;
   onLocalityCreated?: (payload: LocalityCreatedPayload) => void;
   onLocalityUpdated?: (payload: LocalityUpdatedPayload) => void;
   onLocalityDeleted?: (payload: LocalityDeletedPayload) => void;
@@ -75,6 +81,10 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('creature:created', (payload) => handlersRef.current.onCreatureCreated?.(payload));
     socket.on('creature:updated', (payload) => handlersRef.current.onCreatureUpdated?.(payload));
     socket.on('creature:deleted', (payload) => handlersRef.current.onCreatureDeleted?.(payload));
+
+    socket.on('region:created', (payload) => handlersRef.current.onRegionCreated?.(payload));
+    socket.on('region:updated', (payload) => handlersRef.current.onRegionUpdated?.(payload));
+    socket.on('region:deleted', (payload) => handlersRef.current.onRegionDeleted?.(payload));
 
     socket.on('locality:created', (payload) => handlersRef.current.onLocalityCreated?.(payload));
     socket.on('locality:updated', (payload) => handlersRef.current.onLocalityUpdated?.(payload));

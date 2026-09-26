@@ -43,7 +43,7 @@ export function InventorySection({ character, update }: SheetSectionProps) {
     <Section
       title="Inventário"
       icon="flask"
-      subtitle={`Peso total: ${character.derived.totalWeight} lb · capacidade ${character.derived.carryingCapacity} lb`}
+      subtitle={`Peso total: ${character.derived.totalWeight} kg · capacidade ${character.derived.carryingCapacity} kg`}
       actions={
         readOnly ? undefined : (
           <button type="button" className="btn btn-small" onClick={addItem}>
@@ -52,6 +52,13 @@ export function InventorySection({ character, update }: SheetSectionProps) {
         )
       }
     >
+      {inventory.some((item) => item.itemId) ? (
+        <p className="section-note">
+          Itens do catálogo mostram sempre o nome, o peso, a descrição e os atributos definidos
+          pelo mestre — aqui você ajusta só a quantidade e se está equipado.
+        </p>
+      ) : null}
+
       {inventory.length === 0 ? (
         <p className="empty-hint">Nenhum item ainda.</p>
       ) : (
@@ -77,6 +84,10 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                         <InlineField
                           value={item.name}
                           ariaLabel="Nome do item"
+                          readOnly={Boolean(item.itemId)}
+                          title={
+                            item.itemId ? 'Definido pelo mestre no catálogo do item' : undefined
+                          }
                           onCommit={(value) => {
                             const name = value.trim();
                             if (name) patchItem(item.id, { name });
@@ -87,6 +98,7 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                             {describeItemDetails(item.category, item.details)}
                           </span>
                         ) : null}
+                        {item.itemId ? <span className="item-source">catálogo</span> : null}
                       </span>
                     </span>
                   </td>
@@ -107,6 +119,7 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                       mode="number"
                       min={0}
                       ariaLabel="Peso"
+                      readOnly={Boolean(item.itemId)}
                       onCommit={(value) =>
                         patchItem(item.id, { weight: clampFloat(value, 0, 100000, item.weight) })
                       }
@@ -117,6 +130,7 @@ export function InventorySection({ character, update }: SheetSectionProps) {
                       value={item.description}
                       placeholder="descrição"
                       ariaLabel="Descrição do item"
+                      readOnly={Boolean(item.itemId)}
                       onCommit={(value) => patchItem(item.id, { description: value })}
                     />
                   </td>

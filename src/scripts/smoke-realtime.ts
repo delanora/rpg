@@ -22,6 +22,7 @@ const createdUsernames: string[] = [];
 const createdCreatureIds: string[] = [];
 const createdCombatIds: string[] = [];
 const createdLocalityIds: string[] = [];
+const createdRegionIds: string[] = [];
 const createdItemIds: string[] = [];
 
 let failures = 0;
@@ -334,7 +335,7 @@ async function main(): Promise<void> {
     },
   });
   check('peso total é somado (3 + 1,5 = 4,5)', withItems.data?.character?.derived?.totalWeight === 4.5, `recebido: ${withItems.data?.character?.derived?.totalWeight}`);
-  check('capacidade de carga = FOR × 15 (8 × 15 = 120)', withItems.data?.character?.derived?.carryingCapacity === 120, `recebido: ${withItems.data?.character?.derived?.carryingCapacity}`);
+  check('capacidade de carga = FOR × 7,5 (8 × 7,5 = 60 kg)', withItems.data?.character?.derived?.carryingCapacity === 60, `recebido: ${withItems.data?.character?.derived?.carryingCapacity}`);
   check('ataques são gravados', withItems.data?.character?.attacks?.length === 1);
   check('características são gravadas', withItems.data?.character?.features?.length === 1);
   check('magias e espaços são gravados', withItems.data?.character?.spells?.list?.length === 1 && withItems.data?.character?.spells?.slots?.['1']?.max === 2);
@@ -389,20 +390,102 @@ async function main(): Promise<void> {
   // --- 7. Criaturas / NPCs ---------------------------------------------------
   console.log('\n7) Criaturas/NPCs (bestiário do mestre)');
 
+  check('regiões exigem autenticação (401)', (await api('/api/regions')).status === 401);
+  check(
+    'jogador NÃO acessa regiões (403)',
+    (await api('/api/regions', { token: playerToken })).status === 403,
+  );
   check('localidades exigem autenticação (401)', (await api('/api/localities')).status === 401);
   check(
     'jogador NÃO acessa localidades (403)',
     (await api('/api/localities', { token: playerToken })).status === 403,
   );
 
+  const regionEvent = waitFor<any>(masterSocket, 'region:created');
+  const regionCreated = await api('/api/regions', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: 'Vale do Teste',
+      description: 'Região usada pelo smoke test.',
+      notes: 'Anotações do mestre sobre a região.',
+    },
+  });
+  check('mestre cadastra região (201)', regionCreated.status === 201, JSON.stringify(regionCreated.data));
+  const region = regionCreated.data?.region;
+  createdRegionIds.push(region.id);
+  check('região guarda descrição e anotações', region?.description.length > 0 && region?.notes.length > 0);
+  check(
+    'região nova começa sem localidades',
+    region?.localityCount === 0,
+    String(region?.localityCount),
+  );
+  check(
+    'mestre recebe region:created em tempo real',
+    (await regionEvent.catch(() => null))?.region?.id === region?.id,
+  );
+  check(
+    'região sem nome é recusada (400)',
+    (
+      await api('/api/regions', { method: 'POST', token: masterToken, body: { name: '  ' } })
+    ).status === 400,
+  );
+
+  check(
+    'localidade sem região é recusada (400)',
+    (
+      await api('/api/localities', {
+        method: 'POST',
+        token: masterToken,
+        body: { name: 'Local solto' },
+      })
+    ).status === 400,
+  );
+  check(
+    'localidade em região inexistente é recusada (400)',
+    (
+      await api('/api/localities', {
+        method: 'POST',
+        token: masterToken,
+        body: { name: 'Local órfão', regionId: 'regiao-que-nao-existe' },
+      })
+    ).status === 400,
+  );
+
   const localityCreated = await api('/api/localities', {
     method: 'POST',
     token: masterToken,
-    body: { name: 'Caverna do Teste', description: 'Local usado pelo smoke test.' },
+    body: { name: 'Caverna do Teste', description: 'Local usado pelo smoke test.', regionId: region.id },
   });
   check('mestre cadastra localidade (201)', localityCreated.status === 201, JSON.stringify(localityCreated.data));
   const locality = localityCreated.data?.locality;
   createdLocalityIds.push(locality.id);
+  check('localidade pertence à região escolhida', locality?.regionId === region.id);
+  check(
+    'a região passa a contar a localidade nova',
+    (await api(`/api/regions/${region.id}`, { token: masterToken })).data.region.localityCount === 1,
+  );
+
+  // Região com localidade é removida em cascata (localidade junto).
+  const throwawayRegion = (
+    await api('/api/regions', { method: 'POST', token: masterToken, body: { name: 'Região descartável' } })
+  ).data.region;
+  const throwawayLocality = (
+    await api('/api/localities', {
+      method: 'POST',
+      token: masterToken,
+      body: { name: 'Local descartável', regionId: throwawayRegion.id },
+    })
+  ).data.locality;
+  check(
+    'mestre remove a região (204)',
+    (await api(`/api/regions/${throwawayRegion.id}`, { method: 'DELETE', token: masterToken })).status === 204,
+  );
+  const afterDelete = (await api('/api/localities', { token: masterToken })).data.localities;
+  check(
+    'apagar a região apaga as localidades dela',
+    !afterDelete.some((item: any) => item.id === throwawayLocality.id),
+  );
 
   check(
     'bestiário exige autenticação (401)',
@@ -442,6 +525,11 @@ async function main(): Promise<void> {
   const creature = createdCreature.data?.creature;
   check('criatura nasce com HP atual = máximo', creature?.hpCurrent === 7 && creature?.hpMax === 7);
   check('criatura nasce como CREATURE', creature?.kind === 'CREATURE');
+  check(
+    'criatura nasce com deslocamento métrico (9 m = 30 pés)',
+    creature?.speed === 9,
+    String(creature?.speed),
+  );
   check('criatura fica vinculada à localidade', creature?.localities?.[0]?.id === locality.id);
   check('criatura traz os 6 modificadores derivados', Object.keys(creature?.derived?.modifiers ?? {}).length === 6);
   check('mestre recebe creature:created em tempo real', (await createdEvent.catch(() => null))?.creature?.id === creature?.id);
@@ -914,8 +1002,8 @@ async function main(): Promise<void> {
     JSON.stringify(kiResource),
   );
   check(
-    'Movimento sem Armadura dá +15 pés no nível 9',
-    monkSheet.classAdjustments.speedBonus === 15,
+    'Movimento sem Armadura dá +4,5 m no nível 9',
+    monkSheet.classAdjustments.speedBonus === 4.5,
     String(monkSheet.classAdjustments.speedBonus),
   );
   check(
@@ -950,8 +1038,8 @@ async function main(): Promise<void> {
     String(openHand.classAdjustments.martialArtsDie),
   );
   check(
-    'Movimento sem Armadura dá +25 pés no nível 17',
-    openHand.classAdjustments.speedBonus === 25,
+    'Movimento sem Armadura dá +7,5 m no nível 17',
+    openHand.classAdjustments.speedBonus === 7.5,
     String(openHand.classAdjustments.speedBonus),
   );
   check(
@@ -1325,6 +1413,52 @@ async function main(): Promise<void> {
     JSON.stringify(weaponInInventory),
   );
 
+  // --- Inventário espelha o catálogo ---------------------------------------
+  const itemSyncEvent = waitFor<any>(playerSocket, 'sheet:updated');
+  const itemPatched = await api(`/api/items/${weapon.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      name: `Espada Longa Afiada ${suffix}`,
+      weight: 2.5,
+      description: 'Lâmina reforçada pelo mestre.',
+    },
+  });
+  check('mestre edita o item do catálogo (200)', itemPatched.status === 200);
+
+  const syncPayload = await itemSyncEvent.catch(() => null);
+  const syncedEntry = syncPayload?.character?.inventory?.find(
+    (entry: any) => entry.itemId === weapon.id,
+  );
+  check('quem tem o item recebe a ficha republicada', syncPayload !== null);
+  check(
+    'inventário passa a mostrar o nome, o peso e a descrição novos',
+    syncedEntry?.name === `Espada Longa Afiada ${suffix}` &&
+      syncedEntry?.weight === 2.5 &&
+      syncedEntry?.description === 'Lâmina reforçada pelo mestre.',
+    JSON.stringify(syncedEntry),
+  );
+  check('a quantidade do jogador é preservada', syncedEntry?.quantity === 1, String(syncedEntry?.quantity));
+
+  // Edição local em um campo do catálogo é sobrescrita pelo espelho.
+  const locallyEdited = await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      inventory: afterWeaponSend.inventory.map((entry: any) =>
+        entry.itemId === weapon.id ? { ...entry, name: 'Nome local', weight: 99 } : entry,
+      ),
+    },
+  });
+  const mirrored = locallyEdited.data?.character?.inventory?.find(
+    (entry: any) => entry.itemId === weapon.id,
+  );
+  check(
+    'dados do catálogo vencem a edição local',
+    mirrored?.name === `Espada Longa Afiada ${suffix}` && mirrored?.weight === 2.5,
+    JSON.stringify(mirrored),
+  );
+
   await api(`/api/items/${catalogItem.id}/send`, {
     method: 'POST',
     token: masterToken,
@@ -1631,6 +1765,11 @@ async function cleanup(): Promise<void> {
 
   if (createdCreatureIds.length > 0) {
     await prisma.creature.deleteMany({ where: { id: { in: createdCreatureIds } } });
+  }
+
+  if (createdRegionIds.length > 0) {
+    // As localidades dentro delas caem em cascata.
+    await prisma.region.deleteMany({ where: { id: { in: createdRegionIds } } });
   }
 
   if (createdLocalityIds.length > 0) {

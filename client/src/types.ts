@@ -393,7 +393,7 @@ export interface CharacterPatch {
 
 export type CreatureKind = 'CREATURE' | 'NPC';
 
-/** Imagem de uma localidade (arquivo servido em `/uploads/...`). */
+/** Imagem de uma região ou localidade (arquivo servido em `/uploads/...`). */
 export interface LocalityImage {
   url: string;
   name: string;
@@ -405,12 +405,39 @@ export interface LocalitySummary {
   name: string;
 }
 
-/** Localidade do mundo (cidade, masmorra, taverna...). */
+/**
+ * Região do mundo (reino, floresta, continente...) que agrupa localidades.
+ * As criaturas e NPCs ficam nas localidades, nunca soltos na região.
+ */
+export interface Region {
+  id: string;
+  name: string;
+  description: string;
+  /** Anotações livres do mestre sobre a região. */
+  notes: string;
+  images: LocalityImage[];
+  /** Quantas localidades estão dentro desta região. */
+  localityCount: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RegionPatch {
+  name?: string;
+  description?: string;
+  notes?: string;
+  images?: LocalityImage[];
+}
+
+/** Localidade do mundo (cidade, masmorra, taverna...) dentro de uma região. */
 export interface Locality {
   id: string;
   name: string;
   description: string;
   images: LocalityImage[];
+  /** Região dona da localidade. */
+  regionId: string;
   creatureCount: number;
   version: number;
   createdAt: string;
@@ -421,6 +448,7 @@ export interface LocalityPatch {
   name?: string;
   description?: string;
   images?: LocalityImage[];
+  regionId?: string;
 }
 
 /** Criatura/NPC cadastrado pelo mestre. */
@@ -521,6 +549,19 @@ export interface CreatureUpdatedPayload {
 
 export interface CreatureDeletedPayload {
   creatureId: string;
+}
+
+export interface RegionCreatedPayload {
+  region: Region;
+}
+
+export interface RegionUpdatedPayload {
+  region: Region;
+  changes: Record<string, unknown>;
+}
+
+export interface RegionDeletedPayload {
+  regionId: string;
 }
 
 export interface LocalityCreatedPayload {

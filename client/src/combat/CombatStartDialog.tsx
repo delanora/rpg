@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
-import type { Creature, Locality } from '../types';
+import type { Creature, Locality, Region } from '../types';
 import type { CombatCreatureEntry } from './combatApi';
 
 interface CombatStartDialogProps {
   localities: Locality[];
+  /** Regiões, para mostrar a qual delas cada localidade pertence. */
+  regions: Region[];
   /** Apenas monstros (kind CREATURE); NPCs não entram em combate. */
   creatures: Creature[];
   onCancel: () => void;
@@ -24,6 +26,7 @@ const MAX_QUANTITY = 30;
  */
 export function CombatStartDialog({
   localities,
+  regions,
   creatures,
   onCancel,
   onStart,
@@ -35,6 +38,8 @@ export function CombatStartDialog({
   const [error, setError] = useState<string | null>(null);
 
   const selected = localities.find((locality) => locality.id === localityId) ?? null;
+  const regionName = (locality: Locality): string =>
+    regions.find((region) => region.id === locality.regionId)?.name ?? '';
 
   const suggestions = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -111,6 +116,7 @@ export function CombatStartDialog({
             {selected ? (
               <p className="section-note">
                 Local escolhido: <strong>{selected.name}</strong>
+                {regionName(selected) ? ` · ${regionName(selected)}` : ''}
               </p>
             ) : suggestions.length === 0 ? (
               <p className="empty-hint">Nenhuma localidade encontrada.</p>
@@ -121,7 +127,10 @@ export function CombatStartDialog({
                     <button type="button" className="suggestion" onClick={() => choose(locality)}>
                       <Icon name="scroll" size={14} />
                       <span className="suggestion-name">{locality.name}</span>
-                      <span className="muted">{locality.creatureCount} criatura(s)</span>
+                      <span className="muted">
+                        {regionName(locality) ? `${regionName(locality)} · ` : ''}
+                        {locality.creatureCount} criatura(s)
+                      </span>
                     </button>
                   </li>
                 ))}

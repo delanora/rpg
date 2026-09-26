@@ -5,7 +5,7 @@ import { Icon } from '../components/Icon';
 import { PresentationOverlay } from '../components/PresentationOverlay';
 import { CreaturesTab } from '../components/master/CreaturesTab';
 import { ItemsTab } from '../components/master/ItemsTab';
-import { LocalitiesTab } from '../components/master/LocalitiesTab';
+import { RegionsTab } from '../components/master/RegionsTab';
 import { SheetsTab } from '../components/master/SheetsTab';
 import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
@@ -24,11 +24,13 @@ import type {
   Locality,
   LocalityPatch,
   Presentation,
+  Region,
+  RegionPatch,
   SessionUser,
 } from '../types';
 import { useRealtime } from '../useRealtime';
 
-type Tab = 'sheets' | 'creatures' | 'npcs' | 'localities' | 'items';
+type Tab = 'sheets' | 'creatures' | 'npcs' | 'regions' | 'items';
 
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
@@ -37,6 +39,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [localities, setLocalities] = useState<Locality[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +98,24 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       setLocalities((prev) => prev.filter((locality) => locality.id !== payload.localityId));
     },
 
+    onRegionCreated: (payload) => {
+      setRegions((prev) =>
+        prev.some((region) => region.id === payload.region.id)
+          ? prev
+          : [...prev, payload.region].sort(byName),
+      );
+    },
+    onRegionUpdated: (payload) => {
+      setRegions((prev) =>
+        prev.map((region) => (region.id === payload.region.id ? payload.region : region)),
+      );
+    },
+    onRegionDeleted: (payload) => {
+      setRegions((prev) => prev.filter((region) => region.id !== payload.regionId));
+      // As localidades da região caem junto (cascade no banco).
+      setLocalities((prev) => prev.filter((locality) => locality.regionId !== payload.regionId));
+    },
+
     onItemCreated: (payload) => {
       setItems((prev) =>
         prev.some((item) => item.id === payload.item.id)
@@ -122,18 +143,29 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     Promise.all([
       api<{ characters: Character[] }>('/api/characters'),
       api<{ creatures: Creature[] }>('/api/creatures'),
+      api<{ regions: Region[] }>('/api/regions'),
       api<{ localities: Locality[] }>('/api/localities'),
       api<{ items: Item[] }>('/api/items'),
       fetchActiveCombat(),
     ])
-      .then(([charactersResult, creaturesResult, localitiesResult, itemsResult, activeCombat]) => {
-        if (!active) return;
-        setCharacters(charactersResult.characters);
-        setCreatures(creaturesResult.creatures);
-        setLocalities(localitiesResult.localities);
-        setItems(itemsResult.items);
-        combatState.setCombat(activeCombat);
-      })
+      .then(
+        ([
+          charactersResult,
+          creaturesResult,
+          regionsResult,
+          localitiesResult,
+          itemsResult,
+          activeCombat,
+        ]) => {
+          if (!active) return;
+          setCharacters(charactersResult.characters);
+          setCreatures(creaturesResult.creatures);
+          setRegions(regionsResult.regions);
+          setLocalities(localitiesResult.localities);
+          setItems(itemsResult.items);
+          combatState.setCombat(activeCombat);
+        },
+      )
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : 'Falha ao carregar o painel.');
       })
@@ -195,10 +227,50 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
-  const createLocality = useCallback(async (): Promise<Locality> => {
+  const createRegion = useCallback(async (): Promise<Region> => {
+    const { region } = await api<{ region: Region }>('/api/regions', {
+      method: 'POST',
+      body: { name: 'Nova região' },
+    });
+    setRegions((prev) =>
+      prev.some((item) => item.id === region.id) ? prev : [...prev, region].sort(byName),
+    );
+    return region;
+  }, []);
+
+  const patchRegion = useCallback(async (id: string, patch: RegionPatch) => {
+    setRegions((prev) => prev.map((region) => (region.id === id ? { ...region, ...patch } : region)));
+
+    try {
+      const { region } = await api<{ region: Region }>(`/api/regions/${id}`, {
+        method: 'PATCH',
+        body: patch,
+      });
+      setRegions((prev) => prev.map((item) => (item.id === id ? region : item)));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar a região.');
+    }
+  }, []);
+
+  const deleteRegion = useCallback(async (id: string) => {
+    setRegions((prev) => prev.filter((region) => region.id !== id));
+    // As localidades dentro dela somem junto (cascade no banco).
+    setLocalities((prev) => prev.filter((locality) => locality.regionId !== id));
+
+    try {
+      await api(`/api/regions/${id}`, { method: 'DELETE' });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao remover a região.');
+    }
+  }, []);
+
+  /** Cria uma localidade já dentro da região aberta. */
+  const createLocality = useCallback(async (regionId: string): Promise<Locality> => {
     const { locality } = await api<{ locality: Locality }>('/api/localities', {
       method: 'POST',
-      body: { name: 'Nova localidade' },
+      body: { name: 'Nova localidade', regionId },
     });
     setLocalities((prev) =>
       prev.some((item) => item.id === locality.id) ? prev : [...prev, locality].sort(byName),
@@ -395,10 +467,10 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           </button>
           <button
             type="button"
-            className={tab === 'localities' ? 'tab active' : 'tab'}
-            onClick={() => setTab('localities')}
+            className={tab === 'regions' ? 'tab active' : 'tab'}
+            onClick={() => setTab('regions')}
           >
-            <Icon name="scroll" size={16} /> Localidades
+            <Icon name="book" size={16} /> Regiões
           </button>
           <button
             type="button"
@@ -444,13 +516,17 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           />
         ) : tab === 'sheets' ? (
           <SheetsTab characters={characters} onUpdate={patchCharacter} />
-        ) : tab === 'localities' ? (
-          <LocalitiesTab
+        ) : tab === 'regions' ? (
+          <RegionsTab
+            regions={regions}
             localities={localities}
             creatures={creatures}
-            onCreate={createLocality}
-            onPatch={patchLocality}
-            onDelete={deleteLocality}
+            onCreate={createRegion}
+            onPatch={patchRegion}
+            onDelete={deleteRegion}
+            onCreateLocality={createLocality}
+            onPatchLocality={patchLocality}
+            onDeleteLocality={deleteLocality}
           />
         ) : tab === 'items' ? (
           <ItemsTab
@@ -466,6 +542,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             kind={tab === 'npcs' ? 'NPC' : 'CREATURE'}
             creatures={tab === 'npcs' ? npcs : monsters}
             localities={localities}
+            regions={regions}
             onCreate={createCreature}
             onPatch={patchCreature}
             onDelete={deleteCreature}
@@ -476,6 +553,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       {showStartDialog ? (
         <CombatStartDialog
           localities={localities}
+          regions={regions}
           creatures={monsters}
           onCancel={() => setShowStartDialog(false)}
           onStart={handleStartCombat}

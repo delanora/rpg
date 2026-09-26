@@ -77,7 +77,8 @@ model Character {
   hpTemp          Int @default(0)
   armorClass      Int @default(10)
   initiativeBonus Int @default(0)
-  speed           Int @default(30)
+  /// Deslocamento em metros (sistema métrico).
+  speed           Int @default(9)
 
   // Coleções (JSONB) — ver src/modules/characters/characters.schema.ts
   skills    Json @default("{}") //  { [skill]: { proficient, expertise } }
@@ -119,7 +120,28 @@ enum CreatureKind {
   NPC
 }
 
-/// Local do mundo (cidade, masmorra, taverna...) com uma ou mais imagens.
+/// Região do mundo (reino, floresta, continente...) que agrupa localidades.
+/// Tem descrição, anotações e imagens próprias; as criaturas/NPCs ficam
+/// sempre nas localidades, nunca soltos na região.
+model Region {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  /// Anotações livres do mestre sobre a região.
+  notes       String   @default("")
+  /// Lista de imagens: [{ url, name }]. Os arquivos ficam em `uploads/`.
+  images      Json     @default("[]")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  localities Locality[]
+
+  @@index([name])
+  @@map("regions")
+}
+
+/// Local do mundo (cidade, masmorra, taverna...) dentro de uma região.
 model Locality {
   id          String   @id @default(cuid())
   name        String
@@ -130,10 +152,15 @@ model Locality {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  /// Região à qual a localidade pertence. Apagar a região apaga as localidades.
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
   creatures Creature[]
   combats   Combat[]
 
   @@index([name])
+  @@index([regionId])
   @@map("localities")
 }
 
@@ -158,7 +185,8 @@ model Creature {
   hpCurrent  Int @default(1)
   hpMax      Int @default(1)
   armorClass Int @default(10)
-  speed      Int @default(30)
+  /// Deslocamento em metros (sistema métrico).
+  speed      Int @default(9)
 
   // Coleções (JSONB) — ver src/modules/shared/attacks.ts
   attacks     Json @default("[]") // [{ id, name, damage, damageType, attackBonus, notes }]
@@ -189,7 +217,7 @@ model Item {
   id          String   @id @default(cuid())
   name        String
   description String   @default("")
-  /// Peso em libras (aceita frações, como 0.5).
+  /// Peso em quilogramas (aceita frações, como 0.25).
   weight      Float    @default(0)
   /// Categoria validada na aplicação (ex.: Arma, Poção, Tesouro).
   category    String   @default("Item Geral")

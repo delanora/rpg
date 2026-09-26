@@ -29,6 +29,7 @@ import {
 } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { ItemDetails } from '../shared/item-details.js';
+import { syncInventory, type CatalogSnapshot } from './inventory-sync.js';
 import {
   featureSchema,
   inventoryItemSchema,
@@ -131,7 +132,12 @@ const inventoryListSchema = z.array(inventoryItemSchema);
 const attackListSchema = z.array(attackSchema);
 const featureListSchema = z.array(featureSchema);
 
-export function toCharacterDto(character: Character, ownerUsername?: string): CharacterDto {
+export function toCharacterDto(
+  character: Character,
+  ownerUsername?: string,
+  /** Itens do catálogo, para o inventário espelhar os dados atuais do mestre. */
+  catalog?: Map<string, CatalogSnapshot>,
+): CharacterDto {
   const skills = normalizeSkills(character.skills);
   const classDefinition = getClassDefinition(character.classKey);
   const activeFeatures = getActiveClassFeatures(
@@ -178,7 +184,10 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     classState,
     abilities,
   );
-  const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
+  const inventory = syncInventory(
+    parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []),
+    catalog ?? new Map(),
+  );
   const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
     list: [],
     slots: {},

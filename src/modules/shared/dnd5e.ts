@@ -105,9 +105,14 @@ export function formatModifier(value: number): string {
   return value >= 0 ? `+${value}` : String(value);
 }
 
-/** Capacidade de carga: Força × 15 (em libras). */
+/**
+ * Capacidade de carga: Força × 7,5 (em quilogramas).
+ *
+ * É a conversão usada no livro em português: 2 lb = 1 kg, então as 15 lb por
+ * ponto de Força viram 7,5 kg.
+ */
 export function carryingCapacity(strength: number): number {
-  return strength * 15;
+  return strength * 7.5;
 }
 
 /** Iniciativa = modificador de Destreza + bônus avulso. */

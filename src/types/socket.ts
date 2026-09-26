@@ -14,6 +14,9 @@ import type {
   PresentationClosedPayload,
   PresentationShownPayload,
   PresenceUpdatePayload,
+  RegionCreatedPayload,
+  RegionDeletedPayload,
+  RegionUpdatedPayload,
   SheetUpdatedPayload,
 } from '../realtime/events.js';
 
@@ -30,6 +33,11 @@ export interface ServerToClientEvents {
   'creature:created': (payload: CreatureCreatedPayload) => void;
   'creature:updated': (payload: CreatureUpdatedPayload) => void;
   'creature:deleted': (payload: CreatureDeletedPayload) => void;
+
+  // Regiões e localidades (painel do mestre)
+  'region:created': (payload: RegionCreatedPayload) => void;
+  'region:updated': (payload: RegionUpdatedPayload) => void;
+  'region:deleted': (payload: RegionDeletedPayload) => void;
 
   // Apresentação de imagens
   'presentation:shown': (payload: PresentationShownPayload) => void;

@@ -6,6 +6,7 @@ import { creaturesRouter } from '../../modules/creatures/creatures.routes.js';
 import { itemsRouter } from '../../modules/items/items.routes.js';
 import { localitiesRouter, uploadsRouter } from '../../modules/localities/localities.routes.js';
 import { presentationRouter } from '../../modules/presentation/presentation.routes.js';
+import { regionsRouter } from '../../modules/regions/regions.routes.js';
 import { usersRouter } from '../../modules/users/users.routes.js';
 import { healthRouter } from './health.js';
 
@@ -20,6 +21,7 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/characters', charactersRouter);
 apiRouter.use('/creatures', creaturesRouter);
+apiRouter.use('/regions', regionsRouter);
 apiRouter.use('/localities', localitiesRouter);
 apiRouter.use('/items', itemsRouter);
 apiRouter.use('/uploads', uploadsRouter);

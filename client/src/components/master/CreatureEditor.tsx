@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import { ABILITY_KEYS, ABILITY_LABELS, DAMAGE_TYPES, formatModifier } from '../../dnd';
-import type { Creature, CreaturePatch, Locality } from '../../types';
+import type { Creature, CreaturePatch, Locality, Region } from '../../types';
 import { clampInt } from '../../utils';
 import { AttacksTable } from '../AttacksTable';
 import { Icon } from '../Icon';
@@ -49,6 +49,8 @@ function DamageChips({ label, selected, onChange }: DamageChipsProps) {
 interface CreatureEditorProps {
   creature: Creature;
   localities: Locality[];
+  /** Regiões, usadas para agrupar as localidades no seletor. */
+  regions: Region[];
   onPatch: (patch: CreaturePatch) => void;
   onDelete: () => void;
 }
@@ -56,6 +58,7 @@ interface CreatureEditorProps {
 export function CreatureEditor({
   creature,
   localities,
+  regions,
   onPatch,
   onDelete,
 }: CreatureEditorProps) {
@@ -204,25 +207,35 @@ export function CreatureEditor({
         <h3 className="subsection-title">Localidades</h3>
         {localities.length === 0 ? (
           <p className="empty-hint">
-            Cadastre uma localidade na aba “Localidades” para poder vincular.
+            Cadastre uma região e uma localidade nela (aba “Regiões”) para poder vincular.
           </p>
         ) : (
-          <div className="chips">
-            {localities.map((locality) => {
-              const active = creature.localities.some((item) => item.id === locality.id);
-              return (
-                <button
-                  key={locality.id}
-                  type="button"
-                  className={active ? 'chip chip-on' : 'chip'}
-                  aria-pressed={active}
-                  onClick={() => toggleLocality(locality.id)}
-                >
-                  {locality.name}
-                </button>
-              );
-            })}
-          </div>
+          regions.map((region) => {
+            const own = localities.filter((locality) => locality.regionId === region.id);
+            if (own.length === 0) return null;
+
+            return (
+              <div key={region.id} className="chip-group">
+                <span className="chip-group-title">{region.name}</span>
+                <div className="chips">
+                  {own.map((locality) => {
+                    const active = creature.localities.some((item) => item.id === locality.id);
+                    return (
+                      <button
+                        key={locality.id}
+                        type="button"
+                        className={active ? 'chip chip-on' : 'chip'}
+                        aria-pressed={active}
+                        onClick={() => toggleLocality(locality.id)}
+                      >
+                        {locality.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
         )}
       </Section>
 
@@ -306,7 +319,7 @@ export function CreatureEditor({
               ariaLabel="Deslocamento"
               onCommit={(value) => onPatch({ speed: clampInt(value, 0, 999, creature.speed) })}
             />
-            <span className="vital-hint">pés</span>
+            <span className="vital-hint">metros</span>
           </div>
         </div>
       </Section>

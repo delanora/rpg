@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Creature, CreatureKind, CreaturePatch, Locality } from '../../types';
+import type { Creature, CreatureKind, CreaturePatch, Locality, Region } from '../../types';
 import { Portrait } from '../Portrait';
 import { CreatureEditor } from './CreatureEditor';
 
@@ -8,6 +8,8 @@ interface CreaturesTabProps {
   kind: CreatureKind;
   creatures: Creature[];
   localities: Locality[];
+  /** Regiões, para agrupar/identificar as localidades no seletor. */
+  regions: Region[];
   onCreate: (localityId: string) => Promise<Creature>;
   onPatch: (id: string, patch: CreaturePatch) => void;
   onDelete: (id: string) => void;
@@ -30,6 +32,7 @@ export function CreaturesTab({
   kind,
   creatures,
   localities,
+  regions,
   onCreate,
   onPatch,
   onDelete,
@@ -67,11 +70,18 @@ export function CreaturesTab({
             <label className="field field-inline">
               <span>Localidade</span>
               <select value={localityId} onChange={(event) => setLocalityId(event.target.value)}>
-                {localities.map((locality) => (
-                  <option key={locality.id} value={locality.id}>
-                    {locality.name}
-                  </option>
-                ))}
+                {localities.map((locality) => {
+                  // Com mais de uma região, o nome dela ajuda a achar o lugar.
+                  const region = regions.find((item) => item.id === locality.regionId);
+                  const prefix = regions.length > 1 && region ? `${region.name} · ` : '';
+
+                  return (
+                    <option key={locality.id} value={locality.id}>
+                      {prefix}
+                      {locality.name}
+                    </option>
+                  );
+                })}
               </select>
             </label>
           )}
@@ -129,6 +139,7 @@ export function CreaturesTab({
           <CreatureEditor
             creature={selected}
             localities={localities}
+            regions={regions}
             onPatch={(patch) => onPatch(selected.id, patch)}
             onDelete={() => {
               onDelete(selected.id);

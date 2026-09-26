@@ -1,14 +1,15 @@
 import type { Locality } from '@prisma/client';
-import { z } from 'zod';
 import { parseJson } from '../shared/json.js';
-import { localityImageSchema, type LocalityImage } from './localities.schema.js';
+import { imageListSchema, type ImageRef } from '../shared/images.js';
 
 /** Localidade enviada ao painel do mestre. */
 export interface LocalityDto {
   id: string;
   name: string;
   description: string;
-  images: LocalityImage[];
+  images: ImageRef[];
+  /** Região dona da localidade. */
+  regionId: string;
   /** Quantas criaturas/NPCs estão vinculadas a esta localidade. */
   creatureCount: number;
   version: number;
@@ -22,13 +23,11 @@ export interface LocalitySummaryDto {
   name: string;
 }
 
-const imageListSchema = z.array(localityImageSchema);
-
 type LocalityWithCount = Locality & { _count?: { creatures: number } };
 
 /** Lê a lista de imagens de uma localidade (JSONB tolerante a dados antigos). */
-export function parseLocalityImages(locality: Pick<Locality, 'images'>): LocalityImage[] {
-  return parseJson<LocalityImage[]>(imageListSchema, locality.images, []);
+export function parseLocalityImages(locality: Pick<Locality, 'images'>): ImageRef[] {
+  return parseJson<ImageRef[]>(imageListSchema, locality.images, []);
 }
 
 export function toLocalityDto(locality: LocalityWithCount): LocalityDto {
@@ -37,6 +36,7 @@ export function toLocalityDto(locality: LocalityWithCount): LocalityDto {
     name: locality.name,
     description: locality.description,
     images: parseLocalityImages(locality),
+    regionId: locality.regionId,
     creatureCount: locality._count?.creatures ?? 0,
     version: locality.version,
     createdAt: locality.createdAt.toISOString(),

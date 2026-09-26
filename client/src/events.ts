@@ -10,6 +10,9 @@ import type {
   LocalityUpdatedPayload,
   PresentationClosedPayload,
   PresentationShownPayload,
+  RegionCreatedPayload,
+  RegionDeletedPayload,
+  RegionUpdatedPayload,
   Role,
   SheetUpdatedPayload,
 } from './types';
@@ -26,6 +29,9 @@ export type {
   LocalityUpdatedPayload,
   PresentationClosedPayload,
   PresentationShownPayload,
+  RegionCreatedPayload,
+  RegionDeletedPayload,
+  RegionUpdatedPayload,
   SheetUpdatedPayload,
 };
 

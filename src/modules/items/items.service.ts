@@ -6,7 +6,8 @@ import { HttpError } from '../../lib/http-error.js';
 import { deleteUploadedImage } from '../../lib/uploads.js';
 import { ServerEvents, type ServerEvent } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { toCharacterDto, type InventoryItemDto } from '../characters/characters.dto.js';
+import type { InventoryItemDto } from '../characters/characters.dto.js';
+import { republishSheetsWithCatalogItem, toSheetDto } from '../characters/characters.service.js';
 import { inventoryItemSchema } from '../characters/characters.schema.js';
 import { sanitizeItemDetails } from '../shared/item-details.js';
 import { parseJson } from '../shared/json.js';
@@ -111,6 +112,11 @@ export async function updateItem(id: string, patch: UpdateItemInput): Promise<It
   }
 
   broadcastItem(ServerEvents.ITEM_UPDATED, item, patch as Record<string, unknown>);
+
+  // O inventário dos jogadores espelha o catálogo: quem já tem o item recebe
+  // a ficha atualizada na hora, sem recarregar nada.
+  await republishSheetsWithCatalogItem(item.id);
+
   return toItemDto(item, 'MASTER');
 }
 
@@ -176,7 +182,7 @@ export async function sendItemToCharacter(
     characterId: updated.id,
     version: updated.version,
     changes: { inventory },
-    character: toCharacterDto(updated, character.user.username),
+    character: await toSheetDto(updated, character.user.username),
     at: new Date().toISOString(),
   };
   try {
