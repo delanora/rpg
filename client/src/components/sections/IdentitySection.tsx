@@ -1,10 +1,32 @@
-import { ALIGNMENTS } from '../../dnd';
+import {
+  ABILITY_ABBREVIATIONS,
+  ALIGNMENTS,
+  SPELLCASTING_TYPE_LABELS,
+  SPELL_LEARNING_LABELS,
+  hitDieLabel,
+} from '../../dnd';
 import { clampInt } from '../../utils';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 export function IdentitySection({ character, update }: SheetSectionProps) {
+  const definition = character.classDefinition;
+  const classNames = character.classCatalog.map((item) => item.name);
+  const subclassEligible = definition !== null && character.level >= definition.subclassLevel;
+  const subclassNames = definition?.subclasses.map((item) => item.name) ?? [];
+
+  function classKeyFromName(name: string): string {
+    return character.classCatalog.find((item) => item.name === name)?.key ?? '';
+  }
+
+  const spellcastingLabel = definition
+    ? SPELLCASTING_TYPE_LABELS[definition.spellcasting.type] +
+      (definition.spellcasting.ability
+        ? ` · ${ABILITY_ABBREVIATIONS[definition.spellcasting.ability]}`
+        : '')
+    : '—';
+
   return (
     <Section title="Identidade" icon="scroll" subtitle="Clique em qualquer campo para editar">
       <div className="grid grid-3">
@@ -29,6 +51,38 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
             onCommit={(value) => update({ race: value.trim() })}
           />
         </label>
+
+        <label className="field">
+          <span>Classe</span>
+          <InlineField
+            value={definition?.name ?? ''}
+            mode="select"
+            options={classNames}
+            ariaLabel="Classe do personagem"
+            onCommit={(value) => update({ classKey: classKeyFromName(value) })}
+          />
+        </label>
+
+        {definition !== null && subclassEligible ? (
+          <label className="field">
+            <span>Subclasse</span>
+            <InlineField
+              value={character.subclass}
+              mode="select"
+              options={subclassNames}
+              ariaLabel="Subclasse"
+              onCommit={(value) => update({ subclass: value })}
+            />
+          </label>
+        ) : (
+          <div
+            className="field readonly"
+            title={definition ? `Escolhida a partir do nível ${definition.subclassLevel}` : undefined}
+          >
+            <span>Subclasse</span>
+            <strong>{definition ? `nível ${definition.subclassLevel}+` : '—'}</strong>
+          </div>
+        )}
 
         <label className="field">
           <span>Nível</span>
@@ -75,6 +129,21 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
             }
           />
         </label>
+
+        <div className="field readonly">
+          <span>Dado de vida</span>
+          <strong>{hitDieLabel(definition?.hitDie ?? null)}</strong>
+        </div>
+
+        <div className="field readonly">
+          <span>Conjuração</span>
+          <strong>{spellcastingLabel}</strong>
+        </div>
+
+        <div className="field readonly">
+          <span>Magias</span>
+          <strong>{definition ? SPELL_LEARNING_LABELS[definition.spellcasting.learning] : '—'}</strong>
+        </div>
 
         <div className="field readonly">
           <span>Bônus de proficiência</span>
