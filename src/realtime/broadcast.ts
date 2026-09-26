@@ -16,6 +16,8 @@ export interface Broadcaster {
   toMasters(event: ServerEvent, payload: unknown): void;
   /** Envia para todos os conectados na mesa. */
   toTable(event: ServerEvent, payload: unknown): void;
+  /** Envia para a mesa exceto os mestres (visão dos jogadores). */
+  toPlayers(event: ServerEvent, payload: unknown): void;
   /** Reenvia a lista atualizada de usuários online. */
   presence(): void;
 }
@@ -32,10 +34,25 @@ export function createBroadcaster(io: AppServer): Broadcaster {
     );
   };
 
+  /** Emite para uma sala excluindo outra (ex.: mesa sem os mestres). */
+  const emitToExcept = (
+    room: string,
+    exceptRoom: string,
+    event: ServerEvent,
+    payload: unknown,
+  ): void => {
+    (
+      io.to(room).except(exceptRoom) as unknown as {
+        emit: (event: string, payload: unknown) => void;
+      }
+    ).emit(event, payload);
+  };
+
   return {
     toUser: (userId, event, payload) => emitTo(userRoom(userId), event, payload),
     toMasters: (event, payload) => emitTo(MASTERS_ROOM, event, payload),
     toTable: (event, payload) => emitTo(tableRoom(), event, payload),
+    toPlayers: (event, payload) => emitToExcept(tableRoom(), MASTERS_ROOM, event, payload),
     presence: () =>
       emitTo(tableRoom(), ServerEvents.PRESENCE_UPDATE, { online: getOnlineUsers() }),
   };

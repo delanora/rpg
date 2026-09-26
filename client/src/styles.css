@@ -2279,6 +2279,15 @@ input[type='checkbox']:disabled {
   white-space: nowrap;
 }
 
+/* Vida/CA de criaturas escondidas do jogador — só o mestre vê os números. */
+.turn-hidden {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
 .combat-block {
   border: 1px solid var(--line);
   border-radius: var(--radius);

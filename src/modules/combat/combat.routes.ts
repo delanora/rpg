@@ -21,8 +21,8 @@ function actorFrom(req: { user?: { sub: string; username: string; role: Role } }
 }
 
 /** GET /api/combat/active — estado do combate em andamento (ou null). */
-combatRouter.get('/active', authenticate, async (_req, res) => {
-  res.json({ combat: await getActiveCombat() });
+combatRouter.get('/active', authenticate, async (req, res) => {
+  res.json({ combat: await getActiveCombat(actorFrom(req).role) });
 });
 
 /** POST /api/combat — botão "COMBATE": inicia o combate com as criaturas escolhidas. */
@@ -34,7 +34,7 @@ combatRouter.post('/', authenticate, requireRole('MASTER'), async (req, res) => 
     return;
   }
 
-  res.status(201).json({ combat: await startCombat(parsed.data) });
+  res.status(201).json({ combat: await startCombat(actorFrom(req), parsed.data) });
 });
 
 /** POST /api/combat/initiative — o jogador rola a própria iniciativa. */

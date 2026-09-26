@@ -1,4 +1,4 @@
-import type { Character, CombatStatus, CombatantKind, Creature } from '@prisma/client';
+import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
 import { attackSchema, type Attack } from '../shared/attacks.js';
 import { parseJson } from '../shared/json.js';
@@ -28,10 +28,15 @@ export interface CombatantDto {
   dexterityMod: number;
   initiative: number | null;
   initiativeRoll: number | null;
-  /** Lidos ao vivo da ficha/criatura — nunca duplicados no combatente. */
-  hpCurrent: number;
-  hpMax: number;
-  armorClass: number;
+  /**
+   * Lidos ao vivo da ficha/criatura — nunca duplicados no combatente.
+   * Ficam `null` quando ocultos do jogador (vida/CA de criaturas).
+   */
+  hpCurrent: number | null;
+  hpMax: number | null;
+  armorClass: number | null;
+  /** Verdadeiro quando a vida/CA existem, mas estão ocultas para quem vê. */
+  statsHidden: boolean;
   /** Verdadeiro quando a ficha/criatura de origem foi removida. */
   missing: boolean;
   rolled: boolean;
@@ -107,12 +112,17 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     hpCurrent: source?.hpCurrent ?? 0,
     hpMax: source?.hpMax ?? 0,
     armorClass: source?.armorClass ?? 0,
+    statsHidden: false,
     missing: source === null,
     rolled: combatant.initiative !== null,
   };
 }
 
-export function toCombatDto(combat: CombatSourced): CombatDto {
+/**
+ * Monta o combate para quem está vendo. O mestre recebe tudo; o jogador não
+ * enxerga a vida nem a CA das criaturas (as dos personagens continuam visíveis).
+ */
+export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
   // A ordem só faz sentido depois que todos rolaram; antes disso a lista fica
   // em ordem alfabética para a tela de espera não "pular".
   const ordered =
@@ -122,7 +132,7 @@ export function toCombatDto(combat: CombatSourced): CombatDto {
   const current =
     combat.status === 'ACTIVE' ? (combatants[combat.currentIndex] ?? null) : null;
 
-  return {
+  const dto: CombatDto = {
     id: combat.id,
     status: combat.status,
     round: combat.round,
@@ -131,5 +141,22 @@ export function toCombatDto(combat: CombatSourced): CombatDto {
     combatants,
     createdAt: combat.createdAt.toISOString(),
     endedAt: combat.endedAt ? combat.endedAt.toISOString() : null,
+  };
+
+  return viewer === 'MASTER' ? dto : hideCreatureStats(dto);
+}
+
+/**
+ * Esconde vida e CA das criaturas de um DTO já montado. Só as criaturas somem:
+ * a vida dos personagens continua visível para a mesa.
+ */
+export function hideCreatureStats(dto: CombatDto): CombatDto {
+  return {
+    ...dto,
+    combatants: dto.combatants.map((combatant) =>
+      combatant.kind === 'CREATURE'
+        ? { ...combatant, hpCurrent: null, hpMax: null, armorClass: null, statsHidden: true }
+        : combatant,
+    ),
   };
 }

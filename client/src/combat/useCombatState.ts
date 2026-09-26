@@ -48,15 +48,23 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
       ? 'acertou'
       : 'errou';
 
+  // CA e vida do alvo só entram quando não estão ocultas (criatura x jogador).
+  const hpPart = payload.targetStatsHidden
+    ? ''
+    : ` com ${payload.targetHpCurrent}/${payload.targetHpMax} HP`;
+  const vsPart = payload.targetStatsHidden
+    ? ''
+    : ` (${payload.attackTotal} vs CA ${payload.targetArmorClass})`;
+
   const damage =
     payload.hit && payload.damageRolled > 0
-      ? ` · ${payload.damageRolled} de dano${payload.damageType ? ` (${payload.damageType})` : ''} → ${payload.targetName} com ${payload.targetHpCurrent}/${payload.targetHpMax} HP`
+      ? ` · ${payload.damageRolled} de dano${payload.damageType ? ` (${payload.damageType})` : ''} → ${payload.targetName}${hpPart}`
       : '';
 
   return {
     id: nextLogId(),
     kind: 'result',
-    text: `${payload.attackerName} usou ${payload.attackName} em ${payload.targetName} e ${outcome} (${payload.attackTotal} vs CA ${payload.targetArmorClass})`,
+    text: `${payload.attackerName} usou ${payload.attackName} em ${payload.targetName} e ${outcome}${vsPart}`,
     detail: damage || undefined,
     crit: payload.critical,
     at: payload.at,

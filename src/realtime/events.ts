@@ -159,13 +159,17 @@ export interface AttackResolvedPayload {
   attackRoll: number;
   attackBonus: number;
   attackTotal: number;
-  targetArmorClass: number;
+  /** `null` quando o alvo é uma criatura e quem vê é um jogador. */
+  targetArmorClass: number | null;
   hit: boolean;
   critical: boolean;
   damageRolled: number;
   damageType: string;
-  targetHpCurrent: number;
-  targetHpMax: number;
+  /** `null` quando a vida do alvo está oculta (criatura vista por jogador). */
+  targetHpCurrent: number | null;
+  targetHpMax: number | null;
+  /** Verdadeiro quando CA/vida do alvo existem mas ficam ocultas para quem vê. */
+  targetStatsHidden: boolean;
   at: string;
 }
 

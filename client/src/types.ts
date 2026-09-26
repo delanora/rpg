@@ -288,9 +288,12 @@ export interface CombatantDto {
   dexterityMod: number;
   initiative: number | null;
   initiativeRoll: number | null;
-  hpCurrent: number;
-  hpMax: number;
-  armorClass: number;
+  /** `null` quando a vida/CA está oculta para quem vê (criatura vista por jogador). */
+  hpCurrent: number | null;
+  hpMax: number | null;
+  armorClass: number | null;
+  /** Verdadeiro quando a vida/CA existem, mas ficam ocultas para quem vê. */
+  statsHidden: boolean;
   missing: boolean;
   rolled: boolean;
 }
@@ -346,12 +349,15 @@ export interface AttackResolvedPayload {
   attackRoll: number;
   attackBonus: number;
   attackTotal: number;
-  targetArmorClass: number;
+  /** `null` quando o alvo é uma criatura e quem vê é um jogador. */
+  targetArmorClass: number | null;
   hit: boolean;
   critical: boolean;
   damageRolled: number;
   damageType: string;
-  targetHpCurrent: number;
-  targetHpMax: number;
+  targetHpCurrent: number | null;
+  targetHpMax: number | null;
+  /** Verdadeiro quando CA/vida do alvo ficam ocultas para quem vê. */
+  targetStatsHidden: boolean;
   at: string;
 }

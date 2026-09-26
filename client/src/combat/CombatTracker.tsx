@@ -103,7 +103,10 @@ function AttackPanel({
               <option value="">escolha o alvo</option>
               {targets.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name} — CA {item.armorClass}, HP {item.hpCurrent}/{item.hpMax}
+                  {item.name}
+                  {item.statsHidden
+                    ? ''
+                    : ` — CA ${item.armorClass}, HP ${item.hpCurrent}/${item.hpMax}`}
                 </option>
               ))}
             </select>
@@ -325,10 +328,10 @@ export function CombatTracker({
 
       <ol className="turn-order">
         {combat.combatants.map((combatant, index) => {
+          const hpCurrent = combatant.hpCurrent ?? 0;
+          const hpMax = combatant.hpMax ?? 0;
           const percent =
-            combatant.hpMax > 0
-              ? Math.max(0, Math.min(100, (combatant.hpCurrent / combatant.hpMax) * 100))
-              : 0;
+            hpMax > 0 ? Math.max(0, Math.min(100, (hpCurrent / hpMax) * 100)) : 0;
 
           return (
             <li
@@ -343,15 +346,25 @@ export function CombatTracker({
                 {combatant.missing ? <em className="tag">removido</em> : null}
               </span>
               <span className="turn-init">{combatant.initiative}</span>
-              <span className="turn-hp">
-                <span className="hp-bar">
-                  <span className="hp-fill" style={{ width: `${percent}%` }} />
+
+              {/* Vida e CA de criaturas ficam ocultas para os jogadores. */}
+              {combatant.statsHidden ? (
+                <span className="turn-hp">
+                  <span className="turn-hidden" title="Vida e CA visíveis apenas para o mestre">
+                    <Icon name="eye" size={13} /> vida e CA ocultas
+                  </span>
                 </span>
-                <span className="hp-text">
-                  {combatant.hpCurrent}/{combatant.hpMax}
+              ) : (
+                <span className="turn-hp">
+                  <span className="hp-bar">
+                    <span className="hp-fill" style={{ width: `${percent}%` }} />
+                  </span>
+                  <span className="hp-text">
+                    {hpCurrent}/{hpMax}
+                  </span>
+                  <span className="turn-ac">CA {combatant.armorClass}</span>
                 </span>
-                <span className="turn-ac">CA {combatant.armorClass}</span>
-              </span>
+              )}
             </li>
           );
         })}

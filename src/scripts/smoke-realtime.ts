@@ -583,8 +583,19 @@ async function main(): Promise<void> {
     token: masterToken,
   });
 
-  const active = masterRoll.data.combat;
+  let active = masterRoll.data.combat;
   check('mestre rola pela criatura', active.combatants.find((item: any) => item.id === creatureCombatant.id)?.initiative !== null);
+
+  // Outras fichas de jogador já existentes na mesa também entram no combate; o
+  // mestre rola por quem ainda não rolou, para a ordem fechar.
+  for (const id of active.combatants
+    .filter((item: any) => item.initiative === null)
+    .map((item: any) => item.id)) {
+    active = (
+      await api(`/api/combat/initiative/${id}`, { method: 'POST', token: masterToken })
+    ).data.combat;
+  }
+
   check('todos rolaram -> combate ativo', active.status === 'ACTIVE');
   check(
     'ordem montada do maior para o menor',
@@ -597,11 +608,16 @@ async function main(): Promise<void> {
 
   const nextTurn = await api('/api/combat/next-turn', { method: 'POST', token: masterToken });
   check('mestre avança o turno', nextTurn.data.combat.currentIndex === 1);
-  const wrapped = await api('/api/combat/next-turn', { method: 'POST', token: masterToken });
+
+  // Avança até dar a volta e começar a rodada 2 (o número de combatentes varia).
+  let wrapped = nextTurn.data.combat;
+  while (wrapped.round === 1) {
+    wrapped = (await api('/api/combat/next-turn', { method: 'POST', token: masterToken })).data.combat;
+  }
   check(
     'ao passar do último, volta ao início com nova rodada',
-    wrapped.data.combat.currentIndex === 0 && wrapped.data.combat.round === 2,
-    JSON.stringify({ index: wrapped.data.combat.currentIndex, round: wrapped.data.combat.round }),
+    wrapped.currentIndex === 0 && wrapped.round === 2,
+    JSON.stringify({ index: wrapped.currentIndex, round: wrapped.round }),
   );
 
   // Ataque: o dano só entra quando acerta a CA.
@@ -613,16 +629,29 @@ async function main(): Promise<void> {
   const attackResult = attack.data.result;
   check('ataque devolve a rolagem de acerto', attackResult.attackRoll >= 1 && attackResult.attackRoll <= 20);
   check('total do ataque = d20 + bônus', attackResult.attackTotal === attackResult.attackRoll + attackResult.attackBonus);
-  check('CA considerada é a do alvo', attackResult.targetArmorClass === 12);
   check('dano só existe quando acerta', attackResult.hit ? attackResult.damageRolled >= 1 : attackResult.damageRolled === 0, JSON.stringify(attackResult));
   check(
-    'HP do alvo reflete o dano aplicado',
-    attackResult.hit ? attackResult.targetHpCurrent === 20 - attackResult.damageRolled : attackResult.targetHpCurrent === 20,
-    JSON.stringify({ hit: attackResult.hit, hp: attackResult.targetHpCurrent, dano: attackResult.damageRolled }),
+    'jogador NÃO vê a CA da criatura no resultado do ataque',
+    attackResult.targetStatsHidden === true && attackResult.targetArmorClass === null,
+    JSON.stringify(attackResult),
   );
   check(
-    'HP atualizado aparece no estado do combate',
-    attack.data.combat.combatants.find((item: any) => item.id === creatureCombatant.id).hpCurrent === attackResult.targetHpCurrent,
+    'jogador NÃO vê a vida da criatura no resultado do ataque',
+    attackResult.targetHpCurrent === null && attackResult.targetHpMax === null,
+  );
+  check(
+    'jogador NÃO vê a vida da criatura no estado do combate',
+    attack.data.combat.combatants.find((item: any) => item.id === creatureCombatant.id)?.statsHidden === true,
+  );
+
+  // O mestre enxerga CA e HP normalmente.
+  const masterCombat = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  const masterCreature = masterCombat.combatants.find((item: any) => item.id === creatureCombatant.id);
+  check('mestre vê a CA da criatura', masterCreature.armorClass === 12);
+  check(
+    'HP do alvo reflete o dano aplicado (visão do mestre)',
+    attackResult.hit ? masterCreature.hpCurrent === 20 - attackResult.damageRolled : masterCreature.hpCurrent === 20,
+    JSON.stringify({ hit: attackResult.hit, hp: masterCreature.hpCurrent, dano: attackResult.damageRolled }),
   );
   check(
     'jogador NÃO usa o ataque de outra ficha (404)',
@@ -642,7 +671,7 @@ async function main(): Promise<void> {
   );
 
   // Dano/cura manual do mestre.
-  const hpBefore = attackResult.targetHpCurrent;
+  const hpBefore = masterCreature.hpCurrent;
   const manualDamage = await api('/api/combat/hp', {
     method: 'POST',
     token: masterToken,

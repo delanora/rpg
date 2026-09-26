@@ -13,6 +13,7 @@ import { abilityModifier } from '../shared/dnd5e.js';
 import { rollD20, rollDice } from '../shared/dice.js';
 import {
   combatantAttacks,
+  hideCreatureStats,
   orderCombatants,
   toCombatDto,
   type CombatDto,
@@ -75,6 +76,34 @@ function emit(event: (typeof ServerEvents)[keyof typeof ServerEvents], payload: 
   }
 }
 
+/**
+ * Estado do combate com visões distintas: o mestre recebe a vida e a CA das
+ * criaturas, os jogadores não. Os personagens continuam visíveis para todos.
+ */
+function emitCombat(
+  event: (typeof ServerEvents)[keyof typeof ServerEvents],
+  dto: CombatDto,
+): void {
+  try {
+    const broadcaster = getBroadcaster();
+    broadcaster.toMasters(event, { combat: dto });
+    broadcaster.toPlayers(event, { combat: hideCreatureStats(dto) });
+  } catch (error) {
+    console.error('[combat] falha ao publicar o combate em tempo real:', error);
+  }
+}
+
+/** Oculta CA e vida do alvo no resultado do ataque (usado só para jogadores). */
+function hideTargetStats(result: AttackResolvedPayload): AttackResolvedPayload {
+  return {
+    ...result,
+    targetArmorClass: null,
+    targetHpCurrent: null,
+    targetHpMax: null,
+    targetStatsHidden: true,
+  };
+}
+
 function emitTurn(dto: CombatDto): void {
   if (dto.status !== 'ACTIVE') return;
 
@@ -97,14 +126,14 @@ function announceRoll(payload: DiceRolledPayload): void {
 
 /** --- Consulta ---------------------------------------------------------------- */
 
-export async function getActiveCombat(): Promise<CombatDto | null> {
+export async function getActiveCombat(viewer: Role): Promise<CombatDto | null> {
   const combat = await findCombat({ status: { in: ACTIVE_STATUSES } });
-  return combat ? toCombatDto(combat) : null;
+  return combat ? toCombatDto(combat, viewer) : null;
 }
 
 /** --- Início ------------------------------------------------------------------ */
 
-export async function startCombat(input: StartCombatInput): Promise<CombatDto> {
+export async function startCombat(actor: CombatActor, input: StartCombatInput): Promise<CombatDto> {
   const existing = await findCombat({ status: { in: ACTIVE_STATUSES } });
   if (existing) {
     throw new HttpError('Já existe um combate em andamento.', 409);
@@ -147,24 +176,24 @@ export async function startCombat(input: StartCombatInput): Promise<CombatDto> {
   });
 
   const loaded = await loadCombatById(created.id);
-  emit(ServerEvents.COMBAT_STARTED, { combat: toCombatDto(loaded) });
+  emitCombat(ServerEvents.COMBAT_STARTED, toCombatDto(loaded, 'MASTER'));
 
-  return finalizeInitiative(created.id);
+  return finalizeInitiative(created.id, actor.role);
 }
 
 /**
  * Verifica se todos já rolaram; quando sim, monta a ordem e ativa o combate.
  * Chamada após cada rolagem de iniciativa.
  */
-async function finalizeInitiative(combatId: string): Promise<CombatDto> {
+async function finalizeInitiative(combatId: string, viewer: Role): Promise<CombatDto> {
   const combat = await loadCombatById(combatId);
 
   const everyoneRolled = combat.combatants.every((combatant) => combatant.initiative !== null);
 
   if (!everyoneRolled || combat.status !== 'PENDING_INITIATIVE') {
-    const dto = toCombatDto(combat);
-    emit(ServerEvents.COMBAT_UPDATED, { combat: dto });
-    return dto;
+    const dto = toCombatDto(combat, 'MASTER');
+    emitCombat(ServerEvents.COMBAT_UPDATED, dto);
+    return viewer === 'MASTER' ? dto : hideCreatureStats(dto);
   }
 
   await prisma.combat.update({
@@ -173,10 +202,10 @@ async function finalizeInitiative(combatId: string): Promise<CombatDto> {
   });
 
   const active = await loadCombatById(combatId);
-  const dto = toCombatDto(active);
-  emit(ServerEvents.COMBAT_UPDATED, { combat: dto });
+  const dto = toCombatDto(active, 'MASTER');
+  emitCombat(ServerEvents.COMBAT_UPDATED, dto);
   emitTurn(dto);
-  return dto;
+  return viewer === 'MASTER' ? dto : hideCreatureStats(dto);
 }
 
 /** --- Iniciativa -------------------------------------------------------------- */
@@ -235,7 +264,7 @@ export async function rollInitiative(
     at: new Date().toISOString(),
   });
 
-  return finalizeInitiative(combat.id);
+  return finalizeInitiative(combat.id, actor.role);
 }
 
 /** --- Turnos ------------------------------------------------------------------- */
@@ -264,8 +293,8 @@ export async function nextTurn(actor: CombatActor): Promise<CombatDto> {
     data: { currentIndex: index, round },
   });
 
-  const dto = toCombatDto(await loadCombatById(combat.id));
-  emit(ServerEvents.COMBAT_UPDATED, { combat: dto });
+  const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
+  emitCombat(ServerEvents.COMBAT_UPDATED, dto);
   emitTurn(dto);
   return dto;
 }
@@ -413,10 +442,11 @@ export async function resolveAttack(
     }
   }
 
-  const dto = toCombatDto(await loadCombatById(combat.id));
-  emit(ServerEvents.COMBAT_UPDATED, { combat: dto });
+  const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
+  emitCombat(ServerEvents.COMBAT_UPDATED, dto);
 
   const targetAfter = dto.combatants.find((item) => item.id === target.id);
+  const targetIsCreature = target.kind === 'CREATURE';
 
   const result: AttackResolvedPayload = {
     attackerName: attacker.name,
@@ -432,12 +462,24 @@ export async function resolveAttack(
     damageType: attack.damageType,
     targetHpCurrent: targetAfter?.hpCurrent ?? 0,
     targetHpMax: targetAfter?.hpMax ?? 0,
+    targetStatsHidden: false,
     at: new Date().toISOString(),
   };
 
-  emit(ServerEvents.ATTACK_RESOLVED, result);
+  // Jogador atacando criatura não vê a CA nem a vida dela; o mestre vê tudo.
+  const resultForPlayers = targetIsCreature ? hideTargetStats(result) : result;
 
-  return { combat: dto, result };
+  try {
+    const broadcaster = getBroadcaster();
+    broadcaster.toMasters(ServerEvents.ATTACK_RESOLVED, result);
+    broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, resultForPlayers);
+  } catch (error) {
+    console.error('[combat] falha ao publicar o ataque em tempo real:', error);
+  }
+
+  return actor.role === 'MASTER'
+    ? { combat: dto, result }
+    : { combat: hideCreatureStats(dto), result: resultForPlayers };
 }
 
 /** Ajuste manual de HP pelo mestre (dano ou cura). */
@@ -459,8 +501,8 @@ export async function applyManualHp(
     throw new HttpError('A ficha ou criatura deste combatente não existe mais.', 409);
   }
 
-  const dto = toCombatDto(await loadCombatById(combat.id));
-  emit(ServerEvents.COMBAT_UPDATED, { combat: dto });
+  const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
+  emitCombat(ServerEvents.COMBAT_UPDATED, dto);
   return dto;
 }
 
