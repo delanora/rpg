@@ -416,6 +416,20 @@ O mestre liga/desliga o Level Up da mesa pelo botão no painel (`LIBERAR/BLOQUEA
 
 A configuração é uma linha única em `game_config`. Cada personagem guarda `lastLevelUpRelease`; o botão fica habilitado quando `levelUpUnlocked` está ligado e `lastLevelUpRelease < levelUpRelease`.
 
+### Assistente de Level Up
+
+Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jogador por:
+
+1. **Classe** — subir na classe atual ou multiclassar numa nova (as classes sem pré-requisito aparecem bloqueadas com o motivo).
+2. **Pontos de vida** — rolar o Dado de Vida (o servidor rola, nunca o cliente) ou usar a média do PHB (d6=4, d8=5, d10=6, d12=7), sempre somando o modificador de Constituição com o **mínimo de 1 PV** por nível.
+3. **Subclasse** — pedida quando o novo nível da classe libera a escolha (Clérigo/Bruxo/Feiticeiro no 1, Druida/Mago no 2, as demais no 3).
+4. **Aumento de Atributo ou Talento** — só nos níveis de ASI **daquela classe**: +2 em um atributo ou +1 em dois (máximo 20), ou um talento do PHB (a lista com nome e descrição está em `client/src/feats.ts`; por enquanto o talento é registrado como texto na aba Características, sem efeito mecânico automatizado).
+5. **Resumo e confirmação** — mostra o novo nível, o PV ganho e a progressão escolhida; ao confirmar, tudo é aplicado de uma vez e o botão se desabilita para o jogador até o mestre liberar de novo. O mestre vê a ficha mudar em tempo real.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `POST` | `/api/characters/me/level-up` | autenticado | Aplica o Level Up (`classKey`, `subclass`, `hp`, `abilityIncreases`, `feat`) quando a liberação está ativa. |
+
 ### Endpoints
 
 | Método | Rota | Acesso | Descrição |

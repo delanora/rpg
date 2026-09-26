@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
+import { LevelUpDialog } from '../components/LevelUpDialog';
 import { PresentationOverlay } from '../components/PresentationOverlay';
 import { SheetView } from '../components/SheetView';
 import { CombatTracker } from '../combat/CombatTracker';
@@ -240,23 +241,17 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
                 </div>
 
-                {levelUpOpen ? (
-                  <div className="banner banner-info">
-                    <span className="banner-line">
-                      <Icon name="scroll" size={15} /> O assistente de Level Up entra na próxima
-                      etapa.
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn-small"
-                      onClick={() => setLevelUpOpen(false)}
-                    >
-                      fechar
-                    </button>
-                  </div>
-                ) : null}
-
                 <SheetView character={character} update={update} />
+
+                {levelUpOpen && levelUpAvailable ? (
+                  <LevelUpDialog
+                    character={character}
+                    onClose={() => setLevelUpOpen(false)}
+                    onApplied={(updated) =>
+                      setCharacter((prev) => (!prev || updated.version >= prev.version ? updated : prev))
+                    }
+                  />
+                ) : null}
               </>
             )}
           </>

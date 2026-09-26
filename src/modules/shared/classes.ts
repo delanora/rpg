@@ -2468,6 +2468,10 @@ export interface ClassOption extends ClassSummary {
   eligible: boolean;
   /** Texto do motivo do bloqueio ('' quando elegível). */
   missing: string;
+  /** Níveis de Aumento de Atributo/Talento desta classe. */
+  asiLevels: number[];
+  /** Nomes das subclasses disponíveis. */
+  subclassNames: string[];
 }
 
 /**
@@ -2481,11 +2485,22 @@ export function classOptionsFor(
   return CLASS_CATALOG.map((summary) => {
     const alreadyHas = entries.some((entry) => entry.classKey === summary.key);
     const missing = multiclassMissingLabel(summary.key, abilities);
+    const definition = getClassDefinition(summary.key);
 
     return {
       ...summary,
       eligible: alreadyHas || missing === '',
       missing: alreadyHas ? '' : missing,
+      asiLevels: [...asiLevelsFor(summary.key)],
+      subclassNames: definition?.subclasses.map((subclass) => subclass.name) ?? [],
     };
   });
+}
+
+/**
+ * Ganho de PV fixo (média arredondada para cima) por dado de vida, PHB 2014:
+ * d6 → 4, d8 → 5, d10 → 6, d12 → 7.
+ */
+export function averageHitDie(hitDie: number): number {
+  return Math.floor(hitDie / 2) + 1;
 }

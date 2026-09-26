@@ -1,24 +1,34 @@
+import { randomInt, randomUUID } from 'node:crypto';
 import type { Character, Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
 import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
+import { getGameConfig } from '../game-config/game-config.service.js';
 import { toCharacterDto, type CharacterDto } from './characters.dto.js';
 import {
   catalogItemIds,
   loadCatalogLookup,
   type CatalogSnapshot,
 } from './inventory-sync.js';
-import type { CreateCharacterInput, UpdateCharacterInput } from './characters.schema.js';
+import type {
+  CreateCharacterInput,
+  LevelUpInput,
+  UpdateCharacterInput,
+} from './characters.schema.js';
 import {
   applySaveProficiencies,
+  averageHitDie,
+  findSubclass,
   getClassDefinition,
+  isAsiLevel,
   multiclassMissingLabel,
   normalizeClassEntries,
+  totalCharacterLevel,
   type ClassEntry,
 } from '../shared/classes.js';
 import type { AbilityKey } from '../shared/dnd5e.js';
-import { normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
+import { LEVEL_MAX, abilityModifier, normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
 
 /** Quem está alterando a ficha (vem do token, nunca do corpo da requisição). */
 export interface Actor {
@@ -38,7 +48,6 @@ interface SheetOwner {
 const SCALAR_KEYS = [
   'name',
   'race',
-  'level',
   'background',
   'alignment',
   'experience',
@@ -211,6 +220,142 @@ export async function createCharacter(
 
   await publishChange(actor, character, { created: true });
   return toSheetDto(character, actor.username);
+}
+
+/**
+ * Sobe um nível seguindo o assistente de Level Up.
+ *
+ * Só é permitido quando o mestre liberou a mesa E o jogador ainda não usou a
+ * liberação atual (`lastLevelUpRelease < GameConfig.levelUpRelease`). Aplica de
+ * uma vez: o nível da classe (nova ou existente), o PV ganho (dado rolado no
+ * servidor ou a média do PHB, sempre mínimo 1), a subclasse quando o nível a
+ * libera e o Aumento de Atributo/Talento quando é um nível de ASI da classe.
+ */
+export async function levelUpCharacter(actor: Actor, input: LevelUpInput): Promise<CharacterDto> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const config = await getGameConfig();
+  if (!config.levelUpUnlocked) {
+    throw new HttpError('O mestre ainda não liberou o Level Up.', 403);
+  }
+  if (character.lastLevelUpRelease >= config.levelUpRelease) {
+    throw new HttpError('Você já usou esta liberação de Level Up.', 409);
+  }
+
+  const entries = normalizeClassEntries(character.classes);
+  const abilities = abilitiesOf(character);
+
+  if (totalCharacterLevel(entries) >= LEVEL_MAX) {
+    throw new HttpError('O personagem já está no nível máximo (20).', 400);
+  }
+
+  const definition = getClassDefinition(input.classKey);
+  if (!definition) throw new HttpError('Classe desconhecida.', 400);
+
+  const existing = entries.find((entry) => entry.classKey === definition.key);
+  if (existing && existing.level >= LEVEL_MAX) {
+    throw new HttpError(`${definition.name} já está no nível máximo.`, 400);
+  }
+
+  // Classe nova (multiclasse) precisa do pré-requisito de atributo.
+  if (!existing) {
+    const missing = multiclassMissingLabel(definition.key, abilities);
+    if (missing) throw new HttpError(`Para entrar em ${definition.name} ${missing}.`, 400);
+  }
+
+  const newClassLevel = existing ? existing.level + 1 : 1;
+
+  // --- Pontos de vida: dado rolado ou média (d6=4, d8=5, d10=6, d12=7) ----
+  const conModifier = abilityModifier(character.constitution);
+  const dieRoll =
+    input.hp === 'roll'
+      ? randomInt(1, definition.hitDie + 1)
+      : averageHitDie(definition.hitDie);
+  // Mínimo de 1 PV por nível, mesmo com modificador de Constituição negativo.
+  const hpGained = Math.max(1, dieRoll + conModifier);
+
+  // --- Subclasse: exigida quando o nível da classe libera a escolha ---------
+  let subclass = existing?.subclass ?? '';
+  if (!subclass && newClassLevel >= definition.subclassLevel) {
+    const chosen = input.subclass.trim();
+    if (!chosen) {
+      throw new HttpError(`Escolha a subclasse de ${definition.name}.`, 400);
+    }
+    const found = findSubclass(definition, chosen);
+    if (!found) throw new HttpError('Subclasse desconhecida.', 400);
+    subclass = found.name;
+  }
+
+  // --- Aumento de Atributo ou Talento (só nos níveis de ASI da classe) ------
+  const data: Record<string, unknown> = {};
+  const features: unknown[] = Array.isArray(character.features) ? [...character.features] : [];
+
+  if (isAsiLevel(definition.key, newClassLevel)) {
+    if (input.feat) {
+      features.push({
+        id: `feat-${randomUUID()}`,
+        name: input.feat.name,
+        source: 'feat',
+        description: input.feat.description,
+      });
+      data.features = features;
+    } else {
+      const increases = new Map<AbilityKey, number>();
+      for (const item of input.abilityIncreases) {
+        const ability = item.ability as AbilityKey;
+        increases.set(ability, (increases.get(ability) ?? 0) + item.amount);
+      }
+      const points = [...increases.values()].reduce((sum, value) => sum + value, 0);
+      if (points !== 2) {
+        throw new HttpError(
+          'Distribua as 2 melhorias: +2 em um atributo ou +1 em dois diferentes.',
+          400,
+        );
+      }
+
+      for (const [ability, amount] of increases) {
+        if (character[ability] + amount > 20) {
+          throw new HttpError('Nenhum atributo pode passar de 20.', 400);
+        }
+        data[ability] = character[ability] + amount;
+      }
+    }
+  } else if (input.feat || input.abilityIncreases.length > 0) {
+    throw new HttpError(
+      'Este nível não concede Aumento de Atributo nem Talento.',
+      400,
+    );
+  }
+
+  // --- Grava de uma vez ----------------------------------------------------
+  const nextEntries: ClassEntry[] = existing
+    ? entries.map((entry) =>
+        entry.classKey === definition.key ? { ...entry, level: newClassLevel, subclass } : entry,
+      )
+    : [...entries, { classKey: definition.key, subclass, level: 1 }];
+
+  const updated = await prisma.character.update({
+    where: { userId: actor.userId },
+    data: {
+      ...(data as Prisma.CharacterUpdateInput),
+      classes: nextEntries as unknown as Prisma.InputJsonValue,
+      hpMax: character.hpMax + hpGained,
+      lastLevelUpRelease: config.levelUpRelease,
+      version: { increment: 1 },
+    },
+  });
+
+  await publishChange(actor, updated, {
+    levelUp: {
+      classKey: definition.key,
+      classLevel: newClassLevel,
+      hpGained,
+      hpRolled: input.hp === 'roll',
+    },
+  });
+
+  return toSheetDto(updated, actor.username);
 }
 
 export function getCharacterByUserId(userId: string): Promise<Character | null> {

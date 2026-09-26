@@ -3,11 +3,13 @@ import { attackSchema } from '../shared/attacks.js';
 import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
 import { itemDetailsSchema } from '../shared/item-details.js';
 import {
+  ABILITY_KEYS,
   ABILITY_SCORE_MAX,
   ABILITY_SCORE_MIN,
   FEATURE_SOURCES,
   LEVEL_MAX,
   LEVEL_MIN,
+  type AbilityKey,
 } from '../shared/dnd5e.js';
 
 /**
@@ -119,6 +121,39 @@ export const createCharacterSchema = z.object({
   /** Primeira classe (a ficha nasce no nível 1 dela). */
   classKey: classKeySchema.optional(),
 });
+
+/**
+ * Level Up: escolha da classe (subir nela ou multiclassar), de como ganhar PV
+ * e, quando o nível da classe concede, do Aumento de Atributo ou do Talento.
+ * O dado de vida é rolado no SERVIDOR — o cliente só escolhe "rolar" ou "média".
+ */
+export const levelUpSchema = z.object({
+  /** Classe que sobe de nível (existente, ou nova no multiclasse). */
+  classKey: z.string().trim().min(1, 'Escolha uma classe.').max(40),
+  /** Subclasse, quando o novo nível da classe libera a escolha. */
+  subclass: shortText(120).default(''),
+  hp: z.enum(['roll', 'average']),
+  /** Aumento de Atributo: +2 em um atributo ou +1 em dois diferentes. */
+  abilityIncreases: z
+    .array(
+      z.object({
+        ability: z.enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]]),
+        amount: z.number().int().min(1).max(2),
+      }),
+    )
+    .max(2)
+    .default([]),
+  /** Talento escolhido (registro textual; sem efeito mecânico automatizado). */
+  feat: z
+    .object({
+      name: z.string().trim().min(1, 'O talento precisa de um nome.').max(120),
+      description: shortText(4000).default(''),
+    })
+    .nullable()
+    .default(null),
+});
+
+export type LevelUpInput = z.infer<typeof levelUpSchema>;
 
 // --- Atualização parcial (edição inline) ------------------------------------
 

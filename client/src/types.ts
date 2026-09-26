@@ -264,6 +264,10 @@ export interface ClassOption extends ClassSummary {
   eligible: boolean;
   /** Motivo do bloqueio ('' quando elegível). */
   missing: string;
+  /** Níveis de Aumento de Atributo/Talento desta classe. */
+  asiLevels: number[];
+  /** Nomes das subclasses disponíveis. */
+  subclassNames: string[];
 }
 
 /**
@@ -409,6 +413,18 @@ export interface GameConfig {
 
 export interface GameConfigPayload {
   config: GameConfig;
+}
+
+/** Corpo enviado ao assistente de Level Up (`POST /api/characters/me/level-up`). */
+export interface LevelUpRequest {
+  classKey: string;
+  /** Subclasse, quando o novo nível da classe libera a escolha. */
+  subclass?: string;
+  hp: 'roll' | 'average';
+  /** Aumento de Atributo: +2 em um atributo ou +1 em dois diferentes. */
+  abilityIncreases?: { ability: AbilityKey; amount: number }[];
+  /** Talento escolhido (registro textual; sem efeito mecânico ainda). */
+  feat?: { name: string; description: string } | null;
 }
 
 export interface CharacterPatch {

@@ -1,9 +1,14 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
-import { createCharacterSchema, updateCharacterSchema } from './characters.schema.js';
+import {
+  createCharacterSchema,
+  levelUpSchema,
+  updateCharacterSchema,
+} from './characters.schema.js';
 import {
   createCharacter,
   getSheetByUserId,
+  levelUpCharacter,
   listCharacters,
   updateCharacter,
   updateCharacterAsMaster,
@@ -69,6 +74,27 @@ charactersRouter.patch('/me', authenticate, async (req, res) => {
   }
 
   const character = await updateCharacter(actorFrom(req), parsed.data);
+  res.json({ character });
+});
+
+/**
+ * POST /api/characters/me/level-up — sobe um nível pelo assistente.
+ *
+ * Só funciona quando o mestre liberou o Level Up da mesa e o jogador ainda
+ * não usou a liberação atual. O dado de vida é rolado no servidor.
+ */
+charactersRouter.post('/me/level-up', authenticate, async (req, res) => {
+  const parsed = levelUpSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const character = await levelUpCharacter(actorFrom(req), parsed.data);
   res.json({ character });
 });
 

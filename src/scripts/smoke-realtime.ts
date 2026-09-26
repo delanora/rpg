@@ -1982,6 +1982,151 @@ async function main(): Promise<void> {
     body: { unlocked: false },
   });
 
+  // --- 11.7 Assistente de Level Up ------------------------------------------
+  console.log('\n11.7) Level Up (assistente)');
+
+  const otherToken = otherReg.data.token;
+
+  /** Cada liberação precisa de um desligar → ligar para valer para o próximo nível. */
+  async function unlockForLevelUp(): Promise<void> {
+    await api('/api/game/level-up', {
+      method: 'POST',
+      token: masterToken,
+      body: { unlocked: false },
+    });
+    await api('/api/game/level-up', {
+      method: 'POST',
+      token: masterToken,
+      body: { unlocked: true },
+    });
+  }
+
+  await unlockForLevelUp();
+  check(
+    'subir sem escolher a subclasse liberada é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: otherToken,
+        body: { classKey: 'wizard', hp: 'average' },
+      })
+    ).status === 400,
+  );
+  check(
+    'multiclassar sem o pré-requisito é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: otherToken,
+        body: { classKey: 'barbarian', hp: 'average' },
+      })
+    ).status === 400,
+  );
+
+  const otherBefore = (await api('/api/characters/me', { token: otherToken })).data.character;
+  const levelTwo = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: otherToken,
+    body: { classKey: 'wizard', subclass: 'Escola de Abjuração', hp: 'average' },
+  });
+  check('sobe de nível usando a média (200)', levelTwo.status === 200, JSON.stringify(levelTwo.data));
+  check('nível total vira 2', levelTwo.data?.character?.level === 2);
+  check('a classe sobe para o nível 2', levelTwo.data?.character?.classes?.[0]?.level === 2);
+  check(
+    'subclasse escolhida é gravada',
+    levelTwo.data?.character?.classes?.[0]?.subclass === 'Escola de Abjuração',
+    JSON.stringify(levelTwo.data?.character?.classes),
+  );
+  check(
+    'PV máximo sobe com a média (d6 = 4 + CON)',
+    levelTwo.data?.character?.hpMax === otherBefore.hpMax + 4,
+    `antes ${otherBefore.hpMax}, depois ${levelTwo.data?.character?.hpMax}`,
+  );
+  check(
+    'a mesma liberação não pode ser usada de novo (409)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: otherToken,
+        body: { classKey: 'wizard', hp: 'average' },
+      })
+    ).status === 409,
+  );
+
+  // Rolando o dado de vida: quem rola é o servidor.
+  await unlockForLevelUp();
+  const hpBeforeRoll = levelTwo.data.character.hpMax;
+  const levelThree = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: otherToken,
+    body: { classKey: 'wizard', hp: 'roll' },
+  });
+  check('rolar o Dado de Vida aplica o ganho (200)', levelThree.status === 200);
+  check(
+    'PV sobe ao menos 1 ao rolar',
+    levelThree.data?.character?.hpMax >= hpBeforeRoll + 1,
+    `antes ${hpBeforeRoll}, depois ${levelThree.data?.character?.hpMax}`,
+  );
+
+  // Nível 4 do Mago concede Aumento de Atributo ou Talento.
+  await unlockForLevelUp();
+  check(
+    'nível de ASI sem escolher a progressão é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: otherToken,
+        body: { classKey: 'wizard', hp: 'average' },
+      })
+    ).status === 400,
+  );
+  const intBefore = (await api('/api/characters/me', { token: otherToken })).data.character
+    .intelligence;
+  const levelFour = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: otherToken,
+    body: {
+      classKey: 'wizard',
+      hp: 'average',
+      abilityIncreases: [{ ability: 'intelligence', amount: 2 }],
+    },
+  });
+  check('nível 4 aplica o Aumento de Atributo (200)', levelFour.status === 200, JSON.stringify(levelFour.data));
+  check(
+    'INT sobe em 2 com o Aumento de Atributo',
+    levelFour.data?.character?.intelligence === intBefore + 2,
+    `antes ${intBefore}, depois ${levelFour.data?.character?.intelligence}`,
+  );
+
+  // Talento: registrado como característica textual.
+  await setCharacterClasses(playerId, [{ classKey: 'fighter', level: 3, subclass: 'Campeão' }]);
+  await unlockForLevelUp();
+  const featLevel = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      classKey: 'fighter',
+      hp: 'average',
+      feat: { name: 'Sortudo', description: 'Registro textual do talento.' },
+    },
+  });
+  check('escolher Talento sobe o nível (200)', featLevel.status === 200, JSON.stringify(featLevel.data));
+  check('o personagem chega ao nível 4', featLevel.data?.character?.level === 4);
+  check(
+    'talento fica registrado como característica',
+    (featLevel.data?.character?.features ?? []).some(
+      (feature: any) => feature.source === 'feat' && feature.name === 'Sortudo',
+    ),
+    JSON.stringify(featLevel.data?.character?.features),
+  );
+
+  // Devolve a mesa ao estado inicial (desligado).
+  await api('/api/game/level-up', {
+    method: 'POST',
+    token: masterToken,
+    body: { unlocked: false },
+  });
+
   // --- 12. Presença ao desconectar ------------------------------------------
   console.log('\n12) Presença ao desconectar');
   const offlinePromise = waitForPresence(
