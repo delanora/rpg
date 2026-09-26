@@ -28,7 +28,8 @@ export type IconName =
   | 'plus'
   | 'x'
   | 'sparkle'
-  | 'flame';
+  | 'flame'
+  | 'dragon';
 
 const ICONS: Record<IconName, ReactNode> = {
   sword: (
@@ -142,6 +143,27 @@ const ICONS: Record<IconName, ReactNode> = {
   sparkle: <path d="M12 3l1.7 6.3L20 11l-6.3 1.7L12 19l-1.7-6.3L4 11l6.3-1.7Z" />,
   flame: (
     <path d="M12 2c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-1.5.5-2.8 1.5-4 .5 1.2 1.3 2 2.5 2.3C11 8.5 12 5 12 2Z" />
+  ),
+  dragon: (
+    <>
+      {/* Chifres recurvados para trás */}
+      <path d="M9.4 8.2C7.8 6.4 6.4 5 4.4 4.2c1.6 2 2.4 3.2 3.6 5" />
+      <path d="M14.6 8.2c1.6-1.8 3-3.2 5-4-1.6 2-2.4 3.2-3.6 5" />
+      {/* Cabeça (focinho afilado) */}
+      <path d="M12 6.8C10.5 6.8 9.2 7.4 8.6 9c-.6 1.6-.8 3.2 0 4.8.8 1.6 2.2 3.2 3.4 4.8 1.2-1.6 2.6-3.2 3.4-4.8.8-1.6.6-3.2 0-4.8C14.8 7.4 13.5 6.8 12 6.8Z" />
+      {/* Sobrancelha */}
+      <path d="M9 9.5c1.4-.8 4.6-.8 6 0" />
+      {/* Olhos */}
+      <path d="M9 11.2l2.2.5-2 1.1Z" fill="currentColor" stroke="none" />
+      <path d="M15 11.2l-2.2.5 2 1.1Z" fill="currentColor" stroke="none" />
+      {/* Narinas */}
+      <circle cx="11" cy="13.3" r=".55" fill="currentColor" stroke="none" />
+      <circle cx="13" cy="13.3" r=".55" fill="currentColor" stroke="none" />
+      {/* Boca e presas */}
+      <path d="M9.7 14.6c1.2 1 3.4 1 4.6 0" />
+      <path d="M10.2 15.4l.7.2-.5 1.1Z" fill="currentColor" stroke="none" />
+      <path d="M13.8 15.4l-.7.2.5 1.1Z" fill="currentColor" stroke="none" />
+    </>
   ),
 };
 

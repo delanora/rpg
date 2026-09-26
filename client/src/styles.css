@@ -677,6 +677,9 @@ a {
 }
 
 .app-header-title h1 .brand-mark {
+  width: 1.3em;
+  height: 1.3em;
+  vertical-align: -0.22em;
   filter: drop-shadow(0 0 8px rgba(224, 184, 63, 0.5));
 }
 
