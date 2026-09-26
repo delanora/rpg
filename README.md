@@ -1,4 +1,4 @@
-# 🐉 Grimório Digital — Sistema de Mesa para D&D 5e
+# 🐉 Codex do Aventureiro — Sistema de Mesa para D&D 5e
 
 Sistema web multiusuário para mesas de RPG de **D&D 5ª Edição**, com fichas de personagem dinâmicas, painel exclusivo do mestre e um sistema de combate com iniciativa automática e sincronização em tempo real entre todos os jogadores.
 
@@ -518,7 +518,7 @@ Para o visual não depender de CDN nem de internet, as fontes são servidas pela
 | Fonte | Uso |
 |-------|-----|
 | **Cinzel** | Títulos, botões e rótulos (cara de inscrição em pedra) |
-| **MedievalSharp** | Marca "Grimório Digital" |
+| **MedievalSharp** | Marca "Codex do Aventureiro" |
 | **EB Garamond** | Corpo do texto (leitura confortável) |
 
 Todas de licença SIL Open Font License.

@@ -1,4 +1,4 @@
-// Schema do Prisma — Grimório Digital
+// Schema do Prisma — Codex do Aventureiro
 // Documentação: https://pris.ly/d/prisma-schema
 
 generator client {

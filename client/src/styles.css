@@ -1,5 +1,5 @@
 /*
- * Grimório Digital — identidade visual completa.
+ * Codex do Aventureiro — identidade visual completa.
  *
  * Tema: fantasia medieval / pergaminho antigo. O modo claro ("pergaminho") é o
  * principal; o escuro é o "grimório amaldiçoado" (couro queimado + dourado
@@ -430,20 +430,14 @@ a {
   font-family: var(--font-title);
   font-size: 2rem;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--ink);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  margin-bottom: 1.25rem;
 }
 
 [data-theme='dark'] .auth-card h1 {
   text-shadow: 0 0 18px rgba(224, 184, 63, 0.4);
-}
-
-.auth-subtitle {
-  text-align: center;
-  color: var(--ink-soft);
-  margin: 0.35rem 0 1.5rem;
-  font-size: 0.95rem;
-  font-style: italic;
 }
 
 .auth-form {
@@ -672,6 +666,7 @@ a {
   font-family: var(--font-title);
   font-size: 1.3rem;
   letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--gold-bright);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 0 18px rgba(224, 184, 63, 0.35);
 }

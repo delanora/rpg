@@ -38,7 +38,7 @@ export function AppHeader({
     <header className="app-header">
       <div className="app-header-title">
         <h1>
-          <Icon name="dragon" className="brand-mark" size={22} /> Grimório Digital
+          <Icon name="dragon" className="brand-mark" size={22} /> Codex do Aventureiro
         </h1>
         <span className="character-name">{title}</span>
         {subtitle ? <span className="character-name">{subtitle}</span> : null}

@@ -14,7 +14,7 @@ async function bootstrap(): Promise<void> {
     httpServer.listen(env.PORT, resolve);
   });
 
-  console.log(`🐉 Grimório Digital — ${env.NODE_ENV}`);
+  console.log(`🐉 Codex do Aventureiro — ${env.NODE_ENV}`);
   console.log(`   HTTP + WebSocket em http://localhost:${env.PORT}`);
   console.log(`   Health check em http://localhost:${env.PORT}/api/health`);
 

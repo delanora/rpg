@@ -52,8 +52,7 @@ export function AuthPage() {
             <Icon name="sword" size={32} />
           </span>
         </div>
-        <h1>Grimório Digital</h1>
-        <p className="auth-subtitle">Ficha de D&amp;D 5e com sincronização em tempo real</p>
+        <h1>Codex do Aventureiro</h1>
 
         <div className="tabs">
           <button

@@ -1,5 +1,5 @@
 [Unit]
-Description=Grimorio Digital - servidor web (D&D 5e)
+Description=Codex do Aventureiro - servidor web (D&D 5e)
 Documentation=https://github.com/delanora/rpg
 # Sobe depois da rede e do PostgreSQL, dos quais o servidor depende para iniciar.
 After=network-online.target postgresql.service
