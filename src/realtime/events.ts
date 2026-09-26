@@ -2,6 +2,7 @@ import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
+import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
 import type { RegionDto } from '../modules/regions/regions.dto.js';
@@ -125,6 +126,10 @@ export const ServerEvents = {
   /** O mestre encerrou a apresentação. */
   PRESENTATION_CLOSED: 'presentation:closed',
 
+  // Configuração da mesa (entrega para toda a mesa)
+  /** O mestre liberou/bloqueou o Level Up (ou outra config mudou). */
+  GAME_CONFIG: 'game:config',
+
   // Combate (entrega para toda a mesa: jogadores e mestre participam)
   /** Combate iniciado — também é o gatilho do pedido de iniciativa. */
   COMBAT_STARTED: 'combat:started',
@@ -219,6 +224,11 @@ export interface PresentationShownPayload {
 
 export interface PresentationClosedPayload {
   presentationId: string;
+}
+
+/** Configuração da mesa alterada (Level Up liberado/bloqueado). */
+export interface GameConfigPayload {
+  config: GameConfigDto;
 }
 
 /** --- Combate ----------------------------------------------------------------- */

@@ -145,6 +145,12 @@ export interface DerivedStats {
   saves: SaveDetail[];
   skills: Record<string, SkillDetail>;
   spellcasting: { ability: AbilityKey; saveDC: number; attackBonus: number } | null;
+  /** Espaços de magia combinados do conjurador multiclasse (max > 0). */
+  spellSlots: { level: number; max: number }[];
+  /** Magia de Pacto do bruxo, calculada à parte (null quando não há bruxo). */
+  pactSlots: { max: number; slotLevel: number } | null;
+  /** XP necessário para o próximo nível (null no nível 20). */
+  xpForNextLevel: number | null;
 }
 
 /** --- Classes (ver src/modules/shared/classes.ts) --------------------------- */
@@ -253,6 +259,44 @@ export interface ClassSummary {
   spellcastingType: SpellcastingType;
 }
 
+/** Opção de classe para o seletor, com a elegibilidade do personagem calculada. */
+export interface ClassOption extends ClassSummary {
+  eligible: boolean;
+  /** Motivo do bloqueio ('' quando elegível). */
+  missing: string;
+}
+
+/**
+ * Uma classe do personagem (multiclasse). O nível é o nível NAQUELA classe; o
+ * nível total da ficha é a soma dos níveis de todas as entradas.
+ */
+export interface ClassEntry {
+  classKey: string;
+  className: string;
+  subclass: string;
+  level: number;
+  hitDie: number;
+  subclassLevel: number;
+  subclassEligible: boolean;
+  subclassNames: string[];
+  /** Níveis de Aumento de Atributo/Talento desta classe. */
+  asiLevels: number[];
+  spellcasting: {
+    type: SpellcastingType;
+    ability: AbilityKey | null;
+    learning: SpellLearning;
+    saveDC: number | null;
+    attackBonus: number | null;
+    preparedCount: number | null;
+  } | null;
+}
+
+/** Entrada de classe enviada no PATCH (o nível NUNCA é enviado). */
+export interface ClassEntryPatch {
+  classKey: string;
+  subclass?: string;
+}
+
 /** Ficha completa devolvida pela API. */
 export interface Character {
   id: string;
@@ -261,15 +305,15 @@ export interface Character {
 
   name: string;
   race: string;
+  /** Nome composto das classes, com os níveis (ex.: "Bárbaro 3 / Ladino 2"). */
   className: string;
-  /** Chave canônica da classe ('' = sem classe). */
-  classKey: string;
-  /** Subclasse escolhida ('' = nenhuma). */
-  subclass: string;
-  /** Definição completa da classe escolhida (nula se nenhuma). */
-  classDefinition: ClassDefinition | null;
-  /** Catálogo resumido das 12 classes. */
-  classCatalog: ClassSummary[];
+  /** Classes do personagem (multiclasse), em ordem de entrada. */
+  classes: ClassEntry[];
+  /**
+   * Catálogo das 12 classes com a elegibilidade já calculada (pré-requisito de
+   * atributo atendido ou o motivo do bloqueio).
+   */
+  classOptions: ClassOption[];
   /** Features de classe/subclasse já liberadas pelo nível atual. */
   activeFeatures: ActiveClassFeature[];
   /** Estado de runtime da classe (toggles ativos e usos gastos). */
@@ -277,6 +321,8 @@ export interface Character {
   /** Ajustes mecânicos derivados das features (Fúria, resistências, etc.). */
   classAdjustments: ClassAdjustments;
   level: number;
+  /** Última liberação de Level Up que este personagem já usou. */
+  lastLevelUpRelease: number;
   background: string;
   alignment: string;
   experience: number;
@@ -354,13 +400,25 @@ export interface ClassAdjustments {
   abilityCaps: Partial<Record<AbilityKey, number>>;
 }
 
+/** Configuração global da mesa (Level Up liberado pelo mestre). */
+export interface GameConfig {
+  levelUpUnlocked: boolean;
+  levelUpRelease: number;
+  updatedAt: string;
+}
+
+export interface GameConfigPayload {
+  config: GameConfig;
+}
+
 export interface CharacterPatch {
   name?: string;
   race?: string;
-  className?: string;
-  classKey?: string;
-  subclass?: string;
-  level?: number;
+  /**
+   * Lista de classes enviada para editar a subclasse de cada uma. O nível de
+   * cada classe é ignorado: ele só muda pelo fluxo de Level Up.
+   */
+  classes?: ClassEntryPatch[];
   background?: string;
   alignment?: string;
   experience?: number;

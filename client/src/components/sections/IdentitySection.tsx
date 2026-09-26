@@ -12,6 +12,7 @@ import { clampInt } from '../../utils';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
+import type { ClassEntry } from '../../types';
 import type { SheetSectionProps } from './common';
 
 export function IdentitySection({ character, update }: SheetSectionProps) {
@@ -40,21 +41,39 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
     }
   }
 
-  const definition = character.classDefinition;
-  const classNames = character.classCatalog.map((item) => item.name);
-  const subclassEligible = definition !== null && character.level >= definition.subclassLevel;
-  const subclassNames = definition?.subclasses.map((item) => item.name) ?? [];
+  const classes = character.classes;
+  const classNames = character.classOptions.map((option) => option.name);
 
   function classKeyFromName(name: string): string {
-    return character.classCatalog.find((item) => item.name === name)?.key ?? '';
+    return character.classOptions.find((option) => option.name === name)?.key ?? '';
   }
 
-  const spellcastingLabel = definition
-    ? SPELLCASTING_TYPE_LABELS[definition.spellcasting.type] +
-      (definition.spellcasting.ability
-        ? ` · ${ABILITY_ABBREVIATIONS[definition.spellcasting.ability]}`
-        : '')
-    : '—';
+  /** Troca a subclasse de UMA classe (o nível continua vindo do servidor). */
+  function setSubclass(entry: ClassEntry, subclass: string): void {
+    update({
+      classes: classes.map((item) =>
+        item.classKey === entry.classKey
+          ? { classKey: item.classKey, subclass }
+          : { classKey: item.classKey, subclass: item.subclass },
+      ),
+    });
+  }
+
+  const hitDice = classes.map((entry) => hitDieLabel(entry.hitDie)).join(' / ');
+  const casting = classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.type !== 'none')
+    .map((entry) => {
+      const ability = entry.spellcasting?.ability;
+      return (
+        `${entry.className}: ${SPELLCASTING_TYPE_LABELS[entry.spellcasting!.type]}` +
+        (ability ? ` · ${ABILITY_ABBREVIATIONS[ability]}` : '')
+      );
+    })
+    .join(' · ');
+  const learning = classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.learning !== 'none')
+    .map((entry) => `${entry.className}: ${SPELL_LEARNING_LABELS[entry.spellcasting!.learning]}`)
+    .join(' · ');
 
   return (
     <Section title="Identidade" icon="scroll" subtitle="Clique em qualquer campo para editar">
@@ -108,49 +127,10 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           />
         </label>
 
-        <label className="field">
-          <span>Classe</span>
-          <InlineField
-            value={definition?.name ?? ''}
-            mode="select"
-            options={classNames}
-            ariaLabel="Classe do personagem"
-            onCommit={(value) => update({ classKey: classKeyFromName(value) })}
-          />
-        </label>
-
-        {definition !== null && subclassEligible ? (
-          <label className="field">
-            <span>Subclasse</span>
-            <InlineField
-              value={character.subclass}
-              mode="select"
-              options={subclassNames}
-              ariaLabel="Subclasse"
-              onCommit={(value) => update({ subclass: value })}
-            />
-          </label>
-        ) : (
-          <div
-            className="field readonly"
-            title={definition ? `Escolhida a partir do nível ${definition.subclassLevel}` : undefined}
-          >
-            <span>Subclasse</span>
-            <strong>{definition ? `nível ${definition.subclassLevel}+` : '—'}</strong>
-          </div>
-        )}
-
-        <label className="field">
-          <span>Nível</span>
-          <InlineField
-            value={character.level}
-            mode="number"
-            min={1}
-            max={20}
-            ariaLabel="Nível"
-            onCommit={(value) => update({ level: clampInt(value, 1, 20, character.level) })}
-          />
-        </label>
+        <div className="field readonly">
+          <span>Nível total</span>
+          <strong>{character.level}</strong>
+        </div>
 
         <label className="field">
           <span>Antecedente</span>
@@ -188,17 +168,17 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
 
         <div className="field readonly">
           <span>Dado de vida</span>
-          <strong>{hitDieLabel(definition?.hitDie ?? null)}</strong>
+          <strong>{hitDice || '—'}</strong>
         </div>
 
         <div className="field readonly">
           <span>Conjuração</span>
-          <strong>{spellcastingLabel}</strong>
+          <strong>{casting || '—'}</strong>
         </div>
 
         <div className="field readonly">
           <span>Magias</span>
-          <strong>{definition ? SPELL_LEARNING_LABELS[definition.spellcasting.learning] : '—'}</strong>
+          <strong>{learning || '—'}</strong>
         </div>
 
         <div className="field readonly">
@@ -206,6 +186,72 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           <strong>+{character.derived.proficiencyBonus}</strong>
         </div>
       </div>
+
+      <h3 className="subsection-title">Classes</h3>
+
+      {classes.length === 0 ? (
+        <div className="class-list">
+          <p className="section-note">
+            A ficha ainda não tem classe. Escolha a primeira abaixo — o nível sobe pelo botão
+            Level Up, quando o mestre liberar.
+          </p>
+          <label className="field">
+            <span>Primeira classe</span>
+            <InlineField
+              value=""
+              mode="select"
+              options={classNames}
+              ariaLabel="Classe do personagem"
+              onCommit={(value) => {
+                const key = classKeyFromName(value);
+                if (key) update({ classes: [{ classKey: key }] });
+              }}
+            />
+          </label>
+        </div>
+      ) : (
+        <ul className="class-list">
+          {classes.map((entry) => (
+            <li className="class-row" key={entry.classKey}>
+              <span className="class-name">
+                {entry.className} <em className="class-level">Nv {entry.level}</em>
+              </span>
+
+              {entry.subclassEligible ? (
+                <label className="field class-subclass">
+                  <span>Subclasse</span>
+                  <InlineField
+                    value={entry.subclass}
+                    mode="select"
+                    options={entry.subclassNames}
+                    ariaLabel={`Subclasse de ${entry.className}`}
+                    onCommit={(value) => setSubclass(entry, value)}
+                  />
+                </label>
+              ) : (
+                <div
+                  className="field readonly class-subclass"
+                  title={`Escolhida a partir do nível ${entry.subclassLevel} da classe`}
+                >
+                  <span>Subclasse</span>
+                  <strong>nível {entry.subclassLevel}+</strong>
+                </div>
+              )}
+
+              <span className="class-asi">
+                {entry.asiLevels.length > 0
+                  ? `Aumento/Talento nos níveis ${entry.asiLevels.join(', ')}`
+                  : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="section-note">
+        Regra de multiclasse: o nível de cada classe sobe separadamente pelo Level Up e o nível
+        total é a soma. As magias combinadas usam a regra de multiclasse do PHB.
+      </p>
     </Section>
   );
 }

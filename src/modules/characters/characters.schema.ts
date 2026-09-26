@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { attackSchema } from '../shared/attacks.js';
-import { getClassDefinition } from '../shared/classes.js';
+import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
 import { itemDetailsSchema } from '../shared/item-details.js';
 import {
   ABILITY_SCORE_MAX,
@@ -33,6 +33,21 @@ const classKeySchema = z
   .trim()
   .max(40)
   .refine((value) => value === '' || getClassDefinition(value) !== null, 'Classe desconhecida.');
+
+/**
+ * Entrada de classe enviada pela ficha.
+ *
+ * O **nível nunca vem por aqui**: ele só muda pelo fluxo de Level Up, então o
+ * campo é aceito (para o cliente mandar a lista inteira) mas ignorado ao salvar.
+ */
+export const classEntryInputSchema = z.object({
+  classKey: classKeySchema.refine((value) => value !== '', 'Escolha uma classe.'),
+  subclass: shortText(120).default(''),
+  level: z.number().int().min(LEVEL_MIN).max(LEVEL_MAX).optional(),
+});
+
+/** Lista de classes do personagem (multiclasse). */
+export const classEntriesInputSchema = z.array(classEntryInputSchema).max(MAX_CLASSES);
 
 // --- Coleções ---------------------------------------------------------------
 
@@ -101,9 +116,8 @@ export const classStateSchema = z.object({
 export const createCharacterSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   race: shortText(60).optional(),
-  className: shortText(60).optional(),
+  /** Primeira classe (a ficha nasce no nível 1 dela). */
   classKey: classKeySchema.optional(),
-  level: z.number().int().min(LEVEL_MIN).max(LEVEL_MAX).optional(),
 });
 
 // --- Atualização parcial (edição inline) ------------------------------------
@@ -113,9 +127,13 @@ export const updateCharacterSchema = z
     // Identidade
     name: z.string().trim().min(1, 'O nome não pode ficar vazio.').max(120),
     race: shortText(60),
-    className: shortText(60),
-    classKey: classKeySchema,
-    subclass: shortText(120),
+    /** Classes do personagem — ver o tratamento em characters.service.ts. */
+    classes: classEntriesInputSchema,
+    /**
+     * O nível do personagem é SEMPRE derivado das classes (soma delas).
+     * Aceito aqui apenas para o servidor recusar com uma mensagem clara, em
+     * vez de um erro genérico de validação.
+     */
     level: z.number().int().min(LEVEL_MIN).max(LEVEL_MAX),
     background: shortText(120),
     alignment: shortText(60),

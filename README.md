@@ -390,6 +390,32 @@ O sistema usa **metros e quilogramas** em tudo: deslocamento de fichas e criatur
 
 Os dados anteriores foram convertidos na migração `20260926170000_metric_system` (incluindo o peso das cópias que já estavam nos inventários).
 
+### Multiclasse (PHB 2014)
+
+A ficha guarda uma **lista de classes** (`{ classKey, subclass, level }`) em vez de uma classe única. O **nível total** do personagem é a soma dos níveis de cada classe — é ele que define o bônus de proficiência, o XP para o próximo nível e o teto de 20. As features de cada classe escalam com o **nível dela** e são somadas: um Bárbaro 3 / Ladino 2 tem, ao mesmo tempo, as features de Bárbaro até o 3 e as de Ladino até o 2 (a Fúria escala pelo nível de Bárbaro, o Ataque Furtivo pelo de Ladino).
+
+- **Pré-requisitos:** para entrar numa classe é preciso **13** no(s) atributo(s) exigido(s) — o Guerreiro aceita Força **ou** Destreza, o Monge exige Destreza **e** Sabedoria. Sem o atributo, a classe é recusada com o motivo (`multiclassMissingLabel`).
+- **Magia combinada:** conjurador completo + metade do meio-conjurador + um terço do terço-conjurador (arredondando para baixo) formam o nível de conjurador da tabela de multiclasse. O **Bruxo fica de fora** e usa Magia de Pacto separada; magias conhecidas/preparadas continuam sendo contadas **por classe**.
+- **Aumento de Atributo/Talento é por classe:** Guerreiro em 4/6/8/12/14/16/19, Ladino em 4/8/10/12/16/19 e as demais em 4/8/12/16/19 (do nível daquela classe).
+- O **nível de cada classe não é editável** direto: a lista só ganha classe e sobe de nível pelo Level Up (a edição direta de `level` é recusada com 400 e a lista só aceita trocar a **subclasse** de classes existentes).
+
+As regras vivem em `src/modules/shared/classes.ts` (pré-requisitos, ajustes somados, tabelas de espaços, ASI por classe); a ficha grava as classes no JSONB `characters.classes` (migração `20260926180000_multiclass_and_level_up`).
+
+### Controle de Level Up pelo mestre
+
+O mestre liga/desliga o Level Up da mesa pelo botão no painel (`LIBERAR/BLOQUEAR LEVEL UP`). Enquanto desligado, nenhum jogador sobe de nível; quando liga, **todos** os jogadores veem o botão **Level Up** habilitado na própria ficha. Cada liberação (desligar → ligar) conta como uma nova, então depois de usar o Level Up o botão fica desabilitado **para aquele jogador** até o mestre liberar de novo.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/game` | autenticado | Configuração da mesa (Level Up liberado e o contador de liberação). |
+| `POST` | `/api/game/level-up` | **mestre** | `{ unlocked }` libera/bloqueia o Level Up da mesa. |
+
+| Evento | Destino | Conteúdo |
+|--------|---------|----------|
+| `game:config` | mesa | Configuração da mesa atualizada (liberação/bloqueio). |
+
+A configuração é uma linha única em `game_config`. Cada personagem guarda `lastLevelUpRelease`; o botão fica habilitado quando `levelUpUnlocked` está ligado e `lastLevelUpRelease < levelUpRelease`.
+
 ### Endpoints
 
 | Método | Rota | Acesso | Descrição |

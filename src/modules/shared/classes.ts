@@ -1775,6 +1775,10 @@ export interface ActiveClassFeature extends ClassFeatureDefinition {
   source: 'class' | 'subclass';
   /** Nome da subclasse, quando vier dela. */
   subclassName?: string;
+  /** Chave da classe de origem (preenchida no modo multiclasse). */
+  classKey?: string;
+  /** Nível do personagem NAQUELA classe (usado nas escalas por nível). */
+  classLevel?: number;
 }
 
 /**
@@ -2108,3 +2112,380 @@ export const SPELL_LEARNING_LABELS: Record<SpellLearning, string> = {
   prepared: 'Preparadas',
   none: '—',
 };
+
+// ---------------------------------------------------------------------------
+// Multiclasse (PHB 2014, capítulo 6)
+//
+// O personagem guarda uma LISTA de classes: `{ classKey, subclass, level }`.
+// O nível é o nível NAQUELA classe; o nível total do personagem é a soma — é
+// ele que determina bônus de proficiência, XP e o limite de 20.
+// ---------------------------------------------------------------------------
+
+/** Uma classe do personagem, com o nível específico dela. */
+export interface ClassEntry {
+  /** Chave canônica da classe (ex.: 'rogue'). */
+  classKey: string;
+  /** Subclasse escolhida ('' até o nível de escolha daquela classe). */
+  subclass: string;
+  /** Nível NAQUELA classe (começa em 1 quando ela entra). */
+  level: number;
+}
+
+/** Quantas classes diferentes o personagem pode somar. */
+export const MAX_CLASSES = 4;
+
+/**
+ * Pré-requisitos de atributo para ENTRAR numa classe (PHB 2014).
+ * `all` exige todos os atributos; `any` exige pelo menos um deles.
+ */
+export const MULTICLASS_PREREQUISITES: Record<
+  string,
+  { all?: AbilityKey[]; any?: AbilityKey[] }
+> = {
+  barbarian: { all: ['strength'] },
+  bard: { all: ['charisma'] },
+  cleric: { all: ['wisdom'] },
+  druid: { all: ['wisdom'] },
+  fighter: { any: ['strength', 'dexterity'] },
+  monk: { all: ['dexterity', 'wisdom'] },
+  paladin: { all: ['strength', 'charisma'] },
+  ranger: { all: ['dexterity', 'wisdom'] },
+  rogue: { all: ['dexterity'] },
+  sorcerer: { all: ['charisma'] },
+  warlock: { all: ['charisma'] },
+  wizard: { all: ['intelligence'] },
+};
+
+/** Atributo mínimo exigido para entrar numa classe. */
+export const MULTICLASS_MINIMUM = 13;
+
+const ABILITY_NAMES: Record<AbilityKey, string> = {
+  strength: 'Força',
+  dexterity: 'Destreza',
+  constitution: 'Constituição',
+  intelligence: 'Inteligência',
+  wisdom: 'Sabedoria',
+  charisma: 'Carisma',
+};
+
+/**
+ * Atributos que FALTAM (abaixo de 13) para entrar na classe.
+ * Vazio = pré-requisito atendido.
+ */
+export function multiclassMissingAbilities(
+  classKey: string,
+  abilities: Record<AbilityKey, number>,
+): AbilityKey[] {
+  const rule = MULTICLASS_PREREQUISITES[classKey.trim()];
+  if (!rule) return [];
+
+  const missing = (rule.all ?? []).filter(
+    (ability) => abilities[ability] < MULTICLASS_MINIMUM,
+  );
+
+  // Em classes com alternativa (Guerreiro: Força OU Destreza), basta um deles.
+  if (rule.any && rule.any.length > 0) {
+    const ok = rule.any.some((ability) => abilities[ability] >= MULTICLASS_MINIMUM);
+    if (!ok) missing.push(...rule.any);
+  }
+
+  return missing;
+}
+
+/** Texto pronto do motivo do bloqueio (ex.: "faltam Força 13 e Sabedoria 13"). */
+export function multiclassMissingLabel(
+  classKey: string,
+  abilities: Record<AbilityKey, number>,
+): string {
+  const missing = multiclassMissingAbilities(classKey, abilities);
+  if (missing.length === 0) return '';
+
+  const names = missing.map((ability) => `${ABILITY_NAMES[ability]} 13`);
+  return names.length === 1
+    ? `faltam ${names[0]}`
+    : `faltam ${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+}
+
+/** Rótulo curto das classes com os níveis: "Bárbaro 3 / Ladino 2". */
+export function classEntryLabel(entry: Pick<ClassEntry, 'classKey' | 'level'>): string {
+  const definition = getClassDefinition(entry.classKey);
+  if (!definition) return '';
+  return `${definition.name} ${entry.level}`;
+}
+
+/** Nome composto de todas as classes ("Bárbaro 3 / Ladino 2"). */
+export function classEntriesLabel(entries: ClassEntry[]): string {
+  return entries.map(classEntryLabel).filter(Boolean).join(' / ');
+}
+
+/** Nível total do personagem: a soma dos níveis de todas as classes. */
+export function totalCharacterLevel(entries: ClassEntry[]): number {
+  return entries.reduce((sum, entry) => sum + entry.level, 0);
+}
+
+/** Lê/normaliza a lista de classes vinda do JSONB, descartando lixo. */
+export function normalizeClassEntries(input: unknown): ClassEntry[] {
+  if (!Array.isArray(input)) return [];
+
+  const entries: ClassEntry[] = [];
+  for (const raw of input) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as { classKey?: unknown; subclass?: unknown; level?: unknown };
+    if (typeof item.classKey !== 'string') continue;
+
+    const definition = getClassDefinition(item.classKey);
+    if (!definition) continue;
+    if (entries.some((entry) => entry.classKey === definition.key)) continue;
+
+    const level = typeof item.level === 'number' && Number.isFinite(item.level)
+      ? Math.min(20, Math.max(1, Math.floor(item.level)))
+      : 1;
+
+    entries.push({
+      classKey: definition.key,
+      subclass: typeof item.subclass === 'string' ? item.subclass.trim().slice(0, 120) : '',
+      level,
+    });
+  }
+
+  return entries.slice(0, MAX_CLASSES);
+}
+
+/**
+ * Features de TODAS as classes do personagem, cada uma sabendo de que classe
+ * veio e o nível dela — é assim que cada classe escala no próprio nível, sem
+ * interferência do nível total.
+ */
+export function getMulticlassFeatures(entries: ClassEntry[]): ActiveClassFeature[] {
+  return entries.flatMap((entry) => {
+    const definition = getClassDefinition(entry.classKey);
+    if (!definition) return [];
+
+    return getActiveClassFeatures(definition, entry.level, entry.subclass).map((feature) => ({
+      ...feature,
+      classKey: definition.key,
+      classLevel: entry.level,
+    }));
+  });
+}
+
+function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments): ClassAdjustments {
+  const byId = <T extends { id: string }>(items: T[]): T[] => {
+    const map = new Map<string, T>();
+    for (const item of items) map.set(item.id, item);
+    return [...map.values()];
+  };
+
+  const abilityBonuses: Partial<Record<AbilityKey, number>> = { ...base.abilityBonuses };
+  for (const [ability, bonus] of Object.entries(extra.abilityBonuses)) {
+    const key = ability as AbilityKey;
+    abilityBonuses[key] = (abilityBonuses[key] ?? 0) + (bonus ?? 0);
+  }
+
+  return {
+    toggles: byId([...base.toggles, ...extra.toggles]),
+    resources: byId([...base.resources, ...extra.resources]),
+    activeToggleIds: [...new Set([...base.activeToggleIds, ...extra.activeToggleIds])],
+    meleeDamageBonus: base.meleeDamageBonus + extra.meleeDamageBonus,
+    resistances: [...new Set([...base.resistances, ...extra.resistances])],
+    speedBonus: base.speedBonus + extra.speedBonus,
+    critExtraDice: Math.max(base.critExtraDice, extra.critExtraDice),
+    unarmoredDefense: base.unarmoredDefense || extra.unarmoredDefense,
+    unarmoredDefenseAbility:
+      base.unarmoredDefenseAbility ?? extra.unarmoredDefenseAbility,
+    unarmoredDefenseBase: Math.max(base.unarmoredDefenseBase, extra.unarmoredDefenseBase),
+    martialArtsDie: Math.max(base.martialArtsDie, extra.martialArtsDie),
+    hpBonus: base.hpBonus + extra.hpBonus,
+    wildShapeCr:
+      base.wildShapeCr === null && extra.wildShapeCr === null
+        ? null
+        : Math.max(base.wildShapeCr ?? 0, extra.wildShapeCr ?? 0),
+    wildShapeFlying: base.wildShapeFlying || extra.wildShapeFlying,
+    abilityBonuses,
+    abilityCaps: { ...extra.abilityCaps, ...base.abilityCaps },
+  };
+}
+
+/** Ajustes internos vazios (ponto de partida da soma). */
+function emptyAdjustments(): ClassAdjustments {
+  return {
+    toggles: [],
+    resources: [],
+    activeToggleIds: [],
+    meleeDamageBonus: 0,
+    resistances: [],
+    speedBonus: 0,
+    critExtraDice: 0,
+    unarmoredDefense: false,
+    unarmoredDefenseAbility: null,
+    unarmoredDefenseBase: 10,
+    martialArtsDie: 0,
+    hpBonus: 0,
+    wildShapeCr: null,
+    wildShapeFlying: false,
+    abilityBonuses: {},
+    abilityCaps: {},
+  };
+}
+
+/**
+ * Ajustes de multiclasse: cada classe é calculada com o PRÓPRIO nível (Fúria
+ * escala com o nível de bárbaro, Ki com o de monge...) e os resultados são
+ * somados/combinados — os dois conjuntos de features valem ao mesmo tempo.
+ */
+export function computeMulticlassAdjustments(
+  entries: ClassEntry[],
+  state: ClassState,
+  abilities?: Record<AbilityKey, number>,
+): ClassAdjustments {
+  return entries.reduce((acc, entry) => {
+    const definition = getClassDefinition(entry.classKey);
+    if (!definition) return acc;
+
+    const features = getActiveClassFeatures(definition, entry.level, entry.subclass);
+    return mergeAdjustments(
+      acc,
+      computeClassAdjustments(features, entry.level, state, abilities),
+    );
+  }, emptyAdjustments());
+}
+
+/**
+ * Nível de conjurador para a tabela combinada de espaços de magia:
+ * conjurador completo + metade do meio-conjurador + um terço do terço-conjurador.
+ * O bruxo fica de fora (Magia de Pacto tem espaços próprios).
+ */
+export function multiclassCasterLevel(entries: ClassEntry[]): number {
+  let casterLevel = 0;
+
+  for (const entry of entries) {
+    const definition = getClassDefinition(entry.classKey);
+    const type = definition?.spellcasting.type;
+
+    if (type === 'full') casterLevel += entry.level;
+    else if (type === 'half') casterLevel += Math.floor(entry.level / 2);
+    else if (type === 'third') casterLevel += Math.floor(entry.level / 3);
+  }
+
+  return Math.min(20, casterLevel);
+}
+
+/** Tabela completa de espaços do conjurador de nível 1 a 20 (índice = nível). */
+const FULL_CASTER_SLOTS: readonly number[][] = [
+  [],
+  [2, 0, 0, 0, 0, 0, 0, 0, 0],
+  [3, 0, 0, 0, 0, 0, 0, 0, 0],
+  [4, 2, 0, 0, 0, 0, 0, 0, 0],
+  [4, 3, 0, 0, 0, 0, 0, 0, 0],
+  [4, 3, 2, 0, 0, 0, 0, 0, 0],
+  [4, 3, 3, 0, 0, 0, 0, 0, 0],
+  [4, 3, 3, 1, 0, 0, 0, 0, 0],
+  [4, 3, 3, 2, 0, 0, 0, 0, 0],
+  [4, 3, 3, 3, 1, 0, 0, 0, 0],
+  [4, 3, 3, 3, 2, 0, 0, 0, 0],
+  [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  [4, 3, 3, 3, 2, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 2, 1, 1],
+];
+
+/** Máximo de espaços por nível de magia (1 a 9) para um nível de conjurador. */
+export function spellSlotsForCasterLevel(level: number): { level: number; max: number }[] {
+  const clamped = Math.min(FULL_CASTER_SLOTS.length - 1, Math.max(0, Math.floor(level)));
+  const row = FULL_CASTER_SLOTS[clamped] ?? [];
+  return row
+    .map((max, index) => ({ level: index + 1, max }))
+    .filter((slot) => slot.max > 0);
+}
+
+/** Tabela de Magia de Pacto do bruxo (espaços, nível do espaço e quantidade). */
+const PACT_SLOTS: readonly { level: number; max: number; slotLevel: number }[] = [
+  { level: 1, max: 1, slotLevel: 1 },
+  { level: 2, max: 2, slotLevel: 1 },
+  { level: 3, max: 2, slotLevel: 2 },
+  { level: 4, max: 2, slotLevel: 2 },
+  { level: 5, max: 2, slotLevel: 3 },
+  { level: 6, max: 2, slotLevel: 3 },
+  { level: 7, max: 2, slotLevel: 4 },
+  { level: 8, max: 2, slotLevel: 4 },
+  { level: 9, max: 2, slotLevel: 5 },
+  { level: 10, max: 2, slotLevel: 5 },
+  { level: 11, max: 3, slotLevel: 5 },
+  { level: 12, max: 3, slotLevel: 5 },
+  { level: 13, max: 3, slotLevel: 5 },
+  { level: 14, max: 3, slotLevel: 5 },
+  { level: 15, max: 3, slotLevel: 5 },
+  { level: 16, max: 3, slotLevel: 5 },
+  { level: 17, max: 4, slotLevel: 5 },
+  { level: 18, max: 4, slotLevel: 5 },
+  { level: 19, max: 4, slotLevel: 5 },
+  { level: 20, max: 4, slotLevel: 5 },
+];
+
+/** Espaços de Magia de Pacto do bruxo no nível dele (null quando não é bruxo). */
+export function pactMagicSlots(entries: ClassEntry[]): { max: number; slotLevel: number } | null {
+  const warlock = entries.find((entry) => {
+    const definition = getClassDefinition(entry.classKey);
+    return definition?.spellcasting.type === 'pact';
+  });
+  if (!warlock) return null;
+
+  const row = PACT_SLOTS[Math.min(20, Math.max(1, warlock.level)) - 1];
+  return row ? { max: row.max, slotLevel: row.slotLevel } : null;
+}
+
+/** Dados de Ataque Furtivo do personagem (escala com o nível de LADINO). */
+export function multiclassSneakAttack(entries: ClassEntry[]): number {
+  const rogue = entries.find((entry) => entry.classKey === 'rogue');
+  return rogue ? sneakAttackDice(rogue.level) : 0;
+}
+
+/** Níveis de Aumento de Atributo/Talento — são POR CLASSE, não pelo total. */
+const DEFAULT_ASI_LEVELS: readonly number[] = [4, 8, 12, 16, 19];
+const ASI_LEVELS_BY_CLASS: Record<string, readonly number[]> = {
+  fighter: [4, 6, 8, 12, 14, 16, 19],
+  rogue: [4, 8, 10, 12, 16, 19],
+};
+
+/** Níveis em que a classe concede Aumento de Atributo ou Talento. */
+export function asiLevelsFor(classKey: string): readonly number[] {
+  return ASI_LEVELS_BY_CLASS[classKey.trim()] ?? DEFAULT_ASI_LEVELS;
+}
+
+/** Verdadeiro quando o nível da classe é um dos níveis de ASI/Talento dela. */
+export function isAsiLevel(classKey: string, level: number): boolean {
+  return asiLevelsFor(classKey).includes(level);
+}
+
+/** Opção de classe para o seletor: o resumo + se o personagem pode entrar nela. */
+export interface ClassOption extends ClassSummary {
+  eligible: boolean;
+  /** Texto do motivo do bloqueio ('' quando elegível). */
+  missing: string;
+}
+
+/**
+ * Catálogo com a elegibilidade do personagem calculada: o seletor esconde (ou
+ * explica) as classes cujo pré-requisito de atributo não é atendido.
+ */
+export function classOptionsFor(
+  abilities: Record<AbilityKey, number>,
+  entries: ClassEntry[] = [],
+): ClassOption[] {
+  return CLASS_CATALOG.map((summary) => {
+    const alreadyHas = entries.some((entry) => entry.classKey === summary.key);
+    const missing = multiclassMissingLabel(summary.key, abilities);
+
+    return {
+      ...summary,
+      eligible: alreadyHas || missing === '',
+      missing: alreadyHas ? '' : missing,
+    };
+  });
+}

@@ -14,6 +14,21 @@ datasource db {
 // Etapa 1 — Usuários e autenticação
 // -----------------------------------------------------------------------------
 
+/// Configuração global da mesa (linha única, `id = "main"`).
+/// Hoje guarda só o controle de Level Up liberado pelo mestre.
+model GameConfig {
+  id              String   @id @default("main")
+  /// Verdadeiro enquanto o mestre deixou o Level Up liberado.
+  levelUpUnlocked Boolean  @default(false)
+  ///
+  /// Incrementa a cada liberação (desligar → ligar). O personagem guarda a
+  /// última liberação que já usou, então cada jogador sobe um nível por vez.
+  levelUpRelease  Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  @@map("game_config")
+}
+
 /// Papel do usuário na mesa.
 /// - PLAYER: cria e gerencia apenas a própria ficha.
 /// - MASTER: enxerga todas as fichas e tem o painel de controle.
@@ -51,17 +66,22 @@ model Character {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Identidade
-  name       String @default("Novo Personagem")
-  race       String @default("")
-  className  String @default("")
-  /// Chave canônica da classe (ver src/modules/shared/classes.ts). Vazia = sem classe.
-  classKey   String @default("")
-  /// Subclasse escolhida (liberada a partir do nível de subclasse da classe).
-  subclass   String @default("")
-  level      Int    @default(1)
+  name String @default("Novo Personagem")
+  race String @default("")
+  ///
+  /// Classes do personagem (multiclasse): [{ classKey, subclass, level }].
+  /// O nível de cada entrada é o nível NAQUELA classe; o nível total do
+  /// personagem é a soma deles. Vazio = ficha sem classe ainda.
+  /// Ver src/modules/shared/classes.ts.
+  classes    Json   @default("[]")
   background String @default("")
   alignment  String @default("")
   experience Int    @default(0)
+  ///
+  /// Última liberação de Level Up já usada por este personagem.
+  /// Comparado com `GameConfig.levelUpRelease` para saber se o jogador ainda
+  /// pode subir de nível na liberação atual.
+  lastLevelUpRelease Int @default(0)
 
   // Atributos (1 a 30)
   strength     Int @default(10)

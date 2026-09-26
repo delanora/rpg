@@ -11,6 +11,7 @@ import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
+import { fetchGameConfig, setLevelUpUnlocked } from '../gameApi';
 import { closePresentation } from '../presentationApi';
 import type {
   Attack,
@@ -19,6 +20,7 @@ import type {
   Creature,
   CreatureKind,
   CreaturePatch,
+  GameConfig,
   Item,
   ItemPatch,
   Locality,
@@ -45,6 +47,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [error, setError] = useState<string | null>(null);
   const [showStartDialog, setShowStartDialog] = useState(false);
   const [presentation, setPresentation] = useState<Presentation | null>(null);
+  // Configuração da mesa: controle de Level Up liberado.
+  const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -134,6 +138,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     // que é quem fecha).
     onPresentationShown: (payload) => setPresentation(payload.presentation),
     onPresentationClosed: () => setPresentation(null),
+
+    // Configuração da mesa (Level Up liberado) — acompanha mudanças.
+    onGameConfig: (payload) => setGameConfig(payload.config),
   });
 
   // Carga inicial: fichas, bestiário, localidades e eventual combate em andamento.
@@ -147,6 +154,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       api<{ localities: Locality[] }>('/api/localities'),
       api<{ items: Item[] }>('/api/items'),
       fetchActiveCombat(),
+      fetchGameConfig().catch(() => null),
     ])
       .then(
         ([
@@ -156,6 +164,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           localitiesResult,
           itemsResult,
           activeCombat,
+          config,
         ]) => {
           if (!active) return;
           setCharacters(charactersResult.characters);
@@ -164,6 +173,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           setLocalities(localitiesResult.localities);
           setItems(itemsResult.items);
           combatState.setCombat(activeCombat);
+          setGameConfig(config);
         },
       )
       .catch((err: unknown) => {
@@ -183,6 +193,22 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const closePresentedImage = useCallback(() => {
     void closePresentation().catch(() => setPresentation(null));
   }, []);
+
+  /**
+   * Liga/desliga o Level Up da mesa. Cada liberação (desligado → ligado) conta
+   * como uma nova, então os jogadores voltam a ver o botão habilitado.
+   */
+  const toggleLevelUp = useCallback(async () => {
+    const next = !(gameConfig?.levelUpUnlocked ?? false);
+
+    try {
+      const config = await setLevelUpUnlocked(next);
+      setGameConfig(config);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao alterar o Level Up.');
+    }
+  }, [gameConfig]);
 
   const createCreature = useCallback(
     async (localityId: string): Promise<Creature> => {
@@ -315,7 +341,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
    */
   const patchCharacter = useCallback(async (id: string, patch: CharacterPatch) => {
     setCharacters((prev) =>
-      prev.map((character) => (character.id === id ? { ...character, ...patch } : character)),
+      prev.map((character) =>
+        character.id === id ? { ...character, ...patch, classes: character.classes } : character,
+      ),
     );
 
     try {
@@ -478,6 +506,16 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onClick={() => setTab('items')}
           >
             <Icon name="flask" size={16} /> Itens
+          </button>
+
+          <button
+            type="button"
+            className={gameConfig?.levelUpUnlocked ? 'btn btn-levelup active' : 'btn btn-levelup'}
+            onClick={() => void toggleLevelUp()}
+            title="Liberar ou bloquear o Level Up para os jogadores"
+          >
+            <Icon name="sparkle" size={16} />{' '}
+            {gameConfig?.levelUpUnlocked ? 'BLOQUEAR LEVEL UP' : 'LIBERAR LEVEL UP'}
           </button>
 
           <button

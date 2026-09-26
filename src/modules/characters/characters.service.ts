@@ -10,7 +10,14 @@ import {
   type CatalogSnapshot,
 } from './inventory-sync.js';
 import type { CreateCharacterInput, UpdateCharacterInput } from './characters.schema.js';
-import { applyClassSavingThrows, getClassDefinition } from '../shared/classes.js';
+import {
+  applySaveProficiencies,
+  getClassDefinition,
+  multiclassMissingLabel,
+  normalizeClassEntries,
+  type ClassEntry,
+} from '../shared/classes.js';
+import type { AbilityKey } from '../shared/dnd5e.js';
 import { normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
 
 /** Quem está alterando a ficha (vem do token, nunca do corpo da requisição). */
@@ -31,7 +38,6 @@ interface SheetOwner {
 const SCALAR_KEYS = [
   'name',
   'race',
-  'className',
   'level',
   'background',
   'alignment',
@@ -54,6 +60,92 @@ const SCALAR_KEYS = [
 
 function emptySpells(): Prisma.InputJsonValue {
   return { list: [], slots: {} };
+}
+
+/** Atributos do personagem no formato usado pelas regras de classe. */
+function abilitiesOf(character: Character): Record<AbilityKey, number> {
+  return {
+    strength: character.strength,
+    dexterity: character.dexterity,
+    constitution: character.constitution,
+    intelligence: character.intelligence,
+    wisdom: character.wisdom,
+    charisma: character.charisma,
+  };
+}
+
+/** Salvaguardas fixas de TODAS as classes do personagem (multiclasse). */
+function lockedSavesOf(entries: ClassEntry[]): AbilityKey[] {
+  return entries.flatMap((entry) => getClassDefinition(entry.classKey)?.savingThrows ?? []);
+}
+
+/**
+ * Resolve a lista de classes de um PATCH.
+ *
+ * O **nível** de cada classe só muda pelo fluxo de Level Up, então aqui:
+ *
+ *  - Ficha sem classe: aceita exatamente uma classe (entra no nível 1) e exige
+ *    o pré-requisito de atributo da classe.
+ *  - Ficha com classes: a lista só pode trocar a SUBCLASSE de classes que já
+ *    existem (respeitando o nível de escolha daquela classe). Adicionar,
+ *    remover ou mudar nível é recusado com uma mensagem clara.
+ *
+ * Retorna `null` quando o patch não mexeu em classes.
+ */
+function resolveClassPatch(
+  existing: ClassEntry[],
+  incoming: { classKey: string; subclass: string }[] | undefined,
+  abilities: Record<AbilityKey, number>,
+): ClassEntry[] | null {
+  if (incoming === undefined) return null;
+
+  if (existing.length === 0) {
+    if (incoming.length === 0) return [];
+    if (incoming.length > 1) {
+      throw new HttpError('A ficha começa com uma classe só; as demais entram pelo Level Up.', 400);
+    }
+
+    const chosen = incoming[0];
+    const definition = getClassDefinition(chosen.classKey);
+    if (!definition) throw new HttpError('Classe desconhecida.', 400);
+
+    const missing = multiclassMissingLabel(definition.key, abilities);
+    if (missing) {
+      throw new HttpError(`Para entrar em ${definition.name} ${missing}.`, 400);
+    }
+
+    return [{ classKey: definition.key, subclass: '', level: 1 }];
+  }
+
+  const known = new Set(existing.map((entry) => entry.classKey));
+  for (const entry of incoming) {
+    if (!known.has(entry.classKey)) {
+      throw new HttpError(
+        'Para adicionar uma classe nova use o Level Up (multiclasse).',
+        400,
+      );
+    }
+  }
+
+  let changed = false;
+  const next = existing.map((entry) => {
+    const patch = incoming.find((item) => item.classKey === entry.classKey);
+    if (!patch || patch.subclass === entry.subclass) return entry;
+
+    const definition = getClassDefinition(entry.classKey);
+
+    if (patch.subclass !== '' && definition && entry.level < definition.subclassLevel) {
+      throw new HttpError(
+        `A subclasse de ${definition.name} é escolhida a partir do nível ${definition.subclassLevel} dela.`,
+        400,
+      );
+    }
+
+    changed = true;
+    return { ...entry, subclass: patch.subclass };
+  });
+
+  return changed ? next : null;
 }
 
 /**
@@ -100,23 +192,16 @@ export async function createCharacter(
     throw new HttpError('Você já possui uma ficha.', 409);
   }
 
-  const classKey = input.classKey ?? '';
-  const classDefinition = getClassDefinition(classKey);
-
   const character = await prisma.character.create({
     data: {
       userId: actor.userId,
       name: input.name ?? 'Novo Personagem',
       race: input.race ?? '',
-      className: classDefinition?.name ?? input.className ?? '',
-      classKey,
-      subclass: '',
-      level: input.level ?? 1,
+      // A ficha nasce sem classe: o jogador escolhe a primeira na ficha, onde
+      // o pré-requisito de atributo pode ser conferido com os valores reais.
+      classes: [] as unknown as Prisma.InputJsonValue,
       skills: normalizeSkills({}) as unknown as Prisma.InputJsonValue,
-      saves: applyClassSavingThrows(
-        normalizeSaves({}),
-        classDefinition,
-      ) as unknown as Prisma.InputJsonValue,
+      saves: normalizeSaves({}) as unknown as Prisma.InputJsonValue,
       inventory: [] as Prisma.InputJsonValue,
       spells: emptySpells(),
       attacks: [] as Prisma.InputJsonValue,
@@ -195,48 +280,36 @@ async function applyCharacterPatch(
     if (value !== undefined) data[key] = value;
   }
 
-  // --- Classe, subclasse e salvaguardas fixas ------------------------------
-  const nextClassKey = patch.classKey ?? existing.classKey;
-  const classDefinition = getClassDefinition(nextClassKey);
-  const classChanged = patch.classKey !== undefined && patch.classKey !== existing.classKey;
-  const nextLevel = patch.level ?? existing.level;
-
-  if (classDefinition && patch.classKey !== undefined) {
-    // A classe define o nome exibido (o campo livre `className` vira derivado).
-    data.className = classDefinition.name;
-  }
-  if (patch.classKey !== undefined) data.classKey = patch.classKey;
-
-  if (patch.subclass !== undefined && patch.subclass !== '') {
-    if (!classDefinition) {
-      throw new HttpError('Escolha uma classe antes de definir a subclasse.', 400);
-    }
-    if (nextLevel < classDefinition.subclassLevel) {
-      throw new HttpError(
-        `A subclasse de ${classDefinition.name} é escolhida a partir do nível ${classDefinition.subclassLevel}.`,
-        400,
-      );
-    }
+  // --- Nível e classes -----------------------------------------------------
+  // O nível do personagem é a soma dos níveis das classes: quem sobe é o
+  // fluxo de Level Up (liberado pelo mestre), nunca o PATCH da ficha.
+  if (patch.level !== undefined) {
+    throw new HttpError('O nível do personagem só muda pelo Level Up.', 400);
   }
 
-  if (classChanged) {
-    // Trocar de classe zera a subclasse, as salvaguardas e o estado de classe.
-    data.subclass = '';
-    data.classState = { active: [], used: {} };
-  } else if (patch.subclass !== undefined) {
-    data.subclass = patch.subclass;
+  const currentClasses = normalizeClassEntries(existing.classes);
+  const nextClasses = resolveClassPatch(
+    currentClasses,
+    patch.classes,
+    abilitiesOf(existing),
+  );
+  const classes = nextClasses ?? currentClasses;
+  const classesChanged = nextClasses !== null;
+
+  if (classesChanged) {
+    data.classes = classes as unknown as Prisma.InputJsonValue;
+    // Sem classe, nada de estado de classe pendurado.
+    if (classes.length === 0) data.classState = { active: [], used: {} };
   }
 
+  // --- Salvaguardas fixas das classes --------------------------------------
   const currentSaves = normalizeSaves(existing.saves);
-  const classSavesApplied =
-    classDefinition !== null &&
-    classDefinition.savingThrows.every((ability) => currentSaves[ability]);
+  const lockedSaves = lockedSavesOf(classes);
+  const lockedSavesMissing = lockedSaves.some((ability) => !currentSaves[ability]);
 
-  if (patch.saves !== undefined || classChanged || (classDefinition !== null && !classSavesApplied)) {
-    const base = classChanged
-      ? normalizeSaves({})
-      : normalizeSaves(patch.saves ?? existing.saves);
-    data.saves = applyClassSavingThrows(base, classDefinition);
+  if (patch.saves !== undefined || classesChanged || lockedSavesMissing) {
+    const base = normalizeSaves(patch.saves ?? existing.saves);
+    data.saves = applySaveProficiencies(base, lockedSaves);
   }
 
   if (patch.skills !== undefined) data.skills = normalizeSkills(patch.skills);

@@ -62,6 +62,9 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   const readOnly = useReadOnly();
   const { list, slots } = character.spells;
   const spellcasting = character.derived.spellcasting;
+  // Espaços combinados pela regra de multiclasse (PHB) e Magia de Pacto à parte.
+  const combinedSlots = character.derived.spellSlots ?? [];
+  const pactSlots = character.derived.pactSlots ?? null;
 
   function patchSpell(id: string, patch: Partial<Spell>): void {
     update({ spells: { ...character.spells, list: list.map((spell) => (spell.id === id ? { ...spell, ...patch } : spell)) } });
@@ -148,6 +151,29 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
         )
       }
     >
+      {combinedSlots.length > 0 || pactSlots ? (
+        <>
+          <h3 className="subsection-title">Espaços pela regra de multiclasse</h3>
+          <p className="section-note">
+            Somados como no PHB: conjurador completo + metade do meio-conjurador + um terço do
+            terço-conjurador. As magias preparadas continuam sendo contadas por classe.
+          </p>
+          <div className="slot-reference">
+            {combinedSlots.map((slot) => (
+              <span className="slot-ref" key={slot.level}>
+                {SPELL_LEVEL_LABELS[slot.level]}: <strong>{slot.max}</strong>
+              </span>
+            ))}
+            {pactSlots ? (
+              <span className="slot-ref pact">
+                Magia de Pacto: <strong>{pactSlots.max}</strong> espaço(s) de{' '}
+                {SPELL_LEVEL_LABELS[pactSlots.slotLevel]}
+              </span>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+
       <h3 className="subsection-title">Espaços de magia</h3>
       <div className="grid grid-slots">
         {SLOT_LEVELS.map((level) => {

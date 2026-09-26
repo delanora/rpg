@@ -9,15 +9,15 @@ import {
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import {
-  computeClassAdjustments,
+  computeMulticlassAdjustments,
   featureEffectsOf,
-  getActiveClassFeatures,
-  getClassDefinition,
+  getMulticlassFeatures,
+  multiclassSneakAttack,
+  normalizeClassEntries,
   normalizeClassState,
-  sneakAttackDice,
   type ClassAdjustments,
 } from '../shared/classes.js';
-import { abilityModifier } from '../shared/dnd5e.js';
+import { abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
 import { parseDiceExpression, rollD20, rollDice } from '../shared/dice.js';
 import {
   combatantAttacks,
@@ -387,16 +387,27 @@ async function changeHp(
 
 /** --- Ataque -------------------------------------------------------------------- */
 
-/** Ajustes de features (Fúria, resistências...) de um personagem. */
+/** Ajustes de features (Fúria, resistências...) de um personagem multiclasse. */
 function characterAdjustments(character: {
-  classKey: string;
-  level: number;
-  subclass: string;
+  classes: unknown;
   classState: unknown;
+  strength: number;
+  dexterity: number;
+  constitution: number;
+  intelligence: number;
+  wisdom: number;
+  charisma: number;
 }): ClassAdjustments {
-  const definition = getClassDefinition(character.classKey);
-  const features = getActiveClassFeatures(definition, character.level, character.subclass);
-  return computeClassAdjustments(features, character.level, normalizeClassState(character.classState));
+  const entries = normalizeClassEntries(character.classes);
+  const abilities: Record<AbilityKey, number> = {
+    strength: character.strength,
+    dexterity: character.dexterity,
+    constitution: character.constitution,
+    intelligence: character.intelligence,
+    wisdom: character.wisdom,
+    charisma: character.charisma,
+  };
+  return computeMulticlassAdjustments(entries, normalizeClassState(character.classState), abilities);
 }
 
 /** Aplica a resistência do alvo a um tipo de dano (ex.: Fúria do bárbaro). */
@@ -429,13 +440,15 @@ function rollSneakAttack(
   if (!character) return null;
   if (!attack.finesse && !attack.ranged) return null;
 
-  const definition = getClassDefinition(character.classKey);
-  const features = getActiveClassFeatures(definition, character.level, character.subclass);
+  const entries = normalizeClassEntries(character.classes);
+  const features = getMulticlassFeatures(entries);
   if (!features.some((feature) => featureEffectsOf(feature).some((effect) => effect.type === 'sneakAttack'))) {
     return null;
   }
 
-  const expression = `${sneakAttackDice(character.level)}d6`;
+  const dice = multiclassSneakAttack(entries);
+  if (dice <= 0) return null;
+  const expression = `${dice}d6`;
   const roll = rollDice(expression, { crit: critical });
   if (!roll) return null;
 

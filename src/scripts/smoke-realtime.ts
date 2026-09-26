@@ -111,6 +111,28 @@ function connect(token: string): Socket {
   });
 }
 
+/**
+ * Define a lista de classes direto no banco (setup dos testes de regras).
+ *
+ * O nível de uma classe só muda pelo fluxo de Level Up, então os cenários de
+ * nível alto são preparados na fonte antes de exercitar a API.
+ */
+async function setCharacterClasses(
+  userId: string,
+  entries: { classKey: string; subclass?: string; level: number }[],
+): Promise<void> {
+  await prisma.character.update({
+    where: { userId },
+    data: {
+      classes: entries.map((entry) => ({
+        classKey: entry.classKey,
+        subclass: entry.subclass ?? '',
+        level: entry.level,
+      })) as any,
+    },
+  });
+}
+
 async function main(): Promise<void> {
   console.log(`\n🔎 Smoke test (Etapas 1 e 2) em ${BASE_URL}\n`);
 
@@ -225,11 +247,16 @@ async function main(): Promise<void> {
   const created = await api('/api/characters/me', {
     method: 'POST',
     token: playerToken,
-    body: { name: 'Thoradin', race: 'Anão', className: 'Guerreiro', level: 1 },
+    body: { name: 'Thoradin', race: 'Anão' },
   });
   check('jogador cria a própria ficha (201)', created.status === 201, JSON.stringify(created.data));
 
   const sheet = created.data?.character;
+  check(
+    'ficha nasce sem classe (a primeira classe entra na ficha)',
+    (sheet?.classes ?? []).length === 0 && sheet?.level === 0,
+    JSON.stringify({ classes: sheet?.classes, level: sheet?.level }),
+  );
   check('ficha tem as 18 perícias normalizadas', Object.keys(sheet?.skills ?? {}).length === 18);
   check('ficha tem as 6 salvaguardas normalizadas', Object.keys(sheet?.saves ?? {}).length === 6);
   check('nenhuma perícia começa proficiente', Object.values(sheet?.skills ?? {}).every((s: any) => !s.proficient));
@@ -238,11 +265,28 @@ async function main(): Promise<void> {
     (await api('/api/characters/me', { method: 'POST', token: playerToken, body: {} })).status === 409,
   );
 
-  // Regras: nível, modificadores e proficiência.
+  // O nível do personagem não é mais editável diretamente.
+  check(
+    'PATCH direto do nível é recusado (400)',
+    (await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 5 } })).status === 400,
+  );
+  check(
+    'adicionar classe pela ficha (fora do Level Up) é recusado (400)',
+    (
+      await api('/api/characters/me', {
+        method: 'PATCH',
+        token: playerToken,
+        body: { classes: [{ classKey: 'fighter' }, { classKey: 'wizard' }] },
+      })
+    ).status === 400,
+  );
+
+  // Regras: nível, modificadores e proficiência (nível preparado na fonte).
+  await setCharacterClasses(playerId, [{ classKey: 'fighter', level: 5 }]);
   const rules = await api('/api/characters/me', {
     method: 'PATCH',
     token: playerToken,
-    body: { level: 5, dexterity: 16, strength: 8, wisdom: 14, armorClass: 15 },
+    body: { dexterity: 16, strength: 8, wisdom: 14, armorClass: 15 },
   });
   const rulesSheet = rules.data?.character;
   check('PATCH aplica os valores', rulesSheet?.level === 5 && rulesSheet?.dexterity === 16);
@@ -386,6 +430,46 @@ async function main(): Promise<void> {
   });
   const otherMe = await api('/api/characters/me', { token: otherReg.data?.token });
   check('outro jogador não vê a ficha alheia (null)', otherMe.data?.character === null);
+
+  // A primeira classe exige o pré-requisito de atributo (multiclasse do PHB).
+  await api('/api/characters/me', { method: 'POST', token: otherReg.data.token, body: {} });
+  check(
+    'entrar em Mago sem INT 13 é recusado (400)',
+    (
+      await api('/api/characters/me', {
+        method: 'PATCH',
+        token: otherReg.data.token,
+        body: { classes: [{ classKey: 'wizard' }] },
+      })
+    ).status === 400,
+  );
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: otherReg.data.token,
+    body: { intelligence: 15 },
+  });
+  const otherSheet = await api('/api/characters/me', {
+    method: 'PATCH',
+    token: otherReg.data.token,
+    body: { classes: [{ classKey: 'wizard' }] },
+  });
+  check(
+    'com INT 15 o Mago entra no nível 1',
+    otherSheet.status === 200 &&
+      otherSheet.data?.character?.classes?.[0]?.classKey === 'wizard' &&
+      otherSheet.data?.character?.level === 1,
+    JSON.stringify(otherSheet.data),
+  );
+  check(
+    'com INT 15 mas CAR 10, entrar em Bardo é recusado (400)',
+    (
+      await api('/api/characters/me', {
+        method: 'PATCH',
+        token: otherReg.data.token,
+        body: { classes: [{ classKey: 'wizard' }, { classKey: 'bard' }] },
+      })
+    ).status === 400,
+  );
 
   // --- 7. Criaturas / NPCs ---------------------------------------------------
   console.log('\n7) Criaturas/NPCs (bestiário do mestre)');
@@ -791,18 +875,18 @@ async function main(): Promise<void> {
   );
 
   // --- Ladino: features derivadas e Ataque Furtivo automático ----------------
-  await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: {
-      classKey: 'rogue',
-      level: 3,
-      attacks: [
-        { id: 'p1', name: 'Adaga', damage: '1d4+3', damageType: 'Perfurante', attackBonus: 10, notes: '', finesse: true, ranged: false },
-      ],
-    },
-  });
-  const rogueSheet = (await api('/api/characters/me', { token: playerToken })).data.character;
+  await setCharacterClasses(playerId, [{ classKey: 'rogue', level: 3 }]);
+  const rogueSheet = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: {
+        attacks: [
+          { id: 'p1', name: 'Adaga', damage: '1d4+3', damageType: 'Perfurante', attackBonus: 10, notes: '', finesse: true, ranged: false },
+        ],
+      },
+    })
+  ).data.character;
   check(
     'features de classe liberadas pelo nível (Ataque Furtivo, Ação Ardilosa)',
     rogueSheet.activeFeatures.some((f: any) => f.id === 'sneak-attack') &&
@@ -862,11 +946,12 @@ async function main(): Promise<void> {
   );
 
   // Nível alto: Mente Escorregadia e conjuração de subclasse.
+  await setCharacterClasses(playerId, [{ classKey: 'rogue', level: 15 }]);
   const highRogue = (
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
-      body: { level: 15, subclass: 'Trapaceiro Arcano' },
+      body: { classes: [{ classKey: 'rogue', subclass: 'Trapaceiro Arcano' }] },
     })
   ).data.character;
   check(
@@ -886,13 +971,12 @@ async function main(): Promise<void> {
   );
 
   // --- Bárbaro: Fúria, contador de usos e efeitos automáticos ---------------
+  await setCharacterClasses(playerId, [{ classKey: 'barbarian', level: 9 }]);
   const barbarianSheet = (
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
       body: {
-        classKey: 'barbarian',
-        level: 9,
         attacks: [
           { id: 'p1', name: 'Machado grande', damage: '1d12+3', damageType: 'Cortante', attackBonus: 10, notes: '', finesse: false, ranged: false },
         ],
@@ -959,9 +1043,8 @@ async function main(): Promise<void> {
     JSON.stringify(longRest.classAdjustments.resources),
   );
 
-  const champion = (
-    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 20 } })
-  ).data.character;
+  await setCharacterClasses(playerId, [{ classKey: 'barbarian', level: 20 }]);
+  const champion = (await api('/api/characters/me', { token: playerToken })).data.character;
   const effectiveStrength = Math.min(champion.strength + 4, 24);
   check(
     'Campeão Primitivo soma +4 de FOR (teto 24)',
@@ -970,13 +1053,8 @@ async function main(): Promise<void> {
   );
 
   // --- Monge: Ki, Artes Marciais, Defesa sem Armadura e subclasses ----------
-  const monkSheet = (
-    await api('/api/characters/me', {
-      method: 'PATCH',
-      token: playerToken,
-      body: { classKey: 'monk', level: 9, subclass: '' },
-    })
-  ).data.character;
+  await setCharacterClasses(playerId, [{ classKey: 'monk', level: 9 }]);
+  const monkSheet = (await api('/api/characters/me', { token: playerToken })).data.character;
   check('dado de vida do Monge é d8', monkSheet.derived.hitDie === 8, String(monkSheet.derived.hitDie));
   check(
     'salvaguardas FOR e DES fixas',
@@ -1025,13 +1103,10 @@ async function main(): Promise<void> {
   );
 
   // Subclasse do Monge (Mão Aberta) e nível alto.
-  const openHand = (
-    await api('/api/characters/me', {
-      method: 'PATCH',
-      token: playerToken,
-      body: { level: 17, subclass: 'Caminho da Mão Aberta' },
-    })
-  ).data.character;
+  await setCharacterClasses(playerId, [
+    { classKey: 'monk', level: 17, subclass: 'Caminho da Mão Aberta' },
+  ]);
+  const openHand = (await api('/api/characters/me', { token: playerToken })).data.character;
   check(
     'Artes Marciais usa 1d10 no nível 17',
     openHand.classAdjustments.martialArtsDie === 10,
@@ -1048,9 +1123,10 @@ async function main(): Promise<void> {
     JSON.stringify(openHand.classAdjustments.resources),
   );
 
-  const diamondSoul = (
-    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 14 } })
-  ).data.character;
+  await setCharacterClasses(playerId, [
+    { classKey: 'monk', level: 14, subclass: 'Caminho da Mão Aberta' },
+  ]);
+  const diamondSoul = (await api('/api/characters/me', { token: playerToken })).data.character;
   check(
     'Alma de Diamante proficiência em todas as salvaguardas',
     ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'].every(
@@ -1060,13 +1136,8 @@ async function main(): Promise<void> {
   );
 
   // --- Druida: Forma Selvagem, limite de CR e magias preparadas -------------
-  const druidSheet = (
-    await api('/api/characters/me', {
-      method: 'PATCH',
-      token: playerToken,
-      body: { classKey: 'druid', level: 2, subclass: '' },
-    })
-  ).data.character;
+  await setCharacterClasses(playerId, [{ classKey: 'druid', level: 2 }]);
+  const druidSheet = (await api('/api/characters/me', { token: playerToken })).data.character;
   check('dado de vida do Druida é d8', druidSheet.derived.hitDie === 8, String(druidSheet.derived.hitDie));
   check(
     'salvaguardas INT e SAB fixas',
@@ -1093,20 +1164,20 @@ async function main(): Promise<void> {
     JSON.stringify({ prepared: druidSheet.derived.preparedSpellCount, wis: druidSheet.derived.modifiers.wisdom }),
   );
 
-  const druidHigh = (
-    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 8 } })
-  ).data.character;
+  await setCharacterClasses(playerId, [{ classKey: 'druid', level: 8 }]);
+  const druidHigh = (await api('/api/characters/me', { token: playerToken })).data.character;
   check(
     'Forma Selvagem sobe para CR 1 e libera voo no nível 8',
     druidHigh.classAdjustments.wildShapeCr === 1 && druidHigh.classAdjustments.wildShapeFlying === true,
     JSON.stringify({ cr: druidHigh.classAdjustments.wildShapeCr, fly: druidHigh.classAdjustments.wildShapeFlying }),
   );
 
+  await setCharacterClasses(playerId, [{ classKey: 'druid', level: 6 }]);
   const moonDruid = (
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
-      body: { level: 6, subclass: 'Círculo da Lua' },
+      body: { classes: [{ classKey: 'druid', subclass: 'Círculo da Lua' }] },
     })
   ).data.character;
   check(
@@ -1115,9 +1186,10 @@ async function main(): Promise<void> {
     String(moonDruid.classAdjustments.wildShapeCr),
   );
 
-  const archdruid = (
-    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 20 } })
-  ).data.character;
+  await setCharacterClasses(playerId, [
+    { classKey: 'druid', level: 20, subclass: 'Círculo da Lua' },
+  ]);
+  const archdruid = (await api('/api/characters/me', { token: playerToken })).data.character;
   check(
     'Arquidruida torna a Forma Selvagem ilimitada',
     archdruid.classAdjustments.resources.find((r: any) => r.id === 'wild-shape')?.unlimited === true,
@@ -1125,16 +1197,12 @@ async function main(): Promise<void> {
   );
 
   // --- Feiticeiro: Pontos de Feitiçaria e Linhagem Dracônica ----------------
-  await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: { classKey: 'sorcerer', level: 6 },
-  });
+  await setCharacterClasses(playerId, [{ classKey: 'sorcerer', level: 6 }]);
   const sorcererSheet = (
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
-      body: { subclass: 'Linhagem Dracônica' },
+      body: { classes: [{ classKey: 'sorcerer', subclass: 'Linhagem Dracônica' }] },
     })
   ).data.character;
   check('dado de vida do Feiticeiro é d6', sorcererSheet.derived.hitDie === 6, String(sorcererSheet.derived.hitDie));
@@ -1169,16 +1237,12 @@ async function main(): Promise<void> {
   );
 
   // --- Mago: grimório, Recuperação Arcana, Couraça Arcana e Presságio ------
-  await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: { classKey: 'wizard', level: 6 },
-  });
+  await setCharacterClasses(playerId, [{ classKey: 'wizard', level: 6 }]);
   const wizardSheet = (
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
-      body: { subclass: 'Escola de Abjuração' },
+      body: { classes: [{ classKey: 'wizard', subclass: 'Escola de Abjuração' }] },
     })
   ).data.character;
   check('dado de vida do Mago é d6', wizardSheet.derived.hitDie === 6, String(wizardSheet.derived.hitDie));
@@ -1206,7 +1270,7 @@ async function main(): Promise<void> {
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
-      body: { subclass: 'Escola de Adivinhação' },
+      body: { classes: [{ classKey: 'wizard', subclass: 'Escola de Adivinhação' }] },
     })
   ).data.character;
   check(
@@ -1215,18 +1279,20 @@ async function main(): Promise<void> {
     JSON.stringify(diviner.classAdjustments.resources),
   );
 
-  const divinerHigh = (
-    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 14 } })
-  ).data.character;
+  await setCharacterClasses(playerId, [
+    { classKey: 'wizard', level: 14, subclass: 'Escola de Adivinhação' },
+  ]);
+  const divinerHigh = (await api('/api/characters/me', { token: playerToken })).data.character;
   check(
     'Presságio Maior eleva para 3 dados no nível 14',
     divinerHigh.classAdjustments.resources.find((r: any) => r.id === 'portent')?.max === 3,
     JSON.stringify(divinerHigh.classAdjustments.resources.find((r: any) => r.id === 'portent')),
   );
 
-  const wizard20 = (
-    await api('/api/characters/me', { method: 'PATCH', token: playerToken, body: { level: 20 } })
-  ).data.character;
+  await setCharacterClasses(playerId, [
+    { classKey: 'wizard', level: 20, subclass: 'Escola de Adivinhação' },
+  ]);
+  const wizard20 = (await api('/api/characters/me', { token: playerToken })).data.character;
   check(
     'Magias Assinatura aparece no nível 20',
     wizard20.activeFeatures.some((f: any) => f.id === 'signature-spells'),
@@ -1234,15 +1300,15 @@ async function main(): Promise<void> {
   );
   check(
     'Mago tem as 8 Escolas de Magia',
-    wizard20.classDefinition?.subclasses.length === 8,
-    JSON.stringify(wizard20.classDefinition?.subclasses.map((s: any) => s.name)),
+    wizard20.classes?.[0]?.subclassNames?.length === 8,
+    JSON.stringify(wizard20.classes?.[0]?.subclassNames),
   );
 
   const evoker = (
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
-      body: { subclass: 'Escola de Evocação' },
+      body: { classes: [{ classKey: 'wizard', subclass: 'Escola de Evocação' }] },
     })
   ).data.character;
   check(
@@ -1255,13 +1321,108 @@ async function main(): Promise<void> {
     await api('/api/characters/me', {
       method: 'PATCH',
       token: playerToken,
-      body: { subclass: 'Escola de Necromancia' },
+      body: { classes: [{ classKey: 'wizard', subclass: 'Escola de Necromancia' }] },
     })
   ).data.character;
   check(
     'Necromancia concede resistência a dano necrótico no nível 10',
     necromancer.classAdjustments.resistances.includes('Necrótico'),
     JSON.stringify(necromancer.classAdjustments.resistances),
+  );
+
+  // --- Multiclasse: soma de features, magia combinada e ASI por classe ------
+  console.log('\n8.5) Multiclasse (regras combinadas)');
+
+  // Bárbaro 3 / Ladino 2: as duas classes valem ao mesmo tempo.
+  await setCharacterClasses(playerId, [
+    { classKey: 'barbarian', level: 3 },
+    { classKey: 'rogue', level: 2 },
+  ]);
+  const multiclass = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check('nível total soma as classes (3 + 2 = 5)', multiclass.level === 5, String(multiclass.level));
+  check(
+    'nome composto mostra as duas classes',
+    multiclass.className === 'Bárbaro 3 / Ladino 2',
+    String(multiclass.className),
+  );
+  check(
+    'features das duas classes coexistem',
+    multiclass.activeFeatures.some((f: any) => f.id === 'rage') &&
+      multiclass.activeFeatures.some((f: any) => f.id === 'sneak-attack'),
+    JSON.stringify(multiclass.activeFeatures.map((f: any) => f.id)),
+  );
+  check(
+    'Fúria escala com o nível de Bárbaro (3 usos no nível 3)',
+    multiclass.classAdjustments.resources.find((r: any) => r.id === 'rage')?.max === 3,
+    JSON.stringify(multiclass.classAdjustments.resources.find((r: any) => r.id === 'rage')),
+  );
+  check(
+    'Ataque Furtivo escala com o nível de Ladino (1d6 no nível 2)',
+    multiclass.derived.sneakAttack?.expression === '1d6',
+    JSON.stringify(multiclass.derived.sneakAttack),
+  );
+  check(
+    'salvaguardas fixas somam as duas classes',
+    ['strength', 'constitution', 'dexterity', 'intelligence'].every((ability: string) =>
+      multiclass.derived.lockedSaves.includes(ability),
+    ),
+    JSON.stringify(multiclass.derived.lockedSaves),
+  );
+  check(
+    'ASI/Talento são por classe (Ladino: 4/8/10/12/16/19)',
+    JSON.stringify(multiclass.classes.find((c: any) => c.classKey === 'rogue')?.asiLevels) ===
+      JSON.stringify([4, 8, 10, 12, 16, 19]),
+    JSON.stringify(multiclass.classes.map((c: any) => ({ key: c.classKey, asi: c.asiLevels }))),
+  );
+  check(
+    'XP do próximo nível vem do nível total (5 → 14000)',
+    multiclass.derived.xpForNextLevel === 14000,
+    String(multiclass.derived.xpForNextLevel),
+  );
+
+  // Magia combinada: Mago 5 (completo) + Clérigo 3 (completo) = conjurador 8.
+  await setCharacterClasses(playerId, [
+    { classKey: 'wizard', level: 5 },
+    { classKey: 'cleric', level: 3 },
+  ]);
+  const caster = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const slotsAt = (level: number): number | undefined =>
+    caster.derived.spellSlots.find((slot: any) => slot.level === level)?.max;
+  check(
+    'magia combinada usa o nível de conjurador somado (Mago 5 + Clérigo 3 = 8)',
+    slotsAt(1) === 4 && slotsAt(2) === 3 && slotsAt(3) === 3 && slotsAt(4) === 2,
+    JSON.stringify(caster.derived.spellSlots),
+  );
+
+  // Meio-conjurador arredonda para baixo: Paladino 5 = 2 níveis de conjurador.
+  await setCharacterClasses(playerId, [
+    { classKey: 'wizard', level: 3 },
+    { classKey: 'paladin', level: 5 },
+  ]);
+  const halfCaster = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'meio-conjurador conta metade do nível (Mago 3 + Paladino 5 = 5)',
+    halfCaster.derived.spellSlots.find((s: any) => s.level === 3)?.max === 2,
+    JSON.stringify(halfCaster.derived.spellSlots),
+  );
+
+  // Bruxo fica fora da soma e usa Magia de Pacto própria.
+  await setCharacterClasses(playerId, [
+    { classKey: 'wizard', level: 3 },
+    { classKey: 'warlock', level: 4 },
+  ]);
+  const pact = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'Magia de Pacto é calculada à parte (Bruxo 4: 2 espaços de 2º)',
+    pact.derived.pactSlots?.max === 2 && pact.derived.pactSlots?.slotLevel === 2,
+    JSON.stringify(pact.derived.pactSlots),
+  );
+  check(
+    'Bruxo não entra na soma dos espaços combinados (só Mago 3)',
+    pact.derived.spellSlots.find((s: any) => s.level === 1)?.max === 4 &&
+      pact.derived.spellSlots.find((s: any) => s.level === 2)?.max === 2 &&
+      !pact.derived.spellSlots.some((s: any) => s.level === 3),
+    JSON.stringify(pact.derived.spellSlots),
   );
 
   // --- Itens, ícones e avatar ------------------------------------------------
@@ -1700,13 +1861,23 @@ async function main(): Promise<void> {
   const masterEdit = await api(`/api/characters/${playerSheetId}`, {
     method: 'PATCH',
     token: masterToken,
-    body: { notes: 'ajustado pelo mestre', level: 6, strength: 10 },
+    body: { notes: 'ajustado pelo mestre', strength: 10 },
   });
   check('mestre edita a ficha do jogador (200)', masterEdit.status === 200, JSON.stringify(masterEdit.data));
   check(
     'resposta recalcula os valores derivados',
-    masterEdit.data.character?.level === 6 && masterEdit.data.character?.derived?.modifiers?.strength === 0,
-    `nível ${masterEdit.data.character?.level}, mod FOR ${masterEdit.data.character?.derived?.modifiers?.strength}`,
+    masterEdit.data.character?.derived?.modifiers?.strength === 0,
+    `mod FOR ${masterEdit.data.character?.derived?.modifiers?.strength}`,
+  );
+  check(
+    'edição do mestre NÃO muda o nível (400 se tentar)',
+    (
+      await api(`/api/characters/${playerSheetId}`, {
+        method: 'PATCH',
+        token: masterToken,
+        body: { level: 3 },
+      })
+    ).status === 400,
   );
 
   const masterEditPayload = await masterEditEvent.catch(() => null);
@@ -1736,6 +1907,80 @@ async function main(): Promise<void> {
     ownEditPayload !== null && ownEditPayload?.editedBy === undefined,
     `recebido: ${ownEditPayload?.editedBy}`,
   );
+
+  // --- 11.5 Level Up controlado pelo mestre ---------------------------------
+  console.log('\n11.5) Level Up liberado pelo mestre');
+
+  const initialConfig = await api('/api/game', { token: playerToken });
+  check('configuração da mesa é acessível ao jogador (200)', initialConfig.status === 200);
+  check(
+    'jogador NÃO controla o Level Up (403)',
+    (
+      await api('/api/game/level-up', {
+        method: 'POST',
+        token: playerToken,
+        body: { unlocked: true },
+      })
+    ).status === 403,
+  );
+
+  const releaseBefore = initialConfig.data?.config?.levelUpRelease ?? 0;
+  const configEvent = waitFor<any>(playerSocket, 'game:config');
+  const unlocked = await api('/api/game/level-up', {
+    method: 'POST',
+    token: masterToken,
+    body: { unlocked: true },
+  });
+  check(
+    'mestre libera o Level Up (200)',
+    unlocked.status === 200 && unlocked.data?.config?.levelUpUnlocked === true,
+    JSON.stringify(unlocked.data),
+  );
+  check(
+    'cada liberação incrementa o contador',
+    unlocked.data?.config?.levelUpRelease === releaseBefore + 1,
+    JSON.stringify({ before: releaseBefore, after: unlocked.data?.config?.levelUpRelease }),
+  );
+  check('jogador recebe a liberação em tempo real', (await configEvent.catch(() => null)) !== null);
+
+  const unlockedAgain = await api('/api/game/level-up', {
+    method: 'POST',
+    token: masterToken,
+    body: { unlocked: true },
+  });
+  check(
+    'liberar de novo sem bloquear NÃO gera nova liberação',
+    unlockedAgain.data?.config?.levelUpRelease === releaseBefore + 1,
+    JSON.stringify(unlockedAgain.data?.config),
+  );
+
+  await api('/api/game/level-up', {
+    method: 'POST',
+    token: masterToken,
+    body: { unlocked: false },
+  });
+  const relocked = await api('/api/game/level-up', {
+    method: 'POST',
+    token: masterToken,
+    body: { unlocked: true },
+  });
+  check(
+    'desligar e ligar de novo gera nova liberação',
+    relocked.data?.config?.levelUpRelease === releaseBefore + 2,
+    JSON.stringify(relocked.data?.config),
+  );
+  check(
+    'ficha expõe a última liberação usada (0 para esta ficha nova)',
+    (await api('/api/characters/me', { token: playerToken })).data.character
+      ?.lastLevelUpRelease === 0,
+  );
+
+  // Devolve a mesa ao estado inicial (desligado).
+  await api('/api/game/level-up', {
+    method: 'POST',
+    token: masterToken,
+    body: { unlocked: false },
+  });
 
   // --- 12. Presença ao desconectar ------------------------------------------
   console.log('\n12) Presença ao desconectar');

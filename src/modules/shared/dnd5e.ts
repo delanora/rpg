@@ -106,6 +106,21 @@ export function formatModifier(value: number): string {
 }
 
 /**
+ * XP acumulado necessário para alcançar cada nível (PHB 2014).
+ * O índice é o nível atual: `XP_THRESHOLDS[1]` = XP para chegar ao nível 2.
+ */
+const XP_THRESHOLDS: readonly number[] = [
+  0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000,
+  165000, 195000, 225000, 265000, 305000, 355000,
+];
+
+/** XP necessário para alcançar o próximo nível (null no nível 20). */
+export function xpForNextLevel(level: number): number | null {
+  const clamped = Math.min(20, Math.max(1, Math.floor(level)));
+  return clamped >= 20 ? null : (XP_THRESHOLDS[clamped] ?? null);
+}
+
+/**
  * Capacidade de carga: Força × 7,5 (em quilogramas).
  *
  * É a conversão usada no livro em português: 2 lb = 1 kg, então as 15 lb por
@@ -245,6 +260,12 @@ export interface DerivedStats {
   saves: SaveDetail[];
   skills: Record<string, SkillDetail>;
   spellcasting: { ability: AbilityKey; saveDC: number; attackBonus: number } | null;
+  /** Espaços de magia do conjurador multiclasse (níveis com espaços > 0). */
+  spellSlots: { level: number; max: number }[];
+  /** Magia de Pacto do bruxo, calculada à parte (null quando não há bruxo). */
+  pactSlots: { max: number; slotLevel: number } | null;
+  /** XP necessário para o próximo nível (null no nível 20). */
+  xpForNextLevel: number | null;
 }
 
 export interface DerivedInput {
@@ -268,6 +289,10 @@ export interface DerivedInput {
   sneakAttack?: { dice: number; expression: string } | null;
   /** Total de espaços de Expertise. */
   expertiseSlots?: number;
+  /** Espaços de magia já resolvidos (regra de multiclasse). */
+  spellSlots?: { level: number; max: number }[];
+  /** Espaços de Magia de Pacto do bruxo, quando houver. */
+  pactSlots?: { max: number; slotLevel: number } | null;
   /**
    * Defesa sem Armadura: atributo somado à CA junto de Destreza (Bárbaro usa
    * Constituição; Monge usa Sabedoria). Nulo/ausente = só Destreza.
@@ -349,6 +374,9 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     totalWeight: Math.round(totalWeight * 100) / 100,
     saves,
     skills,
+    spellSlots: input.spellSlots ?? [],
+    pactSlots: input.pactSlots ?? null,
+    xpForNextLevel: xpForNextLevel(input.level),
     spellcasting:
       spellcastingAbility === null
         ? null

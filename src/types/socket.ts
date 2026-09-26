@@ -11,6 +11,7 @@ import type {
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
   DiceRolledPayload,
+  GameConfigPayload,
   PresentationClosedPayload,
   PresentationShownPayload,
   PresenceUpdatePayload,
@@ -42,6 +43,9 @@ export interface ServerToClientEvents {
   // Apresentação de imagens
   'presentation:shown': (payload: PresentationShownPayload) => void;
   'presentation:closed': (payload: PresentationClosedPayload) => void;
+
+  // Configuração da mesa
+  'game:config': (payload: GameConfigPayload) => void;
 
   // Combate
   'combat:started': (payload: CombatStartedPayload) => void;

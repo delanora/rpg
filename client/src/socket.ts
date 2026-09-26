@@ -20,6 +20,7 @@ import type {
   CombatTurnPayload,
   CombatUpdatedPayload,
   DiceRolledPayload,
+  GameConfigPayload,
   PresentationClosedPayload,
   PresentationShownPayload,
   PresencePayload,
@@ -48,6 +49,7 @@ export interface ServerToClientEvents {
   'item:deleted': (payload: ItemDeletedPayload) => void;
   'presentation:shown': (payload: PresentationShownPayload) => void;
   'presentation:closed': (payload: PresentationClosedPayload) => void;
+  'game:config': (payload: GameConfigPayload) => void;
   'combat:started': (payload: CombatStartedPayload) => void;
   'combat:updated': (payload: CombatUpdatedPayload) => void;
   'combat:turn': (payload: CombatTurnPayload) => void;

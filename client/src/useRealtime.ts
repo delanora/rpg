@@ -10,6 +10,7 @@ import type {
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
   DiceRolledPayload,
+  GameConfigPayload,
   ItemCreatedPayload,
   ItemDeletedPayload,
   ItemUpdatedPayload,
@@ -49,6 +50,7 @@ export interface RealtimeHandlers {
   onAttackResolved?: (payload: AttackResolvedPayload) => void;
   onPresentationShown?: (payload: PresentationShownPayload) => void;
   onPresentationClosed?: (payload: PresentationClosedPayload) => void;
+  onGameConfig?: (payload: GameConfigPayload) => void;
 }
 
 /**
@@ -98,6 +100,8 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('presentation:closed', (payload) =>
       handlersRef.current.onPresentationClosed?.(payload),
     );
+
+    socket.on('game:config', (payload) => handlersRef.current.onGameConfig?.(payload));
 
     socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
     socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));

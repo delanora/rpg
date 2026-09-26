@@ -7,8 +7,15 @@ import { SheetView } from '../components/SheetView';
 import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
+import { fetchGameConfig } from '../gameApi';
 import { closePresentation } from '../presentationApi';
-import type { Character, CharacterPatch, Presentation, SessionUser } from '../types';
+import type {
+  Character,
+  CharacterPatch,
+  GameConfig,
+  Presentation,
+  SessionUser,
+} from '../types';
 import { useRealtime } from '../useRealtime';
 
 export function SheetPage({ user }: { user: SessionUser }) {
@@ -19,6 +26,9 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const [presentation, setPresentation] = useState<Presentation | null>(null);
   // Aviso de que o mestre mexeu na ficha (com quem e quando).
   const [masterNotice, setMasterNotice] = useState<string | null>(null);
+  // Configuração da mesa: controla se o botão Level Up está habilitado.
+  const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
+  const [levelUpOpen, setLevelUpOpen] = useState(false);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -44,6 +54,9 @@ export function SheetPage({ user }: { user: SessionUser }) {
     // Imagem que o mestre está mostrando para a mesa.
     onPresentationShown: (payload) => setPresentation(payload.presentation),
     onPresentationClosed: () => setPresentation(null),
+
+    // O mestre liberou/bloqueou o Level Up: o botão reage na hora.
+    onGameConfig: (payload) => setGameConfig(payload.config),
   });
 
   // Carrega a ficha do usuário e o eventual combate em andamento.
@@ -53,11 +66,13 @@ export function SheetPage({ user }: { user: SessionUser }) {
     Promise.all([
       api<{ character: Character | null }>('/api/characters/me'),
       fetchActiveCombat().catch(() => null),
+      fetchGameConfig().catch(() => null),
     ])
-      .then(([characterResult, activeCombat]) => {
+      .then(([characterResult, activeCombat, config]) => {
         if (!active) return;
         setCharacter(characterResult.character);
         combatState.setCombat(activeCombat);
+        setGameConfig(config);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : 'Não foi possível carregar a ficha.');
@@ -77,7 +92,9 @@ export function SheetPage({ user }: { user: SessionUser }) {
    * A resposta do servidor é a fonte de verdade (traz os valores derivados).
    */
   const update = useCallback(async (patch: CharacterPatch) => {
-    setCharacter((prev) => (prev ? { ...prev, ...patch } : prev));
+    // `classes` chega no formato do PATCH (sem nível); mantém a lista atual até
+    // a resposta do servidor trazer o DTO completo.
+    setCharacter((prev) => (prev ? { ...prev, ...patch, classes: prev.classes } : prev));
 
     try {
       const { character: saved } = await api<{ character: Character }>('/api/characters/me', {
@@ -106,6 +123,21 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const closePresentedImage = useCallback(() => {
     void closePresentation().catch(() => setPresentation(null));
   }, []);
+
+  /** O jogador só pode subir de nível se o mestre liberou e ele ainda não usou. */
+  const levelUpAvailable =
+    character !== null &&
+    gameConfig !== null &&
+    gameConfig.levelUpUnlocked &&
+    character.lastLevelUpRelease < gameConfig.levelUpRelease;
+
+  const levelUpHint = !gameConfig
+    ? ''
+    : !gameConfig.levelUpUnlocked
+      ? 'O mestre ainda não liberou o Level Up nesta mesa.'
+      : levelUpAvailable
+        ? 'O mestre liberou o Level Up!'
+        : 'Você já usou esta liberação. Aguarde o mestre liberar de novo.';
 
   const createSheet = useCallback(async () => {
     setBusy(true);
@@ -195,7 +227,37 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 </button>
               </div>
             ) : (
-              <SheetView character={character} update={update} />
+              <>
+                <div className="levelup-bar">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={!levelUpAvailable}
+                    onClick={() => setLevelUpOpen(true)}
+                  >
+                    <Icon name="sparkle" size={16} /> Level Up
+                  </button>
+                  {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
+                </div>
+
+                {levelUpOpen ? (
+                  <div className="banner banner-info">
+                    <span className="banner-line">
+                      <Icon name="scroll" size={15} /> O assistente de Level Up entra na próxima
+                      etapa.
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => setLevelUpOpen(false)}
+                    >
+                      fechar
+                    </button>
+                  </div>
+                ) : null}
+
+                <SheetView character={character} update={update} />
+              </>
             )}
           </>
         )}
