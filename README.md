@@ -1,1 +1,375 @@
-RPG
+# 🐉 Grimório Digital — Sistema de Mesa para D&D 5e
+
+Sistema web multiusuário para mesas de RPG de **D&D 5ª Edição**, com fichas de personagem dinâmicas, painel exclusivo do mestre e um sistema de combate com iniciativa automática e sincronização em tempo real entre todos os jogadores.
+
+---
+
+## ✨ Visão geral
+
+Este projeto foi pensado para uma mesa fixa de RPG, onde:
+
+- **Jogadores** criam e gerenciam a própria ficha de personagem, com todos os cálculos de D&D 5e feitos automaticamente.
+- O **Mestre** enxerga todas as fichas dos jogadores, cadastra criaturas/NPCs e comanda o combate através de um painel exclusivo.
+- Tudo acontece **em tempo real**: qualquer alteração (HP, dano, turno de combate) aparece instantaneamente para quem precisa ver, sem recarregar a página.
+
+O visual do sistema segue um tema de **fantasia medieval / pergaminho antigo**, com o objetivo de parecer um grimório físico e não uma planilha genérica.
+
+---
+
+## 🧩 Papéis de usuário
+
+| Papel        | Permissões |
+|--------------|------------|
+| **Jogador**  | Cria e edita a própria ficha (atributos, inventário, magias, ataques). Só enxerga a própria ficha. |
+| **Mestre**   | Enxerga todas as fichas dos jogadores (somente leitura), cadastra e gerencia criaturas/NPCs, controla o modo de combate e aplica dano/cura manualmente quando necessário. |
+
+---
+
+## ⚔️ Sistema de combate
+
+1. O mestre aciona o botão **"COMBATE"**, iniciando o modo de combate para todos os conectados.
+2. Cada jogador rola a própria iniciativa (1d20 + modificador de Destreza, calculado automaticamente).
+3. O mestre rola iniciativa para as criaturas/NPCs adicionadas ao combate.
+4. O sistema monta a **ordem dos turnos automaticamente**, do maior para o menor resultado.
+5. Um indicador visual destaca de quem é o turno atual; o mestre avança os turnos manualmente.
+6. Ataques rolados pelos jogadores aplicam **dano automaticamente** no HP do alvo (personagem ou criatura), refletindo em tempo real para todos os envolvidos.
+7. O mestre pode ajustar HP manualmente a qualquer momento e encerrar o combate quando quiser.
+
+Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada jogador.
+
+---
+
+## 🛠️ Stack tecnológica
+
+| Camada | Escolha | Por quê |
+|--------|---------|---------|
+| Runtime | **Node.js 20+** | Stack já definida. |
+| Linguagem | **TypeScript** (ESM) | Segurança de tipos em fichas, magias e combate; o Prisma gera os tipos do banco automaticamente. |
+| Framework HTTP | **Express 5** | Maior ecossistema e documentação — decisivo para manutenção de longo prazo. A carga (4–6 usuários) não exige Fastify. |
+| Banco de dados | **PostgreSQL** | Stack já definida. |
+| ORM | **Prisma** | Migrations versionadas e client tipado gerado do schema. |
+| Senhas | **bcryptjs** | Hash com custo 12; puro JS, sem build nativo (facilita a hospedagem). |
+| Autenticação | **JWT** (`jsonwebtoken`) | Token assinado, enviado no header HTTP e no handshake do WebSocket. |
+| Validação | **Zod** | Valida todo payload de entrada (env, cadastro, login, eventos). |
+| Tempo real | **Socket.io** | Salas (`rooms`), reconexão automática e entrega garantida de eventos — essenciais para turnos e HP sincronizados. |
+| Frontend | **React 19 + Vite + TypeScript** | Edição inline exige interface reativa; Vite dá dev server rápido com proxy para a API. O tema visual (Etapa 5) é aplicado por cima. |
+
+Camada de tempo real: HTTP e WebSocket compartilham a **mesma porta** (`http.Server` do Express + Socket.io), o que simplifica a hospedagem.
+
+### Estrutura de pastas
+
+```
+src/
+├── config/         # env validado (Zod) e singleton do PrismaClient
+├── http/
+│   ├── app.ts      # monta o Express (sem listen)
+│   └── routes/     # rotas da API, agregadas sob /api
+├── lib/            # utilitários puros (senha/bcrypt, JWT)
+├── middlewares/    # tratamento central de erros
+├── modules/        # domínio, um diretório por área
+│   ├── auth/       # cadastro, login, middlewares de autenticação/autorização
+│   ├── characters/ # ficha: regras de D&D 5e, validação e rotas
+│   └── users/      # listagem de usuários (mestre)
+├── realtime/       # Socket.io: auth, salas, presença e broadcast
+├── scripts/        # utilitários (criar mestre, smoke test)
+├── types/          # tipos compartilhados (Express e Socket.io)
+└── index.ts        # bootstrap + graceful shutdown
+
+prisma/
+├── schema.prisma   # models (User, Character) + datasource PostgreSQL
+└── migrations/     # migrations versionadas
+
+client/             # app React (Vite + TypeScript)
+├── index.html
+├── vite.config.ts  # proxy de /api e /socket.io para o backend em dev
+└── src/
+    ├── components/ # InlineField, Section, AuthPage e seções da ficha
+    ├── pages/      # SheetPage (orquestra a ficha e a sincronização)
+    ├── api.ts      # cliente HTTP com token
+    ├── auth.tsx    # contexto de autenticação
+    └── socket.ts   # conexão Socket.io
+```
+
+---
+
+## 🎨 Identidade visual
+
+- Tema: fantasia medieval / pergaminho antigo
+- Paleta: dourado, marrom-couro, vermelho vinho, preto entintado
+- Tipografia serifada/medieval nos títulos (ex: Cinzel, MedievalSharp)
+- Ficha de personagem estruturada como "páginas" de um grimório, com abas e transições suaves
+- Painel do mestre com identidade visual diferenciada ("de comando")
+- Modo de combate com transição visual marcante e indicador de turno em destaque
+- Totalmente responsivo (desktop, tablet e celular)
+- Modo claro (pergaminho) como padrão, com modo escuro alternável ("grimório amaldiçoado")
+
+---
+
+## 📋 Funcionalidades da ficha de personagem
+
+- Nome, raça, classe, nível, antecedente, alinhamento, experiência
+- Atributos (Força, Destreza, Constituição, Inteligência, Sabedoria, Carisma) com modificadores automáticos
+- HP (atual/máximo/temporário), Classe de Armadura, Iniciativa, Deslocamento
+- Perícias e salvaguardas com proficiência e cálculo automático de bônus
+- Inventário de itens e equipamentos
+- Magias por nível, com espaços de magia (spell slots) controláveis
+- Ataques e armas com dano e bônus de acerto
+- Características de raça/classe/antecedente e anotações livres
+
+---
+
+## 🗺️ Roadmap de construção
+
+O projeto foi planejado em etapas sequenciais:
+
+- [x] **Etapa 0** — Definição de stack e estrutura inicial do projeto
+- [x] **Etapa 1** — Autenticação, papéis de usuário e canais de tempo real
+- [x] **Etapa 2** — Ficha de personagem completa (jogador)
+- [ ] **Etapa 3** — Painel do mestre e cadastro de criaturas
+- [ ] **Etapa 4** — Sistema de combate com iniciativa automática
+- [ ] **Etapa 5** — Design visual (fantasia medieval / pergaminho)
+- [ ] **Etapa 6** — Otimização e performance
+
+---
+
+## 🚀 Como rodar
+
+Requisitos: **Node.js 20+** e um **PostgreSQL** acessível.
+
+```bash
+# 1. Instalar dependências
+npm install
+
+# 2. Configurar variáveis de ambiente
+cp .env.example .env   # edite DATABASE_URL conforme seu PostgreSQL
+
+# 3. Gerar o client do Prisma
+npm run prisma:generate
+
+# 4. Iniciar em modo desenvolvimento (hot reload)
+npm run dev
+```
+
+O servidor sobe em `http://localhost:3000`. Verifique com:
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
+
+### Comandos disponíveis
+
+| Comando | Descrição |
+|---------|-----------|
+| `npm run dev` | Servidor em modo desenvolvimento (`tsx watch`). |
+| `npm run build` | Compila o TypeScript para `dist/`. |
+| `npm start` | Executa a build compilada (produção). |
+| `npm run typecheck` | Checagem de tipos sem gerar arquivos. |
+| `npm run prisma:migrate` | Cria/aplica migrations em desenvolvimento. |
+| `npm run prisma:deploy` | Aplica migrations em produção. |
+| `npm run prisma:studio` | Interface visual do banco. |
+| `npm run create-master` | Cria/promove a conta de Mestre (CLI). |
+| `npm run smoke` | Smoke test ponta a ponta (exige o servidor rodando). |
+| `npm run setup` | Instala as dependências do backend e do frontend. |
+| `npm run dev:client` | Frontend em modo desenvolvimento (`http://localhost:5173`). |
+| `npm run build:client` | Compila o frontend para `client/dist/`. |
+
+### Ambiente local já configurado (esta máquina)
+
+O PostgreSQL 17 foi instalado e configurado localmente, então o projeto roda direto por aqui:
+
+| Item | Valor |
+|------|-------|
+| Cluster | `17/main` (porta `5432`, habilitado no boot via systemd) |
+| Banco | `grimorio` |
+| Usuário / senha | `postgres` / `postgres` |
+| Servidor | `http://localhost:3000` (`npm run dev`) |
+
+Gerenciando o banco:
+
+```bash
+# Ver status do cluster
+pg_lsclusters
+
+# Iniciar o PostgreSQL (sobe sozinho no boot, mas se precisar)
+sudo pg_ctlcluster 17 main start
+
+# Parar o PostgreSQL
+sudo pg_ctlcluster 17 main stop
+```
+
+> Em caso de reinício da máquina, o PostgreSQL volta sozinho. Basta rodar `npm run dev` para subir o servidor.
+
+### Hospedagem
+
+A aplicação é um único serviço Node que expõe HTTP e WebSocket na mesma porta — basta definir `PORT`, `DATABASE_URL`, `CORS_ORIGIN`, `JWT_SECRET` e `MASTER_INVITE_CODE` no provedor e rodar `npm run prisma:deploy && npm start`. O health check em `/api/health` serve para o monitoramento do provedor.
+
+---
+
+## 🔐 Etapa 1 — Autenticação, papéis e tempo real
+
+### Papéis
+
+| Papel | Como é criado | O que pode fazer |
+|-------|---------------|------------------|
+| `PLAYER` | Cadastro normal (`POST /api/auth/register`). | Gerencia apenas a própria ficha; recebe eventos da própria ficha. |
+| `MASTER` | Cadastro com `masterInviteCode` válido, ou CLI `npm run create-master`. | Lista todos os usuários, enxerga todas as fichas e entra na sala dos mestres. |
+
+O `masterInviteCode` é comparado com `MASTER_INVITE_CODE`. Um código errado devolve **403**; sem informar código, o cadastro vira `PLAYER`.
+
+### Criando o primeiro mestre
+
+```bash
+npm run create-master -- --username mestre --password "uma-senha-forte" --name "Seu Nome"
+```
+
+(Pode rodar de novo depois: a conta é atualizada, o que também serve para trocar a senha.)
+
+### Endpoints
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `POST` | `/api/auth/register` | público | Cria conta; devolve `{ token, user }`. |
+| `POST` | `/api/auth/login` | público | Valida credenciais; devolve `{ token, user }`. |
+| `GET` | `/api/auth/me` | autenticado | Dados do usuário do token. |
+| `GET` | `/api/users` | **mestre** | Lista todos os usuários da mesa. |
+| `GET` | `/api/health` | público | Status do servidor e do banco. |
+
+Autenticação HTTP: header `Authorization: Bearer <token>`. Cadastro e login têm *rate limit* de 30 tentativas por 15 minutos por IP.
+
+### Contrato de tempo real
+
+A conexão WebSocket exige o mesmo token:
+
+```js
+import { io } from 'socket.io-client';
+const socket = io('http://SEU_IP:3000', { auth: { token } });
+```
+
+O servidor coloca cada conexão automaticamente nas salas:
+
+| Sala | Quem entra | Uso |
+|------|-----------|-----|
+| `table:main` | todos | Eventos gerais da mesa e presença. |
+| `user:<userId>` | as sessões do próprio usuário | Eventos das fichas dele (sincroniza abas). |
+| `role:masters` | somente `MASTER` | Painel de controle; recebe alterações de todas as fichas. |
+
+**Eventos (servidor → cliente)**
+
+| Evento | Destino | Conteúdo |
+|--------|---------|----------|
+| `connection:ready` | o próprio socket | `socketId`, `connectedAt`, `user`. |
+| `presence:update` | mesa | Lista de quem está online. |
+| `sheet:updated` | mestres + autor | Alteração de ficha, com autor carimbado pelo servidor. |
+| `app:error` | o socket que errou | Mensagem de payload inválido, etc. |
+
+**Eventos (cliente → servidor)**
+
+| Evento | Payload | Efeito |
+|--------|---------|--------|
+| `sheet:update` | `{ characterId?, changes }` | Retransmite para os mestres e para as outras abas do autor. |
+| `table:join` / `table:leave` | `tableId?` | Entra/sai da sala da mesa. |
+
+> **Segurança:** `userId`/`username` **não** vêm do cliente — são carimbados a partir do socket autenticado, então um jogador não consegue se passar por outro. Na Etapa 2 o `characterId` também será validado contra o dono da ficha.
+
+### Acesso por IP (fora da máquina)
+
+O servidor escuta em todas as interfaces (`0.0.0.0:3000`), então já é acessível pela rede:
+
+```bash
+# Descobrir o IP da máquina
+hostname -I
+
+# Testar de fora
+curl http://SEU_IP:3000/api/health
+```
+
+Para acesso pela internet, libere a porta no firewall e, se a máquina estiver atrás de roteador, faça o encaminhamento da porta 3000. Nesse cenário, defina `CORS_ORIGIN` com o endereço do frontend (em vez de `*`) antes de expor o sistema.
+
+---
+
+## 📜 Etapa 2 — Ficha de personagem
+
+### Como rodar (backend + frontend)
+
+Em **dois terminais**:
+
+```bash
+# terminal 1 — API + WebSocket (porta 3000)
+npm run dev
+
+# terminal 2 — interface (porta 5173, com proxy para a API)
+npm run dev:client
+```
+
+Abra `http://localhost:5173`. Para publicar numa única porta (acesso por IP), use o build:
+
+```bash
+npm run build && npm run build:client && npm start
+# agora tudo é servido em http://SEU_IP:3000
+```
+
+### Modelagem da ficha
+
+Modelo **híbrido**: campos simples e muito consultados em colunas, coleções maiores em **JSONB** validado por Zod.
+
+| Tipo | Campos |
+|------|--------|
+| Colunas | `name`, `race`, `className`, `level`, `background`, `alignment`, `experience`, os 6 atributos, `hpCurrent/hpMax/hpTemp`, `armorClass`, `initiativeBonus`, `speed`, `notes`, `version` |
+| JSONB | `skills` (18 perícias), `saves`, `inventory`, `spells`, `attacks`, `features` |
+
+Quando uma coleção é enviada no PATCH, ela **substitui integralmente** o valor anterior — sem merge profundo, o que torna a edição inline previsível.
+
+Um usuário tem **uma ficha** (`userId` único), o que garante por construção que ele só pode ler e editar a própria.
+
+### Regras de D&D 5e calculadas no servidor
+
+Implementadas em `src/modules/characters/dnd5e.ts` e devolvidas em `derived` (nunca gravadas):
+
+- **Modificador de atributo:** `floor((valor − 10) / 2)`
+- **Bônus de proficiência** por nível: +2 (1–4), +3 (5–8), +4 (9–12), +5 (13–16), +6 (17–20)
+- **Iniciativa:** modificador de Destreza + bônus avulso
+- **Perícias:** modificador do atributo + proficiência (especialização dobra o bônus)
+- **Salvaguardas:** modificador + proficiência
+- **Percepção passiva:** `10 + bônus de Percepção`
+- **CD de magia:** `8 + proficiência + mod. do atributo de conjuração` (por classe); **ataque mágico:** proficiência + mod.
+- **Carga:** Força × 15 lb; peso total somado do inventário
+- **CA sugerida** sem armadura: `10 + mod. Destreza` (a CA da ficha é manual, pois armaduras ainda não são modeladas)
+
+### Endpoints
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/characters/me` | autenticado | Própria ficha (ou `null`). |
+| `POST` | `/api/characters/me` | autenticado | Cria a própria ficha (409 se já existir). |
+| `PATCH` | `/api/characters/me` | autenticado | Edição inline: aceita qualquer subconjunto de campos. |
+| `GET` | `/api/characters` | **mestre** | Todas as fichas da mesa (base do painel da Etapa 3). |
+
+O autor vem sempre do token. Não existe rota que receba um `userId` — logo, não há como acessar a ficha de outra pessoa.
+
+### Sincronização em tempo real
+
+A escrita é **HTTP** (`PATCH`), que persiste e então publica `sheet:updated` pelo WebSocket — evitando dois caminhos de gravação divergentes. O evento vai para a sala dos mestres **e** para as sessões do autor (sincroniza abas).
+
+Cada alteração incrementa `version`; o frontend só aceita eventos com versão igual ou maior, o que evita respostas fora de ordem. O payload traz tanto o `changes` enviado quanto a `character` completa já calculada.
+
+### Edição inline
+
+Nenhum formulário abre em outra tela: clicar no valor transforma o campo em edição; **Enter** ou sair do campo salva, **Esc** cancela. A alteração aparece na hora (otimista) e é confirmada pela resposta do servidor, que é a fonte de verdade dos valores derivados.
+
+Seções da ficha: Identidade, Atributos, Vida e Defesa, Perícias e Salvaguardas, Inventário, Magias, Ataques, Características e Anotações/História.
+
+---
+
+## 📌 Escopo
+
+- Sistema pensado para **uma única mesa fixa** (sem suporte a múltiplas campanhas/salas por enquanto)
+- Sem chat integrado (uso de Discord ou similar à parte)
+- Sistema de regras: **D&D 5ª Edição**
+
+---
+
+## 📄 Licença
+
+Definir conforme a necessidade do projeto (uso pessoal/privado por padrão).

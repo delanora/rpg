@@ -1,0 +1,49 @@
+{
+  "name": "grimorio-digital",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sistema web multiusuário para mesas de D&D 5e com fichas, painel do mestre e combate em tempo real.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "db:push": "prisma db push",
+    "create-master": "tsx src/scripts/create-master.ts",
+    "smoke": "tsx src/scripts/smoke-realtime.ts",
+    "setup": "npm install && npm --prefix client install",
+    "dev:client": "npm --prefix client run dev",
+    "build:client": "npm --prefix client run build",
+    "typecheck:client": "npm --prefix client run typecheck"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.0.0",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "socket.io": "^4.8.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.14.0",
+    "prisma": "^6.0.0",
+    "socket.io-client": "^4.8.4",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

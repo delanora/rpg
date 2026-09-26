@@ -1,0 +1,99 @@
+// Schema do Prisma — Grimório Digital
+// Documentação: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Etapa 1 — Usuários e autenticação
+// -----------------------------------------------------------------------------
+
+/// Papel do usuário na mesa.
+/// - PLAYER: cria e gerencia apenas a própria ficha.
+/// - MASTER: enxerga todas as fichas e tem o painel de controle.
+enum Role {
+  PLAYER
+  MASTER
+}
+
+model User {
+  id           String     @id @default(cuid())
+  username     String     @unique
+  displayName  String
+  passwordHash String
+  role         Role       @default(PLAYER)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  character    Character?
+
+  @@index([role])
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// Etapa 2 — Ficha de personagem
+//
+// Modelagem híbrida: campos simples e muito consultados ficam em colunas
+// (nome, nível, atributos, HP, CA) e as coleções maiores ficam em JSONB,
+// validadas por Zod na aplicação. Isso deixa a edição inline e a sincronização
+// em tempo real simples, sem dezenas de tabelas auxiliares.
+// -----------------------------------------------------------------------------
+
+model Character {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Identidade
+  name       String @default("Novo Personagem")
+  race       String @default("")
+  className  String @default("")
+  level      Int    @default(1)
+  background String @default("")
+  alignment  String @default("")
+  experience Int    @default(0)
+
+  // Atributos (1 a 30)
+  strength     Int @default(10)
+  dexterity    Int @default(10)
+  constitution Int @default(10)
+  intelligence Int @default(10)
+  wisdom       Int @default(10)
+  charisma     Int @default(10)
+
+  // Pontos de vida e defesa
+  hpCurrent       Int @default(1)
+  hpMax           Int @default(1)
+  hpTemp          Int @default(0)
+  armorClass      Int @default(10)
+  initiativeBonus Int @default(0)
+  speed           Int @default(30)
+
+  // Coleções (JSONB) — ver src/modules/characters/characters.schema.ts
+  skills    Json @default("{}") //  { [skill]: { proficient, expertise } }
+  saves     Json @default("{}") //  { [ability]: boolean }
+  inventory Json @default("[]") //  [{ id, name, description, quantity, weight, equipped }]
+  spells    Json @default("{}") //  { list: [...], slots: { "1": { max, used } } }
+  attacks   Json @default("[]") //  [{ id, name, damage, damageType, attackBonus, notes }]
+  features  Json @default("[]") //  [{ id, name, source, description }]
+  notes     String @default("")
+
+  /// Incrementado a cada alteração; ajuda a ordenar eventos em tempo real.
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("characters")
+}
+
+// -----------------------------------------------------------------------------
+// Próximas etapas:
+//   Etapa 3 — Creature / NPC
+//   Etapa 4 — Combat, Combatant, InitiativeOrder, Turn
+// -----------------------------------------------------------------------------

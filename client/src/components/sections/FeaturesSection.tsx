@@ -1,0 +1,91 @@
+import { FEATURE_SOURCES, FEATURE_SOURCE_LABELS } from '../../dnd';
+import type { Feature, FeatureSource } from '../../types';
+import { newId } from '../../utils';
+import { InlineField } from '../InlineField';
+import { Section } from '../Section';
+import type { SheetSectionProps } from './common';
+
+export function FeaturesSection({ character, update }: SheetSectionProps) {
+  const features = character.features;
+
+  function patchFeature(id: string, patch: Partial<Feature>): void {
+    update({
+      features: features.map((feature) => (feature.id === id ? { ...feature, ...patch } : feature)),
+    });
+  }
+
+  function addFeature(): void {
+    update({
+      features: [
+        ...features,
+        { id: newId(), name: 'Nova característica', source: 'class', description: '' },
+      ],
+    });
+  }
+
+  function removeFeature(id: string): void {
+    update({ features: features.filter((feature) => feature.id !== id) });
+  }
+
+  const sourceLabels = FEATURE_SOURCES.map((source) => FEATURE_SOURCE_LABELS[source]);
+
+  function sourceFromLabel(label: string): FeatureSource {
+    const found = FEATURE_SOURCES.find((source) => FEATURE_SOURCE_LABELS[source] === label);
+    return found ?? 'other';
+  }
+
+  return (
+    <Section
+      title="Características"
+      subtitle="Traços de raça, classe, antecedente e talentos"
+      actions={
+        <button type="button" className="btn btn-small" onClick={addFeature}>
+          + característica
+        </button>
+      }
+    >
+      {features.length === 0 ? (
+        <p className="empty-hint">Nenhuma característica cadastrada.</p>
+      ) : (
+        <div className="feature-list">
+          {features.map((feature) => (
+            <article className="feature-card" key={feature.id}>
+              <div className="feature-head">
+                <InlineField
+                  value={feature.name}
+                  ariaLabel="Nome da característica"
+                  onCommit={(value) => {
+                    const name = value.trim();
+                    if (name) patchFeature(feature.id, { name });
+                  }}
+                />
+                <InlineField
+                  value={FEATURE_SOURCE_LABELS[feature.source]}
+                  mode="select"
+                  options={sourceLabels}
+                  ariaLabel="Origem da característica"
+                  onCommit={(value) => patchFeature(feature.id, { source: sourceFromLabel(value) })}
+                />
+                <button
+                  type="button"
+                  className="btn btn-danger btn-small"
+                  onClick={() => removeFeature(feature.id)}
+                  aria-label={`Remover ${feature.name}`}
+                >
+                  ×
+                </button>
+              </div>
+              <InlineField
+                value={feature.description}
+                mode="textarea"
+                placeholder="Descreva o efeito..."
+                ariaLabel="Descrição da característica"
+                onCommit={(value) => patchFeature(feature.id, { description: value })}
+              />
+            </article>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
