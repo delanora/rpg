@@ -6,6 +6,15 @@ import type { SheetSectionProps } from './common';
 
 const DEFAULT_ENTRY: SkillEntry = { proficient: false, expertise: false };
 
+/** Reparte uma lista em colunas de tamanho fixo (ex.: 18 perícias em 2×9). */
+function splitInColumns<T>(items: readonly T[], columnSize: number): T[][] {
+  const columns: T[][] = [];
+  for (let index = 0; index < items.length; index += columnSize) {
+    columns.push(items.slice(index, index + columnSize));
+  }
+  return columns;
+}
+
 export function SkillsSavesSection({ character, update }: SheetSectionProps) {
   const readOnly = useReadOnly();
   const { derived } = character;
@@ -30,11 +39,11 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
       icon="eye"
       subtitle="Marque a proficiência; o bônus é automático"
     >
-      <div className="grid grid-2">
-        <div>
-          <h3 className="subsection-title">Perícias</h3>
-          <ul className="prof-list">
-            {SKILLS.map((skill) => {
+      <h3 className="subsection-title">Perícias</h3>
+      <div className="prof-columns">
+        {splitInColumns(SKILLS, 9).map((column, columnIndex) => (
+          <ul className="prof-list" key={columnIndex}>
+            {column.map((skill) => {
               const entry = character.skills[skill.key] ?? DEFAULT_ENTRY;
               const detail = derived.skills[skill.key];
 
@@ -67,12 +76,14 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
               );
             })}
           </ul>
-        </div>
+        ))}
+      </div>
 
-        <div>
-          <h3 className="subsection-title">Salvaguardas</h3>
-          <ul className="prof-list">
-            {ABILITY_KEYS.map((ability) => {
+      <h3 className="subsection-title">Salvaguardas</h3>
+      <div className="prof-columns">
+        {splitInColumns(ABILITY_KEYS, 3).map((column, columnIndex) => (
+          <ul className="prof-list" key={columnIndex}>
+            {column.map((ability) => {
               const detail = derived.saves.find((save) => save.ability === ability);
 
               return (
@@ -91,7 +102,7 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
               );
             })}
           </ul>
-        </div>
+        ))}
       </div>
     </Section>
   );
