@@ -29,6 +29,8 @@ export function AttacksTable({ attacks, onChange, defaultBonus = 0 }: AttacksTab
         damageType: '',
         attackBonus: defaultBonus,
         notes: '',
+        finesse: false,
+        ranged: false,
       },
     ]);
   }
@@ -58,6 +60,7 @@ export function AttacksTable({ attacks, onChange, defaultBonus = 0 }: AttacksTab
                 <th className="col-narrow">Bônus</th>
                 <th className="col-narrow">Dano</th>
                 <th>Tipo</th>
+                <th className="col-narrow">Furtivo</th>
                 <th>Observações</th>
                 {!readOnly ? <th className="col-narrow" /> : null}
               </tr>
@@ -106,6 +109,34 @@ export function AttacksTable({ attacks, onChange, defaultBonus = 0 }: AttacksTab
                       ariaLabel="Tipo de dano"
                       onCommit={(value) => patchAttack(attack.id, { damageType: value })}
                     />
+                  </td>
+                  <td className="col-center">
+                    <span className="check-inline">
+                      <input
+                        type="checkbox"
+                        checked={attack.finesse}
+                        disabled={readOnly}
+                        title="Arma sutil — habilita o Ataque Furtivo"
+                        aria-label={`Arma sutil para ${attack.name}`}
+                        onChange={(event) =>
+                          patchAttack(attack.id, { finesse: event.target.checked })
+                        }
+                      />
+                      <span>sutil</span>
+                    </span>
+                    <span className="check-inline">
+                      <input
+                        type="checkbox"
+                        checked={attack.ranged}
+                        disabled={readOnly}
+                        title="Arma à distância — habilita o Ataque Furtivo"
+                        aria-label={`Arma à distância para ${attack.name}`}
+                        onChange={(event) =>
+                          patchAttack(attack.id, { ranged: event.target.checked })
+                        }
+                      />
+                      <span>dist.</span>
+                    </span>
                   </td>
                   <td>
                     <InlineField

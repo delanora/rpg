@@ -8,6 +8,7 @@ import {
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { toCharacterDto } from '../characters/characters.dto.js';
+import { getActiveClassFeatures, getClassDefinition, sneakAttackDice } from '../shared/classes.js';
 import { abilityModifier } from '../shared/dnd5e.js';
 import { rollD20, rollDice } from '../shared/dice.js';
 import {
@@ -379,6 +380,35 @@ async function changeHp(
 /** --- Ataque -------------------------------------------------------------------- */
 
 /**
+ * Calcula o dano extra de Ataque Furtivo, quando aplicável.
+ *
+ * Requer que o atacante seja um personagem com a feature de Ataque Furtivo e
+ * que a arma seja sutil ou à distância. As condições táticas (vantagem ou
+ * aliado adjacente ao alvo) não são rastreadas pelo sistema: o jogador rola o
+ * ataque somente quando elas valem.
+ */
+function rollSneakAttack(
+  attacker: CombatantSourced,
+  attack: { finesse: boolean; ranged: boolean },
+  critical: boolean,
+): { expression: string; total: number; rolls: number[] } | null {
+  if (attacker.kind !== 'CHARACTER') return null;
+  const character = attacker.character;
+  if (!character) return null;
+  if (!attack.finesse && !attack.ranged) return null;
+
+  const definition = getClassDefinition(character.classKey);
+  const features = getActiveClassFeatures(definition, character.level, character.subclass);
+  if (!features.some((feature) => feature.effect?.type === 'sneakAttack')) return null;
+
+  const expression = `${sneakAttackDice(character.level)}d6`;
+  const roll = rollDice(expression, { crit: critical });
+  if (!roll) return null;
+
+  return { expression, total: roll.total, rolls: roll.rolls };
+}
+
+/**
  * Resolve um ataque: rola 1d20 + bônus contra a CA do alvo; se acertar, rola o
  * dano (dobrado no crítico) e aplica no HP do alvo.
  */
@@ -437,12 +467,36 @@ export async function resolveAttack(
   });
 
   let damageRolled = 0;
+  let sneakAttackResult: { expression: string; total: number } | null = null;
 
   if (hit) {
     const damage = rollDice(attack.damage, { crit: critical });
 
     if (damage) {
-      damageRolled = damage.total;
+      let total = damage.total;
+
+      // Ataque Furtivo: entra automaticamente em armas sutis ou à distância
+      // quando a classe concede a feature. O jogador rola o ataque justamente
+      // nas situações em que ele se aplica (vantagem ou aliado adjacente).
+      const sneak = rollSneakAttack(attacker, attack, critical);
+      if (sneak) {
+        total += sneak.total;
+        sneakAttackResult = { expression: sneak.expression, total: sneak.total };
+
+        announceRoll({
+          kind: 'damage',
+          actorName: `${attacker.name} — Ataque Furtivo`,
+          expression: sneak.expression,
+          rolls: sneak.rolls,
+          sides: 6,
+          modifier: 0,
+          total: sneak.total,
+          crit: critical,
+          at: new Date().toISOString(),
+        });
+      }
+
+      damageRolled = total;
 
       announceRoll({
         kind: 'damage',
@@ -456,7 +510,7 @@ export async function resolveAttack(
         at: new Date().toISOString(),
       });
 
-      await changeHp(target, -damage.total);
+      await changeHp(target, -total);
     }
   }
 
@@ -478,6 +532,7 @@ export async function resolveAttack(
     critical,
     damageRolled,
     damageType: attack.damageType,
+    sneakAttack: sneakAttackResult,
     targetHpCurrent: targetAfter?.hpCurrent ?? 0,
     targetHpMax: targetAfter?.hpMax ?? 0,
     targetStatsHidden: false,

@@ -3,8 +3,13 @@ import { z } from 'zod';
 import { attackSchema, type Attack } from '../shared/attacks.js';
 import {
   CLASS_CATALOG,
-  applyClassSavingThrows,
+  applySaveProficiencies,
+  expertiseSlots,
+  findSubclass,
+  getActiveClassFeatures,
   getClassDefinition,
+  sneakAttackDice,
+  type ActiveClassFeature,
   type ClassDefinition,
   type ClassSummary,
 } from '../shared/classes.js';
@@ -62,6 +67,8 @@ export interface CharacterDto {
   classDefinition: ClassDefinition | null;
   /** Catálogo resumido das 12 classes, usado pelo seletor da ficha. */
   classCatalog: ClassSummary[];
+  /** Features de classe/subclasse já liberadas pelo nível atual. */
+  activeFeatures: ActiveClassFeature[];
   level: number;
   background: string;
   alignment: string;
@@ -106,9 +113,29 @@ const featureListSchema = z.array(featureSchema);
 export function toCharacterDto(character: Character, ownerUsername?: string): CharacterDto {
   const skills = normalizeSkills(character.skills);
   const classDefinition = getClassDefinition(character.classKey);
-  // As salvaguardas de classe são fixas: aparecem sempre proficientes na ficha,
-  // mesmo que o valor gravado esteja desatualizado.
-  const saves = applyClassSavingThrows(normalizeSaves(character.saves), classDefinition);
+  const activeFeatures = getActiveClassFeatures(
+    classDefinition,
+    character.level,
+    character.subclass,
+  );
+  const subclassDefinition = findSubclass(classDefinition, character.subclass);
+  const spellcasting = subclassDefinition?.spellcasting ?? classDefinition?.spellcasting ?? null;
+
+  // Salvaguardas fixas: as da classe e as concedidas por features (ex.: Mente
+  // Escorregadia). Aparecem sempre proficientes, mesmo se o valor gravado
+  // estiver desatualizado.
+  const lockedSaves = [
+    ...(classDefinition?.savingThrows ?? []),
+    ...activeFeatures.flatMap((feature) =>
+      feature.effect?.type === 'save' && feature.effect.ability ? [feature.effect.ability] : [],
+    ),
+  ];
+  const saves = applySaveProficiencies(normalizeSaves(character.saves), lockedSaves);
+
+  const hasSneakAttack = activeFeatures.some(
+    (feature) => feature.effect?.type === 'sneakAttack',
+  );
+  const sneakDice = hasSneakAttack ? sneakAttackDice(character.level) : 0;
   const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
   const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
     list: [],
@@ -135,7 +162,10 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     className: character.className,
     inventory,
     hitDie: classDefinition?.hitDie ?? null,
-    spellcastingAbility: classDefinition ? classDefinition.spellcasting.ability : undefined,
+    spellcastingAbility: spellcasting ? spellcasting.ability : undefined,
+    lockedSaves,
+    sneakAttack: sneakDice > 0 ? { dice: sneakDice, expression: `${sneakDice}d6` } : null,
+    expertiseSlots: expertiseSlots(activeFeatures),
   });
 
   return {
@@ -149,6 +179,7 @@ export function toCharacterDto(character: Character, ownerUsername?: string): Ch
     subclass: character.subclass,
     classDefinition,
     classCatalog: CLASS_CATALOG,
+    activeFeatures,
     level: character.level,
     background: character.background,
     alignment: character.alignment,

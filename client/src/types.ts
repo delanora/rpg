@@ -65,6 +65,10 @@ export interface Attack {
   damageType: string;
   attackBonus: number;
   notes: string;
+  /** Arma sutil (habilita Ataque Furtivo). */
+  finesse: boolean;
+  /** Arma à distância (habilita Ataque Furtivo). */
+  ranged: boolean;
 }
 
 export type FeatureSource = 'race' | 'class' | 'background' | 'feat' | 'other';
@@ -97,6 +101,12 @@ export interface DerivedStats {
   modifiers: Record<AbilityKey, number>;
   /** Dado de vida da classe (6, 8, 10 ou 12) ou nulo se nenhuma classe foi escolhida. */
   hitDie: number | null;
+  /** Salvaguardas que não podem ser desmarcadas (classe e features). */
+  lockedSaves: AbilityKey[];
+  /** Dados de Ataque Furtivo (ex.: 2d6) quando a classe concede a feature. */
+  sneakAttack: { dice: number; expression: string } | null;
+  /** Espaços de Expertise (dobrar proficiência) concedidos pelas features. */
+  expertiseSlots: number;
   initiative: number;
   passivePerception: number;
   armorClassHint: number;
@@ -120,9 +130,10 @@ export interface ClassFeatureResource {
 
 /** Efeito mecânico opcional de uma característica de classe. */
 export interface ClassFeatureEffect {
-  type: 'bonus' | 'resource' | 'other';
+  type: 'bonus' | 'resource' | 'save' | 'expertise' | 'sneakAttack' | 'other';
   target?: string;
   value?: number;
+  ability?: AbilityKey;
   resource?: ClassFeatureResource;
   notes?: string;
 }
@@ -140,7 +151,19 @@ export interface Subclass {
   id: string;
   name: string;
   description: string;
+  /** Conjuração própria da subclasse (ex.: Trapaceiro Arcano). */
+  spellcasting?: {
+    type: SpellcastingType;
+    ability: AbilityKey | null;
+    learning: SpellLearning;
+  };
   features: ClassFeature[];
+}
+
+/** Feature de classe/subclasse já liberada pelo nível atual. */
+export interface ActiveClassFeature extends ClassFeature {
+  source: 'class' | 'subclass';
+  subclassName?: string;
 }
 
 /** Definição completa de uma classe. */
@@ -185,6 +208,8 @@ export interface Character {
   classDefinition: ClassDefinition | null;
   /** Catálogo resumido das 12 classes. */
   classCatalog: ClassSummary[];
+  /** Features de classe/subclasse já liberadas pelo nível atual. */
+  activeFeatures: ActiveClassFeature[];
   level: number;
   background: string;
   alignment: string;
@@ -480,6 +505,8 @@ export interface AttackResolvedPayload {
   critical: boolean;
   damageRolled: number;
   damageType: string;
+  /** Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve). */
+  sneakAttack: { expression: string; total: number } | null;
   targetHpCurrent: number | null;
   targetHpMax: number | null;
   /** Verdadeiro quando CA/vida do alvo ficam ocultas para quem vê. */

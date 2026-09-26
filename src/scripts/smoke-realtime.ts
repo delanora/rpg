@@ -700,6 +700,110 @@ async function main(): Promise<void> {
     attackResult.hit ? masterCreature.hpCurrent === 20 - attackResult.damageRolled : masterCreature.hpCurrent === 20,
     JSON.stringify({ hit: attackResult.hit, hp: masterCreature.hpCurrent, dano: attackResult.damageRolled }),
   );
+
+  // --- Ladino: features derivadas e Ataque Furtivo automático ----------------
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      classKey: 'rogue',
+      level: 3,
+      attacks: [
+        { id: 'p1', name: 'Adaga', damage: '1d4+3', damageType: 'Perfurante', attackBonus: 10, notes: '', finesse: true, ranged: false },
+      ],
+    },
+  });
+  const rogueSheet = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'features de classe liberadas pelo nível (Ataque Furtivo, Ação Ardilosa)',
+    rogueSheet.activeFeatures.some((f: any) => f.id === 'sneak-attack') &&
+      rogueSheet.activeFeatures.some((f: any) => f.id === 'cunning-action'),
+    JSON.stringify(rogueSheet.activeFeatures.map((f: any) => f.id)),
+  );
+  check(
+    'Ataque Furtivo no nível 3 é 2d6',
+    rogueSheet.derived.sneakAttack?.expression === '2d6',
+    JSON.stringify(rogueSheet.derived.sneakAttack),
+  );
+  check(
+    'Expertise concede 2 espaços no nível 3',
+    rogueSheet.derived.expertiseSlots === 2,
+    String(rogueSheet.derived.expertiseSlots),
+  );
+  check(
+    'dado de vida do Ladino é d8',
+    rogueSheet.derived.hitDie === 8,
+    String(rogueSheet.derived.hitDie),
+  );
+
+  const sneakAttack = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'p1', targetCombatantId: creatureCombatant.id },
+  });
+  const sneakResult = sneakAttack.data.result;
+  check(
+    'arma sutil soma o Ataque Furtivo ao dano',
+    sneakResult.hit
+      ? sneakResult.sneakAttack?.expression === '2d6' &&
+          sneakResult.damageRolled >= sneakResult.sneakAttack.total + 1
+      : sneakResult.sneakAttack === null,
+    JSON.stringify(sneakResult),
+  );
+
+  // Arma sem sutil/à distância não recebe o dano extra.
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      attacks: [
+        { id: 'p2', name: 'Maça', damage: '1d6+3', damageType: 'Concussão', attackBonus: 10, notes: '', finesse: false, ranged: false },
+      ],
+    },
+  });
+  const plainAttack = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'p2', targetCombatantId: creatureCombatant.id },
+  });
+  check(
+    'arma sem sutil/à distância NÃO recebe Ataque Furtivo',
+    plainAttack.data.result.sneakAttack === null,
+    JSON.stringify(plainAttack.data.result),
+  );
+
+  // Nível alto: Mente Escorregadia e conjuração de subclasse.
+  const highRogue = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { level: 15, subclass: 'Trapaceiro Arcano' },
+    })
+  ).data.character;
+  check(
+    'Mente Escorregadia trava a salvaguarda de Sabedoria',
+    highRogue.derived.lockedSaves.includes('wisdom'),
+    JSON.stringify(highRogue.derived.lockedSaves),
+  );
+  check(
+    'Trapaceiro Arcano conjura com Inteligência (terço-conjurador)',
+    highRogue.derived.spellcasting?.ability === 'intelligence',
+    JSON.stringify(highRogue.derived.spellcasting),
+  );
+  check(
+    'feature de subclasse aparece nas características',
+    highRogue.activeFeatures.some((f: any) => f.id === 'magical-ambush'),
+    JSON.stringify(highRogue.activeFeatures.map((f: any) => f.id)),
+  );
+
+  // Os ataques acima mudaram o HP da criatura; atualiza a referência usada
+  // pelos checks de dano manual abaixo.
+  Object.assign(
+    masterCreature,
+    (await api('/api/combat/active', { token: masterToken })).data.combat.combatants.find(
+      (item: any) => item.id === creatureCombatant.id,
+    ),
+  );
   check(
     'jogador NÃO usa o ataque de outra ficha (404)',
     (await api('/api/combat/attack', {

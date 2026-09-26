@@ -34,6 +34,10 @@ export const attackSchema = z.object({
   damageType: z.string().trim().max(60).default(''),
   attackBonus: z.number().int().min(-30).max(30).default(0),
   notes: z.string().trim().max(1000).default(''),
+  /** Arma sutil: habilita o Ataque Furtivo do ladino. */
+  finesse: z.boolean().default(false),
+  /** Arma à distância: habilita o Ataque Furtivo do ladino. */
+  ranged: z.boolean().default(false),
 });
 
 export type Attack = z.infer<typeof attackSchema>;

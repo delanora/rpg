@@ -224,6 +224,12 @@ export interface DerivedStats {
   modifiers: Record<AbilityKey, number>;
   /** Dado de vida da classe (6, 8, 10 ou 12) ou nulo se nenhuma classe foi escolhida. */
   hitDie: number | null;
+  /** Salvaguardas que não podem ser desmarcadas (classe e features). */
+  lockedSaves: AbilityKey[];
+  /** Dados de Ataque Furtivo (ex.: 2d6) quando a classe concede a feature. */
+  sneakAttack: { dice: number; expression: string } | null;
+  /** Espaços de Expertise (dobrar proficiência) concedidos pelas features. */
+  expertiseSlots: number;
   initiative: number;
   passivePerception: number;
   armorClassHint: number;
@@ -249,6 +255,12 @@ export interface DerivedInput {
   spellcastingAbility?: AbilityKey | null;
   /** Dado de vida da classe escolhida. */
   hitDie?: number | null;
+  /** Salvaguardas fixas (classe + features) que a ficha deve travar. */
+  lockedSaves?: AbilityKey[];
+  /** Dados de Ataque Furtivo já resolvidos. */
+  sneakAttack?: { dice: number; expression: string } | null;
+  /** Total de espaços de Expertise. */
+  expertiseSlots?: number;
 }
 
 /** Calcula todos os valores derivados exibidos na ficha. */
@@ -302,6 +314,9 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     proficiencyBonus: prof,
     modifiers,
     hitDie: input.hitDie ?? null,
+    lockedSaves: input.lockedSaves ?? [],
+    sneakAttack: input.sneakAttack ?? null,
+    expertiseSlots: input.expertiseSlots ?? 0,
     initiative: initiative(input.abilities.dexterity, input.initiativeBonus),
     passivePerception: 10 + (perception?.total ?? modifiers.wisdom),
     armorClassHint: unarmoredArmorClass(input.abilities.dexterity),

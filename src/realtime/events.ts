@@ -188,6 +188,8 @@ export interface AttackResolvedPayload {
   critical: boolean;
   damageRolled: number;
   damageType: string;
+  /** Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve). */
+  sneakAttack: { expression: string; total: number } | null;
   /** `null` quando a vida do alvo está oculta (criatura vista por jogador). */
   targetHpCurrent: number | null;
   targetHpMax: number | null;

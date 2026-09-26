@@ -49,6 +49,30 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
         )
       }
     >
+      {character.activeFeatures.length > 0 ? (
+        <>
+          <h3 className="subsection-title">Características de Classe</h3>
+          <div className="feature-list">
+            {character.activeFeatures.map((feature) => (
+              <article
+                className="feature-card feature-card-static"
+                key={`${feature.source}-${feature.id}`}
+              >
+                <div className="feature-head">
+                  <span className="feature-name">{feature.name}</span>
+                  <em className="tag">
+                    {feature.source === 'subclass' ? 'subclasse' : 'classe'} · nv {feature.level}
+                  </em>
+                </div>
+                <p className="feature-desc">{feature.description}</p>
+              </article>
+            ))}
+          </div>
+
+          <h3 className="subsection-title">Minhas características</h3>
+        </>
+      ) : null}
+
       {features.length === 0 ? (
         <p className="empty-hint">Nenhuma característica cadastrada.</p>
       ) : (

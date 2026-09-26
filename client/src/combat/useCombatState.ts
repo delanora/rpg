@@ -56,9 +56,12 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
     ? ''
     : ` (${payload.attackTotal} vs CA ${payload.targetArmorClass})`;
 
+  const sneak = payload.sneakAttack
+    ? ` (inclui ${payload.sneakAttack.expression} de Ataque Furtivo)`
+    : '';
   const damage =
     payload.hit && payload.damageRolled > 0
-      ? ` · ${payload.damageRolled} de dano${payload.damageType ? ` (${payload.damageType})` : ''} → ${payload.targetName}${hpPart}`
+      ? ` · ${payload.damageRolled} de dano${payload.damageType ? ` (${payload.damageType})` : ''}${sneak} → ${payload.targetName}${hpPart}`
       : '';
 
   return {

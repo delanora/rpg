@@ -19,8 +19,9 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
   const readOnly = useReadOnly();
   const { derived } = character;
 
-  // As salvaguardas da classe são fixas: ficam sempre marcadas e travadas.
-  const classSaves = new Set<AbilityKey>(character.classDefinition?.savingThrows ?? []);
+  // Salvaguardas fixas (classe e features, ex.: Mente Escorregadia do ladino):
+  // ficam sempre marcadas e travadas.
+  const lockedSaves = new Set<AbilityKey>(character.derived.lockedSaves);
 
   function setSkill(key: string, patch: Partial<SkillEntry>): void {
     const current = character.skills[key] ?? DEFAULT_ENTRY;
@@ -88,7 +89,7 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
           <ul className="prof-list" key={columnIndex}>
             {column.map((ability) => {
               const detail = derived.saves.find((save) => save.ability === ability);
-              const locked = classSaves.has(ability);
+              const locked = lockedSaves.has(ability);
 
               return (
                 <li className="prof-row prof-row-save" key={ability}>

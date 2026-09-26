@@ -22,6 +22,8 @@ interface AttackPanelProps {
   attackerChoices?: CombatantDto[];
   onSelectAttacker?: (combatantId: string) => void;
   attacksFor?: (combatantId: string) => Attack[];
+  /** Dados de Ataque Furtivo a exibir em armas que qualificam (ex.: "2d6"). */
+  sneakAttack?: string | null;
   busy: boolean;
   onAttack: (input: {
     attackId: string;
@@ -37,6 +39,7 @@ function AttackPanel({
   attackerChoices,
   onSelectAttacker,
   attacksFor,
+  sneakAttack,
   busy,
   onAttack,
 }: AttackPanelProps) {
@@ -92,6 +95,9 @@ function AttackPanel({
                   {attack.name} — dano {attack.damage || '—'}
                   {attack.damageType ? ` (${attack.damageType})` : ''}, acerto{' '}
                   {formatModifier(attack.attackBonus)}
+                  {sneakAttack && (attack.finesse || attack.ranged)
+                    ? ` · +${sneakAttack} furtivo`
+                    : ''}
                 </option>
               ))}
             </select>
@@ -140,6 +146,8 @@ interface CombatTrackerProps {
   onDismissTurnAlert: () => void;
   /** Ataques do próprio personagem (fluxo do jogador). */
   characterAttacks?: Attack[];
+  /** Dados de Ataque Furtivo do próprio personagem (ex.: "2d6"). */
+  sneakAttackExpression?: string | null;
   /** Mestre: ataques de qualquer combatente, para escolher o atacante. */
   attacksFor?: (combatantId: string) => Attack[];
   onCombatChange: (combat: CombatDto) => void;
@@ -154,6 +162,7 @@ export function CombatTracker({
   turnAlert,
   onDismissTurnAlert,
   characterAttacks = [],
+  sneakAttackExpression = null,
   attacksFor,
   onCombatChange,
   onCombatEnd,
@@ -467,6 +476,7 @@ export function CombatTracker({
             combat={combat}
             attacker={myCombatant}
             attacks={characterAttacks}
+            sneakAttack={sneakAttackExpression}
             busy={busy}
             onAttack={(input) => {
               void (async () => {

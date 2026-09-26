@@ -1710,6 +1710,39 @@ input[type='checkbox']:disabled {
   font-size: 1.02rem;
 }
 
+/* Características de classe: somente leitura (apenas texto). */
+.feature-card-static {
+  border-left-color: var(--gold-deep);
+}
+
+.feature-card-static .feature-head {
+  grid-template-columns: 1fr auto;
+}
+
+.feature-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.02rem;
+  color: var(--ink);
+}
+
+.feature-desc {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+/* Checkboxes compactos em linha (ex.: sutil/à distância na tabela de ataques). */
+.check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.55rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
 .notes-area {
   width: 100%;
   font-family: var(--font-body);

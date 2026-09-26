@@ -12,6 +12,13 @@ export function AttacksSection({ character, update }: SheetSectionProps) {
         defaultBonus={defaultBonus}
         onChange={(attacks) => update({ attacks })}
       />
+
+      {character.derived.sneakAttack ? (
+        <p className="section-note">
+          Ataque Furtivo: +{character.derived.sneakAttack.expression} em armas marcadas como
+          sutis ou à distância (somado automaticamente quando o ataque acerta).
+        </p>
+      ) : null}
     </Section>
   );
 }
