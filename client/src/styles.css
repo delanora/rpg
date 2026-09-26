@@ -3247,33 +3247,6 @@ input[type='checkbox']:disabled {
   flex-wrap: wrap;
 }
 
-/* Busca de itens no inventário do jogador. */
-.catalog-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.7rem;
-  flex-wrap: wrap;
-}
-
-.catalog-search .inline-input {
-  flex: 1;
-  min-width: 12rem;
-}
-
-.catalog-suggestions {
-  flex-basis: 100%;
-  margin-top: 0.3rem;
-}
-
-.catalog-suggestions .suggestion {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-}
-
 .item-cell {
   display: flex;
   align-items: center;

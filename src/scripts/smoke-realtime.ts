@@ -1277,7 +1277,7 @@ async function main(): Promise<void> {
     (await api('/api/items', { method: 'POST', token: playerToken, body: { name: 'x' } })).status === 403,
   );
   check(
-    'jogador lista o catálogo (para o autocomplete)',
+    'jogador lista o catálogo (sem preço)',
     (await api('/api/items', { token: playerToken })).data.items.some((item: any) => item.id === catalogItem.id),
   );
 
