@@ -8,6 +8,11 @@ interface HpBarProps {
   /** Rótulo curto opcional (ex.: nome do combatente). */
   label?: string;
   className?: string;
+  /**
+   * Em `false`, desenha só a barra — quem usa já mostra os números (ex.: a
+   * ficha, onde atual/máximo são campos editáveis ao lado da barra).
+   */
+  showLabel?: boolean;
 }
 
 /**
@@ -15,7 +20,7 @@ interface HpBarProps {
  * (verde → âmbar → vermelho) e treme quando o personagem está à beira da morte.
  * Sempre acompanha o número, porque barra sozinha não basta numa ficha.
  */
-export function HpBar({ current, max, temp = 0, label, className }: HpBarProps) {
+export function HpBar({ current, max, temp = 0, label, className, showLabel = true }: HpBarProps) {
   const ratio = max > 0 ? current / max : 0;
   const percent = Math.max(0, Math.min(100, ratio * 100));
   const state = percent <= 0 ? 'down' : percent <= 25 ? 'critical' : percent <= 50 ? 'wounded' : 'healthy';
@@ -36,15 +41,17 @@ export function HpBar({ current, max, temp = 0, label, className }: HpBarProps) 
           />
         ) : null}
       </div>
-      <div className="hp-label">
-        <Icon name="heart" size={14} className="hp-heart" />
-        <span className="hp-numbers">
-          {current}
-          <span className="hp-sep">/</span>
-          {max}
-        </span>
-        {temp > 0 ? <span className="hp-badge">+{temp}</span> : null}
-      </div>
+      {showLabel ? (
+        <div className="hp-label">
+          <Icon name="heart" size={14} className="hp-heart" />
+          <span className="hp-numbers">
+            {current}
+            <span className="hp-sep">/</span>
+            {max}
+          </span>
+          {temp > 0 ? <span className="hp-badge">+{temp}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

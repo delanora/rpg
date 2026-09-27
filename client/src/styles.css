@@ -1528,6 +1528,49 @@ a {
   font-size: 1.2rem;
 }
 
+/*
+ * PV atual / máximo editáveis dentro da própria caixa da barra de vida —
+ * substituem os antigos cards de HP.
+ */
+.hp-editor {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+}
+
+.hp-editor .hp-heart {
+  flex: none;
+}
+
+.hp-editor-value {
+  width: 4.6rem;
+  padding: 0 0.25rem;
+  min-height: 0;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--ink);
+}
+
+.hp-editor-value.is-critical {
+  color: var(--danger);
+}
+
+.hp-editor-value.is-down {
+  color: var(--wine-bright);
+  text-shadow: 0 0 12px rgba(163, 38, 38, 0.35);
+}
+
+.hp-editor-sep {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  color: var(--ink-faint);
+}
+
 /* Barra de vida visual (componente HpBar). */
 .hp {
   display: grid;
@@ -4000,14 +4043,6 @@ input[type='checkbox']:disabled {
   justify-items: center;
   gap: var(--space-2);
   margin-top: 0.4rem;
-}
-
-.inventory-hint {
-  max-width: 30rem;
-  margin: 0;
-  text-align: center;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
 }
 
 /* --- Set de equipamento: grade 3×3 no estilo clássico do Tibia ----------- */

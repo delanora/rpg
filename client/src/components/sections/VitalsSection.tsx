@@ -81,17 +81,15 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
 
   return (
     <Section title="Vida e Defesa" icon="heart">
+      {/*
+       * A barra de vida faz o papel dos antigos cards de PV: os campos de
+       * atual e máximo vivem aqui, junto da barra.
+       */}
       <div className="vitals-hp">
-        <HpBar current={character.hpCurrent} max={character.hpMax} temp={character.hpTemp} />
-      </div>
-
-      <div className="grid grid-4">
-        <div className="vital">
-          <span className="vital-label">
-            <Icon name="heart" size={13} /> HP atual
-          </span>
+        <div className="hp-editor">
+          <Icon name="heart" size={16} className="hp-heart" />
           <InlineField
-            className={`vital-value${hpClass}`}
+            className={`hp-editor-value${hpClass}`}
             value={character.hpCurrent}
             mode="number"
             min={-999}
@@ -101,12 +99,9 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
               update({ hpCurrent: clampInt(value, -999, 9999, character.hpCurrent) })
             }
           />
-        </div>
-
-        <div className="vital">
-          <span className="vital-label">HP máximo</span>
+          <span className="hp-editor-sep">/</span>
           <InlineField
-            className="vital-value"
+            className="hp-editor-value"
             value={character.hpMax}
             mode="number"
             min={0}
@@ -114,8 +109,18 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
             ariaLabel="Pontos de vida máximos"
             onCommit={(value) => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })}
           />
+          {character.hpTemp > 0 ? <span className="hp-badge">+{character.hpTemp}</span> : null}
         </div>
 
+        <HpBar
+          current={character.hpCurrent}
+          max={character.hpMax}
+          temp={character.hpTemp}
+          showLabel={false}
+        />
+      </div>
+
+      <div className="grid grid-4">
         <div className="vital">
           <span className="vital-label">
             <Icon name="flask" size={13} /> HP temporário
