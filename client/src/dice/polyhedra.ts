@@ -351,8 +351,33 @@ export interface DieFace {
   transform: string;
   /** Lado do quadrado da face, em px do modelo. */
   size: number;
+  /** Centro do polígono dentro da face, em % (onde o número é desenhado). */
+  valueX: number;
+  valueY: number;
+  /**
+   * Tamanho do número que cabe na face, em px do modelo (a face é desenhada
+   * como um quadrado de `size`; o número escala junto com o poliedro).
+   */
+  valueSize: number;
   /** Normal para fora, no espaço do modelo. */
   normal: V3;
+}
+
+/**
+ * Folga das faces: cada face é um pouco maior que o polígono exato, para as
+ * arestas vizinhas se sobreporem e não deixarem "frestas" (o dado parecia
+ * translúcido nas junções).
+ */
+const FACE_OUTSET = 1.08;
+
+/** Distância da origem (o centroide) ao segmento AB — usada para achar o
+ *  círculo inscrito no polígono da face. */
+function distanceToSegment(ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2));
+  return Math.hypot(ax + t * dx, ay + t * dy);
 }
 
 function buildFace(vertices: V3[], indices: number[], value: number | null, key: number): DieFace {
@@ -380,17 +405,32 @@ function buildFace(vertices: V3[], indices: number[], value: number | null, key:
   const offsetX = (side - width) / 2;
   const offsetY = (side - height) / 2;
 
+  const percentX = (x: number): number => ((x - minX + offsetX) / side) * 100;
+  const percentY = (y: number): number => ((y - minY + offsetY) / side) * 100;
+
   const clipPath = `polygon(${flat
-    .map(
-      ([x, y]) =>
-        `${(((x - minX + offsetX) / side) * 100).toFixed(2)}% ${(
-          ((y - minY + offsetY) / side) *
-          100
-        ).toFixed(2)}%`,
-    )
+    .map(([x, y]) => `${percentX(x).toFixed(2)}% ${percentY(y).toFixed(2)}%`)
     .join(',')})`;
 
-  const half = (side * MODEL_SCALE) / 2;
+  // O número vai no centro (centroide) do polígono, não no centro da caixa.
+  // Por construção as coordenadas 2D são relativas ao centroide, então ele é a
+  // origem (0, 0).
+  const valueX = percentX(0);
+  const valueY = percentY(0);
+
+  // Maior número que cabe na face: um círculo de raio `edgeDistance` (a menor
+  // distância do centro até as arestas) delimita altura e largura do texto.
+  // Números de um dígito podem ser maiores que os de dois ("20" é mais largo).
+  const edgeDistance = Math.min(
+    ...flat.map(([x, y], index) => {
+      const [nx, ny] = flat[(index + 1) % flat.length];
+      return distanceToSegment(x, y, nx, ny);
+    }),
+  );
+  const valueFit = value !== null && value < 10 ? 1.5 : 1.25;
+  const valueSize = edgeDistance * MODEL_SCALE * FACE_OUTSET * valueFit;
+
+  const half = (side * MODEL_SCALE * FACE_OUTSET) / 2;
   const transform = toCss(
     multiply(
       translation(center[0] * MODEL_SCALE, center[1] * MODEL_SCALE, center[2] * MODEL_SCALE),
@@ -398,7 +438,17 @@ function buildFace(vertices: V3[], indices: number[], value: number | null, key:
     ),
   );
 
-  return { key, value, clipPath, transform, size: side * MODEL_SCALE, normal };
+  return {
+    key,
+    value,
+    clipPath,
+    transform,
+    size: side * MODEL_SCALE * FACE_OUTSET,
+    valueX,
+    valueY,
+    valueSize,
+    normal,
+  };
 }
 
 const faceCache = new Map<number, DieFace[]>();

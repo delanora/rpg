@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { dieFaces, paintsValues, settleTransform, type V3 } from './polyhedra';
 
 /** Direção da luz (no espaço do modelo) usada para o facetado das faces. */
@@ -17,10 +17,10 @@ const PIP_LAYOUT: Record<number, number[]> = {
   6: [0, 2, 3, 5, 6, 8],
 };
 
-function DiePips({ value }: { value: number }) {
+function DiePips({ value, style }: { value: number; style?: CSSProperties }) {
   const on = new Set(PIP_LAYOUT[value] ?? []);
   return (
-    <span className="ddie-pips" aria-hidden>
+    <span className="ddie-pips" style={style} aria-hidden>
       {Array.from({ length: 9 }, (_, index) => (
         <i key={index} className={on.has(index) ? 'on' : ''} />
       ))}
@@ -97,9 +97,25 @@ export function Die3D({
                 >
                   {reveal && face.value !== null ? (
                     sides === 6 ? (
-                      <DiePips value={face.value} />
+                      <DiePips
+                        value={face.value}
+                        style={{ left: `${face.valueX}%`, top: `${face.valueY}%` }}
+                      />
                     ) : (
-                      <span className="ddie-num">{face.value}</span>
+                      // O número fica no centroide da face (não no centro da
+                      // caixa) e cresce junto com a face. É um `font-size` no
+                      // espaço do modelo, então o `.ddie-model` o escala na
+                      // proporção certa — nada de número minúsculo.
+                      <span
+                        className="ddie-num"
+                        style={{
+                          left: `${face.valueX}%`,
+                          top: `${face.valueY}%`,
+                          fontSize: `${face.valueSize}px`,
+                        }}
+                      >
+                        {face.value}
+                      </span>
                     )
                   ) : null}
                 </span>
