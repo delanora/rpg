@@ -5309,6 +5309,13 @@ input[type='checkbox']:focus-visible,
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
 }
 
+.dice-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .dice-history h3 {
   margin: 0;
   display: inline-flex;
@@ -5318,6 +5325,11 @@ input[type='checkbox']:focus-visible,
   font-size: 0.82rem;
   letter-spacing: 0.04em;
   color: var(--ink);
+}
+
+.dice-history-clear {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.72rem;
 }
 
 .dice-history-empty {

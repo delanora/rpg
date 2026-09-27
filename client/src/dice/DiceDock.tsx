@@ -116,6 +116,7 @@ export function DiceDock({ roller }: DiceDockProps) {
     setPrivate,
     submit,
     dismissToast,
+    clearHistory,
   } = roller;
 
   // Esc fecha a janela.
@@ -295,9 +296,20 @@ export function DiceDock({ roller }: DiceDockProps) {
 
             {isMaster ? (
               <aside className="dice-history" aria-label="Histórico de rolagens">
-                <h3>
-                  <Icon name="scroll" size={14} /> Histórico
-                </h3>
+                <div className="dice-history-head">
+                  <h3>
+                    <Icon name="scroll" size={14} /> Histórico
+                  </h3>
+                  {history.length > 0 ? (
+                    <button
+                      type="button"
+                      className="btn btn-small dice-history-clear"
+                      onClick={() => void clearHistory()}
+                    >
+                      limpar
+                    </button>
+                  ) : null}
+                </div>
                 {history.length === 0 ? (
                   <p className="dice-history-empty">Nenhuma rolagem ainda.</p>
                 ) : (

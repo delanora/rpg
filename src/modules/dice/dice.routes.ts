@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import { tableRollSchema } from './dice.schema.js';
-import { getDiceHistory, rollTableDice } from './dice.service.js';
+import { clearDiceHistory, getDiceHistory, rollTableDice } from './dice.service.js';
 
 export const diceRouter = Router();
 
@@ -13,6 +13,12 @@ diceRouter.use(authenticate);
  */
 diceRouter.get('/history', requireRole('MASTER'), (_req, res) => {
   res.json({ rolls: getDiceHistory() });
+});
+
+/** DELETE /api/dice/history — zera o log lateral do mestre. */
+diceRouter.delete('/history', requireRole('MASTER'), (_req, res) => {
+  clearDiceHistory();
+  res.status(204).end();
 });
 
 /**

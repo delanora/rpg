@@ -15,3 +15,8 @@ export async function fetchDiceHistory(): Promise<DiceRollDto[]> {
   const { rolls } = await api<{ rolls: DiceRollDto[] }>('/api/dice/history');
   return rolls;
 }
+
+/** Zera o histórico da sessão — exclusivo do mestre. */
+export async function clearDiceHistory(): Promise<void> {
+  await api('/api/dice/history', { method: 'DELETE' });
+}
