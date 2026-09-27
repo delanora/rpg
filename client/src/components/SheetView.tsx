@@ -13,11 +13,11 @@ import { SpellsSection } from './sections/SpellsSection';
 import { VitalsSection } from './sections/VitalsSection';
 
 /**
- * Seções que vivem em abas. Perícias não entra aqui: ela fica sempre visível
- * logo abaixo dos atributos, junto do resto do HUD.
+ * Seções que vivem em abas. Perícias e inventário não entram aqui: a primeira
+ * fica sempre visível abaixo dos atributos e o inventário ocupa uma coluna
+ * lateral própria, ambos fora das abas.
  */
 const TAB_SECTIONS = [
-  { key: 'inventory', label: 'Inventário', icon: 'bag' },
   { key: 'spells', label: 'Magias', icon: 'star' },
   { key: 'attacks', label: 'Ataques', icon: 'sword' },
   { key: 'features', label: 'Características', icon: 'book' },
@@ -34,17 +34,8 @@ interface SheetViewProps {
   readOnly?: boolean;
 }
 
-function renderTab(
-  key: TabKey,
-  character: Character,
-  update: (patch: CharacterPatch) => void,
-  onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>,
-) {
+function renderTab(key: TabKey, character: Character, update: (patch: CharacterPatch) => void) {
   switch (key) {
-    case 'inventory':
-      return (
-        <InventorySection character={character} update={update} onMoveItem={onInventoryMove} />
-      );
     case 'spells':
       return <SpellsSection character={character} update={update} />;
     case 'attacks':
@@ -56,20 +47,21 @@ function renderTab(
 
 /**
  * Ficha em forma de HUD: identidade, atributos, vida e anotações ficam sempre
- * à vista, e só as seções mais longas (perícias, inventário, magias, ataques,
- * características) vivem em abas. Reutilizada pelo jogador e pelo mestre.
+ * à vista; o inventário ocupa uma coluna lateral fixa (independente da aba) e
+ * só magias, ataques e características vivem em abas. Reutilizada pelo jogador
+ * e pelo mestre.
  */
 export function SheetView({ character, update, onInventoryMove, readOnly = false }: SheetViewProps) {
-  const [tab, setTab] = useState<TabKey>('inventory');
+  const [tab, setTab] = useState<TabKey>('spells');
   const active = TAB_SECTIONS.find((item) => item.key === tab) ?? TAB_SECTIONS[0];
 
   return (
     <ReadOnlyProvider value={readOnly}>
       <div className="sheet">
         {/*
-         * Uma única grade de duas colunas: à esquerda identidade, atributos,
-         * perícias e as abas; à direita vida e anotações. O conteúdo flui em
-         * cada coluna, sem deixar buracos no meio da página.
+         * Uma única grade de três colunas: o corpo da ficha (identidade,
+         * atributos, perícias e as abas), vida e anotações, e o inventário na
+         * coluna lateral. O conteúdo flui em cada coluna, sem buracos.
          */}
         <div className="sheet-main">
           <IdentitySection character={character} update={update} />
@@ -94,7 +86,7 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
 
           {/* A `key` reinicia a animação de "virar a página" a cada troca de aba. */}
           <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
-            {renderTab(tab, character, update, onInventoryMove)}
+            {renderTab(tab, character, update)}
           </div>
         </div>
 
@@ -102,6 +94,11 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
           <VitalsSection character={character} update={update} />
           <NotesSection character={character} update={update} />
         </div>
+
+        {/* Coluna lateral própria: o inventário fica sempre à vista, fora das abas. */}
+        <aside className="sheet-inventory" aria-label="Inventário">
+          <InventorySection character={character} update={update} onMoveItem={onInventoryMove} />
+        </aside>
       </div>
     </ReadOnlyProvider>
   );
