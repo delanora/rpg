@@ -2,7 +2,7 @@ import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
-import type { DiceRollDto, DiceRollKind } from '../modules/dice/dice.dto.js';
+import type { DiceRollDto, DiceRollKind, RollBoardDto } from '../modules/dice/dice.dto.js';
 import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
@@ -301,6 +301,8 @@ export interface TableRollActivePayload {
   kind: DiceRollKind;
   /** Perícia/salvaguarda em teste (vazio na rolagem livre). */
   label: string;
+  /** Tabuleiro montado por quem está rolando (a mesa assiste; só ele interage). */
+  board: RollBoardDto;
   at: string;
 }
 

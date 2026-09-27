@@ -4,7 +4,13 @@ import { prisma } from '../../config/prisma.js';
 import { ServerEvents, type TableRollActivePayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { rollD20, rollDie } from '../shared/dice.js';
-import type { ActiveRollDto, DiceRollDto, DiceRollKind, RolledDie } from './dice.dto.js';
+import type {
+  ActiveRollDto,
+  DiceRollDto,
+  DiceRollKind,
+  RollBoardDto,
+  RolledDie,
+} from './dice.dto.js';
 import type { ActiveRollInput, TableRollInput } from './dice.schema.js';
 
 /**
@@ -59,7 +65,14 @@ function publishActive(payload: TableRollActivePayload): void {
 /** Monta o aviso a partir de quem está rolando (identidade carimbada no token). */
 function activePayload(
   active: boolean,
-  who: { userId: string; actorName: string; avatarUrl: string; kind: DiceRollKind; label: string },
+  who: {
+    userId: string;
+    actorName: string;
+    avatarUrl: string;
+    kind: DiceRollKind;
+    label: string;
+    board: RollBoardDto;
+  },
 ): TableRollActivePayload {
   return { active, ...who, at: new Date().toISOString() };
 }
@@ -102,6 +115,13 @@ export async function setActiveRoll(
     avatarUrl: character?.avatarUrl ?? '',
     kind: input.kind ?? ('free' as DiceRollKind),
     label: input.label ?? '',
+    board: {
+      pool: (input.pool ?? []).map((die) => ({ sides: die.sides, locked: Boolean(die.locked) })),
+      advantage: Boolean(input.advantage) && !input.disadvantage,
+      disadvantage: Boolean(input.disadvantage) && !input.advantage,
+      bonus: input.bonus ?? 0,
+      phase: input.phase === 'tumbling' ? ('tumbling' as const) : ('idle' as const),
+    },
   };
 
   activeRoll = { ...who, at: new Date().toISOString() };
@@ -180,6 +200,7 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
 
   const roll: DiceRollDto = {
     id: randomUUID(),
+    actorUserId: actor.userId,
     clientId: input.clientId ?? null,
     actorName: character?.name?.trim() || actor.displayName,
     kind,

@@ -1,25 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
 import type { DiceRollDto } from '../types';
 import { Die3D } from './Die3D';
+import { announcement, resultBreakdown } from './format';
+import { RemoteRollBoard } from './RemoteRollBoard';
 import { DICE_TYPES, type DiceRollerState } from './useDiceRoller';
-
-/** Texto do aviso público que todos (menos o autor) veem. */
-function announcement(roll: DiceRollDto): string {
-  if (roll.kind === 'free') return `${roll.actorName} está fazendo uma rolagem de dados`;
-  return `${roll.actorName} está fazendo um teste de ${roll.label}`;
-}
-
-/** Detalhe do resultado: valores individuais + bônus. */
-function resultBreakdown(roll: DiceRollDto): string {
-  const parts = roll.dice.filter((die) => !die.dropped).map((die) => String(die.value));
-  const expression = parts.join(' + ') || '0';
-  const bonus =
-    roll.bonus === 0 ? '' : roll.bonus > 0 ? ` + ${roll.bonus}` : ` − ${Math.abs(roll.bonus)}`;
-  return `${expression}${bonus}`;
-}
 
 function historyLine(roll: DiceRollDto): string {
   const label = roll.kind === 'free' ? 'Rolagem livre' : roll.label;
@@ -38,7 +25,8 @@ interface DiceDockProps {
  * dentro dele e o resultado e o log do mestre aparecem abaixo.
  *
  * A janela é de quem está rolando. Os demais veem a faixa no topo do tabuleiro
- * com a foto e o nome de quem está realizando o teste.
+ * ("Fulano está realizando um teste") e podem clicar nela para assistir o
+ * tabuleiro daquela pessoa — sem mexer em nada.
  */
 export function DiceDock({ roller }: DiceDockProps) {
   const {
@@ -47,7 +35,7 @@ export function DiceDock({ roller }: DiceDockProps) {
     context,
     pool,
     extraD20,
-    activeRoll,
+    remote,
     advantage,
     disadvantage,
     isPrivate,
@@ -68,6 +56,14 @@ export function DiceDock({ roller }: DiceDockProps) {
     dismissToast,
     clearHistory,
   } = roller;
+
+  // Tabuleiro de outra pessoa, aberto por escolha de quem assiste.
+  const [watching, setWatching] = useState(false);
+
+  // Fechou a janela de quem rolava: o tabuleiro assistido sai da tela.
+  useEffect(() => {
+    if (!remote) setWatching(false);
+  }, [remote]);
 
   // Esc fecha e o fundo não rola enquanto o ring está aberto.
   useEffect(() => {
@@ -116,26 +112,39 @@ export function DiceDock({ roller }: DiceDockProps) {
         </div>
       ) : null}
 
-      {/* Alguém da mesa abriu a janela: quem não é o autor acompanha pela faixa. */}
-      {activeRoll ? (
-        <div className="dice-live" role="status">
+      {/* Alguém da mesa está rolando: a faixa no topo; clicar abre o tabuleiro
+          de quem rola, só para assistir. */}
+      {remote ? (
+        <button
+          type="button"
+          className="dice-live"
+          title={`Ver o tabuleiro de ${remote.actorName} (somente leitura)`}
+          onClick={() => setWatching(true)}
+        >
           <Portrait
-            src={activeRoll.avatarUrl}
-            alt={activeRoll.actorName}
+            src={remote.avatarUrl}
+            alt={remote.actorName}
             size="sm"
             icon="users"
             zoomable={false}
           />
           <span className="dice-live-text">
-            <strong>{activeRoll.actorName}</strong> está realizando
-            {activeRoll.label ? ` um teste de ${activeRoll.label}` : ' um teste'}
+            <strong>{remote.actorName}</strong>
+            {remote.label
+              ? ` está realizando um teste de ${remote.label}`
+              : ' está realizando um teste'}
           </span>
           <span className="dice-live-dots" aria-hidden>
             <i />
             <i />
             <i />
           </span>
-        </div>
+          <span className="dice-live-hint">assistir</span>
+        </button>
+      ) : null}
+
+      {watching && remote ? (
+        <RemoteRollBoard board={remote} onClose={() => setWatching(false)} />
       ) : null}
 
       {open

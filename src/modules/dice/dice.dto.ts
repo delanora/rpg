@@ -20,6 +20,29 @@ export interface RolledDie {
   dropped?: boolean;
 }
 
+/** Um dado do pool, como o autor montou o tabuleiro. */
+export interface RollBoardDie {
+  sides: number;
+  /** d20 fixo da rolagem de perícia/salvaguarda (não dá para remover). */
+  locked: boolean;
+}
+
+/**
+ * O tabuleiro de rolagem como quem está rolando o montou.
+ *
+ * A mesa inteira vê esse tabuleiro (para acompanhar a rolagem), mas só o autor
+ * interage com ele — por isso o servidor é apenas o espelho do estado.
+ */
+export interface RollBoardDto {
+  pool: RollBoardDie[];
+  advantage: boolean;
+  disadvantage: boolean;
+  /** Bônus fixo do teste (perícia/salvaguarda). */
+  bonus: number;
+  /** `tumbling` = os dados estão rolando agora. */
+  phase: 'idle' | 'tumbling';
+}
+
 /**
  * Alguém com a janela de dados aberta na mesa.
  *
@@ -36,12 +59,16 @@ export interface ActiveRollDto {
   kind: DiceRollKind;
   /** Perícia/salvaguarda em teste (vazio na rolagem livre). */
   label: string;
+  /** Tabuleiro montado pelo autor (os demais só assistem). */
+  board: RollBoardDto;
   /** Momento da última mudança de estado. */
   at: string;
 }
 
 export interface DiceRollDto {
   id: string;
+  /** Dono da rolagem — a mesa usa isso para casar a rolagem com o tabuleiro. */
+  actorUserId: string;
   /**
    * Identificador do pedido do cliente. O autor usa isso para reconhecer a
    * própria rolagem no tempo real e não repetir o aviso que ele mesmo vê na
