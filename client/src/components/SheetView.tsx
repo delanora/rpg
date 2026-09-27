@@ -23,9 +23,7 @@ const TAB_SECTIONS = [
   { key: 'features', label: 'Características', icon: 'book' },
 ] as const satisfies readonly { key: string; label: string; icon: IconName }[];
 
-export type SheetTabKey = (typeof TAB_SECTIONS)[number]['key'];
-
-type TabKey = SheetTabKey;
+type TabKey = (typeof TAB_SECTIONS)[number]['key'];
 
 interface SheetViewProps {
   character: Character;
@@ -34,9 +32,6 @@ interface SheetViewProps {
   onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>;
   /** Em `true`, nenhum campo é editável (visão do mestre). */
   readOnly?: boolean;
-  /** Aba controlada de fora (ex.: atalhos do combate). Sem isso, é interna. */
-  tab?: TabKey;
-  onTabChange?: (key: TabKey) => void;
 }
 
 function renderTab(key: TabKey, character: Character, update: (patch: CharacterPatch) => void) {
@@ -56,18 +51,8 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
  * perícias, anotações e as abas (magias, ataques, características).
  * Reutilizada pelo jogador e pelo mestre.
  */
-export function SheetView({
-  character,
-  update,
-  onInventoryMove,
-  readOnly = false,
-  tab: tabProp,
-  onTabChange,
-}: SheetViewProps) {
-  const [internalTab, setInternalTab] = useState<TabKey>('spells');
-  // Controlada por quem chamou (atalhos do combate) ou pela própria ficha.
-  const tab = tabProp ?? internalTab;
-  const setTab = onTabChange ?? setInternalTab;
+export function SheetView({ character, update, onInventoryMove, readOnly = false }: SheetViewProps) {
+  const [tab, setTab] = useState<TabKey>('spells');
   // Anotações vivem num painel flutuante, abertas pelo botão de pena.
   const [notesOpen, setNotesOpen] = useState(false);
   const active = TAB_SECTIONS.find((item) => item.key === tab) ?? TAB_SECTIONS[0];

@@ -4,8 +4,16 @@ import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
 import { LevelUpDialog } from '../components/LevelUpDialog';
 import { PresentationOverlay } from '../components/PresentationOverlay';
-import { SheetView, type SheetTabKey } from '../components/SheetView';
-import { CombatTracker, type SheetShortcut } from '../combat/CombatTracker';
+import { SheetView } from '../components/SheetView';
+import { BagListSection } from '../components/sections/BagListSection';
+import { FeaturesSection } from '../components/sections/FeaturesSection';
+import { AttacksSection } from '../components/sections/AttacksSection';
+import { SpellsSection } from '../components/sections/SpellsSection';
+import {
+  CombatTracker,
+  COMBAT_SHORTCUTS,
+  type SheetShortcut,
+} from '../combat/CombatTracker';
 import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
 import { fetchGameConfig } from '../gameApi';
@@ -32,19 +40,15 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // Configuração da mesa: controla se o botão Level Up está habilitado.
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
-  // Aba das seções vivas da ficha. Controlada aqui para os atalhos do combate.
-  const [sheetTab, setSheetTab] = useState<SheetTabKey>('spells');
+  // Seção da ficha aberta logo abaixo do painel de combate (ou nenhuma).
+  const [combatView, setCombatView] = useState<SheetShortcut | null>(null);
 
-  /** Atalho do combate: abre a aba pedida (ou rola até o inventário). */
+  // Clicar de novo no mesmo atalho fecha a seção aberta.
   const openSheetSection = useCallback((target: SheetShortcut) => {
-    if (target !== 'inventory') setSheetTab(target);
-    // As abas e o inventário já estão na página; rolamos com um quadro de
-    // folga para a aba escolhida estar pintada quando a rolagem começar.
-    window.requestAnimationFrame(() => {
-      const selector = target === 'inventory' ? '.sheet-inventory' : '.sheet-tabs-area';
-      document.querySelector(selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    setCombatView((current) => (current === target ? null : target));
   }, []);
+
+  const openShortcut = COMBAT_SHORTCUTS.find((item) => item.key === combatView) ?? null;
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -241,7 +245,40 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 onCombatEnd={() => combatState.setCombat(null)}
                 onError={setError}
                 onOpenSection={openSheetSection}
+                openSection={combatView}
               />
+            ) : null}
+
+            {/* Atalhos do combate: a seção abre aqui embaixo, sem tirar o
+                jogador do painel de batalha. */}
+            {combat && combatView && character ? (
+              <section className="combat-view" aria-label={openShortcut?.label}>
+                <div className="combat-view-head">
+                  <h2>
+                    <Icon name={openShortcut?.icon ?? 'book'} size={16} />
+                    {openShortcut?.label}
+                  </h2>
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    aria-label="Fechar esta seção"
+                    onClick={() => setCombatView(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {combatView === 'spells' ? (
+                  <SpellsSection character={character} update={update} />
+                ) : null}
+                {combatView === 'attacks' ? (
+                  <AttacksSection character={character} update={update} />
+                ) : null}
+                {combatView === 'features' ? (
+                  <FeaturesSection character={character} update={update} />
+                ) : null}
+                {combatView === 'inventory' ? <BagListSection character={character} /> : null}
+              </section>
             ) : null}
 
             {!character ? (
@@ -271,13 +308,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
                 </div>
 
-                <SheetView
-                  character={character}
-                  update={update}
-                  onInventoryMove={moveItem}
-                  tab={sheetTab}
-                  onTabChange={setSheetTab}
-                />
+                <SheetView character={character} update={update} onInventoryMove={moveItem} />
 
                 {levelUpOpen && levelUpAvailable ? (
                   <LevelUpDialog

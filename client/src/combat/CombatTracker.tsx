@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Icon } from '../components/Icon';
+import { Icon, type IconName } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
 import { formatModifier } from '../dnd';
 import type { Attack, CombatDto, CombatantDto, SessionUser } from '../types';
@@ -139,8 +139,18 @@ function AttackPanel({
   );
 }
 
-/** Seções da ficha que podem ser abertas a partir do painel de combate. */
-export type SheetShortcut = 'spells' | 'attacks' | 'features' | 'inventory';
+/**
+ * Seções da ficha que podem ser abertas abaixo do painel de combate. A lista
+ * fica aqui para os botões e o painel que os atende não saírem de sincronia.
+ */
+export const COMBAT_SHORTCUTS = [
+  { key: 'spells', label: 'Magias', icon: 'star' },
+  { key: 'attacks', label: 'Ataques', icon: 'sword' },
+  { key: 'features', label: 'Características', icon: 'book' },
+  { key: 'inventory', label: 'Mochila', icon: 'bag' },
+] as const satisfies readonly { key: string; label: string; icon: IconName }[];
+
+export type SheetShortcut = (typeof COMBAT_SHORTCUTS)[number]['key'];
 
 interface CombatTrackerProps {
   combat: CombatDto;
@@ -159,6 +169,8 @@ interface CombatTrackerProps {
   onError: (message: string) => void;
   /** Atalhos para as seções da ficha. Sem isso, os botões não aparecem. */
   onOpenSection?: (target: SheetShortcut) => void;
+  /** Atalho aberto no momento (só para marcar o botão correspondente). */
+  openSection?: SheetShortcut | null;
 }
 
 export function CombatTracker({
@@ -174,6 +186,7 @@ export function CombatTracker({
   onCombatEnd,
   onError,
   onOpenSection,
+  openSection = null,
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
 
@@ -544,34 +557,20 @@ export function CombatTracker({
             <Icon name="book" size={15} /> Atalhos da ficha
           </h3>
           <div className="combat-shortcuts">
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => onOpenSection('spells')}
-            >
-              <Icon name="star" size={15} /> Magias
-            </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => onOpenSection('attacks')}
-            >
-              <Icon name="sword" size={15} /> Ataques
-            </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => onOpenSection('features')}
-            >
-              <Icon name="book" size={15} /> Características
-            </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              onClick={() => onOpenSection('inventory')}
-            >
-              <Icon name="bag" size={15} /> Mochila
-            </button>
+            {COMBAT_SHORTCUTS.map((shortcut) => {
+              const isOpen = shortcut.key === openSection;
+              return (
+                <button
+                  key={shortcut.key}
+                  type="button"
+                  className={isOpen ? 'btn btn-small active' : 'btn btn-small'}
+                  aria-expanded={isOpen}
+                  onClick={() => onOpenSection(shortcut.key)}
+                >
+                  <Icon name={shortcut.icon} size={15} /> {shortcut.label}
+                </button>
+              );
+            })}
           </div>
         </section>
       ) : null}
