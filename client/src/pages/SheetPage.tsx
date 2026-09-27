@@ -4,8 +4,8 @@ import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
 import { LevelUpDialog } from '../components/LevelUpDialog';
 import { PresentationOverlay } from '../components/PresentationOverlay';
-import { SheetView } from '../components/SheetView';
-import { CombatTracker } from '../combat/CombatTracker';
+import { SheetView, type SheetTabKey } from '../components/SheetView';
+import { CombatTracker, type SheetShortcut } from '../combat/CombatTracker';
 import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
 import { fetchGameConfig } from '../gameApi';
@@ -32,6 +32,19 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // Configuração da mesa: controla se o botão Level Up está habilitado.
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
+  // Aba das seções vivas da ficha. Controlada aqui para os atalhos do combate.
+  const [sheetTab, setSheetTab] = useState<SheetTabKey>('spells');
+
+  /** Atalho do combate: abre a aba pedida (ou rola até o inventário). */
+  const openSheetSection = useCallback((target: SheetShortcut) => {
+    if (target !== 'inventory') setSheetTab(target);
+    // As abas e o inventário já estão na página; rolamos com um quadro de
+    // folga para a aba escolhida estar pintada quando a rolagem começar.
+    window.requestAnimationFrame(() => {
+      const selector = target === 'inventory' ? '.sheet-inventory' : '.sheet-tabs-area';
+      document.querySelector(selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -227,6 +240,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 onCombatChange={combatState.setCombat}
                 onCombatEnd={() => combatState.setCombat(null)}
                 onError={setError}
+                onOpenSection={openSheetSection}
               />
             ) : null}
 
@@ -257,7 +271,13 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
                 </div>
 
-                <SheetView character={character} update={update} onInventoryMove={moveItem} />
+                <SheetView
+                  character={character}
+                  update={update}
+                  onInventoryMove={moveItem}
+                  tab={sheetTab}
+                  onTabChange={setSheetTab}
+                />
 
                 {levelUpOpen && levelUpAvailable ? (
                   <LevelUpDialog

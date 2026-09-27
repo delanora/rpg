@@ -2811,6 +2811,24 @@ input[type='checkbox']:disabled {
   color: var(--gold);
 }
 
+/* Atalhos do combate: magias, ataques, características e mochila. */
+.combat-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.combat-shortcuts .btn {
+  flex: 1 1 8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+.combat-shortcuts .btn .icon {
+  color: var(--gold);
+}
+
 .hp-controls {
   display: flex;
   flex-wrap: wrap;

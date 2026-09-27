@@ -139,6 +139,9 @@ function AttackPanel({
   );
 }
 
+/** Seções da ficha que podem ser abertas a partir do painel de combate. */
+export type SheetShortcut = 'spells' | 'attacks' | 'features' | 'inventory';
+
 interface CombatTrackerProps {
   combat: CombatDto;
   log: CombatLogEntry[];
@@ -154,6 +157,8 @@ interface CombatTrackerProps {
   onCombatChange: (combat: CombatDto) => void;
   onCombatEnd: () => void;
   onError: (message: string) => void;
+  /** Atalhos para as seções da ficha. Sem isso, os botões não aparecem. */
+  onOpenSection?: (target: SheetShortcut) => void;
 }
 
 export function CombatTracker({
@@ -168,6 +173,7 @@ export function CombatTracker({
   onCombatChange,
   onCombatEnd,
   onError,
+  onOpenSection,
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
 
@@ -530,6 +536,45 @@ export function CombatTracker({
           </ul>
         )}
       </section>
+
+      {/* Atalhos: levam direto às seções da ficha sem sair do combate. */}
+      {onOpenSection ? (
+        <section className="combat-block">
+          <h3>
+            <Icon name="book" size={15} /> Atalhos da ficha
+          </h3>
+          <div className="combat-shortcuts">
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => onOpenSection('spells')}
+            >
+              <Icon name="star" size={15} /> Magias
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => onOpenSection('attacks')}
+            >
+              <Icon name="sword" size={15} /> Ataques
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => onOpenSection('features')}
+            >
+              <Icon name="book" size={15} /> Características
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => onOpenSection('inventory')}
+            >
+              <Icon name="bag" size={15} /> Mochila
+            </button>
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }
