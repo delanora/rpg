@@ -53,10 +53,13 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
  */
 export function SheetView({ character, update, onInventoryMove, readOnly = false }: SheetViewProps) {
   const [tab, setTab] = useState<TabKey>('spells');
+  // Anotações vivem num painel flutuante, abertas pelo botão de pena.
+  const [notesOpen, setNotesOpen] = useState(false);
   const active = TAB_SECTIONS.find((item) => item.key === tab) ?? TAB_SECTIONS[0];
 
   return (
     <ReadOnlyProvider value={readOnly}>
+      {/* `position: fixed` no botão e no painel: não participam da grade. */}
       <div className="sheet">
         {/* Identidade de ponta a ponta, no topo da ficha. */}
         <div className="sheet-identity">
@@ -76,13 +79,9 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
           <VitalsSection character={character} update={update} />
         </div>
 
-        {/* Perícias em duas colunas, com as anotações ao lado. */}
+        {/* Perícias e salvaguardas ocupam a largura toda. */}
         <div className="sheet-skills">
           <SkillsSavesSection character={character} update={update} />
-        </div>
-
-        <div className="sheet-notes">
-          <NotesSection character={character} update={update} />
         </div>
 
         <div className="sheet-tabs-area">
@@ -107,6 +106,38 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
             {renderTab(tab, character, update)}
           </div>
         </div>
+
+        {/* Anotações e história: botão flutuante no canto inferior direito. */}
+        <button
+          type="button"
+          className={notesOpen ? 'notes-fab active' : 'notes-fab'}
+          aria-expanded={notesOpen}
+          aria-controls="sheet-notes-panel"
+          title={notesOpen ? 'Fechar anotações' : 'Abrir anotações e história'}
+          onClick={() => setNotesOpen((value) => !value)}
+        >
+          <Icon name="quill" size={18} />
+          <span className="notes-fab-label">Anotações</span>
+        </button>
+
+        {notesOpen ? (
+          <div
+            className="notes-drawer"
+            id="sheet-notes-panel"
+            role="dialog"
+            aria-label="Anotações e história"
+          >
+            <button
+              type="button"
+              className="notes-drawer-close"
+              aria-label="Fechar anotações"
+              onClick={() => setNotesOpen(false)}
+            >
+              ×
+            </button>
+            <NotesSection character={character} update={update} />
+          </div>
+        ) : null}
       </div>
     </ReadOnlyProvider>
   );

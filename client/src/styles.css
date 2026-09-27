@@ -899,11 +899,10 @@ a {
 .sheet {
   position: relative;
   display: grid;
-  /* Inventário | atributos | vida e defesa. */
+  /* Inventário à esquerda; atributos e vida/defesa empilhados à direita. */
   grid-template-columns:
     minmax(16rem, 20rem)
-    minmax(0, 1fr)
-    minmax(0, 1.15fr);
+    minmax(0, 1fr);
   gap: var(--space-section);
   /* Cada seção tem a altura do próprio conteúdo — nada de card esticado. */
   align-items: start;
@@ -981,27 +980,43 @@ a {
 .sheet-abilities,
 .sheet-vitals,
 .sheet-skills,
-.sheet-notes {
+.sheet-tabs-area {
   min-width: 0;
 }
 
 /* Identidade de ponta a ponta, no topo. */
 .sheet-identity {
   grid-column: 1 / -1;
+  grid-row: 1;
 }
 
-/* Perícias ocupam duas colunas; as anotações ficam na terceira. */
+/* Inventário na coluna esquerda, ao lado de atributos + vida e defesa. */
+.sheet-inventory {
+  grid-column: 1;
+  grid-row: 2 / 4;
+}
+
+.sheet-abilities {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+/* Vida e Defesa logo abaixo dos atributos, na mesma coluna. */
+.sheet-vitals {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+/* Perícias e salvaguardas ocupam a largura toda. */
 .sheet-skills {
-  grid-column: 1 / 3;
-}
-
-.sheet-notes {
-  grid-column: 3 / 4;
+  grid-column: 1 / -1;
+  grid-row: 4;
 }
 
 /* As abas (magias, ataques, características) fecham a ficha, de ponta a ponta. */
 .sheet-tabs-area {
   grid-column: 1 / -1;
+  grid-row: 5;
   display: grid;
   align-content: start;
   gap: var(--space-2);
@@ -1020,10 +1035,6 @@ a {
   gap: 0.7rem;
 }
 
-.sheet-notes .notes-area {
-  min-height: 14rem;
-}
-
 /* Em telas estreitas tudo vira uma coluna, na ordem de leitura. */
 @media (max-width: 1180px) {
   .sheet {
@@ -1031,10 +1042,36 @@ a {
   }
 
   .sheet-identity,
+  .sheet-inventory,
+  .sheet-abilities,
+  .sheet-vitals,
   .sheet-skills,
-  .sheet-notes,
   .sheet-tabs-area {
     grid-column: 1 / -1;
+  }
+
+  .sheet-identity {
+    grid-row: 1;
+  }
+
+  .sheet-inventory {
+    grid-row: 2;
+  }
+
+  .sheet-abilities {
+    grid-row: 3;
+  }
+
+  .sheet-vitals {
+    grid-row: 4;
+  }
+
+  .sheet-skills {
+    grid-row: 5;
+  }
+
+  .sheet-tabs-area {
+    grid-row: 6;
   }
 
   .sheet-identity .grid-3 {
@@ -3497,19 +3534,59 @@ input[type='checkbox']:disabled {
   flex-wrap: wrap;
 }
 
-/* Avatar maior e alinhado aos botões, formando um bloco equilibrado. */
-.avatar-row .portrait {
+/* Avatar no cabeçalho da Identidade: clicar na foto revela as opções. */
+.avatar-head {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.avatar-trigger {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  transition: box-shadow 0.18s ease, transform 0.12s ease;
+}
+
+.avatar-trigger .portrait {
   border-radius: 50%;
 }
 
-.avatar-row .portrait-lg {
-  width: 3.9rem;
-  height: 3.9rem;
+.avatar-trigger .portrait-lg {
+  width: 3.2rem;
+  height: 3.2rem;
 }
 
-/* O toolbar tem margem inferior para uso solto; aqui ela desalinha o bloco. */
-.avatar-row .toolbar {
-  margin-bottom: 0;
+.avatar-trigger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 3px var(--gold-hair);
+}
+
+.avatar-trigger:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* "Trocar" e "remover" só aparecem depois de clicar na foto. */
+.avatar-menu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  z-index: 45;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+}
+
+.avatar-menu .btn {
+  white-space: nowrap;
 }
 
 .item-cell {
@@ -4393,6 +4470,99 @@ input[type='checkbox']:focus-visible,
 /* Tabelas de ataque: linhas com o mesmo respiro das listas de perícias. */
 .sheet-table tbody tr {
   transition: background 0.15s ease;
+}
+
+/* ==========================================================================
+   25. Anotações: botão flutuante e painel de escrita
+   ========================================================================== */
+
+/* Botão de pena no canto inferior direito da tela. */
+.notes-fab {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 56;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--leather-2), var(--leather));
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow: var(--shadow-deep);
+  transition: transform 0.15s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.notes-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-deep), 0 0 18px -4px var(--glow);
+}
+
+.notes-fab:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.notes-fab.active {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-color: var(--gold);
+  color: #3a2410;
+}
+
+/* Painel de escrita ancorado logo acima do botão. */
+.notes-drawer {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 5.4rem;
+  z-index: 55;
+  width: min(32rem, 92vw);
+  animation: ink-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.notes-drawer .notes-area {
+  max-height: 48vh;
+}
+
+.notes-drawer-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.7rem;
+  z-index: 1;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.notes-drawer-close:hover {
+  border-color: var(--gold);
+  color: var(--gold-deep);
+  box-shadow: 0 0 12px -3px var(--glow);
+}
+
+.notes-drawer-close:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Em telas estreitas o botão fica só com o ícone. */
+@media (max-width: 560px) {
+  .notes-fab-label {
+    display: none;
+  }
 }
 
 /* Seção que hospeda um tooltip: sem recorte, para o popover poder escapar. */
