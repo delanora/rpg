@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playCrit, playDice } from '../sound';
-import type {
-  DiceRollDto,
-  DiceRollKind,
-  SessionUser,
-  TableRollActivePayload,
-} from '../types';
+import type { DiceRollDto, DiceRollKind, RollBoardDie, SessionUser } from '../types';
 import type { RealtimeHandlers } from '../useRealtime';
 import {
   announceActiveRoll,
@@ -22,6 +17,26 @@ export const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100] as const;
 export interface DicePoolDie {
   sides: number;
   locked: boolean;
+}
+
+/**
+ * O tabuleiro de quem está rolando, visto por quem apenas assiste.
+ *
+ * Chega pelo evento `dice:active` (pool, vantagem, fase) e é completado pelo
+ * `dice:roll` com o resultado. Só o autor interage: aqui é tudo leitura.
+ */
+export interface RemoteBoard {
+  userId: string;
+  actorName: string;
+  avatarUrl: string;
+  kind: DiceRollKind;
+  label: string;
+  bonus: number;
+  pool: RollBoardDie[];
+  advantage: boolean;
+  disadvantage: boolean;
+  phase: RollPhase;
+  result: DiceRollDto | null;
 }
 
 /** Contexto da rolagem aberta (livre ou de perícia/salvaguarda). */
@@ -62,13 +77,13 @@ export function useDiceRoller(user: SessionUser) {
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<DiceToast[]>([]);
   const [history, setHistory] = useState<DiceRollDto[]>([]);
-  // Alguém da mesa com a janela de dados aberta (o autor não conta: ele vê a
-  // própria janela). É o que vira a faixa no topo do tabuleiro.
-  const [activeRoll, setActiveRoll] = useState<TableRollActivePayload | null>(null);
+  // Tabuleiro de outra pessoa da mesa, espelhado aqui (só para assistir).
+  const [remote, setRemote] = useState<RemoteBoard | null>(null);
 
   // Reconhece a própria rolagem no tempo real (para não repetir o aviso).
   const myClientId = useRef<string | null>(null);
   const settleTimer = useRef<number | null>(null);
+  const remoteSettleTimer = useRef<number | null>(null);
   const toastTimers = useRef<number[]>([]);
 
   // O mestre carrega o histórico já acumulado ao abrir o painel.
@@ -92,10 +107,27 @@ export function useDiceRoller(user: SessionUser) {
   useEffect(
     () => () => {
       if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+      if (remoteSettleTimer.current !== null) window.clearTimeout(remoteSettleTimer.current);
       toastTimers.current.forEach((timer) => window.clearTimeout(timer));
     },
     [],
   );
+
+  /** O tabuleiro assistido sai da tela quando a janela do autor fecha. */
+  const clearRemote = useCallback(() => {
+    if (remoteSettleTimer.current !== null) window.clearTimeout(remoteSettleTimer.current);
+    remoteSettleTimer.current = null;
+    setRemote(null);
+  }, []);
+
+  /** Os dados assistidos assentam junto com os do autor (mesma animação). */
+  const settleRemote = useCallback(() => {
+    if (remoteSettleTimer.current !== null) window.clearTimeout(remoteSettleTimer.current);
+    remoteSettleTimer.current = window.setTimeout(
+      () => setRemote((current) => (current ? { ...current, phase: 'settled' } : current)),
+      TUMBLE_MS,
+    );
+  }, []);
 
   const reset = useCallback(() => {
     setContext(null);
@@ -131,8 +163,19 @@ export function useDiceRoller(user: SessionUser) {
   const isPrivateRoll = isPrivate && isMaster;
   const announcing = open && !isPrivateRoll;
 
-  // Avisa a mesa que a janela abriu (e desfaz o aviso ao fechar, ao marcar
-  // "Privada" ou ao trocar de teste).
+  // O tabuleiro como a mesa o vê: pool, vantagem/desvantagem e o bônus do teste.
+  const board = useMemo(
+    () => ({
+      pool: pool.map((die) => ({ sides: die.sides, locked: die.locked })),
+      advantage,
+      disadvantage,
+      bonus: context?.bonus ?? 0,
+    }),
+    [pool, advantage, disadvantage, context?.bonus],
+  );
+
+  // Espelha o tabuleiro para a mesa (abrir/fechar, mexer no pool, trocar de
+  // teste). A fase fica em `idle` aqui: rolar é anunciado no próprio `submit`.
   const announced = useRef(false);
 
   useEffect(() => {
@@ -145,10 +188,12 @@ export function useDiceRoller(user: SessionUser) {
       label: context?.label ?? '',
       kind: context?.kind ?? 'free',
       private: isPrivateRoll,
+      ...board,
+      phase: 'idle',
     }).catch(() => {
-      // A faixa é acessória: sem ela a rolagem continua funcionando.
+      // A mesa só não acompanha: a rolagem continua funcionando.
     });
-  }, [announcing, isPrivateRoll, context?.label, context?.kind]);
+  }, [announcing, isPrivateRoll, context?.label, context?.kind, board]);
 
   // Fechar a aba no meio da rolagem não pode deixar a faixa presa na mesa (o
   // servidor também limpa pelo disconnect, isto cobre o fechamento normal).
@@ -159,16 +204,29 @@ export function useDiceRoller(user: SessionUser) {
     [],
   );
 
-  // Estado que já estava aberto quando esta tela carregou.
+  // Tabuleiro que já estava aberto quando esta tela carregou.
   useEffect(() => {
     let active = true;
 
     fetchActiveRoll()
       .then((state) => {
-        if (active && state && state.userId !== user.id) setActiveRoll(state);
+        if (!active || !state || state.userId === user.id) return;
+        setRemote({
+          userId: state.userId,
+          actorName: state.actorName,
+          avatarUrl: state.avatarUrl,
+          kind: state.kind,
+          label: state.label,
+          bonus: state.board.bonus,
+          pool: state.board.pool,
+          advantage: state.board.advantage,
+          disadvantage: state.board.disadvantage,
+          phase: state.board.phase === 'tumbling' ? 'tumbling' : 'idle',
+          result: null,
+        });
       })
       .catch(() => {
-        // Sem estado: nenhuma faixa.
+        // Sem estado: nenhum tabuleiro para assistir.
       });
 
     return () => {
@@ -215,6 +273,18 @@ export function useDiceRoller(user: SessionUser) {
     setResult(null);
     setError(null);
 
+    // A mesa inteira vê os dados caindo junto com quem rolou.
+    if (announcing) {
+      void announceActiveRoll({
+        active: true,
+        label: context?.label ?? '',
+        kind: context?.kind ?? 'free',
+        private: isPrivateRoll,
+        ...board,
+        phase: 'tumbling',
+      }).catch(() => {});
+    }
+
     try {
       const roll = await rollTableDice({
         dice: pool.map((die) => ({ sides: die.sides })),
@@ -237,7 +307,19 @@ export function useDiceRoller(user: SessionUser) {
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Falha ao rolar os dados.');
     }
-  }, [phase, pool, advantage, disadvantage, context, isPrivate, isMaster, user.id]);
+  }, [
+    phase,
+    pool,
+    advantage,
+    disadvantage,
+    context,
+    isPrivate,
+    isMaster,
+    user.id,
+    announcing,
+    isPrivateRoll,
+    board,
+  ]);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
@@ -265,16 +347,30 @@ export function useDiceRoller(user: SessionUser) {
 
   const handlers = useMemo<RealtimeHandlers>(
     () => ({
-      // Alguém abriu (ou fechou) a janela de dados: a faixa do topo do tabuleiro.
+      // O tabuleiro de outra pessoa da mesa (para assistir a rolagem).
       onDiceActive: (payload) => {
-        if (!payload.active) {
-          setActiveRoll(null);
+        if (!payload.active || payload.userId === user.id) {
+          // Fechou — ou o tabuleiro é o meu (eu já vejo a janela de verdade).
+          clearRemote();
           return;
         }
 
-        // A própria janela já está aberta na tela: nada de faixa para o autor.
-        if (payload.userId === user.id) return;
-        setActiveRoll(payload);
+        const tumbling = payload.board.phase === 'tumbling';
+        setRemote({
+          userId: payload.userId,
+          actorName: payload.actorName,
+          avatarUrl: payload.avatarUrl,
+          kind: payload.kind,
+          label: payload.label,
+          bonus: payload.board.bonus,
+          pool: payload.board.pool,
+          advantage: payload.board.advantage,
+          disadvantage: payload.board.disadvantage,
+          phase: tumbling ? 'tumbling' : 'idle',
+          result: null,
+        });
+
+        if (tumbling) settleRemote();
       },
 
       onDiceRoll: (payload) => {
@@ -284,6 +380,17 @@ export function useDiceRoller(user: SessionUser) {
         if (isMaster) {
           setHistory((prev) => [roll, ...prev.filter((item) => item.id !== roll.id)].slice(0, 100));
         }
+
+        // A rolagem entra no tabuleiro espelhado de quem está assistindo.
+        setRemote((current) =>
+          current && current.userId === roll.actorUserId
+            ? {
+                ...current,
+                result: roll,
+                phase: current.phase === 'tumbling' ? 'tumbling' : 'settled',
+              }
+            : current,
+        );
 
         // A própria rolagem já aparece na janela: não vira aviso para o autor.
         if (roll.clientId && roll.clientId === myClientId.current) return;
@@ -300,7 +407,7 @@ export function useDiceRoller(user: SessionUser) {
         );
       },
     }),
-    [isMaster, user.id],
+    [isMaster, user.id, clearRemote, settleRemote],
   );
 
   return {
@@ -309,7 +416,7 @@ export function useDiceRoller(user: SessionUser) {
     context,
     pool,
     extraD20,
-    activeRoll,
+    remote,
     advantage,
     disadvantage,
     isPrivate,

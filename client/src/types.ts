@@ -840,6 +840,8 @@ export interface RolledDie {
 
 export interface DiceRollDto {
   id: string;
+  /** Dono da rolagem — casa a rolagem com o tabuleiro anunciado. */
+  actorUserId: string;
   clientId: string | null;
   actorName: string;
   kind: DiceRollKind;
@@ -872,15 +874,39 @@ export interface TableRollActivePayload {
   avatarUrl: string;
   kind: DiceRollKind;
   label: string;
+  /** Tabuleiro montado por quem está rolando. */
+  board: RollBoardDto;
   at: string;
 }
 
-/** Aviso enviado ao servidor quando a janela abre ou fecha. */
+/** Um dado do pool do tabuleiro. */
+export interface RollBoardDie {
+  sides: number;
+  /** d20 fixo da rolagem de perícia/salvaguarda. */
+  locked: boolean;
+}
+
+/** O tabuleiro de rolagem, como quem está rolando o montou. */
+export interface RollBoardDto {
+  pool: RollBoardDie[];
+  advantage: boolean;
+  disadvantage: boolean;
+  bonus: number;
+  /** `tumbling` = os dados estão rolando agora. */
+  phase: 'idle' | 'tumbling';
+}
+
+/** Aviso enviado ao servidor quando o tabuleiro muda (abre, mexe no pool, rola). */
 export interface TableRollActiveRequest {
   active: boolean;
   label?: string;
   kind?: DiceRollKind;
   private?: boolean;
+  pool?: RollBoardDie[];
+  advantage?: boolean;
+  disadvantage?: boolean;
+  bonus?: number;
+  phase?: 'idle' | 'tumbling';
 }
 
 /** Pedido de rolagem enviado ao servidor. */

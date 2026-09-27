@@ -35,6 +35,20 @@ export const activeRollSchema = z.object({
   kind: z.enum(['skill', 'save', 'free']).optional(),
   /** Só vale para o mestre; rolagem de jogador é sempre pública. */
   private: z.boolean().optional(),
+  /** O tabuleiro montado: a mesa assiste, só o autor interage. */
+  pool: z
+    .array(
+      z.object({
+        sides: z.number().int().min(2).max(1000),
+        locked: z.boolean().optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
+  advantage: z.boolean().optional(),
+  disadvantage: z.boolean().optional(),
+  bonus: z.number().int().min(-100).max(100).optional(),
+  phase: z.enum(['idle', 'tumbling']).optional(),
 });
 
 export type TableRollInput = z.infer<typeof tableRollSchema>;

@@ -2375,7 +2375,14 @@ async function main(): Promise<void> {
   const opened = await api('/api/dice/active', {
     method: 'POST',
     token: playerToken,
-    body: { active: true, kind: 'skill', label: 'Percepção' },
+    body: {
+      active: true,
+      kind: 'skill',
+      label: 'Percepção',
+      pool: [{ sides: 20, locked: true }, { sides: 6 }],
+      advantage: true,
+      bonus: 5,
+    },
   });
   check(
     'abrir a janela responde com quem está rolando',
@@ -2391,6 +2398,56 @@ async function main(): Promise<void> {
       typeof banner?.avatarUrl === 'string' &&
       banner?.label === 'Percepção',
     JSON.stringify(banner),
+  );
+  check(
+    'o tabuleiro montado vai junto (pool, vantagem e bônus)',
+    banner?.board?.pool?.length === 2 &&
+      banner?.board?.pool?.[0]?.sides === 20 &&
+      banner?.board?.pool?.[0]?.locked === true &&
+      banner?.board?.advantage === true &&
+      banner?.board?.bonus === 5 &&
+      banner?.board?.phase === 'idle',
+    JSON.stringify(banner?.board),
+  );
+  check(
+    'o pool anunciado é validado (401 dados não passam)',
+    (
+      await api('/api/dice/active', {
+        method: 'POST',
+        token: playerToken,
+        body: { active: true, pool: Array.from({ length: 60 }, () => ({ sides: 6 })) },
+      })
+    ).status === 400,
+  );
+
+  // Rolar: o tabuleiro assistido entra na fase de queda.
+  const tumblingEvent = waitFor<any>(masterSocket, 'dice:active').catch(() => null);
+  const rolling = await api('/api/dice/roll', {
+    method: 'POST',
+    token: playerToken,
+    body: { dice: [{ sides: 20 }], advantage: true, bonus: 5, kind: 'skill', label: 'Percepção' },
+  });
+  check(
+    'a rolagem identifica o dono (para casar com o tabuleiro)',
+    rolling.data?.roll?.actorUserId === playerUserId,
+    String(rolling.data?.roll?.actorUserId),
+  );
+  await api('/api/dice/active', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      active: true,
+      kind: 'skill',
+      label: 'Percepção',
+      pool: [{ sides: 20, locked: true }],
+      advantage: true,
+      bonus: 5,
+      phase: 'tumbling',
+    },
+  });
+  check(
+    'a mesa é avisada de que os dados estão rolando',
+    (await tumblingEvent)?.board?.phase === 'tumbling',
   );
 
   // Quem entra no meio da rolagem já recebe a faixa.

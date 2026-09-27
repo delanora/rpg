@@ -661,14 +661,14 @@ A apresentação é **efêmera** (não vai para o banco): vive na memória do se
 
 Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotações) fica disponível em **qualquer tela** — ficha, combate e painel do mestre. Ao clicar, o fundo escurece (como no lightbox das imagens) e um **ring circular** surge no centro da tela.
 
-O evento `dice:active` é emitido para toda a mesa quando alguém abre ou fecha a janela — quem conecta no meio de uma rolagem recebe o estado na hora (a rolagem é efêmera, vive só na memória do servidor).
+O evento `dice:active` é emitido para toda a mesa quando alguém abre ou fecha a janela, quando mexe no pool e quando os dados começam a rolar (`phase: 'tumbling'`) — é ele que mantém o tabuleiro assistido sincronizado. Quem conecta no meio de uma rolagem recebe o estado na hora (é efêmero, vive só na memória do servidor).
 
 Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da geometria de cada sólido (tetraedro, cubo, octaedro, dodecaedro, icosaedro e bipirâmides). Eles giram em vários eixos dentro do ring e **pousam com a face do resultado voltada para a câmera** — o número é desenhado no centro de cada face (d100 sai no selo, porque 10 faces não representam 100 números).
 
 - **Rolagem livre:** pool vazio; clique nos dados (d4, d6, d8, d10, d12, d20, d100) para empilhar; clique de novo num dado da bandeja para removê-lo.
 - **Rolagem de perícia/salvaguarda:** cada linha da seção "Perícias e Salvaguardas" tem um botão de dado que abre a janela com **1d20 fixo** e o bônus já aplicado; ainda dá para somar dados extras (Orientação, Inspiração de Bardo...).
 - **Vantagem/Desvantagem:** checkboxes exclusivos — rolam **2d20** e mantêm o maior (vantagem) ou o menor (desvantagem); os demais dados do pool rolam uma vez só. Os **dois d20 aparecem rolando juntos** no ring e o descartado fica **cinza** no resultado.
-- **Mesa acompanha a rolagem:** ao abrir a janela, quem está rolando avisa a mesa. Os demais não veem a janela (só o autor interage) — veem uma **faixa no topo do tabuleiro** com a foto do personagem e "*nome* está realizando um teste" (com o nome da perícia, quando é o caso). Rolagem marcada como privada pelo mestre não é divulgada, e fechar a janela (ou o navegador) tira a faixa.
+- **Mesa acompanha a rolagem:** ao abrir a janela, quem está rolando avisa a mesa. Os demais veem uma **faixa no topo do tabuleiro** com a foto do personagem e "*nome* está realizando um teste" (com o nome da perícia, quando é o caso). **Clicando na faixa**, quem assiste abre o **tabuleiro daquela pessoa em modo somente leitura** — os mesmos dados, caindo no mesmo instante, e o mesmo resultado, sem picker nem botões (o anúncio carrega o pool, a vantagem/desvantagem e a fase da rolagem). Rolagem marcada como privada pelo mestre não é divulgada, e fechar a janela (ou o navegador) tira a faixa.
 - **Animação:** os dados giram e quicam dentro do ring até assentarem; o total (com bônus) e o valor de cada dado aparecem em destaque.
 - **Visibilidade:** rolagem de jogador é **sempre pública**; o mestre pode marcar **Privada**, que não gera aviso para mais ninguém. Rolagem pública dispara um aviso para toda a mesa ("[Personagem] está fazendo um teste de [Perícia]") que some sozinho em **3 segundos** e também pode ser dispensado na hora.
 - **Histórico:** o mestre tem um **log** logo abaixo dos dados com todas as rolagens da sessão, do mais recente ao mais antigo, e pode **limpar** o log.
@@ -680,7 +680,7 @@ Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da g
 | `POST` | `/api/dice/roll` | autenticado | Rola o pool (`{ dice, advantage?, disadvantage?, bonus?, label?, kind?, private?, clientId? }`). |
 | `GET` | `/api/dice/history` | **mestre** | Rolagens da sessão (memória do servidor). |
 | `DELETE` | `/api/dice/history` | **mestre** | Zera o log. |
-| `POST` | `/api/dice/active` | autenticado | Avisa a mesa que a janela abriu/fechou (`{ active, label?, kind?, private? }`). |
+| `POST` | `/api/dice/active` | autenticado | Avisa a mesa que a janela abriu/fechou e manda o tabuleiro (`{ active, label?, kind?, private?, pool?, advantage?, disadvantage?, bonus?, phase? }`). |
 | `GET` | `/api/dice/active` | autenticado | Quem está com a janela aberta agora (`{ activeRoll }`). |
 
 | Evento | Destino | Conteúdo |
