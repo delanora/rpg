@@ -2,6 +2,7 @@ import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
+import type { DiceRollDto } from '../modules/dice/dice.dto.js';
 import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
@@ -141,6 +142,11 @@ export const ServerEvents = {
   COMBAT_ENDED: 'combat:ended',
   /** Um dado foi rolado (usado para o efeito sonoro e o log). */
   DICE_ROLLED: 'dice:rolled',
+  /**
+   * Rolagem da janela de dados (livre, perícia ou salvaguarda). Chega a toda a
+   * mesa nas rolagens públicas e apenas ao autor nas privadas.
+   */
+  DICE_ROLL: 'dice:roll',
   /** Resultado de um ataque, com acerto/erro e dano aplicado. */
   ATTACK_RESOLVED: 'combat:attack',
 } as const;
@@ -266,6 +272,11 @@ export interface DiceRolledPayload {
   total: number;
   crit: boolean;
   at: string;
+}
+
+/** Rolagem da janela de dados divulgada em tempo real. */
+export interface TableRollPayload {
+  roll: DiceRollDto;
 }
 
 /** Resultado de um ataque, do teste de acerto ao dano aplicado. */

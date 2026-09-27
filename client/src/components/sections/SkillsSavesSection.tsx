@@ -1,10 +1,18 @@
 import { ABILITY_ABBREVIATIONS, ABILITY_KEYS, ABILITY_LABELS, SKILLS, formatModifier } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import type { AbilityKey, SkillEntry } from '../../types';
+import { Icon } from '../Icon';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 const DEFAULT_ENTRY: SkillEntry = { proficient: false, expertise: false };
+
+/** Abre a janela de dados já com 1d20 e o bônus do teste aplicado. */
+interface RollInput {
+  kind: 'skill' | 'save';
+  label: string;
+  bonus: number;
+}
 
 /** Reparte uma lista em colunas de tamanho fixo (ex.: 18 perícias em 2×9). */
 function splitInColumns<T>(items: readonly T[], columnSize: number): T[][] {
@@ -15,7 +23,11 @@ function splitInColumns<T>(items: readonly T[], columnSize: number): T[][] {
   return columns;
 }
 
-export function SkillsSavesSection({ character, update }: SheetSectionProps) {
+export function SkillsSavesSection({
+  character,
+  update,
+  onRoll,
+}: SheetSectionProps & { onRoll?: (input: RollInput) => void }) {
   const readOnly = useReadOnly();
   const { derived } = character;
 
@@ -52,7 +64,7 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
               const detail = derived.skills[skill.key];
 
               return (
-                <li className="prof-row" key={skill.key}>
+                <li className={onRoll ? 'prof-row with-roll' : 'prof-row'} key={skill.key}>
                   <input
                     type="checkbox"
                     checked={entry.proficient}
@@ -76,6 +88,19 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
                     {entry.expertise ? <em className="tag">esp.</em> : null}
                   </span>
                   <span className="prof-value">{formatModifier(detail?.total ?? 0)}</span>
+                  {onRoll ? (
+                    <button
+                      type="button"
+                      className="prof-roll"
+                      title={`Rolar ${skill.label}`}
+                      aria-label={`Rolar teste de ${skill.label}`}
+                      onClick={() =>
+                        onRoll({ kind: 'skill', label: skill.label, bonus: detail?.total ?? 0 })
+                      }
+                    >
+                      <Icon name="die" size={13} />
+                    </button>
+                  ) : null}
                 </li>
               );
             })}
@@ -92,7 +117,10 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
               const locked = lockedSaves.has(ability);
 
               return (
-                <li className="prof-row prof-row-save" key={ability}>
+                <li
+                  className={onRoll ? 'prof-row prof-row-save with-roll' : 'prof-row prof-row-save'}
+                  key={ability}
+                >
                   <input
                     type="checkbox"
                     checked={character.saves[ability] ?? false}
@@ -107,6 +135,23 @@ export function SkillsSavesSection({ character, update }: SheetSectionProps) {
                     {locked ? <em className="tag">classe</em> : null}
                   </span>
                   <span className="prof-value">{formatModifier(detail?.total ?? 0)}</span>
+                  {onRoll ? (
+                    <button
+                      type="button"
+                      className="prof-roll"
+                      title={`Rolar salvaguarda de ${ABILITY_LABELS[ability]}`}
+                      aria-label={`Rolar salvaguarda de ${ABILITY_LABELS[ability]}`}
+                      onClick={() =>
+                        onRoll({
+                          kind: 'save',
+                          label: `Salvaguarda de ${ABILITY_LABELS[ability]}`,
+                          bonus: detail?.total ?? 0,
+                        })
+                      }
+                    >
+                      <Icon name="die" size={13} />
+                    </button>
+                  ) : null}
                 </li>
               );
             })}

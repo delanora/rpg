@@ -657,6 +657,32 @@ A apresentação é **efêmera** (não vai para o banco): vive na memória do se
 
 ---
 
+## 🎲 Janela de dados
+
+Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotações) fica disponível em **qualquer tela** — ficha, combate e painel do mestre. Ele abre a janela de rolagem, com uma **bandeja octogonal** onde os dados escolhidos ficam parados como modelos 3D.
+
+- **Rolagem livre:** pool vazio; clique nos dados (d4, d6, d8, d10, d12, d20, d100) para empilhar; clique de novo num dado da bandeja para removê-lo.
+- **Rolagem de perícia/salvaguarda:** cada linha da seção "Perícias e Salvaguardas" tem um botão de dado que abre a janela com **1d20 fixo** e o bônus já aplicado; ainda dá para somar dados extras (Orientação, Inspiração de Bardo...).
+- **Vantagem/Desvantagem:** checkboxes exclusivos — rolam **2d20** e mantêm o maior (vantagem) ou o menor (desvantagem); os demais dados do pool rolam uma vez só.
+- **Animação:** os dados giram e quicam na bandeja até assentarem; o total (com bônus) e o valor de cada dado aparecem em destaque.
+- **Visibilidade:** rolagem de jogador é **sempre pública**; o mestre pode marcar **Privada**, que não gera aviso para mais ninguém. Rolagem pública dispara um aviso dispensável para toda a mesa ("[Personagem] está fazendo um teste de [Perícia]").
+- **Histórico:** o mestre tem um **log lateral** na própria janela com todas as rolagens da sessão, do mais recente ao mais antigo.
+
+### Endpoints
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `POST` | `/api/dice/roll` | autenticado | Rola o pool (`{ dice, advantage?, disadvantage?, bonus?, label?, kind?, private?, clientId? }`). |
+| `GET` | `/api/dice/history` | **mestre** | Rolagens da sessão (memória do servidor). |
+
+| Evento | Destino | Conteúdo |
+|--------|---------|----------|
+| `dice:roll` | mesa (pública) / autor (privada) | Resultado da rolagem da janela de dados. |
+
+Quem rolou é carimbado pelo servidor a partir do token e da ficha do usuário — nunca vem do corpo da requisição. O `clientId` enviado pelo cliente volta no resultado para o autor reconhecer a própria rolagem e não repetir o aviso.
+
+---
+
 ## 📌 Escopo
 
 - Sistema pensado para **uma única mesa fixa** (sem suporte a múltiplas campanhas/salas por enquanto)

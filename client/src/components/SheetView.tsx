@@ -30,6 +30,8 @@ interface SheetViewProps {
   update: (patch: CharacterPatch) => void;
   /** Move/equipa um item do inventário (endpoint dedicado do servidor). */
   onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>;
+  /** Abre a janela de dados com 1d20 + bônus da perícia/salvaguarda. */
+  onRollSkill?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void;
   /** Em `true`, nenhum campo é editável (visão do mestre). */
   readOnly?: boolean;
 }
@@ -51,7 +53,13 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
  * perícias, anotações e as abas (magias, ataques, características).
  * Reutilizada pelo jogador e pelo mestre.
  */
-export function SheetView({ character, update, onInventoryMove, readOnly = false }: SheetViewProps) {
+export function SheetView({
+  character,
+  update,
+  onInventoryMove,
+  onRollSkill,
+  readOnly = false,
+}: SheetViewProps) {
   const [tab, setTab] = useState<TabKey>('spells');
   // Anotações vivem num painel flutuante, abertas pelo botão de pena.
   const [notesOpen, setNotesOpen] = useState(false);
@@ -81,7 +89,7 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
 
         {/* Perícias e salvaguardas ocupam a largura toda. */}
         <div className="sheet-skills">
-          <SkillsSavesSection character={character} update={update} />
+          <SkillsSavesSection character={character} update={update} onRoll={onRollSkill} />
         </div>
 
         <div className="sheet-tabs-area">

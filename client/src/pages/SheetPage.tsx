@@ -16,6 +16,8 @@ import {
 } from '../combat/CombatTracker';
 import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
+import { DiceDock } from '../dice/DiceDock';
+import { useDiceRoller } from '../dice/useDiceRoller';
 import { fetchGameConfig } from '../gameApi';
 import { moveInventoryItem } from '../inventoryApi';
 import { closePresentation } from '../presentationApi';
@@ -53,8 +55,12 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
 
+  // Janela de dados (botão flutuante + avisos + rolagens de perícia).
+  const dice = useDiceRoller(user);
+
   const { connection, online, lastEventAt } = useRealtime({
     ...combatState.handlers,
+    ...dice.handlers,
 
     onSheetUpdated: (payload) => {
       // Só aceita a própria ficha e versões mais novas (evita respostas fora de ordem).
@@ -308,7 +314,12 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
                 </div>
 
-                <SheetView character={character} update={update} onInventoryMove={moveItem} />
+                <SheetView
+                  character={character}
+                  update={update}
+                  onInventoryMove={moveItem}
+                  onRollSkill={dice.openSkillRoll}
+                />
 
                 {levelUpOpen && levelUpAvailable ? (
                   <LevelUpDialog
@@ -324,6 +335,9 @@ export function SheetPage({ user }: { user: SessionUser }) {
           </>
         )}
       </main>
+
+      {/* Botão "Dados" sempre disponível, em qualquer tela do jogo. */}
+      <DiceDock roller={dice} />
     </div>
   );
 }

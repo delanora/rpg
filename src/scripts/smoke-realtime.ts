@@ -2247,6 +2247,104 @@ async function main(): Promise<void> {
     body: { unlocked: false },
   });
 
+  // --- 11.8 Rolagem de dados -------------------------------------------------
+  console.log('\n11.8) Rolagem de dados (janela de dados)');
+
+  check(
+    'pool vazio é recusado (400)',
+    (
+      await api('/api/dice/roll', {
+        method: 'POST',
+        token: playerToken,
+        body: { dice: [] },
+      })
+    ).status === 400,
+  );
+
+  const publicRollEvent = waitFor<any>(masterSocket, 'dice:roll').catch(() => null);
+  const publicRoll = await api('/api/dice/roll', {
+    method: 'POST',
+    token: playerToken,
+    body: { dice: [{ sides: 20 }], kind: 'free', clientId: 'smoke-public' },
+  });
+  check('rolagem livre pública é aceita (201)', publicRoll.status === 201);
+  check(
+    'o total de um d20 fica entre 1 e 20',
+    publicRoll.data?.roll?.total >= 1 && publicRoll.data?.roll?.total <= 20,
+    JSON.stringify(publicRoll.data?.roll),
+  );
+  check(
+    'quem rolou vem da ficha do jogador',
+    typeof publicRoll.data?.roll?.actorName === 'string' &&
+      publicRoll.data.roll.actorName.length > 0,
+    String(publicRoll.data?.roll?.actorName),
+  );
+  check(
+    'o mestre recebe a rolagem em tempo real',
+    (await publicRollEvent)?.roll?.id === publicRoll.data?.roll?.id,
+  );
+
+  const skillRoll = await api('/api/dice/roll', {
+    method: 'POST',
+    token: playerToken,
+    body: { dice: [{ sides: 20 }], kind: 'skill', label: 'Percepção', bonus: 5, advantage: true },
+  });
+  const skillDice = skillRoll.data?.roll?.dice ?? [];
+  const keptDice = skillDice.filter((die: any) => !die.dropped);
+  check(
+    'vantagem rola dois d20 e mantém um só',
+    skillDice.length === 2 && keptDice.length === 1,
+    JSON.stringify(skillDice),
+  );
+  check(
+    'o total soma o d20 mantido e o bônus da perícia',
+    skillRoll.data?.roll?.total === keptDice[0]?.value + 5,
+    JSON.stringify({ total: skillRoll.data?.roll?.total, kept: keptDice[0]?.value }),
+  );
+
+  // Rolagem privada do mestre: não chega a nenhum jogador.
+  let playerSawPrivate = false;
+  const privateWatcher = (payload: any): void => {
+    if (payload?.roll?.isPrivate) playerSawPrivate = true;
+  };
+  playerSocket.on('dice:roll', privateWatcher);
+
+  const privateRoll = await api('/api/dice/roll', {
+    method: 'POST',
+    token: masterToken,
+    body: { dice: [{ sides: 6 }], kind: 'free', private: true },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  playerSocket.off('dice:roll', privateWatcher);
+  check(
+    'rolagem privada do mestre não chega ao jogador',
+    privateRoll.status === 201 &&
+      privateRoll.data?.roll?.isPrivate === true &&
+      playerSawPrivate === false,
+  );
+
+  const forcedPublic = await api('/api/dice/roll', {
+    method: 'POST',
+    token: playerToken,
+    body: { dice: [{ sides: 6 }], private: true },
+  });
+  check(
+    'rolagem de jogador é sempre pública',
+    forcedPublic.data?.roll?.isPrivate === false,
+    JSON.stringify(forcedPublic.data?.roll),
+  );
+
+  check(
+    'jogador não acessa o histórico (403)',
+    (await api('/api/dice/history', { token: playerToken })).status === 403,
+  );
+  const diceHistory = await api('/api/dice/history', { token: masterToken });
+  check(
+    'histórico do mestre reúne as rolagens da sessão',
+    Array.isArray(diceHistory.data?.rolls) &&
+      diceHistory.data.rolls.some((roll: any) => roll.id === privateRoll.data?.roll?.id),
+  );
+
   // --- 12. Presença ao desconectar ------------------------------------------
   console.log('\n12) Presença ao desconectar');
   const offlinePromise = waitForPresence(
