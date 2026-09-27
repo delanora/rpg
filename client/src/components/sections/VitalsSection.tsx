@@ -47,6 +47,24 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     applyClassState({ active: classState.active, used });
   }
 
+  /**
+   * Descanso longo: restaura o HP ao máximo, recarrega todos os espaços de
+   * magia e zera o estado de classe (toggles encerrados e usos devolvidos).
+   */
+  function longRest(): void {
+    const slots = Object.fromEntries(
+      Object.entries(character.spells.slots).map(([level, slot]) => [
+        level,
+        { ...slot, used: 0 },
+      ]),
+    );
+    update({
+      hpCurrent: character.hpMax,
+      spells: { ...character.spells, slots },
+      classState: { active: [], used: {} },
+    });
+  }
+
   const hasShortResource = classAdjustments.resources.some(
     (resource) => resource.recharge === 'short',
   );
@@ -245,12 +263,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
                 descanso curto
               </button>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-small"
-              disabled={readOnly}
-              onClick={() => applyClassState({ active: [], used: {} })}
-            >
+            <button type="button" className="btn btn-small" disabled={readOnly} onClick={longRest}>
               descanso longo
             </button>
           </div>

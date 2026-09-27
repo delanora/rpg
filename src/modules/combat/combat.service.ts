@@ -341,11 +341,25 @@ async function changeHp(
 ): Promise<{ hpCurrent: number; hpMax: number } | null> {
   if (combatant.kind === 'CHARACTER' && combatant.characterId && combatant.character) {
     const { character } = combatant;
-    const nextHp = Math.max(0, Math.min(character.hpCurrent + delta, Math.max(character.hpMax, 0)));
+
+    // Dano consome primeiro os PV temporários; só o excedente chega aos PV
+    // atuais. Cura (delta positivo) não mexe nos temporários.
+    let remaining = delta;
+    let hpTemp = character.hpTemp;
+    if (delta < 0) {
+      const absorbed = Math.min(hpTemp, -delta);
+      hpTemp -= absorbed;
+      remaining = delta + absorbed;
+    }
+
+    const nextHp = Math.max(
+      0,
+      Math.min(character.hpCurrent + remaining, Math.max(character.hpMax, 0)),
+    );
 
     const updated = await prisma.character.update({
       where: { id: character.id },
-      data: { hpCurrent: nextHp, version: { increment: 1 } },
+      data: { hpCurrent: nextHp, hpTemp, version: { increment: 1 } },
     });
 
     // Reaproveita o canal da ficha: o jogador vê o próprio HP mudar na hora,
@@ -355,7 +369,7 @@ async function changeHp(
       username: character.user.username,
       characterId: updated.id,
       version: updated.version,
-      changes: { hpCurrent: updated.hpCurrent },
+      changes: { hpCurrent: updated.hpCurrent, hpTemp: updated.hpTemp },
       character: await toSheetDto(updated, character.user.username),
       at: new Date().toISOString(),
     };
