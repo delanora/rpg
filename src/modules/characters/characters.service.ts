@@ -82,6 +82,17 @@ function firstLevelHpMax(hitDie: number, constitution: number): number {
   return Math.max(1, hitDie + abilityModifier(constitution));
 }
 
+/**
+ * Recálculo retroativo de Constituição (regra do PHB): quando o modificador de
+ * CON muda, o PV passa a valer como se o novo modificador existisse desde o
+ * nível 1. O delta cobre todos os níveis já obtidos — `(novo mod − mod antigo)
+ * × nível total` — e entra tanto no máximo quanto no atual. Um valor negativo
+ * (CON diminuída) reduz os dois na mesma medida.
+ */
+function constitutionHpDelta(previous: number, next: number, totalLevel: number): number {
+  return (abilityModifier(next) - abilityModifier(previous)) * totalLevel;
+}
+
 /** Atributos do personagem no formato usado pelas regras de classe. */
 function abilitiesOf(character: Character): Record<AbilityKey, number> {
   return {
@@ -308,14 +319,13 @@ async function applyLevelUp(
 
   const newClassLevel = existing ? existing.level + 1 : 1;
 
-  // --- Pontos de vida: dado rolado ou média (d6=4, d8=5, d10=6, d12=7) ----
-  const conModifier = abilityModifier(character.constitution);
+  // --- Dado de vida: rolado ou média (d6=4, d8=5, d10=6, d12=7) -----------
+  // O modificador de Constituição entra depois: o Aumento de Atributo deste
+  // mesmo nível (se houver) já vale para o PV ganho agora.
   const dieRoll =
     input.hp === 'roll'
       ? randomInt(1, definition.hitDie + 1)
       : averageHitDie(definition.hitDie);
-  // Mínimo de 1 PV por nível, mesmo com modificador de Constituição negativo.
-  const hpGained = Math.max(1, dieRoll + conModifier);
 
   // --- Subclasse: exigida quando o nível da classe libera a escolha ---------
   let subclass = existing?.subclass ?? '';
@@ -377,6 +387,22 @@ async function applyLevelUp(
       )
     : [...entries, { classKey: definition.key, subclass, level: 1 }];
 
+  // --- Pontos de vida do nível que está sendo ganho ------------------------
+  // O PV ganho usa o modificador de Constituição já atualizado pelo Aumento de
+  // Atributo (se houve); mínimo de 1 PV por nível, mesmo com CON negativa.
+  const nextConstitution =
+    typeof data.constitution === 'number' ? data.constitution : character.constitution;
+  const hpGained = Math.max(1, dieRoll + abilityModifier(nextConstitution));
+
+  // --- Recálculo retroativo de Constituição --------------------------------
+  // Se a Constituição subiu, os níveis JÁ obtidos (antes deste) também ganham
+  // o ajuste: (novo mod − mod antigo) × nível total anterior.
+  const conDelta = constitutionHpDelta(
+    character.constitution,
+    nextConstitution,
+    totalCharacterLevel(entries),
+  );
+
   const result = await tx.character.updateMany({
     where: {
       userId: actor.userId,
@@ -387,8 +413,8 @@ async function applyLevelUp(
       ...(data as Prisma.CharacterUpdateManyMutationInput),
       classes: nextEntries as unknown as Prisma.InputJsonValue,
       // O PV ganho vale tanto para o máximo quanto para o PV atual.
-      hpMax: character.hpMax + hpGained,
-      hpCurrent: character.hpCurrent + hpGained,
+      hpMax: character.hpMax + hpGained + conDelta,
+      hpCurrent: Math.max(0, character.hpCurrent + hpGained + conDelta),
       lastLevelUpRelease: config.levelUpRelease,
       version: { increment: 1 },
     },
@@ -585,6 +611,25 @@ async function applyCharacterPatch(
         if (patch.hpCurrent === undefined) data.hpCurrent = hpMax;
       }
     }
+  }
+
+  // --- Recálculo retroativo de Constituição --------------------------------
+  // Mudar o modificador de CON (na ficha ou pelo Level Up) recalcula o PV como
+  // se o novo valor valesse desde o nível 1. O delta cobre os níveis já
+  // obtidos e entra no máximo e no atual; ao diminuir, o atual nunca fica
+  // negativo — cai junto com o máximo.
+  const nextConstitution = patch.constitution ?? existing.constitution;
+  const conDelta = constitutionHpDelta(
+    existing.constitution,
+    nextConstitution,
+    totalCharacterLevel(currentClasses),
+  );
+
+  if (conDelta !== 0) {
+    const baseHpMax = (data.hpMax as number | undefined) ?? existing.hpMax;
+    const baseHpCurrent = (data.hpCurrent as number | undefined) ?? existing.hpCurrent;
+    data.hpMax = Math.max(0, baseHpMax + conDelta);
+    data.hpCurrent = Math.max(0, baseHpCurrent + conDelta);
   }
 
   // --- Salvaguardas fixas das classes --------------------------------------
