@@ -26,17 +26,17 @@ const SLOT_LABELS: Record<InventorySlot, string> = {
   boots: 'Botas',
 };
 
-/** Ícone de placeholder de um slot vazio. */
+/** Ícone de placeholder de um slot vazio (o que o campo representa). */
 const SLOT_ICON: Record<InventorySlot, IconName> = {
-  helmet: 'shield',
-  necklace: 'star',
-  chest: 'shield',
-  ring1: 'star',
-  ring2: 'star',
+  helmet: 'helmet',
+  necklace: 'necklace',
+  chest: 'armor',
+  ring1: 'ring',
+  ring2: 'ring',
   hand1: 'sword',
-  hand2: 'sword',
-  legs: 'shield',
-  boots: 'shield',
+  hand2: 'shield',
+  legs: 'legs',
+  boots: 'boots',
 };
 
 interface InventorySectionProps extends SheetSectionProps {
@@ -128,18 +128,6 @@ function BodyDoll() {
     </svg>
   );
 }
-
-const EQUIP_SLOTS: InventorySlot[] = [
-  'helmet',
-  'necklace',
-  'chest',
-  'hand1',
-  'hand2',
-  'legs',
-  'ring1',
-  'ring2',
-  'boots',
-];
 
 export function InventorySection({ character, update, onMoveItem }: InventorySectionProps) {
   const readOnly = useReadOnly();
@@ -313,7 +301,7 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
     return (
       <div
         key={slot}
-        className={`equip-slot slot-${slot}${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
+        className={`equip-slot${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
         title={SLOT_LABELS[slot]}
         aria-label={SLOT_LABELS[slot]}
         onDragOver={(event) => allowDrop(event, key)}
@@ -324,9 +312,52 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
           itemNode(item)
         ) : (
           <span className="slot-empty">
-            <Icon name={SLOT_ICON[slot]} size={20} />
+            <Icon name={SLOT_ICON[slot]} size={22} />
           </span>
         )}
+      </div>
+    );
+  }
+
+  /** Célula "Anel": abriga os dois slots de anel lado a lado. */
+  function ringSlotNode() {
+    const rings: InventorySlot[] = ['ring1', 'ring2'];
+    return (
+      <div className="equip-slot is-double" title="Anéis">
+        {rings.map((slot) => {
+          const item = equipped.get(slot);
+          const key = `slot:${slot}`;
+          return (
+            <div
+              key={slot}
+              className={`equip-subslot${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
+              title={SLOT_LABELS[slot]}
+              aria-label={SLOT_LABELS[slot]}
+              onDragOver={(event) => allowDrop(event, key)}
+              onDragLeave={() => setDragOver((value) => (value === key ? null : value))}
+              onDrop={(event) => dropOnEquipSlot(event, slot)}
+            >
+              {item ? (
+                itemNode(item)
+              ) : (
+                <span className="slot-empty">
+                  <Icon name="ring" size={17} />
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  /** Célula "Munição/Carcaça": decorativa (o modelo não tem esse slot). */
+  function ammoSlotNode() {
+    return (
+      <div className="equip-slot is-static" title="Munição / Carcaça">
+        <span className="slot-empty">
+          <Icon name="ammo" size={22} />
+        </span>
       </div>
     );
   }
@@ -348,23 +379,37 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
         {/* --- Set de equipamento (estilo Tibia) ------------------------- */}
         <div className="equip-set" ref={setRef}>
           <BodyDoll />
-          {EQUIP_SLOTS.map((slot) => equipSlotNode(slot))}
 
-          {/* Slot de container: clicar abre a janela da mochila; soltar um
-              item equipado aqui o devolve à primeira célula livre. */}
-          <button
-            type="button"
-            className={`equip-slot slot-backpack${dragOver === 'backpack' ? ' is-over' : ''}`}
-            title={`Mochila (${backpackCount}) — clique para abrir`}
-            aria-label={`Abrir mochila (${backpackCount} itens)`}
-            onClick={openBag}
-            onDragOver={(event) => allowDrop(event, 'backpack')}
-            onDragLeave={() => setDragOver((value) => (value === 'backpack' ? null : value))}
-            onDrop={dropOnBackpack}
-          >
-            <Icon name="bag" size={24} />
-            <span className="bag-badge">{backpackCount}</span>
-          </button>
+          {/* Grade principal 3×3, célula a célula como o set clássico:
+              amuleto | elmo | mochila
+              arma    | peitoral | escudo
+              anéis   | calças | munição */}
+          <div className="equip-grid">
+            {equipSlotNode('necklace')}
+            {equipSlotNode('helmet')}
+            <button
+              type="button"
+              className={`equip-slot slot-backpack${dragOver === 'backpack' ? ' is-over' : ''}`}
+              title={`Mochila (${backpackCount}) — clique para abrir`}
+              aria-label={`Abrir mochila (${backpackCount} itens)`}
+              onClick={openBag}
+              onDragOver={(event) => allowDrop(event, 'backpack')}
+              onDragLeave={() => setDragOver((value) => (value === 'backpack' ? null : value))}
+              onDrop={dropOnBackpack}
+            >
+              <Icon name="bag" size={24} />
+              <span className="bag-badge">{backpackCount}</span>
+            </button>
+            {equipSlotNode('hand1')}
+            {equipSlotNode('chest')}
+            {equipSlotNode('hand2')}
+            {ringSlotNode()}
+            {equipSlotNode('legs')}
+            {ammoSlotNode()}
+          </div>
+
+          {/* Botas, sozinhas e centralizadas abaixo da grade. */}
+          <div className="equip-extra-row">{equipSlotNode('boots')}</div>
         </div>
 
         <p className="inventory-hint">
