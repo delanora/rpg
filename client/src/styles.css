@@ -2841,6 +2841,8 @@ input[type='checkbox']:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.7rem 0.7rem 0.85rem;
+  /* Mesmo respiro do painel de combate, para não colar na barra de Level Up. */
+  margin-bottom: 1.1rem;
   display: grid;
   gap: 0.7rem;
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
