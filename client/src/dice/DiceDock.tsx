@@ -241,6 +241,11 @@ export function DiceDock({ roller }: DiceDockProps) {
                           {advantage ? 'vantagem' : 'desvantagem'}: cada d20 rola duas vezes
                         </span>
                       ) : null}
+                      {!rolling && isPrivate ? (
+                        <span className="dice-readout-note">
+                          privada: a mesa não é avisada
+                        </span>
+                      ) : null}
                     </p>
                   )}
                 </div>
@@ -278,7 +283,10 @@ export function DiceDock({ roller }: DiceDockProps) {
                     Desvantagem
                   </label>
                   {isMaster ? (
-                    <label className="dice-toggle">
+                    <label
+                      className="dice-toggle"
+                      title="Privada: só você vê o resultado e a mesa não é avisada. Desmarque para a mesa acompanhar a rolagem."
+                    >
                       <input
                         type="checkbox"
                         checked={isPrivate}
