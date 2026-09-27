@@ -30,7 +30,14 @@ export type IconName =
   | 'sparkle'
   | 'flame'
   | 'dragon'
-  | 'bag';
+  | 'bag'
+  | 'helmet'
+  | 'necklace'
+  | 'armor'
+  | 'ring'
+  | 'legs'
+  | 'boots'
+  | 'ammo';
 
 const ICONS: Record<IconName, ReactNode> = {
   sword: (
@@ -150,6 +157,54 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M7 9V7a5 5 0 0 1 10 0v2" />
       <path d="M4.5 9h15l-1.2 11.5H5.7Z" />
       <path d="M9.5 12.5v2.5M14.5 12.5v2.5" />
+    </>
+  ),
+  helmet: (
+    <>
+      <path d="M5 12a7 7 0 0 1 14 0v5.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 17.5Z" />
+      <path d="M5 13h3.6l1-2 1.5 2h1.8l1.5-2 1 2H19" />
+      <path d="M10 19v-3M14 19v-3" />
+    </>
+  ),
+  necklace: (
+    <>
+      <path d="M5 4c0 5.2 2.6 8.7 7 9.7" />
+      <path d="M19 4c0 5.2-2.6 8.7-7 9.7" />
+      <path d="M12 13.5l1.9 2.4L12 20.5l-1.9-4.6Z" />
+    </>
+  ),
+  armor: (
+    <>
+      <path d="M8 3.5 5 5.5V12c0 4.2 2.8 7.3 7 8.8 4.2-1.5 7-4.6 7-8.8V5.5l-3-2-2 2H10Z" />
+      <path d="M10 5.5h4" />
+      <path d="M12 9.5v6" />
+    </>
+  ),
+  ring: (
+    <>
+      <circle cx="12" cy="14.8" r="5" />
+      <path d="M9.7 9.8 12 4.2l2.3 5.6" />
+      <path d="M10.6 7h2.8" />
+    </>
+  ),
+  legs: (
+    <>
+      <path d="M7 3h10l-.8 18h-3.1L12 11l-1.1 10H7.8Z" />
+      <path d="M7.2 7h9.6" />
+    </>
+  ),
+  boots: (
+    <>
+      <path d="M7.5 3h4.2v9.4c0 1.1.6 2 1.6 2.5l3.1 1.5c1.6.8 2.6 2.4 2.6 4.1H7.5Z" />
+      <path d="M7.5 20.5h11.5" />
+      <path d="M7.5 7h4.2" />
+    </>
+  ),
+  ammo: (
+    <>
+      <path d="M9 3.5v6M12 3.5v6M15 3.5v6" />
+      <path d="M7 10h10l-1 11H8Z" />
+      <path d="M9 6 9.6 4M12 6l.6-2M15 6l.6-2" />
     </>
   ),
   dragon: (

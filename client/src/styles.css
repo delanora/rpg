@@ -3749,27 +3749,37 @@ input[type='checkbox']:disabled {
   color: var(--ink-soft);
 }
 
-/* --- Set (paperdoll sobre o corpo) --------------------------------------- */
+/* --- Set de equipamento: grade 3×3 no estilo clássico do Tibia ----------- */
 .equip-set {
   position: relative;
   width: 100%;
   max-width: 320px;
-  height: 340px;
+  margin: 0 auto;
+  padding: 20px 18px 16px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   background:
     radial-gradient(circle at 50% 18%, rgba(184, 145, 42, 0.18), transparent 60%),
     linear-gradient(180deg, var(--surface-2), var(--surface-3));
   box-shadow: inset 0 0 0 1px var(--gold-hair), var(--shadow);
-  overflow: hidden;
 }
 
+/* Moldura interna com cantos ornamentados. */
 .equip-set::after {
   content: '';
   position: absolute;
   inset: 5px;
   border: 1px solid var(--gold-hair);
   border-radius: 7px;
+  background:
+    radial-gradient(circle at 0 0, var(--gold) 0 2.5px, transparent 3px),
+    radial-gradient(circle at 100% 0, var(--gold) 0 2.5px, transparent 3px),
+    radial-gradient(circle at 0 100%, var(--gold) 0 2.5px, transparent 3px),
+    radial-gradient(circle at 100% 100%, var(--gold) 0 2.5px, transparent 3px);
+  opacity: 0.75;
   pointer-events: none;
 }
 
@@ -3781,18 +3791,32 @@ input[type='checkbox']:disabled {
   height: 96%;
   width: auto;
   fill: var(--ink);
-  opacity: 0.1;
+  opacity: 0.08;
   pointer-events: none;
 }
 
 [data-theme='dark'] .equip-doll {
   fill: var(--gold-bright);
-  opacity: 0.15;
+  opacity: 0.12;
+}
+
+/* A grade principal e a linha extra das botas compartilham as 3 colunas. */
+.equip-grid,
+.equip-extra-row {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 60px);
+  gap: 8px;
+}
+
+.equip-extra-row .equip-slot {
+  grid-column: 2;
 }
 
 .equip-slot {
-  --slot: 58px;
-  position: absolute;
+  --slot: 60px;
+  position: relative;
   width: var(--slot);
   height: var(--slot);
   display: flex;
@@ -3800,7 +3824,12 @@ input[type='checkbox']:disabled {
   justify-content: center;
   border: 1px solid var(--line-strong);
   border-radius: 7px;
-  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  background:
+    radial-gradient(circle at 5px 5px, var(--gold-hair) 0 1.6px, transparent 2.1px),
+    radial-gradient(circle at calc(100% - 5px) 5px, var(--gold-hair) 0 1.6px, transparent 2.1px),
+    radial-gradient(circle at 5px calc(100% - 5px), var(--gold-hair) 0 1.6px, transparent 2.1px),
+    radial-gradient(circle at calc(100% - 5px) calc(100% - 5px), var(--gold-hair) 0 1.6px, transparent 2.1px),
+    linear-gradient(180deg, var(--surface), var(--surface-2));
   box-shadow: inset 0 0 0 1px var(--gold-hair), inset 0 2px 5px rgba(43, 33, 21, 0.14);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -3810,25 +3839,44 @@ input[type='checkbox']:disabled {
   background: linear-gradient(180deg, var(--surface), var(--surface-3));
 }
 
+.equip-slot.is-static {
+  opacity: 0.5;
+}
+
 .equip-slot.is-over,
 .bag-cell.is-over {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px var(--gold-hair), inset 0 0 0 1px var(--gold);
 }
 
-.slot-helmet { top: 12px; left: 50%; transform: translateX(-50%); }
-.slot-necklace { top: 76px; left: 50%; transform: translateX(-50%); }
-.slot-chest { top: 140px; left: 50%; transform: translateX(-50%); }
-.slot-hand1 { top: 140px; left: 16px; }
-.slot-hand2 { top: 140px; right: 16px; }
-.slot-legs { top: 204px; left: 50%; transform: translateX(-50%); }
-.slot-ring1 { top: 204px; left: 16px; }
-.slot-ring2 { top: 204px; right: 16px; }
-.slot-boots { top: 268px; left: 50%; transform: translateX(-50%); }
+/* Célula "Anel": contém os dois anéis lado a lado. */
+.equip-slot.is-double {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+}
+
+.equip-subslot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.equip-subslot.is-filled {
+  border-color: var(--gold-deep);
+}
+
+.equip-subslot.is-over {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold-hair);
+}
 
 .slot-backpack {
-  top: 12px;
-  right: 16px;
   border-color: var(--gold-deep);
   background: linear-gradient(180deg, var(--leather-2), var(--leather));
   color: var(--gold-bright);
@@ -3858,7 +3906,7 @@ input[type='checkbox']:disabled {
 
 .slot-empty {
   color: var(--ink-faint);
-  opacity: 0.5;
+  opacity: 0.55;
 }
 
 /* --- Itens (slot ou célula) ---------------------------------------------- */
