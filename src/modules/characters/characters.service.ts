@@ -242,17 +242,46 @@ export async function createCharacter(
  * libera e o Aumento de Atributo/Talento quando é um nível de ASI da classe.
  */
 export async function levelUpCharacter(actor: Actor, input: LevelUpInput): Promise<CharacterDto> {
-  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
-  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
-
   const config = await getGameConfig();
   if (!config.levelUpUnlocked) {
     throw new HttpError('O mestre ainda não liberou o Level Up.', 403);
   }
-  if (character.lastLevelUpRelease >= config.levelUpRelease) {
-    throw new HttpError('Você já usou esta liberação de Level Up.', 409);
-  }
 
+  // Leitura, checagem e gravação na MESMA transação: o `where` com o
+  // `lastLevelUpRelease` antigo (ver applyLevelUp) impede que dois cliques
+  // simultâneos apliquem dois níveis na mesma liberação.
+  const { updated, levelUp } = await prisma.$transaction(async (tx) => {
+    const character = await tx.character.findUnique({ where: { userId: actor.userId } });
+    if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+    if (character.lastLevelUpRelease >= config.levelUpRelease) {
+      throw new HttpError('Você já usou esta liberação de Level Up.', 409);
+    }
+
+    return applyLevelUp(tx, actor, input, config, character);
+  });
+
+  await publishChange(actor, updated, { levelUp });
+
+  return toSheetDto(updated, actor.username);
+}
+
+/**
+ * Núcleo do Level Up: valida contra a classe e grava dentro da transação.
+ *
+ * A gravação é um `updateMany` cujo `where` inclui o `lastLevelUpRelease` lido:
+ * se outra requisição já aplicou o level up, nenhuma linha casa e devolvemos 409.
+ */
+async function applyLevelUp(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  input: LevelUpInput,
+  config: Awaited<ReturnType<typeof getGameConfig>>,
+  character: Character,
+): Promise<{
+  updated: Character;
+  levelUp: { classKey: string; classLevel: number; hpGained: number; hpRolled: boolean };
+}> {
   const entries = normalizeClassEntries(character.classes);
   const abilities = abilitiesOf(character);
 
@@ -345,10 +374,14 @@ export async function levelUpCharacter(actor: Actor, input: LevelUpInput): Promi
       )
     : [...entries, { classKey: definition.key, subclass, level: 1 }];
 
-  const updated = await prisma.character.update({
-    where: { userId: actor.userId },
+  const result = await tx.character.updateMany({
+    where: {
+      userId: actor.userId,
+      // Condição de corrida: só grava se a liberação ainda não foi usada.
+      lastLevelUpRelease: character.lastLevelUpRelease,
+    },
     data: {
-      ...(data as Prisma.CharacterUpdateInput),
+      ...(data as Prisma.CharacterUpdateManyMutationInput),
       classes: nextEntries as unknown as Prisma.InputJsonValue,
       // O PV ganho vale tanto para o máximo quanto para o PV atual.
       hpMax: character.hpMax + hpGained,
@@ -358,16 +391,22 @@ export async function levelUpCharacter(actor: Actor, input: LevelUpInput): Promi
     },
   });
 
-  await publishChange(actor, updated, {
+  if (result.count === 0) {
+    throw new HttpError('Você já usou esta liberação de Level Up.', 409);
+  }
+
+  // Relê a ficha dentro da transação para devolver o estado já gravado.
+  const updated = await tx.character.findUniqueOrThrow({ where: { userId: actor.userId } });
+
+  return {
+    updated,
     levelUp: {
       classKey: definition.key,
       classLevel: newClassLevel,
       hpGained,
       hpRolled: input.hp === 'roll',
     },
-  });
-
-  return toSheetDto(updated, actor.username);
+  };
 }
 
 export function getCharacterByUserId(userId: string): Promise<Character | null> {
