@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fileToImagePayload, uploadAvatar } from '../../api';
 import {
   ABILITY_ABBREVIATIONS,
@@ -34,6 +34,21 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
   const readOnly = useReadOnly();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Os botões do avatar só aparecem depois de clicar na foto.
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const avatarRef = useRef<HTMLDivElement>(null);
+
+  // Um clique fora do bloco do avatar fecha as opções.
+  useEffect(() => {
+    if (!avatarOpen) return undefined;
+
+    function onPointerDown(event: globalThis.MouseEvent): void {
+      if (!avatarRef.current?.contains(event.target as Node)) setAvatarOpen(false);
+    }
+
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [avatarOpen]);
 
   /**
    * Avatar da ficha (gravado em `uploads/characters/`). O dono define o
@@ -49,6 +64,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
       const payload = await fileToImagePayload(file);
       const image = await uploadAvatar(payload.dataUrl, payload.name);
       update({ avatarUrl: image.url });
+      setAvatarOpen(false);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Falha ao enviar o avatar.');
     } finally {
@@ -125,32 +141,71 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
       icon="scroll"
       subtitle="Clique em qualquer campo para editar"
       className="stacked-tip"
-    >
-      <div className="avatar-row">
-        <Portrait src={character.avatarUrl} alt={character.name} size="lg" icon="users" />
-        {readOnly ? null : (
-          <div className="toolbar">
-            <label className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}>
-              {uploading ? 'enviando...' : character.avatarUrl ? 'trocar avatar' : '+ adicionar avatar'}
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                disabled={uploading}
-                onChange={(event) => {
-                  void handleAvatar(event.target.files);
-                  event.target.value = '';
-                }}
-              />
-            </label>
-            {character.avatarUrl ? (
-              <button type="button" className="btn btn-small" onClick={() => update({ avatarUrl: '' })}>
-                remover avatar
+      actions={
+        /* Avatar da ficha no cabeçalho, alinhado à direita. */
+        <div className="avatar-head" ref={avatarRef}>
+          {readOnly ? (
+            <Portrait src={character.avatarUrl} alt={character.name} size="lg" icon="users" />
+          ) : (
+            <>
+              <button
+                type="button"
+                className="avatar-trigger"
+                aria-label="Opções do avatar"
+                aria-expanded={avatarOpen}
+                title={avatarOpen ? 'Fechar opções do avatar' : 'Clique para trocar o avatar'}
+                onClick={() => setAvatarOpen((value) => !value)}
+              >
+                <Portrait
+                  src={character.avatarUrl}
+                  alt={character.name}
+                  size="lg"
+                  icon="users"
+                  zoomable={false}
+                />
               </button>
-            ) : null}
-          </div>
-        )}
-      </div>
+
+              {/* Só aparecem depois de clicar na foto. */}
+              {avatarOpen ? (
+                <div className="avatar-menu">
+                  <label
+                    className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}
+                  >
+                    {uploading
+                      ? 'enviando...'
+                      : character.avatarUrl
+                        ? 'trocar avatar'
+                        : '+ adicionar avatar'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={uploading}
+                      onChange={(event) => {
+                        void handleAvatar(event.target.files);
+                        event.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {character.avatarUrl ? (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => {
+                        update({ avatarUrl: '' });
+                        setAvatarOpen(false);
+                      }}
+                    >
+                      remover avatar
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      }
+    >
       {uploadError ? <p className="form-error">{uploadError}</p> : null}
 
       <div className="grid grid-3">
@@ -220,6 +275,11 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           <strong>{hitDice || '—'}</strong>
         </div>
 
+        <div className="field readonly">
+          <span>Bônus de proficiência</span>
+          <strong>+{character.derived.proficiencyBonus}</strong>
+        </div>
+
         <div className="field readonly field-wide">
           <span>Conjuração</span>
           <strong title={casting || undefined}>{castingShort || '—'}</strong>
@@ -228,11 +288,6 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
         <div className="field readonly field-wide">
           <span>Magias</span>
           <strong title={learning || undefined}>{learningShort || '—'}</strong>
-        </div>
-
-        <div className="field readonly">
-          <span>Bônus de proficiência</span>
-          <strong>+{character.derived.proficiencyBonus}</strong>
         </div>
       </div>
 
