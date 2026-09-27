@@ -24,6 +24,7 @@ import type {
   RegionDeletedPayload,
   RegionUpdatedPayload,
   SheetUpdatedPayload,
+  TableRollActivePayload,
   TableRollPayload,
 } from './types';
 
@@ -50,6 +51,8 @@ export interface RealtimeHandlers {
   onDiceRolled?: (payload: DiceRolledPayload) => void;
   /** Rolagem da janela de dados (pública para a mesa, privada para o autor). */
   onDiceRoll?: (payload: TableRollPayload) => void;
+  /** Alguém abriu (ou fechou) a janela de dados — a faixa do topo do tabuleiro. */
+  onDiceActive?: (payload: TableRollActivePayload) => void;
   onAttackResolved?: (payload: AttackResolvedPayload) => void;
   onPresentationShown?: (payload: PresentationShownPayload) => void;
   onPresentationClosed?: (payload: PresentationClosedPayload) => void;
@@ -112,6 +115,7 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('combat:ended', (payload) => handlersRef.current.onCombatEnded?.(payload));
     socket.on('dice:rolled', (payload) => handlersRef.current.onDiceRolled?.(payload));
     socket.on('dice:roll', (payload) => handlersRef.current.onDiceRoll?.(payload));
+    socket.on('dice:active', (payload) => handlersRef.current.onDiceActive?.(payload));
     socket.on('combat:attack', (payload) => handlersRef.current.onAttackResolved?.(payload));
 
     return () => {

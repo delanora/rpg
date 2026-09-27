@@ -1,5 +1,10 @@
 import { api } from '../api';
-import type { DiceRollDto, TableRollRequest } from '../types';
+import type {
+  DiceRollDto,
+  TableRollActivePayload,
+  TableRollActiveRequest,
+  TableRollRequest,
+} from '../types';
 
 /** Rola o pool da janela de dados (livre, perícia ou salvaguarda). */
 export async function rollTableDice(request: TableRollRequest): Promise<DiceRollDto> {
@@ -8,6 +13,30 @@ export async function rollTableDice(request: TableRollRequest): Promise<DiceRoll
     body: request,
   });
   return roll;
+}
+
+/**
+ * Avisa a mesa que a janela de dados abriu (ou fechou).
+ *
+ * Quem recebe vê a faixa "está realizando um teste" no topo do tabuleiro. A
+ * rolagem privada do mestre não é divulgada.
+ */
+export async function announceActiveRoll(
+  request: TableRollActiveRequest,
+): Promise<TableRollActivePayload | null> {
+  const { activeRoll } = await api<{ activeRoll: TableRollActivePayload | null }>(
+    '/api/dice/active',
+    { method: 'POST', body: request },
+  );
+  return activeRoll;
+}
+
+/** Quem está com a janela de dados aberta agora (ou `null`). */
+export async function fetchActiveRoll(): Promise<TableRollActivePayload | null> {
+  const { activeRoll } = await api<{ activeRoll: TableRollActivePayload | null }>(
+    '/api/dice/active',
+  );
+  return activeRoll;
 }
 
 /** Histórico da sessão — exclusivo do mestre. */

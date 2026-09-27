@@ -1,6 +1,7 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { corsOrigins } from '../config/env.js';
+import { clearActiveRollFrom, getActiveRoll } from '../modules/dice/dice.service.js';
 import { getCurrentPresentation } from '../modules/presentation/presentation.service.js';
 import type { AppServer, AppSocket } from '../types/socket.js';
 import { socketAuth } from './auth.js';
@@ -64,6 +65,13 @@ export function createRealtimeServer(httpServer: HttpServer): AppServer {
       socket.emit(ServerEvents.PRESENTATION_SHOWN, { presentation });
     }
 
+    // Idem para a janela de dados: quem chega durante uma rolagem já recebe a
+    // faixa de "está rolando" no topo do tabuleiro.
+    const activeRoll = getActiveRoll();
+    if (activeRoll) {
+      socket.emit(ServerEvents.DICE_ACTIVE, { active: true, ...activeRoll });
+    }
+
     console.log(`[socket] conectado: ${username} (${role}) — ${socket.id}`);
     if (becameOnline) {
       broadcaster.presence();
@@ -81,6 +89,9 @@ export function createRealtimeServer(httpServer: HttpServer): AppServer {
       const becameOffline = unregisterConnection(userId, socket.id);
       console.log(`[socket] desconectado: ${username} (${reason})`);
       if (becameOffline) {
+        // Fechou o navegador no meio de uma rolagem: tira a faixa da mesa. Só
+        // quando a última aba do usuário saiu — outra aba pode estar rolando.
+        clearActiveRollFrom(userId);
         broadcaster.presence();
       }
     });

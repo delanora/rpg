@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playCrit, playDice } from '../sound';
-import type { DiceRollDto, DiceRollKind, SessionUser } from '../types';
+import type {
+  DiceRollDto,
+  DiceRollKind,
+  SessionUser,
+  TableRollActivePayload,
+} from '../types';
 import type { RealtimeHandlers } from '../useRealtime';
-import { clearDiceHistory as clearDiceHistoryRequest, fetchDiceHistory, rollTableDice } from './diceApi';
+import {
+  announceActiveRoll,
+  clearDiceHistory as clearDiceHistoryRequest,
+  fetchActiveRoll,
+  fetchDiceHistory,
+  rollTableDice,
+} from './diceApi';
 
 /** Tipos de dado usados em D&D 5e (d100 = percentual). */
 export const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100] as const;
@@ -51,6 +62,9 @@ export function useDiceRoller(user: SessionUser) {
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<DiceToast[]>([]);
   const [history, setHistory] = useState<DiceRollDto[]>([]);
+  // Alguém da mesa com a janela de dados aberta (o autor não conta: ele vê a
+  // própria janela). É o que vira a faixa no topo do tabuleiro.
+  const [activeRoll, setActiveRoll] = useState<TableRollActivePayload | null>(null);
 
   // Reconhece a própria rolagem no tempo real (para não repetir o aviso).
   const myClientId = useRef<string | null>(null);
@@ -112,6 +126,55 @@ export function useDiceRoller(user: SessionUser) {
   );
 
   const close = useCallback(() => setOpen(false), []);
+
+  // A rolagem privada do mestre não é divulgada para a mesa.
+  const isPrivateRoll = isPrivate && isMaster;
+  const announcing = open && !isPrivateRoll;
+
+  // Avisa a mesa que a janela abriu (e desfaz o aviso ao fechar, ao marcar
+  // "Privada" ou ao trocar de teste).
+  const announced = useRef(false);
+
+  useEffect(() => {
+    // Sem nada anunciado não há o que desfazer — evita um pedido por carga de tela.
+    if (!announcing && !announced.current) return;
+    announced.current = announcing;
+
+    void announceActiveRoll({
+      active: announcing,
+      label: context?.label ?? '',
+      kind: context?.kind ?? 'free',
+      private: isPrivateRoll,
+    }).catch(() => {
+      // A faixa é acessória: sem ela a rolagem continua funcionando.
+    });
+  }, [announcing, isPrivateRoll, context?.label, context?.kind]);
+
+  // Fechar a aba no meio da rolagem não pode deixar a faixa presa na mesa (o
+  // servidor também limpa pelo disconnect, isto cobre o fechamento normal).
+  useEffect(
+    () => () => {
+      if (announced.current) void announceActiveRoll({ active: false }).catch(() => {});
+    },
+    [],
+  );
+
+  // Estado que já estava aberto quando esta tela carregou.
+  useEffect(() => {
+    let active = true;
+
+    fetchActiveRoll()
+      .then((state) => {
+        if (active && state && state.userId !== user.id) setActiveRoll(state);
+      })
+      .catch(() => {
+        // Sem estado: nenhuma faixa.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user.id]);
 
   const addDie = useCallback((sides: number) => {
     setPhase('idle');
@@ -191,8 +254,29 @@ export function useDiceRoller(user: SessionUser) {
     }
   }, []);
 
+  /** Dados extras da vantagem/desvantagem: cada d20 do pool vira dois. */
+  const extraD20 = useMemo(
+    () =>
+      advantage || disadvantage
+        ? pool.filter((die) => die.sides === 20).length
+        : 0,
+    [pool, advantage, disadvantage],
+  );
+
   const handlers = useMemo<RealtimeHandlers>(
     () => ({
+      // Alguém abriu (ou fechou) a janela de dados: a faixa do topo do tabuleiro.
+      onDiceActive: (payload) => {
+        if (!payload.active) {
+          setActiveRoll(null);
+          return;
+        }
+
+        // A própria janela já está aberta na tela: nada de faixa para o autor.
+        if (payload.userId === user.id) return;
+        setActiveRoll(payload);
+      },
+
       onDiceRoll: (payload) => {
         const { roll } = payload;
 
@@ -216,7 +300,7 @@ export function useDiceRoller(user: SessionUser) {
         );
       },
     }),
-    [isMaster],
+    [isMaster, user.id],
   );
 
   return {
@@ -224,6 +308,8 @@ export function useDiceRoller(user: SessionUser) {
     open,
     context,
     pool,
+    extraD20,
+    activeRoll,
     advantage,
     disadvantage,
     isPrivate,

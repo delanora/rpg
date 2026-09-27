@@ -27,6 +27,7 @@ import type {
   RegionCreatedPayload,
   RegionDeletedPayload,
   RegionUpdatedPayload,
+  TableRollActivePayload,
   TableRollPayload,
 } from './types';
 
@@ -57,6 +58,7 @@ export interface ServerToClientEvents {
   'combat:ended': (payload: CombatEndedPayload) => void;
   'dice:rolled': (payload: DiceRolledPayload) => void;
   'dice:roll': (payload: TableRollPayload) => void;
+  'dice:active': (payload: TableRollActivePayload) => void;
   'combat:attack': (payload: AttackResolvedPayload) => void;
 }
 

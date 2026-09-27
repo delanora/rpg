@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
+import { Portrait } from '../components/Portrait';
 import type { DiceRollDto } from '../types';
 import { Die3D } from './Die3D';
 import { DICE_TYPES, type DiceRollerState } from './useDiceRoller';
@@ -35,6 +36,9 @@ interface DiceDockProps {
  * O botão fica disponível em qualquer tela. Ao abrir, o ring surge no centro da
  * tela com o fundo escurecido (como o lightbox das imagens), os dados rolam
  * dentro dele e o resultado e o log do mestre aparecem abaixo.
+ *
+ * A janela é de quem está rolando. Os demais veem a faixa no topo do tabuleiro
+ * com a foto e o nome de quem está realizando o teste.
  */
 export function DiceDock({ roller }: DiceDockProps) {
   const {
@@ -42,6 +46,8 @@ export function DiceDock({ roller }: DiceDockProps) {
     open,
     context,
     pool,
+    extraD20,
+    activeRoll,
     advantage,
     disadvantage,
     isPrivate,
@@ -110,6 +116,28 @@ export function DiceDock({ roller }: DiceDockProps) {
         </div>
       ) : null}
 
+      {/* Alguém da mesa abriu a janela: quem não é o autor acompanha pela faixa. */}
+      {activeRoll ? (
+        <div className="dice-live" role="status">
+          <Portrait
+            src={activeRoll.avatarUrl}
+            alt={activeRoll.actorName}
+            size="sm"
+            icon="users"
+            zoomable={false}
+          />
+          <span className="dice-live-text">
+            <strong>{activeRoll.actorName}</strong> está realizando
+            {activeRoll.label ? ` um teste de ${activeRoll.label}` : ' um teste'}
+          </span>
+          <span className="dice-live-dots" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+        </div>
+      ) : null}
+
       {open
         ? createPortal(
             <div className="dice-overlay" role="dialog" aria-modal="true" onClick={close}>
@@ -151,17 +179,33 @@ export function DiceDock({ roller }: DiceDockProps) {
                       ) : pool.length === 0 ? (
                         <p className="dice-ring-hint">Escolha os dados abaixo</p>
                       ) : (
-                        pool.map((die, index) => (
-                          <Die3D
-                            key={`p-${index}`}
-                            sides={die.sides}
-                            value={null}
-                            reveal={false}
-                            tumbling={rolling}
-                            locked={die.locked}
-                            onClick={rolling || die.locked ? undefined : () => removeDie(index)}
-                          />
-                        ))
+                        <>
+                          {pool.map((die, index) => (
+                            <Die3D
+                              key={`p-${index}`}
+                              sides={die.sides}
+                              value={null}
+                              reveal={false}
+                              tumbling={rolling}
+                              locked={die.locked}
+                              onClick={rolling || die.locked ? undefined : () => removeDie(index)}
+                            />
+                          ))}
+
+                          {/* Vantagem/desvantagem: o d20 rola duas vezes, então o segundo
+                              dado já entra no ring junto com o primeiro. */}
+                          {rolling
+                            ? Array.from({ length: extraD20 }, (_, index) => (
+                                <Die3D
+                                  key={`x-${index}`}
+                                  sides={20}
+                                  value={null}
+                                  reveal={false}
+                                  tumbling
+                                />
+                              ))
+                            : null}
+                        </>
                       )}
                     </div>
                   </div>
@@ -183,6 +227,11 @@ export function DiceDock({ roller }: DiceDockProps) {
                   ) : (
                     <p className="dice-readout-hint">
                       {rolling ? 'Rolando os dados...' : 'Monte o pool e role'}
+                      {!rolling && (advantage || disadvantage) ? (
+                        <span className="dice-readout-note">
+                          {advantage ? 'vantagem' : 'desvantagem'}: cada d20 rola duas vezes
+                        </span>
+                      ) : null}
                     </p>
                   )}
                 </div>
