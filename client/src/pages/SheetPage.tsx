@@ -9,11 +9,13 @@ import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
 import { fetchGameConfig } from '../gameApi';
+import { moveInventoryItem } from '../inventoryApi';
 import { closePresentation } from '../presentationApi';
 import type {
   Character,
   CharacterPatch,
   GameConfig,
+  InventoryMoveRequest,
   Presentation,
   SessionUser,
 } from '../types';
@@ -117,6 +119,20 @@ export function SheetPage({ user }: { user: SessionUser }) {
       } catch {
         // Sem rede: mantém o estado local e exibe o erro acima.
       }
+    }
+  }, []);
+
+  /**
+   * Move/equipa um item do inventário. Usa o endpoint dedicado (que trata a
+   * troca no servidor) e adota a ficha devolvida como fonte de verdade.
+   */
+  const moveItem = useCallback(async (request: InventoryMoveRequest) => {
+    try {
+      const saved = await moveInventoryItem(request);
+      setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível mover o item.');
     }
   }, []);
 
@@ -241,7 +257,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
                 </div>
 
-                <SheetView character={character} update={update} />
+                <SheetView character={character} update={update} onInventoryMove={moveItem} />
 
                 {levelUpOpen && levelUpAvailable ? (
                   <LevelUpDialog
