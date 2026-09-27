@@ -659,14 +659,16 @@ A apresentação é **efêmera** (não vai para o banco): vive na memória do se
 
 ## 🎲 Janela de dados
 
-Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotações) fica disponível em **qualquer tela** — ficha, combate e painel do mestre. Ele abre a janela de rolagem, com uma **bandeja octogonal** onde os dados escolhidos ficam parados como modelos 3D.
+Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotações) fica disponível em **qualquer tela** — ficha, combate e painel do mestre. Ao clicar, o fundo escurece (como no lightbox das imagens) e um **ring circular** surge no centro da tela.
+
+Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da geometria de cada sólido (tetraedro, cubo, octaedro, dodecaedro, icosaedro e bipirâmides). Eles giram em vários eixos dentro do ring e **pousam com a face do resultado voltada para a câmera** — d6 com pontos, os demais com o número gravado.
 
 - **Rolagem livre:** pool vazio; clique nos dados (d4, d6, d8, d10, d12, d20, d100) para empilhar; clique de novo num dado da bandeja para removê-lo.
 - **Rolagem de perícia/salvaguarda:** cada linha da seção "Perícias e Salvaguardas" tem um botão de dado que abre a janela com **1d20 fixo** e o bônus já aplicado; ainda dá para somar dados extras (Orientação, Inspiração de Bardo...).
 - **Vantagem/Desvantagem:** checkboxes exclusivos — rolam **2d20** e mantêm o maior (vantagem) ou o menor (desvantagem); os demais dados do pool rolam uma vez só.
-- **Animação:** os dados giram e quicam na bandeja até assentarem; o total (com bônus) e o valor de cada dado aparecem em destaque.
+- **Animação:** os dados giram e quicam dentro do ring até assentarem; o total (com bônus) e o valor de cada dado aparecem em destaque.
 - **Visibilidade:** rolagem de jogador é **sempre pública**; o mestre pode marcar **Privada**, que não gera aviso para mais ninguém. Rolagem pública dispara um aviso para toda a mesa ("[Personagem] está fazendo um teste de [Perícia]") que some sozinho em **3 segundos** e também pode ser dispensado na hora.
-- **Histórico:** o mestre tem um **log lateral** na própria janela com todas as rolagens da sessão, do mais recente ao mais antigo, e pode **limpar** o log.
+- **Histórico:** o mestre tem um **log** logo abaixo dos dados com todas as rolagens da sessão, do mais recente ao mais antigo, e pode **limpar** o log.
 
 ### Endpoints
 
