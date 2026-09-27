@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import type { DragEvent, MouseEvent } from 'react';
+import type { DragEvent, MouseEvent, PointerEvent } from 'react';
 import { describeItemDetails } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import type { InventoryItem, InventoryMoveRequest, InventorySlot } from '../../types';
@@ -9,11 +9,11 @@ import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
-/** Colunas fixas da grade da mochila (as linhas crescem conforme os itens). */
+/** Colunas fixas da mochila (as linhas crescem conforme os itens). */
 const GRID_COLS = 5;
-const MIN_ROWS = 5;
+const MIN_ROWS = 4;
 
-/** Rótulos dos slots do paperdoll (também usados em leitores de tela). */
+/** Rótulos dos slots (usados em `title`/leitores de tela). */
 const SLOT_LABELS: Record<InventorySlot, string> = {
   helmet: 'Elmo',
   necklace: 'Colar',
@@ -57,6 +57,7 @@ interface CellPosition {
 function layoutBackpack(inventory: InventoryItem[]): {
   cells: Map<string, InventoryItem>;
   rows: number;
+  firstFree: CellPosition;
 } {
   const backpack = inventory.filter((item) => item.slot === null);
   const placed = new Map<string, CellPosition>();
@@ -93,8 +94,19 @@ function layoutBackpack(inventory: InventoryItem[]): {
     if (position) cells.set(`${position.x},${position.y}`, item);
   }
 
+  // Primeira célula livre após acomodar tudo (destino ao soltar na mochila).
+  let freeX = 0;
+  let freeY = 0;
+  while (occupied.has(`${freeX},${freeY}`)) {
+    freeX += 1;
+    if (freeX >= GRID_COLS) {
+      freeX = 0;
+      freeY += 1;
+    }
+  }
+
   const rows = Math.max(MIN_ROWS, maxY + 1, Math.ceil(backpack.length / GRID_COLS));
-  return { cells, rows };
+  return { cells, rows, firstFree: { x: freeX, y: freeY } };
 }
 
 /** Sprite do item ou o ícone genérico quando não há imagem. */
@@ -105,12 +117,10 @@ function ItemSprite({ item }: { item: InventoryItem }) {
   return <Icon name="flask" size={22} />;
 }
 
-/**
- * Silhueta do paperdoll: só decoração de fundo, atrás dos slots.
- */
-function Silhouette() {
+/** Silhueta do corpo atrás dos slots (decoração do set). */
+function BodyDoll() {
   return (
-    <svg className="paperdoll-silhouette" viewBox="0 0 120 260" aria-hidden="true">
+    <svg className="equip-doll" viewBox="0 0 120 260" aria-hidden="true">
       <circle cx="60" cy="24" r="17" />
       <path d="M60 44c-15 0-25 9-27 23l-6 46 13 3 4-30v32h32V86l4 30 13-3-6-46c-2-14-12-23-27-23Z" />
       <path d="M41 118v58l-6 78h15l6-72 3-64Z" />
@@ -119,22 +129,34 @@ function Silhouette() {
   );
 }
 
+const EQUIP_SLOTS: InventorySlot[] = [
+  'helmet',
+  'necklace',
+  'chest',
+  'hand1',
+  'hand2',
+  'legs',
+  'ring1',
+  'ring2',
+  'boots',
+];
+
 export function InventorySection({ character, update, onMoveItem }: InventorySectionProps) {
   const readOnly = useReadOnly();
   const inventory = character.inventory;
   // Sem o callback do endpoint (ex.: visão do mestre) não há arrastar/soltar.
   const canMove = !readOnly && onMoveItem !== undefined;
 
-  const [backpackOpen, setBackpackOpen] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  // Espelho síncrono do item arrastado: o estado do React pode não ter
-  // atualizado antes do primeiro `dragover`, então o `drop` usa o ref.
+  const setRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<string | null>(null);
+
+  const [bagPos, setBagPos] = useState<CellPosition | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ item: InventoryItem; x: number; y: number } | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const { cells, rows } = useMemo(() => layoutBackpack(inventory), [inventory]);
+  const { cells, rows, firstFree } = useMemo(() => layoutBackpack(inventory), [inventory]);
   const equipped = useMemo(() => {
     const map = new Map<InventorySlot, InventoryItem>();
     for (const item of inventory) {
@@ -177,6 +199,40 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
     setSelectedId(null);
   }
 
+  function openBag(): void {
+    const rect = setRef.current?.getBoundingClientRect();
+    const width = 296;
+    const x = rect ? Math.min(rect.right + 14, window.innerWidth - width - 12) : 40;
+    const y = rect ? Math.max(rect.top, 12) : 80;
+    setBagPos({ x: Math.max(12, x), y });
+  }
+
+  function closeBag(): void {
+    setBagPos(null);
+  }
+
+  /** Arrasta a janela da mochila pela barra de título. */
+  function startWindowDrag(event: PointerEvent<HTMLDivElement>): void {
+    if (!bagPos) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = bagPos;
+
+    function onMove(moveEvent: globalThis.PointerEvent): void {
+      setBagPos({
+        x: Math.max(0, origin.x + moveEvent.clientX - startX),
+        y: Math.max(0, origin.y + moveEvent.clientY - startY),
+      });
+    }
+    function onUp(): void {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
   function beginDrag(event: DragEvent, id: string): void {
     if (!canMove) {
       event.preventDefault();
@@ -202,21 +258,30 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
     if (dragOver !== key) setDragOver(key);
   }
 
-  function dropOn(event: DragEvent, target: { slot?: InventorySlot; x?: number; y?: number }): void {
-    event.preventDefault();
-    const id = draggingRef.current ?? event.dataTransfer.getData('text/plain');
+  function moveDraggedTo(request: (id: string) => InventoryMoveRequest): void {
+    const id = draggingRef.current;
     endDrag();
     if (!id || !canMove || !onMoveItem) return;
+    void onMoveItem(request(id));
+  }
 
-    if (target.slot !== undefined) {
-      void onMoveItem({ itemInventoryId: id, targetSlot: target.slot });
-    } else {
-      void onMoveItem({
-        itemInventoryId: id,
-        targetBackpackX: target.x ?? 0,
-        targetBackpackY: target.y ?? 0,
-      });
-    }
+  function dropOnEquipSlot(event: DragEvent, slot: InventorySlot): void {
+    event.preventDefault();
+    moveDraggedTo((id) => ({ itemInventoryId: id, targetSlot: slot }));
+  }
+
+  function dropOnCell(event: DragEvent, x: number, y: number): void {
+    event.preventDefault();
+    moveDraggedTo((id) => ({ itemInventoryId: id, targetBackpackX: x, targetBackpackY: y }));
+  }
+
+  function dropOnBackpack(event: DragEvent): void {
+    event.preventDefault();
+    moveDraggedTo((id) => ({
+      itemInventoryId: id,
+      targetBackpackX: firstFree.x,
+      targetBackpackY: firstFree.y,
+    }));
   }
 
   function showTooltip(event: MouseEvent, item: InventoryItem): void {
@@ -242,26 +307,26 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
     );
   }
 
-  function slotNode(slot: InventorySlot) {
+  function equipSlotNode(slot: InventorySlot) {
     const item = equipped.get(slot);
     const key = `slot:${slot}`;
     return (
       <div
         key={slot}
-        className={`paperdoll-slot pos-${slot}${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
+        className={`equip-slot slot-${slot}${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
+        title={SLOT_LABELS[slot]}
+        aria-label={SLOT_LABELS[slot]}
         onDragOver={(event) => allowDrop(event, key)}
         onDragLeave={() => setDragOver((value) => (value === key ? null : value))}
-        onDrop={(event) => dropOn(event, { slot })}
-        aria-label={SLOT_LABELS[slot]}
+        onDrop={(event) => dropOnEquipSlot(event, slot)}
       >
         {item ? (
           itemNode(item)
         ) : (
           <span className="slot-empty">
-            <Icon name={SLOT_ICON[slot]} size={18} />
+            <Icon name={SLOT_ICON[slot]} size={20} />
           </span>
         )}
-        <span className="slot-caption">{SLOT_LABELS[slot]}</span>
       </div>
     );
   }
@@ -280,39 +345,113 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
       }
     >
       <div className="inventory-board">
-        {/* --- Paperdoll ------------------------------------------------- */}
-        <div className="paperdoll">
-          <Silhouette />
-          <div className="paperdoll-grid">
-            {slotNode('helmet')}
-            {slotNode('necklace')}
-            {slotNode('hand1')}
-            {slotNode('chest')}
-            {slotNode('hand2')}
-            <div className="paperdoll-rings">
-              {slotNode('ring1')}
-              {slotNode('ring2')}
-            </div>
-            {slotNode('legs')}
-            {slotNode('boots')}
-          </div>
-        </div>
+        {/* --- Set de equipamento (estilo Tibia) ------------------------- */}
+        <div className="equip-set" ref={setRef}>
+          <BodyDoll />
+          {EQUIP_SLOTS.map((slot) => equipSlotNode(slot))}
 
-        {/* --- Mochila --------------------------------------------------- */}
-        <div className="backpack">
+          {/* Slot de container: clicar abre a janela da mochila; soltar um
+              item equipado aqui o devolve à primeira célula livre. */}
           <button
             type="button"
-            className={backpackOpen ? 'backpack-toggle is-open' : 'backpack-toggle'}
-            aria-expanded={backpackOpen}
-            onClick={() => setBackpackOpen((value) => !value)}
+            className={`equip-slot slot-backpack${dragOver === 'backpack' ? ' is-over' : ''}`}
+            title={`Mochila (${backpackCount}) — clique para abrir`}
+            aria-label={`Abrir mochila (${backpackCount} itens)`}
+            onClick={openBag}
+            onDragOver={(event) => allowDrop(event, 'backpack')}
+            onDragLeave={() => setDragOver((value) => (value === 'backpack' ? null : value))}
+            onDrop={dropOnBackpack}
           >
-            <Icon name="bag" size={18} />
-            <span>Mochila</span>
-            <span className="backpack-count">{backpackCount}</span>
+            <Icon name="bag" size={24} />
+            <span className="bag-badge">{backpackCount}</span>
           </button>
+        </div>
 
-          {backpackOpen ? (
-            <div className="backpack-grid" style={{ gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)` }}>
+        <p className="inventory-hint">
+          Arraste os itens do set para a mochila e vice-versa. Clique na mochila do set para abrir a
+          janela com a grade.
+        </p>
+
+        {selected ? (
+          <div className="inv-detail">
+            <div className="inv-detail-head">
+              <span className="inv-detail-sprite">
+                <ItemSprite item={selected} />
+              </span>
+              <div className="inv-detail-title">
+                <strong>{selected.name}</strong>
+                <span className="inv-detail-meta">
+                  {selected.weight} kg
+                  {selected.itemId ? ' · catálogo' : ''}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => setSelectedId(null)}
+                aria-label="Fechar detalhes"
+              >
+                ×
+              </button>
+            </div>
+
+            {describeItemDetails(selected.category, selected.details) ? (
+              <p className="inv-detail-effect">
+                {describeItemDetails(selected.category, selected.details)}
+              </p>
+            ) : null}
+            <p className="inv-detail-desc">{selected.description || 'Sem descrição.'}</p>
+
+            <div className="inv-detail-actions">
+              <label className="inv-detail-qty">
+                Qtd.
+                <InlineField
+                  className="inv-detail-qty-field"
+                  value={selected.quantity}
+                  mode="number"
+                  min={0}
+                  readOnly={readOnly}
+                  ariaLabel="Quantidade"
+                  onCommit={(value) =>
+                    patchItem(selected.id, { quantity: clampInt(value, 0, 9999, selected.quantity) })
+                  }
+                />
+              </label>
+              {!readOnly ? (
+                <button
+                  type="button"
+                  className="btn btn-danger btn-small"
+                  onClick={() => removeItem(selected.id)}
+                >
+                  remover
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* --- Janela da mochila (container) ----------------------------- */}
+      {bagPos ? (
+        <div className="bag-window" style={{ left: bagPos.x, top: bagPos.y }}>
+          <div className="bag-window-title" onPointerDown={startWindowDrag}>
+            <Icon name="bag" size={16} />
+            <span>Mochila</span>
+            <span className="bag-window-count">{backpackCount}</span>
+            <button
+              type="button"
+              className="bag-window-close"
+              onClick={closeBag}
+              aria-label="Fechar mochila"
+            >
+              ×
+            </button>
+          </div>
+
+          {backpackCount === 0 ? (
+            <p className="bag-window-empty">A mochila está vazia.</p>
+          ) : (
+            <div className="bag-grid">
               {Array.from({ length: rows * GRID_COLS }, (_, index) => {
                 const x = index % GRID_COLS;
                 const y = Math.floor(index / GRID_COLS);
@@ -322,79 +461,19 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
                 return (
                   <div
                     key={key}
-                    className={`backpack-cell${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
+                    className={`bag-cell${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
                     onDragOver={(event) => allowDrop(event, key)}
                     onDragLeave={() => setDragOver((value) => (value === key ? null : value))}
-                    onDrop={(event) => dropOn(event, { x, y })}
+                    onDrop={(event) => dropOnCell(event, x, y)}
                   >
                     {item ? itemNode(item) : null}
                   </div>
                 );
               })}
             </div>
-          ) : (
-            <p className="empty-hint">Mochila fechada.</p>
           )}
-
-          {selected ? (
-            <div className="inv-detail">
-              <div className="inv-detail-head">
-                <span className="inv-detail-sprite">
-                  <ItemSprite item={selected} />
-                </span>
-                <div className="inv-detail-title">
-                  <strong>{selected.name}</strong>
-                  <span className="inv-detail-meta">
-                    {selected.weight} kg
-                    {selected.itemId ? ' · catálogo' : ''}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  onClick={() => setSelectedId(null)}
-                  aria-label="Fechar detalhes"
-                >
-                  ×
-                </button>
-              </div>
-
-              {describeItemDetails(selected.category, selected.details) ? (
-                <p className="inv-detail-effect">
-                  {describeItemDetails(selected.category, selected.details)}
-                </p>
-              ) : null}
-              <p className="inv-detail-desc">{selected.description || 'Sem descrição.'}</p>
-
-              <div className="inv-detail-actions">
-                <label className="inv-detail-qty">
-                  Qtd.
-                  <InlineField
-                    className="inv-detail-qty-field"
-                    value={selected.quantity}
-                    mode="number"
-                    min={0}
-                    readOnly={readOnly}
-                    ariaLabel="Quantidade"
-                    onCommit={(value) =>
-                      patchItem(selected.id, { quantity: clampInt(value, 0, 9999, selected.quantity) })
-                    }
-                  />
-                </label>
-                {!readOnly ? (
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-small"
-                    onClick={() => removeItem(selected.id)}
-                  >
-                    remover
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
         </div>
-      </div>
+      ) : null}
 
       {tooltip ? (
         <div className="inv-tooltip" style={{ left: tooltip.x + 14, top: tooltip.y + 14 }}>
