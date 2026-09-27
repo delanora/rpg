@@ -62,13 +62,43 @@ export const skillsStateSchema = z.record(z.string(), skillEntrySchema);
 
 export const savesStateSchema = z.record(z.string(), z.boolean());
 
+/**
+ * Slots de equipamento do personagem (estilo Tibia). Cada slot comporta um
+ * item por vez; equipar em um slot ocupado devolve o item anterior à mochila.
+ */
+export const INVENTORY_SLOTS = [
+  'helmet',
+  'necklace',
+  'chest',
+  'ring1',
+  'ring2',
+  'hand1',
+  'hand2',
+  'legs',
+  'boots',
+] as const;
+
+export type InventorySlot = (typeof INVENTORY_SLOTS)[number];
+
+export const inventorySlotSchema = z.enum(INVENTORY_SLOTS);
+
 export const inventoryItemSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1, 'O item precisa de um nome.').max(120),
   description: shortText(2000).default(''),
   quantity: nonNegativeInt.default(1),
   weight: z.number().min(0).max(100000).default(0),
-  equipped: z.boolean().default(false),
+  /**
+   * Slot em que o item está equipado (`null` = está na mochila). Nenhuma
+   * restrição de categoria: qualquer item cabe em qualquer slot.
+   */
+  slot: inventorySlotSchema.nullable().default(null),
+  /**
+   * Posição do item na grade da mochila (`null` quando equipado em um slot ou
+   * ainda sem posição definida).
+   */
+  backpackX: z.number().int().min(0).nullable().default(null),
+  backpackY: z.number().int().min(0).nullable().default(null),
   /** Sprite do item (`/uploads/items/...`); vazio quando o item é avulso. */
   imageUrl: shortText(500).default(''),
   /** Id do item no catálogo do mestre, quando o item veio de lá. */
@@ -78,6 +108,9 @@ export const inventoryItemSchema = z.object({
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: itemDetailsSchema.default({}),
 });
+
+/** Lista de itens do inventário (limite de itens da mochila). */
+export const inventoryListSchema = z.array(inventoryItemSchema).max(300);
 
 export const spellSchema = z.object({
   id: z.string().min(1),
@@ -155,6 +188,23 @@ export const levelUpSchema = z.object({
 
 export type LevelUpInput = z.infer<typeof levelUpSchema>;
 
+/**
+ * Move ou equipa um item do inventário (arrastar e soltar na ficha).
+ *
+ * - `targetSlot` definido equipa o item naquele slot.
+ * - `targetBackpackX/Y` move o item para a grade da mochila.
+ * Se o destino já tiver um item, os dois trocam de posição.
+ */
+export const moveInventoryItemSchema = z.object({
+  /** Id do item dentro do array `inventory` da ficha (não é o id do catálogo). */
+  itemInventoryId: z.string().min(1, 'Informe o item.'),
+  targetSlot: inventorySlotSchema.nullable().optional(),
+  targetBackpackX: z.number().int().min(0).nullable().optional(),
+  targetBackpackY: z.number().int().min(0).nullable().optional(),
+});
+
+export type MoveInventoryItemInput = z.infer<typeof moveInventoryItemSchema>;
+
 // --- Atualização parcial (edição inline) ------------------------------------
 
 export const updateCharacterSchema = z
@@ -193,7 +243,7 @@ export const updateCharacterSchema = z
     // Coleções
     skills: skillsStateSchema,
     saves: savesStateSchema,
-    inventory: z.array(inventoryItemSchema).max(300),
+    inventory: inventoryListSchema,
     spells: spellsStateSchema,
     attacks: z.array(attackSchema).max(100),
     features: z.array(featureSchema).max(200),

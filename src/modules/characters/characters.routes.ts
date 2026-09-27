@@ -3,6 +3,7 @@ import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   createCharacterSchema,
   levelUpSchema,
+  moveInventoryItemSchema,
   updateCharacterSchema,
 } from './characters.schema.js';
 import {
@@ -10,6 +11,7 @@ import {
   getSheetByUserId,
   levelUpCharacter,
   listCharacters,
+  moveInventoryItem,
   updateCharacter,
   updateCharacterAsMaster,
   type Actor,
@@ -95,6 +97,27 @@ charactersRouter.post('/me/level-up', authenticate, async (req, res) => {
   }
 
   const character = await levelUpCharacter(actorFrom(req), parsed.data);
+  res.json({ character });
+});
+
+/**
+ * POST /api/characters/me/inventory/move — move/equipa um item do inventário.
+ *
+ * Recebe o id do item dentro do inventário e o destino (slot ou posição na
+ * mochila). Em tempo real, o dono e o mestre recebem `sheet:updated`.
+ */
+charactersRouter.post('/me/inventory/move', authenticate, async (req, res) => {
+  const parsed = moveInventoryItemSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const character = await moveInventoryItem(actorFrom(req), parsed.data);
   res.json({ character });
 });
 

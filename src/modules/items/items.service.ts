@@ -159,7 +159,10 @@ export async function sendItemToCharacter(
       description: item.description,
       quantity,
       weight: item.weight,
-      equipped: false,
+      // O item chega à mochila, sem posição e sem slot definidos.
+      slot: null,
+      backpackX: null,
+      backpackY: null,
       imageUrl: item.imageUrl,
       itemId: item.id,
       category: item.category,
