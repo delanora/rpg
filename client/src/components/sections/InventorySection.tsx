@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
 import { describeItemDetails } from '../../dnd';
 import { useReadOnly } from '../../readonly';
@@ -136,11 +136,14 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
   const canMove = !readOnly && onMoveItem !== undefined;
 
   const draggingRef = useRef<string | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ item: InventoryItem; x: number; y: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // O detalhe do item abre flutuante, ancorado no ponto do clique.
+  const [detailPos, setDetailPos] = useState<{ x: number; y: number } | null>(null);
 
   const { cells, rows, firstFree } = useMemo(() => layoutBackpack(inventory), [inventory]);
   const equipped = useMemo(() => {
@@ -153,6 +156,20 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
 
   const backpackCount = inventory.filter((item) => item.slot === null).length;
   const selected = inventory.find((item) => item.id === selectedId) ?? null;
+
+  // Um clique fora do painel flutuante fecha os detalhes.
+  useEffect(() => {
+    if (!selectedId) return undefined;
+
+    function onPointerDown(event: globalThis.MouseEvent): void {
+      if (detailRef.current?.contains(event.target as Node)) return;
+      setSelectedId(null);
+      setDetailPos(null);
+    }
+
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [selectedId]);
 
   function patchItem(id: string, patch: Partial<InventoryItem>): void {
     update({ inventory: inventory.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
@@ -182,7 +199,28 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
 
   function removeItem(id: string): void {
     update({ inventory: inventory.filter((item) => item.id !== id) });
+    closeDetail();
+  }
+
+  /** Fecha o painel flutuante do item. */
+  function closeDetail(): void {
     setSelectedId(null);
+    setDetailPos(null);
+  }
+
+  /**
+   * Abre o detalhe do item num painel flutuante perto do clique, sempre dentro
+   * da tela (não empurra mais o conteúdo da mochila para baixo).
+   */
+  function openDetail(item: InventoryItem, event: MouseEvent): void {
+    const width = 300;
+    const height = 240;
+    setTooltip(null);
+    setSelectedId(item.id);
+    setDetailPos({
+      x: Math.max(12, Math.min(event.clientX + 14, window.innerWidth - width - 12)),
+      y: Math.max(12, Math.min(event.clientY + 14, window.innerHeight - height - 12)),
+    });
   }
 
   function beginDrag(event: DragEvent, id: string): void {
@@ -237,6 +275,8 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
   }
 
   function showTooltip(event: MouseEvent, item: InventoryItem): void {
+    // Com o detalhe aberto, o painel flutuante já cumpre o papel do tooltip.
+    if (selectedId) return;
     setTooltip({ item, x: event.clientX, y: event.clientY });
   }
 
@@ -248,7 +288,7 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
         draggable={canMove}
         onDragStart={(event) => beginDrag(event, item.id)}
         onDragEnd={endDrag}
-        onClick={() => setSelectedId(item.id)}
+        onClick={(event) => openDetail(item, event)}
         onMouseEnter={(event) => showTooltip(event, item)}
         onMouseLeave={() => setTooltip(null)}
         aria-label={`${item.name}${item.quantity > 1 ? ` (${item.quantity})` : ''}`}
@@ -385,9 +425,8 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
             <span className="bag-panel-count">{backpackCount}</span>
           </div>
 
-          {backpackCount === 0 ? (
-            <p className="bag-panel-empty">A mochila está vazia.</p>
-          ) : (
+          {/* Mostra sempre 4 fileiras de 5 células; o excedente rola aqui. */}
+          <div className="bag-scroll">
             <div className="bag-grid">
               {Array.from({ length: rows * GRID_COLS }, (_, index) => {
                 const x = index % GRID_COLS;
@@ -408,11 +447,17 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
                 );
               })}
             </div>
-          )}
+          </div>
         </div>
 
-        {selected ? (
-          <div className="inv-detail">
+        {selected && detailPos ? (
+          <div
+            className="inv-detail"
+            ref={detailRef}
+            style={{ left: detailPos.x, top: detailPos.y }}
+            role="dialog"
+            aria-label={`Detalhes de ${selected.name}`}
+          >
             <div className="inv-detail-head">
               <span className="inv-detail-sprite">
                 <ItemSprite item={selected} />
@@ -427,7 +472,7 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
               <button
                 type="button"
                 className="btn btn-small"
-                onClick={() => setSelectedId(null)}
+                onClick={closeDetail}
                 aria-label="Fechar detalhes"
               >
                 ×

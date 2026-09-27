@@ -1051,6 +1051,40 @@ a {
 .sheet-vitals .grid-4 {
   grid-auto-rows: 1fr;
   gap: 0.7rem;
+  flex: 1;
+}
+
+/*
+ * Atributos e Vida e Defesa também esticam até o fim da linha, para os dois
+ * cards baterem com a altura do inventário e não sobrar espaço morto.
+ */
+.sheet-abilities,
+.sheet-vitals {
+  align-self: stretch;
+}
+
+.sheet-abilities > .sheet-section,
+.sheet-vitals > .sheet-section {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-abilities > .sheet-section > .section-header,
+.sheet-vitals > .sheet-section > .section-header {
+  flex: none;
+}
+
+.sheet-abilities > .sheet-section > .section-body,
+.sheet-vitals > .sheet-section > .section-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Os cards internos crescem juntos para preencher o card inteiro. */
+.sheet-abilities .grid-abilities {
+  flex: 1;
 }
 
 /* Em telas estreitas tudo vira uma coluna, na ordem de leitura. */
@@ -4278,6 +4312,8 @@ input[type='checkbox']:disabled {
 
 /* --- Mochila (container estilo Tibia), sempre aberta sob o set ------------ */
 .bag-panel {
+  /* Lado de cada célula da mochila; a janela mostra 4 fileiras de 5. */
+  --bag-cell: 2.6rem;
   width: 100%;
   max-width: 320px;
   display: grid;
@@ -4315,18 +4351,17 @@ input[type='checkbox']:disabled {
   text-align: center;
 }
 
-.bag-panel-empty {
-  margin: 0;
-  padding: 0.9rem;
-  text-align: center;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
+/* Recorte de 4 fileiras: o que passar disso rola dentro do painel. */
+.bag-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(var(--bag-cell) * 4 + 28px);
 }
 
-/* A grade se adapta à largura da coluna (as células ficam quadradas). */
 .bag-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, var(--bag-cell));
+  justify-content: center;
   gap: 4px;
   padding: 8px;
   background:
@@ -4335,7 +4370,8 @@ input[type='checkbox']:disabled {
 }
 
 .bag-cell {
-  aspect-ratio: 1;
+  width: var(--bag-cell);
+  height: var(--bag-cell);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4352,16 +4388,18 @@ input[type='checkbox']:disabled {
 }
 
 /* --- Detalhe do item selecionado ----------------------------------------- */
+/* Detalhe do item: flutua perto do clique, sem empurrar a mochila. */
 .inv-detail {
-  width: 100%;
-  max-width: 320px;
+  position: fixed;
+  z-index: 78;
+  width: min(19rem, 86vw);
   display: grid;
   gap: 0.4rem;
   padding: 0.7rem 0.8rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface), var(--surface-2));
-  box-shadow: inset 0 0 0 1px var(--gold-hair);
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
 }
 
 .inv-detail-head {
