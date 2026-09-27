@@ -46,10 +46,10 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
 }
 
 /**
- * Ficha em forma de HUD: identidade, atributos, vida e anotações ficam sempre
- * à vista; o inventário ocupa uma coluna lateral fixa (independente da aba) e
- * só magias, ataques e características vivem em abas. Reutilizada pelo jogador
- * e pelo mestre.
+ * Ficha em forma de HUD: Identidade ocupa a largura toda no topo; abaixo dela
+ * ficam lado a lado o inventário, os atributos e vida e defesa; e na sequência
+ * perícias, anotações e as abas (magias, ataques, características).
+ * Reutilizada pelo jogador e pelo mestre.
  */
 export function SheetView({ character, update, onInventoryMove, readOnly = false }: SheetViewProps) {
   const [tab, setTab] = useState<TabKey>('spells');
@@ -58,20 +58,34 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
   return (
     <ReadOnlyProvider value={readOnly}>
       <div className="sheet">
-        {/*
-         * Uma única grade de três colunas: o inventário na lateral esquerda e,
-         * ao lado dele, o corpo da ficha (identidade, atributos, perícias e as
-         * abas) e a coluna de vida e anotações. Cada coluna flui sem buracos.
-         */}
+        {/* Identidade de ponta a ponta, no topo da ficha. */}
+        <div className="sheet-identity">
+          <IdentitySection character={character} update={update} />
+        </div>
+
+        {/* Linha logo abaixo: inventário, atributos e vida e defesa. */}
         <div className="sheet-inventory">
           <InventorySection character={character} update={update} onMoveItem={onInventoryMove} />
         </div>
 
-        <div className="sheet-main">
-          <IdentitySection character={character} update={update} />
+        <div className="sheet-abilities">
           <AbilitiesSection character={character} update={update} />
-          <SkillsSavesSection character={character} update={update} />
+        </div>
 
+        <div className="sheet-vitals">
+          <VitalsSection character={character} update={update} />
+        </div>
+
+        {/* Perícias em duas colunas, com as anotações ao lado. */}
+        <div className="sheet-skills">
+          <SkillsSavesSection character={character} update={update} />
+        </div>
+
+        <div className="sheet-notes">
+          <NotesSection character={character} update={update} />
+        </div>
+
+        <div className="sheet-tabs-area">
           <div className="sheet-tabs" role="tablist" aria-label="Seções da ficha">
             {TAB_SECTIONS.map((item) => (
               <button
@@ -92,11 +106,6 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
           <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
             {renderTab(tab, character, update)}
           </div>
-        </div>
-
-        <div className="sheet-side">
-          <VitalsSection character={character} update={update} />
-          <NotesSection character={character} update={update} />
         </div>
       </div>
     </ReadOnlyProvider>
