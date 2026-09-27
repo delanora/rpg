@@ -365,9 +365,10 @@ export interface DieFace {
 }
 
 /**
- * Folga das faces: cada face é um pouco maior que o polígono exato, só o
- * bastante para as arestas vizinhas se sobreporem no antialias (as faces também
- * são pintadas dos dois lados, então uma fresta nunca mostra o fundo).
+ * Folga das faces: cada face é um pouco maior que o polígono exato (a escala é
+ * em torno do centroide da própria face), só o bastante para as arestas
+ * vizinhas se sobreporem no antialias. As faces também são pintadas dos dois
+ * lados, então uma fresta nunca mostra o fundo do ring.
  */
 const FACE_OUTSET = 1.03;
 
@@ -431,11 +432,25 @@ function buildFace(vertices: V3[], indices: number[], value: number | null, key:
   const valueFit = value !== null && value < 10 ? 1.5 : 1.25;
   const valueSize = edgeDistance * MODEL_SCALE * FACE_OUTSET * valueFit;
 
-  const half = (side * MODEL_SCALE * FACE_OUTSET) / 2;
+  // Pivô da face: a posição do centroide (origem de `flat`) dentro do quadrado
+  // da face, em px do modelo. É o MESMO ponto onde o número é desenhado
+  // (`valueX`/`valueY`, já que `local = percentual / 100 * size`).
+  //
+  // Não dá para usar o meio do quadrado (`size / 2`): a caixa do polígono só é
+  // simétrica em torno do centroide nas faces com simetria de 180° (o quadrado
+  // do d6). Nas faces triangulares e pentagonais o centroide fica fora do meio
+  // da caixa, e o pivô errado desliza a face dentro do próprio plano dela — a
+  // superfície abre frestas entre faces vizinhas e deixa ver o fundo do ring.
+  const centerOffsetX = (-minX + offsetX) * MODEL_SCALE * FACE_OUTSET;
+  const centerOffsetY = (-minY + offsetY) * MODEL_SCALE * FACE_OUTSET;
+
   const transform = toCss(
     multiply(
       translation(center[0] * MODEL_SCALE, center[1] * MODEL_SCALE, center[2] * MODEL_SCALE),
-      multiply(fromBasis(u, w, normal, [0, 0, 0]), translation(-half, -half, 0)),
+      multiply(
+        fromBasis(u, w, normal, [0, 0, 0]),
+        translation(-centerOffsetX, -centerOffsetY, 0),
+      ),
     ),
   );
 
