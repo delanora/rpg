@@ -5592,7 +5592,7 @@ input[type='checkbox']:focus-visible,
 
 .dice-ring {
   position: relative;
-  width: min(27rem, 82vw);
+  width: min(30rem, 88vw);
   aspect-ratio: 1 / 1;
   margin: 0 auto;
   border-radius: 50%;
@@ -5672,7 +5672,7 @@ input[type='checkbox']:focus-visible,
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 17%;
+  padding: 9%;
   perspective: 920px;
   perspective-origin: 50% 24%;
   transform-style: preserve-3d;
@@ -5874,8 +5874,8 @@ input[type='checkbox']:focus-visible,
 
 .ddie {
   position: relative;
-  width: var(--ddie-box, 4.6rem);
-  height: var(--ddie-box, 4.6rem);
+  width: var(--ddie-box, 6.8rem);
+  height: var(--ddie-box, 6.8rem);
   display: block;
   padding: 0;
   border: none;
@@ -5895,8 +5895,7 @@ input[type='checkbox']:focus-visible,
   transform: translateY(-3px);
 }
 
-.ddie.is-dropped .ddie-num,
-.ddie.is-dropped .ddie-pips {
+.ddie.is-dropped .ddie-num {
   opacity: 0.4;
 }
 
@@ -5918,15 +5917,18 @@ input[type='checkbox']:focus-visible,
 }
 
 .ddie-model {
-  transform: scale3d(var(--ddie-scale, 0.34), var(--ddie-scale, 0.34), var(--ddie-scale, 0.34));
+  transform: scale3d(var(--ddie-scale, 0.47), var(--ddie-scale, 0.47), var(--ddie-scale, 0.47));
 }
 
+/* As faces NÃO usam `backface-visibility: hidden` de propósito: elas pintam os
+   dois lados do poliedro. Assim a casca do dado fica fechada — se sobrar uma
+   fresta de antialias entre duas faces, vê-se o outro lado (também de osso) e
+   nunca o fundo atrás do dado. */
 .ddie-face {
   position: absolute;
   left: 0;
   top: 0;
   transform-origin: 0 0;
-  backface-visibility: hidden;
   color: #4a3316;
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
@@ -5944,28 +5946,6 @@ input[type='checkbox']:focus-visible,
   line-height: 1;
   letter-spacing: -0.02em;
   text-shadow: 0 0 1px rgba(255, 250, 235, 0.9);
-}
-
-.ddie-pips {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  width: 62%;
-  height: 62%;
-}
-
-.ddie-pips i {
-  place-self: center;
-  width: 62%;
-  height: 62%;
-  border-radius: 50%;
-}
-
-.ddie-pips i.on {
-  background: radial-gradient(circle at 35% 30%, #7a3425, #3a1712);
-  box-shadow: inset 0 -1px 1px rgba(255, 255, 255, 0.28);
 }
 
 .ddie-badge {
@@ -6047,11 +6027,11 @@ input[type='checkbox']:focus-visible,
   }
 
   .dice-ring {
-    width: min(22rem, 86vw);
+    width: min(24rem, 86vw);
   }
 
   .ddie {
-    --ddie-box: 3.6rem;
-    --ddie-scale: 0.27;
+    --ddie-box: 4.6rem;
+    --ddie-scale: 0.34;
   }
 }

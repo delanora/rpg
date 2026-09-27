@@ -4,7 +4,7 @@
  * Cada dado é um poliedro regular de verdade (ou a melhor aproximação do PHB):
  *
  *  - d4  — tetraedro
- *  - d6  — cubo (com pontos)
+ *  - d6  — cubo
  *  - d8  — octaedro
  *  - d10 — bipirâmide pentagonal (aproxima o trapezoedro pentagonal)
  *  - d12 — dodecaedro
@@ -13,9 +13,10 @@
  *           representam 100 números)
  *
  * Para cada face calculamos o polígono (clip-path) e a matriz `matrix3d` que a
- * coloca no espaço. Assim o CSS monta um poliedro 3D de verdade, com
- * `backface-visibility: hidden` escondendo as faces de trás — o dado gira e
- * pousa mostrando a face do resultado para a câmera.
+ * coloca no espaço. Assim o CSS monta um poliedro 3D de verdade; as faces são
+ * pintadas dos dois lados, então a casca do dado fica fechada (nenhuma fresta
+ * deixa ver o fundo). O dado gira e pousa mostrando a face do resultado para a
+ * câmera.
  */
 
 export type V3 = [number, number, number];
@@ -364,11 +365,11 @@ export interface DieFace {
 }
 
 /**
- * Folga das faces: cada face é um pouco maior que o polígono exato, para as
- * arestas vizinhas se sobreporem e não deixarem "frestas" (o dado parecia
- * translúcido nas junções).
+ * Folga das faces: cada face é um pouco maior que o polígono exato, só o
+ * bastante para as arestas vizinhas se sobreporem no antialias (as faces também
+ * são pintadas dos dois lados, então uma fresta nunca mostra o fundo).
  */
-const FACE_OUTSET = 1.08;
+const FACE_OUTSET = 1.03;
 
 /** Distância da origem (o centroide) ao segmento AB — usada para achar o
  *  círculo inscrito no polígono da face. */

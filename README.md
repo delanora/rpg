@@ -661,7 +661,7 @@ A apresentação é **efêmera** (não vai para o banco): vive na memória do se
 
 Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotações) fica disponível em **qualquer tela** — ficha, combate e painel do mestre. Ao clicar, o fundo escurece (como no lightbox das imagens) e um **ring circular** surge no centro da tela.
 
-Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da geometria de cada sólido (tetraedro, cubo, octaedro, dodecaedro, icosaedro e bipirâmides). Eles giram em vários eixos dentro do ring e **pousam com a face do resultado voltada para a câmera** — d6 com pontos, os demais com o número gravado.
+Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da geometria de cada sólido (tetraedro, cubo, octaedro, dodecaedro, icosaedro e bipirâmides). Eles giram em vários eixos dentro do ring e **pousam com a face do resultado voltada para a câmera** — o número é desenhado no centro de cada face (d100 sai no selo, porque 10 faces não representam 100 números).
 
 - **Rolagem livre:** pool vazio; clique nos dados (d4, d6, d8, d10, d12, d20, d100) para empilhar; clique de novo num dado da bandeja para removê-lo.
 - **Rolagem de perícia/salvaguarda:** cada linha da seção "Perícias e Salvaguardas" tem um botão de dado que abre a janela com **1d20 fixo** e o bônus já aplicado; ainda dá para somar dados extras (Orientação, Inspiração de Bardo...).
@@ -676,7 +676,7 @@ Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da g
 |--------|------|--------|-----------|
 | `POST` | `/api/dice/roll` | autenticado | Rola o pool (`{ dice, advantage?, disadvantage?, bonus?, label?, kind?, private?, clientId? }`). |
 | `GET` | `/api/dice/history` | **mestre** | Rolagens da sessão (memória do servidor). |
-| `DELETE` | `/api/dice/history` | **mestre** | Zera o log lateral. |
+| `DELETE` | `/api/dice/history` | **mestre** | Zera o log. |
 
 | Evento | Destino | Conteúdo |
 |--------|---------|----------|
