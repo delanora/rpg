@@ -1,64 +1,9 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
 import type { DiceRollDto } from '../types';
+import { Die3D } from './Die3D';
 import { DICE_TYPES, type DiceRollerState } from './useDiceRoller';
-
-interface Die3DProps {
-  sides: number;
-  value: number | null;
-  dropped?: boolean;
-  locked?: boolean;
-  tumbling?: boolean;
-  onClick?: () => void;
-  title?: string;
-}
-
-/**
- * Um dado desenhado em CSS 3D. Fica parado levemente inclinado; durante a
- * rolagem entra na animação de queda (`tumbling`).
- */
-function Die3D({ sides, value, dropped, locked, tumbling, onClick, title }: Die3DProps) {
-  const classes = ['die3d'];
-  if (tumbling) classes.push('is-tumbling');
-  if (dropped) classes.push('is-dropped');
-  if (locked) classes.push('is-locked');
-  if (onClick) classes.push('is-clickable');
-
-  const label = tumbling ? '?' : value === null ? '·' : String(value);
-
-  const body = (
-    <>
-      <span className="die3d-type">d{sides}</span>
-      <span className="die3d-value">{label}</span>
-      {locked ? <span className="die3d-lock">fixo</span> : null}
-    </>
-  );
-
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        className={classes.join(' ')}
-        data-sides={sides}
-        title={title ?? 'Clique para remover'}
-        aria-label={locked ? `d${sides} fixo` : `Remover d${sides} do pool`}
-        onClick={onClick}
-      >
-        {body}
-      </button>
-    );
-  }
-
-  return (
-    <span
-      className={classes.join(' ')}
-      data-sides={sides}
-      title={dropped ? `d${sides} descartado` : `d${sides}`}
-    >
-      {body}
-    </span>
-  );
-}
 
 /** Texto do aviso público que todos (menos o autor) veem. */
 function announcement(roll: DiceRollDto): string {
@@ -68,11 +13,10 @@ function announcement(roll: DiceRollDto): string {
 
 /** Detalhe do resultado: valores individuais + bônus. */
 function resultBreakdown(roll: DiceRollDto): string {
-  const parts = roll.dice
-    .filter((die) => !die.dropped)
-    .map((die) => String(die.value));
+  const parts = roll.dice.filter((die) => !die.dropped).map((die) => String(die.value));
   const expression = parts.join(' + ') || '0';
-  const bonus = roll.bonus === 0 ? '' : roll.bonus > 0 ? ` + ${roll.bonus}` : ` − ${Math.abs(roll.bonus)}`;
+  const bonus =
+    roll.bonus === 0 ? '' : roll.bonus > 0 ? ` + ${roll.bonus}` : ` − ${Math.abs(roll.bonus)}`;
   return `${expression}${bonus}`;
 }
 
@@ -86,11 +30,11 @@ interface DiceDockProps {
 }
 
 /**
- * Botão flutuante "Dados" (canto inferior esquerdo) e a janela de rolagem.
+ * Botão flutuante "Dados" e a janela de rolagem.
  *
- * Fica disponível em qualquer tela — ficha, combate e painel do mestre. As
- * rolagens públicas disparam um aviso para toda a mesa; o mestre tem ainda a
- * rolagem privada e o log lateral da sessão.
+ * O botão fica disponível em qualquer tela. Ao abrir, o ring surge no centro da
+ * tela com o fundo escurecido (como o lightbox das imagens), os dados rolam
+ * dentro dele e o resultado e o log do mestre aparecem abaixo.
  */
 export function DiceDock({ roller }: DiceDockProps) {
   const {
@@ -119,19 +63,27 @@ export function DiceDock({ roller }: DiceDockProps) {
     clearHistory,
   } = roller;
 
-  // Esc fecha a janela.
+  // Esc fecha e o fundo não rola enquanto o ring está aberto.
   useEffect(() => {
     if (!open) return;
+
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') close();
     };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
   }, [open, close]);
 
+  const rolling = phase === 'tumbling';
   const settled = phase === 'settled' && result !== null;
   const hasRemovable = pool.some((die) => !die.locked);
-  const rolling = phase === 'tumbling';
 
   return (
     <>
@@ -158,180 +110,188 @@ export function DiceDock({ roller }: DiceDockProps) {
         </div>
       ) : null}
 
-      {open ? (
-        <section
-          className={isMaster ? 'dice-window is-master' : 'dice-window'}
-          role="dialog"
-          aria-label="Janela de rolagem de dados"
-        >
-          <header className="dice-window-head">
-            <h2>
-              <Icon name="die" size={18} />
-              {context ? `Teste de ${context.label}` : 'Rolagem livre'}
-            </h2>
-            {context ? (
-              <span className="dice-window-bonus">
-                bônus {context.bonus >= 0 ? `+${context.bonus}` : context.bonus}
-              </span>
-            ) : null}
-            <button
-              type="button"
-              className="dice-window-close"
-              aria-label="Fechar a janela de dados"
-              onClick={close}
-            >
-              ×
-            </button>
-          </header>
+      {open
+        ? createPortal(
+            <div className="dice-overlay" role="dialog" aria-modal="true" onClick={close}>
+              <div className="dice-stage" onClick={(event) => event.stopPropagation()}>
+                <header className="dice-head">
+                  <h2>
+                    <Icon name="die" size={18} />
+                    {context ? `Teste de ${context.label}` : 'Rolagem livre'}
+                  </h2>
+                  {context ? (
+                    <span className="dice-head-bonus">
+                      bônus {context.bonus >= 0 ? `+${context.bonus}` : context.bonus}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="dice-head-close"
+                    aria-label="Fechar a janela de dados"
+                    onClick={close}
+                  >
+                    <Icon name="x" size={16} />
+                  </button>
+                </header>
 
-          <div className="dice-window-body">
-            <div className="dice-main">
-              {/* Bandeja octogonal: os dados escolhidos ficam parados no centro. */}
-              <div className={rolling ? 'dice-tray is-rolling' : 'dice-tray'}>
-                <div className="dice-tray-inner">
+                {/* Ring: arena circular onde os dados giram e pousam. */}
+                <div className={rolling ? 'dice-ring is-rolling' : 'dice-ring'}>
+                  <div className="dice-ring-inner">
+                    <div className="dice-ring-floor">
+                      {settled && result ? (
+                        result.dice.map((die, index) => (
+                          <Die3D
+                            key={`r-${index}`}
+                            sides={die.sides}
+                            value={die.value}
+                            reveal
+                            dropped={die.dropped}
+                          />
+                        ))
+                      ) : pool.length === 0 ? (
+                        <p className="dice-ring-hint">Escolha os dados abaixo</p>
+                      ) : (
+                        pool.map((die, index) => (
+                          <Die3D
+                            key={`p-${index}`}
+                            sides={die.sides}
+                            value={null}
+                            reveal={false}
+                            tumbling={rolling}
+                            locked={die.locked}
+                            onClick={rolling || die.locked ? undefined : () => removeDie(index)}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Leitura do resultado, logo abaixo do ring. */}
+                <div className="dice-readout">
                   {settled && result ? (
-                    result.dice.map((die, index) => (
-                      <Die3D
-                        key={`r-${index}`}
-                        sides={die.sides}
-                        value={die.value}
-                        dropped={die.dropped}
-                      />
-                    ))
-                  ) : pool.length === 0 ? (
-                    <p className="dice-tray-empty">Escolha os dados abaixo</p>
+                    <div className={result.crit ? 'dice-total is-crit' : 'dice-total'}>
+                      <span className="dice-total-value">{result.total}</span>
+                      <span className="dice-total-detail">{resultBreakdown(result)}</span>
+                      <span className="dice-total-tags">
+                        {result.advantage ? <em>vantagem</em> : null}
+                        {result.disadvantage ? <em>desvantagem</em> : null}
+                        {result.crit ? <em className="crit">20 natural!</em> : null}
+                        {result.isPrivate ? <em className="private">privada</em> : null}
+                      </span>
+                    </div>
                   ) : (
-                    pool.map((die, index) => (
-                      <Die3D
-                        key={`p-${index}`}
-                        sides={die.sides}
-                        value={null}
-                        locked={die.locked}
-                        tumbling={rolling}
-                        onClick={
-                          rolling || die.locked ? undefined : () => removeDie(index)
-                        }
-                      />
-                    ))
+                    <p className="dice-readout-hint">
+                      {rolling ? 'Rolando os dados...' : 'Monte o pool e role'}
+                    </p>
                   )}
                 </div>
-              </div>
 
-              {/* Bandeja de tipos: cada clique empilha um dado no pool. */}
-              <div className="dice-picker" role="group" aria-label="Tipos de dado">
-                {DICE_TYPES.map((sides) => (
-                  <button
-                    key={sides}
-                    type="button"
-                    className="dice-pick"
-                    data-sides={sides}
-                    onClick={() => addDie(sides)}
-                    aria-label={`Adicionar d${sides}`}
-                  >
-                    d{sides}
-                  </button>
-                ))}
-              </div>
+                <div className="dice-picker" role="group" aria-label="Tipos de dado">
+                  {DICE_TYPES.map((sides) => (
+                    <button
+                      key={sides}
+                      type="button"
+                      className="dice-pick"
+                      data-sides={sides}
+                      onClick={() => addDie(sides)}
+                      aria-label={`Adicionar d${sides}`}
+                    >
+                      d{sides}
+                    </button>
+                  ))}
+                </div>
 
-              <div className="dice-controls">
-                <label className="dice-toggle">
-                  <input
-                    type="checkbox"
-                    checked={advantage}
-                    onChange={(event) => setAdvantage(event.target.checked)}
-                  />
-                  Vantagem
-                </label>
-                <label className="dice-toggle">
-                  <input
-                    type="checkbox"
-                    checked={disadvantage}
-                    onChange={(event) => setDisadvantage(event.target.checked)}
-                  />
-                  Desvantagem
-                </label>
-                {isMaster ? (
+                <div className="dice-controls">
                   <label className="dice-toggle">
                     <input
                       type="checkbox"
-                      checked={isPrivate}
-                      onChange={(event) => setPrivate(event.target.checked)}
+                      checked={advantage}
+                      onChange={(event) => setAdvantage(event.target.checked)}
                     />
-                    Privada
+                    Vantagem
                   </label>
-                ) : null}
-
-                <span className="dice-controls-spacer" />
-
-                {hasRemovable ? (
-                  <button type="button" className="btn btn-small" onClick={clearPool}>
-                    limpar
-                  </button>
-                ) : null}
-
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={rolling || pool.length === 0}
-                  onClick={() => void submit()}
-                >
-                  <Icon name="die" size={15} /> {rolling ? 'Rolando...' : 'Rolar'}
-                </button>
-              </div>
-
-              {error ? <p className="dice-error">{error}</p> : null}
-
-              {settled && result ? (
-                <div className={result.crit ? 'dice-result is-crit' : 'dice-result'}>
-                  <div className="dice-result-total">{result.total}</div>
-                  <div className="dice-result-detail">{resultBreakdown(result)}</div>
-                  {result.advantage ? <span className="dice-result-tag">vantagem</span> : null}
-                  {result.disadvantage ? (
-                    <span className="dice-result-tag">desvantagem</span>
+                  <label className="dice-toggle">
+                    <input
+                      type="checkbox"
+                      checked={disadvantage}
+                      onChange={(event) => setDisadvantage(event.target.checked)}
+                    />
+                    Desvantagem
+                  </label>
+                  {isMaster ? (
+                    <label className="dice-toggle">
+                      <input
+                        type="checkbox"
+                        checked={isPrivate}
+                        onChange={(event) => setPrivate(event.target.checked)}
+                      />
+                      Privada
+                    </label>
                   ) : null}
-                  {result.crit ? <span className="dice-result-tag crit">20 natural!</span> : null}
-                </div>
-              ) : null}
-            </div>
 
-            {isMaster ? (
-              <aside className="dice-history" aria-label="Histórico de rolagens">
-                <div className="dice-history-head">
-                  <h3>
-                    <Icon name="scroll" size={14} /> Histórico
-                  </h3>
-                  {history.length > 0 ? (
-                    <button
-                      type="button"
-                      className="btn btn-small dice-history-clear"
-                      onClick={() => void clearHistory()}
-                    >
+                  <span className="dice-controls-spacer" />
+
+                  {hasRemovable ? (
+                    <button type="button" className="btn btn-small" onClick={clearPool}>
                       limpar
                     </button>
                   ) : null}
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={rolling || pool.length === 0}
+                    onClick={() => void submit()}
+                  >
+                    <Icon name="die" size={15} /> {rolling ? 'Rolando...' : 'Rolar'}
+                  </button>
                 </div>
-                {history.length === 0 ? (
-                  <p className="dice-history-empty">Nenhuma rolagem ainda.</p>
-                ) : (
-                  <ul className="dice-history-list">
-                    {history.map((roll) => (
-                      <li key={roll.id} className={roll.isPrivate ? 'is-private' : undefined}>
-                        <span className="dice-history-text">{historyLine(roll)}</span>
-                        <span className="dice-history-side">
-                          {roll.isPrivate ? <em className="tag">privada</em> : null}
-                          <span className="dice-history-time">
-                            {new Date(roll.at).toLocaleTimeString('pt-BR')}
-                          </span>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </aside>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
+
+                {error ? <p className="dice-error">{error}</p> : null}
+
+                {/* Log do mestre, abaixo dos dados. */}
+                {isMaster ? (
+                  <div className="dice-log">
+                    <div className="dice-log-head">
+                      <h3>
+                        <Icon name="scroll" size={14} /> Histórico
+                      </h3>
+                      {history.length > 0 ? (
+                        <button
+                          type="button"
+                          className="btn btn-small dice-log-clear"
+                          onClick={() => void clearHistory()}
+                        >
+                          limpar
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {history.length === 0 ? (
+                      <p className="dice-log-empty">Nenhuma rolagem ainda.</p>
+                    ) : (
+                      <ul className="dice-log-list">
+                        {history.map((roll) => (
+                          <li key={roll.id} className={roll.isPrivate ? 'is-private' : undefined}>
+                            <span className="dice-log-text">{historyLine(roll)}</span>
+                            <span className="dice-log-side">
+                              {roll.isPrivate ? <em className="tag">privada</em> : null}
+                              <span className="dice-log-time">
+                                {new Date(roll.at).toLocaleTimeString('pt-BR')}
+                              </span>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       <button
         type="button"
@@ -346,4 +306,3 @@ export function DiceDock({ roller }: DiceDockProps) {
     </>
   );
 }
-

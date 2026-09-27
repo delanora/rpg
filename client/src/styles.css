@@ -5496,3 +5496,560 @@ input[type='checkbox']:focus-visible,
     border-top: 1px solid var(--line);
   }
 }
+
+/* ==========================================================================
+   27. Janela de dados — ring central e dados 3D (substitui a seção 26)
+   ========================================================================== */
+
+/* Toasts acima do overlay (o ring fica em z 70). */
+.dice-toasts {
+  z-index: 76;
+}
+
+/* Fundo escurecido e foco no ring — mesmo espírito do lightbox das imagens. */
+.dice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 1.4rem;
+  background: radial-gradient(circle at 50% 38%, rgba(34, 22, 13, 0.7), rgba(9, 5, 3, 0.92));
+  backdrop-filter: blur(5px);
+  animation: ink-in 0.22s ease both;
+}
+
+.dice-stage {
+  position: relative;
+  width: min(34rem, 95vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem 1.15rem;
+  border: 2px solid var(--gold-deep);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow:
+    var(--shadow-deep),
+    0 0 70px -22px var(--glow),
+    inset 0 0 0 1px var(--gold-hair);
+  animation: ink-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* --- Cabeçalho ------------------------------------------------------------ */
+
+.dice-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dice-head h2 {
+  margin: 0 auto 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+
+.dice-head-bonus {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .dice-head-bonus {
+  color: var(--gold-bright);
+}
+
+.dice-head-close {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.dice-head-close:hover {
+  border-color: var(--gold);
+  color: var(--gold-deep);
+  box-shadow: 0 0 12px -3px var(--glow);
+}
+
+/* --- Ring ----------------------------------------------------------------- */
+
+.dice-ring {
+  position: relative;
+  width: min(27rem, 82vw);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  border-radius: 50%;
+  padding: clamp(12px, 2.3vw, 20px);
+  background:
+    radial-gradient(circle at 50% 2%, rgba(255, 245, 214, 0.6), transparent 40%),
+    conic-gradient(
+      from 210deg,
+      #5c4310,
+      #e9c964,
+      #7a5a1c,
+      #b8912a,
+      #4f3a0d,
+      #efd27a,
+      #6b4f16
+    );
+  box-shadow:
+    0 30px 54px -28px rgba(0, 0, 0, 0.92),
+    inset 0 2px 4px rgba(255, 246, 220, 0.55),
+    inset 0 -7px 14px rgba(0, 0, 0, 0.55),
+    0 0 80px -24px var(--glow);
+  animation: ring-in 0.55s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+@keyframes ring-in {
+  0% {
+    transform: scale(0.7) rotate(-9deg);
+    opacity: 0;
+  }
+  62% {
+    transform: scale(1.02) rotate(1.2deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+/* Aro interno (bisel) desenhado por cima da borda dourada. */
+.dice-ring::after {
+  content: '';
+  position: absolute;
+  inset: clamp(12px, 2.3vw, 20px);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 3px rgba(255, 236, 194, 0.18),
+    inset 0 0 22px -6px rgba(0, 0, 0, 0.8);
+}
+
+.dice-ring-inner {
+  position: absolute;
+  inset: clamp(12px, 2.3vw, 20px);
+  border-radius: 50%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 26%, #3b2718, #1a1009 74%),
+    repeating-radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02) 0 2px, transparent 2px 6px);
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.85),
+    inset 0 10px 26px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme='dark'] .dice-ring-inner {
+  background:
+    radial-gradient(circle at 50% 26%, #241812, #0c0704 74%),
+    repeating-radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02) 0 2px, transparent 2px 6px);
+}
+
+.dice-ring-floor {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 17%;
+  perspective: 920px;
+  perspective-origin: 50% 24%;
+  transform-style: preserve-3d;
+}
+
+.dice-ring-hint {
+  margin: 0;
+  color: rgba(236, 220, 189, 0.5);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+}
+
+/* --- Leitura do resultado ------------------------------------------------- */
+
+.dice-readout {
+  min-height: 3rem;
+  display: grid;
+  place-items: center;
+}
+
+.dice-readout-hint {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+}
+
+.dice-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.4rem 0.8rem;
+}
+
+.dice-total-value {
+  font-family: var(--font-display);
+  font-size: 2.6rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--wine);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 12px rgba(122, 31, 31, 0.28);
+}
+
+[data-theme='dark'] .dice-total-value {
+  color: var(--gold-bright);
+  text-shadow: 0 2px 12px rgba(246, 217, 119, 0.2);
+}
+
+.dice-total-detail {
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+.dice-total-tags {
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.dice-total-tags em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.dice-total-tags em.crit {
+  color: var(--ok);
+}
+
+.dice-total-tags em.private {
+  color: var(--wine);
+}
+
+.dice-total.is-crit .dice-total-value {
+  color: var(--ok);
+  animation: pulse-turn 0.9s ease 2;
+}
+
+/* Bandeja de tipos mais refinada (chips de osso/dourado). */
+.dice-picker {
+  gap: 0.45rem;
+}
+
+.dice-pick {
+  min-width: 2.7rem;
+  padding: 0.42rem 0.55rem;
+  border-radius: 999px;
+  border-color: var(--gold-hair);
+  background: linear-gradient(180deg, #fbf3e0, var(--surface-3));
+  color: #4a3316;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 250, 236, 0.6),
+    0 4px 9px -6px rgba(43, 33, 21, 0.8);
+}
+
+[data-theme='dark'] .dice-pick {
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+  color: var(--ink);
+}
+
+.dice-pick:hover {
+  border-color: var(--gold);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 250, 236, 0.6),
+    0 0 14px -4px var(--glow);
+}
+
+.dice-controls {
+  padding-top: 0.15rem;
+}
+
+/* --- Log do mestre (abaixo dos dados) ------------------------------------- */
+
+.dice-log {
+  margin-top: 0.15rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.dice-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.dice-log h3 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.dice-log-clear {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+.dice-log-empty {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+
+.dice-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.dice-log-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.3rem;
+  border-bottom: 1px solid rgba(184, 145, 42, 0.16);
+  font-size: 0.82rem;
+}
+
+.dice-log-list li.is-private {
+  opacity: 0.82;
+}
+
+.dice-log-text {
+  color: var(--ink);
+}
+
+.dice-log-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.dice-log-time {
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Dados 3D -------------------------------------------------------------- */
+
+.ddie {
+  position: relative;
+  width: var(--ddie-box, 4.6rem);
+  height: var(--ddie-box, 4.6rem);
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  perspective: 900px;
+  perspective-origin: 50% 34%;
+  transition: transform 0.16s ease;
+}
+
+.ddie.is-clickable {
+  cursor: pointer;
+}
+
+/* Sem `filter`/`opacity` no elemento com `perspective`: isso achataria a cena
+   3D dos filhos. A ênfase do hover é um leve deslocamento. */
+.ddie.is-clickable:hover {
+  transform: translateY(-3px);
+}
+
+.ddie.is-dropped .ddie-num,
+.ddie.is-dropped .ddie-pips {
+  opacity: 0.4;
+}
+
+.ddie.is-dropped .ddie-badge {
+  opacity: 0.6;
+}
+
+/* A pilha de transformações: orientação de pouso → giro → poliedro. */
+.ddie-orient,
+.ddie-spin,
+.ddie-model {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  transform-origin: 0 0;
+}
+
+.ddie-model {
+  transform: scale3d(var(--ddie-scale, 0.34), var(--ddie-scale, 0.34), var(--ddie-scale, 0.34));
+}
+
+.ddie-face {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  transform-origin: 0 0;
+  backface-visibility: hidden;
+  color: #4a3316;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  box-shadow:
+    inset 0 0 0 1px rgba(92, 67, 26, 0.42),
+    inset 0 0 16px -5px rgba(92, 67, 26, 0.55);
+}
+
+.ddie-num {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 250, 235, 0.7);
+}
+
+.ddie-s4 .ddie-num,
+.ddie-s20 .ddie-num {
+  font-size: 0.9rem;
+}
+
+.ddie-pips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 66%;
+  height: 66%;
+}
+
+.ddie-pips i {
+  border-radius: 50%;
+}
+
+.ddie-pips i.on {
+  background: radial-gradient(circle at 35% 30%, #7a3425, #3a1712);
+  box-shadow: inset 0 -1px 1px rgba(255, 255, 255, 0.28);
+}
+
+.ddie-badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0.08rem 0.36rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: rgba(246, 232, 200, 0.92);
+  background: rgba(18, 11, 6, 0.74);
+  box-shadow: 0 0 0 1px rgba(184, 145, 42, 0.55);
+  pointer-events: none;
+}
+
+.ddie-s100 .ddie-badge {
+  font-size: 1rem;
+  padding: 0.12rem 0.45rem;
+}
+
+.ddie.is-locked .ddie-badge {
+  color: var(--gold-bright);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 10px -2px var(--glow);
+}
+
+/* Giro multi-eixo; termina em múltiplos de 360° = identidade, então o dado
+   "assenta" na orientação de pouso definida por `.ddie-orient`. */
+@keyframes die-tumble-run {
+  0% {
+    transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(1080deg) rotateY(720deg) rotateZ(360deg);
+  }
+}
+
+.ddie.is-tumbling .ddie-spin {
+  animation: die-tumble-run 1.15s cubic-bezier(0.22, 0.68, 0.24, 1) both;
+}
+
+.dice-ring-floor .ddie.is-tumbling:nth-child(2n) .ddie-spin {
+  animation-duration: 1.28s;
+  animation-delay: 0.05s;
+}
+
+.dice-ring-floor .ddie.is-tumbling:nth-child(3n) .ddie-spin {
+  animation-duration: 1.02s;
+  animation-delay: 0.12s;
+}
+
+@keyframes die-bounce {
+  0% {
+    transform: translateY(-40%);
+  }
+  42% {
+    transform: translateY(5%);
+  }
+  62% {
+    transform: translateY(-14%);
+  }
+  80% {
+    transform: translateY(2%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.ddie.is-tumbling {
+  animation: die-bounce 1.15s cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+
+@media (max-width: 560px) {
+  .dice-stage {
+    padding: 0.85rem;
+  }
+
+  .dice-ring {
+    width: min(22rem, 86vw);
+  }
+
+  .ddie {
+    --ddie-box: 3.6rem;
+    --ddie-scale: 0.27;
+  }
+}
