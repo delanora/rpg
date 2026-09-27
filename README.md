@@ -661,7 +661,9 @@ A apresentação é **efêmera** (não vai para o banco): vive na memória do se
 
 Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotações) fica disponível em **qualquer tela** — ficha, combate e painel do mestre. Ao clicar, o fundo escurece (como no lightbox das imagens) e um **ring circular** surge no centro da tela.
 
-O evento `dice:active` é emitido para toda a mesa quando alguém abre ou fecha a janela, quando mexe no pool e quando os dados começam a rolar (`phase: 'tumbling'`) — é ele que mantém o tabuleiro assistido sincronizado. Quem conecta no meio de uma rolagem recebe o estado na hora (é efêmero, vive só na memória do servidor).
+O evento `dice:active` é emitido para toda a mesa quando alguém abre ou fecha a janela e quando mexe no pool. A fase de queda (`phase: 'tumbling'`) também vai por aí, mas **anunciada pelo servidor no início da rolagem** — não pelo cliente em um pedido paralelo. Com um pedido só, a ordem queda → resultado fica garantida e nenhum espectador recebe o total antes de o tabuleiro entrar em queda (nem perde o total por causa de um anúncio atrasado).
+
+O tabuleiro anunciado guarda também a **última rolagem** (`lastRoll`), e o `at` diz desde quando o estado mudou: quem conecta no meio da queda assiste só o restante dela e quem conecta depois vê o mesmo resultado de quem rolou — nunca fica o dado parado na tela sem total. Mexer no pool descarta esse resultado guardado, igual à janela do autor. Todo esse estado é efêmero: vive só na memória do servidor.
 
 Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da geometria de cada sólido (tetraedro, cubo, octaedro, dodecaedro, icosaedro e bipirâmides). Eles giram em vários eixos dentro do ring e **pousam com a face do resultado voltada para a câmera** — o número é desenhado no centro de cada face (d100 sai no selo, porque 10 faces não representam 100 números).
 

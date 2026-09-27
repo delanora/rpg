@@ -2420,7 +2420,10 @@ async function main(): Promise<void> {
     ).status === 400,
   );
 
-  // Rolar: o tabuleiro assistido entra na fase de queda.
+  // Rolar: o próprio pedido de rolagem avisa a mesa de que os dados estão
+  // caindo. O anúncio tem de sair do servidor (e não de um segundo pedido do
+  // cliente) para nunca chegar depois do resultado — era isso que deixava o
+  // dado na tela de quem assiste sem o total.
   const tumblingEvent = waitFor<any>(masterSocket, 'dice:active').catch(() => null);
   const rolling = await api('/api/dice/roll', {
     method: 'POST',
@@ -2432,6 +2435,37 @@ async function main(): Promise<void> {
     rolling.data?.roll?.actorUserId === playerUserId,
     String(rolling.data?.roll?.actorUserId),
   );
+
+  const tumbling = await tumblingEvent;
+  check('a mesa é avisada de que os dados estão rolando', tumbling?.board?.phase === 'tumbling');
+  check(
+    'o anúncio da queda ainda não carrega resultado',
+    tumbling?.lastRoll === null,
+    JSON.stringify(tumbling?.lastRoll),
+  );
+  check(
+    'quem sincroniza depois recebe o resultado guardado no tabuleiro',
+    (await api('/api/dice/active', { token: masterToken })).data?.activeRoll?.lastRoll?.id ===
+      rolling.data?.roll?.id,
+    JSON.stringify((await api('/api/dice/active', { token: masterToken })).data?.activeRoll),
+  );
+
+  // Quem entra no meio da rolagem já recebe a faixa — e com o resultado, para
+  // não ver só os dados parados.
+  const lateDiceSocket = connect(playerToken);
+  const lateBanner = await waitFor<any>(lateDiceSocket, 'dice:active').catch(() => null);
+  check(
+    'quem conecta depois recebe a faixa em andamento',
+    lateBanner?.active === true && lateBanner?.userId === playerUserId,
+  );
+  check(
+    'quem conecta depois também recebe o resultado',
+    lateBanner?.lastRoll?.id === rolling.data?.roll?.id,
+    JSON.stringify(lateBanner?.lastRoll),
+  );
+  lateDiceSocket.close();
+
+  // Mexer no tabuleiro descarta o resultado guardado (espelha a janela).
   await api('/api/dice/active', {
     method: 'POST',
     token: playerToken,
@@ -2439,25 +2473,15 @@ async function main(): Promise<void> {
       active: true,
       kind: 'skill',
       label: 'Percepção',
-      pool: [{ sides: 20, locked: true }],
+      pool: [{ sides: 20, locked: true }, { sides: 6 }],
       advantage: true,
       bonus: 5,
-      phase: 'tumbling',
     },
   });
   check(
-    'a mesa é avisada de que os dados estão rolando',
-    (await tumblingEvent)?.board?.phase === 'tumbling',
+    'mexer no pool descarta o resultado anterior',
+    (await api('/api/dice/active', { token: masterToken })).data?.activeRoll?.lastRoll === null,
   );
-
-  // Quem entra no meio da rolagem já recebe a faixa.
-  const lateDiceSocket = connect(playerToken);
-  const lateBanner = await waitFor<any>(lateDiceSocket, 'dice:active').catch(() => null);
-  check(
-    'quem conecta depois recebe a faixa em andamento',
-    lateBanner?.active === true && lateBanner?.userId === playerUserId,
-  );
-  lateDiceSocket.close();
 
   check(
     'a mesa consulta quem está rolando',

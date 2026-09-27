@@ -72,6 +72,7 @@ function activePayload(
     kind: DiceRollKind;
     label: string;
     board: RollBoardDto;
+    lastRoll: DiceRollDto | null;
   },
 ): TableRollActivePayload {
   return { active, ...who, at: new Date().toISOString() };
@@ -120,8 +121,11 @@ export async function setActiveRoll(
       advantage: Boolean(input.advantage) && !input.disadvantage,
       disadvantage: Boolean(input.disadvantage) && !input.advantage,
       bonus: input.bonus ?? 0,
-      phase: input.phase === 'tumbling' ? ('tumbling' as const) : ('idle' as const),
+      phase: 'idle' as const,
     },
+    // Mexeu no tabuleiro: o resultado anterior deixa de valer (é o mesmo
+    // comportamento da janela de quem rola).
+    lastRoll: null,
   };
 
   activeRoll = { ...who, at: new Date().toISOString() };
@@ -136,6 +140,28 @@ export async function setActiveRoll(
  * Sem isso a faixa ficaria presa no topo de todo mundo quando alguém fecha o
  * navegador no meio de uma rolagem.
  */
+/**
+ * Marca o tabuleiro anunciado como "os dados estão caindo".
+ *
+ * O anúncio da queda é feito aqui, no começo da rolagem — e não pelo cliente,
+ * em um pedido paralelo ao da rolagem. Com uma requisição só, a ordem
+ * (queda → resultado) fica garantida para a mesa inteira: nenhum espectador
+ * recebe o total antes de o próprio tabuleiro entrar em queda.
+ */
+export function markRollTumbling(actor: DiceActor): void {
+  if (!activeRoll || activeRoll.userId !== actor.userId) return;
+
+  activeRoll = {
+    ...activeRoll,
+    board: { ...activeRoll.board, phase: 'tumbling' },
+    // A rolagem nova ainda não existe: o resultado guardado é o antigo.
+    lastRoll: null,
+    at: new Date().toISOString(),
+  };
+
+  publishActive(activePayload(true, activeRoll));
+}
+
 export function clearActiveRollFrom(userId: string): void {
   if (activeRoll?.userId !== userId) return;
 
@@ -180,6 +206,10 @@ function publish(roll: DiceRollDto, actor: DiceActor): void {
 }
 
 export async function rollTableDice(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
+  // Antes de sortear, avisa a mesa que os dados estão rolando (a janela de
+  // quem assiste entra na mesma animação de queda).
+  markRollTumbling(actor);
+
   // Vantagem e desvantagem são mutuamente exclusivas; se vierem as duas, o
   // servidor ignora as duas (a interface já impede).
   const advantage = Boolean(input.advantage) && !input.disadvantage;
@@ -214,6 +244,12 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
     crit: dice.some((die) => die.sides === 20 && !die.dropped && die.value === 20),
     at: new Date().toISOString(),
   };
+
+  // Guarda o resultado no tabuleiro anunciado: quem chegar depois (recarga da
+  // página, reconexão) vê o mesmo total, e não o dado parado sem resultado.
+  if (activeRoll?.userId === actor.userId) {
+    activeRoll = { ...activeRoll, lastRoll: roll };
+  }
 
   history = [roll, ...history].slice(0, HISTORY_LIMIT);
   publish(roll, actor);

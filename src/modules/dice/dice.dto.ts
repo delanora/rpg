@@ -39,7 +39,10 @@ export interface RollBoardDto {
   disadvantage: boolean;
   /** Bônus fixo do teste (perícia/salvaguarda). */
   bonus: number;
-  /** `tumbling` = os dados estão rolando agora. */
+  /**
+   * `tumbling` = os dados estão rolando agora. Quem assiste conta o tempo de
+   * queda a partir de `at` (ActiveRollDto), então sincronizar no meio funciona.
+   */
   phase: 'idle' | 'tumbling';
 }
 
@@ -61,7 +64,13 @@ export interface ActiveRollDto {
   label: string;
   /** Tabuleiro montado pelo autor (os demais só assistem). */
   board: RollBoardDto;
-  /** Momento da última mudança de estado. */
+  /**
+   * Última rolagem deste tabuleiro (a mais recente desde a última mexida no
+   * pool). É o que garante que quem sincroniza no meio — recarga da página,
+   * reconexão — veja o mesmo resultado de quem rolou, e não só os dados.
+   */
+  lastRoll: DiceRollDto | null;
+  /** Momento da última mudança de estado (referência da animação). */
   at: string;
 }
 
