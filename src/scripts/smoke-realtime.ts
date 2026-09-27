@@ -2212,6 +2212,34 @@ async function main(): Promise<void> {
     JSON.stringify(featLevel.data?.character?.features),
   );
 
+  // Recálculo retroativo de Constituição (PHB): subir a CON no Level Up soma o
+  // ajuste a TODOS os níveis já obtidos, além do PV normal do nível novo.
+  await setCharacterClasses(playerId, [{ classKey: 'fighter', level: 3, subclass: 'Campeão' }]);
+  await prisma.character.update({ where: { userId: playerId }, data: { constitution: 10 } });
+  const conBefore = (await api('/api/characters/me', { token: playerToken })).data.character;
+  await unlockForLevelUp();
+  const conLevel = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      classKey: 'fighter',
+      hp: 'average',
+      abilityIncreases: [{ ability: 'constitution', amount: 2 }],
+    },
+  });
+  // d10 média 6 + novo mod. CON (+1) = 7, mais +1 por cada um dos 3 níveis
+  // anteriores (nível total 3) → +10 no total.
+  check(
+    'subir a CON soma o PV retroativo de todos os níveis anteriores',
+    conLevel.data?.character?.hpMax === conBefore.hpMax + 10,
+    `antes ${conBefore.hpMax}, depois ${conLevel.data?.character?.hpMax}`,
+  );
+  check(
+    'o PV atual acompanha o ganho retroativo de CON',
+    conLevel.data?.character?.hpCurrent === conBefore.hpCurrent + 10,
+    `antes ${conBefore.hpCurrent}, depois ${conLevel.data?.character?.hpCurrent}`,
+  );
+
   // Devolve a mesa ao estado inicial (desligado).
   await api('/api/game/level-up', {
     method: 'POST',
