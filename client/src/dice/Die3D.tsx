@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo } from 'react';
 import { dieFaces, paintsValues, settleTransform, type V3 } from './polyhedra';
 
 /** Direção da luz (no espaço do modelo) usada para o facetado das faces. */
@@ -6,27 +6,6 @@ const LIGHT: V3 = [-0.45, -0.78, 0.44];
 
 /** Inclinação parada do dado antes de rolar (só para dar volume à peça). */
 const IDLE_TILT = 'rotateX(-18deg) rotateY(26deg) rotateZ(4deg)';
-
-/** Posições dos pontos do d6 (grade 3×3). */
-const PIP_LAYOUT: Record<number, number[]> = {
-  1: [4],
-  2: [0, 8],
-  3: [0, 4, 8],
-  4: [0, 2, 6, 8],
-  5: [0, 2, 4, 6, 8],
-  6: [0, 2, 3, 5, 6, 8],
-};
-
-function DiePips({ value, style }: { value: number; style?: CSSProperties }) {
-  const on = new Set(PIP_LAYOUT[value] ?? []);
-  return (
-    <span className="ddie-pips" style={style} aria-hidden>
-      {Array.from({ length: 9 }, (_, index) => (
-        <i key={index} className={on.has(index) ? 'on' : ''} />
-      ))}
-    </span>
-  );
-}
 
 interface Die3DProps {
   sides: number;
@@ -43,8 +22,9 @@ interface Die3DProps {
 
 /**
  * Um dado de verdade em CSS 3D: as faces do poliedro são colocadas com
- * `matrix3d` e `backface-visibility` esconde as de trás. O dado gira (`.ddie-spin`)
- * e pousa na orientação que traz o resultado para a câmera (`.ddie-orient`).
+ * `matrix3d` (e pintadas dos dois lados, para o dado não ficar oco). O dado gira
+ * (`.ddie-spin`) e pousa na orientação que traz o resultado para a câmera
+ * (`.ddie-orient`).
  */
 export function Die3D({
   sides,
@@ -96,27 +76,20 @@ export function Die3D({
                   }}
                 >
                   {reveal && face.value !== null ? (
-                    sides === 6 ? (
-                      <DiePips
-                        value={face.value}
-                        style={{ left: `${face.valueX}%`, top: `${face.valueY}%` }}
-                      />
-                    ) : (
-                      // O número fica no centroide da face (não no centro da
-                      // caixa) e cresce junto com a face. É um `font-size` no
-                      // espaço do modelo, então o `.ddie-model` o escala na
-                      // proporção certa — nada de número minúsculo.
-                      <span
-                        className="ddie-num"
-                        style={{
-                          left: `${face.valueX}%`,
-                          top: `${face.valueY}%`,
-                          fontSize: `${face.valueSize}px`,
-                        }}
-                      >
-                        {face.value}
-                      </span>
-                    )
+                    // O número fica no centroide da face (não no centro da
+                    // caixa) e cresce junto com a face. É um `font-size` no
+                    // espaço do modelo, então o `.ddie-model` o escala na
+                    // proporção certa — nada de número minúsculo.
+                    <span
+                      className="ddie-num"
+                      style={{
+                        left: `${face.valueX}%`,
+                        top: `${face.valueY}%`,
+                        fontSize: `${face.valueSize}px`,
+                      }}
+                    >
+                      {face.value}
+                    </span>
                   ) : null}
                 </span>
               );
