@@ -461,6 +461,11 @@ async function main(): Promise<void> {
     JSON.stringify(otherSheet.data),
   );
   check(
+    'PV inicial = dado de vida máximo (d6) + CON',
+    otherSheet.data?.character?.hpMax === 6 && otherSheet.data?.character?.hpCurrent === 6,
+    JSON.stringify({ hpMax: otherSheet.data?.character?.hpMax, hpCurrent: otherSheet.data?.character?.hpCurrent }),
+  );
+  check(
     'com INT 15 mas CAR 10, entrar em Bardo é recusado (400)',
     (
       await api('/api/characters/me', {
@@ -1722,9 +1727,14 @@ async function main(): Promise<void> {
     })).status === 403,
   );
 
-  // Dano em personagem precisa chegar à ficha dele em tempo real.
+  // Dano em personagem precisa chegar à ficha dele em tempo real. Os PV
+  // temporários são preparados na fonte (sem PATCH, que geraria evento) e o
+  // dano deve abatê-los antes do HP atual.
+  await prisma.character.update({
+    where: { userId: playerId },
+    data: { hpCurrent: 20, hpTemp: 3 },
+  });
   const sheetDamaged = waitFor<any>(playerSocket, 'sheet:updated');
-  const beforeSheet = (await api('/api/characters/me', { token: playerToken })).data.character.hpCurrent;
   await api('/api/combat/hp', {
     method: 'POST',
     token: masterToken,
@@ -1733,9 +1743,9 @@ async function main(): Promise<void> {
   const sheetPayload = await sheetDamaged.catch(() => null);
   check('dano em personagem avisa a ficha do dono', sheetPayload !== null);
   check(
-    'HP da ficha cai pelo dano do combate',
-    sheetPayload?.character?.hpCurrent === beforeSheet - 4,
-    `antes ${beforeSheet}, depois ${sheetPayload?.character?.hpCurrent}`,
+    'dano consome os PV temporários antes do HP atual',
+    sheetPayload?.character?.hpTemp === 0 && sheetPayload?.character?.hpCurrent === 19,
+    JSON.stringify({ hpTemp: sheetPayload?.character?.hpTemp, hpCurrent: sheetPayload?.character?.hpCurrent }),
   );
 
   const combatEndedEvent = waitFor<any>(playerSocket, 'combat:ended');
@@ -2041,6 +2051,11 @@ async function main(): Promise<void> {
     'PV máximo sobe com a média (d6 = 4 + CON)',
     levelTwo.data?.character?.hpMax === otherBefore.hpMax + 4,
     `antes ${otherBefore.hpMax}, depois ${levelTwo.data?.character?.hpMax}`,
+  );
+  check(
+    'PV atual sobe junto no Level Up',
+    levelTwo.data?.character?.hpCurrent === otherBefore.hpCurrent + 4,
+    `antes ${otherBefore.hpCurrent}, depois ${levelTwo.data?.character?.hpCurrent}`,
   );
   check(
     'a mesma liberação não pode ser usada de novo (409)',

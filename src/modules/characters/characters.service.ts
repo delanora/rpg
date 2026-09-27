@@ -71,6 +71,14 @@ function emptySpells(): Prisma.InputJsonValue {
   return { list: [], slots: {} };
 }
 
+/**
+ * PV de nível 1: o máximo do Dado de Vida da classe + modificador de
+ * Constituição (mínimo 1, mesmo com Constituição negativa).
+ */
+function firstLevelHpMax(hitDie: number, constitution: number): number {
+  return Math.max(1, hitDie + abilityModifier(constitution));
+}
+
 /** Atributos do personagem no formato usado pelas regras de classe. */
 function abilitiesOf(character: Character): Record<AbilityKey, number> {
   return {
@@ -208,6 +216,8 @@ export async function createCharacter(
       race: input.race ?? '',
       // A ficha nasce sem classe: o jogador escolhe a primeira na ficha, onde
       // o pré-requisito de atributo pode ser conferido com os valores reais.
+      // O PV inicial (dado de vida + Constituição) é calculado nessa escolha.
+      // Ver applyCharacterPatch.
       classes: [] as unknown as Prisma.InputJsonValue,
       skills: normalizeSkills({}) as unknown as Prisma.InputJsonValue,
       saves: normalizeSaves({}) as unknown as Prisma.InputJsonValue,
@@ -340,7 +350,9 @@ export async function levelUpCharacter(actor: Actor, input: LevelUpInput): Promi
     data: {
       ...(data as Prisma.CharacterUpdateInput),
       classes: nextEntries as unknown as Prisma.InputJsonValue,
+      // O PV ganho vale tanto para o máximo quanto para o PV atual.
       hpMax: character.hpMax + hpGained,
+      hpCurrent: character.hpCurrent + hpGained,
       lastLevelUpRelease: config.levelUpRelease,
       version: { increment: 1 },
     },
@@ -445,6 +457,18 @@ async function applyCharacterPatch(
     data.classes = classes as unknown as Prisma.InputJsonValue;
     // Sem classe, nada de estado de classe pendurado.
     if (classes.length === 0) data.classState = { active: [], used: {} };
+
+    // Primeira classe escolhida: define o PV inicial (dado de vida máximo +
+    // modificador de Constituição), salvo se o patch já mandou PV explícito.
+    if (currentClasses.length === 0 && classes.length > 0 && patch.hpMax === undefined) {
+      const chosen = getClassDefinition(classes[0].classKey);
+      if (chosen) {
+        const constitution = patch.constitution ?? existing.constitution;
+        const hpMax = firstLevelHpMax(chosen.hitDie, constitution);
+        data.hpMax = hpMax;
+        if (patch.hpCurrent === undefined) data.hpCurrent = hpMax;
+      }
+    }
   }
 
   // --- Salvaguardas fixas das classes --------------------------------------
