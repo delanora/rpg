@@ -37,7 +37,8 @@ export type IconName =
   | 'ring'
   | 'legs'
   | 'boots'
-  | 'ammo';
+  | 'ammo'
+  | 'info';
 
 const ICONS: Record<IconName, ReactNode> = {
   sword: (
@@ -157,6 +158,13 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M7 9V7a5 5 0 0 1 10 0v2" />
       <path d="M4.5 9h15l-1.2 11.5H5.7Z" />
       <path d="M9.5 12.5v2.5M14.5 12.5v2.5" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11.2v5" />
+      <circle cx="12" cy="7.9" r="0.95" fill="currentColor" stroke="none" />
     </>
   ),
   helmet: (
