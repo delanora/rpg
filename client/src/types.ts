@@ -858,6 +858,31 @@ export interface TableRollPayload {
   roll: DiceRollDto;
 }
 
+/**
+ * Janela de dados aberta (ou fechada) por alguém da mesa.
+ *
+ * `active: false` chega quando quem rolou fecha a janela, marca a rolagem como
+ * privada ou sai da mesa no meio dela.
+ */
+export interface TableRollActivePayload {
+  active: boolean;
+  userId: string;
+  actorName: string;
+  /** Avatar do personagem (`''` quando não há imagem). */
+  avatarUrl: string;
+  kind: DiceRollKind;
+  label: string;
+  at: string;
+}
+
+/** Aviso enviado ao servidor quando a janela abre ou fecha. */
+export interface TableRollActiveRequest {
+  active: boolean;
+  label?: string;
+  kind?: DiceRollKind;
+  private?: boolean;
+}
+
 /** Pedido de rolagem enviado ao servidor. */
 export interface TableRollRequest {
   dice: { sides: number }[];

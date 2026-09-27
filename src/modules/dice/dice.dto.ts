@@ -20,6 +20,26 @@ export interface RolledDie {
   dropped?: boolean;
 }
 
+/**
+ * Alguém com a janela de dados aberta na mesa.
+ *
+ * É um estado efêmero (como a apresentação de imagens): vive na memória do
+ * servidor enquanto a janela estiver aberta e é reenviado a quem conectar no
+ * meio. Não vai para o banco.
+ */
+export interface ActiveRollDto {
+  userId: string;
+  /** Nome do personagem (ou do usuário, sem ficha) de quem está rolando. */
+  actorName: string;
+  /** Avatar do personagem (`''` quando não há imagem). */
+  avatarUrl: string;
+  kind: DiceRollKind;
+  /** Perícia/salvaguarda em teste (vazio na rolagem livre). */
+  label: string;
+  /** Momento da última mudança de estado. */
+  at: string;
+}
+
 export interface DiceRollDto {
   id: string;
   /**

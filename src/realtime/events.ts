@@ -2,7 +2,7 @@ import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
-import type { DiceRollDto } from '../modules/dice/dice.dto.js';
+import type { DiceRollDto, DiceRollKind } from '../modules/dice/dice.dto.js';
 import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
@@ -147,6 +147,12 @@ export const ServerEvents = {
    * mesa nas rolagens públicas e apenas ao autor nas privadas.
    */
   DICE_ROLL: 'dice:roll',
+  /**
+   * Alguém abriu (ou fechou) a janela de dados. Serve para a mesa acompanhar
+   * quem está rolando: quem recebe vê a faixa no topo do tabuleiro, não a
+   * janela. Rolagem marcada como privada pelo mestre não é divulgada.
+   */
+  DICE_ACTIVE: 'dice:active',
   /** Resultado de um ataque, com acerto/erro e dano aplicado. */
   ATTACK_RESOLVED: 'combat:attack',
 } as const;
@@ -277,6 +283,25 @@ export interface DiceRolledPayload {
 /** Rolagem da janela de dados divulgada em tempo real. */
 export interface TableRollPayload {
   roll: DiceRollDto;
+}
+
+/**
+ * Janela de dados aberta (ou fechada) por alguém da mesa.
+ *
+ * `active: false` é enviado ao fechar a janela — inclusive quando o mestre
+ * marca a rolagem como privada ou sai da mesa no meio dela.
+ */
+export interface TableRollActivePayload {
+  active: boolean;
+  /** Quem está rolando (o autor é carimbado pelo servidor, a partir do token). */
+  userId: string;
+  actorName: string;
+  /** Avatar do personagem (`''` quando não há imagem). */
+  avatarUrl: string;
+  kind: DiceRollKind;
+  /** Perícia/salvaguarda em teste (vazio na rolagem livre). */
+  label: string;
+  at: string;
 }
 
 /** Resultado de um ataque, do teste de acerto ao dano aplicado. */

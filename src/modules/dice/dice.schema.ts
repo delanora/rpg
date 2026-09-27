@@ -23,4 +23,19 @@ export const tableRollSchema = z.object({
   clientId: z.string().trim().max(64).optional(),
 });
 
+/**
+ * Aviso de que a janela de dados abriu (ou fechou).
+ *
+ * O cliente manda apenas o rótulo do teste e o estado; a identidade (nome e
+ * avatar) é resolvida no servidor a partir do token.
+ */
+export const activeRollSchema = z.object({
+  active: z.boolean(),
+  label: z.string().trim().max(80).optional(),
+  kind: z.enum(['skill', 'save', 'free']).optional(),
+  /** Só vale para o mestre; rolagem de jogador é sempre pública. */
+  private: z.boolean().optional(),
+});
+
 export type TableRollInput = z.infer<typeof tableRollSchema>;
+export type ActiveRollInput = z.infer<typeof activeRollSchema>;

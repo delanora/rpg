@@ -2355,6 +2355,99 @@ async function main(): Promise<void> {
   const clearedHistory = await api('/api/dice/history', { token: masterToken });
   check('histórico fica vazio depois de limpar', (clearedHistory.data?.rolls ?? []).length === 0);
 
+  // --- 11.9 Faixa de rolagem (janela aberta) --------------------------------
+  console.log('\n11.9) Faixa de rolagem (janela de dados aberta)');
+
+  const playerUserId = playerReg.data?.user?.id;
+
+  check(
+    'aviso de janela inválido é recusado (400)',
+    (
+      await api('/api/dice/active', {
+        method: 'POST',
+        token: playerToken,
+        body: { active: 'sim' },
+      })
+    ).status === 400,
+  );
+
+  const bannerEvent = waitFor<any>(masterSocket, 'dice:active').catch(() => null);
+  const opened = await api('/api/dice/active', {
+    method: 'POST',
+    token: playerToken,
+    body: { active: true, kind: 'skill', label: 'Percepção' },
+  });
+  check(
+    'abrir a janela responde com quem está rolando',
+    opened.status === 200 && opened.data?.activeRoll?.userId === playerUserId,
+    JSON.stringify(opened.data),
+  );
+
+  const banner = await bannerEvent;
+  check(
+    'o mestre recebe a faixa com nome, foto e o teste',
+    banner?.active === true &&
+      banner?.actorName === publicRoll.data?.roll?.actorName &&
+      typeof banner?.avatarUrl === 'string' &&
+      banner?.label === 'Percepção',
+    JSON.stringify(banner),
+  );
+
+  // Quem entra no meio da rolagem já recebe a faixa.
+  const lateDiceSocket = connect(playerToken);
+  const lateBanner = await waitFor<any>(lateDiceSocket, 'dice:active').catch(() => null);
+  check(
+    'quem conecta depois recebe a faixa em andamento',
+    lateBanner?.active === true && lateBanner?.userId === playerUserId,
+  );
+  lateDiceSocket.close();
+
+  check(
+    'a mesa consulta quem está rolando',
+    (await api('/api/dice/active', { token: masterToken })).data?.activeRoll?.label ===
+      'Percepção',
+  );
+
+  // Janela privada do mestre: não vira faixa e não derruba a de quem já estava
+  // rolando.
+  let playerSawActive = false;
+  const activeWatcher = (payload: any): void => {
+    if (payload?.userId !== playerUserId) playerSawActive = true;
+  };
+  playerSocket.on('dice:active', activeWatcher);
+
+  const privateWindow = await api('/api/dice/active', {
+    method: 'POST',
+    token: masterToken,
+    body: { active: true, private: true, kind: 'free' },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  playerSocket.off('dice:active', activeWatcher);
+  check(
+    'janela privada do mestre não vira faixa para o jogador',
+    privateWindow.status === 200 &&
+      privateWindow.data?.activeRoll?.userId === playerUserId &&
+      playerSawActive === false,
+    JSON.stringify({ state: privateWindow.data, playerSawActive }),
+  );
+  check(
+    'a rolagem de quem já estava na mesa continua anunciada',
+    (await api('/api/dice/active', { token: playerToken })).data?.activeRoll?.userId ===
+      playerUserId,
+  );
+
+  const closedBanner = waitFor<any>(masterSocket, 'dice:active').catch(() => null);
+  check(
+    'fechar a janela desfaz a faixa (200)',
+    (await api('/api/dice/active', { method: 'POST', token: playerToken, body: { active: false } }))
+      .status === 200,
+  );
+  check('a mesa é avisada de que a rolagem acabou', (await closedBanner)?.active === false);
+  check(
+    'ninguém mais aparece como rolando',
+    (await api('/api/dice/active', { token: masterToken })).data?.activeRoll === null,
+  );
+
   // --- 12. Presença ao desconectar ------------------------------------------
   console.log('\n12) Presença ao desconectar');
   const offlinePromise = waitForPresence(

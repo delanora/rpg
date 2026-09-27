@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
-import { ServerEvents } from '../../realtime/events.js';
+import { ServerEvents, type TableRollActivePayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { rollD20, rollDie } from '../shared/dice.js';
-import type { DiceRollDto, DiceRollKind, RolledDie } from './dice.dto.js';
-import type { TableRollInput } from './dice.schema.js';
+import type { ActiveRollDto, DiceRollDto, DiceRollKind, RolledDie } from './dice.dto.js';
+import type { ActiveRollInput, TableRollInput } from './dice.schema.js';
 
 /**
  * Histórico das rolagens da sessão.
@@ -32,6 +32,96 @@ export interface DiceActor {
   username: string;
   displayName: string;
   role: Role;
+}
+
+/**
+ * Janela de dados aberta na mesa (ou `null`).
+ *
+ * Como a apresentação de imagens, é um estado efêmero da sessão: guardá-lo em
+ * memória é o que permite reenviar a faixa a quem conectar no meio da rolagem.
+ */
+let activeRoll: ActiveRollDto | null = null;
+
+/** Quem está com a janela de dados aberta (ou `null`). */
+export function getActiveRoll(): ActiveRollDto | null {
+  return activeRoll;
+}
+
+/** Divulga a faixa de "está rolando" para a mesa. */
+function publishActive(payload: TableRollActivePayload): void {
+  try {
+    getBroadcaster().toTable(ServerEvents.DICE_ACTIVE, payload);
+  } catch (error) {
+    console.error('[dice] falha ao publicar a janela de dados em tempo real:', error);
+  }
+}
+
+/** Monta o aviso a partir de quem está rolando (identidade carimbada no token). */
+function activePayload(
+  active: boolean,
+  who: { userId: string; actorName: string; avatarUrl: string; kind: DiceRollKind; label: string },
+): TableRollActivePayload {
+  return { active, ...who, at: new Date().toISOString() };
+}
+
+/**
+ * Anuncia que a janela de dados abriu ou fechou.
+ *
+ * A rolagem privada do mestre não é divulgada: nesse caso o estado da mesa fica
+ * vazio (e um anúncio anterior é desfeito, o que acontece quando o mestre marca
+ * "Privada" com a janela já aberta).
+ */
+export async function setActiveRoll(
+  actor: DiceActor,
+  input: ActiveRollInput,
+): Promise<ActiveRollDto | null> {
+  const isPrivate = Boolean(input.private) && actor.role === 'MASTER';
+  const active = input.active && !isPrivate;
+
+  if (!active) {
+    // Quem não está anunciando não derruba a faixa de outra pessoa.
+    if (!activeRoll || activeRoll.userId !== actor.userId) return activeRoll;
+
+    const previous = activeRoll;
+    activeRoll = null;
+    publishActive(activePayload(false, previous));
+
+    return null;
+  }
+
+  // Nome e avatar saem da ficha (ou do nome de exibição, sem ficha) — nunca do
+  // corpo da requisição.
+  const character = await prisma.character.findUnique({
+    where: { userId: actor.userId },
+    select: { name: true, avatarUrl: true },
+  });
+
+  const who = {
+    userId: actor.userId,
+    actorName: character?.name?.trim() || actor.displayName,
+    avatarUrl: character?.avatarUrl ?? '',
+    kind: input.kind ?? ('free' as DiceRollKind),
+    label: input.label ?? '',
+  };
+
+  activeRoll = { ...who, at: new Date().toISOString() };
+  publishActive(activePayload(true, who));
+
+  return activeRoll;
+}
+
+/**
+ * Esquece a janela aberta por um usuário que saiu da mesa.
+ *
+ * Sem isso a faixa ficaria presa no topo de todo mundo quando alguém fecha o
+ * navegador no meio de uma rolagem.
+ */
+export function clearActiveRollFrom(userId: string): void {
+  if (activeRoll?.userId !== userId) return;
+
+  const previous = activeRoll;
+  activeRoll = null;
+  publishActive(activePayload(false, previous));
 }
 
 /**

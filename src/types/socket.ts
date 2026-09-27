@@ -16,6 +16,7 @@ import type {
   PresentationShownPayload,
   PresenceUpdatePayload,
   RegionCreatedPayload,
+  TableRollActivePayload,
   TableRollPayload,
   RegionDeletedPayload,
   RegionUpdatedPayload,
@@ -55,6 +56,7 @@ export interface ServerToClientEvents {
   'combat:ended': (payload: CombatEndedPayload) => void;
   'dice:rolled': (payload: DiceRolledPayload) => void;
   'dice:roll': (payload: TableRollPayload) => void;
+  'dice:active': (payload: TableRollActivePayload) => void;
   'combat:attack': (payload: AttackResolvedPayload) => void;
 }
 
