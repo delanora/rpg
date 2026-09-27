@@ -867,11 +867,11 @@ a {
 .sheet {
   position: relative;
   display: grid;
-  /* Três colunas: o corpo da ficha (fluido), vida/anotações e o inventário. */
+  /* Três colunas: inventário (esquerda), o corpo da ficha (fluido) e vida/anotações. */
   grid-template-columns:
+    minmax(17rem, 20rem)
     minmax(0, 1fr)
-    minmax(18.75rem, 22.5rem)
-    minmax(17rem, 20rem);
+    minmax(18.75rem, 22.5rem);
   gap: var(--space-2);
   padding: var(--space-2);
   background:
@@ -980,7 +980,7 @@ a {
   gap: var(--space-2);
 }
 
-/* Coluna lateral do inventário: fica presa ao topo enquanto a ficha rola. */
+/* Coluna lateral esquerda do inventário: fica presa enquanto a ficha rola. */
 .sheet-inventory {
   align-self: start;
   position: sticky;
