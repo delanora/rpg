@@ -29,7 +29,8 @@ export type IconName =
   | 'x'
   | 'sparkle'
   | 'flame'
-  | 'dragon';
+  | 'dragon'
+  | 'bag';
 
 const ICONS: Record<IconName, ReactNode> = {
   sword: (
@@ -143,6 +144,13 @@ const ICONS: Record<IconName, ReactNode> = {
   sparkle: <path d="M12 3l1.7 6.3L20 11l-6.3 1.7L12 19l-1.7-6.3L4 11l6.3-1.7Z" />,
   flame: (
     <path d="M12 2c3 4 5 6.5 5 10a5 5 0 0 1-10 0c0-1.5.5-2.8 1.5-4 .5 1.2 1.3 2 2.5 2.3C11 8.5 12 5 12 2Z" />
+  ),
+  bag: (
+    <>
+      <path d="M7 9V7a5 5 0 0 1 10 0v2" />
+      <path d="M4.5 9h15l-1.2 11.5H5.7Z" />
+      <path d="M9.5 12.5v2.5M14.5 12.5v2.5" />
+    </>
   ),
   dragon: (
     <>

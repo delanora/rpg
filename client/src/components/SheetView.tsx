@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ReadOnlyProvider } from '../readonly';
-import type { Character, CharacterPatch } from '../types';
+import type { Character, CharacterPatch, InventoryMoveRequest } from '../types';
 import { Icon, type IconName } from './Icon';
 import { AbilitiesSection } from './sections/AbilitiesSection';
 import { AttacksSection } from './sections/AttacksSection';
@@ -17,7 +17,7 @@ import { VitalsSection } from './sections/VitalsSection';
  * logo abaixo dos atributos, junto do resto do HUD.
  */
 const TAB_SECTIONS = [
-  { key: 'inventory', label: 'Inventário', icon: 'flask' },
+  { key: 'inventory', label: 'Inventário', icon: 'bag' },
   { key: 'spells', label: 'Magias', icon: 'star' },
   { key: 'attacks', label: 'Ataques', icon: 'sword' },
   { key: 'features', label: 'Características', icon: 'book' },
@@ -28,14 +28,23 @@ type TabKey = (typeof TAB_SECTIONS)[number]['key'];
 interface SheetViewProps {
   character: Character;
   update: (patch: CharacterPatch) => void;
+  /** Move/equipa um item do inventário (endpoint dedicado do servidor). */
+  onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>;
   /** Em `true`, nenhum campo é editável (visão do mestre). */
   readOnly?: boolean;
 }
 
-function renderTab(key: TabKey, character: Character, update: (patch: CharacterPatch) => void) {
+function renderTab(
+  key: TabKey,
+  character: Character,
+  update: (patch: CharacterPatch) => void,
+  onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>,
+) {
   switch (key) {
     case 'inventory':
-      return <InventorySection character={character} update={update} />;
+      return (
+        <InventorySection character={character} update={update} onMoveItem={onInventoryMove} />
+      );
     case 'spells':
       return <SpellsSection character={character} update={update} />;
     case 'attacks':
@@ -50,7 +59,7 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
  * à vista, e só as seções mais longas (perícias, inventário, magias, ataques,
  * características) vivem em abas. Reutilizada pelo jogador e pelo mestre.
  */
-export function SheetView({ character, update, readOnly = false }: SheetViewProps) {
+export function SheetView({ character, update, onInventoryMove, readOnly = false }: SheetViewProps) {
   const [tab, setTab] = useState<TabKey>('inventory');
   const active = TAB_SECTIONS.find((item) => item.key === tab) ?? TAB_SECTIONS[0];
 
@@ -85,7 +94,7 @@ export function SheetView({ character, update, readOnly = false }: SheetViewProp
 
           {/* A `key` reinicia a animação de "virar a página" a cada troca de aba. */}
           <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
-            {renderTab(tab, character, update)}
+            {renderTab(tab, character, update, onInventoryMove)}
           </div>
         </div>
 

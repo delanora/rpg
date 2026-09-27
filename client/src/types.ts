@@ -50,13 +50,29 @@ export interface ItemPrice {
   copper: number;
 }
 
+/** Slots de equipamento do paperdoll (estilo Tibia). */
+export type InventorySlot =
+  | 'helmet'
+  | 'necklace'
+  | 'chest'
+  | 'ring1'
+  | 'ring2'
+  | 'hand1'
+  | 'hand2'
+  | 'legs'
+  | 'boots';
+
 export interface InventoryItem {
   id: string;
   name: string;
   description: string;
   quantity: number;
   weight: number;
-  equipped: boolean;
+  /** Slot em que o item está equipado (`null` = mochila). */
+  slot: InventorySlot | null;
+  /** Posição na grade da mochila (`null` = equipado ou sem posição). */
+  backpackX: number | null;
+  backpackY: number | null;
   /** Sprite do item (`/uploads/items/...`); vazio quando é avulso. */
   imageUrl: string;
   /** Id do item no catálogo do mestre ('' quando é avulso). */
@@ -65,6 +81,14 @@ export interface InventoryItem {
   category: string;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
+}
+
+/** Corpo de `POST /api/characters/me/inventory/move`. */
+export interface InventoryMoveRequest {
+  itemInventoryId: string;
+  targetSlot?: InventorySlot | null;
+  targetBackpackX?: number | null;
+  targetBackpackY?: number | null;
 }
 
 export interface Spell {
