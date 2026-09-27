@@ -899,11 +899,14 @@ a {
 .sheet {
   position: relative;
   display: grid;
+  /* Inventário | atributos | vida e defesa. */
   grid-template-columns:
-    minmax(17rem, 20rem)
+    minmax(16rem, 20rem)
     minmax(0, 1fr)
-    minmax(18.75rem, 22.5rem);
+    minmax(0, 1.15fr);
   gap: var(--space-section);
+  /* Cada seção tem a altura do próprio conteúdo — nada de card esticado. */
+  align-items: start;
 }
 
 .sheet-tabs {
@@ -971,56 +974,71 @@ a {
   animation: ink-in 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-/* --- Ficha: colunas que fluem sem buracos --------------------------------- */
+/* --- Ficha: posição de cada seção na grade -------------------------------- */
 
-.sheet-main,
+.sheet-identity,
 .sheet-inventory,
-.sheet-side {
+.sheet-abilities,
+.sheet-vitals,
+.sheet-skills,
+.sheet-notes {
   min-width: 0;
+}
+
+/* Identidade de ponta a ponta, no topo. */
+.sheet-identity {
+  grid-column: 1 / -1;
+}
+
+/* Perícias ocupam duas colunas; as anotações ficam na terceira. */
+.sheet-skills {
+  grid-column: 1 / 3;
+}
+
+.sheet-notes {
+  grid-column: 3 / 4;
+}
+
+/* As abas (magias, ataques, características) fecham a ficha, de ponta a ponta. */
+.sheet-tabs-area {
+  grid-column: 1 / -1;
   display: grid;
   align-content: start;
-  gap: var(--space-section);
+  gap: var(--space-2);
 }
 
-/* Coluna lateral esquerda do inventário. Rola junto com a ficha, como as
-   demais seções — sem acompanhar a rolagem. */
-.sheet-inventory {
-  align-self: start;
-}
-
-/* Identidade ocupa a coluna esquerda e nunca deixa um campo órfão. */
-.sheet-main .grid-3 {
+/* Identidade: quatro colunas iguais — com Conjuração e Magias ocupando duas
+   cada, a grade fecha exatamente em três linhas. */
+.sheet-identity .grid-3 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 /* Cards de vida com exatamente a mesma altura e estilo, apesar de o conteúdo
    de cada um variar (uns têm dica, outros não). */
-.sheet-side .grid-4 {
+.sheet-vitals .grid-4 {
   grid-auto-rows: 1fr;
   gap: 0.7rem;
 }
 
-.sheet-side .notes-area {
+.sheet-notes .notes-area {
   min-height: 14rem;
 }
 
-/* Em telas estreitas o inventário desce para uma faixa inteira abaixo. */
+/* Em telas estreitas tudo vira uma coluna, na ordem de leitura. */
 @media (max-width: 1180px) {
   .sheet {
-    grid-template-columns: minmax(0, 1fr) minmax(18.75rem, 22.5rem);
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .sheet-main {
-    grid-area: 1 / 1;
+  .sheet-identity,
+  .sheet-skills,
+  .sheet-notes,
+  .sheet-tabs-area {
+    grid-column: 1 / -1;
   }
 
-  .sheet-side {
-    grid-area: 1 / 2;
-  }
-
-  .sheet-inventory {
-    grid-area: 2 / 1 / 3 / 3;
-    position: static;
+  .sheet-identity .grid-3 {
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   }
 }
 
@@ -4046,11 +4064,10 @@ input[type='checkbox']:disabled {
   border-color: var(--gold-deep);
   background: linear-gradient(180deg, var(--leather-2), var(--leather));
   color: var(--gold-bright);
-  font: inherit;
-  cursor: pointer;
 }
 
-.slot-backpack:hover {
+.slot-backpack:hover,
+.slot-backpack.is-over {
   box-shadow: 0 0 0 3px var(--gold-hair), inset 0 0 0 1px var(--gold);
 }
 
@@ -4118,11 +4135,12 @@ input[type='checkbox']:disabled {
   text-align: center;
 }
 
-/* --- Janela da mochila (container estilo Tibia) -------------------------- */
-.bag-window {
-  position: fixed;
-  z-index: 65;
+/* --- Mochila (container estilo Tibia), sempre aberta sob o set ------------ */
+.bag-panel {
+  width: 100%;
+  max-width: 320px;
   display: grid;
+  align-content: start;
   border: 1px solid var(--gold-deep);
   border-radius: 8px;
   background: linear-gradient(180deg, var(--surface), var(--surface-2));
@@ -4130,13 +4148,11 @@ input[type='checkbox']:disabled {
   overflow: hidden;
 }
 
-.bag-window-title {
+.bag-panel-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.55rem;
-  cursor: grab;
-  user-select: none;
   background: linear-gradient(180deg, var(--leather-2), var(--leather));
   color: var(--gold-bright);
   font-family: var(--font-display);
@@ -4144,15 +4160,11 @@ input[type='checkbox']:disabled {
   letter-spacing: 0.04em;
 }
 
-.bag-window-title:active {
-  cursor: grabbing;
-}
-
-.bag-window-title .icon {
+.bag-panel-title .icon {
   color: var(--gold-bright);
 }
 
-.bag-window-count {
+.bag-panel-count {
   min-width: 1.2rem;
   padding: 0 0.3rem;
   border-radius: 999px;
@@ -4162,20 +4174,18 @@ input[type='checkbox']:disabled {
   text-align: center;
 }
 
-.bag-window-close {
-  margin-left: auto;
-  padding: 0 0.25rem;
-  border: 0;
-  background: none;
-  color: var(--gold-bright);
-  font-size: 1.05rem;
-  line-height: 1;
-  cursor: pointer;
+.bag-panel-empty {
+  margin: 0;
+  padding: 0.9rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
 }
 
+/* A grade se adapta à largura da coluna (as células ficam quadradas). */
 .bag-grid {
   display: grid;
-  grid-template-columns: repeat(5, 48px);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4px;
   padding: 8px;
   background:
@@ -4184,8 +4194,7 @@ input[type='checkbox']:disabled {
 }
 
 .bag-cell {
-  width: 48px;
-  height: 48px;
+  aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4199,14 +4208,6 @@ input[type='checkbox']:disabled {
 .bag-cell.is-filled {
   border-color: var(--line-strong);
   background: linear-gradient(180deg, var(--surface), var(--surface-3));
-}
-
-.bag-window-empty {
-  margin: 0;
-  padding: 0.9rem;
-  text-align: center;
-  font-size: 0.85rem;
-  color: var(--ink-soft);
 }
 
 /* --- Detalhe do item selecionado ----------------------------------------- */

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import type { DragEvent, MouseEvent, PointerEvent } from 'react';
+import type { DragEvent, MouseEvent } from 'react';
 import { describeItemDetails } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import type { InventoryItem, InventoryMoveRequest, InventorySlot } from '../../types';
@@ -135,10 +135,8 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
   // Sem o callback do endpoint (ex.: visão do mestre) não há arrastar/soltar.
   const canMove = !readOnly && onMoveItem !== undefined;
 
-  const setRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<string | null>(null);
 
-  const [bagPos, setBagPos] = useState<CellPosition | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ item: InventoryItem; x: number; y: number } | null>(null);
@@ -185,40 +183,6 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
   function removeItem(id: string): void {
     update({ inventory: inventory.filter((item) => item.id !== id) });
     setSelectedId(null);
-  }
-
-  function openBag(): void {
-    const rect = setRef.current?.getBoundingClientRect();
-    const width = 296;
-    const x = rect ? Math.min(rect.right + 14, window.innerWidth - width - 12) : 40;
-    const y = rect ? Math.max(rect.top, 12) : 80;
-    setBagPos({ x: Math.max(12, x), y });
-  }
-
-  function closeBag(): void {
-    setBagPos(null);
-  }
-
-  /** Arrasta a janela da mochila pela barra de título. */
-  function startWindowDrag(event: PointerEvent<HTMLDivElement>): void {
-    if (!bagPos) return;
-    event.preventDefault();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const origin = bagPos;
-
-    function onMove(moveEvent: globalThis.PointerEvent): void {
-      setBagPos({
-        x: Math.max(0, origin.x + moveEvent.clientX - startX),
-        y: Math.max(0, origin.y + moveEvent.clientY - startY),
-      });
-    }
-    function onUp(): void {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    }
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
   }
 
   function beginDrag(event: DragEvent, id: string): void {
@@ -377,7 +341,7 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
     >
       <div className="inventory-board">
         {/* --- Set de equipamento (estilo Tibia) ------------------------- */}
-        <div className="equip-set" ref={setRef}>
+        <div className="equip-set">
           <BodyDoll />
 
           {/* Grade principal 3×3, célula a célula como o set clássico:
@@ -387,19 +351,16 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
           <div className="equip-grid">
             {equipSlotNode('necklace')}
             {equipSlotNode('helmet')}
-            <button
-              type="button"
+            <div
               className={`equip-slot slot-backpack${dragOver === 'backpack' ? ' is-over' : ''}`}
-              title={`Mochila (${backpackCount}) — clique para abrir`}
-              aria-label={`Abrir mochila (${backpackCount} itens)`}
-              onClick={openBag}
+              title={`Mochila (${backpackCount}) — solte um item aqui para guardá-lo`}
               onDragOver={(event) => allowDrop(event, 'backpack')}
               onDragLeave={() => setDragOver((value) => (value === 'backpack' ? null : value))}
               onDrop={dropOnBackpack}
             >
               <Icon name="bag" size={24} />
               <span className="bag-badge">{backpackCount}</span>
-            </button>
+            </div>
             {equipSlotNode('hand1')}
             {equipSlotNode('chest')}
             {equipSlotNode('hand2')}
@@ -413,9 +374,42 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
         </div>
 
         <p className="inventory-hint">
-          Arraste os itens do set para a mochila e vice-versa. Clique na mochila do set para abrir a
-          janela com a grade.
+          Arraste os itens entre o set e a mochila. Clique em um item para ver os detalhes.
         </p>
+
+        {/* Mochila sempre aberta, logo abaixo do set. */}
+        <div className="bag-panel">
+          <div className="bag-panel-title">
+            <Icon name="bag" size={16} />
+            <span>Mochila</span>
+            <span className="bag-panel-count">{backpackCount}</span>
+          </div>
+
+          {backpackCount === 0 ? (
+            <p className="bag-panel-empty">A mochila está vazia.</p>
+          ) : (
+            <div className="bag-grid">
+              {Array.from({ length: rows * GRID_COLS }, (_, index) => {
+                const x = index % GRID_COLS;
+                const y = Math.floor(index / GRID_COLS);
+                const item = cells.get(`${x},${y}`);
+                const key = `cell:${x},${y}`;
+
+                return (
+                  <div
+                    key={key}
+                    className={`bag-cell${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
+                    onDragOver={(event) => allowDrop(event, key)}
+                    onDragLeave={() => setDragOver((value) => (value === key ? null : value))}
+                    onDrop={(event) => dropOnCell(event, x, y)}
+                  >
+                    {item ? itemNode(item) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {selected ? (
           <div className="inv-detail">
@@ -475,50 +469,6 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
           </div>
         ) : null}
       </div>
-
-      {/* --- Janela da mochila (container) ----------------------------- */}
-      {bagPos ? (
-        <div className="bag-window" style={{ left: bagPos.x, top: bagPos.y }}>
-          <div className="bag-window-title" onPointerDown={startWindowDrag}>
-            <Icon name="bag" size={16} />
-            <span>Mochila</span>
-            <span className="bag-window-count">{backpackCount}</span>
-            <button
-              type="button"
-              className="bag-window-close"
-              onClick={closeBag}
-              aria-label="Fechar mochila"
-            >
-              ×
-            </button>
-          </div>
-
-          {backpackCount === 0 ? (
-            <p className="bag-window-empty">A mochila está vazia.</p>
-          ) : (
-            <div className="bag-grid">
-              {Array.from({ length: rows * GRID_COLS }, (_, index) => {
-                const x = index % GRID_COLS;
-                const y = Math.floor(index / GRID_COLS);
-                const item = cells.get(`${x},${y}`);
-                const key = `cell:${x},${y}`;
-
-                return (
-                  <div
-                    key={key}
-                    className={`bag-cell${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
-                    onDragOver={(event) => allowDrop(event, key)}
-                    onDragLeave={() => setDragOver((value) => (value === key ? null : value))}
-                    onDrop={(event) => dropOnCell(event, x, y)}
-                  >
-                    {item ? itemNode(item) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : null}
 
       {tooltip ? (
         <div className="inv-tooltip" style={{ left: tooltip.x + 14, top: tooltip.y + 14 }}>
