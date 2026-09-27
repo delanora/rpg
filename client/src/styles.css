@@ -1055,36 +1055,28 @@ a {
 }
 
 /*
- * Atributos e Vida e Defesa também esticam até o fim da linha, para os dois
- * cards baterem com a altura do inventário e não sobrar espaço morto.
+ * Vida e Defesa estica até o fim da linha, para o card bater com a altura do
+ * inventário. Os atributos ficam na altura natural — placas esticadas ficavam
+ * com o conteúdo perdido no meio do card.
  */
-.sheet-abilities,
 .sheet-vitals {
   align-self: stretch;
 }
 
-.sheet-abilities > .sheet-section,
 .sheet-vitals > .sheet-section {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.sheet-abilities > .sheet-section > .section-header,
 .sheet-vitals > .sheet-section > .section-header {
   flex: none;
 }
 
-.sheet-abilities > .sheet-section > .section-body,
 .sheet-vitals > .sheet-section > .section-body {
   flex: 1;
   display: flex;
   flex-direction: column;
-}
-
-/* Os cards internos crescem juntos para preencher o card inteiro. */
-.sheet-abilities .grid-abilities {
-  flex: 1;
 }
 
 /* Em telas estreitas tudo vira uma coluna, na ordem de leitura. */
@@ -1412,7 +1404,9 @@ a {
 
 .ability-card {
   position: relative;
-  padding: 0.7rem 0.5rem 1.1rem;
+  /* O respiro extra embaixo mantém o selo do modificador longe do bico do
+     escudo (o clip-path corta as pontas). */
+  padding: 0.7rem 0.5rem 1.3rem;
   text-align: center;
   display: grid;
   gap: 0.1rem;
@@ -1474,15 +1468,16 @@ a {
 }
 
 .ability-modifier {
-  min-width: 2.6rem;
+  min-width: 3.4rem;
   font-family: var(--font-display);
-  font-size: 0.82rem;
+  font-size: 1.05rem;
   font-weight: 600;
+  line-height: 1.25;
   color: #fbeccb;
   background: linear-gradient(180deg, var(--wine-bright), var(--wine));
   border: 1px solid var(--gold-deep);
   border-radius: 999px;
-  padding: 0.02rem 0.4rem;
+  padding: 0.12rem 0.7rem;
   box-shadow: 0 0 10px -3px var(--glow);
 }
 
@@ -1502,8 +1497,12 @@ a {
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   display: grid;
-  gap: var(--space-1);
-  align-content: start;
+  /* Rótulo no topo, valor centralizado no meio e dica no pé. */
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  justify-items: center;
+  text-align: center;
+  gap: 0.35rem;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
@@ -1529,10 +1528,12 @@ a {
 
 .vital-value {
   font-family: var(--font-display);
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
+  /* Vence o `text-align: left` dos campos inline: o valor fica centralizado. */
+  text-align: center;
   color: var(--ink);
 }
 
