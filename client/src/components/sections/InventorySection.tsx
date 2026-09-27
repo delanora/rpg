@@ -330,7 +330,6 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
     <Section
       title="Inventário"
       icon="bag"
-      subtitle={`Peso total: ${character.derived.totalWeight} kg · capacidade ${character.derived.carryingCapacity} kg`}
       actions={
         readOnly ? undefined : (
           <button type="button" className="btn btn-small" onClick={addItem}>
@@ -372,6 +371,11 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
           {/* Botas, sozinhas e centralizadas abaixo da grade. */}
           <div className="equip-extra-row">{equipSlotNode('boots')}</div>
         </div>
+
+        <p className="inventory-weight">
+          Peso total: {character.derived.totalWeight} kg · capacidade{' '}
+          {character.derived.carryingCapacity} kg
+        </p>
 
         {/* Mochila sempre aberta, logo abaixo do set. */}
         <div className="bag-panel">
