@@ -373,10 +373,6 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
           <div className="equip-extra-row">{equipSlotNode('boots')}</div>
         </div>
 
-        <p className="inventory-hint">
-          Arraste os itens entre o set e a mochila. Clique em um item para ver os detalhes.
-        </p>
-
         {/* Mochila sempre aberta, logo abaixo do set. */}
         <div className="bag-panel">
           <div className="bag-panel-title">
