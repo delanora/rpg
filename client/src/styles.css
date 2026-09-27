@@ -2836,17 +2836,41 @@ input[type='checkbox']:disabled {
   box-shadow: 0 0 0 1px var(--gold-hair);
 }
 
-/* Seção da ficha aberta logo abaixo do painel de combate. */
+/* Seção da ficha aberta logo abaixo do painel de combate. Repete a moldura
+   reforçada da aba de combate (contorno dourado, anel interno e brilho), para
+   os dois blocos serem lidos como o mesmo "modo de batalha". */
 .combat-view {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.7rem 0.7rem 0.85rem;
+  position: relative;
+  border: 2px solid var(--gold-deep);
+  border-radius: 6px;
+  padding: 0.9rem 0.7rem 0.85rem;
   /* Mesmo respiro do painel de combate, para não colar na barra de Level Up. */
   margin-bottom: 1.1rem;
   display: grid;
   gap: 0.7rem;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  background-image:
+    linear-gradient(180deg, var(--surface-2), var(--surface-3)),
+    var(--ornament),
+    var(--ornament),
+    var(--ornament),
+    var(--ornament);
+  background-position:
+    0 0,
+    left 5px top 5px,
+    right 5px top 5px,
+    left 5px bottom 5px,
+    right 5px bottom 5px;
+  background-size:
+    auto,
+    13px 13px,
+    13px 13px,
+    13px 13px,
+    13px 13px;
+  background-repeat: no-repeat;
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px var(--gold-hair),
+    0 0 30px -12px rgba(122, 31, 31, 0.7);
   animation: ink-in 0.2s ease-out;
 }
 .combat-view-head {
