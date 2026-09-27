@@ -1430,6 +1430,19 @@ async function main(): Promise<void> {
     JSON.stringify(pact.derived.spellSlots),
   );
 
+  // A conjuração da SUBCLASSE conta na soma: Ladino 6 Trapaceiro Arcano vale
+  // como 2 níveis de conjurador (2 espaços de 1º na tabela combinada).
+  await setCharacterClasses(playerId, [
+    { classKey: 'rogue', level: 6, subclass: 'Trapaceiro Arcano' },
+  ]);
+  const thirdCaster = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'subclasse terço-conjuradora entra na soma (Ladino 6 = conjurador 2)',
+    thirdCaster.derived.spellSlots.find((s: any) => s.level === 1)?.max === 3 &&
+      !thirdCaster.derived.spellSlots.some((s: any) => s.level === 2),
+    JSON.stringify(thirdCaster.derived.spellSlots),
+  );
+
   // --- Itens, ícones e avatar ------------------------------------------------
   console.log('\n9) Itens, ícones e avatar');
 

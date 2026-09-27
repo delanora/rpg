@@ -7,9 +7,9 @@ import {
   classEntriesLabel,
   classOptionsFor,
   computeMulticlassAdjustments,
+  effectiveSpellcasting,
   expertiseSlots,
   featureEffectsOf,
-  findSubclass,
   getClassDefinition,
   getMulticlassFeatures,
   multiclassCasterLevel,
@@ -262,11 +262,9 @@ export function toCharacterDto(
    * personagem (bônus de proficiência) e as preparadas usam o nível DELA.
    */
   function spellcastingOf(entry: ClassEntry): ClassEntryDto['spellcasting'] {
-    const definition = getClassDefinition(entry.classKey);
-    if (!definition) return null;
+    const config = effectiveSpellcasting(entry);
+    if (!config) return null;
 
-    const subclassDefinition = findSubclass(definition, entry.subclass);
-    const config = subclassDefinition?.spellcasting ?? definition.spellcasting;
     const ability = config.ability;
     const score = ability ? effectiveAbilities[ability] : null;
 

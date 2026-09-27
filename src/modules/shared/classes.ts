@@ -1770,6 +1770,21 @@ export function findSubclass(
   return definition.subclasses.find((item) => item.id === key || item.name === key) ?? null;
 }
 
+/**
+ * Conjuração efetiva de uma entrada de classe (multiclasse): a subclasse pode
+ * sobrepor a configuração da classe base (ex.: Trapaceiro Arcano e Cavaleiro
+ * Arcano são terço-conjuradores). A mesma regra vale para o nível de
+ * conjurador, os espaços de Pacto e o DTO da ficha.
+ */
+export function effectiveSpellcasting(
+  entry: ClassEntry,
+): ClassDefinition['spellcasting'] | null {
+  const definition = getClassDefinition(entry.classKey);
+  if (!definition) return null;
+  const subclassDefinition = findSubclass(definition, entry.subclass);
+  return subclassDefinition?.spellcasting ?? definition.spellcasting;
+}
+
 /** Uma feature já liberada para o personagem (classe ou subclasse). */
 export interface ActiveClassFeature extends ClassFeatureDefinition {
   source: 'class' | 'subclass';
@@ -2359,8 +2374,7 @@ export function multiclassCasterLevel(entries: ClassEntry[]): number {
   let casterLevel = 0;
 
   for (const entry of entries) {
-    const definition = getClassDefinition(entry.classKey);
-    const type = definition?.spellcasting.type;
+    const type = effectiveSpellcasting(entry)?.type;
 
     if (type === 'full') casterLevel += entry.level;
     else if (type === 'half') casterLevel += Math.floor(entry.level / 2);
@@ -2430,10 +2444,7 @@ const PACT_SLOTS: readonly { level: number; max: number; slotLevel: number }[] =
 
 /** Espaços de Magia de Pacto do bruxo no nível dele (null quando não é bruxo). */
 export function pactMagicSlots(entries: ClassEntry[]): { max: number; slotLevel: number } | null {
-  const warlock = entries.find((entry) => {
-    const definition = getClassDefinition(entry.classKey);
-    return definition?.spellcasting.type === 'pact';
-  });
+  const warlock = entries.find((entry) => effectiveSpellcasting(entry)?.type === 'pact');
   if (!warlock) return null;
 
   const row = PACT_SLOTS[Math.min(20, Math.max(1, warlock.level)) - 1];
