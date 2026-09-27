@@ -59,10 +59,14 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
     <ReadOnlyProvider value={readOnly}>
       <div className="sheet">
         {/*
-         * Uma única grade de três colunas: o corpo da ficha (identidade,
-         * atributos, perícias e as abas), vida e anotações, e o inventário na
-         * coluna lateral. O conteúdo flui em cada coluna, sem buracos.
+         * Uma única grade de três colunas: o inventário na lateral esquerda e,
+         * ao lado dele, o corpo da ficha (identidade, atributos, perícias e as
+         * abas) e a coluna de vida e anotações. Cada coluna flui sem buracos.
          */}
+        <div className="sheet-inventory">
+          <InventorySection character={character} update={update} onMoveItem={onInventoryMove} />
+        </div>
+
         <div className="sheet-main">
           <IdentitySection character={character} update={update} />
           <AbilitiesSection character={character} update={update} />
@@ -94,11 +98,6 @@ export function SheetView({ character, update, onInventoryMove, readOnly = false
           <VitalsSection character={character} update={update} />
           <NotesSection character={character} update={update} />
         </div>
-
-        {/* Coluna lateral própria: o inventário fica sempre à vista, fora das abas. */}
-        <aside className="sheet-inventory" aria-label="Inventário">
-          <InventorySection character={character} update={update} onMoveItem={onInventoryMove} />
-        </aside>
       </div>
     </ReadOnlyProvider>
   );
