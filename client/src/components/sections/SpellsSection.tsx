@@ -134,6 +134,12 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   // Agrupa as magias por nível (0 = truques) para exibir em blocos.
   const levels = [...new Set(list.map((spell) => spell.level))].sort((a, b) => a - b);
 
+  // Só os níveis com espaços ganham o card grande; os níveis zerados ficam numa
+  // linha compacta (mas ainda com o campo de total, para poder configurá-los).
+  const slotTotal = (level: number): number => (slots[String(level)] ?? EMPTY_SLOT).max;
+  const activeSlotLevels = SLOT_LEVELS.filter((level) => slotTotal(level) > 0);
+  const emptySlotLevels = SLOT_LEVELS.filter((level) => slotTotal(level) <= 0);
+
   return (
     <Section
       title="Magias"
@@ -175,36 +181,66 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
       ) : null}
 
       <h3 className="subsection-title">Espaços de magia</h3>
-      <div className="grid grid-slots">
-        {SLOT_LEVELS.map((level) => {
-          const slot = slots[String(level)] ?? EMPTY_SLOT;
 
-          return (
-            <div className="slot-card" key={level}>
-              <span className="slot-level">{SPELL_LEVEL_LABELS[level]}</span>
+      {activeSlotLevels.length === 0 ? (
+        <p className="empty-hint">Nenhum espaço de magia configurado.</p>
+      ) : (
+        <div className="grid grid-slots">
+          {activeSlotLevels.map((level) => {
+            const slot = slots[String(level)] ?? EMPTY_SLOT;
 
-              <SlotPips
-                level={level}
-                slot={slot}
-                readOnly={readOnly}
-                onChange={(patch) => setSlot(level, patch)}
-              />
+            return (
+              <div className="slot-card" key={level}>
+                <span className="slot-level">{SPELL_LEVEL_LABELS[level]}</span>
 
-              <label className="slot-field">
-                <span>usados</span>
-                <InlineField
-                  value={slot.used}
-                  mode="number"
-                  min={0}
-                  ariaLabel={`Espaços usados de ${level}º nível`}
-                  onCommit={(value) =>
-                    setSlot(level, { used: clampInt(value, 0, 99, slot.used) })
-                  }
+                <SlotPips
+                  level={level}
+                  slot={slot}
+                  readOnly={readOnly}
+                  onChange={(patch) => setSlot(level, patch)}
                 />
-              </label>
-              <label className="slot-field">
-                <span>total</span>
+
+                <label className="slot-field">
+                  <span>usados</span>
+                  <InlineField
+                    value={slot.used}
+                    mode="number"
+                    min={0}
+                    ariaLabel={`Espaços usados de ${level}º nível`}
+                    onCommit={(value) =>
+                      setSlot(level, { used: clampInt(value, 0, 99, slot.used) })
+                    }
+                  />
+                </label>
+                <label className="slot-field">
+                  <span>total</span>
+                  <InlineField
+                    value={slot.max}
+                    mode="number"
+                    min={0}
+                    ariaLabel={`Espaços totais de ${level}º nível`}
+                    onCommit={(value) =>
+                      setSlot(level, { max: clampInt(value, 0, 99, slot.max) })
+                    }
+                  />
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Níveis sem espaços: uma linha compacta em vez de um card vazio cada. */}
+      {emptySlotLevels.length > 0 ? (
+        <div className="slot-inactive">
+          <span className="slot-inactive-label">Sem espaços</span>
+          {emptySlotLevels.map((level) => {
+            const slot = slots[String(level)] ?? EMPTY_SLOT;
+            return (
+              <label className="slot-inactive-item" key={level}>
+                <span className="slot-inactive-level">{SPELL_LEVEL_LABELS[level]}</span>
                 <InlineField
+                  className="slot-inactive-total"
                   value={slot.max}
                   mode="number"
                   min={0}
@@ -214,10 +250,10 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                   }
                 />
               </label>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       {sorcery ? (
         <>

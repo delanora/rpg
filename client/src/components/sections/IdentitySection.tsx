@@ -9,11 +9,26 @@ import {
 } from '../../dnd';
 import { useReadOnly } from '../../readonly';
 import { clampInt } from '../../utils';
+import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
 import type { ClassEntry } from '../../types';
 import type { SheetSectionProps } from './common';
+
+/** Abreviações dos tipos de conjuração mostradas na grade de Identidade. */
+const SPELLCASTING_SHORT: Record<string, string> = {
+  full: 'completo',
+  half: 'meio',
+  third: '1/3',
+  pact: 'pacto',
+};
+
+/** Abreviações de como as magias são aprendidas. */
+const SPELL_LEARNING_SHORT: Record<string, string> = {
+  known: 'conhecidas',
+  prepared: 'preparadas',
+};
 
 export function IdentitySection({ character, update }: SheetSectionProps) {
   const readOnly = useReadOnly();
@@ -75,8 +90,42 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
     .map((entry) => `${entry.className}: ${SPELL_LEARNING_LABELS[entry.spellcasting!.learning]}`)
     .join(' · ');
 
+  /**
+   * Versões curtas exibidas na grade (o texto completo fica no tooltip).
+   * Sem isso, "Ladino: Terço-conjurador · INT" ocupava três linhas e empurrava
+   * os campos vizinhos.
+   */
+  const castingShort = classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.type !== 'none')
+    .map((entry) => {
+      const ability = entry.spellcasting?.ability;
+      return (
+        `${entry.className} (${SPELLCASTING_SHORT[entry.spellcasting!.type]})` +
+        (ability ? ` · ${ABILITY_ABBREVIATIONS[ability]}` : '')
+      );
+    })
+    .join(' · ');
+  const learningShort = classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.learning !== 'none')
+    .map(
+      (entry) =>
+        `${entry.className} (${SPELL_LEARNING_SHORT[entry.spellcasting!.learning] ?? entry.spellcasting!.learning})`,
+    )
+    .join(' · ');
+
+  // Resumo de Aumento de Atributo/Talento de cada classe (vai para o tooltip).
+  const asiSummary = classes
+    .filter((entry) => entry.asiLevels.length > 0)
+    .map((entry) => `${entry.className}: níveis ${entry.asiLevels.join(', ')}`)
+    .join(' · ');
+
   return (
-    <Section title="Identidade" icon="scroll" subtitle="Clique em qualquer campo para editar">
+    <Section
+      title="Identidade"
+      icon="scroll"
+      subtitle="Clique em qualquer campo para editar"
+      className="stacked-tip"
+    >
       <div className="avatar-row">
         <Portrait src={character.avatarUrl} alt={character.name} size="lg" icon="users" />
         {readOnly ? null : (
@@ -171,14 +220,14 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           <strong>{hitDice || '—'}</strong>
         </div>
 
-        <div className="field readonly">
+        <div className="field readonly field-wide">
           <span>Conjuração</span>
-          <strong>{casting || '—'}</strong>
+          <strong title={casting || undefined}>{castingShort || '—'}</strong>
         </div>
 
-        <div className="field readonly">
+        <div className="field readonly field-wide">
           <span>Magias</span>
-          <strong>{learning || '—'}</strong>
+          <strong title={learning || undefined}>{learningShort || '—'}</strong>
         </div>
 
         <div className="field readonly">
@@ -187,7 +236,21 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
         </div>
       </div>
 
-      <h3 className="subsection-title">Classes</h3>
+      <h3 className="subsection-title">
+        Classes
+        <span className="info-tip" tabIndex={0}>
+          <Icon name="info" size={14} />
+          <span className="info-tip-text" role="tooltip">
+            <strong>Aumento de atributo ou talento</strong>
+            <span>{asiSummary || 'Nenhum aumento de atributo ou talento nos níveis atuais.'}</span>
+            <strong>Multiclasse</strong>
+            <span>
+              O nível de cada classe sobe separadamente pelo Level Up e o nível total é a soma.
+              As magias combinadas usam a regra de multiclasse do PHB.
+            </span>
+          </span>
+        </span>
+      </h3>
 
       {classes.length === 0 ? (
         <div className="class-list">
@@ -238,20 +301,10 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
                 </div>
               )}
 
-              <span className="class-asi">
-                {entry.asiLevels.length > 0
-                  ? `Aumento/Talento nos níveis ${entry.asiLevels.join(', ')}`
-                  : ''}
-              </span>
             </li>
           ))}
         </ul>
       )}
-
-      <p className="section-note">
-        Regra de multiclasse: o nível de cada classe sobe separadamente pelo Level Up e o nível
-        total é a soma. As magias combinadas usam a regra de multiclasse do PHB.
-      </p>
     </Section>
   );
 }

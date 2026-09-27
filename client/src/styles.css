@@ -593,17 +593,17 @@ a {
   align-content: start;
 }
 
+/* Fixo e editável compartilham EXATAMENTE o mesmo peso visual: nenhum valor
+   da grade de Identidade se destaca mais que outro. */
 .field.readonly strong {
   font-family: var(--font-display);
   font-size: 1.1rem;
   font-weight: 600;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
-  color: var(--wine);
+  color: var(--ink);
 }
 
-/* O valor editável de um campo rotulado usa a mesma voz tipográfica do valor
-   fixo (mesma família, tamanho e peso) — só muda a cor de destaque. */
 .field > .inline-field {
   font-family: var(--font-display);
   font-size: 1.1rem;
@@ -612,15 +612,17 @@ a {
   color: var(--ink);
 }
 
+/* Campos que ocupam duas colunas da grade (Conjuração e Magias), para o texto
+   não quebrar em várias linhas nem empurrar os vizinhos. */
+.field-wide {
+  grid-column: span 2;
+}
+
 .field > .inline-field.placeholder,
 .field > .inline-field .placeholder {
   font-family: var(--font-body);
   font-weight: 400;
   color: var(--ink-faint);
-}
-
-[data-theme='dark'] .field.readonly strong {
-  color: var(--gold-bright);
 }
 
 .inline-field {
@@ -889,50 +891,19 @@ a {
    8. Ficha — página e abas
    ========================================================================== */
 
+/*
+ * Grade de três colunas, sem moldura externa: cada seção é o próprio card de
+ * pergaminho. Com a moldura, a coluna curta do inventário deixaria um
+ * retângulo de pergaminho vazio esticando até o fim da página.
+ */
 .sheet {
   position: relative;
   display: grid;
-  /* Três colunas: inventário (esquerda), o corpo da ficha (fluido) e vida/anotações. */
   grid-template-columns:
     minmax(17rem, 20rem)
     minmax(0, 1fr)
     minmax(18.75rem, 22.5rem);
   gap: var(--space-section);
-  padding: var(--space-2);
-  background:
-    linear-gradient(180deg, var(--surface), var(--surface-2) 70%, var(--surface-3));
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  box-shadow: var(--shadow-deep), inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-  background-image:
-    linear-gradient(180deg, var(--surface), var(--surface-2) 70%, var(--surface-3)),
-    var(--ornament), var(--ornament), var(--ornament), var(--ornament);
-  background-position:
-    0 0,
-    left 6px top 6px,
-    right 6px top 6px,
-    left 6px bottom 6px,
-    right 6px bottom 6px;
-  background-size:
-    auto,
-    14px 14px,
-    14px 14px,
-    14px 14px,
-    14px 14px;
-  background-repeat: no-repeat;
-}
-
-/* Fita lateral dourada como lombada do grimório. */
-.sheet::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 14px;
-  bottom: 14px;
-  width: 4px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, transparent, var(--gold), transparent);
-  opacity: 0.5;
 }
 
 .sheet-tabs {
@@ -1220,6 +1191,60 @@ a {
 
 .subsection-title:first-child {
   margin-top: 0;
+}
+
+/* Ícone de informação: o texto explicativo vive no tooltip, sem ocupar espaço
+   permanente na ficha. */
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gold-deep);
+  cursor: help;
+}
+
+.info-tip .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.info-tip-text {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 40;
+  width: min(27rem, 78vw);
+  display: none;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+  /* Volta à tipografia de corpo: o título da subseção é display/caixa alta. */
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+  color: var(--ink-soft);
+  cursor: default;
+}
+
+.info-tip-text strong {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.info-tip:hover .info-tip-text,
+.info-tip:focus .info-tip-text,
+.info-tip:focus-visible .info-tip-text {
+  display: grid;
 }
 
 .subsection-title::after {
@@ -1815,6 +1840,55 @@ input[type='checkbox']:disabled {
   font-size: 0.8rem;
 }
 
+/*
+ * Níveis de magia sem espaços não ganham card: ficam numa única linha
+ * compacta, com o campo de total para poder configurá-los.
+ */
+.slot-inactive {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.7rem;
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(184, 145, 42, 0.06), transparent);
+}
+
+.slot-inactive-label {
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+}
+
+.slot-inactive-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.slot-inactive-level {
+  font-family: var(--font-display);
+  color: var(--ink-soft);
+}
+
+.slot-inactive-total {
+  width: 2.7rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.slot-inactive-total.inline-display,
+.slot-inactive-total.inline-static {
+  padding: 0.08rem 0.25rem;
+  min-height: 1.5rem;
+}
+
 .spell-group {
   margin-top: 0.85rem;
 }
@@ -2174,11 +2248,6 @@ input[type='checkbox']:disabled {
 .app-shell.theme-master .master-list {
   border-color: var(--gold-hair);
   box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
-}
-
-.app-shell.theme-master .sheet {
-  border-color: var(--gold-hair);
-  box-shadow: var(--shadow-deep), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 /* ==========================================================================
@@ -3410,6 +3479,21 @@ input[type='checkbox']:disabled {
   flex-wrap: wrap;
 }
 
+/* Avatar maior e alinhado aos botões, formando um bloco equilibrado. */
+.avatar-row .portrait {
+  border-radius: 50%;
+}
+
+.avatar-row .portrait-lg {
+  width: 3.9rem;
+  height: 3.9rem;
+}
+
+/* O toolbar tem margem inferior para uso solto; aqui ela desalinha o bloco. */
+.avatar-row .toolbar {
+  margin-bottom: 0;
+}
+
 .item-cell {
   display: flex;
   align-items: center;
@@ -3695,13 +3779,6 @@ input[type='checkbox']:disabled {
 
 .class-subclass {
   flex: 1 1 12rem;
-}
-
-.class-asi {
-  font-size: 0.78rem;
-  font-style: italic;
-  color: var(--ink-soft);
-  flex-basis: 100%;
 }
 
 /* Espaços combinados de multiclasse (referência). */
@@ -4315,4 +4392,16 @@ input[type='checkbox']:focus-visible,
 /* Tabelas de ataque: linhas com o mesmo respiro das listas de perícias. */
 .sheet-table tbody tr {
   transition: background 0.15s ease;
+}
+
+/* Seção que hospeda um tooltip: sem recorte, para o popover poder escapar. */
+.sheet-section.stacked-tip {
+  overflow: visible;
+}
+
+/* O cabeçalho tem fundo próprio; sem o recorte do pai, ele precisa arredondar
+   os cantos para não vazar da moldura da seção. */
+.sheet-section.stacked-tip > .section-header {
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
 }
