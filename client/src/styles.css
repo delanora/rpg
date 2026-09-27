@@ -5925,39 +5925,41 @@ input[type='checkbox']:focus-visible,
   position: absolute;
   left: 0;
   top: 0;
-  display: grid;
-  place-items: center;
   transform-origin: 0 0;
   backface-visibility: hidden;
   color: #4a3316;
   font-family: var(--font-display);
   font-variant-numeric: tabular-nums;
-  box-shadow:
-    inset 0 0 0 1px rgba(92, 67, 26, 0.42),
-    inset 0 0 16px -5px rgba(92, 67, 26, 0.55);
+  /* Sem relevo de caixa (as faces são recortadas pelo `clip-path`): o volume
+     vem só do gradiente, então as junções não ganham costuras claras. */
+  box-shadow: inset 0 0 18px -6px rgba(92, 67, 26, 0.5);
 }
 
+/* O número é centralizado no centroide da face (`left`/`top` vêm do cálculo da
+   geometria) e o tamanho é calculado para caber no círculo inscrito. */
 .ddie-num {
-  font-size: 1rem;
+  position: absolute;
+  transform: translate(-50%, -50%);
   font-weight: 700;
   line-height: 1;
-  text-shadow: 0 1px 0 rgba(255, 250, 235, 0.7);
-}
-
-.ddie-s4 .ddie-num,
-.ddie-s20 .ddie-num {
-  font-size: 0.9rem;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 1px rgba(255, 250, 235, 0.9);
 }
 
 .ddie-pips {
+  position: absolute;
+  transform: translate(-50%, -50%);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
-  width: 66%;
-  height: 66%;
+  width: 62%;
+  height: 62%;
 }
 
 .ddie-pips i {
+  place-self: center;
+  width: 62%;
+  height: 62%;
   border-radius: 50%;
 }
 
