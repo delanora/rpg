@@ -826,6 +826,50 @@ export interface DiceRolledPayload {
   at: string;
 }
 
+/** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
+
+export type DiceRollKind = 'skill' | 'save' | 'free';
+
+/** Um dado já rolado (espelha src/modules/dice/dice.dto.ts). */
+export interface RolledDie {
+  sides: number;
+  value: number;
+  /** Descartado por vantagem/desvantagem. */
+  dropped?: boolean;
+}
+
+export interface DiceRollDto {
+  id: string;
+  clientId: string | null;
+  actorName: string;
+  kind: DiceRollKind;
+  label: string;
+  dice: RolledDie[];
+  bonus: number;
+  total: number;
+  advantage: boolean;
+  disadvantage: boolean;
+  isPrivate: boolean;
+  crit: boolean;
+  at: string;
+}
+
+export interface TableRollPayload {
+  roll: DiceRollDto;
+}
+
+/** Pedido de rolagem enviado ao servidor. */
+export interface TableRollRequest {
+  dice: { sides: number }[];
+  advantage?: boolean;
+  disadvantage?: boolean;
+  bonus?: number;
+  label?: string;
+  kind?: DiceRollKind;
+  private?: boolean;
+  clientId?: string;
+}
+
 export interface AttackResolvedPayload {
   attackerName: string;
   attackName: string;

@@ -27,6 +27,7 @@ import type {
   RegionCreatedPayload,
   RegionDeletedPayload,
   RegionUpdatedPayload,
+  TableRollPayload,
 } from './types';
 
 /** Mapa de eventos espelhando o backend (src/types/socket.ts). */
@@ -55,6 +56,7 @@ export interface ServerToClientEvents {
   'combat:turn': (payload: CombatTurnPayload) => void;
   'combat:ended': (payload: CombatEndedPayload) => void;
   'dice:rolled': (payload: DiceRolledPayload) => void;
+  'dice:roll': (payload: TableRollPayload) => void;
   'combat:attack': (payload: AttackResolvedPayload) => void;
 }
 

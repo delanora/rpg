@@ -11,6 +11,8 @@ import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
+import { DiceDock } from '../dice/DiceDock';
+import { useDiceRoller } from '../dice/useDiceRoller';
 import { fetchGameConfig, setLevelUpUnlocked } from '../gameApi';
 import { closePresentation } from '../presentationApi';
 import type {
@@ -53,8 +55,12 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
 
+  // Janela de dados: rolagem livre (pública/privada), avisos e log da sessão.
+  const dice = useDiceRoller(user);
+
   const { connection, online, lastEventAt } = useRealtime({
     ...combatState.handlers,
+    ...dice.handlers,
 
     // Fichas dos jogadores chegam ao vivo — é o requisito central do painel.
     onSheetUpdated: (payload) => {
@@ -597,6 +603,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           onStart={handleStartCombat}
         />
       ) : null}
+
+      {/* Botão "Dados" sempre disponível, inclusive em combate. */}
+      <DiceDock roller={dice} />
     </div>
   );
 }
