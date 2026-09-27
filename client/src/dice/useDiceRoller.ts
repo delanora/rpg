@@ -85,6 +85,9 @@ export function useDiceRoller(user: SessionUser) {
   const settleTimer = useRef<number | null>(null);
   const remoteSettleTimer = useRef<number | null>(null);
   const toastTimers = useRef<number[]>([]);
+  // Quando os dados de outra pessoa começaram a cair (o aviso do resultado sai
+  // quando eles pousam, nunca antes de quem rolou ver o resultado).
+  const remoteTumbleAt = useRef<number | null>(null);
 
   // O mestre carrega o histórico já acumulado ao abrir o painel.
   useEffect(() => {
@@ -370,7 +373,10 @@ export function useDiceRoller(user: SessionUser) {
           result: null,
         });
 
-        if (tumbling) settleRemote();
+        if (tumbling) {
+          remoteTumbleAt.current = Date.now();
+          settleRemote();
+        }
       },
 
       onDiceRoll: (payload) => {
@@ -395,15 +401,27 @@ export function useDiceRoller(user: SessionUser) {
         // A própria rolagem já aparece na janela: não vira aviso para o autor.
         if (roll.clientId && roll.clientId === myClientId.current) return;
 
+        // O aviso só entra quando os dados de quem rolou terminam de cair — sem
+        // isso o resultado apareceria na mesa antes de aparecer para quem rolou.
+        const tumbleAt = remoteTumbleAt.current;
+        remoteTumbleAt.current = null;
+        const remaining = tumbleAt === null ? TUMBLE_MS : Date.now() - tumbleAt;
+        const delay = Math.max(0, TUMBLE_MS - remaining);
+
         toastSequence += 1;
         const id = `dice-toast-${toastSequence}`;
-        setToasts((prev) => [{ id, roll }, ...prev].slice(0, 5));
 
-        // Some sozinho depois de 3 segundos (ou antes, se o usuário dispensar).
         toastTimers.current.push(
           window.setTimeout(() => {
-            setToasts((prev) => prev.filter((toast) => toast.id !== id));
-          }, TOAST_MS),
+            setToasts((prev) => [{ id, roll }, ...prev].slice(0, 5));
+
+            // Some sozinho depois de 3 segundos (ou antes, se dispensarem).
+            toastTimers.current.push(
+              window.setTimeout(() => {
+                setToasts((prev) => prev.filter((toast) => toast.id !== id));
+              }, TOAST_MS),
+            );
+          }, delay),
         );
       },
     }),
