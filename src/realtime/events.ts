@@ -303,6 +303,8 @@ export interface TableRollActivePayload {
   label: string;
   /** Tabuleiro montado por quem está rolando (a mesa assiste; só ele interage). */
   board: RollBoardDto;
+  /** Última rolagem do tabuleiro (para quem sincroniza no meio ou depois). */
+  lastRoll: DiceRollDto | null;
   at: string;
 }
 

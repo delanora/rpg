@@ -48,7 +48,6 @@ export const activeRollSchema = z.object({
   advantage: z.boolean().optional(),
   disadvantage: z.boolean().optional(),
   bonus: z.number().int().min(-100).max(100).optional(),
-  phase: z.enum(['idle', 'tumbling']).optional(),
 });
 
 export type TableRollInput = z.infer<typeof tableRollSchema>;

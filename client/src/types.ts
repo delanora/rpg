@@ -876,6 +876,14 @@ export interface TableRollActivePayload {
   label: string;
   /** Tabuleiro montado por quem está rolando. */
   board: RollBoardDto;
+  /**
+   * Última rolagem do tabuleiro (desde a última mexida no pool).
+   *
+   * É o que garante que quem sincroniza no meio da rolagem — recarrega a
+   * página, reconecta — veja o resultado, e não só os dados parados na tela.
+   */
+  lastRoll: DiceRollDto | null;
+  /** Momento da última mudança de estado (referência da animação de queda). */
   at: string;
 }
 
@@ -906,7 +914,6 @@ export interface TableRollActiveRequest {
   advantage?: boolean;
   disadvantage?: boolean;
   bonus?: number;
-  phase?: 'idle' | 'tumbling';
 }
 
 /** Pedido de rolagem enviado ao servidor. */
