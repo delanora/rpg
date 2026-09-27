@@ -43,10 +43,11 @@ import type { ItemDetails } from '../shared/item-details.js';
 import { syncInventory, type CatalogSnapshot } from './inventory-sync.js';
 import {
   featureSchema,
-  inventoryItemSchema,
+  inventoryListSchema,
   spellSchema,
   spellSlotSchema,
   spellsStateSchema,
+  type InventorySlot,
 } from './characters.schema.js';
 
 export interface InventoryItemDto {
@@ -55,7 +56,11 @@ export interface InventoryItemDto {
   description: string;
   quantity: number;
   weight: number;
-  equipped: boolean;
+  /** Slot em que o item está equipado (`null` = mochila). */
+  slot: InventorySlot | null;
+  /** Posição na grade da mochila (`null` = equipado ou sem posição). */
+  backpackX: number | null;
+  backpackY: number | null;
   /** Sprite do item (`/uploads/items/...`); vazio quando é avulso. */
   imageUrl: string;
   /** Id do item no catálogo do mestre ('' quando é avulso). */
@@ -180,7 +185,6 @@ export interface CharacterDto {
   derived: DerivedStats;
 }
 
-const inventoryListSchema = z.array(inventoryItemSchema);
 const attackListSchema = z.array(attackSchema);
 const featureListSchema = z.array(featureSchema);
 

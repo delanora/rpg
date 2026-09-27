@@ -5,17 +5,20 @@ import { HttpError } from '../../lib/http-error.js';
 import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { getGameConfig } from '../game-config/game-config.service.js';
-import { toCharacterDto, type CharacterDto } from './characters.dto.js';
+import { toCharacterDto, type CharacterDto, type InventoryItemDto } from './characters.dto.js';
 import {
   catalogItemIds,
   loadCatalogLookup,
   type CatalogSnapshot,
 } from './inventory-sync.js';
+import { inventoryListSchema } from './characters.schema.js';
 import type {
   CreateCharacterInput,
   LevelUpInput,
+  MoveInventoryItemInput,
   UpdateCharacterInput,
 } from './characters.schema.js';
+import { parseJson } from '../shared/json.js';
 import {
   applySaveProficiencies,
   averageHitDie,
@@ -429,6 +432,80 @@ export async function toSheetDto(
 export async function getSheetByUserId(userId: string): Promise<CharacterDto | null> {
   const character = await getCharacterByUserId(userId);
   return character ? toSheetDto(character) : null;
+}
+
+/**
+ * Move um item do inventário: equipa em um slot ou reposiciona na mochila.
+ *
+ * O destino padrão é a mochila (`slot` nulo). Se o destino já estiver ocupado,
+ * o item que estava lá assume a posição antiga do item movido (troca), o que
+ * mantém a regra de um item por slot. Nenhuma categoria é validada: qualquer
+ * item pode ir a qualquer slot ou célula.
+ */
+export async function moveInventoryItem(
+  actor: Actor,
+  input: MoveInventoryItemInput,
+): Promise<CharacterDto> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const inventory = parseJson<InventoryItemDto[]>(
+    inventoryListSchema,
+    character.inventory,
+    [],
+  );
+  const item = inventory.find((entry) => entry.id === input.itemInventoryId);
+  if (!item) throw new HttpError('Item não encontrado no inventário.', 404);
+
+  const targetX = input.targetBackpackX ?? null;
+  const targetY = input.targetBackpackY ?? null;
+  // Slot definido e não nulo equipa; caso contrário, vai para a grade da mochila.
+  const equipToSlot = input.targetSlot !== undefined && input.targetSlot !== null;
+
+  // Item que já ocupa o destino (nunca o próprio item sendo movido).
+  const occupant = equipToSlot
+    ? inventory.find((entry) => entry.id !== item.id && entry.slot === input.targetSlot)
+    : targetX !== null && targetY !== null
+      ? inventory.find(
+          (entry) =>
+            entry.id !== item.id &&
+            entry.slot === null &&
+            entry.backpackX === targetX &&
+            entry.backpackY === targetY,
+        )
+      : undefined;
+
+  // Posição antiga do item movido; na troca, é para onde o ocupante vai.
+  const previousSlot = item.slot;
+  const previousX = item.backpackX;
+  const previousY = item.backpackY;
+
+  if (equipToSlot) {
+    item.slot = input.targetSlot ?? null;
+    item.backpackX = null;
+    item.backpackY = null;
+  } else {
+    item.slot = null;
+    item.backpackX = targetX;
+    item.backpackY = targetY;
+  }
+
+  if (occupant) {
+    occupant.slot = previousSlot;
+    occupant.backpackX = previousX;
+    occupant.backpackY = previousY;
+  }
+
+  const updated = await prisma.character.update({
+    where: { userId: actor.userId },
+    data: {
+      inventory: inventory as unknown as Prisma.InputJsonValue,
+      version: { increment: 1 },
+    },
+  });
+
+  await publishChange(actor, updated, { inventory });
+  return toSheetDto(updated, actor.username);
 }
 
 /**

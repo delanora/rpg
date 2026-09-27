@@ -1592,6 +1592,70 @@ async function main(): Promise<void> {
     JSON.stringify(weaponInInventory),
   );
 
+  // --- Equipamento (slots + mochila) e endpoint de mover item ---------------
+  const equipSheet = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const potion = equipSheet.inventory.find((entry: any) => entry.itemId === catalogItem.id);
+  const blade = equipSheet.inventory.find((entry: any) => entry.itemId === weapon.id);
+  check(
+    'item enviado entra na mochila sem slot nem posição',
+    potion?.slot === null && potion?.backpackX === null && potion?.backpackY === null,
+    JSON.stringify({ slot: potion?.slot, x: potion?.backpackX, y: potion?.backpackY }),
+  );
+
+  const moveEvent = waitFor<any>(playerSocket, 'sheet:updated');
+  const equipped = await api('/api/characters/me/inventory/move', {
+    method: 'POST',
+    token: playerToken,
+    body: { itemInventoryId: blade.id, targetSlot: 'hand1' },
+  });
+  check(
+    'equipar em um slot grava o slot e limpa a posição da mochila',
+    equipped.data?.character?.inventory?.find((e: any) => e.id === blade.id)?.slot === 'hand1',
+    JSON.stringify(equipped.data),
+  );
+  check('mover item avisa a ficha em tempo real', (await moveEvent.catch(() => null)) !== null);
+
+  const backpacked = await api('/api/characters/me/inventory/move', {
+    method: 'POST',
+    token: playerToken,
+    body: { itemInventoryId: potion.id, targetBackpackX: 2, targetBackpackY: 4 },
+  });
+  const potionAfter = backpacked.data?.character?.inventory?.find((e: any) => e.id === potion.id);
+  check(
+    'mover para a mochila grava a célula e zera o slot',
+    potionAfter?.slot === null && potionAfter?.backpackX === 2 && potionAfter?.backpackY === 4,
+    JSON.stringify(potionAfter),
+  );
+
+  // Troca: equipar a poção no hand1 devolve a espada para a célula (2,4).
+  const swapped = await api('/api/characters/me/inventory/move', {
+    method: 'POST',
+    token: playerToken,
+    body: { itemInventoryId: potion.id, targetSlot: 'hand1' },
+  });
+  const swappedInv: any[] = swapped.data?.character?.inventory ?? [];
+  const potionSwapped = swappedInv.find((e) => e.id === potion.id);
+  const bladeSwapped = swappedInv.find((e) => e.id === blade.id);
+  check(
+    'equipar em slot ocupado troca com o item que estava lá',
+    potionSwapped?.slot === 'hand1' &&
+      bladeSwapped?.slot === null &&
+      bladeSwapped?.backpackX === 2 &&
+      bladeSwapped?.backpackY === 4,
+    JSON.stringify(swappedInv.map((e) => ({ id: e.id, slot: e.slot, x: e.backpackX, y: e.backpackY }))),
+  );
+
+  check(
+    'slot inválido é recusado (400)',
+    (
+      await api('/api/characters/me/inventory/move', {
+        method: 'POST',
+        token: playerToken,
+        body: { itemInventoryId: potion.id, targetSlot: 'cape' },
+      })
+    ).status === 400,
+  );
+
   // --- Inventário espelha o catálogo ---------------------------------------
   const itemSyncEvent = waitFor<any>(playerSocket, 'sheet:updated');
   const itemPatched = await api(`/api/items/${weapon.id}`, {
