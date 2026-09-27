@@ -110,7 +110,7 @@ function layoutBackpack(inventory: InventoryItem[]): {
 }
 
 /** Sprite do item ou o ícone genérico quando não há imagem. */
-function ItemSprite({ item }: { item: InventoryItem }) {
+export function ItemSprite({ item }: { item: InventoryItem }) {
   if (item.imageUrl) {
     return <img className="inv-sprite" src={item.imageUrl} alt={item.name} draggable={false} />;
   }
