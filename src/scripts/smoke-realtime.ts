@@ -2344,6 +2344,16 @@ async function main(): Promise<void> {
     Array.isArray(diceHistory.data?.rolls) &&
       diceHistory.data.rolls.some((roll: any) => roll.id === privateRoll.data?.roll?.id),
   );
+  check(
+    'jogador não limpa o histórico (403)',
+    (await api('/api/dice/history', { method: 'DELETE', token: playerToken })).status === 403,
+  );
+  check(
+    'mestre limpa o histórico (204)',
+    (await api('/api/dice/history', { method: 'DELETE', token: masterToken })).status === 204,
+  );
+  const clearedHistory = await api('/api/dice/history', { token: masterToken });
+  check('histórico fica vazio depois de limpar', (clearedHistory.data?.rolls ?? []).length === 0);
 
   // --- 12. Presença ao desconectar ------------------------------------------
   console.log('\n12) Presença ao desconectar');

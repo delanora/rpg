@@ -665,8 +665,8 @@ Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotaç�
 - **Rolagem de perícia/salvaguarda:** cada linha da seção "Perícias e Salvaguardas" tem um botão de dado que abre a janela com **1d20 fixo** e o bônus já aplicado; ainda dá para somar dados extras (Orientação, Inspiração de Bardo...).
 - **Vantagem/Desvantagem:** checkboxes exclusivos — rolam **2d20** e mantêm o maior (vantagem) ou o menor (desvantagem); os demais dados do pool rolam uma vez só.
 - **Animação:** os dados giram e quicam na bandeja até assentarem; o total (com bônus) e o valor de cada dado aparecem em destaque.
-- **Visibilidade:** rolagem de jogador é **sempre pública**; o mestre pode marcar **Privada**, que não gera aviso para mais ninguém. Rolagem pública dispara um aviso dispensável para toda a mesa ("[Personagem] está fazendo um teste de [Perícia]").
-- **Histórico:** o mestre tem um **log lateral** na própria janela com todas as rolagens da sessão, do mais recente ao mais antigo.
+- **Visibilidade:** rolagem de jogador é **sempre pública**; o mestre pode marcar **Privada**, que não gera aviso para mais ninguém. Rolagem pública dispara um aviso para toda a mesa ("[Personagem] está fazendo um teste de [Perícia]") que some sozinho em **3 segundos** e também pode ser dispensado na hora.
+- **Histórico:** o mestre tem um **log lateral** na própria janela com todas as rolagens da sessão, do mais recente ao mais antigo, e pode **limpar** o log.
 
 ### Endpoints
 
@@ -674,6 +674,7 @@ Um botão flutuante **Dados** (canto inferior esquerdo, espelhando o de Anotaç�
 |--------|------|--------|-----------|
 | `POST` | `/api/dice/roll` | autenticado | Rola o pool (`{ dice, advantage?, disadvantage?, bonus?, label?, kind?, private?, clientId? }`). |
 | `GET` | `/api/dice/history` | **mestre** | Rolagens da sessão (memória do servidor). |
+| `DELETE` | `/api/dice/history` | **mestre** | Zera o log lateral. |
 
 | Evento | Destino | Conteúdo |
 |--------|---------|----------|

@@ -21,6 +21,11 @@ export function getDiceHistory(): DiceRollDto[] {
   return history;
 }
 
+/** Limpa o histórico da sessão (o mestre recomeça o log). */
+export function clearDiceHistory(): void {
+  history = [];
+}
+
 /** Autor da rolagem, sempre carimbado a partir do token. */
 export interface DiceActor {
   userId: string;

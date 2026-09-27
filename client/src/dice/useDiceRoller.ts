@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { playCrit, playDice } from '../sound';
 import type { DiceRollDto, DiceRollKind, SessionUser } from '../types';
 import type { RealtimeHandlers } from '../useRealtime';
-import { fetchDiceHistory, rollTableDice } from './diceApi';
+import { clearDiceHistory as clearDiceHistoryRequest, fetchDiceHistory, rollTableDice } from './diceApi';
 
 /** Tipos de dado usados em D&D 5e (d100 = percentual). */
 export const DICE_TYPES = [4, 6, 8, 10, 12, 20, 100] as const;
@@ -34,6 +34,9 @@ let toastSequence = 0;
 /** Duração da animação de queda dos dados, em milissegundos. */
 const TUMBLE_MS = 1150;
 
+/** Os avisos públicos somem sozinhos depois de 3 segundos. */
+const TOAST_MS = 3000;
+
 export function useDiceRoller(user: SessionUser) {
   const isMaster = user.role === 'MASTER';
 
@@ -52,6 +55,7 @@ export function useDiceRoller(user: SessionUser) {
   // Reconhece a própria rolagem no tempo real (para não repetir o aviso).
   const myClientId = useRef<string | null>(null);
   const settleTimer = useRef<number | null>(null);
+  const toastTimers = useRef<number[]>([]);
 
   // O mestre carrega o histórico já acumulado ao abrir o painel.
   useEffect(() => {
@@ -74,6 +78,7 @@ export function useDiceRoller(user: SessionUser) {
   useEffect(
     () => () => {
       if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+      toastTimers.current.forEach((timer) => window.clearTimeout(timer));
     },
     [],
   );
@@ -175,6 +180,17 @@ export function useDiceRoller(user: SessionUser) {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
+  /** Zera o log lateral (mestre) no servidor e na memória local. */
+  const clearHistory = useCallback(async () => {
+    try {
+      await clearDiceHistoryRequest();
+      setHistory([]);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao limpar o histórico.');
+    }
+  }, []);
+
   const handlers = useMemo<RealtimeHandlers>(
     () => ({
       onDiceRoll: (payload) => {
@@ -189,7 +205,15 @@ export function useDiceRoller(user: SessionUser) {
         if (roll.clientId && roll.clientId === myClientId.current) return;
 
         toastSequence += 1;
-        setToasts((prev) => [{ id: `dice-toast-${toastSequence}`, roll }, ...prev].slice(0, 5));
+        const id = `dice-toast-${toastSequence}`;
+        setToasts((prev) => [{ id, roll }, ...prev].slice(0, 5));
+
+        // Some sozinho depois de 3 segundos (ou antes, se o usuário dispensar).
+        toastTimers.current.push(
+          window.setTimeout(() => {
+            setToasts((prev) => prev.filter((toast) => toast.id !== id));
+          }, TOAST_MS),
+        );
       },
     }),
     [isMaster],
@@ -220,6 +244,7 @@ export function useDiceRoller(user: SessionUser) {
     setPrivate,
     submit,
     dismissToast,
+    clearHistory,
   };
 }
 
