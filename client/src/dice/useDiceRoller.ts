@@ -77,7 +77,10 @@ export function useDiceRoller(user: SessionUser) {
   const [pool, setPool] = useState<DicePoolDie[]>([]);
   const [advantage, setAdvantageValue] = useState(false);
   const [disadvantage, setDisadvantageValue] = useState(false);
-  const [isPrivate, setPrivate] = useState(false);
+  // A rolagem do mestre já nasce privada: a mesa só acompanha se ele desmarcar
+  // "Privada" (o aviso é opcional, não o padrão). Rolagem de jogador é sempre
+  // pública, então o padrão deles continua sendo avisar.
+  const [isPrivate, setPrivate] = useState(isMaster);
   const [phase, setPhase] = useState<RollPhase>('idle');
   const [result, setResult] = useState<DiceRollDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -216,11 +219,11 @@ export function useDiceRoller(user: SessionUser) {
     setPool([]);
     setAdvantageValue(false);
     setDisadvantageValue(false);
-    setPrivate(false);
+    setPrivate(isMaster);
     setResult(null);
     setPhase('idle');
     setError(null);
-  }, []);
+  }, [isMaster]);
 
   /** Rolagem livre: pool vazio, o jogador monta a combinação. */
   const openFree = useCallback(() => {
