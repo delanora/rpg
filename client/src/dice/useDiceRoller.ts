@@ -445,6 +445,10 @@ export function useDiceRoller(user: SessionUser) {
           setHistory((prev) => [roll, ...prev.filter((item) => item.id !== roll.id)].slice(0, 100));
         }
 
+        // Rolagem da criação de personagem: entra no log do mestre (acima), mas
+        // não vira aviso para ninguém — ela já aparece dentro do assistente.
+        if (roll.kind === 'creation') return;
+
         // A rolagem entra no tabuleiro espelhado de quem está assistindo.
         setRemote((current) =>
           current && current.userId === roll.actorUserId

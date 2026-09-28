@@ -9,8 +9,14 @@ import {
   FEATURE_SOURCES,
   LEVEL_MAX,
   LEVEL_MIN,
+  SKILL_KEYS,
   type AbilityKey,
 } from '../shared/dnd5e.js';
+import {
+  CREATION_FIRST_STEP,
+  CREATION_LAST_STEP,
+  CREATION_ROLL_DICE,
+} from '../shared/creation.js';
 
 /**
  * Schemas da ficha.
@@ -266,3 +272,62 @@ export const updateCharacterSchema = z
 
 export type CreateCharacterInput = z.infer<typeof createCharacterSchema>;
 export type UpdateCharacterInput = z.infer<typeof updateCharacterSchema>;
+
+// --- Assistente de criação --------------------------------------------------
+//
+// O assistente salva o progresso PASSO A PASSO: cada requisição traz o passo
+// concluído e só os campos daquele passo. O rascunho vive no próprio registro
+// do personagem (`creationDraft`) e as escolhas que já são campos da ficha
+// (nome, raça, antecedente, classe, atributos, perícias) são gravadas pelos
+// mesmos caminhos da ficha — ver creation.service.ts.
+
+/** Chave canônica de perícia (as 18 do livro básico). */
+const skillKeySchema = z
+  .string()
+  .trim()
+  .refine((value) => SKILL_KEYS.includes(value), 'Perícia desconhecida.');
+
+/**
+ * Uma rolagem de 4d6 do passo de atributos. Os valores vêm do SERVIDOR (o
+ * dado é rolado em `POST /api/characters/me/creation/roll`) e voltam junto do
+ * rascunho; aqui só são validados.
+ */
+export const creationRollSchema = z.object({
+  dice: z.array(z.number().int().min(1).max(6)).length(CREATION_ROLL_DICE),
+  /** Índice do dado descartado (o menor dos quatro). */
+  dropped: z.number().int().min(0).max(CREATION_ROLL_DICE - 1),
+});
+
+/** Atributos BASE do passo 6 (antes dos bônus raciais). */
+const creationAbilitiesSchema = z.record(
+  z.enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]]),
+  z.number().int().min(1).max(ABILITY_SCORE_MAX),
+);
+
+/** Pedido de rolagem de atributo (`restart` começa a lista de seis de novo). */
+export const creationRollRequestSchema = z.object({
+  restart: z.boolean().optional(),
+});
+
+export const creationStepSchema = z.object({
+  /** Número do passo que acabou de ser concluído (1 a 9). */
+  step: z.number().int().min(CREATION_FIRST_STEP).max(CREATION_LAST_STEP),
+  /** Passo 1: como o personagem está sendo montado. */
+  mode: z.enum(['new', 'existing']).optional(),
+  /** Passo 2: identidade. */
+  name: z.string().trim().min(1, 'O nome não pode ficar vazio.').max(120).optional(),
+  alignment: shortText(60).optional(),
+  avatarUrl: shortText(500).optional(),
+  /** Passos 3 e 4: raça e antecedente (texto livre enquanto não há catálogo). */
+  race: shortText(60).optional(),
+  background: shortText(120).optional(),
+  /** Passo 5: classe inicial. */
+  classKey: classKeySchema.optional(),
+  /** Passo 6: valores-base dos seis atributos. */
+  baseAbilities: creationAbilitiesSchema.optional(),
+  /** Passo 7: perícias com proficiência escolhidas na classe. */
+  skills: z.array(skillKeySchema).max(18).optional(),
+});
+
+export type CreationStepInput = z.infer<typeof creationStepSchema>;
+export type CreationRollRequestInput = z.infer<typeof creationRollRequestSchema>;

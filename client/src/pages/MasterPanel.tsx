@@ -13,7 +13,7 @@ import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../com
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
-import { fetchGameConfig, setLevelUpUnlocked } from '../gameApi';
+import { fetchGameConfig, setLevelUpUnlocked, setStartingLevel } from '../gameApi';
 import { closePresentation } from '../presentationApi';
 import type {
   Attack,
@@ -400,6 +400,37 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     setCharacters((prev) => prev.filter((character) => character.id !== id));
   }, []);
 
+  /**
+   * Devolve a ficha ao assistente de criação: `creationFinalized` volta para
+   * `false` e o jogador reencontra o wizard no próximo acesso, com o que já
+   * existia preenchido. Só o mestre pode fazer isso.
+   */
+  const reopenCreation = useCallback(async (id: string) => {
+    try {
+      const { character } = await api<{ character: Character }>(
+        `/api/characters/${id}/creation/reopen`,
+        { method: 'POST' },
+      );
+      setCharacters((prev) =>
+        prev.map((item) => (item.id === id ? character : item)),
+      );
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao reabrir a criação.');
+    }
+  }, []);
+
+  /** Nível inicial da mesa: o assistente de criação aplica os níveis até ele. */
+  const changeStartingLevel = useCallback(async (level: number) => {
+    try {
+      const config = await setStartingLevel(level);
+      setGameConfig(config);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao definir o nível inicial.');
+    }
+  }, []);
+
   const createItem = useCallback(async (): Promise<Item> => {
     const { item } = await api<{ item: Item }>('/api/items', {
       method: 'POST',
@@ -538,6 +569,20 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             <Icon name="flask" size={16} /> Itens
           </button>
 
+          <label
+            className="field field-inline"
+            title="Nível em que os personagens começam a mesa: o assistente de criação aplica os níveis 2 até ele"
+          >
+            <span>NÍVEL INICIAL</span>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={gameConfig?.startingLevel ?? 1}
+              onChange={(event) => void changeStartingLevel(Number(event.target.value))}
+            />
+          </label>
+
           <button
             type="button"
             className={gameConfig?.levelUpUnlocked ? 'btn btn-levelup active' : 'btn btn-levelup'}
@@ -587,6 +632,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             characters={characters}
             onUpdate={patchCharacter}
             onDelete={deleteCharacter}
+            onReopenCreation={reopenCreation}
           />
         ) : tab === 'regions' ? (
           <RegionsTab

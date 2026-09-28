@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   createCharacterSchema,
+  creationRollRequestSchema,
+  creationStepSchema,
   levelUpSchema,
   moveInventoryItemSchema,
   updateCharacterSchema,
@@ -9,7 +11,6 @@ import {
 import {
   createCharacter,
   deleteCharacter,
-  finalizeCharacter,
   getSheetByUserId,
   levelUpCharacter,
   listCharacters,
@@ -18,6 +19,14 @@ import {
   updateCharacterAsMaster,
   type Actor,
 } from './characters.service.js';
+import {
+  creationLevelUp,
+  finalizeCreation,
+  getCreationState,
+  reopenCreation,
+  rollCreationAttribute,
+  saveCreationStep,
+} from './creation.service.js';
 
 export const charactersRouter = Router();
 
@@ -82,14 +91,86 @@ charactersRouter.patch('/me', authenticate, async (req, res) => {
 });
 
 /**
- * POST /api/characters/me/finalize — encerra a criação do personagem.
+ * GET /api/characters/me/creation — estado do assistente de criação.
  *
- * Botão **provisório** da ficha (será substituído pelo wizard de criação):
- * depois de finalizada, o jogador só mexe no estado de jogo e a construção
- * passa a mudar apenas pelo Level Up ou pelo mestre.
+ * Devolve a ficha (ou `null`, quando ainda não existe), o rascunho (modo,
+ * passo alcançado, rolagens e valores-base), os catálogos de raça/antecedente,
+ * o nível inicial da mesa e o que ainda falta para finalizar.
  */
-charactersRouter.post('/me/finalize', authenticate, async (req, res) => {
-  res.json({ character: await finalizeCharacter(actorFrom(req)) });
+charactersRouter.get('/me/creation', authenticate, async (req, res) => {
+  res.json(await getCreationState(actorFrom(req)));
+});
+
+/**
+ * PATCH /api/characters/me/creation — salva o passo concluído do assistente.
+ *
+ * Cada passo grava o que lhe pertence na própria ficha e avança o rascunho; é
+ * o que permite fechar o navegador e retomar de onde parou.
+ */
+charactersRouter.patch('/me/creation', authenticate, async (req, res) => {
+  const parsed = creationStepSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await saveCreationStep(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/creation/roll — rola 4d6 (descartando o menor) para
+ * um atributo.
+ *
+ * A rolagem usa o mesmo mecanismo da janela de dados, não avisa a mesa (só o
+ * histórico do mestre) e fica guardada no rascunho. `restart` recomeça os seis
+ * valores.
+ */
+charactersRouter.post('/me/creation/roll', authenticate, async (req, res) => {
+  const parsed = creationRollRequestSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.status(201).json(await rollCreationAttribute(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/creation/level-up — aplica um nível durante a criação.
+ *
+ * É o passo 8 ("nível inicial da mesa") usando o MESMO assistente de Level Up,
+ * sem depender da liberação do mestre e sem consumir a liberação dele.
+ */
+charactersRouter.post('/me/creation/level-up', authenticate, async (req, res) => {
+  const parsed = levelUpSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await creationLevelUp(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/creation/finalize — último passo do assistente.
+ *
+ * Grava `creationFinalized = true` depois de conferir que nenhum passo ficou
+ * para trás. Dali em diante o jogador só mexe no estado de jogo.
+ */
+charactersRouter.post('/me/creation/finalize', authenticate, async (req, res) => {
+  res.json(await finalizeCreation(actorFrom(req)));
 });
 
 /**
@@ -173,6 +254,23 @@ charactersRouter.patch('/:id', authenticate, requireRole('MASTER'), async (req, 
   );
   res.json({ character });
 });
+
+/**
+ * POST /api/characters/:id/creation/reopen — devolve a ficha ao assistente.
+ *
+ * Exclusivo do mestre: `creationFinalized` volta para `false` e o jogador
+ * reencontra o wizard de criação no próximo acesso (com o que já existia
+ * preenchido). É o único caminho de volta: o jogador não refaz a criação
+ * sozinho.
+ */
+charactersRouter.post(
+  '/:id/creation/reopen',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    res.json({ character: await reopenCreation(String(req.params.id), actorFrom(req)) });
+  },
+);
 
 /**
  * DELETE /api/characters/:id — exclui o personagem **e a conta do jogador**.

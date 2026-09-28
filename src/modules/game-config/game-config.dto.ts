@@ -10,5 +10,10 @@ export interface GameConfigDto {
   levelUpUnlocked: boolean;
   /** Número da liberação atual, comparado com `Character.lastLevelUpRelease`. */
   levelUpRelease: number;
+  /**
+   * Nível em que os personagens começam a mesa. Quando é maior que 1, o
+   * assistente de criação aplica os níveis 2 até ele ao concluir a montagem.
+   */
+  startingLevel: number;
   updatedAt: string;
 }

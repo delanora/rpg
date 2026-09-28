@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { AppHeader } from '../components/AppHeader';
-import { FinalizeCreationDialog } from '../components/FinalizeCreationDialog';
+import { CreationWizard } from '../components/CreationWizard';
 import { Icon } from '../components/Icon';
 import { LevelUpDialog } from '../components/LevelUpDialog';
 import { PresentationOverlay } from '../components/PresentationOverlay';
@@ -37,7 +37,6 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const { logout } = useAuth();
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [presentation, setPresentation] = useState<Presentation | null>(null);
   // Aviso de que o mestre mexeu na ficha (com quem e quando).
@@ -45,8 +44,6 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // Configuração da mesa: controla se o botão Level Up está habilitado.
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
-  // Confirmação do fim da criação (botão provisório, ver FinalizeCreationDialog).
-  const [finalizeOpen, setFinalizeOpen] = useState(false);
   // Seção da ficha aberta logo abaixo do painel de combate (ou nenhuma).
   const [combatView, setCombatView] = useState<SheetShortcut | null>(null);
 
@@ -190,34 +187,35 @@ export function SheetPage({ user }: { user: SessionUser }) {
         ? 'O mestre liberou o Level Up!'
         : 'Você já usou esta liberação. Aguarde o mestre liberar de novo.';
 
-  /**
-   * Encerra a criação do personagem. Depois disso a ficha fica travada para o
-   * jogador nos campos de construção — só o estado de jogo segue editável.
-   */
-  const finalizeCreation = useCallback(async () => {
-    const { character: saved } = await api<{ character: Character }>(
-      '/api/characters/me/finalize',
-      { method: 'POST' },
-    );
+  /** Aplica a ficha vinda do assistente de criação (a fonte de verdade é dele). */
+  const adoptCreatedSheet = useCallback((saved: Character) => {
     setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
   }, []);
 
-  const createSheet = useCallback(async () => {
-    setBusy(true);
-    setError(null);
+  // O assistente abre sozinho para o jogador sem ficha ou com a criação aberta,
+  // e bloqueia o acesso à ficha até o último passo.
+  const needsWizard = !loading && (!character || !character.creationFinalized);
 
-    try {
-      const { character: created } = await api<{ character: Character }>('/api/characters/me', {
-        method: 'POST',
-        body: {},
-      });
-      setCharacter(created);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível criar a ficha.');
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  if (needsWizard) {
+    return (
+      <>
+        {error ? (
+          <div className="banner banner-error">
+            {error}
+            <button type="button" className="btn btn-small" onClick={() => setError(null)}>
+              fechar
+            </button>
+          </div>
+        ) : null}
+
+        <CreationWizard
+          user={user}
+          onCharacter={adoptCreatedSheet}
+          onFinished={adoptCreatedSheet}
+        />
+      </>
+    );
+  }
 
   return (
     <div className={combat ? 'app-shell combat-active' : 'app-shell'}>
@@ -310,20 +308,9 @@ export function SheetPage({ user }: { user: SessionUser }) {
               </section>
             ) : null}
 
-            {!character ? (
-              <div className="empty-state">
-                <h2>Você ainda não tem uma ficha</h2>
-                <p>Crie sua ficha para começar a preencher seus dados de D&amp;D 5e.</p>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={createSheet}
-                  disabled={busy}
-                >
-                  {busy ? 'Criando...' : 'Criar minha ficha'}
-                </button>
-              </div>
-            ) : (
+            {/* Sem ficha o assistente de criação já tomou a tela (ver
+                `needsWizard` acima); aqui a ficha está montada e em jogo. */}
+            {character ? (
               <>
                 <div className="levelup-bar">
                   <button
@@ -336,22 +323,12 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   </button>
                   {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
 
-                  {/* Botão provisório do fim da criação (o wizard o substitui). */}
-                  {character.creationFinalized ? (
-                    <span className="levelup-hint creation-locked-hint">
-                      <Icon name="quill" size={14} /> ficha finalizada: a montagem só muda pelo
-                      Level Up (ou pelo mestre)
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => setFinalizeOpen(true)}
-                      title="Encerrar a criação: depois disso só o estado de jogo fica editável para você"
-                    >
-                      <Icon name="scroll" size={16} /> Finalizar criação
-                    </button>
-                  )}
+                  {/* A criação já foi finalizada: a montagem só muda pelo Level Up
+                      ou pelo mestre (o mestre pode reabrir a criação pelo painel). */}
+                  <span className="levelup-hint creation-locked-hint">
+                    <Icon name="quill" size={14} /> criação finalizada: a montagem só muda pelo
+                    Level Up (ou pelo mestre)
+                  </span>
                 </div>
 
                 <SheetView
@@ -371,16 +348,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
                     }
                   />
                 ) : null}
-
-                {finalizeOpen ? (
-                  <FinalizeCreationDialog
-                    characterName={character.name}
-                    onCancel={() => setFinalizeOpen(false)}
-                    onConfirm={finalizeCreation}
-                  />
-                ) : null}
               </>
-            )}
+            ) : null}
           </>
         )}
       </main>

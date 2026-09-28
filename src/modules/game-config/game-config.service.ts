@@ -1,5 +1,6 @@
 import type { GameConfig } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
+import { LEVEL_MAX, LEVEL_MIN } from '../shared/dnd5e.js';
 import { ServerEvents, type GameConfigPayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import type { GameConfigDto } from './game-config.dto.js';
@@ -11,6 +12,7 @@ function toGameConfigDto(config: GameConfig): GameConfigDto {
   return {
     levelUpUnlocked: config.levelUpUnlocked,
     levelUpRelease: config.levelUpRelease,
+    startingLevel: config.startingLevel,
     updatedAt: config.updatedAt.toISOString(),
   };
 }
@@ -50,6 +52,27 @@ export async function setLevelUpUnlocked(unlocked: boolean): Promise<GameConfigD
   const config = await prisma.gameConfig.update({
     where: { id: CONFIG_ID },
     data: { levelUpUnlocked: unlocked, levelUpRelease },
+  });
+
+  const dto = toGameConfigDto(config);
+  broadcast(dto);
+  return dto;
+}
+
+/**
+ * Define o nível em que a mesa começa (1 a 20).
+ *
+ * Vale para as PRÓXIMAS criações: o assistente de um personagem em montagem lê
+ * este valor e aplica os níveis 2..N no passo de progressão. Personagens já
+ * finalizados não são tocados.
+ */
+export async function setStartingLevel(level: number): Promise<GameConfigDto> {
+  const clamped = Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, Math.floor(level)));
+
+  await getGameConfig();
+  const config = await prisma.gameConfig.update({
+    where: { id: CONFIG_ID },
+    data: { startingLevel: clamped },
   });
 
   const dto = toGameConfigDto(config);

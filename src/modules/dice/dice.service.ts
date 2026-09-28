@@ -207,6 +207,11 @@ function publish(roll: DiceRollDto, actor: DiceActor): void {
     // de quem rolou. A pública chega a toda a mesa (jogadores e mestres).
     if (roll.isPrivate) {
       broadcaster.toUser(actor.userId, ServerEvents.DICE_ROLL, payload);
+    } else if (roll.kind === 'creation') {
+      // Rolagem de criação de personagem: a mesa NÃO é avisada (e nem vê o
+      // "está rolando"), mas ela entra no log do mestre — é para lá que o
+      // evento vai. O autor já recebeu o resultado na resposta da rota.
+      broadcaster.toMasters(ServerEvents.DICE_ROLL, payload);
     } else {
       broadcaster.toTable(ServerEvents.DICE_ROLL, payload);
     }
@@ -216,9 +221,12 @@ function publish(roll: DiceRollDto, actor: DiceActor): void {
 }
 
 export async function rollTableDice(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
+  const kind: DiceRollKind = input.kind ?? 'free';
+
   // Antes de sortear, avisa a mesa que os dados estão rolando (a janela de
-  // quem assiste entra na mesma animação de queda).
-  markRollTumbling(actor);
+  // quem assiste entra na mesma animação de queda). A rolagem da criação de
+  // personagem passa longe disso: ela não é anunciada na mesa.
+  if (kind !== 'creation') markRollTumbling(actor);
 
   // Vantagem e desvantagem são mutuamente exclusivas; se vierem as duas, o
   // servidor ignora as duas (a interface já impede).
@@ -228,7 +236,6 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
   const dice = input.dice.flatMap((die) => rollGroup(die.sides, advantage, disadvantage));
 
   const bonus = input.bonus ?? 0;
-  const kind: DiceRollKind = input.kind ?? 'free';
   const diceTotal = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
 
   // O nome de quem rolou vem da ficha do usuário (cai no nome de exibição

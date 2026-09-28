@@ -40,6 +40,7 @@ import {
 } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { ItemDetails } from '../shared/item-details.js';
+import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
 import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
 import { armorPiecesFrom } from '../shared/armor-class.js';
 import { syncInventory, type CatalogSnapshot } from './inventory-sync.js';
@@ -148,6 +149,13 @@ export interface CharacterDto {
    * continua editando tudo.
    */
   creationFinalized: boolean;
+  /**
+   * Rascunho do assistente de criação (ver shared/creation.ts): modo escolhido,
+   * passo alcançado, rolagens de 4d6 e valores-base dos atributos. Só vale
+   * enquanto `creationFinalized` for falso — é o que permite retomar a criação
+   * de onde parou.
+   */
+  creationDraft: CreationDraft;
   /** Nível total do personagem (soma dos níveis das classes). */
   level: number;
   /**
@@ -360,6 +368,7 @@ export function toCharacterDto(
     classState,
     classAdjustments,
     creationFinalized: character.creationFinalized,
+    creationDraft: normalizeCreationDraft(character.creationDraft),
     level,
     lastLevelUpRelease: character.lastLevelUpRelease,
     background: character.background,

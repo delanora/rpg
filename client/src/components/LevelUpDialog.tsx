@@ -9,6 +9,12 @@ interface LevelUpDialogProps {
   character: Character;
   onClose: () => void;
   onApplied: (character: Character) => void;
+  /**
+   * Como aplicar o nível. O padrão é o Level Up da ficha (liberado pelo mestre);
+   * o assistente de criação passa a rota de criação, que aplica os níveis
+   * iniciais da mesa sem depender de liberação.
+   */
+  apply?: (request: LevelUpRequest) => Promise<Character>;
 }
 
 type HpMode = 'roll' | 'average';
@@ -23,7 +29,12 @@ type AsiMode = 'ability' | 'feat';
  * rola o dado e aplica as regras. Ao concluir, o botão Level Up se desabilita
  * para este jogador até o mestre liberar de novo.
  */
-export function LevelUpDialog({ character, onClose, onApplied }: LevelUpDialogProps) {
+export function LevelUpDialog({
+  character,
+  onClose,
+  onApplied,
+  apply: applyLevelUp = levelUpCharacter,
+}: LevelUpDialogProps) {
   const [classKey, setClassKey] = useState<string>(character.classes[0]?.classKey ?? '');
   const [subclass, setSubclass] = useState('');
   const [hp, setHp] = useState<HpMode>('average');
@@ -142,7 +153,7 @@ export function LevelUpDialog({ character, onClose, onApplied }: LevelUpDialogPr
     setBusy(true);
     setError(null);
     try {
-      const updated = await levelUpCharacter(request);
+      const updated = await applyLevelUp(request);
       onApplied(updated);
       onClose();
     } catch (err) {
