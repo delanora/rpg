@@ -6225,21 +6225,28 @@ input[type='checkbox']:focus-visible,
    outras janelas, com a trilha dos nove passos no topo.
    ========================================================================== */
 
-.wizard-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 45;
-  overflow-y: auto;
-  padding: var(--space-3) var(--space-2) 0;
+/*
+ * A criação é uma TELA do app, não um overlay: o cabeçalho (tema, som, presença)
+ * fica visível o tempo todo e a página rola normalmente. O pergaminho de fundo vem
+ * de `.creation-shell` (ver o fim deste bloco, junto de SheetPage).
+ */
+.creation-shell {
   background:
     radial-gradient(ellipse 60% 45% at 12% 0%, rgba(255, 250, 230, 0.5), transparent 65%),
     radial-gradient(ellipse 80% 70% at 50% 108%, rgba(90, 62, 28, 0.28), transparent 62%),
     linear-gradient(160deg, var(--bg), var(--bg-2));
-  animation: ink-in 0.3s ease both;
 }
 
-[data-theme='dark'] .wizard-overlay {
+[data-theme='dark'] .creation-shell {
   background: linear-gradient(160deg, var(--bg), var(--bg-2));
+}
+
+.creation-main {
+  padding-top: 1rem;
+}
+
+.wizard-overlay {
+  animation: ink-in 0.3s ease both;
 }
 
 .wizard {
@@ -6289,21 +6296,28 @@ input[type='checkbox']:focus-visible,
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.35rem;
+  /* Os NOVE passos numa única fileira, todos com a mesma largura: nada de
+     quebrar em duas linhas de tamanhos diferentes. */
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 0.3rem;
+  align-items: stretch;
 }
 
 .wizard-step-chip {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.5rem;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  padding: 0.5rem 0.25rem;
+  min-height: 4.15rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   color: var(--ink-faint);
   font-size: 0.76rem;
   line-height: 1.2;
+  text-align: center;
 }
 
 .wizard-step-number {
@@ -6321,7 +6335,8 @@ input[type='checkbox']:focus-visible,
 
 .wizard-step-label {
   font-family: var(--font-display);
-  letter-spacing: 0.02em;
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
 }
 
 .wizard-step-chip.done {
@@ -6441,37 +6456,163 @@ input[type='checkbox']:focus-visible,
 
 /* --- Passo 6: rolagem de 4d6 --------------------------------------------- */
 
+/*
+ * O palco da rolagem: um retângulo escuro (mesa de veludo/pergaminho noturno)
+ * com brilho dourado. É escuro nos DOIS temas de propósito — os dados em osso
+ * ficam em evidência e a cena tem cara de "rolagem de verdade".
+ */
+.wizard-roll-stage {
+  position: relative;
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem 1.15rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 6px;
+  background:
+    radial-gradient(ellipse 70% 90% at 50% 6%, rgba(224, 184, 63, 0.22), transparent 72%),
+    radial-gradient(ellipse 90% 100% at 50% 120%, rgba(0, 0, 0, 0.6), transparent 70%),
+    linear-gradient(180deg, #241809, #140d06);
+  box-shadow:
+    inset 0 0 0 1px rgba(224, 184, 63, 0.22),
+    inset 0 22px 44px -30px rgba(0, 0, 0, 0.95),
+    var(--shadow-deep);
+  overflow: hidden;
+}
+
+.wizard-roll-stage::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(224, 184, 63, 0.2);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.wizard-roll-stage-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(224, 184, 63, 0.22);
+}
+
+.wizard-roll-count {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d7c19a;
+}
+
+.wizard-roll-count strong {
+  font-size: 1.05rem;
+  color: var(--gold-bright);
+}
+
+.wizard-roll-count small {
+  color: rgba(215, 193, 154, 0.6);
+}
+
 .wizard-roll-bar {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
+/* Os botões secundários acompanham o couro escuro do palco. */
+.wizard-roll-stage .btn:not(.btn-primary) {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(224, 184, 63, 0.45);
+  color: #f2e3c4;
+}
+
+.wizard-roll-stage .btn:not(.btn-primary):hover:not(:disabled) {
+  background: rgba(224, 184, 63, 0.18);
+  border-color: var(--gold);
+  color: #fff;
+}
+
 .wizard-dice {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  min-height: 6rem;
-  padding: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: radial-gradient(circle at 50% 30%, var(--surface-3), var(--surface-4));
-  box-shadow: inset 0 2px 6px rgba(43, 33, 21, 0.18);
+  gap: 0.6rem;
+  min-height: 7.5rem;
+  padding: 0.9rem 0.5rem 1.5rem;
+}
+
+/* Sombra de "chão" sob os dados. O dado em si não pode levar `filter` (isso
+   achataria a cena 3D dos filhos), então a sombra vem deste pseudo-elemento. */
+.wizard-dice::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0.7rem;
+  width: min(16rem, 72%);
+  height: 1.5rem;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.6), transparent 72%);
+  pointer-events: none;
 }
 
 /* Dados em tamanho de mesa dentro do wizard. */
 .wizard-dice .ddie {
-  --ddie-box: 4.8rem;
-  --ddie-scale: 0.35;
+  --ddie-box: 5.6rem;
+  --ddie-scale: 0.41;
 }
 
 .wizard-dice-hint {
+  position: relative;
+  z-index: 1;
   width: 100%;
-  text-align: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
   font-size: 0.86rem;
-  color: var(--ink-soft);
+  color: #cdb892;
+}
+
+.wizard-dice-dropped {
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  color: rgba(205, 184, 146, 0.8);
+}
+
+.wizard-dice-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 18px -6px var(--glow), inset 0 0 0 1px rgba(224, 184, 63, 0.25);
+}
+
+.wizard-dice-total small {
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #c9b48c;
+}
+
+.wizard-dice-total strong {
+  font-family: var(--font-title);
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--gold-bright);
+  text-shadow: 0 0 16px rgba(224, 184, 63, 0.5);
 }
 
 .wizard-roll-list {
@@ -6479,18 +6620,20 @@ input[type='checkbox']:focus-visible,
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
   gap: 0.45rem;
 }
 
 .wizard-roll {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
+  padding: 0.45rem 0.6rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .wizard-roll.empty {
@@ -6501,15 +6644,20 @@ input[type='checkbox']:focus-visible,
 
 .wizard-roll.used {
   border-color: var(--gold);
-  box-shadow: 0 0 12px -5px var(--glow);
+  box-shadow: 0 0 0 1px var(--gold-hair), 0 0 16px -6px var(--glow);
 }
 
 .wizard-roll-value {
-  font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-family: var(--font-title);
+  font-size: 1.5rem;
   font-weight: 700;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  color: var(--wine);
+}
+
+[data-theme='dark'] .wizard-roll-value {
+  color: var(--gold-bright);
 }
 
 .wizard-roll-dice {
@@ -6582,5 +6730,21 @@ input[type='checkbox']:focus-visible,
 
   .wizard-review strong {
     max-width: 50%;
+  }
+
+  /* Em tela estreita a trilha fica só com os números, mas continua alinhada. */
+  .wizard-step-label {
+    display: none;
+  }
+
+  .wizard-step-chip {
+    flex-direction: row;
+    justify-content: center;
+    min-height: 2.1rem;
+    padding: 0.35rem 0.15rem;
+  }
+
+  .wizard-roll-stage-head {
+    justify-content: center;
   }
 }

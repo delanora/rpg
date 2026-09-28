@@ -120,63 +120,78 @@ export function AbilityStep({
         histórico do mestre.
       </p>
 
-      <div className="wizard-roll-bar">
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={disabled || rolling || rolls.length >= 6}
-          onClick={() => void roll(false)}
-        >
-          <Icon name="die" size={15} />{' '}
-          {rolling ? 'rolando...' : `rolar 4d6 (${rolls.length}/6)`}
-        </button>
+      {/* A mesa de rolagem: um palco escuro (pergaminho noturno) onde os dados
+          caem, com os controles na cabeceira e o resultado em destaque. */}
+      <div className="wizard-roll-stage">
+        <div className="wizard-roll-stage-head">
+          <span className="wizard-roll-count">
+            rolagens <strong>{rolls.length}</strong>
+            <small>/6</small>
+          </span>
 
-        {rolls.length > 0 ? (
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={disabled || rolling || !restarting}
-            onClick={() => void roll(true)}
-          >
-            {restarting ? 'confirmar: rolar os seis de novo' : 'rolar novamente'}
-          </button>
-        ) : null}
+          <div className="wizard-roll-bar">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={disabled || rolling || rolls.length >= 6}
+              onClick={() => void roll(false)}
+            >
+              <Icon name="die" size={15} />{' '}
+              {rolling ? 'rolando...' : `rolar 4d6 (${rolls.length}/6)`}
+            </button>
 
-        {rolls.length > 0 && !restarting && rolls.length < 6 ? (
-          <button type="button" className="btn btn-small" onClick={() => setRestarting(true)}>
-            começar de novo
-          </button>
-        ) : null}
-      </div>
+            {rolls.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-small"
+                disabled={disabled || rolling || !restarting}
+                onClick={() => void roll(true)}
+              >
+                {restarting ? 'confirmar: rolar os seis de novo' : 'rolar novamente'}
+              </button>
+            ) : null}
 
-      {/* Ring da última rolagem (mesmos dados 3D da janela de dados). */}
-      <div className="wizard-dice">
-        {animating ? (
-          <>
-            {animating.dice.map((_, index) => (
-              <Die3D key={`t-${index}`} sides={6} value={null} reveal={false} tumbling />
-            ))}
-            <span className="wizard-dice-hint">rolando...</span>
-          </>
-        ) : lastIndex >= 0 ? (
-          <>
-            {rolls[lastIndex].dice.map((value, index) => (
-              <Die3D
-                key={`s-${index}`}
-                sides={6}
-                value={value}
-                reveal
-                dropped={index === rolls[lastIndex].dropped}
-              />
-            ))}
-            <span className="wizard-dice-hint">
-              descartado: <s>{rolls[lastIndex].dice[rolls[lastIndex].dropped]}</s> · valor{' '}
-              <strong>{values[lastIndex]}</strong>
-            </span>
-          </>
-        ) : (
-          <span className="wizard-dice-hint">Nenhuma rolagem ainda — use "rolar 4d6".</span>
-        )}
+            {rolls.length > 0 && !restarting && rolls.length < 6 ? (
+              <button type="button" className="btn btn-small" onClick={() => setRestarting(true)}>
+                começar de novo
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="wizard-dice">
+          {animating ? (
+            <>
+              {animating.dice.map((_, index) => (
+                <Die3D key={`t-${index}`} sides={6} value={null} reveal={false} tumbling />
+              ))}
+              <span className="wizard-dice-hint">rolando os 4d6...</span>
+            </>
+          ) : lastIndex >= 0 ? (
+            <>
+              {rolls[lastIndex].dice.map((value, index) => (
+                <Die3D
+                  key={`s-${index}`}
+                  sides={6}
+                  value={value}
+                  reveal
+                  dropped={index === rolls[lastIndex].dropped}
+                />
+              ))}
+              <span className="wizard-dice-hint">
+                <span className="wizard-dice-dropped">
+                  descartado <s>{rolls[lastIndex].dice[rolls[lastIndex].dropped]}</s>
+                </span>
+                <span className="wizard-dice-total">
+                  <small>valor</small>
+                  <strong>{values[lastIndex]}</strong>
+                </span>
+              </span>
+            </>
+          ) : (
+            <span className="wizard-dice-hint">Nenhuma rolagem ainda — use "rolar 4d6".</span>
+          )}
+        </div>
       </div>
 
       {/* Os seis valores: os já distribuídos aparecem marcados. */}
