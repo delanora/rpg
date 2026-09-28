@@ -569,6 +569,8 @@ export interface CreationStepRequest {
   abilityChoices?: AbilityKey[];
   background?: string;
   classKey?: string;
+  /** Subclasse, quando a classe já a exige no nível 1 (passo 5). */
+  subclass?: string;
   baseAbilities?: Record<AbilityKey, number>;
   skills?: string[];
 }

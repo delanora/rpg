@@ -196,12 +196,35 @@ function resolveClassPatch(
       throw new HttpError(`Para entrar em ${definition.name} ${missing}.`, 400);
     }
 
-    // Troca da classe inicial (assistente de criação): a subclasse já escolhida
-    // não sobrevive à troca, porque ela é da classe antiga.
-    const subclass =
-      existing.length === 1 && existing[0].classKey === definition.key
-        ? existing[0].subclass
-        : '';
+    // Subclasse do NÍVEL 1 (Clérigo, Feiticeiro e Bruxo): o livro já exige a
+    // subclasse junto da primeira classe, então o passo da classe pode (e deve)
+    // trazê-la. Nas demais classes ela só entra no nível que a libera.
+    const requestedSubclass = chosen.subclass.trim();
+    const keepsExistingSubclass =
+      existing.length === 1 && existing[0].classKey === definition.key;
+    let subclass = '';
+
+    if (requestedSubclass !== '') {
+      if (definition.subclassLevel > 1) {
+        throw new HttpError(
+          `A subclasse de ${definition.name} é escolhida a partir do nível ${definition.subclassLevel} dela.`,
+          400,
+        );
+      }
+      const found = findSubclass(definition, requestedSubclass);
+      if (!found) throw new HttpError('Subclasse desconhecida.', 400);
+      subclass = found.name;
+    } else if (keepsExistingSubclass) {
+      // Voltou ao passo sem mexer na classe: a subclasse já escolhida fica.
+      subclass = existing[0].subclass;
+    }
+
+    // A obrigatoriedade vale para o ASSISTENTE (que mostra a escolha): o seletor
+    // antigo de "primeira classe" da ficha não tem onde pedir a subclasse, então
+    // lá ela continua podendo ser preenchida depois, no campo da classe.
+    if (subclass === '' && definition.subclassLevel <= 1 && options.allowReplace) {
+      throw new HttpError(`Escolha a subclasse de ${definition.name}.`, 400);
+    }
 
     return [{ classKey: definition.key, subclass, level: 1 }];
   }

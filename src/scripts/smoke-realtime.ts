@@ -3083,6 +3083,62 @@ async function main(): Promise<void> {
     ).status === 400,
   );
 
+  // Clérigo, Feiticeiro e Bruxo escolhem a SUBCLASSE já no nível 1 (Domínio,
+  // Origem e Patrono): o passo da classe exige a escolha.
+  check(
+    'classe com subclasse no nível 1 exige a escolha (400)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 5, classKey: 'cleric' },
+      })
+    ).status === 400,
+  );
+  check(
+    'subclasse fora do catálogo é recusada (400)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 5, classKey: 'cleric', subclass: 'Domínio Inventado' },
+      })
+    ).status === 400,
+  );
+  check(
+    'subclasse de classe que só a libera depois é recusada (400)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 5, classKey: 'fighter', subclass: 'Campeão' },
+      })
+    ).status === 400,
+  );
+  const clericPick = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'cleric', subclass: 'Domínio da Vida' },
+  });
+  check(
+    'a subclasse do nível 1 entra na ficha junto da classe (200)',
+    clericPick.status === 200 &&
+      clericPick.data?.character?.classes?.[0]?.classKey === 'cleric' &&
+      clericPick.data?.character?.classes?.[0]?.subclass === 'Domínio da Vida',
+    JSON.stringify(clericPick.data?.character?.classes),
+  );
+  const clericKept = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'cleric' },
+  });
+  check(
+    'voltar ao passo da classe sem trocar nada mantém a subclasse (200)',
+    clericKept.status === 200 &&
+      clericKept.data?.character?.classes?.[0]?.subclass === 'Domínio da Vida',
+    JSON.stringify(clericKept.data?.character?.classes),
+  );
+
   // A classe é escolhida ANTES dos atributos: o pré-requisito é conferido no
   // passo seguinte, com os valores finais (Paladino exige Força 13 e Carisma 13).
   const paladinClass = await api('/api/characters/me/creation', {

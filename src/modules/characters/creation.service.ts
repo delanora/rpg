@@ -298,6 +298,13 @@ function missingForFinalize(character: Character, draft: CreationDraft): string[
   if (!character.background.trim()) missing.push('o antecedente (passo 4)');
   if (entries.length === 0) missing.push('a classe (passo 5)');
 
+  // Clérigo/Feiticeiro/Bruxo precisam da subclasse desde o nível 1.
+  const firstClass = entries[0];
+  const firstDefinition = firstClass ? getClassDefinition(firstClass.classKey) : null;
+  if (firstDefinition && firstDefinition.subclassLevel <= 1 && !firstClass.subclass) {
+    missing.push('a subclasse (passo 5)');
+  }
+
   if (!ABILITY_KEYS.every((ability) => draft.baseAbilities[ability] !== undefined)) {
     missing.push('os atributos (passo 6)');
   }
@@ -442,12 +449,17 @@ export async function saveCreationStep(
       const definition = getClassDefinition(classKey);
       if (!definition) throw new HttpError('Classe desconhecida.', 400);
 
+      // Clérigo, Feiticeiro e Bruxo escolhem a subclasse já na PRIMEIRA classe
+      // (Domínio, Origem e Patrono). Ela vem neste mesmo passo e é validada
+      // junto das classes (ver resolveClassPatch, em characters.service.ts).
+      const subclass = (input.subclass ?? '').trim();
+
       // O pré-requisito de atributo é conferido aqui (com os valores já
       // gravados) e de novo no passo 6, quando os atributos existem.
       const current = normalizeClassEntries(character.classes);
       if (current.length === 0 || (current.length === 1 && current[0].level === 1)) {
         // Primeira classe (ou troca da classe inicial, ainda no nível 1).
-        patch.classes = [{ classKey: definition.key, subclass: '' }];
+        patch.classes = [{ classKey: definition.key, subclass }];
       } else if (current.length !== 1 || current[0].classKey !== definition.key) {
         // Ficha reaberta já com níveis: trocar de classe aqui apagaria os
         // níveis já ganhos, então a troca continua sendo do Level Up/mestre.
