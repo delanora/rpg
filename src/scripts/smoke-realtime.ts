@@ -2923,6 +2923,17 @@ async function main(): Promise<void> {
     JSON.stringify(raceCatalog.find((race: any) => race.key === 'human')?.abilityBonuses),
   );
 
+  // Antecedentes: os 13 do Livro do Jogador, cada um com as duas perícias.
+  const backgroundCatalog: any[] = emptyCreation.data?.creation?.backgroundCatalog ?? [];
+  const sage = backgroundCatalog.find((item: any) => item.key === 'sage');
+  check(
+    'o catálogo de antecedentes traz os 13 do PHB com as perícias',
+    backgroundCatalog.length === 13 &&
+      JSON.stringify(sage?.skills) === JSON.stringify(['arcana', 'history']) &&
+      backgroundCatalog.every((item: any) => (item.skills ?? []).length === 2),
+    JSON.stringify(backgroundCatalog.map((item: any) => item.key)),
+  );
+
   // Passo 1: o rascunho É a ficha (criada aqui), com a criação em aberto.
   const stepOne = await api('/api/characters/me/creation', {
     method: 'PATCH',
@@ -3062,6 +3073,7 @@ async function main(): Promise<void> {
     [4, { background: 'Sábio' }],
   ];
   const walkStatuses: number[] = [];
+  let sageStep: any = null;
   for (const [step, body] of walkSteps) {
     const walked = await api('/api/characters/me/creation', {
       method: 'PATCH',
@@ -3069,11 +3081,23 @@ async function main(): Promise<void> {
       body: { step, ...body },
     });
     walkStatuses.push(walked.status);
+    if (step === 4) sageStep = walked;
   }
   check(
     'identidade, raça e antecedente são salvos passo a passo (200)',
     walkStatuses.every((status) => status === 200),
     JSON.stringify(walkStatuses),
+  );
+  check(
+    'o antecedente concede as perícias sem gastar as escolhas da classe',
+    sageStep?.data?.character?.skills?.arcana?.proficient === true &&
+      sageStep?.data?.character?.skills?.history?.proficient === true &&
+      (sageStep?.data?.creation?.skillPicks ?? []).length === 0,
+    JSON.stringify({
+      arcana: sageStep?.data?.character?.skills?.arcana,
+      history: sageStep?.data?.character?.skills?.history,
+      picks: sageStep?.data?.creation?.skillPicks,
+    }),
   );
 
   check(

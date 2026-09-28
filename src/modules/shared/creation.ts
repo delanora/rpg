@@ -8,11 +8,11 @@
  *   passo alcançado, as rolagens de 4d6 e os valores-base dos atributos);
  * - os catálogos de raças e antecedentes.
  *
- * O catálogo de RAÇAS do Livro do Jogador já está preenchido: o passo 3 lista as
- * opções (uma por linhagem/sub-raça) em vez de pedir texto livre, e os bônus de
- * atributo entram sozinhos na ficha (ver `racialAbilityBonuses` e o uso em
- * creation.service.ts). O catálogo de ANTECEDENTES ainda está vazio: enquanto
- * não existir, o passo 4 continua pedindo o texto livre.
+ * Os catálogos de RAÇAS e ANTECEDENTES do Livro do Jogador já estão preenchidos:
+ * os passos 3 e 4 listam as opções em vez de pedir texto livre, e o que cada uma
+ * concede entra sozinho na ficha — os bônus de atributo (ver
+ * `racialAbilityBonuses`) e as perícias do antecedente (ver `backgroundSkills`),
+ * ambos usados em creation.service.ts.
  */
 
 import { ABILITY_KEYS, type AbilityKey } from './dnd5e.js';
@@ -76,9 +76,10 @@ export interface RaceOption {
   abilityChoice?: number;
 }
 
-/** Um antecedente do catálogo. */
+/** Um antecedente do catálogo (um dos 13 do Livro do Jogador). */
 export interface BackgroundOption {
   key: string;
+  /** Nome, como fica gravado em `characters.background` (ex.: "Herói do Povo"). */
   name: string;
   description?: string;
   /** Perícias concedidas pelo antecedente (chaves de `SKILLS`). */
@@ -207,8 +208,94 @@ export const RACE_CATALOG: readonly RaceOption[] = [
   },
 ];
 
-/** Antecedentes do catálogo. Vazio: o assistente usa texto livre. */
-export const BACKGROUND_CATALOG: readonly BackgroundOption[] = [];
+/**
+ * Antecedentes do Livro do Jogador (2014) — os 13.
+ *
+ * Cada um concede DUAS perícias com proficiência (as do livro), aplicadas pelo
+ * passo 4 e somadas às escolhidas na classe, sem consumir as escolhas dela (ver
+ * `skillsPatch` em creation.service.ts). Ferramentas, idiomas e a característica
+ * do antecedente ainda não são modelados — só a perícia entra na ficha.
+ */
+export const BACKGROUND_CATALOG: readonly BackgroundOption[] = [
+  {
+    key: 'acolyte',
+    name: 'Acólito',
+    description: 'Você serviu a um templo e conhece os ritos, as orações e os segredos da fé.',
+    skills: ['insight', 'religion'],
+  },
+  {
+    key: 'charlatan',
+    name: 'Charlatão',
+    description: 'Você sempre teve um plano, uma identidade falsa e a lábia para vendê-la.',
+    skills: ['deception', 'sleightOfHand'],
+  },
+  {
+    key: 'criminal',
+    name: 'Criminoso',
+    description: 'Você tem contatos no submundo e um passado que prefere não comentar.',
+    skills: ['deception', 'stealth'],
+  },
+  {
+    key: 'entertainer',
+    name: 'Artista',
+    description: 'Você vive para a plateia: música, dança, malabarismo ou lábia de palco.',
+    skills: ['acrobatics', 'performance'],
+  },
+  {
+    key: 'folk-hero',
+    name: 'Herói do Povo',
+    description: 'Você veio do campo e o povo simples o tem como campeão.',
+    skills: ['animalHandling', 'survival'],
+  },
+  {
+    key: 'guild-artisan',
+    name: 'Artesão de Guilda',
+    description: 'Você é membro de uma guilda de artesãos, com carta, oficina e contatos.',
+    skills: ['insight', 'persuasion'],
+  },
+  {
+    key: 'hermit',
+    name: 'Eremita',
+    description: 'Você se isolou do mundo em busca de iluminação — e encontrou algo.',
+    skills: ['medicine', 'religion'],
+  },
+  {
+    key: 'noble',
+    name: 'Nobre',
+    description: 'Você nasceu com título, terras e a educação (e as dívidas) da nobreza.',
+    skills: ['history', 'persuasion'],
+  },
+  {
+    key: 'outlander',
+    name: 'Forasteiro',
+    description: 'Você cresceu nas terras selvagens, longe das cidades e das estradas.',
+    skills: ['athletics', 'survival'],
+  },
+  {
+    key: 'sage',
+    name: 'Sábio',
+    description: 'Você passou a vida entre livros e arquivos, caçando conhecimento proibido.',
+    skills: ['arcana', 'history'],
+  },
+  {
+    key: 'sailor',
+    name: 'Marinheiro',
+    description: 'Você navegou por anos: conhece cordas, tempestades e portos de todo lugar.',
+    skills: ['athletics', 'perception'],
+  },
+  {
+    key: 'soldier',
+    name: 'Soldado',
+    description: 'Você treinou e lutou num exército; a disciplina (ou a cicatriz) ficou.',
+    skills: ['athletics', 'intimidation'],
+  },
+  {
+    key: 'urchin',
+    name: 'Órfão de Rua',
+    description: 'Você cresceu sozinho nas ruas, rápido de mãos e invisível nos becos.',
+    skills: ['sleightOfHand', 'stealth'],
+  },
+];
 
 /** Busca a raça pelo `key` ou pelo nome digitado (aceita caixa diferente). */
 export function findRace(value: string): RaceOption | null {
@@ -265,7 +352,7 @@ export function raceChoiceCount(race: string): number {
   return findRace(race)?.abilityChoice ?? 0;
 }
 
-/** Perícias concedidas pelo antecedente escolhido (vazio sem catálogo). */
+/** Perícias concedidas pelo antecedente escolhido (vazio se ele não estiver no catálogo). */
 export function backgroundSkills(background: string): string[] {
   return findBackground(background)?.skills ?? [];
 }
