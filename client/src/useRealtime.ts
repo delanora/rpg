@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createSocket } from './socket';
 import type {
   AttackResolvedPayload,
+  CharacterDeletedPayload,
   CombatEndedPayload,
   CombatStartedPayload,
   CombatTurnPayload,
@@ -32,6 +33,8 @@ export type ConnectionState = 'connecting' | 'online' | 'offline';
 
 export interface RealtimeHandlers {
   onSheetUpdated?: (payload: SheetUpdatedPayload) => void;
+  /** O mestre excluiu um personagem junto com a conta do dono. */
+  onCharacterDeleted?: (payload: CharacterDeletedPayload) => void;
   onCreatureCreated?: (payload: CreatureCreatedPayload) => void;
   onCreatureUpdated?: (payload: CreatureUpdatedPayload) => void;
   onCreatureDeleted?: (payload: CreatureDeletedPayload) => void;
@@ -85,6 +88,10 @@ export function useRealtime(handlers: RealtimeHandlers) {
       setLastEventAt(payload.at);
       handlersRef.current.onSheetUpdated?.(payload);
     });
+
+    socket.on('character:deleted', (payload) =>
+      handlersRef.current.onCharacterDeleted?.(payload),
+    );
 
     socket.on('creature:created', (payload) => handlersRef.current.onCreatureCreated?.(payload));
     socket.on('creature:updated', (payload) => handlersRef.current.onCreatureUpdated?.(payload));

@@ -2,8 +2,14 @@ import { randomInt, randomUUID } from 'node:crypto';
 import type { Character, Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
-import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js';
+import { deleteUploadedImage } from '../../lib/uploads.js';
+import {
+  ServerEvents,
+  type CharacterDeletedPayload,
+  type SheetUpdatedPayload,
+} from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
+import { clearActiveRollFrom, forgetRollsFrom } from '../dice/dice.service.js';
 import { getGameConfig } from '../game-config/game-config.service.js';
 import { toCharacterDto, type CharacterDto, type InventoryItemDto } from './characters.dto.js';
 import {
@@ -692,6 +698,101 @@ export async function updateCharacterAsMaster(
     patch,
     master.displayName,
   );
+}
+
+/**
+ * Quantas conexões do usuário excluído esperamos o aviso chegar antes de
+ * derrubá-las (`disconnectUser`). Sem essa folga o evento pode se perder no
+ * fechamento do socket.
+ */
+const DISCONNECT_GRACE_MS = 250;
+
+/**
+ * Exclui um personagem **e a conta do jogador** que o interpreta.
+ *
+ * Ação exclusiva do mestre e irreversível: apaga o usuário (a ficha sai em
+ * cascata, pela relação `Character.userId`), tira o personagem de qualquer
+ * combate — um combatente órfão continuaria aparecendo na ordem de iniciativa
+ * —, apaga o avatar do disco e limpa o estado efêmero da sessão (faixa da
+ * janela de dados e log de rolagens).
+ *
+ * O dono recebe o aviso em tempo real e é desconectado; dali em diante o token
+ * dele não vale mais (`authenticate` confere se a conta ainda existe).
+ */
+export async function deleteCharacter(
+  characterId: string,
+  master: Actor,
+): Promise<CharacterDeletedPayload> {
+  const character = await prisma.character.findUnique({
+    where: { id: characterId },
+    select: {
+      id: true,
+      name: true,
+      avatarUrl: true,
+      userId: true,
+      user: { select: { username: true, role: true } },
+    },
+  });
+
+  if (!character) {
+    throw new HttpError('Ficha não encontrada.', 404);
+  }
+
+  // A conta do mestre é a chave da mesa: excluí-la por engano deixaria todo
+  // mundo sem painel de controle (e não há como recriar a mesma conta).
+  if (character.user.role === 'MASTER') {
+    throw new HttpError(
+      'A conta de um mestre não pode ser excluída por aqui — o mestre não tem ficha de jogador.',
+      403,
+    );
+  }
+
+  const { userId } = character;
+  const { username } = character.user;
+  const name = character.name;
+
+  await prisma.$transaction(async (tx) => {
+    // Fora do combate antes de sumir: o combatente guarda só identidade, mas
+    // sem o personagem ele vira uma linha fantasma na ordem de turnos.
+    await tx.combatant.deleteMany({
+      where: { OR: [{ ownerUserId: userId }, { characterId }] },
+    });
+
+    // A ficha sai junto (onDelete: Cascade na relação User -> Character).
+    await tx.user.delete({ where: { id: userId } });
+  });
+
+  if (character.avatarUrl) await deleteUploadedImage(character.avatarUrl);
+
+  // Estado que só existe na memória do servidor e apontava para ele.
+  clearActiveRollFrom(userId);
+  forgetRollsFrom(userId);
+
+  console.log(`[characters] "${name}" (${username}) excluído por ${master.displayName}`);
+
+  const payload: CharacterDeletedPayload = { characterId, userId, name, username };
+
+  try {
+    const broadcaster = getBroadcaster();
+    broadcaster.toMasters(ServerEvents.CHARACTER_DELETED, payload);
+    // O dono precisa saber por que a tela dele vai voltar ao login.
+    broadcaster.toUser(userId, ServerEvents.CHARACTER_DELETED, payload);
+
+    const timer = setTimeout(() => {
+      try {
+        getBroadcaster().disconnectUser(userId);
+      } catch (error) {
+        console.error('[characters] falha ao derrubar a sessão do usuário excluído:', error);
+      }
+    }, DISCONNECT_GRACE_MS);
+
+    // Não segura o processo vivo por causa do aviso.
+    timer.unref?.();
+  } catch (error) {
+    console.error('[characters] falha ao publicar a exclusão em tempo real:', error);
+  }
+
+  return payload;
 }
 
 /** Lista todas as fichas da mesa (uso exclusivo do mestre). */

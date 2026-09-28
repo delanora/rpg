@@ -76,6 +76,17 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       });
     },
 
+    // O mestre excluiu um personagem (junto com a conta do jogador): a ficha
+    // sai da lista e o combatente dela sai do combate em andamento.
+    onCharacterDeleted: (payload) => {
+      setCharacters((prev) => prev.filter((character) => character.id !== payload.characterId));
+      if (combat) {
+        void fetchActiveCombat()
+          .then(combatState.setCombat)
+          .catch(() => undefined);
+      }
+    },
+
     onCreatureCreated: (payload) => {
       setCreatures((prev) =>
         prev.some((creature) => creature.id === payload.creature.id)
@@ -376,6 +387,19 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /**
+   * Exclui um personagem: no servidor vão embora a ficha **e a conta do
+   * jogador** (`DELETE /api/characters/:id`). A confirmação fica no diálogo da
+   * aba Fichas; aqui não tratamos o erro de propósito — ele é do diálogo, que
+   * precisa continuar aberto para o mestre tentar de novo.
+   */
+  const deleteCharacter = useCallback(async (id: string) => {
+    await api(`/api/characters/${id}`, { method: 'DELETE' });
+    // Otimista: o evento `character:deleted` confirma e mantém as outras abas
+    // em dia (o servidor também refaz o combate anunciado).
+    setCharacters((prev) => prev.filter((character) => character.id !== id));
+  }, []);
+
   const createItem = useCallback(async (): Promise<Item> => {
     const { item } = await api<{ item: Item }>('/api/items', {
       method: 'POST',
@@ -559,7 +583,11 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onError={setError}
           />
         ) : tab === 'sheets' ? (
-          <SheetsTab characters={characters} onUpdate={patchCharacter} />
+          <SheetsTab
+            characters={characters}
+            onUpdate={patchCharacter}
+            onDelete={deleteCharacter}
+          />
         ) : tab === 'regions' ? (
           <RegionsTab
             regions={regions}

@@ -2540,6 +2540,144 @@ async function main(): Promise<void> {
 
   masterSocket.close();
 
+  // --- 13. Exclusão de personagem (com a conta do jogador) ------------------
+  console.log('\n13) Exclusão de personagem pelo mestre');
+
+  const ownSheet = await api('/api/characters/me', { token: playerToken });
+  const doomedCharacterId: string = ownSheet.data?.character?.id;
+  check('a ficha a excluir existe', Boolean(doomedCharacterId), JSON.stringify(ownSheet.data));
+
+  check(
+    'jogador NÃO exclui personagem (403)',
+    (
+      await api(`/api/characters/${doomedCharacterId}`, {
+        method: 'DELETE',
+        token: playerToken,
+      })
+    ).status === 403,
+  );
+
+  check(
+    'excluir ficha inexistente devolve 404',
+    (await api('/api/characters/nao-existe', { method: 'DELETE', token: masterToken })).status === 404,
+  );
+
+  // A conta do mestre é a chave da mesa: esta rota não apaga ficha de mestre.
+  const masterSheet = await api('/api/characters/me', {
+    method: 'POST',
+    token: masterToken,
+    body: {},
+  });
+  check(
+    'a conta de um mestre não é excluída por esta rota (403)',
+    (
+      await api(`/api/characters/${masterSheet.data?.character?.id}`, {
+        method: 'DELETE',
+        token: masterToken,
+      })
+    ).status === 403,
+    JSON.stringify(masterSheet.data),
+  );
+
+  // Combate de apoio: o personagem excluído também sai da ordem de iniciativa.
+  const doomedCombat = await api('/api/combat', {
+    method: 'POST',
+    token: masterToken,
+    body: { entries: [] },
+  });
+  createdCombatIds.push(doomedCombat.data?.combat?.id);
+  check(
+    'o combate de apoio traz o personagem que será excluído',
+    doomedCombat.data?.combat?.combatants?.some(
+      (item: any) => item.ownerUserId === playerUserId,
+    ) === true,
+    JSON.stringify(doomedCombat.data),
+  );
+
+  const logBefore = await api('/api/dice/history', { token: masterToken });
+  const playerRollsBefore = (logBefore.data?.rolls ?? []).filter(
+    (item: any) => item.actorUserId === playerUserId,
+  );
+  check('o log do mestre tem rolagens do personagem', playerRollsBefore.length > 0);
+
+  const masterBackSocket = connect(masterToken);
+  const playerBackSocket = connect(playerToken);
+  await Promise.all([
+    waitFor<any>(masterBackSocket, 'connection:ready').catch(() => null),
+    waitFor<any>(playerBackSocket, 'connection:ready').catch(() => null),
+  ]);
+
+  const masterWatch = waitFor<any>(masterBackSocket, 'character:deleted');
+  const playerWatch = waitFor<any>(playerBackSocket, 'character:deleted').catch(() => null);
+  const playerDropped = waitFor<any>(playerBackSocket, 'disconnect').catch(() => null);
+
+  const removal = await api(`/api/characters/${doomedCharacterId}`, {
+    method: 'DELETE',
+    token: masterToken,
+  });
+  check('o mestre exclui o personagem (204)', removal.status === 204, `status ${removal.status}`);
+  check(
+    'o painel do mestre é avisado da exclusão',
+    (await masterWatch.catch(() => null))?.characterId === doomedCharacterId,
+  );
+  check('o dono recebe o aviso antes de ser derrubado', (await playerWatch)?.userId === playerUserId);
+  check('a sessão da conta excluída é derrubada', (await playerDropped) !== null);
+
+  const charactersAfter = await api('/api/characters', { token: masterToken });
+  check(
+    'a ficha sai da lista de fichas do mestre',
+    Array.isArray(charactersAfter.data?.characters) &&
+      !charactersAfter.data.characters.some((item: any) => item.id === doomedCharacterId),
+  );
+  check(
+    'a conta do jogador sai da lista de usuários',
+    !(await api('/api/users', { token: masterToken })).data.users.some(
+      (item: any) => item.username === playerUsername,
+    ),
+  );
+  check(
+    'o personagem sai do combate em andamento',
+    !(await api('/api/combat/active', { token: masterToken })).data.combat.combatants.some(
+      (item: any) => item.ownerUserId === playerUserId || item.characterId === doomedCharacterId,
+    ),
+  );
+
+  const logAfter = await api('/api/dice/history', { token: masterToken });
+  check(
+    'as rolagens do personagem saem do log do mestre',
+    (logAfter.data?.rolls ?? []).every((item: any) => item.actorUserId !== playerUserId) &&
+      logAfter.data.rolls.length === logBefore.data.rolls.length - playerRollsBefore.length,
+  );
+
+  check(
+    'o token do jogador excluído não vale mais (401)',
+    (await api('/api/characters/me', { token: playerToken })).status === 401,
+  );
+  check(
+    'a conexão WebSocket da conta excluída é recusada',
+    await new Promise<boolean>((resolve) => {
+      const socket = connect(playerToken);
+      const done = (refused: boolean): void => {
+        socket.close();
+        resolve(refused);
+      };
+      socket.on('connect_error', () => done(true));
+      socket.on('connect', () => done(false));
+      setTimeout(() => done(false), 3000);
+    }),
+  );
+  check(
+    'a conta excluída não faz login de novo (401)',
+    (
+      await api('/api/auth/login', {
+        method: 'POST',
+        body: { username: playerUsername, password: 'senha-forte-123' },
+      })
+    ).status === 401,
+  );
+
+  masterBackSocket.close();
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'

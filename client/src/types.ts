@@ -612,6 +612,17 @@ export interface CreaturePatch {
   imageUrl?: string;
 }
 
+/**
+ * Payload do evento `character:deleted`: o mestre excluiu a ficha **e a conta**
+ * do jogador dono dela.
+ */
+export interface CharacterDeletedPayload {
+  characterId: string;
+  userId: string;
+  name: string;
+  username: string;
+}
+
 /** Payload do evento `sheet:updated` recebido pelo WebSocket. */
 export interface SheetUpdatedPayload {
   userId: string;
