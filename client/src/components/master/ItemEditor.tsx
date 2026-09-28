@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import { DAMAGE_TYPES } from '../../dnd';
-import { ITEM_CATEGORIES } from '../../types';
+import { ARMOR_TYPES, ITEM_CATEGORIES } from '../../types';
 import type { Character, Item, ItemDetails, ItemPatch, ItemPrice } from '../../types';
 import { clampFloat, clampInt } from '../../utils';
 import { Icon } from '../Icon';
@@ -101,11 +101,57 @@ function CategoryFields({
     );
   }
 
-  if (item.category === 'Armadura' || item.category === 'Escudo') {
+  // A armadura tem CA base e peso (leve/média/pesada): é daí que sai a CA da
+  // ficha quando ela está equipada no peitoral.
+  if (item.category === 'Armadura') {
     return (
       <div className="grid grid-3">
         <label className="field">
-          <span>CA adicional</span>
+          <span>Tipo</span>
+          <InlineField
+            value={details.armorType ?? ''}
+            mode="select"
+            options={ARMOR_TYPES}
+            ariaLabel="Tipo da armadura"
+            onCommit={(value) => onPatchDetails({ armorType: value || undefined })}
+          />
+          <span className="field-hint">leve soma a DES · média no máximo +2 · pesada sem DES</span>
+        </label>
+
+        <label className="field">
+          <span>CA base</span>
+          <InlineField
+            value={details.baseArmorClass ?? 0}
+            mode="number"
+            min={0}
+            max={30}
+            ariaLabel="CA base da armadura"
+            onCommit={(value) => onPatchDetails({ baseArmorClass: clampInt(value, 0, 30, 0) })}
+          />
+          <span className="field-hint">ex.: couro 11 · gibão de peles 12 · cota de malha 16</span>
+        </label>
+
+        <label className="field">
+          <span>Bônus mágico de CA</span>
+          <InlineField
+            value={details.armorClassBonus ?? 0}
+            mode="number"
+            min={-10}
+            max={30}
+            ariaLabel="Bônus mágico de CA"
+            onCommit={(value) => onPatchDetails({ armorClassBonus: clampInt(value, -10, 30, 0) })}
+          />
+          <span className="field-hint">armadura mágica (+1, +2...) some ao total</span>
+        </label>
+      </div>
+    );
+  }
+
+  if (item.category === 'Escudo') {
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Bônus de CA</span>
           <InlineField
             value={details.armorClassBonus ?? 0}
             mode="number"
@@ -114,7 +160,7 @@ function CategoryFields({
             ariaLabel="Bônus de CA"
             onCommit={(value) => onPatchDetails({ armorClassBonus: clampInt(value, -10, 30, 0) })}
           />
-          <span className="field-hint">some à CA sugerida da ficha informativamente</span>
+          <span className="field-hint">soma à CA enquanto o escudo estiver equipado</span>
         </label>
       </div>
     );

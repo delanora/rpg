@@ -27,6 +27,29 @@ export interface SkillEntry {
   expertise: boolean;
 }
 
+/** Armadura equipada (espelha shared/armor-class.ts). */
+export interface ArmorPiece {
+  name: string;
+  /** 'Leve' | 'Média' | 'Pesada' */
+  type: string;
+  base: number;
+}
+
+/** Resultado do cálculo da CA, com o detalhamento para a ficha explicar. */
+export interface ArmorClassDetail {
+  /** CA final: override do mestre quando existe, senão a automática. */
+  value: number;
+  automatic: number;
+  /** Override manual do mestre (`null` = automático). */
+  override: number | null;
+  armor: ArmorPiece | null;
+  dexterityBonus: number;
+  shieldBonus: number;
+  magicBonus: number;
+  /** Defesa sem armadura usada, quando não há armadura. */
+  unarmoredLabel: string | null;
+}
+
 export type SkillsState = Record<string, SkillEntry>;
 export type SavesState = Record<AbilityKey, boolean>;
 
@@ -37,6 +60,11 @@ export interface ItemDetails {
   damageType?: string;
   attackBonus?: number;
   spellcastingFocus?: boolean;
+  /** Peso da armadura: 'Leve' | 'Média' | 'Pesada' (só a categoria Armadura usa). */
+  armorType?: string;
+  /** CA base da armadura (couro = 11, cota de malha = 16...). */
+  baseArmorClass?: number;
+  /** Bônus avulso de CA (escudos e itens mágicos). */
   armorClassBonus?: number;
   effectRoll?: string;
   duration?: string;
@@ -163,7 +191,8 @@ export interface DerivedStats {
   preparedSpellCount: number | null;
   initiative: number;
   passivePerception: number;
-  armorClassHint: number;
+  /** CA calculada (armadura + atributos + Defesa sem Armadura) e override do mestre. */
+  armorClass: ArmorClassDetail;
   carryingCapacity: number;
   totalWeight: number;
   saves: SaveDetail[];
@@ -348,6 +377,11 @@ export interface Character {
   classState: ClassState;
   /** Ajustes mecânicos derivados das features (Fúria, resistências, etc.). */
   classAdjustments: ClassAdjustments;
+  /**
+   * Criação encerrada: o jogador só mexe no estado de jogo (PV atual/temporário,
+   * usos de recursos, anotações, avatar e movimentação de itens).
+   */
+  creationFinalized: boolean;
   level: number;
   /** Última liberação de Level Up que este personagem já usou. */
   lastLevelUpRelease: number;
@@ -367,7 +401,10 @@ export interface Character {
   hpCurrent: number;
   hpMax: number;
   hpTemp: number;
+  /** CA efetiva (override do mestre ou a calculada). */
   armorClass: number;
+  /** Override manual da CA (`null` = automático). Só o mestre grava. */
+  armorClassOverride: number | null;
   initiativeBonus: number;
   speed: number;
 
@@ -420,6 +457,13 @@ export interface ClassAdjustments {
   unarmoredDefense: boolean;
   unarmoredDefenseAbility: AbilityKey | null;
   unarmoredDefenseBase: number;
+  /** Fórmulas de Defesa sem Armadura disponíveis (vale a que der o maior valor). */
+  unarmoredDefenseOptions: {
+    label: string;
+    base: number;
+    ability: AbilityKey | null;
+    requiresNoShield: boolean;
+  }[];
   martialArtsDie: number;
   hpBonus: number;
   wildShapeCr: number | null;
@@ -474,7 +518,8 @@ export interface CharacterPatch {
   hpCurrent?: number;
   hpMax?: number;
   hpTemp?: number;
-  armorClass?: number;
+  /** Override manual da CA — só o mestre pode enviar (`null` limpa). */
+  armorClassOverride?: number | null;
   initiativeBonus?: number;
   speed?: number;
 
@@ -702,6 +747,14 @@ export const ITEM_CATEGORIES = [
 ] as const;
 
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
+
+/**
+ * Peso das armaduras (espelha src/modules/shared/item-details.ts). Decide como
+ * a Destreza entra na CA: leve soma tudo, média no máximo +2, pesada nada.
+ */
+export const ARMOR_TYPES = ['Leve', 'Média', 'Pesada'] as const;
+
+export type ArmorType = (typeof ARMOR_TYPES)[number];
 
 /** Item do catálogo central gerenciado pelo mestre. */
 export interface Item {

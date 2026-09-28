@@ -5,6 +5,12 @@
  * testáveis e reaproveitáveis pela Etapa 4 (combate: iniciativa, CA, ataques).
  */
 
+import {
+  computeArmorClass,
+  type ArmorClassDetail,
+  type ArmorClassPieces,
+} from './armor-class.js';
+
 // ---------------------------------------------------------------------------
 // Atributos
 // ---------------------------------------------------------------------------
@@ -254,7 +260,8 @@ export interface DerivedStats {
   preparedSpellCount: number | null;
   initiative: number;
   passivePerception: number;
-  armorClassHint: number;
+  /** CA calculada (armadura equipada + atributos + defesa sem armadura). */
+  armorClass: ArmorClassDetail;
   carryingCapacity: number;
   totalWeight: number;
   saves: SaveDetail[];
@@ -294,15 +301,14 @@ export interface DerivedInput {
   /** Espaços de Magia de Pacto do bruxo, quando houver. */
   pactSlots?: { max: number; slotLevel: number } | null;
   /**
-   * Defesa sem Armadura: atributo somado à CA junto de Destreza (Bárbaro usa
-   * Constituição; Monge usa Sabedoria). Nulo/ausente = só Destreza.
+   * Defesas sem Armadura concedidas pelas classes (Bárbaro/Monge/Linhagem
+   * Dracônica). Elas não se acumulam: vale a que der o MAIOR valor.
    */
-  unarmoredDefenseAbility?: AbilityKey | null;
-  /**
-   * Base da CA sem armadura (padrão 10; Linhagem Dracônica usa 13). Nulo/ausente
-   * = CA padrão 10 + DES.
-   */
-  unarmoredDefenseBase?: number | null;
+  unarmoredDefenses?: readonly { label: string; base: number; ability: AbilityKey | null }[];
+  /** Armadura, escudo e bônus mágicos lidos do equipamento. */
+  armorPieces?: ArmorClassPieces;
+  /** Override manual da CA definido pelo mestre (`0`/ausente = automático). */
+  armorClassOverride?: number | null;
   /** Máximo de magias preparadas (conjuradores preparados), quando aplicável. */
   preparedSpellCount?: number | null;
 }
@@ -364,12 +370,18 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     preparedSpellCount: input.preparedSpellCount ?? null,
     initiative: initiative(input.abilities.dexterity, input.initiativeBonus),
     passivePerception: 10 + (perception?.total ?? modifiers.wisdom),
-    armorClassHint:
-      input.unarmoredDefenseBase !== undefined && input.unarmoredDefenseBase !== null
-        ? input.unarmoredDefenseBase +
+    armorClass: computeArmorClass({
+      dexterityModifier: modifiers.dexterity,
+      pieces: input.armorPieces ?? { armor: null, shieldBonus: 0, magicBonus: 0 },
+      unarmored: (input.unarmoredDefenses ?? []).map((option) => ({
+        label: option.label,
+        value:
+          option.base +
           modifiers.dexterity +
-          (input.unarmoredDefenseAbility ? modifiers[input.unarmoredDefenseAbility] : 0)
-        : unarmoredArmorClass(input.abilities.dexterity),
+          (option.ability ? modifiers[option.ability] : 0),
+      })),
+      override: input.armorClassOverride ?? null,
+    }),
     carryingCapacity: carryingCapacity(input.abilities.strength),
     totalWeight: Math.round(totalWeight * 100) / 100,
     saves,

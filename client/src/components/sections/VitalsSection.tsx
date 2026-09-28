@@ -1,6 +1,6 @@
 import { ABILITY_ABBREVIATIONS, formatChallengeRating, formatModifier } from '../../dnd';
-import { useReadOnly } from '../../readonly';
-import type { ActiveResource, ActiveToggle, ClassState } from '../../types';
+import { useSheetAccess } from '../../readonly';
+import type { ActiveResource, ActiveToggle, ArmorClassDetail, ClassState } from '../../types';
 import { clampInt } from '../../utils';
 import { HpBar } from '../HpBar';
 import { Icon } from '../Icon';
@@ -8,9 +8,43 @@ import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
+/**
+ * Explica de onde saiu a CA: a armadura equipada (e como a Destreza entrou),
+ * a Defesa sem Armadura da classe, o escudo, os bônus mágicos e o override do
+ * mestre. Sem isso a CA automática viraria um número sem justificativa.
+ */
+function describeArmorClass(detail: ArmorClassDetail): string {
+  const parts: string[] = [];
+  const dex = `DES ${formatModifier(detail.dexterityBonus)}`;
+
+  if (detail.armor) {
+    parts.push(
+      detail.armor.type === 'Pesada'
+        ? `${detail.armor.name} (pesada): ${detail.armor.base} · sem DES`
+        : `${detail.armor.name} (${detail.armor.type.toLowerCase()}): ${detail.armor.base} + ${dex}`,
+    );
+  } else if (detail.unarmoredLabel) {
+    parts.push(
+      `${detail.unarmoredLabel}: ${detail.automatic - detail.shieldBonus - detail.magicBonus}`,
+    );
+  } else {
+    parts.push(`sem armadura: 10 + ${dex}`);
+  }
+
+  if (detail.shieldBonus !== 0) parts.push(`escudo ${formatModifier(detail.shieldBonus)}`);
+  if (detail.magicBonus !== 0) parts.push(`bônus mágico ${formatModifier(detail.magicBonus)}`);
+  if (detail.override !== null) parts.push(`CA manual (automática ${detail.automatic})`);
+
+  return parts.join(' · ');
+}
+
 export function VitalsSection({ character, update }: SheetSectionProps) {
-  const readOnly = useReadOnly();
+  // PV atual/temporário, usos de recursos e espaços continuam editáveis pelo
+  // jogador depois de finalizar a criação; PV máximo, CA, iniciativa e
+  // deslocamento são construção (e a CA manual é privilégio do mestre).
+  const { readOnly, lockedConstruction, masterView } = useSheetAccess();
   const { derived, classAdjustments, classState } = character;
+  const armorClass: ArmorClassDetail = derived.armorClass;
 
   // O destaque é do valor, não do card: só o HP entra em estado crítico.
   const hpRatio = character.hpMax > 0 ? character.hpCurrent / character.hpMax : 0;
@@ -106,6 +140,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
             mode="number"
             min={0}
             max={9999}
+            readOnly={lockedConstruction}
             ariaLabel="Pontos de vida máximos"
             onCommit={(value) => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })}
           />
@@ -140,16 +175,34 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
           <span className="vital-label">
             <Icon name="shield" size={13} /> Classe de Armadura
           </span>
-          <InlineField
-            className="vital-value"
-            value={character.armorClass}
-            mode="number"
-            min={0}
-            max={99}
-            ariaLabel="Classe de armadura"
-            onCommit={(value) => update({ armorClass: clampInt(value, 0, 99, character.armorClass) })}
-          />
-          <span className="vital-hint">sem armadura: {derived.armorClassHint}</span>
+
+          {/* A CA é calculada; só o mestre pode fixar um valor manual. */}
+          {masterView && !readOnly ? (
+            <InlineField
+              className="vital-value"
+              value={character.armorClassOverride ?? armorClass.automatic}
+              mode="number"
+              min={0}
+              max={99}
+              ariaLabel="Classe de armadura"
+              title="CA manual do mestre (igual à automática ou 0 volta ao cálculo)"
+              onCommit={(value) => {
+                const next = clampInt(
+                  value,
+                  0,
+                  99,
+                  character.armorClassOverride ?? armorClass.automatic,
+                );
+                update({
+                  armorClassOverride: next === armorClass.automatic ? null : next,
+                });
+              }}
+            />
+          ) : (
+            <strong className="vital-value">{armorClass.value}</strong>
+          )}
+
+          <span className="vital-hint">{describeArmorClass(armorClass)}</span>
         </div>
 
         <div className="vital">
@@ -165,6 +218,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
               mode="number"
               min={-30}
               max={30}
+              readOnly={lockedConstruction}
               ariaLabel="Bônus de iniciativa"
               onCommit={(value) =>
                 update({ initiativeBonus: clampInt(value, -30, 30, character.initiativeBonus) })
@@ -183,6 +237,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
             mode="number"
             min={0}
             max={999}
+            readOnly={lockedConstruction}
             ariaLabel="Deslocamento"
             onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
           />

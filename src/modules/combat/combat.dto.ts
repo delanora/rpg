@@ -1,5 +1,6 @@
 import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
+import { characterArmorClass } from '../characters/armor-class.js';
 import { attackSchema, type Attack } from '../shared/attacks.js';
 import { parseJson } from '../shared/json.js';
 
@@ -112,7 +113,12 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   // cada uma com a própria vida). Personagens leem ao vivo da ficha.
   const hpCurrent = combatant.hpCurrent ?? source?.hpCurrent ?? 0;
   const hpMax = combatant.hpMax ?? source?.hpMax ?? 0;
-  const armorClass = combatant.armorClass ?? source?.armorClass ?? 0;
+  // A CA de personagem é CALCULADA (atributos + equipamento), nunca lida de
+  // uma coluna — a ficha só guarda o override manual do mestre.
+  const armorClass =
+    combatant.character !== null
+      ? characterArmorClass(combatant.character).value
+      : (combatant.armorClass ?? combatant.creature?.armorClass ?? 0);
 
   return {
     id: combatant.id,

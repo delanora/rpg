@@ -40,6 +40,8 @@ import {
 } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { ItemDetails } from '../shared/item-details.js';
+import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
+import { armorPiecesFrom } from '../shared/armor-class.js';
 import { syncInventory, type CatalogSnapshot } from './inventory-sync.js';
 import {
   featureSchema,
@@ -140,6 +142,12 @@ export interface CharacterDto {
   classState: ClassState;
   /** Ajustes mecânicos somados das classes (Fúria, resistências, etc.). */
   classAdjustments: ClassAdjustments;
+  /**
+   * Criação encerrada: com `true`, o jogador só mexe no estado de jogo (PV
+   * atual/temporário, usos de recursos, anotações, avatar e itens). O mestre
+   * continua editando tudo.
+   */
+  creationFinalized: boolean;
   /** Nível total do personagem (soma dos níveis das classes). */
   level: number;
   /**
@@ -165,7 +173,10 @@ export interface CharacterDto {
   hpCurrent: number;
   hpMax: number;
   hpTemp: number;
+  /** CA efetiva: o override do mestre quando existe, senão a calculada. */
   armorClass: number;
+  /** Override manual da CA definido pelo mestre (`null` = automático). */
+  armorClassOverride: number | null;
   initiativeBonus: number;
   speed: number;
 
@@ -253,12 +264,16 @@ export function toCharacterDto(
   // Bônus de atributo de features (ex.: Campeão Primitivo) entram nos valores
   // efetivos usados por todos os cálculos derivados; a pontuação gravada segue
   // sendo a base.
-  const effectiveAbilities: Record<AbilityKey, number> = { ...abilities };
-  for (const [ability, bonus] of Object.entries(classAdjustments.abilityBonuses)) {
-    const key = ability as AbilityKey;
-    const cap = classAdjustments.abilityCaps[key] ?? Number.POSITIVE_INFINITY;
-    effectiveAbilities[key] = Math.min(effectiveAbilities[key] + bonus, cap);
-  }
+  const effectiveAbilities = effectiveAbilitiesOf(character, classAdjustments);
+
+  // CA: armadura/escudo/bônus vêm do equipamento (já sincronizado com o
+  // catálogo) e as defesas sem armadura das classes; o valor gravado é apenas
+  // o override do mestre.
+  const armorPieces = armorPiecesFrom(inventory);
+  const unarmoredDefenses = applicableUnarmoredDefenses(
+    classAdjustments,
+    armorPieces.shieldBonus > 0,
+  );
 
   /**
    * Conjuração de uma classe: a subclasse pode trocar a configuração (ex.:
@@ -324,8 +339,9 @@ export function toCharacterDto(
     lockedSaves,
     sneakAttack: sneakDice > 0 ? { dice: sneakDice, expression: `${sneakDice}d6` } : null,
     expertiseSlots: expertiseSlots(activeFeatures),
-    unarmoredDefenseAbility: classAdjustments.unarmoredDefenseAbility,
-    unarmoredDefenseBase: classAdjustments.unarmoredDefense ? classAdjustments.unarmoredDefenseBase : null,
+    unarmoredDefenses,
+    armorPieces,
+    armorClassOverride: character.armorClass,
     preparedSpellCount: primaryCasting?.preparedCount ?? null,
     spellSlots,
     pactSlots,
@@ -343,6 +359,7 @@ export function toCharacterDto(
     activeFeatures,
     classState,
     classAdjustments,
+    creationFinalized: character.creationFinalized,
     level,
     lastLevelUpRelease: character.lastLevelUpRelease,
     background: character.background,
@@ -358,7 +375,8 @@ export function toCharacterDto(
     hpCurrent: character.hpCurrent,
     hpMax: character.hpMax,
     hpTemp: character.hpTemp,
-    armorClass: character.armorClass,
+    armorClass: derived.armorClass.value,
+    armorClassOverride: derived.armorClass.override,
     initiativeBonus: character.initiativeBonus,
     speed: character.speed,
     skills,

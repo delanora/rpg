@@ -1,5 +1,5 @@
 import { SPELL_LEVEL_LABELS, SPELL_SCHOOLS, formatModifier } from '../../dnd';
-import { useReadOnly } from '../../readonly';
+import { useSheetAccess } from '../../readonly';
 import type { Spell, SpellSlot } from '../../types';
 import { clampInt, newId } from '../../utils';
 import { Icon } from '../Icon';
@@ -59,7 +59,9 @@ function SlotPips({ level, slot, readOnly, onChange }: SlotPipsProps) {
 }
 
 export function SpellsSection({ character, update }: SheetSectionProps) {
-  const readOnly = useReadOnly();
+  // Gastar/recuperar espaços é estado de jogo; a lista de magias conhecidas e
+  // o TOTAL de cada nível são construção (vêm da classe e do Level Up).
+  const { readOnly, lockedConstruction } = useSheetAccess();
   const { list, slots } = character.spells;
   const spellcasting = character.derived.spellcasting;
   // Espaços combinados pela regra de multiclasse (PHB) e Magia de Pacto à parte.
@@ -150,7 +152,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
           : 'Informe uma classe conjuradora para calcular CD e ataque'
       }
       actions={
-        readOnly ? undefined : (
+        lockedConstruction ? undefined : (
           <button type="button" className="btn btn-small" onClick={addSpell}>
             + magia
           </button>
@@ -218,6 +220,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                     value={slot.max}
                     mode="number"
                     min={0}
+                    readOnly={lockedConstruction}
                     ariaLabel={`Espaços totais de ${level}º nível`}
                     onCommit={(value) =>
                       setSlot(level, { max: clampInt(value, 0, 99, slot.max) })
@@ -244,6 +247,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                   value={slot.max}
                   mode="number"
                   min={0}
+                  readOnly={lockedConstruction}
                   ariaLabel={`Espaços totais de ${level}º nível`}
                   onCommit={(value) =>
                     setSlot(level, { max: clampInt(value, 0, 99, slot.max) })
@@ -318,13 +322,14 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                     <input
                       type="checkbox"
                       checked={spell.prepared}
-                      disabled={readOnly}
+                      disabled={lockedConstruction}
                       aria-label={`Preparada: ${spell.name}`}
                       title="Preparada"
                       onChange={(event) => patchSpell(spell.id, { prepared: event.target.checked })}
                     />
                     <InlineField
                       value={spell.name}
+                      readOnly={lockedConstruction}
                       ariaLabel="Nome da magia"
                       onCommit={(value) => {
                         const name = value.trim();
@@ -335,6 +340,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                       value={spell.school}
                       mode="select"
                       options={SPELL_SCHOOLS}
+                      readOnly={lockedConstruction}
                       ariaLabel="Escola da magia"
                       onCommit={(value) => patchSpell(spell.id, { school: value })}
                     />
@@ -343,6 +349,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                       mode="number"
                       min={0}
                       max={9}
+                      readOnly={lockedConstruction}
                       ariaLabel="Nível da magia"
                       onCommit={(value) =>
                         patchSpell(spell.id, { level: clampInt(value, 0, 9, spell.level) })
@@ -351,11 +358,12 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                     <InlineField
                       className="spell-description"
                       value={spell.description}
+                      readOnly={lockedConstruction}
                       placeholder="efeito / descrição"
                       ariaLabel="Descrição da magia"
                       onCommit={(value) => patchSpell(spell.id, { description: value })}
                     />
-                    {readOnly ? null : (
+                    {lockedConstruction ? null : (
                       <button
                         type="button"
                         className="btn btn-danger btn-small"

@@ -81,6 +81,8 @@ export interface ClassFeatureEffect {
   damageTypes?: string[];
   /** Atributo somado na Defesa sem Armadura (Bárbaro: CON; Monge: SAB). */
   unarmoredDefenseAbility?: AbilityKey;
+  /** Fórmula que só vale sem escudo equipado (Defesa sem Armadura do Monge). */
+  requiresNoShield?: boolean;
   /** Recurso com contador em `type: 'resource'`. */
   resource?: ClassFeatureResource;
   /** Só vale enquanto o toggle com este id estiver ativo (ex.: efeitos da Fúria). */

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
 import { describeItemDetails } from '../../dnd';
-import { useReadOnly } from '../../readonly';
+import { useSheetAccess } from '../../readonly';
 import type { InventoryItem, InventoryMoveRequest, InventorySlot } from '../../types';
 import { clampInt, newId } from '../../utils';
 import { Icon, type IconName } from '../Icon';
@@ -130,7 +130,9 @@ function BodyDoll() {
 }
 
 export function InventorySection({ character, update, onMoveItem }: InventorySectionProps) {
-  const readOnly = useReadOnly();
+  // Movimentar/equipar itens é estado de jogo (continua liberado depois de
+  // finalizar a criação); criar, renomear ou remover itens é construção.
+  const { readOnly, lockedConstruction } = useSheetAccess();
   const inventory = character.inventory;
   // Sem o callback do endpoint (ex.: visão do mestre) não há arrastar/soltar.
   const canMove = !readOnly && onMoveItem !== undefined;
@@ -371,7 +373,7 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
       title="Inventário"
       icon="bag"
       actions={
-        readOnly ? undefined : (
+        lockedConstruction ? undefined : (
           <button type="button" className="btn btn-small" onClick={addItem}>
             + item avulso
           </button>
@@ -494,14 +496,14 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
                   value={selected.quantity}
                   mode="number"
                   min={0}
-                  readOnly={readOnly}
+                  readOnly={lockedConstruction}
                   ariaLabel="Quantidade"
                   onCommit={(value) =>
                     patchItem(selected.id, { quantity: clampInt(value, 0, 9999, selected.quantity) })
                   }
                 />
               </label>
-              {!readOnly ? (
+              {lockedConstruction ? null : (
                 <button
                   type="button"
                   className="btn btn-danger btn-small"
@@ -509,7 +511,7 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
                 >
                   remover
                 </button>
-              ) : null}
+              )}
             </div>
           </div>
         ) : null}

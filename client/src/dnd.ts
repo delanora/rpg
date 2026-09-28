@@ -167,7 +167,14 @@ export function describeItemDetails(category: string, details: ItemDetails | und
     if (details.damageType) parts.push(details.damageType);
     if (details.attackBonus) parts.push(`acerto ${formatModifier(details.attackBonus)}`);
     if (category === 'Cajado' && details.spellcastingFocus) parts.push('foco de conjuração');
-  } else if (category === 'Armadura' || category === 'Escudo') {
+  } else if (category === 'Armadura') {
+    if (details.armorType && details.baseArmorClass) {
+      parts.push(`CA ${details.baseArmorClass} (${details.armorType.toLowerCase()})`);
+    } else if (details.baseArmorClass) {
+      parts.push(`CA ${details.baseArmorClass}`);
+    }
+    if (details.armorClassBonus) parts.push(`CA ${formatModifier(details.armorClassBonus)}`);
+  } else if (category === 'Escudo') {
     if (details.armorClassBonus) parts.push(`CA ${formatModifier(details.armorClassBonus)}`);
   } else if (category === 'Poção') {
     if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);

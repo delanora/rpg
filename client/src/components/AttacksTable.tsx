@@ -1,5 +1,5 @@
 import { DAMAGE_TYPES, formatModifier } from '../dnd';
-import { useReadOnly } from '../readonly';
+import { useSheetAccess } from '../readonly';
 import type { Attack } from '../types';
 import { clampInt, newId } from '../utils';
 import { InlineField } from './InlineField';
@@ -13,7 +13,10 @@ interface AttacksTableProps {
 
 /** Tabela de ataques/armas — usada tanto pela ficha quanto pelo bestiário. */
 export function AttacksTable({ attacks, onChange, defaultBonus = 0 }: AttacksTableProps) {
-  const readOnly = useReadOnly();
+  // Ataques são construção: depois de finalizar a criação, só o mestre (ou o
+  // Level Up) mexe neles.
+  const { lockedConstruction } = useSheetAccess();
+  const readOnly = lockedConstruction;
 
   function patchAttack(id: string, patch: Partial<Attack>): void {
     onChange(attacks.map((attack) => (attack.id === id ? { ...attack, ...patch } : attack)));

@@ -15,7 +15,8 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
     level: 1,
     description:
       'Enquanto não usar armadura nem escudo, sua CA é 10 + mod. de Destreza + mod. de Sabedoria.',
-    effect: { type: 'unarmoredDefense', unarmoredDefenseAbility: 'wisdom' },
+    // A Defesa sem Armadura do monge é a única que exige também nenhum escudo.
+    effect: { type: 'unarmoredDefense', unarmoredDefenseAbility: 'wisdom', requiresNoShield: true },
   },
   {
     id: 'martial-arts',

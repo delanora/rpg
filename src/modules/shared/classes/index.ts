@@ -240,6 +240,23 @@ export interface ActiveResource {
   unlimited: boolean;
 }
 
+/**
+ * Uma fórmula de Defesa sem Armadura concedida por uma classe.
+ *
+ * As fórmulas **não se acumulam**: a ficha usa a que der o MAIOR valor. Por
+ * isso o ajuste guarda a lista (um Bárbaro/Feiticeiro Dracônico tem as duas).
+ */
+export interface UnarmoredDefenseOption {
+  /** Rótulo para a ficha (nome da feature que concede). */
+  label: string;
+  /** Base da CA (10 no Bárbaro/Monge; 13 na Linhagem Dracônica). */
+  base: number;
+  /** Atributo somado além de Destreza (null na Linhagem Dracônica). */
+  ability: AbilityKey | null;
+  /** Fórmulas que não valem com escudo equipado (Defesa sem Armadura do Monge). */
+  requiresNoShield: boolean;
+}
+
 /** Ajustes calculados a partir das features ativas e do estado de classe. */
 export interface ClassAdjustments {
   toggles: ActiveToggle[];
@@ -258,6 +275,8 @@ export interface ClassAdjustments {
   unarmoredDefenseAbility: AbilityKey | null;
   /** Base da CA na Defesa sem Armadura (10 no Bárbaro/Monge; 13 na Linhagem Dracônica). */
   unarmoredDefenseBase: number;
+  /** Todas as fórmulas de Defesa sem Armadura disponíveis (só uma vale: a maior). */
+  unarmoredDefenseOptions: UnarmoredDefenseOption[];
   /** Faces do dado de dano desarmado de Artes Marciais (0 = sem a feature). */
   martialArtsDie: number;
   /** PV extras concedidos por features (ex.: +1 por nível de feiticeiro dracônico). */
@@ -290,6 +309,7 @@ export function computeClassAdjustments(
   let unarmoredDefense = false;
   let unarmoredDefenseAbility: AbilityKey | null = null;
   let unarmoredDefenseBase = 10;
+  const unarmoredDefenseOptions: UnarmoredDefenseOption[] = [];
   let martialArtsDie = 0;
   let hpBonus = 0;
   let baseWildShapeCr = 0;
@@ -340,11 +360,26 @@ export function computeClassAdjustments(
         case 'critDice':
           critExtraDice = Math.max(critExtraDice, effectValueAtLevel(effect, level) ?? 0);
           break;
-        case 'unarmoredDefense':
+        case 'unarmoredDefense': {
+          const base = effect.base ?? 10;
+          const ability = effect.unarmoredDefenseAbility ?? null;
+
           unarmoredDefense = true;
-          if (effect.unarmoredDefenseAbility) unarmoredDefenseAbility = effect.unarmoredDefenseAbility;
-          unarmoredDefenseBase = Math.max(unarmoredDefenseBase, effect.base ?? 10);
+          if (ability) unarmoredDefenseAbility = ability;
+          unarmoredDefenseBase = Math.max(unarmoredDefenseBase, base);
+
+          const option: UnarmoredDefenseOption = {
+            label: effect.name ?? feature.name,
+            base,
+            ability,
+            requiresNoShield: Boolean(effect.requiresNoShield),
+          };
+          const known = unarmoredDefenseOptions.some(
+            (item) => item.base === base && item.ability === ability && item.label === option.label,
+          );
+          if (!known) unarmoredDefenseOptions.push(option);
           break;
+        }
         case 'martialArts':
           martialArtsDie = Math.max(martialArtsDie, effectValueAtLevel(effect, level) ?? 0);
           break;
@@ -389,6 +424,7 @@ export function computeClassAdjustments(
     unarmoredDefense,
     unarmoredDefenseAbility,
     unarmoredDefenseBase,
+    unarmoredDefenseOptions,
     martialArtsDie,
     hpBonus,
     wildShapeCr: overrideWildShapeCr ?? (baseWildShapeCr > 0 ? baseWildShapeCr : null),
@@ -616,6 +652,18 @@ function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments): Clas
     unarmoredDefenseAbility:
       base.unarmoredDefenseAbility ?? extra.unarmoredDefenseAbility,
     unarmoredDefenseBase: Math.max(base.unarmoredDefenseBase, extra.unarmoredDefenseBase),
+    unarmoredDefenseOptions: [
+      ...base.unarmoredDefenseOptions,
+      ...extra.unarmoredDefenseOptions.filter(
+        (option) =>
+          !base.unarmoredDefenseOptions.some(
+            (item) =>
+              item.base === option.base &&
+              item.ability === option.ability &&
+              item.label === option.label,
+          ),
+      ),
+    ],
     martialArtsDie: Math.max(base.martialArtsDie, extra.martialArtsDie),
     hpBonus: base.hpBonus + extra.hpBonus,
     wildShapeCr:
@@ -641,6 +689,7 @@ function emptyAdjustments(): ClassAdjustments {
     unarmoredDefense: false,
     unarmoredDefenseAbility: null,
     unarmoredDefenseBase: 10,
+    unarmoredDefenseOptions: [],
     martialArtsDie: 0,
     hpBonus: 0,
     wildShapeCr: null,

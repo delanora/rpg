@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { AppHeader } from '../components/AppHeader';
+import { FinalizeCreationDialog } from '../components/FinalizeCreationDialog';
 import { Icon } from '../components/Icon';
 import { LevelUpDialog } from '../components/LevelUpDialog';
 import { PresentationOverlay } from '../components/PresentationOverlay';
@@ -44,6 +45,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // Configuração da mesa: controla se o botão Level Up está habilitado.
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
+  // Confirmação do fim da criação (botão provisório, ver FinalizeCreationDialog).
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
   // Seção da ficha aberta logo abaixo do painel de combate (ou nenhuma).
   const [combatView, setCombatView] = useState<SheetShortcut | null>(null);
 
@@ -187,6 +190,18 @@ export function SheetPage({ user }: { user: SessionUser }) {
         ? 'O mestre liberou o Level Up!'
         : 'Você já usou esta liberação. Aguarde o mestre liberar de novo.';
 
+  /**
+   * Encerra a criação do personagem. Depois disso a ficha fica travada para o
+   * jogador nos campos de construção — só o estado de jogo segue editável.
+   */
+  const finalizeCreation = useCallback(async () => {
+    const { character: saved } = await api<{ character: Character }>(
+      '/api/characters/me/finalize',
+      { method: 'POST' },
+    );
+    setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+  }, []);
+
   const createSheet = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -320,6 +335,23 @@ export function SheetPage({ user }: { user: SessionUser }) {
                     <Icon name="sparkle" size={16} /> Level Up
                   </button>
                   {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
+
+                  {/* Botão provisório do fim da criação (o wizard o substitui). */}
+                  {character.creationFinalized ? (
+                    <span className="levelup-hint creation-locked-hint">
+                      <Icon name="quill" size={14} /> ficha finalizada: a montagem só muda pelo
+                      Level Up (ou pelo mestre)
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => setFinalizeOpen(true)}
+                      title="Encerrar a criação: depois disso só o estado de jogo fica editável para você"
+                    >
+                      <Icon name="scroll" size={16} /> Finalizar criação
+                    </button>
+                  )}
                 </div>
 
                 <SheetView
@@ -327,6 +359,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   update={update}
                   onInventoryMove={moveItem}
                   onRollSkill={dice.openSkillRoll}
+                  creationLocked={character.creationFinalized}
                 />
 
                 {levelUpOpen && levelUpAvailable ? (
@@ -336,6 +369,14 @@ export function SheetPage({ user }: { user: SessionUser }) {
                     onApplied={(updated) =>
                       setCharacter((prev) => (!prev || updated.version >= prev.version ? updated : prev))
                     }
+                  />
+                ) : null}
+
+                {finalizeOpen ? (
+                  <FinalizeCreationDialog
+                    characterName={character.name}
+                    onCancel={() => setFinalizeOpen(false)}
+                    onConfirm={finalizeCreation}
                   />
                 ) : null}
               </>

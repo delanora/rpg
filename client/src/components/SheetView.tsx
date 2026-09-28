@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ReadOnlyProvider } from '../readonly';
+import { SheetAccessProvider } from '../readonly';
 import type { Character, CharacterPatch, InventoryMoveRequest } from '../types';
 import { Icon, type IconName } from './Icon';
 import { AbilitiesSection } from './sections/AbilitiesSection';
@@ -34,6 +34,13 @@ interface SheetViewProps {
   onRollSkill?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void;
   /** Em `true`, nenhum campo é editável (visão do mestre). */
   readOnly?: boolean;
+  /**
+   * Criação finalizada: o jogador só mexe no estado de jogo. Fica `false` no
+   * painel do mestre, que edita tudo a qualquer momento.
+   */
+  creationLocked?: boolean;
+  /** Aberta no painel do mestre (habilita o que só ele pode, como a CA manual). */
+  masterView?: boolean;
 }
 
 function renderTab(key: TabKey, character: Character, update: (patch: CharacterPatch) => void) {
@@ -59,6 +66,8 @@ export function SheetView({
   onInventoryMove,
   onRollSkill,
   readOnly = false,
+  creationLocked = false,
+  masterView = false,
 }: SheetViewProps) {
   const [tab, setTab] = useState<TabKey>('spells');
   // Anotações vivem num painel flutuante, abertas pelo botão de pena.
@@ -66,7 +75,7 @@ export function SheetView({
   const active = TAB_SECTIONS.find((item) => item.key === tab) ?? TAB_SECTIONS[0];
 
   return (
-    <ReadOnlyProvider value={readOnly}>
+    <SheetAccessProvider value={{ readOnly, creationLocked, masterView }}>
       {/* `position: fixed` no botão e no painel: não participam da grade. */}
       <div className="sheet">
         {/* Identidade de ponta a ponta, no topo da ficha. */}
@@ -147,6 +156,6 @@ export function SheetView({
           </div>
         ) : null}
       </div>
-    </ReadOnlyProvider>
+    </SheetAccessProvider>
   );
 }

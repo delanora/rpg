@@ -126,12 +126,13 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 
 - Nome, raça, classe, nível, antecedente, alinhamento, experiência
 - Atributos (Força, Destreza, Constituição, Inteligência, Sabedoria, Carisma) com modificadores automáticos
-- HP (atual/máximo/temporário), Classe de Armadura, Iniciativa, Deslocamento
+- HP (atual/máximo/temporário), **Classe de Armadura calculada** (armadura equipada + atributos), Iniciativa, Deslocamento
 - Perícias e salvaguardas com proficiência e cálculo automático de bônus
 - Inventário de itens e equipamentos
 - Magias por nível, com espaços de magia (spell slots) controláveis
 - Ataques e armas com dano e bônus de acerto
-- Características de raça/classe/antecedente e anotações livres
+- Características de raça/classe/antecedente, **subseção de Talentos** e anotações livres
+- **Criação finalizada:** depois de encerrar a montagem, o jogador só mexe no estado de jogo — o resto fica para o Level Up e para o mestre
 
 ---
 
@@ -383,13 +384,23 @@ Implementadas em `src/modules/shared/dnd5e.ts` e devolvidas em `derived` (nunca 
 - **Percepção passiva:** `10 + bônus de Percepção`
 - **CD de magia:** `8 + proficiência + mod. do atributo de conjuração` (por classe); **ataque mágico:** proficiência + mod.
 - **Carga:** Força × 7,5 kg; peso total somado do inventário
-- **CA sugerida** sem armadura: `10 + mod. Destreza` (a CA da ficha é manual, pois armaduras ainda não são modeladas)
+
+**Classe de Armadura (calculada, nunca digitada pelo jogador)** — `src/modules/shared/armor-class.ts`:
+
+- **Sem armadura:** `10 + mod. Destreza`. As **Defesas sem Armadura** das classes concorrem com essa fórmula e vale a que der o **maior** valor — Bárbaro `10 + DES + CON`, Monge `10 + DES + SAB` (só sem escudo), Feiticeiro de Linhagem Dracônica `13 + DES`. Elas **não se acumulam** entre si.
+- **Com armadura** (item da categoria *Armadura* equipado no **peitoral**, com `armorType` e `baseArmorClass` cadastrados pelo mestre): leve = `CA base + mod. DES`; média = `CA base + mod. DES` (no máximo +2); pesada = só a `CA base`.
+- **Escudo** equipado soma o próprio `armorClassBonus`; os demais itens equipados (anéis, elmos, armadura mágica `+1`) também somam o `armorClassBonus` como bônus mágico.
+- **Override do mestre:** o campo *CA* do painel grava `armorClassOverride` e vence o cálculo; deixá-lo igual à automática (ou 0) volta ao automático. O jogador **nunca** grava CA (403).
+
+Nada disso é guardado como valor fixo: modificadores, proficiência, iniciativa, percepção passiva, carga, CD/ataque de magia e CA saem sempre dos **atributos e do equipamento atuais**. Quando os atributos mudam (Level Up com Aumento de Atributo, bônus de feature como Campeão Primitivo) ou o equipamento muda, tudo é recalculado na hora — inclusive a CA que o **combate** usa para decidir se um ataque acerta.
 
 ### Sistema métrico
 
 O sistema usa **metros e quilogramas** em tudo: deslocamento de fichas e criaturas em **metros** (5 pés = 1,5 m, então o padrão de 30 pés virou 9 m) e peso de itens em **kg** (1 kg = 2 lb, então 3 lb = 1,5 kg). É a mesma convenção do livro em português, e os bônus de deslocamento das classes (Movimento Rápido, Movimento sem Armadura) também estão em metros.
 
 Os dados anteriores foram convertidos na migração `20260926170000_metric_system` (incluindo o peso das cópias que já estavam nos inventários).
+
+> A mesma migração `20260927120000_creation_finalized_and_armor_class` zerou a coluna `armorClass` das fichas antigas: o valor que estava lá era digitado pelo jogador, não um override do mestre, então todas voltaram ao **cálculo automático** (o mestre pode fixar uma CA manual a qualquer momento).
 
 ### Multiclasse (PHB 2014)
 
@@ -399,6 +410,8 @@ A ficha guarda uma **lista de classes** (`{ classKey, subclass, level }`) em vez
 - **Magia combinada:** conjurador completo + metade do meio-conjurador + um terço do terço-conjurador (arredondando para baixo) formam o nível de conjurador da tabela de multiclasse. O **Bruxo fica de fora** e usa Magia de Pacto separada; magias conhecidas/preparadas continuam sendo contadas **por classe**.
 - **Aumento de Atributo/Talento é por classe:** Guerreiro em 4/6/8/12/14/16/19, Ladino em 4/8/10/12/16/19 e as demais em 4/8/12/16/19 (do nível daquela classe).
 - O **nível de cada classe não é editável** direto: a lista só ganha classe e sobe de nível pelo Level Up (a edição direta de `level` é recusada com 400 e a lista só aceita trocar a **subclasse** de classes existentes).
+
+O **Talento** escolhido nesse mesmo assistente fica registrado na ficha como uma característica de origem `feat` e aparece na aba **Características**, na subseção **Talentos** (nome + descrição; sem efeito mecânico automatizado por enquanto).
 
 As regras vivem em `src/modules/shared/classes.ts` (pré-requisitos, ajustes somados, tabelas de espaços, ASI por classe); a ficha grava as classes no JSONB `characters.classes` (migração `20260926180000_multiclass_and_level_up`).
 
@@ -437,9 +450,10 @@ Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jog
 |--------|------|--------|-----------|
 | `GET` | `/api/characters/me` | autenticado | Própria ficha (ou `null`). |
 | `POST` | `/api/characters/me` | autenticado | Cria a própria ficha (409 se já existir). |
-| `PATCH` | `/api/characters/me` | autenticado | Edição inline: aceita qualquer subconjunto de campos. |
+| `PATCH` | `/api/characters/me` | autenticado | Edição inline: aceita qualquer subconjunto de campos. Com a criação finalizada, só o estado de jogo (o resto responde 403). |
+| `POST` | `/api/characters/me/finalize` | autenticado | Encerra a criação do personagem (botão provisório, substituído pelo wizard). |
 | `GET` | `/api/characters` | **mestre** | Todas as fichas da mesa (base do painel da Etapa 3). |
-| `PATCH` | `/api/characters/:id` | **mestre** | Edita a ficha de um jogador. A ficha continua pertencendo a ele. |
+| `PATCH` | `/api/characters/:id` | **mestre** | Edita a ficha de um jogador — **qualquer campo, a qualquer momento**. A ficha continua pertencendo a ele. |
 | `DELETE` | `/api/characters/:id` | **mestre** | Exclui a ficha **e a conta do jogador** dono dela (irreversível; recusa ficha de mestre). |
 
 O autor vem sempre do token. Não existe rota que receba um `userId` — logo, um jogador não consegue acessar a ficha de outra pessoa, e a única escrita em ficha alheia é o `PATCH /api/characters/:id`, que exige o papel `MASTER`.
@@ -450,11 +464,32 @@ A escrita é **HTTP** (`PATCH`), que persiste e então publica `sheet:updated` p
 
 Cada alteração incrementa `version`; o frontend só aceita eventos com versão igual ou maior, o que evita respostas fora de ordem. O payload traz tanto o `changes` enviado quanto a `character` completa já calculada.
 
+### Criação finalizada (trava da ficha)
+
+A ficha nasce com `creationFinalized = false`: enquanto isso o jogador monta o personagem livremente. O botão **Finalizar criação** (na barra do Level Up) abre uma confirmação que lista o que fica travado; ao confirmar, o servidor grava `creationFinalized = true`.
+
+A partir daí o jogador **só** altera o **estado de jogo**:
+
+- PV atual e PV temporário;
+- gastar/recuperar **espaços de magia** (a lista de magias e o total de cada nível ficam como estão — são construção) e **usos de recursos de classe** (Fúria, Ki...);
+- anotações/história, avatar e **movimentação de itens** no inventário/equipamento.
+
+Todo o **resto** responde **403** em `PATCH /api/characters/me`: nome, raça, antecedente, alinhamento, experiência, atributos, proficiências de perícias e salvaguardas, classes/subclasses, PV máximo, CA, iniciativa, deslocamento, inventário, ataques e características. A mensagem de erro diz exatamente quais campos foram recusados.
+
+Dois caminhos continuam mexendo na construção:
+
+1. **Level Up** (`POST /api/characters/me/level-up`) — não passa pelo PATCH, então segue subindo nível, PV, subclasse e atributos normalmente.
+2. **O mestre**, por `PATCH /api/characters/:id`, sem travas — e a mudança chega na tela do jogador na hora (`sheet:updated`).
+
+Na interface, os campos travados ficam **somente leitura** (o mesmo modo da visão do mestre), o botão de finalizar some e uma nota lembra que a montagem só muda pelo Level Up. O wizard de criação, quando existir, substitui esse botão — a trava é a mesma.
+
+> `creationFinalized` entrou na migração `20260927120000_creation_finalized_and_armor_class`, que marca **todas as fichas existentes** como finalizadas (elas já foram criadas).
+
 ### Edição inline
 
 Nenhum formulário abre em outra tela: clicar no valor transforma o campo em edição; **Enter** ou sair do campo salva, **Esc** cancela. A alteração aparece na hora (otimista) e é confirmada pela resposta do servidor, que é a fonte de verdade dos valores derivados.
 
-Seções da ficha: Identidade, Atributos, Vida e Defesa, Perícias e Salvaguardas, Inventário, Magias, Ataques, Características e Anotações/História.
+Seções da ficha: Identidade, Atributos, Vida e Defesa, Perícias e Salvaguardas, Inventário, Magias, Ataques, Características (com a subseção **Talentos**) e Anotações/História.
 
 ---
 
@@ -534,6 +569,8 @@ Os eventos `region:created` / `region:updated` / `region:deleted` e `locality:cr
 O inventário guarda o que é do jogador (**quantidade**, **equipado** e o vínculo `itemId`) e lê do catálogo o resto — nome, descrição, peso, categoria, sprite e atributos. Na ficha, os campos que vêm do catálogo aparecem com o selo *catálogo* e não são editáveis (o servidor aplica o espelho ao montar o DTO, então edição local não sobrescreve o mestre).
 
 Quando o mestre corrige um item na aba **Itens**, o servidor encontra todas as fichas que possuem aquele item e republica cada uma (`sheet:updated`) — o jogador vê o nome/peso novos na hora, sem recarregar. Se o item for removido do catálogo, a cópia antiga permanece na ficha (ninguém perde o que já estava na mochila).
+
+**Armaduras e escudos:** a categoria *Armadura* ganhou **tipo** (`Leve`, `Média`, `Pesada`) e **CA base** (`baseArmorClass`), usados no cálculo automático da CA da ficha; o `armorClassBonus` continua sendo o bônus avulso, que **some ao total** quando o item está equipado (é o que dá o +2 do escudo e o +1 de uma armadura mágica). Itens antigos sem tipo/CA base não viram armadura — o mestre só precisa reabrir o item e preencher.
 
 ### Prontas para o combate
 

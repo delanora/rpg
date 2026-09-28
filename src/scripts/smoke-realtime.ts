@@ -286,7 +286,7 @@ async function main(): Promise<void> {
   const rules = await api('/api/characters/me', {
     method: 'PATCH',
     token: playerToken,
-    body: { dexterity: 16, strength: 8, wisdom: 14, armorClass: 15 },
+    body: { dexterity: 16, strength: 8, wisdom: 14 },
   });
   const rulesSheet = rules.data?.character;
   check('PATCH aplica os valores', rulesSheet?.level === 5 && rulesSheet?.dexterity === 16);
@@ -294,7 +294,21 @@ async function main(): Promise<void> {
   check('modificador de DES 16 é +3', rulesSheet?.derived?.modifiers?.dexterity === 3);
   check('modificador de FOR 8 é -1', rulesSheet?.derived?.modifiers?.strength === -1);
   check('iniciativa = modificador de Destreza', rulesSheet?.derived?.initiative === 3, `recebido: ${rulesSheet?.derived?.initiative}`);
-  check('CA não é recalculada (valor manual preservado)', rulesSheet?.armorClass === 15);
+  check(
+    'CA é calculada (10 + DES, sem armadura equipada)',
+    rulesSheet?.armorClass === 10 + (rulesSheet?.derived?.modifiers?.dexterity ?? 0),
+    JSON.stringify({ ca: rulesSheet?.armorClass, automatica: rulesSheet?.derived?.armorClass }),
+  );
+  check(
+    'jogador NÃO define a CA manual (403)',
+    (
+      await api('/api/characters/me', {
+        method: 'PATCH',
+        token: playerToken,
+        body: { armorClassOverride: 20 },
+      })
+    ).status === 403,
+  );
   const withSave = await api('/api/characters/me', {
     method: 'PATCH',
     token: playerToken,
@@ -996,10 +1010,10 @@ async function main(): Promise<void> {
     JSON.stringify(barbarianSheet.derived.lockedSaves),
   );
   check(
-    'Defesa sem Armadura sugere 10 + DES + CON',
-    barbarianSheet.derived.armorClassHint ===
+    'Defesa sem Armadura entra na CA (10 + DES + CON)',
+    barbarianSheet.derived.armorClass.automatic ===
       10 + barbarianSheet.derived.modifiers.dexterity + barbarianSheet.derived.modifiers.constitution,
-    JSON.stringify({ hint: barbarianSheet.derived.armorClassHint }),
+    JSON.stringify({ ca: barbarianSheet.derived.armorClass }),
   );
   const rageResource = barbarianSheet.classAdjustments.resources.find((r: any) => r.id === 'rage');
   check('Fúria tem 4 usos no nível 9', rageResource?.max === 4 && rageResource?.remaining === 4, JSON.stringify(rageResource));
@@ -1068,10 +1082,10 @@ async function main(): Promise<void> {
     JSON.stringify(monkSheet.derived.lockedSaves),
   );
   check(
-    'Defesa sem Armadura do Monge sugere 10 + DES + SAB',
-    monkSheet.derived.armorClassHint ===
+    'Defesa sem Armadura do Monge entra na CA (10 + DES + SAB)',
+    monkSheet.derived.armorClass.automatic ===
       10 + monkSheet.derived.modifiers.dexterity + monkSheet.derived.modifiers.wisdom,
-    JSON.stringify({ hint: monkSheet.derived.armorClassHint }),
+    JSON.stringify({ ca: monkSheet.derived.armorClass }),
   );
   check(
     'Artes Marciais usa 1d6 no nível 9',
@@ -1232,8 +1246,8 @@ async function main(): Promise<void> {
   );
   check(
     'CA sem armadura dracônica é 13 + DES',
-    sorcererSheet.derived.armorClassHint === 13 + sorcererSheet.derived.modifiers.dexterity,
-    String(sorcererSheet.derived.armorClassHint),
+    sorcererSheet.derived.armorClass.automatic === 13 + sorcererSheet.derived.modifiers.dexterity,
+    String(sorcererSheet.derived.armorClass.automatic),
   );
   check(
     'Feiticeiro (conjurador conhecido) não tem limite de preparadas',
@@ -2247,8 +2261,274 @@ async function main(): Promise<void> {
     body: { unlocked: false },
   });
 
-  // --- 11.8 Rolagem de dados -------------------------------------------------
-  console.log('\n11.8) Rolagem de dados (janela de dados)');
+  // --- 11.8 Criação finalizada, CA automática e talentos --------------------
+  console.log('\n11.8) Fim da criação, CA automática e talentos');
+
+  const openSheet = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const playerCharacterId: string = openSheet.id;
+  check('a ficha nasce com a criação aberta', openSheet.creationFinalized === false);
+  check(
+    'o talento escolhido no Level Up está na ficha',
+    (openSheet.features ?? []).some((feature: any) => feature.source === 'feat'),
+    JSON.stringify(openSheet.features),
+  );
+
+  // A CA é CALCULADA: sem armadura vale a maior fórmula (aqui, a Defesa sem
+  // Armadura do bárbaro: 10 + DES + CON).
+  await setCharacterClasses(playerId, [
+    { classKey: 'barbarian', level: 3, subclass: 'Guerreiro Primitivo' },
+  ]);
+  const unarmored = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'sem armadura, a CA usa a maior fórmula (10 + DES + CON)',
+    unarmored.armorClass ===
+      10 + unarmored.derived.modifiers.dexterity + unarmored.derived.modifiers.constitution,
+    JSON.stringify({ ca: unarmored.armorClass, detalhe: unarmored.derived.armorClass }),
+  );
+
+  // Armadura pesada (CA base, sem Destreza) e escudo, direto do catálogo.
+  const heavyArmor = (
+    await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: 'Cota de malha',
+        category: 'Armadura',
+        weight: 25,
+        details: { armorType: 'Pesada', baseArmorClass: 16 },
+      },
+    })
+  ).data.item;
+  createdItemIds.push(heavyArmor.id);
+  const shieldItem = (
+    await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: { name: 'Escudo', category: 'Escudo', weight: 3, details: { armorClassBonus: 2 } },
+    })
+  ).data.item;
+  createdItemIds.push(shieldItem.id);
+
+  const armorDetails = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: { name: 'Armadura sem tipo', category: 'Armadura', details: { armorClassBonus: 3 } },
+  });
+  check(
+    'tipo e CA base do item de armadura sobrevivem ao cadastro',
+    (await api(`/api/items/${heavyArmor.id}`, { token: masterToken })).data.item.details
+      .armorType === 'Pesada' &&
+      (await api(`/api/items/${heavyArmor.id}`, { token: masterToken })).data.item.details
+        .baseArmorClass === 16,
+  );
+  check(
+    'armadura sem tipo nem CA base não guarda campos de peso',
+    armorDetails.status === 201 &&
+      armorDetails.data?.item?.details?.armorType === undefined &&
+      armorDetails.data?.item?.details?.baseArmorClass === undefined,
+    JSON.stringify(armorDetails.data?.item?.details),
+  );
+  createdItemIds.push(armorDetails.data?.item?.id);
+
+  for (const item of [heavyArmor, shieldItem]) {
+    await api(`/api/items/${item.id}/send`, {
+      method: 'POST',
+      token: masterToken,
+      body: { characterId: playerCharacterId, quantity: 1 },
+    });
+  }
+
+  const carryingArmor = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const armorEntry = carryingArmor.inventory.find(
+    (entry: any) => entry.itemId === heavyArmor.id,
+  );
+  const shieldEntry = carryingArmor.inventory.find(
+    (entry: any) => entry.itemId === shieldItem.id,
+  );
+  check('armadura e escudo chegam ao inventário', Boolean(armorEntry) && Boolean(shieldEntry));
+
+  await api('/api/characters/me/inventory/move', {
+    method: 'POST',
+    token: playerToken,
+    body: { itemInventoryId: armorEntry.id, targetSlot: 'chest' },
+  });
+  const armored = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'armadura pesada equipada: CA = base, sem Destreza',
+    armored.derived.armorClass.armor?.name === 'Cota de malha' &&
+      armored.derived.armorClass.dexterityBonus === 0 &&
+      armored.armorClass === 16,
+    JSON.stringify(armored.derived.armorClass),
+  );
+
+  await api('/api/characters/me/inventory/move', {
+    method: 'POST',
+    token: playerToken,
+    body: { itemInventoryId: shieldEntry.id, targetSlot: 'hand2' },
+  });
+  const shielded = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'escudo equipado soma o próprio bônus',
+    shielded.derived.armorClass.shieldBonus === 2 && shielded.armorClass === 18,
+    JSON.stringify(shielded.derived.armorClass),
+  );
+
+  // O mestre pode fixar uma CA manual; o override entra no lugar do cálculo.
+  const overrideSheet = (
+    await api(`/api/characters/${playerCharacterId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { armorClassOverride: 20 },
+    })
+  ).data.character;
+  check(
+    'mestre define a CA manual (override vence o cálculo)',
+    overrideSheet.armorClass === 20 && overrideSheet.derived.armorClass.override === 20,
+    JSON.stringify(overrideSheet.derived.armorClass),
+  );
+  const clearedOverride = (
+    await api(`/api/characters/${playerCharacterId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { armorClassOverride: null },
+    })
+  ).data.character;
+  check(
+    'limpar o override volta ao cálculo automático',
+    clearedOverride.armorClass === 18 && clearedOverride.armorClassOverride === null,
+  );
+
+  // --- Trava da criação -----------------------------------------------------
+  const finalized = await api('/api/characters/me/finalize', {
+    method: 'POST',
+    token: playerToken,
+  });
+  check(
+    'jogador finaliza a criação (200)',
+    finalized.status === 200 && finalized.data?.character?.creationFinalized === true,
+    JSON.stringify(finalized.data),
+  );
+
+  const blockedBodies: [string, Record<string, unknown>][] = [
+    ['nome', { name: 'Nome novo' }],
+    ['raça', { race: 'Elfo' }],
+    ['antecedente', { background: 'Sábio' }],
+    ['alinhamento', { alignment: 'Caótico e Bom' }],
+    ['experiência', { experience: 9999 }],
+    ['atributo', { strength: 20 }],
+    ['perícias', { skills: { perception: { proficient: true, expertise: false } } }],
+    ['salvaguardas', { saves: { strength: true } }],
+    ['classes', { classes: [{ classKey: 'fighter' }] }],
+    ['PV máximo', { hpMax: 999 }],
+    ['iniciativa', { initiativeBonus: 5 }],
+    ['deslocamento', { speed: 20 }],
+    ['inventário', { inventory: [] }],
+    ['ataques', { attacks: [] }],
+    ['características', { features: [] }],
+  ];
+  for (const [label, body] of blockedBodies) {
+    check(
+      `criação finalizada: ${label} é recusado (403)`,
+      (await api('/api/characters/me', { method: 'PATCH', token: playerToken, body })).status === 403,
+    );
+  }
+
+  // O que é ESTADO DE JOGO continua liberado.
+  const statePatch = await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      hpCurrent: 7,
+      hpTemp: 3,
+      notes: 'Diário de bordo',
+      avatarUrl: '/uploads/characters/avatar.png',
+      classState: { active: ['rage'], used: { rage: 1 } },
+    },
+  });
+  const stateSheet = statePatch.data?.character;
+  check(
+    'criação finalizada: PV atual/temporário, anotações, avatar e recursos seguem editáveis (200)',
+    statePatch.status === 200 &&
+      stateSheet?.hpCurrent === 7 &&
+      stateSheet?.hpTemp === 3 &&
+      stateSheet?.notes === 'Diário de bordo' &&
+      stateSheet?.classState?.active?.includes('rage'),
+    JSON.stringify({ status: statePatch.status, hp: stateSheet?.hpCurrent }),
+  );
+
+  // Espaços de magia: o USO muda, mas a lista e o TOTAL (da classe) não.
+  await api(`/api/characters/${playerCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { spells: { list: [], slots: { '1': { max: 2, used: 0 } } } },
+  });
+  const slotsPatched = await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      spells: {
+        list: [
+          { id: 'inventada', name: 'Magia inventada', level: 1, school: '', prepared: false, description: '' },
+        ],
+        slots: { '1': { max: 9, used: 1 } },
+      },
+    },
+  });
+  const slotsAfter = slotsPatched.data?.character?.spells;
+  check(
+    'criação finalizada: gastar espaço de magia é aceito (200)',
+    slotsPatched.status === 200 && slotsAfter?.slots?.['1']?.used === 1,
+    JSON.stringify(slotsAfter),
+  );
+  check(
+    'criação finalizada: lista de magias e TOTAL do espaço não mudam',
+    (slotsAfter?.list ?? []).length === 0 && slotsAfter?.slots?.['1']?.max === 2,
+    JSON.stringify(slotsAfter),
+  );
+
+  // O mestre não tem travas — e a mudança chega na ficha do jogador na hora.
+  const finalizeEditEvent = waitFor<any>(playerSocket, 'sheet:updated');
+  const finalizeEdit = await api(`/api/characters/${playerCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { name: 'Renomeado pelo mestre', strength: 18 },
+  });
+  check(
+    'mestre edita uma ficha finalizada (200)',
+    finalizeEdit.status === 200 &&
+      finalizeEdit.data?.character?.name === 'Renomeado pelo mestre' &&
+      finalizeEdit.data?.character?.strength === 18,
+    JSON.stringify(finalizeEdit.data?.character?.creationFinalized),
+  );
+  check(
+    'a edição do mestre chega ao jogador em tempo real',
+    (await finalizeEditEvent.catch(() => null))?.character?.name === 'Renomeado pelo mestre',
+  );
+
+  // E o Level Up continua sendo o caminho da construção.
+  await unlockForLevelUp();
+  const afterFinalizeLevel = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      classKey: 'barbarian',
+      hp: 'average',
+      abilityIncreases: [{ ability: 'strength', amount: 2 }],
+    },
+  });
+  check(
+    'criação finalizada: o Level Up continua aplicando a construção (200)',
+    afterFinalizeLevel.status === 200 && afterFinalizeLevel.data?.character?.strength === 20,
+    JSON.stringify(afterFinalizeLevel.data),
+  );
+  await api('/api/game/level-up', {
+    method: 'POST',
+    token: masterToken,
+    body: { unlocked: false },
+  });
+
+  // --- 11.9 Rolagem de dados -------------------------------------------------
+  console.log('\n11.9) Rolagem de dados (janela de dados)');
 
   check(
     'pool vazio é recusado (400)',
@@ -2355,8 +2635,8 @@ async function main(): Promise<void> {
   const clearedHistory = await api('/api/dice/history', { token: masterToken });
   check('histórico fica vazio depois de limpar', (clearedHistory.data?.rolls ?? []).length === 0);
 
-  // --- 11.9 Faixa de rolagem (janela aberta) --------------------------------
-  console.log('\n11.9) Faixa de rolagem (janela de dados aberta)');
+  // --- 11.10 Faixa de rolagem (janela aberta) -------------------------------
+  console.log('\n11.10) Faixa de rolagem (janela de dados aberta)');
 
   const playerUserId = playerReg.data?.user?.id;
 
