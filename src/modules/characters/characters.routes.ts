@@ -8,6 +8,7 @@ import {
 } from './characters.schema.js';
 import {
   createCharacter,
+  deleteCharacter,
   getSheetByUserId,
   levelUpCharacter,
   listCharacters,
@@ -159,4 +160,16 @@ charactersRouter.patch('/:id', authenticate, requireRole('MASTER'), async (req, 
     parsed.data,
   );
   res.json({ character });
+});
+
+/**
+ * DELETE /api/characters/:id — exclui o personagem **e a conta do jogador**.
+ *
+ * Ação exclusiva do mestre e irreversível: o usuário dono da ficha é apagado
+ * (a ficha sai em cascata) e ele é desconectado da mesa. A confirmação é da
+ * interface — a rota já chega decidida.
+ */
+charactersRouter.delete('/:id', authenticate, requireRole('MASTER'), async (req, res) => {
+  await deleteCharacter(String(req.params.id), actorFrom(req));
+  res.status(204).end();
 });

@@ -3,21 +3,30 @@ import type { Character, CharacterPatch } from '../../types';
 import { Icon } from '../Icon';
 import { Portrait } from '../Portrait';
 import { SheetView } from '../SheetView';
+import { DeleteCharacterDialog } from './DeleteCharacterDialog';
 
 interface SheetsTabProps {
   characters: Character[];
   /** Edição da ficha de um jogador pelo mestre (`PATCH /api/characters/:id`). */
   onUpdate: (characterId: string, patch: CharacterPatch) => void;
+  /**
+   * Exclui a ficha **e a conta do jogador** (`DELETE /api/characters/:id`).
+   * Deve rejeitar quando falhar, para o diálogo mostrar o erro.
+   */
+  onDelete: (characterId: string) => Promise<void>;
 }
 
 /**
  * Aba de fichas dos jogadores. O mestre abre qualquer ficha em **somente
  * leitura** e pode entrar em modo de edição — aí a mesma ficha do jogador
  * (com todos os controles) fica disponível, e cada alteração salva na hora.
+ * Também é daqui que ele **exclui um personagem** (com a conta do jogador),
+ * sempre passando pela confirmação.
  */
-export function SheetsTab({ characters, onUpdate }: SheetsTabProps) {
+export function SheetsTab({ characters, onUpdate, onDelete }: SheetsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Derivado da lista: uma atualização em tempo real já reflete no detalhe.
   const selected = characters.find((character) => character.id === selectedId) ?? null;
 
@@ -25,6 +34,7 @@ export function SheetsTab({ characters, onUpdate }: SheetsTabProps) {
     setSelectedId(id);
     // Trocar de ficha volta ao modo leitura, para não editar a pessoa errada.
     setEditing(false);
+    setConfirmingDelete(false);
   }
 
   if (characters.length === 0) {
@@ -87,6 +97,15 @@ export function SheetsTab({ characters, onUpdate }: SheetsTabProps) {
                   <Icon name={editing ? 'eye' : 'quill'} size={14} />
                   {editing ? 'concluir edição' : 'editar ficha'}
                 </button>
+
+                <button
+                  type="button"
+                  className="btn btn-danger btn-small"
+                  onClick={() => setConfirmingDelete(true)}
+                  title="Excluir o personagem e a conta do jogador (não pode ser desfeito)"
+                >
+                  <Icon name="trash" size={14} /> excluir personagem
+                </button>
               </div>
             </div>
 
@@ -102,6 +121,14 @@ export function SheetsTab({ characters, onUpdate }: SheetsTabProps) {
               update={(patch) => onUpdate(selected.id, patch)}
               readOnly={!editing}
             />
+
+            {confirmingDelete ? (
+              <DeleteCharacterDialog
+                character={selected}
+                onCancel={() => setConfirmingDelete(false)}
+                onConfirm={() => onDelete(selected.id)}
+              />
+            ) : null}
           </>
         ) : (
           <p className="empty-hint">Selecione uma ficha para ver todos os detalhes.</p>

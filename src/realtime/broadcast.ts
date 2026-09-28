@@ -18,6 +18,14 @@ export interface Broadcaster {
   toTable(event: ServerEvent, payload: unknown): void;
   /** Envia para a mesa exceto os mestres (visão dos jogadores). */
   toPlayers(event: ServerEvent, payload: unknown): void;
+  /**
+   * Derruba todas as conexões de um usuário.
+   *
+   * Usado quando a conta dele deixa de existir (exclusão de personagem pelo
+   * mestre): o token continua válido até expirar, então a conexão precisa ser
+   * encerrada à força.
+   */
+  disconnectUser(userId: string): void;
   /** Reenvia a lista atualizada de usuários online. */
   presence(): void;
 }
@@ -53,6 +61,9 @@ export function createBroadcaster(io: AppServer): Broadcaster {
     toMasters: (event, payload) => emitTo(MASTERS_ROOM, event, payload),
     toTable: (event, payload) => emitTo(tableRoom(), event, payload),
     toPlayers: (event, payload) => emitToExcept(tableRoom(), MASTERS_ROOM, event, payload),
+    disconnectUser: (userId) => {
+      io.in(userRoom(userId)).disconnectSockets(true);
+    },
     presence: () =>
       emitTo(tableRoom(), ServerEvents.PRESENCE_UPDATE, { online: getOnlineUsers() }),
   };

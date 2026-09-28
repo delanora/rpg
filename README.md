@@ -283,7 +283,7 @@ npm run create-master -- --username mestre --password "uma-senha-forte" --name "
 | `GET` | `/api/users` | **mestre** | Lista todos os usuários da mesa. |
 | `GET` | `/api/health` | público | Status do servidor e do banco. |
 
-Autenticação HTTP: header `Authorization: Bearer <token>`. Cadastro e login têm *rate limit* de 30 tentativas por 15 minutos por IP.
+Autenticação HTTP: header `Authorization: Bearer <token>`. Cadastro e login têm *rate limit* de 30 tentativas por 15 minutos por IP. Como o JWT vale até expirar, cada requisição (e cada conexão WebSocket) **confere a conta no banco**: conta excluída pelo mestre perde o acesso na hora, com um JWT antigo ou não.
 
 ### Contrato de tempo real
 
@@ -309,6 +309,7 @@ O servidor coloca cada conexão automaticamente nas salas:
 | `connection:ready` | o próprio socket | `socketId`, `connectedAt`, `user`. |
 | `presence:update` | mesa | Lista de quem está online. |
 | `sheet:updated` | mestres + autor | Alteração de ficha, com autor carimbado pelo servidor. |
+| `character:deleted` | mestres + dono | Personagem excluído junto com a conta do jogador; o dono é desconectado. |
 | `app:error` | o socket que errou | Mensagem de payload inválido, etc. |
 
 **Eventos (cliente → servidor)**
@@ -439,6 +440,7 @@ Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jog
 | `PATCH` | `/api/characters/me` | autenticado | Edição inline: aceita qualquer subconjunto de campos. |
 | `GET` | `/api/characters` | **mestre** | Todas as fichas da mesa (base do painel da Etapa 3). |
 | `PATCH` | `/api/characters/:id` | **mestre** | Edita a ficha de um jogador. A ficha continua pertencendo a ele. |
+| `DELETE` | `/api/characters/:id` | **mestre** | Exclui a ficha **e a conta do jogador** dono dela (irreversível; recusa ficha de mestre). |
 
 O autor vem sempre do token. Não existe rota que receba um `userId` — logo, um jogador não consegue acessar a ficha de outra pessoa, e a única escrita em ficha alheia é o `PATCH /api/characters/:id`, que exige o papel `MASTER`.
 
@@ -473,6 +475,19 @@ A aba **Fichas dos jogadores** lista todas as fichas e abre cada uma com exatame
 A ficha continua sendo do jogador — o mestre só ganha acesso de escrita, e a rota exige o papel `MASTER`. O evento publicado continua sendo `sheet:updated`, indo para os mestres e para as sessões do **dono**, que vê a mudança na tela na hora junto de um aviso de quem editou. Nas edições do próprio jogador esse aviso não aparece.
 
 **Atualização em tempo real:** cada alteração (do jogador ou do mestre) publica `sheet:updated` e o painel substitui a ficha na lista e no detalhe já aberto, sem recarregar. Eventos com `version` menor que a atual são ignorados, evitando respostas fora de ordem.
+
+### Excluir personagem (e a conta do jogador)
+
+Na ficha aberta, o botão vermelho **excluir personagem** abre uma confirmação que diz exatamente o que desaparece: a ficha inteira **e a conta do jogador** que a interpreta — nada de um "tem certeza?" genérico, já que a ação é irreversível. Só o segundo clique (no botão vermelho do diálogo) apaga; Esc ou **cancelar** fecham sem mudar nada.
+
+Ao confirmar, o servidor apaga o **usuário** dono da ficha; a ficha sai em cascata (relação `Character.userId`) e, junto com ela:
+
+- o **avatar** enviado sai do disco;
+- o personagem sai de qualquer **combate** em andamento (o combatente é removido, para não ficar uma linha fantasma na ordem de iniciativa);
+- as **rolagens** dele saem do log da sessão e a faixa da janela de dados é desfeita;
+- o dono recebe `character:deleted` e é **desconectado** — a tela dele volta ao login.
+
+O token JWT continua válido até expirar, então `authenticate` e o handshake do WebSocket **conferem a conta no banco a cada requisição/conexão**: conta excluída recebe `401` na hora e não consegue nem reabrir o WebSocket (nem fazer login de novo, porque o usuário não existe mais). A rota recusa excluir ficha de **mestre** — a conta do mestre é a chave da mesa e não há como recriá-la.
 
 ### Criaturas e NPCs
 

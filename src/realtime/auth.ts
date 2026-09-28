@@ -1,3 +1,4 @@
+import { prisma } from '../config/prisma.js';
 import { tryVerifyToken } from '../lib/jwt.js';
 import type { AppSocket } from '../types/socket.js';
 
@@ -7,8 +8,11 @@ import type { AppSocket } from '../types/socket.js';
  * O token pode vir em `socket.handshake.auth.token` (padrão do Socket.io,
  * usado pelo frontend) ou em `?token=` na query string (útil para testar
  * com ferramentas de linha de comando). Se for inválido, a conexão é recusada.
+ *
+ * Como no HTTP, a conta também é conferida no banco: um token de conta
+ * excluída pelo mestre não abre mais socket nenhum.
  */
-export function socketAuth(socket: AppSocket, next: (err?: Error) => void): void {
+export async function socketAuth(socket: AppSocket, next: (err?: Error) => void): Promise<void> {
   const authToken = socket.handshake.auth?.token;
   const queryToken = socket.handshake.query?.token;
 
@@ -26,10 +30,25 @@ export function socketAuth(socket: AppSocket, next: (err?: Error) => void): void
     return;
   }
 
-  socket.data.userId = payload.sub;
-  socket.data.username = payload.username;
-  socket.data.displayName = payload.displayName;
-  socket.data.role = payload.role;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, username: true, displayName: true, role: true },
+    });
 
-  next();
+    if (!user) {
+      next(new Error('UNAUTHORIZED'));
+      return;
+    }
+
+    socket.data.userId = user.id;
+    socket.data.username = user.username;
+    socket.data.displayName = user.displayName;
+    socket.data.role = user.role;
+
+    next();
+  } catch (error) {
+    console.error('[socket] falha ao validar a conta na conexão:', error);
+    next(new Error('UNAUTHORIZED'));
+  }
 }

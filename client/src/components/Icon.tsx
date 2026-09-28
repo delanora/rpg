@@ -38,6 +38,7 @@ export type IconName =
   | 'legs'
   | 'boots'
   | 'ammo'
+  | 'trash'
   | 'info';
 
 const ICONS: Record<IconName, ReactNode> = {
@@ -158,6 +159,14 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M7 9V7a5 5 0 0 1 10 0v2" />
       <path d="M4.5 9h15l-1.2 11.5H5.7Z" />
       <path d="M9.5 12.5v2.5M14.5 12.5v2.5" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16" />
+      <path d="M9.5 7V5.3A1.3 1.3 0 0 1 10.8 4h2.4a1.3 1.3 0 0 1 1.3 1.3V7" />
+      <path d="M6.4 7l1 12.2a1.3 1.3 0 0 0 1.3 1.3h6.6a1.3 1.3 0 0 0 1.3-1.3L18 7" />
+      <path d="M10 11v5.6M14 11v5.6" />
     </>
   ),
   info: (

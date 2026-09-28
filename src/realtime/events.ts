@@ -71,6 +71,22 @@ export interface SheetUpdatedPayload {
   at: string;
 }
 
+/**
+ * Personagem (e a conta do jogador dono dele) excluído pelo mestre.
+ *
+ * Vai para o painel dos mestres (a ficha sai da lista) e para as sessões do
+ * próprio dono, que é desconectado em seguida — a conta não existe mais.
+ */
+export interface CharacterDeletedPayload {
+  characterId: string;
+  /** Dono da ficha — a conta de usuário também foi excluída. */
+  userId: string;
+  /** Nome do personagem no momento da exclusão. */
+  name: string;
+  /** Nome de usuário da conta excluída. */
+  username: string;
+}
+
 /** Eventos enviados pelo cliente (frontend) para o servidor. */
 export const ClientEvents = {
   /** Entra na sala da mesa para receber os eventos de sessão. */
@@ -89,6 +105,11 @@ export const ServerEvents = {
   PRESENCE_UPDATE: 'presence:update',
   /** Ficha alterada — entregue aos mestres e às sessões do autor. */
   SHEET_UPDATED: 'sheet:updated',
+  /**
+   * Personagem excluído pelo mestre (com a conta do jogador): os mestres
+   * tiram a ficha da lista e o dono é avisado e desconectado.
+   */
+  CHARACTER_DELETED: 'character:deleted',
   /** Criatura cadastrada pelo mestre. */
   CREATURE_CREATED: 'creature:created',
   /** Criatura alterada pelo mestre. */

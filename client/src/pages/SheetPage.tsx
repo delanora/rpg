@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { useAuth } from '../auth';
 import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
 import { LevelUpDialog } from '../components/LevelUpDialog';
@@ -32,6 +33,7 @@ import type {
 import { useRealtime } from '../useRealtime';
 
 export function SheetPage({ user }: { user: SessionUser }) {
+  const { logout } = useAuth();
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -75,6 +77,12 @@ export function SheetPage({ user }: { user: SessionUser }) {
         const time = new Date(payload.at).toLocaleTimeString('pt-BR');
         setMasterNotice(`${payload.editedBy} (mestre) alterou sua ficha às ${time}.`);
       }
+    },
+
+    // O mestre excluiu este personagem: a conta do jogador também foi
+    // embora, então a única saída é voltar para o login.
+    onCharacterDeleted: (payload) => {
+      if (payload.userId === user.id) logout();
     },
 
     // Imagem que o mestre está mostrando para a mesa.

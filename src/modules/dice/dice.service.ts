@@ -32,6 +32,16 @@ export function clearDiceHistory(): void {
   history = [];
 }
 
+/**
+ * Esquece as rolagens de um usuário.
+ *
+ * Chamado quando a conta dele é excluída (o log da sessão não deve guardar
+ * rolagens de quem não existe mais).
+ */
+export function forgetRollsFrom(userId: string): void {
+  history = history.filter((roll) => roll.actorUserId !== userId);
+}
+
 /** Autor da rolagem, sempre carimbado a partir do token. */
 export interface DiceActor {
   userId: string;

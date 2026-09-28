@@ -2,6 +2,7 @@ import type { Role } from '@prisma/client';
 import type { Server, Socket } from 'socket.io';
 import type {
   AttackResolvedPayload,
+  CharacterDeletedPayload,
   CombatEndedPayload,
   CombatStartedPayload,
   CombatTurnPayload,
@@ -33,6 +34,7 @@ export interface ServerToClientEvents {
   'app:error': (payload: { message: string }) => void;
   'presence:update': (payload: PresenceUpdatePayload) => void;
   'sheet:updated': (payload: SheetUpdatedPayload) => void;
+  'character:deleted': (payload: CharacterDeletedPayload) => void;
   'creature:created': (payload: CreatureCreatedPayload) => void;
   'creature:updated': (payload: CreatureUpdatedPayload) => void;
   'creature:deleted': (payload: CreatureDeletedPayload) => void;
