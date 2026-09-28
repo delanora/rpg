@@ -6704,7 +6704,7 @@ input[type='checkbox']:focus-visible,
   max-width: 62%;
 }
 
-/* --- Nível inicial no painel do mestre ---------------------------------- */
+/* --- Campos compactos em barras de ferramenta (combate, itens, criaturas) -- */
 
 .field-inline {
   grid-auto-flow: column;
@@ -6724,7 +6724,235 @@ input[type='checkbox']:focus-visible,
   text-align: center;
 }
 
+/* ==========================================================================
+   29. Aba "Configurações da mesa" (painel do mestre)
+   ==========================================================================
+
+   O Nível Inicial mora aqui, discreto, no lugar de destaque que ele tinha na
+   barra de abas. O resto da aba é consulta: as listas de classes, raças,
+   antecedentes e magias. */
+
+.config-shell {
+  display: grid;
+  gap: var(--space-section);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.config-card {
+  padding: 1.05rem 1.15rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: var(--shadow);
+}
+
+.config-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.config-card p {
+  margin: 0.35rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.config-card-head {
+  margin-bottom: 0.9rem;
+}
+
+/* O nível inicial é só mais um cartão: nada de destaque na barra de abas. */
+.config-card-level {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.config-level-copy {
+  max-width: 46rem;
+}
+
+.config-level-field {
+  flex: 0 0 auto;
+  width: 7rem;
+}
+
+.config-level-field > input {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+/* --- Listas de consulta --------------------------------------------------- */
+
+.config-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.config-panel-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+
+.config-panel-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.config-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.config-item {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.config-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.config-item-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.config-badge {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--gold-deep);
+  white-space: nowrap;
+}
+
+.config-facts {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0;
+}
+
+.config-facts > div {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.config-facts dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.config-facts dd {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.config-text {
+  margin: 0.45rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.config-note {
+  margin: 0.45rem 0 0;
+  font-size: 0.86rem;
+  color: var(--ink-faint);
+}
+
+.config-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+}
+
+.config-tag {
+  padding: 0.12rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+/* Contador das abas do compêndio e das liberações de Level Up. */
+.config-count {
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--surface-4);
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.config-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.9rem 0.4rem;
+  font-size: 0.92rem;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.config-empty-error {
+  font-style: normal;
+  color: var(--wine-bright);
+}
+
 @media (max-width: 720px) {
+  .config-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .config-facts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  .config-card-level {
+    align-items: flex-start;
+  }
+
   .wizard-identity {
     grid-template-columns: minmax(0, 1fr);
   }

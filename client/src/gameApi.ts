@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { GameConfig } from './types';
+import type { Compendium, GameConfig } from './types';
 
 /**
  * Configuração global da mesa. Como as demais escritas do domínio, a alteração
@@ -12,13 +12,27 @@ export async function fetchGameConfig(): Promise<GameConfig> {
   return config;
 }
 
-/** Libera/bloqueia o Level Up da mesa (somente mestre). */
-export async function setLevelUpUnlocked(unlocked: boolean): Promise<GameConfig> {
+/**
+ * Libera UM Level Up para a mesa (somente mestre).
+ *
+ * Cada chamada é uma liberação nova: quem já subiu de nível fica de fora até o
+ * próximo clique. Não existe mais bloquear — basta liberar de novo.
+ */
+export async function releaseLevelUp(): Promise<GameConfig> {
   const { config } = await api<{ config: GameConfig }>('/api/game/level-up', {
     method: 'POST',
-    body: { unlocked },
   });
   return config;
+}
+
+/**
+ * Listas de referência da mesa (classes, raças, antecedentes e magias).
+ *
+ * Alimenta a aba "Configurações da mesa". Somente leitura por enquanto.
+ */
+export async function fetchCompendium(): Promise<Compendium> {
+  const { compendium } = await api<{ compendium: Compendium }>('/api/compendium');
+  return compendium;
 }
 
 /**

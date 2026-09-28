@@ -2020,55 +2020,38 @@ async function main(): Promise<void> {
       await api('/api/game/level-up', {
         method: 'POST',
         token: playerToken,
-        body: { unlocked: true },
       })
     ).status === 403,
   );
 
   const releaseBefore = initialConfig.data?.config?.levelUpRelease ?? 0;
   const configEvent = waitFor<any>(playerSocket, 'game:config');
-  const unlocked = await api('/api/game/level-up', {
+  const released = await api('/api/game/level-up', {
     method: 'POST',
     token: masterToken,
-    body: { unlocked: true },
   });
   check(
     'mestre libera o Level Up (200)',
-    unlocked.status === 200 && unlocked.data?.config?.levelUpUnlocked === true,
-    JSON.stringify(unlocked.data),
-  );
-  check(
-    'cada liberação incrementa o contador',
-    unlocked.data?.config?.levelUpRelease === releaseBefore + 1,
-    JSON.stringify({ before: releaseBefore, after: unlocked.data?.config?.levelUpRelease }),
+    released.status === 200 && released.data?.config?.levelUpRelease === releaseBefore + 1,
+    JSON.stringify(released.data),
   );
   check('jogador recebe a liberação em tempo real', (await configEvent.catch(() => null)) !== null);
 
-  const unlockedAgain = await api('/api/game/level-up', {
+  // Não existe mais estado "bloqueado": liberar de novo JÁ é uma liberação
+  // nova, sem o mestre precisar desligar nada antes.
+  const releasedAgain = await api('/api/game/level-up', {
     method: 'POST',
     token: masterToken,
-    body: { unlocked: true },
   });
   check(
-    'liberar de novo sem bloquear NÃO gera nova liberação',
-    unlockedAgain.data?.config?.levelUpRelease === releaseBefore + 1,
-    JSON.stringify(unlockedAgain.data?.config),
+    'liberar de novo sem bloquear gera nova liberação',
+    releasedAgain.data?.config?.levelUpRelease === releaseBefore + 2,
+    JSON.stringify(releasedAgain.data?.config),
   );
-
-  await api('/api/game/level-up', {
-    method: 'POST',
-    token: masterToken,
-    body: { unlocked: false },
-  });
-  const relocked = await api('/api/game/level-up', {
-    method: 'POST',
-    token: masterToken,
-    body: { unlocked: true },
-  });
   check(
-    'desligar e ligar de novo gera nova liberação',
-    relocked.data?.config?.levelUpRelease === releaseBefore + 2,
-    JSON.stringify(relocked.data?.config),
+    'a configuração não expõe mais estado de bloqueio',
+    releasedAgain.data?.config?.levelUpUnlocked === undefined,
+    JSON.stringify(releasedAgain.data?.config),
   );
   check(
     'ficha expõe a última liberação usada (0 para esta ficha nova)',
@@ -2076,29 +2059,63 @@ async function main(): Promise<void> {
       ?.lastLevelUpRelease === 0,
   );
 
-  // Devolve a mesa ao estado inicial (desligado).
-  await api('/api/game/level-up', {
-    method: 'POST',
-    token: masterToken,
-    body: { unlocked: false },
-  });
+  // --- 11.6 Compêndio da mesa (aba "Mesa") ----------------------------------
+  console.log('\n11.6) Compêndio da mesa (aba Mesa)');
+
+  check('o compêndio exige autenticação (401)', (await api('/api/compendium')).status === 401);
+
+  const compendiumRes = await api('/api/compendium', { token: playerToken });
+  const compendium = compendiumRes.data?.compendium;
+  check(
+    'o compêndio é acessível (200)',
+    compendiumRes.status === 200,
+    JSON.stringify(compendiumRes.data),
+  );
+  check(
+    'há 12 classes, cada uma com dado de vida e duas salvaguardas',
+    (compendium?.classes ?? []).length === 12 &&
+      compendium.classes.every(
+        (entry: any) => entry.hitDie > 0 && entry.savingThrows?.length === 2,
+      ),
+    JSON.stringify((compendium?.classes ?? []).map((entry: any) => entry.key)),
+  );
+  check(
+    'o clérigo traz os 7 domínios',
+    compendium?.classes?.find((entry: any) => entry.key === 'cleric')?.subclasses?.length === 7,
+  );
+  check(
+    'há 14 linhagens de raça, todas com história',
+    (compendium?.races ?? []).length === 14 &&
+      compendium.races.every((race: any) => (race.description ?? '').length > 0),
+    JSON.stringify((compendium?.races ?? []).map((race: any) => race.key)),
+  );
+  check(
+    'há 13 antecedentes, cada um com 2 perícias',
+    (compendium?.backgrounds ?? []).length === 13 &&
+      compendium.backgrounds.every((entry: any) => entry.skills?.length === 2),
+    JSON.stringify((compendium?.backgrounds ?? []).map((entry: any) => entry.key)),
+  );
+  check(
+    'o catálogo de magias está preparado (lista vazia por enquanto)',
+    Array.isArray(compendium?.spells) && compendium.spells.length === 0,
+    JSON.stringify(compendium?.spells),
+  );
 
   // --- 11.7 Assistente de Level Up ------------------------------------------
   console.log('\n11.7) Level Up (assistente)');
 
   const otherToken = otherReg.data.token;
 
-  /** Cada liberação precisa de um desligar → ligar para valer para o próximo nível. */
+  /**
+   * Libera mais um Level Up para a mesa.
+   *
+   * Cada chamada é uma liberação nova, então basta pedir de novo — não existe
+   * mais o desligar → ligar de antes.
+   */
   async function unlockForLevelUp(): Promise<void> {
     await api('/api/game/level-up', {
       method: 'POST',
       token: masterToken,
-      body: { unlocked: false },
-    });
-    await api('/api/game/level-up', {
-      method: 'POST',
-      token: masterToken,
-      body: { unlocked: true },
     });
   }
 
@@ -2253,13 +2270,6 @@ async function main(): Promise<void> {
     conLevel.data?.character?.hpCurrent === conBefore.hpCurrent + 10,
     `antes ${conBefore.hpCurrent}, depois ${conLevel.data?.character?.hpCurrent}`,
   );
-
-  // Devolve a mesa ao estado inicial (desligado).
-  await api('/api/game/level-up', {
-    method: 'POST',
-    token: masterToken,
-    body: { unlocked: false },
-  });
 
   // --- 11.8 Criação finalizada, CA automática e talentos --------------------
   console.log('\n11.8) Fim da criação, CA automática e talentos');
@@ -2580,11 +2590,6 @@ async function main(): Promise<void> {
     afterFinalizeLevel.status === 200 && afterFinalizeLevel.data?.character?.strength === 20,
     JSON.stringify(afterFinalizeLevel.data),
   );
-  await api('/api/game/level-up', {
-    method: 'POST',
-    token: masterToken,
-    body: { unlocked: false },
-  });
 
   // --- 11.9 Rolagem de dados -------------------------------------------------
   console.log('\n11.9) Rolagem de dados (janela de dados)');

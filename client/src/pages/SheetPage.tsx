@@ -172,19 +172,23 @@ export function SheetPage({ user }: { user: SessionUser }) {
     void closePresentation().catch(() => setPresentation(null));
   }, []);
 
-  /** O jogador só pode subir de nível se o mestre liberou e ele ainda não usou. */
+  /**
+   * O jogador sobe de nível enquanto não usou a liberação atual da mesa.
+   *
+   * Não existe mais estado "bloqueado": o mestre libera, o jogador upa, e uma
+   * nova liberação re-arma o botão sem precisar bloquear antes.
+   */
   const levelUpAvailable =
     character !== null &&
     gameConfig !== null &&
-    gameConfig.levelUpUnlocked &&
     character.lastLevelUpRelease < gameConfig.levelUpRelease;
 
   const levelUpHint = !gameConfig
     ? ''
-    : !gameConfig.levelUpUnlocked
-      ? 'O mestre ainda não liberou o Level Up nesta mesa.'
-      : levelUpAvailable
-        ? 'O mestre liberou o Level Up!'
+    : levelUpAvailable
+      ? 'O mestre liberou o Level Up!'
+      : gameConfig.levelUpRelease === 0
+        ? 'O mestre ainda não liberou nenhum Level Up nesta mesa.'
         : 'Você já usou esta liberação. Aguarde o mestre liberar de novo.';
 
   /** Aplica a ficha vinda do assistente de criação (a fonte de verdade é dele). */

@@ -10,7 +10,6 @@ const CONFIG_ID = 'main';
 
 function toGameConfigDto(config: GameConfig): GameConfigDto {
   return {
-    levelUpUnlocked: config.levelUpUnlocked,
     levelUpRelease: config.levelUpRelease,
     startingLevel: config.startingLevel,
     updatedAt: config.updatedAt.toISOString(),
@@ -38,20 +37,18 @@ function broadcast(config: GameConfigDto): void {
 }
 
 /**
- * Liga/desliga a liberação do Level Up.
+ * Libera UM Level Up para cada jogador que ainda não usou a liberação atual.
  *
- * Cada transição de desligado → ligado incrementa `levelUpRelease`, então quem
- * já usou a liberação anterior volta a ver o botão habilitado só depois que o
- * mestre desligar e ligar de novo.
+ * Cada clique incrementa `levelUpRelease`. Quem já subiu de nível fica de fora
+ * até o mestre liberar de novo — e isso NÃO exige bloquear antes: basta clicar
+ * em "Liberar Level Up" outra vez. O incremento é atômico (`increment`), então
+ * dois cliques simultâneos contam como duas liberações, nunca uma só.
  */
-export async function setLevelUpUnlocked(unlocked: boolean): Promise<GameConfigDto> {
-  const current = await getGameConfig();
-  const levelUpRelease =
-    unlocked && !current.levelUpUnlocked ? current.levelUpRelease + 1 : current.levelUpRelease;
-
+export async function releaseLevelUp(): Promise<GameConfigDto> {
+  await getGameConfig();
   const config = await prisma.gameConfig.update({
     where: { id: CONFIG_ID },
-    data: { levelUpUnlocked: unlocked, levelUpRelease },
+    data: { levelUpRelease: { increment: 1 } },
   });
 
   const dto = toGameConfigDto(config);

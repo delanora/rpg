@@ -3,6 +3,7 @@ import { api } from '../api';
 import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
 import { PresentationOverlay } from '../components/PresentationOverlay';
+import { ConfigTab } from '../components/master/ConfigTab';
 import { CreaturesTab } from '../components/master/CreaturesTab';
 import { ItemsTab } from '../components/master/ItemsTab';
 import { RegionsTab } from '../components/master/RegionsTab';
@@ -13,7 +14,7 @@ import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../com
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
-import { fetchGameConfig, setLevelUpUnlocked, setStartingLevel } from '../gameApi';
+import { fetchGameConfig, releaseLevelUp, setStartingLevel } from '../gameApi';
 import { closePresentation } from '../presentationApi';
 import type {
   Attack,
@@ -34,7 +35,7 @@ import type {
 } from '../types';
 import { useRealtime } from '../useRealtime';
 
-type Tab = 'sheets' | 'creatures' | 'npcs' | 'regions' | 'items';
+type Tab = 'sheets' | 'creatures' | 'npcs' | 'regions' | 'items' | 'config';
 
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
@@ -212,20 +213,19 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   }, []);
 
   /**
-   * Liga/desliga o Level Up da mesa. Cada liberação (desligado → ligado) conta
-   * como uma nova, então os jogadores voltam a ver o botão habilitado.
+   * Libera UM Level Up para a mesa. Cada clique é uma liberação nova, então o
+   * mestre não precisa bloquear nada antes: quem já subiu de nível volta a ver
+   * o botão habilitado no próximo clique.
    */
-  const toggleLevelUp = useCallback(async () => {
-    const next = !(gameConfig?.levelUpUnlocked ?? false);
-
+  const releaseLevelUpForTable = useCallback(async () => {
     try {
-      const config = await setLevelUpUnlocked(next);
+      const config = await releaseLevelUp();
       setGameConfig(config);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao alterar o Level Up.');
+      setError(err instanceof Error ? err.message : 'Falha ao liberar o Level Up.');
     }
-  }, [gameConfig]);
+  }, []);
 
   const createCreature = useCallback(
     async (localityId: string): Promise<Creature> => {
@@ -569,28 +569,23 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             <Icon name="flask" size={16} /> Itens
           </button>
 
-          <label
-            className="field field-inline"
-            title="Nível em que os personagens começam a mesa: o assistente de criação aplica os níveis 2 até ele"
-          >
-            <span>NÍVEL INICIAL</span>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={gameConfig?.startingLevel ?? 1}
-              onChange={(event) => void changeStartingLevel(Number(event.target.value))}
-            />
-          </label>
-
           <button
             type="button"
-            className={gameConfig?.levelUpUnlocked ? 'btn btn-levelup active' : 'btn btn-levelup'}
-            onClick={() => void toggleLevelUp()}
-            title="Liberar ou bloquear o Level Up para os jogadores"
+            className={tab === 'config' ? 'tab active' : 'tab'}
+            onClick={() => setTab('config')}
           >
-            <Icon name="sparkle" size={16} />{' '}
-            {gameConfig?.levelUpUnlocked ? 'BLOQUEAR LEVEL UP' : 'LIBERAR LEVEL UP'}
+            <Icon name="table" size={16} /> Mesa
+          </button>
+
+          {/* Cada clique libera UM Level Up por jogador: não há mais bloquear. */}
+          <button
+            type="button"
+            className="btn btn-levelup"
+            onClick={() => void releaseLevelUpForTable()}
+            title={`Libera um Level Up para quem ainda não usou a liberação atual. Liberações dadas: ${gameConfig?.levelUpRelease ?? 0}.`}
+          >
+            <Icon name="sparkle" size={16} /> LIBERAR LEVEL UP
+            {gameConfig ? <span className="config-count">{gameConfig.levelUpRelease}</span> : null}
           </button>
 
           <button
@@ -645,6 +640,11 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onCreateLocality={createLocality}
             onPatchLocality={patchLocality}
             onDeleteLocality={deleteLocality}
+          />
+        ) : tab === 'config' ? (
+          <ConfigTab
+            startingLevel={gameConfig?.startingLevel ?? 1}
+            onChangeStartingLevel={changeStartingLevel}
           />
         ) : tab === 'items' ? (
           <ItemsTab

@@ -344,17 +344,16 @@ export async function createCharacter(
 /**
  * Sobe um nível seguindo o assistente de Level Up.
  *
- * Só é permitido quando o mestre liberou a mesa E o jogador ainda não usou a
- * liberação atual (`lastLevelUpRelease < GameConfig.levelUpRelease`). Aplica de
+ * Só é permitido quando o jogador ainda não usou a liberação atual
+ * (`lastLevelUpRelease < GameConfig.levelUpRelease`). Não existe mais estado
+ * "bloqueado": o mestre libera e o jogador upa; liberar de novo re-arma para o
+ * próximo nível. Aplica de
  * uma vez: o nível da classe (nova ou existente), o PV ganho (dado rolado no
  * servidor ou a média do PHB, sempre mínimo 1), a subclasse quando o nível a
  * libera e o Aumento de Atributo/Talento quando é um nível de ASI da classe.
  */
 export async function levelUpCharacter(actor: Actor, input: LevelUpInput): Promise<CharacterDto> {
   const config = await getGameConfig();
-  if (!config.levelUpUnlocked) {
-    throw new HttpError('O mestre ainda não liberou o Level Up.', 403);
-  }
 
   // Leitura, checagem e gravação na MESMA transação: o `where` com o
   // `lastLevelUpRelease` antigo (ver applyLevelUp) impede que dois cliques
