@@ -1,13 +1,13 @@
 /**
  * Configuração global da mesa.
  *
- * Por enquanto só guarda o controle de Level Up liberado pelo mestre: enquanto
- * desligado, nenhum jogador sobe de nível; cada liberação (desligar → ligar)
- * incrementa `levelUpRelease` e libera o botão uma vez para cada personagem.
+ * Guarda o contador de liberações de Level Up e o nível inicial da mesa. Cada
+ * clique do mestre em "Liberar Level Up" incrementa `levelUpRelease`, e cada
+ * jogador compara com o `Character.lastLevelUpRelease` dele: quem ainda não usou
+ * a liberação atual sobe um nível. Sem liga/desliga — o mestre libera e o
+ * jogador upa, e basta liberar de novo para o próximo.
  */
 export interface GameConfigDto {
-  /** Verdadeiro enquanto o mestre deixou o Level Up liberado. */
-  levelUpUnlocked: boolean;
   /** Número da liberação atual, comparado com `Character.lastLevelUpRelease`. */
   levelUpRelease: number;
   /**

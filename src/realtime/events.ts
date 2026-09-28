@@ -149,7 +149,7 @@ export const ServerEvents = {
   PRESENTATION_CLOSED: 'presentation:closed',
 
   // Configuração da mesa (entrega para toda a mesa)
-  /** O mestre liberou/bloqueou o Level Up (ou outra config mudou). */
+  /** O mestre liberou um Level Up (ou outra config da mesa mudou). */
   GAME_CONFIG: 'game:config',
 
   // Combate (entrega para toda a mesa: jogadores e mestre participam)
@@ -259,7 +259,7 @@ export interface PresentationClosedPayload {
   presentationId: string;
 }
 
-/** Configuração da mesa alterada (Level Up liberado/bloqueado). */
+/** Configuração da mesa alterada (Level Up liberado, nível inicial...). */
 export interface GameConfigPayload {
   config: GameConfigDto;
 }

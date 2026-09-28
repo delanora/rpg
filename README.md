@@ -70,6 +70,7 @@ src/
 │   ├── auth/       # cadastro, login, middlewares de autenticação/autorização
 │   ├── characters/ # ficha do jogador (inclui o assistente de criação)
 │   ├── combat/     # combate: iniciativa, turnos, ataques e HP
+│   ├── compendium/ # listas de referência da mesa (classes, raças, antecedentes, magias)
 │   ├── creatures/  # criaturas/NPCs cadastrados pelo mestre
 │   ├── shared/     # regras de D&D 5e, dados, ataques e utilidades compartilhadas
 │   └── users/      # listagem de usuários (mestre)
@@ -420,21 +421,31 @@ As regras vivem em `src/modules/shared/classes.ts` (pré-requisitos, ajustes som
 
 ### Controle de Level Up pelo mestre
 
-O mestre liga/desliga o Level Up da mesa pelo botão no painel (`LIBERAR/BLOQUEAR LEVEL UP`). Enquanto desligado, nenhum jogador sobe de nível; quando liga, **todos** os jogadores veem o botão **Level Up** habilitado na própria ficha. Cada liberação (desligar → ligar) conta como uma nova, então depois de usar o Level Up o botão fica desabilitado **para aquele jogador** até o mestre liberar de novo.
+O mestre libera o Level Up pelo botão **LIBERAR LEVEL UP** na barra de abas do painel. **Cada clique é uma liberação nova**: avança o contador e habilita o botão **Level Up** na ficha de **todos** os jogadores que ainda não subiram de nível naquela liberação. Não existe liga/desliga — depois que um jogador sobe de nível o botão dele fica desabilitado só até o próximo clique do mestre, sem precisar bloquear nada antes.
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
-| `GET` | `/api/game` | autenticado | Configuração da mesa (Level Up liberado, contador de liberação e nível inicial). |
-| `POST` | `/api/game/level-up` | **mestre** | `{ unlocked }` libera/bloqueia o Level Up da mesa. |
+| `GET` | `/api/game` | autenticado | Configuração da mesa (contador de liberação e nível inicial). |
+| `POST` | `/api/game/level-up` | **mestre** | Libera **um** Level Up para a mesa (incrementa o contador). |
 | `POST` | `/api/game/starting-level` | **mestre** | `{ level }` define o nível em que a mesa começa (o assistente de criação aplica os níveis até ele). |
 
 | Evento | Destino | Conteúdo |
 |--------|---------|----------|
-| `game:config` | mesa | Configuração da mesa atualizada (liberação/bloqueio). |
+| `game:config` | mesa | Configuração da mesa atualizada (nova liberação, nível inicial...). |
 
-A configuração é uma linha única em `game_config`. Cada personagem guarda `lastLevelUpRelease`; o botão fica habilitado quando `levelUpUnlocked` está ligado e `lastLevelUpRelease < levelUpRelease`.
+A configuração é uma linha única em `game_config`. Cada personagem guarda `lastLevelUpRelease`; o botão fica habilitado enquanto `lastLevelUpRelease < levelUpRelease`.
 
-No mesmo lugar do painel fica o **NÍVEL INICIAL** da mesa: quando é maior que 1, o assistente de criação aplica os níveis 2 até ele ao concluir a montagem — **sem** depender da liberação do mestre e **sem** consumir a liberação do jogador (o nível inicial não é um Level Up de campanha).
+### Aba "Mesa"
+
+O **NÍVEL INICIAL** e as listas de referência ficam na aba **Mesa** do painel do mestre (antes o nível inicial aparecia em destaque na barra de abas). Quando o nível inicial é maior que 1, o assistente de criação aplica os níveis 2 até ele ao concluir a montagem — **sem** depender da liberação do mestre e **sem** consumir a liberação do jogador (o nível inicial não é um Level Up de campanha).
+
+A aba também consulta o **compêndio da mesa** (somente leitura por enquanto): todas as classes com seus atributos (dado de vida, salvaguardas, conjuração e subclasses), todas as linhagens de raça com a história, todos os antecedentes com as perícias e o espaço das **magias** — o formato já existe, mas o catálogo de magias ainda está vazio, para ser preenchido numa etapa seguinte.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/compendium` | autenticado | Listas de referência da mesa (classes, raças, antecedentes e magias). |
+
+O compêndio é montado por `getCompendium()` em `src/modules/compendium/compendium.service.ts`, que hoje lê os catálogos estáticos (`shared/classes` e `shared/creation.ts`). É a única função a trocar de fonte quando o mestre puder criar e editar raças e antecedentes.
 
 ### Assistente de Level Up
 

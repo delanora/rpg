@@ -478,9 +478,15 @@ export interface ClassAdjustments {
   abilityCaps: Partial<Record<AbilityKey, number>>;
 }
 
-/** Configuração global da mesa (Level Up liberado pelo mestre). */
+/**
+ * Configuração global da mesa.
+ *
+ * `levelUpRelease` conta as liberações de Level Up: cada clique do mestre em
+ * "Liberar Level Up" avança o contador e cada personagem o compara com o próprio
+ * `lastLevelUpRelease` para saber se ainda pode subir de nível.
+ */
 export interface GameConfig {
-  levelUpUnlocked: boolean;
+  /** Número da liberação atual, comparado com `Character.lastLevelUpRelease`. */
   levelUpRelease: number;
   /**
    * Nível em que a mesa começa: o assistente de criação aplica os níveis 2 até
@@ -488,6 +494,96 @@ export interface GameConfig {
    */
   startingLevel: number;
   updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Compêndio da mesa (aba "Configurações da mesa")
+// ---------------------------------------------------------------------------
+
+/** Característica de uma classe ou subclasse do compêndio. */
+export interface CompendiumFeature {
+  id: string;
+  name: string;
+  /** Nível em que a característica é obtida. */
+  level: number;
+  description: string;
+}
+
+/** Uma subclasse do compêndio. */
+export interface CompendiumSubclass {
+  id: string;
+  name: string;
+  description: string;
+  features: CompendiumFeature[];
+}
+
+/** Uma classe do compêndio, com os atributos que a definem. */
+export interface CompendiumClass {
+  key: string;
+  name: string;
+  /** Dado de vida: 6, 8, 10 ou 12. */
+  hitDie: number;
+  /** As duas salvaguardas com proficiência. */
+  savingThrows: AbilityKey[];
+  /** Nível em que a subclasse é escolhida. */
+  subclassLevel: number;
+  spellcasting: {
+    type: SpellcastingType;
+    ability: AbilityKey | null;
+    learning: SpellLearning;
+  };
+  features: CompendiumFeature[];
+  subclasses: CompendiumSubclass[];
+}
+
+/** Uma linhagem de raça do compêndio. */
+export interface CompendiumRace {
+  key: string;
+  name: string;
+  /** Raça "mãe", para agrupar as linhagens (as três de elfo, as duas de anão...). */
+  baseRace: string | null;
+  description: string | null;
+  abilityBonuses: Partial<Record<AbilityKey, number>>;
+  /** Quantos atributos à escolha ganham +1 (Meio-Elfo: 2; 0 = nenhum). */
+  abilityChoice: number;
+}
+
+/** Um antecedente do compêndio. */
+export interface CompendiumBackground {
+  key: string;
+  name: string;
+  description: string | null;
+  /** Perícias concedidas (chaves de `SKILLS`). */
+  skills: string[];
+}
+
+/**
+ * Uma magia do compêndio.
+ *
+ * A estrutura já existe, mas a lista ainda vem vazia: o catálogo de magias será
+ * preenchido numa etapa seguinte.
+ */
+export interface CompendiumSpell {
+  key: string;
+  name: string;
+  /** 0 = truque; 1..9 = nível da magia. */
+  level: number;
+  school: string;
+  castingTime: string;
+  range: string;
+  components: string;
+  duration: string;
+  description: string;
+  /** Chaves das classes que têm a magia na lista. */
+  classes: string[];
+}
+
+/** As listas de referência da mesa. */
+export interface Compendium {
+  classes: CompendiumClass[];
+  races: CompendiumRace[];
+  backgrounds: CompendiumBackground[];
+  spells: CompendiumSpell[];
 }
 
 // ---------------------------------------------------------------------------

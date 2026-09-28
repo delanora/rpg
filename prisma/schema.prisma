@@ -15,21 +15,20 @@ datasource db {
 // -----------------------------------------------------------------------------
 
 /// Configuração global da mesa (linha única, `id = "main"`).
-/// Hoje guarda só o controle de Level Up liberado pelo mestre.
+/// Guarda o contador de liberações de Level Up e o nível inicial da mesa.
 model GameConfig {
-  id              String   @id @default("main")
-  /// Verdadeiro enquanto o mestre deixou o Level Up liberado.
-  levelUpUnlocked Boolean  @default(false)
+  id             String   @id @default("main")
   ///
-  /// Incrementa a cada liberação (desligar → ligar). O personagem guarda a
-  /// última liberação que já usou, então cada jogador sobe um nível por vez.
-  levelUpRelease  Int      @default(0)
+  /// Incrementa a cada clique do mestre em "Liberar Level Up". O personagem
+  /// guarda a última liberação que já usou, então cada jogador sobe UM nível
+  /// por liberação — e o mestre libera de novo sem precisar bloquear antes.
+  levelUpRelease Int      @default(0)
   ///
   /// Nível em que os personagens começam a mesa. Quando é maior que 1, o
   /// assistente de criação aplica os níveis 2 até este ao concluir a montagem
   /// (sem depender da liberação de Level Up do mestre).
-  startingLevel   Int      @default(1)
-  updatedAt       DateTime @updatedAt
+  startingLevel  Int      @default(1)
+  updatedAt      DateTime @updatedAt
 
   @@map("game_config")
 }
