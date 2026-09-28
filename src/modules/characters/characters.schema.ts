@@ -131,6 +131,8 @@ export const spellsStateSchema = z.object({
   slots: z.record(z.string(), spellSlotSchema).default({}),
 });
 
+export type SpellsStateInput = z.infer<typeof spellsStateSchema>;
+
 // `attackSchema` vem de ../shared/attacks.ts — o formato é compartilhado com as criaturas.
 
 export const featureSchema = z.object({
@@ -236,7 +238,12 @@ export const updateCharacterSchema = z
     hpCurrent: z.number().int().min(-999).max(9999),
     hpMax: z.number().int().min(0).max(9999),
     hpTemp: nonNegativeInt.max(9999),
-    armorClass: z.number().int().min(0).max(99),
+    /**
+     * CA manual (override do mestre). A CA da ficha é CALCULADA a partir da
+     * armadura equipada, dos atributos e da Defesa sem Armadura da classe;
+     * `null` volta ao automático. O jogador nunca grava aqui.
+     */
+    armorClassOverride: z.number().int().min(0).max(99).nullable(),
     initiativeBonus: z.number().int().min(-30).max(30),
     speed: z.number().int().min(0).max(999),
 

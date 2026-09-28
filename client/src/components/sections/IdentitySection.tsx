@@ -7,7 +7,7 @@ import {
   SPELL_LEARNING_LABELS,
   hitDieLabel,
 } from '../../dnd';
-import { useReadOnly } from '../../readonly';
+import { useSheetAccess } from '../../readonly';
 import { clampInt } from '../../utils';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
@@ -31,7 +31,9 @@ const SPELL_LEARNING_SHORT: Record<string, string> = {
 };
 
 export function IdentitySection({ character, update }: SheetSectionProps) {
-  const readOnly = useReadOnly();
+  // O avatar é estado de jogo (segue editável com a criação finalizada); os
+  // demais campos da identidade são construção.
+  const { readOnly, lockedConstruction } = useSheetAccess();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Os botões do avatar só aparecem depois de clicar na foto.
@@ -213,6 +215,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           <span>Nome</span>
           <InlineField
             value={character.name}
+            readOnly={lockedConstruction}
             ariaLabel="Nome do personagem"
             onCommit={(value) => {
               const name = value.trim();
@@ -225,6 +228,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           <span>Raça</span>
           <InlineField
             value={character.race}
+            readOnly={lockedConstruction}
             ariaLabel="Raça"
             placeholder="ex.: Anão"
             onCommit={(value) => update({ race: value.trim() })}
@@ -240,6 +244,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           <span>Antecedente</span>
           <InlineField
             value={character.background}
+            readOnly={lockedConstruction}
             ariaLabel="Antecedente"
             placeholder="ex.: Sábio"
             onCommit={(value) => update({ background: value.trim() })}
@@ -252,6 +257,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
             value={character.alignment}
             mode="select"
             options={ALIGNMENTS}
+            readOnly={lockedConstruction}
             ariaLabel="Alinhamento"
             onCommit={(value) => update({ alignment: value })}
           />
@@ -263,6 +269,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
             value={character.experience}
             mode="number"
             min={0}
+            readOnly={lockedConstruction}
             ariaLabel="Pontos de experiência"
             onCommit={(value) =>
               update({ experience: clampInt(value, 0, 99_999_999, character.experience) })
@@ -319,6 +326,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
               value=""
               mode="select"
               options={classNames}
+              readOnly={lockedConstruction}
               ariaLabel="Classe do personagem"
               onCommit={(value) => {
                 const key = classKeyFromName(value);
@@ -342,6 +350,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
                     value={entry.subclass}
                     mode="select"
                     options={entry.subclassNames}
+                    readOnly={lockedConstruction}
                     ariaLabel={`Subclasse de ${entry.className}`}
                     onCommit={(value) => setSubclass(entry, value)}
                   />

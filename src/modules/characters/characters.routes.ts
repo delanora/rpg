@@ -9,6 +9,7 @@ import {
 import {
   createCharacter,
   deleteCharacter,
+  finalizeCharacter,
   getSheetByUserId,
   levelUpCharacter,
   listCharacters,
@@ -78,6 +79,17 @@ charactersRouter.patch('/me', authenticate, async (req, res) => {
 
   const character = await updateCharacter(actorFrom(req), parsed.data);
   res.json({ character });
+});
+
+/**
+ * POST /api/characters/me/finalize — encerra a criação do personagem.
+ *
+ * Botão **provisório** da ficha (será substituído pelo wizard de criação):
+ * depois de finalizada, o jogador só mexe no estado de jogo e a construção
+ * passa a mudar apenas pelo Level Up ou pelo mestre.
+ */
+charactersRouter.post('/me/finalize', authenticate, async (req, res) => {
+  res.json({ character: await finalizeCharacter(actorFrom(req)) });
 });
 
 /**

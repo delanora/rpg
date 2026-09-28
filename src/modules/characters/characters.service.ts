@@ -25,6 +25,7 @@ import type {
   UpdateCharacterInput,
 } from './characters.schema.js';
 import { parseJson } from '../shared/json.js';
+import { spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
 import {
   applySaveProficiencies,
   averageHitDie,
@@ -69,12 +70,52 @@ const SCALAR_KEYS = [
   'hpCurrent',
   'hpMax',
   'hpTemp',
-  'armorClass',
   'initiativeBonus',
   'speed',
   'avatarUrl',
   'notes',
 ] as const;
+
+/**
+ * Campos que o jogador ainda pode alterar com a criação finalizada — o ESTADO
+ * DE JOGO. Todo o resto (identidade, atributos, proficiências, classes, PV
+ * máximo, CA, magias conhecidas, ataques, características e inventário) é
+ * construção: só muda pelo Level Up ou pelas mãos do mestre.
+ */
+const PLAYER_STATE_KEYS = [
+  'hpCurrent',
+  'hpTemp',
+  'notes',
+  'avatarUrl',
+  'classState',
+  'spells',
+] as const;
+
+/** Nome de cada campo de construção, para a mensagem de 403 ficar legível. */
+const CREATION_FIELD_LABELS: Record<string, string> = {
+  name: 'nome',
+  race: 'raça',
+  background: 'antecedente',
+  alignment: 'alinhamento',
+  experience: 'experiência',
+  classes: 'classes',
+  level: 'nível',
+  strength: 'Força',
+  dexterity: 'Destreza',
+  constitution: 'Constituição',
+  intelligence: 'Inteligência',
+  wisdom: 'Sabedoria',
+  charisma: 'Carisma',
+  hpMax: 'PV máximo',
+  armorClassOverride: 'CA',
+  initiativeBonus: 'iniciativa',
+  speed: 'deslocamento',
+  skills: 'perícias',
+  saves: 'salvaguardas',
+  attacks: 'ataques',
+  features: 'características',
+  inventory: 'inventário',
+};
 
 function emptySpells(): Prisma.InputJsonValue {
   return { list: [], slots: {} };
@@ -565,18 +606,68 @@ export async function republishSheetsWithCatalogItem(itemId: string): Promise<vo
 }
 
 /**
+ * Espaços de magia de uma ficha já finalizada: o jogador só gasta e recupera
+ * usos. A lista de magias conhecidas e o TOTAL de cada nível vêm da classe e
+ * do Level Up, então continuam como estavam.
+ */
+function mergeSpellUsage(storedRaw: unknown, incoming: SpellsStateInput): Prisma.InputJsonValue {
+  const stored = parseJson<SpellsStateInput>(spellsStateSchema, storedRaw, { list: [], slots: {} });
+  const slots: SpellsStateInput['slots'] = {};
+
+  for (const [level, slot] of Object.entries(stored.slots)) {
+    const used = incoming.slots[level]?.used ?? slot.used;
+    slots[level] = { max: slot.max, used: Math.max(0, Math.min(used, slot.max)) };
+  }
+
+  return { list: stored.list, slots } as unknown as Prisma.InputJsonValue;
+}
+
+/**
+ * Travas do jogador (não valem para o mestre).
+ *
+ * - A CA manual é privilégio do mestre em qualquer momento — a CA do jogador é
+ *   sempre a calculada.
+ * - Com a criação finalizada, só o estado de jogo continua editável.
+ */
+function assertPlayerCanPatch(character: Character, patch: UpdateCharacterInput): void {
+  if (patch.armorClassOverride !== undefined) {
+    throw new HttpError(
+      'A Classe de Armadura é calculada automaticamente; só o mestre pode definir um valor manual.',
+      403,
+    );
+  }
+
+  if (!character.creationFinalized) return;
+
+  const blocked = Object.keys(patch).filter(
+    (key) => !(PLAYER_STATE_KEYS as readonly string[]).includes(key),
+  );
+  if (blocked.length === 0) return;
+
+  const names = blocked.map((key) => CREATION_FIELD_LABELS[key] ?? key).join(', ');
+  throw new HttpError(
+    `A criação deste personagem foi finalizada: só o Level Up e o mestre podem alterar ${names}. ` +
+      'Você continua podendo mexer no PV atual, no PV temporário, nos usos de recursos e espaços de magia, nas anotações, no avatar e na movimentação de itens.',
+    403,
+  );
+}
+
+/**
  * Núcleo da edição: valida o patch contra a classe, grava e publica.
  * Serve tanto ao dono da ficha quanto ao mestre que a está editando.
  */
 async function applyCharacterPatch(
   owner: SheetOwner,
   patch: UpdateCharacterInput,
-  editedBy?: string,
+  options: { editedBy?: string; fromPlayer?: boolean } = {},
 ): Promise<CharacterDto> {
+  const { editedBy, fromPlayer = false } = options;
   const existing = await prisma.character.findUnique({ where: { userId: owner.userId } });
   if (!existing) {
     throw new HttpError('Esta ficha ainda não foi criada.', 404);
   }
+
+  if (fromPlayer) assertPlayerCanPatch(existing, patch);
 
   const data: Record<string, unknown> = { version: { increment: 1 } };
 
@@ -650,7 +741,17 @@ async function applyCharacterPatch(
 
   if (patch.skills !== undefined) data.skills = normalizeSkills(patch.skills);
   if (patch.inventory !== undefined) data.inventory = patch.inventory;
-  if (patch.spells !== undefined) data.spells = patch.spells;
+  if (patch.spells !== undefined) {
+    data.spells =
+      fromPlayer && existing.creationFinalized
+        ? mergeSpellUsage(existing.spells, patch.spells)
+        : patch.spells;
+  }
+
+  // A CA manual é o override do mestre (`null` limpa e volta ao automático).
+  if (patch.armorClassOverride !== undefined) {
+    data.armorClass = patch.armorClassOverride ?? 0;
+  }
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
   if (patch.features !== undefined) data.features = patch.features;
   if (patch.classState !== undefined) data.classState = patch.classState;
@@ -669,7 +770,36 @@ async function applyCharacterPatch(
  * As coleções enviadas substituem integralmente o valor anterior.
  */
 export function updateCharacter(actor: Actor, patch: UpdateCharacterInput): Promise<CharacterDto> {
-  return applyCharacterPatch({ userId: actor.userId, username: actor.username }, patch);
+  return applyCharacterPatch({ userId: actor.userId, username: actor.username }, patch, {
+    fromPlayer: true,
+  });
+}
+
+/**
+ * Encerra a criação do personagem (botão "Finalizar criação" da ficha).
+ *
+ * A partir daí o jogador só mexe no estado de jogo; identidade, atributos,
+ * proficiências, classes, PV máximo e CA passam a mudar apenas pelo Level Up ou
+ * pelas mãos do mestre. Idempotente: finalizar de novo devolve a ficha como está
+ * (o botão só aparece enquanto a criação está aberta).
+ */
+export async function finalizeCharacter(actor: Actor): Promise<CharacterDto> {
+  const existing = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!existing) {
+    throw new HttpError('Esta ficha ainda não foi criada.', 404);
+  }
+
+  if (existing.creationFinalized) {
+    return toSheetDto(existing, actor.username);
+  }
+
+  const character = await prisma.character.update({
+    where: { userId: actor.userId },
+    data: { creationFinalized: true, version: { increment: 1 } },
+  });
+
+  await publishChange(actor, character, { creationFinalized: true });
+  return toSheetDto(character, actor.username);
 }
 
 /**
@@ -693,10 +823,12 @@ export async function updateCharacterAsMaster(
     throw new HttpError('Ficha não encontrada.', 404);
   }
 
+  // O mestre não tem travas: edita qualquer campo, em qualquer momento,
+  // inclusive com a criação já finalizada (`armorClassOverride` inclusive).
   return applyCharacterPatch(
     { userId: target.userId, username: target.user.username },
     patch,
-    master.displayName,
+    { editedBy: master.displayName },
   );
 }
 

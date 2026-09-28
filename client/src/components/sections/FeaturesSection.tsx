@@ -1,5 +1,5 @@
 import { FEATURE_SOURCES, FEATURE_SOURCE_LABELS } from '../../dnd';
-import { useReadOnly } from '../../readonly';
+import { useSheetAccess } from '../../readonly';
 import type { Feature, FeatureSource } from '../../types';
 import { newId } from '../../utils';
 import { InlineField } from '../InlineField';
@@ -7,8 +7,15 @@ import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 export function FeaturesSection({ character, update }: SheetSectionProps) {
-  const readOnly = useReadOnly();
+  // Características (inclusive os talentos) são construção: com a criação
+  // finalizada elas só mudam pelo Level Up ou pelo mestre.
+  const { lockedConstruction } = useSheetAccess();
+  const readOnly = lockedConstruction;
   const features = character.features;
+  // Talentos escolhidos no Level Up ficam registrados aqui (source: 'feat') e
+  // ganham uma subseção própria; a lista editável mostra o resto.
+  const feats = features.filter((feature) => feature.source === 'feat');
+  const otherFeatures = features.filter((feature) => feature.source !== 'feat');
 
   function patchFeature(id: string, patch: Partial<Feature>): void {
     update({
@@ -49,6 +56,38 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
         )
       }
     >
+      {feats.length > 0 ? (
+        <>
+          <h3 className="subsection-title">Talentos</h3>
+          <div className="feature-list">
+            {feats.map((feat) => (
+              <article className="feature-card" key={feat.id}>
+                <div className="feature-head">
+                  <InlineField
+                    value={feat.name}
+                    readOnly={readOnly}
+                    ariaLabel="Nome do talento"
+                    onCommit={(value) => {
+                      const name = value.trim();
+                      if (name) patchFeature(feat.id, { name });
+                    }}
+                  />
+                  <em className="tag">talento</em>
+                </div>
+                <InlineField
+                  value={feat.description}
+                  mode="textarea"
+                  readOnly={readOnly}
+                  placeholder="Descreva o efeito..."
+                  ariaLabel="Descrição do talento"
+                  onCommit={(value) => patchFeature(feat.id, { description: value })}
+                />
+              </article>
+            ))}
+          </div>
+        </>
+      ) : null}
+
       {character.activeFeatures.length > 0 ? (
         <>
           <h3 className="subsection-title">Características de Classe</h3>
@@ -73,11 +112,11 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
         </>
       ) : null}
 
-      {features.length === 0 ? (
+      {otherFeatures.length === 0 ? (
         <p className="empty-hint">Nenhuma característica cadastrada.</p>
       ) : (
         <div className="feature-list">
-          {features.map((feature) => (
+          {otherFeatures.map((feature) => (
             <article className="feature-card" key={feature.id}>
               <div className="feature-head">
                 <InlineField

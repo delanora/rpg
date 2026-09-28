@@ -120,6 +120,7 @@ export function SheetsTab({ characters, onUpdate, onDelete }: SheetsTabProps) {
               character={selected}
               update={(patch) => onUpdate(selected.id, patch)}
               readOnly={!editing}
+              masterView
             />
 
             {confirmingDelete ? (

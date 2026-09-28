@@ -1,0 +1,170 @@
+import type { ArmorType, ItemDetails } from './item-details.js';
+
+/**
+ * Classe de Armadura calculada (PHB 2014).
+ *
+ * A CA **nunca** é um valor fixo da ficha: ela sai dos atributos atuais e do
+ * equipamento. O único valor gravado é o override manual do mestre (`0` =
+ * automático). Fica em `shared` porque a ficha (DTO) e o combate usam a mesma
+ * conta.
+ */
+
+/** Armadura equipada (o item de categoria Armadura no slot de peitoral). */
+export interface ArmorPiece {
+  name: string;
+  type: ArmorType;
+  /** CA base da armadura (ex.: couro = 11, cota de malha = 16). */
+  base: number;
+}
+
+/** Tudo que o equipamento contribui para a CA. */
+export interface ArmorClassPieces {
+  armor: ArmorPiece | null;
+  /** Soma do bônus de CA dos escudos equipados. */
+  shieldBonus: number;
+  /** Bônus mágicos de itens equipados que não são a armadura (nem o escudo). */
+  magicBonus: number;
+}
+
+/** Fórmula de defesa sem armadura concedida por uma classe. */
+export interface UnarmoredCandidate {
+  /** Rótulo para a ficha (ex.: "Defesa sem Armadura"). */
+  label: string;
+  /**
+   * Valor **já somado** da fórmula: base + Destreza + o atributo da classe.
+   * Elas não se acumulam entre si — vale a que der o maior valor.
+   */
+  value: number;
+}
+
+/** Resultado detalhado, usado pela ficha e pelo combate. */
+export interface ArmorClassDetail {
+  /** CA final: o override do mestre quando existe, senão a automática. */
+  value: number;
+  /** CA calculada pelas regras, sem override. */
+  automatic: number;
+  /** Override manual do mestre (`null` = cálculo automático). */
+  override: number | null;
+  armor: ArmorPiece | null;
+  /** Parcela da Destreza aplicada (0 com armadura pesada, no máximo +2 na média). */
+  dexterityBonus: number;
+  shieldBonus: number;
+  magicBonus: number;
+  /** Defesa sem armadura usada (quando não há armadura); `null` no padrão 10 + DES. */
+  unarmoredLabel: string | null;
+}
+
+const EMPTY_PIECES: ArmorClassPieces = { armor: null, shieldBonus: 0, magicBonus: 0 };
+
+/** Mínimo que um item de inventário precisa ter para entrar na conta. */
+export interface EquippedItemLike {
+  name: string;
+  category: string;
+  slot: string | null;
+  details: ItemDetails;
+}
+
+function armorTypeOf(value: unknown): ArmorType | null {
+  return value === 'Leve' || value === 'Média' || value === 'Pesada' ? value : null;
+}
+
+/**
+ * Separa o que o personagem tem equipado e que mexe na CA.
+ *
+ * - **Armadura**: categoria `Armadura` no slot de peitoral (`chest`) com
+ *   `armorType` e `baseArmorClass` cadastrados pelo mestre. Sem esses campos
+ *   (itens antigos) o item não vira armadura — só o bônus avulso dele conta.
+ * - **Escudo**: qualquer item da categoria `Escudo` equipado soma o próprio
+ *   `armorClassBonus`.
+ * - **Bônus mágicos**: o `armorClassBonus` dos demais itens equipados (anéis,
+ *   elmos, armadura mágica...) some ao total.
+ */
+export function armorPiecesFrom(items: readonly EquippedItemLike[]): ArmorClassPieces {
+  const equipped = items.filter((item) => item.slot !== null);
+  if (equipped.length === 0) return EMPTY_PIECES;
+
+  let armor: ArmorPiece | null = null;
+  let shieldBonus = 0;
+  let magicBonus = 0;
+
+  for (const item of equipped) {
+    const bonus = item.details.armorClassBonus ?? 0;
+
+    if (item.category === 'Escudo') {
+      shieldBonus += bonus;
+      continue;
+    }
+
+    if (item.category === 'Armadura' && item.slot === 'chest') {
+      const type = armorTypeOf(item.details.armorType);
+      const base = item.details.baseArmorClass ?? 0;
+      if (type && base > 0) {
+        armor = { name: item.name, type, base };
+        magicBonus += bonus;
+        continue;
+      }
+    }
+
+    magicBonus += bonus;
+  }
+
+  return { armor, shieldBonus, magicBonus };
+}
+
+export interface ArmorClassInput {
+  /** Modificador de Destreza. */
+  dexterityModifier: number;
+  pieces: ArmorClassPieces;
+  /** Defesas sem armadura das classes (o padrão 10 + DES entra sempre). */
+  unarmored?: readonly UnarmoredCandidate[];
+  /** Override manual do mestre (`null`/`0`/ausente = automático). */
+  override?: number | null;
+}
+
+/** Calcula a CA aplicando armadura, escudo, bônus e o override do mestre. */
+export function computeArmorClass(input: ArmorClassInput): ArmorClassDetail {
+  const { pieces } = input;
+  const override =
+    input.override === undefined || input.override === null || input.override <= 0
+      ? null
+      : input.override;
+
+  let automatic: number;
+  let dexterityBonus = 0;
+  let unarmoredLabel: string | null = null;
+
+  if (pieces.armor) {
+    dexterityBonus =
+      pieces.armor.type === 'Pesada'
+        ? 0
+        : pieces.armor.type === 'Média'
+          ? Math.min(input.dexterityModifier, 2)
+          : input.dexterityModifier;
+    automatic = pieces.armor.base + dexterityBonus;
+  } else {
+    const candidates: UnarmoredCandidate[] = [
+      { label: '', value: 10 + input.dexterityModifier },
+      ...(input.unarmored ?? []),
+    ];
+    const best = candidates.reduce(
+      (top, candidate) => (candidate.value > top.value ? candidate : top),
+      candidates[0],
+    );
+    automatic = best.value;
+    unarmoredLabel = best.label || null;
+  }
+
+  // Escudo e bônus mágicos somam em qualquer situação.
+  automatic += pieces.shieldBonus + pieces.magicBonus;
+
+  return {
+    value: override ?? automatic,
+    automatic,
+    override,
+    armor: pieces.armor,
+    dexterityBonus,
+    shieldBonus: pieces.shieldBonus,
+    magicBonus: pieces.magicBonus,
+    unarmoredLabel,
+  };
+}

@@ -7,6 +7,7 @@ import {
   type DiceRolledPayload,
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
+import { characterArmorClass } from '../characters/armor-class.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import {
   computeMulticlassAdjustments,
@@ -506,8 +507,12 @@ export async function resolveAttack(
     throw new HttpError('Ataque não encontrado nesta ficha ou criatura.', 404);
   }
 
+  // Personagem não tem CA gravada: ela é calculada da ficha (atributos +
+  // equipamento + override do mestre), igual à que aparece no tabuleiro.
   const targetArmorClass =
-    target.armorClass ?? target.character?.armorClass ?? target.creature?.armorClass ?? 10;
+    target.character !== null
+      ? characterArmorClass(target.character).value
+      : (target.armorClass ?? target.creature?.armorClass ?? 10);
 
   const attackRoll = rollD20();
   const attackTotal = attackRoll + attack.attackBonus;

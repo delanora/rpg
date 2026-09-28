@@ -65,6 +65,14 @@ model Character {
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  ///
+  /// Criação encerrada: enquanto for `false`, o jogador ainda está montando o
+  /// personagem e pode mexer em identidade, atributos, proficiências e classes.
+  /// Com `true`, só o estado de jogo continua editável pelo jogador (PV atual,
+  /// PV temporário, usos de recursos/espaços, anotações, avatar e movimentação
+  /// de itens) — o resto só muda pelo Level Up ou pelo mestre.
+  creationFinalized Boolean @default(false)
+
   // Identidade
   name String @default("Novo Personagem")
   race String @default("")
@@ -92,10 +100,14 @@ model Character {
   charisma     Int @default(10)
 
   // Pontos de vida e defesa
-  hpCurrent       Int @default(1)
-  hpMax           Int @default(1)
-  hpTemp          Int @default(0)
-  armorClass      Int @default(10)
+  hpCurrent Int @default(1)
+  hpMax     Int @default(1)
+  hpTemp    Int @default(0)
+  ///
+  /// OVERRIDE da Classe de Armadura, definido pelo mestre. `0` = sem override:
+  /// a CA é calculada (armadura equipada + atributos + defesa sem armadura).
+  /// Só o mestre grava aqui — a CA não é um valor fixo da ficha.
+  armorClass      Int @default(0)
   initiativeBonus Int @default(0)
   /// Deslocamento em metros (sistema métrico).
   speed           Int @default(9)

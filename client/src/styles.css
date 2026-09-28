@@ -4223,6 +4223,13 @@ input[type='checkbox']:disabled {
   color: var(--ink-soft);
 }
 
+/* Ficha com a criação finalizada: lembrete de que a montagem está fechada. */
+.creation-locked-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .btn-levelup {
   letter-spacing: 0.08em;
 }

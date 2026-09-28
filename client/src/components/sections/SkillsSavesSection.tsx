@@ -1,5 +1,5 @@
 import { ABILITY_ABBREVIATIONS, ABILITY_KEYS, ABILITY_LABELS, SKILLS, formatModifier } from '../../dnd';
-import { useReadOnly } from '../../readonly';
+import { useSheetAccess } from '../../readonly';
 import type { AbilityKey, SkillEntry } from '../../types';
 import { Icon } from '../Icon';
 import { Section } from '../Section';
@@ -28,8 +28,10 @@ export function SkillsSavesSection({
   update,
   onRoll,
 }: SheetSectionProps & { onRoll?: (input: RollInput) => void }) {
-  const readOnly = useReadOnly();
+  // Proficiências de perícias e salvaguardas são construção.
+  const { lockedConstruction } = useSheetAccess();
   const { derived } = character;
+  const readOnly = lockedConstruction;
 
   // Salvaguardas fixas (classe e features, ex.: Mente Escorregadia do ladino):
   // ficam sempre marcadas e travadas.

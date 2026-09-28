@@ -24,6 +24,16 @@ export const ITEM_CATEGORIES = [
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 /**
+ * Categoria de peso das armaduras (PHB 2014), usada no cálculo da CA:
+ * - Leve: CA base + mod. Destreza inteiro.
+ * - Média: CA base + mod. Destreza, no máximo +2.
+ * - Pesada: só a CA base.
+ */
+export const ARMOR_TYPES = ['Leve', 'Média', 'Pesada'] as const;
+
+export type ArmorType = (typeof ARMOR_TYPES)[number];
+
+/**
  * Atributos de item, todos opcionais. A categoria decide quais são usados
  * (ver `sanitizeItemDetails`), mas o formato é único para simplificar o JSONB.
  */
@@ -36,6 +46,11 @@ export const itemDetailsSchema = z.object({
   /** Cajado também é foco de conjuração. */
   spellcastingFocus: z.boolean().optional(),
   // Armadura / Escudo
+  /** Peso da armadura (só a categoria Armadura usa; decide como a Destreza entra). */
+  armorType: z.enum(ARMOR_TYPES).optional(),
+  /** CA base da armadura (ex.: couro = 11, cota de malha = 16). */
+  baseArmorClass: z.number().int().min(0).max(30).optional(),
+  /** Bônus avulso de CA (escudos e itens mágicos somam ao total). */
   armorClassBonus: z.number().int().min(-10).max(30).optional(),
   // Poção / Anel
   effectRoll: z.string().trim().max(60).optional(),
@@ -58,7 +73,7 @@ export type ItemPrice = z.infer<typeof itemPriceSchema>;
 const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   Arma: ['damageCount', 'damageDie', 'damageType', 'attackBonus'],
   Cajado: ['damageCount', 'damageDie', 'damageType', 'attackBonus', 'spellcastingFocus'],
-  Armadura: ['armorClassBonus'],
+  Armadura: ['armorType', 'baseArmorClass', 'armorClassBonus'],
   Escudo: ['armorClassBonus'],
   Poção: ['effectRoll', 'duration'],
   Anel: ['effectRoll', 'attunement'],
