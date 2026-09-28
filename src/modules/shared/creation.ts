@@ -8,12 +8,11 @@
  *   passo alcançado, as rolagens de 4d6 e os valores-base dos atributos);
  * - os catálogos de raças e antecedentes.
  *
- * Os catálogos ainda estão VAZIOS: enquanto não existirem, o assistente pede o
- * texto livre (raça/antecedente) e nenhum bônus racial é aplicado. A estrutura
- * já é a final — basta preencher `RACE_CATALOG`/`BACKGROUND_CATALOG` com o
- * conteúdo do livro que o passo passa a selecionar em vez de digitar e os
- * bônus de atributo/perícias entram em vigor sozinhos (ver
- * `racialAbilityBonuses` e o uso em creation.service.ts).
+ * O catálogo de RAÇAS do Livro do Jogador já está preenchido: o passo 3 lista as
+ * opções (uma por linhagem/sub-raça) em vez de pedir texto livre, e os bônus de
+ * atributo entram sozinhos na ficha (ver `racialAbilityBonuses` e o uso em
+ * creation.service.ts). O catálogo de ANTECEDENTES ainda está vazio: enquanto
+ * não existir, o passo 4 continua pedindo o texto livre.
  */
 
 import { ABILITY_KEYS, type AbilityKey } from './dnd5e.js';
@@ -55,13 +54,26 @@ export const CREATION_ROLL_LABEL = 'Criação de personagem';
 // Catálogos de raça e antecedente
 // ---------------------------------------------------------------------------
 
-/** Uma raça do catálogo (vazio enquanto o conteúdo do livro não é cadastrado). */
+/** Uma raça do catálogo — uma entrada por linhagem/sub-raça do Livro do Jogador. */
 export interface RaceOption {
+  /** Chave única da LINHAGEM (ex.: `dwarf-hill`, `elf-high`, `half-elf`). */
   key: string;
+  /** Nome completo, como fica gravado em `characters.race` (ex.: "Anão (Anão da Colina)"). */
   name: string;
+  /**
+   * Nome da raça base, para agrupar as sub-raças na interface
+   * (ex.: as três linhagens de elfo compartilham "Elfo").
+   */
+  baseRace?: string;
   description?: string;
-  /** Bônus racial fixo aplicado aos atributos (ex.: Anão: CON +2). */
+  /** Bônus racial FIXO aplicado aos atributos (ex.: Anão: CON +2). */
   abilityBonuses?: Partial<Record<AbilityKey, number>>;
+  /**
+   * Quantos atributos à escolha ganham +1 cada (Meio-Elfo: 2). Os atributos
+   * escolhidos vivem no rascunho (`CreationDraft.abilityChoices`) e são
+   * validados contra `raceChoicePool`.
+   */
+  abilityChoice?: number;
 }
 
 /** Um antecedente do catálogo. */
@@ -73,8 +85,127 @@ export interface BackgroundOption {
   skills?: string[];
 }
 
-/** Raças do catálogo. Vazio: o assistente usa texto livre (ver o cabeçalho). */
-export const RACE_CATALOG: readonly RaceOption[] = [];
+/**
+ * Raças do Livro do Jogador (2014).
+ *
+ * Cada LINHAGEM é uma entrada própria, com os bônus JÁ SOMADOS da raça base e
+ * da sub-raça — assim o passo 3 é uma seleção simples e o bônus entra direto
+ * em `racialAbilityBonuses`. O `baseRace` guarda o nome da raça "mãe" para uma
+ * futura interface em dois níveis.
+ *
+ * O Draconato fica em uma única entrada: a ancestralidade dracônica (cor) muda
+ * a arma de sopro e a resistência, não os atributos, e o personagem ainda não
+ * tem campo para guardá-la.
+ */
+export const RACE_CATALOG: readonly RaceOption[] = [
+  {
+    key: 'dwarf-hill',
+    name: 'Anão (Anão da Colina)',
+    baseRace: 'Anão',
+    description: 'Robusto e teimoso, com sentidos apurados e vigor lendário.',
+    abilityBonuses: { constitution: 2, wisdom: 1 },
+  },
+  {
+    key: 'dwarf-mountain',
+    name: 'Anão (Anão da Montanha)',
+    baseRace: 'Anão',
+    description: 'Criado nas alturas, troca a sabedoria pela força bruta.',
+    abilityBonuses: { constitution: 2, strength: 2 },
+  },
+  {
+    key: 'elf-high',
+    name: 'Elfo (Alto Elfo)',
+    baseRace: 'Elfo',
+    description: 'Herdeiro das torres antigas, com mente afiada para a magia.',
+    abilityBonuses: { dexterity: 2, intelligence: 1 },
+  },
+  {
+    key: 'elf-wood',
+    name: 'Elfo (Elfo da Floresta)',
+    baseRace: 'Elfo',
+    description: 'Andarilho das matas, atento e silencioso como a própria folhagem.',
+    abilityBonuses: { dexterity: 2, wisdom: 1 },
+  },
+  {
+    key: 'elf-drow',
+    name: 'Elfo (Drow)',
+    baseRace: 'Elfo',
+    description: 'Elfo negro do Subterrâneo, marcado pela magia e pela presença sombria.',
+    abilityBonuses: { dexterity: 2, charisma: 1 },
+  },
+  {
+    key: 'halfling-lightfoot',
+    name: 'Halfling (Pés-Leves)',
+    baseRace: 'Halfling',
+    description: 'Pequeno e sorrateiro, mais fácil de amar do que de encontrar.',
+    abilityBonuses: { dexterity: 2, charisma: 1 },
+  },
+  {
+    key: 'halfling-stout',
+    name: 'Halfling (Robusto)',
+    baseRace: 'Halfling',
+    description: 'Mais resistente que os primos, com o vigor dos anões no sangue.',
+    abilityBonuses: { dexterity: 2, constitution: 1 },
+  },
+  {
+    key: 'human',
+    name: 'Humano',
+    baseRace: 'Humano',
+    description: 'Versátil e ambicioso: um pouco melhor em tudo.',
+    abilityBonuses: {
+      strength: 1,
+      dexterity: 1,
+      constitution: 1,
+      intelligence: 1,
+      wisdom: 1,
+      charisma: 1,
+    },
+  },
+  {
+    key: 'dragonborn',
+    name: 'Draconato',
+    baseRace: 'Draconato',
+    description: 'Descendente de dragões, com sopro e resistência definidos pela linhagem.',
+    abilityBonuses: { strength: 2, charisma: 1 },
+  },
+  {
+    key: 'gnome-forest',
+    name: 'Gnomo (Gnomo da Floresta)',
+    baseRace: 'Gnomo',
+    description: 'Curioso e ágil, com uma queda natural por ilusões e engenhocas.',
+    abilityBonuses: { intelligence: 2, dexterity: 1 },
+  },
+  {
+    key: 'gnome-rock',
+    name: 'Gnomo (Gnomo das Rochas)',
+    baseRace: 'Gnomo',
+    description: 'Inventor nato, resistente à magia e às pedras do caminho.',
+    abilityBonuses: { intelligence: 2, constitution: 1 },
+  },
+  {
+    key: 'half-elf',
+    name: 'Meio-Elfo',
+    baseRace: 'Meio-Elfo',
+    description: 'Entre dois mundos: encanto élfico e a versatilidade de quem não pertence a lugar nenhum.',
+    // +1 em DOIS atributos à escolha (os escolhidos vão no rascunho).
+    abilityBonuses: { charisma: 2 },
+    abilityChoice: 2,
+  },
+  {
+    key: 'half-orc',
+    name: 'Meio-Orc',
+    baseRace: 'Meio-Orc',
+    description: 'Força bruta e fúria herdadas, temperadas por uma vontade teimosa.',
+    abilityBonuses: { strength: 2, constitution: 1 },
+  },
+  {
+    key: 'tiefling',
+    name: 'Tiefling',
+    baseRace: 'Tiefling',
+    description: 'Sangue infernal: carisma e astúcia com um quê de condenação.',
+    abilityBonuses: { charisma: 2, intelligence: 1 },
+  },
+];
 
 /** Antecedentes do catálogo. Vazio: o assistente usa texto livre. */
 export const BACKGROUND_CATALOG: readonly BackgroundOption[] = [];
@@ -103,11 +234,35 @@ export function findBackground(value: string): BackgroundOption | null {
 }
 
 /**
- * Bônus racial de atributo da raça escolhida. Sem catálogo (ou raça fora dele)
- * não há bônus — é o único ponto que precisa mudar quando o conteúdo entrar.
+ * Bônus racial de atributo da raça escolhida, já com os `+1` à escolha do
+ * jogador (Meio-Elfo). Raça fora do catálogo não concede bônus algum.
  */
-export function racialAbilityBonuses(race: string): Partial<Record<AbilityKey, number>> {
-  return findRace(race)?.abilityBonuses ?? {};
+export function racialAbilityBonuses(
+  race: string,
+  choices: readonly AbilityKey[] = [],
+): Partial<Record<AbilityKey, number>> {
+  const option = findRace(race);
+  if (!option) return {};
+
+  const bonuses: Partial<Record<AbilityKey, number>> = { ...(option.abilityBonuses ?? {}) };
+  const pick = option.abilityChoice ?? 0;
+  if (pick > 0) {
+    for (const ability of choices.slice(0, pick)) {
+      bonuses[ability] = (bonuses[ability] ?? 0) + 1;
+    }
+  }
+
+  return bonuses;
+}
+
+/** Atributos elegíveis ao `+1` à escolha da raça (os que não têm bônus fixo). */
+export function raceChoicePool(option: RaceOption): AbilityKey[] {
+  return ABILITY_KEYS.filter((ability) => (option.abilityBonuses?.[ability] ?? 0) === 0);
+}
+
+/** Quantos atributos à escolha a raça pede (0 = nenhum). */
+export function raceChoiceCount(race: string): number {
+  return findRace(race)?.abilityChoice ?? 0;
 }
 
 /** Perícias concedidas pelo antecedente escolhido (vazio sem catálogo). */
@@ -143,6 +298,11 @@ export interface CreationDraft {
    * consome — nem devolve — as escolhas da classe.
    */
   skillPicks: string[];
+  /**
+   * Atributos escolhidos para os `+1` da raça (hoje só o Meio-Elfo usa). Fica no
+   * rascunho para o passo 6 aplicar o bônus e a ficha reaberta poder desfazê-lo.
+   */
+  abilityChoices: AbilityKey[];
 }
 
 export const EMPTY_CREATION_DRAFT: CreationDraft = {
@@ -151,6 +311,7 @@ export const EMPTY_CREATION_DRAFT: CreationDraft = {
   rolls: [],
   baseAbilities: {},
   skillPicks: [],
+  abilityChoices: [],
 };
 
 function isAbilityKey(value: string): value is AbilityKey {
@@ -204,7 +365,17 @@ export function normalizeCreationDraft(input: unknown): CreationDraft {
         .slice(0, CREATION_ABILITY_COUNT * 2)
     : [];
 
-  return { mode, step, rolls, baseAbilities, skillPicks };
+  const abilityChoices = Array.isArray(source.abilityChoices)
+    ? [
+        ...new Set(
+          source.abilityChoices.filter(
+            (key): key is AbilityKey => typeof key === 'string' && isAbilityKey(key),
+          ),
+        ),
+      ].slice(0, CREATION_ABILITY_COUNT)
+    : [];
+
+  return { mode, step, rolls, baseAbilities, skillPicks, abilityChoices };
 }
 
 /** Índice do menor dado (o descartado na rolagem de 4d6). */

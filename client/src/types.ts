@@ -508,14 +508,20 @@ export interface CreationDraft {
   rolls: CreationRoll[];
   baseAbilities: Partial<Record<AbilityKey, number>>;
   skillPicks: string[];
+  /** Atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois). */
+  abilityChoices: AbilityKey[];
 }
 
-/** Raça do catálogo (vazio enquanto o conteúdo do livro não é cadastrado). */
+/** Uma raça do catálogo — uma entrada por linhagem/sub-raça do Livro do Jogador. */
 export interface RaceOption {
   key: string;
   name: string;
+  /** Nome da raça base (agrupa as sub-raças na interface). */
+  baseRace?: string;
   description?: string;
   abilityBonuses?: Partial<Record<AbilityKey, number>>;
+  /** Quantos atributos à escolha ganham +1 (Meio-Elfo: 2). */
+  abilityChoice?: number;
 }
 
 /** Antecedente do catálogo. */
@@ -533,6 +539,8 @@ export interface CreationState {
   rolls: CreationRoll[];
   baseAbilities: Partial<Record<AbilityKey, number>>;
   skillPicks: string[];
+  /** Atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois). */
+  abilityChoices: AbilityKey[];
   skillChoice: { count: number; from: string[] };
   startingLevel: number;
   raceCatalog: RaceOption[];
@@ -557,6 +565,8 @@ export interface CreationStepRequest {
   alignment?: string;
   avatarUrl?: string;
   race?: string;
+  /** Atributos escolhidos para os `+1` da raça (passo 3). */
+  abilityChoices?: AbilityKey[];
   background?: string;
   classKey?: string;
   baseAbilities?: Record<AbilityKey, number>;

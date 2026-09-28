@@ -454,14 +454,14 @@ Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jog
 
 A criação é um **assistente em tela cheia** que abre sozinho quando o **jogador** entra e não tem ficha **ou** tem uma ficha com `creationFinalized = false`. Enquanto ele estiver aberto, a ficha não aparece: o assistente toma a tela até o último passo. O mestre nunca é afetado (ele pode estar com a ficha do jogador aberta ao mesmo tempo).
 
-O **rascunho é o próprio registro de `Character`**: o passo 1 cria a ficha (com a criação aberta) e cada passo concluído grava o que lhe pertence nos campos da ficha — nome, raça, antecedente, classe, atributos e perícias passam pelos mesmos caminhos de validação da ficha. O JSONB `characters.creationDraft` guarda o que não é campo da ficha: modo escolhido (novo/existente), passo alcançado, as rolagens de 4d6 e os valores-base dos atributos. Fechar o navegador não perde nada: ao voltar, o assistente reabre no passo em que parou.
+O **rascunho é o próprio registro de `Character`**: o passo 1 cria a ficha (com a criação aberta) e cada passo concluído grava o que lhe pertence nos campos da ficha — nome, raça, antecedente, classe, atributos e perícias passam pelos mesmos caminhos de validação da ficha. O JSONB `characters.creationDraft` guarda o que não é campo da ficha: modo escolhido (novo/existente), passo alcançado, as rolagens de 4d6, os valores-base dos atributos e os `+1` à escolha da raça. Fechar o navegador não perde nada: ao voltar, o assistente reabre no passo em que parou.
 
 | Passo | O que faz |
 |-------|-----------|
 | 1. Tipo de personagem | **Personagem novo** (rola os atributos) ou **Personagem existente** (digita de 1 a 20). |
 | 2. Identidade | Nome, alinhamento e avatar (opcional). |
-| 3. Raça | Seleção do catálogo de raças; enquanto o catálogo não existe, campo de texto livre. |
-| 4. Antecedente | Mesma lógica da raça (catálogo ou texto livre). |
+| 3. Raça | Seleção do **catálogo de raças do PHB 2014** (uma opção por linhagem/sub-raça; o nome mostra os bônus). O **Meio-Elfo** pede dois atributos à escolha para o `+1`. |
+| 4. Antecedente | Ainda é texto livre: o catálogo de antecedentes não existe. |
 | 5. Classe | Classe inicial, do mesmo catálogo de classes da ficha. |
 | 6. Atributos | **Personagem novo:** rola 4d6 descartando o menor, seis vezes, e distribui os valores. **Personagem existente:** digita os seis valores. |
 | 7. Perícias | Escolha das perícias da classe (quantidade e lista do PHB 2014 em `classes/index.ts`) mais as perícias concedidas pelo antecedente. |
@@ -470,6 +470,7 @@ O **rascunho é o próprio registro de `Character`**: o passo 1 cria a ficha (co
 
 - **Rolagem de atributo:** o dado é sorteado no **servidor**, pelo mesmo mecanismo da janela de dados (`POST /api/characters/me/creation/roll`, 4d6 com o menor descartado), e os quatro valores aparecem na tela com o descartado em destaque. A rolagem **não avisa a mesa** — ela entra apenas no **histórico do mestre**, como `[Jogador]: Criação de personagem: [valor]`.
 - **Pré-requisito de classe:** a classe é escolhida no passo 5 e o pré-requisito de atributo do livro (13) é conferido no passo 6, quando os atributos existem — se faltar, o passo dos atributos é recusado explicando o que falta. Trocar a classe inicial ainda no nível 1 é permitido.
+- **Bônus de raça:** cada entrada do catálogo (`src/modules/shared/creation.ts`) traz os bônus de atributo já somados da raça e da sub-raça (ex.: `Anão (Anão da Colina)` = CON +2, SAB +1). Eles são aplicados sobre os valores-BASE do rascunho, então trocar de raça (ou voltar ao passo 3) refaz os atributos sem perder o que foi rolado/digitado. O **Meio-Elfo** tem +2 em Carisma e `abilityChoice: 2`: o jogador escolhe dois atributos (que não tenham bônus fixo) para ganhar +1, e a escolha é validada no servidor.
 - **Nada é concedido pelo assistente:** itens são exclusividade do mestre. Todo valor derivado (PV, CA, iniciativa, CD de magia, percepção passiva, carga) é calculado pelo servidor a partir das escolhas.
 - **Depois de finalizada, o jogador não refaz o assistente.** Só o **mestre** pode reabrir a criação (`POST /api/characters/:id/creation/reopen`): `creationFinalized` volta para `false`, o rascunho é re-semeado com os valores atuais (modo "personagem existente", passo 1) e o jogador reencontra o assistente no próximo acesso.
 
@@ -482,7 +483,7 @@ O **rascunho é o próprio registro de `Character`**: o passo 1 cria a ficha (co
 | `POST` | `/api/characters/me/creation/finalize` | autenticado | Último passo: fecha a criação (recusa com a lista do que falta, se algo ficou para trás). |
 | `POST` | `/api/characters/:id/creation/reopen` | **mestre** | Devolve a ficha ao assistente (o jogador refaz a montagem no próximo acesso). |
 
-> Os catálogos de **raça** e **antecedente** ainda estão vazios (`src/modules/shared/creation.ts`): enquanto isso os passos 3 e 4 pedem texto livre. A estrutura já é a final — preencher `RACE_CATALOG`/`BACKGROUND_CATALOG` faz o passo virar seleção e os bônus de atributo (raça) e as perícias concedidas (antecedente) passarem a ser aplicados automaticamente.
+> O catálogo de **raça** (`RACE_CATALOG`) já está preenchido com o Livro do Jogador 2014 — o passo 3 é uma seleção e os bônus de atributo entram sozinhos. O catálogo de **antecedente** (`BACKGROUND_CATALOG`, mesmo arquivo) continua vazio: enquanto isso o passo 4 pede texto livre, e preenchê-lo fará o passo virar seleção e as perícias concedidas passarem a ser aplicadas automaticamente.
 
 ### Endpoints
 

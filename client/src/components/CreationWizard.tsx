@@ -15,6 +15,7 @@ import type {
   CreationRoll,
   CreationStepRequest,
   LevelUpRequest,
+  RaceOption,
   SessionUser,
 } from '../types';
 import { AbilityStep } from './creation/AbilityStep';
@@ -39,6 +40,40 @@ const LAST_STEP = STEP_LABELS.length;
 
 /** Nome padrão da ficha recém-criada: enquanto for este, o passo 2 está vazio. */
 const DEFAULT_NAME = 'novo personagem';
+
+/** "+2" / "-1" (para o resumo dos bônus raciais). */
+function signed(value: number): string {
+  return value >= 0 ? `+${value}` : String(value);
+}
+
+/** Resumo curto dos bônus de uma raça, para o rótulo da opção no seletor. */
+function raceBonusLabel(option: RaceOption): string {
+  const parts = ABILITY_KEYS.filter(
+    (ability) => (option.abilityBonuses?.[ability] ?? 0) !== 0,
+  ).map((ability) => `${ABILITY_LABELS[ability]} ${signed(option.abilityBonuses?.[ability] ?? 0)}`);
+
+  if ((option.abilityChoice ?? 0) > 0) parts.push(`+1 à escolha (${option.abilityChoice})`);
+  return parts.join(' · ');
+}
+
+/** Atributos elegíveis ao `+1` à escolha da raça (os que não têm bônus fixo). */
+function raceChoicePool(option: RaceOption): AbilityKey[] {
+  return ABILITY_KEYS.filter((ability) => (option.abilityBonuses?.[ability] ?? 0) === 0);
+}
+
+/** Bônus racial já com os `+1` à escolha do jogador (Meio-Elfo). */
+function raceBonusesWithChoices(
+  option: RaceOption | null,
+  choices: AbilityKey[],
+): Partial<Record<AbilityKey, number>> {
+  if (!option) return {};
+  const bonuses: Partial<Record<AbilityKey, number>> = { ...(option.abilityBonuses ?? {}) };
+  const pick = option.abilityChoice ?? 0;
+  for (const ability of choices.slice(0, pick)) {
+    bonuses[ability] = (bonuses[ability] ?? 0) + 1;
+  }
+  return bonuses;
+}
 
 interface CreationWizardProps {
   user: SessionUser;
@@ -72,6 +107,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [alignment, setAlignment] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [race, setRace] = useState('');
+  const [abilityChoices, setAbilityChoices] = useState<AbilityKey[]>([]);
   const [background, setBackground] = useState('');
   const [classKey, setClassKey] = useState('');
   const [assigned, setAssigned] = useState<Partial<Record<AbilityKey, number>>>({});
@@ -94,6 +130,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     setAlignment(sheet?.alignment ?? '');
     setAvatarUrl(sheet?.avatarUrl ?? '');
     setRace(sheet?.race ?? '');
+    setAbilityChoices(saved.abilityChoices ?? []);
     setBackground(sheet?.background ?? '');
     setClassKey(sheet?.classes[0]?.classKey ?? '');
     setAssigned(saved.baseAbilities);
@@ -167,6 +204,38 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       .filter((skill): skill is (typeof SKILLS)[number] => Boolean(skill));
   }, [creation?.skillChoice.from]);
 
+  /** A raça escolhida, quando ela vem do catálogo (por nome ou por chave). */
+  const selectedRace = useMemo(() => {
+    const needle = race.trim().toLowerCase();
+    if (!needle) return null;
+    return (
+      (creation?.raceCatalog ?? []).find(
+        (option) =>
+          option.name.toLowerCase() === needle || option.key.toLowerCase() === needle,
+      ) ?? null
+    );
+  }, [creation?.raceCatalog, race]);
+
+  /** Quantos `+1` à escolha a raça pede (0 = nenhum). */
+  const raceChoiceNeeded = selectedRace?.abilityChoice ?? 0;
+
+  /** Troca a raça e recomeça as escolhas de atributo (o catálogo muda o pool). */
+  function selectRace(value: string): void {
+    setRace(value);
+    setAbilityChoices([]);
+  }
+
+  /** Grava o atributo da enésima escolha da raça (+1), sem repetir atributo. */
+  function setRaceChoice(index: number, value: string): void {
+    setAbilityChoices((current) => {
+      const next = [...current];
+      if (value === '') next.splice(index, 1);
+      else if (index < next.length) next[index] = value as AbilityKey;
+      else next.push(value as AbilityKey);
+      return [...new Set(next)];
+    });
+  }
+
   const assignedCount = ABILITY_KEYS.filter((ability) => assigned[ability] !== undefined).length;
   const abilitiesReady = assignedCount === ABILITY_KEYS.length;
   const level = character?.level ?? 0;
@@ -179,7 +248,10 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 2:
         return name.trim().length >= 2;
       case 3:
-        return race.trim().length > 0;
+        return (
+          race.trim().length > 0 &&
+          (raceChoiceNeeded === 0 || abilityChoices.length === raceChoiceNeeded)
+        );
       case 4:
         return background.trim().length > 0;
       case 5:
@@ -191,8 +263,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 8:
         return level >= startingLevel;
       default:
-        return true;
-    }
+        return true;    }
   })();
 
   /** Corpo do passo atual enviado ao servidor. */
@@ -203,7 +274,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 2:
         return { name, alignment, avatarUrl };
       case 3:
-        return { race };
+        return { race, abilityChoices };
       case 4:
         return { background };
       case 5:
@@ -261,15 +332,10 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     }
   }
 
-  const racialBonus = useMemo(() => {
-    const catalog = creation?.raceCatalog ?? [];
-    const found = catalog.find(
-      (option) =>
-        option.name.toLowerCase() === race.trim().toLowerCase() ||
-        option.key.toLowerCase() === race.trim().toLowerCase(),
-    );
-    return found?.abilityBonuses ?? {};
-  }, [creation?.raceCatalog, race]);
+  const racialBonus = useMemo(
+    () => raceBonusesWithChoices(selectedRace, abilityChoices),
+    [selectedRace, abilityChoices],
+  );
 
   if (loading) {
     return (
@@ -401,17 +467,64 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
           {step === 3 ? (
             <div className="wizard-step-body">
               {creation && creation.raceCatalog.length > 0 ? (
-                <label className="field">
-                  <span>Raça</span>
-                  <select value={race} onChange={(event) => setRace(event.target.value)}>
-                    <option value="">— escolha —</option>
-                    {creation.raceCatalog.map((option) => (
-                      <option key={option.key} value={option.name}>
-                        {option.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <>
+                  <label className="field">
+                    <span>Raça</span>
+                    <select value={race} onChange={(event) => selectRace(event.target.value)}>
+                      <option value="">— escolha —</option>
+                      {creation.raceCatalog.map((option) => {
+                        const bonus = raceBonusLabel(option);
+                        return (
+                          <option key={option.key} value={option.name}>
+                            {bonus ? `${option.name} · ${bonus}` : option.name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+
+                  {selectedRace?.description ? (
+                    <p className="section-note">{selectedRace.description}</p>
+                  ) : null}
+
+                  {/* Meio-Elfo: +1 em dois atributos à escolha, além dos fixos. */}
+                  {selectedRace && raceChoiceNeeded > 0 ? (
+                    <div className="wizard-race-choice">
+                      <p className="section-note">
+                        {selectedRace.name} concede +1 em {raceChoiceNeeded} atributos à sua escolha
+                        (além dos bônus fixos de {raceBonusLabel(selectedRace) || '—'}).
+                      </p>
+                      <div className="grid grid-2">
+                        {Array.from({ length: raceChoiceNeeded }, (_, index) => {
+                          const chosen = abilityChoices[index] ?? '';
+                          return (
+                            <label className="field" key={`race-choice-${index}`}>
+                              <span>Escolha {index + 1}</span>
+                              <select
+                                value={chosen}
+                                disabled={busy}
+                                onChange={(event) => setRaceChoice(index, event.target.value)}
+                              >
+                                <option value="">— escolha —</option>
+                                {raceChoicePool(selectedRace).map((ability) => (
+                                  <option
+                                    key={ability}
+                                    value={ability}
+                                    disabled={
+                                      abilityChoices.includes(ability) && chosen !== ability
+                                    }
+                                  >
+                                    {ABILITY_LABELS[ability]}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <label className="field">
