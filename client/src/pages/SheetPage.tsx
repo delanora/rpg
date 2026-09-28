@@ -196,9 +196,25 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // e bloqueia o acesso à ficha até o último passo.
   const needsWizard = !loading && (!character || !character.creationFinalized);
 
+  // A criação NÃO esconde o cabeçalho: o jogador troca o tema, silencia o som e
+  // acompanha a presença da mesa enquanto monta o personagem.
   if (needsWizard) {
+    const draftName = character?.name?.trim() ?? '';
+    const wizardTitle =
+      draftName && draftName.toLowerCase() !== 'novo personagem' ? draftName : 'Novo aventureiro';
+
     return (
-      <>
+      <div className="app-shell creation-shell">
+        <AppHeader
+          title={wizardTitle}
+          subtitle="criação de personagem"
+          avatarUrl={character?.avatarUrl}
+          connection={connection}
+          online={online}
+          lastEventAt={lastEventAt}
+          user={user}
+        />
+
         {error ? (
           <div className="banner banner-error">
             {error}
@@ -208,12 +224,14 @@ export function SheetPage({ user }: { user: SessionUser }) {
           </div>
         ) : null}
 
-        <CreationWizard
-          user={user}
-          onCharacter={adoptCreatedSheet}
-          onFinished={adoptCreatedSheet}
-        />
-      </>
+        <main className="app-main app-main-wide creation-main">
+          <CreationWizard
+            user={user}
+            onCharacter={adoptCreatedSheet}
+            onFinished={adoptCreatedSheet}
+          />
+        </main>
+      </div>
     );
   }
 
