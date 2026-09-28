@@ -16,7 +16,11 @@ export const tableRollSchema = z.object({
   bonus: z.number().int().min(-100).max(100).optional(),
   /** Rótulo do teste ("Percepção"); vazio na rolagem livre. */
   label: z.string().trim().max(80).optional(),
-  kind: z.enum(['skill', 'save', 'free']).optional(),
+  /**
+   * `creation` = rolagem da criação de personagem: não avisa a mesa, só entra
+   * no histórico do mestre (o assistente monta o pedido no servidor).
+   */
+  kind: z.enum(['skill', 'save', 'free', 'creation']).optional(),
   /** Só vale para o mestre; rolagem de jogador é sempre pública. */
   private: z.boolean().optional(),
   /** Identificador do pedido, gerado no cliente (ver DiceRollDto.clientId). */

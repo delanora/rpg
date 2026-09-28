@@ -1,0 +1,725 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { fileToImagePayload, uploadAvatar } from '../api';
+import {
+  creationLevelUp,
+  fetchCreationState,
+  finalizeCreation,
+  rollCreationAttribute,
+  saveCreationStep,
+} from '../creationApi';
+import { ABILITY_KEYS, ABILITY_LABELS, ALIGNMENTS, SKILLS } from '../dnd';
+import type {
+  AbilityKey,
+  Character,
+  CreationResponse,
+  CreationRoll,
+  CreationStepRequest,
+  LevelUpRequest,
+  SessionUser,
+} from '../types';
+import { AbilityStep } from './creation/AbilityStep';
+import { Icon } from './Icon';
+import { LevelUpDialog } from './LevelUpDialog';
+import { Portrait } from './Portrait';
+
+/** Passos do assistente, na ordem em que são percorridos. */
+const STEP_LABELS = [
+  'Tipo de personagem',
+  'Identidade',
+  'Raça',
+  'Antecedente',
+  'Classe',
+  'Atributos',
+  'Perícias',
+  'Nível e progressão',
+  'Revisão',
+];
+
+const LAST_STEP = STEP_LABELS.length;
+
+/** Nome padrão da ficha recém-criada: enquanto for este, o passo 2 está vazio. */
+const DEFAULT_NAME = 'novo personagem';
+
+interface CreationWizardProps {
+  user: SessionUser;
+  /** Como começar a mesa: o nível inicial vem da configuração da mesa. */
+  onCharacter: (character: Character) => void;
+  /** Criação concluída: o assistente fecha e a ficha aparece. */
+  onFinished: (character: Character) => void;
+}
+
+/**
+ * Assistente de criação de personagem (tela cheia).
+ *
+ * Abre sozinho para o jogador que ainda não tem ficha ou que tem uma ficha com a
+ * criação em aberto (`creationFinalized = false`), e bloqueia o acesso à ficha
+ * até o fim. O progresso é salvo a cada passo no próprio registro do personagem:
+ * fechar o navegador não perde nada, o jogador retoma de onde parou.
+ *
+ * As regras são todas do servidor (classe, pré-requisito de atributo, PV, CA,
+ * perícias e níveis iniciais) — aqui só existe a condução dos passos.
+ */
+export function CreationWizard({ user, onCharacter, onFinished }: CreationWizardProps) {
+  const [state, setState] = useState<CreationResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [step, setStep] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Campos dos passos (hidratados do rascunho na abertura).
+  const [mode, setMode] = useState<'new' | 'existing' | null>(null);
+  const [name, setName] = useState('');
+  const [alignment, setAlignment] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [race, setRace] = useState('');
+  const [background, setBackground] = useState('');
+  const [classKey, setClassKey] = useState('');
+  const [assigned, setAssigned] = useState<Partial<Record<AbilityKey, number>>>({});
+  const [picks, setPicks] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [levelUpOpen, setLevelUpOpen] = useState(false);
+  const avatarInput = useRef<HTMLInputElement>(null);
+
+  const character = state?.character ?? null;
+  const creation = state?.creation ?? null;
+
+  /** Hidrata os campos locais a partir do que já está gravado (retomada). */
+  const hydrate = useCallback((response: CreationResponse) => {
+    const { creation: saved, character: sheet } = response;
+
+    setMode(saved.mode);
+    setName(
+      sheet && sheet.name.trim().toLowerCase() !== DEFAULT_NAME ? sheet.name : '',
+    );
+    setAlignment(sheet?.alignment ?? '');
+    setAvatarUrl(sheet?.avatarUrl ?? '');
+    setRace(sheet?.race ?? '');
+    setBackground(sheet?.background ?? '');
+    setClassKey(sheet?.classes[0]?.classKey ?? '');
+    setAssigned(saved.baseAbilities);
+    setPicks(saved.skillPicks);
+    setStep(saved.step);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    fetchCreationState()
+      .then((response) => {
+        if (!active) return;
+        setState(response);
+        hydrate(response);
+      })
+      .catch((err: unknown) => {
+        if (active) setError(err instanceof Error ? err.message : 'Falha ao abrir a criação.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [hydrate]);
+
+  /** Grava o passo e avança. Cada passo é salvo no servidor na hora. */
+  const saveStep = useCallback(
+    async (body: Record<string, unknown>): Promise<boolean> => {
+      setBusy(true);
+      setError(null);
+
+      try {
+        const response = await saveCreationStep({ step, ...body } as CreationStepRequest);
+        setState(response);
+        if (response.character) onCharacter(response.character);
+        setStep((current) => Math.min(LAST_STEP, current + 1));
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Falha ao salvar este passo.');
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [step, onCharacter],
+  );
+
+  /** Rolagem de atributo do passo 6 (o dado é sorteado no servidor). */
+  const rollAttribute = useCallback(
+    async (restart: boolean): Promise<CreationRoll | null> => {
+      const response = await rollCreationAttribute(restart);
+      setState(response);
+      if (response.character) onCharacter(response.character);
+      if (restart) setAssigned({});
+      return response.roll ? { dice: response.roll.dice, dropped: response.roll.dropped } : null;
+    },
+    [onCharacter],
+  );
+
+  /* --- O que cada passo exige para poder avançar ------------------------- */
+
+  const skillCount = creation?.skillChoice.count ?? 0;
+  const skillPool = useMemo(() => {
+    const from = creation?.skillChoice.from ?? [];
+    const keys = from.length > 0 ? from : SKILLS.map((skill) => skill.key);
+    return keys
+      .map((key) => SKILLS.find((skill) => skill.key === key))
+      .filter((skill): skill is (typeof SKILLS)[number] => Boolean(skill));
+  }, [creation?.skillChoice.from]);
+
+  const assignedCount = ABILITY_KEYS.filter((ability) => assigned[ability] !== undefined).length;
+  const abilitiesReady = assignedCount === ABILITY_KEYS.length;
+  const level = character?.level ?? 0;
+  const startingLevel = creation?.startingLevel ?? 1;
+
+  const canAdvance = (() => {
+    switch (step) {
+      case 1:
+        return mode !== null;
+      case 2:
+        return name.trim().length >= 2;
+      case 3:
+        return race.trim().length > 0;
+      case 4:
+        return background.trim().length > 0;
+      case 5:
+        return classKey !== '';
+      case 6:
+        return assignedCount === ABILITY_KEYS.length;
+      case 7:
+        return skillCount === 0 || picks.length === skillCount;
+      case 8:
+        return level >= startingLevel;
+      default:
+        return true;
+    }
+  })();
+
+  /** Corpo do passo atual enviado ao servidor. */
+  function stepBody(): Record<string, unknown> {
+    switch (step) {
+      case 1:
+        return { mode };
+      case 2:
+        return { name, alignment, avatarUrl };
+      case 3:
+        return { race };
+      case 4:
+        return { background };
+      case 5:
+        return { classKey };
+      case 6:
+        return { baseAbilities: assigned };
+      case 7:
+        return { skills: picks };
+      default:
+        return {};
+    }
+  }
+
+  async function next(): Promise<void> {
+    if (!canAdvance || busy) return;
+    await saveStep(stepBody());
+  }
+
+  async function finish(): Promise<void> {
+    setBusy(true);
+    setError(null);
+
+    try {
+      const response = await finalizeCreation();
+      if (response.character) onFinished(response.character);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao finalizar a criação.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Passo 8: aplica um nível pelo assistente de Level Up da ficha. */
+  async function applyLevelUp(request: LevelUpRequest): Promise<Character> {
+    const response = await creationLevelUp(request);
+    setState(response);
+    if (response.character) onCharacter(response.character);
+    return response.character as Character;
+  }
+
+  async function handleAvatar(files: FileList | null): Promise<void> {
+    const file = files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setError(null);
+    try {
+      const payload = await fileToImagePayload(file);
+      const image = await uploadAvatar(payload.dataUrl, payload.name);
+      setAvatarUrl(image.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao enviar o avatar.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const racialBonus = useMemo(() => {
+    const catalog = creation?.raceCatalog ?? [];
+    const found = catalog.find(
+      (option) =>
+        option.name.toLowerCase() === race.trim().toLowerCase() ||
+        option.key.toLowerCase() === race.trim().toLowerCase(),
+    );
+    return found?.abilityBonuses ?? {};
+  }, [creation?.raceCatalog, race]);
+
+  if (loading) {
+    return (
+      <div className="wizard-overlay">
+        <p className="splash">Abrindo a criação de personagem...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="wizard-overlay">
+      <div className="wizard">
+        <header className="wizard-head">
+          <h1>
+            <Icon name="scroll" size={20} /> Criação de personagem
+          </h1>
+          <span className="wizard-user">{user.displayName}</span>
+        </header>
+
+        {/* Trilha dos nove passos. */}
+        <ol className="wizard-track">
+          {STEP_LABELS.map((label, index) => {
+            const number = index + 1;
+            const state_ = number === step ? 'current' : number < step ? 'done' : 'todo';
+            return (
+              <li key={label} className={`wizard-step-chip ${state_}`}>
+                <span className="wizard-step-number">{number}</span>
+                <span className="wizard-step-label">{label}</span>
+              </li>
+            );
+          })}
+        </ol>
+
+        <div className="wizard-body">
+          <h2>
+            {step}. {STEP_LABELS[step - 1]}
+          </h2>
+
+          {/* --- 1. Tipo de personagem -------------------------------------- */}
+          {step === 1 ? (
+            <div className="wizard-step-body">
+              <p className="section-note">
+                O personagem é novo (você rola os atributos) ou já existe na mesa (você digita os
+                valores que já tem)?
+              </p>
+              <ul className="modal-list">
+                {[
+                  {
+                    value: 'new' as const,
+                    label: 'Personagem novo',
+                    hint: 'Role 4d6 (descartando o menor) seis vezes e distribua os valores.',
+                  },
+                  {
+                    value: 'existing' as const,
+                    label: 'Personagem existente',
+                    hint: 'Digite os atributos da sua ficha, de 1 a 20.',
+                  },
+                ].map((option) => (
+                  <li key={option.value}>
+                    <label className={mode === option.value ? 'check-row active' : 'check-row'}>
+                      <input
+                        type="radio"
+                        name="creation-mode"
+                        checked={mode === option.value}
+                        onChange={() => setMode(option.value)}
+                      />
+                      <span className="check-name">
+                        {option.label}
+                        <span className="muted"> · {option.hint}</span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {/* --- 2. Identidade ---------------------------------------------- */}
+          {step === 2 ? (
+            <div className="wizard-step-body">
+              <div className="wizard-identity">
+                <div className="wizard-avatar">
+                  <Portrait src={avatarUrl} alt={name || 'Personagem'} size="lg" icon="users" />
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={uploading || busy}
+                    onClick={() => avatarInput.current?.click()}
+                  >
+                    <Icon name="quill" size={14} /> {uploading ? 'enviando...' : 'escolher avatar'}
+                  </button>
+                  <input
+                    ref={avatarInput}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => void handleAvatar(event.target.files)}
+                  />
+                  <small className="muted">opcional</small>
+                </div>
+
+                <div className="grid grid-2">
+                  <label className="field">
+                    <span>Nome</span>
+                    <input
+                      type="text"
+                      value={name}
+                      maxLength={120}
+                      onChange={(event) => setName(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Alinhamento</span>
+                    <select value={alignment} onChange={(event) => setAlignment(event.target.value)}>
+                      <option value="">— escolha —</option>
+                      {ALIGNMENTS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* --- 3. Raça ---------------------------------------------------- */}
+          {step === 3 ? (
+            <div className="wizard-step-body">
+              {creation && creation.raceCatalog.length > 0 ? (
+                <label className="field">
+                  <span>Raça</span>
+                  <select value={race} onChange={(event) => setRace(event.target.value)}>
+                    <option value="">— escolha —</option>
+                    {creation.raceCatalog.map((option) => (
+                      <option key={option.key} value={option.name}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>Raça</span>
+                    <input
+                      type="text"
+                      value={race}
+                      maxLength={60}
+                      placeholder="Anão, Elfo, Humano..."
+                      onChange={(event) => setRace(event.target.value)}
+                    />
+                  </label>
+                  <p className="section-note">
+                    O catálogo de raças ainda não existe: escreva a raça do livro. Quando ele for
+                    cadastrado, este passo passa a listar as opções e os bônus de atributo entram
+                    automaticamente.
+                  </p>
+                </>
+              )}
+            </div>
+          ) : null}
+
+          {/* --- 4. Antecedente --------------------------------------------- */}
+          {step === 4 ? (
+            <div className="wizard-step-body">
+              {creation && creation.backgroundCatalog.length > 0 ? (
+                <label className="field">
+                  <span>Antecedente</span>
+                  <select
+                    value={background}
+                    onChange={(event) => setBackground(event.target.value)}
+                  >
+                    <option value="">— escolha —</option>
+                    {creation.backgroundCatalog.map((option) => (
+                      <option key={option.key} value={option.name}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>Antecedente</span>
+                    <input
+                      type="text"
+                      value={background}
+                      maxLength={120}
+                      placeholder="Sábio, Soldado, Criminoso..."
+                      onChange={(event) => setBackground(event.target.value)}
+                    />
+                  </label>
+                  <p className="section-note">
+                    O catálogo de antecedentes ainda não existe: escreva o antecedente do livro.
+                    Quando ele for cadastrado, este passo passa a listar as opções e as perícias
+                    concedidas.
+                  </p>
+                </>
+              )}
+            </div>
+          ) : null}
+
+          {/* --- 5. Classe -------------------------------------------------- */}
+          {step === 5 ? (
+            <div className="wizard-step-body">
+              <p className="section-note">
+                A classe inicial. O pré-requisito de atributo do livro é conferido no passo dos
+                atributos — é lá que o assistente avisa se algum atributo ainda está abaixo do
+                mínimo (13) da classe escolhida.
+              </p>
+              <ul className="modal-list wizard-classes">
+                {(character?.classOptions ?? []).map((option) => (
+                  <li key={option.key}>
+                    <label className="check-row levelup-choice">
+                      <input
+                        type="radio"
+                        name="creation-class"
+                        checked={classKey === option.key}
+                        onChange={() => setClassKey(option.key)}
+                      />
+                      <span className="check-name">
+                        {option.name}
+                        <span className="muted">
+                          {' '}
+                          · d{option.hitDie} · subclasse no nível {option.subclassLevel}
+                        </span>
+                        {/* Com os atributos já definidos, o motivo do bloqueio
+                            ajuda; antes disso ele seria enganoso. */}
+                        {abilitiesReady && !option.eligible && option.missing ? (
+                          <span className="levelup-blocked"> — {option.missing}</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {/* --- 6. Atributos ----------------------------------------------- */}
+          {step === 6 && mode ? (
+            <AbilityStep
+              mode={mode}
+              rolls={creation?.rolls ?? []}
+              assigned={assigned}
+              racialBonus={racialBonus}
+              onRoll={rollAttribute}
+              onAssign={(ability, value) =>
+                setAssigned((current) => {
+                  const next = { ...current };
+                  if (value === null) delete next[ability];
+                  else next[ability] = value;
+                  return next;
+                })
+              }
+              disabled={busy}
+            />
+          ) : null}
+
+          {/* --- 7. Perícias ------------------------------------------------ */}
+          {step === 7 ? (
+            <div className="wizard-step-body">
+              <p className="section-note">
+                A classe concede {skillCount} perícia(s)
+                {skillPool.length < SKILLS.length ? ' da lista abaixo' : ' à sua escolha'}.
+              </p>
+
+              <div className="grid grid-2 wizard-skills">
+                {skillPool.map((skill) => {
+                  const checked = picks.includes(skill.key);
+                  return (
+                    <label className="check-row" key={skill.key}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!checked && picks.length >= skillCount}
+                        onChange={() =>
+                          setPicks((current) =>
+                            current.includes(skill.key)
+                              ? current.filter((key) => key !== skill.key)
+                              : [...current, skill.key],
+                          )
+                        }
+                      />
+                      <span className="check-name">
+                        {skill.label}
+                        <span className="muted"> · {ABILITY_LABELS[skill.ability]}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <p className="section-note">
+                {picks.length}/{skillCount} escolhida(s)
+              </p>
+            </div>
+          ) : null}
+
+          {/* --- 8. Nível e progressão -------------------------------------- */}
+          {step === 8 ? (
+            <div className="wizard-step-body">
+              <p className="section-note">
+                Esta mesa começa no <strong>nível {startingLevel}</strong>. O assistente aplica os
+                níveis do personagem com a mesma regra do Level Up (dado de vida, subclasse,
+                aumento de atributo ou talento).
+              </p>
+
+              <ul className="levelup-summary">
+                <li>
+                  <span>Nível atual</span>
+                  <strong>{level}</strong>
+                </li>
+                <li>
+                  <span>Nível inicial da mesa</span>
+                  <strong>{startingLevel}</strong>
+                </li>
+              </ul>
+
+              {level < startingLevel ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => setLevelUpOpen(true)}
+                >
+                  <Icon name="sparkle" size={15} /> aplicar nível {level + 1}
+                </button>
+              ) : (
+                <p className="section-note">
+                  <Icon name="sparkle" size={14} /> Pronto: o personagem já está no nível inicial
+                  da mesa.
+                </p>
+              )}
+
+              {levelUpOpen && character && level < startingLevel ? (
+                <LevelUpDialog
+                  character={character}
+                  apply={applyLevelUp}
+                  onClose={() => setLevelUpOpen(false)}
+                  onApplied={() => undefined}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* --- 9. Revisão ------------------------------------------------- */}
+          {step === 9 && character ? (
+            <div className="wizard-step-body">
+              <p className="section-note">
+                Confira tudo antes de finalizar. Depois disso a montagem só muda pelo Level Up — ou
+                pelas mãos do mestre.
+              </p>
+
+              <ul className="levelup-summary wizard-review">
+                <li>
+                  <span>Nome</span>
+                  <strong>{character.name}</strong>
+                </li>
+                <li>
+                  <span>Raça · antecedente · alinhamento</span>
+                  <strong>
+                    {[character.race, character.background, character.alignment]
+                      .filter(Boolean)
+                      .join(' · ') || '—'}
+                  </strong>
+                </li>
+                <li>
+                  <span>Classe e nível</span>
+                  <strong>
+                    {character.className || '—'} · nível {character.level}
+                  </strong>
+                </li>
+                <li>
+                  <span>Atributos</span>
+                  <strong>
+                    {ABILITY_KEYS.map(
+                      (ability) => `${ABILITY_LABELS[ability]} ${character[ability]}`,
+                    ).join(' · ')}
+                  </strong>
+                </li>
+                <li>
+                  <span>Pontos de vida</span>
+                  <strong>
+                    {character.hpMax} (dado de vida {character.derived.hitDie ?? '—'} + Constituição)
+                  </strong>
+                </li>
+                <li>
+                  <span>Classe de Armadura</span>
+                  <strong>{character.armorClass}</strong>
+                </li>
+                <li>
+                  <span>Perícias com proficiência</span>
+                  <strong>
+                    {SKILLS.filter((skill) => character.skills[skill.key]?.proficient)
+                      .map((skill) => skill.label)
+                      .join(', ') || '—'}
+                  </strong>
+                </li>
+              </ul>
+
+              {creation && creation.missing.length > 0 ? (
+                <p className="form-error">Ainda falta: {creation.missing.join(', ')}.</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {error ? <p className="form-error">{error}</p> : null}
+        </div>
+
+        <footer className="wizard-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={step <= 1 || busy}
+            onClick={() => {
+              setError(null);
+              setStep((current) => Math.max(1, current - 1));
+            }}
+          >
+            Voltar
+          </button>
+
+          <span className="wizard-progress">
+            passo {step} de {LAST_STEP}
+          </span>
+
+          {step < LAST_STEP ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!canAdvance || busy}
+              onClick={() => void next()}
+            >
+              {busy ? 'salvando...' : 'Próximo'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void finish()}
+            >
+              <Icon name="scroll" size={15} /> {busy ? 'finalizando...' : 'Finalizar criação'}
+            </button>
+          )}
+        </footer>
+      </div>
+    </div>
+  );
+}

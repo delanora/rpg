@@ -6216,3 +6216,360 @@ input[type='checkbox']:focus-visible,
     --ddie-scale: 0.34;
   }
 }
+
+/* ==========================================================================
+   28. Assistente de criação de personagem
+
+   Tela cheia: enquanto a ficha está em montagem (`creationFinalized = false`),
+   o wizard ocupa a tela inteira e a ficha não aparece. Mesmo pergaminho das
+   outras janelas, com a trilha dos nove passos no topo.
+   ========================================================================== */
+
+.wizard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-2) 0;
+  background:
+    radial-gradient(ellipse 60% 45% at 12% 0%, rgba(255, 250, 230, 0.5), transparent 65%),
+    radial-gradient(ellipse 80% 70% at 50% 108%, rgba(90, 62, 28, 0.28), transparent 62%),
+    linear-gradient(160deg, var(--bg), var(--bg-2));
+  animation: ink-in 0.3s ease both;
+}
+
+[data-theme='dark'] .wizard-overlay {
+  background: linear-gradient(160deg, var(--bg), var(--bg-2));
+}
+
+.wizard {
+  width: 100%;
+  max-width: 58rem;
+  margin: 0 auto;
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+
+.wizard-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-1);
+  border-bottom: 2px solid var(--gold-hair);
+}
+
+.wizard-head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-title);
+  font-size: 1.55rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.wizard-head h1 .icon {
+  color: var(--gold);
+}
+
+.wizard-user {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+/* --- Trilha dos passos ----------------------------------------------------- */
+
+.wizard-track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.35rem;
+}
+
+.wizard-step-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.wizard-step-number {
+  flex: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.wizard-step-label {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+.wizard-step-chip.done {
+  color: var(--ink-soft);
+  border-color: var(--gold-hair);
+}
+
+.wizard-step-chip.done .wizard-step-number {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-color: var(--gold-deep);
+  color: #3a2410;
+}
+
+.wizard-step-chip.current {
+  color: var(--ink);
+  border-color: var(--gold);
+  box-shadow: 0 0 14px -4px var(--glow), inset 0 0 0 1px var(--gold-hair);
+}
+
+.wizard-step-chip.current .wizard-step-number {
+  background: linear-gradient(180deg, var(--wine-bright), var(--wine));
+  border-color: var(--gold-deep);
+  color: #fbeccb;
+}
+
+/* --- Corpo do passo ------------------------------------------------------- */
+
+.wizard-body {
+  position: relative;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.wizard-body::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--gold-hair);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.wizard-body h2 {
+  font-size: 1.2rem;
+  color: var(--wine);
+  margin-bottom: 0.4rem;
+}
+
+[data-theme='dark'] .wizard-body h2 {
+  color: var(--gold-bright);
+}
+
+.wizard-step-body {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 0.8rem;
+}
+
+.wizard-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.75rem var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: 0 -6px 18px -12px rgba(43, 33, 21, 0.8), inset 0 0 0 1px var(--gold-hair);
+}
+
+.wizard-progress {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+/* --- Passo 2: identidade -------------------------------------------------- */
+
+.wizard-identity {
+  display: grid;
+  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.wizard-avatar {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  text-align: center;
+}
+
+/* --- Passo 5: classes ---------------------------------------------------- */
+
+.wizard-classes {
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+/* --- Passo 6: rolagem de 4d6 --------------------------------------------- */
+
+.wizard-roll-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.wizard-dice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: radial-gradient(circle at 50% 30%, var(--surface-3), var(--surface-4));
+  box-shadow: inset 0 2px 6px rgba(43, 33, 21, 0.18);
+}
+
+/* Dados em tamanho de mesa dentro do wizard. */
+.wizard-dice .ddie {
+  --ddie-box: 4.8rem;
+  --ddie-scale: 0.35;
+}
+
+.wizard-dice-hint {
+  width: 100%;
+  text-align: center;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+
+.wizard-roll-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.45rem;
+}
+
+.wizard-roll {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.wizard-roll.empty {
+  justify-content: center;
+  color: var(--ink-faint);
+  font-family: var(--font-display);
+}
+
+.wizard-roll.used {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px -5px var(--glow);
+}
+
+.wizard-roll-value {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.wizard-roll-dice {
+  display: inline-flex;
+  gap: 0.15rem;
+}
+
+.wizard-roll-dice .die {
+  min-width: 1.35rem;
+  padding: 0 0.2rem;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.wizard-roll-dice .die.dropped {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.wizard-abilities small {
+  font-size: 0.76rem;
+}
+
+/* --- Passo 7: perícias --------------------------------------------------- */
+
+.wizard-skills {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  max-height: 24rem;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+/* --- Passo 9: revisão ---------------------------------------------------- */
+
+.wizard-review strong {
+  text-align: right;
+  font-weight: 600;
+  max-width: 62%;
+}
+
+/* --- Nível inicial no painel do mestre ---------------------------------- */
+
+.field-inline {
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.field-inline > span {
+  white-space: nowrap;
+}
+
+.field-inline > input {
+  width: 4.2rem;
+  padding: 0.3rem 0.45rem;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .wizard-identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wizard-review strong {
+    max-width: 50%;
+  }
+}

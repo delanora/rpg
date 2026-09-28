@@ -20,3 +20,17 @@ export async function setLevelUpUnlocked(unlocked: boolean): Promise<GameConfig>
   });
   return config;
 }
+
+/**
+ * Define o nível inicial da mesa (somente mestre).
+ *
+ * É o nível em que os personagens novos começam: o assistente de criação aplica
+ * os níveis 2 até ele ao concluir a montagem.
+ */
+export async function setStartingLevel(level: number): Promise<GameConfig> {
+  const { config } = await api<{ config: GameConfig }>('/api/game/starting-level', {
+    method: 'POST',
+    body: { level },
+  });
+  return config;
+}

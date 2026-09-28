@@ -382,6 +382,12 @@ export interface Character {
    * usos de recursos, anotações, avatar e movimentação de itens).
    */
   creationFinalized: boolean;
+  /**
+   * Rascunho do assistente de criação: modo escolhido, passo alcançado, as
+   * rolagens de 4d6, os valores-base dos atributos e as perícias escolhidas.
+   * Só vale enquanto `creationFinalized` for falso.
+   */
+  creationDraft: CreationDraft;
   level: number;
   /** Última liberação de Level Up que este personagem já usou. */
   lastLevelUpRelease: number;
@@ -476,7 +482,85 @@ export interface ClassAdjustments {
 export interface GameConfig {
   levelUpUnlocked: boolean;
   levelUpRelease: number;
+  /**
+   * Nível em que a mesa começa: o assistente de criação aplica os níveis 2 até
+   * ele ao concluir a montagem.
+   */
+  startingLevel: number;
   updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Assistente de criação de personagem
+// ---------------------------------------------------------------------------
+
+/** Uma rolagem de 4d6 do passo de atributos: os valores e o dado descartado. */
+export interface CreationRoll {
+  dice: number[];
+  /** Índice do dado descartado (o menor dos quatro). */
+  dropped: number;
+}
+
+/** Rascunho do assistente (espelho do JSONB `creationDraft` do servidor). */
+export interface CreationDraft {
+  mode: 'new' | 'existing' | null;
+  step: number;
+  rolls: CreationRoll[];
+  baseAbilities: Partial<Record<AbilityKey, number>>;
+  skillPicks: string[];
+}
+
+/** Raça do catálogo (vazio enquanto o conteúdo do livro não é cadastrado). */
+export interface RaceOption {
+  key: string;
+  name: string;
+  description?: string;
+  abilityBonuses?: Partial<Record<AbilityKey, number>>;
+}
+
+/** Antecedente do catálogo. */
+export interface BackgroundOption {
+  key: string;
+  name: string;
+  description?: string;
+  skills?: string[];
+}
+
+/** Estado do assistente devolvido pela API. */
+export interface CreationState {
+  mode: 'new' | 'existing' | null;
+  step: number;
+  rolls: CreationRoll[];
+  baseAbilities: Partial<Record<AbilityKey, number>>;
+  skillPicks: string[];
+  skillChoice: { count: number; from: string[] };
+  startingLevel: number;
+  raceCatalog: RaceOption[];
+  backgroundCatalog: BackgroundOption[];
+  /** O que ainda falta para poder finalizar. */
+  missing: string[];
+}
+
+/** Resposta das rotas do assistente (`{ character, creation }`). */
+export interface CreationResponse {
+  character: Character | null;
+  creation: CreationState;
+  /** Só na rolagem de atributo. */
+  roll?: CreationRoll & { value: number };
+}
+
+/** Passo concluído enviado ao servidor (`PATCH /api/characters/me/creation`). */
+export interface CreationStepRequest {
+  step: number;
+  mode?: 'new' | 'existing';
+  name?: string;
+  alignment?: string;
+  avatarUrl?: string;
+  race?: string;
+  background?: string;
+  classKey?: string;
+  baseAbilities?: Record<AbilityKey, number>;
+  skills?: string[];
 }
 
 export interface GameConfigPayload {
@@ -892,7 +976,7 @@ export interface DiceRolledPayload {
 
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
 
-export type DiceRollKind = 'skill' | 'save' | 'free';
+export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation';
 
 /** Um dado já rolado (espelha src/modules/dice/dice.dto.ts). */
 export interface RolledDie {

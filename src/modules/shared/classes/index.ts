@@ -871,3 +871,127 @@ export function classOptionsFor(
 export function averageHitDie(hitDie: number): number {
   return Math.floor(hitDie / 2) + 1;
 }
+
+// ---------------------------------------------------------------------------
+// Perícias de classe (usadas na criação de personagem)
+//
+// Cada classe do PHB 2014 deixa o jogador escolher algumas perícias de uma
+// lista fixa. Isso é dados da CLASSE (não muda com o nível), então vive aqui
+// junto do resto do registro — o assistente de criação usa o mesmo mapa que o
+// resto das regras, sem duplicar a lista de perícias.
+// ---------------------------------------------------------------------------
+
+/** Perícias que a classe oferece: quantas escolher e de qual lista. */
+export interface ClassSkillChoice {
+  /** Quantas perícias o jogador escolhe da lista. */
+  count: number;
+  /**
+   * Chaves de perícia aceitas (ver SKILLS em shared/dnd5e.ts).
+   * Lista vazia = qualquer uma das 18 perícias.
+   */
+  from: string[];
+}
+
+/** Listas do PHB 2014 (as chaves são as de `shared/dnd5e.ts`). */
+export const CLASS_SKILL_CHOICES: Record<string, ClassSkillChoice> = {
+  barbarian: {
+    count: 2,
+    from: ['animalHandling', 'athletics', 'intimidation', 'nature', 'perception', 'survival'],
+  },
+  bard: { count: 3, from: [] },
+  cleric: { count: 2, from: ['history', 'insight', 'medicine', 'persuasion', 'religion'] },
+  druid: {
+    count: 2,
+    from: [
+      'arcana',
+      'animalHandling',
+      'insight',
+      'medicine',
+      'nature',
+      'perception',
+      'religion',
+      'survival',
+    ],
+  },
+  fighter: {
+    count: 2,
+    from: [
+      'acrobatics',
+      'animalHandling',
+      'athletics',
+      'history',
+      'insight',
+      'intimidation',
+      'perception',
+      'survival',
+    ],
+  },
+  monk: { count: 2, from: ['acrobatics', 'athletics', 'stealth', 'history', 'insight', 'religion'] },
+  paladin: {
+    count: 2,
+    from: ['athletics', 'insight', 'intimidation', 'medicine', 'persuasion', 'religion'],
+  },
+  ranger: {
+    count: 3,
+    from: [
+      'animalHandling',
+      'athletics',
+      'stealth',
+      'insight',
+      'investigation',
+      'nature',
+      'perception',
+      'survival',
+    ],
+  },
+  rogue: {
+    count: 4,
+    from: [
+      'acrobatics',
+      'athletics',
+      'deception',
+      'stealth',
+      'intimidation',
+      'insight',
+      'investigation',
+      'perception',
+      'performance',
+      'persuasion',
+      'sleightOfHand',
+    ],
+  },
+  sorcerer: {
+    count: 2,
+    from: ['arcana', 'deception', 'intimidation', 'insight', 'persuasion', 'religion'],
+  },
+  warlock: {
+    count: 2,
+    from: ['arcana', 'deception', 'history', 'intimidation', 'investigation', 'nature', 'religion'],
+  },
+  wizard: { count: 2, from: ['arcana', 'history', 'insight', 'investigation', 'medicine', 'religion'] },
+};
+
+/** Perícias oferecidas por uma classe (padrão do livro para classe sem lista). */
+export function classSkillChoice(classKey: string): ClassSkillChoice {
+  return CLASS_SKILL_CHOICES[classKey.trim()] ?? { count: 2, from: [] };
+}
+
+/**
+ * Perícias que o personagem escolhe na criação, já somando o multiclasse: as
+ * quantidades somam e a lista é a UNIÃO das oferecidas (lista vazia em
+ * qualquer classe = qualquer perícia entra, como no Bardo).
+ */
+export function creationSkillChoice(entries: ClassEntry[]): ClassSkillChoice {
+  let count = 0;
+  let any = false;
+  const from = new Set<string>();
+
+  for (const entry of entries) {
+    const choice = classSkillChoice(entry.classKey);
+    count += choice.count;
+    if (choice.from.length === 0) any = true;
+    else choice.from.forEach((skill) => from.add(skill));
+  }
+
+  return { count, from: any ? [] : [...from] };
+}

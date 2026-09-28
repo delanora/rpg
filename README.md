@@ -68,7 +68,7 @@ src/
 ├── middlewares/    # tratamento central de erros
 ├── modules/        # domínio, um diretório por área
 │   ├── auth/       # cadastro, login, middlewares de autenticação/autorização
-│   ├── characters/ # ficha do jogador
+│   ├── characters/ # ficha do jogador (inclui o assistente de criação)
 │   ├── combat/     # combate: iniciativa, turnos, ataques e HP
 │   ├── creatures/  # criaturas/NPCs cadastrados pelo mestre
 │   ├── shared/     # regras de D&D 5e, dados, ataques e utilidades compartilhadas
@@ -88,7 +88,9 @@ client/             # app React (Vite + TypeScript)
 ├── vite.config.ts  # proxy de /api e /socket.io para o backend em dev
 └── src/
     ├── components/ # InlineField, Section, SheetView, Icon, HpBar, AuthPage e seções
-    │   └── master/ # painel do mestre: fichas (leitura) e criaturas
+    │   ├── master/ # painel do mestre: fichas (leitura) e criaturas
+    │   └── creation/ # passo dos atributos (rolagem de 4d6 e distribuição)
+    ├── creationApi.ts # assistente de criação (passos, rolagem e finalização)
     ├── combat/     # CombatTracker, CombatIntro, CombatStartDialog e estado do combate
     ├── pages/      # SheetPage (jogador) e MasterPanel (mestre)
     ├── api.ts      # cliente HTTP com token
@@ -132,6 +134,7 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 - Magias por nível, com espaços de magia (spell slots) controláveis
 - Ataques e armas com dano e bônus de acerto
 - Características de raça/classe/antecedente, **subseção de Talentos** e anotações livres
+- **Assistente de criação** em tela cheia (9 passos), com rolagem de 4d6 e retomada de onde parou
 - **Criação finalizada:** depois de encerrar a montagem, o jogador só mexe no estado de jogo — o resto fica para o Level Up e para o mestre
 
 ---
@@ -421,14 +424,17 @@ O mestre liga/desliga o Level Up da mesa pelo botão no painel (`LIBERAR/BLOQUEA
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
-| `GET` | `/api/game` | autenticado | Configuração da mesa (Level Up liberado e o contador de liberação). |
+| `GET` | `/api/game` | autenticado | Configuração da mesa (Level Up liberado, contador de liberação e nível inicial). |
 | `POST` | `/api/game/level-up` | **mestre** | `{ unlocked }` libera/bloqueia o Level Up da mesa. |
+| `POST` | `/api/game/starting-level` | **mestre** | `{ level }` define o nível em que a mesa começa (o assistente de criação aplica os níveis até ele). |
 
 | Evento | Destino | Conteúdo |
 |--------|---------|----------|
 | `game:config` | mesa | Configuração da mesa atualizada (liberação/bloqueio). |
 
 A configuração é uma linha única em `game_config`. Cada personagem guarda `lastLevelUpRelease`; o botão fica habilitado quando `levelUpUnlocked` está ligado e `lastLevelUpRelease < levelUpRelease`.
+
+No mesmo lugar do painel fica o **NÍVEL INICIAL** da mesa: quando é maior que 1, o assistente de criação aplica os níveis 2 até ele ao concluir a montagem — **sem** depender da liberação do mestre e **sem** consumir a liberação do jogador (o nível inicial não é um Level Up de campanha).
 
 ### Assistente de Level Up
 
@@ -444,6 +450,40 @@ Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jog
 |--------|------|--------|-----------|
 | `POST` | `/api/characters/me/level-up` | autenticado | Aplica o Level Up (`classKey`, `subclass`, `hp`, `abilityIncreases`, `feat`) quando a liberação está ativa. |
 
+### Assistente de criação de personagem
+
+A criação é um **assistente em tela cheia** que abre sozinho quando o **jogador** entra e não tem ficha **ou** tem uma ficha com `creationFinalized = false`. Enquanto ele estiver aberto, a ficha não aparece: o assistente toma a tela até o último passo. O mestre nunca é afetado (ele pode estar com a ficha do jogador aberta ao mesmo tempo).
+
+O **rascunho é o próprio registro de `Character`**: o passo 1 cria a ficha (com a criação aberta) e cada passo concluído grava o que lhe pertence nos campos da ficha — nome, raça, antecedente, classe, atributos e perícias passam pelos mesmos caminhos de validação da ficha. O JSONB `characters.creationDraft` guarda o que não é campo da ficha: modo escolhido (novo/existente), passo alcançado, as rolagens de 4d6 e os valores-base dos atributos. Fechar o navegador não perde nada: ao voltar, o assistente reabre no passo em que parou.
+
+| Passo | O que faz |
+|-------|-----------|
+| 1. Tipo de personagem | **Personagem novo** (rola os atributos) ou **Personagem existente** (digita de 1 a 20). |
+| 2. Identidade | Nome, alinhamento e avatar (opcional). |
+| 3. Raça | Seleção do catálogo de raças; enquanto o catálogo não existe, campo de texto livre. |
+| 4. Antecedente | Mesma lógica da raça (catálogo ou texto livre). |
+| 5. Classe | Classe inicial, do mesmo catálogo de classes da ficha. |
+| 6. Atributos | **Personagem novo:** rola 4d6 descartando o menor, seis vezes, e distribui os valores. **Personagem existente:** digita os seis valores. |
+| 7. Perícias | Escolha das perícias da classe (quantidade e lista do PHB 2014 em `classes/index.ts`) mais as perícias concedidas pelo antecedente. |
+| 8. Nível e progressão | Aplica os níveis 2..N pelo **assistente de Level Up** quando o nível inicial da mesa é maior que 1. |
+| 9. Revisão | Resumo de tudo e o botão **Finalizar criação** (`creationFinalized = true`). |
+
+- **Rolagem de atributo:** o dado é sorteado no **servidor**, pelo mesmo mecanismo da janela de dados (`POST /api/characters/me/creation/roll`, 4d6 com o menor descartado), e os quatro valores aparecem na tela com o descartado em destaque. A rolagem **não avisa a mesa** — ela entra apenas no **histórico do mestre**, como `[Jogador]: Criação de personagem: [valor]`.
+- **Pré-requisito de classe:** a classe é escolhida no passo 5 e o pré-requisito de atributo do livro (13) é conferido no passo 6, quando os atributos existem — se faltar, o passo dos atributos é recusado explicando o que falta. Trocar a classe inicial ainda no nível 1 é permitido.
+- **Nada é concedido pelo assistente:** itens são exclusividade do mestre. Todo valor derivado (PV, CA, iniciativa, CD de magia, percepção passiva, carga) é calculado pelo servidor a partir das escolhas.
+- **Depois de finalizada, o jogador não refaz o assistente.** Só o **mestre** pode reabrir a criação (`POST /api/characters/:id/creation/reopen`): `creationFinalized` volta para `false`, o rascunho é re-semeado com os valores atuais (modo "personagem existente", passo 1) e o jogador reencontra o assistente no próximo acesso.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/characters/me/creation` | autenticado | Estado do assistente: ficha (ou `null`), rascunho, catálogos, nível inicial e o que falta para finalizar. |
+| `PATCH` | `/api/characters/me/creation` | autenticado | Salva o **passo concluído** (`step` + só os campos daquele passo). |
+| `POST` | `/api/characters/me/creation/roll` | autenticado | Rola 4d6 (descartando o menor) para um atributo; `{ restart: true }` recomeça os seis valores. |
+| `POST` | `/api/characters/me/creation/level-up` | autenticado | Aplica um nível durante a criação (mesmo assistente de Level Up, sem depender da liberação do mestre). |
+| `POST` | `/api/characters/me/creation/finalize` | autenticado | Último passo: fecha a criação (recusa com a lista do que falta, se algo ficou para trás). |
+| `POST` | `/api/characters/:id/creation/reopen` | **mestre** | Devolve a ficha ao assistente (o jogador refaz a montagem no próximo acesso). |
+
+> Os catálogos de **raça** e **antecedente** ainda estão vazios (`src/modules/shared/creation.ts`): enquanto isso os passos 3 e 4 pedem texto livre. A estrutura já é a final — preencher `RACE_CATALOG`/`BACKGROUND_CATALOG` faz o passo virar seleção e os bônus de atributo (raça) e as perícias concedidas (antecedente) passarem a ser aplicados automaticamente.
+
 ### Endpoints
 
 | Método | Rota | Acesso | Descrição |
@@ -451,7 +491,6 @@ Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jog
 | `GET` | `/api/characters/me` | autenticado | Própria ficha (ou `null`). |
 | `POST` | `/api/characters/me` | autenticado | Cria a própria ficha (409 se já existir). |
 | `PATCH` | `/api/characters/me` | autenticado | Edição inline: aceita qualquer subconjunto de campos. Com a criação finalizada, só o estado de jogo (o resto responde 403). |
-| `POST` | `/api/characters/me/finalize` | autenticado | Encerra a criação do personagem (botão provisório, substituído pelo wizard). |
 | `GET` | `/api/characters` | **mestre** | Todas as fichas da mesa (base do painel da Etapa 3). |
 | `PATCH` | `/api/characters/:id` | **mestre** | Edita a ficha de um jogador — **qualquer campo, a qualquer momento**. A ficha continua pertencendo a ele. |
 | `DELETE` | `/api/characters/:id` | **mestre** | Exclui a ficha **e a conta do jogador** dono dela (irreversível; recusa ficha de mestre). |
@@ -466,7 +505,7 @@ Cada alteração incrementa `version`; o frontend só aceita eventos com versão
 
 ### Criação finalizada (trava da ficha)
 
-A ficha nasce com `creationFinalized = false`: enquanto isso o jogador monta o personagem livremente. O botão **Finalizar criação** (na barra do Level Up) abre uma confirmação que lista o que fica travado; ao confirmar, o servidor grava `creationFinalized = true`.
+A ficha nasce com `creationFinalized = false`: enquanto isso o **assistente de criação** conduz a montagem. O último passo do assistente é a revisão, e é o botão **Finalizar criação** dela que grava `creationFinalized = true` (não existe mais o botão provisório dentro da ficha).
 
 A partir daí o jogador **só** altera o **estado de jogo**:
 
@@ -481,9 +520,11 @@ Dois caminhos continuam mexendo na construção:
 1. **Level Up** (`POST /api/characters/me/level-up`) — não passa pelo PATCH, então segue subindo nível, PV, subclasse e atributos normalmente.
 2. **O mestre**, por `PATCH /api/characters/:id`, sem travas — e a mudança chega na tela do jogador na hora (`sheet:updated`).
 
-Na interface, os campos travados ficam **somente leitura** (o mesmo modo da visão do mestre), o botão de finalizar some e uma nota lembra que a montagem só muda pelo Level Up. O wizard de criação, quando existir, substitui esse botão — a trava é a mesma.
+Na interface, os campos travados ficam **somente leitura** (o mesmo modo da visão do mestre) e uma nota no topo da ficha lembra que a montagem só muda pelo Level Up ou pelo mestre.
 
-> `creationFinalized` entrou na migração `20260927120000_creation_finalized_and_armor_class`, que marca **todas as fichas existentes** como finalizadas (elas já foram criadas).
+Quem quiser devolver a ficha à montagem é o **mestre**, pelo botão **Reabrir criação** na ficha do jogador no painel: `creationFinalized` volta para `false` e o assistente reabre no próximo acesso daquele jogador, já com o que existia preenchido.
+
+> `creationFinalized` entrou na migração `20260927120000_creation_finalized_and_armor_class`, que marca **todas as fichas existentes** como finalizadas (elas já foram criadas). O rascunho do assistente (`characters.creationDraft`) e o nível inicial da mesa (`game_config.startingLevel`) entraram na migração `20260928120000_creation_wizard`.
 
 ### Edição inline
 
@@ -725,7 +766,7 @@ Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da g
 - **Mesa acompanha a rolagem:** ao abrir a janela, quem está rolando avisa a mesa. Os demais veem uma **faixa no topo do tabuleiro** com a foto do personagem e "*nome* está realizando um teste" (com o nome da perícia, quando é o caso). **Clicando na faixa**, quem assiste abre o **tabuleiro daquela pessoa em modo somente leitura** — os mesmos dados, caindo no mesmo instante, e o mesmo resultado, sem picker nem botões (o anúncio carrega o pool, a vantagem/desvantagem e a fase da rolagem). A rolagem do mestre **já nasce privada** — a faixa só aparece para a mesa se ele **desmarcar "Privada"** ("a rolagem é avisada se ele desejar"). Fechar a janela (ou o navegador) tira a faixa.
 - **Animação:** os dados giram e quicam dentro do ring até assentarem; o total (com bônus) e o valor de cada dado aparecem em destaque.
 - **Visibilidade:** rolagem de jogador é **sempre pública**; a do mestre é **Privada por padrão** (só ele vê o resultado e nenhum aviso sai). Desmarcando **Privada** o mestre compartilha a rolagem como um jogador: a mesa recebe o aviso e pode assistir ao tabuleiro. Rolagem pública dispara um aviso para toda a mesa ("[Personagem] está fazendo um teste de [Perícia]") que some sozinho em **3 segundos** e também pode ser dispensado na hora.
-- **Histórico:** o mestre tem um **log** logo abaixo dos dados com todas as rolagens da sessão, do mais recente ao mais antigo, e pode **limpar** o log.
+- **Histórico:** o mestre tem um **log** logo abaixo dos dados com todas as rolagens da sessão, do mais recente ao mais antigo, e pode **limpar** o log. As rolagens do **assistente de criação** (`kind: 'creation'`) também entram aí, como `[Jogador]: Criação de personagem: [valor]` — elas **não** avisam a mesa e não acendem a faixa de rolagem.
 
 ### Endpoints
 

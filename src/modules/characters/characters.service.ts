@@ -174,10 +174,11 @@ function resolveClassPatch(
   existing: ClassEntry[],
   incoming: { classKey: string; subclass: string }[] | undefined,
   abilities: Record<AbilityKey, number>,
+  options: { allowReplace?: boolean; skipPrerequisite?: boolean } = {},
 ): ClassEntry[] | null {
   if (incoming === undefined) return null;
 
-  if (existing.length === 0) {
+  if (existing.length === 0 || canReplaceSingleClass(existing, options)) {
     if (incoming.length === 0) return [];
     if (incoming.length > 1) {
       throw new HttpError('A ficha começa com uma classe só; as demais entram pelo Level Up.', 400);
@@ -187,12 +188,22 @@ function resolveClassPatch(
     const definition = getClassDefinition(chosen.classKey);
     if (!definition) throw new HttpError('Classe desconhecida.', 400);
 
-    const missing = multiclassMissingLabel(definition.key, abilities);
+    // O assistente de criação escolhe a classe ANTES dos atributos: nesse
+    // momento o pré-requisito ainda não pode ser conferido (o passo seguinte é
+    // quem faz isso, já com os valores finais).
+    const missing = options.skipPrerequisite ? '' : multiclassMissingLabel(definition.key, abilities);
     if (missing) {
       throw new HttpError(`Para entrar em ${definition.name} ${missing}.`, 400);
     }
 
-    return [{ classKey: definition.key, subclass: '', level: 1 }];
+    // Troca da classe inicial (assistente de criação): a subclasse já escolhida
+    // não sobrevive à troca, porque ela é da classe antiga.
+    const subclass =
+      existing.length === 1 && existing[0].classKey === definition.key
+        ? existing[0].subclass
+        : '';
+
+    return [{ classKey: definition.key, subclass, level: 1 }];
   }
 
   const known = new Set(existing.map((entry) => entry.classKey));
@@ -224,6 +235,20 @@ function resolveClassPatch(
   });
 
   return changed ? next : null;
+}
+
+/**
+ * Verdadeiro quando a lista pode ser substituída por inteiro.
+ *
+ * Só o assistente de criação usa isso (`fromWizard`), para o jogador poder
+ * voltar ao passo da classe e escolher outra antes de finalizar. Depois disso a
+ * classe inicial já está em jogo e a lista só muda pelo Level Up.
+ */
+function canReplaceSingleClass(
+  existing: ClassEntry[],
+  options: { allowReplace?: boolean },
+): boolean {
+  return options.allowReplace === true && existing.length === 1 && existing[0].level === 1;
 }
 
 /**
@@ -319,7 +344,48 @@ export async function levelUpCharacter(actor: Actor, input: LevelUpInput): Promi
       throw new HttpError('Você já usou esta liberação de Level Up.', 409);
     }
 
-    return applyLevelUp(tx, actor, input, config, character);
+    return applyLevelUp(tx, actor, input, config, character, { consumeRelease: true });
+  });
+
+  await publishChange(actor, updated, { levelUp });
+
+  return toSheetDto(updated, actor.username);
+}
+
+/**
+ * Sobe um nível SEM depender da liberação do mestre — é o que o assistente de
+ * criação usa no passo 8 ("nível inicial da mesa") para aplicar os níveis 2..N
+ * de uma vez, na mesma lógica do Level Up normal.
+ *
+ * A liberação da mesa NÃO é consumida: o jogador continua com o Level Up dele
+ * disponível quando o mestre liberar, como qualquer outro.
+ */
+export async function levelUpDraft(
+  actor: Actor,
+  input: LevelUpInput,
+  maxLevel: number,
+): Promise<CharacterDto> {
+  const config = await getGameConfig();
+
+  const { updated, levelUp } = await prisma.$transaction(async (tx) => {
+    const character = await tx.character.findUnique({ where: { userId: actor.userId } });
+    if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+    if (character.creationFinalized) {
+      throw new HttpError(
+        'A criação deste personagem já foi finalizada — o nível agora sobe pelo Level Up.',
+        409,
+      );
+    }
+
+    const level = totalCharacterLevel(normalizeClassEntries(character.classes));
+    if (level >= maxLevel) {
+      throw new HttpError(
+        `O nível inicial desta mesa é ${maxLevel} — não há mais níveis para aplicar na criação.`,
+        400,
+      );
+    }
+
+    return applyLevelUp(tx, actor, input, config, character, { consumeRelease: false });
   });
 
   await publishChange(actor, updated, { levelUp });
@@ -339,6 +405,12 @@ async function applyLevelUp(
   input: LevelUpInput,
   config: Awaited<ReturnType<typeof getGameConfig>>,
   character: Character,
+  /**
+   * `consumeRelease` marca a liberação da mesa como usada por este personagem.
+   * O assistente de criação passa `false` (o nível inicial não gasta o Level Up
+   * que o mestre liberou).
+   */
+  options: { consumeRelease: boolean },
 ): Promise<{
   updated: Character;
   levelUp: { classKey: string; classLevel: number; hpGained: number; hpRolled: boolean };
@@ -462,7 +534,9 @@ async function applyLevelUp(
       // O PV ganho vale tanto para o máximo quanto para o PV atual.
       hpMax: character.hpMax + hpGained + conDelta,
       hpCurrent: Math.max(0, character.hpCurrent + hpGained + conDelta),
-      lastLevelUpRelease: config.levelUpRelease,
+      lastLevelUpRelease: options.consumeRelease
+        ? config.levelUpRelease
+        : character.lastLevelUpRelease,
       version: { increment: 1 },
     },
   });
@@ -659,9 +733,28 @@ function assertPlayerCanPatch(character: Character, patch: UpdateCharacterInput)
 async function applyCharacterPatch(
   owner: SheetOwner,
   patch: UpdateCharacterInput,
-  options: { editedBy?: string; fromPlayer?: boolean } = {},
+  options: {
+    editedBy?: string;
+    fromPlayer?: boolean;
+    /** Chamado pelo assistente de criação (permite trocar a classe inicial). */
+    fromWizard?: boolean;
+    /**
+     * Pula o pré-requisito de atributo da classe inicial. Só o assistente usa:
+     * lá a classe é escolhida ANTES dos atributos e o passo dos atributos é
+     * quem confere o pré-requisito.
+     */
+    skipClassPrerequisite?: boolean;
+    /** Rascunho do assistente, gravado na mesma escrita (ver shared/creation.ts). */
+    creationDraft?: Prisma.InputJsonValue;
+  } = {},
 ): Promise<CharacterDto> {
-  const { editedBy, fromPlayer = false } = options;
+  const {
+    editedBy,
+    fromPlayer = false,
+    fromWizard = false,
+    skipClassPrerequisite = false,
+    creationDraft,
+  } = options;
   const existing = await prisma.character.findUnique({ where: { userId: owner.userId } });
   if (!existing) {
     throw new HttpError('Esta ficha ainda não foi criada.', 404);
@@ -670,6 +763,9 @@ async function applyCharacterPatch(
   if (fromPlayer) assertPlayerCanPatch(existing, patch);
 
   const data: Record<string, unknown> = { version: { increment: 1 } };
+
+  // O rascunho do assistente de criação vai na mesma escrita da ficha.
+  if (creationDraft !== undefined) data.creationDraft = creationDraft;
 
   for (const key of SCALAR_KEYS) {
     const value = patch[key];
@@ -688,6 +784,7 @@ async function applyCharacterPatch(
     currentClasses,
     patch.classes,
     abilitiesOf(existing),
+    { allowReplace: fromWizard, skipPrerequisite: fromWizard && skipClassPrerequisite },
   );
   const classes = nextClasses ?? currentClasses;
   const classesChanged = nextClasses !== null;
@@ -697,9 +794,15 @@ async function applyCharacterPatch(
     // Sem classe, nada de estado de classe pendurado.
     if (classes.length === 0) data.classState = { active: [], used: {} };
 
-    // Primeira classe escolhida: define o PV inicial (dado de vida máximo +
-    // modificador de Constituição), salvo se o patch já mandou PV explícito.
-    if (currentClasses.length === 0 && classes.length > 0 && patch.hpMax === undefined) {
+    // Primeira classe escolhida (ou troca dela pelo assistente, ainda no nível
+    // 1): define o PV inicial pelo dado de vida máximo + modificador de
+    // Constituição, salvo se o patch já mandou PV explícito.
+    const rebuildFirstLevelHp =
+      classes.length > 0 &&
+      (currentClasses.length === 0 ||
+        (fromWizard && totalCharacterLevel(classes) === 1));
+
+    if (rebuildFirstLevelHp && patch.hpMax === undefined) {
       const chosen = getClassDefinition(classes[0].classKey);
       if (chosen) {
         const constitution = patch.constitution ?? existing.constitution;
@@ -776,30 +879,64 @@ export function updateCharacter(actor: Actor, patch: UpdateCharacterInput): Prom
 }
 
 /**
- * Encerra a criação do personagem (botão "Finalizar criação" da ficha).
+ * Um passo do assistente de criação: grava os campos da ficha que aquele passo
+ * resolve e o rascunho (`creationDraft`) na MESMA escrita.
  *
- * A partir daí o jogador só mexe no estado de jogo; identidade, atributos,
- * proficiências, classes, PV máximo e CA passam a mudar apenas pelo Level Up ou
- * pelas mãos do mestre. Idempotente: finalizar de novo devolve a ficha como está
- * (o botão só aparece enquanto a criação está aberta).
+ * Vale como edição do próprio jogador (as travas dele continuam valendo) e
+ * permite trocar a classe inicial enquanto a criação estiver aberta.
  */
-export async function finalizeCharacter(actor: Actor): Promise<CharacterDto> {
-  const existing = await prisma.character.findUnique({ where: { userId: actor.userId } });
+export function updateDraftSheet(
+  owner: SheetOwner,
+  patch: UpdateCharacterInput,
+  creationDraft: Prisma.InputJsonValue,
+  options: { skipClassPrerequisite?: boolean } = {},
+): Promise<CharacterDto> {
+  return applyCharacterPatch(owner, patch, {
+    fromPlayer: true,
+    fromWizard: true,
+    skipClassPrerequisite: options.skipClassPrerequisite,
+    creationDraft,
+  });
+}
+
+/**
+ * Grava a flag de criação (finalizada/reaberta) do personagem de um jogador.
+ *
+ * Finalizar é o último passo do assistente (ver creation.service.ts, que antes
+ * confere se não falta nada); reabrir é uma ação exclusiva do mestre, que devolve
+ * o personagem ao assistente e o jogador reencontra o wizard no próximo acesso.
+ * `extra` leva, na mesma escrita, o rascunho do assistente.
+ */
+export async function setCreationFinalized(
+  owner: SheetOwner,
+  actor: Actor,
+  finalized: boolean,
+  extra: Record<string, unknown> = {},
+): Promise<CharacterDto> {
+  const existing = await prisma.character.findUnique({ where: { userId: owner.userId } });
   if (!existing) {
     throw new HttpError('Esta ficha ainda não foi criada.', 404);
   }
 
-  if (existing.creationFinalized) {
-    return toSheetDto(existing, actor.username);
+  // Idempotente: chamar de novo devolve a ficha como está.
+  if (existing.creationFinalized === finalized && Object.keys(extra).length === 0) {
+    return toSheetDto(existing, owner.username);
   }
 
   const character = await prisma.character.update({
-    where: { userId: actor.userId },
-    data: { creationFinalized: true, version: { increment: 1 } },
+    where: { userId: owner.userId },
+    data: { creationFinalized: finalized, ...extra, version: { increment: 1 } },
   });
 
-  await publishChange(actor, character, { creationFinalized: true });
-  return toSheetDto(character, actor.username);
+  // Quem editou só vai marcado quando NÃO é o dono (o mestre reabrindo a
+  // criação) — o jogador finalizando a própria ficha não recebe o aviso.
+  await publishChange(
+    owner,
+    character,
+    { creationFinalized: finalized, ...extra },
+    actor.userId === owner.userId ? undefined : actor.displayName,
+  );
+  return toSheetDto(character, owner.username);
 }
 
 /**

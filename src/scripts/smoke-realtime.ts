@@ -2398,13 +2398,72 @@ async function main(): Promise<void> {
     clearedOverride.armorClass === 18 && clearedOverride.armorClassOverride === null,
   );
 
-  // --- Trava da criação -----------------------------------------------------
-  const finalized = await api('/api/characters/me/finalize', {
+  // --- Trava da criação (assistente de criação) -----------------------------
+  // A ficha em montagem passa pelo assistente: cada passo grava o que lhe
+  // pertence e o ÚLTIMO passo (a revisão) é quem fecha a criação.
+  const draftSheet = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const draftOpen = await api('/api/characters/me/creation', { token: playerToken });
+  check(
+    'a criação aberta começa no passo 1 do assistente',
+    draftOpen.status === 200 &&
+      draftOpen.data?.creation?.step === 1 &&
+      draftOpen.data?.creation?.mode === null,
+    JSON.stringify(draftOpen.data?.creation),
+  );
+
+  const wizardSteps: [number, Record<string, unknown>][] = [
+    [1, { mode: 'existing' }],
+    [2, { name: draftSheet.name, alignment: 'Leal e Bom' }],
+    [3, { race: draftSheet.race }],
+    [4, { background: 'Sábio' }],
+    [5, { classKey: draftSheet.classes[0].classKey }],
+    [
+      6,
+      {
+        baseAbilities: {
+          // O bárbaro exige Força 13 e o passo dos atributos confere o
+          // pré-requisito da classe: a ficha do smoke tinha Força 8, então o
+          // personagem volta do assistente com o mínimo da classe.
+          strength: Math.max(13, draftSheet.strength),
+          dexterity: draftSheet.dexterity,
+          constitution: draftSheet.constitution,
+          intelligence: draftSheet.intelligence,
+          wisdom: draftSheet.wisdom,
+          charisma: draftSheet.charisma,
+        },
+      },
+    ],
+    [7, { skills: ['athletics', 'survival'] }],
+  ];
+
+  const stepStatuses: number[] = [];
+  for (const [step, body] of wizardSteps) {
+    const saved = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { step, ...body },
+    });
+    stepStatuses.push(saved.status);
+  }
+  check(
+    'assistente: os passos 1 a 7 salvam o progresso (200)',
+    stepStatuses.every((status) => status === 200),
+    JSON.stringify(stepStatuses),
+  );
+
+  const resumed = await api('/api/characters/me/creation', { token: playerToken });
+  check(
+    'o progresso fica salvo para retomar de onde parou',
+    resumed.data?.creation?.step === 8,
+    JSON.stringify(resumed.data?.creation?.step),
+  );
+
+  const finalized = await api('/api/characters/me/creation/finalize', {
     method: 'POST',
     token: playerToken,
   });
   check(
-    'jogador finaliza a criação (200)',
+    'jogador finaliza a criação pelo assistente (200)',
     finalized.status === 200 && finalized.data?.character?.creationFinalized === true,
     JSON.stringify(finalized.data),
   );
@@ -2808,6 +2867,485 @@ async function main(): Promise<void> {
     'ninguém mais aparece como rolando',
     (await api('/api/dice/active', { token: masterToken })).data?.activeRoll === null,
   );
+
+  // --- 11.11 Assistente de criação de personagem ---------------------------
+  console.log('\n11.11) Assistente de criação de personagem');
+
+  // Um jogador novo (sem ficha) é quem percorre o assistente do começo.
+  const rookieUsername = `criacao_${suffix}`;
+  createdUsernames.push(rookieUsername);
+  const rookieReg = await api('/api/auth/register', {
+    method: 'POST',
+    body: { username: rookieUsername, displayName: 'Criação Teste', password: 'senha-forte-123' },
+  });
+  const rookieToken: string = rookieReg.data?.token;
+  check(
+    'jogador novo cadastrado para o assistente (201)',
+    rookieReg.status === 201 && Boolean(rookieToken),
+    JSON.stringify(rookieReg.data),
+  );
+
+  const emptyCreation = await api('/api/characters/me/creation', { token: rookieToken });
+  check(
+    'sem ficha, o assistente abre no passo 1 e sem personagem',
+    emptyCreation.status === 200 &&
+      emptyCreation.data?.character === null &&
+      emptyCreation.data?.creation?.step === 1 &&
+      emptyCreation.data?.creation?.mode === null,
+    JSON.stringify(emptyCreation.data?.creation),
+  );
+  check(
+    'o assistente traz o nível inicial da mesa e os catálogos',
+    emptyCreation.data?.creation?.startingLevel === 1 &&
+      Array.isArray(emptyCreation.data?.creation?.raceCatalog) &&
+      Array.isArray(emptyCreation.data?.creation?.backgroundCatalog),
+    JSON.stringify(emptyCreation.data?.creation),
+  );
+
+  // Passo 1: o rascunho É a ficha (criada aqui), com a criação em aberto.
+  const stepOne = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 1, mode: 'new' },
+  });
+  const rookieCharacterId: string = stepOne.data?.character?.id;
+  check(
+    'passo 1 cria o rascunho (personagem novo, criação em aberto)',
+    stepOne.status === 200 &&
+      Boolean(rookieCharacterId) &&
+      stepOne.data?.character?.creationFinalized === false &&
+      stepOne.data?.creation?.step === 2,
+    JSON.stringify({ status: stepOne.status, creation: stepOne.data?.creation }),
+  );
+  check(
+    'o rascunho já aparece para o mestre (ficha em andamento)',
+    (await api('/api/characters', { token: masterToken })).data?.characters?.some(
+      (entry: any) => entry.id === rookieCharacterId && entry.creationFinalized === false,
+    ),
+  );
+
+  // Rolagem de atributo: 4d6 descartando o menor, pelo mesmo mecanismo da
+  // janela de dados (o dado é sorteado no servidor).
+  const firstRoll = await api('/api/characters/me/creation/roll', {
+    method: 'POST',
+    token: rookieToken,
+    body: {},
+  });
+  const rolled = firstRoll.data?.roll;
+  const rollTotal = (roll: any): number =>
+    roll.dice.reduce((sum: number, value: number, index: number) =>
+      index === roll.dropped ? sum : sum + value,
+      0,
+    );
+  check(
+    'rolagem de criação: 4d6 com o MENOR dado descartado',
+    firstRoll.status === 201 &&
+      rolled?.dice?.length === 4 &&
+      rolled?.dropped === rolled?.dice?.indexOf(Math.min(...(rolled?.dice ?? []))) &&
+      rolled?.value === rollTotal(rolled),
+    JSON.stringify(rolled),
+  );
+  check(
+    'a rolagem fica guardada no rascunho (para distribuir depois)',
+    firstRoll.data?.creation?.rolls?.length === 1,
+    JSON.stringify(firstRoll.data?.creation?.rolls),
+  );
+
+  const creationHistory = await api('/api/dice/history', { token: masterToken });
+  const creationEntry = (creationHistory.data?.rolls ?? []).find(
+    (roll: any) => roll.kind === 'creation',
+  );
+  check(
+    'a rolagem entra no histórico do mestre como "Criação de personagem"',
+    creationEntry?.label === 'Criação de personagem',
+    JSON.stringify(creationEntry),
+  );
+
+  // Seis valores por criação: a sétima rolagem só depois de "rolar novamente".
+  for (let index = 0; index < 5; index += 1) {
+    await api('/api/characters/me/creation/roll', { method: 'POST', token: rookieToken, body: {} });
+  }
+  check(
+    'os seis valores já rolados são recusados na sétima rolagem (409)',
+    (
+      await api('/api/characters/me/creation/roll', {
+        method: 'POST',
+        token: rookieToken,
+        body: {},
+      })
+    ).status === 409,
+  );
+  const restarted = await api('/api/characters/me/creation/roll', {
+    method: 'POST',
+    token: rookieToken,
+    body: { restart: true },
+  });
+  check(
+    '"rolar novamente" recomeça os seis valores',
+    restarted.status === 201 && restarted.data?.creation?.rolls?.length === 1,
+    JSON.stringify(restarted.data?.creation?.rolls),
+  );
+
+  // Distribuição: os valores têm de ser EXATAMENTE os rolados.
+  for (let index = 0; index < 5; index += 1) {
+    await api('/api/characters/me/creation/roll', {
+      method: 'POST',
+      token: rookieToken,
+      body: {},
+    });
+  }
+  const sixRolls = await api('/api/characters/me/creation', { token: rookieToken });
+  check(
+    'o rascunho guarda as seis rolagens (para distribuir depois)',
+    sixRolls.data?.creation?.rolls?.length === 6,
+    JSON.stringify(sixRolls.data?.creation?.rolls?.length),
+  );
+
+  const forged = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: {
+      step: 6,
+      baseAbilities: {
+        strength: 1,
+        dexterity: 1,
+        constitution: 1,
+        intelligence: 1,
+        wisdom: 1,
+        charisma: 1,
+      },
+    },
+  });
+  check(
+    'distribuir valores que não foram rolados é recusado (400)',
+    forged.status === 400,
+    JSON.stringify(forged.data),
+  );
+
+  // O resto do assistente é feito no modo "personagem existente" (valores
+  // digitados), que é determinístico para os testes.
+  check(
+    'voltar ao passo 1 e trocar o modo é aceito (200)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 1, mode: 'existing' },
+      })
+    ).status === 200,
+  );
+
+  const walkSteps: [number, Record<string, unknown>][] = [
+    [2, { name: 'Teste do Assistente', alignment: 'Neutro e Bom' }],
+    [3, { race: 'Anão' }],
+    [4, { background: 'Sábio' }],
+  ];
+  const walkStatuses: number[] = [];
+  for (const [step, body] of walkSteps) {
+    const walked = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: rookieToken,
+      body: { step, ...body },
+    });
+    walkStatuses.push(walked.status);
+  }
+  check(
+    'identidade, raça e antecedente são salvos passo a passo (200)',
+    walkStatuses.every((status) => status === 200),
+    JSON.stringify(walkStatuses),
+  );
+
+  check(
+    'finalizar com passos faltando é recusado com a lista do que falta (400)',
+    (
+      await api('/api/characters/me/creation/finalize', { method: 'POST', token: rookieToken })
+    ).status === 400,
+  );
+
+  // A classe é escolhida ANTES dos atributos: o pré-requisito é conferido no
+  // passo seguinte, com os valores finais (Paladino exige Força 13 e Carisma 13).
+  const paladinClass = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'paladin' },
+  });
+  check(
+    'a classe é escolhida mesmo antes de os atributos existirem (200)',
+    paladinClass.status === 200 && paladinClass.data?.character?.classes?.[0]?.classKey === 'paladin',
+    JSON.stringify(paladinClass.data?.character?.classes),
+  );
+
+  const paladinAbilities = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: {
+      step: 6,
+      baseAbilities: {
+        strength: 15,
+        dexterity: 14,
+        constitution: 14,
+        intelligence: 10,
+        wisdom: 12,
+        charisma: 8,
+      },
+    },
+  });
+  check(
+    'atributos sem o pré-requisito da classe devolvem o que falta (400)',
+    paladinAbilities.status === 400 &&
+      String(paladinAbilities.data?.message ?? '').includes('Carisma'),
+    JSON.stringify(paladinAbilities.data),
+  );
+
+  const barbarianClass = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'barbarian' },
+  });
+  check(
+    'trocar a classe inicial pelo assistente é aceito (200)',
+    barbarianClass.status === 200 &&
+      barbarianClass.data?.character?.classes?.[0]?.classKey === 'barbarian',
+    JSON.stringify(barbarianClass.data?.character?.classes),
+  );
+
+  const badAbilities = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: {
+      step: 6,
+      baseAbilities: {
+        strength: 8,
+        dexterity: 14,
+        constitution: 14,
+        intelligence: 10,
+        wisdom: 12,
+        charisma: 8,
+      },
+    },
+  });
+  check(
+    'atributos sem o pré-requisito da classe são recusados com o que falta (400)',
+    badAbilities.status === 400 && String(badAbilities.data?.message ?? '').includes('faltam'),
+    JSON.stringify(badAbilities.data),
+  );
+
+  const goodAbilities = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: {
+      step: 6,
+      baseAbilities: {
+        strength: 15,
+        dexterity: 14,
+        constitution: 14,
+        intelligence: 10,
+        wisdom: 12,
+        charisma: 8,
+      },
+    },
+  });
+  const rookieSheet = goodAbilities.data?.character;
+  check(
+    'os atributos são gravados e o PV de nível 1 usa o dado de vida + CON',
+    goodAbilities.status === 200 &&
+      rookieSheet?.strength === 15 &&
+      rookieSheet?.hpMax === 12 + 2 &&
+      rookieSheet?.hpCurrent === 14,
+    JSON.stringify({ hpMax: rookieSheet?.hpMax, abilities: rookieSheet?.strength }),
+  );
+
+  // Perícias: quantidade e lista vêm da classe (Bárbaro escolhe 2).
+  const wrongSkills = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 7, skills: ['athletics'] },
+  });
+  const outsideSkills = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 7, skills: ['arcana', 'history'] },
+  });
+  check(
+    'perícias fora da lista da classe são recusadas (400)',
+    wrongSkills.status === 400 && outsideSkills.status === 400,
+    JSON.stringify({ wrongSkills: wrongSkills.data, outsideSkills: outsideSkills.data }),
+  );
+
+  const skillsStep = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 7, skills: ['athletics', 'survival'] },
+  });
+  check(
+    'as perícias escolhidas ficam proficientes na ficha (200)',
+    skillsStep.status === 200 &&
+      skillsStep.data?.character?.skills?.athletics?.proficient === true &&
+      skillsStep.data?.character?.skills?.survival?.proficient === true,
+    JSON.stringify(skillsStep.data?.character?.skills),
+  );
+
+  check(
+    'passo 8 no nível inicial da mesa (1) é aceito (200)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 8 },
+      })
+    ).status === 200,
+  );
+
+  const rookieFinalized = await api('/api/characters/me/creation/finalize', {
+    method: 'POST',
+    token: rookieToken,
+  });
+  check(
+    'passo 9 fecha a criação (200)',
+    rookieFinalized.status === 200 &&
+      rookieFinalized.data?.character?.creationFinalized === true,
+    JSON.stringify(rookieFinalized.data),
+  );
+
+  check(
+    'criação finalizada: o assistente não aceita mais passos (409)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 2, name: 'Outro nome' },
+      })
+    ).status === 409,
+  );
+  check(
+    'o jogador não reabre a própria criação (403)',
+    (
+      await api(`/api/characters/${rookieCharacterId}/creation/reopen`, {
+        method: 'POST',
+        token: rookieToken,
+      })
+    ).status === 403,
+  );
+
+  // Só o mestre reabre — e o assistente volta com o que já existia preenchido.
+  const reopened = await api(`/api/characters/${rookieCharacterId}/creation/reopen`, {
+    method: 'POST',
+    token: masterToken,
+  });
+  check(
+    'o mestre reabre a criação (200)',
+    reopened.status === 200 && reopened.data?.character?.creationFinalized === false,
+    JSON.stringify(reopened.data?.character?.creationFinalized),
+  );
+
+  const afterReopen = await api('/api/characters/me/creation', { token: rookieToken });
+  check(
+    'reaberta, a criação volta ao passo 1 com os valores atuais como base',
+    afterReopen.data?.creation?.step === 1 &&
+      afterReopen.data?.creation?.mode === 'existing' &&
+      afterReopen.data?.creation?.baseAbilities?.strength === 15,
+    JSON.stringify(afterReopen.data?.creation),
+  );
+
+  // Nível inicial da mesa: o passo 8 aplica os níveis SEM a liberação do mestre.
+  const startingLevelSet = await api('/api/game/starting-level', {
+    method: 'POST',
+    token: masterToken,
+    body: { level: 2 },
+  });
+  check(
+    'o mestre define o nível inicial da mesa (200)',
+    startingLevelSet.status === 200 && startingLevelSet.data?.config?.startingLevel === 2,
+    JSON.stringify(startingLevelSet.data?.config),
+  );
+  check(
+    'o assistente passa a exigir o nível inicial (2)',
+    (await api('/api/characters/me/creation', { token: rookieToken })).data?.creation
+      ?.startingLevel === 2,
+  );
+  check(
+    'passo 8 sem ter aplicado os níveis iniciais é recusado (400)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 8 },
+      })
+    ).status === 400,
+  );
+
+  const creationLevel = await api('/api/characters/me/creation/level-up', {
+    method: 'POST',
+    token: rookieToken,
+    body: { classKey: 'barbarian', hp: 'average' },
+  });
+  check(
+    'o assistente aplica o nível inicial sem a liberação do mestre (200)',
+    creationLevel.status === 200 && creationLevel.data?.character?.level === 2,
+    JSON.stringify({ status: creationLevel.status, level: creationLevel.data?.character?.level }),
+  );
+  check(
+    'o nível inicial não consome a liberação de Level Up do jogador',
+    creationLevel.data?.character?.lastLevelUpRelease === 0,
+    JSON.stringify(creationLevel.data?.character?.lastLevelUpRelease),
+  );
+
+  const reopenWalk: [number, Record<string, unknown>][] = [
+    [2, { name: 'Teste do Assistente' }],
+    [3, { race: 'Anão' }],
+    [4, { background: 'Sábio' }],
+    [5, { classKey: 'barbarian' }],
+    [
+      6,
+      {
+        baseAbilities: {
+          strength: 15,
+          dexterity: 14,
+          constitution: 14,
+          intelligence: 10,
+          wisdom: 12,
+          charisma: 8,
+        },
+      },
+    ],
+    [7, { skills: ['athletics', 'survival'] }],
+    [8, {}],
+  ];
+  const reopenStatuses: number[] = [];
+  for (const [step, body] of reopenWalk) {
+    const walked = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: rookieToken,
+      body: { step, ...body },
+    });
+    reopenStatuses.push(walked.status);
+  }
+  check(
+    'a criação reaberta percorre os passos de novo (200)',
+    reopenStatuses.every((status) => status === 200),
+    JSON.stringify(reopenStatuses),
+  );
+
+  const rookieRefinalized = await api('/api/characters/me/creation/finalize', {
+    method: 'POST',
+    token: rookieToken,
+  });
+  check(
+    'a criação reaberta é finalizada no nível inicial da mesa',
+    rookieRefinalized.status === 200 &&
+      rookieRefinalized.data?.character?.creationFinalized === true &&
+      rookieRefinalized.data?.character?.level === 2,
+    JSON.stringify({
+      status: rookieRefinalized.status,
+      level: rookieRefinalized.data?.character?.level,
+    }),
+  );
+
+  await api('/api/game/starting-level', {
+    method: 'POST',
+    token: masterToken,
+    body: { level: 1 },
+  });
 
   // --- 12. Presença ao desconectar ------------------------------------------
   console.log('\n12) Presença ao desconectar');
