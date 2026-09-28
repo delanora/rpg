@@ -12,8 +12,11 @@ import {
   EMPTY_CREATION_DRAFT,
   RACE_CATALOG,
   backgroundSkills,
+  findRace,
   lowestIndex,
   normalizeCreationDraft,
+  raceChoiceCount,
+  raceChoicePool,
   racialAbilityBonuses,
   rollValues,
   type BackgroundOption,
@@ -87,6 +90,8 @@ export interface CreationStateDto {
   baseAbilities: Partial<Record<AbilityKey, number>>;
   /** Perícias escolhidas na classe. */
   skillPicks: string[];
+  /** Atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois). */
+  abilityChoices: AbilityKey[];
   /** Perícias que a classe do rascunho oferece (quantas e quais). */
   skillChoice: { count: number; from: string[] };
   /** Nível em que a mesa começa: o passo 8 aplica os níveis 2 até ele. */
@@ -127,8 +132,9 @@ function abilitiesOf(character: Character): Record<AbilityKey, number> {
 function abilitiesPatchFrom(
   race: string,
   base: Partial<Record<AbilityKey, number>>,
+  choices: readonly AbilityKey[] = [],
 ): Partial<Record<AbilityKey, number>> {
-  const bonuses = racialAbilityBonuses(race);
+  const bonuses = racialAbilityBonuses(race, choices);
   const patch: Partial<Record<AbilityKey, number>> = {};
 
   for (const ability of ABILITY_KEYS) {
@@ -145,8 +151,12 @@ function abilitiesPatchFrom(
 }
 
 /** Valores-BASE a partir dos atributos gravados (descontando os bônus raciais). */
-function baseAbilitiesOf(character: Character, race: string): Partial<Record<AbilityKey, number>> {
-  const bonuses = racialAbilityBonuses(race || character.race);
+function baseAbilitiesOf(
+  character: Character,
+  race: string,
+  choices: readonly AbilityKey[] = [],
+): Partial<Record<AbilityKey, number>> {
+  const bonuses = racialAbilityBonuses(race || character.race, choices);
   const abilities = abilitiesOf(character);
   const base: Partial<Record<AbilityKey, number>> = {};
 
@@ -255,7 +265,7 @@ function validateAbilities(
   // Modo "personagem existente": o jogador digita os valores (1 a 20). Uma ficha
   // reaberta pelo mestre pode ter valores acima disso (melhorias de nível já
   // aplicadas) — nesse caso o valor que já estava na ficha passa como está.
-  const current = baseAbilitiesOf(character, character.race);
+  const current = baseAbilitiesOf(character, character.race, draft.abilityChoices);
   for (const ability of ABILITY_KEYS) {
     const value = base[ability];
     if (value === undefined) continue;
@@ -279,6 +289,12 @@ function missingForFinalize(character: Character, draft: CreationDraft): string[
     missing.push('o nome (passo 2)');
   }
   if (!character.race.trim()) missing.push('a raça (passo 3)');
+  if (
+    raceChoiceCount(character.race) > 0 &&
+    draft.abilityChoices.length < raceChoiceCount(character.race)
+  ) {
+    missing.push('os atributos à escolha da raça (passo 3)');
+  }
   if (!character.background.trim()) missing.push('o antecedente (passo 4)');
   if (entries.length === 0) missing.push('a classe (passo 5)');
 
@@ -313,6 +329,7 @@ async function buildState(
       rolls: draft.rolls,
       baseAbilities: draft.baseAbilities,
       skillPicks: draft.skillPicks,
+      abilityChoices: draft.abilityChoices,
       skillChoice: creationSkillChoice(entries),
       startingLevel,
       raceCatalog: [...RACE_CATALOG],
@@ -349,6 +366,7 @@ export async function saveCreationStep(
     ...draft,
     baseAbilities: { ...draft.baseAbilities },
     skillPicks: [...draft.skillPicks],
+    abilityChoices: [...draft.abilityChoices],
   };
   const patch: UpdateCharacterInput = {};
 
@@ -373,11 +391,38 @@ export async function saveCreationStep(
 
     case 3: {
       const race = (input.race ?? '').trim();
-      if (!race) throw new HttpError('Escreva a raça do personagem.', 400);
+      if (!race) throw new HttpError('Escolha a raça do personagem.', 400);
       patch.race = race;
+
+      // Algumas raças pedem atributos à escolha (Meio-Elfo: +1 em dois). A
+      // escolha é validada contra o catálogo e guardada no rascunho; trocar
+      // para uma raça sem escolha limpa a lista.
+      const option = findRace(race);
+      const required = option?.abilityChoice ?? 0;
+      const choices = [...new Set(input.abilityChoices ?? [])];
+      if (required > 0 && option) {
+        const pool = raceChoicePool(option);
+        const outside = choices.filter((ability) => !pool.includes(ability));
+        if (outside.length > 0) {
+          throw new HttpError(
+            `Fora da escolha de ${option.name}: ${outside
+              .map((ability) => ABILITY_LABELS[ability] ?? ability)
+              .join(', ')}.`,
+            400,
+          );
+        }
+        if (choices.length !== required) {
+          throw new HttpError(
+            `${option.name} concede +1 em ${required} atributos à sua escolha — escolha exatamente esse tanto.`,
+            400,
+          );
+        }
+      }
+      nextDraft.abilityChoices = required > 0 ? choices : [];
+
       // A raça pode conceder bônus de atributo: os valores são refeitos a partir
       // dos valores-BASE do rascunho (nada do que foi rolado se perde).
-      Object.assign(patch, abilitiesPatchFrom(race, nextDraft.baseAbilities));
+      Object.assign(patch, abilitiesPatchFrom(race, nextDraft.baseAbilities, choices));
       break;
     }
 
@@ -430,7 +475,10 @@ export async function saveCreationStep(
       nextDraft.baseAbilities = { ...base };
 
       const race = patch.race ?? character.race;
-      Object.assign(patch, abilitiesPatchFrom(race, nextDraft.baseAbilities));
+      Object.assign(
+        patch,
+        abilitiesPatchFrom(race, nextDraft.baseAbilities, nextDraft.abilityChoices),
+      );
 
       // Pré-requisito da classe, agora com os atributos finais: é o momento em
       // que o assistente barra a combinação (ex.: Paladino sem Força 13) e
@@ -619,8 +667,9 @@ export async function reopenCreation(characterId: string, master: Actor): Promis
     mode: draft.mode ?? 'existing',
     step: CREATION_FIRST_STEP,
     rolls: draft.rolls,
-    baseAbilities: baseAbilitiesOf(character, character.race),
+    baseAbilities: baseAbilitiesOf(character, character.race, draft.abilityChoices),
     skillPicks: draft.skillPicks,
+    abilityChoices: draft.abilityChoices,
   };
 
   return setCreationFinalized(

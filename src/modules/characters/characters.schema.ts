@@ -318,9 +318,17 @@ export const creationStepSchema = z.object({
   name: z.string().trim().min(1, 'O nome não pode ficar vazio.').max(120).optional(),
   alignment: shortText(60).optional(),
   avatarUrl: shortText(500).optional(),
-  /** Passos 3 e 4: raça e antecedente (texto livre enquanto não há catálogo). */
+  /** Passos 3 e 4: raça e antecedente (o passo 4 ainda é texto livre). */
   race: shortText(60).optional(),
   background: shortText(120).optional(),
+  /**
+   * Passo 3: atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois).
+   * Os atributos fora do `raceChoicePool` da raça são recusados no serviço.
+   */
+  abilityChoices: z
+    .array(z.enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]]))
+    .max(2)
+    .optional(),
   /** Passo 5: classe inicial. */
   classKey: classKeySchema.optional(),
   /** Passo 6: valores-base dos seis atributos. */

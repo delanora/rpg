@@ -2902,6 +2902,27 @@ async function main(): Promise<void> {
     JSON.stringify(emptyCreation.data?.creation),
   );
 
+  // O catálogo de raças do Livro do Jogador já vem preenchido: o passo 3 lista
+  // as linhagens (com os bônus somados) em vez de pedir texto livre.
+  const raceCatalog: any[] = emptyCreation.data?.creation?.raceCatalog ?? [];
+  const hillDwarf = raceCatalog.find((race: any) => race.key === 'dwarf-hill');
+  check(
+    'o catálogo de raças traz as linhagens do PHB com os bônus',
+    raceCatalog.length >= 14 &&
+      hillDwarf?.abilityBonuses?.constitution === 2 &&
+      hillDwarf?.abilityBonuses?.wisdom === 1 &&
+      raceCatalog.some((race: any) => race.key === 'elf-drow'),
+    JSON.stringify(raceCatalog.map((race: any) => race.key)),
+  );
+  check(
+    'o humano soma +1 nos seis atributos e o meio-elfo pede duas escolhas',
+    Object.values(
+      raceCatalog.find((race: any) => race.key === 'human')?.abilityBonuses ?? {},
+    ).every((value) => value === 1) &&
+      raceCatalog.find((race: any) => race.key === 'half-elf')?.abilityChoice === 2,
+    JSON.stringify(raceCatalog.find((race: any) => race.key === 'human')?.abilityBonuses),
+  );
+
   // Passo 1: o rascunho É a ficha (criada aqui), com a criação em aberto.
   const stepOne = await api('/api/characters/me/creation', {
     method: 'PATCH',
@@ -3245,6 +3266,61 @@ async function main(): Promise<void> {
       afterReopen.data?.creation?.mode === 'existing' &&
       afterReopen.data?.creation?.baseAbilities?.strength === 15,
     JSON.stringify(afterReopen.data?.creation),
+  );
+
+  // Raça do catálogo no passo 3: os bônus entram na ficha e as escolhas do
+  // Meio-Elfo são validadas contra o catálogo. (O resto do assistente remonta a
+  // ficha a partir do passo 2, então nada aqui vaza para os testes seguintes.)
+  check(
+    'raça com escolha sem informar os atributos à escolha é recusada (400)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 3, race: 'Meio-Elfo' },
+      })
+    ).status === 400,
+  );
+  check(
+    'escolher um atributo fora do pool da raça é recusado (400)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 3, race: 'Meio-Elfo', abilityChoices: ['charisma', 'strength'] },
+      })
+    ).status === 400,
+  );
+  const halfElf = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 3, race: 'Meio-Elfo', abilityChoices: ['strength', 'constitution'] },
+  });
+  check(
+    'os bônus fixos e os +1 à escolha entram na ficha (200)',
+    halfElf.status === 200 &&
+      halfElf.data?.character?.charisma === 10 &&
+      halfElf.data?.character?.strength === 16 &&
+      halfElf.data?.character?.constitution === 15 &&
+      JSON.stringify(halfElf.data?.creation?.abilityChoices) ===
+        JSON.stringify(['strength', 'constitution']),
+    JSON.stringify({
+      charisma: halfElf.data?.character?.charisma,
+      strength: halfElf.data?.character?.strength,
+      choices: halfElf.data?.creation?.abilityChoices,
+    }),
+  );
+  check(
+    'voltar para uma raça sem escolha limpa os +1 à escolha',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 3, race: 'Anão' },
+      })
+    ).status === 200 &&
+      (await api('/api/characters/me/creation', { token: rookieToken })).data?.creation
+        ?.abilityChoices?.length === 0,
   );
 
   // Nível inicial da mesa: o passo 8 aplica os níveis SEM a liberação do mestre.

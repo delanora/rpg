@@ -6421,6 +6421,17 @@ input[type='checkbox']:focus-visible,
   text-align: center;
 }
 
+/* --- Passo 3: raça ------------------------------------------------------- */
+
+.wizard-race-choice {
+  display: grid;
+  gap: 0.5rem;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
 /* --- Passo 5: classes ---------------------------------------------------- */
 
 .wizard-classes {
