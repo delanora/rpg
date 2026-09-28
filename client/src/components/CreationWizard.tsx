@@ -10,6 +10,7 @@ import {
 import { ABILITY_KEYS, ABILITY_LABELS, ALIGNMENTS, SKILLS } from '../dnd';
 import type {
   AbilityKey,
+  BackgroundOption,
   Character,
   CreationResponse,
   CreationRoll,
@@ -54,6 +55,13 @@ function raceBonusLabel(option: RaceOption): string {
 
   if ((option.abilityChoice ?? 0) > 0) parts.push(`+1 à escolha (${option.abilityChoice})`);
   return parts.join(' · ');
+}
+
+/** Nomes das perícias concedidas por um antecedente (para o rótulo do seletor). */
+function backgroundSkillNames(option: BackgroundOption): string[] {
+  return (option.skills ?? []).map(
+    (key) => SKILLS.find((skill) => skill.key === key)?.label ?? key,
+  );
 }
 
 /** Atributos elegíveis ao `+1` à escolha da raça (os que não têm bônus fixo). */
@@ -220,6 +228,23 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
 
   /** Quantos `+1` à escolha a raça pede (0 = nenhum). */
   const raceChoiceNeeded = selectedRace?.abilityChoice ?? 0;
+
+  /** O antecedente escolhido, quando ele vem do catálogo (por nome ou por chave). */
+  const selectedBackground = useMemo(() => {
+    const needle = background.trim().toLowerCase();
+    if (!needle) return null;
+    return (
+      (creation?.backgroundCatalog ?? []).find(
+        (option) =>
+          option.name.toLowerCase() === needle || option.key.toLowerCase() === needle,
+      ) ?? null
+    );
+  }, [creation?.backgroundCatalog, background]);
+
+  /** Perícias que o antecedente concede (mostradas nos passos 4 e 7). */
+  const backgroundSkillLabels = selectedBackground
+    ? backgroundSkillNames(selectedBackground)
+    : [];
 
   /** Troca a raça e recomeça as escolhas de atributo (o catálogo muda o pool). */
   function selectRace(value: string): void {
@@ -563,20 +588,36 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
           {step === 4 ? (
             <div className="wizard-step-body">
               {creation && creation.backgroundCatalog.length > 0 ? (
-                <label className="field">
-                  <span>Antecedente</span>
-                  <select
-                    value={background}
-                    onChange={(event) => setBackground(event.target.value)}
-                  >
-                    <option value="">— escolha —</option>
-                    {creation.backgroundCatalog.map((option) => (
-                      <option key={option.key} value={option.name}>
-                        {option.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <>
+                  <label className="field">
+                    <span>Antecedente</span>
+                    <select
+                      value={background}
+                      onChange={(event) => setBackground(event.target.value)}
+                    >
+                      <option value="">— escolha —</option>
+                      {creation.backgroundCatalog.map((option) => {
+                        const granted = backgroundSkillNames(option);
+                        return (
+                          <option key={option.key} value={option.name}>
+                            {granted.length > 0
+                              ? `${option.name} · ${granted.join(', ')}`
+                              : option.name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+
+                  {selectedBackground ? (
+                    <p className="section-note">
+                      {selectedBackground.description}
+                      {backgroundSkillLabels.length > 0
+                        ? ` Perícias concedidas: ${backgroundSkillLabels.join(' e ')}.`
+                        : ''}
+                    </p>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <label className="field">
@@ -719,6 +760,14 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                   );
                 })}
               </div>
+
+              {backgroundSkillLabels.length > 0 ? (
+                <p className="section-note">
+                  O antecedente {selectedBackground?.name} já concede{' '}
+                  {backgroundSkillLabels.join(' e ')} — elas entram na ficha sem gastar as escolhas da
+                  classe.
+                </p>
+              ) : null}
 
               <p className="section-note">
                 {picks.length}/{skillCount} escolhida(s)
