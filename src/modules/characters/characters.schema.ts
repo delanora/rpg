@@ -331,6 +331,11 @@ export const creationStepSchema = z.object({
     .optional(),
   /** Passo 5: classe inicial. */
   classKey: classKeySchema.optional(),
+  /**
+   * Passo 5: subclasse, quando a classe já a exige no nível 1 (Clérigo,
+   * Feiticeiro e Bruxo escolhem Domínio/Origem/Patrono logo na primeira classe).
+   */
+  subclass: shortText(120).optional(),
   /** Passo 6: valores-base dos seis atributos. */
   baseAbilities: creationAbilitiesSchema.optional(),
   /** Passo 7: perícias com proficiência escolhidas na classe. */

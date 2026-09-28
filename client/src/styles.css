@@ -6438,7 +6438,8 @@ input[type='checkbox']:focus-visible,
 
 /* --- Passo 3: raça ------------------------------------------------------- */
 
-.wizard-race-choice {
+.wizard-race-choice,
+.wizard-subclass {
   display: grid;
   gap: 0.5rem;
   padding: var(--space-2);

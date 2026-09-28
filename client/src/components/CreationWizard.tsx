@@ -110,6 +110,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [abilityChoices, setAbilityChoices] = useState<AbilityKey[]>([]);
   const [background, setBackground] = useState('');
   const [classKey, setClassKey] = useState('');
+  const [subclass, setSubclass] = useState('');
   const [assigned, setAssigned] = useState<Partial<Record<AbilityKey, number>>>({});
   const [picks, setPicks] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -133,6 +134,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     setAbilityChoices(saved.abilityChoices ?? []);
     setBackground(sheet?.background ?? '');
     setClassKey(sheet?.classes[0]?.classKey ?? '');
+    setSubclass(sheet?.classes[0]?.subclass ?? '');
     setAssigned(saved.baseAbilities);
     setPicks(saved.skillPicks);
     setStep(saved.step);
@@ -236,6 +238,16 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     });
   }
 
+  /** A classe escolhida, com a subclasse que o nível 1 já exige (Clérigo/Feiticeiro/Bruxo). */
+  const selectedClass = useMemo(
+    () => (character?.classOptions ?? []).find((option) => option.key === classKey) ?? null,
+    [character?.classOptions, classKey],
+  );
+  const classNeedsSubclass =
+    selectedClass !== null &&
+    selectedClass.subclassLevel <= 1 &&
+    selectedClass.subclassNames.length > 0;
+
   const assignedCount = ABILITY_KEYS.filter((ability) => assigned[ability] !== undefined).length;
   const abilitiesReady = assignedCount === ABILITY_KEYS.length;
   const level = character?.level ?? 0;
@@ -255,7 +267,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 4:
         return background.trim().length > 0;
       case 5:
-        return classKey !== '';
+        return classKey !== '' && (!classNeedsSubclass || subclass !== '');
       case 6:
         return assignedCount === ABILITY_KEYS.length;
       case 7:
@@ -278,7 +290,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 4:
         return { background };
       case 5:
-        return { classKey };
+        return { classKey, subclass };
       case 6:
         return { baseAbilities: assigned };
       case 7:
@@ -603,7 +615,11 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                         type="radio"
                         name="creation-class"
                         checked={classKey === option.key}
-                        onChange={() => setClassKey(option.key)}
+                        onChange={() => {
+                          setClassKey(option.key);
+                          // A subclasse é da classe antiga: trocar de classe recomeça.
+                          setSubclass('');
+                        }}
                       />
                       <span className="check-name">
                         {option.name}
@@ -621,6 +637,32 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                   </li>
                 ))}
               </ul>
+
+              {/* Clérigo, Feiticeiro e Bruxo escolhem a subclasse já no nível 1. */}
+              {classNeedsSubclass && selectedClass ? (
+                <div className="wizard-subclass">
+                  <h3 className="subsection-title">Subclasse de {selectedClass.name}</h3>
+                  <label className="field">
+                    <span>Subclasse</span>
+                    <select
+                      value={subclass}
+                      disabled={busy}
+                      onChange={(event) => setSubclass(event.target.value)}
+                    >
+                      <option value="">— escolha —</option>
+                      {selectedClass.subclassNames.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="section-note">
+                    {selectedClass.name} escolhe a subclasse já no nível 1: ela entra na ficha junto
+                    da classe.
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -756,6 +798,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                   <span>Classe e nível</span>
                   <strong>
                     {character.className || '—'} · nível {character.level}
+                    {character.classes[0]?.subclass ? ` · ${character.classes[0].subclass}` : ''}
                   </strong>
                 </li>
                 <li>
