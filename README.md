@@ -201,7 +201,7 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 
 ### Verificação automática (smoke test)
 
-Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 21 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio e a **Fase 0 (seções 14 a 21)**, a regressão das regras base:
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 26 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas (seções 22 a 26):
 
 | Seção | O que verifica |
 |-------|----------------|
@@ -213,8 +213,13 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **19** | **Subclasses 1 → 20** — Level Up de verdade pelas 10 subclasses novas (features e recursos por nível) e o **crítico em combate** (limiar 18 do Campeão, 1 natural errando e a volta a 20 sem ele). |
 | **20** | **Moedas** — ficha nasce zerada, jogador barrado no PATCH (403), 50 moedas = 0,5 kg no peso, dar/retirar do mestre (400 se exceder o saldo), gasto exato sem troco, troca com fração recusada, transferência entre jogadores (e a recusa a si mesmo) e a chave de **moedas extras** (PL/PE). |
 | **21** | **Inventário** — o jogador não muda a quantidade nem adiciona/remove itens por PATCH (403, em qualquer fase); movimentar/equipar segue liberado e não altera a quantidade; usar um consumível desconta 1 unidade (a última entrada sai) e devolve a rolagem do efeito (`kind: item`); item não consumível (400) e item inexistente (404). |
+| **22** | **Dano estruturado** — expressão textual derivada (`2d6+3`, `1d8-1`, fixo `4`), crítico dobrando os dados e somando o modificador uma só vez, tipo fora dos 13 canônicos (400), ataque legado preservado com a marca e o texto original. |
+| **23** | **Cadastro de arma e preço** — o catálogo guarda o preço e a ficha recebe só o **perfil** da arma (tipo, categoria, dado); o preço **não** vaza para o jogador. |
+| **24** | **Munição (complemento)** — arma sem `ammunition` não consome nada; o bônus da munição mágica soma ao ataque **e** ao dano; duas requisições simultâneas não gastam a mesma unidade (uma consome, a outra recebe 409). |
+| **25** | **Moedas (complemento)** — a transferência publica `sheet:updated` nas duas fichas com os saldos finais; saldo insuficiente e transferência para o mestre recusados (400); alternar `extraCoins` publica `game:config`. |
+| **26** | **Inventário (complemento)** — o mestre ajusta quantidade e remove item; os `send` se acumulam; usar consumível entra no log de rolagens do mestre como `kind: item`. |
 
-Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória.
+Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória (e as seções novas **reaproveitam** fichas já criadas para não estourar o limite de 30 contas por 15 min do modo produção).
 
 ### Ambiente local já configurado (esta máquina)
 

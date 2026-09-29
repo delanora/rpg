@@ -1,6 +1,8 @@
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
+import { damageExpression } from '../modules/shared/attacks.js';
+import { rollDice } from '../modules/shared/dice.js';
 
 /**
  * Smoke test ponta a ponta das Etapas 1 e 2.
@@ -5278,7 +5280,8 @@ async function main(): Promise<void> {
   masterBackSocket.close();
 
   // ==========================================================================
-  // FASE 0 — regressão das regras base (seções 14 a 21)
+  // FASE 0 — regressão das regras base e das fases de ataques/itens/moedas
+  // (seções 14 a 26)
   //
   // Cada seção cria as PRÓPRIAS contas (sufixo único) e limpa no final, como o
   // resto do smoke. Os cenários de nível alto são montados direto no banco
@@ -6871,6 +6874,534 @@ async function main(): Promise<void> {
       roll: oilUse.data?.roll,
       inv: oilUse.data?.character?.inventory?.map((item: any) => item.id),
     }),
+  );
+
+  // --- 22. Dano estruturado: expressão derivada, tipo canônico e legado -----
+  console.log('\n22) Dano estruturado: expressão derivada, tipo canônico e legado');
+
+  // A expressão textual ("2d6+3") é DERIVADA do dano estruturado, nunca gravada.
+  check(
+    'a expressão textual é derivada do dano estruturado',
+    damageExpression({ count: 2, sides: 6, bonus: 3, type: 'Cortante' }) === '2d6+3' &&
+      damageExpression({ count: 1, sides: 8, bonus: -1, type: 'Cortante' }) === '1d8-1' &&
+      damageExpression({ count: 0, sides: 0, bonus: 4, type: 'Força' }) === '4',
+    JSON.stringify([
+      damageExpression({ count: 2, sides: 6, bonus: 3, type: 'Cortante' }),
+      damageExpression({ count: 1, sides: 8, bonus: -1, type: 'Cortante' }),
+      damageExpression({ count: 0, sides: 0, bonus: 4, type: 'Força' }),
+    ]),
+  );
+
+  // O crítico dobra os DADOS e soma o modificador UMA vez.
+  const critDamage = rollDice(
+    damageExpression({ count: 2, sides: 6, bonus: 3, type: 'Cortante' }),
+    { crit: true },
+  );
+  const normalDamage = rollDice(
+    damageExpression({ count: 2, sides: 6, bonus: 3, type: 'Cortante' }),
+  );
+  check(
+    'o crítico dobra os dados (2d6 → 4d6) e soma o modificador uma só vez',
+    critDamage?.count === 4 &&
+      critDamage.sides === 6 &&
+      critDamage.modifier === 3 &&
+      critDamage.rolls.length === 4 &&
+      critDamage.total >= 7 &&
+      critDamage.total <= 27 &&
+      normalDamage?.count === 2 &&
+      normalDamage.total >= 5 &&
+      normalDamage.total <= 15,
+    JSON.stringify({ crit: critDamage?.total, normal: normalDamage?.total }),
+  );
+
+  // Reaproveita a carteira da seção 20 como ficha de trabalho (o cadastro de
+  // contas é limitado pelo rate limiter do login).
+  const dmgSheet = wallet;
+  const badTypeAttack = await masterPatch(dmgSheet.characterId, {
+    attacks: [
+      {
+        id: 'bad',
+        name: 'Ataque estranho',
+        damage: { count: 1, sides: 6, bonus: 0, type: 'Sonoro' },
+        attackBonus: 0,
+        notes: '',
+        finesse: false,
+        ranged: false,
+      },
+    ],
+  });
+  check(
+    'tipo de dano fora dos 13 canônicos é recusado (400)',
+    badTypeAttack.status === 400,
+    JSON.stringify(badTypeAttack.data),
+  );
+
+  const legacySaved = await masterPatch(dmgSheet.characterId, {
+    attacks: [
+      {
+        id: 'legacy1',
+        name: 'Mordida',
+        damage: { count: 0, sides: 0, bonus: 0, type: 'Elétrico' },
+        attackBonus: 0,
+        notes: '',
+        finesse: false,
+        ranged: false,
+        legacy: true,
+        damageText: '(2d10+9)+2d10',
+      },
+    ],
+  });
+  const legacyKept = legacySaved.data?.character?.attacks?.find((a: any) => a.id === 'legacy1');
+  check(
+    'ataque legado é preservado com a marca e o texto original',
+    legacySaved.status === 200 &&
+      legacyKept?.legacy === true &&
+      legacyKept?.damageText === '(2d10+9)+2d10',
+    JSON.stringify(legacyKept),
+  );
+
+  const typedSaved = await masterPatch(dmgSheet.characterId, {
+    attacks: [
+      {
+        id: 'typed',
+        name: 'Adaga',
+        damage: { count: 1, sides: 4, bonus: 2, type: 'Perfurante' },
+        attackBonus: 5,
+        notes: '',
+        finesse: true,
+        ranged: false,
+      },
+    ],
+  });
+  const typedAttack = typedSaved.data?.character?.attacks?.find((a: any) => a.id === 'typed');
+  check(
+    'dano estruturado com tipo canônico é gravado (sem texto paralelo)',
+    typedSaved.status === 200 &&
+      typedAttack?.damage?.count === 1 &&
+      typedAttack?.damage?.sides === 4 &&
+      typedAttack?.damage?.bonus === 2 &&
+      typedAttack?.damage?.type === 'Perfurante' &&
+      typedAttack?.legacy === false &&
+      typedAttack?.damageText === undefined,
+    JSON.stringify(typedAttack),
+  );
+
+  // --- 23. Cadastro de arma: perfil na ficha e preço fora dela --------------
+  console.log('\n23) Cadastro de arma: perfil na ficha e preço só do mestre');
+
+  const shopper = wallet;
+  const pricedItem = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Espada do teste ${suffix}`,
+      category: 'Arma',
+      weight: 2,
+      details: {
+        damageCount: 1,
+        damageDie: 8,
+        damageType: 'Cortante',
+        weaponType: 'melee',
+        weaponCategory: 'martial',
+        properties: [],
+      },
+      price: { gold: 15, silver: 5, copper: 0 },
+    },
+  });
+  check(
+    'mestre cadastra a arma com preço no catálogo (201)',
+    pricedItem.status === 201,
+    JSON.stringify(pricedItem.data),
+  );
+  const pricedId = pricedItem.data?.item?.id;
+  createdItemIds.push(pricedId);
+
+  await api(`/api/items/${pricedId}/send`, {
+    method: 'POST',
+    token: masterToken,
+    body: { characterId: shopper.characterId, quantity: 1 },
+  });
+  const shopperSheet = await sheetOf(shopper.token);
+  const shopEntry = shopperSheet?.inventory?.find((item: any) => item.itemId === pricedId);
+  check(
+    'a ficha do jogador recebe a arma com o PERFIL (tipo, categoria e dano)',
+    shopEntry?.category === 'Arma' &&
+      shopEntry?.details?.weaponType === 'melee' &&
+      shopEntry?.details?.weaponCategory === 'martial' &&
+      shopEntry?.details?.damageDie === 8,
+    JSON.stringify(shopEntry),
+  );
+  check(
+    'o PREÇO do catálogo não vai para a ficha do jogador',
+    shopEntry !== undefined &&
+      !('price' in shopEntry) &&
+      !JSON.stringify(shopEntry).includes('"price"'),
+    JSON.stringify(shopEntry),
+  );
+
+  // --- 24. Munição: exigência, bônus de dano e concorrência -----------------
+  console.log('\n24) Munição: exigência, bônus de dano e concorrência');
+
+  /** Item de inventário no formato aceito pelo PATCH da ficha. */
+  const makeItem = (
+    id: string,
+    name: string,
+    category: string,
+    details: Record<string, unknown>,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id,
+    name,
+    description: '',
+    quantity: 1,
+    weight: 1,
+    slot: null,
+    backpackX: null,
+    backpackY: null,
+    imageUrl: '',
+    itemId: '',
+    category,
+    details,
+    ...extra,
+  });
+
+  // Só há UM combate ativo por vez: encerra o de treino anterior.
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+
+  const archer = wallet;
+  const ammoTarget = await api('/api/creatures', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Alvo de munição ${suffix}`,
+      type: 'Constructo',
+      hpMax: 9999,
+      armorClass: 10,
+      localityIds: [locality.id],
+    },
+  });
+  createdCreatureIds.push(ammoTarget.data.creature.id);
+
+  const ammoCombat = await api('/api/combat', {
+    method: 'POST',
+    token: masterToken,
+    body: { entries: [{ creatureId: ammoTarget.data.creature.id, quantity: 1 }] },
+  });
+  check('combate de munição iniciado (201)', ammoCombat.status === 201, JSON.stringify(ammoCombat.data));
+  createdCombatIds.push(ammoCombat.data.combat.id);
+  for (const combatant of ammoCombat.data.combat.combatants) {
+    await api(`/api/combat/initiative/${combatant.id}`, { method: 'POST', token: masterToken });
+  }
+  const ammoActive = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  const ammoTargetCombatant = (ammoActive?.combatants ?? []).find(
+    (item: any) => item.kind === 'CREATURE',
+  );
+  check(
+    'o combate de munição fica ativo com alvo',
+    ammoActive?.status === 'ACTIVE' && Boolean(ammoTargetCombatant),
+    JSON.stringify({ status: ammoActive?.status }),
+  );
+
+  // Arma corpo a corpo SEM a propriedade Munição: nada é consumido.
+  await masterPatch(archer.characterId, {
+    inventory: [
+      makeItem(
+        'plain-sword',
+        'Espada',
+        'Arma',
+        { damageCount: 1, damageDie: 8, damageType: 'Cortante' },
+        { slot: 'hand1' },
+      ),
+      makeItem('plain-arrow', 'Flecha', 'Munição', { ammoType: 'Flecha' }, { quantity: 5 }),
+    ],
+    attacks: [
+      {
+        id: 'plain-sword-atk',
+        name: 'Espada',
+        damage: { count: 0, sides: 0, bonus: 4, type: 'Cortante' },
+        attackBonus: 30,
+        notes: '',
+        finesse: false,
+        ranged: false,
+        inventoryItemId: 'plain-sword',
+      },
+    ],
+  });
+  const plainHit = await api('/api/combat/attack', {
+    method: 'POST',
+    token: archer.token,
+    body: { attackId: 'plain-sword-atk', targetCombatantId: ammoTargetCombatant.id },
+  });
+  const afterPlainHit = await sheetOf(archer.token);
+  check(
+    'arma sem a propriedade Munição NÃO consome nada',
+    plainHit.status === 200 &&
+      afterPlainHit.inventory.find((item: any) => item.id === 'plain-arrow')?.quantity === 5,
+    JSON.stringify(afterPlainHit.inventory.map((item: any) => ({ id: item.id, q: item.quantity }))),
+  );
+
+  // Munição mágica: o bônus soma ao ATAQUE e ao DANO.
+  const rangedBow = makeItem(
+    'bow2',
+    'Arco curto',
+    'Arma',
+    {
+      damageCount: 1,
+      damageDie: 6,
+      damageType: 'Perfurante',
+      weaponType: 'ranged',
+      weaponCategory: 'simple',
+      properties: ['ammunition', 'two-handed'],
+      ammoType: 'Flecha',
+      rangeNormal: 24,
+      rangeLong: 96,
+    },
+    { slot: 'hand2' },
+  );
+  const magicArrow2 = makeItem(
+    'arrow2',
+    'Flecha +2',
+    'Munição',
+    { ammoType: 'Flecha', attackBonus: 2, damageBonus: 2 },
+    { quantity: 3 },
+  );
+  const bowAttack2 = {
+    id: 'bow2-atk',
+    name: 'Arco',
+    damage: { count: 0, sides: 0, bonus: 4, type: 'Perfurante' },
+    attackBonus: 30,
+    notes: '',
+    finesse: false,
+    ranged: true,
+    inventoryItemId: 'bow2',
+  };
+  await masterPatch(archer.characterId, {
+    inventory: [rangedBow, magicArrow2],
+    attacks: [bowAttack2],
+  });
+
+  let ammoDamageResult: any = null;
+  for (let attempt = 0; attempt < 12 && ammoDamageResult === null; attempt += 1) {
+    const shot = await api('/api/combat/attack', {
+      method: 'POST',
+      token: archer.token,
+      body: { attackId: 'bow2-atk', targetCombatantId: ammoTargetCombatant.id },
+    });
+    if (shot.status === 200 && shot.data?.result?.hit) ammoDamageResult = shot.data.result;
+  }
+  check(
+    'o bônus da munição mágica soma ao ATAQUE e ao DANO (dano fixo 4 + 2)',
+    ammoDamageResult !== null &&
+      ammoDamageResult.attackBonus === 32 &&
+      ammoDamageResult.damageRolled === 6,
+    JSON.stringify(ammoDamageResult),
+  );
+
+  // Duas requisições SIMULTÂNEAS não gastam a mesma unidade duas vezes.
+  await masterPatch(archer.characterId, {
+    inventory: [rangedBow, { ...magicArrow2, id: 'arrow3', quantity: 1 }],
+    attacks: [bowAttack2],
+  });
+  const race = await Promise.all([
+    api('/api/combat/attack', {
+      method: 'POST',
+      token: archer.token,
+      body: { attackId: 'bow2-atk', targetCombatantId: ammoTargetCombatant.id },
+    }),
+    api('/api/combat/attack', {
+      method: 'POST',
+      token: archer.token,
+      body: { attackId: 'bow2-atk', targetCombatantId: ammoTargetCombatant.id },
+    }),
+  ]);
+  const raceStatuses = race.map((response) => response.status).sort();
+  const afterRace = await sheetOf(archer.token);
+  check(
+    'duas requisições simultâneas não gastam a mesma unidade (1 consome, 1 recusa)',
+    raceStatuses[0] === 200 &&
+      raceStatuses[1] === 409 &&
+      afterRace.inventory.find((item: any) => item.id === 'arrow3') === undefined,
+    JSON.stringify({
+      statuses: raceStatuses,
+      inventario: afterRace.inventory.map((item: any) => ({ id: item.id, q: item.quantity })),
+    }),
+  );
+
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+
+  // --- 25. Moedas: eventos em tempo real e recusas --------------------------
+  console.log('\n25) Moedas: eventos em tempo real e recusas');
+
+  // Duas fichas que já existem (o cadastro é limitado pelo rate limiter).
+  const payer = wallet;
+  const payee = receiver;
+  const payerSocket = connect(payer.token);
+  const payeeSocket = connect(payee.token);
+  await Promise.all([
+    waitFor<any>(payerSocket, 'connection:ready').catch(() => null),
+    waitFor<any>(payeeSocket, 'connection:ready').catch(() => null),
+  ]);
+
+  // Saldos conhecidos antes da transferência.
+  await masterPatch(payer.characterId, { coins: { pp: 0, gp: 30, ep: 0, sp: 0, cp: 0 } });
+  await masterPatch(payee.characterId, { coins: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 } });
+  /** Espera um `sheet:updated` com o saldo em ouro informado (ignora outros). */
+  const waitForGold = async (socket: Socket, gold: number) => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const payload = await waitFor<any>(socket, 'sheet:updated', 1500).catch(() => null);
+      if (!payload) return null;
+      if (payload.character?.coins?.gp === gold) return payload;
+    }
+    return null;
+  };
+
+  const payerEvent = waitForGold(payerSocket, 20);
+  const payeeEvent = waitForGold(payeeSocket, 10);
+  const sent = await api('/api/characters/me/coins/transfer', {
+    method: 'POST',
+    token: payer.token,
+    body: { targetCharacterId: payee.characterId, amount: { gp: 10 } },
+  });
+  const [payerPayload, payeePayload] = await Promise.all([payerEvent, payeeEvent]);
+  check(
+    'a transferência publica sheet:updated para as DUAS fichas, com os saldos finais',
+    sent.status === 200 &&
+      payerPayload?.character?.coins?.gp === 20 &&
+      payeePayload?.character?.coins?.gp === 10,
+    JSON.stringify({
+      status: sent.status,
+      doador: payerPayload?.character?.coins,
+      destino: payeePayload?.character?.coins,
+    }),
+  );
+
+  check(
+    'transferir mais do que o saldo é recusado (400)',
+    (
+      await api('/api/characters/me/coins/transfer', {
+        method: 'POST',
+        token: payer.token,
+        body: { targetCharacterId: payee.characterId, amount: { gp: 999 } },
+      })
+    ).status === 400,
+  );
+
+  // O mestre também pode ter ficha própria: transferir para ela é 400.
+  const masterSheetCreated = await api<{ character: any }>('/api/characters/me', {
+    method: 'POST',
+    token: masterToken,
+    body: {},
+  });
+  const masterCharacterId =
+    masterSheetCreated.status === 201
+      ? masterSheetCreated.data?.character?.id
+      : (await api<{ character: any }>('/api/characters/me', { token: masterToken })).data?.character
+          ?.id;
+  check(
+    'transferir para o mestre é recusado (400)',
+    Boolean(masterCharacterId) &&
+      (
+        await api('/api/characters/me/coins/transfer', {
+          method: 'POST',
+          token: payer.token,
+          body: { targetCharacterId: masterCharacterId, amount: { gp: 1 } },
+        })
+      ).status === 400,
+  );
+
+  // Alternar as moedas extras publica game:config para a mesa.
+  const configSocket = connect(masterToken);
+  await waitFor<any>(configSocket, 'connection:ready').catch(() => null);
+  const configEvent = waitFor<any>(configSocket, 'game:config');
+  const toggledEvent = await api('/api/game/extra-coins', {
+    method: 'POST',
+    token: masterToken,
+    body: { enabled: true },
+  });
+  const configPayload = await configEvent.catch(() => null);
+  check(
+    'alternar as moedas extras publica game:config',
+    toggledEvent.status === 200 && configPayload?.config?.extraCoins === true,
+    JSON.stringify(configPayload?.config),
+  );
+  await api('/api/game/extra-coins', {
+    method: 'POST',
+    token: masterToken,
+    body: { enabled: false },
+  });
+
+  payerSocket.close();
+  payeeSocket.close();
+  configSocket.close();
+
+  // --- 26. Inventário: ajuste do mestre, send e log do item -----------------
+  console.log('\n26) Inventário: ajuste do mestre, send e log do item');
+
+  const locked = wallet;
+  const healingPotion = makeItem('lock-potion', 'Poção de teste', 'Poção', { effectRoll: '1d4+1' });
+  const rope = makeItem('lock-rope', 'Corda', 'Item Geral', {});
+
+  await masterPatch(locked.characterId, { inventory: [healingPotion, rope] });
+  const adjusted = await masterPatch(locked.characterId, {
+    inventory: [{ ...healingPotion, quantity: 5 }, rope],
+  });
+  check(
+    'o mestre ajusta a QUANTIDADE de um item (200)',
+    adjusted.status === 200 &&
+      adjusted.data?.character?.inventory?.find((item: any) => item.id === 'lock-potion')
+        ?.quantity === 5,
+    JSON.stringify(adjusted.data?.character?.inventory),
+  );
+
+  const removedItem = await masterPatch(locked.characterId, {
+    inventory: [{ ...healingPotion, quantity: 5 }],
+  });
+  check(
+    'o mestre REMOVE um item do inventário (200)',
+    removedItem.status === 200 &&
+      !(removedItem.data?.character?.inventory ?? []).some((item: any) => item.id === 'lock-rope'),
+    JSON.stringify(removedItem.data?.character?.inventory?.map((item: any) => item.id)),
+  );
+
+  // O `send` do mestre continua somando no que já existe.
+  const bulkItem = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: { name: `Corda do mestre ${suffix}`, category: 'Item Geral', weight: 2, details: {} },
+  });
+  createdItemIds.push(bulkItem.data?.item?.id);
+  await api(`/api/items/${bulkItem.data.item.id}/send`, {
+    method: 'POST',
+    token: masterToken,
+    body: { characterId: locked.characterId, quantity: 2 },
+  });
+  await api(`/api/items/${bulkItem.data.item.id}/send`, {
+    method: 'POST',
+    token: masterToken,
+    body: { characterId: locked.characterId, quantity: 3 },
+  });
+  const afterSend = await sheetOf(locked.token);
+  check(
+    'os envios do mestre se acumulam (2 + 3 = 5)',
+    afterSend.inventory.find((item: any) => item.itemId === bulkItem.data.item.id)?.quantity === 5,
+    JSON.stringify(afterSend.inventory.map((item: any) => ({ id: item.itemId, q: item.quantity }))),
+  );
+
+  // Usar um consumível entra no LOG DE ROLAGENS do mestre como kind 'item'.
+  await api('/api/dice/history', { method: 'DELETE', token: masterToken });
+  const loggedUse = await api('/api/characters/me/inventory/use', {
+    method: 'POST',
+    token: locked.token,
+    body: { itemInventoryId: 'lock-potion' },
+  });
+  const history = await api<{ rolls: any[] }>('/api/dice/history', { token: masterToken });
+  const itemRoll = (history.data?.rolls ?? []).find((roll: any) => roll.kind === 'item');
+  check(
+    'o uso do item entra no log de rolagens como kind item',
+    loggedUse.status === 200 &&
+      itemRoll?.label === 'Item: Poção de teste' &&
+      itemRoll?.total === loggedUse.data?.roll?.total,
+    JSON.stringify({ log: itemRoll, resposta: loggedUse.data?.roll }),
   );
 
   }
