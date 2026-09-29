@@ -9,21 +9,25 @@ import {
   computeMulticlassAdjustments,
   effectiveSpellcasting,
   expertiseSlots,
+  featureChoiceInfo,
   featureEffectsOf,
   getClassDefinition,
   getMulticlassFeatures,
-  multiclassCasterLevel,
   multiclassSneakAttack,
   normalizeClassEntries,
   normalizeClassState,
+  normalizeProficiencies,
   pactMagicSlots,
-  spellSlotsForCasterLevel,
+  preparedSpellCountFor,
+  spellSlotsForClasses,
   totalCharacterLevel,
   type ActiveClassFeature,
   type ClassAdjustments,
   type ClassEntry,
   type ClassOption,
   type ClassState,
+  type FeatureChoiceInfo,
+  type ProficienciesState,
   type SpellcastingType,
   type SpellLearning,
 } from '../shared/classes.js';
@@ -97,7 +101,10 @@ export interface ClassEntryDto {
   asiLevels: number[];
   /**
    * Conjuração DESTA classe: a CD e o ataque usam o nível total do personagem
-   * (bônus de proficiência), e as magias preparadas usam o nível dela.
+   * (bônus de proficiência) e as magias preparadas são calculadas POR CLASSE,
+   * com o atributo e o nível dela (`preparedSpellCountFor`). `preparedCount` é
+   * `null` nas classes de magias conhecidas e `0` no Paladino de nível 1, que
+   * ainda não conjura.
    */
   spellcasting: {
     type: SpellcastingType;
@@ -107,6 +114,12 @@ export interface ClassEntryDto {
     attackBonus: number | null;
     preparedCount: number | null;
   } | null;
+  /**
+   * Escolhas de característica DESTA classe (Estilo de Luta, Inimigo Favorito
+   * e as melhorias), com o nível de cada escolha e o que já está gravado — é o
+   * que o assistente de Level Up usa para pedir a escolha do nível novo.
+   */
+  featureChoices: FeatureChoiceInfo[];
 }
 
 export type SpellDto = z.infer<typeof spellSchema>;
@@ -191,6 +204,8 @@ export interface CharacterDto {
   // Coleções
   skills: SkillsState;
   saves: Record<AbilityKey, boolean>;
+  /** Proficiências de armadura, arma e ferramenta (texto; só o mestre edita). */
+  proficiencies: ProficienciesState;
   inventory: InventoryItemDto[];
   spells: SpellsStateDto;
   attacks: AttackDto[];
@@ -235,11 +250,14 @@ export function toCharacterDto(
   const activeFeatures = getMulticlassFeatures(classEntries);
   const classAdjustments = computeMulticlassAdjustments(classEntries, classState, abilities);
 
-  // Salvaguardas fixas: as de todas as classes e as concedidas por features
-  // (ex.: Mente Escorregadia). Aparecem sempre proficientes, mesmo se o valor
-  // gravado estiver desatualizado.
+  // Salvaguardas fixas: as da PRIMEIRA classe (multiclasse nunca concede
+  // salvaguardas — PHB p.164) e as concedidas por features (ex.: Mente
+  // Escorregadia). Aparecem sempre proficientes, mesmo se o valor gravado
+  // estiver desatualizado.
   const lockedSaves = [
-    ...classEntries.flatMap((entry) => getClassDefinition(entry.classKey)?.savingThrows ?? []),
+    ...(classEntries[0]
+      ? (getClassDefinition(classEntries[0].classKey)?.savingThrows ?? [])
+      : []),
     ...activeFeatures.flatMap((feature) =>
       featureEffectsOf(feature).flatMap((effect) =>
         effect.type === 'save' && effect.ability ? [effect.ability] : [],
@@ -253,10 +271,10 @@ export function toCharacterDto(
   );
   const sneakDice = hasSneakAttack ? multiclassSneakAttack(classEntries) : 0;
 
-  // Magia de multiclasse: o total de espaços usa o nível de conjurador somado
-  // (completo + ½ meio + ⅓ terço); o bruxo fica de fora e usa o próprio pacto.
-  const casterLevel = multiclassCasterLevel(classEntries);
-  const spellSlots = spellSlotsForCasterLevel(casterLevel);
+  // Espaços de magia: com UMA classe conjuradora vale a tabela dela; com duas
+  // ou mais, a tabela combinada do cap. 6. O bruxo fica de fora das duas e usa
+  // a Magia de Pacto, calculada à parte. Ver `spellSlotsForClasses`.
+  const spellSlots = spellSlotsForClasses(classEntries);
   const pactSlots = pactMagicSlots(classEntries);
   const inventory = syncInventory(
     parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []),
@@ -286,7 +304,8 @@ export function toCharacterDto(
   /**
    * Conjuração de uma classe: a subclasse pode trocar a configuração (ex.:
    * Trapaceiro Arcano é um terço-conjurador). A CD/ataque usa o nível TOTAL do
-   * personagem (bônus de proficiência) e as preparadas usam o nível DELA.
+   * personagem (bônus de proficiência) e as preparadas usam o nível DELA —
+   * cada classe com o próprio atributo (ver `preparedSpellCountFor`).
    */
   function spellcastingOf(entry: ClassEntry): ClassEntryDto['spellcasting'] {
     const config = effectiveSpellcasting(entry);
@@ -302,11 +321,8 @@ export function toCharacterDto(
       saveDC: ability !== null && score !== null ? spellSaveDc(level, score) : null,
       attackBonus: ability !== null && score !== null ? spellAttackBonus(level, score) : null,
       preparedCount:
-        ability !== null &&
-        score !== null &&
-        config.learning === 'prepared' &&
-        config.type === 'full'
-          ? Math.max(1, abilityModifier(score) + entry.level)
+        ability !== null && score !== null
+          ? preparedSpellCountFor(entry, abilityModifier(score))
           : null,
     };
   }
@@ -325,6 +341,9 @@ export function toCharacterDto(
       subclassNames: definition?.subclasses.map((item) => item.name) ?? [],
       asiLevels: [...asiLevelsFor(entry.classKey)],
       spellcasting: spellcastingOf(entry),
+      featureChoices: definition
+        ? featureChoiceInfo(definition, classState.choices, entry.subclass)
+        : [],
     };
   });
 
@@ -350,9 +369,23 @@ export function toCharacterDto(
     unarmoredDefenses,
     armorPieces,
     armorClassOverride: character.armorClass,
-    preparedSpellCount: primaryCasting?.preparedCount ?? null,
     spellSlots,
     pactSlots,
+    // Aura de Proteção (todas as salvaguardas), Pau para Toda Obra (metade da
+    // proficiência em testes sem proficiência) e Estilo de Luta Defesa (+1 CA).
+    saveBonus: classAdjustments.saveBonus,
+    halfProficiency: classAdjustments.halfProficiency,
+    critThreshold: classAdjustments.critThreshold,
+    classArmorBonuses:
+      classAdjustments.armorClassBonus > 0
+        ? [
+            {
+              label: classAdjustments.armorClassBonusLabel,
+              value: classAdjustments.armorClassBonus,
+              requiresArmor: classAdjustments.armorClassBonusRequiresArmor,
+            },
+          ]
+        : [],
   });
 
   return {
@@ -390,6 +423,7 @@ export function toCharacterDto(
     speed: character.speed,
     skills,
     saves,
+    proficiencies: normalizeProficiencies(character.proficiencies),
     inventory,
     spells,
     attacks,

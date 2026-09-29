@@ -256,8 +256,6 @@ export interface DerivedStats {
   sneakAttack: { dice: number; expression: string } | null;
   /** Espaços de Expertise (dobrar proficiência) concedidos pelas features. */
   expertiseSlots: number;
-  /** Máximo de magias preparadas (conjuradores preparados) ou nulo. */
-  preparedSpellCount: number | null;
   initiative: number;
   passivePerception: number;
   /** CA calculada (armadura equipada + atributos + defesa sem armadura). */
@@ -266,8 +264,27 @@ export interface DerivedStats {
   totalWeight: number;
   saves: SaveDetail[];
   skills: Record<string, SkillDetail>;
+  /** Bônus somado a TODAS as salvaguardas (Aura de Proteção: mod. de CAR). */
+  saveBonus: number;
+  /**
+   * Metade da proficiência aplicada em testes de habilidade sem proficiência
+   * (Pau para Toda Obra do bardo; Atleta Extraordinário do Campeão). 0 = sem
+   * efeito. Quando mais de um efeito vale para o mesmo teste, este é o MAIOR
+   * valor aplicado (nunca a soma).
+   */
+  halfProficiencyBonus: number;
+  /** Limiar de crítico no d20 (20 = só o 20 natural; Campeão: 19 e depois 18). */
+  critThreshold: number;
   spellcasting: { ability: AbilityKey; saveDC: number; attackBonus: number } | null;
-  /** Espaços de magia do conjurador multiclasse (níveis com espaços > 0). */
+  /**
+   * Magias preparadas: NÃO existe um total aqui. Preparadas são POR CLASSE (o
+   * Paladino conta metade do nível e cada classe usa o próprio atributo), então
+   * o valor vive em `CharacterDto.classes[].spellcasting.preparedCount` — ver
+   * `preparedSpellCountFor` em shared/classes. Um número único enganaria fichas
+   * multiclasse.
+   */
+  /** Espaços de magia: a tabela da própria classe com UMA classe conjuradora;
+   *  a combinada só com DUAS OU MAIS (ver `spellSlotsForClasses`). */
   spellSlots: { level: number; max: number }[];
   /** Magia de Pacto do bruxo, calculada à parte (null quando não há bruxo). */
   pactSlots: { max: number; slotLevel: number } | null;
@@ -309,13 +326,53 @@ export interface DerivedInput {
   armorPieces?: ArmorClassPieces;
   /** Override manual da CA definido pelo mestre (`0`/ausente = automático). */
   armorClassOverride?: number | null;
-  /** Máximo de magias preparadas (conjuradores preparados), quando aplicável. */
-  preparedSpellCount?: number | null;
+  /** Bônus somado a todas as salvaguardas (Aura de Proteção). */
+  saveBonus?: number;
+  /**
+   * Efeitos de "metade da proficiência" (ver DerivedStats): alvo e
+   * arredondamento (para baixo no bardo; para cima no Campeão).
+   */
+  halfProficiency?: readonly { target: 'checks' | 'physicalChecks'; round: 'down' | 'up' }[];
+  /** Limiar de crítico do personagem (Campeão: 19/18); padrão 20. */
+  critThreshold?: number | null;
+  /** Bônus fixos de CA de classes (Estilo de Luta Defesa). */
+  classArmorBonuses?: readonly ClassArmorBonus[];
+}
+
+/** Bônus fixo de CA concedido por uma classe (Estilo de Luta Defesa). */
+export interface ClassArmorBonus {
+  label: string;
+  value: number;
+  /** Só vale com armadura vestida (regra da Defesa). */
+  requiresArmor?: boolean;
 }
 
 /** Calcula todos os valores derivados exibidos na ficha. */
 export function deriveStats(input: DerivedInput): DerivedStats {
   const prof = proficiencyBonus(input.level);
+  const saveBonus = input.saveBonus ?? 0;
+  const critThreshold = input.critThreshold ?? 20;
+  const halfProfGrants: readonly { target: string; round: string }[] = input.halfProficiency ?? [];
+
+  /**
+   * Metade da proficiência SOMENTE em testes de habilidade sem proficiência.
+   * Cada efeito arredonda do seu jeito (bardo para baixo, Campeão para cima) e,
+   * se dois valerem para o MESMO teste, vale o MAIOR — nunca a soma.
+   */
+  function halfProficiencyFor(ability: AbilityKey): number {
+    if (halfProfGrants.length === 0) return 0;
+    const physical =
+      ability === 'strength' || ability === 'dexterity' || ability === 'constitution';
+    const applicable = halfProfGrants.filter(
+      (grant) => grant.target === 'checks' || (grant.target === 'physicalChecks' && physical),
+    );
+    if (applicable.length === 0) return 0;
+
+    return applicable.reduce((top, grant) => {
+      const value = grant.round === 'up' ? Math.ceil(prof / 2) : Math.floor(prof / 2);
+      return Math.max(top, value);
+    }, 0);
+  }
 
   const modifiers = {} as Record<AbilityKey, number>;
   for (const ability of ABILITY_KEYS) {
@@ -328,7 +385,9 @@ export function deriveStats(input: DerivedInput): DerivedStats {
       ability,
       proficient,
       modifier: modifiers[ability],
-      total: modifiers[ability] + (proficient ? prof : 0),
+      // O bônus de salvaguarda (Aura de Proteção) entra em TODAS, com ou sem
+      // proficiência — e nunca na conta aqui da perícia/CA.
+      total: modifiers[ability] + (proficient ? prof : 0) + saveBonus,
     };
   });
 
@@ -336,8 +395,11 @@ export function deriveStats(input: DerivedInput): DerivedStats {
   for (const skill of SKILLS) {
     const entry = input.skills[skill.key] ?? { proficient: false, expertise: false };
     const modifier = modifiers[skill.ability];
-    // Expertise só conta se houver proficiência (e dobra o bônus).
-    const bonus = entry.proficient ? prof * (entry.expertise ? 2 : 1) : 0;
+    // Expertise só conta se houver proficiência (e dobra o bônus); sem
+    // proficiência ainda cabe a metade da proficiência (Pau para Toda Obra).
+    const bonus = entry.proficient
+      ? prof * (entry.expertise ? 2 : 1)
+      : halfProficiencyFor(skill.ability);
 
     skills[skill.key] = {
       label: skill.label,
@@ -367,12 +429,22 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     lockedSaves: input.lockedSaves ?? [],
     sneakAttack: input.sneakAttack ?? null,
     expertiseSlots: input.expertiseSlots ?? 0,
-    preparedSpellCount: input.preparedSpellCount ?? null,
-    initiative: initiative(input.abilities.dexterity, input.initiativeBonus),
+    saveBonus,
+    halfProficiencyBonus: halfProfGrants.reduce((top, grant) => {
+      const value = grant.round === 'up' ? Math.ceil(prof / 2) : Math.floor(prof / 2);
+      return Math.max(top, value);
+    }, 0),
+    critThreshold,
+    // A iniciativa é um teste de Destreza: a metade da proficiência vale nela.
+    initiative: initiative(
+      input.abilities.dexterity,
+      input.initiativeBonus + halfProficiencyFor('dexterity'),
+    ),
     passivePerception: 10 + (perception?.total ?? modifiers.wisdom),
     armorClass: computeArmorClass({
       dexterityModifier: modifiers.dexterity,
       pieces: input.armorPieces ?? { armor: null, shieldBonus: 0, magicBonus: 0 },
+      classBonuses: input.classArmorBonuses ?? [],
       unarmored: (input.unarmoredDefenses ?? []).map((option) => ({
         label: option.label,
         value:

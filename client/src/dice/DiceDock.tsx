@@ -2,16 +2,11 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
-import type { DiceRollDto } from '../types';
 import { Die3D } from './Die3D';
 import { announcement, resultBreakdown } from './format';
 import { RemoteRollBoard } from './RemoteRollBoard';
+import { RollLogList } from './RollLogList';
 import { DICE_TYPES, type DiceRollerState } from './useDiceRoller';
-
-function historyLine(roll: DiceRollDto): string {
-  const label = roll.kind === 'free' ? 'Rolagem livre' : roll.label;
-  return `${roll.actorName}: ${label}: ${roll.total}`;
-}
 
 interface DiceDockProps {
   roller: DiceRollerState;
@@ -334,23 +329,7 @@ export function DiceDock({ roller }: DiceDockProps) {
                       ) : null}
                     </div>
 
-                    {history.length === 0 ? (
-                      <p className="dice-log-empty">Nenhuma rolagem ainda.</p>
-                    ) : (
-                      <ul className="dice-log-list">
-                        {history.map((roll) => (
-                          <li key={roll.id} className={roll.isPrivate ? 'is-private' : undefined}>
-                            <span className="dice-log-text">{historyLine(roll)}</span>
-                            <span className="dice-log-side">
-                              {roll.isPrivate ? <em className="tag">privada</em> : null}
-                              <span className="dice-log-time">
-                                {new Date(roll.at).toLocaleTimeString('pt-BR')}
-                              </span>
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    <RollLogList history={history} />
                   </div>
                 ) : null}
               </div>
@@ -359,9 +338,11 @@ export function DiceDock({ roller }: DiceDockProps) {
           )
         : null}
 
+      {/* No painel do mestre o botão sobe: acima dele ficam o Log e, abaixo,
+          as Anotações (ver `.dice-fab.is-master` em styles.css). */}
       <button
         type="button"
-        className={open ? 'dice-fab active' : 'dice-fab'}
+        className={isMaster ? `dice-fab is-master${open ? ' active' : ''}` : open ? 'dice-fab active' : 'dice-fab'}
         aria-expanded={open}
         title={open ? 'Fechar a janela de dados' : 'Abrir a janela de dados'}
         onClick={() => (open ? close() : openFree())}

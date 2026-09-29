@@ -20,6 +20,7 @@ import type {
   SessionUser,
 } from '../types';
 import { AbilityStep } from './creation/AbilityStep';
+import { FeatureChoiceField } from './FeatureChoiceField';
 import { Icon } from './Icon';
 import { LevelUpDialog } from './LevelUpDialog';
 import { Portrait } from './Portrait';
@@ -119,6 +120,8 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [background, setBackground] = useState('');
   const [classKey, setClassKey] = useState('');
   const [subclass, setSubclass] = useState('');
+  /** Escolhas de característica do passo 5 (Estilo de Luta, Inimigo Favorito). */
+  const [choicePicks, setChoicePicks] = useState<Record<string, string[]>>({});
   const [assigned, setAssigned] = useState<Partial<Record<AbilityKey, number>>>({});
   const [picks, setPicks] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -273,6 +276,33 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     selectedClass.subclassLevel <= 1 &&
     selectedClass.subclassNames.length > 0;
 
+  /**
+   * Escolhas que a classe pede no NÍVEL 1 (Estilo de Luta do Guerreiro, Inimigo
+   * Favorito e Explorador Nato do Patrulheiro). O Estilo de Luta do Paladino e
+   * do Patrulheiro só chega no 2º nível — lá elas aparecem no Level Up.
+   */
+  const featureChoices = useMemo(() => {
+    if (selectedClass === null || classKey === '') return [];
+    // As opções vêm da classe SELECIONADA (`classOptions[].featureChoices`); o
+    // que já estava escolhido só vale se for a MESMA classe que está na ficha.
+    const sameClass = character?.classes[0]?.classKey === selectedClass.key;
+    const stored = new Map(
+      (sameClass ? (creation?.featureChoices ?? []) : []).map((item) => [
+        item.featureId,
+        item.chosen,
+      ]),
+    );
+    return (selectedClass.featureChoices ?? []).map((item) => ({
+      ...item,
+      chosen: stored.get(item.featureId) ?? [],
+    }));
+  }, [selectedClass, classKey, character?.classes, creation?.featureChoices]);
+
+  /** Escolhas completas (uma opção por escolha pedida). */
+  const choicesReady = featureChoices.every(
+    (item) => (choicePicks[item.featureId] ?? item.chosen).filter(Boolean).length >= item.count,
+  );
+
   const assignedCount = ABILITY_KEYS.filter((ability) => assigned[ability] !== undefined).length;
   const abilitiesReady = assignedCount === ABILITY_KEYS.length;
   const level = character?.level ?? 0;
@@ -292,7 +322,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 4:
         return background.trim().length > 0;
       case 5:
-        return classKey !== '' && (!classNeedsSubclass || subclass !== '');
+        return classKey !== '' && (!classNeedsSubclass || subclass !== '') && choicesReady;
       case 6:
         return assignedCount === ABILITY_KEYS.length;
       case 7:
@@ -315,7 +345,16 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 4:
         return { background };
       case 5:
-        return { classKey, subclass };
+        return {
+          classKey,
+          subclass,
+          choices: Object.fromEntries(
+            featureChoices.map((item) => [
+              item.featureId,
+              (choicePicks[item.featureId] ?? item.chosen).filter(Boolean),
+            ]),
+          ),
+        };
       case 6:
         return { baseAbilities: assigned };
       case 7:
@@ -658,8 +697,10 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                         checked={classKey === option.key}
                         onChange={() => {
                           setClassKey(option.key);
-                          // A subclasse é da classe antiga: trocar de classe recomeça.
+                          // A subclasse e as escolhas são da classe antiga: trocar
+                          // de classe recomeça (o servidor também descarta).
                           setSubclass('');
+                          setChoicePicks({});
                         }}
                       />
                       <span className="check-name">
@@ -704,6 +745,24 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                   </p>
                 </div>
               ) : null}
+
+              {/* Escolhas de característica do nível 1 (Estilo de Luta, Inimigo
+                  Favorito, Explorador Nato). */}
+              {featureChoices.map((item) => (
+                <div className="wizard-subclass" key={item.featureId}>
+                  <h3 className="subsection-title">
+                    {item.prompt} de {selectedClass?.name}
+                  </h3>
+                  <FeatureChoiceField
+                    info={item}
+                    values={choicePicks[item.featureId] ?? item.chosen}
+                    disabled={busy}
+                    onChange={(keys) =>
+                      setChoicePicks((current) => ({ ...current, [item.featureId]: keys }))
+                    }
+                  />
+                </div>
+              ))}
             </div>
           ) : null}
 

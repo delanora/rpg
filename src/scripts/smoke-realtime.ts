@@ -133,6 +133,83 @@ async function setCharacterClasses(
   });
 }
 
+/**
+ * Corpo do Level Up montado do mesmo jeito que o `LevelUpDialog` monta.
+ *
+ * As escolhas do nível novo saem de `classes[].featureChoices` (classe que já
+ * está na ficha) ou de `classOptions[].featureChoices` (classe nova) e, quando a
+ * SUBCLASSE está sendo escolhida agora, de `classOptions[].subclassChoices`
+ * (Caçador e Colégio do Conhecimento pedem escolha no mesmo nível).
+ *
+ * Nos níveis de Aumento de Atributo/Talento distribui os +1/+1 entre os
+ * atributos que ainda têm espaço (é o que o assistente pede).
+ */
+function levelUpRequestFor(sheet: any, classKey: string, subclassPick = 0): any {
+  const entry =
+    (sheet?.classes ?? []).find((item: any) => item.classKey === classKey) ?? null;
+  const option = (sheet?.classOptions ?? []).find((item: any) => item.key === classKey);
+
+  const newLevel = (entry?.level ?? 0) + 1;
+  const needsSubclass =
+    (entry?.subclass ?? '') === '' && newLevel >= (option?.subclassLevel ?? 1);
+  const subclassNames: string[] = option?.subclassNames ?? [];
+  const subclass = needsSubclass
+    ? (subclassNames[subclassPick] ?? subclassNames[0] ?? '')
+    : '';
+
+  const pending: any[] = [
+    ...(entry ? (entry.featureChoices ?? []) : (option?.featureChoices ?? [])),
+  ].filter((info: any) => info.level === newLevel && info.chosen.length < info.count);
+
+  if (needsSubclass) {
+    for (const info of option?.subclassChoices ?? []) {
+      if (
+        info.subclass === subclass &&
+        info.level === newLevel &&
+        info.chosen.length < info.count
+      ) {
+        pending.push(info);
+      }
+    }
+  }
+
+  const choices: Record<string, string[]> = {};
+  for (const info of pending) {
+    choices[info.featureId] = info.options
+      .slice(0, info.count)
+      .map((item: any) => item.key);
+  }
+
+  const request: any = {
+    classKey,
+    subclass: needsSubclass ? subclass : '',
+    hp: 'average',
+    choices,
+  };
+
+  if ((option?.asiLevels ?? []).includes(newLevel)) {
+    const room = [
+      'strength',
+      'dexterity',
+      'constitution',
+      'intelligence',
+      'wisdom',
+      'charisma',
+    ].filter((ability) => (sheet?.[ability] ?? 0) + 1 <= 20);
+
+    if (room.length >= 2) {
+      request.abilityIncreases = [
+        { ability: room[0], amount: 1 },
+        { ability: room[1], amount: 1 },
+      ];
+    } else {
+      request.feat = { name: 'Talento do smoke', description: 'verificação automática' };
+    }
+  }
+
+  return request;
+}
+
 async function main(): Promise<void> {
   console.log(`\n🔎 Smoke test (Etapas 1 e 2) em ${BASE_URL}\n`);
 
@@ -478,6 +555,23 @@ async function main(): Promise<void> {
     'PV inicial = dado de vida máximo (d6) + CON',
     otherSheet.data?.character?.hpMax === 6 && otherSheet.data?.character?.hpCurrent === 6,
     JSON.stringify({ hpMax: otherSheet.data?.character?.hpMax, hpCurrent: otherSheet.data?.character?.hpCurrent }),
+  );
+  check(
+    'a primeira classe concede as proficiências iniciais completas (PHB cap. 6)',
+    (otherSheet.data?.character?.proficiencies?.weapons ?? []).includes('Bordões') &&
+      (otherSheet.data?.character?.proficiencies?.armor ?? []).length === 0 &&
+      (otherSheet.data?.character?.proficiencies?.tools ?? []).length === 0,
+    JSON.stringify(otherSheet.data?.character?.proficiencies),
+  );
+  check(
+    'as opções de classe já trazem as proficiências e a perícia de multiclasse',
+    otherSheet.data?.character?.classOptions?.find((item: any) => item.key === 'rogue')
+      ?.multiclassSkillChoice?.count === 1 &&
+      (
+        otherSheet.data?.character?.classOptions?.find((item: any) => item.key === 'fighter')
+          ?.multiclassProficiencies?.armor ?? []
+      ).includes('Escudos'),
+    JSON.stringify(otherSheet.data?.character?.classOptions?.[0]),
   );
   check(
     'com INT 15 mas CAR 10, entrar em Bardo é recusado (400)',
@@ -1178,9 +1272,12 @@ async function main(): Promise<void> {
   );
   check(
     'Druida prepara mod. de SAB + nível magias (mínimo 1)',
-    druidSheet.derived.preparedSpellCount ===
+    druidSheet.classes[0]?.spellcasting?.preparedCount ===
       Math.max(1, druidSheet.derived.modifiers.wisdom + 2),
-    JSON.stringify({ prepared: druidSheet.derived.preparedSpellCount, wis: druidSheet.derived.modifiers.wisdom }),
+    JSON.stringify({
+      prepared: druidSheet.classes[0]?.spellcasting?.preparedCount,
+      wis: druidSheet.derived.modifiers.wisdom,
+    }),
   );
 
   await setCharacterClasses(playerId, [{ classKey: 'druid', level: 8 }]);
@@ -1251,8 +1348,8 @@ async function main(): Promise<void> {
   );
   check(
     'Feiticeiro (conjurador conhecido) não tem limite de preparadas',
-    sorcererSheet.derived.preparedSpellCount === null,
-    JSON.stringify(sorcererSheet.derived.preparedSpellCount),
+    sorcererSheet.classes[0]?.spellcasting?.preparedCount === null,
+    JSON.stringify(sorcererSheet.classes[0]?.spellcasting),
   );
 
   // --- Mago: grimório, Recuperação Arcana, Couraça Arcana e Presságio ------
@@ -1273,9 +1370,9 @@ async function main(): Promise<void> {
   );
   check(
     'Mago prepara mod. de INT + nível magias do grimório',
-    wizardSheet.derived.preparedSpellCount ===
+    wizardSheet.classes[0]?.spellcasting?.preparedCount ===
       Math.max(1, wizardSheet.derived.modifiers.intelligence + 6),
-    JSON.stringify({ prepared: wizardSheet.derived.preparedSpellCount }),
+    JSON.stringify({ prepared: wizardSheet.classes[0]?.spellcasting?.preparedCount }),
   );
   const ward = wizardSheet.classAdjustments.resources.find((r: any) => r.id === 'arcane-ward');
   check(
@@ -1380,11 +1477,16 @@ async function main(): Promise<void> {
     multiclass.derived.sneakAttack?.expression === '1d6',
     JSON.stringify(multiclass.derived.sneakAttack),
   );
+  // Multiclasse NUNCA concede salvaguardas (PHB 2014, p.164): as fixas são só
+  // as da PRIMEIRA classe — aqui, as do Bárbaro (Força e Constituição).
   check(
-    'salvaguardas fixas somam as duas classes',
-    ['strength', 'constitution', 'dexterity', 'intelligence'].every((ability: string) =>
+    'salvaguardas fixas são só as da PRIMEIRA classe',
+    ['strength', 'constitution'].every((ability: string) =>
       multiclass.derived.lockedSaves.includes(ability),
-    ),
+    ) &&
+      !['dexterity', 'intelligence'].some((ability: string) =>
+        multiclass.derived.lockedSaves.includes(ability),
+      ),
     JSON.stringify(multiclass.derived.lockedSaves),
   );
   check(
@@ -1455,6 +1557,120 @@ async function main(): Promise<void> {
     thirdCaster.derived.spellSlots.find((s: any) => s.level === 1)?.max === 3 &&
       !thirdCaster.derived.spellSlots.some((s: any) => s.level === 2),
     JSON.stringify(thirdCaster.derived.spellSlots),
+  );
+
+  // --- Espaços e preparadas POR CLASSE (PHB cap. 3 x cap. 6) ----------------
+  console.log('\n8.6) Tabela de espaços e magias preparadas por classe');
+
+  // Com UMA classe conjuradora vale a tabela da PRÓPRIA classe: o
+  // meio-conjurador arredonda a metade para CIMA (Paladino 3 = 3 espaços de 1º).
+  // O arredondamento para BAIXO é só da tabela COMBINADA de multiclasse.
+  await setCharacterClasses(playerId, [{ classKey: 'paladin', level: 3 }]);
+  const paladinAlone = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'Paladino 3 sozinho usa a tabela do Paladino (3 espaços de 1º, nenhum de 2º)',
+    paladinAlone.derived.spellSlots.find((s: any) => s.level === 1)?.max === 3 &&
+      !paladinAlone.derived.spellSlots.some((s: any) => s.level === 2),
+    JSON.stringify(paladinAlone.derived.spellSlots),
+  );
+  check(
+    'Paladino prepara CAR + METADE do nível (Paladino 3 → metade = 1)',
+    paladinAlone.classes[0]?.spellcasting?.preparedCount ===
+      Math.max(1, paladinAlone.derived.modifiers.charisma + 1),
+    JSON.stringify({
+      prepared: paladinAlone.classes[0]?.spellcasting?.preparedCount,
+      car: paladinAlone.derived.modifiers.charisma,
+    }),
+  );
+
+  // Paladino no 1º nível ainda NÃO conjura: zero espaços e zero preparadas.
+  await setCharacterClasses(playerId, [{ classKey: 'paladin', level: 1 }]);
+  const paladinFirst = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'Paladino de nível 1 não tem espaços nem magias preparadas',
+    paladinFirst.derived.spellSlots.length === 0 &&
+      paladinFirst.classes[0]?.spellcasting?.preparedCount === 0,
+    JSON.stringify({
+      slots: paladinFirst.derived.spellSlots,
+      prepared: paladinFirst.classes[0]?.spellcasting?.preparedCount,
+    }),
+  );
+
+  // Patrulheiro: meio-conjurador de magias CONHECIDAS (a metade não entra na
+  // contagem de preparadas, mas a tabela dele é a de meio-conjurador).
+  await setCharacterClasses(playerId, [{ classKey: 'ranger', level: 5 }]);
+  const rangerAlone = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'Patrulheiro 5 usa a tabela dele (4 espaços de 1º e 2 de 2º)',
+    rangerAlone.derived.spellSlots.find((s: any) => s.level === 1)?.max === 4 &&
+      rangerAlone.derived.spellSlots.find((s: any) => s.level === 2)?.max === 2,
+    JSON.stringify(rangerAlone.derived.spellSlots),
+  );
+  check(
+    'Patrulheiro usa magias conhecidas (sem limite de preparadas)',
+    rangerAlone.classes[0]?.spellcasting?.preparedCount === null,
+    JSON.stringify(rangerAlone.classes[0]?.spellcasting),
+  );
+
+  // Terço-conjurador sozinho também arredonda para CIMA (Ladino 4 → conjurador 2).
+  await setCharacterClasses(playerId, [
+    { classKey: 'rogue', level: 4, subclass: 'Trapaceiro Arcano' },
+  ]);
+  const tricksterAlone = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'Trapaceiro Arcano 4 usa a tabela dele (3 espaços de 1º, nenhum de 2º)',
+    tricksterAlone.derived.spellSlots.find((s: any) => s.level === 1)?.max === 3 &&
+      !tricksterAlone.derived.spellSlots.some((s: any) => s.level === 2),
+    JSON.stringify(tricksterAlone.derived.spellSlots),
+  );
+
+  // Classe que NÃO conjura não puxa a tabela combinada: Guerreiro 5 / Paladino 5
+  // continua com a tabela do Paladino (4 de 1º e 2 de 2º) — a combinada daria 3.
+  await setCharacterClasses(playerId, [
+    { classKey: 'fighter', level: 5 },
+    { classKey: 'paladin', level: 5 },
+  ]);
+  const fighterPaladin = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'Guerreiro sem conjuração não entra na tabela combinada (Guerreiro 5 / Paladino 5)',
+    fighterPaladin.derived.spellSlots.find((s: any) => s.level === 1)?.max === 4 &&
+      fighterPaladin.derived.spellSlots.find((s: any) => s.level === 2)?.max === 2,
+    JSON.stringify(fighterPaladin.derived.spellSlots),
+  );
+
+  // Bruxo sozinho: nenhum espaço da tabela comum, só a Magia de Pacto.
+  await setCharacterClasses(playerId, [{ classKey: 'warlock', level: 4 }]);
+  const warlockAlone = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'Bruxo sozinho fica fora da tabela comum (só Magia de Pacto)',
+    warlockAlone.derived.spellSlots.length === 0 &&
+      warlockAlone.derived.pactSlots?.max === 2 &&
+      warlockAlone.derived.pactSlots?.slotLevel === 2,
+    JSON.stringify({
+      slots: warlockAlone.derived.spellSlots,
+      pact: warlockAlone.derived.pactSlots,
+    }),
+  );
+
+  // Multiclasse preparado: cada classe com o próprio atributo e o próprio nível
+  // (nada de número somado).
+  await setCharacterClasses(playerId, [
+    { classKey: 'wizard', level: 6 },
+    { classKey: 'cleric', level: 3 },
+  ]);
+  const twoPrepared = (await api('/api/characters/me', { token: playerToken })).data.character;
+  check(
+    'magias preparadas são POR CLASSE (Mago 6 e Clérigo 3, sem somar)',
+    twoPrepared.classes[0]?.spellcasting?.preparedCount ===
+      Math.max(1, twoPrepared.derived.modifiers.intelligence + 6) &&
+      twoPrepared.classes[1]?.spellcasting?.preparedCount ===
+        Math.max(1, twoPrepared.derived.modifiers.wisdom + 3),
+    JSON.stringify(
+      twoPrepared.classes.map((entry: any) => ({
+        key: entry.classKey,
+        prepared: entry.spellcasting?.preparedCount,
+      })),
+    ),
   );
 
   // --- Itens, ícones e avatar ------------------------------------------------
@@ -2059,6 +2275,846 @@ async function main(): Promise<void> {
       ?.lastLevelUpRelease === 0,
   );
 
+  // --- 11.5b Anotações do mestre --------------------------------------------
+  console.log('\n11.5b) Anotações privadas do mestre');
+
+  check(
+    'as anotações do mestre exigem autenticação (401)',
+    (await api('/api/game/notes')).status === 401,
+  );
+  check(
+    'jogador NÃO lê as anotações do mestre (403)',
+    (await api('/api/game/notes', { token: playerToken })).status === 403,
+  );
+  check(
+    'jogador NÃO grava as anotações do mestre (403)',
+    (
+      await api('/api/game/notes', {
+        method: 'PATCH',
+        token: playerToken,
+        body: { notes: 'invadindo o caderno alheio' },
+      })
+    ).status === 403,
+  );
+
+  const playerConfig = (await api('/api/game', { token: playerToken })).data?.config ?? {};
+  check(
+    'a configuração que o jogador recebe NÃO traz as anotações do mestre',
+    playerConfig.notes === undefined && playerConfig.masterNotes === undefined,
+    JSON.stringify(playerConfig),
+  );
+
+  const savedNotes = await api('/api/game/notes', {
+    method: 'PATCH',
+    token: masterToken,
+    body: { notes: 'O dragao do poço devolve segredos.' },
+  });
+  check(
+    'o mestre grava as próprias anotações (200)',
+    savedNotes.status === 200 && savedNotes.data?.notes === 'O dragao do poço devolve segredos.',
+    JSON.stringify(savedNotes.data),
+  );
+  check(
+    'o mestre relê as anotações gravadas',
+    (await api('/api/game/notes', { token: masterToken })).data?.notes ===
+      'O dragao do poço devolve segredos.',
+  );
+  check(
+    'anotações acima do limite são recusadas (400)',
+    (
+      await api('/api/game/notes', {
+        method: 'PATCH',
+        token: masterToken,
+        body: { notes: 'x'.repeat(20_001) },
+      })
+    ).status === 400,
+  );
+  // Não deixa texto de teste na configuração da mesa (ela é global).
+  await api('/api/game/notes', { method: 'PATCH', token: masterToken, body: { notes: '' } });
+
+  // --- 11.5c Escolhas de característica e efeitos de classe ------------------
+  console.log('\n11.5c) Escolhas de característica e efeitos de classe');
+
+  // Ficha própria e isolada: aqui testamos as ESCOLHAS de característica
+  // (Estilo de Luta, Inimigo Favorito...) e os efeitos numéricos que elas
+  // destravam, sem mexer nas fichas usadas pelos outros blocos.
+  const choicesUsername = `escolhas_${suffix}`;
+  createdUsernames.push(choicesUsername);
+  const choicesReg = await api('/api/auth/register', {
+    method: 'POST',
+    body: {
+      username: choicesUsername,
+      displayName: 'Escolhas Teste',
+      password: 'senha-forte-123',
+    },
+  });
+  const choicesToken: string = choicesReg.data?.token;
+  const choicesId: string = choicesReg.data?.user?.id;
+  const choicesSheet = await api('/api/characters/me', {
+    method: 'POST',
+    token: choicesToken,
+    body: {},
+  });
+  const choicesCharacterId: string = choicesSheet.data?.character?.id;
+  check(
+    'jogador novo cadastrado para as escolhas (201)',
+    choicesReg.status === 201 && Boolean(choicesToken) && Boolean(choicesCharacterId),
+    JSON.stringify(choicesReg.data),
+  );
+
+  // Guerreiro de nível 1 com uma armadura leve EQUIPADA: o Estilo de Luta
+  // Defesa só vale "enquanto você estiver usando armadura".
+  const testArmor = {
+    id: 'armor-escolhas',
+    name: 'Couro do teste',
+    description: '',
+    quantity: 1,
+    weight: 5,
+    slot: 'chest' as string | null,
+    backpackX: null as number | null,
+    backpackY: null as number | null,
+    imageUrl: '',
+    itemId: '',
+    category: 'Armadura',
+    details: { armorType: 'Leve', baseArmorClass: 12 },
+  };
+  // Os atributos vêm ANTES da classe: o pré-requisito do livro é conferido com
+  // os valores já gravados na ficha (ver resolveClassPatch).
+  await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      strength: 15,
+      dexterity: 14,
+      constitution: 14,
+      intelligence: 10,
+      wisdom: 14,
+      charisma: 10,
+    },
+  });
+  // REGRESSÃO: o assistente de criação monta os seletores a partir do CATÁLOGO
+  // (`classOptions[].featureChoices`), porque na hora da escolha a ficha ainda
+  // não tem classe — as opções precisam vir do catálogo, não da ficha.
+  const classlessSheet = (await api('/api/characters/me', { token: choicesToken }))
+    .data.character;
+  const classlessFighter = (classlessSheet?.classOptions ?? []).find(
+    (option: any) => option.key === 'fighter',
+  );
+  const classlessRanger = (classlessSheet?.classOptions ?? []).find(
+    (option: any) => option.key === 'ranger',
+  );
+  check(
+    'sem classe na ficha, o catálogo já traz as escolhas do nível 1 (opções visíveis)',
+    classlessFighter?.featureChoices?.[0]?.options?.length === 6 &&
+      classlessRanger?.featureChoices?.length === 2 &&
+      classlessRanger?.featureChoices?.[0]?.options?.length === 13 &&
+      classlessRanger?.featureChoices?.[1]?.options?.length === 8,
+    JSON.stringify({
+      fighter: classlessFighter?.featureChoices?.[0]?.options?.length,
+      ranger: classlessRanger?.featureChoices?.map((info: any) => info.options.length),
+    }),
+  );
+
+  const choicesSetup = await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { classes: [{ classKey: 'fighter' }], inventory: [testArmor] },
+  });
+  check(
+    'o mestre monta o guerreiro de teste (200)',
+    choicesSetup.status === 200 &&
+      choicesSetup.data?.character?.classes?.[0]?.classKey === 'fighter',
+    JSON.stringify(choicesSetup.data),
+  );
+
+  const fighterOption = (choicesSetup.data?.character?.classOptions ?? []).find(
+    (option: any) => option.key === 'fighter',
+  );
+  const paladinOption = (choicesSetup.data?.character?.classOptions ?? []).find(
+    (option: any) => option.key === 'paladin',
+  );
+  const rangerOption = (choicesSetup.data?.character?.classOptions ?? []).find(
+    (option: any) => option.key === 'ranger',
+  );
+  check(
+    'o Estilo de Luta do Guerreiro traz as 6 opções do livro (nível 1)',
+    fighterOption?.featureChoices?.length === 1 &&
+      fighterOption?.featureChoices?.[0]?.featureId === 'fighter-fighting-style' &&
+      fighterOption?.featureChoices?.[0]?.options?.length === 6,
+    JSON.stringify(fighterOption?.featureChoices),
+  );
+  check(
+    'o Patrulheiro pede as DUAS escolhas do nível 1 (Inimigo Favorito e Explorador Nato)',
+    rangerOption?.featureChoices?.length === 2 &&
+      rangerOption?.featureChoices?.map((info: any) => info.featureId).join(',') ===
+        'favored-enemy,natural-explorer',
+    JSON.stringify(rangerOption?.featureChoices),
+  );
+  check(
+    'o Estilo de Luta do Paladino é do nível 2 (não aparece na entrada)',
+    paladinOption?.featureChoices?.length === 0,
+    JSON.stringify(paladinOption?.featureChoices),
+  );
+
+  const fighterStyle = await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      classState: {
+        active: [],
+        used: {},
+        choices: { 'fighter-fighting-style': ['defense'] },
+      },
+    },
+  });
+  const armoredFighter = fighterStyle.data?.character;
+  check(
+    'o mestre escolhe o Estilo de Luta Defesa (200)',
+    fighterStyle.status === 200 &&
+      armoredFighter?.classState?.choices?.['fighter-fighting-style']?.[0] === 'defense',
+    JSON.stringify(armoredFighter?.classState),
+  );
+  check(
+    'a escolha já feita aparece nas escolhas da classe',
+    armoredFighter?.classes?.[0]?.featureChoices?.[0]?.chosen?.[0] === 'defense',
+    JSON.stringify(armoredFighter?.classes?.[0]?.featureChoices),
+  );
+  check(
+    'Defesa soma +1 na CA com armadura equipada (12 + DES 2 + 1)',
+    armoredFighter?.derived?.armorClass?.automatic === 15 &&
+      armoredFighter?.derived?.armorClass?.classBonus === 1 &&
+      armoredFighter?.classAdjustments?.armorClassBonus === 1,
+    JSON.stringify({
+      ca: armoredFighter?.derived?.armorClass,
+      ajuste: armoredFighter?.classAdjustments?.armorClassBonus,
+    }),
+  );
+
+  const withoutArmor = await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { inventory: [{ ...testArmor, slot: null, backpackX: 1, backpackY: 0 }] },
+  });
+  check(
+    'sem armadura VESTIDA a Defesa não soma (o livro exige armadura)',
+    withoutArmor.data?.character?.derived?.armorClass?.automatic === 12 &&
+      withoutArmor.data?.character?.derived?.armorClass?.classBonus === 0,
+    JSON.stringify(withoutArmor.data?.character?.derived?.armorClass),
+  );
+  await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { inventory: [testArmor] },
+  });
+
+  // Level Up: entrar numa classe NOVA pede as escolhas do nível 1 DELA. O
+  // guerreiro tem FOR 15/DES 14, então atende o patrulheiro (DES 13 e SAB 13).
+  await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  check(
+    'multiclassar em Patrulheiro sem as escolhas do nível 1 é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: choicesToken,
+        body: { classKey: 'ranger', hp: 'average', skillChoice: 'nature' },
+      })
+    ).status === 400,
+  );
+  check(
+    'opção de escolha inválida no Level Up é recusada (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: choicesToken,
+        body: {
+          classKey: 'ranger',
+          hp: 'average',
+          skillChoice: 'nature',
+          choices: { 'favored-enemy': ['inventado'], 'natural-explorer': ['forest'] },
+        },
+      })
+    ).status === 400,
+  );
+  check(
+    'escolha do nível ERRADO no Level Up é recusada (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: choicesToken,
+        body: {
+          classKey: 'ranger',
+          hp: 'average',
+          skillChoice: 'nature',
+          choices: {
+            'favored-enemy': ['undead'],
+            'natural-explorer': ['forest'],
+            // O Estilo de Luta do patrulheiro só é escolhido no 2º nível.
+            'ranger-fighting-style': ['defense'],
+          },
+        },
+      })
+    ).status === 400,
+  );
+
+  const rangerEntry = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: choicesToken,
+    body: {
+      classKey: 'ranger',
+      hp: 'average',
+      skillChoice: 'nature',
+      choices: { 'favored-enemy': ['undead'], 'natural-explorer': ['forest'] },
+    },
+  });
+  check(
+    'Inimigo Favorito e Explorador Nato entram no Level Up (200)',
+    rangerEntry.status === 200 &&
+      rangerEntry.data?.character?.classState?.choices?.['favored-enemy']?.[0] === 'undead' &&
+      rangerEntry.data?.character?.classState?.choices?.['natural-explorer']?.[0] === 'forest',
+    JSON.stringify(rangerEntry.data?.character?.classState),
+  );
+  check(
+    'a perícia do patrulheiro entra na ficha junto das escolhas',
+    rangerEntry.data?.character?.skills?.nature?.proficient === true,
+    JSON.stringify(rangerEntry.data?.character?.skills),
+  );
+  check(
+    'entrar numa classe nova não apaga a escolha da anterior (Estilo de Luta)',
+    rangerEntry.data?.character?.classState?.choices?.['fighter-fighting-style']?.[0] === 'defense',
+    JSON.stringify(rangerEntry.data?.character?.classState?.choices),
+  );
+
+  // As escolhas são CONSTRUÇÃO: com a criação finalizada o jogador só vê (o
+  // mestre continua editando), mas usos de recursos seguem liberados.
+  // O assistente do passo 9 não é usado aqui (esta ficha foi montada direto
+  // pelo mestre), então o flag vai na fonte — como os cenários de nível.
+  await prisma.character.update({
+    where: { userId: choicesId },
+    data: { creationFinalized: true },
+  });
+  check(
+    'a ficha de teste fica com a criação finalizada',
+    (await api('/api/characters/me', { token: choicesToken })).data?.character
+      ?.creationFinalized === true,
+  );
+  const keptChoices = {
+    'fighter-fighting-style': ['defense'],
+    'favored-enemy': ['undead'],
+    'natural-explorer': ['forest'],
+  };
+  check(
+    'com a criação finalizada o jogador NÃO troca a escolha (403)',
+    (
+      await api('/api/characters/me', {
+        method: 'PATCH',
+        token: choicesToken,
+        body: {
+          classState: {
+            active: [],
+            used: {},
+            choices: { ...keptChoices, 'fighter-fighting-style': ['archery'] },
+          },
+        },
+      })
+    ).status === 403,
+  );
+  check(
+    'o jogador continua mexendo nos usos de recursos (200)',
+    (
+      await api('/api/characters/me', {
+        method: 'PATCH',
+        token: choicesToken,
+        body: { classState: { active: [], used: { 'second-wind': 1 }, choices: keptChoices } },
+      })
+    ).status === 200,
+  );
+  const masterChoiceEdit = await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      classState: {
+        active: [],
+        used: {},
+        choices: { ...keptChoices, 'fighter-fighting-style': ['archery'] },
+      },
+    },
+  });
+  check(
+    'o mestre edita a escolha de característica (200)',
+    masterChoiceEdit.data?.character?.classState?.choices?.['fighter-fighting-style']?.[0] ===
+      'archery' &&
+      masterChoiceEdit.data?.character?.derived?.armorClass?.classBonus === 0,
+    JSON.stringify(masterChoiceEdit.data?.character?.derived?.armorClass),
+  );
+
+  // --- Bardo (Pau para Toda Obra) e Paladino (Aura de Proteção) -------------
+  // Cenários de nível alto são preparados direto no banco, como no resto do
+  // smoke (o nível de uma classe só sobe pelo fluxo de Level Up).
+  await setCharacterClasses(choicesId, [{ classKey: 'bard', level: 2 }]);
+  const bardSheet = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const inspiration = (bardSheet?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'bardic-inspiration',
+  );
+  check(
+    'Inspiração de Bardo: usos = mod. de CAR com mínimo 1 (CAR 10 → 1)',
+    inspiration?.max === 1 && inspiration?.recharge === 'long',
+    JSON.stringify(inspiration),
+  );
+  check(
+    'Pau para Toda Obra dá metade da proficiência (nível 2 → +1)',
+    bardSheet?.derived?.halfProficiencyBonus === 1 &&
+      bardSheet?.derived?.skills?.athletics?.total ===
+        bardSheet?.derived?.modifiers?.strength + 1 &&
+      bardSheet?.derived?.initiative === bardSheet?.derived?.modifiers?.dexterity + 1,
+    JSON.stringify({
+      half: bardSheet?.derived?.halfProficiencyBonus,
+      athletics: bardSheet?.derived?.skills?.athletics,
+      initiative: bardSheet?.derived?.initiative,
+    }),
+  );
+  check(
+    'Pau para Toda Obra NÃO entra em perícia com proficiência',
+    bardSheet?.derived?.skills?.nature?.proficient === true &&
+      bardSheet?.derived?.skills?.nature?.total === bardSheet?.derived?.modifiers?.intelligence + 2,
+    JSON.stringify(bardSheet?.derived?.skills?.nature),
+  );
+
+  await prisma.character.update({
+    where: { userId: choicesId },
+    data: { charisma: 16, classState: { active: [], used: {}, choices: {} } as any },
+  });
+  const paladinSheet = await (async () => {
+    await setCharacterClasses(choicesId, [{ classKey: 'paladin', level: 6 }]);
+    return (await api('/api/characters/me', { token: choicesToken })).data.character;
+  })();
+  const divineSense = (paladinSheet?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'divine-sense',
+  );
+  const layOnHands = (paladinSheet?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'lay-on-hands',
+  );
+  check(
+    'Aura de Proteção soma o mod. de CAR (mínimo +1) em TODAS as salvaguardas',
+    paladinSheet?.derived?.saveBonus === 3 &&
+      (paladinSheet?.derived?.saves ?? []).every(
+        (save: any) =>
+          save.total === save.modifier + (save.proficient ? 3 : 0) + 3 &&
+          paladinSheet?.derived?.saveBonus === 3,
+      ),
+    JSON.stringify({ bonus: paladinSheet?.derived?.saveBonus, saves: paladinSheet?.derived?.saves }),
+  );
+  check(
+    'Sentido Divino = 1 + mod. de CAR e Mãos Consagradas = 5 × nível',
+    divineSense?.max === 4 && layOnHands?.max === 30 && layOnHands?.recharge === 'long',
+    JSON.stringify({ divineSense, layOnHands }),
+  );
+  check(
+    'o Estilo de Luta do Paladino fica pendente no nível 2 (não cobrado no 6)',
+    (paladinSheet?.classes?.[0]?.featureChoices ?? []).some(
+      (info: any) => info.featureId === 'paladin-fighting-style' && info.level === 2,
+    ),
+    JSON.stringify(paladinSheet?.classes?.[0]?.featureChoices),
+  );
+
+  await setCharacterClasses(choicesId, [{ classKey: 'ranger', level: 10 }]);
+  await prisma.character.update({
+    where: { userId: choicesId },
+    data: {
+      classState: {
+        active: [],
+        used: {},
+        choices: {
+          'favored-enemy': ['undead'],
+          'favored-enemy-6': ['fiends'],
+          'natural-explorer': ['forest'],
+          'natural-explorer-6': ['arctic'],
+        },
+      } as any,
+    },
+  });
+  const rangerTen = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const rangerChoices = rangerTen?.classes?.[0]?.featureChoices ?? [];
+  const explorerTen = rangerChoices.find((info: any) => info.featureId === 'natural-explorer-10');
+  check(
+    'o Inimigo Favorito melhora no 6 e no 14 e o Explorador Nato no 6 e no 10',
+    rangerChoices.length === 7 &&
+      explorerTen?.count === 2 &&
+      rangerChoices.some((info: any) => info.featureId === 'favored-enemy-14') &&
+      rangerChoices.find((info: any) => info.featureId === 'favored-enemy-6')?.chosen?.[0] ===
+        'fiends',
+    JSON.stringify(rangerChoices.map((info: any) => [info.featureId, info.level, info.count])),
+  );
+  check(
+    'classes conhecidas: o Patrulheiro não tem limite de preparadas',
+    rangerTen?.classes?.[0]?.spellcasting?.preparedCount === null &&
+      rangerTen?.classes?.[0]?.spellcasting?.learning === 'known',
+    JSON.stringify(rangerTen?.classes?.[0]?.spellcasting),
+  );
+
+  // --- 11.5d As subclasses do PHB que faltavam ---------------------------------
+  // Bardo, Guerreiro, Paladino e Patrulheiro fecham o livro: escolhas de
+  // subclasse feitas no MESMO nível da subclasse, limiar de crítico, dados de
+  // superioridade, proficiências concedidas pela subclasse e as magias de
+  // juramento do paladino.
+  console.log('\n11.5d) Subclasses novas do PHB (bardo, guerreiro, paladino, patrulheiro)');
+
+  const subclassSheet = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const optionOf = (key: string): any =>
+    (subclassSheet?.classOptions ?? []).find((option: any) => option.key === key);
+  check(
+    'o catálogo passa a ter as 9 subclasses novas (bardo 2, guerreiro 3, paladino 3, patrulheiro 2)',
+    optionOf('bard')?.subclassNames?.length === 2 &&
+      optionOf('fighter')?.subclassNames?.length === 3 &&
+      optionOf('paladin')?.subclassNames?.length === 3 &&
+      optionOf('ranger')?.subclassNames?.length === 2,
+    JSON.stringify({
+      bard: optionOf('bard')?.subclassNames,
+      fighter: optionOf('fighter')?.subclassNames,
+      paladin: optionOf('paladin')?.subclassNames,
+      ranger: optionOf('ranger')?.subclassNames,
+    }),
+  );
+
+  const hunterCatalogChoices = (optionOf('ranger')?.subclassChoices ?? []).filter(
+    (item: any) => item.subclass === 'Caçador',
+  );
+  check(
+    'o catálogo já traz as 4 escolhas do Caçador (a Presa é escolhida junto da subclasse)',
+    hunterCatalogChoices.length === 4 &&
+      hunterCatalogChoices.every((item: any) => item.chosen.length === 0) &&
+      hunterCatalogChoices.map((item: any) => item.featureId).join(',') ===
+        'hunters-prey,defensive-tactics,multiattack,superior-hunters-defense' &&
+      hunterCatalogChoices.find((item: any) => item.featureId === 'hunters-prey')?.level === 3,
+    JSON.stringify(hunterCatalogChoices.map((item: any) => [item.featureId, item.level])),
+  );
+
+  // --- Campeão: limiar de crítico e Atleta Extraordinário -------------------
+  await setCharacterClasses(choicesId, [{ classKey: 'fighter', subclass: 'Campeão', level: 3 }]);
+  const championThree = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  check(
+    'Campeão: Crítico Aprimorado baixa o limiar de crítico para 19 no d20',
+    championThree?.derived?.critThreshold === 19,
+    JSON.stringify(championThree?.derived?.critThreshold),
+  );
+
+  await setCharacterClasses(choicesId, [{ classKey: 'fighter', subclass: 'Campeão', level: 7 }]);
+  const championSeven = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  check(
+    'Atleta Extraordinário soma metade da proficiência PARA CIMA, inclusive na iniciativa',
+    championSeven?.derived?.halfProficiencyBonus === 2 &&
+      championSeven?.derived?.initiative === championSeven?.derived?.modifiers?.dexterity + 2 &&
+      championSeven?.derived?.skills?.athletics?.total ===
+        championSeven?.derived?.modifiers?.strength + 2,
+    JSON.stringify({
+      half: championSeven?.derived?.halfProficiencyBonus,
+      initiative: championSeven?.derived?.initiative,
+      athletics: championSeven?.derived?.skills?.athletics,
+    }),
+  );
+
+  await setCharacterClasses(choicesId, [{ classKey: 'fighter', subclass: 'Campeão', level: 15 }]);
+  check(
+    'Campeão (15): Crítico Superior baixa o limiar para 18 (o menor prevalece)',
+    (await api('/api/characters/me', { token: choicesToken })).data.character?.derived
+      ?.critThreshold === 18,
+  );
+
+  // --- Mestre da Batalha: dados de superioridade e manobras ------------------
+  await setCharacterClasses(choicesId, [
+    { classKey: 'fighter', subclass: 'Mestre da Batalha', level: 3 },
+  ]);
+  const battleMasterThree = (await api('/api/characters/me', { token: choicesToken })).data
+    .character;
+  const superiority = (battleMasterThree?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'superiority-dice',
+  );
+  const maneuversThree = (battleMasterThree?.classes?.[0]?.featureChoices ?? []).find(
+    (info: any) => info.featureId === 'maneuvers',
+  );
+  const studentOfWar = (battleMasterThree?.classes?.[0]?.featureChoices ?? []).find(
+    (info: any) => info.featureId === 'student-of-war',
+  );
+  check(
+    'Mestre da Batalha: 4 dados de superioridade no 3º nível, voltando no descanso curto',
+    superiority?.max === 4 && superiority?.recharge === 'short',
+    JSON.stringify(superiority),
+  );
+  check(
+    'as 16 manobras do PHB são oferecidas (3 escolhidas no 3º nível)',
+    maneuversThree?.count === 3 && maneuversThree?.options?.length === 16,
+    JSON.stringify({ count: maneuversThree?.count, options: maneuversThree?.options?.length }),
+  );
+  check(
+    'Estudante da Guerra: 1 ferramenta de artesão à escolha (13 do livro)',
+    studentOfWar?.count === 1 && studentOfWar?.options?.length === 13,
+    JSON.stringify({ count: studentOfWar?.count, options: studentOfWar?.options?.length }),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'fighter', subclass: 'Mestre da Batalha', level: 7 },
+  ]);
+  const battleMasterSeven = (await api('/api/characters/me', { token: choicesToken })).data
+    .character;
+  check(
+    'Mestre da Batalha (7): 5 dados e mais duas manobras',
+    (battleMasterSeven?.classAdjustments?.resources ?? []).find(
+      (resource: any) => resource.id === 'superiority-dice',
+    )?.max === 5 &&
+      (battleMasterSeven?.classes?.[0]?.featureChoices ?? []).find(
+        (info: any) => info.featureId === 'maneuvers-7',
+      )?.count === 2,
+    JSON.stringify(battleMasterSeven?.classAdjustments?.resources),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'fighter', subclass: 'Mestre da Batalha', level: 15 },
+  ]);
+  const battleMasterFifteen = (await api('/api/characters/me', { token: choicesToken })).data
+    .character;
+  const superiorityIds = (battleMasterFifteen?.activeFeatures ?? [])
+    .filter((feature: any) => feature.source === 'subclass')
+    .map((feature: any) => feature.id);
+  check(
+    'Mestre da Batalha (15): 6 dados, mais duas manobras e Conheça seu Inimigo',
+    (battleMasterFifteen?.classAdjustments?.resources ?? []).find(
+      (resource: any) => resource.id === 'superiority-dice',
+    )?.max === 6 &&
+      (battleMasterFifteen?.classes?.[0]?.featureChoices ?? []).find(
+        (info: any) => info.featureId === 'maneuvers-15',
+      )?.count === 2 &&
+      superiorityIds.includes('know-your-enemy') &&
+      superiorityIds.includes('relentless'),
+    JSON.stringify(superiorityIds),
+  );
+
+  // --- Cavaleiro Arcano: terço-conjurador de INT ----------------------------
+  await setCharacterClasses(choicesId, [
+    { classKey: 'fighter', subclass: 'Cavaleiro Arcano', level: 3 },
+  ]);
+  const knightThree = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  check(
+    'Cavaleiro Arcano: terço-conjurador de INT com magias conhecidas e os espaços dele',
+    knightThree?.classes?.[0]?.spellcasting?.type === 'third' &&
+      knightThree?.classes?.[0]?.spellcasting?.ability === 'intelligence' &&
+      knightThree?.classes?.[0]?.spellcasting?.learning === 'known' &&
+      JSON.stringify((knightThree?.derived?.spellSlots ?? []).map((slot: any) => [slot.level, slot.max])) ===
+        JSON.stringify([[1, 2]]),
+    JSON.stringify({
+      casting: knightThree?.classes?.[0]?.spellcasting,
+      slots: knightThree?.derived?.spellSlots,
+    }),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'fighter', subclass: 'Cavaleiro Arcano', level: 7 },
+  ]);
+  const knightSeven = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  check(
+    'Cavaleiro Arcano (7): os espaços sobem para 4/2 e a Magia de Guerra entra',
+    JSON.stringify((knightSeven?.derived?.spellSlots ?? []).map((slot: any) => [slot.level, slot.max])) ===
+      JSON.stringify([
+        [1, 4],
+        [2, 2],
+      ]) &&
+      (knightSeven?.activeFeatures ?? []).some((feature: any) => feature.id === 'war-magic'),
+    JSON.stringify(knightSeven?.derived?.spellSlots),
+  );
+
+  // --- Juramentos do Paladino -----------------------------------------------
+  await setCharacterClasses(choicesId, [
+    { classKey: 'paladin', subclass: 'Juramento de Devoção', level: 3 },
+  ]);
+  const devotion = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const channelDivinity = (devotion?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'channel-divinity',
+  );
+  const devotionIds = (devotion?.activeFeatures ?? [])
+    .filter((feature: any) => feature.source === 'subclass')
+    .map((feature: any) => feature.id);
+  check(
+    'Canalizar Divindade do juramento: 1 uso, recuperado no descanso curto ou longo',
+    channelDivinity?.max === 1 && channelDivinity?.recharge === 'short',
+    JSON.stringify(channelDivinity),
+  );
+  check(
+    'as magias de juramento do 3º nível entram como característica da subclasse',
+    devotionIds.includes('oath-spells') && !devotionIds.includes('aura-of-devotion'),
+    JSON.stringify(devotionIds),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'paladin', subclass: 'Juramento de Vingança', level: 20 },
+  ]);
+  const vengeance = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const vengeanceIds = (vengeance?.activeFeatures ?? [])
+    .filter((feature: any) => feature.source === 'subclass')
+    .map((feature: any) => feature.id);
+  check(
+    'o juramento cobre as 5 faixas de magias e as características de 7/15/20',
+    [
+      'oath-spells',
+      'oath-spells-5',
+      'oath-spells-9',
+      'oath-spells-13',
+      'oath-spells-17',
+      'relentless-avenger',
+      'soul-of-vengeance',
+      'avenging-angel',
+    ].every((id) => vengeanceIds.includes(id)) &&
+      (vengeance?.classAdjustments?.resources ?? []).find(
+        (resource: any) => resource.id === 'avenging-angel',
+      )?.max === 1,
+    JSON.stringify(vengeanceIds),
+  );
+
+  // --- Bardo: Colégio do Conhecimento (escolha no MESMO nível) -------------- 
+  await setCharacterClasses(choicesId, [{ classKey: 'bard', level: 2 }]);
+  await prisma.character.update({
+    where: { userId: choicesId },
+    data: { classState: { active: [], used: {}, choices: {} } as any },
+  });
+  await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  check(
+    'Colégio do Conhecimento: o 3º nível não fecha sem as 3 perícias (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: choicesToken,
+        body: { classKey: 'bard', hp: 'average', subclass: 'Colégio do Conhecimento' },
+      })
+    ).status === 400,
+  );
+  const loreUp = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: choicesToken,
+    body: {
+      classKey: 'bard',
+      hp: 'average',
+      subclass: 'Colégio do Conhecimento',
+      choices: { 'bonus-proficiencies': ['arcana', 'history', 'insight'] },
+    },
+  });
+  check(
+    'Colégio do Conhecimento: a subclasse e as 3 perícias entram na mesma subida (200)',
+    loreUp.status === 200 &&
+      loreUp.data?.character?.classes?.[0]?.subclass === 'Colégio do Conhecimento' &&
+      (['arcana', 'history', 'insight'] as string[]).every(
+        (key) => loreUp.data?.character?.skills?.[key]?.proficient === true,
+      ) &&
+      (loreUp.data?.character?.classState?.choices?.['bonus-proficiencies'] ?? []).length === 3,
+    JSON.stringify(loreUp.data?.character?.classState),
+  );
+
+  // --- Bardo: Colégio da Bravura (proficiências da subclasse) --------------- 
+  // Proficiências zeradas antes: assim o que aparecer na ficha é só o que a
+  // SUBCLASSE concedeu.
+  await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { proficiencies: { armor: [], weapons: [], tools: [] } },
+  });
+  await setCharacterClasses(choicesId, [{ classKey: 'bard', level: 2 }]);
+  await prisma.character.update({
+    where: { userId: choicesId },
+    data: { classState: { active: [], used: {}, choices: {} } as any },
+  });
+  await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  const valorUp = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: choicesToken,
+    body: { classKey: 'bard', hp: 'average', subclass: 'Colégio da Bravura' },
+  });
+  check(
+    'Colégio da Bravura concede armaduras médias, escudos e armas marciais (200)',
+    valorUp.status === 200 &&
+      JSON.stringify(valorUp.data?.character?.proficiencies?.armor) ===
+        JSON.stringify(['Armaduras médias', 'Escudos']) &&
+      JSON.stringify(valorUp.data?.character?.proficiencies?.weapons) ===
+        JSON.stringify(['Armas marciais']) &&
+      (valorUp.data?.character?.activeFeatures ?? []).some(
+        (feature: any) => feature.id === 'combat-inspiration',
+      ),
+    JSON.stringify(valorUp.data?.character?.proficiencies),
+  );
+
+  // --- Patrulheiro: Caçador e Senhor das Feras ------------------------------ 
+  await setCharacterClasses(choicesId, [{ classKey: 'ranger', level: 2 }]);
+  await prisma.character.update({
+    where: { userId: choicesId },
+    data: { classState: { active: [], used: {}, choices: {} } as any },
+  });
+  await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  check(
+    'Caçador: subir para o 3º sem a Presa do Caçador é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: choicesToken,
+        body: { classKey: 'ranger', hp: 'average', subclass: 'Caçador' },
+      })
+    ).status === 400,
+  );
+  const hunterUp = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: choicesToken,
+    body: {
+      classKey: 'ranger',
+      hp: 'average',
+      subclass: 'Caçador',
+      choices: { 'hunters-prey': ['colossus-slayer'] },
+    },
+  });
+  check(
+    'Caçador: a subclasse e a Presa do Caçador entram na mesma subida (200)',
+    hunterUp.status === 200 &&
+      hunterUp.data?.character?.classes?.[0]?.subclass === 'Caçador' &&
+      hunterUp.data?.character?.classState?.choices?.['hunters-prey']?.[0] === 'colossus-slayer' &&
+      (hunterUp.data?.character?.classes?.[0]?.featureChoices ?? []).some(
+        (info: any) => info.featureId === 'defensive-tactics' && info.level === 7,
+      ),
+    JSON.stringify(hunterUp.data?.character?.classState),
+  );
+
+  await setCharacterClasses(choicesId, [{ classKey: 'ranger', level: 2 }]);
+  await prisma.character.update({
+    where: { userId: choicesId },
+    data: { classState: { active: [], used: {}, choices: {} } as any },
+  });
+  await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  const beastUp = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: choicesToken,
+    body: { classKey: 'ranger', hp: 'average', subclass: 'Senhor das Feras' },
+  });
+  check(
+    'Senhor das Feras: o companheiro entra como característica informativa (200)',
+    beastUp.status === 200 &&
+      (beastUp.data?.character?.activeFeatures ?? []).some(
+        (feature: any) => feature.id === 'rangers-companion' && feature.source === 'subclass',
+      ),
+    JSON.stringify(beastUp.data?.character?.activeFeatures),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'ranger', subclass: 'Senhor das Feras', level: 15 },
+  ]);
+  const beastFifteen = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const beastIds = (beastFifteen?.activeFeatures ?? [])
+    .filter((feature: any) => feature.source === 'subclass')
+    .map((feature: any) => feature.id);
+  check(
+    'Senhor das Feras (15): Treinamento Excepcional, Fúria Bestial e Compartilhar Magias',
+    ['exceptional-training', 'bestial-fury', 'share-spells'].every((id) => beastIds.includes(id)),
+    JSON.stringify(beastIds),
+  );
+
+  // A ficha de teste sai de cena limpa (o usuário é apagado no fim do smoke).
+  await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { classState: { active: [], used: {}, choices: {} } },
+  });
+
   // --- 11.6 Compêndio da mesa (aba "Mesa") ----------------------------------
   console.log('\n11.6) Compêndio da mesa (aba Mesa)');
 
@@ -2269,6 +3325,109 @@ async function main(): Promise<void> {
     'o PV atual acompanha o ganho retroativo de CON',
     conLevel.data?.character?.hpCurrent === conBefore.hpCurrent + 10,
     `antes ${conBefore.hpCurrent}, depois ${conLevel.data?.character?.hpCurrent}`,
+  );
+
+  // --- Pré-requisito de MULTICLASSE do PHB (cap. 6) -------------------------
+  // Entrar numa classe nova exige 13 nos atributos exigidos por ela E por todas
+  // as classes que o personagem JÁ tem. O Paladino abaixo fica com Força 8
+  // (pré-requisito perdido), o que precisa barrar a entrada no Ladino mesmo
+  // com Destreza 14.
+  await setCharacterClasses(playerId, [{ classKey: 'paladin', level: 1 }]);
+  await prisma.character.update({
+    where: { userId: playerId },
+    data: { strength: 8, dexterity: 14 },
+  });
+  await unlockForLevelUp();
+  const blockedByPaladin = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: { classKey: 'rogue', hp: 'average', skillChoice: 'stealth' },
+  });
+  check(
+    'multiclassar é barrado quando uma classe ATUAL está sem o pré-requisito (400)',
+    blockedByPaladin.status === 400,
+    JSON.stringify(blockedByPaladin.data),
+  );
+  check(
+    'a mensagem do bloqueio diz qual classe exige o quê',
+    typeof blockedByPaladin.data?.message === 'string' &&
+      blockedByPaladin.data.message.includes('Paladino') &&
+      blockedByPaladin.data.message.includes('Força 13'),
+    JSON.stringify(blockedByPaladin.data),
+  );
+  const paladinOptions = (await api('/api/characters/me', { token: playerToken })).data.character
+    .classOptions;
+  check(
+    'o DTO marca a classe nova como inelegível citando a classe atual',
+    paladinOptions.find((item: any) => item.key === 'rogue')?.eligible === false &&
+      (paladinOptions.find((item: any) => item.key === 'rogue')?.missing ?? '').includes(
+        'Paladino',
+      ),
+    JSON.stringify(paladinOptions.find((item: any) => item.key === 'rogue')),
+  );
+  check(
+    'a classe que o personagem já tem continua elegível (subir nela não exige nada)',
+    paladinOptions.find((item: any) => item.key === 'paladin')?.eligible === true,
+  );
+
+  // Com os pré-requisitos do Paladino de volta (Força e Carisma 13), entrar no
+  // Ladino exige a perícia de multiclasse (PHB p.164) e concede só o conjunto
+  // reduzido de proficiências.
+  // As salvaguardas gravadas são zeradas junto: é assim que dá para conferir
+  // depois que o Ladino (segunda classe) NÃO concede Destreza/Inteligência.
+  await prisma.character.update({
+    where: { userId: playerId },
+    data: { strength: 13, charisma: 13, saves: {} },
+  });
+  const rogueWithoutSkill = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: { classKey: 'rogue', hp: 'average' },
+  });
+  check(
+    'entrar em Ladino exige a perícia de multiclasse (400)',
+    rogueWithoutSkill.status === 400,
+    JSON.stringify(rogueWithoutSkill.data),
+  );
+  const rogueSkillOutOfList = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: { classKey: 'rogue', hp: 'average', skillChoice: 'arcana' },
+  });
+  check(
+    'perícia fora da lista da classe é recusada (400)',
+    rogueSkillOutOfList.status === 400,
+    JSON.stringify(rogueSkillOutOfList.data),
+  );
+  const rogueEntry = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: { classKey: 'rogue', hp: 'average', skillChoice: 'stealth' },
+  });
+  check(
+    'entrar em Ladino aplica a perícia escolhida (200)',
+    rogueEntry.status === 200 && rogueEntry.data?.character?.skills?.stealth?.proficient === true,
+    JSON.stringify({ status: rogueEntry.status, body: rogueEntry.data }),
+  );
+  check(
+    'a entrada por multiclasse concede o conjunto reduzido (Ferramentas de ladrão)',
+    (rogueEntry.data?.character?.proficiencies?.tools ?? []).includes('Ferramentas de ladrão') &&
+      (rogueEntry.data?.character?.proficiencies?.armor ?? []).includes('Armaduras leves'),
+    JSON.stringify(rogueEntry.data?.character?.proficiencies ?? rogueEntry.data),
+  );
+  check(
+    'e NÃO concede a lista completa do nível 1 (Espadas longas)',
+    !(rogueEntry.data?.character?.proficiencies?.weapons ?? []).includes('Espadas longas'),
+    JSON.stringify(rogueEntry.data?.character?.proficiencies?.weapons),
+  );
+  check(
+    'multiclasse não concede salvaguardas: só as da PRIMEIRA classe ficam fixas',
+    // As do Paladino (primeira classe) seguem fixas: Sabedoria e Carisma.
+    rogueEntry.data?.character?.saves?.wisdom === true &&
+      rogueEntry.data?.character?.saves?.charisma === true &&
+      rogueEntry.data?.character?.saves?.dexterity === false &&
+      rogueEntry.data?.character?.saves?.intelligence === false,
+    JSON.stringify(rogueEntry.data?.character?.saves),
   );
 
   // --- 11.8 Criação finalizada, CA automática e talentos --------------------
@@ -2487,6 +3646,7 @@ async function main(): Promise<void> {
     ['atributo', { strength: 20 }],
     ['perícias', { skills: { perception: { proficient: true, expertise: false } } }],
     ['salvaguardas', { saves: { strength: true } }],
+    ['proficiências de armadura/arma/ferramenta', { proficiencies: { armor: [], weapons: [] } }],
     ['classes', { classes: [{ classKey: 'fighter' }] }],
     ['PV máximo', { hpMax: 999 }],
     ['iniciativa', { initiativeBonus: 5 }],
@@ -2553,6 +3713,17 @@ async function main(): Promise<void> {
     'criação finalizada: lista de magias e TOTAL do espaço não mudam',
     (slotsAfter?.list ?? []).length === 0 && slotsAfter?.slots?.['1']?.max === 2,
     JSON.stringify(slotsAfter),
+  );
+  const masterProficiencies = await api(`/api/characters/${playerCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { proficiencies: { armor: ['Armaduras leves'], weapons: ['Machados'], tools: [] } },
+  });
+  check(
+    'o mestre edita as proficiências de uma ficha finalizada (200)',
+    masterProficiencies.status === 200 &&
+      (masterProficiencies.data?.character?.proficiencies?.weapons ?? []).includes('Machados'),
+    JSON.stringify(masterProficiencies.data?.character?.proficiencies),
   );
 
   // O mestre não tem travas — e a mudança chega na ficha do jogador na hora.
@@ -3168,6 +4339,52 @@ async function main(): Promise<void> {
     JSON.stringify(clericKept.data?.character?.classes),
   );
 
+  // Escolhas que a classe faz JÁ no nível 1 (Guerreiro e Patrulheiro): o passo
+  // da classe mostra as opções do CATÁLOGO e exige a escolha. O assistente usa
+  // `classOptions[].featureChoices` porque na hora a ficha ainda não tem classe.
+  check(
+    'o passo da classe exige o Estilo de Luta do Guerreiro (400)',
+    (
+      await api('/api/characters/me/creation', {
+        method: 'PATCH',
+        token: rookieToken,
+        body: { step: 5, classKey: 'fighter' },
+      })
+    ).status === 400,
+  );
+  const fighterPick = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'fighter', choices: { 'fighter-fighting-style': ['archery'] } },
+  });
+  check(
+    'a escolha do nível 1 entra pelo assistente, com as opções visíveis (200)',
+    fighterPick.status === 200 &&
+      fighterPick.data?.character?.classState?.choices?.['fighter-fighting-style']?.[0] ===
+        'archery' &&
+      fighterPick.data?.creation?.featureChoices?.[0]?.options?.length === 6 &&
+      fighterPick.data?.creation?.featureChoices?.[0]?.chosen?.[0] === 'archery',
+    JSON.stringify({
+      choices: fighterPick.data?.character?.classState?.choices,
+      featureChoices: fighterPick.data?.creation?.featureChoices,
+    }),
+  );
+  const classSwap = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'monk' },
+  });
+  check(
+    'trocar a classe descarta as escolhas da anterior (e a nova não pede nenhuma)',
+    classSwap.status === 200 &&
+      classSwap.data?.character?.classState?.choices?.['fighter-fighting-style'] === undefined &&
+      (classSwap.data?.creation?.featureChoices ?? []).length === 0,
+    JSON.stringify({
+      choices: classSwap.data?.character?.classState?.choices,
+      featureChoices: classSwap.data?.creation?.featureChoices,
+    }),
+  );
+
   // A classe é escolhida ANTES dos atributos: o pré-requisito é conferido no
   // passo seguinte, com os valores finais (Paladino exige Força 13 e Carisma 13).
   const paladinClass = await api('/api/characters/me/creation', {
@@ -3232,7 +4449,10 @@ async function main(): Promise<void> {
   });
   check(
     'atributos sem o pré-requisito da classe são recusados com o que falta (400)',
-    badAbilities.status === 400 && String(badAbilities.data?.message ?? '').includes('faltam'),
+    // A mensagem cita a classe e o atributo exigido (PHB cap. 6).
+    badAbilities.status === 400 &&
+      String(badAbilities.data?.message ?? '').includes('Bárbaro') &&
+      String(badAbilities.data?.message ?? '').includes('Força 13'),
     JSON.stringify(badAbilities.data),
   );
 
@@ -3656,6 +4876,1265 @@ async function main(): Promise<void> {
   );
 
   masterBackSocket.close();
+
+  // ==========================================================================
+  // FASE 0 — regressão das regras base (seções 14 a 19)
+  //
+  // Cada seção cria as PRÓPRIAS contas (sufixo único) e limpa no final, como o
+  // resto do smoke. Os cenários de nível alto são montados direto no banco
+  // (`setCharacterClasses`), porque o nível de uma classe só sobe pelo Level Up.
+  //
+  // Tudo vive num BLOCO próprio: assim os nomes daqui não colidem com os dos
+  // cenários das seções anteriores (que já usam `championThree`, `equipped`…).
+  // ==========================================================================
+  {
+
+  /** Jogador novo com a ficha em branco, para as seções da Fase 0. */
+  async function freshSheet(prefix: string): Promise<{
+    token: string;
+    userId: string;
+    characterId: string;
+  }> {
+    const username = `${prefix}_${suffix}`;
+    createdUsernames.push(username);
+    const registered = await api('/api/auth/register', {
+      method: 'POST',
+      body: { username, displayName: `Fase 0 ${prefix}`, password: 'senha-forte-123' },
+    });
+    const token: string = registered.data?.token;
+    const userId: string = registered.data?.user?.id;
+    const sheet = await api('/api/characters/me', { method: 'POST', token, body: {} });
+    check(
+      `conta da Fase 0 (${prefix}) com ficha criada`,
+      registered.status === 201 && Boolean(userId) && Boolean(sheet.data?.character?.id),
+      JSON.stringify(registered.data),
+    );
+    return { token, userId, characterId: sheet.data?.character?.id };
+  }
+
+  /** PATCH do mestre na ficha de um jogador. */
+  const masterPatch = (characterId: string, body: unknown) =>
+    api(`/api/characters/${characterId}`, { method: 'PATCH', token: masterToken, body });
+
+  /** Lê a ficha do próprio jogador. */
+  const sheetOf = async (token: string) =>
+    (await api('/api/characters/me', { token })).data.character;
+
+  /** Estado de classe (toggles/usos/escolhas) gravado direto no banco. */
+  const setState = (
+    userId: string,
+    classState: unknown = { active: [], used: {}, choices: {} },
+  ) => prisma.character.update({ where: { userId }, data: { classState: classState as any } });
+
+  /** Item avulso já equipado no inventário (armadura, escudo…). */
+  const equipped = (
+    name: string,
+    category: 'Armadura' | 'Escudo',
+    details: Record<string, unknown>,
+    slot: string | null = 'chest',
+  ) => ({
+    id: `fase0-${name}`,
+    name,
+    description: '',
+    quantity: 1,
+    weight: 5,
+    slot,
+    backpackX: null,
+    backpackY: null,
+    imageUrl: '',
+    itemId: '',
+    category,
+    details,
+  });
+
+  // --- 14. PV e CA automáticos (regressão) ----------------------------------
+  console.log('\n14) PV e CA automáticos (regressão)');
+
+  const vitals = await freshSheet('fase0pv');
+  await prisma.character.update({
+    where: { userId: vitals.userId },
+    data: { constitution: 14, dexterity: 18, wisdom: 16 },
+  });
+
+  const fighterOne = await masterPatch(vitals.characterId, {
+    classes: [{ classKey: 'fighter' }],
+  });
+  check(
+    'PV inicial = dado de vida máximo + CON (Guerreiro d10 com CON 14 → 12)',
+    fighterOne.data?.character?.hpMax === 12 && fighterOne.data?.character?.hpCurrent === 12,
+    JSON.stringify({ hpMax: fighterOne.data?.character?.hpMax }),
+  );
+
+  const arcane = await freshSheet('fase0pv2');
+  // A classe nova também passa pelo pré-requisito do livro (Mago exige INT 13).
+  await prisma.character.update({
+    where: { userId: arcane.userId },
+    data: { constitution: 14, intelligence: 14 },
+  });
+  const wizardOne = await masterPatch(arcane.characterId, { classes: [{ classKey: 'wizard' }] });
+  check(
+    'o PV inicial segue o dado de vida da classe (Mago d6 com CON 14 → 8)',
+    wizardOne.data?.character?.hpMax === 8,
+    JSON.stringify({ hpMax: wizardOne.data?.character?.hpMax }),
+  );
+
+  // Recálculo retroativo: o modificador novo vale como se existisse desde o 1º
+  // nível — o delta cobre TODOS os níveis já obtidos e entra no máximo e no atual.
+  await setCharacterClasses(vitals.userId, [{ classKey: 'fighter', level: 5 }]);
+  await prisma.character.update({
+    where: { userId: vitals.userId },
+    data: { constitution: 14, hpMax: 40, hpCurrent: 30 },
+  });
+  const conUp = await masterPatch(vitals.characterId, { constitution: 16 });
+  check(
+    'subir CON no 5º nível soma (novo mod − mod antigo) × nível no máximo E no atual',
+    conUp.data?.character?.hpMax === 45 && conUp.data?.character?.hpCurrent === 35,
+    JSON.stringify({
+      hpMax: conUp.data?.character?.hpMax,
+      hpCurrent: conUp.data?.character?.hpCurrent,
+    }),
+  );
+  const conDown = await masterPatch(vitals.characterId, { constitution: 8 });
+  check(
+    'reduzir CON reduz os dois na mesma medida',
+    conDown.data?.character?.hpMax === 25 && conDown.data?.character?.hpCurrent === 15,
+    JSON.stringify({
+      hpMax: conDown.data?.character?.hpMax,
+      hpCurrent: conDown.data?.character?.hpCurrent,
+    }),
+  );
+
+  // O detalhe da CA vem do corpo da resposta (`{ status, data: { character } }`).
+  const armorClassOf = (payload: any) => payload?.data?.character?.derived?.armorClass;
+
+  const lightArmor = await masterPatch(vitals.characterId, {
+    inventory: [equipped('Couro batido', 'Armadura', { armorType: 'Leve', baseArmorClass: 12 })],
+  });
+  check(
+    'armadura leve soma a Destreza inteira (12 + DES 4 = 16)',
+    armorClassOf(lightArmor)?.automatic === 16 &&
+      armorClassOf(lightArmor)?.dexterityBonus === 4 &&
+      lightArmor.data?.character?.armorClass === 16,
+    JSON.stringify(armorClassOf(lightArmor)),
+  );
+
+  const mediumArmor = await masterPatch(vitals.characterId, {
+    inventory: [equipped('Camisão de malha', 'Armadura', { armorType: 'Média', baseArmorClass: 13 })],
+  });
+  check(
+    'armadura média limita a Destreza a +2 (13 + 2 = 15)',
+    armorClassOf(mediumArmor)?.automatic === 15 && armorClassOf(mediumArmor)?.dexterityBonus === 2,
+    JSON.stringify(armorClassOf(mediumArmor)),
+  );
+
+  const heavyArmor = await masterPatch(vitals.characterId, {
+    inventory: [equipped('Cota de malha', 'Armadura', { armorType: 'Pesada', baseArmorClass: 16 })],
+  });
+  check(
+    'armadura pesada ignora a Destreza (16, sem bônus de DES)',
+    armorClassOf(heavyArmor)?.automatic === 16 && armorClassOf(heavyArmor)?.dexterityBonus === 0,
+    JSON.stringify(armorClassOf(heavyArmor)),
+  );
+
+  const withShield = await masterPatch(vitals.characterId, {
+    inventory: [
+      equipped('Cota de malha', 'Armadura', { armorType: 'Pesada', baseArmorClass: 16 }),
+      equipped('Escudo', 'Escudo', { armorClassBonus: 2 }, 'hand2'),
+    ],
+  });
+  check(
+    'o escudo soma em cima de qualquer armadura (16 + 2 = 18)',
+    armorClassOf(withShield)?.automatic === 18 && armorClassOf(withShield)?.shieldBonus === 2,
+    JSON.stringify(armorClassOf(withShield)),
+  );
+
+  // Defesa sem Armadura: Bárbaro (10 + DES + CON) e Monge (10 + DES + SAB, que
+  // exige NENHUM escudo). Vale a fórmula que der o maior valor — a Constituição
+  // volta ao normal para a conta do Bárbaro ficar acima do padrão 10 + DES.
+  await prisma.character.update({
+    where: { userId: vitals.userId },
+    data: { constitution: 14 },
+  });
+  await setCharacterClasses(vitals.userId, [{ classKey: 'barbarian', level: 3 }]);
+  await masterPatch(vitals.characterId, { inventory: [] });
+  const barbarianAc = await sheetOf(vitals.token);
+  check(
+    'sem armadura o Bárbaro usa 10 + DES + CON (10 + 4 + 2 = 16)',
+    barbarianAc?.derived?.armorClass?.automatic === 16 &&
+      Boolean(barbarianAc?.derived?.armorClass?.unarmoredLabel),
+    JSON.stringify(barbarianAc?.derived?.armorClass),
+  );
+
+  await setCharacterClasses(vitals.userId, [{ classKey: 'monk', level: 3 }]);
+  const monkAc = await sheetOf(vitals.token);
+  check(
+    'o Monge usa 10 + DES + SAB (10 + 4 + 3 = 17)',
+    monkAc?.derived?.armorClass?.automatic === 17 &&
+      Boolean(monkAc?.derived?.armorClass?.unarmoredLabel),
+    JSON.stringify(monkAc?.derived?.armorClass),
+  );
+
+  const monkWithShield = await masterPatch(vitals.characterId, {
+    inventory: [equipped('Escudo', 'Escudo', { armorClassBonus: 2 }, 'hand2')],
+  });
+  check(
+    'com escudo a Defesa sem Armadura do Monge cai (10 + DES + 2 = 16)',
+    armorClassOf(monkWithShield)?.automatic === 16 &&
+      armorClassOf(monkWithShield)?.unarmoredLabel === null,
+    JSON.stringify(armorClassOf(monkWithShield)),
+  );
+
+  const overrideSet = await masterPatch(vitals.characterId, { armorClassOverride: 30 });
+  check(
+    'a CA manual do mestre vence a automática (30, com a automática em 16)',
+    overrideSet.data?.character?.armorClass === 30 &&
+      armorClassOf(overrideSet)?.override === 30 &&
+      armorClassOf(overrideSet)?.automatic === 16,
+    JSON.stringify({ ca: overrideSet.data?.character?.armorClass, detalhe: armorClassOf(overrideSet) }),
+  );
+  const overrideCleared = await masterPatch(vitals.characterId, { armorClassOverride: 0 });
+  check(
+    'CA manual 0 volta ao cálculo automático',
+    armorClassOf(overrideCleared)?.override === null &&
+      overrideCleared.data?.character?.armorClass === 16,
+    JSON.stringify(armorClassOf(overrideCleared)),
+  );
+
+  // --- 15. Multiclasse ------------------------------------------------------
+  console.log('\n15) Multiclasse: pré-requisitos, proficiências e perícia');
+
+  // A entrada por multiclasse só acontece pelo Level Up (a ficha não troca nem
+  // acrescenta classe por PATCH): os cenários abaixo passam pelo fluxo real.
+  const multi = await freshSheet('fase0mc');
+  await prisma.character.update({
+    where: { userId: multi.userId },
+    data: {
+      strength: 8,
+      dexterity: 13,
+      constitution: 12,
+      intelligence: 14,
+      wisdom: 13,
+      charisma: 8,
+      skills: {},
+      saves: {},
+    },
+  });
+  await setCharacterClasses(multi.userId, [{ classKey: 'wizard', level: 1 }]);
+  await unlockForLevelUp();
+
+  // Falta atributo na classe NOVA: Paladino exige Força 13 e Carisma 13, e o
+  // Mago (classe atual) tem a Inteligência 14 que ele pede.
+  const blockedNewClass = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: multi.token,
+    body: { classKey: 'paladin', hp: 'average' },
+  });
+  check(
+    'entrada bloqueada quando falta atributo na classe NOVA (400)',
+    blockedNewClass.status === 400,
+    JSON.stringify(blockedNewClass.data),
+  );
+  check(
+    'a mensagem cita a classe nova e os atributos que ela exige',
+    typeof blockedNewClass.data?.message === 'string' &&
+      blockedNewClass.data.message.includes('Para entrar em Paladino') &&
+      blockedNewClass.data.message.includes('Força 13') &&
+      blockedNewClass.data.message.includes('Carisma 13'),
+    JSON.stringify(blockedNewClass.data),
+  );
+
+  // Falta atributo na classe ATUAL: o Paladino (Força/Carisma 13) está abaixo e
+  // é ele quem barra — o Ladino que se quer entrar tem a Destreza 13 atendida.
+  await prisma.character.update({
+    where: { userId: multi.userId },
+    data: { strength: 8, charisma: 8, dexterity: 13 },
+  });
+  await setCharacterClasses(multi.userId, [{ classKey: 'paladin', level: 1 }]);
+  await unlockForLevelUp();
+  const blockedCurrentClass = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: multi.token,
+    body: { classKey: 'rogue', hp: 'average', skillChoice: 'stealth' },
+  });
+  check(
+    'entrada bloqueada quando a classe ATUAL está sem o pré-requisito (400)',
+    blockedCurrentClass.status === 400,
+    JSON.stringify(blockedCurrentClass.data),
+  );
+  check(
+    'a mensagem acusa a classe ATUAL, e não a nova (Ladino: Destreza 13 está atendida)',
+    typeof blockedCurrentClass.data?.message === 'string' &&
+      blockedCurrentClass.data.message.includes('para continuar como Paladino') &&
+      !blockedCurrentClass.data.message.includes('Para entrar em Ladino'),
+    JSON.stringify(blockedCurrentClass.data),
+  );
+
+  // Liberada quando os DOIS lados batem (Paladino: Força e Carisma 13; Ladino:
+  // Destreza 13). As salvaguardas gravadas são zeradas junto: é assim que dá
+  // para conferir que a segunda classe não concede nenhuma.
+  await prisma.character.update({
+    where: { userId: multi.userId },
+    data: {
+      strength: 13,
+      charisma: 13,
+      skills: {},
+      saves: {},
+      proficiencies: { armor: [], weapons: [], tools: [] },
+    },
+  });
+  await unlockForLevelUp();
+  const allowedEntry = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: multi.token,
+    body: { classKey: 'rogue', hp: 'average', skillChoice: 'stealth' },
+  });
+  check(
+    'liberada quando os DOIS lados batem (200)',
+    allowedEntry.status === 200 &&
+      allowedEntry.data?.character?.classes?.length === 2 &&
+      allowedEntry.data?.character?.classes?.[1]?.classKey === 'rogue',
+    JSON.stringify(allowedEntry.data?.message ?? allowedEntry.data),
+  );
+  check(
+    'a classe por multiclasse concede o conjunto PARCIAL de proficiências',
+    (allowedEntry.data?.character?.proficiencies?.armor ?? []).includes('Armaduras leves') &&
+      (allowedEntry.data?.character?.proficiencies?.tools ?? []).includes('Ferramentas de ladrão') &&
+      !(allowedEntry.data?.character?.proficiencies?.weapons ?? []).includes('Espadas longas'),
+    JSON.stringify(allowedEntry.data?.character?.proficiencies),
+  );
+  check(
+    'multiclasse NÃO concede salvaguardas (só as do Paladino: Sabedoria e Carisma)',
+    allowedEntry.data?.character?.saves?.wisdom === true &&
+      allowedEntry.data?.character?.saves?.charisma === true &&
+      allowedEntry.data?.character?.saves?.dexterity === false &&
+      allowedEntry.data?.character?.saves?.intelligence === false,
+    JSON.stringify(allowedEntry.data?.character?.saves),
+  );
+
+  const firstClass = await freshSheet('fase0mc2');
+  await prisma.character.update({ where: { userId: firstClass.userId }, data: { strength: 13 } });
+  const firstClassEntry = await masterPatch(firstClass.characterId, {
+    classes: [{ classKey: 'fighter' }],
+  });
+  check(
+    'a PRIMEIRA classe concede a lista COMPLETA (Guerreiro: armaduras pesadas)',
+    (firstClassEntry.data?.character?.proficiencies?.armor ?? []).includes('Armaduras pesadas') &&
+      (firstClassEntry.data?.character?.proficiencies?.weapons ?? []).includes('Armas marciais'),
+    JSON.stringify(firstClassEntry.data?.character?.proficiencies),
+  );
+
+  // Perícia de multiclasse pelo fluxo de Level Up: Patrulheiro (da lista da
+  // classe) e Bardo (qualquer perícia).
+  const skillEntry = await freshSheet('fase0mc3');
+  await prisma.character.update({
+    where: { userId: skillEntry.userId },
+    data: {
+      strength: 13,
+      dexterity: 14,
+      wisdom: 13,
+      charisma: 13,
+      skills: {},
+      saves: {},
+      lastLevelUpRelease: 0,
+    },
+  });
+  await setCharacterClasses(skillEntry.userId, [{ classKey: 'fighter', level: 1 }]);
+
+  const rangerEntryChoices = {
+    'favored-enemy': ['undead'],
+    'natural-explorer': ['forest'],
+  };
+  await unlockForLevelUp();
+  check(
+    'multiclasse de Patrulheiro exige a perícia da classe (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: skillEntry.token,
+        body: { classKey: 'ranger', hp: 'average', choices: rangerEntryChoices },
+      })
+    ).status === 400,
+  );
+  check(
+    'perícia fora da lista do Patrulheiro é recusada (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: skillEntry.token,
+        body: {
+          classKey: 'ranger',
+          hp: 'average',
+          skillChoice: 'arcana',
+          choices: rangerEntryChoices,
+        },
+      })
+    ).status === 400,
+  );
+  const rangerEntry = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: skillEntry.token,
+    body: {
+      classKey: 'ranger',
+      hp: 'average',
+      skillChoice: 'nature',
+      choices: rangerEntryChoices,
+    },
+  });
+  check(
+    'a perícia dentro da lista entra na ficha junto da classe nova (200)',
+    rangerEntry.status === 200 && rangerEntry.data?.character?.skills?.nature?.proficient === true,
+    JSON.stringify(rangerEntry.data?.message ?? rangerEntry.data),
+  );
+
+  await unlockForLevelUp();
+  check(
+    'multiclasse de Bardo exige a perícia mesmo sendo de qualquer lista (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: skillEntry.token,
+        body: { classKey: 'bard', hp: 'average' },
+      })
+    ).status === 400,
+  );
+  const bardEntry = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: skillEntry.token,
+    body: { classKey: 'bard', hp: 'average', skillChoice: 'arcana' },
+  });
+  check(
+    'o Bardo aceita qualquer perícia na entrada (200)',
+    bardEntry.status === 200 && bardEntry.data?.character?.skills?.arcana?.proficient === true,
+    JSON.stringify(bardEntry.data?.message ?? bardEntry.data),
+  );
+
+  await prisma.character.update({
+    where: { userId: skillEntry.userId },
+    data: { creationFinalized: true },
+  });
+  check(
+    'jogador com a criação finalizada leva 403 ao editar proficiencies',
+    (
+      await api('/api/characters/me', {
+        method: 'PATCH',
+        token: skillEntry.token,
+        body: { proficiencies: { armor: ['Armaduras de teste'], weapons: [], tools: [] } },
+      })
+    ).status === 403,
+  );
+
+  // --- 16. Magias preparadas por classe -------------------------------------
+  console.log('\n16) Magias preparadas (por classe, com o próprio atributo)');
+
+  const spellbook = await freshSheet('fase0prep');
+  await prisma.character.update({
+    where: { userId: spellbook.userId },
+    data: { wisdom: 16, intelligence: 18, charisma: 16, skills: {} },
+  });
+  /** Monta um cenário de classes e devolve a ficha (preparadas por classe). */
+  const scenarioOf = async (entries: { classKey: string; level: number; subclass?: string }[]) => {
+    await setCharacterClasses(spellbook.userId, entries);
+    return sheetOf(spellbook.token);
+  };
+  const preparedOf = (sheet: any, index = 0) => sheet?.classes?.[index]?.spellcasting;
+
+  const clericFive = await scenarioOf([{ classKey: 'cleric', level: 5 }]);
+  check(
+    'Clérigo prepara mod. de Sabedoria + nível da classe (3 + 5 = 8)',
+    preparedOf(clericFive)?.preparedCount === 8 &&
+      preparedOf(clericFive)?.learning === 'prepared' &&
+      preparedOf(clericFive)?.ability === 'wisdom',
+    JSON.stringify(preparedOf(clericFive)),
+  );
+
+  const druidThree = await scenarioOf([{ classKey: 'druid', level: 3 }]);
+  check(
+    'Druida prepara mod. de Sabedoria + nível (3 + 3 = 6)',
+    preparedOf(druidThree)?.preparedCount === 6,
+    JSON.stringify(preparedOf(druidThree)),
+  );
+
+  const wizardSeven = await scenarioOf([{ classKey: 'wizard', level: 7 }]);
+  check(
+    'Mago prepara mod. de Inteligência + nível (4 + 7 = 11)',
+    preparedOf(wizardSeven)?.preparedCount === 11 && preparedOf(wizardSeven)?.ability === 'intelligence',
+    JSON.stringify(preparedOf(wizardSeven)),
+  );
+
+  const paladinOneLevel = await scenarioOf([{ classKey: 'paladin', level: 1 }]);
+  check(
+    'Paladino de 1º nível ainda não conjura: zero preparadas',
+    preparedOf(paladinOneLevel)?.preparedCount === 0,
+    JSON.stringify(preparedOf(paladinOneLevel)),
+  );
+
+  const paladinTwo = await scenarioOf([{ classKey: 'paladin', level: 2 }]);
+  check(
+    'Paladino prepara mod. de Carisma + METADE do nível, para baixo (3 + 1 = 4)',
+    preparedOf(paladinTwo)?.preparedCount === 4,
+    JSON.stringify(preparedOf(paladinTwo)),
+  );
+
+  const paladinNine = await scenarioOf([{ classKey: 'paladin', level: 9 }]);
+  check(
+    '...e escala por metade do nível (3 + 4 = 7 no 9º)',
+    preparedOf(paladinNine)?.preparedCount === 7,
+    JSON.stringify(preparedOf(paladinNine)),
+  );
+
+  const knownCasters = await scenarioOf([
+    { classKey: 'bard', level: 5 },
+    { classKey: 'ranger', level: 5 },
+    { classKey: 'sorcerer', level: 5 },
+    { classKey: 'warlock', level: 5 },
+  ]);
+  check(
+    'as classes de magias CONHECIDAS não usam a fórmula (nulo)',
+    (knownCasters?.classes ?? []).length === 4 &&
+      knownCasters.classes.every((entry: any) => entry.spellcasting?.preparedCount === null),
+    JSON.stringify(
+      (knownCasters?.classes ?? []).map((entry: any) => [entry.classKey, entry.spellcasting?.preparedCount]),
+    ),
+  );
+
+  const knightPrep = await scenarioOf([
+    { classKey: 'fighter', level: 7, subclass: 'Cavaleiro Arcano' },
+  ]);
+  check(
+    'o terço-conjurador (Cavaleiro Arcano) também é de magias conhecidas (nulo)',
+    preparedOf(knightPrep)?.type === 'third' && preparedOf(knightPrep)?.preparedCount === null,
+    JSON.stringify(preparedOf(knightPrep)),
+  );
+
+  const mixedCasters = await scenarioOf([
+    { classKey: 'cleric', level: 5 },
+    { classKey: 'paladin', level: 4 },
+  ]);
+  check(
+    'no multiclasse o valor é SEPARADO por classe (Clérigo 8, Paladino 5)',
+    preparedOf(mixedCasters, 0)?.preparedCount === 8 &&
+      preparedOf(mixedCasters, 1)?.preparedCount === 5 &&
+      preparedOf(mixedCasters, 0)?.ability === 'wisdom' &&
+      preparedOf(mixedCasters, 1)?.ability === 'charisma',
+    JSON.stringify((mixedCasters?.classes ?? []).map((entry: any) => entry.spellcasting)),
+  );
+
+  // --- 17. Espaços de magia -------------------------------------------------
+  console.log('\n17) Espaços de magia (tabela da classe x tabela combinada)');
+
+  const slotLabel = (sheet: any) =>
+    JSON.stringify((sheet?.derived?.spellSlots ?? []).map((slot: any) => [slot.level, slot.max]));
+
+  const paladinThreeSlots = await scenarioOf([{ classKey: 'paladin', level: 3 }]);
+  check(
+    'Paladino 3 usa a tabela dele: 3 espaços de 1º (metade para CIMA)',
+    slotLabel(paladinThreeSlots) === JSON.stringify([[1, 3]]),
+    slotLabel(paladinThreeSlots),
+  );
+
+  const rangerFiveSlots = await scenarioOf([{ classKey: 'ranger', level: 5 }]);
+  check(
+    'Patrulheiro 5: 4 espaços de 1º e 2 de 2º',
+    slotLabel(rangerFiveSlots) === JSON.stringify([[1, 4], [2, 2]]),
+    slotLabel(rangerFiveSlots),
+  );
+
+  const knightFourSlots = await scenarioOf([
+    { classKey: 'fighter', level: 4, subclass: 'Cavaleiro Arcano' },
+  ]);
+  check(
+    'Cavaleiro Arcano 4: 3 espaços de 1º (um terço para CIMA)',
+    slotLabel(knightFourSlots) === JSON.stringify([[1, 3]]),
+    slotLabel(knightFourSlots),
+  );
+
+  const twoCasterSlots = await scenarioOf([
+    { classKey: 'wizard', level: 3 },
+    { classKey: 'cleric', level: 3 },
+  ]);
+  check(
+    'duas conjuradoras usam a tabela COMBINADA (nível de conjurador 6 → 4/3/3)',
+    slotLabel(twoCasterSlots) === JSON.stringify([[1, 4], [2, 3], [3, 3]]),
+    slotLabel(twoCasterSlots),
+  );
+
+  const fighterPaladinSlots = await scenarioOf([
+    { classKey: 'fighter', level: 5 },
+    { classKey: 'paladin', level: 4 },
+  ]);
+  check(
+    'Guerreiro sem subclasse conjuradora não conta: vale a tabela do Paladino (3 de 1º)',
+    slotLabel(fighterPaladinSlots) === JSON.stringify([[1, 3]]),
+    slotLabel(fighterPaladinSlots),
+  );
+
+  const warlockFiveSlots = await scenarioOf([{ classKey: 'warlock', level: 5 }]);
+  check(
+    'o Bruxo fica FORA da tabela: nenhum espaço comum e a Magia de Pacto à parte (2 × 3º)',
+    (warlockFiveSlots?.derived?.spellSlots ?? []).length === 0 &&
+      warlockFiveSlots?.derived?.pactSlots?.max === 2 &&
+      warlockFiveSlots?.derived?.pactSlots?.slotLevel === 3,
+    JSON.stringify({
+      slots: warlockFiveSlots?.derived?.spellSlots,
+      pact: warlockFiveSlots?.derived?.pactSlots,
+    }),
+  );
+
+  const warlockWizardSlots = await scenarioOf([
+    { classKey: 'warlock', level: 5 },
+    { classKey: 'wizard', level: 3 },
+  ]);
+  check(
+    'Bruxo + Mago: os espaços saem do Mago e a Magia de Pacto vem separada',
+    slotLabel(warlockWizardSlots) === JSON.stringify([[1, 4], [2, 2]]) &&
+      warlockWizardSlots?.derived?.pactSlots?.max === 2 &&
+      warlockWizardSlots?.derived?.pactSlots?.slotLevel === 3,
+    JSON.stringify({
+      slots: warlockWizardSlots?.derived?.spellSlots,
+      pact: warlockWizardSlots?.derived?.pactSlots,
+    }),
+  );
+
+  // --- 18. Features e escolhas de característica ----------------------------
+  console.log('\n18) Features e escolhas de característica');
+
+  const chosen = await freshSheet('fase0feat');
+  await prisma.character.update({
+    where: { userId: chosen.userId },
+    data: {
+      strength: 15,
+      dexterity: 14,
+      constitution: 14,
+      wisdom: 14,
+      charisma: 16,
+      skills: {},
+      lastLevelUpRelease: 0,
+    },
+  });
+
+  // Estilo de Luta Defesa: "+1 na CA enquanto você estiver usando armadura".
+  await setCharacterClasses(chosen.userId, [{ classKey: 'fighter', level: 1 }]);
+  await setState(chosen.userId, {
+    active: [],
+    used: {},
+    choices: { 'fighter-fighting-style': ['defense'] },
+  });
+  const defenseBare = await masterPatch(chosen.characterId, { inventory: [] });
+  check(
+    'Estilo de Luta Defesa NÃO soma sem armadura (10 + DES 2 = 12)',
+    armorClassOf(defenseBare)?.automatic === 12 && armorClassOf(defenseBare)?.classBonus === 0,
+    JSON.stringify(armorClassOf(defenseBare)),
+  );
+
+  const defenseArmored = await masterPatch(chosen.characterId, {
+    inventory: [equipped('Couro', 'Armadura', { armorType: 'Leve', baseArmorClass: 12 })],
+  });
+  check(
+    'com armadura a Defesa soma +1 e a ficha explica de onde veio (12 + 2 + 1 = 15)',
+    armorClassOf(defenseArmored)?.automatic === 15 &&
+      armorClassOf(defenseArmored)?.classBonus === 1 &&
+      (armorClassOf(defenseArmored)?.classBonusLabels ?? []).includes('Estilo de Luta (Defesa)') &&
+      defenseArmored.data?.character?.classAdjustments?.armorClassBonus === 1,
+    JSON.stringify(armorClassOf(defenseArmored)),
+  );
+
+  // Pau para Toda Obra do Bardo: metade da proficiência (para baixo) onde não há.
+  await setCharacterClasses(chosen.userId, [{ classKey: 'bard', level: 2 }]);
+  await setState(chosen.userId);
+  const jack = await masterPatch(chosen.characterId, { inventory: [], skills: {} });
+  check(
+    'Pau para Toda Obra soma metade da proficiência em perícia sem proficiência',
+    jack.data?.character?.derived?.halfProficiencyBonus === 1 &&
+      jack.data?.character?.derived?.skills?.athletics?.total ===
+        jack.data?.character?.derived?.modifiers?.strength + 1,
+    JSON.stringify({
+      metade: jack.data?.character?.derived?.halfProficiencyBonus,
+      athletics: jack.data?.character?.derived?.skills?.athletics,
+    }),
+  );
+  check(
+    '...e também vale para a INICIATIVA',
+    jack.data?.character?.derived?.initiative ===
+      jack.data?.character?.derived?.modifiers?.dexterity + 1,
+    JSON.stringify(jack.data?.character?.derived?.initiative),
+  );
+  const jackProficient = await masterPatch(chosen.characterId, {
+    skills: { athletics: { proficient: true } },
+  });
+  check(
+    '...mas não soma onde o personagem JÁ tem proficiência (vale só o bônus cheio)',
+    jackProficient.data?.character?.derived?.skills?.athletics?.total ===
+      jackProficient.data?.character?.derived?.modifiers?.strength + 2,
+    JSON.stringify(jackProficient.data?.character?.derived?.skills?.athletics),
+  );
+
+  // Aura de Proteção do Paladino: mod. de CAR (mínimo +1) em TODAS as salvaguardas.
+  await setCharacterClasses(chosen.userId, [{ classKey: 'paladin', level: 6 }]);
+  await setState(chosen.userId);
+  const aura = await sheetOf(chosen.token);
+  check(
+    'Aura de Proteção soma o mod. de CAR (3) em todas as salvaguardas',
+    aura?.derived?.saveBonus === 3 &&
+      aura?.derived?.saves?.every(
+        (save: any) =>
+          save.total ===
+          save.modifier + (save.proficient ? aura.derived.proficiencyBonus : 0) + 3,
+      ) &&
+      aura?.classAdjustments?.saveBonusLabel === 'Aura de Proteção',
+    JSON.stringify({ bonus: aura?.derived?.saveBonus, saves: aura?.derived?.saves }),
+  );
+
+  // Escolhas inválidas: opção inexistente, quantidade errada, nível errado e a
+  // escolha obrigatória faltando (todas 400, sem aplicar o nível).
+  const picky = await freshSheet('fase0ch');
+  await prisma.character.update({
+    where: { userId: picky.userId },
+    data: {
+      strength: 15,
+      dexterity: 14,
+      intelligence: 14,
+      wisdom: 13,
+      charisma: 13,
+      skills: {},
+      lastLevelUpRelease: 0,
+    },
+  });
+  await setCharacterClasses(picky.userId, [{ classKey: 'wizard', level: 1 }]);
+
+  const fighterEntryBody = (extra: Record<string, unknown> = {}) => ({
+    classKey: 'fighter',
+    hp: 'average',
+    ...extra,
+  });
+  await unlockForLevelUp();
+  check(
+    'opção inexistente na escolha é recusada (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: picky.token,
+        body: fighterEntryBody({ choices: { 'fighter-fighting-style': ['inventado'] } }),
+      })
+    ).status === 400,
+  );
+  check(
+    'quantidade de opções diferente da declarada é recusada (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: picky.token,
+        body: fighterEntryBody({ choices: { 'fighter-fighting-style': ['defense', 'archery'] } }),
+      })
+    ).status === 400,
+  );
+  check(
+    'entrar numa classe nova SEM a escolha obrigatória é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: picky.token,
+        body: fighterEntryBody(),
+      })
+    ).status === 400,
+  );
+  const fighterEntryOk = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: picky.token,
+    body: fighterEntryBody({ choices: { 'fighter-fighting-style': ['defense'] } }),
+  });
+  check(
+    'com a escolha certa a entrada é aplicada (200)',
+    fighterEntryOk.status === 200 &&
+      fighterEntryOk.data?.character?.classState?.choices?.['fighter-fighting-style']?.[0] ===
+        'defense',
+    JSON.stringify(fighterEntryOk.data?.message ?? fighterEntryOk.data),
+  );
+
+  await unlockForLevelUp();
+  check(
+    'escolha declarada para o nível ERRADO na mesma classe é recusada (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: picky.token,
+        body: {
+          classKey: 'ranger',
+          hp: 'average',
+          skillChoice: 'nature',
+          choices: {
+            'favored-enemy': ['undead'],
+            'natural-explorer': ['forest'],
+            // O Estilo de Luta do Patrulheiro só é escolhido no 2º nível.
+            'ranger-fighting-style': ['defense'],
+          },
+        },
+      })
+    ).status === 400,
+  );
+
+  // Subclasse no 3º nível das quatro classes que escolhem nele: sem ela o nível
+  // não fecha; com ela o nome entra na ficha.
+  const subclassPick = await freshSheet('fase0sub');
+  await prisma.character.update({
+    where: { userId: subclassPick.userId },
+    data: {
+      strength: 15,
+      dexterity: 14,
+      constitution: 14,
+      intelligence: 14,
+      wisdom: 14,
+      charisma: 16,
+      skills: {},
+      lastLevelUpRelease: 0,
+    },
+  });
+  for (const classKey of ['bard', 'fighter', 'paladin', 'ranger']) {
+    await setCharacterClasses(subclassPick.userId, [{ classKey, level: 2 }]);
+    await setState(subclassPick.userId);
+    await unlockForLevelUp();
+    const withoutSubclass = await api('/api/characters/me/level-up', {
+      method: 'POST',
+      token: subclassPick.token,
+      body: { classKey, hp: 'average' },
+    });
+    check(
+      `${classKey}: subir para o 3º nível sem a subclasse é recusado (400)`,
+      withoutSubclass.status === 400,
+      JSON.stringify(withoutSubclass.data),
+    );
+
+    const before = await sheetOf(subclassPick.token);
+    const body = levelUpRequestFor(before, classKey, 0);
+    const withSubclass = await api('/api/characters/me/level-up', {
+      method: 'POST',
+      token: subclassPick.token,
+      body,
+    });
+    check(
+      `${classKey}: com a subclasse escolhida o 3º nível entra (200)`,
+      withSubclass.status === 200 &&
+        withSubclass.data?.character?.classes?.[0]?.subclass === body.subclass &&
+        withSubclass.data?.character?.classes?.[0]?.level === 3,
+      JSON.stringify({ body, response: withSubclass.data?.message ?? withSubclass.data }),
+    );
+  }
+
+  // --- 19. Subclasses novas: 1 → 20, features e crítico ---------------------
+  console.log('\n19) Subclasses novas: Level Up 1 → 20, features e recursos');
+
+  const walker = await freshSheet('fase0walk');
+  await prisma.character.update({
+    where: { userId: walker.userId },
+    data: {
+      strength: 15,
+      dexterity: 14,
+      constitution: 14,
+      intelligence: 14,
+      wisdom: 14,
+      charisma: 15,
+      skills: {},
+    },
+  });
+
+  /** Percorre o Level Up do 1º ao 20º nível de UMA subclasse, sem atalhos. */
+  async function walkSubclass(classKey: string, pick: number, label: string): Promise<void> {
+    await prisma.character.update({
+      where: { userId: walker.userId },
+      data: {
+        classes: [{ classKey, subclass: '', level: 1 }] as any,
+        classState: { active: [], used: {}, choices: {} } as any,
+        lastLevelUpRelease: 0,
+      },
+    });
+
+    let sheet = await sheetOf(walker.token);
+    let failure = '';
+    for (let guard = 0; guard < 25 && (sheet?.classes?.[0]?.level ?? 0) < 20; guard += 1) {
+      const from = sheet?.classes?.[0]?.level ?? 0;
+      await unlockForLevelUp();
+      const result = await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: walker.token,
+        body: levelUpRequestFor(sheet, classKey, pick),
+      });
+      if (result.status !== 200) {
+        failure = `nível ${from} → ${from + 1}: ${result.status} ${JSON.stringify(
+          result.data?.message ?? result.data,
+        )}`;
+        break;
+      }
+      sheet = result.data?.character;
+    }
+
+    const entry = sheet?.classes?.[0];
+    const expected = (sheet?.classOptions ?? []).find((item: any) => item.key === classKey)
+      ?.subclassNames?.[pick];
+    check(
+      `${label}: Level Up do 1º ao 20º sem travar`,
+      failure === '' && entry?.level === 20,
+      failure || JSON.stringify({ nivel: entry?.level }),
+    );
+    check(
+      `${label}: a subclasse gravada é a do catálogo`,
+      expected !== undefined && entry?.subclass === expected,
+      JSON.stringify({ esperado: expected, gravado: entry?.subclass }),
+    );
+  }
+
+  const subclassRuns: { classKey: string; pick: number; label: string }[] = [
+    { classKey: 'bard', pick: 0, label: 'Bardo · Colégio do Conhecimento' },
+    { classKey: 'bard', pick: 1, label: 'Bardo · Colégio da Bravura' },
+    { classKey: 'fighter', pick: 0, label: 'Guerreiro · Campeão' },
+    { classKey: 'fighter', pick: 1, label: 'Guerreiro · Mestre da Batalha' },
+    { classKey: 'fighter', pick: 2, label: 'Guerreiro · Cavaleiro Arcano' },
+    { classKey: 'paladin', pick: 0, label: 'Paladino · Juramento de Devoção' },
+    { classKey: 'paladin', pick: 1, label: 'Paladino · Juramento dos Anciões' },
+    { classKey: 'paladin', pick: 2, label: 'Paladino · Juramento de Vingança' },
+    { classKey: 'ranger', pick: 0, label: 'Patrulheiro · Caçador' },
+    { classKey: 'ranger', pick: 1, label: 'Patrulheiro · Senhor das Feras' },
+  ];
+  for (const run of subclassRuns) {
+    await walkSubclass(run.classKey, run.pick, run.label);
+  }
+
+  /** Features da subclasse ativas num cenário pronto (classe + subclasse + nível). */
+  async function subclassScenario(
+    classKey: string,
+    subclass: string,
+    level: number,
+    classState: unknown = { active: [], used: {}, choices: {} },
+  ): Promise<any> {
+    await prisma.character.update({
+      where: { userId: walker.userId },
+      data: {
+        classes: [{ classKey, subclass, level }] as any,
+        classState: classState as any,
+      },
+    });
+    const sheet = await sheetOf(walker.token);
+    return {
+      sheet,
+      ids: (sheet?.activeFeatures ?? [])
+        .filter((feature: any) => feature.source === 'subclass')
+        .map((feature: any) => feature.id),
+    };
+  }
+
+  const resourceMax = (scenario: any, id: string): number | undefined =>
+    (scenario?.sheet?.classAdjustments?.resources ?? []).find((item: any) => item.id === id)?.max;
+
+  const championThree = await subclassScenario('fighter', 'Campeão', 3);
+  check(
+    'Campeão (3): Crítico Aprimorado e limiar de crítico em 19',
+    championThree.ids.includes('improved-critical') &&
+      championThree.sheet?.derived?.critThreshold === 19,
+    JSON.stringify(championThree.ids),
+  );
+  const championSeven = await subclassScenario('fighter', 'Campeão', 7);
+  check(
+    'Campeão (7): Atleta Extraordinário entram no nível certo (não antes)',
+    championSeven.ids.includes('remarkable-athlete') &&
+      !championThree.ids.includes('remarkable-athlete') &&
+      !championThree.ids.includes('survivor'),
+    JSON.stringify(championSeven.ids),
+  );
+  const championFifteen = await subclassScenario('fighter', 'Campeão', 15);
+  check(
+    'Campeão (15): Crítico Superior baixa o limiar para 18 (o menor prevalece)',
+    championFifteen.ids.includes('superior-critical') &&
+      championFifteen.sheet?.derived?.critThreshold === 18,
+    JSON.stringify(championFifteen.ids),
+  );
+  const championEighteen = await subclassScenario('fighter', 'Campeão', 18);
+  check(
+    'Campeão (18): Sobrevivente entra e o limiar fica em 18',
+    championEighteen.ids.includes('survivor') &&
+      championEighteen.sheet?.derived?.critThreshold === 18,
+    JSON.stringify(championEighteen.ids),
+  );
+
+  const battleMasterThree = await subclassScenario('fighter', 'Mestre da Batalha', 3, {
+    active: [],
+    used: {},
+    choices: { maneuvers: ['trip-attack', 'riposte', 'parry'], 'student-of-war': ['smith'] },
+  });
+  check(
+    'Mestre da Batalha (3): 4 dados de superioridade e as manobras escolhidas',
+    battleMasterThree.ids.includes('combat-superiority') &&
+      resourceMax(battleMasterThree, 'superiority-dice') === 4 &&
+      battleMasterThree.sheet?.classes?.[0]?.featureChoices?.find(
+        (info: any) => info.featureId === 'maneuvers',
+      )?.count === 3,
+    JSON.stringify({ dados: resourceMax(battleMasterThree, 'superiority-dice') }),
+  );
+  const battleMasterSeven = await subclassScenario('fighter', 'Mestre da Batalha', 7);
+  check(
+    'Mestre da Batalha (7): 5 dados e Conheça seu Inimigo',
+    resourceMax(battleMasterSeven, 'superiority-dice') === 5 &&
+      battleMasterSeven.ids.includes('know-your-enemy'),
+    JSON.stringify(battleMasterSeven.ids),
+  );
+  const battleMasterFifteen = await subclassScenario('fighter', 'Mestre da Batalha', 15);
+  check(
+    'Mestre da Batalha (15): 6 dados, mais duas manobras e Implacável',
+    resourceMax(battleMasterFifteen, 'superiority-dice') === 6 &&
+      battleMasterFifteen.ids.includes('maneuvers-15') &&
+      battleMasterFifteen.ids.includes('relentless'),
+    JSON.stringify(battleMasterFifteen.ids),
+  );
+  const battleMasterEighteen = await subclassScenario('fighter', 'Mestre da Batalha', 18);
+  check(
+    'Mestre da Batalha (18): Superioridade em Combate Aprimorada',
+    battleMasterEighteen.ids.includes('combat-superiority-mastery'),
+    JSON.stringify(battleMasterEighteen.ids),
+  );
+
+  const knightThree = await subclassScenario('fighter', 'Cavaleiro Arcano', 3);
+  check(
+    'Cavaleiro Arcano (3): Vínculo com Arma e conjuração de terço',
+    knightThree.ids.includes('weapon-bond') &&
+      knightThree.sheet?.classes?.[0]?.spellcasting?.type === 'third',
+    JSON.stringify(knightThree.ids),
+  );
+  const knightSeven = await subclassScenario('fighter', 'Cavaleiro Arcano', 7);
+  const knightTen = await subclassScenario('fighter', 'Cavaleiro Arcano', 10);
+  const knightFifteen = await subclassScenario('fighter', 'Cavaleiro Arcano', 15);
+  const knightEighteen = await subclassScenario('fighter', 'Cavaleiro Arcano', 18);
+  check(
+    'Cavaleiro Arcano: Magia de Guerra (7), Golpe Místico (10), Carga Arcana (15) e Aprimorada (18)',
+    knightSeven.ids.includes('war-magic') &&
+      knightTen.ids.includes('eldritch-strike') &&
+      knightFifteen.ids.includes('arcane-charge') &&
+      knightEighteen.ids.includes('improved-war-magic'),
+    JSON.stringify([
+      knightSeven.ids,
+      knightTen.ids,
+      knightFifteen.ids,
+      knightEighteen.ids,
+    ]),
+  );
+
+  const paladinOneStep = await subclassScenario('paladin', 'Juramento de Devoção', 1);
+  const paladinFiveStep = await subclassScenario('paladin', 'Juramento de Devoção', 5);
+  check(
+    'Mãos Consagradas = 5 × nível de Paladino (5 no 1º nível, 25 no 5º)',
+    resourceMax(paladinOneStep, 'lay-on-hands') === 5 &&
+      resourceMax(paladinFiveStep, 'lay-on-hands') === 25,
+    JSON.stringify({
+      um: resourceMax(paladinOneStep, 'lay-on-hands'),
+      cinco: resourceMax(paladinFiveStep, 'lay-on-hands'),
+    }),
+  );
+
+  const devotionThree = await subclassScenario('paladin', 'Juramento de Devoção', 3);
+  check(
+    'Devoção (3): Canalizar Divindade (1 uso) e as magias de juramento',
+    resourceMax(devotionThree, 'channel-divinity') === 1 &&
+      devotionThree.ids.includes('oath-spells') &&
+      !devotionThree.ids.includes('aura-of-devotion'),
+    JSON.stringify(devotionThree.ids),
+  );
+  const devotionSeven = await subclassScenario('paladin', 'Juramento de Devoção', 7);
+  const devotionTwenty = await subclassScenario('paladin', 'Juramento de Devoção', 20);
+  check(
+    'Devoção (7 e 20): Aura de Devoção, Purificação e Halo Sagrado nos níveis certos',
+    devotionSeven.ids.includes('aura-of-devotion') &&
+      !devotionSeven.ids.includes('holy-nimbus') &&
+      devotionTwenty.ids.includes('purity-of-spirit') &&
+      devotionTwenty.ids.includes('holy-nimbus'),
+    JSON.stringify({ sete: devotionSeven.ids, vinte: devotionTwenty.ids }),
+  );
+
+  const ancientsThree = await subclassScenario('paladin', 'Juramento dos Anciões', 3);
+  const ancientsSeven = await subclassScenario('paladin', 'Juramento dos Anciões', 7);
+  const ancientsTwenty = await subclassScenario('paladin', 'Juramento dos Anciões', 20);
+  check(
+    'Anciões: magias de juramento, Aura de Resguardo (7), Sentinela Imortal (15) e Campeão Ancestral (20)',
+    ancientsThree.ids.includes('oath-spells') &&
+      ancientsSeven.ids.includes('aura-of-warding') &&
+      ancientsTwenty.ids.includes('undying-sentinel') &&
+      ancientsTwenty.ids.includes('elder-champion') &&
+      resourceMax(ancientsTwenty, 'elder-champion') === 1,
+    JSON.stringify(ancientsTwenty.ids),
+  );
+
+  const vengeanceThree = await subclassScenario('paladin', 'Juramento de Vingança', 3);
+  const vengeanceTwenty = await subclassScenario('paladin', 'Juramento de Vingança', 20);
+  check(
+    'Vingança: Abjurar Inimigo/Voto de Inimizade (3) e as features até o Anjo Vingador (20)',
+    vengeanceThree.ids.includes('oath-spells') &&
+      vengeanceTwenty.ids.includes('relentless-avenger') &&
+      vengeanceTwenty.ids.includes('soul-of-vengeance') &&
+      vengeanceTwenty.ids.includes('avenging-angel') &&
+      resourceMax(vengeanceTwenty, 'avenging-angel') === 1,
+    JSON.stringify(vengeanceTwenty.ids),
+  );
+
+  const loreThree = await subclassScenario('bard', 'Colégio do Conhecimento', 3);
+  const loreFourteen = await subclassScenario('bard', 'Colégio do Conhecimento', 14);
+  check(
+    'Colégio do Conhecimento: 3 perícias e Palavras de Interrupção (3), Perícia Inigualável (14)',
+    loreThree.ids.includes('bonus-proficiencies') &&
+      loreThree.ids.includes('cutting-words') &&
+      loreFourteen.ids.includes('additional-magical-secrets') &&
+      loreFourteen.ids.includes('peerless-skill'),
+    JSON.stringify(loreFourteen.ids),
+  );
+  const valorThree = await subclassScenario('bard', 'Colégio da Bravura', 3);
+  const valorFourteen = await subclassScenario('bard', 'Colégio da Bravura', 14);
+  check(
+    'Colégio da Bravura: Inspiração de Combate (3), Ataque Extra (6) e Magia de Batalha (14)',
+    valorThree.ids.includes('combat-inspiration') &&
+      !valorThree.ids.includes('extra-attack') &&
+      valorFourteen.ids.includes('extra-attack') &&
+      valorFourteen.ids.includes('battle-magic'),
+    JSON.stringify(valorFourteen.ids),
+  );
+
+  const hunterThree = await subclassScenario('ranger', 'Caçador', 3);
+  const hunterSeven = await subclassScenario('ranger', 'Caçador', 7);
+  const hunterEleven = await subclassScenario('ranger', 'Caçador', 11);
+  const hunterFifteen = await subclassScenario('ranger', 'Caçador', 15);
+  check(
+    'Caçador: Presa (3), Táticas Defensivas (7), Multiataque (11) e Defesa Superior (15)',
+    hunterThree.ids.includes('hunters-prey') &&
+      !hunterThree.ids.includes('defensive-tactics') &&
+      hunterSeven.ids.includes('defensive-tactics') &&
+      hunterEleven.ids.includes('multiattack') &&
+      hunterFifteen.ids.includes('superior-hunters-defense'),
+    JSON.stringify([hunterThree.ids, hunterFifteen.ids]),
+  );
+
+  const beastThree = await subclassScenario('ranger', 'Senhor das Feras', 3);
+  const beastFifteen = await subclassScenario('ranger', 'Senhor das Feras', 15);
+  check(
+    'Senhor das Feras: companheiro (3), Treinamento Excepcional (7), Fúria Bestial (11) e Compartilhar Magias (15)',
+    beastThree.ids.includes('rangers-companion') &&
+      beastFifteen.ids.includes('exceptional-training') &&
+      beastFifteen.ids.includes('bestial-fury') &&
+      beastFifteen.ids.includes('share-spells'),
+    JSON.stringify(beastFifteen.ids),
+  );
+
+  // --- Crítico no ataque de verdade ----------------------------------------
+  // O limiar do Campeão precisa valer no combate: com o Crítico Superior todo
+  // d20 igual ou acima de 18 critica, e o 1 natural continua errando.
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+
+  const critPlayer = await freshSheet('fase0crit');
+  await prisma.character.update({
+    where: { userId: critPlayer.userId },
+    data: {
+      strength: 15,
+      dexterity: 14,
+      hpMax: 400,
+      hpCurrent: 400,
+      classes: [{ classKey: 'fighter', subclass: 'Campeão', level: 15 }] as any,
+      classState: { active: [], used: {}, choices: {} } as any,
+    },
+  });
+  await masterPatch(critPlayer.characterId, {
+    attacks: [
+      {
+        id: 'crit1',
+        name: 'Espada longa',
+        damage: '1d8+3',
+        damageType: 'Cortante',
+        attackBonus: 12,
+        notes: '',
+        finesse: false,
+        ranged: false,
+      },
+    ],
+  });
+
+  const dummy = await api('/api/creatures', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: 'Boneco de treino',
+      type: 'Constructo',
+      hpMax: 9999,
+      armorClass: 10,
+      localityIds: [locality.id],
+    },
+  });
+  createdCreatureIds.push(dummy.data.creature.id);
+
+  const started = await api('/api/combat', {
+    method: 'POST',
+    token: masterToken,
+    body: { entries: [{ creatureId: dummy.data.creature.id, quantity: 1 }] },
+  });
+  check('combate de treino iniciado para o teste de crítico (201)', started.status === 201, JSON.stringify(started.data));
+  createdCombatIds.push(started.data.combat.id);
+
+  for (const combatant of started.data.combat.combatants) {
+    await api(`/api/combat/initiative/${combatant.id}`, { method: 'POST', token: masterToken });
+  }
+  const training = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  const targetCombatant = (training?.combatants ?? []).find((item: any) => item.kind === 'CREATURE');
+  check(
+    'o combate fica ativo com o boneco de treino como alvo',
+    training?.status === 'ACTIVE' && Boolean(targetCombatant),
+    JSON.stringify({ status: training?.status }),
+  );
+
+  /** Ataca N vezes com o personagem e devolve os resultados aceitos. */
+  async function rollAttacks(token: string, times: number): Promise<any[]> {
+    const results: any[] = [];
+    for (let index = 0; index < times; index += 1) {
+      const response = await api('/api/combat/attack', {
+        method: 'POST',
+        token,
+        body: { attackId: 'crit1', targetCombatantId: targetCombatant.id },
+      });
+      if (response.status === 200 && response.data?.result) results.push(response.data.result);
+    }
+    return results;
+  }
+
+  const championRolls = await rollAttacks(critPlayer.token, 60);
+  check(
+    'o Campeão (15) resolve os 60 ataques de treino',
+    championRolls.length === 60,
+    JSON.stringify({ resolvidos: championRolls.length }),
+  );
+  check(
+    'com o Crítico Superior, TODO d20 ≥ 18 é crítico (18–20)',
+    championRolls.every((result: any) => result.critical === (result.attackRoll >= 18)),
+    JSON.stringify(championRolls.filter((r: any) => r.critical !== (r.attackRoll >= 18))),
+  );
+  check(
+    'a amostra do Campeão tem um crítico de verdade (a regra foi exercitada)',
+    championRolls.some((result: any) => result.attackRoll >= 18 && result.critical),
+    JSON.stringify(championRolls.map((r: any) => r.attackRoll)),
+  );
+  check(
+    'o 1 natural continua ERRANDO mesmo com o limiar baixo',
+    championRolls.every((result: any) => result.attackRoll !== 1 || result.hit === false),
+    JSON.stringify(championRolls.filter((r: any) => r.attackRoll === 1 && r.hit)),
+  );
+
+  // Sem o Campeão o limiar volta a 20: um 19 NÃO pode ser crítico.
+  await prisma.character.update({
+    where: { userId: critPlayer.userId },
+    data: { classes: [{ classKey: 'fighter', subclass: '', level: 15 }] as any },
+  });
+  const plainRolls = await rollAttacks(critPlayer.token, 60);
+  check(
+    'sem o Campeão o limiar volta a 20 (nenhum acerto com d20 < 20 é crítico)',
+    plainRolls.length === 60 &&
+      plainRolls.every((result: any) => result.critical === (result.attackRoll >= 20)),
+    JSON.stringify(plainRolls.filter((r: any) => r.critical !== (r.attackRoll >= 20))),
+  );
+  check(
+    'o 1 natural também erra no Guerreiro sem subclasse',
+    plainRolls.every((result: any) => result.attackRoll !== 1 || result.hit === false),
+    JSON.stringify(plainRolls.filter((r: any) => r.attackRoll === 1 && r.hit)),
+  );
+
+  }
 
   console.log(
     failures === 0

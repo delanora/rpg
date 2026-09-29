@@ -1,3 +1,4 @@
+import { HttpError } from '../../../lib/http-error.js';
 import { abilityModifier, type AbilityKey } from '../dnd5e.js';
 import { barbarian } from './barbarian.js';
 import { bard } from './bard.js';
@@ -17,6 +18,8 @@ import type {
   ClassFeatureEffect,
   ClassFeatureResource,
   ClassSummary,
+  MulticlassSkillChoice,
+  ProficienciesState,
   SpellLearning,
   SpellcastingType,
   SubclassDefinition,
@@ -178,7 +181,233 @@ export function resourceMaxAtLevel(
   if (resource.abilityMod && abilities) {
     value += abilityModifier(abilities[resource.abilityMod]);
   }
+  // Piso do recurso (1 + mod. de CAR nunca fica abaixo de 1).
+  if (resource.min !== undefined && value !== -1) value = Math.max(resource.min, value);
   return value;
+}
+
+/**
+ * Modificador somado por `abilityMod` (Aura de Proteção: +mod. de CAR em todas
+ * as salvaguardas), respeitando o piso (`minValue`).
+ */
+function effectValueWithAbilityMod(
+  effect: ClassFeatureEffect,
+  abilities?: Record<AbilityKey, number>,
+): number {
+  let value = effect.value ?? 0;
+  if (effect.abilityMod && abilities) {
+    value += abilityModifier(abilities[effect.abilityMod]);
+  }
+  if (effect.minValue !== undefined) value = Math.max(effect.minValue, value);
+  return value;
+}
+
+/**
+ * Features da classe MAIS as da subclasse escolhida (as duas podem declarar
+ * escolhas — o Caçador escolhe Presa do Caçador já no 3º nível).
+ */
+export function featuresWithSubclass(
+  definition: ClassDefinition,
+  subclassName: string,
+): ClassFeatureDefinition[] {
+  const subclass = findSubclass(definition, subclassName);
+  return subclass ? [...definition.features, ...subclass.features] : [...definition.features];
+}
+
+/**
+ * Proficiências que a SUBCLASSE concede ao ser escolhida (Colégio da Bravura:
+ * armaduras médias, escudos e armas marciais). Vazio quando não concede.
+ */
+export function subclassProficiencyGrant(
+  definition: ClassDefinition,
+  subclassName: string,
+): ProficienciesState {
+  const subclass = findSubclass(definition, subclassName);
+  return subclass?.proficiencies ?? emptyProficiencies();
+}
+
+/**
+ * Nível (da CLASSE) em que a escolha de uma característica é feita.
+ *
+ * O padrão é o nível da própria característica; as melhorias declaram o seu
+ * (`choice.level`), porque valem no nível da característica de origem.
+ */
+export function featureChoiceLevel(feature: ClassFeatureDefinition): number {
+  return feature.choice?.level ?? feature.level;
+}
+
+/** Quantas opções a escolha pede (padrão 1). */
+export function featureChoiceCount(feature: ClassFeatureDefinition): number {
+  return Math.max(1, feature.choice?.count ?? 1);
+}
+
+/**
+ * Características de UMA classe que pedem escolha, com o que já foi escolhido.
+ *
+ * Serve ao assistente de Level Up (só as escolhas do nível que está sendo
+ * ganho) e à ficha (mostrar/editar o que já foi escolhido).
+ */
+export interface FeatureChoiceInfo {
+  /** Id da característica que declara a escolha. */
+  featureId: string;
+  /** Nome da característica (ex.: 'Estilo de Luta'). */
+  name: string;
+  /** Rótulo do passo na interface (padrão: o nome). */
+  prompt: string;
+  /** Nível (da classe) em que a escolha é feita. */
+  level: number;
+  /** Quantas opções escolher. */
+  count: number;
+  /** Se a mesma opção pode ser repetida nesta escolha múltipla. */
+  allowRepeat: boolean;
+  /** Opções aceitas. */
+  options: { key: string; name: string; description: string }[];
+  /** Opções já escolhidas (vazio enquanto não houve escolha). */
+  chosen: string[];
+}
+
+export function featureChoiceInfo(
+  definition: ClassDefinition,
+  chosen: Record<string, string[]> = {},
+  /** Subclasse escolhida: as features dela também podem pedir escolha. */
+  subclassName = '',
+): FeatureChoiceInfo[] {
+  return featuresWithSubclass(definition, subclassName)
+    .filter((feature) => feature.choice !== undefined)
+    .map((feature) => ({
+      featureId: feature.id,
+      name: feature.name,
+      prompt: feature.choice?.prompt ?? feature.name,
+      level: featureChoiceLevel(feature),
+      count: featureChoiceCount(feature),
+      allowRepeat: Boolean(feature.choice?.allowRepeat),
+      options: (feature.choice?.options ?? []).map((option) => ({
+        key: option.key,
+        name: option.name,
+        description: option.description ?? '',
+      })),
+      chosen: chosen[feature.id] ?? [],
+    }));
+}
+
+/**
+ * Escolhas que FALTAM numa classe, no nível que está sendo ganho.
+ *
+ * Vale para o assistente de criação (nível 1 da primeira classe) e para o Level
+ * Up (nível novo): só entram as características cuja escolha é feita neste
+ * nível e que ainda não têm valor gravado.
+ */
+export function pendingFeatureChoices(
+  definition: ClassDefinition,
+  classLevel: number,
+  chosen: Record<string, string[]> = {},
+  subclassName = '',
+): FeatureChoiceInfo[] {
+  return featureChoiceInfo(definition, chosen, subclassName).filter(
+    (info) => info.level === classLevel && info.chosen.length < info.count,
+  );
+}
+
+/**
+ * Valida e mescla as escolhas enviadas numa subida de nível (ou na criação).
+ *
+ * Regras:
+ *  • só são aceitas escolhas de características cujo nível de escolha é o nível
+ *    que está sendo ganho (`classLevel`);
+ *  • a quantidade tem de bater com a declarada e cada opção precisa existir;
+ *  • a mesma opção não se repete, salvo quando a característica permite;
+ *  • escolha já gravada é PRESERVADA (o nível é ganho uma vez só).
+ */
+export function resolveFeatureChoices(
+  definition: ClassDefinition,
+  classLevel: number,
+  incoming: Record<string, string[]>,
+  current: Record<string, string[]> = {},
+  /** Subclasse escolhida (as features dela têm escolhas próprias). */
+  subclassName = '',
+): Record<string, string[]> {
+  const next: Record<string, string[]> = { ...current };
+  const features = featuresWithSubclass(definition, subclassName);
+  const pending = new Map(
+    pendingFeatureChoices(definition, classLevel, current, subclassName).map((info) => [
+      info.featureId,
+      info,
+    ]),
+  );
+
+  for (const [featureId, keys] of Object.entries(incoming)) {
+    const info = pending.get(featureId);
+    if (!info) {
+      const feature = features.find((item) => item.id === featureId);
+      if (!feature?.choice) {
+        throw new HttpError(`A característica ${featureId} não pede escolha.`, 400);
+      }
+      if (featureChoiceLevel(feature) !== classLevel) {
+        throw new HttpError(
+          `A escolha de ${feature.name} é feita no nível ${featureChoiceLevel(feature)} de ${definition.name}.`,
+          400,
+        );
+      }
+      // Já escolhida: mantém o que está gravado.
+      continue;
+    }
+
+    const unique = [...new Set(keys)];
+    if (unique.length !== keys.length && !info.allowRepeat) {
+      throw new HttpError(`Escolha opções diferentes em ${info.prompt}.`, 400);
+    }
+    if (unique.length !== info.count) {
+      throw new HttpError(
+        `${info.prompt}: escolha ${info.count} ${info.count === 1 ? 'opção' : 'opções'}.`,
+        400,
+      );
+    }
+
+    const valid = new Set(info.options.map((option) => option.key));
+    const outside = unique.filter((key) => !valid.has(key));
+    if (outside.length > 0) {
+      throw new HttpError(`Opção inválida em ${info.prompt}: ${outside.join(', ')}.`, 400);
+    }
+
+    next[featureId] = unique;
+  }
+
+  // Nenhuma escolha deste nível pode ficar sem resposta: o nível só é ganho uma
+  // vez, então ou ela é feita agora ou fica faltando para sempre.
+  const stillMissing = pendingFeatureChoices(definition, classLevel, next, subclassName);
+  if (stillMissing.length > 0) {
+    const prompts = stillMissing.map((info) => info.prompt).join(', ');
+    throw new HttpError(`Escolha ${prompts} para o nível ${classLevel} de ${definition.name}.`, 400);
+  }
+
+  return next;
+}
+
+/**
+ * Duas escolhas são iguais? A ORDEM das características não importa (o JSONB do
+ * Postgres reordena as chaves), mas a ordem das opções dentro de cada escolha
+ * importa.
+ */
+export function sameFeatureChoices(
+  a: Record<string, string[]>,
+  b: Record<string, string[]>,
+): boolean {
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+
+  return keysA.every((key) => {
+    const listA = a[key] ?? [];
+    const listB = b[key];
+    if (!listB || listA.length !== listB.length) return false;
+    return listA.every((item, index) => item === listB[index]);
+  });
+}
+
+/** Rótulo legível das opções escolhidas numa característica ("Defesa"). */
+export function featureChoiceLabels(feature: ClassFeatureDefinition, keys: string[]): string[] {
+  return keys.map(
+    (key) => feature.choice?.options.find((option) => option.key === key)?.name ?? key,
+  );
 }
 
 /** Total de espaços de Expertise concedidos pelas features ativas. */
@@ -194,15 +423,27 @@ export function expertiseSlots(features: ActiveClassFeature[]): number {
   );
 }
 
-/** Estado de runtime da classe (toggles ativos e usos gastos). */
+/**
+ * Estado de runtime da classe.
+ *
+ * - `active`: toggles ligados (ex.: Fúria);
+ * - `used`: usos gastos por recurso;
+ * - `choices`: escolha de característica por id dela (ex.: `{ 'fighting-style':
+ *   ['defense'] }`). É campo de CONSTRUÇÃO: só o Level Up, o assistente de
+ *   criação e o mestre mexem nele (ver `assertPlayerCanPatch`).
+ */
 export interface ClassState {
   active: string[];
   used: Record<string, number>;
+  choices: Record<string, string[]>;
 }
+
+/** Teto de opções numa escolha (evita JSONB gigante vindo do cliente). */
+export const MAX_FEATURE_CHOICES = 8;
 
 /** Lê/normaliza o estado de classe vindo do JSONB. */
 export function normalizeClassState(input: unknown): ClassState {
-  const source = (input ?? {}) as { active?: unknown; used?: unknown };
+  const source = (input ?? {}) as { active?: unknown; used?: unknown; choices?: unknown };
 
   const active = Array.isArray(source.active)
     ? source.active.filter((item): item is string => typeof item === 'string')
@@ -217,7 +458,18 @@ export function normalizeClassState(input: unknown): ClassState {
     }
   }
 
-  return { active, used };
+  const choices: Record<string, string[]> = {};
+  if (source.choices && typeof source.choices === 'object') {
+    for (const [key, value] of Object.entries(source.choices as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue;
+      const keys = value
+        .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+        .slice(0, MAX_FEATURE_CHOICES);
+      if (keys.length > 0) choices[key] = keys;
+    }
+  }
+
+  return { active, used, choices };
 }
 
 /** Um toggle ativável (ex.: Fúria, Ataque Descuidado). */
@@ -287,11 +539,34 @@ export interface ClassAdjustments {
   wildShapeFlying: boolean;
   abilityBonuses: Partial<Record<AbilityKey, number>>;
   abilityCaps: Partial<Record<AbilityKey, number>>;
+  /** Bônus fixo de CA (Estilo de Luta Defesa: +1). */
+  armorClassBonus: number;
+  /** O bônus de CA acima só vale com armadura vestida (regra da Defesa). */
+  armorClassBonusRequiresArmor: boolean;
+  /** Rótulo do bônus de CA (ex.: 'Estilo de Luta (Defesa)'). */
+  armorClassBonusLabel: string;
+  /** Bônus somado a TODAS as salvaguardas (Aura de Proteção: mod. de CAR). */
+  saveBonus: number;
+  /** Rótulo do bônus de salvaguarda (ex.: 'Aura de Proteção'). */
+  saveBonusLabel: string;
+  /**
+   * Efeitos de "metade da proficiência" nos testes de habilidade: Pau para Toda
+   * Obra do bardo ('checks', arredondando para BAIXO) e Atleta Extraordinário do
+   * Campeão ('physicalChecks' — FOR/DES/CON —, arredondando para CIMA). Dois
+   * efeitos no MESMO teste nunca somam: vale o maior valor.
+   */
+  halfProficiency: { target: 'checks' | 'physicalChecks'; round: 'down' | 'up' }[];
+  /**
+   * Limiar de crítico no d20 (Campeão: 19 e depois 18). `null` = 20 (só o 20
+   * natural). O MENOR limiar prevalece quando houver mais de uma fonte.
+   */
+  critThreshold: number | null;
 }
 
 /**
  * Reúne os ajustes mecânicos das features ativas: toggles, recursos, bônus de
- * dano, resistências, deslocamento, dados de crítico e bônus de atributo.
+ * dano, resistências, deslocamento, dados de crítico, escolhas de característica
+ * (Estilo de Luta) e bônus de atributo.
  */
 export function computeClassAdjustments(
   features: ActiveClassFeature[],
@@ -316,16 +591,29 @@ export function computeClassAdjustments(
   let overrideWildShapeCr: number | null = null;
   const abilityBonuses: Partial<Record<AbilityKey, number>> = {};
   const abilityCaps: Partial<Record<AbilityKey, number>> = {};
+  let armorClassBonus = 0;
+  let armorClassBonusRequiresArmor = false;
+  let armorClassBonusLabel = '';
+  let saveBonus = 0;
+  let saveBonusLabel = '';
+  const halfProficiency: { target: 'checks' | 'physicalChecks'; round: 'down' | 'up' }[] = [];
+  let critThreshold: number | null = null;
 
-  for (const feature of features) {
-    for (const effect of featureEffectsOf(feature)) {
-      const effectId = effect.id ?? feature.id;
-
+  /**
+   * Aplica UM efeito. Os efeitos das opções escolhidas (Estilo de Luta) passam
+   * por aqui também, com o id/nome da característica que os declarou.
+   */
+  function applyEffect(
+    effect: ClassFeatureEffect,
+    effectId: string,
+    sourceName: string,
+  ): void {
+    {
       switch (effect.type) {
         case 'toggle':
           toggles.push({
             id: effectId,
-            name: effect.name ?? feature.name,
+            name: effect.name ?? sourceName,
             active: activeSet.has(effectId),
             resourceId: effect.resourceId ?? null,
           });
@@ -369,7 +657,7 @@ export function computeClassAdjustments(
           unarmoredDefenseBase = Math.max(unarmoredDefenseBase, base);
 
           const option: UnarmoredDefenseOption = {
-            label: effect.name ?? feature.name,
+            label: effect.name ?? sourceName,
             base,
             ability,
             requiresNoShield: Boolean(effect.requiresNoShield),
@@ -401,8 +689,56 @@ export function computeClassAdjustments(
           if (effect.max !== undefined) abilityCaps[ability] = effect.max;
           break;
         }
+        case 'armorClass':
+          // Bônus fixo de CA (Estilo de Luta Defesa). Dois "Estilos de Luta" não
+          // se acumulam: vale o MAIOR (o livro proíbe repetir a mesma opção).
+          if ((effectValueAtLevel(effect, level) ?? 0) > armorClassBonus) {
+            armorClassBonus = effectValueAtLevel(effect, level) ?? 0;
+            armorClassBonusLabel = effect.name ?? sourceName;
+          }
+          if (effect.requiresArmor) armorClassBonusRequiresArmor = true;
+          break;
+        case 'saveBonus':
+          // Aura de Proteção é única na mesa: também vale o MAIOR, nunca a soma.
+          if (effectValueWithAbilityMod(effect, abilities) > saveBonus) {
+            saveBonus = effectValueWithAbilityMod(effect, abilities);
+            saveBonusLabel = effect.name ?? sourceName;
+          }
+          break;
+        case 'halfProficiency': {
+          const target = effect.target === 'physicalChecks' ? 'physicalChecks' : 'checks';
+          // O arredondamento padrão do efeito é PARA BAIXO (Pau para Toda Obra);
+          // o Atleta Extraordinário do Campeão declara `round: 'up'`.
+          const round = effect.round === 'up' ? 'up' : 'down';
+          const known = halfProficiency.some(
+            (item) => item.target === target && item.round === round,
+          );
+          if (!known) halfProficiency.push({ target, round });
+          break;
+        }
+        case 'critThreshold': {
+          const value = effectValueAtLevel(effect, level) ?? 20;
+          critThreshold = critThreshold === null ? value : Math.min(critThreshold, value);
+          break;
+        }
         default:
           break;
+      }
+    }
+  }
+
+  for (const feature of features) {
+    for (const effect of featureEffectsOf(feature)) {
+      applyEffect(effect, effect.id ?? feature.id, feature.name);
+    }
+
+    // Efeitos das OPÇÕES ESCOLHIDAS: o +1 CA da "Defesa" só vale com essa opção
+    // escolhida no Estilo de Luta daquela classe.
+    if (feature.choice) {
+      const chosen = state.choices[feature.id] ?? [];
+      for (const option of feature.choice.options) {
+        if (!option.effect || !chosen.includes(option.key)) continue;
+        applyEffect(option.effect, option.effect.id ?? feature.id, feature.name);
       }
     }
   }
@@ -431,6 +767,13 @@ export function computeClassAdjustments(
     wildShapeFlying: (overrideWildShapeCr ?? baseWildShapeCr) > 0 && level >= 8,
     abilityBonuses,
     abilityCaps,
+    armorClassBonus,
+    armorClassBonusRequiresArmor,
+    armorClassBonusLabel,
+    saveBonus,
+    saveBonusLabel,
+    halfProficiency,
+    critThreshold,
   };
 }
 
@@ -492,6 +835,229 @@ export interface ClassEntry {
 /** Quantas classes diferentes o personagem pode somar. */
 export const MAX_CLASSES = 4;
 
+/** Listas de exibição das proficiências (evitam strings soltas no mapa). */
+const ARMOR_LIGHT = 'Armaduras leves';
+const ARMOR_MEDIUM = 'Armaduras médias';
+const ARMOR_HEAVY = 'Armaduras pesadas';
+const ARMOR_SHIELD = 'Escudos';
+const WEAPON_SIMPLE = 'Armas simples';
+const WEAPON_MARTIAL = 'Armas marciais';
+
+/**
+ * Proficiências de armadura, arma e ferramenta (PHB 2014, cap. 6).
+ *
+ * Vive aqui, junto dos demais mapas de MULTICLASSE, porque o livro traz as duas
+ * tabelas lado a lado: o que a classe concede quando é a PRIMEIRA (`first`) e o
+ * conjunto reduzido de quando se entra nela por multiclasse (`multiclass`).
+ * Nenhuma entrada de multiclasse concede salvaguardas (PHB p.164).
+ *
+ * As listas são o TEXTO exibido na ficha. O efeito mecânico (CA de armadura,
+ * ataque de arma) ainda não é calculado a partir daqui.
+ */
+export const CLASS_PROFICIENCIES: Record<
+  string,
+  { first: ProficienciesState; multiclass: ProficienciesState }
+> = {
+  barbarian: {
+    first: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL],
+      tools: [],
+    },
+    multiclass: { armor: [ARMOR_SHIELD], weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL], tools: [] },
+  },
+  bard: {
+    first: {
+      armor: [ARMOR_LIGHT],
+      weapons: [WEAPON_SIMPLE, 'Bestas de mão', 'Espadas longas', 'Rapieiras', 'Espadas curtas'],
+      tools: ['3 instrumentos musicais à sua escolha'],
+    },
+    multiclass: {
+      armor: [ARMOR_LIGHT],
+      weapons: [],
+      tools: ['1 instrumento musical à sua escolha'],
+    },
+  },
+  cleric: {
+    first: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE],
+      tools: [],
+    },
+    multiclass: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [],
+      tools: [],
+    },
+  },
+  druid: {
+    first: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, 'Escudos (não usa metal)'],
+      weapons: [
+        'Clavas',
+        'Adagas',
+        'Dardos',
+        'Azagaias',
+        'Maças',
+        'Bordões',
+        'Cimitarras',
+        'Foices',
+        'Fundas',
+        'Lanças',
+      ],
+      tools: ['Kit de herbalismo'],
+    },
+    multiclass: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [],
+      tools: [],
+    },
+  },
+  fighter: {
+    first: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_HEAVY, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL],
+      tools: [],
+    },
+    multiclass: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL],
+      tools: [],
+    },
+  },
+  monk: {
+    first: {
+      armor: [],
+      weapons: [WEAPON_SIMPLE, 'Espadas curtas'],
+      tools: ['1 ferramenta de artesão ou instrumento musical à sua escolha'],
+    },
+    multiclass: { armor: [], weapons: [WEAPON_SIMPLE, 'Espadas curtas'], tools: [] },
+  },
+  paladin: {
+    first: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_HEAVY, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL],
+      tools: [],
+    },
+    multiclass: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL],
+      tools: [],
+    },
+  },
+  ranger: {
+    first: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL],
+      tools: [],
+    },
+    multiclass: {
+      armor: [ARMOR_LIGHT, ARMOR_MEDIUM, ARMOR_SHIELD],
+      weapons: [WEAPON_SIMPLE, WEAPON_MARTIAL],
+      tools: [],
+    },
+  },
+  rogue: {
+    first: {
+      armor: [ARMOR_LIGHT],
+      weapons: [WEAPON_SIMPLE, 'Bestas de mão', 'Espadas longas', 'Rapieiras', 'Espadas curtas'],
+      tools: ['Ferramentas de ladrão'],
+    },
+    multiclass: { armor: [ARMOR_LIGHT], weapons: [], tools: ['Ferramentas de ladrão'] },
+  },
+  sorcerer: {
+    first: {
+      armor: [],
+      weapons: ['Adagas', 'Dardos', 'Fundas', 'Bordões', 'Bestas leves'],
+      tools: [],
+    },
+    multiclass: { armor: [], weapons: [], tools: [] },
+  },
+  warlock: {
+    first: { armor: [ARMOR_LIGHT], weapons: [WEAPON_SIMPLE], tools: [] },
+    multiclass: { armor: [ARMOR_LIGHT], weapons: [WEAPON_SIMPLE], tools: [] },
+  },
+  wizard: {
+    first: {
+      armor: [],
+      weapons: ['Adagas', 'Dardos', 'Fundas', 'Bordões', 'Bestas leves'],
+      tools: [],
+    },
+    multiclass: { armor: [], weapons: [], tools: [] },
+  },
+};
+
+/**
+ * Perícias à escolha concedidas ao ENTRAR na classe por multiclasse. O livro dá
+ * uma perícia ao Bardo (qualquer), ao Patrulheiro e ao Ladino (da lista da
+ * classe) — os demais não concedem perícia na multiclasse.
+ */
+const MULTICLASS_SKILL_COUNT: Record<string, number> = { bard: 1, ranger: 1, rogue: 1 };
+
+/** Proficiências vazias (ficha sem classe ou classe que não concede nada). */
+export function emptyProficiencies(): ProficienciesState {
+  return { armor: [], weapons: [], tools: [] };
+}
+
+/**
+ * Lê/normaliza as proficiências vindas do JSONB: só texto, sem repetição e sem
+ * vazio. Qualquer outra coisa é descartada (dado antigo não quebra a leitura).
+ */
+export function normalizeProficiencies(input: unknown): ProficienciesState {
+  const source = (input ?? {}) as { armor?: unknown; weapons?: unknown; tools?: unknown };
+
+  const list = (value: unknown): string[] => {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    for (const item of value) {
+      if (typeof item !== 'string') continue;
+      const text = item.trim().slice(0, 120);
+      if (text !== '') seen.add(text);
+    }
+    return [...seen].slice(0, 60);
+  };
+
+  return { armor: list(source.armor), weapons: list(source.weapons), tools: list(source.tools) };
+}
+
+/** Soma proficiências sem repetir, mantendo a ordem de quem veio primeiro. */
+export function mergeProficiencies(
+  ...grants: ProficienciesState[]
+): ProficienciesState {
+  const merge = (pick: (grant: ProficienciesState) => string[]): string[] => {
+    const seen = new Set<string>();
+    for (const grant of grants) for (const item of pick(grant)) seen.add(item);
+    return [...seen];
+  };
+
+  return {
+    armor: merge((grant) => grant.armor),
+    weapons: merge((grant) => grant.weapons),
+    tools: merge((grant) => grant.tools),
+  };
+}
+
+/** Proficiências do nível 1 quando a classe é a PRIMEIRA do personagem. */
+export function firstClassProficiencies(classKey: string): ProficienciesState {
+  return CLASS_PROFICIENCIES[classKey.trim()]?.first ?? emptyProficiencies();
+}
+
+/** Proficiências concedidas ao ENTRAR na classe por multiclasse (PHB p.164). */
+export function multiclassProficiencyGrant(classKey: string): ProficienciesState {
+  return CLASS_PROFICIENCIES[classKey.trim()]?.multiclass ?? emptyProficiencies();
+}
+
+/**
+ * Perícia à escolha da ENTRADA por multiclasse (null quando a classe não dá
+ * nenhuma). A lista é a mesma da criação da classe — vazia = qualquer perícia.
+ */
+export function multiclassSkillChoiceFor(classKey: string): MulticlassSkillChoice | null {
+  const key = classKey.trim();
+  const count = MULTICLASS_SKILL_COUNT[key] ?? 0;
+  if (count <= 0) return null;
+  return { count, from: classSkillChoice(key).from };
+}
+
 /**
  * Pré-requisitos de atributo para ENTRAR numa classe (PHB 2014).
  * `all` exige todos os atributos; `any` exige pelo menos um deles.
@@ -550,18 +1116,56 @@ export function multiclassMissingAbilities(
   return missing;
 }
 
-/** Texto pronto do motivo do bloqueio (ex.: "faltam Força 13 e Sabedoria 13"). */
-export function multiclassMissingLabel(
+/** Atributos no formato "Força 13, Destreza 13 e Sabedoria 13". */
+function abilityRequirementsLabel(abilities: AbilityKey[]): string {
+  const names = abilities.map((ability) => `${ABILITY_NAMES[ability]} ${MULTICLASS_MINIMUM}`);
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+}
+
+/**
+ * Mensagem do pré-requisito de atributo para entrar numa classe NOVA.
+ *
+ * O PHB (cap. 6) exige 13 nos atributos exigidos pela classe nova **e também
+ * por todas as classes que o personagem já possui**, então a mensagem cita cada
+ * classe que está bloqueando:
+ *
+ *   "Para entrar em Ladino você precisa de Destreza 13; para continuar como
+ *    Paladino você precisa de Força 13 e Carisma 13"
+ *
+ * Devolve '' quando o pré-requisito está atendido. Os valores comparados são os
+ * atributos GRAVADOS na ficha (a mesma referência que o sistema já usava).
+ */
+export function multiclassPrerequisiteLabel(
   classKey: string,
   abilities: Record<AbilityKey, number>,
+  entries: ClassEntry[] = [],
 ): string {
-  const missing = multiclassMissingAbilities(classKey, abilities);
-  if (missing.length === 0) return '';
+  const clauses: string[] = [];
 
-  const names = missing.map((ability) => `${ABILITY_NAMES[ability]} 13`);
-  return names.length === 1
-    ? `faltam ${names[0]}`
-    : `faltam ${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+  const definition = getClassDefinition(classKey);
+  const newClassMissing = multiclassMissingAbilities(classKey, abilities);
+  if (definition && newClassMissing.length > 0) {
+    clauses.push(
+      `Para entrar em ${definition.name} você precisa de ${abilityRequirementsLabel(newClassMissing)}`,
+    );
+  }
+
+  for (const entry of entries) {
+    if (entry.classKey === classKey) continue;
+
+    const existingMissing = multiclassMissingAbilities(entry.classKey, abilities);
+    const existingDefinition = getClassDefinition(entry.classKey);
+    if (existingDefinition && existingMissing.length > 0) {
+      clauses.push(
+        `para continuar como ${existingDefinition.name} você precisa de ${abilityRequirementsLabel(
+          existingMissing,
+        )}`,
+      );
+    }
+  }
+
+  return clauses.join('; ');
 }
 
 /** Rótulo curto das classes com os níveis: "Bárbaro 3 / Ladino 2". */
@@ -673,6 +1277,32 @@ function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments): Clas
     wildShapeFlying: base.wildShapeFlying || extra.wildShapeFlying,
     abilityBonuses,
     abilityCaps: { ...extra.abilityCaps, ...base.abilityCaps },
+    // Bônus de CA e de salvaguarda NÃO somam entre classes (dois "Estilos de
+    // Luta" ou duas "Auras" valem uma vez só): o maior vence.
+    armorClassBonus: Math.max(base.armorClassBonus, extra.armorClassBonus),
+    armorClassBonusRequiresArmor:
+      base.armorClassBonusRequiresArmor || extra.armorClassBonusRequiresArmor,
+    armorClassBonusLabel:
+      extra.armorClassBonus > base.armorClassBonus
+        ? extra.armorClassBonusLabel
+        : base.armorClassBonusLabel,
+    saveBonus: Math.max(base.saveBonus, extra.saveBonus),
+    saveBonusLabel:
+      extra.saveBonus > base.saveBonus ? extra.saveBonusLabel : base.saveBonusLabel,
+    halfProficiency: [
+      ...base.halfProficiency,
+      ...extra.halfProficiency.filter(
+        (item) =>
+          !base.halfProficiency.some(
+            (known) => known.target === item.target && known.round === item.round,
+          ),
+      ),
+    ],
+    // O MENOR limiar prevalece (dois Campeões não "somam" críticos).
+    critThreshold:
+      base.critThreshold === null && extra.critThreshold === null
+        ? null
+        : Math.min(base.critThreshold ?? 20, extra.critThreshold ?? 20),
   };
 }
 
@@ -696,6 +1326,13 @@ function emptyAdjustments(): ClassAdjustments {
     wildShapeFlying: false,
     abilityBonuses: {},
     abilityCaps: {},
+    armorClassBonus: 0,
+    armorClassBonusRequiresArmor: false,
+    armorClassBonusLabel: '',
+    saveBonus: 0,
+    saveBonusLabel: '',
+    halfProficiency: [],
+    critThreshold: null,
   };
 }
 
@@ -722,9 +1359,13 @@ export function computeMulticlassAdjustments(
 }
 
 /**
- * Nível de conjurador para a tabela combinada de espaços de magia:
- * conjurador completo + metade do meio-conjurador + um terço do terço-conjurador.
- * O bruxo fica de fora (Magia de Pacto tem espaços próprios).
+ * Nível de conjurador da TABELA COMBINADA de multiclasse (PHB 2014, cap. 6):
+ * conjurador completo com o nível cheio + METADE do meio-conjurador + UM TERÇO
+ * do terço-conjurador, tudo **arredondado para baixo**. O bruxo fica de fora
+ * (Magia de Pacto tem espaços próprios).
+ *
+ * Esta função só vale para personagens com DUAS OU MAIS classes conjuradoras:
+ * com uma só, a tabela é a da PRÓPRIA classe — ver `spellSlotsForClasses`.
  */
 export function multiclassCasterLevel(entries: ClassEntry[]): number {
   let casterLevel = 0;
@@ -772,6 +1413,96 @@ export function spellSlotsForCasterLevel(level: number): { level: number; max: n
   return row
     .map((max, index) => ({ level: index + 1, max }))
     .filter((slot) => slot.max > 0);
+}
+
+/**
+ * Entradas que conjuram com a tabela de espaços do livro (o bruxo NÃO entra:
+ * ele usa Magia de Pacto, calculada à parte).
+ */
+function spellcastingEntries(
+  entries: ClassEntry[],
+): { entry: ClassEntry; type: 'full' | 'half' | 'third' }[] {
+  const casters: { entry: ClassEntry; type: 'full' | 'half' | 'third' }[] = [];
+
+  for (const entry of entries) {
+    const type = effectiveSpellcasting(entry)?.type;
+    if (type === 'full' || type === 'half' || type === 'third') casters.push({ entry, type });
+  }
+
+  return casters;
+}
+
+/**
+ * Nível de conjurador de uma classe na tabela DELA (PHB 2014, cap. 3).
+ *
+ * Com uma classe só, a tabela é a da própria classe — e as equivalências do
+ * livro são: conjurador completo = nível cheio; meio-conjurador = **metade
+ * arredondada para CIMA** (Paladino 3 → 3 espaços de 1º, Paladino 5 → 4 de 1º e
+ * 2 de 2º); terço-conjurador = **um terço arredondado para CIMA** (Cavaleiro
+ * Arcano 4 → 3 espaços de 1º).
+ *
+ * Meio-conjurador só conjura a partir do 2º nível da classe e terço-conjurador a
+ * partir do 3º: abaixo disso o nível de conjurador é 0 (nenhum espaço).
+ *
+ * O arredondamento para BAIXO é exclusivo da tabela COMBINADA de multiclasse
+ * (`multiclassCasterLevel`).
+ */
+export function ownCasterLevel(entry: ClassEntry): number {
+  const type = effectiveSpellcasting(entry)?.type;
+
+  if (type === 'full') return entry.level;
+  if (type === 'half') return entry.level < 2 ? 0 : Math.ceil(entry.level / 2);
+  if (type === 'third') return entry.level < 3 ? 0 : Math.ceil(entry.level / 3);
+  return 0;
+}
+
+/**
+ * Espaços de magia do personagem (sem a Magia de Pacto, que vai à parte).
+ *
+ * Regra do PHB 2014:
+ *  • NENHUMA classe conjuradora (ou só bruxo) ⇒ sem espaços;
+ *  • UMA classe conjuradora ⇒ a tabela da PRÓPRIA classe (`ownCasterLevel`) —
+ *    Guerreiro 5 / Paladino 4 usa a tabela do Paladino, porque o Guerreiro sem
+ *    Cavaleiro Arcano não conjura;
+ *  • DUAS OU MAIS ⇒ a tabela COMBINADA do cap. 6 (`multiclassCasterLevel`,
+ *    meio e terço arredondados para baixo).
+ */
+export function spellSlotsForClasses(entries: ClassEntry[]): { level: number; max: number }[] {
+  const casters = spellcastingEntries(entries);
+  if (casters.length === 0) return [];
+
+  if (casters.length === 1) return spellSlotsForCasterLevel(ownCasterLevel(casters[0].entry));
+  return spellSlotsForCasterLevel(multiclassCasterLevel(entries));
+}
+
+/**
+ * Quantas magias a classe PREPARA por dia (PHB 2014, cap. 3/10).
+ *
+ *  • Clérigo, Druida e Mago: modificador do atributo + NÍVEL NA CLASSE (mínimo 1).
+ *  • Paladino: modificador de Carisma + **METADE** do nível de paladino,
+ *    arredondado para BAIXO (mínimo 1) — e só a partir do 2º nível, quando a
+ *    conjuração começa (no 1º são 0 magias e 0 espaços).
+ *  • `null` = a classe NÃO prepara magias: Bardo, Patrulheiro, Feiticeiro,
+ *    Bruxo e as subclasses de terço-conjurador usam a lista fixa de conhecidas.
+ *
+ * O cálculo é POR CLASSE, com o atributo e o nível dela — no multiclasse não
+ * existe um total único (Mago e Clérigo preparam, cada um, as suas).
+ */
+export function preparedSpellCountFor(
+  entry: ClassEntry,
+  abilityModifier: number,
+): number | null {
+  const config = effectiveSpellcasting(entry);
+  if (!config || config.learning !== 'prepared') return null;
+
+  if (config.type === 'full') return Math.max(1, abilityModifier + entry.level);
+
+  if (config.type === 'half') {
+    if (entry.level < 2) return 0;
+    return Math.max(1, abilityModifier + Math.floor(entry.level / 2));
+  }
+
+  return null;
 }
 
 /** Tabela de Magia de Pacto do bruxo (espaços, nível do espaço e quantidade). */
@@ -839,6 +1570,29 @@ export interface ClassOption extends ClassSummary {
   asiLevels: number[];
   /** Nomes das subclasses disponíveis. */
   subclassNames: string[];
+  /** O que a classe concede ao ser a PRIMEIRA do personagem (nível 1). */
+  firstProficiencies: ProficienciesState;
+  /** O que ela concede ao ENTRAR por multiclasse (PHB p.164). */
+  multiclassProficiencies: ProficienciesState;
+  /** Perícia à escolha da entrada por multiclasse (null quando não concede). */
+  multiclassSkillChoice: MulticlassSkillChoice | null;
+  /**
+   * Escolhas de característica feitas no NÍVEL 1 da classe — é o que a entrada
+   * por multiclasse (e a criação) precisa pedir na hora (Estilo de Luta do
+   * guerreiro, Inimigo Favorito e Explorador Nato do patrulheiro).
+   */
+  featureChoices: FeatureChoiceInfo[];
+  /**
+   * Escolhas declaradas pelas SUBCLASSES desta classe, com o nome da subclasse
+   * em `subclass` (vazio de `chosen`, porque a subclasse ainda não foi
+   * escolhida).
+   *
+   * Serve ao assistente de Level Up quando a subclasse é escolhida no MESMO
+   * nível em que ela já pede uma escolha (Caçador: Presa do Caçador no 3º): o
+   * DTO da classe só passa a enxergar as escolhas da subclasse depois que ela
+   * está gravada na ficha.
+   */
+  subclassChoices: (FeatureChoiceInfo & { subclass: string })[];
 }
 
 /**
@@ -851,7 +1605,8 @@ export function classOptionsFor(
 ): ClassOption[] {
   return CLASS_CATALOG.map((summary) => {
     const alreadyHas = entries.some((entry) => entry.classKey === summary.key);
-    const missing = multiclassMissingLabel(summary.key, abilities);
+    // O bloqueio cita a classe nova E as classes que o personagem já tem (PHB).
+    const missing = multiclassPrerequisiteLabel(summary.key, abilities, entries);
     const definition = getClassDefinition(summary.key);
 
     return {
@@ -860,6 +1615,23 @@ export function classOptionsFor(
       missing: alreadyHas ? '' : missing,
       asiLevels: [...asiLevelsFor(summary.key)],
       subclassNames: definition?.subclasses.map((subclass) => subclass.name) ?? [],
+      firstProficiencies: firstClassProficiencies(summary.key),
+      multiclassProficiencies: multiclassProficiencyGrant(summary.key),
+      multiclassSkillChoice: multiclassSkillChoiceFor(summary.key),
+      featureChoices: definition
+        ? featureChoiceInfo(definition).filter((info) => info.level === 1)
+        : [],
+      // Só as escolhas que vêm DA SUBCLASSE (as da classe já estão acima).
+      subclassChoices: definition
+        ? definition.subclasses.flatMap((subclass) =>
+            featureChoiceInfo(definition, {}, subclass.name)
+              .filter(
+                (info) =>
+                  !definition.features.some((feature) => feature.id === info.featureId),
+              )
+              .map((info) => ({ ...info, subclass: subclass.name })),
+          )
+        : [],
     };
   });
 }

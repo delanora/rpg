@@ -69,6 +69,19 @@ export const skillsStateSchema = z.record(z.string(), skillEntrySchema);
 export const savesStateSchema = z.record(z.string(), z.boolean());
 
 /**
+ * Proficiências de armadura, arma e ferramenta — texto exibido na ficha.
+ *
+ * Campo de CONSTRUÇÃO: como as demais coleções, o valor enviado substitui o
+ * anterior por inteiro (quem manda é a seção inteira). Entra pelo Level Up
+ * (multiclasse) e pelas mãos do mestre — ver characters.service.ts.
+ */
+export const proficienciesSchema = z.object({
+  armor: z.array(shortText(120)).max(60).default([]),
+  weapons: z.array(shortText(120)).max(60).default([]),
+  tools: z.array(shortText(120)).max(60).default([]),
+});
+
+/**
  * Slots de equipamento do personagem (estilo Tibia). Cada slot comporta um
  * item por vez; equipar em um slot ocupado devolve o item anterior à mochila.
  */
@@ -148,10 +161,20 @@ export const featureSchema = z.object({
   description: shortText(4000).default(''),
 });
 
-/** Estado de runtime da classe: toggles ativos e usos gastos por recurso. */
+/**
+ * Estado de runtime da classe: toggles ativos, usos gastos por recurso e as
+ * escolhas de característica (`choices[featureId] = [opção, ...]`).
+ * As escolhas também são CONSTRUÇÃO — com a criação finalizada só o Level Up e o
+ * mestre as mudam (ver assertPlayerCanPatch).
+ */
+export const featureChoicesSchema = z
+  .record(z.string().trim().min(1).max(60), z.array(z.string().trim().min(1).max(80)).max(8))
+  .default({});
+
 export const classStateSchema = z.object({
   active: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   used: z.record(z.string(), z.number().int().min(0).max(99)).default({}),
+  choices: featureChoicesSchema,
 });
 
 // --- Criação ----------------------------------------------------------------
@@ -174,6 +197,12 @@ export const levelUpSchema = z.object({
   /** Subclasse, quando o novo nível da classe libera a escolha. */
   subclass: shortText(120).default(''),
   hp: z.enum(['roll', 'average']),
+  /**
+   * Perícia concedida pela ENTRADA numa classe nova por multiclasse (Bardo:
+   * qualquer; Patrulheiro e Ladino: da lista da classe). A validade é conferida
+   * no serviço, contra a classe escolhida.
+   */
+  skillChoice: z.string().trim().max(40).default(''),
   /** Aumento de Atributo: +2 em um atributo ou +1 em dois diferentes. */
   abilityIncreases: z
     .array(
@@ -184,6 +213,12 @@ export const levelUpSchema = z.object({
     )
     .max(2)
     .default([]),
+  /**
+   * Escolhas de característica do nível que está sendo ganho (ex.: Estilo de
+   * Luta no 1º nível do Guerreiro): `{ [id da característica]: [opções] }`. A
+   * validade é conferida no serviço, contra as características daquela classe.
+   */
+  choices: featureChoicesSchema,
   /** Talento escolhido (registro textual; sem efeito mecânico automatizado). */
   feat: z
     .object({
@@ -256,6 +291,7 @@ export const updateCharacterSchema = z
     // Coleções
     skills: skillsStateSchema,
     saves: savesStateSchema,
+    proficiencies: proficienciesSchema,
     inventory: inventoryListSchema,
     spells: spellsStateSchema,
     attacks: z.array(attackSchema).max(100),
@@ -336,6 +372,12 @@ export const creationStepSchema = z.object({
    * Feiticeiro e Bruxo escolhem Domínio/Origem/Patrono logo na primeira classe).
    */
   subclass: shortText(120).optional(),
+  /**
+   * Passo 5: escolhas de característica do NÍVEL 1 da classe inicial (Estilo de
+   * Luta do Guerreiro, Inimigo Favorito e Explorador Nato do Patrulheiro) —
+   * `{ [id da característica]: [opções] }`. Validadas no serviço.
+   */
+  choices: featureChoicesSchema.optional(),
   /** Passo 6: valores-base dos seis atributos. */
   baseAbilities: creationAbilitiesSchema.optional(),
   /** Passo 7: perícias com proficiência escolhidas na classe. */

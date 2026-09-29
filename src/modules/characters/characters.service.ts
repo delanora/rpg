@@ -30,15 +30,34 @@ import {
   applySaveProficiencies,
   averageHitDie,
   findSubclass,
+  firstClassProficiencies,
   getClassDefinition,
   isAsiLevel,
-  multiclassMissingLabel,
+  mergeProficiencies,
+  multiclassPrerequisiteLabel,
+  multiclassProficiencyGrant,
+  multiclassSkillChoiceFor,
+  featureChoiceLevel,
+  featuresWithSubclass,
   normalizeClassEntries,
+  normalizeClassState,
+  normalizeProficiencies,
+  resolveFeatureChoices,
+  sameFeatureChoices,
+  subclassProficiencyGrant,
   totalCharacterLevel,
   type ClassEntry,
+  type ProficienciesState,
 } from '../shared/classes.js';
 import type { AbilityKey } from '../shared/dnd5e.js';
-import { LEVEL_MAX, abilityModifier, normalizeSaves, normalizeSkills } from '../shared/dnd5e.js';
+import {
+  LEVEL_MAX,
+  SKILL_KEYS,
+  SKILL_LABELS,
+  abilityModifier,
+  normalizeSaves,
+  normalizeSkills,
+} from '../shared/dnd5e.js';
 
 /** Quem está alterando a ficha (vem do token, nunca do corpo da requisição). */
 export interface Actor {
@@ -112,6 +131,7 @@ const CREATION_FIELD_LABELS: Record<string, string> = {
   speed: 'deslocamento',
   skills: 'perícias',
   saves: 'salvaguardas',
+  proficiencies: 'proficiências de armadura, arma e ferramenta',
   attacks: 'ataques',
   features: 'características',
   inventory: 'inventário',
@@ -152,9 +172,16 @@ function abilitiesOf(character: Character): Record<AbilityKey, number> {
   };
 }
 
-/** Salvaguardas fixas de TODAS as classes do personagem (multiclasse). */
+/**
+ * Salvaguardas fixas do personagem.
+ *
+ * Só a PRIMEIRA classe concede salvaguardas: multiclasse nunca as concede
+ * (PHB 2014, p.164), mesmo que a classe nova tenha salvaguardas próprias.
+ */
 function lockedSavesOf(entries: ClassEntry[]): AbilityKey[] {
-  return entries.flatMap((entry) => getClassDefinition(entry.classKey)?.savingThrows ?? []);
+  const first = entries[0];
+  if (!first) return [];
+  return [...(getClassDefinition(first.classKey)?.savingThrows ?? [])];
 }
 
 /**
@@ -191,9 +218,12 @@ function resolveClassPatch(
     // O assistente de criação escolhe a classe ANTES dos atributos: nesse
     // momento o pré-requisito ainda não pode ser conferido (o passo seguinte é
     // quem faz isso, já com os valores finais).
-    const missing = options.skipPrerequisite ? '' : multiclassMissingLabel(definition.key, abilities);
+    // A ficha ainda não tem classes: só o pré-requisito da classe nova importa.
+    const missing = options.skipPrerequisite
+      ? ''
+      : multiclassPrerequisiteLabel(definition.key, abilities, existing);
     if (missing) {
-      throw new HttpError(`Para entrar em ${definition.name} ${missing}.`, 400);
+      throw new HttpError(`${missing}.`, 400);
     }
 
     // Subclasse do NÍVEL 1 (Clérigo, Feiticeiro e Bruxo): o livro já exige a
@@ -452,10 +482,12 @@ async function applyLevelUp(
     throw new HttpError(`${definition.name} já está no nível máximo.`, 400);
   }
 
-  // Classe nova (multiclasse) precisa do pré-requisito de atributo.
+  // Classe nova (multiclasse) precisa do pré-requisito de atributo: 13 nos
+  // atributos exigidos por ela E por todas as classes que o personagem já tem
+  // (PHB 2014, cap. 6).
   if (!existing) {
-    const missing = multiclassMissingLabel(definition.key, abilities);
-    if (missing) throw new HttpError(`Para entrar em ${definition.name} ${missing}.`, 400);
+    const missing = multiclassPrerequisiteLabel(definition.key, abilities, entries);
+    if (missing) throw new HttpError(`${missing}.`, 400);
   }
 
   const newClassLevel = existing ? existing.level + 1 : 1;
@@ -468,6 +500,9 @@ async function applyLevelUp(
       ? randomInt(1, definition.hitDie + 1)
       : averageHitDie(definition.hitDie);
 
+  const data: Record<string, unknown> = {};
+  const features: unknown[] = Array.isArray(character.features) ? [...character.features] : [];
+
   // --- Subclasse: exigida quando o nível da classe libera a escolha ---------
   let subclass = existing?.subclass ?? '';
   if (!subclass && newClassLevel >= definition.subclassLevel) {
@@ -478,11 +513,118 @@ async function applyLevelUp(
     const found = findSubclass(definition, chosen);
     if (!found) throw new HttpError('Subclasse desconhecida.', 400);
     subclass = found.name;
+
+    // A subclasse pode conceder proficiências (Colégio da Bravura: armaduras
+    // médias, escudos e armas marciais): entram SOMADAS às da classe.
+    const subclassGrant = subclassProficiencyGrant(definition, subclass);
+    if (subclassGrant.armor.length + subclassGrant.weapons.length + subclassGrant.tools.length > 0) {
+      data.proficiencies = mergeProficiencies(
+        normalizeProficiencies(data.proficiencies ?? character.proficiencies),
+        subclassGrant,
+      );
+    }
   }
 
   // --- Aumento de Atributo ou Talento (só nos níveis de ASI da classe) ------
-  const data: Record<string, unknown> = {};
-  const features: unknown[] = Array.isArray(character.features) ? [...character.features] : [];
+  // --- Escolhas de característica liberadas por ESTE nível ------------------
+  // Estilo de Luta do guerreiro (1º), do paladino e do patrulheiro (2º),
+  // Inimigo Favorito e Explorador Nato do patrulheiro (1º e melhorias). O
+  // serviço valida quantidade, opções e o nível em que cada escolha é feita.
+  const classState = normalizeClassState(character.classState);
+  const nextChoices = resolveFeatureChoices(
+    definition,
+    newClassLevel,
+    input.choices,
+    classState.choices,
+    subclass,
+  );
+  if (!sameFeatureChoices(nextChoices, classState.choices)) {
+    data.classState = { ...classState, choices: nextChoices };
+  }
+
+  /**
+   * Entrada numa classe NOVA (multiclasse de verdade): só aí valem a tabela
+   * reduzida de proficiências e a perícia extra do livro. A primeira classe da
+   * ficha usa as proficiências iniciais completas.
+   */
+  const isMulticlassEntry = !existing && entries.length > 0;
+
+  // --- Proficiências de armadura, arma e ferramenta -------------------------
+  // Entrar numa classe concede somente o que a tabela de multiclasse dá (PHB
+  // p.164) — nunca salvaguardas.
+  if (!existing) {
+    const grant = isMulticlassEntry
+      ? multiclassProficiencyGrant(definition.key)
+      : firstClassProficiencies(definition.key);
+    data.proficiencies = mergeProficiencies(
+      normalizeProficiencies(character.proficiencies),
+      grant,
+    );
+  }
+
+  // --- Perícia da entrada por multiclasse ----------------------------------
+  // Bardo (qualquer perícia), Patrulheiro e Ladino (da lista da classe) dão uma
+  // perícia ao entrar; ela precisa ser uma perícia que o personagem não tenha.
+  if (isMulticlassEntry) {
+    const skillChoice = multiclassSkillChoiceFor(definition.key);
+    const chosenSkill = input.skillChoice.trim();
+
+    if (skillChoice) {
+      if (chosenSkill === '') {
+        throw new HttpError(`Escolha a perícia concedida por ${definition.name}.`, 400);
+      }
+      const withinList = skillChoice.from.length === 0 || skillChoice.from.includes(chosenSkill);
+      if (!SKILL_KEYS.includes(chosenSkill) || !withinList) {
+        throw new HttpError(`Perícia inválida para ${definition.name}.`, 400);
+      }
+
+      const currentSkills = normalizeSkills(character.skills);
+      if (currentSkills[chosenSkill]?.proficient) {
+        throw new HttpError(
+          `Você já tem proficiência em ${SKILL_LABELS[chosenSkill] ?? chosenSkill}.`,
+          400,
+        );
+      }
+
+      data.skills = {
+        ...currentSkills,
+        [chosenSkill]: {
+          proficient: true,
+          expertise: currentSkills[chosenSkill]?.expertise ?? false,
+        },
+      };
+    } else if (chosenSkill !== '') {
+      throw new HttpError(
+        `${definition.name} não concede perícia ao entrar por multiclasse.`,
+        400,
+      );
+    }
+  } else if (input.skillChoice.trim() !== '') {
+    throw new HttpError(
+      'A perícia de multiclasse só entra ao escolher uma classe nova.',
+      400,
+    );
+  }
+
+  // --- Escolhas que APLICAM algo na ficha -----------------------------------
+  // Colégio do Conhecimento: as 3 perícias escolhidas viram proficiência (a
+  // escolha também fica gravada em `classState.choices`).
+  const skillGainChoices = featuresWithSubclass(definition, subclass).filter(
+    (feature) =>
+      feature.choice?.apply === 'skill' && featureChoiceLevel(feature) === newClassLevel,
+  );
+  const gainedSkills = [
+    ...new Set(skillGainChoices.flatMap((feature) => nextChoices[feature.id] ?? [])),
+  ].filter((key) => SKILL_KEYS.includes(key));
+
+  if (gainedSkills.length > 0) {
+    const currentSkills = normalizeSkills(data.skills ?? character.skills);
+    const nextSkills = { ...currentSkills };
+    for (const key of gainedSkills) {
+      nextSkills[key] = { proficient: true, expertise: currentSkills[key]?.expertise ?? false };
+    }
+    data.skills = nextSkills;
+  }
 
   if (isAsiLevel(definition.key, newClassLevel)) {
     if (input.feat) {
@@ -735,6 +877,22 @@ function assertPlayerCanPatch(character: Character, patch: UpdateCharacterInput)
 
   if (!character.creationFinalized) return;
 
+  // As ESCOLHAS de característica são construção (só o Level Up e o mestre as
+  // mudam): o jogador continua podendo ligar toggles e gastar/recuperar usos.
+  if (patch.classState !== undefined) {
+    const stored = normalizeClassState(character.classState);
+    const incoming = normalizeClassState(patch.classState);
+    // A comparação ignora a ORDEM das características (o JSONB do Postgres
+    // reordena as chaves e o cliente devolve a mesma lista, em outra ordem).
+    if (!sameFeatureChoices(incoming.choices, stored.choices)) {
+      throw new HttpError(
+        'A criação deste personagem foi finalizada: as escolhas de característica ' +
+          '(Estilo de Luta, Inimigo Favorito...) só mudam no Level Up ou pelo mestre.',
+        403,
+      );
+    }
+  }
+
   const blocked = Object.keys(patch).filter(
     (key) => !(PLAYER_STATE_KEYS as readonly string[]).includes(key),
   );
@@ -814,7 +972,7 @@ async function applyCharacterPatch(
   if (classesChanged) {
     data.classes = classes as unknown as Prisma.InputJsonValue;
     // Sem classe, nada de estado de classe pendurado.
-    if (classes.length === 0) data.classState = { active: [], used: {} };
+    if (classes.length === 0) data.classState = { active: [], used: {}, choices: {} };
 
     // Primeira classe escolhida (ou troca dela pelo assistente, ainda no nível
     // 1): define o PV inicial pelo dado de vida máximo + modificador de
@@ -832,6 +990,28 @@ async function applyCharacterPatch(
         data.hpMax = hpMax;
         if (patch.hpCurrent === undefined) data.hpCurrent = hpMax;
       }
+    }
+
+    // A PRIMEIRA classe define as proficiências iniciais (armaduras, armas e
+    // ferramentas). Um valor mandado no mesmo patch tem prioridade.
+    if (rebuildFirstLevelHp && patch.proficiencies === undefined) {
+      const chosen = getClassDefinition(classes[0].classKey);
+      if (chosen) data.proficiencies = firstClassProficiencies(chosen.key);
+    }
+
+    // Trocou a classe inicial pelo assistente? As escolhas da classe antiga
+    // (Estilo de Luta do Guerreiro) não valem para a nova — só ficam as que
+    // ainda existem na classe escolhida. Escolhas enviadas no mesmo patch já
+    // passaram pelo assistente e têm prioridade.
+    if (fromWizard && rebuildFirstLevelHp && patch.classState === undefined) {
+      const chosen = getClassDefinition(classes[0].classKey);
+      const stored = normalizeClassState(existing.classState);
+      const valid = new Set((chosen?.features ?? []).map((feature) => feature.id));
+      const kept: Record<string, string[]> = {};
+      for (const [id, keys] of Object.entries(stored.choices)) {
+        if (valid.has(id)) kept[id] = keys;
+      }
+      data.classState = { ...stored, choices: kept };
     }
   }
 
@@ -865,6 +1045,11 @@ async function applyCharacterPatch(
   }
 
   if (patch.skills !== undefined) data.skills = normalizeSkills(patch.skills);
+  // Proficiências de armadura/arma/ferramenta: construção — com a criação
+  // finalizada só o mestre edita (ver PLAYER_STATE_KEYS acima).
+  if (patch.proficiencies !== undefined) {
+    data.proficiencies = normalizeProficiencies(patch.proficiencies) as ProficienciesState;
+  }
   if (patch.inventory !== undefined) data.inventory = patch.inventory;
   if (patch.spells !== undefined) {
     data.spells =
@@ -879,7 +1064,9 @@ async function applyCharacterPatch(
   }
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
   if (patch.features !== undefined) data.features = patch.features;
-  if (patch.classState !== undefined) data.classState = patch.classState;
+  if (patch.classState !== undefined) {
+    data.classState = normalizeClassState(patch.classState);
+  }
 
   const character = await prisma.character.update({
     where: { userId: owner.userId },

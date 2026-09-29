@@ -1,11 +1,18 @@
 import { ABILITY_ABBREVIATIONS, ABILITY_KEYS, ABILITY_LABELS, SKILLS, formatModifier } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
-import type { AbilityKey, SkillEntry } from '../../types';
+import type { AbilityKey, ProficienciesState, SkillEntry } from '../../types';
 import { Icon } from '../Icon';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 
 const DEFAULT_ENTRY: SkillEntry = { proficient: false, expertise: false };
+
+/** Grupos das proficiências de armadura/arma/ferramenta do PHB (cap. 6). */
+const PROFICIENCY_GROUPS: { key: keyof ProficienciesState; label: string; hint: string }[] = [
+  { key: 'armor', label: 'Armaduras', hint: 'Armaduras leves · Escudos' },
+  { key: 'weapons', label: 'Armas', hint: 'Armas simples · Espadas longas' },
+  { key: 'tools', label: 'Ferramentas', hint: 'Ferramentas de ladrão' },
+];
 
 /** Abre a janela de dados já com 1d20 e o bônus do teste aplicado. */
 interface RollInput {
@@ -49,6 +56,16 @@ export function SkillsSavesSection({
 
   function setSave(ability: AbilityKey, proficient: boolean): void {
     update({ saves: { ...character.saves, [ability]: proficient } });
+  }
+
+  /**
+   * Proficiências de armadura/arma/ferramenta: construção (o jogador com a
+   * criação finalizada só as VÊ). O mestre as edita como texto separado por
+   * vírgula; as escolhas abertas do livro entram como descrição.
+   */
+  function setProficiencies(key: keyof ProficienciesState, raw: string): void {
+    const items = [...new Set(raw.split(',').map((item) => item.trim()).filter(Boolean))];
+    update({ proficiencies: { ...character.proficiencies, [key]: items } });
   }
 
   return (
@@ -159,6 +176,43 @@ export function SkillsSavesSection({
             })}
           </ul>
         ))}
+      </div>
+
+      <h3 className="subsection-title">Armaduras, Armas e Ferramentas</h3>
+      <p className="section-note">
+        Concedidas pela classe inicial e pelas entradas por multiclasse (multiclasse nunca concede
+        salvaguardas). O efeito na CA e nos ataques ainda não é automático.
+      </p>
+      <div className="prof-groups">
+        {PROFICIENCY_GROUPS.map((group) => {
+          const items = character.proficiencies[group.key];
+
+          return (
+            <div className="prof-group" key={group.key}>
+              <h4 className="prof-group-title">{group.label}</h4>
+              {readOnly ? (
+                items.length === 0 ? (
+                  <p className="prof-group-items muted">Nenhuma</p>
+                ) : (
+                  <p className="prof-group-items">{items.join(' · ')}</p>
+                )
+              ) : (
+                <input
+                  type="text"
+                  className="prof-group-input"
+                  key={items.join(',')}
+                  defaultValue={items.join(', ')}
+                  placeholder={group.hint}
+                  aria-label={`Proficiências em ${group.label} (separe por vírgula)`}
+                  onBlur={(event) => setProficiencies(group.key, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') event.currentTarget.blur();
+                  }}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     </Section>
   );

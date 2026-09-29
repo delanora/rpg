@@ -5,6 +5,8 @@ import { Icon } from '../components/Icon';
 import { PresentationOverlay } from '../components/PresentationOverlay';
 import { ConfigTab } from '../components/master/ConfigTab';
 import { CreaturesTab } from '../components/master/CreaturesTab';
+import { MasterNotes } from '../components/master/MasterNotes';
+import { RollLogPanel } from '../components/master/RollLogPanel';
 import { ItemsTab } from '../components/master/ItemsTab';
 import { RegionsTab } from '../components/master/RegionsTab';
 import { SheetsTab } from '../components/master/SheetsTab';
@@ -52,6 +54,10 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [presentation, setPresentation] = useState<Presentation | null>(null);
   // Configuração da mesa: controle de Level Up liberado.
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
+  // Painéis flutuantes do mestre: o log de rolagens e as anotações da mesa.
+  // Abrem UM por vez, no mesmo espaço acima dos botões flutuantes.
+  const [logOpen, setLogOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -680,6 +686,27 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
       {/* Botão "Dados" sempre disponível, inclusive em combate. */}
       <DiceDock roller={dice} />
+
+      {/* Pilha flutuante do mestre, no canto inferior esquerdo: o LOG abre
+          acima do botão dos dados e as ANOTAÇÕES ficam abaixo dele. */}
+      <RollLogPanel
+        history={dice.history}
+        open={logOpen}
+        onToggle={() => {
+          setNotesOpen(false);
+          setLogOpen((value) => !value);
+        }}
+        onClose={() => setLogOpen(false)}
+        onClear={dice.clearHistory}
+      />
+      <MasterNotes
+        open={notesOpen}
+        onToggle={() => {
+          setLogOpen(false);
+          setNotesOpen((value) => !value);
+        }}
+        onClose={() => setNotesOpen(false)}
+      />
     </div>
   );
 }

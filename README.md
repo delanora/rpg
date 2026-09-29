@@ -197,6 +197,21 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 | `npm run dev:client` | Frontend em modo desenvolvimento (`http://localhost:5173`). |
 | `npm run build:client` | Compila o frontend para `client/dist/`. |
 
+### Verificação automática (smoke test)
+
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 19 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio e a **Fase 0 (seções 14 a 19)**, a regressão das regras base:
+
+| Seção | O que verifica |
+|-------|----------------|
+| **14** | **PV e CA automáticos** — PV de d10/d6, recálculo retroativo de CON (subindo e descendo), CA leve/média/pesada, escudo, Defesa sem Armadura de Bárbaro e de Monge, override do mestre. |
+| **15** | **Multiclasse** — pré-requisito faltando na classe nova e nas classes atuais (400 + mensagem), proficiências parciais de entrada x lista completa da 1ª classe, salvaguardas só da 1ª classe, perícia de multiclasse obrigatória/válida. |
+| **16** | **Magias preparadas** — contador por classe (Clérigo/Druida/Mago, Paladino com metade do nível, zero no 1º) e as classes de magias conhecidas. |
+| **17** | **Espaços de magia** — tabela da própria classe x combinada (duas conjuradoras), terço-conjurador e Bruxo de fora (magia de pacto separada). |
+| **18** | **Features e escolhas** — Defesa (+1 só com armadura), Pau para Toda Obra, Aura de Proteção, escolhas válidas/inválidas e subclasse no nível certo. |
+| **19** | **Subclasses 1 → 20** — Level Up de verdade pelas 10 subclasses novas (features e recursos por nível) e o **crítico em combate** (limiar 18 do Campeão, 1 natural errando e a volta a 20 sem ele). |
+
+Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória.
+
 ### Ambiente local já configurado (esta máquina)
 
 O PostgreSQL 17 foi instalado e configurado localmente, então o projeto roda direto por aqui:
@@ -370,7 +385,7 @@ Modelo **híbrido**: campos simples e muito consultados em colunas, coleções m
 | Tipo | Campos |
 |------|--------|
 | Colunas | `name`, `race`, `className`, `level`, `background`, `alignment`, `experience`, os 6 atributos, `hpCurrent/hpMax/hpTemp`, `armorClass`, `initiativeBonus`, `speed`, `notes`, `version` |
-| JSONB | `skills` (18 perícias), `saves`, `inventory`, `spells`, `attacks`, `features` |
+| JSONB | `skills` (18 perícias), `saves`, `proficiencies` (armadura/arma/ferramenta), `inventory`, `spells`, `attacks`, `features` |
 
 Quando uma coleção é enviada no PATCH, ela **substitui integralmente** o valor anterior — sem merge profundo, o que torna a edição inline previsível.
 
@@ -410,14 +425,47 @@ Os dados anteriores foram convertidos na migração `20260926170000_metric_syste
 
 A ficha guarda uma **lista de classes** (`{ classKey, subclass, level }`) em vez de uma classe única. O **nível total** do personagem é a soma dos níveis de cada classe — é ele que define o bônus de proficiência, o XP para o próximo nível e o teto de 20. As features de cada classe escalam com o **nível dela** e são somadas: um Bárbaro 3 / Ladino 2 tem, ao mesmo tempo, as features de Bárbaro até o 3 e as de Ladino até o 2 (a Fúria escala pelo nível de Bárbaro, o Ataque Furtivo pelo de Ladino).
 
-- **Pré-requisitos:** para entrar numa classe é preciso **13** no(s) atributo(s) exigido(s) — o Guerreiro aceita Força **ou** Destreza, o Monge exige Destreza **e** Sabedoria. Sem o atributo, a classe é recusada com o motivo (`multiclassMissingLabel`).
-- **Magia combinada:** conjurador completo + metade do meio-conjurador + um terço do terço-conjurador (arredondando para baixo) formam o nível de conjurador da tabela de multiclasse. O **Bruxo fica de fora** e usa Magia de Pacto separada; magias conhecidas/preparadas continuam sendo contadas **por classe**.
+- **Pré-requisitos:** para entrar numa classe nova é preciso **13** no(s) atributo(s) exigido(s) pela classe **e também por todas as classes que o personagem já tem** (PHB 2014, cap. 6) — o Guerreiro aceita Força **ou** Destreza, o Monge exige Destreza **e** Sabedoria. Sem o atributo, a entrada é recusada com o motivo completo (`multiclassPrerequisiteLabel`), algo como *"Para entrar em Ladino você precisa de Destreza 13; para continuar como Paladino você precisa de Força 13 e Carisma 13"*. A classe que o personagem já possui continua sempre elegível para subir de nível: o pré-requisito só vale para **entrar** numa classe.
+- **Proficiências de armadura, arma e ferramenta:** a PRIMEIRA classe concede o conjunto completo do nível 1; entrar numa classe nova concede só o conjunto reduzido da tabela de multiclasse (PHB p.164) — e **nunca salvaguardas** (as fixas são só as da primeira classe). Bardo, Patrulheiro e Ladino ainda dão **uma perícia à escolha** ao entrar (qualquer uma, para o Bardo; da lista da classe, para os outros), pedida no próprio assistente de Level Up. As escolhas abertas do livro ("1 instrumento musical à sua escolha") entram como descrição; o efeito na CA e nos ataques ainda não é automático.
+- **Espaços de magia — qual tabela vale:** com **uma** classe conjuradora vale a tabela da **própria classe** (conjurador completo = nível cheio; meio = **metade arredondada para CIMA**: Paladino 3 já tem 3 espaços de 1º, Patrulheiro 5 tem 4 de 1º e 2 de 2º; terço = **um terço para cima**: Trapaceiro Arcano 4 tem 3 de 1º). Paladino e Patrulheiro **não conjuram no nível 1** e o terço-conjurador só a partir do 3º. A tabela **combinada** (conjurador completo + metade do meio + um terço do terço, **arredondando para baixo**) só entra com **duas ou mais** classes conjuradoras; Guerreiro e Ladino sem a subclasse conjuradora não contam como conjuradores (Guerreiro 5 / Paladino 4 usa a tabela do Paladino). O **Bruxo fica de fora** das duas e usa Magia de Pacto separada.
+- **Magias preparadas são POR CLASSE**, cada uma com o próprio atributo e o próprio nível: Clérigo (SAB), Druida (SAB) e Mago (INT) preparam `mod + nível da classe` (mínimo 1); o **Paladino (CAR)** prepara `mod + metade do nível de paladino` (mínimo 1) e **zero no nível 1**. Bardo, Patrulheiro, Feiticeiro, Bruxo e os terço-conjuradores usam **magias conhecidas** (a fórmula não se aplica — o valor sai como nulo). Cada classe expõe o seu número em `classes[].spellcasting.preparedCount`; **não há um total somado** na ficha.
 - **Aumento de Atributo/Talento é por classe:** Guerreiro em 4/6/8/12/14/16/19, Ladino em 4/8/10/12/16/19 e as demais em 4/8/12/16/19 (do nível daquela classe).
+
+### Escolhas de característica (Estilo de Luta, Inimigo Favorito...)
+
+Algumas características pedem uma escolha: o **Estilo de Luta** (Guerreiro no 1º nível; Paladino e Patrulheiro no 2º), o **Inimigo Favorito** e o **Explorador Nato** do Patrulheiro (um no 1º nível, mais um no 6º e — no caso do terreno — mais dois no 10º, e o último inimigo no 14º), o **Estilo de Luta Adicional** do Campeão (10º), as **Manobras** e o **Estudante da Guerra** do Mestre da Batalha (3º, com mais duas manobras no 7º/10º/15º), as **Proficiências Adicionais** do Colégio do Conhecimento (3 perícias, que entram como proficiência de verdade) e as **quatro escolhas do Caçador** (Presa do Caçador no 3º, Táticas Defensivas no 7º, Multiataque no 11º e Defesa Superior no 15º).
+
+A característica declara quantas opções, quais e **em que nível da classe** a escolha é feita; o valor fica em `classState.choices` (`{ 'fighter-fighting-style': ['defense'] }`) — sem migração nova. Quem **valida** é o servidor, no **Level Up** e no **passo 5 do assistente de criação** (quantidade, opção existente, sem repetir e só no nível certo); o `LevelUpDialog` e o `CreationWizard` mostram o seletor, e a **ficha mostra a escolha** na aba Características — em leitura para o jogador com a criação finalizada (403, campo de construção) e editável pelo mestre.
+
+Quatro efeitos numéricos saem daí para o `derived`: o **Estilo de Luta Defesa** soma **+1 na CA enquanto houver armadura vestida** (escudo sozinho não conta), a **Aura de Proteção** do Paladino (6º nível) soma o **mod. de Carisma — mínimo +1 — em todas as salvaguardas**, o **Pau para Toda Obra** do Bardo (2º nível) soma **metade da proficiência** (arredondada para baixo) em todo teste de habilidade sem proficiência, inclusive a **iniciativa**, e o **Crítico Aprimorado/Superior** do Campeão (3º/15º) baixa o **limiar de crítico** para 19–20 e depois 18–20. Quando dois desses efeitos valem para o mesmo teste, vale o **maior** — nunca a soma (no crítico, vale o **menor limiar**).
+
+A **subclasse escolhida no mesmo nível em que já pede uma escolha** (Caçador e Colégio do Conhecimento, ambos no 3º) funciona: o catálogo de classes do personagem expõe as escolhas de cada subclasse (`classOptions[].subclassChoices`) e o assistente de Level Up mostra o passo assim que a subclasse é selecionada — a subida só fecha com a escolha feita.
+
+As demais escolhas (Arquearia, Duelismo, Proteção...) ficam registradas e descritas; o efeito em combate por ação/reação entra na Fase 5.
+
+### Características de classe cadastradas
+
+As características de **classe** (não de subclasse) das 12 classes estão no registro: cada uma com nível, texto e os efeitos mecânicos que o sistema já sabe aplicar (recursos com contador, toglões, bônus de CA, de salvaguarda, de velocidade, dados de crítico, Defesa sem Armadura, Forma Selvagem...). Os recursos com contador guardam **tipo de descanso** para a Fase 6 (o reset automático por descanso ainda não existe) e o que depende de combate por ação/reação/rolagem está marcado no próprio arquivo da classe com **PENDENTE (Fase 4/5)**.
+
+Exemplos: Bardo (Inspiração de Bardo com usos = mod. de CAR, Canção de Descanso, Especialização), Guerreiro (Estilo de Luta, Retomar o Fôlego, Surto de Ação, Indomável e os Ataques Extras de 5/11/20), Paladino (Sentido Divino, Mãos Consagradas com reserva de 5 × nível, Aura de Proteção, Aura de Coragem, Toque Purificador) e Patrulheiro (Inimigo Favorito, Explorador Nato, Consciência Primitiva, Passo Terrestre, Desaparecer, Matador de Inimigos).
+
+As **subclasses do PHB estão todas cadastradas**, com as escolhas e os efeitos que o sistema já sabe aplicar:
+
+- **Bardo** — Colégio do Conhecimento (3 perícias à escolha que viram proficiência, Palavras de Interrupção) e Colégio da Bravura (concede **armaduras médias, escudos e armas marciais**, Inspiração de Combate);
+- **Guerreiro** — **Campeão** (crítico com 19–20 no 3º e 18–20 no 15º, Atleta Extraordinário com metade da proficiência **arredondada para cima** em testes de FOR/DES/CON e na iniciativa), **Mestre da Batalha** (dados de superioridade d8 → d10 no 10º → d12 no 18º, 4 no 3º / 5 no 7º / 6 no 15º de descanso curto, as **16 manobras** do livro e Estudante da Guerra) e **Cavaleiro Arcano** (terço-conjurador de INT, com a tabela de espaços e magias conhecidas própria);
+- **Paladino** — os três juramentos (Devoção, Anciões e Vingança) com **Canalizar Divindade** (1 uso, descanso curto ou longo), as **magias de juramento** como texto nos níveis 3/5/9/13/17 (sempre preparadas, fora do limite) e as características de 7/15/20;
+- **Patrulheiro** — **Caçador** (as 4 escolhas do arquétipo) e **Senhor das Feras** (companheiro animal como característica informativa — a ficha do companheiro é Fase 5).
+
+O **combate** já usa o limiar de crítico da ficha (Campeão): o ataque critica com d20 **maior ou igual** ao limiar, o crítico sempre acerta e o **1 natural sempre erra**.
+
+> **Lacunas conhecidas:** **Clérigo** e **Bruxo** ainda têm `features: []` (faltam Canalizar Divindade, Destruir Mortos-Vivos, Intervenção Divina, Invocações Místicas, Dádiva do Pacto, Arcanum Místico) e o Ladino não tem a Gíria de Ladrão (texto puro). O **companheiro animal** do Senhor das Feras e as **magias de juramento** do Paladino como magias de verdade ficam para as Fases 4/5.
 - O **nível de cada classe não é editável** direto: a lista só ganha classe e sobe de nível pelo Level Up (a edição direta de `level` é recusada com 400 e a lista só aceita trocar a **subclasse** de classes existentes).
 
 O **Talento** escolhido nesse mesmo assistente fica registrado na ficha como uma característica de origem `feat` e aparece na aba **Características**, na subseção **Talentos** (nome + descrição; sem efeito mecânico automatizado por enquanto).
 
-As regras vivem em `src/modules/shared/classes.ts` (pré-requisitos, ajustes somados, tabelas de espaços, ASI por classe); a ficha grava as classes no JSONB `characters.classes` (migração `20260926180000_multiclass_and_level_up`).
+As regras vivem em `src/modules/shared/classes/index.ts` (pré-requisitos, tabela `CLASS_PROFICIENCIES` de proficiências, ajustes somados, tabelas de espaços, ASI por classe); a ficha grava as classes no JSONB `characters.classes` (migração `20260926180000_multiclass_and_level_up`) e as proficiências no JSONB `characters.proficiencies` (migração `20260928160000_character_proficiencies`, que já preencheu as fichas existentes a partir das classes).
+
+As **proficiências de armadura, arma e ferramenta** aparecem em modo somente leitura na seção **Perícias e Salvaguardas** da ficha. É campo de **construção**: com a criação finalizada o jogador não altera (403) e só o mestre edita (texto separado por vírgula no próprio local).
 
 ### Controle de Level Up pelo mestre
 
@@ -435,6 +483,29 @@ O mestre libera o Level Up pelo botão **LIBERAR LEVEL UP** na barra de abas do 
 
 A configuração é uma linha única em `game_config`. Cada personagem guarda `lastLevelUpRelease`; o botão fica habilitado enquanto `lastLevelUpRelease < levelUpRelease`.
 
+### Pilha flutuante do mestre
+
+No **canto inferior esquerdo** o mestre tem três botões empilhados — o único lugar do sistema com essa pilha:
+
+| Posição | Botão | O que faz |
+|---------|-------|-----------|
+| topo | **Log** (com o contador de rolagens) | Abre o painel flutuante **só com o histórico de rolagens** da sessão. |
+| meio | **Dados** | Abre a janela de rolagem (o tabuleiro, com o log dentro dela). |
+| base | **Anotações** | Abre as **anotações privadas do mestre** sobre a mesa. |
+
+Os dois painéis são flutuantes (cartões ancorados acima da pilha, com rolagem própria — nada de tela cheia) e abrem **um por vez**: abrir o log fecha as anotações e vice-versa.
+
+### Anotações do mestre
+
+O mestre tem um bloco de notas próprio, com o **mesmo esquema das anotações do jogador** (botão de pena + painel flutuante com salvamento automático ao sair do campo e "salvo às HH:MM"), mas o texto fica na **configuração da mesa** (`GameConfig.masterNotes`) e é **visível só para ele**: não vai para a ficha de ninguém nem para a mesa. Como as demais escritas do domínio, a gravação é por HTTP e o conteúdo não gera evento em tempo real (é privado de um único usuário).
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `GET` | `/api/game/notes` | **mestre** | Anotações privadas do mestre (`{ notes }`). |
+| `PATCH` | `/api/game/notes` | **mestre** | `{ notes }` substitui o texto (até 20.000 caracteres). |
+
+> As anotações moram na mesma linha de `game_config`, mas **não** entram no `GET /api/game`: essa rota é acessível ao jogador (a ficha lê o contador de liberações), então o texto só trafega pelas rotas acima, exclusivas de `MASTER`.
+
 ### Aba "Mesa"
 
 O **NÍVEL INICIAL** e as listas de referência ficam na aba **Mesa** do painel do mestre (antes o nível inicial aparecia em destaque na barra de abas). Quando o nível inicial é maior que 1, o assistente de criação aplica os níveis 2 até ele ao concluir a montagem — **sem** depender da liberação do mestre e **sem** consumir a liberação do jogador (o nível inicial não é um Level Up de campanha).
@@ -451,15 +522,17 @@ O compêndio é montado por `getCompendium()` em `src/modules/compendium/compend
 
 Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jogador por:
 
-1. **Classe** — subir na classe atual ou multiclassar numa nova (as classes sem pré-requisito aparecem bloqueadas com o motivo).
-2. **Pontos de vida** — rolar o Dado de Vida (o servidor rola, nunca o cliente) ou usar a média do PHB (d6=4, d8=5, d10=6, d12=7), sempre somando o modificador de Constituição com o **mínimo de 1 PV** por nível.
-3. **Subclasse** — pedida quando o novo nível da classe libera a escolha (Clérigo/Bruxo/Feiticeiro no 1, Druida/Mago no 2, as demais no 3).
-4. **Aumento de Atributo ou Talento** — só nos níveis de ASI **daquela classe**: +2 em um atributo ou +1 em dois (máximo 20), ou um talento do PHB (a lista com nome e descrição está em `client/src/feats.ts`; por enquanto o talento é registrado como texto na aba Características, sem efeito mecânico automatizado).
-5. **Resumo e confirmação** — mostra o novo nível, o PV ganho e a progressão escolhida; ao confirmar, tudo é aplicado de uma vez e o botão se desabilita para o jogador até o mestre liberar de novo. O mestre vê a ficha mudar em tempo real.
+1. **Classe** — subir na classe atual ou multiclassar numa nova (as classes sem pré-requisito aparecem bloqueadas com o motivo, citando a classe nova e as classes atuais que estão barrando).
+2. **Escolhas de característica** — quando o nível novo as libera (Estilo de Luta no 1º do Guerreiro e no 2º do Paladino/Patrulheiro, Inimigo Favorito e Explorador Nato no 1º do Patrulheiro e as melhorias do 6º/10º/14º, as manobras do Mestre da Batalha, as perícias do Colégio do Conhecimento e as do Caçador); o servidor valida quantidade, opções e o nível — inclusive quando a escolha vem junto da subclasse escolhida na mesma subida.
+3. **Perícia de multiclasse** — só ao entrar numa classe nova de Bardo (qualquer perícia), Patrulheiro ou Ladino (da lista da classe); a escolha precisa ser uma perícia que o personagem ainda não tenha, é validada no servidor e o passo mostra também as proficiências que aquela entrada concede.
+4. **Pontos de vida** — rolar o Dado de Vida (o servidor rola, nunca o cliente) ou usar a média do PHB (d6=4, d8=5, d10=6, d12=7), sempre somando o modificador de Constituição com o **mínimo de 1 PV** por nível.
+5. **Subclasse** — pedida quando o novo nível da classe libera a escolha (Clérigo/Bruxo/Feiticeiro no 1, Druida/Mago no 2, as demais no 3).
+6. **Aumento de Atributo ou Talento** — só nos níveis de ASI **daquela classe**: +2 em um atributo ou +1 em dois (máximo 20), ou um talento do PHB (a lista com nome e descrição está em `client/src/feats.ts`; por enquanto o talento é registrado como texto na aba Características, sem efeito mecânico automatizado).
+7. **Resumo e confirmação** — mostra o novo nível, o PV ganho e a progressão escolhida; ao confirmar, tudo é aplicado de uma vez e o botão se desabilita para o jogador até o mestre liberar de novo. O mestre vê a ficha mudar em tempo real.
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
-| `POST` | `/api/characters/me/level-up` | autenticado | Aplica o Level Up (`classKey`, `subclass`, `hp`, `abilityIncreases`, `feat`) quando a liberação está ativa. |
+| `POST` | `/api/characters/me/level-up` | autenticado | Aplica o Level Up (`classKey`, `subclass`, `hp`, `skillChoice`, `choices`, `abilityIncreases`, `feat`) quando a liberação está ativa. |
 
 ### Assistente de criação de personagem
 
@@ -473,18 +546,20 @@ O **rascunho é o próprio registro de `Character`**: o passo 1 cria a ficha (co
 | 2. Identidade | Nome, alinhamento e avatar (opcional). |
 | 3. Raça | Seleção do **catálogo de raças do PHB 2014** (uma opção por linhagem/sub-raça; o nome mostra os bônus). O **Meio-Elfo** pede dois atributos à escolha para o `+1`. |
 | 4. Antecedente | Seleção dos **13 antecedentes do PHB 2014**; cada um mostra (e concede) as suas duas perícias, sem consumir as escolhas da classe. |
-| 5. Classe | Classe inicial, do mesmo catálogo de classes da ficha. **Clérigo, Feiticeiro e Bruxo** (subclasse no nível 1) já escolhem aqui o Domínio/Origem/Patrono. |
+| 5. Classe | Classe inicial, do mesmo catálogo de classes da ficha. **Clérigo, Feiticeiro e Bruxo** (subclasse no nível 1) já escolhem aqui o Domínio/Origem/Patrono, e as classes com escolha no nível 1 (Estilo de Luta do **Guerreiro**, Inimigo Favorito e Explorador Nato do **Patrulheiro**) pedem a escolha neste mesmo passo — o servidor recusa sem ela. |
 | 6. Atributos | **Personagem novo:** rola 4d6 descartando o menor, seis vezes, e distribui os valores. **Personagem existente:** digita os seis valores. |
 | 7. Perícias | Escolha das perícias da classe (quantidade e lista do PHB 2014 em `classes/index.ts`) mais as perícias concedidas pelo antecedente. |
 | 8. Nível e progressão | Aplica os níveis 2..N pelo **assistente de Level Up** quando o nível inicial da mesa é maior que 1. |
 | 9. Revisão | Resumo de tudo e o botão **Finalizar criação** (`creationFinalized = true`). |
 
-- **Rolagem de atributo:** o dado é sorteado no **servidor**, pelo mesmo mecanismo da janela de dados (`POST /api/characters/me/creation/roll`, 4d6 com o menor descartado), e os quatro valores aparecem na tela com o descartado em destaque. A rolagem **não avisa a mesa** — ela entra apenas no **histórico do mestre**, como `[Jogador]: Criação de personagem: [valor]`.
+- **Rolagem de atributo:** o dado é sorteado no **servidor**, pelo mesmo mecanismo da janela de dados (`POST /api/characters/me/creation/roll`, 4d6 com o menor descartado), e os quatro valores aparecem na tela com o descartado em destaque. A rolagem **não avisa a mesa** — ela entra apenas no **histórico do mestre**, como `[Jogador]: Criação de personagem: [valor] (d6 6 + d6 4 + d6 2 + d6 2)`.
 - **Subclasse no nível 1:** no PHB 2014, Clérigo (Domínio Divino), Feiticeiro (Origem de Feitiçaria) e Bruxo (Patrono Extraplanar) escolhem a subclasse **já na primeira classe**; o passo 5 exige a escolha e ela entra na ficha junto da classe. Nas demais classes a subclasse continua sendo escolhida no nível que a libera, pelo Level Up. As listas vêm de `src/modules/shared/classes/*.ts` (`subclassLevel: 1`).
 - **Pré-requisito de classe:** a classe é escolhida no passo 5 e o pré-requisito de atributo do livro (13) é conferido no passo 6, quando os atributos existem — se faltar, o passo dos atributos é recusado explicando o que falta. Trocar a classe inicial ainda no nível 1 é permitido.
 - **Perícias do antecedente:** o passo 4 aplica as duas perícias do antecedente escolhido direto na ficha, somadas às escolhidas na classe — e sem gastar as escolhas dela (o `skillPicks` do rascunho guarda só as da classe).
 - **Bônus de raça:** cada entrada do catálogo (`src/modules/shared/creation.ts`) traz os bônus de atributo já somados da raça e da sub-raça (ex.: `Anão (Anão da Colina)` = CON +2, SAB +1). Eles são aplicados sobre os valores-BASE do rascunho, então trocar de raça (ou voltar ao passo 3) refaz os atributos sem perder o que foi rolado/digitado. O **Meio-Elfo** tem +2 em Carisma e `abilityChoice: 2`: o jogador escolhe dois atributos (que não tenham bônus fixo) para ganhar +1, e a escolha é validada no servidor.
 - **Nada é concedido pelo assistente:** itens são exclusividade do mestre. Todo valor derivado (PV, CA, iniciativa, CD de magia, percepção passiva, carga) é calculado pelo servidor a partir das escolhas.
+- **Proficiências da primeira classe:** ao escolher a classe inicial (passo 5 ou seletor da ficha), o servidor grava as proficiências de armadura/arma/ferramenta do PHB para aquele nível 1 (`CLASS_PROFICIENCIES`); trocar a classe inicial enquanto a criação está aberta recalcula as proficiências.
+- **Escolhas do nível 1:** o passo 5 pede as escolhas que a classe faz já no nível 1 (Estilo de Luta do Guerreiro, Inimigo Favorito e Explorador Nato do Patrulheiro) e grava em `classState.choices`; trocar a classe descarta as escolhas da anterior (o servidor também valida de novo).
 - **Depois de finalizada, o jogador não refaz o assistente.** Só o **mestre** pode reabrir a criação (`POST /api/characters/:id/creation/reopen`): `creationFinalized` volta para `false`, o rascunho é re-semeado com os valores atuais (modo "personagem existente", passo 1) e o jogador reencontra o assistente no próximo acesso.
 
 | Método | Rota | Acesso | Descrição |
@@ -780,7 +855,7 @@ Os dados são **poliedros 3D de verdade**, montados com `matrix3d` a partir da g
 - **Mesa acompanha a rolagem:** ao abrir a janela, quem está rolando avisa a mesa. Os demais veem uma **faixa no topo do tabuleiro** com a foto do personagem e "*nome* está realizando um teste" (com o nome da perícia, quando é o caso). **Clicando na faixa**, quem assiste abre o **tabuleiro daquela pessoa em modo somente leitura** — os mesmos dados, caindo no mesmo instante, e o mesmo resultado, sem picker nem botões (o anúncio carrega o pool, a vantagem/desvantagem e a fase da rolagem). A rolagem do mestre **já nasce privada** — a faixa só aparece para a mesa se ele **desmarcar "Privada"** ("a rolagem é avisada se ele desejar"). Fechar a janela (ou o navegador) tira a faixa.
 - **Animação:** os dados giram e quicam dentro do ring até assentarem; o total (com bônus) e o valor de cada dado aparecem em destaque.
 - **Visibilidade:** rolagem de jogador é **sempre pública**; a do mestre é **Privada por padrão** (só ele vê o resultado e nenhum aviso sai). Desmarcando **Privada** o mestre compartilha a rolagem como um jogador: a mesa recebe o aviso e pode assistir ao tabuleiro. Rolagem pública dispara um aviso para toda a mesa ("[Personagem] está fazendo um teste de [Perícia]") que some sozinho em **3 segundos** e também pode ser dispensado na hora.
-- **Histórico:** o mestre tem um **log** logo abaixo dos dados com todas as rolagens da sessão, do mais recente ao mais antigo, e pode **limpar** o log. As rolagens do **assistente de criação** (`kind: 'creation'`) também entram aí, como `[Jogador]: Criação de personagem: [valor]` — elas **não** avisam a mesa e não acendem a faixa de rolagem.
+- **Histórico (duas portas):** o mestre tem o **log dentro da bandeja** (logo abaixo dos dados, na janela de rolagem) **e** um **botão flutuante "Log"** na tela, logo **acima** do botão "Dados", que abre um **painel flutuante só com o histórico** — um cartão ancorado acima dos botões, com rolagem própria e botão de fechar, **sem ocupar a tela** (o tabuleiro não precisa estar aberto). Nos dois lugares o log vai do mais recente ao mais antigo e pode ser **limpo**. Cada linha é `[Jogador]: [Perícia]: [total]` seguida da **depuração entre parênteses** — cada dado com o tipo, a origem do bônus e o que foi descartado: `Umbrae: Percepção: 10 (d20 6 + 4 perícia)`, `Umbrae: Rolagem livre: 17 (d20 14 + 3 bônus)`, `Umbrae: Percepção: 10 (d20 6, descartado d20 2 + 4 perícia)`. O bônus é rotulado como *perícia*, *salvaguarda* ou *bônus* conforme o tipo da rolagem (o `total` do log é sempre o mesmo que a mesa viu). As rolagens do **assistente de criação** (`kind: 'creation'`) também entram aí, como `[Jogador]: Criação de personagem: [valor] (d6 6 + d6 4 + d6 2 + d6 2)`, sem descartar dado nenhum no log (o menor descartado da criação é escolha do assistente, não da rolagem) — elas **não** avisam a mesa e não acendem a faixa de rolagem.
 
 ### Endpoints
 

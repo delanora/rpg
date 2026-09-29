@@ -27,10 +27,15 @@ import {
 } from '../shared/creation.js';
 import {
   creationSkillChoice,
+  featureChoiceInfo,
   getClassDefinition,
-  multiclassMissingLabel,
+  multiclassPrerequisiteLabel,
   normalizeClassEntries,
+  normalizeClassState,
+  pendingFeatureChoices,
+  resolveFeatureChoices,
   totalCharacterLevel,
+  type FeatureChoiceInfo,
 } from '../shared/classes.js';
 import {
   ABILITY_KEYS,
@@ -94,6 +99,12 @@ export interface CreationStateDto {
   abilityChoices: AbilityKey[];
   /** Perícias que a classe do rascunho oferece (quantas e quais). */
   skillChoice: { count: number; from: string[] };
+  /**
+   * Escolhas de característica do NÍVEL 1 da classe inicial (Estilo de Luta do
+   * guerreiro, Inimigo Favorito e Explorador Nato do patrulheiro) — com as
+   * opções e o que já foi escolhido.
+   */
+  featureChoices: FeatureChoiceInfo[];
   /** Nível em que a mesa começa: o passo 8 aplica os níveis 2 até ele. */
   startingLevel: number;
   /** Catálogos (vazios enquanto o conteúdo não for cadastrado). */
@@ -305,6 +316,15 @@ function missingForFinalize(character: Character, draft: CreationDraft): string[
     missing.push('a subclasse (passo 5)');
   }
 
+  // Escolhas do nível 1 da classe inicial (Estilo de Luta, Inimigo Favorito e
+  // Explorador Nato) — o mesmo passo 5 as pede.
+  if (firstDefinition) {
+    const choices = normalizeClassState(character.classState).choices;
+    for (const info of pendingFeatureChoices(firstDefinition, 1, choices)) {
+      missing.push(`${info.prompt} (passo 5)`);
+    }
+  }
+
   if (!ABILITY_KEYS.every((ability) => draft.baseAbilities[ability] !== undefined)) {
     missing.push('os atributos (passo 6)');
   }
@@ -327,6 +347,8 @@ async function buildState(
 ): Promise<CreationState> {
   const draft = normalizeCreationDraft(character?.creationDraft ?? EMPTY_CREATION_DRAFT);
   const entries = normalizeClassEntries(character?.classes ?? []);
+  const firstDefinition = entries[0] ? getClassDefinition(entries[0].classKey) : null;
+  const classChoices = normalizeClassState(character?.classState).choices;
 
   return {
     character: character ? await toSheetDto(character, actor.username) : null,
@@ -338,6 +360,9 @@ async function buildState(
       skillPicks: draft.skillPicks,
       abilityChoices: draft.abilityChoices,
       skillChoice: creationSkillChoice(entries),
+      featureChoices: firstDefinition
+        ? featureChoiceInfo(firstDefinition, classChoices).filter((info) => info.level === 1)
+        : [],
       startingLevel,
       raceCatalog: [...RACE_CATALOG],
       backgroundCatalog: [...BACKGROUND_CATALOG],
@@ -460,6 +485,20 @@ export async function saveCreationStep(
       if (current.length === 0 || (current.length === 1 && current[0].level === 1)) {
         // Primeira classe (ou troca da classe inicial, ainda no nível 1).
         patch.classes = [{ classKey: definition.key, subclass }];
+
+        // Escolhas que a classe pede no NÍVEL 1: Estilo de Luta do Guerreiro,
+        // Inimigo Favorito e Explorador Nato do Patrulheiro. Ao TROCAR a classe
+        // as escolhas da anterior caem (elas não existem na nova); ao repetir o
+        // passo com a mesma classe, o que já foi escolhido é mantido.
+        const stored = normalizeClassState(character.classState);
+        const keepsClass = current.length === 1 && current[0].classKey === definition.key;
+        const choices = resolveFeatureChoices(
+          definition,
+          1,
+          input.choices ?? {},
+          keepsClass ? stored.choices : {},
+        );
+        patch.classState = { ...stored, choices };
       } else if (current.length !== 1 || current[0].classKey !== definition.key) {
         // Ficha reaberta já com níveis: trocar de classe aqui apagaria os
         // níveis já ganhos, então a troca continua sendo do Level Up/mestre.
@@ -499,9 +538,9 @@ export async function saveCreationStep(
       const definition = entries[0] ? getClassDefinition(entries[0].classKey) : null;
       if (definition) {
         const abilities = { ...abilitiesOf(character), ...patch } as Record<AbilityKey, number>;
-        const missing = multiclassMissingLabel(definition.key, abilities);
+        const missing = multiclassPrerequisiteLabel(definition.key, abilities, entries);
         if (missing) {
-          throw new HttpError(`Para entrar em ${definition.name} ${missing}.`, 400);
+          throw new HttpError(`${missing}.`, 400);
         }
       }
       break;

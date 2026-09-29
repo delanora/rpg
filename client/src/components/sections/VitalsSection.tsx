@@ -33,6 +33,11 @@ function describeArmorClass(detail: ArmorClassDetail): string {
 
   if (detail.shieldBonus !== 0) parts.push(`escudo ${formatModifier(detail.shieldBonus)}`);
   if (detail.magicBonus !== 0) parts.push(`bônus mágico ${formatModifier(detail.magicBonus)}`);
+  // Bônus de classe na CA (Estilo de Luta Defesa) — só entra com armadura.
+  if (detail.classBonus !== 0) {
+    const label = detail.classBonusLabels.join(' · ');
+    parts.push(`${label || 'classe'} ${formatModifier(detail.classBonus)}`);
+  }
   if (detail.override !== null) parts.push(`CA manual (automática ${detail.automatic})`);
 
   return parts.join(' · ');
@@ -59,8 +64,8 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
   function toggleFeature(toggle: ActiveToggle, resource?: ActiveResource): void {
     if (toggle.active) {
       applyClassState({
+        ...classState,
         active: classState.active.filter((id) => id !== toggle.id),
-        used: classState.used,
       });
       return;
     }
@@ -69,7 +74,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     if (resource && !resource.unlimited) {
       used[resource.id] = Math.min(resource.max, (used[resource.id] ?? 0) + 1);
     }
-    applyClassState({ active: [...classState.active, toggle.id], used });
+    applyClassState({ ...classState, active: [...classState.active, toggle.id], used });
   }
 
   /** Descanso curto: repõe apenas os recursos de recarga curta (ex.: Ki). */
@@ -78,7 +83,7 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     for (const resource of classAdjustments.resources) {
       if (resource.recharge === 'short') delete used[resource.id];
     }
-    applyClassState({ active: classState.active, used });
+    applyClassState({ ...classState, used });
   }
 
   /**
@@ -95,7 +100,9 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     update({
       hpCurrent: character.hpMax,
       spells: { ...character.spells, slots },
-      classState: { active: [], used: {} },
+      // O descanso longo NÃO apaga as escolhas de característica (Estilo de
+      // Luta, Inimigo Favorito): só encerra toggles e devolve usos.
+      classState: { ...classState, active: [], used: {} },
     });
   }
 
@@ -111,6 +118,8 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     classAdjustments.critExtraDice > 0 ||
     classAdjustments.martialArtsDie > 0 ||
     classAdjustments.hpBonus > 0 ||
+    (classAdjustments.critThreshold !== null && classAdjustments.critThreshold < 20) ||
+    derived.halfProficiencyBonus > 0 ||
     classAdjustments.wildShapeCr !== null;
 
   return (
@@ -355,6 +364,12 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
               : ''}
             {classAdjustments.critExtraDice > 0
               ? `Crítico Brutal: +${classAdjustments.critExtraDice} dado(s) no crítico. `
+              : ''}
+            {classAdjustments.critThreshold !== null && classAdjustments.critThreshold < 20
+              ? `Crítico aprimorado: acerto crítico com ${classAdjustments.critThreshold}–20 no d20. `
+              : ''}
+            {derived.halfProficiencyBonus > 0
+              ? `Metade da proficiência (+${derived.halfProficiencyBonus}) nos testes de habilidade em que você não é proficiente. `
               : ''}
             {classAdjustments.resistances.length > 0
               ? `Resistências: ${classAdjustments.resistances.join(', ')}.`
