@@ -201,7 +201,7 @@ SERVIDOR (src/)
     migrate-item-weapons.ts  completa o perfil de arma dos itens (padrões melee/simple;
                           Cajado com dano vira versátil d6/d8) e lista os suspeitos de
                           arma à distância pelo nome
-    smoke-realtime.ts     6.926 linhas — smoke test ponta a ponta (699 asserts)
+    smoke-realtime.ts     7.457 linhas — smoke test ponta a ponta (720 asserts)
 
 CLIENTE (client/src/)
   main.tsx                initTheme() + unlockAudioOnFirstGesture() + <App/>
@@ -1577,7 +1577,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 
 ================================================================================
 18) TESTES E VERIFICAÇÃO
-================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 6.926 linhas, 699 asserts)
+================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 7.457 linhas, 720 asserts)
   Executa contra um servidor RODANDO (`npm run smoke`; base configurável por
   SMOKE_BASE_URL). Cria contas com sufixo único, exercita a API e o WebSocket de
   ponta a ponta e LIMPA tudo no final (`cleanup()`), saindo com código 0 ou 1
@@ -1627,7 +1627,8 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     12) Presença ao desconectar
     13) Exclusão de personagem     — 403 para jogador, cascata de conta/combate/log,
                                      derrubada da sessão, token invalidado
-  -- FASE 0: regressão das regras base (seções 14 a 21, num escopo próprio) --
+  -- FASE 0: regressão das regras base e das fases de ataques/itens/moedas
+     (seções 14 a 26, num escopo próprio) --
     14) PV e CA automáticos        — PV de d10/d6, recálculo retroativo de CON no 5º
                                      (40/30 → 45/35 com CON 16; → 25/15 com CON 8),
                                      CA leve/média/pesada, escudo, Defesa sem Armadura
@@ -1682,6 +1683,31 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
                                      consumível (400) e item fora do inventário (404);
                                      item de Outro marcado como consumível funciona e o
                                      efeito fixo vira bônus
+    22) Dano estruturado          — a expressão textual é DERIVADA do dano estruturado
+                                     (2d6+3 / 1d8-1 / fixo 4) e o crítico dobra os DADOS
+                                     (2d6 → 4d6) somando o modificador uma só vez; tipo
+                                     fora dos 13 canônicos é 400; ataque legado mantém a
+                                     marca `legacy` e o texto original; tipo canônico
+                                     grava o dano estruturado sem texto paralelo
+    23) Cadastro de arma/preço    — o mestre cadastra a arma com preço no catálogo; a
+                                     ficha recebe o PERFIL (weaponType, weaponCategory,
+                                     dado) e NÃO recebe o preço
+    24) Munição (complemento)     — arma sem a propriedade `ammunition` não consome;
+                                     bônus da munição mágica soma ao ATAQUE e ao DANO;
+                                     duas requisições SIMULTÂNEAS não gastam a mesma
+                                     unidade (1 consome, 1 recebe 409)
+    25) Moedas (complemento)      — a transferência publica `sheet:updated` para as
+                                     DUAS fichas com os saldos finais; saldo insuficiente
+                                     (400) e transferir para o mestre (400); alternar
+                                     `extraCoins` publica `game:config`
+    26) Inventário (complemento)  — o mestre ajusta a QUANTIDADE e REMOVE item (200);
+                                     os `send` se acumulam (2 + 3 = 5); usar consumível
+                                     entra no log de rolagens do mestre como `kind: 'item'`
+
+  LIMITE OPERACIONAL: o smoke cria ~14 contas e faz ~27 chamadas a `/api/auth/*`
+  por execução. Em `NODE_ENV=production` o limiter do login é 30 por 15 min, então
+  as seções novas REAPROVEITAM fichas já criadas em vez de registrar contas novas —
+  qualquer seção que precise de mais contas deve seguir essa regra.
 
   ARMADILHA OPERACIONAL: o rate limiter é em memória. Duas execuções do smoke
   seguidas podem devolver 429 no login. Reiniciar o serviço zera o contador.
@@ -1763,13 +1789,24 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    (`spells` = { list, slots }), sem catálogo central.
 [LACUNA] RAÇAS E ANTECEDENTES: bônus de atributo e perícias são aplicados; ferramentas,
    idiomas e as características raciais/de antecedente NÃO são modelados.
-[LACUNA/FASE 2] PROFICIÊNCIAS DE EQUIPAMENTO: `characters.proficiencies` já registra
-   armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada por
-   multiclasse, com backfill na migração `20260928160000_character_proficiencies`),
+[LACUNA/FASE 2] PROFICIÊNCIAS DE EQUIPAMENTO E ATAQUE DERIVADO: `characters.proficiencies`
+   já registra armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada
+   por multiclasse, com backfill na migração `20260928160000_character_proficiencies`),
    mas o EFEITO mecânico NÃO é calculado: a CA não exige proficiência para somar
-   armadura/escudo e não há penalidade de armadura sem proficiência nem restrição de
-   ataque por arma. As escolhas abertas do livro ("1 instrumento musical à sua
-   escolha") entram como DESCRIÇÃO — a escolha interativa ainda não existe.
+   armadura/escudo e não há penalidade de armadura sem proficiência. Também NÃO existe
+   ataque DERIVADO da arma equipada: hoje o ataque é uma linha salva em `attacks`, com
+   `attackBonus`/`damage` escritos à mão e um vínculo OPCIONAL a um item do inventário
+   (`inventoryItemId`, usado só para a munição). Ficam pendentes, portanto: habilidade
+   correta (FOR no corpo a corpo, DES à distância, a MELHOR das duas na arma com
+   acuidade), proficiência por categoria e por nome somada ao ataque, dado VERSÁTIL
+   quando a outra mão está livre, recusa de arma de duas mãos com a outra mão ocupada,
+   a segunda arma leve sem modificador no dano, arremesso e golpe desarmado. As
+   escolhas abertas do livro ("1 instrumento musical à sua escolha") entram como
+   DESCRIÇÃO — a escolha interativa ainda não existe.
+   CONSEQUÊNCIA PARA O SMOKE: as seções 22 a 26 cobrem SOMENTE o que existe (dano
+   estruturado, cadastro de arma e preço, munição, moedas e quantidade travada). Não
+   há verificação do ataque derivado justamente porque a funcionalidade não existe —
+   quando ela for implementada, a cobertura precisa ser acrescentada.
 [LACUNA] O compêndio é SOMENTE LEITURA. O plano declarado é o mestre poder criar e
    editar raças/antecedentes: a arquitetura já está preparada (rota única, coleções,
    `getCompendium()` como fonte trocável), mas não há CRUD nem tabelas para isso.
