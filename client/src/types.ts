@@ -48,6 +48,10 @@ export interface ArmorClassDetail {
   magicBonus: number;
   /** Defesa sem armadura usada, quando não há armadura. */
   unarmoredLabel: string | null;
+  /** Bônus fixos de classe aplicados à CA (Estilo de Luta Defesa: +1). */
+  classBonus: number;
+  /** Rótulos desses bônus (ex.: ["Estilo de Luta (Defesa)"]). */
+  classBonusLabels: string[];
 }
 
 export type SkillsState = Record<string, SkillEntry>;
@@ -187,8 +191,23 @@ export interface DerivedStats {
   sneakAttack: { dice: number; expression: string } | null;
   /** Espaços de Expertise (dobrar proficiência) concedidos pelas features. */
   expertiseSlots: number;
-  /** Máximo de magias preparadas (conjuradores preparados) ou nulo. */
-  preparedSpellCount: number | null;
+  /** Bônus somado a TODAS as salvaguardas (Aura de Proteção: mod. de CAR). */
+  saveBonus: number;
+  /**
+   * Metade da proficiência aplicada em testes de habilidade sem proficiência
+   * (Pau para Toda Obra do bardo; Atleta Notável do guerreiro). 0 = sem efeito.
+   */
+  halfProficiencyBonus: number;
+  /**
+   * Limiar de crítico no d20 (20 = padrão; 19 = Crítico Aprimorado do Campeão;
+   * 18 = Crítico Superior). Crítico sempre acerta; 1 natural sempre erra.
+   */
+  critThreshold: number;
+  /**
+   * As magias PREPARADAS são por classe — ver
+   * `Character.classes[].spellcasting.preparedCount`. Não existe um total único:
+   * cada conjurador prepara as suas, com o atributo e o nível da própria classe.
+   */
   initiative: number;
   passivePerception: number;
   /** CA calculada (armadura + atributos + Defesa sem Armadura) e override do mestre. */
@@ -219,6 +238,8 @@ export interface ClassFeatureResource {
   perLevel?: boolean;
   perLevelMultiplier?: number;
   abilityMod?: AbilityKey;
+  /** Piso do máximo calculado (1 + mod. de CAR nunca fica abaixo de 1). */
+  min?: number;
 }
 
 /** Efeito mecânico opcional de uma característica de classe. */
@@ -239,6 +260,14 @@ export interface ClassFeatureEffect {
     | 'wildShape'
     | 'hpBonus'
     | 'abilityBonus'
+    /** Bônus fixo de CA (Estilo de Luta Defesa). */
+    | 'armorClass'
+    /** Bônus em TODAS as salvaguardas (Aura de Proteção). */
+    | 'saveBonus'
+    /** Metade da proficiência em testes de habilidade sem proficiência. */
+    | 'halfProficiency'
+    /** Limiar de crítico: acerta criticamente com `value` ou mais no d20. */
+    | 'critThreshold'
     | 'other';
   id?: string;
   resourceId?: string;
@@ -256,9 +285,44 @@ export interface ClassFeatureEffect {
   resource?: ClassFeatureResource;
   requiresActive?: string;
   notes?: string;
+  /** Só vale com armadura vestida (Estilo de Luta Defesa). */
+  requiresArmor?: boolean;
+  /** Modificador somado ao valor (Aura de Proteção: CAR). */
+  abilityMod?: AbilityKey;
+  /** Piso do valor calculado (Aura de Proteção: mínimo +1). */
+  minValue?: number;
+  /**
+   * Arredondamento de "metade da proficiência": 'down' (padrão) ou 'up'
+   * (Atleta Extraordinário do Campeão).
+   */
+  round?: 'down' | 'up';
 }
 
-/** Característica de classe ou subclasse (ainda não populadas). */
+/** Uma opção oferecida por uma característica (ex.: 'Defesa' no Estilo de Luta). */
+export interface FeatureChoiceOption {
+  key: string;
+  name: string;
+  description?: string;
+  /** Efeito que só vale com esta opção escolhida (Defesa: +1 CA). */
+  effect?: ClassFeatureEffect;
+}
+
+/** Escolha declarada por uma característica (quantas, quais e em que nível). */
+export interface ClassFeatureChoice {
+  count?: number;
+  options: FeatureChoiceOption[];
+  level?: number;
+  prompt?: string;
+  /** Permite repetir a mesma opção nas escolhas múltiplas (padrão: não). */
+  allowRepeat?: boolean;
+  /**
+   * O que a escolha faz na ficha além de ficar gravada. 'skill': as opções são
+   * perícias e as escolhidas viram proficiência (Colégio do Conhecimento).
+   */
+  apply?: 'skill';
+}
+
+/** Característica de classe ou subclasse. */
 export interface ClassFeature {
   id: string;
   name: string;
@@ -266,6 +330,21 @@ export interface ClassFeature {
   description: string;
   effect?: ClassFeatureEffect;
   effects?: ClassFeatureEffect[];
+  /** Escolha exigida (Estilo de Luta, Inimigo Favorito). */
+  choice?: ClassFeatureChoice;
+}
+
+/** Escolha de característica com as opções e o que já foi escolhido. */
+export interface FeatureChoiceInfo {
+  featureId: string;
+  name: string;
+  prompt: string;
+  /** Nível da CLASSE em que a escolha é feita. */
+  level: number;
+  count: number;
+  allowRepeat: boolean;
+  options: { key: string; name: string; description: string }[];
+  chosen: string[];
 }
 
 export interface Subclass {
@@ -278,6 +357,11 @@ export interface Subclass {
     ability: AbilityKey | null;
     learning: SpellLearning;
   };
+  /**
+   * Proficiências concedidas pela subclasse (Colégio da Bravura: armaduras
+   * médias, escudos e armas marciais). Somadas às da classe quando escolhida.
+   */
+  proficiencies?: ProficienciesState;
   features: ClassFeature[];
 }
 
@@ -285,6 +369,10 @@ export interface Subclass {
 export interface ActiveClassFeature extends ClassFeature {
   source: 'class' | 'subclass';
   subclassName?: string;
+  /** Chave da classe de origem (preenchida no modo multiclasse). */
+  classKey?: string;
+  /** Nível do personagem NAQUELA classe (é ele que escala os efeitos). */
+  classLevel?: number;
 }
 
 /** Definição completa de uma classe. */
@@ -312,15 +400,49 @@ export interface ClassSummary {
   spellcastingType: SpellcastingType;
 }
 
+/**
+ * Proficiências de armadura, arma e ferramenta da ficha (texto exibido).
+ * Campo de construção: só o mestre edita depois da criação finalizada.
+ */
+export interface ProficienciesState {
+  armor: string[];
+  weapons: string[];
+  tools: string[];
+}
+
+/** Perícia à escolha concedida ao ENTRAR numa classe por multiclasse. */
+export interface MulticlassSkillChoice {
+  count: number;
+  /** Chaves aceitas (ver SKILLS em dnd.ts). Vazio = qualquer uma. */
+  from: string[];
+}
+
 /** Opção de classe para o seletor, com a elegibilidade do personagem calculada. */
 export interface ClassOption extends ClassSummary {
   eligible: boolean;
-  /** Motivo do bloqueio ('' quando elegível). */
+  /**
+   * Motivo do bloqueio ('' quando elegível). Cita a classe nova E as classes
+   * que o personagem já tem, quando uma delas é que está barrando.
+   */
   missing: string;
   /** Níveis de Aumento de Atributo/Talento desta classe. */
   asiLevels: number[];
   /** Nomes das subclasses disponíveis. */
   subclassNames: string[];
+  /** O que a classe concede ao ser a PRIMEIRA do personagem (nível 1). */
+  firstProficiencies: ProficienciesState;
+  /** O que ela concede ao ENTRAR por multiclasse (PHB p.164). */
+  multiclassProficiencies: ProficienciesState;
+  /** Perícia à escolha da entrada por multiclasse (null quando não concede). */
+  multiclassSkillChoice: MulticlassSkillChoice | null;
+  /** Escolhas feitas no NÍVEL 1 da classe (Estilo de Luta, Inimigo Favorito). */
+  featureChoices: FeatureChoiceInfo[];
+  /**
+   * Escolhas declaradas pelas SUBCLASSES desta classe, com o nome da subclasse.
+   * É o que o Level Up usa quando a subclasse é escolhida no MESMO nível em que
+   * ela já pede uma escolha (Caçador: Presa do Caçador no 3º).
+   */
+  subclassChoices: (FeatureChoiceInfo & { subclass: string })[];
 }
 
 /**
@@ -346,6 +468,8 @@ export interface ClassEntry {
     attackBonus: number | null;
     preparedCount: number | null;
   } | null;
+  /** Escolhas de característica desta classe, com o nível de cada uma. */
+  featureChoices: FeatureChoiceInfo[];
 }
 
 /** Entrada de classe enviada no PATCH (o nível NUNCA é enviado). */
@@ -416,6 +540,8 @@ export interface Character {
 
   skills: SkillsState;
   saves: SavesState;
+  /** Proficiências de armadura, arma e ferramenta (armaduras/armas/ferramentas). */
+  proficiencies: ProficienciesState;
   inventory: InventoryItem[];
   spells: SpellsState;
   attacks: Attack[];
@@ -433,6 +559,12 @@ export interface Character {
 export interface ClassState {
   active: string[];
   used: Record<string, number>;
+  /**
+   * Escolhas de característica por id dela (ex.: `{ 'fighting-style':
+   * ['defense'] }`). Campo de CONSTRUÇÃO: com a criação finalizada o jogador não
+   * muda (403) — só o Level Up e o mestre.
+   */
+  choices: Record<string, string[]>;
 }
 
 export interface ActiveToggle {
@@ -476,6 +608,25 @@ export interface ClassAdjustments {
   wildShapeFlying: boolean;
   abilityBonuses: Partial<Record<AbilityKey, number>>;
   abilityCaps: Partial<Record<AbilityKey, number>>;
+  /** Bônus fixo de CA (Estilo de Luta Defesa: +1). */
+  armorClassBonus: number;
+  /** O bônus de CA só vale com armadura vestida. */
+  armorClassBonusRequiresArmor: boolean;
+  armorClassBonusLabel: string;
+  /** Bônus somado a TODAS as salvaguardas (Aura de Proteção). */
+  saveBonus: number;
+  saveBonusLabel: string;
+  /**
+   * Efeitos "metade da proficiência" ativos: `target` diz em que testes eles
+   * valem e `round` como arredondar (para baixo no Pau para Toda Obra, para
+   * cima no Atleta Extraordinário). O maior valor prevalece.
+   */
+  halfProficiency: { target: 'checks' | 'physicalChecks'; round: 'down' | 'up' }[];
+  /**
+   * Limiar de crítico no d20 (20 = padrão; 19 = Crítico Aprimorado; 18 =
+   * Crítico Superior). O MENOR limiar prevalece.
+   */
+  critThreshold: number | null;
 }
 
 /**
@@ -638,6 +789,11 @@ export interface CreationState {
   /** Atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois). */
   abilityChoices: AbilityKey[];
   skillChoice: { count: number; from: string[] };
+  /**
+   * Escolhas do NÍVEL 1 da classe inicial (Estilo de Luta do guerreiro,
+   * Inimigo Favorito e Explorador Nato do patrulheiro).
+   */
+  featureChoices: FeatureChoiceInfo[];
   startingLevel: number;
   raceCatalog: RaceOption[];
   backgroundCatalog: BackgroundOption[];
@@ -683,8 +839,19 @@ export interface LevelUpRequest {
   hp: 'roll' | 'average';
   /** Aumento de Atributo: +2 em um atributo ou +1 em dois diferentes. */
   abilityIncreases?: { ability: AbilityKey; amount: number }[];
+  /**
+   * Perícia concedida pela entrada numa classe NOVA por multiclasse (Bardo:
+   * qualquer; Patrulheiro e Ladino: da lista da classe).
+   */
+  skillChoice?: string;
   /** Talento escolhido (registro textual; sem efeito mecânico ainda). */
   feat?: { name: string; description: string } | null;
+  /**
+   * Escolhas de característica do nível que está sendo ganho (Estilo de Luta no
+   * 1º nível do guerreiro e no 2º do paladino/patrulheiro, Inimigo Favorito e
+   * Explorador Nato do patrulheiro): `{ [id da característica]: [opções] }`.
+   */
+  choices?: Record<string, string[]>;
 }
 
 export interface CharacterPatch {
@@ -717,6 +884,8 @@ export interface CharacterPatch {
 
   skills?: SkillsState;
   saves?: SavesState;
+  /** Só o mestre envia (campo de construção). */
+  proficiencies?: ProficienciesState;
   inventory?: InventoryItem[];
   spells?: SpellsState;
   attacks?: Attack[];

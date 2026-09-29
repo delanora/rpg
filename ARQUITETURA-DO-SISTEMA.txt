@@ -90,7 +90,7 @@ CLIENTE (client/)
   @vitejs/plugin-react ^6.1.1, TypeScript ^7.0.2 com verbatimModuleSyntax,
   noUnusedLocals e noUnusedParameters (rigoroso).
   SEM framework de UI e SEM biblioteca de estado: React puro + CSS próprio.
-  Estilo: client/src/styles.css (≈6.980 linhas no arquivo-fonte), tema pergaminho
+  Estilo: client/src/styles.css (≈7.120 linhas no arquivo-fonte), tema pergaminho
   (claro) e "grimório amaldiçoado" (escuro) via `data-theme` no <html>.
   Fontes auto-hospedadas em client/public/fonts (Cinzel, EB Garamond,
   MedievalSharp) — nenhum recurso externo em runtime.
@@ -164,8 +164,10 @@ SERVIDOR (src/)
       creation.ts         485 linhas — catálogos de RAÇA (14) e ANTECEDENTE (13) + rascunho
       classes.ts            9 linhas — fachada que reexporta classes/index.ts
       classes/
-        types.ts          159 linhas — ClassDefinition, SubclassDefinition, features, efeitos
-        index.ts          997 linhas — as 12 classes, multiclasse, espaços, ASI, ajustes
+        types.ts          181 linhas — ClassDefinition, SubclassDefinition, features, efeitos,
+                                        ProficienciesState, MulticlassSkillChoice
+        index.ts         1270 linhas — as 12 classes, multiclasse, CLASS_PROFICIENCIES,
+                                        espaços, ASI, ajustes
         barbarian.ts 231 · bard.ts 13 · cleric.ts 76 · druid.ts 188 · fighter.ts 13
         monk.ts 343 · paladin.ts 13 · ranger.ts 13 · rogue.ts 226 · sorcerer.ts 155
         warlock.ts 48 · wizard.ts 407
@@ -179,7 +181,7 @@ SERVIDOR (src/)
     events.ts             357 linhas — CONTRATO de eventos e payloads (fonte de verdade)
   scripts/
     create-master.ts      cria/atualiza MASTER por CLI
-    smoke-realtime.ts     3.708 linhas — smoke test ponta a ponta (432 asserts)
+    smoke-realtime.ts     6.187 linhas — smoke test ponta a ponta (649 asserts)
 
 CLIENTE (client/src/)
   main.tsx                initTheme() + unlockAudioOnFirstGesture() + <App/>
@@ -197,19 +199,22 @@ CLIENTE (client/src/)
   dice/diceApi.ts
   pages/
     SheetPage.tsx         383 linhas — ficha do jogador (ou o wizard de criação)
-    MasterPanel.tsx       685 linhas — painel do mestre (abas + combate)
+    MasterPanel.tsx       712 linhas — painel do mestre (abas + combate + pilha flutuante)
   components/
     AuthPage, AppHeader, Icon, Portrait, HpBar, Lightbox, Section, InlineField,
     SheetView, AttacksTable, PresentationOverlay, CreationWizard (930),
-    LevelUpDialog (424)
+    LevelUpDialog (497)
     creation/AbilityStep.tsx   palco de rolagem de atributos
     sections/  Abilities, Attacks, BagList, Features, Identity (374), Inventory (532),
                Notes, SkillsSaves, Spells (384), Vitals (367)
     master/    SheetsTab, CreaturesTab, CreatureEditor, RegionsTab, RegionEditor,
-               LocalityEditor, ItemsTab, ItemEditor, DeleteCharacterDialog,
+               LocalityEditor, ItemsTab, ItemEditor, DeleteCharacterDialog, ConfigTab,
+               RollLogPanel (log flutuante), MasterNotes (anotações do mestre),
                ImageGallery, ConfigTab
   combat/  CombatTracker (579), CombatStartDialog, CombatIntro, useCombatState
-  dice/    DiceDock (374), Die3D, polyhedra (501), RemoteRollBoard, useDiceRoller (531), format
+  dice/    DiceDock, Die3D, polyhedra (501), RemoteRollBoard, useDiceRoller (531),
+           RollLogList (lista do log, usada na bandeja e no painel flutuante),
+           format (resultBreakdown + historyLine + rollDebug)
 
 
 ================================================================================
@@ -372,7 +377,12 @@ exceto GameConfig (chave fixa "main").
     id             String  @id @default("main")
     levelUpRelease Int     @default(0)   // contador de liberações de Level Up
     startingLevel  Int     @default(1)   // nível em que a mesa começa (1..20)
+    masterNotes    String  @default("")  // anotações PRIVADAS do mestre (<= 20.000)
     updatedAt      DateTime @updatedAt
+
+    Invariante: `masterNotes` NÃO entra no GameConfigDto. O GET /api/game é
+    acessível ao JOGADOR (a ficha lê o contador de liberações), então as
+    anotações só trafegam por /api/game/notes, exclusiva de MASTER (§8.14).
 
 7.2 enum Role { PLAYER, MASTER }
 
@@ -398,6 +408,9 @@ exceto GameConfig (chave fixa "main").
     initiativeBonus Int @default(0) · speed Int @default(9)   // metros (métrico)
     skills    Json @default("{}")  // { [pericia]: { proficient, expertise } }
     saves     Json @default("{}")  // { [atributo]: boolean }
+    proficiencies Json @default("{}") // { armor: string[], weapons: string[], tools: string[] }
+                                     // CONSTRUÇÃO: 1ª classe dá o conjunto completo do
+                                     // nível 1; multiclasse dá o reduzido (PHB p.164).
     inventory Json @default("[]")
     spells    Json @default("{}")  // { list: [...], slots: { "1": { max, used } } }
     attacks   Json @default("[]")
@@ -633,6 +646,14 @@ Todos os corpos passam por Zod; corpo inválido ⇒ 400 com `issues` por campo.
                                                         'damage'|'heal' } → { combat }
   POST /api/combat/end                       [mestre] → { combatId }
 
+8.16 ANOTAÇÕES DO MESTRE (mesma linha do GameConfig, fora do GameConfigDto)
+  GET   /api/game/notes  [mestre] → { notes }
+  PATCH /api/game/notes  [mestre] { notes } → { notes }   (substitui o texto todo)
+        Limite de 20.000 caracteres (Zod). Gravadas em `GameConfig.masterNotes`,
+        mas FORA do GameConfigDto: o GET /api/game é acessível ao jogador e não
+        pode carregar o caderno do mestre. Sem publicação em tempo real — é texto
+        privado de um único usuário (não existe evento `game:notes`).
+
 
 ================================================================================
 9) CAMADA DE TEMPO REAL (Socket.io)
@@ -739,7 +760,16 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   Percepção passiva: 10 + total de Percepção.
   CD de magia: 8 + proficiência + mod. do atributo de conjuração.
   Bônus de ataque mágico: proficiência + mod. do atributo de conjuração.
-  Magias preparadas (conjurador completo/preparado): max(1, mod + nível da classe).
+  Magias preparadas — calculadas POR CLASSE (`preparedSpellCountFor`), com o
+    atributo e o nível de cada uma:
+      • completo/preparado (Clérigo SAB, Druida SAB, Mago INT): max(1, mod + nível).
+      • meio-conjurador preparado (PALADINO CAR): max(1, mod + floor(nível/2)) e
+        ZERO antes do 2º nível (a conjuração começa no 2º).
+      • conjuradores CONHECIDOS (Bardo, Feiticeiro, Bruxo, Patrulheiro e os
+        terço-conjuradores Trapaceiro/Cavaleiro Arcano): null — usam a tabela de
+        magias conhecidas, não a fórmula.
+    Exposto em `CharacterDto.classes[].spellcasting.preparedCount`.
+    NÃO existe total único no DTO: em multiclasse cada classe prepara as suas.
 
 10.2 PERÍCIAS (18) e SALVAGUARDAS
   `normalizeSkills` garante as 18 chaves com { proficient, expertise } booleanos;
@@ -786,17 +816,66 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   SpellcastingType = none|full|half|third|pact · SpellLearning = known|prepared|none
   NÍVEL DE ESCOLHA DE SUBCLASSE (`subclassLevel`):
     cleric 1 · sorcerer 1 · warlock 1 · druid 2 · wizard 2 · todas as outras 3.
-  SUBCLASSES CADASTRADAS: cleric (7 domínios), warlock (3 patronos), barbarian,
-    druid, monk, rogue, sorcerer, wizard.
-  [LACUNA CONHECIDA] bard, fighter, paladin e ranger têm `subclasses: []`. Se a mesa
-    começar no nível 3+ com uma dessas classes, o Level Up travará pedindo uma
-    subclasse que não existe no catálogo.
-  FEATURES: cada feature tem { id, name, level, description, effect? | effects? }.
+  SUBCLASSES CADASTRADAS: TODAS as do PHB — cleric (7 domínios), warlock (3 patronos),
+    barbarian (2), bard (2: Colégio do Conhecimento e da Bravura), druid (2),
+    fighter (3: Campeão, Mestre da Batalha, Cavaleiro Arcano), monk (3), paladin (3:
+    Devoção, Anciões, Vingança), ranger (2: Caçador e Senhor das Feras), rogue (3),
+    sorcerer (2), wizard (8 escolas).
+    Mestres da Batalha expõe as 16 manobras; o Caçador declara as 4 escolhas do
+    arquétipo (Presa do Caçador no 3º, Táticas Defensivas no 7, Multiataque no 11 e
+    Defesa Superior no 15); o Colégio da Bravura concede `proficiencies`
+    (armaduras médias, escudos e armas marciais) somadas às da classe quando a
+    subclasse é escolhida, e o Cavaleiro Arcano declara a conjuração de terço
+    (`spellcasting: { type: 'third', ability: 'intelligence', learning: 'known' }`).
+  FEATURES: cada feature tem
+    { id, name, level, description, effect? | effects?, choice? }.
     Efeitos suportados (ClassFeatureEffect.type): bonus, resource, save, expertise,
     sneakAttack, toggle, resistance, speed, damageBonus, critDice, unarmoredDefense,
-    martialArts, wildShape, hpBonus, abilityBonus, other.
-    Recursos com contador aceitam: max fixo, maxByLevel[], perLevel (× multiplicador)
-    e soma do modificador de um atributo (abilityMod).
+    martialArts, wildShape, hpBonus, abilityBonus, armorClass, saveBonus,
+    halfProficiency, critThreshold, other.
+    Recursos com contador aceitam: max fixo, maxByLevel[], perLevel (× multiplicador),
+    soma do modificador de um atributo (abilityMod) e piso do total (min).
+  ESCOLHAS DE CARACTERÍSTICA (`choice`): uma feature pode declarar
+    { count, options[{ key, name, description, effect? }], level?, prompt?,
+      allowRepeat?, apply? }. O valor vive em `classState.choices[featureId] = [chaves]`
+    (JSONB, sem migração). Quem valida é `resolveFeatureChoices` (quantidade,
+    opção existente, sem repetir e só no nível em que a escolha é feita) — usada
+    no Level Up (novo nível da classe) e no passo 5 do assistente (nível 1).
+    `pendingFeatureChoices`/`featureChoiceInfo` alimentam a interface: o DTO expõe
+    `classes[].featureChoices` (incluindo as da SUBCLASSE já escolhida, graças a
+    `featuresWithSubclass`), `classOptions[].featureChoices` (nível 1) e
+    `classOptions[].subclassChoices` (com o nome da subclasse) — este último é o
+    que mostra a escolha quando a SUBCLASSE é escolhida no mesmo nível em que ela
+    já pede uma escolha (Caçador no 3º, Colégio do Conhecimento no 3º).
+    `apply: 'skill'` faz as chaves escolhidas virarem proficiência de perícia
+    (Colégio do Conhecimento: 3 perícias).
+    FEATURES COM ESCOLHA: Estilo de Luta (fighter nv 1 — id 'fighter-fighting-style',
+    paladin nv 2, ranger nv 2), Inimigo Favorito (ranger nv 1, +1 no 6 e no 14),
+    Explorador Nato (ranger nv 1, +1 no 6, +2 no 10), Estilo de Luta Adicional
+    (Campeão nv 10), Manobras (Mestre da Batalha nv 3, +2 no 7/10/15), Estudante da
+    Guerra (Mestre da Batalha nv 3, 1 ferramenta de artesão), Proficiências
+    Adicionais (Colégio do Conhecimento nv 3, 3 perícias) e as 4 do Caçador. Só a
+    opção Defesa tem efeito automático (+1 CA com armadura); as demais são escolha
+    informativa (Fase 5).
+  EFEITOS NUMÉRICOS NO DERIVED:
+    • armorClass (+1, requiresArmor) → `derived.armorClass.classBonus`, SOMADO só
+      com armadura vestida (escudo não conta) e nunca duas vezes entre classes;
+    • saveBonus (abilityMod + minValue) → `derived.saveBonus`, somado a TODAS as
+      salvaguardas (Aura de Proteção: mod. de CAR, mínimo +1);
+    • halfProficiency (target 'checks' | 'physicalChecks') → metade da proficiência
+      em testes de habilidade SEM proficiência, inclusive a iniciativa. `round`
+      decide o arredondamento ('down' no Pau para Toda Obra do bardo, 'up' no
+      Atleta Extraordinário do Campeão); dois efeitos no mesmo teste não somam:
+      vale o maior;
+    • critThreshold (value) → `derived.critThreshold` (padrão 20): o ataque do
+      combate acerta criticamente com d20 >= limiar (Campeão: 19 no 3º e 18 no 15º).
+      Crítico sempre acerta e o 1 natural sempre erra; o MENOR limiar prevalece.
+  FEATURES CADASTRADAS POR CLASSE (PHB 2014): barbarian, druid, fighter, monk,
+    paladin, ranger, rogue, sorcerer, wizard, bard.
+  [LACUNA CONHECIDA] cleric e warlock têm `features: []` (só as subclasses):
+    faltam Canalizar Divindade/Destruir Mortos-Vivos/Intervenção Divina (clérigo) e
+    Invocações Místicas/Dádiva do Pacto/Arcanum Místico/Mestre Místico (bruxo).
+    O ladino não tem a Gíria de Ladrão (nível 1, texto puro).
   PERÍCIAS DE CLASSE (CLASS_SKILL_CHOICES): quantas e de qual lista —
     barbarian 2, bard 3 (lista vazia = qualquer uma das 18), cleric 2, druid 2,
     fighter 2, monk 2, paladin 2, ranger 3, rogue 4, sorcerer 2, warlock 2, wizard 2.
@@ -810,18 +889,48 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     barbarian FOR · bard CAR · cleric SAB · druid SAB · fighter FOR **ou** DES ·
     monk DES e SAB · paladin FOR e CAR · ranger DES e SAB · rogue DES ·
     sorcerer CAR · warlock CAR · wizard INT
-  `multiclassMissingLabel` devolve o texto do bloqueio ("faltam Força 13 e ...").
+  `multiclassPrerequisiteLabel(classKey, abilities, entries)` devolve o texto do
+    bloqueio citando CADA classe que está barrando — o PHB exige 13 na classe nova
+    E também em TODAS as classes que o personagem já tem:
+      "Para entrar em Ladino você precisa de Destreza 13; para continuar como
+       Paladino você precisa de Força 13 e Carisma 13"
+    É a mesma função usada pelo serviço (resolveClassPatch/applyLevelUp) e pelo
+    `classOptions[].eligible/missing` do DTO. Classes que o personagem JÁ possui
+    ficam sempre elegíveis: o pré-requisito só vale para ENTRAR numa classe nova.
+  PROFICIÊNCIAS (CLASS_PROFICIENCIES em shared/classes/index.ts): cada classe tem
+    `first` (conjunto completo do nível 1) e `multiclass` (conjunto reduzido da
+    tabela de multiclasse, PHB p.164). A ficha grava o resultado em
+    `characters.proficiencies` (JSONB). MULTICLASSE NUNCA CONCEDE SALVAGUARDAS:
+    `lockedSaves`/`lockedSavesOf` usam só a PRIMEIRA classe (as de features, tipo
+    'save', continuam valendo).
+  PERÍCIA DE MULTICLASSE (`multiclassSkillChoiceFor`): entrar em Bardo (qualquer
+    perícia), Patrulheiro ou Ladino (da lista da classe) concede UMA perícia — o corpo do
+    Level Up leva `skillChoice`, validada no servidor (precisa estar em SKILL_KEYS,
+    dentro da lista da classe e o personagem NÃO pode já ser proficiente nela).
   FEATURES: `getMulticlassFeatures` avalia CADA classe no PRÓPRIO nível e concatena
     (um Bárbaro 3/Ladino 2 tem as features de bárbaro até o 3 E as de ladino até o 2).
   AJUSTES: `computeMulticlassAdjustments` calcula os ajustes por classe e SOMA/
     COMBINA: toggles e recursos deduplicados por id; meleeDamageBonus, speedBonus e
     hpBonus somam; resistências unificam; critDice e martialArtsDie pegam o maior;
     Defesa sem Armadura vira lista (vale a de maior valor); abilityBonuses somam e
-    abilityCaps usam o teto de menor valor.
+    abilityCaps usam o teto de menor valor; armorClassBonus/saveBonus pegam o MAIOR
+    (não somam entre classes) e halfProficiencyTargets unificam.
+    Os efeitos das OPÇÕES escolhidas (Estilo de Luta Defesa) entram na mesma conta,
+    lendo `classState.choices`.
   ATAQUE FURTIVO: escala com o nível de LADINO — max(1, ceil(level/2)) dados d6.
-  NÍVEL DE CONJURADOR (tabela combinada de espaços):
-    full = nível cheio · half = floor(nível/2) · third = floor(nível/3); cap 20.
-    BRUXO FICA FORA e usa Magia de Pacto própria: nível 1→1 espaço de 1º; 2→2 de 1º;
+  TABELA DE ESPAÇOS (`spellSlotsForClasses`) — qual tabela é usada:
+    • nenhuma classe conjuradora (ou só Bruxo) ⇒ sem espaços;
+    • UMA classe conjuradora ⇒ a tabela da PRÓPRIA classe (`ownCasterLevel`):
+      completo = nível cheio · meio = CEIL(nível/2) · terço = CEIL(nível/3),
+      e ZERO enquanto o meio-conjurador não chega ao 2º nível (Paladino/Patrulheiro)
+      ou o terço-conjurador ao 3º. Ex.: Paladino 3 = 3 de 1º; Patrulheiro 5 = 4 de
+      1º + 2 de 2º; Trapaceiro Arcano 4 = 3 de 1º.
+      Guerreiro/Ladino SEM subclasse conjuradora não contam (Guerreiro 5 /
+      Paladino 4 usa a tabela do Paladino).
+    • DUAS OU MAIS classes conjuradoras ⇒ a tabela COMBINADA (`multiclassCasterLevel`):
+      full = nível cheio · half = floor(nível/2) · third = floor(nível/3); cap 20.
+      O arredondamento para BAIXO é exclusivo desta tabela.
+    BRUXO FICA FORA das duas e usa Magia de Pacto própria: nível 1→1 espaço de 1º; 2→2 de 1º;
     3–4→2 de 2º; 5–6→2 de 3º; 7–8→2 de 4º; 9–10→2 de 5º; 11–16→3 de 5º;
     17–20→4 de 5º.
     A tabela de conjurador completo (níveis 1..20 × espaços de 1º..9º) está
@@ -852,7 +961,7 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
 
 10.9 DTO DERIVADO (`deriveStats` → DerivedStats)
   proficiencyBonus, modifiers (6), hitDie, lockedSaves[], sneakAttack, expertiseSlots,
-  preparedSpellCount, initiative, passivePerception, armorClass (detalhado),
+  initiative, passivePerception, armorClass (detalhado),
   carryingCapacity, totalWeight, saves[6], skills[18], spellcasting{saveDC,attackBonus},
   spellSlots[], pactSlots, xpForNextLevel.
   REGRA: nada disso é gravado no banco; é recalculado em toda leitura.
@@ -877,9 +986,14 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     • level       → SEMPRE RECUSADO (400 "O nível do personagem só muda pelo Level Up.").
                     Existe no schema só para gerar uma mensagem clara.
     • classes     → ver §11.3.
-    • saves       → as salvaguardas da(s) classe(s) são FORÇADAS a true
-                    (lockedSaves inclui classe + efeitos de features tipo 'save').
+    • saves       → as salvaguardas da PRIMEIRA classe são FORÇADAS a true
+                    (lockedSaves = primeira classe + efeitos de features tipo 'save').
+                    Multiclasse nunca concede salvaguardas (PHB p.164).
     • skills      → substituição integral, normalizada para as 18 perícias.
+    • proficiencies → substituição integral normalizada ({ armor, weapons, tools },
+                    só texto, sem repetição). CONSTRUÇÃO: entra sozinho com a primeira
+                    classe e pelo Level Up de multiclasse; o jogador com a criação
+                    finalizada não altera (403).
     • inventory / attacks / features / classState → substituição integral.
     • spells      → se o patch vem do JOGADOR e a criação está finalizada, aplica
                     `mergeSpellUsage`: só `used` de cada nível é aceito (limitado
@@ -888,7 +1002,9 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     • armorClassOverride → grava `armorClass` (null ⇒ 0 = automático).
   Regras de negócio embutidas:
     • Primeira classe (ou troca dela no assistente no nível 1) define o PV inicial
-      pelo dado de vida máximo + mod. CON, SALVO se o patch já mandou `hpMax`.
+      pelo dado de vida máximo + mod. CON, SALVO se o patch já mandou `hpMax`, e
+      grava as proficiências iniciais completas daquela classe (a menos que o patch
+      já traga `proficiencies`).
     • Mudança de CON dispara o recálculo retroativo de PV (§10.4).
     • Se `classes` esvaziar, `classState` é zerado.
   Regra geral das coleções: o cliente envia o ESTADO COMPLETO da seção; não há merge
@@ -952,11 +1068,12 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   defesas sem armadura + override), atributos efetivos e `deriveStats`.
   O DTO final inclui: identidade, `classes[]` (com hitDie, subclassLevel,
   subclassEligible, subclassNames, asiLevels e spellcasting POR CLASSE),
-  `classOptions[]` (12 classes com `eligible` e o motivo do bloqueio), `className`
-  ("Bárbaro 3 / Ladino 2"), `activeFeatures[]`, `classState`, `classAdjustments`,
-  `creationFinalized`, `creationDraft`, `level`, `lastLevelUpRelease`, atributos,
-  vitais, `armorClass` + `armorClassOverride`, coleções, `version`, timestamps e
-  `derived`.
+  `classOptions[]` (12 classes com `eligible`, o motivo do bloqueio
+  `missing`, `firstProficiencies`, `multiclassProficiencies` e
+  `multiclassSkillChoice`), `className` ("Bárbaro 3 / Ladino 2"), `activeFeatures[]`,
+  `classState`, `classAdjustments`, `creationFinalized`, `creationDraft`, `level`,
+  `lastLevelUpRelease`, atributos, vitais, `armorClass` + `armorClassOverride`,
+  coleções (incluindo `proficiencies`), `version`, timestamps e `derived`.
 
 
 ================================================================================
@@ -965,13 +1082,15 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
 
 12.1 FLUXO NORMAL — POST /api/characters/me/level-up
   Entrada (levelUpSchema): { classKey, subclass? (default ''), hp: 'roll'|'average',
+    skillChoice? (default '', perícia da entrada por multiclasse),
     abilityIncreases?: [{ ability, amount }] (máx. 2), feat?: { name, description }
     | null }
   Pré-condições verificadas:
     1. Nível total < 20;
     2. classe conhecida;
     3. a classe escolhida não está no nível máximo;
-    4. se for classe NOVA (multiclasse), o pré-requisito de atributo deve passar;
+    4. se for classe NOVA (multiclasse), o pré-requisito de atributo deve passar
+       nela e em todas as classes atuais (PHB cap. 6);
     5. **a liberação da mesa**: `character.lastLevelUpRelease <
        GameConfig.levelUpRelease` — senão 409 "Você já usou esta liberação de
        Level Up." Não existe mais nenhuma checagem de "bloqueado".
@@ -980,6 +1099,14 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     • PV do dado: se 'roll' → crypto.randomInt(1, dado+1); se 'average' → média;
     • SUBCLASSE: se a classe ainda não tem e `newClassLevel >= subclassLevel`, exige
       `subclass` no corpo (400 se faltar; 400 se não existir no catálogo);
+    • PROFICIÊNCIAS: só ao ENTRAR numa classe NOVA — `data.proficiencies` =
+      merge(normalizeProficiencies(character.proficiencies), grant), em que o grant é
+      `multiclassProficiencyGrant` (ou `firstClassProficiencies` quando a ficha ainda
+      não tinha classe nenhuma);
+    • PERÍCIA DE MULTICLASSE: se a classe nova concede perícia
+      (`multiclassSkillChoiceFor`), `skillChoice` é OBRIGATÓRIA (400 vazia, fora de
+      SKILL_KEYS/da lista da classe ou já proficiente) e a perícia escolhida entra em
+      `data.skills`; mandá-la em outro caso ⇒ 400;
     • ASI/TALENTO: se `isAsiLevel(classKey, newClassLevel)`:
         – com `feat`: empurra uma característica { id: 'feat-<uuid>', name, source:
           'feat', description } em `features`;
@@ -1077,7 +1204,8 @@ ROLAGEM DE ATRIBUTO (POST /me/creation/roll)
   Rola 4d6 e DESCARTA O MENOR (`lowestIndex`), usando o MESMO mecanismo da janela de
   dados (`rollTableDice` com `kind: 'creation'`). Particularidades:
     • NÃO anuncia para a mesa (não publica `dice:active` nem `dice:roll` para a mesa);
-    • entra no histórico do mestre como "[Personagem]: Criação de personagem: [valor]";
+    • entra no histórico do mestre como "[Personagem]: Criação de personagem: [valor]
+      (d6 6 + d6 4 + d6 2 + d6 2)";
     • fica guardada no rascunho (máximo 6; a 7ª ⇒ 409);
     • `restart: true` recomeça a lista dos seis.
 
@@ -1208,6 +1336,32 @@ JANELA DE DADOS (dice)
     jogador é SEMPRE pública.
   • O nome de quem rolou vem da FICHA (fallback: displayName do usuário), nunca do corpo.
   • Ao desconectar a última aba do usuário, a faixa é removida da mesa.
+  • HISTÓRICO DO MESTRE (cliente, `dice/format.ts::rollDebug` + `DiceDock`): cada linha
+    é "[Personagem]: [Perícia]: [total]" seguida da DEPURAÇÃO entre parênteses —
+    cada dado com o TIPO, o bônus rotulado pela origem e os descartados:
+      Umbrae: Percepção: 10 (d20 6 + 4 perícia)
+      Umbrae: Rolagem livre: 17 (d20 14 + 3 bônus)
+      Umbrae: Percepção: 10 (d20 6, descartado d20 2 + 4 perícia)
+    O rótulo do bônus vem do `kind` (skill → perícia, save → salvaguarda, resto →
+    bônus). O log é montado no CLIENTE a partir do próprio `DiceRollDto` (que já
+    traz `dice[]`, `bonus` e `total`) — nenhum campo novo trafega e nenhum valor
+    derivado é gravado. A rolagem de criação sai como
+      "[Personagem]: Criação de personagem: [valor] (d6 6 + d6 4 + d6 2 + d6 2)"
+    (os 4d6 sem flag `dropped`: o menor descartado da criação é escolha do
+    assistente — `CreationDraft.rolls[].dropped` — e não a vantagem/desvantagem).
+  • DUAS PORTAS PARA O MESMO LOG (cliente): (a) dentro da bandeja, abaixo dos
+    dados, como sempre; (b) um painel flutuante só com o histórico, aberto pelo
+    botão `Log` que fica ACIMA do botão `Dados` (components/master/RollLogPanel).
+    O painel é um cartão ancorado acima da pilha de botões (não ocupa a tela,
+    `max-height: calc(100vh - 12rem)` com rolagem própria). A lista é a MESMA nos
+    dois lugares: `dice/RollLogList` + `historyLine`/`rollDebug` de `dice/format`.
+  • PILHA FLUTUANTE DO MESTRE (canto inferior esquerdo, em MasterPanel):
+      topo   → Log (`RollLogPanel`)      — painel do histórico
+      meio   → Dados (`DiceDock`)        — janela de rolagem (`.dice-fab.is-master`)
+      base   → Anotações (`MasterNotes`) — `GameConfig.masterNotes`
+    Os dois painéis são flutuantes (`.master-fab-panel`) e abrem UM POR VEZ: o
+    estado de qual está aberto vive no MasterPanel, que fecha o outro ao abrir.
+    O jogador não tem a pilha: só o botão `Dados`, na base (`.dice-fab` puro).
 
 APRESENTAÇÃO DE IMAGENS (presentation)
   Estado único em memória `current`. O mestre mostra uma imagem para a mesa inteira
@@ -1346,7 +1500,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 18) TESTES E VERIFICAÇÃO
 ================================================================================
 
-18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 3.708 linhas, 432 asserts)
+18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 6.187 linhas, 649 asserts)
   Executa contra um servidor RODANDO (`npm run smoke`; base configurável por
   SMOKE_BASE_URL). Cria contas com sufixo único, exercita a API e o WebSocket de
   ponta a ponta e LIMPA tudo no final (`cleanup()`), saindo com código 0 ou 1
@@ -1375,12 +1529,18 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     11) Mestre edita a ficha       — editedBy, evento para o dono
     11.5) Level Up liberado        — contador incrementa a CADA clique, sem bloqueio;
                                      configuração sem `levelUpUnlocked`; lastLevelUpRelease
+    11.5b) Anotações do mestre     — 401 sem token, 403 para o jogador (ler e gravar),
+                                     configuração do jogador sem o campo, gravação/leitura
+                                     do mestre e limite de 20.000 caracteres (400)
     11.6) Compêndio (aba "Mesa")   — 401 sem token; 12 classes com dado de vida e 2
                                      salvaguardas; clérigo com 7 domínios; 14 linhagens com
                                      história; 13 antecedentes com 2 perícias; magias vazias
     11.7) Level Up (assistente)    — subclasse obrigatória, multiclasse sem pré-requisito,
+                                     pré-requisito das classes ATUAIS (400 + mensagem),
+                                     perícia de multiclasse (obrigatória/fora da lista 400),
                                      média/rolagem de PV, mesma liberação duas vezes (409),
-                                     ASI, Talento, PV retroativo de CON
+                                     ASI, Talento, PV retroativo de CON, proficiências
+                                     concedidas por entrada e salvaguardas só da 1ª classe
     11.8) Fim da criação/CA/talentos
     11.9) Rolagem de dados         — pool vazio (400), pública, privada
     11.10) Faixa de rolagem        — janela aberta/fechada, privada não vira faixa
@@ -1390,6 +1550,42 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     12) Presença ao desconectar
     13) Exclusão de personagem     — 403 para jogador, cascata de conta/combate/log,
                                      derrubada da sessão, token invalidado
+  -- FASE 0: regressão das regras base (seções 14 a 19, num escopo próprio) --
+    14) PV e CA automáticos        — PV de d10/d6, recálculo retroativo de CON no 5º
+                                     (40/30 → 45/35 com CON 16; → 25/15 com CON 8),
+                                     CA leve/média/pesada, escudo, Defesa sem Armadura
+                                     de Bárbaro (10+DES+CON) e de Monge (10+DES+SAB,
+                                     que cai com escudo), override 30 e override 0
+    15) Multiclasse                — pré-requisito faltando na classe NOVA (Paladino)
+                                     e na ATUAL (Paladino barrando Ladino), ambas 400 + a
+                                     mensagem "para continuar como X"; entrada liberada
+                                     concede proficiências PARCIAIS e nenhuma salvaguarda,
+                                     enquanto a 1ª classe concede a lista COMPLETA;
+                                     perícia de multiclasse obrigatória/fora da lista
+                                     (400) e válida (200); 403 ao editar proficiências
+                                     com a criação finalizada
+    16) Magias preparadas          — Clérigo (SAB+5), Druida (SAB+3), Mago (INT+7),
+                                     Paladino 1 = 0 e Paladino (CAR + metade para
+                                     baixo), escala no 9º, classes de conhecidas nulas
+                                     e multiclasse com contadores separados
+    17) Espaços de magia           — Paladino 3 = 3 de 1º; Patrulheiro 5 = 4/2; Cavaleiro
+                                     Arcano 4 = 3 (terço); duas conjuradoras (nível 6 →
+                                     4/3/3), Guerreiro não-conjurador + Paladino usa a
+                                     tabela do Paladino; Bruxo separado (pacto)
+    18) Features e escolhas        — Defesa (+1 só com armadura, rótulo e detalhamento),
+                                     Pau para Toda Obra (perícia e iniciativa, nunca
+                                     somando onde já há proficiência), Aura de Proteção
+                                     em todas as salvaguardas; escolhas inválidas (400)
+                                     e válidas (200), escolha para o nível ERRADO (400)
+                                     e subclasse no nível certo em bard/fighter/paladin/
+                                     ranger (400 sem, 200 com)
+    19) Subclasses 1 → 20          — Level Up de verdade pelas 10 subclasses novas, com
+                                     features e recursos por nível (Campeão, Mestre da
+                                     Batalha, Cavaleiro Arcano, Devoção/Anciões/
+                                     Vingança, Conhecimento/Bravura, Caçador, Senhor
+                                     das Feras) e o CRÍTICO em combate: 60 ataques de
+                                     treino com todo d20 >= 18 crítico, 1 natural erra
+                                     e o limiar volta a 20 sem o Campeão
 
   ARMADILHA OPERACIONAL: o rate limiter é em memória. Duas execuções do smoke
   seguidas podem devolver 429 no login. Reiniciar o serviço zera o contador.
@@ -1416,7 +1612,13 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     só sobe pelo Level Up (ou pelo assistente de criação, no passo 8).
  4. `armorClass` no banco é só o override do mestre (0 = automático). O jogador
     nunca grava CA (403).
- 5. As salvaguardas das classes são FIXAS e forçadas a `true` em toda leitura.
+ 5. As salvaguardas das classes são FIXAS e forçadas a `true` em toda leitura —
+    SÓ as da PRIMEIRA classe: multiclasse nunca concede salvaguardas (PHB p.164).
+5b. `proficiencies` é CONSTRUÇÃO: entra sozinho com a primeira classe e na entrada
+    por multiclasse; o jogador com a criação finalizada recebe 403 (só o mestre
+    edita). Nada da CA/ataque é derivado dela ainda (Fase 2).
+5c. Entrar numa classe NOVA exige 13 nos atributos exigidos por ela E por todas as
+    classes que o personagem já tem; a classe que ele já possui não exige nada.
  6. O ator/identidade nunca vem do corpo da requisição, sempre do token.
  7. `authenticate` confere a conta no banco em toda requisição (exclusão imediata).
  8. No máximo um combate em PENDING_INITIATIVE ou ACTIVE.
@@ -1438,15 +1640,40 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 20) LACUNAS CONHECIDAS E PONTOS DE EXTENSÃO
 ================================================================================
 
-[LACUNA] SUBCLASSES AUSENTES: bard, fighter, paladin e ranger têm `subclasses: []`.
-   Com a mesa começando no nível 3+, o Level Up exigirá uma subclasse que não existe
-   no catálogo e travará. (As classes que escolhem no nível 1 — clérigo, feiticeiro e
-   bruxo — já estão completas.)
+[RESOLVIDO 2026-09-28] SUBCLASSES DO PHB: as 9 que faltavam (Bardo ×2, Guerreiro ×3,
+   Paladino ×3, Patrulheiro ×2) foram cadastradas com as escolhas e os efeitos que o
+   motor já sabe aplicar (crítico do Campeão, dados de superioridade do Mestre da
+   Batalha, terço-conjurador do Cavaleiro Arcano, as escolhas do Caçador). O smoke
+   seção 19 sobe de nível 1 a 20 pelas 10 subclasses e valida o crítico em combate.
+[LACUNA] CARACTERÍSTICAS DE CLASSE DO CLÉRIGO E DO BRUXO: os dois ainda têm
+   `features: []` (só as subclasses) — faltam Canalizar Divindade, Destruir
+   Mortos-Vivos, Intervenção Divina, Invocações Místicas, Dádiva do Pacto, Arcanum
+   Místico e Mestre Místico. O ladino não tem a Gíria de Ladrão (texto puro).
+[LACUNA/FASE 5] COMPANHEIRO ANIMAL DO SENHOR DAS FERAS: as quatro características do
+   arquétipo estão cadastradas como texto, mas a ficha do companheiro (PV, CA,
+   ataques e PV gastos saindo dos seus) fica para a Fase 5.
+[LACUNA/FASE 4 e 5] MAGIAS DE JURAMENTO DO PALADINO: os nomes entram como texto na
+   característica do nível (3/5/9/13/17), sempre preparadas e fora do limite — o
+   catálogo de magias (Fase 4) é quem vai vinculá-las à ficha.
+[LACUNA/FASE 5] EFEITO EM COMBATE DAS ESCOLHAS E DAS CARACTERÍSTICAS NOVAS: os
+   Estilos de Luta que não a Defesa, o gasto de Surto de Ação/Retomar o Fôlego/
+   Indomável, a Destruição Divina, a Canção de Descanso, o Contra-encanto, os
+   Segredos Mágicos, as auras nos ALIADOS, as manobras do Mestre da Batalha (os
+   dados de superioridade contam, a manobra em si é texto) e o die das inspirações
+   são texto — o contador de usos funciona, o efeito na mesa ainda não. O reset por
+   descanso dos recursos é a Fase 6 (cada recurso só guarda o tipo).
 [LACUNA] CATÁLOGO DE MAGIAS: `CompendiumSpellDto` está definido e a aba "Mesa" tem a
    seção, mas `SPELL_CATALOG` é `[]`. Magias hoje são apenas estado por ficha
    (`spells` = { list, slots }), sem catálogo central.
 [LACUNA] RAÇAS E ANTECEDENTES: bônus de atributo e perícias são aplicados; ferramentas,
    idiomas e as características raciais/de antecedente NÃO são modelados.
+[LACUNA/FASE 2] PROFICIÊNCIAS DE EQUIPAMENTO: `characters.proficiencies` já registra
+   armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada por
+   multiclasse, com backfill na migração `20260928160000_character_proficiencies`),
+   mas o EFEITO mecânico NÃO é calculado: a CA não exige proficiência para somar
+   armadura/escudo e não há penalidade de armadura sem proficiência nem restrição de
+   ataque por arma. As escolhas abertas do livro ("1 instrumento musical à sua
+   escolha") entram como DESCRIÇÃO — a escolha interativa ainda não existe.
 [LACUNA] O compêndio é SOMENTE LEITURA. O plano declarado é o mestre poder criar e
    editar raças/antecedentes: a arquitetura já está preparada (rota única, coleções,
    `getCompendium()` como fonte trocável), mas não há CRUD nem tabelas para isso.
@@ -1456,6 +1683,11 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    MEMÓRIA do processo: não sobrevivem a restart e não escalam horizontalmente.
 [LACUNA] Salas de combate (`combatRoom`) estão definidas mas não são usadas — a
    filtragem de visibilidade é feita por payload, não por sala.
+[NOTA] ANOTAÇÕES DO MESTRE (`GameConfig.masterNotes`) não publicam evento: são
+   texto privado de um único usuário, sem valor para a mesa. Consequência: com o
+   painel aberto em DUAS abas, a segunda só vê o texto ao recarregar (e poderia
+   sobrescrever o da primeira ao sair do campo). Se um dia isso incomodar, basta
+   um evento exclusivo da sala dos mestres.
 [HIGIENE] O único canal público além da autenticação são register/login (rate
    limited). Não há rate limit nas demais rotas.
 [NOTA] `README.md`, `REVISAO-CODIGO.md` e este documento são as fontes de
@@ -1498,6 +1730,9 @@ DIAGNÓSTICO
   level                   DERIVADO da soma de classes[].level (não é coluna)
   classState              { active: string[], used: { [id]: number } } — toggles/usos
   classAdjustments        ajustes calculados das features (nunca gravados)
+  proficiencies           { armor, weapons, tools } — texto do PHB; CONSTRUÇÃO (só o mestre)
+  CLASS_PROFICIENCIES     tabela `first` (nível 1) x `multiclass` (PHB p.164) por classe
+  multiclassSkillChoice   perícia à escolha ao ENTRAR numa classe nova (Bardo/Ranger/Rogue)
   derived (DerivedStats)  todos os valores calculados da ficha (nunca gravados)
   armorClass (coluna)     OVERRIDE do mestre; 0 = automático
   levelUpRelease          contador de liberações (incrementa a cada clique do mestre)

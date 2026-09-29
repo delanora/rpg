@@ -64,9 +64,16 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   const { readOnly, lockedConstruction } = useSheetAccess();
   const { list, slots } = character.spells;
   const spellcasting = character.derived.spellcasting;
-  // Espaços combinados pela regra de multiclasse (PHB) e Magia de Pacto à parte.
+  // Espaços pela regra do PHB (tabela da própria classe, ou a combinada quando
+  // há duas ou mais classes conjuradoras) e Magia de Pacto à parte.
   const combinedSlots = character.derived.spellSlots ?? [];
   const pactSlots = character.derived.pactSlots ?? null;
+
+  // Magias PREPARADAS são por classe: cada conjurador preparado tem o seu
+  // limite, com o próprio atributo (Paladino conta metade do nível).
+  const preparedByClass = character.classes
+    .map((entry) => ({ name: entry.className, count: entry.spellcasting?.preparedCount ?? null }))
+    .filter((item): item is { name: string; count: number } => item.count !== null && item.count > 0);
 
   function patchSpell(id: string, patch: Partial<Spell>): void {
     update({ spells: { ...character.spells, list: list.map((spell) => (spell.id === id ? { ...spell, ...patch } : spell)) } });
@@ -300,8 +307,10 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
 
       <h3 className="subsection-title">
         Magias conhecidas e preparadas
-        {character.derived.preparedSpellCount !== null
-          ? ` — até ${character.derived.preparedSpellCount} preparadas`
+        {preparedByClass.length > 0
+          ? ` — prepara: ${preparedByClass
+              .map((item) => `${item.name} ${item.count}`)
+              .join(' · ')}`
           : ''}
       </h3>
 

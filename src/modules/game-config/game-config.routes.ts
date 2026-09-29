@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   getGameConfig,
+  getMasterNotes,
   releaseLevelUp,
+  setMasterNotes,
   setStartingLevel,
 } from './game-config.service.js';
 import { LEVEL_MAX, LEVEL_MIN } from '../shared/dnd5e.js';
@@ -14,6 +16,13 @@ gameConfigRouter.use(authenticate);
 
 const startingLevelSchema = z.object({
   level: z.number().int().min(LEVEL_MIN).max(LEVEL_MAX),
+});
+
+/** Limite das anotações do mestre (o mesmo dos textos livres da ficha). */
+const MASTER_NOTES_MAX = 20000;
+
+const masterNotesSchema = z.object({
+  notes: z.string().max(MASTER_NOTES_MAX),
 });
 
 /** GET /api/game — configuração atual da mesa (usada ao abrir a ficha). */
@@ -39,6 +48,36 @@ gameConfigRouter.post('/starting-level', requireRole('MASTER'), (req, res) => {
 
   void setStartingLevel(parsed.data.level)
     .then((config) => res.json({ config }))
+    .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
+});
+
+/**
+ * GET /api/game/notes — anotações privadas do mestre (só MASTER).
+ *
+ * Fora do GET /api/game de propósito: lá a configuração é entregue também ao
+ * jogador, e as anotações são do mestre.
+ */
+gameConfigRouter.get('/notes', requireRole('MASTER'), (_req, res) => {
+  void getMasterNotes()
+    .then((notes) => res.json(notes))
+    .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
+});
+
+/**
+ * PATCH /api/game/notes — grava as anotações do mestre (só MASTER).
+ *
+ * Substituição integral do texto; sem evento em tempo real (é privado).
+ */
+gameConfigRouter.patch('/notes', requireRole('MASTER'), (req, res) => {
+  const parsed = masterNotesSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  void setMasterNotes(parsed.data.notes)
+    .then((notes) => res.json(notes))
     .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
 });
 

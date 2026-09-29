@@ -5,6 +5,8 @@
 > **Objetivo:** garantir **funcionalidade plena** e **escalabilidade em relação ao sistema de D&D 5e**.
 > **Regra desta revisão:** nada foi alterado no código. Este documento reúne os pontos encontrados e as mudanças sugeridas (arquivo de trabalho para as próximas etapas).
 > **Status do repositório no momento da revisão:** `f69c315` (main), typecheck limpo, smoke passando.
+>
+> **Atualizações:** os itens **A13**, **A14** e **A15** foram acrescentados em **2026-09-28** já com o resultado da correção/implementação (multiclasse fiel ao PHB: pré-requisito das classes atuais, salvaguardas só da primeira classe e proficiências de armadura/arma/ferramenta). Na mesma data a **Fase 0** fechou as regras base de PV e CA (**A4**, **A5** e **A10** corrigidos) e as **9 subclasses do PHB** que faltavam (**A19**), com a regressão coberta pelas seções **14 a 19** do smoke.
 
 ---
 
@@ -18,7 +20,6 @@ Os riscos mais relevantes são:
 |------|-------|------------|
 | Concorrência | Sem transação/lock em Level Up, combate e edição de ficha → perdade de atualização / duplo level up | **Alta** |
 | Regras D&D | Subclasse conjuradora (Trapaceiro/Cavaleiro Arcano) ignorada na magia de multiclasse | **Alta** |
-| Regras D&D | PV inicial e PV de Level Up não seguem o PHB (hpMax fixo em 1; `hpCurrent` não sobe) | **Alta** |
 | Consistência | `derived.spellSlots` calculado vs. `spells.slots` editável manualmente → dois números na mesma tela | **Média** |
 | Escalabilidade | `republishSheetsWithCatalogItem` varre TODAS as fichas e recomputa DTO; eventos carregam a ficha inteira | **Média** |
 | Segurança | Token de 7 dias sem revogação; `userId` do token não é reconciliado com o banco | **Média** |
@@ -30,28 +31,58 @@ Os riscos mais relevantes são:
 
 ## Parte A — Correção das regras de D&D 5e
 
-### A1. Subclasse conjuradora não entra no nível de conjurador multiclasse — **Alta**
-`src/modules/shared/classes.ts` → `multiclassCasterLevel()` e `pactMagicSlots()` leem apenas `definition.spellcasting.type`. As subclasses de **terço-conjurador** (Ladino **Trapaceiro Arcano** e Guerreiro **Cavaleiro Arcano**) têm conjuração própria em `SubclassDefinition.spellcasting`, mas não são somadas.
-- **Efeito:** um Mago 3 / Ladino 9 (Trapaceiro Arcano) deveria ter nível de conjurador `3 + floor(9/3) = 6`, mas hoje calcula só `3`.
-- **Sugestão:** calcular o tipo de conjuração por entrada considerando a subclasse escolhida (mesma lógica de `spellcastingOf` no DTO) e somar: completo + ½ meio + ⅓ terço.
-- **Referência:** `classes.ts` (`multiclassCasterLevel`, `pactMagicSlots`); espelho em `characters.dto.ts` (`spellcastingOf`).
+### A1. Subclasse conjuradora não entra no nível de conjurador multiclasse — **CORRIGIDO (2026-09-28)**
+`multiclassCasterLevel()` e `pactMagicSlots()` liam apenas `definition.spellcasting.type`. As subclasses de **terço-conjurador** (Ladino **Trapaceiro Arcano** e Guerreiro **Cavaleiro Arcano**) têm conjuração própria em `SubclassDefinition.spellcasting`.
+- **Efeito (antes):** um Mago 3 / Ladino 9 (Trapaceiro Arcano) deveria ter nível de conjurador `3 + floor(9/3) = 6`, mas calculava só `3`.
+- **Feito:** as duas funções passam por `effectiveSpellcasting(entry)`, que resolve a subclasse escolhida antes da classe — hoje Mago 3 / Ladino 9 (Trapaceiro) dá nível de conjurador **6** (espaços 4/3/3). O mesmo vale para `ownCasterLevel` e `preparedSpellCountFor`.
+- **Referência:** `classes/index.ts` (`effectiveSpellcasting`, `multiclassCasterLevel`, `pactMagicSlots`); espelho em `characters.dto.ts` (`spellcastingOf`).
 
-### A2. Magias preparadas por classe incompletas e DTO só mostra a primeira — **Média**
-`characters.dto.ts` → `spellcastingOf()` calcula `preparedCount` apenas quando `config.learning === 'prepared' && config.type === 'full'`. Ficam de fora os **meio-conjuradores preparados** (Paladino/Patrulheiro), cuja fórmula é `mod. + floor(nível da classe / 2)`. Além disso, `derived.preparedSpellCount` usa somente o `primaryCasting` (primeira classe conjuradora), o que engana em fichas multiclasse.
-- **Sugestão:** retornar `preparedCount` também para `half` preparados (com arredondamento para baixo) e expor o total como a **soma** das preparadas de cada classe (ou uma lista por classe).
+### A2. Magias preparadas por classe incompletas e DTO só mostra a primeira — **CORRIGIDO (2026-09-28)**
+`characters.dto.ts` → `spellcastingOf()` calculava `preparedCount` apenas quando `config.learning === 'prepared' && config.type === 'full'`. Ficavam de fora os **meio-conjuradores preparados** (Paladino) e `derived.preparedSpellCount` usava só a primeira classe conjuradora, o que engana em fichas multiclasse.
+- **Feito:** `preparedSpellCountFor(entry, mod)` em `shared/classes/index.ts` é hoje a única fonte: **Clérigo/Druida/Mago** = `max(1, mod + nível da classe)`; **Paladino** = `max(1, mod + floor(nível da classe / 2))`, com **zero** abaixo do nível 2 (não conjura no 1º nível); **conjuradores conhecidos** (Bardo, Feiticeiro, Bruxo, Patrulheiro e os terço-conjuradores Trapaceiro/Cavaleiro Arcano) devolvem `null` — não usam a fórmula.
+- **Onde aparece:** `CharacterDto.classes[].spellcasting.preparedCount`, calculado **por classe**, com o próprio atributo e o próprio nível de classe. O total único `derived.preparedSpellCount` foi **removido** do DTO por ser enganador em multiclasse; os textos da ficha (`SpellsSection.tsx`) e do Level Up passaram a ler o valor por classe.
+
+### A17. Bardo, Guerreiro, Paladino e Patrulheiro não tinham NENHUMA característica de classe — **CORRIGIDO (2026-09-28)**
+Os quatro arquivos tinham `features: NO_FEATURES` (13 linhas cada): a ficha dessas classes não mostrava nada na aba Características e nenhum efeito (Inspiração de Bardo, Surto de Ação, Aura de Proteção...) existia.
+- **Feito:** as características de CLASSE dos quatro foram cadastradas com os efeitos que o motor já sabe aplicar. Bardo: Inspiração de Bardo (usos = mod. de CAR, mínimo 1), Pau para Toda Obra, Canção de Descanso, Especialização, Fonte de Inspiração (recarga curta no 5), Contra-encanto, Segredos Mágicos (10/14/18) e Inspiração Superior. Guerreiro: Estilo de Luta (escolha), Retomar o Fôlego, Surto de Ação (2 usos no 17), Ataque Extra (5/11/20) e Indomável (1/2/3 usos). Paladino: Sentido Divino, Mãos Consagradas (5 × nível), Estilo de Luta (2), Destruição Divina (2 e 11), Saúde Divina, Ataque Extra, Aura de Proteção, Aura de Coragem e Toque Purificador. Patrulheiro: Inimigo Favorito e Explorador Nato (com as melhorias do 6/10/14), Estilo de Luta (2), Consciência Primitiva, Ataque Extra, Esconder-se à Vista de Todos, Desaparecer, Sentidos Selvagens e Matador de Inimigos.
+- **Efeitos novos no motor:** `armorClass` (+1 CA da Defesa, só com armadura), `saveBonus` (Aura de Proteção: mod. de CAR, mínimo +1, em TODAS as salvaguardas) e `halfProficiency` (metade da proficiência em testes de habilidade sem proficiência — perícias E iniciativa —, com "vale o maior" quando dois efeitos caem no mesmo teste). Recursos ganharam piso (`min`) para o "1 + mod. de CAR, mínimo 1".
+- **Escolhas de característica:** mecanismo genérico em `classState.choices[featureId]` (JSONB, sem migração), declarado pela própria característica (`choice: { count, options, level, prompt }`) e validado por `resolveFeatureChoices` no Level Up e no passo 5 do assistente. Hoje: Estilo de Luta (Guerreiro 1, Paladino 2, Patrulheiro 2), Inimigo Favorito (Patrulheiro 1/6/14) e Explorador Nato (Patrulheiro 1/6/10). Campo de CONSTRUÇÃO: com a criação finalizada o jogador recebe 403 e só o mestre edita (a comparação ignora a ordem das chaves, que o JSONB reordena).
+- **Pendências registradas nos arquivos das classes:** PENDENTE Fase 5 (combate por ação/reação/rolagem: gastar Surto de Ação, Retomar o Fôlego, inspirações, auras em aliados, os Estilos de Luta que não a Defesa...) e PENDENTE Fase 4 (Destruição Divina e Segredos Mágicos, que dependem de espaços/catálogo de magias). O reset por descanso continua na Fase 6 — cada recurso só guarda o tipo.
+- **Achados da auditoria das outras 8 classes:** Bárbaro, Druida, Monge, Feiticeiro e Mago estão completos; o Ladino só não tem a Gíria de Ladrão (texto puro, nível 1); **Clérigo** e **Bruxo** continuam com `features: []` (ver A18).
+
+### A19. As 9 subclasses do PHB que faltavam (Bardo, Guerreiro, Paladino, Patrulheiro) — **CORRIGIDO (2026-09-28)**
+Bardo, Guerreiro, Paladino e Patrulheiro tinham `subclasses: NO_SUBCLASSES`: com a mesa começando no nível 3+ o Level Up pedia uma subclasse que **não existia no catálogo** e travava; além disso, o Campeão (crítico com 19–20) e o Cavaleiro Arcano (terço-conjurador) não existiam, e as escolhas do Caçador não tinham onde ser feitas.
+- **Feito — Bardo:** Colégio do Conhecimento (Proficiências Adicionais: 3 perícias com `apply: 'skill'`, que viram proficiência de verdade na ficha; Palavras de Interrupção, Segredos Mágicos Adicionais, Perícia Inigualável) e Colégio da Bravura (`proficiencies` de subclasse — armaduras médias, escudos e armas marciais — somadas às da classe quando escolhida; Inspiração de Combate, Ataque Extra, Magia de Batalha).
+- **Feito — Guerreiro:** **Campeão** (Crítico Aprimorado, Atleta Extraordinário, Estilo de Luta Adicional, Crítico Superior, Sobrevivente), **Mestre da Batalha** (Superioridade em Combate: 4/5/6 dados d8→d10→d12 de descanso curto; as 16 manobras do PHB; Estudante da Guerra; Conheça seu Inimigo; Implacável) e **Cavaleiro Arcano** (conjuração `third` de INT sobreposta à da classe, reaproveitando a máquina do Trapaceiro Arcano; Vínculo com Arma, Magia de Guerra, Golpe Místico, Carga Arcana, Magia de Guerra Aprimorada).
+- **Feito — Paladino:** Devoção, Anciões e Vingança, cada um com **Canalizar Divindade** (1 uso, descanso curto ou longo), as **magias de juramento** como texto nos níveis 3/5/9/13/17 (listas exatas do PHB; sempre preparadas e fora do limite — o vínculo com o catálogo é da Fase 4) e as características de 7/15/20.
+- **Feito — Patrulheiro:** **Caçador** com as quatro escolhas do arquétipo (Presa do Caçador no 3º, Táticas Defensivas no 7º, Multiataque no 11º e Defesa Superior no 15º) e **Senhor das Feras** (companheiro animal como característica informativa — a ficha do companheiro é Fase 5).
+- **Motor — novo efeito `critThreshold`:** o ataque do combate passa a usar o limiar da ficha (`characterCritThreshold`, padrão 20); crítico sempre acerta, **1 natural sempre erra** e o **MENOR limiar prevalece** no multiclasse. `halfProficiency` ganhou `round: 'up'` (Atleta Extraordinário) e `SubclassDefinition.proficiencies` é somado no Level Up por `subclassProficiencyGrant`.
+- **Motor — escolha no MESMO nível da subclasse:** `featureChoiceInfo`/`pendingFeatureChoices`/`resolveFeatureChoices` recebem o nome da subclasse e usam `featuresWithSubclass`. Como o DTO da classe só enxerga as escolhas da subclasse **depois** que ela está gravada, `classOptionsFor` passou a expor `classOptions[].subclassChoices` (`FeatureChoiceInfo & { subclass }`) — é dele que o `LevelUpDialog` tira o passo quando a subclasse é escolhida agora (Caçador 3º, Colégio do Conhecimento 3º). Trocar de subclasse descarta as escolhas da anterior.
+- **Cobertura:** smoke seção **11.5d** (catálogo das 9 subclasses + `subclassChoices` do Caçador; crítico 19/18; Atleta Extraordinário para cima na iniciativa e em FOR/DES/CON; dados de superioridade 4/5/6; as 16 manobras; Estudante da Guerra; terço-conjurador com espaços 2 e depois 4/2; Canalizar Divindade e as 5 faixas de juramento; Colégio do Conhecimento e da Bravura subindo de nível de verdade; Caçador e Senhor das Feras pelo Level Up). 23 verificações.
+
+### A18. Clérigo e Bruxo sem características de classe — **PENDENTE (Média)**
+Só as subclasses estão cadastradas nos dois. Faltam, no clérigo: Canalizar Divindade (2 usos no 2, 3 no 6, 4 no 18), Destruir Mortos-Vivos (5) e Intervenção Divina (10) e Aprimorada (20); no bruxo: Invocações Místicas (2), Dádiva do Pacto (3), Arcanum Místico (11/13/15/17) e Mestre Místico (20). As duas dependem de escolhas em lista longa (invocações) e de magias — mesma máquina de escolhas e o mesmo catálogo da Fase 4.
+
+### A16. Tabela de espaços errada em conjurador único — **CORRIGIDO (2026-09-28)**
+`spellSlotsForClasses` montava sempre o nível de conjurador pela fórmula combinada (`half = floor(nível/2)`, `third = floor(nível/3)`), inclusive com **uma** classe. O PHB usa a tabela **da própria classe** nesse caso, que arredonda a metade/terço para **CIMA**.
+- **Efeito:** Paladino 3 tinha 2 espaços de 1º (deveria ter 3), Patrulheiro 5 tinha 3 de 1º e nenhum de 2º (deveria ter 4 e 2) e Trapaceiro Arcano 3 não tinha espaços (deveria ter 2 de 1º).
+- **Feito:** `spellSlotsForClasses` usa `ownCasterLevel(entry)` (metade/terço arredondados para cima, zero antes do nível 2 do Paladino/Patrulheiro e antes do 3 do terço-conjurador) quando há **uma só** classe conjuradora; a tabela combinada (com arredondamento para baixo) só entra com **duas ou mais**. Guerreiro e Ladino **sem** subclasse conjuradora não contam como conjuradores, e o **Bruxo** continua fora da tabela (Magia de Pacto separada).
+- **Referência:** `shared/classes/index.ts` (`ownCasterLevel`, `multiclassCasterLevel`, `spellSlotsForClasses`, `pactMagicSlots`); coberto pela seção **8.6** do smoke.
 
 ### A3. Espaços de magia calculados x editáveis divergem — **Média**
 `derived.spellSlots` (regra de multiclasse) é exibido em `SpellsSection.tsx`, enquanto a ficha continua editando livremente `spells.slots` (`max`/`used`) no mesmo painel. Não há sincronização nem aviso — há dois "totais" possíveis para o mesmo personagem.
 - **Sugestão:** ou o `max` passa a ser **derivado** (somente `used` é editável), ou a seção marca claramente "espaços do sistema (referência)" x "controle manual da mesa".
 
-### A4. Defesa sem Armadura em multiclasse combina o que deveria escolher — **Baixa/Média**
-`classes.ts` → `mergeAdjustments()` usa `base.unarmoredDefense || extra` e um único `unarmoredDefenseAbility`. Um Bárbaro/Monge deveria **escolher** uma das fórmulas (10+DES+CON **ou** 10+DES+SAB), não misturar.
-- **Sugestão:** ao combinar, manter a fórmula de maior valor e registrar qual classe a concedeu (ou exigir escolha no Level Up).
+### A4. Defesa sem Armadura em multiclasse combina o que deveria escolher — **CORRIGIDO (2026-09-28)**
+`classes.ts` → `mergeAdjustments()` usava `base.unarmoredDefense || extra` e um único `unarmoredDefenseAbility`. Um Bárbaro/Monge deveria **escolher** uma das fórmulas (10+DES+CON **ou** 10+DES+SAB), não misturar.
+- **Feito:** `computeArmorClass` (shared/armor-class.ts) recebe as fórmulas como **candidatas** (`unarmored`) e usa a de **maior valor**, rotulando qual classe a concedeu. A fórmula padrão (10 + DES) entra sempre na disputa.
+- **Cobertura:** seção **14** do smoke (Defesa sem Armadura de Bárbaro e de Monge, com e sem escudo).
 
-### A5. PV inicial e PV de Level Up fora do PHB — **Alta**
-- `characters.service.ts` → `createCharacter()` cria a ficha com `hpMax = 1` (default do schema). O PHB define PV iniciais = **máximo do dado de vida + mod. de CON** no nível 1.
-- `levelUpCharacter()` soma o ganho só em `hpMax`; o PHB soma em **máximo e atual**.
-- **Sugestão:** ao escolher a primeira classe, calcular PV iniciais automaticamente (com opção de rolar/média, como no Level Up) e, no Level Up, somar o ganho em `hpCurrent` também.
+### A5. PV inicial e PV de Level Up fora do PHB — **CORRIGIDO (2026-09-28)**
+- `characters.service.ts` → `createCharacter()` criava a ficha com `hpMax = 1` (default do schema). O PHB define PV iniciais = **máximo do dado de vida + mod. de CON** no nível 1.
+- `levelUpCharacter()` somava o ganho só em `hpMax`; o PHB soma em **máximo e atual**.
+- **Feito:** `firstLevelHpMax(hitDie, constitution)` (máximo do dado + mod. de CON, mínimo 1) define o PV inicial quando a primeira classe é escolhida/definida no assistente (salvo se o patch já mandou `hpMax`); no Level Up o ganho (`max(1, dado + mod. de CON)`) entra em `hpMax` **e** em `hpCurrent`. O mod. de CON também dispara o **recálculo retroativo** — `constitutionHpDelta` = `(novo mod − mod antigo) × nível total`, aplicado em máximo e atual (ao reduzir, o atual nunca fica negativo).
+- **Cobertura:** seção **14** do smoke (PV de d10/d6, CON 16 subindo 40/30 → 45/35, CON 8 caindo para 25/15).
 
 ### A6. Ataque Furtivo é aplicado automaticamente sem as condições táticas — **Média**
 `combat.service.ts` → `rollSneakAttack()` adiciona o dano sempre que a arma é sutil/à distância e a feature existe. As condições reais (vantagem **ou** aliado adjacente ao alvo, sem desvantagem) não são verificadas.
@@ -69,15 +100,30 @@ Os riscos mais relevantes são:
 `levelUpCharacter()` valida o +2 com base no valor **bruto** (`character[ability]`), enquanto o DTO usa valores **efetivos** (`abilityBonuses`/`abilityCaps`, ex.: Campeão Primitivo até 24). Pode haver divergência entre o que o assistente permite e o que a ficha mostra.
 - **Sugestão:** validar o teto sobre o valor efetivo (reaproveitar o cálculo de `effectiveAbilities`).
 
-### A10. Integração de armadura/escudo na CA — **Média**
-`Item.armorClassBonus` é cadastrado, mas `armorClassHint` só cobre "sem armadura". Equipar uma armadura no inventário **não** altera a CA sugerida, e a CA final é sempre manual (`character.armorClass`).
-- **Sugestão:** quando houver itens equipados com `armorClassBonus`, somar à CA sugerida (e/ou calcular a CA final automaticamente, com o valor manual como exceção).
+### A10. Integração de armadura/escudo na CA — **CORRIGIDO (2026-09-28)**
+`Item.armorClassBonus` era cadastrado, mas `armorClassHint` só cobria "sem armadura". Equipar uma armadura no inventário **não** alterava a CA sugerida, e a CA final era sempre manual (`character.armorClass`).
+- **Feito:** `computeArmorClass` monta a CA a partir do **equipamento** (shared/armor-class.ts): armadura no peitoral (`armorType` + `baseArmorClass`, com o teto de DES por tipo — 0 na pesada, +2 na média), escudo e bônus mágicos dos demais itens equipados. `character.armorClass` virou **apenas o override do mestre** (0 = automático) e `derived.armorClass` traz o detalhamento (automatic, dexterityBonus, shieldBonus, magicBonus, classBonus...). O combate passou a usar a mesma conta.
+- **Cobertura:** seções **14** (leve/média/pesada, escudo, override) e **18** (Estilo de Luta Defesa +1 só com armadura) do smoke.
 
 ### A11. XP é manual e não interage com o Level Up — **Baixa**
 `xpForNextLevel` é exibido, mas subir de nível não exige/consome XP — depende só da liberação do mestre (decisão de design válida). Registrar para evitar expectativa de "XP destrava o botão".
 
 ### A12. Aumento de Atributo por classe e feats — **OK, com ressalva**
 `asiLevelsFor` cobre Guerreiro (4/6/8/12/14/16/19), Ladino (4/8/10/12/16/19) e demais (4/8/12/16/19), e o Level Up checa o **nível da classe** — correto. Ressalva: talentos são apenas texto (sem efeito mecânico), o que está documentado, mas deve constar no roadmap.
+
+### A13. Pré-requisito de multiclasse ignorava as classes atuais — **CORRIGIDO (2026-09-28)**
+`multiclassMissingLabel` conferia apenas a classe NOVA. O PHB (cap. 6) exige 13 nos atributos exigidos pela classe nova **e por todas as classes que o personagem já tem** — um Paladino com Força 8 podia multiclassar livremente.
+- **Feito:** `multiclassPrerequisiteLabel(classKey, abilities, entries)` monta a mensagem citando cada classe bloqueadora ("Para entrar em Ladino você precisa de Destreza 13; para continuar como Paladino você precisa de Força 13 e Carisma 13"), com os mesmos atributos gravados que o sistema já usava. Aplicada no serviço (`resolveClassPatch` e `applyLevelUp`) e no `classOptions[].eligible/missing` do DTO; o assistente de Level Up mostra o mesmo texto.
+- **Referência:** `shared/classes/index.ts`, `characters.service.ts`, `characters.dto.ts`, `client/src/components/LevelUpDialog.tsx`.
+
+### A14. Multiclasse concedia as salvaguardas de TODAS as classes — **CORRIGIDO (2026-09-28)**
+`lockedSavesOf` (serviço) e `lockedSaves` (DTO) somavam as salvaguardas de cada entrada da lista, então entrar em Ladino marcava Destreza/Inteligência como fixas. O PHB (p.164) diz o contrário: multiclasse **nunca** concede salvaguardas.
+- **Feito:** as salvaguardas fixas passam a vir só da **primeira** classe (as de features, como Mente Escorregadia, continuam valendo). Dados antigos que gravaram as salvaguardas extras seguem gravados até a próxima escrita da ficha.
+
+### A15. Proficiências de armadura, arma e ferramenta não eram modeladas — **IMPLEMENTADO (2026-09-28, Fase 1)**
+A ficha só tinha perícias e salvaguardas, então nenhuma proficiência de equipamento existia.
+- **Feito:** JSONB `characters.proficiencies` (`{ armor, weapons, tools }`, migração `20260928160000_character_proficiencies`, com backfill das fichas existentes a partir de `classes`); tabela `CLASS_PROFICIENCIES` (`shared/classes/index.ts`) com o conjunto completo do nível 1 e o reduzido de multiclasse (PHB p.164); a primeira classe concede o conjunto completo, entrar numa classe nova concede o reduzido e, para Bardo/Patrulheiro/Ladino, **uma perícia à escolha** validada no servidor (`skillChoice` no Level Up); exibição somente leitura na ficha e edição restrita ao mestre (campo de construção, 403 para o jogador com a criação finalizada).
+- **Pendente (Fase 2):** o efeito mecânico — somar `armorClassBonus` de armadura/escudo equipados só quando houver proficiência, penalidades de armadura sem proficiência e bônus de ataque de arma. Também pendente: escolha interativa das ferramentas abertas ("1 instrumento musical à sua escolha" entra como descrição).
 
 ---
 
@@ -192,6 +238,18 @@ O botão respeita `levelUpUnlocked` e `lastLevelUpRelease < levelUpRelease`; o m
 - **Sugestão:** adicionar handler de `Esc` e foco inicial no modal.
 
 ### F3. `SpellsSection` mistura slots derivados e manuais — ver A3.
+### F7. Log de rolagens do mestre só mostrava o total — **CORRIGIDO (2026-09-28)**
+`DiceDock.historyLine` montava `[Jogador]: [Perícia]: [total]` e jogava fora o resto do `DiceRollDto`. O mestre não conseguia saber de onde vinha o número (dado + bônus).
+- **Feito:** `rollDebug(roll)` (em `client/src/dice/format.ts`) exibe a depuração ao lado do total — `Umbrae: Percepção: 10 (d20 6 + 4 perícia)`, com o tipo de cada dado, o bônus rotulado pela origem (perícia/salvaguarda/bônus) e os dados descartados pela vantagem/desvantagem (`d20 6, descartado d20 2`). É só apresentação: o DTO já trazia `dice[]`, `bonus` e `total`, então nenhum dado novo trafega nem é gravado.
+- **Referência:** `client/src/dice/format.ts`, `client/src/dice/DiceDock.tsx`, `.dice-log-debug` em `client/src/styles.css`.
+
+### F8. Log de rolagens só existia dentro da janela de dados — **AMPLIADO (2026-09-28)**
+O histórico do mestre só aparecia abaixo dos dados, dentro da janela de rolagem: para consultar o log era preciso abrir o tabuleiro (que ocupa a tela).
+- **Feito:** o log continua na bandeja de rolagem **e** ganhou um **botão flutuante "Log"** (com o contador de rolagens) acima do botão "Dados", que abre um **painel flutuante só com o histórico** — cartão ancorado acima dos botões, com rolagem própria, fechar e limpar, sem ocupar a tela (`components/master/RollLogPanel.tsx`, lista compartilhada em `dice/RollLogList.tsx`).
+- **Junto:** abaixo do botão "Dados" entrou o botão **Anotações** do mestre, com o MESMO esquema das anotações do jogador (pena + painel flutuante, salvamento automático ao sair do campo), gravadas em `GameConfig.masterNotes` e visíveis só para ele (`GET`/`PATCH /api/game/notes`, exclusivas de `MASTER`, migração `20260928170000_game_config_master_notes`). Os dois painéis abrem um por vez.
+- **Escolha consciente:** as anotações do mestre **não** publicam evento em tempo real (texto privado de um único usuário). Com o painel aberto em duas abas, a segunda só sincroniza ao recarregar.
+- **Referência:** `components/master/{RollLogPanel,MasterNotes}.tsx`, `pages/MasterPanel.tsx`, `gameApi.ts`, `game-config.{service,routes,dto}.ts`, `.roll-log-fab`/`.master-fab-panel`/`.dice-fab.is-master` em `styles.css`.
+
 ### F4. Seleção de atributo no ASI esconde opções por teto — **Baixa**
 `abilityOptions()` filtra por `score + amount <= 20`; se todos estiverem no teto, o select fica vazio sem explicação.
 - **Sugestão:** mostrar mensagem quando não houver atributo elegível.
@@ -229,7 +287,7 @@ Ordem sugerida por impacto na mesa:
 4. **Condições e exaustão** — atordoado, caído, envenenado, exausto etc., com efeitos (vantagem/desvantagem, restrição de ações).
 5. **Salvaguardas contra morte e estabilização** — HP 0 hoje é só 0.
 6. **Concentração** — manter magia com salvaguarda de CON ao levar dano.
-7. **Equipamento e CA automáticas** — integração de armadura/escudo (A10) e proficiências.
+7. **Equipamento e CA automáticas** — integração de armadura/escudo (A10) e o **efeito** das proficiências (Fase 2 de A15).
 8. **Efeitos mecânicos dos talentos** (A12) — hoje apenas registro textual.
 9. **Encontros/XP** — conceder XP por encontro derrotado, se desejado.
 
@@ -240,14 +298,23 @@ Ordem sugerida por impacto na mesa:
 > Marcações: **P0** = corrigir antes de uso intenso; **P1** = importante; **P2** = melhoria.
 
 ### Regras de D&D
-- [ ] **P0** `classes.ts`: incluir conjuração de **subclasse** em `multiclassCasterLevel`/`pactMagicSlots` (Trapaceiro/Cavaleiro Arcano). _(A1)_
-- [ ] **P0** `characters.service.ts`: PV iniciais = dado de vida máx + CON; no Level Up somar o ganho também em `hpCurrent`. _(A5)_
-- [ ] **P1** `characters.dto.ts`: `preparedCount` para meio-conjuradores preparados e total por classe no multiclasse. _(A2)_
+- [x] **Corrigido (2026-09-28)** Pré-requisito de multiclasse: conferir também as classes que o personagem já tem. _(A13)_
+- [x] **Corrigido (2026-09-28)** Multiclasse não concede salvaguardas (só a primeira classe). _(A14)_
+- [x] **Implementado (2026-09-28)** Proficiências de armadura/arma/ferramenta na ficha (Fase 1: registro, concessão e exibição). _(A15)_
+- [ ] **P1** Proficiências de armadura/arma/ferramenta: efeito mecânico na CA e nos ataques (Fase 2). _(A15)_
+- [x] **Corrigido (2026-09-28)** `classes/index.ts`: incluir conjuração de **subclasse** em `multiclassCasterLevel`/`pactMagicSlots` (Trapaceiro/Cavaleiro Arcano). _(A1)_
+- [x] **Corrigido (2026-09-28)** `characters.service.ts`: PV iniciais = dado de vida máx + CON; no Level Up somar o ganho também em `hpCurrent`; recálculo retroativo de CON. _(A5)_
+- [x] **Corrigido (2026-09-28)** `characters.dto.ts`: `preparedCount` para o Paladino (metade do nível) e por classe no multiclasse, com o total único removido. _(A2)_
+- [x] **Corrigido (2026-09-28)** Características de CLASSE de Bardo, Guerreiro, Paladino e Patrulheiro + mecanismo genérico de escolhas (`classState.choices`). _(A17)_
+- [x] **Corrigido (2026-09-28)** As 9 subclasses do PHB de Bardo, Guerreiro, Paladino e Patrulheiro + efeito `critThreshold` no combate + `subclassChoices` no catálogo (escolha no mesmo nível da subclasse). _(A19)_
+- [ ] **P1** Fase 5: efeito em combate do Mestre da Batalha (gastar os dados de superioridade e resolver as manobras) e a ficha do companheiro animal do Senhor das Feras. _(A19)_
+- [ ] **P2** Características de classe do **Clérigo** e do **Bruxo** (Canalizar Divindade, Invocações Místicas, Arcanum Místico...). _(A18)_
+- [x] **Corrigido (2026-09-28)** Tabela de espaços: conjurador único usa a tabela da própria classe (metade/terço para cima); a combinada só com 2+ conjuradores. _(A16)_
 - [ ] **P1** `combat.service.ts`: imunidade/resistência/vulnerabilidade por tipo de dano (usar `Creature.immunities`). _(A7)_
 - [ ] **P1** `SpellsSection.tsx` + DTO: decidir se `spellSlots` é derivado (recomendado) ou manual, e remover a duplicidade. _(A3)_
 - [ ] **P1** Ataque Furtivo: condicionar a vantagem/aliado adjacente ou expor toggle. _(A6)_
-- [ ] **P2** `mergeAdjustments`: escolher uma fórmula de Defesa sem Armadura no multiclasse. _(A4)_
-- [ ] **P2** CA sugerida somar `armorClassBonus` de itens equipados. _(A10)_
+- [x] **Corrigido (2026-09-28)** Defesa sem Armadura no multiclasse: vale a fórmula de maior valor (Bárbaro x Monge). _(A4)_
+- [x] **Corrigido (2026-09-28)** CA automática somando armadura/escudo/bônus mágicos equipados (override do mestre como exceção). _(A10)_
 - [ ] **P2** Validação de teto de atributo pelo valor efetivo no Level Up. _(A9)_
 - [ ] **P2** Capacidade de carga por tamanho/traços. _(A8)_
 

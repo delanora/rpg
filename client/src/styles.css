@@ -1744,6 +1744,54 @@ a {
   gap: 0.1rem;
 }
 
+/*
+ * Proficiências de armadura/arma/ferramenta: três blocos (o jogador só as lê;
+ * o mestre as edita como texto separado por vírgula).
+ */
+.prof-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 720px) {
+  .prof-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+.prof-group {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme='dark'] .prof-group {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.prof-group-title {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.prof-group-items {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.prof-group-input {
+  width: 100%;
+  font-size: 0.86rem;
+}
+
 /* Perícias em 2×9 e salvaguardas em 2×3 — sempre em duas colunas iguais. */
 .prof-columns {
   display: grid;
@@ -2147,6 +2195,18 @@ input[type='checkbox']:disabled {
 /* Características de classe: somente leitura (apenas texto). */
 .feature-card-static {
   border-left-color: var(--gold-deep);
+}
+
+/* Escolha de característica (Estilo de Luta, Inimigo Favorito) no card. */
+.feature-choice {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--line);
+}
+
+.feature-choice .field {
+  margin: 0;
 }
 
 .feature-card-static .feature-head {
@@ -4885,6 +4945,7 @@ input[type='checkbox']:focus-visible,
 
 /* Em telas estreitas o botão fica só com o ícone. */
 @media (max-width: 560px) {
+  .roll-log-fab-label,
   .notes-fab-label {
     display: none;
   }
@@ -4942,6 +5003,90 @@ input[type='checkbox']:focus-visible,
   background: linear-gradient(180deg, var(--gold-bright), var(--gold));
   border-color: var(--gold);
   color: #3a2410;
+}
+
+/* ---------------------------------------------------------------------------
+   Pilha flutuante do MESTRE (canto inferior esquerdo): o LOG acima do botão
+   dos dados e as ANOTAÇÕES abaixo dele. O jogador só tem o botão dos dados, na
+   base — por isso o deslocamento vale apenas com `.is-master`.
+
+   Os três botões têm a mesma altura (~2.4rem), então o passo entre eles é
+   fixo: 1.25 (base) + 3.0 (passo) por posição, e o painel abre acima dos três.
+   --------------------------------------------------------------------------- */
+.dice-fab.is-master {
+  bottom: 4.25rem;
+}
+
+.roll-log-fab {
+  position: fixed;
+  left: 1.25rem;
+  bottom: 7.25rem;
+  z-index: 56;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--leather-2), var(--leather));
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow: var(--shadow-deep);
+  transition: transform 0.15s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.roll-log-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-deep), 0 0 18px -4px var(--glow);
+}
+
+.roll-log-fab:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.roll-log-fab.active {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-color: var(--gold);
+  color: #3a2410;
+}
+
+/* Quantas rolagens o log tem agora. */
+.roll-log-count {
+  margin-left: 0.1rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--surface-4);
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}
+
+/* Anotações do mestre: mesmo botão do jogador, no canto esquerdo. */
+.notes-fab.master-notes-fab {
+  left: 1.25rem;
+  right: auto;
+}
+
+/*
+ * Painel flutuante do mestre (log ou anotações). NÃO ocupa a tela: é um cartão
+ * ancorado acima dos três botões, com rolagem própria. Um painel por vez.
+ */
+.master-fab-panel {
+  position: fixed;
+  left: 1.25rem;
+  bottom: 10.6rem;
+  z-index: 55;
+  width: min(32rem, 92vw);
+  max-height: calc(100vh - 12rem);
+  overflow-y: auto;
+  animation: ink-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.master-fab-panel .notes-area {
+  max-height: 40vh;
 }
 
 @media (max-width: 560px) {
@@ -6036,6 +6181,16 @@ input[type='checkbox']:focus-visible,
 
 .dice-log-text {
   color: var(--ink);
+  /* A depuração do total ocupa a linha toda quando não couber ao lado. */
+  min-width: 0;
+}
+
+/* Depuração da rolagem no log do mestre: "(d20 6 + 4 perícia)". */
+.dice-log-debug {
+  margin-left: 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .dice-log-side {

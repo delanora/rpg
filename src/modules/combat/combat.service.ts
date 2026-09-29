@@ -7,7 +7,7 @@ import {
   type DiceRolledPayload,
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { characterArmorClass } from '../characters/armor-class.js';
+import { characterArmorClass, characterCritThreshold } from '../characters/armor-class.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import {
   computeMulticlassAdjustments,
@@ -516,8 +516,13 @@ export async function resolveAttack(
 
   const attackRoll = rollD20();
   const attackTotal = attackRoll + attack.attackBonus;
-  const critical = attackRoll === 20;
-  // 20 natural sempre acerta; 1 natural sempre erra.
+  // Limiar de crítico: 20 por padrão, 19/18 com o Crítico Aprimorado/Superior
+  // do Campeão (o MENOR limiar prevalece entre as classes). Criaturas não têm
+  // features: ficam no 20 natural.
+  const critThreshold =
+    attacker.character !== null ? characterCritThreshold(attacker.character) : 20;
+  const critical = attackRoll >= critThreshold;
+  // Crítico sempre acerta; 1 natural sempre erra.
   const hit = critical || (attackRoll !== 1 && attackTotal >= targetArmorClass);
 
   announceRoll({

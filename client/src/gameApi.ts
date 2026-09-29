@@ -26,6 +26,26 @@ export async function releaseLevelUp(): Promise<GameConfig> {
 }
 
 /**
+ * Anotações privadas do mestre sobre a mesa (somente mestre).
+ *
+ * Ficam na configuração da mesa, mas fora do `GameConfigDto` de propósito: o
+ * jogador também lê a configuração e não pode ver as anotações do mestre.
+ */
+export async function fetchMasterNotes(): Promise<string> {
+  const { notes } = await api<{ notes: string }>('/api/game/notes');
+  return notes;
+}
+
+/** Grava as anotações do mestre (substituição integral do texto). */
+export async function saveMasterNotes(notes: string): Promise<string> {
+  const { notes: saved } = await api<{ notes: string }>('/api/game/notes', {
+    method: 'PATCH',
+    body: { notes },
+  });
+  return saved;
+}
+
+/**
  * Listas de referência da mesa (classes, raças, antecedentes e magias).
  *
  * Alimenta a aba "Configurações da mesa". Somente leitura por enquanto.

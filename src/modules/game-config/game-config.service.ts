@@ -3,7 +3,7 @@ import { prisma } from '../../config/prisma.js';
 import { LEVEL_MAX, LEVEL_MIN } from '../shared/dnd5e.js';
 import { ServerEvents, type GameConfigPayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import type { GameConfigDto } from './game-config.dto.js';
+import type { GameConfigDto, MasterNotesDto } from './game-config.dto.js';
 
 /** Linha única da configuração da mesa. */
 const CONFIG_ID = 'main';
@@ -25,6 +25,35 @@ export async function getGameConfig(): Promise<GameConfigDto> {
   });
 
   return toGameConfigDto(config);
+}
+
+/**
+ * Anotações privadas do mestre sobre a mesa.
+ *
+ * Vivem na MESMA linha única da configuração, mas fora do `GameConfigDto` (o
+ * jogador recebe a configuração no GET /api/game e não pode ver as anotações):
+ * só as rotas exclusivas de MASTER chegam aqui. Sem publicação em tempo real —
+ * é texto privado de um único usuário.
+ */
+export async function getMasterNotes(): Promise<MasterNotesDto> {
+  const config = await prisma.gameConfig.upsert({
+    where: { id: CONFIG_ID },
+    update: {},
+    create: { id: CONFIG_ID },
+  });
+
+  return { notes: config.masterNotes };
+}
+
+/** Grava as anotações do mestre (substituição integral do texto). */
+export async function setMasterNotes(notes: string): Promise<MasterNotesDto> {
+  await getGameConfig();
+  const config = await prisma.gameConfig.update({
+    where: { id: CONFIG_ID },
+    data: { masterNotes: notes },
+  });
+
+  return { notes: config.masterNotes };
 }
 
 function broadcast(config: GameConfigDto): void {

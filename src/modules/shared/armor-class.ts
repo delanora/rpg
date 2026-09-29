@@ -52,6 +52,20 @@ export interface ArmorClassDetail {
   magicBonus: number;
   /** Defesa sem armadura usada (quando não há armadura); `null` no padrão 10 + DES. */
   unarmoredLabel: string | null;
+  /** Bônus fixos de classe aplicados (Estilo de Luta Defesa: +1). */
+  classBonus: number;
+  /** Rótulos dos bônus de classe aplicados (ex.: ["Estilo de Luta (Defesa)"]). */
+  classBonusLabels: string[];
+}
+
+/** Bônus fixo de CA de uma classe (Estilo de Luta Defesa). */
+export interface ClassArmorBonusInput {
+  /** Rótulo para a ficha (ex.: "Estilo de Luta (Defesa)"). */
+  label: string;
+  /** Valor somado à CA. */
+  value: number;
+  /** Só vale com ARMADURA vestida (escudo sozinho não conta). */
+  requiresArmor?: boolean;
 }
 
 const EMPTY_PIECES: ArmorClassPieces = { armor: null, shieldBonus: 0, magicBonus: 0 };
@@ -117,6 +131,8 @@ export interface ArmorClassInput {
   pieces: ArmorClassPieces;
   /** Defesas sem armadura das classes (o padrão 10 + DES entra sempre). */
   unarmored?: readonly UnarmoredCandidate[];
+  /** Bônus fixos de classe (Estilo de Luta Defesa). */
+  classBonuses?: readonly ClassArmorBonusInput[];
   /** Override manual do mestre (`null`/`0`/ausente = automático). */
   override?: number | null;
 }
@@ -157,6 +173,17 @@ export function computeArmorClass(input: ArmorClassInput): ArmorClassDetail {
   // Escudo e bônus mágicos somam em qualquer situação.
   automatic += pieces.shieldBonus + pieces.magicBonus;
 
+  // Bônus fixos de classe: o Estilo de Luta Defesa vale "enquanto você estiver
+  // usando armadura" — escudo sozinho não conta como armadura.
+  let classBonus = 0;
+  const classBonusLabels: string[] = [];
+  for (const bonus of input.classBonuses ?? []) {
+    if (bonus.requiresArmor && pieces.armor === null) continue;
+    classBonus += bonus.value;
+    if (bonus.label) classBonusLabels.push(bonus.label);
+  }
+  automatic += classBonus;
+
   return {
     value: override ?? automatic,
     automatic,
@@ -166,5 +193,7 @@ export function computeArmorClass(input: ArmorClassInput): ArmorClassDetail {
     shieldBonus: pieces.shieldBonus,
     magicBonus: pieces.magicBonus,
     unarmoredLabel,
+    classBonus,
+    classBonusLabels,
   };
 }

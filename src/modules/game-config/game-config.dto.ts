@@ -17,3 +17,14 @@ export interface GameConfigDto {
   startingLevel: number;
   updatedAt: string;
 }
+
+/**
+ * Anotações privadas do mestre sobre a mesa.
+ *
+ * Ficam em `GameConfig.masterNotes`, mas NÃO entram no `GameConfigDto`: o
+ * `GET /api/game` é acessível ao jogador (a ficha lê o contador de liberações),
+ * então as anotações só trafegam pelas rotas próprias, exclusivas de MASTER.
+ */
+export interface MasterNotesDto {
+  notes: string;
+}

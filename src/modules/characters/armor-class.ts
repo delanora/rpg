@@ -66,6 +66,20 @@ export function effectiveAbilitiesOf(
 }
 
 /**
+ * Limiar de crítico do personagem no d20 (PHB 2014): 20 por padrão e 19/18 com
+ * o Crítico Aprimorado/Superior do Campeão. O combate usa este valor para dizer
+ * se um ataque é crítico (`d20 >= limiar`); o 1 natural continua sempre errando.
+ */
+export function characterCritThreshold(character: Character): number {
+  const entries = normalizeClassEntries(character.classes);
+  const adjustments = computeMulticlassAdjustments(
+    entries,
+    normalizeClassState(character.classState),
+  );
+  return adjustments.critThreshold ?? 20;
+}
+
+/**
  * Fórmulas de Defesa sem Armadura que valem agora.
  *
  * A do monge exige também **nenhum escudo** — por isso o filtro olha o
@@ -111,6 +125,18 @@ export function characterArmorClass(character: Character): ArmorClassDetail {
     dexterityModifier: modifiers.dexterity,
     pieces,
     unarmored,
+    // Estilo de Luta Defesa (+1 CA, só com armadura) — o combate lê a MESMA
+    // conta da ficha.
+    classBonuses:
+      adjustments.armorClassBonus > 0
+        ? [
+            {
+              label: adjustments.armorClassBonusLabel,
+              value: adjustments.armorClassBonus,
+              requiresArmor: adjustments.armorClassBonusRequiresArmor,
+            },
+          ]
+        : [],
     override: character.armorClass,
   });
 }

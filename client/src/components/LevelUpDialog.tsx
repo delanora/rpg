@@ -1,9 +1,16 @@
 import { useMemo, useState } from 'react';
-import { ABILITY_KEYS, ABILITY_LABELS, formatModifier } from '../dnd';
+import { ABILITY_KEYS, ABILITY_LABELS, SKILLS, formatModifier } from '../dnd';
 import { FEATS } from '../feats';
 import { levelUpCharacter } from '../levelUpApi';
-import type { AbilityKey, Character, LevelUpRequest } from '../types';
+import type { AbilityKey, Character, LevelUpRequest, ProficienciesState } from '../types';
+import { FeatureChoiceField } from './FeatureChoiceField';
 import { Icon } from './Icon';
+
+/** Texto curto do que a classe concede ao entrar ("Escudos · Armas simples"). */
+function grantLabel(grant: ProficienciesState | undefined): string {
+  const items = [...(grant?.armor ?? []), ...(grant?.weapons ?? []), ...(grant?.tools ?? [])];
+  return items.length === 0 ? 'Nenhuma proficiência nova' : items.join(' · ');
+}
 
 interface LevelUpDialogProps {
   character: Character;
@@ -37,6 +44,9 @@ export function LevelUpDialog({
 }: LevelUpDialogProps) {
   const [classKey, setClassKey] = useState<string>(character.classes[0]?.classKey ?? '');
   const [subclass, setSubclass] = useState('');
+  const [skillChoice, setSkillChoice] = useState('');
+  /** Escolhas de característica do nível novo (Estilo de Luta, Inimigo Favorito). */
+  const [choicePicks, setChoicePicks] = useState<Record<string, string[]>>({});
   const [hp, setHp] = useState<HpMode>('average');
   const [asiMode, setAsiMode] = useState<AsiMode>('ability');
   const [abilityMode, setAbilityMode] = useState<'one' | 'two'>('two');
@@ -74,6 +84,54 @@ export function LevelUpDialog({
   const newLevel = info ? info.currentLevel + 1 : 0;
   const needsSubclass = info !== null && info.currentSubclass === '' && newLevel >= info.subclassLevel;
   const isAsi = info !== null && info.asiLevels.includes(newLevel);
+
+  // Entrada numa classe NOVA (multiclasse de verdade): Bardo, Patrulheiro e
+  // Ladino concedem uma perícia à escolha do livro. A primeira classe do
+  // personagem não passa por aqui (lá as perícias vêm da criação).
+  const multiclassSkill =
+    character.classes.length > 0 && entry === null
+      ? (option?.multiclassSkillChoice ?? null)
+      : null;
+
+  /**
+   * Letra do primeiro passo de ESCOLHA do bloco 1: 1a é a própria classe, 1b é a
+   * subclasse e a perícia de multiclasse vem em seguida — as escolhas ganham as
+   * letras livres depois desses passos, para nenhum cabeçalho repetir.
+   */
+  const fixedSubSteps = (needsSubclass ? 1 : 0) + (multiclassSkill ? 1 : 0);
+  const choiceLetterStart =
+    'a'.charCodeAt(0) + (fixedSubSteps > 0 ? fixedSubSteps + 1 : 0);
+
+  /**
+   * Escolhas que ESTE nível libera e ainda não foram feitas: Estilo de Luta do
+   * guerreiro (1º) e do paladino/patrulheiro (2º), Inimigo Favorito e Explorador
+   * Nato do patrulheiro (1º e melhorias do 6º/10º/14º).
+   */
+  const pendingChoices = useMemo(() => {
+    const source = entry ? entry.featureChoices : (option?.featureChoices ?? []);
+    const own = source.filter(
+      (item) => item.level === newLevel && item.chosen.length < item.count,
+    );
+
+    // A subclasse escolhida AGORA ainda não está na ficha (o DTO da classe só
+    // recalcula depois de aplicado), então as escolhas dela neste nível vêm do
+    // catálogo: é o caso do Caçador, que pede a Presa do Caçador já no 3º.
+    if (!needsSubclass || subclass === '' || option === null) return own;
+    const fromSubclass = option.subclassChoices.filter(
+      (item) => item.subclass === subclass && item.level === newLevel,
+    );
+    return [...own, ...fromSubclass];
+  }, [entry, option, newLevel, needsSubclass, subclass]);
+
+  /** Perícias oferecidas: as da lista da classe, menos as que já são proficientes. */
+  const skillOptions = useMemo(() => {
+    if (!multiclassSkill) return [];
+    const pool = multiclassSkill.from.length === 0 ? null : new Set(multiclassSkill.from);
+    return SKILLS.filter(
+      (skill) =>
+        (pool === null || pool.has(skill.key)) && !character.skills[skill.key]?.proficient,
+    );
+  }, [multiclassSkill, character.skills]);
   const conModifier = character.derived.modifiers.constitution;
   const averageDie = info ? Math.floor(info.hitDie / 2) + 1 : 0;
   const averageGain = Math.max(1, averageDie + conModifier);
@@ -115,11 +173,29 @@ export function LevelUpDialog({
       setError(`Escolha a subclasse de ${info?.name ?? ''}.`);
       return null;
     }
+    if (multiclassSkill && !skillChoice) {
+      setError(`Escolha a perícia concedida por ${info?.name ?? ''}.`);
+      return null;
+    }
+    for (const choice of pendingChoices) {
+      const picks = (choicePicks[choice.featureId] ?? []).filter(Boolean);
+      if (picks.length < choice.count) {
+        setError(`Escolha ${choice.prompt} de ${info?.name ?? ''}.`);
+        return null;
+      }
+    }
 
     const request: LevelUpRequest = {
       classKey,
       subclass: needsSubclass ? subclass : '',
       hp,
+      skillChoice: multiclassSkill ? skillChoice : '',
+      choices: Object.fromEntries(
+        pendingChoices.map((choice) => [
+          choice.featureId,
+          (choicePicks[choice.featureId] ?? []).filter(Boolean),
+        ]),
+      ),
     };
 
     if (isAsi) {
@@ -207,13 +283,15 @@ export function LevelUpDialog({
                   onChange={() => {
                     setClassKey(choice.key);
                     setSubclass('');
+                    setSkillChoice('');
+                    setChoicePicks({});
                   }}
                 />
                 <span className="check-name">
                   {choice.name}
                   <span className="muted"> · {choice.sub}</span>
                   {!choice.eligible && choice.missing ? (
-                    <span className="levelup-blocked"> — {choice.missing}</span>
+                    <span className="levelup-blocked">{choice.missing}</span>
                   ) : null}
                 </span>
               </label>
@@ -227,7 +305,15 @@ export function LevelUpDialog({
             <h3 className="subsection-title">1b. Subclasse de {info?.name}</h3>
             <label className="field">
               <span>Subclasse</span>
-              <select value={subclass} onChange={(event) => setSubclass(event.target.value)}>
+              <select
+                value={subclass}
+                onChange={(event) => {
+                  setSubclass(event.target.value);
+                  // Trocar de subclasse descarta as escolhas dela (cada uma tem
+                  // as próprias características).
+                  setChoicePicks({});
+                }}
+              >
                 <option value="">— escolha —</option>
                 {info?.subclassNames.map((name) => (
                   <option key={name} value={name}>
@@ -236,6 +322,62 @@ export function LevelUpDialog({
                 ))}
               </select>
             </label>
+          </>
+        ) : null}
+
+        {/* Perícia concedida pela entrada por multiclasse */}
+        {multiclassSkill ? (
+          <>
+            <h3 className="subsection-title">
+              1{needsSubclass ? 'c' : 'b'}. Perícia de {info?.name}
+            </h3>
+            <p className="section-note">
+              Entrar em {info?.name} concede {multiclassSkill.count} perícia à sua escolha
+              {multiclassSkill.from.length === 0
+                ? ' (qualquer uma)'
+                : ' (da lista da classe)'}
+              .
+            </p>
+            <label className="field">
+              <span>Perícia</span>
+              <select value={skillChoice} onChange={(event) => setSkillChoice(event.target.value)}>
+                <option value="">— escolha —</option>
+                {skillOptions.map((skill) => (
+                  <option key={skill.key} value={skill.key}>
+                    {skill.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {skillOptions.length === 0 ? (
+              <p className="section-note">
+                Todas as perícias oferecidas por esta classe já são proficientes.
+              </p>
+            ) : null}
+            <p className="section-note">
+              Proficiências concedidas pela entrada:{' '}
+              {grantLabel(option?.multiclassProficiencies)}. Multiclasse nunca concede salvaguardas.
+            </p>
+          </>
+        ) : null}
+
+        {/* Escolhas de característica liberadas por este nível */}
+        {pendingChoices.length > 0 ? (
+          <>
+            {pendingChoices.map((choice, index) => (
+              <div key={choice.featureId}>
+                <h3 className="subsection-title">
+                  1{String.fromCharCode(choiceLetterStart + index)}. {choice.prompt}
+                </h3>
+                <FeatureChoiceField
+                  info={choice}
+                  values={choicePicks[choice.featureId] ?? choice.chosen}
+                  onChange={(keys) =>
+                    setChoicePicks((current) => ({ ...current, [choice.featureId]: keys }))
+                  }
+                />
+              </div>
+            ))}
           </>
         ) : null}
 
@@ -397,6 +539,27 @@ export function LevelUpDialog({
               <strong>{subclass || '—'}</strong>
             </li>
           ) : null}
+          {multiclassSkill ? (
+            <li>
+              <span>Perícia de multiclasse</span>
+              <strong>
+                {SKILLS.find((skill) => skill.key === skillChoice)?.label ?? '—'}
+              </strong>
+            </li>
+          ) : null}
+          {pendingChoices.map((choice) => (
+            <li key={choice.featureId}>
+              <span>{choice.prompt}</span>
+              <strong>
+                {(choicePicks[choice.featureId] ?? [])
+                  .filter(Boolean)
+                  .map(
+                    (key) => choice.options.find((option) => option.key === key)?.name ?? key,
+                  )
+                  .join(', ') || '—'}
+              </strong>
+            </li>
+          ))}
           {isAsi ? (
             <li>
               <span>Progressão</span>

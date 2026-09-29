@@ -1,7 +1,8 @@
 import { FEATURE_SOURCES, FEATURE_SOURCE_LABELS } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
-import type { Feature, FeatureSource } from '../../types';
+import type { ActiveClassFeature, Feature, FeatureSource } from '../../types';
 import { newId } from '../../utils';
+import { choiceInfoOf, FeatureChoiceField } from '../FeatureChoiceField';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
@@ -11,6 +12,20 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
   // finalizada elas só mudam pelo Level Up ou pelo mestre.
   const { lockedConstruction } = useSheetAccess();
   const readOnly = lockedConstruction;
+  const choices = character.classState.choices;
+
+  /**
+   * Escolha de uma característica de classe (Estilo de Luta, Inimigo Favorito):
+   * o jogador com a criação finalizada só VÊ — quem muda é o mestre.
+   */
+  function setChoice(featureId: string, keys: string[]): void {
+    update({
+      classState: {
+        ...character.classState,
+        choices: { ...choices, [featureId]: keys.filter(Boolean) },
+      },
+    });
+  }
   const features = character.features;
   // Talentos escolhidos no Level Up ficam registrados aqui (source: 'feat') e
   // ganham uma subseção própria; a lista editável mostra o resto.
@@ -93,18 +108,13 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
           <h3 className="subsection-title">Características de Classe</h3>
           <div className="feature-list">
             {character.activeFeatures.map((feature) => (
-              <article
-                className="feature-card feature-card-static"
-                key={`${feature.source}-${feature.id}`}
-              >
-                <div className="feature-head">
-                  <span className="feature-name">{feature.name}</span>
-                  <em className="tag">
-                    {feature.source === 'subclass' ? 'subclasse' : 'classe'} · nv {feature.level}
-                  </em>
-                </div>
-                <p className="feature-desc">{feature.description}</p>
-              </article>
+              <FeatureCard
+                key={`${feature.classKey ?? ''}-${feature.source}-${feature.id}`}
+                feature={feature}
+                chosen={choices[feature.id] ?? []}
+                readOnly={readOnly}
+                onChoice={(keys) => setChoice(feature.id, keys)}
+              />
             ))}
           </div>
 
@@ -157,5 +167,57 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
         </div>
       )}
     </Section>
+  );
+}
+
+/**
+ * Característica de classe já liberada. Quando ela PEDE escolha (Estilo de
+ * Luta, Inimigo Favorito), a escolha aparece aqui: em leitura para o jogador
+ * com a criação finalizada e editável para o mestre (e durante a criação).
+ */
+function FeatureCard({
+  feature,
+  chosen,
+  readOnly,
+  onChoice,
+}: {
+  feature: ActiveClassFeature;
+  chosen: string[];
+  readOnly: boolean;
+  onChoice: (keys: string[]) => void;
+}) {
+  const info = choiceInfoOf(feature, chosen);
+
+  return (
+    <article className="feature-card">
+      <div className="feature-head">
+        <span className="feature-name">{feature.name}</span>
+        <em className="tag">
+          {feature.source === 'subclass' ? 'subclasse' : 'classe'} · nv {feature.level}
+        </em>
+      </div>
+      <p className="feature-desc">{feature.description}</p>
+      {info ? (
+        <div className="feature-choice">
+          {readOnly ? (
+            <p className="section-note">
+              {info.prompt}:{' '}
+              <strong>
+                {info.options
+                  .filter((option) => chosen.includes(option.key))
+                  .map((option) => option.name)
+                  .join(', ') || '— não escolhido —'}
+              </strong>
+            </p>
+          ) : (
+            <FeatureChoiceField
+              info={{ ...info, chosen }}
+              values={chosen}
+              onChange={onChoice}
+            />
+          )}
+        </div>
+      ) : null}
+    </article>
   );
 }
