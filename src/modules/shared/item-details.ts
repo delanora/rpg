@@ -115,10 +115,15 @@ export const itemDetailsSchema = z
     baseArmorClass: z.number().int().min(0).max(30).optional(),
     /** Bônus avulso de CA (escudos e itens mágicos somam ao total). */
     armorClassBonus: z.number().int().min(-10).max(30).optional(),
-    // Poção / Anel
+    // Poção / Anel / item consumível
     effectRoll: z.string().trim().max(60).optional(),
     duration: z.string().trim().max(120).optional(),
     attunement: z.boolean().optional(),
+    /**
+     * Marcado pelo mestre (Item Geral e Outro): o item pode ser USADO pelo
+     * jogador, consumindo 1 unidade. Poções são consumíveis pela categoria.
+     */
+    consumable: z.boolean().optional(),
   })
   .superRefine((details, ctx) => {
     const properties = details.properties ?? [];
@@ -225,14 +230,24 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   Escudo: ['armorClassBonus'],
   Poção: ['effectRoll', 'duration'],
   Anel: ['effectRoll', 'attunement'],
-  'Item Geral': [],
+  'Item Geral': ['effectRoll', 'consumable'],
   Tesouro: [],
-  Outro: [],
+  Outro: ['effectRoll', 'consumable'],
 };
 
 /** Categorias que funcionam como arma (têm as propriedades de arma). */
 function isWeaponCategory(category: string): boolean {
   return category === 'Arma' || category === 'Cajado';
+}
+
+/**
+ * O item pode ser USADO pelo jogador (consumindo 1 unidade)?
+ *
+ * Toda Poção é consumível; nas demais categorias só vale com o campo
+ * `consumable` marcado pelo mestre (Item Geral e Outro aceitam o campo).
+ */
+export function isConsumableItem(category: string, details: ItemDetails): boolean {
+  return category === 'Poção' || details.consumable === true;
 }
 
 /**

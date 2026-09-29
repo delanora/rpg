@@ -4955,6 +4955,13 @@ input[type='checkbox']:disabled {
   width: 3.5rem;
 }
 
+/* Quantidade em modo leitura (o jogador não edita o inventário). */
+.inv-detail-qty-static {
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+}
+
 /* --- Tooltip do item ----------------------------------------------------- */
 .inv-tooltip {
   position: fixed;

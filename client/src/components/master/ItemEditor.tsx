@@ -475,6 +475,33 @@ function CategoryFields({
     );
   }
 
+  // Item Geral / Outro: o mestre pode marcar o item como CONSUMÍVEL (aí ele
+  // ganha o botão "Usar" na ficha do jogador) e dar uma rolagem de efeito.
+  if (item.category === 'Item Geral' || item.category === 'Outro') {
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Rolagem do efeito</span>
+          <InlineField
+            value={details.effectRoll ?? ''}
+            placeholder="ex.: 2d4+2"
+            ariaLabel="Rolagem do efeito do item"
+            onCommit={(value) => onPatchDetails({ effectRoll: value.trim() })}
+          />
+        </label>
+        <label className="field field-check">
+          <span>Consumível (usável)</span>
+          <input
+            type="checkbox"
+            checked={Boolean(details.consumable)}
+            aria-label="Item consumível"
+            onChange={(event) => onPatchDetails({ consumable: event.target.checked })}
+          />
+        </label>
+      </div>
+    );
+  }
+
   return <p className="section-note">Esta categoria não tem atributos especiais além do preço.</p>;
 }
 

@@ -30,6 +30,8 @@ interface SheetViewProps {
   update: (patch: CharacterPatch) => void;
   /** Move/equipa um item do inventário (endpoint dedicado do servidor). */
   onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>;
+  /** Usa (consome) 1 unidade de um item consumível do inventário. */
+  onInventoryUse?: (itemInventoryId: string) => void | Promise<void>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins?: boolean;
   /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
@@ -70,6 +72,7 @@ export function SheetView({
   character,
   update,
   onInventoryMove,
+  onInventoryUse,
   extraCoins = false,
   coinTargets,
   onCoinsChange,
@@ -98,6 +101,7 @@ export function SheetView({
             character={character}
             update={update}
             onMoveItem={onInventoryMove}
+            onUseItem={onInventoryUse}
             extraCoins={extraCoins}
             coinTargets={coinTargets}
             onCoinsChange={onCoinsChange}

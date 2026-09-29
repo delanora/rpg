@@ -133,6 +133,7 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 - Perícias e salvaguardas com proficiência e cálculo automático de bônus
 - Inventário de itens e equipamentos
 - **Moedas** (PL/PO/PE/PP/PC) com conversões do PHB, gasto, troca e transferência entre jogadores; só o mestre dá ou retira
+- **Inventário administrado pelo mestre**: a quantidade de um item é dele — o jogador move/equipa e **usa** consumíveis (Poção ou item marcado), sem editar quantidade, adicionar ou remover
 - Magias por nível, com espaços de magia (spell slots) controláveis
 - Ataques e armas com dano e bônus de acerto
 - Características de raça/classe/antecedente, **subseção de Talentos** e anotações livres
@@ -200,7 +201,7 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 
 ### Verificação automática (smoke test)
 
-Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 20 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio e a **Fase 0 (seções 14 a 20)**, a regressão das regras base:
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 21 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio e a **Fase 0 (seções 14 a 21)**, a regressão das regras base:
 
 | Seção | O que verifica |
 |-------|----------------|
@@ -211,6 +212,7 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **18** | **Features e escolhas** — Defesa (+1 só com armadura), Pau para Toda Obra, Aura de Proteção, escolhas válidas/inválidas e subclasse no nível certo. |
 | **19** | **Subclasses 1 → 20** — Level Up de verdade pelas 10 subclasses novas (features e recursos por nível) e o **crítico em combate** (limiar 18 do Campeão, 1 natural errando e a volta a 20 sem ele). |
 | **20** | **Moedas** — ficha nasce zerada, jogador barrado no PATCH (403), 50 moedas = 0,5 kg no peso, dar/retirar do mestre (400 se exceder o saldo), gasto exato sem troco, troca com fração recusada, transferência entre jogadores (e a recusa a si mesmo) e a chave de **moedas extras** (PL/PE). |
+| **21** | **Inventário** — o jogador não muda a quantidade nem adiciona/remove itens por PATCH (403, em qualquer fase); movimentar/equipar segue liberado e não altera a quantidade; usar um consumível desconta 1 unidade (a última entrada sai) e devolve a rolagem do efeito (`kind: item`); item não consumível (400) e item inexistente (404). |
 
 Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória.
 

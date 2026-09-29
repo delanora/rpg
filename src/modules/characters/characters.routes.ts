@@ -10,6 +10,7 @@ import {
   spendCoinsSchema,
   transferCoinsSchema,
   updateCharacterSchema,
+  useInventoryItemSchema,
 } from './characters.schema.js';
 import { exchangeCoinsSchema } from '../shared/coins.js';
 import {
@@ -26,6 +27,7 @@ import {
   transferCoins,
   updateCharacter,
   updateCharacterAsMaster,
+  useInventoryItem,
   type Actor,
 } from './characters.service.js';
 import {
@@ -222,6 +224,27 @@ charactersRouter.post('/me/inventory/move', authenticate, async (req, res) => {
 
   const character = await moveInventoryItem(actorFrom(req), parsed.data);
   res.json({ character });
+});
+
+/**
+ * POST /api/characters/me/inventory/use — usa (consome) 1 unidade de um item.
+ *
+ * Só vale para Poção e para itens marcados como consumíveis pelo mestre. Se o
+ * item tiver `effectRoll`, a resposta traz também a rolagem (`roll`); nenhum
+ * efeito é aplicado automaticamente na ficha.
+ */
+charactersRouter.post('/me/inventory/use', authenticate, async (req, res) => {
+  const parsed = useInventoryItemSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await useInventoryItem(actorFrom(req), parsed.data));
 });
 
 /**

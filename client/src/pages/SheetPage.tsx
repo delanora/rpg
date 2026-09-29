@@ -22,7 +22,8 @@ import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
 import { fetchTransferTargets } from '../coinsApi';
 import { fetchGameConfig } from '../gameApi';
-import { moveInventoryItem } from '../inventoryApi';
+import { moveInventoryItem, useInventoryItem } from '../inventoryApi';
+import { resultBreakdown } from '../dice/format';
 import { closePresentation } from '../presentationApi';
 import type {
   Character,
@@ -43,6 +44,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const [presentation, setPresentation] = useState<Presentation | null>(null);
   // Aviso de que o mestre mexeu na ficha (com quem e quando).
   const [masterNotice, setMasterNotice] = useState<string | null>(null);
+  // Resultado do último item consumido (rolagem do efeito, quando houver).
+  const [itemNotice, setItemNotice] = useState<string | null>(null);
   // Configuração da mesa: controla se o botão Level Up está habilitado.
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
@@ -186,6 +189,26 @@ export function SheetPage({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /**
+   * Usa (consome) 1 unidade de um item consumível do inventário.
+   *
+   * O servidor desconta a unidade e devolve a ficha nova; se o item tiver
+   * `effectRoll`, a rolagem do efeito volta junto e é mostrada no aviso.
+   */
+  const useItem = useCallback(async (itemInventoryId: string) => {
+    try {
+      const { character: saved, roll } = await useInventoryItem(itemInventoryId);
+      setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+      setItemNotice(
+        roll ? `${roll.label}: ${resultBreakdown(roll)} = ${roll.total}` : 'Item consumido.',
+      );
+      setError(null);
+    } catch (err) {
+      setItemNotice(null);
+      setError(err instanceof Error ? err.message : 'Não foi possível usar o item.');
+    }
+  }, []);
+
   /** Fechamento da imagem apresentada (só o mestre chega aqui na prática). */
   const closePresentedImage = useCallback(() => {
     void closePresentation().catch(() => setPresentation(null));
@@ -289,6 +312,17 @@ export function SheetPage({ user }: { user: SessionUser }) {
         </div>
       ) : null}
 
+      {itemNotice ? (
+        <div className="banner banner-info">
+          <span className="banner-line">
+            <Icon name="flask" size={15} /> {itemNotice}
+          </span>
+          <button type="button" className="btn btn-small" onClick={() => setItemNotice(null)}>
+            fechar
+          </button>
+        </div>
+      ) : null}
+
       {masterNotice ? (
         <div className="banner banner-info">
           <span className="banner-line">
@@ -382,6 +416,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   character={character}
                   update={update}
                   onInventoryMove={moveItem}
+                  onInventoryUse={useItem}
                   extraCoins={gameConfig?.extraCoins ?? false}
                   coinTargets={coinTargets}
                   onCoinsChange={adoptCoins}

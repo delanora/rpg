@@ -165,9 +165,10 @@ SERVIDOR (src/)
                                        ataque ainda pode apontar para uma ARMA do inventário
       ammo.ts              80 linhas — regras de munição (arma equipada nas mãos, tipo exigido
                                        e escolha da pilha)
-      item-details.ts     263 linhas — categorias/atributos/preço de item + PERFIL DE ARMA
+      item-details.ts     278 linhas — categorias/atributos/preço de item + PERFIL DE ARMA
                                        (tipo, categoria, propriedades do PHB, versátil,
-                                       munição e alcance)
+                                       munição e alcance) + `consumable` (Item Geral/Outro:
+                                       o item pode ser USADO) e `isConsumableItem`
       coins.ts            202 linhas — sistema de MOEDAS { pp, gp, ep, sp, cp }: conversões
                                        do PHB (1 pp = 10 gp; 1 gp = 100 cp; 1 ep = 50 cp),
                                        troca EXATA (rejeita fração), peso (0,01 kg por
@@ -200,7 +201,7 @@ SERVIDOR (src/)
     migrate-item-weapons.ts  completa o perfil de arma dos itens (padrões melee/simple;
                           Cajado com dano vira versátil d6/d8) e lista os suspeitos de
                           arma à distância pelo nome
-    smoke-realtime.ts     6.761 linhas — smoke test ponta a ponta (689 asserts)
+    smoke-realtime.ts     6.926 linhas — smoke test ponta a ponta (699 asserts)
 
 CLIENTE (client/src/)
   main.tsx                initTheme() + unlockAudioOnFirstGesture() + <App/>
@@ -555,6 +556,16 @@ Todos os corpos passam por Zod; corpo inválido ⇒ 400 com `issues` por campo.
         Se `targetSlot` vier definido ⇒ equipa naquele slot (o item que estava lá
         vai para a posição antiga = TROCA). Caso contrário ⇒ posição na grade da
         mochila (mesma regra de troca). Sem validação de categoria por slot.
+        É o ÚNICO caminho do jogador que mexe na POSIÇÃO de um item, e nunca na
+        quantidade (o inventário não entra no PATCH do jogador — ver §11).
+  POST  /api/characters/me/inventory/use       [auth] → 200 { character, roll }
+        Corpo: { itemInventoryId }. Usa (consome) UMA unidade de um item
+        consumível: Poção ou item com `details.consumable` (Item Geral/Outro),
+        senão 400. A unidade é descontada com escrita condicionada à `version` e
+        a entrada SAI do inventário ao chegar a zero. Com `effectRoll`, o
+        servidor rola a expressão, registra no histórico de rolagens como
+        `kind: 'item'` (label "Item: <nome>") e devolve a rolagem em `roll`;
+        NENHUM efeito é aplicado automaticamente na ficha.
 
 8.5 ASSISTENTE DE CRIAÇÃO (ver §13 para a máquina de estados)
   GET   /api/characters/me/creation            [auth] → { character, creation }
@@ -1080,6 +1091,11 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
 
 11.7 TRAVAS DO JOGADOR (`assertPlayerCanPatch`) — não valem para o mestre
   • CA manual é SEMPRE 403 para o jogador (a CA dele é calculada).
+  • O INVENTÁRIO é SEMPRE 403 para o jogador, em QUALQUER fase (inclusive com a
+    criação aberta): ele só muda pela movimentação (`POST /me/inventory/move`,
+    que nunca toca a quantidade), pelo uso de consumível (`POST /me/inventory/use`)
+    e por itens que o mestre envia. Remover item e mudar a QUANTIDADE são do mestre
+    (PATCH da ficha, com `sheet:updated` para o dono).
   • Com `creationFinalized = true`, o jogador só pode alterar PLAYER_STATE_KEYS:
       hpCurrent, hpTemp, notes, avatarUrl, classState, spells
     Qualquer outro campo ⇒ 403 com a lista legível dos campos bloqueados (mapa
@@ -1379,6 +1395,9 @@ JANELA DE DADOS (dice)
   • Roteamento da publicação: privada (só mestre) ⇒ `toUser(autor)`;
     `kind: 'creation'` ⇒ somente `toMasters` (a mesa nem sabe que houve rolagem);
     qualquer outra ⇒ `toTable`.
+  • Uso de item (`rollItemEffect`, `kind: 'item'`): rola o `effectRoll` sem aviso de
+    queda, entra no histórico do mestre e vai para a mesa como qualquer rolagem
+    pública; sem efeito automático na ficha.
   • Privacidade: `isPrivate = Boolean(private) && role === 'MASTER'` — rolagem de
     jogador é SEMPRE pública.
   • O nome de quem rolou vem da FICHA (fallback: displayName do usuário), nunca do corpo.
@@ -1558,7 +1577,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 
 ================================================================================
 18) TESTES E VERIFICAÇÃO
-================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 6.761 linhas, 689 asserts)
+================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 6.926 linhas, 699 asserts)
   Executa contra um servidor RODANDO (`npm run smoke`; base configurável por
   SMOKE_BASE_URL). Cria contas com sufixo único, exercita a API e o WebSocket de
   ponta a ponta e LIMPA tudo no final (`cleanup()`), saindo com código 0 ou 1
@@ -1608,7 +1627,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     12) Presença ao desconectar
     13) Exclusão de personagem     — 403 para jogador, cascata de conta/combate/log,
                                      derrubada da sessão, token invalidado
-  -- FASE 0: regressão das regras base (seções 14 a 20, num escopo próprio) --
+  -- FASE 0: regressão das regras base (seções 14 a 21, num escopo próprio) --
     14) PV e CA automáticos        — PV de d10/d6, recálculo retroativo de CON no 5º
                                      (40/30 → 45/35 com CON 16; → 25/15 com CON 8),
                                      CA leve/média/pesada, escudo, Defesa sem Armadura
@@ -1653,6 +1672,16 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
                                      transferência debita o doador e credita o destino,
                                      recusa a si mesmo e a lista de destinos exclui a
                                      própria ficha; só o mestre liga as moedas extras
+    21) Inventário                 — o jogador não altera o inventário por PATCH nem
+                                     durante a criação (403 citando "Inventário"); o
+                                     mestre define o inventário pelo PATCH; mover/equipar
+                                     segue do jogador e não muda a quantidade; usar uma
+                                     poção desconta 1 unidade (a última entrada SAI do
+                                     inventário) e devolve a rolagem do efeito como
+                                     kind 'item' (2d4+2 → dados + bônus); item não
+                                     consumível (400) e item fora do inventário (404);
+                                     item de Outro marcado como consumível funciona e o
+                                     efeito fixo vira bônus
 
   ARMADILHA OPERACIONAL: o rate limiter é em memória. Duas execuções do smoke
   seguidas podem devolver 429 no login. Reiniciar o serviço zera o contador.
@@ -1808,6 +1837,8 @@ DIAGNÓSTICO
   PLAYER_STATE_KEYS       o que o jogador pode editar com a criação finalizada
   coins                   { pp, gp, ep, sp, cp } — carteira; CONSTRUÇÃO (só o mestre por PATCH)
   extraCoins              exibe PL/PE no bloco de moedas (só a exibição; valores sempre gravados)
+  consumable              `details.consumable` (Item Geral/Outro): o item pode ser usado
+  POST /me/inventory/use  consome 1 unidade de um item consumível; `roll` = effectRoll (kind 'item')
   editedBy                preenchido em sheet:updated SÓ quando o editor não é o dono
   toMasters/toPlayers     destinatários do broadcaster (sala role:masters / mesa sem mestres)
   kind                    CreatureKind: CREATURE (combate) vs NPC (narrativo)

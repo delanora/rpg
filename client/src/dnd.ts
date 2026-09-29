@@ -242,9 +242,22 @@ export function describeItemDetails(category: string, details: ItemDetails | und
   } else if (category === 'Anel') {
     if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
     if (details.attunement) parts.push('sintonização');
+  } else if (category === 'Item Geral' || category === 'Outro') {
+    if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
+    if (details.consumable) parts.push('consumível (usável)');
   }
 
   return parts.join(' · ');
+}
+
+/**
+ * O item pode ser USADO pelo jogador (consome 1 unidade)?
+ *
+ * Espelha `isConsumableItem` do servidor: toda Poção é consumível; nas demais
+ * categorias só quando o mestre marcou `details.consumable`.
+ */
+export function isConsumableItem(category: string, details: ItemDetails): boolean {
+  return category === 'Poção' || details.consumable === true;
 }
 
 /** Formata um Valor de Desafio (CR): 0.25 -> "1/4", 0.5 -> "1/2", 1 -> "1". */
