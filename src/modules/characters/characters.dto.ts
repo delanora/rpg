@@ -1,6 +1,7 @@
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
-import { attackSchema, type Attack } from '../shared/attacks.js';
+import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
+import { deriveWeaponAttacks } from '../shared/weapon-attacks.js';
 import {
   applySaveProficiencies,
   asiLevelsFor,
@@ -210,6 +211,12 @@ export interface CharacterDto {
   inventory: InventoryItemDto[];
   spells: SpellsStateDto;
   attacks: AttackDto[];
+  /**
+   * Ataques CALCULADOS das armas equipadas (mais o golpe desarmado). Como a CA,
+   * não são gravados na ficha: o servidor os deriva a cada leitura. Entram com
+   * `derived: true` e, quando a arma não pode ser empunhada, com `blocked`.
+   */
+  derivedAttacks: CombatAttack[];
   features: FeatureDto[];
   /**
    * Carteira de moedas { pp, gp, ep, sp, cp }, sempre com as cinco
@@ -294,11 +301,21 @@ export function toCharacterDto(
   });
   const attacks = parseJson<AttackDto[]>(attackListSchema, character.attacks, []);
   const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
+  const proficiencies = normalizeProficiencies(character.proficiencies);
 
   // Bônus de atributo de features (ex.: Campeão Primitivo) entram nos valores
   // efetivos usados por todos os cálculos derivados; a pontuação gravada segue
   // sendo a base.
   const effectiveAbilities = effectiveAbilitiesOf(character, classAdjustments);
+
+  // Ataques derivados das armas EQUIPADAS (habilidade, proficiência, versátil,
+  // duas mãos, mão secundária, arremesso e golpe desarmado).
+  const derivedAttacks = deriveWeaponAttacks({
+    abilities: effectiveAbilities,
+    level,
+    weaponProficiencies: proficiencies.weapons,
+    inventory,
+  });
 
   // CA: armadura/escudo/bônus vêm do equipamento (já sincronizado com o
   // catálogo) e as defesas sem armadura das classes; o valor gravado é apenas
@@ -432,10 +449,11 @@ export function toCharacterDto(
     speed: character.speed,
     skills,
     saves,
-    proficiencies: normalizeProficiencies(character.proficiencies),
+    proficiencies,
     inventory,
     spells,
     attacks,
+    derivedAttacks,
     features,
     coins,
     notes: character.notes,
@@ -444,4 +462,26 @@ export function toCharacterDto(
     updatedAt: character.updatedAt.toISOString(),
     derived,
   };
+}
+
+/**
+ * Ataques derivados de uma ficha lida DIRETO do banco (sem passar pelo DTO).
+ * O combate resolve por aqui os ataques de arma equipada — a mesma conta que a
+ * ficha mostra, para os ids (`weapon:<item>`, `thrown:<item>`, `offhand:<item>`
+ * e `unarmed`) baterem.
+ */
+export function characterDerivedAttacks(character: Character): CombatAttack[] {
+  const classEntries = normalizeClassEntries(character.classes);
+  const classAdjustments = computeMulticlassAdjustments(
+    classEntries,
+    normalizeClassState(character.classState),
+  );
+  const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
+
+  return deriveWeaponAttacks({
+    abilities: effectiveAbilitiesOf(character, classAdjustments),
+    level: totalCharacterLevel(classEntries),
+    weaponProficiencies: normalizeProficiencies(character.proficiencies).weapons,
+    inventory,
+  });
 }

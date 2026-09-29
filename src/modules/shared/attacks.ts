@@ -86,6 +86,20 @@ export const attackSchema = z.object({
 export type Attack = z.infer<typeof attackSchema>;
 
 /**
+ * Ataque pronto para o combate: os campos gravados MAIS o que é derivado na
+ * hora. `derived` marca o ataque calculado da arma equipada (nunca gravado na
+ * ficha) e `blocked`, quando presente, diz por que ele não pode ser usado — o
+ * combate devolve 400 com essa mensagem (ver shared/weapon-attacks.ts).
+ *
+ * Nenhum dos dois entra no `attackSchema`: eles são sempre calculados e o
+ * `parseJson` do que está gravado os descarta.
+ */
+export interface CombatAttack extends Attack {
+  derived?: boolean;
+  blocked?: string;
+}
+
+/**
  * Lista de resistências ou imunidades a tipos de dano.
  * Restrita aos tipos canônicos para que o combate possa compará-las.
  */

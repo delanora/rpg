@@ -269,6 +269,16 @@ export interface Attack {
   damageText?: string;
   /** Verdadeiro quando o dano veio de uma expressão antiga não conversível. */
   legacy: boolean;
+  /**
+   * Ataque CALCULADO da arma equipada (nunca gravado na ficha): vem em
+   * `derivedAttacks`, não em `attacks`. A ficha não o edita.
+   */
+  derived?: boolean;
+  /**
+   * Motivo pelo qual o ataque derivado não pode ser usado agora (ex.: arma de
+   * duas mãos com a outra mão ocupada). O combate recusa a rolagem.
+   */
+  blocked?: string;
 }
 
 export type FeatureSource = 'race' | 'class' | 'background' | 'feat' | 'other';
@@ -661,6 +671,8 @@ export interface Character {
   inventory: InventoryItem[];
   spells: SpellsState;
   attacks: Attack[];
+  /** Ataques calculados das armas equipadas (e o golpe desarmado). */
+  derivedAttacks: Attack[];
   features: Feature[];
   /** Carteira de moedas: sempre com as cinco denominações. */
   coins: CoinPurse;

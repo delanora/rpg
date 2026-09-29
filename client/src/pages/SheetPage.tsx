@@ -346,7 +346,10 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 user={user}
                 turnAlert={turnAlert}
                 onDismissTurnAlert={dismissTurnAlert}
-                characterAttacks={character?.attacks ?? []}
+                characterAttacks={[
+                  ...(character?.attacks ?? []),
+                  ...(character?.derivedAttacks ?? []),
+                ]}
                 characterInventory={character?.inventory ?? []}
                 sneakAttackExpression={character?.derived.sneakAttack?.expression ?? null}
                 onCombatChange={combatState.setCombat}

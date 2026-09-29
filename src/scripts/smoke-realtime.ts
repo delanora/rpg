@@ -7404,6 +7404,369 @@ async function main(): Promise<void> {
     JSON.stringify({ log: itemRoll, resposta: loggedUse.data?.roll }),
   );
 
+  // --- 27. Ataque derivado da arma equipada ---------------------------------
+  console.log('\n27) Ataque derivado da arma equipada');
+
+  // Reaproveita a ficha da seção 20 (o cadastro é limitado pelo rate limiter).
+  // Ladino nível 1 dá o Ataque Furtivo e +2 de proficiência; FOR 16 / DES 18
+  // deixam claro qual habilidade cada arma escolhe.
+  const duelist = wallet;
+  await setCharacterClasses(duelist.userId, [{ classKey: 'rogue', level: 1 }]);
+
+  const weaponItem = (
+    id: string,
+    name: string,
+    details: Record<string, unknown>,
+    slot: 'hand1' | 'hand2',
+  ) => makeItem(id, name, 'Arma', details, { slot });
+
+  const longsword = weaponItem(
+    'a-longsword',
+    'Espada longa',
+    {
+      damageCount: 1,
+      damageDie: 8,
+      damageType: 'Cortante',
+      weaponType: 'melee',
+      weaponCategory: 'martial',
+      properties: ['versatile'],
+      versatileDie: 10,
+    },
+    'hand1',
+  );
+  const greataxe = weaponItem(
+    'a-greataxe',
+    'Machado grande',
+    {
+      damageCount: 1,
+      damageDie: 12,
+      damageType: 'Cortante',
+      weaponType: 'melee',
+      weaponCategory: 'martial',
+      properties: ['two-handed'],
+    },
+    'hand1',
+  );
+  const club = weaponItem(
+    'a-club',
+    'Clava',
+    {
+      damageCount: 1,
+      damageDie: 4,
+      damageType: 'Concussão',
+      weaponType: 'melee',
+      weaponCategory: 'simple',
+    },
+    'hand1',
+  );
+  const rapier = weaponItem(
+    'a-rapier',
+    'Rapieira',
+    {
+      damageCount: 1,
+      damageDie: 8,
+      damageType: 'Perfurante',
+      weaponType: 'melee',
+      weaponCategory: 'martial',
+      properties: ['finesse'],
+    },
+    'hand1',
+  );
+  const shortbow = weaponItem(
+    'a-bow',
+    'Arco curto',
+    {
+      damageCount: 1,
+      damageDie: 6,
+      damageType: 'Perfurante',
+      weaponType: 'ranged',
+      weaponCategory: 'simple',
+      properties: ['ammunition', 'two-handed'],
+      ammoType: 'Flecha',
+      rangeNormal: 24,
+      rangeLong: 96,
+    },
+    'hand1',
+  );
+  const javelin = weaponItem(
+    'a-javelin',
+    'Azagaia',
+    {
+      damageCount: 1,
+      damageDie: 6,
+      damageType: 'Perfurante',
+      weaponType: 'melee',
+      weaponCategory: 'simple',
+      properties: ['thrown'],
+      rangeNormal: 9,
+      rangeLong: 36,
+    },
+    'hand1',
+  );
+  const daggerMain = weaponItem(
+    'a-dagger1',
+    'Adaga',
+    {
+      damageCount: 1,
+      damageDie: 4,
+      damageType: 'Perfurante',
+      weaponType: 'melee',
+      weaponCategory: 'simple',
+      properties: ['finesse', 'light'],
+    },
+    'hand1',
+  );
+  const daggerOff = weaponItem(
+    'a-dagger2',
+    'Adaga',
+    {
+      damageCount: 1,
+      damageDie: 4,
+      damageType: 'Perfurante',
+      weaponType: 'melee',
+      weaponCategory: 'simple',
+      properties: ['finesse', 'light'],
+    },
+    'hand2',
+  );
+  const shield = makeItem('a-shield', 'Escudo', 'Escudo', { armorClassBonus: 2 }, { slot: 'hand2' });
+
+  // Proficiências controladas: CATEGORIA simples e o NOME 'Espadas longas'
+  // (plural) — nada de marcial genérico.
+  await masterPatch(duelist.characterId, {
+    strength: 16,
+    dexterity: 18,
+    proficiencies: { armor: [], weapons: ['Armas simples', 'Espadas longas'], tools: [] },
+    inventory: [longsword],
+    attacks: [],
+  });
+
+  const weaponAttacksOf = async (): Promise<any[]> =>
+    ((await sheetOf(duelist.token))?.derivedAttacks ?? []) as any[];
+
+  const longswordAttack = (await weaponAttacksOf()).find(
+    (attack) => attack.id === 'weapon:a-longsword',
+  );
+  check(
+    'a arma equipada vira ataque derivado com a habilidade FOR (+3) e a proficiência pelo NOME (+2)',
+    longswordAttack?.attackBonus === 5 &&
+      longswordAttack?.damage?.bonus === 3 &&
+      longswordAttack?.finesse === false &&
+      longswordAttack?.ranged === false &&
+      /proficiente/.test(longswordAttack?.notes ?? ''),
+    JSON.stringify(longswordAttack),
+  );
+  check(
+    'versátil com a outra mão LIVRE usa o dado de duas mãos (1d10+3)',
+    longswordAttack?.damage?.count === 1 &&
+      longswordAttack?.damage?.sides === 10 &&
+      longswordAttack?.damage?.type === 'Cortante' &&
+      /duas mãos/.test(longswordAttack?.notes ?? ''),
+    JSON.stringify(longswordAttack?.damage),
+  );
+
+  // Versátil com a outra mão ocupada volta ao dado de uma mão.
+  await masterPatch(duelist.characterId, { inventory: [longsword, shield] });
+  const versatilOneHand = (await weaponAttacksOf()).find(
+    (attack) => attack.id === 'weapon:a-longsword',
+  );
+  check(
+    'versátil com a outra mão OCUPADA volta ao dado de uma mão (1d8), sem bloquear',
+    versatilOneHand?.damage?.sides === 8 &&
+      versatilOneHand?.blocked === undefined &&
+      !/duas mãos/.test(versatilOneHand?.notes ?? ''),
+    JSON.stringify(versatilOneHand),
+  );
+
+  // Proficiência pela CATEGORIA ('Armas simples') numa arma simples.
+  await masterPatch(duelist.characterId, { inventory: [club] });
+  const clubAttack = (await weaponAttacksOf()).find((attack) => attack.id === 'weapon:a-club');
+  check(
+    'a proficiência pela CATEGORIA (Armas simples) soma +2 numa arma simples',
+    clubAttack?.attackBonus === 5 && clubAttack?.damage?.bonus === 3,
+    JSON.stringify(clubAttack),
+  );
+
+  // Arma marcial sem nome nem categoria na lista: SEM proficiência.
+  await masterPatch(duelist.characterId, { inventory: [greataxe] });
+  const greataxeAttack = (await weaponAttacksOf()).find(
+    (attack) => attack.id === 'weapon:a-greataxe',
+  );
+  check(
+    'arma sem categoria nem nome na lista NÃO soma o bônus de proficiência',
+    greataxeAttack?.attackBonus === 3 &&/sem proficiência/.test(greataxeAttack?.notes ?? ''),
+    JSON.stringify(greataxeAttack),
+  );
+
+  // Acuidade: DES 18 (+4) vale mais que FOR 16 (+3).
+  await masterPatch(duelist.characterId, { inventory: [rapier] });
+  const rapierAttack = (await weaponAttacksOf()).find(
+    (attack) => attack.id === 'weapon:a-rapier',
+  );
+  check(
+    'acuidade usa a MELHOR habilidade (DES +4 em vez de FOR +3)',
+    rapierAttack?.attackBonus === 4 &&
+      rapierAttack?.damage?.bonus === 4 &&
+      rapierAttack?.finesse === true,
+    JSON.stringify(rapierAttack),
+  );
+
+  // Arma à distância: DES + proficiência simples.
+  await masterPatch(duelist.characterId, { inventory: [shortbow] });
+  const bowAttack = (await weaponAttacksOf()).find((attack) => attack.id === 'weapon:a-bow');
+  check(
+    'arma à distância usa DES (+4) com proficiência (+2) e é marcada como ranged',
+    bowAttack?.attackBonus === 6 && bowAttack?.damage?.bonus === 4 && bowAttack?.ranged === true,
+    JSON.stringify(bowAttack),
+  );
+
+  // Arremesso: variante à distância que continua usando FOR (não DES).
+  await masterPatch(duelist.characterId, { inventory: [javelin] });
+  const javelinAttacks = await weaponAttacksOf();
+  const meleeJavelin = javelinAttacks.find((attack) => attack.id === 'weapon:a-javelin');
+  const thrownJavelin = javelinAttacks.find((attack) => attack.id === 'thrown:a-javelin');
+  check(
+    'arma arremessável ganha a variante de arremesso (ranged) usando FOR, não DES',
+    meleeJavelin?.ranged === false &&
+      meleeJavelin?.attackBonus === 5 &&
+      thrownJavelin?.ranged === true &&
+      thrownJavelin?.attackBonus === 5,
+    JSON.stringify({ meleeJavelin, thrownJavelin }),
+  );
+
+  // Duas mãos com a outra mão ocupada: listado, mas BLOQUEADO.
+  await masterPatch(duelist.characterId, { inventory: [greataxe, shield] });
+  const blockedGreat = (await weaponAttacksOf()).find(
+    (attack) => attack.id === 'weapon:a-greataxe',
+  );
+  check(
+    'duas mãos com a outra mão ocupada: ataque listado mas bloqueado',
+    typeof blockedGreat?.blocked === 'string' && (blockedGreat?.blocked ?? '').length > 0,
+    JSON.stringify(blockedGreat),
+  );
+
+  // Duas armas LEVES: ataque da mão secundária sem o modificador de dano.
+  await masterPatch(duelist.characterId, { inventory: [daggerMain, daggerOff] });
+  const lightPair = await weaponAttacksOf();
+  const daggerMainAttack = lightPair.find((attack) => attack.id === 'weapon:a-dagger1');
+  const daggerOffAttack = lightPair.find((attack) => attack.id === 'offhand:a-dagger2');
+  check(
+    'segunda arma leve: a mão secundária ataca com acuidade (+6) mas sem o modificador de dano (1d4)',
+    daggerOffAttack?.attackBonus === 6 &&
+      daggerOffAttack?.damage?.count === 1 &&
+      daggerOffAttack?.damage?.sides === 4 &&
+      daggerOffAttack?.damage?.bonus === 0 &&
+      daggerMainAttack?.damage?.bonus === 4,
+    JSON.stringify({ daggerMainAttack, daggerOffAttack }),
+  );
+
+  // Golpe desarmado: sempre disponível, 1 + FOR de concussão.
+  const unarmedAttack = lightPair.find((attack) => attack.id === 'unarmed');
+  check(
+    'golpe desarmado sempre disponível (1 + FOR de concussão, proficiente)',
+    unarmedAttack?.damage?.bonus === 4 &&
+      unarmedAttack?.damage?.type === 'Concussão' &&
+      unarmedAttack?.attackBonus === 5 &&
+      unarmedAttack?.inventoryItemId === undefined,
+    JSON.stringify(unarmedAttack),
+  );
+
+  // --- Ataque derivado dentro do COMBATE -----------------------------------
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+  const trainingDummy = await api('/api/creatures', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Boneco de treino ${suffix}`,
+      type: 'Constructo',
+      hpMax: 9999,
+      armorClass: 10,
+      localityIds: [locality.id],
+    },
+  });
+  createdCreatureIds.push(trainingDummy.data.creature.id);
+
+  const derivedCombat = await api('/api/combat', {
+    method: 'POST',
+    token: masterToken,
+    body: { entries: [{ creatureId: trainingDummy.data.creature.id, quantity: 1 }] },
+  });
+  check(
+    'combate do ataque derivado iniciado (201)',
+    derivedCombat.status === 201,
+    JSON.stringify(derivedCombat.data),
+  );
+  createdCombatIds.push(derivedCombat.data.combat.id);
+  for (const combatant of derivedCombat.data.combat.combatants) {
+    await api(`/api/combat/initiative/${combatant.id}`, { method: 'POST', token: masterToken });
+  }
+  const derivedActive = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  const dummyCombatant = (derivedActive?.combatants ?? []).find(
+    (item: any) => item.kind === 'CREATURE',
+  );
+
+  const rollUntilHit = async (
+    attackId: string,
+    options: { sneak?: boolean } = {},
+  ): Promise<any> => {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const shot = await api('/api/combat/attack', {
+        method: 'POST',
+        token: duelist.token,
+        body: { attackId, targetCombatantId: dummyCombatant.id },
+      });
+      if (shot.status !== 200 || !shot.data?.result?.hit) continue;
+      if (options.sneak && !shot.data.result.sneakAttack) continue;
+      return shot.data.result;
+    }
+    return null;
+  };
+
+  await masterPatch(duelist.characterId, { inventory: [longsword] });
+  const derivedHit = await rollUntilHit('weapon:a-longsword');
+  check(
+    'o ataque derivado resolve no combate (nome, bônus e dano da arma)',
+    derivedHit !== null &&
+      derivedHit.attackName === 'Espada longa' &&
+      derivedHit.attackBonus === 5 &&
+      derivedHit.damageRolled >= 4 &&
+      derivedHit.damageType === 'Cortante',
+    JSON.stringify(derivedHit),
+  );
+
+  // Arma sutil derivada aciona o Ataque Furtivo do ladino.
+  await masterPatch(duelist.characterId, { inventory: [rapier] });
+  const sneakHit = await rollUntilHit('weapon:a-rapier', { sneak: true });
+  check(
+    'arma sutil derivada aciona o Ataque Furtivo automaticamente',
+    sneakHit !== null && (sneakHit.sneakAttack?.total ?? 0) >= 1,
+    JSON.stringify(sneakHit?.sneakAttack ?? null),
+  );
+
+  // Ataque da mão secundária também resolve no combate.
+  await masterPatch(duelist.characterId, { inventory: [daggerMain, daggerOff] });
+  const offHandHit = await rollUntilHit('offhand:a-dagger2');
+  check(
+    'o ataque da mão secundária também resolve no combate',
+    offHandHit !== null && offHandHit.attackName === 'Adaga (mão secundária)',
+    JSON.stringify(offHandHit),
+  );
+
+  // Arma de duas mãos com a outra mão ocupada: o combate recusa (400).
+  await masterPatch(duelist.characterId, { inventory: [greataxe, shield] });
+  const blockedShot = await api('/api/combat/attack', {
+    method: 'POST',
+    token: duelist.token,
+    body: { attackId: 'weapon:a-greataxe', targetCombatantId: dummyCombatant.id },
+  });
+  check(
+    'usar a arma de duas mãos bloqueada é recusado (400)',
+    blockedShot.status === 400,
+    JSON.stringify({ status: blockedShot.status, data: blockedShot.data }),
+  );
+
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+
   }
 
   console.log(

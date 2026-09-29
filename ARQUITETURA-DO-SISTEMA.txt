@@ -201,7 +201,7 @@ SERVIDOR (src/)
     migrate-item-weapons.ts  completa o perfil de arma dos itens (padrões melee/simple;
                           Cajado com dano vira versátil d6/d8) e lista os suspeitos de
                           arma à distância pelo nome
-    smoke-realtime.ts     7.457 linhas — smoke test ponta a ponta (720 asserts)
+    smoke-realtime.ts     7.820 linhas — smoke test ponta a ponta (736 asserts)
 
 CLIENTE (client/src/)
   main.tsx                initTheme() + unlockAudioOnFirstGesture() + <App/>
@@ -1577,7 +1577,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 
 ================================================================================
 18) TESTES E VERIFICAÇÃO
-================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 7.457 linhas, 720 asserts)
+================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 7.820 linhas, 736 asserts)
   Executa contra um servidor RODANDO (`npm run smoke`; base configurável por
   SMOKE_BASE_URL). Cria contas com sufixo único, exercita a API e o WebSocket de
   ponta a ponta e LIMPA tudo no final (`cleanup()`), saindo com código 0 ou 1
@@ -1628,7 +1628,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     13) Exclusão de personagem     — 403 para jogador, cascata de conta/combate/log,
                                      derrubada da sessão, token invalidado
   -- FASE 0: regressão das regras base e das fases de ataques/itens/moedas
-     (seções 14 a 26, num escopo próprio) --
+     (seções 14 a 27, num escopo próprio) --
     14) PV e CA automáticos        — PV de d10/d6, recálculo retroativo de CON no 5º
                                      (40/30 → 45/35 com CON 16; → 25/15 com CON 8),
                                      CA leve/média/pesada, escudo, Defesa sem Armadura
@@ -1703,6 +1703,15 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     26) Inventário (complemento)  — o mestre ajusta a QUANTIDADE e REMOVE item (200);
                                      os `send` se acumulam (2 + 3 = 5); usar consumível
                                      entra no log de rolagens do mestre como `kind: 'item'`
+    27) Ataque derivado da arma  — a arma EQUIPADA vira ataque calculado (FOR no corpo
+                                     a corpo, DES à distância, a MELHOR das duas com
+                                     acuidade), com proficiência por CATEGORIA e por
+                                     NOME (plural/acento), dado VERSÁTIL com a outra mão
+                                     livre, DUAS MÃOS recusada (400) com a outra mão
+                                     ocupada, segunda arma LEVE sem o modificador de
+                                     dano, variante de ARREMESSO (ranged, mas usando
+                                     FOR) e GOLPE DESARMADO; tudo resolvido no combate
+                                     (incluindo o Ataque Furtivo da arma sutil)
 
   LIMITE OPERACIONAL: o smoke cria ~14 contas e faz ~27 chamadas a `/api/auth/*`
   por execução. Em `NODE_ENV=production` o limiter do login é 30 por 15 min, então
@@ -1789,24 +1798,28 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    (`spells` = { list, slots }), sem catálogo central.
 [LACUNA] RAÇAS E ANTECEDENTES: bônus de atributo e perícias são aplicados; ferramentas,
    idiomas e as características raciais/de antecedente NÃO são modelados.
-[LACUNA/FASE 2] PROFICIÊNCIAS DE EQUIPAMENTO E ATAQUE DERIVADO: `characters.proficiencies`
-   já registra armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada
-   por multiclasse, com backfill na migração `20260928160000_character_proficiencies`),
-   mas o EFEITO mecânico NÃO é calculado: a CA não exige proficiência para somar
-   armadura/escudo e não há penalidade de armadura sem proficiência. Também NÃO existe
-   ataque DERIVADO da arma equipada: hoje o ataque é uma linha salva em `attacks`, com
-   `attackBonus`/`damage` escritos à mão e um vínculo OPCIONAL a um item do inventário
-   (`inventoryItemId`, usado só para a munição). Ficam pendentes, portanto: habilidade
-   correta (FOR no corpo a corpo, DES à distância, a MELHOR das duas na arma com
-   acuidade), proficiência por categoria e por nome somada ao ataque, dado VERSÁTIL
-   quando a outra mão está livre, recusa de arma de duas mãos com a outra mão ocupada,
-   a segunda arma leve sem modificador no dano, arremesso e golpe desarmado. As
-   escolhas abertas do livro ("1 instrumento musical à sua escolha") entram como
-   DESCRIÇÃO — a escolha interativa ainda não existe.
-   CONSEQUÊNCIA PARA O SMOKE: as seções 22 a 26 cobrem SOMENTE o que existe (dano
-   estruturado, cadastro de arma e preço, munição, moedas e quantidade travada). Não
-   há verificação do ataque derivado justamente porque a funcionalidade não existe —
-   quando ela for implementada, a cobertura precisa ser acrescentada.
+[LACUNA/FASE 2] PROFICIÊNCIAS DE ARMADURA: `characters.proficiencies` registra
+   armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada por
+   multiclasse, com backfill na migração `20260928160000_character_proficiencies`) e o
+   bônus de ATAQUE das armas já usa a proficiência (ver abaixo), mas o efeito nas
+   ARMADURAS ainda NÃO é calculado: a CA não exige proficiência para somar
+   armadura/escudo e não há penalidade de armadura sem proficiência. As escolhas abertas
+   do livro ("1 instrumento musical à sua escolha") entram como DESCRIÇÃO — a escolha
+   interativa ainda não existe.
+[IMPLEMENTADO] ATAQUE DERIVADO DA ARMA EQUIPADA (`src/modules/shared/weapon-attacks.ts`
+   + `derivedAttacks` no DTO da ficha): a arma equipada em `hand1`/`hand2` vira um ataque
+   CALCULADO (nunca gravado, como a CA), com ids estáveis — `weapon:<item>`, a variante
+   `thrown:<item>` (arma com a propriedade `thrown`), `offhand:<item>` (segunda arma
+   LEVE) e `unarmed` (golpe desarmado). Cobre: habilidade FOR no corpo a corpo, DES à
+   distância e a MELHOR de FOR/DES com `finesse` (o arremesso usa FOR, mesmo sendo
+   `ranged`); proficiência somada por CATEGORIA ("Armas simples"/"Armas marciais") ou por
+   NOME específico, com comparação tolerante a plural/acento ("Espadas longas" casa
+   "Espada longa"); dado VERSÁTIL quando a outra mão está livre; arma de DUAS MÃOS com a
+   outra mão ocupada listada com `blocked` (o combate devolve 400 com o motivo); segunda
+   arma leve com o modificador de dano omitido (salvo se negativo); e golpe desarmado
+   (1 + FOR, concussão). Os ataques derivados entram em `combatantAttacks` também, então
+   `POST /api/combat/attack` resolve pelo mesmo id que a ficha mostra, alimentando
+   Ataque Furtivo (`finesse`/`ranged`) e Fúria (`ranged`). Cobertura na seção 27 do smoke.
 [LACUNA] O compêndio é SOMENTE LEITURA. O plano declarado é o mestre poder criar e
    editar raças/antecedentes: a arquitetura já está preparada (rota única, coleções,
    `getCompendium()` como fonte trocável), mas não há CRUD nem tabelas para isso.
