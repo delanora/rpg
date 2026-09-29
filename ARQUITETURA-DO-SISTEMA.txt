@@ -52,6 +52,8 @@ Comandos (package.json):
   npm run prisma:generate | prisma:migrate | prisma:deploy | prisma:studio
   npm run db:push             → prisma db push
   npm run create-master       → cria/atualiza conta MASTER por CLI
+  npm run migrate:attack-damage → converte o dano textual dos ataques em estruturado
+  npm run migrate:item-weapons  → completa os campos de arma dos itens (tipo/categoria)
   npm run smoke               → tsx src/scripts/smoke-realtime.ts
 
 EM PRODUÇÃO O SERVIÇO systemd EXECUTA `dist/`. Alterar `src/` sem `npm run build`
@@ -157,19 +159,31 @@ SERVIDOR (src/)
       dnd5e.ts            426 linhas — atributos, perícias, proficiência, XP, derived
       armor-class.ts      170 linhas — cálculo de CA (armadura/escudo/defesa sem armadura/override)
       dice.ts              91 linhas — randomInt, parser de expressão "2d6+3", crítico
-      attacks.ts           49 linhas — schema de ataque compartilhado ficha/criatura
-      item-details.ts      99 linhas — categorias/atributos/preço de item
+      attacks.ts           90 linhas — schema de ataque compartilhado ficha/criatura; o DANO
+                                       é estruturado ({ count, sides, bonus, type }) e a
+                                       expressão textual é derivada só para exibição; o
+                                       ataque ainda pode apontar para uma ARMA do inventário
+      ammo.ts              80 linhas — regras de munição (arma equipada nas mãos, tipo exigido
+                                       e escolha da pilha)
+      item-details.ts     263 linhas — categorias/atributos/preço de item + PERFIL DE ARMA
+                                       (tipo, categoria, propriedades do PHB, versátil,
+                                       munição e alcance)
+      coins.ts            202 linhas — sistema de MOEDAS { pp, gp, ep, sp, cp }: conversões
+                                       do PHB (1 pp = 10 gp; 1 gp = 100 cp; 1 ep = 50 cp),
+                                       troca EXATA (rejeita fração), peso (0,01 kg por
+                                       moeda) e denominações visíveis (PL/PE opcionais)
       images.ts            15 linhas — { url, name }
       json.ts              10 linhas — parseJson(schema, valor, fallback)
       creation.ts         485 linhas — catálogos de RAÇA (14) e ANTECEDENTE (13) + rascunho
       classes.ts            9 linhas — fachada que reexporta classes/index.ts
       classes/
-        types.ts          181 linhas — ClassDefinition, SubclassDefinition, features, efeitos,
+        types.ts          273 linhas — ClassDefinition, SubclassDefinition, features, efeitos,
                                         ProficienciesState, MulticlassSkillChoice
-        index.ts         1270 linhas — as 12 classes, multiclasse, CLASS_PROFICIENCIES,
+        index.ts         1769 linhas — as 12 classes, multiclasse, CLASS_PROFICIENCIES,
                                         espaços, ASI, ajustes
-        barbarian.ts 231 · bard.ts 13 · cleric.ts 76 · druid.ts 188 · fighter.ts 13
-        monk.ts 343 · paladin.ts 13 · ranger.ts 13 · rogue.ts 226 · sorcerer.ts 155
+        fighting-styles.ts 92 · option-lists.ts 36 (listas compartilhadas de escolhas)
+        barbarian.ts 231 · bard.ts 232 · cleric.ts 76 · druid.ts 188 · fighter.ts 424
+        monk.ts 343 · paladin.ts 426 · ranger.ts 357 · rogue.ts 226 · sorcerer.ts 155
         warlock.ts 48 · wizard.ts 407
   realtime/
     index.ts              cria o Socket.io, autentica, entra em salas, presença
@@ -181,7 +195,12 @@ SERVIDOR (src/)
     events.ts             357 linhas — CONTRATO de eventos e payloads (fonte de verdade)
   scripts/
     create-master.ts      cria/atualiza MASTER por CLI
-    smoke-realtime.ts     6.187 linhas — smoke test ponta a ponta (649 asserts)
+    migrate-attack-damage.ts  converte o dano textual dos ataques (fichas + criaturas)
+                          para o formato estruturado (idempotente)
+    migrate-item-weapons.ts  completa o perfil de arma dos itens (padrões melee/simple;
+                          Cajado com dano vira versátil d6/d8) e lista os suspeitos de
+                          arma à distância pelo nome
+    smoke-realtime.ts     6.761 linhas — smoke test ponta a ponta (689 asserts)
 
 CLIENTE (client/src/)
   main.tsx                initTheme() + unlockAudioOnFirstGesture() + <App/>
@@ -378,6 +397,8 @@ exceto GameConfig (chave fixa "main").
     levelUpRelease Int     @default(0)   // contador de liberações de Level Up
     startingLevel  Int     @default(1)   // nível em que a mesa começa (1..20)
     masterNotes    String  @default("")  // anotações PRIVADAS do mestre (<= 20.000)
+    extraCoins     Boolean @default(false) // exibe PL (pp) e PE (ep) no bloco de moedas
+                                           // das fichas; os valores existem sempre
     updatedAt      DateTime @updatedAt
 
     Invariante: `masterNotes` NÃO entra no GameConfigDto. O GET /api/game é
@@ -417,6 +438,12 @@ exceto GameConfig (chave fixa "main").
     features  Json @default("[]")  // { id, name, source, description }
     notes     String @default("")
     classState Json @default("{}") // { active: string[], used: { [id]: number } }
+    coins     Json @default("{ pp:0, gp:0, ep:0, sp:0, cp:0 }") // CARTEIRA de moedas
+                                     // (inteiros >= 0). O jogador NUNCA altera por PATCH
+                                     // (403, mesmo antes de finalizar); o mestre dá/retira
+                                     // (PATCH ou POST /:id/coins) e o jogador gasta, troca e
+                                     // transfere pelos endpoints próprios. O peso entra no
+                                     // derived.totalWeight (50 moedas = 0,5 kg).
     avatarUrl String @default("")
     version Int @default(1)      // incrementa a cada alteração (ordena eventos)
     createdAt · updatedAt · combatants Combatant[]
@@ -1274,11 +1301,14 @@ ATAQUE (POST /api/combat/attack)
     1. CA do alvo: personagem → `characterArmorClass(...).value` (calculada!);
        criatura → snapshot `armorClass` (fallback `creature.armorClass`, senão 10).
     2. `attackRoll = 1d20`; `attackTotal = attackRoll + attackBonus`;
-       critical = (attackRoll === 20); hit = critical OU (attackRoll ≠ 1 E
-       attackTotal ≥ CA). Ou seja: 20 natural sempre acerta, 1 natural sempre erra.
+       critical = (attackRoll ≥ LIMIAR da ficha, 20 por padrão — 19/18 com o
+       Crítico Aprimorado/Superior do Campeão); hit = critical OU (attackRoll ≠ 1
+       E attackTotal ≥ CA). Crítico sempre acerta, 1 natural sempre erra.
     3. Publica `dice:rolled` (kind 'attack').
-    4. Se acertou, rola o dano da expressão do ataque (dados dobrados no crítico,
-       modificador uma vez) e soma, quando aplicáveis:
+    4. Se acertou, rola o DANO ESTRUTURADO do ataque (`attack.damage` =
+       { count, sides, bonus, type }) — a expressão textual é derivada daí só para
+       a rolagem/exibição. Dados dobrados no crítico, modificador uma vez, mínimo
+       0. Soma, quando aplicáveis:
        • DADOS EXTRAS DE CRÍTICO (critExtraDice, ex.: Crítico Brutal) — só corpo a corpo;
        • BÔNUS DE DANO CORPO A CORPO enquanto o toggle exigido está ativo (ex.: Fúria) —
          não vale para arma à distância (campo `ranged` do ataque);
@@ -1286,9 +1316,26 @@ ATAQUE (POST /api/combat/attack)
          nível de ladino) E a arma ser `finesse` ou `ranged`. As condições TÁTICAS
          (vantagem / aliado adjacente) NÃO são rastreadas: o jogador decide quando
          rolar. Cada parcela extra publica seu próprio `dice:rolled` (kind 'damage').
-    5. RESISTÊNCIA do alvo (personagem com o tipo de dano em `resistances`, ex.:
-       Fúria) ⇒ dano dividido por 2 (`floor(total/2)`).
+    5. RESISTÊNCIA do alvo (personagem com o tipo ESTRUTURADO `attack.damage.type`
+       em `resistances`, ex.: Fúria) ⇒ dano dividido por 2 (`floor(total/2)`).
+       `type: null` ("sem tipo") NÃO aciona resistência.
+    5b. MUNIÇÃO (só PERSONAGENS): quando o ataque tem `inventoryItemId`, a arma
+        apontada precisa estar EQUIPADA numa das mãos (hand1/hand2) — senão 409.
+        Se ela declara a propriedade `ammunition`, 1 unidade do `ammoType` dela é
+        gasta de uma pilha da categoria 'Munição' ANTES de rolar (sem munição ⇒
+        409 e nada é rolado). O `attackBonus`/`damageBonus` da munição somam ao
+        ataque e ao dano; a pilha que chega a 0 sai do inventário. A escolha da
+        pilha (`ammoInventoryId` opcional) prefere a SEM bônus mágico e depois a
+        de menor bônus. O gasto usa `updateMany` condicionado ao `version` (com
+        releitura e nova tentativa), como o Level Up, e publica `sheet:updated`
+        para o dono e os mestres. Criaturas nunca consomem.
+        A arma não equipada também SOME da aba Ataques do jogador (filtro no
+        cliente por `isWeaponEquipped`).
     6. `changeHp(alvo, −total)` e publica `combat:updated`.
+  DANO ESTRUTURADO x LEGADO: o ataque guarda `damage` estruturado e, quando a
+  migração (`npm run migrate:attack-damage`) não conseguiu converter a expressão
+  antiga com segurança, `legacy: true` + `damageText` com o texto original (o
+  mestre revisa pela ficha). O tipo é um dos 13 canônicos ou `null`.
   Resultado (`AttackResolvedPayload`) é enviado DIFERENCIADO:
     • mestre: CA, hpCurrent/hpMax do alvo, tudo;
     • jogadores, quando o ALVO é CRIATURA: targetArmorClass/targetHpCurrent/
@@ -1393,10 +1440,23 @@ REGIÕES E LOCALIDADES
 CATÁLOGO DE ITENS
   Categorias: Arma, Armadura, Escudo, Poção, Anel, Cajado, Item Geral, Tesouro, Outro.
   `sanitizeItemDetails(category, details)` mantém SÓ os campos que a categoria usa:
-    Arma (damageCount, damageDie, damageType, attackBonus) · Cajado (idem +
+    Arma (damageCount, damageDie, damageType, attackBonus, damageBonus, weaponType,
+    weaponCategory, properties, versatileDie, rangeNormal, rangeLong) · Cajado (idem +
     spellcastingFocus) · Armadura (armorType, baseArmorClass, armorClassBonus) ·
     Escudo (armorClassBonus) · Poção (effectRoll, duration) · Anel (effectRoll,
     attunement) · demais: nenhum.
+  PERFIL DE ARMA (Arma/Cajado) — o cadastro separa corpo a corpo de à distância:
+    WEAPON_TYPES melee | ranged (padrão melee) · WEAPON_CATEGORIES simple | martial
+    (padrão simple) · WEAPON_PROPERTIES (light, finesse, heavy, two-handed, versatile,
+    thrown, reach, ammunition, loading, special) · versatileDie (dado de duas mãos) ·
+    rangeNormal/rangeLong em METROS (corpo a corpo é 1,5 m; 3 m com reach).
+  COERÊNCIA (superRefine no itemDetailsSchema; os padrões entram no sanitize):
+    ammunition só em ranged E exige ammoType; versatile exige versatileDie e não
+    combina com two-handed; thrown e ranged exigem os dois alcances. Dado
+    incoerente ⇒ 400 na rota e `{}` no sanitize (nada é gravado pela metade).
+  MUNIÇÃO (categoria própria): AMMO_TYPES Flecha | Virote | Bala de funda |
+    Agulha de zarabatana; a categoria 'Munição' usa ammoType, attackBonus e
+    damageBonus (munição mágica +1/+2/+3).
   ARMOR_TYPES: Leve | Média | Pesada — usado no cálculo de CA (§10.3).
   PREÇO (priceGold/Silver/Copper) é informação EXCLUSIVA do mestre: o DTO de jogador
   sai sem ele. O item entregue ao jogador NUNCA leva o preço.
@@ -1498,9 +1558,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 
 ================================================================================
 18) TESTES E VERIFICAÇÃO
-================================================================================
-
-18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 6.187 linhas, 649 asserts)
+================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 6.761 linhas, 689 asserts)
   Executa contra um servidor RODANDO (`npm run smoke`; base configurável por
   SMOKE_BASE_URL). Cria contas com sufixo único, exercita a API e o WebSocket de
   ponta a ponta e LIMPA tudo no final (`cleanup()`), saindo com código 0 ou 1
@@ -1550,7 +1608,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     12) Presença ao desconectar
     13) Exclusão de personagem     — 403 para jogador, cascata de conta/combate/log,
                                      derrubada da sessão, token invalidado
-  -- FASE 0: regressão das regras base (seções 14 a 19, num escopo próprio) --
+  -- FASE 0: regressão das regras base (seções 14 a 20, num escopo próprio) --
     14) PV e CA automáticos        — PV de d10/d6, recálculo retroativo de CON no 5º
                                      (40/30 → 45/35 com CON 16; → 25/15 com CON 8),
                                      CA leve/média/pesada, escudo, Defesa sem Armadura
@@ -1586,6 +1644,15 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
                                      das Feras) e o CRÍTICO em combate: 60 ataques de
                                      treino com todo d20 >= 18 crítico, 1 natural erra
                                      e o limiar volta a 20 sem o Campeão
+    20) Moedas                     — a ficha nasce com as cinco denominações zeradas; o
+                                     jogador não altera por PATCH (403 citando "Moedas");
+                                     50 moedas = 0,5 kg em totalWeight; o mestre dá/retira
+                                     (retirada maior que o saldo: 400); gastar é exato e
+                                     sem troco (saldo insuficiente: 400); troca preserva o
+                                     valor e recusa fração (1 PC para PO: 400); a
+                                     transferência debita o doador e credita o destino,
+                                     recusa a si mesmo e a lista de destinos exclui a
+                                     própria ficha; só o mestre liga as moedas extras
 
   ARMADILHA OPERACIONAL: o rate limiter é em memória. Duas execuções do smoke
   seguidas podem devolver 429 no login. Reiniciar o serviço zera o contador.
@@ -1739,6 +1806,8 @@ DIAGNÓSTICO
   lastLevelUpRelease      última liberação usada POR ESTA FICHA
   startingLevel           nível em que a mesa começa (aplicado no passo 8)
   PLAYER_STATE_KEYS       o que o jogador pode editar com a criação finalizada
+  coins                   { pp, gp, ep, sp, cp } — carteira; CONSTRUÇÃO (só o mestre por PATCH)
+  extraCoins              exibe PL/PE no bloco de moedas (só a exibição; valores sempre gravados)
   editedBy                preenchido em sheet:updated SÓ quando o editor não é o dono
   toMasters/toPlayers     destinatários do broadcaster (sala role:masters / mesa sem mestres)
   kind                    CreatureKind: CREATURE (combate) vs NPC (narrativo)

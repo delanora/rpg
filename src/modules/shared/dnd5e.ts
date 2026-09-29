@@ -301,6 +301,11 @@ export interface DerivedInput {
   className: string;
   inventory: Array<{ quantity: number; weight: number }>;
   /**
+   * Peso da carteira de moedas em quilos (50 moedas = 0,5 kg — PHB p.143).
+   * Somado ao peso do inventário em `totalWeight`.
+   */
+  coinWeight?: number;
+  /**
    * Atributo de conjuração vindo do registro de classes. Quando `undefined`,
    * cai no mapa por nome de classe abaixo (compatibilidade com fichas antigas).
    */
@@ -412,10 +417,9 @@ export function deriveStats(input: DerivedInput): DerivedStats {
   }
 
   const perception = skills.perception;
-  const totalWeight = input.inventory.reduce(
-    (sum, item) => sum + (item.weight ?? 0) * (item.quantity ?? 0),
-    0,
-  );
+  const totalWeight =
+    input.inventory.reduce((sum, item) => sum + (item.weight ?? 0) * (item.quantity ?? 0), 0) +
+    (input.coinWeight ?? 0);
 
   const spellcastingAbility =
     input.spellcastingAbility !== undefined

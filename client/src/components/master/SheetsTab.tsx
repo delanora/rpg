@@ -20,6 +20,10 @@ interface SheetsTabProps {
    * dele, com o que já existe preenchido.
    */
   onReopenCreation: (characterId: string) => Promise<void>;
+  /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
+  extraCoins: boolean;
+  /** Ação de moedas devolveu a ficha inteira — atualiza a lista do painel. */
+  onCoinsChange: (character: Character) => void;
 }
 
 /**
@@ -34,6 +38,8 @@ export function SheetsTab({
   onUpdate,
   onDelete,
   onReopenCreation,
+  extraCoins,
+  onCoinsChange,
 }: SheetsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -150,6 +156,8 @@ export function SheetsTab({
             <SheetView
               character={selected}
               update={(patch) => onUpdate(selected.id, patch)}
+              extraCoins={extraCoins}
+              onCoinsChange={onCoinsChange}
               readOnly={!editing}
               masterView
             />

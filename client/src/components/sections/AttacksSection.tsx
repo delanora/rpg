@@ -10,6 +10,7 @@ export function AttacksSection({ character, update }: SheetSectionProps) {
       <AttacksTable
         attacks={character.attacks}
         defaultBonus={defaultBonus}
+        inventory={character.inventory}
         onChange={(attacks) => update({ attacks })}
       />
 

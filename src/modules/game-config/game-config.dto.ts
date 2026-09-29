@@ -15,6 +15,12 @@ export interface GameConfigDto {
    * assistente de criação aplica os níveis 2 até ele ao concluir a montagem.
    */
   startingLevel: number;
+  /**
+   * Mostra as denominações EXTRAS (PL/pp e PE/ep) no bloco de moedas da ficha.
+   * Desligado, a interface mostra só PO (gp), PP (sp) e PC (cp); os valores das
+   * cinco denominações existem sempre no banco.
+   */
+  extraCoins: boolean;
   updatedAt: string;
 }
 

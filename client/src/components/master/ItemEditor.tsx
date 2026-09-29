@@ -1,8 +1,31 @@
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
-import { DAMAGE_TYPES } from '../../dnd';
-import { ARMOR_TYPES, ITEM_CATEGORIES } from '../../types';
-import type { Character, Item, ItemDetails, ItemPatch, ItemPrice } from '../../types';
+import {
+  DAMAGE_TYPES,
+  WEAPON_CATEGORY_LABELS,
+  WEAPON_PROPERTY_LABELS,
+  WEAPON_TYPE_LABELS,
+  damageExpression,
+} from '../../dnd';
+import {
+  AMMO_TYPES,
+  ARMOR_TYPES,
+  ITEM_CATEGORIES,
+  WEAPON_CATEGORIES,
+  WEAPON_PROPERTIES,
+  WEAPON_TYPES,
+} from '../../types';
+import type {
+  AmmoType,
+  Character,
+  Item,
+  ItemDetails,
+  ItemPatch,
+  ItemPrice,
+  WeaponCategory,
+  WeaponProperty,
+  WeaponType,
+} from '../../types';
 import { clampFloat, clampInt } from '../../utils';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
@@ -10,6 +33,11 @@ import { Portrait } from '../Portrait';
 import { Section } from '../Section';
 
 const DIE_OPTIONS = ['4', '6', '8', '10', '12', '20'] as const;
+
+/** Escada do dado versátil: d4→d6, d6→d8, d8→d10, d10→d12 (senão d8). */
+function nextVersatileDie(die: number): number {
+  return die >= 4 && die <= 10 ? die + 2 : 8;
+}
 
 interface ItemEditorProps {
   item: Item;
@@ -30,7 +58,65 @@ function CategoryFields({
   const details = item.details;
 
   if (item.category === 'Arma' || item.category === 'Cajado') {
+    const properties = details.properties ?? [];
+    const weaponType = details.weaponType ?? 'melee';
+    const showRange = weaponType === 'ranged' || properties.includes('thrown');
+    const hasVersatile = properties.includes('versatile');
+    const hasAmmunition = properties.includes('ammunition');
+    // Munição só aparece (e só vale) para arma à distância.
+    const listedProperties =
+      weaponType === 'ranged'
+        ? WEAPON_PROPERTIES
+        : WEAPON_PROPERTIES.filter((property) => property !== 'ammunition');
+
+    /** Mantém as propriedades coerentes entre si (o servidor revalida). */
+    function toggleProperty(property: WeaponProperty): void {
+      const next = new Set(properties);
+      const removing = next.has(property);
+      const patch: ItemDetails = {};
+
+      if (removing) {
+        next.delete(property);
+        if (property === 'versatile') patch.versatileDie = undefined;
+      } else {
+        next.add(property);
+        if (property === 'versatile') {
+          // Versátil e Duas mãos não coexistem.
+          next.delete('two-handed');
+          patch.versatileDie = details.versatileDie ?? nextVersatileDie(details.damageDie ?? 6);
+        }
+        if (property === 'two-handed') {
+          next.delete('versatile');
+          patch.versatileDie = undefined;
+        }
+        if (property === 'thrown' && details.rangeNormal === undefined) {
+          // Arremessável exige os dois alcances: já sugere um par editável.
+          patch.rangeNormal = 6;
+          patch.rangeLong = 18;
+        }
+        if (property === 'ammunition') {
+          // Munição exigida: já sugere um tipo para o item não ficar inválido.
+          patch.ammoType = details.ammoType ?? 'Flecha';
+        }
+      }
+
+      onPatchDetails({ ...patch, properties: [...next] });
+    }
+
+    function changeWeaponType(value: string): void {
+      const nextType = (value || 'melee') as WeaponType;
+      const patch: ItemDetails = { weaponType: nextType };
+      if (nextType === 'melee') {
+        patch.properties = properties.filter((property) => property !== 'ammunition');
+      } else if (details.rangeNormal === undefined || details.rangeLong === undefined) {
+        patch.rangeNormal = details.rangeNormal ?? 6;
+        patch.rangeLong = details.rangeLong ?? 18;
+      }
+      onPatchDetails(patch);
+    }
+
     return (
+      <>
       <div className="grid grid-3">
         <label className="field">
           <span>Dados de dano</span>
@@ -38,9 +124,9 @@ function CategoryFields({
             value={details.damageCount ?? 0}
             mode="number"
             min={0}
-            max={20}
+            max={50}
             ariaLabel="Quantidade de dados de dano"
-            onCommit={(value) => onPatchDetails({ damageCount: clampInt(value, 0, 20, 0) })}
+            onCommit={(value) => onPatchDetails({ damageCount: clampInt(value, 0, 50, 0) })}
           />
         </label>
 
@@ -62,7 +148,9 @@ function CategoryFields({
             mode="select"
             options={DAMAGE_TYPES}
             ariaLabel="Tipo de dano"
-            onCommit={(value) => onPatchDetails({ damageType: value })}
+            onCommit={(value) =>
+              onPatchDetails({ damageType: (value || undefined) as ItemDetails['damageType'] })
+            }
           />
         </label>
 
@@ -76,27 +164,198 @@ function CategoryFields({
             ariaLabel="Bônus de ataque"
             onCommit={(value) => onPatchDetails({ attackBonus: clampInt(value, -30, 30, 0) })}
           />
+        </label>
+
+        <label className="field">
+          <span>Bônus de dano</span>
+          <InlineField
+            value={details.damageBonus ?? 0}
+            mode="number"
+            min={-9999}
+            max={9999}
+            ariaLabel="Bônus de dano"
+            onCommit={(value) => onPatchDetails({ damageBonus: clampInt(value, -9999, 9999, 0) })}
+          />
           <span className="field-hint">
             dano resumido:{' '}
             <strong>
-              {details.damageCount && details.damageDie
-                ? `${details.damageCount}d${details.damageDie}`
-                : '—'}
+              {damageExpression({
+                count: details.damageCount ?? 0,
+                sides: details.damageDie ?? 0,
+                bonus: details.damageBonus ?? 0,
+                type: details.damageType ?? null,
+              })}
             </strong>
           </span>
         </label>
+      </div>
 
-        {item.category === 'Cajado' ? (
-          <label className="field field-check">
-            <span>Foco de conjuração</span>
-            <input
-              type="checkbox"
-              checked={Boolean(details.spellcastingFocus)}
-              aria-label="Foco de conjuração"
-              onChange={(event) => onPatchDetails({ spellcastingFocus: event.target.checked })}
+      <h3 className="subsection-title">Perfil da arma</h3>
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Uso</span>
+          <InlineField
+            value={weaponType}
+            mode="select"
+            options={WEAPON_TYPES}
+            optionLabels={WEAPON_TYPE_LABELS}
+            ariaLabel="Uso da arma"
+            onCommit={changeWeaponType}
+          />
+          <span className="field-hint">corpo a corpo padrão 1,5 m · 3 m com Alcance</span>
+        </label>
+
+        <label className="field">
+          <span>Categoria</span>
+          <InlineField
+            value={details.weaponCategory ?? 'simple'}
+            mode="select"
+            options={WEAPON_CATEGORIES}
+            optionLabels={WEAPON_CATEGORY_LABELS}
+            ariaLabel="Categoria da arma"
+            onCommit={(value) =>
+              onPatchDetails({ weaponCategory: (value || 'simple') as WeaponCategory })
+            }
+          />
+        </label>
+
+        {hasVersatile ? (
+          <label className="field">
+            <span>Dado com as duas mãos</span>
+            <InlineField
+              value={details.versatileDie ? `d${details.versatileDie}` : ''}
+              mode="select"
+              options={DIE_OPTIONS.map((die) => `d${die}`)}
+              ariaLabel="Dado do dano versátil"
+              onCommit={(value) =>
+                onPatchDetails({ versatileDie: value ? Number(value.slice(1)) : undefined })
+              }
             />
           </label>
         ) : null}
+
+        {hasAmmunition ? (
+          <label className="field">
+            <span>Munição exigida</span>
+            <InlineField
+              value={details.ammoType ?? ''}
+              mode="select"
+              options={AMMO_TYPES}
+              ariaLabel="Tipo de munição exigida"
+              onCommit={(value) => onPatchDetails({ ammoType: (value || 'Flecha') as AmmoType })}
+            />
+            <span className="field-hint">consumida a cada ataque (1 unidade)</span>
+          </label>
+        ) : null}
+      </div>
+
+      <h3 className="subsection-title">Propriedades</h3>
+      <div className="property-grid">
+        {listedProperties.map((property) => (
+          <label key={property} className="field field-check property-check">
+            <input
+              type="checkbox"
+              checked={properties.includes(property)}
+              aria-label={WEAPON_PROPERTY_LABELS[property]}
+              onChange={() => toggleProperty(property)}
+            />
+            <span>{WEAPON_PROPERTY_LABELS[property]}</span>
+          </label>
+        ))}
+      </div>
+
+      {showRange ? (
+        <div className="grid grid-3">
+          <label className="field">
+            <span>Alcance normal (m)</span>
+            <InlineField
+              value={details.rangeNormal ?? 0}
+              mode="number"
+              min={0}
+              max={1000}
+              ariaLabel="Alcance normal em metros"
+              onCommit={(value) =>
+                onPatchDetails({ rangeNormal: clampInt(value, 0, 1000, details.rangeNormal ?? 0) })
+              }
+            />
+          </label>
+
+          <label className="field">
+            <span>Alcance longo (m)</span>
+            <InlineField
+              value={details.rangeLong ?? 0}
+              mode="number"
+              min={0}
+              max={1000}
+              ariaLabel="Alcance longo em metros"
+              onCommit={(value) =>
+                onPatchDetails({ rangeLong: clampInt(value, 0, 1000, details.rangeLong ?? 0) })
+              }
+            />
+          </label>
+
+          <p className="field-hint">
+            1 casa = 1,5 m no grid · ex.: arco curto 24/96 · adaga arremessada 6/18
+          </p>
+        </div>
+      ) : null}
+
+      {item.category === 'Cajado' ? (
+        <label className="field field-check">
+          <span>Foco de conjuração</span>
+          <input
+            type="checkbox"
+            checked={Boolean(details.spellcastingFocus)}
+            aria-label="Foco de conjuração"
+            onChange={(event) => onPatchDetails({ spellcastingFocus: event.target.checked })}
+          />
+        </label>
+      ) : null}
+      </>
+    );
+  }
+
+  // Munição: o tipo e os bônus (mágica +1/+2/+3) que a pilha concede ao ataque.
+  if (item.category === 'Munição') {
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Tipo de munição</span>
+          <InlineField
+            value={details.ammoType ?? ''}
+            mode="select"
+            options={AMMO_TYPES}
+            ariaLabel="Tipo de munição"
+            onCommit={(value) =>
+              onPatchDetails({ ammoType: (value || undefined) as AmmoType | undefined })
+            }
+          />
+        </label>
+
+        <label className="field">
+          <span>Bônus de ataque</span>
+          <InlineField
+            value={details.attackBonus ?? 0}
+            mode="number"
+            min={-30}
+            max={30}
+            ariaLabel="Bônus de ataque da munição"
+            onCommit={(value) => onPatchDetails({ attackBonus: clampInt(value, -30, 30, 0) })}
+          />
+        </label>
+
+        <label className="field">
+          <span>Bônus de dano</span>
+          <InlineField
+            value={details.damageBonus ?? 0}
+            mode="number"
+            min={-9999}
+            max={9999}
+            ariaLabel="Bônus de dano da munição"
+            onCommit={(value) => onPatchDetails({ damageBonus: clampInt(value, -9999, 9999, 0) })}
+          />
+          <span className="field-hint">munição mágica: +1, +2 ou +3</span>
+        </label>
       </div>
     );
   }

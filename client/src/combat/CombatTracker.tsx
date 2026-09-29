@@ -1,8 +1,16 @@
 import { useState } from 'react';
 import { Icon, type IconName } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
-import { formatModifier } from '../dnd';
-import type { Attack, CombatDto, CombatantDto, SessionUser } from '../types';
+import {
+  ammoStackLabel,
+  ammoStackTotal,
+  ammoStacks,
+  availableAttacks as selectAvailableAttacks,
+  requiredAmmoType,
+  weaponOf,
+} from '../ammo';
+import { damageExpression, formatModifier } from '../dnd';
+import type { Attack, CombatDto, CombatantDto, InventoryItem, SessionUser } from '../types';
 import { clampInt } from '../utils';
 import {
   applyManualHp,
@@ -25,11 +33,14 @@ interface AttackPanelProps {
   attacksFor?: (combatantId: string) => Attack[];
   /** Dados de Ataque Furtivo a exibir em armas que qualificam (ex.: "2d6"). */
   sneakAttack?: string | null;
+  /** Inventário do próprio personagem (para munição e vínculo de arma). */
+  inventory?: InventoryItem[];
   busy: boolean;
   onAttack: (input: {
     attackId: string;
     targetCombatantId: string;
     attackerCombatantId?: string;
+    ammoInventoryId?: string;
   }) => void;
 }
 
@@ -41,19 +52,30 @@ function AttackPanel({
   onSelectAttacker,
   attacksFor,
   sneakAttack,
+  inventory,
   busy,
   onAttack,
 }: AttackPanelProps) {
   const [attackId, setAttackId] = useState('');
   const [targetId, setTargetId] = useState('');
+  const [ammoId, setAmmoId] = useState('');
 
-  const availableAttacks = attackerChoices && attacksFor && attacker
-    ? attacksFor(attacker.id)
-    : attacks;
+  const baseAttacks = attackerChoices && attacksFor && attacker ? attacksFor(attacker.id) : attacks;
+  // Ataques de arma não equipada somem (só dá para avaliar com o inventário).
+  const availableAttacks = inventory ? selectAvailableAttacks(baseAttacks, inventory) : baseAttacks;
 
   const targets = combat.combatants.filter((item) => item.id !== attacker?.id && !item.missing);
 
-  const ready = Boolean(attacker && attackId && targetId);
+  // Munição do ataque escolhido: arma equipada vinculada + pilhas compatíveis.
+  const selectedAttack = availableAttacks.find((item) => item.id === attackId) ?? null;
+  const weapon = inventory && selectedAttack ? weaponOf(selectedAttack, inventory) : null;
+  const ammoType = requiredAmmoType(weapon);
+  const stacks = inventory && ammoType ? ammoStacks(inventory, ammoType) : [];
+  const ammoTotal = ammoStackTotal(stacks);
+  const selectedAmmo = stacks.find((item) => item.id === ammoId) ?? null;
+  const ammoMissing = Boolean(ammoType) && ammoTotal === 0;
+
+  const ready = Boolean(attacker && attackId && targetId) && !ammoMissing;
 
   return (
     <section className="combat-block">
@@ -93,8 +115,8 @@ function AttackPanel({
               <option value="">escolha o ataque</option>
               {availableAttacks.map((attack) => (
                 <option key={attack.id} value={attack.id}>
-                  {attack.name} — dano {attack.damage || '—'}
-                  {attack.damageType ? ` (${attack.damageType})` : ''}, acerto{' '}
+                  {attack.name} — dano {damageExpression(attack.damage)}
+                  {attack.damage.type ? ` (${attack.damage.type})` : ''}, acerto{' '}
                   {formatModifier(attack.attackBonus)}
                   {sneakAttack && (attack.finesse || attack.ranged)
                     ? ` · +${sneakAttack} furtivo`
@@ -119,15 +141,38 @@ function AttackPanel({
             </select>
           </label>
 
+          {ammoType ? (
+            <label className="field">
+              <span>Munição ({ammoType})</span>
+              {stacks.length > 0 ? (
+                <select value={selectedAmmo?.id ?? ''} onChange={(event) => setAmmoId(event.target.value)}>
+                  <option value="">automática (sem bônus primeiro)</option>
+                  {stacks.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {ammoStackLabel(item)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="ammo-warning">Sem munição para esta arma.</span>
+              )}
+              {stacks.length > 0 ? (
+                <span className="field-hint">disponível: {ammoTotal}</span>
+              ) : null}
+            </label>
+          ) : null}
+
           <button
             type="button"
             className="btn btn-primary"
             disabled={busy || !ready}
+            title={ammoMissing ? 'Sem munição para esta arma.' : undefined}
             onClick={() => {
               onAttack({
                 attackId,
                 targetCombatantId: targetId,
                 ...(attackerChoices ? { attackerCombatantId: attacker.id } : {}),
+                ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
               });
             }}
           >
@@ -162,6 +207,8 @@ interface CombatTrackerProps {
   characterAttacks?: Attack[];
   /** Dados de Ataque Furtivo do próprio personagem (ex.: "2d6"). */
   sneakAttackExpression?: string | null;
+  /** Inventário do próprio personagem (munição e vínculo de arma). */
+  characterInventory?: InventoryItem[];
   /** Mestre: ataques de qualquer combatente, para escolher o atacante. */
   attacksFor?: (combatantId: string) => Attack[];
   onCombatChange: (combat: CombatDto) => void;
@@ -181,6 +228,7 @@ export function CombatTracker({
   onDismissTurnAlert,
   characterAttacks = [],
   sneakAttackExpression = null,
+  characterInventory,
   attacksFor,
   onCombatChange,
   onCombatEnd,
@@ -510,6 +558,7 @@ export function CombatTracker({
             combat={combat}
             attacker={myCombatant}
             attacks={characterAttacks}
+            inventory={characterInventory}
             sneakAttack={sneakAttackExpression}
             busy={busy}
             onAttack={(input) => {

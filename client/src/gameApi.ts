@@ -56,6 +56,18 @@ export async function fetchCompendium(): Promise<Compendium> {
 }
 
 /**
+ * Liga/desliga as denominações extras (PL e PE) no bloco de moedas (somente
+ * mestre). Só muda a EXIBIÇÃO: os valores das cinco denominações existem sempre.
+ */
+export async function setExtraCoins(enabled: boolean): Promise<GameConfig> {
+  const { config } = await api<{ config: GameConfig }>('/api/game/extra-coins', {
+    method: 'POST',
+    body: { enabled },
+  });
+  return config;
+}
+
+/**
  * Define o nível inicial da mesa (somente mestre).
  *
  * É o nível em que os personagens novos começam: o assistente de criação aplica

@@ -9,6 +9,8 @@ interface InlineFieldProps {
   onCommit: (value: string) => void;
   mode?: Mode;
   options?: readonly string[];
+  /** Rótulos exibidos no select, por valor (o valor gravado continua sendo a chave). */
+  optionLabels?: Record<string, string>;
   placeholder?: string;
   min?: number;
   max?: number;
@@ -31,6 +33,7 @@ export function InlineField({
   onCommit,
   mode = 'text',
   options,
+  optionLabels,
   placeholder = '—',
   min,
   max,
@@ -105,7 +108,7 @@ export function InlineField({
         <option value="">—</option>
         {options?.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {optionLabels?.[option] ?? option}
           </option>
         ))}
       </select>

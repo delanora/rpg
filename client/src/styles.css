@@ -1937,6 +1937,48 @@ input[type='checkbox']:disabled {
   text-align: center;
 }
 
+.col-damage {
+  min-width: 16rem;
+}
+
+/* Dano estruturado na tabela de ataques: quantidade de dados · dado · bônus. */
+.damage-fields {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+
+.damage-fields .inline-field {
+  min-width: 2.2rem;
+}
+
+.damage-sep {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+.damage-preview {
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(184, 145, 42, 0.14);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.legacy-badge {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(160, 82, 45, 0.18);
+  color: #a0522d;
+  cursor: help;
+}
+
 /* ==========================================================================
    15. Magias
    ========================================================================== */
@@ -3991,6 +4033,42 @@ input[type='checkbox']:disabled {
   accent-color: var(--gold);
 }
 
+/* Grade de propriedades de arma no editor de itens. */
+.property-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.35rem 0.75rem;
+  margin: 0.2rem 0 0.5rem;
+}
+
+.property-check {
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.property-check input[type='checkbox'] {
+  width: auto;
+  accent-color: var(--gold);
+}
+
+/* Munição: disponibilidade na ficha e aviso no painel de combate. */
+.ammo-info {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.ammo-info.is-empty {
+  color: #a0522d;
+}
+
+.ammo-warning {
+  color: #a0522d;
+  font-size: 0.85rem;
+}
+
 .field-hint {
   font-size: 0.72rem;
   color: var(--ink-faint);
@@ -4388,6 +4466,120 @@ input[type='checkbox']:disabled {
   font-family: var(--font-display);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+/* --- Bloco de moedas (logo abaixo da mochila) ---------------------------- */
+.coins-panel {
+  display: grid;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 30rem;
+  margin: 0.2rem auto 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.coins-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.coins-weight {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.coins-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.coin-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.coin-label {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.coin-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.coin-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--danger, #d9534f);
+}
+
+.coins-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.coin-form {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--line);
+}
+
+.coin-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.coin-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.coin-field {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.coin-input {
+  width: 5.5rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font: inherit;
+}
+
+.coin-hint {
+  margin: 0;
+  font-size: 0.76rem;
   color: var(--ink-soft);
 }
 

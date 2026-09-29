@@ -5,6 +5,7 @@ import {
   getGameConfig,
   getMasterNotes,
   releaseLevelUp,
+  setExtraCoins,
   setMasterNotes,
   setStartingLevel,
 } from './game-config.service.js';
@@ -16,6 +17,11 @@ gameConfigRouter.use(authenticate);
 
 const startingLevelSchema = z.object({
   level: z.number().int().min(LEVEL_MIN).max(LEVEL_MAX),
+});
+
+/** Liga/desliga a exibição de PL e PE no bloco de moedas da ficha. */
+const extraCoinsSchema = z.object({
+  enabled: z.boolean(),
 });
 
 /** Limite das anotações do mestre (o mesmo dos textos livres da ficha). */
@@ -47,6 +53,25 @@ gameConfigRouter.post('/starting-level', requireRole('MASTER'), (req, res) => {
   }
 
   void setStartingLevel(parsed.data.level)
+    .then((config) => res.json({ config }))
+    .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
+});
+
+/**
+ * POST /api/game/extra-coins — o mestre liga/desliga as denominações extras.
+ *
+ * Só afeta a EXIBIÇÃO de PL (pp) e PE (ep) no bloco de moedas: os valores das
+ * cinco denominações existem sempre na ficha.
+ */
+gameConfigRouter.post('/extra-coins', requireRole('MASTER'), (req, res) => {
+  const parsed = extraCoinsSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  void setExtraCoins(parsed.data.enabled)
     .then((config) => res.json({ config }))
     .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
 });

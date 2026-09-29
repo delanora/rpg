@@ -132,6 +132,7 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 - HP (atual/máximo/temporário), **Classe de Armadura calculada** (armadura equipada + atributos), Iniciativa, Deslocamento
 - Perícias e salvaguardas com proficiência e cálculo automático de bônus
 - Inventário de itens e equipamentos
+- **Moedas** (PL/PO/PE/PP/PC) com conversões do PHB, gasto, troca e transferência entre jogadores; só o mestre dá ou retira
 - Magias por nível, com espaços de magia (spell slots) controláveis
 - Ataques e armas com dano e bônus de acerto
 - Características de raça/classe/antecedente, **subseção de Talentos** e anotações livres
@@ -199,7 +200,7 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 
 ### Verificação automática (smoke test)
 
-Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 19 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio e a **Fase 0 (seções 14 a 19)**, a regressão das regras base:
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 20 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio e a **Fase 0 (seções 14 a 20)**, a regressão das regras base:
 
 | Seção | O que verifica |
 |-------|----------------|
@@ -209,6 +210,7 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **17** | **Espaços de magia** — tabela da própria classe x combinada (duas conjuradoras), terço-conjurador e Bruxo de fora (magia de pacto separada). |
 | **18** | **Features e escolhas** — Defesa (+1 só com armadura), Pau para Toda Obra, Aura de Proteção, escolhas válidas/inválidas e subclasse no nível certo. |
 | **19** | **Subclasses 1 → 20** — Level Up de verdade pelas 10 subclasses novas (features e recursos por nível) e o **crítico em combate** (limiar 18 do Campeão, 1 natural errando e a volta a 20 sem ele). |
+| **20** | **Moedas** — ficha nasce zerada, jogador barrado no PATCH (403), 50 moedas = 0,5 kg no peso, dar/retirar do mestre (400 se exceder o saldo), gasto exato sem troco, troca com fração recusada, transferência entre jogadores (e a recusa a si mesmo) e a chave de **moedas extras** (PL/PE). |
 
 Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória.
 
@@ -716,11 +718,29 @@ As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a 
 2. **Fase de iniciativa.** Cada jogador recebe um prompt na própria tela para rolar **1d20 + modificador de Destreza** (o modificador vem da ficha, calculado pelo servidor). Cada um rola quando quiser; a ordem só é montada quando **todos** tiverem rolado. O mestre rola pelas criaturas, uma a uma.
 3. **A ordem é montada automaticamente.** Quando o último combatente rola, o sistema ordena do maior para o menor resultado (empate desempatado pela Destreza e, depois, pelo nome) e divulga para todos (`combat:updated`).
 4. **Indicador de turno.** O combatente da vez fica destacado para toda a mesa; o mestre avança com **"Próximo turno"** (`combat:turn`). Ao passar do último, a ordem volta ao início e a **rodada** incrementa.
-5. **Ataques aplicam dano sozinhos.** Durante o combate o jogador escolhe, na própria ficha, um ataque e um alvo (personagem ou criatura). O servidor rola `1d20 + bônus` contra a **CA** do alvo: no acerto aplica o dano; no 20 natural é **crítico** (dobra os dados de dano); no 1 natural erra. O dano cai direto no HP do alvo e reflete na hora para o dono da ficha e para o mestre (`sheet:updated` / `creature:updated`).
+5. **Ataques aplicam dano sozinhos.** Durante o combate o jogador escolhe, na própria ficha, um ataque e um alvo (personagem ou criatura). O servidor rola `1d20 + bônus` contra a **CA** do alvo: no acerto aplica o dano (estruturado, com o tipo); o crítico (limiar 20, ou 19/18 com o Campeão) **dobra os dados** de dano; no 1 natural erra. O dano cai direto no HP do alvo e reflete na hora para o dono da ficha e para o mestre (`sheet:updated` / `creature:updated`).
 6. **Ajuste manual.** O mestre pode aplicar dano ou cura em qualquer combatente pelo painel (com piso em 0 e teto no HP máximo).
 7. **Encerrar.** A qualquer momento o mestre encerra o combate (`combat:ended`) e tudo volta ao estado normal.
 
 > **Importante:** o HP **não é duplicado** no combate. O `Combatant` guarda apenas a referência (`characterId`/`creatureId`), e o HP é sempre lido ao vivo da ficha ou da criatura — assim os dois nunca divergem.
+
+### Ataques e dano estruturado
+
+O dano de um ataque **não é texto livre**: é estruturado em `{ count, sides, bonus, type }` — quantidade de dados, faces, bônus fixo (que pode ser negativo) e o tipo entre os **13 canônicos** (os mesmos usados nas resistências do bestiário). Ataques de **dano fixo** (ex.: 4) são `count: 0` com o valor em `bonus`, e um ataque pode ficar **sem tipo** (nesse caso não aciona resistência). A expressão textual (`2d6+3`) é **derivada** do dano estruturado só para exibição; a ficha e o editor de criatura têm campos separados (quantidade de dados, dado, bônus e tipo em lista).
+
+No combate o servidor rola esse dano (crítico dobra os **dados** e o bônus entra uma vez, com piso em 0) e usa o **tipo estruturado** para a resistência do alvo. Personagens e criaturas compartilham o mesmo formato (`src/modules/shared/attacks.ts`), e o **limiar de crítico** da ficha (Campeão: 19–20 e depois 18–20) decide o crítico.
+
+No catálogo, os itens **Arma** e **Cajado** guardam o dano estruturado (`damageCount`, `damageDie`, `damageType`) mais o `attackBonus` e o `damageBonus` (bônus mágico somado ao dano). A arma também tem **perfil próprio**: **uso** (corpo a corpo/à distância), **categoria** (simples/marcial), as **propriedades do PHB** (leve, acuidade, pesada, duas mãos, versátil, arremesso, alcance, munição, recarga, especial), o **dado versátil** e os **alcances** normal/longo em metros — exibidos no card do item. O servidor exige coerência: **munição** só em arma à distância, **versátil** exige o dado de duas mãos e não convive com **duas mãos**, e **à distância/arremesso** exigem os dois alcances.
+
+> No editor, escolher **à distância** revela os campos de alcance e a propriedade **Munição**; corpo a corpo usa 1,5 m (3 m com **Alcance**). A arma antiga cadastrada como Arma recebeu `melee`/`simple` (`npm run migrate:item-weapons`) — as que parecem ser à distância pelo nome saem listadas para o mestre corrigir.
+
+> Ataques antigos cuja expressão o parser não conseguiu interpretar foram convertidos com o **texto original preservado** e a marca **legado** (`npm run migrate:attack-damage`); o mestre revisa pela própria ficha.
+
+### Munição (arma à distância)
+
+Uma arma à distância pode declarar, no catálogo, que **exige munição**: a propriedade **Munição** marca isso e o tipo (**Flecha**, **Virote**, **Bala de funda**, **Agulha de zarabatana**) fica no próprio item. **Munição** também é uma **categoria de item**, com o tipo e os bônus da munição mágica (**+1/+2/+3** ao ataque e/ou ao dano).
+
+Na ficha, um ataque pode ser **vinculado a uma arma do inventário**. A arma precisa estar **equipada numa das mãos** do set: enquanto não estiver, o ataque **nem aparece** na aba Ataques. Se a arma equipada exige munição, cada ataque **gasta 1 unidade** do tipo correspondente — sem munição o ataque **não é rolado** (409). A pilha gasta é escolhida automaticamente (**sem bônus mágico primeiro**, depois a de menor bônus) ou pelo **seletor** na ficha/combate; a pilha que chega a **0** sai do inventário. Os bônus da munição usada somam ao ataque e ao dano **apenas na resolução**. **Criaturas nunca consomem munição.**
 
 ### Rolagem de dados
 

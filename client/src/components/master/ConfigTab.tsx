@@ -141,9 +141,17 @@ function RaceCard({ race }: { race: CompendiumRace }) {
 interface ConfigTabProps {
   startingLevel: number;
   onChangeStartingLevel: (level: number) => void;
+  /** Exibe PL (pp) e PE (ep) no bloco de moedas das fichas. */
+  extraCoins: boolean;
+  onChangeExtraCoins: (enabled: boolean) => void;
 }
 
-export function ConfigTab({ startingLevel, onChangeStartingLevel }: ConfigTabProps) {
+export function ConfigTab({
+  startingLevel,
+  onChangeStartingLevel,
+  extraCoins,
+  onChangeExtraCoins,
+}: ConfigTabProps) {
   const [section, setSection] = useState<ConfigSection>('classes');
   const [compendium, setCompendium] = useState<Compendium | null>(null);
   const [loading, setLoading] = useState(true);
@@ -224,6 +232,29 @@ export function ConfigTab({ startingLevel, onChangeStartingLevel }: ConfigTabPro
               if (event.key === 'Enter') event.currentTarget.blur();
             }}
           />
+        </label>
+      </section>
+
+      {/* Moedas extras ------------------------------------------------------- */}
+      <section className="config-card config-card-level">
+        <div className="config-level-copy">
+          <h2>
+            <Icon name="sparkle" size={18} /> Moedas extras
+          </h2>
+          <p>
+            Desligado, o bloco de moedas das fichas mostra só PO (ouro), PP (prata) e PC (cobre).
+            Ligado, mostra também PL (platina) e PE (electrum). Os valores das cinco
+            denominações existem de qualquer forma.
+          </p>
+        </div>
+
+        <label className="field config-level-field field-check">
+          <input
+            type="checkbox"
+            checked={extraCoins}
+            onChange={(event) => onChangeExtraCoins(event.target.checked)}
+          />
+          <span>MOSTRAR PL/PE</span>
         </label>
       </section>
 

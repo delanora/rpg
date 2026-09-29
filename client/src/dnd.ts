@@ -1,4 +1,18 @@
-import type { AbilityKey, FeatureSource, ItemDetails, SpellLearning, SpellcastingType } from './types';
+import { DAMAGE_TYPES } from './types';
+import type {
+  AbilityKey,
+  Damage,
+  FeatureSource,
+  ItemDetails,
+  SpellLearning,
+  SpellcastingType,
+  WeaponCategory,
+  WeaponProperty,
+  WeaponType,
+} from './types';
+
+// Reexportado para quem já importava os tipos de dano daqui.
+export { DAMAGE_TYPES };
 
 /**
  * Constantes de D&D 5e usadas apenas para exibição/labels no frontend.
@@ -108,21 +122,28 @@ export function hitDieLabel(die: number | null): string {
   return die === null ? '—' : `d${die}`;
 }
 
-export const DAMAGE_TYPES = [
-  'Cortante',
-  'Perfurante',
-  'Concussão',
-  'Ácido',
-  'Frio',
-  'Fogo',
-  'Elétrico',
-  'Necrótico',
-  'Veneno',
-  'Psíquico',
-  'Radiante',
-  'Trovão',
-  'Força',
-] as const;
+export const WEAPON_TYPE_LABELS: Record<WeaponType, string> = {
+  melee: 'Corpo a corpo',
+  ranged: 'À distância',
+};
+
+export const WEAPON_CATEGORY_LABELS: Record<WeaponCategory, string> = {
+  simple: 'Simples',
+  martial: 'Marcial',
+};
+
+export const WEAPON_PROPERTY_LABELS: Record<WeaponProperty, string> = {
+  light: 'Leve',
+  finesse: 'Acuidade',
+  heavy: 'Pesada',
+  'two-handed': 'Duas mãos',
+  versatile: 'Versátil',
+  thrown: 'Arremesso',
+  reach: 'Alcance',
+  ammunition: 'Munição',
+  loading: 'Recarga',
+  special: 'Especial',
+};
 
 export const SPELL_SCHOOLS = [
   'Abjuração',
@@ -153,6 +174,18 @@ export function formatModifier(value: number): string {
 }
 
 /**
+ * Expressão textual do dano estruturado ("2d6+3", "1d8-1", "4") — só para
+ * exibição, igual ao `damageExpression` do servidor.
+ */
+export function damageExpression(damage: Damage | null | undefined): string {
+  if (!damage) return '—';
+  const dice = damage.count > 0 && damage.sides > 0 ? `${damage.count}d${damage.sides}` : '';
+  if (dice === '') return String(damage.bonus);
+  if (damage.bonus === 0) return dice;
+  return `${dice}${damage.bonus > 0 ? '+' : ''}${damage.bonus}`;
+}
+
+/**
  * Resume os atributos de um item por categoria (ex.: "2d6 Cortante · acerto +5",
  * "CA +2", "efeito 2d4+2 · 10 min"). Vazio quando o item não tem atributos.
  */
@@ -162,10 +195,33 @@ export function describeItemDetails(category: string, details: ItemDetails | und
 
   if (category === 'Arma' || category === 'Cajado') {
     if (details.damageCount && details.damageDie) {
-      parts.push(`${details.damageCount}d${details.damageDie}`);
+      parts.push(
+        details.damageBonus
+          ? `${details.damageCount}d${details.damageDie}${formatModifier(details.damageBonus)}`
+          : `${details.damageCount}d${details.damageDie}`,
+      );
+    } else if (details.damageBonus) {
+      parts.push(`dano ${formatModifier(details.damageBonus)}`);
     }
     if (details.damageType) parts.push(details.damageType);
     if (details.attackBonus) parts.push(`acerto ${formatModifier(details.attackBonus)}`);
+    // Perfil da arma (tipo, categoria, propriedades e alcance).
+    if (details.weaponCategory) parts.push(WEAPON_CATEGORY_LABELS[details.weaponCategory]);
+    if (details.weaponType === 'ranged' || details.properties?.includes('thrown')) {
+      parts.push(WEAPON_TYPE_LABELS.ranged);
+    }
+    if (details.properties?.length) {
+      parts.push(details.properties.map((property) => WEAPON_PROPERTY_LABELS[property]).join(', '));
+    }
+    if (details.properties?.includes('versatile') && details.versatileDie) {
+      parts.push(`versátil d${details.versatileDie}`);
+    }
+    if (details.properties?.includes('ammunition') && details.ammoType) {
+      parts.push(`munição ${details.ammoType}`);
+    }
+    if (details.rangeNormal !== undefined && details.rangeLong !== undefined) {
+      parts.push(`${details.rangeNormal}/${details.rangeLong} m`);
+    }
     if (category === 'Cajado' && details.spellcastingFocus) parts.push('foco de conjuração');
   } else if (category === 'Armadura') {
     if (details.armorType && details.baseArmorClass) {
@@ -176,6 +232,10 @@ export function describeItemDetails(category: string, details: ItemDetails | und
     if (details.armorClassBonus) parts.push(`CA ${formatModifier(details.armorClassBonus)}`);
   } else if (category === 'Escudo') {
     if (details.armorClassBonus) parts.push(`CA ${formatModifier(details.armorClassBonus)}`);
+  } else if (category === 'Munição') {
+    if (details.ammoType) parts.push(details.ammoType);
+    if (details.attackBonus) parts.push(`acerto ${formatModifier(details.attackBonus)}`);
+    if (details.damageBonus) parts.push(`dano ${formatModifier(details.damageBonus)}`);
   } else if (category === 'Poção') {
     if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
     if (details.duration) parts.push(details.duration);

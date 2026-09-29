@@ -18,6 +18,8 @@
     "prisma:studio": "prisma studio",
     "db:push": "prisma db push",
     "create-master": "tsx src/scripts/create-master.ts",
+    "migrate:attack-damage": "tsx src/scripts/migrate-attack-damage.ts",
+    "migrate:item-weapons": "tsx src/scripts/migrate-item-weapons.ts",
     "smoke": "tsx src/scripts/smoke-realtime.ts",
     "setup": "npm install && npm --prefix client install",
     "dev:client": "npm --prefix client run dev",
