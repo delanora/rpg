@@ -4,17 +4,26 @@ import {
   createCharacterSchema,
   creationRollRequestSchema,
   creationStepSchema,
+  giveCoinsSchema,
   levelUpSchema,
   moveInventoryItemSchema,
+  spendCoinsSchema,
+  transferCoinsSchema,
   updateCharacterSchema,
 } from './characters.schema.js';
+import { exchangeCoinsSchema } from '../shared/coins.js';
 import {
   createCharacter,
   deleteCharacter,
+  exchangeCoins,
   getSheetByUserId,
+  giveCoins,
   levelUpCharacter,
   listCharacters,
+  listTransferTargets,
   moveInventoryItem,
+  spendCoins,
+  transferCoins,
   updateCharacter,
   updateCharacterAsMaster,
   type Actor,
@@ -212,6 +221,103 @@ charactersRouter.post('/me/inventory/move', authenticate, async (req, res) => {
   }
 
   const character = await moveInventoryItem(actorFrom(req), parsed.data);
+  res.json({ character });
+});
+
+/**
+ * POST /api/characters/me/coins/spend — gasta moedas do próprio saldo.
+ *
+ * O gasto é EXATO, denominação por denominação (sem troco automático).
+ * Saldo insuficiente é 400 e nada muda.
+ */
+charactersRouter.post('/me/coins/spend', authenticate, async (req, res) => {
+  const parsed = spendCoinsSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const character = await spendCoins(actorFrom(req), parsed.data.amount);
+  res.json({ character });
+});
+
+/**
+ * POST /api/characters/me/coins/exchange — troca entre denominações.
+ *
+ * Usa as conversões do PHB e preserva o valor total; trocas que exigiriam
+ * fração (ex.: 1 cp para PO) são recusadas.
+ */
+charactersRouter.post('/me/coins/exchange', authenticate, async (req, res) => {
+  const parsed = exchangeCoinsSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const character = await exchangeCoins(actorFrom(req), parsed.data);
+  res.json({ character });
+});
+
+/**
+ * POST /api/characters/me/coins/transfer — transfere para OUTRO jogador.
+ *
+ * Não vale para si mesmo nem para o mestre; as duas fichas mudam na mesma
+ * transação e as duas recebem `sheet:updated`.
+ */
+charactersRouter.post('/me/coins/transfer', authenticate, async (req, res) => {
+  const parsed = transferCoinsSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const character = await transferCoins(
+    actorFrom(req),
+    parsed.data.targetCharacterId,
+    parsed.data.amount,
+  );
+  res.json({ character });
+});
+
+/**
+ * GET /api/characters/players — destinos possíveis de uma transferência.
+ *
+ * Só os personagens de OUTROS jogadores (sem o mestre e sem a própria ficha).
+ */
+charactersRouter.get('/players', authenticate, async (req, res) => {
+  res.json({ characters: await listTransferTargets(actorFrom(req)) });
+});
+
+/**
+ * POST /api/characters/:id/coins — o mestre dá ou retira moedas de uma ficha.
+ *
+ * `delta` aceita valores positivos (dar) e negativos (retirar); retirar mais do
+ * que existe é 400. A ficha do jogador recebe `sheet:updated`.
+ */
+charactersRouter.post('/:id/coins', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = giveCoinsSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const character = await giveCoins(String(req.params.id), actorFrom(req), parsed.data.delta);
   res.json({ character });
 });
 

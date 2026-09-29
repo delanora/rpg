@@ -58,6 +58,22 @@ import {
   normalizeSaves,
   normalizeSkills,
 } from '../shared/dnd5e.js';
+import {
+  COIN_KEYS,
+  COIN_LABELS,
+  addDelta,
+  exchangeIsExact,
+  exchangeResult,
+  fillCoins,
+  formatCoins,
+  hasCoinsFor,
+  normalizeCoins,
+  subtractCoins,
+  type CoinAmount,
+  type CoinDelta,
+  type CoinPurse,
+  type ExchangeCoinsInput,
+} from '../shared/coins.js';
 
 /** Quem está alterando a ficha (vem do token, nunca do corpo da requisição). */
 export interface Actor {
@@ -132,6 +148,7 @@ const CREATION_FIELD_LABELS: Record<string, string> = {
   skills: 'perícias',
   saves: 'salvaguardas',
   proficiencies: 'proficiências de armadura, arma e ferramenta',
+  coins: 'Moedas',
   attacks: 'ataques',
   features: 'características',
   inventory: 'inventário',
@@ -819,6 +836,261 @@ export async function moveInventoryItem(
   return toSheetDto(updated, actor.username);
 }
 
+// ---------------------------------------------------------------------------
+// Moedas
+// ---------------------------------------------------------------------------
+
+/** Tentativas de reescrita quando duas requisições disputam o mesmo saldo. */
+const COIN_WRITE_ATTEMPTS = 6;
+
+/** A escrita conflitou com outra requisição (`version` mudou) — tentar de novo. */
+class CoinConflictError extends Error {}
+
+/**
+ * Grava a carteira nova CONDICIONADA à `version` lida. Sem isso, duas
+ * requisições simultâneas poderiam gastar o mesmo saldo duas vezes: a segunda
+ * a chegar não acha mais a versão e não escreve.
+ */
+async function writeCoins(
+  client: Prisma.TransactionClient | typeof prisma,
+  id: string,
+  version: number,
+  coins: CoinPurse,
+): Promise<boolean> {
+  const result = await client.character.updateMany({
+    where: { id, version },
+    data: { coins: coins as unknown as Prisma.InputJsonValue, version: { increment: 1 } },
+  });
+  return result.count > 0;
+}
+
+/**
+ * Aplica uma mudança na carteira de UMA ficha de forma segura contra duas
+ * requisições simultâneas: se a `version` mudou entre a leitura e a escrita, a
+ * operação é refeita sobre o saldo novo (mesmo cuidado do Level Up).
+ */
+async function mutateCoins(
+  where: Prisma.CharacterWhereUniqueInput,
+  notFound: string,
+  mutate: (character: Character, coins: CoinPurse) => CoinPurse,
+): Promise<{ character: Character; owner: SheetOwner }> {
+  const include = { user: { select: { username: true } } } as const;
+
+  for (let attempt = 0; attempt < COIN_WRITE_ATTEMPTS; attempt += 1) {
+    const current = await prisma.character.findUnique({ where, include });
+    if (!current) throw new HttpError(notFound, 404);
+
+    const coins = mutate(current, normalizeCoins(current.coins));
+    if (!(await writeCoins(prisma, current.id, current.version, coins))) continue;
+
+    const updated = await prisma.character.findUnique({ where: { id: current.id }, include });
+    if (!updated) throw new HttpError(notFound, 404);
+    return {
+      character: updated,
+      owner: { userId: updated.userId, username: updated.user.username },
+    };
+  }
+
+  throw new HttpError('O saldo mudou durante a operação; tente novamente.', 409);
+}
+
+/** Saldo insuficiente: 400 dizendo o que falta, denominação por denominação. */
+function assertSufficient(purse: CoinPurse, amount: CoinPurse): void {
+  const missing = COIN_KEYS.filter((key) => purse[key] < amount[key]);
+  if (missing.length === 0) return;
+
+  const detail = missing.map((key) => `${amount[key] - purse[key]} ${COIN_LABELS[key]}`).join(', ');
+  throw new HttpError(`Saldo insuficiente: faltam ${detail}.`, 400);
+}
+
+/**
+ * O mestre dá ou retira moedas de uma ficha (`POST /api/characters/:id/coins`).
+ *
+ * Deltas positivos dão e negativos retiram; retirar mais do que existe é 400.
+ */
+export async function giveCoins(
+  characterId: string,
+  master: Actor,
+  delta: CoinDelta,
+): Promise<CharacterDto> {
+  const amount = fillCoins(delta);
+
+  const { character, owner } = await mutateCoins({ id: characterId }, 'Ficha não encontrada.', (_character, coins) => {
+    const next = addDelta(coins, amount);
+    const negative = COIN_KEYS.filter((key) => next[key] < 0);
+    if (negative.length > 0) {
+      const detail = negative.map((key) => COIN_LABELS[key]).join(', ');
+      throw new HttpError(
+        `Retirada maior que o saldo em ${detail} (atual: ${formatCoins(coins)}).`,
+        400,
+      );
+    }
+    return next;
+  });
+
+  await publishChange(owner, character, { coins: normalizeCoins(character.coins) }, master.displayName);
+  return toSheetDto(character, owner.username);
+}
+
+/** O jogador gasta exatamente as moedas informadas (sem troco automático). */
+export async function spendCoins(actor: Actor, amount: CoinAmount): Promise<CharacterDto> {
+  const paid = fillCoins(amount);
+
+  const { character, owner } = await mutateCoins(
+    { userId: actor.userId },
+    'Esta ficha ainda não foi criada.',
+    (_character, coins) => {
+      assertSufficient(coins, paid);
+      return subtractCoins(coins, paid);
+    },
+  );
+
+  await publishChange(owner, character, { coins: normalizeCoins(character.coins) });
+  return toSheetDto(character, owner.username);
+}
+
+/**
+ * Troca entre denominações pelas conversões do PHB, preservando o valor total.
+ * Trocas que exigiriam fração (ex.: 1 cp para gp) são recusadas.
+ */
+export async function exchangeCoins(
+  actor: Actor,
+  input: ExchangeCoinsInput,
+): Promise<CharacterDto> {
+  const { from, to, amount } = input;
+
+  if (from === to) {
+    throw new HttpError('A troca precisa ser entre denominações diferentes.', 400);
+  }
+  if (!exchangeIsExact(amount, from, to)) {
+    throw new HttpError(
+      `Essa troca não é exata: ${amount} ${COIN_LABELS[from]} não vira um número inteiro de ` +
+        `${COIN_LABELS[to]}.`,
+      400,
+    );
+  }
+
+  const received = exchangeResult(amount, from, to);
+
+  const { character, owner } = await mutateCoins(
+    { userId: actor.userId },
+    'Esta ficha ainda não foi criada.',
+    (_character, coins) => {
+      if (coins[from] < amount) {
+        throw new HttpError(
+          `Saldo insuficiente: você tem ${coins[from]} ${COIN_LABELS[from]}.`,
+          400,
+        );
+      }
+
+      const next: CoinPurse = { ...coins };
+      next[from] = next[from] - amount;
+      next[to] = next[to] + received;
+      return next;
+    },
+  );
+
+  await publishChange(owner, character, { coins: normalizeCoins(character.coins) });
+  return toSheetDto(character, owner.username);
+}
+
+/**
+ * Transfere moedas para OUTRO personagem de jogador (nunca para si mesmo e
+ * nunca para o mestre). As duas fichas mudam na MESMA transação e as duas
+ * recebem `sheet:updated`.
+ */
+export async function transferCoins(
+  actor: Actor,
+  targetCharacterId: string,
+  amount: CoinAmount,
+): Promise<CharacterDto> {
+  const paid = fillCoins(amount);
+
+  const source = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!source) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+  if (source.id === targetCharacterId) {
+    throw new HttpError('Você não pode transferir moedas para si mesmo.', 400);
+  }
+
+  const target = await prisma.character.findUnique({
+    where: { id: targetCharacterId },
+    include: { user: { select: { role: true } } },
+  });
+  if (!target) throw new HttpError('Personagem de destino não encontrado.', 404);
+  if (target.user.role === 'MASTER') {
+    throw new HttpError('Não é possível transferir moedas para o mestre.', 400);
+  }
+
+  let transferred = false;
+  for (let attempt = 0; attempt < COIN_WRITE_ATTEMPTS && !transferred; attempt += 1) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        const from = await tx.character.findUnique({ where: { id: source.id } });
+        const to = await tx.character.findUnique({ where: { id: target.id } });
+        if (!from || !to) throw new HttpError('Personagem de destino não encontrado.', 404);
+
+        const current = normalizeCoins(from.coins);
+        assertSufficient(current, paid);
+
+        if (!(await writeCoins(tx, from.id, from.version, subtractCoins(current, paid)))) {
+          throw new CoinConflictError();
+        }
+        if (!(await writeCoins(tx, to.id, to.version, addDelta(normalizeCoins(to.coins), paid)))) {
+          throw new CoinConflictError();
+        }
+      });
+      transferred = true;
+    } catch (error) {
+      if (error instanceof CoinConflictError) continue;
+      throw error;
+    }
+  }
+
+  if (!transferred) {
+    throw new HttpError('O saldo mudou durante a operação; tente novamente.', 409);
+  }
+
+  const include = { user: { select: { username: true } } } as const;
+  const updatedSource = await prisma.character.findUnique({ where: { id: source.id }, include });
+  const updatedTarget = await prisma.character.findUnique({ where: { id: target.id }, include });
+  if (!updatedSource || !updatedTarget) {
+    throw new HttpError('Personagem de destino não encontrado.', 404);
+  }
+
+  await publishChange(
+    { userId: updatedSource.userId, username: updatedSource.user.username },
+    updatedSource,
+    { coins: normalizeCoins(updatedSource.coins) },
+  );
+  await publishChange(
+    { userId: updatedTarget.userId, username: updatedTarget.user.username },
+    updatedTarget,
+    { coins: normalizeCoins(updatedTarget.coins) },
+  );
+
+  return toSheetDto(updatedSource, updatedSource.user.username);
+}
+
+/**
+ * Personagens de OUTROS jogadores — os destinos possíveis de uma transferência
+ * (o próprio personagem e as fichas do mestre ficam de fora).
+ */
+export async function listTransferTargets(
+  actor: Actor,
+): Promise<{ id: string; name: string; ownerUsername: string }[]> {
+  const characters = await prisma.character.findMany({
+    where: { userId: { not: actor.userId }, user: { role: 'PLAYER' } },
+    include: { user: { select: { username: true } } },
+    orderBy: { name: 'asc' },
+  });
+
+  return characters.map((character) => ({
+    id: character.id,
+    name: character.name,
+    ownerUsername: character.user.username,
+  }));
+}
+
 /**
  * Republica as fichas que têm um item do catálogo no inventário.
  *
@@ -868,6 +1140,17 @@ function mergeSpellUsage(storedRaw: unknown, incoming: SpellsStateInput): Prisma
  * - Com a criação finalizada, só o estado de jogo continua editável.
  */
 function assertPlayerCanPatch(character: Character, patch: UpdateCharacterInput): void {
+  // As moedas NUNCA entram pelo PATCH do jogador — nem antes de finalizar a
+  // criação. Elas só mudam pelas mãos do mestre (PATCH ou /coins) e pelas
+  // ações de gastar, trocar e transferir.
+  if (patch.coins !== undefined) {
+    throw new HttpError(
+      `O campo ${CREATION_FIELD_LABELS.coins} é controlado pelo mestre: use as ações de gastar, ` +
+        'trocar e transferir para movimentar as suas moedas.',
+      403,
+    );
+  }
+
   if (patch.armorClassOverride !== undefined) {
     throw new HttpError(
       'A Classe de Armadura é calculada automaticamente; só o mestre pode definir um valor manual.',
@@ -1051,6 +1334,10 @@ async function applyCharacterPatch(
     data.proficiencies = normalizeProficiencies(patch.proficiencies) as ProficienciesState;
   }
   if (patch.inventory !== undefined) data.inventory = patch.inventory;
+  // Moedas: só o MESTRE chega aqui (o jogador é barrado em assertPlayerCanPatch).
+  if (patch.coins !== undefined) {
+    data.coins = normalizeCoins(patch.coins) as unknown as Prisma.InputJsonValue;
+  }
   if (patch.spells !== undefined) {
     data.spells =
       fromPlayer && existing.creationFinalized

@@ -27,6 +27,11 @@ export const attackSchema = z.object({
   targetCombatantId: z.string().min(1),
   attackId: z.string().min(1),
   attackerCombatantId: z.string().min(1).optional(),
+  /**
+   * Pilha de munição escolhida na ficha (opcional). Sem ela o servidor usa a
+   * pilha SEM bônus mágico primeiro e, depois, a de menor bônus.
+   */
+  ammoInventoryId: z.string().min(1).optional(),
 });
 
 /** Dano/cura manual aplicado pelo mestre. */

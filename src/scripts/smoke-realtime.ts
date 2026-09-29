@@ -460,7 +460,8 @@ async function main(): Promise<void> {
         { id: 'i2', name: 'Poção de cura', description: '', quantity: 3, weight: 0.5, equipped: false },
       ],
       attacks: [
-        { id: 'a1', name: 'Espada longa', damage: '1d8+2', damageType: 'Cortante', attackBonus: 5, notes: '' },
+        { id: 'a1', name: 'Espada longa', damage: { count: 1, sides: 8, bonus: 2, type: 'Cortante' }, attackBonus: 5, notes: '' },
+        { id: 'a2', name: 'Dardos mágicos (fixo)', damage: { count: 0, sides: 0, bonus: 4, type: 'Força' }, attackBonus: 0, notes: '' },
       ],
       features: [{ id: 'f1', name: 'Visão no escuro', source: 'race', description: 'Enxerga no escuro até 18m.' }],
       spells: {
@@ -471,7 +472,26 @@ async function main(): Promise<void> {
   });
   check('peso total é somado (3 + 1,5 = 4,5)', withItems.data?.character?.derived?.totalWeight === 4.5, `recebido: ${withItems.data?.character?.derived?.totalWeight}`);
   check('capacidade de carga = FOR × 7,5 (8 × 7,5 = 60 kg)', withItems.data?.character?.derived?.carryingCapacity === 60, `recebido: ${withItems.data?.character?.derived?.carryingCapacity}`);
-  check('ataques são gravados', withItems.data?.character?.attacks?.length === 1);
+  check('ataques são gravados', withItems.data?.character?.attacks?.length === 2);
+  const structuredAttack = withItems.data?.character?.attacks?.find((a: any) => a.id === 'a1');
+  check(
+    'dano é ESTRUTURADO (1d8+2 Cortante, sem texto livre)',
+    structuredAttack?.damage?.count === 1 &&
+      structuredAttack?.damage?.sides === 8 &&
+      structuredAttack?.damage?.bonus === 2 &&
+      structuredAttack?.damage?.type === 'Cortante' &&
+      structuredAttack?.damageType === undefined,
+    JSON.stringify(structuredAttack),
+  );
+  const fixedAttack = withItems.data?.character?.attacks?.find((a: any) => a.id === 'a2');
+  check(
+    'dano FIXO usa count 0 + bônus (4 de Força)',
+    fixedAttack?.damage?.count === 0 &&
+      fixedAttack?.damage?.sides === 0 &&
+      fixedAttack?.damage?.bonus === 4 &&
+      fixedAttack?.damage?.type === 'Força',
+    JSON.stringify(fixedAttack),
+  );
   check('características são gravadas', withItems.data?.character?.features?.length === 1);
   check('magias e espaços são gravados', withItems.data?.character?.spells?.list?.length === 1 && withItems.data?.character?.spells?.slots?.['1']?.max === 2);
 
@@ -740,7 +760,7 @@ async function main(): Promise<void> {
       strength: 8,
       dexterity: 14,
       attacks: [
-        { id: 'g1', name: 'Cimitarra', damage: '1d6+2', damageType: 'Cortante', attackBonus: 4, notes: '' },
+        { id: 'g1', name: 'Cimitarra', damage: { count: 1, sides: 6, bonus: 2, type: 'Cortante' }, attackBonus: 4, notes: '' },
       ],
       resistances: ['Fogo'],
       immunities: ['Veneno'],
@@ -751,7 +771,15 @@ async function main(): Promise<void> {
   check('PATCH atualiza a criatura', goblin?.hpCurrent === 3 && goblin?.strength === 8);
   check('modificador de FOR 8 é -1', goblin?.derived?.modifiers?.strength === -1);
   check('modificador de DES 14 é +2', goblin?.derived?.modifiers?.dexterity === 2);
-  check('ataques da criatura são gravados', goblin?.attacks?.length === 1 && goblin?.attacks?.[0]?.damage === '1d6+2');
+  check(
+    'ataques da criatura são gravados (dano estruturado)',
+    goblin?.attacks?.length === 1 &&
+      goblin?.attacks?.[0]?.damage?.count === 1 &&
+      goblin?.attacks?.[0]?.damage?.sides === 6 &&
+      goblin?.attacks?.[0]?.damage?.bonus === 2 &&
+      goblin?.attacks?.[0]?.damage?.type === 'Cortante',
+    JSON.stringify(goblin?.attacks),
+  );
   check('resistências são gravadas', goblin?.resistances?.[0] === 'Fogo');
   check('imunidades são gravadas', goblin?.immunities?.[0] === 'Veneno');
   check('versão da criatura incrementa', (goblin?.version ?? 0) > (creature?.version ?? 0));
@@ -816,7 +844,7 @@ async function main(): Promise<void> {
       hpMax: 30,
       hpCurrent: 30,
       attacks: [
-        { id: 'p1', name: 'Espada longa', damage: '1d8+3', damageType: 'Cortante', attackBonus: 10, notes: '' },
+        { id: 'p1', name: 'Espada longa', damage: { count: 1, sides: 8, bonus: 3, type: 'Cortante' }, attackBonus: 10, notes: '' },
       ],
     },
   });
@@ -835,7 +863,7 @@ async function main(): Promise<void> {
     body: {
       dexterity: 14,
       attacks: [
-        { id: 'c1', name: 'Mordida', damage: '1d6+2', damageType: 'Cortante', attackBonus: 10, notes: '' },
+        { id: 'c1', name: 'Mordida', damage: { count: 1, sides: 6, bonus: 2, type: 'Cortante' }, attackBonus: 10, notes: '' },
       ],
     },
   });
@@ -987,6 +1015,199 @@ async function main(): Promise<void> {
     JSON.stringify({ hit: attackResult.hit, hp: masterCreature.hpCurrent, dano: attackResult.damageRolled }),
   );
 
+  // --- Munição: arma EQUIPADA consome 1 por ataque ---------------------------
+  const bowId = 'inv-bow';
+  const arrowId = 'inv-arrow';
+  const magicArrowId = 'inv-arrow-magic';
+  const bowItem = {
+    id: bowId,
+    name: 'Arco curto',
+    description: '',
+    quantity: 1,
+    weight: 1,
+    slot: 'hand2',
+    backpackX: null,
+    backpackY: null,
+    imageUrl: '',
+    itemId: '',
+    category: 'Arma',
+    details: {
+      damageCount: 1,
+      damageDie: 6,
+      damageType: 'Perfurante',
+      weaponType: 'ranged',
+      weaponCategory: 'simple',
+      properties: ['ammunition', 'two-handed'],
+      ammoType: 'Flecha',
+      rangeNormal: 24,
+      rangeLong: 96,
+    },
+  };
+  const arrowItem = {
+    id: arrowId,
+    name: 'Flechas',
+    description: '',
+    quantity: 3,
+    weight: 0,
+    slot: null,
+    backpackX: 0,
+    backpackY: 0,
+    imageUrl: '',
+    itemId: '',
+    category: 'Munição',
+    details: { ammoType: 'Flecha' },
+  };
+  const magicArrowItem = {
+    id: magicArrowId,
+    name: 'Flechas +2',
+    description: '',
+    quantity: 2,
+    weight: 0,
+    slot: null,
+    backpackX: 1,
+    backpackY: 0,
+    imageUrl: '',
+    itemId: '',
+    category: 'Munição',
+    details: { ammoType: 'Flecha', attackBonus: 2, damageBonus: 2 },
+  };
+  const bowAttack = {
+    id: 'bow',
+    name: 'Arco curto',
+    damage: { count: 1, sides: 6, bonus: 3, type: 'Perfurante' },
+    attackBonus: 10,
+    notes: '',
+    finesse: false,
+    ranged: true,
+    inventoryItemId: bowId,
+  };
+  const ammoSheet = async (): Promise<any> =>
+    (await api('/api/characters/me', { token: playerToken })).data.character;
+
+  const withAmmo = (
+    await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { inventory: [bowItem, arrowItem, magicArrowItem], attacks: [bowAttack] },
+    })
+  ).data.character;
+  check(
+    'inventário aceita arma equipada e pilhas de munição',
+    withAmmo.inventory.length === 3 &&
+      withAmmo.inventory.find((e: any) => e.id === bowId)?.slot === 'hand2',
+    JSON.stringify(withAmmo.inventory.map((e: any) => ({ name: e.name, slot: e.slot }))),
+  );
+
+  const ammoSpendEvent = waitFor<any>(playerSocket, 'sheet:updated');
+  const firstShot = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
+  });
+  check('ataque de arma com munição resolve (200)', firstShot.status === 200, JSON.stringify(firstShot.data));
+  check(
+    'o gasto de munição publica sheet:updated para o dono',
+    (await ammoSpendEvent.catch(() => null))?.character?.inventory !== undefined,
+  );
+  const afterFirst = await ammoSheet();
+  check(
+    'consome 1 da pilha SEM bônus por padrão (3 -> 2)',
+    afterFirst.inventory.find((e: any) => e.id === arrowId)?.quantity === 2,
+    JSON.stringify(afterFirst.inventory.map((e: any) => ({ id: e.id, q: e.quantity }))),
+  );
+  check(
+    'NÃO gasta a munição mágica sem pedir',
+    afterFirst.inventory.find((e: any) => e.id === magicArrowId)?.quantity === 2,
+  );
+
+  const magicShot = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      attackId: 'bow',
+      targetCombatantId: creatureCombatant.id,
+      ammoInventoryId: magicArrowId,
+    },
+  });
+  const afterMagic = await ammoSheet();
+  check(
+    'a pilha escolhida é a consumida (mágica 2 -> 1)',
+    afterMagic.inventory.find((e: any) => e.id === magicArrowId)?.quantity === 1,
+    JSON.stringify(afterMagic.inventory.map((e: any) => ({ id: e.id, q: e.quantity }))),
+  );
+  check(
+    'os bônus da munição somam ao ataque (10 + 2)',
+    magicShot.data.result.attackBonus === 12,
+    JSON.stringify(magicShot.data.result),
+  );
+
+  // Pilha que chega a 0 sai do inventário.
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      inventory: [bowItem, { ...arrowItem, quantity: 1 }, { ...magicArrowItem, quantity: 1 }],
+    },
+  });
+  await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
+  });
+  const afterDrain = await ammoSheet();
+  check(
+    'pilha que chega a 0 sai do inventário',
+    afterDrain.inventory.find((e: any) => e.id === arrowId) === undefined &&
+      afterDrain.inventory.length === 2,
+    JSON.stringify(afterDrain.inventory.map((e: any) => e.id)),
+  );
+
+  // Sem munição: 409 e nada é rolado.
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: { inventory: [bowItem] },
+  });
+  const emptyQuiver = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
+  });
+  check(
+    'sem munição devolve 409 e não rola o ataque',
+    emptyQuiver.status === 409 && /sem munição/i.test(String(emptyQuiver.data?.message ?? '')),
+    JSON.stringify(emptyQuiver.data),
+  );
+
+  // Arma vinculada NÃO equipada: o ataque não é utilizável.
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: { inventory: [{ ...bowItem, slot: null }, { ...arrowItem, quantity: 5 }] },
+  });
+  const unequippedBow = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
+  });
+  check(
+    'arma não equipada não ataca (409)',
+    unequippedBow.status === 409 && /equipe a arma/i.test(String(unequippedBow.data?.message ?? '')),
+    JSON.stringify(unequippedBow.data),
+  );
+
+  // Restaura o inventário do começo do combate para as próximas seções.
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      inventory: [
+        { id: 'i1', name: 'Espada longa', description: 'cortante', quantity: 1, weight: 3, equipped: true },
+        { id: 'i2', name: 'Poção de cura', description: '', quantity: 3, weight: 0.5, equipped: false },
+      ],
+    },
+  });
+
   // --- Ladino: features derivadas e Ataque Furtivo automático ----------------
   await setCharacterClasses(playerId, [{ classKey: 'rogue', level: 3 }]);
   const rogueSheet = (
@@ -995,7 +1216,7 @@ async function main(): Promise<void> {
       token: playerToken,
       body: {
         attacks: [
-          { id: 'p1', name: 'Adaga', damage: '1d4+3', damageType: 'Perfurante', attackBonus: 10, notes: '', finesse: true, ranged: false },
+          { id: 'p1', name: 'Adaga', damage: { count: 1, sides: 4, bonus: 3, type: 'Perfurante' }, attackBonus: 10, notes: '', finesse: true, ranged: false },
         ],
       },
     })
@@ -1043,7 +1264,7 @@ async function main(): Promise<void> {
     token: playerToken,
     body: {
       attacks: [
-        { id: 'p2', name: 'Maça', damage: '1d6+3', damageType: 'Concussão', attackBonus: 10, notes: '', finesse: false, ranged: false },
+        { id: 'p2', name: 'Maça', damage: { count: 1, sides: 6, bonus: 3, type: 'Concussão' }, attackBonus: 10, notes: '', finesse: false, ranged: false },
       ],
     },
   });
@@ -1091,7 +1312,7 @@ async function main(): Promise<void> {
       token: playerToken,
       body: {
         attacks: [
-          { id: 'p1', name: 'Machado grande', damage: '1d12+3', damageType: 'Cortante', attackBonus: 10, notes: '', finesse: false, ranged: false },
+          { id: 'p1', name: 'Machado grande', damage: { count: 1, sides: 12, bonus: 3, type: 'Cortante' }, attackBonus: 10, notes: '', finesse: false, ranged: false },
         ],
       },
     })
@@ -1141,6 +1362,28 @@ async function main(): Promise<void> {
     'Fúria soma o bônus de dano corpo a corpo',
     rageAttack.data.result.hit ? rageAttack.data.result.damageRolled >= 7 : true,
     JSON.stringify(rageAttack.data.result),
+  );
+
+  // A resistência do alvo usa o TIPO ESTRUTURADO do ataque: o Lobo morde o
+  // bárbaro em Fúria (Cortante) e o dano cai pela metade (1d6+2 ⇒ no máximo 4).
+  const biteOnRaging = await api('/api/combat/attack', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      attackerCombatantId: creatureCombatant.id,
+      attackId: 'c1',
+      targetCombatantId: playerCombatant.id,
+    },
+  });
+  check(
+    'resistência da Fúria halva o dano pelo TIPO estruturado (máx. 4 de 1d6+2 Cortante)',
+    biteOnRaging.data.result.hit ? biteOnRaging.data.result.damageRolled <= 4 : true,
+    JSON.stringify(biteOnRaging.data.result),
+  );
+  check(
+    'o resultado do ataque devolve o tipo estruturado (Cortante)',
+    biteOnRaging.data.result.damageType === 'Cortante',
+    JSON.stringify(biteOnRaging.data.result),
   );
 
   const longRest = (
@@ -1704,7 +1947,16 @@ async function main(): Promise<void> {
       name: `Espada Longa ${suffix}`,
       category: 'Arma',
       weight: 3,
-      details: { damageCount: 2, damageDie: 6, damageType: 'Cortante', attackBonus: 5 },
+      details: {
+        damageCount: 2,
+        damageDie: 6,
+        damageType: 'Cortante',
+        attackBonus: 5,
+        weaponType: 'melee',
+        weaponCategory: 'martial',
+        properties: ['versatile'],
+        versatileDie: 10,
+      },
       price: { gold: 15, silver: 0, copper: 0 },
     },
   });
@@ -1718,6 +1970,157 @@ async function main(): Promise<void> {
       weapon?.details?.attackBonus === 5,
     JSON.stringify(weapon?.details),
   );
+  check(
+    'arma guarda tipo, categoria, propriedades e o dado versátil',
+    weapon?.details?.weaponType === 'melee' &&
+      weapon?.details?.weaponCategory === 'martial' &&
+      weapon?.details?.properties?.includes('versatile') &&
+      weapon?.details?.versatileDie === 10,
+    JSON.stringify(weapon?.details),
+  );
+
+  // Arma sem tipo/categoria cai nos padrões seguros (corpo a corpo, simples).
+  const defaultWeapon = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Bordão ${suffix}`,
+      category: 'Arma',
+      details: { damageCount: 1, damageDie: 6, damageType: 'Concussão' },
+    },
+  });
+  createdItemIds.push(defaultWeapon.data?.item?.id);
+  check(
+    'arma sem tipo assume corpo a corpo e simples por padrão',
+    defaultWeapon.data?.item?.details?.weaponType === 'melee' &&
+      defaultWeapon.data?.item?.details?.weaponCategory === 'simple',
+    JSON.stringify(defaultWeapon.data?.item?.details),
+  );
+
+  // Arma à distância: alcance em metros + munição.
+  const bowCreated = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Arco Curto ${suffix}`,
+      category: 'Arma',
+      weight: 1,
+      details: {
+        damageCount: 1,
+        damageDie: 6,
+        damageType: 'Perfurante',
+        weaponType: 'ranged',
+        weaponCategory: 'simple',
+        properties: ['ammunition', 'two-handed'],
+        ammoType: 'Flecha',
+        rangeNormal: 24,
+        rangeLong: 96,
+      },
+    },
+  });
+  createdItemIds.push(bowCreated.data?.item?.id);
+  check(
+    'arma à distância guarda alcance normal/longo e a munição',
+    bowCreated.status === 201 &&
+      bowCreated.data?.item?.details?.weaponType === 'ranged' &&
+      bowCreated.data?.item?.details?.rangeNormal === 24 &&
+      bowCreated.data?.item?.details?.rangeLong === 96 &&
+      bowCreated.data?.item?.details?.properties?.includes('ammunition'),
+    JSON.stringify(bowCreated.data),
+  );
+
+  // Munição entra como categoria própria, com tipo e bônus (mágica +1/+2/+3).
+  const ammoItem = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Flechas +1 ${suffix}`,
+      category: 'Munição',
+      weight: 0.05,
+      details: { ammoType: 'Flecha', attackBonus: 1, damageBonus: 1, damageCount: 9 },
+    },
+  });
+  createdItemIds.push(ammoItem.data?.item?.id);
+  check(
+    'categoria Munição guarda tipo e bônus (e descarta dano de arma)',
+    ammoItem.status === 201 &&
+      ammoItem.data?.item?.details?.ammoType === 'Flecha' &&
+      ammoItem.data?.item?.details?.attackBonus === 1 &&
+      ammoItem.data?.item?.details?.damageBonus === 1 &&
+      ammoItem.data?.item?.details?.damageCount === undefined,
+    JSON.stringify(ammoItem.data),
+  );
+
+  const ammoWithoutType = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Arco sem Tipo ${suffix}`,
+      category: 'Arma',
+      details: { weaponType: 'ranged', properties: ['ammunition'], rangeNormal: 24, rangeLong: 96 },
+    },
+  });
+  check(
+    "'Munição' sem o tipo de munição é recusada (400)",
+    ammoWithoutType.status === 400,
+    JSON.stringify(ammoWithoutType.data),
+  );
+
+  // --- Coerência das propriedades de arma (validada no servidor) -----------
+  const badAmmunition = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Munição Inválida ${suffix}`,
+      category: 'Arma',
+      details: { weaponType: 'melee', properties: ['ammunition'] },
+    },
+  });
+  check("Munição em arma corpo a corpo é recusada (400)", badAmmunition.status === 400, JSON.stringify(badAmmunition.data));
+
+  const badVersatile = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Versátil Inválida ${suffix}`,
+      category: 'Arma',
+      details: { weaponType: 'melee', properties: ['versatile'] },
+    },
+  });
+  check('Versátil sem o dado de duas mãos é recusado (400)', badVersatile.status === 400, JSON.stringify(badVersatile.data));
+
+  const badTwoHanded = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Versátil Duas Mãos ${suffix}`,
+      category: 'Arma',
+      details: { weaponType: 'melee', properties: ['versatile', 'two-handed'], versatileDie: 10 },
+    },
+  });
+  check("Versátil junto de 'Duas mãos' é recusado (400)", badTwoHanded.status === 400, JSON.stringify(badTwoHanded.data));
+
+  const badRanged = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `À Distância sem Alcance ${suffix}`,
+      category: 'Arma',
+      details: { weaponType: 'ranged' },
+    },
+  });
+  check('arma à distância sem alcance é recusada (400)', badRanged.status === 400, JSON.stringify(badRanged.data));
+
+  const badThrown = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Arremesso sem Alcance ${suffix}`,
+      category: 'Arma',
+      details: { weaponType: 'melee', properties: ['thrown'] },
+    },
+  });
+  check('arremesso sem alcance é recusado (400)', badThrown.status === 400, JSON.stringify(badThrown.data));
   check(
     'preço em PO/PP/PC volta para o mestre',
     weapon?.price?.gold === 15 && weapon?.price?.silver === 0 && weapon?.price?.copper === 0,
@@ -4878,7 +5281,7 @@ async function main(): Promise<void> {
   masterBackSocket.close();
 
   // ==========================================================================
-  // FASE 0 — regressão das regras base (seções 14 a 19)
+  // FASE 0 — regressão das regras base (seções 14 a 20)
   //
   // Cada seção cria as PRÓPRIAS contas (sufixo único) e limpa no final, como o
   // resto do smoke. Os cenários de nível alto são montados direto no banco
@@ -6038,8 +6441,7 @@ async function main(): Promise<void> {
       {
         id: 'crit1',
         name: 'Espada longa',
-        damage: '1d8+3',
-        damageType: 'Cortante',
+        damage: { count: 1, sides: 8, bonus: 3, type: 'Cortante' },
         attackBonus: 12,
         notes: '',
         finesse: false,
@@ -6133,6 +6535,178 @@ async function main(): Promise<void> {
     plainRolls.every((result: any) => result.attackRoll !== 1 || result.hit === false),
     JSON.stringify(plainRolls.filter((r: any) => r.attackRoll === 1 && r.hit)),
   );
+
+  // --- 20. Moedas -----------------------------------------------------------
+  console.log('\n20) Moedas');
+
+  const wallet = await freshSheet('fase0coins');
+  const receiver = await freshSheet('fase0coins2');
+
+  const initialCoins = await sheetOf(wallet.token);
+  check(
+    'a ficha nasce com as cinco denominações zeradas',
+    initialCoins?.coins?.pp === 0 &&
+      initialCoins?.coins?.gp === 0 &&
+      initialCoins?.coins?.ep === 0 &&
+      initialCoins?.coins?.sp === 0 &&
+      initialCoins?.coins?.cp === 0,
+    JSON.stringify(initialCoins?.coins),
+  );
+
+  // O PATCH do JOGADOR nunca aceita moedas — nem antes de finalizar a criação.
+  const playerCoinPatch = await api('/api/characters/me', {
+    method: 'PATCH',
+    token: wallet.token,
+    body: { coins: { gp: 100 } },
+  });
+  check(
+    'o jogador não altera moedas por PATCH (403 citando Moedas)',
+    playerCoinPatch.status === 403 && /Moedas/.test(playerCoinPatch.data?.message ?? ''),
+    JSON.stringify(playerCoinPatch.data),
+  );
+
+  const masterGive = (characterId: string, delta: Record<string, number>) =>
+    api(`/api/characters/${characterId}/coins`, {
+      method: 'POST',
+      token: masterToken,
+      body: { delta },
+    });
+
+  await masterPatch(wallet.characterId, { coins: { pp: 0, gp: 50, ep: 0, sp: 0, cp: 0 } });
+  const weighted = await sheetOf(wallet.token);
+  check(
+    '50 moedas entram no derived.totalWeight como 0,5 kg',
+    weighted?.derived?.totalWeight === 0.5,
+    JSON.stringify({ totalWeight: weighted?.derived?.totalWeight }),
+  );
+
+  const given = await masterGive(wallet.characterId, { gp: 20, sp: 5 });
+  check(
+    'o mestre dá moedas pelo endpoint dedicado (200)',
+    given.status === 200 &&
+      given.data?.character?.coins?.gp === 70 &&
+      given.data?.character?.coins?.sp === 5,
+    JSON.stringify(given.data?.character?.coins),
+  );
+
+  check(
+    'retirar mais do que existe é recusado (400)',
+    (await masterGive(wallet.characterId, { gp: -999 })).status === 400,
+  );
+
+  const spent = await api('/api/characters/me/coins/spend', {
+    method: 'POST',
+    token: wallet.token,
+    body: { amount: { gp: 10, sp: 5 } },
+  });
+  check(
+    'gastar debita exatamente as denominações pedidas (sem troco)',
+    spent.status === 200 &&
+      spent.data?.character?.coins?.gp === 60 &&
+      spent.data?.character?.coins?.sp === 0,
+    JSON.stringify(spent.data?.character?.coins),
+  );
+
+  check(
+    'gastar mais do que o saldo é recusado (400)',
+    (
+      await api('/api/characters/me/coins/spend', {
+        method: 'POST',
+        token: wallet.token,
+        body: { amount: { pp: 1 } },
+      })
+    ).status === 400,
+  );
+
+  await masterGive(wallet.characterId, { sp: 10 });
+  const exchanged = await api('/api/characters/me/coins/exchange', {
+    method: 'POST',
+    token: wallet.token,
+    body: { from: 'sp', to: 'gp', amount: 10 },
+  });
+  check(
+    'trocar 10 PP por 1 PO preserva o valor total (200)',
+    exchanged.status === 200 &&
+      exchanged.data?.character?.coins?.sp === 0 &&
+      exchanged.data?.character?.coins?.gp === 61,
+    JSON.stringify(exchanged.data?.character?.coins),
+  );
+
+  await masterGive(wallet.characterId, { cp: 1 });
+  check(
+    'troca que exigiria fração é recusada (1 PC para PO → 400)',
+    (
+      await api('/api/characters/me/coins/exchange', {
+        method: 'POST',
+        token: wallet.token,
+        body: { from: 'cp', to: 'gp', amount: 1 },
+      })
+    ).status === 400,
+  );
+
+  await masterGive(wallet.characterId, { gp: 10 });
+  const transferred = await api('/api/characters/me/coins/transfer', {
+    method: 'POST',
+    token: wallet.token,
+    body: { targetCharacterId: receiver.characterId, amount: { gp: 10 } },
+  });
+  const receiverSheet = await sheetOf(receiver.token);
+  check(
+    'transferir debita do doador e credita no destino na mesma ação',
+    transferred.status === 200 &&
+      transferred.data?.character?.coins?.gp === 61 &&
+      receiverSheet?.coins?.gp === 10,
+    JSON.stringify({ doador: transferred.data?.character?.coins, destino: receiverSheet?.coins }),
+  );
+
+  check(
+    'transferir para si mesmo é recusado (400)',
+    (
+      await api('/api/characters/me/coins/transfer', {
+        method: 'POST',
+        token: wallet.token,
+        body: { targetCharacterId: wallet.characterId, amount: { gp: 1 } },
+      })
+    ).status === 400,
+  );
+
+  const targets = await api('/api/characters/players', { token: wallet.token });
+  check(
+    'a lista de destinos traz outros jogadores e não a própria ficha',
+    targets.status === 200 &&
+      Array.isArray(targets.data?.characters) &&
+      targets.data.characters.some((entry: any) => entry.id === receiver.characterId) &&
+      !targets.data.characters.some((entry: any) => entry.id === wallet.characterId),
+    JSON.stringify(targets.data?.characters?.length),
+  );
+
+  check(
+    'só o mestre alterna as moedas extras (403)',
+    (
+      await api('/api/game/extra-coins', {
+        method: 'POST',
+        token: wallet.token,
+        body: { enabled: true },
+      })
+    ).status === 403,
+  );
+
+  const toggled = await api('/api/game/extra-coins', {
+    method: 'POST',
+    token: masterToken,
+    body: { enabled: true },
+  });
+  check(
+    'o mestre liga as denominações extras (200)',
+    toggled.status === 200 && toggled.data?.config?.extraCoins === true,
+    JSON.stringify(toggled.data?.config),
+  );
+  // Devolve ao padrão para não influenciar o restante da mesa.
+  await api('/api/game/extra-coins', {
+    method: 'POST',
+    token: masterToken,
+    body: { enabled: false },
+  });
 
   }
 

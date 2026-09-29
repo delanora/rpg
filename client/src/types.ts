@@ -61,8 +61,23 @@ export type SavesState = Record<AbilityKey, boolean>;
 export interface ItemDetails {
   damageCount?: number;
   damageDie?: number;
-  damageType?: string;
+  damageType?: DamageType;
   attackBonus?: number;
+  /** Bônus mágico somado ao DANO da arma (ex.: +1). */
+  damageBonus?: number;
+  /** Arma corpo a corpo ('melee') ou à distância ('ranged'). */
+  weaponType?: WeaponType;
+  /** Arma simples ('simple') ou marcial ('martial'). */
+  weaponCategory?: WeaponCategory;
+  /** Tipo de munição consumido (exige a propriedade 'ammunition'). */
+  ammoType?: AmmoType;
+  /** Propriedades de arma do PHB marcadas pelo mestre. */
+  properties?: WeaponProperty[];
+  /** Dado do dano com as duas mãos (só com a propriedade Versátil). */
+  versatileDie?: number;
+  /** Alcance normal/longo em metros (à distância ou arremessável). */
+  rangeNormal?: number;
+  rangeLong?: number;
   spellcastingFocus?: boolean;
   /** Peso da armadura: 'Leve' | 'Média' | 'Pesada' (só a categoria Armadura usa). */
   armorType?: string;
@@ -123,6 +138,34 @@ export interface InventoryMoveRequest {
   targetBackpackY?: number | null;
 }
 
+/** --- Moedas (ver src/modules/shared/coins.ts) ------------------------------ */
+
+/** Denominações do PHB, sempre nesta ordem: platina, ouro, electrum, prata, cobre. */
+export const COIN_KEYS = ['pp', 'gp', 'ep', 'sp', 'cp'] as const;
+export type CoinKey = (typeof COIN_KEYS)[number];
+
+/** Carteira de moedas: as cinco denominações, inteiros >= 0. */
+export interface CoinPurse {
+  pp: number;
+  gp: number;
+  ep: number;
+  sp: number;
+  cp: number;
+}
+
+/** Valor de moedas informado por uma ação (gastar, trocar, transferir). */
+export type CoinAmount = Partial<CoinPurse>;
+
+/** Ajuste do mestre: valores positivos dão e negativos retiram. */
+export type CoinDelta = Partial<CoinPurse>;
+
+/** Destino possível de uma transferência de moedas. */
+export interface TransferTarget {
+  id: string;
+  name: string;
+  ownerUsername: string;
+}
+
 export interface Spell {
   id: string;
   name: string;
@@ -142,17 +185,88 @@ export interface SpellsState {
   slots: Record<string, SpellSlot>;
 }
 
+/**
+ * Tipos de dano do livro básico (espelha src/modules/shared/attacks.ts).
+ * O mesmo conjunto vale para o dano dos ataques, o tipo dos itens e as
+ * resistências/imunidades das criaturas.
+ */
+export const DAMAGE_TYPES = [
+  'Cortante',
+  'Perfurante',
+  'Concussão',
+  'Ácido',
+  'Frio',
+  'Fogo',
+  'Elétrico',
+  'Necrótico',
+  'Veneno',
+  'Psíquico',
+  'Radiante',
+  'Trovão',
+  'Força',
+] as const;
+
+export type DamageType = (typeof DAMAGE_TYPES)[number];
+
+/** Arma corpo a corpo x à distância (espelha src/modules/shared/item-details.ts). */
+export const WEAPON_TYPES = ['melee', 'ranged'] as const;
+export type WeaponType = (typeof WEAPON_TYPES)[number];
+
+/** Categoria de proficiência da arma (PHB). */
+export const WEAPON_CATEGORIES = ['simple', 'martial'] as const;
+export type WeaponCategory = (typeof WEAPON_CATEGORIES)[number];
+
+/** Propriedades de arma do PHB (subconjunto usado no cadastro). */
+export const WEAPON_PROPERTIES = [
+  'light',
+  'finesse',
+  'heavy',
+  'two-handed',
+  'versatile',
+  'thrown',
+  'reach',
+  'ammunition',
+  'loading',
+  'special',
+] as const;
+export type WeaponProperty = (typeof WEAPON_PROPERTIES)[number];
+
+/** Tipos de munição (espelha src/modules/shared/item-details.ts). */
+export const AMMO_TYPES = ['Flecha', 'Virote', 'Bala de funda', 'Agulha de zarabatana'] as const;
+export type AmmoType = (typeof AMMO_TYPES)[number];
+
+/**
+ * Dano estruturado de um ataque (espelha `damageSchema` do servidor):
+ * `count`d`sides` + `bonus`; `count: 0` é dano fixo (só o bônus) e `type: null`
+ * significa "sem tipo" (não aciona resistência).
+ */
+export interface Damage {
+  count: number;
+  sides: number;
+  bonus: number;
+  type: DamageType | null;
+}
+
 export interface Attack {
   id: string;
   name: string;
-  damage: string;
-  damageType: string;
+  damage: Damage;
   attackBonus: number;
   notes: string;
   /** Arma sutil (habilita Ataque Furtivo). */
   finesse: boolean;
   /** Arma à distância (habilita Ataque Furtivo). */
   ranged: boolean;
+  /**
+   * Item do INVENTÁRIO que este ataque usa. Quando aponta para uma arma
+   * equipada numa das mãos, o combate passa a olhar a munição dela; o ataque
+   * some da ficha enquanto a arma não estiver equipada.
+   */
+  inventoryItemId?: string;
+  /** Texto original preservado quando o dano antigo não pôde ser convertido. */
+  damageText?: string;
+  /** Verdadeiro quando o dano veio de uma expressão antiga não conversível. */
+  legacy: boolean;
 }
 
 export type FeatureSource = 'race' | 'class' | 'background' | 'feat' | 'other';
@@ -546,6 +660,8 @@ export interface Character {
   spells: SpellsState;
   attacks: Attack[];
   features: Feature[];
+  /** Carteira de moedas: sempre com as cinco denominações. */
+  coins: CoinPurse;
 
   notes: string;
   version: number;
@@ -644,6 +760,11 @@ export interface GameConfig {
    * ele ao concluir a montagem.
    */
   startingLevel: number;
+  /**
+   * Mostra as denominações extras (PL/pp e PE/ep) no bloco de moedas da ficha.
+   * Desligado, a ficha mostra só PO (gp), PP (sp) e PC (cp).
+   */
+  extraCoins: boolean;
   updatedAt: string;
 }
 
@@ -1102,6 +1223,7 @@ export const ITEM_CATEGORIES = [
   'Poção',
   'Anel',
   'Cajado',
+  'Munição',
   'Item Geral',
   'Tesouro',
   'Outro',

@@ -2,11 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
 import { describeItemDetails } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
-import type { InventoryItem, InventoryMoveRequest, InventorySlot } from '../../types';
+import type {
+  Character,
+  InventoryItem,
+  InventoryMoveRequest,
+  InventorySlot,
+  TransferTarget,
+} from '../../types';
 import { clampInt, newId } from '../../utils';
 import { Icon, type IconName } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
+import { CoinsPanel } from './CoinsPanel';
 import type { SheetSectionProps } from './common';
 
 /** Colunas fixas da mochila (as linhas crescem conforme os itens). */
@@ -42,6 +49,12 @@ const SLOT_ICON: Record<InventorySlot, IconName> = {
 interface InventorySectionProps extends SheetSectionProps {
   /** Move/equipa um item no servidor (trata a troca no backend). */
   onMoveItem?: (request: InventoryMoveRequest) => void | Promise<void>;
+  /** Denominações extras (PL/PE) ligadas pelo mestre na mesa. */
+  extraCoins?: boolean;
+  /** Destinos possíveis de transferência de moedas (outros jogadores). */
+  coinTargets?: TransferTarget[];
+  /** Adota a ficha devolvida por uma ação de moedas. */
+  onCoinsChange?: (character: Character) => void;
 }
 
 interface CellPosition {
@@ -129,7 +142,14 @@ function BodyDoll() {
   );
 }
 
-export function InventorySection({ character, update, onMoveItem }: InventorySectionProps) {
+export function InventorySection({
+  character,
+  update,
+  onMoveItem,
+  extraCoins = false,
+  coinTargets = [],
+  onCoinsChange,
+}: InventorySectionProps) {
   // Movimentar/equipar itens é estado de jogo (continua liberado depois de
   // finalizar a criação); criar, renomear ou remover itens é construção.
   const { readOnly, lockedConstruction } = useSheetAccess();
@@ -451,6 +471,17 @@ export function InventorySection({ character, update, onMoveItem }: InventorySec
             </div>
           </div>
         </div>
+
+        {/* Moedas logo abaixo da mochila (só quando alguém pode movimentá-las
+            ou o mestre está vendo a ficha). */}
+        {onCoinsChange ? (
+          <CoinsPanel
+            character={character}
+            extraCoins={extraCoins}
+            targets={coinTargets}
+            onCharacter={onCoinsChange}
+          />
+        ) : null}
 
         {selected && detailPos ? (
           <div

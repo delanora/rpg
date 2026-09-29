@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
+import { availableAttacks } from '../ammo';
 import { AppHeader } from '../components/AppHeader';
 import { Icon } from '../components/Icon';
 import { PresentationOverlay } from '../components/PresentationOverlay';
@@ -16,7 +17,7 @@ import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../com
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
-import { fetchGameConfig, releaseLevelUp, setStartingLevel } from '../gameApi';
+import { fetchGameConfig, releaseLevelUp, setExtraCoins, setStartingLevel } from '../gameApi';
 import { closePresentation } from '../presentationApi';
 import type {
   Attack,
@@ -426,6 +427,25 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /**
+   * Ação de moedas devolve a ficha inteira (gastar/trocar/transferir/dar): a
+   * lista do painel adota a versão nova.
+   */
+  const adoptCoins = useCallback((character: Character) => {
+    setCharacters((prev) => prev.map((item) => (item.id === character.id ? character : item)));
+  }, []);
+
+  /** Liga/desliga PL e PE no bloco de moedas das fichas. */
+  const changeExtraCoins = useCallback(async (enabled: boolean) => {
+    try {
+      const config = await setExtraCoins(enabled);
+      setGameConfig(config);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao alternar as moedas extras.');
+    }
+  }, []);
+
   /** Nível inicial da mesa: o assistente de criação aplica os níveis até ele. */
   const changeStartingLevel = useCallback(async (level: number) => {
     try {
@@ -491,9 +511,10 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       if (!combatant) return [];
 
       if (combatant.characterId) {
-        return (
-          characters.find((character) => character.id === combatant.characterId)?.attacks ?? []
-        );
+        const character = characters.find((item) => item.id === combatant.characterId);
+        if (!character) return [];
+        // Ataques de arma não equipada não aparecem (regra da munição).
+        return availableAttacks(character.attacks, character.inventory);
       }
       if (combatant.creatureId) {
         return creatures.find((creature) => creature.id === combatant.creatureId)?.attacks ?? [];
@@ -634,6 +655,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onUpdate={patchCharacter}
             onDelete={deleteCharacter}
             onReopenCreation={reopenCreation}
+            extraCoins={gameConfig?.extraCoins ?? false}
+            onCoinsChange={adoptCoins}
           />
         ) : tab === 'regions' ? (
           <RegionsTab
@@ -651,6 +674,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           <ConfigTab
             startingLevel={gameConfig?.startingLevel ?? 1}
             onChangeStartingLevel={changeStartingLevel}
+            extraCoins={gameConfig?.extraCoins ?? false}
+            onChangeExtraCoins={changeExtraCoins}
           />
         ) : tab === 'items' ? (
           <ItemsTab

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { attackSchema } from '../shared/attacks.js';
+import { coinsSchema, coinAmountSchema, coinDeltaSchema } from '../shared/coins.js';
 import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
 import { itemDetailsSchema } from '../shared/item-details.js';
 import {
@@ -248,6 +249,35 @@ export const moveInventoryItemSchema = z.object({
 
 export type MoveInventoryItemInput = z.infer<typeof moveInventoryItemSchema>;
 
+// --- Moedas -----------------------------------------------------------------
+//
+// Só o mestre dá ou retira (PATCH e `POST /:id/coins`); o jogador gasta, troca
+// e transfere pelos endpoints próprios. Nenhuma cobrança cabe no PATCH do
+// jogador — ver assertPlayerCanPatch.
+
+/** O mestre dá (positivo) ou retira (negativo) moedas de uma ficha. */
+export const giveCoinsSchema = z.object({
+  /** Delta por denominação: { pp?, gp?, ep?, sp?, cp? }. */
+  delta: coinDeltaSchema,
+});
+
+/** Gasta exatamente as moedas informadas do próprio saldo (sem troco). */
+export const spendCoinsSchema = z.object({
+  amount: coinAmountSchema,
+  /** Observação livre do gasto (não entra em histórico — fora do escopo). */
+  note: shortText(200).optional(),
+});
+
+/** Transfere moedas para outro personagem de jogador. */
+export const transferCoinsSchema = z.object({
+  targetCharacterId: z.string().min(1, 'Escolha o personagem de destino.'),
+  amount: coinAmountSchema,
+});
+
+export type GiveCoinsInput = z.infer<typeof giveCoinsSchema>;
+export type SpendCoinsInput = z.infer<typeof spendCoinsSchema>;
+export type TransferCoinsInput = z.infer<typeof transferCoinsSchema>;
+
 // --- Atualização parcial (edição inline) ------------------------------------
 
 export const updateCharacterSchema = z
@@ -293,6 +323,12 @@ export const updateCharacterSchema = z
     saves: savesStateSchema,
     proficiencies: proficienciesSchema,
     inventory: inventoryListSchema,
+    /**
+     * Carteira de moedas { pp, gp, ep, sp, cp }. Campo de CONSTRUÇÃO: o jogador
+     * NUNCA altera por PATCH (403, mesmo antes de finalizar a criação) — só o
+     * mestre por aqui e pelas ações de gastar, trocar e transferir.
+     */
+    coins: coinsSchema,
     spells: spellsStateSchema,
     attacks: z.array(attackSchema).max(100),
     features: z.array(featureSchema).max(200),

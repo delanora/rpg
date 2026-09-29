@@ -33,6 +33,11 @@ model GameConfig {
   /// NÃO fazem parte do GameConfigDto: o GET /api/game é acessível ao jogador,
   /// então elas têm rotas próprias (`/api/game/notes`, só MASTER).
   masterNotes    String   @default("")
+  ///
+  /// Mostra as denominações EXTRAS (PL/pp e PE/ep) no bloco de moedas da ficha.
+  /// Desligado (padrão), a interface mostra só PO (gp), PP (sp) e PC (cp); os
+  /// valores das cinco denominações existem sempre no banco.
+  extraCoins     Boolean  @default(false)
   updatedAt      DateTime @updatedAt
 
   @@map("game_config")
@@ -139,11 +144,16 @@ model Character {
   proficiencies Json @default("{}") //  { armor: string[], weapons: string[], tools: string[] }
   inventory Json @default("[]") //  [{ id, name, description, quantity, weight, equipped }]
   spells    Json @default("{}") //  { list: [...], slots: { "1": { max, used } } }
-  attacks   Json @default("[]") //  [{ id, name, damage, damageType, attackBonus, notes }]
+  attacks   Json @default("[]") //  [{ id, name, damage: { count, sides, bonus, type }, attackBonus, notes, finesse, ranged, legacy? }]
   features  Json @default("[]") //  [{ id, name, source, description }]
   notes     String @default("")
   /// Estado de runtime da classe: toggles ativos (ex.: Fúria) e usos gastos.
   classState Json @default("{}") //  { active: string[], used: { [id]: number } }
+  ///
+  /// Carteira de moedas: { pp, gp, ep, sp, cp }, inteiros >= 0 (padrão 0).
+  /// Só o MESTRE altera por PATCH; o jogador gasta, troca e transfere pelos
+  /// endpoints dedicados — ver src/modules/shared/coins.ts.
+  coins     Json @default("{ \"pp\": 0, \"gp\": 0, \"ep\": 0, \"sp\": 0, \"cp\": 0 }")
 
   /// URL pública do avatar enviado pelo próprio jogador (`uploads/characters/...`).
   avatarUrl String @default("")
@@ -243,7 +253,7 @@ model Creature {
   speed      Int @default(9)
 
   // Coleções (JSONB) — ver src/modules/shared/attacks.ts
-  attacks     Json @default("[]") // [{ id, name, damage, damageType, attackBonus, notes }]
+  attacks     Json @default("[]") // [{ id, name, damage: { count, sides, bonus, type }, attackBonus, notes, finesse, ranged, legacy? }]
   resistances Json @default("[]") // tipos de dano resistidos
   immunities  Json @default("[]") // tipos de dano imunes
   description String @default("")

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DAMAGE_TYPES } from './attacks.js';
 
 /**
  * Atributos específicos de cada categoria de item e o preço em PO/PP/PC.
@@ -16,6 +17,7 @@ export const ITEM_CATEGORIES = [
   'Poção',
   'Anel',
   'Cajado',
+  'Munição',
   'Item Geral',
   'Tesouro',
   'Outro',
@@ -34,29 +36,147 @@ export const ARMOR_TYPES = ['Leve', 'Média', 'Pesada'] as const;
 export type ArmorType = (typeof ARMOR_TYPES)[number];
 
 /**
+ * Arma corpo a corpo x arma à distância. O cadastro separa as duas porque só
+ * a arma à distância (ou a arremessável) tem alcance e munição.
+ */
+export const WEAPON_TYPES = ['melee', 'ranged'] as const;
+export type WeaponType = (typeof WEAPON_TYPES)[number];
+
+/** Categoria de proficiência da arma (PHB 2014). */
+export const WEAPON_CATEGORIES = ['simple', 'martial'] as const;
+export type WeaponCategory = (typeof WEAPON_CATEGORIES)[number];
+
+/**
+ * Propriedades de arma do PHB (subconjunto). São as regras que o mestre marca
+ * no cadastro; o efeito mecânico de cada uma fica para a Fase 7.
+ */
+export const WEAPON_PROPERTIES = [
+  'light',
+  'finesse',
+  'heavy',
+  'two-handed',
+  'versatile',
+  'thrown',
+  'reach',
+  'ammunition',
+  'loading',
+  'special',
+] as const;
+
+export type WeaponProperty = (typeof WEAPON_PROPERTIES)[number];
+
+/**
+ * Tipos de munição (PHB 2014). Uma arma à distância com a propriedade
+ * `ammunition` declara qual deles consome; a pilha do inventário cujo
+ * `ammoType` casar é que é gasta no ataque.
+ */
+export const AMMO_TYPES = ['Flecha', 'Virote', 'Bala de funda', 'Agulha de zarabatana'] as const;
+
+export type AmmoType = (typeof AMMO_TYPES)[number];
+
+/**
  * Atributos de item, todos opcionais. A categoria decide quais são usados
  * (ver `sanitizeItemDetails`), mas o formato é único para simplificar o JSONB.
+ *
+ * O `superRefine` no fim valida a COERÊNCIA das propriedades de arma (ex.:
+ * Munição só em arma à distância, Versátil exige o dado de duas mãos).
  */
-export const itemDetailsSchema = z.object({
-  // Arma / Cajado
-  damageCount: z.number().int().min(0).max(20).optional(),
-  damageDie: z.number().int().min(0).max(100).optional(),
-  damageType: z.string().trim().max(40).optional(),
-  attackBonus: z.number().int().min(-30).max(30).optional(),
-  /** Cajado também é foco de conjuração. */
-  spellcastingFocus: z.boolean().optional(),
-  // Armadura / Escudo
-  /** Peso da armadura (só a categoria Armadura usa; decide como a Destreza entra). */
-  armorType: z.enum(ARMOR_TYPES).optional(),
-  /** CA base da armadura (ex.: couro = 11, cota de malha = 16). */
-  baseArmorClass: z.number().int().min(0).max(30).optional(),
-  /** Bônus avulso de CA (escudos e itens mágicos somam ao total). */
-  armorClassBonus: z.number().int().min(-10).max(30).optional(),
-  // Poção / Anel
-  effectRoll: z.string().trim().max(60).optional(),
-  duration: z.string().trim().max(120).optional(),
-  attunement: z.boolean().optional(),
-});
+export const itemDetailsSchema = z
+  .object({
+    // Arma / Cajado — dano estruturado (mesmos limites de `Damage` no ataque).
+    damageCount: z.number().int().min(0).max(50).optional(),
+    damageDie: z.number().int().min(0).max(1000).optional(),
+    damageType: z.enum(DAMAGE_TYPES).optional(),
+    /** Bônus de ataque da arma. */
+    attackBonus: z.number().int().min(-30).max(30).optional(),
+    /** Bônus mágico somado ao DANO da arma (ex.: +1 de uma arma mágica). */
+    damageBonus: z.number().int().min(-9999).max(9999).optional(),
+    // Arma / Cajado — uso e propriedades (PHB)
+    /** Corpo a corpo ou à distância (padrão 'melee' na categoria Arma). */
+    weaponType: z.enum(WEAPON_TYPES).optional(),
+    /** Simples ou marcial (padrão 'simple'). */
+    weaponCategory: z.enum(WEAPON_CATEGORIES).optional(),
+    /** Propriedades do PHB marcadas pelo mestre. */
+    properties: z.array(z.enum(WEAPON_PROPERTIES)).max(WEAPON_PROPERTIES.length).optional(),
+    /** Munição consumida (obrigatória quando a propriedade `ammunition` está marcada). */
+    ammoType: z.enum(AMMO_TYPES).optional(),
+    /** Dado do dano empunhada com as DUAS MÃOS (exige a propriedade Versátil). */
+    versatileDie: z.number().int().min(0).max(1000).optional(),
+    /** Alcance normal em metros (à distância ou arremessável). */
+    rangeNormal: z.number().int().min(0).max(1000).optional(),
+    /** Alcance longo em metros (à distância ou arremessável). */
+    rangeLong: z.number().int().min(0).max(1000).optional(),
+    /** Cajado também é foco de conjuração. */
+    spellcastingFocus: z.boolean().optional(),
+    // Armadura / Escudo
+    /** Peso da armadura (só a categoria Armadura usa; decide como a Destreza entra). */
+    armorType: z.enum(ARMOR_TYPES).optional(),
+    /** CA base da armadura (ex.: couro = 11, cota de malha = 16). */
+    baseArmorClass: z.number().int().min(0).max(30).optional(),
+    /** Bônus avulso de CA (escudos e itens mágicos somam ao total). */
+    armorClassBonus: z.number().int().min(-10).max(30).optional(),
+    // Poção / Anel
+    effectRoll: z.string().trim().max(60).optional(),
+    duration: z.string().trim().max(120).optional(),
+    attunement: z.boolean().optional(),
+  })
+  .superRefine((details, ctx) => {
+    const properties = details.properties ?? [];
+    const weaponType = details.weaponType ?? 'melee';
+
+    // Munição é exclusiva da arma à distância e exige um tipo de munição.
+    if (properties.includes('ammunition')) {
+      if (weaponType !== 'ranged') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['properties'],
+          message: "A propriedade 'Munição' só vale para arma à distância.",
+        });
+      }
+      if (details.ammoType === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['ammoType'],
+          message: "A propriedade 'Munição' exige o tipo de munição (Flecha, Virote...).",
+        });
+      }
+    }
+
+    // Versátil: exige o dado de duas mãos e não combina com Duas mãos.
+    if (properties.includes('versatile')) {
+      if (details.versatileDie === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['versatileDie'],
+          message: "'Versátil' exige o dado do dano com as duas mãos.",
+        });
+      }
+      if (properties.includes('two-handed')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['properties'],
+          message: "'Versátil' e 'Duas mãos' não podem coexistir.",
+        });
+      }
+    } else if (details.versatileDie !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['versatileDie'],
+        message: "O dado de duas mãos só vale com a propriedade 'Versátil'.",
+      });
+    }
+
+    // Arma à distância ou arremessável exige os dois alcances (em metros).
+    if (properties.includes('thrown') || weaponType === 'ranged') {
+      if (details.rangeNormal === undefined || details.rangeLong === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rangeNormal'],
+          message: 'Arma à distância ou arremessável exige o alcance normal e o longo.',
+        });
+      }
+    }
+  });
 
 export type ItemDetails = z.infer<typeof itemDetailsSchema>;
 
@@ -71,8 +191,36 @@ export type ItemPrice = z.infer<typeof itemPriceSchema>;
 
 /** Campos usados por cada categoria; o resto é descartado ao salvar. */
 const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
-  Arma: ['damageCount', 'damageDie', 'damageType', 'attackBonus'],
-  Cajado: ['damageCount', 'damageDie', 'damageType', 'attackBonus', 'spellcastingFocus'],
+  Arma: [
+    'damageCount',
+    'damageDie',
+    'damageType',
+    'attackBonus',
+    'damageBonus',
+    'weaponType',
+    'weaponCategory',
+    'properties',
+    'ammoType',
+    'versatileDie',
+    'rangeNormal',
+    'rangeLong',
+  ],
+  Cajado: [
+    'damageCount',
+    'damageDie',
+    'damageType',
+    'attackBonus',
+    'damageBonus',
+    'weaponType',
+    'weaponCategory',
+    'properties',
+    'ammoType',
+    'versatileDie',
+    'rangeNormal',
+    'rangeLong',
+    'spellcastingFocus',
+  ],
+  Munição: ['ammoType', 'attackBonus', 'damageBonus'],
   Armadura: ['armorType', 'baseArmorClass', 'armorClassBonus'],
   Escudo: ['armorClassBonus'],
   Poção: ['effectRoll', 'duration'],
@@ -82,7 +230,16 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   Outro: [],
 };
 
-/** Normaliza os atributos: mantém só os campos que a categoria usa. */
+/** Categorias que funcionam como arma (têm as propriedades de arma). */
+function isWeaponCategory(category: string): boolean {
+  return category === 'Arma' || category === 'Cajado';
+}
+
+/**
+ * Normaliza os atributos: mantém só os campos que a categoria usa e aplica os
+ * padrões da arma. Devolve `{}` quando os dados são incoerentes (o item não
+ * passa da validação da rota, então isto é só uma segunda barreira).
+ */
 export function sanitizeItemDetails(category: string, details: unknown): ItemDetails {
   const parsed = itemDetailsSchema.safeParse(details ?? {});
   if (!parsed.success) return {};
@@ -95,5 +252,12 @@ export function sanitizeItemDetails(category: string, details: unknown): ItemDet
       (result as Record<string, unknown>)[key] = value;
     }
   }
+
+  if (isWeaponCategory(category)) {
+    if (result.weaponType === undefined) result.weaponType = 'melee';
+    if (result.weaponCategory === undefined) result.weaponCategory = 'simple';
+    if (result.properties === undefined) result.properties = [];
+  }
+
   return result;
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { SheetAccessProvider } from '../readonly';
-import type { Character, CharacterPatch, InventoryMoveRequest } from '../types';
+import type { Character, CharacterPatch, InventoryMoveRequest, TransferTarget } from '../types';
 import { Icon, type IconName } from './Icon';
 import { AbilitiesSection } from './sections/AbilitiesSection';
 import { AttacksSection } from './sections/AttacksSection';
@@ -30,6 +30,12 @@ interface SheetViewProps {
   update: (patch: CharacterPatch) => void;
   /** Move/equipa um item do inventário (endpoint dedicado do servidor). */
   onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>;
+  /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
+  extraCoins?: boolean;
+  /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
+  coinTargets?: TransferTarget[];
+  /** Adota a ficha devolvida por uma ação de moedas (gastar/trocar/transferir). */
+  onCoinsChange?: (character: Character) => void;
   /** Abre a janela de dados com 1d20 + bônus da perícia/salvaguarda. */
   onRollSkill?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void;
   /** Em `true`, nenhum campo é editável (visão do mestre). */
@@ -64,6 +70,9 @@ export function SheetView({
   character,
   update,
   onInventoryMove,
+  extraCoins = false,
+  coinTargets,
+  onCoinsChange,
   onRollSkill,
   readOnly = false,
   creationLocked = false,
@@ -85,7 +94,14 @@ export function SheetView({
 
         {/* Linha logo abaixo: inventário, atributos e vida e defesa. */}
         <div className="sheet-inventory">
-          <InventorySection character={character} update={update} onMoveItem={onInventoryMove} />
+          <InventorySection
+            character={character}
+            update={update}
+            onMoveItem={onInventoryMove}
+            extraCoins={extraCoins}
+            coinTargets={coinTargets}
+            onCoinsChange={onCoinsChange}
+          />
         </div>
 
         <div className="sheet-abilities">

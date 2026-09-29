@@ -1,6 +1,7 @@
-import type { CombatStatus, Role } from '@prisma/client';
+import type { CombatStatus, Prisma, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
+import { inventoryListSchema } from '../characters/characters.schema.js';
 import {
   ServerEvents,
   type AttackResolvedPayload,
@@ -18,8 +19,18 @@ import {
   normalizeClassState,
   type ClassAdjustments,
 } from '../shared/classes.js';
+import {
+  ammoStacks,
+  chooseAmmoStack,
+  isWeaponEquipped,
+  requiredAmmoType,
+  type InventoryLike,
+} from '../shared/ammo.js';
+import { damageExpression } from '../shared/attacks.js';
 import { abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
-import { parseDiceExpression, rollD20, rollDice } from '../shared/dice.js';
+import { parseJson } from '../shared/json.js';
+import type { AmmoType } from '../shared/item-details.js';
+import { rollD20, rollDice } from '../shared/dice.js';
 import {
   combatantAttacks,
   hideCreatureStats,
@@ -428,7 +439,7 @@ function characterAdjustments(character: {
 /** Aplica a resistência do alvo a um tipo de dano (ex.: Fúria do bárbaro). */
 function applyDamageResistance(
   target: CombatantSourced,
-  damageType: string,
+  damageType: string | null,
   total: number,
 ): number {
   if (target.kind !== 'CHARACTER' || !target.character || !damageType) return total;
@@ -470,6 +481,97 @@ function rollSneakAttack(
   return { expression, total: roll.total, rolls: roll.rolls };
 }
 
+/** Bônus que a munição consumida soma ao ATAQUE e ao DANO desta rolagem. */
+interface AmmoBonus {
+  attackBonus: number;
+  damageBonus: number;
+}
+
+/** Publica a ficha (inventário) para o dono e os mestres — `sheet:updated`. */
+async function publishInventory(characterId: string, inventory: unknown): Promise<void> {
+  const updated = await prisma.character.findUnique({
+    where: { id: characterId },
+    include: { user: { select: { username: true } } },
+  });
+  if (!updated) return;
+
+  const payload = {
+    userId: updated.userId,
+    username: updated.user.username,
+    characterId: updated.id,
+    version: updated.version,
+    changes: { inventory },
+    character: await toSheetDto(updated, updated.user.username),
+    at: new Date().toISOString(),
+  };
+
+  try {
+    const broadcaster = getBroadcaster();
+    broadcaster.toMasters(ServerEvents.SHEET_UPDATED, payload);
+    broadcaster.toUser(updated.userId, ServerEvents.SHEET_UPDATED, payload);
+  } catch (error) {
+    console.error('[combat] falha ao publicar a ficha em tempo real:', error);
+  }
+}
+
+/**
+ * Gasta 1 unidade de munição do tipo pedido e devolve os bônus que ela concede.
+ *
+ * Seguro contra duas requisições simultâneas: a gravação só acontece se o
+ * `version` da ficha não mudou desde a leitura (mesmo cuidado do Level Up); se
+ * mudou, relê e tenta de novo. Devolve `null` quando não há pilha compatível.
+ */
+async function consumeAmmo(
+  characterId: string,
+  ammoType: AmmoType,
+  preferredInventoryId?: string,
+): Promise<AmmoBonus | null> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const current = await prisma.character.findUnique({
+      where: { id: characterId },
+      select: { inventory: true, version: true },
+    });
+    if (!current) return null;
+
+    const inventory = parseJson<InventoryLike[]>(
+      inventoryListSchema,
+      current.inventory,
+      [],
+    );
+    const stack = chooseAmmoStack(ammoStacks(inventory, ammoType), preferredInventoryId);
+    if (!stack) return null;
+
+    const bonus: AmmoBonus = {
+      attackBonus: stack.details.attackBonus ?? 0,
+      damageBonus: stack.details.damageBonus ?? 0,
+    };
+
+    // Pilha que chega a 0 sai do inventário.
+    const remaining = stack.quantity - 1;
+    const nextInventory =
+      remaining > 0
+        ? inventory.map((item) =>
+            item.id === stack.id ? { ...item, quantity: remaining } : item,
+          )
+        : inventory.filter((item) => item.id !== stack.id);
+
+    const result = await prisma.character.updateMany({
+      where: { id: characterId, version: current.version },
+      data: {
+        inventory: nextInventory as unknown as Prisma.InputJsonValue,
+        version: { increment: 1 },
+      },
+    });
+
+    if (result.count === 1) {
+      await publishInventory(characterId, nextInventory);
+      return bonus;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Resolve um ataque: rola 1d20 + bônus contra a CA do alvo; se acertar, rola o
  * dano (dobrado no crítico) e aplica no HP do alvo.
@@ -507,6 +609,29 @@ export async function resolveAttack(
     throw new HttpError('Ataque não encontrado nesta ficha ou criatura.', 404);
   }
 
+  // Munição: só para PERSONAGENS e só quando o ataque aponta para uma arma do
+  // inventário. A arma precisa estar EQUIPADA numa das mãos; se ela exigir
+  // munição (propriedade `ammunition`), 1 unidade é gasta ANTES de rolar —
+  // sem munição, nada é rolado (409). Criaturas nunca consomem.
+  let ammoBonus: AmmoBonus = { attackBonus: 0, damageBonus: 0 };
+  if (attacker.kind === 'CHARACTER' && attacker.character && attack.inventoryItemId) {
+    const inventory = parseJson<InventoryLike[]>(
+      inventoryListSchema,
+      attacker.character.inventory,
+      [],
+    );
+    const weapon = inventory.find((item) => item.id === attack.inventoryItemId);
+    if (!isWeaponEquipped(weapon)) {
+      throw new HttpError('Equipe a arma deste ataque para usá-lo.', 409);
+    }
+    const ammoType = requiredAmmoType(weapon);
+    if (ammoType) {
+      const consumed = await consumeAmmo(attacker.character.id, ammoType, input.ammoInventoryId);
+      if (!consumed) throw new HttpError('Sem munição para esta arma.', 409);
+      ammoBonus = consumed;
+    }
+  }
+
   // Personagem não tem CA gravada: ela é calculada da ficha (atributos +
   // equipamento + override do mestre), igual à que aparece no tabuleiro.
   const targetArmorClass =
@@ -515,7 +640,8 @@ export async function resolveAttack(
       : (target.armorClass ?? target.creature?.armorClass ?? 10);
 
   const attackRoll = rollD20();
-  const attackTotal = attackRoll + attack.attackBonus;
+  // A munição usada soma o próprio bônus de acerto à rolagem.
+  const attackTotal = attackRoll + attack.attackBonus + ammoBonus.attackBonus;
   // Limiar de crítico: 20 por padrão, 19/18 com o Crítico Aprimorado/Superior
   // do Campeão (o MENOR limiar prevalece entre as classes). Criaturas não têm
   // features: ficam no 20 natural.
@@ -531,7 +657,7 @@ export async function resolveAttack(
     expression: '1d20',
     rolls: [attackRoll],
     sides: 20,
-    modifier: attack.attackBonus,
+    modifier: attack.attackBonus + ammoBonus.attackBonus,
     total: attackTotal,
     crit: critical,
     at: new Date().toISOString(),
@@ -541,7 +667,9 @@ export async function resolveAttack(
   let sneakAttackResult: { expression: string; total: number } | null = null;
 
   if (hit) {
-    const damage = rollDice(attack.damage, { crit: critical });
+    // Dano estruturado do ataque: a expressão textual é derivada só para a
+    // rolagem (o crítico dobra os DADOS e o modificador entra uma vez).
+    const damage = rollDice(damageExpression(attack.damage), { crit: critical });
 
     if (damage) {
       const attackerAdjustments =
@@ -551,10 +679,13 @@ export async function resolveAttack(
 
       let total = damage.total;
 
+      // Bônus de dano da munição usada (entra uma vez, como qualquer modificador).
+      if (ammoBonus.damageBonus !== 0) total += ammoBonus.damageBonus;
+
       // Crítico Brutal: dados de arma extras no crítico (só corpo a corpo).
       if (critical && attackerAdjustments && attackerAdjustments.critExtraDice > 0) {
-        const spec = parseDiceExpression(attack.damage);
-        if (spec && spec.count > 0) {
+        const spec = attack.damage;
+        if (spec.count > 0 && spec.sides > 0) {
           const extra = rollDice(
             `${spec.count * attackerAdjustments.critExtraDice}d${spec.sides}`,
             { crit: false },
@@ -626,7 +757,7 @@ export async function resolveAttack(
       });
 
       // Resistência do alvo (ex.: Fúria do bárbaro halva dano físico).
-      total = applyDamageResistance(target, attack.damageType, total);
+      total = applyDamageResistance(target, attack.damage.type, total);
       damageRolled = total;
 
       await changeHp(target, -total);
@@ -644,13 +775,13 @@ export async function resolveAttack(
     attackName: attack.name,
     targetName: target.name,
     attackRoll,
-    attackBonus: attack.attackBonus,
+    attackBonus: attack.attackBonus + ammoBonus.attackBonus,
     attackTotal,
     targetArmorClass,
     hit,
     critical,
     damageRolled,
-    damageType: attack.damageType,
+    damageType: attack.damage.type ?? '',
     sneakAttack: sneakAttackResult,
     targetHpCurrent: targetAfter?.hpCurrent ?? 0,
     targetHpMax: targetAfter?.hpMax ?? 0,

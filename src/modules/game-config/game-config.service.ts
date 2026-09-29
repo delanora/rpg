@@ -12,6 +12,7 @@ function toGameConfigDto(config: GameConfig): GameConfigDto {
   return {
     levelUpRelease: config.levelUpRelease,
     startingLevel: config.startingLevel,
+    extraCoins: config.extraCoins,
     updatedAt: config.updatedAt.toISOString(),
   };
 }
@@ -78,6 +79,24 @@ export async function releaseLevelUp(): Promise<GameConfigDto> {
   const config = await prisma.gameConfig.update({
     where: { id: CONFIG_ID },
     data: { levelUpRelease: { increment: 1 } },
+  });
+
+  const dto = toGameConfigDto(config);
+  broadcast(dto);
+  return dto;
+}
+
+/**
+ * Liga/desliga a exibição das denominações extras (PL e PE) no bloco de moedas.
+ *
+ * Só muda o que a interface mostra: os valores das cinco denominações existem
+ * sempre na ficha. Publica `game:config` para a mesa inteira.
+ */
+export async function setExtraCoins(enabled: boolean): Promise<GameConfigDto> {
+  await getGameConfig();
+  const config = await prisma.gameConfig.update({
+    where: { id: CONFIG_ID },
+    data: { extraCoins: enabled },
   });
 
   const dto = toGameConfigDto(config);

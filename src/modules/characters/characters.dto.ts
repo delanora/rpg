@@ -43,6 +43,7 @@ import {
   spellSaveDc,
 } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
+import { coinsWeight, normalizeCoins, type CoinPurse } from '../shared/coins.js';
 import type { ItemDetails } from '../shared/item-details.js';
 import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
 import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
@@ -210,6 +211,11 @@ export interface CharacterDto {
   spells: SpellsStateDto;
   attacks: AttackDto[];
   features: FeatureDto[];
+  /**
+   * Carteira de moedas { pp, gp, ep, sp, cp }, sempre com as cinco
+   * denominações. A exibição de PL/PE depende de `GameConfig.extraCoins`.
+   */
+  coins: CoinPurse;
 
   notes: string;
   version: number;
@@ -244,6 +250,8 @@ export function toCharacterDto(
   const level = totalCharacterLevel(classEntries);
   const className = classEntriesLabel(classEntries);
   const classState = normalizeClassState(character.classState);
+  // Moedas: as cinco denominações sempre gravadas; o peso entra no derived.
+  const coins = normalizeCoins(character.coins);
 
   // Cada classe é avaliada no PRÓPRIO nível: um Bárbaro 3/Ladino 2 tem as
   // features de bárbaro até o 3 e as de ladino até o 2, ao mesmo tempo.
@@ -361,6 +369,7 @@ export function toCharacterDto(
     initiativeBonus: character.initiativeBonus,
     className,
     inventory,
+    coinWeight: coinsWeight(coins),
     hitDie: classEntryDtos[0]?.hitDie ?? null,
     spellcastingAbility: primaryCasting?.ability ?? undefined,
     lockedSaves,
@@ -428,6 +437,7 @@ export function toCharacterDto(
     spells,
     attacks,
     features,
+    coins,
     notes: character.notes,
     version: character.version,
     createdAt: character.createdAt.toISOString(),

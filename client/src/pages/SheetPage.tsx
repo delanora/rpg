@@ -20,6 +20,7 @@ import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
+import { fetchTransferTargets } from '../coinsApi';
 import { fetchGameConfig } from '../gameApi';
 import { moveInventoryItem } from '../inventoryApi';
 import { closePresentation } from '../presentationApi';
@@ -30,6 +31,7 @@ import type {
   InventoryMoveRequest,
   Presentation,
   SessionUser,
+  TransferTarget,
 } from '../types';
 import { useRealtime } from '../useRealtime';
 
@@ -44,6 +46,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // Configuração da mesa: controla se o botão Level Up está habilitado.
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
+  // Destinos possíveis de transferência de moedas (outros jogadores da mesa).
+  const [coinTargets, setCoinTargets] = useState<TransferTarget[]>([]);
   // Seção da ficha aberta logo abaixo do painel de combate (ou nenhuma).
   const [combatView, setCombatView] = useState<SheetShortcut | null>(null);
 
@@ -153,6 +157,21 @@ export function SheetPage({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  // Lista de outros jogadores, para o seletor de destino da transferência.
+  // Refeita só quando a ficha (o personagem) muda — não a cada alteração.
+  useEffect(() => {
+    if (!character) return;
+    let active = true;
+    fetchTransferTargets()
+      .then((targets) => {
+        if (active) setCoinTargets(targets);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [character?.id]);
+
   /**
    * Move/equipa um item do inventário. Usa o endpoint dedicado (que trata a
    * troca no servidor) e adota a ficha devolvida como fonte de verdade.
@@ -190,6 +209,11 @@ export function SheetPage({ user }: { user: SessionUser }) {
       : gameConfig.levelUpRelease === 0
         ? 'O mestre ainda não liberou nenhum Level Up nesta mesa.'
         : 'Você já usou esta liberação. Aguarde o mestre liberar de novo.';
+
+  /** Ações de moedas devolvem a ficha inteira — ela passa a ser a da tela. */
+  const adoptCoins = useCallback((saved: Character) => {
+    setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+  }, []);
 
   /** Aplica a ficha vinda do assistente de criação (a fonte de verdade é dele). */
   const adoptCreatedSheet = useCallback((saved: Character) => {
@@ -289,6 +313,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 turnAlert={turnAlert}
                 onDismissTurnAlert={dismissTurnAlert}
                 characterAttacks={character?.attacks ?? []}
+                characterInventory={character?.inventory ?? []}
                 sneakAttackExpression={character?.derived.sneakAttack?.expression ?? null}
                 onCombatChange={combatState.setCombat}
                 onCombatEnd={() => combatState.setCombat(null)}
@@ -357,6 +382,9 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   character={character}
                   update={update}
                   onInventoryMove={moveItem}
+                  extraCoins={gameConfig?.extraCoins ?? false}
+                  coinTargets={coinTargets}
+                  onCoinsChange={adoptCoins}
                   onRollSkill={dice.openSkillRoll}
                   creationLocked={character.creationFinalized}
                 />
