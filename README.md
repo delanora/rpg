@@ -201,7 +201,7 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 
 ### Verificação automática (smoke test)
 
-Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 26 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas (seções 22 a 26):
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 27 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas e do ataque derivado (seções 22 a 27):
 
 | Seção | O que verifica |
 |-------|----------------|
@@ -218,6 +218,7 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **24** | **Munição (complemento)** — arma sem `ammunition` não consome nada; o bônus da munição mágica soma ao ataque **e** ao dano; duas requisições simultâneas não gastam a mesma unidade (uma consome, a outra recebe 409). |
 | **25** | **Moedas (complemento)** — a transferência publica `sheet:updated` nas duas fichas com os saldos finais; saldo insuficiente e transferência para o mestre recusados (400); alternar `extraCoins` publica `game:config`. |
 | **26** | **Inventário (complemento)** — o mestre ajusta quantidade e remove item; os `send` se acumulam; usar consumível entra no log de rolagens do mestre como `kind: item`. |
+| **27** | **Ataque derivado da arma equipada** — a arma equipada vira ataque calculado com a habilidade certa (FOR corpo a corpo, DES à distância, a melhor das duas com acuidade), proficiência por **categoria** e por **nome** (plural/acento), dado **versátil** com a outra mão livre, **duas mãos** recusada (400) com a outra mão ocupada, **segunda arma leve** sem o modificador de dano, variante de **arremesso** (`ranged` usando FOR) e **golpe desarmado**; tudo resolvido no combate, inclusive o Ataque Furtivo da arma sutil. |
 
 Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória (e as seções novas **reaproveitam** fichas já criadas para não estourar o limite de 30 contas por 15 min do modo produção).
 

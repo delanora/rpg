@@ -513,8 +513,12 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       if (combatant.characterId) {
         const character = characters.find((item) => item.id === combatant.characterId);
         if (!character) return [];
-        // Ataques de arma não equipada não aparecem (regra da munição).
-        return availableAttacks(character.attacks, character.inventory);
+        // Ataques de arma não equipada não aparecem (regra da munição); os
+        // derivados das armas equipadas entram junto (e os bloqueados somem).
+        return availableAttacks(
+          [...character.attacks, ...character.derivedAttacks],
+          character.inventory,
+        );
       }
       if (combatant.creatureId) {
         return creatures.find((creature) => creature.id === combatant.creatureId)?.attacks ?? [];

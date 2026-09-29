@@ -38,9 +38,11 @@ export function weaponOf(
 
 /**
  * O ataque pode ser exibido/usado? Sem vínculo, sempre. Com vínculo, só quando
- * a arma apontada está equipada numa das mãos.
+ * a arma apontada está equipada numa das mãos. Ataques derivados BLOQUEADOS
+ * (ex.: arma de duas mãos com a outra mão ocupada) nunca são usáveis.
  */
 export function attackIsAvailable(attack: Attack, inventory: readonly InventoryItem[]): boolean {
+  if (attack.blocked) return false;
   if (!attack.inventoryItemId) return true;
   return isWeaponEquipped(weaponOf(attack, inventory));
 }

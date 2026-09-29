@@ -609,6 +609,12 @@ export async function resolveAttack(
     throw new HttpError('Ataque não encontrado nesta ficha ou criatura.', 404);
   }
 
+  // Ataque derivado de arma que não pode ser empunhada agora (ex.: duas mãos
+  // com a outra mão ocupada): recusa com o motivo, em vez de rolar.
+  if (attack.blocked) {
+    throw new HttpError(attack.blocked, 400);
+  }
+
   // Munição: só para PERSONAGENS e só quando o ataque aponta para uma arma do
   // inventário. A arma precisa estar EQUIPADA numa das mãos; se ela exigir
   // munição (propriedade `ammunition`), 1 unidade é gasta ANTES de rolar —

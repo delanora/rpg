@@ -1,7 +1,8 @@
 import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
 import { characterArmorClass } from '../characters/armor-class.js';
-import { attackSchema, type Attack } from '../shared/attacks.js';
+import { characterDerivedAttacks } from '../characters/characters.dto.js';
+import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
 import { parseJson } from '../shared/json.js';
 
 /** Formato do combate enviado a jogadores e mestre. */
@@ -95,10 +96,17 @@ export function orderCombatants(combatants: CombatantSourced[]): CombatantSource
   });
 }
 
-/** Ataques do combatente, venham da ficha ou da criatura. */
-export function combatantAttacks(combatant: CombatantSourced): Attack[] {
+/**
+ * Ataques do combatente, venham da ficha ou da criatura. Os personagens ainda
+ * ganham os ataques DERIVADOS das armas equipadas (e o golpe desarmado), com os
+ * mesmos ids que a ficha exibe — sem isso o ataque da arma não resolveria.
+ */
+export function combatantAttacks(combatant: CombatantSourced): CombatAttack[] {
   if (combatant.character) {
-    return parseJson<Attack[]>(attackListSchema, combatant.character.attacks, []);
+    return [
+      ...parseJson<Attack[]>(attackListSchema, combatant.character.attacks, []),
+      ...characterDerivedAttacks(combatant.character),
+    ];
   }
   if (combatant.creature) {
     return parseJson<Attack[]>(attackListSchema, combatant.creature.attacks, []);
