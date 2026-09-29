@@ -249,6 +249,18 @@ export const moveInventoryItemSchema = z.object({
 
 export type MoveInventoryItemInput = z.infer<typeof moveInventoryItemSchema>;
 
+/**
+ * Usa (consome) UMA unidade de um item do inventário.
+ *
+ * Só vale para Poção ou para item marcado como consumível pelo mestre; se o
+ * item tiver `effectRoll`, o servidor rola a expressão e devolve o resultado.
+ */
+export const useInventoryItemSchema = z.object({
+  itemInventoryId: z.string().min(1, 'Informe o item.'),
+});
+
+export type UseInventoryItemInput = z.infer<typeof useInventoryItemSchema>;
+
 // --- Moedas -----------------------------------------------------------------
 //
 // Só o mestre dá ou retira (PATCH e `POST /:id/coins`); o jogador gasta, troca

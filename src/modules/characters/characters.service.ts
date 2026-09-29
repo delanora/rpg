@@ -9,7 +9,8 @@ import {
   type SheetUpdatedPayload,
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { clearActiveRollFrom, forgetRollsFrom } from '../dice/dice.service.js';
+import { clearActiveRollFrom, forgetRollsFrom, rollItemEffect } from '../dice/dice.service.js';
+import type { DiceRollDto } from '../dice/dice.dto.js';
 import { getGameConfig } from '../game-config/game-config.service.js';
 import { toCharacterDto, type CharacterDto, type InventoryItemDto } from './characters.dto.js';
 import {
@@ -23,7 +24,9 @@ import type {
   LevelUpInput,
   MoveInventoryItemInput,
   UpdateCharacterInput,
+  UseInventoryItemInput,
 } from './characters.schema.js';
+import { isConsumableItem } from '../shared/item-details.js';
 import { parseJson } from '../shared/json.js';
 import { spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
 import {
@@ -151,7 +154,7 @@ const CREATION_FIELD_LABELS: Record<string, string> = {
   coins: 'Moedas',
   attacks: 'ataques',
   features: 'características',
-  inventory: 'inventário',
+  inventory: 'Inventário',
 };
 
 function emptySpells(): Prisma.InputJsonValue {
@@ -837,6 +840,71 @@ export async function moveInventoryItem(
 }
 
 // ---------------------------------------------------------------------------
+// Uso de item consumível
+// ---------------------------------------------------------------------------
+
+/** Tentativas de reescrita quando duas requisições disputam o inventário. */
+const INVENTORY_WRITE_ATTEMPTS = 6;
+
+/**
+ * Usa (consome) UMA unidade de um item do inventário do próprio jogador.
+ *
+ * Só vale para Poção e para itens marcados com `details.consumable`; outros
+ * itens são recusados (400). A unidade é descontada com a escrita condicionada
+ * à `version` (duas requisições simultâneas não consomem a mesma unidade) e a
+ * entrada SAI do inventário quando a quantidade chega a zero. Se o item tiver
+ * `effectRoll`, o resultado da rolagem volta na resposta — nenhum efeito é
+ * aplicado automaticamente na ficha.
+ */
+export async function useInventoryItem(
+  actor: Actor,
+  input: UseInventoryItemInput,
+): Promise<{ character: CharacterDto; roll: DiceRollDto | null }> {
+  for (let attempt = 0; attempt < INVENTORY_WRITE_ATTEMPTS; attempt += 1) {
+    const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+    if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+    const inventory = parseJson<InventoryItemDto[]>(
+      inventoryListSchema,
+      character.inventory,
+      [],
+    );
+    const item = inventory.find((entry) => entry.id === input.itemInventoryId);
+    if (!item) throw new HttpError('Item não encontrado no inventário.', 404);
+
+    if (!isConsumableItem(item.category, item.details)) {
+      throw new HttpError(`O item ${item.name} não é consumível.`, 400);
+    }
+    if (item.quantity <= 0) {
+      throw new HttpError(`Não há mais unidades de ${item.name}.`, 400);
+    }
+
+    // A entrada some quando a última unidade é usada.
+    const next = inventory
+      .map((entry) => (entry.id === item.id ? { ...entry, quantity: entry.quantity - 1 } : entry))
+      .filter((entry) => entry.quantity > 0);
+
+    const written = await prisma.character.updateMany({
+      where: { id: character.id, version: character.version },
+      data: { inventory: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } },
+    });
+    if (written.count === 0) continue;
+
+    const updated = await prisma.character.findUnique({ where: { id: character.id } });
+    if (!updated) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+    const roll = item.details.effectRoll
+      ? rollItemEffect(actor, updated.name || actor.displayName, item.name, item.details.effectRoll)
+      : null;
+
+    await publishChange(actor, updated, { inventory: next });
+    return { character: await toSheetDto(updated, actor.username), roll };
+  }
+
+  throw new HttpError('O inventário mudou durante a operação; tente novamente.', 409);
+}
+
+// ---------------------------------------------------------------------------
 // Moedas
 // ---------------------------------------------------------------------------
 
@@ -1154,6 +1222,18 @@ function assertPlayerCanPatch(character: Character, patch: UpdateCharacterInput)
   if (patch.armorClassOverride !== undefined) {
     throw new HttpError(
       'A Classe de Armadura é calculada automaticamente; só o mestre pode definir um valor manual.',
+      403,
+    );
+  }
+
+  // O INVENTÁRIO do jogador nunca entra pelo PATCH — em fase NENHUMA (nem
+  // durante a criação). Ele só muda por: movimentar/equipar
+  // (`POST /me/inventory/move`, que nunca toca a quantidade), usar um item
+  // consumível (`POST /me/inventory/use`) e itens que o mestre envia.
+  if (patch.inventory !== undefined) {
+    throw new HttpError(
+      `O ${CREATION_FIELD_LABELS.inventory} só muda pelo mestre: use os itens que ele envia, ` +
+        'mova/equipe pelo inventário e consuma os itens usáveis.',
       403,
     );
   }

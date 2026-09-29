@@ -133,6 +133,8 @@ async function setCharacterClasses(
   });
 }
 
+
+
 /**
  * Corpo do Level Up montado do mesmo jeito que o `LevelUpDialog` monta.
  *
@@ -278,6 +280,22 @@ async function main(): Promise<void> {
   const playerToken: string = playerLogin.data?.token;
   const masterToken: string = masterLogin.data?.token;
   const playerId: string = playerLogin.data?.user?.id;
+
+  /**
+   * Monta o inventário (ou qualquer campo) da ficha de um jogador COMO MESTRE.
+   *
+   * O jogador não edita mais o inventário por PATCH em fase nenhuma, então os
+   * cenários que precisam de itens específicos usam o PATCH do mestre.
+   */
+  const patchAsMaster = async (userId: string, body: Record<string, unknown>) => {
+    const character = await prisma.character.findUnique({ where: { userId } });
+    if (!character) throw new Error(`Ficha não encontrada para ${userId}.`);
+    return api(`/api/characters/${character.id}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body,
+    });
+  };
 
   check('/api/auth/me exige token (401 sem token)', (await api('/api/auth/me')).status === 401);
 
@@ -450,11 +468,9 @@ async function main(): Promise<void> {
     (await api('/api/characters/me')).status === 401,
   );
 
-  // Inventário com peso.
-  const withItems = await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: {
+  // Inventário com peso — montado pelo MESTRE (o jogador não edita o
+  // inventário por PATCH em fase nenhuma).
+  const withItems = await patchAsMaster(playerId, {
       inventory: [
         { id: 'i1', name: 'Espada longa', description: 'cortante', quantity: 1, weight: 3, equipped: true },
         { id: 'i2', name: 'Poção de cura', description: '', quantity: 3, weight: 0.5, equipped: false },
@@ -468,7 +484,6 @@ async function main(): Promise<void> {
         list: [{ id: 's1', name: 'Mísseis Mágicos', level: 1, school: 'Evocação', prepared: true, description: '' }],
         slots: { '1': { max: 2, used: 1 } },
       },
-    },
   });
   check('peso total é somado (3 + 1,5 = 4,5)', withItems.data?.character?.derived?.totalWeight === 4.5, `recebido: ${withItems.data?.character?.derived?.totalWeight}`);
   check('capacidade de carga = FOR × 7,5 (8 × 7,5 = 60 kg)', withItems.data?.character?.derived?.carryingCapacity === 60, `recebido: ${withItems.data?.character?.derived?.carryingCapacity}`);
@@ -1085,10 +1100,9 @@ async function main(): Promise<void> {
     (await api('/api/characters/me', { token: playerToken })).data.character;
 
   const withAmmo = (
-    await api('/api/characters/me', {
-      method: 'PATCH',
-      token: playerToken,
-      body: { inventory: [bowItem, arrowItem, magicArrowItem], attacks: [bowAttack] },
+    await patchAsMaster(playerId, {
+      inventory: [bowItem, arrowItem, magicArrowItem],
+      attacks: [bowAttack],
     })
   ).data.character;
   check(
@@ -1142,12 +1156,8 @@ async function main(): Promise<void> {
   );
 
   // Pilha que chega a 0 sai do inventário.
-  await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: {
-      inventory: [bowItem, { ...arrowItem, quantity: 1 }, { ...magicArrowItem, quantity: 1 }],
-    },
+  await patchAsMaster(playerId, {
+    inventory: [bowItem, { ...arrowItem, quantity: 1 }, { ...magicArrowItem, quantity: 1 }],
   });
   await api('/api/combat/attack', {
     method: 'POST',
@@ -1163,11 +1173,7 @@ async function main(): Promise<void> {
   );
 
   // Sem munição: 409 e nada é rolado.
-  await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: { inventory: [bowItem] },
-  });
+  await patchAsMaster(playerId, { inventory: [bowItem] });
   const emptyQuiver = await api('/api/combat/attack', {
     method: 'POST',
     token: playerToken,
@@ -1180,10 +1186,8 @@ async function main(): Promise<void> {
   );
 
   // Arma vinculada NÃO equipada: o ataque não é utilizável.
-  await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: { inventory: [{ ...bowItem, slot: null }, { ...arrowItem, quantity: 5 }] },
+  await patchAsMaster(playerId, {
+    inventory: [{ ...bowItem, slot: null }, { ...arrowItem, quantity: 5 }],
   });
   const unequippedBow = await api('/api/combat/attack', {
     method: 'POST',
@@ -1197,15 +1201,11 @@ async function main(): Promise<void> {
   );
 
   // Restaura o inventário do começo do combate para as próximas seções.
-  await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: {
-      inventory: [
-        { id: 'i1', name: 'Espada longa', description: 'cortante', quantity: 1, weight: 3, equipped: true },
-        { id: 'i2', name: 'Poção de cura', description: '', quantity: 3, weight: 0.5, equipped: false },
-      ],
-    },
+  await patchAsMaster(playerId, {
+    inventory: [
+      { id: 'i1', name: 'Espada longa', description: 'cortante', quantity: 1, weight: 3, equipped: true },
+      { id: 'i2', name: 'Poção de cura', description: '', quantity: 3, weight: 0.5, equipped: false },
+    ],
   });
 
   // --- Ladino: features derivadas e Ataque Furtivo automático ----------------
@@ -2316,15 +2316,12 @@ async function main(): Promise<void> {
   );
   check('a quantidade do jogador é preservada', syncedEntry?.quantity === 1, String(syncedEntry?.quantity));
 
-  // Edição local em um campo do catálogo é sobrescrita pelo espelho.
-  const locallyEdited = await api('/api/characters/me', {
-    method: 'PATCH',
-    token: playerToken,
-    body: {
-      inventory: afterWeaponSend.inventory.map((entry: any) =>
-        entry.itemId === weapon.id ? { ...entry, name: 'Nome local', weight: 99 } : entry,
-      ),
-    },
+  // Edição local em um campo do catálogo é sobrescrita pelo espelho (aqui o
+  // mestre escreve o valor local, que o espelho do catálogo substitui).
+  const locallyEdited = await patchAsMaster(playerId, {
+    inventory: afterWeaponSend.inventory.map((entry: any) =>
+      entry.itemId === weapon.id ? { ...entry, name: 'Nome local', weight: 99 } : entry,
+    ),
   });
   const mirrored = locallyEdited.data?.character?.inventory?.find(
     (entry: any) => entry.itemId === weapon.id,
@@ -5281,7 +5278,7 @@ async function main(): Promise<void> {
   masterBackSocket.close();
 
   // ==========================================================================
-  // FASE 0 — regressão das regras base (seções 14 a 20)
+  // FASE 0 — regressão das regras base (seções 14 a 21)
   //
   // Cada seção cria as PRÓPRIAS contas (sufixo único) e limpa no final, como o
   // resto do smoke. Os cenários de nível alto são montados direto no banco
@@ -6707,6 +6704,174 @@ async function main(): Promise<void> {
     token: masterToken,
     body: { enabled: false },
   });
+
+  // --- 21. Inventário: quantidade só do mestre e uso de consumível ----------
+  console.log('\n21) Inventário (quantidade e uso de item)');
+
+  const bag = await freshSheet('fase0inv');
+  // A ficha ainda NÃO finalizou a criação — e o PATCH de inventário já é 403.
+  const inventoryPatch = await api('/api/characters/me', {
+    method: 'PATCH',
+    token: bag.token,
+    body: { inventory: [] },
+  });
+  check(
+    'o jogador não altera o inventário por PATCH nem durante a criação (403 citando Inventário)',
+    inventoryPatch.status === 403 && /Inventário/.test(inventoryPatch.data?.message ?? ''),
+    JSON.stringify(inventoryPatch.data),
+  );
+
+  const potion = {
+    id: 'inv-potion',
+    name: 'Poção de cura',
+    description: '',
+    quantity: 2,
+    weight: 0.5,
+    slot: null,
+    backpackX: null,
+    backpackY: null,
+    imageUrl: '',
+    itemId: '',
+    category: 'Poção',
+    details: { effectRoll: '2d4+2' },
+  };
+  const gear = {
+    id: 'inv-gear',
+    name: 'Corda',
+    description: '',
+    quantity: 1,
+    weight: 2,
+    slot: null,
+    backpackX: null,
+    backpackY: null,
+    imageUrl: '',
+    itemId: '',
+    category: 'Item Geral',
+    details: {},
+  };
+  const sword = {
+    ...gear,
+    id: 'inv-sword',
+    name: 'Espada longa',
+    category: 'Arma',
+    details: { damageCount: 1, damageDie: 8, damageType: 'Cortante' },
+  };
+
+  const stocked = await masterPatch(bag.characterId, { inventory: [potion, gear, sword] });
+  check(
+    'o mestre define o inventário pelo PATCH (200)',
+    stocked.status === 200 && stocked.data?.character?.inventory?.length === 3,
+    JSON.stringify(stocked.data?.character?.inventory?.length),
+  );
+
+  // Movimentar continua do jogador, e nunca mexe na quantidade (o campo extra
+  // de quantidade no corpo é ignorado pelo schema).
+  const moved = await api('/api/characters/me/inventory/move', {
+    method: 'POST',
+    token: bag.token,
+    body: { itemInventoryId: 'inv-potion', targetSlot: 'hand1', quantity: 99 },
+  });
+  const movedPotion = (moved.data?.character?.inventory ?? []).find(
+    (item: any) => item.id === 'inv-potion',
+  );
+  check(
+    'mover/equipar do jogador continua valendo e não muda a quantidade',
+    moved.status === 200 && movedPotion?.slot === 'hand1' && movedPotion?.quantity === 2,
+    JSON.stringify(movedPotion),
+  );
+
+  const used = await api('/api/characters/me/inventory/use', {
+    method: 'POST',
+    token: bag.token,
+    body: { itemInventoryId: 'inv-potion' },
+  });
+  const usedPotion = (used.data?.character?.inventory ?? []).find(
+    (item: any) => item.id === 'inv-potion',
+  );
+  check(
+    'usar a poção desconta 1 unidade (2 → 1) e devolve a ficha (200)',
+    used.status === 200 && usedPotion?.quantity === 1,
+    JSON.stringify(usedPotion),
+  );
+  check(
+    'a rolagem do efeito volta como kind item, com o nome do item',
+    used.data?.roll?.kind === 'item' &&
+      used.data?.roll?.label === 'Item: Poção de cura' &&
+      used.data?.roll?.actorName === used.data?.character?.name &&
+      used.data?.roll?.dice?.length === 2 &&
+      used.data?.roll?.dice?.every((die: any) => die.sides === 4) &&
+      used.data?.roll?.bonus === 2 &&
+      used.data?.roll?.total ===
+        used.data.roll.dice.reduce((sum: number, die: any) => sum + die.value, 0) + 2,
+    JSON.stringify(used.data?.roll),
+  );
+
+  const usedAgain = await api('/api/characters/me/inventory/use', {
+    method: 'POST',
+    token: bag.token,
+    body: { itemInventoryId: 'inv-potion' },
+  });
+  check(
+    'a última unidade sai do inventário (a entrada some)',
+    usedAgain.status === 200 &&
+      !(usedAgain.data?.character?.inventory ?? []).some((item: any) => item.id === 'inv-potion'),
+    JSON.stringify(usedAgain.data?.character?.inventory?.map((item: any) => item.id)),
+  );
+
+  check(
+    'item não consumível é recusado (400)',
+    (
+      await api('/api/characters/me/inventory/use', {
+        method: 'POST',
+        token: bag.token,
+        body: { itemInventoryId: 'inv-sword' },
+      })
+    ).status === 400,
+  );
+
+  check(
+    'usar um item fora do inventário é 404',
+    (
+      await api('/api/characters/me/inventory/use', {
+        method: 'POST',
+        token: bag.token,
+        body: { itemInventoryId: 'nao-existe' },
+      })
+    ).status === 404,
+  );
+
+  // Item de Outro marcado pelo mestre como consumível, com efeito FIXO (sem dado).
+  await masterPatch(bag.characterId, {
+    inventory: [
+      gear,
+      sword,
+      {
+        ...gear,
+        id: 'inv-oil',
+        name: 'Óleo flamejante',
+        category: 'Outro',
+        details: { consumable: true, effectRoll: '4' },
+      },
+    ],
+  });
+  const oilUse = await api('/api/characters/me/inventory/use', {
+    method: 'POST',
+    token: bag.token,
+    body: { itemInventoryId: 'inv-oil' },
+  });
+  check(
+    'item de Outro marcado como consumível pode ser usado; efeito fixo vira bônus',
+    oilUse.status === 200 &&
+      oilUse.data?.roll?.kind === 'item' &&
+      oilUse.data?.roll?.dice?.length === 0 &&
+      oilUse.data?.roll?.bonus === 4 &&
+      oilUse.data?.roll?.total === 4 &&
+      !(oilUse.data?.character?.inventory ?? []).some((item: any) => item.id === 'inv-oil'),
+    JSON.stringify({
+      roll: oilUse.data?.roll,
+      inv: oilUse.data?.character?.inventory?.map((item: any) => item.id),
+    }),
+  );
 
   }
 

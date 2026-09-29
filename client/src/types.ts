@@ -88,6 +88,8 @@ export interface ItemDetails {
   effectRoll?: string;
   duration?: string;
   attunement?: boolean;
+  /** Marcado pelo mestre (Item Geral/Outro): o item pode ser USADO (consome 1). */
+  consumable?: boolean;
 }
 
 /** Preço em peças de ouro (PO), prata (PP) e cobre (PC). */
@@ -1375,7 +1377,7 @@ export interface DiceRolledPayload {
 
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
 
-export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation';
+export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item';
 
 /** Um dado já rolado (espelha src/modules/dice/dice.dto.ts). */
 export interface RolledDie {

@@ -6,7 +6,7 @@
  * e de salvaguarda, públicas ou privadas.
  */
 
-export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation';
+export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item';
 
 /** Um dado já rolado. */
 export interface RolledDie {
@@ -87,7 +87,10 @@ export interface DiceRollDto {
   /** Nome do personagem (ou do usuário, sem ficha) que rolou. */
   actorName: string;
   kind: DiceRollKind;
-  /** Perícia/salvaguarda ("Percepção") ou vazio na rolagem livre. */
+  /**
+   * Perícia/salvaguarda ("Percepção"), "Item: Poção de cura" na rolagem de uso
+   * de item, ou vazio na rolagem livre.
+   */
   label: string;
   dice: RolledDie[];
   /** Modificador fixo pré-aplicado (bônus de perícia/salvaguarda). */

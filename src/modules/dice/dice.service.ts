@@ -3,7 +3,7 @@ import type { Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { ServerEvents, type TableRollActivePayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { rollD20, rollDie } from '../shared/dice.js';
+import { rollD20, rollDice, rollDie } from '../shared/dice.js';
 import type {
   ActiveRollDto,
   DiceRollDto,
@@ -198,7 +198,7 @@ function rollGroup(sides: number, advantage: boolean, disadvantage: boolean): Ro
   return [{ sides, value: rollDie(sides) }];
 }
 
-function publish(roll: DiceRollDto, actor: DiceActor): void {
+function publish(roll: DiceRollDto, actor: { userId: string }): void {
   try {
     const broadcaster = getBroadcaster();
     const payload = { roll };
@@ -267,6 +267,48 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
   if (activeRoll?.userId === actor.userId) {
     activeRoll = { ...activeRoll, lastRoll: roll };
   }
+
+  history = [roll, ...history].slice(0, HISTORY_LIMIT);
+  publish(roll, actor);
+
+  return roll;
+}
+
+/**
+ * Rola o `effectRoll` de um item CONSUMÍVEL e registra a rolagem no log.
+ *
+ * Não há aviso de "está rolando" (ninguém está na janela de dados) e nenhum
+ * efeito é aplicado na ficha: a rolagem entra no histórico do mestre como
+ * `kind: 'item'`, rotulada com o nome do item, e volta na resposta para o
+ * jogador ver o resultado. Devolve `null` quando a expressão não é válida —
+ * aí o item é consumido mesmo assim, sem rolagem.
+ */
+export function rollItemEffect(
+  actor: { userId: string },
+  actorName: string,
+  itemName: string,
+  expression: string,
+): DiceRollDto | null {
+  const result = rollDice(expression);
+  if (!result) return null;
+
+  const roll: DiceRollDto = {
+    id: randomUUID(),
+    actorUserId: actor.userId,
+    clientId: null,
+    actorName,
+    kind: 'item',
+    label: `Item: ${itemName}`,
+    // Expressão fixa (ex.: "4") não tem dado: o valor vai como bônus.
+    dice: result.rolls.map((value) => ({ sides: result.sides, value })),
+    bonus: result.modifier,
+    total: result.total,
+    advantage: false,
+    disadvantage: false,
+    isPrivate: false,
+    crit: false,
+    at: new Date().toISOString(),
+  };
 
   history = [roll, ...history].slice(0, HISTORY_LIMIT);
   publish(roll, actor);

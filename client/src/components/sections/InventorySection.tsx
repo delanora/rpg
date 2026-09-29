@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
-import { describeItemDetails } from '../../dnd';
+import { describeItemDetails, isConsumableItem } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type {
   Character,
@@ -49,6 +49,8 @@ const SLOT_ICON: Record<InventorySlot, IconName> = {
 interface InventorySectionProps extends SheetSectionProps {
   /** Move/equipa um item no servidor (trata a troca no backend). */
   onMoveItem?: (request: InventoryMoveRequest) => void | Promise<void>;
+  /** Usa (consome) 1 unidade de um item consumível (Poção ou marcado). */
+  onUseItem?: (itemInventoryId: string) => void | Promise<void>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na mesa. */
   extraCoins?: boolean;
   /** Destinos possíveis de transferência de moedas (outros jogadores). */
@@ -146,16 +148,22 @@ export function InventorySection({
   character,
   update,
   onMoveItem,
+  onUseItem,
   extraCoins = false,
   coinTargets = [],
   onCoinsChange,
 }: InventorySectionProps) {
-  // Movimentar/equipar itens é estado de jogo (continua liberado depois de
-  // finalizar a criação); criar, renomear ou remover itens é construção.
-  const { readOnly, lockedConstruction } = useSheetAccess();
+  // Movimentar/equipar e USAR item são estado de jogo (valem sempre para o
+  // jogador); criar, remover e mudar a QUANTIDADE são do mestre — o jogador
+  // nunca altera a quantidade (regra do servidor).
+  const { readOnly, masterView } = useSheetAccess();
   const inventory = character.inventory;
   // Sem o callback do endpoint (ex.: visão do mestre) não há arrastar/soltar.
   const canMove = !readOnly && onMoveItem !== undefined;
+  // Controles de CONSTRUÇÃO do inventário: só o mestre, e só em modo de edição.
+  const canEditItems = masterView && !readOnly;
+  // O jogador pode usar consumíveis (nunca o mestre, que só administra).
+  const canUseItems = !masterView && !readOnly;
 
   const draggingRef = useRef<string | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
@@ -164,6 +172,8 @@ export function InventorySection({
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ item: InventoryItem; x: number; y: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Item sendo consumido agora (desabilita o botão enquanto o servidor responde).
+  const [usingId, setUsingId] = useState<string | null>(null);
   // O detalhe do item abre flutuante, ancorado no ponto do clique.
   const [detailPos, setDetailPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -222,6 +232,13 @@ export function InventorySection({
   function removeItem(id: string): void {
     update({ inventory: inventory.filter((item) => item.id !== id) });
     closeDetail();
+  }
+
+  /** Consome 1 unidade do item (o servidor é quem desconta). */
+  function useItem(id: string): void {
+    if (!onUseItem) return;
+    setUsingId(id);
+    void Promise.resolve(onUseItem(id)).finally(() => setUsingId(null));
   }
 
   /** Fecha o painel flutuante do item. */
@@ -393,11 +410,11 @@ export function InventorySection({
       title="Inventário"
       icon="bag"
       actions={
-        lockedConstruction ? undefined : (
+        canEditItems ? (
           <button type="button" className="btn btn-small" onClick={addItem}>
             + item avulso
           </button>
-        )
+        ) : undefined
       }
     >
       <div className="inventory-board">
@@ -520,21 +537,38 @@ export function InventorySection({
             <p className="inv-detail-desc">{selected.description || 'Sem descrição.'}</p>
 
             <div className="inv-detail-actions">
-              <label className="inv-detail-qty">
-                Qtd.
-                <InlineField
-                  className="inv-detail-qty-field"
-                  value={selected.quantity}
-                  mode="number"
-                  min={0}
-                  readOnly={lockedConstruction}
-                  ariaLabel="Quantidade"
-                  onCommit={(value) =>
-                    patchItem(selected.id, { quantity: clampInt(value, 0, 9999, selected.quantity) })
-                  }
-                />
-              </label>
-              {lockedConstruction ? null : (
+              {canEditItems ? (
+                <label className="inv-detail-qty">
+                  Qtd.
+                  <InlineField
+                    className="inv-detail-qty-field"
+                    value={selected.quantity}
+                    mode="number"
+                    min={0}
+                    readOnly={false}
+                    ariaLabel="Quantidade"
+                    onCommit={(value) =>
+                      patchItem(selected.id, { quantity: clampInt(value, 0, 9999, selected.quantity) })
+                    }
+                  />
+                </label>
+              ) : (
+                <span className="inv-detail-qty-static">Qtd. {selected.quantity}</span>
+              )}
+
+              {canUseItems && isConsumableItem(selected.category, selected.details) ? (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-small"
+                  disabled={usingId === selected.id}
+                  title="Consome 1 unidade deste item"
+                  onClick={() => useItem(selected.id)}
+                >
+                  {usingId === selected.id ? 'usando...' : 'Usar'}
+                </button>
+              ) : null}
+
+              {canEditItems ? (
                 <button
                   type="button"
                   className="btn btn-danger btn-small"
@@ -542,7 +576,7 @@ export function InventorySection({
                 >
                   remover
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
         ) : null}
