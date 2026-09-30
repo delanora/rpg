@@ -5,6 +5,7 @@ import {
   creationRollRequestSchema,
   creationStepSchema,
   giveCoinsSchema,
+  levelDownSchema,
   levelUpSchema,
   moveInventoryItemSchema,
   spendCoinsSchema,
@@ -19,6 +20,7 @@ import {
   exchangeCoins,
   getSheetByUserId,
   giveCoins,
+  levelDownCharacter,
   levelUpCharacter,
   listCharacters,
   listTransferTargets,
@@ -382,6 +384,31 @@ charactersRouter.patch('/:id', authenticate, requireRole('MASTER'), async (req, 
     parsed.data,
   );
   res.json({ character });
+});
+
+/**
+ * POST /api/characters/:id/level-down — o mestre reduz UM nível do personagem.
+ *
+ * O inverso do Level Up: tira um nível da classe indicada e desfaz o que aquele
+ * nível concedeu (PV, Aumento de Atributo/Talento, escolhas, subclasse, perícia
+ * de multiclasse e proficiências), usando o histórico gravado no Level Up.
+ *
+ * Nível 1 caindo para 0 remove a classe da ficha. A resposta traz também
+ * `levelDown` com o que foi revertido e `warnings` dos níveis antigos, sem
+ * histórico (só o PV foi estimado).
+ */
+charactersRouter.post('/:id/level-down', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = levelDownSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await levelDownCharacter(String(req.params.id), actorFrom(req), parsed.data));
 });
 
 /**

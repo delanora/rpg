@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { Character, LevelUpRequest } from './types';
+import type { Character, LevelDownRequest, LevelDownResult, LevelUpRequest } from './types';
 
 /**
  * Aplica o Level Up de uma vez. O dado de vida é rolado no servidor: o cliente
@@ -11,4 +11,20 @@ export async function levelUpCharacter(request: LevelUpRequest): Promise<Charact
     body: request,
   });
   return character;
+}
+
+/**
+ * O MESTRE reduz um nível de um personagem — o inverso do Level Up.
+ *
+ * A resposta traz a ficha já revertida, o resumo do que saiu (`levelDown`) e os
+ * avisos dos níveis anteriores ao histórico.
+ */
+export function levelDownCharacter(
+  characterId: string,
+  request: LevelDownRequest,
+): Promise<LevelDownResult> {
+  return api<LevelDownResult>(`/api/characters/${characterId}/level-down`, {
+    method: 'POST',
+    body: request,
+  });
 }

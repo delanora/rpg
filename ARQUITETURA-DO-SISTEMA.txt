@@ -201,7 +201,7 @@ SERVIDOR (src/)
     migrate-item-weapons.ts  completa o perfil de arma dos itens (padrões melee/simple;
                           Cajado com dano vira versátil d6/d8) e lista os suspeitos de
                           arma à distância pelo nome
-    smoke-realtime.ts     7.820 linhas — smoke test ponta a ponta (736 asserts)
+    smoke-realtime.ts     8.090 linhas — smoke test ponta a ponta (755 asserts)
 
 CLIENTE (client/src/)
   main.tsx                initTheme() + unlockAudioOnFirstGesture() + <App/>
@@ -424,6 +424,14 @@ exceto GameConfig (chave fixa "main").
     classes Json @default("[]")   // [{ classKey, subclass, level }]
     background String · alignment String · experience Int @default(0)
     lastLevelUpRelease Int @default(0)  // última liberação USADA por esta ficha
+    levelHistory Json @default("[]")    // o que CADA nível concedeu: PV ganho
+                                        // { rolled, die, gained, conDelta, total },
+                                        // abilityIncreases, feat { id, name },
+                                        // choices, subclass, skills e proficiências.
+                                        // É o que permite ao mestre REVERTER um nível
+                                        // (§12.5). Níveis anteriores à migração
+                                        // `20260929140000_character_level_history`
+                                        // ficam sem registro (downgrade estima e avisa).
     strength/dexterity/constitution/intelligence/wisdom/charisma Int @default(10)
     hpCurrent Int @default(1) · hpMax Int @default(1) · hpTemp Int @default(0)
     armorClass Int @default(0)   // OVERRIDE do mestre; 0 = automático
@@ -589,6 +597,12 @@ Todos os corpos passam por Zod; corpo inválido ⇒ 400 com `issues` por campo.
          O mestre edita QUALQUER campo, em qualquer momento, sem travas (inclusive
          `armorClassOverride` e com a criação finalizada). A ficha CONTINUA sendo do
          jogador; o dono recebe `sheet:updated` com `editedBy` = displayName do mestre.
+  POST   /api/characters/:id/level-down        [mestre] → { character, levelDown }
+         REDUZ UM nível da classe indicada, revertendo o que aquele nível concedeu
+         (ver §12.5). Corpo: { classKey, hpLost?, abilityDecreases?, removeFeatId? };
+         os opcionais só valem para níveis anteriores ao histórico. Nível 1 → 0
+         remove a classe da ficha. A resposta traz o resumo `levelDown` (o que foi
+         revertido) e `warnings` (o que não deu para reverter com certeza).
   POST   /api/characters/:id/creation/reopen   [mestre] → { character }
          ÚNICO caminho de volta: `creationFinalized` volta a false, o rascunho é
          re-semeado com modo 'existing', valores ATUAIS como base e passo 1.
@@ -1114,7 +1128,8 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   `classOptions[]` (12 classes com `eligible`, o motivo do bloqueio
   `missing`, `firstProficiencies`, `multiclassProficiencies` e
   `multiclassSkillChoice`), `className` ("Bárbaro 3 / Ladino 2"), `activeFeatures[]`,
-  `classState`, `classAdjustments`, `creationFinalized`, `creationDraft`, `level`,
+  `classState`, `levelHistory[]` (o que cada nível concedeu — §12.5), `classAdjustments`,
+  `creationFinalized`, `creationDraft`, `level`,
   `lastLevelUpRelease`, atributos, vitais, `armorClass` + `armorClassOverride`,
   coleções (incluindo `proficiencies`), `version`, timestamps e `derived`.
 
@@ -1191,6 +1206,63 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   Mesmo núcleo (`applyLevelUp`), com `consumeRelease: false`, exigindo
   `creationFinalized === false` e nível total < startingLevel. É o que permite ao
   jogador montar um personagem de nível inicial alto sem depender do mestre.
+
+12.5 HISTÓRICO DO NÍVEL (o que cada nível concedeu)
+  Todo nível ganho (Level Up normal ou de criação) grava UM registro em
+  `characters.levelHistory` (JSONB), no MESMO `updateMany` que aplica o nível:
+    { classKey, classLevel, totalLevel,
+      hp: { rolled, die, gained, conDelta, total },
+      abilityIncreases: [{ ability, amount }], feat: { id, name } | null,
+      choices: { [featureId]: [opções] }, subclass, skills: string[],
+      proficiencies: { armor, weapons, tools } | null, at }
+  `hp.total` = dado (rolado ou média) + mod. CON do momento + o delta RETROATIVO de
+  CON que este nível provocou nos níveis anteriores — é exatamente o que foi somado
+  em `hpMax`/`hpCurrent`.
+  Motivo: a rolagem de PV, o Aumento de Atributo/Talento e as escolhas não existem
+  em nenhum outro lugar da ficha. Sem esse registro não há como REVERTER um nível
+  (não se sabe quanto de PV aquele nível deu nem que atributo o jogador subiu).
+  O JSONB é lido com `normalizeLevelHistory` (tolerante: registro malformado é
+  descartado, teto de 40 registros) e exposto em `CharacterDto.levelHistory`.
+
+12.6 DOWNGRADE DE NÍVEL — POST /api/characters/:id/level-down (MESTRE)
+  Entrada (`levelDownSchema`): { classKey, hpLost?, abilityDecreases?, removeFeatId? }.
+  O inverso do Level Up: tira UM nível da classe indicada e desfaz o que aquele
+  nível concedeu. O núcleo é `levelDownCharacter` (characters.service.ts).
+  Pré-condições:
+    1. a ficha existe (404) e TEM a classe escolhida (400) — só a rota de mestre;
+    2. **a ficha não pode ficar sem classe**: remover a ÚLTIMA classe (nível 1 com
+       uma só entrada) é 400 (a primeira classe define PV base, salvaguardas e
+       proficiências iniciais; para desmontar, o mestre usa "reabrir criação").
+  Reversão, por classe:
+    • classes: nível − 1; em nível 1 a entrada SAI da ficha (com a subclasse dela);
+    • PV: subtrai o `hp.total` do registro (piso 1 em `hpMax`, 0 em `hpCurrent`);
+    • Aumento de Atributo: subtrai os `abilityIncreases` do registro (piso 1 por
+      atributo); o talento registrado sai de `features` pelo id `feat-<uuid>`;
+    • escolhas de característica do nível: as chaves gravadas no registro saem de
+      `classState.choices`; a subclasse escolhida naquele nível volta para '';
+    • perícias concedidas naquele nível voltam a `proficient: false`;
+    • proficiências: tira as do registro, mas MANTÉM as que as classes que FICARAM
+      ainda concedem (`subtractProficiencies` com `classProficiencyGrant(next)`) —
+      evita tirar uma proficiência compartilhada (ex.: "Armaduras leves");
+    • salvaguardas: as da PRIMEIRA classe. Se a primeira SAIR da ficha, as antigas
+      voltam a false e as da nova primeira são travadas (`lockedSavesOf`);
+    • estado de runtime: sair a classe inteira limpa `active`/`used` dos ids das
+      features/efeitos dela (`classStateIdsFor`);
+    • o registro do nível perdido SAI do histórico.
+  NÍVEIS ANTERIORES AO HISTÓRICO (fichas antigas): não têm registro, então o PV é
+  ESTIMADO pela média do dado de vida + CON, nada mais é revertido sozinho e a
+  resposta traz `warnings` dizendo isso. O mestre pode corrigir pelo corpo:
+  `hpLost` (PV exato), `abilityDecreases` (Aumento de Atributo/Talento à mão) e
+  `removeFeatId` (talento a remover).
+  Concorrência: `updateMany` com `version` no `where` — dois cliques seguidos não
+  tiram dois níveis (o segundo recebe 409).
+  Resposta: { character, levelDown } — `levelDown` = { classKey, className,
+  previousClassLevel, classLevel (0 = classe removida), totalLevel, classRemoved,
+  hpLost, reverted: { abilities, feats, choices, subclass, skills, proficiencies },
+  warnings[] }. Publica `sheet:updated` com `editedBy` = displayName do mestre.
+  O que se recalcula sozinho (nada a reverter): espaços de magia, magia de pacto,
+  Ataque Furtivo, proficiência, CA, ataques derivados e as features por nível —
+  todos DERIVADOS das classes, como sempre. Cobertura na seção 28 do smoke.
 
 
 ================================================================================
@@ -1577,7 +1649,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 
 ================================================================================
 18) TESTES E VERIFICAÇÃO
-================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 7.820 linhas, 736 asserts)
+================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 8.090 linhas, 755 asserts)
   Executa contra um servidor RODANDO (`npm run smoke`; base configurável por
   SMOKE_BASE_URL). Cria contas com sufixo único, exercita a API e o WebSocket de
   ponta a ponta e LIMPA tudo no final (`cleanup()`), saindo com código 0 ou 1
@@ -1628,7 +1700,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     13) Exclusão de personagem     — 403 para jogador, cascata de conta/combate/log,
                                      derrubada da sessão, token invalidado
   -- FASE 0: regressão das regras base e das fases de ataques/itens/moedas
-     (seções 14 a 27, num escopo próprio) --
+     (seções 14 a 28, num escopo próprio) --
     14) PV e CA automáticos        — PV de d10/d6, recálculo retroativo de CON no 5º
                                      (40/30 → 45/35 com CON 16; → 25/15 com CON 8),
                                      CA leve/média/pesada, escudo, Defesa sem Armadura
@@ -1712,6 +1784,17 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
                                      dano, variante de ARREMESSO (ranged, mas usando
                                      FOR) e GOLPE DESARMADO; tudo resolvido no combate
                                      (incluindo o Ataque Furtivo da arma sutil)
+    28) Downgrade de nível        — o Level Up grava o HISTÓRICO de cada nível (PV com
+        (mestre)                    o dado/rolagem, Aumento de Atributo, talento,
+                                     escolhas, subclasse, perícia e proficiências);
+                                     `POST /:id/level-down` devolve tudo isso (4º
+                                     nível volta PV 29→20 e a CON 12→10, 3º tira a
+                                     subclasse, 2º volta ao estado inicial); nível 1
+                                     caindo para 0 REMOVE a classe (com perícia e
+                                     proficiências de entrada) mantendo a proficiência
+                                     COMPARTILHADA; a última classe do personagem e o
+                                     jogador (403) são recusados; níveis sem histórico
+                                     voltam 200 com `warnings` e PV estimado
 
   LIMITE OPERACIONAL: o smoke cria ~14 contas e faz ~27 chamadas a `/api/auth/*`
   por execução. Em `NODE_ENV=production` o limiter do login é 30 por 15 min, então
@@ -1806,6 +1889,17 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    armadura/escudo e não há penalidade de armadura sem proficiência. As escolhas abertas
    do livro ("1 instrumento musical à sua escolha") entram como DESCRIÇÃO — a escolha
    interativa ainda não existe.
+[IMPLEMENTADO] HISTÓRICO DE NÍVEL E DOWNGRADE PELO MESTRE
+   (`src/modules/shared/level-history.ts` + `characters.levelHistory`): cada nível
+   ganho (Level Up normal e de criação) grava o que concedeu — PV (dado/rolagem +
+   CON, incluindo o delta RETROATIVO de Constituição), Aumento de Atributo ou
+   Talento, escolhas de característica, subclasse, perícia de multiclasse e
+   proficiências. `POST /api/characters/:id/level-down` (só MASTER) tira UM nível da
+   classe escolhida e reverte exatamente isso; nível 1 → 0 remove a classe (menos
+   quando é a única); a proficiência compartilhada com as classes restantes fica.
+   Fichas anteriores à migração `20260929140000_character_level_history` não têm
+   registro: ali o PV é estimado pela média e a resposta avisa (`warnings`). Ver §12.5
+   e §12.6. Cobertura na seção 28 do smoke.
 [IMPLEMENTADO] ATAQUE DERIVADO DA ARMA EQUIPADA (`src/modules/shared/weapon-attacks.ts`
    + `derivedAttacks` no DTO da ficha): a arma equipada em `hand1`/`hand2` vira um ataque
    CALCULADO (nunca gravado, como a CA), com ids estáveis — `weapon:<item>`, a variante
@@ -1883,6 +1977,8 @@ DIAGNÓSTICO
   armorClass (coluna)     OVERRIDE do mestre; 0 = automático
   levelUpRelease          contador de liberações (incrementa a cada clique do mestre)
   lastLevelUpRelease      última liberação usada POR ESTA FICHA
+  levelHistory            o que CADA nível concedeu (base do downgrade — §12.5)
+  POST /:id/level-down    downgrade de UM nível pelo mestre (inverso do Level Up — §12.6)
   startingLevel           nível em que a mesa começa (aplicado no passo 8)
   PLAYER_STATE_KEYS       o que o jogador pode editar com a criação finalizada
   coins                   { pp, gp, ep, sp, cp } — carteira; CONSTRUÇÃO (só o mestre por PATCH)

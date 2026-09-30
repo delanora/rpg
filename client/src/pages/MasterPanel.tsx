@@ -29,6 +29,8 @@ import type {
   GameConfig,
   Item,
   ItemPatch,
+  LevelDownRequest,
+  LevelDownResult,
   Locality,
   LocalityPatch,
   Presentation,
@@ -431,6 +433,27 @@ export function MasterPanel({ user }: { user: SessionUser }) {
    * Ação de moedas devolve a ficha inteira (gastar/trocar/transferir/dar): a
    * lista do painel adota a versão nova.
    */
+  /**
+   * O mestre REDUZ um nível de um personagem (`POST /api/characters/:id/level-down`).
+   *
+   * É o inverso do Level Up: o servidor desfaz o que aquele nível concedeu (PV
+   * rolado, Aumento de Atributo/Talento, escolhas, subclasse, perícia e
+   * proficiências) e devolve a ficha já revertida, que a lista adota.
+   *
+   * O erro NÃO é engolido aqui: a janela do downgrade mostra a mensagem.
+   */
+  const levelDown = useCallback(
+    async (id: string, request: LevelDownRequest): Promise<LevelDownResult> => {
+      const result = await api<LevelDownResult>(`/api/characters/${id}/level-down`, {
+        method: 'POST',
+        body: request,
+      });
+      setCharacters((prev) => prev.map((item) => (item.id === id ? result.character : item)));
+      return result;
+    },
+    [],
+  );
+
   const adoptCoins = useCallback((character: Character) => {
     setCharacters((prev) => prev.map((item) => (item.id === character.id ? character : item)));
   }, []);
@@ -659,6 +682,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onUpdate={patchCharacter}
             onDelete={deleteCharacter}
             onReopenCreation={reopenCreation}
+            onLevelDown={levelDown}
             extraCoins={gameConfig?.extraCoins ?? false}
             onCoinsChange={adoptCoins}
           />

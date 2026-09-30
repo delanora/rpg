@@ -21,6 +21,7 @@ import {
 import { inventoryListSchema } from './characters.schema.js';
 import type {
   CreateCharacterInput,
+  LevelDownInput,
   LevelUpInput,
   MoveInventoryItemInput,
   UpdateCharacterInput,
@@ -32,6 +33,7 @@ import { spellsStateSchema, type SpellsStateInput } from './characters.schema.js
 import {
   applySaveProficiencies,
   averageHitDie,
+  emptyProficiencies,
   findSubclass,
   firstClassProficiencies,
   getClassDefinition,
@@ -52,6 +54,14 @@ import {
   type ClassEntry,
   type ProficienciesState,
 } from '../shared/classes.js';
+import {
+  classEntryProficiencyGrant,
+  classProficiencyGrant,
+  classStateIdsFor,
+  normalizeLevelHistory,
+  subtractProficiencies,
+  type LevelHistoryRecord,
+} from '../shared/level-history.js';
 import type { AbilityKey } from '../shared/dnd5e.js';
 import {
   LEVEL_MAX,
@@ -523,6 +533,17 @@ async function applyLevelUp(
   const data: Record<string, unknown> = {};
   const features: unknown[] = Array.isArray(character.features) ? [...character.features] : [];
 
+  // --- O que ESTE nível concede, para o histórico --------------------------
+  // Cada item daqui é o que o downgrade do mestre precisa desfazer (ver
+  // `levelDownCharacter` e shared/level-history.ts). Aumento de Atributo e a
+  // rolagem de PV não ficam em nenhum outro lugar da ficha: sem este registro
+  // não haveria como revertê-los.
+  let grantedProficiencies: ProficienciesState | null = null;
+  let grantedSubclass = '';
+  let grantedFeat: { id: string; name: string } | null = null;
+  const grantedAbilities: { ability: AbilityKey; amount: number }[] = [];
+  const grantedSkills: string[] = [];
+
   // --- Subclasse: exigida quando o nível da classe libera a escolha ---------
   let subclass = existing?.subclass ?? '';
   if (!subclass && newClassLevel >= definition.subclassLevel) {
@@ -533,6 +554,7 @@ async function applyLevelUp(
     const found = findSubclass(definition, chosen);
     if (!found) throw new HttpError('Subclasse desconhecida.', 400);
     subclass = found.name;
+    grantedSubclass = found.name;
 
     // A subclasse pode conceder proficiências (Colégio da Bravura: armaduras
     // médias, escudos e armas marciais): entram SOMADAS às da classe.
@@ -542,6 +564,7 @@ async function applyLevelUp(
         normalizeProficiencies(data.proficiencies ?? character.proficiencies),
         subclassGrant,
       );
+      grantedProficiencies = subclassGrant;
     }
   }
 
@@ -576,10 +599,15 @@ async function applyLevelUp(
     const grant = isMulticlassEntry
       ? multiclassProficiencyGrant(definition.key)
       : firstClassProficiencies(definition.key);
+    // A subclasse escolhida NO MESMO nível (Clérigo do Domínio da Guerra, no
+    // 1º) já somou as dela acima: aqui elas não podem ser perdidas.
     data.proficiencies = mergeProficiencies(
-      normalizeProficiencies(character.proficiencies),
+      normalizeProficiencies(data.proficiencies ?? character.proficiencies),
       grant,
     );
+    grantedProficiencies = grantedProficiencies
+      ? mergeProficiencies(grantedProficiencies, grant)
+      : grant;
   }
 
   // --- Perícia da entrada por multiclasse ----------------------------------
@@ -613,6 +641,7 @@ async function applyLevelUp(
           expertise: currentSkills[chosenSkill]?.expertise ?? false,
         },
       };
+      grantedSkills.push(chosenSkill);
     } else if (chosenSkill !== '') {
       throw new HttpError(
         `${definition.name} não concede perícia ao entrar por multiclasse.`,
@@ -644,17 +673,20 @@ async function applyLevelUp(
       nextSkills[key] = { proficient: true, expertise: currentSkills[key]?.expertise ?? false };
     }
     data.skills = nextSkills;
+    grantedSkills.push(...gainedSkills);
   }
 
   if (isAsiLevel(definition.key, newClassLevel)) {
     if (input.feat) {
+      const featId = `feat-${randomUUID()}`;
       features.push({
-        id: `feat-${randomUUID()}`,
+        id: featId,
         name: input.feat.name,
         source: 'feat',
         description: input.feat.description,
       });
       data.features = features;
+      grantedFeat = { id: featId, name: input.feat.name };
     } else {
       const increases = new Map<AbilityKey, number>();
       for (const item of input.abilityIncreases) {
@@ -674,6 +706,7 @@ async function applyLevelUp(
           throw new HttpError('Nenhum atributo pode passar de 20.', 400);
         }
         data[ability] = character[ability] + amount;
+        grantedAbilities.push({ ability, amount });
       }
     }
   } else if (input.feat || input.abilityIncreases.length > 0) {
@@ -706,6 +739,38 @@ async function applyLevelUp(
     totalCharacterLevel(entries),
   );
 
+  // --- Histórico do nível que está sendo ganho -----------------------------
+  // É o que o mestre precisa para REVERTER este nível depois: a rolagem de PV, o
+  // Aumento de Atributo/Talento e as escolhas não existem em nenhum outro lugar
+  // da ficha. Ver shared/level-history.ts.
+  const addedChoices: Record<string, string[]> = {};
+  for (const [featureId, keys] of Object.entries(nextChoices)) {
+    const previous = classState.choices[featureId] ?? [];
+    const same =
+      previous.length === keys.length && previous.every((value, index) => value === keys[index]);
+    if (!same) addedChoices[featureId] = keys;
+  }
+
+  const historyRecord: LevelHistoryRecord = {
+    classKey: definition.key,
+    classLevel: newClassLevel,
+    totalLevel: totalCharacterLevel(nextEntries),
+    hp: {
+      rolled: input.hp === 'roll',
+      die: dieRoll,
+      gained: hpGained,
+      conDelta,
+      total: hpGained + conDelta,
+    },
+    abilityIncreases: grantedAbilities,
+    feat: grantedFeat,
+    choices: addedChoices,
+    subclass: grantedSubclass,
+    skills: [...new Set(grantedSkills)],
+    proficiencies: grantedProficiencies,
+    at: new Date().toISOString(),
+  };
+
   const result = await tx.character.updateMany({
     where: {
       userId: actor.userId,
@@ -715,6 +780,10 @@ async function applyLevelUp(
     data: {
       ...(data as Prisma.CharacterUpdateManyMutationInput),
       classes: nextEntries as unknown as Prisma.InputJsonValue,
+      levelHistory: [
+        ...normalizeLevelHistory(character.levelHistory),
+        historyRecord,
+      ] as unknown as Prisma.InputJsonValue,
       // O PV ganho vale tanto para o máximo quanto para o PV atual.
       hpMax: character.hpMax + hpGained + conDelta,
       hpCurrent: Math.max(0, character.hpCurrent + hpGained + conDelta),
@@ -741,6 +810,277 @@ async function applyLevelUp(
       hpRolled: input.hp === 'roll',
     },
   };
+}
+
+/** Resumo do que um downgrade desfez — vai na resposta e no aviso da mesa. */
+export interface LevelDownSummary {
+  classKey: string;
+  className: string;
+  /** Nível da classe ANTES da redução. */
+  previousClassLevel: number;
+  /** Nível da classe depois (0 = a classe saiu da ficha). */
+  classLevel: number;
+  /** Nível total do personagem depois da redução. */
+  totalLevel: number;
+  classRemoved: boolean;
+  hpLost: number;
+  /** O que foi revertido na ficha. */
+  reverted: {
+    abilities: { ability: AbilityKey; amount: number }[];
+    feats: string[];
+    choices: string[];
+    subclass: string;
+    skills: string[];
+    proficiencies: ProficienciesState;
+  };
+  /** O que não deu para reverter com certeza (nível anterior ao histórico). */
+  warnings: string[];
+}
+
+/**
+ * O MESTRE reduz um nível de um personagem.
+ *
+ * Tira UM nível da classe indicada e reverte o que aquele nível concedeu — é o
+ * inverso do `applyLevelUp`. O histórico gravado no Level Up é a fonte da
+ * verdade: sem ele não se sabe quanto de PV aquele nível deu (a rolagem se
+ * perde) nem que atributo o jogador subiu.
+ *
+ * Nível 1 caindo para 0 tira a classe inteira da ficha: subclasse, escolhas,
+ * perícia de multiclasse e proficiências de entrada vão junto (só as que as
+ * classes restantes não concedem). A última classe do personagem não pode sair —
+ * a ficha ficaria sem classe para definir PV base e salvaguardas.
+ *
+ * Níveis anteriores ao histórico caem no caminho estimado (média do dado de vida
+ * + Constituição) e devolvem avisos; o mestre pode corrigir pelo corpo da
+ * requisição (`hpLost`, `abilityDecreases`, `removeFeatId`).
+ */
+export async function levelDownCharacter(
+  characterId: string,
+  master: Actor,
+  input: LevelDownInput,
+): Promise<{ character: CharacterDto; levelDown: LevelDownSummary }> {
+  const target = await prisma.character.findUnique({
+    where: { id: characterId },
+    include: { user: { select: { username: true } } },
+  });
+
+  if (!target) throw new HttpError('Ficha não encontrada.', 404);
+
+  const entries = normalizeClassEntries(target.classes);
+  const index = entries.findIndex((item) => item.classKey === input.classKey);
+  if (index === -1) {
+    throw new HttpError('O personagem não tem essa classe.', 400);
+  }
+
+  const entry = entries[index];
+  const definition = getClassDefinition(entry.classKey);
+  const className = definition?.name ?? entry.classKey;
+  const warnings: string[] = [];
+
+  // A ficha não pode ficar sem classe: a primeira define o PV base, as
+  // salvaguardas e as proficiências iniciais. Para desmontar a última classe, o
+  // mestre reabre a criação.
+  if (entry.level <= 1 && entries.length === 1) {
+    throw new HttpError(
+      `Reduzir ${className} deixaria o personagem sem classe — reabra a criação para refazer a ficha.`,
+      400,
+    );
+  }
+
+  // O ÚLTIMO registro daquela classe é o nível que está sendo perdido.
+  const history = normalizeLevelHistory(target.levelHistory);
+  const recordIndex = history.reduce(
+    (last, item, at) => (item.classKey === entry.classKey ? at : last),
+    -1,
+  );
+  const record =
+    recordIndex >= 0 && history[recordIndex].classLevel === entry.level
+      ? history[recordIndex]
+      : null;
+
+  const classRemoved = entry.level <= 1;
+  // A subclasse escolhida NAQUELE nível vai junto com ele.
+  const revertedSubclass = record?.subclass ?? '';
+  const keptSubclass = revertedSubclass === '' ? entry.subclass : '';
+  const nextEntries: ClassEntry[] = classRemoved
+    ? entries.filter((item) => item.classKey !== entry.classKey)
+    : entries.map((item) =>
+        item.classKey === entry.classKey
+          ? { ...item, level: item.level - 1, subclass: keptSubclass }
+          : item,
+      );
+
+  // --- PV ------------------------------------------------------------------
+  // O histórico manda: é o que foi somado naquele nível (dado + CON + ajuste
+  // retroativo de CON). Sem ele, a média do dado de vida é a estimativa do PHB.
+  const hitDie = definition?.hitDie ?? 8;
+  let hpLost: number;
+  if (input.hpLost !== undefined) {
+    hpLost = input.hpLost;
+  } else if (record) {
+    hpLost = record.hp.total;
+  } else {
+    hpLost = Math.max(1, averageHitDie(hitDie) + abilityModifier(target.constitution));
+    warnings.push(
+      `O ${entry.level}º nível de ${className} é anterior ao histórico da ficha: o PV perdido foi ` +
+        `estimado pela média do dado de vida (${hpLost}) e o que esse nível concedeu não pôde ser revertido sozinho.`,
+    );
+    if (isAsiLevel(entry.classKey, entry.level)) {
+      warnings.push(
+        `O ${entry.level}º nível de ${className} concede Aumento de Atributo/Talento — informe ` +
+          '`abilityDecreases` (ou `removeFeatId`) para desfazê-lo.',
+      );
+    }
+  }
+
+  // --- Aumento de Atributo/Talento -----------------------------------------
+  const decreases = new Map<AbilityKey, number>();
+  for (const item of [...(record?.abilityIncreases ?? []), ...input.abilityDecreases]) {
+    const ability = item.ability as AbilityKey;
+    decreases.set(ability, (decreases.get(ability) ?? 0) + item.amount);
+  }
+
+  const abilityData: Record<string, number> = {};
+  const revertedAbilities: { ability: AbilityKey; amount: number }[] = [];
+  for (const [ability, amount] of decreases) {
+    const next = Math.max(1, target[ability] - amount);
+    if (next === target[ability]) continue;
+    abilityData[ability] = next;
+    revertedAbilities.push({ ability, amount: target[ability] - next });
+  }
+
+  const featIds = new Set<string>();
+  if (record?.feat) featIds.add(record.feat.id);
+  if (input.removeFeatId) featIds.add(input.removeFeatId);
+
+  const storedFeatures = Array.isArray(target.features) ? [...target.features] : [];
+  const removedFeats: string[] = [];
+  const keptFeatures = storedFeatures.filter((item) => {
+    const id = (item as { id?: unknown } | null)?.id;
+    if (typeof id === 'string' && featIds.has(id)) {
+      removedFeats.push(id);
+      return false;
+    }
+    return true;
+  });
+
+  // --- Escolhas de característica, perícia e proficiências ------------------
+  const classState = normalizeClassState(target.classState);
+  const choices = { ...classState.choices };
+  const revertedChoices = Object.keys(record?.choices ?? {}).filter(
+    (featureId) => featureId in choices,
+  );
+  for (const featureId of revertedChoices) delete choices[featureId];
+
+  const skills = normalizeSkills(target.skills);
+  const revertedSkills = [...new Set(record?.skills ?? [])].filter(
+    (key) => SKILL_KEYS.includes(key) && skills[key]?.proficient === true,
+  );
+  for (const key of revertedSkills) skills[key] = { proficient: false, expertise: false };
+
+  // O que aquele nível somou: o registro manda; num nível de ENTRADA sem
+  // histórico, a concessão da classe é reconstruída (primeira classe vs.
+  // multiclasse).
+  const removedGrant: ProficienciesState = record
+    ? (record.proficiencies ?? emptyProficiencies())
+    : entry.level === 1
+      ? classEntryProficiencyGrant(entry, index === 0)
+      : emptyProficiencies();
+
+  const currentProficiencies = normalizeProficiencies(target.proficiencies);
+  const proficiencies = subtractProficiencies(
+    currentProficiencies,
+    removedGrant,
+    classProficiencyGrant(nextEntries),
+  );
+  const dropped = (before: string[], after: string[]): string[] =>
+    before.filter((item) => !after.includes(item));
+
+  // --- Salvaguardas: quem concede é a PRIMEIRA classe ----------------------
+  // Sair a classe inicial passa a chave para a próxima: as salvaguardas dela
+  // entram e as antigas voltam a ser escolha do mestre.
+  const oldLocked = lockedSavesOf(entries);
+  const newLocked = lockedSavesOf(nextEntries);
+  const savesBase = { ...normalizeSaves(target.saves) };
+  for (const ability of oldLocked) {
+    if (!newLocked.includes(ability)) savesBase[ability] = false;
+  }
+  const saves = applySaveProficiencies(savesBase, newLocked);
+
+  // --- Estado de runtime: a classe que sai leva os recursos dela -----------
+  const removedIds = classRemoved ? classStateIdsFor(entry) : new Set<string>();
+  const nextClassState = {
+    active: classState.active.filter((id) => !removedIds.has(id)),
+    used: Object.fromEntries(
+      Object.entries(classState.used).filter(([id]) => !removedIds.has(id)),
+    ),
+    choices,
+  };
+
+  const nextHpMax = Math.max(1, target.hpMax - hpLost);
+
+  const data: Record<string, unknown> = {
+    classes: nextEntries,
+    // O registro do nível perdido sai do histórico (o próximo downgrade já
+    // enxerga o nível anterior).
+    levelHistory: record ? history.filter((_, at) => at !== recordIndex) : history,
+    hpMax: nextHpMax,
+    hpCurrent: Math.min(nextHpMax, Math.max(0, target.hpCurrent - hpLost)),
+    saves,
+    skills,
+    proficiencies,
+    classState: nextClassState,
+    ...abilityData,
+    version: { increment: 1 },
+  };
+  if (removedFeats.length > 0) data.features = keptFeatures;
+
+  // `version` no WHERE: dois cliques seguidos não tiram dois níveis.
+  const result = await prisma.character.updateMany({
+    where: { id: characterId, version: target.version },
+    data: { ...(data as Prisma.CharacterUpdateManyMutationInput) },
+  });
+
+  if (result.count === 0) {
+    throw new HttpError(
+      'A ficha mudou enquanto o nível era reduzido — recarregue e tente de novo.',
+      409,
+    );
+  }
+
+  const updated = await prisma.character.findUniqueOrThrow({ where: { id: characterId } });
+
+  const levelDown: LevelDownSummary = {
+    classKey: entry.classKey,
+    className,
+    previousClassLevel: entry.level,
+    classLevel: classRemoved ? 0 : entry.level - 1,
+    totalLevel: totalCharacterLevel(nextEntries),
+    classRemoved,
+    hpLost,
+    reverted: {
+      abilities: revertedAbilities,
+      feats: removedFeats,
+      choices: revertedChoices,
+      subclass: revertedSubclass,
+      skills: revertedSkills,
+      proficiencies: {
+        armor: dropped(currentProficiencies.armor, proficiencies.armor),
+        weapons: dropped(currentProficiencies.weapons, proficiencies.weapons),
+        tools: dropped(currentProficiencies.tools, proficiencies.tools),
+      },
+    },
+    warnings,
+  };
+
+  await publishChange(
+    { userId: target.userId, username: target.user.username },
+    updated,
+    { levelDown },
+    master.displayName,
+  );
+
+  return { character: await toSheetDto(updated, target.user.username), levelDown };
 }
 
 export function getCharacterByUserId(userId: string): Promise<Character | null> {

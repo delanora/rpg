@@ -68,7 +68,7 @@ src/
 ├── middlewares/    # tratamento central de erros
 ├── modules/        # domínio, um diretório por área
 │   ├── auth/       # cadastro, login, middlewares de autenticação/autorização
-│   ├── characters/ # ficha do jogador (inclui o assistente de criação)
+│   ├── characters/ # ficha do jogador (assistente de criação, Level Up e downgrade)
 │   ├── combat/     # combate: iniciativa, turnos, ataques e HP
 │   ├── compendium/ # listas de referência da mesa (classes, raças, antecedentes, magias)
 │   ├── creatures/  # criaturas/NPCs cadastrados pelo mestre
@@ -201,7 +201,7 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 
 ### Verificação automática (smoke test)
 
-Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 27 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas e do ataque derivado (seções 22 a 27):
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 28 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas, do ataque derivado e do downgrade de nível (seções 22 a 28):
 
 | Seção | O que verifica |
 |-------|----------------|
@@ -219,6 +219,7 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **25** | **Moedas (complemento)** — a transferência publica `sheet:updated` nas duas fichas com os saldos finais; saldo insuficiente e transferência para o mestre recusados (400); alternar `extraCoins` publica `game:config`. |
 | **26** | **Inventário (complemento)** — o mestre ajusta quantidade e remove item; os `send` se acumulam; usar consumível entra no log de rolagens do mestre como `kind: item`. |
 | **27** | **Ataque derivado da arma equipada** — a arma equipada vira ataque calculado com a habilidade certa (FOR corpo a corpo, DES à distância, a melhor das duas com acuidade), proficiência por **categoria** e por **nome** (plural/acento), dado **versátil** com a outra mão livre, **duas mãos** recusada (400) com a outra mão ocupada, **segunda arma leve** sem o modificador de dano, variante de **arremesso** (`ranged` usando FOR) e **golpe desarmado**; tudo resolvido no combate, inclusive o Ataque Furtivo da arma sutil. |
+| **28** | **Downgrade de nível (mestre)** — o Level Up passa a gravar o **histórico** de cada nível (dado/rolagem de PV com o ajuste retroativo de CON, Aumento de Atributo ou Talento, escolhas, subclasse, perícia e proficiências); `POST /api/characters/:id/level-down` desfaz exatamente isso (PV, atributos, escolhas e subclasse voltam), nível 1 caindo para 0 **remove a classe** da ficha (com a perícia e as proficiências de entrada, mas **mantendo** a proficiência que as classes restantes também concedem); a última classe do personagem e o jogador (403) são recusados; níveis anteriores ao histórico voltam com **aviso** e PV estimado pela média. |
 
 Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória (e as seções novas **reaproveitam** fichas já criadas para não estourar o limite de 30 contas por 15 min do modo produção).
 
@@ -469,7 +470,7 @@ As **subclasses do PHB estão todas cadastradas**, com as escolhas e os efeitos 
 O **combate** já usa o limiar de crítico da ficha (Campeão): o ataque critica com d20 **maior ou igual** ao limiar, o crítico sempre acerta e o **1 natural sempre erra**.
 
 > **Lacunas conhecidas:** **Clérigo** e **Bruxo** ainda têm `features: []` (faltam Canalizar Divindade, Destruir Mortos-Vivos, Intervenção Divina, Invocações Místicas, Dádiva do Pacto, Arcanum Místico) e o Ladino não tem a Gíria de Ladrão (texto puro). O **companheiro animal** do Senhor das Feras e as **magias de juramento** do Paladino como magias de verdade ficam para as Fases 4/5.
-- O **nível de cada classe não é editável** direto: a lista só ganha classe e sobe de nível pelo Level Up (a edição direta de `level` é recusada com 400 e a lista só aceita trocar a **subclasse** de classes existentes).
+- O **nível de cada classe não é editável** direto: a lista só ganha classe e sobe de nível pelo Level Up (a edição direta de `level` é recusada com 400 e a lista só aceita trocar a **subclasse** de classes existentes). Para **baixar** um nível existe a ação **reduzir nível** do mestre (`POST /api/characters/:id/level-down`), que reverte o que aquele nível concedeu — ver a seção *Downgrade de nível (mestre)*.
 
 O **Talento** escolhido nesse mesmo assistente fica registrado na ficha como uma característica de origem `feat` e aparece na aba **Características**, na subseção **Talentos** (nome + descrição; sem efeito mecânico automatizado por enquanto).
 
@@ -543,6 +544,21 @@ Com o botão habilitado, ele abre uma janela no tema pergaminho que conduz o jog
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
 | `POST` | `/api/characters/me/level-up` | autenticado | Aplica o Level Up (`classKey`, `subclass`, `hp`, `skillChoice`, `choices`, `abilityIncreases`, `feat`) quando a liberação está ativa. |
+
+### Downgrade de nível (mestre)
+
+A ficha do jogador tem um botão **reduzir nível** no painel do mestre (aba **Fichas**, ao lado de *reabrir criação*). Ele abre a janela **Reduzir nível**, que pede a **classe** que perde um nível e mostra, antes de confirmar, **o que aquele nível concedeu** — o PV ganho (com o dado e se foi rolado ou a média), o Aumento de Atributo ou o Talento, a subclasse, as escolhas de característica, a perícia de multiclasse e as proficiências. Ao confirmar, tudo isso é **desfeito na ficha na hora** e o jogador vê a mudança em tempo real.
+
+Para isso, cada nível ganho passa a gravar um **histórico** (`characters.levelHistory`) no próprio Level Up: sem ele não havia como saber quanto de PV aquele nível deu (a rolagem se perde) nem que atributo o jogador subiu.
+
+- **Nível 1 caindo para 0 remove a classe da ficha**, com a subclasse, a perícia e as proficiências que só ela concedia — a proficiência que outra classe restante também dá (ex.: *Armaduras leves* do Ladino) **fica**.
+- A **última classe** do personagem não pode sair (400): a ficha ficaria sem classe para definir o PV base e as salvaguardas. Para desmontar o personagem, o mestre usa **reabrir criação**.
+- **Níveis anteriores ao histórico** (personagens que já existiam): o PV perdido é estimado pela **média do dado de vida** e a janela avisa que o resto precisa ser informado à mão (PV exato, Aumento de Atributo/Talento a desfazer).
+- O que **se recalcula sozinho**: espaços de magia, magia de pacto, Ataque Furtivo, proficiência, CA e ataques derivados — todos saem das classes, como sempre.
+
+| Método | Rota | Acesso | Descrição |
+|--------|------|--------|-----------|
+| `POST` | `/api/characters/:id/level-down` | **mestre** | Reduz um nível da classe indicada e reverte o que ele concedeu. Corpo: `classKey` e, só para níveis sem histórico, `hpLost`, `abilityDecreases` e `removeFeatId`. Devolve a ficha e o resumo `levelDown` (com `warnings`). |
 
 ### Assistente de criação de personagem
 

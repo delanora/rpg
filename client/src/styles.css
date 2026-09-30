@@ -4447,6 +4447,30 @@ input[type='checkbox']:disabled {
   color: var(--ink);
 }
 
+/*
+ * Downgrade de nível (painel do mestre): a caixa de avisos dos níveis que são
+ * anteriores ao histórico da ficha — ali o PV é estimado e o resto o mestre
+ * informa à mão.
+ */
+.leveldown-warnings {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.65rem 0.5rem 1.6rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--wine);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--wine);
+  font-size: 0.84rem;
+}
+
+[data-theme='dark'] .leveldown-warnings {
+  color: var(--gold-bright);
+}
+
+.levelup-modal input[type='number'] {
+  width: 100%;
+}
+
 /* ==========================================================================
    23. Inventário: set de equipamento estilo Tibia e janela da mochila
    ========================================================================== */

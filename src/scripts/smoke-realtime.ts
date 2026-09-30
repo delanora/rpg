@@ -7767,6 +7767,276 @@ async function main(): Promise<void> {
 
   await api('/api/combat/end', { method: 'POST', token: masterToken });
 
+  // --- 28. Downgrade de nível pelo mestre -----------------------------------
+  console.log('\n28) Downgrade de nível pelo mestre');
+
+  // Reaproveita a ficha das seções 20/27 (o cadastro é limitado pelo rate
+  // limiter). O estado é fixado aqui para os números fecharem: ladino nível 1,
+  // CON 10 (mod 0), PV 10 e histórico vazio.
+  const downgradee = wallet;
+
+  const resetDowngradee = (data: Record<string, unknown>) =>
+    prisma.character.update({ where: { userId: downgradee.userId }, data: data as any });
+
+  await resetDowngradee({
+    classes: [{ classKey: 'rogue', subclass: '', level: 1 }],
+    levelHistory: [],
+    classState: { active: [], used: {}, choices: {} },
+    features: [],
+    strength: 16,
+    dexterity: 18,
+    constitution: 10,
+    charisma: 10,
+    hpMax: 10,
+    hpCurrent: 10,
+    lastLevelUpRelease: 0,
+    proficiencies: {
+      armor: ['Armaduras leves'],
+      weapons: ['Armas simples', 'Espadas longas'],
+      tools: ['Ferramentas de ladrão'],
+    },
+  });
+
+  const levelDown = (characterId: string, body: unknown, token = masterToken) =>
+    api(`/api/characters/${characterId}/level-down`, { method: 'POST', token, body });
+
+  /** Libera o Level Up e aplica um nível, exatamente como o jogador faria. */
+  const gainLevel = async (body: any): Promise<any> => {
+    await api('/api/game/level-up', { method: 'POST', token: masterToken });
+    return api('/api/characters/me/level-up', {
+      method: 'POST',
+      token: downgradee.token,
+      body,
+    });
+  };
+
+  // --- Caminho COM histórico: cada nível reverte o que deu ------------------
+  const sheetL1 = await sheetOf(downgradee.token);
+  const levelTwo = await gainLevel(levelUpRequestFor(sheetL1, 'rogue'));
+  check(
+    'Level Up 2 do ladino aplica a média do dado de vida (PV 10 → 15)',
+    levelTwo.status === 200 &&
+      levelTwo.data?.character?.classes?.[0]?.level === 2 &&
+      levelTwo.data?.character?.hpMax === 15,
+    JSON.stringify({ status: levelTwo.status, hp: levelTwo.data?.character?.hpMax }),
+  );
+  check(
+    'o nível ganho entra no HISTÓRICO com o dado, o PV e o total',
+    levelTwo.data?.character?.levelHistory?.length === 1 &&
+      levelTwo.data?.character?.levelHistory?.[0]?.classKey === 'rogue' &&
+      levelTwo.data?.character?.levelHistory?.[0]?.classLevel === 2 &&
+      levelTwo.data?.character?.levelHistory?.[0]?.hp?.rolled === false &&
+      levelTwo.data?.character?.levelHistory?.[0]?.hp?.total === 5,
+    JSON.stringify(levelTwo.data?.character?.levelHistory),
+  );
+
+  const sheetL2 = await sheetOf(downgradee.token);
+  const levelThree = await gainLevel(levelUpRequestFor(sheetL2, 'rogue'));
+  const rogueSubclass: string = levelThree.data?.character?.classes?.[0]?.subclass ?? '';
+  check(
+    'Level Up 3 escolhe a subclasse do ladino (PV 15 → 20)',
+    levelThree.status === 200 && rogueSubclass !== '' && levelThree.data?.character?.hpMax === 20,
+    JSON.stringify({
+      status: levelThree.status,
+      subclass: rogueSubclass,
+      hp: levelThree.data?.character?.hpMax,
+    }),
+  );
+
+  const sheetL3 = await sheetOf(downgradee.token);
+  const levelFour = await gainLevel({
+    classKey: 'rogue',
+    hp: 'average',
+    abilityIncreases: [{ ability: 'constitution', amount: 2 }],
+  });
+  check(
+    'Level Up 4 dá Aumento de Atributo e o PV retroativo de CON (PV 20 → 29)',
+    levelFour.status === 200 &&
+      levelFour.data?.character?.constitution === 12 &&
+      levelFour.data?.character?.hpMax === 29,
+    JSON.stringify({
+      status: levelFour.status,
+      con: levelFour.data?.character?.constitution,
+      hp: levelFour.data?.character?.hpMax,
+    }),
+  );
+
+  const downFour = await levelDown(downgradee.characterId, { classKey: 'rogue' });
+  check(
+    'downgrade do 4º nível devolve o PV, o Aumento de Atributo e a CON (29 → 20)',
+    downFour.status === 200 &&
+      downFour.data?.character?.hpMax === 20 &&
+      downFour.data?.character?.hpCurrent === 20 &&
+      downFour.data?.character?.constitution === 10 &&
+      downFour.data?.character?.classes?.[0]?.level === 3,
+    JSON.stringify({
+      status: downFour.status,
+      hp: downFour.data?.character?.hpMax,
+      con: downFour.data?.character?.constitution,
+      classes: downFour.data?.character?.classes,
+    }),
+  );
+  check(
+    'a resposta do downgrade descreve o que foi revertido (sem avisos)',
+    downFour.data?.levelDown?.hpLost === 9 &&
+      downFour.data?.levelDown?.classLevel === 3 &&
+      downFour.data?.levelDown?.totalLevel === 3 &&
+      downFour.data?.levelDown?.classRemoved === false &&
+      downFour.data?.levelDown?.reverted?.abilities?.some(
+        (item: any) => item.ability === 'constitution' && item.amount === 2,
+      ) === true &&
+      (downFour.data?.levelDown?.warnings ?? []).length === 0,
+    JSON.stringify(downFour.data?.levelDown),
+  );
+  check(
+    'o registro do nível perdido sai do histórico',
+    (downFour.data?.character?.levelHistory ?? []).length === 2,
+    JSON.stringify((downFour.data?.character?.levelHistory ?? []).length),
+  );
+
+  const downThree = await levelDown(downgradee.characterId, { classKey: 'rogue' });
+  check(
+    'downgrade do 3º nível tira a subclasse escolhida nele (PV 20 → 15)',
+    downThree.status === 200 &&
+      downThree.data?.character?.classes?.[0]?.level === 2 &&
+      downThree.data?.character?.classes?.[0]?.subclass === '' &&
+      downThree.data?.character?.hpMax === 15 &&
+      downThree.data?.levelDown?.reverted?.subclass === rogueSubclass,
+    JSON.stringify({
+      status: downThree.status,
+      classes: downThree.data?.character?.classes,
+      hp: downThree.data?.character?.hpMax,
+    }),
+  );
+
+  const downTwo = await levelDown(downgradee.characterId, { classKey: 'rogue' });
+  check(
+    'downgrade do 2º nível volta a ficha ao estado inicial (PV 10, histórico vazio)',
+    downTwo.status === 200 &&
+      downTwo.data?.character?.classes?.[0]?.level === 1 &&
+      downTwo.data?.character?.hpMax === 10 &&
+      (downTwo.data?.character?.levelHistory ?? []).length === 0,
+    JSON.stringify({
+      status: downTwo.status,
+      hp: downTwo.data?.character?.hpMax,
+      history: (downTwo.data?.character?.levelHistory ?? []).length,
+    }),
+  );
+
+  const onlyClassDown = await levelDown(downgradee.characterId, { classKey: 'rogue' });
+  check(
+    'reduzir a ÚNICA classe do personagem é recusado (400)',
+    onlyClassDown.status === 400,
+    JSON.stringify({ status: onlyClassDown.status, data: onlyClassDown.data }),
+  );
+
+  // --- Nível 1 caindo para 0: a classe SAI da ficha ------------------------
+  await masterPatch(downgradee.characterId, { charisma: 14 });
+  const bardSheet = await sheetOf(downgradee.token);
+  const bardRequest = levelUpRequestFor(bardSheet, 'bard');
+  bardRequest.skillChoice = 'performance';
+  const bardLevelUp = await gainLevel(bardRequest);
+  check(
+    'entrar no Bardo por multiclasse concede a perícia e as proficiências da tabela reduzida',
+    bardLevelUp.status === 200 &&
+      bardLevelUp.data?.character?.skills?.performance?.proficient === true &&
+      bardLevelUp.data?.character?.proficiencies?.tools?.includes(
+        '1 instrumento musical à sua escolha',
+      ) === true,
+    JSON.stringify({
+      status: bardLevelUp.status,
+      skill: bardLevelUp.data?.character?.skills?.performance,
+      proficiencies: bardLevelUp.data?.character?.proficiencies,
+    }),
+  );
+
+  const bardDown = await levelDown(downgradee.characterId, { classKey: 'bard' });
+  const afterBardDown = bardDown.data?.character;
+  check(
+    'downgrade do nível 1 do Bardo REMOVE a classe da ficha',
+    bardDown.status === 200 &&
+      afterBardDown?.classes?.length === 1 &&
+      afterBardDown?.classes?.[0]?.classKey === 'rogue' &&
+      bardDown.data?.levelDown?.classRemoved === true,
+    JSON.stringify({ status: bardDown.status, classes: afterBardDown?.classes }),
+  );
+  check(
+    'a perícia e a proficiência que só o Bardo dava saem da ficha',
+    afterBardDown?.skills?.performance?.proficient === false &&
+      afterBardDown?.proficiencies?.tools?.includes('1 instrumento musical à sua escolha') === false,
+    JSON.stringify({
+      skill: afterBardDown?.skills?.performance,
+      tools: afterBardDown?.proficiencies?.tools,
+    }),
+  );
+  check(
+    'a proficiência COMPARTILHADA (Armaduras leves) fica — o ladino também a concede',
+    afterBardDown?.proficiencies?.armor?.includes('Armaduras leves') === true,
+    JSON.stringify(afterBardDown?.proficiencies),
+  );
+
+  // --- Níveis ANTERIORES ao histórico: estimativa + avisos -----------------
+  await setCharacterClasses(downgradee.userId, [
+    { classKey: 'rogue', level: 1 },
+    { classKey: 'wizard', level: 3 },
+  ]);
+  const legacySheet = await sheetOf(downgradee.token);
+  const legacyDown = await levelDown(downgradee.characterId, { classKey: 'wizard' });
+  check(
+    'nível sem histórico: volta 200 com AVISOS e o PV estimado pela média (d6 = 4)',
+    legacyDown.status === 200 &&
+      legacyDown.data?.character?.classes?.[1]?.level === 2 &&
+      legacyDown.data?.character?.hpMax === (legacySheet?.hpMax ?? 0) - 4 &&
+      (legacyDown.data?.levelDown?.warnings ?? []).length > 0,
+    JSON.stringify({
+      status: legacyDown.status,
+      hp: legacyDown.data?.character?.hpMax,
+      antes: legacySheet?.hpMax,
+      warnings: legacyDown.data?.levelDown?.warnings,
+    }),
+  );
+
+  const manualDown = await levelDown(downgradee.characterId, {
+    classKey: 'wizard',
+    abilityDecreases: [{ ability: 'intelligence', amount: 1 }],
+  });
+  check(
+    'nos níveis sem histórico o mestre desfaz o Aumento de Atributo à mão',
+    manualDown.status === 200 &&
+      manualDown.data?.character?.intelligence === (legacySheet?.intelligence ?? 0) - 1 &&
+      manualDown.data?.levelDown?.reverted?.abilities?.[0]?.ability === 'intelligence',
+    JSON.stringify({
+      status: manualDown.status,
+      intelligence: manualDown.data?.character?.intelligence,
+      reverted: manualDown.data?.levelDown?.reverted?.abilities,
+    }),
+  );
+
+  const playerDown = await levelDown(
+    downgradee.characterId,
+    { classKey: 'wizard' },
+    downgradee.token,
+  );
+  check(
+    'o jogador NÃO reduz o próprio nível (403)',
+    playerDown.status === 403,
+    JSON.stringify({ status: playerDown.status, data: playerDown.data }),
+  );
+
+  const unknownClassDown = await levelDown(downgradee.characterId, { classKey: 'druid' });
+  check(
+    'classe que o personagem não tem é recusada (400)',
+    unknownClassDown.status === 400,
+    JSON.stringify({ status: unknownClassDown.status, data: unknownClassDown.data }),
+  );
+
+  const emptyDown = await levelDown(downgradee.characterId, {});
+  check(
+    'corpo sem a classe é VALIDATION_ERROR (400)',
+    emptyDown.status === 400 && emptyDown.data?.error === 'VALIDATION_ERROR',
+    JSON.stringify({ status: emptyDown.status, data: emptyDown.data }),
+  );
+
   }
 
   console.log(
