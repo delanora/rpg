@@ -728,6 +728,12 @@ Quando o mestre corrige um item na aba **Itens**, o servidor encontra todas as f
 
 **Armaduras e escudos:** a categoria *Armadura* ganhou **tipo** (`Leve`, `Média`, `Pesada`) e **CA base** (`baseArmorClass`), usados no cálculo automático da CA da ficha; o `armorClassBonus` continua sendo o bônus avulso, que **some ao total** quando o item está equipado (é o que dá o +2 do escudo e o +1 de uma armadura mágica). Itens antigos sem tipo/CA base não viram armadura — o mestre só precisa reabrir o item e preencher.
 
+### Entregar moedas (aba Itens)
+
+No topo da aba **Itens** fica o painel **Entregar moedas**: o mestre escolhe o jogador e digita o valor por denominação — **positivo entrega, negativo retira** — sem abrir (nem editar) a ficha de ninguém. Antes disso, dinheiro só saía pelo bloco de moedas dentro da ficha, em modo de edição.
+
+Antes de aplicar, o painel mostra o saldo **atual → depois da entrega**, então dá para conferir quanto o jogador vai ficar; retirar mais do que existe é recusado com a mensagem das denominações que faltam (o servidor também recusa, com 400). É o mesmo `POST /api/characters/:id/coins` do bloco de moedas, e na confirmação o painel adota a ficha devolvida pelo servidor — o jogador vê o saldo novo na hora (`sheet:updated`). As denominações **PL (pp)** e **PE (ep)** só aparecem com a chave `extraCoins` ligada na aba Mesa (o saldo delas, se existir, aparece sempre).
+
 ### Prontas para o combate
 
 As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a iniciativa), HP atual/máximo e ataques no **mesmo formato** usado pelas fichas (`src/modules/shared/attacks.ts`), além de resistências e imunidades tipadas.

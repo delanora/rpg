@@ -3898,6 +3898,16 @@ input[type='checkbox']:disabled {
 }
 
 /* Catálogo de itens (aba do mestre). */
+
+/*
+ * Aba Itens: o painel "Entregar moedas" ocupa a largura toda, acima do catálogo
+ * (mesmo respiro do `.master-layout`, que separa a lista do detalhe).
+ */
+.items-tab {
+  display: grid;
+  gap: 1.1rem;
+}
+
 .item-cards {
   list-style: none;
   margin: 0;
