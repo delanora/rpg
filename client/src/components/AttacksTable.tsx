@@ -6,7 +6,7 @@ import {
   requiredAmmoType,
   weaponOf,
 } from '../ammo';
-import { DAMAGE_TYPES, damageExpression, formatModifier } from '../dnd';
+import { DAMAGE_TYPES, MAX_EXTRA_DAMAGES, damageExpression, formatModifier } from '../dnd';
 import { useSheetAccess } from '../readonly';
 import type { Attack, Damage, DamageType, InventoryItem } from '../types';
 import { clampInt, newId } from '../utils';
@@ -56,6 +56,54 @@ export function AttacksTable({
     );
   }
 
+  /** Edita UM dano adicional, pelo índice da linha. */
+  function patchExtraDamage(id: string, index: number, patch: Partial<Damage>): void {
+    onChange(
+      attacks.map((attack) =>
+        attack.id === id
+          ? {
+              ...attack,
+              extraDamages: attack.extraDamages.map((damage, at) =>
+                at === index ? { ...damage, ...patch } : damage,
+              ),
+            }
+          : attack,
+      ),
+    );
+  }
+
+  /**
+   * Acrescenta uma linha de dano ADICIONAL — é o "+" ao lado da linha de dano.
+   * Ela nasce com os MESMOS dados do dano principal (é o caso comum: "1d8
+   * cortante + 1d6 de fogo") e sem tipo, para o mestre escolher no seletor.
+   * Tipos já usados continuam disponíveis: a lista não filtra nada.
+   */
+  function addExtraDamage(id: string): void {
+    onChange(
+      attacks.map((attack) =>
+        attack.id === id && attack.extraDamages.length < MAX_EXTRA_DAMAGES
+          ? {
+              ...attack,
+              extraDamages: [
+                ...attack.extraDamages,
+                { count: attack.damage.count, sides: attack.damage.sides, bonus: 0, type: null },
+              ],
+            }
+          : attack,
+      ),
+    );
+  }
+
+  function removeExtraDamage(id: string, index: number): void {
+    onChange(
+      attacks.map((attack) =>
+        attack.id === id
+          ? { ...attack, extraDamages: attack.extraDamages.filter((_, at) => at !== index) }
+          : attack,
+      ),
+    );
+  }
+
   function addAttack(): void {
     onChange([
       ...attacks,
@@ -63,6 +111,7 @@ export function AttacksTable({
         id: newId(),
         name: 'Novo ataque',
         damage: { count: 1, sides: 6, bonus: 0, type: null },
+        extraDamages: [],
         attackBonus: defaultBonus,
         notes: '',
         finesse: false,
@@ -168,51 +217,139 @@ export function AttacksTable({
                       />
                     </td>
                     <td>
-                      <div className="damage-fields">
-                        <InlineField
-                          value={attack.damage.count}
-                          mode="number"
-                          min={0}
-                          max={50}
-                          ariaLabel="Quantidade de dados de dano"
-                          title="Quantidade de dados (0 = dano fixo)"
-                          onCommit={(value) =>
-                            patchDamage(attack.id, {
-                              count: clampInt(value, 0, 50, attack.damage.count),
-                            })
-                          }
-                        />
-                        <span className="damage-sep" aria-hidden="true">
-                          d
-                        </span>
-                        <InlineField
-                          value={attack.damage.sides ? String(attack.damage.sides) : ''}
-                          mode="select"
-                          options={DIE_OPTIONS}
-                          ariaLabel="Dado de dano"
-                          onCommit={(value) =>
-                            patchDamage(attack.id, { sides: value ? Number(value) : 0 })
-                          }
-                        />
-                        <span className="damage-sep" aria-hidden="true">
-                          +
-                        </span>
-                        <InlineField
-                          value={attack.damage.bonus}
-                          mode="number"
-                          min={-9999}
-                          max={9999}
-                          ariaLabel="Bônus de dano"
-                          title="Bônus fixo (pode ser negativo)"
-                          onCommit={(value) =>
-                            patchDamage(attack.id, {
-                              bonus: clampInt(value, -9999, 9999, attack.damage.bonus),
-                            })
-                          }
-                        />
-                        <span className="damage-preview" title="Expressão derivada (só exibição)">
-                          {damageExpression(attack.damage)}
-                        </span>
+                      <div className="damage-list">
+                        <div className="damage-fields">
+                          <InlineField
+                            value={attack.damage.count}
+                            mode="number"
+                            min={0}
+                            max={50}
+                            ariaLabel="Quantidade de dados de dano"
+                            title="Quantidade de dados (0 = dano fixo)"
+                            onCommit={(value) =>
+                              patchDamage(attack.id, {
+                                count: clampInt(value, 0, 50, attack.damage.count),
+                              })
+                            }
+                          />
+                          <span className="damage-sep" aria-hidden="true">
+                            d
+                          </span>
+                          <InlineField
+                            value={attack.damage.sides ? String(attack.damage.sides) : ''}
+                            mode="select"
+                            options={DIE_OPTIONS}
+                            ariaLabel="Dado de dano"
+                            onCommit={(value) =>
+                              patchDamage(attack.id, { sides: value ? Number(value) : 0 })
+                            }
+                          />
+                          <span className="damage-sep" aria-hidden="true">
+                            +
+                          </span>
+                          <InlineField
+                            value={attack.damage.bonus}
+                            mode="number"
+                            min={-9999}
+                            max={9999}
+                            ariaLabel="Bônus de dano"
+                            title="Bônus fixo (pode ser negativo)"
+                            onCommit={(value) =>
+                              patchDamage(attack.id, {
+                                bonus: clampInt(value, -9999, 9999, attack.damage.bonus),
+                              })
+                            }
+                          />
+                          <span className="damage-preview" title="Expressão derivada (só exibição)">
+                            {damageExpression(attack.damage)}
+                          </span>
+                          {!readOnly ? (
+                            <button
+                              type="button"
+                              className="btn btn-small damage-add"
+                              disabled={attack.extraDamages.length >= MAX_EXTRA_DAMAGES}
+                              title="Adicionar outro tipo de dano (ex.: 1d6 de fogo numa espada flamejante)"
+                              aria-label={`Adicionar outro tipo de dano em ${attack.name}`}
+                              onClick={() => addExtraDamage(attack.id)}
+                            >
+                              +
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {attack.extraDamages.map((extra, index) => (
+                          <div className="damage-fields damage-extra" key={index}>
+                            <InlineField
+                              value={extra.count}
+                              mode="number"
+                              min={0}
+                              max={50}
+                              ariaLabel={`Dados do ${index + 2}º dano de ${attack.name}`}
+                              title="Quantidade de dados do dano adicional (0 = dano fixo)"
+                              onCommit={(value) =>
+                                patchExtraDamage(attack.id, index, {
+                                  count: clampInt(value, 0, 50, extra.count),
+                                })
+                              }
+                            />
+                            <span className="damage-sep" aria-hidden="true">
+                              d
+                            </span>
+                            <InlineField
+                              value={extra.sides ? String(extra.sides) : ''}
+                              mode="select"
+                              options={DIE_OPTIONS}
+                              ariaLabel={`Dado do ${index + 2}º dano de ${attack.name}`}
+                              onCommit={(value) =>
+                                patchExtraDamage(attack.id, index, {
+                                  sides: value ? Number(value) : 0,
+                                })
+                              }
+                            />
+                            <span className="damage-sep" aria-hidden="true">
+                              +
+                            </span>
+                            <InlineField
+                              value={extra.bonus}
+                              mode="number"
+                              min={-9999}
+                              max={9999}
+                              ariaLabel={`Bônus do ${index + 2}º dano de ${attack.name}`}
+                              title="Bônus fixo do dano adicional (pode ser negativo)"
+                              onCommit={(value) =>
+                                patchExtraDamage(attack.id, index, {
+                                  bonus: clampInt(value, -9999, 9999, extra.bonus),
+                                })
+                              }
+                            />
+                            <InlineField
+                              value={extra.type ?? ''}
+                              mode="select"
+                              options={DAMAGE_TYPES}
+                              ariaLabel={`Tipo do ${index + 2}º dano de ${attack.name}`}
+                              title="Tipo do dano adicional"
+                              onCommit={(value) =>
+                                patchExtraDamage(attack.id, index, {
+                                  type: (value || null) as DamageType | null,
+                                })
+                              }
+                            />
+                            <span className="damage-preview" title="Expressão derivada (só exibição)">
+                              {damageExpression(extra)}
+                            </span>
+                            {!readOnly ? (
+                              <button
+                                type="button"
+                                className="btn btn-danger btn-small"
+                                title="Remover este dano adicional"
+                                aria-label={`Remover o ${index + 2}º dano de ${attack.name}`}
+                                onClick={() => removeExtraDamage(attack.id, index)}
+                              >
+                                ×
+                              </button>
+                            ) : null}
+                          </div>
+                        ))}
                       </div>
                     </td>
                     <td>

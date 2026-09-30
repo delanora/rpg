@@ -201,7 +201,7 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 
 ### Verificação automática (smoke test)
 
-Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 28 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas, do ataque derivado e do downgrade de nível (seções 22 a 28):
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 29 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas, do ataque derivado, do downgrade de nível e dos vários tipos de dano (seções 22 a 29):
 
 | Seção | O que verifica |
 |-------|----------------|
@@ -220,6 +220,7 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **26** | **Inventário (complemento)** — o mestre ajusta quantidade e remove item; os `send` se acumulam; usar consumível entra no log de rolagens do mestre como `kind: item`. |
 | **27** | **Ataque derivado da arma equipada** — a arma equipada vira ataque calculado com a habilidade certa (FOR corpo a corpo, DES à distância, a melhor das duas com acuidade), proficiência por **categoria** e por **nome** (plural/acento), dado **versátil** com a outra mão livre, **duas mãos** recusada (400) com a outra mão ocupada, **segunda arma leve** sem o modificador de dano, variante de **arremesso** (`ranged` usando FOR) e **golpe desarmado**; tudo resolvido no combate, inclusive o Ataque Furtivo da arma sutil. |
 | **28** | **Downgrade de nível (mestre)** — o Level Up passa a gravar o **histórico** de cada nível (dado/rolagem de PV com o ajuste retroativo de CON, Aumento de Atributo ou Talento, escolhas, subclasse, perícia e proficiências); `POST /api/characters/:id/level-down` desfaz exatamente isso (PV, atributos, escolhas e subclasse voltam), nível 1 caindo para 0 **remove a classe** da ficha (com a perícia e as proficiências de entrada, mas **mantendo** a proficiência que as classes restantes também concedem); a última classe do personagem e o jogador (403) são recusados; níveis anteriores ao histórico voltam com **aviso** e PV estimado pela média. |
+| **29** | **Vários tipos de dano por ataque e por arma** — a arma do catálogo, o ataque da ficha e o da criatura carregam `extraDamages` (cada parcela com os seus dados e o seu tipo), o item enviado e o ataque **derivado** da arma equipada levam a lista junto e o combate continua resolvendo **só o dano principal**. |
 
 Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória (e as seções novas **reaproveitam** fichas já criadas para não estourar o limite de 30 contas por 15 min do modo produção).
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DAMAGE_TYPES } from './attacks.js';
+import { DAMAGE_TYPES, damageListSchema } from './attacks.js';
 
 /**
  * Atributos específicos de cada categoria de item e o preço em PO/PP/PC.
@@ -84,9 +84,16 @@ export type AmmoType = (typeof AMMO_TYPES)[number];
 export const itemDetailsSchema = z
   .object({
     // Arma / Cajado — dano estruturado (mesmos limites de `Damage` no ataque).
+    /** Dano PRINCIPAL da arma: quantidade de dados, dado, tipo e bônus. */
     damageCount: z.number().int().min(0).max(50).optional(),
     damageDie: z.number().int().min(0).max(1000).optional(),
     damageType: z.enum(DAMAGE_TYPES).optional(),
+    /**
+     * Danos ADICIONAIS da arma, cada um com o seu tipo (ex.: espada flamejante
+     * = cortante no principal + 1d6 de fogo aqui). O ataque derivado da arma
+     * equipada leva os extras junto — eles ainda não são somados no combate.
+     */
+    extraDamages: damageListSchema.optional(),
     /** Bônus de ataque da arma. */
     attackBonus: z.number().int().min(-30).max(30).optional(),
     /** Bônus mágico somado ao DANO da arma (ex.: +1 de uma arma mágica). */
@@ -200,6 +207,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
     'damageCount',
     'damageDie',
     'damageType',
+    'extraDamages',
     'attackBonus',
     'damageBonus',
     'weaponType',
@@ -214,6 +222,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
     'damageCount',
     'damageDie',
     'damageType',
+    'extraDamages',
     'attackBonus',
     'damageBonus',
     'weaponType',

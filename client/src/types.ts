@@ -59,9 +59,16 @@ export type SavesState = Record<AbilityKey, boolean>;
 
 /** Atributos de item por categoria (espelha src/modules/shared/item-details.ts). */
 export interface ItemDetails {
+  /** Dano PRINCIPAL da arma (quantidade de dados, dado e tipo). */
   damageCount?: number;
   damageDie?: number;
   damageType?: DamageType;
+  /**
+   * Danos ADICIONAIS da arma, cada um com o seu tipo (ex.: espada flamejante =
+   * cortante no principal + 1d6 de fogo aqui). O ataque derivado da arma
+   * equipada leva os extras junto.
+   */
+  extraDamages?: Damage[];
   attackBonus?: number;
   /** Bônus mágico somado ao DANO da arma (ex.: +1). */
   damageBonus?: number;
@@ -252,7 +259,13 @@ export interface Damage {
 export interface Attack {
   id: string;
   name: string;
+  /** Dano PRINCIPAL do ataque (o combate resolve este por enquanto). */
   damage: Damage;
+  /**
+   * Danos ADICIONAIS, cada um com o seu tipo e os seus dados — independentes
+   * entre si (quem resiste a um não resiste ao outro). Vazio = um tipo só.
+   */
+  extraDamages: Damage[];
   attackBonus: number;
   notes: string;
   /** Arma sutil (habilita Ataque Furtivo). */

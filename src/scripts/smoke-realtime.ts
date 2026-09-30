@@ -8037,6 +8037,256 @@ async function main(): Promise<void> {
     JSON.stringify({ status: emptyDown.status, data: emptyDown.data }),
   );
 
+  // --- 29. Vários tipos de dano por ataque e por arma -----------------------
+  console.log('\n29) Vários tipos de dano por ataque e por arma');
+
+  // Cada dano é INDEPENDENTE: o principal continua em `damage` (é o que o
+  // combate resolve por enquanto) e os demais vão em `extraDamages`, cada um
+  // com os seus dados e o seu tipo. A ficha, as criaturas e as armas do
+  // catálogo usam a MESMA lista.
+  const multiSheetOwner = downgradee;
+
+  const multiWeapon = await api('/api/items', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Lâmina flamejante ${suffix}`,
+      category: 'Arma',
+      weight: 2,
+      details: {
+        damageCount: 1,
+        damageDie: 8,
+        damageType: 'Cortante',
+        attackBonus: 0,
+        damageBonus: 0,
+        weaponType: 'melee',
+        weaponCategory: 'martial',
+        properties: [],
+        extraDamages: [{ count: 1, sides: 6, bonus: 0, type: 'Fogo' }],
+      },
+    },
+  });
+  check(
+    'a arma do catálogo guarda o dano ADICIONAL (1d6 de Fogo junto do Cortante)',
+    multiWeapon.status === 201 &&
+      multiWeapon.data?.item?.details?.extraDamages?.length === 1 &&
+      multiWeapon.data.item.details.extraDamages[0].type === 'Fogo' &&
+      multiWeapon.data.item.details.extraDamages[0].sides === 6 &&
+      multiWeapon.data.item.details.damageType === 'Cortante',
+    JSON.stringify(multiWeapon.data?.item?.details),
+  );
+  const multiWeaponId = multiWeapon.data?.item?.id;
+  createdItemIds.push(multiWeaponId);
+
+  await api(`/api/items/${multiWeaponId}/send`, {
+    method: 'POST',
+    token: masterToken,
+    body: { characterId: multiSheetOwner.characterId, quantity: 1 },
+  });
+  const multiSheet = await sheetOf(multiSheetOwner.token);
+  const multiEntry = multiSheet?.inventory?.find((item: any) => item.itemId === multiWeaponId);
+  check(
+    'o item enviado leva o dano adicional para o inventário do jogador',
+    multiEntry?.details?.extraDamages?.length === 1 &&
+      multiEntry?.details?.extraDamages?.[0]?.type === 'Fogo',
+    JSON.stringify(multiEntry?.details),
+  );
+
+  // Equipa a arma: o ataque DERIVADO dela carrega o principal e os extras.
+  await masterPatch(multiSheetOwner.characterId, {
+    inventory: [
+      {
+        id: 'multi-blade',
+        name: multiEntry?.name ?? 'Lâmina flamejante',
+        description: '',
+        quantity: 1,
+        weight: 2,
+        slot: 'hand1',
+        backpackX: null,
+        backpackY: null,
+        imageUrl: '',
+        itemId: multiWeaponId,
+        category: 'Arma',
+        details: multiEntry?.details ?? {},
+      },
+    ],
+  });
+  const equippedBladeSheet = await sheetOf(multiSheetOwner.token);
+  const bladeAttack = (equippedBladeSheet?.derivedAttacks ?? []).find(
+    (attack: any) => attack.id === 'weapon:multi-blade',
+  );
+  check(
+    'o ataque derivado da arma equipada traz o dano principal e os adicionais',
+    bladeAttack?.damage?.type === 'Cortante' &&
+      bladeAttack?.damage?.sides === 8 &&
+      bladeAttack?.extraDamages?.length === 1 &&
+      bladeAttack?.extraDamages?.[0]?.type === 'Fogo' &&
+      bladeAttack?.extraDamages?.[0]?.sides === 6,
+    JSON.stringify(bladeAttack),
+  );
+
+  // Ataque da FICHA com três danos: dois rolados e um FIXO (dano de morte 5).
+  const multiAttackSaved = await masterPatch(multiSheetOwner.characterId, {
+    attacks: [
+      {
+        id: 'multi',
+        name: 'Lâmina flamejante',
+        damage: { count: 1, sides: 8, bonus: 3, type: 'Cortante' },
+        extraDamages: [
+          { count: 1, sides: 6, bonus: 0, type: 'Fogo' },
+          { count: 0, sides: 0, bonus: 5, type: 'Necrótico' },
+        ],
+        attackBonus: 5,
+        notes: '',
+        finesse: false,
+        ranged: false,
+      },
+    ],
+  });
+  const multiAttack = multiAttackSaved.data?.character?.attacks?.find(
+    (attack: any) => attack.id === 'multi',
+  );
+  check(
+    'a ficha grava o ataque com três danos independentes (dois rolados e um fixo)',
+    multiAttackSaved.status === 200 &&
+      multiAttack?.damage?.type === 'Cortante' &&
+      multiAttack?.extraDamages?.length === 2 &&
+      multiAttack?.extraDamages?.[0]?.type === 'Fogo' &&
+      multiAttack?.extraDamages?.[1]?.type === 'Necrótico' &&
+      multiAttack?.extraDamages?.[1]?.bonus === 5 &&
+      multiAttack?.extraDamages?.[1]?.count === 0,
+    JSON.stringify(multiAttack),
+  );
+
+  // Repetir o tipo é permitido: dois danos de Fogo, calculados um por um.
+  const repeatedType = await masterPatch(multiSheetOwner.characterId, {
+    attacks: [
+      {
+        id: 'multi',
+        name: 'Lâmina flamejante',
+        damage: { count: 1, sides: 8, bonus: 3, type: 'Cortante' },
+        extraDamages: [
+          { count: 1, sides: 6, bonus: 0, type: 'Fogo' },
+          { count: 1, sides: 4, bonus: 0, type: 'Fogo' },
+        ],
+        attackBonus: 5,
+        notes: '',
+        finesse: false,
+        ranged: false,
+      },
+    ],
+  });
+  check(
+    'o mesmo tipo de dano pode se repetir (não fica bloqueado)',
+    repeatedType.status === 200 &&
+      repeatedType.data?.character?.attacks?.[0]?.extraDamages?.length === 2 &&
+      repeatedType.data.character.attacks[0].extraDamages.every(
+        (damage: any) => damage.type === 'Fogo',
+      ),
+    JSON.stringify(repeatedType.data?.character?.attacks?.[0]?.extraDamages),
+  );
+
+  const tooManyDamages = await masterPatch(multiSheetOwner.characterId, {
+    attacks: [
+      {
+        id: 'multi',
+        name: 'Exagerado',
+        damage: { count: 1, sides: 6, bonus: 0, type: null },
+        extraDamages: Array.from({ length: 11 }, () => ({
+          count: 1,
+          sides: 6,
+          bonus: 0,
+          type: 'Fogo',
+        })),
+        attackBonus: 0,
+        notes: '',
+        finesse: false,
+        ranged: false,
+      },
+    ],
+  });
+  check(
+    'passar do teto de danos adicionais é recusado (400)',
+    tooManyDamages.status === 400,
+    JSON.stringify({ status: tooManyDamages.status, data: tooManyDamages.data }),
+  );
+
+  // Criatura (bestiário): mesmo formato de ataque, também com vários danos.
+  const multiCreature = await api('/api/creatures', {
+    method: 'POST',
+    token: masterToken,
+    body: {
+      name: `Elemental duplo ${suffix}`,
+      type: 'Elemental',
+      hpMax: 60,
+      armorClass: 12,
+      localityIds: [locality.id],
+    },
+  });
+  createdCreatureIds.push(multiCreature.data.creature.id);
+  const creaturePatch = await api(`/api/creatures/${multiCreature.data.creature.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      attacks: [
+        {
+          id: 'claw',
+          name: 'Garra',
+          damage: { count: 1, sides: 6, bonus: 2, type: 'Cortante' },
+          extraDamages: [{ count: 1, sides: 4, bonus: 0, type: 'Ácido' }],
+          attackBonus: 4,
+          notes: '',
+        },
+      ],
+    },
+  });
+  const creatureAttack = creaturePatch.data?.creature?.attacks?.find(
+    (attack: any) => attack.id === 'claw',
+  );
+  check(
+    'a criatura do bestiário também guarda vários tipos de dano (Cortante + Ácido)',
+    creaturePatch.status === 200 &&
+      creatureAttack?.damage?.type === 'Cortante' &&
+      creatureAttack?.extraDamages?.length === 1 &&
+      creatureAttack?.extraDamages?.[0]?.type === 'Ácido',
+    JSON.stringify(creatureAttack),
+  );
+
+  // O combate ainda resolve SÓ o dano principal: os extras são configuração.
+  const multiCombat = await api('/api/combat', {
+    method: 'POST',
+    token: masterToken,
+    body: { entries: [{ creatureId: multiCreature.data.creature.id, quantity: 1 }] },
+  });
+  createdCombatIds.push(multiCombat.data.combat.id);
+  for (const combatant of multiCombat.data.combat.combatants) {
+    await api(`/api/combat/initiative/${combatant.id}`, { method: 'POST', token: masterToken });
+  }
+  const multiActive = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  const multiTarget = (multiActive?.combatants ?? []).find(
+    (item: any) => item.kind === 'CREATURE',
+  );
+
+  let multiHit: any = null;
+  for (let attempt = 0; attempt < 25 && multiHit === null; attempt += 1) {
+    const shot = await api('/api/combat/attack', {
+      method: 'POST',
+      token: multiSheetOwner.token,
+      body: { attackId: 'weapon:multi-blade', targetCombatantId: multiTarget.id },
+    });
+    if (shot.status === 200 && shot.data?.result?.hit) multiHit = shot.data.result;
+  }
+  // FOR 16 (+3) e arma sem bônus: 1d8+3 (no crítico, 2d8+3). Se o 1d6 de Fogo
+  // entrasse na conta, o teto passaria de 11 (ou de 19 no crítico).
+  const multiCap = multiHit?.critical ? 19 : 11;
+  check(
+    'o combate resolve só o dano PRINCIPAL (os extras ainda não são somados)',
+    multiHit !== null && multiHit.damageType === 'Cortante' && multiHit.damageRolled <= multiCap,
+    JSON.stringify(multiHit),
+  );
+
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+
   }
 
   console.log(

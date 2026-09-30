@@ -3,6 +3,10 @@ import { z } from 'zod';
 /**
  * Formato de ataque compartilhado entre fichas de jogador e criaturas.
  *
+ * Um ataque pode dar MAIS DE UM TIPO de dano: `damage` é o principal (somado no
+ * combate hoje) e `extraDamages` traz os demais, cada um independente — quem é
+ * imune a um tipo continua levando o outro. Ver `attackDamages`.
+ *
  * Fica em `shared` porque a Etapa 4 (combate) precisa rolar ataques tanto de
  * personagens quanto de criaturas — o mesmo shape nos dois lados evita
  * conversões e duplicação de código.
@@ -49,6 +53,43 @@ export type Damage = z.infer<typeof damageSchema>;
 
 const EMPTY_DAMAGE: Damage = { count: 0, sides: 0, bonus: 0, type: null };
 
+/**
+ * Tetos de danos ADICIONAIS por ataque/arma (o principal não conta).
+ * Existe para o JSONB não virar depósito: uma arma do livro tem no máximo uns
+ * dois tipos extras (ex.: espada flamejante = cortante + fogo).
+ */
+export const MAX_EXTRA_DAMAGES = 10;
+
+/**
+ * Dano de VÁRIOS tipos: o principal vem primeiro e é o que o combate resolve
+ * hoje; os demais são calculados à parte (cada um com a sua resistência).
+ *
+ * Fica em `shared` porque a ficha, as criaturas e as armas do catálogo
+ * (`item-details.ts`) usam a MESMA lista.
+ */
+export const damageListSchema = z.array(damageSchema).max(MAX_EXTRA_DAMAGES);
+
+/** Um dano está vazio (não rola dado nenhum e não soma bônus)? */
+export function damageIsEmpty(damage: Damage | null | undefined): boolean {
+  if (!damage) return true;
+  const hasDice = damage.count > 0 && damage.sides > 0;
+  return !hasDice && damage.bonus === 0;
+}
+
+/**
+ * TODOS os danos de um ataque: o principal (`damage`) mais os adicionais.
+ *
+ * É o que o combate vai percorrer quando cada tipo passar a ser aplicado de
+ * forma independente (hoje: resistência por tipo em `applyDamageResistance`).
+ * Enquanto isso o combate segue rolando só `attack.damage`.
+ */
+export function attackDamages(attack: {
+  damage: Damage;
+  extraDamages?: Damage[];
+}): Damage[] {
+  return [attack.damage, ...(attack.extraDamages ?? [])];
+}
+
 /** Expressão textual do dano ("2d6+3", "1d8-1", "4"), só para exibição. */
 export function damageExpression(damage: Damage | null | undefined): string {
   if (!damage) return '—';
@@ -61,7 +102,17 @@ export function damageExpression(damage: Damage | null | undefined): string {
 export const attackSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1, 'O ataque precisa de um nome.').max(120),
+  /** Dano PRINCIPAL do ataque (o combate resolve este por enquanto). */
   damage: damageSchema.default(EMPTY_DAMAGE),
+  /**
+   * Danos ADICIONAIS, cada um com o seu tipo (ex.: espada flamejante =
+   * `damage` cortante + um extra de fogo). São independentes: quem resiste a um
+   * tipo não resiste ao outro. Vazio = ataque de um tipo só, como antes.
+   *
+   * O mestre cadastra os extras pelo "+" ao lado da linha de dano (ficha e
+   * bestiário) e na arma do catálogo.
+   */
+  extraDamages: damageListSchema.default([]),
   attackBonus: z.number().int().min(-30).max(30).default(0),
   notes: z.string().trim().max(1000).default(''),
   /**
@@ -97,6 +148,21 @@ export type Attack = z.infer<typeof attackSchema>;
 export interface CombatAttack extends Attack {
   derived?: boolean;
   blocked?: string;
+}
+
+/**
+ * Lista de danos escrita como texto ("1d8 Cortante + 1d6 Necrótico") — é o que a
+ * ficha e o combate mostram quando o ataque tem mais de um tipo. O dano sem
+ * tipo conhecido sai sem rótulo.
+ */
+export function damagesExpression(damages: Damage[]): string {
+  return damages
+    .filter((damage) => !damageIsEmpty(damage))
+    .map((damage) => {
+      const expression = damageExpression(damage);
+      return damage.type ? `${expression} ${damage.type}` : expression;
+    })
+    .join(' + ');
 }
 
 /**

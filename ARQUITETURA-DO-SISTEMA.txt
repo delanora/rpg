@@ -201,7 +201,7 @@ SERVIDOR (src/)
     migrate-item-weapons.ts  completa o perfil de arma dos itens (padrões melee/simple;
                           Cajado com dano vira versátil d6/d8) e lista os suspeitos de
                           arma à distância pelo nome
-    smoke-realtime.ts     8.090 linhas — smoke test ponta a ponta (755 asserts)
+    smoke-realtime.ts     8.340 linhas — smoke test ponta a ponta (763 asserts)
 
 CLIENTE (client/src/)
   main.tsx                initTheme() + unlockAudioOnFirstGesture() + <App/>
@@ -444,7 +444,12 @@ exceto GameConfig (chave fixa "main").
                                      // nível 1; multiclasse dá o reduzido (PHB p.164).
     inventory Json @default("[]")
     spells    Json @default("{}")  // { list: [...], slots: { "1": { max, used } } }
-    attacks   Json @default("[]")
+    attacks   Json @default("[]")   // [{ id, name, damage: { count, sides, bonus, type },
+                                     //    extraDamages: [{ count, sides, bonus, type }],
+                                     //    attackBonus, notes, finesse, ranged, ... }]
+                                     // `damage` é o PRINCIPAL (é o que o combate rola hoje);
+                                     // `extraDamages` são os tipos ADICIONAIS, independentes
+                                     // entre si (ver §10.0)
     features  Json @default("[]")  // { id, name, source, description }
     notes     String @default("")
     classState Json @default("{}") // { active: string[], used: { [id]: number } }
@@ -1019,6 +1024,39 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   spellSlots[], pactSlots, xpForNextLevel.
   REGRA: nada disso é gravado no banco; é recalculado em toda leitura.
 
+10.10 VÁRIOS TIPOS DE DANO POR ATAQUE E POR ARMA
+  Um ataque (da ficha ou de criatura) e uma arma do catálogo podem dar MAIS DE UM
+  TIPO de dano, cada um com os seus próprios dados — é o que permitirá, no futuro,
+  resolver cada parcela contra a resistência/imunidade do alvo (cortante 5 entra,
+  necrótico 5 não, num alvo imune a necrótico).
+
+  FORMATO (o mesmo nos três lugares, `shared/attacks.ts`):
+    • `damage`       = dano PRINCIPAL — inalterado, e o que o combate rola hoje;
+    • `extraDamages` = lista dos ADICIONAIS, cada um um `Damage` completo
+                       ({ count, sides, bonus, type }), teto MAX_EXTRA_DAMAGES (10).
+    Ataques: `attackSchema` (ficha e criaturas). Armas: `details.extraDamages`
+    (categorias Arma e Cajado — o `sanitizeItemDetails` mantém a chave).
+
+  HELPERS (para o combate novo e para a interface não repetir a regra):
+    `attackDamages(attack)`   → [principal, ...extras] (o que o combate vai percorrer)
+    `damageIsEmpty(damage)`   → não rola dado nenhum e não soma bônus
+    `damagesExpression(lista)` / `damageExpression(dano)` → só exibição
+
+  REGRAS ATUAIS (deliberadamente parciais):
+    • o combate resolve APENAS `damage`; `extraDamages` NÃO é somado nem resistido
+      ainda — o dado existe e trafega (ficha, derivados e criaturas), mas quem
+      aplica cada tipo por si é a próxima etapa;
+    • o ataque DERIVADO da arma equipada (`weapon-attacks.ts`) copia os
+      `extraDamages` da arma, então a ficha lista "1d8 Cortante + 1d6 Fogo";
+    • nenhum tipo é proibido: repetir o mesmo tipo em dois danos é válido (dois
+      danos de Fogo independentes) e não há relação com as resistências do alvo.
+
+  INTERFACE (sem poluir): a linha de dano continua como estava e ganhou um "+" ao
+  lado, que acrescenta uma linha de dano ADICIONAL (mesmos campos + o tipo, com o
+  "×" para remover). Vale na tabela de ataques da ficha (e do bestiário) e no
+  editor de arma do catálogo (o "+" fica junto de Dados/Dado/Tipo). Cobertura na
+  seção 29 do smoke.
+
 
 ================================================================================
 11) MÓDULO characters — SEMÂNTICA EXATA DA FICHA
@@ -1425,6 +1463,11 @@ ATAQUE (POST /api/combat/attack)
   migração (`npm run migrate:attack-damage`) não conseguiu converter a expressão
   antiga com segurança, `legacy: true` + `damageText` com o texto original (o
   mestre revisa pela ficha). O tipo é um dos 13 canônicos ou `null`.
+  VÁRIOS TIPOS DE DANO (§10.0): `attack.damage` é o dano PRINCIPAL e é o único
+  que o combate resolve hoje; `extraDamages` guarda os demais, cada um com os seus
+  dados e o seu tipo. O passo 4 acima (e o passo 5, de resistência) continua
+  lendo SÓ `attack.damage` — aplicar cada tipo de forma independente (somando o
+  que passa pela resistência/imunidade do alvo) é o próximo passo do combate.
   Resultado (`AttackResolvedPayload`) é enviado DIFERENCIADO:
     • mestre: CA, hpCurrent/hpMax do alvo, tudo;
     • jogadores, quando o ALVO é CRIATURA: targetArmorClass/targetHpCurrent/
@@ -1532,9 +1575,9 @@ REGIÕES E LOCALIDADES
 CATÁLOGO DE ITENS
   Categorias: Arma, Armadura, Escudo, Poção, Anel, Cajado, Item Geral, Tesouro, Outro.
   `sanitizeItemDetails(category, details)` mantém SÓ os campos que a categoria usa:
-    Arma (damageCount, damageDie, damageType, attackBonus, damageBonus, weaponType,
-    weaponCategory, properties, versatileDie, rangeNormal, rangeLong) · Cajado (idem +
-    spellcastingFocus) · Armadura (armorType, baseArmorClass, armorClassBonus) ·
+    Arma (damageCount, damageDie, damageType, extraDamages, attackBonus, damageBonus,
+    weaponType, weaponCategory, properties, versatileDie, rangeNormal, rangeLong) ·
+    Cajado (idem + spellcastingFocus) · Armadura (armorType, baseArmorClass, armorClassBonus) ·
     Escudo (armorClassBonus) · Poção (effectRoll, duration) · Anel (effectRoll,
     attunement) · demais: nenhum.
   PERFIL DE ARMA (Arma/Cajado) — o cadastro separa corpo a corpo de à distância:
@@ -1657,7 +1700,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 
 ================================================================================
 18) TESTES E VERIFICAÇÃO
-================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 8.090 linhas, 755 asserts)
+================================================================================    18.1 SMOKE TEST (src/scripts/smoke-realtime.ts — 8.340 linhas, 763 asserts)
   Executa contra um servidor RODANDO (`npm run smoke`; base configurável por
   SMOKE_BASE_URL). Cria contas com sufixo único, exercita a API e o WebSocket de
   ponta a ponta e LIMPA tudo no final (`cleanup()`), saindo com código 0 ou 1
@@ -1708,7 +1751,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
     13) Exclusão de personagem     — 403 para jogador, cascata de conta/combate/log,
                                      derrubada da sessão, token invalidado
   -- FASE 0: regressão das regras base e das fases de ataques/itens/moedas
-     (seções 14 a 28, num escopo próprio) --
+     (seções 14 a 29, num escopo próprio) --
     14) PV e CA automáticos        — PV de d10/d6, recálculo retroativo de CON no 5º
                                      (40/30 → 45/35 com CON 16; → 25/15 com CON 8),
                                      CA leve/média/pesada, escudo, Defesa sem Armadura
@@ -1803,6 +1846,13 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
                                      COMPARTILHADA; a última classe do personagem e o
                                      jogador (403) são recusados; níveis sem histórico
                                      voltam 200 com `warnings` e PV estimado
+    29) Vários tipos de dano       — cada dano INDEPENDENTE: o principal continua em
+                                     `damage` (é o que o combate resolve hoje) e os
+                                     demais vão em `extraDamages` ({count,sides,bonus,
+                                     type}), teto de 10; a arma do catálogo, o ataque
+                                     da ficha e o da criatura usam a MESMA lista; o
+                                     item enviado e o ataque DERIVADO levam os extras
+                                     juntos; o combate resolve SÓ o principal
 
   LIMITE OPERACIONAL: o smoke cria ~14 contas e faz ~27 chamadas a `/api/auth/*`
   por execução. Em `NODE_ENV=production` o limiter do login é 30 por 15 min, então

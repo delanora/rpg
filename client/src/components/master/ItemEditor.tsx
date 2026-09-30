@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import {
   DAMAGE_TYPES,
+  MAX_EXTRA_DAMAGES,
   WEAPON_CATEGORY_LABELS,
   WEAPON_PROPERTY_LABELS,
   WEAPON_TYPE_LABELS,
   damageExpression,
+  damageIsEmpty,
 } from '../../dnd';
 import {
   AMMO_TYPES,
@@ -18,6 +20,8 @@ import {
 import type {
   AmmoType,
   Character,
+  Damage,
+  DamageType,
   Item,
   ItemDetails,
   ItemPatch,
@@ -59,6 +63,7 @@ function CategoryFields({
 
   if (item.category === 'Arma' || item.category === 'Cajado') {
     const properties = details.properties ?? [];
+    const extraDamages = details.extraDamages ?? [];
     const weaponType = details.weaponType ?? 'melee';
     const showRange = weaponType === 'ranged' || properties.includes('thrown');
     const hasVersatile = properties.includes('versatile');
@@ -68,6 +73,15 @@ function CategoryFields({
       weaponType === 'ranged'
         ? WEAPON_PROPERTIES
         : WEAPON_PROPERTIES.filter((property) => property !== 'ammunition');
+
+    /** Edita UM dano adicional da arma, pelo índice da linha. */
+    function patchExtraDamage(index: number, patch: Partial<Damage>): void {
+      onPatchDetails({
+        extraDamages: extraDamages.map((damage, at) =>
+          at === index ? { ...damage, ...patch } : damage,
+        ),
+      });
+    }
 
     /** Mantém as propriedades coerentes entre si (o servidor revalida). */
     function toggleProperty(property: WeaponProperty): void {
@@ -154,6 +168,37 @@ function CategoryFields({
           />
         </label>
 
+        {/*
+          * "+" ao lado da linha de dano: a arma pode dar VÁRIOS tipos de dano
+          * (ex.: espada flamejante = cortante + fogo), cada um com os seus dados.
+          * Tipos já usados continuam disponíveis no seletor.
+          */}
+        <div className="field">
+          <span aria-hidden="true">&nbsp;</span>
+          <button
+            type="button"
+            className="btn btn-small damage-add"
+            disabled={extraDamages.length >= MAX_EXTRA_DAMAGES}
+            title="Adicionar outro tipo de dano (ex.: 1d6 de fogo numa espada flamejante)"
+            aria-label={`Adicionar outro tipo de dano em ${item.name}`}
+            onClick={() =>
+              onPatchDetails({
+                extraDamages: [
+                  ...extraDamages,
+                  {
+                    count: details.damageCount ?? 0,
+                    sides: details.damageDie ?? 0,
+                    bonus: 0,
+                    type: null,
+                  },
+                ],
+              })
+            }
+          >
+            + outro tipo de dano
+          </button>
+        </div>
+
         <label className="field">
           <span>Bônus de ataque</span>
           <InlineField
@@ -189,6 +234,74 @@ function CategoryFields({
           </span>
         </label>
       </div>
+
+      {/* Danos ADICIONAIS da arma (um por tipo), logo abaixo do principal. */}
+      {extraDamages.map((extra, index) => (
+        <div className="damage-extra-row" key={index}>
+          <label className="field">
+            <span>Dados</span>
+            <InlineField
+              value={extra.count}
+              mode="number"
+              min={0}
+              max={50}
+              ariaLabel={`Dados do ${index + 2}º dano de ${item.name}`}
+              onCommit={(value) => patchExtraDamage(index, { count: clampInt(value, 0, 50, 0) })}
+            />
+          </label>
+          <label className="field">
+            <span>Dado</span>
+            <InlineField
+              value={extra.sides ? String(extra.sides) : ''}
+              mode="select"
+              options={DIE_OPTIONS}
+              ariaLabel={`Dado do ${index + 2}º dano de ${item.name}`}
+              onCommit={(value) => patchExtraDamage(index, { sides: value ? Number(value) : 0 })}
+            />
+          </label>
+          <label className="field">
+            <span>Tipo de dano</span>
+            <InlineField
+              value={extra.type ?? ''}
+              mode="select"
+              options={DAMAGE_TYPES}
+              ariaLabel={`Tipo do ${index + 2}º dano de ${item.name}`}
+              onCommit={(value) =>
+                patchExtraDamage(index, { type: (value || null) as DamageType | null })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Bônus</span>
+            <InlineField
+              value={extra.bonus}
+              mode="number"
+              min={-9999}
+              max={9999}
+              ariaLabel={`Bônus do ${index + 2}º dano de ${item.name}`}
+              onCommit={(value) => patchExtraDamage(index, { bonus: clampInt(value, -9999, 9999, 0) })}
+            />
+            {!damageIsEmpty(extra) ? (
+              <span className="field-hint">
+                dano: <strong>{damageExpression(extra)}</strong>
+              </span>
+            ) : null}
+          </label>
+          <button
+            type="button"
+            className="btn btn-danger btn-small"
+            title="Remover este tipo de dano"
+            aria-label={`Remover o ${index + 2}º dano de ${item.name}`}
+            onClick={() =>
+              onPatchDetails({
+                extraDamages: extraDamages.filter((_, at) => at !== index),
+              })
+            }
+          >
+            remover
+          </button>
+        </div>
+      ))}
 
       <h3 className="subsection-title">Perfil da arma</h3>
       <div className="grid grid-3">
