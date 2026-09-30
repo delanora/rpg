@@ -15,6 +15,7 @@ import { Portrait } from '../Portrait';
 import { Section } from '../Section';
 import type { ClassEntry } from '../../types';
 import type { SheetSectionProps } from './common';
+import { VitalsSection } from './VitalsSection';
 
 /** Abreviações dos tipos de conjuração mostradas na grade de Identidade. */
 const SPELLCASTING_SHORT: Record<string, string> = {
@@ -139,7 +140,7 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
 
   return (
     <Section
-      title="Identidade"
+      title="Personagem"
       icon="scroll"
       subtitle="Clique em qualquer campo para editar"
       className="stacked-tip"
@@ -369,6 +370,9 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           ))}
         </ul>
       )}
+
+      {/* Vida e Defesa fecha o Personagem, logo abaixo das classes. */}
+      <VitalsSection character={character} update={update} embedded />
     </Section>
   );
 }
