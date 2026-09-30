@@ -1,19 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { fileToImagePayload, uploadAvatar } from '../../api';
+import { fetchBackgroundCatalog, fetchRaceCatalog } from '../../creationApi';
 import {
   ABILITY_ABBREVIATIONS,
   ALIGNMENTS,
   SPELLCASTING_TYPE_LABELS,
   SPELL_LEARNING_LABELS,
+  formatModifier,
   hitDieLabel,
 } from '../../dnd';
+import { findBackgroundOption, findRaceOption } from '../../races';
 import { useSheetAccess } from '../../readonly';
 import { clampInt } from '../../utils';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
-import type { ClassEntry } from '../../types';
+import type { BackgroundOption, ClassEntry, RaceOption } from '../../types';
 import type { SheetSectionProps } from './common';
 import { VitalsSection } from './VitalsSection';
 
@@ -31,6 +34,21 @@ const SPELL_LEARNING_SHORT: Record<string, string> = {
   prepared: 'preparadas',
 };
 
+/**
+ * "i" ao lado do rótulo de um campo: explica em uma frase o que aquilo é.
+ * O texto vive no tooltip, sem ocupar espaço permanente na ficha.
+ */
+function FieldInfo({ children }: { children: ReactNode }) {
+  return (
+    <span className="info-tip field-info" tabIndex={0}>
+      <Icon name="info" size={12} />
+      <span className="info-tip-text" role="tooltip">
+        {children}
+      </span>
+    </span>
+  );
+}
+
 export function IdentitySection({ character, update }: SheetSectionProps) {
   // O avatar é estado de jogo (segue editável com a criação finalizada); os
   // demais campos da identidade são construção.
@@ -40,6 +58,24 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
   // Os botões do avatar só aparecem depois de clicar na foto.
   const [avatarOpen, setAvatarOpen] = useState(false);
   const avatarRef = useRef<HTMLDivElement>(null);
+
+  // Catálogos do livro: dão a descrição de raça e antecedente mostrada no "i".
+  const [races, setRaces] = useState<RaceOption[]>([]);
+  const [backgrounds, setBackgrounds] = useState<BackgroundOption[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([fetchRaceCatalog(), fetchBackgroundCatalog()]).then(
+      ([raceCatalog, backgroundCatalog]) => {
+        if (!active) return;
+        setRaces(raceCatalog);
+        setBackgrounds(backgroundCatalog);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Um clique fora do bloco do avatar fecha as opções.
   useEffect(() => {
@@ -93,6 +129,10 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
     });
   }
 
+  // Descrições do catálogo para os "i" de raça e antecedente.
+  const raceInfo = findRaceOption(races, character.race)?.description;
+  const backgroundInfo = findBackgroundOption(backgrounds, character.background)?.description;
+
   const hitDice = classes.map((entry) => hitDieLabel(entry.hitDie)).join(' / ');
   const casting = classes
     .filter((entry) => entry.spellcasting && entry.spellcasting.type !== 'none')
@@ -138,11 +178,12 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
     .map((entry) => `${entry.className}: níveis ${entry.asiLevels.join(', ')}`)
     .join(' · ');
 
+  const spellcasting = character.derived.spellcasting;
+
   return (
     <Section
       title="Personagem"
       icon="scroll"
-      subtitle="Clique em qualquer campo para editar"
       className="stacked-tip"
       actions={
         /* Avatar da ficha no cabeçalho, alinhado à direita. */
@@ -211,9 +252,17 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
     >
       {uploadError ? <p className="form-error">{uploadError}</p> : null}
 
-      <div className="grid grid-3">
-        <label className="field">
-          <span>Nome</span>
+      {/*
+       * A identidade propriamente dita (Nome, Raça e Antecedente) vem primeiro e
+       * com mais peso: é o que reconhece o personagem. Os números derivados
+       * ficam num segundo bloco, menor, para a hierarquia ficar clara.
+       */}
+      <div className="identity-primary">
+        <label className="field identity-name">
+          <span>
+            Nome
+            <FieldInfo>Como o personagem é chamado pela companhia e pelos NPCs.</FieldInfo>
+          </span>
           <InlineField
             value={character.name}
             readOnly={lockedConstruction}
@@ -226,7 +275,10 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
         </label>
 
         <label className="field">
-          <span>Raça</span>
+          <span>
+            Raça
+            <FieldInfo>{raceInfo || 'A raça escolhida na criação dá bônus e traços raciais.'}</FieldInfo>
+          </span>
           <InlineField
             value={character.race}
             readOnly={lockedConstruction}
@@ -236,13 +288,14 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           />
         </label>
 
-        <div className="field readonly">
-          <span>Nível total</span>
-          <strong>{character.level}</strong>
-        </div>
-
         <label className="field">
-          <span>Antecedente</span>
+          <span>
+            Antecedente
+            <FieldInfo>
+              {backgroundInfo ||
+                'A história que veio antes da aventura: define perícias e contatos.'}
+            </FieldInfo>
+          </span>
           <InlineField
             value={character.background}
             readOnly={lockedConstruction}
@@ -251,9 +304,22 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
             onCommit={(value) => update({ background: value.trim() })}
           />
         </label>
+      </div>
+
+      <div className="grid grid-3 identity-grid">
+        <div className="field readonly">
+          <span>
+            Nível total
+            <FieldInfo>Soma dos níveis de todas as classes do personagem.</FieldInfo>
+          </span>
+          <strong>{character.level}</strong>
+        </div>
 
         <label className="field">
-          <span>Alinhamento</span>
+          <span>
+            Alinhamento
+            <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
+          </span>
           <InlineField
             value={character.alignment}
             mode="select"
@@ -265,7 +331,10 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
         </label>
 
         <label className="field">
-          <span>Experiência (XP)</span>
+          <span>
+            Experiência (XP)
+            <FieldInfo>Pontos acumulados; o mestre decide quando rende um novo nível.</FieldInfo>
+          </span>
           <InlineField
             value={character.experience}
             mode="number"
@@ -279,24 +348,60 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
         </label>
 
         <div className="field readonly">
-          <span>Dado de vida</span>
+          <span>
+            Dado de vida
+            <FieldInfo>
+              Dado de cada classe, usado para recuperar PV no descanso curto.
+            </FieldInfo>
+          </span>
           <strong>{hitDice || '—'}</strong>
         </div>
 
         <div className="field readonly">
-          <span>Bônus de proficiência</span>
+          <span>
+            Bônus de proficiência
+            <FieldInfo>
+              Somado a ataques, testes de resistência e perícias proficientes; cresce com o nível
+              total.
+            </FieldInfo>
+          </span>
           <strong>+{character.derived.proficiencyBonus}</strong>
         </div>
+      </div>
 
-        <div className="field readonly field-wide">
-          <span>Conjuração</span>
-          <strong title={casting || undefined}>{castingShort || '—'}</strong>
-        </div>
+      {/*
+       * Conjuração num bloco único: tipos de conjuração, como cada classe aprende
+       * as magias e o resumo de CD/ataque que antes ficava solto no rodapé.
+       */}
+      <div className="casting-block">
+        <span className="casting-title">
+          Conjuração
+          <FieldInfo>
+            Como cada classe conjura magias, a CD para resistir a elas e o bônus de ataque mágico.
+          </FieldInfo>
+        </span>
 
-        <div className="field readonly field-wide">
-          <span>Magias</span>
-          <strong title={learning || undefined}>{learningShort || '—'}</strong>
-        </div>
+        {spellcasting ? (
+          <div className="casting-summary">
+            <span className="casting-stat">
+              <em>CD</em>
+              <b>{spellcasting.saveDC}</b>
+            </span>
+            <span className="casting-stat">
+              <em>ataque</em>
+              <b>{formatModifier(spellcasting.attackBonus)}</b>
+            </span>
+          </div>
+        ) : null}
+
+        <p className="casting-detail">
+          <em>Conjuração</em>
+          <span title={casting || undefined}>{castingShort || '—'}</span>
+        </p>
+        <p className="casting-detail">
+          <em>Magias</em>
+          <span title={learning || undefined}>{learningShort || '—'}</span>
+        </p>
       </div>
 
       <h3 className="subsection-title">
@@ -365,7 +470,6 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
                   <strong>nível {entry.subclassLevel}+</strong>
                 </div>
               )}
-
             </li>
           ))}
         </ul>

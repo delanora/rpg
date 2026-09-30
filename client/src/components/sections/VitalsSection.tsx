@@ -64,6 +64,12 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
   const hpClass =
     hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
 
+  // Carga: só ilustra o quanto do limite já foi usado (os números seguem).
+  const loadPercent =
+    derived.carryingCapacity > 0
+      ? Math.max(0, Math.min(100, (derived.totalWeight / derived.carryingCapacity) * 100))
+      : 0;
+
   function applyClassState(next: ClassState): void {
     update({ classState: next });
   }
@@ -136,18 +142,14 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
       icon="heart"
       className={embedded ? 'vitals-embedded' : undefined}
     >
-      {/*
-       * Barra de vida à esquerda e os cards de defesa à direita quando o bloco
-       * está embutido no Personagem (na coluna própria ele fica empilhado).
-       */}
-      <div className={embedded ? 'vitals-main vitals-main-split' : 'vitals-main'}>
+      <div className="vitals-grid">
         {/*
-         * A barra de vida faz o papel dos antigos cards de PV: os campos de
-         * atual e máximo vivem aqui, junto da barra.
+         * Linha 1: a vida ocupa a largura toda — o número atual/máximo e a barra
+         * ficam grandes, com o PV temporário ao lado.
          */}
         <div className="vitals-hp">
           <div className="hp-editor">
-            <Icon name="heart" size={16} className="hp-heart" />
+            <Icon name="heart" size={18} className="hp-heart" />
             <InlineField
               className={`hp-editor-value${hpClass}`}
               value={character.hpCurrent}
@@ -161,7 +163,7 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
             />
             <span className="hp-editor-sep">/</span>
             <InlineField
-              className="hp-editor-value"
+              className="hp-editor-value hp-editor-value-max"
               value={character.hpMax}
               mode="number"
               min={0}
@@ -170,7 +172,21 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
               ariaLabel="Pontos de vida máximos"
               onCommit={(value) => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })}
             />
-            {character.hpTemp > 0 ? <span className="hp-badge">+{character.hpTemp}</span> : null}
+
+            {/* PV temporário ao lado dos números, como uma pequena ficha extra. */}
+            <label className="hp-temp-field">
+              <span>PV temporário</span>
+              <InlineField
+                value={character.hpTemp}
+                mode="number"
+                min={0}
+                max={9999}
+                ariaLabel="Pontos de vida temporários"
+                onCommit={(value) =>
+                  update({ hpTemp: clampInt(value, 0, 9999, character.hpTemp) })
+                }
+              />
+            </label>
           </div>
 
           <HpBar
@@ -181,61 +197,53 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
           />
         </div>
 
-        <div className="grid grid-4">
+        {/* Linha 2: os cinco atributos de defesa, todos com a mesma altura. */}
+        <div className="vitals-cards">
           <div className="vital">
-            <span className="vital-label">
-              <Icon name="flask" size={13} /> HP temporário
-            </span>
-            <InlineField
-              className="vital-value"
-              value={character.hpTemp}
-              mode="number"
-              min={0}
-              max={9999}
-              ariaLabel="Pontos de vida temporários"
-              onCommit={(value) => update({ hpTemp: clampInt(value, 0, 9999, character.hpTemp) })}
-            />
-          </div>
-
-          <div className="vital">
-            <span className="vital-label">
-              <Icon name="shield" size={13} /> Classe de Armadura
+            <span className="vital-label" title="Classe de Armadura">
+              <Icon name="shield" size={13} />
+              <span className="vital-label-text">Classe de Armadura</span>
             </span>
 
             {/* A CA é calculada; só o mestre pode fixar um valor manual. */}
-            {masterView && !readOnly ? (
-              <InlineField
-                className="vital-value"
-                value={character.armorClassOverride ?? armorClass.automatic}
-                mode="number"
-                min={0}
-                max={99}
-                ariaLabel="Classe de armadura"
-                title="CA manual do mestre (igual à automática ou 0 volta ao cálculo)"
-                onCommit={(value) => {
-                  const next = clampInt(
-                    value,
-                    0,
-                    99,
-                    character.armorClassOverride ?? armorClass.automatic,
-                  );
-                  update({
-                    armorClassOverride: next === armorClass.automatic ? null : next,
-                  });
-                }}
-              />
-            ) : (
-              <strong className="vital-value">{armorClass.value}</strong>
-            )}
+            <div className="vital-body">
+              {masterView && !readOnly ? (
+                <InlineField
+                  className="vital-value"
+                  value={character.armorClassOverride ?? armorClass.automatic}
+                  mode="number"
+                  min={0}
+                  max={99}
+                  ariaLabel="Classe de armadura"
+                  title="CA manual do mestre (igual à automática ou 0 volta ao cálculo)"
+                  onCommit={(value) => {
+                    const next = clampInt(
+                      value,
+                      0,
+                      99,
+                      character.armorClassOverride ?? armorClass.automatic,
+                    );
+                    update({
+                      armorClassOverride: next === armorClass.automatic ? null : next,
+                    });
+                  }}
+                />
+              ) : (
+                <strong className="vital-value">{armorClass.value}</strong>
+              )}
+            </div>
 
             <span className="vital-hint">{describeArmorClass(armorClass)}</span>
           </div>
 
           <div className="vital">
-            <span className="vital-label">
-              <Icon name="bolt" size={13} /> Iniciativa
+            <span className="vital-label" title="Iniciativa">
+              <Icon name="bolt" size={13} />
+              <span className="vital-label-text">Iniciativa</span>
             </span>
-            <strong className="vital-value">{formatModifier(derived.initiative)}</strong>
+            <div className="vital-body">
+              <strong className="vital-value">{formatModifier(derived.initiative)}</strong>
+            </div>
             <span className="vital-hint">
               bônus extra:{' '}
               <InlineField
@@ -254,47 +262,55 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
           </div>
 
           <div className="vital">
-            <span className="vital-label">
-              <Icon name="wind" size={13} /> Deslocamento
+            <span className="vital-label" title="Deslocamento">
+              <Icon name="wind" size={13} />
+              <span className="vital-label-text">Deslocamento</span>
             </span>
-            <InlineField
-              className="vital-value"
-              value={character.speed}
-              mode="number"
-              min={0}
-              max={999}
-              readOnly={lockedConstruction}
-              ariaLabel="Deslocamento"
-              onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
-            />
+            <div className="vital-body">
+              <InlineField
+                className="vital-value"
+                value={character.speed}
+                mode="number"
+                min={0}
+                max={999}
+                readOnly={lockedConstruction}
+                ariaLabel="Deslocamento"
+                onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
+              />
+            </div>
             <span className="vital-hint">metros</span>
           </div>
 
           <div className="vital">
-            <span className="vital-label">
-              <Icon name="eye" size={13} /> Percepção passiva
+            <span className="vital-label" title="Percepção passiva">
+              <Icon name="eye" size={13} />
+              <span className="vital-label-text">Percepção passiva</span>
             </span>
-            <strong className="vital-value">{derived.passivePerception}</strong>
+            <div className="vital-body">
+              <strong className="vital-value">{derived.passivePerception}</strong>
+            </div>
           </div>
 
           <div className="vital">
-            <span className="vital-label">
-              <Icon name="weight" size={13} /> Carga
+            <span className="vital-label" title="Carga">
+              <Icon name="weight" size={13} />
+              <span className="vital-label-text">Carga</span>
             </span>
-            <strong className="vital-value">
-              {derived.totalWeight} / {derived.carryingCapacity}
-            </strong>
+            <div className="vital-body">
+              <strong className="vital-value vital-value-load">
+                {derived.totalWeight} / {derived.carryingCapacity}
+              </strong>
+              {/* Mini barra opcional; os números continuam sendo a fonte. */}
+              <span className="vital-load">
+                <span className="vital-load-track">
+                  <span className="vital-load-fill" style={{ width: `${loadPercent}%` }} />
+                </span>
+              </span>
+            </div>
             <span className="vital-hint">peso atual / capacidade (kg)</span>
           </div>
         </div>
       </div>
-
-      {derived.spellcasting ? (
-        <p className="section-note">
-          Conjuração: CD {derived.spellcasting.saveDC} · ataque{' '}
-          {formatModifier(derived.spellcasting.attackBonus)}
-        </p>
-      ) : null}
 
       {hasClassPanel ? (
         <section className="class-state">

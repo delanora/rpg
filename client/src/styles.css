@@ -612,12 +612,6 @@ a {
   color: var(--ink);
 }
 
-/* Campos que ocupam duas colunas da grade (Conjuração e Magias), para o texto
-   não quebrar em várias linhas nem empurrar os vizinhos. */
-.field-wide {
-  grid-column: span 2;
-}
-
 .field > .inline-field.placeholder,
 .field > .inline-field .placeholder {
   font-family: var(--font-body);
@@ -1005,18 +999,43 @@ a {
   gap: var(--space-2);
 }
 
-/* Identidade: quatro colunas iguais — com Conjuração e Magias ocupando duas
-   cada, a grade fecha exatamente em três linhas. */
-.sheet-identity .grid-3 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+/*
+ * IDENTIDADE
+ *
+ * Nome, Raça e Antecedente formam o bloco de cima, com mais peso (é o que
+ * reconhece o personagem); os valores derivados ficam num segundo bloco menor.
+ */
+.identity-primary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.identity-primary .field > span {
+  font-size: 0.72rem;
+  color: var(--gold-deep);
+}
+
+.identity-primary .field > .inline-field {
+  font-size: 1.35rem;
+}
+
+.identity-name > .inline-field {
+  font-size: 1.55rem;
+}
+
+/* Campos secundários: cinco numa faixa só em telas largas, sem coluna órfã. */
+.sheet-identity .identity-grid {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 }
 
 /*
  * VIDA E DEFESA DENTRO DO PERSONAGEM (depois das Classes)
  *
- * Fecha a seção sem virar um card dentro de outro: moldura e fundo do card
- * saem, o cabeçalho vira um subtítulo (como "Classes") e o corpo perde o
- * respiro próprio. Só o conteúdo do bloco continua igual.
+ * Fecha a seção sem virar um card dentro de outro: moldura, fundo, sombra e a
+ * hairline interna (::after) saem, e o cabeçalho vira um subtítulo (como
+ * "Classes"). Só o conteúdo do bloco continua igual.
  */
 .vitals-embedded.sheet-section {
   overflow: visible;
@@ -1024,6 +1043,11 @@ a {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+/* Sem a moldura da seção, a hairline interna sobrando viraria moldura dupla. */
+.vitals-embedded.sheet-section::after {
+  content: none;
 }
 
 .vitals-embedded > .section-header {
@@ -1057,33 +1081,130 @@ a {
 }
 
 /*
- * Embutido, o bloco usa a largura da seção: a barra de vida fica à esquerda e
- * os cards de defesa à direita (na coluna própria de antes, empilhados).
+ * Grade de 12 colunas: a vida ocupa a linha 1 inteira (12/12) e os cards de
+ * defesa ocupam a linha 2, distribuídos por auto-fit — sem buraco no fim.
  */
-.vitals-embedded .vitals-main-split {
+.vitals-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: var(--space-2);
-  align-items: start;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.7rem;
 }
 
-/* Cards de vida com exatamente a mesma altura e estilo, apesar de o conteúdo
-   de cada um variar (uns têm dica, outros não). */
-.vitals-embedded .grid-4 {
+.vitals-grid > .vitals-hp {
+  grid-column: 1 / -1;
+}
+
+.vitals-cards {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  /* Todos os cards com a mesma altura, apesar do conteúdo variável. */
   grid-auto-rows: 1fr;
   gap: 0.7rem;
 }
 
-/* Em telas estreitas os dois blocos voltam a ficar empilhados. */
-@media (max-width: 900px) {
-  .vitals-embedded .vitals-main-split {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* Informação do rótulo: "i" discreto que abre a explicação no tooltip. */
+.field-info {
+  margin-left: 0.3rem;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+
+.field-info .icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* Centrado no ícone para um popover estreito não vazar pelos lados. */
+.field-info .info-tip-text {
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(17rem, 82vw);
+}
+
+/*
+ * CONJURAÇÃO: tipos de conjuração, aprendizado das magias e o resumo de CD e
+ * ataque num único bloco, em vez de espalhados pela ficha.
+ */
+.casting-block {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.9rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.casting-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+}
+
+.casting-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1.5rem;
+  margin: 0.15rem 0 0.3rem;
+}
+
+.casting-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.casting-stat em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+}
+
+.casting-stat b {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.casting-detail {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.casting-detail em {
+  flex: none;
+  width: 6.5rem;
+  padding-top: 0.15rem;
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+}
+
+.casting-detail span {
+  min-width: 0;
 }
 
 /* Em telas estreitas a grade da identidade se reorganiza sozinha. */
 @media (max-width: 1180px) {
-  .sheet-identity .grid-3 {
+  .sheet-identity .identity-grid {
     grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   }
 }
@@ -1817,6 +1938,7 @@ a {
  */
 .vital {
   position: relative;
+  min-width: 0;
   min-height: 5.5rem;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
@@ -1836,6 +1958,7 @@ a {
 .vital-label {
   display: flex;
   align-items: center;
+  max-width: 100%;
   gap: 0.35rem;
   font-family: var(--font-display);
   font-size: 0.66rem;
@@ -1843,6 +1966,23 @@ a {
   letter-spacing: 0.09em;
   line-height: 1.25;
   color: var(--ink-soft);
+}
+
+/* O rótulo completo vive no `title`; na tela ele cabe sempre em uma linha. */
+.vital-label-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Valor (e a mini barra da Carga) centralizados na mesma faixa dos cards. */
+.vital-body {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-width: 0;
+  gap: 0.3rem;
 }
 
 /* Ícones de rótulo com o mesmo tamanho do coração da barra de vida. */
@@ -1883,9 +2023,12 @@ a {
 
 .vital-hint {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem;
-  font-size: 0.78rem;
+  /* Nunca abaixo de 11px: a dica é legível, não letra miúda. */
+  font-size: 0.72rem;
   line-height: 1.35;
   color: var(--ink-soft);
 }
@@ -1895,12 +2038,45 @@ a {
   width: 4.2rem;
 }
 
+/* "0.45 / 82.5" é maior que um número só: cabe menor sem quebrar. */
+.vital-value-load {
+  font-size: 1.3rem;
+}
+
+/* Mini barra de Carga (ilustrativa; os números continuam mandando). */
+.vital-load {
+  display: block;
+  width: min(9rem, 72%);
+}
+
+.vital-load-track {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, #2a1d12, #170f0a);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.vital-load-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #e6c974, #b8912a);
+  transition: width 0.4s ease;
+}
+
 .vitals-hp {
-  margin-bottom: 1rem;
-  padding: 0.85rem 0.9rem;
+  padding: 0.9rem 1rem;
   border: 1px solid var(--wine);
   border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(122, 31, 31, 0.1), rgba(122, 31, 31, 0.02));
+}
+
+/* Linha 1, largura total: a barra de vida fica mais alta e legível. */
+.vitals-hp .hp-track {
+  height: 22px;
 }
 
 .vitals-hp .hp-numbers {
@@ -1923,13 +2099,44 @@ a {
 }
 
 .hp-editor-value {
-  width: 4.6rem;
+  width: 5.4rem;
   padding: 0 0.25rem;
   min-height: 0;
   font-family: var(--font-display);
-  font-size: 1.7rem;
+  font-size: 2.1rem;
   font-weight: 700;
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--ink);
+}
+
+/* O máximo é leitura; fica um tom abaixo do atual para não competir. */
+.hp-editor-value-max {
+  color: var(--ink-soft);
+}
+
+/* PV temporário mora ao lado dos números, empurrado para a direita. */
+.hp-temp-field {
+  display: grid;
+  gap: 0.2rem;
+  margin-left: auto;
+  justify-items: center;
+}
+
+.hp-temp-field > span {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.hp-temp-field > .inline-field {
+  width: 3.8rem;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: center;
   color: var(--ink);
@@ -4586,13 +4793,16 @@ input[type='checkbox']:disabled {
   padding: 0;
   display: grid;
   gap: 0.5rem;
+  /* Duas informações por linha não precisam da largura toda do pergaminho. */
+  max-width: 46rem;
 }
 
+/* Grade de duas colunas: o nome da classe e a subclasse alinham entre linhas. */
 .class-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(8.5rem, 0.9fr) minmax(0, 1.6fr);
+  align-items: center;
+  gap: 0.5rem 1rem;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -4601,10 +4811,10 @@ input[type='checkbox']:disabled {
 }
 
 .class-name {
+  min-width: 0;
   font-family: var(--font-display);
   font-weight: 600;
   color: var(--ink);
-  min-width: 8rem;
 }
 
 .class-level {
@@ -4614,7 +4824,7 @@ input[type='checkbox']:disabled {
 }
 
 .class-subclass {
-  flex: 1 1 12rem;
+  min-width: 0;
 }
 
 /* Espaços combinados de multiclasse (referência). */

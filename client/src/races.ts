@@ -1,4 +1,4 @@
-import type { AbilityKey, RaceOption } from './types';
+import type { AbilityKey, BackgroundOption, RaceOption } from './types';
 
 /**
  * Catálogo de raças do Livro do Jogador, do lado do cliente.
@@ -14,6 +14,21 @@ export function findRaceOption(
   race: string,
 ): RaceOption | null {
   const needle = race.trim().toLowerCase();
+  if (!needle) return null;
+
+  return (
+    catalog.find(
+      (option) => option.key.toLowerCase() === needle || option.name.toLowerCase() === needle,
+    ) ?? null
+  );
+}
+
+/** Acha o antecedente no catálogo pela chave ou pelo nome (mesmo critério da raça). */
+export function findBackgroundOption(
+  catalog: readonly BackgroundOption[],
+  background: string,
+): BackgroundOption | null {
+  const needle = background.trim().toLowerCase();
   if (!needle) return null;
 
   return (
