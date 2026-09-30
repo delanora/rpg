@@ -4,6 +4,7 @@ import type {
   CreationResponse,
   CreationStepRequest,
   LevelUpRequest,
+  RaceOption,
 } from './types';
 
 /**
@@ -17,6 +18,21 @@ import type {
 /** Estado atual do assistente (ficha + rascunho + catálogos). */
 export async function fetchCreationState(): Promise<CreationResponse> {
   return api<CreationResponse>('/api/characters/me/creation');
+}
+
+/**
+ * Catálogo de raças (bônus de atributo), para a ficha explicar a composição de
+ * cada atributo. É um catálogo fixo do livro: buscado uma vez por sessão e
+ * reaproveitado (o assistente tem o dele na resposta da criação).
+ */
+let raceCatalog: Promise<RaceOption[]> | null = null;
+
+export function fetchRaceCatalog(): Promise<RaceOption[]> {
+  raceCatalog ??= fetchCreationState()
+    .then((state) => state.creation.raceCatalog)
+    .catch(() => []);
+
+  return raceCatalog;
 }
 
 /** Salva o passo concluído (é o "Próximo" do assistente). */

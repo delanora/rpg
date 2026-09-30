@@ -8,6 +8,7 @@ import {
   saveCreationStep,
 } from '../creationApi';
 import { ABILITY_KEYS, ABILITY_LABELS, ALIGNMENTS, SKILLS } from '../dnd';
+import { raceBonusesWithChoices } from '../races';
 import type {
   AbilityKey,
   BackgroundOption,
@@ -68,20 +69,6 @@ function backgroundSkillNames(option: BackgroundOption): string[] {
 /** Atributos elegíveis ao `+1` à escolha da raça (os que não têm bônus fixo). */
 function raceChoicePool(option: RaceOption): AbilityKey[] {
   return ABILITY_KEYS.filter((ability) => (option.abilityBonuses?.[ability] ?? 0) === 0);
-}
-
-/** Bônus racial já com os `+1` à escolha do jogador (Meio-Elfo). */
-function raceBonusesWithChoices(
-  option: RaceOption | null,
-  choices: AbilityKey[],
-): Partial<Record<AbilityKey, number>> {
-  if (!option) return {};
-  const bonuses: Partial<Record<AbilityKey, number>> = { ...(option.abilityBonuses ?? {}) };
-  const pick = option.abilityChoice ?? 0;
-  for (const ability of choices.slice(0, pick)) {
-    bonuses[ability] = (bonuses[ability] ?? 0) + 1;
-  }
-  return bonuses;
 }
 
 interface CreationWizardProps {
