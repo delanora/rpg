@@ -111,6 +111,17 @@ model Character {
   /// Comparado com `GameConfig.levelUpRelease` para saber se o jogador ainda
   /// pode subir de nível na liberação atual.
   lastLevelUpRelease Int @default(0)
+  ///
+  /// Histórico do que CADA nível concedeu: PV ganho (dado + Constituição + o
+  /// ajuste retroativo de Constituição), Aumento de Atributo/Talento, escolhas
+  /// de característica, subclasse, perícia de multiclasse e proficiências
+  /// somadas naquele nível.
+  ///
+  /// É o que permite ao MESTRE reduzir um nível revertendo exatamente o que ele
+  /// deu (POST /api/characters/:id/level-down). Níveis anteriores a esta coluna
+  /// ficam sem registro — o downgrade estima o PV e avisa na resposta.
+  /// Ver src/modules/shared/level-history.ts.
+  levelHistory Json @default("[]")
 
   // Atributos (1 a 30)
   strength     Int @default(10)

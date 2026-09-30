@@ -233,6 +233,43 @@ export const levelUpSchema = z.object({
 export type LevelUpInput = z.infer<typeof levelUpSchema>;
 
 /**
+ * Downgrade de nível — exclusivo do MESTRE (`POST /api/characters/:id/level-down`).
+ *
+ * Tira UM nível de uma classe escolhida e reverte o que aquele nível concedeu,
+ * usando o histórico gravado pelo Level Up (PV rolado, Aumento de Atributo ou
+ * Talento, escolhas, subclasse, perícia de multiclasse e proficiências).
+ *
+ * Os campos opcionais existem para os níveis ANTERIORES ao histórico: ali o PV é
+ * estimado pela média do dado de vida e o resto o mestre informa.
+ */
+export const levelDownSchema = z.object({
+  /** Classe que perde um nível. */
+  classKey: z.string().trim().min(1, 'Escolha a classe.').max(40),
+  /**
+   * PV a retirar. Padrão: o que o histórico registrou (dado de vida +
+   * Constituição + ajuste retroativo de Constituição).
+   */
+  hpLost: z.number().int().min(0).max(999).optional(),
+  /**
+   * Aumentos de atributo a desfazer ALÉM do que o histórico manda. Nenhum
+   * atributo fica abaixo de 1.
+   */
+  abilityDecreases: z
+    .array(
+      z.object({
+        ability: z.enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]]),
+        amount: z.number().int().min(1).max(2),
+      }),
+    )
+    .max(2)
+    .default([]),
+  /** Id da característica (talento) a remover além do que o histórico registra. */
+  removeFeatId: z.string().trim().min(1).max(80).optional(),
+});
+
+export type LevelDownInput = z.infer<typeof levelDownSchema>;
+
+/**
  * Move ou equipa um item do inventário (arrastar e soltar na ficha).
  *
  * - `targetSlot` definido equipa o item naquele slot.

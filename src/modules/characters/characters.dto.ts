@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
 import { deriveWeaponAttacks } from '../shared/weapon-attacks.js';
 import {
+  normalizeLevelHistory,
+  type LevelHistoryRecord,
+} from '../shared/level-history.js';
+import {
   applySaveProficiencies,
   asiLevelsFor,
   classEntriesLabel,
@@ -156,6 +160,12 @@ export interface CharacterDto {
   activeFeatures: ActiveClassFeature[];
   /** Estado de runtime da classe (toggles ativos e usos gastos). */
   classState: ClassState;
+  /**
+   * O que CADA nível concedeu (PV, Aumento de Atributo/Talento, escolhas,
+   * subclasse, perícia e proficiências). É o que o painel do mestre usa para
+   * mostrar o que o downgrade vai desfazer. Ver shared/level-history.ts.
+   */
+  levelHistory: LevelHistoryRecord[];
   /** Ajustes mecânicos somados das classes (Fúria, resistências, etc.). */
   classAdjustments: ClassAdjustments;
   /**
@@ -425,6 +435,7 @@ export function toCharacterDto(
     classOptions: classOptionsFor(abilities, classEntries),
     activeFeatures,
     classState,
+    levelHistory: normalizeLevelHistory(character.levelHistory),
     classAdjustments,
     creationFinalized: character.creationFinalized,
     creationDraft: normalizeCreationDraft(character.creationDraft),

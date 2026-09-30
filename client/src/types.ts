@@ -625,6 +625,12 @@ export interface Character {
   activeFeatures: ActiveClassFeature[];
   /** Estado de runtime da classe (toggles ativos e usos gastos). */
   classState: ClassState;
+  /**
+   * O que CADA nível concedeu (PV, Aumento de Atributo/Talento, escolhas,
+   * subclasse, perícia e proficiências). É o que o painel do mestre mostra ao
+   * reduzir um nível.
+   */
+  levelHistory: LevelHistoryRecord[];
   /** Ajustes mecânicos derivados das features (Fúria, resistências, etc.). */
   classAdjustments: ClassAdjustments;
   /**
@@ -987,6 +993,65 @@ export interface LevelUpRequest {
    * Explorador Nato do patrulheiro): `{ [id da característica]: [opções] }`.
    */
   choices?: Record<string, string[]>;
+}
+
+/**
+ * Um nível ganho, com o que ele concedeu (gravado pelo Level Up).
+ * Níveis anteriores ao histórico não aparecem aqui — o downgrade os estima.
+ */
+export interface LevelHistoryRecord {
+  classKey: string;
+  /** Nível da CLASSE depois deste nível (1 = entrada por multiclasse). */
+  classLevel: number;
+  /** Nível total do personagem depois deste nível. */
+  totalLevel: number;
+  hp: { rolled: boolean; die: number; gained: number; conDelta: number; total: number };
+  abilityIncreases: { ability: AbilityKey; amount: number }[];
+  feat: { id: string; name: string } | null;
+  choices: Record<string, string[]>;
+  subclass: string;
+  skills: string[];
+  proficiencies: ProficienciesState | null;
+  at: string;
+}
+
+/** Corpo do downgrade de nível (`POST /api/characters/:id/level-down`, mestre). */
+export interface LevelDownRequest {
+  /** Classe que perde um nível. */
+  classKey: string;
+  /** PV a retirar (padrão: o que o histórico registra; sem ele, a média). */
+  hpLost?: number;
+  /** Aumentos de atributo a desfazer além do que o histórico manda. */
+  abilityDecreases?: { ability: AbilityKey; amount: number }[];
+  /** Id da característica (talento) a remover além do que o histórico registra. */
+  removeFeatId?: string;
+}
+
+/** O que o downgrade desfez na ficha (resposta do mestre). */
+export interface LevelDownSummary {
+  classKey: string;
+  className: string;
+  previousClassLevel: number;
+  /** 0 = a classe saiu da ficha. */
+  classLevel: number;
+  totalLevel: number;
+  classRemoved: boolean;
+  hpLost: number;
+  reverted: {
+    abilities: { ability: AbilityKey; amount: number }[];
+    feats: string[];
+    choices: string[];
+    subclass: string;
+    skills: string[];
+    proficiencies: ProficienciesState;
+  };
+  /** Avisos dos níveis sem histórico (PV estimado). */
+  warnings: string[];
+}
+
+export interface LevelDownResult {
+  character: Character;
+  levelDown: LevelDownSummary;
 }
 
 export interface CharacterPatch {

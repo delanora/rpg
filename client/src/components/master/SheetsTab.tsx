@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { Character, CharacterPatch } from '../../types';
+import type { Character, CharacterPatch, LevelDownRequest, LevelDownResult } from '../../types';
 import { Icon } from '../Icon';
 import { Portrait } from '../Portrait';
 import { SheetView } from '../SheetView';
 import { DeleteCharacterDialog } from './DeleteCharacterDialog';
+import { LevelDownDialog } from './LevelDownDialog';
 
 interface SheetsTabProps {
   characters: Character[];
@@ -20,6 +21,12 @@ interface SheetsTabProps {
    * dele, com o que já existe preenchido.
    */
   onReopenCreation: (characterId: string) => Promise<void>;
+  /**
+   * Reduz UM nível do personagem (`POST /api/characters/:id/level-down`): o
+   * inverso do Level Up. Deve rejeitar quando falhar, para a janela mostrar o
+   * erro, e devolver a ficha já revertida.
+   */
+  onLevelDown: (characterId: string, request: LevelDownRequest) => Promise<LevelDownResult>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins: boolean;
   /** Ação de moedas devolveu a ficha inteira — atualiza a lista do painel. */
@@ -38,6 +45,7 @@ export function SheetsTab({
   onUpdate,
   onDelete,
   onReopenCreation,
+  onLevelDown,
   extraCoins,
   onCoinsChange,
 }: SheetsTabProps) {
@@ -45,6 +53,7 @@ export function SheetsTab({
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [reopening, setReopening] = useState(false);
+  const [levelingDown, setLevelingDown] = useState(false);
   // Derivado da lista: uma atualização em tempo real já reflete no detalhe.
   const selected = characters.find((character) => character.id === selectedId) ?? null;
 
@@ -53,6 +62,7 @@ export function SheetsTab({
     // Trocar de ficha volta ao modo leitura, para não editar a pessoa errada.
     setEditing(false);
     setConfirmingDelete(false);
+    setLevelingDown(false);
   }
 
   if (characters.length === 0) {
@@ -137,6 +147,16 @@ export function SheetsTab({
 
                 <button
                   type="button"
+                  className="btn btn-small"
+                  disabled={selected.classes.length === 0}
+                  title="Reduzir UM nível do personagem e reverter o que aquele nível concedeu"
+                  onClick={() => setLevelingDown(true)}
+                >
+                  <Icon name="scroll" size={14} /> reduzir nível
+                </button>
+
+                <button
+                  type="button"
                   className="btn btn-danger btn-small"
                   onClick={() => setConfirmingDelete(true)}
                   title="Excluir o personagem e a conta do jogador (não pode ser desfeito)"
@@ -161,6 +181,14 @@ export function SheetsTab({
               readOnly={!editing}
               masterView
             />
+
+            {levelingDown ? (
+              <LevelDownDialog
+                character={selected}
+                onClose={() => setLevelingDown(false)}
+                apply={(request) => onLevelDown(selected.id, request)}
+              />
+            ) : null}
 
             {confirmingDelete ? (
               <DeleteCharacterDialog
