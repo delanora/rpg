@@ -1,5 +1,6 @@
 import { api } from './api';
 import type {
+  BackgroundOption,
   Character,
   CreationResponse,
   CreationStepRequest,
@@ -21,18 +22,31 @@ export async function fetchCreationState(): Promise<CreationResponse> {
 }
 
 /**
- * Catálogo de raças (bônus de atributo), para a ficha explicar a composição de
- * cada atributo. É um catálogo fixo do livro: buscado uma vez por sessão e
- * reaproveitado (o assistente tem o dele na resposta da criação).
+ * Catálogos fixos do livro (raças e antecedentes), reaproveitados pela ficha
+ * para explicar a composição dos atributos e descrever a identidade do
+ * personagem. Buscados uma vez por sessão (uma única resposta do assistente).
  */
-let raceCatalog: Promise<RaceOption[]> | null = null;
+let catalogs: Promise<{ races: RaceOption[]; backgrounds: BackgroundOption[] }> | null = null;
 
+function fetchCatalogs(): Promise<{ races: RaceOption[]; backgrounds: BackgroundOption[] }> {
+  catalogs ??= fetchCreationState()
+    .then((state) => ({
+      races: state.creation.raceCatalog,
+      backgrounds: state.creation.backgroundCatalog,
+    }))
+    .catch(() => ({ races: [], backgrounds: [] }));
+
+  return catalogs;
+}
+
+/** Catálogo de raças (bônus de atributo e descrição) do Livro do Jogador. */
 export function fetchRaceCatalog(): Promise<RaceOption[]> {
-  raceCatalog ??= fetchCreationState()
-    .then((state) => state.creation.raceCatalog)
-    .catch(() => []);
+  return fetchCatalogs().then((value) => value.races);
+}
 
-  return raceCatalog;
+/** Catálogo de antecedentes (perícias e descrição) do Livro do Jogador. */
+export function fetchBackgroundCatalog(): Promise<BackgroundOption[]> {
+  return fetchCatalogs().then((value) => value.backgrounds);
 }
 
 /** Salva o passo concluído (é o "Próximo" do assistente). */

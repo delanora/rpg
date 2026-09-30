@@ -92,7 +92,7 @@ CLIENTE (client/)
   @vitejs/plugin-react ^6.1.1, TypeScript ^7.0.2 com verbatimModuleSyntax,
   noUnusedLocals e noUnusedParameters (rigoroso).
   SEM framework de UI e SEM biblioteca de estado: React puro + CSS próprio.
-  Estilo: client/src/styles.css (≈7.680 linhas no arquivo-fonte), tema pergaminho
+  Estilo: client/src/styles.css (≈7.900 linhas no arquivo-fonte), tema pergaminho
   (claro) e "grimório amaldiçoado" (escuro) via `data-theme` no <html>.
   Fontes auto-hospedadas em client/public/fonts (Cinzel, EB Garamond,
   MedievalSharp) — nenhum recurso externo em runtime.
@@ -1688,14 +1688,31 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   e Vida e Defesa), os seis atributos, o inventário e as abas. Dentro do
   inventário, o set de equipamento e a mochila ficam lado a lado (max-width de
   320px cada, centralizados na própria coluna) com peso, moedas e detalhe abaixo.
+  IDENTIDADE (IdentitySection): o cabeçalho "Personagem" não traz mais o subtítulo
+  "Clique em qualquer campo para editar". Nome, Raça e Antecedente formam o bloco
+  de cima (`.identity-primary`, fonte maior — é o que identifica o personagem); os
+  derivados (Nível total, Alinhamento, XP, Dado de vida, Bônus de proficiência)
+  ficam numa faixa abaixo (`.sheet-identity .identity-grid`). Cada rótulo tem um
+  "(i)" (`.field-info` sobre o `.info-tip`) com a explicação do campo; Raça e
+  Antecedente usam a `description` do catálogo do servidor, obtida por
+  `fetchRaceCatalog()`/`fetchBackgroundCatalog()` (o mesmo fetch memoizado da
+  criação, em `creationApi.ts`). A Conjuração virou UM bloco (`.casting-block`): o
+  resumo de CD/ataque (`derived.spellcasting`) e, em seguida, os tipos de
+  conjuração e o aprendizado das magias de cada classe. As classes ficam numa
+  grade de duas colunas (nome/nível à esquerda, subclasse à direita), com largura
+  limitada a 46rem.
   VIDA E DEFESA EMBUTIDA: `VitalsSection` aceita `embedded` (usado pelo Identity);
-  nesse modo o bloco perde a moldura de card (`.vitals-embedded`: sem borda, fundo
-  e sombra; corpo sem padding) e o cabeçalho vira um subtítulo com hairline em
-  cima, como o "Classes". O conteúdo é o mesmo de antes (barra de PV, HP
-  temporário, CA, iniciativa, deslocamento, percepção passiva, carga, nota de
-  conjuração e Recursos de Classe), agora em duas colunas: a barra de vida à
-  esquerda (`.vitals-main-split`) e os cards de defesa à direita — abaixo de
-  900px os dois voltam a ficar empilhados.
+  nesse modo o bloco perde a moldura de card (`.vitals-embedded`: sem borda, fundo,
+  sombra e sem a hairline interna `::after` — era a "moldura dupla") e o cabeçalho
+  vira um subtítulo com hairline em cima, como o "Classes". O conteúdo usa uma
+  grade de 12 colunas (`.vitals-grid`): a linha 1 é a barra de vida em largura
+  total (`.vitals-hp`, número e barra maiores, PV temporário editável ao lado) e a
+  linha 2 são os cinco cards de defesa (CA, iniciativa, deslocamento, percepção
+  passiva e carga) em `repeat(auto-fit, minmax(150px, 1fr))` com altura igual
+  (`grid-auto-rows: 1fr`) — sem espaço vazio no fim. O título de cada card fica em
+  UMA linha (o texto completo vai no `title`) e a dica fica na base, com fonte
+  mínima de 0.72rem (~11.5px). A Carga ganhou uma mini barra (`.vital-load`), sem
+  remover os números.
   `readonly.tsx` implementa o modo somente leitura usado quando o mestre visualiza a
   ficha de um jogador.
   Layout de perícias/salvaguardas e inventário espelham exatamente os DTOs do servidor:

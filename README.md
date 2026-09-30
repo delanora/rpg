@@ -117,7 +117,8 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 - **Molduras:** bordas douradas, hairlines internas e rosetas nos cantos, como a moldura de um livro.
 - **Ícones desenhados à mão** (espada, escudo, coração, poção, pergaminho, estrela, dado, pena...), no traço de tinta, em vez de ícones flat.
 - **Ficha em abas** que parecem divisões do grimório, com transição de "virar a página".
-- **Vida e magia visuais:** barra de HP que muda de cor com a gravidade e espaços de magia em estrelas clicáveis.
+- **Personagem com hierarquia:** Nome, Raça e Antecedente em destaque; cada campo tem um **"i"** que explica o que é (Raça e Antecedente usam a descrição do livro) e a Conjuração reúne CD e ataque num único bloco.
+- **Vida e magia visuais:** barra de HP que muda de cor com a gravidade (em largura total, com os cards de defesa de mesma altura abaixo) e espaços de magia em estrelas clicáveis.
 - **Painel do mestre "de comando":** cabeçalho escuro e molduras imponentes dentro do mesmo tema.
 - **Combate:** a tela "se transforma" com um **brasão de batalha** ao começar, e o turno atual brilha em dourado pulsante.
 - **Modo claro (pergaminho)** como padrão e **modo escuro ("grimório amaldiçoado")** alternável no cabeçalho, com a escolha salva.
