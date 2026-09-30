@@ -230,7 +230,8 @@ CLIENTE (client/src/)
     master/    SheetsTab, CreaturesTab, CreatureEditor, RegionsTab, RegionEditor,
                LocalityEditor, ItemsTab, ItemEditor, DeleteCharacterDialog, ConfigTab,
                RollLogPanel (log flutuante), MasterNotes (anotações do mestre),
-               ImageGallery, ConfigTab
+               ImageGallery, ConfigTab, CoinsGrantPanel (entregar moedas na aba Itens),
+               LevelDownDialog (reduzir nível de um jogador)
   combat/  CombatTracker (579), CombatStartDialog, CombatIntro, useCombatState
   dice/    DiceDock, Die3D, polyhedra (501), RemoteRollBoard, useDiceRoller (531),
            RollLogList (lista do log, usada na bandeja e no painel flutuante),
@@ -1613,6 +1614,13 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
       liberações) e "COMBATE".
     • A aba "Mesa" contém o NÍVEL INICIAL da mesa e o compêndio (classes, raças,
       antecedentes, magias) — consulta, somente leitura.
+    • A aba "Itens" (catálogo) tem, ACIMA da lista, o painel "Entregar moedas"
+      (CoinsGrantPanel): escolhe o jogador, aceita valor por denominação (positivo
+      dá, negativo retira), mostra o saldo ATUAL → DEPOIS e usa o
+      `POST /api/characters/:id/coins` — o mestre não precisa mais abrir a ficha
+      do jogador (nem entrar em modo de edição) para entregar dinheiro. A ficha
+      devolvida é adotada pela lista (`adoptCoins`) e o jogador recebe o mesmo
+      dado por `sheet:updated`.
     • Carga inicial em um Promise.all: characteres, creatures, regions, localities,
       items, combate ativo, configuração da mesa.
     • Todas as mutações são OTIMISTAS (a tela muda na hora e a resposta do servidor

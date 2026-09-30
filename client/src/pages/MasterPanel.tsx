@@ -713,6 +713,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onPatch={patchItem}
             onDelete={deleteItem}
             onSend={sendItem}
+            extraCoins={gameConfig?.extraCoins ?? false}
+            onCoinsChange={adoptCoins}
           />
         ) : (
           <CreaturesTab
