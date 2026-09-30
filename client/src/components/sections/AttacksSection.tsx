@@ -1,6 +1,6 @@
 import { AttacksTable } from '../AttacksTable';
 import { Section } from '../Section';
-import { damageExpression, formatModifier } from '../../dnd';
+import { attackDamages, damageListExpression, damageTypeLabel, formatModifier } from '../../dnd';
 import type { SheetSectionProps } from './common';
 
 export function AttacksSection({ character, update }: SheetSectionProps) {
@@ -47,8 +47,10 @@ export function AttacksSection({ character, update }: SheetSectionProps) {
                       ) : null}
                     </td>
                     <td>{formatModifier(attack.attackBonus)}</td>
-                    <td>{damageExpression(attack.damage)}</td>
-                    <td>{attack.damage.type ?? '—'}</td>
+                    {/* A arma pode dar mais de um tipo de dano (ex.: cortante +
+                        fogo): a linha mostra todos, cada um com o seu dado. */}
+                    <td>{damageListExpression(attackDamages(attack))}</td>
+                    <td>{damageTypeLabel(attackDamages(attack))}</td>
                     <td>{attack.blocked ?? attack.notes}</td>
                   </tr>
                 ))}

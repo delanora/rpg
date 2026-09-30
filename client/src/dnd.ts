@@ -186,6 +186,49 @@ export function damageExpression(damage: Damage | null | undefined): string {
 }
 
 /**
+ * Tetos de danos ADICIONAIS por ataque/arma (o principal não conta). Espelha
+ * `MAX_EXTRA_DAMAGES` do servidor.
+ */
+export const MAX_EXTRA_DAMAGES = 10;
+
+/** Um dano está vazio (não rola dado nenhum e não soma bônus)? */
+export function damageIsEmpty(damage: Damage | null | undefined): boolean {
+  if (!damage) return true;
+  const hasDice = damage.count > 0 && damage.sides > 0;
+  return !hasDice && damage.bonus === 0;
+}
+
+/**
+ * TODOS os danos de um ataque/arma: o principal (`damage`) mais os adicionais
+ * (`extraDamages`). Espelha `attackDamages` do servidor.
+ */
+export function attackDamages(attack: {
+  damage: Damage;
+  extraDamages?: Damage[];
+}): Damage[] {
+  return [attack.damage, ...(attack.extraDamages ?? [])];
+}
+
+/** Só as expressões, lado a lado: "1d8+3 + 1d6". */
+export function damageListExpression(damages: Damage[]): string {
+  const parts = damages
+    .filter((damage) => !damageIsEmpty(damage))
+    .map((damage) => damageExpression(damage));
+  return parts.length > 0 ? parts.join(' + ') : '—';
+}
+
+/**
+ * Tipos dos danos COM valor, sem repetir ("Cortante, Necrótico") — o que a
+ * tabela mostra quando o ataque/arma tem mais de um tipo.
+ */
+export function damageTypeLabel(damages: Damage[]): string {
+  const types = damages
+    .filter((damage) => !damageIsEmpty(damage) && damage.type)
+    .map((damage) => damage.type as string);
+  return types.length > 0 ? [...new Set(types)].join(', ') : '—';
+}
+
+/**
  * Resume os atributos de um item por categoria (ex.: "2d6 Cortante · acerto +5",
  * "CA +2", "efeito 2d4+2 · 10 min"). Vazio quando o item não tem atributos.
  */
@@ -204,6 +247,11 @@ export function describeItemDetails(category: string, details: ItemDetails | und
       parts.push(`dano ${formatModifier(details.damageBonus)}`);
     }
     if (details.damageType) parts.push(details.damageType);
+    // Danos ADICIONAIS da arma: cada um com o seu dado e o seu tipo.
+    for (const extra of details.extraDamages ?? []) {
+      if (damageIsEmpty(extra)) continue;
+      parts.push(`${damageExpression(extra)}${extra.type ? ` ${extra.type}` : ''}`);
+    }
     if (details.attackBonus) parts.push(`acerto ${formatModifier(details.attackBonus)}`);
     // Perfil da arma (tipo, categoria, propriedades e alcance).
     if (details.weaponCategory) parts.push(WEAPON_CATEGORY_LABELS[details.weaponCategory]);

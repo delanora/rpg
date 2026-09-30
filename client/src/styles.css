@@ -1949,6 +1949,46 @@ input[type='checkbox']:disabled {
   white-space: nowrap;
 }
 
+/*
+ * Dano com MAIS DE UM tipo: a linha principal fica como está e cada dano extra
+ * ganha a sua própria linha logo abaixo (o "+" ao lado da linha acrescenta).
+ */
+.damage-list {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.damage-extra {
+  padding-left: 0.35rem;
+  border-left: 2px solid var(--gold-hair);
+}
+
+/* O "+" de adicionar outro tipo de dano (ficha, bestiário e catálogo). */
+.damage-add {
+  padding: 0.05rem 0.4rem;
+  line-height: 1.1;
+  font-size: 0.95rem;
+}
+
+/*
+ * Dano ADICIONAL no editor de arma do catálogo: os mesmos campos do principal
+ * (Dados, Dado, Tipo, Bônus) lado a lado com o botão de remover.
+ */
+.damage-extra-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--gold-hair);
+}
+
+.damage-extra-row .field {
+  flex: 1 1 7rem;
+  min-width: 6rem;
+}
+
 .damage-fields .inline-field {
   min-width: 2.2rem;
 }

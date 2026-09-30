@@ -202,6 +202,10 @@ function makeWeaponAttack(options: {
       bonus: options.damageBonus,
       type: options.weapon.details.damageType ?? null,
     },
+    // Tipos de dano ADICIONAIS que o mestre cadastrou na arma (ex.: o fogo de
+    // uma espada flamejante). Vêm junto para a ficha mostrar e para o combate
+    // ter o que aplicar quando cada tipo passar a ser resolvido por si.
+    extraDamages: options.weapon.details.extraDamages ?? [],
     attackBonus: options.attackBonus,
     notes: options.notes,
     finesse: properties.includes('finesse'),
@@ -221,6 +225,7 @@ function unarmedAttack(strengthMod: number, proficiency: number): CombatAttack {
     id: 'unarmed',
     name: 'Golpe desarmado',
     damage: { count: 0, sides: 0, bonus: 1 + strengthMod, type: 'Concussão' },
+    extraDamages: [],
     attackBonus: clampAttackBonus(strengthMod + proficiency),
     notes: `Corpo a corpo · FOR ${formatModifier(strengthMod)} · proficiente ${formatModifier(proficiency)}`,
     finesse: false,
