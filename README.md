@@ -130,9 +130,9 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 
 - Nome, raça, classe, nível, antecedente, alinhamento, experiência
 - **Seis cards de atributo** (Força, Destreza, Constituição, Inteligência, Sabedoria, Carisma): cada card reúne o valor com modificador automático, a salvaguarda e as perícias daquele atributo, na divisão do PHB 2014 — no lugar das antigas seções separadas de "Atributos" e "Perícias e Salvaguardas"
-- O selo do atributo tem um **"i"** que explica de onde vem o valor (criação + raça + aumentos de nível + bônus de classe) e, ao clicar no número, rola um **teste puro** do atributo
+- O **cabeçalho do card de atributo** tem um **"i"** que explica de onde vem o valor (criação + raça + aumentos de nível + bônus de classe); ao clicar no número, rola um **teste puro** do atributo
 - HP (atual/máximo/temporário), **Classe de Armadura calculada** (armadura equipada + atributos), Iniciativa, Deslocamento
-- Perícias e salvaguardas com proficiência e cálculo automático de bônus, cada linha com o seu botão de rolagem e os nomes que nunca quebram
+- **Perícias** com proficiência editável e **salvaguardas** de proficiência fixa (a caixa é desabilitada — quem define é a classe), com cálculo automático de bônus, cada linha com o seu botão de rolagem e os nomes que nunca quebram
 - Inventário de itens e equipamentos
 - **Moedas** (PL/PO/PE/PP/PC) com conversões do PHB, gasto, troca e transferência entre jogadores; só o mestre dá ou retira
 - **Inventário administrado pelo mestre**: a quantidade de um item é dele — o jogador move/equipa e **usa** consumíveis (Poção ou item marcado), sem editar quantidade, adicionar ou remover

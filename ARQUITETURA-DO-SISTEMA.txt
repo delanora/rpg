@@ -1722,7 +1722,8 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   A antiga divisão "Atributos" (topo) + "Perícias e Salvaguardas" (lista corrida)
   virou UMA fileira de seis cards, na ordem do PHB (FOR, DES, CON, INT, SAB, CAR).
   Cada card, de cima para baixo:
-    • faixa com a SIGLA do atributo;
+    • faixa (CABEÇALHO) com a SIGLA do atributo e, na ponta DIREITA dela, a
+      pastilha dourada do "i";
     • selo HEXAGONAL em vinho com o valor GRAVADO e, abaixo, o modificador — o
       hexágono fica ABAIXO da faixa, com respiro fixo (não invade o título);
     • linha da SALVAGUARDA (caixa de proficiência + bônus + botão de rolagem);
@@ -1743,16 +1744,18 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   menores ficam com o espaço restante em branco no fim — sem esticar o espaçamento.
   As três primeiras camadas alinham entre os seis cards. Nas telas estreitas a
   fileira quebra em 3 colunas (≤1280px) e em 2 (≤720px).
-  Na salvaguarda NÃO há mais selo "classe" nem chip "esp." — a proficiência fixa
-  segue marcada e desabilitada (com `title`), e a ESPECIALIZAÇÃO deixou de ser
-  marcada pela ficha.
+  Na salvaguarda a caixa de proficiência é SEMPRE desabilitada (sem `onChange` e
+  fora da ordem de tabulação) — a proficiência é fixa, concedida pela classe, e a
+  ficha só exibe o valor/bônus; não há mais selo "classe" nem chip "esp.", e a
+  ESPECIALIZAÇÃO deixou de ser marcada pela ficha.
   ROLAGEM: o botão de dado de cada linha abre a janela com 1d20 + o bônus (kind
   `skill`/`save`, como antes). No SELO, clicar no número rola um TESTE PURO do
   atributo (1d20 + modificador) — exceto para o mestre em edição, que continua
   clicando para alterar o valor bruto; o modificador também é clicável e rola.
-  O "i" é uma pastilha dourada no ombro DIREITO do hexágono (inteira e sem
-  colidir com o título); a JANELA do "i" é irmã da pastilha, então se posiciona
-  pelo SELO e abre com a largura do próprio card — nunca vaza para os lados.
+  O "i" é uma pastilha dourada ancorada na ponta DIREITA do CABEÇALHO do card (a
+  faixa com a sigla), fora do selo hexagonal; a JANELA do "i" é irmã da pastilha,
+  então se posiciona pelo CABEÇALHO e abre logo abaixo dele, com a largura do
+  próprio card — nunca vaza para os lados.
   Ela NÃO recalcula nada: monta a composição a partir do que já vem na ficha —
   valor-base do rascunho da criação (`creationDraft.baseAbilities`), bônus racial
   (catálogo de raças buscado uma vez por `GET /api/characters/me/creation` e
