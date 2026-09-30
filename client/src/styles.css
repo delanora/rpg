@@ -979,7 +979,6 @@ a {
 .sheet-inventory,
 .sheet-abilities,
 .sheet-vitals,
-.sheet-skills,
 .sheet-tabs-area {
   min-width: 0;
 }
@@ -991,12 +990,12 @@ a {
 }
 
 /*
- * Inventário na coluna esquerda, ao lado de atributos + vida e defesa. Ele
- * estica para o fim do card bater com o fim da aba de Vida e Defesa.
+ * Inventário na coluna esquerda, ao lado de Vida e Defesa. Ele estica para o
+ * fim do card bater com o fim da coluna da direita.
  */
 .sheet-inventory {
   grid-column: 1;
-  grid-row: 2 / 4;
+  grid-row: 3;
   align-self: stretch;
 }
 
@@ -1014,27 +1013,25 @@ a {
   flex: 1;
 }
 
+/*
+ * Os seis atributos (cada um com a salvaguarda e as perícias dele) ocupam a
+ * largura toda, logo abaixo da identidade.
+ */
 .sheet-abilities {
-  grid-column: 2;
+  grid-column: 1 / -1;
   grid-row: 2;
 }
 
-/* Vida e Defesa logo abaixo dos atributos, na mesma coluna. */
+/* Vida e Defesa ao lado do inventário. */
 .sheet-vitals {
   grid-column: 2;
   grid-row: 3;
 }
 
-/* Perícias e salvaguardas ocupam a largura toda. */
-.sheet-skills {
-  grid-column: 1 / -1;
-  grid-row: 4;
-}
-
 /* As abas (magias, ataques, características) fecham a ficha, de ponta a ponta. */
 .sheet-tabs-area {
   grid-column: 1 / -1;
-  grid-row: 5;
+  grid-row: 4;
   display: grid;
   align-content: start;
   gap: var(--space-2);
@@ -1055,38 +1052,29 @@ a {
 }
 
 /*
- * Atributos e Vida e Defesa esticam até o fim da linha, para os dois cards
- * baterem com a altura do inventário. O conteúdo é centralizado no card e os
- * filhos NÃO são esticados — sem o `align-items: center` o selo do modificador
- * esticava junto e virava uma bolinha.
+ * Vida e Defesa estica até o fim da linha, para o card bater com a altura do
+ * inventário. O conteúdo é centralizado no card e os filhos NÃO são esticados —
+ * sem o `align-items: center` o selo do modificador esticava junto e virava uma
+ * bolinha.
  */
-.sheet-abilities,
 .sheet-vitals {
   align-self: stretch;
 }
 
-.sheet-abilities > .sheet-section,
 .sheet-vitals > .sheet-section {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.sheet-abilities > .sheet-section > .section-header,
 .sheet-vitals > .sheet-section > .section-header {
   flex: none;
 }
 
-.sheet-abilities > .sheet-section > .section-body,
 .sheet-vitals > .sheet-section > .section-body {
   flex: 1;
   display: flex;
   flex-direction: column;
-}
-
-/* A grade ocupa a altura restante do card, então as placas crescem juntas. */
-.sheet-abilities .grid-abilities {
-  flex: 1;
 }
 
 /* Em telas estreitas tudo vira uma coluna, na ordem de leitura. */
@@ -1099,7 +1087,6 @@ a {
   .sheet-inventory,
   .sheet-abilities,
   .sheet-vitals,
-  .sheet-skills,
   .sheet-tabs-area {
     grid-column: 1 / -1;
   }
@@ -1108,11 +1095,11 @@ a {
     grid-row: 1;
   }
 
-  .sheet-inventory {
+  .sheet-abilities {
     grid-row: 2;
   }
 
-  .sheet-abilities {
+  .sheet-inventory {
     grid-row: 3;
   }
 
@@ -1120,12 +1107,8 @@ a {
     grid-row: 4;
   }
 
-  .sheet-skills {
-    grid-row: 5;
-  }
-
   .sheet-tabs-area {
-    grid-row: 6;
+    grid-row: 5;
   }
 
   .sheet-identity .grid-3 {
@@ -1497,6 +1480,343 @@ a {
 }
 
 /* ==========================================================================
+   11.1 Os seis atributos da ficha — um card por atributo
+   ==========================================================================
+
+   Cada card reúne o que depende do atributo: a sigla, o selo com o valor e o
+   modificador, a salvaguarda e as perícias dele. Substitui as antigas seções
+   "Atributos" e "Perícias e Salvaguardas".
+   ========================================================================== */
+
+/*
+ * Os seis lado a lado (a mesma largura para todos). A altura sai do card mais
+ * alto — o de 5 perícias —, então os cards menores ficam com o espaço restante
+ * em branco no fim, sem esticar o espaçamento entre as linhas.
+ */
+.ability-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-1);
+  align-items: stretch;
+}
+
+@media (max-width: 1280px) {
+  .ability-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .ability-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Moldura do card: borda, fundo de pergaminho e uma roseta em cada canto. */
+.ability-block {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  padding-bottom: 0.2rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: 0 2px 6px -3px rgba(43, 33, 21, 0.35);
+}
+
+/* As rosetas ficam por cima do fundo da faixa (mas não recebem clique) e
+   abaixo do selo, para não cortarem a janela do "i". */
+.ability-block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: var(--ornament), var(--ornament), var(--ornament), var(--ornament);
+  background-position:
+    left 3px top 3px,
+    right 3px top 3px,
+    left 3px bottom 3px,
+    right 3px bottom 3px;
+  background-size: 11px 11px;
+  background-repeat: no-repeat;
+}
+
+/* Camada 1 — a faixa com a sigla (topo de lápide), em fundo levemente
+   destacado do corpo do card. */
+.ability-head {
+  height: 2.1rem;
+  margin: 0.3rem 0.3rem 0;
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid var(--gold-hair);
+  border-radius: 5px 5px 0 0;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* Camada 2 — o selo hexagonal, grudado entre a faixa e o corpo. */
+.ability-seal {
+  position: relative;
+  z-index: 2;
+  /* Sobe o selo sobre a borda de baixo da faixa. */
+  margin-top: -0.85rem;
+  display: grid;
+  justify-items: center;
+}
+
+.ability-hex {
+  position: relative;
+  width: 4.1rem;
+  height: 4.5rem;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.1rem;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: linear-gradient(180deg, var(--wine-bright), var(--wine));
+  filter: drop-shadow(0 3px 4px rgba(43, 33, 21, 0.3));
+  transition: filter 0.18s ease;
+}
+
+.ability-hex:hover {
+  filter: drop-shadow(0 3px 5px rgba(43, 33, 21, 0.35)) drop-shadow(0 0 12px var(--glow));
+}
+
+/* Filo dourado do hexágono (o mesmo truque da moldura do card). */
+.ability-hex::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  clip-path: inherit;
+  border: 1px solid var(--gold-hair);
+  pointer-events: none;
+}
+
+.ability-hex .ability-score,
+.ability-hex .inline-display {
+  padding: 0;
+  min-height: 0;
+  width: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.05;
+  text-align: center;
+  color: #fbeccb;
+}
+
+.ability-hex .inline-display:hover {
+  background: transparent;
+  border: none;
+  text-shadow: 0 0 12px var(--glow);
+}
+
+.ability-hex .inline-input {
+  width: 3.1rem;
+  padding: 0.1rem 0.2rem;
+  text-align: center;
+  font-size: 1.2rem;
+}
+
+/* O valor do atributo rola um teste puro quando não é editável (o mestre em
+   edição continua clicando para alterar o número). */
+.ability-score-roll {
+  cursor: pointer;
+  transition: text-shadow 0.15s ease;
+}
+
+.ability-score-roll:hover {
+  text-shadow: 0 0 12px var(--glow);
+}
+
+/* O modificador é um botão (rola o teste), mas sem pílula: dentro do selo ele é
+   só o número com sinal. */
+.ability-modifier {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  color: #fbeccb;
+  cursor: pointer;
+  transition: text-shadow 0.15s ease, color 0.15s ease;
+}
+
+.ability-modifier:hover {
+  color: #fff6dd;
+  text-shadow: 0 0 12px var(--glow);
+}
+
+/* O "i" que explica de onde vêm o valor e o modificador: fica na ponta de
+   cima do selo (o hexágono é centrado, então a posição acompanha o card). */
+.ability-tip {
+  position: absolute;
+  top: 0.4rem;
+  left: calc(50% + 1.4rem);
+  z-index: 3;
+  color: var(--gold-bright);
+}
+
+/* A janela abre centrada no "i" (dentro da largura do card, nos dois sentidos). */
+.ability-tip .info-tip-text {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(16rem, 74vw);
+}
+
+.ability-tip-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+}
+
+.ability-tip-row b {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .ability-tip-row b {
+  color: var(--gold-bright);
+}
+
+.ability-tip-total {
+  padding-top: 0.15rem;
+  border-top: 1px solid var(--gold-hair);
+}
+
+.ability-tip-note {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--ink-faint);
+}
+
+/* Camadas 3 e 4 — salvaguarda e perícias do atributo, na mesma linha visual. */
+.ability-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0.15rem 0.3rem 0.4rem;
+  display: grid;
+  align-content: start;
+  gap: 0.05rem;
+}
+
+.ability-line {
+  display: grid;
+  grid-template-columns: 1rem 2.2rem minmax(0, 1fr) auto 1.6rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.25rem;
+  border-radius: var(--radius);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ability-line:hover {
+  background: rgba(184, 145, 42, 0.13);
+  box-shadow: 0 0 10px -6px var(--glow);
+}
+
+/* Cada peça tem a sua coluna: o chip de especialização some quando a perícia
+   não é proficiente, e a rolagem continua no mesmo lugar. */
+.ability-line > input[type='checkbox'] {
+  grid-column: 1;
+}
+
+.ability-line-value {
+  grid-column: 2;
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .ability-line-value {
+  color: var(--gold-bright);
+}
+
+.ability-line-label {
+  grid-column: 3;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ability-line .esp-chip {
+  grid-column: 4;
+}
+
+.ability-line .prof-roll {
+  grid-column: 5;
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* A salvaguarda separa: mais respiro em cima e embaixo que as perícias. */
+.ability-line-save {
+  margin: 0.35rem 0 0.45rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--gold-hair);
+}
+
+.ability-line-save .ability-line-label {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Especialização (dobra o bônus de proficiência): o antigo "esp.", clicável. */
+.esp-chip {
+  padding: 0 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.esp-chip:hover {
+  color: var(--gold-deep);
+  border-color: var(--gold-hair);
+}
+
+.esp-chip.active {
+  border-color: var(--gold-deep);
+  background: linear-gradient(180deg, var(--wine-bright), var(--wine));
+  color: #fbeccb;
+}
+
+.esp-chip:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+/* ==========================================================================
    12. Vida e defesa
    ========================================================================== */
 
@@ -1736,14 +2056,6 @@ a {
    13. Perícias e salvaguardas
    ========================================================================== */
 
-.prof-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.1rem;
-}
-
 /*
  * Proficiências de armadura/arma/ferramenta: três blocos (o jogador só as lê;
  * o mestre as edita como texto separado por vírgula).
@@ -1790,63 +2102,6 @@ a {
 .prof-group-input {
   width: 100%;
   font-size: 0.86rem;
-}
-
-/* Perícias em 2×9 e salvaguardas em 2×3 — sempre em duas colunas iguais. */
-.prof-columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: var(--space-3);
-  align-items: start;
-}
-
-@media (max-width: 560px) {
-  .prof-columns {
-    grid-template-columns: 1fr;
-  }
-}
-
-.prof-row {
-  display: grid;
-  grid-template-columns: 1.2rem 1.2rem 2.4rem 1fr auto;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.22rem 0.4rem;
-  border-radius: var(--radius);
-  border-bottom: 1px solid rgba(184, 145, 42, 0.14);
-  transition: background 0.15s ease;
-}
-
-.prof-row:hover {
-  background: rgba(184, 145, 42, 0.12);
-}
-
-/* Salvaguardas têm 4 colunas (sem a caixa de especialização). */
-.prof-list .prof-row-save {
-  grid-template-columns: 1.2rem 2.4rem 1fr auto;
-}
-
-.prof-ability {
-  font-family: var(--font-display);
-  font-size: 0.66rem;
-  letter-spacing: 0.04em;
-  color: var(--ink-faint);
-}
-
-.prof-label {
-  font-size: 1rem;
-}
-
-.prof-value {
-  font-family: var(--font-display);
-  font-size: 0.98rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--wine);
-}
-
-[data-theme='dark'] .prof-value {
-  color: var(--gold-bright);
 }
 
 /* Checkboxes estilizados em tom de tinta/dourado. */
@@ -3580,10 +3835,6 @@ input[type='checkbox']:disabled {
 
   .section-body {
     padding: 0.8rem;
-  }
-
-  .prof-row {
-    grid-template-columns: 1.2rem 1.2rem 2.2rem 1fr auto;
   }
 
   .spell-row {
@@ -5898,15 +6149,7 @@ input[type='checkbox']:focus-visible,
   color: var(--gold-deep);
 }
 
-/* --- Botão de rolagem nas perícias/salvaguardas --------------------------- */
-
-.prof-row.with-roll {
-  grid-template-columns: 1.2rem 1.2rem 2.4rem 1fr auto 1.9rem;
-}
-
-.prof-row-save.with-roll {
-  grid-template-columns: 1.2rem 2.4rem 1fr auto 1.9rem;
-}
+/* --- Botão de rolagem nas linhas de salvaguarda/perícia ------------------- */
 
 .prof-roll {
   width: 1.7rem;

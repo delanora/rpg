@@ -92,7 +92,7 @@ CLIENTE (client/)
   @vitejs/plugin-react ^6.1.1, TypeScript ^7.0.2 com verbatimModuleSyntax,
   noUnusedLocals e noUnusedParameters (rigoroso).
   SEM framework de UI e SEM biblioteca de estado: React puro + CSS próprio.
-  Estilo: client/src/styles.css (≈7.120 linhas no arquivo-fonte), tema pergaminho
+  Estilo: client/src/styles.css (≈7.650 linhas no arquivo-fonte), tema pergaminho
   (claro) e "grimório amaldiçoado" (escuro) via `data-theme` no <html>.
   Fontes auto-hospedadas em client/public/fonts (Cinzel, EB Garamond,
   MedievalSharp) — nenhum recurso externo em runtime.
@@ -213,6 +213,8 @@ CLIENTE (client/src/)
   types.ts                espelho dos DTOs do servidor
   events.ts               payloads de conexão/presença
   dnd.ts                  apenas LABELS/constantes para exibição (nenhuma regra de negócio)
+  races.ts                achar a raça no catálogo + bônus racial com os `+1` à escolha
+                          (mesma regra no assistente de criação e no "i" da ficha)
   theme.ts · sound.ts · utils.ts · readonly.tsx
   gameApi.ts creationApi.ts levelUpApi.ts inventoryApi.ts presentationApi.ts
   combat/combatApi.ts
@@ -225,8 +227,9 @@ CLIENTE (client/src/)
     SheetView, AttacksTable, PresentationOverlay, CreationWizard (930),
     LevelUpDialog (497)
     creation/AbilityStep.tsx   palco de rolagem de atributos
-    sections/  Abilities, Attacks, BagList, Features, Identity (374), Inventory (532),
-               Notes, SkillsSaves, Spells (384), Vitals (367)
+    sections/  AbilityCards (397), Attacks, BagList, Features, Identity (374),
+               Inventory (532), Notes, Spells (384), Vitals (367)
+               (AbilityCards substitui Abilities + SkillsSaves: um card por atributo)
     master/    SheetsTab, CreaturesTab, CreatureEditor, RegionsTab, RegionEditor,
                LocalityEditor, ItemsTab, ItemEditor, DeleteCharacterDialog, ConfigTab,
                RollLogPanel (log flutuante), MasterNotes (anotações do mestre),
@@ -1676,15 +1679,45 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   (evita uma requisição por tecla).
 
 17.4 SEÇÕES DA FICHA (components/sections)
-  Identity (identidade, classes, subclasse, avatar), Abilities (6 atributos + derived),
-  Vitals (PV, PV temporários, CA, iniciativa, deslocamento, espaço de magia),
-  SkillsSaves (18 perícias + 6 salvaguardas, com proficiência/expertise),
-  Attacks, Features, Spells (list + slots), Inventory (grade de mochila + 9 slots
-  arrastáveis), Notes, BagList.
+  Identity (identidade, classes, subclasse, avatar), AbilityCards (os SEIS atributos,
+  cada um com a salvaguarda e as perícias dele), Vitals (PV, PV temporários, CA,
+  iniciativa, deslocamento, espaço de magia), Attacks, Features, Spells (list +
+  slots), Inventory (grade de mochila + 9 slots arrastáveis), Notes, BagList.
   `readonly.tsx` implementa o modo somente leitura usado quando o mestre visualiza a
   ficha de um jogador.
   Layout de perícias/salvaguardas e inventário espelham exatamente os DTOs do servidor:
   o cliente não recalcula nenhuma regra — exibe `derived`.
+
+17.4.1 ATRIBUTOS EM CARDS (AbilityCardsSection)
+  A antiga divisão "Atributos" (topo) + "Perícias e Salvaguardas" (lista corrida)
+  virou UMA fileira de seis cards, na ordem do PHB (FOR, DES, CON, INT, SAB, CAR).
+  Cada card, de cima para baixo:
+    • faixa com a SIGLA do atributo;
+    • selo HEXAGONAL em vinho com o valor GRAVADO e, abaixo, o modificador (o
+      "i" ao lado explica a composição — ver abaixo);
+    • linha da SALVAGUARDA (caixa de proficiência + bônus + botão de rolagem);
+    • as PERÍCIAS daquele atributo (FOR 1, DES 3, CON 0, INT 5, SAB 5, CAR 4,
+      exatamente a divisão do PHB 2014), cada uma com caixa de proficiência,
+      bônus total, chip opcional "esp." (especialização, só com proficiência) e
+      rolagem.
+  Os cards têm a MESMA largura e a altura do mais alto (o de 5 perícias), então os
+  menores ficam com o espaço restante em branco no fim — sem esticar o espaçamento.
+  As três primeiras camadas alinham entre os seis cards. Nas telas estreitas a
+  fileira quebra em 3 colunas (≤1280px) e em 2 (≤720px).
+  ROLAGEM: o botão de dado de cada linha abre a janela com 1d20 + o bônus (kind
+  `skill`/`save`, como antes). No SELO, clicar no número rola um TESTE PURO do
+  atributo (1d20 + modificador) — exceto para o mestre em edição, que continua
+  clicando para alterar o valor bruto; o modificador também é clicável e rola.
+  O "i" NÃO recalcula nada: monta a composição a partir do que já vem na ficha —
+  valor-base do rascunho da criação (`creationDraft.baseAbilities`), bônus racial
+  (catálogo de raças buscado uma vez por `GET /api/characters/me/creation` e
+  cruzado com `abilityChoices`), aumentos de nível (`levelHistory.abilityIncreases`)
+  e bônus de característica (`classAdjustments.abilityBonuses`, respeitando o cap);
+  quando a soma não fecha com o valor gravado (ficha antiga, edição do mestre), a
+  diferença aparece como "outros ajustes", para o total NUNCA mentir. Itens
+  equipados não somam atributo no sistema, e isso está dito na própria janela.
+  O bloco de ARMADURAS/ARMAS/FERRAMENTAS (proficiências) que vivia na seção de
+  perícias continua no fim desta seção, inalterado.
 
 17.5 DADOS VISUAIS / SOM
   Icon.tsx: ícones SVG desenhados à mão, todos com `currentColor` (sword, shield,

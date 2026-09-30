@@ -2,20 +2,19 @@ import { useState } from 'react';
 import { SheetAccessProvider } from '../readonly';
 import type { Character, CharacterPatch, InventoryMoveRequest, TransferTarget } from '../types';
 import { Icon, type IconName } from './Icon';
-import { AbilitiesSection } from './sections/AbilitiesSection';
+import { AbilityCardsSection } from './sections/AbilityCardsSection';
 import { AttacksSection } from './sections/AttacksSection';
 import { FeaturesSection } from './sections/FeaturesSection';
 import { IdentitySection } from './sections/IdentitySection';
 import { InventorySection } from './sections/InventorySection';
 import { NotesSection } from './sections/NotesSection';
-import { SkillsSavesSection } from './sections/SkillsSavesSection';
 import { SpellsSection } from './sections/SpellsSection';
 import { VitalsSection } from './sections/VitalsSection';
 
 /**
- * Seções que vivem em abas. Perícias e inventário não entram aqui: a primeira
- * fica sempre visível abaixo dos atributos e o inventário ocupa uma coluna
- * lateral própria, ambos fora das abas.
+ * Seções que vivem em abas. Os atributos (com perícias e salvaguardas) e o
+ * inventário não entram aqui: o primeiro ocupa a largura toda no topo e o
+ * segundo uma coluna lateral própria, ambos fora das abas.
  */
 const TAB_SECTIONS = [
   { key: 'spells', label: 'Magias', icon: 'star' },
@@ -64,8 +63,9 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
 
 /**
  * Ficha em forma de HUD: Identidade ocupa a largura toda no topo; abaixo dela
- * ficam lado a lado o inventário, os atributos e vida e defesa; e na sequência
- * perícias, anotações e as abas (magias, ataques, características).
+ * vem a fileira dos seis atributos (cada card com a salvaguarda e as perícias
+ * do atributo); depois, lado a lado, o inventário e vida e defesa; e na
+ * sequência as abas (magias, ataques, características).
  * Reutilizada pelo jogador e pelo mestre.
  */
 export function SheetView({
@@ -96,6 +96,11 @@ export function SheetView({
         </div>
 
         {/* Linha logo abaixo: inventário, atributos e vida e defesa. */}
+        {/* Os seis atributos, com salvaguardas e perícias, de ponta a ponta. */}
+        <div className="sheet-abilities">
+          <AbilityCardsSection character={character} update={update} onRoll={onRollSkill} />
+        </div>
+
         <div className="sheet-inventory">
           <InventorySection
             character={character}
@@ -108,17 +113,8 @@ export function SheetView({
           />
         </div>
 
-        <div className="sheet-abilities">
-          <AbilitiesSection character={character} update={update} />
-        </div>
-
         <div className="sheet-vitals">
           <VitalsSection character={character} update={update} />
-        </div>
-
-        {/* Perícias e salvaguardas ocupam a largura toda. */}
-        <div className="sheet-skills">
-          <SkillsSavesSection character={character} update={update} onRoll={onRollSkill} />
         </div>
 
         <div className="sheet-tabs-area">
