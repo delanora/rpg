@@ -129,9 +129,9 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 
 - Nome, raça, classe, nível, antecedente, alinhamento, experiência
 - **Seis cards de atributo** (Força, Destreza, Constituição, Inteligência, Sabedoria, Carisma): cada card reúne o valor com modificador automático, a salvaguarda e as perícias daquele atributo, na divisão do PHB 2014 — no lugar das antigas seções separadas de "Atributos" e "Perícias e Salvaguardas"
-- O selo do atributo tem um **"i"** que explica de onde vem o valor (criação + raça + aumentos de nível + bônus de característica) e, ao clicar no número, rola um **teste puro** do atributo
+- O selo do atributo tem um **"i"** que explica de onde vem o valor (criação + raça + aumentos de nível + bônus de classe) e, ao clicar no número, rola um **teste puro** do atributo
 - HP (atual/máximo/temporário), **Classe de Armadura calculada** (armadura equipada + atributos), Iniciativa, Deslocamento
-- Perícias e salvaguardas com proficiência, especialização ("esp.") e cálculo automático de bônus, cada uma com o seu botão de rolagem
+- Perícias e salvaguardas com proficiência e cálculo automático de bônus, cada linha com o seu botão de rolagem e os nomes que nunca quebram
 - Inventário de itens e equipamentos
 - **Moedas** (PL/PO/PE/PP/PC) com conversões do PHB, gasto, troca e transferência entre jogadores; só o mestre dá ou retira
 - **Inventário administrado pelo mestre**: a quantidade de um item é dele — o jogador move/equipa e **usa** consumíveis (Poção ou item marcado), sem editar quantidade, adicionar ou remover
@@ -647,7 +647,7 @@ Quem quiser devolver a ficha à montagem é o **mestre**, pelo botão **Reabrir 
 
 Nenhum formulário abre em outra tela: clicar no valor transforma o campo em edição; **Enter** ou sair do campo salva, **Esc** cancela. A alteração aparece na hora (otimista) e é confirmada pela resposta do servidor, que é a fonte de verdade dos valores derivados.
 
-Seções da ficha: Identidade, Atributos, Vida e Defesa, Perícias e Salvaguardas, Inventário, Magias, Ataques, Características (com a subseção **Talentos**) e Anotações/História.
+Seções da ficha: **Personagem** (identidade, classes e, no fim, **Vida e Defesa**), seis cards de Atributos (perícias e salvaguardas de cada atributo), Inventário, Magias, Ataques, Características (com a subseção **Talentos**) e Anotações/História.
 
 ---
 
@@ -845,7 +845,7 @@ O tema é um atributo `data-theme` no `<html>`; o CSS troca todas as cores por v
 
 - **Texturas em SVG embutidas** (grão de papel e rosetas de canto) — sem arquivos de imagem.
 - **Ícones autorais** em `client/src/components/Icon.tsx` (traço de tinta, `currentColor`).
-- **Ficha em abas** (`SheetView`): Identidade, Atributos, Vida & Defesa, Perícias, Inventário, Magias, Ataques, Características e Anotações.
+- **Ficha em abas** (`SheetView`): Personagem (com Vida e Defesa no fim), Atributos (com perícias e salvaguardas), Inventário, Magias, Ataques, Características e Anotações.
 - **Atributos em forma de escudo** e **barra de vida** com cor por gravidade (`components/HpBar.tsx`).
 - **Espaços de magia** como estrelas clicáveis (gastar/recuperar), além dos números.
 - **Microanimações:** brilho dourado no hover, tremulação de chama nos ícones e "virar de página" ao trocar de aba.

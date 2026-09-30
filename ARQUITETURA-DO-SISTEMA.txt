@@ -92,7 +92,7 @@ CLIENTE (client/)
   @vitejs/plugin-react ^6.1.1, TypeScript ^7.0.2 com verbatimModuleSyntax,
   noUnusedLocals e noUnusedParameters (rigoroso).
   SEM framework de UI e SEM biblioteca de estado: React puro + CSS próprio.
-  Estilo: client/src/styles.css (≈7.650 linhas no arquivo-fonte), tema pergaminho
+  Estilo: client/src/styles.css (≈7.680 linhas no arquivo-fonte), tema pergaminho
   (claro) e "grimório amaldiçoado" (escuro) via `data-theme` no <html>.
   Fontes auto-hospedadas em client/public/fonts (Cinzel, EB Garamond,
   MedievalSharp) — nenhum recurso externo em runtime.
@@ -227,9 +227,10 @@ CLIENTE (client/src/)
     SheetView, AttacksTable, PresentationOverlay, CreationWizard (930),
     LevelUpDialog (497)
     creation/AbilityStep.tsx   palco de rolagem de atributos
-    sections/  AbilityCards (397), Attacks, BagList, Features, Identity (374),
-               Inventory (532), Notes, Spells (384), Vitals (367)
-               (AbilityCards substitui Abilities + SkillsSaves: um card por atributo)
+    sections/  AbilityCards (397), Attacks, BagList, Features, Identity (378),
+               Inventory (532), Notes, Spells (384), Vitals (400)
+               (AbilityCards substitui Abilities + SkillsSaves: um card por atributo;
+                Vitals fica DENTRO do Identity, embutido)
     master/    SheetsTab, CreaturesTab, CreatureEditor, RegionsTab, RegionEditor,
                LocalityEditor, ItemsTab, ItemEditor, DeleteCharacterDialog, ConfigTab,
                RollLogPanel (log flutuante), MasterNotes (anotações do mestre),
@@ -1679,10 +1680,22 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   (evita uma requisição por tecla).
 
 17.4 SEÇÕES DA FICHA (components/sections)
-  Identity (identidade, classes, subclasse, avatar), AbilityCards (os SEIS atributos,
-  cada um com a salvaguarda e as perícias dele), Vitals (PV, PV temporários, CA,
-  iniciativa, deslocamento, espaço de magia), Attacks, Features, Spells (list +
-  slots), Inventory (grade de mochila + 9 slots arrastáveis), Notes, BagList.
+  Personagem (Identity: identidade, classes, subclasse, avatar e, no FIM da seção,
+  Vida e Defesa EMBUTIDA), AbilityCards (os SEIS atributos, cada um com a
+  salvaguarda e as perícias dele), Attacks, Features, Spells (list + slots),
+  Inventory (grade de mochila + 9 slots arrastáveis), Notes, BagList.
+  A ficha é uma PILHA de seções de ponta a ponta: Personagem (que já traz Classes
+  e Vida e Defesa), os seis atributos, o inventário e as abas. Dentro do
+  inventário, o set de equipamento e a mochila ficam lado a lado (max-width de
+  320px cada, centralizados na própria coluna) com peso, moedas e detalhe abaixo.
+  VIDA E DEFESA EMBUTIDA: `VitalsSection` aceita `embedded` (usado pelo Identity);
+  nesse modo o bloco perde a moldura de card (`.vitals-embedded`: sem borda, fundo
+  e sombra; corpo sem padding) e o cabeçalho vira um subtítulo com hairline em
+  cima, como o "Classes". O conteúdo é o mesmo de antes (barra de PV, HP
+  temporário, CA, iniciativa, deslocamento, percepção passiva, carga, nota de
+  conjuração e Recursos de Classe), agora em duas colunas: a barra de vida à
+  esquerda (`.vitals-main-split`) e os cards de defesa à direita — abaixo de
+  900px os dois voltam a ficar empilhados.
   `readonly.tsx` implementa o modo somente leitura usado quando o mestre visualiza a
   ficha de um jogador.
   Layout de perícias/salvaguardas e inventário espelham exatamente os DTOs do servidor:
@@ -1693,27 +1706,42 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   virou UMA fileira de seis cards, na ordem do PHB (FOR, DES, CON, INT, SAB, CAR).
   Cada card, de cima para baixo:
     • faixa com a SIGLA do atributo;
-    • selo HEXAGONAL em vinho com o valor GRAVADO e, abaixo, o modificador (o
-      "i" ao lado explica a composição — ver abaixo);
+    • selo HEXAGONAL em vinho com o valor GRAVADO e, abaixo, o modificador — o
+      hexágono fica ABAIXO da faixa, com respiro fixo (não invade o título);
     • linha da SALVAGUARDA (caixa de proficiência + bônus + botão de rolagem);
     • as PERÍCIAS daquele atributo (FOR 1, DES 3, CON 0, INT 5, SAB 5, CAR 4,
       exatamente a divisão do PHB 2014), cada uma com caixa de proficiência,
-      bônus total, chip opcional "esp." (especialização, só com proficiência) e
-      rolagem.
+      bônus total e rolagem.
+  GRID DAS LINHAS: salvaguarda e perícias usam a MESMA grade fixa —
+  [caixa 1rem] [bônus 1.7rem] [nome 1fr] [dado 1.35rem], com `gap` reduzido e
+  altura mínima de 1.55rem, para todas as colunas alinharem entre os seis cards.
+  O bônus é tabular e alinhado à direita. O nome NUNCA quebra no meio da palavra:
+  `white-space: nowrap` + `text-overflow: ellipsis` (o nome inteiro vai no
+  `title`) e o tamanho acompanha a LARGURA DO CARD via container query
+  (`container-type: inline-size` no card + `font-size: min(7.8cqi, 0.88rem)`),
+  o que garante que "Prestidigitação" caiba até na fileira de 6 (cada card com
+  ~165px, a mais apertada da ficha — nesta seção o respiro lateral do corpo é de
+  0.55rem para liberar espaço ao nome).
   Os cards têm a MESMA largura e a altura do mais alto (o de 5 perícias), então os
   menores ficam com o espaço restante em branco no fim — sem esticar o espaçamento.
   As três primeiras camadas alinham entre os seis cards. Nas telas estreitas a
   fileira quebra em 3 colunas (≤1280px) e em 2 (≤720px).
+  Na salvaguarda NÃO há mais selo "classe" nem chip "esp." — a proficiência fixa
+  segue marcada e desabilitada (com `title`), e a ESPECIALIZAÇÃO deixou de ser
+  marcada pela ficha.
   ROLAGEM: o botão de dado de cada linha abre a janela com 1d20 + o bônus (kind
   `skill`/`save`, como antes). No SELO, clicar no número rola um TESTE PURO do
   atributo (1d20 + modificador) — exceto para o mestre em edição, que continua
   clicando para alterar o valor bruto; o modificador também é clicável e rola.
-  O "i" NÃO recalcula nada: monta a composição a partir do que já vem na ficha —
+  O "i" é uma pastilha dourada no ombro DIREITO do hexágono (inteira e sem
+  colidir com o título); a JANELA do "i" é irmã da pastilha, então se posiciona
+  pelo SELO e abre com a largura do próprio card — nunca vaza para os lados.
+  Ela NÃO recalcula nada: monta a composição a partir do que já vem na ficha —
   valor-base do rascunho da criação (`creationDraft.baseAbilities`), bônus racial
   (catálogo de raças buscado uma vez por `GET /api/characters/me/creation` e
   cruzado com `abilityChoices`), aumentos de nível (`levelHistory.abilityIncreases`)
-  e bônus de característica (`classAdjustments.abilityBonuses`, respeitando o cap);
-  quando a soma não fecha com o valor gravado (ficha antiga, edição do mestre), a
+  e bônus de classe (`classAdjustments.abilityBonuses`, respeitando o cap); quando
+  a soma não fecha com o valor gravado (ficha antiga, edição do mestre), a
   diferença aparece como "outros ajustes", para o total NUNCA mentir. Itens
   equipados não somam atributo no sistema, e isso está dito na própria janela.
   O bloco de ARMADURAS/ARMAS/FERRAMENTAS (proficiências) que vivia na seção de

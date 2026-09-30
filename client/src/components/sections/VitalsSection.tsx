@@ -43,7 +43,15 @@ function describeArmorClass(detail: ArmorClassDetail): string {
   return parts.join(' · ');
 }
 
-export function VitalsSection({ character, update }: SheetSectionProps) {
+interface VitalsSectionProps extends SheetSectionProps {
+  /**
+   * Embutido na seção Personagem (depois das Classes): o bloco perde a moldura
+   * de card e o cabeçalho vira um subtítulo, mas o conteúdo é o mesmo.
+   */
+  embedded?: boolean;
+}
+
+export function VitalsSection({ character, update, embedded = false }: VitalsSectionProps) {
   // PV atual/temporário, usos de recursos e espaços continuam editáveis pelo
   // jogador depois de finalizar a criação; PV máximo, CA, iniciativa e
   // deslocamento são construção (e a CA manual é privilégio do mestre).
@@ -123,151 +131,161 @@ export function VitalsSection({ character, update }: SheetSectionProps) {
     classAdjustments.wildShapeCr !== null;
 
   return (
-    <Section title="Vida e Defesa" icon="heart">
+    <Section
+      title="Vida e Defesa"
+      icon="heart"
+      className={embedded ? 'vitals-embedded' : undefined}
+    >
       {/*
-       * A barra de vida faz o papel dos antigos cards de PV: os campos de
-       * atual e máximo vivem aqui, junto da barra.
+       * Barra de vida à esquerda e os cards de defesa à direita quando o bloco
+       * está embutido no Personagem (na coluna própria ele fica empilhado).
        */}
-      <div className="vitals-hp">
-        <div className="hp-editor">
-          <Icon name="heart" size={16} className="hp-heart" />
-          <InlineField
-            className={`hp-editor-value${hpClass}`}
-            value={character.hpCurrent}
-            mode="number"
-            min={-999}
-            max={9999}
-            ariaLabel="Pontos de vida atuais"
-            onCommit={(value) =>
-              update({ hpCurrent: clampInt(value, -999, 9999, character.hpCurrent) })
-            }
-          />
-          <span className="hp-editor-sep">/</span>
-          <InlineField
-            className="hp-editor-value"
-            value={character.hpMax}
-            mode="number"
-            min={0}
-            max={9999}
-            readOnly={lockedConstruction}
-            ariaLabel="Pontos de vida máximos"
-            onCommit={(value) => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })}
-          />
-          {character.hpTemp > 0 ? <span className="hp-badge">+{character.hpTemp}</span> : null}
-        </div>
-
-        <HpBar
-          current={character.hpCurrent}
-          max={character.hpMax}
-          temp={character.hpTemp}
-          showLabel={false}
-        />
-      </div>
-
-      <div className="grid grid-4">
-        <div className="vital">
-          <span className="vital-label">
-            <Icon name="flask" size={13} /> HP temporário
-          </span>
-          <InlineField
-            className="vital-value"
-            value={character.hpTemp}
-            mode="number"
-            min={0}
-            max={9999}
-            ariaLabel="Pontos de vida temporários"
-            onCommit={(value) => update({ hpTemp: clampInt(value, 0, 9999, character.hpTemp) })}
-          />
-        </div>
-
-        <div className="vital">
-          <span className="vital-label">
-            <Icon name="shield" size={13} /> Classe de Armadura
-          </span>
-
-          {/* A CA é calculada; só o mestre pode fixar um valor manual. */}
-          {masterView && !readOnly ? (
+      <div className={embedded ? 'vitals-main vitals-main-split' : 'vitals-main'}>
+        {/*
+         * A barra de vida faz o papel dos antigos cards de PV: os campos de
+         * atual e máximo vivem aqui, junto da barra.
+         */}
+        <div className="vitals-hp">
+          <div className="hp-editor">
+            <Icon name="heart" size={16} className="hp-heart" />
             <InlineField
-              className="vital-value"
-              value={character.armorClassOverride ?? armorClass.automatic}
+              className={`hp-editor-value${hpClass}`}
+              value={character.hpCurrent}
               mode="number"
-              min={0}
-              max={99}
-              ariaLabel="Classe de armadura"
-              title="CA manual do mestre (igual à automática ou 0 volta ao cálculo)"
-              onCommit={(value) => {
-                const next = clampInt(
-                  value,
-                  0,
-                  99,
-                  character.armorClassOverride ?? armorClass.automatic,
-                );
-                update({
-                  armorClassOverride: next === armorClass.automatic ? null : next,
-                });
-              }}
-            />
-          ) : (
-            <strong className="vital-value">{armorClass.value}</strong>
-          )}
-
-          <span className="vital-hint">{describeArmorClass(armorClass)}</span>
-        </div>
-
-        <div className="vital">
-          <span className="vital-label">
-            <Icon name="bolt" size={13} /> Iniciativa
-          </span>
-          <strong className="vital-value">{formatModifier(derived.initiative)}</strong>
-          <span className="vital-hint">
-            bônus extra:{' '}
-            <InlineField
-              className="vital-inline"
-              value={character.initiativeBonus}
-              mode="number"
-              min={-30}
-              max={30}
-              readOnly={lockedConstruction}
-              ariaLabel="Bônus de iniciativa"
+              min={-999}
+              max={9999}
+              ariaLabel="Pontos de vida atuais"
               onCommit={(value) =>
-                update({ initiativeBonus: clampInt(value, -30, 30, character.initiativeBonus) })
+                update({ hpCurrent: clampInt(value, -999, 9999, character.hpCurrent) })
               }
             />
-          </span>
-        </div>
+            <span className="hp-editor-sep">/</span>
+            <InlineField
+              className="hp-editor-value"
+              value={character.hpMax}
+              mode="number"
+              min={0}
+              max={9999}
+              readOnly={lockedConstruction}
+              ariaLabel="Pontos de vida máximos"
+              onCommit={(value) => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })}
+            />
+            {character.hpTemp > 0 ? <span className="hp-badge">+{character.hpTemp}</span> : null}
+          </div>
 
-        <div className="vital">
-          <span className="vital-label">
-            <Icon name="wind" size={13} /> Deslocamento
-          </span>
-          <InlineField
-            className="vital-value"
-            value={character.speed}
-            mode="number"
-            min={0}
-            max={999}
-            readOnly={lockedConstruction}
-            ariaLabel="Deslocamento"
-            onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
+          <HpBar
+            current={character.hpCurrent}
+            max={character.hpMax}
+            temp={character.hpTemp}
+            showLabel={false}
           />
-          <span className="vital-hint">metros</span>
         </div>
 
-        <div className="vital">
-          <span className="vital-label">
-            <Icon name="eye" size={13} /> Percepção passiva
-          </span>
-          <strong className="vital-value">{derived.passivePerception}</strong>
-        </div>
+        <div className="grid grid-4">
+          <div className="vital">
+            <span className="vital-label">
+              <Icon name="flask" size={13} /> HP temporário
+            </span>
+            <InlineField
+              className="vital-value"
+              value={character.hpTemp}
+              mode="number"
+              min={0}
+              max={9999}
+              ariaLabel="Pontos de vida temporários"
+              onCommit={(value) => update({ hpTemp: clampInt(value, 0, 9999, character.hpTemp) })}
+            />
+          </div>
 
-        <div className="vital">
-          <span className="vital-label">
-            <Icon name="weight" size={13} /> Carga
-          </span>
-          <strong className="vital-value">
-            {derived.totalWeight} / {derived.carryingCapacity}
-          </strong>
-          <span className="vital-hint">peso atual / capacidade (kg)</span>
+          <div className="vital">
+            <span className="vital-label">
+              <Icon name="shield" size={13} /> Classe de Armadura
+            </span>
+
+            {/* A CA é calculada; só o mestre pode fixar um valor manual. */}
+            {masterView && !readOnly ? (
+              <InlineField
+                className="vital-value"
+                value={character.armorClassOverride ?? armorClass.automatic}
+                mode="number"
+                min={0}
+                max={99}
+                ariaLabel="Classe de armadura"
+                title="CA manual do mestre (igual à automática ou 0 volta ao cálculo)"
+                onCommit={(value) => {
+                  const next = clampInt(
+                    value,
+                    0,
+                    99,
+                    character.armorClassOverride ?? armorClass.automatic,
+                  );
+                  update({
+                    armorClassOverride: next === armorClass.automatic ? null : next,
+                  });
+                }}
+              />
+            ) : (
+              <strong className="vital-value">{armorClass.value}</strong>
+            )}
+
+            <span className="vital-hint">{describeArmorClass(armorClass)}</span>
+          </div>
+
+          <div className="vital">
+            <span className="vital-label">
+              <Icon name="bolt" size={13} /> Iniciativa
+            </span>
+            <strong className="vital-value">{formatModifier(derived.initiative)}</strong>
+            <span className="vital-hint">
+              bônus extra:{' '}
+              <InlineField
+                className="vital-inline"
+                value={character.initiativeBonus}
+                mode="number"
+                min={-30}
+                max={30}
+                readOnly={lockedConstruction}
+                ariaLabel="Bônus de iniciativa"
+                onCommit={(value) =>
+                  update({ initiativeBonus: clampInt(value, -30, 30, character.initiativeBonus) })
+                }
+              />
+            </span>
+          </div>
+
+          <div className="vital">
+            <span className="vital-label">
+              <Icon name="wind" size={13} /> Deslocamento
+            </span>
+            <InlineField
+              className="vital-value"
+              value={character.speed}
+              mode="number"
+              min={0}
+              max={999}
+              readOnly={lockedConstruction}
+              ariaLabel="Deslocamento"
+              onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
+            />
+            <span className="vital-hint">metros</span>
+          </div>
+
+          <div className="vital">
+            <span className="vital-label">
+              <Icon name="eye" size={13} /> Percepção passiva
+            </span>
+            <strong className="vital-value">{derived.passivePerception}</strong>
+          </div>
+
+          <div className="vital">
+            <span className="vital-label">
+              <Icon name="weight" size={13} /> Carga
+            </span>
+            <strong className="vital-value">
+              {derived.totalWeight} / {derived.carryingCapacity}
+            </strong>
+            <span className="vital-hint">peso atual / capacidade (kg)</span>
+          </div>
         </div>
       </div>
 

@@ -9,7 +9,6 @@ import { IdentitySection } from './sections/IdentitySection';
 import { InventorySection } from './sections/InventorySection';
 import { NotesSection } from './sections/NotesSection';
 import { SpellsSection } from './sections/SpellsSection';
-import { VitalsSection } from './sections/VitalsSection';
 
 /**
  * Seções que vivem em abas. Os atributos (com perícias e salvaguardas) e o
@@ -62,10 +61,10 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
 }
 
 /**
- * Ficha em forma de HUD: Identidade ocupa a largura toda no topo; abaixo dela
- * vem a fileira dos seis atributos (cada card com a salvaguarda e as perícias
- * do atributo); depois, lado a lado, o inventário e vida e defesa; e na
- * sequência as abas (magias, ataques, características).
+ * Ficha em pilha, de ponta a ponta: Personagem (identidade, classes e, no fim,
+ * vida e defesa), a fileira dos seis atributos (cada card com a salvaguarda e
+ * as perícias do atributo), o inventário e, por último, as abas (magias,
+ * ataques, características).
  * Reutilizada pelo jogador e pelo mestre.
  */
 export function SheetView({
@@ -90,12 +89,11 @@ export function SheetView({
     <SheetAccessProvider value={{ readOnly, creationLocked, masterView }}>
       {/* `position: fixed` no botão e no painel: não participam da grade. */}
       <div className="sheet">
-        {/* Identidade de ponta a ponta, no topo da ficha. */}
+        {/* Personagem (identidade, classes e vida e defesa), de ponta a ponta. */}
         <div className="sheet-identity">
           <IdentitySection character={character} update={update} />
         </div>
 
-        {/* Linha logo abaixo: inventário, atributos e vida e defesa. */}
         {/* Os seis atributos, com salvaguardas e perícias, de ponta a ponta. */}
         <div className="sheet-abilities">
           <AbilityCardsSection character={character} update={update} onRoll={onRollSkill} />
@@ -111,10 +109,6 @@ export function SheetView({
             coinTargets={coinTargets}
             onCoinsChange={onCoinsChange}
           />
-        </div>
-
-        <div className="sheet-vitals">
-          <VitalsSection character={character} update={update} />
         </div>
 
         <div className="sheet-tabs-area">

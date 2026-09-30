@@ -228,41 +228,46 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                   </button>
                 </div>
 
+                {/* O "i" e a janela são irmãos: assim a janela se abre com a
+                    largura do próprio card, sem vazar para os lados. */}
                 <span className="info-tip ability-tip" tabIndex={0}>
                   <Icon name="info" size={12} />
-                  <span className="info-tip-text" role="tooltip">
-                    <strong>O que compõe {label}</strong>
+                </span>
+                <span
+                  className="info-tip-text ability-tooltip"
+                  role="tooltip"
+                  aria-label={`O que compõe ${label}`}
+                >
+                  <strong>O que compõe {label}</strong>
 
-                    {composition.sources.map((source) => (
-                      <span className="ability-tip-row" key={source.label}>
-                        <span>{source.label}</span>
-                        <b>{source.signed ? formatModifier(source.value) : source.value}</b>
-                      </span>
-                    ))}
+                  {composition.sources.map((source) => (
+                    <span className="ability-tip-row" key={source.label}>
+                      <span>{source.label}</span>
+                      <b>{source.signed ? formatModifier(source.value) : source.value}</b>
+                    </span>
+                  ))}
 
+                  <span className="ability-tip-row ability-tip-total">
+                    <span>Valor gravado</span>
+                    <b>{composition.stored}</b>
+                  </span>
+
+                  {composition.feature !== 0 ? (
+                    <span className="ability-tip-row">
+                      <span>Bônus de classe</span>
+                      <b>{formatModifier(composition.feature)}</b>
+                    </span>
+                  ) : null}
+
+                  {composition.total !== composition.stored ? (
                     <span className="ability-tip-row ability-tip-total">
-                      <span>Valor gravado</span>
-                      <b>{composition.stored}</b>
+                      <span>Total nos cálculos</span>
+                      <b>{composition.total}</b>
                     </span>
+                  ) : null}
 
-                    {composition.feature !== 0 ? (
-                      <span className="ability-tip-row">
-                        <span>Bônus de característica</span>
-                        <b>{formatModifier(composition.feature)}</b>
-                      </span>
-                    ) : null}
-
-                    {composition.total !== composition.stored ? (
-                      <span className="ability-tip-row ability-tip-total">
-                        <span>Total nos cálculos</span>
-                        <b>{composition.total}</b>
-                      </span>
-                    ) : null}
-
-                    <span className="ability-tip-note">
-                      O sistema não soma bônus de item equipado em atributo: o valor gravado
-                      reúne o que foi definido na criação e no Level Up.
-                    </span>
+                  <span className="ability-tip-note">
+                    Itens equipados não somam atributo neste sistema.
                   </span>
                 </span>
               </div>
@@ -278,10 +283,7 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                     onChange={(event) => setSave(ability, event.target.checked)}
                   />
                   <span className="ability-line-value">{formatModifier(save?.total ?? 0)}</span>
-                  <span className="ability-line-label">
-                    Salvaguarda
-                    {saveLocked ? <em className="tag">classe</em> : null}
-                  </span>
+                  <span className="ability-line-label">Salvaguarda</span>
                   {onRoll ? (
                     <button
                       type="button"
@@ -320,20 +322,9 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                       <span className="ability-line-value">
                         {formatModifier(detail?.total ?? 0)}
                       </span>
-                      <span className="ability-line-label">{skill.label}</span>
-                      {entry.proficient ? (
-                        <button
-                          type="button"
-                          className={entry.expertise ? 'esp-chip active' : 'esp-chip'}
-                          disabled={lockedConstruction}
-                          title="Especialização (dobra o bônus de proficiência)"
-                          aria-pressed={entry.expertise}
-                          aria-label={`Especialização em ${skill.label}`}
-                          onClick={() => setSkill(skill.key, { expertise: !entry.expertise })}
-                        >
-                          esp.
-                        </button>
-                      ) : null}
+                      <span className="ability-line-label" title={skill.label}>
+                        {skill.label}
+                      </span>
                       {onRoll ? (
                         <button
                           type="button"
