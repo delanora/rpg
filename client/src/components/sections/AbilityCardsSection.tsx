@@ -120,7 +120,7 @@ function compositionOf(
  * servidor (`derived`); aqui não há regra de negócio.
  */
 export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsSectionProps) {
-  const { lockedConstruction, readOnly } = useSheetAccess();
+  const { lockedConstruction } = useSheetAccess();
   const { derived } = character;
 
   // O catálogo de raças serve só para explicar a composição do atributo no "i".
@@ -151,10 +151,6 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
     if (!next.proficient) next.expertise = false;
 
     update({ skills: { ...character.skills, [key]: next } });
-  }
-
-  function setSave(ability: AbilityKey, proficient: boolean): void {
-    update({ saves: { ...character.saves, [ability]: proficient } });
   }
 
   /**
@@ -188,48 +184,10 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
 
           return (
             <article className="ability-block" key={ability}>
-              <header className="ability-head">{ABILITY_ABBREVIATIONS[ability]}</header>
-
-              <div className="ability-seal">
-                <div className="ability-hex">
-                  {editable ? (
-                    <InlineField
-                      className="ability-score"
-                      value={character[ability]}
-                      mode="number"
-                      min={1}
-                      max={30}
-                      ariaLabel={label}
-                      title="Clique para editar o valor do atributo"
-                      onCommit={(value) =>
-                        update({ [ability]: clampInt(value, 1, 30, character[ability]) })
-                      }
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      className="ability-score ability-score-roll"
-                      title={`Rolar teste de ${label} (1d20 ${formatModifier(modifier)})`}
-                      aria-label={`Rolar teste de ${label}`}
-                      onClick={rollAbility}
-                    >
-                      {character[ability]}
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    className="ability-modifier"
-                    title={`Rolar teste de ${label} (1d20 ${formatModifier(modifier)})`}
-                    aria-label={`Rolar teste de ${label}`}
-                    onClick={rollAbility}
-                  >
-                    {formatModifier(modifier)}
-                  </button>
-                </div>
-
-                {/* O "i" e a janela são irmãos: assim a janela se abre com a
-                    largura do próprio card, sem vazar para os lados. */}
+              <header className="ability-head">
+                <span className="ability-head-label">{ABILITY_ABBREVIATIONS[ability]}</span>
+                {/* O "i" vive no cabeçalho do card; a janela é IRMÃ da pastilha,
+                    então abre com a largura do próprio card, sem vazar. */}
                 <span className="info-tip ability-tip" tabIndex={0}>
                   <Icon name="info" size={12} />
                 </span>
@@ -270,6 +228,46 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                     Itens equipados não somam atributo neste sistema.
                   </span>
                 </span>
+              </header>
+
+              <div className="ability-seal">
+                <div className="ability-hex">
+                  {editable ? (
+                    <InlineField
+                      className="ability-score"
+                      value={character[ability]}
+                      mode="number"
+                      min={1}
+                      max={30}
+                      ariaLabel={label}
+                      title="Clique para editar o valor do atributo"
+                      onCommit={(value) =>
+                        update({ [ability]: clampInt(value, 1, 30, character[ability]) })
+                      }
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="ability-score ability-score-roll"
+                      title={`Rolar teste de ${label} (1d20 ${formatModifier(modifier)})`}
+                      aria-label={`Rolar teste de ${label}`}
+                      onClick={rollAbility}
+                    >
+                      {character[ability]}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className="ability-modifier"
+                    title={`Rolar teste de ${label} (1d20 ${formatModifier(modifier)})`}
+                    aria-label={`Rolar teste de ${label}`}
+                    onClick={rollAbility}
+                  >
+                    {formatModifier(modifier)}
+                  </button>
+                </div>
+
               </div>
 
               <ul className="ability-lines">
@@ -277,10 +275,14 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                   <input
                     type="checkbox"
                     checked={character.saves[ability] ?? false}
-                    disabled={readOnly || saveLocked}
+                    disabled
+                    tabIndex={-1}
                     aria-label={`Proficiência em salvaguarda de ${label}`}
-                    title={saveLocked ? 'Concedida pela classe (fixa)' : 'Salvaguarda proficiente'}
-                    onChange={(event) => setSave(ability, event.target.checked)}
+                    title={
+                      saveLocked
+                        ? 'Concedida pela classe (fixa)'
+                        : 'Salvaguarda definida pela classe — não editável por aqui'
+                    }
                   />
                   <span className="ability-line-value">{formatModifier(save?.total ?? 0)}</span>
                   <span className="ability-line-label">Salvaguarda</span>

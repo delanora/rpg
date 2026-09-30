@@ -1648,6 +1648,7 @@ a {
 /* Camada 1 — a faixa com a sigla (topo de lápide), em fundo levemente
    destacado do corpo do card. */
 .ability-head {
+  position: relative;
   height: 2.1rem;
   margin: 0.3rem 0.3rem 0;
   display: grid;
@@ -1765,11 +1766,12 @@ a {
 }
 
 /* O "i" que explica de onde vêm o valor e o modificador: uma pequena pastilha
-   dourada no ombro direito do selo, inteira e sem colidir com o título. */
+   dourada ancorada na ponta direita do CABEÇALHO do card. */
 .ability-tip {
   position: absolute;
-  top: 1.15rem;
-  left: calc(50% + 2.35rem);
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
   z-index: 3;
   width: 1.05rem;
   height: 1.05rem;
@@ -1798,7 +1800,8 @@ a {
 
 /*
  * A janela do "i" é IRMÃ da pastilha (e não filha), então ela se posiciona pelo
- * SELO: abre com a largura do próprio card e nunca vaza para os lados.
+ * CABEÇALHO: abre logo abaixo dele, com a largura do próprio card, e nunca vaza
+ * para os lados.
  */
 .ability-tooltip {
   left: 0;
