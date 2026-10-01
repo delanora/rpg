@@ -1064,19 +1064,30 @@ select option {
  * abaixo, a faixa "NÍVEL" com o círculo — que é o Level Up do jogador.
  *
  * O retrato é absoluto em relação ao CARD — nenhum ancestral entre ele e a
- * seção é posicionado —, então o transbordo é real. À esquerda ele para na
- * margem do conteúdo (`--portrait-out-x`), para o card não sair do alinhamento
- * das outras seções nem criar rolagem horizontal.
+ * seção é posicionado —, então o transbordo é real. O CENTRO dele fica no canto
+ * superior esquerdo do card: meia foto para fora em cima e à esquerda. Como a
+ * ficha é centralizada num container de 1420px, o deslocamento à esquerda para
+ * quando não há mais tela (`--portrait-shift`), sem quebrar o alinhamento das
+ * seções nem criar rolagem horizontal.
  */
 .sheet-identity {
   --portrait-size: clamp(8.5rem, 16vw, 13rem);
-  --portrait-out-x: 1.25rem;
-  --portrait-out-y: 44px;
+  --portrait-half: calc(var(--portrait-size) / 2);
+  /*
+   * Espaço livre entre a borda esquerda do card e a borda da tela: o conteúdo
+   * vive num container de no máximo 1420px, centrado, com 1.25rem de padding.
+   * O retrato centraliza no canto do card, mas nunca passa da tela.
+   */
+  --portrait-room: calc(max((100vw - 1420px) / 2, 0px) + 0.5rem);
+  --portrait-shift: min(var(--portrait-half), var(--portrait-room));
 }
 
-/* Espaço acima para o retrato transbordar sem cobrir o painel de combate. */
+/*
+ * Espaço acima para o retrato transbordar (ele sobe meia altura acima do card)
+ * sem cobrir o painel de combate.
+ */
 .identity-section {
-  margin-top: 2.9rem;
+  margin-top: calc(var(--portrait-half) + 0.5rem);
 }
 
 /* O cabeçalho do card some: a faixa do nome já identifica a seção. */
@@ -1094,12 +1105,13 @@ select option {
 
 /*
  * Retrato: só a imagem, sem fundo, borda, canto arredondado, padding, sombra ou
- * filtro. Ancorado no canto superior esquerdo do card, transbordando as bordas.
+ * filtro. O CENTRO dele fica exatamente no canto superior esquerdo do card, com
+ * meia foto para fora em cima e à esquerda.
  */
 .identity-section .hero-avatar {
   position: absolute;
-  top: calc(-1 * var(--portrait-out-y));
-  left: calc(-1 * var(--portrait-out-x));
+  top: calc(-1 * var(--portrait-half));
+  left: calc(-1 * var(--portrait-shift));
   z-index: 6;
   display: block;
   width: var(--portrait-size);
@@ -1152,34 +1164,41 @@ select option {
 
 /* --- Bandeirola do nome e da raça (nasce DE TRÁS do retrato) -------------- */
 
-/*
- * A coluna da direita começa alinhada à metade de baixo do retrato: a
- * bandeirola fica centrada nessa faixa e os campos de papel vêm abaixo dela.
- */
+/* A coluna da direita entrega o alinhamento vertical à própria bandeirola. */
 .identity-main {
   display: grid;
   align-content: start;
   gap: 0.95rem;
   min-width: 0;
-  padding-top: calc(0.75 * var(--portrait-size) - 6rem);
 }
 
 /*
  * A bandeirola tem a PONTA ESQUERDA escondida sob a foto (z-index menor que o
- * retrato, que é 6) e o corpo esticado para a direita, com a ponta direita
- * recortada em V (swallowtail). O padding-left deixa o texto começar só depois
- * da borda direita do retrato.
+ * retrato, que é 6) e o corpo com a largura do próprio texto — ela cresce com
+ * o nome, não ocupa a largura toda do card. A ponta direita é recortada em V
+ * (swallowtail) e o padding-left deixa o texto começar depois da borda direita
+ * do retrato.
  *
- * A margem negativa soma: transbordo do retrato (1.25rem) + padding do corpo
- * da seção (1rem) + gap da grade (1.5rem) — a constante 3.75rem.
+ * Na vertical ela fica CENTRADA no retrato: o `margin-top` anula o padding do
+ * corpo da seção (1rem) e sobe meia altura da fita, de modo que o centro dela
+ * caia no centro da foto (que é o canto superior esquerdo do card).
+ *
+ * A margem à esquerda soma: o quanto o retrato sai do card (`--portrait-shift`)
+ * + o padding do corpo (1rem) + o gap da grade (1.5rem) + a ponta escondida.
  */
 .identity-ribbon {
   --ribbon-tuck: 2.5rem;
   --ribbon-tail: 1.3rem;
+  --ribbon-half-height: 2.2rem;
   position: relative;
   z-index: 1;
-  justify-self: stretch;
-  margin-left: calc(-1 * (var(--ribbon-tuck) + 3.75rem));
+  justify-self: start;
+  width: max-content;
+  max-width: 100%;
+  margin-top: calc(-1rem - var(--ribbon-half-height));
+  /* Corrige a diferença entre a meia altura real e a estimada (2.2rem). */
+  transform: translateY(calc(var(--ribbon-half-height) - 50%));
+  margin-left: calc(-1 * var(--portrait-shift) - var(--ribbon-tuck) - 2.5rem);
   /* O fundo dourado aparece como fio de 1px ao redor da fita vinho. */
   padding: 1px;
   background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
@@ -1339,25 +1358,38 @@ select option {
   align-content: start;
   justify-items: start;
   gap: 0.55rem;
-  padding-top: calc(var(--portrait-size) - var(--portrait-out-y) - 1.1rem);
+  /* Meia foto acima do card: a base dela fica na metade da altura do retrato. */
+  padding-top: calc(var(--portrait-half) - 1.1rem);
 }
 
 .identity-level {
+  position: relative;
   display: grid;
   justify-items: start;
   gap: 0.3rem;
 }
 
-/* Fita "NÍVEL" com a mesma ponta recortada em V da bandeirola do nome. */
+/*
+ * Fita "NÍVEL": sai DE TRÁS do círculo, encostada na lateral direita dele. O
+ * círculo (z-index 2) cobre a ponta esquerda da fita; o texto começa depois da
+ * borda direita do círculo.
+ */
 .level-ribbon {
-  padding: 0.22rem 1.1rem 0.26rem 0.9rem;
+  --level-tuck: 0.6rem;
+  position: absolute;
+  top: 50%;
+  left: calc(3.3rem - var(--level-tuck));
+  z-index: 1;
+  padding: 0.22rem 1.1rem 0.26rem calc(var(--level-tuck) + 0.9rem);
   background: linear-gradient(180deg, #7d232c, #55161d);
   color: var(--gold-bright);
   font-family: var(--font-display);
   font-size: var(--text-label);
   text-transform: uppercase;
+  white-space: nowrap;
   letter-spacing: 0.1em;
   clip-path: polygon(0 0, 100% 0, calc(100% - 0.7rem) 50%, 100% 100%, 0 100%);
+  transform: translateY(-50%);
   filter: drop-shadow(0 3px 5px rgba(28, 18, 8, 0.35));
 }
 
@@ -1371,6 +1403,8 @@ select option {
  */
 .level-circle {
   position: relative;
+  /* Acima da fita "NÍVEL", que sai de trás dele. */
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1492,14 +1526,11 @@ select option {
     position: static;
   }
 
-  .identity-main {
-    padding-top: 0;
-  }
-
   /* Sem transbordo, a bandeirola volta a começar na borda do conteúdo. */
   .identity-ribbon {
     --ribbon-tuck: 0rem;
 
+    margin-top: 0;
     margin-left: 0;
   }
 
