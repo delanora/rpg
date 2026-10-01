@@ -1680,27 +1680,36 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   (evita uma requisição por tecla).
 
 17.4 SEÇÕES DA FICHA (components/sections)
-  Personagem (Identity: identidade, classes, subclasse, avatar e, no FIM da seção,
+  Personagem (Identity: foto + identidade, classes, subclasse e, no FIM da seção,
   Vida e Defesa EMBUTIDA), AbilityCards (os SEIS atributos, cada um com a
-  salvaguarda e as perícias dele), Attacks, Features, Spells (list + slots),
-  Inventory (grade de mochila + 9 slots arrastáveis), Notes, BagList.
+  salvaguarda e as perícias dele), Attacks, Features, Spells (list + slots, com o
+  bloco de Conjuração), Inventory (grade de mochila + 9 slots arrastáveis),
+  Notes, BagList.
   A ficha é uma PILHA de seções de ponta a ponta: Personagem (que já traz Classes
   e Vida e Defesa), os seis atributos, o inventário e as abas. Dentro do
   inventário, o set de equipamento e a mochila ficam lado a lado (max-width de
   320px cada, centralizados na própria coluna) com peso, moedas e detalhe abaixo.
   IDENTIDADE (IdentitySection): o cabeçalho "Personagem" não traz mais o subtítulo
-  "Clique em qualquer campo para editar". Nome, Raça e Antecedente formam o bloco
-  de cima (`.identity-primary`, fonte maior — é o que identifica o personagem); os
-  derivados (Nível total, Alinhamento, XP, Dado de vida, Bônus de proficiência)
-  ficam numa faixa abaixo (`.sheet-identity .identity-grid`). Cada rótulo tem um
-  "(i)" (`.field-info` sobre o `.info-tip`) com a explicação do campo; Raça e
-  Antecedente usam a `description` do catálogo do servidor, obtida por
+  "Clique em qualquer campo para editar" e o avatar saiu das AÇÕES do cabeçalho. A
+  seção abre com a FOTO DO PERSONAGEM (`.identity-hero` > `.hero-avatar`): imagem
+  grande (`clamp(9rem, 20vw, 13rem)`), SEM moldura, fundo ou sombra — só um canto
+  arredondado. Sem imagem, um contorno tracejado convida ao clique, que abre o menu
+  de envio (e, no modo somente leitura, o lightbox). Ao lado da foto
+  (`.identity-hero-fields`) ficam o Nome (fonte 1.9rem) e, em
+  `.identity-hero-meta`, Raça, Antecedente e Alinhamento — o "quem é" do
+  personagem, com o maior peso da ficha. Os derivados (Nível total, XP, Dado de
+  vida, Bônus de proficiência) ficam numa faixa abaixo
+  (`.sheet-identity .identity-grid`). Cada rótulo tem um "(i)" (`.field-info`,
+  componente `FieldInfo`) com a explicação do campo; Raça e Antecedente usam a
+  `description` do catálogo do servidor, obtida por
   `fetchRaceCatalog()`/`fetchBackgroundCatalog()` (o mesmo fetch memoizado da
-  criação, em `creationApi.ts`). A Conjuração virou UM bloco (`.casting-block`): o
-  resumo de CD/ataque (`derived.spellcasting`) e, em seguida, os tipos de
-  conjuração e o aprendizado das magias de cada classe. As classes ficam numa
-  grade de duas colunas (nome/nível à esquerda, subclasse à direita), com largura
-  limitada a 46rem.
+  criação, em `creationApi.ts`). O bloco de Conjuração (`.casting-block`) agora vive
+  na seção MAGIAS (SpellsSection), no topo do corpo: os tipos de conjuração e o
+  aprendizado das magias de cada classe (versão curta visível, texto completo no
+  `title`; o resumo de CD/ataque segue no subtítulo da seção). As classes ficam numa
+  grade de duas colunas (nome/nível à esquerda, subclasse à direita) e ocupam a
+  LARGURA TOTAL do pergaminho (saiu o `max-width` de 46rem; o seletor de subclasse
+  fica limitado a 30rem para não esticar demais).
   VIDA E DEFESA EMBUTIDA: `VitalsSection` aceita `embedded` (usado pelo Identity);
   nesse modo o bloco perde a moldura de card (`.vitals-embedded`: sem borda, fundo,
   sombra e sem a hairline interna `::after` — era a "moldura dupla") e o cabeçalho
