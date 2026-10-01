@@ -1700,10 +1700,11 @@ abas.
   rótulo em caixa alta embaixo (com o "(i)" do `FieldInfo`). Com multiclasse, o
   campo Classe mostra "Multiclasse" e o detalhe ("Mago Nv 1, Guerreiro Nv 2 e
   Ladino Nv 2") vai para o hover do nível. O **Nível** fica na MESMA linha da
-  grade que os campos, com o **centro do círculo sobre a linha** que divide valor
-  e rótulo (e à frente do retrato, já que a linha cai na área da foto). O círculo
-  **é o botão de Level Up**: discreto por padrão e dourado quando o mestre
-  libera; a fita "NÍVEL" sai de trás dele, na lateral direita. A **Inspiração** (estrela vazia/preenchida; só o visual — a mecânica
+  grade que os campos: a **borda esquerda do círculo encosta na borda direita do
+  retrato** e o **centro dele cai sobre a linha** que divide valor e rótulo (com
+  um ajuste fino, `--level-line-nudge`). O círculo **é o botão de Level Up**:
+  discreto por padrão e dourado quando o mestre libera; a fita "NÍVEL" sai de
+  trás dele, na lateral direita. A **Inspiração** (estrela vazia/preenchida; só o visual — a mecânica
   virá do mestre). O bloco de **Conjuração** vive na seção Magias.
 - **Vida e Defesa embutida:** `VitalsSection` aceita `embedded`; nesse modo
   perde a moldura de card e o cabeçalho some (o rótulo "Vida" vive no próprio

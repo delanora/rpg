@@ -1726,12 +1726,14 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   Com multiclasse, CLASSE mostra "Multiclasse" e o detalhe ("Mago Nv 1,
   Guerreiro Nv 2 e Ladino Nv 2") vai para o hover do nível. O NÍVEL divide a
   MESMA linha da grade com os campos (áreas `level` e `fields`): com
-  `margin-top: calc(var(--field-line) - var(--level-circle-size) / 2)` o CENTRO
-  do círculo cai exatamente sobre a linha que divide valor e rótulo
-  (`--field-line`, 2.2rem, acompanha o `min-height` + o respiro do
-  `.line-field-value`). Como essa linha fica na área do retrato, o bloco do
-  nível tem `z-index: 7` (à frente da foto) e o círculo `.level-circle` traz a
-  fita `.level-ribbon` ABSOLUTA na LATERAL DIREITA dele —
+  `margin-top: calc(var(--field-line) - var(--level-circle-size) / 2 +
+  var(--level-line-nudge))` o CENTRO do círculo cai sobre a linha que divide
+  valor e rótulo (`--field-line`, 2.2rem, acompanha o `min-height` + o respiro do
+  `.line-field-value`; `--level-line-nudge` é o ajuste fino) e com
+  `margin-left: calc(var(--portrait-size) - var(--portrait-shift) - 1rem)` a
+  BORDA ESQUERDA do círculo encosta na BORDA DIREITA do retrato. O bloco tem
+  `z-index: 7` (a fita avança sobre a coluna dos campos) e o círculo
+  `.level-circle` traz a fita `.level-ribbon` ABSOLUTA na LATERAL DIREITA dele —
   `left: calc(var(--level-circle-size) - var(--level-tuck))`, centrada na altura
   do círculo por `translateY(-50%)` e com `z-index: 1` contra o 2 do círculo,
   isto é, saindo DE TRÁS dele; mesma ponta em V. A INSPIRAÇÃO

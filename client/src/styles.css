@@ -1087,6 +1087,8 @@ select option {
    * em que o centro do círculo de nível se apoia.
    */
   --field-line: 2.2rem;
+  /* Ajuste fino: sobe um pouco o nível em relação à linha dos campos. */
+  --level-line-nudge: -0.3rem;
 }
 
 /*
@@ -1365,10 +1367,10 @@ select option {
 /* --- Nível (com o Level Up do jogador) ------------------------------------ */
 
 /*
- * NÍVEL: o círculo fica na mesma linha da grade dos campos de papel e o centro
- * dele cai exatamente sobre a linha que divide valor e rótulo — o `margin-top`
- * desconta meia altura do círculo da altura da linha (`--field-line`). Reveja a
- * fita "NÍVEL": ela é absoluta, à direita do círculo.
+ * NÍVEL: o círculo fica na mesma linha da grade dos campos de papel, com a
+ * BORDA ESQUERDA encostada na borda direita do retrato e o CENTRO apoiado na
+ * linha que divide valor e rótulo (`--field-line`, com o ajuste fino do
+ * `--level-line-nudge`). A fita "NÍVEL" é absoluta, à direita do círculo.
  */
 .identity-level {
   grid-area: level;
@@ -1377,8 +1379,12 @@ select option {
   display: grid;
   justify-items: start;
   gap: 0.3rem;
-  margin-top: calc(var(--field-line) - var(--level-circle-size) / 2);
-  /* O nível fica à frente do retrato, já que a linha cai na área da foto. */
+  /* Deixa o círculo começar onde a foto termina (o padding do corpo é 1rem). */
+  margin-left: calc(var(--portrait-size) - var(--portrait-shift) - 1rem);
+  margin-top: calc(
+    var(--field-line) - var(--level-circle-size) / 2 + var(--level-line-nudge)
+  );
+  /* Acima do que estiver atrás: a fita avança sobre a área dos campos. */
   z-index: 7;
 }
 
@@ -1558,6 +1564,7 @@ select option {
   /* Empilhado, o círculo deixa de se apoiar na linha dos campos. */
   .identity-level {
     margin-top: 0;
+    margin-left: 0;
   }
 }
 
