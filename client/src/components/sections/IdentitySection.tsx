@@ -179,8 +179,7 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
        * inspiração.
        */}
       <div className="identity-hero">
-        <div className="identity-side">
-          <div className="hero-avatar" ref={avatarRef}>
+        <div className="hero-avatar" ref={avatarRef}>
             {readOnly ? (
               character.avatarUrl ? (
                 <button
@@ -250,43 +249,6 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
             )}
           </div>
 
-          {/* Nível total: a faixa e o círculo ficam levemente sobre o retrato. */}
-          <div className="identity-level">
-            <span className="level-ribbon">Nível</span>
-            {levelUp ? (
-              <button
-                type="button"
-                className={levelUp.available ? 'level-circle is-ready' : 'level-circle'}
-                title={levelTooltip}
-                aria-label={`Nível ${character.level}`}
-                aria-disabled={!levelUp.available}
-                onClick={() => {
-                  if (levelUp.available) levelUp.onOpen();
-                }}
-              >
-                {character.level}
-                {levelUp.available ? <span className="level-circle-pip" aria-hidden="true" /> : null}
-              </button>
-            ) : (
-              <span className="level-circle" title={levelTooltip}>
-                {character.level}
-              </span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            className={inspired ? 'inspiration-toggle is-on' : 'inspiration-toggle'}
-            aria-pressed={inspired}
-            title="Inspiração — a mecânica será implementada em breve (o mestre poderá conceder)"
-            onClick={() => setInspired((value) => !value)}
-          >
-            <Icon name="star" size={15} />
-            <span>Inspiração</span>
-          </button>
-        </div>
-
-        <div className="identity-main">
           {/*
            * Bandeirola que nasce DE TRÁS do retrato: a ponta esquerda fica
            * escondida sob a foto (o retrato tem z-index maior) e a direita
@@ -314,6 +276,33 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
                 onCommit={(value) => update({ race: value.trim() })}
               />
             </div>
+          </div>
+
+          {/*
+           * O nível vive na MESMA linha da grade dos campos de papel, com o
+           * centro do círculo na altura da linha que divide valor e rótulo.
+           */}
+          <div className="identity-level">
+            <span className="level-ribbon">Nível</span>
+            {levelUp ? (
+              <button
+                type="button"
+                className={levelUp.available ? 'level-circle is-ready' : 'level-circle'}
+                title={levelTooltip}
+                aria-label={`Nível ${character.level}`}
+                aria-disabled={!levelUp.available}
+                onClick={() => {
+                  if (levelUp.available) levelUp.onOpen();
+                }}
+              >
+                {character.level}
+                {levelUp.available ? <span className="level-circle-pip" aria-hidden="true" /> : null}
+              </button>
+            ) : (
+              <span className="level-circle" title={levelTooltip}>
+                {character.level}
+              </span>
+            )}
           </div>
 
           {/*
@@ -423,8 +412,19 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
               </span>
             </div>
           </div>
+
+          {/* Inspiração fecha o conjunto, abaixo do nível, à esquerda. */}
+          <button
+            type="button"
+            className={inspired ? 'inspiration-toggle is-on' : 'inspiration-toggle'}
+            aria-pressed={inspired}
+            title="Inspiração — a mecânica será implementada em breve (o mestre poderá conceder)"
+            onClick={() => setInspired((value) => !value)}
+          >
+            <Icon name="star" size={15} />
+            <span>Inspiração</span>
+          </button>
         </div>
-      </div>
 
       {/* Vida e Defesa fecha o Personagem, logo abaixo do cabeçalho. */}
       <VitalsSection character={character} update={update} embedded />

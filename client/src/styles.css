@@ -1080,6 +1080,13 @@ select option {
    */
   --portrait-room: calc(max((100vw - 1420px) / 2, 0px) + 0.5rem);
   --portrait-shift: min(var(--portrait-half), var(--portrait-room));
+  --level-circle-size: 3.3rem;
+  /*
+   * Altura da linha dos campos de papel contada do topo do valor até a borda
+   * inferior: `min-height` do valor (2rem) + respiro (0.2rem). É a referência
+   * em que o centro do círculo de nível se apoia.
+   */
+  --field-line: 2.2rem;
 }
 
 /*
@@ -1095,11 +1102,22 @@ select option {
   display: none;
 }
 
+/*
+ * Grade do cabeçalho: à esquerda a coluna do retrato (fora do fluxo, absoluto)
+ * e à direita a bandeirola e os campos de papel. O NÍVEL ocupa a MESMA linha da
+ * grade que os campos — é isso que mantém o centro do círculo em cima da linha
+ * que divide valor e rótulo, sem cálculo de pixels.
+ */
 .identity-hero {
   display: grid;
   grid-template-columns: var(--portrait-size) minmax(0, 1fr);
+  grid-template-areas:
+    'photo ribbon'
+    'level fields'
+    'inspiration fields';
   align-items: start;
-  gap: 1.5rem;
+  column-gap: 1.5rem;
+  row-gap: 0.95rem;
   margin-bottom: 1.1rem;
 }
 
@@ -1109,6 +1127,7 @@ select option {
  * meia foto para fora em cima e à esquerda.
  */
 .identity-section .hero-avatar {
+  grid-area: photo;
   position: absolute;
   top: calc(-1 * var(--portrait-half));
   left: calc(-1 * var(--portrait-shift));
@@ -1164,14 +1183,6 @@ select option {
 
 /* --- Bandeirola do nome e da raça (nasce DE TRÁS do retrato) -------------- */
 
-/* A coluna da direita entrega o alinhamento vertical à própria bandeirola. */
-.identity-main {
-  display: grid;
-  align-content: start;
-  gap: 0.95rem;
-  min-width: 0;
-}
-
 /*
  * A bandeirola tem a PONTA ESQUERDA escondida sob a foto (z-index menor que o
  * retrato, que é 6) e o corpo com a largura do próprio texto — ela cresce com
@@ -1190,6 +1201,7 @@ select option {
   --ribbon-tuck: 2.5rem;
   --ribbon-tail: 1.3rem;
   --ribbon-half-height: 2.2rem;
+  grid-area: ribbon;
   position: relative;
   z-index: 1;
   justify-self: start;
@@ -1267,8 +1279,11 @@ select option {
 /* --- Linha de campos de papel: valor / linha / rótulo ---------------------- */
 
 .identity-line-fields {
+  grid-area: fields;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* A área ocupa duas linhas da grade: o conteúdo fica no topo dela. */
+  align-content: start;
   gap: 0.5rem 1.1rem;
   min-width: 0;
 }
@@ -1280,6 +1295,7 @@ select option {
   min-width: 0;
 }
 
+/* A altura daqui (min-height + padding) forma o `--field-line` do cabeçalho. */
 .line-field-value {
   display: flex;
   align-items: center;
@@ -1349,24 +1365,21 @@ select option {
 /* --- Nível (com o Level Up do jogador) ------------------------------------ */
 
 /*
- * Coluna da esquerda: nível (com o Level Up) e inspiração, ambos alinhados à
- * esquerda. O padding reserva a altura do retrato, para a faixa "NÍVEL" cair
- * logo abaixo dele.
+ * NÍVEL: o círculo fica na mesma linha da grade dos campos de papel e o centro
+ * dele cai exatamente sobre a linha que divide valor e rótulo — o `margin-top`
+ * desconta meia altura do círculo da altura da linha (`--field-line`). Reveja a
+ * fita "NÍVEL": ela é absoluta, à direita do círculo.
  */
-.identity-side {
-  display: grid;
-  align-content: start;
-  justify-items: start;
-  gap: 0.55rem;
-  /* Meia foto acima do card: a base dela fica na metade da altura do retrato. */
-  padding-top: calc(var(--portrait-half) - 1.1rem);
-}
-
 .identity-level {
+  grid-area: level;
+  align-self: start;
   position: relative;
   display: grid;
   justify-items: start;
   gap: 0.3rem;
+  margin-top: calc(var(--field-line) - var(--level-circle-size) / 2);
+  /* O nível fica à frente do retrato, já que a linha cai na área da foto. */
+  z-index: 7;
 }
 
 /*
@@ -1378,7 +1391,7 @@ select option {
   --level-tuck: 0.6rem;
   position: absolute;
   top: 50%;
-  left: calc(3.3rem - var(--level-tuck));
+  left: calc(var(--level-circle-size) - var(--level-tuck));
   z-index: 1;
   padding: 0.22rem 1.1rem 0.26rem calc(var(--level-tuck) + 0.9rem);
   background: linear-gradient(180deg, #7d232c, #55161d);
@@ -1408,8 +1421,8 @@ select option {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3.3rem;
-  height: 3.3rem;
+  width: var(--level-circle-size);
+  height: var(--level-circle-size);
   padding: 0;
   border: 2px solid var(--line-strong);
   border-radius: 50%;
@@ -1468,6 +1481,8 @@ select option {
 /* --- Inspiração ----------------------------------------------------------- */
 
 .inspiration-toggle {
+  grid-area: inspiration;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: var(--gap-icon);
@@ -1509,8 +1524,8 @@ select option {
 }
 
 /*
- * Em telas estreitas o retrato para de transbordar: a coluna da esquerda vira
- * uma faixa com retrato, nível e inspiração lado a lado.
+ * Em telas estreitas o retrato para de transbordar e a grade vira uma pilha:
+ * retrato, bandeirola, nível, campos e inspiração.
  */
 @media (max-width: 820px) {
   .identity-section {
@@ -1519,7 +1534,13 @@ select option {
 
   .identity-hero {
     grid-template-columns: minmax(0, 1fr);
-    gap: 1rem;
+    grid-template-areas:
+      'photo'
+      'ribbon'
+      'level'
+      'fields'
+      'inspiration';
+    row-gap: 0.85rem;
   }
 
   .identity-section .hero-avatar {
@@ -1534,11 +1555,9 @@ select option {
     margin-left: 0;
   }
 
-  .identity-side {
-    grid-template-columns: auto auto 1fr;
-    align-items: center;
-    gap: 1rem;
-    padding-top: 0;
+  /* Empilhado, o círculo deixa de se apoiar na linha dos campos. */
+  .identity-level {
+    margin-top: 0;
   }
 }
 
