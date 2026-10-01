@@ -1056,27 +1056,63 @@ select option {
 }
 
 /*
- * IDENTIDADE
+ * IDENTIDADE — CABEÇALHO
  *
- * A foto do personagem abre a seção, grande e sem moldura nem fundo (o destaque
- * é a própria imagem). Ao lado fica o que o reconhece — nome, raça, antecedente
- * e alinhamento — com mais peso; os valores derivados vêm num bloco menor.
+ * O retrato "salta" para fora do card (canto superior esquerdo) e, à direita,
+ * uma faixa recortada traz o nome e a raça sobre os quatro campos de papel
+ * (classe, subclasse, antecedente e alinhamento). Abaixo do retrato, na coluna
+ * da esquerda, ficam o nível (que agora hospeda o Level Up) e a inspiração.
+ *
+ * O retrato é absoluto em relação ao CARD — nenhum ancestral entre ele e a
+ * seção é posicionado —, então `--portrait-out` vale como transbordo real de
+ * borda. A coluna da esquerda reserva a altura dele no fluxo, para que nada
+ * fique embaixo da foto.
  */
+.sheet-identity {
+  --portrait-size: clamp(8.5rem, 16vw, 13rem);
+  --portrait-out: 44px;
+}
+
+/*
+ * Espaço acima para o retrato transbordar sem cobrir o painel de combate e um
+ * leve recuo à esquerda: o transbordo de `--portrait-out` é maior que a margem
+ * do conteúdo, e sem isso a ficha ganharia rolagem horizontal.
+ */
+.identity-section {
+  margin-top: 2.9rem;
+  margin-left: calc(var(--portrait-out) - 1.25rem);
+}
+
+/* O cabeçalho do card some: a faixa do nome já identifica a seção. */
+.identity-section > .section-header {
+  display: none;
+}
+
 .identity-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: var(--portrait-size) minmax(0, 1fr);
   align-items: start;
-  gap: 1.6rem;
+  gap: 1.5rem;
   margin-bottom: 1.1rem;
 }
 
-.hero-avatar {
-  position: relative;
-  display: inline-flex;
+/* Retrato no canto superior esquerdo do card, transbordando as duas bordas. */
+.identity-section .hero-avatar {
+  position: absolute;
+  top: calc(-1 * var(--portrait-out));
+  left: calc(-1 * var(--portrait-out));
+  z-index: 6;
+  display: block;
+  width: var(--portrait-size);
+  height: var(--portrait-size);
+  /* Sombra suave: reforça a profundidade de estar "à frente" do card. */
+  filter: drop-shadow(0 10px 16px rgba(28, 18, 8, 0.45));
 }
 
 .hero-avatar-trigger {
   display: block;
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 0;
   background: none;
@@ -1094,13 +1130,15 @@ select option {
   outline-offset: 3px;
 }
 
-/* Sem moldura, sem fundo e sem sombra: só a foto, em tamanho de destaque. */
+/* Sem moldura de card: só a foto, grande, com um aro fino e sombra própria. */
 .hero-photo {
   display: block;
-  width: clamp(9rem, 20vw, 13rem);
-  height: clamp(9rem, 20vw, 13rem);
+  width: 100%;
+  height: 100%;
   object-fit: cover;
+  border: 2px solid var(--line-strong);
   border-radius: 0.7rem;
+  background: var(--surface-2);
 }
 
 /* Ainda sem imagem: um contorno tracejado discreto convida ao clique. */
@@ -1117,75 +1155,359 @@ select option {
   color: var(--gold-bright);
 }
 
-/*
- * Nome, raça, antecedente e alinhamento: os campos com mais peso da ficha,
- * todos na MESMA linha. O nome ocupa mais espaço; os demais dividem o resto.
- */
-.identity-hero-fields {
+/* --- Faixa do nome e da raça (ribbon com as pontas recortadas) ------------- */
+
+.identity-main {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
   align-content: start;
-  align-items: start;
-  gap: 0.6rem 1.1rem;
+  gap: 0.95rem;
+  min-width: 0;
+  padding-top: 0.35rem;
+}
+
+.identity-ribbon {
+  justify-self: start;
+  width: min(100%, 27rem);
+  padding: 0.45rem 2.6rem 0.55rem;
+  background: linear-gradient(180deg, #7d232c, #55161d 62%, #411015);
+  color: #f6e6c3;
+  text-align: center;
+  /* Pontas em V dos dois lados, como uma fita de pergaminho. */
+  clip-path: polygon(
+    1.15rem 0,
+    calc(100% - 1.15rem) 0,
+    100% 50%,
+    calc(100% - 1.15rem) 100%,
+    1.15rem 100%,
+    0 50%
+  );
+  filter: drop-shadow(0 4px 8px rgba(28, 18, 8, 0.4));
+}
+
+[data-theme='dark'] .identity-ribbon {
+  background: linear-gradient(180deg, #5c1a22, #3a1015 62%, #2b0c10);
+  color: var(--gold-bright);
+}
+
+/* O nome e a raça seguem editáveis (clique) dentro da própria faixa. */
+.identity-ribbon .inline-field,
+.identity-ribbon .inline-static {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  cursor: text;
+}
+
+.identity-ribbon .inline-display:hover {
+  background: rgba(246, 230, 195, 0.14);
+  border-color: transparent;
+  border-bottom-color: transparent;
+}
+
+.identity-ribbon .ribbon-name {
+  font-family: var(--font-display);
+  font-size: var(--text-name);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.identity-ribbon .ribbon-race {
+  margin-top: 0.1rem;
+  font-family: var(--font-body);
+  font-size: var(--text-aux);
+  font-style: italic;
+  letter-spacing: 0.04em;
+  text-align: center;
+  opacity: 0.9;
+}
+
+.identity-ribbon .placeholder {
+  color: rgba(246, 230, 195, 0.55);
+  font-style: italic;
+}
+
+/* --- Linha de campos de papel: valor / linha / rótulo ---------------------- */
+
+.identity-line-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem 1.1rem;
   min-width: 0;
 }
 
-/* Sem isto um valor longo empurraria a coluna em vez de encolher. */
-.identity-hero .field {
+.line-field {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
   min-width: 0;
+}
+
+.line-field-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 2rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.line-field-text,
+.line-field-value > .inline-field,
+.line-field-value > .inline-static {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-display);
+  font-size: var(--text-value);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--ink);
+}
+
+.line-field-value > .inline-display:hover {
+  background: rgba(184, 145, 42, 0.12);
+  border-color: transparent;
+  border-bottom-color: transparent;
+}
+
+.line-field-value select.inline-select {
+  appearance: none;
+  -webkit-appearance: none;
+  text-align-last: center;
+  cursor: pointer;
+}
+
+.line-field-value > .inline-field:focus,
+.line-field-value > .inline-field:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.line-field-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.line-field-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--gold-deep);
+}
+
+/* --- Nível (com o Level Up do jogador) ------------------------------------ */
+
+.identity-side {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 0.55rem;
+  /* Reserva a altura do retrato, descontada a sobreposição do nível. */
+  padding-top: calc(var(--portrait-size) - var(--portrait-out) - 2.4rem);
+}
+
+.identity-level {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+}
+
+.level-ribbon {
+  padding: 0.1rem 0.9rem 0.15rem;
+  background: linear-gradient(180deg, #7d232c, #55161d);
+  color: #f6e6c3;
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  clip-path: polygon(
+    0.6rem 0,
+    calc(100% - 0.6rem) 0,
+    100% 50%,
+    calc(100% - 0.6rem) 100%,
+    0.6rem 100%,
+    0 50%
+  );
+  filter: drop-shadow(0 3px 5px rgba(28, 18, 8, 0.35));
+}
+
+[data-theme='dark'] .level-ribbon {
+  background: linear-gradient(180deg, #5c1a22, #3a1015);
+  color: var(--gold-bright);
 }
 
 /*
- * Todas as informações compartilham o MESMO rótulo e o MESMO respiro, para
- * parecerem uma única estrutura. O rótulo reserva uma altura fixa (uma linha)
- * e o valor começa sempre no mesmo eixo, mesmo com o nome maior.
+ * O nível total é um campo discreto: só o Level Up liberado o destaca. Ao
+ * passar o mouse, o title lista as classes e os níveis de cada uma.
  */
-.identity-hero .field > span {
-  font-size: var(--text-label);
+.level-circle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.3rem;
+  height: 3.3rem;
+  padding: 0;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  cursor: default;
+}
+
+.level-circle.is-ready {
+  border-color: var(--gold);
   color: var(--gold-deep);
-  white-space: nowrap;
+  cursor: pointer;
+  animation: level-ready 1.8s ease-in-out infinite;
 }
 
-.identity-hero .field > .inline-field {
-  font-size: var(--text-value-lg);
+[data-theme='dark'] .level-circle.is-ready {
+  color: var(--gold-bright);
 }
 
-.identity-hero .identity-name > .inline-field {
-  font-size: var(--text-name);
+.level-circle.is-ready:hover {
+  border-color: var(--gold-bright);
 }
 
-/* Em telas médias as quatro informações passam a duas por linha. */
-@media (max-width: 1100px) {
-  .identity-hero-fields {
+.level-circle-pip {
+  position: absolute;
+  top: -0.15rem;
+  right: -0.15rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--glow);
+}
+
+@keyframes level-ready {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      0 0 0 3px var(--gold-hair),
+      0 0 14px -6px var(--glow);
+  }
+  50% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      0 0 0 4px var(--gold-hair),
+      0 0 24px -2px var(--glow);
+  }
+}
+
+/* --- Inspiração ----------------------------------------------------------- */
+
+.inspiration-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-icon);
+  padding: 0.2rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.inspiration-toggle:hover {
+  border-color: var(--line-strong);
+  color: var(--ink-soft);
+}
+
+/* Estrela vazia = sem inspiração; preenchida e dourada = com inspiração. */
+.inspiration-toggle.is-on {
+  border-color: var(--gold-hair);
+  color: var(--gold-deep);
+}
+
+.inspiration-toggle.is-on .icon {
+  color: var(--gold);
+  fill: currentColor;
+  filter: drop-shadow(0 0 6px var(--glow));
+}
+
+/* Em telas médias os quatro campos de papel passam a duas por linha. */
+@media (max-width: 980px) {
+  .identity-line-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* Em telas estreitas a foto vai para cima e as informações logo abaixo. */
-@media (max-width: 640px) {
+/*
+ * Em telas estreitas o retrato para de transbordar: a coluna da esquerda vira
+ * uma faixa com retrato, nível e inspiração lado a lado.
+ */
+@media (max-width: 820px) {
+  .identity-section {
+    margin-top: 0;
+    margin-left: 0;
+  }
+
   .identity-hero {
     grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .identity-section .hero-avatar {
+    position: static;
+    filter: none;
+  }
+
+  .identity-side {
+    grid-template-columns: auto auto 1fr;
+    align-items: center;
+    gap: 1rem;
+    padding-top: 0;
   }
 }
 
-/* Em telas muito estreitas cada informação fica na própria linha. */
-@media (max-width: 420px) {
-  .identity-hero-fields {
+/* Em telas muito estreitas cada campo de papel fica na própria linha. */
+@media (max-width: 460px) {
+  .identity-line-fields {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-
-/* Campos secundários: cinco numa faixa só em telas largas, sem coluna órfã. */
-.sheet-identity .identity-grid {
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 }
 
 /*
- * VIDA E DEFESA DENTRO DO PERSONAGEM (depois das Classes)
+ * VIDA E DEFESA DENTRO DO PERSONAGEM
  *
- * Fecha a seção sem virar um card dentro de outro: moldura, fundo, sombra e a
- * hairline interna (::after) saem, e o cabeçalho vira um subtítulo (como
- * "Classes"). Só o conteúdo do bloco continua igual.
+ * Fecha o cabeçalho sem virar um card dentro de outro: moldura, fundo, sombra e
+ * a hairline interna (::after) saem, e o cabeçalho da seção some por completo
+ * (o rótulo "Vida" vive dentro do próprio bloco).
  */
 .vitals-embedded.sheet-section {
   overflow: visible;
@@ -1200,57 +1522,41 @@ select option {
   content: none;
 }
 
+/* O título "Vida e Defesa" saiu: o bloco de vida já diz o que é. */
 .vitals-embedded > .section-header {
-  min-height: 0;
-  margin-top: 0.6rem;
-  padding: 0.5rem 0 0.3rem;
-  background: transparent;
-  border-top: 1px solid var(--gold-hair);
-  border-bottom: none;
-  box-shadow: none;
-}
-
-.vitals-embedded > .section-header::after {
-  content: none;
-}
-
-.vitals-embedded > .section-header h2 {
-  font-size: 0.95rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
-.vitals-embedded > .section-header h2 .icon {
-  width: 15px;
-  height: 15px;
+  display: none;
 }
 
 .vitals-embedded > .section-body {
   padding: 0;
 }
 
-/*
- * Grade de 12 colunas: a vida ocupa a linha 1 inteira (12/12) e os cards de
- * defesa ocupam a linha 2, distribuídos por auto-fit — sem buraco no fim.
- */
+/* Vida em cima, de ponta a ponta, e a linha dos seis números logo abaixo. */
 .vitals-grid {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.7rem;
-}
-
-.vitals-grid > .vitals-hp {
-  grid-column: 1 / -1;
 }
 
 .vitals-cards {
-  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  /* Todos os cards com a mesma altura, apesar do conteúdo variável. */
+  /* Os seis cards sempre na MESMA linha, com largura igual. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   gap: 0.7rem;
+}
+
+/* Telas médias: três por linha; estreitas: duas. */
+@media (max-width: 1100px) {
+  .vitals-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .vitals-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Informação do rótulo: "i" discreto que abre a explicação no tooltip. */
@@ -1351,13 +1657,6 @@ select option {
 
 .casting-detail span {
   min-width: 0;
-}
-
-/* Em telas estreitas a grade da identidade se reorganiza sozinha. */
-@media (max-width: 1180px) {
-  .sheet-identity .identity-grid {
-    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  }
 }
 
 /* ==========================================================================
@@ -2192,45 +2491,24 @@ select option {
   width: 4.2rem;
 }
 
-/* "0.45 / 82.5" é maior que um número só: cabe menor sem quebrar. */
-.vital-value-load {
-  font-size: 1.3rem;
+/* "1d8 / 1d10" é mais largo que um número só: cabe menor sem quebrar. */
+.vital-value-die {
+  font-size: 1.35rem;
 }
 
-/* Mini barra de Carga (ilustrativa; os números continuam mandando). */
-.vital-load {
-  display: block;
-  width: min(9rem, 72%);
-}
-
-.vital-load-track {
-  display: block;
-  height: 6px;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: linear-gradient(180deg, #2a1d12, #170f0a);
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
-  overflow: hidden;
-}
-
-.vital-load-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #e6c974, #b8912a);
-  transition: width 0.4s ease;
-}
-
+/*
+ * A vida é uma faixa baixa: ícone e rótulo à esquerda, o número grande logo
+ * depois e a barra ocupando toda a largura embaixo.
+ */
 .vitals-hp {
-  padding: 0.9rem 1rem;
+  padding: 0.5rem 0.9rem 0.6rem;
   border: 1px solid var(--wine);
   border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(122, 31, 31, 0.1), rgba(122, 31, 31, 0.02));
 }
 
-/* Linha 1, largura total: a barra de vida fica mais alta e legível. */
 .vitals-hp .hp-track {
-  height: 22px;
+  height: 20px;
 }
 
 .vitals-hp .hp-numbers {
@@ -2243,13 +2521,23 @@ select option {
  */
 .hp-editor {
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.55rem;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin-bottom: 0.3rem;
 }
 
 .hp-editor .hp-heart {
   flex: none;
+  align-self: center;
+}
+
+.hp-editor-label {
+  margin-right: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
 }
 
 .hp-editor-value {
@@ -2257,9 +2545,9 @@ select option {
   padding: 0 0.25rem;
   min-height: 0;
   font-family: var(--font-display);
-  font-size: 2.1rem;
+  font-size: 1.9rem;
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
   text-align: center;
   color: var(--ink);
@@ -2268,32 +2556,6 @@ select option {
 /* O máximo é leitura; fica um tom abaixo do atual para não competir. */
 .hp-editor-value-max {
   color: var(--ink-soft);
-}
-
-/* PV temporário mora ao lado dos números, empurrado para a direita. */
-.hp-temp-field {
-  display: grid;
-  gap: 0.2rem;
-  margin-left: auto;
-  justify-items: center;
-}
-
-.hp-temp-field > span {
-  font-family: var(--font-display);
-  font-size: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-soft);
-}
-
-.hp-temp-field > .inline-field {
-  width: 3.8rem;
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  color: var(--ink);
 }
 
 .hp-editor-value.is-critical {
@@ -4985,27 +5247,6 @@ input[type='checkbox']:disabled {
 .slot-ref.pact {
   border-color: var(--gold);
   color: var(--wine);
-}
-
-/* Botão de Level Up do jogador e o aviso do mestre. */
-.levelup-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.6rem;
-}
-
-.levelup-hint {
-  font-style: italic;
-  font-size: 0.9rem;
-  color: var(--ink-soft);
-}
-
-/* Ficha com a criação finalizada: lembrete de que a montagem está fechada. */
-.creation-locked-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
 }
 
 .btn-levelup {

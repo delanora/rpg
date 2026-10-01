@@ -1681,25 +1681,30 @@ Notes, BagList. A ficha é uma **pilha** de seções de ponta a ponta: Personage
 (que já traz Classes e Vida e Defesa), os seis atributos, o inventário e as
 abas.
 
-- **Identidade (IdentitySection):** abre com a **foto do personagem**
-  (`.identity-hero` > `.hero-avatar`): imagem grande
-  (`clamp(9rem, 20vw, 13rem)`), sem moldura/fundo/sombra. Sem imagem, um
-  contorno tracejado convida ao clique (que abre o menu de envio; no modo
-  somente leitura, o lightbox). Ao lado, **Nome** (1,9rem), **Raça**,
-  **Antecedente** e **Alinhamento** **na mesma linha**, em quatro colunas
-  (`minmax(0, 1.7fr)` para o nome + `repeat(3, minmax(0, 1fr))`); em telas
-  médias viram duas por linha e, estreitas, uma. Cada rótulo tem um "(i)"
-  (`.field-info`, componente `FieldInfo`) com a explicação; Raça e Antecedente
-  usam a `description` do catálogo. Os derivados (Nível total, XP, Dado de vida,
-  Bônus de proficiência) ficam numa faixa abaixo. As **classes** ficam numa
-  grade de duas colunas (nome/nível à esquerda; **subclasse à direita**,
-  `justify-self: end`, com rótulo e valor terminando na mesma borda), em largura
-  total. O bloco de **Conjuração** vive na seção Magias.
+- **Identidade (IdentitySection) — cabeçalho novo:** o card do Personagem perde
+  o próprio cabeçalho e o **retrato** (`.identity-section .hero-avatar`) passa a
+  ser **absoluto em relação ao card** (nenhum ancestral posicionado entre eles),
+  com `top/left` negativos (`--portrait-out: 44px`) e `z-index: 6` — ele
+  **transborda a borda superior e a esquerda**, com sombra própria. A coluna da
+  esquerda (`.identity-side`) reserva a altura dele. À direita
+  (`.identity-main`): a **faixa recortada** do nome/raça (`.identity-ribbon`,
+  `clip-path` em V, fundo vinho) com o **Nome** em caixa alta e a **Raça**
+  abaixo; e, sob ela, a **linha de campos de papel** (`.identity-line-fields`,
+  quatro colunas) com **Classe**, **Subclasse**, **Antecedente** e
+  **Alinhamento** — valor centralizado em cima, linha fina e rótulo em caixa
+  alta embaixo (com o "(i)" do `FieldInfo`). Com multiclasse, o campo Classe
+  mostra "Multiclasse" e o detalhe ("Mago Nv 1, Guerreiro Nv 2 e Ladino Nv 2")
+  vai para o hover do nível. Abaixo do retrato ficam o **Nível** (faixa +
+  círculo, que **é o botão de Level Up**: discreto por padrão e dourado quando o
+  mestre libera) e a **Inspiração** (estrela vazia/preenchida; só o visual — a
+  mecânica virá do mestre). O bloco de **Conjuração** vive na seção Magias.
 - **Vida e Defesa embutida:** `VitalsSection` aceita `embedded`; nesse modo
-  perde a moldura de card e o cabeçalho vira um subtítulo com hairline. Grade de
-  12 colunas: linha 1 = barra de vida em largura total (PV temporário editável
-  ao lado); linha 2 = cinco cards de defesa (CA, iniciativa, deslocamento,
-  percepção passiva, carga) com altura igual.
+  perde a moldura de card e o cabeçalho some (o rótulo "Vida" vive no próprio
+  bloco). A vida é uma faixa baixa (ícone + "Vida" + `27 / 27` grande + barra
+  verde em largura total) e abaixo vem **uma linha com seis cards iguais**: CA,
+  iniciativa, deslocamento, percepção passiva, **dado de vida** e **bônus de
+  proficiência** (a carga saiu daqui — vive no inventário; o PV temporário segue
+  na mecânica, sem campo próprio).
 - **Atributos em cards (AbilityCardsSection):** uma fileira de seis cards na
   ordem do PHB (FOR, DES, CON, INT, SAB, CAR). Cada card: faixa com a sigla e o
   "i" na ponta direita; selo hexagonal com o valor e o modificador; linha da

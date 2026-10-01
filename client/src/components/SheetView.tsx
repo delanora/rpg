@@ -38,6 +38,15 @@ interface SheetViewProps {
   onCoinsChange?: (character: Character) => void;
   /** Abre a janela de dados com 1d20 + bônus da perícia/salvaguarda. */
   onRollSkill?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void;
+  /**
+   * Level Up do jogador: vive no círculo de nível do cabeçalho. A visão do
+   * mestre não passa nada, e o círculo fica só de leitura.
+   */
+  levelUp?: {
+    available: boolean;
+    hint: string;
+    onOpen: () => void;
+  };
   /** Em `true`, nenhum campo é editável (visão do mestre). */
   readOnly?: boolean;
   /**
@@ -76,6 +85,7 @@ export function SheetView({
   coinTargets,
   onCoinsChange,
   onRollSkill,
+  levelUp,
   readOnly = false,
   creationLocked = false,
   masterView = false,
@@ -89,9 +99,9 @@ export function SheetView({
     <SheetAccessProvider value={{ readOnly, creationLocked, masterView }}>
       {/* `position: fixed` no botão e no painel: não participam da grade. */}
       <div className="sheet">
-        {/* Personagem (identidade, classes e vida e defesa), de ponta a ponta. */}
+        {/* Personagem (identidade, nível e vida e defesa), de ponta a ponta. */}
         <div className="sheet-identity">
-          <IdentitySection character={character} update={update} />
+          <IdentitySection character={character} update={update} levelUp={levelUp} />
         </div>
 
         {/* Os seis atributos, com salvaguardas e perícias, de ponta a ponta. */}

@@ -396,25 +396,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 `needsWizard` acima); aqui a ficha está montada e em jogo. */}
             {character ? (
               <>
-                <div className="levelup-bar">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={!levelUpAvailable}
-                    onClick={() => setLevelUpOpen(true)}
-                  >
-                    <Icon name="sparkle" size={16} /> Level Up
-                  </button>
-                  {levelUpHint ? <span className="levelup-hint">{levelUpHint}</span> : null}
-
-                  {/* A criação já foi finalizada: a montagem só muda pelo Level Up
-                      ou pelo mestre (o mestre pode reabrir a criação pelo painel). */}
-                  <span className="levelup-hint creation-locked-hint">
-                    <Icon name="quill" size={14} /> criação finalizada: a montagem só muda pelo
-                    Level Up (ou pelo mestre)
-                  </span>
-                </div>
-
+                {/* O Level Up vive no círculo de nível do cabeçalho da ficha
+                    (a montagem só muda por ele ou pelas mãos do mestre). */}
                 <SheetView
                   character={character}
                   update={update}
@@ -425,6 +408,11 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   onCoinsChange={adoptCoins}
                   onRollSkill={dice.openSkillRoll}
                   creationLocked={character.creationFinalized}
+                  levelUp={{
+                    available: levelUpAvailable,
+                    hint: levelUpHint,
+                    onOpen: () => setLevelUpOpen(true),
+                  }}
                 />
 
                 {levelUpOpen && levelUpAvailable ? (
