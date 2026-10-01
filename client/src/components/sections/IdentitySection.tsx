@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { fileToImagePayload, uploadAvatar } from '../../api';
 import { fetchBackgroundCatalog, fetchRaceCatalog } from '../../creationApi';
-import { ALIGNMENTS, hitDieLabel } from '../../dnd';
+import { ALIGNMENTS } from '../../dnd';
 import { findBackgroundOption, findRaceOption } from '../../races';
 import { useSheetAccess } from '../../readonly';
-import { clampInt } from '../../utils';
 import { FieldInfo } from '../FieldInfo';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
@@ -15,9 +14,9 @@ import type { SheetSectionProps } from './common';
 import { VitalsSection } from './VitalsSection';
 
 /**
- * Foto do personagem no topo da Identidade: imagem grande, sem moldura nem
- * fundo — o destaque é a própria foto. Sem imagem, um contorno tracejado
- * discreto convida ao clique para enviar uma.
+ * Foto do personagem: imagem grande, sem moldura nem fundo — o destaque é a
+ * própria foto. Sem imagem, um contorno tracejado discreto convida ao clique
+ * para enviar uma.
  */
 function HeroPhoto({ src, name }: { src: string; name: string }) {
   if (!src) {
@@ -30,7 +29,28 @@ function HeroPhoto({ src, name }: { src: string; name: string }) {
   return <img className="hero-photo" src={src} alt={name} />;
 }
 
-export function IdentitySection({ character, update }: SheetSectionProps) {
+/** Junta em "A, B e C" — a leitura natural do resumo de classes. */
+function joinList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`;
+}
+
+interface IdentitySectionProps extends SheetSectionProps {
+  /**
+   * Level Up transferido para o círculo de nível do cabeçalho. Sem estas props
+   * (a visão do mestre não as passa) o círculo é só leitura.
+   */
+  levelUp?: {
+    /** O mestre liberou um Level Up que este jogador ainda não usou. */
+    available: boolean;
+    /** Aviso do mestre, mostrado no hover do nível. */
+    hint: string;
+    onOpen: () => void;
+  };
+}
+
+export function IdentitySection({ character, update, levelUp }: IdentitySectionProps) {
   // O avatar é estado de jogo (segue editável com a criação finalizada); os
   // demais campos da identidade são construção.
   const { readOnly, lockedConstruction } = useSheetAccess();
@@ -40,6 +60,9 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
   // Os botões do avatar só aparecem depois de clicar na foto.
   const [avatarOpen, setAvatarOpen] = useState(false);
   const avatarRef = useRef<HTMLDivElement>(null);
+  // Inspiração: por enquanto só o estado visual — a mecânica (concedida pelo
+  // mestre) entra depois; o servidor ainda não guarda este campo.
+  const [inspired, setInspired] = useState(false);
 
   // Catálogos do livro: dão a descrição de raça e antecedente mostrada no "i".
   const [races, setRaces] = useState<RaceOption[]>([]);
@@ -95,6 +118,9 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
 
   const classes = character.classes;
   const classNames = character.classOptions.map((option) => option.name);
+  // Com uma classe só, o subclasse ainda é escolhida no próprio campo; com
+  // multiclasse as classes (e os níveis) vivem no hover do círculo de nível.
+  const singleClass = classes.length === 1 ? classes[0] : null;
 
   function classKeyFromName(name: string): string {
     return character.classOptions.find((option) => option.name === name)?.key ?? '';
@@ -115,104 +141,156 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
   const raceInfo = findRaceOption(races, character.race)?.description;
   const backgroundInfo = findBackgroundOption(backgrounds, character.background)?.description;
 
-  const hitDice = classes.map((entry) => hitDieLabel(entry.hitDie)).join(' / ');
-
   // Resumo de Aumento de Atributo/Talento de cada classe (vai para o tooltip).
   const asiSummary = classes
     .filter((entry) => entry.asiLevels.length > 0)
     .map((entry) => `${entry.className}: níveis ${entry.asiLevels.join(', ')}`)
     .join(' · ');
 
+  // "Mago Nv 1, Guerreiro Nv 2 e Ladino Nv 2" — o detalhe que aparece ao passar
+  // o mouse no nível total, sem precisar clicar.
+  const classSummary = classes.length
+    ? joinList(classes.map((entry) => `${entry.className} Nv ${entry.level}`))
+    : '';
+
+  const levelTooltip = [
+    classSummary || 'Nenhuma classe definida',
+    `XP ${character.experience}`,
+    levelUp?.hint || '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  const unableToPickSubclass = singleClass !== null && !singleClass.subclassEligible;
+  const subclassText = singleClass
+    ? singleClass.subclassEligible
+      ? singleClass.subclass || '—'
+      : `nível ${singleClass.subclassLevel}+`
+    : joinList(classes.map((entry) => entry.subclass).filter(Boolean)) || '—';
+
   return (
-    <Section title="Personagem" icon="scroll" className="stacked-tip">
+    <Section title="Personagem" icon="scroll" className="stacked-tip identity-section">
       {uploadError ? <p className="form-error">{uploadError}</p> : null}
 
       {/*
-       * A identidade abre com a foto do personagem à esquerda — grande, sem
-       * moldura nem fundo — e, ao lado, o que o reconhece: nome, raça,
-       * antecedente e alinhamento, com o maior peso da seção. Os números
-       * derivados ficam num segundo bloco, menor, para a hierarquia ficar clara.
+       * Cabeçalho novo: o retrato "salta" para fora do card (canto superior
+       * esquerdo) e, à direita dele, a faixa de nome e raça sobre os quatro
+       * campos de papel. Abaixo do retrato ficam o nível (com o Level Up) e a
+       * inspiração.
        */}
       <div className="identity-hero">
-        <div className="hero-avatar" ref={avatarRef}>
-          {readOnly ? (
-            character.avatarUrl ? (
+        <div className="identity-side">
+          <div className="hero-avatar" ref={avatarRef}>
+            {readOnly ? (
+              character.avatarUrl ? (
+                <button
+                  type="button"
+                  className="hero-avatar-trigger"
+                  title="Ampliar imagem"
+                  aria-label={`Ampliar imagem de ${character.name}`}
+                  onClick={() => openLightbox(character.avatarUrl, character.name)}
+                >
+                  <HeroPhoto src={character.avatarUrl} name={character.name} />
+                </button>
+              ) : (
+                <HeroPhoto src="" name={character.name} />
+              )
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="hero-avatar-trigger"
+                  aria-label="Opções do avatar"
+                  aria-expanded={avatarOpen}
+                  title={avatarOpen ? 'Fechar opções do avatar' : 'Clique para trocar o avatar'}
+                  onClick={() => setAvatarOpen((value) => !value)}
+                >
+                  <HeroPhoto src={character.avatarUrl} name={character.name} />
+                </button>
+
+                {/* Só aparecem depois de clicar na foto. */}
+                {avatarOpen ? (
+                  <div className="avatar-menu hero-avatar-menu">
+                    <label
+                      className={
+                        uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'
+                      }
+                    >
+                      {uploading
+                        ? 'enviando...'
+                        : character.avatarUrl
+                          ? 'trocar avatar'
+                          : '+ adicionar avatar'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        disabled={uploading}
+                        onChange={(event) => {
+                          void handleAvatar(event.target.files);
+                          event.target.value = '';
+                        }}
+                      />
+                    </label>
+                    {character.avatarUrl ? (
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => {
+                          update({ avatarUrl: '' });
+                          setAvatarOpen(false);
+                        }}
+                      >
+                        remover avatar
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          {/* Nível total: a faixa e o círculo ficam levemente sobre o retrato. */}
+          <div className="identity-level">
+            <span className="level-ribbon">Nível</span>
+            {levelUp ? (
               <button
                 type="button"
-                className="hero-avatar-trigger"
-                title="Ampliar imagem"
-                aria-label={`Ampliar imagem de ${character.name}`}
-                onClick={() => openLightbox(character.avatarUrl, character.name)}
+                className={levelUp.available ? 'level-circle is-ready' : 'level-circle'}
+                title={levelTooltip}
+                aria-label={`Nível ${character.level}`}
+                aria-disabled={!levelUp.available}
+                onClick={() => {
+                  if (levelUp.available) levelUp.onOpen();
+                }}
               >
-                <HeroPhoto src={character.avatarUrl} name={character.name} />
+                {character.level}
+                {levelUp.available ? <span className="level-circle-pip" aria-hidden="true" /> : null}
               </button>
             ) : (
-              <HeroPhoto src="" name={character.name} />
-            )
-          ) : (
-            <>
-              <button
-                type="button"
-                className="hero-avatar-trigger"
-                aria-label="Opções do avatar"
-                aria-expanded={avatarOpen}
-                title={avatarOpen ? 'Fechar opções do avatar' : 'Clique para trocar o avatar'}
-                onClick={() => setAvatarOpen((value) => !value)}
-              >
-                <HeroPhoto src={character.avatarUrl} name={character.name} />
-              </button>
+              <span className="level-circle" title={levelTooltip}>
+                {character.level}
+              </span>
+            )}
+          </div>
 
-              {/* Só aparecem depois de clicar na foto. */}
-              {avatarOpen ? (
-                <div className="avatar-menu hero-avatar-menu">
-                  <label
-                    className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}
-                  >
-                    {uploading
-                      ? 'enviando...'
-                      : character.avatarUrl
-                        ? 'trocar avatar'
-                        : '+ adicionar avatar'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      disabled={uploading}
-                      onChange={(event) => {
-                        void handleAvatar(event.target.files);
-                        event.target.value = '';
-                      }}
-                    />
-                  </label>
-                  {character.avatarUrl ? (
-                    <button
-                      type="button"
-                      className="btn btn-small"
-                      onClick={() => {
-                        update({ avatarUrl: '' });
-                        setAvatarOpen(false);
-                      }}
-                    >
-                      remover avatar
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          )}
+          <button
+            type="button"
+            className={inspired ? 'inspiration-toggle is-on' : 'inspiration-toggle'}
+            aria-pressed={inspired}
+            title="Inspiração — a mecânica será implementada em breve (o mestre poderá conceder)"
+            onClick={() => setInspired((value) => !value)}
+          >
+            <Icon name="star" size={15} />
+            <span>Inspiração</span>
+          </button>
         </div>
 
-        {/*
-         * Nome, raça, antecedente e alinhamento ficam na MESMA linha, em quatro
-         * colunas (o nome ocupa mais espaço), alinhados pela base do rótulo.
-         */}
-        <div className="identity-hero-fields">
-          <label className="field identity-name">
-            <span>
-              Nome
-              <FieldInfo>Como o personagem é chamado pela companhia e pelos NPCs.</FieldInfo>
-            </span>
+        <div className="identity-main">
+          {/* Faixa com pontas recortadas: nome em destaque e a raça abaixo. */}
+          <div className="identity-ribbon">
             <InlineField
+              className="ribbon-name"
               value={character.name}
               readOnly={lockedConstruction}
               ariaLabel="Nome do personagem"
@@ -221,176 +299,128 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
                 if (name) update({ name });
               }}
             />
-          </label>
-
-          <label className="field">
-            <span>
-              Raça
-              <FieldInfo>{raceInfo || 'A raça escolhida na criação dá bônus e traços raciais.'}</FieldInfo>
-            </span>
             <InlineField
+              className="ribbon-race"
               value={character.race}
               readOnly={lockedConstruction}
               ariaLabel="Raça"
-              placeholder="ex.: Anão"
+              placeholder="raça"
+              title={raceInfo || 'Clique para editar'}
               onCommit={(value) => update({ race: value.trim() })}
             />
-          </label>
+          </div>
 
-          <label className="field">
-            <span>
-              Antecedente
-              <FieldInfo>
-                {backgroundInfo ||
-                  'A história que veio antes da aventura: define perícias e contatos.'}
-              </FieldInfo>
-            </span>
-            <InlineField
-              value={character.background}
-              readOnly={lockedConstruction}
-              ariaLabel="Antecedente"
-              placeholder="ex.: Sábio"
-              onCommit={(value) => update({ background: value.trim() })}
-            />
-          </label>
-
-          <label className="field">
-            <span>
-              Alinhamento
-              <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
-            </span>
-            <InlineField
-              value={character.alignment}
-              mode="select"
-              options={ALIGNMENTS}
-              readOnly={lockedConstruction}
-              ariaLabel="Alinhamento"
-              onCommit={(value) => update({ alignment: value })}
-            />
-          </label>
-        </div>
-      </div>
-
-      <div className="grid grid-3 identity-grid">
-        <div className="field readonly">
-          <span>
-            Nível total
-            <FieldInfo>Soma dos níveis de todas as classes do personagem.</FieldInfo>
-          </span>
-          <strong>{character.level}</strong>
-        </div>
-
-        <label className="field">
-          <span>
-            Experiência (XP)
-            <FieldInfo>Pontos acumulados; o mestre decide quando rende um novo nível.</FieldInfo>
-          </span>
-          <InlineField
-            value={character.experience}
-            mode="number"
-            min={0}
-            readOnly={lockedConstruction}
-            ariaLabel="Pontos de experiência"
-            onCommit={(value) =>
-              update({ experience: clampInt(value, 0, 99_999_999, character.experience) })
-            }
-          />
-        </label>
-
-        <div className="field readonly">
-          <span>
-            Dado de vida
-            <FieldInfo>
-              Dado de cada classe, usado para recuperar PV no descanso curto.
-            </FieldInfo>
-          </span>
-          <strong>{hitDice || '—'}</strong>
-        </div>
-
-        <div className="field readonly">
-          <span>
-            Bônus de proficiência
-            <FieldInfo>
-              Somado a ataques, testes de resistência e perícias proficientes; cresce com o nível
-              total.
-            </FieldInfo>
-          </span>
-          <strong>+{character.derived.proficiencyBonus}</strong>
-        </div>
-      </div>
-
-      <h3 className="subsection-title">
-        Classes
-        <span className="info-tip" tabIndex={0}>
-          <Icon name="info" size={14} />
-          <span className="info-tip-text" role="tooltip">
-            <strong>Aumento de atributo ou talento</strong>
-            <span>{asiSummary || 'Nenhum aumento de atributo ou talento nos níveis atuais.'}</span>
-            <strong>Multiclasse</strong>
-            <span>
-              O nível de cada classe sobe separadamente pelo Level Up e o nível total é a soma.
-              As magias combinadas usam a regra de multiclasse do PHB.
-            </span>
-          </span>
-        </span>
-      </h3>
-
-      {classes.length === 0 ? (
-        <div className="class-list">
-          <p className="section-note">
-            A ficha ainda não tem classe. Escolha a primeira abaixo — o nível sobe pelo botão
-            Level Up, quando o mestre liberar.
-          </p>
-          <label className="field">
-            <span>Primeira classe</span>
-            <InlineField
-              value=""
-              mode="select"
-              options={classNames}
-              readOnly={lockedConstruction}
-              ariaLabel="Classe do personagem"
-              onCommit={(value) => {
-                const key = classKeyFromName(value);
-                if (key) update({ classes: [{ classKey: key }] });
-              }}
-            />
-          </label>
-        </div>
-      ) : (
-        <ul className="class-list">
-          {classes.map((entry) => (
-            <li className="class-row" key={entry.classKey}>
-              <span className="class-name">
-                {entry.className} <em className="class-level">Nv {entry.level}</em>
-              </span>
-
-              {entry.subclassEligible ? (
-                <label className="field class-subclass">
-                  <span>Subclasse</span>
+          {/*
+           * Estilo "linha de ficha de papel": valor centralizado em cima, uma
+           * linha fina embaixo e o rótulo em caixa alta sob a linha.
+           */}
+          <div className="identity-line-fields">
+            <div className="line-field">
+              <div className="line-field-value">
+                {classes.length === 0 ? (
                   <InlineField
-                    value={entry.subclass}
+                    value=""
                     mode="select"
-                    options={entry.subclassNames}
+                    options={classNames}
                     readOnly={lockedConstruction}
-                    ariaLabel={`Subclasse de ${entry.className}`}
-                    onCommit={(value) => setSubclass(entry, value)}
+                    ariaLabel="Classe do personagem"
+                    onCommit={(value) => {
+                      const key = classKeyFromName(value);
+                      if (key) update({ classes: [{ classKey: key }] });
+                    }}
                   />
-                </label>
-              ) : (
-                <div
-                  className="field readonly class-subclass"
-                  title={`Escolhida a partir do nível ${entry.subclassLevel} da classe`}
-                >
-                  <span>Subclasse</span>
-                  <strong>nível {entry.subclassLevel}+</strong>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+                ) : (
+                  <span className="line-field-text" title={classSummary}>
+                    {singleClass ? singleClass.className : 'Multiclasse'}
+                  </span>
+                )}
+              </div>
+              <span className="line-field-label">
+                Classe
+                <FieldInfo>
+                  <strong>Aumento de atributo ou talento</strong>
+                  <span>{asiSummary || 'Nenhum aumento de atributo ou talento nos níveis atuais.'}</span>
+                  <strong>Multiclasse</strong>
+                  <span>
+                    O nível de cada classe sobe separadamente pelo Level Up e o nível total é a
+                    soma. As magias combinadas usam a regra de multiclasse do PHB.
+                  </span>
+                </FieldInfo>
+              </span>
+            </div>
 
-      {/* Vida e Defesa fecha o Personagem, logo abaixo das classes. */}
+            <div className="line-field">
+              <div className="line-field-value">
+                {singleClass?.subclassEligible ? (
+                  <InlineField
+                    value={singleClass.subclass}
+                    mode="select"
+                    options={singleClass.subclassNames}
+                    readOnly={lockedConstruction}
+                    ariaLabel={`Subclasse de ${singleClass.className}`}
+                    onCommit={(value) => setSubclass(singleClass, value)}
+                  />
+                ) : (
+                  <span
+                    className="line-field-text"
+                    title={
+                      unableToPickSubclass
+                        ? `Escolhida a partir do nível ${singleClass.subclassLevel} da classe`
+                        : undefined
+                    }
+                  >
+                    {subclassText}
+                  </span>
+                )}
+              </div>
+              <span className="line-field-label">
+                Subclasse
+                <FieldInfo>
+                  A especialização da classe, escolhida a partir de um nível (varia por classe).
+                </FieldInfo>
+              </span>
+            </div>
+
+            <div className="line-field">
+              <div className="line-field-value">
+                <InlineField
+                  value={character.background}
+                  readOnly={lockedConstruction}
+                  ariaLabel="Antecedente"
+                  placeholder="—"
+                  onCommit={(value) => update({ background: value.trim() })}
+                />
+              </div>
+              <span className="line-field-label">
+                Antecedente
+                <FieldInfo>
+                  {backgroundInfo ||
+                    'A história que veio antes da aventura: define perícias e contatos.'}
+                </FieldInfo>
+              </span>
+            </div>
+
+            <div className="line-field">
+              <div className="line-field-value">
+                <InlineField
+                  value={character.alignment}
+                  mode="select"
+                  options={ALIGNMENTS}
+                  readOnly={lockedConstruction}
+                  ariaLabel="Alinhamento"
+                  onCommit={(value) => update({ alignment: value })}
+                />
+              </div>
+              <span className="line-field-label">
+                Alinhamento
+                <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Vida e Defesa fecha o Personagem, logo abaixo do cabeçalho. */}
       <VitalsSection character={character} update={update} embedded />
     </Section>
   );

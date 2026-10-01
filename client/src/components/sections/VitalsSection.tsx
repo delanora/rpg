@@ -1,4 +1,9 @@
-import { ABILITY_ABBREVIATIONS, formatChallengeRating, formatModifier } from '../../dnd';
+import {
+  ABILITY_ABBREVIATIONS,
+  formatChallengeRating,
+  formatModifier,
+  hitDieLabel,
+} from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type { ActiveResource, ActiveToggle, ArmorClassDetail, ClassState } from '../../types';
 import { clampInt } from '../../utils';
@@ -64,11 +69,8 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
   const hpClass =
     hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
 
-  // Carga: só ilustra o quanto do limite já foi usado (os números seguem).
-  const loadPercent =
-    derived.carryingCapacity > 0
-      ? Math.max(0, Math.min(100, (derived.totalWeight / derived.carryingCapacity) * 100))
-      : 0;
+  // Dado de vida de cada classe, usado no descanso curto.
+  const hitDice = character.classes.map((entry) => hitDieLabel(entry.hitDie)).join(' / ');
 
   function applyClassState(next: ClassState): void {
     update({ classState: next });
@@ -144,12 +146,13 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
     >
       <div className="vitals-grid">
         {/*
-         * Linha 1: a vida ocupa a largura toda — o número atual/máximo e a barra
-         * ficam grandes, com o PV temporário ao lado.
+         * Linha 1: a vida ocupa a largura toda em faixa baixa — ícone e rótulo à
+         * esquerda, número atual/máximo logo depois e a barra embaixo.
          */}
         <div className="vitals-hp">
           <div className="hp-editor">
             <Icon name="heart" size={18} className="hp-heart" />
+            <span className="hp-editor-label">Vida</span>
             <InlineField
               className={`hp-editor-value${hpClass}`}
               value={character.hpCurrent}
@@ -172,21 +175,6 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
               ariaLabel="Pontos de vida máximos"
               onCommit={(value) => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })}
             />
-
-            {/* PV temporário ao lado dos números, como uma pequena ficha extra. */}
-            <label className="hp-temp-field">
-              <span>PV temporário</span>
-              <InlineField
-                value={character.hpTemp}
-                mode="number"
-                min={0}
-                max={9999}
-                ariaLabel="Pontos de vida temporários"
-                onCommit={(value) =>
-                  update({ hpTemp: clampInt(value, 0, 9999, character.hpTemp) })
-                }
-              />
-            </label>
           </div>
 
           <HpBar
@@ -197,7 +185,10 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
           />
         </div>
 
-        {/* Linha 2: os cinco atributos de defesa, todos com a mesma altura. */}
+        {/*
+         * Linha 2: os seis números de jogo numa linha só (a carga vive no
+         * inventário e o PV temporário segue na mecânica, sem campo próprio).
+         */}
         <div className="vitals-cards">
           <div className="vital">
             <span className="vital-label" title="Classe de Armadura">
@@ -292,22 +283,25 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
           </div>
 
           <div className="vital">
-            <span className="vital-label" title="Carga">
-              <Icon name="weight" size={13} />
-              <span className="vital-label-text">Carga</span>
+            <span className="vital-label" title="Dado de vida">
+              <Icon name="die" size={13} />
+              <span className="vital-label-text">Dado de Vida</span>
             </span>
             <div className="vital-body">
-              <strong className="vital-value vital-value-load">
-                {derived.totalWeight} / {derived.carryingCapacity}
-              </strong>
-              {/* Mini barra opcional; os números continuam sendo a fonte. */}
-              <span className="vital-load">
-                <span className="vital-load-track">
-                  <span className="vital-load-fill" style={{ width: `${loadPercent}%` }} />
-                </span>
-              </span>
+              <strong className="vital-value vital-value-die">{hitDice || '—'}</strong>
             </div>
-            <span className="vital-hint">peso atual / capacidade (kg)</span>
+            <span className="vital-hint">recupera PV no descanso curto</span>
+          </div>
+
+          <div className="vital">
+            <span className="vital-label" title="Bônus de proficiência">
+              <Icon name="crown" size={13} />
+              <span className="vital-label-text">Bônus de Proficiência</span>
+            </span>
+            <div className="vital-body">
+              <strong className="vital-value">+{derived.proficiencyBonus}</strong>
+            </div>
+            <span className="vital-hint">testes, ataques e perícias</span>
           </div>
         </div>
       </div>

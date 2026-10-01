@@ -648,7 +648,7 @@ Quem quiser devolver a ficha à montagem é o **mestre**, pelo botão **Reabrir 
 
 Nenhum formulário abre em outra tela: clicar no valor transforma o campo em edição; **Enter** ou sair do campo salva, **Esc** cancela. A alteração aparece na hora (otimista) e é confirmada pela resposta do servidor, que é a fonte de verdade dos valores derivados.
 
-Seções da ficha: **Personagem** (a foto e a identidade com Nome/Raça/Antecedente/Alinhamento, as classes — ocupando a largura toda — e, no fim, **Vida e Defesa**), seis cards de Atributos (perícias e salvaguardas de cada atributo), Inventário, **Magias** (com o bloco de Conjuração), Ataques, Características (com a subseção **Talentos**) e Anotações/História.
+Seções da ficha: **Personagem** (o retrato que salta para fora do card, a faixa recortada com Nome/Raça, a linha de Classe/Subclasse/Antecedente/Alinhamento, o nível com o **Level Up** e a inspiração — e, no fim, **Vida** com os seis cards de CA, iniciativa, deslocamento, percepção passiva, dado de vida e bônus de proficiência), seis cards de Atributos (perícias e salvaguardas de cada atributo), Inventário, **Magias** (com o bloco de Conjuração), Ataques, Características (com a subseção **Talentos**) e Anotações/História.
 
 ---
 
@@ -846,7 +846,7 @@ O tema é um atributo `data-theme` no `<html>`; o CSS troca todas as cores por v
 
 - **Texturas em SVG embutidas** (grão de papel e rosetas de canto) — sem arquivos de imagem.
 - **Ícones autorais** em `client/src/components/Icon.tsx` (traço de tinta, `currentColor`).
-- **Ficha em abas** (`SheetView`): Personagem (com Vida e Defesa no fim), Atributos (com perícias e salvaguardas), Inventário, Magias, Ataques, Características e Anotações.
+- **Ficha em abas** (`SheetView`): Personagem (cabeçalho novo, com Vida e Defesa no fim), Atributos (com perícias e salvaguardas), Inventário, Magias, Ataques, Características e Anotações.
 - **Atributos em forma de escudo** e **barra de vida** com cor por gravidade (`components/HpBar.tsx`).
 - **Espaços de magia** como estrelas clicáveis (gastar/recuperar), além dos números.
 - **Microanimações:** brilho dourado no hover, tremulação de chama nos ícones e "virar de página" ao trocar de aba.
