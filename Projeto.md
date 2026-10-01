@@ -1682,22 +1682,24 @@ Notes, BagList. A ficha é uma **pilha** de seções de ponta a ponta: Personage
 abas.
 
 - **Identidade (IdentitySection) — cabeçalho novo:** o card do Personagem perde
-  o próprio cabeçalho e o **retrato** (`.identity-section .hero-avatar`) passa a
-  ser **absoluto em relação ao card** (nenhum ancestral posicionado entre eles),
-  com `top/left` negativos (`--portrait-out: 44px`) e `z-index: 6` — ele
-  **transborda a borda superior e a esquerda**, com sombra própria. A coluna da
-  esquerda (`.identity-side`) reserva a altura dele. À direita
-  (`.identity-main`): a **faixa recortada** do nome/raça (`.identity-ribbon`,
-  `clip-path` em V, fundo vinho) com o **Nome** em caixa alta e a **Raça**
-  abaixo; e, sob ela, a **linha de campos de papel** (`.identity-line-fields`,
-  quatro colunas) com **Classe**, **Subclasse**, **Antecedente** e
-  **Alinhamento** — valor centralizado em cima, linha fina e rótulo em caixa
-  alta embaixo (com o "(i)" do `FieldInfo`). Com multiclasse, o campo Classe
-  mostra "Multiclasse" e o detalhe ("Mago Nv 1, Guerreiro Nv 2 e Ladino Nv 2")
-  vai para o hover do nível. Abaixo do retrato ficam o **Nível** (faixa +
-  círculo, que **é o botão de Level Up**: discreto por padrão e dourado quando o
-  mestre libera) e a **Inspiração** (estrela vazia/preenchida; só o visual — a
-  mecânica virá do mestre). O bloco de **Conjuração** vive na seção Magias.
+  o próprio cabeçalho e o **retrato** (`.identity-section .hero-avatar`) é
+  **absoluto em relação ao card** e **foto crua** — sem fundo, borda, canto
+  arredondado, padding, sombra ou `filter` (o aro ornamentado já vem no arquivo) —,
+  transbordando 44px acima e 1,25rem à esquerda (para não desalinhar o card das
+  outras seções). À direita (`.identity-main`): a **bandeirola** do nome/raça
+  (`.identity-ribbon` > `.identity-ribbon-inner`) **nasce de trás do retrato**
+  (ponta esquerda escondida sob a foto, `z-index` menor), com fio dourado de 1px
+  e a **ponta direita recortada em V** (`clip-path`); **Nome** em caixa alta
+  dourado e **Raça** abaixo, à esquerda. Sob ela, a **linha de campos de papel**
+  (`.identity-line-fields`, quatro colunas) com **Classe**, **Subclasse**,
+  **Antecedente** e **Alinhamento** — valor centralizado em cima, linha fina e
+  rótulo em caixa alta embaixo (com o "(i)" do `FieldInfo`). Com multiclasse, o
+  campo Classe mostra "Multiclasse" e o detalhe ("Mago Nv 1, Guerreiro Nv 2 e
+  Ladino Nv 2") vai para o hover do nível. Abaixo do retrato, alinhados à
+  esquerda, ficam o **Nível** (faixa encostando na base da foto + círculo, que
+  **é o botão de Level Up**: discreto por padrão e dourado quando o mestre
+  libera) e a **Inspiração** (estrela vazia/preenchida; só o visual — a mecânica
+  virá do mestre). O bloco de **Conjuração** vive na seção Magias.
 - **Vida e Defesa embutida:** `VitalsSection` aceita `embedded`; nesse modo
   perde a moldura de card e o cabeçalho some (o rótulo "Vida" vive no próprio
   bloco). A vida é uma faixa baixa (ícone + "Vida" + `27 / 27` grande + barra

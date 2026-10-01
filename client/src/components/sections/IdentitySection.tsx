@@ -287,27 +287,33 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
         </div>
 
         <div className="identity-main">
-          {/* Faixa com pontas recortadas: nome em destaque e a raça abaixo. */}
+          {/*
+           * Bandeirola que nasce DE TRÁS do retrato: a ponta esquerda fica
+           * escondida sob a foto (o retrato tem z-index maior) e a direita
+           * termina em V. Nome em destaque e raça logo abaixo, à esquerda.
+           */}
           <div className="identity-ribbon">
-            <InlineField
-              className="ribbon-name"
-              value={character.name}
-              readOnly={lockedConstruction}
-              ariaLabel="Nome do personagem"
-              onCommit={(value) => {
-                const name = value.trim();
-                if (name) update({ name });
-              }}
-            />
-            <InlineField
-              className="ribbon-race"
-              value={character.race}
-              readOnly={lockedConstruction}
-              ariaLabel="Raça"
-              placeholder="raça"
-              title={raceInfo || 'Clique para editar'}
-              onCommit={(value) => update({ race: value.trim() })}
-            />
+            <div className="identity-ribbon-inner">
+              <InlineField
+                className="ribbon-name"
+                value={character.name}
+                readOnly={lockedConstruction}
+                ariaLabel="Nome do personagem"
+                onCommit={(value) => {
+                  const name = value.trim();
+                  if (name) update({ name });
+                }}
+              />
+              <InlineField
+                className="ribbon-race"
+                value={character.race}
+                readOnly={lockedConstruction}
+                ariaLabel="Raça"
+                placeholder="raça"
+                title={raceInfo || 'Clique para editar'}
+                onCommit={(value) => update({ race: value.trim() })}
+              />
+            </div>
           </div>
 
           {/*

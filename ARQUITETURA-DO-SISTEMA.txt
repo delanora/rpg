@@ -1695,33 +1695,41 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   320px cada, centralizados na própria coluna) com peso, moedas e detalhe abaixo.
   IDENTIDADE (IdentitySection) — CABEÇALHO NOVO: o card do Personagem perde o
   próprio cabeçalho (`display: none`) e o avatar saiu das AÇÕES. O RETRATO
-  (`.identity-section .hero-avatar`) continua do mesmo tamanho
-  (`--portrait-size: clamp(8.5rem, 16vw, 13rem)`), mas agora é ABSOLUTO em
-  relação ao card (nenhum ancestral entre ele e a seção é posicionado), com
-  `top/left` negativos (`--portrait-out: 44px`) e `z-index: 6`: ele TRANSBORDA a
-  borda superior e a esquerda, "saltando" para fora, com sombra própria
-  (`filter: drop-shadow`). A coluna da esquerda (`.identity-side`) reserva a
-  altura dele com `padding-top: calc(var(--portrait-size) - var(--portrait-out) -
-  2.4rem)`. Sem imagem, um contorno tracejado convida ao clique, que abre o menu
-  de envio (e, no modo somente leitura, o lightbox). À DIREITA do retrato
-  (`.identity-main`): a FAIXA RECORTADA do nome e da raça (`.identity-ribbon`,
-  `clip-path` em V nos dois lados, fundo vinho) com o NOME em caixa alta
-  (`--text-name`, editável inline) e a RAÇA logo abaixo; e, sob ela, a LINHA DE
-  CAMPOS DE PAPEL (`.identity-line-fields`, quatro colunas) com CLASSE,
-  SUBCLASSE, ANTECEDENTE e ALINHAMENTO — valor centralizado em cima, linha fina
-  (`border-bottom`) e rótulo em caixa alta embaixo (`.line-field-label`, com
-  "(i)" do `FieldInfo`). Com multiclasse, CLASSE mostra "Multiclasse" e o
-  detalhe ("Mago Nv 1, Guerreiro Nv 2 e Ladino Nv 2") vai para o hover do
-  nível. Abaixo do retrato ficam o NÍVEL (faixa `.level-ribbon` + círculo
-  `.level-circle`) e a INSPIRAÇÃO (`.inspiration-toggle`, estrela vazia/
-  preenchida — só o visual; a mecânica virá do mestre). O círculo de nível É o
-  botão de Level Up: discreto por padrão, ganha destaque (`.is-ready`, dourado
-  pulsante) quando o mestre libera, e o `title` lista as classes e os níveis de
-  cada uma (mais o XP e o aviso do mestre). Não existe mais o `levelup-bar`
-  acima da ficha. Em telas ≤820px o retrato deixa de transbordar e a coluna da
-  esquerda vira uma faixa (retrato, nível e inspiração lado a lado). Cada rótulo
-  tem a explicação do campo; Raça e Antecedente usam a `description` do catálogo
-  do servidor, obtida por
+  (`.identity-section .hero-avatar`) tem `--portrait-size: clamp(8.5rem, 16vw,
+  13rem)` e é ABSOLUTO em relação ao card (nenhum ancestral entre ele e a seção
+  é posicionado), com `z-index: 6`. É uma FOTO CRUA: sem fundo, borda, canto
+  arredondado, padding, sombra ou `filter` — o aro ornamentado já vem no
+  arquivo da imagem. O transbordo é `--portrait-out-y: 44px` (acima) e
+  `--portrait-out-x: 1.25rem` (à esquerda: para no alinhamento das outras
+  seções, sem criar rolagem horizontal). Sem imagem, um contorno tracejado
+  convida ao clique, que abre o menu de envio (e, no modo somente leitura, o
+  lightbox). À DIREITA do retrato (`.identity-main`, com `padding-top:
+  calc(0.75 * var(--portrait-size) - 6rem)` para alinhar a bandeirola à metade
+  de baixo da foto): a BANDEIROLA do nome e da raça (`.identity-ribbon` >
+  `.identity-ribbon-inner`) NASCE DE TRÁS DO RETRATO — ponta esquerda escondida
+  sob a foto (`z-index: 1` contra o 6 do retrato, `margin-left` proporcional a
+  `--ribbon-tuck` + 3.75rem e `padding-left` para o texto começar depois da
+  borda direita da foto) —, com fio dourado de 1px (fundo dourado no pai, vinho
+  na `-inner`) e a PONTA DIREITA RECORTADA EM V (`clip-path` swallowtail,
+  `--ribbon-tail`). Nome em caixa alta e dourado (editável inline) e raça logo
+  abaixo, ambos ALINHADOS À ESQUERDA. Sob ela, a LINHA DE CAMPOS DE PAPEL
+  (`.identity-line-fields`, quatro colunas) com CLASSE, SUBCLASSE, ANTECEDENTE e
+  ALINHAMENTO — valor centralizado em cima, linha fina (`border-bottom`) e
+  rótulo em caixa alta embaixo (`.line-field-label`, com "(i)" do `FieldInfo`).
+  Com multiclasse, CLASSE mostra "Multiclasse" e o detalhe ("Mago Nv 1,
+  Guerreiro Nv 2 e Ladino Nv 2") vai para o hover do nível. Abaixo do retrato,
+  alinhados à esquerda, ficam o NÍVEL (faixa `.level-ribbon` — mesma ponta em V —
+  encostando na base da foto, com `padding-top: calc(var(--portrait-size) -
+  var(--portrait-out-y) - 1.1rem)`, + círculo `.level-circle`) e a INSPIRAÇÃO
+  (`.inspiration-toggle`, estrela vazia/preenchida — só o visual; a mecânica
+  virá do mestre). O círculo de nível É o botão de Level Up: discreto por
+  padrão, ganha destaque (`.is-ready`, dourado pulsante) quando o mestre libera,
+  e o `title` lista as classes e os níveis de cada uma (mais o XP e o aviso do
+  mestre). Não existe mais o `levelup-bar` acima da ficha. Em telas ≤820px o
+  retrato deixa de transbordar (a bandeirola volta a começar na borda do
+  conteúdo) e a coluna da esquerda vira uma faixa (retrato, nível e inspiração
+  lado a lado). Cada rótulo tem a explicação do campo; Raça e Antecedente usam a
+  `description` do catálogo do servidor, obtida por
   `fetchRaceCatalog()`/`fetchBackgroundCatalog()` (o mesmo fetch memoizado da
   criação, em `creationApi.ts`). O bloco de Conjuração (`.casting-block`) agora vive
   na seção MAGIAS (SpellsSection), no topo do corpo: os tipos de conjuração e o
