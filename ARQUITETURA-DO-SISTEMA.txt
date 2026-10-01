@@ -1695,9 +1695,11 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   grande (`clamp(9rem, 20vw, 13rem)`), SEM moldura, fundo ou sombra — só um canto
   arredondado. Sem imagem, um contorno tracejado convida ao clique, que abre o menu
   de envio (e, no modo somente leitura, o lightbox). Ao lado da foto
-  (`.identity-hero-fields`) ficam o Nome (fonte 1.9rem) e, em
-  `.identity-hero-meta`, Raça, Antecedente e Alinhamento — o "quem é" do
-  personagem, com o maior peso da ficha. Os derivados (Nível total, XP, Dado de
+  (`.identity-hero-fields`) ficam Nome (fonte 1.9rem), Raça, Antecedente e
+  Alinhamento NA MESMA LINHA, em quatro colunas (`minmax(0, 1.7fr)` para o nome
+  + `repeat(3, minmax(0, 1fr))`) — o "quem é" do personagem, com o maior peso
+  da ficha. Em telas médias viram duas por linha e, estreitas, uma só. Os
+  derivados (Nível total, XP, Dado de
   vida, Bônus de proficiência) ficam numa faixa abaixo
   (`.sheet-identity .identity-grid`). Cada rótulo tem um "(i)" (`.field-info`,
   componente `FieldInfo`) com a explicação do campo; Raça e Antecedente usam a
@@ -1708,8 +1710,10 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   aprendizado das magias de cada classe (versão curta visível, texto completo no
   `title`; o resumo de CD/ataque segue no subtítulo da seção). As classes ficam numa
   grade de duas colunas (nome/nível à esquerda, subclasse à direita) e ocupam a
-  LARGURA TOTAL do pergaminho (saiu o `max-width` de 46rem; o seletor de subclasse
-  fica limitado a 30rem para não esticar demais).
+  LARGURA TOTAL do pergaminho (saiu o `max-width` de 46rem). A subclasse fica
+  ALINHADA À DIREITA (coluna `auto` que encolhe ao próprio conteúdo;
+  `justify-self: end`, limitada a 30rem) e o rótulo "Subclasse" e o valor
+  terminam na MESMA borda direita.
   VIDA E DEFESA EMBUTIDA: `VitalsSection` aceita `embedded` (usado pelo Identity);
   nesse modo o bloco perde a moldura de card (`.vitals-embedded`: sem borda, fundo,
   sombra e sem a hairline interna `::after` — era a "moldura dupla") e o cabeçalho

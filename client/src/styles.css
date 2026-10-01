@@ -1061,18 +1061,22 @@ a {
   color: var(--gold-bright);
 }
 
+/*
+ * Nome, raça, antecedente e alinhamento: os campos com mais peso da ficha,
+ * todos na MESMA linha. O nome ocupa mais espaço; os demais dividem o resto.
+ */
 .identity-hero-fields {
   display: grid;
+  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
   align-content: start;
-  gap: 0.85rem;
+  align-items: start;
+  gap: 0.6rem 1.1rem;
   min-width: 0;
 }
 
-/* Nome, raça, antecedente e alinhamento: os campos com mais peso da ficha. */
-.identity-hero-meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 0.9rem;
+/* Sem isto um valor longo empurraria a coluna em vez de encolher. */
+.identity-hero .field {
+  min-width: 0;
 }
 
 .identity-hero .field > span {
@@ -1088,9 +1092,23 @@ a {
   font-size: 1.9rem;
 }
 
+/* Em telas médias as quatro informações passam a duas por linha. */
+@media (max-width: 1100px) {
+  .identity-hero-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Em telas estreitas a foto vai para cima e as informações logo abaixo. */
 @media (max-width: 640px) {
   .identity-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Em telas muito estreitas cada informação fica na própria linha. */
+@media (max-width: 420px) {
+  .identity-hero-fields {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -4839,10 +4857,13 @@ input[type='checkbox']:disabled {
   gap: 0.5rem;
 }
 
-/* Grade de duas colunas: o nome da classe e a subclasse alinham entre linhas. */
+/*
+ * Grade de duas colunas: o nome da classe à esquerda e a subclasse encostada
+ * na direita (a coluna da subclasse encolhe ao tamanho do próprio conteúdo).
+ */
 .class-row {
   display: grid;
-  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(9rem, 1fr) auto;
   align-items: center;
   gap: 0.5rem 1rem;
   padding: 0.55rem 0.7rem;
@@ -4867,8 +4888,19 @@ input[type='checkbox']:disabled {
 
 .class-subclass {
   min-width: 0;
+  /* Rótulo e valor terminam na MESMA borda direita da linha. */
+  justify-self: end;
+  justify-items: end;
+  text-align: right;
   /* A linha ocupa a largura toda, mas o seletor não estica além do razoável. */
   max-width: 30rem;
+}
+
+/* O seletor acompanha o rótulo em vez de ocupar toda a largura do campo. */
+.class-subclass > .inline-field {
+  width: auto;
+  max-width: 100%;
+  text-align: right;
 }
 
 /* Espaços combinados de multiclasse (referência). */
