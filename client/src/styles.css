@@ -610,6 +610,41 @@ a {
   box-shadow: 0 0 12px -3px var(--glow), inset 0 1px 3px rgba(43, 33, 21, 0.12);
 }
 
+/* Base dos campos selecionáveis nativos.
+   Um <select> que não esteja dentro de `.field`, `.hp-controls` ou seja
+   `.inline-select`/`.coin-input` cai no visual branco do sistema e, no tema
+   escuro, fica com letra clara sobre fundo branco. Esta regra de elemento
+   (especificidade baixa) alinha esses casos ao pergaminho/couro e escurece
+   também a lista de opções, que NÃO herda o background do controle. */
+select {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fffaf0, var(--surface-2));
+  color: var(--ink);
+}
+
+[data-theme='dark'] select {
+  background: linear-gradient(180deg, #2b2018, #1d1510);
+  /* Instrui o navegador a pintar o popup nativo em tom escuro. */
+  color-scheme: dark;
+}
+
+select option {
+  background-color: var(--surface);
+  color: var(--ink);
+}
+
+[data-theme='dark'] select option {
+  background-color: #1d1510;
+  color: var(--ink);
+}
+
+[data-theme='dark'] select option:disabled {
+  color: var(--ink-faint);
+}
+
 .field.readonly {
   align-content: start;
 }
