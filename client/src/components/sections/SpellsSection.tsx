@@ -1,7 +1,15 @@
-import { SPELL_LEVEL_LABELS, SPELL_SCHOOLS, formatModifier } from '../../dnd';
+import {
+  ABILITY_ABBREVIATIONS,
+  SPELL_LEVEL_LABELS,
+  SPELL_LEARNING_LABELS,
+  SPELL_SCHOOLS,
+  SPELLCASTING_TYPE_LABELS,
+  formatModifier,
+} from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type { Spell, SpellSlot } from '../../types';
 import { clampInt, newId } from '../../utils';
+import { FieldInfo } from '../FieldInfo';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
@@ -9,6 +17,20 @@ import type { SheetSectionProps } from './common';
 
 const SLOT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 const EMPTY_SLOT: SpellSlot = { max: 0, used: 0 };
+
+/** Abreviações dos tipos de conjuração mostradas no bloco de Conjuração. */
+const SPELLCASTING_SHORT: Record<string, string> = {
+  full: 'completo',
+  half: 'meio',
+  third: '1/3',
+  pact: 'pacto',
+};
+
+/** Abreviações de como as magias são aprendidas. */
+const SPELL_LEARNING_SHORT: Record<string, string> = {
+  known: 'conhecidas',
+  prepared: 'preparadas',
+};
 
 /** Custo em pontos de feitiçaria para criar um espaço de magia (Fonte de Magia). */
 const SORCERY_SLOT_COSTS: Record<number, number> = { 1: 2, 2: 3, 3: 5, 4: 6, 5: 7 };
@@ -68,6 +90,41 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   // há duas ou mais classes conjuradoras) e Magia de Pacto à parte.
   const combinedSlots = character.derived.spellSlots ?? [];
   const pactSlots = character.derived.pactSlots ?? null;
+
+  // Conjuração por classe: como cada uma conjura e como aprende as magias. O
+  // resumo de CD/ataque fica no subtítulo da seção; aqui vai o detalhe por
+  // classe (versão curta visível, texto completo no title).
+  const castingShort = character.classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.type !== 'none')
+    .map((entry) => {
+      const ability = entry.spellcasting?.ability;
+      return (
+        `${entry.className} (${SPELLCASTING_SHORT[entry.spellcasting!.type]})` +
+        (ability ? ` · ${ABILITY_ABBREVIATIONS[ability]}` : '')
+      );
+    })
+    .join(' · ');
+  const learningShort = character.classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.learning !== 'none')
+    .map(
+      (entry) =>
+        `${entry.className} (${SPELL_LEARNING_SHORT[entry.spellcasting!.learning] ?? entry.spellcasting!.learning})`,
+    )
+    .join(' · ');
+  const castingFull = character.classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.type !== 'none')
+    .map((entry) => {
+      const ability = entry.spellcasting?.ability;
+      return (
+        `${entry.className}: ${SPELLCASTING_TYPE_LABELS[entry.spellcasting!.type]}` +
+        (ability ? ` · ${ABILITY_ABBREVIATIONS[ability]}` : '')
+      );
+    })
+    .join(' · ');
+  const learningFull = character.classes
+    .filter((entry) => entry.spellcasting && entry.spellcasting.learning !== 'none')
+    .map((entry) => `${entry.className}: ${SPELL_LEARNING_LABELS[entry.spellcasting!.learning]}`)
+    .join(' · ');
 
   // Magias PREPARADAS são por classe: cada conjurador preparado tem o seu
   // limite, com o próprio atributo (Paladino conta metade do nível).
@@ -166,6 +223,30 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
         )
       }
     >
+      {/*
+       * Conjuração (vinda da Identidade): tipos por classe, como as magias são
+       * aprendidas e o resumo de CD/ataque (que já aparece no subtítulo).
+       */}
+      {castingShort || learningShort ? (
+        <div className="casting-block">
+          <span className="casting-title">
+            Conjuração
+            <FieldInfo>
+              Como cada classe conjura magias, a CD para resistir a elas e o bônus de ataque mágico.
+            </FieldInfo>
+          </span>
+
+          <p className="casting-detail">
+            <em>Conjuração</em>
+            <span title={castingFull || undefined}>{castingShort || '—'}</span>
+          </p>
+          <p className="casting-detail">
+            <em>Magias</em>
+            <span title={learningFull || undefined}>{learningShort || '—'}</span>
+          </p>
+        </div>
+      ) : null}
+
       {combinedSlots.length > 0 || pactSlots ? (
         <>
           <h3 className="subsection-title">Espaços pela regra de multiclasse</h3>

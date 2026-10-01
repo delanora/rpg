@@ -1002,27 +1002,97 @@ a {
 /*
  * IDENTIDADE
  *
- * Nome, Raça e Antecedente formam o bloco de cima, com mais peso (é o que
- * reconhece o personagem); os valores derivados ficam num segundo bloco menor.
+ * A foto do personagem abre a seção, grande e sem moldura nem fundo (o destaque
+ * é a própria imagem). Ao lado fica o que o reconhece — nome, raça, antecedente
+ * e alinhamento — com mais peso; os valores derivados vêm num bloco menor.
  */
-.identity-primary {
+.identity-hero {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0.9rem;
-  margin-bottom: 1rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 1.6rem;
+  margin-bottom: 1.1rem;
 }
 
-.identity-primary .field > span {
-  font-size: 0.72rem;
+.hero-avatar {
+  position: relative;
+  display: inline-flex;
+}
+
+.hero-avatar-trigger {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 0.7rem;
+  transition: opacity 0.16s ease;
+}
+
+.hero-avatar-trigger:hover {
+  opacity: 0.88;
+}
+
+.hero-avatar-trigger:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+/* Sem moldura, sem fundo e sem sombra: só a foto, em tamanho de destaque. */
+.hero-photo {
+  display: block;
+  width: clamp(9rem, 20vw, 13rem);
+  height: clamp(9rem, 20vw, 13rem);
+  object-fit: cover;
+  border-radius: 0.7rem;
+}
+
+/* Ainda sem imagem: um contorno tracejado discreto convida ao clique. */
+.hero-photo.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .hero-photo.is-empty {
+  color: var(--gold-bright);
+}
+
+.identity-hero-fields {
+  display: grid;
+  align-content: start;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+/* Nome, raça, antecedente e alinhamento: os campos com mais peso da ficha. */
+.identity-hero-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.9rem;
+}
+
+.identity-hero .field > span {
+  font-size: 0.74rem;
   color: var(--gold-deep);
 }
 
-.identity-primary .field > .inline-field {
+.identity-hero .field > .inline-field {
   font-size: 1.35rem;
 }
 
-.identity-name > .inline-field {
-  font-size: 1.55rem;
+.identity-hero .identity-name > .inline-field {
+  font-size: 1.9rem;
+}
+
+/* Em telas estreitas a foto vai para cima e as informações logo abaixo. */
+@media (max-width: 640px) {
+  .identity-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Campos secundários: cinco numa faixa só em telas largas, sem coluna órfã. */
@@ -1129,7 +1199,8 @@ a {
 .casting-block {
   display: grid;
   gap: 0.35rem;
-  margin-top: 0.9rem;
+  /* Abre a seção Magias: separa do conteúdo seguinte, não do anterior. */
+  margin-bottom: 1rem;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -4449,42 +4520,6 @@ input[type='checkbox']:disabled {
   flex-wrap: wrap;
 }
 
-/* Avatar no cabeçalho da Identidade: clicar na foto revela as opções. */
-.avatar-head {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
-.avatar-trigger {
-  display: inline-flex;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  cursor: pointer;
-  transition: box-shadow 0.18s ease, transform 0.12s ease;
-}
-
-.avatar-trigger .portrait {
-  border-radius: 50%;
-}
-
-.avatar-trigger .portrait-lg {
-  width: 3.2rem;
-  height: 3.2rem;
-}
-
-.avatar-trigger:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 0 3px var(--gold-hair);
-}
-
-.avatar-trigger:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 2px;
-}
-
 /* "Trocar" e "remover" só aparecem depois de clicar na foto. */
 .avatar-menu {
   position: absolute;
@@ -4502,6 +4537,12 @@ input[type='checkbox']:disabled {
 
 .avatar-menu .btn {
   white-space: nowrap;
+}
+
+/* O menu da foto da Identidade abre alinhado à esquerda da imagem. */
+.hero-avatar-menu {
+  left: 0;
+  right: auto;
 }
 
 .item-cell {
@@ -4796,14 +4837,12 @@ input[type='checkbox']:disabled {
   padding: 0;
   display: grid;
   gap: 0.5rem;
-  /* Duas informações por linha não precisam da largura toda do pergaminho. */
-  max-width: 46rem;
 }
 
 /* Grade de duas colunas: o nome da classe e a subclasse alinham entre linhas. */
 .class-row {
   display: grid;
-  grid-template-columns: minmax(8.5rem, 0.9fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 1.2fr);
   align-items: center;
   gap: 0.5rem 1rem;
   padding: 0.55rem 0.7rem;
@@ -4828,6 +4867,8 @@ input[type='checkbox']:disabled {
 
 .class-subclass {
   min-width: 0;
+  /* A linha ocupa a largura toda, mas o seletor não estica além do razoável. */
+  max-width: 30rem;
 }
 
 /* Espaços combinados de multiclasse (referência). */

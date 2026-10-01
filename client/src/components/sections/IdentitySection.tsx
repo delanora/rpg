@@ -1,58 +1,40 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fileToImagePayload, uploadAvatar } from '../../api';
 import { fetchBackgroundCatalog, fetchRaceCatalog } from '../../creationApi';
-import {
-  ABILITY_ABBREVIATIONS,
-  ALIGNMENTS,
-  SPELLCASTING_TYPE_LABELS,
-  SPELL_LEARNING_LABELS,
-  formatModifier,
-  hitDieLabel,
-} from '../../dnd';
+import { ALIGNMENTS, hitDieLabel } from '../../dnd';
 import { findBackgroundOption, findRaceOption } from '../../races';
 import { useSheetAccess } from '../../readonly';
 import { clampInt } from '../../utils';
+import { FieldInfo } from '../FieldInfo';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
-import { Portrait } from '../Portrait';
+import { useLightbox } from '../Lightbox';
 import { Section } from '../Section';
 import type { BackgroundOption, ClassEntry, RaceOption } from '../../types';
 import type { SheetSectionProps } from './common';
 import { VitalsSection } from './VitalsSection';
 
-/** Abreviações dos tipos de conjuração mostradas na grade de Identidade. */
-const SPELLCASTING_SHORT: Record<string, string> = {
-  full: 'completo',
-  half: 'meio',
-  third: '1/3',
-  pact: 'pacto',
-};
-
-/** Abreviações de como as magias são aprendidas. */
-const SPELL_LEARNING_SHORT: Record<string, string> = {
-  known: 'conhecidas',
-  prepared: 'preparadas',
-};
-
 /**
- * "i" ao lado do rótulo de um campo: explica em uma frase o que aquilo é.
- * O texto vive no tooltip, sem ocupar espaço permanente na ficha.
+ * Foto do personagem no topo da Identidade: imagem grande, sem moldura nem
+ * fundo — o destaque é a própria foto. Sem imagem, um contorno tracejado
+ * discreto convida ao clique para enviar uma.
  */
-function FieldInfo({ children }: { children: ReactNode }) {
-  return (
-    <span className="info-tip field-info" tabIndex={0}>
-      <Icon name="info" size={12} />
-      <span className="info-tip-text" role="tooltip">
-        {children}
+function HeroPhoto({ src, name }: { src: string; name: string }) {
+  if (!src) {
+    return (
+      <span className="hero-photo is-empty">
+        <Icon name="users" size={54} />
       </span>
-    </span>
-  );
+    );
+  }
+  return <img className="hero-photo" src={src} alt={name} />;
 }
 
 export function IdentitySection({ character, update }: SheetSectionProps) {
   // O avatar é estado de jogo (segue editável com a criação finalizada); os
   // demais campos da identidade são construção.
   const { readOnly, lockedConstruction } = useSheetAccess();
+  const { open: openLightbox } = useLightbox();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Os botões do avatar só aparecem depois de clicar na foto.
@@ -134,43 +116,6 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
   const backgroundInfo = findBackgroundOption(backgrounds, character.background)?.description;
 
   const hitDice = classes.map((entry) => hitDieLabel(entry.hitDie)).join(' / ');
-  const casting = classes
-    .filter((entry) => entry.spellcasting && entry.spellcasting.type !== 'none')
-    .map((entry) => {
-      const ability = entry.spellcasting?.ability;
-      return (
-        `${entry.className}: ${SPELLCASTING_TYPE_LABELS[entry.spellcasting!.type]}` +
-        (ability ? ` · ${ABILITY_ABBREVIATIONS[ability]}` : '')
-      );
-    })
-    .join(' · ');
-  const learning = classes
-    .filter((entry) => entry.spellcasting && entry.spellcasting.learning !== 'none')
-    .map((entry) => `${entry.className}: ${SPELL_LEARNING_LABELS[entry.spellcasting!.learning]}`)
-    .join(' · ');
-
-  /**
-   * Versões curtas exibidas na grade (o texto completo fica no tooltip).
-   * Sem isso, "Ladino: Terço-conjurador · INT" ocupava três linhas e empurrava
-   * os campos vizinhos.
-   */
-  const castingShort = classes
-    .filter((entry) => entry.spellcasting && entry.spellcasting.type !== 'none')
-    .map((entry) => {
-      const ability = entry.spellcasting?.ability;
-      return (
-        `${entry.className} (${SPELLCASTING_SHORT[entry.spellcasting!.type]})` +
-        (ability ? ` · ${ABILITY_ABBREVIATIONS[ability]}` : '')
-      );
-    })
-    .join(' · ');
-  const learningShort = classes
-    .filter((entry) => entry.spellcasting && entry.spellcasting.learning !== 'none')
-    .map(
-      (entry) =>
-        `${entry.className} (${SPELL_LEARNING_SHORT[entry.spellcasting!.learning] ?? entry.spellcasting!.learning})`,
-    )
-    .join(' · ');
 
   // Resumo de Aumento de Atributo/Talento de cada classe (vai para o tooltip).
   const asiSummary = classes
@@ -178,40 +123,48 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
     .map((entry) => `${entry.className}: níveis ${entry.asiLevels.join(', ')}`)
     .join(' · ');
 
-  const spellcasting = character.derived.spellcasting;
-
   return (
-    <Section
-      title="Personagem"
-      icon="scroll"
-      className="stacked-tip"
-      actions={
-        /* Avatar da ficha no cabeçalho, alinhado à direita. */
-        <div className="avatar-head" ref={avatarRef}>
+    <Section title="Personagem" icon="scroll" className="stacked-tip">
+      {uploadError ? <p className="form-error">{uploadError}</p> : null}
+
+      {/*
+       * A identidade abre com a foto do personagem à esquerda — grande, sem
+       * moldura nem fundo — e, ao lado, o que o reconhece: nome, raça,
+       * antecedente e alinhamento, com o maior peso da seção. Os números
+       * derivados ficam num segundo bloco, menor, para a hierarquia ficar clara.
+       */}
+      <div className="identity-hero">
+        <div className="hero-avatar" ref={avatarRef}>
           {readOnly ? (
-            <Portrait src={character.avatarUrl} alt={character.name} size="lg" icon="users" />
+            character.avatarUrl ? (
+              <button
+                type="button"
+                className="hero-avatar-trigger"
+                title="Ampliar imagem"
+                aria-label={`Ampliar imagem de ${character.name}`}
+                onClick={() => openLightbox(character.avatarUrl, character.name)}
+              >
+                <HeroPhoto src={character.avatarUrl} name={character.name} />
+              </button>
+            ) : (
+              <HeroPhoto src="" name={character.name} />
+            )
           ) : (
             <>
               <button
                 type="button"
-                className="avatar-trigger"
+                className="hero-avatar-trigger"
                 aria-label="Opções do avatar"
                 aria-expanded={avatarOpen}
                 title={avatarOpen ? 'Fechar opções do avatar' : 'Clique para trocar o avatar'}
                 onClick={() => setAvatarOpen((value) => !value)}
               >
-                <Portrait
-                  src={character.avatarUrl}
-                  alt={character.name}
-                  size="lg"
-                  icon="users"
-                  zoomable={false}
-                />
+                <HeroPhoto src={character.avatarUrl} name={character.name} />
               </button>
 
               {/* Só aparecem depois de clicar na foto. */}
               {avatarOpen ? (
-                <div className="avatar-menu">
+                <div className="avatar-menu hero-avatar-menu">
                   <label
                     className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}
                   >
@@ -248,62 +201,73 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
             </>
           )}
         </div>
-      }
-    >
-      {uploadError ? <p className="form-error">{uploadError}</p> : null}
 
-      {/*
-       * A identidade propriamente dita (Nome, Raça e Antecedente) vem primeiro e
-       * com mais peso: é o que reconhece o personagem. Os números derivados
-       * ficam num segundo bloco, menor, para a hierarquia ficar clara.
-       */}
-      <div className="identity-primary">
-        <label className="field identity-name">
-          <span>
-            Nome
-            <FieldInfo>Como o personagem é chamado pela companhia e pelos NPCs.</FieldInfo>
-          </span>
-          <InlineField
-            value={character.name}
-            readOnly={lockedConstruction}
-            ariaLabel="Nome do personagem"
-            onCommit={(value) => {
-              const name = value.trim();
-              if (name) update({ name });
-            }}
-          />
-        </label>
+        <div className="identity-hero-fields">
+          <label className="field identity-name">
+            <span>
+              Nome
+              <FieldInfo>Como o personagem é chamado pela companhia e pelos NPCs.</FieldInfo>
+            </span>
+            <InlineField
+              value={character.name}
+              readOnly={lockedConstruction}
+              ariaLabel="Nome do personagem"
+              onCommit={(value) => {
+                const name = value.trim();
+                if (name) update({ name });
+              }}
+            />
+          </label>
 
-        <label className="field">
-          <span>
-            Raça
-            <FieldInfo>{raceInfo || 'A raça escolhida na criação dá bônus e traços raciais.'}</FieldInfo>
-          </span>
-          <InlineField
-            value={character.race}
-            readOnly={lockedConstruction}
-            ariaLabel="Raça"
-            placeholder="ex.: Anão"
-            onCommit={(value) => update({ race: value.trim() })}
-          />
-        </label>
+          {/* Raça, antecedente e alinhamento completam o "quem é" do personagem. */}
+          <div className="identity-hero-meta">
+            <label className="field">
+              <span>
+                Raça
+                <FieldInfo>{raceInfo || 'A raça escolhida na criação dá bônus e traços raciais.'}</FieldInfo>
+              </span>
+              <InlineField
+                value={character.race}
+                readOnly={lockedConstruction}
+                ariaLabel="Raça"
+                placeholder="ex.: Anão"
+                onCommit={(value) => update({ race: value.trim() })}
+              />
+            </label>
 
-        <label className="field">
-          <span>
-            Antecedente
-            <FieldInfo>
-              {backgroundInfo ||
-                'A história que veio antes da aventura: define perícias e contatos.'}
-            </FieldInfo>
-          </span>
-          <InlineField
-            value={character.background}
-            readOnly={lockedConstruction}
-            ariaLabel="Antecedente"
-            placeholder="ex.: Sábio"
-            onCommit={(value) => update({ background: value.trim() })}
-          />
-        </label>
+            <label className="field">
+              <span>
+                Antecedente
+                <FieldInfo>
+                  {backgroundInfo ||
+                    'A história que veio antes da aventura: define perícias e contatos.'}
+                </FieldInfo>
+              </span>
+              <InlineField
+                value={character.background}
+                readOnly={lockedConstruction}
+                ariaLabel="Antecedente"
+                placeholder="ex.: Sábio"
+                onCommit={(value) => update({ background: value.trim() })}
+              />
+            </label>
+
+            <label className="field">
+              <span>
+                Alinhamento
+                <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
+              </span>
+              <InlineField
+                value={character.alignment}
+                mode="select"
+                options={ALIGNMENTS}
+                readOnly={lockedConstruction}
+                ariaLabel="Alinhamento"
+                onCommit={(value) => update({ alignment: value })}
+              />
+            </label>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-3 identity-grid">
@@ -314,21 +278,6 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           </span>
           <strong>{character.level}</strong>
         </div>
-
-        <label className="field">
-          <span>
-            Alinhamento
-            <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
-          </span>
-          <InlineField
-            value={character.alignment}
-            mode="select"
-            options={ALIGNMENTS}
-            readOnly={lockedConstruction}
-            ariaLabel="Alinhamento"
-            onCommit={(value) => update({ alignment: value })}
-          />
-        </label>
 
         <label className="field">
           <span>
@@ -367,41 +316,6 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           </span>
           <strong>+{character.derived.proficiencyBonus}</strong>
         </div>
-      </div>
-
-      {/*
-       * Conjuração num bloco único: tipos de conjuração, como cada classe aprende
-       * as magias e o resumo de CD/ataque que antes ficava solto no rodapé.
-       */}
-      <div className="casting-block">
-        <span className="casting-title">
-          Conjuração
-          <FieldInfo>
-            Como cada classe conjura magias, a CD para resistir a elas e o bônus de ataque mágico.
-          </FieldInfo>
-        </span>
-
-        {spellcasting ? (
-          <div className="casting-summary">
-            <span className="casting-stat">
-              <em>CD</em>
-              <b>{spellcasting.saveDC}</b>
-            </span>
-            <span className="casting-stat">
-              <em>ataque</em>
-              <b>{formatModifier(spellcasting.attackBonus)}</b>
-            </span>
-          </div>
-        ) : null}
-
-        <p className="casting-detail">
-          <em>Conjuração</em>
-          <span title={casting || undefined}>{castingShort || '—'}</span>
-        </p>
-        <p className="casting-detail">
-          <em>Magias</em>
-          <span title={learning || undefined}>{learningShort || '—'}</span>
-        </p>
       </div>
 
       <h3 className="subsection-title">
