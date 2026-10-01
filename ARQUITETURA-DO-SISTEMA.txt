@@ -1706,7 +1706,9 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   (`--portrait-room`, derivado de `100vw`; `--portrait-shift` é o menor entre
   meia foto e a tela), sem desalinhar o card nem criar rolagem horizontal. Sem
   imagem, um contorno tracejado convida ao clique, que abre o menu de envio (e,
-  no modo somente leitura, o lightbox). À DIREITA do retrato (`.identity-main`):
+  no modo somente leitura, o lightbox). O cabeçalho é uma GRADE de áreas
+  (`.identity-hero`): `'photo ribbon' / 'level fields' / 'inspiration fields'`
+  — o retrato fora do fluxo (absoluto) na área `photo`. À direita dele:
   a BANDEIROLA do nome e da raça (`.identity-ribbon` > `.identity-ribbon-inner`)
   NASCE DE TRÁS DO RETRATO — ponta esquerda escondida sob a foto (`z-index: 1`
   contra o 6 do retrato, `padding-left: calc(var(--ribbon-tuck) + 0.9rem)` para
@@ -1722,12 +1724,17 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   ALINHAMENTO — valor centralizado em cima, linha fina (`border-bottom`) e
   rótulo em caixa alta embaixo (`.line-field-label`, com "(i)" do `FieldInfo`).
   Com multiclasse, CLASSE mostra "Multiclasse" e o detalhe ("Mago Nv 1,
-  Guerreiro Nv 2 e Ladino Nv 2") vai para o hover do nível. Abaixo do retrato,
-  alinhados à esquerda (com `padding-top: calc(var(--portrait-half) - 1.1rem)`
-  na coluna), ficam o NÍVEL (círculo `.level-circle`, com a fita `.level-ribbon`
-  ABSOLUTA na LATERAL DIREITA dele — `left: calc(3.3rem - var(--level-tuck))`,
-  centrada na altura do círculo por `translateY(-50%)` e com `z-index: 1`
-  contra o 2 do círculo, isto é, saindo DE TRÁS dele; mesma ponta em V) e a INSPIRAÇÃO
+  Guerreiro Nv 2 e Ladino Nv 2") vai para o hover do nível. O NÍVEL divide a
+  MESMA linha da grade com os campos (áreas `level` e `fields`): com
+  `margin-top: calc(var(--field-line) - var(--level-circle-size) / 2)` o CENTRO
+  do círculo cai exatamente sobre a linha que divide valor e rótulo
+  (`--field-line`, 2.2rem, acompanha o `min-height` + o respiro do
+  `.line-field-value`). Como essa linha fica na área do retrato, o bloco do
+  nível tem `z-index: 7` (à frente da foto) e o círculo `.level-circle` traz a
+  fita `.level-ribbon` ABSOLUTA na LATERAL DIREITA dele —
+  `left: calc(var(--level-circle-size) - var(--level-tuck))`, centrada na altura
+  do círculo por `translateY(-50%)` e com `z-index: 1` contra o 2 do círculo,
+  isto é, saindo DE TRÁS dele; mesma ponta em V. A INSPIRAÇÃO
   (`.inspiration-toggle`, estrela vazia/preenchida — só o visual; a mecânica
   virá do mestre). O círculo de nível É o botão de Level Up: discreto por
   padrão, ganha destaque (`.is-ready`, dourado pulsante) quando o mestre libera,

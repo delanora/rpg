@@ -1687,7 +1687,8 @@ abas.
   arredondado, padding, sombra ou `filter` (o aro ornamentado já vem no arquivo) —,
   com o **centro no canto superior esquerdo do card** (meia foto para fora em cima
   e à esquerda; o quanto sai à esquerda para na borda da tela, sem desalinhar o
-  card). À direita (`.identity-main`): a **bandeirola** do nome/raça
+  card). O cabeçalho é uma **grade de áreas** (`photo`/`ribbon`/`level`/
+  `fields`/`inspiration`). À direita: a **bandeirola** do nome/raça
   (`.identity-ribbon` > `.identity-ribbon-inner`) **nasce de trás do retrato**
   (ponta esquerda escondida sob a foto, `z-index` menor), com fio dourado de 1px
   e a **ponta direita recortada em V** (`clip-path`); a largura acompanha o
@@ -1698,10 +1699,11 @@ abas.
   **Antecedente** e **Alinhamento** — valor centralizado em cima, linha fina e
   rótulo em caixa alta embaixo (com o "(i)" do `FieldInfo`). Com multiclasse, o
   campo Classe mostra "Multiclasse" e o detalhe ("Mago Nv 1, Guerreiro Nv 2 e
-  Ladino Nv 2") vai para o hover do nível. Abaixo do retrato, alinhados à
-  esquerda, ficam o **Nível** (círculo, que **é o botão de Level Up**: discreto
-  por padrão e dourado quando o mestre libera; a fita "NÍVEL" sai de trás dele,
-  na lateral direita) e a **Inspiração** (estrela vazia/preenchida; só o visual — a mecânica
+  Ladino Nv 2") vai para o hover do nível. O **Nível** fica na MESMA linha da
+  grade que os campos, com o **centro do círculo sobre a linha** que divide valor
+  e rótulo (e à frente do retrato, já que a linha cai na área da foto). O círculo
+  **é o botão de Level Up**: discreto por padrão e dourado quando o mestre
+  libera; a fita "NÍVEL" sai de trás dele, na lateral direita. A **Inspiração** (estrela vazia/preenchida; só o visual — a mecânica
   virá do mestre). O bloco de **Conjuração** vive na seção Magias.
 - **Vida e Defesa embutida:** `VitalsSection` aceita `embedded`; nesse modo
   perde a moldura de card e o cabeçalho some (o rótulo "Vida" vive no próprio
