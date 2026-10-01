@@ -1058,29 +1058,25 @@ select option {
 /*
  * IDENTIDADE — CABEÇALHO
  *
- * O retrato "salta" para fora do card (canto superior esquerdo) e, à direita,
- * uma faixa recortada traz o nome e a raça sobre os quatro campos de papel
- * (classe, subclasse, antecedente e alinhamento). Abaixo do retrato, na coluna
- * da esquerda, ficam o nível (que agora hospeda o Level Up) e a inspiração.
+ * O retrato salta para fora do card (canto superior esquerdo), cru, sem caixa
+ * nenhuma: o aro e a moldura já vêm no próprio arquivo da imagem. Atrás dele
+ * vêm a bandeirola do nome/raça (ponta esquerda escondida sob a foto) e, logo
+ * abaixo, a faixa "NÍVEL" com o círculo — que é o Level Up do jogador.
  *
  * O retrato é absoluto em relação ao CARD — nenhum ancestral entre ele e a
- * seção é posicionado —, então `--portrait-out` vale como transbordo real de
- * borda. A coluna da esquerda reserva a altura dele no fluxo, para que nada
- * fique embaixo da foto.
+ * seção é posicionado —, então o transbordo é real. À esquerda ele para na
+ * margem do conteúdo (`--portrait-out-x`), para o card não sair do alinhamento
+ * das outras seções nem criar rolagem horizontal.
  */
 .sheet-identity {
   --portrait-size: clamp(8.5rem, 16vw, 13rem);
-  --portrait-out: 44px;
+  --portrait-out-x: 1.25rem;
+  --portrait-out-y: 44px;
 }
 
-/*
- * Espaço acima para o retrato transbordar sem cobrir o painel de combate e um
- * leve recuo à esquerda: o transbordo de `--portrait-out` é maior que a margem
- * do conteúdo, e sem isso a ficha ganharia rolagem horizontal.
- */
+/* Espaço acima para o retrato transbordar sem cobrir o painel de combate. */
 .identity-section {
   margin-top: 2.9rem;
-  margin-left: calc(var(--portrait-out) - 1.25rem);
 }
 
 /* O cabeçalho do card some: a faixa do nome já identifica a seção. */
@@ -1096,17 +1092,18 @@ select option {
   margin-bottom: 1.1rem;
 }
 
-/* Retrato no canto superior esquerdo do card, transbordando as duas bordas. */
+/*
+ * Retrato: só a imagem, sem fundo, borda, canto arredondado, padding, sombra ou
+ * filtro. Ancorado no canto superior esquerdo do card, transbordando as bordas.
+ */
 .identity-section .hero-avatar {
   position: absolute;
-  top: calc(-1 * var(--portrait-out));
-  left: calc(-1 * var(--portrait-out));
+  top: calc(-1 * var(--portrait-out-y));
+  left: calc(-1 * var(--portrait-out-x));
   z-index: 6;
   display: block;
   width: var(--portrait-size);
   height: var(--portrait-size);
-  /* Sombra suave: reforça a profundidade de estar "à frente" do card. */
-  filter: drop-shadow(0 10px 16px rgba(28, 18, 8, 0.45));
 }
 
 .hero-avatar-trigger {
@@ -1117,7 +1114,7 @@ select option {
   border: 0;
   background: none;
   cursor: pointer;
-  border-radius: 0.7rem;
+  border-radius: 50%;
   transition: opacity 0.16s ease;
 }
 
@@ -1130,15 +1127,12 @@ select option {
   outline-offset: 3px;
 }
 
-/* Sem moldura de card: só a foto, grande, com um aro fino e sombra própria. */
+/* Foto crua: nada atrás dela — nem fundo, nem borda, nem canto arredondado. */
 .hero-photo {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border: 2px solid var(--line-strong);
-  border-radius: 0.7rem;
-  background: var(--surface-2);
 }
 
 /* Ainda sem imagem: um contorno tracejado discreto convida ao clique. */
@@ -1147,6 +1141,7 @@ select option {
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--line-strong);
+  border-radius: 50%;
   background: transparent;
   color: var(--wine);
 }
@@ -1155,38 +1150,51 @@ select option {
   color: var(--gold-bright);
 }
 
-/* --- Faixa do nome e da raça (ribbon com as pontas recortadas) ------------- */
+/* --- Bandeirola do nome e da raça (nasce DE TRÁS do retrato) -------------- */
 
+/*
+ * A coluna da direita começa alinhada à metade de baixo do retrato: a
+ * bandeirola fica centrada nessa faixa e os campos de papel vêm abaixo dela.
+ */
 .identity-main {
   display: grid;
   align-content: start;
   gap: 0.95rem;
   min-width: 0;
-  padding-top: 0.35rem;
+  padding-top: calc(0.75 * var(--portrait-size) - 6rem);
 }
 
+/*
+ * A bandeirola tem a PONTA ESQUERDA escondida sob a foto (z-index menor que o
+ * retrato, que é 6) e o corpo esticado para a direita, com a ponta direita
+ * recortada em V (swallowtail). O padding-left deixa o texto começar só depois
+ * da borda direita do retrato.
+ *
+ * A margem negativa soma: transbordo do retrato (1.25rem) + padding do corpo
+ * da seção (1rem) + gap da grade (1.5rem) — a constante 3.75rem.
+ */
 .identity-ribbon {
-  justify-self: start;
-  width: min(100%, 27rem);
-  padding: 0.45rem 2.6rem 0.55rem;
-  background: linear-gradient(180deg, #7d232c, #55161d 62%, #411015);
-  color: #f6e6c3;
-  text-align: center;
-  /* Pontas em V dos dois lados, como uma fita de pergaminho. */
-  clip-path: polygon(
-    1.15rem 0,
-    calc(100% - 1.15rem) 0,
-    100% 50%,
-    calc(100% - 1.15rem) 100%,
-    1.15rem 100%,
-    0 50%
-  );
+  --ribbon-tuck: 2.5rem;
+  --ribbon-tail: 1.3rem;
+  position: relative;
+  z-index: 1;
+  justify-self: stretch;
+  margin-left: calc(-1 * (var(--ribbon-tuck) + 3.75rem));
+  /* O fundo dourado aparece como fio de 1px ao redor da fita vinho. */
+  padding: 1px;
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--ribbon-tail)) 50%, 100% 100%, 0 100%);
   filter: drop-shadow(0 4px 8px rgba(28, 18, 8, 0.4));
 }
 
-[data-theme='dark'] .identity-ribbon {
+.identity-ribbon-inner {
+  padding: 0.4rem 2.4rem 0.5rem calc(var(--ribbon-tuck) + 0.9rem);
+  background: linear-gradient(180deg, #7d232c, #55161d 62%, #411015);
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--ribbon-tail)) 50%, 100% 100%, 0 100%);
+}
+
+[data-theme='dark'] .identity-ribbon-inner {
   background: linear-gradient(180deg, #5c1a22, #3a1015 62%, #2b0c10);
-  color: var(--gold-bright);
 }
 
 /* O nome e a raça seguem editáveis (clique) dentro da própria faixa. */
@@ -1217,7 +1225,9 @@ select option {
   line-height: 1.15;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-align: center;
+  text-align: left;
+  color: var(--gold-bright);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
 .identity-ribbon .ribbon-race {
@@ -1226,8 +1236,8 @@ select option {
   font-size: var(--text-aux);
   font-style: italic;
   letter-spacing: 0.04em;
-  text-align: center;
-  opacity: 0.9;
+  text-align: left;
+  color: rgba(246, 230, 195, 0.85);
 }
 
 .identity-ribbon .placeholder {
@@ -1319,43 +1329,40 @@ select option {
 
 /* --- Nível (com o Level Up do jogador) ------------------------------------ */
 
+/*
+ * Coluna da esquerda: nível (com o Level Up) e inspiração, ambos alinhados à
+ * esquerda. O padding reserva a altura do retrato, para a faixa "NÍVEL" cair
+ * logo abaixo dele.
+ */
 .identity-side {
   display: grid;
   align-content: start;
-  justify-items: center;
+  justify-items: start;
   gap: 0.55rem;
-  /* Reserva a altura do retrato, descontada a sobreposição do nível. */
-  padding-top: calc(var(--portrait-size) - var(--portrait-out) - 2.4rem);
+  padding-top: calc(var(--portrait-size) - var(--portrait-out-y) - 1.1rem);
 }
 
 .identity-level {
   display: grid;
-  justify-items: center;
+  justify-items: start;
   gap: 0.3rem;
 }
 
+/* Fita "NÍVEL" com a mesma ponta recortada em V da bandeirola do nome. */
 .level-ribbon {
-  padding: 0.1rem 0.9rem 0.15rem;
+  padding: 0.22rem 1.1rem 0.26rem 0.9rem;
   background: linear-gradient(180deg, #7d232c, #55161d);
-  color: #f6e6c3;
+  color: var(--gold-bright);
   font-family: var(--font-display);
   font-size: var(--text-label);
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  clip-path: polygon(
-    0.6rem 0,
-    calc(100% - 0.6rem) 0,
-    100% 50%,
-    calc(100% - 0.6rem) 100%,
-    0.6rem 100%,
-    0 50%
-  );
+  letter-spacing: 0.1em;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 0.7rem) 50%, 100% 100%, 0 100%);
   filter: drop-shadow(0 3px 5px rgba(28, 18, 8, 0.35));
 }
 
 [data-theme='dark'] .level-ribbon {
   background: linear-gradient(180deg, #5c1a22, #3a1015);
-  color: var(--gold-bright);
 }
 
 /*
@@ -1474,7 +1481,6 @@ select option {
 @media (max-width: 820px) {
   .identity-section {
     margin-top: 0;
-    margin-left: 0;
   }
 
   .identity-hero {
@@ -1484,7 +1490,17 @@ select option {
 
   .identity-section .hero-avatar {
     position: static;
-    filter: none;
+  }
+
+  .identity-main {
+    padding-top: 0;
+  }
+
+  /* Sem transbordo, a bandeirola volta a começar na borda do conteúdo. */
+  .identity-ribbon {
+    --ribbon-tuck: 0rem;
+
+    margin-left: 0;
   }
 
   .identity-side {
