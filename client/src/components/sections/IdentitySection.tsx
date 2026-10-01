@@ -202,6 +202,10 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
           )}
         </div>
 
+        {/*
+         * Nome, raça, antecedente e alinhamento ficam na MESMA linha, em quatro
+         * colunas (o nome ocupa mais espaço), alinhados pela base do rótulo.
+         */}
         <div className="identity-hero-fields">
           <label className="field identity-name">
             <span>
@@ -219,54 +223,51 @@ export function IdentitySection({ character, update }: SheetSectionProps) {
             />
           </label>
 
-          {/* Raça, antecedente e alinhamento completam o "quem é" do personagem. */}
-          <div className="identity-hero-meta">
-            <label className="field">
-              <span>
-                Raça
-                <FieldInfo>{raceInfo || 'A raça escolhida na criação dá bônus e traços raciais.'}</FieldInfo>
-              </span>
-              <InlineField
-                value={character.race}
-                readOnly={lockedConstruction}
-                ariaLabel="Raça"
-                placeholder="ex.: Anão"
-                onCommit={(value) => update({ race: value.trim() })}
-              />
-            </label>
+          <label className="field">
+            <span>
+              Raça
+              <FieldInfo>{raceInfo || 'A raça escolhida na criação dá bônus e traços raciais.'}</FieldInfo>
+            </span>
+            <InlineField
+              value={character.race}
+              readOnly={lockedConstruction}
+              ariaLabel="Raça"
+              placeholder="ex.: Anão"
+              onCommit={(value) => update({ race: value.trim() })}
+            />
+          </label>
 
-            <label className="field">
-              <span>
-                Antecedente
-                <FieldInfo>
-                  {backgroundInfo ||
-                    'A história que veio antes da aventura: define perícias e contatos.'}
-                </FieldInfo>
-              </span>
-              <InlineField
-                value={character.background}
-                readOnly={lockedConstruction}
-                ariaLabel="Antecedente"
-                placeholder="ex.: Sábio"
-                onCommit={(value) => update({ background: value.trim() })}
-              />
-            </label>
+          <label className="field">
+            <span>
+              Antecedente
+              <FieldInfo>
+                {backgroundInfo ||
+                  'A história que veio antes da aventura: define perícias e contatos.'}
+              </FieldInfo>
+            </span>
+            <InlineField
+              value={character.background}
+              readOnly={lockedConstruction}
+              ariaLabel="Antecedente"
+              placeholder="ex.: Sábio"
+              onCommit={(value) => update({ background: value.trim() })}
+            />
+          </label>
 
-            <label className="field">
-              <span>
-                Alinhamento
-                <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
-              </span>
-              <InlineField
-                value={character.alignment}
-                mode="select"
-                options={ALIGNMENTS}
-                readOnly={lockedConstruction}
-                ariaLabel="Alinhamento"
-                onCommit={(value) => update({ alignment: value })}
-              />
-            </label>
-          </div>
+          <label className="field">
+            <span>
+              Alinhamento
+              <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
+            </span>
+            <InlineField
+              value={character.alignment}
+              mode="select"
+              options={ALIGNMENTS}
+              readOnly={lockedConstruction}
+              ariaLabel="Alinhamento"
+              onCommit={(value) => update({ alignment: value })}
+            />
+          </label>
         </div>
       </div>
 
