@@ -54,6 +54,27 @@
 
   --radius: 4px;
 
+  /*
+   * Escala tipográfica — cada PAPEL tem um único tamanho, para rótulos, valores,
+   * títulos e textos auxiliares não variarem de seção para seção.
+   */
+  --text-page: 1.35rem; /* título da página */
+  --text-section: 1.06rem; /* título de seção */
+  --text-subsection: 0.78rem; /* título de bloco, em caixa alta */
+  --text-label: 0.7rem; /* rótulo de campo, em caixa alta */
+  --text-value: 1.1rem; /* valor de campo */
+  --text-value-lg: 1.35rem; /* valor em destaque (identidade) */
+  --text-name: 1.9rem; /* nome do personagem */
+  --text-aux: 0.84rem; /* texto auxiliar, notas e legendas */
+  --text-micro: 0.72rem; /* micro-texto (dicas e pistas) */
+
+  /* Ritmo interno dos componentes — um único respiro por papel. */
+  --gap-icon: 0.5rem; /* ícone ↔ texto */
+  --gap-label: 0.32rem; /* rótulo ↔ valor */
+  --card-pad-y: 0.55rem; /* respiro vertical de cards e linhas */
+  --card-pad-x: 0.75rem; /* respiro horizontal de cards e linhas */
+  --control-h: 2.1rem; /* altura padrão dos controles */
+
   /* Escala de espaçamento — múltiplos de 8px para um ritmo visual consistente. */
   --space-1: 0.5rem; /* 8px */
   --space-2: 1rem; /* 16px */
@@ -548,13 +569,13 @@ a {
 
 .field {
   display: grid;
-  gap: 0.3rem;
+  gap: var(--gap-label);
 }
 
 /* Rótulos da ficha: mesmo tamanho, caixa alta e espaçamento em toda a página. */
 .field > span {
   font-family: var(--font-display);
-  font-size: 0.66rem;
+  font-size: var(--text-label);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   line-height: 1.25;
@@ -597,7 +618,7 @@ a {
    da grade de Identidade se destaca mais que outro. */
 .field.readonly strong {
   font-family: var(--font-display);
-  font-size: 1.1rem;
+  font-size: var(--text-value);
   font-weight: 600;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
@@ -606,7 +627,7 @@ a {
 
 .field > .inline-field {
   font-family: var(--font-display);
-  font-size: 1.1rem;
+  font-size: var(--text-value);
   font-weight: 600;
   line-height: 1.2;
   color: var(--ink);
@@ -634,7 +655,7 @@ a {
   border-radius: var(--radius);
   background: transparent;
   cursor: text;
-  min-height: 2rem;
+  min-height: var(--control-h);
   transition: background 0.16s ease, border-color 0.16s ease;
 }
 
@@ -675,7 +696,7 @@ a {
 .inline-static {
   display: block;
   padding: 0.35rem 0.5rem;
-  min-height: 2rem;
+  min-height: var(--control-h);
   border: 1px solid transparent;
 }
 
@@ -722,7 +743,7 @@ a {
 
 .app-header-title h1 {
   font-family: var(--font-title);
-  font-size: 1.3rem;
+  font-size: var(--text-page);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--gold-bright);
@@ -756,7 +777,7 @@ a {
   align-items: center;
   gap: 0.3rem;
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.05em;
 }
 
@@ -1079,17 +1100,23 @@ a {
   min-width: 0;
 }
 
+/*
+ * Todas as informações compartilham o MESMO rótulo e o MESMO respiro, para
+ * parecerem uma única estrutura. O rótulo reserva uma altura fixa (uma linha)
+ * e o valor começa sempre no mesmo eixo, mesmo com o nome maior.
+ */
 .identity-hero .field > span {
-  font-size: 0.74rem;
+  font-size: var(--text-label);
   color: var(--gold-deep);
+  white-space: nowrap;
 }
 
 .identity-hero .field > .inline-field {
-  font-size: 1.35rem;
+  font-size: var(--text-value-lg);
 }
 
 .identity-hero .identity-name > .inline-field {
-  font-size: 1.9rem;
+  font-size: var(--text-name);
 }
 
 /* Em telas médias as quatro informações passam a duas por linha. */
@@ -1228,9 +1255,9 @@ a {
 .casting-title {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--gap-icon);
   font-family: var(--font-display);
-  font-size: 0.66rem;
+  font-size: var(--text-label);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--ink-soft);
@@ -1253,7 +1280,7 @@ a {
 .casting-stat em {
   font-style: normal;
   font-family: var(--font-display);
-  font-size: 0.66rem;
+  font-size: var(--text-label);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--ink-soft);
@@ -1281,7 +1308,7 @@ a {
   padding-top: 0.15rem;
   font-style: normal;
   font-family: var(--font-display);
-  font-size: 0.66rem;
+  font-size: var(--text-label);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--ink-soft);
@@ -1349,10 +1376,10 @@ a {
 .section-header h2 {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--gap-icon);
   min-height: 1.6rem;
   line-height: 1.15;
-  font-size: 1.06rem;
+  font-size: var(--text-section);
   letter-spacing: 0.045em;
   color: var(--ink);
 }
@@ -1379,7 +1406,7 @@ a {
 
 .section-subtitle {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--text-aux);
   line-height: 1.35;
   color: var(--ink-soft);
   font-style: italic;
@@ -1396,7 +1423,7 @@ a {
 
 .section-note {
   margin: 0.8rem 0 0;
-  font-size: 0.88rem;
+  font-size: var(--text-aux);
   color: var(--ink-soft);
   font-style: italic;
 }
@@ -1417,8 +1444,8 @@ a {
 .class-resource {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.45rem 0.6rem;
+  gap: var(--gap-icon);
+  padding: var(--card-pad-y) var(--card-pad-x);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
@@ -1450,9 +1477,9 @@ a {
 .subsection-title {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--gap-icon);
   font-family: var(--font-display);
-  font-size: 0.78rem;
+  font-size: var(--text-subsection);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--wine);
@@ -2051,9 +2078,9 @@ a {
   display: flex;
   align-items: center;
   max-width: 100%;
-  gap: 0.35rem;
+  gap: var(--gap-icon);
   font-family: var(--font-display);
-  font-size: 0.66rem;
+  font-size: var(--text-label);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   line-height: 1.25;
@@ -2120,7 +2147,7 @@ a {
   justify-content: center;
   gap: 0.35rem;
   /* Nunca abaixo de 11px: a dica é legível, não letra miúda. */
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   line-height: 1.35;
   color: var(--ink-soft);
 }
@@ -2334,7 +2361,7 @@ a {
 }
 
 .hp-badge {
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   color: #1b2b3a;
   background: #8fc4f0;
   border-radius: 999px;
@@ -2571,7 +2598,7 @@ input[type='checkbox']:disabled {
 .slot-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0.55rem;
+  padding: var(--card-pad-y) var(--card-pad-x);
   display: grid;
   gap: 0.3rem;
   align-content: start;
@@ -2603,8 +2630,8 @@ input[type='checkbox']:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
+  gap: var(--gap-icon);
+  padding: var(--card-pad-y) var(--card-pad-x);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
@@ -2798,7 +2825,7 @@ input[type='checkbox']:disabled {
   border: 1px solid var(--line);
   border-left: 4px solid var(--gold);
   border-radius: var(--radius);
-  padding: 0.7rem 0.8rem;
+  padding: var(--card-pad-y) var(--card-pad-x);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   display: grid;
   gap: 0.45rem;
@@ -3746,7 +3773,7 @@ input[type='checkbox']:disabled {
 
 .log-time {
   color: var(--ink-faint);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   font-family: var(--font-display);
   letter-spacing: 0.04em;
 }
@@ -3917,8 +3944,8 @@ input[type='checkbox']:disabled {
   display: grid;
   grid-template-columns: 1.2rem 1fr auto;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.45rem 0.6rem;
+  gap: var(--gap-icon);
+  padding: var(--card-pad-y) var(--card-pad-x);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
@@ -3938,7 +3965,7 @@ input[type='checkbox']:disabled {
 
 .muted {
   color: var(--ink-soft);
-  font-size: 0.82rem;
+  font-size: var(--text-aux);
 }
 
 .modal-actions {
@@ -4501,8 +4528,8 @@ input[type='checkbox']:disabled {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.55rem 0.7rem;
+  gap: var(--gap-icon);
+  padding: var(--card-pad-y) var(--card-pad-x);
   border: 1px solid var(--line);
   border-left: 3px solid var(--line-strong);
   border-radius: var(--radius);
@@ -4576,7 +4603,7 @@ input[type='checkbox']:disabled {
 }
 
 .item-detail-hint {
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   color: var(--ink-faint);
   letter-spacing: 0.01em;
 }
@@ -4617,7 +4644,7 @@ input[type='checkbox']:disabled {
 .ammo-info {
   display: block;
   margin-top: 0.15rem;
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   color: var(--ink-soft);
 }
 
@@ -4631,7 +4658,7 @@ input[type='checkbox']:disabled {
 }
 
 .field-hint {
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   color: var(--ink-faint);
   line-height: 1.3;
 }
@@ -4866,7 +4893,7 @@ input[type='checkbox']:disabled {
   grid-template-columns: minmax(9rem, 1fr) auto;
   align-items: center;
   gap: 0.5rem 1rem;
-  padding: 0.55rem 0.7rem;
+  padding: var(--card-pad-y) var(--card-pad-x);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
@@ -5137,7 +5164,7 @@ input[type='checkbox']:disabled {
 }
 
 .coins-weight {
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.02em;
   text-transform: none;
 }
@@ -5160,7 +5187,7 @@ input[type='checkbox']:disabled {
 
 .coin-label {
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.08em;
   color: var(--ink-soft);
 }
@@ -5204,7 +5231,7 @@ input[type='checkbox']:disabled {
 .coin-field {
   display: grid;
   gap: 0.15rem;
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.04em;
   color: var(--ink-soft);
 }
@@ -5561,7 +5588,7 @@ input[type='checkbox']:disabled {
 }
 
 .inv-detail-meta {
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   color: var(--ink-faint);
 }
 
@@ -5631,7 +5658,7 @@ input[type='checkbox']:disabled {
 }
 
 .inv-tooltip span {
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   color: var(--ink-faint);
 }
 
@@ -5902,7 +5929,7 @@ input[type='checkbox']:focus-visible,
   border-radius: 999px;
   background: var(--surface-4);
   color: var(--ink-soft);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
 }
 
 /* Anotações do mestre: mesmo botão do jogador, no canto esquerdo. */
@@ -6353,7 +6380,7 @@ input[type='checkbox']:focus-visible,
 
 .dice-history-clear {
   padding: 0.15rem 0.55rem;
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
 }
 
 .dice-history-empty {
@@ -6398,7 +6425,7 @@ input[type='checkbox']:focus-visible,
 
 .dice-history-time {
   color: var(--ink-faint);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   font-variant-numeric: tabular-nums;
 }
 
@@ -6980,7 +7007,7 @@ input[type='checkbox']:focus-visible,
 
 .dice-log-clear {
   padding: 0.15rem 0.55rem;
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
 }
 
 .dice-log-empty {
@@ -7035,7 +7062,7 @@ input[type='checkbox']:focus-visible,
 
 .dice-log-time {
   color: var(--ink-faint);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   font-variant-numeric: tabular-nums;
 }
 
@@ -7125,7 +7152,7 @@ input[type='checkbox']:focus-visible,
   padding: 0.08rem 0.36rem;
   border-radius: 999px;
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.04em;
   color: rgba(246, 232, 200, 0.92);
   background: rgba(18, 11, 6, 0.74);
@@ -7317,7 +7344,7 @@ input[type='checkbox']:focus-visible,
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   font-weight: 600;
 }
 
@@ -7841,7 +7868,7 @@ input[type='checkbox']:focus-visible,
   padding: 0.1rem 0.45rem;
   border: 1px solid var(--gold-hair);
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.04em;
   color: var(--gold-deep);
   white-space: nowrap;
@@ -7907,7 +7934,7 @@ input[type='checkbox']:focus-visible,
   padding: 0 0.35rem;
   border-radius: 999px;
   background: var(--surface-4);
-  font-size: 0.72rem;
+  font-size: var(--text-micro);
   color: var(--ink-soft);
 }
 

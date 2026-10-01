@@ -96,6 +96,10 @@ CLIENTE (client/)
   (claro) e "grimório amaldiçoado" (escuro) via `data-theme` no <html>.
   Fontes auto-hospedadas em client/public/fonts (Cinzel, EB Garamond,
   MedievalSharp) — nenhum recurso externo em runtime.
+  Tipografia e ritmo em TOKENS, para cada papel ter UM só tamanho e um só respiro:
+  `--text-page/section/subsection/label/value/value-lg/name/aux/micro` (títulos,
+  rótulos, valores e textos auxiliares) e `--gap-icon`, `--gap-label`,
+  `--card-pad-x/y` e `--control-h` (ícone↔texto, rótulo↔valor, cards e controles).
 
 BANCO
   PostgreSQL. `datasource db { provider = "postgresql" }` + DATABASE_URL.
