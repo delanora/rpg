@@ -1699,28 +1699,35 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   13rem)` e é ABSOLUTO em relação ao card (nenhum ancestral entre ele e a seção
   é posicionado), com `z-index: 6`. É uma FOTO CRUA: sem fundo, borda, canto
   arredondado, padding, sombra ou `filter` — o aro ornamentado já vem no
-  arquivo da imagem. O transbordo é `--portrait-out-y: 44px` (acima) e
-  `--portrait-out-x: 1.25rem` (à esquerda: para no alinhamento das outras
-  seções, sem criar rolagem horizontal). Sem imagem, um contorno tracejado
-  convida ao clique, que abre o menu de envio (e, no modo somente leitura, o
-  lightbox). À DIREITA do retrato (`.identity-main`, com `padding-top:
-  calc(0.75 * var(--portrait-size) - 6rem)` para alinhar a bandeirola à metade
-  de baixo da foto): a BANDEIROLA do nome e da raça (`.identity-ribbon` >
-  `.identity-ribbon-inner`) NASCE DE TRÁS DO RETRATO — ponta esquerda escondida
-  sob a foto (`z-index: 1` contra o 6 do retrato, `margin-left` proporcional a
-  `--ribbon-tuck` + 3.75rem e `padding-left` para o texto começar depois da
-  borda direita da foto) —, com fio dourado de 1px (fundo dourado no pai, vinho
-  na `-inner`) e a PONTA DIREITA RECORTADA EM V (`clip-path` swallowtail,
-  `--ribbon-tail`). Nome em caixa alta e dourado (editável inline) e raça logo
+  arquivo da imagem. O CENTRO dele fica no canto superior esquerdo do card:
+  `top: calc(-1 * var(--portrait-half))` e `left: calc(-1 * var(--portrait-shift))`
+  (meia foto para fora em cima e à esquerda). Como a ficha é centralizada num
+  container de 1420px, o deslocamento à esquerda para quando não há mais tela
+  (`--portrait-room`, derivado de `100vw`; `--portrait-shift` é o menor entre
+  meia foto e a tela), sem desalinhar o card nem criar rolagem horizontal. Sem
+  imagem, um contorno tracejado convida ao clique, que abre o menu de envio (e,
+  no modo somente leitura, o lightbox). À DIREITA do retrato (`.identity-main`):
+  a BANDEIROLA do nome e da raça (`.identity-ribbon` > `.identity-ribbon-inner`)
+  NASCE DE TRÁS DO RETRATO — ponta esquerda escondida sob a foto (`z-index: 1`
+  contra o 6 do retrato, `padding-left: calc(var(--ribbon-tuck) + 0.9rem)` para
+  o texto começar depois da borda direita da foto) —, com fio dourado de 1px
+  (fundo dourado no pai, vinho na `-inner`) e a PONTA DIREITA RECORTADA EM V
+  (`clip-path` swallowtail, `--ribbon-tail`). A largura dela NÃO ocupa o card:
+  é `width: max-content`, ou seja, acompanha o tamanho do nome. Na vertical, o
+  CENTRO dela acompanha o centro da foto (que é o canto do card): `margin-top:
+  calc(-1rem - var(--ribbon-half-height))` mais um `translateY` de correção.
+  Nome em caixa alta e dourado (editável inline) e raça logo
   abaixo, ambos ALINHADOS À ESQUERDA. Sob ela, a LINHA DE CAMPOS DE PAPEL
   (`.identity-line-fields`, quatro colunas) com CLASSE, SUBCLASSE, ANTECEDENTE e
   ALINHAMENTO — valor centralizado em cima, linha fina (`border-bottom`) e
   rótulo em caixa alta embaixo (`.line-field-label`, com "(i)" do `FieldInfo`).
   Com multiclasse, CLASSE mostra "Multiclasse" e o detalhe ("Mago Nv 1,
   Guerreiro Nv 2 e Ladino Nv 2") vai para o hover do nível. Abaixo do retrato,
-  alinhados à esquerda, ficam o NÍVEL (faixa `.level-ribbon` — mesma ponta em V —
-  encostando na base da foto, com `padding-top: calc(var(--portrait-size) -
-  var(--portrait-out-y) - 1.1rem)`, + círculo `.level-circle`) e a INSPIRAÇÃO
+  alinhados à esquerda (com `padding-top: calc(var(--portrait-half) - 1.1rem)`
+  na coluna), ficam o NÍVEL (círculo `.level-circle`, com a fita `.level-ribbon`
+  ABSOLUTA na LATERAL DIREITA dele — `left: calc(3.3rem - var(--level-tuck))`,
+  centrada na altura do círculo por `translateY(-50%)` e com `z-index: 1`
+  contra o 2 do círculo, isto é, saindo DE TRÁS dele; mesma ponta em V) e a INSPIRAÇÃO
   (`.inspiration-toggle`, estrela vazia/preenchida — só o visual; a mecânica
   virá do mestre). O círculo de nível É o botão de Level Up: discreto por
   padrão, ganha destaque (`.is-ready`, dourado pulsante) quando o mestre libera,
