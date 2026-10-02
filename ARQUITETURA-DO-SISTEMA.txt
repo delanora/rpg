@@ -1656,8 +1656,14 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
       A criação NÃO esconde o cabeçalho (tema, som, presença continuam acessíveis).
     • Com a ficha pronta, exibe SheetView com as seções.
     • Level Up: `levelUpAvailable = lastLevelUpRelease < levelUpRelease`, com dica
-      textual conforme o caso (§12.2); o diálogo (LevelUpDialog) conduz classe (ou
-      multiclasse), subclasse quando liberada, PV (rolar/média), ASI ou Talento.
+      textual conforme o caso (§12.2); o diálogo (LevelUpDialog) ABRE NA CLASSE
+      PRINCIPAL (a lista com as classes atuais e as novas só aparece pelo botão
+      "multiclasse" do cabeçalho, à direita, ao lado do X que fecha — Esc fecha
+      também) e conduz subclasse quando liberada, PV (rolar/média), ASI ou Talento.
+      Confirmado, a janela não fecha: troca o formulário pelo resumo do que foi
+      escolhido e das características (com a descrição do livro) e PV que o nível
+      trouxe — é por isso que ela segue montada com `levelUpOpen`, sem depender de
+      `levelUpAvailable`.
   MasterPanel (mestre)
     • Abas: Fichas · Criaturas · NPCs · Regiões · Itens · Mesa. Em modo de combate o
       painel inteiro dá lugar ao CombatTracker.

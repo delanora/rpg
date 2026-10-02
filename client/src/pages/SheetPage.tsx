@@ -415,7 +415,11 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   }}
                 />
 
-                {levelUpOpen && levelUpAvailable ? (
+                {/*
+                 * Aberta, a janela segue montada depois do confirmar para mostrar o resumo
+                 * do nível — por isso o gatilho é só `levelUpOpen`.
+                 */}
+                {levelUpOpen ? (
                   <LevelUpDialog
                     character={character}
                     onClose={() => setLevelUpOpen(false)}

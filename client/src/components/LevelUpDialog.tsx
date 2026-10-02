@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ABILITY_KEYS, ABILITY_LABELS, SKILLS, formatModifier } from '../dnd';
 import { FEATS } from '../feats';
 import { levelUpCharacter } from '../levelUpApi';
@@ -10,6 +10,26 @@ import { Icon } from './Icon';
 function grantLabel(grant: ProficienciesState | undefined): string {
   const items = [...(grant?.armor ?? []), ...(grant?.weapons ?? []), ...(grant?.tools ?? [])];
   return items.length === 0 ? 'Nenhuma proficiência nova' : items.join(' · ');
+}
+
+/**
+ * O que a janela mostra DEPOIS de confirmar: o que foi escolhido e o que o
+ * nível trouxe de fato (PV ganho e características novas do livro).
+ */
+interface LevelUpResult {
+  className: string;
+  /** Nível da classe antes/depois; `isNew` marca a entrada por multiclasse. */
+  classSteps: { from: number; to: number; isNew: boolean };
+  totalFrom: number;
+  totalTo: number;
+  hpGained: number;
+  hpDetail: string;
+  subclass: string;
+  skill: string;
+  choices: { prompt: string; picks: string }[];
+  asi: string;
+  proficiencies: string;
+  features: { id: string; name: string; description: string; source: 'class' | 'subclass' }[];
 }
 
 interface LevelUpDialogProps {
@@ -55,6 +75,10 @@ export function LevelUpDialog({
   const [featName, setFeatName] = useState(FEATS[0]?.name ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A lista de classes só abre pelo botão multiclasse (o padrão é a principal). */
+  const [classesOpen, setClassesOpen] = useState(false);
+  /** Preenchido ao confirmar: troca o formulário pelo resumo do que veio. */
+  const [result, setResult] = useState<LevelUpResult | null>(null);
 
   const entry = character.classes.find((item) => item.classKey === classKey) ?? null;
   const option = character.classOptions.find((item) => item.key === classKey) ?? null;
@@ -82,6 +106,17 @@ export function LevelUpDialog({
       : null;
 
   const newLevel = info ? info.currentLevel + 1 : 0;
+  /**
+   * Por padrão o Level Up segue a CLASSE PRINCIPAL (a primeira da ficha). A
+   * lista com as outras classes — inclusive as novas, por multiclasse — só
+   * aparece depois do clique no botão homônimo do cabeçalho.
+   */
+  const hasClasses = character.classes.length > 0;
+  const isNewClassPick = entry === null;
+  const canMulticlass = character.classOptions.some(
+    (item) => !character.classes.some((current) => current.classKey === item.key),
+  );
+  const showClassList = !hasClasses || classesOpen;
   const needsSubclass = info !== null && info.currentSubclass === '' && newLevel >= info.subclassLevel;
   const isAsi = info !== null && info.asiLevels.includes(newLevel);
 
@@ -135,6 +170,15 @@ export function LevelUpDialog({
   const conModifier = character.derived.modifiers.constitution;
   const averageDie = info ? Math.floor(info.hitDie / 2) + 1 : 0;
   const averageGain = Math.max(1, averageDie + conModifier);
+
+  // Esc fecha a janela, como o X do cabeçalho — nunca no meio de uma aplicação.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [busy, onClose]);
 
   const choices = useMemo(
     () => [
@@ -222,6 +266,47 @@ export function LevelUpDialog({
     return request;
   }
 
+  /**
+   * Resumo do que foi escolhido e do que o nível trouxe, montado com a ficha
+   * ANTES e DEPOIS da aplicação (o servidor devolve a ficha já atualizada).
+   */
+  function summarize(updated: Character): LevelUpResult {
+    return {
+      className: info?.name ?? '—',
+      // `isNew` só vale para a entrada por multiclasse; no assistente de criação
+      // a primeira classe também tem `currentLevel` zero, mas não é multiclasse.
+      classSteps: { from: info?.currentLevel ?? 0, to: newLevel, isNew: isNewClassPick && hasClasses },
+      totalFrom: character.level,
+      totalTo: updated.level,
+      // Diferença real de PV máximo: já inclui o que um +2 de CON soma retroativamente.
+      hpGained: Math.max(0, updated.hpMax - character.hpMax),
+      hpDetail:
+        hp === 'roll'
+          ? `1d${info?.hitDie ?? '—'} ${formatModifier(conModifier)} de CON (mín. 1)`
+          : `média ${averageDie} ${formatModifier(conModifier)} de CON`,
+      subclass: needsSubclass ? subclass : '',
+      skill: multiclassSkill ? SKILLS.find((item) => item.key === skillChoice)?.label ?? '' : '',
+      choices: pendingChoices.map((choice) => ({
+        prompt: choice.prompt,
+        picks: (choicePicks[choice.featureId] ?? [])
+          .filter(Boolean)
+          .map((key) => choice.options.find((item) => item.key === key)?.name ?? key)
+          .join(', '),
+      })),
+      asi: isAsi ? asiSummary : '',
+      proficiencies: multiclassSkill ? grantLabel(option?.multiclassProficiencies) : '',
+      // As características DESSE nível da classe escolhida (classe e subclasse).
+      features: updated.activeFeatures
+        .filter((item) => item.classKey === classKey && item.level === newLevel)
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          source: item.source,
+        })),
+    };
+  }
+
   async function apply(): Promise<void> {
     const request = buildRequest();
     if (!request) return;
@@ -230,8 +315,9 @@ export function LevelUpDialog({
     setError(null);
     try {
       const updated = await applyLevelUp(request);
+      // A janela NÃO fecha: mostra o resumo do que foi aplicado e o que veio junto.
+      setResult(summarize(updated));
       onApplied(updated);
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao subir de nível.');
     } finally {
@@ -248,56 +334,230 @@ export function LevelUpDialog({
           ? `${ABILITY_LABELS[abilityA]} +2`
           : `${ABILITY_LABELS[abilityA]} +1, ${ABILITY_LABELS[abilityB]} +1`;
 
+  // Confirmação: o formulário dá lugar ao resumo do que foi aplicado.
+  if (result) {
+    return (
+      <div
+        className="modal-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Level Up concluído"
+      >
+        <div className="modal levelup-modal">
+          <header className="levelup-header">
+            <h2>
+              <Icon name="sparkle" size={20} /> Level Up concluído
+            </h2>
+            <div className="levelup-header-actions">
+              <button
+                type="button"
+                className="levelup-close"
+                title="Fechar (Esc)"
+                aria-label="Fechar"
+                onClick={onClose}
+              >
+                <Icon name="x" size={15} />
+              </button>
+            </div>
+          </header>
+
+          <p className="section-note">
+            {character.name} agora está no nível total {result.totalTo}.
+          </p>
+
+          <h3 className="subsection-title">O que foi escolhido</h3>
+          <ul className="levelup-summary">
+            <li>
+              <span>{result.classSteps.isNew ? 'Nova classe (multiclasse)' : 'Classe'}</span>
+              <strong>
+                {result.classSteps.isNew || result.classSteps.from === 0
+                  ? `${result.className} · nível ${result.classSteps.to}`
+                  : `${result.className} ${result.classSteps.from} → ${result.classSteps.to}`}
+              </strong>
+            </li>
+            <li>
+              <span>Nível total</span>
+              <strong>
+                {result.totalFrom} → {result.totalTo}
+              </strong>
+            </li>
+            <li>
+              <span>Pontos de vida</span>
+              <strong>
+                +{result.hpGained} ({result.hpDetail})
+              </strong>
+            </li>
+            {result.subclass ? (
+              <li>
+                <span>Subclasse</span>
+                <strong>{result.subclass}</strong>
+              </li>
+            ) : null}
+            {result.skill ? (
+              <li>
+                <span>Perícia de multiclasse</span>
+                <strong>{result.skill}</strong>
+              </li>
+            ) : null}
+            {result.choices.map((choice) => (
+              <li key={choice.prompt}>
+                <span>{choice.prompt}</span>
+                <strong>{choice.picks || '—'}</strong>
+              </li>
+            ))}
+            {result.asi ? (
+              <li>
+                <span>Progressão</span>
+                <strong>{result.asi}</strong>
+              </li>
+            ) : null}
+            {result.proficiencies ? (
+              <li>
+                <span>Proficiências</span>
+                <strong>{result.proficiencies}</strong>
+              </li>
+            ) : null}
+          </ul>
+
+          <h3 className="subsection-title">O que você ganhou</h3>
+          {result.features.length > 0 ? (
+            <ul className="levelup-gains">
+              {result.features.map((feature) => (
+                <li key={`${feature.id}-${feature.source}`}>
+                  <strong>
+                    {feature.name}
+                    {feature.source === 'subclass' ? (
+                      <span className="muted"> · subclasse</span>
+                    ) : null}
+                  </strong>
+                  <span>{feature.description}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="section-note">Este nível não libera características novas.</p>
+          )}
+
+          <div className="modal-actions">
+            <button type="button" className="btn btn-primary" onClick={onClose}>
+              concluir
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Level Up">
       <div className="modal levelup-modal">
-        <h2>
-          <Icon name="sparkle" size={20} /> Level Up
-        </h2>
+        {/*
+         * Cabeçalho: à direita, o atalho para a lista de classes (multiclasse)
+         * e o X que fecha a janela — o Esc faz o mesmo.
+         */}
+        <header className="levelup-header">
+          <h2>
+            <Icon name="sparkle" size={20} /> Level Up
+          </h2>
+          <div className="levelup-header-actions">
+            {hasClasses && canMulticlass ? (
+              <button
+                type="button"
+                className={
+                  classesOpen
+                    ? 'btn btn-small levelup-multiclass is-on'
+                    : 'btn btn-small levelup-multiclass'
+                }
+                aria-expanded={classesOpen}
+                title="Subir de nível em uma classe nova (multiclasse)"
+                onClick={() => setClassesOpen((open) => !open)}
+              >
+                <Icon name="users" size={14} /> multiclasse
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="levelup-close"
+              title="Fechar (Esc)"
+              aria-label="Fechar a janela de Level Up"
+              onClick={onClose}
+            >
+              <Icon name="x" size={15} />
+            </button>
+          </div>
+        </header>
+
         <p className="section-note">
           {character.name} · nível total {character.level} → {character.level + 1}
         </p>
 
-        {/* 1. Escolha da classe */}
+        {/*
+         * 1. Classe: por padrão segue a CLASSE PRINCIPAL (a primeira da ficha).
+         * A lista completa (outras classes atuais e as novas, por multiclasse)
+         * só aparece depois do clique no botão "multiclasse" do cabeçalho.
+         */}
         <h3 className="subsection-title">1. Classe</h3>
-        {character.classes.length > 0 ? (
-          <p className="section-note">
-            Subir de nível em uma classe atual ou multiclassar em uma nova?
-          </p>
+        {hasClasses ? (
+          <ul className="levelup-summary levelup-class-summary">
+            <li>
+              <span>{isNewClassPick ? 'Multiclasse' : 'Classe principal'}</span>
+              <strong>
+                {info?.name ?? '—'}
+                {isNewClassPick
+                  ? ' · nova classe · nível 1'
+                  : ` · nível ${info?.currentLevel ?? 0} → ${newLevel}`}
+              </strong>
+            </li>
+          </ul>
         ) : (
           <p className="section-note">Escolha a primeira classe do personagem.</p>
         )}
-        <ul className="modal-list">
-          {choices.map((choice) => (
-            <li key={choice.key}>
-              <label
-                className={
-                  choice.eligible ? 'check-row levelup-choice' : 'check-row levelup-choice blocked'
-                }
-              >
-                <input
-                  type="radio"
-                  name="levelup-class"
-                  checked={classKey === choice.key}
-                  disabled={!choice.eligible}
-                  onChange={() => {
-                    setClassKey(choice.key);
-                    setSubclass('');
-                    setSkillChoice('');
-                    setChoicePicks({});
-                  }}
-                />
-                <span className="check-name">
-                  {choice.name}
-                  <span className="muted"> · {choice.sub}</span>
-                  {!choice.eligible && choice.missing ? (
-                    <span className="levelup-blocked">{choice.missing}</span>
-                  ) : null}
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
+
+        {showClassList ? (
+          <>
+            {hasClasses ? (
+              <p className="section-note">
+                Subir em uma classe que já é sua ou entrar em uma nova — a multiclasse segue o
+                capítulo 6 do PHB (as perícias e proficiências de entrada entram na ficha).
+              </p>
+            ) : null}
+            <ul className="modal-list">
+              {choices.map((choice) => (
+                <li key={choice.key}>
+                  <label
+                    className={
+                      choice.eligible
+                        ? 'check-row levelup-choice'
+                        : 'check-row levelup-choice blocked'
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="levelup-class"
+                      checked={classKey === choice.key}
+                      disabled={!choice.eligible}
+                      onChange={() => {
+                        setClassKey(choice.key);
+                        setSubclass('');
+                        setSkillChoice('');
+                        setChoicePicks({});
+                        // Escolheu: a lista volta a ficar fechada.
+                        if (hasClasses) setClassesOpen(false);
+                      }}
+                    />
+                    <span className="check-name">
+                      {choice.name}
+                      <span className="muted"> · {choice.sub}</span>
+                      {!choice.eligible && choice.missing ? (
+                        <span className="levelup-blocked">{choice.missing}</span>
+                      ) : null}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
 
         {/* Subclasse, quando o nível libera */}
         {needsSubclass ? (

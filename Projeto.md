@@ -1655,8 +1655,12 @@ interno (abas do painel, passos do wizard, modais).
   acessíveis).
 - Com a ficha pronta, exibe `SheetView`.
 - Level Up: `levelUpAvailable = lastLevelUpRelease < levelUpRelease`, com dica
-  conforme o caso; o `LevelUpDialog` conduz classe (ou multiclasse), subclasse
-  quando liberada, PV (rolar/média) e ASI ou Talento.
+  conforme o caso; o `LevelUpDialog` **abre na classe principal** (a lista com as
+  classes atuais e as novas só aparece pelo botão **"multiclasse"** do cabeçalho,
+  à direita, ao lado do **X** que fecha — **Esc** fecha também) e conduz
+  subclasse quando liberada, PV (rolar/média) e ASI ou Talento. Confirmado, a
+  janela **não** fecha: troca o formulário pelo **resumo** do que foi escolhido e
+  das características (com a descrição do livro) e PV que o nível trouxe.
 
 **`MasterPanel` (mestre)**
 

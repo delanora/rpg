@@ -5369,6 +5369,97 @@ input[type='checkbox']:disabled {
   max-width: 40rem;
 }
 
+/*
+ * Cabeçalho da janela: título à esquerda, atalho de multiclasse e o X de fechar
+ * alinhados à direita.
+ */
+.levelup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.levelup-header h2 {
+  margin-bottom: 0;
+}
+
+.levelup-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Aberto, o atalho fica dourado para indicar que a lista de classes está à vista. */
+.levelup-multiclass.is-on {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #3a2410;
+}
+
+/* X de fechar (o Esc faz o mesmo). */
+.levelup-close {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--wine);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.levelup-close:hover {
+  border-color: var(--gold);
+  background: var(--wine-bright);
+  color: #fbeccb;
+}
+
+[data-theme='dark'] .levelup-close {
+  color: var(--gold-bright);
+}
+
+/* A classe escolhida em uma linha, antes da lista (que só abre no multiclasse). */
+.levelup-class-summary {
+  margin-top: 0.3rem;
+}
+
+/*
+ * Confirmação: as características que o nível liberou, com a descrição do livro.
+ */
+.levelup-gains {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.levelup-gains li {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--gold-deep);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.levelup-gains strong {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+
+.levelup-gains li > span {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .levelup-choice {
   grid-template-columns: 1.2rem 1fr;
   cursor: pointer;
