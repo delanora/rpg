@@ -314,9 +314,79 @@ export const ITEM_RARITY_LABELS: Record<ItemRarity, string> = {
   artifact: 'Artefato',
 };
 
+/**
+ * CORES das raridades — FONTE ÚNICA do sistema visual de raridade.
+ *
+ * Para mudar a cor de uma raridade, altere SÓ aqui: todo o app (inventário,
+ * painel do mestre e modal de detalhes) lê deste mapa. Um item sem raridade
+ * reconhecida usa o estilo neutro do tema (nenhuma cor aleatória).
+ */
+export const ITEM_RARITY_COLORS: Record<ItemRarity, string> = {
+  common: '#BDBDBD',
+  uncommon: '#4CAF50',
+  rare: '#2196F3',
+  very_rare: '#9C27B0',
+  legendary: '#FF9800',
+  artifact: '#D32F2F',
+};
+
+/**
+ * Apelidos aceitos para cada raridade (chave em minúsculas, sem acento). Aceita
+ * tanto os valores internos (`very_rare`) quanto os rótulos em português, em
+ * qualquer capitalização ("comum", "Comum", "COMUM").
+ */
+const RARITY_ALIASES: Record<string, ItemRarity> = {
+  common: 'common',
+  comum: 'common',
+  uncommon: 'uncommon',
+  incomum: 'uncommon',
+  rare: 'rare',
+  raro: 'rare',
+  very_rare: 'very_rare',
+  veryrare: 'very_rare',
+  'muito raro': 'very_rare',
+  legendary: 'legendary',
+  lendario: 'legendary',
+  artifact: 'artifact',
+  artefato: 'artifact',
+};
+
+/**
+ * Normaliza um valor de raridade vindo de qualquer fonte (minúsculas, sem
+ * acento, espaço em branco colapsado) para o valor interno. Devolve `null`
+ * quando não reconhece — o consumidor usa o estilo neutro.
+ */
+export function normalizeRarity(value: string | null | undefined): ItemRarity | null {
+  if (!value) return null;
+  const key = value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
+  return RARITY_ALIASES[key] ?? RARITY_ALIASES[key.replace(/ /g, '_')] ?? null;
+}
+
+/** Cor da raridade (fonte única) ou `null` quando não há raridade reconhecida. */
+export function rarityColor(rarity: string | null | undefined): string | null {
+  const key = normalizeRarity(rarity);
+  return key ? ITEM_RARITY_COLORS[key] : null;
+}
+
+/**
+ * Versão translúcida da cor da raridade (borda/fundo discreto). `alpha` é o
+ * sufixo hexadecimal de opacidade (padrão `33` ≈ 20%). `null` sem raridade.
+ */
+export function rarityTint(rarity: string | null | undefined, alpha = '33'): string | null {
+  const color = rarityColor(rarity);
+  return color ? `${color}${alpha}` : null;
+}
+
 /** Rótulo da raridade para exibição (`null` ou desconhecida → ''). */
-export function rarityLabel(rarity: ItemRarity | null | undefined): string {
-  return rarity ? ITEM_RARITY_LABELS[rarity] : '';
+export function rarityLabel(rarity: string | null | undefined): string {
+  const key = normalizeRarity(rarity);
+  return key ? ITEM_RARITY_LABELS[key] : '';
 }
 
 export const SPELL_SCHOOLS = [

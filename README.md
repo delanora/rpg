@@ -781,6 +781,8 @@ Todo item do catálogo tem duas propriedades de **item**, não de categoria: **r
 
 Ambos aparecem no editor/lista do mestre e **descem para o inventário do jogador**: o espelho do catálogo (`CatalogSnapshot`/`syncInventory`) copia `rarity` e `requiresAttunement` para a cópia do inventário, de modo que a ficha mostra a raridade e o aviso **"Requer Sintonização"** no detalhe do item — e uma correção do mestre se propaga na hora para quem já tem o item.
 
+**Sistema visual de cores.** Cada raridade tem uma cor própria (Comum cinza `#BDBDBD`, Incomum verde `#4CAF50`, Raro azul `#2196F3`, Muito Raro roxo `#9C27B0`, Lendário laranja `#FF9800`, Artefato vermelho `#D32F2F`), usada no **texto** e como **detalhe discreto** (anel da célula na mochila, borda esquerda do card e do modal). A configuração fica **num único lugar**: `ITEM_RARITY_COLORS` em `client/src/dnd.ts` — mudar ali reflete em todo o app. Os helpers `rarityColor`/`rarityTint`/`rarityLabel` normalizam o valor (aceitam `common`, "Comum", "COMUM" etc.) e devolvem o estilo **neutro** quando o item não tem raridade (nunca uma cor aleatória). A cor é só um reforço: o **nome da raridade continua escrito** por acessibilidade.
+
 > Ataques antigos cuja expressão o parser não conseguiu interpretar foram convertidos com o **texto original preservado** e a marca **legado** (`npm run migrate:attack-damage`); o mestre revisa pela própria ficha.
 
 ### Munição (arma à distância)

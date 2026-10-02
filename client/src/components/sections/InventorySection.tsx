@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
-import { describeItemDetails, isConsumableItem, rarityLabel } from '../../dnd';
+import { describeItemDetails, isConsumableItem, rarityColor, rarityLabel, rarityTint } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type {
   Character,
@@ -361,11 +361,14 @@ export function InventorySection({
     }));
   }
 
-  /** Nó do item: arrastável, com pré-visualização no hover e fixação no clique. */
+  /** Nó do item: arrastável, com pré-visualização no hover e detalhes no clique. */
   function itemNode(item: InventoryItem) {
+    // Indicação discreta da raridade: um anel interno na cor, bem translúcido.
+    const rarityRing = rarityTint(item.rarity, '88');
     return (
       <div
         className={`inv-item${draggingId === item.id ? ' is-dragging' : ''}`}
+        style={rarityRing ? { boxShadow: `inset 0 0 0 1.5px ${rarityRing}` } : undefined}
         draggable={canMove}
         onDragStart={(event) => beginDrag(event, item.id)}
         onDragEnd={endDrag}
@@ -546,7 +549,11 @@ export function InventorySection({
           <div
             className="inv-detail"
             ref={detailRef}
-            style={{ left: detailPos.x, top: detailPos.y }}
+            style={{
+              left: detailPos.x,
+              top: detailPos.y,
+              borderColor: rarityTint(selected.rarity, '88') ?? undefined,
+            }}
             role="dialog"
             aria-label={`Detalhes de ${selected.name}`}
             onMouseEnter={cancelDetailClose}
@@ -560,7 +567,12 @@ export function InventorySection({
                 <strong>{selected.name}</strong>
                 <span className="inv-detail-meta">
                   {selected.weight} kg
-                  {selected.rarity ? ` · ${rarityLabel(selected.rarity)}` : ''}
+                  {selected.rarity ? (
+                    <span style={{ color: rarityColor(selected.rarity) ?? undefined }}>
+                      {' · '}
+                      {rarityLabel(selected.rarity)}
+                    </span>
+                  ) : null}
                   {selected.requiresAttunement ? ' · Requer Sintonização' : ''}
                   {selected.itemId ? ' · catálogo' : ''}
                 </span>

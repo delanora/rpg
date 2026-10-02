@@ -9,6 +9,8 @@ import {
   WEAPON_TYPE_LABELS,
   damageExpression,
   damageIsEmpty,
+  rarityColor,
+  rarityLabel,
 } from '../../dnd';
 import {
   AMMO_TYPES,
@@ -730,7 +732,16 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
               ariaLabel="Raridade do item"
               onCommit={(value) => onPatch({ rarity: (value || null) as ItemRarity | null })}
             />
-            <span className="field-hint">sem raridade classificada —</span>
+            {item.rarity ? (
+              <span className="field-hint">
+                raridade:{' '}
+                <strong style={{ color: rarityColor(item.rarity) ?? undefined }}>
+                  {rarityLabel(item.rarity)}
+                </strong>
+              </span>
+            ) : (
+              <span className="field-hint">sem raridade classificada —</span>
+            )}
           </label>
 
           <label className="field field-check">
