@@ -49,6 +49,25 @@ export function itemRarityOf(value: unknown): ItemRarity | null {
 }
 
 /**
+ * Categorias de FINALIDADE de uma poção (só a categoria Poção usa). Os valores
+ * internos são estáveis (gravados no JSONB `details`); a exibição em português
+ * fica no cliente (`POTION_CATEGORY_LABELS` em `dnd.ts`). É OPCIONAL: poções
+ * cadastradas antes desta classificação continuam válidas sem ela.
+ */
+export const POTION_CATEGORIES = [
+  'healing',
+  'enhancement',
+  'protection',
+  'mobility',
+  'stealth',
+  'exploration',
+  'poison',
+  'longevity',
+] as const;
+
+export type PotionCategory = (typeof POTION_CATEGORIES)[number];
+
+/**
  * Categoria de peso das armaduras (PHB 2014), usada no cálculo da CA:
  * - Leve: CA base + mod. Destreza inteiro.
  * - Média: CA base + mod. Destreza, no máximo +2.
@@ -148,6 +167,8 @@ export const itemDetailsSchema = z
     // Poção / Anel / item consumível
     effectRoll: z.string().trim().max(60).optional(),
     duration: z.string().trim().max(120).optional(),
+    /** Finalidade da poção (só a categoria Poção guarda este campo). */
+    potionCategory: z.enum(POTION_CATEGORIES).optional(),
     /**
      * Marcado pelo mestre (Item Geral e Outro): o item pode ser USADO pelo
      * jogador, consumindo 1 unidade. Poções são consumíveis pela categoria.
@@ -259,7 +280,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   Munição: ['ammoType', 'attackBonus', 'damageBonus'],
   Armadura: ['armorType', 'baseArmorClass', 'armorClassBonus'],
   Escudo: ['armorClassBonus'],
-  Poção: ['effectRoll', 'duration'],
+  Poção: ['effectRoll', 'duration', 'potionCategory'],
   Anel: ['effectRoll'],
   'Item Geral': ['effectRoll', 'consumable'],
   Tesouro: [],

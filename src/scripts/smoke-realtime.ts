@@ -8485,6 +8485,78 @@ async function main(): Promise<void> {
     );
   }
 
+  // 32) Categoria da Poção (finalidade) no catálogo do mestre
+  {
+    console.log('\n32) Categoria da poção');
+
+    const potionItem = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção de cura ${suffix}`,
+        category: 'Poção',
+        details: { effectRoll: '2d4+2', duration: 'instantânea', potionCategory: 'healing' },
+      },
+    });
+    const potionId = potionItem.data?.item?.id;
+    if (potionId) createdItemIds.push(potionId);
+    check(
+      'poção guarda a categoria (healing) e mantém os demais atributos',
+      potionItem.status === 201 &&
+        potionItem.data?.item?.details?.potionCategory === 'healing' &&
+        potionItem.data?.item?.details?.effectRoll === '2d4+2' &&
+        potionItem.data?.item?.details?.duration === 'instantânea',
+      JSON.stringify(potionItem.data?.item?.details),
+    );
+
+    const badPotion = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção inválida ${suffix}`,
+        category: 'Poção',
+        details: { potionCategory: 'inexistente' },
+      },
+    });
+    check(
+      'categoria da poção fora da lista é recusada (400)',
+      badPotion.status === 400,
+      JSON.stringify(badPotion.data),
+    );
+
+    const wrongCategory = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Anel com categoria de poção ${suffix}`,
+        category: 'Anel',
+        details: { effectRoll: '1d6', potionCategory: 'healing' },
+      },
+    });
+    if (wrongCategory.data?.item?.id) createdItemIds.push(wrongCategory.data.item.id);
+    check(
+      'item de outra categoria NÃO recebe potionCategory (sanitize descarta)',
+      wrongCategory.status === 201 &&
+        wrongCategory.data?.item?.details?.potionCategory === undefined,
+      JSON.stringify(wrongCategory.data?.item?.details),
+    );
+
+    const patchedPotion = await api(`/api/items/${potionId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: {
+        details: { effectRoll: '2d4+2', duration: 'instantânea', potionCategory: 'protection' },
+      },
+    });
+    check(
+      'editar a poção atualiza a categoria mantendo os outros atributos (200)',
+      patchedPotion.status === 200 &&
+        patchedPotion.data?.item?.details?.potionCategory === 'protection' &&
+        patchedPotion.data?.item?.details?.effectRoll === '2d4+2',
+      JSON.stringify(patchedPotion.data?.item?.details),
+    );
+  }
+
   }
 
   console.log(
