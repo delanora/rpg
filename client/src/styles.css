@@ -2267,29 +2267,37 @@ select option {
   justify-items: center;
   gap: 0.1rem;
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  /* As MESMAS cores da bandeirola do nome: vinho escuro no corpo... */
-  background: linear-gradient(180deg, #7d232c, #55161d 62%, #411015);
+  /*
+   * As MESMAS cores da bandeirola do nome, em DUAS camadas: o fundo é o fio
+   * dourado e o corpo vinho vem do `::before` 1px para dentro — assim a linha
+   * acompanha o hexágono INTEIRO, arestas inclinadas inclusive (uma borda de
+   * caixa seria cortada pelo `clip-path` e só apareceria nas laterais).
+   */
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold-deep));
+  /* Stacking context próprio: é o que garante o `z-index: -1` do corpo vinho
+     ficar atrás do número e do modificador. */
+  isolation: isolate;
   filter: drop-shadow(0 3px 4px rgba(43, 33, 21, 0.3));
   transition: filter 0.18s ease;
-}
-
-[data-theme='dark'] .ability-hex {
-  background: linear-gradient(180deg, #5c1a22, #3a1015 62%, #2b0c10);
 }
 
 .ability-hex:hover {
   filter: drop-shadow(0 3px 5px rgba(43, 33, 21, 0.35)) drop-shadow(0 0 12px var(--glow));
 }
 
-/* ...e o fio dourado da bandeirola na borda do selo (o mesmo truque da
-   moldura do card, com o ouro cheio em vez do hairline). */
+/* O corpo vinho, encostado no fio dourado (1px de ouro visível na borda). */
 .ability-hex::before {
   content: '';
   position: absolute;
-  inset: 2px;
+  inset: 1px;
   clip-path: inherit;
-  border: 1px solid var(--gold);
+  background: linear-gradient(180deg, #7d232c, #55161d 62%, #411015);
   pointer-events: none;
+  z-index: -1;
+}
+
+[data-theme='dark'] .ability-hex::before {
+  background: linear-gradient(180deg, #5c1a22, #3a1015 62%, #2b0c10);
 }
 
 .ability-hex .ability-score,
