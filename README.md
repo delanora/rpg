@@ -648,7 +648,7 @@ Quem quiser devolver a ficha à montagem é o **mestre**, pelo botão **Reabrir 
 
 Nenhum formulário abre em outra tela: clicar no valor transforma o campo em edição; **Enter** ou sair do campo salva, **Esc** cancela. A alteração aparece na hora (otimista) e é confirmada pela resposta do servidor, que é a fonte de verdade dos valores derivados.
 
-Seções da ficha: **Personagem** (o retrato que salta para fora do card, a faixa recortada com Nome/Raça, a linha de Classe/Subclasse/Antecedente/Alinhamento, o nível com o **Level Up** e a inspiração — e, no fim, **Vida** com os seis cards de CA, iniciativa, deslocamento, percepção passiva, dado de vida e bônus de proficiência), seis cards de Atributos (perícias e salvaguardas de cada atributo), Inventário, **Magias** (com o bloco de Conjuração), Ataques, Características (com a subseção **Talentos**) e Anotações/História.
+Seções da ficha: **Personagem** (o retrato que salta para fora do card, a faixa recortada com Nome/Raça, a linha de Classe/Subclasse/Antecedente/Alinhamento, o nível com o **Level Up** e a inspiração — e, no fim, **Vida** com os seis cards de CA, iniciativa, deslocamento, percepção passiva, dado de vida e bônus de proficiência), seis cards de Atributos (selo hexagonal com o valor nas cores da bandeirola do nome e as perícias e salvaguardas de cada atributo — cada linha traz um resumo do que a perícia serve ao passar o mouse), Inventário, **Magias** (com o bloco de Conjuração), Ataques, Características (com a subseção **Talentos**) e Anotações/História.
 
 ---
 

@@ -50,28 +50,133 @@ export interface SkillDefinition {
   key: string;
   label: string;
   ability: AbilityKey;
+  /** Para que a perícia serve, em uma frase (mostrada no hover da linha). */
+  description: string;
 }
 
 export const SKILLS: readonly SkillDefinition[] = [
-  { key: 'acrobatics', label: 'Acrobacia', ability: 'dexterity' },
-  { key: 'animalHandling', label: 'Adestramento', ability: 'wisdom' },
-  { key: 'arcana', label: 'Arcanismo', ability: 'intelligence' },
-  { key: 'athletics', label: 'Atletismo', ability: 'strength' },
-  { key: 'performance', label: 'Atuação', ability: 'charisma' },
-  { key: 'deception', label: 'Enganação', ability: 'charisma' },
-  { key: 'stealth', label: 'Furtividade', ability: 'dexterity' },
-  { key: 'history', label: 'História', ability: 'intelligence' },
-  { key: 'intimidation', label: 'Intimidação', ability: 'charisma' },
-  { key: 'insight', label: 'Intuição', ability: 'wisdom' },
-  { key: 'investigation', label: 'Investigação', ability: 'intelligence' },
-  { key: 'medicine', label: 'Medicina', ability: 'wisdom' },
-  { key: 'nature', label: 'Natureza', ability: 'intelligence' },
-  { key: 'perception', label: 'Percepção', ability: 'wisdom' },
-  { key: 'persuasion', label: 'Persuasão', ability: 'charisma' },
-  { key: 'sleightOfHand', label: 'Prestidigitação', ability: 'dexterity' },
-  { key: 'religion', label: 'Religião', ability: 'intelligence' },
-  { key: 'survival', label: 'Sobrevivência', ability: 'wisdom' },
+  {
+    key: 'acrobatics',
+    label: 'Acrobacia',
+    ability: 'dexterity',
+    description: 'Equilíbrio, cambalhotas e escapar de agarrões ou de uma queda.',
+  },
+  {
+    key: 'animalHandling',
+    label: 'Adestramento',
+    ability: 'wisdom',
+    description: 'Acalmar, treinar e conduzir animais, inclusive montados.',
+  },
+  {
+    key: 'arcana',
+    label: 'Arcanismo',
+    ability: 'intelligence',
+    description: 'Reconhecer magias, itens mágicos, planos e criaturas arcanas.',
+  },
+  {
+    key: 'athletics',
+    label: 'Atletismo',
+    ability: 'strength',
+    description: 'Escalar, nadar, saltar longe e agarrar ou derrubar à força.',
+  },
+  {
+    key: 'performance',
+    label: 'Atuação',
+    ability: 'charisma',
+    description: 'Entreter uma plateia com música, dança, teatro ou discurso.',
+  },
+  {
+    key: 'deception',
+    label: 'Enganação',
+    ability: 'charisma',
+    description: 'Mentir, disfarçar-se e esconder as próprias intenções.',
+  },
+  {
+    key: 'stealth',
+    label: 'Furtividade',
+    ability: 'dexterity',
+    description: 'Mover-se sem ser visto nem ouvido, e seguir alguém em silêncio.',
+  },
+  {
+    key: 'history',
+    label: 'História',
+    ability: 'intelligence',
+    description: 'Lembrar eventos, reinos, linhagens e guerras antigas.',
+  },
+  {
+    key: 'intimidation',
+    label: 'Intimidação',
+    ability: 'charisma',
+    description: 'Ameaçar e coagir alguém pela presença e pela voz.',
+  },
+  {
+    key: 'insight',
+    label: 'Intuição',
+    ability: 'wisdom',
+    description: 'Perceber intenções e dizer se alguém está mentindo.',
+  },
+  {
+    key: 'investigation',
+    label: 'Investigação',
+    ability: 'intelligence',
+    description: 'Deduzir a partir de pistas e achar o que está escondido.',
+  },
+  {
+    key: 'medicine',
+    label: 'Medicina',
+    ability: 'wisdom',
+    description: 'Estabilizar um moribundo e diagnosticar doenças ou venenos.',
+  },
+  {
+    key: 'nature',
+    label: 'Natureza',
+    ability: 'intelligence',
+    description: 'Conhecer terreno, plantas, animais, clima e ciclos naturais.',
+  },
+  {
+    key: 'perception',
+    label: 'Percepção',
+    ability: 'wisdom',
+    description: 'Notar detalhes, ouvir ruídos e perceber emboscadas.',
+  },
+  {
+    key: 'persuasion',
+    label: 'Persuasão',
+    ability: 'charisma',
+    description: 'Convencer e negociar com argumentos honestos.',
+  },
+  {
+    key: 'sleightOfHand',
+    label: 'Prestidigitação',
+    ability: 'dexterity',
+    description: 'Furtar bolsos, esconder objetos e fazer truques com as mãos.',
+  },
+  {
+    key: 'religion',
+    label: 'Religião',
+    ability: 'intelligence',
+    description: 'Conhecer divindades, ritos, símbolos e criaturas divinas.',
+  },
+  {
+    key: 'survival',
+    label: 'Sobrevivência',
+    ability: 'wisdom',
+    description: 'Rastrear, orientar-se e caçar no ermo, prevendo o tempo.',
+  },
 ];
+
+/**
+ * Para que serve cada SALVAGUARDA, em uma frase — é o resumo que a ficha mostra
+ * ao passar o mouse na linha da salvaguarda.
+ */
+export const SAVE_DESCRIPTIONS: Record<AbilityKey, string> = {
+  strength: 'Resistir a empurrões, agarrões e efeitos que prendem ou derrubam.',
+  dexterity: 'Escapar de explosões e áreas perigosas (bola de fogo, sopro do dragão).',
+  constitution: 'Aguentar venenos, doenças e efeitos que drenam o corpo.',
+  intelligence: 'Resistir a efeitos que atacam a mente e a memória.',
+  wisdom: 'Resistir a encantamentos e a efeitos que dominam a vontade.',
+  charisma: 'Resistir a efeitos que aprisionam ou banem a alma.',
+};
 
 export const ALIGNMENTS = [
   'Leal e Bom',
