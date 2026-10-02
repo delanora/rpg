@@ -2492,25 +2492,37 @@ select option {
 .vital {
   position: relative;
   min-width: 0;
-  min-height: 5.5rem;
-  padding: var(--space-1) var(--space-2);
+  /*
+   * Alta o bastante para o número centralizado não encostar no rótulo (topo) nem
+   * na faixa da dica (pé) — a dica NÃO ocupa linha do grid, então quem manda na
+   * altura do card é esta caixa.
+   */
+  min-height: 6.3rem;
+  padding: var(--space-1) var(--space-2) 1rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   display: grid;
-  /* Rótulo no topo, valor centralizado no meio e dica no pé. */
-  grid-template-rows: auto 1fr auto;
-  align-items: center;
-  justify-items: center;
+  /*
+   * O NÚMERO fica no centro do card: ele é o único item no fluxo e é centralizado
+   * nas duas direções. O rótulo sai do fluxo (topo) e a dica do pé também, então
+   * nenhum dos dois empurra o número para cima ou para baixo.
+   */
+  place-items: center;
   text-align: center;
-  gap: 0.35rem;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
+/* Rótulo fixo no topo do card (fora do fluxo, para não deslocar o número). */
 .vital-label {
+  position: absolute;
+  top: var(--space-1);
+  left: 0.4rem;
+  right: 0.4rem;
   display: flex;
   align-items: center;
+  justify-content: center;
   max-width: 100%;
   gap: var(--gap-icon);
   font-family: var(--font-display);
@@ -2529,7 +2541,7 @@ select option {
   text-overflow: ellipsis;
 }
 
-/* Valor (e a mini barra da Carga) centralizados na mesma faixa dos cards. */
+/* Caixa do valor: é ela que o grid do card centraliza (o rótulo está no topo). */
 .vital-body {
   display: grid;
   align-content: center;
@@ -2574,16 +2586,37 @@ select option {
   line-height: inherit;
 }
 
+/*
+ * Dica do pé do card: fica FORA do fluxo (para não deslocar o número nem a
+ * altura da linha) e só aparece quando o ponteiro — ou o foco — chega ao card.
+ * O fundo repete o do card para ela ler como uma faixa do próprio card.
+ */
 .vital-hint {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: 0.3rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   /* Nunca abaixo de 11px: a dica é legível, não letra miúda. */
   font-size: var(--text-micro);
   line-height: 1.35;
   color: var(--ink-soft);
+  opacity: 0;
+  /* Invisível mas ainda no fluxo de foco: o Tab mostra a dica via :focus-within. */
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.vital:hover .vital-hint,
+.vital:focus-within .vital-hint {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .vital-inline {
