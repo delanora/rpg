@@ -6297,42 +6297,6 @@ input[type='checkbox']:disabled {
   color: var(--ink-soft);
 }
 
-/* --- Tooltip do item ----------------------------------------------------- */
-.inv-tooltip {
-  position: fixed;
-  z-index: 80;
-  max-width: 260px;
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--gold);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--surface), var(--surface-2));
-  color: var(--ink);
-  font-size: 0.82rem;
-  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
-  pointer-events: none;
-}
-
-.inv-tooltip strong {
-  font-family: var(--font-display);
-  color: var(--gold-deep);
-}
-
-[data-theme='dark'] .inv-tooltip strong {
-  color: var(--gold-bright);
-}
-
-.inv-tooltip span {
-  font-size: var(--text-micro);
-  color: var(--ink-faint);
-}
-
-.inv-tooltip p {
-  margin: 0;
-  color: var(--ink-soft);
-}
-
 /* ==========================================================================
    24. Polimento da ficha — realce de hover e foco
    ========================================================================== */

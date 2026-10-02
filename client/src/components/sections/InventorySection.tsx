@@ -170,12 +170,16 @@ export function InventorySection({
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ item: InventoryItem; x: number; y: number } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Item sendo consumido agora (desabilita o botão enquanto o servidor responde).
   const [usingId, setUsingId] = useState<string | null>(null);
-  // O detalhe do item abre flutuante, ancorado no ponto do clique.
+  // O detalhe do item abre flutuante, ancorado no ponto do ponteiro (hover/clique).
   const [detailPos, setDetailPos] = useState<{ x: number; y: number } | null>(null);
+  // Fechamento por hover agendado: dá tempo de o ponteiro chegar ao painel.
+  const closeTimerRef = useRef<number | null>(null);
+  // Painel fixado pelo clique NÃO fecha ao sair com o mouse (quantidade/usar/
+  // remover ficam utilizáveis); a pré-visualização por hover fecha ao sair.
+  const [pinnedDetail, setPinnedDetail] = useState(false);
 
   const { cells, rows, firstFree } = useMemo(() => layoutBackpack(inventory), [inventory]);
   const equipped = useMemo(() => {
@@ -195,6 +199,7 @@ export function InventorySection({
 
     function onPointerDown(event: globalThis.MouseEvent): void {
       if (detailRef.current?.contains(event.target as Node)) return;
+      setPinnedDetail(false);
       setSelectedId(null);
       setDetailPos(null);
     }
@@ -202,6 +207,9 @@ export function InventorySection({
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [selectedId]);
+
+  // Cancela um fechamento por hover pendente ao desmontar.
+  useEffect(() => () => cancelDetailClose(), []);
 
   function patchItem(id: string, patch: Partial<InventoryItem>): void {
     update({ inventory: inventory.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
@@ -243,25 +251,63 @@ export function InventorySection({
     void Promise.resolve(onUseItem(id)).finally(() => setUsingId(null));
   }
 
+  /** Cancela um fechamento agendado (o ponteiro voltou para o item/painel). */
+  function cancelDetailClose(): void {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }
+
+  /**
+   * Fecha o painel depois de uma folga curta: o ponteiro pode estar indo do item
+   * para o próprio painel (é lá que ficam quantidade/usar/remover). Se o usuário
+   * fixou o painel com o clique, nada é agendado.
+   */
+  function scheduleDetailClose(): void {
+    if (pinnedDetail) return;
+    cancelDetailClose();
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      setSelectedId(null);
+      setDetailPos(null);
+    }, 140);
+  }
+
   /** Fecha o painel flutuante do item. */
   function closeDetail(): void {
+    cancelDetailClose();
+    setPinnedDetail(false);
     setSelectedId(null);
     setDetailPos(null);
   }
 
   /**
-   * Abre o detalhe do item num painel flutuante perto do clique, sempre dentro
-   * da tela (não empurra mais o conteúdo da mochila para baixo).
+   * Ancora o painel no ponto do ponteiro, sempre dentro da tela (não empurra o
+   * conteúdo da mochila para baixo).
    */
-  function openDetail(item: InventoryItem, event: MouseEvent): void {
+  function detailPosFor(clientX: number, clientY: number): { x: number; y: number } {
     const width = 300;
     const height = 240;
-    setTooltip(null);
+    return {
+      x: Math.max(12, Math.min(clientX + 14, window.innerWidth - width - 12)),
+      y: Math.max(12, Math.min(clientY + 14, window.innerHeight - height - 12)),
+    };
+  }
+
+  /** Hover: mostra o MESMO painel que o clique (pré-visualização). */
+  function hoverDetail(item: InventoryItem, event: MouseEvent): void {
+    cancelDetailClose();
     setSelectedId(item.id);
-    setDetailPos({
-      x: Math.max(12, Math.min(event.clientX + 14, window.innerWidth - width - 12)),
-      y: Math.max(12, Math.min(event.clientY + 14, window.innerHeight - height - 12)),
-    });
+    setDetailPos(detailPosFor(event.clientX, event.clientY));
+  }
+
+  /** Clique: fixa o painel aberto (não fecha ao sair com o mouse). */
+  function openDetail(item: InventoryItem, event: MouseEvent): void {
+    cancelDetailClose();
+    setPinnedDetail(true);
+    setSelectedId(item.id);
+    setDetailPos(detailPosFor(event.clientX, event.clientY));
   }
 
   function beginDrag(event: DragEvent, id: string): void {
@@ -273,7 +319,8 @@ export function InventorySection({
     event.dataTransfer.setData('text/plain', id);
     draggingRef.current = id;
     setDraggingId(id);
-    setTooltip(null);
+    // Começar a arrastar fecha a pré-visualização para não atrapalhar o "drop".
+    closeDetail();
   }
 
   function endDrag(): void {
@@ -315,13 +362,7 @@ export function InventorySection({
     }));
   }
 
-  function showTooltip(event: MouseEvent, item: InventoryItem): void {
-    // Com o detalhe aberto, o painel flutuante já cumpre o papel do tooltip.
-    if (selectedId) return;
-    setTooltip({ item, x: event.clientX, y: event.clientY });
-  }
-
-  /** Nó do item: arrastável, clicável e com tooltip. */
+  /** Nó do item: arrastável, com pré-visualização no hover e fixação no clique. */
   function itemNode(item: InventoryItem) {
     return (
       <div
@@ -330,8 +371,8 @@ export function InventorySection({
         onDragStart={(event) => beginDrag(event, item.id)}
         onDragEnd={endDrag}
         onClick={(event) => openDetail(item, event)}
-        onMouseEnter={(event) => showTooltip(event, item)}
-        onMouseLeave={() => setTooltip(null)}
+        onMouseEnter={(event) => hoverDetail(item, event)}
+        onMouseLeave={scheduleDetailClose}
         aria-label={`${item.name}${item.quantity > 1 ? ` (${item.quantity})` : ''}`}
       >
         <ItemSprite item={item} />
@@ -509,6 +550,8 @@ export function InventorySection({
             style={{ left: detailPos.x, top: detailPos.y }}
             role="dialog"
             aria-label={`Detalhes de ${selected.name}`}
+            onMouseEnter={cancelDetailClose}
+            onMouseLeave={scheduleDetailClose}
           >
             <div className="inv-detail-head">
               <span className="inv-detail-sprite">
@@ -585,17 +628,6 @@ export function InventorySection({
           </div>
         ) : null}
       </div>
-
-      {tooltip ? (
-        <div className="inv-tooltip" style={{ left: tooltip.x + 14, top: tooltip.y + 14 }}>
-          <strong>{tooltip.item.name}</strong>
-          <span>
-            {tooltip.item.weight} kg
-            {tooltip.item.quantity > 1 ? ` · ${tooltip.item.quantity}×` : ''}
-          </span>
-          <p>{tooltip.item.description || 'Sem descrição.'}</p>
-        </div>
-      ) : null}
     </Section>
   );
 }
