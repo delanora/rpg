@@ -1838,9 +1838,11 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   menores ficam com o espaço restante em branco no fim — sem esticar o espaçamento.
   As três primeiras camadas alinham entre os seis cards. Nas telas estreitas a
   fileira quebra em 3 colunas (≤1280px) e em 2 (≤720px).
-  Na salvaguarda a caixa de proficiência é SEMPRE desabilitada (sem `onChange` e
-  fora da ordem de tabulação) — a proficiência é fixa, concedida pela classe, e a
-  ficha só exibe o valor/bônus; não há mais selo "classe" nem chip "esp.", e a
+  A caixa de proficiência da salvaguarda segue a MESMA lógica da perícia: fica
+  desabilitada apenas para o player (`lockedConstruction`) e o mestre, em edição,
+  marca à mão (`setSave` → `update({ saves })`, como `setSkill`). O servidor
+  reaplica as fixas da classe (`applySaveProficiencies`), então a marcação manual
+  não sobrevive à classe. Não há mais selo "classe" nem chip "esp.", e a
   ESPECIALIZAÇÃO deixou de ser marcada pela ficha.
   ROLAGEM: o botão de dado de cada linha abre a janela com 1d20 + o bônus (kind
   `skill`/`save`, como antes). No SELO, clicar no número rola um TESTE PURO do

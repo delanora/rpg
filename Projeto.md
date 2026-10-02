@@ -1731,10 +1731,11 @@ abas.
   usam a **mesma grade fixa** `[caixa 1rem] [bônus 1.7rem] [nome 1fr] [dado
   1.35rem]` e abrem um **resumo no hover** (o que a perícia/salvaguarda serve,
   de `SKILLS[].description` e `SAVE_DESCRIPTIONS`). O nome nunca quebra
-  (container query + ellipsis). A caixa de proficiência da salvaguarda é
-  **sempre desabilitada** (fixa pela classe) e a **especialização deixou de ser
-  marcada** (LACUNA de UX). Clicar no número rola um teste puro do atributo; o
-  modificador também rola.
+  (container query + ellipsis). A caixa de proficiência da salvaguarda segue a
+  **mesma lógica da perícia**: desabilitada só para o player, o mestre a marca à
+  mão (o servidor reaplica as fixas da classe), e a **especialização deixou de
+  ser marcada** (LACUNA de UX). Clicar no número rola um teste puro do atributo;
+  o modificador também rola.
 - **`readonly.tsx`:** modo somente leitura usado quando o mestre visualiza a
   ficha de um jogador.
 - Layout de perícias/salvaguardas e inventário espelha exatamente os DTOs do

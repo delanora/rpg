@@ -155,6 +155,14 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
   }
 
   /**
+   * Proficiência de UMA salvaguarda: MESMA lógica da perícia — é construção, então
+   * só o mestre (em edição) marca; o servidor reaplica as fixas da classe.
+   */
+  function setSave(ability: AbilityKey, proficient: boolean): void {
+    update({ saves: { ...character.saves, [ability]: proficient } });
+  }
+
+  /**
    * Proficiências de armadura/arma/ferramenta: construção (o jogador com a
    * criação finalizada só as VÊ). O mestre as edita como texto separado por
    * vírgula; as escolhas abertas do livro entram como descrição.
@@ -276,9 +284,9 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                   <input
                     type="checkbox"
                     checked={character.saves[ability] ?? false}
-                    disabled
-                    tabIndex={-1}
+                    disabled={lockedConstruction}
                     aria-label={`Proficiência em salvaguarda de ${label}`}
+                    onChange={(event) => setSave(ability, event.target.checked)}
                   />
                   <span className="ability-line-value">{formatModifier(save?.total ?? 0)}</span>
                   <span className="ability-line-label">Salvaguarda</span>
@@ -306,7 +314,7 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                     <span className="ability-tip-note">
                       {saveLocked
                         ? 'Concedida pela classe (fixa nas duas salvaguardas dela).'
-                        : 'Definida pela classe — muda só pela entrada em outra classe.'}
+                        : 'Normalmente vem da classe; o mestre pode marcá-la à mão.'}
                     </span>
                     {onRoll ? (
                       <span className="ability-tip-note">Clique no dado para rolar o teste.</span>
