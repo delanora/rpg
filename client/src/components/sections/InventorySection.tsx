@@ -12,6 +12,7 @@ import type {
 import { clampInt, newId } from '../../utils';
 import { Icon, type IconName } from '../Icon';
 import { InlineField } from '../InlineField';
+import { ItemDetailModal } from '../ItemDetailModal';
 import { Section } from '../Section';
 import { CoinsPanel } from './CoinsPanel';
 import type { SheetSectionProps } from './common';
@@ -173,13 +174,13 @@ export function InventorySection({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Item sendo consumido agora (desabilita o botão enquanto o servidor responde).
   const [usingId, setUsingId] = useState<string | null>(null);
-  // O detalhe do item abre flutuante, ancorado no ponto do ponteiro (hover/clique).
+  // Painel flutuante de pré-visualização: abre no hover e fecha ao sair.
   const [detailPos, setDetailPos] = useState<{ x: number; y: number } | null>(null);
   // Fechamento por hover agendado: dá tempo de o ponteiro chegar ao painel.
   const closeTimerRef = useRef<number | null>(null);
-  // Painel fixado pelo clique NÃO fecha ao sair com o mouse (quantidade/usar/
-  // remover ficam utilizáveis); a pré-visualização por hover fecha ao sair.
-  const [pinnedDetail, setPinnedDetail] = useState(false);
+  // Item aberto na ficha detalhada (modal central). Guarda só o id: o item é
+  // lido do inventário, sem cópia.
+  const [modalItemId, setModalItemId] = useState<string | null>(null);
 
   const { cells, rows, firstFree } = useMemo(() => layoutBackpack(inventory), [inventory]);
   const equipped = useMemo(() => {
@@ -192,6 +193,7 @@ export function InventorySection({
 
   const backpackCount = inventory.filter((item) => item.slot === null).length;
   const selected = inventory.find((item) => item.id === selectedId) ?? null;
+  const modalItem = inventory.find((item) => item.id === modalItemId) ?? null;
 
   // Um clique fora do painel flutuante fecha os detalhes.
   useEffect(() => {
@@ -199,7 +201,6 @@ export function InventorySection({
 
     function onPointerDown(event: globalThis.MouseEvent): void {
       if (detailRef.current?.contains(event.target as Node)) return;
-      setPinnedDetail(false);
       setSelectedId(null);
       setDetailPos(null);
     }
@@ -261,11 +262,9 @@ export function InventorySection({
 
   /**
    * Fecha o painel depois de uma folga curta: o ponteiro pode estar indo do item
-   * para o próprio painel (é lá que ficam quantidade/usar/remover). Se o usuário
-   * fixou o painel com o clique, nada é agendado.
+   * para o próprio painel (é lá que ficam quantidade/usar/remover).
    */
   function scheduleDetailClose(): void {
-    if (pinnedDetail) return;
     cancelDetailClose();
     closeTimerRef.current = window.setTimeout(() => {
       closeTimerRef.current = null;
@@ -277,7 +276,6 @@ export function InventorySection({
   /** Fecha o painel flutuante do item. */
   function closeDetail(): void {
     cancelDetailClose();
-    setPinnedDetail(false);
     setSelectedId(null);
     setDetailPos(null);
   }
@@ -302,12 +300,13 @@ export function InventorySection({
     setDetailPos(detailPosFor(event.clientX, event.clientY));
   }
 
-  /** Clique: fixa o painel aberto (não fecha ao sair com o mouse). */
-  function openDetail(item: InventoryItem, event: MouseEvent): void {
-    cancelDetailClose();
-    setPinnedDetail(true);
-    setSelectedId(item.id);
-    setDetailPos(detailPosFor(event.clientX, event.clientY));
+  /**
+   * Clique: abre a FICHA DETALHADA (modal centralizado, somente leitura). O
+   * painel de pré-visualização do hover sai de cena para não ficar atrás dele.
+   */
+  function openDetail(item: InventoryItem): void {
+    closeDetail();
+    setModalItemId(item.id);
   }
 
   function beginDrag(event: DragEvent, id: string): void {
@@ -370,7 +369,7 @@ export function InventorySection({
         draggable={canMove}
         onDragStart={(event) => beginDrag(event, item.id)}
         onDragEnd={endDrag}
-        onClick={(event) => openDetail(item, event)}
+        onClick={() => openDetail(item)}
         onMouseEnter={(event) => hoverDetail(item, event)}
         onMouseLeave={scheduleDetailClose}
         aria-label={`${item.name}${item.quantity > 1 ? ` (${item.quantity})` : ''}`}
@@ -628,6 +627,10 @@ export function InventorySection({
           </div>
         ) : null}
       </div>
+
+      {modalItem ? (
+        <ItemDetailModal item={modalItem} onClose={() => setModalItemId(null)} />
+      ) : null}
     </Section>
   );
 }
