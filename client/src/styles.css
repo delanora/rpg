@@ -2495,59 +2495,66 @@ select option {
 
 /* A caixa de proficiência vira um CÍRCULO (vazio = sem proficiência,
    preenchido = com proficiência) e ganha um envoltório para o selo de
-   Expertise caber ATRÁS dela, sem tirar a área de clique. */
+   Expertise caber ATRÁS dela, sem tirar a área de clique.
+
+   As regras do checkbox global (`input[type='checkbox']`) vêm DEPOIS neste
+   arquivo: por isso tudo aqui é escopado em `.ability-line` (especificidade
+   maior), senão o quadrado com gradiente venceria o círculo. */
 .ability-line .prof-check-wrap {
   grid-column: 1;
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 1rem;
+  height: 1rem;
+  overflow: visible;
 }
 
-.prof-check {
-  width: 0.95rem;
-  height: 0.95rem;
+.ability-line .prof-check-wrap .prof-check {
+  width: 1rem;
+  height: 1rem;
   border-radius: 50%;
   background: transparent;
   border: 1px solid var(--line-strong);
 }
 
-.prof-check::before {
+.ability-line .prof-check-wrap .prof-check::before {
+  /* Sem o check: o preenchimento do círculo é que indica a proficiência. */
   display: none;
 }
 
-.prof-check:checked {
+.ability-line .prof-check-wrap .prof-check:checked {
   background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold-deep));
   border-color: var(--gold-deep);
   box-shadow: 0 0 8px -1px var(--glow);
 }
 
 /* A perícia em Expertise já chega marcada e travada — o círculo segue cheio. */
-.prof-check:disabled {
+.ability-line .prof-check-wrap .prof-check:disabled {
   opacity: 0.5;
 }
 
-.prof-expertise .prof-check:disabled {
+.ability-line .prof-expertise .prof-check-wrap .prof-check:disabled {
   opacity: 1;
 }
 
-/* Coroa de louros atrás do círculo: um pouco maior, sem capturar o clique. */
-.prof-check-wrap .expertise-laurel {
+/* Coroa de louros atrás do círculo: cresce em volta dele e não pega o clique. */
+.ability-line .prof-check-wrap .expertise-laurel {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 1.8rem;
+  height: 1.8rem;
   transform: translate(-50%, -50%);
   color: var(--gold-deep);
   pointer-events: none;
+  /* ATRÁS do círculo (o clique continua no checkbox, que fica por cima). */
   z-index: 0;
   filter: drop-shadow(0 1px 1px rgba(60, 36, 6, 0.5));
   transition: color 0.18s ease, filter 0.18s ease;
 }
 
-[data-theme='dark'] .prof-check-wrap .expertise-laurel {
+[data-theme='dark'] .ability-line .prof-check-wrap .expertise-laurel {
   color: var(--gold);
 }
 
@@ -2562,7 +2569,7 @@ select option {
   fill: currentColor;
 }
 
-.prof-check-wrap .prof-check {
+.ability-line .prof-check-wrap .prof-check {
   position: relative;
   z-index: 1;
 }
