@@ -857,7 +857,8 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                 </p>
               )}
 
-              {levelUpOpen && character && level < startingLevel ? (
+              {/* Montada depois do confirmar: mostra o resumo do nível aplicado. */}
+              {levelUpOpen && character ? (
                 <LevelUpDialog
                   character={character}
                   apply={applyLevelUp}
