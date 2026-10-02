@@ -450,6 +450,10 @@ exceto GameConfig (chave fixa "main").
     proficiencies Json @default("{}") // { armor: string[], weapons: string[], tools: string[] }
                                      // CONSTRUÇÃO: 1ª classe dá o conjunto completo do
                                      // nível 1; multiclasse dá o reduzido (PHB p.164).
+    toolProficiencies String[] @default([]) // ids do catálogo de ferramentas (PHB 2014,
+                                     // shared/tools): proficiência SIMPLES, ex. "thieves-tools".
+                                     // CONSTRUÇÃO (só o mestre); vazio por padrão — nada
+                                     // concede ferramenta automaticamente nesta etapa.
     inventory Json @default("[]")
     spells    Json @default("{}")  // { list: [...], slots: { "1": { max, used } } }
     attacks   Json @default("[]")   // [{ id, name, damage: { count, sides, bonus, type },
@@ -2215,6 +2219,8 @@ DIAGNÓSTICO
   classState              { active: string[], used: { [id]: number } } — toggles/usos
   classAdjustments        ajustes calculados das features (nunca gravados)
   proficiencies           { armor, weapons, tools } — texto do PHB; CONSTRUÇÃO (só o mestre)
+  toolProficiencies       ids de ferramenta do catálogo (shared/tools); CONSTRUÇÃO (só o mestre)
+  TOOLS/getTool           catálogo fechado das 35 ferramentas do PHB 2014 (shared/tools)
   CLASS_PROFICIENCIES     tabela `first` (nível 1) x `multiclass` (PHB p.164) por classe
   multiclassSkillChoice   perícia à escolha ao ENTRAR numa classe nova (Bardo/Ranger/Rogue)
   derived (DerivedStats)  todos os valores calculados da ficha (nunca gravados)

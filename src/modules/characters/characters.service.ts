@@ -164,6 +164,7 @@ const CREATION_FIELD_LABELS: Record<string, string> = {
   skills: 'perícias',
   saves: 'salvaguardas',
   proficiencies: 'proficiências de armadura, arma e ferramenta',
+  toolProficiencies: 'proficiências de ferramenta',
   coins: 'Moedas',
   attacks: 'ataques',
   features: 'características',
@@ -1844,6 +1845,11 @@ async function applyCharacterPatch(
   // finalizada só o mestre edita (ver PLAYER_STATE_KEYS acima).
   if (patch.proficiencies !== undefined) {
     data.proficiencies = normalizeProficiencies(patch.proficiencies) as ProficienciesState;
+  }
+  // Proficiências simples em ferramenta (ids do catálogo): só o mestre grava, e
+  // o valor enviado substitui o anterior por inteiro. Sem repetição.
+  if (patch.toolProficiencies !== undefined) {
+    data.toolProficiencies = [...new Set(patch.toolProficiencies)];
   }
   if (patch.inventory !== undefined) data.inventory = patch.inventory;
   // Moedas: só o MESTRE chega aqui (o jogador é barrado em assertPlayerCanPatch).

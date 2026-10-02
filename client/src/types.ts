@@ -697,6 +697,11 @@ export interface Character {
   expertiseSkills: string[];
   /** Proficiências de armadura, arma e ferramenta (armaduras/armas/ferramentas). */
   proficiencies: ProficienciesState;
+  /**
+   * Proficiências SIMPLES em ferramenta, pelos ids do catálogo do PHB 2014
+   * (ex.: "thieves-tools"). Sem tela nesta etapa — o campo só viaja no DTO.
+   */
+  toolProficiencies: string[];
   inventory: InventoryItem[];
   spells: SpellsState;
   attacks: Attack[];

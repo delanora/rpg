@@ -8382,6 +8382,30 @@ async function main(): Promise<void> {
 
   await api('/api/combat/end', { method: 'POST', token: masterToken });
 
+  // 30) Proficiências simples em ferramenta (catálogo do PHB 2014)
+  {
+    console.log('\n30) Proficiências simples em ferramenta');
+    const toolSheet = await masterPatch(multiSheetOwner.characterId, {
+      toolProficiencies: ['thieves-tools', 'lute', 'bagpipes'],
+    });
+    check(
+      'o mestre grava toolProficiencies com ids do catálogo (200)',
+      toolSheet.status === 200 &&
+        JSON.stringify(toolSheet.data?.character?.toolProficiencies) ===
+          JSON.stringify(['thieves-tools', 'lute', 'bagpipes']),
+      JSON.stringify(toolSheet.data?.character?.toolProficiencies),
+    );
+
+    const badTool = await masterPatch(multiSheetOwner.characterId, {
+      toolProficiencies: ['ferramenta-inexistente'],
+    });
+    check(
+      'id de ferramenta fora do catálogo é recusado (400)',
+      badTool.status === 400,
+      JSON.stringify(badTool.data),
+    );
+  }
+
   }
 
   console.log(

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { attackSchema } from '../shared/attacks.js';
 import { coinsSchema, coinAmountSchema, coinDeltaSchema } from '../shared/coins.js';
 import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
+import { getTool } from '../shared/tools.js';
 import { itemDetailsSchema } from '../shared/item-details.js';
 import {
   ABILITY_KEYS,
@@ -81,6 +82,23 @@ export const proficienciesSchema = z.object({
   weapons: z.array(shortText(120)).max(60).default([]),
   tools: z.array(shortText(120)).max(60).default([]),
 });
+
+/** Id de ferramenta do catálogo do PHB 2014 (ex.: "thieves-tools"). */
+const toolIdSchema = z
+  .string()
+  .trim()
+  .refine((value) => getTool(value) !== undefined, 'Ferramenta desconhecida.');
+
+/**
+ * Proficiências SIMPLES em ferramentas, pelos ids do catálogo
+ * (src/modules/shared/tools). Diferente de `proficiencies.tools` (texto livre),
+ * aqui só entram ids estáveis — é o que o futuro concede/rola usará.
+ *
+ * Campo de CONSTRUÇÃO: como as demais coleções, o valor enviado substitui o
+ * anterior por inteiro. Entra pelas mãos do mestre; nesta etapa NADA concede
+ * ferramenta automaticamente por classe, raça ou antecedente.
+ */
+export const toolProficienciesSchema = z.array(toolIdSchema).max(60);
 
 /**
  * Slots de equipamento do personagem (estilo Tibia). Cada slot comporta um
@@ -371,6 +389,7 @@ export const updateCharacterSchema = z
     skills: skillsStateSchema,
     saves: savesStateSchema,
     proficiencies: proficienciesSchema,
+    toolProficiencies: toolProficienciesSchema,
     inventory: inventoryListSchema,
     /**
      * Carteira de moedas { pp, gp, ep, sp, cp }. Campo de CONSTRUÇÃO: o jogador

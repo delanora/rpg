@@ -398,7 +398,7 @@ Modelo **híbrido**: campos simples e muito consultados em colunas, coleções m
 
 | Tipo | Campos |
 |------|--------|
-| Colunas | `name`, `race`, `className`, `level`, `background`, `alignment`, `experience`, os 6 atributos, `hpCurrent/hpMax/hpTemp`, `armorClass`, `initiativeBonus`, `speed`, `notes`, `version` |
+| Colunas | `name`, `race`, `className`, `level`, `background`, `alignment`, `experience`, os 6 atributos, `hpCurrent/hpMax/hpTemp`, `armorClass`, `initiativeBonus`, `speed`, `notes`, `version`, `toolProficiencies` (ids de ferramenta) |
 | JSONB | `skills` (18 perícias), `saves`, `proficiencies` (armadura/arma/ferramenta), `inventory`, `spells`, `attacks`, `features` |
 
 Quando uma coleção é enviada no PATCH, ela **substitui integralmente** o valor anterior — sem merge profundo, o que torna a edição inline previsível.
@@ -480,6 +480,8 @@ O **Talento** escolhido nesse mesmo assistente fica registrado na ficha como uma
 As regras vivem em `src/modules/shared/classes/index.ts` (pré-requisitos, tabela `CLASS_PROFICIENCIES` de proficiências, ajustes somados, tabelas de espaços, ASI por classe); a ficha grava as classes no JSONB `characters.classes` (migração `20260926180000_multiclass_and_level_up`) e as proficiências no JSONB `characters.proficiencies` (migração `20260928160000_character_proficiencies`, que já preencheu as fichas existentes a partir das classes).
 
 As **proficiências de armadura, arma e ferramenta** aparecem em modo somente leitura na seção **Perícias e Salvaguardas** da ficha. É campo de **construção**: com a criação finalizada o jogador não altera (403) e só o mestre edita (texto separado por vírgula no próprio local).
+
+O catálogo **`src/modules/shared/tools`** reúne as **35 ferramentas do PHB 2014** (17 de artesão, 4 kits, jogo de tabuleiro/cartas, 9 instrumentos musicais, navegação, ladrão e 2 veículos), com id estável em inglês (`thieves-tools`), nome em português/inglês, categoria, sugestão de atributo e uma descrição curta. Serve às funções `getTool`/`toolsByCategory`/`allTools`. O campo **`toolProficiencies`** (coluna `text[]`, nasce vazio) guarda os **ids** das ferramentas em que o personagem tem proficiência simples — é campo de construção, sem concessão automática por classe, raça ou antecedente nesta etapa.
 
 ### Controle de Level Up pelo mestre
 
