@@ -9,13 +9,19 @@ import {
   type SheetUpdatedPayload,
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { clearActiveRollFrom, forgetRollsFrom, rollItemEffect } from '../dice/dice.service.js';
+import {
+  clearActiveRollFrom,
+  forgetRollsFrom,
+  recordHealingRoll,
+  rollItemEffect,
+} from '../dice/dice.service.js';
 import type { DiceRollDto } from '../dice/dice.dto.js';
 import { getGameConfig } from '../game-config/game-config.service.js';
 import { toCharacterDto, type CharacterDto, type InventoryItemDto } from './characters.dto.js';
 import {
   catalogItemIds,
   loadCatalogLookup,
+  syncInventory,
   type CatalogSnapshot,
 } from './inventory-sync.js';
 import { inventoryListSchema } from './characters.schema.js';
@@ -28,6 +34,7 @@ import type {
   UseInventoryItemInput,
 } from './characters.schema.js';
 import { isConsumableItem } from '../shared/item-details.js';
+import { rollHealingDice } from '../shared/dice.js';
 import { parseJson } from '../shared/json.js';
 import { spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
 import {
@@ -1257,9 +1264,12 @@ const INVENTORY_WRITE_ATTEMPTS = 6;
  * Só vale para Poção e para itens marcados com `details.consumable`; outros
  * itens são recusados (400). A unidade é descontada com a escrita condicionada
  * à `version` (duas requisições simultâneas não consomem a mesma unidade) e a
- * entrada SAI do inventário quando a quantidade chega a zero. Se o item tiver
- * `effectRoll`, o resultado da rolagem volta na resposta — nenhum efeito é
- * aplicado automaticamente na ficha.
+ * entrada SAI do inventário quando a quantidade chega a zero.
+ *
+ * Poção de Cura com `healingDice` (cura estruturada) aplica a cura na ficha:
+ * o HP novo entra na MESMA escrita que desconta a unidade. As demais poções (e
+ * as de cura sem `healingDice`, caso legado) só rolam `effectRoll` e voltam na
+ * resposta — nenhum efeito automático.
  */
 export async function useInventoryItem(
   actor: Actor,
@@ -1274,7 +1284,14 @@ export async function useInventoryItem(
       character.inventory,
       [],
     );
-    const item = inventory.find((entry) => entry.id === input.itemInventoryId);
+
+    // Os atributos EXIBIDOS na ficha vêm do catálogo (espelho no DTO). O uso
+    // lê da mesma fonte para que uma correção do mestre (ex.: a cura) valha na
+    // hora, sem precisar reenviar o item.
+    const catalog = await loadCatalogLookup([inventory]);
+    const item = syncInventory(inventory, catalog).find(
+      (entry) => entry.id === input.itemInventoryId,
+    );
     if (!item) throw new HttpError('Item não encontrado no inventário.', 404);
 
     if (!isConsumableItem(item.category, item.details)) {
@@ -1284,6 +1301,20 @@ export async function useInventoryItem(
       throw new HttpError(`Não há mais unidades de ${item.name}.`, 400);
     }
 
+    // Poção de Cura com `healingDice`: rola a cura agora (dado justo) para que
+    // o total entre na MESMA escrita que desconta a unidade.
+    const healing =
+      item.category === 'Poção' &&
+      item.details.potionCategory === 'healing' &&
+      item.details.healingDice
+        ? rollHealingDice(item.details.healingDice)
+        : null;
+
+    // TODO (Fase 5 — motor de ações): consumir 1 Ação do turno ao usar poção de
+    // cura durante o combate; bloquear se a Ação já foi gasta naquele turno.
+    const nextHp =
+      healing === null ? null : Math.min(character.hpMax, character.hpCurrent + healing.total);
+
     // A entrada some quando a última unidade é usada.
     const next = inventory
       .map((entry) => (entry.id === item.id ? { ...entry, quantity: entry.quantity - 1 } : entry))
@@ -1291,18 +1322,29 @@ export async function useInventoryItem(
 
     const written = await prisma.character.updateMany({
       where: { id: character.id, version: character.version },
-      data: { inventory: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } },
+      data: {
+        inventory: next as unknown as Prisma.InputJsonValue,
+        ...(nextHp === null ? {} : { hpCurrent: nextHp }),
+        version: { increment: 1 },
+      },
     });
     if (written.count === 0) continue;
 
     const updated = await prisma.character.findUnique({ where: { id: character.id } });
     if (!updated) throw new HttpError('Esta ficha ainda não foi criada.', 404);
 
-    const roll = item.details.effectRoll
-      ? rollItemEffect(actor, updated.name || actor.displayName, item.name, item.details.effectRoll)
-      : null;
+    const actorName = updated.name || actor.displayName;
+    const roll =
+      healing !== null
+        ? recordHealingRoll(actor, actorName, item.name, healing)
+        : item.details.effectRoll
+          ? rollItemEffect(actor, actorName, item.name, item.details.effectRoll)
+          : null;
 
-    await publishChange(actor, updated, { inventory: next });
+    await publishChange(actor, updated, {
+      inventory: next,
+      ...(nextHp === null ? {} : { hpCurrent: nextHp }),
+    });
     return { character: await toSheetDto(updated, actor.username), roll };
   }
 

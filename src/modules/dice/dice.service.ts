@@ -315,3 +315,40 @@ export function rollItemEffect(
 
   return roll;
 }
+
+/**
+ * Registra no log a cura de uma poção JÁ rolada e devolve a rolagem.
+ *
+ * O resultado (dados e total) é calculado antes, por `rollHealingDice` do
+ * `shared/dice.ts`, para que o total aplicado na ficha seja EXATAMENTE o que
+ * aparece no histórico. A rolagem entra como `kind: 'item'`, rotulada como
+ * "Cura (<nome>)" — o `rollDebug` do cliente mostra o detalhe dado a dado.
+ */
+export function recordHealingRoll(
+  actor: { userId: string },
+  actorName: string,
+  itemName: string,
+  result: { rolls: number[]; sides: number; bonus: number; total: number },
+): DiceRollDto {
+  const roll: DiceRollDto = {
+    id: randomUUID(),
+    actorUserId: actor.userId,
+    clientId: null,
+    actorName,
+    kind: 'item',
+    label: `Cura (${itemName})`,
+    dice: result.rolls.map((value) => ({ sides: result.sides, value })),
+    bonus: result.bonus,
+    total: result.total,
+    advantage: false,
+    disadvantage: false,
+    isPrivate: false,
+    crit: false,
+    at: new Date().toISOString(),
+  };
+
+  history = [roll, ...history].slice(0, HISTORY_LIMIT);
+  publish(roll, actor);
+
+  return roll;
+}

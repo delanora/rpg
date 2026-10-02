@@ -16,6 +16,7 @@ import {
 import {
   AMMO_TYPES,
   ARMOR_TYPES,
+  HEALING_DICE_SIDES,
   ITEM_CATEGORIES,
   ITEM_RARITIES,
   POTION_CATEGORIES,
@@ -45,6 +46,15 @@ import { Portrait } from '../Portrait';
 import { Section } from '../Section';
 
 const DIE_OPTIONS = ['4', '6', '8', '10', '12', '20'] as const;
+
+/** Rótulos do dado de cura (d4...d12), usados no select da Poção de Cura. */
+const HEALING_DIE_LABELS: Record<string, string> = {
+  '4': 'd4',
+  '6': 'd6',
+  '8': 'd8',
+  '10': 'd10',
+  '12': 'd12',
+};
 
 /** Escada do dado versátil: d4→d6, d6→d8, d8→d10, d10→d12 (senão d8). */
 function nextVersatileDie(die: number): number {
@@ -547,6 +557,14 @@ function CategoryFields({
   }
 
   if (item.category === 'Poção') {
+    // Poção de Cura: a rolagem de texto livre dá lugar à cura ESTRUTURADA
+    // (o uso do item rola e aplica na ficha). As demais finalidades seguem com
+    // `effectRoll`/`duration` como texto livre.
+    const isHealing = details.potionCategory === 'healing';
+    const healing = details.healingDice ?? { count: 1, sides: 8, bonus: 0 };
+    const patchHealing = (patch: Partial<typeof healing>): void =>
+      onPatchDetails({ healingDice: { ...healing, ...patch } });
+
     return (
       <div className="grid grid-3">
         {/* Classificação da finalidade: só a Poção tem este campo; é opcional
@@ -567,15 +585,56 @@ function CategoryFields({
           />
           <span className="field-hint">a finalidade da poção (classificação manual)</span>
         </label>
-        <label className="field">
-          <span>Rolagem do efeito</span>
-          <InlineField
-            value={details.effectRoll ?? ''}
-            placeholder="ex.: 2d4+2"
-            ariaLabel="Rolagem do efeito da poção"
-            onCommit={(value) => onPatchDetails({ effectRoll: value.trim() })}
-          />
-        </label>
+        {isHealing ? (
+          <>
+            <label className="field">
+              <span>Dado de cura</span>
+              <InlineField
+                value={String(healing.sides)}
+                mode="select"
+                options={HEALING_DICE_SIDES.map(String)}
+                optionLabels={HEALING_DIE_LABELS}
+                ariaLabel="Dado de cura da poção"
+                onCommit={(value) => patchHealing({ sides: Number(value) || healing.sides })}
+              />
+              <span className="field-hint">faces do dado rolado na cura</span>
+            </label>
+            <label className="field">
+              <span>Quantidade</span>
+              <InlineField
+                value={healing.count}
+                mode="number"
+                min={1}
+                max={10}
+                ariaLabel="Quantidade de dados de cura"
+                onCommit={(value) => patchHealing({ count: clampInt(value, 1, 10, 1) })}
+              />
+              <span className="field-hint">quantos dados de cura (1 a 10)</span>
+            </label>
+            <label className="field">
+              <span>Bônus</span>
+              <InlineField
+                value={healing.bonus}
+                mode="number"
+                min={0}
+                max={20}
+                ariaLabel="Bônus de cura"
+                onCommit={(value) => patchHealing({ bonus: clampInt(value, 0, 20, 0) })}
+              />
+              <span className="field-hint">bônus fixo somado à cura (0 a 20)</span>
+            </label>
+          </>
+        ) : (
+          <label className="field">
+            <span>Rolagem do efeito</span>
+            <InlineField
+              value={details.effectRoll ?? ''}
+              placeholder="ex.: 2d4+2"
+              ariaLabel="Rolagem do efeito da poção"
+              onCommit={(value) => onPatchDetails({ effectRoll: value.trim() })}
+            />
+          </label>
+        )}
         <label className="field">
           <span>Duração</span>
           <InlineField

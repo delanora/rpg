@@ -94,6 +94,8 @@ export interface ItemDetails {
   armorClassBonus?: number;
   /** Finalidade da poção (só a categoria Poção usa). */
   potionCategory?: PotionCategory;
+  /** Cura estruturada (só Poção de Cura): substitui `effectRoll` no uso. */
+  healingDice?: HealingDice;
   effectRoll?: string;
   duration?: string;
   /** Marcado pelo mestre (Item Geral/Outro): o item pode ser USADO (consome 1). */
@@ -1383,6 +1385,22 @@ export const POTION_CATEGORIES = [
 ] as const;
 
 export type PotionCategory = (typeof POTION_CATEGORIES)[number];
+
+/**
+ * Faces válidas do dado de cura de uma poção de Cura (d4/d6/d8/d10/d12).
+ * Espelha `HEALING_DICE_SIDES` do servidor.
+ */
+export const HEALING_DICE_SIDES = [4, 6, 8, 10, 12] as const;
+
+/**
+ * Cura ESTRUTURADA de uma poção de Cura (`potionCategory === 'healing'`): o
+ * uso rola `count`d`sides` + `bonus` e aplica na ficha automaticamente.
+ */
+export interface HealingDice {
+  count: number;
+  sides: number;
+  bonus: number;
+}
 
 /**
  * Peso das armaduras (espelha src/modules/shared/item-details.ts). Decide como

@@ -226,6 +226,7 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **30** | **Proficiências de ferramenta** — o mestre grava `toolProficiencies` com os ids estáveis do catálogo do PHB 2014 (`thieves-tools`, `lute`, `bagpipes`); um id fora do catálogo é recusado (400). |
 | **31** | **Raridade e sintonização do item** — o item guarda `rarity` (valores internos `common`…`artifact`) e `requiresAttunement` (booleano manual, independente da raridade); item criado sem raridade nasce com `rarity: null` e `requiresAttunement: false`; raridade fora da lista é recusada (400); a edição atualiza os dois de forma independente; e o inventário do jogador **espelha** ambos (catálogo → ficha). |
 | **32** | **Categoria da Poção** — a categoria **Poção** ganha o campo opcional `details.potionCategory` (`healing`…`longevity`), que convive com `effectRoll`/`duration` sem alterá-los; um valor fora da lista é recusado (400); poção antiga sem categoria continua válida; item de **outra** categoria com `potionCategory` é **descartado** pelo `sanitizeItemDetails`; e a edição atualiza a categoria mantendo os demais atributos. |
+| **33** | **Poção de Cura (cura estruturada)** — a poção com `potionCategory: 'healing'` ganha `details.healingDice` (`{ count 1..10, sides 4/6/8/10/12, bonus 0..20 }`; fora disso, 400), que só é guardado quando a finalidade é Cura (sanitize descarta nas demais); no editor o texto livre de rolagem dá lugar a **Dado/Quantidade/Bônus**; e o uso do item rola `count×sides + bonus` no servidor, aplica `hpCurrent = min(hpMax, hpCurrent + total)` na **mesma** escrita que desconta a unidade, publica `sheet:updated` e registra a cura no log como `kind: 'item'` (rótulo `Cura (<poção>)`, detalhe dado a dado). Poção não de Cura (ou de Cura sem `healingDice`) mantém o comportamento antigo. |
 
 Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória (e as seções novas **reaproveitam** fichas já criadas para não estourar o limite de 30 contas por 15 min do modo produção).
 
@@ -787,6 +788,38 @@ Ambos aparecem no editor/lista do mestre e **descem para o inventário do jogado
 A categoria **Poção** tem um campo próprio adicional, dentro de **Atributos — Poção**, exclusivo dela: a **Categoria da Poção** (`potionCategory`), um `select` de **uma** finalidade por poção. Os valores internos são estáveis (`healing`, `enhancement`, `protection`, `mobility`, `stealth`, `exploration`, `poison`, `longevity`) e os rótulos ficam no cliente (`POTION_CATEGORY_LABELS` em `dnd.ts`): **Cura**, **Atributos e aprimoramento**, **Resistência e proteção**, **Mobilidade**, **Furtividade e percepção**, **Sobrevivência e exploração**, **Veneno** e **Longevidade**.
 
 O campo é **opcional** e vive dentro do JSONB `details` (é mais um atributo da categoria, como `effectRoll`/`duration` — **nenhuma coluna nem migração** foram necessárias): poções cadastradas antes desta classificação continuam funcionando sem categoria, e o mestre pode deixá-la em branco. Nada é inferido do nome ou do efeito da poção — a classificação é **sempre manual**. Como o `sanitizeItemDetails` só mantém as chaves da categoria, um item de outra categoria **nunca** guarda `potionCategory`: o campo só aparece no editor com a categoria Poção e, ao trocá-la, o servidor descarta a categoria da poção, sem tocar nos demais dados do item (nome, descrição, raridade...). A categoria aparece no detalhe do item (modal do inventário e lista do mestre) junto de efeito, duração, raridade e descrição, sem substituí-los.
+
+### Poção de Cura (cura estruturada)
+
+Uma poção com **Categoria da Poção = Cura** (`healing`) passa a ter, em vez da
+rolagem de texto livre, uma **cura estruturada** dentro de `details.healingDice`:
+`{ count, sides, bonus }` — `count` de **1 a 10** dados, `sides` só **4, 6, 8, 10
+ou 12** e `bonus` de **0 a 20** (qualquer valor fora disso é **400**). No editor
+do mestre, ao escolher **Cura**, o campo **Rolagem do efeito** some e entram
+**Dado** (select d4…d12), **Quantidade** e **Bônus**; nas demais finalidades (ou
+sem categoria) o `effectRoll`/`duration` como texto livre continua **igual**.
+
+`healingDice` é exclusivo da poção de Cura: como o `sanitizeItemDetails` só
+mantém as chaves da categoria (e o filtro extra exige a finalidade `healing`),
+uma poção de outra finalidade **nunca** guarda a cura estruturada — trocar a
+categoria para fora de Cura descarta a chave, e trocar **para** Cura mantém
+`effectRoll`/`duration` como estavam (só deixa de exibi-los). O campo desce para
+o inventário pela **mesma** espelho do catálogo (`syncInventory`), então uma
+correção do mestre se propaga para quem já tem a poção.
+
+No **uso do item** (`POST /api/characters/me/inventory/use`), uma Poção de Cura
+com `healingDice` rola `count×dado + bonus` com o **rolador do servidor**
+(`shared/dice.ts`, `crypto.randomInt`) e aplica o total em `hpCurrent` **sem
+ultrapassar** `hpMax` (`min(hpMax, hpCurrent + total)`) — a cura e o desconto de
+1 unidade entram na **mesma** escrita e o `sheet:updated` é publicado como
+qualquer mudança de PV. A rolagem entra no log do mestre como `kind: 'item'`,
+rotulada `Cura (<nome da poção>)`, com o detalhe dado a dado no mesmo formato da
+perícia/salvaguarda (`d8 6 + d8 4 + 2 bônus`). A resposta do endpoint continua
+`{ character, roll }`, com o `character` já refletindo o PV novo. Poções que
+**não** são de Cura — ou de Cura **sem** `healingDice` (caso legado) — seguem
+rolando `effectRoll` e **não** aplicam nada na ficha. O custo de **Ação** em
+combate ainda não é cobrado (o motor de ações é a Fase 5): o ponto de resolução
+traz apenas o comentário `TODO (Fase 5 — motor de ações)`.
 
 **Sistema visual de cores.** Cada raridade tem uma cor própria (Comum cinza `#BDBDBD`, Incomum verde `#4CAF50`, Raro azul `#2196F3`, Muito Raro roxo `#9C27B0`, Lendário laranja `#FF9800`, Artefato vermelho `#D32F2F`), usada no **texto** e como **detalhe discreto** (anel da célula na mochila, borda esquerda do card e do modal). A configuração fica **num único lugar**: `ITEM_RARITY_COLORS` em `client/src/dnd.ts` — mudar ali reflete em todo o app. Os helpers `rarityColor`/`rarityTint`/`rarityLabel` normalizam o valor (aceitam `common`, "Comum", "COMUM" etc.) e devolvem o estilo **neutro** quando o item não tem raridade (nunca uma cor aleatória). A cor é só um reforço: o **nome da raridade continua escrito** por acessibilidade.
 
