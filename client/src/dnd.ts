@@ -173,6 +173,22 @@ export function formatModifier(value: number): string {
   return value >= 0 ? `+${value}` : String(value);
 }
 
+/** Um quadrado do grid (tabuleiro) vale 1,5 m — 5 pés, como no PHB. */
+export const METERS_PER_SQUARE = 1.5;
+
+/**
+ * Deslocamento em quadrados do grid: "9 metros = 6 quadrados". Quando a metragem
+ * não é múltipla de 1,5 m, o valor sai arredondado com "≈".
+ */
+export function speedInSquares(meters: number): string {
+  const squares = meters / METERS_PER_SQUARE;
+  const rounded = Math.round(squares * 100) / 100;
+  const exact = Number.isInteger(rounded);
+  const text = exact ? String(rounded) : rounded.toFixed(2).replace('.', ',');
+  const label = rounded === 1 ? 'quadrado' : 'quadrados';
+  return `${exact ? '' : '≈'}${text} ${label} de 1,5 m`;
+}
+
 /**
  * Expressão textual do dano estruturado ("2d6+3", "1d8-1", "4") — só para
  * exibição, igual ao `damageExpression` do servidor.

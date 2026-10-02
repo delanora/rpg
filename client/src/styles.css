@@ -1927,7 +1927,9 @@ select option {
   height: 14px;
 }
 
-.info-tip-text {
+/* O popup dos cards de vida usa este MESMO visual (ver `.vital-tip`). */
+.info-tip-text,
+.vital-tip {
   position: absolute;
   top: calc(100% + 0.45rem);
   left: 0;
@@ -1955,7 +1957,8 @@ select option {
   cursor: default;
 }
 
-.info-tip-text strong {
+.info-tip-text strong,
+.vital-tip strong {
   font-family: var(--font-display);
   font-size: 0.68rem;
   letter-spacing: 0.09em;
@@ -1967,7 +1970,9 @@ select option {
 .info-tip:hover .info-tip-text,
 .info-tip:focus .info-tip-text,
 .info-tip:focus-visible .info-tip-text,
-.info-tip:focus-within .info-tip-text {
+.info-tip:focus-within .info-tip-text,
+.vital:hover .vital-tip,
+.vital:focus-within .vital-tip {
   display: grid;
 }
 
@@ -2492,21 +2497,18 @@ select option {
 .vital {
   position: relative;
   min-width: 0;
-  /*
-   * Alta o bastante para o número centralizado não encostar no rótulo (topo) nem
-   * na faixa da dica (pé) — a dica NÃO ocupa linha do grid, então quem manda na
-   * altura do card é esta caixa.
-   */
-  min-height: 6.3rem;
-  padding: var(--space-1) var(--space-2) 1rem;
+  /* Alta o bastante para o número, centralizado, não encostar no rótulo do topo. */
+  min-height: 5.5rem;
+  /* Padding simétrico: com o rótulo fora do fluxo, o número centra de verdade. */
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   display: grid;
   /*
    * O NÚMERO fica no centro do card: ele é o único item no fluxo e é centralizado
-   * nas duas direções. O rótulo sai do fluxo (topo) e a dica do pé também, então
-   * nenhum dos dois empurra o número para cima ou para baixo.
+   * nas duas direções. O rótulo fica fora do fluxo (topo) e a explicação é um
+   * popup do hover, então nada empurra o número para cima ou para baixo.
    */
   place-items: center;
   text-align: center;
@@ -2533,7 +2535,8 @@ select option {
   color: var(--ink-soft);
 }
 
-/* O rótulo completo vive no `title`; na tela ele cabe sempre em uma linha. */
+/* Uma linha só (com reticências quando não couber): o nome completo e a
+   explicação do card vivem no popup do hover. */
 .vital-label-text {
   min-width: 0;
   overflow: hidden;
@@ -2587,36 +2590,70 @@ select option {
 }
 
 /*
- * Dica do pé do card: fica FORA do fluxo (para não deslocar o número nem a
- * altura da linha) e só aparece quando o ponteiro — ou o foco — chega ao card.
- * O fundo repete o do card para ela ler como uma faixa do próprio card.
+ * Explicação do card: um POPUP igual ao do "i" (visual em `.info-tip-text`),
+ * ancorado no card e aberto no hover — ou no foco, para o bônus extra da
+ * iniciativa continuar alcançável pelo teclado.
  */
-.vital-hint {
-  position: absolute;
-  left: 0.5rem;
-  right: 0.5rem;
-  bottom: 0.3rem;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
-  /* Nunca abaixo de 11px: a dica é legível, não letra miúda. */
-  font-size: var(--text-micro);
-  line-height: 1.35;
-  color: var(--ink-soft);
-  opacity: 0;
-  /* Invisível mas ainda no fluxo de foco: o Tab mostra a dica via :focus-within. */
-  pointer-events: none;
-  transition: opacity 0.16s ease;
+.vital-tip {
+  top: calc(100% + 0.35rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(20rem, 76vw);
 }
 
-.vital:hover .vital-hint,
-.vital:focus-within .vital-hint {
-  opacity: 1;
-  pointer-events: auto;
+/* As linhas da explicação entram identadas, abaixo do título do popup. */
+.vital-tip > span {
+  padding-left: 0.5rem;
+}
+
+/* Ponte invisível: o ponteiro atravessa a folga do card sem fechar o popup. */
+.vital-tip::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -0.4rem;
+  height: 0.4rem;
+}
+
+/* Nas pontas da linha o popup encosta na borda do card, sem vazar a página. */
+.vital:first-child .vital-tip {
+  left: 0;
+  transform: none;
+}
+
+.vital:last-child .vital-tip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* Aberto, o card sobe na ordem de pintura (o popup cobre o que vier depois). */
+.vital:hover,
+.vital:focus-within {
+  z-index: 60;
+}
+
+/* Valor com a unidade colada (Deslocamento: "9 /m"). */
+.vital-value-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.1rem;
+}
+
+/* Unidade em corpo miúdo: acompanha o número sem competir com ele. */
+.vital-unit {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* Linha do bônus extra da iniciativa dentro do popup. */
+.vital-tip-field {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .vital-inline {

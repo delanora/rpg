@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
-import { ABILITY_KEYS, ABILITY_LABELS, DAMAGE_TYPES, formatModifier } from '../../dnd';
+import {
+  ABILITY_KEYS,
+  ABILITY_LABELS,
+  DAMAGE_TYPES,
+  formatModifier,
+  speedInSquares,
+} from '../../dnd';
 import type { Creature, CreaturePatch, Locality, Region } from '../../types';
 import { clampInt } from '../../utils';
 import { AttacksTable } from '../AttacksTable';
@@ -306,20 +312,28 @@ export function CreatureEditor({
                 onPatch({ armorClass: clampInt(value, 0, 99, creature.armorClass) })
               }
             />
-          </div>
-
-          <div className="vital">
+          </div>          <div className="vital">
             <span className="vital-label">Deslocamento</span>
-            <InlineField
-              className="vital-value"
-              value={creature.speed}
-              mode="number"
-              min={0}
-              max={999}
-              ariaLabel="Deslocamento"
-              onCommit={(value) => onPatch({ speed: clampInt(value, 0, 999, creature.speed) })}
-            />
-            <span className="vital-hint">metros</span>
+            <span className="vital-value-row">
+              <InlineField
+                className="vital-value"
+                value={creature.speed}
+                mode="number"
+                min={0}
+                max={999}
+                ariaLabel="Deslocamento em metros"
+                onCommit={(value) => onPatch({ speed: clampInt(value, 0, 999, creature.speed) })}
+              />
+              <span className="vital-unit">/m</span>
+            </span>
+            {/* Mesmo popup dos cards da ficha: aqui só os quadrados do tabuleiro. */}
+            <span className="vital-tip" role="tooltip">
+              <strong>Deslocamento</strong>
+              <span>
+                {creature.speed} metros equivalem a {speedInSquares(creature.speed)} no
+                tabuleiro.
+              </span>
+            </span>
           </div>
         </div>
       </Section>
