@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ITEM_CATEGORIES,
+  ITEM_RARITIES,
   itemDetailsSchema,
   itemPriceSchema,
   sanitizeItemDetails,
@@ -23,6 +24,10 @@ const itemFields = z.object({
   description: z.string().max(20000),
   weight: z.number().min(0).max(100000),
   category: itemCategorySchema,
+  /** Raridade do PHB 2014; `null` = sem raridade classificada. */
+  rarity: z.enum(ITEM_RARITIES).nullable(),
+  /** O item exige sintonização (propriedade manual, independente da raridade). */
+  requiresAttunement: z.boolean(),
   /** URL do sprite (`/uploads/items/...`); vazio = sem imagem. */
   imageUrl: z.string().trim().max(500),
   details: itemDetailsInputSchema,
@@ -35,6 +40,8 @@ export const createItemSchema = z.object({
   description: z.string().max(20000).optional(),
   weight: z.number().min(0).max(100000).optional(),
   category: itemCategorySchema.optional(),
+  rarity: z.enum(ITEM_RARITIES).nullable().optional(),
+  requiresAttunement: z.boolean().optional(),
   imageUrl: z.string().trim().max(500).optional(),
   details: itemDetailsInputSchema.optional(),
   price: itemPriceInputSchema.partial().optional(),

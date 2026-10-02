@@ -8406,6 +8406,85 @@ async function main(): Promise<void> {
     );
   }
 
+  // 31) Raridade e sintonização dos itens do catálogo
+  {
+    console.log('\n31) Raridade e sintonização dos itens');
+
+    const rarityItem = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Anel da Sombra ${suffix}`,
+        category: 'Anel',
+        weight: 0,
+        rarity: 'rare',
+        requiresAttunement: true,
+        details: { effectRoll: '1d6' },
+      },
+    });
+    const rarityId = rarityItem.data?.item?.id;
+    if (rarityId) createdItemIds.push(rarityId);
+    check(
+      'item guarda a raridade interna (rare) e a sintonização (true)',
+      rarityItem.status === 201 &&
+        rarityItem.data?.item?.rarity === 'rare' &&
+        rarityItem.data?.item?.requiresAttunement === true,
+      JSON.stringify(rarityItem.data?.item),
+    );
+
+    const plainItem = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: { name: `Corda simples ${suffix}`, category: 'Item Geral' },
+    });
+    if (plainItem.data?.item?.id) createdItemIds.push(plainItem.data.item.id);
+    check(
+      'item criado sem raridade nasce com rarity null e requiresAttunement false',
+      plainItem.status === 201 &&
+        plainItem.data?.item?.rarity === null &&
+        plainItem.data?.item?.requiresAttunement === false,
+      JSON.stringify(plainItem.data?.item),
+    );
+
+    const badRarity = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: { name: `Item inválido ${suffix}`, rarity: 'mitico' },
+    });
+    check(
+      'raridade fora da lista é recusada (400)',
+      badRarity.status === 400,
+      JSON.stringify(badRarity.data),
+    );
+
+    const patchedRarity = await api(`/api/items/${rarityId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { rarity: 'legendary', requiresAttunement: false },
+    });
+    check(
+      'editar atualiza raridade e sintonização independentemente (200)',
+      patchedRarity.status === 200 &&
+        patchedRarity.data?.item?.rarity === 'legendary' &&
+        patchedRarity.data?.item?.requiresAttunement === false,
+      JSON.stringify(patchedRarity.data?.item),
+    );
+
+    // O inventário do jogador espelha o catálogo: os dois campos descem juntos.
+    await api(`/api/items/${rarityId}/send`, {
+      method: 'POST',
+      token: masterToken,
+      body: { characterId: multiSheetOwner.characterId, quantity: 1 },
+    });
+    const invSheet = await sheetOf(multiSheetOwner.token);
+    const invEntry = invSheet?.inventory?.find((entry: any) => entry.itemId === rarityId);
+    check(
+      'raridade e sintonização chegam ao inventário do jogador (espelho do catálogo)',
+      invEntry?.rarity === 'legendary' && invEntry?.requiresAttunement === false,
+      JSON.stringify(invEntry),
+    );
+  }
+
   }
 
   console.log(

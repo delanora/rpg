@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { describeItemDetails } from '../../dnd';
+import { describeItemDetails, rarityLabel } from '../../dnd';
 import type { Character, Item, ItemPatch } from '../../types';
 import { Portrait } from '../Portrait';
 import { CoinsGrantPanel } from './CoinsGrantPanel';
@@ -100,7 +100,9 @@ export function ItemsTab({
                       <span className="card-name">{item.name}</span>
                       <span className="card-line">
                         {item.category}
+                        {item.rarity ? ` · ${rarityLabel(item.rarity)}` : ''}
                         {item.weight > 0 ? ` · ${item.weight} kg` : ''}
+                        {item.requiresAttunement ? ' · sintonização' : ''}
                       </span>
                       {describeItemDetails(item.category, item.details) ? (
                         <span className="card-line">

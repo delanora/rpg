@@ -3,7 +3,7 @@ import { attackSchema } from '../shared/attacks.js';
 import { coinsSchema, coinAmountSchema, coinDeltaSchema } from '../shared/coins.js';
 import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
 import { getTool } from '../shared/tools.js';
-import { itemDetailsSchema } from '../shared/item-details.js';
+import { ITEM_RARITIES, itemDetailsSchema } from '../shared/item-details.js';
 import {
   ABILITY_KEYS,
   ABILITY_SCORE_MAX,
@@ -143,6 +143,10 @@ export const inventoryItemSchema = z.object({
   itemId: shortText(60).default(''),
   /** Categoria do item no catálogo ('' quando avulso). */
   category: shortText(40).default(''),
+  /** Raridade do item no catálogo (`null` = sem raridade classificada). */
+  rarity: z.enum(ITEM_RARITIES).nullable().default(null),
+  /** O item exige sintonização (propriedade manual do mestre). */
+  requiresAttunement: z.boolean().default(false),
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: itemDetailsSchema.default({}),
 });

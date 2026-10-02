@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import {
   DAMAGE_TYPES,
+  ITEM_RARITY_LABELS,
   MAX_EXTRA_DAMAGES,
   WEAPON_CATEGORY_LABELS,
   WEAPON_PROPERTY_LABELS,
@@ -13,6 +14,7 @@ import {
   AMMO_TYPES,
   ARMOR_TYPES,
   ITEM_CATEGORIES,
+  ITEM_RARITIES,
   WEAPON_CATEGORIES,
   WEAPON_PROPERTIES,
   WEAPON_TYPES,
@@ -26,6 +28,7 @@ import type {
   ItemDetails,
   ItemPatch,
   ItemPrice,
+  ItemRarity,
   WeaponCategory,
   WeaponProperty,
   WeaponType,
@@ -575,15 +578,6 @@ function CategoryFields({
             onCommit={(value) => onPatchDetails({ effectRoll: value.trim() })}
           />
         </label>
-        <label className="field field-check">
-          <span>Exige sintonização</span>
-          <input
-            type="checkbox"
-            checked={Boolean(details.attunement)}
-            aria-label="Exige sintonização"
-            onChange={(event) => onPatchDetails({ attunement: event.target.checked })}
-          />
-        </label>
       </div>
     );
   }
@@ -720,6 +714,34 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
               ariaLabel="Peso do item"
               onCommit={(value) => onPatch({ weight: clampFloat(value, 0, 100000, item.weight) })}
             />
+          </label>
+        </div>
+
+        {/* Raridade e sintonização: propriedades do ITEM, independentes da
+            categoria e uma da outra (nada é inferido automaticamente). */}
+        <div className="grid grid-3">
+          <label className="field">
+            <span>Raridade</span>
+            <InlineField
+              value={item.rarity ?? ''}
+              mode="select"
+              options={ITEM_RARITIES}
+              optionLabels={ITEM_RARITY_LABELS}
+              ariaLabel="Raridade do item"
+              onCommit={(value) => onPatch({ rarity: (value || null) as ItemRarity | null })}
+            />
+            <span className="field-hint">sem raridade classificada —</span>
+          </label>
+
+          <label className="field field-check">
+            <span>Requer sintonização</span>
+            <input
+              type="checkbox"
+              checked={item.requiresAttunement}
+              aria-label="Requer sintonização"
+              onChange={(event) => onPatch({ requiresAttunement: event.target.checked })}
+            />
+            <span className="field-hint">propriedade manual, não ligada à raridade</span>
           </label>
         </div>
 

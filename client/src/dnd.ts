@@ -4,6 +4,7 @@ import type {
   Damage,
   FeatureSource,
   ItemDetails,
+  ItemRarity,
   SpellLearning,
   SpellcastingType,
   WeaponCategory,
@@ -303,6 +304,21 @@ export const WEAPON_PROPERTY_LABELS: Record<WeaponProperty, string> = {
   special: 'Especial',
 };
 
+/** Rótulos em português das raridades (os valores internos ficam em `types.ts`). */
+export const ITEM_RARITY_LABELS: Record<ItemRarity, string> = {
+  common: 'Comum',
+  uncommon: 'Incomum',
+  rare: 'Raro',
+  very_rare: 'Muito Raro',
+  legendary: 'Lendário',
+  artifact: 'Artefato',
+};
+
+/** Rótulo da raridade para exibição (`null` ou desconhecida → ''). */
+export function rarityLabel(rarity: ItemRarity | null | undefined): string {
+  return rarity ? ITEM_RARITY_LABELS[rarity] : '';
+}
+
 export const SPELL_SCHOOLS = [
   'Abjuração',
   'Adivinhação',
@@ -463,7 +479,6 @@ export function describeItemDetails(category: string, details: ItemDetails | und
     if (details.duration) parts.push(details.duration);
   } else if (category === 'Anel') {
     if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
-    if (details.attunement) parts.push('sintonização');
   } else if (category === 'Item Geral' || category === 'Outro') {
     if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
     if (details.consumable) parts.push('consumível (usável)');

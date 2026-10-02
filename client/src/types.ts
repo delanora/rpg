@@ -94,7 +94,6 @@ export interface ItemDetails {
   armorClassBonus?: number;
   effectRoll?: string;
   duration?: string;
-  attunement?: boolean;
   /** Marcado pelo mestre (Item Geral/Outro): o item pode ser USADO (consome 1). */
   consumable?: boolean;
 }
@@ -135,6 +134,10 @@ export interface InventoryItem {
   itemId: string;
   /** Categoria do item no catálogo ('' quando avulso). */
   category: string;
+  /** Raridade do item no catálogo (`null` = sem raridade). */
+  rarity: ItemRarity | null;
+  /** O item exige sintonização (propriedade manual do mestre). */
+  requiresAttunement: boolean;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
 }
@@ -1346,6 +1349,22 @@ export const ITEM_CATEGORIES = [
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 /**
+ * Raridades do PHB 2014 (espelha src/modules/shared/item-details.ts). Os valores
+ * internos são estáveis; os rótulos em português ficam em `dnd.ts`
+ * (`ITEM_RARITY_LABELS`). `null` = item sem raridade classificada.
+ */
+export const ITEM_RARITIES = [
+  'common',
+  'uncommon',
+  'rare',
+  'very_rare',
+  'legendary',
+  'artifact',
+] as const;
+
+export type ItemRarity = (typeof ITEM_RARITIES)[number];
+
+/**
  * Peso das armaduras (espelha src/modules/shared/item-details.ts). Decide como
  * a Destreza entra na CA: leve soma tudo, média no máximo +2, pesada nada.
  */
@@ -1360,6 +1379,10 @@ export interface Item {
   description: string;
   weight: number;
   category: string;
+  /** Raridade do PHB 2014; `null` = sem raridade classificada. */
+  rarity: ItemRarity | null;
+  /** O item exige sintonização (propriedade manual do mestre). */
+  requiresAttunement: boolean;
   imageUrl: string;
   /** Atributos específicos da categoria. */
   details: ItemDetails;
@@ -1375,6 +1398,8 @@ export interface ItemPatch {
   description?: string;
   weight?: number;
   category?: ItemCategory;
+  rarity?: ItemRarity | null;
+  requiresAttunement?: boolean;
   imageUrl?: string;
   details?: ItemDetails;
   price?: ItemPrice;

@@ -52,7 +52,7 @@ import {
 } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import { coinsWeight, normalizeCoins, type CoinPurse } from '../shared/coins.js';
-import type { ItemDetails } from '../shared/item-details.js';
+import type { ItemDetails, ItemRarity } from '../shared/item-details.js';
 import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
 import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
 import { armorPiecesFrom } from '../shared/armor-class.js';
@@ -83,6 +83,10 @@ export interface InventoryItemDto {
   itemId: string;
   /** Categoria do item no catálogo ('' quando avulso). */
   category: string;
+  /** Raridade do item no catálogo (`null` = sem raridade classificada). */
+  rarity: ItemRarity | null;
+  /** O item exige sintonização (propriedade manual do mestre). */
+  requiresAttunement: boolean;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
 }

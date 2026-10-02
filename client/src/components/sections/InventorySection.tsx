@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent } from 'react';
-import { describeItemDetails, isConsumableItem } from '../../dnd';
+import { describeItemDetails, isConsumableItem, rarityLabel } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type {
   Character,
@@ -223,6 +223,8 @@ export function InventorySection({
           imageUrl: '',
           itemId: '',
           category: '',
+          rarity: null,
+          requiresAttunement: false,
           details: {},
         },
       ],
@@ -516,6 +518,8 @@ export function InventorySection({
                 <strong>{selected.name}</strong>
                 <span className="inv-detail-meta">
                   {selected.weight} kg
+                  {selected.rarity ? ` · ${rarityLabel(selected.rarity)}` : ''}
+                  {selected.requiresAttunement ? ' · Requer Sintonização' : ''}
                   {selected.itemId ? ' · catálogo' : ''}
                 </span>
               </div>
