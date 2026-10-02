@@ -227,6 +227,12 @@ export interface CharacterDto {
   expertiseSkills: string[];
   /** Proficiências de armadura, arma e ferramenta (texto; só o mestre edita). */
   proficiencies: ProficienciesState;
+  /**
+   * Proficiências SIMPLES em ferramenta, pelos ids do catálogo do PHB 2014
+   * (ex.: "thieves-tools"). Nasce vazio: nada concede ferramenta automaticamente
+   * nesta etapa. A Expertise tem campo próprio (`expertiseSkills`).
+   */
+  toolProficiencies: string[];
   inventory: InventoryItemDto[];
   spells: SpellsStateDto;
   attacks: AttackDto[];
@@ -499,6 +505,7 @@ export function toCharacterDto(
     expertiseSkills,
     saves,
     proficiencies,
+    toolProficiencies: character.toolProficiencies ?? [],
     inventory,
     spells,
     attacks,
