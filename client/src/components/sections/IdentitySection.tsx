@@ -153,14 +153,6 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
     ? joinList(classes.map((entry) => `${entry.className} Nv ${entry.level}`))
     : '';
 
-  const levelTooltip = [
-    classSummary || 'Nenhuma classe definida',
-    `XP ${character.experience}`,
-    levelUp?.hint || '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
   const unableToPickSubclass = singleClass !== null && !singleClass.subclassEligible;
   const subclassText = singleClass
     ? singleClass.subclassEligible
@@ -281,28 +273,38 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
           {/*
            * O nível vive na MESMA linha da grade dos campos de papel, com o
            * centro do círculo na altura da linha que divide valor e rótulo.
+           * A explicação abre no MESMO tooltip dos "i" dos campos (não no balão
+           * nativo do navegador): quem tem Level Up liberado vê o resumo das
+           * classes, o XP e o aviso do mestre.
            */}
           <div className="identity-level">
             <span className="level-ribbon">Nível</span>
-            {levelUp ? (
-              <button
-                type="button"
-                className={levelUp.available ? 'level-circle is-ready' : 'level-circle'}
-                title={levelTooltip}
-                aria-label={`Nível ${character.level}`}
-                aria-disabled={!levelUp.available}
-                onClick={() => {
-                  if (levelUp.available) levelUp.onOpen();
-                }}
-              >
-                {character.level}
-                {levelUp.available ? <span className="level-circle-pip" aria-hidden="true" /> : null}
-              </button>
-            ) : (
-              <span className="level-circle" title={levelTooltip}>
-                {character.level}
+            <span className="info-tip level-info" tabIndex={levelUp ? undefined : 0}>
+              {levelUp ? (
+                <button
+                  type="button"
+                  className={levelUp.available ? 'level-circle is-ready' : 'level-circle'}
+                  aria-label={`Nível ${character.level}`}
+                  aria-disabled={!levelUp.available}
+                  onClick={() => {
+                    if (levelUp.available) levelUp.onOpen();
+                  }}
+                >
+                  {character.level}
+                  {levelUp.available ? (
+                    <span className="level-circle-pip" aria-hidden="true" />
+                  ) : null}
+                </button>
+              ) : (
+                <span className="level-circle">{character.level}</span>
+              )}
+              <span className="info-tip-text" role="tooltip">
+                <strong>Nível {character.level}</strong>
+                <span>{classSummary || 'Nenhuma classe definida'}</span>
+                <span>XP {character.experience}</span>
+                {levelUp?.hint ? <span>{levelUp.hint}</span> : null}
               </span>
-            )}
+            </span>
           </div>
 
           {/*
