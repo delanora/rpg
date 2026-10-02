@@ -1803,10 +1803,14 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
       para a borda direita do card);
     • selo HEXAGONAL com o valor GRAVADO e, abaixo, o modificador — o hexágono
       fica ABAIXO da faixa, com respiro fixo (não invade o título) e usa as
-      MESMAS cores da bandeirola do nome: corpo no vinho escuro
+      MESMAS cores da bandeirola do nome em DUAS camadas clippadas: o FUNDO é o
+      fio dourado (`linear-gradient(180deg, var(--gold-bright), var(--gold-deep))`)
+      e o corpo vinho vem do `::before` `inset: 1px`
       (`linear-gradient(180deg, #7d232c, #55161d 62%, #411015)`, com variante no
-      tema escuro) e o fio dourado na borda (`::before` com `border` de
-      `var(--gold)`);
+      tema escuro). É assim que a linha acompanha o hexágono INTEIRO, arestas
+      inclinadas inclusive — uma `border` de caixa seria cortada pelo `clip-path`
+      e só apareceria nas laterais. O `::before` leva `z-index: -1` (com
+      `isolation: isolate` no selo) para ficar atrás do número e do modificador;
     • linha da SALVAGUARDA (caixa de proficiência + bônus + botão de rolagem);
     • as PERÍCIAS daquele atributo (FOR 1, DES 3, CON 0, INT 5, SAB 5, CAR 4,
       exatamente a divisão do PHB 2014), cada uma com caixa de proficiência,
