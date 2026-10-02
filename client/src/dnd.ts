@@ -85,6 +85,28 @@ export const ALIGNMENTS = [
   'Caótico e Mau',
 ] as const;
 
+/**
+ * O que cada alinhamento quer dizer, em uma frase — é o texto que a ficha mostra
+ * ao passar o mouse no alinhamento escolhido.
+ */
+export const ALIGNMENT_DESCRIPTIONS: Record<string, string> = {
+  'Leal e Bom': 'Age pelo dever e pela compaixão: cumpre a lei e protege os inocentes.',
+  'Neutro e Bom': 'Faz o bem sem se prender a leis — ajuda quem precisa, como e quando puder.',
+  'Caótico e Bom': 'Segue a própria consciência: livre das regras, escolhe o bem pelo coração.',
+  'Leal e Neutro': 'Vive pela ordem e pelo dever, sem pender para o bem nem para o mal.',
+  Neutro: 'Busca o equilíbrio: age conforme a situação, sem compromisso com a lei ou o caos.',
+  'Caótico e Neutro':
+    'Segue o próprio desejo — faz o que quer, quando quer, sem se importar com o resto.',
+  'Leal e Mau': 'Usa a lei e a hierarquia em proveito próprio, sem freios morais.',
+  'Neutro e Mau': 'Age pelo interesse próprio: maldade sem código nem escrúpulo.',
+  'Caótico e Mau': 'Destrói e tiraniza por prazer ou por ganho — nem lei, nem limite.',
+};
+
+/** Descrição do alinhamento escolhido ('' quando não houver). */
+export function alignmentDescription(value: string): string {
+  return ALIGNMENT_DESCRIPTIONS[value] ?? '';
+}
+
 export const FEATURE_SOURCES: readonly FeatureSource[] = [
   'race',
   'class',

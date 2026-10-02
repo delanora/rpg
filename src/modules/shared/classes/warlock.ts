@@ -39,6 +39,8 @@ const WARLOCK_SUBCLASSES: SubclassDefinition[] = [
 export const warlock: ClassDefinition = {
   key: 'warlock',
   name: 'Bruxo',
+  description:
+    'Fez um pacto com um patrono extraplanar e recebe dons estranhos em troca de serviço.',
   hitDie: 8,
   savingThrows: ['wisdom', 'charisma'],
   subclassLevel: 1, // Patrono Extraplanar

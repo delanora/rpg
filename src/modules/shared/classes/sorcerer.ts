@@ -146,6 +146,8 @@ const SORCERER_SUBCLASSES: SubclassDefinition[] = [
 export const sorcerer: ClassDefinition = {
   key: 'sorcerer',
   name: 'Feiticeiro',
+  description:
+    'Conjurador nato: a magia corre no sangue e se manifesta pela vontade, sem livro nem prece.',
   hitDie: 6,
   savingThrows: ['constitution', 'charisma'],
   subclassLevel: 1, // Origem de Feitiçaria

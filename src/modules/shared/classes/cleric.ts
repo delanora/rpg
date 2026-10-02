@@ -67,6 +67,8 @@ const CLERIC_SUBCLASSES: SubclassDefinition[] = [
 export const cleric: ClassDefinition = {
   key: 'cleric',
   name: 'Clérigo',
+  description:
+    'Servo de um poder divino: cura os seus e castiga os inimigos em nome do domínio que escolheu.',
   hitDie: 8,
   savingThrows: ['wisdom', 'charisma'],
   subclassLevel: 1, // Domínio Divino

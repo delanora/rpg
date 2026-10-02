@@ -219,6 +219,11 @@ export interface ClassDefinition {
   /** Chave canônica (estável, usada no banco e nas APIs). */
   key: string;
   name: string;
+  /**
+   * O que a classe é, em uma frase — é o texto que a ficha mostra ao passar o
+   * mouse no nome da classe (mesmo tom curto das descrições de subclasse).
+   */
+  description: string;
   /** Dado de vida: 6, 8, 10 ou 12. */
   hitDie: number;
   /** As duas salvaguardas com proficiência — fixas, nunca mudam. */

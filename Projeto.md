@@ -1701,9 +1701,14 @@ abas.
   esquerda. Sob ela, a **linha de campos de papel**
   (`.identity-line-fields`, quatro colunas) com **Classe**, **Subclasse**,
   **Antecedente** e **Alinhamento** — valor centralizado em cima, linha fina e
-  rótulo em caixa alta embaixo (com o "(i)" do `FieldInfo`). Com multiclasse, o
-  campo Classe mostra "Multiclasse" e o detalhe ("Mago Nv 1, Guerreiro Nv 2 e
-  Ladino Nv 2") vai para o hover do nível. O **Nível** fica na MESMA linha da
+  rótulo em caixa alta embaixo (com o "(i)" do `FieldInfo`). Cada campo tem DOIS
+  tooltips: o "(i)" explica o conceito, em geral, e o **valor** abre um popup
+  (mesmo visual do "(i)") com o que **aquele** item escolhido é — a descrição da
+  classe/subclasse vinda do compêndio (`fetchCompendium`), a do antecedente com
+  as perícias que ele concede e a frase do alinhamento. Com multiclasse, o campo
+  Classe mostra "Multiclasse" (o popup lista cada classe) e o campo Subclasse
+  mostra "Multiclasse" quando duas ou mais já foram escolhidas — e o popup
+  explica cada subclasse; o detalhe do nível continua no hover do nível. O **Nível** fica na MESMA linha da
   grade que os campos: a **borda esquerda do círculo encosta na borda direita do
   retrato** e o **centro dele cai sobre a linha** que divide valor e rótulo (com
   um ajuste fino, `--level-line-nudge`). O círculo **é o botão de Level Up**:

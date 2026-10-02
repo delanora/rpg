@@ -3530,10 +3530,14 @@ async function main(): Promise<void> {
     JSON.stringify(compendiumRes.data),
   );
   check(
-    'há 12 classes, cada uma com dado de vida e duas salvaguardas',
+    'há 12 classes, cada uma com dado de vida, duas salvaguardas e descrição',
     (compendium?.classes ?? []).length === 12 &&
       compendium.classes.every(
-        (entry: any) => entry.hitDie > 0 && entry.savingThrows?.length === 2,
+        (entry: any) =>
+          entry.hitDie > 0 &&
+          entry.savingThrows?.length === 2 &&
+          typeof entry.description === 'string' &&
+          entry.description.length > 20,
       ),
     JSON.stringify((compendium?.classes ?? []).map((entry: any) => entry.key)),
   );

@@ -1364,6 +1364,30 @@ select option {
   color: var(--gold-deep);
 }
 
+/*
+ * Popup do VALOR do campo (classe, subclasse, antecedente, alinhamento): a
+ * célula do valor é o gatilho (classe `.info-tip`, visual em `.info-tip-text`)
+ * e o popup diz o que AQUELE item escolhido é.
+ */
+.identity-value-tip .info-tip-text {
+  top: calc(100% + 0.3rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(19rem, 80vw);
+}
+
+/* Nas pontas da linha o popup encosta no valor, sem vazar da página. */
+.line-field:first-child .identity-value-tip .info-tip-text {
+  left: 0;
+  transform: none;
+}
+
+.line-field:last-child .identity-value-tip .info-tip-text {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 /* --- Nível (com o Level Up do jogador) ------------------------------------ */
 
 /*

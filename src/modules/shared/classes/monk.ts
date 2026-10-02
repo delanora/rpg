@@ -334,6 +334,8 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
 export const monk: ClassDefinition = {
   key: 'monk',
   name: 'Monge',
+  description:
+    'Asceta marcial que luta desarmado, canaliza o ki e transforma o próprio corpo em arma.',
   hitDie: 8,
   savingThrows: ['strength', 'dexterity'],
   subclassLevel: 3, // Tradição Monástica

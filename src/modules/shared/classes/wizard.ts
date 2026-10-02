@@ -398,6 +398,8 @@ const WIZARD_SUBCLASSES: SubclassDefinition[] = [
 export const wizard: ClassDefinition = {
   key: 'wizard',
   name: 'Mago',
+  description:
+    'Estudioso do arcano que copia fórmulas no grimório e molda a magia pelo entendimento.',
   hitDie: 6,
   savingThrows: ['intelligence', 'wisdom'],
   subclassLevel: 2, // Tradição Arcana

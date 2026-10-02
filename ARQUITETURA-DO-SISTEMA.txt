@@ -1729,8 +1729,22 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   (`.identity-line-fields`, quatro colunas) com CLASSE, SUBCLASSE, ANTECEDENTE e
   ALINHAMENTO — valor centralizado em cima, linha fina (`border-bottom`) e
   rótulo em caixa alta embaixo (`.line-field-label`, com "(i)" do `FieldInfo`).
-  Com multiclasse, CLASSE mostra "Multiclasse" e o detalhe ("Mago Nv 1,
-  Guerreiro Nv 2 e Ladino Nv 2") vai para o hover do nível. O NÍVEL divide a
+  São DOIS tooltips por campo: o "(i)" explica o CONCEITO (o que é classe,
+  subclasse, antecedente e alinhamento, em geral) e o VALOR abre um popup com o
+  mesmo visual do "(i)" (`.info-tip-text`) dizendo o que AQUELE item escolhido é
+  — a célula do valor leva as classes `line-field-value info-tip
+  identity-value-tip` (ver `.identity-value-tip .info-tip-text`, mais estreito e
+  centrado no valor, encostando na borda no primeiro e no último campo). O
+  conteúdo sai do compêndio (`fetchCompendium`, em `gameApi.ts` — a MESMA fonte
+  da aba "Mesa", aberta ao jogador): `description` da classe + dado de vida +
+  salvaguardas + níveis de Aumento de Atributo/Talento + subclasse; a lista das
+  subclasses do livro com a descrição de cada uma quando a classe libera a
+  escolha; a `description` do antecedente (com as perícias que ele concede) e a
+  frase do alinhamento escolhido (`ALIGNMENT_DESCRIPTIONS`, em `dnd.ts`). Com
+  multiclasse, CLASSE mostra "Multiclasse" e o popup lista cada classe com o
+  nível e o que ela é; SUBCLASSE mostra "Multiclasse" quando DUAS ou mais já
+  foram escolhidas (o popup explica cada uma) e, com uma só, o nome dela. O
+  detalhe ("Mago Nv 1, Guerreiro Nv 2 e Ladino Nv 2") segue no hover do nível. O NÍVEL divide a
   MESMA linha da grade com os campos (áreas `level` e `fields`): com
   `margin-top: calc(var(--field-line) - var(--level-circle-size) / 2 +
   var(--level-line-nudge))` o CENTRO do círculo cai sobre a linha que divide
@@ -1750,10 +1764,11 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   mestre). Não existe mais o `levelup-bar` acima da ficha. Em telas ≤820px o
   retrato deixa de transbordar (a bandeirola volta a começar na borda do
   conteúdo) e a coluna da esquerda vira uma faixa (retrato, nível e inspiração
-  lado a lado). Cada rótulo tem a explicação do campo; Raça e Antecedente usam a
-  `description` do catálogo do servidor, obtida por
-  `fetchRaceCatalog()`/`fetchBackgroundCatalog()` (o mesmo fetch memoizado da
-  criação, em `creationApi.ts`). O bloco de Conjuração (`.casting-block`) agora vive
+  lado a lado). Cada rótulo tem a explicação do campo; Raça usa a `description`
+  do catálogo (`fetchRaceCatalog()`/`fetchBackgroundCatalog()`, o mesmo fetch
+  memoizado da criação, em `creationApi.ts`) e os popups dos valores usam o
+  compêndio, que passou a expor a `description` de cada classe (as 12 definições
+  em `shared/classes/*.ts`). O bloco de Conjuração (`.casting-block`) agora vive
   na seção MAGIAS (SpellsSection), no topo do corpo: os tipos de conjuração e o
   aprendizado das magias de cada classe (versão curta visível, texto completo no
   `title`; o resumo de CD/ataque segue no subtítulo da seção). As classes ficam numa

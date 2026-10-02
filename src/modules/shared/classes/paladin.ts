@@ -417,6 +417,8 @@ const PALADIN_SUBCLASSES: SubclassDefinition[] = [
 export const paladin: ClassDefinition = {
   key: 'paladin',
   name: 'Paladino',
+  description:
+    'Cavaleiro sagrado que une aço e juramento: cura pelas mãos e protege os aliados com a aura.',
   hitDie: 10,
   savingThrows: ['wisdom', 'charisma'],
   subclassLevel: 3, // Juramento Sagrado

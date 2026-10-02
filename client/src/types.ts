@@ -518,6 +518,8 @@ export interface ActiveClassFeature extends ClassFeature {
 export interface ClassDefinition {
   key: string;
   name: string;
+  /** O que a classe é, em uma frase. */
+  description: string;
   hitDie: number;
   savingThrows: [AbilityKey, AbilityKey];
   subclassLevel: number;
@@ -826,6 +828,8 @@ export interface CompendiumSubclass {
 export interface CompendiumClass {
   key: string;
   name: string;
+  /** O que a classe é, em uma frase (mostrado na ficha ao passar o mouse). */
+  description: string;
   /** Dado de vida: 6, 8, 10 ou 12. */
   hitDie: number;
   /** As duas salvaguardas com proficiência. */
