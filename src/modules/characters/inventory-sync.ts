@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { prisma } from '../../config/prisma.js';
-import { itemDetailsSchema, type ItemDetails } from '../shared/item-details.js';
+import {
+  itemDetailsSchema,
+  itemRarityOf,
+  type ItemDetails,
+  type ItemRarity,
+} from '../shared/item-details.js';
 import { parseJson } from '../shared/json.js';
 
 /**
@@ -19,6 +24,10 @@ export interface CatalogSnapshot {
   description: string;
   weight: number;
   category: string;
+  /** Raridade do PHB 2014 (`null` = sem raridade classificada). */
+  rarity: ItemRarity | null;
+  /** O item exige sintonização (propriedade manual do mestre). */
+  requiresAttunement: boolean;
   imageUrl: string;
   details: ItemDetails;
 }
@@ -30,6 +39,8 @@ interface SyncableItem {
   description: string;
   weight: number;
   category: string;
+  rarity: ItemRarity | null;
+  requiresAttunement: boolean;
   imageUrl: string;
   details: ItemDetails;
 }
@@ -67,6 +78,8 @@ export async function loadCatalogLookup(
         description: item.description,
         weight: item.weight,
         category: item.category,
+        rarity: itemRarityOf(item.rarity),
+        requiresAttunement: item.requiresAttunement,
         imageUrl: item.imageUrl,
         details: parseJson<ItemDetails>(itemDetailsSchema, item.details, {}),
       },
@@ -92,6 +105,8 @@ export function syncInventory<T extends SyncableItem>(
       description: snapshot.description,
       weight: snapshot.weight,
       category: snapshot.category,
+      rarity: snapshot.rarity,
+      requiresAttunement: snapshot.requiresAttunement,
       imageUrl: snapshot.imageUrl,
       details: snapshot.details,
     };

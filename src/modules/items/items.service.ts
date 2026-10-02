@@ -9,7 +9,7 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import type { InventoryItemDto } from '../characters/characters.dto.js';
 import { republishSheetsWithCatalogItem, toSheetDto } from '../characters/characters.service.js';
 import { inventoryItemSchema } from '../characters/characters.schema.js';
-import { sanitizeItemDetails } from '../shared/item-details.js';
+import { itemRarityOf, sanitizeItemDetails } from '../shared/item-details.js';
 import { parseJson } from '../shared/json.js';
 import { toItemDto, type ItemDto } from './items.dto.js';
 import type { CreateItemInput, UpdateItemInput } from './items.schema.js';
@@ -67,6 +67,8 @@ export async function createItem(input: CreateItemInput): Promise<ItemDto> {
       description: input.description ?? '',
       weight: input.weight ?? 0,
       category,
+      rarity: input.rarity ?? null,
+      requiresAttunement: input.requiresAttunement ?? false,
       imageUrl: input.imageUrl ?? '',
       details: sanitizeItemDetails(category, input.details) as Prisma.InputJsonValue,
       priceGold: price.gold ?? 0,
@@ -87,6 +89,8 @@ export async function updateItem(id: string, patch: UpdateItemInput): Promise<It
   if (patch.description !== undefined) data.description = patch.description;
   if (patch.weight !== undefined) data.weight = patch.weight;
   if (patch.category !== undefined) data.category = patch.category;
+  if (patch.rarity !== undefined) data.rarity = patch.rarity;
+  if (patch.requiresAttunement !== undefined) data.requiresAttunement = patch.requiresAttunement;
   if (patch.imageUrl !== undefined) data.imageUrl = patch.imageUrl;
 
   // Atributos são re-normalizados com a categoria final (a troca de categoria
@@ -166,6 +170,8 @@ export async function sendItemToCharacter(
       imageUrl: item.imageUrl,
       itemId: item.id,
       category: item.category,
+      rarity: itemRarityOf(item.rarity),
+      requiresAttunement: item.requiresAttunement,
       details: sanitizeItemDetails(item.category, item.details),
     });
   }

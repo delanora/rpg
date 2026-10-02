@@ -497,9 +497,12 @@ exceto GameConfig (chave fixa "main").
     @@index([name]) @@index([kind])
 7.9 Item → `items`
     id · name · description · weight Float (kg, aceita frações) · category
+    rarity String? (common|uncommon|rare|very_rare|legendary|artifact; null = sem
+      raridade) · requiresAttunement Boolean @default(false) (manual, independente
+      da raridade)
     imageUrl · details Json @default("{}") · priceGold/priceSilver/priceCopper Int
     version · createdAt · updatedAt
-    @@index([name]) @@index([category])
+    @@index([name]) @@index([category]) @@index([rarity])
 7.10 enum CombatStatus { PENDING_INITIATIVE, ACTIVE, ENDED }
      enum CombatantKind { CHARACTER, CREATURE }
 7.11 Combat → `combats`
@@ -1590,8 +1593,8 @@ CATÁLOGO DE ITENS
     Arma (damageCount, damageDie, damageType, extraDamages, attackBonus, damageBonus,
     weaponType, weaponCategory, properties, versatileDie, rangeNormal, rangeLong) ·
     Cajado (idem + spellcastingFocus) · Armadura (armorType, baseArmorClass, armorClassBonus) ·
-    Escudo (armorClassBonus) · Poção (effectRoll, duration) · Anel (effectRoll,
-    attunement) · demais: nenhum.
+    Escudo (armorClassBonus) · Poção (effectRoll, duration) · Anel (effectRoll) ·
+    demais: nenhum.
   PERFIL DE ARMA (Arma/Cajado) — o cadastro separa corpo a corpo de à distância:
     WEAPON_TYPES melee | ranged (padrão melee) · WEAPON_CATEGORIES simple | martial
     (padrão simple) · WEAPON_PROPERTIES (light, finesse, heavy, two-handed, versatile,
@@ -1605,6 +1608,17 @@ CATÁLOGO DE ITENS
     Agulha de zarabatana; a categoria 'Munição' usa ammoType, attackBonus e
     damageBonus (munição mágica +1/+2/+3).
   ARMOR_TYPES: Leve | Média | Pesada — usado no cálculo de CA (§10.3).
+  RARIDADE E SINTONIZAÇÃO (propriedades do ITEM, não da categoria):
+    ITEM_RARITIES: common | uncommon | rare | very_rare | legendary | artifact
+    (valores internos; os rótulos PT — Comum, Incomum, Raro, Muito Raro, Lendário,
+    Artefato — ficam no cliente). rarity fica NULL quando o item não é classificado.
+    requiresAttunement é um booleano MANUAL do mestre: nenhuma regra liga raridade
+    a sintonização. itemRarityOf converte o valor do banco para a raridade válida.
+    A antiga chave `details.attunement` (só Anel) foi INCORPORADA a este campo
+    global pela migração 20261002010000_item_rarity_and_attunement (os anéis com
+    sintonização ficam requiresAttunement = true; a chave sai do JSONB).
+    ESPELHO: CatalogSnapshot/syncInventory copiam rarity e requiresAttunement para
+    o inventário do jogador (InventoryItemDto), então a ficha mostra os dois.
   PREÇO (priceGold/Silver/Copper) é informação EXCLUSIVA do mestre: o DTO de jogador
   sai sem ele. O item entregue ao jogador NUNCA leva o preço.
   VISIBILIDADE: catálogo é legível por qualquer autenticado; criar/editar/remover/
@@ -2234,6 +2248,8 @@ DIAGNÓSTICO
   coins                   { pp, gp, ep, sp, cp } — carteira; CONSTRUÇÃO (só o mestre por PATCH)
   extraCoins              exibe PL/PE no bloco de moedas (só a exibição; valores sempre gravados)
   consumable              `details.consumable` (Item Geral/Outro): o item pode ser usado
+  rarity                  raridade do item (ITEM_RARITIES; null = sem raridade); índice p/ filtro
+  requiresAttunement      booleano MANUAL do item: exige sintonização? (independe da raridade)
   POST /me/inventory/use  consome 1 unidade de um item consumível; `roll` = effectRoll (kind 'item')
   editedBy                preenchido em sheet:updated SÓ quando o editor não é o dono
   toMasters/toPlayers     destinatários do broadcaster (sala role:masters / mesa sem mestres)

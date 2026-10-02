@@ -463,8 +463,10 @@ níveis de `classes[]`.
 ### 8.7 Item → `items`
 
 `id` · `name` · `description` · `weight Float` (kg) · `category` ·
+`rarity String?` (common|uncommon|rare|very_rare|legendary|artifact; `null` =
+sem raridade) · `requiresAttunement Boolean` (manual, independente da raridade) ·
 `imageUrl` · `details Json` · `priceGold/Silver/Copper Int` · `version` ·
-timestamps. `@@index([name])`, `@@index([category])`.
+timestamps. `@@index([name])`, `@@index([category])`, `@@index([rarity])`.
 
 ### 8.8 Combat → `combats` / Combatant → `combatants`
 
@@ -706,7 +708,7 @@ Aceita só PNG/JPEG/WEBP/GIF em data URL base64, **máx. 5 MB decodificados**.
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
 | GET | `/api/items` · `/api/items/:id` | [auth] | jogador recebe **sem preço** |
-| POST | `/api/items` | [mestre] | `201 { item }` |
+| POST | `/api/items` | [mestre] | `201 { item }`; aceita `rarity` (enum ou `null`) e `requiresAttunement` (bool) |
 | PATCH | `/api/items/:id` | [mestre] | troca de categoria re-normaliza `details`; dispara `republishSheetsWithCatalogItem` |
 | DELETE | `/api/items/:id` | [mestre] | `204` (apaga o sprite do disco) |
 | POST | `/api/items/:id/send` | [mestre] | `{ characterId, quantity? }` → `201`; se já houver o mesmo `itemId`, **soma**. Nunca envia o preço. Evento só para mestre e dono. |
@@ -1571,7 +1573,7 @@ usa:
 - **Armadura** (armorType, baseArmorClass, armorClassBonus);
 - **Escudo** (armorClassBonus);
 - **Poção** (effectRoll, duration);
-- **Anel** (effectRoll, attunement);
+- **Anel** (effectRoll);
 - demais: nenhum.
 
 **Perfil de arma (Arma/Cajado):** `WEAPON_TYPES` melee|ranged (padrão melee);
@@ -1584,6 +1586,15 @@ special); `versatileDie`; `rangeNormal/rangeLong` em **metros** (corpo a corpo
 `ammoType`; `versatile` exige `versatileDie` e não combina com `two-handed`;
 `thrown` e `ranged` exigem os dois alcances. Dado incoerente ⇒ 400 (ou `{}` no
 sanitize, sem gravar pela metade).
+
+**Raridade e sintonização (propriedade do ITEM, não da categoria):**
+`ITEM_RARITIES` = common | uncommon | rare | very_rare | legendary | artifact
+(valores internos; rótulos PT — Comum, Incomum, Raro, Muito Raro, Lendário,
+Artefato — no cliente). `rarity` fica `null` quando o item não é classificado.
+`requiresAttunement` é um booleano **manual** (sem regra automática ligando
+raridade e sintonização). Ambos são gravados no item e **espelhados** no
+inventário do jogador (`CatalogSnapshot`/`syncInventory` → `InventoryItemDto`).
+A antiga chave `details.attunement` (só Anel) foi incorporada a este campo.
 
 **Munição:** `AMMO_TYPES` Flecha | Virote | Bala de funda | Agulha de
 zarabatana; a categoria `Munição` usa `ammoType`, `attackBonus` e `damageBonus`

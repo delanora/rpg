@@ -203,7 +203,7 @@ Retorna `{ "status": "ok", "database": "up" }` quando o banco está acessível.
 
 ### Verificação automática (smoke test)
 
-Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 29 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas, do ataque derivado, do downgrade de nível e dos vários tipos de dano (seções 22 a 29):
+Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`npm run smoke`), que exige o servidor rodando, cria as próprias contas, exercita API e WebSocket e limpa tudo no fim. Ele cobre 31 seções — cadastro/login, tempo real, regras de D&D 5e, combate, Level Up, compêndio, a **Fase 0 (seções 14 a 21)** e os complementos de ataques/itens/moedas, do ataque derivado, do downgrade de nível, dos vários tipos de dano e do catálogo de ferramentas (seções 22 a 31):
 
 | Seção | O que verifica |
 |-------|----------------|
@@ -223,6 +223,8 @@ Não há testes unitários: a verificação é o **smoke test ponta a ponta** (`
 | **27** | **Ataque derivado da arma equipada** — a arma equipada vira ataque calculado com a habilidade certa (FOR corpo a corpo, DES à distância, a melhor das duas com acuidade), proficiência por **categoria** e por **nome** (plural/acento), dado **versátil** com a outra mão livre, **duas mãos** recusada (400) com a outra mão ocupada, **segunda arma leve** sem o modificador de dano, variante de **arremesso** (`ranged` usando FOR) e **golpe desarmado**; tudo resolvido no combate, inclusive o Ataque Furtivo da arma sutil. |
 | **28** | **Downgrade de nível (mestre)** — o Level Up passa a gravar o **histórico** de cada nível (dado/rolagem de PV com o ajuste retroativo de CON, Aumento de Atributo ou Talento, escolhas, subclasse, perícia e proficiências); `POST /api/characters/:id/level-down` desfaz exatamente isso (PV, atributos, escolhas e subclasse voltam), nível 1 caindo para 0 **remove a classe** da ficha (com a perícia e as proficiências de entrada, mas **mantendo** a proficiência que as classes restantes também concedem); a última classe do personagem e o jogador (403) são recusados; níveis anteriores ao histórico voltam com **aviso** e PV estimado pela média. |
 | **29** | **Vários tipos de dano por ataque e por arma** — a arma do catálogo, o ataque da ficha e o da criatura carregam `extraDamages` (cada parcela com os seus dados e o seu tipo), o item enviado e o ataque **derivado** da arma equipada levam a lista junto e o combate continua resolvendo **só o dano principal**. |
+| **30** | **Proficiências de ferramenta** — o mestre grava `toolProficiencies` com os ids estáveis do catálogo do PHB 2014 (`thieves-tools`, `lute`, `bagpipes`); um id fora do catálogo é recusado (400). |
+| **31** | **Raridade e sintonização do item** — o item guarda `rarity` (valores internos `common`…`artifact`) e `requiresAttunement` (booleano manual, independente da raridade); item criado sem raridade nasce com `rarity: null` e `requiresAttunement: false`; raridade fora da lista é recusada (400); a edição atualiza os dois de forma independente; e o inventário do jogador **espelha** ambos (catálogo → ficha). |
 
 Em produção, rode `npm run build` (e `npm run build:client`) **antes** de reiniciar o serviço — o systemd executa `dist/`. Se rodar o smoke várias vezes seguidas, reinicie o serviço entre as execuções: o rate limiter do login é em memória (e as seções novas **reaproveitam** fichas já criadas para não estourar o limite de 30 contas por 15 min do modo produção).
 
@@ -768,6 +770,14 @@ No combate o servidor rola esse dano (crítico dobra os **dados** e o bônus ent
 No catálogo, os itens **Arma** e **Cajado** guardam o dano estruturado (`damageCount`, `damageDie`, `damageType`) mais o `attackBonus` e o `damageBonus` (bônus mágico somado ao dano). A arma também tem **perfil próprio**: **uso** (corpo a corpo/à distância), **categoria** (simples/marcial), as **propriedades do PHB** (leve, acuidade, pesada, duas mãos, versátil, arremesso, alcance, munição, recarga, especial), o **dado versátil** e os **alcances** normal/longo em metros — exibidos no card do item. O servidor exige coerência: **munição** só em arma à distância, **versátil** exige o dado de duas mãos e não convive com **duas mãos**, e **à distância/arremesso** exigem os dois alcances.
 
 > No editor, escolher **à distância** revela os campos de alcance e a propriedade **Munição**; corpo a corpo usa 1,5 m (3 m com **Alcance**). A arma antiga cadastrada como Arma recebeu `melee`/`simple` (`npm run migrate:item-weapons`) — as que parecem ser à distância pelo nome saem listadas para o mestre corrigir.
+
+### Raridade e sintonização
+
+Todo item do catálogo tem duas propriedades de **item**, não de categoria: **raridade** (`rarity`) e **requer sintonização** (`requiresAttunement`). A raridade é um campo próprio do modelo (`String?`, com índice para permitir filtro futuro) e usa **valores internos estáveis** — `common`, `uncommon`, `rare`, `very_rare`, `legendary`, `artifact` — exibidos em português (**Comum, Incomum, Raro, Muito Raro, Lendário, Artefato**). Um item sem raridade classificada fica com `null` e continua funcionando normalmente (aparece como `—`).
+
+`requiresAttunement` é um **booleano definido manualmente** pelo mestre (`false` por padrão) e é **independente da raridade** — nenhuma regra automática liga as duas. A sintonização antes existia apenas dentro de `details` na categoria **Anel**; ela foi **incorporada** a este campo global (a migração leva os anéis antigos para `requiresAttunement` e limpa a chave do JSONB).
+
+Ambos aparecem no editor/lista do mestre e **descem para o inventário do jogador**: o espelho do catálogo (`CatalogSnapshot`/`syncInventory`) copia `rarity` e `requiresAttunement` para a cópia do inventário, de modo que a ficha mostra a raridade e o aviso **"Requer Sintonização"** no detalhe do item — e uma correção do mestre se propaga na hora para quem já tem o item.
 
 > Ataques antigos cuja expressão o parser não conseguiu interpretar foram convertidos com o **texto original preservado** e a marca **legado** (`npm run migrate:attack-damage`); o mestre revisa pela própria ficha.
 

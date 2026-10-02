@@ -26,6 +26,29 @@ export const ITEM_CATEGORIES = [
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
 
 /**
+ * Raridades de item do PHB 2014, na ordem crescente de poder. Os VALORES
+ * internos são estáveis (gravados no banco); a exibição em português fica no
+ * cliente. Um item sem raridade classificada usa `null`.
+ */
+export const ITEM_RARITIES = [
+  'common',
+  'uncommon',
+  'rare',
+  'very_rare',
+  'legendary',
+  'artifact',
+] as const;
+
+export type ItemRarity = (typeof ITEM_RARITIES)[number];
+
+/** Converte um valor vindo do banco para uma raridade conhecida (senão `null`). */
+export function itemRarityOf(value: unknown): ItemRarity | null {
+  return typeof value === 'string' && (ITEM_RARITIES as readonly string[]).includes(value)
+    ? (value as ItemRarity)
+    : null;
+}
+
+/**
  * Categoria de peso das armaduras (PHB 2014), usada no cálculo da CA:
  * - Leve: CA base + mod. Destreza inteiro.
  * - Média: CA base + mod. Destreza, no máximo +2.
@@ -125,7 +148,6 @@ export const itemDetailsSchema = z
     // Poção / Anel / item consumível
     effectRoll: z.string().trim().max(60).optional(),
     duration: z.string().trim().max(120).optional(),
-    attunement: z.boolean().optional(),
     /**
      * Marcado pelo mestre (Item Geral e Outro): o item pode ser USADO pelo
      * jogador, consumindo 1 unidade. Poções são consumíveis pela categoria.
@@ -238,7 +260,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   Armadura: ['armorType', 'baseArmorClass', 'armorClassBonus'],
   Escudo: ['armorClassBonus'],
   Poção: ['effectRoll', 'duration'],
-  Anel: ['effectRoll', 'attunement'],
+  Anel: ['effectRoll'],
   'Item Geral': ['effectRoll', 'consumable'],
   Tesouro: [],
   Outro: ['effectRoll', 'consumable'],

@@ -303,6 +303,13 @@ model Item {
   weight      Float    @default(0)
   /// Categoria validada na aplicação (ex.: Arma, Poção, Tesouro).
   category    String   @default("Item Geral")
+  /// Raridade do PHB 2014 (common, uncommon, rare, very_rare, legendary,
+  /// artifact). `null` = item sem raridade classificada. Ver ITEM_RARITIES em
+  /// src/modules/shared/item-details.ts.
+  rarity      String?
+  /// O item exige sintonização (PHB 2014). Propriedade MANUAL do mestre,
+  /// independente da raridade. Ver src/modules/shared/item-details.ts.
+  requiresAttunement Boolean @default(false)
   /// URL pública do sprite do item (`uploads/items/...`).
   imageUrl    String   @default("")
   /// Atributos específicos da categoria: dano, CA adicional, rolagem de efeito...
@@ -318,6 +325,7 @@ model Item {
 
   @@index([name])
   @@index([category])
+  @@index([rarity])
   @@map("items")
 }
 
