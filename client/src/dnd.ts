@@ -3,6 +3,7 @@ import type {
   AbilityKey,
   Damage,
   FeatureSource,
+  HealingDice,
   ItemDetails,
   ItemRarity,
   PotionCategory,
@@ -394,6 +395,14 @@ export function rarityLabel(rarity: string | null | undefined): string {
  * Rótulos em português das categorias de POÇÃO (os valores internos ficam em
  * `types.ts` / `item-details.ts`). Só a categoria Poção usa este mapa.
  */
+/**
+ * Expressão da cura estruturada de uma poção: `2d8+3`, `1d4` (sem bônus).
+ * Espelha o `count d sides + bonus` que o servidor rola no uso do item.
+ */
+export function healingDiceLabel(dice: HealingDice): string {
+  return `${dice.count}d${dice.sides}${dice.bonus ? `+${dice.bonus}` : ''}`;
+}
+
 export const POTION_CATEGORY_LABELS: Record<PotionCategory, string> = {
   healing: 'Cura',
   enhancement: 'Atributos e aprimoramento',
@@ -562,7 +571,13 @@ export function describeItemDetails(category: string, details: ItemDetails | und
     if (details.damageBonus) parts.push(`dano ${formatModifier(details.damageBonus)}`);
   } else if (category === 'Poção') {
     if (details.potionCategory) parts.push(POTION_CATEGORY_LABELS[details.potionCategory]);
-    if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
+    // Poção de Cura automatizada: mostra a cura estruturada no lugar do texto
+    // livre de efeito (que deixa de valer para ela).
+    if (details.healingDice) {
+      parts.push(`cura ${healingDiceLabel(details.healingDice)}`);
+    } else if (details.effectRoll) {
+      parts.push(`efeito ${details.effectRoll}`);
+    }
     if (details.duration) parts.push(details.duration);
   } else if (category === 'Anel') {
     if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
@@ -647,7 +662,8 @@ export function itemDetailRows(details: ItemDetails | undefined): ItemDetailRow[
     'Categoria da poção',
     details.potionCategory ? POTION_CATEGORY_LABELS[details.potionCategory] : undefined,
   );
-  add('Efeito', details.effectRoll);
+  add('Cura', details.healingDice ? healingDiceLabel(details.healingDice) : undefined);
+  if (!details.healingDice) add('Efeito', details.effectRoll);
   add('Duração', details.duration);
   add('Usável', details.consumable ? 'Sim (consome 1 unidade)' : undefined);
 

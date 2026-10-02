@@ -8557,6 +8557,183 @@ async function main(): Promise<void> {
     );
   }
 
+  // 33) Poção de Cura automatizada (healingDice) e uso com cura na ficha
+  {
+    console.log('\n33) Poção de Cura: cura estruturada e uso automático');
+
+    const healingItem = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção de cura maior ${suffix}`,
+        category: 'Poção',
+        details: {
+          potionCategory: 'healing',
+          duration: 'instantânea',
+          healingDice: { count: 2, sides: 8, bonus: 3 },
+        },
+      },
+    });
+    const healingId = healingItem.data?.item?.id;
+    if (healingId) createdItemIds.push(healingId);
+    check(
+      'poção de Cura guarda a cura estruturada (2d8+3)',
+      healingItem.status === 201 &&
+        healingItem.data?.item?.details?.healingDice?.count === 2 &&
+        healingItem.data?.item?.details?.healingDice?.sides === 8 &&
+        healingItem.data?.item?.details?.healingDice?.bonus === 3,
+      JSON.stringify(healingItem.data?.item?.details),
+    );
+
+    // healingDice só existe quando potionCategory é 'healing'.
+    const poisonPotion = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção venenosa ${suffix}`,
+        category: 'Poção',
+        details: { potionCategory: 'poison', healingDice: { count: 2, sides: 8, bonus: 3 } },
+      },
+    });
+    if (poisonPotion.data?.item?.id) createdItemIds.push(poisonPotion.data.item.id);
+    check(
+      'poção que NÃO é de Cura NÃO guarda healingDice (sanitize descarta)',
+      poisonPotion.status === 201 && poisonPotion.data?.item?.details?.healingDice === undefined,
+      JSON.stringify(poisonPotion.data?.item?.details),
+    );
+
+    const badCount = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção inválida A ${suffix}`,
+        category: 'Poção',
+        details: { potionCategory: 'healing', healingDice: { count: 0, sides: 8, bonus: 0 } },
+      },
+    });
+    check('quantidade de dados fora de 1..10 é recusada (400)', badCount.status === 400);
+
+    const badSides = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção inválida B ${suffix}`,
+        category: 'Poção',
+        details: { potionCategory: 'healing', healingDice: { count: 1, sides: 7, bonus: 0 } },
+      },
+    });
+    check('dado de cura fora de d4/d6/d8/d10/d12 é recusado (400)', badSides.status === 400);
+
+    const badBonus = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção inválida C ${suffix}`,
+        category: 'Poção',
+        details: { potionCategory: 'healing', healingDice: { count: 1, sides: 8, bonus: 21 } },
+      },
+    });
+    check('bônus de cura fora de 0..20 é recusado (400)', badBonus.status === 400);
+
+    // Envia a poção ao jogador e prepara uma ficha ferida (PV 1 de 50).
+    await api(`/api/items/${healingId}/send`, {
+      method: 'POST',
+      token: masterToken,
+      body: { characterId: multiSheetOwner.characterId, quantity: 1 },
+    });
+    const stockedHeal = await masterPatch(multiSheetOwner.characterId, { hpMax: 50, hpCurrent: 1 });
+    const healEntry = stockedHeal.data?.character?.inventory?.find(
+      (entry: any) => entry.itemId === healingId,
+    );
+
+    const healUse = await api('/api/characters/me/inventory/use', {
+      method: 'POST',
+      token: multiSheetOwner.token,
+      body: { itemInventoryId: healEntry?.id },
+    });
+    const healRoll = healUse.data?.roll;
+    check(
+      'usar a poção de Cura rola kind item rotulado como Cura e aplica o total no HP',
+      healUse.status === 200 &&
+        healRoll?.kind === 'item' &&
+        healRoll?.label === `Cura (Poção de cura maior ${suffix})` &&
+        healRoll?.dice?.length === 2 &&
+        healRoll?.dice?.every((die: any) => die.sides === 8) &&
+        healRoll?.bonus === 3 &&
+        healUse.data?.character?.hpCurrent === Math.min(50, 1 + healRoll.total),
+      JSON.stringify({ roll: healRoll, hpCurrent: healUse.data?.character?.hpCurrent }),
+    );
+
+    // Cura não passa do máximo: ficha cheia + cura grande continua no hpMax.
+    const capItem = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção de cura plena ${suffix}`,
+        category: 'Poção',
+        details: { potionCategory: 'healing', healingDice: { count: 10, sides: 12, bonus: 20 } },
+      },
+    });
+    const capId = capItem.data?.item?.id;
+    if (capId) createdItemIds.push(capId);
+    await api(`/api/items/${capId}/send`, {
+      method: 'POST',
+      token: masterToken,
+      body: { characterId: multiSheetOwner.characterId, quantity: 1 },
+    });
+    const stockedCap = await masterPatch(multiSheetOwner.characterId, { hpMax: 50, hpCurrent: 50 });
+    const capEntry = stockedCap.data?.character?.inventory?.find(
+      (entry: any) => entry.itemId === capId,
+    );
+    const capUse = await api('/api/characters/me/inventory/use', {
+      method: 'POST',
+      token: multiSheetOwner.token,
+      body: { itemInventoryId: capEntry?.id },
+    });
+    check(
+      'a cura nunca ultrapassa o PV máximo (hpCurrent = min(hpMax, ...))',
+      capUse.status === 200 && capUse.data?.character?.hpCurrent === 50,
+      JSON.stringify({ hpCurrent: capUse.data?.character?.hpCurrent, roll: capUse.data?.roll?.total }),
+    );
+
+    // Caso legado: poção de Cura SEM healingDice rola effectRoll e não cura.
+    const legacyItem = await api('/api/items', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: `Poção de cura antiga ${suffix}`,
+        category: 'Poção',
+        details: { potionCategory: 'healing', effectRoll: '1d4+1' },
+      },
+    });
+    const legacyId = legacyItem.data?.item?.id;
+    if (legacyId) createdItemIds.push(legacyId);
+    await api(`/api/items/${legacyId}/send`, {
+      method: 'POST',
+      token: masterToken,
+      body: { characterId: multiSheetOwner.characterId, quantity: 1 },
+    });
+    const stockedLegacy = await masterPatch(multiSheetOwner.characterId, {
+      hpMax: 50,
+      hpCurrent: 10,
+    });
+    const legacyEntry = stockedLegacy.data?.character?.inventory?.find(
+      (entry: any) => entry.itemId === legacyId,
+    );
+    const legacyUse = await api('/api/characters/me/inventory/use', {
+      method: 'POST',
+      token: multiSheetOwner.token,
+      body: { itemInventoryId: legacyEntry?.id },
+    });
+    check(
+      'poção de Cura sem healingDice mantém o comportamento antigo (rola, não aplica)',
+      legacyUse.status === 200 &&
+        legacyUse.data?.roll?.label === `Item: Poção de cura antiga ${suffix}` &&
+        legacyUse.data?.character?.hpCurrent === 10,
+      JSON.stringify({ roll: legacyUse.data?.roll, hp: legacyUse.data?.character?.hpCurrent }),
+    );
+  }
+
   }
 
   console.log(

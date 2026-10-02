@@ -68,6 +68,35 @@ export const POTION_CATEGORIES = [
 export type PotionCategory = (typeof POTION_CATEGORIES)[number];
 
 /**
+ * Faces válidas de um dado de cura de poção (PHB 2014): d4, d6, d8, d10 e d12.
+ * Usado tanto pela validação quanto pelo rolador de cura.
+ */
+export const HEALING_DICE_SIDES = [4, 6, 8, 10, 12] as const;
+
+/**
+ * Cura ESTRUTURADA de uma poção de Cura (`potionCategory === 'healing'`).
+ * Substitui a rolagem de texto livre (`effectRoll`) nesse caso: o uso do item
+ * rola `count`d`sides` + `bonus` e aplica o total na ficha automaticamente.
+ * Só existe quando a categoria é Poção E a finalidade é Cura.
+ */
+export const healingDiceSchema = z.object({
+  /** Quantidade de dados (1 a 10). */
+  count: z.number().int().min(1).max(10),
+  /** Faces do dado: 4, 6, 8, 10 ou 12. */
+  sides: z.union([
+    z.literal(4),
+    z.literal(6),
+    z.literal(8),
+    z.literal(10),
+    z.literal(12),
+  ]),
+  /** Bônus fixo somado ao total (0 a 20). */
+  bonus: z.number().int().min(0).max(20),
+});
+
+export type HealingDice = z.infer<typeof healingDiceSchema>;
+
+/**
  * Categoria de peso das armaduras (PHB 2014), usada no cálculo da CA:
  * - Leve: CA base + mod. Destreza inteiro.
  * - Média: CA base + mod. Destreza, no máximo +2.
@@ -169,6 +198,11 @@ export const itemDetailsSchema = z
     duration: z.string().trim().max(120).optional(),
     /** Finalidade da poção (só a categoria Poção guarda este campo). */
     potionCategory: z.enum(POTION_CATEGORIES).optional(),
+    /**
+     * Cura estruturada da poção (só quando `potionCategory === 'healing'`).
+     * O descarte fora desse caso é feito por `sanitizeItemDetails`.
+     */
+    healingDice: healingDiceSchema.optional(),
     /**
      * Marcado pelo mestre (Item Geral e Outro): o item pode ser USADO pelo
      * jogador, consumindo 1 unidade. Poções são consumíveis pela categoria.
@@ -280,7 +314,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   Munição: ['ammoType', 'attackBonus', 'damageBonus'],
   Armadura: ['armorType', 'baseArmorClass', 'armorClassBonus'],
   Escudo: ['armorClassBonus'],
-  Poção: ['effectRoll', 'duration', 'potionCategory'],
+  Poção: ['effectRoll', 'duration', 'potionCategory', 'healingDice'],
   Anel: ['effectRoll'],
   'Item Geral': ['effectRoll', 'consumable'],
   Tesouro: [],
@@ -318,6 +352,13 @@ export function sanitizeItemDetails(category: string, details: unknown): ItemDet
     if (value !== undefined) {
       (result as Record<string, unknown>)[key] = value;
     }
+  }
+
+  // `healingDice` é exclusivo da poção de CURA: mesmo estando em `DETAIL_KEYS`
+  // da categoria Poção, ele é descartado quando a finalidade não é 'healing'
+  // (o mesmo cuidado que se aplica às chaves de outras categorias).
+  if (result.healingDice !== undefined && result.potionCategory !== 'healing') {
+    delete result.healingDice;
   }
 
   if (isWeaponCategory(category)) {

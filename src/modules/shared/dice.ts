@@ -37,6 +37,29 @@ export function rollD20(): number {
   return rollDie(20);
 }
 
+/** Resultado da cura estruturada de uma poção: os dados rolados e o total. */
+export interface HealingDiceResult {
+  rolls: number[];
+  sides: number;
+  bonus: number;
+  total: number;
+}
+
+/**
+ * Rola a cura estruturada de uma poção: `count`d`sides` + `bonus`.
+ * Usa o mesmo dado justo do servidor (`rollDie`/`crypto.randomInt`). O total
+ * NUNCA é negativo (o bônus já é validado como >= 0).
+ */
+export function rollHealingDice(spec: {
+  count: number;
+  sides: number;
+  bonus: number;
+}): HealingDiceResult {
+  const rolls = Array.from({ length: spec.count }, () => rollDie(spec.sides));
+  const total = rolls.reduce((sum, value) => sum + value, 0) + spec.bonus;
+  return { rolls, sides: spec.sides, bonus: spec.bonus, total };
+}
+
 const DICE_EXPRESSION = /^\s*(\d*)\s*[dD]\s*(\d+)\s*(?:([+-])\s*(\d+))?\s*$/;
 const FLAT_EXPRESSION = /^\s*([+-]?\d+)\s*$/;
 

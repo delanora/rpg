@@ -594,7 +594,12 @@ Todos os corpos passam por Zod; corpo inválido ⇒ 400 com `issues` por campo.
         a entrada SAI do inventário ao chegar a zero. Com `effectRoll`, o
         servidor rola a expressão, registra no histórico de rolagens como
         `kind: 'item'` (label "Item: <nome>") e devolve a rolagem em `roll`;
-        NENHUM efeito é aplicado automaticamente na ficha.
+        NENHUM efeito é aplicado automaticamente na ficha. EXCEÇÃO: Poção de
+        Cura (`potionCategory === 'healing'`) com `healingDice` rola
+        `count×dado + bonus`, aplica `hpCurrent = min(hpMax, hpCurrent + total)`
+        na MESMA escrita do desconto e registra como `kind: 'item'` com label
+        `Cura (<nome>)` (detalhe dado a dado). Os atributos vêm do CATÁLOGO
+        sincronizado, não da cópia guardada, para valer a correção do mestre.
 
 8.5 ASSISTENTE DE CRIAÇÃO (ver §13 para a máquina de estados)
   GET   /api/characters/me/creation            [auth] → { character, creation }
@@ -1528,7 +1533,9 @@ JANELA DE DADOS (dice)
     qualquer outra ⇒ `toTable`.
   • Uso de item (`rollItemEffect`, `kind: 'item'`): rola o `effectRoll` sem aviso de
     queda, entra no histórico do mestre e vai para a mesa como qualquer rolagem
-    pública; sem efeito automático na ficha.
+    pública; sem efeito automático na ficha. Em Poção de Cura com `healingDice`
+    (`recordHealingRoll`) a rolagem sai rotulada como `Cura (<nome>)` e o total é
+    aplicado em `hpCurrent` na mesma operação do uso.
   • Privacidade: `isPrivate = Boolean(private) && role === 'MASTER'` — rolagem de
     jogador é SEMPRE pública.
   • O nome de quem rolou vem da FICHA (fallback: displayName do usuário), nunca do corpo.
@@ -1593,7 +1600,7 @@ CATÁLOGO DE ITENS
     Arma (damageCount, damageDie, damageType, extraDamages, attackBonus, damageBonus,
     weaponType, weaponCategory, properties, versatileDie, rangeNormal, rangeLong) ·
     Cajado (idem + spellcastingFocus) · Armadura (armorType, baseArmorClass, armorClassBonus) ·
-    Escudo (armorClassBonus) · Poção (effectRoll, duration, potionCategory) · Anel (effectRoll) ·
+    Escudo (armorClassBonus) · Poção (effectRoll, duration, potionCategory, healingDice) · Anel (effectRoll) ·
     demais: nenhum.
   PERFIL DE ARMA (Arma/Cajado) — o cadastro separa corpo a corpo de à distância:
     WEAPON_TYPES melee | ranged (padrão melee) · WEAPON_CATEGORIES simple | martial
@@ -1603,6 +1610,10 @@ CATÁLOGO DE ITENS
   POTION_CATEGORIES (só a Poção): healing | enhancement | protection | mobility |
     stealth | exploration | poison | longevity — finalidade da poção, OPCIONAL e
     manual (rótulos PT em POTION_CATEGORY_LABELS, no cliente). Vive no details (JSONB).
+  CURA ESTRUTURADA (só poção de Cura): healingDice { count 1..10, sides 4|6|8|10|12,
+    bonus 0..20 } substitui o effectRoll no uso; o sanitize descarta healingDice quando
+    potionCategory != 'healing' (o uso rola count d sides + bonus e aplica em hpCurrent,
+    ver §uso de item).
   COERÊNCIA (superRefine no itemDetailsSchema; os padrões entram no sanitize):
     ammunition só em ranged E exige ammoType; versatile exige versatileDie e não
     combina com two-handed; thrown e ranged exigem os dois alcances. Dado
@@ -2264,7 +2275,10 @@ DIAGNÓSTICO
   consumable              `details.consumable` (Item Geral/Outro): o item pode ser usado
   rarity                  raridade do item (ITEM_RARITIES; null = sem raridade); índice p/ filtro
   requiresAttunement      booleano MANUAL do item: exige sintonização? (independe da raridade)
-  POST /me/inventory/use  consome 1 unidade de um item consumível; `roll` = effectRoll (kind 'item')
+  POST /me/inventory/use  consome 1 unidade de um item consumível; `roll` = effectRoll
+                          (kind 'item'); em Poção de Cura com healingDice rola a cura,
+                          aplica hpCurrent = min(hpMax, hpCurrent + total) na MESMA escrita
+                          e registra o log como 'Cura (<nome>)'
   editedBy                preenchido em sheet:updated SÓ quando o editor não é o dono
   toMasters/toPlayers     destinatários do broadcaster (sala role:masters / mesa sem mestres)
   kind                    CreatureKind: CREATURE (combate) vs NPC (narrativo)

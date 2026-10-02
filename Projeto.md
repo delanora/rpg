@@ -655,7 +655,7 @@ MASTER. Todos os corpos passam por Zod; corpo inválido ⇒ `400` com `issues`.
 | PATCH | `/api/characters/me` | [auth] | edição parcial; ver §14 |
 | POST | `/api/characters/me/level-up` | [auth] | Level Up pelo assistente; §15 |
 | POST | `/api/characters/me/inventory/move` | [auth] | `{ itemInventoryId, targetSlot?, targetBackpackX?, targetBackpackY? }` — equipa/troca ou move na mochila. **Único** caminho do jogador que mexe na **posição**; nunca na quantidade. |
-| POST | `/api/characters/me/inventory/use` | [auth] | `{ itemInventoryId }` → `{ character, roll }`. Consome 1 unidade de Poção ou item com `details.consumable`; com `effectRoll`, rola e registra (`kind: 'item'`). Nenhum efeito automático na ficha. |
+| POST | `/api/characters/me/inventory/use` | [auth] | `{ itemInventoryId }` → `{ character, roll }`. Consome 1 unidade de Poção ou item com `details.consumable`; com `effectRoll`, rola e registra (`kind: 'item'`). Em **Poção de Cura com `healingDice`**, rola `count×dado + bonus` e aplica `hpCurrent = min(hpMax, hpCurrent + total)` na mesma escrita (log `kind: 'item'`, `Cura (<nome>)`). Fora desse caso, nenhum efeito automático. |
 | POST | `/api/characters/me/coins/spend` | [auth] | `{ amount }` — gasto **exato** por denominação (sem troco); saldo insuficiente `400`. |
 | POST | `/api/characters/me/coins/exchange` | [auth] | troca entre denominações com as conversões do PHB; troca que exigiria fração ⇒ `400`. |
 | POST | `/api/characters/me/coins/transfer` | [auth] | `{ targetCharacterId, amount }` — debita o doador e credita o destino na **mesma transação**; não vale para si nem para o mestre; as **duas** fichas recebem `sheet:updated`. |
@@ -1572,7 +1572,7 @@ usa:
 - **Cajado** (idem + spellcastingFocus);
 - **Armadura** (armorType, baseArmorClass, armorClassBonus);
 - **Escudo** (armorClassBonus);
-- **Poção** (effectRoll, duration, potionCategory);
+- **Poção** (effectRoll, duration, potionCategory, healingDice);
 - **Anel** (effectRoll);
 - demais: nenhum.
 
@@ -1605,6 +1605,19 @@ Furtividade e percepção, Sobrevivência e exploração, Veneno, Longevidade). 
 no JSONB `details` (sem coluna/migração); poção antiga sem categoria segue
 válida e o `sanitizeItemDetails` descarta o campo em qualquer outra categoria.
 Exibida no modal de detalhes junto de efeito, duração, raridade e sintonização.
+
+**Cura estruturada (Poção de Cura):** a poção com `potionCategory === 'healing'`
+troca a rolagem de texto livre por `details.healingDice` = `{ count 1..10,
+ sides 4|6|8|10|12, bonus 0..20 }` (fora disso, 400). O `sanitizeItemDetails`
+ descarta `healingDice` quando a finalidade não é Cura; no editor, Cura oculta
+ *Rolagem do efeito* e mostra **Dado/Quantidade/Bônus** (as demais finalidades
+ seguem com `effectRoll`/`duration`). No uso (`POST /me/inventory/use`), uma
+ Poção de Cura com `healingDice` rola `count×dado + bonus` com o rolador do
+ servidor e aplica `hpCurrent = min(hpMax, hpCurrent + total)` na **mesma**
+ escrita que desconta a unidade, publica `sheet:updated` e registra no log como
+ `kind: 'item'` (label `Cura (<nome>)`, detalhe dado a dado). Poção não de Cura
+ (ou de Cura sem `healingDice`) mantém o comportamento antigo. Ver §Fase 5 para
+ o custo de Ação (ainda não implementado).
 
 **Munição:** `AMMO_TYPES` Flecha | Virote | Bala de funda | Agulha de
 zarabatana; a categoria `Munição` usa `ammoType`, `attackBonus` e `damageBonus`
