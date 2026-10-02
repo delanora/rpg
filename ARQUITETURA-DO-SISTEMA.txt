@@ -1619,6 +1619,12 @@ CATÁLOGO DE ITENS
     sintonização ficam requiresAttunement = true; a chave sai do JSONB).
     ESPELHO: CatalogSnapshot/syncInventory copiam rarity e requiresAttunement para
     o inventário do jogador (InventoryItemDto), então a ficha mostra os dois.
+    CORES (dnd.ts): ITEM_RARITY_COLORS é a FONTE ÚNICA — common #BDBDBD,
+    uncommon #4CAF50, rare #2196F3, very_rare #9C27B0, legendary #FF9800,
+    artifact #D32F2F. rarityColor/rarityTint/rarityLabel normalizam o valor
+    (aceitam "common"/"Comum"/"COMUM") e devolvem estilo NEUTRO sem raridade.
+    A cor aparece no texto e como detalhe discreto (anel da célula, borda do card
+    do mestre e do modal); o nome da raridade segue escrito (acessibilidade).
   PREÇO (priceGold/Silver/Copper) é informação EXCLUSIVA do mestre: o DTO de jogador
   sai sem ele. O item entregue ao jogador NUNCA leva o preço.
   VISIBILIDADE: catálogo é legível por qualquer autenticado; criar/editar/remover/

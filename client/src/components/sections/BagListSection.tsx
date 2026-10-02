@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { describeItemDetails } from '../../dnd';
+import { describeItemDetails, rarityColor, rarityLabel } from '../../dnd';
 import type { Character } from '../../types';
 import { ItemSprite } from './InventorySection';
 
@@ -38,6 +38,14 @@ export function BagListSection({ character }: BagListSectionProps) {
                 <ItemSprite item={item} />
               </span>
               <span className="bag-list-name">{item.name}</span>
+              {item.rarity ? (
+                <span
+                  className="bag-list-rarity"
+                  style={{ color: rarityColor(item.rarity) ?? undefined }}
+                >
+                  {rarityLabel(item.rarity)}
+                </span>
+              ) : null}
               <span className="bag-list-qty">×{item.quantity}</span>
               <span className="bag-list-weight">{item.weight} kg</span>
             </button>

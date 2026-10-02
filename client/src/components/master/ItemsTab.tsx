@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { describeItemDetails, rarityLabel } from '../../dnd';
+import { describeItemDetails, rarityColor, rarityLabel } from '../../dnd';
 import type { Character, Item, ItemPatch } from '../../types';
 import { Portrait } from '../Portrait';
 import { CoinsGrantPanel } from './CoinsGrantPanel';
@@ -93,6 +93,7 @@ export function ItemsTab({
                   <button
                     type="button"
                     className={selected?.id === item.id ? 'item-card active' : 'item-card'}
+                    style={{ borderLeftColor: rarityColor(item.rarity) ?? undefined }}
                     onClick={() => setSelectedId(item.id)}
                   >
                     <Portrait src={item.imageUrl} alt={item.name} icon="flask" />
@@ -100,7 +101,12 @@ export function ItemsTab({
                       <span className="card-name">{item.name}</span>
                       <span className="card-line">
                         {item.category}
-                        {item.rarity ? ` · ${rarityLabel(item.rarity)}` : ''}
+                        {item.rarity ? (
+                          <span style={{ color: rarityColor(item.rarity) ?? undefined }}>
+                            {' · '}
+                            {rarityLabel(item.rarity)}
+                          </span>
+                        ) : null}
                         {item.weight > 0 ? ` · ${item.weight} kg` : ''}
                         {item.requiresAttunement ? ' · sintonização' : ''}
                       </span>

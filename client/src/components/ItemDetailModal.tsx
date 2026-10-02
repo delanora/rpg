@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { itemDetailRows, rarityLabel } from '../dnd';
+import { itemDetailRows, rarityColor, rarityLabel, rarityTint } from '../dnd';
 import type { InventoryItem } from '../types';
 import { Icon } from './Icon';
 import { useLightbox } from './Lightbox';
@@ -43,6 +43,9 @@ export function ItemDetailModal({ item, onClose }: ItemDetailModalProps) {
 
   const rows = itemDetailRows(item.details);
   const rarity = rarityLabel(item.rarity);
+  // Cores da raridade: texto na cor cheia e um detalhe/borda discreto (tinta).
+  const color = rarityColor(item.rarity);
+  const accent = rarityTint(item.rarity, '99');
 
   return createPortal(
     <div
@@ -53,7 +56,11 @@ export function ItemDetailModal({ item, onClose }: ItemDetailModalProps) {
       onClick={onClose}
     >
       {/* O clique dentro do cartão não fecha (só a área escurecida fecha). */}
-      <div className="modal item-modal" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="modal item-modal"
+        style={{ borderLeftColor: accent ?? undefined, borderLeftWidth: accent ? 4 : undefined }}
+        onClick={(event) => event.stopPropagation()}
+      >
         <button
           type="button"
           className="item-modal-close"
@@ -87,7 +94,14 @@ export function ItemDetailModal({ item, onClose }: ItemDetailModalProps) {
             <h2 className="item-modal-name">{item.name}</h2>
             <p className="item-modal-tags">
               {item.category ? <span className="item-modal-tag">{item.category}</span> : null}
-              {rarity ? <span className="item-modal-tag">{rarity}</span> : null}
+              {rarity ? (
+                <span
+                  className="item-modal-tag is-rarity"
+                  style={color && accent ? { color, borderColor: accent } : undefined}
+                >
+                  {rarity}
+                </span>
+              ) : null}
               <span
                 className={
                   item.requiresAttunement

@@ -4279,6 +4279,13 @@ input[type='checkbox']:disabled {
   min-width: 3.6rem;
   text-align: right;
 }
+/* Raridade na lista da mochila: texto na cor, sem competir com o nome. */
+.bag-list-rarity {
+  flex: none;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
 .bag-list-detail {
   margin: 0.25rem 0 0.35rem 2.15rem;
   padding-left: 0.6rem;
@@ -6420,6 +6427,12 @@ input[type='checkbox']:disabled {
 
 .item-modal-tag.is-muted {
   color: var(--ink-faint);
+}
+
+/* Raridade no modal: cor+peso próprios (a cor vem inline, da fonte única). */
+.item-modal-tag.is-rarity {
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .item-modal-facts {
