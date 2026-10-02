@@ -5,6 +5,7 @@ import type {
   FeatureSource,
   ItemDetails,
   ItemRarity,
+  PotionCategory,
   SpellLearning,
   SpellcastingType,
   WeaponCategory,
@@ -389,6 +390,21 @@ export function rarityLabel(rarity: string | null | undefined): string {
   return key ? ITEM_RARITY_LABELS[key] : '';
 }
 
+/**
+ * Rótulos em português das categorias de POÇÃO (os valores internos ficam em
+ * `types.ts` / `item-details.ts`). Só a categoria Poção usa este mapa.
+ */
+export const POTION_CATEGORY_LABELS: Record<PotionCategory, string> = {
+  healing: 'Cura',
+  enhancement: 'Atributos e aprimoramento',
+  protection: 'Resistência e proteção',
+  mobility: 'Mobilidade',
+  stealth: 'Furtividade e percepção',
+  exploration: 'Sobrevivência e exploração',
+  poison: 'Veneno',
+  longevity: 'Longevidade',
+};
+
 export const SPELL_SCHOOLS = [
   'Abjuração',
   'Adivinhação',
@@ -545,6 +561,7 @@ export function describeItemDetails(category: string, details: ItemDetails | und
     if (details.attackBonus) parts.push(`acerto ${formatModifier(details.attackBonus)}`);
     if (details.damageBonus) parts.push(`dano ${formatModifier(details.damageBonus)}`);
   } else if (category === 'Poção') {
+    if (details.potionCategory) parts.push(POTION_CATEGORY_LABELS[details.potionCategory]);
     if (details.effectRoll) parts.push(`efeito ${details.effectRoll}`);
     if (details.duration) parts.push(details.duration);
   } else if (category === 'Anel') {
@@ -626,6 +643,10 @@ export function itemDetailRows(details: ItemDetails | undefined): ItemDetailRow[
   add('Tipo de armadura', details.armorType);
   add('CA base', details.baseArmorClass ? String(details.baseArmorClass) : undefined);
   add('Bônus de CA', details.armorClassBonus ? formatModifier(details.armorClassBonus) : undefined);
+  add(
+    'Categoria da poção',
+    details.potionCategory ? POTION_CATEGORY_LABELS[details.potionCategory] : undefined,
+  );
   add('Efeito', details.effectRoll);
   add('Duração', details.duration);
   add('Usável', details.consumable ? 'Sim (consome 1 unidade)' : undefined);

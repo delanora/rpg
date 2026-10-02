@@ -1593,13 +1593,16 @@ CATÁLOGO DE ITENS
     Arma (damageCount, damageDie, damageType, extraDamages, attackBonus, damageBonus,
     weaponType, weaponCategory, properties, versatileDie, rangeNormal, rangeLong) ·
     Cajado (idem + spellcastingFocus) · Armadura (armorType, baseArmorClass, armorClassBonus) ·
-    Escudo (armorClassBonus) · Poção (effectRoll, duration) · Anel (effectRoll) ·
+    Escudo (armorClassBonus) · Poção (effectRoll, duration, potionCategory) · Anel (effectRoll) ·
     demais: nenhum.
   PERFIL DE ARMA (Arma/Cajado) — o cadastro separa corpo a corpo de à distância:
     WEAPON_TYPES melee | ranged (padrão melee) · WEAPON_CATEGORIES simple | martial
     (padrão simple) · WEAPON_PROPERTIES (light, finesse, heavy, two-handed, versatile,
     thrown, reach, ammunition, loading, special) · versatileDie (dado de duas mãos) ·
     rangeNormal/rangeLong em METROS (corpo a corpo é 1,5 m; 3 m com reach).
+  POTION_CATEGORIES (só a Poção): healing | enhancement | protection | mobility |
+    stealth | exploration | poison | longevity — finalidade da poção, OPCIONAL e
+    manual (rótulos PT em POTION_CATEGORY_LABELS, no cliente). Vive no details (JSONB).
   COERÊNCIA (superRefine no itemDetailsSchema; os padrões entram no sanitize):
     ammunition só em ranged E exige ammoType; versatile exige versatileDie e não
     combina com two-handed; thrown e ranged exigem os dois alcances. Dado

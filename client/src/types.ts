@@ -92,6 +92,8 @@ export interface ItemDetails {
   baseArmorClass?: number;
   /** Bônus avulso de CA (escudos e itens mágicos). */
   armorClassBonus?: number;
+  /** Finalidade da poção (só a categoria Poção usa). */
+  potionCategory?: PotionCategory;
   effectRoll?: string;
   duration?: string;
   /** Marcado pelo mestre (Item Geral/Outro): o item pode ser USADO (consome 1). */
@@ -1363,6 +1365,24 @@ export const ITEM_RARITIES = [
 ] as const;
 
 export type ItemRarity = (typeof ITEM_RARITIES)[number];
+
+/**
+ * Categorias de finalidade de uma POÇÃO (espelha item-details.ts do servidor).
+ * Os valores internos são estáveis; os rótulos em português ficam em `dnd.ts`
+ * (`POTION_CATEGORY_LABELS`). É opcional — poções antigas podem não ter.
+ */
+export const POTION_CATEGORIES = [
+  'healing',
+  'enhancement',
+  'protection',
+  'mobility',
+  'stealth',
+  'exploration',
+  'poison',
+  'longevity',
+] as const;
+
+export type PotionCategory = (typeof POTION_CATEGORIES)[number];
 
 /**
  * Peso das armaduras (espelha src/modules/shared/item-details.ts). Decide como

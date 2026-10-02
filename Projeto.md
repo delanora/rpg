@@ -1572,7 +1572,7 @@ usa:
 - **Cajado** (idem + spellcastingFocus);
 - **Armadura** (armorType, baseArmorClass, armorClassBonus);
 - **Escudo** (armorClassBonus);
-- **Poção** (effectRoll, duration);
+- **Poção** (effectRoll, duration, potionCategory);
 - **Anel** (effectRoll);
 - demais: nenhum.
 
@@ -1595,6 +1595,16 @@ Artefato — no cliente). `rarity` fica `null` quando o item não é classificad
 raridade e sintonização). Ambos são gravados no item e **espelhados** no
 inventário do jogador (`CatalogSnapshot`/`syncInventory` → `InventoryItemDto`).
 A antiga chave `details.attunement` (só Anel) foi incorporada a este campo.
+
+**Categoria da Poção:** só a categoria **Poção** tem `potionCategory`, um
+`select` de **uma** finalidade (opcional e sempre manual) dentro de "Atributos
+— Poção". `POTION_CATEGORIES` = healing | enhancement | protection | mobility |
+stealth | exploration | poison | longevity (rótulos PT em `POTION_CATEGORY_LABELS`
+no cliente: Cura, Atributos e aprimoramento, Resistência e proteção, Mobilidade,
+Furtividade e percepção, Sobrevivência e exploração, Veneno, Longevidade). Vive
+no JSONB `details` (sem coluna/migração); poção antiga sem categoria segue
+válida e o `sanitizeItemDetails` descarta o campo em qualquer outra categoria.
+Exibida no modal de detalhes junto de efeito, duração, raridade e sintonização.
 
 **Munição:** `AMMO_TYPES` Flecha | Virote | Bala de funda | Agulha de
 zarabatana; a categoria `Munição` usa `ammoType`, `attackBonus` e `damageBonus`

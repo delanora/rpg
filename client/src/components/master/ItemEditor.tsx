@@ -4,6 +4,7 @@ import {
   DAMAGE_TYPES,
   ITEM_RARITY_LABELS,
   MAX_EXTRA_DAMAGES,
+  POTION_CATEGORY_LABELS,
   WEAPON_CATEGORY_LABELS,
   WEAPON_PROPERTY_LABELS,
   WEAPON_TYPE_LABELS,
@@ -17,6 +18,7 @@ import {
   ARMOR_TYPES,
   ITEM_CATEGORIES,
   ITEM_RARITIES,
+  POTION_CATEGORIES,
   WEAPON_CATEGORIES,
   WEAPON_PROPERTIES,
   WEAPON_TYPES,
@@ -31,6 +33,7 @@ import type {
   ItemPatch,
   ItemPrice,
   ItemRarity,
+  PotionCategory,
   WeaponCategory,
   WeaponProperty,
   WeaponType,
@@ -546,6 +549,24 @@ function CategoryFields({
   if (item.category === 'Poção') {
     return (
       <div className="grid grid-3">
+        {/* Classificação da finalidade: só a Poção tem este campo; é opcional
+            (poções antigas seguem sem categoria). */}
+        <label className="field">
+          <span>Categoria da Poção</span>
+          <InlineField
+            value={details.potionCategory ?? ''}
+            mode="select"
+            options={POTION_CATEGORIES}
+            optionLabels={POTION_CATEGORY_LABELS}
+            ariaLabel="Categoria da poção"
+            onCommit={(value) =>
+              onPatchDetails({
+                potionCategory: (value || undefined) as PotionCategory | undefined,
+              })
+            }
+          />
+          <span className="field-hint">a finalidade da poção (classificação manual)</span>
+        </label>
         <label className="field">
           <span>Rolagem do efeito</span>
           <InlineField
