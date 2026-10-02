@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ABILITY_KEYS, ABILITY_LABELS, SKILLS, formatModifier } from '../dnd';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ABILITY_KEYS, ABILITY_LABELS, SKILLS, expertiseEligibleOptions, formatModifier } from '../dnd';
 import { FEATS } from '../feats';
 import { levelUpCharacter } from '../levelUpApi';
-import type { AbilityKey, Character, LevelUpRequest, ProficienciesState } from '../types';
+import type {
+  AbilityKey,
+  Character,
+  FeatureChoiceInfo,
+  LevelUpRequest,
+  ProficienciesState,
+} from '../types';
 import { FeatureChoiceField } from './FeatureChoiceField';
 import { Icon } from './Icon';
 
@@ -142,21 +148,43 @@ export function LevelUpDialog({
    * guerreiro (1º) e do paladino/patrulheiro (2º), Inimigo Favorito e Explorador
    * Nato do patrulheiro (1º e melhorias do 6º/10º/14º).
    */
+  /**
+   * A Expertise só pode escolher o que o personagem JÁ domina. O DTO da classe
+   * que já está na ficha (`entry.featureChoices`) chega filtrado pelo servidor;
+   * o catálogo de uma classe NOVA (multiclasse) traz a lista completa, então a
+   * restrição também é feita aqui.
+   */
+  const restrictExpertise = useCallback(
+    (item: FeatureChoiceInfo): FeatureChoiceInfo => {
+      if (item.apply !== 'expertise') return item;
+      const proficient = Object.entries(character.skills)
+        .filter(([, skill]) => skill.proficient)
+        .map(([key]) => key);
+      const allowed = new Set(
+        expertiseEligibleOptions(proficient, character.proficiencies.tools).map(
+          (option) => option.key,
+        ),
+      );
+      return { ...item, options: item.options.filter((option) => allowed.has(option.key)) };
+    },
+    [character.skills, character.proficiencies.tools],
+  );
+
   const pendingChoices = useMemo(() => {
     const source = entry ? entry.featureChoices : (option?.featureChoices ?? []);
-    const own = source.filter(
-      (item) => item.level === newLevel && item.chosen.length < item.count,
-    );
+    const own = source
+      .filter((item) => item.level === newLevel && item.chosen.length < item.count)
+      .map(restrictExpertise);
 
     // A subclasse escolhida AGORA ainda não está na ficha (o DTO da classe só
     // recalcula depois de aplicado), então as escolhas dela neste nível vêm do
     // catálogo: é o caso do Caçador, que pede a Presa do Caçador já no 3º.
     if (!needsSubclass || subclass === '' || option === null) return own;
-    const fromSubclass = option.subclassChoices.filter(
-      (item) => item.subclass === subclass && item.level === newLevel,
-    );
+    const fromSubclass = option.subclassChoices
+      .filter((item) => item.subclass === subclass && item.level === newLevel)
+      .map(restrictExpertise);
     return [...own, ...fromSubclass];
-  }, [entry, option, newLevel, needsSubclass, subclass]);
+  }, [entry, option, newLevel, needsSubclass, subclass, restrictExpertise]);
 
   /** Perícias oferecidas: as da lista da classe, menos as que já são proficientes. */
   const skillOptions = useMemo(() => {

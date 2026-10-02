@@ -3,7 +3,7 @@ import type {
   ClassFeatureDefinition,
   SubclassDefinition,
 } from './types.js';
-import { SKILL_CHOICE_OPTIONS } from './option-lists.js';
+import { EXPERTISE_CHOICE_OPTIONS, SKILL_CHOICE_OPTIONS } from './option-lists.js';
 
 // ---------------------------------------------------------------------------
 // Bardo (Bard) — PHB 2014
@@ -70,6 +70,25 @@ const BARD_FEATURES: ClassFeatureDefinition[] = [
     description:
       'Escolha duas proficiências (perícias ou ferramentas de ladrão): nelas o bônus de proficiência é dobrado.',
     effect: { type: 'expertise', value: 2 },
+    choice: {
+      prompt: 'Especialização (2 perícias ou ferramentas com proficiência)',
+      count: 2,
+      apply: 'expertise',
+      options: EXPERTISE_CHOICE_OPTIONS,
+    },
+  },
+  {
+    id: 'expertise-improvement',
+    name: 'Especialização Aprimorada',
+    level: 10,
+    description: 'Escolha mais duas proficiências para receber Especialização.',
+    effect: { type: 'expertise', value: 2 },
+    choice: {
+      prompt: 'Especialização aprimorada (mais 2 perícias ou ferramentas)',
+      count: 2,
+      apply: 'expertise',
+      options: EXPERTISE_CHOICE_OPTIONS,
+    },
   },
   {
     id: 'font-of-inspiration',

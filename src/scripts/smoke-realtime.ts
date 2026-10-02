@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
 import { damageExpression } from '../modules/shared/attacks.js';
 import { rollDice } from '../modules/shared/dice.js';
+import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
 
 /**
  * Smoke test ponta a ponta das Etapas 1 e 2.
@@ -136,6 +137,28 @@ async function setCharacterClasses(
 }
 
 
+
+/**
+ * Garante DUAS perícias proficientes e devolve as chaves — é o mínimo que a
+ * Expertise (Ladino 1º/6º, Bardo 3º/10º) exige para poder escolher. Grava
+ * direto no banco (como os outros preparos do smoke) para não depender de rota.
+ */
+async function ensureExpertisePool(
+  where: { id: string } | { userId: string },
+): Promise<string[]> {
+  const character = await prisma.character.findUniqueOrThrow({ where });
+  const skills = normalizeSkills(character.skills);
+  const proficient = SKILLS.filter((skill) => skills[skill.key]?.proficient).map(
+    (skill) => skill.key,
+  );
+  if (proficient.length >= 2) return proficient.slice(0, 2);
+
+  const pool = SKILLS.slice(0, 2).map((skill) => skill.key);
+  const next = { ...skills };
+  for (const key of pool) next[key] = { proficient: true, expertise: false };
+  await prisma.character.update({ where, data: { skills: next as any } });
+  return pool;
+}
 
 /**
  * Corpo do Level Up montado do mesmo jeito que o `LevelUpDialog` monta.
@@ -3386,6 +3409,9 @@ async function main(): Promise<void> {
       })
     ).status === 400,
   );
+  // A Expertise do bardo chega no 3º nível junto com a subclasse: as duas
+  // escolhas saem do que o personagem JÁ domina (o servidor recusa o resto).
+  const loreExpertise = await ensureExpertisePool({ id: choicesCharacterId });
   const loreUp = await api('/api/characters/me/level-up', {
     method: 'POST',
     token: choicesToken,
@@ -3393,7 +3419,10 @@ async function main(): Promise<void> {
       classKey: 'bard',
       hp: 'average',
       subclass: 'Colégio do Conhecimento',
-      choices: { 'bonus-proficiencies': ['arcana', 'history', 'insight'] },
+      choices: {
+        'bonus-proficiencies': ['arcana', 'history', 'insight'],
+        expertise: loreExpertise,
+      },
     },
   });
   check(
@@ -3404,7 +3433,34 @@ async function main(): Promise<void> {
         (key) => loreUp.data?.character?.skills?.[key]?.proficient === true,
       ) &&
       (loreUp.data?.character?.classState?.choices?.['bonus-proficiencies'] ?? []).length === 3,
-    JSON.stringify(loreUp.data?.character?.classState),
+    JSON.stringify(loreUp.data?.message ?? loreUp.data?.character?.classState),
+  );
+  check(
+    'Expertise do bardo: as 2 escolhas entram em expertiseSkills e dobram o bônus',
+    loreUp.status === 200 &&
+      (loreUp.data?.character?.expertiseSkills ?? []).length === 2 &&
+      (loreUp.data?.character?.expertiseSkills ?? []).includes(loreExpertise[0]) &&
+      loreUp.data?.character?.skills?.[loreExpertise[0]]?.expertise === true,
+    JSON.stringify({
+      expertise: loreUp.data?.character?.expertiseSkills,
+      skill: loreUp.data?.character?.skills?.[loreExpertise[0]],
+    }),
+  );
+  const blockedUncheck = await api(`/api/characters/${choicesCharacterId}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: {
+      skills: {
+        ...(loreUp.data?.character?.skills ?? {}),
+        [loreExpertise[0]]: { proficient: false, expertise: true },
+      },
+    },
+  });
+  check(
+    'tirar a proficiência de uma perícia em Expertise é recusado (400)',
+    blockedUncheck.status === 400 &&
+      String(blockedUncheck.data?.message ?? '').includes('Expertise'),
+    JSON.stringify(blockedUncheck.data),
   );
 
   // --- Bardo: Colégio da Bravura (proficiências da subclasse) --------------- 
@@ -3421,10 +3477,16 @@ async function main(): Promise<void> {
     data: { classState: { active: [], used: {}, choices: {} } as any },
   });
   await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  const valorExpertise = await ensureExpertisePool({ id: choicesCharacterId });
   const valorUp = await api('/api/characters/me/level-up', {
     method: 'POST',
     token: choicesToken,
-    body: { classKey: 'bard', hp: 'average', subclass: 'Colégio da Bravura' },
+    body: {
+      classKey: 'bard',
+      hp: 'average',
+      subclass: 'Colégio da Bravura',
+      choices: { expertise: valorExpertise },
+    },
   });
   check(
     'Colégio da Bravura concede armaduras médias, escudos e armas marciais (200)',
@@ -3805,10 +3867,18 @@ async function main(): Promise<void> {
     rogueSkillOutOfList.status === 400,
     JSON.stringify(rogueSkillOutOfList.data),
   );
+  // O Ladino concede a Expertise já no 1º nível (inclusive entrando por
+  // multiclasse): a escolha sai do que o personagem já domina.
+  const rogueExpertise = await ensureExpertisePool({ userId: playerId });
   const rogueEntry = await api('/api/characters/me/level-up', {
     method: 'POST',
     token: playerToken,
-    body: { classKey: 'rogue', hp: 'average', skillChoice: 'stealth' },
+    body: {
+      classKey: 'rogue',
+      hp: 'average',
+      skillChoice: 'stealth',
+      choices: { expertise: rogueExpertise },
+    },
   });
   check(
     'entrar em Ladino aplica a perícia escolhida (200)',
@@ -4077,7 +4147,13 @@ async function main(): Promise<void> {
       hpTemp: 3,
       notes: 'Diário de bordo',
       avatarUrl: '/uploads/characters/avatar.png',
-      classState: { active: ['rage'], used: { rage: 1 } },
+      // O jogador devolve o classState inteiro (como o cliente faz): sem as
+      // `choices` ele pareceria estar tentando apagá-las.
+      classState: {
+        ...(finalized.data?.character?.classState ?? { active: [], used: {}, choices: {} }),
+        active: ['rage'],
+        used: { rage: 1 },
+      },
     },
   });
   const stateSheet = statePatch.data?.character;
@@ -5589,11 +5665,19 @@ async function main(): Promise<void> {
       proficiencies: { armor: [], weapons: [], tools: [] },
     },
   });
+  // O Ladino concede a Expertise já no 1º nível: a escolha sai do que o
+  // personagem domina (duas perícias proficientes garantidas aqui).
+  const multiExpertise = await ensureExpertisePool({ userId: multi.userId });
   await unlockForLevelUp();
   const allowedEntry = await api('/api/characters/me/level-up', {
     method: 'POST',
     token: multi.token,
-    body: { classKey: 'rogue', hp: 'average', skillChoice: 'stealth' },
+    body: {
+      classKey: 'rogue',
+      hp: 'average',
+      skillChoice: 'stealth',
+      choices: { expertise: multiExpertise },
+    },
   });
   check(
     'liberada quando os DOIS lados batem (200)',
@@ -6091,7 +6175,11 @@ async function main(): Promise<void> {
       intelligence: 14,
       wisdom: 14,
       charisma: 16,
-      skills: {},
+      // Duas perícias proficientes: o Bardo escolhe a Expertise no 3º nível.
+      skills: {
+        arcana: { proficient: true, expertise: false },
+        history: { proficient: true, expertise: false },
+      },
       lastLevelUpRelease: 0,
     },
   });
@@ -6153,6 +6241,9 @@ async function main(): Promise<void> {
         lastLevelUpRelease: 0,
       },
     });
+    // O Bardo tem a Especialização no 3º e no 10º: duas perícias proficientes
+    // garantem que a escolha tenha de onde sair em toda a caminhada.
+    await ensureExpertisePool({ userId: walker.userId });
 
     let sheet = await sheetOf(walker.token);
     let failure = '';

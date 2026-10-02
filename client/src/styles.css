@@ -2493,10 +2493,114 @@ select option {
   box-shadow: 0 0 10px -6px var(--glow);
 }
 
-.ability-line > input[type='checkbox'] {
+/* A caixa de proficiência vira um CÍRCULO (vazio = sem proficiência,
+   preenchido = com proficiência) e ganha um envoltório para o selo de
+   Expertise caber ATRÁS dela, sem tirar a área de clique. */
+.ability-line .prof-check-wrap {
   grid-column: 1;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
   width: 0.95rem;
   height: 0.95rem;
+}
+
+.prof-check {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+}
+
+.prof-check::before {
+  display: none;
+}
+
+.prof-check:checked {
+  background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold-deep));
+  border-color: var(--gold-deep);
+  box-shadow: 0 0 8px -1px var(--glow);
+}
+
+/* A perícia em Expertise já chega marcada e travada — o círculo segue cheio. */
+.prof-check:disabled {
+  opacity: 0.5;
+}
+
+.prof-expertise .prof-check:disabled {
+  opacity: 1;
+}
+
+/* Coroa de louros atrás do círculo: um pouco maior, sem capturar o clique. */
+.prof-check-wrap .expertise-laurel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.7rem;
+  height: 1.7rem;
+  transform: translate(-50%, -50%);
+  color: var(--gold-deep);
+  pointer-events: none;
+  z-index: 0;
+  filter: drop-shadow(0 1px 1px rgba(60, 36, 6, 0.5));
+  transition: color 0.18s ease, filter 0.18s ease;
+}
+
+[data-theme='dark'] .prof-check-wrap .expertise-laurel {
+  color: var(--gold);
+}
+
+.expertise-laurel .laurel-stem {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+}
+
+.expertise-laurel .laurel-leaf {
+  fill: currentColor;
+}
+
+.prof-check-wrap .prof-check {
+  position: relative;
+  z-index: 1;
+}
+
+/* Brilho e pulsação sutis ao passar o mouse/focar o selo. */
+.prof-expertise:hover .expertise-laurel,
+.prof-expertise:focus-within .expertise-laurel,
+.prof-expertise:focus .expertise-laurel {
+  color: var(--gold-bright);
+  filter: drop-shadow(0 0 7px var(--glow));
+  animation: expertise-pulse 1.7s ease-in-out infinite;
+}
+
+@keyframes expertise-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Tooltip do selo: mesmo visual dos outros (`info-tip-text`), abre no hover. */
+.expertise-tip {
+  position: absolute;
+  bottom: calc(100% + 0.3rem);
+  left: 0;
+  width: max-content;
+  max-width: 14rem;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.prof-expertise:hover .expertise-tip,
+.prof-expertise:focus-within .expertise-tip,
+.prof-expertise:focus .expertise-tip {
+  display: grid;
 }
 
 .ability-line-value {
@@ -2944,6 +3048,26 @@ select option {
   margin: 0;
   font-size: 0.86rem;
   line-height: 1.45;
+}
+
+/* Ferramenta em Expertise: ganha o selo de louros (só visual — o sistema não
+   rola testes de ferramenta). */
+.prof-tool-expertise {
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .prof-tool-expertise {
+  color: var(--gold);
+}
+
+.prof-tool-expertise .expertise-laurel {
+  position: static;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-right: 0.15rem;
+  vertical-align: -0.14rem;
+  transform: none;
+  filter: none;
 }
 
 .prof-group-input {

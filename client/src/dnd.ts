@@ -169,6 +169,37 @@ export const SKILLS: readonly SkillDefinition[] = [
  * Para que serve cada SALVAGUARDA, em uma frase — é o resumo que a ficha mostra
  * ao passar o mouse na linha da salvaguarda.
  */
+/** Prefixo das ferramentas nas chaves de Expertise (`tool:<rótulo>`). */
+export const EXPERTISE_TOOL_PREFIX = 'tool:';
+
+/** Rótulo exibido de uma chave de Expertise (perícia ou ferramenta). */
+export function expertiseKeyLabel(key: string): string {
+  if (key.startsWith(EXPERTISE_TOOL_PREFIX)) {
+    return key.slice(EXPERTISE_TOOL_PREFIX.length);
+  }
+  return SKILLS.find((skill) => skill.key === key)?.label ?? key;
+}
+
+/**
+ * O que o personagem JÁ domina e pode receber Expertise: as perícias com
+ * proficiência e as ferramentas da ficha (as opções saem daqui).
+ */
+export function expertiseEligibleOptions(
+  proficientSkills: readonly string[],
+  tools: readonly string[],
+): { key: string; name: string }[] {
+  const options: { key: string; name: string }[] = [];
+  for (const skill of SKILLS) {
+    if (proficientSkills.includes(skill.key)) options.push({ key: skill.key, name: skill.label });
+  }
+  for (const tool of tools) {
+    const label = tool.trim();
+    if (label === '') continue;
+    options.push({ key: `${EXPERTISE_TOOL_PREFIX}${label}`, name: label });
+  }
+  return options;
+}
+
 export const SAVE_DESCRIPTIONS: Record<AbilityKey, string> = {
   strength: 'Resistir a empurrões, agarrões e efeitos que prendem ou derrubam.',
   dexterity: 'Escapar de explosões e áreas perigosas (bola de fogo, sopro do dragão).',

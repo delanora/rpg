@@ -482,6 +482,8 @@ export interface FeatureChoiceInfo {
   level: number;
   count: number;
   allowRepeat: boolean;
+  /** O que a escolha faz na ficha: 'skill' vira proficiência; 'expertise' dobra. */
+  apply?: 'skill' | 'expertise';
   options: { key: string; name: string; description: string }[];
   chosen: string[];
 }
@@ -687,6 +689,12 @@ export interface Character {
 
   skills: SkillsState;
   saves: SavesState;
+  /**
+   * O que está em Expertise: chaves de perícia e/ou `tool:<rótulo>` de
+   * ferramenta (só Ladino e Bardo). É a lista do selo de louros e do bloqueio
+   * da proficiência da perícia.
+   */
+  expertiseSkills: string[];
   /** Proficiências de armadura, arma e ferramenta (armaduras/armas/ferramentas). */
   proficiencies: ProficienciesState;
   inventory: InventoryItem[];
@@ -952,6 +960,11 @@ export interface CreationState {
    * Inimigo Favorito e Explorador Nato do patrulheiro).
    */
   featureChoices: FeatureChoiceInfo[];
+  /**
+   * Expertise do NÍVEL 1 da classe inicial (Ladino) — pedida no passo das
+   * perícias, quando já dá para saber o que o personagem domina.
+   */
+  expertiseChoices: FeatureChoiceInfo[];
   startingLevel: number;
   raceCatalog: RaceOption[];
   backgroundCatalog: BackgroundOption[];

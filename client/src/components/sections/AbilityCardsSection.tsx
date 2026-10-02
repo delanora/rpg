@@ -18,7 +18,9 @@ import type {
   RaceOption,
   SkillEntry,
 } from '../../types';
+import { EXPERTISE_TOOL_PREFIX } from '../../dnd';
 import { clampInt } from '../../utils';
+import { ExpertiseLaurel, EXPERTISE_TOOLTIP } from '../ExpertiseLaurel';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
@@ -123,6 +125,21 @@ function compositionOf(
 export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsSectionProps) {
   const { lockedConstruction } = useSheetAccess();
   const { derived } = character;
+  // O que está em Expertise (só Ladino/Bardo): as perícias dobram o bônus e a
+  // proficiência delas fica travada; as ferramentas ganham só o selo.
+  const expertisedSkills = useMemo(
+    () => new Set(character.expertiseSkills.filter((key) => !key.startsWith(EXPERTISE_TOOL_PREFIX))),
+    [character.expertiseSkills],
+  );
+  const expertisedTools = useMemo(
+    () =>
+      new Set(
+        character.expertiseSkills
+          .filter((key) => key.startsWith(EXPERTISE_TOOL_PREFIX))
+          .map((key) => key.slice(EXPERTISE_TOOL_PREFIX.length)),
+      ),
+    [character.expertiseSkills],
+  );
 
   // O catálogo de raças serve só para explicar a composição do atributo no "i".
   const [raceCatalog, setRaceCatalog] = useState<RaceOption[]>([]);
@@ -281,13 +298,16 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
 
               <ul className="ability-lines">
                 <li className="ability-line ability-line-save">
-                  <input
-                    type="checkbox"
-                    checked={character.saves[ability] ?? false}
-                    disabled={lockedConstruction}
-                    aria-label={`Proficiência em salvaguarda de ${label}`}
-                    onChange={(event) => setSave(ability, event.target.checked)}
-                  />
+                  <span className="prof-check-wrap">
+                    <input
+                      type="checkbox"
+                      className="prof-check"
+                      checked={character.saves[ability] ?? false}
+                      disabled={lockedConstruction}
+                      aria-label={`Proficiência em salvaguarda de ${label}`}
+                      onChange={(event) => setSave(ability, event.target.checked)}
+                    />
+                  </span>
                   <span className="ability-line-value">{formatModifier(save?.total ?? 0)}</span>
                   <span className="ability-line-label">Salvaguarda</span>
                   {onRoll ? (
@@ -325,18 +345,35 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                 {SKILLS_BY_ABILITY[ability].map((skill) => {
                   const entry = character.skills[skill.key] ?? DEFAULT_ENTRY;
                   const detail = derived.skills[skill.key];
+                  // Expertise: a proficiência é pré-requisito, então a caixa fica
+                  // sempre marcada e travada (o servidor também recusa tirar).
+                  const isExpertise = expertisedSkills.has(skill.key);
 
                   return (
                     <li className="ability-line" key={skill.key}>
-                      <input
-                        type="checkbox"
-                        checked={entry.proficient}
-                        disabled={lockedConstruction}
-                        aria-label={`Proficiência em ${skill.label}`}
-                        onChange={(event) =>
-                          setSkill(skill.key, { proficient: event.target.checked })
-                        }
-                      />
+                      <span
+                        className={`prof-check-wrap${isExpertise ? ' prof-expertise' : ''}`}
+                        tabIndex={isExpertise ? 0 : undefined}
+                        aria-label={isExpertise ? EXPERTISE_TOOLTIP : undefined}
+                      >
+                        {isExpertise ? <ExpertiseLaurel /> : null}
+                        <input
+                          type="checkbox"
+                          className="prof-check"
+                          checked={isExpertise ? true : entry.proficient}
+                          disabled={lockedConstruction || isExpertise}
+                          title={isExpertise ? EXPERTISE_TOOLTIP : undefined}
+                          aria-label={`Proficiência em ${skill.label}`}
+                          onChange={(event) =>
+                            setSkill(skill.key, { proficient: event.target.checked })
+                          }
+                        />
+                        {isExpertise ? (
+                          <span className="info-tip-text expertise-tip" role="tooltip">
+                            {EXPERTISE_TOOLTIP}
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="ability-line-value">
                         {formatModifier(detail?.total ?? 0)}
                       </span>
@@ -390,7 +427,22 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                 items.length === 0 ? (
                   <p className="prof-group-items muted">Nenhuma</p>
                 ) : (
-                  <p className="prof-group-items">{items.join(' · ')}</p>
+                  <p className="prof-group-items">
+                    {items.map((item, index) => {
+                      const isExpertiseTool = expertisedTools.has(item);
+                      return (
+                        <span
+                          className={`prof-tool${isExpertiseTool ? ' prof-tool-expertise' : ''}`}
+                          key={item}
+                          title={isExpertiseTool ? EXPERTISE_TOOLTIP : undefined}
+                        >
+                          {index > 0 ? ' · ' : ''}
+                          {isExpertiseTool ? <ExpertiseLaurel /> : null}
+                          {item}
+                        </span>
+                      );
+                    })}
+                  </p>
                 )
               ) : (
                 <input

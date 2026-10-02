@@ -34,6 +34,8 @@ import {
   applySaveProficiencies,
   averageHitDie,
   emptyProficiencies,
+  expertiseOptionsFor,
+  expertiseSkillsState,
   findSubclass,
   firstClassProficiencies,
   getClassDefinition,
@@ -52,6 +54,7 @@ import {
   subclassProficiencyGrant,
   totalCharacterLevel,
   type ClassEntry,
+  type ClassFeatureDefinition,
   type ProficienciesState,
 } from '../shared/classes.js';
 import {
@@ -166,6 +169,36 @@ const CREATION_FIELD_LABELS: Record<string, string> = {
   features: 'características',
   inventory: 'Inventário',
 };
+
+/**
+ * Features de Expertise (Ladino/Bardo) de UMA classe — só elas interessam ao
+ * recálculo de `skills[].expertise`.
+ */
+function expertiseFeaturesOf(classKey: string, subclassName: string): ClassFeatureDefinition[] {
+  const definition = getClassDefinition(classKey);
+  if (!definition) return [];
+  return featuresWithSubclass(definition, subclassName).filter(
+    (feature) => feature.choice?.apply === 'expertise',
+  );
+}
+
+/**
+ * Perícias com Expertise na ficha a partir das escolhas gravadas em
+ * `classState.choices` (as ferramentas não vivem em `skills`). Mantém o bônus
+ * dobrado de `deriveStats` igual à lista de espaços concedidos.
+ */
+function withExpertiseSkills(
+  entries: ClassEntry[],
+  extra: { classKey: string; subclass: string },
+  choices: Record<string, string[]>,
+  skills: Record<string, { proficient: boolean; expertise: boolean }>,
+): Record<string, { proficient: boolean; expertise: boolean }> {
+  const features = [
+    ...entries.flatMap((entry) => expertiseFeaturesOf(entry.classKey, entry.subclass)),
+    ...expertiseFeaturesOf(extra.classKey, extra.subclass),
+  ];
+  return expertiseSkillsState(features, choices, skills);
+}
 
 function emptySpells(): Prisma.InputJsonValue {
   return { list: [], slots: {} };
@@ -574,16 +607,36 @@ async function applyLevelUp(
   // Inimigo Favorito e Explorador Nato do patrulheiro (1º e melhorias). O
   // serviço valida quantidade, opções e o nível em que cada escolha é feita.
   const classState = normalizeClassState(character.classState);
+  const skillsNow = normalizeSkills(data.skills ?? character.skills);
+  // A Expertise só aceita o que o personagem JÁ domina: as opções da escolha
+  // saem das perícias marcadas na ficha e das ferramentas dela — o servidor
+  // recusa qualquer coisa fora dessa lista.
   const nextChoices = resolveFeatureChoices(
     definition,
     newClassLevel,
     input.choices,
     classState.choices,
     subclass,
+    {
+      expertise: expertiseOptionsFor(
+        Object.entries(skillsNow)
+          .filter(([, entry]) => entry.proficient)
+          .map(([key]) => key),
+        normalizeProficiencies(data.proficiencies ?? character.proficiencies).tools,
+      ),
+    },
   );
   if (!sameFeatureChoices(nextChoices, classState.choices)) {
     data.classState = { ...classState, choices: nextChoices };
   }
+  // A ficha segue as escolhas: a perícia escolhida para Expertise passa a dobrar
+  // o bônus de proficiência e a que saiu da lista volta ao normal.
+  data.skills = withExpertiseSkills(
+    entries,
+    { classKey: definition.key, subclass },
+    nextChoices,
+    skillsNow,
+  );
 
   /**
    * Entrada numa classe NOVA (multiclasse de verdade): só aí valem a tabela
@@ -1016,6 +1069,17 @@ export async function levelDownCharacter(
     ),
     choices,
   };
+
+  // A Expertise daquele nível sai junto das escolhas revertidas: as perícias
+  // voltam ao bônus normal (as ferramentas não vivem em `skills`).
+  Object.assign(
+    skills,
+    expertiseSkillsState(
+      nextEntries.flatMap((item) => expertiseFeaturesOf(item.classKey, item.subclass)),
+      choices,
+      skills,
+    ),
+  );
 
   const nextHpMax = Math.max(1, target.hpMax - hpLost);
 
@@ -1747,7 +1811,35 @@ async function applyCharacterPatch(
     data.saves = applySaveProficiencies(base, lockedSaves);
   }
 
-  if (patch.skills !== undefined) data.skills = normalizeSkills(patch.skills);
+  if (patch.skills !== undefined) {
+    const nextSkills = normalizeSkills(patch.skills);
+    const storedSkills = normalizeSkills(existing.skills);
+    // Perícias em Expertise: o que está gravado na ficha E o que as escolhas de
+    // classe concedem. A proficiência delas é pré-requisito da Expertise, então
+    // não pode ser desmarcada enquanto a perícia estiver dobrando o bônus.
+    const expertised = new Set(
+      Object.entries(storedSkills)
+        .filter(([, entry]) => entry.expertise)
+        .map(([key]) => key),
+    );
+    for (const feature of classes.flatMap((item) =>
+      expertiseFeaturesOf(item.classKey, item.subclass),
+    )) {
+      for (const key of normalizeClassState(existing.classState).choices[feature.id] ?? []) {
+        if (SKILL_KEYS.includes(key)) expertised.add(key);
+      }
+    }
+    const unchecking = [...expertised].filter(
+      (key) => nextSkills[key] !== undefined && !nextSkills[key].proficient,
+    );
+    if (unchecking.length > 0) {
+      throw new HttpError(
+        `${unchecking.map((key) => SKILL_LABELS[key] ?? key).join(', ')} está em Expertise: remova a Expertise antes de tirar a proficiência.`,
+        400,
+      );
+    }
+    data.skills = nextSkills;
+  }
   // Proficiências de armadura/arma/ferramenta: construção — com a criação
   // finalizada só o mestre edita (ver PLAYER_STATE_KEYS acima).
   if (patch.proficiencies !== undefined) {
@@ -1772,7 +1864,15 @@ async function applyCharacterPatch(
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
   if (patch.features !== undefined) data.features = patch.features;
   if (patch.classState !== undefined) {
-    data.classState = normalizeClassState(patch.classState);
+    const nextClassState = normalizeClassState(patch.classState);
+    data.classState = nextClassState;
+    // As escolhas de Expertise mandam na ficha: ligar/desligar a perícia dobrada
+    // não pode depender de um segundo campo.
+    data.skills = expertiseSkillsState(
+      classes.flatMap((item) => expertiseFeaturesOf(item.classKey, item.subclass)),
+      nextClassState.choices,
+      normalizeSkills(data.skills ?? existing.skills),
+    );
   }
 
   const character = await prisma.character.update({

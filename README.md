@@ -412,7 +412,7 @@ Implementadas em `src/modules/shared/dnd5e.ts` e devolvidas em `derived` (nunca 
 - **Modificador de atributo:** `floor((valor − 10) / 2)`
 - **Bônus de proficiência** por nível: +2 (1–4), +3 (5–8), +4 (9–12), +5 (13–16), +6 (17–20)
 - **Iniciativa:** modificador de Destreza + bônus avulso
-- **Perícias:** modificador do atributo + proficiência (especialização dobra o bônus)
+- **Perícias:** modificador do atributo + proficiência (a **Expertise** do Ladino/Bardo dobra o bônus e marca a perícia com o selo de louros)
 - **Salvaguardas:** modificador + proficiência
 - **Percepção passiva:** `10 + bônus de Percepção`
 - **CD de magia:** `8 + proficiência + mod. do atributo de conjuração` (por classe); **ataque mágico:** proficiência + mod.
