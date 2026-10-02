@@ -348,6 +348,8 @@ const RANGER_SUBCLASSES: SubclassDefinition[] = [
 export const ranger: ClassDefinition = {
   key: 'ranger',
   name: 'Patrulheiro',
+  description:
+    'Caçador dos ermos: rastreia, sobrevive na natureza e derruba o inimigo escolhido com magia natural.',
   hitDie: 10,
   savingThrows: ['strength', 'dexterity'],
   subclassLevel: 3, // Arquétipo de Patrulheiro

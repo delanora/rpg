@@ -179,6 +179,8 @@ const DRUID_SUBCLASSES: SubclassDefinition[] = [
 export const druid: ClassDefinition = {
   key: 'druid',
   name: 'Druida',
+  description:
+    'Guardião do equilíbrio natural, que conjura magias da natureza e assume formas animais.',
   hitDie: 8,
   savingThrows: ['intelligence', 'wisdom'],
   subclassLevel: 2, // Círculo Druídico

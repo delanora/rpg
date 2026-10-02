@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { fileToImagePayload, uploadAvatar } from '../../api';
 import { fetchBackgroundCatalog, fetchRaceCatalog } from '../../creationApi';
-import { ALIGNMENTS } from '../../dnd';
+import { ABILITY_LABELS, ALIGNMENTS, SKILLS, alignmentDescription } from '../../dnd';
+import { fetchCompendium } from '../../gameApi';
 import { findBackgroundOption, findRaceOption } from '../../races';
 import { useSheetAccess } from '../../readonly';
 import { FieldInfo } from '../FieldInfo';
@@ -9,7 +10,7 @@ import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { useLightbox } from '../Lightbox';
 import { Section } from '../Section';
-import type { BackgroundOption, ClassEntry, RaceOption } from '../../types';
+import type { BackgroundOption, ClassEntry, Compendium, RaceOption } from '../../types';
 import type { SheetSectionProps } from './common';
 import { VitalsSection } from './VitalsSection';
 
@@ -67,14 +68,19 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
   // Catálogos do livro: dão a descrição de raça e antecedente mostrada no "i".
   const [races, setRaces] = useState<RaceOption[]>([]);
   const [backgrounds, setBackgrounds] = useState<BackgroundOption[]>([]);
+  //
+  // O compêndio é a MESMA fonte da aba "Mesa" do mestre e está aberto ao
+  // jogador: dele saem a descrição da classe e o que cada subclasse é.
+  const [compendium, setCompendium] = useState<Compendium | null>(null);
 
   useEffect(() => {
     let active = true;
-    void Promise.all([fetchRaceCatalog(), fetchBackgroundCatalog()]).then(
-      ([raceCatalog, backgroundCatalog]) => {
+    void Promise.all([fetchRaceCatalog(), fetchBackgroundCatalog(), fetchCompendium()]).then(
+      ([raceCatalog, backgroundCatalog, book]) => {
         if (!active) return;
         setRaces(raceCatalog);
         setBackgrounds(backgroundCatalog);
+        setCompendium(book);
       },
     );
     return () => {
@@ -137,28 +143,48 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
     });
   }
 
-  // Descrições do catálogo para os "i" de raça e antecedente.
+  // Descrições do catálogo para o "i" de raça e para o popup do antecedente.
   const raceInfo = findRaceOption(races, character.race)?.description;
-  const backgroundInfo = findBackgroundOption(backgrounds, character.background)?.description;
+  const backgroundOption = findBackgroundOption(backgrounds, character.background);
+  const backgroundInfo = backgroundOption?.description;
+  // Perícias concedidas pelo antecedente escolhido (chaves -> nomes do livro).
+  const backgroundSkills = (backgroundOption?.skills ?? [])
+    .map((key) => SKILLS.find((skill) => skill.key === key)?.label ?? key)
+    .join(', ');
 
-  // Resumo de Aumento de Atributo/Talento de cada classe (vai para o tooltip).
-  const asiSummary = classes
-    .filter((entry) => entry.asiLevels.length > 0)
-    .map((entry) => `${entry.className}: níveis ${entry.asiLevels.join(', ')}`)
-    .join(' · ');
+  /** Classe do compêndio (descrição, dado de vida, salvaguardas). */
+  function bookClass(key: string) {
+    return compendium?.classes.find((item) => item.key === key) ?? null;
+  }
 
-  // "Mago Nv 1, Guerreiro Nv 2 e Ladino Nv 2" — o detalhe que aparece ao passar
-  // o mouse no nível total, sem precisar clicar.
+  /** O que a subclasse escolhida é, segundo o compêndio. */
+  function bookSubclass(classKey: string, name: string): string {
+    return bookClass(classKey)?.subclasses.find((item) => item.name === name)?.description ?? '';
+  }
+
+  /** "Destreza e Inteligência" — as salvaguardas da classe, do compêndio. */
+  function savingThrowLabels(key: string): string {
+    return (bookClass(key)?.savingThrows ?? [])
+      .map((ability) => ABILITY_LABELS[ability])
+      .join(' e ');
+  }
+
+  // "Mago Nv 1, Guerreiro Nv 2 e Ladino Nv 2" — detalhe do hover no nível total.
   const classSummary = classes.length
     ? joinList(classes.map((entry) => `${entry.className} Nv ${entry.level}`))
     : '';
 
-  const unableToPickSubclass = singleClass !== null && !singleClass.subclassEligible;
+  // Subclasses já escolhidas. Com mais de uma, o campo vira "Multiclasse" e o
+  // popup explica cada uma delas.
+  const chosenSubclasses = classes.filter((entry) => entry.subclass !== '');
+  const multiclassSubclasses = classes.length > 1 && chosenSubclasses.length > 1;
   const subclassText = singleClass
     ? singleClass.subclassEligible
       ? singleClass.subclass || '—'
       : `nível ${singleClass.subclassLevel}+`
-    : joinList(classes.map((entry) => entry.subclass).filter(Boolean)) || '—';
+    : multiclassSubclasses
+      ? 'Multiclasse'
+      : joinList(chosenSubclasses.map((entry) => entry.subclass)) || '—';
 
   return (
     <Section title="Personagem" icon="scroll" className="stacked-tip identity-section">
@@ -313,7 +339,18 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
            */}
           <div className="identity-line-fields">
             <div className="line-field">
-              <div className="line-field-value">
+              {/*
+               * O "i" explica o conceito de CLASSE; o VALOR mostra o que a classe
+               * escolhida é (descrição, dado de vida, salvaguardas e o que ela
+               * pede em cada nível).
+               */}
+              <div
+                className={
+                  classes.length === 0
+                    ? 'line-field-value'
+                    : 'line-field-value info-tip identity-value-tip'
+                }
+              >
                 {classes.length === 0 ? (
                   <InlineField
                     value=""
@@ -327,27 +364,75 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
                     }}
                   />
                 ) : (
-                  <span className="line-field-text" title={classSummary}>
+                  <span className="line-field-text">
                     {singleClass ? singleClass.className : 'Multiclasse'}
+                  </span>
+                )}
+                {classes.length === 0 ? null : (
+                  <span className="info-tip-text" role="tooltip">
+                    {singleClass ? (
+                      <>
+                        <strong>{singleClass.className}</strong>
+                        {bookClass(singleClass.classKey) ? (
+                          <span>{bookClass(singleClass.classKey)?.description}</span>
+                        ) : null}
+                        <span>
+                          Dado de vida 1d{singleClass.hitDie} · Salvaguardas{' '}
+                          {savingThrowLabels(singleClass.classKey) || '—'}
+                        </span>
+                        {singleClass.asiLevels.length > 0 ? (
+                          <span>
+                            Aumento de atributo ou talento nos níveis{' '}
+                            {singleClass.asiLevels.join(', ')}
+                          </span>
+                        ) : null}
+                        <span>
+                          {singleClass.subclassEligible
+                            ? `Subclasse: ${singleClass.subclass || 'ainda não escolhida'}`
+                            : `Subclasse a partir do nível ${singleClass.subclassLevel} da classe`}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <strong>Multiclasse</strong>
+                        <span>
+                          O nível total é a soma das classes, mas cada uma sobe de nível pelo Level
+                          Up e mantém as próprias características.
+                        </span>
+                        {classes.map((entry) => (
+                          <span key={entry.classKey}>
+                            {entry.className} · nível {entry.level}
+                            {bookClass(entry.classKey) ? `: ${bookClass(entry.classKey)?.description}` : ''}
+                          </span>
+                        ))}
+                      </>
+                    )}
                   </span>
                 )}
               </div>
               <span className="line-field-label">
                 Classe
                 <FieldInfo>
-                  <strong>Aumento de atributo ou talento</strong>
-                  <span>{asiSummary || 'Nenhum aumento de atributo ou talento nos níveis atuais.'}</span>
-                  <strong>Multiclasse</strong>
+                  <strong>Classe</strong>
                   <span>
-                    O nível de cada classe sobe separadamente pelo Level Up e o nível total é a
-                    soma. As magias combinadas usam a regra de multiclasse do PHB.
+                    O arquétipo do personagem — guerreiro, mago, ladino... Define o dado de vida, as
+                    salvaguardas, as proficiências e as características que ele ganha a cada nível.
+                  </span>
+                  <span>
+                    Cada classe sobe de nível pelo Level Up; com mais de uma, o personagem é
+                    multiclasse e o nível total é a soma delas.
                   </span>
                 </FieldInfo>
               </span>
             </div>
 
             <div className="line-field">
-              <div className="line-field-value">
+              {/*
+               * Com uma classe, o popup lista as subclasses dela com a descrição
+               * do livro; com mais de uma escolhida, o valor vira "Multiclasse" e
+               * o popup explica cada subclasse escolhida.
+               */}
+              <div className="line-field-value info-tip identity-value-tip">
                 {singleClass?.subclassEligible ? (
                   <InlineField
                     value={singleClass.subclass}
@@ -358,28 +443,81 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
                     onCommit={(value) => setSubclass(singleClass, value)}
                   />
                 ) : (
-                  <span
-                    className="line-field-text"
-                    title={
-                      unableToPickSubclass
-                        ? `Escolhida a partir do nível ${singleClass.subclassLevel} da classe`
-                        : undefined
-                    }
-                  >
-                    {subclassText}
-                  </span>
+                  <span className="line-field-text">{subclassText}</span>
                 )}
+                <span className="info-tip-text" role="tooltip">
+                  {singleClass ? (
+                    singleClass.subclassEligible ? (
+                      <>
+                        <strong>Subclasses de {singleClass.className}</strong>
+                        {singleClass.subclassNames.map((name) => (
+                          <span key={name}>
+                            {name}: {bookSubclass(singleClass.classKey, name) || '—'}
+                          </span>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <strong>Subclasse</strong>
+                        <span>
+                          {singleClass.className} escolhe a subclasse a partir do nível{' '}
+                          {singleClass.subclassLevel}. Ela troca ou acrescenta características à
+                          classe.
+                        </span>
+                      </>
+                    )
+                  ) : multiclassSubclasses ? (
+                    <>
+                      <strong>Multiclasse</strong>
+                      <span>Uma subclasse para cada classe:</span>
+                      {chosenSubclasses.map((entry) => (
+                        <span key={entry.classKey}>
+                          {entry.className} · {entry.subclass}:{' '}
+                          {bookSubclass(entry.classKey, entry.subclass) || '—'}
+                        </span>
+                      ))}
+                    </>
+                  ) : chosenSubclasses.length === 1 ? (
+                    <>
+                      <strong>
+                        {chosenSubclasses[0].className} · {chosenSubclasses[0].subclass}
+                      </strong>
+                      <span>
+                        {bookSubclass(chosenSubclasses[0].classKey, chosenSubclasses[0].subclass) ||
+                          '—'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <strong>Subclasse</strong>
+                      <span>Uma para cada classe do personagem:</span>
+                      {classes.map((entry) => (
+                        <span key={entry.classKey}>
+                          {entry.className}:{' '}
+                          {entry.subclassEligible
+                            ? 'ainda não escolhida'
+                            : `a partir do nível ${entry.subclassLevel}`}
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </span>
               </div>
               <span className="line-field-label">
                 Subclasse
                 <FieldInfo>
-                  A especialização da classe, escolhida a partir de um nível (varia por classe).
+                  <strong>Subclasse</strong>
+                  <span>
+                    A especialização da classe — a partir de um nível (varia por classe), ela troca
+                    ou acrescenta características de classe.
+                  </span>
                 </FieldInfo>
               </span>
             </div>
 
             <div className="line-field">
-              <div className="line-field-value">
+              {/* O popup mostra a HISTÓRIA do antecedente escolhido e as perícias dele. */}
+              <div className="line-field-value info-tip identity-value-tip">
                 <InlineField
                   value={character.background}
                   readOnly={lockedConstruction}
@@ -387,18 +525,32 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
                   placeholder="—"
                   onCommit={(value) => update({ background: value.trim() })}
                 />
+                <span className="info-tip-text" role="tooltip">
+                  <strong>{character.background || 'Antecedente'}</strong>
+                  {backgroundInfo ? <span>{backgroundInfo}</span> : null}
+                  {backgroundSkills ? <span>Perícias concedidas: {backgroundSkills}</span> : null}
+                  {!backgroundInfo && !backgroundSkills ? (
+                    <span>
+                      Ainda não escolhido — o antecedente define perícias, ferramentas e contatos.
+                    </span>
+                  ) : null}
+                </span>
               </div>
               <span className="line-field-label">
                 Antecedente
                 <FieldInfo>
-                  {backgroundInfo ||
-                    'A história que veio antes da aventura: define perícias e contatos.'}
+                  <strong>Antecedente</strong>
+                  <span>
+                    A vida que o personagem levava antes da aventura: define perícias, ferramentas e
+                    contatos com o mundo.
+                  </span>
                 </FieldInfo>
               </span>
             </div>
 
             <div className="line-field">
-              <div className="line-field-value">
+              {/* O popup explica o ALINHAMENTO escolhido, não o conceito. */}
+              <div className="line-field-value info-tip identity-value-tip">
                 <InlineField
                   value={character.alignment}
                   mode="select"
@@ -407,10 +559,23 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
                   ariaLabel="Alinhamento"
                   onCommit={(value) => update({ alignment: value })}
                 />
+                <span className="info-tip-text" role="tooltip">
+                  <strong>{character.alignment || 'Alinhamento'}</strong>
+                  <span>
+                    {alignmentDescription(character.alignment) ||
+                      'Ainda não escolhido: o código moral e ético do personagem (ex.: Leal e Bom).'}
+                  </span>
+                </span>
               </div>
               <span className="line-field-label">
                 Alinhamento
-                <FieldInfo>O código moral e ético do personagem (ex.: Leal e Bom).</FieldInfo>
+                <FieldInfo>
+                  <strong>Alinhamento</strong>
+                  <span>
+                    O código moral e ético do personagem: como ele decide entre o dever, a liberdade
+                    e o próprio interesse.
+                  </span>
+                </FieldInfo>
               </span>
             </div>
           </div>

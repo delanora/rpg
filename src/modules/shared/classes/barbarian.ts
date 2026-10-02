@@ -222,6 +222,8 @@ const BARBARIAN_SUBCLASSES: SubclassDefinition[] = [
 export const barbarian: ClassDefinition = {
   key: 'barbarian',
   name: 'Bárbaro',
+  description:
+    'Guerreiro selvagem que troca a armadura pesada pela fúria: bate forte, aguenta muito e segue o instinto.',
   hitDie: 12,
   savingThrows: ['strength', 'constitution'],
   subclassLevel: 3, // Caminho Primal

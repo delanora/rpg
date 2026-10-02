@@ -415,6 +415,8 @@ const FIGHTER_SUBCLASSES: SubclassDefinition[] = [
 export const fighter: ClassDefinition = {
   key: 'fighter',
   name: 'Guerreiro',
+  description:
+    'Mestre de armas e armaduras — o combatente mais versátil e resistente do campo de batalha.',
   hitDie: 10,
   savingThrows: ['strength', 'constitution'],
   subclassLevel: 3, // Arquétipo Marcial

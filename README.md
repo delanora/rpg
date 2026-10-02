@@ -117,7 +117,7 @@ O visual é o coração do projeto: a mesa inteira — ficha, painel e combate �
 - **Molduras:** bordas douradas, hairlines internas e rosetas nos cantos, como a moldura de um livro.
 - **Ícones desenhados à mão** (espada, escudo, coração, poção, pergaminho, estrela, dado, pena...), no traço de tinta, em vez de ícones flat.
 - **Ficha em abas** que parecem divisões do grimório, com transição de "virar a página".
-- **Personagem com hierarquia:** a **foto do personagem** abre a seção, grande e **sem moldura nem fundo**, com **Nome, Raça, Antecedente e Alinhamento** ao lado, na mesma linha e em destaque; cada campo tem um **"i"** que explica o que é (Raça e Antecedente usam a descrição do livro). O bloco de **Conjuração** (tipos por classe e o que define CD e ataque) fica na aba **Magias**.
+- **Personagem com hierarquia:** a **foto do personagem** abre a seção, grande e **sem moldura nem fundo**, com **Nome, Raça, Antecedente e Alinhamento** ao lado, na mesma linha e em destaque. Cada campo tem **dois tooltips**: o **"i"** explica o conceito (o que é classe, subclasse, antecedente e alinhamento, em geral) e o **valor escolhido** abre um popup com o que aquele item é — a descrição da classe e das subclasses do livro (do compêndio), a história do antecedente com as perícias que ele concede e a frase do alinhamento. O bloco de **Conjuração** (tipos por classe e o que define CD e ataque) fica na aba **Magias**.
 - **Vida e magia visuais:** barra de HP que muda de cor com a gravidade (em largura total, com os cards de defesa de mesma altura abaixo) e espaços de magia em estrelas clicáveis.
 - **Painel do mestre "de comando":** cabeçalho escuro e molduras imponentes dentro do mesmo tema.
 - **Combate:** a tela "se transforma" com um **brasão de batalha** ao começar, e o turno atual brilha em dourado pulsante.
@@ -524,7 +524,7 @@ O mestre tem um bloco de notas próprio, com o **mesmo esquema das anotações d
 
 O **NÍVEL INICIAL** e as listas de referência ficam na aba **Mesa** do painel do mestre (antes o nível inicial aparecia em destaque na barra de abas). Quando o nível inicial é maior que 1, o assistente de criação aplica os níveis 2 até ele ao concluir a montagem — **sem** depender da liberação do mestre e **sem** consumir a liberação do jogador (o nível inicial não é um Level Up de campanha).
 
-A aba também consulta o **compêndio da mesa** (somente leitura por enquanto): todas as classes com seus atributos (dado de vida, salvaguardas, conjuração e subclasses), todas as linhagens de raça com a história, todos os antecedentes com as perícias e o espaço das **magias** — o formato já existe, mas o catálogo de magias ainda está vazio, para ser preenchido numa etapa seguinte.
+A aba também consulta o **compêndio da mesa** (somente leitura por enquanto): todas as classes com seus atributos (dado de vida, salvaguardas, conjuração, a **descrição** de cada uma e as subclasses), todas as linhagens de raça com a história, todos os antecedentes com as perícias e o espaço das **magias** — o formato já existe, mas o catálogo de magias ainda está vazio, para ser preenchido numa etapa seguinte.
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|

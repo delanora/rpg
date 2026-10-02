@@ -223,6 +223,8 @@ const BARD_SUBCLASSES: SubclassDefinition[] = [
 export const bard: ClassDefinition = {
   key: 'bard',
   name: 'Bardo',
+  description:
+    'Artista errante que inspira os aliados, sabe um pouco de tudo e molda magia com palavras e canções.',
   hitDie: 8,
   savingThrows: ['dexterity', 'charisma'],
   subclassLevel: 3, // Colégio de Bardo

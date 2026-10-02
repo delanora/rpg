@@ -38,6 +38,7 @@ function toClass(definition: (typeof CLASS_DEFINITIONS)[number]): CompendiumClas
   return {
     key: definition.key,
     name: definition.name,
+    description: definition.description,
     hitDie: definition.hitDie,
     savingThrows: [...definition.savingThrows],
     subclassLevel: definition.subclassLevel,

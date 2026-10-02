@@ -217,6 +217,8 @@ const ROGUE_SUBCLASSES: SubclassDefinition[] = [
 export const rogue: ClassDefinition = {
   key: 'rogue',
   name: 'Ladino',
+  description:
+    'Especialista em furtividade, fechaduras e golpes precisos — acha a brecha e some antes da resposta.',
   hitDie: 8,
   savingThrows: ['dexterity', 'intelligence'],
   subclassLevel: 3, // Arquétipo Ladino

@@ -33,6 +33,8 @@ export interface CompendiumSubclassDto {
 export interface CompendiumClassDto {
   key: string;
   name: string;
+  /** O que a classe é, em uma frase (mostrado na ficha ao passar o mouse). */
+  description: string;
   /** Dado de vida: 6, 8, 10 ou 12. */
   hitDie: number;
   /** As duas salvaguardas com proficiência. */
