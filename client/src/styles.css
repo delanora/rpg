@@ -2493,69 +2493,37 @@ select option {
   box-shadow: 0 0 10px -6px var(--glow);
 }
 
-/* A caixa de proficiência vira um CÍRCULO (vazio = sem proficiência,
-   preenchido = com proficiência) e ganha um envoltório para o selo de
-   Expertise caber ATRÁS dela, sem tirar a área de clique.
-
-   As regras do checkbox global (`input[type='checkbox']`) vêm DEPOIS neste
-   arquivo: por isso tudo aqui é escopado em `.ability-line` (especificidade
-   maior), senão o quadrado com gradiente venceria o círculo. */
-.ability-line .prof-check-wrap {
-  grid-column: 1;
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: 1rem;
-  height: 1rem;
-  overflow: visible;
-}
-
-.ability-line .prof-check-wrap .prof-check {
-  width: 1rem;
-  height: 1rem;
-  border-radius: 50%;
-  background: transparent;
-  border: 1px solid var(--line-strong);
-}
-
-.ability-line .prof-check-wrap .prof-check::before {
-  /* Sem o check: o preenchimento do círculo é que indica a proficiência. */
-  display: none;
-}
-
-.ability-line .prof-check-wrap .prof-check:checked {
-  background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold-deep));
-  border-color: var(--gold-deep);
-  box-shadow: 0 0 8px -1px var(--glow);
-}
-
-/* A perícia em Expertise já chega marcada e travada — o círculo segue cheio. */
-.ability-line .prof-check-wrap .prof-check:disabled {
-  opacity: 0.5;
-}
-
-.ability-line .prof-expertise .prof-check-wrap .prof-check:disabled {
+/* A caixa de proficiência voltou ao checkbox QUADRADO padrão (o global cuida
+   do visual). Só a perícia em Expertise fica travada sem parecer desabilitada. */
+.ability-line input[type='checkbox'].prof-locked:disabled {
   opacity: 1;
+  cursor: default;
 }
 
-/* Coroa de louros atrás do círculo: cresce em volta dele e não pega o clique. */
-.ability-line .prof-check-wrap .expertise-laurel {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 1.8rem;
-  height: 1.8rem;
-  transform: translate(-50%, -50%);
-  color: var(--gold-deep);
-  pointer-events: none;
-  /* ATRÁS do círculo (o clique continua no checkbox, que fica por cima). */
-  z-index: 0;
-  filter: drop-shadow(0 1px 1px rgba(60, 36, 6, 0.5));
-  transition: color 0.18s ease, filter 0.18s ease;
+/* Selo de Expertise ao lado do NOME da perícia: uma pastilha `info-tip` (mesmo
+   gatilho dos outros "i") com a coroa de louros e o tooltip compartilhado, que
+   vem com fundo SÓLIDO (`.info-tip-text`) — nada de fundo transparente. */
+.expertise-mark {
+  flex: 0 0 auto;
 }
 
-[data-theme='dark'] .ability-line .prof-check-wrap .expertise-laurel {
-  color: var(--gold);
+.expertise-mark .expertise-laurel {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+}
+
+.expertise-mark .info-tip-text {
+  width: min(15rem, 62vw);
+  background-color: var(--surface);
+  background-image: linear-gradient(180deg, var(--surface), var(--surface-2));
+}
+
+.expertise-mark:hover .expertise-laurel,
+.expertise-mark:focus .expertise-laurel,
+.expertise-mark:focus-visible .expertise-laurel {
+  color: var(--gold-bright);
+  filter: drop-shadow(0 0 6px var(--glow));
 }
 
 .expertise-laurel .laurel-stem {
@@ -2567,47 +2535,6 @@ select option {
 
 .expertise-laurel .laurel-leaf {
   fill: currentColor;
-}
-
-.ability-line .prof-check-wrap .prof-check {
-  position: relative;
-  z-index: 1;
-}
-
-/* Brilho e pulsação sutis ao passar o mouse/focar o selo. */
-.prof-expertise:hover .expertise-laurel,
-.prof-expertise:focus-within .expertise-laurel,
-.prof-expertise:focus .expertise-laurel {
-  color: var(--gold-bright);
-  filter: drop-shadow(0 0 7px var(--glow));
-  animation: expertise-pulse 1.7s ease-in-out infinite;
-}
-
-@keyframes expertise-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.8;
-  }
-}
-
-/* Tooltip do selo: mesmo visual dos outros (`info-tip-text`), abre no hover. */
-.expertise-tip {
-  position: absolute;
-  bottom: calc(100% + 0.3rem);
-  left: 0;
-  width: max-content;
-  max-width: 14rem;
-  z-index: 60;
-  pointer-events: none;
-}
-
-.prof-expertise:hover .expertise-tip,
-.prof-expertise:focus-within .expertise-tip,
-.prof-expertise:focus .expertise-tip {
-  display: grid;
 }
 
 .ability-line-value {
@@ -2631,10 +2558,18 @@ select option {
  */
 .ability-line-label {
   grid-column: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   min-width: 0;
   font-size: 0.8rem;
   font-size: min(7.8cqi, 0.88rem);
   line-height: 1.2;
+}
+
+/* O nome trunca; o selo de louros fica FORA do truncamento, sempre visível. */
+.ability-line-name {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

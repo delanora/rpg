@@ -36,6 +36,22 @@ function LaurelHalf() {
   );
 }
 
+/**
+ * O selo de Expertise ao lado do nome: uma pastilha `info-tip` (mesmo gatilho de
+ * hover/foco dos outros "i" da ficha) com a coroa de louros e o tooltip
+ * compartilhado — que tem FUNDO SÓLIDO (`.info-tip-text`).
+ */
+export function ExpertiseMark() {
+  return (
+    <span className="info-tip expertise-mark" tabIndex={0} aria-label={EXPERTISE_TOOLTIP}>
+      <ExpertiseLaurel />
+      <span className="info-tip-text expertise-tip" role="tooltip">
+        {EXPERTISE_TOOLTIP}
+      </span>
+    </span>
+  );
+}
+
 export function ExpertiseLaurel() {
   return (
     <svg
@@ -44,11 +60,15 @@ export function ExpertiseLaurel() {
       aria-hidden="true"
       focusable="false"
     >
-      <g className="laurel-half">
-        <LaurelHalf />
-      </g>
-      <g className="laurel-half" transform="translate(34 0) scale(-1 1)">
-        <LaurelHalf />
+      {/* Recentra o miolo da coroa no centro da caixa (17,17) e abre o aro
+          ~20%, para a coroa envolver o círculo do checkbox com folga. */}
+      <g transform="translate(17 17) scale(1.2) translate(-17 -18.5)">
+        <g className="laurel-half">
+          <LaurelHalf />
+        </g>
+        <g className="laurel-half" transform="translate(34 0) scale(-1 1)">
+          <LaurelHalf />
+        </g>
       </g>
     </svg>
   );

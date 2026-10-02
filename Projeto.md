@@ -1736,12 +1736,12 @@ abas.
   de `SKILLS[].description` e `SAVE_DESCRIPTIONS`). O nome nunca quebra
   (container query + ellipsis). A caixa de proficiência da salvaguarda segue a
   **mesma lógica da perícia**: desabilitada só para o player, o mestre a marca à
-  mão (o servidor reaplica as fixas da classe). A caixa é um **círculo** (vazio
-  = sem proficiência, preenchido = com proficiência) e a **Expertise** (Ladino
-  1º/6º, Bardo 3º/10º) é escolhida no Level Up/criação entre o que o personagem
-  JÁ domina (perícias ou ferramentas) e marcada por uma **coroa de louros**
-  dourada atrás do círculo, com tooltip e a proficiência travada. Clicar no
-  número rola um teste puro do atributo; o modificador também rola.
+  mão (o servidor reaplica as fixas da classe). A caixa é o **checkbox quadrado
+  padrão** da ficha e a **Expertise** (Ladino 1º/6º, Bardo 3º/10º) é escolhida
+  no Level Up/criação entre o que o personagem JÁ domina (perícias ou
+  ferramentas), marcada por uma **coroa de louros** ao lado do NOME da perícia
+  (tooltip de fundo sólido) e com a proficiência travada. Clicar no número rola
+  um teste puro do atributo; o modificador também rola.
 - **`readonly.tsx`:** modo somente leitura usado quando o mestre visualiza a
   ficha de um jogador.
 - Layout de perícias/salvaguardas e inventário espelha exatamente os DTOs do

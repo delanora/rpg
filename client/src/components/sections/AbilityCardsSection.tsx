@@ -20,7 +20,7 @@ import type {
 } from '../../types';
 import { EXPERTISE_TOOL_PREFIX } from '../../dnd';
 import { clampInt } from '../../utils';
-import { ExpertiseLaurel, EXPERTISE_TOOLTIP } from '../ExpertiseLaurel';
+import { ExpertiseLaurel, ExpertiseMark, EXPERTISE_TOOLTIP } from '../ExpertiseLaurel';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
@@ -298,16 +298,13 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
 
               <ul className="ability-lines">
                 <li className="ability-line ability-line-save">
-                  <span className="prof-check-wrap">
-                    <input
-                      type="checkbox"
-                      className="prof-check"
-                      checked={character.saves[ability] ?? false}
-                      disabled={lockedConstruction}
-                      aria-label={`Proficiência em salvaguarda de ${label}`}
-                      onChange={(event) => setSave(ability, event.target.checked)}
-                    />
-                  </span>
+                  <input
+                    type="checkbox"
+                    checked={character.saves[ability] ?? false}
+                    disabled={lockedConstruction}
+                    aria-label={`Proficiência em salvaguarda de ${label}`}
+                    onChange={(event) => setSave(ability, event.target.checked)}
+                  />
                   <span className="ability-line-value">{formatModifier(save?.total ?? 0)}</span>
                   <span className="ability-line-label">Salvaguarda</span>
                   {onRoll ? (
@@ -351,33 +348,24 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
 
                   return (
                     <li className="ability-line" key={skill.key}>
-                      <span
-                        className={`prof-check-wrap${isExpertise ? ' prof-expertise' : ''}`}
-                        tabIndex={isExpertise ? 0 : undefined}
-                        aria-label={isExpertise ? EXPERTISE_TOOLTIP : undefined}
-                      >
-                        {isExpertise ? <ExpertiseLaurel /> : null}
-                        <input
-                          type="checkbox"
-                          className="prof-check"
-                          checked={isExpertise ? true : entry.proficient}
-                          disabled={lockedConstruction || isExpertise}
-                          title={isExpertise ? EXPERTISE_TOOLTIP : undefined}
-                          aria-label={`Proficiência em ${skill.label}`}
-                          onChange={(event) =>
-                            setSkill(skill.key, { proficient: event.target.checked })
-                          }
-                        />
-                        {isExpertise ? (
-                          <span className="info-tip-text expertise-tip" role="tooltip">
-                            {EXPERTISE_TOOLTIP}
-                          </span>
-                        ) : null}
-                      </span>
+                      <input
+                        type="checkbox"
+                        className={isExpertise ? 'prof-locked' : undefined}
+                        checked={isExpertise ? true : entry.proficient}
+                        disabled={lockedConstruction || isExpertise}
+                        title={isExpertise ? EXPERTISE_TOOLTIP : undefined}
+                        aria-label={`Proficiência em ${skill.label}`}
+                        onChange={(event) =>
+                          setSkill(skill.key, { proficient: event.target.checked })
+                        }
+                      />
                       <span className="ability-line-value">
                         {formatModifier(detail?.total ?? 0)}
                       </span>
-                      <span className="ability-line-label">{skill.label}</span>
+                      <span className="ability-line-label">
+                        <span className="ability-line-name">{skill.label}</span>
+                        {isExpertise ? <ExpertiseMark /> : null}
+                      </span>
                       {onRoll ? (
                         <button
                           type="button"

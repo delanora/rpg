@@ -1843,15 +1843,16 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   marca à mão (`setSave` → `update({ saves })`, como `setSkill`). O servidor
   reaplica as fixas da classe (`applySaveProficiencies`), então a marcação manual
   não sobrevive à classe. Não há mais selo "classe" nem chip "esp.".
-  A caixa de proficiência é um CÍRCULO (vazio = sem proficiência, preenchido =
-  com proficiência). A EXPERTISE (Ladino 1º/6º, Bardo 3º/10º) é escolhida no
-  Level Up/criação (2 perícias OU ferramentas entre as que o personagem JÁ
-  domina) e vive em `classState.choices` + `skills[].expertise`; a ficha expõe
-  `expertiseSkills` (chaves de perícia e/ou `tool:<rótulo>`). A perícia em
-  Expertise ganha uma coroa de louros dourada ATRÁS do círculo (o clique segue
-  no círculo), brilho/pulsação no hover e o tooltip "Expertise (bônus de
-  proficiência dobrado)"; a proficiência dela fica travada (o servidor recusa
-  tirar com 400). Ferramentas em Expertise ganham só o selo (são visuais).
+  A EXPERTISE (Ladino 1º/6º, Bardo 3º/10º) é escolhida no Level Up/criação (2
+  perícias OU ferramentas entre as que o personagem JÁ domina) e vive em
+  `classState.choices` + `skills[].expertise`; a ficha expõe `expertiseSkills`
+  (chaves de perícia e/ou `tool:<rótulo>`). A perícia em Expertise ganha uma
+  coroa de louros dourada AO LADO DO NOME (uma pastilha `.info-tip`, com o
+  tooltip compartilhado de fundo sólido: "Expertise (bônus de proficiência
+  dobrado)"), com brilho no hover/foco; a proficiência dela fica travada (o
+  servidor recusa tirar com 400). A caixa de proficiência é o checkbox
+  QUADRADO padrão da ficha. Ferramentas em Expertise ganham o mesmo selo na
+  lista (são visuais).
   ROLAGEM: o botão de dado de cada linha abre a janela com 1d20 + o bônus (kind
   `skill`/`save`, como antes). No SELO, clicar no número rola um TESTE PURO do
   atributo (1d20 + modificador) — exceto para o mestre em edição, que continua
