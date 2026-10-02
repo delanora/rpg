@@ -7,7 +7,7 @@ import {
   rollCreationAttribute,
   saveCreationStep,
 } from '../creationApi';
-import { ABILITY_KEYS, ABILITY_LABELS, ALIGNMENTS, SKILLS } from '../dnd';
+import { ABILITY_KEYS, ABILITY_LABELS, ALIGNMENTS, SKILLS, expertiseEligibleOptions } from '../dnd';
 import { raceBonusesWithChoices } from '../races';
 import type {
   AbilityKey,
@@ -279,11 +279,33 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
         item.chosen,
       ]),
     );
-    return (selectedClass.featureChoices ?? []).map((item) => ({
-      ...item,
-      chosen: stored.get(item.featureId) ?? [],
-    }));
+    // A Expertise fica de fora daqui: ela é pedida no passo das perícias, quando
+    // já dá para saber o que o personagem domina.
+    return (selectedClass.featureChoices ?? [])
+      .filter((item) => item.apply !== 'expertise')
+      .map((item) => ({
+        ...item,
+        chosen: stored.get(item.featureId) ?? [],
+      }));
   }, [selectedClass, classKey, character?.classes, creation?.featureChoices]);
+
+  /**
+   * Expertise do nível 1 (Ladino): pedida junto das perícias, com as opções
+   * saindo do que o personagem JÁ domina — as escolhas desta tela contam.
+   */
+  const expertiseChoice = useMemo(() => {
+    const base = creation?.expertiseChoices?.[0];
+    if (!base) return null;
+    const proficient = new Set(picks);
+    for (const [key, entry] of Object.entries(character?.skills ?? {})) {
+      if (entry.proficient) proficient.add(key);
+    }
+    const options = expertiseEligibleOptions(
+      [...proficient],
+      character?.proficiencies?.tools ?? [],
+    );
+    return { ...base, options: options.map((option) => ({ ...option, description: '' })) };
+  }, [creation?.expertiseChoices, picks, character?.skills, character?.proficiencies?.tools]);
 
   /** Escolhas completas (uma opção por escolha pedida). */
   const choicesReady = featureChoices.every(
@@ -312,8 +334,13 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
         return classKey !== '' && (!classNeedsSubclass || subclass !== '') && choicesReady;
       case 6:
         return assignedCount === ABILITY_KEYS.length;
-      case 7:
-        return skillCount === 0 || picks.length === skillCount;
+      case 7: {
+        const expertiseReady =
+          expertiseChoice === null ||
+          (choicePicks[expertiseChoice.featureId] ?? expertiseChoice.chosen).filter(Boolean)
+            .length >= expertiseChoice.count;
+        return (skillCount === 0 || picks.length === skillCount) && expertiseReady;
+      }
       case 8:
         return level >= startingLevel;
       default:
@@ -345,7 +372,18 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 6:
         return { baseAbilities: assigned };
       case 7:
-        return { skills: picks };
+        return {
+          skills: picks,
+          ...(expertiseChoice
+            ? {
+                choices: {
+                  [expertiseChoice.featureId]: (
+                    choicePicks[expertiseChoice.featureId] ?? expertiseChoice.chosen
+                  ).filter(Boolean),
+                },
+              }
+            : {}),
+        };
       default:
         return {};
     }
@@ -818,6 +856,26 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
               <p className="section-note">
                 {picks.length}/{skillCount} escolhida(s)
               </p>
+
+              {expertiseChoice ? (
+                <div className="wizard-subclass">
+                  <h3 className="subsection-title">{expertiseChoice.prompt}</h3>
+                  <FeatureChoiceField
+                    info={expertiseChoice}
+                    values={choicePicks[expertiseChoice.featureId] ?? expertiseChoice.chosen}
+                    disabled={busy}
+                    onChange={(keys) =>
+                      setChoicePicks((current) => ({
+                        ...current,
+                        [expertiseChoice.featureId]: keys,
+                      }))
+                    }
+                  />
+                  <p className="section-note">
+                    A Expertise dobra o bônus de proficiência; só entra o que você já domina.
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

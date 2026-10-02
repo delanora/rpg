@@ -27,15 +27,21 @@ import {
 } from '../shared/creation.js';
 import {
   creationSkillChoice,
+  expertiseOptionsFor,
+  expertiseSkillsState,
   featureChoiceInfo,
+  featuresWithSubclass,
   getClassDefinition,
   multiclassPrerequisiteLabel,
   normalizeClassEntries,
   normalizeClassState,
+  normalizeProficiencies,
   pendingFeatureChoices,
   resolveFeatureChoices,
   totalCharacterLevel,
   type FeatureChoiceInfo,
+  type FeatureChoiceOption,
+  type FeatureChoiceOptionsOverride,
 } from '../shared/classes.js';
 import {
   ABILITY_KEYS,
@@ -105,6 +111,11 @@ export interface CreationStateDto {
    * opções e o que já foi escolhido.
    */
   featureChoices: FeatureChoiceInfo[];
+  /**
+   * Expertise do NÍVEL 1 da classe inicial (Ladino) — pedida no passo das
+   * perícias, quando já dá para saber o que o personagem domina.
+   */
+  expertiseChoices: FeatureChoiceInfo[];
   /** Nível em que a mesa começa: o passo 8 aplica os níveis 2 até ele. */
   startingLevel: number;
   /** Catálogos (vazios enquanto o conteúdo não for cadastrado). */
@@ -199,6 +210,21 @@ async function requireDraft(actor: Actor): Promise<Character> {
   // continua sendo a mesma função de sempre (e o mestre já vê a ficha na lista).
   await createCharacter(actor, {});
   return prisma.character.findUniqueOrThrow({ where: { userId: actor.userId } });
+}
+
+/**
+ * Opções de Expertise com a ficha em mãos: tudo o que o personagem JÁ domina —
+ * as perícias marcadas e as ferramentas dela (PHB: só se dobra uma proficiência
+ * existente). Usada pelo passo das perícias, quando a escolha é pedida.
+ */
+function creationExpertiseOptions(character: Character): FeatureChoiceOption[] {
+  const skills = normalizeSkills(character.skills);
+  return expertiseOptionsFor(
+    Object.entries(skills)
+      .filter(([, entry]) => entry.proficient)
+      .map(([key]) => key),
+    normalizeProficiencies(character.proficiencies).tools,
+  );
 }
 
 /** Estado de perícias: as escolhidas na classe + as concedidas pelo antecedente. */
@@ -317,11 +343,30 @@ function missingForFinalize(character: Character, draft: CreationDraft): string[
   }
 
   // Escolhas do nível 1 da classe inicial (Estilo de Luta, Inimigo Favorito e
-  // Explorador Nato) — o mesmo passo 5 as pede.
+  // Explorador Nato) — o mesmo passo 5 as pede. A Expertise fica de fora: ela
+  // é pedida no passo das perícias, quando já dá para saber o que o personagem
+  // domina.
   if (firstDefinition) {
     const choices = normalizeClassState(character.classState).choices;
-    for (const info of pendingFeatureChoices(firstDefinition, 1, choices)) {
+    for (const info of pendingFeatureChoices(
+      firstDefinition,
+      1,
+      choices,
+      '',
+      {},
+      ['expertise'],
+    )) {
       missing.push(`${info.prompt} (passo 5)`);
+    }
+    for (const info of pendingFeatureChoices(
+      firstDefinition,
+      1,
+      choices,
+      '',
+      {},
+      ['skill'],
+    ).filter((item) => item.apply === 'expertise')) {
+      missing.push(`${info.prompt} (passo 7)`);
     }
   }
 
@@ -361,8 +406,16 @@ async function buildState(
       abilityChoices: draft.abilityChoices,
       skillChoice: creationSkillChoice(entries),
       featureChoices: firstDefinition
-        ? featureChoiceInfo(firstDefinition, classChoices).filter((info) => info.level === 1)
+        ? featureChoiceInfo(firstDefinition, classChoices).filter(
+            (info) => info.level === 1 && info.apply !== 'expertise',
+          )
         : [],
+      expertiseChoices:
+        firstDefinition && character
+          ? featureChoiceInfo(firstDefinition, classChoices, '', {
+              expertise: creationExpertiseOptions(character),
+            }).filter((info) => info.level === 1 && info.apply === 'expertise')
+          : [],
       startingLevel,
       raceCatalog: [...RACE_CATALOG],
       backgroundCatalog: [...BACKGROUND_CATALOG],
@@ -492,11 +545,16 @@ export async function saveCreationStep(
         // passo com a mesma classe, o que já foi escolhido é mantido.
         const stored = normalizeClassState(character.classState);
         const keepsClass = current.length === 1 && current[0].classKey === definition.key;
+        // A Expertise é adiada para o passo das perícias (as opções só existem
+        // depois que o personagem escolhe o que domina).
         const choices = resolveFeatureChoices(
           definition,
           1,
           input.choices ?? {},
           keepsClass ? stored.choices : {},
+          '',
+          {},
+          ['expertise'],
         );
         patch.classState = { ...stored, choices };
       } else if (current.length !== 1 || current[0].classKey !== definition.key) {
@@ -550,7 +608,39 @@ export async function saveCreationStep(
       const picks = [...new Set(input.skills ?? [])];
       validateSkillPicks(character, picks);
       nextDraft.skillPicks = picks;
-      patch.skills = skillsPatch(character, picks, character.background);
+      const nextSkills = skillsPatch(character, picks, character.background);
+
+      // Expertise do nível 1 (Ladino): só agora, com as perícias escolhidas, dá
+      // para validar a escolha contra o que o personagem domina. O passo 5
+      // adiou a escolha justamente por isso.
+      const entries = normalizeClassEntries(character.classes);
+      const definition = entries[0] ? getClassDefinition(entries[0].classKey) : null;
+      if (definition) {
+        const stored = normalizeClassState(character.classState);
+        const choices = resolveFeatureChoices(
+          definition,
+          1,
+          input.choices ?? {},
+          stored.choices,
+          '',
+          {
+            expertise: expertiseOptionsFor(
+              Object.entries(nextSkills)
+                .filter(([, entry]) => entry.proficient)
+                .map(([key]) => key),
+              normalizeProficiencies(character.proficiencies).tools,
+            ),
+          },
+        );
+        patch.classState = { ...stored, choices };
+        patch.skills = expertiseSkillsState(
+          featuresWithSubclass(definition, ''),
+          choices,
+          nextSkills,
+        );
+      } else {
+        patch.skills = nextSkills;
+      }
       break;
     }
 

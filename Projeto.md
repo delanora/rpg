@@ -890,7 +890,10 @@ para cada conta**.
 `normalizeSkills` garante as 18 chaves com `{ proficient, expertise }`
 booleanos; `normalizeSaves` garante os 6 atributos booleanos.
 Total de uma perícia = `mod + (proficiente ? prof × (expertise ? 2 : 1) : 0)`.
-Expertise só conta com proficiência.
+Expertise só conta com proficiência. A Expertise em si é escolhida no Level
+Up/criação (Ladino 1º/6º, Bardo 3º/10º) dentre o que o personagem JÁ domina,
+gravada em `classState.choices` e espelhada em `skills[].expertise`; o DTO expõe
+`expertiseSkills` (chaves de perícia e/ou `tool:<rótulo>` de ferramenta).
 
 ### 13.3 Classe de Armadura (`armor-class.ts`)
 
@@ -1733,9 +1736,12 @@ abas.
   de `SKILLS[].description` e `SAVE_DESCRIPTIONS`). O nome nunca quebra
   (container query + ellipsis). A caixa de proficiência da salvaguarda segue a
   **mesma lógica da perícia**: desabilitada só para o player, o mestre a marca à
-  mão (o servidor reaplica as fixas da classe), e a **especialização deixou de
-  ser marcada** (LACUNA de UX). Clicar no número rola um teste puro do atributo;
-  o modificador também rola.
+  mão (o servidor reaplica as fixas da classe). A caixa é um **círculo** (vazio
+  = sem proficiência, preenchido = com proficiência) e a **Expertise** (Ladino
+  1º/6º, Bardo 3º/10º) é escolhida no Level Up/criação entre o que o personagem
+  JÁ domina (perícias ou ferramentas) e marcada por uma **coroa de louros**
+  dourada atrás do círculo, com tooltip e a proficiência travada. Clicar no
+  número rola um teste puro do atributo; o modificador também rola.
 - **`readonly.tsx`:** modo somente leitura usado quando o mestre visualiza a
   ficha de um jogador.
 - Layout de perícias/salvaguardas e inventário espelha exatamente os DTOs do
@@ -1869,9 +1875,11 @@ zera o contador.
   CA não exige proficiência e não há penalidade de armadura sem proficiência).
   Escolhas abertas do livro ("1 instrumento à sua escolha") entram como
   descrição.
-- **[LACUNA] Especialização (expertise) sem UI:** desde que o chip "esp." saiu
-  das perícias, o jogador não tem onde marcar `skills[].expertise` na ficha (o
-  servidor ainda calcula o bônus a partir dela).
+- **[LACUNA] Expertise sem edição na ficha:** a Expertise já é escolhida no
+  Level Up/criação (coroa de louros no card) e o servidor recusa tirar a
+  proficiência de uma perícia dobrada; não há, porém, uma tela para o mestre
+  trocar as escolhas fora do Level Up (ele ainda pode mexer em
+  `classState.choices` pelo PATCH).
 - **[LACUNA] O compêndio é somente leitura.** O plano é o mestre poder
   criar/editar raças/antecedentes — a arquitetura está preparada (`getCompendium`
   como fonte trocável), mas não há CRUD nem tabelas.

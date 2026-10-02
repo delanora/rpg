@@ -1,3 +1,4 @@
+import { EXPERTISE_CHOICE_OPTIONS } from './option-lists.js';
 import type {
   ClassDefinition,
   ClassFeatureDefinition,
@@ -16,6 +17,12 @@ const ROGUE_FEATURES: ClassFeatureDefinition[] = [
     description:
       'Escolha duas proficiências (perícias ou ferramentas de ladrão). O bônus de proficiência é dobrado nas escolhidas.',
     effect: { type: 'expertise', value: 2 },
+    choice: {
+      prompt: 'Expertise (2 perícias ou ferramentas com proficiência)',
+      count: 2,
+      apply: 'expertise',
+      options: EXPERTISE_CHOICE_OPTIONS,
+    },
   },
   {
     id: 'sneak-attack',
@@ -45,6 +52,12 @@ const ROGUE_FEATURES: ClassFeatureDefinition[] = [
     level: 6,
     description: 'Escolha mais duas proficiências para receber Expertise.',
     effect: { type: 'expertise', value: 2 },
+    choice: {
+      prompt: 'Expertise aprimorada (mais 2 perícias ou ferramentas)',
+      count: 2,
+      apply: 'expertise',
+      options: EXPERTISE_CHOICE_OPTIONS,
+    },
   },
   {
     id: 'evasion',

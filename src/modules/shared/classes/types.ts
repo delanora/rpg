@@ -165,11 +165,14 @@ export interface ClassFeatureChoice {
   /** Permite repetir a mesma opção nas escolhas múltiplas (padrão: não). */
   allowRepeat?: boolean;
   /**
-   * O que a escolha FAZ na ficha além de ficar gravada. Hoje só 'skill': as
-   * opções são PERÍCIAS e as escolhidas viram proficiência (Colégio do
-   * Conhecimento do bardo: 3 perícias à escolha).
+   * O que a escolha FAZ na ficha além de ficar gravada:
+   *  • 'skill': as opções são PERÍCIAS e as escolhidas viram proficiência
+   *    (Colégio do Conhecimento do bardo: 3 perícias à escolha);
+   *  • 'expertise': as opções saem do que o personagem JÁ tem proficiência
+   *    (perícias ou ferramentas) e as escolhidas dobram o bônus de proficiência
+   *    (Ladino 1º/6º, Bardo 3º/10º).
    */
-  apply?: 'skill';
+  apply?: 'skill' | 'expertise';
 }
 
 /** Uma característica concedida por uma classe ou subclasse. */

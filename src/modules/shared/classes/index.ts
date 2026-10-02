@@ -1,5 +1,10 @@
 import { HttpError } from '../../../lib/http-error.js';
-import { abilityModifier, type AbilityKey } from '../dnd5e.js';
+import {
+  abilityModifier,
+  SKILL_KEYS,
+  SKILL_LABELS,
+  type AbilityKey,
+} from '../dnd5e.js';
 import { barbarian } from './barbarian.js';
 import { bard } from './bard.js';
 import { cleric } from './cleric.js';
@@ -18,6 +23,7 @@ import type {
   ClassFeatureEffect,
   ClassFeatureResource,
   ClassSummary,
+  FeatureChoiceOption,
   MulticlassSkillChoice,
   ProficienciesState,
   SpellLearning,
@@ -260,17 +266,30 @@ export interface FeatureChoiceInfo {
   count: number;
   /** Se a mesma opção pode ser repetida nesta escolha múltipla. */
   allowRepeat: boolean;
+  /** O que a escolha FAZ na ficha ('skill', 'expertise'). */
+  apply?: 'skill' | 'expertise';
   /** Opções aceitas. */
   options: { key: string; name: string; description: string }[];
   /** Opções já escolhidas (vazio enquanto não houve escolha). */
   chosen: string[];
 }
 
+/**
+ * Opções DINÂMICAS por TIPO de escolha — hoje só a Expertise: as opções saem do
+ * que o personagem JÁ tem proficiência (perícias e ferramentas), então não podem
+ * ser fixadas na definição da classe.
+ */
+export type FeatureChoiceOptionsOverride = Partial<
+  Record<'skill' | 'expertise', FeatureChoiceOption[]>
+>;
+
 export function featureChoiceInfo(
   definition: ClassDefinition,
   chosen: Record<string, string[]> = {},
   /** Subclasse escolhida: as features dela também podem pedir escolha. */
   subclassName = '',
+  /** Opções que sobrepõem as da definição (ex.: Expertise só entre proficientes). */
+  optionsOverride: FeatureChoiceOptionsOverride = {},
 ): FeatureChoiceInfo[] {
   return featuresWithSubclass(definition, subclassName)
     .filter((feature) => feature.choice !== undefined)
@@ -281,7 +300,12 @@ export function featureChoiceInfo(
       level: featureChoiceLevel(feature),
       count: featureChoiceCount(feature),
       allowRepeat: Boolean(feature.choice?.allowRepeat),
-      options: (feature.choice?.options ?? []).map((option) => ({
+      apply: feature.choice?.apply,
+      options: (
+        (feature.choice?.apply ? optionsOverride[feature.choice.apply] : undefined) ??
+        feature.choice?.options ??
+        []
+      ).map((option) => ({
         key: option.key,
         name: option.name,
         description: option.description ?? '',
@@ -302,9 +326,15 @@ export function pendingFeatureChoices(
   classLevel: number,
   chosen: Record<string, string[]> = {},
   subclassName = '',
+  optionsOverride: FeatureChoiceOptionsOverride = {},
+  /** Escolhas adiadas para outro momento (a criação resolve a Expertise no passo das perícias). */
+  ignoreApply: readonly ('skill' | 'expertise')[] = [],
 ): FeatureChoiceInfo[] {
-  return featureChoiceInfo(definition, chosen, subclassName).filter(
-    (info) => info.level === classLevel && info.chosen.length < info.count,
+  return featureChoiceInfo(definition, chosen, subclassName, optionsOverride).filter(
+    (info) =>
+      info.level === classLevel &&
+      info.chosen.length < info.count &&
+      !(info.apply !== undefined && ignoreApply.includes(info.apply)),
   );
 }
 
@@ -325,14 +355,22 @@ export function resolveFeatureChoices(
   current: Record<string, string[]> = {},
   /** Subclasse escolhida (as features dela têm escolhas próprias). */
   subclassName = '',
+  /** Opções dinâmicas (Expertise só entre o que o personagem já domina). */
+  optionsOverride: FeatureChoiceOptionsOverride = {},
+  /** Escolhas adiadas (a criação resolve a Expertise no passo das perícias). */
+  ignoreApply: readonly ('skill' | 'expertise')[] = [],
 ): Record<string, string[]> {
   const next: Record<string, string[]> = { ...current };
   const features = featuresWithSubclass(definition, subclassName);
   const pending = new Map(
-    pendingFeatureChoices(definition, classLevel, current, subclassName).map((info) => [
-      info.featureId,
-      info,
-    ]),
+    pendingFeatureChoices(
+      definition,
+      classLevel,
+      current,
+      subclassName,
+      optionsOverride,
+      ignoreApply,
+    ).map((info) => [info.featureId, info]),
   );
 
   for (const [featureId, keys] of Object.entries(incoming)) {
@@ -374,7 +412,14 @@ export function resolveFeatureChoices(
 
   // Nenhuma escolha deste nível pode ficar sem resposta: o nível só é ganho uma
   // vez, então ou ela é feita agora ou fica faltando para sempre.
-  const stillMissing = pendingFeatureChoices(definition, classLevel, next, subclassName);
+  const stillMissing = pendingFeatureChoices(
+    definition,
+    classLevel,
+    next,
+    subclassName,
+    optionsOverride,
+    ignoreApply,
+  );
   if (stillMissing.length > 0) {
     const prompts = stillMissing.map((info) => info.prompt).join(', ');
     throw new HttpError(`Escolha ${prompts} para o nível ${classLevel} de ${definition.name}.`, 400);
@@ -421,6 +466,89 @@ export function expertiseSlots(features: ActiveClassFeature[]): number {
       ),
     0,
   );
+}
+
+/** Prefixo das ferramentas nas escolhas de Expertise (nunca colide com perícia). */
+export const EXPERTISE_TOOL_PREFIX = 'tool:';
+
+/** Uma ferramenta é a chave `tool:<rótulo>` de uma proficiência de ferramenta. */
+export function isToolExpertiseKey(key: string): boolean {
+  return key.startsWith(EXPERTISE_TOOL_PREFIX);
+}
+
+/** Rótulo exibido de uma chave de Expertise (tira o prefixo de ferramenta). */
+export function expertiseKeyLabel(key: string): string {
+  if (isToolExpertiseKey(key)) return key.slice(EXPERTISE_TOOL_PREFIX.length);
+  return SKILL_LABELS[key] ?? key;
+}
+
+/**
+ * Opções de Expertise de UM personagem: só o que ele JÁ tem proficiência —
+ * as perícias marcadas na ficha e as ferramentas dela. O PHB só deixa dobrar
+ * uma proficiência existente, então esta é a lista completa do que pode ser
+ * escolhido (o servidor recusa qualquer coisa fora dela).
+ */
+export function expertiseOptionsFor(
+  proficientSkills: readonly string[],
+  tools: readonly string[],
+): FeatureChoiceOption[] {
+  const options: FeatureChoiceOption[] = [];
+
+  for (const key of SKILL_KEYS) {
+    if (proficientSkills.includes(key)) {
+      options.push({ key, name: SKILL_LABELS[key] ?? key });
+    }
+  }
+  for (const tool of tools) {
+    const label = tool.trim();
+    if (label === '') continue;
+    options.push({ key: `${EXPERTISE_TOOL_PREFIX}${label}`, name: label });
+  }
+
+  return options;
+}
+
+/**
+ * Explicação de uma escolha de Expertise, para a mensagem de erro: lista as
+ * perícias/ferramentas que o personagem domina (ou avisa que não há nenhuma).
+ */
+export function expertiseOptionsHint(options: FeatureChoiceOption[]): string {
+  return options.length > 0
+    ? `pode escolher entre ${options.map((option) => option.name).join(', ')}`
+    : 'não há nenhuma proficiência para dobrar';
+}
+
+/**
+ * Ajustes de `skills[].expertise` a partir das escolhas de Expertise gravadas em
+ * `classState.choices`: liga as perícias escolhidas (as ferramentas não vivem em
+ * `skills`) e desliga as que saíram. Sempre devolve o mapa completo.
+ *
+ * É chamado no Level Up, no assistente de criação e no rebaixamento de nível,
+ * para `expertiseSlots` (as escolhas) e o bônus dobrado (a ficha) nunca
+ * divergirem.
+ */
+export function expertiseSkillsState(
+  features: readonly ClassFeatureDefinition[],
+  choices: Record<string, string[]>,
+  current: Record<string, { proficient: boolean; expertise: boolean }>,
+): Record<string, { proficient: boolean; expertise: boolean }> {
+  const expertised = new Set<string>();
+  for (const feature of features) {
+    if (feature.choice?.apply !== 'expertise') continue;
+    for (const key of choices[feature.id] ?? []) {
+      if (SKILL_KEYS.includes(key)) expertised.add(key);
+    }
+  }
+
+  const next: Record<string, { proficient: boolean; expertise: boolean }> = {};
+  for (const key of SKILL_KEYS) {
+    const entry = current[key];
+    next[key] = {
+      proficient: entry?.proficient ?? false,
+      expertise: expertised.has(key),
+    };
+  }
+  return next;
 }
 
 /**

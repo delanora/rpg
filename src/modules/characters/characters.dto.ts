@@ -13,8 +13,10 @@ import {
   classOptionsFor,
   computeMulticlassAdjustments,
   effectiveSpellcasting,
+  expertiseOptionsFor,
   expertiseSlots,
   featureChoiceInfo,
+  isToolExpertiseKey,
   featureEffectsOf,
   getClassDefinition,
   getMulticlassFeatures,
@@ -32,6 +34,7 @@ import {
   type ClassOption,
   type ClassState,
   type FeatureChoiceInfo,
+  type FeatureChoiceOptionsOverride,
   type ProficienciesState,
   type SpellcastingType,
   type SpellLearning,
@@ -216,6 +219,12 @@ export interface CharacterDto {
   // Coleções
   skills: SkillsState;
   saves: Record<AbilityKey, boolean>;
+  /**
+   * O que está em Expertise: chaves de perícia e/ou `tool:<rótulo>` de
+   * ferramenta (só o Ladino e o Bardo têm). É a lista que a ficha usa para o
+   * selo de louros e para travar a proficiência da perícia.
+   */
+  expertiseSkills: string[];
   /** Proficiências de armadura, arma e ferramenta (texto; só o mestre edita). */
   proficiencies: ProficienciesState;
   inventory: InventoryItemDto[];
@@ -313,6 +322,34 @@ export function toCharacterDto(
   const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
   const proficiencies = normalizeProficiencies(character.proficiencies);
 
+  // Expertise (Ladino/Bardo): as opções saem SÓ do que o personagem já domina —
+  // as perícias marcadas na ficha e as ferramentas dela. A definição da classe
+  // declara a lista completa (perícias + ferramentas), usada quando não há
+  // personagem em mãos (ex.: o catálogo de classes do seletor).
+  const expertiseOptionsOverride: FeatureChoiceOptionsOverride = {
+    expertise: expertiseOptionsFor(
+      Object.entries(skills)
+        .filter(([, entry]) => entry.proficient)
+        .map(([key]) => key),
+      proficiencies.tools,
+    ),
+  };
+
+  // O que está em Expertise: as perícias com `expertise` na ficha (a fonte do
+  // bônus dobrado) mais as FERRAMENTAS escolhidas no Level Up, que não vivem em
+  // `skills` (ficam gravadas em `classState.choices`).
+  const expertiseSkills = [
+    ...new Set([
+      ...Object.entries(skills)
+        .filter(([, entry]) => entry.expertise)
+        .map(([key]) => key),
+      ...activeFeatures
+        .filter((feature) => feature.choice?.apply === 'expertise')
+        .flatMap((feature) => classState.choices[feature.id] ?? [])
+        .filter(isToolExpertiseKey),
+    ]),
+  ];
+
   // Bônus de atributo de features (ex.: Campeão Primitivo) entram nos valores
   // efetivos usados por todos os cálculos derivados; a pontuação gravada segue
   // sendo a base.
@@ -377,7 +414,7 @@ export function toCharacterDto(
       asiLevels: [...asiLevelsFor(entry.classKey)],
       spellcasting: spellcastingOf(entry),
       featureChoices: definition
-        ? featureChoiceInfo(definition, classState.choices, entry.subclass)
+        ? featureChoiceInfo(definition, classState.choices, entry.subclass, expertiseOptionsOverride)
         : [],
     };
   });
@@ -459,6 +496,7 @@ export function toCharacterDto(
     initiativeBonus: character.initiativeBonus,
     speed: character.speed,
     skills,
+    expertiseSkills,
     saves,
     proficiencies,
     inventory,
