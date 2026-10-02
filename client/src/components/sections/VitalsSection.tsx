@@ -3,6 +3,7 @@ import {
   formatChallengeRating,
   formatModifier,
   hitDieLabel,
+  speedInSquares,
 } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type { ActiveResource, ActiveToggle, ArmorClassDetail, ClassState } from '../../types';
@@ -17,8 +18,10 @@ import type { SheetSectionProps } from './common';
  * Explica de onde saiu a CA: a armadura equipada (e como a Destreza entrou),
  * a Defesa sem Armadura da classe, o escudo, os bônus mágicos e o override do
  * mestre. Sem isso a CA automática viraria um número sem justificativa.
+ *
+ * Cada parte sai em uma linha própria no popup do card (uma conta por linha).
  */
-function describeArmorClass(detail: ArmorClassDetail): string {
+function describeArmorClass(detail: ArmorClassDetail): string[] {
   const parts: string[] = [];
   const dex = `DES ${formatModifier(detail.dexterityBonus)}`;
 
@@ -45,7 +48,7 @@ function describeArmorClass(detail: ArmorClassDetail): string {
   }
   if (detail.override !== null) parts.push(`CA manual (automática ${detail.automatic})`);
 
-  return parts.join(' · ');
+  return parts;
 }
 
 interface VitalsSectionProps extends SheetSectionProps {
@@ -71,6 +74,9 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
 
   // Dado de vida de cada classe, usado no descanso curto.
   const hitDice = character.classes.map((entry) => hitDieLabel(entry.hitDie)).join(' / ');
+
+  // Percepção passiva = 10 + o total da perícia Percepção (proficiência inclusa).
+  const perception = derived.skills.perception;
 
   function applyClassState(next: ClassState): void {
     update({ classState: next });
@@ -191,7 +197,8 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
          */}
         <div className="vitals-cards">
           <div className="vital">
-            <span className="vital-label" title="Classe de Armadura">
+            {/* O nome completo aparece no popup — sem balão nativo do navegador. */}
+            <span className="vital-label">
               <Icon name="shield" size={13} />
               <span className="vital-label-text">Classe de Armadura</span>
             </span>
@@ -224,84 +231,149 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
               )}
             </div>
 
-            <span className="vital-hint">{describeArmorClass(armorClass)}</span>
+            {/* O popup abre no hover (e no foco): uma conta por linha. */}
+            <span className="vital-tip" role="tooltip">
+              <strong>Classe de Armadura</strong>
+              {describeArmorClass(armorClass).map((part) => (
+                <span key={part}>{part}</span>
+              ))}
+            </span>
           </div>
 
           <div className="vital">
-            <span className="vital-label" title="Iniciativa">
+            <span className="vital-label">
               <Icon name="bolt" size={13} />
               <span className="vital-label-text">Iniciativa</span>
             </span>
             <div className="vital-body">
               <strong className="vital-value">{formatModifier(derived.initiative)}</strong>
             </div>
-            <span className="vital-hint">
-              bônus extra:{' '}
-              <InlineField
-                className="vital-inline"
-                value={character.initiativeBonus}
-                mode="number"
-                min={-30}
-                max={30}
-                readOnly={lockedConstruction}
-                ariaLabel="Bônus de iniciativa"
-                onCommit={(value) =>
-                  update({ initiativeBonus: clampInt(value, -30, 30, character.initiativeBonus) })
-                }
-              />
+            <span className="vital-tip" role="tooltip">
+              <strong>Iniciativa</strong>
+              <span>
+                Destreza {formatModifier(derived.modifiers.dexterity)} · bônus extra{' '}
+                {formatModifier(character.initiativeBonus)} · total{' '}
+                {formatModifier(derived.initiative)}
+              </span>
+              <span>
+                É um teste de Destreza: define a ordem dos turnos no combate — quem tem a maior
+                iniciativa age primeiro.
+              </span>
+              {/* O bônus extra segue editável (mestre/criação); o popup fica aberto no foco. */}
+              {lockedConstruction ? null : (
+                <span className="vital-tip-field">
+                  <InlineField
+                    className="vital-inline"
+                    value={character.initiativeBonus}
+                    mode="number"
+                    min={-30}
+                    max={30}
+                    ariaLabel="Bônus de iniciativa"
+                    onCommit={(value) =>
+                      update({
+                        initiativeBonus: clampInt(value, -30, 30, character.initiativeBonus),
+                      })
+                    }
+                  />
+                  <span className="muted">bônus extra</span>
+                </span>
+              )}
             </span>
           </div>
 
           <div className="vital">
-            <span className="vital-label" title="Deslocamento">
+            <span className="vital-label">
               <Icon name="wind" size={13} />
               <span className="vital-label-text">Deslocamento</span>
             </span>
             <div className="vital-body">
-              <InlineField
-                className="vital-value"
-                value={character.speed}
-                mode="number"
-                min={0}
-                max={999}
-                readOnly={lockedConstruction}
-                ariaLabel="Deslocamento"
-                onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
-              />
+              <span className="vital-value-row">
+                <InlineField
+                  className="vital-value"
+                  value={character.speed}
+                  mode="number"
+                  min={0}
+                  max={999}
+                  readOnly={lockedConstruction}
+                  ariaLabel="Deslocamento em metros"
+                  onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
+                />
+                <span className="vital-unit">/m</span>
+              </span>
             </div>
-            <span className="vital-hint">metros</span>
+            <span className="vital-tip" role="tooltip">
+              <strong>Deslocamento</strong>
+              {/* O tabuleiro conta em quadrados de 1,5 m (5 pés) — PHB. */}
+              <span>
+                {character.speed} metros equivalem a {speedInSquares(character.speed)} no
+                tabuleiro.
+              </span>
+              <span>
+                É o quanto o personagem anda gastando o movimento do turno — e pode dividir o
+                deslocamento entre andar e agir.
+              </span>
+            </span>
           </div>
 
           <div className="vital">
-            <span className="vital-label" title="Percepção passiva">
+            <span className="vital-label">
               <Icon name="eye" size={13} />
               <span className="vital-label-text">Percepção passiva</span>
             </span>
             <div className="vital-body">
               <strong className="vital-value">{derived.passivePerception}</strong>
             </div>
+            <span className="vital-tip" role="tooltip">
+              <strong>Percepção passiva</strong>
+              <span>
+                10 + Percepção {formatModifier(perception?.total ?? derived.modifiers.wisdom)} ={' '}
+                {derived.passivePerception}
+              </span>
+              <span>
+                É o que o mestre usa para notar — ou esconder — detalhes sem pedir uma rolagem.
+              </span>
+            </span>
           </div>
 
           <div className="vital">
-            <span className="vital-label" title="Dado de vida">
+            <span className="vital-label">
               <Icon name="die" size={13} />
               <span className="vital-label-text">Dado de Vida</span>
             </span>
             <div className="vital-body">
               <strong className="vital-value vital-value-die">{hitDice || '—'}</strong>
             </div>
-            <span className="vital-hint">recupera PV no descanso curto</span>
+            <span className="vital-tip" role="tooltip">
+              <strong>Dado de Vida</strong>
+              {character.classes.length > 0 ? (
+                character.classes.map((entry) => (
+                  <span key={entry.classKey}>
+                    {entry.className}: 1{hitDieLabel(entry.hitDie)} por nível
+                  </span>
+                ))
+              ) : (
+                <span>Ainda sem classe definida.</span>
+              )}
+              <span>No descanso curto, gastar um dado recupera 1 dado de vida + CON em PV.</span>
+            </span>
           </div>
 
           <div className="vital">
-            <span className="vital-label" title="Bônus de proficiência">
+            <span className="vital-label">
               <Icon name="crown" size={13} />
               <span className="vital-label-text">Bônus de Proficiência</span>
             </span>
             <div className="vital-body">
               <strong className="vital-value">+{derived.proficiencyBonus}</strong>
             </div>
-            <span className="vital-hint">testes, ataques e perícias</span>
+            <span className="vital-tip" role="tooltip">
+              <strong>Bônus de Proficiência</strong>
+              <span>
+                Soma {formatModifier(derived.proficiencyBonus)} em testes de perícia, ataques e
+                salvaguardas em que o personagem é proficiente.
+              </span>
+              <span>Sobe +1 no 5º, 9º, 13º e 17º nível.</span>
+            </span>
           </div>
         </div>
       </div>
