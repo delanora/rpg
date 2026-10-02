@@ -229,7 +229,7 @@ CLIENTE (client/src/)
   components/
     AuthPage, AppHeader, Icon, Portrait, HpBar, Lightbox, Section, InlineField,
     SheetView, AttacksTable, PresentationOverlay, CreationWizard (930),
-    LevelUpDialog (497)
+    LevelUpDialog (497), ItemDetailModal (ficha do item do inventário — clique)
     creation/AbilityStep.tsx   palco de rolagem de atributos
     sections/  AbilityCards (397), Attacks, BagList, Features, Identity (378),
                Inventory (532), Notes, Spells (384), Vitals (400)
@@ -1713,6 +1713,11 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   salvaguarda e as perícias dele), Attacks, Features, Spells (list + slots, com o
   bloco de Conjuração), Inventory (grade de mochila + 9 slots arrastáveis),
   Notes, BagList.
+  INVENTÁRIO — HOVER x CLIQUE: passar o mouse abre um painel flutuante de
+  pré-visualização (com os controles de quantidade/usar/remover); clicar abre a
+  ficha detalhada no modal centralizado `ItemDetailModal` (somente leitura,
+  lê o próprio item — nunca o preço). Fecha por X, clique na área escurecida
+  ou Esc. A imagem ampliada reusa o lightbox único do app.
   A ficha é uma PILHA de seções de ponta a ponta: Personagem (que já traz Classes
   e Vida e Defesa), os seis atributos, o inventário e as abas. Dentro do
   inventário, o set de equipamento e a mochila ficam lado a lado (max-width de

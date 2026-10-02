@@ -487,6 +487,82 @@ export function describeItemDetails(category: string, details: ItemDetails | und
   return parts.join(' · ');
 }
 
+/** Uma linha rótulo/valor da ficha detalhada do item. */
+export interface ItemDetailRow {
+  label: string;
+  value: string;
+}
+
+/**
+ * Atributos do item em pares rótulo/valor, para a ficha detalhada do modal do
+ * inventário. Só entram as linhas que o item realmente tem — nada de campos
+ * vazios. O PREÇO nunca é incluído (é informação exclusiva do mestre e nem
+ * chega ao objeto do inventário).
+ */
+export function itemDetailRows(details: ItemDetails | undefined): ItemDetailRow[] {
+  if (!details) return [];
+  const rows: ItemDetailRow[] = [];
+  const add = (label: string, value: string | undefined | null): void => {
+    if (value) rows.push({ label, value });
+  };
+
+  // Dano principal (Arma/Cajado): a expressão já leva o bônus de dano junto.
+  const hasMainDamage = Boolean(details.damageCount && details.damageDie);
+  if (hasMainDamage) {
+    add(
+      'Dano',
+      damageExpression({
+        count: details.damageCount ?? 0,
+        sides: details.damageDie ?? 0,
+        bonus: details.damageBonus ?? 0,
+        type: details.damageType ?? null,
+      }),
+    );
+  } else if (details.damageBonus) {
+    add('Bônus de dano', formatModifier(details.damageBonus));
+  }
+  add('Tipo de dano', details.damageType);
+
+  // Danos ADICIONAIS (um por tipo), cada um com a sua expressão.
+  for (const extra of details.extraDamages ?? []) {
+    if (damageIsEmpty(extra)) continue;
+    add(
+      'Dano adicional',
+      extra.type ? `${damageExpression(extra)} (${extra.type})` : damageExpression(extra),
+    );
+  }
+
+  add('Bônus de ataque', details.attackBonus ? formatModifier(details.attackBonus) : undefined);
+  add('Uso', details.weaponType ? WEAPON_TYPE_LABELS[details.weaponType] : undefined);
+  add(
+    'Categoria da arma',
+    details.weaponCategory ? WEAPON_CATEGORY_LABELS[details.weaponCategory] : undefined,
+  );
+  if (details.properties?.length) {
+    add(
+      'Propriedades',
+      details.properties.map((property) => WEAPON_PROPERTY_LABELS[property]).join(', '),
+    );
+  }
+  add('Munição', details.ammoType);
+  add('Dado versátil', details.versatileDie ? `d${details.versatileDie}` : undefined);
+  if (details.rangeNormal !== undefined || details.rangeLong !== undefined) {
+    const ranges = [details.rangeNormal, details.rangeLong].filter(
+      (value): value is number => value !== undefined,
+    );
+    add('Alcance', `${ranges.join('/')} m`);
+  }
+  add('Foco de conjuração', details.spellcastingFocus ? 'Sim' : undefined);
+  add('Tipo de armadura', details.armorType);
+  add('CA base', details.baseArmorClass ? String(details.baseArmorClass) : undefined);
+  add('Bônus de CA', details.armorClassBonus ? formatModifier(details.armorClassBonus) : undefined);
+  add('Efeito', details.effectRoll);
+  add('Duração', details.duration);
+  add('Usável', details.consumable ? 'Sim (consome 1 unidade)' : undefined);
+
+  return rows;
+}
+
 /**
  * O item pode ser USADO pelo jogador (consome 1 unidade)?
  *
