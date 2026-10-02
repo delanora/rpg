@@ -2199,7 +2199,9 @@ select option {
   /* Container de consulta: os rótulos das linhas usam `cqi` (ver
      `.ability-line-label`), então o tamanho do texto acompanha o card. */
   container-type: inline-size;
-  padding-bottom: 0.2rem;
+  /* Respiro maior no pé: a última linha do card não encosta nas rosetas dos
+     cantos de baixo (que ocupam ~0,9rem a partir da borda). */
+  padding-bottom: 0.55rem;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: linear-gradient(180deg, var(--surface), var(--surface-2));
@@ -2230,8 +2232,12 @@ select option {
   position: relative;
   height: 2.1rem;
   margin: 0.3rem 0.3rem 0;
-  display: grid;
-  place-items: center;
+  /* Sigla e "i" ficam JUNTOS, centrados como um bloco: o "i" acompanha o
+     título do atributo em vez de ir para a borda direita do card. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
   border-bottom: 1px solid var(--gold-hair);
   border-radius: 5px 5px 0 0;
   background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
@@ -2261,22 +2267,28 @@ select option {
   justify-items: center;
   gap: 0.1rem;
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  background: linear-gradient(180deg, var(--wine-bright), var(--wine));
+  /* As MESMAS cores da bandeirola do nome: vinho escuro no corpo... */
+  background: linear-gradient(180deg, #7d232c, #55161d 62%, #411015);
   filter: drop-shadow(0 3px 4px rgba(43, 33, 21, 0.3));
   transition: filter 0.18s ease;
+}
+
+[data-theme='dark'] .ability-hex {
+  background: linear-gradient(180deg, #5c1a22, #3a1015 62%, #2b0c10);
 }
 
 .ability-hex:hover {
   filter: drop-shadow(0 3px 5px rgba(43, 33, 21, 0.35)) drop-shadow(0 0 12px var(--glow));
 }
 
-/* Filo dourado do hexágono (o mesmo truque da moldura do card). */
+/* ...e o fio dourado da bandeirola na borda do selo (o mesmo truque da
+   moldura do card, com o ouro cheio em vez do hairline). */
 .ability-hex::before {
   content: '';
   position: absolute;
   inset: 2px;
   clip-path: inherit;
-  border: 1px solid var(--gold-hair);
+  border: 1px solid var(--gold);
   pointer-events: none;
 }
 
@@ -2345,12 +2357,10 @@ select option {
 }
 
 /* O "i" que explica de onde vêm o valor e o modificador: uma pequena pastilha
-   dourada ancorada na ponta direita do CABEÇALHO do card. */
+   dourada logo ao lado da sigla do atributo. */
 .ability-tip {
-  position: absolute;
-  top: 50%;
-  right: 0.4rem;
-  transform: translateY(-50%);
+  /* No fluxo do cabeçalho (ao lado da sigla); o popup continua ancorado nele. */
+  position: relative;
   z-index: 3;
   width: 1.05rem;
   height: 1.05rem;
@@ -2439,6 +2449,8 @@ select option {
 }
 
 .ability-line {
+  /* Ancoragem do resumo que abre no hover da linha. */
+  position: relative;
   display: grid;
   grid-template-columns: 1rem 1.7rem minmax(0, 1fr) 1.35rem;
   align-items: center;
@@ -2447,6 +2459,25 @@ select option {
   padding: 0.1rem 0.15rem;
   border-radius: var(--radius);
   transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+/*
+ * Resumo da perícia/salvaguarda: mesmo visual do popup do "i" (a classe
+ * `info-tip-text` vem no JSX) e abre no hover — ou no foco — da LINHA, com a
+ * largura presa ao card. `pointer-events: none` deixa o ponteiro atravessar o
+ * popup e trocar de linha sem fechá-lo à toa.
+ */
+.ability-skill-tip {
+  top: calc(100% + 0.2rem);
+  left: 0;
+  width: min(16rem, 100%);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.ability-line:hover .ability-skill-tip,
+.ability-line:focus-within .ability-skill-tip {
+  display: grid;
 }
 
 .ability-line:hover {

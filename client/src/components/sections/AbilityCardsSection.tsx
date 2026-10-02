@@ -4,6 +4,7 @@ import {
   ABILITY_ABBREVIATIONS,
   ABILITY_KEYS,
   ABILITY_LABELS,
+  SAVE_DESCRIPTIONS,
   SKILLS,
   formatModifier,
   type SkillDefinition,
@@ -278,11 +279,6 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                     disabled
                     tabIndex={-1}
                     aria-label={`Proficiência em salvaguarda de ${label}`}
-                    title={
-                      saveLocked
-                        ? 'Concedida pela classe (fixa)'
-                        : 'Salvaguarda definida pela classe — não editável por aqui'
-                    }
                   />
                   <span className="ability-line-value">{formatModifier(save?.total ?? 0)}</span>
                   <span className="ability-line-label">Salvaguarda</span>
@@ -290,7 +286,6 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                     <button
                       type="button"
                       className="prof-roll"
-                      title={`Rolar salvaguarda de ${label}`}
                       aria-label={`Rolar salvaguarda de ${label}`}
                       onClick={() =>
                         onRoll({
@@ -303,6 +298,20 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                       <Icon name="die" size={13} />
                     </button>
                   ) : null}
+
+                  {/* Resumo do que a salvaguarda serve, aberto no hover da linha. */}
+                  <span className="info-tip-text ability-skill-tip" role="tooltip">
+                    <strong>Salvaguarda de {label}</strong>
+                    <span>{SAVE_DESCRIPTIONS[ability]}</span>
+                    <span className="ability-tip-note">
+                      {saveLocked
+                        ? 'Concedida pela classe (fixa nas duas salvaguardas dela).'
+                        : 'Definida pela classe — muda só pela entrada em outra classe.'}
+                    </span>
+                    {onRoll ? (
+                      <span className="ability-tip-note">Clique no dado para rolar o teste.</span>
+                    ) : null}
+                  </span>
                 </li>
 
                 {SKILLS_BY_ABILITY[ability].map((skill) => {
@@ -316,7 +325,6 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                         checked={entry.proficient}
                         disabled={lockedConstruction}
                         aria-label={`Proficiência em ${skill.label}`}
-                        title={`Perícia de ${label}`}
                         onChange={(event) =>
                           setSkill(skill.key, { proficient: event.target.checked })
                         }
@@ -324,14 +332,11 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                       <span className="ability-line-value">
                         {formatModifier(detail?.total ?? 0)}
                       </span>
-                      <span className="ability-line-label" title={skill.label}>
-                        {skill.label}
-                      </span>
+                      <span className="ability-line-label">{skill.label}</span>
                       {onRoll ? (
                         <button
                           type="button"
                           className="prof-roll"
-                          title={`Rolar ${skill.label}`}
                           aria-label={`Rolar teste de ${skill.label}`}
                           onClick={() =>
                             onRoll({ kind: 'skill', label: skill.label, bonus: detail?.total ?? 0 })
@@ -340,6 +345,18 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
                           <Icon name="die" size={13} />
                         </button>
                       ) : null}
+
+                      {/* Para que a perícia serve, resumido no hover da linha. */}
+                      <span className="info-tip-text ability-skill-tip" role="tooltip">
+                        <strong>{skill.label}</strong>
+                        <span>{skill.description}</span>
+                        <span className="ability-tip-note">Perícia de {label}.</span>
+                        {onRoll ? (
+                          <span className="ability-tip-note">
+                            Clique no dado para rolar o teste.
+                          </span>
+                        ) : null}
+                      </span>
                     </li>
                   );
                 })}

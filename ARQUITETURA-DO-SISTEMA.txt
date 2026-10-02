@@ -1798,10 +1798,15 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   A antiga divisão "Atributos" (topo) + "Perícias e Salvaguardas" (lista corrida)
   virou UMA fileira de seis cards, na ordem do PHB (FOR, DES, CON, INT, SAB, CAR).
   Cada card, de cima para baixo:
-    • faixa (CABEÇALHO) com a SIGLA do atributo e, na ponta DIREITA dela, a
-      pastilha dourada do "i";
-    • selo HEXAGONAL em vinho com o valor GRAVADO e, abaixo, o modificador — o
-      hexágono fica ABAIXO da faixa, com respiro fixo (não invade o título);
+    • faixa (CABEÇALHO) com a SIGLA do atributo e a pastilha dourada do "i" logo
+      AO LADO dela (linha flex centrada: o "i" acompanha o título, não vai mais
+      para a borda direita do card);
+    • selo HEXAGONAL com o valor GRAVADO e, abaixo, o modificador — o hexágono
+      fica ABAIXO da faixa, com respiro fixo (não invade o título) e usa as
+      MESMAS cores da bandeirola do nome: corpo no vinho escuro
+      (`linear-gradient(180deg, #7d232c, #55161d 62%, #411015)`, com variante no
+      tema escuro) e o fio dourado na borda (`::before` com `border` de
+      `var(--gold)`);
     • linha da SALVAGUARDA (caixa de proficiência + bônus + botão de rolagem);
     • as PERÍCIAS daquele atributo (FOR 1, DES 3, CON 0, INT 5, SAB 5, CAR 4,
       exatamente a divisão do PHB 2014), cada uma com caixa de proficiência,
@@ -1810,12 +1815,21 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   [caixa 1rem] [bônus 1.7rem] [nome 1fr] [dado 1.35rem], com `gap` reduzido e
   altura mínima de 1.55rem, para todas as colunas alinharem entre os seis cards.
   O bônus é tabular e alinhado à direita. O nome NUNCA quebra no meio da palavra:
-  `white-space: nowrap` + `text-overflow: ellipsis` (o nome inteiro vai no
-  `title`) e o tamanho acompanha a LARGURA DO CARD via container query
-  (`container-type: inline-size` no card + `font-size: min(7.8cqi, 0.88rem)`),
+  `white-space: nowrap` + `text-overflow: ellipsis` (o nome inteiro e o que a
+  perícia é vão no popup do hover) e o tamanho acompanha a LARGURA DO CARD via container query  (
+  `container-type: inline-size` no card + `font-size: min(7.8cqi, 0.88rem)`),
   o que garante que "Prestidigitação" caiba até na fileira de 6 (cada card com
   ~165px, a mais apertada da ficha — nesta seção o respiro lateral do corpo é de
-  0.55rem para liberar espaço ao nome).
+  0.55rem para liberar espaço ao nome). O card leva um respiro extra no pé
+  (`padding-bottom: 0.55rem`) para a última linha não encostar nas rosetas dos
+  cantos de baixo.
+  RESUMO NO HOVER: passar o mouse (ou focar) na LINHA de uma perícia ou
+  salvaguarda abre um popup com o mesmo visual do "i" (classe `info-tip-text` +
+  `ability-skill-tip`), dizendo para que ela serve — os textos são
+  `SKILLS[].description` (as 18 perícias) e `SAVE_DESCRIPTIONS` (as 6
+  salvaguardas), em `dnd.ts`. O popup se ancora na linha, abre abaixo dela com a
+  largura presa ao card e não recebe clique (`pointer-events: none`), então o
+  ponteiro atravessa e troca de linha sem fechá-lo à toa.
   Os cards têm a MESMA largura e a altura do mais alto (o de 5 perícias), então os
   menores ficam com o espaço restante em branco no fim — sem esticar o espaçamento.
   As três primeiras camadas alinham entre os seis cards. Nas telas estreitas a
@@ -1828,10 +1842,10 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   `skill`/`save`, como antes). No SELO, clicar no número rola um TESTE PURO do
   atributo (1d20 + modificador) — exceto para o mestre em edição, que continua
   clicando para alterar o valor bruto; o modificador também é clicável e rola.
-  O "i" é uma pastilha dourada ancorada na ponta DIREITA do CABEÇALHO do card (a
-  faixa com a sigla), fora do selo hexagonal; a JANELA do "i" é irmã da pastilha,
-  então se posiciona pelo CABEÇALHO e abre logo abaixo dele, com a largura do
-  próprio card — nunca vaza para os lados.
+  O "i" é uma pastilha dourada ao LADO da sigla, no CABEÇALHO do card, fora do
+  selo hexagonal; a JANELA do "i" é irmã da pastilha, então se posiciona pelo
+  CABEÇALHO e abre logo abaixo dele, com a largura do próprio card — nunca vaza
+  para os lados.
   Ela NÃO recalcula nada: monta a composição a partir do que já vem na ficha —
   valor-base do rascunho da criação (`creationDraft.baseAbilities`), bônus racial
   (catálogo de raças buscado uma vez por `GET /api/characters/me/creation` e

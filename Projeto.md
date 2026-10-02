@@ -1724,14 +1724,17 @@ abas.
   na mecânica, sem campo próprio).
 - **Atributos em cards (AbilityCardsSection):** uma fileira de seis cards na
   ordem do PHB (FOR, DES, CON, INT, SAB, CAR). Cada card: faixa com a sigla e o
-  "i" na ponta direita; selo hexagonal com o valor e o modificador; linha da
+  "i" **ao lado dela**; selo hexagonal com o valor e o modificador, nas **mesmas
+  cores da bandeirola do nome** (vinho escuro + fio dourado); linha da
   salvaguarda (caixa de proficiência + bônus + rolagem); as perícias daquele
   atributo (FOR 1, DES 3, CON 0, INT 5, SAB 5, CAR 4). Salvaguarda e perícias
   usam a **mesma grade fixa** `[caixa 1rem] [bônus 1.7rem] [nome 1fr] [dado
-  1.35rem]`. O nome nunca quebra (container query + ellipsis). A caixa de
-  proficiência da salvaguarda é **sempre desabilitada** (fixa pela classe) e a
-  **especialização deixou de ser marcada** (LACUNA de UX). Clicar no número rola
-  um teste puro do atributo; o modificador também rola.
+  1.35rem]` e abrem um **resumo no hover** (o que a perícia/salvaguarda serve,
+  de `SKILLS[].description` e `SAVE_DESCRIPTIONS`). O nome nunca quebra
+  (container query + ellipsis). A caixa de proficiência da salvaguarda é
+  **sempre desabilitada** (fixa pela classe) e a **especialização deixou de ser
+  marcada** (LACUNA de UX). Clicar no número rola um teste puro do atributo; o
+  modificador também rola.
 - **`readonly.tsx`:** modo somente leitura usado quando o mestre visualiza a
   ficha de um jogador.
 - Layout de perícias/salvaguardas e inventário espelha exatamente os DTOs do
