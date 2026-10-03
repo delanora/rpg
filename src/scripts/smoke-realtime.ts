@@ -8415,6 +8415,25 @@ async function main(): Promise<void> {
       JSON.stringify(toolSheet.data?.character?.toolProficiencies),
     );
 
+    // A ficha recebe as ferramentas JÁ RESOLVIDAS pelo catálogo (nome, categoria
+    // e atributo sugerido) para o bloco "Ferramentas e Proficiências".
+    const resolvedTools: any[] = toolSheet.data?.character?.tools ?? [];
+    const thieves = resolvedTools.find((tool) => tool.id === 'thieves-tools');
+    check(
+      'a ficha resolve as ferramentas pelo catálogo (nome e categoria)',
+      resolvedTools.length === 3 &&
+        thieves?.name === 'Ferramentas de Ladrão' &&
+        thieves?.category === 'thieves' &&
+        thieves?.categoryLabel === 'Ferramentas de Ladrão',
+      JSON.stringify(resolvedTools),
+    );
+    const lute = resolvedTools.find((tool) => tool.id === 'lute');
+    check(
+      'a ferramenta traz o atributo sugerido do catálogo (Alaúde → Carisma)',
+      lute?.defaultAbility === 'charisma' && lute?.categoryLabel === 'Instrumento Musical',
+      JSON.stringify(lute),
+    );
+
     const badTool = await masterPatch(multiSheetOwner.characterId, {
       toolProficiencies: ['ferramenta-inexistente'],
     });

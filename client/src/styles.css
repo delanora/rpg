@@ -7500,6 +7500,59 @@ input[type='checkbox']:focus-visible,
   outline-offset: 2px;
 }
 
+/* --- Bloco Ferramentas e Proficiências ----------------------------------- */
+
+.tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.tool-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme='dark'] .tool-line {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tool-line-name {
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+.tool-line-category {
+  font-size: 0.76rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+
+.tool-line-bonus {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--gold-deep);
+}
+
+.tool-line-ability {
+  font-size: 0.82rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+
 /* --- Responsivo ----------------------------------------------------------- */
 
 @media (max-width: 700px) {

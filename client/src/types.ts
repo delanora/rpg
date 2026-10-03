@@ -645,6 +645,17 @@ export interface ClassEntryPatch {
   subclass?: string;
 }
 
+/** Proficiência em ferramenta já resolvida pelo catálogo do servidor. */
+export interface CharacterTool {
+  /** Id estável do catálogo (ex.: "thieves-tools"). */
+  id: string;
+  name: string;
+  category: string;
+  categoryLabel: string;
+  /** Atributo sugerido pelo catálogo; `null` quando não há. */
+  defaultAbility: AbilityKey | null;
+}
+
 /** Ficha completa devolvida pela API. */
 export interface Character {
   id: string;
@@ -738,9 +749,11 @@ export interface Character {
   proficiencies: ProficienciesState;
   /**
    * Proficiências SIMPLES em ferramenta, pelos ids do catálogo do PHB 2014
-   * (ex.: "thieves-tools"). Sem tela nesta etapa — o campo só viaja no DTO.
+   * (ex.: "thieves-tools").
    */
   toolProficiencies: string[];
+  /** As mesmas ferramentas resolvidas pelo catálogo (nome, categoria, atributo). */
+  tools: CharacterTool[];
   inventory: InventoryItem[];
   spells: SpellsState;
   attacks: Attack[];
