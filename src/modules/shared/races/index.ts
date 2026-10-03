@@ -1,8 +1,9 @@
 import { dragonborn } from './dragonborn.js';
 import { dwarf } from './dwarf.js';
 import { elf } from './elf.js';
+import { halfling } from './halfling.js';
 import { human } from './human.js';
-import type { Race, Subrace } from './types.js';
+import type { Race, RaceTrait, Subrace } from './types.js';
 
 /**
  * Registro agregado do catálogo ESTRUTURADO de raças (fundação).
@@ -18,7 +19,7 @@ import type { Race, Subrace } from './types.js';
  */
 export * from './types.js';
 
-export const RACES: readonly Race[] = [dragonborn, elf, dwarf, human];
+export const RACES: readonly Race[] = [dragonborn, elf, dwarf, human, halfling];
 
 const RACE_BY_ID: ReadonlyMap<string, Race> = new Map(RACES.map((race) => [race.id, race]));
 
@@ -79,4 +80,38 @@ export function raceHpBonusDelta(
   level: number,
 ): number {
   return raceHpBonus(to.raceId, to.subraceId, level) - raceHpBonus(from.raceId, from.subraceId, level);
+}
+
+/** Algum traço declara o Sortudo (`luckyReroll`)? */
+function traitsHaveLucky(traits: readonly RaceTrait[]): boolean {
+  for (const trait of traits) {
+    const effects =
+      trait.mechanicalEffects ?? (trait.mechanicalEffect ? [trait.mechanicalEffect] : []);
+    if (effects.some((effect) => effect.type === 'luckyReroll')) return true;
+  }
+  return false;
+}
+
+/**
+ * O personagem tem o Sortudo do Halfling?
+ *
+ * Resolve pelo catálogo ESTRUTURADO (`raceId`/`subraceId`) quando já estiver
+ * gravado e, na falta dele, pelo texto livre `race` — o assistente de criação
+ * ainda grava a linhagem como texto (ex.: "Halfling (Pés-Leves)") até o 2.10.
+ * Usado pelo serviço de dados para marcar `lucky` no resultado.
+ */
+export function hasLuckyReroll(input: {
+  raceId?: string | null;
+  subraceId?: string | null;
+  race?: string | null;
+}): boolean {
+  const race = input.raceId ? getRace(input.raceId) : undefined;
+  if (race) {
+    const subrace = input.subraceId
+      ? race.subraces?.find((item) => item.id === input.subraceId)
+      : undefined;
+    return traitsHaveLucky([...race.traits, ...(subrace?.traits ?? [])]);
+  }
+  // Sem raceId: cai no texto livre da raça/linhagem.
+  return (input.race ?? '').trim().toLowerCase().startsWith('halfling');
 }

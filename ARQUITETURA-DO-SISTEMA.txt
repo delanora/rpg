@@ -1419,10 +1419,11 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   • RaceChoiceDefinition: id · label · options[{ id, label, damageType? }] → a escolha
     fica em raceChoices. damageType é o tipo de dano canônico associado à opção (ex.: a
     cor do Draconato) — é o que um efeito resistanceFromChoice resolve.
-  • ClassFeatureEffect ganhou dois tipos usados só por raças: `resistanceFromChoice`
-    (+ campo `choiceId`) — resistência cujo TIPO DE DANO vem de uma escolha — e
-    `skillProficiency` (a chave da perícia vem em `target`). Ainda NÃO são processados,
-    EXCETO a Robustez Anã (`hpBonus`), aplicada/revertida de verdade pelo serviço.
+  • ClassFeatureEffect ganhou três tipos usados só por raças: `resistanceFromChoice`
+    (+ campo `choiceId`) — resistência cujo TIPO DE DANO vem de uma escolha —,
+    `skillProficiency` (a chave da perícia vem em `target`) e `luckyReroll` (Sortudo do
+    Halfling). NÃO processados, EXCETO a Robustez Anã (`hpBonus`, aplicada/revertida pelo
+    serviço) e o Sortudo (`luckyReroll`: o serviço de dados marca `lucky` no 1 natural).
   • RaceTrait tem `mechanicalEffect` (um efeito) e `mechanicalEffects` (vários) — espelha o
     par effect/effects das classes; `Race` ganhou `description`.
   DRACONATO (dragonborn.ts): For+2/Car+1 · speed 9 · size Medium · languages [Comum,
@@ -1447,8 +1448,14 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   HUMANO (human.ts): +1 nos SEIS atributos · speed 9 · size Medium · languages [Comum] +
   bonusLanguageChoices 1 · traits VAZIO · sem sub-raças. Humano Variante NÃO cadastrado
   (depende de talentos mecânicos, inexistentes; TODO no arquivo).
+  HALFLING (halfling.ts): Des+2 · speed 7,5 · size Small · SEM darkvision · languages
+  [Comum, Pequenino] · 3 traços — lucky (luckyReroll), brave ('other' vantagem vs amedrontado)
+  e halfling-nimbleness (texto). 2 sub-raças: lightfoot (Car+1, Furtivo por Natureza texto) e
+  stout (Con+1, Resiliência Robusta = MESMA estrutura do Anão: resistance Veneno + 'other').
+  hasLuckyReroll resolve o traço por raceId/subraceId OU pelo texto `race`. Combate FICA DE
+  FORA do Sortudo (o fluxo de ataque será revisto).
   Funções: getRace(id), getSubrace(raceId, subraceId), allRaces(), raceHpBonus(...),
-  raceHpBonusDelta(...).
+  raceHpBonusDelta(...), hasLuckyReroll(...).
   COEXISTÊNCIA: o assistente de criação e o compêndio CONTINUAM lendo o RACE_CATALOG de
   shared/creation.ts; a substituição (e a migração de `characters.race` texto → raceId)
   é o Prompt 2.10. O bug "Draconato não escolhe a linhagem" persiste no wizard até lá.

@@ -7915,6 +7915,29 @@ input[type='checkbox']:focus-visible,
   color: var(--wine);
 }
 
+/* Sortudo (Halfling): 1 natural — o jogador pode rolar de novo. */
+.dice-lucky {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--ok);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ok);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  animation: pulse-turn 1.2s ease 2;
+}
+
+.dice-lucky:hover {
+  filter: brightness(1.15);
+}
+
 .dice-total.is-crit .dice-total-value {
   color: var(--ok);
   animation: pulse-turn 0.9s ease 2;

@@ -243,6 +243,17 @@ export function DiceDock({ roller }: DiceDockProps) {
                       ) : null}
                     </p>
                   )}
+
+                  {settled && result?.lucky ? (
+                    <button
+                      type="button"
+                      className="dice-lucky"
+                      title="Sortudo: você tirou 1 natural e pode rolar de novo (usa o novo resultado)."
+                      onClick={() => void submit()}
+                    >
+                      <Icon name="sparkle" size={15} /> Sortudo: rolar de novo
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="dice-picker" role="group" aria-label="Tipos de dado">

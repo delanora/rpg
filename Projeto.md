@@ -1375,8 +1375,8 @@ CAR+1) · gnome-forest (INT+2 DES+1) · gnome-rock (INT+2 CON+1) · half-elf (CA
 **LACUNA:** ferramentas, idiomas e características raciais não são modelados.
 
 **Catálogo estruturado (`shared/races/`):** `types.ts` + `index.ts` + um arquivo por raça
-(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Quatro raças
-cadastradas** (`RACES = [dragonborn, elf, dwarf, human]`): **Draconato** — For+2/Car+1, `speed` 9 m,
+(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Cinco raças
+cadastradas** (`RACES = [dragonborn, elf, dwarf, human, halfling]`): **Draconato** — For+2/Car+1, `speed` 9 m,
 `size` Medium, `languages` [Comum, Dracônico] (informativo), 3 traços (`draconic-ancestry`
 descritivo, `breath-weapon` como recurso 1 uso/recarga curta, `damage-resistance` via
 `resistanceFromChoice` → `choiceId` 'draconic-ancestry') e `hasChoices` `draconic-ancestry`
@@ -1390,14 +1390,17 @@ Veneno + `other`; `dwarven-combat-training`/`stonecunning` textuais; escolha
 `dwarven-tool-proficiency`), `hasChoices` `dwarf-tool-proficiency` (smith/brewer/mason) e 2
 sub-raças (Anão da Colina Sab+1 com `dwarven-toughness` = `hpBonus` +1/nível; Anão da Montanha
 For+2 com treino de armadura textual); **Humano** — +1 em todos os seis atributos (`strength`…
-`charisma`), `speed` 9 m, `languages` [Comum] com `bonusLanguageChoices` 1, `traits: []` e sem
-sub-raças (Humano Variante NÃO cadastrado — depende de talentos mecânicos). O
-`ClassFeatureEffect` ganhou os tipos
-`resistanceFromChoice` (+ `choiceId`) e `skillProficiency` (+ `target`), ainda **não processados**
-por nenhum motor — **EXCETO** a Robustez Anã (`hpBonus`), único efeito racial aplicado de verdade:
-o mestre grava `raceId`/`subraceId` pelo PATCH e o serviço aplica/REVERTE o +1×nível total ao
-trocar a raça/sub-raça (`raceHpBonus`/`raceHpBonusDelta`). As magias raciais (truque do Alto Elfo
-e Drow) ficam descritivas até o catálogo de magias existir.
+`charisma`), `speed` 9 m, `languages` [Comum] com `bonusLanguageChoices` 1, `traits: []` e semsub-raças (Humano Variante NÃO cadastrado — depende de talentos mecânicos); **Halfling** — Des+2,
+`speed` 7,5 m, `size` Small, sem visão no escuro, traços `lucky` (`luckyReroll`), `brave` (`other`)
+e `halfling-nimbleness`, com as sub-raças Pés-Leves (Car+1) e Robusto (Con+1, `stout-resilience`
+igual à Resiliência Anã). O `ClassFeatureEffect` ganhou os tipos `resistanceFromChoice`
+(+ `choiceId`), `skillProficiency` (+ `target`) e `luckyReroll`, ainda **não processados** por
+nenhum motor — **EXCETO** dois efeitos aplicados de verdade: a Robustez Anã (`hpBonus`; o mestre
+grava `raceId`/`subraceId` pelo PATCH e o serviço aplica/REVERTE o +1×nível via
+`raceHpBonus`/`raceHpBonusDelta`) e o Sortudo do Halfling (`luckyReroll`; a rolagem do pool marca
+`lucky` no 1 natural — `hasLuckyReroll` resolve por `raceId` ou pelo texto `race`). O combate fica
+de fora do Sortudo por ora. As magias raciais (truque do Alto Elfo e Drow) ficam descritivas até o
+catálogo de magias existir.
 `Race` (`abilityScoreIncrease[{ ability, amount }]` com `AbilityKey`, `speed` em METROS,
 `size`/`darkvision` só preparação, `damageResistances` com os 13 tipos canônicos,
 `languages`/`bonusLanguageChoices` informativos — não há campo de idioma na ficha,

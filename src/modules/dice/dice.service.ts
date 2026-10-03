@@ -4,6 +4,7 @@ import { prisma } from '../../config/prisma.js';
 import { ServerEvents, type TableRollActivePayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { rollD20, rollDice, rollDie } from '../shared/dice.js';
+import { hasLuckyReroll } from '../shared/races/index.js';
 import type {
   ActiveRollDto,
   DiceRollDto,
@@ -242,7 +243,7 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
   // quando não há ficha) — nunca do corpo da requisição.
   const character = await prisma.character.findUnique({
     where: { userId: actor.userId },
-    select: { name: true },
+    select: { name: true, race: true, raceId: true, subraceId: true },
   });
 
   const roll: DiceRollDto = {
@@ -259,6 +260,15 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
     disadvantage,
     isPrivate: Boolean(input.private) && actor.role === 'MASTER',
     crit: dice.some((die) => die.sides === 20 && !die.dropped && die.value === 20),
+    // Sortudo (Halfling): 1 natural num d20 de quem tem o traço. O combate fica
+    // de fora por ora (o fluxo de ataque será revisto).
+    lucky:
+      dice.some((die) => die.sides === 20 && !die.dropped && die.value === 1) &&
+      hasLuckyReroll({
+        raceId: character?.raceId,
+        subraceId: character?.subraceId,
+        race: character?.race,
+      }),
     at: new Date().toISOString(),
   };
 
@@ -307,6 +317,7 @@ export function rollItemEffect(
     disadvantage: false,
     isPrivate: false,
     crit: false,
+    lucky: false,
     at: new Date().toISOString(),
   };
 
@@ -344,6 +355,7 @@ export function recordHealingRoll(
     disadvantage: false,
     isPrivate: false,
     crit: false,
+    lucky: false,
     at: new Date().toISOString(),
   };
 
