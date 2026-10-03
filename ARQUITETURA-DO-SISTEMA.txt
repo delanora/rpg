@@ -452,8 +452,12 @@ exceto GameConfig (chave fixa "main").
                                      // nível 1; multiclasse dá o reduzido (PHB p.164).
     toolProficiencies String[] @default([]) // ids do catálogo de ferramentas (PHB 2014,
                                      // shared/tools): proficiência SIMPLES, ex. "thieves-tools".
-                                     // CONSTRUÇÃO (só o mestre); vazio por padrão — nada
-                                     // concede ferramenta automaticamente nesta etapa.
+                                     // CONSTRUÇÃO: o assistente preenche (passo 3 raça +
+                                     // passo 4 antecedente); o DTO expõe `tools` RESOLVIDO
+                                     // (nome/categoriaLabel/defaultAbility) para a aba
+                                     // "Ferramentas", que rola o teste com o mesmo dado de
+                                     // perícia (atributo escolhido + proficiência; dobra em
+                                     // Expertise casando o `tool:<rótulo>`).
     inventory Json @default("[]")
     spells    Json @default("{}")  // { list: [...], slots: { "1": { max, used } } }
     attacks   Json @default("[]")   // [{ id, name, damage: { count, sides, bonus, type },

@@ -9,6 +9,7 @@ import { IdentitySection } from './sections/IdentitySection';
 import { InventoryDock } from './InventoryDock';
 import { NotesSection } from './sections/NotesSection';
 import { SpellsSection } from './sections/SpellsSection';
+import { ToolsSection } from './sections/ToolsSection';
 
 /**
  * Seções que vivem em abas. Os atributos (com perícias e salvaguardas) ficam
@@ -19,6 +20,7 @@ const TAB_SECTIONS = [
   { key: 'spells', label: 'Magias', icon: 'star' },
   { key: 'attacks', label: 'Ataques', icon: 'sword' },
   { key: 'features', label: 'Características', icon: 'book' },
+  { key: 'tools', label: 'Ferramentas', icon: 'gear' },
 ] as const satisfies readonly { key: string; label: string; icon: IconName }[];
 
 type TabKey = (typeof TAB_SECTIONS)[number]['key'];
@@ -58,7 +60,12 @@ interface SheetViewProps {
   masterView?: boolean;
 }
 
-function renderTab(key: TabKey, character: Character, update: (patch: CharacterPatch) => void) {
+function renderTab(
+  key: TabKey,
+  character: Character,
+  update: (patch: CharacterPatch) => void,
+  onRoll?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void,
+) {
   switch (key) {
     case 'spells':
       return <SpellsSection character={character} update={update} />;
@@ -66,6 +73,8 @@ function renderTab(key: TabKey, character: Character, update: (patch: CharacterP
       return <AttacksSection character={character} update={update} />;
     case 'features':
       return <FeaturesSection character={character} update={update} />;
+    case 'tools':
+      return <ToolsSection character={character} update={update} onRoll={onRoll} />;
   }
 }
 
@@ -140,7 +149,7 @@ export function SheetView({
 
           {/* A `key` reinicia a animação de "virar a página" a cada troca de aba. */}
           <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
-            {renderTab(tab, character, update)}
+            {renderTab(tab, character, update, onRollSkill)}
           </div>
         </div>
 

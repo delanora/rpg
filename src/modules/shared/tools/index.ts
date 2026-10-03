@@ -4,6 +4,17 @@ import type { Tool, ToolCategory } from './types.js';
 export * from './types.js';
 export { TOOLS } from './catalog.js';
 
+/** Rótulo em português de cada categoria (para a ficha e o assistente). */
+export const TOOL_CATEGORY_LABELS: Record<ToolCategory, string> = {
+  artisan: 'Ferramenta de Artesão',
+  kit: 'Kit',
+  gamingSet: 'Jogo de Tabuleiro ou Cartas',
+  musicalInstrument: 'Instrumento Musical',
+  navigator: 'Ferramentas de Navegação',
+  thieves: 'Ferramentas de Ladrão',
+  vehicle: 'Veículo',
+};
+
 /**
  * Catálogo de ferramentas do PHB 2014 — ver catalog.ts para a lista fechada.
  *

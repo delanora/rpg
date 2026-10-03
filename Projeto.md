@@ -1434,6 +1434,13 @@ recalculado a cada passo), idiomas em `characters.languages` e a característica
 `suggestedEquipment` (texto) — nunca entra no inventário. Sem migração nova: as
 escolhas vivem no rascunho (`creationDraft`) e o resultado cai nos campos existentes.
 
+As ferramentas da ficha aparecem no bloco/aba **"Ferramentas e Proficiências"**: o
+DTO resolve `toolProficiencies` pelo catálogo (`tools`: nome, `categoryLabel`,
+`defaultAbility`) e cada linha traz o selo de Expertise (casando `tool:<rótulo>`
+normalizado) e um **botão de rolar teste** — o jogador escolhe o atributo (o sugerido
+vem selecionado) e a MESMA janela de dados das perícias abre com o bônus
+(`mod. do atributo + proficiência`, dobrada em Expertise).
+
 ---
 
 ## 17. Combate

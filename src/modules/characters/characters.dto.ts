@@ -54,6 +54,7 @@ import { parseJson } from '../shared/json.js';
 import { coinsWeight, normalizeCoins, type CoinPurse } from '../shared/coins.js';
 import type { ItemDetails, ItemRarity } from '../shared/item-details.js';
 import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
+import { getTool, TOOL_CATEGORY_LABELS, type ToolCategory } from '../shared/tools/index.js';
 import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
 import { armorPiecesFrom } from '../shared/armor-class.js';
 import { syncInventory, type CatalogSnapshot } from './inventory-sync.js';
@@ -145,6 +146,49 @@ export interface SpellsStateDto {
 
 export type AttackDto = Attack;
 export type FeatureDto = z.infer<typeof featureSchema>;
+
+/** Atributo sugerido do catálogo (abreviação PT) → chave de atributo. */
+const ABILITY_BY_TOOL_CODE: Record<string, AbilityKey> = {
+  FOR: 'strength',
+  DES: 'dexterity',
+  CON: 'constitution',
+  INT: 'intelligence',
+  SAB: 'wisdom',
+  CAR: 'charisma',
+};
+
+/**
+ * Uma proficiência em ferramenta JÁ RESOLVIDA pelo catálogo, para a ficha
+ * mostrar o nome e a categoria sem precisar de um espelho no cliente.
+ */
+export interface CharacterToolDto {
+  /** Id estável do catálogo (ex.: "thieves-tools"). */
+  id: string;
+  name: string;
+  category: ToolCategory;
+  categoryLabel: string;
+  /** Atributo sugerido pelo catálogo (`dexterity`…); `null` quando não há. */
+  defaultAbility: AbilityKey | null;
+}
+
+/** Resolve os ids de `toolProficiencies` pelo catálogo, ignorando ids órfãos. */
+function resolveTools(ids: readonly string[]): CharacterToolDto[] {
+  const tools: CharacterToolDto[] = [];
+  for (const id of ids) {
+    const tool = getTool(id);
+    if (!tool) continue;
+    tools.push({
+      id: tool.id,
+      name: tool.namePt,
+      category: tool.category,
+      categoryLabel: TOOL_CATEGORY_LABELS[tool.category],
+      defaultAbility: tool.defaultAbility
+        ? (ABILITY_BY_TOOL_CODE[tool.defaultAbility] ?? null)
+        : null,
+    });
+  }
+  return tools;
+}
 
 /** Formato enviado ao frontend. Inclui os valores derivados, nunca gravados. */
 export interface CharacterDto {
@@ -253,6 +297,8 @@ export interface CharacterDto {
    * nesta etapa. A Expertise tem campo próprio (`expertiseSkills`).
    */
   toolProficiencies: string[];
+  /** As mesmas ferramentas RESOLVIDAS pelo catálogo (nome, categoria, atributo). */
+  tools: CharacterToolDto[];
   inventory: InventoryItemDto[];
   spells: SpellsStateDto;
   attacks: AttackDto[];
@@ -533,6 +579,7 @@ export function toCharacterDto(
     saves,
     proficiencies,
     toolProficiencies: character.toolProficiencies ?? [],
+    tools: resolveTools(character.toolProficiencies ?? []),
     inventory,
     spells,
     attacks,
