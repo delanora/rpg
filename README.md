@@ -608,6 +608,8 @@ O **rascunho é o próprio registro de `Character`**: o passo 1 cria a ficha (co
 
 > Os catálogos de **raça** (`RACE_CATALOG`) e **antecedente** (`BACKGROUND_CATALOG`), no mesmo arquivo, estão preenchidos com o Livro do Jogador 2014: os passos 3 e 4 são seleções e o que cada opção concede (bônus de atributo/sua escolha no Meio-Elfo e perícias do antecedente) entra sozinho na ficha. Ferramentas, idiomas e a característica própria de cada antecedente ainda não são modelados.
 
+> **Fundação do catálogo estruturado de raças:** já existe `src/modules/shared/races/` (mesmo padrão de `shared/classes/`: `types.ts` + `index.ts` + um arquivo por raça), porém **sem nenhuma raça cadastrada** — `RACES` está vazio. É só a base das próximas etapas: até o Prompt 2.10 o assistente e o compêndio continuam lendo o `RACE_CATALOG`. A ficha ganhou, de forma aditiva (`raceId`, `subraceId`, `raceChoices`, `customRaceId`), os campos que vão receber o catálogo novo — ainda sem nada que os preencha — e o `race` de texto livre segue intacto.
+
 ### Endpoints
 
 | Método | Rota | Acesso | Descrição |

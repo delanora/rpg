@@ -71,6 +71,12 @@ export const skillsStateSchema = z.record(z.string(), skillEntrySchema);
 export const savesStateSchema = z.record(z.string(), z.boolean());
 
 /**
+ * Escolhas da raça do catálogo estruturado: `{ [id da escolha]: id da opção }`.
+ * É fundação — nada preenche ainda; a leitura é tolerante a lixo no JSONB.
+ */
+export const raceChoicesSchema = z.record(z.string(), z.string());
+
+/**
  * Proficiências de armadura, arma e ferramenta — texto exibido na ficha.
  *
  * Campo de CONSTRUÇÃO: como as demais coleções, o valor enviado substitui o

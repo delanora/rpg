@@ -635,7 +635,16 @@ export interface Character {
   ownerUsername?: string;
 
   name: string;
+  /** Raça em texto livre (o `name` do catálogo de criação). */
   race: string;
+  /** Raça do catálogo estruturado (`shared/races`), pelo id; `null` por ora. */
+  raceId: string | null;
+  /** Sub-raça do catálogo estruturado, pelo id; `null` quando não há. */
+  subraceId: string | null;
+  /** Escolhas da raça: `{ [id da escolha]: id da opção }`. */
+  raceChoices: Record<string, string>;
+  /** Raça personalizada do mestre (id, sem relação ainda); `null` por ora. */
+  customRaceId: string | null;
   /** Nome composto das classes, com os níveis (ex.: "Bárbaro 3 / Ladino 2"). */
   className: string;
   /** Classes do personagem (multiclasse), em ordem de entrada. */
