@@ -1,6 +1,7 @@
 import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
 import { characterArmorClass } from '../characters/armor-class.js';
+import type { ArmorProficiencyState } from '../shared/armor-class.js';
 import { characterDerivedAttacks } from '../characters/characters.dto.js';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
 import { parseJson } from '../shared/json.js';
@@ -42,6 +43,12 @@ export interface CombatantDto {
   hpCurrent: number | null;
   hpMax: number | null;
   armorClass: number | null;
+  /**
+   * Não proficiência ATIVA com a armadura/escudo equipados (personagem).
+   * É a MESMA resolução da ficha (`characterArmorClass`); `null` em criaturas.
+   * A penalidade mecânica será consumida na Fase 8.
+   */
+  armorNonProficiency: ArmorProficiencyState | null;
   /** Verdadeiro quando a vida/CA existem, mas estão ocultas para quem vê. */
   statsHidden: boolean;
   /** Verdadeiro quando a ficha/criatura de origem foi removida. */
@@ -122,11 +129,16 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const hpCurrent = combatant.hpCurrent ?? source?.hpCurrent ?? 0;
   const hpMax = combatant.hpMax ?? source?.hpMax ?? 0;
   // A CA de personagem é CALCULADA (atributos + equipamento), nunca lida de
-  // uma coluna — a ficha só guarda o override manual do mestre.
+  // uma coluna — a ficha só guarda o override manual do mestre. O MESMO detalhe
+  // traz o estado de proficiência (armadura/escudo), para o combate enxergar o
+  // que a ficha já mostra — sem uma segunda conta.
+  const armorClassDetail =
+    combatant.character !== null ? characterArmorClass(combatant.character) : null;
   const armorClass =
-    combatant.character !== null
-      ? characterArmorClass(combatant.character).value
-      : (combatant.armorClass ?? combatant.creature?.armorClass ?? 0);
+    armorClassDetail?.value ??
+    combatant.armorClass ??
+    combatant.creature?.armorClass ??
+    0;
 
   return {
     id: combatant.id,
@@ -143,6 +155,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     hpCurrent,
     hpMax,
     armorClass,
+    armorNonProficiency: armorClassDetail?.armorNonProficiency ?? null,
     statsHidden: false,
     missing: source === null,
     rolled: combatant.initiative !== null,

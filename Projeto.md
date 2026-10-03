@@ -913,6 +913,12 @@ automático). Peças lidas do **inventário equipado** (slot ≠ null):
   `armorClassBonus`.
 - **Bônus mágicos:** `armorClassBonus` dos demais itens equipados.
 
+**Proficiência de armadura (Fase 1.2):** `shared/armor-class.ts` resolve a
+proficiência do que está equipado (armadura por tipo e escudo) e o detalhe da CA
+informa `armorProficiency` / `armorNonProficiency`. A CA **não** muda sem
+proficiência (PHB 2014) — o que fica ativo são as penalidades de não
+proficiência, consumidas na Fase 8. O combate usa a mesma conta.
+
 Sem armadura, vale a **maior** entre `10 + mod. DES` e as fórmulas de Defesa
 sem Armadura das classes (não se acumulam): Bárbaro `10 + DES + CON` · Monge
 `10 + DES + SAB` (exige nenhum escudo) · Feiticeiro (Linhagem Dracônica)

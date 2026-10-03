@@ -882,8 +882,19 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   Depois somam-se escudo + bônus mágicos. Se houver override do mestre, ele
   substitui o automático (`value = override ?? automatic`).
   O DTO expõe `armorClass` (efetiva) e `armorClassOverride` (null = automático), e
-  `derived.armorClass` traz o detalhamento (automatic, armor, dexterityBonus,
-  shieldBonus, magicBonus, unarmoredLabel).
+  `derived.armorClass` traz o detalhamento (automatic, armor, shield,
+  dexterityBonus, shieldBonus, magicBonus, unarmoredLabel).
+  PROFICIÊNCIA DE ARMADURA (Fase 1.2, PHB 2014): resolvida por regra COMPARTILHADA
+  (`shared/armor-class.ts`): `armorProficiencyOf(proficiencies.armor, pieces)` →
+  { armor, shield }. O TIPO exige "Armaduras leves"/"médias"/"pesadas" (match
+  exato); o escudo aceita o prefixo "Escudos" (inclui "Escudos (não usa metal)").
+  O detalhe devolve `armorProficiency` (domina o equipado; true quando nada
+  equipado) e `armorNonProficiency` (ATIVO: veste armadura/escudo sem proficiência).
+  CRÍTICO: a CA NUNCA muda por falta de proficiência. As penalidades do PHB
+  (desvantagem em testes/salvaguardas/ataques de FOR ou DES e incapacidade de
+  conjurar) NÃO são aplicadas aqui — só o ESTADO derivado é produzido; o motor da
+  Fase 8 é quem consome. O combate lê a MESMA `characterArmorClass` e expõe
+  `CombatantDto.armorNonProficiency`.
 
 10.4 PONTOS DE VIDA
   Nível 1 (primeira classe): max(1, dado de vida + mod. CON).
@@ -2290,14 +2301,19 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    de personagem, vantagem em salvaguarda (saveAdvantage) e o flag de resistência
    condicional. Do ANTECEDENTE, só as 2 perícias são modeladas (ferramentas/idiomas/
    característica própria não).
-[LACUNA/FASE 2] PROFICIÊNCIAS DE ARMADURA: `characters.proficiencies` registra
+[IMPLEMENTADO/FASE 1.2] PROFICIÊNCIA DE ARMADURA: `characters.proficiencies` registra
    armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada por
-   multiclasse, com backfill na migração `20260928160000_character_proficiencies`) e o
-   bônus de ATAQUE das armas já usa a proficiência (ver abaixo), mas o efeito nas
-   ARMADURAS ainda NÃO é calculado: a CA não exige proficiência para somar
-   armadura/escudo e não há penalidade de armadura sem proficiência. As escolhas abertas
-   do livro ("1 instrumento musical à sua escolha") entram como DESCRIÇÃO — a escolha
-   interativa ainda não existe.
+   multiclasse, com backfill na migração `20260928160000_character_proficiencies`).
+   O bônus de ATAQUE das armas usa a proficiência (ver [IMPLEMENTADO] ATAQUE DERIVADO) e
+   agora o EQUIPAMENTO DEFENSIVO também: `shared/armor-class.ts` resolve a proficiência
+   do que está equipado (armadura por TIPO e escudo) e expõe `armorProficiency` /
+   `armorNonProficiency` no detalhe da CA — a MESMA conta usada pela ficha e pelo
+   combate. REGRA (PHB 2014): a CA NÃO muda sem proficiência; o que fica ATIVO são as
+   penalidades de não proficiência (desvantagem em testes/salvaguardas/ataques de FOR
+   ou DES e incapacidade de conjurar), que serão consumidas na FASE 8 — a Fase 1.2
+   entrega só o estado derivado. Cobertura na seção 14 do smoke.
+   [LACUNA] As escolhas abertas do livro ("1 instrumento musical à sua escolha") entram
+   como DESCRIÇÃO — a escolha interativa ainda não existe.
 [IMPLEMENTADO] HISTÓRICO DE NÍVEL E DOWNGRADE PELO MESTRE
    (`src/modules/shared/level-history.ts` + `characters.levelHistory`): cada nível
    ganho (Level Up normal e de criação) grava o que concedeu — PV (dado/rolagem +

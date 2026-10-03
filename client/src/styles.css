@@ -2649,6 +2649,16 @@ select option {
   text-overflow: ellipsis;
 }
 
+/* Aviso no rótulo do card: equipamento sem proficiência (a penalidade do PHB,
+   sem mudar a CA). Pequeno e dourado-escuro para não competir com o valor. */
+.vital-warn {
+  flex: none;
+  font-size: 0.85em;
+  line-height: 1;
+  color: var(--gold-deep);
+  cursor: help;
+}
+
 /* Caixa do valor: é ela que o grid do card centraliza (o rótulo está no topo). */
 .vital-body {
   display: grid;

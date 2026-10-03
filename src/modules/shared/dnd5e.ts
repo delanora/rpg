@@ -329,6 +329,11 @@ export interface DerivedInput {
   unarmoredDefenses?: readonly { label: string; base: number; ability: AbilityKey | null }[];
   /** Armadura, escudo e bônus mágicos lidos do equipamento. */
   armorPieces?: ArmorClassPieces;
+  /**
+   * Proficiências de armadura do personagem (`proficiencies.armor`). Alimenta o
+   * ESTADO de proficiência da CA — nunca o valor da CA.
+   */
+  armorProficiencies?: readonly string[];
   /** Override manual da CA definido pelo mestre (`0`/ausente = automático). */
   armorClassOverride?: number | null;
   /** Bônus somado a todas as salvaguardas (Aura de Proteção). */
@@ -447,8 +452,9 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     passivePerception: 10 + (perception?.total ?? modifiers.wisdom),
     armorClass: computeArmorClass({
       dexterityModifier: modifiers.dexterity,
-      pieces: input.armorPieces ?? { armor: null, shieldBonus: 0, magicBonus: 0 },
+      pieces: input.armorPieces ?? { armor: null, shield: null, shieldBonus: 0, magicBonus: 0 },
       classBonuses: input.classArmorBonuses ?? [],
+      armorProficiencies: input.armorProficiencies ?? [],
       unarmored: (input.unarmoredDefenses ?? []).map((option) => ({
         label: option.label,
         value:

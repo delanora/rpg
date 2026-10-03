@@ -17,13 +17,83 @@ export interface ArmorPiece {
   base: number;
 }
 
+/** Escudo equipado (o item de categoria Escudo). */
+export interface ShieldPiece {
+  name: string;
+}
+
 /** Tudo que o equipamento contribui para a CA. */
 export interface ArmorClassPieces {
   armor: ArmorPiece | null;
+  /** Escudo equipado (o PRIMEIRO encontrado), para exibir e aferir proficiência. */
+  shield: ShieldPiece | null;
   /** Soma do bônus de CA dos escudos equipados. */
   shieldBonus: number;
   /** Bônus mágicos de itens equipados que não são a armadura (nem o escudo). */
   magicBonus: number;
+}
+
+/**
+ * Textos das proficiências de armadura (PHB 2014), como aparecem em
+ * `CLASS_PROFICIENCIES` e no JSONB `characters.proficiencies.armor`.
+ */
+export const ARMOR_PROFICIENCY_LIGHT = 'Armaduras leves';
+export const ARMOR_PROFICIENCY_MEDIUM = 'Armaduras médias';
+export const ARMOR_PROFICIENCY_HEAVY = 'Armaduras pesadas';
+export const ARMOR_PROFICIENCY_SHIELD = 'Escudos';
+
+const ARMOR_PROFICIENCY_BY_TYPE: Record<ArmorType, string> = {
+  Leve: ARMOR_PROFICIENCY_LIGHT,
+  Média: ARMOR_PROFICIENCY_MEDIUM,
+  Pesada: ARMOR_PROFICIENCY_HEAVY,
+};
+
+/**
+ * Estado de proficiência do equipamento defensivo equipado.
+ *
+ * `true` = o personagem DOMINA aquele item (ou NÃO há item daquele tipo
+ * equipado, quando não há penalidade a aplicar). `false` = veste armadura/escudo
+ * sem proficiência — é o gatilho das penalidades de não proficiência do PHB
+ * (que a Fase 8 vai consumir: desvantagem em testes/salvaguardas/ataques de
+ * FOR/DES e impossibilidade de conjurar).
+ */
+export interface ArmorProficiencyState {
+  armor: boolean;
+  shield: boolean;
+}
+
+/** A lista de proficiências inclui este TIPO de armadura? (comparação exata) */
+export function isArmorTypeProficient(
+  proficiencies: readonly string[],
+  type: ArmorType,
+): boolean {
+  const required = ARMOR_PROFICIENCY_BY_TYPE[type];
+  return proficiencies.some(
+    (entry) => entry.trim().toLowerCase() === required.toLowerCase(),
+  );
+}
+
+/**
+ * A lista inclui proficiência com ESCUDOS? Aceita variantes do livro (ex.:
+ * "Escudos (não usa metal)" do Druida) por prefixo.
+ */
+export function isShieldProficient(proficiencies: readonly string[]): boolean {
+  return proficiencies.some((entry) => entry.trim().toLowerCase().startsWith('escudos'));
+}
+
+/**
+ * Resolve a proficiência do que está EQUIPADO (armadura por TIPO e escudo).
+ * Sem armadura/escudo equipado, o campo correspondente é `true` (nada a
+ * penalizar) — a CA automática nunca muda por causa disto.
+ */
+export function armorProficiencyOf(
+  proficiencies: readonly string[],
+  pieces: ArmorClassPieces,
+): ArmorProficiencyState {
+  return {
+    armor: pieces.armor === null ? true : isArmorTypeProficient(proficiencies, pieces.armor.type),
+    shield: pieces.shield === null ? true : isShieldProficient(proficiencies),
+  };
 }
 
 /** Fórmula de defesa sem armadura concedida por uma classe. */
@@ -46,6 +116,8 @@ export interface ArmorClassDetail {
   /** Override manual do mestre (`null` = cálculo automático). */
   override: number | null;
   armor: ArmorPiece | null;
+  /** Escudo equipado (o PRIMEIRO encontrado); `null` sem escudo. */
+  shield: ShieldPiece | null;
   /** Parcela da Destreza aplicada (0 com armadura pesada, no máximo +2 na média). */
   dexterityBonus: number;
   shieldBonus: number;
@@ -56,6 +128,20 @@ export interface ArmorClassDetail {
   classBonus: number;
   /** Rótulos dos bônus de classe aplicados (ex.: ["Estilo de Luta (Defesa)"]). */
   classBonusLabels: string[];
+  /**
+   * Proficiência do equipamento defensivo equipado (armadura por tipo e
+   * escudo). Informativo: NÃO altera a CA (PHB 2014 — vestir armadura sem
+   * proficiência mantém a CA; o que entra são as penalidades de não
+   * proficiência, consumidas pela Fase 8).
+   */
+  armorProficiency: ArmorProficiencyState;
+  /**
+   * Não proficiência ATIVA: veste armadura/escudo do tipo sem proficiência.
+   * É o gatilho das penalidades (desvantagem em testes/salvaguardas/ataques de
+   * FOR ou DES e impossibilidade de conjurar magias). `true` só quando há
+   * equipamento equipado sem proficiência.
+   */
+  armorNonProficiency: ArmorProficiencyState;
 }
 
 /** Bônus fixo de CA de uma classe (Estilo de Luta Defesa). */
@@ -68,7 +154,12 @@ export interface ClassArmorBonusInput {
   requiresArmor?: boolean;
 }
 
-const EMPTY_PIECES: ArmorClassPieces = { armor: null, shieldBonus: 0, magicBonus: 0 };
+const EMPTY_PIECES: ArmorClassPieces = {
+  armor: null,
+  shield: null,
+  shieldBonus: 0,
+  magicBonus: 0,
+};
 
 /** Mínimo que um item de inventário precisa ter para entrar na conta. */
 export interface EquippedItemLike {
@@ -98,6 +189,7 @@ export function armorPiecesFrom(items: readonly EquippedItemLike[]): ArmorClassP
   if (equipped.length === 0) return EMPTY_PIECES;
 
   let armor: ArmorPiece | null = null;
+  let shield: ShieldPiece | null = null;
   let shieldBonus = 0;
   let magicBonus = 0;
 
@@ -105,6 +197,9 @@ export function armorPiecesFrom(items: readonly EquippedItemLike[]): ArmorClassP
     const bonus = item.details.armorClassBonus ?? 0;
 
     if (item.category === 'Escudo') {
+      // Guarda o primeiro escudo para exibir/proficiência; a SOMA do bônus
+      // continua valendo (comportamento anterior preservado).
+      if (shield === null) shield = { name: item.name };
       shieldBonus += bonus;
       continue;
     }
@@ -122,7 +217,7 @@ export function armorPiecesFrom(items: readonly EquippedItemLike[]): ArmorClassP
     magicBonus += bonus;
   }
 
-  return { armor, shieldBonus, magicBonus };
+  return { armor, shield, shieldBonus, magicBonus };
 }
 
 export interface ArmorClassInput {
@@ -133,6 +228,11 @@ export interface ArmorClassInput {
   unarmored?: readonly UnarmoredCandidate[];
   /** Bônus fixos de classe (Estilo de Luta Defesa). */
   classBonuses?: readonly ClassArmorBonusInput[];
+  /**
+   * Proficiências de armadura do personagem (`characters.proficiencies.armor`).
+   * Só alimenta o ESTADO de proficiência — a CA automática não depende disso.
+   */
+  armorProficiencies?: readonly string[];
   /** Override manual do mestre (`null`/`0`/ausente = automático). */
   override?: number | null;
 }
@@ -184,16 +284,27 @@ export function computeArmorClass(input: ArmorClassInput): ArmorClassDetail {
   }
   automatic += classBonus;
 
+  // Proficiência do equipamento defensivo (armadura por tipo + escudo). Só
+  // informa: a CA acima NÃO muda por causa da falta de proficiência.
+  const armorProficiency = armorProficiencyOf(input.armorProficiencies ?? [], pieces);
+  const armorNonProficiency: ArmorProficiencyState = {
+    armor: pieces.armor !== null && !armorProficiency.armor,
+    shield: pieces.shield !== null && !armorProficiency.shield,
+  };
+
   return {
     value: override ?? automatic,
     automatic,
     override,
     armor: pieces.armor,
+    shield: pieces.shield,
     dexterityBonus,
     shieldBonus: pieces.shieldBonus,
     magicBonus: pieces.magicBonus,
     unarmoredLabel,
     classBonus,
     classBonusLabels,
+    armorProficiency,
+    armorNonProficiency,
   };
 }
