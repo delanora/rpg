@@ -1,12 +1,71 @@
 import type {
   ClassDefinition,
   ClassFeatureDefinition,
+  FeatureChoiceOption,
   SubclassDefinition,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
 // Feiticeiro (Sorcerer) — PHB 2014
 // ---------------------------------------------------------------------------
+
+/**
+ * As 8 opções de Metamagia do PHB 2014. Todas ficam disponíveis desde o 3º nível
+ * (não há pré-requisito por metamagia); o custo em pontos de feitiçaria vai na
+ * descrição. A escolha de cada opção é OBRIGATÓRIA nos níveis 3, 10 e 17.
+ *
+ * O texto de cada opção só aparece no hover (tooltip), como nas demais
+ * informações da ficha — a característica em si mostra só o resumo.
+ */
+const METAMAGIC_OPTIONS: FeatureChoiceOption[] = [
+  {
+    key: 'careful',
+    name: 'Cuidadosa',
+    description:
+      'Gaste 1 ponto de feitiçaria: escolha criaturas até o seu modificador de Carisma (mínimo 1) para passarem automaticamente na salvaguarda contra a magia.',
+  },
+  {
+    key: 'distant',
+    name: 'Distante',
+    description:
+      'Gaste 1 ponto de feitiçaria: dobre o alcance da magia, ou transforme uma magia de toque em alcance de 9 metros.',
+  },
+  {
+    key: 'empowered',
+    name: 'Fortalecida',
+    description:
+      'Gaste 1 ponto de feitiçaria: rerrole um número de dados de dano da magia até o seu modificador de Carisma (mínimo 1) e use os novos resultados.',
+  },
+  {
+    key: 'extended',
+    name: 'Estendida',
+    description:
+      'Gaste 1 ponto de feitiçaria: dobre a duração da magia, até o máximo de 24 horas.',
+  },
+  {
+    key: 'heightened',
+    name: 'Elevada',
+    description:
+      'Gaste 3 pontos de feitiçaria: uma criatura alvo da magia tem desvantagem na primeira salvaguarda contra ela.',
+  },
+  {
+    key: 'quickened',
+    name: 'Acelerada',
+    description:
+      'Gaste 2 pontos de feitiçaria: conjure a magia com 1 ação como ação bônus (apenas uma magia acelerada por turno).',
+  },
+  {
+    key: 'subtle',
+    name: 'Sutil',
+    description: 'Gaste 1 ponto de feitiçaria: conjure a magia sem componentes verbais nem somáticos.',
+  },
+  {
+    key: 'twinned',
+    name: 'Geminada',
+    description:
+      'Gaste pontos de feitiçaria iguais ao nível da magia (mínimo 1): uma magia de alvo único passa a ter um segundo alvo.',
+  },
+];
 
 const SORCERER_FEATURES: ClassFeatureDefinition[] = [
   {
@@ -27,19 +86,36 @@ const SORCERER_FEATURES: ClassFeatureDefinition[] = [
     name: 'Metamagia',
     level: 3,
     description:
-      'Escolha 2 opções de Metamagia. Cuidadosa (1 ponto: exclui até o mod. de Carisma de criaturas da área), Distante (1: dobra o alcance ou transforma toque em 9 m), Fortalecida (1: rerrola até o mod. de Carisma de dados de dano), Estendida (1: dobra a duração, máx. 24h), Elevada (2: desvantagem na primeira salvaguarda do alvo), Acelerada (2: magia de ação vira ação bônus, 1x por turno), Sutil (1: sem componentes verbais/somáticos) e Geminada (nível da magia em pontos, mín. 1: atinge um segundo alvo).',
+      'Escolha 2 opções de Metamagia. Cada uma gasta pontos de feitiçaria para alterar uma magia no momento da conjuração; em geral só uma opção pode ser usada por magia. Passe o mouse sobre cada opção para ver o que ela faz.',
+    choice: {
+      count: 2,
+      options: METAMAGIC_OPTIONS,
+      excludeChosen: true,
+    },
   },
   {
     id: 'metamagic-improvement',
     name: 'Metamagia Aprimorada',
     level: 10,
-    description: 'Você aprende 1 opção adicional de Metamagia.',
+    description:
+      'Você aprende 1 opção adicional de Metamagia. Passe o mouse sobre cada opção para ver o que ela faz.',
+    choice: {
+      count: 1,
+      options: METAMAGIC_OPTIONS,
+      excludeChosen: true,
+    },
   },
   {
     id: 'metamagic-master',
     name: 'Mestre da Metamagia',
     level: 17,
-    description: 'Você aprende 1 opção adicional de Metamagia.',
+    description:
+      'Você aprende 1 opção adicional de Metamagia. Passe o mouse sobre cada opção para ver o que ela faz.',
+    choice: {
+      count: 1,
+      options: METAMAGIC_OPTIONS,
+      excludeChosen: true,
+    },
   },
   {
     id: 'sorcerous-restoration',

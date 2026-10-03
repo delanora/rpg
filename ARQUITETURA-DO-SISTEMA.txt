@@ -936,10 +936,18 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     soma do modificador de um atributo (abilityMod) e piso do total (min).
   ESCOLHAS DE CARACTERÍSTICA (`choice`): uma feature pode declarar
     { count, options[{ key, name, description, effect? }], level?, prompt?,
-      allowRepeat?, apply? }. O valor vive em `classState.choices[featureId] = [chaves]`
-    (JSONB, sem migração). Quem valida é `resolveFeatureChoices` (quantidade,
-    opção existente, sem repetir e só no nível em que a escolha é feita) — usada
-    no Level Up (novo nível da classe) e no passo 5 do assistente (nível 1).
+      allowRepeat?, excludeChosen?, apply? }. O valor vive em
+    `classState.choices[featureId] = [chaves]` (JSONB, sem migração). Quem valida
+    é `resolveFeatureChoices` (quantidade, opção existente, sem repetir e só no
+    nível em que a escolha é feita) — usada no Level Up (novo nível da classe) e
+    no passo 5 do assistente (nível 1).
+    `excludeChosen: true` tira das opções o que JÁ foi escolhido por OUTRAS
+    features desta mesma classe (Metamagia: o 10º e o 17º não repetem o que foi
+    aprendido no 3º). O filtro acontece em `featureChoiceInfo` (logo no DTO) e o
+    `resolvedor` herda a lista já filtrada; a UI da ficha refaz o mesmo filtro no
+    `choiceInfoOf` (client). A descrição de cada opção aparece SÓ no tooltip
+    (hover/foco), o mesmo `.info-tip-text` das demais informações — a lista de
+    opções do `FeatureChoiceField` é de botões, não um `<select>`.
     `pendingFeatureChoices`/`featureChoiceInfo` alimentam a interface: o DTO expõe
     `classes[].featureChoices` (incluindo as da SUBCLASSE já escolhida, graças a
     `featuresWithSubclass`), `classOptions[].featureChoices` (nível 1) e
@@ -953,9 +961,13 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     Explorador Nato (ranger nv 1, +1 no 6, +2 no 10), Estilo de Luta Adicional
     (Campeão nv 10), Manobras (Mestre da Batalha nv 3, +2 no 7/10/15), Estudante da
     Guerra (Mestre da Batalha nv 3, 1 ferramenta de artesão), Proficiências
-    Adicionais (Colégio do Conhecimento nv 3, 3 perícias) e as 4 do Caçador. Só a
-    opção Defesa tem efeito automático (+1 CA com armadura); as demais são escolha
-    informativa (Fase 5).
+    Adicionais (Colégio do Conhecimento nv 3, 3 perícias), as 4 do Caçador e as
+    Metamagias do Feiticeiro (metamagic nv 3, 2 opções; metamagic-improvement nv 10
+    e metamagic-master nv 17, 1 cada — as 8 opções do PHB 2014, sem pré-requisito
+    por metamagia, com `excludeChosen` para não repetir; só registra e exibe, o
+    gasto de pontos de feitiçaria ao conjurar fica para depois). Só a opção Defesa
+    tem efeito automático (+1 CA com armadura); as demais são escolha informativa
+    (Fase 5).
   EFEITOS NUMÉRICOS NO DERIVED:
     • armorClass (+1, requiresArmor) → `derived.armorClass.classBonus`, SOMADO só
       com armadura vestida (escudo não conta) e nunca duas vezes entre classes;

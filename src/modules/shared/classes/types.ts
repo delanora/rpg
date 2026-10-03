@@ -209,6 +209,14 @@ export interface ClassFeatureChoice {
   /** Permite repetir a mesma opção nas escolhas múltiplas (padrão: não). */
   allowRepeat?: boolean;
   /**
+   * Exclui das opções o que JÁ foi escolhido por OUTRAS características desta
+   * mesma classe (ex.: Metamagia — o 10º e o 17º nível não repetem o que foi
+   * aprendido no 3º). Vale só para as demais características: as opções da
+   * própria característica continuam na lista (o que já está gravado nela é
+   * preservado).
+   */
+  excludeChosen?: boolean;
+  /**
    * O que a escolha FAZ na ficha além de ficar gravada:
    *  • 'skill': as opções são PERÍCIAS e as escolhidas viram proficiência
    *    (Colégio do Conhecimento do bardo: 3 perícias à escolha);

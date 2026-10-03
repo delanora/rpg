@@ -3465,6 +3465,55 @@ input[type='checkbox']:disabled {
   margin: 0;
 }
 
+/* Lista de opções de uma escolha de característica: cada opção é um botão e a
+   explicação do que ela FAZ abre no tooltip padrão da ficha (`.info-tip-text`),
+   só no hover/foco — nada de texto permanente ocupando o card. */
+.choice-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-top: 0.15rem;
+}
+
+.choice-tip {
+  color: inherit;
+  cursor: pointer;
+}
+
+.choice-option {
+  padding: 0.28rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.choice-option:hover:not(:disabled) {
+  border-color: var(--gold-deep);
+  color: var(--ink);
+}
+
+.choice-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.choice-tip.is-selected .choice-option {
+  border-color: var(--gold-deep);
+  background: var(--gold-hair);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* O tooltip da opção segue o padrão, um pouco mais estreito. */
+.choice-option-tip {
+  width: min(22rem, 74vw);
+}
+
 .feature-card-static .feature-head {
   grid-template-columns: 1fr auto;
 }
