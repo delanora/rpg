@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma.js';
 import { damageExpression } from '../modules/shared/attacks.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
+import { allRaces, getRace } from '../modules/shared/races/index.js';
 
 /**
  * Smoke test ponta a ponta das Etapas 1 e 2.
@@ -8734,6 +8735,86 @@ async function main(): Promise<void> {
     );
   }
 
+  }
+
+  // 34) Catálogo estruturado de raças: Draconato (Prompt 2.1)
+  {
+    console.log('\n34) Catálogo estruturado de raças: Draconato');
+
+    const race = getRace('dragonborn');
+    check(
+      'getRace("dragonborn") devolve a raça e ela está em allRaces()',
+      !!race && allRaces().some((r) => r.id === 'dragonborn'),
+      JSON.stringify(allRaces().map((r) => r.id)),
+    );
+    check('nome em PT é Draconato', race?.namePt === 'Draconato', race?.namePt);
+
+    const bonuses = race?.abilityScoreIncrease ?? [];
+    check(
+      'bônus de atributo: Força +2 e Carisma +1',
+      bonuses.length === 2 &&
+        bonuses.some((b) => b.ability === 'strength' && b.amount === 2) &&
+        bonuses.some((b) => b.ability === 'charisma' && b.amount === 1),
+      JSON.stringify(bonuses),
+    );
+    check('deslocamento 9 m (30 pés)', race?.speed === 9, String(race?.speed));
+    check(
+      'idiomas: Comum e Dracônico',
+      JSON.stringify(race?.languages) === JSON.stringify(['Comum', 'Dracônico']),
+      JSON.stringify(race?.languages),
+    );
+
+    // Três traços: ancestralidade (descritiva), sopro (recurso) e resistência.
+    const traits = race?.traits ?? [];
+    check('tem 3 traços', traits.length === 3, JSON.stringify(traits.map((t) => t.id)));
+    check(
+      'o traço de ancestralidade é descritivo (sem efeito mecânico)',
+      !!traits.find((t) => t.id === 'draconic-ancestry')?.description &&
+        traits.find((t) => t.id === 'draconic-ancestry')?.mechanicalEffect === undefined,
+    );
+
+    const breath = traits.find((t) => t.id === 'breath-weapon')?.mechanicalEffect;
+    check(
+      'Arma de Sopro é um recurso (1 uso, recarrega no descanso curto)',
+      breath?.type === 'resource' && breath?.resource?.recharge === 'short' && breath?.resource?.max === 1,
+      JSON.stringify(breath),
+    );
+
+    const resist = traits.find((t) => t.id === 'damage-resistance')?.mechanicalEffect;
+    check(
+      'Resistência a Dano usa resistanceFromChoice apontando para draconic-ancestry',
+      resist?.type === 'resistanceFromChoice' && resist?.choiceId === 'draconic-ancestry',
+      JSON.stringify(resist),
+    );
+
+    // Sem sub-raças.
+    check('não tem sub-raças', race?.subraces === undefined, JSON.stringify(race?.subraces));
+
+    // A escolha de ancestralidade: 10 opções com o tipo de dano correto.
+    const ancestry = race?.hasChoices?.find((c) => c.id === 'draconic-ancestry');
+    check('existe a escolha draconic-ancestry', !!ancestry, JSON.stringify(race?.hasChoices?.map((c) => c.id)));
+    check('a ancestralidade tem 10 opções', ancestry?.options.length === 10, String(ancestry?.options.length));
+
+    const expectedDamage: Record<string, string> = {
+      black: 'Ácido',
+      blue: 'Elétrico',
+      brass: 'Fogo',
+      bronze: 'Elétrico',
+      copper: 'Ácido',
+      gold: 'Fogo',
+      green: 'Veneno',
+      red: 'Fogo',
+      silver: 'Frio',
+      white: 'Frio',
+    };
+    const damageOk = (ancestry?.options ?? []).every(
+      (o) => expectedDamage[o.id] === o.damageType,
+    );
+    check(
+      'cada uma das 10 cores mapeia para o tipo de dano canônico correto',
+      damageOk,
+      JSON.stringify(ancestry?.options),
+    );
   }
 
   console.log(

@@ -74,7 +74,12 @@ export interface RaceChoiceDefinition {
   id: string;
   /** Rótulo exibido (ex.: 'Ancestralidade dracônica'). */
   label: string;
-  options: { id: string; label: string }[];
+  /**
+   * Opções da escolha. `damageType` é o tipo de dano associado à opção, quando
+   * houver (ex.: a cor do Draconato) — pelos 13 tipos canônicos de
+   * `shared/attacks.ts`. É o que um efeito `resistanceFromChoice` resolve.
+   */
+  options: { id: string; label: string; damageType?: string }[];
 }
 
 /**
