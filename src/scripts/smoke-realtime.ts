@@ -5616,6 +5616,144 @@ async function main(): Promise<void> {
     JSON.stringify(armorClassOf(overrideCleared)),
   );
 
+  // Fase 1.2 — proficiência de armadura. A CA NÃO muda sem proficiência (PHB
+  // 2014: vestir armadura sem proficiência mantém a CA); o que muda é o ESTADO
+  // (`armorProficiency` / `armorNonProficiency`), que a Fase 8 vai consumir nas
+  // penalidades de testes, salvaguardas, ataques e conjuração.
+  const setArmorProfs = (armor: string[]) =>
+    masterPatch(vitals.characterId, { proficiencies: { armor, weapons: [], tools: [] } });
+
+  // Caso 1 — proficiência correta (leve com "Armaduras leves").
+  await setArmorProfs(['Armaduras leves']);
+  const profLight = await masterPatch(vitals.characterId, {
+    inventory: [equipped('Couro batido', 'Armadura', { armorType: 'Leve', baseArmorClass: 12 })],
+  });
+  check(
+    'armadura leve COM proficiência: armorProficiency.armor = true',
+    armorClassOf(profLight)?.armorProficiency?.armor === true &&
+      armorClassOf(profLight)?.armorNonProficiency?.armor === false,
+    JSON.stringify(armorClassOf(profLight)),
+  );
+
+  // Caso 2 — média SEM proficiência: a CA continua a da regra (13 + DES 2 = 15).
+  await setArmorProfs(['Armaduras leves']);
+  const noProfMedium = await masterPatch(vitals.characterId, {
+    inventory: [
+      equipped('Camisão de malha', 'Armadura', { armorType: 'Média', baseArmorClass: 13 }),
+    ],
+  });
+  check(
+    'armadura média SEM proficiência: CA 15 mantida e armorNonProficiency.armor = true',
+    armorClassOf(noProfMedium)?.automatic === 15 &&
+      armorClassOf(noProfMedium)?.armorProficiency?.armor === false &&
+      armorClassOf(noProfMedium)?.armorNonProficiency?.armor === true,
+    JSON.stringify(armorClassOf(noProfMedium)),
+  );
+
+  // Caso 3 — pesada sem proficiência.
+  await setArmorProfs(['Armaduras leves']);
+  const noProfHeavy = await masterPatch(vitals.characterId, {
+    inventory: [
+      equipped('Cota de malha', 'Armadura', { armorType: 'Pesada', baseArmorClass: 16 }),
+    ],
+  });
+  check(
+    'armadura pesada SEM proficiência: CA 16 mantida e armorNonProficiency.armor = true',
+    armorClassOf(noProfHeavy)?.automatic === 16 &&
+      armorClassOf(noProfHeavy)?.armorProficiency?.armor === false &&
+      armorClassOf(noProfHeavy)?.armorNonProficiency?.armor === true,
+    JSON.stringify(armorClassOf(noProfHeavy)),
+  );
+
+  // Caso 4 — escudo sem proficiência (lista sem "Escudos").
+  await setArmorProfs(['Armaduras pesadas']);
+  const noProfShield = await masterPatch(vitals.characterId, {
+    inventory: [
+      equipped('Cota de malha', 'Armadura', { armorType: 'Pesada', baseArmorClass: 16 }),
+      equipped('Escudo', 'Escudo', { armorClassBonus: 2 }, 'hand2'),
+    ],
+  });
+  check(
+    'escudo SEM proficiência: CA 18 mantida e armorNonProficiency.shield = true',
+    armorClassOf(noProfShield)?.automatic === 18 &&
+      armorClassOf(noProfShield)?.armorProficiency?.shield === false &&
+      armorClassOf(noProfShield)?.armorNonProficiency?.shield === true &&
+      armorClassOf(noProfShield)?.shield?.name === 'Escudo',
+    JSON.stringify(armorClassOf(noProfShield)),
+  );
+
+  // Caso 5 — as quatro proficiências: armadura e escudo proficientes.
+  await setArmorProfs([
+    'Armaduras leves',
+    'Armaduras médias',
+    'Armaduras pesadas',
+    'Escudos',
+  ]);
+  const allProf = await masterPatch(vitals.characterId, {
+    inventory: [
+      equipped('Cota de malha', 'Armadura', { armorType: 'Pesada', baseArmorClass: 16 }),
+      equipped('Escudo', 'Escudo', { armorClassBonus: 2 }, 'hand2'),
+    ],
+  });
+  check(
+    'com as quatro proficiências, armadura e escudo são proficientes',
+    armorClassOf(allProf)?.armorProficiency?.armor === true &&
+      armorClassOf(allProf)?.armorProficiency?.shield === true &&
+      armorClassOf(allProf)?.armorNonProficiency?.armor === false &&
+      armorClassOf(allProf)?.armorNonProficiency?.shield === false,
+    JSON.stringify(armorClassOf(allProf)),
+  );
+
+  // Caso 9 — Defesa sem Armadura (Bárbaro) NÃO vira "sem proficiência".
+  await setArmorProfs([]);
+  await prisma.character.update({
+    where: { userId: vitals.userId },
+    data: { constitution: 14 },
+  });
+  await setCharacterClasses(vitals.userId, [{ classKey: 'barbarian', level: 3 }]);
+  const unarmoredProf = await masterPatch(vitals.characterId, { inventory: [] });
+  check(
+    'Defesa sem Armadura sem equipamento não gera não proficiência',
+    armorClassOf(unarmoredProf)?.armorProficiency?.armor === true &&
+      armorClassOf(unarmoredProf)?.armorProficiency?.shield === true &&
+      armorClassOf(unarmoredProf)?.armorNonProficiency?.armor === false &&
+      armorClassOf(unarmoredProf)?.armorNonProficiency?.shield === false,
+    JSON.stringify(armorClassOf(unarmoredProf)),
+  );
+
+  // Caso 8 — a CA (e o estado de proficiência) do combate é EXATAMENTE a da
+  // ficha: o combatente lê `characterArmorClass`, sem uma segunda conta.
+  await setArmorProfs(['Armaduras leves']);
+  const sheetForCombat = await masterPatch(vitals.characterId, {
+    inventory: [equipped('Couro batido', 'Armadura', { armorType: 'Leve', baseArmorClass: 12 })],
+  });
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+  const combatForAc = await api('/api/combat', {
+    method: 'POST',
+    token: masterToken,
+    body: { entries: [] },
+  });
+  createdCombatIds.push(combatForAc.data.combat.id);
+  for (const combatant of combatForAc.data.combat.combatants) {
+    await api(`/api/combat/initiative/${combatant.id}`, { method: 'POST', token: masterToken });
+  }
+  const activeForAc = (await api('/api/combat/active', { token: masterToken })).data.combat;
+  const vitalsCombatant = (activeForAc?.combatants ?? []).find(
+    (item: any) => item.characterId === vitals.characterId,
+  );
+  check(
+    'a CA do combate é a mesma da ficha (e traz o estado de proficiência)',
+    vitalsCombatant?.armorClass === armorClassOf(sheetForCombat)?.value &&
+      vitalsCombatant?.armorNonProficiency?.armor === false &&
+      vitalsCombatant?.armorNonProficiency?.shield === false,
+    JSON.stringify({
+      ficha: armorClassOf(sheetForCombat)?.value,
+      combate: vitalsCombatant?.armorClass,
+      nonProf: vitalsCombatant?.armorNonProficiency,
+    }),
+  );
+  await api('/api/combat/end', { method: 'POST', token: masterToken });
+
   // --- 15. Multiclasse ------------------------------------------------------
   console.log('\n15) Multiclasse: pré-requisitos, proficiências e perícia');
 

@@ -35,6 +35,21 @@ export interface ArmorPiece {
   base: number;
 }
 
+/** Escudo equipado (espelha shared/armor-class.ts). */
+export interface ShieldPiece {
+  name: string;
+}
+
+/**
+ * Proficiência do equipamento defensivo equipado. `true` = domina o item (ou
+ * não há item daquele tipo equipado); `false` = veste armadura/escudo sem
+ * proficiência.
+ */
+export interface ArmorProficiencyState {
+  armor: boolean;
+  shield: boolean;
+}
+
 /** Resultado do cálculo da CA, com o detalhamento para a ficha explicar. */
 export interface ArmorClassDetail {
   /** CA final: override do mestre quando existe, senão a automática. */
@@ -43,6 +58,8 @@ export interface ArmorClassDetail {
   /** Override manual do mestre (`null` = automático). */
   override: number | null;
   armor: ArmorPiece | null;
+  /** Escudo equipado (primeiro encontrado); `null` sem escudo. */
+  shield: ShieldPiece | null;
   dexterityBonus: number;
   shieldBonus: number;
   magicBonus: number;
@@ -52,6 +69,10 @@ export interface ArmorClassDetail {
   classBonus: number;
   /** Rótulos desses bônus (ex.: ["Estilo de Luta (Defesa)"]). */
   classBonusLabels: string[];
+  /** Proficiência com a armadura/escudo equipados (não muda a CA). */
+  armorProficiency: ArmorProficiencyState;
+  /** Não proficiência ativa — o gatilho das penalidades do PHB (Fase 8). */
+  armorNonProficiency: ArmorProficiencyState;
 }
 
 export type SkillsState = Record<string, SkillEntry>;
@@ -1642,6 +1663,11 @@ export interface CombatantDto {
   hpCurrent: number | null;
   hpMax: number | null;
   armorClass: number | null;
+  /**
+   * Não proficiência ativa com a armadura/escudo (personagem); `null` em
+   * criaturas. Mesma resolução da ficha (`characterArmorClass`).
+   */
+  armorNonProficiency: ArmorProficiencyState | null;
   /** Verdadeiro quando a vida/CA existem, mas ficam ocultas para quem vê. */
   statsHidden: boolean;
   missing: boolean;

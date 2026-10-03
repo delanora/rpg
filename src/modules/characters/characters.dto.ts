@@ -513,6 +513,9 @@ export function toCharacterDto(
     expertiseSlots: expertiseSlots(activeFeatures),
     unarmoredDefenses,
     armorPieces,
+    // Proficiências de armadura — resolvem o estado de proficiência do
+    // equipamento (não mudam a CA).
+    armorProficiencies: proficiencies.armor,
     armorClassOverride: character.armorClass,
     spellSlots,
     pactSlots,

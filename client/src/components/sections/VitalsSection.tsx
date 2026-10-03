@@ -39,7 +39,10 @@ function describeArmorClass(detail: ArmorClassDetail): string[] {
     parts.push(`sem armadura: 10 + ${dex}`);
   }
 
-  if (detail.shieldBonus !== 0) parts.push(`escudo ${formatModifier(detail.shieldBonus)}`);
+  if (detail.shield?.name && detail.shieldBonus === 0) parts.push(`escudo ${detail.shield.name}`);
+  if (detail.shieldBonus !== 0) {
+    parts.push(`escudo ${detail.shield?.name ?? ''} ${formatModifier(detail.shieldBonus)}`.trim());
+  }
   if (detail.magicBonus !== 0) parts.push(`bônus mágico ${formatModifier(detail.magicBonus)}`);
   // Bônus de classe na CA (Estilo de Luta Defesa) — só entra com armadura.
   if (detail.classBonus !== 0) {
@@ -47,6 +50,18 @@ function describeArmorClass(detail: ArmorClassDetail): string[] {
     parts.push(`${label || 'classe'} ${formatModifier(detail.classBonus)}`);
   }
   if (detail.override !== null) parts.push(`CA manual (automática ${detail.automatic})`);
+
+  // Sem proficiência a CA NÃO muda (PHB 2014): o equipamento continua contando.
+  // O que fica ativo são as penalidades de não proficiência — avisadas abaixo e
+  // consumidas pelo motor da Fase 8 (testes, salvaguardas, ataques e conjuração).
+  if (detail.armorNonProficiency.armor && detail.armor) {
+    parts.push(
+      `⚠ Sem proficiência com ${detail.armor.type.toLowerCase()}: ${detail.armor.name}`,
+    );
+  }
+  if (detail.armorNonProficiency.shield) {
+    parts.push(`⚠ Sem proficiência com escudo${detail.shield ? `: ${detail.shield.name}` : ''}`);
+  }
 
   return parts;
 }
@@ -201,6 +216,14 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
             <span className="vital-label">
               <Icon name="shield" size={13} />
               <span className="vital-label-text">Classe de Armadura</span>
+              {armorClass.armorNonProficiency.armor || armorClass.armorNonProficiency.shield ? (
+                <span
+                  className="vital-warn"
+                  title="Equipamento sem proficiência — penalidades de não proficiência ativas"
+                >
+                  ⚠
+                </span>
+              ) : null}
             </span>
 
             {/* A CA é calculada; só o mestre pode fixar um valor manual. */}

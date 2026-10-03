@@ -9,6 +9,7 @@ import {
   computeMulticlassAdjustments,
   normalizeClassEntries,
   normalizeClassState,
+  normalizeProficiencies,
   type ClassAdjustments,
 } from '../shared/classes.js';
 import { abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
@@ -125,6 +126,9 @@ export function characterArmorClass(character: Character): ArmorClassDetail {
     dexterityModifier: modifiers.dexterity,
     pieces,
     unarmored,
+    // Proficiências de armadura da ficha — resolvem o estado de proficiência do
+    // que está equipado (o combate lê a MESMA conta da ficha).
+    armorProficiencies: normalizeProficiencies(character.proficiencies).armor,
     // Estilo de Luta Defesa (+1 CA, só com armadura) — o combate lê a MESMA
     // conta da ficha.
     classBonuses:
