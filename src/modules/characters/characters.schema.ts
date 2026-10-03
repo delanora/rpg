@@ -502,6 +502,11 @@ export const creationStepSchema = z.object({
     .array(z.enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]]))
     .max(2)
     .optional(),
+  /**
+   * Passo 3: idiomas escolhidos quando a raça concede idioma(s) à escolha
+   * (Humano e Meio-Elfo concedem 1). Validados contra o catálogo no serviço.
+   */
+  languageChoices: z.array(z.string().trim().min(1).max(60)).max(6).optional(),
   /** Passo 5: classe inicial. */
   classKey: classKeySchema.optional(),
   /**

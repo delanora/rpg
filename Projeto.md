@@ -1959,6 +1959,8 @@ zera o contador.
   escalonamento por nível de personagem, vantagem em salvaguarda (`saveAdvantage`),
   resistências condicionais e os efeitos `other` (Ataques Selvagens, Resistência
   Implacável, Sensibilidade à Luz Solar). Do ANTECEDENTE, só as 2 perícias entram.
+  O **idioma à escolha** das raças (Humano e Meio-Elfo) já funciona: catálogo em
+  `shared/languages.ts`, escolhido no passo 3 e exibido na ficha.
 - **[LACUNA/Fase 2] Proficiências de armadura:** registradas e usadas no bônus
   de ataque das armas, mas o efeito nas **armaduras** ainda não é calculado (a
   CA não exige proficiência e não há penalidade de armadura sem proficiência).

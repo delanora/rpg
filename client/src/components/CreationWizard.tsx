@@ -7,7 +7,14 @@ import {
   rollCreationAttribute,
   saveCreationStep,
 } from '../creationApi';
-import { ABILITY_KEYS, ABILITY_LABELS, ALIGNMENTS, SKILLS, expertiseEligibleOptions } from '../dnd';
+import {
+  ABILITY_KEYS,
+  ABILITY_LABELS,
+  ALIGNMENTS,
+  LANGUAGE_NAMES,
+  SKILLS,
+  expertiseEligibleOptions,
+} from '../dnd';
 import { raceBonusesWithChoices } from '../races';
 import type {
   AbilityKey,
@@ -106,6 +113,8 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [abilityChoices, setAbilityChoices] = useState<AbilityKey[]>([]);
   /** Escolhas da raça fora os atributos: `{ escolha: opção }`. */
   const [raceChoices, setRaceChoices] = useState<Record<string, string>>({});
+  /** Idiomas escolhidos quando a raça concede idioma(s) à escolha. */
+  const [languageChoices, setLanguageChoices] = useState<string[]>([]);
   const [background, setBackground] = useState('');
   const [classKey, setClassKey] = useState('');
   const [subclass, setSubclass] = useState('');
@@ -133,6 +142,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     setRace(sheet?.race ?? '');
     setAbilityChoices(saved.abilityChoices ?? []);
     setRaceChoices(saved.raceChoices ?? {});
+    setLanguageChoices(saved.languageChoices ?? []);
     setBackground(sheet?.background ?? '');
     setClassKey(sheet?.classes[0]?.classKey ?? '');
     setSubclass(sheet?.classes[0]?.subclass ?? '');
@@ -234,6 +244,26 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     return Boolean(picked) && choice.options.some((option) => option.id === picked);
   });
 
+  /** Quantos idiomas à escolha a raça concede (Humano e Meio-Elfo: 1). */
+  const languageChoiceCount = selectedRace?.bonusLanguageChoices ?? 0;
+
+  /** Idiomas disponíveis: os do catálogo que a raça não concede de forma fixa. */
+  const languagePool = useMemo(() => {
+    const fixed = new Set(selectedRace?.languages ?? []);
+    return LANGUAGE_NAMES.filter((name) => !fixed.has(name));
+  }, [selectedRace]);
+
+  /** Grava o idioma da enésima escolha, sem repetir. */
+  function setLanguageChoice(index: number, value: string): void {
+    setLanguageChoices((current) => {
+      const next = [...current];
+      if (value === '') next.splice(index, 1);
+      else if (index < next.length) next[index] = value;
+      else next.push(value);
+      return [...new Set(next)];
+    });
+  }
+
   /** O antecedente escolhido, quando ele vem do catálogo (por nome ou por chave). */
   const selectedBackground = useMemo(() => {
     const needle = background.trim().toLowerCase();
@@ -256,6 +286,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     setRace(value);
     setAbilityChoices([]);
     setRaceChoices({});
+    setLanguageChoices([]);
   }
 
   /** Grava a escolha de uma definição (ancestralidade, perícia, ferramenta…). */
@@ -353,7 +384,9 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
         return (
           race.trim().length > 0 &&
           (raceChoiceNeeded === 0 || abilityChoices.length === raceChoiceNeeded) &&
-          raceExtrasReady
+          raceExtrasReady &&
+          (languageChoiceCount === 0 ||
+            languageChoices.filter(Boolean).length === languageChoiceCount)
         );
       case 4:
         return background.trim().length > 0;
@@ -382,7 +415,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 2:
         return { name, alignment, avatarUrl };
       case 3:
-        return { race, abilityChoices, raceChoices };
+        return { race, abilityChoices, raceChoices, languageChoices };
       case 4:
         return { background };
       case 5:
@@ -678,6 +711,41 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                             </select>
                           </label>
                         ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Idiomas à escolha (Humano e Meio-Elfo concedem 1). */}
+                  {selectedRace && languageChoiceCount > 0 ? (
+                    <div className="wizard-race-choice">
+                      <p className="section-note">
+                        {selectedRace.name} concede {languageChoiceCount} idioma(s) à sua escolha.
+                      </p>
+                      <div className="grid grid-2">
+                        {Array.from({ length: languageChoiceCount }, (_, index) => {
+                          const chosen = languageChoices[index] ?? '';
+                          return (
+                            <label className="field" key={`language-choice-${index}`}>
+                              <span>Idioma {index + 1}</span>
+                              <select
+                                value={chosen}
+                                disabled={busy}
+                                onChange={(event) => setLanguageChoice(index, event.target.value)}
+                              >
+                                <option value="">— escolha —</option>
+                                {languagePool.map((name) => (
+                                  <option
+                                    key={name}
+                                    value={name}
+                                    disabled={languageChoices.includes(name) && chosen !== name}
+                                  >
+                                    {name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : null}

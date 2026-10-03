@@ -1475,6 +1475,10 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   não escolhe a linhagem" foi resolvido). Resolvedores em shared/races/index.ts:
   raceAbilityBonuses, raceSpeed, raceDarkvision, raceDamageResistances,
   raceSkillProficiencies, raceToolProficiencies, raceLanguages, raceTraits.
+  IDIOMAS: catálogo em shared/languages.ts (LANGUAGE_NAMES). As raças fixas e as
+  personalizadas expõem languages + bonusLanguageChoices no RaceOption; o passo 3
+  exige o idioma à escolha (Humano e Meio-Elfo: 1), valida contra o catálogo (sem
+  fixo/duplicado) e soma em characters.languages.
   Ficha: raceId?, subraceId?, raceChoices Json, customRaceId? (FK ↔ CustomRace, ON
   DELETE SET NULL), languages String[], darkvision Int, raceResistances String[].
   `characters.speed` virou Float (raças têm 7,5 m / 10,5 m). A coluna `race` de texto

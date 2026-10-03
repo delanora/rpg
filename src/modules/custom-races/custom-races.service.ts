@@ -100,6 +100,8 @@ export function customRaceToOption(race: CustomRace): RaceOption {
       name: trait.name,
       description: trait.description,
     })),
+    languages: [...dto.languages],
+    bonusLanguageChoices: dto.bonusLanguageChoices,
   };
 }
 

@@ -49,6 +49,28 @@ export const ABILITY_ABBREVIATIONS: Record<AbilityKey, string> = {
   charisma: 'CAR',
 };
 
+/**
+ * Idiomas do Livro do Jogador, usados no seletor de "idioma à escolha" das
+ * raças (Humano e Meio-Elfo concedem 1).
+ */
+export const LANGUAGE_NAMES: readonly string[] = [
+  'Comum',
+  'Anão',
+  'Élfico',
+  'Gigante',
+  'Gnômico',
+  'Goblin',
+  'Pequenino',
+  'Orc',
+  'Abissal',
+  'Celestial',
+  'Dracônico',
+  'Infernal',
+  'Primordial',
+  'Silvestre',
+  'Subcomum',
+];
+
 export interface SkillDefinition {
   key: string;
   label: string;

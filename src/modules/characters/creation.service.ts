@@ -23,6 +23,7 @@ import {
   type CreationRoll,
   type RaceOption,
 } from '../shared/creation.js';
+import { isLanguageName } from '../shared/languages.js';
 import {
   raceDamageResistances,
   raceDarkvision,
@@ -115,6 +116,8 @@ export interface CreationStateDto {
   skillPicks: string[];
   /** Atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois). */
   abilityChoices: AbilityKey[];
+  /** Idiomas escolhidos quando a raça concede idioma(s) à escolha. */
+  languageChoices: string[];
   /** Perícias que a classe do rascunho oferece (quantas e quais). */
   skillChoice: { count: number; from: string[] };
   /**
@@ -532,6 +535,7 @@ async function buildState(
       baseAbilities: draft.baseAbilities,
       skillPicks: draft.skillPicks,
       abilityChoices: draft.abilityChoices,
+      languageChoices: draft.languageChoices,
       skillChoice: creationSkillChoice(entries),
       featureChoices: firstDefinition
         ? featureChoiceInfo(firstDefinition, classChoices).filter(
@@ -664,6 +668,31 @@ export async function saveCreationStep(
           if (picked) raceChoices[definition.id] = picked;
         });
 
+      // Idiomas à escolha (Humano e Meio-Elfo concedem 1): só valem idiomas do
+      // catálogo que NÃO sejam fixos da raça, sem repetição e no número exato.
+      const bonusLanguages = option.bonusLanguageChoices ?? 0;
+      const fixedLanguages = option.languages ?? [];
+      const languageChoices = [
+        ...new Set((input.languageChoices ?? []).map((name) => name.trim())),
+      ].filter(Boolean);
+      if (bonusLanguages > 0) {
+        const invalid = languageChoices.filter(
+          (name) => !isLanguageName(name) || fixedLanguages.includes(name),
+        );
+        if (invalid.length > 0) {
+          throw new HttpError(`Idioma inválido para ${option.name}: ${invalid.join(', ')}.`, 400);
+        }
+        if (languageChoices.length !== bonusLanguages) {
+          throw new HttpError(
+            `${option.name} concede ${bonusLanguages} idioma(s) à sua escolha — escolha exatamente esse tanto.`,
+            400,
+          );
+        }
+      } else if (languageChoices.length > 0) {
+        throw new HttpError(`${option.name} não concede idioma à escolha.`, 400);
+      }
+      nextDraft.languageChoices = bonusLanguages > 0 ? languageChoices : [];
+
       patch.race = option.name;
       patch.raceId = option.customRaceId ? null : option.raceId;
       patch.subraceId = option.subraceId ?? null;
@@ -683,7 +712,7 @@ export async function saveCreationStep(
       patch.raceResistances = grants.resistances as NonNullable<
         UpdateCharacterInput['raceResistances']
       >;
-      patch.languages = grants.languages;
+      patch.languages = [...grants.languages, ...nextDraft.languageChoices];
       patch.toolProficiencies = grants.tools;
       patch.skills = skillsPatch(
         character,
@@ -1020,6 +1049,7 @@ export async function reopenCreation(characterId: string, master: Actor): Promis
     ),
     skillPicks: draft.skillPicks,
     abilityChoices: draft.abilityChoices,
+    languageChoices: draft.languageChoices,
   };
 
   return setCreationFinalized(

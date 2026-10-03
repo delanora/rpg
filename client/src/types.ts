@@ -1009,6 +1009,10 @@ export interface RaceOption {
   choices?: RaceChoice[];
   /** Traços raciais (exibidos na aba Características). */
   traits?: { id: string; name: string; description: string }[];
+  /** Idiomas FIXOS concedidos pela raça. */
+  languages?: string[];
+  /** Quantos idiomas à escolha a raça concede (Humano e Meio-Elfo: 1). */
+  bonusLanguageChoices?: number;
 }
 
 /** Raça PERSONALIZADA do mestre (tabela CustomRace). */
@@ -1049,6 +1053,8 @@ export interface CreationState {
   abilityChoices: AbilityKey[];
   /** Escolhas da raça fora os atributos (`{ escolha: opção }`). */
   raceChoices: Record<string, string>;
+  /** Idiomas escolhidos quando a raça concede idioma(s) à escolha. */
+  languageChoices: string[];
   skillChoice: { count: number; from: string[] };
   /**
    * Escolhas do NÍVEL 1 da classe inicial (Estilo de Luta do guerreiro,
@@ -1087,6 +1093,8 @@ export interface CreationStepRequest {
   abilityChoices?: AbilityKey[];
   /** Escolhas da raça fora os atributos (passo 3): `{ escolha: opção }`. */
   raceChoices?: Record<string, string>;
+  /** Idiomas escolhidos quando a raça concede idioma(s) à escolha (passo 3). */
+  languageChoices?: string[];
   background?: string;
   classKey?: string;
   /** Subclasse, quando a classe já a exige no nível 1 (passo 5). */
