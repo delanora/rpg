@@ -414,6 +414,8 @@ export interface ClassFeatureEffect {
     | 'halfProficiency'
     /** Limiar de crítico: acerta criticamente com `value` ou mais no d20. */
     | 'critThreshold'
+    /** Perícia concedida pela característica; a chave vem em `target`. */
+    | 'skillProficiency'
     /** Resistência cujo tipo de dano vem de uma escolha (ex.: ancestralidade). */
     | 'resistanceFromChoice'
     | 'other';
@@ -422,6 +424,7 @@ export interface ClassFeatureEffect {
   choiceId?: string;
   resourceId?: string;
   name?: string;
+  /** Alvo do bônus (`bonus`) ou a chave da perícia (`skillProficiency`). */
   target?: string;
   value?: number;
   base?: number;

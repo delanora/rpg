@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma.js';
 import { damageExpression } from '../modules/shared/attacks.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
-import { allRaces, getRace } from '../modules/shared/races/index.js';
+import { allRaces, getRace, getSubrace } from '../modules/shared/races/index.js';
 
 /**
  * Smoke test ponta a ponta das Etapas 1 e 2.
@@ -8814,6 +8814,96 @@ async function main(): Promise<void> {
       'cada uma das 10 cores mapeia para o tipo de dano canônico correto',
       damageOk,
       JSON.stringify(ancestry?.options),
+    );
+  }
+
+  // 35) Catálogo estruturado de raças: Elfo e sub-raças (Prompt 2.2)
+  {
+    console.log('\n35) Catálogo estruturado de raças: Elfo');
+
+    const elf = getRace('elf');
+    check(
+      'getRace("elf") devolve a raça e ela está em allRaces()',
+      !!elf && allRaces().some((r) => r.id === 'elf'),
+      JSON.stringify(allRaces().map((r) => r.id)),
+    );
+    check('nome em PT é Elfo', elf?.namePt === 'Elfo', elf?.namePt);
+    check(
+      'bônus de atributo: Destreza +2',
+      elf?.abilityScoreIncrease.length === 1 &&
+        elf?.abilityScoreIncrease[0]?.ability === 'dexterity' &&
+        elf?.abilityScoreIncrease[0]?.amount === 2,
+      JSON.stringify(elf?.abilityScoreIncrease),
+    );
+    check('deslocamento 9 m (30 pés)', elf?.speed === 9, String(elf?.speed));
+    check('visão no escuro 18 m (60 pés)', elf?.darkvision === 18, String(elf?.darkvision));
+    check(
+      'idiomas: Comum e Élfico',
+      JSON.stringify(elf?.languages) === JSON.stringify(['Comum', 'Élfico']),
+      JSON.stringify(elf?.languages),
+    );
+
+    // Traços da raça base: Sentidos Aguçados (perícia), Feérica ('other') e Transe.
+    const baseTraits = elf?.traits ?? [];
+    check('a raça base tem 3 traços', baseTraits.length === 3, JSON.stringify(baseTraits.map((t) => t.id)));
+    const keen = baseTraits.find((t) => t.id === 'keen-senses')?.mechanicalEffect;
+    check(
+      'Sentidos Aguçados concede Percepção (skillProficiency → perception)',
+      keen?.type === 'skillProficiency' && keen?.target === 'perception',
+      JSON.stringify(keen),
+    );
+    const fey = baseTraits.find((t) => t.id === 'fey-ancestry')?.mechanicalEffect;
+    check(
+      'Ancestralidade Feérica vai como other (vantagem/imunidade não modeladas)',
+      fey?.type === 'other',
+      JSON.stringify(fey),
+    );
+    check(
+      'Transe é textual (sem efeito mecânico)',
+      baseTraits.find((t) => t.id === 'trance')?.mechanicalEffect === undefined,
+    );
+
+    // Sub-raças: Alto Elfo, Elfo da Floresta e Drow.
+    const subIds = (elf?.subraces ?? []).map((s) => s.id);
+    check(
+      'tem 3 sub-raças (high-elf, wood-elf, drow-elf)',
+      JSON.stringify(subIds) === JSON.stringify(['high-elf', 'wood-elf', 'drow-elf']),
+      JSON.stringify(subIds),
+    );
+    check(
+      'getSubrace("elf", "wood-elf") funciona',
+      getSubrace('elf', 'wood-elf')?.namePt === 'Elfo da Floresta',
+      getSubrace('elf', 'wood-elf')?.namePt,
+    );
+
+    const high = elf?.subraces?.find((s) => s.id === 'high-elf');
+    check(
+      'Alto Elfo: Inteligência +1, arma élfica e o truque',
+      high?.abilityScoreIncrease[0]?.ability === 'intelligence' &&
+        high?.abilityScoreIncrease[0]?.amount === 1 &&
+        high?.traits.some((t) => t.id === 'elven-weapon-training') &&
+        high?.traits.some((t) => t.id === 'high-elf-cantrip'),
+      JSON.stringify(high?.traits.map((t) => t.id)),
+    );
+
+    const wood = elf?.subraces?.find((s) => s.id === 'wood-elf');
+    check(
+      'Elfo da Floresta: Sabedoria +1 e Passo Ligeiro (10,5 m)',
+      wood?.abilityScoreIncrease[0]?.ability === 'wisdom' &&
+        wood?.abilityScoreIncrease[0]?.amount === 1 &&
+        wood?.speed === 10.5 &&
+        wood?.traits.some((t) => t.id === 'fleet-of-foot'),
+      JSON.stringify({ asi: wood?.abilityScoreIncrease, speed: wood?.speed }),
+    );
+
+    const drow = elf?.subraces?.find((s) => s.id === 'drow-elf');
+    check(
+      'Drow: Carisma +1, visão no escuro 36 m e Magia Drow',
+      drow?.abilityScoreIncrease[0]?.ability === 'charisma' &&
+        drow?.abilityScoreIncrease[0]?.amount === 1 &&
+        drow?.darkvision === 36 &&
+        drow?.traits.some((t) => t.id === 'drow-magic'),
+      JSON.stringify({ asi: drow?.abilityScoreIncrease, dv: drow?.darkvision }),
     );
   }
 
