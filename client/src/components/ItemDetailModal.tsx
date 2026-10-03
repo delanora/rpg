@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { itemDetailRows, rarityColor, rarityLabel, rarityTint } from '../dnd';
 import type { InventoryItem } from '../types';
+import { clampInt } from '../utils';
 import { Icon } from './Icon';
+import { InlineField } from './InlineField';
 import { useLightbox } from './Lightbox';
 
 interface ItemDetailModalProps {
@@ -13,6 +15,13 @@ interface ItemDetailModalProps {
    * visão do mestre, por exemplo, não usa itens).
    */
   onUse?: () => void | Promise<void>;
+  /**
+   * Quantidade editável. Só o mestre a recebe (o jogador nunca altera a
+   * quantidade). Ausente = quantidade somente leitura.
+   */
+  onQuantityChange?: (quantity: number) => void;
+  /** Permite remover o item do inventário. Só o mestre recebe. */
+  onRemove?: () => void;
 }
 
 /**
@@ -30,7 +39,13 @@ interface ItemDetailModalProps {
  * único (`useLightbox`) para ampliar a imagem. Fecha pelo "X", pelo clique na
  * área escurecida e pelo Esc.
  */
-export function ItemDetailModal({ item, onClose, onUse }: ItemDetailModalProps) {
+export function ItemDetailModal({
+  item,
+  onClose,
+  onUse,
+  onQuantityChange,
+  onRemove,
+}: ItemDetailModalProps) {
   const { open: openLightbox } = useLightbox();
   const [using, setUsing] = useState(false);
 
@@ -163,6 +178,34 @@ export function ItemDetailModal({ item, onClose, onUse }: ItemDetailModalProps) 
           </h3>
           <p className="item-modal-desc">{item.description || 'Sem descrição.'}</p>
         </section>
+
+        {onQuantityChange || onRemove ? (
+          <div className="item-modal-actions item-modal-manage">
+            {onQuantityChange ? (
+              <label className="item-modal-qty">
+                Qtd.
+                <InlineField
+                  className="item-modal-qty-field"
+                  value={item.quantity}
+                  mode="number"
+                  min={0}
+                  readOnly={false}
+                  ariaLabel="Quantidade"
+                  onCommit={(value) =>
+                    onQuantityChange(clampInt(value, 0, 9999, item.quantity))
+                  }
+                />
+              </label>
+            ) : (
+              <span className="item-modal-actions-hint">Qtd. {item.quantity}</span>
+            )}
+            {onRemove ? (
+              <button type="button" className="btn btn-danger btn-small" onClick={onRemove}>
+                remover
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         {onUse ? (
           <div className="item-modal-actions">

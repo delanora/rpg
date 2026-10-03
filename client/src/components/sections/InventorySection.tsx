@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent, MouseEvent } from 'react';
-import { describeItemDetails, isConsumableItem, rarityColor, rarityLabel, rarityTint } from '../../dnd';
+import { useMemo, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
+import { isConsumableItem, rarityTint } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type {
   Character,
@@ -9,9 +9,8 @@ import type {
   InventorySlot,
   TransferTarget,
 } from '../../types';
-import { clampInt, newId } from '../../utils';
+import { newId } from '../../utils';
 import { Icon, type IconName } from '../Icon';
-import { InlineField } from '../InlineField';
 import { ItemDetailModal } from '../ItemDetailModal';
 import { CoinsPanel } from './CoinsPanel';
 import type { SheetSectionProps } from './common';
@@ -166,17 +165,9 @@ export function InventorySection({
   const canUseItems = !masterView && !readOnly;
 
   const draggingRef = useRef<string | null>(null);
-  const detailRef = useRef<HTMLDivElement>(null);
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Item sendo consumido agora (desabilita o botão enquanto o servidor responde).
-  const [usingId, setUsingId] = useState<string | null>(null);
-  // Painel flutuante de pré-visualização: abre no hover e fecha ao sair.
-  const [detailPos, setDetailPos] = useState<{ x: number; y: number } | null>(null);
-  // Fechamento por hover agendado: dá tempo de o ponteiro chegar ao painel.
-  const closeTimerRef = useRef<number | null>(null);
   // Item aberto na ficha detalhada (modal central). Guarda só o id: o item é
   // lido do inventário, sem cópia.
   const [modalItemId, setModalItemId] = useState<string | null>(null);
@@ -193,25 +184,7 @@ export function InventorySection({
   }, [inventory]);
 
   const backpackCount = inventory.filter((item) => item.slot === null).length;
-  const selected = inventory.find((item) => item.id === selectedId) ?? null;
   const modalItem = inventory.find((item) => item.id === modalItemId) ?? null;
-
-  // Um clique fora do painel flutuante fecha os detalhes.
-  useEffect(() => {
-    if (!selectedId) return undefined;
-
-    function onPointerDown(event: globalThis.MouseEvent): void {
-      if (detailRef.current?.contains(event.target as Node)) return;
-      setSelectedId(null);
-      setDetailPos(null);
-    }
-
-    document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [selectedId]);
-
-  // Cancela um fechamento por hover pendente ao desmontar.
-  useEffect(() => () => cancelDetailClose(), []);
 
   function patchItem(id: string, patch: Partial<InventoryItem>): void {
     update({ inventory: inventory.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
@@ -243,7 +216,7 @@ export function InventorySection({
 
   function removeItem(id: string): void {
     update({ inventory: inventory.filter((item) => item.id !== id) });
-    closeDetail();
+    setModalItemId((current) => (current === id ? null : current));
   }
 
   /**
@@ -252,65 +225,15 @@ export function InventorySection({
    */
   function useItem(id: string): Promise<void> {
     if (!onUseItem) return Promise.resolve();
-    setUsingId(id);
-    return Promise.resolve(onUseItem(id)).finally(() => setUsingId(null));
-  }
-
-  /** Cancela um fechamento agendado (o ponteiro voltou para o item/painel). */
-  function cancelDetailClose(): void {
-    if (closeTimerRef.current !== null) {
-      window.clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
+    return Promise.resolve(onUseItem(id));
   }
 
   /**
-   * Fecha o painel depois de uma folga curta: o ponteiro pode estar indo do item
-   * para o próprio painel (é lá que ficam quantidade/usar/remover).
-   */
-  function scheduleDetailClose(): void {
-    cancelDetailClose();
-    closeTimerRef.current = window.setTimeout(() => {
-      closeTimerRef.current = null;
-      setSelectedId(null);
-      setDetailPos(null);
-    }, 140);
-  }
-
-  /** Fecha o painel flutuante do item. */
-  function closeDetail(): void {
-    cancelDetailClose();
-    setSelectedId(null);
-    setDetailPos(null);
-  }
-
-  /**
-   * Ancora o painel no ponto do ponteiro, sempre dentro da tela (não empurra o
-   * conteúdo da mochila para baixo).
-   */
-  function detailPosFor(clientX: number, clientY: number): { x: number; y: number } {
-    const width = 300;
-    const height = 240;
-    return {
-      x: Math.max(12, Math.min(clientX + 14, window.innerWidth - width - 12)),
-      y: Math.max(12, Math.min(clientY + 14, window.innerHeight - height - 12)),
-    };
-  }
-
-  /** Hover: mostra o MESMO painel que o clique (pré-visualização). */
-  function hoverDetail(item: InventoryItem, event: MouseEvent): void {
-    cancelDetailClose();
-    setSelectedId(item.id);
-    setDetailPos(detailPosFor(event.clientX, event.clientY));
-  }
-
-  /**
-   * Clique: abre a FICHA DETALHADA (modal centralizado). O painel de
-   * pré-visualização do hover sai de cena para não ficar atrás dele. Para o
-   * jogador, o modal ganha o botão "Usar" quando o item é consumível.
+   * Clique: abre a FICHA DETALHADA (modal centralizado). Para o jogador, o modal
+   * ganha o botão "Usar" quando o item é consumível; para o mestre, os controles
+   * de quantidade e remoção.
    */
   function openDetail(item: InventoryItem): void {
-    closeDetail();
     setModalItemId(item.id);
   }
 
@@ -323,8 +246,6 @@ export function InventorySection({
     event.dataTransfer.setData('text/plain', id);
     draggingRef.current = id;
     setDraggingId(id);
-    // Começar a arrastar fecha a pré-visualização para não atrapalhar o "drop".
-    closeDetail();
   }
 
   function endDrag(): void {
@@ -366,7 +287,7 @@ export function InventorySection({
     }));
   }
 
-  /** Nó do item: arrastável, com pré-visualização no hover e detalhes no clique. */
+  /** Nó do item: arrastável, com os detalhes abertos no clique. */
   function itemNode(item: InventoryItem) {
     // Indicação discreta da raridade: um anel interno na cor, bem translúcido.
     const rarityRing = rarityTint(item.rarity, '88');
@@ -378,8 +299,6 @@ export function InventorySection({
         onDragStart={(event) => beginDrag(event, item.id)}
         onDragEnd={endDrag}
         onClick={() => openDetail(item)}
-        onMouseEnter={(event) => hoverDetail(item, event)}
-        onMouseLeave={scheduleDetailClose}
         aria-label={`${item.name}${item.quantity > 1 ? ` (${item.quantity})` : ''}`}
       >
         <ItemSprite item={item} />
@@ -563,99 +482,6 @@ export function InventorySection({
           {character.derived.carryingCapacity} kg
         </p>
 
-        {selected && detailPos ? (
-          <div
-            className="inv-detail"
-            ref={detailRef}
-            style={{
-              left: detailPos.x,
-              top: detailPos.y,
-              borderColor: rarityTint(selected.rarity, '88') ?? undefined,
-            }}
-            role="dialog"
-            aria-label={`Detalhes de ${selected.name}`}
-            onMouseEnter={cancelDetailClose}
-            onMouseLeave={scheduleDetailClose}
-          >
-            <div className="inv-detail-head">
-              <span className="inv-detail-sprite">
-                <ItemSprite item={selected} />
-              </span>
-              <div className="inv-detail-title">
-                <strong>{selected.name}</strong>
-                <span className="inv-detail-meta">
-                  {selected.weight} kg
-                  {selected.rarity ? (
-                    <span style={{ color: rarityColor(selected.rarity) ?? undefined }}>
-                      {' · '}
-                      {rarityLabel(selected.rarity)}
-                    </span>
-                  ) : null}
-                  {selected.requiresAttunement ? ' · Requer Sintonização' : ''}
-                  {selected.itemId ? ' · catálogo' : ''}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="btn btn-small"
-                onClick={closeDetail}
-                aria-label="Fechar detalhes"
-              >
-                ×
-              </button>
-            </div>
-
-            {describeItemDetails(selected.category, selected.details) ? (
-              <p className="inv-detail-effect">
-                {describeItemDetails(selected.category, selected.details)}
-              </p>
-            ) : null}
-            <p className="inv-detail-desc">{selected.description || 'Sem descrição.'}</p>
-
-            <div className="inv-detail-actions">
-              {canEditItems ? (
-                <label className="inv-detail-qty">
-                  Qtd.
-                  <InlineField
-                    className="inv-detail-qty-field"
-                    value={selected.quantity}
-                    mode="number"
-                    min={0}
-                    readOnly={false}
-                    ariaLabel="Quantidade"
-                    onCommit={(value) =>
-                      patchItem(selected.id, { quantity: clampInt(value, 0, 9999, selected.quantity) })
-                    }
-                  />
-                </label>
-              ) : (
-                <span className="inv-detail-qty-static">Qtd. {selected.quantity}</span>
-              )}
-
-              {canUseItems && isConsumableItem(selected.category, selected.details) ? (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-small"
-                  disabled={usingId === selected.id}
-                  title="Consome 1 unidade deste item"
-                  onClick={() => useItem(selected.id)}
-                >
-                  {usingId === selected.id ? 'usando...' : 'Usar'}
-                </button>
-              ) : null}
-
-              {canEditItems ? (
-                <button
-                  type="button"
-                  className="btn btn-danger btn-small"
-                  onClick={() => removeItem(selected.id)}
-                >
-                  remover
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
       </div>
 
       {modalItem ? (
@@ -667,6 +493,12 @@ export function InventorySection({
               ? () => useItem(modalItem.id)
               : undefined
           }
+          onQuantityChange={
+            canEditItems
+              ? (quantity) => patchItem(modalItem.id, { quantity })
+              : undefined
+          }
+          onRemove={canEditItems ? () => removeItem(modalItem.id) : undefined}
         />
       ) : null}
     </>
