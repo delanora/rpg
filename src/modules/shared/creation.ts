@@ -16,6 +16,7 @@
  */
 
 import { ABILITY_KEYS, type AbilityKey } from './dnd5e.js';
+import { isLanguageName } from './languages.js';
 import { allRaces } from './races/index.js';
 import type { Race, RaceChoiceApply, Subrace } from './races/types.js';
 
@@ -107,6 +108,10 @@ export interface RaceOption {
   choices?: RaceChoiceView[];
   /** Traços raciais (exibidos na aba Características). */
   traits?: RaceTraitView[];
+  /** Idiomas FIXOS concedidos pela raça (texto). */
+  languages?: string[];
+  /** Quantos idiomas à escolha a raça concede (Humano e Meio-Elfo: 1). */
+  bonusLanguageChoices?: number;
 }
 
 /** Um traço racial no formato exibido pela ficha. */
@@ -177,6 +182,8 @@ function toRaceOption(race: Race, subrace?: Subrace): RaceOption {
       name: trait.name,
       description: trait.description,
     })),
+    languages: [...race.languages],
+    bonusLanguageChoices: race.bonusLanguageChoices ?? 0,
   };
 }
 
@@ -367,6 +374,11 @@ export interface CreationDraft {
    * rascunho para o passo 6 aplicar o bônus e a ficha reaberta poder desfazê-lo.
    */
   abilityChoices: AbilityKey[];
+  /**
+   * Idiomas escolhidos quando a raça concede idioma(s) à escolha (Humano e
+   * Meio-Elfo: 1). Entram na ficha somados aos idiomas FIXOS da raça.
+   */
+  languageChoices: string[];
 }
 
 export const EMPTY_CREATION_DRAFT: CreationDraft = {
@@ -376,6 +388,7 @@ export const EMPTY_CREATION_DRAFT: CreationDraft = {
   baseAbilities: {},
   skillPicks: [],
   abilityChoices: [],
+  languageChoices: [],
 };
 
 function isAbilityKey(value: string): value is AbilityKey {
@@ -439,7 +452,17 @@ export function normalizeCreationDraft(input: unknown): CreationDraft {
       ].slice(0, CREATION_ABILITY_COUNT)
     : [];
 
-  return { mode, step, rolls, baseAbilities, skillPicks, abilityChoices };
+  const languageChoices = Array.isArray(source.languageChoices)
+    ? [
+        ...new Set(
+          source.languageChoices.filter(
+            (key): key is string => typeof key === 'string' && isLanguageName(key),
+          ),
+        ),
+      ].slice(0, 6)
+    : [];
+
+  return { mode, step, rolls, baseAbilities, skillPicks, abilityChoices, languageChoices };
 }
 
 /** Índice do menor dado (o descartado na rolagem de 4d6). */

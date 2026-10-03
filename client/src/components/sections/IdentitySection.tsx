@@ -580,6 +580,22 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
             </div>
           </div>
 
+          {/* Idiomas, visão no escuro e resistências concedidos pela raça. */}
+          {character.languages.length > 0 ||
+          character.darkvision > 0 ||
+          character.raceResistances.length > 0 ? (
+            <p className="section-note identity-race-facts">
+              {character.languages.length > 0
+                ? `Idiomas: ${character.languages.join(', ')}`
+                : ''}
+              {character.languages.length > 0 && character.darkvision > 0 ? ' · ' : ''}
+              {character.darkvision > 0 ? `Visão no escuro: ${character.darkvision} m` : ''}
+              {character.raceResistances.length > 0
+                ? `${character.languages.length > 0 || character.darkvision > 0 ? ' · ' : ''}Resistências: ${character.raceResistances.join(', ')}`
+                : ''}
+            </p>
+          ) : null}
+
           {/* Inspiração fecha o conjunto, abaixo do nível, à esquerda. */}
           <button
             type="button"

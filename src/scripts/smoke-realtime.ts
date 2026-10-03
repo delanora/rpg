@@ -5096,6 +5096,7 @@ async function main(): Promise<void> {
       race: 'Meio-Elfo',
       abilityChoices: ['strength', 'constitution'],
       raceChoices: { 'half-elf-skill-1': 'perception', 'half-elf-skill-2': 'stealth' },
+      languageChoices: ['Gigante'],
     },
   });
   check(
@@ -9599,6 +9600,48 @@ async function main(): Promise<void> {
       }),
     );
 
+    // --- Idioma à escolha (Humano) ------------------------------------------
+    const humanNoLanguage = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: { step: 3, race: 'Humano' },
+    });
+    check('Humano exige o idioma à escolha (400)', humanNoLanguage.status === 400);
+
+    const humanLanguage = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: { step: 3, race: 'Humano', languageChoices: ['Gigante'] },
+    });
+    check(
+      'Humano: o idioma à escolha entra na ficha junto de Comum',
+      humanLanguage.status === 200 &&
+        (humanLanguage.data?.character?.languages ?? []).includes('Comum') &&
+        (humanLanguage.data?.character?.languages ?? []).includes('Gigante') &&
+        JSON.stringify(humanLanguage.data?.creation?.languageChoices) === JSON.stringify(['Gigante']),
+      JSON.stringify(humanLanguage.data?.character?.languages),
+    );
+    check(
+      'idioma fixo da raça não pode ser escolhido (400)',
+      (
+        await api('/api/characters/me/creation', {
+          method: 'PATCH',
+          token: racesToken,
+          body: { step: 3, race: 'Humano', languageChoices: ['Comum'] },
+        })
+      ).status === 400,
+    );
+    check(
+      'idioma fora do catálogo é recusado (400)',
+      (
+        await api('/api/characters/me/creation', {
+          method: 'PATCH',
+          token: racesToken,
+          body: { step: 3, race: 'Humano', languageChoices: ['Klingon'] },
+        })
+      ).status === 400,
+    );
+
     const halfElfStep = await api('/api/characters/me/creation', {
       method: 'PATCH',
       token: racesToken,
@@ -9607,6 +9650,7 @@ async function main(): Promise<void> {
         race: 'Meio-Elfo',
         abilityChoices: ['strength', 'constitution'],
         raceChoices: { 'half-elf-skill-1': 'arcana', 'half-elf-skill-2': 'stealth' },
+        languageChoices: ['Gigante'],
       },
     });
     check(
