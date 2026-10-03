@@ -1559,13 +1559,15 @@ JANELA DE DADOS (dice)
     O painel é um cartão ancorado acima da pilha de botões (não ocupa a tela,
     `max-height: calc(100vh - 12rem)` com rolagem própria). A lista é a MESMA nos
     dois lugares: `dice/RollLogList` + `historyLine`/`rollDebug` de `dice/format`.
-  • PILHA FLUTUANTE DO MESTRE (canto inferior esquerdo, em MasterPanel):
-      topo   → Log (`RollLogPanel`)      — painel do histórico
-      meio   → Dados (`DiceDock`)        — janela de rolagem (`.dice-fab.is-master`)
-      base   → Anotações (`MasterNotes`) — `GameConfig.masterNotes`
-    Os dois painéis são flutuantes (`.master-fab-panel`) e abrem UM POR VEZ: o
-    estado de qual está aberto vive no MasterPanel, que fecha o outro ao abrir.
-    O jogador não tem a pilha: só o botão `Dados`, na base (`.dice-fab` puro).
+  • PILHA FLUTUANTE (canto inferior esquerdo), de baixo para cima:
+      base   → Inventário (`InventoryDock`) — botão + painel `.inv-panel`; SEMPRE
+               presente (jogador e mestre)
+      +1     → Dados (`DiceDock`)           — janela de rolagem
+      +2     → Anotações (`MasterNotes`)    — só no mestre
+      +3     → Log (`RollLogPanel`)         — só no mestre
+    O passo é fixo (3.0rem) e o botão dos dados fica `.dice-fab` puro no jogador
+    e `.dice-fab.is-master` (um degrau acima) no mestre. Os painéis são flutuantes
+    (`.master-fab-panel`/`.inv-panel`) e abrem UM POR VEZ.
 
 APRESENTAÇÃO DE IMAGENS (presentation)
   Estado único em memória `current`. O mestre mostra uma imagem para a mesa inteira
@@ -1740,9 +1742,13 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   1 unidade via POST /me/inventory/use — o mestre não vê o botão). Fecha por X,
   clique na área escurecida ou Esc. A imagem ampliada reusa o lightbox único.
   A ficha é uma PILHA de seções de ponta a ponta: Personagem (que já traz Classes
-  e Vida e Defesa), os seis atributos, o inventário e as abas. Dentro do
-  inventário, o set de equipamento e a mochila ficam lado a lado (max-width de
-  320px cada, centralizados na própria coluna) com peso, moedas e detalhe abaixo.
+  e Vida e Defesa), os seis atributos e as abas. O INVENTÁRIO saiu do fluxo: virou
+  botão flutuante (`InventoryDock`) na base da pilha inferior esquerda, com o
+  painel `.inv-panel` à esquerda de largura justa. O painel começa só com o set de
+  equipamento e o peso; a MOCHILA só entra ao clicar no ícone dela no set
+  (`.slot-backpack`), exibida LOGO ABAIXO do grid de equipamento, e as MOEDAS
+  ficam DENTRO da mochila (campo aparte, abaixo do grid), com ícone de moeda
+  colorido por denominação (ouro/prata/cobre etc.).
   IDENTIDADE (IdentitySection) — CABEÇALHO NOVO: o card do Personagem perde o
   próprio cabeçalho (`display: none`) e o avatar saiu das AÇÕES. O RETRATO
   (`.identity-section .hero-avatar`) tem `--portrait-size: clamp(8.5rem, 16vw,

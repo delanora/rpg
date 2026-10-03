@@ -353,8 +353,9 @@ pages/
   SheetPage.tsx         ficha do jogador (ou o wizard de criação)
   MasterPanel.tsx       painel do mestre (abas + combate + pilha flutuante)
 components/             AuthPage, AppHeader, Icon, Portrait, HpBar, Lightbox, Section,
-                        InlineField, SheetView, AttacksTable, PresentationOverlay,
-                        CreationWizard, LevelUpDialog, FieldInfo
+                        InlineField, SheetView, InventoryDock, ItemDetailModal,
+                        AttacksTable, PresentationOverlay, CreationWizard, LevelUpDialog,
+                        FieldInfo
   creation/             AbilityStep (palco de rolagem de atributos)
   sections/             Identity, Vitals, AbilityCards, Attacks, Features, Spells,
                         Inventory, BagList, Notes, CoinsPanel
@@ -1525,9 +1526,12 @@ advantage, disadvantage, bonus, phase }`.
 - **Duas portas para o mesmo log:** (a) dentro da bandeja, abaixo dos dados;
   (b) painel flutuante `RollLogPanel`, aberto pelo botão `Log` **acima** do
   botão `Dados`. A lista é a mesma (`RollLogList` + `historyLine`/`rollDebug`).
-- **Pilha flutuante do mestre** (canto inferior esquerdo, em MasterPanel):
-  topo `Log` · meio `Dados` · base `Anotações`. Os dois painéis abrem **um por
-  vez** (estado no MasterPanel). O jogador tem só o botão `Dados`.
+- **Pilha flutuante** (canto inferior esquerdo), de baixo para cima:
+  base `Inventário` (`InventoryDock`) · `Dados` · `Anotações` (mestre) · `Log`
+  (mestre). O passo é fixo; os painéis abrem **um por vez**. O `Inventário`
+  está sempre presente (jogador e mestre): painel `.inv-panel` à esquerda com o
+  set de equipamento; a mochila só entra pelo ícone dela no set, logo abaixo do
+  grid, e as moedas ficam dentro da mochila (ícone colorido por denominação).
 
 ### Apresentação de imagens (`presentation`)
 
