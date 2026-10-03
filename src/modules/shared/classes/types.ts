@@ -82,6 +82,18 @@ export interface ClassFeatureResource {
      */
     | 'skillProficiency'
     /**
+     * Proficiência com FERRAMENTA concedida pela característica (ex.: Ferramentas
+     * de Funileiro do Gnomo das Rochas). O id da ferramenta vem em `target` (ver
+     * o catálogo `shared/tools`). Hoje só a raça usa; quem aplica é o motor de raça.
+     */
+    | 'toolProficiency'
+    /**
+     * Vantagem CONDICIONAL em salvaguardas (ex.: Astúcia Gnômica — INT/SAB/CAR
+     * contra magia). Os atributos vêm em `abilities` e a condição em `condition`.
+     * Hoje só a raça usa; quem aplica é o motor de raça (futuro).
+     */
+    | 'saveAdvantage'
+    /**
      * Resistência cujo TIPO DE DANO vem de uma ESCOLHA (ex.: ancestralidade
      * dracônica do Draconato). O tipo de cada opção é declarado na própria
      * escolha (ver `RaceChoiceDefinition.options[].damageType` em shared/races).
@@ -124,6 +136,10 @@ export interface ClassFeatureResource {
   scaling?: { level: number; value: number }[];
   /** Atributo concedido/afetado (`save`, `abilityBonus`). */
   ability?: AbilityKey;
+  /** Atributos das salvaguardas em `type: 'saveAdvantage'` (ex.: INT/SAB/CAR). */
+  abilities?: AbilityKey[];
+  /** Condição de `type: 'saveAdvantage'` (ex.: 'magic' = contra magia). */
+  condition?: string;
   /** Teto do atributo em `abilityBonus` (ex.: 24 no Campeão Primitivo). */
   max?: number;
   /** Tipos de dano resistidos em `type: 'resistance'`. */

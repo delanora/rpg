@@ -1,8 +1,12 @@
 import { dragonborn } from './dragonborn.js';
 import { dwarf } from './dwarf.js';
 import { elf } from './elf.js';
+import { gnome } from './gnome.js';
+import { halfElf } from './half-elf.js';
+import { halfOrc } from './half-orc.js';
 import { halfling } from './halfling.js';
 import { human } from './human.js';
+import { tiefling } from './tiefling.js';
 import type { Race, RaceTrait, Subrace } from './types.js';
 
 /**
@@ -19,7 +23,17 @@ import type { Race, RaceTrait, Subrace } from './types.js';
  */
 export * from './types.js';
 
-export const RACES: readonly Race[] = [dragonborn, elf, dwarf, human, halfling];
+export const RACES: readonly Race[] = [
+  dragonborn,
+  elf,
+  dwarf,
+  human,
+  halfling,
+  gnome,
+  halfElf,
+  halfOrc,
+  tiefling,
+];
 
 const RACE_BY_ID: ReadonlyMap<string, Race> = new Map(RACES.map((race) => [race.id, race]));
 

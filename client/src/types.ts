@@ -416,6 +416,10 @@ export interface ClassFeatureEffect {
     | 'critThreshold'
     /** Perícia concedida pela característica; a chave vem em `target`. */
     | 'skillProficiency'
+    /** Ferramenta concedida pela característica; o id vem em `target`. */
+    | 'toolProficiency'
+    /** Vantagem condicional em salvaguardas; atributos em `abilities`. */
+    | 'saveAdvantage'
     /** Resistência cujo tipo de dano vem de uma escolha (ex.: ancestralidade). */
     | 'resistanceFromChoice'
     /** Sortudo do Halfling: rolar de novo quando sai 1 natural num d20. */
@@ -434,6 +438,10 @@ export interface ClassFeatureEffect {
   override?: boolean;
   scaling?: { level: number; value: number }[];
   ability?: AbilityKey;
+  /** Atributos das salvaguardas em `saveAdvantage`. */
+  abilities?: AbilityKey[];
+  /** Condição de `saveAdvantage` (ex.: 'magic'). */
+  condition?: string;
   max?: number;
   damageTypes?: string[];
   unarmoredDefenseAbility?: AbilityKey;
