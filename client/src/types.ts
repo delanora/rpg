@@ -418,6 +418,8 @@ export interface ClassFeatureEffect {
     | 'skillProficiency'
     /** Resistência cujo tipo de dano vem de uma escolha (ex.: ancestralidade). */
     | 'resistanceFromChoice'
+    /** Sortudo do Halfling: rolar de novo quando sai 1 natural num d20. */
+    | 'luckyReroll'
     | 'other';
   id?: string;
   /** Id da escolha (em `raceChoices`) alvo de `resistanceFromChoice`. */
@@ -1593,6 +1595,8 @@ export interface DiceRollDto {
   disadvantage: boolean;
   isPrivate: boolean;
   crit: boolean;
+  /** 1 natural num d20 de quem tem o Sortudo: a janela oferece rolar de novo. */
+  lucky: boolean;
   at: string;
 }
 

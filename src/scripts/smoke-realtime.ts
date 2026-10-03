@@ -8,6 +8,7 @@ import {
   allRaces,
   getRace,
   getSubrace,
+  hasLuckyReroll,
   raceHpBonus,
   raceHpBonusDelta,
 } from '../modules/shared/races/index.js';
@@ -9152,6 +9153,132 @@ async function main(): Promise<void> {
       typeof human?.description === 'string' && human.description.length > 0,
       human?.description,
     );
+  }
+
+  // 38) Catálogo estruturado de raças: Halfling + Sortudo (Prompt 2.3)
+  {
+    console.log('\n38) Catálogo estruturado de raças: Halfling');
+
+    const halfling = getRace('halfling');
+    check(
+      'getRace("halfling") devolve a raça e ela está em allRaces()',
+      !!halfling && allRaces().some((r) => r.id === 'halfling'),
+      JSON.stringify(allRaces().map((r) => r.id)),
+    );
+    check('nome em PT é Halfling', halfling?.namePt === 'Halfling', halfling?.namePt);
+    check(
+      'bônus de atributo: Destreza +2',
+      halfling?.abilityScoreIncrease[0]?.ability === 'dexterity' &&
+        halfling?.abilityScoreIncrease[0]?.amount === 2,
+      JSON.stringify(halfling?.abilityScoreIncrease),
+    );
+    check('deslocamento 7,5 m (25 pés)', halfling?.speed === 7.5, String(halfling?.speed));
+    check('tamanho Pequeno', halfling?.size === 'Small', String(halfling?.size));
+    check('sem visão no escuro', halfling?.darkvision === undefined, String(halfling?.darkvision));
+
+    const lucky = halfling?.traits.find((t) => t.id === 'lucky')?.mechanicalEffect;
+    check(
+      'Sortudo é um efeito luckyReroll (máquina-legível)',
+      lucky?.type === 'luckyReroll',
+      JSON.stringify(lucky),
+    );
+    const brave = halfling?.traits.find((t) => t.id === 'brave')?.mechanicalEffect;
+    check('Corajoso vai como other', brave?.type === 'other', JSON.stringify(brave));
+
+    const subIds = (halfling?.subraces ?? []).map((s) => s.id);
+    check(
+      'tem 2 sub-raças (lightfoot-halfling, stout-halfling)',
+      JSON.stringify(subIds) === JSON.stringify(['lightfoot-halfling', 'stout-halfling']),
+      JSON.stringify(subIds),
+    );
+    const lightfoot = halfling?.subraces?.find((s) => s.id === 'lightfoot-halfling');
+    check(
+      'Pés-Leves: Carisma +1 e Furtivo por Natureza',
+      lightfoot?.abilityScoreIncrease[0]?.ability === 'charisma' &&
+        lightfoot?.abilityScoreIncrease[0]?.amount === 1 &&
+        lightfoot?.traits.some((t) => t.id === 'naturally-stealthy'),
+      JSON.stringify(lightfoot?.traits.map((t) => t.id)),
+    );
+    const stout = halfling?.subraces?.find((s) => s.id === 'stout-halfling');
+    const stoutRes =
+      stout?.traits.find((t) => t.id === 'stout-resilience')?.mechanicalEffects ?? [];
+    check(
+      'Robusto: Constituição +1 e Resiliência Robusta (resistência Veneno + other)',
+      stout?.abilityScoreIncrease[0]?.ability === 'constitution' &&
+        stout?.abilityScoreIncrease[0]?.amount === 1 &&
+        stoutRes.length === 2 &&
+        stoutRes.some(
+          (e) =>
+            e.type === 'resistance' &&
+            JSON.stringify(e.damageTypes) === JSON.stringify(['Veneno']),
+        ) &&
+        stoutRes.some((e) => e.type === 'other'),
+      JSON.stringify(stoutRes),
+    );
+
+    // Helper puro: quem tem o Sortudo (por id do catálogo ou pelo texto livre).
+    check(
+      'hasLuckyReroll: Halfling (id ou texto) sim; as outras raças não',
+      hasLuckyReroll({ raceId: 'halfling' }) === true &&
+        hasLuckyReroll({ race: 'Halfling (Pés-Leves)' }) === true &&
+        hasLuckyReroll({ race: 'Halfling (Robusto)' }) === true &&
+        hasLuckyReroll({ raceId: 'dwarf', subraceId: 'hill-dwarf' }) === false &&
+        hasLuckyReroll({ race: 'Anão' }) === false &&
+        hasLuckyReroll({}) === false,
+    );
+
+    // Integração: o flag `lucky` do pool liga no 1 natural de um Halfling.
+    const halfUsername = `halfling_${suffix}`;
+    createdUsernames.push(halfUsername);
+    await api('/api/auth/register', {
+      method: 'POST',
+      body: { username: halfUsername, displayName: 'Halfling Teste', password: 'senha-forte-123' },
+    });
+    const halfLogin = await api('/api/auth/login', {
+      method: 'POST',
+      body: { username: halfUsername, password: 'senha-forte-123' },
+    });
+    const halfToken: string = halfLogin.data?.token;
+    const halfCreated = await api('/api/characters/me', { method: 'POST', token: halfToken });
+    const halfCharId = halfCreated.data?.character?.id;
+    await prisma.character.update({ where: { id: halfCharId }, data: { raceId: 'halfling' } });
+
+    // 50 d20 numa rolagem: garante que um 1 natural apareça em poucas rolagens.
+    const manyD20 = {
+      method: 'POST',
+      token: halfToken,
+      body: { dice: Array.from({ length: 50 }, () => ({ sides: 20 })), kind: 'free' },
+    };
+    let halflingConsistent = true;
+    let sawOne = false;
+    for (let i = 0; i < 10 && !sawOne; i += 1) {
+      const rolled = await api('/api/dice/roll', manyD20);
+      const dice = rolled.data?.roll?.dice ?? [];
+      const hasOne = dice.some((d: any) => d.sides === 20 && !d.dropped && d.value === 1);
+      if (Boolean(rolled.data?.roll?.lucky) !== hasOne) halflingConsistent = false;
+      if (hasOne) sawOne = true;
+    }
+    check(
+      'Sortudo: o flag lucky do Halfling bate com "1 natural" em cada rolagem',
+      halflingConsistent,
+    );
+    check('Sortudo: o Halfling recebeu lucky=true ao sair um 1 natural', sawOne);
+
+    // Sem a raça Halfling o flag nunca liga (mesmo saindo 1 natural).
+    await prisma.character.update({
+      where: { id: halfCharId },
+      data: { raceId: null, subraceId: null, race: '' },
+    });
+    let plainNeverLucky = true;
+    let sawOnePlain = false;
+    for (let i = 0; i < 10 && !sawOnePlain; i += 1) {
+      const rolled = await api('/api/dice/roll', manyD20);
+      if (rolled.data?.roll?.lucky) plainNeverLucky = false;
+      const dice = rolled.data?.roll?.dice ?? [];
+      if (dice.some((d: any) => d.sides === 20 && !d.dropped && d.value === 1)) sawOnePlain = true;
+    }
+    check('Sortudo: sem a raça Halfling o flag lucky nunca liga', plainNeverLucky);
+    check('Sortudo: a rolagem de controle também teve um 1 natural', sawOnePlain);
   }
 
   console.log(

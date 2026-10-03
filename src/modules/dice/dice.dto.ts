@@ -101,5 +101,10 @@ export interface DiceRollDto {
   isPrivate: boolean;
   /** Algum d20 válido saiu 20. */
   crit: boolean;
+  /**
+   * Algum d20 válido saiu 1 e quem rolou tem o Sortudo (Halfling): a janela de
+   * dados oferece rolar de novo. Sem contador — vale a cada 1 natural.
+   */
+  lucky: boolean;
   at: string;
 }

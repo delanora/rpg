@@ -88,6 +88,13 @@ export interface ClassFeatureResource {
      * Hoje só a raça usa; quem resolve é o motor de raça (futuro).
      */
     | 'resistanceFromChoice'
+    /**
+     * Sortudo do Halfling: ao sair 1 natural num d20, o jogador pode rolar de
+     * novo e usar o novo resultado. Sem contador (vale a cada 1). Hoje só a raça
+     * usa; quem resolve é o serviço de dados (ver `hasLuckyReroll` em
+     * shared/races).
+     */
+    | 'luckyReroll'
     | 'other';
   /** Identificador do toggle/recurso (ex.: 'rage'). Vazio = id da feature. */
   id?: string;
