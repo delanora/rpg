@@ -415,6 +415,15 @@ enum CombatantKind {
   CREATURE
 }
 
+/// Um combate ativo por vez.
+///
+/// O índice único PARCIAL `combats_one_active_key` (expressão constante `(1)`
+/// com `WHERE status <> 'ENDED'`, criado na migration
+/// `20261003050000_single_active_combat`) garante no banco que só exista uma
+/// linha com status diferente de ENDED. O Prisma não expressa índice único
+/// parcial no schema, então ele vive só na migration — por isso a checagem de
+/// aplicação em `startCombat` continua existindo (caminho rápido) e o erro
+/// P2002 do INSERT é traduzido para o mesmo 409.
 model Combat {
   id           String       @id @default(cuid())
   status       CombatStatus @default(PENDING_INITIATIVE)

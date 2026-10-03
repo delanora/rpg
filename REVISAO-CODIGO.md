@@ -24,7 +24,7 @@ Os riscos mais relevantes são:
 | Escalabilidade | `republishSheetsWithCatalogItem` varre TODAS as fichas e recomputa DTO; eventos carregam a ficha inteira | **Média** |
 | Segurança | Token de 7 dias sem revogação; `userId` do token não é reconciliado com o banco | **Média** |
 | Segurança | `errorHandler` vaza `err.message` de erros 500 (internos) ao cliente | **Média** |
-| Modelagem | Nenhuma restrição de "um combate ativo por vez" no banco | **Média** |
+| Modelagem | ~~Nenhuma restrição de "um combate ativo por vez" no banco~~ → resolvido com o índice parcial `combats_one_active_key` | **Resolvido** |
 | Cobertura | Sem testes unitários das funções puras de regra; raças/antecedentes não modelados | **Média** |
 
 ---
@@ -132,13 +132,13 @@ A ficha só tinha perícias e salvaguardas, então nenhuma proficiência de equi
 
 ## Parte B — Escalabilidade e concorrência
 
-### B1. Sem transações em operações multi-passo — **Alta**
-- `levelUpCharacter()`: lê a ficha → checa `lastLevelUpRelease` → grava. Dois POST simultâneos podem **subir dois níveis** com uma única liberação.
-- `setLevelUpUnlocked()`: read-modify-write de `levelUpRelease` (corrida no contador).
-- `resolveAttack()` / `changeHp()`: usam `character.hpCurrent` do snapshot carregado no início do ataque; dois ataques concorrentes **perdem dano** (last-write-wins).
-- **Padrão aplicado em (2026-09-29):** `levelDownCharacter()` (downgrade do mestre) usa `updateMany` com o `version` lido no `where` — dois cliques seguidos não tiram dois níveis (o segundo recebe 409), o mesmo truque que `applyLevelUp` faz com `lastLevelUpRelease`.
-- `startCombat()`: checa "já existe combate" e cria em duas etapas → dois combates ativos em corrida.
-- **Sugestão:** envolver em `prisma.$transaction`; para HP, usar `UPDATE ... SET hpCurrent = GREATEST(0, hpCurrent - $dano)`; para o combate ativo, criar um **índice único parcial** (`WHERE status IN ('PENDING_INITIATIVE','ACTIVE')`).
+### B1. Sem transações em operações multi-passo — **Resolvido (2026-10-03)**
+
+- ✅ `levelUpCharacter()`: **já usa `prisma.$transaction`** e o `applyLevelUp` grava com `updateMany` cujo `where` inclui o `lastLevelUpRelease` lido, tratando `count === 0` como **409** — dois POST simultâneos não sobem dois níveis com uma liberação. (`levelUpDraft`, do nível inicial, usa o mesmo caminho.)
+- ✅ `setLevelUpUnlocked()`: **não existe mais** — a coluna foi removida pela migration `20260928150000_release_level_up_per_click`. O equivalente é `releaseLevelUp()`, que usa `{ increment: 1 }` (atômico de banco). Dois cliques simultâneos contam como duas liberações **de propósito** (documentado).
+- ✅ `resolveAttack()` / `changeHp()`: trocado o ler-calcula-grava em JS por **`UPDATE` atômico** (`$executeRaw` com `GREATEST`/`LEAST`). Dano consome os PV temporários no próprio SQL, piso 0, teto `hpMax`; o personagem é **relido** após a escrita para montar o DTO/evento. Dois ataques concorrentes no mesmo alvo não perdem mais dano (combatentes-criatura idem).
+- ✅ `startCombat()`: além da checagem de aplicação, o banco agora impõe o combate único pelo índice parcial `combats_one_active_key` (ver D1); o erro `P2002` do INSERT vira o mesmo 409.
+- **Padrão aplicado em (2026-09-29):** `levelDownCharacter()` (downgrade do mestre) usa `updateMany` com o `version` lido no `where` — dois cliques seguidos não tiram dois níveis (o segundo recebe 409).
 
 ### B2. `version` não é imposto no servidor — **Média**
 O campo `version` serve só para ordenar eventos no cliente (`payload.character.version >= prev.version`). O `PATCH` não envia a versão esperada, então edições concorrentes (mestre + jogador) se sobrescrevem silenciosamente.
@@ -189,9 +189,10 @@ Por usar Bearer token, não há CSRF. `helmet` está ativo e o CSP está configu
 
 ## Parte D — Modelagem de dados (Prisma)
 
-### D1. Falta o índice único parcial de "combate ativo" — **Média**
-`Combat` tem `@@index([status])`, mas nada impede dois combates ativos. A checagem é só de aplicação.
-- **Sugestão:** migração com índice único parcial (`WHERE status <> 'ENDED'`) e tratar o erro como `409`.
+### D1. Índice único parcial de "combate ativo" — **Resolvido (2026-10-03)**
+`Combat` tinha só `@@index([status])` e a checagem era apenas de aplicação.
+- **Feito:** migration `20261003050000_single_active_combat` cria `combats_one_active_key`, índice único PARCIAL sobre a expressão constante `(1)` com `WHERE status <> 'ENDED'`. Um índice único em `(status)` não serviria: permitiria um `PENDING_INITIATIVE` e um `ACTIVE` conviverem. `startCombat` traduz o `P2002` em `409`.
+- **Observação:** o Prisma não expressa índice único parcial no schema, então ele vive só na migration (documentado no modelo `Combat`).
 
 ### D2. `Character` sem `@@index` para ordenação por nome — **Baixa**
 `listCharacters` faz `orderBy: { name }`. Em mesa pequena, irrelevante; se crescer, adicionar índice.
@@ -328,10 +329,10 @@ Ordem sugerida por impacto na mesa:
 - [ ] **P2** Capacidade de carga por tamanho/traços. _(A8)_
 
 ### Concorrência e escalabilidade
-- [ ] **P0** Transação/lock no Level Up (uma liberação = no máximo um uso). _(B1)_
-- [ ] **P0** HP do combate com `UPDATE` atômico (`GREATEST(0, hpCurrent - dano)`). _(B1)_
-- [ ] **P1** Transação em `setLevelUpUnlocked` (contador de liberação). _(B1)_
-- [ ] **P1** Índice único parcial de "um combate ativo". _(B1/D1)_
+- [x] **P0** Transação/lock no Level Up (uma liberação = no máximo um uso). _(B1)_ — **já estava feito** (`$transaction` + `updateMany` com `lastLevelUpRelease` no `WHERE`).
+- [x] **Corrigido (2026-10-03)** HP do combate com `UPDATE` atômico (`GREATEST`/`LEAST` via `$executeRaw`). _(B1)_
+- [x] **Desnecessário (2026-10-03)** `setLevelUpUnlocked` não existe mais; `releaseLevelUp` já usa incremento atômico. _(B1)_
+- [x] **Corrigido (2026-10-03)** Índice único parcial de "um combate ativo" (`combats_one_active_key`). _(B1/D1)_
 - [ ] **P1** `expectedVersion` opcional no PATCH (controle otimista de concorrência). _(B2)_
 - [ ] **P1** `republishSheetsWithCatalogItem`: filtrar no banco e/ou evento incremental. _(B3)_
 - [ ] **P2** Cache do catálogo por requisição/curto prazo. _(B7)_

@@ -473,7 +473,9 @@ timestamps. `@@index([name])`, `@@index([category])`, `@@index([rarity])`.
 
 **Combat:** `id` · `status CombatStatus` (PENDING_INITIATIVE/ACTIVE/ENDED) ·
 `round` (1) · `currentIndex` (0) · `localityId? → Locality (SetNull)` ·
-timestamps · `endedAt?` · `combatants`. `@@index([status])`.
+timestamps · `endedAt?` · `combatants`. `@@index([status])` + índice único
+parcial `combats_one_active_key` (`WHERE status <> 'ENDED'`) = no máximo um
+combate ativo por vez no banco.
 **Invariante:** no máximo **um** combate em PENDING_INITIATIVE|ACTIVE.
 
 **Combatant:** `id` · `combatId → Combat (Cascade)` · `kind` ·
@@ -1541,7 +1543,11 @@ hp do alvo, tudo; jogadores, quando o alvo é **criatura**, recebem
 - **Personagem:** dano consome **primeiro** os PV temporários; só o excedente
   chega ao `hpCurrent`. Cura não mexe nos temporários. `hpCurrent` limitado
   entre 0 e `hpMax`; incrementa `version`. Publica `sheet:updated`.
-- **Criatura:** mexe só no snapshot do combatente (o bestiário não é alterado).
+  A escrita é **atômica** (`$executeRaw`: `UPDATE ... SET hpCurrent = GREATEST(0,
+  LEAST(hpMax, ...))`), calculada a partir do valor gravado — dois ataques
+  simultâneos no mesmo alvo não perdem dano; a ficha é relida depois para o DTO.
+- **Criatura:** mexe só no snapshot do combatente (o bestiário não é alterado),
+  também com `UPDATE` atômico.
 - Retorna `null` se a origem desapareceu.
 
 `POST /api/combat/hp` (mestre) = ajuste manual. `POST /api/combat/end` (mestre) =

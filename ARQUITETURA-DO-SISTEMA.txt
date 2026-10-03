@@ -515,6 +515,11 @@ exceto GameConfig (chave fixa "main").
     createdAt · updatedAt · endedAt DateTime? · combatants Combatant[]
     @@index([status])
     INVARIANTE: no máximo UM combate em status PENDING_INITIATIVE|ACTIVE.
+    Garantida no BANCO pelo índice único PARCIAL `combats_one_active_key`
+    (expressão constante `(1)` com `WHERE status <> 'ENDED'`; migration
+    `20261003050000_single_active_combat`). Um índice único em `(status)` não
+    serviria (permitiria PENDING_INITIATIVE + ACTIVE juntos). O `startCombat`
+    mantém a checagem de aplicação e traduz o erro P2002 do INSERT em 409.
 7.12 Combatant → `combatants`
     id · combatId → Combat (Cascade) · kind CombatantKind
     characterId String? → Character (onDelete: SetNull)
@@ -1589,9 +1594,14 @@ DANO E CURA (`changeHp`) — caminho único, usado por ataque e ajuste manual
   • PERSONAGEM: dano consome PRIMEIRO os PV TEMPORÁRIOS; só o excedente chega ao
     hpCurrent. Cura (delta positivo) NÃO mexe nos temporários. hpCurrent é limitado
     entre 0 e hpMax; incrementa `version`.
+    A escrita é ATÔMICA no banco (`$executeRaw`: UPDATE ... SET hpCurrent =
+    GREATEST(0, LEAST(hpMax, ...)), hpTemp = ...): o valor novo sai do que está
+    GRAVADO, não do snapshot lido no início do ataque — dois ataques simultâneos
+    no mesmo alvo não perdem mais dano. A ficha é RELIDA depois para montar o DTO.
     Depois publica `sheet:updated` (o jogador vê o próprio HP mudar na hora e o
     mestre vê no painel) — o combate reaproveita o canal da ficha.
-  • CRIATURA: mexe só no snapshot do COMBATENTE (o bestiário não é alterado).
+  • CRIATURA: mexe só no snapshot do COMBATENTE (o bestiário não é alterado),
+    também com UPDATE atômico (`LEAST(hpMax, ...)`).
   • Retorna null se a origem desapareceu; o ajuste manual responde 409 nesse caso.
 
 AJUSTE MANUAL DE HP (POST /api/combat/hp, mestre) — { combatantId, amount, mode }.
