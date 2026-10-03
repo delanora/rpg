@@ -1421,15 +1421,18 @@ aplica os efeitos. A ficha ganhou, na migração `20261003025613_custom_races`,
 (ON DELETE SET NULL); `characters.speed` virou Float (7,5 m / 10,5 m). A coluna `race` de
 texto livre foi abandonada — as fichas antigas com raça em texto livre foram apagadas.
 
-**BACKGROUND_CATALOG — 13 do PHB**, cada um com 2 perícias: acolyte (insight,
-religion) · charlatan (deception, sleightOfHand) · criminal (deception, stealth) ·
-entertainer (acrobatics, performance) · folk-hero (animalHandling, survival) ·
-guild-artisan (insight, persuasion) · hermit (medicine, religion) · noble
-(history, persuasion) · outlander (athletics, survival) · sage (arcana, history) ·
-sailor (athletics, perception) · soldier (athletics, intimidation) · urchin
-(sleightOfHand, stealth).
-**LACUNA:** ferramentas, idiomas e a característica do antecedente não são
-modelados — só as perícias entram na ficha.
+**BACKGROUND_CATALOG — DERIVADO** do catálogo estruturado `src/modules/shared/backgrounds/`
+(mesmo padrão de `shared/races/`: `types.ts` + `index.ts` + um arquivo por antecedente).
+Os **13 do PHB 2014**, cada um com 2 perícias (acolyte, charlatan, criminal,
+entertainer, folk-hero, guild-artisan, hermit, noble, outlander, sage, sailor,
+soldier, urchin), ferramentas FIXAS e/ou **à escolha por categoria** (opções
+resolvidas de `toolsByCategory`: instrumento musical, ferramenta de artesão, jogo),
+idiomas à escolha e a característica narrativa. O passo 4 valida as escolhas e aplica:
+ferramentas somam em `characters.toolProficiencies` (junto das da raça — derivado,
+recalculado a cada passo), idiomas em `characters.languages` e a característica em
+`characters.features` (`source: 'background'`). O equipamento inicial é só
+`suggestedEquipment` (texto) — nunca entra no inventário. Sem migração nova: as
+escolhas vivem no rascunho (`creationDraft`) e o resultado cai nos campos existentes.
 
 ---
 

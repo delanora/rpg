@@ -11,7 +11,10 @@ import {
   CREATION_ROLL_LABEL,
   EMPTY_CREATION_DRAFT,
   RACE_CATALOG,
+  backgroundLanguageGrants,
   backgroundSkills,
+  backgroundToolGrants,
+  findBackground,
   lowestIndex,
   normalizeCreationDraft,
   raceChoiceCount,
@@ -76,6 +79,7 @@ import {
   type Actor,
 } from './characters.service.js';
 import type { CharacterDto } from './characters.dto.js';
+import { featureSchema } from './characters.schema.js';
 import type {
   CreationRollRequestInput,
   CreationStepInput,
@@ -118,6 +122,10 @@ export interface CreationStateDto {
   abilityChoices: AbilityKey[];
   /** Idiomas escolhidos quando a raça concede idioma(s) à escolha. */
   languageChoices: string[];
+  /** Ferramentas escolhidas nas categorias do antecedente: `{ escolha: id }`. */
+  backgroundToolChoices: Record<string, string>;
+  /** Idiomas escolhidos quando o antecedente concede idioma(s) à escolha. */
+  backgroundLanguageChoices: string[];
   /** Perícias que a classe do rascunho oferece (quantas e quais). */
   skillChoice: { count: number; from: string[] };
   /**
@@ -182,6 +190,15 @@ function parseRaceChoices(input: unknown): Record<string, string> {
     if (typeof value === 'string') result[key] = value;
   }
   return result;
+}
+
+/** Lê as características gravadas na ficha (JSONB cru), descartando lixo. */
+function parseFeatures(input: unknown): ReturnType<typeof featureSchema.parse>[] {
+  if (!Array.isArray(input)) return [];
+  return input.flatMap((item) => {
+    const parsed = featureSchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 /**
@@ -309,15 +326,51 @@ async function raceGrants(input: {
   };
 }
 
-/** Perícias concedidas pela raça atualmente gravada na ficha. */
-async function characterRaceSkills(character: Character): Promise<string[]> {
-  const grants = await raceGrants({
+/** Resolve os efeitos da raça atualmente gravada na ficha. */
+async function characterRaceGrants(character: Character): Promise<RaceGrants> {
+  return raceGrants({
     raceId: character.raceId,
     subraceId: character.subraceId,
     customRaceId: character.customRaceId,
     choices: parseRaceChoices(character.raceChoices),
   });
-  return grants.skills;
+}
+
+/** Perícias concedidas pela raça atualmente gravada na ficha. */
+async function characterRaceSkills(character: Character): Promise<string[]> {
+  return (await characterRaceGrants(character)).skills;
+}
+
+/**
+ * Ferramentas da ficha do rascunho: as da RAÇA (fixas e escolhidas) mais as do
+ * ANTECEDENTE (fixas e escolhidas por categoria). É DERIVADO — recalculado a
+ * cada passo, para voltar ao passo 3 (ou 4) não perder o que o outro concedeu.
+ */
+function resolvedTools(
+  raceTools: readonly string[],
+  background: string,
+  toolChoices: Record<string, string>,
+): string[] {
+  return [...new Set([...raceTools, ...backgroundToolGrants(background, toolChoices)])];
+}
+
+/**
+ * Idiomas da ficha do rascunho: os FIXOS e escolhidos da raça mais os escolhidos
+ * do antecedente. Também DERIVADO (mesma razão das ferramentas).
+ */
+function resolvedLanguages(
+  raceFixed: readonly string[],
+  raceChoices: readonly string[],
+  background: string,
+  backgroundChoices: readonly string[],
+): string[] {
+  return [
+    ...new Set([
+      ...raceFixed,
+      ...raceChoices,
+      ...backgroundLanguageGrants(background, backgroundChoices),
+    ]),
+  ];
 }
 
 /** A ficha do rascunho (criada no primeiro passo) ou erro se a criação já fechou. */
@@ -464,6 +517,21 @@ function missingForFinalize(character: Character, draft: CreationDraft): string[
     missing.push('os atributos à escolha da raça (passo 3)');
   }
   if (!character.background.trim()) missing.push('o antecedente (passo 4)');
+
+  // Ferramentas e idiomas à escolha do antecedente (quando ele os concede).
+  const backgroundOption = findBackground(character.background);
+  if (backgroundOption) {
+    for (const choice of backgroundOption.toolChoices ?? []) {
+      if (!draft.backgroundToolChoices[choice.id]) {
+        missing.push(`a ${choice.label} do antecedente (passo 4)`);
+      }
+    }
+    const languageCount = backgroundOption.languageChoices ?? 0;
+    if (languageCount > 0 && draft.backgroundLanguageChoices.length < languageCount) {
+      missing.push('os idiomas do antecedente (passo 4)');
+    }
+  }
+
   if (entries.length === 0) missing.push('a classe (passo 5)');
 
   // Clérigo/Feiticeiro/Bruxo precisam da subclasse desde o nível 1.
@@ -536,6 +604,8 @@ async function buildState(
       skillPicks: draft.skillPicks,
       abilityChoices: draft.abilityChoices,
       languageChoices: draft.languageChoices,
+      backgroundToolChoices: draft.backgroundToolChoices,
+      backgroundLanguageChoices: draft.backgroundLanguageChoices,
       skillChoice: creationSkillChoice(entries),
       featureChoices: firstDefinition
         ? featureChoiceInfo(firstDefinition, classChoices).filter(
@@ -712,8 +782,17 @@ export async function saveCreationStep(
       patch.raceResistances = grants.resistances as NonNullable<
         UpdateCharacterInput['raceResistances']
       >;
-      patch.languages = [...grants.languages, ...nextDraft.languageChoices];
-      patch.toolProficiencies = grants.tools;
+      patch.languages = resolvedLanguages(
+        grants.languages,
+        nextDraft.languageChoices,
+        character.background,
+        nextDraft.backgroundLanguageChoices,
+      );
+      patch.toolProficiencies = resolvedTools(
+        grants.tools,
+        character.background,
+        nextDraft.backgroundToolChoices,
+      );
       patch.skills = skillsPatch(
         character,
         nextDraft.skillPicks,
@@ -733,6 +812,49 @@ export async function saveCreationStep(
     case 4: {
       const background = (input.background ?? '').trim();
       if (!background) throw new HttpError('Escreva o antecedente do personagem.', 400);
+
+      // O antecedente do catálogo concede ferramentas (fixas e/ou à escolha por
+      // categoria), idiomas à escolha e uma característica narrativa. Um
+      // antecedente escrito à mão (fora do catálogo) segue aceito, sem esses
+      // extras — só as perícias, como antes.
+      const option = findBackground(background);
+      const toolChoices: Record<string, string> = {};
+      let languageChoices: string[] = [];
+
+      if (option) {
+        for (const choice of option.toolChoices ?? []) {
+          const picked = (input.backgroundToolChoices ?? {})[choice.id];
+          if (!picked) throw new HttpError(`Escolha ${choice.label} de ${option.name}.`, 400);
+          if (!choice.options.some((item) => item.id === picked)) {
+            throw new HttpError(`Opção inválida em "${choice.label}".`, 400);
+          }
+          toolChoices[choice.id] = picked;
+        }
+
+        const languageCount = option.languageChoices ?? 0;
+        languageChoices = [
+          ...new Set((input.backgroundLanguageChoices ?? []).map((name) => name.trim())),
+        ].filter(Boolean);
+        if (languageCount > 0) {
+          const invalid = languageChoices.filter((name) => !isLanguageName(name));
+          if (invalid.length > 0) {
+            throw new HttpError(`Idioma inválido para ${option.name}: ${invalid.join(', ')}.`, 400);
+          }
+          if (languageChoices.length !== languageCount) {
+            throw new HttpError(
+              `${option.name} concede ${languageCount} idioma(s) à sua escolha — escolha exatamente esse tanto.`,
+              400,
+            );
+          }
+        } else if (languageChoices.length > 0) {
+          throw new HttpError(`${option.name} não concede idioma à escolha.`, 400);
+        }
+      }
+
+      nextDraft.backgroundToolChoices = option ? toolChoices : {};
+      nextDraft.backgroundLanguageChoices =
+        option && (option.languageChoices ?? 0) > 0 ? languageChoices : [];
+
       patch.background = background;
       // O antecedente pode conceder perícias: elas entram junto das escolhidas
       // na classe e das concedidas pela raça, sem consumir as escolhas da classe.
@@ -742,6 +864,35 @@ export async function saveCreationStep(
         background,
         await characterRaceSkills(character),
       );
+
+      // Ferramentas e idiomas são DERIVADOS: raça + antecedente, recalculados a
+      // cada passo para voltar ao passo 3 não apagar o que o antecedente deu.
+      const race = await characterRaceGrants(character);
+      patch.toolProficiencies = resolvedTools(
+        race.tools,
+        background,
+        nextDraft.backgroundToolChoices,
+      );
+      patch.languages = resolvedLanguages(
+        race.languages,
+        nextDraft.languageChoices,
+        background,
+        nextDraft.backgroundLanguageChoices,
+      );
+
+      // A característica narrativa do antecedente entra na aba Características
+      // (`source: 'background'`), substituindo uma anterior do mesmo tipo.
+      if (option) {
+        patch.features = [
+          ...parseFeatures(character.features).filter((feature) => feature.source !== 'background'),
+          {
+            id: `background:${option.key}`,
+            name: option.feature?.name ?? option.name,
+            source: 'background',
+            description: option.feature?.description ?? '',
+          },
+        ];
+      }
       break;
     }
 
@@ -1050,6 +1201,8 @@ export async function reopenCreation(characterId: string, master: Actor): Promis
     skillPicks: draft.skillPicks,
     abilityChoices: draft.abilityChoices,
     languageChoices: draft.languageChoices,
+    backgroundToolChoices: draft.backgroundToolChoices,
+    backgroundLanguageChoices: draft.backgroundLanguageChoices,
   };
 
   return setCreationFinalized(

@@ -1391,15 +1391,17 @@ CATÁLOGOS (modules/shared/creation.ts)
     O passo 3 aplica bônus de atributo, deslocamento, visão no escuro, resistências,
     idiomas e as proficiências de perícia/ferramenta resolvidas pelas escolhas; os
     traços aparecem na aba Características da ficha.
-  BACKGROUND_CATALOG — 13 do PHB, cada um concedendo 2 perícias: acolyte (insight,
-    religion) · charlatan (deception, sleightOfHand) · criminal (deception, stealth) ·
-    entertainer (acrobatics, performance) · folk-hero (animalHandling, survival) ·
-    guild-artisan (insight, persuasion) · hermit (medicine, religion) · noble
-    (history, persuasion) · outlander (athletics, survival) · sage (arcana, history) ·
-    sailor (athletics, perception) · soldier (athletics, intimidation) · urchin
-    (sleightOfHand, stealth).
-    [LACUNA] Ferramentas, idiomas e a característica do antecedente NÃO são modelados
-    — só as perícias entram na ficha.
+  BACKGROUND_CATALOG — DERIVADO do catálogo estruturado shared/backgrounds/ (mesmo
+    padrão de shared/races/: types.ts + index.ts + um arquivo por antecedente). Os 13
+    do PHB, cada um com 2 perícias (acolyte, charlatan, criminal, entertainer,
+    folk-hero, guild-artisan, hermit, noble, outlander, sage, sailor, soldier,
+    urchin), ferramentas FIXAS e/ou à ESCOLHA POR CATEGORIA (as opções saem de
+    toolsByCategory — instrumento musical, ferramenta de artesão, jogo etc.),
+    idiomas à escolha e a característica narrativa. O passo 4 valida as escolhas e
+    aplica tudo: as ferramentas somam em characters.toolProficiencies (junto das da
+    raça — DERIVADO, recalculado a cada passo), os idiomas em characters.languages e
+    a característica em characters.features (source: 'background'). O equipamento
+    inicial é só suggestedEquipment (texto) — nunca entra no inventário.
 
 FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça)
   Espelha o padrão de shared/classes/: types.ts + index.ts (agregador) + um arquivo por

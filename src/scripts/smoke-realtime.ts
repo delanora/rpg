@@ -37,6 +37,9 @@ const createdLocalityIds: string[] = [];
 const createdRegionIds: string[] = [];
 const createdItemIds: string[] = [];
 const createdCustomRaceIds: string[] = [];
+/** Token do jogador da seção 40, reaproveitado na seção 41 (o limiter de auth
+ * de produção é apertado: o smoke já consome todas as contas que pode criar). */
+let testsPlayerToken = '';
 
 let failures = 0;
 
@@ -4070,7 +4073,7 @@ async function main(): Promise<void> {
     [1, { mode: 'existing' }],
     [2, { name: draftSheet.name, alignment: 'Leal e Bom' }],
     [3, { race: draftSheet.race }],
-    [4, { background: 'Sábio' }],
+    [4, { background: 'Sábio', backgroundLanguageChoices: ['Élfico', 'Anão'] }],
     [5, { classKey: draftSheet.classes[0].classKey }],
     [
       6,
@@ -4738,7 +4741,7 @@ async function main(): Promise<void> {
   const walkSteps: [number, Record<string, unknown>][] = [
     [2, { name: 'Teste do Assistente', alignment: 'Neutro e Bom' }],
     [3, { race: 'Tiefling' }],
-    [4, { background: 'Sábio' }],
+    [4, { background: 'Sábio', backgroundLanguageChoices: ['Élfico', 'Anão'] }],
   ];
   const walkStatuses: number[] = [];
   let sageStep: any = null;
@@ -5172,7 +5175,7 @@ async function main(): Promise<void> {
   const reopenWalk: [number, Record<string, unknown>][] = [
     [2, { name: 'Teste do Assistente' }],
     [3, { race: 'Tiefling' }],
-    [4, { background: 'Sábio' }],
+    [4, { background: 'Sábio', backgroundLanguageChoices: ['Élfico', 'Anão'] }],
     [5, { classKey: 'barbarian' }],
     [
       6,
@@ -9471,6 +9474,7 @@ async function main(): Promise<void> {
       body: { username: racesUsername, displayName: 'Raças Teste', password: 'senha-forte-123' },
     });
     const racesToken: string = racesReg.data?.token;
+    testsPlayerToken = racesToken;
     check('jogador novo para o teste de raças (201)', racesReg.status === 201 && Boolean(racesToken));
 
     // --- CRUD da raça personalizada (mestre) --------------------------------
@@ -9693,6 +9697,212 @@ async function main(): Promise<void> {
       afterRemove.data?.character?.customRaceId === null &&
         afterRemove.data?.character?.race === '',
       JSON.stringify(afterRemove.data?.character?.customRaceId),
+    );
+  }
+
+  // 41) Antecedentes do PHB (catálogo estruturado + integração com ferramentas)
+  {
+    console.log('\n41) Antecedentes do PHB e integração com as ferramentas');
+
+    // Reaproveita o jogador da seção 40 (a criação dele segue aberta): criar
+    // mais uma conta estouraria o limitador de auth de produção.
+    const bgToken = testsPlayerToken;
+    check('jogador reaproveitado para o teste de antecedentes', Boolean(bgToken));
+
+    // --- Catálogo estruturado ----------------------------------------------
+    const bgState = await api('/api/characters/me/creation', { token: bgToken });
+    const bgCatalog: any[] = bgState.data?.creation?.backgroundCatalog ?? [];
+    check(
+      'o catálogo de antecedentes tem 13, cada um com característica e 2 perícias',
+      bgCatalog.length === 13 &&
+        bgCatalog.every((item) => (item.skills ?? []).length === 2 && item.feature?.name),
+      JSON.stringify(bgCatalog.map((item) => item.key)),
+    );
+    const sageOpt = bgCatalog.find((item) => item.key === 'sage');
+    check(
+      'o Sábio concede 2 idiomas à escolha e nenhuma ferramenta',
+      sageOpt?.languageChoices === 2 && (sageOpt?.toolProficiencies ?? []).length === 0,
+      JSON.stringify({ languages: sageOpt?.languageChoices, tools: sageOpt?.toolProficiencies }),
+    );
+    const entertainerOpt = bgCatalog.find((item) => item.key === 'entertainer');
+    check(
+      'o Artista resolve o instrumento musical do catálogo (9 opções)',
+      entertainerOpt?.toolChoices?.[0]?.options?.length === 9 &&
+        entertainerOpt?.toolChoices?.[0]?.options?.some((option: any) => option.id === 'lute') &&
+        (entertainerOpt?.toolProficiencies ?? []).includes('disguise-kit'),
+      JSON.stringify(entertainerOpt?.toolChoices),
+    );
+    const criminalOpt = bgCatalog.find((item) => item.key === 'criminal');
+    check(
+      'o Criminoso concede thieves-tools + gaming-set FIXOS (sem escolha)',
+      (criminalOpt?.toolProficiencies ?? []).includes('thieves-tools') &&
+        (criminalOpt?.toolProficiencies ?? []).includes('gaming-set') &&
+        (criminalOpt?.toolChoices ?? []).length === 0,
+      JSON.stringify(criminalOpt?.toolProficiencies),
+    );
+
+    // --- Passo 3 (raça Tiefling: Comum + Infernal, sem escolhas) ------------
+    await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 1, mode: 'new' },
+    });
+    await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 2, name: 'Teste dos Antecedentes', alignment: 'Neutro' },
+    });
+    const bgRace = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 3, race: 'Tiefling' },
+    });
+    check(
+      'a raça concede os idiomas fixos antes do antecedente (Comum + Infernal)',
+      bgRace.status === 200 &&
+        ['Comum', 'Infernal'].every((name) =>
+          (bgRace.data?.character?.languages ?? []).includes(name),
+        ),
+      JSON.stringify(bgRace.data?.character?.languages),
+    );
+
+    // --- Ferramenta por categoria: Artista ---------------------------------
+    const entertainerMissing = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 4, background: 'Artista' },
+    });
+    check(
+      'o Artista sem a escolha do instrumento é recusado (400)',
+      entertainerMissing.status === 400,
+      JSON.stringify(entertainerMissing.data),
+    );
+
+    const entertainerBad = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 4, background: 'Artista', backgroundToolChoices: { 'entertainer-instrument': 'thieves-tools' } },
+    });
+    check(
+      'ferramenta fora da categoria do antecedente é recusada (400)',
+      entertainerBad.status === 400,
+      JSON.stringify(entertainerBad.data),
+    );
+
+    const entertainerOk = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: {
+        step: 4,
+        background: 'Artista',
+        backgroundToolChoices: { 'entertainer-instrument': 'lute' },
+      },
+    });
+    check(
+      'a ferramenta escolhida entra junto da fixa (disguise-kit + lute)',
+      entertainerOk.status === 200 &&
+        (entertainerOk.data?.character?.toolProficiencies ?? []).includes('disguise-kit') &&
+        (entertainerOk.data?.character?.toolProficiencies ?? []).includes('lute'),
+      JSON.stringify(entertainerOk.data?.character?.toolProficiencies),
+    );
+    check(
+      'a característica do antecedente entra na ficha com source background',
+      (entertainerOk.data?.character?.features ?? []).some(
+        (feature: any) =>
+          feature.source === 'background' && feature.name === 'Sob Demanda Popular',
+      ),
+      JSON.stringify(entertainerOk.data?.character?.features),
+    );
+
+    // --- Ferramentas FIXAS: Criminoso --------------------------------------
+    const criminalStep = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 4, background: 'Criminoso' },
+    });
+    check(
+      'trocar para o Criminoso dá as ferramentas fixas e troca a característica',
+      criminalStep.status === 200 &&
+        (criminalStep.data?.character?.toolProficiencies ?? []).includes('thieves-tools') &&
+        (criminalStep.data?.character?.toolProficiencies ?? []).includes('gaming-set') &&
+        !(criminalStep.data?.character?.toolProficiencies ?? []).includes('lute') &&
+        (criminalStep.data?.character?.features ?? []).some(
+          (feature: any) => feature.source === 'background' && feature.name === 'Contato Criminoso',
+        ),
+      JSON.stringify(criminalStep.data?.character?.toolProficiencies),
+    );
+
+    // --- Idiomas à escolha: Sábio ------------------------------------------
+    const sageMissing = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 4, background: 'Sábio' },
+    });
+    check('o Sábio sem os 2 idiomas é recusado (400)', sageMissing.status === 400);
+
+    const sageOk = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 4, background: 'Sábio', backgroundLanguageChoices: ['Élfico', 'Anão'] },
+    });
+    check(
+      'os idiomas do Sábio entram junto dos idiomas fixos da raça',
+      sageOk.status === 200 &&
+        ['Élfico', 'Anão'].every((name) =>
+          (sageOk.data?.character?.languages ?? []).includes(name),
+        ) &&
+        (sageOk.data?.character?.languages ?? []).includes('Infernal'),
+      JSON.stringify(sageOk.data?.character?.languages),
+    );
+
+    // --- Ferramenta + idioma juntos: Artesão de Guilda ---------------------
+    const guildBad = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: {
+        step: 4,
+        background: 'Artesão de Guilda',
+        backgroundToolChoices: { 'guild-artisan-tool': 'smith-tools' },
+      },
+    });
+    check('o Artesão de Guilda sem o idioma à escolha é recusado (400)', guildBad.status === 400);
+
+    const guildOk = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: {
+        step: 4,
+        background: 'Artesão de Guilda',
+        backgroundToolChoices: { 'guild-artisan-tool': 'smith-tools' },
+        backgroundLanguageChoices: ['Anão'],
+      },
+    });
+    check(
+      'o Artesão de Guilda aplica a ferramenta e o idioma escolhidos (200)',
+      guildOk.status === 200 &&
+        (guildOk.data?.character?.toolProficiencies ?? []).includes('smith-tools') &&
+        (guildOk.data?.character?.languages ?? []).includes('Anão'),
+      JSON.stringify({
+        tools: guildOk.data?.character?.toolProficiencies,
+        languages: guildOk.data?.character?.languages,
+      }),
+    );
+
+    // --- Voltar ao passo 3 não apaga o que o antecedente concedeu ----------
+    const backToRace = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: bgToken,
+      body: { step: 3, race: 'Tiefling' },
+    });
+    check(
+      'voltar ao passo 3 mantém as ferramentas e os idiomas do antecedente',
+      backToRace.status === 200 &&
+        (backToRace.data?.character?.toolProficiencies ?? []).includes('smith-tools') &&
+        (backToRace.data?.character?.languages ?? []).includes('Anão'),
+      JSON.stringify({
+        tools: backToRace.data?.character?.toolProficiencies,
+        languages: backToRace.data?.character?.languages,
+      }),
     );
   }
 

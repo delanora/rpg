@@ -15,6 +15,7 @@
  * ambos usados em creation.service.ts.
  */
 
+import { allBackgrounds, backgroundToolChoiceOptions, type BackgroundFeature } from './backgrounds/index.js';
 import { ABILITY_KEYS, type AbilityKey } from './dnd5e.js';
 import { isLanguageName } from './languages.js';
 import { allRaces } from './races/index.js';
@@ -121,6 +122,14 @@ export interface RaceTraitView {
   description: string;
 }
 
+/** Uma escolha de ferramenta por CATEGORIA do catálogo, exibida no passo 4. */
+export interface BackgroundToolChoiceView {
+  id: string;
+  label: string;
+  /** Opções resolvidas do catálogo de ferramentas (`toolsByCategory`). */
+  options: { id: string; label: string }[];
+}
+
 /** Um antecedente do catálogo (um dos 13 do Livro do Jogador). */
 export interface BackgroundOption {
   key: string;
@@ -129,6 +138,16 @@ export interface BackgroundOption {
   description?: string;
   /** Perícias concedidas pelo antecedente (chaves de `SKILLS`). */
   skills?: string[];
+  /** Ferramentas FIXAS concedidas (ids do catálogo, ex.: `thieves-tools`). */
+  toolProficiencies?: string[];
+  /** Ferramentas à ESCOLHA por categoria (as opções saem do catálogo). */
+  toolChoices?: BackgroundToolChoiceView[];
+  /** Quantos idiomas à escolha o antecedente concede (0 = nenhum). */
+  languageChoices?: number;
+  /** Característica narrativa (vai para a aba Características). */
+  feature?: BackgroundFeature;
+  /** Equipamento sugerido — texto informativo (não entra no inventário). */
+  suggestedEquipment?: string;
 }
 
 /**
@@ -195,91 +214,35 @@ export const RACE_CATALOG: readonly RaceOption[] = allRaces().flatMap((race) => 
 /**
  * Antecedentes do Livro do Jogador (2014) — os 13.
  *
- * Cada um concede DUAS perícias com proficiência (as do livro), aplicadas pelo
- * passo 4 e somadas às escolhidas na classe, sem consumir as escolhas dela (ver
- * `skillsPatch` em creation.service.ts). Ferramentas, idiomas e a característica
- * do antecedente ainda não são modelados — só a perícia entra na ficha.
+ * Desde a fundação do sistema de antecedentes esta lista é DERIVADA do catálogo
+ * estruturado (`shared/backgrounds/`), no mesmo espírito do catálogo de raças.
+ * Cada um concede DUAS perícias, ferramentas (fixas e/ou escolhidas por
+ * categoria), idiomas à escolha e uma característica narrativa — tudo aplicado
+ * pelo passo 4 (ver `backgroundToolGrants`/`backgroundLanguageGrants`).
  */
-export const BACKGROUND_CATALOG: readonly BackgroundOption[] = [
-  {
-    key: 'acolyte',
-    name: 'Acólito',
-    description: 'Você serviu a um templo e conhece os ritos, as orações e os segredos da fé.',
-    skills: ['insight', 'religion'],
-  },
-  {
-    key: 'charlatan',
-    name: 'Charlatão',
-    description: 'Você sempre teve um plano, uma identidade falsa e a lábia para vendê-la.',
-    skills: ['deception', 'sleightOfHand'],
-  },
-  {
-    key: 'criminal',
-    name: 'Criminoso',
-    description: 'Você tem contatos no submundo e um passado que prefere não comentar.',
-    skills: ['deception', 'stealth'],
-  },
-  {
-    key: 'entertainer',
-    name: 'Artista',
-    description: 'Você vive para a plateia: música, dança, malabarismo ou lábia de palco.',
-    skills: ['acrobatics', 'performance'],
-  },
-  {
-    key: 'folk-hero',
-    name: 'Herói do Povo',
-    description: 'Você veio do campo e o povo simples o tem como campeão.',
-    skills: ['animalHandling', 'survival'],
-  },
-  {
-    key: 'guild-artisan',
-    name: 'Artesão de Guilda',
-    description: 'Você é membro de uma guilda de artesãos, com carta, oficina e contatos.',
-    skills: ['insight', 'persuasion'],
-  },
-  {
-    key: 'hermit',
-    name: 'Eremita',
-    description: 'Você se isolou do mundo em busca de iluminação — e encontrou algo.',
-    skills: ['medicine', 'religion'],
-  },
-  {
-    key: 'noble',
-    name: 'Nobre',
-    description: 'Você nasceu com título, terras e a educação (e as dívidas) da nobreza.',
-    skills: ['history', 'persuasion'],
-  },
-  {
-    key: 'outlander',
-    name: 'Forasteiro',
-    description: 'Você cresceu nas terras selvagens, longe das cidades e das estradas.',
-    skills: ['athletics', 'survival'],
-  },
-  {
-    key: 'sage',
-    name: 'Sábio',
-    description: 'Você passou a vida entre livros e arquivos, caçando conhecimento proibido.',
-    skills: ['arcana', 'history'],
-  },
-  {
-    key: 'sailor',
-    name: 'Marinheiro',
-    description: 'Você navegou por anos: conhece cordas, tempestades e portos de todo lugar.',
-    skills: ['athletics', 'perception'],
-  },
-  {
-    key: 'soldier',
-    name: 'Soldado',
-    description: 'Você treinou e lutou num exército; a disciplina (ou a cicatriz) ficou.',
-    skills: ['athletics', 'intimidation'],
-  },
-  {
-    key: 'urchin',
-    name: 'Órfão de Rua',
-    description: 'Você cresceu sozinho nas ruas, rápido de mãos e invisível nos becos.',
-    skills: ['sleightOfHand', 'stealth'],
-  },
-];
+function toBackgroundOption(background: (typeof BACKGROUNDS)[number]): BackgroundOption {
+  return {
+    key: background.id,
+    name: background.namePt,
+    description: background.description,
+    skills: [...background.skillProficiencies],
+    toolProficiencies: background.toolProficiencies
+      ? [...background.toolProficiencies]
+      : undefined,
+    toolChoices: background.toolChoices?.map((choice) => ({
+      id: choice.id,
+      label: choice.label,
+      options: backgroundToolChoiceOptions(choice.category),
+    })),
+    languageChoices: background.languageChoices ?? 0,
+    feature: background.feature,
+    suggestedEquipment: background.suggestedEquipment,
+  };
+}
+
+const BACKGROUNDS = allBackgrounds();
+
+export const BACKGROUND_CATALOG: readonly BackgroundOption[] = BACKGROUNDS.map(toBackgroundOption);
 
 /** Busca a raça pelo `key` ou pelo nome digitado (aceita caixa diferente). */
 export function findRace(value: string): RaceOption | null {
@@ -341,6 +304,39 @@ export function backgroundSkills(background: string): string[] {
   return findBackground(background)?.skills ?? [];
 }
 
+/**
+ * Ferramentas concedidas pelo antecedente: as FIXAS mais as escolhidas nas
+ * categorias (`choices` = `{ [id da escolha]: id da ferramenta }`). Cada escolha
+ * só aceita um id que exista entre as opções da categoria — nada fora do
+ * catálogo entra.
+ */
+export function backgroundToolGrants(
+  background: string,
+  choices: Record<string, string> = {},
+): string[] {
+  const option = findBackground(background);
+  if (!option) return [];
+
+  const tools = [...(option.toolProficiencies ?? [])];
+  for (const choice of option.toolChoices ?? []) {
+    const picked = choices[choice.id];
+    if (picked && choice.options.some((item) => item.id === picked)) tools.push(picked);
+  }
+  return [...new Set(tools)];
+}
+
+/**
+ * Idiomas à escolha concedidos pelo antecedente (`choices` na ordem escolhida).
+ * Cada antecedente concede no máximo os seus `languageChoices` primeiros.
+ */
+export function backgroundLanguageGrants(
+  background: string,
+  choices: readonly string[] = [],
+): string[] {
+  const count = findBackground(background)?.languageChoices ?? 0;
+  return count > 0 ? [...new Set(choices)].slice(0, count) : [];
+}
+
 // ---------------------------------------------------------------------------
 // Rascunho (JSONB `characters.creationDraft`)
 // ---------------------------------------------------------------------------
@@ -379,6 +375,16 @@ export interface CreationDraft {
    * Meio-Elfo: 1). Entram na ficha somados aos idiomas FIXOS da raça.
    */
   languageChoices: string[];
+  /**
+   * Ferramentas escolhidas nas categorias do antecedente: `{ [id da escolha]:
+   * id da ferramenta }` (ex.: instrumento musical do Artista).
+   */
+  backgroundToolChoices: Record<string, string>;
+  /**
+   * Idiomas escolhidos quando o antecedente concede idioma(s) à escolha
+   * (Acólito e Sábio: 2; vários: 1).
+   */
+  backgroundLanguageChoices: string[];
 }
 
 export const EMPTY_CREATION_DRAFT: CreationDraft = {
@@ -389,6 +395,8 @@ export const EMPTY_CREATION_DRAFT: CreationDraft = {
   skillPicks: [],
   abilityChoices: [],
   languageChoices: [],
+  backgroundToolChoices: {},
+  backgroundLanguageChoices: [],
 };
 
 function isAbilityKey(value: string): value is AbilityKey {
@@ -462,7 +470,38 @@ export function normalizeCreationDraft(input: unknown): CreationDraft {
       ].slice(0, 6)
     : [];
 
-  return { mode, step, rolls, baseAbilities, skillPicks, abilityChoices, languageChoices };
+  const backgroundToolChoices: Record<string, string> = {};
+  if (source.backgroundToolChoices && typeof source.backgroundToolChoices === 'object') {
+    for (const [key, value] of Object.entries(
+      source.backgroundToolChoices as Record<string, unknown>,
+    )) {
+      if (typeof key === 'string' && key.length <= 60 && typeof value === 'string') {
+        backgroundToolChoices[key] = value;
+      }
+    }
+  }
+
+  const backgroundLanguageChoices = Array.isArray(source.backgroundLanguageChoices)
+    ? [
+        ...new Set(
+          source.backgroundLanguageChoices.filter(
+            (key): key is string => typeof key === 'string' && isLanguageName(key),
+          ),
+        ),
+      ].slice(0, 6)
+    : [];
+
+  return {
+    mode,
+    step,
+    rolls,
+    baseAbilities,
+    skillPicks,
+    abilityChoices,
+    languageChoices,
+    backgroundToolChoices,
+    backgroundLanguageChoices,
+  };
 }
 
 /** Índice do menor dado (o descartado na rolagem de 4d6). */
