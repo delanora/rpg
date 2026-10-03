@@ -362,6 +362,13 @@ export const updateCharacterSchema = z
     // Identidade
     name: z.string().trim().min(1, 'O nome não pode ficar vazio.').max(120),
     race: shortText(60),
+    /**
+     * Raça/sub-raça do catálogo ESTRUTURADO (`shared/races`), pelo id. Campo de
+     * construção — com a criação finalizada só o mestre grava. Trocar a
+     * sub-raça liga/desliga o bônus de PV da Robustez Anã (ver o serviço).
+     */
+    raceId: z.string().trim().max(60).nullable(),
+    subraceId: z.string().trim().max(60).nullable(),
     /** Classes do personagem — ver o tratamento em characters.service.ts. */
     classes: classEntriesInputSchema,
     /**

@@ -1375,24 +1375,32 @@ CAR+1) · gnome-forest (INT+2 DES+1) · gnome-rock (INT+2 CON+1) · half-elf (CA
 **LACUNA:** ferramentas, idiomas e características raciais não são modelados.
 
 **Catálogo estruturado (`shared/races/`):** `types.ts` + `index.ts` + um arquivo por raça
-(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Duas raças
-cadastradas** (`RACES = [dragonborn, elf]`): **Draconato** — For+2/Car+1, `speed` 9 m,
+(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Três raças
+cadastradas** (`RACES = [dragonborn, elf, dwarf]`): **Draconato** — For+2/Car+1, `speed` 9 m,
 `size` Medium, `languages` [Comum, Dracônico] (informativo), 3 traços (`draconic-ancestry`
 descritivo, `breath-weapon` como recurso 1 uso/recarga curta, `damage-resistance` via
 `resistanceFromChoice` → `choiceId` 'draconic-ancestry') e `hasChoices` `draconic-ancestry`
 com 10 opções (`{ id, label, damageType }`), sem sub-raças; **Elfo** — Des+2, `speed` 9 m,
 `darkvision` 18 m, `languages` [Comum, Élfico], 3 traços (`keen-senses` via `skillProficiency`,
 `fey-ancestry` como `other`, `trance` textual) e 3 sub-raças (Alto Elfo Int+1; Elfo da
-Floresta Sab+1 com `speed` 10,5; Drow Car+1 com `darkvision` 36 e `drow-magic` descritivo).
-O `ClassFeatureEffect` ganhou os tipos `resistanceFromChoice` (+ `choiceId`) e
-`skillProficiency` (+ `target`), ainda **não processados** por nenhum motor. As magias
-raciais (truque do Alto Elfo e Drow) ficam descritivas até o catálogo de magias existir.
+Floresta Sab+1 com `speed` 10,5; Drow Car+1 com `darkvision` 36 e `drow-magic` descritivo);
+**Anão** — Con+2, `speed` 7,5 m, `darkvision` 18 m, `description` (nota de que armadura pesada
+não reduz o deslocamento), 4 traços (`dwarven-resilience` com `mechanicalEffects` = resistance
+Veneno + `other`; `dwarven-combat-training`/`stonecunning` textuais; escolha
+`dwarven-tool-proficiency`), `hasChoices` `dwarf-tool-proficiency` (smith/brewer/mason) e 2
+sub-raças (Anão da Colina Sab+1 com `dwarven-toughness` = `hpBonus` +1/nível; Anão da Montanha
+For+2 com treino de armadura textual). O `ClassFeatureEffect` ganhou os tipos
+`resistanceFromChoice` (+ `choiceId`) e `skillProficiency` (+ `target`), ainda **não processados**
+por nenhum motor — **EXCETO** a Robustez Anã (`hpBonus`), único efeito racial aplicado de verdade:
+o mestre grava `raceId`/`subraceId` pelo PATCH e o serviço aplica/REVERTE o +1×nível total ao
+trocar a raça/sub-raça (`raceHpBonus`/`raceHpBonusDelta`). As magias raciais (truque do Alto Elfo
+e Drow) ficam descritivas até o catálogo de magias existir.
 `Race` (`abilityScoreIncrease[{ ability, amount }]` com `AbilityKey`, `speed` em METROS,
 `size`/`darkvision` só preparação, `damageResistances` com os 13 tipos canônicos,
 `languages`/`bonusLanguageChoices` informativos — não há campo de idioma na ficha,
-`traits`, `subraces`, `hasChoices`), `RaceTrait` (`mechanicalEffect?` reusa o MESMO
-`ClassFeatureEffect`), `Subrace` e `RaceChoiceDefinition`. Funções: `getRace`,
-`getSubrace`, `allRaces`. **Coexistência:** o wizard e o compêndio continuam lendo o
+`traits`, `subraces`, `hasChoices`), `RaceTrait` (`mechanicalEffect?` para um efeito e `mechanicalEffects?` para vários, ambos
+reusando o MESMO `ClassFeatureEffect`) e `Subrace`. `Race` ganhou `description?`. Funções:
+`getRace`, `getSubrace`, `allRaces`, `raceHpBonus`, `raceHpBonusDelta`. **Coexistência:** o wizard e o compêndio continuam lendo o
 `RACE_CATALOG` (o bug "Draconato não escolhe a linhagem" persiste até o 2.10); a
 substituição (e a migração de `race` texto → `raceId`) é o Prompt 2.10. A ficha ganhou, de
 forma **aditiva** (migração `20261002020000_character_race_fields`), `raceId?`,

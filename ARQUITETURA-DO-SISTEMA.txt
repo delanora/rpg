@@ -1421,7 +1421,10 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
     cor do Draconato) — é o que um efeito resistanceFromChoice resolve.
   • ClassFeatureEffect ganhou dois tipos usados só por raças: `resistanceFromChoice`
     (+ campo `choiceId`) — resistência cujo TIPO DE DANO vem de uma escolha — e
-    `skillProficiency` (a chave da perícia vem em `target`). Ainda NÃO são processados.
+    `skillProficiency` (a chave da perícia vem em `target`). Ainda NÃO são processados,
+    EXCETO a Robustez Anã (`hpBonus`), aplicada/revertida de verdade pelo serviço.
+  • RaceTrait tem `mechanicalEffect` (um efeito) e `mechanicalEffects` (vários) — espelha o
+    par effect/effects das classes; `Race` ganhou `description`.
   DRACONATO (dragonborn.ts): For+2/Car+1 · speed 9 · size Medium · languages [Comum,
   Dracônico] (informativo) · 3 traços — draconic-ancestry (descritivo, tabela das 10
   cores em metros), breath-weapon (recurso 1 uso, recharge short) e damage-resistance
@@ -1434,7 +1437,15 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   magias inexistente), wood-elf (Sab+1, speed 10,5 = Passo Ligeiro) e drow-elf (Car+1,
   darkvision 36, drow-magic DESCRITIVO — escalonamento por nível TOTAL do personagem, no
   texto). Armas raciais ficam só como texto (ProficienciesState.weapons, sem efeito).
-  Funções: getRace(id), getSubrace(raceId, subraceId), allRaces().
+  ANÃO (dwarf.ts): Con+2 · speed 7,5 · darkvision 18 · languages [Comum, Anão] · description
+  (armadura pesada NÃO reduz o deslocamento) · 4 traços — dwarven-resilience (mechanicalEffects:
+  resistance Veneno + 'other' vantagem), dwarven-combat-training/stonecunning (texto) e a escolha
+  dwarven-tool-proficiency. hasChoices: dwarf-tool-proficiency (smith-tools, brewer-supplies,
+  mason-tools). 2 sub-raças: hill-dwarf (Sab+1, dwarven-toughness = hpBonus +1/nível — o ÚNICO
+  efeito de raça APLICADO hoje) e mountain-dwarf (For+2, treino de armadura textual). O mestre
+  grava raceId/subraceId pelo PATCH; raceHpBonus/raceHpBonusDelta aplicam ou REVERTEM o +1×nível.
+  Funções: getRace(id), getSubrace(raceId, subraceId), allRaces(), raceHpBonus(...),
+  raceHpBonusDelta(...).
   COEXISTÊNCIA: o assistente de criação e o compêndio CONTINUAM lendo o RACE_CATALOG de
   shared/creation.ts; a substituição (e a migração de `characters.race` texto → raceId)
   é o Prompt 2.10. O bug "Draconato não escolhe a linhagem" persiste no wizard até lá.
