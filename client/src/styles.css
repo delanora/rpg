@@ -6305,7 +6305,8 @@ input[type='checkbox']:disabled {
 }
 
 /* --- Ficha detalhada do item (modal do inventário) ----------------------- */
-/* Só leitura: clique em qualquer item abre este cartão no centro da tela. */
+/* Clique em qualquer item abre este cartão no centro da tela; para o jogador,
+   consumíveis ganham o botão "Usar" no rodapé. */
 .item-modal {
   max-width: 44rem;
   display: grid;
@@ -6517,6 +6518,24 @@ input[type='checkbox']:disabled {
   color: var(--ink-soft);
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+/* Ação de uso no modal (consumíveis): rodapé com dica e o botão Usar. */
+.item-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.item-modal-actions-hint {
+  margin-right: auto;
+  font-size: var(--text-micro);
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
 }
 
 @media (max-width: 560px) {

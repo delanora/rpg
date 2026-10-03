@@ -1735,9 +1735,10 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   Notes, BagList.
   INVENTÁRIO — HOVER x CLIQUE: passar o mouse abre um painel flutuante de
   pré-visualização (com os controles de quantidade/usar/remover); clicar abre a
-  ficha detalhada no modal centralizado `ItemDetailModal` (somente leitura,
-  lê o próprio item — nunca o preço). Fecha por X, clique na área escurecida
-  ou Esc. A imagem ampliada reusa o lightbox único do app.
+  ficha detalhada no modal centralizado `ItemDetailModal` (lê o próprio item —
+  nunca o preço; para o JOGADOR, consumível mostra o botão "Usar", que consome
+  1 unidade via POST /me/inventory/use — o mestre não vê o botão). Fecha por X,
+  clique na área escurecida ou Esc. A imagem ampliada reusa o lightbox único.
   A ficha é uma PILHA de seções de ponta a ponta: Personagem (que já traz Classes
   e Vida e Defesa), os seis atributos, o inventário e as abas. Dentro do
   inventário, o set de equipamento e a mochila ficam lado a lado (max-width de

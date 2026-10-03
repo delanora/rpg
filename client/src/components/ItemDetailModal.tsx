@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { itemDetailRows, rarityColor, rarityLabel, rarityTint } from '../dnd';
 import type { InventoryItem } from '../types';
@@ -8,22 +8,37 @@ import { useLightbox } from './Lightbox';
 interface ItemDetailModalProps {
   item: InventoryItem;
   onClose: () => void;
+  /**
+   * Usa (consome) 1 unidade do item. Quando ausente, o modal é só leitura (a
+   * visão do mestre, por exemplo, não usa itens).
+   */
+  onUse?: () => void | Promise<void>;
 }
 
 /**
  * Ficha detalhada de um item do inventário, aberta no clique.
  *
- * É SOMENTE LEITURA: usa os dados que já estão no item e nunca toca na ficha,
- * no inventário ou no banco (nada de quantidade, equipamento ou cópia). O
+ * Mostra os dados que já estão no item (nunca copia nem altera o inventário). O
  * campo **Valor** nunca aparece aqui — o preço é informação exclusiva do mestre
  * e nem faz parte do item do inventário.
+ *
+ * Quando recebe `onUse`, mostra o botão **Usar** (consumível): a ação é
+ * disparada no pai e a ficha é atualizada pelo servidor. Sem `onUse` o modal é
+ * somente leitura.
  *
  * Reutiliza o visual dos modais do app (`modal-backdrop`/`modal`) e o lightbox
  * único (`useLightbox`) para ampliar a imagem. Fecha pelo "X", pelo clique na
  * área escurecida e pelo Esc.
  */
-export function ItemDetailModal({ item, onClose }: ItemDetailModalProps) {
+export function ItemDetailModal({ item, onClose, onUse }: ItemDetailModalProps) {
   const { open: openLightbox } = useLightbox();
+  const [using, setUsing] = useState(false);
+
+  function handleUse(): void {
+    if (!onUse || using) return;
+    setUsing(true);
+    void Promise.resolve(onUse()).finally(() => setUsing(false));
+  }
 
   // Esc fecha e a rolagem do fundo fica travada enquanto o modal está aberto.
   useEffect(() => {
@@ -148,6 +163,25 @@ export function ItemDetailModal({ item, onClose }: ItemDetailModalProps) {
           </h3>
           <p className="item-modal-desc">{item.description || 'Sem descrição.'}</p>
         </section>
+
+        {onUse ? (
+          <div className="item-modal-actions">
+            <span className="item-modal-actions-hint">
+              {item.quantity > 1
+                ? `${item.quantity} unidades · usar consome 1`
+                : 'última unidade · usar remove o item'}
+            </span>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={using}
+              title="Consome 1 unidade deste item"
+              onClick={handleUse}
+            >
+              <Icon name="flask" size={15} /> {using ? 'usando...' : 'Usar'}
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>,
     document.body,
