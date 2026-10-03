@@ -9106,6 +9106,54 @@ async function main(): Promise<void> {
     );
   }
 
+  // 37) Catálogo estruturado de raças: Humano (Prompt 2.4)
+  {
+    console.log('\n37) Catálogo estruturado de raças: Humano');
+
+    const human = getRace('human');
+    check(
+      'getRace("human") devolve a raça e ela está em allRaces()',
+      !!human && allRaces().some((r) => r.id === 'human'),
+      JSON.stringify(allRaces().map((r) => r.id)),
+    );
+    check('nome em PT é Humano', human?.namePt === 'Humano', human?.namePt);
+
+    const abilityKeys = [
+      'strength',
+      'dexterity',
+      'constitution',
+      'intelligence',
+      'wisdom',
+      'charisma',
+    ];
+    const bonuses = human?.abilityScoreIncrease ?? [];
+    check(
+      'bônus de atributo: +1 nos seis (chaves em inglês)',
+      bonuses.length === 6 &&
+        abilityKeys.every((k) => bonuses.some((b) => b.ability === k && b.amount === 1)),
+      JSON.stringify(bonuses),
+    );
+    check('deslocamento 9 m (30 pés)', human?.speed === 9, String(human?.speed));
+    check('sem visão no escuro', human?.darkvision === undefined, String(human?.darkvision));
+    check(
+      'sem traços',
+      (human?.traits ?? []).length === 0,
+      JSON.stringify(human?.traits?.map((t) => t.id)),
+    );
+    check('sem sub-raças', human?.subraces === undefined);
+    check(
+      'idiomas: Comum + 1 à escolha',
+      JSON.stringify(human?.languages) === JSON.stringify(['Comum']) &&
+        human?.bonusLanguageChoices === 1,
+      JSON.stringify({ languages: human?.languages, extra: human?.bonusLanguageChoices }),
+    );
+    check(
+      'a descrição existe (compêndio)',
+      typeof human?.description === 'string' && human.description.length > 0,
+      human?.description,
+    );
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'

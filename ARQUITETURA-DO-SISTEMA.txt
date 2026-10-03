@@ -1444,6 +1444,9 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   mason-tools). 2 sub-raças: hill-dwarf (Sab+1, dwarven-toughness = hpBonus +1/nível — o ÚNICO
   efeito de raça APLICADO hoje) e mountain-dwarf (For+2, treino de armadura textual). O mestre
   grava raceId/subraceId pelo PATCH; raceHpBonus/raceHpBonusDelta aplicam ou REVERTEM o +1×nível.
+  HUMANO (human.ts): +1 nos SEIS atributos · speed 9 · size Medium · languages [Comum] +
+  bonusLanguageChoices 1 · traits VAZIO · sem sub-raças. Humano Variante NÃO cadastrado
+  (depende de talentos mecânicos, inexistentes; TODO no arquivo).
   Funções: getRace(id), getSubrace(raceId, subraceId), allRaces(), raceHpBonus(...),
   raceHpBonusDelta(...).
   COEXISTÊNCIA: o assistente de criação e o compêndio CONTINUAM lendo o RACE_CATALOG de
