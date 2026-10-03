@@ -4,7 +4,13 @@ import { prisma } from '../config/prisma.js';
 import { damageExpression } from '../modules/shared/attacks.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
-import { allRaces, getRace, getSubrace } from '../modules/shared/races/index.js';
+import {
+  allRaces,
+  getRace,
+  getSubrace,
+  raceHpBonus,
+  raceHpBonusDelta,
+} from '../modules/shared/races/index.js';
 
 /**
  * Smoke test ponta a ponta das Etapas 1 e 2.
@@ -8904,6 +8910,199 @@ async function main(): Promise<void> {
         drow?.darkvision === 36 &&
         drow?.traits.some((t) => t.id === 'drow-magic'),
       JSON.stringify({ asi: drow?.abilityScoreIncrease, dv: drow?.darkvision }),
+    );
+  }
+
+  // 36) Catálogo estruturado de raças: Anão + Robustez Anã (Prompt 2.5)
+  {
+    console.log('\n36) Catálogo estruturado de raças: Anão');
+
+    const dwarf = getRace('dwarf');
+    check(
+      'getRace("dwarf") devolve a raça e ela está em allRaces()',
+      !!dwarf && allRaces().some((r) => r.id === 'dwarf'),
+      JSON.stringify(allRaces().map((r) => r.id)),
+    );
+    check('nome em PT é Anão', dwarf?.namePt === 'Anão', dwarf?.namePt);
+    check(
+      'bônus de atributo: Constituição +2',
+      dwarf?.abilityScoreIncrease.length === 1 &&
+        dwarf?.abilityScoreIncrease[0]?.ability === 'constitution' &&
+        dwarf?.abilityScoreIncrease[0]?.amount === 2,
+      JSON.stringify(dwarf?.abilityScoreIncrease),
+    );
+    check('deslocamento 7,5 m (25 pés)', dwarf?.speed === 7.5, String(dwarf?.speed));
+    check('visão no escuro 18 m (60 pés)', dwarf?.darkvision === 18, String(dwarf?.darkvision));
+    check(
+      'idiomas: Comum e Anão',
+      JSON.stringify(dwarf?.languages) === JSON.stringify(['Comum', 'Anão']),
+      JSON.stringify(dwarf?.languages),
+    );
+    check(
+      'a descrição cita que armadura pesada não reduz o deslocamento',
+      typeof dwarf?.description === 'string' && /armadura pesada/.test(dwarf.description),
+      dwarf?.description,
+    );
+
+    // Resiliência Anã: DOIS efeitos (resistência legível + vantagem como 'other').
+    const resilience =
+      dwarf?.traits.find((t) => t.id === 'dwarven-resilience')?.mechanicalEffects ?? [];
+    check(
+      'Resiliência Anã tem resistência a Veneno + vantagem (other)',
+      resilience.length === 2 &&
+        resilience.some(
+          (e) =>
+            e.type === 'resistance' &&
+            JSON.stringify(e.damageTypes) === JSON.stringify(['Veneno']),
+        ) &&
+        resilience.some((e) => e.type === 'other'),
+      JSON.stringify(resilience),
+    );
+    check(
+      'Treinamento de Combate e Conhecimento de Pedra são textuais (sem efeito)',
+      dwarf?.traits.find((t) => t.id === 'dwarven-combat-training')?.mechanicalEffect === undefined &&
+        dwarf?.traits.find((t) => t.id === 'dwarven-combat-training')?.mechanicalEffects ===
+          undefined &&
+        dwarf?.traits.find((t) => t.id === 'stonecunning')?.mechanicalEffect === undefined,
+    );
+
+    const toolChoice = dwarf?.hasChoices?.find((c) => c.id === 'dwarf-tool-proficiency');
+    check(
+      'a escolha de ferramenta traz as 3 ferramentas do PHB',
+      JSON.stringify(toolChoice?.options.map((o) => o.id)) ===
+        JSON.stringify(['smith-tools', 'brewer-supplies', 'mason-tools']),
+      JSON.stringify(toolChoice?.options),
+    );
+
+    const subIds = (dwarf?.subraces ?? []).map((s) => s.id);
+    check(
+      'tem 2 sub-raças (hill-dwarf, mountain-dwarf)',
+      JSON.stringify(subIds) === JSON.stringify(['hill-dwarf', 'mountain-dwarf']),
+      JSON.stringify(subIds),
+    );
+
+    const hill = dwarf?.subraces?.find((s) => s.id === 'hill-dwarf');
+    const toughness = hill?.traits.find((t) => t.id === 'dwarven-toughness')?.mechanicalEffect;
+    check(
+      'Anão da Colina: Sabedoria +1 e Robustez Anã (+1 PV/nível)',
+      hill?.abilityScoreIncrease[0]?.ability === 'wisdom' &&
+        hill?.abilityScoreIncrease[0]?.amount === 1 &&
+        toughness?.type === 'hpBonus' &&
+        toughness?.value === 1 &&
+        toughness?.perLevel === true,
+      JSON.stringify(toughness),
+    );
+
+    const mountain = dwarf?.subraces?.find((s) => s.id === 'mountain-dwarf');
+    check(
+      'Anão da Montanha: Força +2 e treino de armadura (texto)',
+      mountain?.abilityScoreIncrease[0]?.ability === 'strength' &&
+        mountain?.abilityScoreIncrease[0]?.amount === 2 &&
+        mountain?.traits.some((t) => t.id === 'dwarven-armor-training') &&
+        mountain?.traits.find((t) => t.id === 'dwarven-armor-training')?.mechanicalEffect ===
+          undefined,
+      JSON.stringify(mountain?.traits.map((t) => t.id)),
+    );
+
+    // Helper: o hpBonus de raça escala pelo NÍVEL TOTAL do personagem.
+    check(
+      'raceHpBonus: Anão da Colina = +1×nível; base/Montanha/outras raças = 0',
+      raceHpBonus('dwarf', 'hill-dwarf', 5) === 5 &&
+        raceHpBonus('dwarf', 'mountain-dwarf', 5) === 0 &&
+        raceHpBonus('dwarf', null, 5) === 0 &&
+        raceHpBonus('dragonborn', null, 5) === 0 &&
+        raceHpBonusDelta(
+          { raceId: 'dwarf', subraceId: 'mountain-dwarf' },
+          { raceId: 'dwarf', subraceId: 'hill-dwarf' },
+          3,
+        ) === 3,
+      String(raceHpBonus('dwarf', 'hill-dwarf', 5)),
+    );
+
+    // Integração: o mestre grava raceId/subraceId e a Robustez Anã aplica/reverte.
+    // Dono novo e autossuficiente (a ficha do jogador de cima pode ter sido
+    // recriada por outra seção).
+    const robustUsername = `anao_${suffix}`;
+    createdUsernames.push(robustUsername);
+    await api('/api/auth/register', {
+      method: 'POST',
+      body: { username: robustUsername, displayName: 'Anão Teste', password: 'senha-forte-123' },
+    });
+    const robustLogin = await api('/api/auth/login', {
+      method: 'POST',
+      body: { username: robustUsername, password: 'senha-forte-123' },
+    });
+    const robustCreated = await api('/api/characters/me', {
+      method: 'POST',
+      token: robustLogin.data?.token,
+    });
+    const robustCharId = robustCreated.data?.character?.id;
+    const robustLevel = 4;
+    await prisma.character.update({
+      where: { id: robustCharId },
+      data: {
+        classes: [{ classKey: 'fighter', level: robustLevel, subclass: null }] as any,
+        hpMax: 40,
+        hpCurrent: 40,
+        raceId: null,
+        subraceId: null,
+      },
+    });
+
+    const applied = await api(`/api/characters/${robustCharId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { raceId: 'dwarf', subraceId: 'hill-dwarf' },
+    });
+    check(
+      'escolher Anão da Colina aplica +1×nível ao PV máximo e ao atual',
+      applied.status === 200 &&
+        applied.data?.character?.raceId === 'dwarf' &&
+        applied.data?.character?.subraceId === 'hill-dwarf' &&
+        applied.data?.character?.hpMax === 44 &&
+        applied.data?.character?.hpCurrent === 44,
+      JSON.stringify({
+        hpMax: applied.data?.character?.hpMax,
+        hp: applied.data?.character?.hpCurrent,
+        subraceId: applied.data?.character?.subraceId,
+      }),
+    );
+
+    const reverted = await api(`/api/characters/${robustCharId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { subraceId: 'mountain-dwarf' },
+    });
+    check(
+      'trocar para Anão da Montanha REVERTE o bônus',
+      reverted.status === 200 &&
+        reverted.data?.character?.subraceId === 'mountain-dwarf' &&
+        reverted.data?.character?.hpMax === 40,
+      JSON.stringify({ hpMax: reverted.data?.character?.hpMax }),
+    );
+
+    const reapplied = await api(`/api/characters/${robustCharId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { subraceId: 'hill-dwarf' },
+    });
+    check(
+      'voltar a Anão da Colina reaplica o bônus',
+      reapplied.status === 200 && reapplied.data?.character?.hpMax === 44,
+      JSON.stringify({ hpMax: reapplied.data?.character?.hpMax }),
+    );
+
+    const cleared = await api(`/api/characters/${robustCharId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { subraceId: null, raceId: null },
+    });
+    check(
+      'remover a raça/sub-raça reverte o bônus do Anão da Colina',
+      cleared.status === 200 &&
+        cleared.data?.character?.raceId === null &&
+        cleared.data?.character?.hpMax === 40,
+      JSON.stringify({ hpMax: cleared.data?.character?.hpMax, raceId: cleared.data?.character?.raceId }),
     );
   }
 

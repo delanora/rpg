@@ -47,6 +47,13 @@ export interface RaceTrait {
    * (nunca um vocabulário paralelo).
    */
   mechanicalEffect?: ClassFeatureEffect;
+  /**
+   * Efeitos mecânicos MÚLTIPLOS de um mesmo traço (ex.: Resiliência Anã =
+   * resistência a veneno + vantagem em salvaguarda contra veneno). Espelha o
+   * par `effect`/`effects` das classes: use `mechanicalEffect` quando houver
+   * um só, `mechanicalEffects` quando houver mais de um.
+   */
+  mechanicalEffects?: ClassFeatureEffect[];
 }
 
 /**
@@ -101,6 +108,8 @@ export interface Race {
   namePt: string;
   /** Nome em inglês (ex.: 'Dwarf'), para referência/compatibilidade. */
   nameEn: string;
+  /** Texto de apresentação da raça (compêndio), quando houver. */
+  description?: string;
   abilityScoreIncrease: AbilityScoreIncrease[];
   /** Deslocamento em METROS (padrão do sistema: 9 = 30 pés). */
   speed: number;

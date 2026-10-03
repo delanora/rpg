@@ -64,6 +64,7 @@ import {
   type ClassFeatureDefinition,
   type ProficienciesState,
 } from '../shared/classes.js';
+import { raceHpBonusDelta } from '../shared/races/index.js';
 import {
   classEntryProficiencyGrant,
   classProficiencyGrant,
@@ -116,6 +117,8 @@ interface SheetOwner {
 const SCALAR_KEYS = [
   'name',
   'race',
+  'raceId',
+  'subraceId',
   'background',
   'alignment',
   'experience',
@@ -153,6 +156,8 @@ const PLAYER_STATE_KEYS = [
 const CREATION_FIELD_LABELS: Record<string, string> = {
   name: 'nome',
   race: 'raça',
+  raceId: 'raça (catálogo)',
+  subraceId: 'sub-raça (catálogo)',
   background: 'antecedente',
   alignment: 'alinhamento',
   experience: 'experiência',
@@ -1842,6 +1847,25 @@ async function applyCharacterPatch(
     const baseHpCurrent = (data.hpCurrent as number | undefined) ?? existing.hpCurrent;
     data.hpMax = Math.max(0, baseHpMax + conDelta);
     data.hpCurrent = Math.max(0, baseHpCurrent + conDelta);
+  }
+
+  // --- Robustez racial (+PV por nível) -------------------------------------
+  // Trocar a raça/sub-raça (ex.: virar Anão da Colina) liga ou desliga o bônus
+  // de PV por nível TOTAL do personagem. O delta APLICA (+1×nível) ou REVERTE
+  // (−1×nível) no máximo e no atual, como o recálculo retroativo de CON.
+  const nextRaceId = patch.raceId !== undefined ? patch.raceId : existing.raceId;
+  const nextSubraceId = patch.subraceId !== undefined ? patch.subraceId : existing.subraceId;
+  const raceHpDelta = raceHpBonusDelta(
+    { raceId: existing.raceId, subraceId: existing.subraceId },
+    { raceId: nextRaceId, subraceId: nextSubraceId },
+    totalCharacterLevel(classes),
+  );
+
+  if (raceHpDelta !== 0) {
+    const baseHpMax = (data.hpMax as number | undefined) ?? existing.hpMax;
+    const baseHpCurrent = (data.hpCurrent as number | undefined) ?? existing.hpCurrent;
+    data.hpMax = Math.max(0, baseHpMax + raceHpDelta);
+    data.hpCurrent = Math.max(0, baseHpCurrent + raceHpDelta);
   }
 
   // --- Salvaguardas fixas das classes --------------------------------------

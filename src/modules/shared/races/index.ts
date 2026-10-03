@@ -1,4 +1,5 @@
 import { dragonborn } from './dragonborn.js';
+import { dwarf } from './dwarf.js';
 import { elf } from './elf.js';
 import type { Race, Subrace } from './types.js';
 
@@ -16,7 +17,7 @@ import type { Race, Subrace } from './types.js';
  */
 export * from './types.js';
 
-export const RACES: readonly Race[] = [dragonborn, elf];
+export const RACES: readonly Race[] = [dragonborn, elf, dwarf];
 
 const RACE_BY_ID: ReadonlyMap<string, Race> = new Map(RACES.map((race) => [race.id, race]));
 
@@ -33,4 +34,48 @@ export function getRace(id: string): Race | undefined {
 /** Uma sub-raça pelo id da raça + o id da sub-raça, ou `undefined`. */
 export function getSubrace(raceId: string, subraceId: string): Subrace | undefined {
   return getRace(raceId)?.subraces?.find((subrace) => subrace.id === subraceId);
+}
+
+/**
+ * Soma dos efeitos `hpBonus` de uma raça + sub-raça no nível informado.
+ *
+ * É o ÚNICO efeito de raça aplicado de verdade hoje (a Robustez Anã, +1 PV por
+ * nível TOTAL do personagem): o serviço de personagens usa `raceHpBonusDelta`
+ * ao trocar a raça/sub-raça. Efeitos de traço podem vir em `mechanicalEffect`
+ * (um) ou `mechanicalEffects` (vários).
+ */
+export function raceHpBonus(
+  raceId: string | null | undefined,
+  subraceId: string | null | undefined,
+  level: number,
+): number {
+  const race = raceId ? getRace(raceId) : undefined;
+  if (!race) return 0;
+  const subrace = subraceId ? race.subraces?.find((item) => item.id === subraceId) : undefined;
+  const traits = [...race.traits, ...(subrace?.traits ?? [])];
+
+  let total = 0;
+  for (const trait of traits) {
+    const effects =
+      trait.mechanicalEffects ?? (trait.mechanicalEffect ? [trait.mechanicalEffect] : []);
+    for (const effect of effects) {
+      if (effect.type === 'hpBonus') {
+        total += (effect.value ?? 0) * (effect.perLevel ? level : 1);
+      }
+    }
+  }
+  return total;
+}
+
+/**
+ * Delta de PV ao TROCAR de raça/sub-raça (positivo liga o bônus, negativo o
+ * reverte). Compara o `hpBonus` da raça/sub-raça anterior com o da nova, no
+ * mesmo nível total do personagem.
+ */
+export function raceHpBonusDelta(
+  from: { raceId: string | null; subraceId: string | null },
+  to: { raceId: string | null; subraceId: string | null },
+  level: number,
+): number {
+  return raceHpBonus(to.raceId, to.subraceId, level) - raceHpBonus(from.raceId, from.subraceId, level);
 }
