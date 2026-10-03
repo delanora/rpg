@@ -9281,6 +9281,152 @@ async function main(): Promise<void> {
     check('Sortudo: a rolagem de controle também teve um 1 natural', sawOnePlain);
   }
 
+  // 39) Catálogo estruturado de raças: Gnomo, Meio-Elfo, Meio-Orc e Tiefling
+  {
+    console.log('\n39) Catálogo estruturado de raças: Gnomo / Meio-Elfo / Meio-Orc / Tiefling');
+    check('o catálogo tem 9 raças', allRaces().length === 9, String(allRaces().length));
+
+    // --- Gnomo ---------------------------------------------------------------
+    const gnome = getRace('gnome');
+    check(
+      'Gnomo: Int+2, 7,5 m, Pequeno, visão no escuro 18 m',
+      gnome?.namePt === 'Gnomo' &&
+        gnome?.abilityScoreIncrease[0]?.ability === 'intelligence' &&
+        gnome?.abilityScoreIncrease[0]?.amount === 2 &&
+        gnome?.speed === 7.5 &&
+        gnome?.size === 'Small' &&
+        gnome?.darkvision === 18,
+      JSON.stringify({ asi: gnome?.abilityScoreIncrease, speed: gnome?.speed, size: gnome?.size }),
+    );
+    const cunning = gnome?.traits.find((t) => t.id === 'gnome-cunning')?.mechanicalEffect;
+    check(
+      'Astúcia Gnômica: saveAdvantage INT/SAB/CAR contra magia',
+      cunning?.type === 'saveAdvantage' &&
+        JSON.stringify(cunning.abilities) ===
+          JSON.stringify(['intelligence', 'wisdom', 'charisma']) &&
+        cunning.condition === 'magic',
+      JSON.stringify(cunning),
+    );
+    const forest = gnome?.subraces?.find((s) => s.id === 'forest-gnome');
+    check(
+      'Gnomo da Floresta: Des+1, Ilusionista Natural e Falar com Pequenos Animais',        forest?.abilityScoreIncrease[0]?.ability === 'dexterity' &&
+        forest?.abilityScoreIncrease[0]?.amount === 1 &&
+        (forest?.traits ?? []).some((t) => t.id === 'natural-illusionist') &&
+        (forest?.traits ?? []).some((t) => t.id === 'speak-with-small-beasts'),
+      JSON.stringify(forest?.traits.map((t) => t.id)),
+    );
+    const rock = gnome?.subraces?.find((s) => s.id === 'rock-gnome');
+    const tinker = rock?.traits.find((t) => t.id === 'tinker')?.mechanicalEffect;
+    check(
+      'Gnomo das Rochas: Con+1 e ferramenta de funileiro (toolProficiency → tinker-tools)',
+      rock?.abilityScoreIncrease[0]?.ability === 'constitution' &&
+        rock?.abilityScoreIncrease[0]?.amount === 1 &&
+        tinker?.type === 'toolProficiency' &&
+        tinker?.target === 'tinker-tools' &&
+        (rock?.traits ?? []).some((t) => t.id === 'artificers-lore'),
+      JSON.stringify(tinker),
+    );
+
+    // --- Meio-Elfo -----------------------------------------------------------
+    const halfElf = getRace('half-elf');
+    check(
+      'Meio-Elfo: Car+2, 9 m, visão no escuro 18 m, sem sub-raças',
+      halfElf?.namePt === 'Meio-Elfo' &&
+        halfElf?.abilityScoreIncrease[0]?.ability === 'charisma' &&
+        halfElf?.abilityScoreIncrease[0]?.amount === 2 &&
+        halfElf?.speed === 9 &&
+        halfElf?.darkvision === 18 &&
+        halfElf?.subraces === undefined,
+      JSON.stringify(halfElf?.abilityScoreIncrease),
+    );
+    check(
+      'Meio-Elfo: Ancestralidade Feérica (reuso) e Versatilidade de Perícia',
+      (halfElf?.traits ?? []).some((t) => t.id === 'fey-ancestry') &&
+        (halfElf?.traits ?? []).some((t) => t.id === 'skill-versatility'),
+      JSON.stringify(halfElf?.traits.map((t) => t.id)),
+    );
+    const abilityChoice = halfElf?.hasChoices?.find((c) => c.id === 'half-elf-ability-1');
+    const skillChoice = halfElf?.hasChoices?.find((c) => c.id === 'half-elf-skill-1');
+    check(
+      'Meio-Elfo: 4 escolhas (2 de atributo + 2 de perícia)',
+      JSON.stringify(halfElf?.hasChoices?.map((c) => c.id)) ===
+        JSON.stringify([
+          'half-elf-ability-1',
+          'half-elf-ability-2',
+          'half-elf-skill-1',
+          'half-elf-skill-2',
+        ]),
+      JSON.stringify(halfElf?.hasChoices?.map((c) => c.id)),
+    );
+    check(
+      'Meio-Elfo: a escolha de atributo exclui Carisma (5 opções)',
+      JSON.stringify(abilityChoice?.options.map((o) => o.id)) ===
+        JSON.stringify(['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom']),
+      JSON.stringify(abilityChoice?.options.map((o) => o.id)),
+    );
+    check(
+      'Meio-Elfo: a escolha de perícia traz as 18 perícias',
+      skillChoice?.options.length === 18 &&
+        skillChoice.options.some((o) => o.id === 'perception') &&
+        skillChoice.options.some((o) => o.id === 'stealth'),
+      String(skillChoice?.options.length),
+    );
+
+    // --- Meio-Orc ------------------------------------------------------------
+    const halfOrc = getRace('half-orc');
+    check(
+      'Meio-Orc: For+2/Con+1, 9 m, visão no escuro 18 m, sem sub-raças',
+      halfOrc?.namePt === 'Meio-Orc' &&
+        JSON.stringify(halfOrc?.abilityScoreIncrease) ===
+          JSON.stringify([
+            { ability: 'strength', amount: 2 },
+            { ability: 'constitution', amount: 1 },
+          ]) &&
+        halfOrc?.darkvision === 18 &&
+        halfOrc?.subraces === undefined,
+      JSON.stringify(halfOrc?.abilityScoreIncrease),
+    );
+    const menacing = halfOrc?.traits.find((t) => t.id === 'menacing')?.mechanicalEffect;
+    check(
+      'Ameaçador: skillProficiency → intimidation',
+      menacing?.type === 'skillProficiency' && menacing?.target === 'intimidation',
+      JSON.stringify(menacing),
+    );
+    check(
+      'Resistência Implacável e Ataques Selvagens vão como other (TODO)',
+      halfOrc?.traits.find((t) => t.id === 'relentless-endurance')?.mechanicalEffect?.type ===
+        'other' &&
+        halfOrc?.traits.find((t) => t.id === 'savage-attacks')?.mechanicalEffect?.type === 'other',
+    );
+
+    // --- Tiefling ------------------------------------------------------------
+    const tiefling = getRace('tiefling');
+    check(
+      'Tiefling: Car+2/Int+1, 9 m, visão no escuro 18 m, sem sub-raças',
+      tiefling?.namePt === 'Tiefling' &&
+        JSON.stringify(tiefling?.abilityScoreIncrease) ===
+          JSON.stringify([
+            { ability: 'charisma', amount: 2 },
+            { ability: 'intelligence', amount: 1 },
+          ]) &&
+        tiefling?.darkvision === 18 &&
+        tiefling?.subraces === undefined,
+      JSON.stringify(tiefling?.abilityScoreIncrease),
+    );
+    const hellish = tiefling?.traits.find((t) => t.id === 'hellish-resistance')?.mechanicalEffect;
+    check(
+      'Resistência Infernal: resistance → Fogo',
+      hellish?.type === 'resistance' &&
+        JSON.stringify(hellish.damageTypes) === JSON.stringify(['Fogo']),
+      JSON.stringify(hellish),
+    );
+    check(
+      'Legado Infernal é descritivo (sem efeito mecânico)',
+      tiefling?.traits.find((t) => t.id === 'infernal-legacy')?.mechanicalEffect === undefined &&
+        tiefling?.traits.find((t) => t.id === 'infernal-legacy')?.mechanicalEffects === undefined,
+    );
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'

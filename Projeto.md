@@ -1375,8 +1375,8 @@ CAR+1) · gnome-forest (INT+2 DES+1) · gnome-rock (INT+2 CON+1) · half-elf (CA
 **LACUNA:** ferramentas, idiomas e características raciais não são modelados.
 
 **Catálogo estruturado (`shared/races/`):** `types.ts` + `index.ts` + um arquivo por raça
-(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Cinco raças
-cadastradas** (`RACES = [dragonborn, elf, dwarf, human, halfling]`): **Draconato** — For+2/Car+1, `speed` 9 m,
+(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Nove raças
+cadastradas** (`RACES = [dragonborn, elf, dwarf, human, halfling, gnome, halfElf, halfOrc, tiefling]`): **Draconato** — For+2/Car+1, `speed` 9 m,
 `size` Medium, `languages` [Comum, Dracônico] (informativo), 3 traços (`draconic-ancestry`
 descritivo, `breath-weapon` como recurso 1 uso/recarga curta, `damage-resistance` via
 `resistanceFromChoice` → `choiceId` 'draconic-ancestry') e `hasChoices` `draconic-ancestry`
@@ -1399,8 +1399,13 @@ nenhum motor — **EXCETO** dois efeitos aplicados de verdade: a Robustez Anã (
 grava `raceId`/`subraceId` pelo PATCH e o serviço aplica/REVERTE o +1×nível via
 `raceHpBonus`/`raceHpBonusDelta`) e o Sortudo do Halfling (`luckyReroll`; a rolagem do pool marca
 `lucky` no 1 natural — `hasLuckyReroll` resolve por `raceId` ou pelo texto `race`). O combate fica
-de fora do Sortudo por ora. As magias raciais (truque do Alto Elfo e Drow) ficam descritivas até o
-catálogo de magias existir.
+de fora do Sortudo por ora. **Gnomo** (Int+2, Small, `gnome-cunning` via `saveAdvantage` — novo tipo
+com `abilities`+`condition` —; sub-raças Gnomo da Floresta Des+1 e Gnomo das Rochas Con+1 com
+`tinker` via novo `toolProficiency`), **Meio-Elfo** (Car+2; `fey-ancestry` REUSADO do Elfo; escolha
+dupla como DUAS `RaceChoiceDefinition` para atributo e para perícia), **Meio-Orc** (For+2/Con+1;
+`savage-attacks`/`relentless-endurance` como `other`+TODO; combate intocado) e **Tiefling**
+(Car+2/Int+1; resistência a Fogo; legado descritivo). As magias raciais (truques do Alto Elfo/Gnomo
+da Floresta/Tiefling, Magia Drow) ficam descritivas até o catálogo de magias existir.
 `Race` (`abilityScoreIncrease[{ ability, amount }]` com `AbilityKey`, `speed` em METROS,
 `size`/`darkvision` só preparação, `damageResistances` com os 13 tipos canônicos,
 `languages`/`bonusLanguageChoices` informativos — não há campo de idioma na ficha,

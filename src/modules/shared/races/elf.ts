@@ -30,6 +30,28 @@ const ELVEN_WEAPON_TRAINING: RaceTrait = {
     'Você tem proficiência com espadas longas, espadas curtas, arcos longos e arcos curtos.',
 };
 
+/**
+ * Ancestralidade Feérica — o Mesmo traço (e o mesmo dado) do Elfo e do
+ * Meio-Elfo. Exportado para o Meio-Elfo reusar exatamente esta estrutura.
+ */
+export const FEY_ANCESTRY: RaceTrait = {
+  id: 'fey-ancestry',
+  name: 'Ancestralidade Feérica',
+  description:
+    'Você tem vantagem em testes de resistência para evitar ser enfeitiçado, e magia ' +
+    'não pode colocá-lo para dormir.',
+  // Vantagem condicional em salvaguarda e imunidade a uma condição mágica NÃO
+  // têm tipo de efeito próprio — vão como 'other' com a descrição.
+  mechanicalEffect: {
+    type: 'other',
+    id: 'fey-ancestry',
+    name: 'Ancestralidade Feérica',
+    notes:
+      'Vantagem em salvaguardas contra ser enfeitiçado; imune a ser posto para dormir por ' +
+      'magia. Não modelado (nem vantagem condicional nem imunidade a condição têm tipo).',
+  },
+};
+
 export const elf: Race = {
   id: 'elf',
   namePt: 'Elfo',
@@ -51,23 +73,7 @@ export const elf: Race = {
       // motor de raça (futuro). A chave 'perception' é a canônica de SKILLS.
       mechanicalEffect: { type: 'skillProficiency', target: 'perception' },
     },
-    {
-      id: 'fey-ancestry',
-      name: 'Ancestralidade Feérica',
-      description:
-        'Você tem vantagem em testes de resistência para evitar ser enfeitiçado, e magia ' +
-        'não pode colocá-lo para dormir.',
-      // Vantagem condicional em salvaguarda e imunidade a uma condição mágica NÃO
-      // têm tipo de efeito próprio no union — vão como 'other' com a descrição.
-      mechanicalEffect: {
-        type: 'other',
-        id: 'fey-ancestry',
-        name: 'Ancestralidade Feérica',
-        notes:
-          'Vantagem em salvaguardas contra ser enfeitiçado; imune a ser posto para dormir por ' +
-          'magia. Não modelado (nem vantagem condicional nem imunidade a condição têm tipo).',
-      },
-    },
+    FEY_ANCESTRY,
     {
       id: 'trance',
       name: 'Transe',

@@ -1419,11 +1419,12 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   • RaceChoiceDefinition: id · label · options[{ id, label, damageType? }] → a escolha
     fica em raceChoices. damageType é o tipo de dano canônico associado à opção (ex.: a
     cor do Draconato) — é o que um efeito resistanceFromChoice resolve.
-  • ClassFeatureEffect ganhou três tipos usados só por raças: `resistanceFromChoice`
-    (+ campo `choiceId`) — resistência cujo TIPO DE DANO vem de uma escolha —,
-    `skillProficiency` (a chave da perícia vem em `target`) e `luckyReroll` (Sortudo do
-    Halfling). NÃO processados, EXCETO a Robustez Anã (`hpBonus`, aplicada/revertida pelo
-    serviço) e o Sortudo (`luckyReroll`: o serviço de dados marca `lucky` no 1 natural).
+  • ClassFeatureEffect ganhou cinco tipos usados só por raças: `resistanceFromChoice`
+    (+ `choiceId`) — resistência cujo TIPO DE DANO vem de uma escolha —, `skillProficiency`
+    (perícia em `target`), `toolProficiency` (id da ferramenta em `target`), `saveAdvantage`
+    (vantagem condicional: `abilities` + `condition`, ex.: Astúcia Gnômica) e `luckyReroll`
+    (Sortudo do Halfling). NÃO processados, EXCETO a Robustez Anã (`hpBonus`, aplicada/revertida
+    pelo serviço) e o Sortudo (`luckyReroll`: o serviço de dados marca `lucky` no 1 natural).
   • RaceTrait tem `mechanicalEffect` (um efeito) e `mechanicalEffects` (vários) — espelha o
     par effect/effects das classes; `Race` ganhou `description`.
   DRACONATO (dragonborn.ts): For+2/Car+1 · speed 9 · size Medium · languages [Comum,
@@ -1454,6 +1455,18 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   stout (Con+1, Resiliência Robusta = MESMA estrutura do Anão: resistance Veneno + 'other').
   hasLuckyReroll resolve o traço por raceId/subraceId OU pelo texto `race`. Combate FICA DE
   FORA do Sortudo (o fluxo de ataque será revisto).
+  GNOMO (gnome.ts): Int+2 · speed 7,5 · size Small · darkvision 18 · gnome-cunning (saveAdvantage:
+  INT/SAB/CAR, condition 'magic'). 2 sub-raças: forest-gnome (Des+1, Ilusionista Natural
+  DESCRITIVO — catálogo de magias inexistente; Falar com Pequenos Animais texto) e rock-gnome
+  (Con+1, tinker = toolProficiency → tinker-tools; Saber do Artífice e dispositivos textuais).
+  MEIO-ELFO (half-elf.ts): Car+2 · darkvision 18 · fey-ancestry (REUSO do Elfo) e
+  skill-versatility. hasChoices: 4 entradas (half-elf-ability-1/2 = 5 atributos sem Carisma;
+  half-elf-skill-1/2 = as 18 perícias). A regra "não repetir" é do validador (2.10). Sem sub-raças.
+  MEIO-ORC (half-orc.ts): For+2/Con+1 · darkvision 18 · menacing (skillProficiency → intimidation),
+  relentless-endurance ('other' — Fase 5) e savage-attacks ('other' — +1 dado de arma no crítico
+  corpo a corpo; combat.service.ts NÃO tocado). Sem sub-raças.
+  TIEFLING (tiefling.ts): Car+2/Int+1 · darkvision 18 · hellish-resistance (resistance Fogo) e
+  infernal-legacy (DESCRITIVO — truque + magias por nível de personagem). Sem sub-raças.
   Funções: getRace(id), getSubrace(raceId, subraceId), allRaces(), raceHpBonus(...),
   raceHpBonusDelta(...), hasLuckyReroll(...).
   COEXISTÊNCIA: o assistente de criação e o compêndio CONTINUAM lendo o RACE_CATALOG de
