@@ -3822,6 +3822,145 @@ async function main(): Promise<void> {
     `antes ${conBefore.hpCurrent}, depois ${conLevel.data?.character?.hpCurrent}`,
   );
 
+  // --- Metamagia do Feiticeiro (PHB 2014) -----------------------------------
+  // O Feiticeiro escolhe 2 Metamagias no 3º nível, +1 no 10º e +1 no 17º; as
+  // opções do 10º/17º nunca repetem o que já foi aprendido, e a escolha é
+  // OBRIGATÓRIA (o servidor recusa o nível sem ela).
+  await setCharacterClasses(playerId, [
+    { classKey: 'sorcerer', subclass: 'Linhagem Dracônica', level: 2 },
+  ]);
+  await unlockForLevelUp();
+  check(
+    'subir o Feiticeiro ao 3º sem escolher a Metamagia é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: playerToken,
+        body: { classKey: 'sorcerer', hp: 'average' },
+      })
+    ).status === 400,
+  );
+
+  const sorcererTwo = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const metamagicInfo = (sorcererTwo.classes ?? [])
+    .find((entry: any) => entry.classKey === 'sorcerer')
+    ?.featureChoices?.find((info: any) => info.featureId === 'metamagic');
+  check(
+    'Metamagia do 3º nível pede 2 opções entre as 8 do livro, com descrição',
+    metamagicInfo?.count === 2 &&
+      metamagicInfo?.options?.length === 8 &&
+      metamagicInfo.options.every((option: any) => (option.description ?? '').length > 0),
+    JSON.stringify(metamagicInfo),
+  );
+  check(
+    'a Elevada custa 3 pontos de feitiçaria (PHB 2014, não 2)',
+    metamagicInfo?.options?.find((option: any) => option.key === 'heightened')?.description?.includes(
+      '3 pontos',
+    ) === true,
+    JSON.stringify(metamagicInfo?.options),
+  );
+
+  const sorcererThree = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      classKey: 'sorcerer',
+      hp: 'average',
+      choices: { metamagic: ['careful', 'empowered'] },
+    },
+  });
+  check(
+    'escolher as 2 Metamagias no 3º nível sobe (200)',
+    sorcererThree.status === 200,
+    JSON.stringify(sorcererThree.data),
+  );
+  check(
+    'as Metamagias escolhidas ficam gravadas na ficha',
+    (sorcererThree.data?.character?.classState?.choices?.metamagic ?? []).join(',') ===
+      'careful,empowered',
+    JSON.stringify(sorcererThree.data?.character?.classState?.choices),
+  );
+
+  // Nível 10: aprende +1 Metamagia, sem repetir as do 3º.
+  await setCharacterClasses(playerId, [
+    { classKey: 'sorcerer', subclass: 'Linhagem Dracônica', level: 9 },
+  ]);
+  await unlockForLevelUp();
+  const sorcererNine = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const improvement = (sorcererNine.classes ?? [])
+    .find((entry: any) => entry.classKey === 'sorcerer')
+    ?.featureChoices?.find((info: any) => info.featureId === 'metamagic-improvement');
+  check(
+    'a Metamagia Aprimorada (10º) pede 1 opção e exclui as já aprendidas',
+    improvement?.count === 1 &&
+      improvement?.options?.length === 6 &&
+      !improvement.options.some((option: any) => option.key === 'careful' || option.key === 'empowered'),
+    JSON.stringify(improvement),
+  );
+  check(
+    'repetir uma Metamagia já aprendida no 10º é recusado (400)',
+    (
+      await api('/api/characters/me/level-up', {
+        method: 'POST',
+        token: playerToken,
+        body: {
+          classKey: 'sorcerer',
+          hp: 'average',
+          choices: { 'metamagic-improvement': ['careful'] },
+        },
+      })
+    ).status === 400,
+  );
+  const sorcererTen = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      classKey: 'sorcerer',
+      hp: 'average',
+      choices: { 'metamagic-improvement': ['heightened'] },
+    },
+  });
+  check(
+    'escolher a Metamagia do 10º sobe (200)',
+    sorcererTen.status === 200,
+    JSON.stringify(sorcererTen.data),
+  );
+  check(
+    'a Metamagia do 10º é somada às do 3º',
+    (sorcererTen.data?.character?.classState?.choices?.['metamagic-improvement'] ?? []).join(',') ===
+      'heightened',
+    JSON.stringify(sorcererTen.data?.character?.classState?.choices),
+  );
+
+  // Nível 17: +1 Metamagia, excluindo as 3 já aprendidas.
+  await setCharacterClasses(playerId, [
+    { classKey: 'sorcerer', subclass: 'Linhagem Dracônica', level: 16 },
+  ]);
+  await unlockForLevelUp();
+  const sorcererSixteen = (await api('/api/characters/me', { token: playerToken })).data.character;
+  const master = (sorcererSixteen.classes ?? [])
+    .find((entry: any) => entry.classKey === 'sorcerer')
+    ?.featureChoices?.find((info: any) => info.featureId === 'metamagic-master');
+  check(
+    'o Mestre da Metamagia (17º) exclui as 3 já aprendidas',
+    master?.count === 1 && master?.options?.length === 5,
+    JSON.stringify(master),
+  );
+  const sorcererSeventeen = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      classKey: 'sorcerer',
+      hp: 'average',
+      choices: { 'metamagic-master': [master.options[0].key] },
+    },
+  });
+  check(
+    'escolher a Metamagia do 17º sobe (200)',
+    sorcererSeventeen.status === 200,
+    JSON.stringify(sorcererSeventeen.data),
+  );
+
   // --- Pré-requisito de MULTICLASSE do PHB (cap. 6) -------------------------
   // Entrar numa classe nova exige 13 nos atributos exigidos por ela E por todas
   // as classes que o personagem JÁ tem. O Paladino abaixo fica com Força 8

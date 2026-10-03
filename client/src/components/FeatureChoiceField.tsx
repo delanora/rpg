@@ -2,11 +2,13 @@ import type { ActiveClassFeature, FeatureChoiceInfo } from '../types';
 
 /**
  * Seletor de uma escolha de característica de classe (Estilo de Luta, Inimigo
- * Favorito, Explorador Nato).
+ * Favorito, Metamagia).
  *
- * `count` seletores, um por escolha. Quando a característica não permite
- * repetição, a opção já usada nos outros seletores fica desabilitada — o
- * servidor também recusa (`resolveFeatureChoices`).
+ * `count` listas, uma por escolha. Cada opção é um botão; a descrição do que ela
+ * faz vive SÓ no tooltip (hover/foco), como nas demais informações da ficha —
+ * nada de texto explicativo ocupando a ficha. Quando a característica não permite
+ * repetição, a opção já usada nas outras listas fica desabilitada (o servidor
+ * também recusa — `resolveFeatureChoices`).
  */
 export function FeatureChoiceField({
   info,
@@ -15,99 +17,78 @@ export function FeatureChoiceField({
   onChange,
 }: {
   info: FeatureChoiceInfo;
-  /** Opções escolhidas (faltando = '' no seletor). */
+  /** Opções escolhidas (faltando = '' na lista). */
   values: string[];
   disabled?: boolean;
   onChange: (keys: string[]) => void;
 }) {
   const current = Array.from({ length: info.count }, (_, index) => values[index] ?? '');
 
-  function setAt(index: number, key: string): void {
+  function toggle(index: number, key: string): void {
     const next = [...current];
-    next[index] = key;
+    next[index] = next[index] === key ? '' : key;
     onChange(next);
   }
 
   return (
     <>
-      <label className="field">
-        <span>
-          {info.prompt}
-          {info.count > 1 ? ` (${info.count} escolhas)` : ''}
-        </span>
-        <select
-          value={current[0] ?? ''}
-          disabled={disabled}
-          onChange={(event) => setAt(0, event.target.value)}
-        >
-          <option value="">— escolha —</option>
-          {info.options.map((option) => (
-            <option
-              key={option.key}
-              value={option.key}
-              disabled={!info.allowRepeat && current.slice(1).includes(option.key)}
-            >
-              {option.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {Array.from({ length: Math.max(0, info.count - 1) }, (_, index) => (
-        <label className="field" key={index}>
+      {Array.from({ length: info.count }, (_, slot) => (
+        <div className="field" key={slot}>
           <span>
-            {info.prompt} ({index + 2})
+            {info.prompt}
+            {info.count > 1 ? ` (${slot + 1} de ${info.count})` : ''}
           </span>
-          <select
-            value={current[index + 1] ?? ''}
-            disabled={disabled}
-            onChange={(event) => setAt(index + 1, event.target.value)}
-          >
-            <option value="">— escolha —</option>
-            {info.options.map((option) => (
-              <option
-                key={option.key}
-                value={option.key}
-                disabled={
-                  !info.allowRepeat &&
-                  current.some((key, other) => other !== index + 1 && key === option.key)
-                }
-              >
-                {option.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="choice-options" role="radiogroup" aria-label={info.prompt}>
+            {info.options.map((option) => {
+              const selected = current[slot] === option.key;
+              const taken =
+                !info.allowRepeat &&
+                current.some((key, other) => other !== slot && key === option.key);
+              return (
+                <span
+                  className={`info-tip choice-tip${selected ? ' is-selected' : ''}`}
+                  key={option.key}
+                >
+                  <button
+                    type="button"
+                    className="choice-option"
+                    disabled={disabled || taken}
+                    aria-pressed={selected}
+                    onClick={() => toggle(slot, option.key)}
+                  >
+                    {option.name}
+                  </button>
+                  {option.description ? (
+                    <span className="info-tip-text choice-option-tip" role="tooltip">
+                      <strong>{option.name}</strong>
+                      {option.description}
+                    </span>
+                  ) : null}
+                </span>
+              );
+            })}
+          </div>
+        </div>
       ))}
-
-      <p className="section-note">{optionHints(info, current)}</p>
     </>
   );
 }
 
 /**
- * Explica a opção escolhida AGORA nos seletores (e o que ela faz) — é o que dá
- * ao jogador a certeza do que a escolha muda na ficha.
- */
-function optionHints(info: FeatureChoiceInfo, current: string[]): string {
-  const chosen = info.options.filter((option) => current.includes(option.key));
-  if (chosen.length === 0) {
-    return `${info.name}: escolha ${info.count} ${info.count === 1 ? 'opção' : 'opções'}.`;
-  }
-  return chosen
-    .map((option) => (option.description ? `${option.name} — ${option.description}` : option.name))
-    .join(' · ');
-}
-
-/**
  * Converte a característica de classe (com a escolha declarada) para o formato
  * usado pelo seletor, com o que já está gravado em `classState.choices`.
+ *
+ * `takenElsewhere` traz as opções já escolhidas em OUTRAS características desta
+ * mesma classe: quando a escolha pede `excludeChosen` (Metamagia), elas saem da
+ * lista — o mesmo que o servidor faz no DTO do Level Up.
  */
 export function choiceInfoOf(
   feature: ActiveClassFeature,
   chosen: string[],
+  takenElsewhere: readonly string[] = [],
 ): FeatureChoiceInfo | null {
   if (!feature.choice) return null;
+  const excluded = feature.choice.excludeChosen ? new Set(takenElsewhere) : null;
   return {
     featureId: feature.id,
     name: feature.name,
@@ -115,11 +96,13 @@ export function choiceInfoOf(
     level: feature.choice.level ?? feature.level,
     count: Math.max(1, feature.choice.count ?? 1),
     allowRepeat: Boolean(feature.choice.allowRepeat),
-    options: feature.choice.options.map((option) => ({
-      key: option.key,
-      name: option.name,
-      description: option.description ?? '',
-    })),
+    options: feature.choice.options
+      .filter((option) => !excluded?.has(option.key))
+      .map((option) => ({
+        key: option.key,
+        name: option.name,
+        description: option.description ?? '',
+      })),
     chosen,
   };
 }

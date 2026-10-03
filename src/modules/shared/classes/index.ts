@@ -291,27 +291,50 @@ export function featureChoiceInfo(
   /** Opções que sobrepõem as da definição (ex.: Expertise só entre proficientes). */
   optionsOverride: FeatureChoiceOptionsOverride = {},
 ): FeatureChoiceInfo[] {
-  return featuresWithSubclass(definition, subclassName)
-    .filter((feature) => feature.choice !== undefined)
-    .map((feature) => ({
-      featureId: feature.id,
-      name: feature.name,
-      prompt: feature.choice?.prompt ?? feature.name,
-      level: featureChoiceLevel(feature),
-      count: featureChoiceCount(feature),
-      allowRepeat: Boolean(feature.choice?.allowRepeat),
-      apply: feature.choice?.apply,
-      options: (
-        (feature.choice?.apply ? optionsOverride[feature.choice.apply] : undefined) ??
-        feature.choice?.options ??
-        []
-      ).map((option) => ({
+  const features = featuresWithSubclass(definition, subclassName).filter(
+    (feature) => feature.choice !== undefined,
+  );
+
+  return features.map((feature) => ({
+    featureId: feature.id,
+    name: feature.name,
+    prompt: feature.choice?.prompt ?? feature.name,
+    level: featureChoiceLevel(feature),
+    count: featureChoiceCount(feature),
+    allowRepeat: Boolean(feature.choice?.allowRepeat),
+    apply: feature.choice?.apply,
+    options: (
+      (feature.choice?.apply ? optionsOverride[feature.choice.apply] : undefined) ??
+      feature.choice?.options ??
+      []
+    )
+      // `excludeChosen`: tira o que já foi aprendido nas OUTRAS características
+      // desta classe (a própria característica mantém as suas escolhas).
+      .filter((option) => !learnedElsewhere(features, chosen, feature).has(option.key))
+      .map((option) => ({
         key: option.key,
         name: option.name,
         description: option.description ?? '',
       })),
-      chosen: chosen[feature.id] ?? [],
-    }));
+    chosen: chosen[feature.id] ?? [],
+  }));
+}
+
+/**
+ * Chaves já escolhidas nas OUTRAS características desta classe, quando a
+ * característica pede `excludeChosen` (Metamagia não repete o que já aprendeu).
+ * Fora desse caso, o conjunto volta vazio e nada é filtrado.
+ */
+function learnedElsewhere(
+  features: ClassFeatureDefinition[],
+  chosen: Record<string, string[]>,
+  feature: ClassFeatureDefinition,
+): Set<string> {
+  if (!feature.choice?.excludeChosen) return new Set();
+  const keys = features
+    .filter((other) => other.id !== feature.id)
+    .flatMap((other) => chosen[other.id] ?? []);
+  return new Set(keys);
 }
 
 /**

@@ -28,6 +28,16 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
       },
     });
   }
+
+  /**
+   * Opções já escolhidas nas OUTRAS características da MESMA classe — o que a
+   * escolha com `excludeChosen` (Metamagia) não deixa repetir.
+   */
+  function learnedElsewhereFor(feature: ActiveClassFeature): string[] {
+    return character.activeFeatures
+      .filter((other) => other.classKey === feature.classKey && other.id !== feature.id)
+      .flatMap((other) => choices[other.id] ?? []);
+  }
   // Traços da RAÇA: vêm do catálogo (fixo ou personalizado) pelo `raceId`/
   // `subraceId` (ou `customRaceId`) da ficha e aparecem na mesma linguagem dos
   // talentos — só leitura.
@@ -202,6 +212,7 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
                 key={`${feature.classKey ?? ''}-${feature.source}-${feature.id}`}
                 feature={feature}
                 chosen={choices[feature.id] ?? []}
+                learnedElsewhere={learnedElsewhereFor(feature)}
                 readOnly={readOnly}
                 onChoice={(keys) => setChoice(feature.id, keys)}
               />
@@ -268,15 +279,18 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
 function FeatureCard({
   feature,
   chosen,
+  learnedElsewhere,
   readOnly,
   onChoice,
 }: {
   feature: ActiveClassFeature;
   chosen: string[];
+  /** Opções já usadas em outras características da mesma classe. */
+  learnedElsewhere: string[];
   readOnly: boolean;
   onChoice: (keys: string[]) => void;
 }) {
-  const info = choiceInfoOf(feature, chosen);
+  const info = choiceInfoOf(feature, chosen, learnedElsewhere);
 
   return (
     <article className="feature-card">
