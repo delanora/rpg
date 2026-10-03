@@ -1363,6 +1363,8 @@ export interface Creature {
   attacks: Attack[];
   resistances: string[];
   immunities: string[];
+  /** Tipos de dano aos quais a criatura é vulnerável (dano dobrado). */
+  vulnerabilities: string[];
   description: string;
   /** URL pública do ícone/retrato ('' = sem imagem). */
   imageUrl: string;
@@ -1397,6 +1399,7 @@ export interface CreaturePatch {
   attacks?: Attack[];
   resistances?: string[];
   immunities?: string[];
+  vulnerabilities?: string[];
   description?: string;
   imageUrl?: string;
 }
@@ -1795,6 +1798,19 @@ export interface TableRollRequest {
   clientId?: string;
 }
 
+/**
+ * Uma PARCELA de dano do ataque (principal + cada `extraDamage`), com o que foi
+ * rolado e o que entrou depois da defesa do alvo. `modifier` explica a
+ * diferença: `resistance` (½), `immunity` (0), `vulnerability` (×2) ou `null`.
+ */
+export interface DamageComponentPayload {
+  type: string;
+  expression: string;
+  rolled: number;
+  applied: number;
+  modifier: 'resistance' | 'immunity' | 'vulnerability' | null;
+}
+
 export interface AttackResolvedPayload {
   attackerName: string;
   attackName: string;
@@ -1808,6 +1824,8 @@ export interface AttackResolvedPayload {
   critical: boolean;
   damageRolled: number;
   damageType: string;
+  /** Cada parcela do ataque, com o efeito da defesa do alvo (vazio se errou). */
+  components: DamageComponentPayload[];
   /** Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve). */
   sneakAttack: { expression: string; total: number } | null;
   targetHpCurrent: number | null;

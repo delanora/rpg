@@ -79,9 +79,8 @@ export function damageIsEmpty(damage: Damage | null | undefined): boolean {
 /**
  * TODOS os danos de um ataque: o principal (`damage`) mais os adicionais.
  *
- * É o que o combate vai percorrer quando cada tipo passar a ser aplicado de
- * forma independente (hoje: resistência por tipo em `applyDamageResistance`).
- * Enquanto isso o combate segue rolando só `attack.damage`.
+ * É o que o combate percorre: cada parcela é rolada e a defesa do alvo
+ * (imunidade/resistência/vulnerabilidade) é aplicada POR TIPO, parcela a parcela.
  */
 export function attackDamages(attack: {
   damage: Damage;
@@ -102,7 +101,7 @@ export function damageExpression(damage: Damage | null | undefined): string {
 export const attackSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1, 'O ataque precisa de um nome.').max(120),
-  /** Dano PRINCIPAL do ataque (o combate resolve este por enquanto). */
+  /** Dano PRINCIPAL do ataque (recebe a munição; resolve-se por tipo). */
   damage: damageSchema.default(EMPTY_DAMAGE),
   /**
    * Danos ADICIONAIS, cada um com o seu tipo (ex.: espada flamejante =

@@ -346,16 +346,21 @@ export function CreatureEditor({
         />
       </Section>
 
-      <Section title="Resistências e Imunidades" icon="flame">
+      <Section title="Resistências, Imunidades e Vulnerabilidades" icon="flame">
         <DamageChips
-          label="Resistências"
+          label="Resistências (½ dano)"
           selected={creature.resistances}
           onChange={(resistances) => onPatch({ resistances })}
         />
         <DamageChips
-          label="Imunidades"
+          label="Imunidades (0 dano)"
           selected={creature.immunities}
           onChange={(immunities) => onPatch({ immunities })}
+        />
+        <DamageChips
+          label="Vulnerabilidades (×2 dano)"
+          selected={creature.vulnerabilities}
+          onChange={(vulnerabilities) => onPatch({ vulnerabilities })}
         />
       </Section>
 

@@ -29,6 +29,8 @@ export interface CreatureDto {
   attacks: Attack[];
   resistances: string[];
   immunities: string[];
+  /** Tipos de dano aos quais a criatura é vulnerável (dano dobrado). */
+  vulnerabilities: string[];
   /** Localidades vinculadas (uma ou mais). */
   localities: LocalitySummaryDto[];
 
@@ -56,6 +58,11 @@ export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
   const attacks = parseJson<Attack[]>(attackListSchema, creature.attacks, []);
   const resistances = parseJson<string[]>(damageListSchema, creature.resistances, []);
   const immunities = parseJson<string[]>(damageListSchema, creature.immunities, []);
+  const vulnerabilities = parseJson<string[]>(
+    damageListSchema,
+    creature.vulnerabilities,
+    [],
+  );
 
   const abilities: Record<AbilityKey, number> = {
     strength: creature.strength,
@@ -90,6 +97,7 @@ export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
     attacks,
     resistances,
     immunities,
+    vulnerabilities,
     localities: (creature.localities ?? []).map(toLocalitySummary),
     imageUrl: creature.imageUrl,
     description: creature.description,

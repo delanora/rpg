@@ -458,6 +458,7 @@ níveis de `classes[]`.
 `id` · `name` · `kind CreatureKind (CREATURE|NPC)` · `type` ·
 `challengeRating` · 6 atributos · `hpCurrent`/`hpMax` · `armorClass` (10) ·
 `speed` (9) · `attacks Json` · `resistances Json` · `immunities Json` ·
+`vulnerabilities Json` (dano dobrado) ·
 `description` · `imageUrl` · `localities Locality[]` (N:N implícito) ·
 `version` · timestamps. `@@index([name])`, `@@index([kind])`.
 
@@ -1515,9 +1516,12 @@ Alvo ≠ atacante. O ataque precisa existir na ficha/criatura
      nível de ladino) **e** a arma ser `finesse` ou `ranged`. As condições
      **táticas** (vantagem/aliado adjacente) **não** são rastreadas: o jogador
      decide quando rolar. Cada parcela extra publica seu próprio `dice:rolled`.
-5. **Resistência** do alvo (personagem com o tipo estruturado
-   `attack.damage.type` em `resistances`) ⇒ dano `/ 2` (`floor`). `type: null`
-   **não** aciona resistência.
+5. **Defesa do alvo por parcela e por tipo**: cada parcela de
+   `attackDamages(attack)` é resolvida isoladamente — **imunidade** zera,
+   **vulnerabilidade** dobra, **resistência** halva (`floor`). Personagem usa
+   resistências de classe + raça; criatura usa `resistances`/`immunities`/
+   `vulnerabilities`. `type: null` **não** aciona defesa. O resultado leva
+   `components[]` (rolado × aplicado por tipo) e o log explica cada defesa.
 6. **Munição** (só personagens): quando o ataque tem `inventoryItemId`, a arma
    precisa estar **equipada** numa das mãos (senão 409). Se declara a
    propriedade `ammunition`, 1 unidade do `ammoType` é gasta de uma pilha da

@@ -5,6 +5,7 @@ import { inventoryListSchema } from '../characters/characters.schema.js';
 import {
   ServerEvents,
   type AttackResolvedPayload,
+  type DamageComponentPayload,
   type DiceRolledPayload,
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
@@ -26,7 +27,7 @@ import {
   requiredAmmoType,
   type InventoryLike,
 } from '../shared/ammo.js';
-import { damageExpression } from '../shared/attacks.js';
+import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
 import { abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
@@ -476,21 +477,73 @@ function characterAdjustments(character: {
   return computeMulticlassAdjustments(entries, normalizeClassState(character.classState), abilities);
 }
 
-/** Aplica a resistência do alvo a um tipo de dano (ex.: Fúria do bárbaro). */
-function applyDamageResistance(
-  target: CombatantSourced,
+/**
+ * Tipos de dano FÍSICOS — é neles que entram os bônus corpo a corpo (Fúria) e
+ * os dados extras do Crítico Brutal. Uma parcela de outro tipo (fogo, necrótico
+ * ...) nunca recebe esses bônus.
+ */
+const PHYSICAL_DAMAGE_TYPES = new Set(['Cortante', 'Perfurante', 'Concussão']);
+
+/** Coage um JSONB de defesa de criatura para lista de tipos (strings). */
+function damageTypeList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+/**
+ * Listas de defesa do alvo contra dano, por tipo canônico.
+ *
+ * Personagem: resistências de CLASSE (Fúria, ...) e de RAÇA (`raceResistances`,
+ * preenchido no passo 3 do assistente: Draconato, Anão, Tiefling...).
+ * Criatura: `resistances` / `immunities` / `vulnerabilities` do bestiário.
+ */
+function damageDefensesOf(target: CombatantSourced): {
+  resistances: Set<string>;
+  immunities: Set<string>;
+  vulnerabilities: Set<string>;
+} {
+  if (target.kind === 'CHARACTER' && target.character) {
+    const adjustments = characterAdjustments(target.character);
+    return {
+      resistances: new Set([
+        ...adjustments.resistances,
+        ...(target.character.raceResistances ?? []),
+      ]),
+      immunities: new Set(),
+      vulnerabilities: new Set(),
+    };
+  }
+
+  const creature = target.creature;
+  return {
+    resistances: new Set(damageTypeList(creature?.resistances)),
+    immunities: new Set(damageTypeList(creature?.immunities)),
+    vulnerabilities: new Set(damageTypeList(creature?.vulnerabilities)),
+  };
+}
+
+/**
+ * Aplica a defesa do alvo a UMA parcela de dano, por tipo.
+ *
+ * Imunidade zera a parcela; vulnerabilidade dobra; resistência reduz pela
+ * metade (arredondando para baixo); sem defesa, a parcela passa inteira. Dano
+ * SEM tipo (`null`) nunca aciona defesa.
+ */
+function applyDamageDefense(
   damageType: string | null,
   total: number,
-): number {
-  if (target.kind !== 'CHARACTER' || !target.character || !damageType) return total;
-  const adjustments = characterAdjustments(target.character);
-  // A resistência vem da CLASSE (Fúria, ...) ou da RAÇA (`raceResistances`,
-  // preenchido no passo 3 do assistente: Draconato, Anão, Tiefling...).
-  const raceResistances = target.character.raceResistances ?? [];
-  if (!adjustments.resistances.includes(damageType) && !raceResistances.includes(damageType)) {
-    return total;
+  defenses: { resistances: Set<string>; immunities: Set<string>; vulnerabilities: Set<string> },
+): { applied: number; modifier: DamageComponentPayload['modifier'] } {
+  if (!damageType) return { applied: total, modifier: null };
+  if (defenses.immunities.has(damageType)) return { applied: 0, modifier: 'immunity' };
+  if (defenses.vulnerabilities.has(damageType)) {
+    return { applied: total * 2, modifier: 'vulnerability' };
   }
-  return Math.floor(total / 2);
+  if (defenses.resistances.has(damageType)) {
+    return { applied: Math.floor(total / 2), modifier: 'resistance' };
+  }
+  return { applied: total, modifier: null };
 }
 
 /**
@@ -618,8 +671,9 @@ async function consumeAmmo(
 }
 
 /**
- * Resolve um ataque: rola 1d20 + bônus contra a CA do alvo; se acertar, rola o
- * dano (dobrado no crítico) e aplica no HP do alvo.
+ * Resolve um ataque: rola 1d20 + bônus contra a CA do alvo; se acertar, rola
+ * CADA parcela de dano do ataque (o principal + os extras, dobrados no crítico),
+ * aplica a defesa do alvo por tipo e debita o total no HP.
  */
 export async function resolveAttack(
   actor: CombatActor,
@@ -716,103 +770,172 @@ export async function resolveAttack(
 
   let damageRolled = 0;
   let sneakAttackResult: { expression: string; total: number } | null = null;
+  // Cada parcela do ataque (principal + `extraDamages`), com o que foi rolado e
+  // o efeito da defesa do alvo — é o que explica o dano final ao mestre.
+  const components: DamageComponentPayload[] = [];
 
   if (hit) {
-    // Dano estruturado do ataque: a expressão textual é derivada só para a
-    // rolagem (o crítico dobra os DADOS e o modificador entra uma vez).
-    const damage = rollDice(damageExpression(attack.damage), { crit: critical });
+    const attackerAdjustments =
+      attacker.kind === 'CHARACTER' && attacker.character
+        ? characterAdjustments(attacker.character)
+        : null;
 
-    if (damage) {
-      const attackerAdjustments =
-        attacker.kind === 'CHARACTER' && attacker.character
-          ? characterAdjustments(attacker.character)
-          : null;
+    // Bônus de dano corpo a corpo (Fúria): só na parcela FÍSICA — não bonifica
+    // (nem reduz) uma parcela de outro tipo, como o fogo de uma arma flamejante.
+    const meleeBonus =
+      !attack.ranged && attackerAdjustments && attackerAdjustments.meleeDamageBonus > 0
+        ? attackerAdjustments.meleeDamageBonus
+        : 0;
 
-      let total = damage.total;
+    // Ataque Furtivo: entra automaticamente em armas sutis ou à distância quando
+    // a classe concede a feature. É dano físico, então vai na 1ª parcela física.
+    const sneak = rollSneakAttack(attacker, attack, critical);
+    const sneakRoll = sneak && sneak.total > 0 ? sneak : null;
 
-      // Bônus de dano da munição usada (entra uma vez, como qualquer modificador).
-      if (ammoBonus.damageBonus !== 0) total += ammoBonus.damageBonus;
+    const defenses = damageDefensesOf(target);
+    const specs = attackDamages(attack);
+    let total = 0;
+    // Fúria e Ataque Furtivo entram UMA vez, na primeira parcela física.
+    let physicalBonusApplied = false;
 
-      // Crítico Brutal: dados de arma extras no crítico (só corpo a corpo).
-      if (critical && attackerAdjustments && attackerAdjustments.critExtraDice > 0) {
-        const spec = attack.damage;
-        if (spec.count > 0 && spec.sides > 0) {
-          const extra = rollDice(
-            `${spec.count * attackerAdjustments.critExtraDice}d${spec.sides}`,
-            { crit: false },
-          );
-          if (extra && extra.total > 0) {
-            total += extra.total;
-            announceRoll({
-              kind: 'damage',
-              actorName: `${attacker.name} — Crítico Brutal`,
-              expression: extra.expression,
-              rolls: extra.rolls,
-              sides: extra.sides,
-              modifier: 0,
-              total: extra.total,
-              crit: true,
-              at: new Date().toISOString(),
-            });
-          }
+    for (let index = 0; index < specs.length; index += 1) {
+      const spec = specs[index];
+      // Parcela vazia (sem dados e sem bônus) não entra no log nem no dano.
+      if (damageIsEmpty(spec)) continue;
+
+      // A expressão textual é derivada só para a rolagem (o crítico dobra os
+      // DADOS da parcela e o modificador entra uma vez).
+      const damage = rollDice(damageExpression(spec), { crit: critical });
+      if (!damage) continue;
+
+      let componentTotal = damage.total;
+
+      // Bônus de dano da munição: entra UMA vez, na parcela PRINCIPAL.
+      if (index === 0 && ammoBonus.damageBonus !== 0) {
+        componentTotal += ammoBonus.damageBonus;
+      }
+
+      const isPhysical = spec.type !== null && PHYSICAL_DAMAGE_TYPES.has(spec.type);
+
+      // Crítico Brutal: dados de arma extras no crítico (só corpo a corpo),
+      // somados à parcela FÍSICA.
+      if (
+        isPhysical &&
+        critical &&
+        attackerAdjustments &&
+        attackerAdjustments.critExtraDice > 0 &&
+        spec.count > 0 &&
+        spec.sides > 0
+      ) {
+        const extra = rollDice(
+          `${spec.count * attackerAdjustments.critExtraDice}d${spec.sides}`,
+          { crit: false },
+        );
+        if (extra && extra.total > 0) {
+          componentTotal += extra.total;
+          announceRoll({
+            kind: 'damage',
+            actorName: `${attacker.name} — Crítico Brutal`,
+            expression: extra.expression,
+            rolls: extra.rolls,
+            sides: extra.sides,
+            modifier: 0,
+            total: extra.total,
+            crit: true,
+            at: new Date().toISOString(),
+          });
         }
       }
 
-      // Bônus de dano corpo a corpo (Fúria) — não vale para armas à distância.
-      if (!attack.ranged && attackerAdjustments && attackerAdjustments.meleeDamageBonus > 0) {
-        total += attackerAdjustments.meleeDamageBonus;
-        announceRoll({
-          kind: 'damage',
-          actorName: `${attacker.name} — Fúria`,
-          expression: `+${attackerAdjustments.meleeDamageBonus}`,
-          rolls: [],
-          sides: 0,
-          modifier: attackerAdjustments.meleeDamageBonus,
-          total: attackerAdjustments.meleeDamageBonus,
-          crit: false,
-          at: new Date().toISOString(),
-        });
+      // Fúria e Ataque Furtivo: UMA vez, na primeira parcela física.
+      if (isPhysical && !physicalBonusApplied) {
+        if (meleeBonus > 0) {
+          componentTotal += meleeBonus;
+          announceRoll({
+            kind: 'damage',
+            actorName: `${attacker.name} — Fúria`,
+            expression: `+${meleeBonus}`,
+            rolls: [],
+            sides: 0,
+            modifier: meleeBonus,
+            total: meleeBonus,
+            crit: false,
+            at: new Date().toISOString(),
+          });
+        }
+        if (sneakRoll) {
+          componentTotal += sneakRoll.total;
+          sneakAttackResult = { expression: sneakRoll.expression, total: sneakRoll.total };
+          announceRoll({
+            kind: 'damage',
+            actorName: `${attacker.name} — Ataque Furtivo`,
+            expression: sneakRoll.expression,
+            rolls: sneakRoll.rolls,
+            sides: 6,
+            modifier: 0,
+            total: sneakRoll.total,
+            crit: critical,
+            at: new Date().toISOString(),
+          });
+        }
+        physicalBonusApplied = true;
       }
 
-      // Ataque Furtivo: entra automaticamente em armas sutis ou à distância
-      // quando a classe concede a feature. O jogador rola o ataque justamente
-      // nas situações em que ele se aplica (vantagem ou aliado adjacente).
-      const sneak = rollSneakAttack(attacker, attack, critical);
-      if (sneak) {
-        total += sneak.total;
-        sneakAttackResult = { expression: sneak.expression, total: sneak.total };
-
-        announceRoll({
-          kind: 'damage',
-          actorName: `${attacker.name} — Ataque Furtivo`,
-          expression: sneak.expression,
-          rolls: sneak.rolls,
-          sides: 6,
-          modifier: 0,
-          total: sneak.total,
-          crit: critical,
-          at: new Date().toISOString(),
-        });
-      }
-
+      // Log da PARCELA, já com os bônus dela (por tipo), para o mestre ver cada
+      // tipo separadamente.
       announceRoll({
         kind: 'damage',
-        actorName: attacker.name,
+        actorName: spec.type ? `${attacker.name} — ${spec.type}` : attacker.name,
         expression: damage.expression,
         rolls: damage.rolls,
         sides: damage.sides,
-        modifier: damage.modifier,
-        total: damage.total,
+        modifier: componentTotal - damage.total,
+        total: componentTotal,
         crit: critical,
         at: new Date().toISOString(),
       });
 
-      // Resistência do alvo (ex.: Fúria do bárbaro halva dano físico).
-      total = applyDamageResistance(target, attack.damage.type, total);
-      damageRolled = total;
-
-      await changeHp(target, -total);
+      // Defesa do alvo POR TIPO e POR PARCELA: imunidade zera, vulnerabilidade
+      // dobra, resistência halva. Cada parcela é resolvida independentemente.
+      const { applied, modifier } = applyDamageDefense(spec.type, componentTotal, defenses);
+      components.push({
+        type: spec.type ?? '',
+        expression: damage.expression,
+        rolled: componentTotal,
+        applied,
+        modifier,
+      });
+      total += applied;
     }
+
+    // Aviso quando alguma defesa mexeu no dano — sem ele o total não bate com a
+    // soma crua das rolagens e o mestre não entende o porquê.
+    const defended = components.filter((component) => component.modifier !== null);
+    if (defended.length > 0) {
+      const parts = defended.map((component) => {
+        const label = component.type || 'sem tipo';
+        if (component.modifier === 'immunity') return `${label} imune (0)`;
+        if (component.modifier === 'vulnerability') {
+          return `${label} vulnerável (${component.rolled}×2=${component.applied})`;
+        }
+        return `${label} resistido (${component.rolled}→${component.applied})`;
+      });
+      announceRoll({
+        kind: 'damage',
+        actorName: `${attacker.name} — Defesas de ${target.name}`,
+        expression: parts.join(' · '),
+        rolls: [],
+        sides: 0,
+        modifier: 0,
+        total,
+        crit: false,
+        at: new Date().toISOString(),
+      });
+    }
+
+    damageRolled = total;
+    // Nada a debitar (tudo imune, por exemplo) — não escreve no HP à toa.
+    if (total > 0) await changeHp(target, -total);
   }
 
   const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
@@ -833,6 +956,7 @@ export async function resolveAttack(
     critical,
     damageRolled,
     damageType: attack.damage.type ?? '',
+    components,
     sneakAttack: sneakAttackResult,
     targetHpCurrent: targetAfter?.hpCurrent ?? 0,
     targetHpMax: targetAfter?.hpMax ?? 0,

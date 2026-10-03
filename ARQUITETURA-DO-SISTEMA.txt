@@ -496,6 +496,7 @@ exceto GameConfig (chave fixa "main").
     id · name · kind CreatureKind @default(CREATURE) · type · challengeRating
     6 atributos (Int, default 10) · hpCurrent · hpMax · armorClass @default(10)
     speed @default(9) (metros) · attacks Json · resistances Json · immunities Json
+    vulnerabilities Json (dano dobrado; 13 tipos canônicos)
     description · imageUrl · localities Locality[] (N:N implícito)
     version · createdAt · updatedAt · combatants Combatant[]
     @@index([name]) @@index([kind])
@@ -1559,9 +1560,17 @@ ATAQUE (POST /api/combat/attack)
          nível de ladino) E a arma ser `finesse` ou `ranged`. As condições TÁTICAS
          (vantagem / aliado adjacente) NÃO são rastreadas: o jogador decide quando
          rolar. Cada parcela extra publica seu próprio `dice:rolled` (kind 'damage').
-    5. RESISTÊNCIA do alvo (personagem com o tipo ESTRUTURADO `attack.damage.type`
-       em `resistances`, ex.: Fúria) ⇒ dano dividido por 2 (`floor(total/2)`).
-       `type: null` ("sem tipo") NÃO aciona resistência.
+    5. DEFESA do alvo POR PARCELA e POR TIPO (uma parcela por vez, sem agrupar
+       tipos repetidos). Cada parcela de `attackDamages(attack)` é resolvida
+       isoladamente: IMUNIDADE zera, VULNERABILIDADE dobra, RESISTÊNCIA halva
+       (`floor`). `type: null` ("sem tipo") NÃO aciona defesa.
+         • PERSONAGEM: resistências de CLASSE (Fúria...) + RAÇA (`raceResistances`).
+         • CRIATURA: `resistances` / `immunities` / `vulnerabilities` do bestiário.
+       O dano total aplicado é a soma das parcelas já defendidas. O resultado
+       leva `components[]` ({ type, expression, rolled, applied, modifier }) e o
+       log do mestre anuncia cada parcela e resume as defesas que mexeram no dano.
+       Os bônus de Fúria/Crítico Brutal/Ataque Furtivo entram só na parcela
+       FÍSICA (Cortante/Perfurante/Concussão); a munição, na principal.
     5b. MUNIÇÃO (só PERSONAGENS): quando o ataque tem `inventoryItemId`, a arma
         apontada precisa estar EQUIPADA numa das mãos (hand1/hand2) — senão 409.
         Se ela declara a propriedade `ammunition`, 1 unidade do `ammoType` dela é
@@ -1579,11 +1588,11 @@ ATAQUE (POST /api/combat/attack)
   migração (`npm run migrate:attack-damage`) não conseguiu converter a expressão
   antiga com segurança, `legacy: true` + `damageText` com o texto original (o
   mestre revisa pela ficha). O tipo é um dos 13 canônicos ou `null`.
-  VÁRIOS TIPOS DE DANO (§10.0): `attack.damage` é o dano PRINCIPAL e é o único
-  que o combate resolve hoje; `extraDamages` guarda os demais, cada um com os seus
-  dados e o seu tipo. O passo 4 acima (e o passo 5, de resistência) continua
-  lendo SÓ `attack.damage` — aplicar cada tipo de forma independente (somando o
-  que passa pela resistência/imunidade do alvo) é o próximo passo do combate.
+  VÁRIOS TIPOS DE DANO (§10.0): `attack.damage` é o dano PRINCIPAL e `extraDamages`
+  guarda os demais, cada um com os seus dados e o seu tipo. O passo 4 percorre
+  TODAS as parcelas de `attackDamages(attack)` (cada uma rola o próprio dado e
+  publica o seu `dice:rolled`) e o passo 5 aplica a defesa do alvo por tipo,
+  somando o que passa. Tipos repetidos são resolvidos parcela a parcela.
   Resultado (`AttackResolvedPayload`) é enviado DIFERENCIADO:
     • mestre: CA, hpCurrent/hpMax do alvo, tudo;
     • jogadores, quando o ALVO é CRIATURA: targetArmorClass/targetHpCurrent/

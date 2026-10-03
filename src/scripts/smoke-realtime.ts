@@ -8168,10 +8168,10 @@ async function main(): Promise<void> {
   // --- 29. Vários tipos de dano por ataque e por arma -----------------------
   console.log('\n29) Vários tipos de dano por ataque e por arma');
 
-  // Cada dano é INDEPENDENTE: o principal continua em `damage` (é o que o
-  // combate resolve por enquanto) e os demais vão em `extraDamages`, cada um
-  // com os seus dados e o seu tipo. A ficha, as criaturas e as armas do
-  // catálogo usam a MESMA lista.
+  // Cada dano é INDEPENDENTE: o principal fica em `damage` e os demais vão em
+  // `extraDamages`, cada um com os seus dados e o seu tipo. A ficha, as
+  // criaturas e as armas do catálogo usam a MESMA lista, e o combate rola
+  // TODAS as parcelas aplicando a defesa do alvo por tipo.
   const multiSheetOwner = downgradee;
 
   const multiWeapon = await api('/api/items', {
@@ -8380,7 +8380,22 @@ async function main(): Promise<void> {
     JSON.stringify(creatureAttack),
   );
 
-  // O combate ainda resolve SÓ o dano principal: os extras são configuração.
+  // Defesas do alvo por tipo — resistência (½), imunidade (0) e vulnerabilidade
+  // (×2) são aplicadas POR PARCELA, cada uma pelo seu próprio tipo.
+  const defensesPatch = await api(`/api/creatures/${multiCreature.data.creature.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { resistances: ['Cortante'], immunities: ['Ácido'], vulnerabilities: ['Fogo'] },
+  });
+  check(
+    'a criatura guarda vulnerabilidades por tipo (×2)',
+    defensesPatch.status === 200 &&
+      defensesPatch.data?.creature?.vulnerabilities?.join(',') === 'Fogo',
+    JSON.stringify(defensesPatch.data?.creature),
+  );
+
+  // O combate rola TODAS as parcelas (principal + extras). A arma do jogador é
+  // Cortante + Fogo, então o Cortante é resistido (½) e o Fogo é vulnerável (×2).
   const multiCombat = await api('/api/combat', {
     method: 'POST',
     token: masterToken,
@@ -8395,22 +8410,55 @@ async function main(): Promise<void> {
     (item: any) => item.kind === 'CREATURE',
   );
 
-  let multiHit: any = null;
-  for (let attempt = 0; attempt < 25 && multiHit === null; attempt += 1) {
-    const shot = await api('/api/combat/attack', {
-      method: 'POST',
-      token: multiSheetOwner.token,
-      body: { attackId: 'weapon:multi-blade', targetCombatantId: multiTarget.id },
-    });
-    if (shot.status === 200 && shot.data?.result?.hit) multiHit = shot.data.result;
-  }
-  // FOR 16 (+3) e arma sem bônus: 1d8+3 (no crítico, 2d8+3). Se o 1d6 de Fogo
-  // entrasse na conta, o teto passaria de 11 (ou de 19 no crítico).
-  const multiCap = multiHit?.critical ? 19 : 11;
+  const attackMulti = async (): Promise<any> => {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const shot = await api('/api/combat/attack', {
+        method: 'POST',
+        token: multiSheetOwner.token,
+        body: { attackId: 'weapon:multi-blade', targetCombatantId: multiTarget.id },
+      });
+      if (shot.status === 200 && shot.data?.result?.hit) return shot.data.result;
+    }
+    return null;
+  };
+  const component = (result: any, type: string): any =>
+    (result?.components ?? []).find((item: any) => item.type === type);
+
+  const multiHit = await attackMulti();
+  const multiCortante = component(multiHit, 'Cortante');
+  const multiFogo = component(multiHit, 'Fogo');
   check(
-    'o combate resolve só o dano PRINCIPAL (os extras ainda não são somados)',
-    multiHit !== null && multiHit.damageType === 'Cortante' && multiHit.damageRolled <= multiCap,
+    'o combate rola TODAS as parcelas e aplica a defesa POR TIPO (resistência ½ e vulnerabilidade ×2)',
+    multiHit !== null &&
+      (multiHit.components ?? []).length === 2 &&
+      multiCortante?.modifier === 'resistance' &&
+      multiCortante?.applied === Math.floor(multiCortante.rolled / 2) &&
+      multiFogo?.modifier === 'vulnerability' &&
+      multiFogo?.applied === multiFogo.rolled * 2 &&
+      multiHit.damageRolled ===
+        (multiHit.components ?? []).reduce((sum: number, item: any) => sum + item.applied, 0),
     JSON.stringify(multiHit),
+  );
+
+  // Imunidade: agora o Fogo é IMUNE — a parcela é ZERADA, mas o Cortante (sem
+  // defesa) entra inteiro; o dano total ignora a parcela imune.
+  await api(`/api/creatures/${multiCreature.data.creature.id}`, {
+    method: 'PATCH',
+    token: masterToken,
+    body: { resistances: [], immunities: ['Fogo'], vulnerabilities: [] },
+  });
+  const immuneHit = await attackMulti();
+  const immuneFogo = component(immuneHit, 'Fogo');
+  const immuneCortante = component(immuneHit, 'Cortante');
+  check(
+    'a imunidade ZERA só a parcela do tipo imune (o Cortante entra inteiro)',
+    immuneHit !== null &&
+      immuneFogo?.modifier === 'immunity' &&
+      immuneFogo?.applied === 0 &&
+      immuneCortante?.modifier === null &&
+      immuneCortante?.applied === immuneCortante.rolled &&
+      immuneHit.damageRolled === immuneCortante.rolled,
+    JSON.stringify(immuneHit),
   );
 
   await api('/api/combat/end', { method: 'POST', token: masterToken });

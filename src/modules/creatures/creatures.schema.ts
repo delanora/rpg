@@ -39,6 +39,7 @@ const creatureFields = z.object({
   attacks: z.array(attackSchema).max(100),
   resistances: damageTypeListSchema,
   immunities: damageTypeListSchema,
+  vulnerabilities: damageTypeListSchema,
   description: z.string().max(20000),
   /** Ícone/retrato da criatura/NPC (`/uploads/creatures/...`). */
   imageUrl: z.string().trim().max(500),

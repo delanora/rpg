@@ -88,10 +88,12 @@ Só as subclasses estão cadastradas nos dois. Faltam, no clérigo: Canalizar Di
 `combat.service.ts` → `rollSneakAttack()` adiciona o dano sempre que a arma é sutil/à distância e a feature existe. As condições reais (vantagem **ou** aliado adjacente ao alvo, sem desvantagem) não são verificadas.
 - **Sugestão:** transformar em opção do jogador no ataque (checkbox "usar Ataque Furtivo") ou validar vantagem/posição quando o combate passar a rastreá-las.
 
-### A7. Resistências, imunidades e vulnerabilidades — **Média**
-`combat.service.ts` → `applyDamageResistance()` apenas **halva** o dano de um tipo resistido. As **imunidades** já existem no modelo de criatura (`Creature.immunities`) mas não são usadas no combate, e **vulnerabilidade** (dano dobrado) não existe.
-- **Feito (2026-09-29, modelagem):** ataques e armas já podem carregar **vários tipos de dano independentes** — `attack.damage` continua sendo o principal e `extraDamages` guarda os adicionais, cada um com os seus dados e o seu tipo (`shared/attacks.ts`; o ataque derivado da arma copia os extras). O combate **ainda resolve só o principal** — o passo que falta é percorrer `attackDamages(attack)` e aplicar imunidade/resistência/vulnerabilidade **por parcela** (cortante entra, necrótico imune zera), que é o que esta fila espera.
-- **Sugestão:** aplicar imunidade (0), resistência (½) e vulnerabilidade (×2) **por dano de `attackDamages()`** antes de debitar o HP; usar a lista de `immunities` da criatura.
+### A7. Resistências, imunidades e vulnerabilidades — **Resolvido (2026-10-03)**
+`combat.service.ts` só rolava o dano principal e `applyDamageResistance()` apenas **halvava** o dano de um tipo resistido de PERSONAGEM; as **imunidades** da criatura não eram usadas e **vulnerabilidade** não existia.
+- **Feito (2026-09-29, modelagem):** ataques e armas podem carregar **vários tipos de dano independentes** (`attack.damage` + `extraDamages`, `shared/attacks.ts`; o ataque derivado da arma copia os extras).
+- **Feito (2026-10-03):** o combate percorre **`attackDamages(attack)`** e rola **cada parcela** (crítico dobra os dados de cada uma), aplicando a defesa **por parcela e por tipo**: imunidade **zera**, vulnerabilidade **dobra**, resistência **halva** (arredondando para baixo). Funciona para **Personagem** (resistências de classe + raça) e para **Criatura** (`resistances`/`immunities`/`vulnerabilities`). Os bônus corpo a corpo (Fúria, Crítico Brutal, Ataque Furtivo) entram só na **parcela física** (Cortante/Perfurante/Concussão); a munição, na principal. A resposta de ataque e o log do mestre ganharam **`components`** (rolado × aplicado por tipo + o motivo) para explicar quando o total não bate com a soma crua.
+- **Feito (2026-10-03, modelagem):** nova coluna `Creature.vulnerabilities` (migration `20261003060000_creature_vulnerabilities`), validada pelos 13 tipos canônicos e editável no editor do mestre. Personagem não tem fonte de vulnerabilidade.
+- **Pendente:** resistência condicional ("a dano não-mágico" vs. mágico) — fora do escopo; só o tipo puro é tratado.
 
 ### A8. Capacidade de carga simplificada — **Baixa**
 `dnd5e.ts` → `carryingCapacity()` = FOR × 7,5 kg. Ignora tamanho (Pequeno ×½, Grande ×2) e traços como **Poderoso**. Como raça/tamanho não são modelados, registrar como limitação conhecida.
@@ -320,7 +322,7 @@ Ordem sugerida por impacto na mesa:
 - [ ] **P2** Características de classe do **Clérigo** e do **Bruxo** (Canalizar Divindade, Invocações Místicas, Arcanum Místico...). _(A18)_
 - [x] **Corrigido (2026-09-28)** Tabela de espaços: conjurador único usa a tabela da própria classe (metade/terço para cima); a combinada só com 2+ conjuradores. _(A16)_
 - [x] **Implementado (2026-09-29)** Vários tipos de dano por ataque e por arma: `extraDamages` no schema do ataque (ficha e criaturas) e em `details` das armas do catálogo, com o ataque derivado copiando os extras; interface com o "+" na linha de dano. _(A7 · seção 29)_
-- [ ] **P1** `combat.service.ts`: imunidade/resistência/vulnerabilidade **por parcela** de `attackDamages()` (hoje só o dano principal é rolado; usar `Creature.immunities`). _(A7)_
+- [x] **Corrigido (2026-10-03)** `combat.service.ts`: imunidade/resistência/vulnerabilidade **por parcela** de `attackDamages()`, para Personagem e Criatura, com `components` no resultado. _(A7)_
 - [ ] **P1** `SpellsSection.tsx` + DTO: decidir se `spellSlots` é derivado (recomendado) ou manual, e remover a duplicidade. _(A3)_
 - [ ] **P1** Ataque Furtivo: condicionar a vantagem/aliado adjacente ou expor toggle. _(A6)_
 - [x] **Corrigido (2026-09-28)** Defesa sem Armadura no multiclasse: vale a fórmula de maior valor (Bárbaro x Monge). _(A4)_

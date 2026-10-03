@@ -339,8 +339,12 @@ model Creature {
 
   // Coleções (JSONB) — ver src/modules/shared/attacks.ts
   attacks     Json @default("[]") // [{ id, name, damage: { count, sides, bonus, type }, attackBonus, notes, finesse, ranged, legacy? }]
-  resistances Json @default("[]") // tipos de dano resistidos
-  immunities  Json @default("[]") // tipos de dano imunes
+  resistances Json @default("[]") // tipos de dano resistidos (dano pela metade)
+  immunities  Json @default("[]") // tipos de dano imunes (dano zerado)
+  /// Tipos de dano aos quais a criatura é VULNERÁVEL (dano dobrado). Lista dos
+  /// 13 tipos canônicos de shared/attacks.ts, validada na escrita. Aplicada no
+  /// combate por parcela, junto de resistances/immunities.
+  vulnerabilities Json @default("[]")
   description String @default("")
 
   /// URL pública do ícone/retrato da criatura/NPC (`uploads/creatures/...`).

@@ -59,10 +59,36 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
   const sneak = payload.sneakAttack
     ? ` (inclui ${payload.sneakAttack.expression} de Ataque Furtivo)`
     : '';
+
+  // Quebra por PARCELA (principal + extras), já com o que entrou de cada tipo.
+  const components = payload.components ?? [];
+  const breakdown = components
+    .filter((component) => component.applied > 0)
+    .map((component) =>
+      component.type ? `${component.applied} ${component.type}` : `${component.applied}`,
+    )
+    .join(' + ');
+  const typePart =
+    breakdown !== '' ? ` [${breakdown}]` : payload.damageType ? ` (${payload.damageType})` : '';
+
+  // Explica ao mestre por que o total não bate com a soma crua das rolagens.
+  const defended = components
+    .filter((component) => component.modifier !== null)
+    .map((component) => {
+      const label = component.type || 'sem tipo';
+      if (component.modifier === 'immunity') return `${label} imune`;
+      if (component.modifier === 'vulnerability') return `${label} vulnerável (×2)`;
+      return `${label} resistido (${component.rolled}→${component.applied})`;
+    });
+  const defense = defended.length > 0 ? ` [${defended.join('; ')}]` : '';
+
+  const allImmune = payload.hit && payload.damageRolled === 0 && defended.length > 0;
   const damage =
     payload.hit && payload.damageRolled > 0
-      ? ` · ${payload.damageRolled} de dano${payload.damageType ? ` (${payload.damageType})` : ''}${sneak} → ${payload.targetName}${hpPart}`
-      : '';
+      ? ` · ${payload.damageRolled} de dano${typePart}${sneak}${defense} → ${payload.targetName}${hpPart}`
+      : allImmune
+        ? ` · sem dano${defense} → ${payload.targetName}${hpPart}`
+        : '';
 
   return {
     id: nextLogId(),
