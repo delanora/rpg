@@ -245,11 +245,14 @@ export function InventorySection({
     closeDetail();
   }
 
-  /** Consome 1 unidade do item (o servidor é quem desconta). */
-  function useItem(id: string): void {
-    if (!onUseItem) return;
+  /**
+   * Consome 1 unidade do item (o servidor é quem desconta). Devolve a promessa
+   * para o modal do item poder segurar o botão "usando..." até a resposta.
+   */
+  function useItem(id: string): Promise<void> {
+    if (!onUseItem) return Promise.resolve();
     setUsingId(id);
-    void Promise.resolve(onUseItem(id)).finally(() => setUsingId(null));
+    return Promise.resolve(onUseItem(id)).finally(() => setUsingId(null));
   }
 
   /** Cancela um fechamento agendado (o ponteiro voltou para o item/painel). */
@@ -301,8 +304,9 @@ export function InventorySection({
   }
 
   /**
-   * Clique: abre a FICHA DETALHADA (modal centralizado, somente leitura). O
-   * painel de pré-visualização do hover sai de cena para não ficar atrás dele.
+   * Clique: abre a FICHA DETALHADA (modal centralizado). O painel de
+   * pré-visualização do hover sai de cena para não ficar atrás dele. Para o
+   * jogador, o modal ganha o botão "Usar" quando o item é consumível.
    */
   function openDetail(item: InventoryItem): void {
     closeDetail();
@@ -641,7 +645,15 @@ export function InventorySection({
       </div>
 
       {modalItem ? (
-        <ItemDetailModal item={modalItem} onClose={() => setModalItemId(null)} />
+        <ItemDetailModal
+          item={modalItem}
+          onClose={() => setModalItemId(null)}
+          onUse={
+            canUseItems && isConsumableItem(modalItem.category, modalItem.details)
+              ? () => useItem(modalItem.id)
+              : undefined
+          }
+        />
       ) : null}
     </Section>
   );
