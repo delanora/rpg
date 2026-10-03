@@ -1375,13 +1375,18 @@ CAR+1) · gnome-forest (INT+2 DES+1) · gnome-rock (INT+2 CON+1) · half-elf (CA
 **LACUNA:** ferramentas, idiomas e características raciais não são modelados.
 
 **Catálogo estruturado (`shared/races/`):** `types.ts` + `index.ts` + um arquivo por raça
-(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Draconato já
-cadastrado** (`RACES = [dragonborn]`): For+2/Car+1, `speed` 9 m, `size` Medium, `languages`
-[Comum, Dracônico] (informativo), 3 traços — `draconic-ancestry` (descritivo, tabela das
-10 cores em metros), `breath-weapon` (recurso 1 uso, recarga curta) e `damage-resistance`
-(`resistanceFromChoice` → `choiceId` 'draconic-ancestry'). `hasChoices`: `draconic-ancestry`
-com 10 opções (`{ id, label, damageType }`). Sem sub-raças. O `ClassFeatureEffect` ganhou
-o tipo `resistanceFromChoice` (+ `choiceId`), ainda **não processado** por nenhum motor.
+(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Duas raças
+cadastradas** (`RACES = [dragonborn, elf]`): **Draconato** — For+2/Car+1, `speed` 9 m,
+`size` Medium, `languages` [Comum, Dracônico] (informativo), 3 traços (`draconic-ancestry`
+descritivo, `breath-weapon` como recurso 1 uso/recarga curta, `damage-resistance` via
+`resistanceFromChoice` → `choiceId` 'draconic-ancestry') e `hasChoices` `draconic-ancestry`
+com 10 opções (`{ id, label, damageType }`), sem sub-raças; **Elfo** — Des+2, `speed` 9 m,
+`darkvision` 18 m, `languages` [Comum, Élfico], 3 traços (`keen-senses` via `skillProficiency`,
+`fey-ancestry` como `other`, `trance` textual) e 3 sub-raças (Alto Elfo Int+1; Elfo da
+Floresta Sab+1 com `speed` 10,5; Drow Car+1 com `darkvision` 36 e `drow-magic` descritivo).
+O `ClassFeatureEffect` ganhou os tipos `resistanceFromChoice` (+ `choiceId`) e
+`skillProficiency` (+ `target`), ainda **não processados** por nenhum motor. As magias
+raciais (truque do Alto Elfo e Drow) ficam descritivas até o catálogo de magias existir.
 `Race` (`abilityScoreIncrease[{ ability, amount }]` com `AbilityKey`, `speed` em METROS,
 `size`/`darkvision` só preparação, `damageResistances` com os 13 tipos canônicos,
 `languages`/`bonusLanguageChoices` informativos — não há campo de idioma na ficha,

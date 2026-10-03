@@ -1419,13 +1419,21 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   • RaceChoiceDefinition: id · label · options[{ id, label, damageType? }] → a escolha
     fica em raceChoices. damageType é o tipo de dano canônico associado à opção (ex.: a
     cor do Draconato) — é o que um efeito resistanceFromChoice resolve.
-  • ClassFeatureEffect ganhou o tipo `resistanceFromChoice` (+ campo `choiceId`): a
-    resistência cujo TIPO DE DANO vem de uma escolha. Ainda não é processado por ninguém.
+  • ClassFeatureEffect ganhou dois tipos usados só por raças: `resistanceFromChoice`
+    (+ campo `choiceId`) — resistência cujo TIPO DE DANO vem de uma escolha — e
+    `skillProficiency` (a chave da perícia vem em `target`). Ainda NÃO são processados.
   DRACONATO (dragonborn.ts): For+2/Car+1 · speed 9 · size Medium · languages [Comum,
   Dracônico] (informativo) · 3 traços — draconic-ancestry (descritivo, tabela das 10
   cores em metros), breath-weapon (recurso 1 uso, recharge short) e damage-resistance
   (resistanceFromChoice → choiceId 'draconic-ancestry'). hasChoices: draconic-ancestry
   com 10 opções (cor → tipo de dano). Sem sub-raças.
+  ELFO (elf.ts): Des+2 · speed 9 · darkvision 18 · languages [Comum, Élfico] · 3 traços —
+  keen-senses (skillProficiency → perception), fey-ancestry ('other': vantagem vs
+  enfeitiçado + imune a sono mágico, não modelados) e trance (textual). 3 sub-raças:
+  high-elf (Int+1, treino de arma como texto, high-elf-cantrip DESCRITIVO — catálogo de
+  magias inexistente), wood-elf (Sab+1, speed 10,5 = Passo Ligeiro) e drow-elf (Car+1,
+  darkvision 36, drow-magic DESCRITIVO — escalonamento por nível TOTAL do personagem, no
+  texto). Armas raciais ficam só como texto (ProficienciesState.weapons, sem efeito).
   Funções: getRace(id), getSubrace(raceId, subraceId), allRaces().
   COEXISTÊNCIA: o assistente de criação e o compêndio CONTINUAM lendo o RACE_CATALOG de
   shared/creation.ts; a substituição (e a migração de `characters.race` texto → raceId)

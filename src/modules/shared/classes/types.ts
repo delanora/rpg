@@ -76,6 +76,12 @@ export interface ClassFeatureResource {
      */
     | 'critThreshold'
     /**
+     * PERÍCIA concedida pela característica (ex.: Sentidos Aguçados do Elfo dá
+     * Percepção). A chave da perícia vem em `target` (ver SKILLS em dnd5e.ts).
+     * Hoje só a raça usa; quem resolve é o motor de raça (futuro).
+     */
+    | 'skillProficiency'
+    /**
      * Resistência cujo TIPO DE DANO vem de uma ESCOLHA (ex.: ancestralidade
      * dracônica do Draconato). O tipo de cada opção é declarado na própria
      * escolha (ver `RaceChoiceDefinition.options[].damageType` em shared/races).
@@ -100,7 +106,10 @@ export interface ClassFeatureResource {
   override?: boolean;
   /** Rótulo do toggle (ex.: 'Fúria'). */
   name?: string;
-  /** Alvo do bônus quando `type: 'bonus'`. */
+  /**
+   * Alvo do bônus (`type: 'bonus'`) ou a CHAVE da perícia (`type:
+   * 'skillProficiency'`, ver SKILLS em dnd5e.ts — ex.: 'perception').
+   */
   target?: string;
   /** Valor fixo (ou espaços, em `type: 'expertise'`). */
   value?: number;
