@@ -7525,7 +7525,12 @@ input[type='checkbox']:focus-visible,
   background: rgba(255, 255, 255, 0.03);
 }
 
+/* Mesma montagem das perícias: `inline-flex` + `gap` alinha o nome e o selo de
+   Expertise (que é o MESMO `ExpertiseMark`, com a coroa em 1rem). */
 .tool-line-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   font-size: 0.92rem;
   color: var(--ink-soft);
 }

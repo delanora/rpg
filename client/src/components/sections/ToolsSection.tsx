@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ABILITY_KEYS, ABILITY_LABELS, EXPERTISE_TOOL_PREFIX } from '../../dnd';
 import type { AbilityKey } from '../../types';
-import { EXPERTISE_TOOLTIP, ExpertiseLaurel } from '../ExpertiseLaurel';
+import { EXPERTISE_TOOLTIP, ExpertiseMark } from '../ExpertiseLaurel';
 import { Icon } from '../Icon';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
@@ -79,7 +79,7 @@ export function ToolsSection({ character, onRoll }: SheetSectionProps & {
               <li className="tool-line" key={tool.id}>
                 <span className="tool-line-name">
                   {tool.name}
-                  {isExpertise ? <ExpertiseLaurel /> : null}
+                  {isExpertise ? <ExpertiseMark /> : null}
                 </span>
                 <span className="tool-line-category">{tool.categoryLabel}</span>
                 <span className="tool-line-bonus">{formatModifier(bonus)}</span>
