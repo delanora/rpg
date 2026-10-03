@@ -13,6 +13,16 @@ import { exchangeCoins, giveCoins, spendCoins, transferCoins } from '../../coins
 import { useSheetAccess } from '../../readonly';
 import type { Character, CoinAmount, CoinKey, CoinPurse, TransferTarget } from '../../types';
 import { clampInt } from '../../utils';
+import { Icon } from '../Icon';
+
+/** Metal de cada denominação — define a cor do ícone de moeda. */
+const COIN_METAL: Record<CoinKey, string> = {
+  pp: 'is-platinum',
+  gp: 'is-gold',
+  ep: 'is-electrum',
+  sp: 'is-silver',
+  cp: 'is-copper',
+};
 
 /**
  * Bloco de moedas da ficha, logo abaixo da mochila.
@@ -219,6 +229,7 @@ export function CoinsPanel({
       <div className="coins-grid">
         {visible.map((key) => (
           <div key={key} className="coin-cell" title={COIN_NAMES[key]}>
+            <Icon name="coin" size={15} className={`coin-icon ${COIN_METAL[key]}`} />
             <span className="coin-label">{COIN_LABELS[key]}</span>
             <span className="coin-value">{coins[key]}</span>
           </div>

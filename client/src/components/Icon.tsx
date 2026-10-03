@@ -41,7 +41,8 @@ export type IconName =
   | 'trash'
   | 'info'
   | 'gear'
-  | 'table';
+  | 'table'
+  | 'coin';
 
 const ICONS: Record<IconName, ReactNode> = {
   sword: (
@@ -259,6 +260,13 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M9.7 14.6c1.2 1 3.4 1 4.6 0" />
       <path d="M10.2 15.4l.7.2-.5 1.1Z" fill="currentColor" stroke="none" />
       <path d="M13.8 15.4l-.7.2.5 1.1Z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  coin: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4.5" />
+      <path d="M12 7.5v-1.2M12 17.7v-1.2M16.5 12h1.2M4.3 12h1.2" />
     </>
   ),
 };

@@ -1024,7 +1024,6 @@ select option {
 /* --- Ficha: posição de cada seção na grade -------------------------------- */
 
 .sheet-identity,
-.sheet-inventory,
 .sheet-abilities,
 .sheet-tabs-area {
   min-width: 0;
@@ -1043,13 +1042,10 @@ select option {
   grid-row: 2;
 }
 
-.sheet-inventory {
-  grid-row: 3;
-}
-
-/* As abas (magias, ataques, características) fecham a ficha. */
+/* As abas (magias, ataques, características) fecham a ficha. O inventário
+   saiu do fluxo: virou botão/painel flutuante (ver §27). */
 .sheet-tabs-area {
-  grid-row: 4;
+  grid-row: 3;
   display: grid;
   align-content: start;
   gap: var(--space-2);
@@ -5754,50 +5750,23 @@ input[type='checkbox']:disabled {
    ========================================================================== */
 
 /*
- * O inventário ocupa a largura toda: o set de equipamento e a mochila ficam um
- * ao lado do outro (antes eram empilhados na coluna estreita) e o peso, as
- * moedas e o detalhe do item fecham abaixo.
+ * O inventário vive num painel flutuante estreito: o set de equipamento fica
+ * no topo e a mochila (com as moedas dentro) entra logo abaixo, quando aberta
+ * pelo ícone da mochila no set. Coluna única, na ordem do fluxo.
  */
 .inventory-board {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   align-items: start;
   gap: var(--space-2);
-  margin-top: 0.4rem;
+  margin-top: 0.2rem;
 }
 
-.inventory-board > .equip-set {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.inventory-board > .bag-panel {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.inventory-board > .inventory-weight {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.inventory-board > .coins-panel {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 900px) {
-  .inventory-board {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .inventory-board > .equip-set,
-  .inventory-board > .bag-panel,
-  .inventory-board > .inventory-weight,
-  .inventory-board > .coins-panel {
-    grid-column: 1;
-    grid-row: auto;
-  }
+.inventory-toolbar {
+  justify-self: stretch;
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* Peso carregado, logo abaixo do set. */
@@ -5850,12 +5819,33 @@ input[type='checkbox']:disabled {
 
 .coin-cell {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.35rem;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+/* Moeda colorida por denominação (ouro/prata/cobre e afins). */
+.coin-icon.is-gold {
+  color: #d9a520;
+}
+
+.coin-icon.is-silver {
+  color: #b9c0c7;
+}
+
+.coin-icon.is-copper {
+  color: #b87333;
+}
+
+.coin-icon.is-platinum {
+  color: #dfe3e6;
+}
+
+.coin-icon.is-electrum {
+  color: #c9b45a;
 }
 
 .coin-label {
@@ -6706,7 +6696,8 @@ input[type='checkbox']:focus-visible,
 /* Em telas estreitas o botão fica só com o ícone. */
 @media (max-width: 560px) {
   .roll-log-fab-label,
-  .notes-fab-label {
+  .notes-fab-label,
+  .inv-fab-label {
     display: none;
   }
 }
@@ -6724,14 +6715,110 @@ input[type='checkbox']:focus-visible,
 }
 
 /* ==========================================================================
-   26. Janela de dados
+   25b. Inventário flutuante: botão na base da pilha + painel à esquerda
    ========================================================================== */
 
-/* Botão flutuante "Dados" no canto inferior ESQUERDO, espelhando as anotações. */
-.dice-fab {
+/* Botão flutuante "Inventário" no canto inferior esquerdo (base da pilha). */
+.inv-fab {
   position: fixed;
   left: 1.25rem;
   bottom: 1.25rem;
+  z-index: 56;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--leather-2), var(--leather));
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow: var(--shadow-deep);
+  transition: transform 0.15s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.inv-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-deep), 0 0 18px -4px var(--glow);
+}
+
+.inv-fab:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.inv-fab.active {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-color: var(--gold);
+  color: #3a2410;
+}
+
+/* Quantos itens o inventário tem agora. */
+.inv-fab-count {
+  margin-left: 0.1rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--surface-4);
+  color: var(--ink-soft);
+  font-size: var(--text-micro);
+}
+
+/*
+ * Painel do inventário: cartão ancorado ACIMA do botão, à esquerda. Largura
+ * justa para o set/mochila (não ocupa a tela) e rolagem própria se faltar
+ * altura. A mochila só entra quando aberta pelo ícone dela.
+ */
+.inv-panel {
+  position: fixed;
+  left: 1.25rem;
+  bottom: 5.4rem;
+  z-index: 57;
+  width: min(23rem, 94vw);
+  max-height: calc(100vh - 7rem);
+  overflow-y: auto;
+  padding: 0.9rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+  animation: ink-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.inv-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+  padding-right: 2rem; /* espaço do botão de fechar */
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+}
+
+/* O ícone da mochila no set vira o gatilho de abrir/fechar a mochila. */
+.slot-backpack {
+  cursor: pointer;
+}
+
+.slot-backpack.is-open {
+  border-color: var(--gold);
+  box-shadow: inset 0 0 0 2px var(--gold-hair);
+}
+
+/* ==========================================================================
+   26. Janela de dados
+   ========================================================================== */
+
+/* Botão flutuante "Dados" no canto inferior ESQUERDO. Agora há o INVENTÁRIO na
+   base (ver `.inv-fab`), então o Dados sobe um degrau. */
+.dice-fab {
+  position: fixed;
+  left: 1.25rem;
+  bottom: 4.25rem;
   z-index: 56;
   display: inline-flex;
   align-items: center;
@@ -6766,21 +6853,19 @@ input[type='checkbox']:focus-visible,
 }
 
 /* ---------------------------------------------------------------------------
-   Pilha flutuante do MESTRE (canto inferior esquerdo): o LOG acima do botão
-   dos dados e as ANOTAÇÕES abaixo dele. O jogador só tem o botão dos dados, na
-   base — por isso o deslocamento vale apenas com `.is-master`.
-
-   Os três botões têm a mesma altura (~2.4rem), então o passo entre eles é
-   fixo: 1.25 (base) + 3.0 (passo) por posição, e o painel abre acima dos três.
+   Pilha flutuante do canto inferior esquerdo, de baixo para cima:
+     Inventário (base, sempre) → Dados → Notas (mestre) → Log (mestre).
+   Os botões têm a mesma altura (~2.4rem), então o passo entre eles é fixo
+   (3.0rem) e o painel abre acima do conjunto.
    --------------------------------------------------------------------------- */
 .dice-fab.is-master {
-  bottom: 4.25rem;
+  bottom: 7.25rem;
 }
 
 .roll-log-fab {
   position: fixed;
   left: 1.25rem;
-  bottom: 7.25rem;
+  bottom: 10.25rem;
   z-index: 56;
   display: inline-flex;
   align-items: center;
@@ -6824,10 +6909,12 @@ input[type='checkbox']:focus-visible,
   font-size: var(--text-micro);
 }
 
-/* Anotações do mestre: mesmo botão do jogador, no canto esquerdo. */
+/* Anotações do mestre: mesmo botão do jogador, no canto esquerdo (acima do
+   Inventário/Dados, abaixo do Log). */
 .notes-fab.master-notes-fab {
   left: 1.25rem;
   right: auto;
+  bottom: 4.25rem;
 }
 
 /*
@@ -6837,7 +6924,7 @@ input[type='checkbox']:focus-visible,
 .master-fab-panel {
   position: fixed;
   left: 1.25rem;
-  bottom: 10.6rem;
+  bottom: 13.6rem;
   z-index: 55;
   width: min(32rem, 92vw);
   max-height: calc(100vh - 12rem);

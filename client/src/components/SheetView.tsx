@@ -6,14 +6,14 @@ import { AbilityCardsSection } from './sections/AbilityCardsSection';
 import { AttacksSection } from './sections/AttacksSection';
 import { FeaturesSection } from './sections/FeaturesSection';
 import { IdentitySection } from './sections/IdentitySection';
-import { InventorySection } from './sections/InventorySection';
+import { InventoryDock } from './InventoryDock';
 import { NotesSection } from './sections/NotesSection';
 import { SpellsSection } from './sections/SpellsSection';
 
 /**
- * Seções que vivem em abas. Os atributos (com perícias e salvaguardas) e o
- * inventário não entram aqui: o primeiro ocupa a largura toda no topo e o
- * segundo uma coluna lateral própria, ambos fora das abas.
+ * Seções que vivem em abas. Os atributos (com perícias e salvaguardas) ficam
+ * de ponta a ponta no topo e o inventário virou um botão/painel flutuante —
+ * nenhum dos dois entra nas abas.
  */
 const TAB_SECTIONS = [
   { key: 'spells', label: 'Magias', icon: 'star' },
@@ -109,17 +109,17 @@ export function SheetView({
           <AbilityCardsSection character={character} update={update} onRoll={onRollSkill} />
         </div>
 
-        <div className="sheet-inventory">
-          <InventorySection
-            character={character}
-            update={update}
-            onMoveItem={onInventoryMove}
-            onUseItem={onInventoryUse}
-            extraCoins={extraCoins}
-            coinTargets={coinTargets}
-            onCoinsChange={onCoinsChange}
-          />
-        </div>
+        {/* Inventário: botão flutuante + painel (o set/mochila não ficam no
+            fluxo da ficha). */}
+        <InventoryDock
+          character={character}
+          update={update}
+          onMoveItem={onInventoryMove}
+          onUseItem={onInventoryUse}
+          extraCoins={extraCoins}
+          coinTargets={coinTargets}
+          onCoinsChange={onCoinsChange}
+        />
 
         <div className="sheet-tabs-area">
           <div className="sheet-tabs" role="tablist" aria-label="Seções da ficha">

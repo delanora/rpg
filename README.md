@@ -654,7 +654,7 @@ Quem quiser devolver a ficha à montagem é o **mestre**, pelo botão **Reabrir 
 
 Nenhum formulário abre em outra tela: clicar no valor transforma o campo em edição; **Enter** ou sair do campo salva, **Esc** cancela. A alteração aparece na hora (otimista) e é confirmada pela resposta do servidor, que é a fonte de verdade dos valores derivados.
 
-Seções da ficha: **Personagem** (o retrato que salta para fora do card, a faixa recortada com Nome/Raça, a linha de Classe/Subclasse/Antecedente/Alinhamento, o nível com o **Level Up** e a inspiração — e, no fim, **Vida** com os seis cards de CA, iniciativa, deslocamento, percepção passiva, dado de vida e bônus de proficiência), seis cards de Atributos (selo hexagonal com o valor nas cores da bandeirola do nome e as perícias e salvaguardas de cada atributo — cada linha traz um resumo do que a perícia serve ao passar o mouse), Inventário, **Magias** (com o bloco de Conjuração), Ataques, Características (com a subseção **Talentos**) e Anotações/História.
+Seções da ficha: **Personagem** (o retrato que salta para fora do card, a faixa recortada com Nome/Raça, a linha de Classe/Subclasse/Antecedente/Alinhamento, o nível com o **Level Up** e a inspiração — e, no fim, **Vida** com os seis cards de CA, iniciativa, deslocamento, percepção passiva, dado de vida e bônus de proficiência), seis cards de Atributos (selo hexagonal com o valor nas cores da bandeirola do nome e as perícias e salvaguardas de cada atributo — cada linha traz um resumo do que a perícia serve ao passar o mouse), **Magias** (com o bloco de Conjuração), Ataques, Características (com a subseção **Talentos**) e Anotações/História. O **Inventário** saiu do fluxo e abre num **botão flutuante** (ver abaixo).
 
 ---
 
@@ -734,6 +734,8 @@ Os eventos `region:created` / `region:updated` / `region:deleted` e `locality:cr
 O inventário guarda o que é do jogador (**quantidade**, **equipado** e o vínculo `itemId`) e lê do catálogo o resto — nome, descrição, peso, categoria, sprite e atributos. Na ficha, os campos que vêm do catálogo aparecem com o selo *catálogo* e não são editáveis (o servidor aplica o espelho ao montar o DTO, então edição local não sobrescreve o mestre).
 
 Quando o mestre corrige um item na aba **Itens**, o servidor encontra todas as fichas que possuem aquele item e republica cada uma (`sheet:updated`) — o jogador vê o nome/peso novos na hora, sem recarregar. Se o item for removido do catálogo, a cópia antiga permanece na ficha (ninguém perde o que já estava na mochila).
+
+**Inventário flutuante:** o inventário não ocupa mais o meio da ficha. Ele vive num **botão flutuante** fixo no canto inferior esquerdo (na base da mesma pilha do botão *Dados*, que sobe um degrau) e, ao clicar, abre um **painel à esquerda** de largura justa. O painel começa só com o **set de equipamento** (estilo Tibia) e o **peso**; a **mochila** só aparece quando o jogador clica no **ícone dela dentro do set** (a célula com a bolsa), logo **abaixo** do grid de equipamento — e as **moedas** vivem **dentro** da mochila, num bloco aparte abaixo do grid, cada denominação com um **ícone de moeda** colorido (ouro/prata/cobre etc.). O painel fecha pelo **X**, pelo próprio botão e pelo **Esc**.
 
 **Ver o item:** passar o mouse sobre um item abre um painel flutuante de pré-visualização (com quantidade/usar/remover, no caso do mestre) e **clicar** abre a **ficha detalhada** num modal centralizado (`ItemDetailModal`) — nome em destaque, imagem ampliada (que abre o lightbox do app), categoria, raridade, sintonização, peso, quantidade, os **atributos** da categoria (dano, alcance, duração, propriedades...) e a descrição. Nunca usa o cadastro do item como fonte paralela: lê o próprio item do inventário. O campo **Valor** não existe nesse fluxo (o preço é exclusivo do mestre e nem chega ao inventário). Para o **jogador**, itens **consumíveis** (Poção ou marcados pelo mestre) ganham no rodapé do modal o botão **Usar**, que consome 1 unidade como o botão do painel de hover — a ficha é atualizada pelo servidor (com a cura automática da poção de Cura). A visão do mestre não mostra o botão. O modal fecha pelo **X**, pelo clique na área escurecida e pelo **Esc**.
 
@@ -902,7 +904,7 @@ O tema é um atributo `data-theme` no `<html>`; o CSS troca todas as cores por v
 
 - **Texturas em SVG embutidas** (grão de papel e rosetas de canto) — sem arquivos de imagem.
 - **Ícones autorais** em `client/src/components/Icon.tsx` (traço de tinta, `currentColor`).
-- **Ficha em abas** (`SheetView`): Personagem (cabeçalho novo, com Vida e Defesa no fim), Atributos (com perícias e salvaguardas), Inventário, Magias, Ataques, Características e Anotações.
+- **Ficha em abas** (`SheetView`): Personagem (cabeçalho novo, com Vida e Defesa no fim), Atributos (com perícias e salvaguardas), Magias, Ataques, Características e Anotações — e o **Inventário** num **painel flutuante** (botão `InventoryDock` na base da pilha inferior esquerda).
 - **Atributos em forma de escudo** e **barra de vida** com cor por gravidade (`components/HpBar.tsx`).
 - **Espaços de magia** como estrelas clicáveis (gastar/recuperar), além dos números.
 - **Microanimações:** brilho dourado no hover, tremulação de chama nos ícones e "virar de página" ao trocar de aba.

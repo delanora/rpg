@@ -13,7 +13,6 @@ import { clampInt, newId } from '../../utils';
 import { Icon, type IconName } from '../Icon';
 import { InlineField } from '../InlineField';
 import { ItemDetailModal } from '../ItemDetailModal';
-import { Section } from '../Section';
 import { CoinsPanel } from './CoinsPanel';
 import type { SheetSectionProps } from './common';
 
@@ -47,7 +46,7 @@ const SLOT_ICON: Record<InventorySlot, IconName> = {
   boots: 'boots',
 };
 
-interface InventorySectionProps extends SheetSectionProps {
+export interface InventorySectionProps extends SheetSectionProps {
   /** Move/equipa um item no servidor (trata a troca no backend). */
   onMoveItem?: (request: InventoryMoveRequest) => void | Promise<void>;
   /** Usa (consome) 1 unidade de um item consumível (Poção ou marcado). */
@@ -181,6 +180,8 @@ export function InventorySection({
   // Item aberto na ficha detalhada (modal central). Guarda só o id: o item é
   // lido do inventário, sem cópia.
   const [modalItemId, setModalItemId] = useState<string | null>(null);
+  // A mochila NÃO abre junto com o inventário: só ao clicar no ícone dela.
+  const [backpackOpen, setBackpackOpen] = useState(false);
 
   const { cells, rows, firstFree } = useMemo(() => layoutBackpack(inventory), [inventory]);
   const equipped = useMemo(() => {
@@ -455,18 +456,16 @@ export function InventorySection({
   }
 
   return (
-    <Section
-      title="Inventário"
-      icon="bag"
-      actions={
-        canEditItems ? (
-          <button type="button" className="btn btn-small" onClick={addItem}>
-            + item avulso
-          </button>
-        ) : undefined
-      }
-    >
+    <>
       <div className="inventory-board">
+        {canEditItems ? (
+          <div className="inventory-toolbar">
+            <button type="button" className="btn btn-small" onClick={addItem}>
+              + item avulso
+            </button>
+          </div>
+        ) : null}
+
         {/* --- Set de equipamento (estilo Tibia) ------------------------- */}
         <div className="equip-set">
           <BodyDoll />
@@ -479,8 +478,19 @@ export function InventorySection({
             {equipSlotNode('necklace')}
             {equipSlotNode('helmet')}
             <div
-              className={`equip-slot slot-backpack${dragOver === 'backpack' ? ' is-over' : ''}`}
-              title={`Mochila (${backpackCount}) — solte um item aqui para guardá-lo`}
+              role="button"
+              tabIndex={0}
+              aria-expanded={backpackOpen}
+              aria-label={`Mochila (${backpackCount} itens) — clique para abrir`}
+              className={`equip-slot slot-backpack${backpackOpen ? ' is-open' : ''}${dragOver === 'backpack' ? ' is-over' : ''}`}
+              title={`Mochila (${backpackCount}) — clique para abrir e solte um item aqui para guardar`}
+              onClick={() => setBackpackOpen((value) => !value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setBackpackOpen((value) => !value);
+                }
+              }}
               onDragOver={(event) => allowDrop(event, 'backpack')}
               onDragLeave={() => setDragOver((value) => (value === 'backpack' ? null : value))}
               onDrop={dropOnBackpack}
@@ -500,54 +510,58 @@ export function InventorySection({
           <div className="equip-extra-row">{equipSlotNode('boots')}</div>
         </div>
 
+        {/* A mochila abre só pelo ícone dela no set (nunca junto do inventário),
+            logo abaixo do grid de equipamento — e as moedas vivem DENTRO dela,
+            num bloco separado abaixo do grid. */}
+        {backpackOpen ? (
+          <div className="bag-panel">
+            <div className="bag-panel-title">
+              <Icon name="bag" size={16} />
+              <span>Mochila</span>
+              <span className="bag-panel-count">{backpackCount}</span>
+            </div>
+
+            {/* Mostra sempre 4 fileiras de 5 células; o excedente rola aqui. */}
+            <div className="bag-scroll">
+              <div className="bag-grid">
+                {Array.from({ length: rows * GRID_COLS }, (_, index) => {
+                  const x = index % GRID_COLS;
+                  const y = Math.floor(index / GRID_COLS);
+                  const item = cells.get(`${x},${y}`);
+                  const key = `cell:${x},${y}`;
+
+                  return (
+                    <div
+                      key={key}
+                      className={`bag-cell${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
+                      onDragOver={(event) => allowDrop(event, key)}
+                      onDragLeave={() => setDragOver((value) => (value === key ? null : value))}
+                      onDrop={(event) => dropOnCell(event, x, y)}
+                    >
+                      {item ? itemNode(item) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Moedas: campo aparte do grid, abaixo dele (só quando alguém pode
+                movimentá-las ou o mestre está vendo a ficha). */}
+            {onCoinsChange ? (
+              <CoinsPanel
+                character={character}
+                extraCoins={extraCoins}
+                targets={coinTargets}
+                onCharacter={onCoinsChange}
+              />
+            ) : null}
+          </div>
+        ) : null}
+
         <p className="inventory-weight">
           Peso total: {character.derived.totalWeight} kg · capacidade{' '}
           {character.derived.carryingCapacity} kg
         </p>
-
-        {/* Mochila sempre aberta, logo abaixo do set. */}
-        <div className="bag-panel">
-          <div className="bag-panel-title">
-            <Icon name="bag" size={16} />
-            <span>Mochila</span>
-            <span className="bag-panel-count">{backpackCount}</span>
-          </div>
-
-          {/* Mostra sempre 4 fileiras de 5 células; o excedente rola aqui. */}
-          <div className="bag-scroll">
-            <div className="bag-grid">
-              {Array.from({ length: rows * GRID_COLS }, (_, index) => {
-                const x = index % GRID_COLS;
-                const y = Math.floor(index / GRID_COLS);
-                const item = cells.get(`${x},${y}`);
-                const key = `cell:${x},${y}`;
-
-                return (
-                  <div
-                    key={key}
-                    className={`bag-cell${item ? ' is-filled' : ''}${dragOver === key ? ' is-over' : ''}`}
-                    onDragOver={(event) => allowDrop(event, key)}
-                    onDragLeave={() => setDragOver((value) => (value === key ? null : value))}
-                    onDrop={(event) => dropOnCell(event, x, y)}
-                  >
-                    {item ? itemNode(item) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Moedas logo abaixo da mochila (só quando alguém pode movimentá-las
-            ou o mestre está vendo a ficha). */}
-        {onCoinsChange ? (
-          <CoinsPanel
-            character={character}
-            extraCoins={extraCoins}
-            targets={coinTargets}
-            onCharacter={onCoinsChange}
-          />
-        ) : null}
 
         {selected && detailPos ? (
           <div
@@ -655,6 +669,6 @@ export function InventorySection({
           }
         />
       ) : null}
-    </Section>
+    </>
   );
 }
