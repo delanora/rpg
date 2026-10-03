@@ -1,6 +1,7 @@
 import { dragonborn } from './dragonborn.js';
 import { dwarf } from './dwarf.js';
 import { elf } from './elf.js';
+import { human } from './human.js';
 import type { Race, Subrace } from './types.js';
 
 /**
@@ -17,7 +18,7 @@ import type { Race, Subrace } from './types.js';
  */
 export * from './types.js';
 
-export const RACES: readonly Race[] = [dragonborn, elf, dwarf];
+export const RACES: readonly Race[] = [dragonborn, elf, dwarf, human];
 
 const RACE_BY_ID: ReadonlyMap<string, Race> = new Map(RACES.map((race) => [race.id, race]));
 
