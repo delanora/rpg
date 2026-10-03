@@ -18,6 +18,9 @@ export const dragonborn: Race = {
   id: 'dragonborn',
   namePt: 'Draconato',
   nameEn: 'Dragonborn',
+  description:
+    'Nascidos de dragões, orgulhosos e honrados: a ancestralidade dracônica define a ' +
+    'arma de sopro e a resistência a dano.',
   abilityScoreIncrease: [
     { ability: 'strength', amount: 2 },
     { ability: 'charisma', amount: 1 },

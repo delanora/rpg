@@ -444,7 +444,12 @@ function applyDamageResistance(
 ): number {
   if (target.kind !== 'CHARACTER' || !target.character || !damageType) return total;
   const adjustments = characterAdjustments(target.character);
-  if (!adjustments.resistances.includes(damageType)) return total;
+  // A resistência vem da CLASSE (Fúria, ...) ou da RAÇA (`raceResistances`,
+  // preenchido no passo 3 do assistente: Draconato, Anão, Tiefling...).
+  const raceResistances = target.character.raceResistances ?? [];
+  if (!adjustments.resistances.includes(damageType) && !raceResistances.includes(damageType)) {
+    return total;
+  }
   return Math.floor(total / 2);
 }
 

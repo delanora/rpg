@@ -16,6 +16,8 @@
  */
 
 import { ABILITY_KEYS, type AbilityKey } from './dnd5e.js';
+import { allRaces } from './races/index.js';
+import type { Race, RaceChoiceApply, Subrace } from './races/types.js';
 
 // ---------------------------------------------------------------------------
 // Passos do assistente
@@ -54,18 +56,45 @@ export const CREATION_ROLL_LABEL = 'Criação de personagem';
 // Catálogos de raça e antecedente
 // ---------------------------------------------------------------------------
 
-/** Uma raça do catálogo — uma entrada por linhagem/sub-raça do Livro do Jogador. */
+/** Uma opção de escolha racial exibida no assistente. */
+export interface RaceChoiceOptionView {
+  id: string;
+  label: string;
+  /** Tipo de dano associado à opção (ex.: a cor do Draconato). */
+  damageType?: string;
+}
+
+/** Uma escolha racial exigida (ancestralidade, atributos/perícias do Meio-Elfo…). */
+export interface RaceChoiceView {
+  id: string;
+  label: string;
+  /** O que a escolha concede (ver `RaceChoiceApply` no catálogo estruturado). */
+  apply?: RaceChoiceApply;
+  options: RaceChoiceOptionView[];
+}
+
+/**
+ * Uma raça do catálogo — uma entrada por linhagem/sub-raça.
+ *
+ * É DERIVADA do catálogo estruturado (`shared/races/`) e das raças
+ * personalizadas do mestre. `key`, `name` e `baseRace` continuam sendo o que a
+ * interface mostra; `raceId`/`subraceId`/`customRaceId` dizem de onde a raça
+ * veio, para o passo 3 gravar a fonte da verdade.
+ */
 export interface RaceOption {
-  /** Chave única da LINHAGEM (ex.: `dwarf-hill`, `elf-high`, `half-elf`). */
+  /** Chave única da LINHAGEM (ex.: `dwarf`, `dwarf:hill-dwarf`, `custom:<id>`). */
   key: string;
-  /** Nome completo, como fica gravado em `characters.race` (ex.: "Anão (Anão da Colina)"). */
+  /** Nome, como fica gravado em `characters.race` (ex.: "Anão (Anão da Colina)"). */
   name: string;
-  /**
-   * Nome da raça base, para agrupar as sub-raças na interface
-   * (ex.: as três linhagens de elfo compartilham "Elfo").
-   */
+  /** Nome da raça base, para agrupar as sub-raças na interface. */
   baseRace?: string;
   description?: string;
+  /** Raça do catálogo estruturado, pelo id. */
+  raceId: string;
+  /** Sub-raça do catálogo estruturado, pelo id. */
+  subraceId?: string;
+  /** Raça personalizada do mestre, pelo id (quando for uma). */
+  customRaceId?: string;
   /** Bônus racial FIXO aplicado aos atributos (ex.: Anão: CON +2). */
   abilityBonuses?: Partial<Record<AbilityKey, number>>;
   /**
@@ -74,6 +103,17 @@ export interface RaceOption {
    * validados contra `raceChoicePool`.
    */
   abilityChoice?: number;
+  /** Escolhas que a raça exige (a UI renderiza e o serviço valida). */
+  choices?: RaceChoiceView[];
+  /** Traços raciais (exibidos na aba Características). */
+  traits?: RaceTraitView[];
+}
+
+/** Um traço racial no formato exibido pela ficha. */
+export interface RaceTraitView {
+  id: string;
+  name: string;
+  description: string;
 }
 
 /** Um antecedente do catálogo (um dos 13 do Livro do Jogador). */
@@ -98,115 +138,52 @@ export interface BackgroundOption {
  * a arma de sopro e a resistência, não os atributos, e o personagem ainda não
  * tem campo para guardá-la.
  */
-export const RACE_CATALOG: readonly RaceOption[] = [
-  {
-    key: 'dwarf-hill',
-    name: 'Anão (Anão da Colina)',
-    baseRace: 'Anão',
-    description: 'Robusto e teimoso, com sentidos apurados e vigor lendário.',
-    abilityBonuses: { constitution: 2, wisdom: 1 },
-  },
-  {
-    key: 'dwarf-mountain',
-    name: 'Anão (Anão da Montanha)',
-    baseRace: 'Anão',
-    description: 'Criado nas alturas, troca a sabedoria pela força bruta.',
-    abilityBonuses: { constitution: 2, strength: 2 },
-  },
-  {
-    key: 'elf-high',
-    name: 'Elfo (Alto Elfo)',
-    baseRace: 'Elfo',
-    description: 'Herdeiro das torres antigas, com mente afiada para a magia.',
-    abilityBonuses: { dexterity: 2, intelligence: 1 },
-  },
-  {
-    key: 'elf-wood',
-    name: 'Elfo (Elfo da Floresta)',
-    baseRace: 'Elfo',
-    description: 'Andarilho das matas, atento e silencioso como a própria folhagem.',
-    abilityBonuses: { dexterity: 2, wisdom: 1 },
-  },
-  {
-    key: 'elf-drow',
-    name: 'Elfo (Drow)',
-    baseRace: 'Elfo',
-    description: 'Elfo negro do Subterrâneo, marcado pela magia e pela presença sombria.',
-    abilityBonuses: { dexterity: 2, charisma: 1 },
-  },
-  {
-    key: 'halfling-lightfoot',
-    name: 'Halfling (Pés-Leves)',
-    baseRace: 'Halfling',
-    description: 'Pequeno e sorrateiro, mais fácil de amar do que de encontrar.',
-    abilityBonuses: { dexterity: 2, charisma: 1 },
-  },
-  {
-    key: 'halfling-stout',
-    name: 'Halfling (Robusto)',
-    baseRace: 'Halfling',
-    description: 'Mais resistente que os primos, com o vigor dos anões no sangue.',
-    abilityBonuses: { dexterity: 2, constitution: 1 },
-  },
-  {
-    key: 'human',
-    name: 'Humano',
-    baseRace: 'Humano',
-    description: 'Versátil e ambicioso: um pouco melhor em tudo.',
-    abilityBonuses: {
-      strength: 1,
-      dexterity: 1,
-      constitution: 1,
-      intelligence: 1,
-      wisdom: 1,
-      charisma: 1,
-    },
-  },
-  {
-    key: 'dragonborn',
-    name: 'Draconato',
-    baseRace: 'Draconato',
-    description: 'Descendente de dragões, com sopro e resistência definidos pela linhagem.',
-    abilityBonuses: { strength: 2, charisma: 1 },
-  },
-  {
-    key: 'gnome-forest',
-    name: 'Gnomo (Gnomo da Floresta)',
-    baseRace: 'Gnomo',
-    description: 'Curioso e ágil, com uma queda natural por ilusões e engenhocas.',
-    abilityBonuses: { intelligence: 2, dexterity: 1 },
-  },
-  {
-    key: 'gnome-rock',
-    name: 'Gnomo (Gnomo das Rochas)',
-    baseRace: 'Gnomo',
-    description: 'Inventor nato, resistente à magia e às pedras do caminho.',
-    abilityBonuses: { intelligence: 2, constitution: 1 },
-  },
-  {
-    key: 'half-elf',
-    name: 'Meio-Elfo',
-    baseRace: 'Meio-Elfo',
-    description: 'Entre dois mundos: encanto élfico e a versatilidade de quem não pertence a lugar nenhum.',
-    // +1 em DOIS atributos à escolha (os escolhidos vão no rascunho).
-    abilityBonuses: { charisma: 2 },
-    abilityChoice: 2,
-  },
-  {
-    key: 'half-orc',
-    name: 'Meio-Orc',
-    baseRace: 'Meio-Orc',
-    description: 'Força bruta e fúria herdadas, temperadas por uma vontade teimosa.',
-    abilityBonuses: { strength: 2, constitution: 1 },
-  },
-  {
-    key: 'tiefling',
-    name: 'Tiefling',
-    baseRace: 'Tiefling',
-    description: 'Sangue infernal: carisma e astúcia com um quê de condenação.',
-    abilityBonuses: { charisma: 2, intelligence: 1 },
-  },
-];
+/**
+ * Catálogo de raças do assistente — GERADO a partir do catálogo ESTRUTURADO
+ * (`shared/races/`), uma entrada por linhagem (a raça base e cada sub-raça).
+ *
+ * Desde o Prompt 2.10 não existe mais a lista hardcoded de 14 entradas: o passo
+ * 3 lê o catálogo estruturado e as raças PERSONALIZADAS do mestre (que o
+ * serviço acrescenta a esta lista). `raceId`/`subraceId` apontam para a fonte da
+ * verdade; `customRaceId` marca as personalizadas.
+ */
+function toRaceOption(race: Race, subrace?: Subrace): RaceOption {
+  const abilityBonuses: Partial<Record<AbilityKey, number>> = {};
+  for (const increase of [...race.abilityScoreIncrease, ...(subrace?.abilityScoreIncrease ?? [])]) {
+    abilityBonuses[increase.ability] = (abilityBonuses[increase.ability] ?? 0) + increase.amount;
+  }
+
+  return {
+    key: subrace ? `${race.id}:${subrace.id}` : race.id,
+    name: subrace ? `${race.namePt} (${subrace.namePt})` : race.namePt,
+    baseRace: race.namePt,
+    description: race.description,
+    raceId: race.id,
+    subraceId: subrace?.id,
+    abilityBonuses,
+    abilityChoice: (race.hasChoices ?? []).filter((choice) => choice.apply === 'ability').length,
+    choices: (race.hasChoices ?? []).map((choice) => ({
+      id: choice.id,
+      label: choice.label,
+      apply: choice.apply,
+      options: choice.options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        damageType: option.damageType,
+      })),
+    })),
+    traits: [...race.traits, ...(subrace?.traits ?? [])].map((trait) => ({
+      id: trait.id,
+      name: trait.name,
+      description: trait.description,
+    })),
+  };
+}
+
+export const RACE_CATALOG: readonly RaceOption[] = allRaces().flatMap((race) => [
+  toRaceOption(race),
+  ...(race.subraces ?? []).map((subrace) => toRaceOption(race, subrace)),
+]);
 
 /**
  * Antecedentes do Livro do Jogador (2014) — os 13.

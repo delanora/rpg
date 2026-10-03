@@ -162,8 +162,14 @@ export interface CharacterDto {
   subraceId: string | null;
   /** Escolhas da raça: `{ [id da escolha]: id da opção }`. */
   raceChoices: Record<string, string>;
-  /** Raça personalizada do mestre (id, sem relação ainda); `null` por ora. */
+  /** Raça personalizada do mestre (id de CustomRace); `null` quando não é. */
   customRaceId: string | null;
+  /** Idiomas conhecidos (texto), concedidos pela raça e pelo antecedente. */
+  languages: string[];
+  /** Visão no escuro em metros (0 = sem). */
+  darkvision: number;
+  /** Tipos de dano resistidos concedidos pela RAÇA (13 canônicos). */
+  raceResistances: string[];
   /** Nome composto das classes, com os níveis (ex.: "Bárbaro 3 / Ladino 2"). */
   className: string;
   /** Classes do personagem (multiclasse), em ordem de entrada. */
@@ -491,6 +497,9 @@ export function toCharacterDto(
     subraceId: character.subraceId,
     raceChoices: parseJson<Record<string, string>>(raceChoicesSchema, character.raceChoices, {}),
     customRaceId: character.customRaceId,
+    languages: [...character.languages],
+    darkvision: character.darkvision,
+    raceResistances: [...character.raceResistances],
     className,
     classes: classEntryDtos,
     classOptions: classOptionsFor(abilities, classEntries),

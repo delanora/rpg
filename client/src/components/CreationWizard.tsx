@@ -104,6 +104,8 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [avatarUrl, setAvatarUrl] = useState('');
   const [race, setRace] = useState('');
   const [abilityChoices, setAbilityChoices] = useState<AbilityKey[]>([]);
+  /** Escolhas da raça fora os atributos: `{ escolha: opção }`. */
+  const [raceChoices, setRaceChoices] = useState<Record<string, string>>({});
   const [background, setBackground] = useState('');
   const [classKey, setClassKey] = useState('');
   const [subclass, setSubclass] = useState('');
@@ -130,6 +132,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     setAvatarUrl(sheet?.avatarUrl ?? '');
     setRace(sheet?.race ?? '');
     setAbilityChoices(saved.abilityChoices ?? []);
+    setRaceChoices(saved.raceChoices ?? {});
     setBackground(sheet?.background ?? '');
     setClassKey(sheet?.classes[0]?.classKey ?? '');
     setSubclass(sheet?.classes[0]?.subclass ?? '');
@@ -219,6 +222,18 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   /** Quantos `+1` à escolha a raça pede (0 = nenhum). */
   const raceChoiceNeeded = selectedRace?.abilityChoice ?? 0;
 
+  /** Escolhas da raça que NÃO são de atributo (ancestralidade, perícia, ferramenta). */
+  const raceExtraChoices = useMemo(
+    () => (selectedRace?.choices ?? []).filter((choice) => choice.apply !== 'ability'),
+    [selectedRace],
+  );
+
+  /** Todas as escolhas extras já respondidas com uma opção válida? */
+  const raceExtrasReady = raceExtraChoices.every((choice) => {
+    const picked = raceChoices[choice.id];
+    return Boolean(picked) && choice.options.some((option) => option.id === picked);
+  });
+
   /** O antecedente escolhido, quando ele vem do catálogo (por nome ou por chave). */
   const selectedBackground = useMemo(() => {
     const needle = background.trim().toLowerCase();
@@ -236,10 +251,21 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     ? backgroundSkillNames(selectedBackground)
     : [];
 
-  /** Troca a raça e recomeça as escolhas de atributo (o catálogo muda o pool). */
+  /** Troca a raça e recomeça as escolhas (o catálogo muda o pool). */
   function selectRace(value: string): void {
     setRace(value);
     setAbilityChoices([]);
+    setRaceChoices({});
+  }
+
+  /** Grava a escolha de uma definição (ancestralidade, perícia, ferramenta…). */
+  function setRaceExtraChoice(id: string, value: string): void {
+    setRaceChoices((current) => {
+      const next = { ...current };
+      if (value === '') delete next[id];
+      else next[id] = value;
+      return next;
+    });
   }
 
   /** Grava o atributo da enésima escolha da raça (+1), sem repetir atributo. */
@@ -326,7 +352,8 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 3:
         return (
           race.trim().length > 0 &&
-          (raceChoiceNeeded === 0 || abilityChoices.length === raceChoiceNeeded)
+          (raceChoiceNeeded === 0 || abilityChoices.length === raceChoiceNeeded) &&
+          raceExtrasReady
         );
       case 4:
         return background.trim().length > 0;
@@ -355,7 +382,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 2:
         return { name, alignment, avatarUrl };
       case 3:
-        return { race, abilityChoices };
+        return { race, abilityChoices, raceChoices };
       case 4:
         return { background };
       case 5:
@@ -622,6 +649,35 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                             </label>
                           );
                         })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Demais escolhas da raça: ancestralidade do Draconato,
+                      perícias do Meio-Elfo, ferramenta do Anão... */}
+                  {selectedRace && raceExtraChoices.length > 0 ? (
+                    <div className="wizard-race-choice">
+                      <p className="section-note">
+                        {selectedRace.name} pede as escolhas abaixo.
+                      </p>
+                      <div className="grid grid-2">
+                        {raceExtraChoices.map((choice) => (
+                          <label className="field" key={choice.id}>
+                            <span>{choice.label}</span>
+                            <select
+                              value={raceChoices[choice.id] ?? ''}
+                              disabled={busy}
+                              onChange={(event) => setRaceExtraChoice(choice.id, event.target.value)}
+                            >
+                              <option value="">— escolha —</option>
+                              {choice.options.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ))}
                       </div>
                     </div>
                   ) : null}

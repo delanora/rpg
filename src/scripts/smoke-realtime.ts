@@ -2,6 +2,7 @@ import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
 import { damageExpression } from '../modules/shared/attacks.js';
+import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
 import {
@@ -35,6 +36,7 @@ const createdCombatIds: string[] = [];
 const createdLocalityIds: string[] = [];
 const createdRegionIds: string[] = [];
 const createdItemIds: string[] = [];
+const createdCustomRaceIds: string[] = [];
 
 let failures = 0;
 
@@ -375,7 +377,7 @@ async function main(): Promise<void> {
   const created = await api('/api/characters/me', {
     method: 'POST',
     token: playerToken,
-    body: { name: 'Thoradin', race: 'Anão' },
+    body: { name: 'Thoradin', race: 'Tiefling' },
   });
   check('jogador cria a própria ficha (201)', created.status === 201, JSON.stringify(created.data));
 
@@ -3616,8 +3618,8 @@ async function main(): Promise<void> {
     compendium?.classes?.find((entry: any) => entry.key === 'cleric')?.subclasses?.length === 7,
   );
   check(
-    'há 14 linhagens de raça, todas com história',
-    (compendium?.races ?? []).length === 14 &&
+    'há 18 linhagens de raça (9 raças + sub-raças), todas com história',
+    (compendium?.races ?? []).length === 18 &&
       compendium.races.every((race: any) => (race.description ?? '').length > 0),
     JSON.stringify((compendium?.races ?? []).map((race: any) => race.key)),
   );
@@ -4571,13 +4573,13 @@ async function main(): Promise<void> {
   // O catálogo de raças do Livro do Jogador já vem preenchido: o passo 3 lista
   // as linhagens (com os bônus somados) em vez de pedir texto livre.
   const raceCatalog: any[] = emptyCreation.data?.creation?.raceCatalog ?? [];
-  const hillDwarf = raceCatalog.find((race: any) => race.key === 'dwarf-hill');
+  const hillDwarf = raceCatalog.find((race: any) => race.key === 'dwarf:hill-dwarf');
   check(
     'o catálogo de raças traz as linhagens do PHB com os bônus',
-    raceCatalog.length >= 14 &&
+    raceCatalog.length >= 18 &&
       hillDwarf?.abilityBonuses?.constitution === 2 &&
       hillDwarf?.abilityBonuses?.wisdom === 1 &&
-      raceCatalog.some((race: any) => race.key === 'elf-drow'),
+      raceCatalog.some((race: any) => race.key === 'elf:drow-elf'),
     JSON.stringify(raceCatalog.map((race: any) => race.key)),
   );
   check(
@@ -4735,7 +4737,7 @@ async function main(): Promise<void> {
 
   const walkSteps: [number, Record<string, unknown>][] = [
     [2, { name: 'Teste do Assistente', alignment: 'Neutro e Bom' }],
-    [3, { race: 'Anão' }],
+    [3, { race: 'Tiefling' }],
     [4, { background: 'Sábio' }],
   ];
   const walkStatuses: number[] = [];
@@ -5089,7 +5091,12 @@ async function main(): Promise<void> {
   const halfElf = await api('/api/characters/me/creation', {
     method: 'PATCH',
     token: rookieToken,
-    body: { step: 3, race: 'Meio-Elfo', abilityChoices: ['strength', 'constitution'] },
+    body: {
+      step: 3,
+      race: 'Meio-Elfo',
+      abilityChoices: ['strength', 'constitution'],
+      raceChoices: { 'half-elf-skill-1': 'perception', 'half-elf-skill-2': 'stealth' },
+    },
   });
   check(
     'os bônus fixos e os +1 à escolha entram na ficha (200)',
@@ -5111,7 +5118,7 @@ async function main(): Promise<void> {
       await api('/api/characters/me/creation', {
         method: 'PATCH',
         token: rookieToken,
-        body: { step: 3, race: 'Anão' },
+        body: { step: 3, race: 'Tiefling' },
       })
     ).status === 200 &&
       (await api('/api/characters/me/creation', { token: rookieToken })).data?.creation
@@ -5163,7 +5170,7 @@ async function main(): Promise<void> {
 
   const reopenWalk: [number, Record<string, unknown>][] = [
     [2, { name: 'Teste do Assistente' }],
-    [3, { race: 'Anão' }],
+    [3, { race: 'Tiefling' }],
     [4, { background: 'Sábio' }],
     [5, { classKey: 'barbarian' }],
     [
@@ -9427,6 +9434,224 @@ async function main(): Promise<void> {
     );
   }
 
+  // 40) Raças personalizadas do mestre + integração do assistente (Prompt 2.10)
+  {
+    console.log('\n40) Raças personalizadas do mestre e integração do assistente');
+
+    // --- Catálogo do assistente derivado das 9 raças fixas ------------------
+    check(
+      'o catálogo do assistente tem 18 linhagens (9 raças + 9 sub-raças)',
+      RACE_CATALOG.length === 18,
+      String(RACE_CATALOG.length),
+    );
+    const hillDwarfOption = RACE_CATALOG.find((race) => race.key === 'dwarf:hill-dwarf');
+    check(
+      'a opção do Anão da Colina aponta raceId/subraceId e pede a ferramenta',
+      hillDwarfOption?.raceId === 'dwarf' &&
+        hillDwarfOption?.subraceId === 'hill-dwarf' &&
+        (hillDwarfOption?.choices ?? []).some(
+          (choice) => choice.id === 'dwarf-tool-proficiency' && choice.apply === 'tool',
+        ),
+      JSON.stringify({ raceId: hillDwarfOption?.raceId, subraceId: hillDwarfOption?.subraceId }),
+    );
+    const halfElfOption = RACE_CATALOG.find((race) => race.key === 'half-elf');
+    check(
+      'a opção do Meio-Elfo pede 2 atributos e 2 perícias',
+      halfElfOption?.abilityChoice === 2 &&
+        (halfElfOption?.choices ?? []).filter((choice) => choice.apply === 'skill').length === 2,
+      JSON.stringify(halfElfOption?.choices?.map((choice) => choice.id)),
+    );
+
+    // Um jogador novo para percorrer o passo 3 (a ficha do rookie já fechou).
+    const racesUsername = `racas_${suffix}`;
+    createdUsernames.push(racesUsername);
+    const racesReg = await api('/api/auth/register', {
+      method: 'POST',
+      body: { username: racesUsername, displayName: 'Raças Teste', password: 'senha-forte-123' },
+    });
+    const racesToken: string = racesReg.data?.token;
+    check('jogador novo para o teste de raças (201)', racesReg.status === 201 && Boolean(racesToken));
+
+    // --- CRUD da raça personalizada (mestre) --------------------------------
+    const createdRace = await api('/api/custom-races', {
+      method: 'POST',
+      token: masterToken,
+      body: {
+        name: 'Gigante da Névoa (teste)',
+        description: 'Raça de teste do smoke.',
+        abilityScoreIncrease: [
+          { ability: 'strength', amount: 2 },
+          { ability: 'wisdom', amount: 1 },
+        ],
+        speed: 10.5,
+        size: 'Medium',
+        darkvision: 18,
+        damageResistances: ['Frio'],
+        languages: ['Comum', 'Gigante'],
+        bonusLanguageChoices: 0,
+        traits: [{ name: 'Passo da Névoa', description: 'A névoa não atrapalha seu movimento.' }],
+      },
+    });
+    const customRaceId: string | undefined = createdRace.data?.customRace?.id;
+    if (typeof customRaceId === 'string') createdCustomRaceIds.push(customRaceId);
+    check(
+      'o mestre cria uma raça personalizada (201)',
+      createdRace.status === 201 && typeof customRaceId === 'string',
+      JSON.stringify(createdRace.data),
+    );
+    const customList = await api('/api/custom-races', { token: racesToken });
+    check(
+      'a raça personalizada aparece na lista de qualquer usuário',
+      (customList.data?.customRaces ?? []).some(
+        (race: any) => race.id === customRaceId && race.damageResistances?.[0] === 'Frio',
+      ),
+      JSON.stringify({ status: customList.status, data: customList.data }),
+    );
+    const racedCompendium = await api('/api/compendium', { token: racesToken });
+    check(
+      'a raça personalizada entra no compêndio junto das 9 raças',
+      (racedCompendium.data?.compendium?.races ?? []).some(
+        (race: any) => race.key === `custom:${customRaceId}`,
+      ),
+      JSON.stringify({
+        status: racedCompendium.status,
+        keys: (racedCompendium.data?.compendium?.races ?? []).map((race: any) => race.key),
+      }),
+    );
+    const playerCreateRace = await api('/api/custom-races', {
+      method: 'POST',
+      token: racesToken,
+      body: { name: 'X' },
+    });
+    check(
+      'jogador não pode criar raça personalizada (403)',
+      playerCreateRace.status === 403,
+      `status ${playerCreateRace.status} ${JSON.stringify(playerCreateRace.data)}`,
+    );
+
+    // --- Efeitos da raça fixa entram na ficha pelo passo 3 ------------------
+    const tieflingStep = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: { step: 3, race: 'Tiefling' },
+    });
+    check(
+      'Tiefling: resistência a Fogo, visão no escuro e idiomas entram na ficha',
+      tieflingStep.status === 200 &&
+        (tieflingStep.data?.character?.raceResistances ?? []).includes('Fogo') &&
+        tieflingStep.data?.character?.darkvision === 18 &&
+        (tieflingStep.data?.character?.languages ?? []).includes('Comum') &&
+        tieflingStep.data?.character?.raceId === 'tiefling',
+      JSON.stringify({
+        resistances: tieflingStep.data?.character?.raceResistances,
+        darkvision: tieflingStep.data?.character?.darkvision,
+      }),
+    );
+
+    const dwarfStep = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: {
+        step: 3,
+        race: 'Anão (Anão da Colina)',
+        raceChoices: { 'dwarf-tool-proficiency': 'smith-tools' },
+      },
+    });
+    check(
+      'Anão da Colina: 7,5 m, visão no escuro, resistência a Veneno e ferramenta escolhida',
+      dwarfStep.status === 200 &&
+        dwarfStep.data?.character?.speed === 7.5 &&
+        dwarfStep.data?.character?.darkvision === 18 &&
+        (dwarfStep.data?.character?.raceResistances ?? []).includes('Veneno') &&
+        (dwarfStep.data?.character?.toolProficiencies ?? []).includes('smith-tools') &&
+        dwarfStep.data?.character?.raceId === 'dwarf' &&
+        dwarfStep.data?.character?.subraceId === 'hill-dwarf',
+      JSON.stringify({
+        speed: dwarfStep.data?.character?.speed,
+        tools: dwarfStep.data?.character?.toolProficiencies,
+        raceId: dwarfStep.data?.character?.raceId,
+      }),
+    );
+    check(
+      'Anão sem a ferramenta escolhida é recusado (400)',
+      (
+        await api('/api/characters/me/creation', {
+          method: 'PATCH',
+          token: racesToken,
+          body: { step: 3, race: 'Anão' },
+        })
+      ).status === 400,
+    );
+
+    const drowStep = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: { step: 3, race: 'Elfo (Drow)' },
+    });
+    check(
+      'Drow: perícia racial Percepção e visão no escuro 36 m',
+      drowStep.status === 200 &&
+        drowStep.data?.character?.skills?.perception?.proficient === true &&
+        drowStep.data?.character?.darkvision === 36,
+      JSON.stringify({
+        darkvision: drowStep.data?.character?.darkvision,
+        perception: drowStep.data?.character?.skills?.perception,
+      }),
+    );
+
+    const halfElfStep = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: {
+        step: 3,
+        race: 'Meio-Elfo',
+        abilityChoices: ['strength', 'constitution'],
+        raceChoices: { 'half-elf-skill-1': 'arcana', 'half-elf-skill-2': 'stealth' },
+      },
+    });
+    check(
+      'Meio-Elfo: as 2 perícias escolhidas viram proficiência',
+      halfElfStep.status === 200 &&
+        halfElfStep.data?.character?.skills?.arcana?.proficient === true &&
+        halfElfStep.data?.character?.skills?.stealth?.proficient === true &&
+        halfElfStep.data?.character?.raceChoices?.['half-elf-skill-1'] === 'arcana',
+      JSON.stringify(halfElfStep.data?.character?.raceChoices),
+    );
+
+    // --- Raça personalizada aplicada pelo assistente ------------------------
+    const customStep = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: { step: 3, race: 'Gigante da Névoa (teste)' },
+    });
+    check(
+      'escolher a raça personalizada aplica customRaceId, velocidade e resistência',
+      customStep.status === 200 &&
+        customStep.data?.character?.customRaceId === customRaceId &&
+        customStep.data?.character?.speed === 10.5 &&
+        (customStep.data?.character?.raceResistances ?? []).includes('Frio') &&
+        (customStep.data?.character?.languages ?? []).includes('Gigante'),
+      JSON.stringify({
+        customRaceId: customStep.data?.character?.customRaceId,
+        speed: customStep.data?.character?.speed,
+      }),
+    );
+
+    // --- Remoção: as fichas que usavam a raça ficam sem raça ----------------
+    const removedRace = await api(`/api/custom-races/${customRaceId}`, {
+      method: 'DELETE',
+      token: masterToken,
+    });
+    check('o mestre remove a raça personalizada (204)', removedRace.status === 204);
+    const afterRemove = await api('/api/characters/me/creation', { token: racesToken });
+    check(
+      'a ficha que usava a raça personalizada fica sem raça',
+      afterRemove.data?.character?.customRaceId === null &&
+        afterRemove.data?.character?.race === '',
+      JSON.stringify(afterRemove.data?.character?.customRaceId),
+    );
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -9457,6 +9682,15 @@ async function cleanup(): Promise<void> {
 
   if (createdItemIds.length > 0) {
     await prisma.item.deleteMany({ where: { id: { in: createdItemIds } } });
+  }
+
+  if (createdCustomRaceIds.length > 0) {
+    // As fichas que apontavam para elas ficam sem raça antes de a raça sair (FK).
+    await prisma.character.updateMany({
+      where: { customRaceId: { in: createdCustomRaceIds } },
+      data: { customRaceId: null },
+    });
+    await prisma.customRace.deleteMany({ where: { id: { in: createdCustomRaceIds } } });
   }
 
   if (createdUsernames.length > 0) {

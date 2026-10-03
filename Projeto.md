@@ -1366,13 +1366,12 @@ janela de dados (`rollTableDice` com `kind: 'creation'`):
 
 ### Catálogos (`shared/creation.ts`)
 
-**RACE_CATALOG — 14 entradas** (uma por linhagem, com `baseRace` para agrupar):
-dwarf-hill (CON+2 SAB+1) · dwarf-mountain (CON+2 FOR+2) · elf-high (DES+2 INT+1) ·
-elf-wood (DES+2 SAB+1) · elf-drow (DES+2 CAR+1) · halfling-lightfoot (DES+2
-CAR+1) · halfling-stout (DES+2 CON+1) · human (+1 nos seis) · dragonborn (FOR+2
-CAR+1) · gnome-forest (INT+2 DES+1) · gnome-rock (INT+2 CON+1) · half-elf (CAR+2
-+ `abilityChoice` 2) · half-orc (FOR+2 CON+1) · tiefling (CAR+2 INT+1).
-**LACUNA:** ferramentas, idiomas e características raciais não são modelados.
+**RACE_CATALOG — DERIVADO (Prompt 2.10)** do catálogo ESTRUTURADO (`shared/races/`):
+**18 entradas** (9 raças + 9 sub-raças), com `raceId`/`subraceId`/`customRaceId` e as
+`choices` que cada raça exige. O serviço acrescenta as **raças personalizadas** do
+mestre (tabela `CustomRace`) à mesma lista. O passo 3 aplica bônus de atributo,
+deslocamento, visão no escuro, resistências, idiomas e as proficiências de perícia/
+ferramenta resolvidas pelas escolhas; os traços vão para a aba Características.
 
 **Catálogo estruturado (`shared/races/`):** `types.ts` + `index.ts` + um arquivo por raça
 (`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Nove raças
@@ -1411,11 +1410,16 @@ da Floresta/Tiefling, Magia Drow) ficam descritivas até o catálogo de magias e
 `languages`/`bonusLanguageChoices` informativos — não há campo de idioma na ficha,
 `traits`, `subraces`, `hasChoices`), `RaceTrait` (`mechanicalEffect?` para um efeito e `mechanicalEffects?` para vários, ambos
 reusando o MESMO `ClassFeatureEffect`) e `Subrace`. `Race` ganhou `description?`. Funções:
-`getRace`, `getSubrace`, `allRaces`, `raceHpBonus`, `raceHpBonusDelta`. **Coexistência:** o wizard e o compêndio continuam lendo o
-`RACE_CATALOG` (o bug "Draconato não escolhe a linhagem" persiste até o 2.10); a
-substituição (e a migração de `race` texto → `raceId`) é o Prompt 2.10. A ficha ganhou, de
-forma **aditiva** (migração `20261002020000_character_race_fields`), `raceId?`,
-`subraceId?`, `raceChoices Json`, `customRaceId?` (sem FK) — `race` intocado.
+`getRace`, `getSubrace`, `allRaces`, `raceHpBonus`, `raceHpBonusDelta`, `hasLuckyReroll` e os
+resolvedores do motor de raça (Prompt 2.10): `raceAbilityBonuses`, `raceSpeed`,
+`raceDarkvision`, `raceDamageResistances`, `raceSkillProficiencies`, `raceToolProficiencies`,
+`raceLanguages`, `raceTraits`, `raceChoiceDefinitions`. **Integração (2.10):** o wizard e o
+compêndio leem o catálogo estruturado + as raças personalizadas do mestre (CRUD em
+`/api/custom-races`); o passo 3 grava `raceId`/`subraceId`/`customRaceId`/`raceChoices` e
+aplica os efeitos. A ficha ganhou, na migração `20261003025613_custom_races`,
+`languages String[]`, `darkvision Int`, `raceResistances String[]` e a FK `customRaceId`
+(ON DELETE SET NULL); `characters.speed` virou Float (7,5 m / 10,5 m). A coluna `race` de
+texto livre foi abandonada — as fichas antigas com raça em texto livre foram apagadas.
 
 **BACKGROUND_CATALOG — 13 do PHB**, cada um com 2 perícias: acolyte (insight,
 religion) · charlatan (deception, sleightOfHand) · criminal (deception, stealth) ·
@@ -1948,11 +1952,13 @@ zera o contador.
 - **[LACUNA] Catálogo de magias:** `CompendiumSpellDto` está definido e a aba
   "Mesa" tem a seção, mas `SPELL_CATALOG` é `[]`. Magias hoje são apenas estado
   por ficha (`spells = { list, slots }`), sem catálogo central.
-- **[LACUNA] Raças e antecedentes:** bônus de atributo e perícias são aplicados;
-  ferramentas, idiomas e as características raciais/de antecedente **não** são
-  modelados. A **fundação** estruturada de raças já existe (`shared/races/`, vazia)
-  e a ficha tem `raceId`/`subraceId`/`raceChoices`/`customRaceId`, mas nada os
-  preenche ainda — o wizard segue no `RACE_CATALOG` até o Prompt 2.10.
+- **[LACUNA] Raças e antecedentes:** o Prompt 2.10 fechou a raça pelo assistente
+  (atributos, deslocamento, visão no escuro, resistências, idiomas e proficiências
+  de perícia/ferramenta por escolha), mas seguem sem tratamento: proficiência de
+  arma/armadura por raça, magias raciais (catálogo de magias inexistente),
+  escalonamento por nível de personagem, vantagem em salvaguarda (`saveAdvantage`),
+  resistências condicionais e os efeitos `other` (Ataques Selvagens, Resistência
+  Implacável, Sensibilidade à Luz Solar). Do ANTECEDENTE, só as 2 perícias entram.
 - **[LACUNA/Fase 2] Proficiências de armadura:** registradas e usadas no bônus
   de ataque das armas, mas o efeito nas **armaduras** ainda não é calculado (a
   CA não exige proficiência e não há penalidade de armadura sem proficiência).

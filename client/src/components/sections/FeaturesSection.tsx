@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
+import { fetchRaceCatalog } from '../../creationApi';
 import { FEATURE_SOURCES, FEATURE_SOURCE_LABELS } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
-import type { ActiveClassFeature, Feature, FeatureSource } from '../../types';
+import type { ActiveClassFeature, Feature, FeatureSource, RaceOption } from '../../types';
 import { newId } from '../../utils';
 import { choiceInfoOf, FeatureChoiceField } from '../FeatureChoiceField';
 import { InlineField } from '../InlineField';
@@ -26,6 +28,36 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
       },
     });
   }
+  // Traços da RAÇA: vêm do catálogo (fixo ou personalizado) pelo `raceId`/
+  // `subraceId` (ou `customRaceId`) da ficha e aparecem na mesma linguagem dos
+  // talentos — só leitura.
+  const [raceTraits, setRaceTraits] = useState<NonNullable<RaceOption['traits']>>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    fetchRaceCatalog()
+      .then((catalog) => {
+        if (!active) return;
+        const option = character.customRaceId
+          ? catalog.find((item) => item.customRaceId === character.customRaceId)
+          : catalog.find(
+              (item) =>
+                !item.customRaceId &&
+                item.raceId === character.raceId &&
+                (item.subraceId ?? null) === (character.subraceId ?? null),
+            );
+        setRaceTraits(option?.traits ?? []);
+      })
+      .catch(() => {
+        if (active) setRaceTraits([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [character.customRaceId, character.raceId, character.subraceId]);
+
   const features = character.features;
   // Talentos escolhidos no Level Up ficam registrados aqui (source: 'feat') e
   // ganham uma subseção própria; a lista editável mostra o resto.
@@ -71,6 +103,23 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
         )
       }
     >
+      {raceTraits.length > 0 ? (
+        <>
+          <h3 className="subsection-title">Traços de Raça</h3>
+          <div className="feature-list">
+            {raceTraits.map((trait) => (
+              <article className="feature-card" key={trait.id}>
+                <div className="feature-head">
+                  <span className="feature-name">{trait.name}</span>
+                  <em className="tag">raça</em>
+                </div>
+                <p className="feature-desc">{trait.description}</p>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : null}
+
       {feats.length > 0 ? (
         <>
           <h3 className="subsection-title">Talentos</h3>

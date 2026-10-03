@@ -119,6 +119,10 @@ const SCALAR_KEYS = [
   'race',
   'raceId',
   'subraceId',
+  'customRaceId',
+  'languages',
+  'darkvision',
+  'raceResistances',
   'background',
   'alignment',
   'experience',
@@ -158,6 +162,11 @@ const CREATION_FIELD_LABELS: Record<string, string> = {
   race: 'raça',
   raceId: 'raça (catálogo)',
   subraceId: 'sub-raça (catálogo)',
+  customRaceId: 'raça personalizada',
+  raceChoices: 'escolhas da raça',
+  languages: 'idiomas',
+  darkvision: 'visão no escuro',
+  raceResistances: 'resistências da raça',
   background: 'antecedente',
   alignment: 'alinhamento',
   experience: 'experiência',
@@ -1765,6 +1774,12 @@ async function applyCharacterPatch(
   for (const key of SCALAR_KEYS) {
     const value = patch[key];
     if (value !== undefined) data[key] = value;
+  }
+
+  // Escolhas da raça (`{ [id da escolha]: id da opção }`): JSONB — copiado à
+  // parte porque o SCALAR_KEYS só cobre colunas simples/arrays.
+  if (patch.raceChoices !== undefined) {
+    data.raceChoices = patch.raceChoices as Prisma.InputJsonValue;
   }
 
   // --- Nível e classes -----------------------------------------------------

@@ -110,9 +110,22 @@ model Character {
   /// Escolhas da raça (ex.: ancestralidade dracônica): { [id da escolha]: id da opção }.
   raceChoices  Json   @default("{}")
   ///
-  /// Raça PERSONALIZADA do mestre — só o id, SEM relação de chave estrangeira
-  /// ainda (a tabela CustomRace só será criada no Prompt 2.10).
+  /// Raça PERSONALIZADA do mestre (tabela CustomRace). Quando preenchida, ela
+  /// tem prioridade sobre `raceId`/`subraceId` na leitura da raça.
   customRaceId String?
+  customRace   CustomRace? @relation(fields: [customRaceId], references: [id], onDelete: SetNull)
+  ///
+  /// Idiomas conhecidos (texto), concedidos pela raça e pelo antecedente.
+  /// Não há mecânica associada — é exibido na ficha.
+  languages       String[] @default([])
+  ///
+  /// Visão no escuro em METROS (0 = sem), concedida pela raça/sub-raça.
+  /// Ponto de exibição — não há sistema de iluminação no jogo.
+  darkvision      Int      @default(0)
+  ///
+  /// Tipos de dano resistidos concedidos pela RAÇA (13 canônicos de
+  /// shared/attacks.ts). Somados às resistências de classe no combate.
+  raceResistances String[] @default([])
   ///
   /// Classes do personagem (multiclasse): [{ classKey, subclass, level }].
   /// O nível de cada entrada é o nível NAQUELA classe; o nível total do
@@ -157,8 +170,10 @@ model Character {
   /// Só o mestre grava aqui — a CA não é um valor fixo da ficha.
   armorClass      Int @default(0)
   initiativeBonus Int @default(0)
-  /// Deslocamento em metros (sistema métrico).
-  speed           Int @default(9)
+  ///
+  /// Deslocamento em metros (sistema métrico), COM frações: 25 pés = 7,5 m,
+  /// 35 pés = 10,5 m. A raça/sub-raça define o valor base no passo 3.
+  speed           Float @default(9)
 
   // Coleções (JSONB) — ver src/modules/characters/characters.schema.ts
   skills    Json @default("{}") //  { [skill]: { proficient, expertise } }
@@ -199,6 +214,42 @@ model Character {
   combatants Combatant[]
 
   @@map("characters")
+}
+
+/// Raça PERSONALIZADA criada pelo mestre (Prompt 2.10).
+///
+/// Segue o formato do catálogo estruturado (`src/modules/shared/races/`), sem
+/// sub-raças: bônus fixos de atributo, deslocamento, tamanho, visão no escuro,
+/// resistências, idiomas e traços em TEXTO LIVRE (sem `mechanicalEffect`
+/// estruturado — diferente das raças oficiais).
+model CustomRace {
+  id                   String   @id @default(cuid())
+  name                 String
+  description          String   @default("")
+  /// Incrementos fixos de atributo: `[{ ability, amount }]`.
+  abilityScoreIncrease Json     @default("[]")
+  /// Deslocamento em metros, com frações (padrão do sistema: 9 = 30 pés).
+  speed                Float    @default(9)
+  /// Tamanho: 'Small' ou 'Medium'.
+  size                 String   @default("Medium")
+  /// Visão no escuro em metros (0 = sem).
+  darkvision           Int      @default(0)
+  /// Tipos de dano resistidos (13 canônicos de shared/attacks.ts).
+  damageResistances    Json     @default("[]")
+  /// Idiomas conhecidos (texto informativo).
+  languages            Json     @default("[]")
+  /// Quantos idiomas à escolha a raça concede.
+  bonusLanguageChoices Int      @default(0)
+  /// Traços em texto livre: `[{ name, description }]`.
+  traits               Json     @default("[]")
+  version              Int      @default(1)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  characters Character[]
+
+  @@index([name])
+  @@map("custom_races")
 }
 
 // -----------------------------------------------------------------------------

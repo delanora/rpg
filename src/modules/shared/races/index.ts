@@ -1,3 +1,4 @@
+import { ABILITY_KEYS, type AbilityKey } from '../dnd5e.js';
 import { dragonborn } from './dragonborn.js';
 import { dwarf } from './dwarf.js';
 import { elf } from './elf.js';
@@ -7,7 +8,7 @@ import { halfOrc } from './half-orc.js';
 import { halfling } from './halfling.js';
 import { human } from './human.js';
 import { tiefling } from './tiefling.js';
-import type { Race, RaceTrait, Subrace } from './types.js';
+import type { Race, RaceChoiceDefinition, RaceTrait, Subrace } from './types.js';
 
 /**
  * Registro agregado do catálogo ESTRUTURADO de raças (fundação).
@@ -128,4 +129,174 @@ export function hasLuckyReroll(input: {
   }
   // Sem raceId: cai no texto livre da raça/linhagem.
   return (input.race ?? '').trim().toLowerCase().startsWith('halfling');
+}
+
+// ---------------------------------------------------------------------------
+// Motor de raça (Prompt 2.10)
+//
+// Resolve, a partir de `raceId`/`subraceId` + as escolhas gravadas em
+// `raceChoices`, o que a raça concede à ficha. O assistente usa isto no passo 3
+// e o PATCH do mestre reusa ao trocar a raça. Só o catálogo FIXO é resolvido
+// aqui; as raças personalizadas do mestre (tabela CustomRace) têm o mesmo
+// formato e são resolvidas pelo serviço, que tem acesso ao banco.
+// ---------------------------------------------------------------------------
+
+/** Entrada comum dos resolvedores: a raça/sub-raça e as escolhas já feitas. */
+export interface RaceResolutionInput {
+  raceId?: string | null;
+  subraceId?: string | null;
+  /** `{ [id da escolha]: id da opção }` — o mesmo formato de `raceChoices`. */
+  choices?: Record<string, string>;
+}
+
+/** Todos os traços da raça + sub-raça, na ordem de exibição. */
+export function raceTraits(input: RaceResolutionInput): RaceTrait[] {
+  const race = input.raceId ? getRace(input.raceId) : undefined;
+  if (!race) return [];
+  const subrace = input.subraceId
+    ? race.subraces?.find((item) => item.id === input.subraceId)
+    : undefined;
+  return [...race.traits, ...(subrace?.traits ?? [])];
+}
+
+/** As escolhas que a raça exige (ancestralidade, atributos/perícias do Meio-Elfo). */
+export function raceChoiceDefinitions(raceId: string | null | undefined): RaceChoiceDefinition[] {
+  return raceId ? [...(getRace(raceId)?.hasChoices ?? [])] : [];
+}
+
+/** Percorre os efeitos mecânicos de um traço, com `mechanicalEffect` e `mechanicalEffects`. */
+function effectsOf(trait: RaceTrait) {
+  return trait.mechanicalEffects ?? (trait.mechanicalEffect ? [trait.mechanicalEffect] : []);
+}
+
+/** Bônus FIXOS de atributo da raça + sub-raça (sem os `+1` à escolha). */
+export function raceFixedAbilityBonuses(
+  input: RaceResolutionInput,
+): Partial<Record<AbilityKey, number>> {
+  const race = input.raceId ? getRace(input.raceId) : undefined;
+  if (!race) return {};
+  const subrace = input.subraceId
+    ? race.subraces?.find((item) => item.id === input.subraceId)
+    : undefined;
+
+  const bonuses: Partial<Record<AbilityKey, number>> = {};
+  for (const increase of [...race.abilityScoreIncrease, ...(subrace?.abilityScoreIncrease ?? [])]) {
+    bonuses[increase.ability] = (bonuses[increase.ability] ?? 0) + increase.amount;
+  }
+  return bonuses;
+}
+
+/**
+ * Bônus de atributo da raça, já com os `+1` à escolha: soma os incrementos fixos
+ * da raça/sub-raça e as escolhas com `apply: 'ability'` (o id da opção é a chave
+ * do atributo). A regra de "não repetir" o mesmo atributo é do assistente.
+ */
+export function raceAbilityBonuses(
+  input: RaceResolutionInput,
+): Partial<Record<AbilityKey, number>> {
+  const bonuses = raceFixedAbilityBonuses(input);
+  const choices = input.choices ?? {};
+
+  for (const definition of raceChoiceDefinitions(input.raceId)) {
+    if (definition.apply !== 'ability') continue;
+    const picked = choices[definition.id];
+    if (!picked) continue;
+    if (!(ABILITY_KEYS as readonly string[]).includes(picked)) continue;
+    const ability = picked as AbilityKey;
+    bonuses[ability] = (bonuses[ability] ?? 0) + 1;
+  }
+
+  return bonuses;
+}
+
+/** Deslocamento em metros (a sub-raça pode sobrescrever). 9 = padrão da ficha. */
+export function raceSpeed(input: RaceResolutionInput): number {
+  const race = input.raceId ? getRace(input.raceId) : undefined;
+  if (!race) return 9;
+  const subrace = input.subraceId
+    ? race.subraces?.find((item) => item.id === input.subraceId)
+    : undefined;
+  return subrace?.speed ?? race.speed;
+}
+
+/** Visão no escuro em metros (a sub-raça pode sobrescrever). 0 = sem. */
+export function raceDarkvision(input: RaceResolutionInput): number {
+  const race = input.raceId ? getRace(input.raceId) : undefined;
+  if (!race) return 0;
+  const subrace = input.subraceId
+    ? race.subraces?.find((item) => item.id === input.subraceId)
+    : undefined;
+  return subrace?.darkvision ?? race.darkvision ?? 0;
+}
+
+/**
+ * Tipos de dano resistidos pela raça: os declarados no campo `damageResistances`
+ * mais os efeitos `resistance` e `resistanceFromChoice` (cujo tipo sai da opção
+ * escolhida via `choiceId`).
+ */
+export function raceDamageResistances(input: RaceResolutionInput): string[] {
+  const race = input.raceId ? getRace(input.raceId) : undefined;
+  if (!race) return [];
+  const choices = input.choices ?? {};
+  const resistances = new Set<string>(race.damageResistances ?? []);
+
+  for (const trait of raceTraits(input)) {
+    for (const effect of effectsOf(trait)) {
+      if (effect.type === 'resistance') {
+        for (const type of effect.damageTypes ?? []) resistances.add(type);
+      } else if (effect.type === 'resistanceFromChoice') {
+        const definition = raceChoiceDefinitions(input.raceId).find(
+          (item) => item.id === effect.choiceId,
+        );
+        const picked = effect.choiceId ? choices[effect.choiceId] : undefined;
+        const option = definition?.options.find((item) => item.id === picked);
+        if (option?.damageType) resistances.add(option.damageType);
+      }
+    }
+  }
+
+  return [...resistances];
+}
+
+/** Perícias em que a raça concede proficiência (fixas + pelas escolhas `apply: 'skill'`). */
+export function raceSkillProficiencies(input: RaceResolutionInput): string[] {
+  const skills = new Set<string>();
+  for (const trait of raceTraits(input)) {
+    for (const effect of effectsOf(trait)) {
+      if (effect.type === 'skillProficiency' && effect.target) skills.add(effect.target);
+    }
+  }
+
+  const choices = input.choices ?? {};
+  for (const definition of raceChoiceDefinitions(input.raceId)) {
+    if (definition.apply !== 'skill') continue;
+    const picked = choices[definition.id];
+    if (picked) skills.add(picked);
+  }
+
+  return [...skills];
+}
+
+/** Ferramentas em que a raça concede proficiência (fixas + escolhas `apply: 'tool'`). */
+export function raceToolProficiencies(input: RaceResolutionInput): string[] {
+  const tools = new Set<string>();
+  for (const trait of raceTraits(input)) {
+    for (const effect of effectsOf(trait)) {
+      if (effect.type === 'toolProficiency' && effect.target) tools.add(effect.target);
+    }
+  }
+
+  const choices = input.choices ?? {};
+  for (const definition of raceChoiceDefinitions(input.raceId)) {
+    if (definition.apply !== 'tool') continue;
+    const picked = choices[definition.id];
+    if (picked) tools.add(picked);
+  }
+
+  return [...tools];
+}
+
+/** Idiomas concedidos pela raça (texto informativo; sem campo de idioma antes). */
+export function raceLanguages(input: RaceResolutionInput): string[] {
+  return input.raceId ? [...(getRace(input.raceId)?.languages ?? [])] : [];
 }
