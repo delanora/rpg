@@ -103,10 +103,51 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
         )
       }
     >
-      {raceTraits.length > 0 ? (
+      {/* Idioma(s) do personagem, concedidos pela raça (e, no futuro, pelo
+          antecedente). */}
+      {character.languages.length > 0 ? (
         <>
-          <h3 className="subsection-title">Traços de Raça</h3>
+          <h3 className="subsection-title">Idiomas</h3>
+          <div className="config-tags">
+            {character.languages.map((language) => (
+              <span className="config-tag" key={language}>
+                {language}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : null}
+
+      {/* Características de Raça: os fatos derivados (visão no escuro,
+          resistências) + os traços do catálogo da raça. */}
+      {raceTraits.length > 0 ||
+      character.darkvision > 0 ||
+      character.raceResistances.length > 0 ? (
+        <>
+          <h3 className="subsection-title">Características de Raça</h3>
           <div className="feature-list">
+            {character.darkvision > 0 ? (
+              <article className="feature-card">
+                <div className="feature-head">
+                  <span className="feature-name">Visão no Escuro</span>
+                  <em className="tag">raça</em>
+                </div>
+                <p className="feature-desc">
+                  Você enxerga no escuro até {character.darkvision} metros.
+                </p>
+              </article>
+            ) : null}
+            {character.raceResistances.length > 0 ? (
+              <article className="feature-card">
+                <div className="feature-head">
+                  <span className="feature-name">Resistência a Dano</span>
+                  <em className="tag">raça</em>
+                </div>
+                <p className="feature-desc">
+                  Resistência a {character.raceResistances.join(', ')}.
+                </p>
+              </article>
+            ) : null}
             {raceTraits.map((trait) => (
               <article className="feature-card" key={trait.id}>
                 <div className="feature-head">
