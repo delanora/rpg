@@ -1172,8 +1172,10 @@ item no catálogo atualiza **todas** as fichas que o possuem
 (`republishSheetsWithCatalogItem`). Se o item saiu do catálogo, a cópia do
 inventário é mantida.
 
-**Slots (estilo Tibia, 9 posições):** `helmet, necklace, chest, ring1, ring2,
-hand1, hand2, legs, boots`. `slot: null` = mochila. Limite de 300 itens.
+**Slots (estilo Tibia, 10 posições):** `helmet, necklace, chest, ring1, ring2,
+hand1, hand2, legs, boots, ammo`. O slot `ammo` é o espaço de **munição** e
+aceita equipar um item como qualquer outro (antes era decorativo). `slot: null`
+= mochila. Limite de 300 itens.
 
 ### 14.7 Travas do jogador (`assertPlayerCanPatch`) — não valem para o mestre
 

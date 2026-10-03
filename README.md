@@ -835,6 +835,8 @@ traz apenas o comentário `TODO (Fase 5 — motor de ações)`.
 
 Uma arma à distância pode declarar, no catálogo, que **exige munição**: a propriedade **Munição** marca isso e o tipo (**Flecha**, **Virote**, **Bala de funda**, **Agulha de zarabatana**) fica no próprio item. **Munição** também é uma **categoria de item**, com o tipo e os bônus da munição mágica (**+1/+2/+3** ao ataque e/ou ao dano).
 
+A pilha de munição pode ser **equipada no slot de munição** do set (`ammo`), como qualquer outro item — é o slot no canto inferior direito do paperdoll.
+
 Na ficha, um ataque pode ser **vinculado a uma arma do inventário**. A arma precisa estar **equipada numa das mãos** do set: enquanto não estiver, o ataque **nem aparece** na aba Ataques. Se a arma equipada exige munição, cada ataque **gasta 1 unidade** do tipo correspondente — sem munição o ataque **não é rolado** (409). A pilha gasta é escolhida automaticamente (**sem bônus mágico primeiro**, depois a de menor bônus) ou pelo **seletor** na ficha/combate; a pilha que chega a **0** sai do inventário. Os bônus da munição usada somam ao ataque e ao dano **apenas na resolução**. **Criaturas nunca consomem munição.**
 
 ### Rolagem de dados

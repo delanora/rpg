@@ -1163,8 +1163,10 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   LIDOS DO CATÁLOGO ao montar o DTO (`syncInventory`). Efeito: corrigir um item no
   catálogo atualiza TODAS as fichas que o possuem (`republishSheetsWithCatalogItem`).
   Se o item saiu do catálogo, a cópia do inventário é mantida (a ficha não perde nada).
-  SLOTS (estilo Tibia, 9 posições): helmet, necklace, chest, ring1, ring2, hand1,
-  hand2, legs, boots. `slot: null` = mochila. Limite de 300 itens no array.
+  SLOTS (estilo Tibia, 10 posições): helmet, necklace, chest, ring1, ring2, hand1,
+  hand2, legs, boots, ammo. O slot `ammo` é o espaço de MUNIÇÃO e aceita equipar
+  um item como qualquer outro (antes era decorativo). `slot: null` = mochila.
+  Limite de 300 itens no array.
 
 11.7 TRAVAS DO JOGADOR (`assertPlayerCanPatch`) — não valem para o mestre
   • CA manual é SEMPRE 403 para o jogador (a CA dele é calculada).
@@ -1822,7 +1824,7 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   Personagem (Identity: foto + identidade, classes, subclasse e, no FIM da seção,
   Vida e Defesa EMBUTIDA), AbilityCards (os SEIS atributos, cada um com a
   salvaguarda e as perícias dele), Attacks, Features, Spells (list + slots, com o
-  bloco de Conjuração), Inventory (grade de mochila + 9 slots arrastáveis),
+  bloco de Conjuração), Inventory (grade de mochila + 10 slots arrastáveis),
   Notes, BagList.
   INVENTÁRIO — HOVER x CLIQUE: passar o mouse abre um painel flutuante de
   pré-visualização (com os controles de quantidade/usar/remover); clicar abre a

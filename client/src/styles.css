@@ -6005,10 +6005,6 @@ input[type='checkbox']:disabled {
   background: linear-gradient(180deg, var(--surface), var(--surface-3));
 }
 
-.equip-slot.is-static {
-  opacity: 0.5;
-}
-
 .equip-slot.is-over,
 .bag-cell.is-over {
   border-color: var(--gold);

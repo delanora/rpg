@@ -119,7 +119,8 @@ export type InventorySlot =
   | 'hand1'
   | 'hand2'
   | 'legs'
-  | 'boots';
+  | 'boots'
+  | 'ammo';
 
 export interface InventoryItem {
   id: string;
