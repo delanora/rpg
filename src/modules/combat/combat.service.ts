@@ -88,6 +88,19 @@ function requireMaster(actor: CombatActor): void {
   }
 }
 
+/**
+ * Verdadeiro quando o erro é uma violação de índice único do Prisma (P2002).
+ * Usado para transformar a corrida do índice parcial de combate ativo em 409.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
+}
+
 /** Publica para toda a mesa — jogadores e mestre acompanham o combate. */
 function emit(event: (typeof ServerEvents)[keyof typeof ServerEvents], payload: unknown): void {
   try {
@@ -194,26 +207,38 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
     }));
   });
 
-  const created = await prisma.combat.create({
-    data: {
-      status: 'PENDING_INITIATIVE',
-      ...(input.localityId ? { localityId: input.localityId } : {}),
-      combatants: {
-        create: [
-          ...characters
-            .filter((character) => character.user.role === 'PLAYER')
-            .map((character) => ({
-              kind: 'CHARACTER' as const,
-              characterId: character.id,
-              name: character.name,
-              ownerUserId: character.userId,
-              dexterityMod: abilityModifier(character.dexterity),
-            })),
-          ...creatureCombatants,
-        ],
+  let created;
+  try {
+    created = await prisma.combat.create({
+      data: {
+        status: 'PENDING_INITIATIVE',
+        ...(input.localityId ? { localityId: input.localityId } : {}),
+        combatants: {
+          create: [
+            ...characters
+              .filter((character) => character.user.role === 'PLAYER')
+              .map((character) => ({
+                kind: 'CHARACTER' as const,
+                characterId: character.id,
+                name: character.name,
+                ownerUserId: character.userId,
+                dexterityMod: abilityModifier(character.dexterity),
+              })),
+            ...creatureCombatants,
+          ],
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    // O índice único PARCIAL `combats_one_active_key` garante no banco que só
+    // exista um combate com status <> 'ENDED'. A checagem acima (findCombat) é
+    // só o caminho rápido; numa corrida de dois cliques, o segundo INSERT
+    // esbarra no índice (P2002) e vira o mesmo 409.
+    if (isUniqueViolation(error)) {
+      throw new HttpError('Já existe um combate em andamento.', 409);
+    }
+    throw error;
+  }
 
   const loaded = await loadCombatById(created.id);
   emitCombat(ServerEvents.COMBAT_STARTED, toCombatDto(loaded, 'MASTER'));
@@ -354,58 +379,73 @@ async function changeHp(
   if (combatant.kind === 'CHARACTER' && combatant.characterId && combatant.character) {
     const { character } = combatant;
 
-    // Dano consome primeiro os PV temporários; só o excedente chega aos PV
-    // atuais. Cura (delta positivo) não mexe nos temporários.
-    let remaining = delta;
-    let hpTemp = character.hpTemp;
-    if (delta < 0) {
-      const absorbed = Math.min(hpTemp, -delta);
-      hpTemp -= absorbed;
-      remaining = delta + absorbed;
-    }
+    // A escrita é ATÔMICA no banco (`UPDATE ... SET hpCurrent = ...`): o valor
+    // novo é calculado a partir do que está GRAVADO, não do snapshot lido no
+    // início do ataque. Sem isso, dois ataques simultâneos no mesmo alvo
+    // perdiam dano (last-write-wins).
+    //
+    // Regras preservadas, agora no SQL:
+    //   • dano (delta < 0) consome primeiro os PV temporários; só o excedente
+    //     chega aos PV atuais; cura (delta > 0) não mexe nos temporários;
+    //   • PV atuais nunca ficam abaixo de 0 nem acima de hpMax.
+    const affected = await prisma.$executeRaw`
+      UPDATE "characters"
+      SET "hpTemp" = GREATEST(0, "hpTemp" - GREATEST(0, -${delta})),
+          "hpCurrent" = GREATEST(
+            0,
+            LEAST(
+              GREATEST("hpMax", 0),
+              "hpCurrent" + ${delta} + LEAST("hpTemp", GREATEST(0, -${delta}))
+            )
+          ),
+          "version" = "version" + 1
+      WHERE "id" = ${character.id}
+    `;
 
-    const nextHp = Math.max(
-      0,
-      Math.min(character.hpCurrent + remaining, Math.max(character.hpMax, 0)),
-    );
+    // A origem foi deletada no meio do combate.
+    if (affected === 0) return null;
 
-    const updated = await prisma.character.update({
-      where: { id: character.id },
-      data: { hpCurrent: nextHp, hpTemp, version: { increment: 1 } },
-    });
+    // Relê o estado REALMENTE gravado para montar o DTO e publicar — nunca o
+    // valor calculado em memória.
+    const stored = await prisma.character.findUniqueOrThrow({ where: { id: character.id } });
 
     // Reaproveita o canal da ficha: o jogador vê o próprio HP mudar na hora,
     // e o mestre vê no painel.
     const payload = {
-      userId: updated.userId,
+      userId: stored.userId,
       username: character.user.username,
-      characterId: updated.id,
-      version: updated.version,
-      changes: { hpCurrent: updated.hpCurrent, hpTemp: updated.hpTemp },
-      character: await toSheetDto(updated, character.user.username),
+      characterId: stored.id,
+      version: stored.version,
+      changes: { hpCurrent: stored.hpCurrent, hpTemp: stored.hpTemp },
+      character: await toSheetDto(stored, character.user.username),
       at: new Date().toISOString(),
     };
 
     const broadcaster = getBroadcaster();
     broadcaster.toMasters(ServerEvents.SHEET_UPDATED, payload);
-    broadcaster.toUser(updated.userId, ServerEvents.SHEET_UPDATED, payload);
+    broadcaster.toUser(stored.userId, ServerEvents.SHEET_UPDATED, payload);
 
-    return { hpCurrent: updated.hpCurrent, hpMax: updated.hpMax };
+    return { hpCurrent: stored.hpCurrent, hpMax: stored.hpMax };
   }
 
   if (combatant.kind === 'CREATURE') {
     // A vida é do próprio combatente (snapshot): várias cópias iguais rastreiam
     // o dano independentemente e o bestiário não é alterado pelo combate.
+    // O teto vem do snapshot carregado (não muda durante o combate); o valor
+    // novo é calculado a partir do que está gravado, na mesma escrita atômica.
     const hpMax = combatant.hpMax ?? combatant.creature?.hpMax ?? 0;
-    const hpCurrent = combatant.hpCurrent ?? combatant.creature?.hpCurrent ?? 0;
-    const nextHp = Math.max(0, Math.min(hpCurrent + delta, Math.max(hpMax, 0)));
+    const ceiling = Math.max(hpMax, 0);
 
-    const updated = await prisma.combatant.update({
-      where: { id: combatant.id },
-      data: { hpCurrent: nextHp },
-    });
+    const affected = await prisma.$executeRaw`
+      UPDATE "combatants"
+      SET "hpCurrent" = GREATEST(0, LEAST(${ceiling}, COALESCE("hpCurrent", 0) + ${delta}))
+      WHERE "id" = ${combatant.id}
+    `;
 
-    return { hpCurrent: updated.hpCurrent ?? nextHp, hpMax };
+    if (affected === 0) return null;
+
+    const stored = await prisma.combatant.findUniqueOrThrow({ where: { id: combatant.id } });
+    return { hpCurrent: stored.hpCurrent ?? 0, hpMax };
   }
 
   return null;

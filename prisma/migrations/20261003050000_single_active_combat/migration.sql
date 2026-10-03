@@ -1,0 +1,12 @@
+-- D1/B1 — garante no BANCO que só exista UM combate ativo por vez.
+--
+-- A checagem de aplicação em `startCombat` (findCombat → 409) é só o caminho
+-- rápido: dois cliques simultâneos no botão "COMBATE" do mestre podiam passar
+-- pela checagem e criar dois combates em corrida.
+--
+-- O índice é PARCIAL e sobre uma EXPRESSÃO CONSTANTE (1): assim ele admite no
+-- máximo UMA linha com `status <> 'ENDED'` (ou seja, PENDING_INITIATIVE ou
+-- ACTIVE). Combates encerrados não entram no índice, então o histórico continua
+-- ilimitado. Um índice único em `(status)` NÃO serviria: permitiria um
+-- PENDING_INITIATIVE e um ACTIVE conviverem.
+CREATE UNIQUE INDEX "combats_one_active_key" ON "combats" ((1)) WHERE "status" <> 'ENDED';
