@@ -1035,11 +1035,27 @@ export interface CustomRace {
 export type CustomRacePatch = Partial<Omit<CustomRace, 'id' | 'version'>>;
 
 /** Antecedente do catálogo. */
+export interface BackgroundToolChoice {
+  id: string;
+  label: string;
+  options: { id: string; label: string }[];
+}
+
 export interface BackgroundOption {
   key: string;
   name: string;
   description?: string;
   skills?: string[];
+  /** Ferramentas fixas concedidas (ids do catálogo). */
+  toolProficiencies?: string[];
+  /** Ferramentas à escolha por categoria (opções já resolvidas do catálogo). */
+  toolChoices?: BackgroundToolChoice[];
+  /** Quantos idiomas à escolha o antecedente concede. */
+  languageChoices?: number;
+  /** Característica narrativa (entra na aba Características). */
+  feature?: { name: string; description: string };
+  /** Equipamento sugerido — texto informativo. */
+  suggestedEquipment?: string;
 }
 
 /** Estado do assistente devolvido pela API. */
@@ -1055,6 +1071,10 @@ export interface CreationState {
   raceChoices: Record<string, string>;
   /** Idiomas escolhidos quando a raça concede idioma(s) à escolha. */
   languageChoices: string[];
+  /** Ferramentas escolhidas nas categorias do antecedente: `{ escolha: id }`. */
+  backgroundToolChoices: Record<string, string>;
+  /** Idiomas escolhidos quando o antecedente concede idioma(s) à escolha. */
+  backgroundLanguageChoices: string[];
   skillChoice: { count: number; from: string[] };
   /**
    * Escolhas do NÍVEL 1 da classe inicial (Estilo de Luta do guerreiro,
@@ -1096,6 +1116,10 @@ export interface CreationStepRequest {
   /** Idiomas escolhidos quando a raça concede idioma(s) à escolha (passo 3). */
   languageChoices?: string[];
   background?: string;
+  /** Ferramentas escolhidas nas categorias do antecedente (passo 4): `{ escolha: id }`. */
+  backgroundToolChoices?: Record<string, string>;
+  /** Idiomas escolhidos quando o antecedente concede idioma(s) à escolha (passo 4). */
+  backgroundLanguageChoices?: string[];
   classKey?: string;
   /** Subclasse, quando a classe já a exige no nível 1 (passo 5). */
   subclass?: string;

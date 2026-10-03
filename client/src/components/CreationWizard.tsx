@@ -116,6 +116,10 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   /** Idiomas escolhidos quando a raça concede idioma(s) à escolha. */
   const [languageChoices, setLanguageChoices] = useState<string[]>([]);
   const [background, setBackground] = useState('');
+  /** Ferramentas escolhidas por categoria no antecedente: `{ escolha: id }`. */
+  const [backgroundToolChoices, setBackgroundToolChoices] = useState<Record<string, string>>({});
+  /** Idiomas escolhidos quando o antecedente concede idioma(s) à escolha. */
+  const [backgroundLanguageChoices, setBackgroundLanguageChoices] = useState<string[]>([]);
   const [classKey, setClassKey] = useState('');
   const [subclass, setSubclass] = useState('');
   /** Escolhas de característica do passo 5 (Estilo de Luta, Inimigo Favorito). */
@@ -144,6 +148,8 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     setRaceChoices(saved.raceChoices ?? {});
     setLanguageChoices(saved.languageChoices ?? []);
     setBackground(sheet?.background ?? '');
+    setBackgroundToolChoices(saved.backgroundToolChoices ?? {});
+    setBackgroundLanguageChoices(saved.backgroundLanguageChoices ?? []);
     setClassKey(sheet?.classes[0]?.classKey ?? '');
     setSubclass(sheet?.classes[0]?.subclass ?? '');
     setAssigned(saved.baseAbilities);
@@ -281,6 +287,24 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     ? backgroundSkillNames(selectedBackground)
     : [];
 
+  /** Escolhas de ferramenta por categoria que o antecedente pede. */
+  const backgroundToolChoiceDefs = selectedBackground?.toolChoices ?? [];
+
+  /** Todas as escolhas de ferramenta do antecedente já respondidas? */
+  const backgroundToolsReady = backgroundToolChoiceDefs.every((choice) => {
+    const picked = backgroundToolChoices[choice.id];
+    return Boolean(picked) && choice.options.some((option) => option.id === picked);
+  });
+
+  /** Quantos idiomas à escolha o antecedente concede (Acólito/Sábio: 2). */
+  const backgroundLanguageCount = selectedBackground?.languageChoices ?? 0;
+
+  /** Idiomas disponíveis: os do catálogo que a ficha ainda não tem (raça). */
+  const backgroundLanguagePool = useMemo(() => {
+    const taken = new Set([...(character?.languages ?? []), ...languageChoices]);
+    return LANGUAGE_NAMES.filter((name) => !taken.has(name));
+  }, [character?.languages, languageChoices]);
+
   /** Troca a raça e recomeça as escolhas (o catálogo muda o pool). */
   function selectRace(value: string): void {
     setRace(value);
@@ -296,6 +320,34 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       if (value === '') delete next[id];
       else next[id] = value;
       return next;
+    });
+  }
+
+  /** Troca o antecedente e recomeça as escolhas dele (ferramentas e idiomas). */
+  function selectBackground(value: string): void {
+    setBackground(value);
+    setBackgroundToolChoices({});
+    setBackgroundLanguageChoices([]);
+  }
+
+  /** Grava a ferramenta de uma escolha por categoria do antecedente. */
+  function setBackgroundToolChoice(id: string, value: string): void {
+    setBackgroundToolChoices((current) => {
+      const next = { ...current };
+      if (value === '') delete next[id];
+      else next[id] = value;
+      return next;
+    });
+  }
+
+  /** Grava o idioma da enésima escolha do antecedente, sem repetir. */
+  function setBackgroundLanguageChoice(index: number, value: string): void {
+    setBackgroundLanguageChoices((current) => {
+      const next = [...current];
+      if (value === '') next.splice(index, 1);
+      else if (index < next.length) next[index] = value;
+      else next.push(value);
+      return [...new Set(next)];
     });
   }
 
@@ -389,7 +441,12 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
             languageChoices.filter(Boolean).length === languageChoiceCount)
         );
       case 4:
-        return background.trim().length > 0;
+        return (
+          background.trim().length > 0 &&
+          backgroundToolsReady &&
+          (backgroundLanguageCount === 0 ||
+            backgroundLanguageChoices.filter(Boolean).length === backgroundLanguageCount)
+        );
       case 5:
         return classKey !== '' && (!classNeedsSubclass || subclass !== '') && choicesReady;
       case 6:
@@ -417,7 +474,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       case 3:
         return { race, abilityChoices, raceChoices, languageChoices };
       case 4:
-        return { background };
+        return { background, backgroundToolChoices, backgroundLanguageChoices };
       case 5:
         return {
           classKey,
@@ -781,7 +838,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                     <span>Antecedente</span>
                     <select
                       value={background}
-                      onChange={(event) => setBackground(event.target.value)}
+                      onChange={(event) => selectBackground(event.target.value)}
                     >
                       <option value="">— escolha —</option>
                       {creation.backgroundCatalog.map((option) => {
@@ -803,7 +860,80 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                       {backgroundSkillLabels.length > 0
                         ? ` Perícias concedidas: ${backgroundSkillLabels.join(' e ')}.`
                         : ''}
+                      {selectedBackground.feature
+                        ? ` Característica: ${selectedBackground.feature.name}.`
+                        : ''}
                     </p>
+                  ) : null}
+
+                  {/* Ferramentas à escolha por categoria (instrumento, artesão…). */}
+                  {selectedBackground && backgroundToolChoiceDefs.length > 0 ? (
+                    <div className="wizard-race-choice">
+                      <p className="section-note">
+                        {selectedBackground.name} pede as ferramentas abaixo.
+                      </p>
+                      <div className="grid grid-2">
+                        {backgroundToolChoiceDefs.map((choice) => (
+                          <label className="field" key={choice.id}>
+                            <span>{choice.label}</span>
+                            <select
+                              value={backgroundToolChoices[choice.id] ?? ''}
+                              disabled={busy}
+                              onChange={(event) =>
+                                setBackgroundToolChoice(choice.id, event.target.value)
+                              }
+                            >
+                              <option value="">— escolha —</option>
+                              {choice.options.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Idiomas à escolha (Acólito e Sábio concedem 2). */}
+                  {selectedBackground && backgroundLanguageCount > 0 ? (
+                    <div className="wizard-race-choice">
+                      <p className="section-note">
+                        {selectedBackground.name} concede {backgroundLanguageCount} idioma(s) à
+                        sua escolha.
+                      </p>
+                      <div className="grid grid-2">
+                        {Array.from({ length: backgroundLanguageCount }, (_, index) => {
+                          const chosen = backgroundLanguageChoices[index] ?? '';
+                          return (
+                            <label className="field" key={`background-language-${index}`}>
+                              <span>Idioma {index + 1}</span>
+                              <select
+                                value={chosen}
+                                disabled={busy}
+                                onChange={(event) =>
+                                  setBackgroundLanguageChoice(index, event.target.value)
+                                }
+                              >
+                                <option value="">— escolha —</option>
+                                {backgroundLanguagePool.map((name) => (
+                                  <option
+                                    key={name}
+                                    value={name}
+                                    disabled={
+                                      backgroundLanguageChoices.includes(name) && chosen !== name
+                                    }
+                                  >
+                                    {name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ) : null}
                 </>
               ) : (

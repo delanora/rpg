@@ -507,6 +507,16 @@ export const creationStepSchema = z.object({
    * (Humano e Meio-Elfo concedem 1). Validados contra o catálogo no serviço.
    */
   languageChoices: z.array(z.string().trim().min(1).max(60)).max(6).optional(),
+  /**
+   * Passo 4: ferramentas escolhidas nas categorias do antecedente
+   * (`{ [id da escolha]: id da ferramenta }`), validadas contra o catálogo.
+   */
+  backgroundToolChoices: z.record(z.string().trim().max(60), z.string().trim().max(60)).optional(),
+  /**
+   * Passo 4: idiomas escolhidos quando o antecedente concede idioma(s) à
+   * escolha (Acólito e Sábio: 2; outros: 1). Validados contra o catálogo.
+   */
+  backgroundLanguageChoices: z.array(z.string().trim().min(1).max(60)).max(6).optional(),
   /** Passo 5: classe inicial. */
   classKey: classKeySchema.optional(),
   /**
