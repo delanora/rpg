@@ -120,6 +120,7 @@ export const INVENTORY_SLOTS = [
   'hand2',
   'legs',
   'boots',
+  'ammo',
 ] as const;
 
 export type InventorySlot = (typeof INVENTORY_SLOTS)[number];

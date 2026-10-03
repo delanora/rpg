@@ -2327,6 +2327,20 @@ async function main(): Promise<void> {
     ).status === 400,
   );
 
+  // O slot de munição ('ammo') é um slot REAL (antes era decorativo e não
+  // aceitava item nenhum): equipar nele grava o slot e limpa a posição.
+  const ammoEquipped = await api('/api/characters/me/inventory/move', {
+    method: 'POST',
+    token: playerToken,
+    body: { itemInventoryId: potion.id, targetSlot: 'ammo' },
+  });
+  const potionInAmmo = ammoEquipped.data?.character?.inventory?.find((e: any) => e.id === potion.id);
+  check(
+    'o slot de munição (ammo) aceita equipar um item',
+    potionInAmmo?.slot === 'ammo' && potionInAmmo?.backpackX === null && potionInAmmo?.backpackY === null,
+    JSON.stringify(potionInAmmo),
+  );
+
   // --- Inventário espelha o catálogo ---------------------------------------
   const itemSyncEvent = waitFor<any>(playerSocket, 'sheet:updated');
   const itemPatched = await api(`/api/items/${weapon.id}`, {

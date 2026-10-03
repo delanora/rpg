@@ -30,6 +30,7 @@ const SLOT_LABELS: Record<InventorySlot, string> = {
   hand2: 'Mão direita',
   legs: 'Calças',
   boots: 'Botas',
+  ammo: 'Munição',
 };
 
 /** Ícone de placeholder de um slot vazio (o que o campo representa). */
@@ -43,6 +44,7 @@ const SLOT_ICON: Record<InventorySlot, IconName> = {
   hand2: 'shield',
   legs: 'legs',
   boots: 'boots',
+  ammo: 'ammo',
 };
 
 export interface InventorySectionProps extends SheetSectionProps {
@@ -363,17 +365,6 @@ export function InventorySection({
     );
   }
 
-  /** Célula "Munição/Carcaça": decorativa (o modelo não tem esse slot). */
-  function ammoSlotNode() {
-    return (
-      <div className="equip-slot is-static" title="Munição / Carcaça">
-        <span className="slot-empty">
-          <Icon name="ammo" size={22} />
-        </span>
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="inventory-board">
@@ -387,12 +378,10 @@ export function InventorySection({
 
         {/* --- Set de equipamento (estilo Tibia) ------------------------- */}
         <div className="equip-set">
-          <BodyDoll />
-
-          {/* Grade principal 3×3, célula a célula como o set clássico:
+          <BodyDoll />              {/* Grade principal 3×3, célula a célula como o set clássico:
               amuleto | elmo | mochila
               arma    | peitoral | escudo
-              anéis   | calças | munição */}
+              anéis   | calças | munição (slot real: aceita pilhas de munição) */}
           <div className="equip-grid">
             {equipSlotNode('necklace')}
             {equipSlotNode('helmet')}
@@ -422,7 +411,7 @@ export function InventorySection({
             {equipSlotNode('hand2')}
             {ringSlotNode()}
             {equipSlotNode('legs')}
-            {ammoSlotNode()}
+            {equipSlotNode('ammo')}
           </div>
 
           {/* Botas, sozinhas e centralizadas abaixo da grade. */}
