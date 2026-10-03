@@ -14,6 +14,6 @@ compendiumRouter.use(authenticate);
  * usuário autenticado para que a mesma fonte sirva a uma futura consulta do
  * jogador.
  */
-compendiumRouter.get('/', (_req, res) => {
-  res.json({ compendium: getCompendium() });
+compendiumRouter.get('/', async (_req, res) => {
+  res.json({ compendium: await getCompendium() });
 });

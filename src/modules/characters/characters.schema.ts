@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { attackSchema } from '../shared/attacks.js';
+import { attackSchema, damageTypeListSchema } from '../shared/attacks.js';
 import { coinsSchema, coinAmountSchema, coinDeltaSchema } from '../shared/coins.js';
 import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
 import { getTool } from '../shared/tools.js';
@@ -369,6 +369,16 @@ export const updateCharacterSchema = z
      */
     raceId: z.string().trim().max(60).nullable(),
     subraceId: z.string().trim().max(60).nullable(),
+    /** Raça PERSONALIZADA do mestre (id de CustomRace). */
+    customRaceId: z.string().trim().max(60).nullable(),
+    /** Escolhas da raça: `{ [id da escolha]: id da opção }`. */
+    raceChoices: z.record(z.string().trim().max(60), z.string().trim().max(60)),
+    /** Idiomas conhecidos (texto), concedidos pela raça/antecedente. */
+    languages: z.array(z.string().trim().min(1).max(60)).max(20),
+    /** Visão no escuro em metros (0 = sem). */
+    darkvision: z.number().int().min(0).max(120),
+    /** Tipos de dano resistidos concedidos pela RAÇA. */
+    raceResistances: damageTypeListSchema,
     /** Classes do personagem — ver o tratamento em characters.service.ts. */
     classes: classEntriesInputSchema,
     /**
@@ -400,7 +410,7 @@ export const updateCharacterSchema = z
      */
     armorClassOverride: z.number().int().min(0).max(99).nullable(),
     initiativeBonus: z.number().int().min(-30).max(30),
-    speed: z.number().int().min(0).max(999),
+    speed: z.number().min(0).max(999),
 
     // Coleções
     skills: skillsStateSchema,
@@ -475,9 +485,15 @@ export const creationStepSchema = z.object({
   name: z.string().trim().min(1, 'O nome não pode ficar vazio.').max(120).optional(),
   alignment: shortText(60).optional(),
   avatarUrl: shortText(500).optional(),
-  /** Passos 3 e 4: raça e antecedente (o passo 4 ainda é texto livre). */
-  race: shortText(60).optional(),
+  /** Passos 3 e 4: raça (nome/chave do catálogo) e antecedente. */
+  race: shortText(120).optional(),
   background: shortText(120).optional(),
+  /**
+   * Passo 3: escolhas da raça `{ [id da escolha]: id da opção }` — exceto as de
+   * atributo, que vão em `abilityChoices`. Ex.: ancestralidade do Draconato,
+   * perícias do Meio-Elfo, ferramenta do Anão.
+   */
+  raceChoices: z.record(z.string().trim().max(60), z.string().trim().max(60)).optional(),
   /**
    * Passo 3: atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois).
    * Os atributos fora do `raceChoicePool` da raça são recusados no serviço.

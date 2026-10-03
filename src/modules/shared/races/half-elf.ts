@@ -50,10 +50,20 @@ export const halfElf: Race = {
     },
   ],
   hasChoices: [
-    { id: 'half-elf-ability-1', label: 'Atributo +1 (1º)', options: HALF_ELF_ABILITY_OPTIONS },
-    { id: 'half-elf-ability-2', label: 'Atributo +1 (2º)', options: HALF_ELF_ABILITY_OPTIONS },
-    { id: 'half-elf-skill-1', label: 'Perícia (1ª)', options: SKILL_OPTIONS },
-    { id: 'half-elf-skill-2', label: 'Perícia (2ª)', options: SKILL_OPTIONS },
+    {
+      id: 'half-elf-ability-1',
+      label: 'Atributo +1 (1º)',
+      apply: 'ability',
+      options: HALF_ELF_ABILITY_OPTIONS,
+    },
+    {
+      id: 'half-elf-ability-2',
+      label: 'Atributo +1 (2º)',
+      apply: 'ability',
+      options: HALF_ELF_ABILITY_OPTIONS,
+    },
+    { id: 'half-elf-skill-1', label: 'Perícia (1ª)', apply: 'skill', options: SKILL_OPTIONS },
+    { id: 'half-elf-skill-2', label: 'Perícia (2ª)', apply: 'skill', options: SKILL_OPTIONS },
   ],
   // Sem sub-raças.
 };

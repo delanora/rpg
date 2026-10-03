@@ -75,12 +75,27 @@ export interface Subrace {
   traits: RaceTrait[];
 }
 
+/**
+ * O que a escolha CONCEDE quando resolvida. É o análogo de `FeatureChoiceChoice.apply`
+ * das classes e o que o motor de raça (2.10) usa para aplicar a escolha à ficha:
+ *
+ * - `ability`: o id da opção é a chave de um atributo e soma +1 nele (Meio-Elfo).
+ * - `skill`: o id da opção é a chave de uma perícia (SKILLS) que vira proficiência.
+ * - `tool`: o id da opção é o id de uma ferramenta do catálogo.
+ *
+ * Ausente = escolha resolvida por outro caminho (ex.: a ancestralidade do
+ * Draconato alimenta um efeito `resistanceFromChoice` via `choiceId`).
+ */
+export type RaceChoiceApply = 'ability' | 'skill' | 'tool';
+
 /** Uma opção que a raça oferece ao jogador (ex.: a ancestralidade do Draconato). */
 export interface RaceChoiceDefinition {
   /** Identificador estável; é a chave em que a escolha fica gravada. */
   id: string;
   /** Rótulo exibido (ex.: 'Ancestralidade dracônica'). */
   label: string;
+  /** O que a escolha concede, quando resolvido (ver `RaceChoiceApply`). */
+  apply?: RaceChoiceApply;
   /**
    * Opções da escolha. `damageType` é o tipo de dano associado à opção, quando
    * houver (ex.: a cor do Draconato) — pelos 13 tipos canônicos de

@@ -12,12 +12,10 @@ import {
   EMPTY_CREATION_DRAFT,
   RACE_CATALOG,
   backgroundSkills,
-  findRace,
   lowestIndex,
   normalizeCreationDraft,
   raceChoiceCount,
   raceChoicePool,
-  racialAbilityBonuses,
   rollValues,
   type BackgroundOption,
   type CreationDraft,
@@ -25,6 +23,20 @@ import {
   type CreationRoll,
   type RaceOption,
 } from '../shared/creation.js';
+import {
+  raceDamageResistances,
+  raceDarkvision,
+  raceFixedAbilityBonuses,
+  raceLanguages,
+  raceSkillProficiencies,
+  raceSpeed,
+  raceToolProficiencies,
+} from '../shared/races/index.js';
+import {
+  findCustomRace,
+  listCustomRaceOptions,
+  toCustomRaceDto,
+} from '../custom-races/custom-races.service.js';
 import {
   creationSkillChoice,
   expertiseOptionsFor,
@@ -146,17 +158,66 @@ function abilitiesOf(character: Character): Record<AbilityKey, number> {
   };
 }
 
+/** Bônus de atributo de uma raça já escolhida: fixos + os `+1` à escolha. */
+function bonusesFromOption(
+  option: RaceOption,
+  choices: readonly AbilityKey[],
+): Partial<Record<AbilityKey, number>> {
+  const bonuses: Partial<Record<AbilityKey, number>> = { ...(option.abilityBonuses ?? {}) };
+  const take = option.abilityChoice ?? 0;
+  for (const ability of choices.slice(0, take)) {
+    bonuses[ability] = (bonuses[ability] ?? 0) + 1;
+  }
+  return bonuses;
+}
+
+/** Lê `raceChoices` (JSONB cru) como um mapa `{ escolha: opção }`. */
+function parseRaceChoices(input: unknown): Record<string, string> {
+  if (!input || typeof input !== 'object') return {};
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (typeof value === 'string') result[key] = value;
+  }
+  return result;
+}
+
+/**
+ * Bônus de atributo da raça GRAVADA na ficha (para recalcular os valores-BASE).
+ * As raças personalizadas buscam os incrementos no banco; as do catálogo fixo
+ * somam os `+1` às escolhas do rascunho.
+ */
+async function bonusesForCharacter(
+  character: Character,
+  abilityChoices: readonly AbilityKey[],
+): Promise<Partial<Record<AbilityKey, number>>> {
+  if (character.customRaceId) {
+    const race = await findCustomRace(character.customRaceId);
+    const bonuses: Partial<Record<AbilityKey, number>> = {};
+    for (const increase of toCustomRaceDto(race).abilityScoreIncrease) {
+      bonuses[increase.ability] = (bonuses[increase.ability] ?? 0) + increase.amount;
+    }
+    return bonuses;
+  }
+
+  const bonuses = raceFixedAbilityBonuses({
+    raceId: character.raceId,
+    subraceId: character.subraceId,
+  });
+  for (const ability of abilityChoices) {
+    bonuses[ability] = (bonuses[ability] ?? 0) + 1;
+  }
+  return bonuses;
+}
+
 /**
  * Bônus raciais aplicados aos valores-BASE: os atributos gravados são sempre
  * base + raça, então trocar de raça (ou voltar ao passo 3) recalcula tudo a
  * partir do rascunho, sem perder o que o jogador digitou/rolou.
  */
 function abilitiesPatchFrom(
-  race: string,
+  bonuses: Partial<Record<AbilityKey, number>>,
   base: Partial<Record<AbilityKey, number>>,
-  choices: readonly AbilityKey[] = [],
 ): Partial<Record<AbilityKey, number>> {
-  const bonuses = racialAbilityBonuses(race, choices);
   const patch: Partial<Record<AbilityKey, number>> = {};
 
   for (const ability of ABILITY_KEYS) {
@@ -175,10 +236,8 @@ function abilitiesPatchFrom(
 /** Valores-BASE a partir dos atributos gravados (descontando os bônus raciais). */
 function baseAbilitiesOf(
   character: Character,
-  race: string,
-  choices: readonly AbilityKey[] = [],
+  bonuses: Partial<Record<AbilityKey, number>>,
 ): Partial<Record<AbilityKey, number>> {
-  const bonuses = racialAbilityBonuses(race || character.race, choices);
   const abilities = abilitiesOf(character);
   const base: Partial<Record<AbilityKey, number>> = {};
 
@@ -191,6 +250,71 @@ function baseAbilitiesOf(
   }
 
   return base;
+}
+
+/**
+ * Acha a opção de raça (fixa ou personalizada) pelo nome ou pela chave. As
+ * personalizadas entram em `catalog` já convertidas em `RaceOption`.
+ */
+function matchRaceOption(catalog: readonly RaceOption[], value: string): RaceOption | null {
+  const needle = value.trim().toLowerCase();
+  if (!needle) return null;
+  return (
+    catalog.find(
+      (option) => option.key.toLowerCase() === needle || option.name.toLowerCase() === needle,
+    ) ?? null
+  );
+}
+
+/** O que a raça concede à ficha, já resolvido (fixa ou personalizada). */
+interface RaceGrants {
+  speed: number;
+  darkvision: number;
+  resistances: string[];
+  languages: string[];
+  skills: string[];
+  tools: string[];
+}
+
+/** Resolve os efeitos da raça gravada (fixa ou personalizada). */
+async function raceGrants(input: {
+  raceId: string | null;
+  subraceId: string | null;
+  customRaceId: string | null;
+  choices: Record<string, string>;
+}): Promise<RaceGrants> {
+  if (input.customRaceId) {
+    const race = await findCustomRace(input.customRaceId);
+    const dto = toCustomRaceDto(race);
+    return {
+      speed: dto.speed,
+      darkvision: dto.darkvision,
+      resistances: dto.damageResistances,
+      languages: dto.languages,
+      skills: [],
+      tools: [],
+    };
+  }
+
+  return {
+    speed: raceSpeed(input),
+    darkvision: raceDarkvision(input),
+    resistances: raceDamageResistances(input),
+    languages: raceLanguages(input),
+    skills: raceSkillProficiencies(input),
+    tools: raceToolProficiencies(input),
+  };
+}
+
+/** Perícias concedidas pela raça atualmente gravada na ficha. */
+async function characterRaceSkills(character: Character): Promise<string[]> {
+  const grants = await raceGrants({
+    raceId: character.raceId,
+    subraceId: character.subraceId,
+    customRaceId: character.customRaceId,
+    choices: parseRaceChoices(character.raceChoices),
+  });
+  return grants.skills;
 }
 
 /** A ficha do rascunho (criada no primeiro passo) ou erro se a criação já fechou. */
@@ -227,11 +351,15 @@ function creationExpertiseOptions(character: Character): FeatureChoiceOption[] {
   );
 }
 
-/** Estado de perícias: as escolhidas na classe + as concedidas pelo antecedente. */
+/**
+ * Estado de perícias: as escolhidas na classe + as do antecedente + as da raça
+ * (perícias raciais fixas ou resolvidas pelas escolhas, ex.: Meio-Elfo).
+ */
 function skillsPatch(
   character: Character,
   picks: string[],
   background: string,
+  raceSkills: readonly string[] = [],
 ): Record<string, { proficient: boolean; expertise: boolean }> {
   const granted = backgroundSkills(background);
   const current = normalizeSkills(character.skills);
@@ -239,7 +367,8 @@ function skillsPatch(
 
   for (const key of SKILL_KEYS) {
     next[key] = {
-      proficient: picks.includes(key) || granted.includes(key),
+      proficient:
+        picks.includes(key) || granted.includes(key) || raceSkills.includes(key),
       expertise: current[key]?.expertise ?? false,
     };
   }
@@ -278,9 +407,9 @@ function validateSkillPicks(character: Character, picks: string[]): void {
 
 /** Confere os valores do passo 6 conforme o modo escolhido. */
 function validateAbilities(
-  character: Character,
   draft: CreationDraft,
   base: Partial<Record<AbilityKey, number>>,
+  current: Partial<Record<AbilityKey, number>>,
 ): void {
   if (draft.mode === 'new') {
     if (draft.rolls.length < CREATION_ABILITY_COUNT) {
@@ -302,7 +431,6 @@ function validateAbilities(
   // Modo "personagem existente": o jogador digita os valores (1 a 20). Uma ficha
   // reaberta pelo mestre pode ter valores acima disso (melhorias de nível já
   // aplicadas) — nesse caso o valor que já estava na ficha passa como está.
-  const current = baseAbilitiesOf(character, character.race, draft.abilityChoices);
   for (const ability of ABILITY_KEYS) {
     const value = base[ability];
     if (value === undefined) continue;
@@ -417,7 +545,9 @@ async function buildState(
             }).filter((info) => info.level === 1 && info.apply === 'expertise')
           : [],
       startingLevel,
-      raceCatalog: [...RACE_CATALOG],
+      // Catálogo único: as nove raças fixas do catálogo estruturado + as raças
+      // PERSONALIZADAS do mestre (tabela CustomRace).
+      raceCatalog: [...RACE_CATALOG, ...(await listCustomRaceOptions())],
       backgroundCatalog: [...BACKGROUND_CATALOG],
       missing: character
         ? missingForFinalize(character, draft)
@@ -477,15 +607,19 @@ export async function saveCreationStep(
     case 3: {
       const race = (input.race ?? '').trim();
       if (!race) throw new HttpError('Escolha a raça do personagem.', 400);
-      patch.race = race;
 
-      // Algumas raças pedem atributos à escolha (Meio-Elfo: +1 em dois). A
-      // escolha é validada contra o catálogo e guardada no rascunho; trocar
-      // para uma raça sem escolha limpa a lista.
-      const option = findRace(race);
-      const required = option?.abilityChoice ?? 0;
+      // O passo 3 lê o catálogo ESTRUTURADO (nove raças fixas) + as raças
+      // PERSONALIZADAS do mestre, numa lista única. A opção diz de onde a raça
+      // veio (`raceId`/`subraceId`/`customRaceId`) e as escolhas que ela exige.
+      const catalog = [...RACE_CATALOG, ...(await listCustomRaceOptions())];
+      const option = matchRaceOption(catalog, race);
+      if (!option) throw new HttpError(`Raça desconhecida: ${race}.`, 400);
+
+      // Escolhas de ATRIBUTO (Meio-Elfo: +1 em dois): validadas contra o pool e
+      // guardadas no rascunho; trocar para uma raça sem escolha limpa a lista.
+      const required = option.abilityChoice ?? 0;
       const choices = [...new Set(input.abilityChoices ?? [])];
-      if (required > 0 && option) {
+      if (required > 0) {
         const pool = raceChoicePool(option);
         const outside = choices.filter((ability) => !pool.includes(ability));
         if (outside.length > 0) {
@@ -505,9 +639,65 @@ export async function saveCreationStep(
       }
       nextDraft.abilityChoices = required > 0 ? choices : [];
 
-      // A raça pode conceder bônus de atributo: os valores são refeitos a partir
-      // dos valores-BASE do rascunho (nada do que foi rolado se perde).
-      Object.assign(patch, abilitiesPatchFrom(race, nextDraft.baseAbilities, choices));
+      // Demais escolhas (ancestralidade do Draconato, perícias do Meio-Elfo,
+      // ferramenta do Anão): validadas contra as opções de cada definição.
+      const raceChoices: Record<string, string> = {};
+      for (const definition of option.choices ?? []) {
+        if (definition.apply === 'ability') continue;
+        const picked = input.raceChoices?.[definition.id];
+        if (!picked) {
+          // Todas as escolhas do catálogo (ancestralidade do Draconato, perícias
+          // do Meio-Elfo, ferramenta do Anão) são obrigatórias.
+          throw new HttpError(`Escolha ${definition.label} de ${option.name}.`, 400);
+        }
+        if (!definition.options.some((item) => item.id === picked)) {
+          throw new HttpError(`Opção inválida em "${definition.label}".`, 400);
+        }
+        raceChoices[definition.id] = picked;
+      }
+      // As escolhas de atributo também entram no mapa (com os ids das
+      // definições), pois efeitos como `resistanceFromChoice` leem daqui.
+      (option.choices ?? [])
+        .filter((definition) => definition.apply === 'ability')
+        .forEach((definition, index) => {
+          const picked = choices[index];
+          if (picked) raceChoices[definition.id] = picked;
+        });
+
+      patch.race = option.name;
+      patch.raceId = option.customRaceId ? null : option.raceId;
+      patch.subraceId = option.subraceId ?? null;
+      patch.customRaceId = option.customRaceId ?? null;
+      patch.raceChoices = raceChoices;
+
+      // Efeitos que a ficha guarda: deslocamento, visão no escuro, resistências,
+      // idiomas e as proficiências de perícia/ferramenta resolvidas.
+      const grants = await raceGrants({
+        raceId: option.customRaceId ? null : option.raceId,
+        subraceId: option.subraceId ?? null,
+        customRaceId: option.customRaceId ?? null,
+        choices: raceChoices,
+      });
+      patch.speed = grants.speed;
+      patch.darkvision = grants.darkvision;
+      patch.raceResistances = grants.resistances as NonNullable<
+        UpdateCharacterInput['raceResistances']
+      >;
+      patch.languages = grants.languages;
+      patch.toolProficiencies = grants.tools;
+      patch.skills = skillsPatch(
+        character,
+        nextDraft.skillPicks,
+        character.background,
+        grants.skills,
+      );
+
+      // A raça concede bônus de atributo: os valores são refeitos a partir dos
+      // valores-BASE do rascunho (nada do que foi rolado se perde).
+      Object.assign(
+        patch,
+        abilitiesPatchFrom(bonusesFromOption(option, choices), nextDraft.baseAbilities),
+      );
       break;
     }
 
@@ -516,8 +706,13 @@ export async function saveCreationStep(
       if (!background) throw new HttpError('Escreva o antecedente do personagem.', 400);
       patch.background = background;
       // O antecedente pode conceder perícias: elas entram junto das escolhidas
-      // na classe, sem consumir as escolhas dela.
-      patch.skills = skillsPatch(character, nextDraft.skillPicks, background);
+      // na classe e das concedidas pela raça, sem consumir as escolhas da classe.
+      patch.skills = skillsPatch(
+        character,
+        nextDraft.skillPicks,
+        background,
+        await characterRaceSkills(character),
+      );
       break;
     }
 
@@ -580,13 +775,19 @@ export async function saveCreationStep(
         );
       }
 
-      validateAbilities(character, draft, base);
+      const currentBase = baseAbilitiesOf(
+        character,
+        await bonusesForCharacter(character, draft.abilityChoices),
+      );
+      validateAbilities(draft, base, currentBase);
       nextDraft.baseAbilities = { ...base };
 
-      const race = patch.race ?? character.race;
       Object.assign(
         patch,
-        abilitiesPatchFrom(race, nextDraft.baseAbilities, nextDraft.abilityChoices),
+        abilitiesPatchFrom(
+          await bonusesForCharacter(character, nextDraft.abilityChoices),
+          nextDraft.baseAbilities,
+        ),
       );
 
       // Pré-requisito da classe, agora com os atributos finais: é o momento em
@@ -608,7 +809,12 @@ export async function saveCreationStep(
       const picks = [...new Set(input.skills ?? [])];
       validateSkillPicks(character, picks);
       nextDraft.skillPicks = picks;
-      const nextSkills = skillsPatch(character, picks, character.background);
+      const nextSkills = skillsPatch(
+        character,
+        picks,
+        character.background,
+        await characterRaceSkills(character),
+      );
 
       // Expertise do nível 1 (Ladino): só agora, com as perícias escolhidas, dá
       // para validar a escolha contra o que o personagem domina. O passo 5
@@ -808,7 +1014,10 @@ export async function reopenCreation(characterId: string, master: Actor): Promis
     mode: draft.mode ?? 'existing',
     step: CREATION_FIRST_STEP,
     rolls: draft.rolls,
-    baseAbilities: baseAbilitiesOf(character, character.race, draft.abilityChoices),
+    baseAbilities: baseAbilitiesOf(
+      character,
+      await bonusesForCharacter(character, draft.abilityChoices),
+    ),
     skillPicks: draft.skillPicks,
     abilityChoices: draft.abilityChoices,
   };

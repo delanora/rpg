@@ -660,8 +660,14 @@ export interface Character {
   subraceId: string | null;
   /** Escolhas da raça: `{ [id da escolha]: id da opção }`. */
   raceChoices: Record<string, string>;
-  /** Raça personalizada do mestre (id, sem relação ainda); `null` por ora. */
+  /** Raça personalizada do mestre (id de CustomRace); `null` quando não é. */
   customRaceId: string | null;
+  /** Idiomas conhecidos (texto), concedidos pela raça e pelo antecedente. */
+  languages: string[];
+  /** Visão no escuro em metros (0 = sem). */
+  darkvision: number;
+  /** Tipos de dano resistidos concedidos pela RAÇA. */
+  raceResistances: string[];
   /** Nome composto das classes, com os níveis (ex.: "Bárbaro 3 / Ladino 2"). */
   className: string;
   /** Classes do personagem (multiclasse), em ordem de entrada. */
@@ -963,17 +969,66 @@ export interface CreationDraft {
   abilityChoices: AbilityKey[];
 }
 
-/** Uma raça do catálogo — uma entrada por linhagem/sub-raça do Livro do Jogador. */
+/** Uma opção de escolha racial (ancestralidade, atributos/perícias do Meio-Elfo…). */
+export interface RaceChoiceOption {
+  id: string;
+  label: string;
+  /** Tipo de dano associado à opção (ex.: a cor do Draconato). */
+  damageType?: string;
+}
+
+/** Uma escolha racial exigida pela raça. */
+export interface RaceChoice {
+  id: string;
+  label: string;
+  /** O que a escolha concede: atributo, perícia ou ferramenta. */
+  apply?: 'ability' | 'skill' | 'tool';
+  options: RaceChoiceOption[];
+}
+
+/**
+ * Uma raça do catálogo do assistente — DERIVADA do catálogo estruturado
+ * (`shared/races/`) e das raças personalizadas do mestre.
+ */
 export interface RaceOption {
   key: string;
   name: string;
   /** Nome da raça base (agrupa as sub-raças na interface). */
   baseRace?: string;
   description?: string;
+  /** Raça do catálogo estruturado, pelo id. */
+  raceId: string;
+  /** Sub-raça do catálogo estruturado, pelo id. */
+  subraceId?: string;
+  /** Raça personalizada do mestre, pelo id. */
+  customRaceId?: string;
   abilityBonuses?: Partial<Record<AbilityKey, number>>;
   /** Quantos atributos à escolha ganham +1 (Meio-Elfo: 2). */
   abilityChoice?: number;
+  /** Escolhas que a raça exige. */
+  choices?: RaceChoice[];
+  /** Traços raciais (exibidos na aba Características). */
+  traits?: { id: string; name: string; description: string }[];
 }
+
+/** Raça PERSONALIZADA do mestre (tabela CustomRace). */
+export interface CustomRace {
+  id: string;
+  name: string;
+  description: string;
+  abilityScoreIncrease: { ability: AbilityKey; amount: number }[];
+  speed: number;
+  size: 'Small' | 'Medium';
+  darkvision: number;
+  damageResistances: string[];
+  languages: string[];
+  bonusLanguageChoices: number;
+  traits: { name: string; description: string }[];
+  version: number;
+}
+
+/** Campos editáveis de uma raça personalizada. */
+export type CustomRacePatch = Partial<Omit<CustomRace, 'id' | 'version'>>;
 
 /** Antecedente do catálogo. */
 export interface BackgroundOption {
@@ -992,6 +1047,8 @@ export interface CreationState {
   skillPicks: string[];
   /** Atributos escolhidos para os `+1` da raça (Meio-Elfo escolhe dois). */
   abilityChoices: AbilityKey[];
+  /** Escolhas da raça fora os atributos (`{ escolha: opção }`). */
+  raceChoices: Record<string, string>;
   skillChoice: { count: number; from: string[] };
   /**
    * Escolhas do NÍVEL 1 da classe inicial (Estilo de Luta do guerreiro,
@@ -1028,6 +1085,8 @@ export interface CreationStepRequest {
   race?: string;
   /** Atributos escolhidos para os `+1` da raça (passo 3). */
   abilityChoices?: AbilityKey[];
+  /** Escolhas da raça fora os atributos (passo 3): `{ escolha: opção }`. */
+  raceChoices?: Record<string, string>;
   background?: string;
   classKey?: string;
   /** Subclasse, quando a classe já a exige no nível 1 (passo 5). */
@@ -1125,6 +1184,16 @@ export interface LevelDownResult {
 export interface CharacterPatch {
   name?: string;
   race?: string;
+  /** Raça/sub-raça do catálogo estruturado (só o mestre com criação fechada). */
+  raceId?: string | null;
+  subraceId?: string | null;
+  /** Raça personalizada do mestre. */
+  customRaceId?: string | null;
+  /** Escolhas da raça (`{ escolha: opção }`). */
+  raceChoices?: Record<string, string>;
+  languages?: string[];
+  darkvision?: number;
+  raceResistances?: string[];
   /**
    * Lista de classes enviada para editar a subclasse de cada uma. O nível de
    * cada classe é ignorado: ele só muda pelo fluxo de Level Up.

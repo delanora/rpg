@@ -1,5 +1,6 @@
 import { CLASS_DEFINITIONS } from '../shared/classes/index.js';
-import { BACKGROUND_CATALOG, RACE_CATALOG } from '../shared/creation.js';
+import { BACKGROUND_CATALOG, RACE_CATALOG, type RaceOption } from '../shared/creation.js';
+import { listCustomRaceOptions } from '../custom-races/custom-races.service.js';
 import type {
   CompendiumBackgroundDto,
   CompendiumClassDto,
@@ -55,7 +56,7 @@ function toClass(definition: (typeof CLASS_DEFINITIONS)[number]): CompendiumClas
   };
 }
 
-function toRace(race: (typeof RACE_CATALOG)[number]): CompendiumRaceDto {
+function toRace(race: RaceOption): CompendiumRaceDto {
   return {
     key: race.key,
     name: race.name,
@@ -78,14 +79,15 @@ function toBackground(background: (typeof BACKGROUND_CATALOG)[number]): Compendi
 /**
  * Monta o compêndio completo.
  *
- * Fonte única do que a aba de configurações mostra: hoje lê os catálogos
- * estáticos; no futuro, quando o mestre puder criar raças e antecedentes, esta
- * é a única função que precisa mudar de fonte (banco em vez de constante).
+ * Fonte única do que a aba de configurações mostra. Desde o Prompt 2.10 as
+ * RAÇAS vêm do catálogo estruturado (`shared/races/`) mais as raças
+ * PERSONALIZADAS do mestre (banco); antecedentes e magias seguem estáticos.
  */
-export function getCompendium(): CompendiumDto {
+export async function getCompendium(): Promise<CompendiumDto> {
+  const customOptions = await listCustomRaceOptions();
   return {
     classes: CLASS_DEFINITIONS.map(toClass),
-    races: RACE_CATALOG.map(toRace),
+    races: [...RACE_CATALOG, ...customOptions].map(toRace),
     backgrounds: BACKGROUND_CATALOG.map(toBackground),
     spells: SPELL_CATALOG,
   };

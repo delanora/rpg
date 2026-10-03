@@ -56,6 +56,9 @@ export const elf: Race = {
   id: 'elf',
   namePt: 'Elfo',
   nameEn: 'Elf',
+  description:
+    'Povo antigo e longevo, de sentidos aguçados e graça sobrenatural. As linhagens ' +
+    'divergem entre a magia das torres, as matas e o Subterrâneo.',
   abilityScoreIncrease: [{ ability: 'dexterity', amount: 2 }],
   speed: 9,
   size: 'Medium',

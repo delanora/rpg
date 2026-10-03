@@ -1,8 +1,22 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ABILITY_ABBREVIATIONS, ABILITY_LABELS, SKILLS, SPELLCASTING_TYPE_LABELS, SPELL_LEARNING_LABELS, formatModifier } from '../../dnd';
-import { fetchCompendium } from '../../gameApi';
-import type { AbilityKey, Compendium, CompendiumClass, CompendiumRace } from '../../types';
+import {
+  createCustomRace,
+  deleteCustomRace,
+  fetchCompendium,
+  fetchCustomRaces,
+  updateCustomRace,
+} from '../../gameApi';
+import type {
+  AbilityKey,
+  Compendium,
+  CompendiumClass,
+  CompendiumRace,
+  CustomRace,
+  CustomRacePatch,
+} from '../../types';
 import { Icon } from '../Icon';
+import { RaceEditor } from './RaceEditor';
 
 /**
  * "Configurações da mesa" — o canto do mestre para ajustar a mesa e consultar
@@ -157,6 +171,12 @@ export function ConfigTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Raças personalizadas do mestre (Prompt 2.10).
+  const [customRaces, setCustomRaces] = useState<CustomRace[]>([]);
+  const [editingRaceId, setEditingRaceId] = useState<string | null>(null);
+  const [customBusy, setCustomBusy] = useState(false);
+  const [customRaceError, setCustomRaceError] = useState<string | null>(null);
+
   // O nível inicial é editado localmente e só sobe ao servidor quando o campo
   // é confirmado (Enter ou sair do campo) — evita uma requisição por tecla.
   const [levelDraft, setLevelDraft] = useState(String(startingLevel));
@@ -185,6 +205,57 @@ export function ConfigTab({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    fetchCustomRaces()
+      .then(setCustomRaces)
+      .catch(() => setCustomRaces([]));
+  }, []);
+
+  const editingRace = customRaces.find((race) => race.id === editingRaceId) ?? null;
+
+  /** Recarrega o compêndio para a lista refletir a raça criada/editada. */
+  function refreshCompendium(): void {
+    void fetchCompendium()
+      .then(setCompendium)
+      .catch(() => undefined);
+  }
+
+  async function addCustomRace(): Promise<void> {
+    setCustomBusy(true);
+    setCustomRaceError(null);
+    try {
+      const race = await createCustomRace();
+      setCustomRaces((prev) => [...prev, race].sort((a, b) => a.name.localeCompare(b.name)));
+      setEditingRaceId(race.id);
+      refreshCompendium();
+    } catch (err) {
+      setCustomRaceError(err instanceof Error ? err.message : 'Falha ao criar a raça.');
+    } finally {
+      setCustomBusy(false);
+    }
+  }
+
+  async function patchCustomRace(id: string, patch: CustomRacePatch): Promise<void> {
+    try {
+      const race = await updateCustomRace(id, patch);
+      setCustomRaces((prev) => prev.map((item) => (item.id === id ? race : item)));
+      refreshCompendium();
+    } catch (err) {
+      setCustomRaceError(err instanceof Error ? err.message : 'Falha ao salvar a raça.');
+    }
+  }
+
+  async function removeCustomRace(id: string): Promise<void> {
+    try {
+      await deleteCustomRace(id);
+      setCustomRaces((prev) => prev.filter((item) => item.id !== id));
+      setEditingRaceId(null);
+      refreshCompendium();
+    } catch (err) {
+      setCustomRaceError(err instanceof Error ? err.message : 'Falha ao remover a raça.');
+    }
+  }
 
   function commitLevel(): void {
     const parsed = Number(levelDraft);
@@ -298,15 +369,77 @@ export function ConfigTab({
             ))}
           </ListPanel>
         ) : section === 'races' ? (
-          <ListPanel
-            title={`${compendium.races.length} linhagem(ns)`}
-            hint="Uma entrada por linhagem, com a história e os bônus."
-            empty={compendium.races.length === 0}
-          >
-            {compendium.races.map((race) => (
-              <RaceCard key={race.key} race={race} />
-            ))}
-          </ListPanel>
+          <>
+            <ListPanel
+              title={`${compendium.races.length} linhagem(ns)`}
+              hint="Uma entrada por linhagem, com a história e os bônus."
+              empty={compendium.races.length === 0}
+            >
+              {compendium.races.map((race) => (
+                <RaceCard key={race.key} race={race} />
+              ))}
+            </ListPanel>
+
+            {/* Raças PERSONALIZADAS do mestre: entram no assistente junto das
+                raças fixas. Traços em texto livre, sem sub-raças. */}
+            <div className="config-panel">
+              <header className="config-panel-head">
+                <h3>{customRaces.length} raça(s) personalizada(s)</h3>
+                <p className="config-panel-hint">
+                  Raças criadas por você: aparecem no passo de Raça do assistente e na ficha.
+                </p>
+              </header>
+
+              <div className="config-actions">
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  disabled={customBusy}
+                  onClick={() => void addCustomRace()}
+                >
+                  <Icon name="plus" size={14} /> raça personalizada
+                </button>
+              </div>
+
+              {customRaceError ? (
+                <p className="config-empty config-empty-error">{customRaceError}</p>
+              ) : null}
+
+              {customRaces.length === 0 ? (
+                <p className="config-empty">
+                  <Icon name="info" size={16} /> Nenhuma raça personalizada ainda.
+                </p>
+              ) : (
+                <ul className="config-list">
+                  {customRaces.map((race) => (
+                    <li key={race.id} className="config-item">
+                      <div className="config-item-head">
+                        <span className="config-item-name">{race.name}</span>
+                        <button
+                          type="button"
+                          className={editingRaceId === race.id ? 'btn btn-small btn-primary' : 'btn btn-small'}
+                          onClick={() => setEditingRaceId(editingRaceId === race.id ? null : race.id)}
+                        >
+                          {editingRaceId === race.id ? 'fechar' : 'editar'}
+                        </button>
+                      </div>
+                      {race.description ? (
+                        <p className="config-text">{race.description}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {editingRace ? (
+                <RaceEditor
+                  race={editingRace}
+                  onPatch={(patch) => void patchCustomRace(editingRace.id, patch)}
+                  onDelete={() => void removeCustomRace(editingRace.id)}
+                />
+              ) : null}
+            </div>
+          </>
         ) : section === 'backgrounds' ? (
           <ListPanel
             title={`${compendium.backgrounds.length} antecedente(s)`}

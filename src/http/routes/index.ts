@@ -4,6 +4,7 @@ import { charactersRouter } from '../../modules/characters/characters.routes.js'
 import { combatRouter } from '../../modules/combat/combat.routes.js';
 import { compendiumRouter } from '../../modules/compendium/compendium.routes.js';
 import { creaturesRouter } from '../../modules/creatures/creatures.routes.js';
+import { customRacesRouter } from '../../modules/custom-races/custom-races.routes.js';
 import { diceRouter } from '../../modules/dice/dice.routes.js';
 import { gameConfigRouter } from '../../modules/game-config/game-config.routes.js';
 import { itemsRouter } from '../../modules/items/items.routes.js';
@@ -24,6 +25,7 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/characters', charactersRouter);
 apiRouter.use('/creatures', creaturesRouter);
+apiRouter.use('/custom-races', customRacesRouter);
 apiRouter.use('/regions', regionsRouter);
 apiRouter.use('/localities', localitiesRouter);
 apiRouter.use('/items', itemsRouter);

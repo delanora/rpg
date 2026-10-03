@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { Compendium, GameConfig } from './types';
+import type { Compendium, CustomRace, CustomRacePatch, GameConfig } from './types';
 
 /**
  * Configuração global da mesa. Como as demais escritas do domínio, a alteração
@@ -53,6 +53,37 @@ export async function saveMasterNotes(notes: string): Promise<string> {
 export async function fetchCompendium(): Promise<Compendium> {
   const { compendium } = await api<{ compendium: Compendium }>('/api/compendium');
   return compendium;
+}
+
+// --- Raças personalizadas do mestre (Prompt 2.10) --------------------------
+
+/** Todas as raças personalizadas. */
+export async function fetchCustomRaces(): Promise<CustomRace[]> {
+  const { customRaces } = await api<{ customRaces: CustomRace[] }>('/api/custom-races');
+  return customRaces;
+}
+
+/** Cria uma raça personalizada (só o nome é obrigatório). */
+export async function createCustomRace(name = 'Nova raça'): Promise<CustomRace> {
+  const { customRace } = await api<{ customRace: CustomRace }>('/api/custom-races', {
+    method: 'POST',
+    body: { name },
+  });
+  return customRace;
+}
+
+/** Edita uma raça personalizada (substitui os campos enviados). */
+export async function updateCustomRace(id: string, patch: CustomRacePatch): Promise<CustomRace> {
+  const { customRace } = await api<{ customRace: CustomRace }>(`/api/custom-races/${id}`, {
+    method: 'PATCH',
+    body: patch,
+  });
+  return customRace;
+}
+
+/** Remove uma raça personalizada (as fichas que a usavam ficam sem raça). */
+export async function deleteCustomRace(id: string): Promise<void> {
+  await api(`/api/custom-races/${id}`, { method: 'DELETE' });
 }
 
 /**

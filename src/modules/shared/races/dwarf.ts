@@ -91,6 +91,9 @@ export const dwarf: Race = {
     {
       id: 'dwarf-tool-proficiency',
       label: 'Proficiência com Ferramenta',
+      // O id da opção é o id de uma ferramenta do catálogo: o motor de raça
+      // (2.10) grava a escolhida em `toolProficiencies`.
+      apply: 'tool',
       options: DWARF_TOOL_OPTIONS,
     },
   ],
