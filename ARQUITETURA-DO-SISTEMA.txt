@@ -1401,6 +1401,32 @@ CATÁLOGOS (modules/shared/creation.ts)
     [LACUNA] Ferramentas, idiomas e a característica do antecedente NÃO são modelados
     — só as perícias entram na ficha.
 
+FUNDAÇÃO DE RAÇAS (modules/shared/races/) — estrutura pronta, SEM raças cadastradas
+  Espelha o padrão de shared/classes/: types.ts + index.ts (agregador) + um arquivo por
+  raça (dwarf.ts, elf.ts…), que os próximos prompts criam. `RACES` está VAZIO.
+  • Race: id · namePt · nameEn · abilityScoreIncrease[{ ability, amount }] (AbilityKey) ·
+    speed em METROS (9 = 30 pés) · size? (SEM efeito: nada consome tamanho hoje) ·
+    darkvision? (SEM sistema de visão) · damageResistances? (os 13 tipos canônicos de
+    shared/attacks.ts, mesmo formato string[] de Creature.resistances) ·
+    languages/bonusLanguageChoices (texto informativo: NÃO há campo de idioma na ficha) ·
+    traits · subraces · hasChoices.
+  • RaceTrait: id, name, description, mechanicalEffect? — REAPROVEITA o MESMO union
+    ClassFeatureEffect das classes (nada de vocabulário paralelo). Nenhum efeito é
+    processado ainda; a integração com o derived entra quando a 1ª raça com efeito
+    mecânico for cadastrada (decisão registrada: computeRaceAdjustments devolvendo o
+    shape ClassAdjustments, combinado via mergeAdjustments; tipos de efeito que faltarem
+    são ACRESCENTADOS ao MESMO union).
+  • Subrace: id · namePt · abilityScoreIncrease · speed?/darkvision? (só quando
+    SOBRESCREVE a raça base) · traits.
+  • RaceChoiceDefinition: id · label · options[{ id, label }] → a escolha fica em raceChoices.
+  Funções: getRace(id), getSubrace(raceId, subraceId), allRaces().
+  COEXISTÊNCIA: o assistente de criação e o compêndio CONTINUAM lendo o RACE_CATALOG de
+  shared/creation.ts; a substituição (e a migração de `characters.race` texto → raceId)
+  é o Prompt 2.10.
+  Ficha (migração 20261002020000_character_race_fields, ADITIVA): raceId?, subraceId?,
+  raceChoices Json @default("{}"), customRaceId? (SEM FK — a tabela CustomRace é do 2.10).
+  `race` (String texto livre) NÃO mudou e NÃO é derivada dos novos campos.
+
 
 ================================================================================
 14) COMBATE
@@ -2174,7 +2200,10 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    seção, mas `SPELL_CATALOG` é `[]`. Magias hoje são apenas estado por ficha
    (`spells` = { list, slots }), sem catálogo central.
 [LACUNA] RAÇAS E ANTECEDENTES: bônus de atributo e perícias são aplicados; ferramentas,
-   idiomas e as características raciais/de antecedente NÃO são modelados.
+   idiomas e as características raciais/de antecedente NÃO são modelados. A FUNDAÇÃO
+   estruturada de raças já existe em shared/races/ (types + index, VAZIA — ver §13) e a
+   ficha já tem raceId/subraceId/raceChoices/customRaceId, mas nada os preenche ainda;
+   o assistente segue no RACE_CATALOG até o Prompt 2.10.
 [LACUNA/FASE 2] PROFICIÊNCIAS DE ARMADURA: `characters.proficiencies` registra
    armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada por
    multiclasse, com backfill na migração `20260928160000_character_proficiencies`) e o

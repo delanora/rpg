@@ -96,7 +96,23 @@ model Character {
 
   // Identidade
   name String @default("Novo Personagem")
+  ///
+  /// Raça em TEXTO LIVRE (o `name` do catálogo de criação, ex.:
+  /// "Anão (Anão da Colina)"). Continua como está — NÃO é derivada dos campos
+  /// estruturados abaixo e NÃO é migrada nesta etapa.
   race String @default("")
+  ///
+  /// Raça do catálogo ESTRUTURADO (src/modules/shared/races/), pelo `id`.
+  /// Ainda não é preenchido por nada: é a fundação para os próximos passos.
+  raceId       String?
+  /// Sub-raça do catálogo estruturado, pelo `id` (dentro da raça acima).
+  subraceId    String?
+  /// Escolhas da raça (ex.: ancestralidade dracônica): { [id da escolha]: id da opção }.
+  raceChoices  Json   @default("{}")
+  ///
+  /// Raça PERSONALIZADA do mestre — só o id, SEM relação de chave estrangeira
+  /// ainda (a tabela CustomRace só será criada no Prompt 2.10).
+  customRaceId String?
   ///
   /// Classes do personagem (multiclasse): [{ classKey, subclass, level }].
   /// O nível de cada entrada é o nível NAQUELA classe; o nível total do
