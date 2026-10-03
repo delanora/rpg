@@ -1401,9 +1401,9 @@ CATÁLOGOS (modules/shared/creation.ts)
     [LACUNA] Ferramentas, idiomas e a característica do antecedente NÃO são modelados
     — só as perícias entram na ficha.
 
-FUNDAÇÃO DE RAÇAS (modules/shared/races/) — estrutura pronta, SEM raças cadastradas
+FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça)
   Espelha o padrão de shared/classes/: types.ts + index.ts (agregador) + um arquivo por
-  raça (dwarf.ts, elf.ts…), que os próximos prompts criam. `RACES` está VAZIO.
+  raça. `RACES = [dragonborn]`; as demais (dwarf, elf…) entram nos próximos prompts.
   • Race: id · namePt · nameEn · abilityScoreIncrease[{ ability, amount }] (AbilityKey) ·
     speed em METROS (9 = 30 pés) · size? (SEM efeito: nada consome tamanho hoje) ·
     darkvision? (SEM sistema de visão) · damageResistances? (os 13 tipos canônicos de
@@ -1411,18 +1411,25 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — estrutura pronta, SEM raças ca
     languages/bonusLanguageChoices (texto informativo: NÃO há campo de idioma na ficha) ·
     traits · subraces · hasChoices.
   • RaceTrait: id, name, description, mechanicalEffect? — REAPROVEITA o MESMO union
-    ClassFeatureEffect das classes (nada de vocabulário paralelo). Nenhum efeito é
-    processado ainda; a integração com o derived entra quando a 1ª raça com efeito
-    mecânico for cadastrada (decisão registrada: computeRaceAdjustments devolvendo o
-    shape ClassAdjustments, combinado via mergeAdjustments; tipos de efeito que faltarem
-    são ACRESCENTADOS ao MESMO union).
+    ClassFeatureEffect das classes (nada de vocabulário paralelo). Os efeitos de raça
+    ainda NÃO são processados no derived (decisão registrada: computeRaceAdjustments
+    devolvendo o shape ClassAdjustments, combinado via mergeAdjustments).
   • Subrace: id · namePt · abilityScoreIncrease · speed?/darkvision? (só quando
     SOBRESCREVE a raça base) · traits.
-  • RaceChoiceDefinition: id · label · options[{ id, label }] → a escolha fica em raceChoices.
+  • RaceChoiceDefinition: id · label · options[{ id, label, damageType? }] → a escolha
+    fica em raceChoices. damageType é o tipo de dano canônico associado à opção (ex.: a
+    cor do Draconato) — é o que um efeito resistanceFromChoice resolve.
+  • ClassFeatureEffect ganhou o tipo `resistanceFromChoice` (+ campo `choiceId`): a
+    resistência cujo TIPO DE DANO vem de uma escolha. Ainda não é processado por ninguém.
+  DRACONATO (dragonborn.ts): For+2/Car+1 · speed 9 · size Medium · languages [Comum,
+  Dracônico] (informativo) · 3 traços — draconic-ancestry (descritivo, tabela das 10
+  cores em metros), breath-weapon (recurso 1 uso, recharge short) e damage-resistance
+  (resistanceFromChoice → choiceId 'draconic-ancestry'). hasChoices: draconic-ancestry
+  com 10 opções (cor → tipo de dano). Sem sub-raças.
   Funções: getRace(id), getSubrace(raceId, subraceId), allRaces().
   COEXISTÊNCIA: o assistente de criação e o compêndio CONTINUAM lendo o RACE_CATALOG de
   shared/creation.ts; a substituição (e a migração de `characters.race` texto → raceId)
-  é o Prompt 2.10.
+  é o Prompt 2.10. O bug "Draconato não escolhe a linhagem" persiste no wizard até lá.
   Ficha (migração 20261002020000_character_race_fields, ADITIVA): raceId?, subraceId?,
   raceChoices Json @default("{}"), customRaceId? (SEM FK — a tabela CustomRace é do 2.10).
   `race` (String texto livre) NÃO mudou e NÃO é derivada dos novos campos.

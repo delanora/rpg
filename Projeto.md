@@ -1374,18 +1374,24 @@ CAR+1) · gnome-forest (INT+2 DES+1) · gnome-rock (INT+2 CON+1) · half-elf (CA
 + `abilityChoice` 2) · half-orc (FOR+2 CON+1) · tiefling (CAR+2 INT+1).
 **LACUNA:** ferramentas, idiomas e características raciais não são modelados.
 
-**Fundação estruturada (`shared/races/`):** a estrutura do catálogo novo já existe —
-`types.ts` + `index.ts` + um arquivo por raça (`dwarf.ts`, `elf.ts`…) no padrão de
-`shared/classes/`, com `RACES` **VAZIO** (nenhuma raça cadastrada). `Race`
-(`abilityScoreIncrease[{ ability, amount }]` com `AbilityKey`, `speed` em METROS,
+**Catálogo estruturado (`shared/races/`):** `types.ts` + `index.ts` + um arquivo por raça
+(`dragonborn.ts`, `dwarf.ts`, `elf.ts`…) no padrão de `shared/classes/`. **Draconato já
+cadastrado** (`RACES = [dragonborn]`): For+2/Car+1, `speed` 9 m, `size` Medium, `languages`
+[Comum, Dracônico] (informativo), 3 traços — `draconic-ancestry` (descritivo, tabela das
+10 cores em metros), `breath-weapon` (recurso 1 uso, recarga curta) e `damage-resistance`
+(`resistanceFromChoice` → `choiceId` 'draconic-ancestry'). `hasChoices`: `draconic-ancestry`
+com 10 opções (`{ id, label, damageType }`). Sem sub-raças. O `ClassFeatureEffect` ganhou
+o tipo `resistanceFromChoice` (+ `choiceId`), ainda **não processado** por nenhum motor.
+`Race` (`abilityScoreIncrease[{ ability, amount }]` com `AbilityKey`, `speed` em METROS,
 `size`/`darkvision` só preparação, `damageResistances` com os 13 tipos canônicos,
 `languages`/`bonusLanguageChoices` informativos — não há campo de idioma na ficha,
 `traits`, `subraces`, `hasChoices`), `RaceTrait` (`mechanicalEffect?` reusa o MESMO
 `ClassFeatureEffect`), `Subrace` e `RaceChoiceDefinition`. Funções: `getRace`,
 `getSubrace`, `allRaces`. **Coexistência:** o wizard e o compêndio continuam lendo o
-`RACE_CATALOG`; a substituição (e a migração de `race` texto → `raceId`) é o Prompt
-2.10. A ficha ganhou, de forma **aditiva** (migração `20261002020000_character_race_fields`),
-`raceId?`, `subraceId?`, `raceChoices Json`, `customRaceId?` (sem FK) — `race` intocado.
+`RACE_CATALOG` (o bug "Draconato não escolhe a linhagem" persiste até o 2.10); a
+substituição (e a migração de `race` texto → `raceId`) é o Prompt 2.10. A ficha ganhou, de
+forma **aditiva** (migração `20261002020000_character_race_fields`), `raceId?`,
+`subraceId?`, `raceChoices Json`, `customRaceId?` (sem FK) — `race` intocado.
 
 **BACKGROUND_CATALOG — 13 do PHB**, cada um com 2 perícias: acolyte (insight,
 religion) · charlatan (deception, sleightOfHand) · criminal (deception, stealth) ·

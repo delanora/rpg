@@ -414,8 +414,12 @@ export interface ClassFeatureEffect {
     | 'halfProficiency'
     /** Limiar de crítico: acerta criticamente com `value` ou mais no d20. */
     | 'critThreshold'
+    /** Resistência cujo tipo de dano vem de uma escolha (ex.: ancestralidade). */
+    | 'resistanceFromChoice'
     | 'other';
   id?: string;
+  /** Id da escolha (em `raceChoices`) alvo de `resistanceFromChoice`. */
+  choiceId?: string;
   resourceId?: string;
   name?: string;
   target?: string;

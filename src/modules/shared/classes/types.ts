@@ -75,9 +75,21 @@ export interface ClassFeatureResource {
      * (Campeão: 19 no 3º nível e 18 no 15º). O MENOR limiar prevalece.
      */
     | 'critThreshold'
+    /**
+     * Resistência cujo TIPO DE DANO vem de uma ESCOLHA (ex.: ancestralidade
+     * dracônica do Draconato). O tipo de cada opção é declarado na própria
+     * escolha (ver `RaceChoiceDefinition.options[].damageType` em shared/races).
+     * Hoje só a raça usa; quem resolve é o motor de raça (futuro).
+     */
+    | 'resistanceFromChoice'
     | 'other';
   /** Identificador do toggle/recurso (ex.: 'rage'). Vazio = id da feature. */
   id?: string;
+  /**
+   * Id da ESCOLHA (em `raceChoices`) que define o alvo de
+   * `type: 'resistanceFromChoice'` (ex.: 'draconic-ancestry').
+   */
+  choiceId?: string;
   /** Recurso consumido pelo toggle (ex.: 'ki'); vazio = recurso de mesmo id. */
   resourceId?: string;
   /** Valor base em `type: 'unarmoredDefense'` (padrão 10; Linhagem Dracônica usa 13). */
