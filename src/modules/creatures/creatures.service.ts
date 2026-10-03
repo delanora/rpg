@@ -78,6 +78,7 @@ export async function createCreature(input: CreateCreatureInput): Promise<Creatu
       attacks: [] as Prisma.InputJsonValue,
       resistances: [] as Prisma.InputJsonValue,
       immunities: [] as Prisma.InputJsonValue,
+      vulnerabilities: [] as Prisma.InputJsonValue,
       localities: { connect: input.localityIds.map((id) => ({ id })) },
     },
     include: withLocalities,
@@ -104,6 +105,7 @@ export async function updateCreature(
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
   if (patch.resistances !== undefined) data.resistances = patch.resistances;
   if (patch.immunities !== undefined) data.immunities = patch.immunities;
+  if (patch.vulnerabilities !== undefined) data.vulnerabilities = patch.vulnerabilities;
 
   if (patch.localityIds !== undefined) {
     await assertLocalitiesExist(patch.localityIds);

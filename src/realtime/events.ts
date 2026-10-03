@@ -329,6 +329,25 @@ export interface TableRollActivePayload {
   at: string;
 }
 
+/**
+ * Uma PARCELA de dano do ataque (o principal + cada `extraDamage`), com o que
+ * foi rolado e o que efetivamente entrou depois da defesa do alvo.
+ *
+ * `modifier` explica por que `applied` difere de `rolled`: `resistance` (½),
+ * `immunity` (0) ou `vulnerability` (×2). `null` = sem defesa contra o tipo.
+ */
+export interface DamageComponentPayload {
+  /** Tipo canônico da parcela ('' quando o dano não tem tipo). */
+  type: string;
+  /** Expressão textual rolada ("2d6+3"). */
+  expression: string;
+  /** Total rolado da parcela, antes da defesa do alvo. */
+  rolled: number;
+  /** Total que entrou no HP depois da defesa do alvo. */
+  applied: number;
+  modifier: 'resistance' | 'immunity' | 'vulnerability' | null;
+}
+
 /** Resultado de um ataque, do teste de acerto ao dano aplicado. */
 export interface AttackResolvedPayload {
   attackerName: string;
@@ -343,6 +362,8 @@ export interface AttackResolvedPayload {
   critical: boolean;
   damageRolled: number;
   damageType: string;
+  /** Cada parcela do ataque, com o efeito da defesa do alvo (vazio se errou). */
+  components: DamageComponentPayload[];
   /** Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve). */
   sneakAttack: { expression: string; total: number } | null;
   /** `null` quando a vida do alvo está oculta (criatura vista por jogador). */
