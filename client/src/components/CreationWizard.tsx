@@ -363,6 +363,21 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     ? backgroundSkillNames(selectedBackground)
     : [];
 
+  /** Chaves (cruas) das perícias do antecedente — travadas no passo 7. */
+  const backgroundSkillKeys = useMemo(
+    () => new Set(selectedBackground?.skills ?? []),
+    [selectedBackground],
+  );
+
+  /**
+   * Escolhas de perícia da classe válidas: descarta as que o antecedente já
+   * concede (aparecem marcadas e travadas na lista, sem gastar escolha).
+   */
+  const effectivePicks = useMemo(
+    () => picks.filter((key) => !backgroundSkillKeys.has(key)),
+    [picks, backgroundSkillKeys],
+  );
+
   /** Escolhas de ferramenta por categoria que o antecedente pede. */
   const backgroundToolChoiceDefs = selectedBackground?.toolChoices ?? [];
 
@@ -550,7 +565,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
           expertiseChoice === null ||
           (choicePicks[expertiseChoice.featureId] ?? expertiseChoice.chosen).filter(Boolean)
             .length >= expertiseChoice.count;
-        return (skillCount === 0 || picks.length === skillCount) && expertiseReady;
+        return (skillCount === 0 || effectivePicks.length === skillCount) && expertiseReady;
       }
       case 8:
         return level >= startingLevel;
@@ -584,7 +599,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
         return { baseAbilities: assigned };
       case 7:
         return {
-          skills: picks,
+          skills: effectivePicks,
           ...(expertiseChoice
             ? {
                 choices: {
@@ -1307,13 +1322,18 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
 
               <div className="grid grid-2 wizard-skills">
                 {skillPool.map((skill) => {
-                  const checked = picks.includes(skill.key);
+                  // Já concedida pelo antecedente: vem marcada e travada.
+                  const fromBackground = backgroundSkillKeys.has(skill.key);
+                  const checked = fromBackground || effectivePicks.includes(skill.key);
                   return (
-                    <label className="check-row" key={skill.key}>
+                    <label
+                      className={`check-row${fromBackground ? ' is-locked' : ''}`}
+                      key={skill.key}
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={!checked && picks.length >= skillCount}
+                        disabled={fromBackground || (!checked && effectivePicks.length >= skillCount)}
                         onChange={() =>
                           setPicks((current) =>
                             current.includes(skill.key)
@@ -1325,6 +1345,9 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                       <span className="check-name">
                         {skill.label}
                         <span className="muted"> · {ABILITY_LABELS[skill.ability]}</span>
+                        {fromBackground ? (
+                          <span className="muted"> · antecedente</span>
+                        ) : null}
                       </span>
                     </label>
                   );
@@ -1334,13 +1357,13 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
               {backgroundSkillLabels.length > 0 ? (
                 <p className="section-note">
                   O antecedente {selectedBackground?.name} já concede{' '}
-                  {backgroundSkillLabels.join(' e ')} — elas entram na ficha sem gastar as escolhas da
-                  classe.
+                  {backgroundSkillLabels.join(' e ')} — entram na ficha sem gastar as escolhas da
+                  classe; as que também aparecem na lista já vêm marcadas e travadas.
                 </p>
               ) : null}
 
               <p className="section-note">
-                {picks.length}/{skillCount} escolhida(s)
+                {effectivePicks.length}/{skillCount} escolhida(s)
               </p>
 
               {expertiseChoice ? (
