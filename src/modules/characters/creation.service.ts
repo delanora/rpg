@@ -130,6 +130,11 @@ export interface CreationStateDto {
   /** Perícias que a classe do rascunho oferece (quantas e quais). */
   skillChoice: { count: number; from: string[] };
   /**
+   * Perícias que a RAÇA já concede (fixas ou pelas escolhas dela, ex.: Meio-Elfo)
+   * — o passo 7 as mostra marcadas e travadas, sem gastar escolhas da classe.
+   */
+  raceSkillKeys: string[];
+  /**
    * Escolhas de característica do NÍVEL 1 da classe inicial (Estilo de Luta do
    * guerreiro, Inimigo Favorito e Explorador Nato do patrulheiro) — com as
    * opções e o que já foi escolhido.
@@ -594,6 +599,7 @@ async function buildState(
   const entries = normalizeClassEntries(character?.classes ?? []);
   const firstDefinition = entries[0] ? getClassDefinition(entries[0].classKey) : null;
   const classChoices = normalizeClassState(character?.classState).choices;
+  const raceSkillKeys = character ? await characterRaceSkills(character) : [];
 
   return {
     character: character ? await toSheetDto(character, actor.username) : null,
@@ -608,6 +614,7 @@ async function buildState(
       backgroundToolChoices: draft.backgroundToolChoices,
       backgroundLanguageChoices: draft.backgroundLanguageChoices,
       skillChoice: creationSkillChoice(entries),
+      raceSkillKeys,
       featureChoices: firstDefinition
         ? featureChoiceInfo(firstDefinition, classChoices).filter(
             (info) => info.level === 1 && info.apply !== 'expertise',

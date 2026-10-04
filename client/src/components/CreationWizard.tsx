@@ -375,6 +375,21 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     [selectedBackground],
   );
 
+  /** Chaves das perícias que a RAÇA já concede (ex.: Percepção do Elfo). */
+  const raceSkillKeys = useMemo(
+    () => new Set(creation?.raceSkillKeys ?? []),
+    [creation?.raceSkillKeys],
+  );
+
+  /** Nomes das perícias raciais, para a nota do passo 7. */
+  const raceSkillLabels = useMemo(
+    () =>
+      [...raceSkillKeys].map(
+        (key) => SKILLS.find((skill) => skill.key === key)?.label ?? key,
+      ),
+    [raceSkillKeys],
+  );
+
   /**
    * Escolhas de perícia da classe válidas: descarta as que o antecedente já
    * concede (aparecem marcadas e travadas na lista, sem gastar escolha).
@@ -383,8 +398,12 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const skillPoolKeys = useMemo(() => new Set(skillPool.map((skill) => skill.key)), [skillPool]);
 
   const effectivePicks = useMemo(
-    () => picks.filter((key) => skillPoolKeys.has(key) && !backgroundSkillKeys.has(key)),
-    [picks, skillPoolKeys, backgroundSkillKeys],
+    () =>
+      picks.filter(
+        (key) =>
+          skillPoolKeys.has(key) && !backgroundSkillKeys.has(key) && !raceSkillKeys.has(key),
+      ),
+    [picks, skillPoolKeys, backgroundSkillKeys, raceSkillKeys],
   );
 
   /** Escolhas de ferramenta por categoria que o antecedente pede. */
@@ -1337,18 +1356,23 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
 
               <div className="grid grid-2 wizard-skills">
                 {skillPool.map((skill) => {
-                  // Já concedida pelo antecedente: vem marcada e travada.
+                  // Já concedida pelo antecedente ou pela raça: marcada e travada.
                   const fromBackground = backgroundSkillKeys.has(skill.key);
-                  const checked = fromBackground || effectivePicks.includes(skill.key);
+                  const fromRace = raceSkillKeys.has(skill.key);
+                  const fromGranted = fromBackground || fromRace;
+                  const grantedBy = fromBackground
+                    ? `Concedida pelo antecedente ${selectedBackground?.name}`
+                    : `Concedida pela raça ${selectedRace?.name}`;
+                  const checked = fromGranted || effectivePicks.includes(skill.key);
                   return (
                     <label
-                      className={`check-row${fromBackground ? ' is-locked' : ''}`}
+                      className={`check-row${fromGranted ? ' is-locked' : ''}`}
                       key={skill.key}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={fromBackground || (!checked && effectivePicks.length >= skillCount)}
+                        disabled={fromGranted || (!checked && effectivePicks.length >= skillCount)}
                         onChange={() =>
                           setPicks((current) =>
                             current.includes(skill.key)
@@ -1361,13 +1385,12 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                         {skill.label}
                         <span className="muted"> · {ABILITY_LABELS[skill.ability]}</span>
                       </span>
-                      {fromBackground ? (
+                      {fromGranted ? (
                         <span className="info-tip skill-tip">
                           <Icon name="info" size={14} />
                           <span className="info-tip-text" role="tooltip">
                             <strong>{skill.label}</strong>
-                            Concedida pelo antecedente {selectedBackground?.name} — entra na ficha
-                            sem gastar as escolhas da classe.
+                            {grantedBy} — entra na ficha sem gastar as escolhas da classe.
                           </span>
                         </span>
                       ) : null}
@@ -1381,6 +1404,14 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                   O antecedente {selectedBackground?.name} já concede{' '}
                   {backgroundSkillLabels.join(' e ')} — entram na ficha sem gastar as escolhas da
                   classe; as que também aparecem na lista já vêm marcadas e travadas.
+                </p>
+              ) : null}
+
+              {raceSkillLabels.length > 0 ? (
+                <p className="section-note">
+                  A raça {selectedRace?.name} já concede {raceSkillLabels.join(' e ')} — entram na
+                  ficha sem gastar as escolhas da classe; as que também aparecem na lista já vêm
+                  marcadas e travadas.
                 </p>
               ) : null}
 
