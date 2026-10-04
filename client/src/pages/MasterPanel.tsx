@@ -551,6 +551,20 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     [combat, characters, creatures],
   );
 
+  /**
+   * Dados de Ataque Furtivo do atacante escolhido pelo mestre (só Ladino tem).
+   * O mestre pode atacar por qualquer ficha, então o painel precisa disto.
+   */
+  const sneakAttackFor = useCallback(
+    (combatantId: string): string | null => {
+      const combatant = combat?.combatants.find((item) => item.id === combatantId);
+      if (!combatant?.characterId) return null;
+      const character = characters.find((item) => item.id === combatant.characterId);
+      return character?.derived.sneakAttack?.expression ?? null;
+    },
+    [combat, characters],
+  );
+
   async function handleStartCombat(input: {
     localityId?: string;
     entries: CombatCreatureEntry[];
@@ -672,6 +686,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             turnAlert={turnAlert}
             onDismissTurnAlert={dismissTurnAlert}
             attacksFor={attacksFor}
+            sneakAttackFor={sneakAttackFor}
             onCombatChange={combatState.setCombat}
             onCombatEnd={() => combatState.setCombat(null)}
             onError={setError}
