@@ -5312,6 +5312,43 @@ async function main(): Promise<void> {
     JSON.stringify(restoredSkills.data?.message),
   );
 
+  // Trocar a RAÇA poda as perícias escolhidas que a nova raça já concede: o
+  // Elfo concede Percepção, então ela sai das escolhas da classe (no passo 7
+  // ela aparece marcada e travada, sem gastar uma escolha da classe).
+  await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 7, skills: ['athletics', 'perception'] },
+  });
+  const elfSwap = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 3, race: 'Elfo' },
+  });
+  check(
+    'trocar a raça poda as perícias que a nova raça já concede (Percepção do Elfo sai)',
+    elfSwap.status === 200 &&
+      JSON.stringify(elfSwap.data?.creation?.skillPicks) === JSON.stringify(['athletics']) &&
+      (elfSwap.data?.creation?.raceSkillKeys ?? []).includes('perception'),
+    JSON.stringify({
+      status: elfSwap.status,
+      message: elfSwap.data?.message,
+      picks: elfSwap.data?.creation?.skillPicks,
+      raceSkills: elfSwap.data?.creation?.raceSkillKeys,
+    }),
+  );
+  // Volta ao Tiefling e refaz o passo 7, para o restante do fluxo seguir igual.
+  await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 3, race: 'Tiefling' },
+  });
+  await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 7, skills: ['athletics', 'survival'] },
+  });
+
   check(
     'passo 8 no nível inicial da mesa (1) é aceito (200)',
     (

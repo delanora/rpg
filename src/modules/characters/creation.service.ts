@@ -785,6 +785,16 @@ export async function saveCreationStep(
         customRaceId: option.customRaceId ?? null,
         choices: raceChoices,
       });
+
+      // Ao TROCAR a raça, as perícias que a NOVA raça já concede saem das
+      // escolhas da classe (mesma poda da troca de classe): elas entram na
+      // ficha de qualquer forma e, no passo 7, aparecem marcadas e travadas —
+      // mantê-las em `skillPicks` faria o contador/validação gastarem uma
+      // escolha que a classe não concedeu.
+      nextDraft.skillPicks = nextDraft.skillPicks.filter(
+        (key) => !grants.skills.includes(key),
+      );
+
       patch.speed = grants.speed;
       patch.darkvision = grants.darkvision;
       patch.raceResistances = grants.resistances as NonNullable<
