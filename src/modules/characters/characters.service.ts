@@ -1873,7 +1873,19 @@ async function applyCharacterPatch(
     // ferramentas). Um valor mandado no mesmo patch tem prioridade.
     if (rebuildFirstLevelHp && patch.proficiencies === undefined) {
       const chosen = getClassDefinition(classes[0].classKey);
-      if (chosen) data.proficiencies = firstClassProficiencies(chosen.key);
+      if (chosen) {
+        const grant = firstClassProficiencies(chosen.key);
+        // A subclasse do NÍVEL 1 (Domínio Divino do clérigo, Origem de
+        // Feitiçaria, Patrono do bruxo) é escolhida junto da classe: as
+        // proficiências dela (ex.: Domínio da Guerra → armas marciais e
+        // armadura pesada) somam JÁ na criação, como no Level Up.
+        const subclassGrant = classes[0].subclass
+          ? subclassProficiencyGrant(chosen, classes[0].subclass)
+          : null;
+        data.proficiencies = subclassGrant
+          ? mergeProficiencies(grant, subclassGrant)
+          : grant;
+      }
     }
 
     // Trocou a classe inicial pelo assistente? As escolhas da classe antiga

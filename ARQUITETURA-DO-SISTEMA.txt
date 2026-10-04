@@ -985,12 +985,16 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     • critThreshold (value) → `derived.critThreshold` (padrão 20): o ataque do
       combate acerta criticamente com d20 >= limiar (Campeão: 19 no 3º e 18 no 15º).
       Crítico sempre acerta e o 1 natural sempre erra; o MENOR limiar prevalece.
-  FEATURES CADASTRADAS POR CLASSE (PHB 2014): barbarian, druid, fighter, monk,
-    paladin, ranger, rogue, sorcerer, wizard, bard.
-  [LACUNA CONHECIDA] cleric e warlock têm `features: []` (só as subclasses):
-    faltam Canalizar Divindade/Destruir Mortos-Vivos/Intervenção Divina (clérigo) e
-    Invocações Místicas/Dádiva do Pacto/Arcanum Místico/Mestre Místico (bruxo).
+  FEATURES CADASTRADAS POR CLASSE (PHB 2014): barbarian, cleric, druid, fighter,
+    monk, paladin, ranger, rogue, sorcerer, wizard, bard.
+  [LACUNA CONHECIDA] warlock tem `features: []` (só as subclasses): faltam
+    Invocações Místicas/Dádiva do Pacto/Arcanum Místico/Mestre Místico.
     O ladino não tem a Gíria de Ladrão (nível 1, texto puro).
+  CLÉRIGO: Canalizar Divindade (1/2/3 usos em 2/6/18, descanso curto/longo) com
+    Expulsar Mortos-Vivos + a opção de cada domínio como TOGGLES que gastam o
+    recurso; Destruir Mortos-Vivos (5), Intervenção Divina (10) e Aprimorada (20);
+    os 7 Domínios com proficiências/reações/resistência. As magias de domínio
+    (1/3/5/7/9) ficam como TEXTO (sempre preparadas, fora do limite) até a Fase 4.
   PERÍCIAS DE CLASSE (CLASS_SKILL_CHOICES): quantas e de qual lista —
     barbarian 2, bard 3 (lista vazia = qualquer uma das 18), cleric 2, druid 2,
     fighter 2, monk 2, paladin 2, ranger 3, rogue 4, sorcerer 2, warlock 2, wizard 2.
@@ -2350,10 +2354,13 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    motor já sabe aplicar (crítico do Campeão, dados de superioridade do Mestre da
    Batalha, terço-conjurador do Cavaleiro Arcano, as escolhas do Caçador). O smoke
    seção 19 sobe de nível 1 a 20 pelas 10 subclasses e valida o crítico em combate.
-[LACUNA] CARACTERÍSTICAS DE CLASSE DO CLÉRIGO E DO BRUXO: os dois ainda têm
-   `features: []` (só as subclasses) — faltam Canalizar Divindade, Destruir
-   Mortos-Vivos, Intervenção Divina, Invocações Místicas, Dádiva do Pacto, Arcanum
-   Místico e Mestre Místico. O ladino não tem a Gíria de Ladrão (texto puro).
+[RESOLVIDO 2026-10-04] CARACTERÍSTICAS DE CLASSE DO CLÉRIGO: os 7 Domínios Divinos e a
+   classe foram cadastrados — Canalizar Divindade (1/2/3 usos em 2/6/18) com opções
+   como toggles que gastam o recurso, Destruir Mortos-Vivos (5), Intervenção Divina
+   (10) e Aprimorada (20), proficiências de domínio e as magias de domínio como texto.
+[LACUNA] CARACTERÍSTICAS DE CLASSE DO BRUXO: ainda tem `features: []` (só as
+   subclasses) — faltam Invocações Místicas, Dádiva do Pacto, Arcanum Místico e
+   Mestre Místico. O ladino não tem a Gíria de Ladrão (texto puro).
 [LACUNA/FASE 5] COMPANHEIRO ANIMAL DO SENHOR DAS FERAS: as quatro características do
    arquétipo estão cadastradas como texto, mas a ficha do companheiro (PV, CA,
    ataques e PV gastos saindo dos seus) fica para a Fase 5.
