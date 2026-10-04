@@ -8764,47 +8764,6 @@ input[type='checkbox']:focus-visible,
   color: var(--gold-deep);
 }
 
-/* Recursos da raça: chips com tooltip (hover) + descrição completa (clique). */
-.race-traits {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.race-trait-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.28rem 0.55rem;
-  border: 1px solid var(--gold-hair);
-  border-radius: 999px;
-  background: var(--surface-3);
-  color: var(--ink);
-  font-size: 0.78rem;
-  cursor: pointer;
-}
-
-.race-trait-btn:hover {
-  border-color: var(--gold);
-}
-
-.race-trait.is-open .race-trait-btn {
-  border-color: var(--gold);
-  color: var(--gold-deep);
-  box-shadow: inset 0 0 0 1px var(--gold-hair);
-}
-
-.race-trait-desc {
-  margin: 0;
-  padding: 0.5rem 0.65rem;
-  border-left: 2px solid var(--gold);
-  border-radius: 3px;
-  background: var(--surface-3);
-  font-size: 0.84rem;
-  line-height: 1.45;
-  color: var(--ink);
-}
-
 .race-traits-full {
   display: grid;
   gap: 0.4rem;

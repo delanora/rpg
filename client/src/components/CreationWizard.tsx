@@ -148,8 +148,6 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [raceBaseKey, setRaceBaseKey] = useState('');
   /** Sub-etapa interna do passo 3: 'race' (3a) ou 'subrace' (3b). */
   const [raceSubStep, setRaceSubStep] = useState<'race' | 'subrace'>('race');
-  /** Traço expandido no painel da raça (clique no ícone). */
-  const [expandedTrait, setExpandedTrait] = useState<string | null>(null);
   const [abilityChoices, setAbilityChoices] = useState<AbilityKey[]>([]);
   /** Escolhas da raça fora os atributos: `{ escolha: opção }`. */
   const [raceChoices, setRaceChoices] = useState<Record<string, string>>({});
@@ -188,7 +186,6 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     const storedLineage = findRaceOption(saved.raceCatalog ?? [], sheet?.race ?? '');
     setRaceBaseKey(storedLineage ? raceGroupKeyOf(storedLineage) : '');
     setRaceSubStep('race');
-    setExpandedTrait(null);
     setAbilityChoices(saved.abilityChoices ?? []);
     setRaceChoices(saved.raceChoices ?? {});
     setLanguageChoices(saved.languageChoices ?? []);
@@ -298,12 +295,6 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const raceBaseSubraces = raceBaseOption ? subracesOf(raceBaseOption) : [];
   const raceNeedsSubrace = raceBaseSubraces.length > 0;
 
-  /** Traço aberto no painel da 3a (clique no ícone). */
-  const expandedTraitOption = useMemo(
-    () => (raceBaseOption?.traits ?? []).find((trait) => trait.id === expandedTrait) ?? null,
-    [raceBaseOption, expandedTrait],
-  );
-
   /** Traços que são SÓ da sub-raça escolhida (os da raça base ficam à parte). */
   const subraceOnlyTraits = useMemo(() => {
     if (!raceBaseOption || !selectedRace?.subraceId) return [];
@@ -403,7 +394,6 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       setLanguageChoices([]);
     }
     setRaceBaseKey(group);
-    setExpandedTrait(null);
 
     const subs = subracesOf(base);
     if (subs.length === 0) {
@@ -416,11 +406,6 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   /** Seleciona a sub-raça na 3b (as escolhas da raça base são preservadas). */
   function pickSubrace(lineage: RaceOption): void {
     setRace(lineage.key);
-  }
-
-  /** Abre/fecha a descrição completa de um traço no painel da 3a. */
-  function toggleTrait(id: string): void {
-    setExpandedTrait((current) => (current === id ? null : id));
   }
 
   /** Grava a escolha de uma definição (ancestralidade, perícia, ferramenta…). */
@@ -843,36 +828,6 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                         {(raceBaseOption.traits ?? []).length > 0 ? (
                           <>
                             <span className="race-detail-sub">Recursos da raça</span>
-                            <div className="race-traits">
-                              {(raceBaseOption.traits ?? []).map((trait) => (
-                                <span
-                                  className={`info-tip race-trait${
-                                    expandedTrait === trait.id ? ' is-open' : ''
-                                  }`}
-                                  key={trait.id}
-                                >
-                                  <button
-                                    type="button"
-                                    className="race-trait-btn"
-                                    aria-expanded={expandedTrait === trait.id}
-                                    onClick={() => toggleTrait(trait.id)}
-                                  >
-                                    <Icon name="star" size={14} />
-                                    {trait.name}
-                                  </button>
-                                  {trait.description ? (
-                                    <span className="info-tip-text" role="tooltip">
-                                      <strong>{trait.name}</strong>
-                                      {trait.description}
-                                    </span>
-                                  ) : null}
-                                </span>
-                              ))}
-                            </div>
-                            {expandedTraitOption ? (
-                              <p className="race-trait-desc">{expandedTraitOption.description}</p>
-                            ) : null}
-
                             <div className="race-traits-full">
                               {(raceBaseOption.traits ?? []).map((trait) => (
                                 <p className="race-trait-line" key={trait.id}>
