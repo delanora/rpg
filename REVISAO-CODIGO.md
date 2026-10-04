@@ -84,9 +84,14 @@ Só as subclasses estão cadastradas nos dois. Faltam, no clérigo: Canalizar Di
 - **Feito:** `firstLevelHpMax(hitDie, constitution)` (máximo do dado + mod. de CON, mínimo 1) define o PV inicial quando a primeira classe é escolhida/definida no assistente (salvo se o patch já mandou `hpMax`); no Level Up o ganho (`max(1, dado + mod. de CON)`) entra em `hpMax` **e** em `hpCurrent`. O mod. de CON também dispara o **recálculo retroativo** — `constitutionHpDelta` = `(novo mod − mod antigo) × nível total`, aplicado em máximo e atual (ao reduzir, o atual nunca fica negativo).
 - **Cobertura:** seção **14** do smoke (PV de d10/d6, CON 16 subindo 40/30 → 45/35, CON 8 caindo para 25/15).
 
-### A6. Ataque Furtivo é aplicado automaticamente sem as condições táticas — **Média**
-`combat.service.ts` → `rollSneakAttack()` adiciona o dano sempre que a arma é sutil/à distância e a feature existe. As condições reais (vantagem **ou** aliado adjacente ao alvo, sem desvantagem) não são verificadas.
-- **Sugestão:** transformar em opção do jogador no ataque (checkbox "usar Ataque Furtivo") ou validar vantagem/posição quando o combate passar a rastreá-las.
+### A6. Ataque Furtivo é aplicado automaticamente sem as condições táticas — **CORRIGIDO (2026-10-03)**
+`combat.service.ts` → `rollSneakAttack()` adicionava o dano sempre que a arma era sutil/à distância e a feature existia. As condições reais (vantagem **ou** aliado adjacente ao alvo, sem desvantagem) não eram verificadas.
+- **Feito (2026-10-03):** o Ataque Furtivo passa a exigir as condições do PHB 2014 — `(vantagem no ataque || aliado adjacente confirmado) && !desvantagem`, além da feature e da arma `finesse`/`ranged`.
+  - **Vantagem/desvantagem** viraram dado da própria rolagem de ataque (`attackSchema` ganhou `advantage`/`disadvantage`; o servidor rola **2d20** e mantém o maior/menor — as duas juntas = nenhuma, igual à janela de dados), com toggles no painel de ataque.
+  - Como não há grid/posição (Fase 10), o **aliado adjacente** é confirmação manual do jogador: checkbox "Tenho um aliado adjacente ao alvo", visível só para Ladino com arma qualificadora (`adjacentAlly`).
+  - A trava **"uma vez por turno"** entrou como `Combatant.sneakAttackUsedThisTurn` (migration `20261003070000_combatant_sneak_attack_flag`), zerada em `nextTurn()` para o combatente que **inicia o turno**.
+  - O log do mestre indica a origem: `— Ataque Furtivo (vantagem)` / `(aliado adjacente)` / `(vantagem + aliado adjacente)`.
+- **Cobertura:** seções **27** (arma derivada) e do **Ladino** do smoke.
 
 ### A7. Resistências, imunidades e vulnerabilidades — **Resolvido (2026-10-03)**
 `combat.service.ts` só rolava o dano principal e `applyDamageResistance()` apenas **halvava** o dano de um tipo resistido de PERSONAGEM; as **imunidades** da criatura não eram usadas e **vulnerabilidade** não existia.
@@ -325,7 +330,7 @@ Ordem sugerida por impacto na mesa:
 - [x] **Implementado (2026-09-29)** Vários tipos de dano por ataque e por arma: `extraDamages` no schema do ataque (ficha e criaturas) e em `details` das armas do catálogo, com o ataque derivado copiando os extras; interface com o "+" na linha de dano. _(A7 · seção 29)_
 - [x] **Corrigido (2026-10-03)** `combat.service.ts`: imunidade/resistência/vulnerabilidade **por parcela** de `attackDamages()`, para Personagem e Criatura, com `components` no resultado. _(A7)_
 - [ ] **P1** `SpellsSection.tsx` + DTO: decidir se `spellSlots` é derivado (recomendado) ou manual, e remover a duplicidade. _(A3)_
-- [ ] **P1** Ataque Furtivo: condicionar a vantagem/aliado adjacente ou expor toggle. _(A6)_
+- [x] **Corrigido (2026-10-03)** Ataque Furtivo: condicionado à vantagem no ataque ou ao aliado adjacente confirmado, sem desvantagem e uma vez por turno. _(A6)_
 - [x] **Corrigido (2026-09-28)** Defesa sem Armadura no multiclasse: vale a fórmula de maior valor (Bárbaro x Monge). _(A4)_
 - [x] **Corrigido (2026-09-28)** CA automática somando armadura/escudo/bônus mágicos equipados (override do mestre como exceção). _(A10)_
 - [ ] **P2** Validação de teto de atributo pelo valor efetivo no Level Up. _(A9)_

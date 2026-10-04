@@ -189,6 +189,19 @@ export const featureSchema = z.object({
   name: z.string().trim().min(1, 'A característica precisa de um nome.').max(120),
   source: z.enum(FEATURE_SOURCES),
   description: shortText(4000).default(''),
+  /**
+   * Id ESTÁVEL do talento no catálogo (`shared/feats`) — só nas features de
+   * `source: 'feat'`. É o que liga a escolha gravada ao efeito mecânico do
+   * talento no `derived`.
+   */
+  featId: z.string().trim().max(60).optional(),
+  /**
+   * Atributo escolhido nos talentos "meio-talentos" (ex.: Atleta: FOR ou DES).
+   * Só existe junto de `featId` e de um talento com `abilityChoice`.
+   */
+  featAbility: z
+    .enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]])
+    .optional(),
 });
 
 /**
@@ -249,11 +262,20 @@ export const levelUpSchema = z.object({
    * validade é conferida no serviço, contra as características daquela classe.
    */
   choices: featureChoicesSchema,
-  /** Talento escolhido (registro textual; sem efeito mecânico automatizado). */
+  /**
+   * Talento escolhido no nível de Aumento de Atributo. `id` liga ao catálogo
+   * (`shared/feats`) e dá efeito mecânico; `ability` é a sub-escolha dos
+   * "meio-talentos" (ex.: Atleta: Força ou Destreza). Sem `id` reconhecido, o
+   * talento continua valendo como registro textual (compatibilidade).
+   */
   feat: z
     .object({
+      id: z.string().trim().max(60).optional(),
       name: z.string().trim().min(1, 'O talento precisa de um nome.').max(120),
       description: shortText(4000).default(''),
+      ability: z
+        .enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]])
+        .optional(),
     })
     .nullable()
     .default(null),

@@ -56,8 +56,11 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
     ? ''
     : ` (${payload.attackTotal} vs CA ${payload.targetArmorClass})`;
 
+  // Vantagem/desvantagem aparecem mesmo quando a CA está oculta (criatura).
+  const modePart = payload.advantage ? ', com vantagem' : payload.disadvantage ? ', com desvantagem' : '';
+
   const sneak = payload.sneakAttack
-    ? ` (inclui ${payload.sneakAttack.expression} de Ataque Furtivo)`
+    ? ` (inclui ${payload.sneakAttack.expression} de Ataque Furtivo — ${payload.sneakAttack.reason})`
     : '';
 
   // Quebra por PARCELA (principal + extras), já com o que entrou de cada tipo.
@@ -93,7 +96,7 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
   return {
     id: nextLogId(),
     kind: 'result',
-    text: `${payload.attackerName} usou ${payload.attackName} em ${payload.targetName} e ${outcome}${vsPart}`,
+    text: `${payload.attackerName} usou ${payload.attackName} em ${payload.targetName} e ${outcome}${modePart}${vsPart}`,
     detail: damage || undefined,
     crit: payload.critical,
     at: payload.at,

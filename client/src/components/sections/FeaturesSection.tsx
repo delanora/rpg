@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchRaceCatalog } from '../../creationApi';
-import { FEATURE_SOURCES, FEATURE_SOURCE_LABELS } from '../../dnd';
+import { ABILITY_LABELS, FEATURE_SOURCES, FEATURE_SOURCE_LABELS } from '../../dnd';
+import { getFeat } from '../../feats';
 import { useSheetAccess } from '../../readonly';
 import type { ActiveClassFeature, Feature, FeatureSource, RaceOption } from '../../types';
 import { newId } from '../../utils';
@@ -8,6 +9,30 @@ import { choiceInfoOf, FeatureChoiceField } from '../FeatureChoiceField';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
+
+/**
+ * Resumo do efeito mecânico de um talento já aplicado na ficha, para exibir ao
+ * lado do nome (ex.: "Atlético (+1 Força)"). Vazio quando o talento não tem
+ * efeito numérico resolvido (Categoria B/C).
+ */
+function featSummary(feat: Feature): string {
+  const definition = feat.featId ? getFeat(feat.featId) : undefined;
+  if (!definition) return '';
+  const parts: string[] = [];
+  for (const effect of definition.effects ?? []) {
+    if (effect.type === 'abilityBonus' && effect.ability) {
+      parts.push(`+${effect.value ?? 1} ${ABILITY_LABELS[effect.ability]}`);
+    } else if (effect.type === 'hpBonus') {
+      parts.push(`+${effect.value ?? 0} PV por nível`);
+    } else if (effect.type === 'speed') {
+      parts.push(`+${effect.value ?? 0} m de deslocamento`);
+    }
+  }
+  if (definition.abilityChoice && feat.featAbility) {
+    parts.push(`+${definition.abilityChoice.amount} ${ABILITY_LABELS[feat.featAbility]}`);
+  }
+  return parts.length > 0 ? `Efeito: ${parts.join(' · ')}` : '';
+}
 
 export function FeaturesSection({ character, update }: SheetSectionProps) {
   // Características (inclusive os talentos) são construção: com a criação
@@ -189,6 +214,12 @@ export function FeaturesSection({ character, update }: SheetSectionProps) {
                   />
                   <em className="tag">talento</em>
                 </div>
+                {feat.featId && getFeat(feat.featId) ? (
+                  <p className="section-note">
+                    {/* O efeito numérico RESOLVIDO, quando o talento tem um. */}
+                    {featSummary(feat)}
+                  </p>
+                ) : null}
                 <InlineField
                   value={feat.description}
                   mode="textarea"

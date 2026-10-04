@@ -354,6 +354,10 @@ export interface AttackResolvedPayload {
   attackName: string;
   targetName: string;
   attackRoll: number;
+  /** Rolagem feita com vantagem (2d20, mantém o maior). */
+  advantage: boolean;
+  /** Rolagem feita com desvantagem (2d20, mantém o menor). */
+  disadvantage: boolean;
   attackBonus: number;
   attackTotal: number;
   /** `null` quando o alvo é uma criatura e quem vê é um jogador. */
@@ -364,8 +368,11 @@ export interface AttackResolvedPayload {
   damageType: string;
   /** Cada parcela do ataque, com o efeito da defesa do alvo (vazio se errou). */
   components: DamageComponentPayload[];
-  /** Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve). */
-  sneakAttack: { expression: string; total: number } | null;
+  /**
+   * Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve).
+   * `reason` indica a condição que o habilitou (vantagem / aliado adjacente).
+   */
+  sneakAttack: { expression: string; total: number; reason: string } | null;
   /** `null` quando a vida do alvo está oculta (criatura vista por jogador). */
   targetHpCurrent: number | null;
   targetHpMax: number | null;

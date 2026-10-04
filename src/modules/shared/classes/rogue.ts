@@ -29,7 +29,7 @@ const ROGUE_FEATURES: ClassFeatureDefinition[] = [
     name: 'Ataque Furtivo',
     level: 1,
     description:
-      'Uma vez por turno, cause dano extra de 1d6 quando atacar com vantagem usando uma arma sutil ou à distância, ou quando outro inimigo do alvo estiver a 1,5 m dele e você não tiver desvantagem no ataque. O dado cresce com o nível do ladino (1d6 no 1º, +1d6 a cada dois níveis ímpares).',
+      'Uma vez por turno, cause 1d6 de dano extra ao acertar com uma arma sutil ou à distância quando tiver vantagem no ataque, ou quando outro inimigo do alvo estiver a 1,5 m dele. Desvantagem no ataque impede o efeito, mesmo com aliado adjacente. O dado cresce com o nível do ladino (1d6 no 1º, +1d6 a cada dois níveis ímpares).',
     effect: { type: 'sneakAttack' },
   },
   {

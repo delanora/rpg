@@ -1281,19 +1281,96 @@ async function main(): Promise<void> {
     String(rogueSheet.derived.hitDie),
   );
 
-  const sneakAttack = await api('/api/combat/attack', {
+  // O combate é por turnos: ao ENTRAR no turno do personagem, a trava "uma
+  // vez por turno" do Ataque Furtivo é zerada (nextTurn).
+  async function advanceToPlayerTurn(): Promise<void> {
+    let state = (await api('/api/combat/active', { token: masterToken })).data.combat;
+    let guard = 0;
+    do {
+      state = (await api('/api/combat/next-turn', { method: 'POST', token: masterToken })).data
+        .combat;
+      guard += 1;
+    } while (
+      state?.status === 'ACTIVE' &&
+      state.currentCombatantId !== playerCombatant.id &&
+      guard < 20
+    );
+  }
+
+  // Sem vantagem e sem aliado adjacente, a arma sutil NÃO recebe o extra.
+  await advanceToPlayerTurn();
+  const noCondition = await api('/api/combat/attack', {
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p1', targetCombatantId: creatureCombatant.id },
   });
-  const sneakResult = sneakAttack.data.result;
   check(
-    'arma sutil soma o Ataque Furtivo ao dano',
-    sneakResult.hit
-      ? sneakResult.sneakAttack?.expression === '2d6' &&
-          sneakResult.damageRolled >= sneakResult.sneakAttack.total + 1
-      : sneakResult.sneakAttack === null,
-    JSON.stringify(sneakResult),
+    'arma sutil sem vantagem nem aliado adjacente NÃO recebe Ataque Furtivo',
+    noCondition.data.result.sneakAttack === null,
+    JSON.stringify(noCondition.data.result),
+  );
+
+  // Desvantagem impede o Ataque Furtivo, mesmo com aliado adjacente confirmado.
+  const withDisadvantage = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: {
+      attackId: 'p1',
+      targetCombatantId: creatureCombatant.id,
+      disadvantage: true,
+      adjacentAlly: true,
+    },
+  });
+  check(
+    'desvantagem impede o Ataque Furtivo mesmo com aliado adjacente',
+    withDisadvantage.data.result.sneakAttack === null,
+    JSON.stringify(withDisadvantage.data.result),
+  );
+
+  // Só com aliado adjacente confirmado já recebe (com a razão no log).
+  const allyAttack = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, adjacentAlly: true },
+  });
+  const allyResult = allyAttack.data.result;
+  const allyApplied = allyResult.hit && allyResult.sneakAttack !== null;
+  check(
+    'aliado adjacente habilita o Ataque Furtivo (sem vantagem)',
+    allyResult.hit
+      ? allyResult.sneakAttack?.expression === '2d6' &&
+          allyResult.sneakAttack?.reason === 'aliado adjacente'
+      : allyResult.sneakAttack === null,
+    JSON.stringify(allyResult),
+  );
+
+  // Uma vez por turno: se o ataque anterior aplicou, este não aplica de novo.
+  const repeated = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, advantage: true },
+  });
+  check(
+    'Ataque Furtivo não repete no mesmo turno',
+    !allyApplied || repeated.data.result.sneakAttack === null,
+    JSON.stringify(repeated.data.result),
+  );
+
+  // Turno novo: com vantagem, volta a aplicar (razão 'vantagem').
+  await advanceToPlayerTurn();
+  const advantageAttack = await api('/api/combat/attack', {
+    method: 'POST',
+    token: playerToken,
+    body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, advantage: true },
+  });
+  const advantageResult = advantageAttack.data.result;
+  check(
+    'vantagem habilita o Ataque Furtivo (razão no log)',
+    advantageResult.hit
+      ? advantageResult.sneakAttack?.expression === '2d6' &&
+          advantageResult.sneakAttack?.reason === 'vantagem'
+      : advantageResult.sneakAttack === null,
+    JSON.stringify(advantageResult),
   );
 
   // Arma sem sutil/à distância não recebe o dano extra.
@@ -8112,13 +8189,18 @@ async function main(): Promise<void> {
 
   const rollUntilHit = async (
     attackId: string,
-    options: { sneak?: boolean } = {},
+    options: { sneak?: boolean; advantage?: boolean; adjacentAlly?: boolean } = {},
   ): Promise<any> => {
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const shot = await api('/api/combat/attack', {
         method: 'POST',
         token: duelist.token,
-        body: { attackId, targetCombatantId: dummyCombatant.id },
+        body: {
+          attackId,
+          targetCombatantId: dummyCombatant.id,
+          ...(options.advantage ? { advantage: true } : {}),
+          ...(options.adjacentAlly ? { adjacentAlly: true } : {}),
+        },
       });
       if (shot.status !== 200 || !shot.data?.result?.hit) continue;
       if (options.sneak && !shot.data.result.sneakAttack) continue;
@@ -8139,12 +8221,15 @@ async function main(): Promise<void> {
     JSON.stringify(derivedHit),
   );
 
-  // Arma sutil derivada aciona o Ataque Furtivo do ladino.
+  // Arma sutil derivada aciona o Ataque Furtivo do ladino quando o ataque tem
+  // a condição tática (aqui, vantagem no ataque).
   await masterPatch(duelist.characterId, { inventory: [rapier] });
-  const sneakHit = await rollUntilHit('weapon:a-rapier', { sneak: true });
+  const sneakHit = await rollUntilHit('weapon:a-rapier', { sneak: true, advantage: true });
   check(
-    'arma sutil derivada aciona o Ataque Furtivo automaticamente',
-    sneakHit !== null && (sneakHit.sneakAttack?.total ?? 0) >= 1,
+    'arma sutil derivada aciona o Ataque Furtivo com vantagem',
+    sneakHit !== null &&
+      (sneakHit.sneakAttack?.total ?? 0) >= 1 &&
+      sneakHit.sneakAttack?.reason === 'vantagem',
     JSON.stringify(sneakHit?.sneakAttack ?? null),
   );
 

@@ -32,6 +32,19 @@ export const attackSchema = z.object({
    * pilha SEM bônus mágico primeiro e, depois, a de menor bônus.
    */
   ammoInventoryId: z.string().min(1).optional(),
+  /** Ataque rolado com vantagem: rola 2d20 e mantém o maior. */
+  advantage: z.boolean().optional(),
+  /**
+   * Ataque rolado com desvantagem: rola 2d20 e mantém o menor. Impede o Ataque
+   * Furtivo, mesmo com aliado adjacente.
+   */
+  disadvantage: z.boolean().optional(),
+  /**
+   * Confirmação explícita do jogador (não há grid/posição no sistema): há um
+   * aliado adjacente ao alvo. Substitui a condição de vantagem no Ataque
+   * Furtivo. Só é considerada para personagens com a feature.
+   */
+  adjacentAlly: z.boolean().optional(),
 });
 
 /** Dano/cura manual aplicado pelo mestre. */

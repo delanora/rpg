@@ -354,10 +354,21 @@ export async function nextTurn(actor: CombatActor): Promise<CombatDto> {
     round += 1;
   }
 
-  await prisma.combat.update({
-    where: { id: combat.id },
-    data: { currentIndex: index, round },
-  });
+  const incoming = ordered[index];
+
+  await prisma.$transaction([
+    prisma.combat.update({
+      where: { id: combat.id },
+      data: { currentIndex: index, round },
+    }),
+    // O turno do combatente que vai agir começa agora: é aqui que a trava
+    // "uma vez por turno" do Ataque Furtivo é zerada (único ponto de avanço
+    // de turno do sistema).
+    prisma.combatant.update({
+      where: { id: incoming.id },
+      data: { sneakAttackUsedThisTurn: false },
+    }),
+  ]);
 
   const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
   emitCombat(ServerEvents.COMBAT_UPDATED, dto);
@@ -547,22 +558,45 @@ function applyDamageDefense(
 }
 
 /**
- * Calcula o dano extra de Ataque Furtivo, quando aplicável.
+ * Contexto tático da rolagem de ataque, usado para decidir o Ataque Furtivo.
  *
- * Requer que o atacante seja um personagem com a feature de Ataque Furtivo e
- * que a arma seja sutil ou à distância. As condições táticas (vantagem ou
- * aliado adjacente ao alvo) não são rastreadas pelo sistema: o jogador rola o
- * ataque somente quando elas valem.
+ * `advantage` é um dado da própria rolagem; `adjacentAlly` é a confirmação
+ * manual do jogador, porque o sistema não rastreia posição/adjacência (Fase 10
+ * — grid/VTT); `usedThisTurn` implementa a trava "uma vez por turno".
+ */
+interface SneakAttackOptions {
+  advantage: boolean;
+  disadvantage: boolean;
+  adjacentAlly: boolean;
+  usedThisTurn: boolean;
+}
+
+/**
+ * Calcula o dano extra de Ataque Furtivo, quando as condições do PHB 2014 são
+ * atendidas:
+ *  • o atacante tem a feature de Ataque Furtivo;
+ *  • a arma é sutil ou à distância;
+ *  • o ataque teve vantagem OU o jogador confirmou um aliado adjacente ao alvo;
+ *  • o ataque NÃO teve desvantagem (desvantagem impede, mesmo com aliado);
+ *  • o Ataque Furtivo ainda não foi usado neste turno.
  */
 function rollSneakAttack(
   attacker: CombatantSourced,
   attack: { finesse: boolean; ranged: boolean },
   critical: boolean,
-): { expression: string; total: number; rolls: number[] } | null {
+  options: SneakAttackOptions,
+): { expression: string; total: number; rolls: number[]; reason: string } | null {
   if (attacker.kind !== 'CHARACTER') return null;
   const character = attacker.character;
   if (!character) return null;
   if (!attack.finesse && !attack.ranged) return null;
+
+  // Uma vez por turno: já usado, não repete neste turno.
+  if (options.usedThisTurn) return null;
+  // Desvantagem no ataque impede o Ataque Furtivo (mesmo com aliado adjacente).
+  if (options.disadvantage) return null;
+  // Exige vantagem no ataque OU um aliado adjacente ao alvo confirmado.
+  if (!options.advantage && !options.adjacentAlly) return null;
 
   const entries = normalizeClassEntries(character.classes);
   const features = getMulticlassFeatures(entries);
@@ -576,7 +610,13 @@ function rollSneakAttack(
   const roll = rollDice(expression, { crit: critical });
   if (!roll) return null;
 
-  return { expression, total: roll.total, rolls: roll.rolls };
+  // Origem da condição, para o log do mestre poder auditar.
+  const reasons: string[] = [];
+  if (options.advantage) reasons.push('vantagem');
+  if (options.adjacentAlly) reasons.push('aliado adjacente');
+  const reason = reasons.join(' + ');
+
+  return { expression, total: roll.total, rolls: roll.rolls, reason };
 }
 
 /** Bônus que a munição consumida soma ao ATAQUE e ao DANO desta rolagem. */
@@ -744,7 +784,20 @@ export async function resolveAttack(
       ? characterArmorClass(target.character).value
       : (target.armorClass ?? target.creature?.armorClass ?? 10);
 
-  const attackRoll = rollD20();
+  // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
+  // vale) — mesmo critério da janela de dados.
+  const advantage = Boolean(input.advantage) && !input.disadvantage;
+  const disadvantage = Boolean(input.disadvantage) && !input.advantage;
+  // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
+  const firstRoll = rollD20();
+  const secondRoll = advantage || disadvantage ? rollD20() : null;
+  const attackRoll =
+    secondRoll === null
+      ? firstRoll
+      : advantage
+        ? Math.max(firstRoll, secondRoll)
+        : Math.min(firstRoll, secondRoll);
+  const attackDice = secondRoll === null ? [attackRoll] : [firstRoll, secondRoll];
   // A munição usada soma o próprio bônus de acerto à rolagem.
   const attackTotal = attackRoll + attack.attackBonus + ammoBonus.attackBonus;
   // Limiar de crítico: 20 por padrão, 19/18 com o Crítico Aprimorado/Superior
@@ -759,8 +812,8 @@ export async function resolveAttack(
   announceRoll({
     kind: 'attack',
     actorName: attacker.name,
-    expression: '1d20',
-    rolls: [attackRoll],
+    expression: advantage ? '1d20 (vantagem)' : disadvantage ? '1d20 (desvantagem)' : '1d20',
+    rolls: attackDice,
     sides: 20,
     modifier: attack.attackBonus + ammoBonus.attackBonus,
     total: attackTotal,
@@ -769,7 +822,7 @@ export async function resolveAttack(
   });
 
   let damageRolled = 0;
-  let sneakAttackResult: { expression: string; total: number } | null = null;
+  let sneakAttackResult: { expression: string; total: number; reason: string } | null = null;
   // Cada parcela do ataque (principal + `extraDamages`), com o que foi rolado e
   // o efeito da defesa do alvo — é o que explica o dano final ao mestre.
   const components: DamageComponentPayload[] = [];
@@ -787,9 +840,15 @@ export async function resolveAttack(
         ? attackerAdjustments.meleeDamageBonus
         : 0;
 
-    // Ataque Furtivo: entra automaticamente em armas sutis ou à distância quando
-    // a classe concede a feature. É dano físico, então vai na 1ª parcela física.
-    const sneak = rollSneakAttack(attacker, attack, critical);
+    // Ataque Furtivo: só entra com as condições táticas do PHB (vantagem no
+    // ataque OU aliado adjacente confirmado), sem desvantagem e uma vez por
+    // turno. É dano físico, então vai na 1ª parcela física.
+    const sneak = rollSneakAttack(attacker, attack, critical, {
+      advantage,
+      disadvantage,
+      adjacentAlly: Boolean(input.adjacentAlly),
+      usedThisTurn: attacker.sneakAttackUsedThisTurn,
+    });
     const sneakRoll = sneak && sneak.total > 0 ? sneak : null;
 
     const defenses = damageDefensesOf(target);
@@ -865,10 +924,14 @@ export async function resolveAttack(
         }
         if (sneakRoll) {
           componentTotal += sneakRoll.total;
-          sneakAttackResult = { expression: sneakRoll.expression, total: sneakRoll.total };
+          sneakAttackResult = {
+            expression: sneakRoll.expression,
+            total: sneakRoll.total,
+            reason: sneakRoll.reason,
+          };
           announceRoll({
             kind: 'damage',
-            actorName: `${attacker.name} — Ataque Furtivo`,
+            actorName: `${attacker.name} — Ataque Furtivo (${sneakRoll.reason})`,
             expression: sneakRoll.expression,
             rolls: sneakRoll.rolls,
             sides: 6,
@@ -933,6 +996,15 @@ export async function resolveAttack(
       });
     }
 
+    // Trava "uma vez por turno": só marca quando o Ataque Furtivo realmente
+    // entrou neste ataque.
+    if (sneakRoll) {
+      await prisma.combatant.update({
+        where: { id: attacker.id },
+        data: { sneakAttackUsedThisTurn: true },
+      });
+    }
+
     damageRolled = total;
     // Nada a debitar (tudo imune, por exemplo) — não escreve no HP à toa.
     if (total > 0) await changeHp(target, -total);
@@ -949,6 +1021,8 @@ export async function resolveAttack(
     attackName: attack.name,
     targetName: target.name,
     attackRoll,
+    advantage,
+    disadvantage,
     attackBonus: attack.attackBonus + ammoBonus.attackBonus,
     attackTotal,
     targetArmorClass,

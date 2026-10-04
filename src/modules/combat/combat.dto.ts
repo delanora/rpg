@@ -85,6 +85,8 @@ export interface CombatantSourced {
   hpCurrent: number | null;
   hpMax: number | null;
   armorClass: number | null;
+  /** Trava do Ataque Furtivo: "uma vez por turno" (zerada em `nextTurn`). */
+  sneakAttackUsedThisTurn: boolean;
   character: (Character & { user: { username: string } }) | null;
   creature: Creature | null;
 }

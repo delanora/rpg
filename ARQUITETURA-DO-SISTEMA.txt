@@ -532,6 +532,9 @@ exceto GameConfig (chave fixa "main").
     ownerUserId String?  · dexterityMod Int @default(0) (fixado na entrada)
     hpCurrent/hpMax/armorClass Int?  — SNAPSHOT, usado só por CRIATURAS
     initiative Int? · initiativeRoll Int?  — null enquanto não rolou
+    sneakAttackUsedThisTurn Boolean @default(false)  — trava "uma vez por turno"
+        do Ataque Furtivo, zerada no `nextTurn` do combatente (migration
+        `20261003070000_combatant_sneak_attack_flag`)
     createdAt · @@index([combatId]) @@index([ownerUserId])
     REGRA: o HP de PERSONAGEM nunca é duplicado aqui — é lido ao vivo da ficha.
 
@@ -728,7 +731,8 @@ Todos os corpos passam por Zod; corpo inválido ⇒ 400 com `issues` por campo.
   POST /api/combat/initiative/:combatantId   [mestre] → { combat } (por qualquer um)
   POST /api/combat/next-turn                 [mestre] → { combat }
   POST /api/combat/attack                    [auth]   { targetCombatantId, attackId,
-                                                        attackerCombatantId? }
+                                                        attackerCombatantId?, ammoInventoryId?,
+                                                        advantage?, disadvantage?, adjacentAlly? }
        → { combat, result: AttackResolvedPayload }
   POST /api/combat/hp                        [mestre] { combatantId, amount, mode:
                                                         'damage'|'heal' } → { combat }
@@ -1557,8 +1561,9 @@ ORDEM DE TURNOS (`orderCombatants`)
   O turno atual é `combatants[currentIndex]` do DTO já ordenado.
 
 AVANÇAR TURNO (POST /api/combat/next-turn, mestre)
-  currentIndex + 1; se passar do último, volta a 0 e round += 1. Publica
-  `combat:updated` + `combat:turn`.
+  currentIndex + 1; se passar do último, volta a 0 e round += 1. Zera a trava
+  "uma vez por turno" do Ataque Furtivo do combatente que ENTRA no turno
+  (`sneakAttackUsedThisTurn = false`). Publica `combat:updated` + `combat:turn`.
 
 ATAQUE (POST /api/combat/attack)
   Só em combate ACTIVE. Atacante = `attackerCombatantId` (só mestre) ou o personagem
@@ -1580,9 +1585,14 @@ ATAQUE (POST /api/combat/attack)
        • BÔNUS DE DANO CORPO A CORPO enquanto o toggle exigido está ativo (ex.: Fúria) —
          não vale para arma à distância (campo `ranged` do ataque);
        • ATAQUE FURTIVO — exige o atacante ser personagem com a feature (obtida pelo
-         nível de ladino) E a arma ser `finesse` ou `ranged`. As condições TÁTICAS
-         (vantagem / aliado adjacente) NÃO são rastreadas: o jogador decide quando
-         rolar. Cada parcela extra publica seu próprio `dice:rolled` (kind 'damage').
+         nível de ladino), a arma ser `finesse` ou `ranged`, a condição TÁTICA
+         (vantagem no ataque OU aliado adjacente ao alvo confirmado pelo jogador) e a
+         AUSÊNCIA de desvantagem. Vantagem/desvantagem é dado da própria rolagem
+         (`advantage`/`disadvantage`; rola 2d20 e mantém o maior/menor); como não há
+         grid/posição (Fase 10), o aliado adjacente é confirmação manual (`adjacentAlly`).
+         UMA VEZ POR TURNO: `Combatant.sneakAttackUsedThisTurn` zera no `nextTurn` do
+         combatente que inicia o turno. Cada parcela extra publica seu próprio
+         `dice:rolled` (kind 'damage').
     5. DEFESA do alvo POR PARCELA e POR TIPO (uma parcela por vez, sem agrupar
        tipos repetidos). Cada parcela de `attackDamages(attack)` é resolvida
        isoladamente: IMUNIDADE zera, VULNERABILIDADE dobra, RESISTÊNCIA halva
@@ -2354,7 +2364,14 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 [LACUNA] O compêndio é SOMENTE LEITURA. O plano declarado é o mestre poder criar e
    editar raças/antecedentes: a arquitetura já está preparada (rota única, coleções,
    `getCompendium()` como fonte trocável), mas não há CRUD nem tabelas para isso.
-[LACUNA] Ataque Furtivo não verifica condições táticas (vantagem / aliado adjacente).
+[IMPLEMENTADO (2026-10-03)] ATAQUE FURTIVO COM AS CONDIÇÕES TÁTICAS DO PHB:
+   `rollSneakAttack` exige (vantagem no ataque OU aliado adjacente confirmado) E
+   ausência de desvantagem, além da feature e de arma `finesse`/`ranged`. Vantagem
+   e desvantagem são da rolagem de ataque (2d20; `advantage`/`disadvantage` no corpo
+   do ataque); o aliado adjacente é um checkbox manual (`adjacentAlly`) por não haver
+   grid/posição (Fase 10). Trava "uma vez por turno" em `Combatant.sneakAttackUsedThisTurn`,
+   zerada no `nextTurn` (migration `20261003070000_combatant_sneak_attack_flag`). O log
+   do mestre indica a origem da condição. Cobertura nas seções 27 e do Ladino do smoke.
 [LACUNA] Não há testes unitários; a verificação é o smoke test.
 [LACUNA] Presença, apresentação, janela de dados e histórico de rolagens vivem na
    MEMÓRIA do processo: não sobrevivem a restart e não escalam horizontalmente.

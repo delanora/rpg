@@ -47,6 +47,13 @@ export function resolveAttack(input: {
   attackId: string;
   targetCombatantId: string;
   attackerCombatantId?: string;
+  ammoInventoryId?: string;
+  /** Rolagem com vantagem (2d20, mantém o maior). */
+  advantage?: boolean;
+  /** Rolagem com desvantagem (2d20, mantém o menor); impede o Ataque Furtivo. */
+  disadvantage?: boolean;
+  /** Confirmação manual: há aliado adjacente ao alvo (habilita o Furtivo). */
+  adjacentAlly?: boolean;
 }): Promise<{ combat: CombatDto; result: AttackResolvedPayload }> {
   return api<{ combat: CombatDto; result: AttackResolvedPayload }>('/api/combat/attack', {
     method: 'POST',
