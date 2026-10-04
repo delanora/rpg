@@ -8691,6 +8691,168 @@ async function main(): Promise<void> {
     JSON.stringify({ status: emptyDown.status, data: emptyDown.data }),
   );
 
+  // --- 28.5) Talentos do PHB: efeito mecânico e remoção ---------------------
+  // O motor de talentos resolve o catálogo (`shared/feats`) pelo MESMO pipeline
+  // das classes: o half-feat credita o +1 no atributo ESCOLHIDO como efeito
+  // DERIVADO (a pontuação gravada não muda) e o Resiliente dá proficiência na
+  // salvaguarda do atributo escolhido. Como o efeito sai das características,
+  // o downgrade do nível que trouxe o talento o desfaz junto.
+  console.log('\n28.5) Talentos do PHB: efeito mecânico e remoção');
+  {
+    const featHero = downgradee;
+    // Estado fixo: guerreiro 3 (o ASI é no 4º), atributos ímpares para o +1
+    // aparecer no modificador e salvaguardas todas desmarcadas — assim o que
+    // aparecer vem SÓ do talento.
+    await prisma.character.update({
+      where: { userId: featHero.userId },
+      data: {
+        classes: [{ classKey: 'fighter', subclass: 'Campeão', level: 3 }] as any,
+        levelHistory: [],
+        classState: { active: [], used: {}, choices: {} },
+        features: [],
+        strength: 11,
+        dexterity: 11,
+        constitution: 11,
+        intelligence: 11,
+        wisdom: 11,
+        charisma: 11,
+        saves: {
+          strength: false,
+          dexterity: false,
+          constitution: false,
+          intelligence: false,
+          wisdom: false,
+          charisma: false,
+        },
+        hpMax: 20,
+        hpCurrent: 20,
+        lastLevelUpRelease: 0,
+      } as any,
+    });
+
+    const unlockFeatRelease = () =>
+      api('/api/game/level-up', { method: 'POST', token: masterToken });
+    const tryFeatLevel = (body: any) =>
+      api('/api/characters/me/level-up', { method: 'POST', token: featHero.token, body });
+
+    // (1) Half-feat SEM escolher o atributo é recusado (400).
+    await unlockFeatRelease();
+    const athleteNoAbility = await tryFeatLevel({
+      classKey: 'fighter',
+      hp: 'average',
+      feat: { id: 'athlete', name: 'Atleta', description: 'teste do smoke' },
+    });
+    check(
+      'half-feat sem o atributo à escolha é recusado (400)',
+      athleteNoAbility.status === 400,
+      JSON.stringify(athleteNoAbility.data),
+    );
+
+    // Atributo FORA das opções do talento também é recusado.
+    await unlockFeatRelease();
+    const athleteBadAbility = await tryFeatLevel({
+      classKey: 'fighter',
+      hp: 'average',
+      feat: { id: 'athlete', name: 'Atleta', description: 'teste do smoke', ability: 'charisma' },
+    });
+    check(
+      'half-feat com atributo fora das opções é recusado (400)',
+      athleteBadAbility.status === 400,
+      JSON.stringify(athleteBadAbility.data),
+    );
+
+    // (2) Atleta + Força: o +1 é DERIVADO (não muda a pontuação gravada).
+    const athleteLevel = await gainLevel({
+      classKey: 'fighter',
+      hp: 'average',
+      feat: { id: 'athlete', name: 'Atleta', description: 'teste do smoke', ability: 'strength' },
+    });
+    const afterAthlete = athleteLevel.data?.character;
+    check(
+      'half-feat válido sobe o nível e grava o id/atributo (200)',
+      athleteLevel.status === 200 &&
+        (afterAthlete?.features ?? []).some(
+          (feature: any) =>
+            feature.source === 'feat' &&
+            feature.featId === 'athlete' &&
+            feature.featAbility === 'strength',
+        ),
+      JSON.stringify(afterAthlete?.features),
+    );
+    check(
+      'o +1 do half-feat é DERIVADO e não altera a pontuação gravada',
+      afterAthlete?.strength === 11 &&
+        afterAthlete?.derived?.modifiers?.strength === 1 &&
+        afterAthlete?.classAdjustments?.abilityBonuses?.strength === 1,
+      JSON.stringify({
+        raw: afterAthlete?.strength,
+        mod: afterAthlete?.derived?.modifiers?.strength,
+        bonus: afterAthlete?.classAdjustments?.abilityBonuses,
+      }),
+    );
+
+    // (3) Nível 5 (sem ASI) e nível 6 com o Resiliente (salvaguarda à escolha).
+    const levelFiveFeat = await gainLevel({ classKey: 'fighter', hp: 'average' });
+    check('o nível 5 do guerreiro sobe normalmente (200)', levelFiveFeat.status === 200);
+
+    const resilientLevel = await gainLevel({
+      classKey: 'fighter',
+      hp: 'average',
+      feat: {
+        id: 'resilient',
+        name: 'Resiliente',
+        description: 'teste do smoke',
+        ability: 'wisdom',
+      },
+    });
+    const afterResilient = resilientLevel.data?.character;
+    const resilientFeatureId = (afterResilient?.features ?? []).find(
+      (feature: any) => feature.featId === 'resilient',
+    )?.id;
+    check(
+      'Resiliente sobe o nível e concede a salvaguarda do atributo escolhido',
+      resilientLevel.status === 200 &&
+        afterResilient?.saves?.wisdom === true &&
+        afterResilient?.derived?.modifiers?.wisdom === 1,
+      JSON.stringify({ saves: afterResilient?.saves, mod: afterResilient?.derived?.modifiers }),
+    );
+
+    // (4) Downgrade do 6º: remove o Resiliente e o efeito DERIVADO some.
+    const downSix = await levelDown(featHero.characterId, { classKey: 'fighter' });
+    check(
+      'o downgrade do 6º remove o Resiliente pelo id',
+      downSix.status === 200 &&
+        (downSix.data?.levelDown?.reverted?.feats ?? []).includes(resilientFeatureId),
+      JSON.stringify(downSix.data?.levelDown?.reverted),
+    );
+    check(
+      'a salvaguarda e o +1 do Resiliente SOMEM com o talento',
+      downSix.data?.character?.saves?.wisdom === false &&
+        downSix.data?.character?.derived?.modifiers?.wisdom === 0,
+      JSON.stringify({
+        saves: downSix.data?.character?.saves,
+        mod: downSix.data?.character?.derived?.modifiers?.wisdom,
+      }),
+    );
+
+    // (5) Downgrade até o 4º: o half-feat sai e o +1 (derivado) também, sem
+    // tocar na pontuação gravada.
+    const downFiveFeat = await levelDown(featHero.characterId, { classKey: 'fighter' });
+    check('o downgrade do 5º desce o nível (200)', downFiveFeat.status === 200);
+    const downFourFeat = await levelDown(featHero.characterId, { classKey: 'fighter' });
+    check(
+      'o downgrade do 4º remove o half-feat e o +1 derivado some (pontuação gravada intacta)',
+      downFourFeat.status === 200 &&
+        downFourFeat.data?.character?.strength === 11 &&
+        downFourFeat.data?.character?.derived?.modifiers?.strength === 0,
+      JSON.stringify({
+        status: downFourFeat.status,
+        raw: downFourFeat.data?.character?.strength,
+        mod: downFourFeat.data?.character?.derived?.modifiers?.strength,
+      }),
+    );
+  }
+
   // --- 29. Vários tipos de dano por ataque e por arma -----------------------
   console.log('\n29) Vários tipos de dano por ataque e por arma');
 

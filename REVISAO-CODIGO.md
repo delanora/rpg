@@ -119,6 +119,7 @@ Só as subclasses estão cadastradas nos dois. Faltam, no clérigo: Canalizar Di
 ### A12. Aumento de Atributo por classe e feats — **OK, com ressalva**
 `asiLevelsFor` cobre Guerreiro (4/6/8/12/14/16/19), Ladino (4/8/10/12/16/19) e demais (4/8/12/16/19), e o Level Up checa o **nível da classe** — correto. Ressalva: talentos são apenas texto (sem efeito mecânico), o que está documentado, mas deve constar no roadmap.
 - **Feito (2026-09-29):** o Aumento de Atributo e o Talento agora ficam registrados no **histórico do nível** (`characters.levelHistory`), então o downgrade do mestre desfaz o aumento (`−amount` por atributo, piso 1) e remove a característica de origem `feat` pelo id — ver §12.5/§12.6 de `ARQUITETURA-DO-SISTEMA.txt`.
+- **Feito (2026-10-04):** os talentos deixaram de ser só texto. O catálogo do PHB 2014 (`shared/feats/`, categorias A/B/C) liga a escolha do Level Up ao efeito mecânico por `featId`, resolvido pelo MESMO pipeline das classes (`computeFeatAdjustments` + `mergeAdjustments`): o +1 dos half-feats vai para o atributo escolhido (`featAbility`) e o Resiliente dá proficiência na salvaguarda do atributo escolhido — tudo **derivado** (a pontuação gravada não muda). Os talentos B/C ficam como registro + TODO do sistema de que dependem. Cobertura na seção **28.5** do smoke.
 
 ### A13. Pré-requisito de multiclasse ignorava as classes atuais — **CORRIGIDO (2026-09-28)**
 `multiclassMissingLabel` conferia apenas a classe NOVA. O PHB (cap. 6) exige 13 nos atributos exigidos pela classe nova **e por todas as classes que o personagem já tem** — um Paladino com Força 8 podia multiclassar livremente.
@@ -302,7 +303,7 @@ Ordem sugerida por impacto na mesa:
 5. **Salvaguardas contra morte e estabilização** — HP 0 hoje é só 0.
 6. **Concentração** — manter magia com salvaguarda de CON ao levar dano.
 7. **Equipamento e CA automáticas** — integração de armadura/escudo (A10) e o **efeito** das proficiências (Fase 2 de A15).
-8. **Efeitos mecânicos dos talentos** (A12) — hoje apenas registro textual.
+8. **Efeitos mecânicos dos talentos** (A12) — ✅ **Feito (2026-10-04)**: catálogo estruturado (A com efeito; B/C com TODO) + `computeFeatAdjustments`/`mergeAdjustments`; half-feat e Resiliente derivados. _(seção 28.5 do smoke)_
 9. **Encontros/XP** — conceder XP por encontro derrotado, se desejado.
 
 ---
@@ -318,6 +319,7 @@ Ordem sugerida por impacto na mesa:
 - [x] **Implementado (2026-09-29)** Proficiências de arma: efeito no ATAQUE via ataque derivado da arma equipada (habilidade, categoria/nome, versátil, duas mãos, mão secundária, arremesso e golpe desarmado). _(A15 · seção 27)_
 - [x] **Corrigido (2026-10-03)** Proficiência de armadura/escudo resolvida por regra compartilhada e exposta no DTO da ficha E do combate (`armorProficiency`/`armorNonProficiency`); a CA não muda sem proficiência (PHB 2014). A penalidade mecânica (desvantagem em testes/salvaguardas/ataques e conjuração) fica para a **Fase 8**. _(A15 · seção 14 do smoke)_
 - [x] **Implementado (2026-09-29)** Downgrade de nível pelo mestre: histórico por nível (`characters.levelHistory`) gravado no Level Up e revertido por `POST /api/characters/:id/level-down` (PV, Aumento de Atributo/Talento, escolhas, subclasse, perícia e proficiências; nível 1 → 0 remove a classe). _(A12/D5 · seção 28)_
+- [x] **Implementado (2026-10-04)** Motor de talentos do PHB: catálogo `shared/feats/` (A/B/C), escolha no Level Up por `featId`/`featAbility` e efeitos derivados (half-feat, Resiliente) pelo mesmo pipeline das classes. _(A12 · seção 28.5)_
 - [ ] **P2** Backfill do histórico para as fichas antigas: hoje um nível sem registro só pode ter o PV estimado pela média (com aviso) e o resto ajustado à mão. _(D5)_
 - [x] **Corrigido (2026-09-28)** `classes/index.ts`: incluir conjuração de **subclasse** em `multiclassCasterLevel`/`pactMagicSlots` (Trapaceiro/Cavaleiro Arcano). _(A1)_
 - [x] **Corrigido (2026-09-28)** `characters.service.ts`: PV iniciais = dado de vida máx + CON; no Level Up somar o ganho também em `hpCurrent`; recálculo retroativo de CON. _(A5)_

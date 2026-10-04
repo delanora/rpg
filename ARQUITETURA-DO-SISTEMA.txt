@@ -1239,8 +1239,8 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
 12.1 FLUXO NORMAL — POST /api/characters/me/level-up
   Entrada (levelUpSchema): { classKey, subclass? (default ''), hp: 'roll'|'average',
     skillChoice? (default '', perícia da entrada por multiclasse),
-    abilityIncreases?: [{ ability, amount }] (máx. 2), feat?: { name, description }
-    | null }
+    abilityIncreases?: [{ ability, amount }] (máx. 2),
+    feat?: { id? (id do catálogo), name, description, ability? (half-feat) } | null }
   Pré-condições verificadas:
     1. Nível total < 20;
     2. classe conhecida;
@@ -1264,8 +1264,12 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
       SKILL_KEYS/da lista da classe ou já proficiente) e a perícia escolhida entra em
       `data.skills`; mandá-la em outro caso ⇒ 400;
     • ASI/TALENTO: se `isAsiLevel(classKey, newClassLevel)`:
-        – com `feat`: empurra uma característica { id: 'feat-<uuid>', name, source:
-          'feat', description } em `features`;
+        – com `feat`: resolve o talento no catálogo (`getFeat(id)` ou pelo nome) e
+          empurra { id: 'feat-<uuid>', name, featId?, featAbility?, source: 'feat',
+          description } em `features`. Nos half-feats (`abilityChoice`), `feat.ability`
+          é OBRIGATÓRIA e precisa estar entre as opções do talento (400 sem ela ou
+          fora da lista); o +1 e a salvaguarda do Resiliente viram efeito DERIVADO
+          (não alteram a pontuação gravada) — ver FUNDAÇÃO DE TALENTOS;
         – sem `feat`: as `abilityIncreases` precisam somar EXATAMENTE 2 pontos e
           nenhum atributo pode passar de 20 (400 caso contrário);
       se NÃO é nível de ASI e vier feat/abilityIncreases ⇒ 400;
@@ -1335,7 +1339,9 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
     • classes: nível − 1; em nível 1 a entrada SAI da ficha (com a subclasse dela);
     • PV: subtrai o `hp.total` do registro (piso 1 em `hpMax`, 0 em `hpCurrent`);
     • Aumento de Atributo: subtrai os `abilityIncreases` do registro (piso 1 por
-      atributo); o talento registrado sai de `features` pelo id `feat-<uuid>`;
+      atributo); o talento registrado sai de `features` pelo id `feat-<uuid>`. O
+      efeito mecânico do talento é DERIVADO das características (o +1 do half-feat
+      e a salvaguarda do Resiliente), então some junto — não há pontuação a reverter;
     • escolhas de característica do nível: as chaves gravadas no registro saem de
       `classState.choices`; a subclasse escolhida naquele nível volta para '';
     • perícias concedidas naquele nível voltam a `proficient: false`;
@@ -1489,7 +1495,7 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   grava raceId/subraceId pelo PATCH; raceHpBonus/raceHpBonusDelta aplicam ou REVERTEM o +1×nível.
   HUMANO (human.ts): +1 nos SEIS atributos · speed 9 · size Medium · languages [Comum] +
   bonusLanguageChoices 1 · traits VAZIO · sem sub-raças. Humano Variante NÃO cadastrado
-  (depende de talentos mecânicos, inexistentes; TODO no arquivo).
+  (dependeria do motor de talentos, hoje ligado ao Level Up; TODO no arquivo).
   HALFLING (halfling.ts): Des+2 · speed 7,5 · size Small · SEM darkvision · languages
   [Comum, Pequenino] · 3 traços — lucky (luckyReroll), brave ('other' vantagem vs amedrontado)
   e halfling-nimbleness (texto). 2 sub-raças: lightfoot (Car+1, Furtivo por Natureza texto) e
@@ -1524,6 +1530,39 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   DELETE SET NULL), languages String[], darkvision Int, raceResistances String[].
   `characters.speed` virou Float (raças têm 7,5 m / 10,5 m). A coluna `race` de texto
   livre foi abandonada — as migrações apagaram as fichas antigas com raça em texto livre.
+
+FUNDAÇÃO DE TALENTOS (modules/shared/feats/) — Motor de talentos do PHB 2014
+  Espelha shared/races/ e shared/backgrounds/: types.ts + index.ts (agregador) +
+  category-a.ts / category-b.ts / category-c.ts. `FEATS = [...A, ...B, ...C]`;
+  `getFeat(id)`, `findFeatByName(name)`, `resolveFeat(idOrName)`,
+  `resolveFeatAbility(feat, ability)`.
+  • Feat: id (estável, gravado em `features[].featId`) · name · description ·
+    prerequisite? (TEXTO, sem validação automática) · effects? (reaproveita o MESMO
+    ClassFeatureEffect das classes — nada de vocabulário paralelo) · abilityChoice?
+    ({ options, amount }: o +1 do half-feat no atributo ESCOLHIDO) · saveProficiency?
+    (Resiliente: proficiência na salvaguarda do atributo escolhido).
+  • CATEGORIAS: A — efeito numérico simples, APLICADO hoje (effects/abilityChoice:
+    Ator, Atleta, Robusto, Mestre de Armas, Resiliente, Vigoroso, Móvel…); B — depende
+    do motor de ação/ação bônus/reação (Fase 5): só description + `other` + TODO;
+    C — depende de um sistema próprio inexistente: também só registro + TODO.
+  • MOTOR (`computeFeatAdjustments` em shared/classes/index.ts): cada talento gravado é
+    resolvido no catálogo, vira uma feature SINTÉTICA (source 'class', level 0) e passa
+    pelo MESMO `computeClassAdjustments` das classes; o resultado é combinado com o das
+    classes via `mergeAdjustments` (exportada). O `abilityChoice` vira um efeito
+    `abilityBonus` no atributo GRAVADO na característica (`featAbility`, teto 20) e o
+    `saveProficiency` vira o efeito `save`, exposto em `ClassAdjustments.saveProficiencies`
+    (a MESMA lista que o DTO usa para travar as salvaguardas — inclui a Mente Escorregadia).
+    O DTO (`toCharacterDto`) já lê as features `source: 'feat'` e aplica. Tudo é
+    DERIVADO: nada é somado à pontuação gravada — quem reflete o +1 é `derived.modifiers`
+    (e `classAdjustments.abilityBonuses`).
+  • LEVEL UP: no nível de ASI, `feat: { id?, name, description, ability? }` liga a
+    escolha ao catálogo; half-feat exige `ability` válida (400). Sem o id reconhecido, o
+    talento continua valendo como registro textual (compatibilidade).
+  • DOWNGRADE: o registro do nível guarda o talento; removê-lo (por id) tira a
+    característica e, como o efeito é DERIVADO, o +1/salvaguarda some junto.
+  • CLIENTE: espelho em client/src/feats.ts (`getFeat` para o resumo "Efeito: …" na
+    subseção Talentos da ficha) e a escolha no LevelUpDialog.
+  Cobertura na seção 28.5 do smoke.
 
 
 ================================================================================
@@ -2347,6 +2386,14 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    Fichas anteriores à migração `20260929140000_character_level_history` não têm
    registro: ali o PV é estimado pela média e a resposta avisa (`warnings`). Ver §12.5
    e §12.6. Cobertura na seção 28 do smoke.
+[IMPLEMENTADO] MOTOR DE TALENTOS DO PHB (`src/modules/shared/feats/` + client/src/feats.ts):
+   catálogo estruturado das três categorias (A com efeito mecânico; B/C com o TODO do
+   sistema de que dependem), escolha no Level Up ligada ao catálogo por `featId` e os
+   ajustes resolvidos pelo MESMO pipeline das classes (`computeFeatAdjustments` +
+   `mergeAdjustments`, aplicados no DTO sobre as features `source: 'feat'`). O +1 dos
+   half-feats (atributo em `featAbility`) e a salvaguarda do Resiliente entram no
+   `derived`; o downgrade do nível que trouxe o talento remove a característica e o
+   efeito derivado junto. Ver "FUNDAÇÃO DE TALENTOS". Cobertura na seção 28.5 do smoke.
 [IMPLEMENTADO] ATAQUE DERIVADO DA ARMA EQUIPADA (`src/modules/shared/weapon-attacks.ts`
    + `derivedAttacks` no DTO da ficha): a arma equipada em `hand1`/`hand2` vira um ataque
    CALCULADO (nunca gravado, como a CA), com ids estáveis — `weapon:<item>`, a variante
