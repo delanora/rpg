@@ -3743,6 +3743,22 @@ async function main(): Promise<void> {
       compendium.weapons.some((weapon: any) => weapon.id === 'hand-crossbow'),
     JSON.stringify((compendium?.weapons ?? []).map((weapon: any) => weapon.id)),
   );
+  check(
+    'armas à distância trazem alcance e munição no catálogo',
+    (() => {
+      const longbow = compendium?.weapons?.find((weapon: any) => weapon.id === 'longbow');
+      const dagger = compendium?.weapons?.find((weapon: any) => weapon.id === 'dagger');
+      return (
+        longbow?.rangeNormal === 45 &&
+        longbow?.rangeLong === 180 &&
+        longbow?.ammoType === 'Flecha' &&
+        dagger?.rangeNormal === 6 &&
+        dagger?.rangeLong === 18 &&
+        dagger?.ammoType === undefined
+      );
+    })(),
+    JSON.stringify(compendium?.weapons?.find((weapon: any) => weapon.id === 'longbow')),
+  );
 
   // --- 11.7 Assistente de Level Up ------------------------------------------
   console.log('\n11.7) Level Up (assistente)');

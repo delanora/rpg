@@ -997,6 +997,11 @@ export interface CanonicalWeapon {
   damageDie: { count: number; sides: number };
   damageType: DamageType;
   damageBonus?: number;
+  /** Alcance normal/longo em metros (pode ser fracionário; o editor arredonda). */
+  rangeNormal?: number;
+  rangeLong?: number;
+  /** Munição consumida (armas com a propriedade 'ammunition'). */
+  ammoType?: AmmoType;
 }
 
 /** As listas de referência da mesa. */

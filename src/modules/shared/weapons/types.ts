@@ -1,5 +1,10 @@
 import type { DamageType } from '../attacks.js';
-import type { WeaponCategory, WeaponProperty, WeaponType } from '../item-details.js';
+import type {
+  AmmoType,
+  WeaponCategory,
+  WeaponProperty,
+  WeaponType,
+} from '../item-details.js';
 
 /**
  * Catálogo canônico das armas do Livro do Jogador (PHB 2014).
@@ -39,4 +44,13 @@ export interface CanonicalWeapon {
    * Ausente na grande maioria das armas.
    */
   damageBonus?: number;
+  /**
+   * Alcance normal/longo em METROS (1 pé = 0,3 m), para armas à distância ou
+   * arremessáveis. Pode ser fracionário (ex.: zarabatana 7,5 m) — o editor
+   * arredonda ao gravar, porque `item.details.rangeNormal/rangeLong` são inteiros.
+   */
+  rangeNormal?: number;
+  rangeLong?: number;
+  /** Munição consumida, quando a arma tem a propriedade `ammunition`. */
+  ammoType?: AmmoType;
 }
