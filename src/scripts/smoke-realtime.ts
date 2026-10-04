@@ -10557,6 +10557,11 @@ async function main(): Promise<void> {
         perception: drowStep.data?.character?.skills?.perception,
       }),
     );
+    check(
+      'o estado de criação expõe as perícias raciais para travar no passo 7',
+      (drowStep.data?.creation?.raceSkillKeys ?? []).includes('perception'),
+      JSON.stringify(drowStep.data?.creation?.raceSkillKeys),
+    );
 
     // --- Idioma à escolha (Humano) ------------------------------------------
     const humanNoLanguage = await api('/api/characters/me/creation', {

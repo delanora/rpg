@@ -1170,6 +1170,11 @@ export interface CreationState {
   backgroundLanguageChoices: string[];
   skillChoice: { count: number; from: string[] };
   /**
+   * Perícias que a RAÇA já concede (fixas ou pelas escolhas dela, ex.:
+   * Meio-Elfo) — o passo 7 as mostra marcadas e travadas.
+   */
+  raceSkillKeys: string[];
+  /**
    * Escolhas do NÍVEL 1 da classe inicial (Estilo de Luta do guerreiro,
    * Inimigo Favorito e Explorador Nato do patrulheiro).
    */
