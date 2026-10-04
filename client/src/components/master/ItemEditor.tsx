@@ -171,6 +171,11 @@ function CategoryFields({
         weaponCategory: weapon.category,
         properties: nextProperties,
         versatileDie: nextProperties.includes('versatile') ? weapon.versatileDie : undefined,
+        // Alcance e munição vêm do catálogo (os campos da arma são inteiros, então
+        // arredonda: a zarabatana 7,5 m vira 8). Armas sem esses dados os limpam.
+        rangeNormal: weapon.rangeNormal === undefined ? undefined : Math.round(weapon.rangeNormal),
+        rangeLong: weapon.rangeLong === undefined ? undefined : Math.round(weapon.rangeLong),
+        ammoType: nextProperties.includes('ammunition') ? weapon.ammoType : undefined,
       });
     }
 

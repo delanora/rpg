@@ -10,7 +10,9 @@ import type { CanonicalWeapon } from './types.js';
  *
  * Os nomes em português seguem a tradução usual da mesa; `nameEn` é só
  * referência. O dano é o do livro (a zarabatana tem dano plano 1, representado
- * por `damageBonus`).
+ * por `damageBonus`). Os alcances estão em METROS (1 pé = 0,3 m) — alguns são
+ * fracionários (zarabatana 7,5 m, rede 1,5 m) e o editor os arredonda ao
+ * gravar, porque os campos de alcance da arma são inteiros.
  */
 export const WEAPONS: readonly CanonicalWeapon[] = [
   // --- Armas simples de corpo a corpo (10) ----------------------------------
@@ -33,6 +35,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['finesse', 'light', 'thrown'],
     damageDie: { count: 1, sides: 4 },
     damageType: 'Perfurante',
+    rangeNormal: 6,
+    rangeLong: 18,
   },
   {
     id: 'greatclub',
@@ -53,6 +57,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['light', 'thrown'],
     damageDie: { count: 1, sides: 6 },
     damageType: 'Cortante',
+    rangeNormal: 6,
+    rangeLong: 18,
   },
   {
     id: 'javelin',
@@ -63,6 +69,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['thrown'],
     damageDie: { count: 1, sides: 6 },
     damageType: 'Perfurante',
+    rangeNormal: 9,
+    rangeLong: 36,
   },
   {
     id: 'light-hammer',
@@ -73,6 +81,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['light', 'thrown'],
     damageDie: { count: 1, sides: 4 },
     damageType: 'Concussão',
+    rangeNormal: 6,
+    rangeLong: 18,
   },
   {
     id: 'mace',
@@ -115,6 +125,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     versatileDie: 8,
     damageDie: { count: 1, sides: 6 },
     damageType: 'Perfurante',
+    rangeNormal: 6,
+    rangeLong: 18,
   },
 
   // --- Armas simples à distância (4) ----------------------------------------
@@ -127,6 +139,9 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['ammunition', 'loading', 'two-handed'],
     damageDie: { count: 1, sides: 8 },
     damageType: 'Perfurante',
+    rangeNormal: 24,
+    rangeLong: 96,
+    ammoType: 'Virote',
   },
   {
     id: 'dart',
@@ -137,6 +152,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['finesse', 'thrown'],
     damageDie: { count: 1, sides: 4 },
     damageType: 'Perfurante',
+    rangeNormal: 6,
+    rangeLong: 18,
   },
   {
     id: 'shortbow',
@@ -147,6 +164,9 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['ammunition', 'two-handed'],
     damageDie: { count: 1, sides: 6 },
     damageType: 'Perfurante',
+    rangeNormal: 24,
+    rangeLong: 96,
+    ammoType: 'Flecha',
   },
   {
     id: 'sling',
@@ -157,6 +177,9 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['ammunition'],
     damageDie: { count: 1, sides: 4 },
     damageType: 'Concussão',
+    rangeNormal: 9,
+    rangeLong: 36,
+    ammoType: 'Bala de funda',
   },
 
   // --- Armas marciais de corpo a corpo (18) ---------------------------------
@@ -312,6 +335,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     versatileDie: 8,
     damageDie: { count: 1, sides: 6 },
     damageType: 'Perfurante',
+    rangeNormal: 6,
+    rangeLong: 18,
   },
   {
     id: 'war-pick',
@@ -356,6 +381,10 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     damageDie: { count: 0, sides: 0 },
     damageType: 'Perfurante',
     damageBonus: 1,
+    // 25/100 pés = 7,5/30 m: o normal é fracionário e o editor arredonda ao gravar.
+    rangeNormal: 7.5,
+    rangeLong: 30,
+    ammoType: 'Agulha de zarabatana',
   },
   {
     id: 'hand-crossbow',
@@ -366,6 +395,9 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['ammunition', 'light', 'loading'],
     damageDie: { count: 1, sides: 6 },
     damageType: 'Perfurante',
+    rangeNormal: 9,
+    rangeLong: 36,
+    ammoType: 'Virote',
   },
   {
     id: 'heavy-crossbow',
@@ -376,6 +408,9 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['ammunition', 'heavy', 'loading', 'two-handed'],
     damageDie: { count: 1, sides: 10 },
     damageType: 'Perfurante',
+    rangeNormal: 30,
+    rangeLong: 120,
+    ammoType: 'Virote',
   },
   {
     id: 'longbow',
@@ -386,6 +421,9 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['ammunition', 'heavy', 'two-handed'],
     damageDie: { count: 1, sides: 8 },
     damageType: 'Perfurante',
+    rangeNormal: 45,
+    rangeLong: 180,
+    ammoType: 'Flecha',
   },
   {
     id: 'net',
@@ -396,5 +434,8 @@ export const WEAPONS: readonly CanonicalWeapon[] = [
     properties: ['special', 'thrown'],
     damageDie: { count: 0, sides: 0 },
     damageType: 'Concussão',
+    // 5/15 pés = 1,5/4,5 m: ambos fracionários; o editor arredonda ao gravar.
+    rangeNormal: 1.5,
+    rangeLong: 4.5,
   },
 ];
