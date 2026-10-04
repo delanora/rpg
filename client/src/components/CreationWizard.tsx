@@ -835,6 +835,11 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                           <p className="race-detail-note">{raceBaseOption.description}</p>
                         ) : null}
 
+                        <p className="race-bonus">
+                          <strong>Bônus de atributo</strong>
+                          {raceBonusLabel(raceBaseOption) || '—'}
+                        </p>
+
                         {(raceBaseOption.traits ?? []).length > 0 ? (
                           <>
                             <span className="race-detail-sub">Recursos da raça</span>
@@ -867,6 +872,15 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                             {expandedTraitOption ? (
                               <p className="race-trait-desc">{expandedTraitOption.description}</p>
                             ) : null}
+
+                            <div className="race-traits-full">
+                              {(raceBaseOption.traits ?? []).map((trait) => (
+                                <p className="race-trait-line" key={trait.id}>
+                                  <strong>{trait.name}</strong>
+                                  {trait.description}
+                                </p>
+                              ))}
+                            </div>
                           </>
                         ) : null}
 

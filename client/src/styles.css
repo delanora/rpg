@@ -8745,6 +8745,25 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
+/* Bônus de atributo da raça, destacado no painel de detalhe. */
+.race-bonus {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 6px;
+  background: var(--surface-3);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.race-bonus strong {
+  margin-right: 0.35rem;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  color: var(--gold-deep);
+}
+
 /* Recursos da raça: chips com tooltip (hover) + descrição completa (clique). */
 .race-traits {
   display: flex;
