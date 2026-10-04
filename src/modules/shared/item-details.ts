@@ -180,6 +180,12 @@ export const itemDetailsSchema = z
     ammoType: z.enum(AMMO_TYPES).optional(),
     /** Dado do dano empunhada com as DUAS MÃOS (exige a propriedade Versátil). */
     versatileDie: z.number().int().min(0).max(1000).optional(),
+    /**
+     * Arma canônica do PHB à qual este item foi vinculado (id de
+     * `shared/weapons`, ex.: "battleaxe"). OPCIONAL: item homebrew fica sem
+     * (a proficiência cai no fallback por categoria/nome).
+     */
+    canonicalWeaponId: z.string().trim().max(60).optional(),
     /** Alcance normal em metros (à distância ou arremessável). */
     rangeNormal: z.number().int().min(0).max(1000).optional(),
     /** Alcance longo em metros (à distância ou arremessável). */
@@ -292,6 +298,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
     'properties',
     'ammoType',
     'versatileDie',
+    'canonicalWeaponId',
     'rangeNormal',
     'rangeLong',
   ],
@@ -307,6 +314,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
     'properties',
     'ammoType',
     'versatileDie',
+    'canonicalWeaponId',
     'rangeNormal',
     'rangeLong',
     'spellcastingFocus',

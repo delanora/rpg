@@ -88,6 +88,13 @@ export interface ClassFeatureResource {
      */
     | 'toolProficiency'
     /**
+     * Proficiência com ARMA nomeada concedida pela característica (ex.:
+     * Treinamento de Combate Anão). Os ids canônicos das armas vêm em `targets`
+     * (ver o catálogo `shared/weapons`). Hoje só a raça usa; quem aplica é o
+     * motor de raça (ver `raceWeaponProficiencies` em shared/races).
+     */
+    | 'weaponProficiency'
+    /**
      * Vantagem CONDICIONAL em salvaguardas (ex.: Astúcia Gnômica — INT/SAB/CAR
      * contra magia). Os atributos vêm em `abilities` e a condição em `condition`.
      * Hoje só a raça usa; quem aplica é o motor de raça (futuro).
@@ -130,6 +137,11 @@ export interface ClassFeatureResource {
    * 'skillProficiency'`, ver SKILLS em dnd5e.ts — ex.: 'perception').
    */
   target?: string;
+  /**
+   * Ids canônicos concedidos em `type: 'weaponProficiency'` (ver o catálogo
+   * `shared/weapons` — ex.: ['battleaxe', 'handaxe']).
+   */
+  targets?: string[];
   /** Valor fixo (ou espaços, em `type: 'expertise'`). */
   value?: number;
   /** Valor escalonado por nível: usa o maior nível menor ou igual ao atual. */

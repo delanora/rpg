@@ -1,5 +1,6 @@
 import { CLASS_DEFINITIONS } from '../shared/classes/index.js';
 import { BACKGROUND_CATALOG, RACE_CATALOG, type RaceOption } from '../shared/creation.js';
+import { allWeapons } from '../shared/weapons/index.js';
 import { listCustomRaceOptions } from '../custom-races/custom-races.service.js';
 import type {
   CompendiumBackgroundDto,
@@ -90,5 +91,6 @@ export async function getCompendium(): Promise<CompendiumDto> {
     races: [...RACE_CATALOG, ...customOptions].map(toRace),
     backgrounds: BACKGROUND_CATALOG.map(toBackground),
     spells: SPELL_CATALOG,
+    weapons: allWeapons(),
   };
 }

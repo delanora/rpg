@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '../../api';
 import { describeItemDetails, rarityColor, rarityLabel } from '../../dnd';
-import type { Character, Item, ItemPatch } from '../../types';
+import type { CanonicalWeapon, Character, Compendium, Item, ItemPatch } from '../../types';
 import { Portrait } from '../Portrait';
 import { CoinsGrantPanel } from './CoinsGrantPanel';
 import { ItemEditor } from './ItemEditor';
@@ -50,6 +51,22 @@ export function ItemsTab({
 }: ItemsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // Catálogo canônico de armas para o seletor "Arma do PHB" (vem do compêndio).
+  const [weapons, setWeapons] = useState<CanonicalWeapon[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    api<{ compendium: Compendium }>('/api/compendium')
+      .then((result) => {
+        if (active) setWeapons(result.compendium.weapons ?? []);
+      })
+      .catch(() => {
+        // Sem o catálogo, o seletor fica apenas com a opção vazia (homebrew).
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
 
@@ -129,6 +146,7 @@ export function ItemsTab({
             <ItemEditor
               item={selected}
               characters={characters}
+              weapons={weapons}
               onPatch={(patch) => onPatch(selected.id, patch)}
               onDelete={() => {
                 onDelete(selected.id);

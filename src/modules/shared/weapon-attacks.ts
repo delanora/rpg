@@ -98,19 +98,26 @@ export function foldWeaponName(text: string): string {
 }
 
 /**
- * O personagem é proficiente com a arma? Vale a proficiência pela CATEGORIA
- * ("Armas simples") ou pelo NOME específico ("Rapieiras").
+ * O personagem é proficiente com a arma? A checagem é, nesta ordem:
+ *
+ *  1. CATEGORIA ("Armas simples"/"Armas marciais");
+ *  2. ID CANÔNICO da arma (`canonicalWeaponId` de `shared/weapons`), quando a
+ *     entrada de `proficiencies.weapons` for um id (ex.: proficiência de raça);
+ *  3. FALLBACK pelo NOME específico ("Rapieiras" ↔ "Rapieira").
+ *
+ * Entradas de texto livre continuam funcionando pelo passo 3; itens sem vínculo
+ * canônico simplesmente pulam o passo 2.
  */
 export function isProficientWithWeapon(
   weaponProficiencies: readonly string[],
   weaponCategory: WeaponCategory,
   weaponName: string,
+  canonicalWeaponId?: string | null,
 ): boolean {
   const known = new Set(weaponProficiencies.map(foldWeaponName));
-  return (
-    known.has(foldWeaponName(CATEGORY_PROFICIENCY[weaponCategory])) ||
-    known.has(foldWeaponName(weaponName))
-  );
+  if (known.has(foldWeaponName(CATEGORY_PROFICIENCY[weaponCategory]))) return true;
+  if (canonicalWeaponId && known.has(foldWeaponName(canonicalWeaponId))) return true;
+  return known.has(foldWeaponName(weaponName));
 }
 
 function modifiersOf(abilities: Record<AbilityKey, number>): Record<AbilityKey, number> {
@@ -262,6 +269,7 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
       input.weaponProficiencies,
       category,
       weapon.name,
+      details.canonicalWeaponId,
     );
     const profBonus = proficient ? proficiency : 0;
     const magicDamage = details.damageBonus ?? 0;
@@ -342,6 +350,7 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
       input.weaponProficiencies,
       details.weaponCategory ?? 'simple',
       offHand.name,
+      details.canonicalWeaponId,
     );
     const profBonus = proficient ? proficiency : 0;
     const die = details.damageDie ?? 0;

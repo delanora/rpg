@@ -103,6 +103,8 @@ export interface ItemDetails {
   properties?: WeaponProperty[];
   /** Dado do dano com as duas mãos (só com a propriedade Versátil). */
   versatileDie?: number;
+  /** Arma canônica do PHB vinculada (id de `shared/weapons`), quando houver. */
+  canonicalWeaponId?: string;
   /** Alcance normal/longo em metros (à distância ou arremessável). */
   rangeNormal?: number;
   rangeLong?: number;
@@ -983,12 +985,28 @@ export interface CompendiumSpell {
   classes: string[];
 }
 
+/** Arma canônica do PHB (espelha `shared/weapons`). */
+export interface CanonicalWeapon {
+  id: string;
+  namePt: string;
+  nameEn: string;
+  category: WeaponCategory;
+  type: WeaponType;
+  properties: WeaponProperty[];
+  versatileDie?: number;
+  damageDie: { count: number; sides: number };
+  damageType: DamageType;
+  damageBonus?: number;
+}
+
 /** As listas de referência da mesa. */
 export interface Compendium {
   classes: CompendiumClass[];
   races: CompendiumRace[];
   backgrounds: CompendiumBackground[];
   spells: CompendiumSpell[];
+  /** Catálogo canônico de armas (seletor "Arma do PHB" do editor de item). */
+  weapons: CanonicalWeapon[];
 }
 
 // ---------------------------------------------------------------------------

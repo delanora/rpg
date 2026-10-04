@@ -26,6 +26,7 @@ import {
 } from '../../types';
 import type {
   AmmoType,
+  CanonicalWeapon,
   Character,
   Damage,
   DamageType,
@@ -64,6 +65,8 @@ function nextVersatileDie(die: number): number {
 interface ItemEditorProps {
   item: Item;
   characters: Character[];
+  /** Catálogo canônico de armas do PHB (seletor "Arma do PHB"). */
+  weapons: CanonicalWeapon[];
   onPatch: (patch: ItemPatch) => void;
   onDelete: () => void;
   onSend: (characterId: string, quantity: number) => Promise<void>;
@@ -72,9 +75,11 @@ interface ItemEditorProps {
 /** Campos numéricos/selects específicos da categoria do item. */
 function CategoryFields({
   item,
+  weapons,
   onPatchDetails,
 }: {
   item: Item;
+  weapons: CanonicalWeapon[];
   onPatchDetails: (patch: ItemDetails) => void;
 }) {
   const details = item.details;
@@ -145,6 +150,35 @@ function CategoryFields({
         patch.rangeLong = details.rangeLong ?? 18;
       }
       onPatchDetails(patch);
+    }
+
+    /**
+     * Vincula (ou desvincula) a ARMA CANÔNICA do PHB. Ao escolher, preenche os
+     * campos de uso a partir do catálogo (tudo ainda editável); vazio = arma
+     * homebrew, que cai no fallback de proficiência por nome/categoria.
+     */
+    function changeCanonicalWeapon(value: string): void {
+      if (!value) {
+        onPatchDetails({ canonicalWeaponId: undefined });
+        return;
+      }
+      const weapon = weapons.find((entry) => entry.id === value);
+      if (!weapon) return;
+      const nextProperties = [...weapon.properties];
+      onPatchDetails({
+        canonicalWeaponId: weapon.id,
+        weaponType: weapon.type,
+        weaponCategory: weapon.category,
+        properties: nextProperties,
+        versatileDie: nextProperties.includes('versatile') ? weapon.versatileDie : undefined,
+      });
+    }
+
+    const weaponOptionLabels: Record<string, string> = {};
+    for (const weapon of weapons) {
+      weaponOptionLabels[weapon.id] = `${weapon.namePt} — ${
+        weapon.category === 'martial' ? 'marcial' : 'simples'
+      }`;
     }
 
     return (
@@ -322,6 +356,19 @@ function CategoryFields({
       ))}
 
       <h3 className="subsection-title">Perfil da arma</h3>
+      <label className="field">
+        <span>Arma do PHB</span>
+        <InlineField
+          value={details.canonicalWeaponId ?? ''}
+          mode="select"
+          options={weapons.map((weapon) => weapon.id)}
+          optionLabels={weaponOptionLabels}
+          ariaLabel="Arma do PHB vinculada"
+          onCommit={changeCanonicalWeapon}
+        />
+        <span className="field-hint">vazio = arma homebrew (sem vínculo canônico)</span>
+      </label>
+
       <div className="grid grid-3">
         <label className="field">
           <span>Uso</span>
@@ -695,7 +742,7 @@ function CategoryFields({
 }
 
 /** Editor de um item: identidade, atributos por categoria, preço e envio. */
-export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: ItemEditorProps) {
+export function ItemEditor({ item, characters, weapons, onPatch, onDelete, onSend }: ItemEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState('');
@@ -851,7 +898,7 @@ export function ItemEditor({ item, characters, onPatch, onDelete, onSend }: Item
         icon="sword"
         subtitle="Os campos mudam conforme a categoria escolhida"
       >
-        <CategoryFields item={item} onPatchDetails={patchDetails} />
+        <CategoryFields item={item} weapons={weapons} onPatchDetails={patchDetails} />
       </Section>
 
       <Section title="Valor (PO / PP / PC)" icon="crown" subtitle="Visível apenas para o mestre">
