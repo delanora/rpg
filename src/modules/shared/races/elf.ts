@@ -24,10 +24,13 @@ import type { Race, RaceTrait } from './types.js';
 const ELVEN_WEAPON_TRAINING: RaceTrait = {
   id: 'elven-weapon-training',
   name: 'Treinamento com Arma Élfica',
-  // Proficiência de ARMA só é exibida como texto hoje (ProficienciesState.weapons);
-  // não há tipo de efeito de proficiência no union — nada a declarar por ora.
   description:
     'Você tem proficiência com espadas longas, espadas curtas, arcos longos e arcos curtos.',
+  // Ids CANÔNICOS do catálogo `shared/weapons` (alto elfo e elfo da floresta).
+  mechanicalEffect: {
+    type: 'weaponProficiency',
+    targets: ['longsword', 'shortsword', 'shortbow', 'longbow'],
+  },
 };
 
 /**
@@ -144,6 +147,11 @@ export const elf: Race = {
           id: 'drow-weapon-training',
           name: 'Treinamento com Arma Drow',
           description: 'Você tem proficiência com rapieiras, espadas curtas e bestas de mão.',
+          // Ids CANÔNICOS do catálogo `shared/weapons`.
+          mechanicalEffect: {
+            type: 'weaponProficiency',
+            targets: ['rapier', 'shortsword', 'hand-crossbow'],
+          },
         },
         {
           id: 'sunlight-sensitivity',

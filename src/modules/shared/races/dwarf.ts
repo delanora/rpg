@@ -63,9 +63,12 @@ export const dwarf: Race = {
       description:
         'Você tem proficiência com machados de batalha, machadinhas, martelos leves e ' +
         'martelos de guerra.',
-      // TODO(proficiência de arma por raça): o sistema só deixa classe/subclasse
-      // alimentarem `proficiencies.weapons`; nada a conceder até existir o caminho
-      // de raça (motor de raça).
+      // Ids CANÔNICOS do catálogo `shared/weapons`: o motor de raça os soma às
+      // proficiências de arma na derivação e o ataque passa a somar o bônus.
+      mechanicalEffect: {
+        type: 'weaponProficiency',
+        targets: ['battleaxe', 'handaxe', 'light-hammer', 'warhammer'],
+      },
     },
     {
       id: 'dwarven-tool-proficiency',

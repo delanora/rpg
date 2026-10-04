@@ -57,6 +57,7 @@ import { coinsWeight, normalizeCoins, type CoinPurse } from '../shared/coins.js'
 import type { ItemDetails, ItemRarity } from '../shared/item-details.js';
 import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
 import { getTool, TOOL_CATEGORY_LABELS, type ToolCategory } from '../shared/tools/index.js';
+import { raceWeaponProficiencies } from '../shared/races/index.js';
 import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
 import { armorPiecesFrom } from '../shared/armor-class.js';
 import { syncInventory, type CatalogSnapshot } from './inventory-sync.js';
@@ -445,12 +446,24 @@ export function toCharacterDto(
   // sendo a base.
   const effectiveAbilities = effectiveAbilitiesOf(character, classAdjustments);
 
+  // Proficiências de arma = as da ficha (classe/subclasse/mestre) + as da RAÇA
+  // (motor de raça, por id canônico do catálogo). A raça é DERIVADA: não grava
+  // em `proficiencies.weapons`, então trocar de raça não deixa resíduo.
+  const weaponProficiencies = [
+    ...proficiencies.weapons,
+    ...raceWeaponProficiencies({
+      raceId: character.raceId,
+      subraceId: character.subraceId,
+      choices: parseJson<Record<string, string>>(raceChoicesSchema, character.raceChoices, {}),
+    }),
+  ];
+
   // Ataques derivados das armas EQUIPADAS (habilidade, proficiência, versátil,
   // duas mãos, mão secundária, arremesso e golpe desarmado).
   const derivedAttacks = deriveWeaponAttacks({
     abilities: effectiveAbilities,
     level,
-    weaponProficiencies: proficiencies.weapons,
+    weaponProficiencies,
     inventory,
   });
 
@@ -632,7 +645,14 @@ export function characterDerivedAttacks(character: Character): CombatAttack[] {
   return deriveWeaponAttacks({
     abilities: effectiveAbilitiesOf(character, classAdjustments),
     level: totalCharacterLevel(classEntries),
-    weaponProficiencies: normalizeProficiencies(character.proficiencies).weapons,
+    weaponProficiencies: [
+      ...normalizeProficiencies(character.proficiencies).weapons,
+      ...raceWeaponProficiencies({
+        raceId: character.raceId,
+        subraceId: character.subraceId,
+        choices: parseJson<Record<string, string>>(raceChoicesSchema, character.raceChoices, {}),
+      }),
+    ],
     inventory,
   });
 }

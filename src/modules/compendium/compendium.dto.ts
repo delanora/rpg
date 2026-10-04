@@ -1,5 +1,6 @@
 import type { AbilityKey } from '../shared/dnd5e.js';
 import type { SpellLearning, SpellcastingType } from '../shared/classes/types.js';
+import type { CanonicalWeapon } from '../shared/weapons/index.js';
 
 /**
  * Compêndio da mesa: as listas de referência que o mestre consulta na aba
@@ -102,4 +103,9 @@ export interface CompendiumDto {
   races: CompendiumRaceDto[];
   backgrounds: CompendiumBackgroundDto[];
   spells: CompendiumSpellDto[];
+  /**
+   * Armas canônicas do PHB (`shared/weapons`). Lista fechada e estática; serve
+   * ao seletor "Arma do PHB" do editor de item do mestre.
+   */
+  weapons: CanonicalWeapon[];
 }

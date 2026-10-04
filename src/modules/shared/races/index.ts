@@ -296,6 +296,24 @@ export function raceToolProficiencies(input: RaceResolutionInput): string[] {
   return [...tools];
 }
 
+/**
+ * Armas em que a raça concede proficiência: ids CANÔNICOS do catálogo
+ * `shared/weapons` (ex.: Treinamento de Combate Anão → 'battleaxe'). É o que
+ * alimenta `proficiencies.weapons` na derivação e o que `isProficientWithWeapon`
+ * compara pelo `canonicalWeaponId` do item.
+ */
+export function raceWeaponProficiencies(input: RaceResolutionInput): string[] {
+  const weapons = new Set<string>();
+  for (const trait of raceTraits(input)) {
+    for (const effect of effectsOf(trait)) {
+      if (effect.type !== 'weaponProficiency') continue;
+      for (const id of effect.targets ?? []) weapons.add(id);
+      if (effect.target) weapons.add(effect.target);
+    }
+  }
+  return [...weapons];
+}
+
 /** Idiomas concedidos pela raça (texto informativo; sem campo de idioma antes). */
 export function raceLanguages(input: RaceResolutionInput): string[] {
   return input.raceId ? [...(getRace(input.raceId)?.languages ?? [])] : [];

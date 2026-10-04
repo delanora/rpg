@@ -3728,6 +3728,21 @@ async function main(): Promise<void> {
     Array.isArray(compendium?.spells) && compendium.spells.length === 0,
     JSON.stringify(compendium?.spells),
   );
+  check(
+    'o compêndio traz as 37 armas canônicas do PHB',
+    (compendium?.weapons ?? []).length === 37 &&
+      compendium.weapons.every(
+        (weapon: any) =>
+          typeof weapon.id === 'string' &&
+          typeof weapon.namePt === 'string' &&
+          ['simple', 'martial'].includes(weapon.category) &&
+          ['melee', 'ranged'].includes(weapon.type) &&
+          Array.isArray(weapon.properties),
+      ) &&
+      compendium.weapons.some((weapon: any) => weapon.id === 'battleaxe') &&
+      compendium.weapons.some((weapon: any) => weapon.id === 'hand-crossbow'),
+    JSON.stringify((compendium?.weapons ?? []).map((weapon: any) => weapon.id)),
+  );
 
   // --- 11.7 Assistente de Level Up ------------------------------------------
   console.log('\n11.7) Level Up (assistente)');
@@ -8012,6 +8027,21 @@ async function main(): Promise<void> {
     'hand2',
   );
   const shield = makeItem('a-shield', 'Escudo', 'Escudo', { armorClassBonus: 2 }, { slot: 'hand2' });
+  const battleaxe = weaponItem(
+    'a-battleaxe',
+    'Machado de batalha',
+    {
+      damageCount: 1,
+      damageDie: 8,
+      damageType: 'Cortante',
+      weaponType: 'melee',
+      weaponCategory: 'martial',
+      properties: ['versatile'],
+      versatileDie: 10,
+      canonicalWeaponId: 'battleaxe',
+    },
+    'hand1',
+  );
 
   // Proficiências controladas: CATEGORIA simples e o NOME 'Espadas longas'
   // (plural) — nada de marcial genérico.
@@ -8079,6 +8109,36 @@ async function main(): Promise<void> {
     greataxeAttack?.attackBonus === 3 &&/sem proficiência/.test(greataxeAttack?.notes ?? ''),
     JSON.stringify(greataxeAttack),
   );
+
+  // Proficiência pelo ID CANÔNICO via RAÇA (o Anão concede 'battleaxe' pelo
+  // Treinamento de Combate Anão). A raça é DERIVADA: não grava na ficha.
+  await masterPatch(duelist.characterId, {
+    raceId: 'dwarf',
+    subraceId: null,
+    proficiencies: { armor: [], weapons: [], tools: [] },
+    inventory: [battleaxe],
+  });
+  const dwarfAxe = (await weaponAttacksOf()).find((attack) => attack.id === 'weapon:a-battleaxe');
+  check(
+    'a raça (Anão) dá proficiência pelo ID canônico da arma',
+    dwarfAxe?.attackBonus === 5 && /proficiente/.test(dwarfAxe?.notes ?? ''),
+    JSON.stringify(dwarfAxe),
+  );
+
+  // Sem a raça, o ID canônico sozinho não dá proficiência (fallback por nome/
+  // categoria não casa): volta a "sem proficiência".
+  await masterPatch(duelist.characterId, { raceId: null, subraceId: null });
+  const noRaceAxe = (await weaponAttacksOf()).find((attack) => attack.id === 'weapon:a-battleaxe');
+  check(
+    'sem a raça, o ID canônico sozinho não dá proficiência',
+    noRaceAxe?.attackBonus === 3 && /sem proficiência/.test(noRaceAxe?.notes ?? ''),
+    JSON.stringify(noRaceAxe),
+  );
+
+  // Restaura as proficiências controladas para os testes seguintes.
+  await masterPatch(duelist.characterId, {
+    proficiencies: { armor: [], weapons: ['Armas simples', 'Espadas longas'], tools: [] },
+  });
 
   // Acuidade: DES 18 (+4) vale mais que FOR 16 (+3).
   await masterPatch(duelist.characterId, { inventory: [rapier] });
@@ -9414,11 +9474,19 @@ async function main(): Promise<void> {
       JSON.stringify(resilience),
     );
     check(
-      'Treinamento de Combate e Conhecimento de Pedra são textuais (sem efeito)',
-      dwarf?.traits.find((t) => t.id === 'dwarven-combat-training')?.mechanicalEffect === undefined &&
-        dwarf?.traits.find((t) => t.id === 'dwarven-combat-training')?.mechanicalEffects ===
-          undefined &&
-        dwarf?.traits.find((t) => t.id === 'stonecunning')?.mechanicalEffect === undefined,
+      'Treinamento de Combate Anão concede os 4 ids canônicos; Conhecimento de Pedra é textual',
+      (() => {
+        const combat = dwarf?.traits.find((t) => t.id === 'dwarven-combat-training')?.mechanicalEffect;
+        return (
+          combat?.type === 'weaponProficiency' &&
+          JSON.stringify(combat?.targets) ===
+            JSON.stringify(['battleaxe', 'handaxe', 'light-hammer', 'warhammer']) &&
+          dwarf?.traits.find((t) => t.id === 'stonecunning')?.mechanicalEffect === undefined
+        );
+      })(),
+      JSON.stringify(
+        dwarf?.traits.find((t) => t.id === 'dwarven-combat-training')?.mechanicalEffect,
+      ),
     );
 
     const toolChoice = dwarf?.hasChoices?.find((c) => c.id === 'dwarf-tool-proficiency');
