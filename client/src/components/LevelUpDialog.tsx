@@ -78,7 +78,9 @@ export function LevelUpDialog({
   const [abilityMode, setAbilityMode] = useState<'one' | 'two'>('two');
   const [abilityA, setAbilityA] = useState<AbilityKey>(ABILITY_KEYS[0]);
   const [abilityB, setAbilityB] = useState<AbilityKey>(ABILITY_KEYS[1]);
-  const [featName, setFeatName] = useState(FEATS[0]?.name ?? '');
+  const [featId, setFeatId] = useState(FEATS[0]?.id ?? '');
+  /** Atributo escolhido nos "meio-talentos" (Atleta, Resiliente...). */
+  const [featAbility, setFeatAbility] = useState<AbilityKey | ''>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** A lista de classes só abre pelo botão multiclasse (o padrão é a principal). */
@@ -230,7 +232,7 @@ export function LevelUpDialog({
     [character.classes, character.classOptions],
   );
 
-  const feat = FEATS.find((item) => item.name === featName) ?? null;
+  const feat = FEATS.find((item) => item.id === featId) ?? null;
 
   function abilityOptions(amount: number): AbilityKey[] {
     return ABILITY_KEYS.filter((ability) => character[ability] + amount <= 20);
@@ -276,7 +278,16 @@ export function LevelUpDialog({
           setError('Escolha um talento.');
           return null;
         }
-        request.feat = { name: feat.name, description: feat.description };
+        if (feat.abilityChoice && !featAbility) {
+          setError(`${feat.name} concede +1 em um atributo à escolha — escolha o atributo.`);
+          return null;
+        }
+        request.feat = {
+          id: feat.id,
+          name: feat.name,
+          description: feat.description,
+          ...(feat.abilityChoice && featAbility ? { ability: featAbility } : {}),
+        };
       } else if (abilityMode === 'one') {
         request.abilityIncreases = [{ ability: abilityA, amount: 2 }];
       } else {
@@ -357,7 +368,7 @@ export function LevelUpDialog({
     !isAsi
       ? ''
       : asiMode === 'feat'
-        ? `Talento: ${featName}`
+        ? `Talento: ${feat?.name ?? '—'}`
         : abilityMode === 'one'
           ? `${ABILITY_LABELS[abilityA]} +2`
           : `${ABILITY_LABELS[abilityA]} +1, ${ABILITY_LABELS[abilityB]} +1`;
@@ -782,18 +793,42 @@ export function LevelUpDialog({
               <>
                 <label className="field">
                   <span>Talento</span>
-                  <select value={featName} onChange={(event) => setFeatName(event.target.value)}>
+                  <select
+                    value={featId}
+                    onChange={(event) => {
+                      setFeatId(event.target.value);
+                      setFeatAbility('');
+                    }}
+                  >
                     {FEATS.map((item) => (
-                      <option key={item.name} value={item.name}>
+                      <option key={item.id} value={item.id}>
                         {item.name}
                       </option>
                     ))}
                   </select>
                 </label>
                 {feat ? <p className="section-note">{feat.description}</p> : null}
+                {feat?.abilityChoice ? (
+                  <label className="field">
+                    <span>
+                      Atributo (+{feat.abilityChoice.amount}) — {feat.name}
+                    </span>
+                    <select
+                      value={featAbility}
+                      onChange={(event) => setFeatAbility(event.target.value as AbilityKey)}
+                    >
+                      <option value="">Escolha o atributo…</option>
+                      {feat.abilityChoice.options.map((ability) => (
+                        <option key={ability} value={ability}>
+                          {ABILITY_LABELS[ability]} ({character[ability]})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <p className="section-note">
-                  O talento fica registrado como texto na aba Características; o efeito mecânico virá
-                  em uma etapa futura.
+                  O talento fica registrado na aba Características e seus efeitos numéricos são
+                  aplicados automaticamente à ficha.
                 </p>
               </>
             )}

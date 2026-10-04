@@ -5,6 +5,7 @@ import {
   SKILL_LABELS,
   type AbilityKey,
 } from '../dnd5e.js';
+import { getFeat } from '../feats/index.js';
 import { barbarian } from './barbarian.js';
 import { bard } from './bard.js';
 import { cleric } from './cleric.js';
@@ -1382,7 +1383,7 @@ export function getMulticlassFeatures(entries: ClassEntry[]): ActiveClassFeature
   });
 }
 
-function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments): ClassAdjustments {
+export function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments): ClassAdjustments {
   const byId = <T extends { id: string }>(items: T[]): T[] => {
     const map = new Map<string, T>();
     for (const item of items) map.set(item.id, item);
@@ -1507,6 +1508,73 @@ export function computeMulticlassAdjustments(
       computeClassAdjustments(features, entry.level, state, abilities),
     );
   }, emptyAdjustments());
+}
+
+/**
+ * Feature de TALENTO já gravada na ficha (source: 'feat'), no formato mínimo que
+ * o motor de talentos precisa ler. Espelha os campos do schema da característica.
+ */
+export interface FeatFeatureInput {
+  /** Id estável do talento no catálogo (`shared/feats`). */
+  featId?: string;
+  /** Nome do talento (fallback quando `featId` não estiver gravado). */
+  name: string;
+  /** Atributo escolhido nos "meio-talentos" (ex.: Atleta: FOR ou DES). */
+  featAbility?: AbilityKey;
+}
+
+/**
+ * Ajustes mecânicos dos TALENTOS escolhidos no Level Up (source: 'feat').
+ *
+ * Os talentos entram pelo MESMO pipeline das classes: cada talento é resolvido
+ * no catálogo (`shared/feats`), os efeitos declarados viram uma feature sintética
+ * e `computeClassAdjustments` os aplica com as mesmas regras (o maior prevalece
+ * em CA/salvaguarda, soma em atributo/PV...). O resultado é combinado com o das
+ * classes via `mergeAdjustments`.
+ *
+ * O `abilityChoice` (half-feats) vira um `abilityBonus` no atributo ESCOLHIDO
+ * (`featAbility`); o `saveProficiency` do Resiliente vira um efeito `save` nesse
+ * mesmo atributo (reaproveita a Mente Escorregadia do ladino).
+ */
+export function computeFeatAdjustments(
+  features: readonly FeatFeatureInput[],
+  level: number,
+  abilities?: Record<AbilityKey, number>,
+): ClassAdjustments {
+  const synthetic: ActiveClassFeature[] = [];
+
+  for (const feature of features) {
+    const feat = feature.featId ? getFeat(feature.featId) : undefined;
+    if (!feat) continue;
+
+    const effects: ClassFeatureEffect[] = [...(feat.effects ?? [])];
+
+    // Half-feat: o +1 no atributo ESCOLHIDO (o valor de `abilityChoice.amount`).
+    if (feat.abilityChoice && feature.featAbility) {
+      effects.push({
+        type: 'abilityBonus',
+        ability: feature.featAbility,
+        value: feat.abilityChoice.amount,
+        max: 20,
+      });
+      // Resiliente: proficiência na salvaguarda do atributo escolhido.
+      if (feat.saveProficiency) {
+        effects.push({ type: 'save', ability: feature.featAbility });
+      }
+    }
+
+    if (effects.length === 0) continue;
+    synthetic.push({
+      id: feat.id,
+      name: feat.name,
+      level: 0,
+      description: feat.description,
+      effects,
+      source: 'class',
+    });
+  }
+
+  return computeClassAdjustments(synthetic, level, { active: [], used: {}, choices: {} }, abilities);
 }
 
 /**

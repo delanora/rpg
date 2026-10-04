@@ -43,6 +43,7 @@ import {
   emptyProficiencies,
   expertiseOptionsFor,
   expertiseSkillsState,
+  computeMulticlassAdjustments,
   findSubclass,
   firstClassProficiencies,
   getClassDefinition,
@@ -75,6 +76,7 @@ import {
 } from '../shared/level-history.js';
 import type { AbilityKey } from '../shared/dnd5e.js';
 import {
+  ABILITY_LABELS,
   LEVEL_MAX,
   SKILL_KEYS,
   SKILL_LABELS,
@@ -82,6 +84,8 @@ import {
   normalizeSaves,
   normalizeSkills,
 } from '../shared/dnd5e.js';
+import { findFeatByName, getFeat, resolveFeatAbility } from '../shared/feats/index.js';
+import { effectiveAbilitiesOf } from './armor-class.js';
 import {
   COIN_KEYS,
   COIN_LABELS,
@@ -753,15 +757,42 @@ async function applyLevelUp(
 
   if (isAsiLevel(definition.key, newClassLevel)) {
     if (input.feat) {
-      const featId = `feat-${randomUUID()}`;
+      const featureId = `feat-${randomUUID()}`;
+      // O talento é ligado ao CATÁLOGO (`shared/feats`) pelo id quando ele vier
+      // reconhecido — é o que dá efeito mecânico via `computeFeatAdjustments`.
+      const catalogFeat = input.feat.id ? getFeat(input.feat.id) : findFeatByName(input.feat.name);
+      // Half-feat: o atributo escolhido precisa estar entre as opções do talento.
+      let featAbility: AbilityKey | undefined;
+      if (catalogFeat?.abilityChoice) {
+        if (!input.feat.ability) {
+          throw new HttpError(
+            `${catalogFeat.name} concede +1 em um atributo à escolha — escolha o atributo.`,
+            400,
+          );
+        }
+        const resolved = resolveFeatAbility(catalogFeat, input.feat.ability);
+        if (!resolved) {
+          throw new HttpError(
+            `${catalogFeat.name} só permite os atributos: ` +
+              `${catalogFeat.abilityChoice.options.map((key) => ABILITY_LABELS[key] ?? key).join(', ')}.`,
+            400,
+          );
+        }
+        featAbility = resolved;
+      } else if (input.feat.ability) {
+        throw new HttpError(`${input.feat.name} não pede atributo à escolha.`, 400);
+      }
+
       features.push({
-        id: featId,
-        name: input.feat.name,
+        id: featureId,
+        name: catalogFeat?.name ?? input.feat.name,
         source: 'feat',
-        description: input.feat.description,
+        description: catalogFeat?.description ?? input.feat.description,
+        ...(catalogFeat ? { featId: catalogFeat.id } : {}),
+        ...(featAbility ? { featAbility } : {}),
       });
       data.features = features;
-      grantedFeat = { id: featId, name: input.feat.name };
+      grantedFeat = { id: featureId, name: catalogFeat?.name ?? input.feat.name };
     } else {
       const increases = new Map<AbilityKey, number>();
       for (const item of input.abilityIncreases) {
@@ -776,9 +807,25 @@ async function applyLevelUp(
         );
       }
 
+      // A9: o teto do atributo é conferido pelo valor EFETIVO (com os bônus de
+      // features, ex.: Campeão Primitivo até 24), não pelo valor bruto gravado.
+      const asiAdjustments = computeMulticlassAdjustments(
+        entries,
+        classState,
+        abilitiesOf(character),
+      );
+      const effective = effectiveAbilitiesOf(character, asiAdjustments);
+
       for (const [ability, amount] of increases) {
         if (character[ability] + amount > 20) {
           throw new HttpError('Nenhum atributo pode passar de 20.', 400);
+        }
+        const cap = asiAdjustments.abilityCaps[ability] ?? 20;
+        if (effective[ability] + amount > cap) {
+          throw new HttpError(
+            `O atributo não pode passar de ${cap} (teto do personagem).`,
+            400,
+          );
         }
         data[ability] = character[ability] + amount;
         grantedAbilities.push({ ability, amount });

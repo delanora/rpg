@@ -41,6 +41,9 @@ interface AttackPanelProps {
     targetCombatantId: string;
     attackerCombatantId?: string;
     ammoInventoryId?: string;
+    advantage?: boolean;
+    disadvantage?: boolean;
+    adjacentAlly?: boolean;
   }) => void;
 }
 
@@ -59,6 +62,9 @@ function AttackPanel({
   const [attackId, setAttackId] = useState('');
   const [targetId, setTargetId] = useState('');
   const [ammoId, setAmmoId] = useState('');
+  const [advantage, setAdvantage] = useState(false);
+  const [disadvantage, setDisadvantage] = useState(false);
+  const [adjacentAlly, setAdjacentAlly] = useState(false);
 
   const baseAttacks = attackerChoices && attacksFor && attacker ? attacksFor(attacker.id) : attacks;
   // Ataques de arma não equipada somem (só dá para avaliar com o inventário).
@@ -68,6 +74,9 @@ function AttackPanel({
 
   // Munição do ataque escolhido: arma equipada vinculada + pilhas compatíveis.
   const selectedAttack = availableAttacks.find((item) => item.id === attackId) ?? null;
+  // O Ataque Furtivo só é possível com uma arma que qualifica (sutil ou à
+  // distância) e quando o personagem tem a feature — mesma condição do servidor.
+  const sneakEligible = Boolean(sneakAttack) && selectedAttack !== null && (selectedAttack.finesse || selectedAttack.ranged);
   const weapon = inventory && selectedAttack ? weaponOf(selectedAttack, inventory) : null;
   const ammoType = requiredAmmoType(weapon);
   const stacks = inventory && ammoType ? ammoStacks(inventory, ammoType) : [];
@@ -111,7 +120,14 @@ function AttackPanel({
         <>
           <label className="field">
             <span>Ataque</span>
-            <select value={attackId} onChange={(event) => setAttackId(event.target.value)}>
+            <select
+              value={attackId}
+              onChange={(event) => {
+                setAttackId(event.target.value);
+                // Trocar de arma invalida a confirmação de aliado adjacente.
+                setAdjacentAlly(false);
+              }}
+            >
               <option value="">escolha o ataque</option>
               {availableAttacks.map((attack) => (
                 <option key={attack.id} value={attack.id}>
@@ -140,6 +156,39 @@ function AttackPanel({
               ))}
             </select>
           </label>
+
+          <div className="dice-controls">
+            <label className="dice-toggle" title="Rola 2d20 e mantém o maior. Habilita o Ataque Furtivo do Ladino.">
+              <input
+                type="checkbox"
+                checked={advantage}
+                onChange={(event) => setAdvantage(event.target.checked)}
+              />
+              Vantagem
+            </label>
+            <label className="dice-toggle" title="Rola 2d20 e mantém o menor. Impede o Ataque Furtivo do Ladino.">
+              <input
+                type="checkbox"
+                checked={disadvantage}
+                onChange={(event) => setDisadvantage(event.target.checked)}
+              />
+              Desvantagem
+            </label>
+          </div>
+
+          {sneakEligible ? (
+            <label
+              className="dice-toggle"
+              title="O sistema não tem grid: confirme marcando se houver um aliado seu adjacente ao alvo. Com isso o Ataque Furtivo se aplica mesmo sem vantagem."
+            >
+              <input
+                type="checkbox"
+                checked={adjacentAlly}
+                onChange={(event) => setAdjacentAlly(event.target.checked)}
+              />
+              Tenho um aliado adjacente ao alvo
+            </label>
+          ) : null}
 
           {ammoType ? (
             <label className="field">
@@ -171,6 +220,9 @@ function AttackPanel({
               onAttack({
                 attackId,
                 targetCombatantId: targetId,
+                advantage,
+                disadvantage,
+                ...(adjacentAlly && sneakEligible ? { adjacentAlly: true } : {}),
                 ...(attackerChoices ? { attackerCombatantId: attacker.id } : {}),
                 ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
               });

@@ -11,7 +11,9 @@ import {
   asiLevelsFor,
   classEntriesLabel,
   classOptionsFor,
+  computeFeatAdjustments,
   computeMulticlassAdjustments,
+  mergeAdjustments,
   effectiveSpellcasting,
   expertiseOptionsFor,
   expertiseSlots,
@@ -354,7 +356,24 @@ export function toCharacterDto(
   // Cada classe é avaliada no PRÓPRIO nível: um Bárbaro 3/Ladino 2 tem as
   // features de bárbaro até o 3 e as de ladino até o 2, ao mesmo tempo.
   const activeFeatures = getMulticlassFeatures(classEntries);
-  const classAdjustments = computeMulticlassAdjustments(classEntries, classState, abilities);
+  // As features GRAVADAS na ficha (JSONB) incluem os talentos escolhidos no
+  // Level Up (`source: 'feat'`), que o pipeline das classes não vê.
+  const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
+  // Ajustes das classes MAIS os dos talentos (mesmo pipeline e mesmo merge).
+  const classAdjustments = mergeAdjustments(
+    computeMulticlassAdjustments(classEntries, classState, abilities),
+    computeFeatAdjustments(
+      features
+        .filter((feature) => feature.source === 'feat')
+        .map((feature) => ({
+          featId: feature.featId,
+          name: feature.name,
+          featAbility: feature.featAbility,
+        })),
+      level,
+      abilities,
+    ),
+  );
 
   // Salvaguardas fixas: as da PRIMEIRA classe (multiclasse nunca concede
   // salvaguardas — PHB p.164) e as concedidas por features (ex.: Mente
@@ -391,7 +410,6 @@ export function toCharacterDto(
     slots: {},
   });
   const attacks = parseJson<AttackDto[]>(attackListSchema, character.attacks, []);
-  const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
   const proficiencies = normalizeProficiencies(character.proficiencies);
 
   // Expertise (Ladino/Bardo): as opções saem SÓ do que o personagem já domina —

@@ -330,6 +330,10 @@ export interface Feature {
   name: string;
   source: FeatureSource;
   description: string;
+  /** Id estável do talento no catálogo (`feats.ts`); só nas features de talento. */
+  featId?: string;
+  /** Atributo escolhido nos "meio-talentos" (ex.: Atleta: FOR ou DES). */
+  featAbility?: AbilityKey;
 }
 
 export interface SaveDetail {
@@ -1184,8 +1188,17 @@ export interface LevelUpRequest {
    * qualquer; Patrulheiro e Ladino: da lista da classe).
    */
   skillChoice?: string;
-  /** Talento escolhido (registro textual; sem efeito mecânico ainda). */
-  feat?: { name: string; description: string } | null;
+  /**
+   * Talento escolhido no nível de Aumento de Atributo. `id` liga ao catálogo
+   * (`feats.ts`) e dá efeito mecânico; `ability` é a sub-escolha dos
+   * "meio-talentos" (ex.: Atleta: Força ou Destreza).
+   */
+  feat?: {
+    id?: string;
+    name: string;
+    description: string;
+    ability?: AbilityKey;
+  } | null;
   /**
    * Escolhas de característica do nível que está sendo ganho (Estilo de Luta no
    * 1º nível do guerreiro e no 2º do paladino/patrulheiro, Inimigo Favorito e
@@ -1847,6 +1860,10 @@ export interface AttackResolvedPayload {
   attackName: string;
   targetName: string;
   attackRoll: number;
+  /** Rolagem feita com vantagem (2d20, mantém o maior). */
+  advantage: boolean;
+  /** Rolagem feita com desvantagem (2d20, mantém o menor). */
+  disadvantage: boolean;
   attackBonus: number;
   attackTotal: number;
   /** `null` quando o alvo é uma criatura e quem vê é um jogador. */
@@ -1857,8 +1874,11 @@ export interface AttackResolvedPayload {
   damageType: string;
   /** Cada parcela do ataque, com o efeito da defesa do alvo (vazio se errou). */
   components: DamageComponentPayload[];
-  /** Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve). */
-  sneakAttack: { expression: string; total: number } | null;
+  /**
+   * Dano extra de Ataque Furtivo já somado a `damageRolled` (nulo se não houve).
+   * `reason` indica a condição que o habilitou (vantagem / aliado adjacente).
+   */
+  sneakAttack: { expression: string; total: number; reason: string } | null;
   targetHpCurrent: number | null;
   targetHpMax: number | null;
   /** Verdadeiro quando CA/vida do alvo ficam ocultas para quem vê. */

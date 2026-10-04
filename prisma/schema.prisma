@@ -479,6 +479,10 @@ model Combatant {
   initiative     Int?
   initiativeRoll Int?
 
+  /// Trava do Ataque Furtivo: "uma vez por turno". A flag é zerada quando o
+  /// turno do combatente começa (ver `nextTurn`).
+  sneakAttackUsedThisTurn Boolean @default(false)
+
   createdAt DateTime @default(now())
 
   @@index([combatId])
