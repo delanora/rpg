@@ -1811,6 +1811,12 @@ export interface ClassOption extends ClassSummary {
   /** Perícia à escolha da entrada por multiclasse (null quando não concede). */
   multiclassSkillChoice: MulticlassSkillChoice | null;
   /**
+   * Perícias à escolha quando a classe é a PRIMEIRA do personagem (criação):
+   * quantas e de qual lista. É o que o assistente usa para podar as escolhas ao
+   * trocar de classe inicial (lista vazia = qualquer perícia, como no Bardo).
+   */
+  skillChoice: ClassSkillChoice;
+  /**
    * Escolhas de característica feitas no NÍVEL 1 da classe — é o que a entrada
    * por multiclasse (e a criação) precisa pedir na hora (Estilo de Luta do
    * guerreiro, Inimigo Favorito e Explorador Nato do patrulheiro).
@@ -1852,6 +1858,7 @@ export function classOptionsFor(
       firstProficiencies: firstClassProficiencies(summary.key),
       multiclassProficiencies: multiclassProficiencyGrant(summary.key),
       multiclassSkillChoice: multiclassSkillChoiceFor(summary.key),
+      skillChoice: classSkillChoice(summary.key),
       featureChoices: definition
         ? featureChoiceInfo(definition).filter((info) => info.level === 1)
         : [],

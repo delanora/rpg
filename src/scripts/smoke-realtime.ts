@@ -5267,6 +5267,51 @@ async function main(): Promise<void> {
     JSON.stringify(skillsStep.data?.character?.skills),
   );
 
+  // Trocar a classe inicial PODA as perícias escolhidas: as que a nova lista
+  // não aceita saem, para não virarem uma "perícia fantasma" (não aparece no
+  // passo 7, mas contaria no envio e o servidor a recusaria). O Ladino aceita
+  // Atletismo mas não Sobrevivência.
+  const prunedSwap = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'rogue' },
+  });
+  check(
+    'trocar a classe inicial poda as perícias fora da nova lista (Atletismo fica, Sobrevivência sai)',
+    prunedSwap.status === 200 &&
+      JSON.stringify(prunedSwap.data?.creation?.skillPicks) === JSON.stringify(['athletics']),
+    JSON.stringify({
+      status: prunedSwap.status,
+      message: prunedSwap.data?.message,
+      picks: prunedSwap.data?.creation?.skillPicks,
+    }),
+  );
+  check(
+    'o passo da classe oferece a lista de perícias para o cliente podar (skillChoice)',
+    prunedSwap.data?.character?.classOptions?.find((item: any) => item.key === 'rogue')?.skillChoice
+      ?.from?.length === 11,
+    JSON.stringify(
+      prunedSwap.data?.character?.classOptions?.find((item: any) => item.key === 'rogue')
+        ?.skillChoice,
+    ),
+  );
+  // Volta ao Bárbaro e refaz o passo 7, para o restante do fluxo seguir igual.
+  await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 5, classKey: 'barbarian' },
+  });
+  const restoredSkills = await api('/api/characters/me/creation', {
+    method: 'PATCH',
+    token: rookieToken,
+    body: { step: 7, skills: ['athletics', 'survival'] },
+  });
+  check(
+    'depois de refazer o passo 7 o fluxo segue válido (200)',
+    restoredSkills.status === 200,
+    JSON.stringify(restoredSkills.data?.message),
+  );
+
   check(
     'passo 8 no nível inicial da mesa (1) é aceito (200)',
     (

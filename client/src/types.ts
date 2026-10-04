@@ -649,6 +649,12 @@ export interface ClassOption extends ClassSummary {
   multiclassProficiencies: ProficienciesState;
   /** Perícia à escolha da entrada por multiclasse (null quando não concede). */
   multiclassSkillChoice: MulticlassSkillChoice | null;
+  /**
+   * Perícias à escolha quando a classe é a PRIMEIRA do personagem (criação):
+   * quantas e de qual lista (lista vazia = qualquer perícia). Usado para podar
+   * as escolhas ao trocar de classe inicial.
+   */
+  skillChoice: MulticlassSkillChoice;
   /** Escolhas feitas no NÍVEL 1 da classe (Estilo de Luta, Inimigo Favorito). */
   featureChoices: FeatureChoiceInfo[];
   /**
