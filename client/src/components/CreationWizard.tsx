@@ -32,6 +32,7 @@ import { FeatureChoiceField } from './FeatureChoiceField';
 import { Icon } from './Icon';
 import { LevelUpDialog } from './LevelUpDialog';
 import { Portrait } from './Portrait';
+import { RaceFaceIcon } from './RaceFace';
 
 /** Passos do assistente, na ordem em que são percorridos. */
 const STEP_LABELS = [
@@ -84,12 +85,6 @@ function raceChoicePool(option: RaceOption): AbilityKey[] {
  */
 function raceGroupKeyOf(option: RaceOption): string {
   return option.customRaceId ?? option.raceId;
-}
-
-/** Inicial exibida no retrato placeholder (usa o nome próprio da sub-raça, quando houver). */
-function portraitInitial(option: RaceOption): string {
-  const inside = option.name.match(/\(([^)]+)\)/)?.[1];
-  return ((inside ?? option.name).trim().charAt(0) || '?').toUpperCase();
 }
 
 /** Nome próprio da sub-raça (tira o "Raça (" e o ")"). */
@@ -817,7 +812,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                             onClick={() => pickBaseRace(base)}
                           >
                             <span className="race-portrait" aria-hidden="true">
-                              {portraitInitial(base)}
+                              <RaceFaceIcon option={base} />
                             </span>
                             <span className="race-card-name">{base.name}</span>
                             {base.customRaceId ? (
@@ -985,7 +980,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                             onClick={() => pickSubrace(lineage)}
                           >
                             <span className="race-portrait" aria-hidden="true">
-                              {portraitInitial(lineage)}
+                              <RaceFaceIcon option={lineage} />
                             </span>
                             <span className="race-card-name">{subraceName(lineage)}</span>
                           </button>
