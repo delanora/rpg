@@ -978,25 +978,45 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                       })}
                     </div>
 
+                    {/* A raça base segue visível durante a escolha da sub-raça,
+                        para comparar o que a linhagem acrescenta. */}
+                    {raceBaseOption ? (
+                      <div className="race-detail">
+                        <h3>{raceBaseOption.name}</h3>
+                        {raceBaseOption.description ? (
+                          <p className="race-detail-note">{raceBaseOption.description}</p>
+                        ) : null}
+
+                        <p className="race-bonus">
+                          <strong>Bônus de atributo</strong>
+                          {raceBonusLabel(raceBaseOption) || '—'}
+                        </p>
+
+                        {(raceBaseOption.traits ?? []).length > 0 ? (
+                          <>
+                            <span className="race-detail-sub">Recursos da raça</span>
+                            <div className="race-traits-full">
+                              {(raceBaseOption.traits ?? []).map((trait) => (
+                                <p className="race-trait-line" key={trait.id}>
+                                  <strong>{trait.name}</strong>
+                                  {trait.description}
+                                </p>
+                              ))}
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+
                     {selectedRace ? (
                       <div className="race-detail">
                         <h3>{selectedRace.name}</h3>
                         {raceBaseOption && subraceBonusLabel(raceBaseOption, selectedRace) ? (
-                          <p className="race-detail-note">
-                            <strong>Bônus:</strong>{' '}
+                          <p className="race-bonus">
+                            <strong>Bônus da sub-raça</strong>
                             {subraceBonusLabel(raceBaseOption, selectedRace)}
                           </p>
                         ) : null}
-
-                        <span className="race-detail-sub">Traços da raça base</span>
-                        <div className="race-traits-full">
-                          {(raceBaseOption?.traits ?? []).map((trait) => (
-                            <p className="race-trait-line" key={trait.id}>
-                              <strong>{trait.name}</strong>
-                              {trait.description}
-                            </p>
-                          ))}
-                        </div>
 
                         {subraceOnlyTraits.length > 0 ? (
                           <>
@@ -1014,7 +1034,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                       </div>
                     ) : (
                       <p className="section-note">
-                        Escolha uma sub-raça acima para ver os detalhes.
+                        Escolha uma sub-raça acima para ver o que ela acrescenta.
                       </p>
                     )}
                   </>
