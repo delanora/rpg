@@ -1345,10 +1345,17 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                       <span className="check-name">
                         {skill.label}
                         <span className="muted"> · {ABILITY_LABELS[skill.ability]}</span>
-                        {fromBackground ? (
-                          <span className="muted"> · antecedente</span>
-                        ) : null}
                       </span>
+                      {fromBackground ? (
+                        <span className="info-tip skill-tip">
+                          <Icon name="info" size={14} />
+                          <span className="info-tip-text" role="tooltip">
+                            <strong>{skill.label}</strong>
+                            Concedida pelo antecedente {selectedBackground?.name} — entra na ficha
+                            sem gastar as escolhas da classe.
+                          </span>
+                        </span>
+                      ) : null}
                     </label>
                   );
                 })}
