@@ -691,6 +691,12 @@ export interface ClassAdjustments {
   wildShapeFlying: boolean;
   abilityBonuses: Partial<Record<AbilityKey, number>>;
   abilityCaps: Partial<Record<AbilityKey, number>>;
+  /**
+   * Atributos com proficiência de SALVAGUARDA concedida por features/talentos
+   * (efeito `save`, ex.: Mente Escorregadia do ladino e o Resiliente). É a mesma
+   * fonte que trava as salvaguardas no DTO.
+   */
+  saveProficiencies: AbilityKey[];
   /** Bônus fixo de CA (Estilo de Luta Defesa: +1). */
   armorClassBonus: number;
   /** O bônus de CA acima só vale com armadura vestida (regra da Defesa). */
@@ -749,6 +755,7 @@ export function computeClassAdjustments(
   let saveBonus = 0;
   let saveBonusLabel = '';
   const halfProficiency: { target: 'checks' | 'physicalChecks'; round: 'down' | 'up' }[] = [];
+  const saveProficiencies: AbilityKey[] = [];
   let critThreshold: number | null = null;
 
   /**
@@ -850,6 +857,11 @@ export function computeClassAdjustments(
           }
           if (effect.requiresArmor) armorClassBonusRequiresArmor = true;
           break;
+        case 'save':
+          // Proficiência de salvaguarda concedida pela feature/talento (o DTO
+          // usa esta lista para TRAVAR a salvaguarda).
+          if (effect.ability) saveProficiencies.push(effect.ability);
+          break;
         case 'saveBonus':
           // Aura de Proteção é única na mesa: também vale o MAIOR, nunca a soma.
           if (effectValueWithAbilityMod(effect, abilities) > saveBonus) {
@@ -924,6 +936,7 @@ export function computeClassAdjustments(
     armorClassBonusLabel,
     saveBonus,
     saveBonusLabel,
+    saveProficiencies,
     halfProficiency,
     critThreshold,
   };
@@ -1429,6 +1442,7 @@ export function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments
     wildShapeFlying: base.wildShapeFlying || extra.wildShapeFlying,
     abilityBonuses,
     abilityCaps: { ...extra.abilityCaps, ...base.abilityCaps },
+    saveProficiencies: [...new Set([...base.saveProficiencies, ...extra.saveProficiencies])],
     // Bônus de CA e de salvaguarda NÃO somam entre classes (dois "Estilos de
     // Luta" ou duas "Auras" valem uma vez só): o maior vence.
     armorClassBonus: Math.max(base.armorClassBonus, extra.armorClassBonus),
@@ -1478,6 +1492,7 @@ function emptyAdjustments(): ClassAdjustments {
     wildShapeFlying: false,
     abilityBonuses: {},
     abilityCaps: {},
+    saveProficiencies: [],
     armorClassBonus: 0,
     armorClassBonusRequiresArmor: false,
     armorClassBonusLabel: '',

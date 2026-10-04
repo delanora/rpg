@@ -427,9 +427,9 @@ export function toCharacterDto(
   );
 
   // Salvaguardas fixas: as da PRIMEIRA classe (multiclasse nunca concede
-  // salvaguardas — PHB p.164) e as concedidas por features (ex.: Mente
-  // Escorregadia). Aparecem sempre proficientes, mesmo se o valor gravado
-  // estiver desatualizado.
+  // salvaguardas — PHB p.164), as das features (ex.: Mente Escorregadia) e as dos
+  // TALENTOS (o `save` do Resiliente, resolvido por `computeFeatAdjustments`).
+  // Aparecem sempre proficientes, mesmo se o valor gravado estiver desatualizado.
   const lockedSaves = [
     ...(classEntries[0]
       ? (getClassDefinition(classEntries[0].classKey)?.savingThrows ?? [])
@@ -439,6 +439,7 @@ export function toCharacterDto(
         effect.type === 'save' && effect.ability ? [effect.ability] : [],
       ),
     ),
+    ...classAdjustments.saveProficiencies,
   ];
   const saves = applySaveProficiencies(normalizeSaves(character.saves), lockedSaves);
 
