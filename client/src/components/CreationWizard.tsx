@@ -410,6 +410,19 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     [picks, skillPoolKeys, backgroundSkillKeys, raceSkillKeys],
   );
 
+  /**
+   * A lista mostrada no passo 7: o pool da classe MAIS as perícias já concedidas
+   * (antecedente/raça) que ficam fora dele — assim elas sempre aparecem marcadas
+   * e travadas, mesmo quando a classe não as oferece.
+   */
+  const displaySkills = useMemo(() => {
+    const extras = [...new Set([...backgroundSkillKeys, ...raceSkillKeys])]
+      .filter((key) => !skillPoolKeys.has(key))
+      .map((key) => SKILLS.find((skill) => skill.key === key))
+      .filter((skill): skill is (typeof SKILLS)[number] => Boolean(skill));
+    return [...skillPool, ...extras];
+  }, [skillPool, skillPoolKeys, backgroundSkillKeys, raceSkillKeys]);
+
   /** Escolhas de ferramenta por categoria que o antecedente pede. */
   const backgroundToolChoiceDefs = selectedBackground?.toolChoices ?? [];
 
@@ -1359,7 +1372,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
               </p>
 
               <div className="grid grid-2 wizard-skills">
-                {skillPool.map((skill) => {
+                {displaySkills.map((skill) => {
                   // Já concedida pelo antecedente ou pela raça: marcada e travada.
                   const fromBackground = backgroundSkillKeys.has(skill.key);
                   const fromRace = raceSkillKeys.has(skill.key);
@@ -1407,15 +1420,14 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                 <p className="section-note">
                   O antecedente {selectedBackground?.name} já concede{' '}
                   {backgroundSkillLabels.join(' e ')} — entram na ficha sem gastar as escolhas da
-                  classe; as que também aparecem na lista já vêm marcadas e travadas.
+                  classe e aparecem marcadas e travadas na lista.
                 </p>
               ) : null}
 
               {raceSkillLabels.length > 0 ? (
                 <p className="section-note">
                   A raça {selectedRace?.name} já concede {raceSkillLabels.join(' e ')} — entram na
-                  ficha sem gastar as escolhas da classe; as que também aparecem na lista já vêm
-                  marcadas e travadas.
+                  ficha sem gastar as escolhas da classe e aparecem marcadas e travadas na lista.
                 </p>
               ) : null}
 
