@@ -40,6 +40,18 @@ export function AttacksSection({ character, update }: SheetSectionProps) {
                   <tr key={attack.id}>
                     <td>
                       {attack.name}
+                      {attack.proficient === false ? (
+                        <span
+                          className="prof-badge is-warn"
+                          title="Sem proficiência com esta arma — não soma o bônus de proficiência"
+                        >
+                          ⚠ sem prof.
+                        </span>
+                      ) : attack.proficient === true ? (
+                        <span className="prof-badge is-ok" title="Proficiente com esta arma">
+                          ✓ prof.
+                        </span>
+                      ) : null}
                       {attack.blocked ? (
                         <span className="legacy-badge" title={attack.blocked}>
                           indisponível

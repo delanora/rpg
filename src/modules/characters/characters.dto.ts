@@ -1,7 +1,7 @@
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
-import { deriveWeaponAttacks } from '../shared/weapon-attacks.js';
+import { deriveWeaponAttacks, isProficientWithWeapon } from '../shared/weapon-attacks.js';
 import {
   normalizeLevelHistory,
   type LevelHistoryRecord,
@@ -57,9 +57,12 @@ import { coinsWeight, normalizeCoins, type CoinPurse } from '../shared/coins.js'
 import type { ItemDetails, ItemRarity } from '../shared/item-details.js';
 import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
 import { getTool, TOOL_CATEGORY_LABELS, type ToolCategory } from '../shared/tools/index.js';
-import { raceWeaponProficiencies } from '../shared/races/index.js';
 import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
-import { armorPiecesFrom } from '../shared/armor-class.js';
+import {
+  armorPiecesFrom,
+  isArmorTypeProficient,
+  isShieldProficient,
+} from '../shared/armor-class.js';
 import { syncInventory, type CatalogSnapshot } from './inventory-sync.js';
 import {
   featureSchema,
@@ -94,6 +97,17 @@ export interface InventoryItemDto {
   requiresAttunement: boolean;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
+  /**
+   * Estado de proficiência do personagem com ESTE item, quando a categoria tem
+   * regra (Arma/Cajado, Armadura, Escudo). `null` nas demais — é o que o popup
+   * de detalhes mostra. DERIVADO na leitura: não é gravado no inventário.
+   */
+  proficiency?: ItemProficiency | null;
+}
+
+/** Proficiência do personagem com um item do inventário (o que o popup exibe). */
+export interface ItemProficiency {
+  proficient: boolean;
 }
 
 /**
@@ -329,6 +343,42 @@ export interface CharacterDto {
 const attackListSchema = z.array(attackSchema);
 const featureListSchema = z.array(featureSchema);
 
+/**
+ * Proficiência do personagem com um item do inventário, pelas MESMAS regras da
+ * ficha: arma/cajado por `isProficientWithWeapon`, armadura por TIPO e escudo
+ * por `isShieldProficient` (ver shared/weapon-attacks e shared/armor-class).
+ *
+ * `null` quando a categoria não tem regra de proficiência (poção, anel...) ou
+ * quando a armadura ainda não tem `armorType` cadastrado — não há o que afirmar.
+ */
+function itemProficiencyOf(
+  item: InventoryItemDto,
+  weaponProficiencies: readonly string[],
+  armorProficiencies: readonly string[],
+): ItemProficiency | null {
+  if (item.category === 'Arma' || item.category === 'Cajado') {
+    return {
+      proficient: isProficientWithWeapon(
+        weaponProficiencies,
+        item.details.weaponCategory ?? 'simple',
+        item.name,
+        item.details.canonicalWeaponId,
+      ),
+    };
+  }
+
+  if (item.category === 'Armadura') {
+    const type = item.details.armorType;
+    return type === undefined ? null : { proficient: isArmorTypeProficient(armorProficiencies, type) };
+  }
+
+  if (item.category === 'Escudo') {
+    return { proficient: isShieldProficient(armorProficiencies) };
+  }
+
+  return null;
+}
+
 export function toCharacterDto(
   character: Character,
   ownerUsername?: string,
@@ -446,17 +496,17 @@ export function toCharacterDto(
   // sendo a base.
   const effectiveAbilities = effectiveAbilitiesOf(character, classAdjustments);
 
-  // Proficiências de arma = as da ficha (classe/subclasse/mestre) + as da RAÇA
-  // (motor de raça, por id canônico do catálogo). A raça é DERIVADA: não grava
-  // em `proficiencies.weapons`, então trocar de raça não deixa resíduo.
-  const weaponProficiencies = [
-    ...proficiencies.weapons,
-    ...raceWeaponProficiencies({
-      raceId: character.raceId,
-      subraceId: character.subraceId,
-      choices: parseJson<Record<string, string>>(raceChoicesSchema, character.raceChoices, {}),
-    }),
-  ];
+  // Proficiências de arma = as GRAVADAS na ficha. A raça escreve os ids
+  // canônicos direto em `proficiencies.weapons` (o serviço aplica/reverte na
+  // troca de raça) — o DTO só lê, a ficha é a fonte única.
+  const weaponProficiencies = proficiencies.weapons;
+
+  // Proficiência do personagem com cada item do inventário (o popup de detalhes
+  // mostra "Proficiente" / "Sem proficiência"). Mesmas regras da ficha.
+  const inventoryWithProficiency: InventoryItemDto[] = inventory.map((item) => ({
+    ...item,
+    proficiency: itemProficiencyOf(item, weaponProficiencies, proficiencies.armor),
+  }));
 
   // Ataques derivados das armas EQUIPADAS (habilidade, proficiência, versátil,
   // duas mãos, mão secundária, arremesso e golpe desarmado).
@@ -614,7 +664,7 @@ export function toCharacterDto(
     proficiencies,
     toolProficiencies: character.toolProficiencies ?? [],
     tools: resolveTools(character.toolProficiencies ?? []),
-    inventory,
+    inventory: inventoryWithProficiency,
     spells,
     attacks,
     derivedAttacks,
@@ -645,14 +695,7 @@ export function characterDerivedAttacks(character: Character): CombatAttack[] {
   return deriveWeaponAttacks({
     abilities: effectiveAbilitiesOf(character, classAdjustments),
     level: totalCharacterLevel(classEntries),
-    weaponProficiencies: [
-      ...normalizeProficiencies(character.proficiencies).weapons,
-      ...raceWeaponProficiencies({
-        raceId: character.raceId,
-        subraceId: character.subraceId,
-        choices: parseJson<Record<string, string>>(raceChoicesSchema, character.raceChoices, {}),
-      }),
-    ],
+    weaponProficiencies: normalizeProficiencies(character.proficiencies).weapons,
     inventory,
   });
 }

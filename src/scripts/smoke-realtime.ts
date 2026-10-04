@@ -5881,6 +5881,12 @@ async function main(): Promise<void> {
       armorClassOf(profLight)?.armorNonProficiency?.armor === false,
     JSON.stringify(armorClassOf(profLight)),
   );
+  check(
+    'o popup da armadura leve mostra PROFICIENTE (dados do servidor)',
+    profLight.data?.character?.inventory?.find((item: any) => item.category === 'Armadura')
+      ?.proficiency?.proficient === true,
+    JSON.stringify(profLight.data?.character?.inventory?.[0]?.proficiency),
+  );
 
   // Caso 2 — média SEM proficiência: a CA continua a da regra (13 + DES 2 = 15).
   await setArmorProfs(['Armaduras leves']);
@@ -5895,6 +5901,12 @@ async function main(): Promise<void> {
       armorClassOf(noProfMedium)?.armorProficiency?.armor === false &&
       armorClassOf(noProfMedium)?.armorNonProficiency?.armor === true,
     JSON.stringify(armorClassOf(noProfMedium)),
+  );
+  check(
+    'o popup da armadura média mostra SEM proficiência',
+    noProfMedium.data?.character?.inventory?.find((item: any) => item.category === 'Armadura')
+      ?.proficiency?.proficient === false,
+    JSON.stringify(noProfMedium.data?.character?.inventory?.[0]?.proficiency),
   );
 
   // Caso 3 — pesada sem proficiência.
@@ -5928,6 +5940,12 @@ async function main(): Promise<void> {
       armorClassOf(noProfShield)?.shield?.name === 'Escudo',
     JSON.stringify(armorClassOf(noProfShield)),
   );
+  check(
+    'o popup do escudo mostra SEM proficiência (lista sem "Escudos")',
+    noProfShield.data?.character?.inventory?.find((item: any) => item.category === 'Escudo')
+      ?.proficiency?.proficient === false,
+    JSON.stringify(noProfShield.data?.character?.inventory?.[1]?.proficiency),
+  );
 
   // Caso 5 — as quatro proficiências: armadura e escudo proficientes.
   await setArmorProfs([
@@ -5949,6 +5967,14 @@ async function main(): Promise<void> {
       armorClassOf(allProf)?.armorNonProficiency?.armor === false &&
       armorClassOf(allProf)?.armorNonProficiency?.shield === false,
     JSON.stringify(armorClassOf(allProf)),
+  );
+  check(
+    'os popups de armadura e escudo mostram PROFICIENTE com as quatro proficiências',
+    allProf.data?.character?.inventory?.find((item: any) => item.category === 'Armadura')
+      ?.proficiency?.proficient === true &&
+      allProf.data?.character?.inventory?.find((item: any) => item.category === 'Escudo')
+        ?.proficiency?.proficient === true,
+    JSON.stringify(allProf.data?.character?.inventory?.map((item: any) => item.proficiency)),
   );
 
   // Caso 9 — Defesa sem Armadura (Bárbaro) NÃO vira "sem proficiência".
@@ -8072,6 +8098,11 @@ async function main(): Promise<void> {
   const weaponAttacksOf = async (): Promise<any[]> =>
     ((await sheetOf(duelist.token))?.derivedAttacks ?? []) as any[];
 
+  // Proficiência do item no popup de detalhes: vem calculada pelo servidor.
+  const itemProficiencyOf = async (id: string): Promise<boolean | null | undefined> =>
+    (await sheetOf(duelist.token))?.inventory?.find((item: any) => item.id === id)?.proficiency
+      ?.proficient;
+
   const longswordAttack = (await weaponAttacksOf()).find(
     (attack) => attack.id === 'weapon:a-longsword',
   );
@@ -8083,6 +8114,11 @@ async function main(): Promise<void> {
       longswordAttack?.ranged === false &&
       /proficiente/.test(longswordAttack?.notes ?? ''),
     JSON.stringify(longswordAttack),
+  );
+  check(
+    'o popup do item traz a proficiência pelo NOME (dados do servidor)',
+    (await itemProficiencyOf('a-longsword')) === true,
+    JSON.stringify(await itemProficiencyOf('a-longsword')),
   );
   check(
     'versátil com a outra mão LIVRE usa o dado de duas mãos (1d10+3)',
@@ -8114,6 +8150,11 @@ async function main(): Promise<void> {
     clubAttack?.attackBonus === 5 && clubAttack?.damage?.bonus === 3,
     JSON.stringify(clubAttack),
   );
+  check(
+    'o popup do item traz a proficiência pela CATEGORIA (Arma simples)',
+    (await itemProficiencyOf('a-club')) === true,
+    JSON.stringify(await itemProficiencyOf('a-club')),
+  );
 
   // Arma marcial sem nome nem categoria na lista: SEM proficiência.
   await masterPatch(duelist.characterId, { inventory: [greataxe] });
@@ -8125,30 +8166,77 @@ async function main(): Promise<void> {
     greataxeAttack?.attackBonus === 3 &&/sem proficiência/.test(greataxeAttack?.notes ?? ''),
     JSON.stringify(greataxeAttack),
   );
+  check(
+    'o popup do item mostra SEM proficiência numa arma sem nome/categoria',
+    (await itemProficiencyOf('a-greataxe')) === false,
+    JSON.stringify(await itemProficiencyOf('a-greataxe')),
+  );
 
   // Proficiência pelo ID CANÔNICO via RAÇA (o Anão concede 'battleaxe' pelo
-  // Treinamento de Combate Anão). A raça é DERIVADA: não grava na ficha.
+  // Treinamento de Combate Anão). A raça GRAVA os ids em `proficiencies.weapons`,
+  // somando às proficiências que já estavam na ficha.
   await masterPatch(duelist.characterId, {
     raceId: 'dwarf',
     subraceId: null,
-    proficiencies: { armor: [], weapons: [], tools: [] },
+    proficiencies: { armor: [], weapons: ['Armas simples'], tools: [] },
     inventory: [battleaxe],
   });
+  const dwarfSheet = await sheetOf(duelist.token);
+  check(
+    'a raça (Anão) GRAVA os 4 ids canônicos na ficha, sem apagar as demais proficiências',
+    JSON.stringify(dwarfSheet?.proficiencies?.weapons) ===
+      JSON.stringify(['Armas simples', 'battleaxe', 'handaxe', 'light-hammer', 'warhammer']),
+    JSON.stringify(dwarfSheet?.proficiencies?.weapons),
+  );
   const dwarfAxe = (await weaponAttacksOf()).find((attack) => attack.id === 'weapon:a-battleaxe');
   check(
-    'a raça (Anão) dá proficiência pelo ID canônico da arma',
+    'a raça (Anão) dá proficiência pelo ID canônico da arma gravado na ficha',
     dwarfAxe?.attackBonus === 5 && /proficiente/.test(dwarfAxe?.notes ?? ''),
     JSON.stringify(dwarfAxe),
   );
+  check(
+    'o popup do item da raça mostra PROFICIENTE pelo ID canônico',
+    (await itemProficiencyOf('a-battleaxe')) === true,
+    JSON.stringify(await itemProficiencyOf('a-battleaxe')),
+  );
 
-  // Sem a raça, o ID canônico sozinho não dá proficiência (fallback por nome/
-  // categoria não casa): volta a "sem proficiência".
+  // Sem a raça, os ids GRAVADOS pela raça saem da ficha (aplicar/reverter) e o
+  // que não veio da raça é preservado.
   await masterPatch(duelist.characterId, { raceId: null, subraceId: null });
+  const noRaceSheet = await sheetOf(duelist.token);
+  check(
+    'trocar de raça REVERTE os ids gravados, preservando as demais proficiências',
+    JSON.stringify(noRaceSheet?.proficiencies?.weapons) === JSON.stringify(['Armas simples']),
+    JSON.stringify(noRaceSheet?.proficiencies?.weapons),
+  );
   const noRaceAxe = (await weaponAttacksOf()).find((attack) => attack.id === 'weapon:a-battleaxe');
   check(
     'sem a raça, o ID canônico sozinho não dá proficiência',
     noRaceAxe?.attackBonus === 3 && /sem proficiência/.test(noRaceAxe?.notes ?? ''),
     JSON.stringify(noRaceAxe),
+  );
+  check(
+    'o popup do item mostra SEM proficiência quando a raça foi revertida',
+    (await itemProficiencyOf('a-battleaxe')) === false,
+    JSON.stringify(await itemProficiencyOf('a-battleaxe')),
+  );
+
+  // O ataque derivado carrega a proficiência em campo próprio (`proficient`),
+  // para a tabela de armas equipadas marcar sem reinterpretar o texto das notas.
+  check(
+    'o ataque derivado marca proficient (nome/categoria/id canônico/raça)',
+    longswordAttack?.proficient === true &&
+      clubAttack?.proficient === true &&
+      greataxeAttack?.proficient === false &&
+      dwarfAxe?.proficient === true &&
+      noRaceAxe?.proficient === false,
+    JSON.stringify({
+      longsword: longswordAttack?.proficient,
+      club: clubAttack?.proficient,
+      greataxe: greataxeAttack?.proficient,
+      dwarfAxe: dwarfAxe?.proficient,
+      noRaceAxe: noRaceAxe?.proficient,
+    }),
   );
 
   // Restaura as proficiências controladas para os testes seguintes.

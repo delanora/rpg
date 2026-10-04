@@ -197,6 +197,8 @@ function makeWeaponAttack(options: {
   die: number;
   dieCount: number;
   notes: string;
+  /** Proficiência com a arma (a ficha marca no ataque derivado). */
+  proficient?: boolean;
   blocked?: string;
 }): CombatAttack {
   const properties = options.weapon.details.properties ?? [];
@@ -222,6 +224,7 @@ function makeWeaponAttack(options: {
     inventoryItemId: options.weapon.id,
     legacy: false,
     derived: true,
+    ...(options.proficient === undefined ? {} : { proficient: options.proficient }),
     ...(options.blocked === undefined ? {} : { blocked: options.blocked }),
   };
 }
@@ -237,6 +240,7 @@ function unarmedAttack(strengthMod: number, proficiency: number): CombatAttack {
     notes: `Corpo a corpo · FOR ${formatModifier(strengthMod)} · proficiente ${formatModifier(proficiency)}`,
     finesse: false,
     ranged: false,
+    proficient: true,
     legacy: false,
     derived: true,
   };
@@ -308,6 +312,7 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
           twoHands,
           die,
         }),
+        proficient,
         ...(blocked === undefined ? {} : { blocked }),
       }),
     );
@@ -333,6 +338,7 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
             twoHands: false,
             die: baseDie,
           }),
+          proficient,
         }),
       );
     }
@@ -368,6 +374,7 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
         die,
         dieCount,
         notes: 'Mão secundária · sem o modificador de dano (duas armas leves)',
+        proficient,
       }),
     );
   }

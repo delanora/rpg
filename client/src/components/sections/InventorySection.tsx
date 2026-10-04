@@ -305,6 +305,20 @@ export function InventorySection({
       >
         <ItemSprite item={item} />
         {item.quantity > 1 ? <span className="inv-qty">{item.quantity}</span> : null}
+        {/* Proficiência do personagem com o item (vem calculada do servidor). */}
+        {item.proficiency ? (
+          <span
+            className={`inv-prof${item.proficiency.proficient ? ' is-ok' : ' is-warn'}`}
+            title={
+              item.proficiency.proficient
+                ? 'Proficiente com este item'
+                : 'Sem proficiência com este item'
+            }
+            aria-hidden="true"
+          >
+            {item.proficiency.proficient ? '✓' : '⚠'}
+          </span>
+        ) : null}
       </div>
     );
   }

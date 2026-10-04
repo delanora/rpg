@@ -3193,6 +3193,27 @@ input[type='checkbox']:disabled {
   cursor: help;
 }
 
+/* Proficiência do ataque derivado (arma equipada): ao lado do nome. */
+.prof-badge {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: help;
+}
+
+.prof-badge.is-ok {
+  background: rgba(47, 107, 63, 0.16);
+  color: var(--ok);
+}
+
+.prof-badge.is-warn {
+  background: rgba(179, 84, 30, 0.18);
+  color: var(--warn);
+}
+
 /* ==========================================================================
    15. Magias
    ========================================================================== */
@@ -6172,6 +6193,34 @@ input[type='checkbox']:disabled {
   text-align: center;
 }
 
+/* Proficiência do item no grid: canto superior esquerdo, discreto. */
+.inv-prof {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 0.85rem;
+  height: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.6rem;
+  line-height: 1;
+  cursor: help;
+}
+
+.inv-prof.is-ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.inv-prof.is-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
 /* --- Mochila (container estilo Tibia), sempre aberta sob o set ------------ */
 .bag-panel {
   /* Lado de cada célula da mochila; a janela mostra 4 fileiras de 5. */
@@ -6499,6 +6548,23 @@ input[type='checkbox']:disabled {
 .item-modal-fact strong {
   font-family: var(--font-display);
   color: var(--ink);
+}
+
+/* Proficiência do personagem com o item: linha discreta. O aviso (sem
+   proficiência) usa o dourado-escuro dos avisos, como no card da CA. */
+.item-modal-proficiency {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.item-modal-proficiency.is-warn {
+  color: var(--gold-deep);
+  font-weight: 600;
+}
+
+[data-theme='dark'] .item-modal-proficiency.is-warn {
+  color: var(--gold-bright);
 }
 
 .item-modal-block {

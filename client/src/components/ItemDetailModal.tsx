@@ -156,6 +156,19 @@ export function ItemDetailModal({
           ) : null}
         </div>
 
+        {/* Proficiência do personagem com este item (vem calculada do servidor). */}
+        {item.proficiency ? (
+          <p
+            className={`item-modal-proficiency${
+              item.proficiency.proficient ? '' : ' is-warn'
+            }`}
+          >
+            {item.proficiency.proficient
+              ? 'Proficiente com este item.'
+              : '⚠ Sem proficiência com este item.'}
+          </p>
+        ) : null}
+
         {rows.length > 0 ? (
           <section className="item-modal-block">
             <h3 className="item-modal-block-title">

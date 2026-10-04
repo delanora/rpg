@@ -168,6 +168,11 @@ export interface InventoryItem {
   requiresAttunement: boolean;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
+  /**
+   * Proficiência do personagem com ESTE item (Arma/Cajado, Armadura, Escudo);
+   * `null`/ausente quando a categoria não tem regra. Vem pronta do servidor.
+   */
+  proficiency?: { proficient: boolean } | null;
 }
 
 /** Corpo de `POST /api/characters/me/inventory/move`. */
@@ -323,6 +328,11 @@ export interface Attack {
    * duas mãos com a outra mão ocupada). O combate recusa a rolagem.
    */
   blocked?: string;
+  /**
+   * Proficiência do personagem com a arma deste ataque derivado. Presente só
+   * nos ataques calculados (`derived: true`).
+   */
+  proficient?: boolean;
 }
 
 export type FeatureSource = 'race' | 'class' | 'background' | 'feat' | 'other';

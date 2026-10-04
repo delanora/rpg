@@ -147,6 +147,13 @@ export type Attack = z.infer<typeof attackSchema>;
 export interface CombatAttack extends Attack {
   derived?: boolean;
   blocked?: string;
+  /**
+   * O personagem é proficiente com a arma deste ataque derivado? Omitido nos
+   * ataques gravados (o jogador não os calcula) e no golpe desarmado fica
+   * `true`. É o que a ficha usa para marcar a proficiência sem reler o texto de
+   * `notes`.
+   */
+  proficient?: boolean;
 }
 
 /**
