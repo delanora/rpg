@@ -42,6 +42,7 @@ import {
   toCustomRaceDto,
 } from '../custom-races/custom-races.service.js';
 import {
+  classSkillChoice,
   creationSkillChoice,
   expertiseOptionsFor,
   expertiseSkillsState,
@@ -920,6 +921,17 @@ export async function saveCreationStep(
         // passo com a mesma classe, o que já foi escolhido é mantido.
         const stored = normalizeClassState(character.classState);
         const keepsClass = current.length === 1 && current[0].classKey === definition.key;
+        // Ao TROCAR a classe inicial, as perícias já escolhidas da classe
+        // anterior saem: ficam só as que a NOVA lista também aceita (lista
+        // vazia = qualquer perícia). Sem isso, uma escolha fora do novo pool
+        // viraria uma "perícia fantasma" — não aparece no passo 7, mas conta no
+        // envio e o validador a recusa ("Fora da lista da classe").
+        if (!keepsClass) {
+          const pool = classSkillChoice(definition.key).from;
+          nextDraft.skillPicks = nextDraft.skillPicks.filter(
+            (key) => SKILL_KEYS.includes(key) && (pool.length === 0 || pool.includes(key)),
+          );
+        }
         // A Expertise é adiada para o passo das perícias (as opções só existem
         // depois que o personagem escolhe o que domina).
         const choices = resolveFeatureChoices(

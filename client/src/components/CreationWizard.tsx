@@ -87,6 +87,17 @@ function raceGroupKeyOf(option: RaceOption): string {
   return option.customRaceId ?? option.raceId;
 }
 
+/**
+ * Poda as perícias escolhidas às que a classe aceita. Ao TROCAR a classe
+ * inicial, uma escolha fora da nova lista vira uma "perícia fantasma": ela não
+ * aparece no passo 7 (não está no pool) mas continuaria contando no contador e
+ * no envio, e o servidor a recusaria. Lista vazia = qualquer perícia (Bardo).
+ */
+function pruneSkillPicksToClass(picks: string[], from: readonly string[]): string[] {
+  if (from.length === 0) return picks.filter((key) => SKILLS.some((skill) => skill.key === key));
+  return picks.filter((key) => from.includes(key));
+}
+
 /** Nome próprio da sub-raça (tira o "Raça (" e o ")"). */
 function subraceName(option: RaceOption): string {
   return option.name.match(/\(([^)]+)\)/)?.[1] ?? option.name;
@@ -368,9 +379,12 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
    * Escolhas de perícia da classe válidas: descarta as que o antecedente já
    * concede (aparecem marcadas e travadas na lista, sem gastar escolha).
    */
+  /** Chaves do pool da classe (o que o passo 7 mostra). */
+  const skillPoolKeys = useMemo(() => new Set(skillPool.map((skill) => skill.key)), [skillPool]);
+
   const effectivePicks = useMemo(
-    () => picks.filter((key) => !backgroundSkillKeys.has(key)),
-    [picks, backgroundSkillKeys],
+    () => picks.filter((key) => skillPoolKeys.has(key) && !backgroundSkillKeys.has(key)),
+    [picks, skillPoolKeys, backgroundSkillKeys],
   );
 
   /** Escolhas de ferramenta por categoria que o antecedente pede. */
@@ -1217,9 +1231,15 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                         name="creation-class"
                         checked={classKey === option.key}
                         onChange={() => {
+                          // Trocar de classe descarta o que era da anterior: a
+                          // subclasse, as escolhas e as PERÍCIAS que a nova
+                          // lista não aceita (o servidor poda do mesmo jeito).
+                          if (option.key !== classKey) {
+                            setPicks((current) =>
+                              pruneSkillPicksToClass(current, option.skillChoice?.from ?? []),
+                            );
+                          }
                           setClassKey(option.key);
-                          // A subclasse e as escolhas são da classe antiga: trocar
-                          // de classe recomeça (o servidor também descarta).
                           setSubclass('');
                           setChoicePicks({});
                         }}
