@@ -8702,10 +8702,11 @@ input[type='checkbox']:focus-visible,
   border-radius: 50%;
   background: radial-gradient(circle at 50% 35%, var(--surface-2), var(--surface-3));
   box-shadow: inset 0 0 0 1px rgba(224, 184, 63, 0.12);
-  font-family: var(--font-display);
-  font-size: 1.35rem;
-  line-height: 1;
   color: var(--gold-deep);
+}
+
+.race-face {
+  display: block;
 }
 
 .race-card.is-selected .race-portrait {
