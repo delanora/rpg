@@ -33,6 +33,11 @@ interface AttackPanelProps {
   attacksFor?: (combatantId: string) => Attack[];
   /** Dados de Ataque Furtivo a exibir em armas que qualificam (ex.: "2d6"). */
   sneakAttack?: string | null;
+  /**
+   * Mestre: resolve os dados de Ataque Furtivo do atacante escolhido (qualquer
+   * combatente, inclusive uma ficha de Ladino). Só o jogador usa `sneakAttack`.
+   */
+  sneakAttackFor?: (combatantId: string) => string | null;
   /** Inventário do próprio personagem (para munição e vínculo de arma). */
   inventory?: InventoryItem[];
   busy: boolean;
@@ -55,6 +60,7 @@ function AttackPanel({
   onSelectAttacker,
   attacksFor,
   sneakAttack,
+  sneakAttackFor,
   inventory,
   busy,
   onAttack,
@@ -74,9 +80,16 @@ function AttackPanel({
 
   // Munição do ataque escolhido: arma equipada vinculada + pilhas compatíveis.
   const selectedAttack = availableAttacks.find((item) => item.id === attackId) ?? null;
+  // No painel do mestre o atacante pode ser a ficha de qualquer Ladino; resolve
+  // os dados do Furtivo dela quando não vierem por prop (caso do jogador).
+  const sneakExpression =
+    sneakAttack ?? (sneakAttackFor && attacker ? sneakAttackFor(attacker.id) : null);
   // O Ataque Furtivo só é possível com uma arma que qualifica (sutil ou à
   // distância) e quando o personagem tem a feature — mesma condição do servidor.
-  const sneakEligible = Boolean(sneakAttack) && selectedAttack !== null && (selectedAttack.finesse || selectedAttack.ranged);
+  const sneakEligible =
+    Boolean(sneakExpression) &&
+    selectedAttack !== null &&
+    (selectedAttack.finesse || selectedAttack.ranged);
   const weapon = inventory && selectedAttack ? weaponOf(selectedAttack, inventory) : null;
   const ammoType = requiredAmmoType(weapon);
   const stacks = inventory && ammoType ? ammoStacks(inventory, ammoType) : [];
@@ -134,8 +147,8 @@ function AttackPanel({
                   {attack.name} — dano {damageExpression(attack.damage)}
                   {attack.damage.type ? ` (${attack.damage.type})` : ''}, acerto{' '}
                   {formatModifier(attack.attackBonus)}
-                  {sneakAttack && (attack.finesse || attack.ranged)
-                    ? ` · +${sneakAttack} furtivo`
+                  {sneakExpression && (attack.finesse || attack.ranged)
+                    ? ` · +${sneakExpression} furtivo`
                     : ''}
                 </option>
               ))}
@@ -259,6 +272,8 @@ interface CombatTrackerProps {
   characterAttacks?: Attack[];
   /** Dados de Ataque Furtivo do próprio personagem (ex.: "2d6"). */
   sneakAttackExpression?: string | null;
+  /** Mestre: dados de Ataque Furtivo do atacante escolhido (pode ser um Ladino). */
+  sneakAttackFor?: (combatantId: string) => string | null;
   /** Inventário do próprio personagem (munição e vínculo de arma). */
   characterInventory?: InventoryItem[];
   /** Mestre: ataques de qualquer combatente, para escolher o atacante. */
@@ -280,6 +295,7 @@ export function CombatTracker({
   onDismissTurnAlert,
   characterAttacks = [],
   sneakAttackExpression = null,
+  sneakAttackFor,
   characterInventory,
   attacksFor,
   onCombatChange,
@@ -581,6 +597,7 @@ export function CombatTracker({
           attacks={[]}
           attackerChoices={combat.combatants.filter((item) => !item.missing)}
           attacksFor={attacksFor}
+          sneakAttackFor={sneakAttackFor}
           onSelectAttacker={setMasterAttacker}
           busy={busy}
           onAttack={(input) => {
