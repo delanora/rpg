@@ -298,8 +298,8 @@ export function raceToolProficiencies(input: RaceResolutionInput): string[] {
 
 /**
  * Armas em que a raça concede proficiência: ids CANÔNICOS do catálogo
- * `shared/weapons` (ex.: Treinamento de Combate Anão → 'battleaxe'). É o que
- * alimenta `proficiencies.weapons` na derivação e o que `isProficientWithWeapon`
+ * `shared/weapons` (ex.: Treinamento de Combate Anão → 'battleaxe'). É o que o
+ * motor de raça GRAVA em `proficiencies.weapons` e o que `isProficientWithWeapon`
  * compara pelo `canonicalWeaponId` do item.
  */
 export function raceWeaponProficiencies(input: RaceResolutionInput): string[] {
@@ -312,6 +312,37 @@ export function raceWeaponProficiencies(input: RaceResolutionInput): string[] {
     }
   }
   return [...weapons];
+}
+
+/**
+ * Aplica/REVERTE as proficiências de arma da raça sobre a lista JÁ GRAVADA na
+ * ficha.
+ *
+ * Tira as armas que a raça ANTERIOR (`from`) concedia — exceto as que a raça NOVA
+ * (`to`) ainda dá e as que `stillGranted` (as classes) continuam concedendo — e
+ * soma as armas da raça NOVA, sem repetição. Sem troca de raça a lista não muda
+ * (a remoção e a soma usam o mesmo conjunto). É o inverso de `raceHpBonusDelta`
+ * para o PV: aqui o efeito fica GRAVADO na ficha.
+ */
+export function applyRaceWeaponProficiencies(
+  current: readonly string[],
+  from: RaceResolutionInput,
+  to: RaceResolutionInput,
+  stillGranted: readonly string[] = [],
+): string[] {
+  const removed = new Set(raceWeaponProficiencies(from));
+  const added = new Set(raceWeaponProficiencies(to));
+  const keep = new Set(stillGranted);
+
+  const result = current.filter((id) => !removed.has(id) || added.has(id) || keep.has(id));
+  const present = new Set(result);
+  for (const id of added) {
+    if (!present.has(id)) {
+      result.push(id);
+      present.add(id);
+    }
+  }
+  return result;
 }
 
 /** Idiomas concedidos pela raça (texto informativo; sem campo de idioma antes). */

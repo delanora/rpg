@@ -36,7 +36,7 @@ import type {
 import { isConsumableItem } from '../shared/item-details.js';
 import { rollHealingDice } from '../shared/dice.js';
 import { parseJson } from '../shared/json.js';
-import { spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
+import { raceChoicesSchema, spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
 import {
   applySaveProficiencies,
   averageHitDie,
@@ -65,7 +65,7 @@ import {
   type ClassFeatureDefinition,
   type ProficienciesState,
 } from '../shared/classes.js';
-import { raceHpBonusDelta } from '../shared/races/index.js';
+import { applyRaceWeaponProficiencies, raceHpBonusDelta } from '../shared/races/index.js';
 import {
   classEntryProficiencyGrant,
   classProficiencyGrant,
@@ -1917,6 +1917,26 @@ async function applyCharacterPatch(
   // (−1×nível) no máximo e no atual, como o recálculo retroativo de CON.
   const nextRaceId = patch.raceId !== undefined ? patch.raceId : existing.raceId;
   const nextSubraceId = patch.subraceId !== undefined ? patch.subraceId : existing.subraceId;
+  const nextCustomRaceId =
+    patch.customRaceId !== undefined ? patch.customRaceId : existing.customRaceId;
+  const previousRaceChoices = parseJson<Record<string, string>>(
+    raceChoicesSchema,
+    existing.raceChoices,
+    {},
+  );
+  const nextRaceChoices =
+    patch.raceChoices !== undefined
+      ? parseJson<Record<string, string>>(raceChoicesSchema, patch.raceChoices, {})
+      : previousRaceChoices;
+  const raceChanged =
+    patch.raceId !== undefined ||
+    patch.subraceId !== undefined ||
+    patch.customRaceId !== undefined ||
+    patch.raceChoices !== undefined;
+  // Uma raça PERSONALIZADA não usa o catálogo fixo: o `raceId` da ficha fica de
+  // fora da resolução do motor (as personalizadas não concedem arma hoje).
+  const previousCatalogRaceId = existing.customRaceId ? null : existing.raceId;
+  const nextCatalogRaceId = nextCustomRaceId ? null : nextRaceId;
   const raceHpDelta = raceHpBonusDelta(
     { raceId: existing.raceId, subraceId: existing.subraceId },
     { raceId: nextRaceId, subraceId: nextSubraceId },
@@ -1973,6 +1993,33 @@ async function applyCharacterPatch(
   // finalizada só o mestre edita (ver PLAYER_STATE_KEYS acima).
   if (patch.proficiencies !== undefined) {
     data.proficiencies = normalizeProficiencies(patch.proficiencies) as ProficienciesState;
+  }
+
+  // --- Proficiências de arma GRAVADAS pela raça ----------------------------
+  // A raça escreve os ids canônicos (Treinamento de Combate Anão, Treinamento
+  // Élfico, Treinamento Drow) DIRETO em `proficiencies.weapons`. Ao trocar de
+  // raça/sub-raça (ou mexer nas proficiências/classes), os ids da raça anterior
+  // saem — menos os que a nova raça ou as classes ainda concedem — e os da nova
+  // entram. É o par do `raceHpBonusDelta`, que faz o mesmo com o PV.
+  if (raceChanged || data.proficiencies !== undefined || classesChanged) {
+    const base = normalizeProficiencies(data.proficiencies ?? existing.proficiencies);
+    const mergedWeapons = applyRaceWeaponProficiencies(
+      base.weapons,
+      {
+        raceId: previousCatalogRaceId,
+        subraceId: existing.subraceId,
+        choices: previousRaceChoices,
+      },
+      { raceId: nextCatalogRaceId, subraceId: nextSubraceId, choices: nextRaceChoices },
+      // Armas compartilhadas com as classes nunca somem na troca de raça.
+      classProficiencyGrant(classes).weapons,
+    );
+    const changed =
+      mergedWeapons.length !== base.weapons.length ||
+      mergedWeapons.some((id, index) => id !== base.weapons[index]);
+    if (changed) {
+      data.proficiencies = { ...base, weapons: mergedWeapons } as ProficienciesState;
+    }
   }
   // Proficiências simples em ferramenta (ids do catálogo): só o mestre grava, e
   // o valor enviado substitui o anterior por inteiro. Sem repetição.
