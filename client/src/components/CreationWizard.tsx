@@ -15,7 +15,7 @@ import {
   SKILLS,
   expertiseEligibleOptions,
 } from '../dnd';
-import { raceBonusesWithChoices } from '../races';
+import { findRaceOption, raceBonusesWithChoices } from '../races';
 import type {
   AbilityKey,
   BackgroundOption,
@@ -78,6 +78,40 @@ function raceChoicePool(option: RaceOption): AbilityKey[] {
   return ABILITY_KEYS.filter((ability) => (option.abilityBonuses?.[ability] ?? 0) === 0);
 }
 
+/**
+ * Chave do GRUPO de uma raça (a raça "mãe"): as sub-raças compartilham a chave
+ * da raça base. Personalizadas usam o próprio id.
+ */
+function raceGroupKeyOf(option: RaceOption): string {
+  return option.customRaceId ?? option.raceId;
+}
+
+/** Inicial exibida no retrato placeholder (usa o nome próprio da sub-raça, quando houver). */
+function portraitInitial(option: RaceOption): string {
+  const inside = option.name.match(/\(([^)]+)\)/)?.[1];
+  return ((inside ?? option.name).trim().charAt(0) || '?').toUpperCase();
+}
+
+/** Nome próprio da sub-raça (tira o "Raça (" e o ")"). */
+function subraceName(option: RaceOption): string {
+  return option.name.match(/\(([^)]+)\)/)?.[1] ?? option.name;
+}
+
+/** Diferença de bônus de atributo entre a sub-raça e a raça base (o que a sub-raça concede). */
+function subraceBonusLabel(base: RaceOption, lineage: RaceOption): string {
+  return ABILITY_KEYS.filter(
+    (ability) =>
+      (lineage.abilityBonuses?.[ability] ?? 0) !== (base.abilityBonuses?.[ability] ?? 0),
+  )
+    .map(
+      (ability) =>
+        `${ABILITY_LABELS[ability]} ${signed(
+          (lineage.abilityBonuses?.[ability] ?? 0) - (base.abilityBonuses?.[ability] ?? 0),
+        )}`,
+    )
+    .join(' · ');
+}
+
 interface CreationWizardProps {
   user: SessionUser;
   /** Como começar a mesa: o nível inicial vem da configuração da mesa. */
@@ -110,6 +144,12 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [alignment, setAlignment] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [race, setRace] = useState('');
+  /** Raça "mãe" selecionada na grade da sub-etapa 3a (chave do grupo). */
+  const [raceBaseKey, setRaceBaseKey] = useState('');
+  /** Sub-etapa interna do passo 3: 'race' (3a) ou 'subrace' (3b). */
+  const [raceSubStep, setRaceSubStep] = useState<'race' | 'subrace'>('race');
+  /** Traço expandido no painel da raça (clique no ícone). */
+  const [expandedTrait, setExpandedTrait] = useState<string | null>(null);
   const [abilityChoices, setAbilityChoices] = useState<AbilityKey[]>([]);
   /** Escolhas da raça fora os atributos: `{ escolha: opção }`. */
   const [raceChoices, setRaceChoices] = useState<Record<string, string>>({});
@@ -144,6 +184,11 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     setAlignment(sheet?.alignment ?? '');
     setAvatarUrl(sheet?.avatarUrl ?? '');
     setRace(sheet?.race ?? '');
+    // Retoma já na grade da raça, com a raça gravada pré-selecionada.
+    const storedLineage = findRaceOption(saved.raceCatalog ?? [], sheet?.race ?? '');
+    setRaceBaseKey(storedLineage ? raceGroupKeyOf(storedLineage) : '');
+    setRaceSubStep('race');
+    setExpandedTrait(null);
     setAbilityChoices(saved.abilityChoices ?? []);
     setRaceChoices(saved.raceChoices ?? {});
     setLanguageChoices(saved.languageChoices ?? []);
@@ -223,41 +268,81 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
       .filter((skill): skill is (typeof SKILLS)[number] => Boolean(skill));
   }, [creation?.skillChoice.from]);
 
-  /** A raça escolhida, quando ela vem do catálogo (por nome ou por chave). */
-  const selectedRace = useMemo(() => {
-    const needle = race.trim().toLowerCase();
-    if (!needle) return null;
-    return (
-      (creation?.raceCatalog ?? []).find(
-        (option) =>
-          option.name.toLowerCase() === needle || option.key.toLowerCase() === needle,
-      ) ?? null
-    );
-  }, [creation?.raceCatalog, race]);
-
-  /** Quantos `+1` à escolha a raça pede (0 = nenhum). */
-  const raceChoiceNeeded = selectedRace?.abilityChoice ?? 0;
-
-  /** Escolhas da raça que NÃO são de atributo (ancestralidade, perícia, ferramenta). */
-  const raceExtraChoices = useMemo(
-    () => (selectedRace?.choices ?? []).filter((choice) => choice.apply !== 'ability'),
-    [selectedRace],
+  /** A LINHAGEM escolhida (raça base ou sub-raça), quando vem do catálogo. */
+  const selectedRace = useMemo(
+    () => findRaceOption(creation?.raceCatalog ?? [], race),
+    [creation?.raceCatalog, race],
   );
 
-  /** Todas as escolhas extras já respondidas com uma opção válida? */
+  /** As raças na grade da 3a: uma entrada por grupo (sem as variantes de sub-raça). */
+  const raceCards = useMemo(
+    () => (creation?.raceCatalog ?? []).filter((option) => !option.subraceId),
+    [creation?.raceCatalog],
+  );
+
+  /** Sub-raças de uma raça, na ordem do catálogo. */
+  const subracesOf = useCallback(
+    (base: RaceOption): RaceOption[] =>
+      (creation?.raceCatalog ?? []).filter(
+        (option) => option.subraceId && raceGroupKeyOf(option) === raceGroupKeyOf(base),
+      ),
+    [creation?.raceCatalog],
+  );
+
+  /** A raça "mãe" selecionada na 3a (pelo grupo). */
+  const raceBaseOption = useMemo(
+    () => raceCards.find((option) => raceGroupKeyOf(option) === raceBaseKey) ?? null,
+    [raceCards, raceBaseKey],
+  );
+
+  const raceBaseSubraces = raceBaseOption ? subracesOf(raceBaseOption) : [];
+  const raceNeedsSubrace = raceBaseSubraces.length > 0;
+
+  /** Traço aberto no painel da 3a (clique no ícone). */
+  const expandedTraitOption = useMemo(
+    () => (raceBaseOption?.traits ?? []).find((trait) => trait.id === expandedTrait) ?? null,
+    [raceBaseOption, expandedTrait],
+  );
+
+  /** Traços que são SÓ da sub-raça escolhida (os da raça base ficam à parte). */
+  const subraceOnlyTraits = useMemo(() => {
+    if (!raceBaseOption || !selectedRace?.subraceId) return [];
+    const baseIds = new Set((raceBaseOption.traits ?? []).map((trait) => trait.id));
+    return (selectedRace.traits ?? []).filter((trait) => !baseIds.has(trait.id));
+  }, [raceBaseOption, selectedRace]);
+
+  /**
+   * As escolhas da raça (ancestralidade do Draconato, perícia/ferramenta,
+   * idiomas e o `+1` à escolha) são da RAÇA e vivem no painel da 3a — mesmo
+   * quando ela tem sub-raça, porque a sub-raça não acrescenta escolhas próprias.
+   */
+  const raceChoiceNeeded = raceBaseOption?.abilityChoice ?? 0;
+
+  const raceExtraChoices = useMemo(
+    () => (raceBaseOption?.choices ?? []).filter((choice) => choice.apply !== 'ability'),
+    [raceBaseOption],
+  );
+
   const raceExtrasReady = raceExtraChoices.every((choice) => {
     const picked = raceChoices[choice.id];
     return Boolean(picked) && choice.options.some((option) => option.id === picked);
   });
 
   /** Quantos idiomas à escolha a raça concede (Humano e Meio-Elfo: 1). */
-  const languageChoiceCount = selectedRace?.bonusLanguageChoices ?? 0;
+  const languageChoiceCount = raceBaseOption?.bonusLanguageChoices ?? 0;
 
   /** Idiomas disponíveis: os do catálogo que a raça não concede de forma fixa. */
   const languagePool = useMemo(() => {
-    const fixed = new Set(selectedRace?.languages ?? []);
+    const fixed = new Set(raceBaseOption?.languages ?? []);
     return LANGUAGE_NAMES.filter((name) => !fixed.has(name));
-  }, [selectedRace]);
+  }, [raceBaseOption]);
+
+  /** Todas as escolhas obrigatórias da raça respondidas? */
+  const raceChoicesReady =
+    (raceChoiceNeeded === 0 || abilityChoices.length === raceChoiceNeeded) &&
+    raceExtrasReady &&
+    (languageChoiceCount === 0 ||
+      languageChoices.filter(Boolean).length === languageChoiceCount);
 
   /** Grava o idioma da enésima escolha, sem repetir. */
   function setLanguageChoice(index: number, value: string): void {
@@ -305,12 +390,37 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     return LANGUAGE_NAMES.filter((name) => !taken.has(name));
   }, [character?.languages, languageChoices]);
 
-  /** Troca a raça e recomeça as escolhas (o catálogo muda o pool). */
-  function selectRace(value: string): void {
-    setRace(value);
-    setAbilityChoices([]);
-    setRaceChoices({});
-    setLanguageChoices([]);
+  /**
+   * Seleciona a raça na grade da 3a. Troca de grupo limpa as escolhas (o pool
+   * muda); raça sem sub-raça já fixa a linhagem, com sub-raça ela fica pendente
+   * até a 3b.
+   */
+  function pickBaseRace(base: RaceOption): void {
+    const group = raceGroupKeyOf(base);
+    if (group !== raceBaseKey) {
+      setAbilityChoices([]);
+      setRaceChoices({});
+      setLanguageChoices([]);
+    }
+    setRaceBaseKey(group);
+    setExpandedTrait(null);
+
+    const subs = subracesOf(base);
+    if (subs.length === 0) {
+      setRace(base.key);
+    } else if (!selectedRace || raceGroupKeyOf(selectedRace) !== group) {
+      setRace('');
+    }
+  }
+
+  /** Seleciona a sub-raça na 3b (as escolhas da raça base são preservadas). */
+  function pickSubrace(lineage: RaceOption): void {
+    setRace(lineage.key);
+  }
+
+  /** Abre/fecha a descrição completa de um traço no painel da 3a. */
+  function toggleTrait(id: string): void {
+    setExpandedTrait((current) => (current === id ? null : id));
   }
 
   /** Grava a escolha de uma definição (ancestralidade, perícia, ferramenta…). */
@@ -432,14 +542,13 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
         return mode !== null;
       case 2:
         return name.trim().length >= 2;
-      case 3:
-        return (
-          race.trim().length > 0 &&
-          (raceChoiceNeeded === 0 || abilityChoices.length === raceChoiceNeeded) &&
-          raceExtrasReady &&
-          (languageChoiceCount === 0 ||
-            languageChoices.filter(Boolean).length === languageChoiceCount)
-        );
+      case 3: {
+        if (raceBaseOption === null) return false;
+        // Com sub-raça, a 3a só exige a raça (o "Próximo" abre a 3b).
+        if (raceNeedsSubrace && raceSubStep === 'race') return true;
+        if (raceNeedsSubrace && selectedRace === null) return false;
+        return raceChoicesReady;
+      }
       case 4:
         return (
           background.trim().length > 0 &&
@@ -507,7 +616,13 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   }
 
   async function next(): Promise<void> {
-    if (!canAdvance || busy) return;
+    if (busy) return;
+    // Passo 3 com sub-raça: o "Próximo" da 3a abre a sub-etapa 3b (sem salvar).
+    if (step === 3 && raceNeedsSubrace && raceSubStep === 'race') {
+      setRaceSubStep('subrace');
+      return;
+    }
+    if (!canAdvance) return;
     await saveStep(stepBody());
   }
 
@@ -681,132 +796,260 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
             </div>
           ) : null}
 
-          {/* --- 3. Raça ---------------------------------------------------- */}
+          {/* --- 3. Raça (grade + sub-raça) ---------------------------------- */}
           {step === 3 ? (
             <div className="wizard-step-body">
               {creation && creation.raceCatalog.length > 0 ? (
-                <>
-                  <label className="field">
-                    <span>Raça</span>
-                    <select value={race} onChange={(event) => selectRace(event.target.value)}>
-                      <option value="">— escolha —</option>
-                      {creation.raceCatalog.map((option) => {
-                        const bonus = raceBonusLabel(option);
+                raceSubStep === 'race' ? (
+                  <>
+                    <p className="wizard-race-title">Selecionar Raça</p>
+
+                    <div className="race-grid" role="radiogroup" aria-label="Raça">
+                      {raceCards.map((base) => {
+                        const selected = raceGroupKeyOf(base) === raceBaseKey;
                         return (
-                          <option key={option.key} value={option.name}>
-                            {bonus ? `${option.name} · ${bonus}` : option.name}
-                          </option>
+                          <button
+                            type="button"
+                            key={base.key}
+                            className={`race-card${selected ? ' is-selected' : ''}`}
+                            aria-pressed={selected}
+                            disabled={busy}
+                            onClick={() => pickBaseRace(base)}
+                          >
+                            <span className="race-portrait" aria-hidden="true">
+                              {portraitInitial(base)}
+                            </span>
+                            <span className="race-card-name">{base.name}</span>
+                            {base.customRaceId ? (
+                              <span className="race-card-tag">Personalizada</span>
+                            ) : null}
+                          </button>
                         );
                       })}
-                    </select>
-                  </label>
+                    </div>
 
-                  {selectedRace?.description ? (
-                    <p className="section-note">{selectedRace.description}</p>
-                  ) : null}
+                    {raceBaseOption ? (
+                      <div className="race-detail">
+                        <h3>{raceBaseOption.name}</h3>
+                        {raceBaseOption.description ? (
+                          <p className="race-detail-note">{raceBaseOption.description}</p>
+                        ) : null}
 
-                  {/* Meio-Elfo: +1 em dois atributos à escolha, além dos fixos. */}
-                  {selectedRace && raceChoiceNeeded > 0 ? (
-                    <div className="wizard-race-choice">
-                      <p className="section-note">
-                        {selectedRace.name} concede +1 em {raceChoiceNeeded} atributos à sua escolha
-                        (além dos bônus fixos de {raceBonusLabel(selectedRace) || '—'}).
-                      </p>
-                      <div className="grid grid-2">
-                        {Array.from({ length: raceChoiceNeeded }, (_, index) => {
-                          const chosen = abilityChoices[index] ?? '';
-                          return (
-                            <label className="field" key={`race-choice-${index}`}>
-                              <span>Escolha {index + 1}</span>
-                              <select
-                                value={chosen}
-                                disabled={busy}
-                                onChange={(event) => setRaceChoice(index, event.target.value)}
-                              >
-                                <option value="">— escolha —</option>
-                                {raceChoicePool(selectedRace).map((ability) => (
-                                  <option
-                                    key={ability}
-                                    value={ability}
-                                    disabled={
-                                      abilityChoices.includes(ability) && chosen !== ability
+                        {(raceBaseOption.traits ?? []).length > 0 ? (
+                          <>
+                            <span className="race-detail-sub">Recursos da raça</span>
+                            <div className="race-traits">
+                              {(raceBaseOption.traits ?? []).map((trait) => (
+                                <span
+                                  className={`info-tip race-trait${
+                                    expandedTrait === trait.id ? ' is-open' : ''
+                                  }`}
+                                  key={trait.id}
+                                >
+                                  <button
+                                    type="button"
+                                    className="race-trait-btn"
+                                    aria-expanded={expandedTrait === trait.id}
+                                    onClick={() => toggleTrait(trait.id)}
+                                  >
+                                    <Icon name="star" size={14} />
+                                    {trait.name}
+                                  </button>
+                                  {trait.description ? (
+                                    <span className="info-tip-text" role="tooltip">
+                                      <strong>{trait.name}</strong>
+                                      {trait.description}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              ))}
+                            </div>
+                            {expandedTraitOption ? (
+                              <p className="race-trait-desc">{expandedTraitOption.description}</p>
+                            ) : null}
+                          </>
+                        ) : null}
+
+                        {/* Meio-Elfo: +1 em dois atributos à escolha. */}
+                        {raceChoiceNeeded > 0 ? (
+                          <div className="wizard-race-choice">
+                            <p className="section-note">
+                              {raceBaseOption.name} concede +1 em {raceChoiceNeeded} atributos à sua
+                              escolha (além dos bônus fixos de{' '}
+                              {raceBonusLabel(raceBaseOption) || '—'}).
+                            </p>
+                            <div className="grid grid-2">
+                              {Array.from({ length: raceChoiceNeeded }, (_, index) => {
+                                const chosen = abilityChoices[index] ?? '';
+                                return (
+                                  <label className="field" key={`race-choice-${index}`}>
+                                    <span>Escolha {index + 1}</span>
+                                    <select
+                                      value={chosen}
+                                      disabled={busy}
+                                      onChange={(event) => setRaceChoice(index, event.target.value)}
+                                    >
+                                      <option value="">— escolha —</option>
+                                      {raceChoicePool(raceBaseOption).map((ability) => (
+                                        <option
+                                          key={ability}
+                                          value={ability}
+                                          disabled={
+                                            abilityChoices.includes(ability) && chosen !== ability
+                                          }
+                                        >
+                                          {ABILITY_LABELS[ability]}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Demais escolhas: ancestralidade do Draconato, perícias
+                            do Meio-Elfo, ferramenta do Anão... */}
+                        {raceExtraChoices.length > 0 ? (
+                          <div className="wizard-race-choice">
+                            <p className="section-note">
+                              {raceBaseOption.name} pede as escolhas abaixo.
+                            </p>
+                            <div className="grid grid-2">
+                              {raceExtraChoices.map((choice) => (
+                                <label className="field" key={choice.id}>
+                                  <span>{choice.label}</span>
+                                  <select
+                                    value={raceChoices[choice.id] ?? ''}
+                                    disabled={busy}
+                                    onChange={(event) =>
+                                      setRaceExtraChoice(choice.id, event.target.value)
                                     }
                                   >
-                                    {ABILITY_LABELS[ability]}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* Demais escolhas da raça: ancestralidade do Draconato,
-                      perícias do Meio-Elfo, ferramenta do Anão... */}
-                  {selectedRace && raceExtraChoices.length > 0 ? (
-                    <div className="wizard-race-choice">
-                      <p className="section-note">
-                        {selectedRace.name} pede as escolhas abaixo.
-                      </p>
-                      <div className="grid grid-2">
-                        {raceExtraChoices.map((choice) => (
-                          <label className="field" key={choice.id}>
-                            <span>{choice.label}</span>
-                            <select
-                              value={raceChoices[choice.id] ?? ''}
-                              disabled={busy}
-                              onChange={(event) => setRaceExtraChoice(choice.id, event.target.value)}
-                            >
-                              <option value="">— escolha —</option>
-                              {choice.options.map((option) => (
-                                <option key={option.id} value={option.id}>
-                                  {option.label}
-                                </option>
+                                    <option value="">— escolha —</option>
+                                    {choice.options.map((option) => (
+                                      <option key={option.id} value={option.id}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
                               ))}
-                            </select>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
+                            </div>
+                          </div>
+                        ) : null}
 
-                  {/* Idiomas à escolha (Humano e Meio-Elfo concedem 1). */}
-                  {selectedRace && languageChoiceCount > 0 ? (
-                    <div className="wizard-race-choice">
-                      <p className="section-note">
-                        {selectedRace.name} concede {languageChoiceCount} idioma(s) à sua escolha.
-                      </p>
-                      <div className="grid grid-2">
-                        {Array.from({ length: languageChoiceCount }, (_, index) => {
-                          const chosen = languageChoices[index] ?? '';
-                          return (
-                            <label className="field" key={`language-choice-${index}`}>
-                              <span>Idioma {index + 1}</span>
-                              <select
-                                value={chosen}
-                                disabled={busy}
-                                onChange={(event) => setLanguageChoice(index, event.target.value)}
-                              >
-                                <option value="">— escolha —</option>
-                                {languagePool.map((name) => (
-                                  <option
-                                    key={name}
-                                    value={name}
-                                    disabled={languageChoices.includes(name) && chosen !== name}
-                                  >
-                                    {name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          );
-                        })}
+                        {/* Idiomas à escolha (Humano e Meio-Elfo concedem 1). */}
+                        {languageChoiceCount > 0 ? (
+                          <div className="wizard-race-choice">
+                            <p className="section-note">
+                              {raceBaseOption.name} concede {languageChoiceCount} idioma(s) à sua
+                              escolha.
+                            </p>
+                            <div className="grid grid-2">
+                              {Array.from({ length: languageChoiceCount }, (_, index) => {
+                                const chosen = languageChoices[index] ?? '';
+                                return (
+                                  <label className="field" key={`language-choice-${index}`}>
+                                    <span>Idioma {index + 1}</span>
+                                    <select
+                                      value={chosen}
+                                      disabled={busy}
+                                      onChange={(event) =>
+                                        setLanguageChoice(index, event.target.value)
+                                      }
+                                    >
+                                      <option value="">— escolha —</option>
+                                      {languagePool.map((name) => (
+                                        <option
+                                          key={name}
+                                          value={name}
+                                          disabled={
+                                            languageChoices.includes(name) && chosen !== name
+                                          }
+                                        >
+                                          {name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
+                    ) : (
+                      <p className="section-note">Escolha uma raça acima para ver os detalhes.</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="wizard-race-title">Selecionar Sub-raça</p>
+
+                    <div className="race-grid" role="radiogroup" aria-label="Sub-raça">
+                      {raceBaseSubraces.map((lineage) => {
+                        const selected = selectedRace?.key === lineage.key;
+                        return (
+                          <button
+                            type="button"
+                            key={lineage.key}
+                            className={`race-card${selected ? ' is-selected' : ''}`}
+                            aria-pressed={selected}
+                            disabled={busy}
+                            onClick={() => pickSubrace(lineage)}
+                          >
+                            <span className="race-portrait" aria-hidden="true">
+                              {portraitInitial(lineage)}
+                            </span>
+                            <span className="race-card-name">{subraceName(lineage)}</span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  ) : null}
-                </>
+
+                    {selectedRace ? (
+                      <div className="race-detail">
+                        <h3>{selectedRace.name}</h3>
+                        {raceBaseOption && subraceBonusLabel(raceBaseOption, selectedRace) ? (
+                          <p className="race-detail-note">
+                            <strong>Bônus:</strong>{' '}
+                            {subraceBonusLabel(raceBaseOption, selectedRace)}
+                          </p>
+                        ) : null}
+
+                        <span className="race-detail-sub">Traços da raça base</span>
+                        <div className="race-traits-full">
+                          {(raceBaseOption?.traits ?? []).map((trait) => (
+                            <p className="race-trait-line" key={trait.id}>
+                              <strong>{trait.name}</strong>
+                              {trait.description}
+                            </p>
+                          ))}
+                        </div>
+
+                        {subraceOnlyTraits.length > 0 ? (
+                          <>
+                            <span className="race-detail-sub">Traços da sub-raça</span>
+                            <div className="race-traits-full">
+                              {subraceOnlyTraits.map((trait) => (
+                                <p className="race-trait-line" key={trait.id}>
+                                  <strong>{trait.name}</strong>
+                                  {trait.description}
+                                </p>
+                              ))}
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="section-note">
+                        Escolha uma sub-raça acima para ver os detalhes.
+                      </p>
+                    )}
+                  </>
+                )
               ) : (
                 <>
                   <label className="field">
@@ -1253,6 +1496,12 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
             disabled={step <= 1 || busy}
             onClick={() => {
               setError(null);
+              // Sub-raça volta para a grade da raça; voltar do passo 4 cai na 3a.
+              if (step === 3 && raceSubStep === 'subrace') {
+                setRaceSubStep('race');
+                return;
+              }
+              if (step === 4) setRaceSubStep('race');
               setStep((current) => Math.max(1, current - 1));
             }}
           >

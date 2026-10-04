@@ -8634,6 +8634,176 @@ input[type='checkbox']:focus-visible,
 
 /* --- Passo 3: raça ------------------------------------------------------- */
 
+.wizard-race-title {
+  margin: 0.1rem 0 0.2rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: var(--gold-deep);
+}
+
+.race-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.race-card {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  padding: 0.6rem 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.race-card:hover:not(:disabled) {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px -4px var(--glow), inset 0 0 0 1px var(--gold-hair);
+}
+
+.race-card.is-selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 16px -3px var(--glow), inset 0 0 0 1px var(--gold-hair);
+}
+
+.race-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.race-portrait {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--gold-hair);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, var(--surface-2), var(--surface-3));
+  box-shadow: inset 0 0 0 1px rgba(224, 184, 63, 0.12);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--gold-deep);
+}
+
+.race-card.is-selected .race-portrait {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.race-card-name {
+  font-size: 0.8rem;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.race-card-tag {
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+  opacity: 0.85;
+}
+
+.race-detail {
+  display: grid;
+  gap: 0.55rem;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.race-detail h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--gold-deep);
+}
+
+.race-detail-sub {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.race-detail-note {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+/* Recursos da raça: chips com tooltip (hover) + descrição completa (clique). */
+.race-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.race-trait-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--ink);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.race-trait-btn:hover {
+  border-color: var(--gold);
+}
+
+.race-trait.is-open .race-trait-btn {
+  border-color: var(--gold);
+  color: var(--gold-deep);
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+}
+
+.race-trait-desc {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border-left: 2px solid var(--gold);
+  border-radius: 3px;
+  background: var(--surface-3);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.race-traits-full {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.race-trait-line {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.race-trait-line strong {
+  margin-right: 0.35rem;
+  font-family: var(--font-display);
+  color: var(--gold-deep);
+}
+
 .wizard-race-choice,
 .wizard-subclass {
   display: grid;
