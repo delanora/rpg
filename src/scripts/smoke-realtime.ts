@@ -3449,6 +3449,93 @@ async function main(): Promise<void> {
     JSON.stringify(knightSeven?.derived?.spellSlots),
   );
 
+  // --- Clérigo: características de classe e Domínios Divinos -----------------
+  await setCharacterClasses(choicesId, [
+    { classKey: 'cleric', subclass: 'Domínio da Vida', level: 2 },
+  ]);
+  const lifeCleric = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const lifeChannel = (lifeCleric?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'channel-divinity',
+  );
+  check(
+    'Clérigo 2: Canalizar Divindade com 1 uso, recuperado no descanso curto ou longo',
+    lifeChannel?.max === 1 && lifeChannel?.recharge === 'short',
+    JSON.stringify(lifeChannel),
+  );
+  check(
+    'Clérigo 2: Expulsar Mortos-Vivos e a opção do domínio gastam Canalizar Divindade',
+    (lifeCleric?.classAdjustments?.toggles ?? []).some(
+      (toggle: any) => toggle.id === 'turn-undead' && toggle.resourceId === 'channel-divinity',
+    ) &&
+      (lifeCleric?.classAdjustments?.toggles ?? []).some(
+        (toggle: any) =>
+          toggle.id === 'preserve-life' && toggle.resourceId === 'channel-divinity',
+      ),
+    JSON.stringify(lifeCleric?.classAdjustments?.toggles),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'cleric', subclass: 'Domínio da Guerra', level: 6 },
+  ]);
+  const warCleric = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const warChannel = (warCleric?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'channel-divinity',
+  );
+  const warPriest = (warCleric?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'war-priest',
+  );
+  check(
+    'Clérigo 6: Canalizar Divindade sobe para 2 usos',
+    warChannel?.max === 2,
+    JSON.stringify(warChannel),
+  );
+  check(
+    'Domínio da Guerra (6): Golpe Guiado e a Bênção do Deus da Guerra são opções',
+    (warCleric?.classAdjustments?.toggles ?? []).some(
+      (toggle: any) => toggle.id === 'guided-strike',
+    ) &&
+      (warCleric?.classAdjustments?.toggles ?? []).some(
+        (toggle: any) => toggle.id === 'war-gods-blessing',
+      ),
+    JSON.stringify(warCleric?.classAdjustments?.toggles),
+  );
+  check(
+    'Sacerdote de Guerra: usos iguais ao modificador de Sabedoria (mínimo 1)',
+    (warPriest?.max ?? 0) >= 1,
+    JSON.stringify(warPriest),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'cleric', subclass: 'Domínio da Vida', level: 18 },
+  ]);
+  const maxCleric = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  const maxChannel = (maxCleric?.classAdjustments?.resources ?? []).find(
+    (resource: any) => resource.id === 'channel-divinity',
+  );
+  check(
+    'Clérigo 18: Canalizar Divindade com 3 usos',
+    maxChannel?.max === 3,
+    JSON.stringify(maxChannel),
+  );
+  check(
+    'Clérigo 18: Intervenção Divina (10) e Destruir Mortos-Vivos (5) entram na ficha',
+    (maxCleric?.activeFeatures ?? []).some((feature: any) => feature.id === 'divine-intervention') &&
+      (maxCleric?.activeFeatures ?? []).some((feature: any) => feature.id === 'destroy-undead'),
+    JSON.stringify((maxCleric?.activeFeatures ?? []).map((feature: any) => feature.id)),
+  );
+
+  await setCharacterClasses(choicesId, [
+    { classKey: 'cleric', subclass: 'Domínio da Guerra', level: 17 },
+  ]);
+  const avatarCleric = (await api('/api/characters/me', { token: choicesToken })).data.character;
+  check(
+    'Domínio da Guerra (17): Avatar da Batalha dá resistência física',
+    ['Concussão', 'Perfurante', 'Cortante'].every((type) =>
+      (avatarCleric?.classAdjustments?.resistances ?? []).includes(type),
+    ),
+    JSON.stringify(avatarCleric?.classAdjustments?.resistances),
+  );
+
   // --- Juramentos do Paladino -----------------------------------------------
   await setCharacterClasses(choicesId, [
     { classKey: 'paladin', subclass: 'Juramento de Devoção', level: 3 },
@@ -5082,6 +5169,11 @@ async function main(): Promise<void> {
       clericPick.data?.character?.classes?.[0]?.classKey === 'cleric' &&
       clericPick.data?.character?.classes?.[0]?.subclass === 'Domínio da Vida',
     JSON.stringify(clericPick.data?.character?.classes),
+  );
+  check(
+    'Domínio da Vida concede proficiência com armadura pesada na criação',
+    (clericPick.data?.character?.proficiencies?.armor ?? []).includes('Armaduras pesadas'),
+    JSON.stringify(clericPick.data?.character?.proficiencies?.armor),
   );
   const clericKept = await api('/api/characters/me/creation', {
     method: 'PATCH',
