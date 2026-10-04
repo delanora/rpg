@@ -987,7 +987,8 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
       Crítico sempre acerta e o 1 natural sempre erra; o MENOR limiar prevalece.
   FEATURES CADASTRADAS POR CLASSE (PHB 2014): barbarian, cleric, druid, fighter,
     monk, paladin, ranger, rogue, sorcerer, warlock, wizard, bard.
-  [LACUNA CONHECIDA] O ladino não tem a Gíria de Ladrão (nível 1, texto puro).
+  LADINO: Gíria de Ladrão (nível 1) como traço puramente textual (idioma secreto +
+    código de sinais), sem efeito mecânico automatizável.
   BRUXO: Dádiva do Pacto (escolha no 3) e Invocações Místicas como `choice`
     (2 no 2 e +1 em 5/7/9/12/15/18), com PRÉ-REQUISITOS por opção
     (`FeatureChoiceOption.requiresLevel`/`requiresPact` — o servidor esconde e
@@ -2368,7 +2369,8 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    17) e listas expandidas como texto, e Mestre Místico (20). Novo campo
    `requiresLevel`/`requiresPact` em `FeatureChoiceOption`, filtrado por
    `featureChoiceInfo` (nível da classe) e validado por `resolveFeatureChoices`.
-[LACUNA] GÍRIA DE LADRÃO do ladino (nível 1, texto puro).
+[RESOLVIDO 2026-10-04] GÍRIA DE LADRÃO do ladino (nível 1): traço textual cadastrado
+   em ROGUE_FEATURES, sem effect/choice — aparece na aba Características.
 [LACUNA/FASE 5] COMPANHEIRO ANIMAL DO SENHOR DAS FERAS: as quatro características do
    arquétipo estão cadastradas como texto, mas a ficha do companheiro (PV, CA,
    ataques e PV gastos saindo dos seus) fica para a Fase 5.

@@ -1260,8 +1260,9 @@ async function main(): Promise<void> {
     })
   ).data.character;
   check(
-    'features de classe liberadas pelo nível (Ataque Furtivo, Ação Ardilosa)',
+    'features de classe liberadas pelo nível (Ataque Furtivo, Gíria de Ladrão, Ação Ardilosa)',
     rogueSheet.activeFeatures.some((f: any) => f.id === 'sneak-attack') &&
+      rogueSheet.activeFeatures.some((f: any) => f.id === 'thieves-cant') &&
       rogueSheet.activeFeatures.some((f: any) => f.id === 'cunning-action'),
     JSON.stringify(rogueSheet.activeFeatures.map((f: any) => f.id)),
   );

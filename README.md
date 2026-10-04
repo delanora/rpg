@@ -478,7 +478,7 @@ As **subclasses do PHB estão todas cadastradas**, com as escolhas e os efeitos 
 
 O **combate** já usa o limiar de crítico da ficha (Campeão): o ataque critica com d20 **maior ou igual** ao limiar, o crítico sempre acerta e o **1 natural sempre erra**.
 
-> **Lacunas conhecidas:** o Ladino não tem a Gíria de Ladrão (texto puro). As **magias de domínio** do Clérigo, as **magias de juramento** do Paladino, o **Arcanum Místico** e as **listas expandidas** do Bruxo e o **companheiro animal** do Senhor das Feras (como ficha) ficam para as Fases 4/5.
+> **Lacunas conhecidas:** as **magias de domínio** do Clérigo, as **magias de juramento** do Paladino, o **Arcanum Místico** e as **listas expandidas** do Bruxo e o **companheiro animal** do Senhor das Feras (como ficha) ficam para as Fases 4/5.
 - O **nível de cada classe não é editável** direto: a lista só ganha classe e sobe de nível pelo Level Up (a edição direta de `level` é recusada com 400 e a lista só aceita trocar a **subclasse** de classes existentes). Para **baixar** um nível existe a ação **reduzir nível** do mestre (`POST /api/characters/:id/level-down`), que reverte o que aquele nível concedeu — ver a seção *Downgrade de nível (mestre)*.
 
 O **Talento** escolhido nesse mesmo assistente fica registrado na ficha como uma característica de origem `feat` e aparece na aba **Características**, na subseção **Talentos** (nome + descrição; sem efeito mecânico automatizado por enquanto).

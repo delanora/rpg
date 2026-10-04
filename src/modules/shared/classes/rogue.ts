@@ -33,6 +33,15 @@ const ROGUE_FEATURES: ClassFeatureDefinition[] = [
     effect: { type: 'sneakAttack' },
   },
   {
+    // Traço puramente textual (como o Transe do Elfo): é um idioma secreto e um
+    // código de sinais, sem efeito mecânico automatizável na ficha.
+    id: 'thieves-cant',
+    name: 'Gíria de Ladrão',
+    level: 1,
+    description:
+      'Você aprendeu a gíria secreta dos criminosos: um dialeto de código, giriadas e sinais que permite esconder mensagens em conversas aparentemente comuns. Só outras criaturas que conhecem a Gíria de Ladrão entendem essas mensagens; os demais precisam de um DC 15 em Inteligência para decifrá-las. Você também conhece um conjunto de símbolos secretos usados para deixar recados curtos (ex.: se uma área é perigosa, se há um esconderijo próximo, se alguém é um alvo fácil).',
+  },
+  {
     id: 'cunning-action',
     name: 'Ação Ardilosa',
     level: 2,
