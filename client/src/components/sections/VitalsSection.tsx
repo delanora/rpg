@@ -82,8 +82,10 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
   const { derived, classAdjustments, classState } = character;
   const armorClass: ArmorClassDetail = derived.armorClass;
 
-  // O destaque é do valor, não do card: só o HP entra em estado crítico.
-  const hpRatio = character.hpMax > 0 ? character.hpCurrent / character.hpMax : 0;
+  // O destaque é do valor, não do card: só o HP entra em estado crítico. O
+  // máximo é o EFETIVO (gravado + `hpBonus` de features/talentos).
+  const hpMax = derived.hpMax;
+  const hpRatio = hpMax > 0 ? character.hpCurrent / hpMax : 0;
   const hpClass =
     hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
 
@@ -135,7 +137,7 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
       ]),
     );
     update({
-      hpCurrent: character.hpMax,
+      hpCurrent: hpMax,
       spells: { ...character.spells, slots },
       // O descanso longo NÃO apaga as escolhas de característica (Estilo de
       // Luta, Inimigo Favorito): só encerra toggles e devolve usos.
@@ -188,19 +190,23 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
             <span className="hp-editor-sep">/</span>
             <InlineField
               className="hp-editor-value hp-editor-value-max"
-              value={character.hpMax}
+              value={hpMax}
               mode="number"
               min={0}
               max={9999}
               readOnly={lockedConstruction}
               ariaLabel="Pontos de vida máximos"
-              onCommit={(value) => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })}
+              // O editor mostra o máximo EFETIVO; o que se grava é a base (sem o
+              // bônus derivado de features/talentos, que é recalculado).
+              onCommit={(value) =>
+                update({ hpMax: Math.max(0, clampInt(value, 0, 9999, hpMax) - derived.hpBonus) })
+              }
             />
           </div>
 
           <HpBar
             current={character.hpCurrent}
-            max={character.hpMax}
+            max={hpMax}
             temp={character.hpTemp}
             showLabel={false}
           />
@@ -480,7 +486,7 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
                 }. `
               : ''}
             {classAdjustments.hpBonus > 0
-              ? `Resiliência Dracônica: +${classAdjustments.hpBonus} PV (some ao HP máximo). `
+              ? `+${classAdjustments.hpBonus} PV de classe/talento (somados ao PV máximo). `
               : ''}
             {classAdjustments.speedBonus > 0
               ? `Deslocamento +${classAdjustments.speedBonus} m. `

@@ -318,7 +318,7 @@ export function LevelUpDialog({
       totalFrom: character.level,
       totalTo: updated.level,
       // Diferença real de PV máximo: já inclui o que um +2 de CON soma retroativamente.
-      hpGained: Math.max(0, updated.hpMax - character.hpMax),
+      hpGained: Math.max(0, updated.derived.hpMax - character.derived.hpMax),
       hpDetail:
         hp === 'roll'
           ? `1d${info?.hitDie ?? '—'} ${formatModifier(conModifier)} de CON (mín. 1)`

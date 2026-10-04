@@ -1069,7 +1069,7 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   `ClassAdjustments` (calculado, nunca gravado) expõe: toggles, resources,
   activeToggleIds, meleeDamageBonus, resistances, speedBonus, critExtraDice,
   unarmoredDefense(+/Ability/Base/Options), martialArtsDie, hpBonus, wildShapeCr,
-  wildShapeFlying, abilityBonuses, abilityCaps.
+  wildShapeFlying, abilityBonuses, abilityCaps, saveProficiencies.
   `effectiveAbilitiesOf` aplica os abilityBonuses respeitando os caps — é o valor
   usado em TODOS os cálculos derivados (CA, iniciativa, CD de magia); a pontuação
   gravada continua sendo a base.
@@ -1078,7 +1078,11 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
   proficiencyBonus, modifiers (6), hitDie, lockedSaves[], sneakAttack, expertiseSlots,
   initiative, passivePerception, armorClass (detalhado),
   carryingCapacity, totalWeight, saves[6], skills[18], spellcasting{saveDC,attackBonus},
-  spellSlots[], pactSlots, xpForNextLevel.
+  spellSlots[], pactSlots, xpForNextLevel, hpBonus, hpMax.
+  HP: `hpMax` é o máximo EFETIVO = gravado (`Character.hpMax`, a base editável) +
+  `hpBonus` de features/talentos (Resiliência Dracônica +1/nível de feiticeiro;
+  Vigoroso +2/nível de personagem). O gravado NUNCA recebe o bônus; o combate lê a
+  MESMA conta (`characterMaxHp`) e o teto da cura manual usa esse valor.
   REGRA: nada disso é gravado no banco; é recalculado em toda leitura.
 
 10.10 VÁRIOS TIPOS DE DANO POR ATAQUE E POR ARMA
@@ -2393,7 +2397,10 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    `mergeAdjustments`, aplicados no DTO sobre as features `source: 'feat'`). O +1 dos
    half-feats (atributo em `featAbility`) e a salvaguarda do Resiliente entram no
    `derived`; o downgrade do nível que trouxe o talento remove a característica e o
-   efeito derivado junto. Ver "FUNDAÇÃO DE TALENTOS". Cobertura na seção 28.5 do smoke.
+   efeito derivado junto. O `hpBonus` (Vigoroso +2/nível; e a Resiliência Dracônica do
+   feiticeiro +1/nível) entra em `derived.hpMax` — o PV máximo EFETIVO —, usado pela
+   ficha e pelo teto de cura do combate (o gravado segue a base editável). Ver
+   "FUNDAÇÃO DE TALENTOS". Cobertura na seção 28.5 do smoke.
 [IMPLEMENTADO] ATAQUE DERIVADO DA ARMA EQUIPADA (`src/modules/shared/weapon-attacks.ts`
    + `derivedAttacks` no DTO da ficha): a arma equipada em `hand1`/`hand2` vira um ataque
    CALCULADO (nunca gravado, como a CA), com ids estáveis — `weapon:<item>`, a variante
