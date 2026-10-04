@@ -1220,7 +1220,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                 <li>
                   <span>Pontos de vida</span>
                   <strong>
-                    {character.hpMax} (dado de vida {character.derived.hitDie ?? '—'} + Constituição)
+                    {character.derived.hpMax} (dado de vida {character.derived.hitDie ?? '—'} + Constituição)
                   </strong>
                 </li>
                 <li>

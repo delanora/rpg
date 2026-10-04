@@ -90,7 +90,7 @@ export function SheetsTab({
                   {character.armorClass}
                 </span>
                 <span className="card-hp">
-                  HP {character.hpCurrent}/{character.hpMax}
+                  HP {character.hpCurrent}/{character.derived.hpMax}
                   {character.hpTemp > 0 ? ` (+${character.hpTemp})` : ''}
                 </span>
               </button>

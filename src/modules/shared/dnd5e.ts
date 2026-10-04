@@ -275,6 +275,13 @@ export interface DerivedStats {
   halfProficiencyBonus: number;
   /** Limiar de crítico no d20 (20 = só o 20 natural; Campeão: 19 e depois 18). */
   critThreshold: number;
+  /** Bônus de PV máximo de features/talentos (Resiliência Dracônica, Vigoroso). */
+  hpBonus: number;
+  /**
+   * PV máximo EFETIVO = gravado + `hpBonus` (nunca gravado). As features e
+   * talentos que somam PV entram aqui; o valor gravado segue a base editável.
+   */
+  hpMax: number;
   spellcasting: { ability: AbilityKey; saveDC: number; attackBonus: number } | null;
   /**
    * Magias preparadas: NÃO existe um total aqui. Preparadas são POR CLASSE (o
@@ -316,6 +323,10 @@ export interface DerivedInput {
   lockedSaves?: AbilityKey[];
   /** Dados de Ataque Furtivo já resolvidos. */
   sneakAttack?: { dice: number; expression: string } | null;
+  /** PV máximo GRAVADO na ficha (base editável); o efetivo soma `hpBonus`. */
+  hpMax?: number;
+  /** Bônus de PV máximo de features/talentos (Resiliência Dracônica, Vigoroso). */
+  hpBonus?: number;
   /** Total de espaços de Expertise. */
   expertiseSlots?: number;
   /** Espaços de magia já resolvidos (regra de multiclasse). */
@@ -362,6 +373,7 @@ export function deriveStats(input: DerivedInput): DerivedStats {
   const prof = proficiencyBonus(input.level);
   const saveBonus = input.saveBonus ?? 0;
   const critThreshold = input.critThreshold ?? 20;
+  const hpBonus = input.hpBonus ?? 0;
   const halfProfGrants: readonly { target: string; round: string }[] = input.halfProficiency ?? [];
 
   /**
@@ -444,6 +456,8 @@ export function deriveStats(input: DerivedInput): DerivedStats {
       return Math.max(top, value);
     }, 0),
     critThreshold,
+    hpBonus,
+    hpMax: Math.max(0, (input.hpMax ?? 0) + hpBonus),
     // A iniciativa é um teste de Destreza: a metade da proficiência vale nela.
     initiative: initiative(
       input.abilities.dexterity,

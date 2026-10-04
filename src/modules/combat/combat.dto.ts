@@ -2,7 +2,7 @@ import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@pr
 import { z } from 'zod';
 import { characterArmorClass } from '../characters/armor-class.js';
 import type { ArmorProficiencyState } from '../shared/armor-class.js';
-import { characterDerivedAttacks } from '../characters/characters.dto.js';
+import { characterDerivedAttacks, characterMaxHp } from '../characters/characters.dto.js';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
 import { parseJson } from '../shared/json.js';
 
@@ -129,7 +129,11 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   // Criaturas usam o snapshot do combatente (permite várias cópias iguais,
   // cada uma com a própria vida). Personagens leem ao vivo da ficha.
   const hpCurrent = combatant.hpCurrent ?? source?.hpCurrent ?? 0;
-  const hpMax = combatant.hpMax ?? source?.hpMax ?? 0;
+  // Personagens: o PV máximo é DERIVADO (gravado + `hpBonus` de features/talentos
+  // — Resiliência Dracônica, Vigoroso). Criaturas: o snapshot do combatente.
+  const hpMax =
+    combatant.hpMax ??
+    (combatant.character ? characterMaxHp(combatant.character) : (source?.hpMax ?? 0));
   // A CA de personagem é CALCULADA (atributos + equipamento), nunca lida de
   // uma coluna — a ficha só guarda o override manual do mestre. O MESMO detalhe
   // traz o estado de proficiência (armadura/escudo), para o combate enxergar o

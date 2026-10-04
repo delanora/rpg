@@ -410,21 +410,10 @@ export function toCharacterDto(
   // As features GRAVADAS na ficha (JSONB) incluem os talentos escolhidos no
   // Level Up (`source: 'feat'`), que o pipeline das classes não vê.
   const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
-  // Ajustes das classes MAIS os dos talentos (mesmo pipeline e mesmo merge).
-  const classAdjustments = mergeAdjustments(
-    computeMulticlassAdjustments(classEntries, classState, abilities),
-    computeFeatAdjustments(
-      features
-        .filter((feature) => feature.source === 'feat')
-        .map((feature) => ({
-          featId: feature.featId,
-          name: feature.name,
-          featAbility: feature.featAbility,
-        })),
-      level,
-      abilities,
-    ),
-  );
+  // Ajustes das classes MAIS os dos talentos (mesmo pipeline e mesmo merge) —
+  // a MESMA conta que `characterClassAdjustments` faz para os leitores diretos
+  // (combate etc.), garantindo que a ficha e o combate nunca divirjam.
+  const classAdjustments = characterClassAdjustments(character);
 
   // Salvaguardas fixas: as da PRIMEIRA classe (multiclasse nunca concede
   // salvaguardas — PHB p.164), as das features (ex.: Mente Escorregadia) e as dos
@@ -598,6 +587,9 @@ export function toCharacterDto(
     // Proficiências de armadura — resolvem o estado de proficiência do
     // equipamento (não mudam a CA).
     armorProficiencies: proficiencies.armor,
+    // PV máximo efetivo: o gravado + o bônus de features/talentos.
+    hpMax: character.hpMax,
+    hpBonus: classAdjustments.hpBonus,
     armorClassOverride: character.armorClass,
     spellSlots,
     pactSlots,
@@ -680,6 +672,50 @@ export function toCharacterDto(
 }
 
 /**
+ * Ajustes de classe + TALENTOS de uma ficha lida DIRETO do banco (sem passar
+ * pelo DTO): a MESMA conta do `toCharacterDto` (multiclasse + features de
+ * talento pelo mesmo `computeFeatAdjustments`/`mergeAdjustments`). O combate e
+ * os demais leitores usam isto para os valores DERIVADOS (ex.: `hpBonus`) nunca
+ * divergirem da ficha.
+ */
+export function characterClassAdjustments(character: Character): ClassAdjustments {
+  const classEntries = normalizeClassEntries(character.classes);
+  const abilities: Record<AbilityKey, number> = {
+    strength: character.strength,
+    dexterity: character.dexterity,
+    constitution: character.constitution,
+    intelligence: character.intelligence,
+    wisdom: character.wisdom,
+    charisma: character.charisma,
+  };
+  const features = parseJson<FeatureDto[]>(featureListSchema, character.features, []);
+
+  return mergeAdjustments(
+    computeMulticlassAdjustments(classEntries, normalizeClassState(character.classState), abilities),
+    computeFeatAdjustments(
+      features
+        .filter((feature) => feature.source === 'feat')
+        .map((feature) => ({
+          featId: feature.featId,
+          name: feature.name,
+          featAbility: feature.featAbility,
+        })),
+      totalCharacterLevel(classEntries),
+      abilities,
+    ),
+  );
+}
+
+/**
+ * PV máximo EFETIVO de uma ficha lida direto do banco = gravado + `hpBonus` de
+ * features/talentos (Resiliência Dracônica, Vigoroso). O gravado segue a base
+ * editável — o bônus nunca é escrito na ficha.
+ */
+export function characterMaxHp(character: Character): number {
+  return Math.max(0, character.hpMax + characterClassAdjustments(character).hpBonus);
+}
+
+/**
  * Ataques derivados de uma ficha lida DIRETO do banco (sem passar pelo DTO).
  * O combate resolve por aqui os ataques de arma equipada — a mesma conta que a
  * ficha mostra, para os ids (`weapon:<item>`, `thrown:<item>`, `offhand:<item>`
@@ -687,10 +723,7 @@ export function toCharacterDto(
  */
 export function characterDerivedAttacks(character: Character): CombatAttack[] {
   const classEntries = normalizeClassEntries(character.classes);
-  const classAdjustments = computeMulticlassAdjustments(
-    classEntries,
-    normalizeClassState(character.classState),
-  );
+  const classAdjustments = characterClassAdjustments(character);
   const inventory = parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []);
 
   return deriveWeaponAttacks({

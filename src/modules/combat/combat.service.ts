@@ -11,6 +11,7 @@ import {
 import { getBroadcaster } from '../../realtime/hub.js';
 import { characterArmorClass, characterCritThreshold } from '../characters/armor-class.js';
 import { toSheetDto } from '../characters/characters.service.js';
+import { characterClassAdjustments } from '../characters/characters.dto.js';
 import {
   computeMulticlassAdjustments,
   featureEffectsOf,
@@ -390,6 +391,9 @@ async function changeHp(
 ): Promise<{ hpCurrent: number; hpMax: number } | null> {
   if (combatant.kind === 'CHARACTER' && combatant.characterId && combatant.character) {
     const { character } = combatant;
+    // O teto de PV de um personagem é DERIVADO: o gravado + o `hpBonus` de
+    // features/talentos (Resiliência Dracônica, Vigoroso), como na ficha.
+    const hpBonus = characterClassAdjustments(character).hpBonus;
 
     // A escrita é ATÔMICA no banco (`UPDATE ... SET hpCurrent = ...`): o valor
     // novo é calculado a partir do que está GRAVADO, não do snapshot lido no
@@ -406,7 +410,7 @@ async function changeHp(
           "hpCurrent" = GREATEST(
             0,
             LEAST(
-              GREATEST("hpMax", 0),
+              GREATEST("hpMax" + ${hpBonus}, 0),
               "hpCurrent" + ${delta} + LEAST("hpTemp", GREATEST(0, -${delta}))
             )
           ),
@@ -437,7 +441,7 @@ async function changeHp(
     broadcaster.toMasters(ServerEvents.SHEET_UPDATED, payload);
     broadcaster.toUser(stored.userId, ServerEvents.SHEET_UPDATED, payload);
 
-    return { hpCurrent: stored.hpCurrent, hpMax: stored.hpMax };
+    return { hpCurrent: stored.hpCurrent, hpMax: stored.hpMax + hpBonus };
   }
 
   if (combatant.kind === 'CREATURE') {

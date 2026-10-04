@@ -387,6 +387,10 @@ export interface DerivedStats {
    * 18 = Crítico Superior). Crítico sempre acerta; 1 natural sempre erra.
    */
   critThreshold: number;
+  /** Bônus de PV máximo de features/talentos (Resiliência Dracônica, Vigoroso). */
+  hpBonus: number;
+  /** PV máximo EFETIVO = gravado + `hpBonus` (o gravado segue a base editável). */
+  hpMax: number;
   /**
    * As magias PREPARADAS são por classe — ver
    * `Character.classes[].spellcasting.preparedCount`. Não existe um total único:

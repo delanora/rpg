@@ -8851,6 +8851,93 @@ async function main(): Promise<void> {
         mod: downFourFeat.data?.character?.derived?.modifiers?.strength,
       }),
     );
+
+    // (6) Vigoroso (tough): +2 PV por nível somados no `derived` (nunca gravados).
+    const toughLevel = await gainLevel({
+      classKey: 'fighter',
+      hp: 'average',
+      feat: { id: 'tough', name: 'Vigoroso', description: 'teste do smoke' },
+    });
+    const afterTough = toughLevel.data?.character;
+    check(
+      'Vigoroso soma o hpBonus (+2/nível) no derived, sem tocar no PV gravado',
+      toughLevel.status === 200 &&
+        afterTough?.classAdjustments?.hpBonus === 8 &&
+        afterTough?.derived?.hpBonus === 8 &&
+        afterTough?.derived?.hpMax === (afterTough?.hpMax ?? 0) + 8,
+      JSON.stringify({
+        bonus: afterTough?.derived?.hpBonus,
+        gravado: afterTough?.hpMax,
+        efetivo: afterTough?.derived?.hpMax,
+      }),
+    );
+    const downTough = await levelDown(featHero.characterId, { classKey: 'fighter' });
+    check(
+      'o downgrade do 4º remove o Vigoroso e o hpBonus derivado volta a 0',
+      downTough.status === 200 &&
+        downTough.data?.character?.derived?.hpBonus === 0 &&
+        downTough.data?.character?.derived?.hpMax === downTough.data?.character?.hpMax,
+      JSON.stringify(downTough.data?.character?.derived),
+    );
+
+    // (7) Resiliência Dracônica: +1 PV por nível de feiticeiro (derivado).
+    await setCharacterClasses(featHero.userId, [
+      { classKey: 'sorcerer', subclass: 'Linhagem Dracônica', level: 3 },
+    ]);
+    const draconic = await sheetOf(featHero.token);
+    check(
+      'Resiliência Dracônica soma +1 PV por nível de feiticeiro no derived',
+      draconic?.classAdjustments?.hpBonus === 3 &&
+        draconic?.derived?.hpBonus === 3 &&
+        draconic?.derived?.hpMax === (draconic?.hpMax ?? 0) + 3,
+      JSON.stringify({
+        bonus: draconic?.derived?.hpBonus,
+        gravado: draconic?.hpMax,
+        efetivo: draconic?.derived?.hpMax,
+      }),
+    );
+
+    // O MESMO teto vale no combate: o combatente do personagem e a cura manual
+    // do mestre usam o PV máximo derivado (gravado + hpBonus).
+    await masterPatch(featHero.characterId, { hpCurrent: 1, hpTemp: 0 });
+    const hpCombat = await api('/api/combat', {
+      method: 'POST',
+      token: masterToken,
+      body: { entries: [] },
+    });
+    createdCombatIds.push(hpCombat.data?.combat?.id);
+    const hpCombatant = (hpCombat.data?.combat?.combatants ?? []).find(
+      (item: any) => item.characterId === featHero.characterId,
+    );
+    const draconicMax = (draconic?.hpMax ?? 0) + (draconic?.derived?.hpBonus ?? 0);
+    check(
+      'o combate usa o PV máximo EFETIVO (gravado + hpBonus)',
+      hpCombatant?.hpMax === draconicMax,
+      JSON.stringify({ combatente: hpCombatant?.hpMax, esperado: draconicMax }),
+    );
+    if (hpCombatant) {
+      await api('/api/combat/hp', {
+        method: 'POST',
+        token: masterToken,
+        body: { combatantId: hpCombatant.id, amount: 999, mode: 'heal' },
+      });
+      const healed = await sheetOf(featHero.token);
+      check(
+        'a cura do combate respeita o PV máximo derivado (não passa de gravado + hpBonus)',
+        healed?.hpCurrent === (healed?.hpMax ?? 0) + (healed?.derived?.hpBonus ?? 0),
+        JSON.stringify({
+          atual: healed?.hpCurrent,
+          gravado: healed?.hpMax,
+          bonus: healed?.derived?.hpBonus,
+        }),
+      );
+    }
+    await api('/api/combat/end', { method: 'POST', token: masterToken });
+
+    // Devolve a ficha ao estado (guerreiro 3) que as próximas seções esperam.
+    await setCharacterClasses(featHero.userId, [
+      { classKey: 'fighter', subclass: 'Campeão', level: 3 },
+    ]);
   }
 
   // --- 29. Vários tipos de dano por ataque e por arma -----------------------
