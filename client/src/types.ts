@@ -795,6 +795,12 @@ export interface Character {
   /** Proficiências de armadura, arma e ferramenta (armaduras/armas/ferramentas). */
   proficiencies: ProficienciesState;
   /**
+   * Proficiências de ARMA prontas para exibição: os ids canônicos gravados pela
+   * raça viram o nome em português e as repetidas somem. `proficiencies.weapons`
+   * guarda o formato original — a ficha mostra ESTA lista.
+   */
+  weaponProficienciesDisplay?: string[];
+  /**
    * Proficiências SIMPLES em ferramenta, pelos ids do catálogo do PHB 2014
    * (ex.: "thieves-tools").
    */
