@@ -406,7 +406,14 @@ export function AbilityCardsSection({ character, update, onRoll }: AbilityCardsS
       </p>
       <div className="prof-groups">
         {PROFICIENCY_GROUPS.map((group) => {
-          const items = character.proficiencies[group.key];
+          const raw = character.proficiencies[group.key];
+          // Só na EXIBIÇÃO (ficha do jogador e visão do mestre sem edição) as
+          // armas usam a lista derivada — ids da raça traduzidos e sem
+          // repetição. No editor do mestre o valor cru é preservado.
+          const items =
+            group.key === 'weapons' && lockedConstruction
+              ? (character.weaponProficienciesDisplay ?? raw)
+              : raw;
 
           return (
             <div className="prof-group" key={group.key}>

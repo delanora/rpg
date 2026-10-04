@@ -8188,6 +8188,25 @@ async function main(): Promise<void> {
       JSON.stringify(['Armas simples', 'battleaxe', 'handaxe', 'light-hammer', 'warhammer']),
     JSON.stringify(dwarfSheet?.proficiencies?.weapons),
   );
+  // A lista EXIBIDA na ficha traduz os ids canônicos da raça para o português
+  // (sem tocar no valor GRAVADO, checado acima).
+  check(
+    'a exibição traduz os ids de arma da raça para o português (sem alterar o valor gravado)',
+    JSON.stringify(dwarfSheet?.weaponProficienciesDisplay) ===
+      JSON.stringify([
+        'Armas simples',
+        'Machado de batalha',
+        'Machadinha',
+        'Martelo leve',
+        'Martelo de guerra',
+      ]) &&
+      JSON.stringify(dwarfSheet?.proficiencies?.weapons) ===
+        JSON.stringify(['Armas simples', 'battleaxe', 'handaxe', 'light-hammer', 'warhammer']),
+    JSON.stringify({
+      display: dwarfSheet?.weaponProficienciesDisplay,
+      raw: dwarfSheet?.proficiencies?.weapons,
+    }),
+  );
   const dwarfAxe = (await weaponAttacksOf()).find((attack) => attack.id === 'weapon:a-battleaxe');
   check(
     'a raça (Anão) dá proficiência pelo ID canônico da arma gravado na ficha',
@@ -8220,6 +8239,32 @@ async function main(): Promise<void> {
     (await itemProficiencyOf('a-battleaxe')) === false,
     JSON.stringify(await itemProficiencyOf('a-battleaxe')),
   );
+
+  // A MESMA arma vinda da classe (texto em PT: 'Rapieiras') e da raça (id
+  // canônico: 'rapier' pelo Drow) não pode aparecer duas vezes na exibição.
+  await masterPatch(duelist.characterId, {
+    raceId: 'elf',
+    subraceId: 'drow-elf',
+    proficiencies: { armor: [], weapons: ['Rapieiras'], tools: [] },
+  });
+  const drowSheet = await sheetOf(duelist.token);
+  check(
+    'a exibição deduplica a arma da classe (PT) e da raça (id), mantendo a versão em português',
+    JSON.stringify(drowSheet?.weaponProficienciesDisplay) ===
+      JSON.stringify(['Rapieiras', 'Espada curta', 'Besta de mão']) &&
+      JSON.stringify(drowSheet?.proficiencies?.weapons) ===
+        JSON.stringify(['Rapieiras', 'rapier', 'shortsword', 'hand-crossbow']),
+    JSON.stringify({
+      display: drowSheet?.weaponProficienciesDisplay,
+      raw: drowSheet?.proficiencies?.weapons,
+    }),
+  );
+  // Restaura as proficiências controladas para os testes seguintes.
+  await masterPatch(duelist.characterId, {
+    raceId: null,
+    subraceId: null,
+    proficiencies: { armor: [], weapons: ['Armas simples', 'Espadas longas'], tools: [] },
+  });
 
   // O ataque derivado carrega a proficiência em campo próprio (`proficient`),
   // para a tabela de armas equipadas marcar sem reinterpretar o texto das notas.

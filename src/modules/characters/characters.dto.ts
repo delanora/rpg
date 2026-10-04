@@ -1,7 +1,8 @@
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
-import { deriveWeaponAttacks, isProficientWithWeapon } from '../shared/weapon-attacks.js';
+import { deriveWeaponAttacks, foldWeaponName, isProficientWithWeapon } from '../shared/weapon-attacks.js';
+import { getWeapon } from '../shared/weapons/index.js';
 import {
   normalizeLevelHistory,
   type LevelHistoryRecord,
@@ -309,6 +310,13 @@ export interface CharacterDto {
   /** Proficiências de armadura, arma e ferramenta (texto; só o mestre edita). */
   proficiencies: ProficienciesState;
   /**
+   * Lista de proficiências de ARMA pronta para exibição: os ids canônicos
+   * gravados pela raça viram o nome em português e as repetidas somem. Fica à
+   * parte de `proficiencies.weapons`, que guarda o formato ORIGINAL (a ficha
+   * só mostra esta; a checagem de proficiência continua sobre o valor cru).
+   */
+  weaponProficienciesDisplay: string[];
+  /**
    * Proficiências SIMPLES em ferramenta, pelos ids do catálogo do PHB 2014
    * (ex.: "thieves-tools"). Nasce vazio: nada concede ferramenta automaticamente
    * nesta etapa. A Expertise tem campo próprio (`expertiseSkills`).
@@ -377,6 +385,45 @@ function itemProficiencyOf(
   }
 
   return null;
+}
+
+/**
+ * Lista de proficiências de ARMA pronta para EXIBIÇÃO.
+ *
+ * A mesma arma chega por duas fontes com formatos diferentes: a CLASSE grava o
+ * texto em português ("Rapieiras") e a RAÇA grava o id canônico ("rapier"), e
+ * as duas somam em `proficiencies.weapons`. Aqui cada entrada que casa com um
+ * id de `shared/weapons` é traduzida para o `namePt`; o que não casa com id
+ * nenhum (a categoria "Armas marciais", um texto livre) passa direto. Depois a
+ * lista é deduplicada por `foldWeaponName` — "Rapieiras" e "Rapieira" viram
+ * uma só entrada, mantendo a versão em PORTUGUÊS (texto livre) quando houver
+ * conflito com uma traduzida de id, seja qual for a ordem.
+ *
+ * É só APRESENTAÇÃO: `proficiencies.weapons` segue guardando o formato original
+ * (a checagem de proficiência é feita sobre o valor cru).
+ */
+function displayWeaponProficiencies(raw: readonly string[]): string[] {
+  const entries: { value: string; translated: boolean }[] = [];
+  const indexByKey = new Map<string, number>();
+
+  for (const item of raw) {
+    const weapon = getWeapon(item);
+    const value = weapon ? weapon.namePt : item;
+    const key = foldWeaponName(value);
+    const existing = indexByKey.get(key);
+    if (existing === undefined) {
+      indexByKey.set(key, entries.length);
+      entries.push({ value, translated: weapon !== undefined });
+      continue;
+    }
+    // Conflito: a entrada em português (texto livre) tem prioridade sobre a
+    // traduzida de um id canônico, independentemente da ordem na lista.
+    if (entries[existing].translated && !weapon) {
+      entries[existing] = { value, translated: false };
+    }
+  }
+
+  return entries.map((entry) => entry.value);
 }
 
 export function toCharacterDto(
@@ -490,6 +537,10 @@ export function toCharacterDto(
   // canônicos direto em `proficiencies.weapons` (o serviço aplica/reverte na
   // troca de raça) — o DTO só lê, a ficha é a fonte única.
   const weaponProficiencies = proficiencies.weapons;
+  // Versão exibida: class (texto em PT) e raça (id canônico) somam na mesma
+  // lista, então a tela mostra os ids traduzidos e sem as repetidas — o campo
+  // gravado acima NÃO é tocado (a checagem de proficiência segue sobre o cru).
+  const weaponProficienciesDisplay = displayWeaponProficiencies(weaponProficiencies);
 
   // Proficiência do personagem com cada item do inventário (o popup de detalhes
   // mostra "Proficiente" / "Sem proficiência"). Mesmas regras da ficha.
@@ -655,6 +706,7 @@ export function toCharacterDto(
     expertiseSkills,
     saves,
     proficiencies,
+    weaponProficienciesDisplay,
     toolProficiencies: character.toolProficiencies ?? [],
     tools: resolveTools(character.toolProficiencies ?? []),
     inventory: inventoryWithProficiency,
