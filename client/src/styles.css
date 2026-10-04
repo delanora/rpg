@@ -4637,6 +4637,22 @@ input[type='checkbox']:disabled {
   box-shadow: 0 0 14px -5px var(--glow);
 }
 
+/* Perícia já concedida pelo antecedente: marcada e travada no passo 7. */
+.check-row.is-locked {
+  cursor: default;
+  border-color: var(--gold-hair);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+}
+
+.check-row.is-locked:hover {
+  border-color: var(--gold-hair);
+  box-shadow: none;
+}
+
+.check-row.is-locked input[type='checkbox'] {
+  cursor: not-allowed;
+}
+
 .check-name {
   font-family: var(--font-display);
   font-weight: 600;
