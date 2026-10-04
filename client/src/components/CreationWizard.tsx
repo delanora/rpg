@@ -236,6 +236,10 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
         const response = await saveCreationStep({ step, ...body } as CreationStepRequest);
         setState(response);
         if (response.character) onCharacter(response.character);
+        // Trocar a raça poda as escolhas que a nova raça já concede (o servidor
+        // faz a poda); sincroniza o estado local para o passo 7 não guardar uma
+        // escolha que agora vem marcada e travada.
+        if (step === 3) setPicks(response.creation.skillPicks);
         setStep((current) => Math.min(LAST_STEP, current + 1));
         return true;
       } catch (err) {
