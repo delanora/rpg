@@ -1530,6 +1530,17 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   personalizadas expõem languages + bonusLanguageChoices no RaceOption; o passo 3
   exige o idioma à escolha (Humano e Meio-Elfo: 1), valida contra o catálogo (sem
   fixo/duplicado) e soma em characters.languages.
+  INTERFACE DO PASSO 3 (CreationWizard): a escolha deixou de ser um `<select>` de
+  linhagens e virou uma grade com retrato placeholder (a inicial do nome) — a sub-
+  etapa 3a seleciona a RAÇA (uma vez por grupo, base + sub-raças) e a 3b seleciona a
+  SUB-RAÇA quando a raça tem (Anão/Elfo/Gnomo/Halfling); raças sem sub-raça (e as
+  personalizadas, que nunca têm) avançam direto. O painel de detalhe mostra a
+  `description` (flavor da raça) e os traços como chips com tooltip (hover) + descrição
+  completa (clique); as escolhas da raça (ancestralidade, perícia/ferramenta, idiomas e
+  o +1 à escolha) ficam no mesmo painel. O cliente segue enviando `race` (a chave da
+  linhagem) ao servidor, sem lógica nova de cálculo. Raças personalizadas levam o selo
+  "Personalizada" e usam o MESMO placeholder (CustomRace NÃO tem campo de imagem —
+  lacuna registrada).
   Ficha: raceId?, subraceId?, raceChoices Json, customRaceId? (FK ↔ CustomRace, ON
   DELETE SET NULL), languages String[], darkvision Int, raceResistances String[].
   `characters.speed` virou Float (raças têm 7,5 m / 10,5 m). A coluna `race` de texto
