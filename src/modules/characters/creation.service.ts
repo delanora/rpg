@@ -616,15 +616,19 @@ async function buildState(
       skillChoice: creationSkillChoice(entries),
       raceSkillKeys,
       featureChoices: firstDefinition
-        ? featureChoiceInfo(firstDefinition, classChoices).filter(
+        ? featureChoiceInfo(firstDefinition, classChoices, '', {}, 1).filter(
             (info) => info.level === 1 && info.apply !== 'expertise',
           )
         : [],
       expertiseChoices:
         firstDefinition && character
-          ? featureChoiceInfo(firstDefinition, classChoices, '', {
-              expertise: creationExpertiseOptions(character),
-            }).filter((info) => info.level === 1 && info.apply === 'expertise')
+          ? featureChoiceInfo(
+              firstDefinition,
+              classChoices,
+              '',
+              { expertise: creationExpertiseOptions(character) },
+              1,
+            ).filter((info) => info.level === 1 && info.apply === 'expertise')
           : [],
       startingLevel,
       // Catálogo único: as nove raças fixas do catálogo estruturado + as raças

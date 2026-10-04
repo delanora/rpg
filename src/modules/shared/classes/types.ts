@@ -199,6 +199,18 @@ export interface FeatureChoiceOption {
   description?: string;
   /** Efeito que só vale com esta opção escolhida. */
   effect?: ClassFeatureEffect;
+  /**
+   * NÍVEL mínimo da classe para poder escolher esta opção (ex.: as Invocações
+   * Místicas que exigem 5º, 7º, 9º... — ver `optionMeetsPrerequisites`). Fica
+   * fora da lista enquanto o personagem não chega nesse nível.
+   */
+  requiresLevel?: number;
+  /**
+   * Dádiva do Pacto exigida para escolher esta opção (chave escolhida na
+   * feature 'pact-boon': 'blade', 'chain' ou 'tome'). Ex.: Lâmina Sedenta exige
+   * o Pacto da Lâmina.
+   */
+  requiresPact?: 'blade' | 'chain' | 'tome';
 }
 
 /**

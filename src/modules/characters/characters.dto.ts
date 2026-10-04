@@ -607,8 +607,17 @@ export function toCharacterDto(
       subclassNames: definition?.subclasses.map((item) => item.name) ?? [],
       asiLevels: [...asiLevelsFor(entry.classKey)],
       spellcasting: spellcastingOf(entry),
+      // As escolhas são feitas no PRÓXIMO nível (o Level Up usa esta lista):
+      // o nível vai +1 para as opções com pré-requisito de nível aparecerem já
+      // no nível em que passam a valer (Invocações Místicas exigem 5º/12º...).
       featureChoices: definition
-        ? featureChoiceInfo(definition, classState.choices, entry.subclass, expertiseOptionsOverride)
+        ? featureChoiceInfo(
+            definition,
+            classState.choices,
+            entry.subclass,
+            expertiseOptionsOverride,
+            entry.level + 1,
+          )
         : [],
     };
   });
