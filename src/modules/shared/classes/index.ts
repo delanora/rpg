@@ -291,6 +291,11 @@ export function featureChoiceInfo(
   subclassName = '',
   /** Opções que sobrepõem as da definição (ex.: Expertise só entre proficientes). */
   optionsOverride: FeatureChoiceOptionsOverride = {},
+  /**
+   * Nível da CLASSE usado para esconder as opções com pré-requisito de nível
+   * (`FeatureChoiceOption.requiresLevel`). `undefined` = não filtra por nível.
+   */
+  level?: number,
 ): FeatureChoiceInfo[] {
   const features = featuresWithSubclass(definition, subclassName).filter(
     (feature) => feature.choice !== undefined,
@@ -312,6 +317,9 @@ export function featureChoiceInfo(
       // `excludeChosen`: tira o que já foi aprendido nas OUTRAS características
       // desta classe (a própria característica mantém as suas escolhas).
       .filter((option) => !learnedElsewhere(features, chosen, feature).has(option.key))
+      // Pré-requisitos de nível/pacto (Invocações Místicas): fora da lista
+      // enquanto não forem atendidos — o servidor também recusa a escolha.
+      .filter((option) => optionMeetsPrerequisites(option, level, chosen))
       .map((option) => ({
         key: option.key,
         name: option.name,
@@ -326,6 +334,26 @@ export function featureChoiceInfo(
  * característica pede `excludeChosen` (Metamagia não repete o que já aprendeu).
  * Fora desse caso, o conjunto volta vazio e nada é filtrado.
  */
+/**
+ * A opção pode ser escolhida no contexto atual? Vale para os pré-requisitos
+ * declarados na própria opção (nível da classe e Dádiva do Pacto). Sem `level`
+ * informado, o filtro de nível não é aplicado.
+ */
+function optionMeetsPrerequisites(
+  option: FeatureChoiceOption,
+  level: number | undefined,
+  chosen: Record<string, string[]>,
+): boolean {
+  if (option.requiresLevel !== undefined && level !== undefined && level < option.requiresLevel) {
+    return false;
+  }
+  if (option.requiresPact !== undefined) {
+    const boon = chosen['pact-boon'] ?? [];
+    if (!boon.includes(option.requiresPact)) return false;
+  }
+  return true;
+}
+
 function learnedElsewhere(
   features: ClassFeatureDefinition[],
   chosen: Record<string, string[]>,
@@ -354,7 +382,7 @@ export function pendingFeatureChoices(
   /** Escolhas adiadas para outro momento (a criação resolve a Expertise no passo das perícias). */
   ignoreApply: readonly ('skill' | 'expertise')[] = [],
 ): FeatureChoiceInfo[] {
-  return featureChoiceInfo(definition, chosen, subclassName, optionsOverride).filter(
+  return featureChoiceInfo(definition, chosen, subclassName, optionsOverride, classLevel).filter(
     (info) =>
       info.level === classLevel &&
       info.chosen.length < info.count &&
@@ -1859,8 +1887,10 @@ export function classOptionsFor(
       multiclassProficiencies: multiclassProficiencyGrant(summary.key),
       multiclassSkillChoice: multiclassSkillChoiceFor(summary.key),
       skillChoice: classSkillChoice(summary.key),
+      // As escolhas de NÍVEL 1 da classe: o nível vai junto para esconder as
+      // opções de nível superior (Invocações Místicas exigem 5º+).
       featureChoices: definition
-        ? featureChoiceInfo(definition).filter((info) => info.level === 1)
+        ? featureChoiceInfo(definition, {}, '', {}, 1).filter((info) => info.level === 1)
         : [],
       // Só as escolhas que vêm DA SUBCLASSE (as da classe já estão acima).
       subclassChoices: definition

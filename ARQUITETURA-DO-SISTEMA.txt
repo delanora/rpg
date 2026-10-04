@@ -986,10 +986,14 @@ DTO e pelo combate, garantindo UMA única fonte para cada conta.
       combate acerta criticamente com d20 >= limiar (Campeão: 19 no 3º e 18 no 15º).
       Crítico sempre acerta e o 1 natural sempre erra; o MENOR limiar prevalece.
   FEATURES CADASTRADAS POR CLASSE (PHB 2014): barbarian, cleric, druid, fighter,
-    monk, paladin, ranger, rogue, sorcerer, wizard, bard.
-  [LACUNA CONHECIDA] warlock tem `features: []` (só as subclasses): faltam
-    Invocações Místicas/Dádiva do Pacto/Arcanum Místico/Mestre Místico.
-    O ladino não tem a Gíria de Ladrão (nível 1, texto puro).
+    monk, paladin, ranger, rogue, sorcerer, warlock, wizard, bard.
+  [LACUNA CONHECIDA] O ladino não tem a Gíria de Ladrão (nível 1, texto puro).
+  BRUXO: Dádiva do Pacto (escolha no 3) e Invocações Místicas como `choice`
+    (2 no 2 e +1 em 5/7/9/12/15/18), com PRÉ-REQUISITOS por opção
+    (`FeatureChoiceOption.requiresLevel`/`requiresPact` — o servidor esconde e
+    recusa o que não atende). Arcanum Místico (11/13/15/17) e as listas
+    expandidas dos patronos ficam como TEXTO até a Fase 4. Mestre Místico (20):
+    recurso 1x/descanso longo.
   CLÉRIGO: Canalizar Divindade (1/2/3 usos em 2/6/18, descanso curto/longo) com
     Expulsar Mortos-Vivos + a opção de cada domínio como TOGGLES que gastam o
     recurso; Destruir Mortos-Vivos (5), Intervenção Divina (10) e Aprimorada (20);
@@ -2358,9 +2362,13 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    classe foram cadastrados — Canalizar Divindade (1/2/3 usos em 2/6/18) com opções
    como toggles que gastam o recurso, Destruir Mortos-Vivos (5), Intervenção Divina
    (10) e Aprimorada (20), proficiências de domínio e as magias de domínio como texto.
-[LACUNA] CARACTERÍSTICAS DE CLASSE DO BRUXO: ainda tem `features: []` (só as
-   subclasses) — faltam Invocações Místicas, Dádiva do Pacto, Arcanum Místico e
-   Mestre Místico. O ladino não tem a Gíria de Ladrão (texto puro).
+[RESOLVIDO 2026-10-04] CARACTERÍSTICAS DE CLASSE DO BRUXO: a classe e os 3 Patronos
+   foram cadastrados — Dádiva do Pacto (3), Invocações Místicas crescentes (2/5/7/9/
+   12/15/18) com pré-requisitos de nível/pacto por opção, Arcanum Místico (11/13/15/
+   17) e listas expandidas como texto, e Mestre Místico (20). Novo campo
+   `requiresLevel`/`requiresPact` em `FeatureChoiceOption`, filtrado por
+   `featureChoiceInfo` (nível da classe) e validado por `resolveFeatureChoices`.
+[LACUNA] GÍRIA DE LADRÃO do ladino (nível 1, texto puro).
 [LACUNA/FASE 5] COMPANHEIRO ANIMAL DO SENHOR DAS FERAS: as quatro características do
    arquétipo estão cadastradas como texto, mas a ficha do companheiro (PV, CA,
    ataques e PV gastos saindo dos seus) fica para a Fase 5.

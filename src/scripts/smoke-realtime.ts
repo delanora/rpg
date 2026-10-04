@@ -6908,10 +6908,88 @@ async function main(): Promise<void> {
     { classKey: 'paladin', pick: 2, label: 'Paladino · Juramento de Vingança' },
     { classKey: 'ranger', pick: 0, label: 'Patrulheiro · Caçador' },
     { classKey: 'ranger', pick: 1, label: 'Patrulheiro · Senhor das Feras' },
+    { classKey: 'warlock', pick: 0, label: 'Bruxo · Arquifada' },
+    { classKey: 'warlock', pick: 1, label: 'Bruxo · O Corruptor' },
+    { classKey: 'warlock', pick: 2, label: 'Bruxo · O Grande Antigo' },
   ];
   for (const run of subclassRuns) {
     await walkSubclass(run.classKey, run.pick, run.label);
   }
+
+  // --- Bruxo: Dádiva do Pacto, Invocações e Patronos -------------------------
+  await setCharacterClasses(walker.userId, [
+    { classKey: 'warlock', subclass: 'Arquifada', level: 2 },
+  ]);
+  const warlockTwo = await sheetOf(walker.token);
+  check(
+    'Bruxo 2: Presença Feérica do patrono entra com 1 uso por descanso',
+    (warlockTwo?.classAdjustments?.resources ?? []).some(
+      (resource: any) =>
+        resource.id === 'fey-presence' && resource.max === 1 && resource.recharge === 'short',
+    ),
+    JSON.stringify(warlockTwo?.classAdjustments?.resources),
+  );
+
+  await setCharacterClasses(walker.userId, [
+    { classKey: 'warlock', subclass: 'O Grande Antigo', level: 10 },
+  ]);
+  const gooWarlock = await sheetOf(walker.token);
+  check(
+    'Bruxo 10: Escudo Mental dá resistência psíquica',
+    (gooWarlock?.classAdjustments?.resistances ?? []).includes('Psíquico'),
+    JSON.stringify(gooWarlock?.classAdjustments?.resistances),
+  );
+
+  await setCharacterClasses(walker.userId, [{ classKey: 'warlock', level: 20 }]);
+  const masterWarlock = await sheetOf(walker.token);
+  check(
+    'Bruxo 20: Mestre Místico (1x/descanso longo) e o Arcanum de 9º entram na ficha',
+    (masterWarlock?.classAdjustments?.resources ?? []).some(
+      (resource: any) =>
+        resource.id === 'eldritch-master' && resource.max === 1 && resource.recharge === 'long',
+    ) &&
+      (masterWarlock?.activeFeatures ?? []).some(
+        (feature: any) => feature.id === 'mystic-arcanum-9',
+      ),
+    JSON.stringify((masterWarlock?.activeFeatures ?? []).map((feature: any) => feature.id)),
+  );
+
+  // Pré-requisitos das invocações: sem pacto, só as que não exigem pacto aparecem.
+  await setCharacterClasses(walker.userId, [{ classKey: 'warlock', level: 4 }]);
+  await prisma.character.update({
+    where: { userId: walker.userId },
+    data: { classState: { active: [], used: {}, choices: {} } as any },
+  });
+  const noPact = await sheetOf(walker.token);
+  const fiveInvocation = (noPact?.classes?.[0]?.featureChoices ?? []).find(
+    (info: any) => info.featureId === 'eldritch-invocations-5',
+  );
+  check(
+    'Invocação de 5º nível aparece, mas a que exige Pacto da Lâmina (Lâmina Sedenta) não',
+    (fiveInvocation?.options ?? []).some((option: any) => option.key === 'one-with-shadows') &&
+      !(fiveInvocation?.options ?? []).some((option: any) => option.key === 'thirsting-blade') &&
+      !(fiveInvocation?.options ?? []).some((option: any) => option.key === 'witch-sight'),
+    JSON.stringify((fiveInvocation?.options ?? []).map((option: any) => option.key)),
+  );
+
+  await setCharacterClasses(walker.userId, [
+    { classKey: 'warlock', subclass: 'O Corruptor', level: 12 },
+  ]);
+  await prisma.character.update({
+    where: { userId: walker.userId },
+    data: { classState: { active: [], used: {}, choices: { 'pact-boon': ['blade'] } } as any },
+  });
+  const bladed = await sheetOf(walker.token);
+  const twelveInvocation = (bladed?.classes?.[0]?.featureChoices ?? []).find(
+    (info: any) => info.featureId === 'eldritch-invocations-12',
+  );
+  check(
+    'Com o Pacto da Lâmina no 12º, Sorvedouro de Vida e Lâmina Sedenta aparecem (Visão de Bruxa não)',
+    (twelveInvocation?.options ?? []).some((option: any) => option.key === 'lifedrinker') &&
+      (twelveInvocation?.options ?? []).some((option: any) => option.key === 'thirsting-blade') &&
+      !(twelveInvocation?.options ?? []).some((option: any) => option.key === 'witch-sight'),
+    JSON.stringify((twelveInvocation?.options ?? []).map((option: any) => option.key)),
+  );
 
   /** Features da subclasse ativas num cenário pronto (classe + subclasse + nível). */
   async function subclassScenario(
