@@ -197,6 +197,9 @@ function makeWeaponAttack(options: {
   die: number;
   dieCount: number;
   notes: string;
+  /** Atributo que soma no dano (FOR/DES) e quanto ele contribui. */
+  ability: AbilityKey;
+  abilityModifier: number;
   /** Proficiência com a arma (a ficha marca no ataque derivado). */
   proficient?: boolean;
   blocked?: string;
@@ -224,6 +227,10 @@ function makeWeaponAttack(options: {
     inventoryItemId: options.weapon.id,
     legacy: false,
     derived: true,
+    // Atributo que alimenta o dano — o combate usa para rotular a parcela do
+    // atributo na quebra do dano (`DES(+3)`).
+    ability: options.ability,
+    abilityModifier: options.abilityModifier,
     ...(options.proficient === undefined ? {} : { proficient: options.proficient }),
     ...(options.blocked === undefined ? {} : { blocked: options.blocked }),
   };
@@ -240,6 +247,8 @@ function unarmedAttack(strengthMod: number, proficiency: number): CombatAttack {
     notes: `Corpo a corpo · FOR ${formatModifier(strengthMod)} · proficiente ${formatModifier(proficiency)}`,
     finesse: false,
     ranged: false,
+    ability: 'strength',
+    abilityModifier: strengthMod,
     proficient: true,
     legacy: false,
     derived: true,
@@ -302,6 +311,8 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
         kind,
         attackBonus: clampAttackBonus(choice.modifier + profBonus + magicAttack),
         damageBonus: choice.modifier + magicDamage,
+        ability: choice.ability,
+        abilityModifier: choice.modifier,
         die,
         dieCount,
         notes: attackNote({
@@ -328,6 +339,8 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
           kind: 'thrown',
           attackBonus: clampAttackBonus(throwChoice.modifier + profBonus + magicAttack),
           damageBonus: throwChoice.modifier + magicDamage,
+          ability: throwChoice.ability,
+          abilityModifier: throwChoice.modifier,
           die: baseDie,
           dieCount: baseCount,
           notes: attackNote({
@@ -371,6 +384,8 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
         attackBonus: clampAttackBonus(choice.modifier + profBonus + (details.attackBonus ?? 0)),
         // Mão secundária: o modificador de dano NÃO entra, salvo se negativo.
         damageBonus: Math.min(choice.modifier, 0) + (details.damageBonus ?? 0),
+        ability: choice.ability,
+        abilityModifier: Math.min(choice.modifier, 0),
         die,
         dieCount,
         notes: 'Mão secundária · sem o modificador de dano (duas armas leves)',

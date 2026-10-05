@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AbilityKey } from './dnd5e.js';
 
 /**
  * Formato de ataque compartilhado entre fichas de jogador e criaturas.
@@ -154,6 +155,14 @@ export interface CombatAttack extends Attack {
    * `notes`.
    */
   proficient?: boolean;
+  /**
+   * Atributo que soma no DANO do ataque derivado (FOR/DES). Só existe no ataque
+   * calculado da arma equipada — é o que permite o combate rotular a parcela de
+   * atributo na quebra do dano (`DES(+3)`). Ataques gravados não o têm.
+   */
+  ability?: AbilityKey;
+  /** Quanto do `damage.bonus` vem do atributo (o resto é mágico/bônus fixo). */
+  abilityModifier?: number;
 }
 
 /**
