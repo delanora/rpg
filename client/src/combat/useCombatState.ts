@@ -1,15 +1,70 @@
 import { useCallback, useMemo, useState } from 'react';
 import { playCrit, playDice, playTurn } from '../sound';
-import type { AttackResolvedPayload, CombatDto, DiceRolledPayload } from '../types';
+import type {
+  AttackResolvedPayload,
+  CombatDto,
+  DamageComponentPayload,
+  DiceRolledPayload,
+} from '../types';
 import type { RealtimeHandlers } from '../useRealtime';
+
+/**
+ * Tipos de evento do log. Hoje o sistema emite rolagens (`dice:rolled`),
+ * resoluções de ataque (`attack:resolved`) e início de turno (`combat:turn`);
+ * os demais existem como espaço de estilo para quando o servidor passar a
+ * enviá-los — a UI nunca inventa um evento.
+ */
+export type CombatLogKind =
+  | 'initiative'
+  | 'attack'
+  | 'damage'
+  | 'result'
+  | 'turn'
+  | 'heal'
+  | 'hp'
+  | 'condition'
+  | 'rage'
+  | 'feature'
+  | 'spell';
 
 export interface CombatLogEntry {
   id: string;
-  kind: 'initiative' | 'attack' | 'damage' | 'result';
-  text: string;
-  detail?: string;
-  crit?: boolean;
+  kind: CombatLogKind;
+  /** Quem protagonizou o evento (quem rolou, atacou ou começou o turno). */
+  actorName: string;
   at: string;
+  crit?: boolean;
+
+  /** Rolagem crua (iniciativa, dado de ataque ou de dano). */
+  expression?: string;
+  rolls?: number[];
+  sides?: number;
+  modifier?: number;
+  total?: number;
+
+  /** Ataque resolvido pelo servidor. */
+  attackName?: string;
+  targetName?: string;
+  attackRoll?: number;
+  attackBonus?: number;
+  attackTotal?: number;
+  targetArmorClass?: number | null;
+  hit?: boolean;
+  critical?: boolean;
+  /** 1 natural no d20 (falha crítica) — só apresentação. */
+  naturalOne?: boolean;
+  advantage?: boolean;
+  disadvantage?: boolean;
+  damageRolled?: number;
+  damageType?: string;
+  components?: DamageComponentPayload[];
+  sneakAttack?: AttackResolvedPayload['sneakAttack'];
+  targetStatsHidden?: boolean;
+  targetHpCurrent?: number | null;
+  targetHpMax?: number | null;
+
+  /** Rodada do combate (início de turno). */
+  round?: number;
 }
 
 export interface TurnAlert {
@@ -21,83 +76,43 @@ let logSequence = 0;
 const nextLogId = (): string => `log-${(logSequence += 1)}`;
 
 function describeRoll(payload: DiceRolledPayload): CombatLogEntry {
-  const label =
-    payload.kind === 'initiative'
-      ? 'Iniciativa'
-      : payload.kind === 'attack'
-        ? 'Ataque'
-        : 'Dano';
-
-  const modifier = payload.modifier === 0 ? '' : payload.modifier > 0 ? ` +${payload.modifier}` : ` ${payload.modifier}`;
-  const dice = payload.rolls.length > 0 ? `[${payload.rolls.join(', ')}]` : '';
-
   return {
     id: nextLogId(),
     kind: payload.kind,
-    text: `${label}: ${payload.actorName} rolou ${payload.expression}${modifier} = ${payload.total}`,
-    detail: dice,
+    actorName: payload.actorName,
+    expression: payload.expression,
+    rolls: payload.rolls,
+    sides: payload.sides,
+    modifier: payload.modifier,
+    total: payload.total,
     crit: payload.crit,
     at: payload.at,
   };
 }
 
 function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
-  const outcome = payload.critical
-    ? 'CRÍTICO!'
-    : payload.hit
-      ? 'acertou'
-      : 'errou';
-
-  // CA e vida do alvo só entram quando não estão ocultas (criatura x jogador).
-  const hpPart = payload.targetStatsHidden
-    ? ''
-    : ` com ${payload.targetHpCurrent}/${payload.targetHpMax} HP`;
-  const vsPart = payload.targetStatsHidden
-    ? ''
-    : ` (${payload.attackTotal} vs CA ${payload.targetArmorClass})`;
-
-  // Vantagem/desvantagem aparecem mesmo quando a CA está oculta (criatura).
-  const modePart = payload.advantage ? ', com vantagem' : payload.disadvantage ? ', com desvantagem' : '';
-
-  const sneak = payload.sneakAttack
-    ? ` (inclui ${payload.sneakAttack.expression} de Ataque Furtivo — ${payload.sneakAttack.reason})`
-    : '';
-
-  // Quebra por PARCELA (principal + extras), já com o que entrou de cada tipo.
-  const components = payload.components ?? [];
-  const breakdown = components
-    .filter((component) => component.applied > 0)
-    .map((component) =>
-      component.type ? `${component.applied} ${component.type}` : `${component.applied}`,
-    )
-    .join(' + ');
-  const typePart =
-    breakdown !== '' ? ` [${breakdown}]` : payload.damageType ? ` (${payload.damageType})` : '';
-
-  // Explica ao mestre por que o total não bate com a soma crua das rolagens.
-  const defended = components
-    .filter((component) => component.modifier !== null)
-    .map((component) => {
-      const label = component.type || 'sem tipo';
-      if (component.modifier === 'immunity') return `${label} imune`;
-      if (component.modifier === 'vulnerability') return `${label} vulnerável (×2)`;
-      return `${label} resistido (${component.rolled}→${component.applied})`;
-    });
-  const defense = defended.length > 0 ? ` [${defended.join('; ')}]` : '';
-
-  const allImmune = payload.hit && payload.damageRolled === 0 && defended.length > 0;
-  const damage =
-    payload.hit && payload.damageRolled > 0
-      ? ` · ${payload.damageRolled} de dano${typePart}${sneak}${defense} → ${payload.targetName}${hpPart}`
-      : allImmune
-        ? ` · sem dano${defense} → ${payload.targetName}${hpPart}`
-        : '';
-
   return {
     id: nextLogId(),
     kind: 'result',
-    text: `${payload.attackerName} usou ${payload.attackName} em ${payload.targetName} e ${outcome}${modePart}${vsPart}`,
-    detail: damage || undefined,
+    actorName: payload.attackerName,
+    attackName: payload.attackName,
+    targetName: payload.targetName,
+    attackRoll: payload.attackRoll,
+    attackBonus: payload.attackBonus,
+    attackTotal: payload.attackTotal,
+    targetArmorClass: payload.targetArmorClass,
+    hit: payload.hit,
+    critical: payload.critical,
+    naturalOne: payload.attackRoll === 1 && !payload.critical,
+    advantage: payload.advantage,
+    disadvantage: payload.disadvantage,
+    damageRolled: payload.damageRolled,
+    damageType: payload.damageType,
+    components: payload.components,
+    sneakAttack: payload.sneakAttack,
+    targetStatsHidden: payload.targetStatsHidden,
+    targetHpCurrent: payload.targetHpCurrent,
+    targetHpMax: payload.targetHpMax,
     crit: payload.critical,
     at: payload.at,
   };
@@ -132,6 +147,19 @@ export function useCombatState(userId: string) {
           playTurn();
           setTurnAlert({ combatantName: payload.combatantName, round: payload.round });
         }
+        // O início de turno entra no log de todos — dado já enviado pelo socket.
+        setLog((previous) =>
+          [
+            {
+              id: nextLogId(),
+              kind: 'turn' as const,
+              actorName: payload.combatantName,
+              round: payload.round,
+              at: new Date().toISOString(),
+            },
+            ...previous,
+          ].slice(0, 40),
+        );
       },
       onDiceRolled: (payload) => {
         playDice();
