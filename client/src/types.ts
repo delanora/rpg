@@ -220,6 +220,11 @@ export interface Spell {
   description: string;
   /** Chave da classe quando a magia veio do catálogo ('' nas de texto livre). */
   classKey: string;
+  /**
+   * Magia DERIVADA de juramento (Paladino): sempre preparada, fora do limite e
+   * não removível. Só vem do servidor; nunca é gravada na ficha.
+   */
+  oath?: boolean;
 }
 
 export interface SpellSlot {

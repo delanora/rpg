@@ -177,12 +177,27 @@ const CHANNEL_DIVINITY_EFFECT = {
   },
 };
 
+/**
+ * Regra comum das magias de juramento (Prompt 6.3). Os NOMES de cada faixa vêm
+ * dos IDs declarados em `SubclassDefinition.oathSpells` — o DTO os traduz do
+ * catálogo na hora de exibir (aba Magias e resumo do Level Up).
+ */
+const OATH_SPELLS_RULE =
+  'Estas magias ficam SEMPRE preparadas e não contam no limite de magias preparadas; elas aparecem na aba Magias com o selo "Juramento".';
+
 const PALADIN_SUBCLASSES: SubclassDefinition[] = [
   {
     id: 'devotion',
     name: 'Juramento de Devoção',
     description:
       'O juramento do ideal: honestidade, coragem, compaixão e honra. O paladino devoto é o exemplo vivo do bem — e a luz que os outros seguem.',
+    oathSpells: {
+      3: ['protection-from-evil-and-good', 'sanctuary'],
+      5: ['lesser-restoration', 'zone-of-truth'],
+      9: ['beacon-of-hope', 'dispel-magic'],
+      13: ['freedom-of-movement', 'guardian-of-faith'],
+      17: ['commune', 'flame-strike'],
+    },
     features: [
       {
         id: 'channel-divinity-devotion',
@@ -196,32 +211,31 @@ const PALADIN_SUBCLASSES: SubclassDefinition[] = [
         id: 'oath-spells',
         name: 'Magias de Juramento',
         level: 3,
-        description:
-          'Estas magias ficam SEMPRE preparadas e não contam no limite de magias preparadas. 3º nível: Proteção contra o Bem e o Mal, Santuário.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-5',
         name: 'Magias de Juramento',
         level: 5,
-        description: '5º nível: Restauração Menor, Zona da Verdade.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-9',
         name: 'Magias de Juramento',
         level: 9,
-        description: '9º nível: Farol da Esperança, Dissipar Magia.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-13',
         name: 'Magias de Juramento',
         level: 13,
-        description: '13º nível: Liberdade de Movimento, Guardião da Fé.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-17',
         name: 'Magias de Juramento',
         level: 17,
-        description: '17º nível: Comunhão, Coluna de Chamas.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'aura-of-devotion',
@@ -263,6 +277,13 @@ const PALADIN_SUBCLASSES: SubclassDefinition[] = [
     name: 'Juramento dos Anciões',
     description:
       'O juramento da luz antiga: proteger a natureza, a vida e a beleza do mundo contra a escuridão que corrói tudo.',
+    oathSpells: {
+      3: ['ensnaring-strike', 'speak-with-animals'],
+      5: ['moonbeam', 'misty-step'],
+      9: ['plant-growth', 'protection-from-energy'],
+      13: ['ice-storm', 'stoneskin'],
+      17: ['commune-with-nature', 'tree-stride'],
+    },
     features: [
       {
         id: 'channel-divinity-ancients',
@@ -276,32 +297,31 @@ const PALADIN_SUBCLASSES: SubclassDefinition[] = [
         id: 'oath-spells',
         name: 'Magias de Juramento',
         level: 3,
-        description:
-          'Estas magias ficam SEMPRE preparadas e não contam no limite de magias preparadas. 3º nível: Golpe Enredante, Falar com Animais.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-5',
         name: 'Magias de Juramento',
         level: 5,
-        description: '5º nível: Raio de Luar, Passo Nebuloso.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-9',
         name: 'Magias de Juramento',
         level: 9,
-        description: '9º nível: Crescer Plantas, Proteção contra Energia.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-13',
         name: 'Magias de Juramento',
         level: 13,
-        description: '13º nível: Tempestade de Gelo, Pele de Pedra.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-17',
         name: 'Magias de Juramento',
         level: 17,
-        description: '17º nível: Comunhão com a Natureza, Passo Arbóreo.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'aura-of-warding',
@@ -343,6 +363,13 @@ const PALADIN_SUBCLASSES: SubclassDefinition[] = [
     name: 'Juramento de Vingança',
     description:
       'O juramento do castigo: usar a violência para punir quem fez o mal, custe o que custar à própria alma.',
+    oathSpells: {
+      3: ['bane', 'hunters-mark'],
+      5: ['hold-person', 'misty-step'],
+      9: ['haste', 'protection-from-energy'],
+      13: ['banishment', 'dimension-door'],
+      17: ['hold-monster', 'scrying'],
+    },
     features: [
       {
         id: 'channel-divinity-vengeance',
@@ -356,32 +383,31 @@ const PALADIN_SUBCLASSES: SubclassDefinition[] = [
         id: 'oath-spells',
         name: 'Magias de Juramento',
         level: 3,
-        description:
-          'Estas magias ficam SEMPRE preparadas e não contam no limite de magias preparadas. 3º nível: Perdição, Marca do Caçador.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-5',
         name: 'Magias de Juramento',
         level: 5,
-        description: '5º nível: Imobilizar Pessoa, Passo Nebuloso.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-9',
         name: 'Magias de Juramento',
         level: 9,
-        description: '9º nível: Aceleração, Proteção contra Energia.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-13',
         name: 'Magias de Juramento',
         level: 13,
-        description: '13º nível: Banimento, Porta Dimensional.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'oath-spells-17',
         name: 'Magias de Juramento',
         level: 17,
-        description: '17º nível: Imobilizar Monstro, Vidência.',
+        description: OATH_SPELLS_RULE,
       },
       {
         id: 'relentless-avenger',
