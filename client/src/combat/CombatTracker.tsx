@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
-import type { Attack, CombatDto, InventoryItem, SessionUser } from '../types';
+import type { Attack, AttackResolvedPayload, CombatDto, InventoryItem, SessionUser } from '../types';
 import {
   applyManualHp,
   endCombat,
@@ -11,6 +11,7 @@ import {
   rollMyInitiative,
 } from './combatApi';
 import { CombatIntro } from './CombatIntro';
+import { AttackResultPanel } from './components/AttackResultPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
 import { CombatDashboard } from './components/CombatDashboard';
 import { CombatLog } from './components/CombatLog';
@@ -84,6 +85,8 @@ export function CombatTracker({
 
   const [busy, setBusy] = useState(false);
   const [masterAttacker, setMasterAttacker] = useState('');
+  // Último resultado de ataque resolvido pelo servidor (só para exibição).
+  const [attackResult, setAttackResult] = useState<AttackResolvedPayload | null>(null);
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
@@ -271,8 +274,9 @@ export function CombatTracker({
                   void (async () => {
                     setBusy(true);
                     try {
-                      const { combat: updated } = await resolveAttack(input);
+                      const { combat: updated, result } = await resolveAttack(input);
                       onCombatChange(updated);
+                      setAttackResult(result);
                     } catch (error) {
                       onError(error instanceof Error ? error.message : 'Falha na rolagem.');
                     } finally {
@@ -301,8 +305,9 @@ export function CombatTracker({
                     void (async () => {
                       setBusy(true);
                       try {
-                        const { combat: updated } = await resolveAttack(input);
+                        const { combat: updated, result } = await resolveAttack(input);
                         onCombatChange(updated);
+                        setAttackResult(result);
                       } catch (error) {
                         onError(error instanceof Error ? error.message : 'Falha na rolagem.');
                       } finally {
@@ -312,6 +317,14 @@ export function CombatTracker({
                   }}
                 />
               </>
+            ) : null}
+
+            {/* Resultado da última rolagem (somente exibição). */}
+            {attackResult ? (
+              <AttackResultPanel
+                result={attackResult}
+                onDismiss={() => setAttackResult(null)}
+              />
             ) : null}
 
             {/* Atalhos: levam direto às seções da ficha sem sair do combate. */}
