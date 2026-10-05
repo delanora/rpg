@@ -1814,6 +1814,26 @@ export interface CombatEndedPayload {
   combatId: string;
 }
 
+/**
+ * Uma parte da quebra de uma parcela de dano: o dado da arma (`1d8` com os
+ * resultados), o Ataque Furtivo (`1d6`), o atributo (`DES`, sem dados) ou um
+ * bônus fixo (`Fúria`, `Munição`...).
+ */
+export interface DamagePartPayload {
+  /** Rótulo legível: `1d8`/`2d6` para dados, `DES`/`FOR` para o atributo. */
+  label: string;
+  /** Dados rolados nesta parte (vazio em bônus fixos). */
+  rolls: number[];
+  /** Valor somado desta parte. */
+  value: number;
+}
+
+/** Quebra legível de uma parcela: `1d8(4)+1d6(2)+DES(+3)=9`. */
+export interface DamageBreakdownPayload {
+  parts: DamagePartPayload[];
+  total: number;
+}
+
 export interface DiceRolledPayload {
   kind: 'initiative' | 'attack' | 'damage';
   actorName: string;
@@ -1824,6 +1844,8 @@ export interface DiceRolledPayload {
   total: number;
   crit: boolean;
   at: string;
+  /** Presente nas rolagens de DANO: a quebra de cada parte da parcela. */
+  breakdown?: DamageBreakdownPayload;
 }
 
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
@@ -1941,6 +1963,8 @@ export interface DamageComponentPayload {
   rolled: number;
   applied: number;
   modifier: 'resistance' | 'immunity' | 'vulnerability' | null;
+  /** Quebra legível do que compôs `rolled` (dados + bônus por parte). */
+  breakdown: DamageBreakdownPayload;
 }
 
 export interface AttackResolvedPayload {

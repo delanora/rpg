@@ -289,6 +289,27 @@ export interface CombatEndedPayload {
 }
 
 /** Rolagem de dado divulgada para todos — dispara o efeito sonoro. */
+/**
+ * Uma parte da quebra de uma parcela de dano. Ex.: o dado da arma (`1d8`,
+ * com os resultados rolados), o Ataque Furtivo (`1d6`), o modificador do
+ * atributo (`DES`, sem dados) ou um bônus fixo (`Fúria`, `Munição`...).
+ */
+export interface DamagePartPayload {
+  /** Rótulo legível: `1d8`/`2d6` para dados, `DES`/`FOR` para o atributo. */
+  label: string;
+  /** Dados rolados nesta parte (vazio em bônus fixos, como o atributo). */
+  rolls: number[];
+  /** Valor somado desta parte (dados + bônus dela). */
+  value: number;
+}
+
+/** Quebra legível de uma parcela: `1d8(4)+1d6(2)+DES(+3)=9`. */
+export interface DamageBreakdownPayload {
+  parts: DamagePartPayload[];
+  /** Total rolado da parcela, antes da defesa do alvo. */
+  total: number;
+}
+
 export interface DiceRolledPayload {
   kind: 'initiative' | 'attack' | 'damage';
   actorName: string;
@@ -299,6 +320,8 @@ export interface DiceRolledPayload {
   total: number;
   crit: boolean;
   at: string;
+  /** Presente nas rolagens de DANO: a quebra de cada parte da parcela. */
+  breakdown?: DamageBreakdownPayload;
 }
 
 /** Rolagem da janela de dados divulgada em tempo real. */
@@ -346,6 +369,8 @@ export interface DamageComponentPayload {
   /** Total que entrou no HP depois da defesa do alvo. */
   applied: number;
   modifier: 'resistance' | 'immunity' | 'vulnerability' | null;
+  /** Quebra legível do que compôs `rolled` (dados + bônus por parte). */
+  breakdown: DamageBreakdownPayload;
 }
 
 /** Resultado de um ataque, do teste de acerto ao dano aplicado. */

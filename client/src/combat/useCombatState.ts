@@ -3,6 +3,7 @@ import { playCrit, playDice, playTurn } from '../sound';
 import type {
   AttackResolvedPayload,
   CombatDto,
+  DamageBreakdownPayload,
   DamageComponentPayload,
   DiceRolledPayload,
 } from '../types';
@@ -41,6 +42,8 @@ export interface CombatLogEntry {
   sides?: number;
   modifier?: number;
   total?: number;
+  /** Quebra legível do dano (presente nas rolagens de DANO). */
+  breakdown?: DamageBreakdownPayload;
 
   /** Ataque resolvido pelo servidor. */
   attackName?: string;
@@ -87,6 +90,7 @@ function describeRoll(payload: DiceRolledPayload): CombatLogEntry {
     total: payload.total,
     crit: payload.crit,
     at: payload.at,
+    ...(payload.breakdown ? { breakdown: payload.breakdown } : {}),
   };
 }
 

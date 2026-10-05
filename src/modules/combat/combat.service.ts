@@ -5,7 +5,9 @@ import { inventoryListSchema } from '../characters/characters.schema.js';
 import {
   ServerEvents,
   type AttackResolvedPayload,
+  type DamageBreakdownPayload,
   type DamageComponentPayload,
+  type DamagePartPayload,
   type DiceRolledPayload,
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
@@ -29,7 +31,7 @@ import {
   type InventoryLike,
 } from '../shared/ammo.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
-import { abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
+import { ABILITY_ABBREVIATIONS, abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice } from '../shared/dice.js';
@@ -882,6 +884,10 @@ export async function resolveAttack(
     // tipo de dano).
     let physicalBonusApplied = false;
     let sneakApplied = false;
+    // Atributo que alimenta o dano: ataques derivados da arma sabem qual é
+    // (FOR/DES); os gravados à mão não, então a parcela sai como "Bônus".
+    const abilityLabel = attack.ability ? ABILITY_ABBREVIATIONS[attack.ability] : null;
+    const abilityModifier = attack.abilityModifier ?? 0;
 
     for (let index = 0; index < specs.length; index += 1) {
       const spec = specs[index];
@@ -895,9 +901,15 @@ export async function resolveAttack(
 
       let componentTotal = damage.total;
 
-      // Bônus de dano da munição: entra UMA vez, na parcela PRINCIPAL.
-      if (index === 0 && ammoBonus.damageBonus !== 0) {
-        componentTotal += ammoBonus.damageBonus;
+      // Quebra legível da parcela: cada dado/bônus vira uma parte. É o que o
+      // registro exibe como `1d8(4)+1d6(2)+DES(+3)=9`.
+      const breakdownParts: DamagePartPayload[] = [];
+      if (spec.count > 0 && spec.sides > 0) {
+        breakdownParts.push({
+          label: `${spec.count}d${spec.sides}`,
+          rolls: damage.rolls,
+          value: damage.total - spec.bonus,
+        });
       }
 
       const isPhysical = spec.type !== null && PHYSICAL_DAMAGE_TYPES.has(spec.type);
@@ -918,16 +930,10 @@ export async function resolveAttack(
         );
         if (extra && extra.total > 0) {
           componentTotal += extra.total;
-          announceRoll({
-            kind: 'damage',
-            actorName: `${attacker.name} — Crítico Brutal`,
-            expression: extra.expression,
+          breakdownParts.push({
+            label: extra.expression,
             rolls: extra.rolls,
-            sides: extra.sides,
-            modifier: 0,
-            total: extra.total,
-            crit: true,
-            at: new Date().toISOString(),
+            value: extra.total,
           });
         }
       }
@@ -936,17 +942,7 @@ export async function resolveAttack(
       if (isPhysical && !physicalBonusApplied) {
         if (meleeBonus > 0) {
           componentTotal += meleeBonus;
-          announceRoll({
-            kind: 'damage',
-            actorName: `${attacker.name} — Fúria`,
-            expression: `+${meleeBonus}`,
-            rolls: [],
-            sides: 0,
-            modifier: meleeBonus,
-            total: meleeBonus,
-            crit: false,
-            at: new Date().toISOString(),
-          });
+          breakdownParts.push({ label: 'Fúria', rolls: [], value: meleeBonus });
         }
         physicalBonusApplied = true;
       }
@@ -960,22 +956,34 @@ export async function resolveAttack(
           total: sneakRoll.total,
           reason: sneakRoll.reason,
         };
-        announceRoll({
-          kind: 'damage',
-          actorName: `${attacker.name} — Ataque Furtivo (${sneakRoll.reason})`,
-          expression: sneakRoll.expression,
+        breakdownParts.push({
+          label: sneakRoll.expression,
           rolls: sneakRoll.rolls,
-          sides: 6,
-          modifier: 0,
-          total: sneakRoll.total,
-          crit: critical,
-          at: new Date().toISOString(),
+          value: sneakRoll.total,
         });
         sneakApplied = true;
       }
 
+      // Atributo + o resto do bônus fixo (mágico etc.): só na parcela PRINCIPAL
+      // o ataque sabe qual atributo o alimenta.
+      if (index === 0 && abilityLabel && abilityModifier !== 0) {
+        breakdownParts.push({ label: abilityLabel, rolls: [], value: abilityModifier });
+      }
+      const flatBonus = spec.bonus - (index === 0 && abilityLabel ? abilityModifier : 0);
+      if (flatBonus !== 0) {
+        breakdownParts.push({ label: 'Bônus', rolls: [], value: flatBonus });
+      }
+
+      // Bônus de dano da munição: entra UMA vez, na parcela PRINCIPAL.
+      if (index === 0 && ammoBonus.damageBonus !== 0) {
+        componentTotal += ammoBonus.damageBonus;
+        breakdownParts.push({ label: 'Munição', rolls: [], value: ammoBonus.damageBonus });
+      }
+
+      const breakdown: DamageBreakdownPayload = { parts: breakdownParts, total: componentTotal };
+
       // Log da PARCELA, já com os bônus dela (por tipo), para o mestre ver cada
-      // tipo separadamente.
+      // tipo separadamente — agora com a quebra parte a parte.
       announceRoll({
         kind: 'damage',
         actorName: spec.type ? `${attacker.name} — ${spec.type}` : attacker.name,
@@ -986,6 +994,7 @@ export async function resolveAttack(
         total: componentTotal,
         crit: critical,
         at: new Date().toISOString(),
+        breakdown,
       });
 
       // Defesa do alvo POR TIPO e POR PARCELA: imunidade zera, vulnerabilidade
@@ -997,6 +1006,7 @@ export async function resolveAttack(
         rolled: componentTotal,
         applied,
         modifier,
+        breakdown,
       });
       total += applied;
     }

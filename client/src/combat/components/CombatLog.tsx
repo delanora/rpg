@@ -1,7 +1,21 @@
 import { Icon, type IconName } from '../../components/Icon';
 import { formatModifier } from '../../dnd';
-import type { DamageComponentPayload } from '../../types';
+import type { DamageBreakdownPayload, DamageComponentPayload } from '../../types';
 import type { CombatLogEntry } from '../useCombatState';
+
+/**
+ * Monta a quebra do dano em uma linha legível, parte a parte:
+ * `1d8(4)+1d6(2)+DES(+3)=9`. Os dados mostram os resultados rolados; os bônus
+ * fixos (atributo, Fúria, munição) mostram o próprio valor.
+ */
+function formatBreakdown(breakdown: DamageBreakdownPayload): string {
+  const parts = breakdown.parts.map((part) =>
+    part.rolls.length > 0
+      ? `${part.label}(${part.rolls.join('+')})`
+      : `${part.label}(${formatModifier(part.value)})`,
+  );
+  return `${parts.join('+')}=${breakdown.total}`;
+}
 
 interface CombatLogProps {
   log: CombatLogEntry[];
@@ -46,7 +60,13 @@ function describeEntry(entry: CombatLogEntry): EntryView {
       title: entry.attackName ?? 'Ataque',
       primary: `${entry.attackTotal} vs ${ca} · ${outcome.label}`,
       ...(entry.hit && entry.damageRolled != null
-        ? { secondary: `${entry.damageRolled} ${entry.damageType ?? ''}`.trim() }
+        ? {
+            secondary: entry.components?.[0]?.breakdown
+              ? `${formatBreakdown(entry.components[0].breakdown)} ${
+                  entry.damageType ?? ''
+                }`.trim()
+              : `${entry.damageRolled} ${entry.damageType ?? ''}`.trim(),
+          }
         : {}),
     };
   }
@@ -66,11 +86,17 @@ function describeEntry(entry: CombatLogEntry): EntryView {
     entry.modifier && entry.modifier !== 0
       ? ` ${entry.modifier > 0 ? `+${entry.modifier}` : entry.modifier}`
       : '';
+  // A linha de DANO sai destrinchada quando o servidor mandou a quebra:
+  // `1d8(4)+1d6(2)+DES(+3)=9`. Sem ela, cai no formato antigo.
+  const primary =
+    entry.kind === 'damage' && entry.breakdown
+      ? formatBreakdown(entry.breakdown)
+      : `${entry.expression ?? ''}${modifierLabel} = ${entry.total ?? '—'}`;
   return {
     icon: KIND_ICON[entry.kind],
     variant: entry.crit ? `${entry.kind} crit` : entry.kind,
     title,
-    primary: `${entry.expression ?? ''}${modifierLabel} = ${entry.total ?? '—'}`,
+    primary,
   };
 }
 
@@ -112,9 +138,10 @@ function detailRows(entry: CombatLogEntry): DetailRow[] {
           value: components
             .map((component) => {
               const note = componentNote(component.modifier);
-              return `${component.expression} → ${component.applied} ${
-                component.type || 'sem tipo'
-              }${note ? ` (${note})` : ''}`;
+              const line = component.breakdown
+                ? formatBreakdown(component.breakdown)
+                : component.expression;
+              return `${line} ${component.type || 'sem tipo'}${note ? ` (${note})` : ''}`;
             })
             .join('  +  '),
         });
