@@ -10946,3 +10946,64 @@ input[type='checkbox']:focus-visible,
     grid-column: 1 / -1;
   }
 }
+
+/* ==========================================================================
+   Combate — etapa 6: integração e acabamento
+   Unifica o ritmo interno, ajusta as colunas para desktop/notebook e dá o
+   mesmo anel de foco aos controles interativos. Nada de regra nova.
+   ========================================================================== */
+
+/* Um único respiro entre os blocos de cada coluna, igual ao do painel. */
+.combat-col {
+  gap: 0.85rem;
+  align-content: start;
+}
+
+/* Notebook: colunas laterais um pouco mais enxutas, mais espaço para o centro. */
+@media (max-width: 1360px) {
+  .combat-dashboard {
+    grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr) minmax(14rem, 19rem);
+  }
+}
+
+/* Tablet: duas colunas, com o log ocupando a linha inteira. */
+@media (max-width: 1180px) {
+  .combat-dashboard {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .combat-col-right {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Celular: uma coluna só. */
+@media (max-width: 760px) {
+  .combat-dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .combat-col-right {
+    grid-column: auto;
+  }
+}
+
+/* Anel de foco coerente com o dourado do sistema nos controles do combate. */
+.attack-card:focus-visible,
+.target-card:focus-visible,
+.roll-mode-btn:focus-visible,
+.combatant-card :focus-visible,
+.log-card-summary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Títulos dos blocos do combate ficam alinhados entre as colunas. */
+.combat-block > h3 {
+  min-height: 1.15rem;
+}
+
+/* O resultado aparece logo abaixo das ações, sem empurrar a barra inferior. */
+.attack-result + .combat-block {
+  margin-top: 0.1rem;
+}
