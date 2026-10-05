@@ -8,9 +8,11 @@ import { LEVEL_6 } from './catalog/level-6.js';
 import { LEVEL_7 } from './catalog/level-7.js';
 import { LEVEL_8 } from './catalog/level-8.js';
 import { LEVEL_9 } from './catalog/level-9.js';
+import { spellClassesFor } from './class-lists.js';
 import type { Spell, SpellSchool } from './types.js';
 
 export * from './types.js';
+export * from './class-lists.js';
 
 /** As 8 escolas do PHB 2014, na ordem do livro. */
 export const SPELL_SCHOOLS: readonly SpellSchool[] = [
@@ -52,7 +54,10 @@ export const SPELL_LEVEL_LABELS: Record<number, string> = {
 
 /**
  * Lista fechada do PHB 2014 (truques + níveis 1 a 9). A ordem é por nível e,
- * dentro de cada nível, alfabética pelo nome em português (ver `catalog/`).
+ * dentro de cada nível, alfabética pelo nome em inglês (ver `catalog/`).
+ *
+ * O campo `classes` do catálogo nasce vazio e é preenchido aqui a partir das
+ * Spell Lists de `class-lists.ts` — fonte única do vínculo magia ↔ classe.
  */
 export const SPELLS: readonly Spell[] = [
   ...CANTRIPS,
@@ -65,7 +70,7 @@ export const SPELLS: readonly Spell[] = [
   ...LEVEL_7,
   ...LEVEL_8,
   ...LEVEL_9,
-];
+].map((spell) => ({ ...spell, classes: spellClassesFor(spell.id) }));
 
 const SPELLS_BY_ID: ReadonlyMap<string, Spell> = new Map(
   SPELLS.map((spell) => [spell.id, spell]),

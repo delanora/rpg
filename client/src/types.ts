@@ -218,6 +218,8 @@ export interface Spell {
   school: string;
   prepared: boolean;
   description: string;
+  /** Chave da classe quando a magia veio do catálogo ('' nas de texto livre). */
+  classKey: string;
 }
 
 export interface SpellSlot {
@@ -687,6 +689,14 @@ export interface ClassEntry {
     saveDC: number | null;
     attackBonus: number | null;
     preparedCount: number | null;
+    /** Truques conhecidos nesta classe. */
+    cantripsKnown: number;
+    /** Magias conhecidas; `null` para quem prepara. */
+    spellsKnown: number | null;
+    /** Nível máximo de magia conjurável nesta classe. */
+    maxSpellLevel: number;
+    /** Tamanho do grimório (só Mago); `null` nas demais. */
+    grimoireSize: number | null;
   } | null;
   /** Escolhas de característica desta classe, com o nível de cada uma. */
   featureChoices: FeatureChoiceInfo[];
@@ -1012,7 +1022,7 @@ export interface CompendiumSpell {
   damageSummary: string | null;
   /** Resumo da cura estruturada (ex.: "1d8"). Nulo quando não há cura. */
   healingSummary: string | null;
-  /** Chaves das classes que têm a magia na lista (vazio até o Prompt 6.2). */
+  /** Chaves das classes que têm a magia na lista (PHB 2014). */
   classes: string[];
 }
 

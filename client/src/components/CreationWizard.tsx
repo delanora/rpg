@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fileToImagePayload, uploadAvatar } from '../api';
+import { fetchCompendium } from '../gameApi';
 import {
   creationLevelUp,
   fetchCreationState,
@@ -20,6 +21,7 @@ import type {
   AbilityKey,
   BackgroundOption,
   Character,
+  CompendiumSpell,
   CreationResponse,
   CreationRoll,
   CreationStepRequest,
@@ -33,6 +35,7 @@ import { Icon } from './Icon';
 import { LevelUpDialog } from './LevelUpDialog';
 import { Portrait } from './Portrait';
 import { RaceFaceIcon } from './RaceFace';
+import { SpellPicker } from './sections/SpellPicker';
 
 /** Passos do assistente, na ordem em que são percorridos. */
 const STEP_LABELS = [
@@ -172,6 +175,8 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const [picks, setPicks] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
+  /** Catálogo de magias para a escolha do passo 8 (buscado uma vez). */
+  const [catalogSpells, setCatalogSpells] = useState<CompendiumSpell[]>([]);
   const avatarInput = useRef<HTMLInputElement>(null);
 
   const character = state?.character ?? null;
@@ -207,6 +212,14 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
 
   useEffect(() => {
     let active = true;
+
+    // O catálogo (magias do PHB) alimenta o seletor do passo 8; se falhar, o
+    // passo apenas não mostra o seletor — o resto da criação segue normal.
+    fetchCompendium()
+      .then((data) => {
+        if (active) setCatalogSpells(data.spells);
+      })
+      .catch(() => undefined);
 
     fetchCreationState()
       .then((response) => {
@@ -1502,6 +1515,24 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                   onApplied={() => undefined}
                 />
               ) : null}
+
+              {/* Livro de magias das classes conjuradoras do nível atual — o
+                  servidor revalida lista, nível máximo e limites. */}
+              {character && catalogSpells.length > 0
+                ? character.classes.map((entry) =>
+                    entry.spellcasting && entry.spellcasting.type !== 'none' ? (
+                      <SpellPicker
+                        key={entry.classKey}
+                        entry={entry}
+                        allSpells={catalogSpells}
+                        current={character.spells.list.filter(
+                          (spell) => spell.classKey === entry.classKey,
+                        )}
+                        onSaved={(saved) => onCharacter(saved)}
+                      />
+                    ) : null,
+                  )
+                : null}
             </div>
           ) : null}
 

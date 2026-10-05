@@ -8,6 +8,7 @@ import {
   levelDownSchema,
   levelUpSchema,
   moveInventoryItemSchema,
+  spellbookSchema,
   spendCoinsSchema,
   transferCoinsSchema,
   updateCharacterSchema,
@@ -25,6 +26,7 @@ import {
   listCharacters,
   listTransferTargets,
   moveInventoryItem,
+  setClassSpellbook,
   spendCoins,
   transferCoins,
   updateCharacter,
@@ -204,6 +206,28 @@ charactersRouter.post('/me/level-up', authenticate, async (req, res) => {
   }
 
   const character = await levelUpCharacter(actorFrom(req), parsed.data);
+  res.json({ character });
+});
+
+/**
+ * PUT /api/characters/me/spellbook — define o livro de magias de UMA classe.
+ *
+ * Valida a seleção contra o catálogo (lista da classe, nível máximo, limites de
+ * truques/conhecidas/preparadas e escolas do CA/TA) e regrava as entradas
+ * daquela classe. O dono da ficha e o mestre podem chamar.
+ */
+charactersRouter.put('/me/spellbook', authenticate, async (req, res) => {
+  const parsed = spellbookSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const character = await setClassSpellbook(actorFrom(req), parsed.data);
   res.json({ character });
 });
 

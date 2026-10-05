@@ -4,6 +4,11 @@ import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.
 import { deriveWeaponAttacks, foldWeaponName, isProficientWithWeapon } from '../shared/weapon-attacks.js';
 import { getWeapon } from '../shared/weapons/index.js';
 import {
+  classSpellcastingLimits,
+  thirdCasterSpellcastingLimits,
+} from '../shared/spells/class-tables.js';
+import { SPELL_CLASS_KEYS, type SpellClassKey } from '../shared/spells/types.js';
+import {
   normalizeLevelHistory,
   type LevelHistoryRecord,
 } from '../shared/level-history.js';
@@ -21,6 +26,7 @@ import {
   featureChoiceInfo,
   isToolExpertiseKey,
   featureEffectsOf,
+  findSubclass,
   getClassDefinition,
   getMulticlassFeatures,
   multiclassSneakAttack,
@@ -146,6 +152,14 @@ export interface ClassEntryDto {
     saveDC: number | null;
     attackBonus: number | null;
     preparedCount: number | null;
+    /** Truques conhecidos (0 quando não há truques). */
+    cantripsKnown: number;
+    /** Magias conhecidas; `null` para quem prepara (Clérigo/Druida/Paladino/Mago). */
+    spellsKnown: number | null;
+    /** Nível máximo de magia conjurável nesta classe (0 = ainda não conjura). */
+    maxSpellLevel: number;
+    /** Tamanho do grimório (só Mago); `null` nas demais. */
+    grimoireSize: number | null;
   } | null;
   /**
    * Escolhas de característica DESTA classe (Estilo de Luta, Inimigo Favorito
@@ -580,6 +594,17 @@ export function toCharacterDto(
     const ability = config.ability;
     const score = ability ? effectiveAbilities[ability] : null;
 
+    // Limites por classe: o terço-conjurador usa a tabela da SUBCLASSE (o nível
+    // é o da classe pai); as demais, a tabela da própria classe.
+    const definition = getClassDefinition(entry.classKey);
+    const subclassDefinition = definition ? findSubclass(definition, entry.subclass) : null;
+    const limits =
+      config.type === 'third' && subclassDefinition
+        ? thirdCasterSpellcastingLimits(subclassDefinition.id, entry.level)
+        : (SPELL_CLASS_KEYS as readonly string[]).includes(entry.classKey)
+          ? classSpellcastingLimits(entry.classKey as SpellClassKey, entry.level)
+          : null;
+
     return {
       type: config.type,
       ability,
@@ -590,6 +615,10 @@ export function toCharacterDto(
         ability !== null && score !== null
           ? preparedSpellCountFor(entry, abilityModifier(score))
           : null,
+      cantripsKnown: limits?.cantripsKnown ?? 0,
+      spellsKnown: limits?.spellsKnown ?? null,
+      maxSpellLevel: limits?.maxSpellLevel ?? 0,
+      grimoireSize: limits?.grimoireSize ?? null,
     };
   }
 

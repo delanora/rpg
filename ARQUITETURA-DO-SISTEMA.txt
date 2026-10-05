@@ -1858,7 +1858,7 @@ CATÁLOGO DE ITENS
 COMPÊNDIO (somente leitura)
   Ver §8.12. Alimenta a aba "Mesa" do painel do mestre junto do NÍVEL INICIAL.
   Fonte única: `getCompendium()`. Magias: catálogo do PHB 2014 (`shared/spells`),
-  361 magias com filtro por nível e escola; `classes[]` fica vazio até o vínculo (6.2).
+  361 magias com filtro por nível e escola; cada magia traz as `classes` do PHB (6.2).
 
 UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   Imagens chegam como DATA URL (base64) dentro do JSON — evita dependência de
@@ -2392,9 +2392,22 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
 CATÁLOGO DE MAGIAS (Prompt 6.1): fechado em `shared/spells` (PHB 2014, 361 magias;
    um arquivo por nível em `catalog/`; `getSpell`/`spellsByLevel`/`spellsBySchool`/
    `allSpells`). O compêndio mapeia via `toSpell` e a aba "Mesa" filtra por nível e
-   escola. [PENDENTE 6.2] `classes[]` ainda vazio — o vínculo com as listas de classe
-   e os TODOs de magia racial (Elfo/Tiefling/Gnomo) entram depois; a ficha ainda só
-   tem estado por ficha (`spells` = { list, slots }), sem ligação com o catálogo.
+   escola.
+VÍNCULO COM AS CLASSES E LIMITES (Prompt 6.2): as `classes` de cada magia são
+   DERIVADAS das listas do PHB em `shared/spells/class-lists.ts` (fonte única; o id
+   do catálogo ganha a lista no `shared/spells/index.ts`). `class-tables.ts` traz as
+   contagens por classe/nível (truques conhecidos, magias conhecidas, nível máximo e
+   o grimório do Mago `6 + 2×(nível−1)`) e as tabelas dos terço-conjuradores;
+   `spellbook.ts` valida uma seleção (`validateSpellbook`: existe no catálogo, é da
+   lista da classe, nível ≤ máximo e respeita os limites) e o `characters.dto` expõe
+   `cantripsKnown`/`spellsKnown`/`maxSpellLevel`/`grimoireSize` em
+   `classes[].spellcasting`. `PUT /api/characters/me/spellbook` regrava o livro de
+   UMA classe (limites POR CLASSE, nunca somados) e a aba Magias, o passo 8 do
+   assistente e o resumo do Level Up usam o mesmo seletor. Cavaleiro Arcano e
+   Trapaceiro Arcano usam a lista do Mago com a restrição de escola (Abjuração/
+   Evocação e Encantamento/Ilusão; qualquer escola nos níveis 8/14/20). Cobertura na
+   seção 16.5 do smoke. [PENDENTE] magias raciais (Elfo/Tiefling/Gnomo) e o vínculo
+   das magias de Domínio/juramento/Arcanum — os TODOs seguem registrados.
 [LACUNA] RAÇAS E ANTECEDENTES: o Prompt 2.10 fechou a raça pelo assistente (atributos,
    deslocamento, visão no escuro, resistências, idiomas e proficiências de perícia/
    ferramenta por escolha), mas seguem sem tratamento: proficiência de arma/armadura

@@ -168,6 +168,11 @@ export const spellSchema = z.object({
   school: shortText(60).default(''),
   prepared: z.boolean().default(false),
   description: shortText(2000).default(''),
+  /**
+   * Chave da classe quando a magia veio do catálogo (Prompt 6.2); vazia nas
+   * magias de texto livre. É o que permite agrupar e trocar as magias POR CLASSE.
+   */
+  classKey: shortText(40).default(''),
 });
 
 export const spellSlotSchema = z.object({
@@ -181,6 +186,20 @@ export const spellsStateSchema = z.object({
 });
 
 export type SpellsStateInput = z.infer<typeof spellsStateSchema>;
+
+/** Uma magia escolhida do catálogo para uma classe. */
+export const spellbookEntrySchema = z.object({
+  key: z.string().trim().min(1).max(80),
+  prepared: z.boolean().default(false),
+});
+
+/** Corpo de `PUT /me/spellbook`: a seleção de magias de UMA classe. */
+export const spellbookSchema = z.object({
+  classKey: z.string().trim().min(1, 'Escolha uma classe.').max(40),
+  entries: z.array(spellbookEntrySchema).max(300).default([]),
+});
+
+export type SpellbookInput = z.infer<typeof spellbookSchema>;
 
 // `attackSchema` vem de ../shared/attacks.ts — o formato é compartilhado com as criaturas.
 
