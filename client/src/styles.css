@@ -9899,3 +9899,206 @@ input[type='checkbox']:focus-visible,
     grid-column: auto;
   }
 }
+
+/* ==========================================================================
+   Combate — etapa 2: cartões de iniciativa e destaque do turno atual
+   A hierarquia é sempre posição → retrato → nome → tipo → HP → CA. O destaque
+   do turno atual usa apenas dourado, pergaminho e os ornamentos já existentes.
+   ========================================================================== */
+
+/* A placa passou a ter duas colunas: medalhão da posição + conteúdo. */
+.combatant-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+}
+
+/* Medalhão da posição na iniciativa. */
+.combatant-card-rank {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--gold-deep);
+  background: radial-gradient(circle at 35% 30%, var(--surface), var(--surface-3));
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--gold-deep);
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+}
+
+[data-theme='dark'] .combatant-card-rank {
+  color: var(--gold-bright);
+}
+
+.combatant-card-main {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.combatant-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.combatant-card-id {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.combatant-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.combatant-card-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.96rem;
+}
+
+.combatant-card-tail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 2.1rem;
+  line-height: 1;
+}
+
+.combatant-card-init-label {
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+/* Marcadores de estado (turno atual / próximo) dentro da paleta existente. */
+.combatant-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 0.56rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.combatant-card-status.agora {
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #2b2115;
+  box-shadow: 0 0 12px -3px var(--glow);
+}
+
+.combatant-card-status.proximo {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-3);
+  color: var(--ink-soft);
+}
+
+/* HP e CA: a barra flexiona e a CA fica alinhada à direita. */
+.combatant-card-stats {
+  align-items: flex-end;
+}
+
+.combatant-card-stats .combatant-card-ac {
+  margin-left: auto;
+  font-family: var(--font-display);
+  white-space: nowrap;
+}
+
+.combatant-card-hp {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.combatant-card-hp .hp-track {
+  height: 9px;
+}
+
+.combatant-card-hp .hp-label {
+  font-size: 0.72rem;
+  gap: 0.25rem;
+}
+
+/* Próximo a jogar: discreto, só para antecipar a rodada. */
+.combatant-card.next {
+  border-left-style: dashed;
+  border-left-color: var(--gold-deep);
+}
+
+/* Turno atual: "a página aberta" — moldura dourada, brilho sutil e canto. */
+.combatant-card.current {
+  padding-left: 0.75rem;
+}
+
+.combatant-card.current .combatant-card-rank {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #2b2115;
+}
+
+.combatant-card.current::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  background: var(--ornament) center / contain no-repeat;
+  opacity: 0.7;
+}
+
+/* Painel central: marcador AGORA na tarja superior. */
+.combat-turn-now {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #2b2115;
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  box-shadow: 0 0 12px -3px var(--glow);
+}
+
+.combat-turn-hp {
+  flex: 1 1 12rem;
+  min-width: 0;
+  gap: 0.3rem;
+}
+
+.combat-turn-hp .hp-label {
+  font-size: 0.9rem;
+}
+
+/* No mobile a barra de vida ocupa a linha toda. */
+@media (max-width: 760px) {
+  .combatant-card-hp {
+    flex-basis: 100%;
+  }
+
+  .combatant-card-stats {
+    flex-wrap: wrap;
+  }
+}

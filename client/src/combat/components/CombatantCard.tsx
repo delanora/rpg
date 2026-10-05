@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { HpBar } from '../../components/HpBar';
 import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import type { CombatantDto } from '../../types';
@@ -9,39 +10,63 @@ interface CombatantCardProps {
   rank?: number;
   /** Este é o combatente com o turno ativo. */
   current?: boolean;
+  /** Este é o próximo a jogar depois do atual. */
+  next?: boolean;
   /** Conteúdo à direita do cartão (iniciativa, botão "rolar" etc.). */
   trailing?: ReactNode;
 }
 
 /**
- * Cada combatente da iniciativa vira um cartão visual. Mostra apenas o que o
- * jogador já pode saber: quando a vida/CA estão ocultas (`statsHidden`) surge o
- * aviso em vez dos números — a mesma regra que já valia na lista anterior.
+ * Cada combatente da iniciativa é uma pequena placa de pergaminho encaixada no
+ * grimório. A hierarquia é sempre: posição → retrato → nome → tipo → HP → CA.
+ *
+ * Respeita o que o jogador já pode saber: quando a vida/CA estão ocultas
+ * (`statsHidden`) aparece o aviso em vez dos números — mesma regra do backend.
+ * O destaque do turno atual e o indicador do próximo usam só a paleta existente.
  */
-export function CombatantCard({ combatant, rank, current, trailing }: CombatantCardProps) {
-  const hpCurrent = combatant.hpCurrent ?? 0;
-  const hpMax = combatant.hpMax ?? 0;
-  const percent = hpMax > 0 ? Math.max(0, Math.min(100, (hpCurrent / hpMax) * 100)) : 0;
+export function CombatantCard({ combatant, rank, current, next, trailing }: CombatantCardProps) {
+  const classes = ['combatant-card'];
+  if (current) classes.push('current');
+  else if (next) classes.push('next');
 
   return (
-    <article className={current ? 'combatant-card current' : 'combatant-card'}>
-      {rank !== undefined ? <span className="combatant-card-rank">{rank}</span> : null}
-
-      <Portrait
-        src={combatant.imageUrl ?? ''}
-        alt=""
-        size="sm"
-        icon={combatant.kind === 'CREATURE' ? 'flame' : 'users'}
-      />
-
-      <div className="combatant-card-body">
-        <span className="combatant-card-name">
-          {combatant.name}
-          {combatant.missing ? <em className="tag">removido</em> : null}
+    <article className={classes.join(' ')}>
+      {rank !== undefined ? (
+        <span className="combatant-card-rank" aria-label={`Posição ${rank} na iniciativa`}>
+          {String(rank).padStart(2, '0')}
         </span>
-        <span className="combatant-card-kind">
-          {combatant.kind === 'CREATURE' ? 'criatura' : 'personagem'}
-        </span>
+      ) : null}
+
+      <div className="combatant-card-main">
+        <div className="combatant-card-head">
+          <Portrait
+            src={combatant.imageUrl ?? ''}
+            alt=""
+            size="sm"
+            icon={combatant.kind === 'CREATURE' ? 'flame' : 'users'}
+          />
+
+          <span className="combatant-card-id">
+            <span className="combatant-card-name-row">
+              <span className="combatant-card-name">
+                {combatant.name}
+                {combatant.missing ? <em className="tag">removido</em> : null}
+              </span>
+              {current ? (
+                <span className="combatant-card-status agora">
+                  <Icon name="sparkle" size={11} /> AGORA
+                </span>
+              ) : next ? (
+                <span className="combatant-card-status proximo">PRÓXIMO</span>
+              ) : null}
+            </span>
+            <span className="combatant-card-kind">
+              {combatant.kind === 'CREATURE' ? 'criatura' : 'personagem'}
+            </span>
+          </span>
+
+          {trailing ? <span className="combatant-card-tail">{trailing}</span> : null}
+        </div>
 
         {/* Vida e CA de criaturas ficam ocultas para os jogadores. */}
         {combatant.statsHidden ? (
@@ -49,19 +74,17 @@ export function CombatantCard({ combatant, rank, current, trailing }: CombatantC
             <Icon name="eye" size={13} /> vida e CA ocultas
           </span>
         ) : (
-          <span className="combatant-card-stats">
-            <span className="hp-bar">
-              <span className="hp-fill" style={{ width: `${percent}%` }} />
-            </span>
-            <span className="hp-text">
-              {hpCurrent}/{hpMax}
-            </span>
+          <div className="combatant-card-stats">
+            <HpBar
+              current={combatant.hpCurrent ?? 0}
+              max={combatant.hpMax ?? 0}
+              label={combatant.name}
+              className="combatant-card-hp"
+            />
             <span className="combatant-card-ac">CA {combatant.armorClass}</span>
-          </span>
+          </div>
         )}
       </div>
-
-      {trailing ? <div className="combatant-card-tail">{trailing}</div> : null}
     </article>
   );
 }

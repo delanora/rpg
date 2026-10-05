@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { HpBar } from '../../components/HpBar';
 import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import type { CombatantDto } from '../../types';
@@ -13,10 +14,9 @@ interface CombatTurnPanelProps {
 }
 
 /**
- * O QUE ESTÁ ACONTECENDO? Painel central de destaque do turno atual. Reúne o
- * mesmo estado que já era exibido no banner e na linha ativa, agora num só
- * lugar: retrato, nome, tipo, vida/CA e efeitos já conhecidos (não proficiência
- * de armadura, quando ativa).
+ * O QUE ESTÁ ACONTECENDO? A "página aberta no combatente atual" do grimório:
+ * moldura dourada, ornamento, brilho discreto e o marcador AGORA. Reúne retrato,
+ * nome, tipo, vida/CA e efeitos já existentes (não proficiência de armadura).
  */
 export function CombatTurnPanel({ combatant, round, isMyTurn, empty }: CombatTurnPanelProps) {
   if (!combatant) {
@@ -30,9 +30,6 @@ export function CombatTurnPanel({ combatant, round, isMyTurn, empty }: CombatTur
     );
   }
 
-  const hpCurrent = combatant.hpCurrent ?? 0;
-  const hpMax = combatant.hpMax ?? 0;
-  const percent = hpMax > 0 ? Math.max(0, Math.min(100, (hpCurrent / hpMax) * 100)) : 0;
   const nonProficientArmor = Boolean(
     combatant.armorNonProficiency?.armor || combatant.armorNonProficiency?.shield,
   );
@@ -41,6 +38,9 @@ export function CombatTurnPanel({ combatant, round, isMyTurn, empty }: CombatTur
     <section className={isMyTurn ? 'combat-turn-panel mine' : 'combat-turn-panel'}>
       <p className="combat-turn-eyebrow">
         <Icon name="sword" size={14} /> Rodada {round}
+        <span className="combat-turn-now">
+          <Icon name="sparkle" size={12} /> AGORA
+        </span>
       </p>
 
       <div className="combat-turn-body">
@@ -72,12 +72,12 @@ export function CombatTurnPanel({ combatant, round, isMyTurn, empty }: CombatTur
         </p>
       ) : (
         <div className="combat-turn-stats">
-          <span className="hp-bar">
-            <span className="hp-fill" style={{ width: `${percent}%` }} />
-          </span>
-          <span className="hp-text">
-            {hpCurrent}/{hpMax}
-          </span>
+          <HpBar
+            current={combatant.hpCurrent ?? 0}
+            max={combatant.hpMax ?? 0}
+            label={combatant.name}
+            className="combat-turn-hp"
+          />
           <span className="combat-turn-ac">CA {combatant.armorClass}</span>
         </div>
       )}
