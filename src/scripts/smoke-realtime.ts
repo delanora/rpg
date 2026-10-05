@@ -10267,12 +10267,15 @@ async function main(): Promise<void> {
     const cortanteParts = multiCortante?.breakdown?.parts ?? [];
     const fogoParts = multiFogo?.breakdown?.parts ?? [];
     const fogoExtra = fogoParts.find((part: any) => part.source === 'extra');
+    // No crítico os dados dobram (1d6 → 2d6), então a expressão é conferida
+    // contra o próprio número de resultados rolados.
+    const fogoCount = Number(String(fogoExtra?.dice ?? '').split('d')[0]);
     check(
       'múltiplos tipos: cada parcela tem a própria composição (Arma e Dano extra)',
       multiHit !== null &&
         cortanteParts.some((part: any) => part.source === 'weapon') &&
-        fogoExtra?.dice === '1d6' &&
-        fogoExtra.rolls.length === 1 &&
+        /^\d+d6$/.test(fogoExtra?.dice ?? '') &&
+        fogoExtra.rolls.length === fogoCount &&
         fogoExtra.value === fogoExtra.rolls.reduce((sum: number, r: number) => sum + r, 0),
       JSON.stringify({ cortante: cortanteParts, fogo: fogoParts }),
     );

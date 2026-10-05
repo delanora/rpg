@@ -1,3 +1,4 @@
+import { damageTypeSlug } from '../../damage';
 import { formatModifier } from '../../dnd';
 import type { DamageComponentPayload, DamagePartPayload } from '../../types';
 
@@ -45,13 +46,18 @@ export function DamagePart({ part }: { part: DamagePartPayload }) {
 export function DamageComponent({ component }: { component: DamageComponentPayload }) {
   const parts = component.breakdown?.parts ?? [];
   const defended = component.modifier !== null;
+  // O accent vem do tipo JÁ resolvido pelo servidor — a UI só o apresenta.
   return (
-    <div className={`damage-component${defended ? ' defended' : ''}`}>
+    <div
+      className={`damage-component${defended ? ' defended' : ''}`}
+      data-damage={damageTypeSlug(component.type)}
+    >
       <p className="damage-component-head">
         <span className="damage-component-applied">{component.applied}</span>
+        <span className="damage-component-marker" aria-hidden="true" />
         <span className="damage-component-type">{component.type || 'sem tipo'}</span>
         {defended ? (
-          <span className="damage-component-defense">
+          <span className={`damage-component-defense ${component.modifier}`}>
             {DEFENSE_LABEL[component.modifier as NonNullable<typeof component.modifier>]} · bruto{' '}
             {component.rolled}
           </span>
