@@ -10102,3 +10102,530 @@ input[type='checkbox']:focus-visible,
     flex-wrap: wrap;
   }
 }
+
+/* ==========================================================================
+   Combate — etapa 3: fluxo de ataque em cartões e resultado da rolagem
+   Mesma linguagem: pergaminho, dourado, marrom e vinho. Só apresentação.
+   ========================================================================== */
+
+.attack-step {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.attack-step-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.attack-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--gold-deep);
+  font-size: 0.6rem;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .attack-step-num {
+  color: var(--gold-bright);
+}
+
+/* Cartões de ataque. */
+.attack-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.45rem;
+}
+
+.attack-card {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease, background 0.15s ease;
+}
+
+.attack-card:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 14px -6px var(--glow);
+}
+
+.attack-card.selected {
+  border-color: var(--gold);
+  border-left-color: var(--gold);
+  background: linear-gradient(90deg, rgba(184, 145, 42, 0.22), var(--surface) 70%);
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+}
+
+.attack-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.attack-card-head .icon {
+  color: var(--gold);
+}
+
+.attack-card-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.attack-card-type {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.attack-card-bonus {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .attack-card-bonus {
+  color: var(--gold-bright);
+}
+
+.attack-card-damage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.attack-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
+
+.attack-card-meta .icon {
+  color: var(--gold-deep);
+}
+
+.attack-card-meta.ammo {
+  color: var(--warn);
+}
+
+/* Cartões de alvo. */
+.target-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.45rem;
+}
+
+.target-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease, background 0.15s ease;
+}
+
+.target-card:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 14px -6px var(--glow);
+}
+
+.target-card.selected {
+  border-color: var(--gold);
+  background: linear-gradient(90deg, rgba(184, 145, 42, 0.2), var(--surface) 70%);
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+}
+
+.target-card-body {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.target-card-name {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.target-card-meta {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.target-card-hidden {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+/* Modo de rolagem: exclusivo. */
+.roll-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.roll-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease, background 0.15s ease;
+}
+
+.roll-mode-btn .icon {
+  color: var(--gold-deep);
+}
+
+.roll-mode-btn:hover {
+  border-color: var(--gold);
+}
+
+.roll-mode-btn.active {
+  border-color: var(--gold-deep);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #2b2115;
+  box-shadow: 0 0 14px -4px var(--glow);
+}
+
+.roll-mode-btn.active .icon {
+  color: #2b2115;
+}
+
+/* Blocos de efeito (Ataque Furtivo / munição). */
+.attack-effect {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--gold);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(184, 145, 42, 0.12), rgba(122, 31, 31, 0.08));
+}
+
+.attack-effect-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .attack-effect-head {
+  color: var(--gold-bright);
+}
+
+.attack-effect-head .icon {
+  color: var(--gold);
+}
+
+.attack-effect.ammo {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+/* Prévia do ataque + botão principal. */
+.attack-preview {
+  display: flex;
+  align-items: stretch;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.attack-preview-side {
+  display: grid;
+  gap: 0.1rem;
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+
+.attack-preview-label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.attack-preview-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.attack-preview-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.attack-preview-vs {
+  align-self: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--gold-deep);
+}
+
+.attack-roll {
+  align-self: center;
+}
+
+/* Resultado da rolagem. */
+.attack-result {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  border: 2px solid var(--gold-deep);
+  border-radius: 6px;
+  background-image:
+    linear-gradient(180deg, var(--surface), var(--surface-2)),
+    var(--ornament),
+    var(--ornament);
+  background-position:
+    0 0,
+    left 5px top 5px,
+    right 5px bottom 5px;
+  background-size:
+    auto,
+    13px 13px,
+    13px 13px;
+  background-repeat: no-repeat;
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px var(--gold-hair);
+  animation: ink-in 0.25s ease both;
+}
+
+.attack-result.crit {
+  border-color: var(--gold);
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px var(--gold-hair),
+    0 0 30px -8px var(--glow);
+}
+
+.attack-result.fail {
+  border-color: var(--wine);
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px rgba(122, 31, 31, 0.3);
+}
+
+.attack-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.attack-result-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+.attack-result-title .icon {
+  color: var(--gold);
+}
+
+.attack-result-roll {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.attack-result-total {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .attack-result-total {
+  color: var(--gold-bright);
+}
+
+.attack-result-vs {
+  font-family: var(--font-display);
+  color: var(--ink-soft);
+}
+
+.attack-result-outcome {
+  margin-left: auto;
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+}
+
+.attack-result-outcome.hit {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.attack-result-outcome.miss {
+  color: var(--ink-soft);
+}
+
+.attack-result-outcome.crit {
+  border-color: var(--gold-deep);
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #2b2115;
+  box-shadow: 0 0 18px -4px var(--glow);
+}
+
+.attack-result-outcome.fail {
+  border-color: var(--wine);
+  background: rgba(122, 31, 31, 0.16);
+  color: var(--wine);
+}
+
+[data-theme='dark'] .attack-result-outcome.fail {
+  border-color: #e5827a;
+  color: #e5827a;
+}
+
+.attack-result-sub {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.attack-result-damage {
+  display: grid;
+  gap: 0.3rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--line);
+}
+
+.attack-result-damage-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+.attack-result-damage-title .icon {
+  color: var(--gold);
+}
+
+.attack-result-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.attack-result-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+
+.attack-result-dealt {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.attack-result-note {
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.attack-result-total-damage {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .attack-result-total-damage {
+  color: var(--gold-bright);
+}
+
+.attack-result-sneak {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.attack-result-sneak .icon {
+  color: var(--gold);
+}
+
+.attack-result-hp {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}

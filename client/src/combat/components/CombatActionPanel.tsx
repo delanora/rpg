@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Icon } from '../../components/Icon';
+import { Portrait } from '../../components/Portrait';
 import {
   ammoStackLabel,
   ammoStackTotal,
@@ -8,9 +9,95 @@ import {
   requiredAmmoType,
   weaponOf,
 } from '../../ammo';
-import { damageExpression, formatModifier } from '../../dnd';
+import { WEAPON_TYPE_LABELS, damageExpression, formatModifier } from '../../dnd';
 import type { Attack, CombatDto, CombatantDto, InventoryItem } from '../../types';
 import { clampInt } from '../../utils';
+
+/** Modos de rolagem são mutuamente exclusivos (nenhum/vantagem/desvantagem). */
+const ROLL_MODES = [
+  { key: 'normal', label: 'Normal', icon: 'die', title: 'Uma rolagem de d20.' },
+  {
+    key: 'advantage',
+    label: 'Vantagem',
+    icon: 'sun',
+    title: 'Rola 2d20 e mantém o maior. Habilita o Ataque Furtivo do Ladino.',
+  },
+  {
+    key: 'disadvantage',
+    label: 'Desvantagem',
+    icon: 'moon',
+    title: 'Rola 2d20 e mantém o menor. Impede o Ataque Furtivo do Ladino.',
+  },
+] as const;
+
+type RollMode = (typeof ROLL_MODES)[number]['key'];
+
+/** Alcance legível a partir da arma vinculada (só quando o inventário existe). */
+function rangeLabel(weapon: InventoryItem | null): string | null {
+  const normal = weapon?.details.rangeNormal;
+  if (!normal) return null;
+  const long = weapon?.details.rangeLong;
+  return long ? `${normal}/${long} m` : `${normal} m`;
+}
+
+/** Tipo do ataque: usa o detalhe da arma quando disponível, senão o flag do ataque. */
+function attackTypeLabel(attack: Attack, weapon: InventoryItem | null): string {
+  const weaponType = weapon?.details.weaponType;
+  if (weaponType) return WEAPON_TYPE_LABELS[weaponType];
+  return attack.ranged ? WEAPON_TYPE_LABELS.ranged : WEAPON_TYPE_LABELS.melee;
+}
+
+/** Cartão visual de um ataque disponível (nome, tipo, bônus, dano, alcance, munição). */
+function AttackOption({
+  attack,
+  inventory,
+  selected,
+  onSelect,
+}: {
+  attack: Attack;
+  inventory?: InventoryItem[];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const weapon = inventory ? weaponOf(attack, inventory) : null;
+  const range = rangeLabel(weapon);
+  const ammo = requiredAmmoType(weapon);
+  const damages = [attack.damage, ...(attack.extraDamages ?? [])];
+
+  return (
+    <button
+      type="button"
+      className={selected ? 'attack-card selected' : 'attack-card'}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      <span className="attack-card-head">
+        <Icon name={attack.ranged ? 'ammo' : 'sword'} size={15} />
+        <span className="attack-card-name">{attack.name}</span>
+      </span>
+      <span className="attack-card-type">{attackTypeLabel(attack, weapon)}</span>
+      <span className="attack-card-bonus">{formatModifier(attack.attackBonus)} para acertar</span>
+      <span className="attack-card-damage">
+        {damages.map((damage, index) => (
+          <span key={index} className="attack-card-damage-line">
+            {damageExpression(damage)}
+            {damage.type ? ` ${damage.type}` : ''}
+          </span>
+        ))}
+      </span>
+      {range ? (
+        <span className="attack-card-meta">
+          <Icon name="wind" size={12} /> Alcance {range}
+        </span>
+      ) : null}
+      {ammo ? (
+        <span className="attack-card-meta ammo">
+          <Icon name="ammo" size={12} /> Consome munição ({ammo})
+        </span>
+      ) : null}
+    </button>
+  );
+}
 
 interface CombatActionPanelProps {
   combat: CombatDto;
@@ -42,9 +129,9 @@ interface CombatActionPanelProps {
 }
 
 /**
- * O QUE POSSO FAZER? Formulário de ataque (jogador e mestre). Componente apenas
- * de apresentação: toda a resolução continua acontecendo no backend via
- * `onAttack`, exatamente como antes.
+ * O QUE POSSO FAZER? Fluxo de ataque visual em três passos — escolher o ataque,
+ * escolher o alvo e revisar a rolagem — com os mesmos dados e a mesma validação
+ * do backend. Só a apresentação mudou: nada de regra, cálculo ou envio.
  */
 export function CombatActionPanel({
   combat,
@@ -62,8 +149,7 @@ export function CombatActionPanel({
   const [attackId, setAttackId] = useState('');
   const [targetId, setTargetId] = useState('');
   const [ammoId, setAmmoId] = useState('');
-  const [advantage, setAdvantage] = useState(false);
-  const [disadvantage, setDisadvantage] = useState(false);
+  const [rollMode, setRollMode] = useState<RollMode>('normal');
   const [adjacentAlly, setAdjacentAlly] = useState(false);
 
   const baseAttacks = attackerChoices && attacksFor && attacker ? attacksFor(attacker.id) : attacks;
@@ -74,6 +160,8 @@ export function CombatActionPanel({
 
   // Munição do ataque escolhido: arma equipada vinculada + pilhas compatíveis.
   const selectedAttack = availableAttacks.find((item) => item.id === attackId) ?? null;
+  const selectedTarget = targets.find((item) => item.id === targetId) ?? null;
+  const selectedWeapon = inventory && selectedAttack ? weaponOf(selectedAttack, inventory) : null;
   // No painel do mestre o atacante pode ser a ficha de qualquer Ladino; resolve
   // os dados do Furtivo dela quando não vierem por prop (caso do jogador).
   const sneakExpression =
@@ -84,17 +172,18 @@ export function CombatActionPanel({
     Boolean(sneakExpression) &&
     selectedAttack !== null &&
     (selectedAttack.finesse || selectedAttack.ranged);
-  const weapon = inventory && selectedAttack ? weaponOf(selectedAttack, inventory) : null;
-  const ammoType = requiredAmmoType(weapon);
+  const ammoType = requiredAmmoType(selectedWeapon);
   const stacks = inventory && ammoType ? ammoStacks(inventory, ammoType) : [];
   const ammoTotal = ammoStackTotal(stacks);
   const selectedAmmo = stacks.find((item) => item.id === ammoId) ?? null;
   const ammoMissing = Boolean(ammoType) && ammoTotal === 0;
 
+  const advantage = rollMode === 'advantage';
+  const disadvantage = rollMode === 'disadvantage';
   const ready = Boolean(attacker && attackId && targetId) && !ammoMissing;
 
   return (
-    <section className="combat-block">
+    <section className="combat-block attack-panel">
       <h3>
         <Icon name="sword" size={15} /> Atacar
       </h3>
@@ -125,118 +214,201 @@ export function CombatActionPanel({
         <p className="empty-hint">Nenhum ataque cadastrado para {attacker.name}.</p>
       ) : (
         <>
-          <label className="field">
-            <span>Ataque</span>
-            <select
-              value={attackId}
-              onChange={(event) => {
-                setAttackId(event.target.value);
-                // Trocar de arma invalida a confirmação de aliado adjacente.
-                setAdjacentAlly(false);
-              }}
-            >
-              <option value="">escolha o ataque</option>
+          {/* Passo 1 — cartões de ataque. */}
+          <div className="attack-step">
+            <p className="attack-step-title">
+              <span className="attack-step-num">1</span> Escolha o ataque
+            </p>
+            <div className="attack-options">
               {availableAttacks.map((attack) => (
-                <option key={attack.id} value={attack.id}>
-                  {attack.name} — dano {damageExpression(attack.damage)}
-                  {attack.damage.type ? ` (${attack.damage.type})` : ''}, acerto{' '}
-                  {formatModifier(attack.attackBonus)}
-                  {sneakExpression && (attack.finesse || attack.ranged)
-                    ? ` · +${sneakExpression} furtivo`
-                    : ''}
-                </option>
+                <AttackOption
+                  key={attack.id}
+                  attack={attack}
+                  inventory={inventory}
+                  selected={attack.id === attackId}
+                  onSelect={() => {
+                    setAttackId(attack.id);
+                    // Trocar de arma invalida a confirmação de aliado adjacente.
+                    setAdjacentAlly(false);
+                  }}
+                />
               ))}
-            </select>
-          </label>
-
-          <label className="field">
-            <span>Alvo</span>
-            <select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
-              <option value="">escolha o alvo</option>
-              {targets.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                  {item.statsHidden
-                    ? ''
-                    : ` — CA ${item.armorClass}, HP ${item.hpCurrent}/${item.hpMax}`}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="dice-controls">
-            <label className="dice-toggle" title="Rola 2d20 e mantém o maior. Habilita o Ataque Furtivo do Ladino.">
-              <input
-                type="checkbox"
-                checked={advantage}
-                onChange={(event) => setAdvantage(event.target.checked)}
-              />
-              Vantagem
-            </label>
-            <label className="dice-toggle" title="Rola 2d20 e mantém o menor. Impede o Ataque Furtivo do Ladino.">
-              <input
-                type="checkbox"
-                checked={disadvantage}
-                onChange={(event) => setDisadvantage(event.target.checked)}
-              />
-              Desvantagem
-            </label>
+            </div>
           </div>
 
+          {/* Passo 2 — cartões de alvo. */}
+          <div className="attack-step">
+            <p className="attack-step-title">
+              <span className="attack-step-num">2</span> Escolha o alvo
+            </p>
+            <div className="target-options">
+              {targets.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={item.id === targetId ? 'target-card selected' : 'target-card'}
+                  aria-pressed={item.id === targetId}
+                  onClick={() => setTargetId(item.id)}
+                >
+                  <Portrait
+                    src={item.imageUrl ?? ''}
+                    alt=""
+                    size="sm"
+                    icon={item.kind === 'CREATURE' ? 'flame' : 'users'}
+                  />
+                  <span className="target-card-body">
+                    <span className="target-card-name">
+                      {item.name}
+                      {item.missing ? <em className="tag">removido</em> : null}
+                    </span>
+                    {/* CA/vida só aparecem quando já são reveladas. */}
+                    {item.statsHidden ? (
+                      <span className="target-card-hidden">
+                        <Icon name="eye" size={12} /> vida e CA ocultas
+                      </span>
+                    ) : (
+                      <span className="target-card-meta">
+                        CA {item.armorClass} · HP {item.hpCurrent}/{item.hpMax}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Passo 3 — modo de rolagem (mutuamente exclusivo). */}
+          <div className="attack-step">
+            <p className="attack-step-title">
+              <span className="attack-step-num">3</span> Modo de rolagem
+            </p>
+            <div className="roll-mode" role="radiogroup" aria-label="Modo de rolagem">
+              {ROLL_MODES.map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={rollMode === mode.key}
+                  title={mode.title}
+                  className={rollMode === mode.key ? 'roll-mode-btn active' : 'roll-mode-btn'}
+                  onClick={() => setRollMode(mode.key)}
+                >
+                  <Icon name={mode.icon} size={14} /> {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Ataque Furtivo disponível (a condição já vem do sistema). */}
           {sneakEligible ? (
-            <label
-              className="dice-toggle"
-              title="O sistema não tem grid: confirme marcando se houver um aliado seu adjacente ao alvo. Com isso o Ataque Furtivo se aplica mesmo sem vantagem."
-            >
-              <input
-                type="checkbox"
-                checked={adjacentAlly}
-                onChange={(event) => setAdjacentAlly(event.target.checked)}
-              />
-              Tenho um aliado adjacente ao alvo
-            </label>
+            <div className="attack-effect">
+              <span className="attack-effect-head">
+                <Icon name="sparkle" size={13} /> Ataque Furtivo disponível
+                <strong> +{sneakExpression}</strong>
+              </span>
+              <label
+                className="dice-toggle"
+                title="O sistema não tem grid: confirme marcando se houver um aliado seu adjacente ao alvo. Com isso o Ataque Furtivo se aplica mesmo sem vantagem."
+              >
+                <input
+                  type="checkbox"
+                  checked={adjacentAlly}
+                  onChange={(event) => setAdjacentAlly(event.target.checked)}
+                />
+                Tenho um aliado adjacente ao alvo
+              </label>
+            </div>
           ) : null}
 
+          {/* Munição: custo e pilha a consumir (lógica preservada). */}
           {ammoType ? (
-            <label className="field">
-              <span>Munição ({ammoType})</span>
+            <div className="attack-effect ammo">
+              <span className="attack-effect-head">
+                <Icon name="ammo" size={13} /> Custo: 1 munição ({ammoType})
+              </span>
               {stacks.length > 0 ? (
-                <select value={selectedAmmo?.id ?? ''} onChange={(event) => setAmmoId(event.target.value)}>
-                  <option value="">automática (sem bônus primeiro)</option>
-                  {stacks.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {ammoStackLabel(item)}
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <label className="field">
+                    <span>Pilha a consumir</span>
+                    <select
+                      value={selectedAmmo?.id ?? ''}
+                      onChange={(event) => setAmmoId(event.target.value)}
+                    >
+                      <option value="">automática (sem bônus primeiro)</option>
+                      {stacks.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {ammoStackLabel(item)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="field-hint">disponível: {ammoTotal}</span>
+                </>
               ) : (
                 <span className="ammo-warning">Sem munição para esta arma.</span>
               )}
-              {stacks.length > 0 ? (
-                <span className="field-hint">disponível: {ammoTotal}</span>
-              ) : null}
-            </label>
+            </div>
           ) : null}
 
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy || !ready}
-            title={ammoMissing ? 'Sem munição para esta arma.' : undefined}
-            onClick={() => {
-              onAttack({
-                attackId,
-                targetCombatantId: targetId,
-                advantage,
-                disadvantage,
-                ...(adjacentAlly && sneakEligible ? { adjacentAlly: true } : {}),
-                ...(attackerChoices ? { attackerCombatantId: attacker.id } : {}),
-                ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
-              });
-            }}
-          >
-            <Icon name="die" size={15} /> Rolar ataque
-          </button>
+          {/* Prévia do ataque + botão principal. */}
+          <div className="attack-preview">
+            <div className="attack-preview-side">
+              <span className="attack-preview-label">Ataque selecionado</span>
+              <span className="attack-preview-name">{selectedAttack?.name ?? '—'}</span>
+              {selectedAttack ? (
+                <span className="attack-preview-stats">
+                  <span>{formatModifier(selectedAttack.attackBonus)}</span>
+                  <span>
+                    {damageExpression(selectedAttack.damage)}
+                    {selectedAttack.damage.type ? ` ${selectedAttack.damage.type}` : ''}
+                  </span>
+                  {rangeLabel(inventory ? selectedWeapon : null) ? (
+                    <span>alcance {rangeLabel(inventory ? selectedWeapon : null)}</span>
+                  ) : null}
+                  {sneakEligible ? <span>furtivo +{sneakExpression}</span> : null}
+                </span>
+              ) : null}
+            </div>
+
+            <span className="attack-preview-vs">VS</span>
+
+            <div className="attack-preview-side">
+              <span className="attack-preview-label">Alvo</span>
+              <span className="attack-preview-name">{selectedTarget?.name ?? '—'}</span>
+              {selectedTarget ? (
+                <span className="attack-preview-stats">
+                  {selectedTarget.statsHidden ? (
+                    <span>vida e CA ocultas</span>
+                  ) : (
+                    <span>
+                      CA {selectedTarget.armorClass} · HP {selectedTarget.hpCurrent}/
+                      {selectedTarget.hpMax}
+                    </span>
+                  )}
+                </span>
+              ) : null}
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary attack-roll"
+              disabled={busy || !ready}
+              title={ammoMissing ? 'Sem munição para esta arma.' : undefined}
+              onClick={() => {
+                onAttack({
+                  attackId,
+                  targetCombatantId: targetId,
+                  advantage,
+                  disadvantage,
+                  ...(adjacentAlly && sneakEligible ? { adjacentAlly: true } : {}),
+                  ...(attackerChoices ? { attackerCombatantId: attacker.id } : {}),
+                  ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
+                });
+              }}
+            >
+              <Icon name="die" size={16} /> Rolar ataque
+            </button>
+          </div>
         </>
       )}
     </section>
