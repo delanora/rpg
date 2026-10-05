@@ -968,7 +968,7 @@ async function main(): Promise<void> {
     (await api(`/api/combat/initiative/${creatureCombatant.id}`, { method: 'POST', token: playerToken })).status === 403,
   );
   check(
-    'jogador NÃO avança o turno (403)',
+    'jogador NÃO avança o turno fora do seu (403)',
     (await api('/api/combat/next-turn', { method: 'POST', token: playerToken })).status === 403,
   );
 
@@ -1033,6 +1033,33 @@ async function main(): Promise<void> {
     'ao passar do último, volta ao início com nova rodada',
     wrapped.currentIndex === 0 && wrapped.round === 2,
     JSON.stringify({ index: wrapped.currentIndex, round: wrapped.round }),
+  );
+
+  // O jogador encerra o PRÓPRIO turno: o mestre avança até o turno cair nele e,
+  // então, é o JOGADOR quem chama o avanço (novo fluxo da barra de recursos).
+  let ownTurn = wrapped;
+  for (
+    let guard = 0;
+    ownTurn.combatants[ownTurn.currentIndex]?.ownerUserId !== playerId &&
+    guard <= active.combatants.length;
+    guard += 1
+  ) {
+    ownTurn = (await api('/api/combat/next-turn', { method: 'POST', token: masterToken })).data
+      .combat;
+  }
+  const playerOwnTurn = await api('/api/combat/next-turn', { method: 'POST', token: playerToken });
+  check('jogador encerra o próprio turno (200)', playerOwnTurn.status === 200);
+  const afterPlayerTurn = playerOwnTurn.data.combat;
+  check(
+    'avanço do jogador NÃO revela a vida das criaturas',
+    afterPlayerTurn.combatants.find((item: any) => item.id === creatureCombatant.id)?.statsHidden ===
+      true,
+  );
+  check(
+    'jogador NÃO encerra o turno de outro (403)',
+    afterPlayerTurn.combatants[afterPlayerTurn.currentIndex]?.ownerUserId !== playerId
+      ? (await api('/api/combat/next-turn', { method: 'POST', token: playerToken })).status === 403
+      : true,
   );
 
   // Ataque: o dano só entra quando acerta a CA.
