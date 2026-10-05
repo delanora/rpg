@@ -8,6 +8,7 @@ import {
   thirdCasterSpellcastingLimits,
 } from '../shared/spells/class-tables.js';
 import { oathSpellsAtLevel, resolveOathSpells } from '../shared/spells/oath-spells.js';
+import { raceSpells } from '../shared/races/index.js';
 import { SPELL_CLASS_KEYS, type SpellClassKey } from '../shared/spells/types.js';
 import {
   normalizeLevelHistory,
@@ -539,10 +540,6 @@ export function toCharacterDto(
       classKey: 'paladin',
       oath: true,
     }));
-  const spellsForDisplay: SpellsStateDto = {
-    ...spells,
-    list: [...spells.list, ...oathSpellList],
-  };
   const attacks = parseJson<AttackDto[]>(attackListSchema, character.attacks, []);
   const proficiencies = normalizeProficiencies(character.proficiencies);
 
@@ -578,6 +575,58 @@ export function toCharacterDto(
   // efetivos usados por todos os cálculos derivados; a pontuação gravada segue
   // sendo a base.
   const effectiveAbilities = effectiveAbilitiesOf(character, classAdjustments);
+
+  // Magias RACIAIS (Prompt 6.4): entram SÓ no DTO (selo 'Raça'), sempre
+  // preparadas, fora de QUALQUER limite de classe e conjuradas sem espaço. A CD
+  // e o ataque usam o atributo da RAÇA e a proficiência do nível TOTAL. O nível
+  // que as concede é o de PERSONAGEM (`raceSpells` filtra pelo `minLevel`), não
+  // o de classe — assim o level-down as remove sozinho.
+  const raceChoices = parseJson<Record<string, string>>(
+    raceChoicesSchema,
+    character.raceChoices,
+    {},
+  );
+  const raceSpellList: SpellsStateDto['list'] = raceSpells(
+    {
+      raceId: character.raceId,
+      subraceId: character.subraceId,
+      choices: raceChoices,
+    },
+    level,
+  )
+    .filter((grant) => !storedSpellIds.has(grant.key))
+    .map((grant) => {
+      const score = effectiveAbilities[grant.ability];
+      const resourceId = `race-spell:${grant.key}`;
+      return {
+        id: grant.key,
+        name: grant.name,
+        level: grant.level,
+        school: grant.school,
+        prepared: true,
+        description: grant.description,
+        classKey: '',
+        race: true,
+        raceAbility: grant.ability,
+        raceSaveDC: spellSaveDc(level, score),
+        raceAttackBonus: spellAttackBonus(level, score),
+        ...(grant.castLevel !== undefined ? { raceCastLevel: grant.castLevel } : {}),
+        // Contador 1x/descanso longo: o reset automático NÃO existe nesta fase
+        // (Categoria B) — `used` só muda por ação explícita do jogador.
+        ...(grant.perRest
+          ? {
+              raceUses: {
+                max: 1,
+                used: Math.min(1, Math.max(0, classState.used[resourceId] ?? 0)),
+              },
+            }
+          : {}),
+      };
+    });
+  const spellsForDisplay: SpellsStateDto = {
+    ...spells,
+    list: [...spells.list, ...oathSpellList, ...raceSpellList],
+  };
 
   // Proficiências de arma = as GRAVADAS na ficha. A raça escreve os ids
   // canônicos direto em `proficiencies.weapons` (o serviço aplica/reverte na
@@ -750,7 +799,7 @@ export function toCharacterDto(
     race: character.race,
     raceId: character.raceId,
     subraceId: character.subraceId,
-    raceChoices: parseJson<Record<string, string>>(raceChoicesSchema, character.raceChoices, {}),
+    raceChoices,
     customRaceId: character.customRaceId,
     languages: [...character.languages],
     darkvision: character.darkvision,

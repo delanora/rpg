@@ -47,9 +47,14 @@ export function SpellPicker({ entry, allSpells, current, onSaved }: SpellPickerP
   const limits = entry.spellcasting;
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState<Map<string, boolean>>(
-    // As magias de juramento são DERIVADAS (fora do limite e não editáveis):
-    // nunca entram na seleção do seletor.
-    () => new Map(current.filter((spell) => !spell.oath).map((spell) => [spell.id, spell.prepared])),
+    // As magias DERIVADAS (juramento e raça) ficam fora do limite e não são
+    // editáveis: nunca entram na seleção do seletor.
+    () =>
+      new Map(
+        current
+          .filter((spell) => !spell.oath && !spell.race)
+          .map((spell) => [spell.id, spell.prepared]),
+      ),
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

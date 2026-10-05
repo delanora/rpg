@@ -3555,6 +3555,35 @@ input[type='checkbox']:disabled {
   color: var(--gold);
 }
 
+/* Magias raciais: derivadas do catálogo, sempre preparadas e não editáveis. */
+.spell-row.race {
+  background: rgba(120, 160, 200, 0.08);
+}
+
+.spell-race-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.spell-race-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.spell-race-badge .icon {
+  color: #6a93c0;
+}
+
 .spell-description {
   color: var(--ink-soft);
   font-style: italic;

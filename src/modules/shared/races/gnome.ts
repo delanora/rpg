@@ -52,9 +52,12 @@ export const gnome: Race = {
           name: 'Ilusionista Natural',
           description:
             'Você conhece o truque Ilusão Menor. Inteligência é o atributo de conjuração dele.',
-          // TODO(catálogo de magias): quando `shared/spells/` existir, declarar
-          // hasChoices 'natural-illusionist' com spellsByClass('wizard', 0) e
-          // refletir o truque em character.spells (mesmo caminho do Alto Elfo).
+          // Truque FIXO do catálogo, à vontade; Inteligência é o atributo da raça.
+          mechanicalEffect: {
+            type: 'spell',
+            spellId: 'minor-illusion',
+            ability: 'intelligence',
+          },
         },
         {
           id: 'speak-with-small-beasts',

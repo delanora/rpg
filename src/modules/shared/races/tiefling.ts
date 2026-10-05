@@ -4,9 +4,9 @@ import type { Race } from './types.js';
  * Tiefling — PHB 2014. Sem sub-raças.
  *
  * Só DADOS por enquanto: Resistência Infernal usa `resistance` (Fogo). O Legado
- * Infernal fica descritivo (truque + magias a partir de níveis de PERSONAGEM),
- * porque o catálogo de magias ainda não existe — mesmo tratamento do truque do
- * Alto Elfo e da Magia Drow. `speed` em METROS (30 pés = 9 m).
+ * Infernal declara os efeitos `spell` vinculados ao catálogo (Prompt 6.4): o
+ * truque à vontade e as duas magias 1x/descanso longo a partir de níveis de
+ * PERSONAGEM. `speed` em METROS (30 pés = 9 m).
  */
 export const tiefling: Race = {
   id: 'tiefling',
@@ -40,10 +40,27 @@ export const tiefling: Race = {
         'Repreensão Infernal e pode lançá-la uma vez por descanso longo; no 5º nível, aprende ' +
         'Escuridão e pode lançá-la uma vez por descanso longo. Carisma é o atributo de ' +
         'conjuração dessas magias.',
-      // TODO(catálogo de magias): o catálogo ainda não existe (SPELL_CATALOG é []).
-      // Quando existir, ligar o truque (spellsByClass) e o recurso de 1 uso por
-      // descanso longo escalonando pelo NÍVEL TOTAL DO PERSONAGEM — mesma decisão
-      // do Draconato/Drow: representado no texto, sem tipo de efeito novo.
+      // Truque à vontade + as duas magias 1x/descanso longo, escalonando pelo
+      // NÍVEL TOTAL do personagem. Repreensão Infernal é conjurada como 2º nível.
+      mechanicalEffects: [
+        { type: 'spell', spellId: 'thaumaturgy', ability: 'charisma' },
+        {
+          type: 'spell',
+          spellId: 'hellish-rebuke',
+          minLevel: 3,
+          castLevel: 2,
+          perRest: 'long',
+          ability: 'charisma',
+        },
+        {
+          type: 'spell',
+          spellId: 'darkness',
+          minLevel: 5,
+          castLevel: 2,
+          perRest: 'long',
+          ability: 'charisma',
+        },
+      ],
     },
   ],
 };

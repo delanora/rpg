@@ -342,6 +342,23 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     return Boolean(picked) && choice.options.some((option) => option.id === picked);
   });
 
+  /**
+   * Escolhas que vêm SÓ da sub-raça (ex.: o truque do Alto Elfo). A linhagem do
+   * catálogo já traz raça base + sub-raça, então removemos as que a 3a mostra
+   * para não pedir duas vezes.
+   */
+  const subraceExtraChoices = useMemo(() => {
+    const baseIds = new Set((raceBaseOption?.choices ?? []).map((choice) => choice.id));
+    return (selectedRace?.choices ?? []).filter(
+      (choice) => choice.apply !== 'ability' && !baseIds.has(choice.id),
+    );
+  }, [selectedRace, raceBaseOption]);
+
+  const subraceExtrasReady = subraceExtraChoices.every((choice) => {
+    const picked = raceChoices[choice.id];
+    return Boolean(picked) && choice.options.some((option) => option.id === picked);
+  });
+
   /** Quantos idiomas à escolha a raça concede (Humano e Meio-Elfo: 1). */
   const languageChoiceCount = raceBaseOption?.bonusLanguageChoices ?? 0;
 
@@ -355,6 +372,7 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
   const raceChoicesReady =
     (raceChoiceNeeded === 0 || abilityChoices.length === raceChoiceNeeded) &&
     raceExtrasReady &&
+    subraceExtrasReady &&
     (languageChoiceCount === 0 ||
       languageChoices.filter(Boolean).length === languageChoiceCount);
 
@@ -476,8 +494,20 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
     }
   }
 
-  /** Seleciona a sub-raça na 3b (as escolhas da raça base são preservadas). */
+  /**
+   * Seleciona a sub-raça na 3b. As escolhas da raça base são preservadas, mas
+   * as escolhas DA SUB-RAÇA que não existem na linhagem nova são descartadas
+   * (ex.: trocar Alto Elfo por Elfo da Floresta esquece o truque escolhido).
+   */
   function pickSubrace(lineage: RaceOption): void {
+    const allowed = new Set((lineage.choices ?? []).map((choice) => choice.id));
+    setRaceChoices((current) => {
+      const next: Record<string, string> = {};
+      for (const [id, value] of Object.entries(current)) {
+        if (allowed.has(id)) next[id] = value;
+      }
+      return next;
+    });
     setRace(lineage.key);
   }
 
@@ -1110,6 +1140,34 @@ export function CreationWizard({ user, onCharacter, onFinished }: CreationWizard
                         Escolha uma sub-raça acima para ver o que ela acrescenta.
                       </p>
                     )}
+
+                    {/* Escolhas PRÓPRIAS da sub-raça (ex.: o truque do Alto Elfo). */}
+                    {selectedRace && subraceExtraChoices.length > 0 ? (
+                      <div className="wizard-race-choice">
+                        <p className="section-note">{selectedRace.name} pede as escolhas abaixo.</p>
+                        <div className="grid grid-2">
+                          {subraceExtraChoices.map((choice) => (
+                            <label className="field" key={choice.id}>
+                              <span>{choice.label}</span>
+                              <select
+                                value={raceChoices[choice.id] ?? ''}
+                                disabled={busy}
+                                onChange={(event) =>
+                                  setRaceExtraChoice(choice.id, event.target.value)
+                                }
+                              >
+                                <option value="">— escolha —</option>
+                                {choice.options.map((option) => (
+                                  <option key={option.id} value={option.id}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </>
                 )
               ) : (
