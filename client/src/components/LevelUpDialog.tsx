@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ABILITY_KEYS, ABILITY_LABELS, SKILLS, expertiseEligibleOptions, formatModifier } from '../dnd';
 import { FEATS } from '../feats';
+import { fetchCompendium } from '../gameApi';
 import { levelUpCharacter } from '../levelUpApi';
 import type {
   AbilityKey,
   Character,
+  CompendiumSpell,
   FeatureChoiceInfo,
   LevelUpRequest,
   ProficienciesState,
 } from '../types';
 import { FeatureChoiceField } from './FeatureChoiceField';
 import { Icon } from './Icon';
+import { SpellPicker } from './sections/SpellPicker';
 
 /** Texto curto do que a classe concede ao entrar ("Escudos · Armas simples"). */
 function grantLabel(grant: ProficienciesState | undefined): string {
@@ -87,6 +90,10 @@ export function LevelUpDialog({
   const [classesOpen, setClassesOpen] = useState(false);
   /** Preenchido ao confirmar: troca o formulário pelo resumo do que veio. */
   const [result, setResult] = useState<LevelUpResult | null>(null);
+  /** Ficha JÁ atualizada pelo servidor (nível novo) para o ajuste das magias. */
+  const [applied, setApplied] = useState<Character | null>(null);
+  /** Catálogo de magias (buscado uma vez) para o ajuste das conhecidas. */
+  const [catalogSpells, setCatalogSpells] = useState<CompendiumSpell[]>([]);
 
   const entry = character.classes.find((item) => item.classKey === classKey) ?? null;
   const option = character.classOptions.find((item) => item.key === classKey) ?? null;
@@ -200,6 +207,19 @@ export function LevelUpDialog({
   const conModifier = character.derived.modifiers.constitution;
   const averageDie = info ? Math.floor(info.hitDie / 2) + 1 : 0;
   const averageGain = Math.max(1, averageDie + conModifier);
+
+  // Catálogo (magias do PHB) para o ajuste das magias conhecidas no resumo.
+  useEffect(() => {
+    let active = true;
+    fetchCompendium()
+      .then((data) => {
+        if (active) setCatalogSpells(data.spells);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Esc fecha a janela, como o X do cabeçalho — nunca no meio de uma aplicação.
   useEffect(() => {
@@ -356,6 +376,7 @@ export function LevelUpDialog({
       const updated = await applyLevelUp(request);
       // A janela NÃO fecha: mostra o resumo do que foi aplicado e o que veio junto.
       setResult(summarize(updated));
+      setApplied(updated);
       onApplied(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao subir de nível.');
@@ -372,6 +393,16 @@ export function LevelUpDialog({
         : abilityMode === 'one'
           ? `${ABILITY_LABELS[abilityA]} +2`
           : `${ABILITY_LABELS[abilityA]} +1, ${ABILITY_LABELS[abilityB]} +1`;
+
+  // Classe que subiu de nível, já na ficha atualizada: alimenta o ajuste das
+  // magias no resumo (os limites já refletem o nível novo).
+  const leveledEntry =
+    applied?.classes.find((item) => item.classKey === classKey) ?? null;
+  const canPickSpells =
+    leveledEntry !== null &&
+    leveledEntry.spellcasting !== null &&
+    leveledEntry.spellcasting.type !== 'none' &&
+    catalogSpells.length > 0;
 
   // Confirmação: o formulário dá lugar ao resumo do que foi aplicado.
   if (result) {
@@ -476,6 +507,28 @@ export function LevelUpDialog({
           ) : (
             <p className="section-note">Este nível não libera características novas.</p>
           )}
+
+          {canPickSpells && applied && leveledEntry ? (
+            <>
+              <h3 className="subsection-title">Magias de {leveledEntry.className}</h3>
+              <p className="section-note">
+                Escolha as magias novas deste nível e, se quiser, troque uma que já
+                conhecia. O servidor revalida a lista, o nível máximo e os limites da
+                classe (no multiclasse, cada classe tem os seus).
+              </p>
+              <SpellPicker
+                entry={leveledEntry}
+                allSpells={catalogSpells}
+                current={applied.spells.list.filter(
+                  (spell) => spell.classKey === leveledEntry.classKey,
+                )}
+                onSaved={(saved) => {
+                  setApplied(saved);
+                  onApplied(saved);
+                }}
+              />
+            </>
+          ) : null}
 
           <div className="modal-actions">
             <button type="button" className="btn btn-primary" onClick={onClose}>

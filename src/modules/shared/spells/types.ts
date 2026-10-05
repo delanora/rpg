@@ -13,11 +13,29 @@ import type { Damage } from '../attacks.js';
  * `{ count, sides, bonus, type }`), com um dos 13 tipos canônicos — nunca
  * texto livre. A expressão textual ("3d6") é derivada na exibição.
  *
- * O campo `classes` existe desde já, mas fica VAZIO nesta etapa: o vínculo com
- * as listas de classe entra no Prompt 6.2.
+ * O campo `classes` é DERIVADO das listas do PHB em `class-lists.ts` (fonte
+ * única do vínculo magia ↔ classe): não é escrito à mão em cada magia.
  *
  * Ver `catalog/` (um arquivo por nível) para a lista fechada.
  */
+
+/**
+ * As 8 classes conjuradoras "base" do PHB 2014 (chaves canônicas, iguais às de
+ * `shared/classes`). Cavaleiro Arcano e Trapaceiro Arcano NÃO entram aqui: usam
+ * a lista do mago com a restrição de escola da subclasse (ver `class-lists.ts`).
+ */
+export const SPELL_CLASS_KEYS = [
+  'bard',
+  'cleric',
+  'druid',
+  'paladin',
+  'ranger',
+  'sorcerer',
+  'warlock',
+  'wizard',
+] as const;
+
+export type SpellClassKey = (typeof SPELL_CLASS_KEYS)[number];
 
 /** As 8 escolas do PHB 2014. */
 export type SpellSchool =
@@ -144,6 +162,10 @@ export interface Spell {
   /** Escalonamento por nível do espaço. */
   upcast?: SpellUpcast;
 
-  /** Chaves das classes que têm a magia na lista — VAZIO até o Prompt 6.2. */
-  classes: string[];
+  /**
+   * Classes que têm a magia na lista (PHB 2014). Preenchido em `index.ts` a
+   * partir de `class-lists.ts` (fonte única das Spell Lists); o literal do
+   * catálogo fica vazio e é sobrescrito ao montar `SPELLS`.
+   */
+  classes: SpellClassKey[];
 }

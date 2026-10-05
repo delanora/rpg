@@ -6602,6 +6602,194 @@ async function main(): Promise<void> {
     JSON.stringify((mixedCasters?.classes ?? []).map((entry: any) => entry.spellcasting)),
   );
 
+  // --- 16.5 Livro de magias: catálogo, limites e escolas do CA/TA -----------
+  console.log('\n16.5) Livro de magias (catálogo, limites e escolas do CA/TA)');
+
+  /** PUT /me/spellbook do próprio jogador (define o livro de UMA classe). */
+  const setSpellbook = (token: string, body: unknown) =>
+    api('/api/characters/me/spellbook', { method: 'PUT', token, body });
+
+  // Os limites de conjuração ficam expostos no DTO da classe (Prompt 6.2).
+  const bardOne = await scenarioOf([{ classKey: 'bard', level: 1 }]);
+  check(
+    'Bardo 1 expõe truques (2), conhecidas (4), nível máx. (1) e sem grimório',
+    preparedOf(bardOne)?.cantripsKnown === 2 &&
+      preparedOf(bardOne)?.spellsKnown === 4 &&
+      preparedOf(bardOne)?.maxSpellLevel === 1 &&
+      preparedOf(bardOne)?.grimoireSize === null,
+    JSON.stringify(preparedOf(bardOne)),
+  );
+
+  const wizardLimit = await scenarioOf([{ classKey: 'wizard', level: 1 }]);
+  check(
+    'Mago 1 expõe o grimório (6), os truques (3) e nenhum teto de conhecidas',
+    preparedOf(wizardLimit)?.grimoireSize === 6 &&
+      preparedOf(wizardLimit)?.cantripsKnown === 3 &&
+      preparedOf(wizardLimit)?.spellsKnown === null,
+    JSON.stringify(preparedOf(wizardLimit)),
+  );
+
+  const clericOne = await scenarioOf([{ classKey: 'cleric', level: 1 }]);
+  check(
+    'Clérigo 1 prepara (mod. SAB + nível) e não tem teto de lista',
+    preparedOf(clericOne)?.preparedCount === Math.max(1, clericOne.derived.modifiers.wisdom + 1) &&
+      preparedOf(clericOne)?.spellsKnown === null &&
+      preparedOf(clericOne)?.grimoireSize === null,
+    JSON.stringify(preparedOf(clericOne)),
+  );
+
+  // Magia fora da lista: 'guiding-bolt' é do Clérigo, não do Bardo.
+  await scenarioOf([{ classKey: 'bard', level: 1 }]);
+  const offList = await setSpellbook(spellbook.token, {
+    classKey: 'bard',
+    entries: [{ key: 'guiding-bolt', prepared: false }],
+  });
+  check(
+    'magia fora da lista da classe é recusada (400)',
+    offList.status === 400,
+    JSON.stringify(offList.data),
+  );
+
+  // Acima do nível máximo: Bardo 1 não conjura 3º nível.
+  const aboveLevel = await setSpellbook(spellbook.token, {
+    classKey: 'bard',
+    entries: [{ key: 'fireball', prepared: false }],
+  });
+  check(
+    'magia acima do nível máximo conjurável é recusada (400)',
+    aboveLevel.status === 400,
+    JSON.stringify(aboveLevel.data),
+  );
+
+  // Acima do limite: Bardo 1 conhece no máximo 4 magias de 1º+.
+  const aboveLimit = await setSpellbook(spellbook.token, {
+    classKey: 'bard',
+    entries: ['charm-person', 'cure-wounds', 'healing-word', 'detect-magic', 'sleep'].map(
+      (key) => ({ key, prepared: false }),
+    ),
+  });
+  check(
+    'mais magias conhecidas do que o limite é recusado (400)',
+    aboveLimit.status === 400,
+    JSON.stringify(aboveLimit.data),
+  );
+
+  // Seleção válida (2 truques + 3 conhecidas) é gravada com a classe na ficha.
+  const validBard = await setSpellbook(spellbook.token, {
+    classKey: 'bard',
+    entries: [
+      { key: 'vicious-mockery', prepared: false },
+      { key: 'dancing-lights', prepared: false },
+      { key: 'charm-person', prepared: false },
+      { key: 'cure-wounds', prepared: false },
+      { key: 'sleep', prepared: false },
+    ],
+  });
+  check(
+    'seleção válida é gravada ligada ao catálogo (com classKey)',
+    validBard.status === 200 &&
+      (validBard.data?.character?.spells?.list ?? []).filter(
+        (spell: any) => spell.classKey === 'bard',
+      ).length === 5 &&
+      (validBard.data?.character?.spells?.list ?? []).every(
+        (spell: any) => spell.classKey === 'bard' && typeof spell.id === 'string',
+      ),
+    JSON.stringify(validBard.data?.character?.spells?.list),
+  );
+
+  // Magia duplicada é recusada.
+  const dupSpell = await setSpellbook(spellbook.token, {
+    classKey: 'bard',
+    entries: [
+      { key: 'charm-person', prepared: false },
+      { key: 'charm-person', prepared: false },
+    ],
+  });
+  check('a mesma magia duas vezes é recusada (400)', dupSpell.status === 400);
+
+  // Multiclasse: os limites são POR CLASSE (nunca somados). Mago 3 (grimório 10)
+  // e Clérigo 3 — uma magia do Clérigo não vale no Mago.
+  await scenarioOf([
+    { classKey: 'wizard', level: 3 },
+    { classKey: 'cleric', level: 3 },
+  ]);
+  const wizardGrimoire = await setSpellbook(spellbook.token, {
+    classKey: 'wizard',
+    entries: [
+      { key: 'magic-missile', prepared: false },
+      { key: 'shield', prepared: true },
+    ],
+  });
+  const clericList = await setSpellbook(spellbook.token, {
+    classKey: 'cleric',
+    entries: [
+      { key: 'guidance', prepared: false },
+      { key: 'bless', prepared: true },
+    ],
+  });
+  const afterMulti = await sheetOf(spellbook.token);
+  check(
+    'no multiclasse cada classe tem o seu livro (Mago e Clérigo separados)',
+    wizardGrimoire.status === 200 &&
+      clericList.status === 200 &&
+      afterMulti.spells.list.filter((spell: any) => spell.classKey === 'wizard').length === 2 &&
+      afterMulti.spells.list.filter((spell: any) => spell.classKey === 'cleric').length === 2,
+    JSON.stringify(afterMulti.spells.list),
+  );
+  const wizardClericSpell = await setSpellbook(spellbook.token, {
+    classKey: 'wizard',
+    entries: [{ key: 'bless', prepared: false }],
+  });
+  check(
+    'a lista de uma classe não vaza para a outra (Bênção não é do Mago)',
+    wizardClericSpell.status === 400,
+    JSON.stringify(wizardClericSpell.data),
+  );
+
+  // Escolas do terço-conjurador: Cavaleiro Arcano (Abjuração/Evocação).
+  await scenarioOf([{ classKey: 'fighter', level: 4, subclass: 'Cavaleiro Arcano' }]);
+  const ekWrongSchool = await setSpellbook(spellbook.token, {
+    classKey: 'fighter',
+    entries: [{ key: 'charm-person', prepared: false }],
+  });
+  const ekRightSchool = await setSpellbook(spellbook.token, {
+    classKey: 'fighter',
+    entries: [{ key: 'shield', prepared: false }],
+  });
+  check(
+    'Cavaleiro Arcano recusa escola fora de Abjuração/Evocação e aceita Escudo',
+    ekWrongSchool.status === 400 && ekRightSchool.status === 200,
+    JSON.stringify({ wrong: ekWrongSchool.data, right: ekRightSchool.data }),
+  );
+
+  // Nível "livre" (8): qualquer escola é permitida.
+  await scenarioOf([{ classKey: 'fighter', level: 8, subclass: 'Cavaleiro Arcano' }]);
+  const ekFreeSchool = await setSpellbook(spellbook.token, {
+    classKey: 'fighter',
+    entries: [{ key: 'charm-person', prepared: false }],
+  });
+  check(
+    'Cavaleiro Arcano no 8º nível aceita qualquer escola (Encantamento)',
+    ekFreeSchool.status === 200,
+    JSON.stringify(ekFreeSchool.data),
+  );
+
+  // Trapaceiro Arcano (Encantamento/Ilusão).
+  await scenarioOf([{ classKey: 'rogue', level: 4, subclass: 'Trapaceiro Arcano' }]);
+  const atWrongSchool = await setSpellbook(spellbook.token, {
+    classKey: 'rogue',
+    entries: [{ key: 'shield', prepared: false }],
+  });
+  const atRightSchool = await setSpellbook(spellbook.token, {
+    classKey: 'rogue',
+    entries: [{ key: 'charm-person', prepared: false }],
+  });
+  check(
+    'Trapaceiro Arcano recusa escola fora de Encantamento/Ilusão e aceita Enfeitiçar',
+    atWrongSchool.status === 400 && atRightSchool.status === 200,
+    JSON.stringify({ wrong: atWrongSchool.data, right: atRightSchool.data }),
+  );
+
   // --- 17. Espaços de magia -------------------------------------------------
   console.log('\n17) Espaços de magia (tabela da classe x tabela combinada)');
 

@@ -37,6 +37,7 @@ import { isConsumableItem } from '../shared/item-details.js';
 import { rollHealingDice } from '../shared/dice.js';
 import { parseJson } from '../shared/json.js';
 import { raceChoicesSchema, spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
+import { validateSpellbook } from '../shared/spells/spellbook.js';
 import {
   applySaveProficiencies,
   averageHitDie,
@@ -44,6 +45,7 @@ import {
   expertiseOptionsFor,
   expertiseSkillsState,
   computeMulticlassAdjustments,
+  effectiveSpellcasting,
   findSubclass,
   firstClassProficiencies,
   getClassDefinition,
@@ -57,6 +59,7 @@ import {
   normalizeClassEntries,
   normalizeClassState,
   normalizeProficiencies,
+  preparedSpellCountFor,
   resolveFeatureChoices,
   sameFeatureChoices,
   subclassProficiencyGrant,
@@ -1509,6 +1512,78 @@ export async function giveCoins(
 }
 
 /** O jogador gasta exatamente as moedas informadas (sem troco automático). */
+/**
+ * Define o LIVRO DE MAGIAS de UMA classe (Prompt 6.2): valida a seleção contra
+ * o PHB 2014 (lista da classe, nível máximo, limites de truques/conhecidas/
+ * preparadas e as escolas do Cavaleiro Arcano/Trapaceiro Arcano) e regrava as
+ * entradas daquela classe em `spells.list`. Magias de texto livre e de OUTRAS
+ * classes são preservadas.
+ *
+ * Os limites são POR CLASSE (no multiclasse nunca são somados).
+ */
+export async function setClassSpellbook(
+  actor: Actor,
+  input: { classKey: string; entries: { key: string; prepared: boolean }[] },
+): Promise<CharacterDto> {
+  const updated = await prisma.$transaction(async (tx) => {
+    const character = await tx.character.findUnique({ where: { userId: actor.userId } });
+    if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+    const entries = normalizeClassEntries(character.classes);
+    const entry = entries.find((item) => item.classKey === input.classKey.trim());
+    if (!entry) throw new HttpError('O personagem não tem essa classe.', 400);
+
+    const definition = getClassDefinition(entry.classKey);
+    const subclassDefinition = definition ? findSubclass(definition, entry.subclass) : null;
+    const config = effectiveSpellcasting(entry);
+    const classState = normalizeClassState(character.classState);
+    const adjustments = computeMulticlassAdjustments(entries, classState, abilitiesOf(character));
+    const abilities = effectiveAbilitiesOf(character, adjustments);
+    const ability = config?.ability ?? null;
+    const preparedCount =
+      ability && config ? preparedSpellCountFor(entry, abilityModifier(abilities[ability])) : null;
+
+    const { error, spells } = validateSpellbook(
+      {
+        classKey: entry.classKey,
+        className: definition?.name ?? entry.classKey,
+        subclassId: subclassDefinition?.id ?? null,
+        classLevel: entry.level,
+        preparedCount,
+      },
+      input.entries,
+    );
+    if (error) throw new HttpError(error, 400);
+
+    const stored = parseJson<SpellsStateInput>(spellsStateSchema, character.spells, {
+      list: [],
+      slots: {},
+    });
+    // Mantém as magias que NÃO são desta classe (texto livre ou de outra classe).
+    const others = stored.list.filter((spell) => spell.classKey !== entry.classKey);
+    const list = [
+      ...others,
+      ...spells.map((spell) => ({
+        id: spell.key,
+        name: spell.name,
+        level: spell.level,
+        school: spell.school,
+        prepared: spell.prepared,
+        description: spell.description,
+        classKey: entry.classKey,
+      })),
+    ];
+
+    return tx.character.update({
+      where: { userId: actor.userId },
+      data: { spells: { ...stored, list } as unknown as Prisma.InputJsonValue },
+    });
+  });
+
+  await publishChange(actor, updated, { spellbook: input });
+  return toSheetDto(updated, actor.username);
+}
+
 export async function spendCoins(actor: Actor, amount: CoinAmount): Promise<CharacterDto> {
   const paid = fillCoins(amount);
 

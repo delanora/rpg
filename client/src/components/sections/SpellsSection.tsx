@@ -6,14 +6,17 @@ import {
   SPELLCASTING_TYPE_LABELS,
   formatModifier,
 } from '../../dnd';
+import { useEffect, useState } from 'react';
+import { fetchCompendium } from '../../gameApi';
 import { useSheetAccess } from '../../readonly';
-import type { Spell, SpellSlot } from '../../types';
+import type { CompendiumSpell, Spell, SpellSlot } from '../../types';
 import { clampInt, newId } from '../../utils';
 import { FieldInfo } from '../FieldInfo';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
+import { SpellPicker } from './SpellPicker';
 
 const SLOT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 const EMPTY_SLOT: SpellSlot = { max: 0, used: 0 };
@@ -85,6 +88,13 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   // o TOTAL de cada nível são construção (vêm da classe e do Level Up).
   const { readOnly, lockedConstruction } = useSheetAccess();
   const { list, slots } = character.spells;
+  // Catálogo de magias (para o seletor por classe). Buscado uma vez na montagem.
+  const [catalogSpells, setCatalogSpells] = useState<CompendiumSpell[]>([]);
+  useEffect(() => {
+    fetchCompendium()
+      .then((data) => setCatalogSpells(data.spells))
+      .catch(() => undefined);
+  }, []);
   const spellcasting = character.derived.spellcasting;
   // Espaços pela regra do PHB (tabela da própria classe, ou a combinada quando
   // há duas ou mais classes conjuradoras) e Magia de Pacto à parte.
@@ -150,7 +160,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
         ...character.spells,
         list: [
           ...list,
-          { id: newId(), name: 'Nova magia', level: 1, school: '', prepared: false, description: '' },
+          { id: newId(), name: 'Nova magia', level: 1, school: '', prepared: false, description: '', classKey: '' },
         ],
       },
     });
@@ -246,6 +256,22 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
           </p>
         </div>
       ) : null}
+
+      {/* Livro de magias por classe (catálogo do PHB) — a escolha alimenta a
+          lista da ficha; o servidor revalida os limites. */}
+      {catalogSpells.length > 0
+        ? character.classes.map((entry) =>
+            entry.spellcasting && entry.spellcasting.type !== 'none' ? (
+              <SpellPicker
+                key={entry.classKey}
+                entry={entry}
+                allSpells={catalogSpells}
+                current={list.filter((spell) => spell.classKey === entry.classKey)}
+                onSaved={(saved) => update({ spells: saved.spells })}
+              />
+            ) : null,
+          )
+        : null}
 
       {combinedSlots.length > 0 || pactSlots ? (
         <>
