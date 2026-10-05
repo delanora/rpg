@@ -10629,3 +10629,201 @@ input[type='checkbox']:focus-visible,
   font-size: 0.78rem;
   color: var(--ink-faint);
 }
+
+/* ==========================================================================
+   Combate — etapa 4: log como página lateral do livro de combate
+   Cada evento é um cartão; o mais recente ganha um destaque dourado discreto.
+   Estilos preparados para tipos que o servidor ainda não envia.
+   ========================================================================== */
+
+.log-card {
+  list-style: none;
+}
+
+.log-card-body {
+  margin: 0;
+}
+
+.log-card-summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.45rem 0.55rem;
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--surface), var(--surface-2));
+  transition: border-color 0.15s ease, box-shadow 0.2s ease;
+  animation: ink-in 0.3s ease both;
+}
+
+.log-card-summary::-webkit-details-marker {
+  display: none;
+}
+
+.log-card-summary:hover {
+  border-left-color: var(--gold);
+}
+
+.log-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.log-card-icon {
+  display: inline-flex;
+  color: var(--gold-deep);
+}
+
+.log-card-actor {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.log-card-time {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+.log-card-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.log-card-primary {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+
+.log-card-secondary {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+/* Detalhes expansíveis. */
+.log-card-detail {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.45rem 0.55rem 0.5rem;
+  border-left: 3px solid var(--line);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--surface-2);
+}
+
+.log-detail-row {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.log-detail-label {
+  min-width: 5.5rem;
+  padding-top: 0.05rem;
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.log-detail-value {
+  flex: 1 1 auto;
+  color: var(--ink);
+}
+
+/* Desfecho do ataque. */
+.log-card.result.hit .log-card-primary {
+  color: var(--ok);
+}
+
+.log-card.result.miss .log-card-primary {
+  color: var(--ink-soft);
+}
+
+.log-card.result.crit .log-card-summary {
+  border-left-color: var(--gold);
+  background: linear-gradient(90deg, rgba(184, 145, 42, 0.28), var(--surface-2));
+  box-shadow: 0 0 16px -6px var(--glow);
+}
+
+.log-card.result.crit .log-card-primary {
+  color: var(--wine);
+}
+
+[data-theme='dark'] .log-card.result.crit .log-card-primary {
+  color: var(--gold-bright);
+}
+
+.log-card.result.crit .log-card-title {
+  color: var(--gold-deep);
+}
+
+.log-card.result.fail .log-card-summary {
+  border-left-color: var(--wine);
+  background: linear-gradient(90deg, rgba(122, 31, 31, 0.16), var(--surface-2));
+}
+
+.log-card.result.fail .log-card-primary {
+  color: var(--wine);
+}
+
+[data-theme='dark'] .log-card.result.fail .log-card-primary {
+  color: #e5827a;
+}
+
+/* Tipos de evento (os não emitidos hoje ficam prontos para quando chegarem). */
+.log-card.attack .log-card-icon {
+  color: var(--wine);
+}
+
+.log-card.damage .log-card-icon {
+  color: var(--warn);
+}
+
+.log-card.turn .log-card-summary {
+  border-left-style: dashed;
+  border-left-color: var(--gold-deep);
+}
+
+.log-card.turn .log-card-icon {
+  color: var(--gold);
+}
+
+.log-card.heal .log-card-icon {
+  color: var(--ok);
+}
+
+.log-card.hp .log-card-icon {
+  color: var(--danger);
+}
+
+.log-card.condition .log-card-icon {
+  color: var(--warn);
+}
+
+.log-card.rage .log-card-icon {
+  color: var(--wine-bright);
+}
+
+.log-card.feature .log-card-icon {
+  color: var(--gold-deep);
+}
+
+.log-card.spell .log-card-icon {
+  color: var(--gold);
+}
+
+/* O evento mais recente recebe um halo dourado discreto. */
+.log-card.recent .log-card-summary {
+  border-left-color: var(--gold);
+  box-shadow: inset 0 0 0 1px var(--gold-hair), 0 0 14px -8px var(--glow);
+}
