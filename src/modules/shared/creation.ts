@@ -177,6 +177,11 @@ function toRaceOption(race: Race, subrace?: Subrace): RaceOption {
     abilityBonuses[increase.ability] = (abilityBonuses[increase.ability] ?? 0) + increase.amount;
   }
 
+  // Escolhas da LINHAGEM: as da raça base somadas às da sub-raça (ex.: o truque
+  // do Alto Elfo vive na sub-raça). A entrada da linhagem é a que o passo 3
+  // valida, então precisa declarar as duas listas.
+  const choiceDefinitions = [...(race.hasChoices ?? []), ...(subrace?.hasChoices ?? [])];
+
   return {
     key: subrace ? `${race.id}:${subrace.id}` : race.id,
     name: subrace ? `${race.namePt} (${subrace.namePt})` : race.namePt,
@@ -185,8 +190,8 @@ function toRaceOption(race: Race, subrace?: Subrace): RaceOption {
     raceId: race.id,
     subraceId: subrace?.id,
     abilityBonuses,
-    abilityChoice: (race.hasChoices ?? []).filter((choice) => choice.apply === 'ability').length,
-    choices: (race.hasChoices ?? []).map((choice) => ({
+    abilityChoice: choiceDefinitions.filter((choice) => choice.apply === 'ability').length,
+    choices: choiceDefinitions.map((choice) => ({
       id: choice.id,
       label: choice.label,
       apply: choice.apply,

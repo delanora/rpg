@@ -1,3 +1,4 @@
+import { CLASS_SPELL_LISTS, getSpell } from '../spells/index.js';
 import type { Race, RaceTrait } from './types.js';
 
 /**
@@ -10,15 +11,20 @@ import type { Race, RaceTrait } from './types.js';
  * de `shared/creation.ts` (que alimenta o assistente e o compêndio) segue
  * intocado — a substituição é o Prompt 2.10.
  *
- * MAGIAS RACIAIS (truque do Alto Elfo e Magia Drow): ficam DESCRITIVAS por
- * enquanto, porque o catálogo de magias ainda não existe (`SPELL_CATALOG` é
- * `[]`, não há `shared/spells/`). Quando ele existir, basta declarar a escolha
- * (`hasChoices`) com as opções vindas do catálogo — sem reescrever os traços.
- * Ver os TODOs em cada traço.
+ * MAGIAS RACIAIS (truque do Alto Elfo e Magia Drow): desde o Prompt 6.4 são
+ * vinculadas ao catálogo (`shared/spells`). O truque do Alto Elfo é uma escolha
+ * da SUB-RAÇA (`hasChoices`) com as opções vindas da lista do Mago; a Magia Drow
+ * declara os efeitos `spell` com `minLevel` (nível de PERSONAGEM). Quem resolve
+ * é `raceSpells` em `races/index.ts` e o DTO injeta as magias derivadas.
  *
  * `speed`/`darkvision` estão em METROS (1 pé = 0,3 m: 30 pés = 9 m, 60 pés =
  * 18 m, 120 pés = 36 m, 35 pés = 10,5 m).
  */
+
+/** Opções do truque do Alto Elfo: os truques (nível 0) da lista do Mago. */
+const WIZARD_CANTRIP_OPTIONS = CLASS_SPELL_LISTS.wizard
+  .filter((id) => getSpell(id)?.level === 0)
+  .map((id) => ({ id, label: getSpell(id)?.namePt ?? id }));
 
 /** Treinamento com Arma Élfica: comum ao Alto Elfo e ao Elfo da Floresta. */
 const ELVEN_WEAPON_TRAINING: RaceTrait = {
@@ -103,9 +109,21 @@ export const elf: Race = {
           description:
             'Você conhece um truque da sua escolha da lista de truques do Mago. Inteligência ' +
             'é o atributo de conjuração dele.',
-          // TODO(catálogo de magias): quando `shared/spells/` existir, declarar
-          // hasChoices id 'high-elf-cantrip' com as opções de spellsByClass('wizard', 0)
-          // e refletir o truque em character.spells como magia conhecida "de graça".
+          // A magia vem da escolha da sub-raça (`hasChoices` abaixo), pelo id
+          // da opção escolhida. Inteligência é o atributo de conjuração.
+          mechanicalEffect: {
+            type: 'spell',
+            spellChoiceId: 'high-elf-cantrip',
+            ability: 'intelligence',
+          },
+        },
+      ],
+      hasChoices: [
+        {
+          id: 'high-elf-cantrip',
+          label: 'Truque do Mago',
+          apply: 'spell',
+          options: WIZARD_CANTRIP_OPTIONS,
         },
       ],
     },
@@ -171,11 +189,27 @@ export const elf: Race = {
             'Fogo das Fadas e pode lançá-la uma vez por descanso longo; no 5º nível, aprende ' +
             'Escuridão e pode lançá-la uma vez por descanso longo. Carisma é o atributo de ' +
             'conjuração dessas magias.',
-          // TODO(catálogo de magias): o catálogo de magias ainda não existe
-          // (SPELL_CATALOG é []). Quando existir, ligar os truques (spellsByClass) e o
-          // recurso de 1 uso por descanso longo escalonando pelo NÍVEL TOTAL DO
-          // PERSONAGEM — mesma decisão da Arma de Sopro do Draconato: representado no
-          // texto, sem tipo de efeito novo.
+          // Truque à vontade + as duas magias 1x/descanso longo, escalonando pelo
+          // NÍVEL TOTAL do personagem (minLevel). Carisma é o atributo da raça.
+          mechanicalEffects: [
+            { type: 'spell', spellId: 'dancing-lights', ability: 'charisma' },
+            {
+              type: 'spell',
+              spellId: 'faerie-fire',
+              minLevel: 3,
+              castLevel: 1,
+              perRest: 'long',
+              ability: 'charisma',
+            },
+            {
+              type: 'spell',
+              spellId: 'darkness',
+              minLevel: 5,
+              castLevel: 2,
+              perRest: 'long',
+              ability: 'charisma',
+            },
+          ],
         },
       ],
     },

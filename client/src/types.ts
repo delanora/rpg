@@ -225,6 +225,20 @@ export interface Spell {
    * não removível. Só vem do servidor; nunca é gravada na ficha.
    */
   oath?: boolean;
+  /**
+   * Magia DERIVADA da RAÇA (Drow, Alto Elfo, Gnomo da Floresta, Tiefling):
+   * sempre preparada, fora de qualquer limite de classe e conjurada sem espaço.
+   * Só vem do servidor; nunca é gravada na ficha.
+   */
+  race?: boolean;
+  /** Atributo de conjuração da magia racial (independente da classe). */
+  raceAbility?: AbilityKey;
+  /** CD da magia racial (8 + proficiência + mod. do atributo da raça). */
+  raceSaveDC?: number;
+  /** Bônus de ataque da magia racial. */
+  raceAttackBonus?: number;
+  /** Contador das magias raciais 1x/descanso longo (sem reset automático). */
+  raceUses?: { max: number; used: number };
 }
 
 export interface SpellSlot {
@@ -1094,8 +1108,8 @@ export interface RaceChoiceOption {
 export interface RaceChoice {
   id: string;
   label: string;
-  /** O que a escolha concede: atributo, perícia ou ferramenta. */
-  apply?: 'ability' | 'skill' | 'tool';
+  /** O que a escolha concede: atributo, perícia, ferramenta ou magia. */
+  apply?: 'ability' | 'skill' | 'tool' | 'spell';
   options: RaceChoiceOption[];
 }
 

@@ -1,4 +1,5 @@
 import { ABILITY_KEYS, type AbilityKey } from '../dnd5e.js';
+import { getSpell, SPELL_SCHOOL_LABELS } from '../spells/index.js';
 import { dragonborn } from './dragonborn.js';
 import { dwarf } from './dwarf.js';
 import { elf } from './elf.js';
@@ -348,4 +349,65 @@ export function applyRaceWeaponProficiencies(
 /** Idiomas concedidos pela raça (texto informativo; sem campo de idioma antes). */
 export function raceLanguages(input: RaceResolutionInput): string[] {
   return input.raceId ? [...(getRace(input.raceId)?.languages ?? [])] : [];
+}
+
+/** Uma magia racial já resolvida contra o catálogo (`shared/spells`). */
+export interface RaceSpellGrant {
+  /** Id estável do catálogo (ex.: 'faerie-fire'). */
+  key: string;
+  name: string;
+  /** Nível da MAGIA (0 = truque). */
+  level: number;
+  /** Rótulo da escola em português. */
+  school: string;
+  description: string;
+  /** Atributo de conjuração da raça (independente da classe). */
+  ability: AbilityKey;
+  /** Nível de ESPAÇO usado ao conjurar; `undefined` = nível da magia. */
+  castLevel?: number;
+  /** 'long' = 1x por descanso longo; `undefined` = à vontade (truque). */
+  perRest?: 'long';
+  /** Id do traço racial que concede a magia. */
+  traitId: string;
+}
+
+/**
+ * Magias concedidas pela RAÇA no NÍVEL TOTAL do personagem (Prompt 6.4).
+ *
+ * Percorre os traços (raça + sub-raça) e resolve os efeitos `type: 'spell'`: a
+ * magia vem fixa (`spellId`) ou de uma escolha (`spellChoiceId` → id da opção
+ * em `choices`). Filtra os efeitos pelo `minLevel` (nível de PERSONAGEM, não de
+ * classe) e ignora ids fora do catálogo. Não se repetem.
+ */
+export function raceSpells(input: RaceResolutionInput, totalLevel = 1): RaceSpellGrant[] {
+  const level = Math.max(1, Math.floor(totalLevel));
+  const choices = input.choices ?? {};
+  const seen = new Set<string>();
+  const grants: RaceSpellGrant[] = [];
+
+  for (const trait of raceTraits(input)) {
+    for (const effect of effectsOf(trait)) {
+      if (effect.type !== 'spell') continue;
+      if ((effect.minLevel ?? 1) > level) continue;
+      const spellId =
+        effect.spellId ?? (effect.spellChoiceId ? choices[effect.spellChoiceId] : undefined);
+      if (!spellId || seen.has(spellId)) continue;
+      const spell = getSpell(spellId);
+      if (!spell) continue;
+      seen.add(spellId);
+      grants.push({
+        key: spell.id,
+        name: spell.namePt,
+        level: spell.level,
+        school: SPELL_SCHOOL_LABELS[spell.school],
+        description: spell.description.slice(0, 2000),
+        ability: effect.ability ?? 'intelligence',
+        castLevel: effect.castLevel,
+        perRest: effect.perRest,
+        traitId: trait.id,
+      });
+    }
+  }
+
+  return grants;
 }

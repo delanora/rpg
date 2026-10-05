@@ -4628,7 +4628,12 @@ async function main(): Promise<void> {
   );
   check(
     'criação finalizada: lista de magias e TOTAL do espaço não mudam',
-    (slotsAfter?.list ?? []).length === 0 && slotsAfter?.slots?.['1']?.max === 2,
+    // As magias DERIVADAS (juramento/raça) não são gravadas: a lista contada é a
+    // que o jogador realmente escolheu.
+    (slotsAfter?.list ?? []).filter(
+      (spell: any) => spell.oath !== true && spell.race !== true,
+    ).length === 0 &&
+      slotsAfter?.slots?.['1']?.max === 2,
     JSON.stringify(slotsAfter),
   );
   const masterProficiencies = await api(`/api/characters/${playerCharacterId}`, {
@@ -6914,6 +6919,154 @@ async function main(): Promise<void> {
       getSpell('shield-of-faith')?.classes.includes('paladin') === true &&
       getSpell('find-steed')?.classes.includes('paladin') === true,
     JSON.stringify(getSpell('bless')?.classes),
+  );
+
+  // --- 16.7 Magias raciais (Drow, Alto Elfo, Gnomo da Floresta, Tiefling) ----
+  console.log('\n16.7) Magias raciais vinculadas ao catálogo');
+
+  /** Magias DERIVADAS de raça na ficha (marca `race`). */
+  const raceSpellsOf = (sheet: any) =>
+    (sheet?.spells?.list ?? []).filter((spell: any) => spell.race === true);
+
+  /** Grava a raça/sub-raça (e as escolhas) direto no banco, como os outros preparos. */
+  const setCharacterRace = (userId: string, data: Record<string, unknown>) =>
+    prisma.character.update({ where: { userId }, data: data as any });
+
+  // Zera as magias gravadas: nenhuma racial deve ser mascarada por uma escolha
+  // anterior, e a contagem de classe fica isolada.
+  await prisma.character.update({
+    where: { userId: spellbook.userId },
+    data: { spells: { list: [], slots: {} } as any },
+  });
+
+  // Drow no 5º nível: truque + as duas magias 1x/descanso longo, com CD/ataque.
+  await setCharacterRace(spellbook.userId, {
+    raceId: 'elf',
+    subraceId: 'drow-elf',
+    raceChoices: {},
+    race: 'Elfo (Drow)',
+  });
+  const drowFive = await scenarioOf([{ classKey: 'wizard', level: 5 }]);
+  check(
+    'Drow 5 tem Luzes Dançantes, Fogo das Fadas e Escuridão (todas sempre preparadas)',
+    JSON.stringify(raceSpellsOf(drowFive).map((s: any) => s.id).sort()) ===
+      JSON.stringify(['dancing-lights', 'darkness', 'faerie-fire']) &&
+      raceSpellsOf(drowFive).every(
+        (s: any) => s.prepared === true && s.raceAbility === 'charisma',
+      ),
+    JSON.stringify(raceSpellsOf(drowFive)),
+  );
+  const drowFaerie = raceSpellsOf(drowFive).find((s: any) => s.id === 'faerie-fire');
+  check(
+    'as magias 1x/descanso longo têm contador (1/0) e o truque não',
+    drowFaerie?.raceUses?.max === 1 &&
+      drowFaerie?.raceUses?.used === 0 &&
+      raceSpellsOf(drowFive).find((s: any) => s.id === 'dancing-lights')?.raceUses === undefined,
+    JSON.stringify(raceSpellsOf(drowFive).map((s: any) => [s.id, s.raceUses])),
+  );
+  check(
+    'a magia racial expõe CD (8 + prof. + CAR) e ataque no atributo da raça',
+    drowFaerie?.raceSaveDC === 8 + 3 + 3 && drowFaerie?.raceAttackBonus === 3 + 3,
+    JSON.stringify({ dc: drowFaerie?.raceSaveDC, atk: drowFaerie?.raceAttackBonus }),
+  );
+  check(
+    'as magias raciais não contam no limite de classe nem entram na lista gravada',
+    (drowFive?.spells?.list ?? []).filter(
+      (s: any) => s.classKey === 'wizard' && s.race !== true,
+    ).length === 0 &&
+      preparedOf(drowFive)?.preparedCount ===
+        Math.max(1, drowFive.derived.modifiers.intelligence + 5),
+    JSON.stringify({
+      stored: (drowFive?.spells?.list ?? []).length,
+      prepared: preparedOf(drowFive)?.preparedCount,
+    }),
+  );
+
+  // Nível 3 (TOTAL): Fogo das Fadas entra, Escuridão ainda não.
+  const drowThree = await scenarioOf([{ classKey: 'wizard', level: 3 }]);
+  check(
+    'Drow no 3º nível já tem Fogo das Fadas, mas não Escuridão',
+    raceSpellsOf(drowThree).some((s: any) => s.id === 'faerie-fire') &&
+      !raceSpellsOf(drowThree).some((s: any) => s.id === 'darkness'),
+    JSON.stringify(raceSpellsOf(drowThree).map((s: any) => s.id)),
+  );
+
+  // O nível é o TOTAL, não o de classe: Paladino 1 + Mago 2 = 3 → Fogo das Fadas.
+  const drowMulticlass = await scenarioOf([
+    { classKey: 'paladin', level: 1 },
+    { classKey: 'wizard', level: 2 },
+  ]);
+  check(
+    'o nível das magias raciais é o TOTAL (Paladino 1 + Mago 2 = 3), não o de classe',
+    drowMulticlass.level === 3 &&
+      raceSpellsOf(drowMulticlass).some((s: any) => s.id === 'faerie-fire'),
+    JSON.stringify({
+      level: drowMulticlass.level,
+      races: raceSpellsOf(drowMulticlass).map((s: any) => s.id),
+    }),
+  );
+
+  // Alto Elfo: a escolha do truque do Mago vira magia racial (Inteligência).
+  await setCharacterRace(spellbook.userId, {
+    raceId: 'elf',
+    subraceId: 'high-elf',
+    raceChoices: { 'high-elf-cantrip': 'fire-bolt' },
+    race: 'Elfo (Alto Elfo)',
+  });
+  const highElf = await scenarioOf([{ classKey: 'wizard', level: 3 }]);
+  check(
+    'Alto Elfo concede o truque escolhido (Raio de Fogo) com Inteligência',
+    raceSpellsOf(highElf).length === 1 &&
+      raceSpellsOf(highElf)[0].id === 'fire-bolt' &&
+      raceSpellsOf(highElf)[0].raceAbility === 'intelligence' &&
+      raceSpellsOf(highElf)[0].level === 0,
+    JSON.stringify(raceSpellsOf(highElf)),
+  );
+
+  // Gnomo da Floresta: Ilusão Menor fixa (Inteligência).
+  await setCharacterRace(spellbook.userId, {
+    raceId: 'gnome',
+    subraceId: 'forest-gnome',
+    raceChoices: {},
+    race: 'Gnomo (Gnomo da Floresta)',
+  });
+  const forestGnome = await scenarioOf([{ classKey: 'wizard', level: 3 }]);
+  check(
+    'Gnomo da Floresta concede Ilusão Menor com Inteligência',
+    raceSpellsOf(forestGnome).length === 1 &&
+      raceSpellsOf(forestGnome)[0].id === 'minor-illusion' &&
+      raceSpellsOf(forestGnome)[0].raceAbility === 'intelligence',
+    JSON.stringify(raceSpellsOf(forestGnome)),
+  );
+
+  // Tiefling no 5º: Taumaturgia + Repreensão Infernal + Escuridão (Carisma).
+  await setCharacterRace(spellbook.userId, {
+    raceId: 'tiefling',
+    subraceId: null,
+    raceChoices: {},
+    race: 'Tiefling',
+  });
+  const tieflingFive = await scenarioOf([{ classKey: 'wizard', level: 5 }]);
+  check(
+    'Tiefling 5 tem Taumaturgia, Repreensão Infernal e Escuridão (Carisma)',
+    JSON.stringify(raceSpellsOf(tieflingFive).map((s: any) => s.id).sort()) ===
+      JSON.stringify(['darkness', 'hellish-rebuke', 'thaumaturgy']) &&
+      raceSpellsOf(tieflingFive).every((s: any) => s.raceAbility === 'charisma'),
+    JSON.stringify(raceSpellsOf(tieflingFive)),
+  );
+
+  // Sem raça não há magia racial.
+  await setCharacterRace(spellbook.userId, {
+    raceId: null,
+    subraceId: null,
+    raceChoices: {},
+    race: '',
+  });
+  const noRace = await scenarioOf([{ classKey: 'wizard', level: 5 }]);
+  check(
+    'sem raça nenhuma magia racial aparece',
+    raceSpellsOf(noRace).length === 0,
+    JSON.stringify(raceSpellsOf(noRace)),
   );
 
   // --- 17. Espaços de magia -------------------------------------------------
@@ -10981,9 +11134,27 @@ async function main(): Promise<void> {
       JSON.stringify(hellish),
     );
     check(
-      'Legado Infernal é descritivo (sem efeito mecânico)',
-      tiefling?.traits.find((t) => t.id === 'infernal-legacy')?.mechanicalEffect === undefined &&
-        tiefling?.traits.find((t) => t.id === 'infernal-legacy')?.mechanicalEffects === undefined,
+      'Legado Infernal concede 3 magias do catálogo (Taumaturgia + 2 por nível de PERSONAGEM)',
+      (() => {
+        const effects =
+          tiefling?.traits.find((t) => t.id === 'infernal-legacy')?.mechanicalEffects ?? [];
+        return (
+          effects.length === 3 &&
+          effects.every((e) => e.type === 'spell' && e.ability === 'charisma') &&
+          effects.some((e) => e.spellId === 'thaumaturgy' && e.minLevel === undefined) &&
+          effects.some(
+            (e) =>
+              e.spellId === 'hellish-rebuke' &&
+              e.minLevel === 3 &&
+              e.castLevel === 2 &&
+              e.perRest === 'long',
+          ) &&
+          effects.some(
+            (e) => e.spellId === 'darkness' && e.minLevel === 5 && e.perRest === 'long',
+          )
+        );
+      })(),
+      JSON.stringify(tiefling?.traits.find((t) => t.id === 'infernal-legacy')?.mechanicalEffects),
     );
   }
 
@@ -11135,6 +11306,74 @@ async function main(): Promise<void> {
           body: { step: 3, race: 'Anão' },
         })
       ).status === 400,
+    );
+
+    // --- Truque do Alto Elfo (escolha da SUB-RAÇA, Prompt 6.4) ---------------
+    // A escolha é obrigatória, validada contra os truques do Mago e descartada
+    // ao trocar de raça (o passo 3 reconstrói `raceChoices` da opção nova).
+    const highElfOption = RACE_CATALOG.find((race) => race.key === 'elf:high-elf');
+    check(
+      'a opção do Alto Elfo expõe a escolha do truque do Mago (spell)',
+      (highElfOption?.choices ?? []).some(
+        (choice) => choice.id === 'high-elf-cantrip' && choice.apply === 'spell',
+      ) &&
+        (highElfOption?.choices ?? []).find((choice) => choice.id === 'high-elf-cantrip')
+          ?.options.length === 16,
+      JSON.stringify(
+        highElfOption?.choices?.find((choice) => choice.id === 'high-elf-cantrip')?.options
+          ?.length,
+      ),
+    );
+    check(
+      'Alto Elfo sem a escolha do truque é recusado (400)',
+      (
+        await api('/api/characters/me/creation', {
+          method: 'PATCH',
+          token: racesToken,
+          body: { step: 3, race: 'Elfo (Alto Elfo)' },
+        })
+      ).status === 400,
+    );
+    check(
+      'Alto Elfo recusa um truque fora da lista do Mago (400)',
+      (
+        await api('/api/characters/me/creation', {
+          method: 'PATCH',
+          token: racesToken,
+          body: {
+            step: 3,
+            race: 'Elfo (Alto Elfo)',
+            raceChoices: { 'high-elf-cantrip': 'fireball' },
+          },
+        })
+      ).status === 400,
+    );
+    const highElfGood = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: {
+        step: 3,
+        race: 'Elfo (Alto Elfo)',
+        raceChoices: { 'high-elf-cantrip': 'fire-bolt' },
+      },
+    });
+    check(
+      'Alto Elfo aceita um truque do Mago (200) e grava a escolha',
+      highElfGood.status === 200 &&
+        highElfGood.data?.character?.subraceId === 'high-elf' &&
+        highElfGood.data?.character?.raceChoices?.['high-elf-cantrip'] === 'fire-bolt',
+      JSON.stringify(highElfGood.data?.character?.raceChoices),
+    );
+    const highElfSwitched = await api('/api/characters/me/creation', {
+      method: 'PATCH',
+      token: racesToken,
+      body: { step: 3, race: 'Gnomo (Gnomo da Floresta)' },
+    });
+    check(
+      'trocar para Gnomo da Floresta descarta a escolha do Alto Elfo',
+      highElfSwitched.status === 200 &&
+        highElfSwitched.data?.character?.raceChoices?.['high-elf-cantrip'] === undefined,
+      JSON.stringify(highElfSwitched.data?.character?.raceChoices),
     );
 
     const drowStep = await api('/api/characters/me/creation', {

@@ -170,6 +170,24 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
     update({ spells: { ...character.spells, list: list.filter((spell) => spell.id !== id) } });
   }
 
+  /**
+   * Contador das magias raciais 1x/descanso longo: alterna usado/disponível.
+   * NÃO há reset automático nesta fase (Categoria B) — o uso só muda por ação
+   * explícita do jogador. O estado vive em `classState.used`.
+   */
+  function toggleRaceUse(spell: Spell): void {
+    if (!spell.raceUses) return;
+    const id = `race-spell:${spell.id}`;
+    const used = character.classState.used[id] ?? 0;
+    const next = used >= spell.raceUses.max ? 0 : used + 1;
+    update({
+      classState: {
+        ...character.classState,
+        used: { ...character.classState.used, [id]: next },
+      },
+    });
+  }
+
   // Fonte de Magia (Feiticeiro): converte pontos de feitiçaria em espaços de
   // magia gastos e vice-versa, usando os campos já existentes (used/total).
   const sorcery = character.classAdjustments.resources.find(
@@ -267,7 +285,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                 entry={entry}
                 allSpells={catalogSpells}
                 current={list.filter(
-                  (spell) => spell.classKey === entry.classKey && !spell.oath,
+                  (spell) => spell.classKey === entry.classKey && !spell.oath && !spell.race,
                 )}
                 onSaved={(saved) => update({ spells: saved.spells })}
               />
@@ -435,71 +453,120 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
             <ul className="spell-list">
               {list
                 .filter((spell) => spell.level === level)
-                .map((spell) => (
-                  <li className={spell.oath ? 'spell-row oath' : 'spell-row'} key={spell.id}>
-                    <input
-                      type="checkbox"
-                      checked={spell.oath ? true : spell.prepared}
-                      disabled={lockedConstruction || Boolean(spell.oath)}
-                      aria-label={`Preparada: ${spell.name}`}
-                      title={spell.oath ? 'Sempre preparada (magia de Juramento)' : 'Preparada'}
-                      onChange={(event) => patchSpell(spell.id, { prepared: event.target.checked })}
-                    />
-                    <InlineField
-                      value={spell.name}
-                      readOnly={lockedConstruction || Boolean(spell.oath)}
-                      ariaLabel="Nome da magia"
-                      onCommit={(value) => {
-                        const name = value.trim();
-                        if (name) patchSpell(spell.id, { name });
-                      }}
-                    />
-                    <InlineField
-                      value={spell.school}
-                      mode="select"
-                      options={SPELL_SCHOOLS}
-                      readOnly={lockedConstruction || Boolean(spell.oath)}
-                      ariaLabel="Escola da magia"
-                      onCommit={(value) => patchSpell(spell.id, { school: value })}
-                    />
-                    <InlineField
-                      value={spell.level}
-                      mode="number"
-                      min={0}
-                      max={9}
-                      readOnly={lockedConstruction || Boolean(spell.oath)}
-                      ariaLabel="Nível da magia"
-                      onCommit={(value) =>
-                        patchSpell(spell.id, { level: clampInt(value, 0, 9, spell.level) })
+                .map((spell) => {
+                  // Magias DERIVADAS (juramento ou raça): sempre preparadas, fora
+                  // do limite e não editáveis/removíveis.
+                  const derived = Boolean(spell.oath || spell.race);
+                  return (
+                    <li
+                      className={
+                        spell.oath ? 'spell-row oath' : spell.race ? 'spell-row race' : 'spell-row'
                       }
-                    />
-                    <InlineField
-                      className="spell-description"
-                      value={spell.description}
-                      readOnly={lockedConstruction || Boolean(spell.oath)}
-                      placeholder="efeito / descrição"
-                      ariaLabel="Descrição da magia"
-                      onCommit={(value) => patchSpell(spell.id, { description: value })}
-                    />
-                    {spell.oath ? (
-                      <span
-                        className="spell-oath-badge"
-                        title="Magia de Juramento: sempre preparada e fora do limite de preparadas"
-                      >
-                        <Icon name="shield" size={12} /> Juramento
-                      </span>
-                    ) : lockedConstruction ? null : (
-                      <button
-                        type="button"
-                        className="btn btn-danger btn-small"
-                        onClick={() => removeSpell(spell.id)}
-                        aria-label={`Remover ${spell.name}`}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </li>
-                ))}
+                      key={spell.id}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={derived ? true : spell.prepared}
+                        disabled={lockedConstruction || derived}
+                        aria-label={`Preparada: ${spell.name}`}
+                        title={
+                          spell.oath
+                            ? 'Sempre preparada (magia de Juramento)'
+                            : spell.race
+                              ? 'Magia racial (sempre disponível)'
+                              : 'Preparada'
+                        }
+                        onChange={(event) => patchSpell(spell.id, { prepared: event.target.checked })}
+                      />
+                      <InlineField
+                        value={spell.name}
+                        readOnly={lockedConstruction || derived}
+                        ariaLabel="Nome da magia"
+                        onCommit={(value) => {
+                          const name = value.trim();
+                          if (name) patchSpell(spell.id, { name });
+                        }}
+                      />
+                      <InlineField
+                        value={spell.school}
+                        mode="select"
+                        options={SPELL_SCHOOLS}
+                        readOnly={lockedConstruction || derived}
+                        ariaLabel="Escola da magia"
+                        onCommit={(value) => patchSpell(spell.id, { school: value })}
+                      />
+                      <InlineField
+                        value={spell.level}
+                        mode="number"
+                        min={0}
+                        max={9}
+                        readOnly={lockedConstruction || derived}
+                        ariaLabel="Nível da magia"
+                        onCommit={(value) =>
+                          patchSpell(spell.id, { level: clampInt(value, 0, 9, spell.level) })
+                        }
+                      />
+                      <InlineField
+                        className="spell-description"
+                        value={spell.description}
+                        readOnly={lockedConstruction || derived}
+                        placeholder="efeito / descrição"
+                        ariaLabel="Descrição da magia"
+                        onCommit={(value) => patchSpell(spell.id, { description: value })}
+                      />
+                      {spell.oath ? (
+                        <span
+                          className="spell-oath-badge"
+                          title="Magia de Juramento: sempre preparada e fora do limite de preparadas"
+                        >
+                          <Icon name="shield" size={12} /> Juramento
+                        </span>
+                      ) : spell.race ? (
+                        <span className="spell-race-tag">
+                          <span
+                            className="spell-race-badge"
+                            title={
+                              'Magia racial: sempre preparada, fora do limite de classe e conjurada sem espaço' +
+                              (spell.raceSaveDC ? ` · CD ${spell.raceSaveDC}` : '') +
+                              (spell.raceAttackBonus !== undefined
+                                ? ` · ataque ${formatModifier(spell.raceAttackBonus)}`
+                                : '') +
+                              (spell.raceAbility
+                                ? ` · ${ABILITY_ABBREVIATIONS[spell.raceAbility]}`
+                                : '')
+                            }
+                          >
+                            <Icon name="sparkle" size={12} /> Raça
+                          </span>
+                          {spell.raceUses ? (
+                            <button
+                              type="button"
+                              className="btn btn-small"
+                              disabled={readOnly}
+                              title={
+                                spell.raceUses.used >= spell.raceUses.max
+                                  ? 'Devolver o uso (descanso longo)'
+                                  : 'Marcar como usado (1x por descanso longo)'
+                              }
+                              onClick={() => toggleRaceUse(spell)}
+                            >
+                              {spell.raceUses.used >= spell.raceUses.max ? 'repor' : 'usar'}
+                            </button>
+                          ) : null}
+                        </span>
+                      ) : lockedConstruction ? null : (
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-small"
+                          onClick={() => removeSpell(spell.id)}
+                          aria-label={`Remover ${spell.name}`}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
             </ul>
           </div>
         ))

@@ -2421,16 +2421,31 @@ MAGIAS DE JURAMENTO DO PALADINO (Prompt 6.3): cada juramento declara
    nível, o level-down as remove sozinho. Na aba Magias ganham o selo "Juramento"
    e não podem ser removidas/despreparadas; o resumo do Level Up mostra os nomes
    (a descrição das características "Magias de Juramento" é gerada do catálogo).
-   Cobertura na seção 16.6 do smoke. [PENDENTE] magias raciais (Elfo/Tiefling/
-   Gnomo), os Domínios do Clérigo/Círculo da Terra/Arcanum Místico e a conjuração
-   de fato — os TODOs seguem registrados.
+   Cobertura na seção 16.6 do smoke.
+MAGIAS RACIAIS (Prompt 6.4): os traços de raça declaram efeitos `spell`
+   (`shared/races/{elf,gnome,tiefling}.ts`) com `spellId` (fixa) ou
+   `spellChoiceId` (escolha da sub-raça, ex.: o truque do Alto Elfo), `ability`
+   (atributo da raça), `minLevel` (nível de PERSONAGEM, não de classe),
+   `castLevel` e `perRest: 'long'`. `raceSpells` (`shared/races/index.ts`)
+   resolve o que está liberado no nível e o DTO injeta as magias como DERIVADAS
+   no `spells.list` (marca `race: true`, sempre preparadas, fora de QUALQUER
+   limite de classe e conjuradas sem espaço), sem duplicar o que o jogador já
+   escolheu. Cada magia racial expõe o atributo, a CD (8 + proficiência + mod.) e
+   o ataque; as 1x/descanso longo trazem um contador (`raceUses`, sem reset
+   automático — a automação de descanso é a Fase 4/5). O `hasChoices` da
+   SUB-RAÇA entra no `toRaceOption` e o passo 3 valida a escolha contra os
+   truques do Mago (descartada ao trocar de raça). Como depende do nível total,
+   o level-down as remove sozinho. Cobertura na seção 16.7 do smoke. [PENDENTE]
+   os Domínios do Clérigo/Círculo da Terra/Arcanum Místico e a conjuração de
+   fato — os TODOs seguem registrados.
 [LACUNA] RAÇAS E ANTECEDENTES: o Prompt 2.10 fechou a raça pelo assistente (atributos,
    deslocamento, visão no escuro, resistências, idiomas e proficiências de perícia/
    ferramenta por escolha), mas seguem sem tratamento: proficiência de arma/armadura
-   por raça, magias raciais (catálogo pronto em `shared/spells`, falta o vínculo por
-   classe/raça do Prompt 6.2), escalonamento por nível
-   de personagem, vantagem em salvaguarda (saveAdvantage) e o flag de resistência
-   condicional. Do ANTECEDENTE, só as 2 perícias são modeladas (ferramentas/idiomas/
+   por raça, escalonamento por nível de personagem, vantagem em salvaguarda
+   (saveAdvantage) e o flag de resistência condicional. As MAGIAS RACIAIS das 4
+   linhagens do PHB (Drow, Alto Elfo, Gnomo da Floresta e Tiefling) foram vinculadas
+   ao catálogo no Prompt 6.4; as raças fora do PHB (Spirithost/Mandrake/Tabaxi)
+   seguem sem vínculo. Do ANTECEDENTE, só as 2 perícias são modeladas (ferramentas/idiomas/
    característica própria não).
 [IMPLEMENTADO/FASE 1.2] PROFICIÊNCIA DE ARMADURA: `characters.proficiencies` registra
    armaduras/armas/ferramentas (concedidas pela 1ª classe e pela entrada por

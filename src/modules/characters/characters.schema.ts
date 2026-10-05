@@ -178,6 +178,28 @@ export const spellSchema = z.object({
    * do limite e não removível. Nunca vai ao banco — só o DTO a marca assim.
    */
   oath: z.boolean().optional(),
+  /**
+   * Magia DERIVADA da RAÇA (Prompt 6.4), não gravada: sempre preparada, fora do
+   * limite e conjurada sem espaço. Come só do DTO.
+   */
+  race: z.boolean().optional(),
+  /** Atributo de conjuração da magia racial (independente da classe). */
+  raceAbility: z
+    .enum(ABILITY_KEYS as unknown as [AbilityKey, ...AbilityKey[]])
+    .optional(),
+  /** CD da magia racial (8 + proficiência + mod. do atributo da raça). */
+  raceSaveDC: z.number().int().optional(),
+  /** Bônus de ataque da magia racial (proficiência + mod. do atributo da raça). */
+  raceAttackBonus: z.number().int().optional(),
+  /** Nível de ESPAÇO usado ao conjurar a magia racial (ex.: Repreensão Infernal = 2). */
+  raceCastLevel: z.number().int().min(0).max(9).optional(),
+  /**
+   * Contador das magias raciais 1x/descanso longo (o reset automático NÃO existe
+   * nesta fase — Categoria B do Prompt 6.4). Ausente nas magias à vontade.
+   */
+  raceUses: z
+    .object({ max: z.number().int(), used: z.number().int() })
+    .optional(),
 });
 
 export const spellSlotSchema = z.object({

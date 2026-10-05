@@ -73,6 +73,12 @@ export interface Subrace {
   /** Sobrescreve a visão no escuro da raça base, em METROS (ex.: Drow). */
   darkvision?: number;
   traits: RaceTrait[];
+  /**
+   * Escolhas que a SUB-RAÇA exige (ex.: o truque do Alto Elfo). Segue o mesmo
+   * formato de `Race.hasChoices`; o assistente e o `toRaceOption` somam as duas
+   * listas na entrada da linhagem.
+   */
+  hasChoices?: RaceChoiceDefinition[];
 }
 
 /**
@@ -82,11 +88,14 @@ export interface Subrace {
  * - `ability`: o id da opção é a chave de um atributo e soma +1 nele (Meio-Elfo).
  * - `skill`: o id da opção é a chave de uma perícia (SKILLS) que vira proficiência.
  * - `tool`: o id da opção é o id de uma ferramenta do catálogo.
+ * - `spell`: o id da opção é o id de uma magia do catálogo (`shared/spells`),
+ *   concedida por um efeito `spell` com o MESMO id em `spellChoiceId` (o truque
+ *   do Alto Elfo).
  *
  * Ausente = escolha resolvida por outro caminho (ex.: a ancestralidade do
  * Draconato alimenta um efeito `resistanceFromChoice` via `choiceId`).
  */
-export type RaceChoiceApply = 'ability' | 'skill' | 'tool';
+export type RaceChoiceApply = 'ability' | 'skill' | 'tool' | 'spell';
 
 /** Uma opção que a raça oferece ao jogador (ex.: a ancestralidade do Draconato). */
 export interface RaceChoiceDefinition {

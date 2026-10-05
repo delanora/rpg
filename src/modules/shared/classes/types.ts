@@ -114,6 +114,16 @@ export interface ClassFeatureResource {
      * shared/races).
      */
     | 'luckyReroll'
+    /**
+     * MAGIA concedida por uma característica de RAÇA (Prompt 6.4): Magia Drow,
+     * truque do Alto Elfo, Ilusionista Natural e Legado Infernal. A magia vem em
+     * `spellId` (fixa) ou `spellChoiceId` (o id da escolha em `raceChoices` cuja
+     * opção é o id da magia). `ability` é o atributo de conjuração da raça,
+     * `minLevel` o nível de PERSONAGEM em que ela é concedida e `castLevel` o
+     * nível de espaço usado (ex.: Repreensão Infernal = 2). `perRest: 'long'`
+     * marca uso 1x por descanso longo (sem reset automático nesta fase).
+     */
+    | 'spell'
     | 'other';
   /** Identificador do toggle/recurso (ex.: 'rage'). Vazio = id da feature. */
   id?: string;
@@ -146,6 +156,16 @@ export interface ClassFeatureResource {
   value?: number;
   /** Valor escalonado por nível: usa o maior nível menor ou igual ao atual. */
   scaling?: { level: number; value: number }[];
+  /** Id da magia concedida por `type: 'spell'` (id do catálogo `shared/spells`). */
+  spellId?: string;
+  /** Id da ESCOLHA (em `raceChoices`) cuja opção é o id da magia (`type: 'spell'`). */
+  spellChoiceId?: string;
+  /** Nível de PERSONAGEM em que `type: 'spell'` é concedida (padrão 1). */
+  minLevel?: number;
+  /** Nível de ESPAÇO usado ao conjurar (`type: 'spell'`); vazio = nível da magia. */
+  castLevel?: number;
+  /** Uso limitado por descanso (`type: 'spell'`): só 'long' hoje; vazio = à vontade. */
+  perRest?: 'long';
   /** Atributo concedido/afetado (`save`, `abilityBonus`). */
   ability?: AbilityKey;
   /** Atributos das salvaguardas em `type: 'saveAdvantage'` (ex.: INT/SAB/CAR). */
