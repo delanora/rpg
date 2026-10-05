@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
-import { damageExpression } from '../modules/shared/attacks.js';
+import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
 import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
@@ -13,6 +13,7 @@ import {
   raceHpBonus,
   raceHpBonusDelta,
 } from '../modules/shared/races/index.js';
+import { getSpell, spellsByLevel, SPELLS } from '../modules/shared/spells/index.js';
 
 /**
  * Smoke test ponta a ponta das Etapas 1 e 2.
@@ -3811,10 +3812,82 @@ async function main(): Promise<void> {
       compendium.backgrounds.every((entry: any) => entry.skills?.length === 2),
     JSON.stringify((compendium?.backgrounds ?? []).map((entry: any) => entry.key)),
   );
+  // Catálogo de magias do PHB 2014 (Prompt 6.1). Contagem canônica por nível:
+  // 27 truques + 62/59/50/35/42/32/20/18/16 = 361 magias.
+  const SPELL_COUNT_BY_LEVEL: Record<number, number> = {
+    0: 27,
+    1: 62,
+    2: 59,
+    3: 50,
+    4: 35,
+    5: 42,
+    6: 32,
+    7: 20,
+    8: 18,
+    9: 16,
+  };
   check(
-    'o catálogo de magias está preparado (lista vazia por enquanto)',
-    Array.isArray(compendium?.spells) && compendium.spells.length === 0,
-    JSON.stringify(compendium?.spells),
+    'o compêndio lista as 361 magias do PHB 2014',
+    Array.isArray(compendium?.spells) && compendium.spells.length === 361,
+    JSON.stringify(compendium?.spells?.length),
+  );
+  check(
+    'as magias do compêndio trazem o resumo estruturado (dano/cura, ritual, concentração)',
+    (compendium?.spells ?? []).every(
+      (spell: any) =>
+        typeof spell.key === 'string' &&
+        typeof spell.name === 'string' &&
+        typeof spell.nameEn === 'string' &&
+        typeof spell.school === 'string' &&
+        typeof spell.concentration === 'boolean' &&
+        typeof spell.ritual === 'boolean' &&
+        (spell.damageSummary === null || typeof spell.damageSummary === 'string') &&
+        (spell.healingSummary === null || typeof spell.healingSummary === 'string') &&
+        Array.isArray(spell.classes),
+    ),
+    JSON.stringify(compendium?.spells?.[0]),
+  );
+  check(
+    'a contagem por nível bate com as Spell Lists do PHB',
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].every(
+      (level) => spellsByLevel(level).length === SPELL_COUNT_BY_LEVEL[level],
+    ),
+    JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((level) => spellsByLevel(level).length)),
+  );
+  check(
+    'os ids das magias são únicos',
+    new Set(SPELLS.map((spell) => spell.id)).size === SPELLS.length,
+  );
+  check(
+    'getSpell acha uma magia conhecida e devolve undefined para id inexistente',
+    getSpell('fireball')?.namePt === 'Bola de Fogo' && getSpell('nao-existe') === undefined,
+  );
+  check(
+    'o dano das magias usa só os 13 tipos canônicos (ou sem tipo)',
+    SPELLS.every((spell) =>
+      (spell.damage ?? []).every(
+        (damage) => damage.type === null || (DAMAGE_TYPES as readonly string[]).includes(damage.type),
+      ),
+    ),
+  );
+  check(
+    'nenhum dano de magia guarda modificador de atributo no bônus (mod. é calculado depois)',
+    SPELLS.every((spell) =>
+      (spell.damage ?? []).every(
+        (damage) =>
+          Number.isInteger(damage.count) &&
+          Number.isInteger(damage.sides) &&
+          Number.isInteger(damage.bonus),
+      ),
+    ) &&
+      getSpell('magic-missile')?.damage?.[0]?.bonus === 3 &&
+      getSpell('fire-bolt')?.damage?.[0]?.bonus === 0,
+  );
+  check(
+    'ritual só aparece nas magias que o PHB marca (Alarme sim, Bola de Fogo não)',
+    getSpell('alarm')?.ritual === true &&
+      getSpell('fireball')?.ritual === false &&
+      SPELLS.filter((spell) => spell.ritual).length > 0,
   );
   check(
     'o compêndio traz as 37 armas canônicas do PHB',

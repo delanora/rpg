@@ -532,7 +532,7 @@ O mestre tem um bloco de notas próprio, com o **mesmo esquema das anotações d
 
 O **NÍVEL INICIAL** e as listas de referência ficam na aba **Mesa** do painel do mestre (antes o nível inicial aparecia em destaque na barra de abas). Quando o nível inicial é maior que 1, o assistente de criação aplica os níveis 2 até ele ao concluir a montagem — **sem** depender da liberação do mestre e **sem** consumir a liberação do jogador (o nível inicial não é um Level Up de campanha).
 
-A aba também consulta o **compêndio da mesa** (somente leitura por enquanto): todas as classes com seus atributos (dado de vida, salvaguardas, conjuração, a **descrição** de cada uma e as subclasses), todas as linhagens de raça com a história, todos os antecedentes com as perícias e o espaço das **magias** — o formato já existe, mas o catálogo de magias ainda está vazio, para ser preenchido numa etapa seguinte.
+A aba também consulta o **compêndio da mesa** (somente leitura por enquanto): todas as classes com seus atributos (dado de vida, salvaguardas, conjuração, a **descrição** de cada uma e as subclasses), todas as linhagens de raça com a história, todos os antecedentes com as perícias e o **catálogo de magias do Livro do Jogador** (361 magias do PHB 2014: 27 truques e as magias de 1º a 9º nível, com nível, escola, conjuração, alcance, componentes, duração, concentração, ritual, resumo de dano/cura e descrição), consultável com filtro por nível e por escola.
 
 | Método | Rota | Acesso | Descrição |
 |--------|------|--------|-----------|
