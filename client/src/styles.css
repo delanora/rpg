@@ -9183,6 +9183,17 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-faint);
 }
 
+.config-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.config-filters .field {
+  min-width: 10rem;
+}
+
 .config-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));

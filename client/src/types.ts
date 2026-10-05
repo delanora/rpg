@@ -991,14 +991,13 @@ export interface CompendiumBackground {
 }
 
 /**
- * Uma magia do compêndio.
- *
- * A estrutura já existe, mas a lista ainda vem vazia: o catálogo de magias será
- * preenchido numa etapa seguinte.
+ * Uma magia do compêndio (catálogo do PHB 2014, somente leitura).
  */
 export interface CompendiumSpell {
   key: string;
   name: string;
+  /** Nome em inglês (referência do livro). */
+  nameEn: string;
   /** 0 = truque; 1..9 = nível da magia. */
   level: number;
   school: string;
@@ -1006,8 +1005,14 @@ export interface CompendiumSpell {
   range: string;
   components: string;
   duration: string;
+  concentration: boolean;
+  ritual: boolean;
   description: string;
-  /** Chaves das classes que têm a magia na lista. */
+  /** Resumo do dano estruturado (ex.: "8d6 de fogo"); nulo quando não há dano. */
+  damageSummary: string | null;
+  /** Resumo da cura estruturada (ex.: "1d8"). Nulo quando não há cura. */
+  healingSummary: string | null;
+  /** Chaves das classes que têm a magia na lista (vazio até o Prompt 6.2). */
   classes: string[];
 }
 

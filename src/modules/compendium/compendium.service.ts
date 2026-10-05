@@ -2,6 +2,8 @@ import { CLASS_DEFINITIONS } from '../shared/classes/index.js';
 import { BACKGROUND_CATALOG, RACE_CATALOG, type RaceOption } from '../shared/creation.js';
 import { allWeapons } from '../shared/weapons/index.js';
 import { listCustomRaceOptions } from '../custom-races/custom-races.service.js';
+import { damageExpression, damageIsEmpty, type Damage } from '../shared/attacks.js';
+import { SPELL_SCHOOL_LABELS, SPELLS, type Spell } from '../shared/spells/index.js';
 import type {
   CompendiumBackgroundDto,
   CompendiumClassDto,
@@ -12,14 +14,40 @@ import type {
   CompendiumSubclassDto,
 } from './compendium.dto.js';
 
-/**
- * Catálogo de magias — ainda VAZIO de propósito.
- *
- * O ambiente já está preparado (tipo, rota e aba de consulta no painel do
- * mestre); o conteúdo entra numa etapa seguinte, sem mexer no contrato com o
- * cliente. Enquanto isso, a aba mostra o estado vazio.
- */
-const SPELL_CATALOG: CompendiumSpellDto[] = [];
+/** Resumo legível de uma parcela de dano (ex.: "8d6 de fogo"). */
+function damageSummaryPart(damage: Damage): string {
+  const expression = damageExpression(damage);
+  return damage.type ? `${expression} de ${damage.type.toLowerCase()}` : expression;
+}
+
+/** Resumo do dano da magia, juntando as parcelas (ex.: "4d6 de fogo + 4d6 de radiante"). */
+function spellDamageSummary(spell: Spell): string | null {
+  const damages = (spell.damage ?? []).filter((damage) => !damageIsEmpty(damage));
+  if (damages.length === 0) return null;
+  return damages.map(damageSummaryPart).join(' + ');
+}
+
+/** Converte uma magia do catálogo no formato do compêndio. */
+function toSpell(spell: Spell): CompendiumSpellDto {
+  return {
+    key: spell.id,
+    name: spell.namePt,
+    nameEn: spell.nameEn,
+    level: spell.level,
+    school: SPELL_SCHOOL_LABELS[spell.school],
+    castingTime: spell.castingTime,
+    range: spell.range,
+    components: spell.componentsText,
+    duration: spell.duration,
+    concentration: spell.concentration,
+    ritual: spell.ritual,
+    description: spell.description,
+    damageSummary: spellDamageSummary(spell),
+    healingSummary:
+      spell.healing && !damageIsEmpty(spell.healing) ? damageExpression(spell.healing) : null,
+    classes: [...spell.classes],
+  };
+}
 
 /** Converte uma característica de classe/subclasse no formato do compêndio. */
 function toFeature(feature: {
@@ -90,7 +118,7 @@ export async function getCompendium(): Promise<CompendiumDto> {
     classes: CLASS_DEFINITIONS.map(toClass),
     races: [...RACE_CATALOG, ...customOptions].map(toRace),
     backgrounds: BACKGROUND_CATALOG.map(toBackground),
-    spells: SPELL_CATALOG,
+    spells: SPELLS.map(toSpell),
     weapons: allWeapons(),
   };
 }

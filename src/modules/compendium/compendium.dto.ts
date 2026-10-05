@@ -77,14 +77,15 @@ export interface CompendiumBackgroundDto {
 /**
  * Magia do compêndio.
  *
- * A estrutura já está pronta, mas a LISTA ainda está vazia: o catálogo de
- * magias entra numa etapa seguinte. Os campos seguem o Livro do Jogador (nível,
- * escola, tempo de conjuração, alcance, componentes, duração, descrição e as
- * classes que a conhecem).
+ * Vem do catálogo único de magias (`shared/spells`, PHB 2014). Os campos
+ * resumem nível, escola, conjuração, alcance, componentes, duração e a
+ * mecânica estruturada (dano/cura) em texto pronto para exibição.
  */
 export interface CompendiumSpellDto {
   key: string;
   name: string;
+  /** Nome em inglês (referência do livro). */
+  nameEn: string;
   /** 0 = truque; 1..9 = nível da magia. */
   level: number;
   school: string;
@@ -92,8 +93,14 @@ export interface CompendiumSpellDto {
   range: string;
   components: string;
   duration: string;
+  concentration: boolean;
+  ritual: boolean;
   description: string;
-  /** Chaves das classes que têm a magia na lista. */
+  /** Resumo do dano estruturado (ex.: "8d6 de fogo"); nulo quando não há dano. */
+  damageSummary: string | null;
+  /** Resumo da cura estruturada (ex.: "1d8"). Nulo quando não há cura. */
+  healingSummary: string | null;
+  /** Chaves das classes que têm a magia na lista (vazio até o Prompt 6.2). */
   classes: string[];
 }
 

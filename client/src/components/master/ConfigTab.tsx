@@ -1,5 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ABILITY_ABBREVIATIONS, ABILITY_LABELS, SKILLS, SPELLCASTING_TYPE_LABELS, SPELL_LEARNING_LABELS, formatModifier } from '../../dnd';
+import {
+  ABILITY_ABBREVIATIONS,
+  ABILITY_LABELS,
+  SKILLS,
+  SPELLCASTING_TYPE_LABELS,
+  SPELL_LEARNING_LABELS,
+  SPELL_LEVEL_LABELS,
+  SPELL_SCHOOLS,
+  formatModifier,
+} from '../../dnd';
 import {
   createCustomRace,
   deleteCustomRace,
@@ -12,9 +21,12 @@ import type {
   Compendium,
   CompendiumClass,
   CompendiumRace,
+  CompendiumSpell,
   CustomRace,
   CustomRacePatch,
 } from '../../types';
+
+const SPELL_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 import { Icon } from '../Icon';
 import { RaceEditor } from './RaceEditor';
 
@@ -149,6 +161,102 @@ function RaceCard({ race }: { race: CompendiumRace }) {
       {race.description ? <p className="config-text">{race.description}</p> : null}
       <p className="config-note">{raceBenefits(race)}</p>
     </li>
+  );
+}
+
+/** Um card de magia do compêndio (somente leitura). */
+function SpellCard({ spell }: { spell: CompendiumSpell }) {
+  const flags = [spell.concentration ? 'Concentração' : null, spell.ritual ? 'Ritual' : null].filter(
+    (flag): flag is string => flag !== null,
+  );
+
+  return (
+    <li className="config-item">
+      <div className="config-item-head">
+        <span className="config-item-name">{spell.name}</span>
+        <span className="config-badge">{SPELL_LEVEL_LABELS[spell.level] ?? `${spell.level}º nível`}</span>
+      </div>
+
+      <p className="config-note">
+        {spell.school} · {spell.castingTime} · {spell.range} · {spell.duration}
+      </p>
+      <p className="config-note">
+        {spell.components}
+        {flags.length > 0 ? ` · ${flags.join(' · ')}` : ''}
+      </p>
+
+      {spell.damageSummary || spell.healingSummary ? (
+        <div className="config-tags">
+          {spell.damageSummary ? <span className="config-tag">Dano: {spell.damageSummary}</span> : null}
+          {spell.healingSummary ? <span className="config-tag">Cura: {spell.healingSummary}</span> : null}
+        </div>
+      ) : null}
+
+      <p className="config-text">{spell.description}</p>
+    </li>
+  );
+}
+
+/** Catálogo de magias com filtro por nível e por escola. */
+function SpellList({ spells }: { spells: CompendiumSpell[] }) {
+  const [level, setLevel] = useState<'all' | number>('all');
+  const [school, setSchool] = useState<'all' | string>('all');
+
+  const filtered = spells.filter(
+    (spell) =>
+      (level === 'all' || spell.level === level) && (school === 'all' || spell.school === school),
+  );
+
+  return (
+    <div className="config-panel">
+      <header className="config-panel-head">
+        <h3>{`${spells.length} magia(s)`}</h3>
+        <p className="config-panel-hint">Truques e magias de 1º a 9º nível (Livro do Jogador).</p>
+      </header>
+
+      <div className="config-filters">
+        <label className="field">
+          <span>NÍVEL</span>
+          <select
+            value={String(level)}
+            onChange={(event) =>
+              setLevel(event.target.value === 'all' ? 'all' : Number(event.target.value))
+            }
+          >
+            <option value="all">Todos</option>
+            {SPELL_LEVELS.map((value) => (
+              <option key={value} value={value}>
+                {SPELL_LEVEL_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field">
+          <span>ESCOLA</span>
+          <select value={school} onChange={(event) => setSchool(event.target.value)}>
+            <option value="all">Todas</option>
+            {SPELL_SCHOOLS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="config-empty">
+          <Icon name="info" size={16} /> Nenhuma magia com esses filtros.
+        </p>
+      ) : (
+        <ul className="config-list">
+          {filtered.map((spell) => (
+            <SpellCard key={spell.key} spell={spell} />
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -464,22 +572,8 @@ export function ConfigTab({
               </li>
             ))}
           </ListPanel>
-        ) : (
-          <ListPanel
-            title="Magias"
-            hint="Truques e magias de 1º a 9º nível."
-            empty={compendium.spells.length === 0}
-          >
-            {null}
-          </ListPanel>
-        )}
-
-        {/* O catálogo de magias ainda está vazio: o ambiente está pronto (tipo,
-            rota e aba), mas o conteúdo entra numa etapa seguinte. */}
-        {!loading && compendium && section === 'spells' && compendium.spells.length === 0 ? (
-          <p className="config-empty">
-            O catálogo de magias ainda não foi preenchido — o espaço já está preparado.
-          </p>
+        ) : section === 'spells' ? (
+          <SpellList spells={compendium.spells} />
         ) : null}
       </section>
     </div>

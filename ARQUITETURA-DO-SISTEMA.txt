@@ -698,11 +698,14 @@ Todos os corpos passam por Zod; corpo inválido ⇒ 400 com `issues` por campo.
                spellcasting{type,ability,learning}, features[], subclasses[]
       races:   key, name, baseRace, description, abilityBonuses, abilityChoice
       backgrounds: key, name, description, skills[2]
-      spells: estrutura definida (key, name, level, school, castingTime, range,
-              components, duration, description, classes[]) mas LISTA VAZIA.
+      spells: catálogo do PHB 2014 — 361 magias (27 truques + níveis 1..9).
+              key, name, nameEn, level, school, castingTime, range, components,
+              duration, concentration, ritual, description, damageSummary,
+              healingSummary, classes[]. Fonte: `shared/spells` (um arquivo por
+              nível); `getCompendium()` só mapeia via `toSpell`.
       Fonte: `getCompendium()` em modules/compendium/compendium.service.ts — lê os
       catálogos estáticos; é a ÚNICA função a trocar de fonte quando o mestre puder
-      criar/editar raças e antecedentes. [LACUNA: catálogo de magias não preenchido.]
+      criar/editar raças e antecedentes.
 
 8.13 JANELA DE DADOS
   GET    /api/dice/active    [auth]  → { activeRoll | null }
@@ -1517,7 +1520,7 @@ FUNDAÇÃO DE RAÇAS (modules/shared/races/) — Draconato cadastrado (1ª raça
   FORA do Sortudo (o fluxo de ataque será revisto).
   GNOMO (gnome.ts): Int+2 · speed 7,5 · size Small · darkvision 18 · gnome-cunning (saveAdvantage:
   INT/SAB/CAR, condition 'magic'). 2 sub-raças: forest-gnome (Des+1, Ilusionista Natural
-  DESCRITIVO — catálogo de magias inexistente; Falar com Pequenos Animais texto) e rock-gnome
+  DESCRITIVO — magia racial aguarda o vínculo do catálogo (Prompt 6.2); Falar com Pequenos Animais texto) e rock-gnome
   (Con+1, tinker = toolProficiency → tinker-tools; Saber do Artífice e dispositivos textuais).
   MEIO-ELFO (half-elf.ts): Car+2 · darkvision 18 · fey-ancestry (REUSO do Elfo) e
   skill-versatility. hasChoices: 4 entradas (half-elf-ability-1/2 = 5 atributos sem Carisma;
@@ -1854,7 +1857,8 @@ CATÁLOGO DE ITENS
 
 COMPÊNDIO (somente leitura)
   Ver §8.12. Alimenta a aba "Mesa" do painel do mestre junto do NÍVEL INICIAL.
-  Fonte única: `getCompendium()`. [LACUNA] magias: estrutura pronta, lista vazia.
+  Fonte única: `getCompendium()`. Magias: catálogo do PHB 2014 (`shared/spells`),
+  361 magias com filtro por nível e escola; `classes[]` fica vazio até o vínculo (6.2).
 
 UPLOADS / ARMAZENAMENTO DE ARQUIVOS
   Imagens chegam como DATA URL (base64) dentro do JSON — evita dependência de
@@ -2176,7 +2180,8 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
                                      do mestre e limite de 20.000 caracteres (400)
     11.6) Compêndio (aba "Mesa")   — 401 sem token; 12 classes com dado de vida e 2
                                      salvaguardas; clérigo com 7 domínios; 14 linhagens com
-                                     história; 13 antecedentes com 2 perícias; magias vazias
+                                     história; 13 antecedentes com 2 perícias; 361 magias do
+                                     PHB (contagem por nível e ids únicos)
     11.7) Level Up (assistente)    — subclasse obrigatória, multiclasse sem pré-requisito,
                                      pré-requisito das classes ATUAIS (400 + mensagem),
                                      perícia de multiclasse (obrigatória/fora da lista 400),
@@ -2384,13 +2389,17 @@ UPLOADS / ARMAZENAMENTO DE ARQUIVOS
    dados de superioridade contam, a manobra em si é texto) e o die das inspirações
    são texto — o contador de usos funciona, o efeito na mesa ainda não. O reset por
    descanso dos recursos é a Fase 6 (cada recurso só guarda o tipo).
-[LACUNA] CATÁLOGO DE MAGIAS: `CompendiumSpellDto` está definido e a aba "Mesa" tem a
-   seção, mas `SPELL_CATALOG` é `[]`. Magias hoje são apenas estado por ficha
-   (`spells` = { list, slots }), sem catálogo central.
+CATÁLOGO DE MAGIAS (Prompt 6.1): fechado em `shared/spells` (PHB 2014, 361 magias;
+   um arquivo por nível em `catalog/`; `getSpell`/`spellsByLevel`/`spellsBySchool`/
+   `allSpells`). O compêndio mapeia via `toSpell` e a aba "Mesa" filtra por nível e
+   escola. [PENDENTE 6.2] `classes[]` ainda vazio — o vínculo com as listas de classe
+   e os TODOs de magia racial (Elfo/Tiefling/Gnomo) entram depois; a ficha ainda só
+   tem estado por ficha (`spells` = { list, slots }), sem ligação com o catálogo.
 [LACUNA] RAÇAS E ANTECEDENTES: o Prompt 2.10 fechou a raça pelo assistente (atributos,
    deslocamento, visão no escuro, resistências, idiomas e proficiências de perícia/
    ferramenta por escolha), mas seguem sem tratamento: proficiência de arma/armadura
-   por raça, magias raciais (catálogo de magias inexistente), escalonamento por nível
+   por raça, magias raciais (catálogo pronto em `shared/spells`, falta o vínculo por
+   classe/raça do Prompt 6.2), escalonamento por nível
    de personagem, vantagem em salvaguarda (saveAdvantage) e o flag de resistência
    condicional. Do ANTECEDENTE, só as 2 perícias são modeladas (ferramentas/idiomas/
    característica própria não).
