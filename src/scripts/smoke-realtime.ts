@@ -1402,6 +1402,33 @@ async function main(): Promise<void> {
     JSON.stringify(advantageResult),
   );
 
+  // O Ataque Furtivo acompanha o dano da ARMA: entra mesmo quando ela NÃO tem
+  // tipo de dano (antes era descartado por exigir uma "parcela física").
+  await advanceToPlayerTurn();
+  await api('/api/characters/me', {
+    method: 'PATCH',
+    token: playerToken,
+    body: {
+      attacks: [
+        { id: 'p1', name: 'Adaga', damage: { count: 1, sides: 4, bonus: 3, type: null }, attackBonus: 10, notes: '', finesse: true, ranged: false },
+      ],
+    },
+  });
+  let typelessResult: any = null;
+  for (let attempt = 0; attempt < 30 && !typelessResult; attempt += 1) {
+    const shot = await api('/api/combat/attack', {
+      method: 'POST',
+      token: playerToken,
+      body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, advantage: true },
+    });
+    if (shot.data.result?.hit) typelessResult = shot.data.result;
+  }
+  check(
+    'Ataque Furtivo entra mesmo sem tipo de dano na arma',
+    typelessResult?.sneakAttack?.expression === '2d6',
+    JSON.stringify(typelessResult),
+  );
+
   // Arma sem sutil/à distância não recebe o dano extra.
   await api('/api/characters/me', {
     method: 'PATCH',
