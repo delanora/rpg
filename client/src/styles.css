@@ -89,6 +89,27 @@
   /* Texturas em SVG (dados como URI para não depender de arquivos externos). */
   --noise: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='160'%20height='160'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.9'%20numOctaves='3'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='saturate'%20values='0'/%3E%3C/filter%3E%3Crect%20width='160'%20height='160'%20filter='url(%23n)'/%3E%3C/svg%3E");
   --ornament: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2020%2020'%3E%3Cpath%20d='M10%202%2018%2010%2010%2018%202%2010Z'%20fill='none'%20stroke='%23b8912a'%20stroke-width='1.3'/%3E%3Ccircle%20cx='10'%20cy='10'%20r='2.2'%20fill='%23b8912a'/%3E%3C/svg%3E");
+
+  /*
+   * Tipos de dano — accents SEMÂNTICOS usados só dentro dos cards de dano do
+   * combate. Tons envelhecidos (menos saturados) para conviver com o
+   * pergaminho/couro. O nome do tipo continua sempre escrito em texto, então a
+   * cor é reforço, nunca a única informação.
+   */
+  --damage-acid: #6f7d24;
+  --damage-bludgeoning: #8a6236;
+  --damage-cold: #4e7d99;
+  --damage-fire: #a83f26;
+  --damage-force: #6a4a94;
+  --damage-lightning: #2f7f9c;
+  --damage-necrotic: #6b3d76;
+  --damage-piercing: #3f6775;
+  --damage-poison: #43743a;
+  --damage-psychic: #96467f;
+  --damage-radiant: #b07d1e;
+  --damage-slashing: #6b7078;
+  --damage-thunder: #3f5573;
+  --damage-default: #7a6a52;
 }
 
 [data-theme='dark'] {
@@ -127,6 +148,22 @@
 
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 20px rgba(0, 0, 0, 0.5);
   --shadow-deep: 0 18px 40px -20px #000;
+
+  /* Tipos de dano no couro: as mesmas matizes, clareadas para manter contraste. */
+  --damage-acid: #a8b84e;
+  --damage-bludgeoning: #c69a63;
+  --damage-cold: #86bcd4;
+  --damage-fire: #e0765a;
+  --damage-force: #a882d6;
+  --damage-lightning: #5fbfe0;
+  --damage-necrotic: #b07ac2;
+  --damage-piercing: #6fa3b8;
+  --damage-poison: #7fb96a;
+  --damage-psychic: #d67fbb;
+  --damage-radiant: #e6cf82;
+  --damage-slashing: #b3bac4;
+  --damage-thunder: #7f9dc9;
+  --damage-default: #b7a583;
 }
 
 /* ==========================================================================
@@ -11021,20 +11058,79 @@ input[type='checkbox']:focus-visible,
 /* --- Fonte de dano genérica (fonte → dados → subtotal → tipo) ------------- */
 
 .damage-component {
+  /* O accent cai no neutro quando o tipo é desconhecido/ausente. */
+  --damage-accent: var(--damage-default);
   display: grid;
   gap: 0.2rem;
-  padding: 0.35rem 0.5rem;
+  padding: 0.35rem 0.5rem 0.35rem 0.6rem;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--damage-accent);
   border-radius: var(--radius);
   background: rgba(0, 0, 0, 0.03);
+  animation: ink-in 0.25s ease both;
+}
+
+/* O accent vem SEMPRE do tipo já resolvido pelo backend (data-damage). */
+.damage-component[data-damage='acid'] {
+  --damage-accent: var(--damage-acid);
+}
+
+.damage-component[data-damage='bludgeoning'] {
+  --damage-accent: var(--damage-bludgeoning);
+}
+
+.damage-component[data-damage='cold'] {
+  --damage-accent: var(--damage-cold);
+}
+
+.damage-component[data-damage='fire'] {
+  --damage-accent: var(--damage-fire);
+}
+
+.damage-component[data-damage='force'] {
+  --damage-accent: var(--damage-force);
+}
+
+.damage-component[data-damage='lightning'] {
+  --damage-accent: var(--damage-lightning);
+}
+
+.damage-component[data-damage='necrotic'] {
+  --damage-accent: var(--damage-necrotic);
+}
+
+.damage-component[data-damage='piercing'] {
+  --damage-accent: var(--damage-piercing);
+}
+
+.damage-component[data-damage='poison'] {
+  --damage-accent: var(--damage-poison);
+}
+
+.damage-component[data-damage='psychic'] {
+  --damage-accent: var(--damage-psychic);
+}
+
+.damage-component[data-damage='radiant'] {
+  --damage-accent: var(--damage-radiant);
+}
+
+.damage-component[data-damage='slashing'] {
+  --damage-accent: var(--damage-slashing);
+}
+
+.damage-component[data-damage='thunder'] {
+  --damage-accent: var(--damage-thunder);
 }
 
 [data-theme='dark'] .damage-component {
   background: rgba(255, 255, 255, 0.03);
 }
 
+/* Defesas: a moldura continua a do tipo; só o filete recebe o dourado. */
 .damage-component.defended {
   border-color: var(--gold-hair);
+  border-left-color: var(--damage-accent);
 }
 
 .damage-component-head {
@@ -11057,18 +11153,58 @@ input[type='checkbox']:focus-visible,
   color: var(--gold-bright);
 }
 
+.damage-component-marker {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--damage-accent);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
 .damage-component-type {
   font-family: var(--font-display);
   font-size: 0.66rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  /* O nome do tipo continua sempre escrito; a cor é reforço (acessibilidade). */
+  color: var(--damage-accent);
+}
+
+/* Estados de defesa: texto curto + filete próprio, sem trocar a cor do tipo. */
+.damage-component-defense {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--ink-soft);
 }
 
-.damage-component-defense {
-  font-size: 0.68rem;
-  font-style: italic;
+.damage-component-defense.resistance {
+  border-color: var(--gold-hair);
+  color: var(--gold-deep);
+}
+
+.damage-component-defense.immunity {
+  border-color: var(--line-strong);
+  background: rgba(0, 0, 0, 0.06);
   color: var(--ink-faint);
+}
+
+.damage-component-defense.vulnerability {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+[data-theme='dark'] .damage-component-defense.resistance {
+  color: var(--gold-bright);
+}
+
+[data-theme='dark'] .damage-component-defense.immunity {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .damage-parts {
