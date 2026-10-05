@@ -351,6 +351,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   ...(character?.derivedAttacks ?? []),
                 ]}
                 characterInventory={character?.inventory ?? []}
+                movementMeters={character?.speed ?? null}
                 sneakAttackExpression={character?.derived.sneakAttack?.expression ?? null}
                 onCombatChange={combatState.setCombat}
                 onCombatEnd={() => combatState.setCombat(null)}

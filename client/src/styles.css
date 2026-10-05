@@ -10827,3 +10827,122 @@ input[type='checkbox']:focus-visible,
   border-left-color: var(--gold);
   box-shadow: inset 0 0 0 1px var(--gold-hair), 0 0 14px -8px var(--glow);
 }
+
+/* ==========================================================================
+   Combate — etapa 5: barra fixa de recursos do turno (preparação Fase 8.1)
+   Mostra o deslocamento real; Ação/Ação bônus/Reação seguem "Fase 8.1"; o Fim
+   do turno usa o avanço já existente. A barra fica fixa no rodapé do combate.
+   ========================================================================== */
+
+/* `.combat-bottom` é o item do grid do painel: é ele que gruda no rodapé,
+   para a barra ficar fixa enquanto a página de combate rola. */
+.combat-bottom {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+}
+
+.turn-resource-bar {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr 1fr 1.35fr;
+  gap: 0;
+  padding: 0;
+  border: 2px solid var(--gold-deep);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px var(--gold-hair);
+  overflow: hidden;
+}
+
+.turn-resource-bar .turn-resource-title {
+  display: none;
+}
+
+.turn-resource-bar .turn-resource-list {
+  display: contents;
+}
+
+.turn-resource {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  justify-items: center;
+  align-content: center;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.5rem 0.4rem;
+  border-left: 1px solid var(--line);
+  text-align: center;
+}
+
+.turn-resource:first-child {
+  border-left: none;
+}
+
+.turn-resource-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--gold-hair);
+  background: radial-gradient(circle at 35% 30%, var(--surface), var(--surface-3));
+  color: var(--gold-deep);
+}
+
+.turn-resource-label {
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.turn-resource-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.turn-resource-state {
+  font-size: 0.62rem;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+.turn-resource-btn {
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
+}
+
+/* Fora do combate ativo a barra fica apagada. */
+.turn-resource-bar.inactive .turn-resource {
+  opacity: 0.68;
+}
+
+/* No seu turno, um fio dourado discreto percorre a barra. */
+.turn-resource-bar.mine {
+  border-color: var(--gold);
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px var(--gold-hair),
+    0 0 22px -9px var(--glow);
+}
+
+/* Mobile: duas colunas, com o Fim do turno ocupando a linha inteira. */
+@media (max-width: 760px) {
+  .turn-resource-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .turn-resource {
+    border-top: 1px solid var(--line);
+  }
+
+  .turn-resource.end {
+    grid-column: 1 / -1;
+  }
+}

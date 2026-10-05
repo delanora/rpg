@@ -47,6 +47,8 @@ interface CombatTrackerProps {
   sneakAttackFor?: (combatantId: string) => string | null;
   /** Inventário do próprio personagem (munição e vínculo de arma). */
   characterInventory?: InventoryItem[];
+  /** Deslocamento do próprio personagem em metros (barra de recursos). */
+  movementMeters?: number | null;
   /** Mestre: ataques de qualquer combatente, para escolher o atacante. */
   attacksFor?: (combatantId: string) => Attack[];
   onCombatChange: (combat: CombatDto) => void;
@@ -74,6 +76,7 @@ export function CombatTracker({
   sneakAttackExpression = null,
   sneakAttackFor,
   characterInventory,
+  movementMeters = null,
   attacksFor,
   onCombatChange,
   onCombatEnd,
@@ -165,7 +168,7 @@ export function CombatTracker({
             />
           }
           right={<CombatLog log={log} />}
-          bottom={<TurnResourceBar active={false} />}
+          bottom={<TurnResourceBar active={false} isMaster={isMaster} />}
         />
 
         {isMaster ? (
@@ -354,7 +357,16 @@ export function CombatTracker({
           </>
         }
         right={<CombatLog log={log} />}
-        bottom={<TurnResourceBar active />}
+        bottom={
+          <TurnResourceBar
+            active
+            isMaster={isMaster}
+            isMyTurn={isMyTurn}
+            movementMeters={movementMeters}
+            busy={busy}
+            onEndTurn={() => void run(nextTurn)}
+          />
+        }
       />
     </section>
   );
