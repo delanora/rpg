@@ -6790,6 +6790,132 @@ async function main(): Promise<void> {
     JSON.stringify({ wrong: atWrongSchool.data, right: atRightSchool.data }),
   );
 
+  // --- 16.6 Magias de juramento (Paladino) ----------------------------------
+  console.log('\n16.6) Magias de juramento (Paladino)');
+
+  /** Magias DERIVADAS de juramento na ficha (marca `oath`). */
+  const oathOf = (sheet: any) =>
+    (sheet?.spells?.list ?? []).filter((spell: any) => spell.oath === true);
+
+  const paladinSheet = await scenarioOf([
+    { classKey: 'paladin', level: 3, subclass: 'Juramento de Devoção' },
+  ]);
+  check(
+    'Devoção 3 tem as 2 magias de juramento, sempre preparadas',
+    oathOf(paladinSheet).length === 2 &&
+      oathOf(paladinSheet).every(
+        (spell: any) => spell.prepared === true && spell.classKey === 'paladin',
+      ) &&
+      ['protection-from-evil-and-good', 'sanctuary'].every((id) =>
+        oathOf(paladinSheet).some((spell: any) => spell.id === id),
+      ),
+    JSON.stringify(oathOf(paladinSheet)),
+  );
+  check(
+    'as magias de juramento NÃO entram na contagem de preparadas nem na lista gravada',
+    preparedOf(paladinSheet)?.preparedCount ===
+      Math.max(1, paladinSheet.derived.modifiers.charisma + 1) &&
+      (paladinSheet?.spells?.list ?? []).filter(
+        (spell: any) => spell.classKey === 'paladin' && spell.oath !== true,
+      ).length === 0,
+    JSON.stringify({
+      prepared: preparedOf(paladinSheet)?.preparedCount,
+      paladin: (paladinSheet?.spells?.list ?? []).filter(
+        (spell: any) => spell.classKey === 'paladin',
+      ),
+    }),
+  );
+
+  // Subir de nível de verdade: o juramento acompanha o nível de PALADINO.
+  await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  const oathLevelFour = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: spellbook.token,
+    body: levelUpRequestFor(await sheetOf(spellbook.token), 'paladin'),
+  });
+  check(
+    'no 4º nível do paladino o juramento continua só com as 2 do 3º',
+    oathLevelFour.status === 200 && oathOf(oathLevelFour.data?.character).length === 2,
+    JSON.stringify({ status: oathLevelFour.status, oath: oathOf(oathLevelFour.data?.character) }),
+  );
+
+  await api('/api/game/level-up', { method: 'POST', token: masterToken });
+  const oathLevelFive = await api('/api/characters/me/level-up', {
+    method: 'POST',
+    token: spellbook.token,
+    body: levelUpRequestFor(await sheetOf(spellbook.token), 'paladin'),
+  });
+  check(
+    'no 5º nível o juramento soma as 2 magias do 5º (4 no total)',
+    oathLevelFive.status === 200 &&
+      oathOf(oathLevelFive.data?.character).length === 4 &&
+      ['lesser-restoration', 'zone-of-truth'].every((id) =>
+        oathOf(oathLevelFive.data?.character).some((spell: any) => spell.id === id),
+      ),
+    JSON.stringify({ status: oathLevelFive.status, oath: oathOf(oathLevelFive.data?.character) }),
+  );
+
+  // Descer de nível (mestre): como são DERIVADAS do nível, somem sozinhas.
+  const downToFour = await api(`/api/characters/${spellbook.characterId}/level-down`, {
+    method: 'POST',
+    token: masterToken,
+    body: { classKey: 'paladin' },
+  });
+  check(
+    'descer ao 4º remove as magias do 5º (volta a 2), sem tocar no level-down',
+    downToFour.status === 200 &&
+      oathOf(downToFour.data?.character).length === 2 &&
+      !oathOf(downToFour.data?.character).some(
+        (spell: any) => spell.id === 'lesser-restoration' || spell.id === 'zone-of-truth',
+      ),
+    JSON.stringify({ status: downToFour.status, oath: oathOf(downToFour.data?.character) }),
+  );
+
+  // Multiclasse: vale o nível de PALADINO (3), não o nível total (8).
+  const multiclassOath = await scenarioOf([
+    { classKey: 'paladin', level: 3, subclass: 'Juramento de Vingança' },
+    { classKey: 'fighter', level: 5 },
+  ]);
+  check(
+    'no multiclasse o juramento usa o nível de paladino (3), não o total (8)',
+    multiclassOath.level === 8 &&
+      oathOf(multiclassOath).length === 2 &&
+      ['bane', "hunters-mark"].every((id) =>
+        oathOf(multiclassOath).some((spell: any) => spell.id === id),
+      ),
+    JSON.stringify({ total: multiclassOath.level, oath: oathOf(multiclassOath) }),
+  );
+
+  // Se a magia já estiver na lista do jogador por outra via, não duplica. Uso
+  // uma magia que é, ao mesmo tempo, da lista do Paladino E do juramento.
+  await scenarioOf([{ classKey: 'paladin', level: 3, subclass: 'Juramento de Devoção' }]);
+  const storedOathSpell = await setSpellbook(spellbook.token, {
+    classKey: 'paladin',
+    entries: [{ key: 'protection-from-evil-and-good', prepared: false }],
+  });
+  const dedupSheet = await sheetOf(spellbook.token);
+  check(
+    'magia já escolhida pelo jogador não é duplicada pelo juramento',
+    storedOathSpell.status === 200 &&
+      dedupSheet.spells.list.filter((spell: any) => spell.id === 'protection-from-evil-and-good')
+        .length === 1 &&
+      !dedupSheet.spells.list.some(
+        (spell: any) => spell.id === 'protection-from-evil-and-good' && spell.oath === true,
+      ) &&
+      oathOf(dedupSheet).length === 1 &&
+      oathOf(dedupSheet)[0].id === 'sanctuary',
+    JSON.stringify(dedupSheet.spells.list.filter((spell: any) => spell.classKey === 'paladin')),
+  );
+
+  // A lista do Paladino foi corrigida (6.2): 'bless' e 'shield-of-faith' entram.
+  check(
+    'a lista do Paladino inclui as magias de classe do PHB (Bênção, Escudo da Fé)',
+    getSpell('bless')?.classes.includes('paladin') === true &&
+      getSpell('shield-of-faith')?.classes.includes('paladin') === true &&
+      getSpell('find-steed')?.classes.includes('paladin') === true,
+    JSON.stringify(getSpell('bless')?.classes),
+  );
+
   // --- 17. Espaços de magia -------------------------------------------------
   console.log('\n17) Espaços de magia (tabela da classe x tabela combinada)');
 

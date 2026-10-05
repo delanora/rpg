@@ -266,7 +266,9 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                 key={entry.classKey}
                 entry={entry}
                 allSpells={catalogSpells}
-                current={list.filter((spell) => spell.classKey === entry.classKey)}
+                current={list.filter(
+                  (spell) => spell.classKey === entry.classKey && !spell.oath,
+                )}
                 onSaved={(saved) => update({ spells: saved.spells })}
               />
             ) : null,
@@ -434,18 +436,18 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
               {list
                 .filter((spell) => spell.level === level)
                 .map((spell) => (
-                  <li className="spell-row" key={spell.id}>
+                  <li className={spell.oath ? 'spell-row oath' : 'spell-row'} key={spell.id}>
                     <input
                       type="checkbox"
-                      checked={spell.prepared}
-                      disabled={lockedConstruction}
+                      checked={spell.oath ? true : spell.prepared}
+                      disabled={lockedConstruction || Boolean(spell.oath)}
                       aria-label={`Preparada: ${spell.name}`}
-                      title="Preparada"
+                      title={spell.oath ? 'Sempre preparada (magia de Juramento)' : 'Preparada'}
                       onChange={(event) => patchSpell(spell.id, { prepared: event.target.checked })}
                     />
                     <InlineField
                       value={spell.name}
-                      readOnly={lockedConstruction}
+                      readOnly={lockedConstruction || Boolean(spell.oath)}
                       ariaLabel="Nome da magia"
                       onCommit={(value) => {
                         const name = value.trim();
@@ -456,7 +458,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                       value={spell.school}
                       mode="select"
                       options={SPELL_SCHOOLS}
-                      readOnly={lockedConstruction}
+                      readOnly={lockedConstruction || Boolean(spell.oath)}
                       ariaLabel="Escola da magia"
                       onCommit={(value) => patchSpell(spell.id, { school: value })}
                     />
@@ -465,7 +467,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                       mode="number"
                       min={0}
                       max={9}
-                      readOnly={lockedConstruction}
+                      readOnly={lockedConstruction || Boolean(spell.oath)}
                       ariaLabel="Nível da magia"
                       onCommit={(value) =>
                         patchSpell(spell.id, { level: clampInt(value, 0, 9, spell.level) })
@@ -474,12 +476,19 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                     <InlineField
                       className="spell-description"
                       value={spell.description}
-                      readOnly={lockedConstruction}
+                      readOnly={lockedConstruction || Boolean(spell.oath)}
                       placeholder="efeito / descrição"
                       ariaLabel="Descrição da magia"
                       onCommit={(value) => patchSpell(spell.id, { description: value })}
                     />
-                    {lockedConstruction ? null : (
+                    {spell.oath ? (
+                      <span
+                        className="spell-oath-badge"
+                        title="Magia de Juramento: sempre preparada e fora do limite de preparadas"
+                      >
+                        <Icon name="shield" size={12} /> Juramento
+                      </span>
+                    ) : lockedConstruction ? null : (
                       <button
                         type="button"
                         className="btn btn-danger btn-small"

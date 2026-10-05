@@ -173,6 +173,11 @@ export const spellSchema = z.object({
    * magias de texto livre. É o que permite agrupar e trocar as magias POR CLASSE.
    */
   classKey: shortText(40).default(''),
+  /**
+   * Magia DERIVADA de juramento (Prompt 6.3), não gravada: sempre preparada, fora
+   * do limite e não removível. Nunca vai ao banco — só o DTO a marca assim.
+   */
+  oath: z.boolean().optional(),
 });
 
 export const spellSlotSchema = z.object({

@@ -47,7 +47,9 @@ export function SpellPicker({ entry, allSpells, current, onSaved }: SpellPickerP
   const limits = entry.spellcasting;
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState<Map<string, boolean>>(
-    () => new Map(current.map((spell) => [spell.id, spell.prepared])),
+    // As magias de juramento são DERIVADAS (fora do limite e não editáveis):
+    // nunca entram na seleção do seletor.
+    () => new Map(current.filter((spell) => !spell.oath).map((spell) => [spell.id, spell.prepared])),
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,6 +58,7 @@ export function SpellPicker({ entry, allSpells, current, onSaved }: SpellPickerP
   if (!limits || limits.type === 'none') return null;
 
   const byKey = new Map(allSpells.map((spell) => [spell.key, spell]));
+  // (As magias de juramento não aparecem no pool: não são escolhidas pelo jogador.)
   const listKeys = classListKeys(entry);
   const third = entry.subclass in THIRD_CASTER_SUBCLASSES;
 

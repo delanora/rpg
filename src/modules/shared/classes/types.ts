@@ -290,6 +290,17 @@ export interface SubclassDefinition {
    * SOMADAS às da classe quando a subclasse é escolhida no Level Up.
    */
   proficiencies?: ProficienciesState;
+  /**
+   * Magias SEMPRE PREPARADAS concedidas pela subclasse, indexadas pelo nível da
+   * CLASSE PAI (ex.: as magias de juramento do Paladino no nível de PALADINO,
+   * não no nível total). Guarda IDs do catálogo (`shared/spells`), não texto.
+   *
+   * São DERIVADAS do nível: não entram em `spells.list`, ficam sempre
+   * preparadas, não contam no limite de preparadas e não podem ser removidas ou
+   * despreparadas. Ver `shared/spells/oath-spells.ts` e a aba Magias (selo
+   * "Juramento").
+   */
+  oathSpells?: Record<number, readonly string[]>;
   features: ClassFeatureDefinition[];
 }
 

@@ -7,6 +7,7 @@ import {
   classSpellcastingLimits,
   thirdCasterSpellcastingLimits,
 } from '../shared/spells/class-tables.js';
+import { oathSpellsAtLevel, resolveOathSpells } from '../shared/spells/oath-spells.js';
 import { SPELL_CLASS_KEYS, type SpellClassKey } from '../shared/spells/types.js';
 import {
   normalizeLevelHistory,
@@ -462,6 +463,14 @@ export function toCharacterDto(
   const level = totalCharacterLevel(classEntries);
   const className = classEntriesLabel(classEntries);
   const classState = normalizeClassState(character.classState);
+  // Subclasse de paladino (juramento): as magias de juramento são DERIVADAS do
+  // nível de PALADINO + juramento (Prompt 6.3) — ver `oath-spells.ts`.
+  const paladinEntry = classEntries.find((entry) => entry.classKey === 'paladin') ?? null;
+  const paladinDefinition = paladinEntry ? getClassDefinition('paladin') : null;
+  const paladinSubclass =
+    paladinEntry && paladinDefinition
+      ? findSubclass(paladinDefinition, paladinEntry.subclass)
+      : null;
   // Moedas: as cinco denominações sempre gravadas; o peso entra no derived.
   const coins = normalizeCoins(character.coins);
 
@@ -511,6 +520,29 @@ export function toCharacterDto(
     list: [],
     slots: {},
   });
+  // Magias de juramento do Paladino: entram SÓ no DTO (origem 'oath'), sempre
+  // preparadas e fora do limite. Se a magia já estiver na lista do jogador por
+  // outra via, não duplicamos.
+  const storedSpellIds = new Set(spells.list.map((spell) => spell.id));
+  const oathSpellList: SpellsStateDto['list'] = resolveOathSpells(
+    paladinSubclass?.oathSpells,
+    paladinEntry?.level ?? 0,
+  )
+    .filter((spell) => !storedSpellIds.has(spell.key))
+    .map((spell) => ({
+      id: spell.key,
+      name: spell.name,
+      level: spell.level,
+      school: spell.school,
+      prepared: true,
+      description: spell.description,
+      classKey: 'paladin',
+      oath: true,
+    }));
+  const spellsForDisplay: SpellsStateDto = {
+    ...spells,
+    list: [...spells.list, ...oathSpellList],
+  };
   const attacks = parseJson<AttackDto[]>(attackListSchema, character.attacks, []);
   const proficiencies = normalizeProficiencies(character.proficiencies);
 
@@ -622,6 +654,17 @@ export function toCharacterDto(
     };
   }
 
+  // As características "Magias de Juramento" mostram os NOMES das magias daquela
+  // faixa, traduzidos do catálogo (fonte única: os IDs da subclasse).
+  const activeFeaturesWithOathNames = activeFeatures.map((feature) => {
+    if (feature.id !== 'oath-spells' && !feature.id.startsWith('oath-spells-')) return feature;
+    const names = oathSpellsAtLevel(paladinSubclass?.oathSpells, feature.level).map(
+      (spell) => spell.name,
+    );
+    if (names.length === 0) return feature;
+    return { ...feature, description: `${feature.description} ${names.join(', ')}.` };
+  });
+
   const classEntryDtos: ClassEntryDto[] = classEntries.map((entry) => {
     const definition = getClassDefinition(entry.classKey);
 
@@ -715,7 +758,7 @@ export function toCharacterDto(
     className,
     classes: classEntryDtos,
     classOptions: classOptionsFor(abilities, classEntries),
-    activeFeatures,
+    activeFeatures: activeFeaturesWithOathNames,
     classState,
     levelHistory: normalizeLevelHistory(character.levelHistory),
     classAdjustments,
@@ -748,7 +791,7 @@ export function toCharacterDto(
     toolProficiencies: character.toolProficiencies ?? [],
     tools: resolveTools(character.toolProficiencies ?? []),
     inventory: inventoryWithProficiency,
-    spells,
+    spells: spellsForDisplay,
     attacks,
     derivedAttacks,
     features,

@@ -3533,6 +3533,28 @@ input[type='checkbox']:disabled {
   background: rgba(184, 145, 42, 0.1);
 }
 
+/* Magias de Juramento: derivadas, sempre preparadas e não editáveis. */
+.spell-row.oath {
+  background: rgba(184, 145, 42, 0.07);
+}
+
+.spell-oath-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 999px;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--gold-deep);
+  white-space: nowrap;
+}
+
+.spell-oath-badge .icon {
+  color: var(--gold);
+}
+
 .spell-description {
   color: var(--ink-soft);
   font-style: italic;

@@ -2406,8 +2406,24 @@ VÍNCULO COM AS CLASSES E LIMITES (Prompt 6.2): as `classes` de cada magia são
    assistente e o resumo do Level Up usam o mesmo seletor. Cavaleiro Arcano e
    Trapaceiro Arcano usam a lista do Mago com a restrição de escola (Abjuração/
    Evocação e Encantamento/Ilusão; qualquer escola nos níveis 8/14/20). Cobertura na
-   seção 16.5 do smoke. [PENDENTE] magias raciais (Elfo/Tiefling/Gnomo) e o vínculo
-   das magias de Domínio/juramento/Arcanum — os TODOs seguem registrados.
+   seção 16.5 do smoke. [CORREÇÃO 6.2] a lista de CLASSES do Paladino foi
+   completada com as 44 magias do PHB 2014: as listas originais saíram do campo
+   `spell_lists` do open5e, que não marca "paladin" em nenhuma magia (o campo
+   correto é `dnd_class`); por isso o Paladino tinha só as magias exclusivas do
+   PHB. As magias de juramento ficam de fora da lista de classe (vêm por
+   subclasse).
+MAGIAS DE JURAMENTO DO PALADINO (Prompt 6.3): cada juramento declara
+   `SubclassDefinition.oathSpells` (IDs do catálogo por nível de PALADINO —
+   3/5/9/13/17). `shared/spells/oath-spells.ts` resolve o que está liberado até o
+   nível, e o DTO injeta as magias como DERIVADAS no `spells.list` (marca
+   `oath: true`, sempre preparadas, fora do limite de preparadas) — sem duplicar
+   o que o jogador já escolheu e sem gravar nada no banco. Como são derivadas do
+   nível, o level-down as remove sozinho. Na aba Magias ganham o selo "Juramento"
+   e não podem ser removidas/despreparadas; o resumo do Level Up mostra os nomes
+   (a descrição das características "Magias de Juramento" é gerada do catálogo).
+   Cobertura na seção 16.6 do smoke. [PENDENTE] magias raciais (Elfo/Tiefling/
+   Gnomo), os Domínios do Clérigo/Círculo da Terra/Arcanum Místico e a conjuração
+   de fato — os TODOs seguem registrados.
 [LACUNA] RAÇAS E ANTECEDENTES: o Prompt 2.10 fechou a raça pelo assistente (atributos,
    deslocamento, visão no escuro, resistências, idiomas e proficiências de perícia/
    ferramenta por escolha), mas seguem sem tratamento: proficiência de arma/armadura
