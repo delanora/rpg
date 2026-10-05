@@ -49,6 +49,8 @@ export interface CombatLogEntry {
   attackName?: string;
   targetName?: string;
   attackRoll?: number;
+  /** Todos os d20 do teste (dois com vantagem/desvantagem). */
+  attackRolls?: number[];
   attackBonus?: number;
   attackTotal?: number;
   targetArmorClass?: number | null;
@@ -102,6 +104,7 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
     attackName: payload.attackName,
     targetName: payload.targetName,
     attackRoll: payload.attackRoll,
+    attackRolls: payload.attackRolls,
     attackBonus: payload.attackBonus,
     attackTotal: payload.attackTotal,
     targetArmorClass: payload.targetArmorClass,
@@ -168,6 +171,10 @@ export function useCombatState(userId: string) {
       onDiceRolled: (payload) => {
         playDice();
         if (payload.crit) playCrit();
+        // Ataque + dano viram UM evento visual: as rolagens de ataque e de dano
+        // não entram soltas no log — o cartão de `combat:attack` já traz tudo.
+        // A iniciativa continua aparecendo (não há cartão de resultado dela).
+        if (payload.kind !== 'initiative') return;
         setLog((previous) => [describeRoll(payload), ...previous].slice(0, 40));
       },
       onAttackResolved: (payload) => {

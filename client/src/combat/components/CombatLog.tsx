@@ -1,21 +1,8 @@
 import { Icon, type IconName } from '../../components/Icon';
 import { formatModifier } from '../../dnd';
-import type { DamageBreakdownPayload, DamageComponentPayload } from '../../types';
+import type { DamageBreakdownPayload } from '../../types';
 import type { CombatLogEntry } from '../useCombatState';
-
-/**
- * Monta a quebra do dano em uma linha legível, parte a parte:
- * `1d8(4)+1d6(2)+DES(+3)=9`. Os dados mostram os resultados rolados; os bônus
- * fixos (atributo, Fúria, munição) mostram o próprio valor.
- */
-function formatBreakdown(breakdown: DamageBreakdownPayload): string {
-  const parts = breakdown.parts.map((part) =>
-    part.rolls.length > 0
-      ? `${part.label}(${part.rolls.join('+')})`
-      : `${part.label}(${formatModifier(part.value)})`,
-  );
-  return `${parts.join('+')}=${breakdown.total}`;
-}
+import { DamageComponent } from './DamageComponent';
 
 interface CombatLogProps {
   log: CombatLogEntry[];
@@ -35,6 +22,16 @@ const KIND_ICON: Record<CombatLogEntry['kind'], IconName> = {
   spell: 'star',
 };
 
+/** Resumo curto de uma quebra ainda sem apresentação própria (uso defensivo). */
+function formatBreakdown(breakdown: DamageBreakdownPayload): string {
+  const parts = breakdown.parts.map((part) =>
+    part.rolls.length > 0
+      ? `${part.label}(${part.rolls.join('+')})`
+      : `${part.label}(${formatModifier(part.value)})`,
+  );
+  return `${parts.join('+')}=${breakdown.total}`;
+}
+
 interface EntryView {
   icon: IconName;
   variant: string;
@@ -43,34 +40,8 @@ interface EntryView {
   secondary?: string;
 }
 
-/** Linha curta que o backend já permite montar (sem inventar dado nenhum). */
+/** Linha curta dos eventos simples (iniciativa, turno). */
 function describeEntry(entry: CombatLogEntry): EntryView {
-  if (entry.kind === 'result') {
-    const outcome = entry.critical
-      ? { key: 'crit', label: 'CRÍTICO!' }
-      : entry.naturalOne
-        ? { key: 'fail', label: 'FALHA CRÍTICA' }
-        : entry.hit
-          ? { key: 'hit', label: 'ACERTO' }
-          : { key: 'miss', label: 'ERROU' };
-    const ca = entry.targetArmorClass === null ? 'CA ?' : `CA ${entry.targetArmorClass}`;
-    return {
-      icon: 'sword',
-      variant: `result ${outcome.key}`,
-      title: entry.attackName ?? 'Ataque',
-      primary: `${entry.attackTotal} vs ${ca} · ${outcome.label}`,
-      ...(entry.hit && entry.damageRolled != null
-        ? {
-            secondary: entry.components?.[0]?.breakdown
-              ? `${formatBreakdown(entry.components[0].breakdown)} ${
-                  entry.damageType ?? ''
-                }`.trim()
-              : `${entry.damageRolled} ${entry.damageType ?? ''}`.trim(),
-          }
-        : {}),
-    };
-  }
-
   if (entry.kind === 'turn') {
     return {
       icon: KIND_ICON.turn,
@@ -80,14 +51,11 @@ function describeEntry(entry: CombatLogEntry): EntryView {
     };
   }
 
-  const title =
-    entry.kind === 'initiative' ? 'Iniciativa' : entry.kind === 'attack' ? 'Ataque' : 'Dano';
+  const title = entry.kind === 'initiative' ? 'Iniciativa' : entry.kind === 'attack' ? 'Ataque' : 'Dano';
   const modifierLabel =
     entry.modifier && entry.modifier !== 0
       ? ` ${entry.modifier > 0 ? `+${entry.modifier}` : entry.modifier}`
       : '';
-  // A linha de DANO sai destrinchada quando o servidor mandou a quebra:
-  // `1d8(4)+1d6(2)+DES(+3)=9`. Sem ela, cai no formato antigo.
   const primary =
     entry.kind === 'damage' && entry.breakdown
       ? formatBreakdown(entry.breakdown)
@@ -100,81 +68,18 @@ function describeEntry(entry: CombatLogEntry): EntryView {
   };
 }
 
-function componentNote(modifier: DamageComponentPayload['modifier']): string {
-  if (modifier === 'resistance') return 'após resistência';
-  if (modifier === 'immunity') return 'imune';
-  if (modifier === 'vulnerability') return 'vulnerável ×2';
-  return '';
-}
-
 interface DetailRow {
   label: string;
   value: string;
 }
 
-/** Detalhes expansíveis — apenas campos presentes no payload atual. */
+/** Detalhes expansíveis dos eventos simples. */
 function detailRows(entry: CombatLogEntry): DetailRow[] {
   const rows: DetailRow[] = [];
-
-  if (entry.kind === 'result') {
-    rows.push({ label: 'Resultado', value: String(entry.attackTotal ?? '—') });
-    rows.push({ label: 'd20', value: String(entry.attackRoll ?? '—') });
-    rows.push({ label: 'Bônus', value: formatModifier(entry.attackBonus ?? 0) });
-    rows.push({
-      label: 'Modo',
-      value: entry.advantage ? 'vantagem' : entry.disadvantage ? 'desvantagem' : 'normal',
-    });
-    rows.push({ label: 'Alvo', value: entry.targetName ?? '—' });
-    rows.push({
-      label: 'CA',
-      value: entry.targetArmorClass === null ? 'oculta' : String(entry.targetArmorClass ?? '—'),
-    });
-
-    if (entry.hit) {
-      const components = entry.components ?? [];
-      if (components.length > 0) {
-        rows.push({
-          label: 'Dano',
-          value: components
-            .map((component) => {
-              const note = componentNote(component.modifier);
-              const line = component.breakdown
-                ? formatBreakdown(component.breakdown)
-                : component.expression;
-              return `${line} ${component.type || 'sem tipo'}${note ? ` (${note})` : ''}`;
-            })
-            .join('  +  '),
-        });
-      } else if (entry.damageRolled != null) {
-        rows.push({
-          label: 'Dano',
-          value: `${entry.damageRolled} ${entry.damageType ?? ''}`.trim(),
-        });
-      }
-      if (entry.damageRolled != null) {
-        rows.push({ label: 'Total', value: String(entry.damageRolled) });
-      }
-      if (entry.sneakAttack) {
-        rows.push({
-          label: 'Ataque Furtivo',
-          value: `${entry.sneakAttack.expression} (${entry.sneakAttack.reason})`,
-        });
-      }
-      if (!entry.targetStatsHidden && entry.targetHpCurrent != null) {
-        rows.push({
-          label: 'HP do alvo',
-          value: `${entry.targetHpCurrent}/${entry.targetHpMax ?? '?'}`,
-        });
-      }
-    }
-    return rows;
-  }
-
   if (entry.kind === 'turn') {
     rows.push({ label: 'Rodada', value: String(entry.round ?? '—') });
     return rows;
   }
-
   rows.push({ label: 'Expressão', value: entry.expression ?? '—' });
   if (entry.rolls && entry.rolls.length > 0) {
     rows.push({ label: 'Dados', value: entry.rolls.join(', ') });
@@ -188,10 +93,139 @@ function detailRows(entry: CombatLogEntry): DetailRow[] {
   return rows;
 }
 
+/** Desfecho do ataque, com o rótulo e a classe visual correspondentes. */
+function outcomeOf(entry: CombatLogEntry): { key: string; label: string } {
+  if (entry.critical) return { key: 'crit', label: 'CRÍTICO!' };
+  if (entry.naturalOne) return { key: 'fail', label: 'FALHA CRÍTICA' };
+  if (entry.hit) return { key: 'hit', label: 'ACERTO' };
+  return { key: 'miss', label: 'ERROU' };
+}
+
 /**
- * O QUE ACONTECEU? Página lateral do livro de combate: cada evento vira um
- * cartão compacto, com destaque dourado no mais recente e detalhes que abrem ao
- * clicar. Só exibe o que o payload do socket já traz.
+ * CARTÃO DE ATAQUE — um único evento visual lógico para ataque + dano.
+ *
+ * Nível principal: quem atacou, com o quê, o desfecho (total vs CA), o dano por
+ * tipo e a composição fonte a fonte. Nível detalhado (`<details>`): a rolagem
+ * de ataque (d20, modo, bônus, CA) e as observações do servidor. Tudo vem do
+ * payload — nada é recalculado.
+ */
+function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean }) {
+  const outcome = outcomeOf(entry);
+  const ca = entry.targetArmorClass === null ? 'CA oculta' : `CA ${entry.targetArmorClass}`;
+  const components = entry.components ?? [];
+  const rolls = entry.attackRolls ?? [];
+  const rollLabel =
+    rolls.length > 0 ? rolls.map((roll) => `[${roll}]`).join(' ') : `[${entry.attackRoll ?? '—'}]`;
+
+  return (
+    <li className={`log-card result ${outcome.key}${recent ? ' recent' : ''}`}>
+      <article className="attack-card">
+        <header className="attack-card-head">
+          <span className="attack-card-actor">
+            <Icon name="sword" size={14} />
+            <span>{entry.actorName}</span>
+          </span>
+          <span className="attack-card-time">{new Date(entry.at).toLocaleTimeString('pt-BR')}</span>
+        </header>
+
+        <p className="attack-card-weapon">
+          {entry.attackName ?? 'Ataque'}
+          {entry.targetName ? <span className="attack-card-target"> → {entry.targetName}</span> : null}
+        </p>
+
+        <p className={`attack-card-outcome ${outcome.key}`}>
+          <span className="attack-card-vs">
+            {entry.attackTotal} vs {ca}
+          </span>
+          <span className={`attack-result-outcome ${outcome.key}`}>{outcome.label}</span>
+        </p>
+
+        {entry.hit ? (
+          <div className="attack-card-damage">
+            <span className="attack-card-label">Dano</span>
+            {components.length > 0 ? (
+              <>
+                <div className="attack-card-components">
+                  {components.map((component, index) => (
+                    <DamageComponent key={`${component.type}-${index}`} component={component} />
+                  ))}
+                </div>
+                <p className="attack-card-total">
+                  <span className="attack-card-total-label">TOTAL</span>
+                  <span className="attack-card-total-value">{entry.damageRolled}</span>
+                </p>
+              </>
+            ) : (
+              <p className="attack-card-flat">
+                {entry.damageRolled} {entry.damageType}
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        <details className="attack-card-details">
+          <summary>▸ Detalhes da rolagem</summary>
+          <div className="attack-card-detail-body">
+            <p className="log-detail-row">
+              <span className="log-detail-label">Ataque</span>
+              <span className="log-detail-value">d20 → {rollLabel}</span>
+            </p>
+            {rolls.length > 1 ? (
+              <p className="log-detail-row">
+                <span className="log-detail-label">Usado</span>
+                <span className="log-detail-value">{entry.attackRoll}</span>
+              </p>
+            ) : null}
+            <p className="log-detail-row">
+              <span className="log-detail-label">Modo</span>
+              <span className="log-detail-value">
+                {entry.advantage ? 'vantagem' : entry.disadvantage ? 'desvantagem' : 'normal'}
+              </span>
+            </p>
+            <p className="log-detail-row">
+              <span className="log-detail-label">Bônus</span>
+              <span className="log-detail-value">{formatModifier(entry.attackBonus ?? 0)}</span>
+            </p>
+            <p className="log-detail-row">
+              <span className="log-detail-label">Total</span>
+              <span className="log-detail-value">{entry.attackTotal ?? '—'}</span>
+            </p>
+            <p className="log-detail-row">
+              <span className="log-detail-label">Alvo</span>
+              <span className="log-detail-value">{entry.targetName ?? '—'}</span>
+            </p>
+            <p className="log-detail-row">
+              <span className="log-detail-label">CA</span>
+              <span className="log-detail-value">
+                {entry.targetArmorClass === null ? 'oculta' : String(entry.targetArmorClass ?? '—')}
+              </span>
+            </p>
+            {entry.sneakAttack ? (
+              <p className="log-detail-row">
+                <span className="log-detail-label">Furtivo</span>
+                <span className="log-detail-value">
+                  {entry.sneakAttack.expression} ({entry.sneakAttack.reason})
+                </span>
+              </p>
+            ) : null}
+            {!entry.targetStatsHidden && entry.targetHpCurrent != null ? (
+              <p className="log-detail-row">
+                <span className="log-detail-label">HP do alvo</span>
+                <span className="log-detail-value">
+                  {entry.targetHpCurrent}/{entry.targetHpMax ?? '?'}
+                </span>
+              </p>
+            ) : null}
+          </div>
+        </details>
+      </article>
+    </li>
+  );
+}
+
+/**
+ * O QUE ACONTECEU? Página lateral do livro de combate. O ataque e o dano viram
+ * UM cartão estruturado; iniciativa e turno continuam cartões simples.
  */
 export function CombatLog({ log }: CombatLogProps) {
   return (
@@ -205,13 +239,14 @@ export function CombatLog({ log }: CombatLogProps) {
       ) : (
         <ol className="combat-log">
           {log.map((entry, index) => {
+            const recent = index === 0;
+            if (entry.kind === 'result') {
+              return <AttackCard key={entry.id} entry={entry} recent={recent} />;
+            }
             const view = describeEntry(entry);
             const details = detailRows(entry);
             return (
-              <li
-                key={entry.id}
-                className={`log-card ${view.variant}${index === 0 ? ' recent' : ''}`}
-              >
+              <li key={entry.id} className={`log-card ${view.variant}${recent ? ' recent' : ''}`}>
                 <details className="log-card-body">
                   <summary className="log-card-summary">
                     <span className="log-card-head">

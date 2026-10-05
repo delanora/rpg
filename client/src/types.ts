@@ -1814,14 +1814,30 @@ export interface CombatEndedPayload {
   combatId: string;
 }
 
+/** Origem canônica de uma parte do dano (a UI não infere). */
+export type DamagePartSource =
+  | 'weapon'
+  | 'extra'
+  | 'sneakAttack'
+  | 'attribute'
+  | 'weaponBonus'
+  | 'flat'
+  | 'rage'
+  | 'ammo'
+  | 'critical';
+
 /**
  * Uma parte da quebra de uma parcela de dano: o dado da arma (`1d8` com os
- * resultados), o Ataque Furtivo (`1d6`), o atributo (`DES`, sem dados) ou um
- * bônus fixo (`Fúria`, `Munição`...).
+ * resultados), o Ataque Furtivo (`2d6`), o atributo (`Destreza`, sem dados) ou
+ * um bônus fixo (`Fúria`, `Munição`...).
  */
 export interface DamagePartPayload {
-  /** Rótulo legível: `1d8`/`2d6` para dados, `DES`/`FOR` para o atributo. */
+  /** Origem canônica da parte. */
+  source: DamagePartSource;
+  /** Rótulo legível já pronto: `Arma`, `Ataque Furtivo`, `Destreza`, `Fúria`... */
   label: string;
+  /** Expressão de dados da parte (`1d8`, `2d6`); vazia em bônus fixos. */
+  dice: string;
   /** Dados rolados nesta parte (vazio em bônus fixos). */
   rolls: number[];
   /** Valor somado desta parte. */
@@ -1972,6 +1988,8 @@ export interface AttackResolvedPayload {
   attackName: string;
   targetName: string;
   attackRoll: number;
+  /** Todos os d20 rolados (um, ou dois com vantagem/desvantagem). */
+  attackRolls: number[];
   /** Rolagem feita com vantagem (2d20, mantém o maior). */
   advantage: boolean;
   /** Rolagem feita com desvantagem (2d20, mantém o menor). */

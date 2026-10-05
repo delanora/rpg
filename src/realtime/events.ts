@@ -290,13 +290,42 @@ export interface CombatEndedPayload {
 
 /** Rolagem de dado divulgada para todos — dispara o efeito sonoro. */
 /**
+ * Origem canônica de uma parte do dano. O frontend só APRESENTA: usa o rótulo
+ * que veio no payload e nunca infere a origem (sem lógica exclusiva do
+ * Ataque Furtivo, por exemplo).
+ */
+export type DamagePartSource =
+  /** Dado base do golpe/arma. */
+  | 'weapon'
+  /** Dados de um dano extra (outro tipo, ex.: fogo). */
+  | 'extra'
+  /** Ataque Furtivo (Ladino). */
+  | 'sneakAttack'
+  /** Modificador de atributo (FOR/DES...). */
+  | 'attribute'
+  /** Bônus estruturado da arma (mágico). */
+  | 'weaponBonus'
+  /** Bônus fixo genérico. */
+  | 'flat'
+  /** Fúria (Bárbaro). */
+  | 'rage'
+  /** Bônus de dano da munição. */
+  | 'ammo'
+  /** Dados extras do Crítico Brutal. */
+  | 'critical';
+
+/**
  * Uma parte da quebra de uma parcela de dano. Ex.: o dado da arma (`1d8`,
  * com os resultados rolados), o Ataque Furtivo (`1d6`), o modificador do
- * atributo (`DES`, sem dados) ou um bônus fixo (`Fúria`, `Munição`...).
+ * atributo (`Destreza`, sem dados) ou um bônus fixo (`Fúria`, `Munição`...).
  */
 export interface DamagePartPayload {
-  /** Rótulo legível: `1d8`/`2d6` para dados, `DES`/`FOR` para o atributo. */
+  /** Origem canônica (a UI não infere; só rotula pelo `label`). */
+  source: DamagePartSource;
+  /** Rótulo legível já pronto: `Arma`, `Ataque Furtivo`, `Destreza`, `Fúria`... */
   label: string;
+  /** Expressão de dados da parte (`1d8`, `2d6`); vazia em bônus fixos. */
+  dice: string;
   /** Dados rolados nesta parte (vazio em bônus fixos, como o atributo). */
   rolls: number[];
   /** Valor somado desta parte (dados + bônus dela). */
@@ -379,6 +408,11 @@ export interface AttackResolvedPayload {
   attackName: string;
   targetName: string;
   attackRoll: number;
+  /**
+   * Todos os d20 rolados no teste de ataque (um, ou dois com
+   * vantagem/desvantagem). `attackRoll` é o mantido.
+   */
+  attackRolls: number[];
   /** Rolagem feita com vantagem (2d20, mantém o maior). */
   advantage: boolean;
   /** Rolagem feita com desvantagem (2d20, mantém o menor). */

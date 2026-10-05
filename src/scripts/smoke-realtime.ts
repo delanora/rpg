@@ -1429,6 +1429,22 @@ async function main(): Promise<void> {
     JSON.stringify(typelessResult),
   );
 
+  // Mesmo sem tipo de dano na arma, o Ataque Furtivo continua nomeado na
+  // composição, com os 2d6 e cada resultado individual.
+  {
+    const typelessParts = typelessResult?.components?.[0]?.breakdown?.parts ?? [];
+    const typelessSneak = typelessParts.find((part: any) => part.source === 'sneakAttack');
+    check(
+      'sem tipo de dano, o Ataque Furtivo continua nomeado com os dados individuais',
+      typelessResult === null ||
+        (typelessSneak?.label === 'Ataque Furtivo' &&
+          typelessSneak.dice === '2d6' &&
+          typelessSneak.rolls.length === 2 &&
+          typelessSneak.value === typelessSneak.rolls.reduce((sum: number, r: number) => sum + r, 0)),
+      JSON.stringify(typelessParts),
+    );
+  }
+
   // Arma sem sutil/à distância não recebe o dano extra.
   await api('/api/characters/me', {
     method: 'PATCH',
@@ -7922,6 +7938,62 @@ async function main(): Promise<void> {
     JSON.stringify(plainRolls.filter((r: any) => r.attackRoll === 1 && r.hit)),
   );
 
+  // --- Reformulação do log: dados individuais e modificadores uma só vez ----
+  const championHits = championRolls.filter((result: any) => result.hit);
+  check(
+    'o payload do ataque traz os d20 rolados (attackRolls) e casa com o resultado usado',
+    championRolls.every(
+      (result: any) =>
+        Array.isArray(result.attackRolls) &&
+        result.attackRolls.length === 1 &&
+        result.attackRolls[0] === result.attackRoll,
+    ),
+    JSON.stringify(championRolls[0]?.attackRolls),
+  );
+  check(
+    'a composição nomeia a ARMA com o dado e os resultados individuais',
+    championHits.length > 0 &&
+      championHits.every((result: any) => {
+        const part = (result.components?.[0]?.breakdown?.parts ?? []).find(
+          (item: any) => item.source === 'weapon',
+        );
+        const count = Number(String(part?.dice ?? '').split('d')[0]);
+        return (
+          part?.label === 'Arma' &&
+          /^\d+d8$/.test(part?.dice ?? '') &&
+          part.rolls.length === count &&
+          part.value === part.rolls.reduce((sum: number, roll: number) => sum + roll, 0)
+        );
+      }),
+    JSON.stringify(championHits[0]?.components?.[0]?.breakdown?.parts),
+  );
+  check(
+    'no crítico a ARMA sai com o dobro de dados (2d8) e o modificador entra UMA só vez',
+    championHits.some((result: any) => result.critical) &&
+      championHits
+        .filter((result: any) => result.critical)
+        .every((result: any) => {
+          const parts = result.components?.[0]?.breakdown?.parts ?? [];
+          const weapon = parts.find((item: any) => item.source === 'weapon');
+          const fixos = parts.filter((item: any) => item.rolls.length === 0);
+          return (
+            weapon?.dice === '2d8' &&
+            weapon.rolls.length === 2 &&
+            fixos.filter((item: any) => item.value === 3).length === 1
+          );
+        }),
+    JSON.stringify(
+      championHits
+        .filter((r: any) => r.critical)
+        .map((r: any) => r.components?.[0]?.breakdown?.parts),
+    ),
+  );
+  check(
+    'ataque errado não traz bloco de dano (components vazio)',
+    plainRolls.every((result: any) => result.hit || (result.components ?? []).length === 0),
+    JSON.stringify(plainRolls.filter((r: any) => !r.hit && (r.components ?? []).length > 0)),
+  );
+
   // --- 20. Moedas -----------------------------------------------------------
   console.log('\n20) Moedas');
 
@@ -8582,6 +8654,22 @@ async function main(): Promise<void> {
       ammoDamageResult.damageRolled === 6,
     JSON.stringify(ammoDamageResult),
   );
+
+  // A munição e o bônus fixo entram como fontes separadas na composição.
+  {
+    const ammoParts = ammoDamageResult?.components?.[0]?.breakdown?.parts ?? [];
+    const ammoPart = ammoParts.find((part: any) => part.source === 'ammo');
+    const flatPart = ammoParts.find((part: any) => part.source === 'flat');
+    check(
+      'a munição e o bônus fixo entram separados na composição',
+      ammoDamageResult !== null &&
+        ammoPart?.label === 'Munição' &&
+        ammoPart.value === 2 &&
+        flatPart?.label === 'Bônus' &&
+        flatPart.value === 4,
+      JSON.stringify(ammoParts),
+    );
+  }
 
   // Duas requisições SIMULTÂNEAS não gastam a mesma unidade duas vezes.
   await masterPatch(archer.characterId, {
@@ -9277,6 +9365,57 @@ async function main(): Promise<void> {
     JSON.stringify(derivedHit),
   );
 
+  // O log separa ARMA (dado) e FORÇA (modificador, sem dados) como fontes
+  // próprias — o atributo entra UMA vez, nunca misturado ao dado da arma.
+  {
+    const derivedParts = derivedHit?.components?.[0]?.breakdown?.parts ?? [];
+    const derivedWeapon = derivedParts.find((part: any) => part.source === 'weapon');
+    const derivedStrength = derivedParts.find((part: any) => part.source === 'attribute');
+    check(
+      'o ataque derivado separa ARMA (dado) e FORÇA (modificador, sem dados) no log',
+      derivedHit !== null &&
+        derivedWeapon?.label === 'Arma' &&
+        derivedWeapon.rolls.length === 1 &&
+        derivedStrength?.label === 'Força' &&
+        derivedStrength.dice === '' &&
+        derivedStrength.rolls.length === 0 &&
+        derivedStrength.value === 3,
+      JSON.stringify(derivedParts),
+    );
+  }
+
+  // Bônus ESTRUTURADO da arma (mágico) sai como fonte própria, não como "Bônus".
+  {
+    const magicLongsword = weaponItem(
+      'a-magicsword',
+      'Espada longa +2',
+      {
+        damageCount: 1,
+        damageDie: 8,
+        damageType: 'Cortante',
+        weaponType: 'melee',
+        weaponCategory: 'martial',
+        properties: ['versatile'],
+        versatileDie: 10,
+        damageBonus: 2,
+        attackBonus: 2,
+      },
+      'hand1',
+    );
+    await masterPatch(duelist.characterId, { inventory: [magicLongsword] });
+    const magicHit = await rollUntilHit('weapon:a-magicsword');
+    const magicParts = magicHit?.components?.[0]?.breakdown?.parts ?? [];
+    const magicBonusPart = magicParts.find((part: any) => part.source === 'weaponBonus');
+    check(
+      'o bônus mágico da arma aparece como fonte própria ("Bônus da arma")',
+      magicHit !== null &&
+        magicBonusPart?.label === 'Bônus da arma' &&
+        magicBonusPart.dice === '' &&
+        magicBonusPart.value === 2,
+      JSON.stringify(magicParts),
+    );
+  }
+
   // Arma sutil derivada aciona o Ataque Furtivo do ladino quando o ataque tem
   // a condição tática (aqui, vantagem no ataque).
   await masterPatch(duelist.characterId, { inventory: [rapier] });
@@ -9288,6 +9427,21 @@ async function main(): Promise<void> {
       sneakHit.sneakAttack?.reason === 'vantagem',
     JSON.stringify(sneakHit?.sneakAttack ?? null),
   );
+
+  // No log, o Ataque Furtivo é uma FONTE própria com a expressão e cada dado.
+  {
+    const sneakParts = sneakHit?.components?.[0]?.breakdown?.parts ?? [];
+    const sneakPart = sneakParts.find((part: any) => part.source === 'sneakAttack');
+    check(
+      'Ataque Furtivo é fonte própria no log: 2d6 → [a][b] = soma',
+      sneakHit !== null &&
+        sneakPart?.label === 'Ataque Furtivo' &&
+        /^\d+d6$/.test(sneakPart.dice) &&
+        sneakPart.rolls.length === Number(sneakPart.dice.split('d')[0]) &&
+        sneakPart.value === sneakPart.rolls.reduce((sum: number, r: number) => sum + r, 0),
+      JSON.stringify(sneakParts),
+    );
+  }
 
   // Ataque da mão secundária também resolve no combate.
   await masterPatch(duelist.characterId, { inventory: [daggerMain, daggerOff] });
@@ -10106,6 +10260,29 @@ async function main(): Promise<void> {
         (multiHit.components ?? []).reduce((sum: number, item: any) => sum + item.applied, 0),
     JSON.stringify(multiHit),
   );
+
+  // Cada tipo tem a PRÓPRIA composição: o Cortante traz o dado da arma, o Fogo
+  // traz um "Dano extra" (o log não mistura os tipos nem esconde os dados).
+  {
+    const cortanteParts = multiCortante?.breakdown?.parts ?? [];
+    const fogoParts = multiFogo?.breakdown?.parts ?? [];
+    const fogoExtra = fogoParts.find((part: any) => part.source === 'extra');
+    check(
+      'múltiplos tipos: cada parcela tem a própria composição (Arma e Dano extra)',
+      multiHit !== null &&
+        cortanteParts.some((part: any) => part.source === 'weapon') &&
+        fogoExtra?.dice === '1d6' &&
+        fogoExtra.rolls.length === 1 &&
+        fogoExtra.value === fogoExtra.rolls.reduce((sum: number, r: number) => sum + r, 0),
+      JSON.stringify({ cortante: cortanteParts, fogo: fogoParts }),
+    );
+    check(
+      'o dano defendido preserva o bruto (rolled) e o aplicado (applied)',
+      multiCortante?.modifier === 'resistance' &&
+        multiCortante.breakdown.total === multiCortante.rolled,
+      JSON.stringify({ rolled: multiCortante?.rolled, applied: multiCortante?.applied }),
+    );
+  }
 
   // Imunidade: agora o Fogo é IMUNE — a parcela é ZERADA, mas o Cortante (sem
   // defesa) entra inteiro; o dano total ignora a parcela imune.
