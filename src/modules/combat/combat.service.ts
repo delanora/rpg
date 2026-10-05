@@ -31,7 +31,7 @@ import {
   type InventoryLike,
 } from '../shared/ammo.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
-import { ABILITY_ABBREVIATIONS, abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
+import { ABILITY_LABELS, abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice } from '../shared/dice.js';
@@ -609,7 +609,7 @@ function rollSneakAttack(
   attack: { finesse: boolean; ranged: boolean },
   critical: boolean,
   options: SneakAttackOptions,
-): { expression: string; total: number; rolls: number[]; reason: string } | null {
+): { expression: string; total: number; rolls: number[]; sides: number; reason: string } | null {
   if (attacker.kind !== 'CHARACTER') return null;
   const character = attacker.character;
   if (!character) return null;
@@ -640,7 +640,7 @@ function rollSneakAttack(
   if (options.adjacentAlly) reasons.push('aliado adjacente');
   const reason = reasons.join(' + ');
 
-  return { expression, total: roll.total, rolls: roll.rolls, reason };
+  return { expression, total: roll.total, rolls: roll.rolls, sides: roll.sides, reason };
 }
 
 /** Bônus que a munição consumida soma ao ATAQUE e ao DANO desta rolagem. */
@@ -886,7 +886,7 @@ export async function resolveAttack(
     let sneakApplied = false;
     // Atributo que alimenta o dano: ataques derivados da arma sabem qual é
     // (FOR/DES); os gravados à mão não, então a parcela sai como "Bônus".
-    const abilityLabel = attack.ability ? ABILITY_ABBREVIATIONS[attack.ability] : null;
+    const abilityLabel = attack.ability ? ABILITY_LABELS[attack.ability] : null;
     const abilityModifier = attack.abilityModifier ?? 0;
 
     for (let index = 0; index < specs.length; index += 1) {
@@ -903,10 +903,16 @@ export async function resolveAttack(
 
       // Quebra legível da parcela: cada dado/bônus vira uma parte. É o que o
       // registro exibe como `1d8(4)+1d6(2)+DES(+3)=9`.
+      // A parcela principal é o golpe/arma; as seguintes são danos extras de
+      // outro tipo (ex.: fogo). O rótulo é montado aqui, não no frontend.
+      const isPrimary = index === 0;
       const breakdownParts: DamagePartPayload[] = [];
       if (spec.count > 0 && spec.sides > 0) {
         breakdownParts.push({
-          label: `${spec.count}d${spec.sides}`,
+          source: isPrimary ? 'weapon' : 'extra',
+          label: isPrimary ? 'Arma' : 'Dano extra',
+          // O número de dados reflete o crítico (o dado dobrado sai como 2d8).
+          dice: `${damage.rolls.length}d${spec.sides}`,
           rolls: damage.rolls,
           value: damage.total - spec.bonus,
         });
@@ -931,7 +937,9 @@ export async function resolveAttack(
         if (extra && extra.total > 0) {
           componentTotal += extra.total;
           breakdownParts.push({
-            label: extra.expression,
+            source: 'critical',
+            label: 'Crítico Brutal',
+            dice: extra.expression,
             rolls: extra.rolls,
             value: extra.total,
           });
@@ -942,7 +950,7 @@ export async function resolveAttack(
       if (isPhysical && !physicalBonusApplied) {
         if (meleeBonus > 0) {
           componentTotal += meleeBonus;
-          breakdownParts.push({ label: 'Fúria', rolls: [], value: meleeBonus });
+          breakdownParts.push({ source: 'rage', label: 'Fúria', dice: '', rolls: [], value: meleeBonus });
         }
         physicalBonusApplied = true;
       }
@@ -957,7 +965,10 @@ export async function resolveAttack(
           reason: sneakRoll.reason,
         };
         breakdownParts.push({
-          label: sneakRoll.expression,
+          source: 'sneakAttack',
+          label: 'Ataque Furtivo',
+          // No crítico os dados dobram: sai como 4d6, com os 4 resultados.
+          dice: `${sneakRoll.rolls.length}d${sneakRoll.sides}`,
           rolls: sneakRoll.rolls,
           value: sneakRoll.total,
         });
@@ -967,17 +978,38 @@ export async function resolveAttack(
       // Atributo + o resto do bônus fixo (mágico etc.): só na parcela PRINCIPAL
       // o ataque sabe qual atributo o alimenta.
       if (index === 0 && abilityLabel && abilityModifier !== 0) {
-        breakdownParts.push({ label: abilityLabel, rolls: [], value: abilityModifier });
+        breakdownParts.push({
+          source: 'attribute',
+          label: abilityLabel,
+          dice: '',
+          rolls: [],
+          value: abilityModifier,
+        });
       }
       const flatBonus = spec.bonus - (index === 0 && abilityLabel ? abilityModifier : 0);
       if (flatBonus !== 0) {
-        breakdownParts.push({ label: 'Bônus', rolls: [], value: flatBonus });
+        // Na parcela principal de um ataque derivado da arma, o bônus fixo é o
+        // bônus estruturado da arma (mágico). Nos demais, é um bônus genérico.
+        const weaponBonus = index === 0 && abilityLabel !== null;
+        breakdownParts.push({
+          source: weaponBonus ? 'weaponBonus' : 'flat',
+          label: weaponBonus ? 'Bônus da arma' : 'Bônus',
+          dice: '',
+          rolls: [],
+          value: flatBonus,
+        });
       }
 
       // Bônus de dano da munição: entra UMA vez, na parcela PRINCIPAL.
       if (index === 0 && ammoBonus.damageBonus !== 0) {
         componentTotal += ammoBonus.damageBonus;
-        breakdownParts.push({ label: 'Munição', rolls: [], value: ammoBonus.damageBonus });
+        breakdownParts.push({
+          source: 'ammo',
+          label: 'Munição',
+          dice: '',
+          rolls: [],
+          value: ammoBonus.damageBonus,
+        });
       }
 
       const breakdown: DamageBreakdownPayload = { parts: breakdownParts, total: componentTotal };
@@ -1061,6 +1093,7 @@ export async function resolveAttack(
     attackName: attack.name,
     targetName: target.name,
     attackRoll,
+    attackRolls: attackDice,
     advantage,
     disadvantage,
     attackBonus: attack.attackBonus + ammoBonus.attackBonus,

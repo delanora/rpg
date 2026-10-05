@@ -1,6 +1,7 @@
 import { Icon } from '../../components/Icon';
 import { formatModifier } from '../../dnd';
 import type { AttackResolvedPayload } from '../../types';
+import { DamageComponent } from './DamageComponent';
 
 interface AttackResultPanelProps {
   result: AttackResolvedPayload;
@@ -9,8 +10,9 @@ interface AttackResultPanelProps {
 
 /**
  * Resultado da rolagem de ataque: selo com o total vs CA, o desfecho
- * (ACERTO / ERRO / CRÍTICO! / FALHA CRÍTICA) e a quebra do dano. Exibe apenas o
- * que o servidor devolveu — nada é recalculado aqui.
+ * (ACERTO / ERROU / CRÍTICO! / FALHA CRÍTICA) e a composição do dano fonte a
+ * fonte, com os dados individuais. Exibe apenas o que o servidor devolveu —
+ * nada é recalculado aqui.
  */
 export function AttackResultPanel({ result, onDismiss }: AttackResultPanelProps) {
   const naturalOne = result.attackRoll === 1 && !result.critical;
@@ -21,12 +23,9 @@ export function AttackResultPanel({ result, onDismiss }: AttackResultPanelProps)
       ? 'FALHA CRÍTICA'
       : result.hit
         ? 'ACERTO'
-        : 'ERRO';
-
-  // Parcelas com dano aplicado ou com defesa do alvo (resistência/imunidade).
-  const components = result.components.filter(
-    (component) => component.applied > 0 || component.modifier !== null,
-  );
+        : 'ERROU';
+  const rolls = result.attackRolls.length > 0 ? result.attackRolls : [result.attackRoll];
+  const rollLabel = rolls.map((roll) => `[${roll}]`).join(' ');
 
   return (
     <section className={`attack-result ${outcome}`} role="status" aria-live="polite">
@@ -50,7 +49,7 @@ export function AttackResultPanel({ result, onDismiss }: AttackResultPanelProps)
       <p className="attack-result-sub">
         {result.attackerName} · {result.attackName} em {result.targetName}
         {result.advantage ? ' · vantagem' : result.disadvantage ? ' · desvantagem' : ''}
-        {` · d20 ${result.attackRoll} ${formatModifier(result.attackBonus)}`}
+        {` · d20 ${rollLabel} ${formatModifier(result.attackBonus)}`}
       </p>
 
       {result.hit ? (
@@ -59,29 +58,16 @@ export function AttackResultPanel({ result, onDismiss }: AttackResultPanelProps)
             <Icon name="flame" size={13} /> Dano
           </span>
 
-          {components.length === 0 ? (
+          {result.components.length === 0 ? (
             <span className="attack-result-line">
               {result.damageRolled} {result.damageType}
             </span>
           ) : (
-            <ul className="attack-result-lines">
-              {components.map((component, index) => (
-                <li key={index} className="attack-result-line">
-                  <span className="attack-result-dealt">
-                    {component.applied} {component.type || 'sem tipo'}
-                  </span>
-                  {component.modifier === 'resistance' ? (
-                    <span className="attack-result-note">
-                      após resistência ({component.rolled}→{component.applied})
-                    </span>
-                  ) : component.modifier === 'immunity' ? (
-                    <span className="attack-result-note">imune</span>
-                  ) : component.modifier === 'vulnerability' ? (
-                    <span className="attack-result-note">vulnerável ×2</span>
-                  ) : null}
-                </li>
+            <div className="attack-card-components">
+              {result.components.map((component, index) => (
+                <DamageComponent key={`${component.type}-${index}`} component={component} />
               ))}
-            </ul>
+            </div>
           )}
 
           <span className="attack-result-total-damage">TOTAL {result.damageRolled}</span>
