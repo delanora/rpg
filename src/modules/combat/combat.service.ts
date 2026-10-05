@@ -876,8 +876,12 @@ export async function resolveAttack(
     const defenses = damageDefensesOf(target);
     const specs = attackDamages(attack);
     let total = 0;
-    // Fúria e Ataque Furtivo entram UMA vez, na primeira parcela física.
+    // A Fúria entra UMA vez, na primeira parcela FÍSICA. O Ataque Furtivo
+    // acompanha o dano da ARMA, então entra UMA vez na primeira parcela — sem
+    // depender do tipo (amarrá-lo à parcela física o descartava em armas sem
+    // tipo de dano).
     let physicalBonusApplied = false;
+    let sneakApplied = false;
 
     for (let index = 0; index < specs.length; index += 1) {
       const spec = specs[index];
@@ -928,7 +932,7 @@ export async function resolveAttack(
         }
       }
 
-      // Fúria e Ataque Furtivo: UMA vez, na primeira parcela física.
+      // Fúria: bônus FÍSICO, UMA vez, na primeira parcela física.
       if (isPhysical && !physicalBonusApplied) {
         if (meleeBonus > 0) {
           componentTotal += meleeBonus;
@@ -944,26 +948,30 @@ export async function resolveAttack(
             at: new Date().toISOString(),
           });
         }
-        if (sneakRoll) {
-          componentTotal += sneakRoll.total;
-          sneakAttackResult = {
-            expression: sneakRoll.expression,
-            total: sneakRoll.total,
-            reason: sneakRoll.reason,
-          };
-          announceRoll({
-            kind: 'damage',
-            actorName: `${attacker.name} — Ataque Furtivo (${sneakRoll.reason})`,
-            expression: sneakRoll.expression,
-            rolls: sneakRoll.rolls,
-            sides: 6,
-            modifier: 0,
-            total: sneakRoll.total,
-            crit: critical,
-            at: new Date().toISOString(),
-          });
-        }
         physicalBonusApplied = true;
+      }
+
+      // Ataque Furtivo: acompanha o dano da ARMA. Entra UMA vez, na primeira
+      // parcela — inclusive quando ela não tem tipo de dano.
+      if (sneakRoll && !sneakApplied) {
+        componentTotal += sneakRoll.total;
+        sneakAttackResult = {
+          expression: sneakRoll.expression,
+          total: sneakRoll.total,
+          reason: sneakRoll.reason,
+        };
+        announceRoll({
+          kind: 'damage',
+          actorName: `${attacker.name} — Ataque Furtivo (${sneakRoll.reason})`,
+          expression: sneakRoll.expression,
+          rolls: sneakRoll.rolls,
+          sides: 6,
+          modifier: 0,
+          total: sneakRoll.total,
+          crit: critical,
+          at: new Date().toISOString(),
+        });
+        sneakApplied = true;
       }
 
       // Log da PARCELA, já com os bônus dela (por tipo), para o mestre ver cada
