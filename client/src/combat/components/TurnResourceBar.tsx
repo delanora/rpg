@@ -82,29 +82,38 @@ export function TurnResourceBar({
 
       {/* Fim do turno: mesmo mecanismo de avanço já existente. */}
       <div className="turn-resource end">
-        <span className="turn-resource-icon">
-          <Icon name="sun" size={13} />
-        </span>
-        <span className="turn-resource-label">Fim do turno</span>
         {canEndTurn ? (
           <button
             type="button"
-            className="btn btn-primary btn-small turn-resource-btn"
+            className="end-turn"
             disabled={busy}
             onClick={onEndTurn}
+            aria-label="Encerrar turno"
           >
-            Encerrar →
+            <span className="end-turn-text">Encerrar turno</span>
+            <span className="end-turn-arrow" aria-hidden="true">
+              <svg viewBox="0 0 20 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 6h13" />
+                <path d="M9.5 1.5 15 6l-5.5 4.5" />
+              </svg>
+            </span>
           </button>
         ) : (
-          <span className="turn-resource-state">
-            {active
-              ? isMyTurn
-                ? 'encerre quando quiser'
-                : isMaster
-                  ? 'aguardando'
-                  : 'aguardando seu turno'
-              : 'não controlado'}
-          </span>
+          <>
+            <span className="turn-resource-icon">
+              <Icon name="sun" size={13} />
+            </span>
+            <span className="turn-resource-label">Encerrar turno</span>
+            <span className="turn-resource-state">
+              {active
+                ? isMyTurn
+                  ? 'encerre quando quiser'
+                  : isMaster
+                    ? 'aguardando'
+                    : 'aguardando seu turno'
+                : 'não controlado'}
+            </span>
+          </>
         )}
       </div>
     </section>
