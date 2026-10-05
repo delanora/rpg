@@ -47,8 +47,11 @@ combatRouter.post('/initiative/:combatantId', authenticate, requireRole('MASTER'
   res.json({ combat: await rollInitiative(actorFrom(req), String(req.params.combatantId)) });
 });
 
-/** POST /api/combat/next-turn — avança o turno (mestre). */
-combatRouter.post('/next-turn', authenticate, requireRole('MASTER'), async (req, res) => {
+/**
+ * POST /api/combat/next-turn — avança o turno. O mestre a qualquer momento;
+ * o jogador só encerra o próprio turno (verificado no serviço).
+ */
+combatRouter.post('/next-turn', authenticate, async (req, res) => {
   res.json({ combat: await nextTurn(actorFrom(req)) });
 });
 

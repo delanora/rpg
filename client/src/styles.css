@@ -10864,16 +10864,21 @@ input[type='checkbox']:focus-visible,
   display: contents;
 }
 
+/* Cada recurso é UMA linha compacta (ícone · rótulo · valor), em vez dos três
+   níveis da versão anterior — a barra fica bem mais fina. */
 .turn-resource {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  justify-items: center;
-  align-content: center;
-  gap: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
   min-width: 0;
-  padding: 0.5rem 0.4rem;
+  padding: 0.3rem 0.5rem;
+  /* Redefine o visual "pílula" do bloco antigo: agora é célula de grade, com
+     um fio separando os recursos. */
+  border: none;
   border-left: 1px solid var(--line);
-  text-align: center;
+  border-radius: 0;
+  background: transparent;
 }
 
 .turn-resource:first-child {
@@ -10884,8 +10889,9 @@ input[type='checkbox']:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.7rem;
-  height: 1.7rem;
+  flex: none;
+  width: 1.2rem;
+  height: 1.2rem;
   border-radius: 999px;
   border: 1px solid var(--gold-hair);
   background: radial-gradient(circle at 35% 30%, var(--surface), var(--surface-3));
@@ -10894,27 +10900,38 @@ input[type='checkbox']:focus-visible,
 
 .turn-resource-label {
   font-family: var(--font-display);
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .turn-resource-value {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   color: var(--ink);
+  white-space: nowrap;
 }
 
 .turn-resource-state {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-style: italic;
   color: var(--ink-faint);
+  padding-left: 0;
+  border-left: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .turn-resource-btn {
-  padding: 0.25rem 0.6rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.7rem;
+  line-height: 1.2;
   white-space: nowrap;
 }
 

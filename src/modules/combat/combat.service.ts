@@ -336,16 +336,32 @@ export async function rollInitiative(
 
 /** --- Turnos ------------------------------------------------------------------- */
 
-/** Avança o turno; ao passar do último, começa uma nova rodada. */
+/**
+ * Avança o turno; ao passar do último, começa uma nova rodada.
+ *
+ * O mestre avança a qualquer momento. O JOGADOR só encerra o PRÓPRIO turno:
+ * é preciso que o combatente atual seja dele (fora do turno, 403). Durante a
+ * espera pela iniciativa não há turno corrente, então ninguém além do mestre
+ * avança.
+ */
 export async function nextTurn(actor: CombatActor): Promise<CombatDto> {
-  requireMaster(actor);
-
   const combat = await requireActiveCombat();
+
+  const ordered = orderCombatants(combat.combatants);
+
+  if (actor.role !== 'MASTER') {
+    // Sem turno montado (PENDING_INITIATIVE) não há combatente corrente: só o
+    // mestre avançaria. Com o combate ativo, o jogador precisa ser o dono do
+    // combatente atual para encerrar o turno.
+    const current = combat.status === 'ACTIVE' ? ordered[combat.currentIndex] : undefined;
+    if (!current || current.ownerUserId !== actor.userId) {
+      throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
+    }
+  }
+
   if (combat.status !== 'ACTIVE') {
     throw new HttpError('A ordem de iniciativa ainda não foi montada.', 409);
   }
-
-  const ordered = orderCombatants(combat.combatants);
 
   let index = combat.currentIndex + 1;
   let round = combat.round;
@@ -374,7 +390,9 @@ export async function nextTurn(actor: CombatActor): Promise<CombatDto> {
   const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
   emitCombat(ServerEvents.COMBAT_UPDATED, dto);
   emitTurn(dto);
-  return dto;
+  // O jogador nunca recebe a vida/CA das criaturas na resposta HTTP (a mesma
+  // visão que ele já recebe em tempo real pelo `emitCombat`).
+  return actor.role === 'MASTER' ? dto : hideCreatureStats(dto);
 }
 
 /** --- Dano e cura --------------------------------------------------------------- */
