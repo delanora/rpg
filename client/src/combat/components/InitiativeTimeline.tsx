@@ -11,9 +11,10 @@ interface InitiativeTimelineProps {
 }
 
 /**
- * QUEM JOGA? A linha de iniciativa em cartões. Substitui a antiga tabela
- * vertical mantendo exatamente as mesmas permissões: o mestre vê os números e
- * pode rolar pelos ausentes; o jogador aguarda a própria vez.
+ * QUEM JOGA? A ordem de iniciativa como coleção de cartões. A ordem nunca é
+ * reordenada no cliente — segue `combat.combatants` (já ordenado pelo backend)
+ * e só marca o atual e o próximo, para o destaque acompanhar o Socket.io sem
+ * piscar nem saltar o layout.
  */
 export function InitiativeTimeline({
   combat,
@@ -21,6 +22,15 @@ export function InitiativeTimeline({
   busy,
   onRollFor,
 }: InitiativeTimelineProps) {
+  const currentIndex = combat.combatants.findIndex(
+    (combatant) => combatant.id === combat.currentCombatantId,
+  );
+  // Só há "próximo" durante o combate ativo e com um turno corrente definido.
+  const nextIndex =
+    combat.status === 'ACTIVE' && currentIndex >= 0 && combat.combatants.length > 1
+      ? (currentIndex + 1) % combat.combatants.length
+      : -1;
+
   return (
     <section className="combat-block combat-timeline">
       <h3>
@@ -33,10 +43,14 @@ export function InitiativeTimeline({
             <CombatantCard
               combatant={combatant}
               rank={index + 1}
-              current={combatant.id === combat.currentCombatantId}
+              current={index === currentIndex}
+              next={index === nextIndex}
               trailing={
                 combatant.rolled ? (
-                  <span className="combatant-card-init">{combatant.initiative}</span>
+                  <>
+                    <span className="combatant-card-init-label">inic</span>
+                    <span className="combatant-card-init">{combatant.initiative}</span>
+                  </>
                 ) : isMaster ? (
                   <button
                     type="button"
