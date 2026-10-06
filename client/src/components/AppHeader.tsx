@@ -2,10 +2,9 @@ import { useState } from 'react';
 import { useAuth } from '../auth';
 import { isMuted, toggleMuted } from '../sound';
 import { getTheme, toggleTheme, type Theme } from '../theme';
-import type { OnlineUser, SessionUser } from '../types';
+import type { SessionUser } from '../types';
 import type { ConnectionState } from '../useRealtime';
 import { Icon } from './Icon';
-import { Portrait } from './Portrait';
 
 const CONNECTION_LABELS: Record<ConnectionState, string> = {
   connecting: 'conectando...',
@@ -14,26 +13,21 @@ const CONNECTION_LABELS: Record<ConnectionState, string> = {
 };
 
 interface AppHeaderProps {
-  title: string;
-  subtitle?: string;
-  /** Avatar do personagem exibido no topo ('' = sem avatar). */
-  avatarUrl?: string;
   connection: ConnectionState;
-  online: OnlineUser[];
   lastEventAt: string | null;
   user: SessionUser;
 }
 
-/** Cabeçalho do app: identidade, conexão, presença, tema e saída. */
-export function AppHeader({
-  title,
-  subtitle,
-  avatarUrl,
-  connection,
-  online,
-  lastEventAt,
-  user,
-}: AppHeaderProps) {
+/**
+ * Cabeçalho do app: a marca, o estado da conexão e as ações da sessão
+ * (tema, som e saída).
+ *
+ * A barra é a mesma para todos e NÃO mostra mais quem é quem: saíram a foto e
+ * o nome do personagem/jogador, o título/subtítulo da tela (que repetia o
+ * painel ou as contagens da mesa) e a lista de quem está online. O conteúdo de
+ * cada aba é que dá esse contexto.
+ */
+export function AppHeader({ connection, lastEventAt, user }: AppHeaderProps) {
   const { logout } = useAuth();
   const [muted, setMuted] = useState(isMuted());
   const [theme, setTheme] = useState<Theme>(getTheme());
@@ -44,9 +38,6 @@ export function AppHeader({
         <h1>
           <Icon name="dragon" className="brand-mark" size={22} /> Codex do Aventureiro
         </h1>
-        {avatarUrl ? <Portrait src={avatarUrl} alt={title} size="sm" /> : null}
-        <span className="character-name">{title}</span>
-        {subtitle ? <span className="character-name">{subtitle}</span> : null}
       </div>
 
       <div className="app-header-meta">
@@ -56,13 +47,6 @@ export function AppHeader({
         >
           ● {CONNECTION_LABELS[connection]}
         </span>
-
-        {online.length > 0 ? (
-          <span className="online-list" title="Online na mesa">
-            <Icon name="users" size={14} />
-            {online.map((person) => person.displayName).join(' · ')}
-          </span>
-        ) : null}
 
         <span className="user-chip">
           {user.displayName}
