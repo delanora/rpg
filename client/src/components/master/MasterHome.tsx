@@ -110,11 +110,9 @@ export function MasterHome({
         <span className="home-hero-mark">
           <Icon name="dragon" size={26} />
         </span>
-        <p className="home-eyebrow">Central do Mestre</p>
         <h2 className="home-title">Salão do Mestre</h2>
         <p className="home-lede">
-          Bem-vindo, {userName}. Reúna as fichas, o bestiário e o mundo da sua campanha aqui — e
-          entre em qualquer aba pelo atalho que quiser.
+          Bem-vindo, {userName}. Reúna as fichas, o bestiário e o mundo da sua campanha aqui.
         </p>
 
         <ul className="home-stats">

@@ -11543,7 +11543,7 @@ input[type='checkbox']:focus-visible,
 }
 
 /* ==========================================================================
-   Central do Mestre (home) e busca das abas do painel
+   Home do mestre (o Salão) e busca das abas do painel
    ==========================================================================
 
    O mestre entra pelo salão (a home), que reúne os atalhos de todas as abas e
@@ -11594,15 +11594,6 @@ input[type='checkbox']:focus-visible,
   color: var(--gold);
   background: linear-gradient(180deg, var(--surface), var(--surface-2));
   box-shadow: 0 0 18px -6px var(--glow);
-}
-
-.home-eyebrow {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--text-label);
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  color: var(--ink-soft);
 }
 
 .home-title {
@@ -11689,13 +11680,27 @@ input[type='checkbox']:focus-visible,
   border-top: 1px solid var(--gold-hair);
 }
 
+/* Flex (e não grade) de propósito: com `justify-content: center` a linha de
+   baixo fica centralizada quando ela não fecha o número de cartões — coisa que
+   a grade não faz sozinha, ela sempre alinha à esquerda. */
 .home-cards {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 0.7rem;
+}
+
+/* Mesmo número de cartões em todas as linhas: cada um ocupa um terço do trilho
+   (descontadas as duas frestas), então os 6 cartões caem em 3 + 3.
+   O `- 1px` é uma folga de propósito: sem ela, o arredondamento dos floats do
+   navegador pode fazer o terceiro cartão estourar por uma fração de pixel e
+   quebrar a linha em 2 — a folga garante que os três caibam. */
+.home-cards > li {
+  flex: 0 1 calc((100% - 1.4rem) / 3 - 1px);
+  min-width: 0;
 }
 
 .home-card {
@@ -11903,12 +11908,20 @@ input[type='checkbox']:focus-visible,
   flex: 1 1 100%;
 }
 
+/* Telas estreitas: menos colunas, mas sempre o mesmo número em cada linha
+   (a última continua centralizada pelo flex). */
+@media (max-width: 1040px) {
+  .home-cards > li {
+    flex-basis: calc((100% - 0.7rem) / 2 - 1px);
+  }
+}
+
 @media (max-width: 720px) {
   .home-hero {
     padding: 1.2rem 1rem 1.1rem;
   }
 
-  .home-cards {
-    grid-template-columns: 1fr;
+  .home-cards > li {
+    flex-basis: 100%;
   }
 }
