@@ -588,7 +588,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       />
 
       <AppHeader
-        title={combat ? 'Modo de combate' : tab === 'home' ? 'Central do Mestre' : 'Painel do Mestre'}
+        title={combat ? 'Modo de combate' : 'Painel do Mestre'}
         subtitle={
           combat
             ? `rodada ${combat.round} · ${combat.combatants.length} combatente(s)`
