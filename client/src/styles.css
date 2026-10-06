@@ -11541,3 +11541,374 @@ input[type='checkbox']:focus-visible,
 .attack-result + .combat-block {
   margin-top: 0.1rem;
 }
+
+/* ==========================================================================
+   Central do Mestre (home) e busca das abas do painel
+   ==========================================================================
+
+   O mestre entra pelo salão (a home), que reúne os atalhos de todas as abas e
+   um resumo vivo da mesa. Cada aba, por sua vez, ganha o mesmo campo de busca
+   (`.search-field`) para filtrar a própria lista sem rota nova. */
+
+.master-home {
+  display: grid;
+  gap: var(--space-section);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* --- Herói: o brasão, a saudação e as ações rápidas do mestre ------------ */
+
+.home-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 1.6rem 1.5rem 1.4rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(120% 150% at 50% -30%, rgba(184, 145, 42, 0.2), transparent 62%),
+    linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+  text-align: center;
+}
+
+/* Fio dourado interno: a mesma moldura discreta dos cartões do grimório. */
+.home-hero::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1px solid var(--gold-hair);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.home-hero-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  margin-bottom: 0.4rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 50%;
+  color: var(--gold);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: 0 0 18px -6px var(--glow);
+}
+
+.home-eyebrow {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-soft);
+}
+
+.home-title {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-title);
+  font-size: clamp(1.7rem, 4vw, 2.35rem);
+  color: var(--ink);
+}
+
+.home-lede {
+  margin: 0.5rem auto 0;
+  max-width: 46rem;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.home-stats {
+  list-style: none;
+  margin: 1.1rem auto 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.55rem 1.6rem;
+}
+
+.home-stats li {
+  display: grid;
+  justify-items: center;
+  min-width: 4.5rem;
+}
+
+.home-stat-value {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .home-stat-value {
+  color: var(--gold-bright);
+}
+
+.home-stat-label {
+  margin-top: 0.2rem;
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+}
+
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 1.2rem;
+}
+
+/* --- Seções e cartões de navegação -------------------------------------- */
+
+.home-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.7rem;
+  font-family: var(--font-display);
+  font-size: var(--text-section);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.home-section-title .icon {
+  color: var(--gold);
+}
+
+.home-section-title::after {
+  content: '';
+  flex: 1;
+  height: 0;
+  border-top: 1px solid var(--gold-hair);
+}
+
+.home-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.7rem;
+}
+
+.home-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.2s ease;
+}
+
+.home-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--gold);
+  box-shadow: var(--shadow-deep), 0 0 18px -6px var(--glow);
+}
+
+.home-card:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.home-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.3rem;
+  height: 2.3rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: var(--radius);
+  color: var(--gold-deep);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+[data-theme='dark'] .home-card-icon {
+  color: var(--gold-bright);
+}
+
+.home-card-body {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.home-card-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.home-card-hint {
+  font-size: var(--text-aux);
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.home-card-count {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-width: 1.9rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--gold-deep);
+  background: rgba(184, 145, 42, 0.1);
+}
+
+[data-theme='dark'] .home-card-count {
+  color: var(--gold-bright);
+}
+
+/* --- Ajustes da mesa em linha ------------------------------------------ */
+
+.home-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: var(--shadow);
+}
+
+.home-meta div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.home-meta dt {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+}
+
+.home-meta dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* --- Campo de busca das abas -------------------------------------------- */
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 1 22rem;
+  min-width: 9rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fffaf0, var(--surface-2));
+  box-shadow: inset 0 1px 3px rgba(43, 33, 21, 0.12);
+  color: var(--ink-soft);
+}
+
+[data-theme='dark'] .search-field {
+  background: linear-gradient(180deg, #2b2018, #1d1510);
+}
+
+.search-field:focus-within {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px -3px var(--glow), inset 0 1px 3px rgba(43, 33, 21, 0.12);
+}
+
+.search-field .icon {
+  flex: 0 0 auto;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .search-field .icon {
+  color: var(--gold-bright);
+}
+
+.search-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--ink);
+  outline: none;
+}
+
+.search-field input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* O "x" nativo do type=search sai de cena: quem limpa é o botão do grimório. */
+.search-field input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.search-clear:hover {
+  border-color: var(--gold);
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .search-clear:hover {
+  color: var(--gold-bright);
+}
+
+/* Ocupa a linha inteira da barra de ferramentas quando está sozinho. */
+.search-grow {
+  flex: 1 1 100%;
+}
+
+@media (max-width: 720px) {
+  .home-hero {
+    padding: 1.2rem 1rem 1.1rem;
+  }
+
+  .home-cards {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { Creature, CreatureKind, CreaturePatch, Locality, Region } from '../../types';
 import { Portrait } from '../Portrait';
 import { CreatureEditor } from './CreatureEditor';
+import { SearchField } from './SearchField';
+import { matchesSearch } from './search';
 
 interface CreaturesTabProps {
   /** CREATURE (monstros) ou NPC — a lista já vem filtrada pelo painel. */
@@ -39,6 +41,7 @@ export function CreaturesTab({
 }: CreaturesTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
   const [localityId, setLocalityId] = useState('');
 
   // Nova entidade nasce na primeira localidade; o mestre pode trocar depois.
@@ -48,6 +51,16 @@ export function CreaturesTab({
 
   const labels = LABELS[kind];
   const selected = creatures.find((creature) => creature.id === selectedId) ?? null;
+  // Busca local: filtra a lista lateral sem mexer no editor aberto ao lado.
+  const visible = creatures.filter((creature) =>
+    matchesSearch(
+      query,
+      creature.name,
+      creature.type,
+      creature.challengeRating,
+      ...creature.localities.map((locality) => locality.name),
+    ),
+  );
 
   async function handleCreate(): Promise<void> {
     if (!localityId) return;
@@ -64,6 +77,12 @@ export function CreaturesTab({
     <div className="master-layout">
       <aside className="master-list">
         <div className="toolbar toolbar-wrap">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por nome, tipo ou local"
+            label={kind === 'NPC' ? 'Buscar NPCs' : 'Buscar criaturas'}
+          />
           {localities.length === 0 ? (
             <span className="muted">Cadastre uma localidade antes de criar {labels.singular}s.</span>
           ) : (
@@ -97,9 +116,11 @@ export function CreaturesTab({
 
         {creatures.length === 0 ? (
           <p className="empty-hint">{labels.vazio}</p>
+        ) : visible.length === 0 ? (
+          <p className="empty-hint">Nenhum resultado para a busca.</p>
         ) : (
           <ul className="character-cards">
-            {creatures.map((creature) => (
+            {visible.map((creature) => (
               <li key={creature.id}>
                 <button
                   type="button"

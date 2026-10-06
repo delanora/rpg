@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon';
 import { PresentationOverlay } from '../components/PresentationOverlay';
 import { ConfigTab } from '../components/master/ConfigTab';
 import { CreaturesTab } from '../components/master/CreaturesTab';
+import { MasterHome, type MasterTab } from '../components/master/MasterHome';
 import { MasterNotes } from '../components/master/MasterNotes';
 import { RollLogPanel } from '../components/master/RollLogPanel';
 import { ItemsTab } from '../components/master/ItemsTab';
@@ -40,12 +41,13 @@ import type {
 } from '../types';
 import { useRealtime } from '../useRealtime';
 
-type Tab = 'sheets' | 'creatures' | 'npcs' | 'regions' | 'items' | 'config';
+type Tab = MasterTab;
 
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
 export function MasterPanel({ user }: { user: SessionUser }) {
-  const [tab, setTab] = useState<Tab>('sheets');
+  // O mestre entra pela home (a central); o padrão antes era cair nas fichas.
+  const [tab, setTab] = useState<Tab>('home');
   const [characters, setCharacters] = useState<Character[]>([]);
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [localities, setLocalities] = useState<Locality[]>([]);
@@ -586,7 +588,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       />
 
       <AppHeader
-        title={combat ? 'Modo de combate' : 'Painel do Mestre'}
+        title={combat ? 'Modo de combate' : tab === 'home' ? 'Central do Mestre' : 'Painel do Mestre'}
         subtitle={
           combat
             ? `rodada ${combat.round} · ${combat.combatants.length} combatente(s)`
@@ -601,6 +603,13 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       {/* Em modo de combate o painel dá lugar ao combate. */}
       {combat ? null : (
         <nav className="tabs tabs-inline">
+          <button
+            type="button"
+            className={tab === 'home' ? 'tab active' : 'tab'}
+            onClick={() => setTab('home')}
+          >
+            <Icon name="home" size={16} /> Início
+          </button>
           <button
             type="button"
             className={tab === 'sheets' ? 'tab active' : 'tab'}
@@ -690,6 +699,22 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onCombatChange={combatState.setCombat}
             onCombatEnd={() => combatState.setCombat(null)}
             onError={setError}
+          />
+        ) : tab === 'home' ? (
+          <MasterHome
+            userName={user.displayName}
+            sheets={characters.length}
+            creatures={monsters.length}
+            npcs={npcs.length}
+            regions={regions.length}
+            localities={localities.length}
+            items={items.length}
+            levelUpRelease={gameConfig?.levelUpRelease ?? 0}
+            startingLevel={gameConfig?.startingLevel ?? 1}
+            extraCoins={gameConfig?.extraCoins ?? false}
+            onOpenTab={setTab}
+            onStartCombat={() => setShowStartDialog(true)}
+            onReleaseLevelUp={() => void releaseLevelUpForTable()}
           />
         ) : tab === 'sheets' ? (
           <SheetsTab

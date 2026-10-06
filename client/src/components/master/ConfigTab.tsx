@@ -29,6 +29,8 @@ import type {
 const SPELL_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 import { Icon } from '../Icon';
 import { RaceEditor } from './RaceEditor';
+import { SearchField } from './SearchField';
+import { matchesSearch } from './search';
 
 /**
  * "Configurações da mesa" — o canto do mestre para ajustar a mesa e consultar
@@ -197,20 +199,30 @@ function SpellCard({ spell }: { spell: CompendiumSpell }) {
   );
 }
 
-/** Catálogo de magias com filtro por nível e por escola. */
-function SpellList({ spells }: { spells: CompendiumSpell[] }) {
+/** Catálogo de magias com filtro por nível, por escola e pela busca do mestre. */
+function SpellList({ spells, query }: { spells: CompendiumSpell[]; query: string }) {
   const [level, setLevel] = useState<'all' | number>('all');
   const [school, setSchool] = useState<'all' | string>('all');
 
   const filtered = spells.filter(
     (spell) =>
-      (level === 'all' || spell.level === level) && (school === 'all' || spell.school === school),
+      (level === 'all' || spell.level === level) &&
+      (school === 'all' || spell.school === school) &&
+      matchesSearch(
+        query,
+        spell.name,
+        spell.school,
+        spell.description,
+        spell.damageSummary,
+        spell.healingSummary,
+        spell.castingTime,
+      ),
   );
 
   return (
     <div className="config-panel">
       <header className="config-panel-head">
-        <h3>{`${spells.length} magia(s)`}</h3>
+        <h3>{`${filtered.length} magia(s)`}</h3>
         <p className="config-panel-hint">Truques e magias de 1º a 9º nível (Livro do Jogador).</p>
       </header>
 
@@ -275,6 +287,8 @@ export function ConfigTab({
   onChangeExtraCoins,
 }: ConfigTabProps) {
   const [section, setSection] = useState<ConfigSection>('classes');
+  // Busca do compêndio: filtra a lista da seção aberta, sem rota nova.
+  const [query, setQuery] = useState('');
   const [compendium, setCompendium] = useState<Compendium | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -377,6 +391,20 @@ export function ConfigTab({
     if (clamped !== startingLevel) onChangeStartingLevel(clamped);
   }
 
+  // Listas já filtradas pela busca — os títulos refletem o que está à vista.
+  const classResults = (compendium?.classes ?? []).filter((definition) =>
+    matchesSearch(query, definition.name, ...definition.subclasses.map((subclass) => subclass.name)),
+  );
+  const raceResults = (compendium?.races ?? []).filter((race) =>
+    matchesSearch(query, race.name, race.baseRace, race.description),
+  );
+  const customRaceResults = customRaces.filter((race) =>
+    matchesSearch(query, race.name, race.description),
+  );
+  const backgroundResults = (compendium?.backgrounds ?? []).filter((background) =>
+    matchesSearch(query, background.name, background.description, ...background.skills),
+  );
+
   const sections: { id: ConfigSection; label: string; count: number }[] = [
     { id: 'classes', label: 'Classes', count: compendium?.classes.length ?? 0 },
     { id: 'races', label: 'Raças', count: compendium?.races.length ?? 0 },
@@ -460,6 +488,24 @@ export function ConfigTab({
           ))}
         </nav>
 
+        <div className="config-filters">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder={
+              section === 'spells'
+                ? 'Buscar magia por nome, escola ou efeito'
+                : section === 'classes'
+                  ? 'Buscar classe ou subclasse'
+                  : section === 'races'
+                    ? 'Buscar linhagem'
+                    : 'Buscar antecedente ou perícia'
+            }
+            label="Buscar no compêndio"
+            className="search-grow"
+          />
+        </div>
+
         {error ? <p className="config-empty config-empty-error">{error}</p> : null}
 
         {loading ? (
@@ -468,22 +514,22 @@ export function ConfigTab({
           <p className="config-empty">Não foi possível carregar o compêndio.</p>
         ) : section === 'classes' ? (
           <ListPanel
-            title={`${compendium.classes.length} classe(s)`}
+            title={`${classResults.length} classe(s)`}
             hint="Dado de vida, salvaguardas, conjuração e subclasses."
-            empty={compendium.classes.length === 0}
+            empty={classResults.length === 0}
           >
-            {compendium.classes.map((definition) => (
+            {classResults.map((definition) => (
               <ClassCard key={definition.key} definition={definition} />
             ))}
           </ListPanel>
         ) : section === 'races' ? (
           <>
             <ListPanel
-              title={`${compendium.races.length} linhagem(ns)`}
+              title={`${raceResults.length} linhagem(ns)`}
               hint="Uma entrada por linhagem, com a história e os bônus."
-              empty={compendium.races.length === 0}
+              empty={raceResults.length === 0}
             >
-              {compendium.races.map((race) => (
+              {raceResults.map((race) => (
                 <RaceCard key={race.key} race={race} />
               ))}
             </ListPanel>
@@ -492,7 +538,7 @@ export function ConfigTab({
                 raças fixas. Traços em texto livre, sem sub-raças. */}
             <div className="config-panel">
               <header className="config-panel-head">
-                <h3>{customRaces.length} raça(s) personalizada(s)</h3>
+                <h3>{customRaceResults.length} raça(s) personalizada(s)</h3>
                 <p className="config-panel-hint">
                   Raças criadas por você: aparecem no passo de Raça do assistente e na ficha.
                 </p>
@@ -517,9 +563,13 @@ export function ConfigTab({
                 <p className="config-empty">
                   <Icon name="info" size={16} /> Nenhuma raça personalizada ainda.
                 </p>
+              ) : customRaceResults.length === 0 ? (
+                <p className="config-empty">
+                  <Icon name="info" size={16} /> Nenhuma raça personalizada corresponde à busca.
+                </p>
               ) : (
                 <ul className="config-list">
-                  {customRaces.map((race) => (
+                  {customRaceResults.map((race) => (
                     <li key={race.id} className="config-item">
                       <div className="config-item-head">
                         <span className="config-item-name">{race.name}</span>
@@ -550,11 +600,11 @@ export function ConfigTab({
           </>
         ) : section === 'backgrounds' ? (
           <ListPanel
-            title={`${compendium.backgrounds.length} antecedente(s)`}
+            title={`${backgroundResults.length} antecedente(s)`}
             hint="Cada antecedente concede duas perícias."
-            empty={compendium.backgrounds.length === 0}
+            empty={backgroundResults.length === 0}
           >
-            {compendium.backgrounds.map((background) => (
+            {backgroundResults.map((background) => (
               <li key={background.key} className="config-item">
                 <div className="config-item-head">
                   <span className="config-item-name">{background.name}</span>
@@ -573,7 +623,7 @@ export function ConfigTab({
             ))}
           </ListPanel>
         ) : section === 'spells' ? (
-          <SpellList spells={compendium.spells} />
+          <SpellList spells={compendium.spells} query={query} />
         ) : null}
       </section>
     </div>

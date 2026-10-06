@@ -5,6 +5,8 @@ import type { CanonicalWeapon, Character, Compendium, Item, ItemPatch } from '..
 import { Portrait } from '../Portrait';
 import { CoinsGrantPanel } from './CoinsGrantPanel';
 import { ItemEditor } from './ItemEditor';
+import { SearchField } from './SearchField';
+import { matchesSearch } from './search';
 
 /** Preço resumido (PO/PP/PC) — visível apenas no painel do mestre. */
 function priceLabel(item: Item): string {
@@ -51,6 +53,7 @@ export function ItemsTab({
 }: ItemsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
   // Catálogo canônico de armas para o seletor "Arma do PHB" (vem do compêndio).
   const [weapons, setWeapons] = useState<CanonicalWeapon[]>([]);
 
@@ -69,6 +72,17 @@ export function ItemsTab({
   }, []);
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
+  // Busca local: filtra o catálogo lateral sem mexer no editor aberto ao lado.
+  const visible = items.filter((item) =>
+    matchesSearch(
+      query,
+      item.name,
+      item.category,
+      rarityLabel(item.rarity),
+      describeItemDetails(item.category, item.details),
+      priceLabel(item),
+    ),
+  );
 
   async function handleCreate(): Promise<void> {
     setCreating(true);
@@ -90,7 +104,14 @@ export function ItemsTab({
 
       <div className="master-layout">
         <aside className="master-list">
-          <div className="toolbar">
+          <div className="toolbar toolbar-wrap">
+            <SearchField
+              value={query}
+              onChange={setQuery}
+              placeholder="Buscar por nome, categoria ou raridade"
+              label="Buscar itens"
+              className="search-grow"
+            />
             <button
               type="button"
               className="btn btn-primary btn-small"
@@ -103,9 +124,11 @@ export function ItemsTab({
 
           {items.length === 0 ? (
             <p className="empty-hint">Nenhum item no catálogo ainda.</p>
+          ) : visible.length === 0 ? (
+            <p className="empty-hint">Nenhum item corresponde à busca.</p>
           ) : (
             <ul className="item-cards">
-              {items.map((item) => (
+              {visible.map((item) => (
                 <li key={item.id}>
                   <button
                     type="button"
