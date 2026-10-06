@@ -673,7 +673,13 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         </div>
       ) : null}
 
-      <main className="app-main app-main-wide">
+      <main
+        className={
+          !combat && tab === 'home'
+            ? 'app-main app-main-wide app-main-home'
+            : 'app-main app-main-wide'
+        }
+      >
         {loading ? (
           <p className="splash">Carregando o painel...</p>
         ) : combat ? (
