@@ -589,14 +589,14 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
       <AppHeader connection={connection} lastEventAt={lastEventAt} user={user} />
 
-      {/* Em modo de combate o painel dá lugar ao combate. */}
-      {combat ? null : (
+      {/* A barra de abas é a navegação do mestre: em combate ela dá lugar ao
+          combate, e na home ela some — de lá o mestre entra nas abas pelos
+          cartões do salão e volta pelo "Início". */}
+      {combat || tab === 'home' ? null : (
         <nav className="tabs tabs-inline">
-          <button
-            type="button"
-            className={tab === 'home' ? 'tab active' : 'tab'}
-            onClick={() => setTab('home')}
-          >
+          {/* Sempre inativo: a barra só existe fora da home, então "Início" é o
+              caminho de volta, nunca o estado atual. */}
+          <button type="button" className="tab" onClick={() => setTab('home')}>
             <Icon name="home" size={16} /> Início
           </button>
           <button
