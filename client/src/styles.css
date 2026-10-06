@@ -11531,6 +11531,21 @@ input[type='checkbox']:focus-visible,
    um resumo vivo da mesa. Cada aba, por sua vez, ganha o mesmo campo de busca
    (`.search-field`) para filtrar a própria lista sem rota nova. */
 
+/* Na home o conteúdo senta no MEIO da tela: sem a barra de abas no topo, o
+   painel central fica equilibrado. O `width: 100%` no filho é o que mantém a
+   largura de sempre — sem ele, um item de flex com alinhamento central mede o
+   próprio conteúdo em vez de ocupar o trilho. */
+.app-main-home {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.app-main-home .master-home {
+  width: 100%;
+}
+
 .master-home {
   display: grid;
   gap: var(--space-section);
