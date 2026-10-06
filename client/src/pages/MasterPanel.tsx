@@ -7,6 +7,7 @@ import { PresentationOverlay } from '../components/PresentationOverlay';
 import { ConfigTab } from '../components/master/ConfigTab';
 import { CreaturesTab } from '../components/master/CreaturesTab';
 import { MasterHome, type MasterTab } from '../components/master/MasterHome';
+import { MasterSearch } from '../components/master/MasterSearch';
 import { MasterNotes } from '../components/master/MasterNotes';
 import { RollLogPanel } from '../components/master/RollLogPanel';
 import { ItemsTab } from '../components/master/ItemsTab';
@@ -24,6 +25,7 @@ import type {
   Attack,
   Character,
   CharacterPatch,
+  Compendium,
   Creature,
   CreatureKind,
   CreaturePatch,
@@ -53,6 +55,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [localities, setLocalities] = useState<Locality[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  // Compêndio da Mesa: alimenta a busca global do salão (classes, linhagens,
+  // antecedentes e magias). Se a rota falhar, a busca só não cobre a Mesa.
+  const [compendium, setCompendium] = useState<Compendium | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showStartDialog, setShowStartDialog] = useState(false);
@@ -184,6 +189,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       api<{ items: Item[] }>('/api/items'),
       fetchActiveCombat(),
       fetchGameConfig().catch(() => null),
+      api<{ compendium: Compendium }>('/api/compendium').catch(() => null),
     ])
       .then(
         ([
@@ -194,6 +200,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           itemsResult,
           activeCombat,
           config,
+          compendiumResult,
         ]) => {
           if (!active) return;
           setCharacters(charactersResult.characters);
@@ -203,6 +210,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           setItems(itemsResult.items);
           combatState.setCombat(activeCombat);
           setGameConfig(config);
+          setCompendium(compendiumResult?.compendium ?? null);
         },
       )
       .catch((err: unknown) => {
@@ -710,6 +718,18 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onOpenTab={setTab}
             onStartCombat={() => setShowStartDialog(true)}
             onReleaseLevelUp={() => void releaseLevelUpForTable()}
+            search={
+              <MasterSearch
+                characters={characters}
+                creatures={monsters}
+                npcs={npcs}
+                regions={regions}
+                localities={localities}
+                items={items}
+                compendium={compendium}
+                onOpenTab={setTab}
+              />
+            }
           />
         ) : tab === 'sheets' ? (
           <SheetsTab

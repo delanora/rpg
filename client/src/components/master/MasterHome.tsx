@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Icon, type IconName } from '../Icon';
 
 /** Abas do painel do mestre — a home concentra todas elas. */
@@ -28,6 +29,11 @@ interface MasterHomeProps {
   onOpenTab: (tab: MasterTab) => void;
   onStartCombat: () => void;
   onReleaseLevelUp: () => void;
+  /**
+   * Busca global, renderizada ACIMA do salão. Vem como slot para a home seguir
+   * sem conhecer os dados que a busca consulta.
+   */
+  search?: ReactNode;
 }
 
 /**
@@ -52,6 +58,7 @@ export function MasterHome({
   onOpenTab,
   onStartCombat,
   onReleaseLevelUp,
+  search,
 }: MasterHomeProps) {
   const shortcuts: Shortcut[] = [
     {
@@ -106,6 +113,8 @@ export function MasterHome({
 
   return (
     <div className="master-home">
+      {search}
+
       <section className="home-hero">
         <span className="home-hero-mark">
           <Icon name="dragon" size={26} />
