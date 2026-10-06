@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { Creature, Locality, LocalityPatch, Region, RegionPatch } from '../../types';
 import { Icon } from '../Icon';
 import { RegionEditor } from './RegionEditor';
+import { SearchField } from './SearchField';
+import { matchesSearch } from './search';
 
 interface RegionsTabProps {
   regions: Region[];
@@ -34,9 +36,14 @@ export function RegionsTab({
 }: RegionsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
 
   // Derivado da lista: atualizações em tempo real refletem no editor aberto.
   const selected = regions.find((region) => region.id === selectedId) ?? null;
+  // Busca local: filtra a lista lateral sem mexer no editor aberto ao lado.
+  const visible = regions.filter((region) =>
+    matchesSearch(query, region.name, region.description),
+  );
 
   async function handleCreate(): Promise<void> {
     setCreating(true);
@@ -51,7 +58,14 @@ export function RegionsTab({
   return (
     <div className="master-layout">
       <aside className="master-list">
-        <div className="toolbar">
+        <div className="toolbar toolbar-wrap">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por nome ou descrição"
+            label="Buscar regiões"
+            className="search-grow"
+          />
           <button
             type="button"
             className="btn btn-primary btn-small"
@@ -64,9 +78,11 @@ export function RegionsTab({
 
         {regions.length === 0 ? (
           <p className="empty-hint">Nenhuma região cadastrada ainda.</p>
+        ) : visible.length === 0 ? (
+          <p className="empty-hint">Nenhuma região corresponde à busca.</p>
         ) : (
           <ul className="locality-cards">
-            {regions.map((region) => (
+            {visible.map((region) => (
               <li key={region.id}>
                 <button
                   type="button"

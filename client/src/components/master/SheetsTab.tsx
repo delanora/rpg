@@ -5,6 +5,8 @@ import { Portrait } from '../Portrait';
 import { SheetView } from '../SheetView';
 import { DeleteCharacterDialog } from './DeleteCharacterDialog';
 import { LevelDownDialog } from './LevelDownDialog';
+import { SearchField } from './SearchField';
+import { matchesSearch } from './search';
 
 interface SheetsTabProps {
   characters: Character[];
@@ -51,11 +53,16 @@ export function SheetsTab({
 }: SheetsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [query, setQuery] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [levelingDown, setLevelingDown] = useState(false);
   // Derivado da lista: uma atualização em tempo real já reflete no detalhe.
   const selected = characters.find((character) => character.id === selectedId) ?? null;
+  // Busca local: filtra a lista ao lado sem fechar a ficha aberta.
+  const visible = characters.filter((character) =>
+    matchesSearch(query, character.name, character.ownerUsername, character.className),
+  );
 
   function selectCharacter(id: string): void {
     setSelectedId(id);
@@ -72,31 +79,47 @@ export function SheetsTab({
   return (
     <div className="master-layout">
       <aside className="master-list">
-        <ul className="character-cards">
-          {characters.map((character) => (
-            <li key={character.id}>
-              <button
-                type="button"
-                className={selected?.id === character.id ? 'character-card active' : 'character-card'}
-                onClick={() => selectCharacter(character.id)}
-              >
-                <span className="card-head">
-                  <Portrait src={character.avatarUrl} alt={character.name} icon="users" />
-                  <span className="card-name">{character.name}</span>
-                </span>
-                <span className="card-owner">{character.ownerUsername ?? '—'}</span>
-                <span className="card-line">
-                  {character.className || 'sem classe'} · Nv {character.level} · CA{' '}
-                  {character.armorClass}
-                </span>
-                <span className="card-hp">
-                  HP {character.hpCurrent}/{character.derived.hpMax}
-                  {character.hpTemp > 0 ? ` (+${character.hpTemp})` : ''}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="toolbar toolbar-wrap">
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Buscar por nome, jogador ou classe"
+            label="Buscar fichas"
+            className="search-grow"
+          />
+        </div>
+
+        {visible.length === 0 ? (
+          <p className="empty-hint">Nenhuma ficha corresponde à busca.</p>
+        ) : (
+          <ul className="character-cards">
+            {visible.map((character) => (
+              <li key={character.id}>
+                <button
+                  type="button"
+                  className={
+                    selected?.id === character.id ? 'character-card active' : 'character-card'
+                  }
+                  onClick={() => selectCharacter(character.id)}
+                >
+                  <span className="card-head">
+                    <Portrait src={character.avatarUrl} alt={character.name} icon="users" />
+                    <span className="card-name">{character.name}</span>
+                  </span>
+                  <span className="card-owner">{character.ownerUsername ?? '—'}</span>
+                  <span className="card-line">
+                    {character.className || 'sem classe'} · Nv {character.level} · CA{' '}
+                    {character.armorClass}
+                  </span>
+                  <span className="card-hp">
+                    HP {character.hpCurrent}/{character.derived.hpMax}
+                    {character.hpTemp > 0 ? ` (+${character.hpTemp})` : ''}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </aside>
 
       <section className="master-detail">
