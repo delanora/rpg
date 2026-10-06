@@ -70,7 +70,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Janela de dados: rolagem livre (pública/privada), avisos e log da sessão.
   const dice = useDiceRoller(user);
 
-  const { connection, online, lastEventAt } = useRealtime({
+  const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
 
@@ -587,18 +587,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         onClose={closePresentedImage}
       />
 
-      <AppHeader
-        title={combat ? 'Modo de combate' : 'Painel do Mestre'}
-        subtitle={
-          combat
-            ? `rodada ${combat.round} · ${combat.combatants.length} combatente(s)`
-            : `${characters.length} ficha(s) · ${monsters.length} criatura(s) · ${npcs.length} NPC(s)`
-        }
-        connection={connection}
-        online={online}
-        lastEventAt={lastEventAt}
-        user={user}
-      />
+      <AppHeader connection={connection} lastEventAt={lastEventAt} user={user} />
 
       {/* Em modo de combate o painel dá lugar ao combate. */}
       {combat ? null : (

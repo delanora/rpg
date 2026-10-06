@@ -829,13 +829,6 @@ select option {
   filter: drop-shadow(0 0 8px rgba(224, 184, 63, 0.5));
 }
 
-.character-name {
-  color: #d7c19a;
-  font-size: 0.95rem;
-  font-style: italic;
-  font-family: var(--font-body);
-}
-
 .app-header-meta {
   display: flex;
   align-items: center;
@@ -864,18 +857,6 @@ select option {
 
 .connection.connecting {
   color: #e0b062;
-}
-
-.online-list {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: #cdb892;
-  font-size: 0.85rem;
-}
-
-.online-list .icon {
-  color: var(--gold);
 }
 
 .user-chip {

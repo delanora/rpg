@@ -67,7 +67,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // Janela de dados (botão flutuante + avisos + rolagens de perícia).
   const dice = useDiceRoller(user);
 
-  const { connection, online, lastEventAt } = useRealtime({
+  const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
 
@@ -250,21 +250,9 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // A criação NÃO esconde o cabeçalho: o jogador troca o tema, silencia o som e
   // acompanha a presença da mesa enquanto monta o personagem.
   if (needsWizard) {
-    const draftName = character?.name?.trim() ?? '';
-    const wizardTitle =
-      draftName && draftName.toLowerCase() !== 'novo personagem' ? draftName : 'Novo aventureiro';
-
     return (
       <div className="app-shell creation-shell">
-        <AppHeader
-          title={wizardTitle}
-          subtitle="criação de personagem"
-          avatarUrl={character?.avatarUrl}
-          connection={connection}
-          online={online}
-          lastEventAt={lastEventAt}
-          user={user}
-        />
+        <AppHeader connection={connection} lastEventAt={lastEventAt} user={user} />
 
         {error ? (
           <div className="banner banner-error">
@@ -294,14 +282,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
         onClose={closePresentedImage}
       />
 
-      <AppHeader
-        title={combat ? `${character?.name ?? 'Sem ficha'} · em combate` : character ? character.name : 'Sem ficha'}
-        avatarUrl={character?.avatarUrl}
-        connection={connection}
-        online={online}
-        lastEventAt={lastEventAt}
-        user={user}
-      />
+      <AppHeader connection={connection} lastEventAt={lastEventAt} user={user} />
 
       {error ? (
         <div className="banner banner-error">
