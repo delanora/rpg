@@ -128,7 +128,7 @@ const REQUEST_DTO_INCLUDE = {
       character: { select: { classes: true } },
     },
   },
-  sessions: { select: { characterId: true, readyAt: true } },
+  sessions: { select: { id: true, characterId: true, readyAt: true } },
 } as const;
 
 /** Carrega a solicitação já no formato do DTO (com usuários, classes e sessões). */

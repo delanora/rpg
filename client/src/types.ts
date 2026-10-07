@@ -1958,6 +1958,11 @@ export interface ShortRestRequestParticipantDto {
   /** Marcou "pronto para finalizar" (só participante ACCEPTED). */
   ready: boolean;
   readyAt: string | null;
+  /**
+   * Id da sessão de Descanso Curto deste participante (null fora de um descanso
+   * em andamento) — é o `sessionId` do gasto de Dado de Vida.
+   */
+  sessionId: string | null;
 }
 
 export interface ShortRestRequestDto {

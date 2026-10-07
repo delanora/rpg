@@ -30,6 +30,8 @@ import type {
   RegionCreatedPayload,
   RegionDeletedPayload,
   RegionUpdatedPayload,
+  ShortRestCompletedPayload,
+  ShortRestRequestUpdatedPayload,
   TableRollActivePayload,
   TableRollPayload,
 } from './types';
@@ -66,6 +68,8 @@ export interface ServerToClientEvents {
   'dice:roll': (payload: TableRollPayload) => void;
   'dice:active': (payload: TableRollActivePayload) => void;
   'combat:attack': (payload: AttackResolvedPayload) => void;
+  'short-rest:request-updated': (payload: ShortRestRequestUpdatedPayload) => void;
+  'short-rest:completed': (payload: ShortRestCompletedPayload) => void;
 }
 
 export interface ClientToServerEvents {

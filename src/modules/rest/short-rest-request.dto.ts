@@ -46,6 +46,12 @@ export interface ShortRestRequestParticipantDto {
   /** Marcou "pronto para finalizar" (só existe em participante ACCEPTED). */
   ready: boolean;
   readyAt: string | null;
+  /**
+   * Id da SESSÃO de Descanso Curto deste participante (`null` fora de um
+   * descanso em andamento). É o que o cliente envia em
+   * `POST /me/rest/short/hit-die` para gastar um Dado de Vida.
+   */
+  sessionId: string | null;
 }
 
 export interface ShortRestRequestDto {
@@ -100,7 +106,7 @@ export type ShortRestRequestWithParticipants = ShortRestRequest & {
     user: { id: string; username: string; displayName: string };
     character: { classes: unknown };
   })[];
-  sessions: Pick<ShortRestSession, 'characterId' | 'readyAt'>[];
+  sessions: Pick<ShortRestSession, 'id' | 'characterId' | 'readyAt'>[];
 };
 
 const ISO = (value: Date | null): string | null => (value ? value.toISOString() : null);
@@ -120,14 +126,15 @@ export function songOfRestDieForAccepted(
  * fonte real é a sessão; o participante só existe para todos os convidados).
  */
 export function toShortRestRequestDto(request: ShortRestRequestWithParticipants): ShortRestRequestDto {
-  const readyByCharacter = new Map(
-    request.sessions.map((session) => [session.characterId, session.readyAt]),
+  const sessionByCharacter = new Map(
+    request.sessions.map((session) => [session.characterId, session]),
   );
 
   const participants = request.participants.map((participant) => {
-    const readyAt = participant.response === 'ACCEPTED'
-      ? readyByCharacter.get(participant.characterId) ?? null
+    const session = participant.response === 'ACCEPTED'
+      ? sessionByCharacter.get(participant.characterId) ?? null
       : null;
+    const readyAt = session?.readyAt ?? null;
     return {
       userId: participant.userId,
       username: participant.user.username,
@@ -138,6 +145,7 @@ export function toShortRestRequestDto(request: ShortRestRequestWithParticipants)
       closedByMaster: participant.closedByMaster,
       ready: readyAt !== null,
       readyAt: ISO(readyAt),
+      sessionId: session?.id ?? null,
     };
   });
   // Ordem estável para a interface: quem solicitou primeiro, depois por nome.

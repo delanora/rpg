@@ -27,6 +27,8 @@ import type {
   RegionDeletedPayload,
   RegionUpdatedPayload,
   SheetUpdatedPayload,
+  ShortRestCompletedPayload,
+  ShortRestRequestUpdatedPayload,
   TableRollActivePayload,
   TableRollPayload,
 } from './types';
@@ -66,6 +68,10 @@ export interface RealtimeHandlers {
   onMusicState?: (payload: MusicStatePayload) => void;
   /** Catálogo de músicas mudou (upload/remoção pelo mestre). */
   onMusicTracks?: (payload: MusicTracksPayload) => void;
+  /** Solicitação coletiva de Descanso Curto criada/alterada (resposta, ready, etc.). */
+  onShortRestRequestUpdated?: (payload: ShortRestRequestUpdatedPayload) => void;
+  /** O Descanso Curto coletivo terminou (Song of Rest + sessões concluídas). */
+  onShortRestCompleted?: (payload: ShortRestCompletedPayload) => void;
 }
 
 /**
@@ -132,6 +138,13 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('dice:roll', (payload) => handlersRef.current.onDiceRoll?.(payload));
     socket.on('dice:active', (payload) => handlersRef.current.onDiceActive?.(payload));
     socket.on('combat:attack', (payload) => handlersRef.current.onAttackResolved?.(payload));
+
+    socket.on('short-rest:request-updated', (payload) =>
+      handlersRef.current.onShortRestRequestUpdated?.(payload),
+    );
+    socket.on('short-rest:completed', (payload) =>
+      handlersRef.current.onShortRestCompleted?.(payload),
+    );
 
     return () => {
       socket.close();
