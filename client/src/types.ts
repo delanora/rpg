@@ -1283,6 +1283,8 @@ export interface MusicStateDto {
   playing: boolean;
   position: number;
   repeat: boolean;
+  /** Volume da mesa (0 a 1), definido pelo mestre — todos ouvem nesse volume. */
+  volume: number;
   at: string;
 }
 

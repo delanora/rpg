@@ -528,6 +528,8 @@ model MusicState {
   position Float    @default(0)
   /// Repete a faixa atual em loop em vez de passar para a próxima.
   repeat   Boolean  @default(false)
+  /// Volume da mesa (0 a 1): o mestre define e TODOS ouvem nesse volume.
+  volume   Float    @default(1)
   updatedAt DateTime @updatedAt
 
   @@map("music_state")

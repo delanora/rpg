@@ -19,8 +19,8 @@ import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../com
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
-import { MusicPanel } from '../music/MusicPanel';
 import { MusicPlayerBar } from '../music/MusicPlayerBar';
+import { SoundpadTab } from '../music/SoundpadTab';
 import { useMusic } from '../music/useMusic';
 import { fetchGameConfig, releaseLevelUp, setExtraCoins, setStartingLevel } from '../gameApi';
 import { closePresentation } from '../presentationApi';
@@ -71,8 +71,6 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Abrem UM por vez, no mesmo espaço acima dos botões flutuantes.
   const [logOpen, setLogOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
-  // Painel de músicas do salão: abre pelo card "Músicas", não por uma aba.
-  const [musicOpen, setMusicOpen] = useState(false);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -671,6 +669,14 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             <Icon name="table" size={16} /> Mesa
           </button>
 
+          <button
+            type="button"
+            className={tab === 'soundpad' ? 'tab active' : 'tab'}
+            onClick={() => setTab('soundpad')}
+          >
+            <Icon name="music" size={16} /> Soundpad
+          </button>
+
           {/* Cada clique libera UM Level Up por jogador: não há mais bloquear. */}
           <button
             type="button"
@@ -739,10 +745,6 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onOpenTab={setTab}
             onStartCombat={() => setShowStartDialog(true)}
             onReleaseLevelUp={() => void releaseLevelUpForTable()}
-            onOpenMusic={() => setMusicOpen(true)}
-            music={
-              musicOpen ? <MusicPanel music={music} onClose={() => setMusicOpen(false)} /> : undefined
-            }
             search={
               <MasterSearch
                 characters={characters}
@@ -796,6 +798,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             extraCoins={gameConfig?.extraCoins ?? false}
             onCoinsChange={adoptCoins}
           />
+        ) : tab === 'soundpad' ? (
+          <SoundpadTab music={music} />
         ) : (
           <CreaturesTab
             kind={tab === 'npcs' ? 'NPC' : 'CREATURE'}

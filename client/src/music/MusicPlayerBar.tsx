@@ -5,18 +5,23 @@ import { MusicTrackList } from './MusicTrackList';
 import type { MusicController } from './useMusic';
 
 /**
- * Barra fixa de reprodução do mestre.
+ * Barra de reprodução do mestre, escondida no rodapé.
  *
- * Fica no rodapé em qualquer aba (o mestre comanda a música de qualquer tela) e
- * mostra a faixa atual, o progresso, o tempo decorrido/total e os controles:
- * anterior, play/pause, próxima, repetir a faixa e a lista completa — que abre
- * um painel com busca para escolher qualquer música na hora.
+ * Fica em qualquer aba (o mestre comanda a música de qualquer tela) e mostra a
+ * faixa atual, o progresso, o tempo decorrido/total, os controles — anterior,
+ * play/pause, próxima, repetir, volume — e a lista completa.
+ *
+ * Para não brigar com o conteúdo, a barra só sobe quando o mestre aproxima o
+ * mouse do rodapé, como a barra de tarefas no modo "ocultar automaticamente".
+ * A zona de hover é BEM mais alta que a linha visível: acertar um fio de 2px
+ * seria um alvo ruim.
  */
 export function MusicPlayerBar({ music }: { music: MusicController }) {
   const [listOpen, setListOpen] = useState(false);
-  // Arrastar a barra não dispara um comando por pixel: guardamos o valor e só
-  // mandamos ao soltar (ou no teclado, ao soltar a tecla).
+  // Arrastar não dispara um comando por pixel: guardamos o valor e só mandamos
+  // ao soltar (ou no teclado, ao soltar a tecla).
   const [seekDraft, setSeekDraft] = useState<number | null>(null);
+  const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
 
   const track = music.state?.track ?? null;
   const playing = music.state?.playing ?? false;
@@ -24,6 +29,8 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
   const duration = music.duration || track?.duration || 0;
   const max = Math.max(1, Math.round(duration));
   const shown = seekDraft ?? music.position;
+  const volume = volumeDraft ?? music.volume;
+  const muted = volume === 0;
 
   function commitSeek(): void {
     if (seekDraft === null) return;
@@ -31,8 +38,18 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
     setSeekDraft(null);
   }
 
+  function commitVolume(): void {
+    if (volumeDraft === null) return;
+    music.setVolume(volumeDraft);
+    setVolumeDraft(null);
+  }
+
   return (
-    <>
+    /* O painel da lista vive DENTRO do dock de propósito: parar o mouse nele
+       conta como estar sobre o dock e mantém a barra no lugar. */
+    <div className="music-dock">
+      <span className="music-dock-line" aria-hidden="true" />
+
       {listOpen ? (
         <aside className="music-panel" role="dialog" aria-label="Lista de músicas da mesa">
           <header className="music-panel-head">
@@ -71,11 +88,11 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
           title="Lista de músicas"
           onClick={() => setListOpen((value) => !value)}
         >
-          <Icon name="list" size={16} />
+          <Icon name="list" size={14} />
         </button>
 
         <span className="music-bar-now" title={track?.name ?? ''}>
-          <Icon name="music" size={15} />
+          <Icon name="music" size={13} />
           <span className="music-bar-title">{track ? track.name : 'Nenhuma faixa tocando'}</span>
         </span>
 
@@ -106,7 +123,7 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
             aria-label="Faixa anterior"
             onClick={music.prev}
           >
-            <Icon name="skip-back" size={16} />
+            <Icon name="skip-back" size={14} />
           </button>
 
           <button
@@ -117,7 +134,7 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
             aria-label={playing ? 'Pausar' : 'Tocar'}
             onClick={music.toggle}
           >
-            <Icon name={playing ? 'pause' : 'play'} size={16} />
+            <Icon name={playing ? 'pause' : 'play'} size={14} />
           </button>
 
           <button
@@ -127,7 +144,7 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
             aria-label="Próxima faixa"
             onClick={music.next}
           >
-            <Icon name="skip-forward" size={16} />
+            <Icon name="skip-forward" size={14} />
           </button>
 
           <button
@@ -139,8 +156,37 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
             aria-label="Repetir a música em andamento"
             onClick={music.toggleRepeat}
           >
-            <Icon name="repeat" size={16} />
+            <Icon name="repeat" size={14} />
           </button>
+        </div>
+
+        {/* Volume da MESA: vai para todos, e é por isso que o mudo também. */}
+        <div className="music-bar-controls music-bar-volume">
+          <button
+            type="button"
+            className={muted ? 'music-bar-mute active' : 'music-bar-mute'}
+            aria-pressed={muted}
+            title={muted ? 'Reativar o som da mesa' : 'Silenciar a mesa'}
+            aria-label={muted ? 'Reativar o som da mesa' : 'Silenciar a mesa'}
+            onClick={music.toggleMute}
+          >
+            <Icon name={muted ? 'mute' : 'volume'} size={14} />
+          </button>
+
+          <input
+            className="music-bar-volume-range"
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round(volume * 100)}
+            aria-label="Volume da mesa"
+            title={`Volume ${Math.round(volume * 100)}%`}
+            onChange={(event) => setVolumeDraft(Number(event.target.value) / 100)}
+            onPointerUp={commitVolume}
+            onKeyUp={commitVolume}
+            onBlur={commitVolume}
+          />
         </div>
 
         {music.error ? (
@@ -154,6 +200,6 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
           </button>
         ) : null}
       </div>
-    </>
+    </div>
   );
 }

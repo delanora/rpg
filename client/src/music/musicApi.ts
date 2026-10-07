@@ -65,6 +65,8 @@ export interface MusicPatch {
   trackId?: string | null;
   position?: number;
   repeat?: boolean;
+  /** Volume de 0 (mudo) a 1 (máximo) — vale para a mesa inteira. */
+  volume?: number;
 }
 
 /** Comanda a reprodução (tocar, pausar, escolher faixa, buscar posição...). */

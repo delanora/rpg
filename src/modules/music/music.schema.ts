@@ -20,6 +20,8 @@ export const musicPatchSchema = z.object({
   trackId: z.string().trim().min(1).nullable().optional(),
   position: z.number().min(0).max(MAX_SECONDS).optional(),
   repeat: z.boolean().optional(),
+  /** Volume de 0 (mudo) a 1 (máximo) — vale para a mesa inteira. */
+  volume: z.number().min(0).max(1).optional(),
 });
 
 /** Pular para a faixa seguinte/anterior. */
