@@ -725,6 +725,25 @@ export function songOfRestDie(level: number): 6 | 8 | 10 | 12 | null {
 }
 
 /**
+ * MELHOR dado de Canção de Descanso entre os Bardos ELEGÍVEIS de um descanso.
+ *
+ * O chamador passa apenas os níveis de BARDO dos participantes EFETIVOS
+ * (ACCEPTED) — quem recusou o descanso NÃO entra na lista. A Canção de Descanso
+ * NÃO acumula: vale o MAIOR dado (ex.: um Bardo d6 e outro d10 → d10), sem rolar
+ * uma vez por Bardo. Sem nenhum Bardo elegível → `null`. É a base da decisão de
+ * "vários Bardos" do descanso coletivo (PHB 2014 + regra de efeitos de mesmo
+ * nome): não somar.
+ */
+export function bestSongOfRestDie(bardLevels: readonly number[]): 6 | 8 | 10 | 12 | null {
+  let best: 6 | 8 | 10 | 12 | null = null;
+  for (const level of bardLevels) {
+    const die = songOfRestDie(level);
+    if (die !== null && (best === null || die > best)) best = die;
+  }
+  return best;
+}
+
+/**
  * Uma fórmula de Defesa sem Armadura concedida por uma classe.
  *
  * As fórmulas **não se acumulam**: a ficha usa a que der o MAIOR valor. Por

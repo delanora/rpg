@@ -12,6 +12,7 @@ import { localitiesRouter, uploadsRouter } from '../../modules/localities/locali
 import { musicRouter } from '../../modules/music/music.routes.js';
 import { presentationRouter } from '../../modules/presentation/presentation.routes.js';
 import { regionsRouter } from '../../modules/regions/regions.routes.js';
+import { restRouter } from '../../modules/rest/rest.routes.js';
 import { usersRouter } from '../../modules/users/users.routes.js';
 import { healthRouter } from './health.js';
 
@@ -37,3 +38,4 @@ apiRouter.use('/uploads', uploadsRouter);
 apiRouter.use('/music', musicRouter);
 apiRouter.use('/presentation', presentationRouter);
 apiRouter.use('/combat', combatRouter);
+apiRouter.use('/rest', restRouter);

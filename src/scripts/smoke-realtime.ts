@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
+import { signToken } from '../lib/jwt.js';
 import { deleteUploadedImage } from '../lib/uploads.js';
 import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
 import { RACE_CATALOG } from '../modules/shared/creation.js';
@@ -13238,6 +13239,668 @@ async function main(): Promise<void> {
   }
   }
 
+  // --- 45. Descanso Curto coletivo (solicitação da mesa) --------------------
+  {
+    console.log('\n45) Descanso Curto coletivo (solicitação da mesa)');
+
+    // Contas: o SOLICITANTE (A) reaproveita a conta viva do fim do smoke; B e D
+    // são convidados ONLINE (com sockets); C tem ficha mas NUNCA conecta — prova
+    // que quem está offline não entra. O mestre já tem conta e ficha (seção 13).
+    const collectiveTokenA = testsPlayerToken;
+    const collectiveMeA = await api('/api/auth/me', { token: collectiveTokenA });
+    const collectiveUserIdA: string = collectiveMeA.data?.user?.sub;
+    const collectiveUsernameA: string = collectiveMeA.data?.user?.username;
+    check(
+      '45) conta do solicitante disponível',
+      collectiveMeA.status === 200 && Boolean(collectiveUserIdA),
+      JSON.stringify(collectiveMeA.data),
+    );
+
+    const collectiveMasterMe = await api('/api/auth/me', { token: masterToken });
+    const collectiveMasterUserId: string = collectiveMasterMe.data?.user?.sub;
+
+    if (!(await prisma.character.findUnique({ where: { userId: collectiveUserIdA } }))) {
+      await api('/api/characters/me', {
+        method: 'POST',
+        token: collectiveTokenA,
+        body: { name: 'Descanso Coletivo A' },
+      });
+    }
+
+    // Os demais participantes são jogadores JÁ criados por seções anteriores: em
+    // produção o cadastro tem rate limit (30) e o smoke chega no limite — criar
+    // contas aqui estouraria com 429. Mintamos o token dos escolhidos com o MESMO
+    // segredo do servidor (a autenticação continua passando pelo middleware).
+    const collectivePlayers = (
+      await prisma.user.findMany({
+        where: { role: 'PLAYER', username: { endsWith: `_${suffix}` }, id: { not: collectiveUserIdA } },
+        include: { character: { select: { id: true } } },
+        orderBy: { username: 'asc' },
+      })
+    )
+      .filter((user) => user.character !== null)
+      .slice(0, 3);
+    check(
+      '45) jogadores existentes com ficha disponíveis para o descanso coletivo',
+      collectivePlayers.length === 3,
+      `encontrados: ${collectivePlayers.length}`,
+    );
+
+    const playerB = collectivePlayers[0];
+    const playerC = collectivePlayers[1]; // fica OFFLINE de propósito
+    const playerD = collectivePlayers[2];
+    const collectiveTokenB = signToken({
+      sub: playerB.id,
+      username: playerB.username,
+      displayName: playerB.displayName,
+      role: playerB.role,
+    });
+    const collectiveTokenC = signToken({
+      sub: playerC.id,
+      username: playerC.username,
+      displayName: playerC.displayName,
+      role: playerC.role,
+    });
+    const collectiveTokenD = signToken({
+      sub: playerD.id,
+      username: playerD.username,
+      displayName: playerD.displayName,
+      role: playerD.role,
+    });
+    const collectiveUserIdB = playerB.id;
+    const collectiveUserIdC = playerC.id;
+    const collectiveUserIdD = playerD.id;
+    const collectiveUsernameB = playerB.username;
+    const collectiveUsernameD = playerD.username;
+
+    const collectiveCharA = await prisma.character.findUniqueOrThrow({
+      where: { userId: collectiveUserIdA },
+    });
+    const collectiveCharB = await prisma.character.findUniqueOrThrow({
+      where: { userId: collectiveUserIdB },
+    });
+    const collectiveCharC = await prisma.character.findUniqueOrThrow({
+      where: { userId: collectiveUserIdC },
+    });
+    const collectiveCharD = await prisma.character.findUniqueOrThrow({
+      where: { userId: collectiveUserIdD },
+    });
+    check(
+      '45) fichas do solicitante, dos convidados e do offline existem',
+      Boolean(collectiveCharA) && Boolean(collectiveCharB) && Boolean(collectiveCharC) && Boolean(collectiveCharD),
+    );
+
+    // Encerra qualquer sessão herdada das seções anteriores.
+    const clearCollectiveSessions = async (...characterIds: string[]) => {
+      await prisma.shortRestSession.updateMany({
+        where: { characterId: { in: characterIds }, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+    };
+    const clearAllCollectiveSessions = () =>
+      clearCollectiveSessions(collectiveCharA.id, collectiveCharB.id, collectiveCharD.id);
+    const collectiveActiveSessions = (characterId: string) =>
+      prisma.shortRestSession.findMany({ where: { characterId, status: 'ACTIVE' } });
+    await clearAllCollectiveSessions();
+
+    // Sockets: A, B e D online; C nunca conecta (offline de propósito).
+    const collectiveSocketA = connect(collectiveTokenA);
+    await waitFor<any>(collectiveSocketA, 'connection:ready').catch(() => null);
+    const collectiveMasterSocket = connect(masterToken);
+    await waitFor<any>(collectiveMasterSocket, 'connection:ready').catch(() => null);
+    const collectiveOnline = waitForPresence(
+      collectiveSocketA,
+      (online) =>
+        online.some((user: any) => user.username === collectiveUsernameA) &&
+        online.some((user: any) => user.username === collectiveUsernameB) &&
+        online.some((user: any) => user.username === collectiveUsernameD),
+    );
+    const collectiveSocketB = connect(collectiveTokenB);
+    const collectiveSocketD = connect(collectiveTokenD);
+    await Promise.all([
+      waitFor<any>(collectiveSocketB, 'connection:ready').catch(() => null),
+      waitFor<any>(collectiveSocketD, 'connection:ready').catch(() => null),
+      collectiveOnline.catch(() => null),
+    ]);
+
+    const collectiveCurrent = async () =>
+      (await api('/api/rest/short/request', { token: collectiveTokenA })).data.request;
+    const collectiveCreate = (token: string, operationId: string) =>
+      api('/api/rest/short/request', { method: 'POST', token, body: { operationId } });
+    const collectiveRespond = (
+      token: string,
+      requestId: string,
+      response: string,
+      operationId: string,
+    ) =>
+      api(`/api/rest/short/${requestId}/respond`, {
+        method: 'POST',
+        token,
+        body: { response, operationId },
+      });
+    const collectiveForce = (requestId: string, operationId: string) =>
+      api(`/api/rest/short/${requestId}/force-approve`, {
+        method: 'POST',
+        token: masterToken,
+        body: { operationId },
+      });
+    const collectiveCancel = (requestId: string, operationId: string, token = masterToken) =>
+      api(`/api/rest/short/${requestId}/cancel`, {
+        method: 'POST',
+        token,
+        body: { operationId },
+      });
+
+    // --- 45.1 Criação, congelamento e única PENDING ------------------------
+    check(
+      '1) criar a solicitação sem token é recusado (401)',
+      (await api('/api/rest/short/request', { method: 'POST', body: { operationId: `op-${suffix}-rq-noauth` } })).status === 401,
+    );
+
+    const collectiveEventPromise = waitFor<any>(collectiveSocketA, 'short-rest:request-updated').catch(() => null);
+    const collectiveCreated1 = await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-1`);
+    const collectiveEvent = await collectiveEventPromise;
+    const collectiveReq1 = collectiveCreated1.data;
+    check(
+      '1) PLAYER cria a solicitação (201, PENDING)',
+      collectiveCreated1.status === 201 &&
+        collectiveReq1?.status === 'PENDING' &&
+        collectiveReq1?.replayed === false &&
+        collectiveReq1?.requestedBy?.userId === collectiveUserIdA,
+      JSON.stringify(collectiveReq1),
+    );
+    check(
+      '2) o solicitante nasce ACCEPTED com respondedAt preenchido',
+      collectiveReq1?.participants?.find((p: any) => p.userId === collectiveUserIdA)?.response === 'ACCEPTED' &&
+        Boolean(collectiveReq1?.participants?.find((p: any) => p.userId === collectiveUserIdA)?.respondedAt),
+      JSON.stringify(collectiveReq1?.participants),
+    );
+    check(
+      '3) os demais jogadores convidados nascem PENDING (sem respondedAt)',
+      collectiveReq1?.participants?.find((p: any) => p.userId === collectiveUserIdB)?.response === 'PENDING' &&
+        collectiveReq1?.participants?.find((p: any) => p.userId === collectiveUserIdD)?.response === 'PENDING' &&
+        collectiveReq1?.participants?.find((p: any) => p.userId === collectiveUserIdB)?.respondedAt === null,
+      JSON.stringify(collectiveReq1?.participants),
+    );
+    check(
+      '4) o MASTER não entra como participante (mesmo tendo ficha)',
+      !(collectiveReq1?.participants ?? []).some((p: any) => p.userId === collectiveMasterUserId),
+      JSON.stringify(collectiveReq1?.participants),
+    );
+    check(
+      '5) jogador offline com ficha NÃO entra (lista congelada só com os online)',
+      !(collectiveReq1?.participants ?? []).some((p: any) => p.userId === collectiveUserIdC) &&
+        (collectiveReq1?.participants ?? []).length === 3,
+      JSON.stringify(collectiveReq1?.participants),
+    );
+    check(
+      'evento short-rest:request-updated chega à mesa com a solicitação',
+      collectiveEvent?.request?.id === collectiveReq1?.id && collectiveEvent?.request?.status === 'PENDING',
+      JSON.stringify(collectiveEvent),
+    );
+
+    const collectiveSecond = await collectiveCreate(collectiveTokenB, `op-${suffix}-rq-2`);
+    check(
+      '6) uma segunda solicitação PENDING global é rejeitada (409)',
+      collectiveSecond.status === 409 &&
+        collectiveSecond.data?.error === 'SHORT_REST_REQUEST_ALREADY_PENDING',
+      JSON.stringify({ status: collectiveSecond.status, data: collectiveSecond.data }),
+    );
+
+    // --- 45.2 Respostas, troca de resposta e aprovação ---------------------
+    check(
+      '8) MASTER não responde (não é participante) → 403',
+      (await collectiveRespond(masterToken, collectiveReq1.id, 'ACCEPTED', `op-${suffix}-rq-master`)).status === 403,
+    );
+    check(
+      '8b) jogador que não participa não responde → 403',
+      (await collectiveRespond(collectiveTokenC, collectiveReq1.id, 'ACCEPTED', `op-${suffix}-rq-nonpart`)).status === 403,
+    );
+
+    const collectiveADeclined = await collectiveRespond(
+      collectiveTokenA,
+      collectiveReq1.id,
+      'DECLINED',
+      `op-${suffix}-rq-a-dec`,
+    );
+    check(
+      '11) ACCEPTED pode virar DECLINED enquanto PENDING (sem resolver)',
+      collectiveADeclined.status === 200 &&
+        collectiveADeclined.data?.status === 'PENDING' &&
+        collectiveADeclined.data?.participants?.find((p: any) => p.userId === collectiveUserIdA)?.response === 'DECLINED',
+      JSON.stringify(collectiveADeclined.data?.participants),
+    );
+    const collectiveAAccepted = await collectiveRespond(
+      collectiveTokenA,
+      collectiveReq1.id,
+      'ACCEPTED',
+      `op-${suffix}-rq-a-acc`,
+    );
+    check(
+      '10) DECLINED pode voltar para ACCEPTED enquanto PENDING',
+      collectiveAAccepted.status === 200 &&
+        collectiveAAccepted.data?.status === 'PENDING' &&
+        collectiveAAccepted.data?.participants?.find((p: any) => p.userId === collectiveUserIdA)?.response === 'ACCEPTED',
+      JSON.stringify(collectiveAAccepted.data?.participants),
+    );
+    const collectiveAReplay = await collectiveRespond(
+      collectiveTokenA,
+      collectiveReq1.id,
+      'ACCEPTED',
+      `op-${suffix}-rq-a-acc`,
+    );
+    check(
+      'resposta idempotente: mesma chave devolve replay',
+      collectiveAReplay.status === 200 && collectiveAReplay.data?.replayed === true,
+      JSON.stringify(collectiveAReplay.data),
+    );
+    const collectiveAReuse = await collectiveRespond(
+      collectiveTokenA,
+      collectiveReq1.id,
+      'DECLINED',
+      `op-${suffix}-rq-a-acc`,
+    );
+    check(
+      'resposta: reusar a chave com outra decisão devolve 409 IDEMPOTENCY_KEY_REUSED',
+      collectiveAReuse.status === 409 && collectiveAReuse.data?.error === 'IDEMPOTENCY_KEY_REUSED',
+      JSON.stringify(collectiveAReuse.data),
+    );
+
+    const collectiveBDeclined = await collectiveRespond(
+      collectiveTokenB,
+      collectiveReq1.id,
+      'DECLINED',
+      `op-${suffix}-rq-b-dec`,
+    );
+    check(
+      '9) DECLINED não bloqueia a aprovação: a coleta continua PENDING enquanto há PENDING',
+      collectiveBDeclined.status === 200 &&
+        collectiveBDeclined.data?.status === 'PENDING' &&
+        collectiveBDeclined.data?.participants?.find((p: any) => p.userId === collectiveUserIdB)?.response === 'DECLINED' &&
+        Boolean(collectiveBDeclined.data?.participants?.find((p: any) => p.userId === collectiveUserIdB)?.respondedAt),
+      JSON.stringify({ status: collectiveBDeclined.data?.status, participants: collectiveBDeclined.data?.participants }),
+    );
+    const collectiveDAccepted = await collectiveRespond(
+      collectiveTokenD,
+      collectiveReq1.id,
+      'ACCEPTED',
+      `op-${suffix}-rq-d-acc`,
+    );
+    check(
+      '14) a última resposta resolve a coleta automaticamente (APPROVED)',
+      collectiveDAccepted.status === 200 &&
+        collectiveDAccepted.data?.status === 'APPROVED' &&
+        Boolean(collectiveDAccepted.data?.approvedAt),
+      JSON.stringify({ status: collectiveDAccepted.status, data: collectiveDAccepted.data }),
+    );
+    check(
+      '15/21) APPROVED cria UMA sessão ACTIVE por ACCEPTED e nenhuma para o DECLINED',
+      (await collectiveActiveSessions(collectiveCharA.id)).length === 1 &&
+        (await collectiveActiveSessions(collectiveCharD.id)).length === 1 &&
+        (await collectiveActiveSessions(collectiveCharB.id)).length === 0,
+      JSON.stringify({
+        a: (await collectiveActiveSessions(collectiveCharA.id)).length,
+        d: (await collectiveActiveSessions(collectiveCharD.id)).length,
+        b: (await collectiveActiveSessions(collectiveCharB.id)).length,
+      }),
+    );
+    check(
+      '16) quem recusou fica completamente fora (sem sessão)',
+      (await collectiveActiveSessions(collectiveCharB.id)).length === 0,
+    );
+
+    const collectiveAfterApproved = await collectiveRespond(
+      collectiveTokenA,
+      collectiveReq1.id,
+      'DECLINED',
+      `op-${suffix}-rq-after-ok`,
+    );
+    check(
+      '12) depois de APPROVED a resposta não pode mais mudar (409)',
+      collectiveAfterApproved.status === 409 &&
+        collectiveAfterApproved.data?.error === 'SHORT_REST_REQUEST_CLOSED',
+      JSON.stringify(collectiveAfterApproved.data),
+    );
+
+    // --- 45.3 Todos recusam → CANCELLED / NO_PARTICIPANTS ------------------
+    await clearAllCollectiveSessions();
+    const collectiveReq3 = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-3`)).data;
+    await collectiveRespond(collectiveTokenA, collectiveReq3.id, 'DECLINED', `op-${suffix}-rq-3-a`);
+    await collectiveRespond(collectiveTokenB, collectiveReq3.id, 'DECLINED', `op-${suffix}-rq-3-b`);
+    const collectiveAllDeclined = await collectiveRespond(
+      collectiveTokenD,
+      collectiveReq3.id,
+      'DECLINED',
+      `op-${suffix}-rq-3-d`,
+    );
+    check(
+      '17) todos recusam → CANCELLED com NO_PARTICIPANTS (sem sessões)',
+      collectiveAllDeclined.status === 200 &&
+        collectiveAllDeclined.data?.status === 'CANCELLED' &&
+        collectiveAllDeclined.data?.cancelReason === 'NO_PARTICIPANTS' &&
+        Boolean(collectiveAllDeclined.data?.cancelledAt) &&
+        (await collectiveActiveSessions(collectiveCharA.id)).length === 0 &&
+        (await collectiveActiveSessions(collectiveCharB.id)).length === 0 &&
+        (await collectiveActiveSessions(collectiveCharD.id)).length === 0,
+      JSON.stringify(collectiveAllDeclined.data),
+    );
+    const collectiveAfterCancelled = await collectiveRespond(
+      collectiveTokenA,
+      collectiveReq3.id,
+      'ACCEPTED',
+      `op-${suffix}-rq-3-after`,
+    );
+    check(
+      '13) depois de CANCELLED a resposta não pode mais mudar (409)',
+      collectiveAfterCancelled.status === 409 &&
+        collectiveAfterCancelled.data?.error === 'SHORT_REST_REQUEST_CLOSED',
+      JSON.stringify(collectiveAfterCancelled.data),
+    );
+
+    // --- 45.4 Force-approve do mestre -------------------------------------
+    await clearAllCollectiveSessions();
+    const collectiveReq4 = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-4`)).data;
+    await collectiveRespond(collectiveTokenB, collectiveReq4.id, 'DECLINED', `op-${suffix}-rq-4-b`);
+    const collectiveForced = await collectiveForce(collectiveReq4.id, `op-${suffix}-rq-4-force`);
+    const collectiveForcedB = collectiveForced.data?.participants?.find((p: any) => p.userId === collectiveUserIdB);
+    const collectiveForcedD = collectiveForced.data?.participants?.find((p: any) => p.userId === collectiveUserIdD);
+    check(
+      '18) MASTER force-approve: PENDING vira não participante (DECLINED + closedByMaster)',
+      collectiveForced.status === 200 &&
+        collectiveForced.data?.status === 'APPROVED' &&
+        collectiveForced.data?.forcedByUserId === collectiveMasterUserId &&
+        collectiveForcedD?.response === 'DECLINED' &&
+        collectiveForcedD?.closedByMaster === true,
+      JSON.stringify({ status: collectiveForced.data?.status, d: collectiveForcedD }),
+    );
+    check(
+      '19) force-approve NÃO converte PENDING em ACCEPTED',
+      collectiveForced.data?.participants?.find((p: any) => p.userId === collectiveUserIdA)?.response === 'ACCEPTED' &&
+        collectiveForcedD?.response !== 'ACCEPTED',
+      JSON.stringify(collectiveForced.data?.participants),
+    );
+    check(
+      '20) DECLINED continua fora no force-approve (fechado pelo jogador, não pelo mestre)',
+      collectiveForcedB?.response === 'DECLINED' && collectiveForcedB?.closedByMaster === false,
+      JSON.stringify(collectiveForcedB),
+    );
+    check(
+      '21) force-approve cria sessões só para os ACCEPTED',
+      (await collectiveActiveSessions(collectiveCharA.id)).length === 1 &&
+        (await collectiveActiveSessions(collectiveCharB.id)).length === 0 &&
+        (await collectiveActiveSessions(collectiveCharD.id)).length === 0,
+    );
+    check(
+      'force-approve em solicitação já resolvida é recusado (409)',
+      (await collectiveForce(collectiveReq4.id, `op-${suffix}-rq-4-force-again`)).status === 409,
+    );
+
+    // --- 45.5 Cancelamento pelo mestre ------------------------------------
+    await clearAllCollectiveSessions();
+    const collectiveReq5 = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-5`)).data;
+    const collectiveCancelled = await collectiveCancel(collectiveReq5.id, `op-${suffix}-rq-5-cancel`);
+    check(
+      '22) MASTER cancela a solicitação (CANCELLED, sem sessões)',
+      collectiveCancelled.status === 200 &&
+        collectiveCancelled.data?.status === 'CANCELLED' &&
+        Boolean(collectiveCancelled.data?.cancelledAt) &&
+        (await collectiveActiveSessions(collectiveCharA.id)).length === 0 &&
+        (await collectiveActiveSessions(collectiveCharB.id)).length === 0,
+      JSON.stringify(collectiveCancelled.data),
+    );
+    const collectiveCancelReplay = await collectiveCancel(collectiveReq5.id, `op-${suffix}-rq-5-cancel`);
+    check(
+      '22b) cancelar com a mesma chave devolve replay',
+      collectiveCancelReplay.status === 200 && collectiveCancelReplay.data?.replayed === true,
+    );
+    check(
+      '22c) PLAYER não cancela a solicitação (403)',
+      (await collectiveCancel(collectiveReq5.id, `op-${suffix}-rq-5-cancel-player`, collectiveTokenA)).status === 403,
+    );
+    check(
+      '22d) a solicitação PENDING some da leitura (GET) depois de resolvida',
+      (await collectiveCurrent()) === null,
+    );
+
+    // --- 45.6 Conflito com sessão ACTIVE ----------------------------------
+    await clearAllCollectiveSessions();
+    await prisma.shortRestSession.create({ data: { characterId: collectiveCharB.id } });
+    const collectiveReq6 = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-6`)).data;
+    await collectiveRespond(collectiveTokenB, collectiveReq6.id, 'ACCEPTED', `op-${suffix}-rq-6-b`);
+    const collectiveConflict = await collectiveRespond(
+      collectiveTokenD,
+      collectiveReq6.id,
+      'ACCEPTED',
+      `op-${suffix}-rq-6-d`,
+    );
+    check(
+      '23) ACCEPTED com sessão ACTIVE → aprovação falha atomicamente (409 SHORT_REST_SESSION_ALREADY_ACTIVE)',
+      collectiveConflict.status === 409 &&
+        collectiveConflict.data?.error === 'SHORT_REST_SESSION_ALREADY_ACTIVE',
+      JSON.stringify({ status: collectiveConflict.status, data: collectiveConflict.data }),
+    );
+    const collectiveAfterConflict = await collectiveCurrent();
+    check(
+      '24) nenhuma sessão parcial é criada e a solicitação permanece PENDING',
+      collectiveAfterConflict?.status === 'PENDING' &&
+        (await collectiveActiveSessions(collectiveCharA.id)).length === 0 &&
+        (await collectiveActiveSessions(collectiveCharD.id)).length === 0,
+      JSON.stringify({
+        status: collectiveAfterConflict?.status,
+        a: (await collectiveActiveSessions(collectiveCharA.id)).length,
+        d: (await collectiveActiveSessions(collectiveCharD.id)).length,
+      }),
+    );
+    // Limpa: remove o conflito e cancela a solicitação presa.
+    await prisma.shortRestSession.updateMany({
+      where: { characterId: collectiveCharB.id, status: 'ACTIVE' },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    });
+    await collectiveCancel(collectiveReq6.id, `op-${suffix}-rq-6-cancel`);
+
+    // --- 45.7 Concorrência ------------------------------------------------
+    await clearAllCollectiveSessions();
+    const collectiveReq7 = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-7`)).data;
+    await collectiveRespond(collectiveTokenD, collectiveReq7.id, 'DECLINED', `op-${suffix}-rq-7-d`);
+    const [collectiveRaceA, collectiveRaceB] = await Promise.all([
+      collectiveRespond(collectiveTokenB, collectiveReq7.id, 'ACCEPTED', `op-${suffix}-rq-7-b1`),
+      collectiveRespond(collectiveTokenB, collectiveReq7.id, 'DECLINED', `op-${suffix}-rq-7-b2`),
+    ]);
+    const collectiveRaceStatuses = [collectiveRaceA.status, collectiveRaceB.status].sort((a, b) => a - b);
+    check(
+      '25) duas respostas finais concorrentes: só uma efetiva (a outra 409), sem duplicar sessões',
+      collectiveRaceStatuses[0] === 200 &&
+        collectiveRaceStatuses[1] === 409 &&
+        (await collectiveActiveSessions(collectiveCharA.id)).length === 1 &&
+        (await collectiveActiveSessions(collectiveCharB.id)).length === 0,
+      JSON.stringify({
+        statuses: collectiveRaceStatuses,
+        a: (await collectiveActiveSessions(collectiveCharA.id)).length,
+      }),
+    );
+
+    await clearAllCollectiveSessions();
+    const collectiveReq8 = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-8`)).data;
+    const [collectiveForceA, collectiveForceB] = await Promise.all([
+      collectiveForce(collectiveReq8.id, `op-${suffix}-rq-8-f1`),
+      collectiveForce(collectiveReq8.id, `op-${suffix}-rq-8-f2`),
+    ]);
+    const collectiveForceStatuses = [collectiveForceA.status, collectiveForceB.status].sort((a, b) => a - b);
+    check(
+      '26) force-approve concorrente: uma efetiva, a outra 409, sem sessões duplicadas',
+      collectiveForceStatuses[0] === 200 &&
+        collectiveForceStatuses[1] === 409 &&
+        (await collectiveActiveSessions(collectiveCharA.id)).length === 1 &&
+        (await collectiveActiveSessions(collectiveCharB.id)).length === 0,
+      JSON.stringify({ statuses: collectiveForceStatuses }),
+    );
+
+    // --- 45.8 Presença congelada e desconexão -----------------------------
+    await clearAllCollectiveSessions();
+    const collectiveReq9 = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-9`)).data;
+    const collectiveDOffline = waitForPresence(
+      collectiveSocketA,
+      (online) => !online.some((user: any) => user.username === collectiveUsernameD),
+    );
+    collectiveSocketD.close();
+    await collectiveDOffline.catch(() => null);
+    const collectiveAfterDisconnect = await collectiveCurrent();
+    check(
+      '28) a desconexão posterior NÃO remove o participante da lista congelada',
+      collectiveAfterDisconnect?.id === collectiveReq9.id &&
+        collectiveAfterDisconnect?.participants?.find((p: any) => p.userId === collectiveUserIdD)?.response === 'PENDING',
+      JSON.stringify(collectiveAfterDisconnect?.participants),
+    );
+    // B recusa (ainda há o PENDING do D offline) e depois o PRÓPRIO D responde
+    // pelo HTTP — a participação não depende de estar conectado.
+    await collectiveRespond(collectiveTokenB, collectiveReq9.id, 'DECLINED', `op-${suffix}-rq-9-b`);
+    const collectiveDOfflineResponded = await collectiveRespond(
+      collectiveTokenD,
+      collectiveReq9.id,
+      'DECLINED',
+      `op-${suffix}-rq-9-d`,
+    );
+    check(
+      '28b) o participante offline responde pelo HTTP e a coleta resolve',
+      collectiveDOfflineResponded.status === 200 &&
+        collectiveDOfflineResponded.data?.status === 'APPROVED' &&
+        (await collectiveActiveSessions(collectiveCharD.id)).length === 0,
+      JSON.stringify(collectiveDOfflineResponded.data),
+    );
+
+    // Agora B também sai: a próxima solicitação só deve convidar A (único online).
+    await clearAllCollectiveSessions();
+    const collectiveBOnline = waitForPresence(
+      collectiveSocketA,
+      (online) => !online.some((user: any) => user.username === collectiveUsernameB),
+    );
+    collectiveSocketB.close();
+    await collectiveBOnline.catch(() => null);
+    const collectiveReq10 = await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-10`);
+    check(
+      '27) presença é congelada na criação: só o solicitante online é convidado e a solicitação é aprovada na hora',
+      collectiveReq10.status === 201 &&
+        collectiveReq10.data?.status === 'APPROVED' &&
+        (collectiveReq10.data?.participants ?? []).length === 1 &&
+        collectiveReq10.data?.participants?.[0]?.response === 'ACCEPTED' &&
+        (await collectiveActiveSessions(collectiveCharA.id)).length === 1,
+      JSON.stringify({ status: collectiveReq10.data?.status, participants: collectiveReq10.data?.participants }),
+    );
+
+    // --- 45.9 Song of Rest derivada só dos ACCEPTED -----------------------
+    await clearAllCollectiveSessions();
+    const collectiveSocketB2 = connect(collectiveTokenB);
+    await waitFor<any>(collectiveSocketB2, 'connection:ready').catch(() => null);
+    await waitForPresence(
+      collectiveSocketA,
+      (online) => online.some((user: any) => user.username === collectiveUsernameB),
+    ).catch(() => null);
+
+    const collectiveApproveWith = async (
+      classesA: { classKey: string; level: number }[],
+      classesB: { classKey: string; level: number }[],
+      responseB: 'ACCEPTED' | 'DECLINED',
+      tag: string,
+    ) => {
+      await clearAllCollectiveSessions();
+      await setCharacterClasses(collectiveUserIdA, classesA);
+      await setCharacterClasses(collectiveUserIdB, classesB);
+      const request = (await collectiveCreate(collectiveTokenA, `op-${suffix}-rq-${tag}`)).data;
+      return collectiveRespond(collectiveTokenB, request.id, responseB, `op-${suffix}-rq-${tag}-b`);
+    };
+
+    // 29) ACCEPTED d6 + ACCEPTED d10 → d10.
+    const collectiveSong29 = await collectiveApproveWith(
+      [{ classKey: 'bard', level: 3 }],
+      [{ classKey: 'bard', level: 15 }],
+      'ACCEPTED',
+      'song-29',
+    );
+    check(
+      '29) Song of Rest: dois Bardos ACCEPTED (d6 + d10) → d10 (o maior, sem acumular)',
+      collectiveSong29.data?.status === 'APPROVED' && collectiveSong29.data?.songOfRestDie === 10,
+      JSON.stringify({ status: collectiveSong29.data?.status, die: collectiveSong29.data?.songOfRestDie }),
+    );
+
+    // 30) ACCEPTED d6 + DECLINED d12 → d6.
+    const collectiveSong30 = await collectiveApproveWith(
+      [{ classKey: 'bard', level: 3 }],
+      [{ classKey: 'bard', level: 17 }],
+      'DECLINED',
+      'song-30',
+    );
+    check(
+      '30) Song of Rest: ACCEPTED d6 + DECLINED d12 → d6 (o recusado não conta)',
+      collectiveSong30.data?.status === 'APPROVED' && collectiveSong30.data?.songOfRestDie === 6,
+      JSON.stringify({ status: collectiveSong30.data?.status, die: collectiveSong30.data?.songOfRestDie }),
+    );
+
+    // 31) somente um Bardo DECLINED → null.
+    const collectiveSong31 = await collectiveApproveWith(
+      [{ classKey: 'fighter', level: 5 }],
+      [{ classKey: 'bard', level: 17 }],
+      'DECLINED',
+      'song-31',
+    );
+    check(
+      '31) Song of Rest: só Bardo DECLINED → null',
+      collectiveSong31.data?.status === 'APPROVED' && collectiveSong31.data?.songOfRestDie === null,
+      JSON.stringify({ status: collectiveSong31.data?.status, die: collectiveSong31.data?.songOfRestDie }),
+    );
+
+    // 32) nenhum Bardo → null.
+    const collectiveSong32 = await collectiveApproveWith(
+      [{ classKey: 'fighter', level: 5 }],
+      [{ classKey: 'fighter', level: 3 }],
+      'ACCEPTED',
+      'song-32',
+    );
+    check(
+      '32) Song of Rest: nenhum Bardo → null',
+      collectiveSong32.data?.status === 'APPROVED' && collectiveSong32.data?.songOfRestDie === null,
+      JSON.stringify({ die: collectiveSong32.data?.songOfRestDie }),
+    );
+
+    // 33) multiclasse usa o nível de BARDO (Bardo 9 / Guerreiro 11 → d8).
+    await prisma.character.update({
+      where: { id: collectiveCharA.id },
+      data: { hpCurrent: 7, hpMax: 60, classState: { active: [], used: {}, choices: {} } },
+    });
+    const collectiveSong33 = await collectiveApproveWith(
+      [
+        { classKey: 'bard', level: 9 },
+        { classKey: 'fighter', level: 11 },
+      ],
+      [{ classKey: 'fighter', level: 3 }],
+      'ACCEPTED',
+      'song-33',
+    );
+    check(
+      '33) Song of Rest: multiclasse usa só o nível de Bardo (Bardo 9 → d8)',
+      collectiveSong33.data?.status === 'APPROVED' && collectiveSong33.data?.songOfRestDie === 8,
+      JSON.stringify({ status: collectiveSong33.data?.status, die: collectiveSong33.data?.songOfRestDie }),
+    );
+
+    // 34) a Song of Rest AINDA não cura nem vira recurso consumível.
+    const collectiveSongRowA = await prisma.character.findUniqueOrThrow({
+      where: { id: collectiveCharA.id },
+    });
+    check(
+      '34) Song of Rest ainda NÃO cura: a aprovação não altera o PV nem cria contador',
+      collectiveSongRowA.hpCurrent === 7 &&
+        !Object.prototype.hasOwnProperty.call(
+          (collectiveSongRowA.classState as any)?.used ?? {},
+          'song-of-rest',
+        ),
+      JSON.stringify({ hp: collectiveSongRowA.hpCurrent, used: (collectiveSongRowA.classState as any)?.used }),
+    );
+
+    await clearAllCollectiveSessions();
+    collectiveSocketA.close();
+    collectiveSocketB2.close();
+    collectiveMasterSocket.close();
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -13296,8 +13959,14 @@ async function cleanup(): Promise<void> {
     await prisma.customRace.deleteMany({ where: { id: { in: createdCustomRaceIds } } });
   }
 
+  // Operações idempotentes da solicitação coletiva de Descanso Curto. A tabela é
+  // global (sem FK para usuário), então a limpeza é explícita — todas as chaves do
+  // teste carregam o sufixo da execução.
+  await prisma.shortRestOperation.deleteMany({ where: { operationId: { contains: suffix } } });
+
   if (createdUsernames.length > 0) {
-    // A ficha é removida junto com o usuário (onDelete: Cascade).
+    // A ficha é removida junto com o usuário (onDelete: Cascade); as solicitações
+    // coletivas e suas sessões caem junto (Cascade).
     await prisma.user.deleteMany({ where: { username: { in: createdUsernames } } });
   }
 
