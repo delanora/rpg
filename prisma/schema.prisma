@@ -489,3 +489,46 @@ model Combatant {
   @@index([ownerUserId])
   @@map("combatants")
 }
+
+// -----------------------------------------------------------------------------
+// Música ambiente da mesa
+// -----------------------------------------------------------------------------
+
+/// Faixa de música da mesa.
+///
+/// O arquivo vive em `uploads/music/` e é servido em `/uploads/music/...`; aqui
+/// ficam só os metadados que a interface usa. A duração é medida pelo navegador
+/// no momento do upload — é ela que deixa o servidor agendar o fim da faixa e
+/// passar para a próxima sem depender de ninguém.
+model MusicTrack {
+  id        String   @id @default(cuid())
+  /// Nome exibido na lista (vem do arquivo, e o mestre pode renomear).
+  name      String
+  /// URL pública do arquivo (`/uploads/music/...`).
+  url       String
+  /// Duração em segundos (0 = desconhecida).
+  duration  Float    @default(0)
+  /// Tamanho do arquivo em bytes (mostrado na lista).
+  size      Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("music_tracks")
+}
+
+/// Estado da reprodução (linha única, `id = "main"`).
+///
+/// É a fonte de verdade da sincronia: o mestre muda o estado por HTTP, o
+/// servidor persiste e publica `music:state` para a mesa inteira. O `position`
+/// vale no instante de `updatedAt`; enquanto toca, a posição corrente é
+/// `position + (agora - updatedAt)`.
+model MusicState {
+  id       String   @id @default("main")
+  trackId  String?
+  playing  Boolean  @default(false)
+  position Float    @default(0)
+  /// Repete a faixa atual em loop em vez de passar para a próxima.
+  repeat   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@map("music_state")
+}

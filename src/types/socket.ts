@@ -13,6 +13,8 @@ import type {
   CreatureUpdatedPayload,
   DiceRolledPayload,
   GameConfigPayload,
+  MusicStatePayload,
+  MusicTracksPayload,
   PresentationClosedPayload,
   PresentationShownPayload,
   PresenceUpdatePayload,
@@ -50,6 +52,10 @@ export interface ServerToClientEvents {
 
   // Configuração da mesa
   'game:config': (payload: GameConfigPayload) => void;
+
+  // Música ambiente (todos escutam a mesma faixa; o catálogo é só do mestre)
+  'music:state': (payload: MusicStatePayload) => void;
+  'music:tracks': (payload: MusicTracksPayload) => void;
 
   // Combate
   'combat:started': (payload: CombatStartedPayload) => void;

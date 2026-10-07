@@ -74,6 +74,9 @@
   --card-pad-y: 0.55rem; /* respiro vertical de cards e linhas */
   --card-pad-x: 0.75rem; /* respiro horizontal de cards e linhas */
   --control-h: 2.1rem; /* altura padrão dos controles */
+  /* Altura da barra de música fixa: o rodapé reserva esse espaço e os botões
+     flutuantes sobem para cima dela (ver .has-music-bar). */
+  --music-bar-h: 4.25rem;
 
   /* Escala de espaçamento — múltiplos de 8px para um ritmo visual consistente. */
   --space-1: 0.5rem; /* 8px */
@@ -12049,5 +12052,367 @@ input[type='checkbox']:focus-visible,
 
   .home-cards > li {
     flex-basis: 100%;
+  }
+}
+
+/* ==========================================================================
+   Música ambiente — barra fixa do mestre, playlist e card do salão
+   ==========================================================================
+
+   A barra fica no rodapé em qualquer aba do mestre e não é só um controle: é
+   a leitura do estado que o SERVIDOR mantém. Os jogadores não têm nada disso —
+   eles só escutam o mesmo estado. */
+
+/* --- Barra fixa de reprodução -------------------------------------------- */
+
+.music-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 58;
+  height: var(--music-bar-h);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0 0.9rem;
+  border-top: 1px solid var(--gold-deep);
+  background: linear-gradient(180deg, var(--leather-2), var(--leather-deep));
+  box-shadow: 0 -12px 26px -16px rgba(0, 0, 0, 0.9);
+}
+
+.music-bar-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 1 16rem;
+  min-width: 0;
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+}
+
+.music-bar-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-bar-time {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: #cdb892;
+}
+
+.music-bar-progress {
+  flex: 1 1 auto;
+  min-width: 4rem;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.music-bar-progress:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.music-bar-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Os botões da barra (e o da lista) seguem a mesma placa de couro dos FABs. */
+.music-bar-controls button,
+.music-bar-list {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--gold-deep);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--leather-2), var(--leather));
+  color: var(--gold-bright);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.18s ease,
+    color 0.15s ease;
+}
+
+.music-bar-controls button:hover:not(:disabled),
+.music-bar-list:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 14px -5px var(--glow);
+}
+
+.music-bar-controls button:focus-visible,
+.music-bar-list:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.music-bar-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.music-bar-controls .music-bar-play {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.music-bar-list.active,
+.music-bar-repeat.active {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-color: var(--gold);
+  color: #3a2410;
+}
+
+/* Aviso de erro do mestre, discreto e clicável (fecha). */
+.music-bar-error {
+  flex: 0 1 auto;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: rgba(155, 34, 38, 0.28);
+  color: #f2c1be;
+  font-size: var(--text-micro);
+  cursor: pointer;
+}
+
+/* --- Painel da playlist (abre pela barra) -------------------------------- */
+
+.music-panel {
+  position: fixed;
+  right: 1.25rem;
+  bottom: calc(var(--music-bar-h) + 0.7rem);
+  z-index: 60;
+  width: min(26rem, 92vw);
+  max-height: min(60vh, 30rem);
+  overflow-y: auto;
+  padding: 0.85rem 0.95rem;
+  border: 2px solid var(--gold-deep);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+  animation: ink-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.music-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--gold-hair);
+}
+
+.music-panel-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+}
+
+.music-panel-head h3 .icon {
+  color: var(--gold);
+}
+
+.music-panel-close {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.music-panel-close:hover {
+  border-color: var(--gold);
+  color: var(--gold-deep);
+}
+
+/* --- Lista de faixas (card do salão e painel da barra) ------------------- */
+
+.music-list-wrap {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.music-tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.music-track {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+}
+
+.music-track.active {
+  border-color: var(--gold);
+  border-left-color: var(--gold);
+  background: linear-gradient(180deg, rgba(184, 145, 42, 0.16), var(--surface-2));
+}
+
+.music-track-play,
+.music-track-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.music-track.active .music-track-play {
+  border-color: var(--gold-hair);
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .music-track.active .music-track-play {
+  color: var(--gold-bright);
+}
+
+.music-track-play:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold-deep);
+}
+
+.music-track-remove:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.music-track-play:disabled,
+.music-track-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.music-track-info {
+  display: grid;
+  gap: 0.05rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.music-track-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-track-meta {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+/* --- Card de música do salão -------------------------------------------- */
+
+.music-card {
+  padding: 0.9rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: var(--shadow);
+}
+
+.music-card-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+/* O input de arquivo é acionado pelo botão estilizado (mesma ideia do sprite). */
+.music-card-file {
+  display: none;
+}
+
+.music-card-hint {
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+}
+
+/* --- Nada pode ficar escondido atrás da barra ---------------------------- */
+
+.app-shell.has-music-bar .app-main {
+  padding-bottom: calc(3rem + var(--music-bar-h));
+}
+
+/* Botões flutuantes do mestre: sobem juntos, mantendo o passo entre eles. */
+.app-shell.has-music-bar .notes-fab.master-notes-fab {
+  bottom: calc(4.25rem + var(--music-bar-h));
+}
+
+.app-shell.has-music-bar .dice-fab.is-master {
+  bottom: calc(7.25rem + var(--music-bar-h));
+}
+
+.app-shell.has-music-bar .roll-log-fab {
+  bottom: calc(10.25rem + var(--music-bar-h));
+}
+
+.app-shell.has-music-bar .master-fab-panel {
+  bottom: calc(13.6rem + var(--music-bar-h));
+}
+
+.app-shell.has-music-bar .dice-window {
+  bottom: calc(5.4rem + var(--music-bar-h));
+}
+
+/* A barra de recursos do combate é `sticky`: ela sobe para cima da música. */
+.app-shell.has-music-bar .combat-bottom {
+  bottom: var(--music-bar-h);
+}
+
+/* Telas estreitas: o título da faixa sai de cena e sobram os controles. */
+@media (max-width: 720px) {
+  .music-bar-now {
+    flex: 0 1 auto;
+  }
+
+  .music-bar-title {
+    display: none;
   }
 }

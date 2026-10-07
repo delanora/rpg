@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
+import { deleteUploadedImage } from '../lib/uploads.js';
 import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
 import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
@@ -38,6 +39,7 @@ const createdLocalityIds: string[] = [];
 const createdRegionIds: string[] = [];
 const createdItemIds: string[] = [];
 const createdCustomRaceIds: string[] = [];
+const createdMusicTrackIds: string[] = [];
 /** Token do jogador da seção 40, reaproveitado na seção 41 (o limiter de auth
  * de produção é apertado: o smoke já consome todas as contas que pode criar). */
 let testsPlayerToken = '';
@@ -120,12 +122,71 @@ function waitForPresence(
   });
 }
 
+/**
+ * Aguarda um `music:state` que satisfaça o predicado.
+ *
+ * Toda conexão já recebe o estado atual ao entrar (por isso o evento pode
+ * chegar antes do comando que queremos observar); filtrar por conteúdo deixa o
+ * teste imune a esse estado antigo.
+ */
+function waitForMusic(
+  socket: Socket,
+  predicate: (state: any) => boolean,
+  timeoutMs = 4000,
+): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off('music:state', handler);
+      reject(new Error('Timeout aguardando music:state correspondente'));
+    }, timeoutMs);
+
+    function handler(payload: any): void {
+      if (!predicate(payload?.state)) return;
+      clearTimeout(timer);
+      socket.off('music:state', handler);
+      resolve(payload);
+    }
+
+    socket.on('music:state', handler);
+  });
+}
+
 function connect(token: string): Socket {
   return io(BASE_URL, {
     transports: ['websocket'],
     auth: { token },
     reconnection: false,
   });
+}
+
+/**
+ * WAV PCM 8-bit mono em silêncio — um arquivo de áudio REAL para o upload.
+ *
+ * A música da mesa aceita o arquivo como data URL (sem multipart), então o
+ * smoke precisa montar bytes válidos: um cabeçalho RIFF/WAVE de 44 bytes mais
+ * as amostras. Silêncio basta — o que se verifica é o caminho de upload, o
+ * estado sincronizado e o broadcast, não o conteúdo sonoro.
+ */
+function makeWavDataUrl(seconds: number): string {
+  const rate = 8000;
+  const samples = rate * seconds;
+  const buffer = Buffer.alloc(44 + samples);
+
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(36 + samples, 4);
+  buffer.write('WAVE', 8);
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16); // tamanho do bloco fmt
+  buffer.writeUInt16LE(1, 20); // PCM sem compressão
+  buffer.writeUInt16LE(1, 22); // mono
+  buffer.writeUInt32LE(rate, 24); // taxa de amostragem
+  buffer.writeUInt32LE(rate, 28); // bytes por segundo (8-bit mono)
+  buffer.writeUInt16LE(1, 32); // alinhamento de bloco
+  buffer.writeUInt16LE(8, 34); // bits por amostra
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(samples, 40);
+
+  return `data:audio/wav;base64,${buffer.toString('base64')}`;
 }
 
 /**
@@ -11933,6 +11994,270 @@ async function main(): Promise<void> {
     );
   }
 
+  // --- 42. Música ambiente da mesa -------------------------------------------
+  {
+    console.log('\n42) Música ambiente da mesa');
+
+    // O jogador original do smoke é excluído na seção 13 (e o cadastro tem
+    // rate limit), então usamos a conta criada nas seções de raças/antecedentes
+    // — viva até o cleanup — como "o jogador que só escuta".
+    const musicPlayerToken = testsPlayerToken;
+
+    // O estado é de leitura livre para a mesa (é o que o jogador segue para
+    // escutar); o catálogo e os comandos são só do mestre.
+    const anonState = await api('/api/music/state');
+    check(
+      'o estado da música exige autenticação (401)',
+      anonState.status === 401,
+      `status ${anonState.status}`,
+    );
+
+    const playerState = await api('/api/music/state', { token: musicPlayerToken });
+    check(
+      'o jogador lê o estado da música (200) — é por ele que ele escuta',
+      playerState.status === 200 && typeof playerState.data?.state?.playing === 'boolean',
+      JSON.stringify(playerState.data),
+    );
+
+    const playerCatalog = await api('/api/music/tracks', { token: musicPlayerToken });
+    check(
+      'o catálogo de faixas é exclusivo do mestre (403 para o jogador)',
+      playerCatalog.status === 403,
+      `status ${playerCatalog.status}`,
+    );
+
+    const masterCatalog = await api('/api/music/tracks', { token: masterToken });
+    check(
+      'o mestre lista o catálogo (200)',
+      masterCatalog.status === 200 && Array.isArray(masterCatalog.data?.tracks),
+      JSON.stringify(masterCatalog.data),
+    );
+
+    const playerCommand = await api('/api/music/state', {
+      method: 'POST',
+      token: musicPlayerToken,
+      body: { playing: true },
+    });
+    check(
+      'o jogador não comanda a reprodução (403)',
+      playerCommand.status === 403,
+      `status ${playerCommand.status}`,
+    );
+
+    const emptyPatch = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: {},
+    });
+    check(
+      'um patch de estado vazio é recusado (400)',
+      emptyPatch.status === 400,
+      `status ${emptyPatch.status}`,
+    );
+
+    const badSkip = await api('/api/music/skip', {
+      method: 'POST',
+      token: masterToken,
+      body: { direction: 'lateral' },
+    });
+    check(
+      'uma direção de pulo inválida é recusada (400)',
+      badSkip.status === 400,
+      `status ${badSkip.status}`,
+    );
+
+    const badUpload = await api('/api/music/tracks', {
+      method: 'POST',
+      token: masterToken,
+      body: { dataUrl: 'data:text/plain;base64,QQ==', name: 'Não é áudio' },
+    });
+    check(
+      'um arquivo que não é áudio é recusado (400)',
+      badUpload.status === 400,
+      `status ${badUpload.status}`,
+    );
+
+    // Upload de verdade: um WAV de 10 minutos. A duração longa é proposital —
+    // o servidor agenda o FIM da faixa e ele não pode interferir nas asserções.
+    const uploaded = await api('/api/music/tracks', {
+      method: 'POST',
+      token: masterToken,
+      body: { dataUrl: makeWavDataUrl(10), name: 'Tema do smoke', duration: 600 },
+    });
+    const trackId: string = uploaded.data?.track?.id ?? '';
+    if (trackId) createdMusicTrackIds.push(trackId);
+    check(
+      'o mestre envia uma faixa (201) e ela entra no catálogo com a duração medida',
+      uploaded.status === 201 &&
+        trackId !== '' &&
+        uploaded.data?.track?.name === 'Tema do smoke' &&
+        uploaded.data?.track?.duration === 600,
+      JSON.stringify(uploaded.data),
+    );
+    check(
+      'o arquivo fica gravado em /uploads/music/',
+      typeof uploaded.data?.track?.url === 'string' &&
+        uploaded.data.track.url.startsWith('/uploads/music/'),
+      String(uploaded.data?.track?.url),
+    );
+
+    const musicMasterSocket = connect(masterToken);
+    const musicPlayerSocket = connect(musicPlayerToken);
+    await Promise.all([
+      waitFor(musicMasterSocket, 'connection:ready').catch(() => null),
+      waitFor(musicPlayerSocket, 'connection:ready').catch(() => null),
+    ]);
+
+    // Sincronia: o comando do mestre vira UM broadcast para a mesa inteira —
+    // jogador e mestre terminam com o mesmo estado, sem recarregar nada.
+    const playerMusicEvent = waitForMusic(
+      musicPlayerSocket,
+      (state) => state?.track?.id === trackId && state?.playing === true,
+    );
+    const masterMusicEvent = waitForMusic(
+      musicMasterSocket,
+      (state) => state?.track?.id === trackId && state?.playing === true,
+    );
+
+    const play = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { trackId, playing: true },
+    });
+    check(
+      'o mestre inicia a faixa (200)',
+      play.status === 200 &&
+        play.data?.state?.track?.id === trackId &&
+        play.data?.state?.playing === true,
+      JSON.stringify(play.data?.state),
+    );
+
+    const playerEvent = await playerMusicEvent.catch(() => null);
+    const masterEvent = await masterMusicEvent.catch(() => null);
+    check(
+      'o JOGADOR recebe music:state sem recarregar (escuta a mesma música)',
+      playerEvent?.state?.track?.id === trackId && playerEvent?.state?.playing === true,
+      JSON.stringify(playerEvent),
+    );
+    check(
+      'o MESTRE recebe o mesmo estado — as duas pontas ficam iguais',
+      masterEvent?.state?.track?.id === trackId && masterEvent?.state?.playing === true,
+      JSON.stringify(masterEvent),
+    );
+
+    const seeked = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { position: 42 },
+    });
+    check(
+      'buscar uma posição da faixa é honrado (≈42s no mesmo ponto para todos)',
+      seeked.status === 200 && Math.abs((seeked.data?.state?.position ?? 0) - 42) < 1.5,
+      JSON.stringify(seeked.data?.state),
+    );
+
+    const repeatOn = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { repeat: true },
+    });
+    check(
+      'o mestre liga o repetir da música em andamento (200)',
+      repeatOn.status === 200 && repeatOn.data?.state?.repeat === true,
+      JSON.stringify(repeatOn.data?.state),
+    );
+
+    const paused = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { playing: false },
+    });
+    check(
+      'o mestre pausa a música (200) e a posição fica no ponto em que parou',
+      paused.status === 200 &&
+        paused.data?.state?.playing === false &&
+        (paused.data?.state?.position ?? 0) >= 42,
+      JSON.stringify(paused.data?.state),
+    );
+
+    const skipped = await api('/api/music/skip', {
+      method: 'POST',
+      token: masterToken,
+      body: { direction: 'next' },
+    });
+    check(
+      'pular para a próxima volta a tocar (200)',
+      skipped.status === 200 &&
+        skipped.data?.state?.playing === true &&
+        skipped.data?.state?.track !== null,
+      JSON.stringify(skipped.data?.state),
+    );
+
+    // Quem entra no meio da música recebe o estado atual logo na conexão — é
+    // assim que quem abre a ficha atrasado começa no ponto certo.
+    const lateMusicSocket = connect(musicPlayerToken);
+    const lateMusicState = await waitForMusic(
+      lateMusicSocket,
+      (state) => state?.playing === true && state?.track !== null,
+    ).catch(() => null);
+    check(
+      'quem entra no meio da música recebe o estado atual ao conectar',
+      lateMusicState?.state?.playing === true && lateMusicState?.state?.track !== null,
+      JSON.stringify(lateMusicState),
+    );
+    lateMusicSocket.close();
+
+    // O catálogo novo chega ao mestre em tempo real (a lista só existe para ele).
+    const catalogEvent = waitFor<any>(musicMasterSocket, 'music:tracks');
+    const secondUpload = await api('/api/music/tracks', {
+      method: 'POST',
+      token: masterToken,
+      body: { dataUrl: makeWavDataUrl(1), name: 'Tema do smoke 2', duration: 1 },
+    });
+    const secondId: string = secondUpload.data?.track?.id ?? '';
+    if (secondId) createdMusicTrackIds.push(secondId);
+    check(
+      'enviar uma faixa publica o catálogo novo para o mestre (music:tracks)',
+      (await catalogEvent.catch(() => null))?.tracks?.some(
+        (item: any) => item.id === secondId,
+      ) === true,
+      JSON.stringify(secondUpload.data),
+    );
+
+    // Antes de remover, garante que a faixa EM REPRODUÇÃO é a nossa.
+    await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { trackId, playing: true },
+    });
+
+    const removed = await api(`/api/music/tracks/${trackId}`, {
+      method: 'DELETE',
+      token: masterToken,
+    });
+    check('o mestre remove a faixa (204)', removed.status === 204, `status ${removed.status}`);
+
+    const stopped = await api('/api/music/state', { token: masterToken });
+    check(
+      'remover a faixa em reprodução para a música da mesa',
+      stopped.data?.state?.playing === false && stopped.data?.state?.track === null,
+      JSON.stringify(stopped.data?.state),
+    );
+
+    const removedAgain = await api(`/api/music/tracks/${trackId}`, {
+      method: 'DELETE',
+      token: masterToken,
+    });
+    check(
+      'remover uma faixa inexistente devolve 404',
+      removedAgain.status === 404,
+      `status ${removedAgain.status}`,
+    );
+
+    musicMasterSocket.close();
+    musicPlayerSocket.close();
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -11963,6 +12288,23 @@ async function cleanup(): Promise<void> {
 
   if (createdItemIds.length > 0) {
     await prisma.item.deleteMany({ where: { id: { in: createdItemIds } } });
+  }
+
+  if (createdMusicTrackIds.length > 0) {
+    // Apaga o ARQUIVO de cada faixa do teste antes da linha do banco.
+    const musicTracks = await prisma.musicTrack.findMany({
+      where: { id: { in: createdMusicTrackIds } },
+    });
+    for (const track of musicTracks) {
+      await deleteUploadedImage(track.url);
+    }
+    // Se algum caso abortou no meio, a reprodução não pode ficar apontando
+    // para uma faixa que deixou de existir.
+    await prisma.musicState.updateMany({
+      where: { trackId: { in: createdMusicTrackIds } },
+      data: { trackId: null, playing: false, position: 0 },
+    });
+    await prisma.musicTrack.deleteMany({ where: { id: { in: createdMusicTrackIds } } });
   }
 
   if (createdCustomRaceIds.length > 0) {

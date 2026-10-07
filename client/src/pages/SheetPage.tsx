@@ -20,6 +20,7 @@ import { fetchActiveCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
+import { useMusic } from '../music/useMusic';
 import { fetchTransferTargets } from '../coinsApi';
 import { fetchGameConfig } from '../gameApi';
 import { moveInventoryItem, useInventoryItem } from '../inventoryApi';
@@ -67,9 +68,14 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // Janela de dados (botão flutuante + avisos + rolagens de perícia).
   const dice = useDiceRoller(user);
 
+  // Música ambiente: o jogador SÓ ESCUTA. O hook segue o estado da mesa e
+  // toca num `<audio>` fora do DOM — nenhuma interface é renderizada.
+  const music = useMusic({ isMaster: false });
+
   const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
+    ...music.handlers,
 
     onSheetUpdated: (payload) => {
       // Só aceita a própria ficha e versões mais novas (evita respostas fora de ordem).

@@ -18,6 +18,8 @@ import type {
   LocalityCreatedPayload,
   LocalityDeletedPayload,
   LocalityUpdatedPayload,
+  MusicStatePayload,
+  MusicTracksPayload,
   OnlineUser,
   PresentationClosedPayload,
   PresentationShownPayload,
@@ -60,6 +62,10 @@ export interface RealtimeHandlers {
   onPresentationShown?: (payload: PresentationShownPayload) => void;
   onPresentationClosed?: (payload: PresentationClosedPayload) => void;
   onGameConfig?: (payload: GameConfigPayload) => void;
+  /** Estado da música ambiente mudou (fonte de verdade da sincronia). */
+  onMusicState?: (payload: MusicStatePayload) => void;
+  /** Catálogo de músicas mudou (upload/remoção pelo mestre). */
+  onMusicTracks?: (payload: MusicTracksPayload) => void;
 }
 
 /**
@@ -115,6 +121,8 @@ export function useRealtime(handlers: RealtimeHandlers) {
     );
 
     socket.on('game:config', (payload) => handlersRef.current.onGameConfig?.(payload));
+    socket.on('music:state', (payload) => handlersRef.current.onMusicState?.(payload));
+    socket.on('music:tracks', (payload) => handlersRef.current.onMusicTracks?.(payload));
 
     socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
     socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));

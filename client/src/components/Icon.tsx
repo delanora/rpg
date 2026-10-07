@@ -44,7 +44,14 @@ export type IconName =
   | 'search'
   | 'home'
   | 'table'
-  | 'coin';
+  | 'coin'
+  | 'music'
+  | 'list'
+  | 'play'
+  | 'pause'
+  | 'skip-back'
+  | 'skip-forward'
+  | 'repeat';
 
 const ICONS: Record<IconName, ReactNode> = {
   sword: (
@@ -275,6 +282,51 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M9.7 14.6c1.2 1 3.4 1 4.6 0" />
       <path d="M10.2 15.4l.7.2-.5 1.1Z" fill="currentColor" stroke="none" />
       <path d="M13.8 15.4l-.7.2.5 1.1Z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  /* Nota com haste dupla: a marca da música ambiente da mesa. */
+  music: (
+    <>
+      <path d="M9 17.5V5.5l11-2.2v12" />
+      <circle cx="6" cy="17.8" r="3.1" />
+      <circle cx="17" cy="15.3" r="3.1" />
+    </>
+  ),
+  /* Lista: as três linhas com marcadores (abre a playlist do mestre). */
+  list: (
+    <>
+      <path d="M8.5 6h12M8.5 12h12M8.5 18h12" />
+      <circle cx="4.4" cy="6" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="4.4" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="4.4" cy="18" r="1.2" fill="currentColor" stroke="none" />
+    </>
+  ),
+  play: <path d="M7 4.5v15l13-7.5Z" fill="currentColor" stroke="none" />,
+  pause: (
+    <>
+      <rect x="6.5" y="5" width="3.8" height="14" rx="1" fill="currentColor" stroke="none" />
+      <rect x="13.7" y="5" width="3.8" height="14" rx="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  'skip-back': (
+    <>
+      <path d="M19 5.5v13L9.5 12Z" fill="currentColor" stroke="none" />
+      <path d="M6 5.5v13" />
+    </>
+  ),
+  'skip-forward': (
+    <>
+      <path d="M5 5.5v13L14.5 12Z" fill="currentColor" stroke="none" />
+      <path d="M18 5.5v13" />
+    </>
+  ),
+  /* Loop: a seta que volta — "repetir a música em andamento". */
+  repeat: (
+    <>
+      <path d="M4.5 10a5.5 5.5 0 0 1 5.5-5.5H19" />
+      <path d="M15.8 1.6 19.6 4.5l-3.8 2.9" />
+      <path d="M19.5 14a5.5 5.5 0 0 1-5.5 5.5H5" />
+      <path d="M8.2 22.4 4.4 19.5l3.8-2.9" />
     </>
   ),
   coin: (

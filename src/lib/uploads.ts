@@ -81,6 +81,71 @@ export async function saveDataUrlImage(
   return { url: `/uploads/${safeFolder}/${fileName}`, name: name.trim().slice(0, 200) };
 }
 
+/**
+ * Pasta das músicas da mesa. O arquivo é sempre gravado aqui; a pasta existe
+ * apenas no disco e é criada sob demanda.
+ */
+export const MUSIC_FOLDER = 'music';
+
+/** Extensões de áudio aceitas (o navegador manda o MIME no data URL). */
+const AUDIO_EXTENSIONS: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/ogg': 'ogg',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/webm': 'webm',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+  'audio/flac': 'flac',
+};
+
+/** Tamanho máximo do áudio já decodificado (24 MB — uma faixa típica). */
+const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
+
+const AUDIO_DATA_URL = /^data:(audio\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/;
+
+export interface StoredAudio {
+  url: string;
+  name: string;
+  /** Tamanho do arquivo em bytes (mostrado na lista do mestre). */
+  size: number;
+}
+
+/**
+ * Grava um áudio enviado como data URL e devolve a URL pública.
+ *
+ * Mesma estratégia das imagens (base64 no JSON, sem multipart), com um teto
+ * próprio — uma faixa é bem maior que um sprite.
+ */
+export async function saveDataUrlAudio(dataUrl: string, name: string): Promise<StoredAudio> {
+  const match = AUDIO_DATA_URL.exec(dataUrl.trim());
+  if (!match) {
+    throw new HttpError('Formato de áudio inválido (use MP3, OGG, WAV, M4A ou WEBM).', 400);
+  }
+
+  const extension = AUDIO_EXTENSIONS[match[1].toLowerCase()];
+  if (!extension) {
+    throw new HttpError('Tipo de áudio não suportado (use MP3, OGG, WAV, M4A ou WEBM).', 400);
+  }
+
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length === 0) {
+    throw new HttpError('O arquivo de áudio está vazio.', 400);
+  }
+  if (buffer.length > MAX_AUDIO_BYTES) {
+    throw new HttpError('O áudio é grande demais (máximo de 24 MB).', 400);
+  }
+
+  const fileName = `${randomUUID()}.${extension}`;
+  const directory = path.join(UPLOADS_DIR, MUSIC_FOLDER);
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, fileName), buffer);
+
+  return { url: `/uploads/${MUSIC_FOLDER}/${fileName}`, name: name.trim().slice(0, 200), size: buffer.length };
+}
+
 /** Remove um arquivo de upload a partir da URL pública (best-effort). */
 export async function deleteUploadedImage(url: string): Promise<void> {
   if (!url.startsWith('/uploads/')) return;

@@ -1259,6 +1259,43 @@ export interface CreationStepRequest {
   skills?: string[];
 }
 
+/** Faixa de música ambiente da mesa (arquivo em `/uploads/music/...`). */
+export interface MusicTrackDto {
+  id: string;
+  name: string;
+  url: string;
+  /** Duração em segundos (0 = desconhecida). */
+  duration: number;
+  /** Tamanho do arquivo em bytes. */
+  size: number;
+  createdAt: string;
+}
+
+/**
+ * Estado da reprodução sincronizada. O servidor é a fonte de verdade.
+ *
+ * `position` vale no instante `at`; enquanto `playing`, a posição corrente é
+ * `position + (agora - at)`. A faixa vem resolvida para o jogador tocar o
+ * arquivo certo sem precisar do catálogo.
+ */
+export interface MusicStateDto {
+  track: MusicTrackDto | null;
+  playing: boolean;
+  position: number;
+  repeat: boolean;
+  at: string;
+}
+
+/** Estado da música publicado para a mesa inteira. */
+export interface MusicStatePayload {
+  state: MusicStateDto;
+}
+
+/** Catálogo de faixas (só o mestre consome). */
+export interface MusicTracksPayload {
+  tracks: MusicTrackDto[];
+}
+
 export interface GameConfigPayload {
   config: GameConfig;
 }

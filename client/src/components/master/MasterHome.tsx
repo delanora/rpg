@@ -34,6 +34,8 @@ interface MasterHomeProps {
    * sem conhecer os dados que a busca consulta.
    */
   search?: ReactNode;
+  /** Card da música ambiente (upload, catálogo e escolha da faixa). */
+  music?: ReactNode;
 }
 
 /**
@@ -59,6 +61,7 @@ export function MasterHome({
   onStartCombat,
   onReleaseLevelUp,
   search,
+  music,
 }: MasterHomeProps) {
   const shortcuts: Shortcut[] = [
     {
@@ -196,6 +199,8 @@ export function MasterHome({
           ))}
         </ul>
       </section>
+
+      {music}
 
       <section className="home-section">
         <h3 className="home-section-title">
