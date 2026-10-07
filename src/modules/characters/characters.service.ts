@@ -13,11 +13,18 @@ import {
   clearActiveRollFrom,
   forgetRollsFrom,
   recordHealingRoll,
+  recordRestHitDieRoll,
   rollItemEffect,
 } from '../dice/dice.service.js';
 import type { DiceRollDto } from '../dice/dice.dto.js';
 import { getGameConfig } from '../game-config/game-config.service.js';
-import { toCharacterDto, type CharacterDto, type InventoryItemDto } from './characters.dto.js';
+import {
+  characterClassAdjustments,
+  characterMaxHp,
+  toCharacterDto,
+  type CharacterDto,
+  type InventoryItemDto,
+} from './characters.dto.js';
 import {
   catalogItemIds,
   loadCatalogLookup,
@@ -30,11 +37,17 @@ import type {
   LevelDownInput,
   LevelUpInput,
   MoveInventoryItemInput,
+  SpendHitDieInput,
   UpdateCharacterInput,
   UseInventoryItemInput,
 } from './characters.schema.js';
 import { isConsumableItem } from '../shared/item-details.js';
-import { rollHealingDice } from '../shared/dice.js';
+import { rollDie, rollHealingDice } from '../shared/dice.js';
+import {
+  deriveHitDice,
+  markHitDieSpent,
+  type HitDiceDerivation,
+} from '../shared/hit-dice.js';
 import { parseJson } from '../shared/json.js';
 import { raceChoicesSchema, spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
 import { validateSpellbook } from '../shared/spells/spellbook.js';
@@ -1413,6 +1426,179 @@ export async function useInventoryItem(
   }
 
   throw new HttpError('O inventário mudou durante a operação; tente novamente.', 409);
+}
+
+// ---------------------------------------------------------------------------
+// Descanso curto — gasto de UM Dado de Vida
+// ---------------------------------------------------------------------------
+
+/** Tipo da operação gravada em `CharacterOperation.kind`. */
+const SHORT_REST_HIT_DIE_KIND = 'short-rest-hit-die';
+
+/**
+ * Resultado IMUTÁVEL da operação. É o que fica guardado em
+ * `CharacterOperation.result` para um reenvio devolver igual — sem rolar de
+ * novo. (O `character` da resposta é montado na hora, a partir da ficha atual.)
+ */
+interface HitDieOutcome {
+  roll: { die: number; value: number; conMod: number; healing: number; actualHealed: number };
+  hp: { before: number; after: number; max: number };
+  hitDice: HitDiceDerivation;
+  version: number;
+}
+
+/** Resposta do gasto de um Dado de Vida (ver `spendHitDie`). */
+export interface SpendHitDieResult extends HitDieOutcome {
+  character: CharacterDto;
+}
+
+/**
+ * Gasta UM Dado de Vida do descanso curto (PHB 2014).
+ *
+ * O SERVIDOR é a autoridade: valida a disponibilidade, rola o dado justo
+ * (`crypto.randomInt`), soma o modificador de Constituição do personagem, cura
+ * e consome o dado na MESMA escrita. A rolagem NÃO é repetida automaticamente —
+ * a operação gera aleatoriedade e um retry poderia rolar outro dado e consumir
+ * dois; um conflito vale 409.
+ *
+ * Ordem: carregar → idempotência (`operationId`) → conferir `expectedVersion`
+ * (409 ANTES de rolar) → disponibilidade → rolar → gravar (guardado por versão)
+ * → registrar a rolagem → responder.
+ *
+ * Resultados <= 0 de `rawRoll + conMod`: a regra do PHB 2014 diz apenas "some o
+ * modificador de Constituição" — NÃO há cura mínima de 1. Um modificador muito
+ * negativo (ex.: CON 1) pode zerar ou negar a cura; `max(before, before + raw)`
+ * garante que o PV atual NUNCA CAI e `actualHealed` registra o que de fato entrou.
+ */
+export async function spendHitDie(
+  actor: Actor,
+  input: SpendHitDieInput,
+): Promise<SpendHitDieResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  // 1) Idempotência: o MESMO operationId devolve o resultado original, sem
+  // rolar de novo. Vem ANTES da checagem de versão de propósito — no reenvio o
+  // `expectedVersion` original já não é o atual, e ainda assim queremos o
+  // resultado guardado (e não um 409).
+  const previous = await prisma.characterOperation.findUnique({
+    where: {
+      characterId_operationId: { characterId: character.id, operationId: input.operationId },
+    },
+  });
+  if (previous) {
+    return {
+      character: await toSheetDto(character, actor.username),
+      ...(previous.result as unknown as HitDieOutcome),
+    };
+  }
+
+  // 2) Concorrência: a versão enviada tem de ser a atual — ANTES de rolar.
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError(
+      'A ficha mudou desde que a tela foi carregada; recarregue antes de gastar o Dado de Vida.',
+      409,
+    );
+  }
+
+  // 3) Disponibilidade: o tipo precisa existir para as classes atuais e ainda
+  // ter dado sobrando. O cliente nunca diz QUANTOS gastar — o endpoint gasta 1.
+  const classEntries = normalizeClassEntries(character.classes);
+  const available = deriveHitDice(classEntries, character.hitDice);
+  const entry = available.byDie.find((item) => item.die === input.die);
+  if (!entry || entry.remaining <= 0) {
+    throw new HttpError(`Não há Dado de Vida d${input.die} disponível para gastar.`, 400);
+  }
+
+  // 4) Rolagem no servidor: dado justo + modificador de Constituição real.
+  const classAdjustments = characterClassAdjustments(character);
+  const constitution = effectiveAbilitiesOf(character, classAdjustments).constitution;
+  const conMod = abilityModifier(constitution);
+  const value = rollDie(input.die);
+  const healing = value + conMod;
+
+  const hpBefore = character.hpCurrent;
+  // O teto da cura é o PV máximo EFETIVO (gravado + hpBonus derivado).
+  const hpMax = characterMaxHp(character);
+  // Nunca reduz o PV atual nem estoura o teto. `hpTemp` não entra na conta e
+  // não é tocado.
+  const hpAfter = Math.min(hpMax, Math.max(hpBefore, hpBefore + healing));
+  const actualHealed = hpAfter - hpBefore;
+
+  const nextUsage = markHitDieSpent(character.hitDice, input.die);
+  const outcome: HitDieOutcome = {
+    roll: { die: input.die, value, conMod, healing, actualHealed },
+    hp: { before: hpBefore, after: hpAfter, max: hpMax },
+    hitDice: deriveHitDice(classEntries, nextUsage),
+    version: input.expectedVersion + 1,
+  };
+
+  // 5) Cura + consumo na MESMA transação, guardada pela versão. A operação
+  // idempotente nasce JUNTO: se o (characterId, operationId) já existir, o
+  // banco recusa e o reenvio cai no catch abaixo.
+  let updated: Character;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      await tx.characterOperation.create({
+        data: {
+          characterId: character.id,
+          operationId: input.operationId,
+          kind: SHORT_REST_HIT_DIE_KIND,
+          result: outcome as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      const written = await tx.character.updateMany({
+        where: { id: character.id, version: input.expectedVersion },
+        data: {
+          hpCurrent: hpAfter,
+          hitDice: nextUsage as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      // A versão mudou entre a leitura e a escrita: NADA foi aplicado e o
+      // rollback remove a operação. 409 SEM retry (nunca rolar de novo).
+      if (written.count === 0) {
+        throw new HttpError(
+          'A ficha mudou durante o gasto do Dado de Vida; tente novamente.',
+          409,
+        );
+      }
+
+      return tx.character.findUniqueOrThrow({ where: { id: character.id } });
+    });
+  } catch (error) {
+    // Corrida no MESMO operationId: outra requisição já gravou — devolve o
+    // resultado dela, sem rolar nem consumir de novo.
+    if ((error as { code?: string }).code === 'P2002') {
+      const raced = await prisma.characterOperation.findUnique({
+        where: {
+          characterId_operationId: { characterId: character.id, operationId: input.operationId },
+        },
+      });
+      if (raced) {
+        const current = await prisma.character.findUnique({ where: { id: character.id } });
+        if (!current) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+        return {
+          character: await toSheetDto(current, actor.username),
+          ...(raced.result as unknown as HitDieOutcome),
+        };
+      }
+    }
+    throw error;
+  }
+
+  // 6) Registra a rolagem no histórico da mesa como `kind: 'rest'`.
+  recordRestHitDieRoll(actor, updated.name || actor.displayName, {
+    die: outcome.roll.die,
+    value: outcome.roll.value,
+    conMod: outcome.roll.conMod,
+    healing: outcome.roll.healing,
+  });
+
+  await publishChange(actor, updated, { hpCurrent: hpAfter, hitDice: nextUsage });
+
+  return { character: await toSheetDto(updated, actor.username), ...outcome };
 }
 
 // ---------------------------------------------------------------------------

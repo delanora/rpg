@@ -413,6 +413,16 @@ export interface DerivedStats {
   /** PV máximo EFETIVO = gravado + `hpBonus` (o gravado segue a base editável). */
   hpMax: number;
   /**
+   * Dados de Vida por tipo + totais (derivados das classes e do uso gasto).
+   * Único lugar onde o cliente lê os Dados de Vida — ver shared/hit-dice.ts.
+   */
+  hitDice: {
+    byDie: { die: number; max: number; used: number; remaining: number }[];
+    total: number;
+    used: number;
+    remaining: number;
+  };
+  /**
    * As magias PREPARADAS são por classe — ver
    * `Character.classes[].spellcasting.preparedCount`. Não existe um total único:
    * cada conjurador prepara as suas, com o atributo e o nível da própria classe.
@@ -1905,7 +1915,7 @@ export interface DiceRolledPayload {
 
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
 
-export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item';
+export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest';
 
 /** Um dado já rolado (espelha src/modules/dice/dice.dto.ts). */
 export interface RolledDie {

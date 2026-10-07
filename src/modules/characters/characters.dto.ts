@@ -62,6 +62,7 @@ import {
   spellSaveDc,
 } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
+import { deriveHitDice } from '../shared/hit-dice.js';
 import { coinsWeight, normalizeCoins, type CoinPurse } from '../shared/coins.js';
 import type { ItemDetails, ItemRarity } from '../shared/item-details.js';
 import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
@@ -463,6 +464,9 @@ export function toCharacterDto(
   const classEntries = normalizeClassEntries(character.classes);
   const level = totalCharacterLevel(classEntries);
   const className = classEntriesLabel(classEntries);
+  // Dados de Vida: TOTAL derivado das classes, USO lido de `character.hitDice`
+  // (o `used` é sempre limitado ao máximo — ver shared/hit-dice.ts).
+  const hitDice = deriveHitDice(classEntries, character.hitDice);
   const classState = normalizeClassState(character.classState);
   // Subclasse de paladino (juramento): as magias de juramento são DERIVADAS do
   // nível de PALADINO + juramento (Prompt 6.3) — ver `oath-spells.ts`.
@@ -771,6 +775,8 @@ export function toCharacterDto(
     // PV máximo efetivo: o gravado + o bônus de features/talentos.
     hpMax: character.hpMax,
     hpBonus: classAdjustments.hpBonus,
+    // Dados de Vida por tipo + totais (base do descanso curto).
+    hitDice,
     armorClassOverride: character.armorClass,
     spellSlots,
     pactSlots,

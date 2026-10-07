@@ -10,6 +10,9 @@ import {
   type ArmorClassDetail,
   type ArmorClassPieces,
 } from './armor-class.js';
+// Só o TIPO entra aqui (import apagado em runtime): mantém este módulo de
+// cálculo puro sem arrastar o registro de classes, que importa dnd5e.
+import type { HitDiceDerivation } from './hit-dice.js';
 
 // ---------------------------------------------------------------------------
 // Atributos
@@ -282,6 +285,12 @@ export interface DerivedStats {
    * talentos que somam PV entram aqui; o valor gravado segue a base editável.
    */
   hpMax: number;
+  /**
+   * Dados de Vida do personagem (por tipo + totais), derivados de
+   * `character.classes` e do uso persistido em `Character.hitDice` — ver
+   * shared/hit-dice.ts. É o que o descanso curto consome.
+   */
+  hitDice: HitDiceDerivation;
   spellcasting: { ability: AbilityKey; saveDC: number; attackBonus: number } | null;
   /**
    * Magias preparadas: NÃO existe um total aqui. Preparadas são POR CLASSE (o
@@ -327,6 +336,12 @@ export interface DerivedInput {
   hpMax?: number;
   /** Bônus de PV máximo de features/talentos (Resiliência Dracônica, Vigoroso). */
   hpBonus?: number;
+  /**
+   * Dados de Vida já derivados (por tipo + totais). Sem isso, a ficha mostra a
+   * derivação vazia — quem monta é `toCharacterDto`, a partir das classes e do
+   * uso persistido em `Character.hitDice`.
+   */
+  hitDice?: HitDiceDerivation;
   /** Total de espaços de Expertise. */
   expertiseSlots?: number;
   /** Espaços de magia já resolvidos (regra de multiclasse). */
@@ -458,6 +473,7 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     critThreshold,
     hpBonus,
     hpMax: Math.max(0, (input.hpMax ?? 0) + hpBonus),
+    hitDice: input.hitDice ?? { byDie: [], total: 0, used: 0, remaining: 0 },
     // A iniciativa é um teste de Destreza: a metade da proficiência vale nela.
     initiative: initiative(
       input.abilities.dexterity,
