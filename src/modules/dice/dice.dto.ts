@@ -6,7 +6,7 @@
  * e de salvaguarda, públicas ou privadas.
  */
 
-export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item';
+export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest';
 
 /** Um dado já rolado. */
 export interface RolledDie {

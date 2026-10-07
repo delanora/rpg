@@ -335,6 +335,53 @@ export function rollItemEffect(
  * aparece no histórico. A rolagem entra como `kind: 'item'`, rotulada como
  * "Cura (<nome>)" — o `rollDebug` do cliente mostra o detalhe dado a dado.
  */
+/**
+ * Registra no log a rolagem de um Dado de Vida gasto no DESCANSO CURTO.
+ *
+ * A cura já foi calculada e aplicada na ficha pelo serviço de personagens
+ * (junto do consumo do dado), então aqui só entra o registro: `kind: 'rest'`,
+ * com o resultado natural do dado (`dice[0].value`), o modificador de
+ * Constituição (`bonus`) e a cura CALCULADA (`total` = dado + CON). A cura
+ * efetivamente aplicada (pode ser menor por causa do teto de PV) volta na
+ * resposta da rota, em `roll.actualHealed`.
+ */
+export function recordRestHitDieRoll(
+  actor: { userId: string },
+  actorName: string,
+  result: { die: number; value: number; conMod: number; healing: number },
+): DiceRollDto {
+  const roll: DiceRollDto = {
+    id: randomUUID(),
+    actorUserId: actor.userId,
+    clientId: null,
+    actorName,
+    kind: 'rest',
+    label: 'Descanso Curto — Dado de Vida',
+    dice: [{ sides: result.die, value: result.value }],
+    bonus: result.conMod,
+    total: result.healing,
+    advantage: false,
+    disadvantage: false,
+    isPrivate: false,
+    crit: false,
+    lucky: false,
+    at: new Date().toISOString(),
+  };
+
+  history = [roll, ...history].slice(0, HISTORY_LIMIT);
+  publish(roll, actor);
+
+  return roll;
+}
+
+/**
+ * Registra no log a cura de uma poção JÁ rolada e devolve a rolagem.
+ *
+ * O resultado (dados e total) é calculado antes, por `rollHealingDice` do
+ * `shared/dice.ts`, para que o total aplicado na ficha seja EXATAMENTE o que
+ * aparece no histórico. A rolagem entra como `kind: 'item'`, rotulada como
+ * "Cura (<nome>)" — o `rollDebug` do cliente mostra o detalhe dado a dado.
+ */
 export function recordHealingRoll(
   actor: { userId: string },
   actorName: string,

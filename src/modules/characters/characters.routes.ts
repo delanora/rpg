@@ -10,6 +10,7 @@ import {
   moveInventoryItemSchema,
   spellbookSchema,
   spendCoinsSchema,
+  spendHitDieSchema,
   transferCoinsSchema,
   updateCharacterSchema,
   useInventoryItemSchema,
@@ -28,6 +29,7 @@ import {
   moveInventoryItem,
   setClassSpellbook,
   spendCoins,
+  spendHitDie,
   transferCoins,
   updateCharacter,
   updateCharacterAsMaster,
@@ -271,6 +273,28 @@ charactersRouter.post('/me/inventory/use', authenticate, async (req, res) => {
   }
 
   res.json(await useInventoryItem(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/rest/short/hit-die — gasta UM Dado de Vida.
+ *
+ * O servidor rola o dado, aplica a cura (dado + mod. de Constituição, limitado
+ * ao PV máximo efetivo) e consome o dado na mesma escrita. `expectedVersion`
+ * trava a ficha (409 ANTES de rolar) e `operationId` impede que um reenvio role
+ * ou consuma de novo. O endpoint gasta EXATAMENTE um dado do tipo escolhido.
+ */
+charactersRouter.post('/me/rest/short/hit-die', authenticate, async (req, res) => {
+  const parsed = spendHitDieSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await spendHitDie(actorFrom(req), parsed.data));
 });
 
 /**

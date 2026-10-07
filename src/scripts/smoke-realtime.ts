@@ -12382,6 +12382,274 @@ async function main(): Promise<void> {
     musicPlayerSocket.close();
   }
 
+  // --- 43. Descanso curto: gasto de Dado de Vida ---------------------------
+  {
+    console.log('\n43) Descanso curto: gasto de Dado de Vida');
+
+    // Reaproveita a conta VIVA do fim do smoke: a ficha do jogador original é
+    // excluída na seção 13 e o cadastro tem rate limit — a seção 43 só precisa
+    // de UM personagem controlável (o cleanup remove essa conta no fim).
+    const restToken = testsPlayerToken;
+    const restMe = await api('/api/auth/me', { token: restToken });
+    const restUserId: string = restMe.data?.user?.sub;
+    check(
+      'conta reaproveitada para o descanso curto',
+      restMe.status === 200 && Boolean(restUserId),
+      JSON.stringify(restMe.data),
+    );
+
+    // A ficha pode já existir (assistente de criação) ou não; garante que exista.
+    let restCharacter = restUserId
+      ? await prisma.character.findUnique({ where: { userId: restUserId } })
+      : null;
+    if (!restCharacter && restUserId) {
+      await api('/api/characters/me', {
+        method: 'POST',
+        token: restToken,
+        body: { name: 'Descanso Teste' },
+      });
+      restCharacter = await prisma.character.findUnique({ where: { userId: restUserId } });
+    }
+    check('ficha disponível para o descanso', Boolean(restCharacter), 'sem personagem');
+
+    // Helpers: leitura/escrita direta no banco para montar os cenários (como as
+    // outras seções fazem) e a chamada do endpoint.
+    const restRow = () => prisma.character.findUniqueOrThrow({ where: { userId: restUserId } });
+    const setRest = (data: Record<string, unknown>) =>
+      prisma.character.update({ where: { userId: restUserId }, data: data as any });
+    const restSheet = async () =>
+      (await api('/api/characters/me', { token: restToken })).data.character;
+    const spend = (die: number, expectedVersion: number, operationId: string) =>
+      api('/api/characters/me/rest/short/hit-die', {
+        method: 'POST',
+        token: restToken,
+        body: { die, expectedVersion, operationId },
+      });
+
+    // 1) Single-class Fighter 3 → 3d10.
+    await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 3 }]);
+    await setRest({ hitDice: {}, hpCurrent: 10, hpMax: 30, hpTemp: 3, constitution: 14 });
+    let restNow = await restSheet();
+    check(
+      '1) Fighter 3 deriva 3d10',
+      restNow.derived.hitDice.total === 3 &&
+        restNow.derived.hitDice.byDie.length === 1 &&
+        restNow.derived.hitDice.byDie[0].die === 10 &&
+        restNow.derived.hitDice.byDie[0].max === 3 &&
+        restNow.derived.hitDice.byDie[0].remaining === 3,
+      JSON.stringify(restNow.derived.hitDice),
+    );
+
+    // 2) Multiclasse Fighter 3 / Wizard 2 → 3d10 + 2d6.
+    await setCharacterClasses(restUserId, [
+      { classKey: 'fighter', level: 3 },
+      { classKey: 'wizard', level: 2 },
+    ]);
+    restNow = await restSheet();
+    const restD10 = restNow.derived.hitDice.byDie.find((entry: any) => entry.die === 10);
+    const restD6 = restNow.derived.hitDice.byDie.find((entry: any) => entry.die === 6);
+    check(
+      '2) Fighter 3 / Wizard 2 deriva 3d10 + 2d6',
+      restNow.derived.hitDice.total === 5 && restD10?.max === 3 && restD6?.max === 2,
+      JSON.stringify(restNow.derived.hitDice),
+    );
+
+    // 3) Gasta 1d10 → used +1 (e o PV sobe com a cura).
+    await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 3 }]);
+    await setRest({ hitDice: {}, hpCurrent: 10, hpMax: 30, hpTemp: 3, constitution: 14 });
+    restNow = await restSheet();
+    const firstOp = `op-${suffix}-1`;
+    const firstSpend = await spend(10, restNow.version, firstOp);
+    const restAfterFirst = await restRow();
+    check(
+      '3) gastar 1d10 devolve 200 e sobe o total usado',
+      firstSpend.status === 200 &&
+        firstSpend.data?.hitDice?.used === 1 &&
+        firstSpend.data?.hitDice?.remaining === 2 &&
+        firstSpend.data?.version === restNow.version + 1,
+      JSON.stringify({ status: firstSpend.status, hitDice: firstSpend.data?.hitDice }),
+    );
+    check(
+      '3b) o dado d10 foi consumido no banco (usedByDie.10 === 1)',
+      (restAfterFirst.hitDice as any)?.usedByDie?.['10'] === 1,
+      JSON.stringify(restAfterFirst.hitDice),
+    );
+
+    // 8) O modificador de Constituição (+2 para CON 14) entra na cura.
+    const restRoll = firstSpend.data?.roll;
+    check(
+      '8) o modificador de Constituição entra na cura (CON 14 → +2)',
+      restRoll?.conMod === 2 &&
+        restRoll?.healing === restRoll?.value + 2 &&
+        firstSpend.data?.hp?.before === 10 &&
+        firstSpend.data?.hp?.after === Math.min(30, 10 + restRoll.value + 2),
+      JSON.stringify({ roll: restRoll, hp: firstSpend.data?.hp }),
+    );
+    check(
+      '8b) a cura efetiva bate com a diferença de PV',
+      restRoll?.actualHealed === firstSpend.data?.hp?.after - firstSpend.data?.hp?.before,
+      JSON.stringify({ roll: restRoll, hp: firstSpend.data?.hp }),
+    );
+
+    // 7) hpTemp permanece intacto.
+    check(
+      '7) o PV temporário permanece intacto',
+      firstSpend.data?.character?.hpTemp === 3 && restAfterFirst.hpTemp === 3,
+      JSON.stringify({
+        resposta: firstSpend.data?.character?.hpTemp,
+        banco: restAfterFirst.hpTemp,
+      }),
+    );
+
+    // 15) A rolagem entra no log da mesa com kind 'rest'.
+    const restHistory = await api('/api/dice/history', { token: masterToken });
+    const restRollLog = (restHistory.data?.rolls ?? []).find(
+      (roll: any) => roll.kind === 'rest' && roll.actorUserId === restUserId,
+    );
+    check(
+      '15) a rolagem é registrada como kind "rest" com o rótulo do Dado de Vida',
+      restHistory.status === 200 &&
+        restRollLog?.label === 'Descanso Curto — Dado de Vida' &&
+        restRollLog?.dice?.[0]?.sides === 10 &&
+        restRollLog?.bonus === 2 &&
+        restRollLog?.total === restRollLog?.dice?.[0]?.value + 2,
+      JSON.stringify(restRollLog),
+    );
+
+    // 10) operationId duplicado: devolve o resultado original, sem gastar de novo.
+    const replayed = await spend(10, restNow.version, firstOp);
+    const restAfterReplay = await restRow();
+    check(
+      '10) reenviar o mesmo operationId devolve o resultado original sem consumir outro dado',
+      replayed.status === 200 &&
+        replayed.data?.roll?.value === restRoll?.value &&
+        replayed.data?.hitDice?.used === 1 &&
+        replayed.data?.version === restNow.version + 1 &&
+        (restAfterReplay.hitDice as any)?.usedByDie?.['10'] === 1,
+      JSON.stringify({ status: replayed.status, hitDice: replayed.data?.hitDice }),
+    );
+
+    // 9) expectedVersion errada: 409 ANTES de rolar (nada muda).
+    const restBeforeBad = await restRow();
+    const wrongVersion = await spend(10, restBeforeBad.version + 5, `op-${suffix}-wrong`);
+    const restAfterBad = await restRow();
+    check(
+      '9) expectedVersion errada devolve 409 sem rolar, consumir nem curar',
+      wrongVersion.status === 409 &&
+        (restAfterBad.hitDice as any)?.usedByDie?.['10'] ===
+          (restBeforeBad.hitDice as any)?.usedByDie?.['10'] &&
+        restAfterBad.hpCurrent === restBeforeBad.hpCurrent &&
+        restAfterBad.version === restBeforeBad.version,
+      JSON.stringify({ status: wrongVersion.status }),
+    );
+
+    // 4) Tipo inexistente (o Fighter não tem d6): recusado.
+    const restBeforeNoDie = await restRow();
+    const noSuchDie = await spend(6, restBeforeNoDie.version, `op-${suffix}-nodie`);
+    check(
+      '4) gastar um tipo de dado que o personagem não tem é recusado (400)',
+      noSuchDie.status === 400,
+      `status ${noSuchDie.status}`,
+    );
+
+    // Face fora de {6,8,10,12}: recusada já na validação.
+    const invalidDie = await spend(7, restBeforeNoDie.version, `op-${suffix}-die7`);
+    check(
+      '4b) uma face fora de {6,8,10,12} é recusada na validação (400)',
+      invalidDie.status === 400,
+      `status ${invalidDie.status}`,
+    );
+
+    // 5) Sem remaining: 400 e nada muda.
+    await setRest({ hitDice: { usedByDie: { '10': 3 } } });
+    restNow = await restSheet();
+    check(
+      '5a) a derivação limita o usado ao máximo (3 de 3, remaining 0)',
+      restNow.derived.hitDice.byDie[0].used === 3 &&
+        restNow.derived.hitDice.byDie[0].remaining === 0,
+      JSON.stringify(restNow.derived.hitDice),
+    );
+    const noneLeft = await spend(10, restNow.version, `op-${suffix}-none`);
+    check(
+      '5) sem Dado de Vida daquele tipo sobrando o gasto é recusado (400)',
+      noneLeft.status === 400,
+      `status ${noneLeft.status}`,
+    );
+
+    // 6) A cura não ultrapassa o PV máximo derivado.
+    await setRest({ hitDice: {}, hpCurrent: 39, hpMax: 40, constitution: 14 });
+    restNow = await restSheet();
+    const capped = await spend(10, restNow.version, `op-${suffix}-cap`);
+    check(
+      '6) a cura não ultrapassa o PV máximo derivado',
+      capped.status === 200 &&
+        capped.data?.hp?.max === 40 &&
+        capped.data?.hp?.after === 40 &&
+        capped.data?.roll?.actualHealed === 40 - 39,
+      JSON.stringify({ hp: capped.data?.hp, roll: capped.data?.roll }),
+    );
+
+    // 11) Duas requisições concorrentes com a MESMA versão: no máximo uma aplica.
+    await setRest({ hitDice: {}, hpCurrent: 5, hpMax: 60, constitution: 14 });
+    restNow = await restSheet();
+    const raceVersion = restNow.version;
+    const [raceA, raceB] = await Promise.all([
+      spend(10, raceVersion, `op-${suffix}-race-a`),
+      spend(10, raceVersion, `op-${suffix}-race-b`),
+    ]);
+    const raceStatuses = [raceA.status, raceB.status].sort((a, b) => a - b);
+    const restAfterRace = await restRow();
+    check(
+      '11) duas requisições concorrentes com a mesma versão: só uma é aplicada',
+      raceStatuses[0] === 200 &&
+        raceStatuses[1] === 409 &&
+        (restAfterRace.hitDice as any)?.usedByDie?.['10'] === 1 &&
+        restAfterRace.version === raceVersion + 1,
+      JSON.stringify({
+        raceStatuses,
+        hitDice: restAfterRace.hitDice,
+        version: restAfterRace.version,
+      }),
+    );
+
+    // 12) Level up: o total derivado aumenta.
+    await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 4 }]);
+    restNow = await restSheet();
+    check(
+      '12) subir de nível aumenta o total derivado de Dados de Vida (4d10)',
+      restNow.derived.hitDice.total === 4 && restNow.derived.hitDice.byDie[0].max === 4,
+      JSON.stringify(restNow.derived.hitDice),
+    );
+
+    // 13) Level down: o usado é limitado ao novo máximo.
+    await setRest({ hitDice: { usedByDie: { '10': 4 } } });
+    restNow = await restSheet();
+    check(
+      '13a) com 4 usados de 4 não há dado sobrando',
+      restNow.derived.hitDice.remaining === 0,
+      JSON.stringify(restNow.derived.hitDice),
+    );
+    await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 2 }]);
+    restNow = await restSheet();
+    check(
+      '13) o level-down limita (clamp) os Dados de Vida usados ao novo máximo',
+      restNow.derived.hitDice.byDie[0].max === 2 &&
+        restNow.derived.hitDice.byDie[0].used === 2 &&
+        restNow.derived.hitDice.remaining === 0,
+      JSON.stringify(restNow.derived.hitDice),
+    );
+
+    // 14) Ficha antiga com hitDice vazio (o default da coluna) funciona.
+    await setRest({ hitDice: {} });
+    restNow = await restSheet();
+    check(
+      '14) ficha antiga com hitDice vazio funciona (nada usado)',
+      restNow.derived.hitDice.used === 0 &&
+        restNow.derived.hitDice.remaining === restNow.derived.hitDice.total,
+      JSON.stringify(restNow.derived.hitDice),
+    );
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'

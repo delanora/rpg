@@ -199,6 +199,13 @@ model Character {
   /// Estado de runtime da classe: toggles ativos (ex.: Fúria) e usos gastos.
   classState Json @default("{}") //  { active: string[], used: { [id]: number } }
   ///
+  /// Uso dos Dados de Vida (PHB 2014), consumidos no descanso curto.
+  /// O TOTAL nunca é gravado — ele é derivado de `classes` (soma dos níveis
+  /// por tipo de dado). Aqui só fica o que já foi gasto:
+  ///   { "usedByDie": { "6": 0, "8": 1, "10": 2, "12": 0 } }
+  /// Ver src/modules/shared/hit-dice.ts.
+  hitDice   Json @default("{}")
+  ///
   /// Carteira de moedas: { pp, gp, ep, sp, cp }, inteiros >= 0 (padrão 0).
   /// Só o MESTRE altera por PATCH; o jogador gasta, troca e transfere pelos
   /// endpoints dedicados — ver src/modules/shared/coins.ts.
@@ -212,8 +219,34 @@ model Character {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   combatants Combatant[]
+  operations CharacterOperation[]
 
   @@map("characters")
+}
+
+///
+/// Operação de ficha IDEMPOTENTE: garante que um pedido com o mesmo
+/// `operationId` (ex.: gastar UM Dado de Vida) não seja aplicado duas vezes.
+///
+/// O par (characterId, operationId) é único; o `result` guarda a resposta
+/// original da operação para um reenvio devolver exatamente o mesmo resultado,
+/// sem rolar o dado nem consumir de novo.
+model CharacterOperation {
+  id          String    @id @default(cuid())
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  ///
+  /// Identificador do pedido gerado pelo cliente. É único POR PERSONAGEM —
+  /// reenviar o mesmo pedido devolve o resultado guardado.
+  operationId String
+  /// Tipo da operação (ex.: "short-rest-hit-die").
+  kind        String
+  /// Resposta original da operação (rolagem, PV antes/depois, Dados de Vida).
+  result      Json      @default("{}")
+  createdAt   DateTime  @default(now())
+
+  @@unique([characterId, operationId])
+  @@map("character_operations")
 }
 
 /// Raça PERSONALIZADA criada pelo mestre (Prompt 2.10).

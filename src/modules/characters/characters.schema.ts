@@ -395,6 +395,33 @@ export const useInventoryItemSchema = z.object({
 
 export type UseInventoryItemInput = z.infer<typeof useInventoryItemSchema>;
 
+/**
+ * Gasta UM Dado de Vida no descanso curto (PHB 2014).
+ *
+ * O cliente NUNCA diz quantos gastar: o endpoint gasta exatamente um dado do
+ * tipo escolhido. `expectedVersion` é a `version` da ficha que o jogador tem em
+ * mãos (a escrita só vale se ela ainda for a atual); `operationId` identifica o
+ * pedido para que um reenvio não role o dado nem o consuma de novo.
+ */
+export const spendHitDieSchema = z.object({
+  /** Face do Dado de Vida a gastar (só os d6/d8/d10/d12 do PHB). */
+  die: z.union([z.literal(6), z.literal(8), z.literal(10), z.literal(12)]),
+  /** Versão da ficha que o cliente acredita ser a atual (inteiro >= 1). */
+  expectedVersion: z.number().int().min(1),
+  /**
+   * Identificador do pedido (ex.: um UUID gerado no cliente). Formato seguro e
+   * com tamanho limitado — é a chave de idempotência.
+   */
+  operationId: z
+    .string()
+    .trim()
+    .min(8, 'Identificador de operação muito curto.')
+    .max(100, 'Identificador de operação muito longo.')
+    .regex(/^[A-Za-z0-9_-]+$/, 'Identificador de operação inválido.'),
+});
+
+export type SpendHitDieInput = z.infer<typeof spendHitDieSchema>;
+
 // --- Moedas -----------------------------------------------------------------
 //
 // Só o mestre dá ou retira (PATCH e `POST /:id/coins`); o jogador gasta, troca
