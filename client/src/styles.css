@@ -12346,30 +12346,33 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
-/* --- Card de música do salão -------------------------------------------- */
+/* --- Painel de músicas do salão (abre pelo card) ------------------------ */
 
-.music-card {
-  padding: 0.9rem 1rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
-  box-shadow: var(--shadow);
+.music-modal {
+  max-width: 42rem;
 }
 
-.music-card-toolbar {
+/* A busca fica fixa no topo: só a lista rola, para o modal não esticar. */
+.music-modal .music-tracks {
+  max-height: min(50vh, 24rem);
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.music-upload-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.6rem;
-  margin-bottom: 0.7rem;
+  margin: 0.85rem 0 0.7rem;
 }
 
 /* O input de arquivo é acionado pelo botão estilizado (mesma ideia do sprite). */
-.music-card-file {
+.music-upload-file {
   display: none;
 }
 
-.music-card-hint {
+.music-upload-hint {
   font-size: var(--text-micro);
   color: var(--ink-faint);
 }
