@@ -248,6 +248,18 @@ export interface SkillDetail {
   total: number;
 }
 
+/**
+ * Canção de Descanso (Song of Rest): informação DERIVADA do nível de Bardo.
+ *
+ * `eligible` quando o personagem é um Bardo de 2º nível ou mais e `die` é o
+ * dado extra da Canção (6, 8, 10 ou 12). NÃO é recurso consumível — é só a
+ * informação que o descanso coletivo (etapa futura) usará.
+ */
+export interface SongOfRestInfo {
+  eligible: boolean;
+  die: 6 | 8 | 10 | 12 | null;
+}
+
 export interface DerivedStats {
   proficiencyBonus: number;
   modifiers: Record<AbilityKey, number>;
@@ -291,6 +303,8 @@ export interface DerivedStats {
    * shared/hit-dice.ts. É o que o descanso curto consome.
    */
   hitDice: HitDiceDerivation;
+  /** Canção de Descanso: se o personagem é elegível e qual dado usaria. */
+  songOfRest: SongOfRestInfo;
   spellcasting: { ability: AbilityKey; saveDC: number; attackBonus: number } | null;
   /**
    * Magias preparadas: NÃO existe um total aqui. Preparadas são POR CLASSE (o
@@ -342,6 +356,8 @@ export interface DerivedInput {
    * uso persistido em `Character.hitDice`.
    */
   hitDice?: HitDiceDerivation;
+  /** Canção de Descanso já derivada (quem monta é `toCharacterDto`). */
+  songOfRest?: SongOfRestInfo;
   /** Total de espaços de Expertise. */
   expertiseSlots?: number;
   /** Espaços de magia já resolvidos (regra de multiclasse). */
@@ -474,6 +490,7 @@ export function deriveStats(input: DerivedInput): DerivedStats {
     hpBonus,
     hpMax: Math.max(0, (input.hpMax ?? 0) + hpBonus),
     hitDice: input.hitDice ?? { byDie: [], total: 0, used: 0, remaining: 0 },
+    songOfRest: input.songOfRest ?? { eligible: false, die: null },
     // A iniciativa é um teste de Destreza: a metade da proficiência vale nela.
     initiative: initiative(
       input.abilities.dexterity,

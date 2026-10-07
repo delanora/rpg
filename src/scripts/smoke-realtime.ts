@@ -5,7 +5,7 @@ import { deleteUploadedImage } from '../lib/uploads.js';
 import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
 import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
-import { restoreShortRestResources } from '../modules/shared/classes.js';
+import { restoreShortRestResources, songOfRestDie } from '../modules/shared/classes.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
 import {
   allRaces,
@@ -13065,6 +13065,177 @@ async function main(): Promise<void> {
         JSON.stringify(restored.active) === JSON.stringify(['keep']),
       JSON.stringify(restored),
     );
+  // --- 44. Canção de Descanso: infraestrutura -------------------------------
+  {
+    console.log('\n44) Canção de Descanso (Song of Rest): infraestrutura');
+
+    // 1-9) Progressão pura pelo nível de BARDO.
+    const songCases: [number, 6 | 8 | 10 | 12 | null][] = [
+      [1, null],
+      [2, 6],
+      [8, 6],
+      [9, 8],
+      [12, 8],
+      [13, 10],
+      [16, 10],
+      [17, 12],
+      [20, 12],
+    ];
+    for (const [lvl, expected] of songCases) {
+      const got = songOfRestDie(lvl);
+      check(
+        `Song of Rest: Bardo ${lvl} → ${expected === null ? 'não elegível' : `d${expected}`}`,
+        got === expected,
+        String(got),
+      );
+    }
+    check(
+      'Song of Rest: Bardo 0 → não elegível',
+      songOfRestDie(0) === null,
+      String(songOfRestDie(0)),
+    );
+
+    // Reaproveita a conta viva do fim do smoke (como a seção 43).
+    const songToken = testsPlayerToken;
+    const songMe = await api('/api/auth/me', { token: songToken });
+    const songUserId: string = songMe.data?.user?.sub;
+    check('conta reaproveitada para a Song of Rest', songMe.status === 200 && Boolean(songUserId));
+    const songRow = () => prisma.character.findUniqueOrThrow({ where: { userId: songUserId } });
+    const songSheet = async () =>
+      (await api('/api/characters/me', { token: songToken })).data.character;
+
+    // Encerra qualquer sessão de descanso deixada pela seção anterior (setup).
+    await prisma.shortRestSession.updateMany({
+      where: { characterId: (await songRow()).id, status: 'ACTIVE' },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    });
+
+    const songOfRestFor = async (entries: { classKey: string; level: number }[]) => {
+      await setCharacterClasses(songUserId, entries);
+      return (await songSheet()).derived.songOfRest;
+    };
+
+    // 10) Fighter 20 → não elegível.
+    const fighterSong = await songOfRestFor([{ classKey: 'fighter', level: 20 }]);
+    check(
+      '10) Fighter 20 não é elegível',
+      fighterSong.eligible === false && fighterSong.die === null,
+      JSON.stringify(fighterSong),
+    );
+
+    // 11) Bard 2 / Fighter 18 → d6 (só o nível de Bardo conta).
+    const bardFighterSong = await songOfRestFor([
+      { classKey: 'bard', level: 2 },
+      { classKey: 'fighter', level: 18 },
+    ]);
+    check(
+      '11) Bardo 2 / Guerreiro 18 → d6 (não soma o nível total)',
+      bardFighterSong.eligible === true && bardFighterSong.die === 6,
+      JSON.stringify(bardFighterSong),
+    );
+
+    // 12) Bard 9 / Rogue 11 → d8.
+    const bardRogueSong = await songOfRestFor([
+      { classKey: 'bard', level: 9 },
+      { classKey: 'rogue', level: 11 },
+    ]);
+    check(
+      '12) Bardo 9 / Ladino 11 → d8',
+      bardRogueSong.eligible === true && bardRogueSong.die === 8,
+      JSON.stringify(bardRogueSong),
+    );
+
+    // 13) Nível total alto com Bardo 1 → não elegível.
+    const lowBardSong = await songOfRestFor([
+      { classKey: 'bard', level: 1 },
+      { classKey: 'fighter', level: 19 },
+    ]);
+    check(
+      '13) Bardo 1 / Guerreiro 19 (nível total 20) → não elegível',
+      lowBardSong.eligible === false && lowBardSong.die === null,
+      JSON.stringify(lowBardSong),
+    );
+
+    // 14) Song of Rest NÃO é recurso consumível.
+    await setCharacterClasses(songUserId, [{ classKey: 'bard', level: 6 }]);
+    const songBardSheet = await songSheet();
+    const songResources: any[] = songBardSheet.classAdjustments?.resources ?? [];
+    check(
+      '14) Song of Rest não aparece como resource nem em classState.used',
+      !songResources.some((resource) => resource.id === 'song-of-rest') &&
+        !Object.prototype.hasOwnProperty.call(
+          songBardSheet.classState?.used ?? {},
+          'song-of-rest',
+        ) &&
+        songBardSheet.derived.songOfRest.die === 6,
+      JSON.stringify({
+        resources: songResources.map((resource) => resource.id),
+        used: songBardSheet.classState?.used,
+      }),
+    );
+
+    // 15/16) Nem o gasto nem a finalização aplicam cura extra ainda.
+    await prisma.character.update({
+      where: { userId: songUserId },
+      data: { hitDice: {}, hpCurrent: 5, hpMax: 100, constitution: 14 } as any,
+    });
+    const songNow = await songSheet();
+    const songStart = await api('/api/characters/me/rest/short/start', {
+      method: 'POST',
+      token: songToken,
+      body: { expectedVersion: songNow.version, operationId: `op-${suffix}-song-start` },
+    });
+    const songSession = songStart.data?.session?.id;
+    const songSpend = await api('/api/characters/me/rest/short/hit-die', {
+      method: 'POST',
+      token: songToken,
+      body: {
+        sessionId: songSession,
+        die: 8,
+        expectedVersion: (await songSheet()).version,
+        operationId: `op-${suffix}-song-hd`,
+      },
+    });
+    const songRoll = songSpend.data?.roll;
+    check(
+      '16) o gasto do Dado de Vida não soma a Song of Rest (só dado + CON)',
+      songSpend.status === 200 &&
+        songRoll?.die === 8 &&
+        songRoll?.healing === songRoll?.value + songRoll?.conMod &&
+        songSpend.data?.hp?.after === Math.min(100, 5 + songRoll.value + songRoll.conMod),
+      JSON.stringify({ roll: songRoll, hp: songSpend.data?.hp }),
+    );
+
+    const songComplete = await api('/api/characters/me/rest/short/complete', {
+      method: 'POST',
+      token: songToken,
+      body: {
+        sessionId: songSession,
+        expectedVersion: (await songSheet()).version,
+        operationId: `op-${suffix}-song-complete`,
+      },
+    });
+    check(
+      '15) a finalização não aplica cura extra da Song of Rest',
+      songComplete.status === 200 &&
+        songComplete.data?.session?.status === 'COMPLETED' &&
+        songComplete.data?.character?.hpCurrent === songSpend.data?.character?.hpCurrent,
+      JSON.stringify({
+        completeHp: songComplete.data?.character?.hpCurrent,
+        spendHp: songSpend.data?.character?.hpCurrent,
+      }),
+    );
+
+    // 17) A Song of Rest não altera a ficha: nenhum `used` de Song foi criado.
+    check(
+      '17) a ficha não ganha contador de Song of Rest em classState.used',
+      !Object.prototype.hasOwnProperty.call(
+        (((await songRow()).classState as any)?.used ?? {}),
+        'song-of-rest',
+      ),
+      'classState.used com chave song-of-rest',
+    );
+  }
   }
 
   console.log(

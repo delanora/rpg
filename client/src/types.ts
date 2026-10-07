@@ -423,6 +423,11 @@ export interface DerivedStats {
     remaining: number;
   };
   /**
+   * Canção de Descanso: se o personagem é um Bardo elegível (2º+) e qual dado
+   * extra usaria. NÃO é recurso nem cura — a aplicação é do descanso coletivo.
+   */
+  songOfRest: { eligible: boolean; die: 6 | 8 | 10 | 12 | null };
+  /**
    * As magias PREPARADAS são por classe — ver
    * `Character.classes[].spellcasting.preparedCount`. Não existe um total único:
    * cada conjurador prepara as suas, com o atributo e o nível da própria classe.
