@@ -8,7 +8,10 @@ import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
 import type { MusicStateDto, MusicTrackDto } from '../modules/music/music.dto.js';
 import type { RegionDto } from '../modules/regions/regions.dto.js';
-import type { ShortRestRequestDto } from '../modules/rest/short-rest-request.dto.js';
+import type {
+  ShortRestCompletionDto,
+  ShortRestRequestDto,
+} from '../modules/rest/short-rest-request.dto.js';
 
 /**
  * Contrato central de eventos do Socket.io.
@@ -179,6 +182,12 @@ export const ServerEvents = {
    * da solicitação e respostas), nunca fichas completas.
    */
   SHORT_REST_REQUEST_UPDATED: 'short-rest:request-updated',
+  /**
+   * O descanso coletivo TERMINOU: todas as sessões foram concluídas e a Canção
+   * de Descanso foi aplicada. Payload enxuto (o resultado da Canção e as
+   * sessões) — as fichas seguem por `sheet:updated`, como sempre.
+   */
+  SHORT_REST_COMPLETED: 'short-rest:completed',
   /** Um dado foi rolado (usado para o efeito sonoro e o log). */
   DICE_ROLLED: 'dice:rolled',
   /**
@@ -471,12 +480,23 @@ export interface AttackResolvedPayload {
 /**
  * Solicitação coletiva de Descanso Curto atualizada.
  *
- * O payload traz o DTO enxuto da solicitação (status, participantes e suas
- * respostas) — nenhuma ficha completa. É a notificação de que a coleta começou,
- * de que alguém respondeu ou de que a solicitação foi resolvida.
+ * O payload traz o DTO enxuto da solicitação (status, participantes, respostas
+ * e prontidão) — nenhuma ficha completa. É a notificação de que a coleta
+ * começou, de que alguém respondeu, ficou pronto ou de que foi resolvida.
  */
 export interface ShortRestRequestUpdatedPayload {
   request: ShortRestRequestDto;
+}
+
+/**
+ * Descanso coletivo concluído.
+ *
+ * Traz o resultado da Canção de Descanso (melhor dado e a rolagem individual de
+ * cada personagem elegível) e as sessões concluídas. Nenhuma ficha completa.
+ */
+export interface ShortRestCompletedPayload {
+  requestId: string;
+  completion: ShortRestCompletionDto;
 }
 
 export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];

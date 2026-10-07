@@ -291,16 +291,29 @@ model ShortRestSession {
   id          String          @id @default(cuid())
   characterId String
   character   Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  ///
+  /// Solicitação COLETIVA que criou esta sessão (null nas sessões individuais
+  /// do fluxo antigo). É o vínculo persistente entre a sessão individual e o
+  /// descanso coletivo — permite concluir TODAS juntas e bloquear a conclusão
+  /// individual de uma sessão coletiva.
+  shortRestRequestId String?
+  shortRestRequest   ShortRestRequest? @relation(fields: [shortRestRequestId], references: [id], onDelete: Cascade)
   status      ShortRestStatus @default(ACTIVE)
   /// Início da sessão (auditoria). Não é trava temporal.
   startedAt   DateTime        @default(now())
   completedAt DateTime?
   cancelledAt DateTime?
+  ///
+  /// Quando o jogador marcou "pronto para finalizar". `ready` = readyAt != null.
+  /// Só existe em sessões coletivas; enquanto preenchido, o participante não
+  /// pode gastar outro Dado de Vida até desmarcar. Null nas sessões individuais.
+  readyAt     DateTime?
   /// Operações do descanso (gastos de Dado de Vida, conclusão, cancelamento).
   operations  CharacterOperation[]
 
   @@index([status])
   @@index([characterId, status])
+  @@index([shortRestRequestId])
   @@map("short_rest_sessions")
 }
 
@@ -308,6 +321,7 @@ model ShortRestSession {
 enum ShortRestRequestStatus {
   PENDING
   APPROVED
+  COMPLETED
   CANCELLED
 }
 
@@ -341,7 +355,11 @@ model ShortRestRequest {
   /// Mestre que forçou a aprovação (null no fluxo normal).
   forcedByUserId    String?
   forcedBy          User?                  @relation("ShortRestForcer", fields: [forcedByUserId], references: [id], onDelete: SetNull)
+  /// Quando o descanso coletivo TERMINOU (todas as sessões concluídas).
+  completedAt       DateTime?
   participants      ShortRestRequestParticipant[]
+  /// Sessões individuais criadas por esta solicitação (uma por ACCEPTED).
+  sessions          ShortRestSession[]
 
   @@index([status])
   @@map("short_rest_requests")

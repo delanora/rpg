@@ -135,7 +135,7 @@ export interface Actor {
 }
 
 /** Dono da ficha: recebe o evento e assina o DTO entregue à mesa. */
-interface SheetOwner {
+export interface SheetOwner {
   userId: string;
   username: string;
 }
@@ -424,7 +424,7 @@ function canReplaceSingleClass(
  * `editedBy` só é preenchido quando o editor não é o dono. Falha de tempo real
  * nunca deve derrubar a requisição HTTP que já foi persistida.
  */
-async function publishChange(
+export async function publishChange(
   owner: SheetOwner,
   character: Character,
   changes: Record<string, unknown>,
@@ -1450,6 +1450,13 @@ const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
 
 /** Código de erro quando já existe um Descanso Curto ativo para o personagem. */
 const SHORT_REST_ALREADY_ACTIVE = 'SHORT_REST_ALREADY_ACTIVE';
+/**
+ * Sessão criada por uma solicitação COLETIVA: só o fluxo coletivo (último ready
+ * ou force-complete do mestre) pode concluí-la/cancelá-la.
+ */
+const SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED = 'SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED';
+/** O participante marcou "pronto" e não pode gastar outro Dado de Vida. */
+const SHORT_REST_SESSION_READY = 'SHORT_REST_SESSION_READY';
 
 /**
  * Assinatura CANÔNICA do payload semântico de um gasto de Dado de Vida.
@@ -1688,7 +1695,17 @@ export async function spendHitDie(
   }
 
   // 2) A sessão precisa existir, ser do personagem e estar ATIVA.
-  await loadActiveSession(character.id, input.sessionId);
+  const session = await loadActiveSession(character.id, input.sessionId);
+
+  // 2b) Quem marcou "pronto para finalizar" terminou suas decisões de gasto:
+  // precisa DESMARCAR antes de gastar outro Dado de Vida.
+  if (session.readyAt) {
+    throw new HttpError(
+      'Você marcou que terminou o descanso; desmarque "pronto" antes de gastar outro Dado de Vida.',
+      409,
+      SHORT_REST_SESSION_READY,
+    );
+  }
 
   // 3) Concorrência: a versão enviada tem de ser a atual — ANTES de rolar.
   if (character.version !== input.expectedVersion) {
@@ -1833,26 +1850,26 @@ export async function completeShortRest(
 
   const session = await loadActiveSession(character.id, input.sessionId);
 
+  // Sessão de um descanso COLETIVO: a conclusão pertence ao fluxo coletivo
+  // (último participante pronto ou force-complete do mestre) — nunca sozinho.
+  if (session.shortRestRequestId) {
+    throw new HttpError(
+      'Este descanso é coletivo: ele é concluído quando todos ficam prontos (ou pelo mestre).',
+      409,
+      SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED,
+    );
+  }
+
   if (character.version !== input.expectedVersion) {
     throw new HttpError('A ficha mudou durante o descanso; recarregue e tente novamente.', 409);
   }
 
-  // TODO (Fase 5.1 — Canção de Descanso / Song of Rest): NÃO é aplicada aqui.
-  // A cura extra (d6 no Bardo 2–8, d8 no 9–12, d10 no 13–16, d12 no 17+) depende
-  // de criaturas que participaram do MESMO descanso coletivo com um Bardo
-  // elegível presente. O projeto ainda não tem participantes de descanso
-  // coletivo/consenso (etapa futura). Quando houver, a implementação deve:
-  //   1. identificar os Bardos participantes da sessão;
-  //   2. determinar o MELHOR dado aplicável e decidir o caso de VÁRIOS Bardos —
-  //      NÃO somar Song of Rest nem rolar múltiplas vezes; seguir o PHB 2014 e a
-  //      regra geral de efeitos de MESMO NOME (decisão explícita pendente);
-  //   3. identificar as criaturas que gastaram >= 1 Dado de Vida;
-  //   4. rolar a cura extra UMA única vez por criatura elegível (não é por dado);
-  //   5. aplicar a cura sem ultrapassar o PV máximo EFETIVO (derived.hpMax);
-  //   6. registrar a rolagem (kind 'rest');
-  //   7. impedir aplicação duplicada.
-  // A base já pronta é `songOfRestDie`/`bardLevel` (shared/classes.ts) e a
-  // informação derivada `derived.songOfRest` (que o frontend/futuro fluxo lê).
+  // Canção de Descanso (Song of Rest): NÃO é aplicada neste endpoint INDIVIDUAL.
+  // A cura extra exige um descanso COLETIVO (participantes ACCEPTED do mesmo
+  // ShortRestRequest com um Bardo elegível) e é aplicada na conclusão coletiva
+  // — ver `src/modules/rest/collective-completion.ts`. Aqui só se conclui a
+  // sessão individual (que nunca faz parte de um request coletivo: esse caso é
+  // bloqueado acima com SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED).
   //
   // Recursos DERIVADOS ATUAIS (respeitam o nível/recarga de cada característica)
   // e o estado com os de recarga curta restaurados.
@@ -1963,6 +1980,15 @@ export async function cancelShortRest(
   }
 
   const session = await loadActiveSession(character.id, input.sessionId);
+
+  // Sessão coletiva: cancelar por conta própria desincronizaria a solicitação.
+  if (session.shortRestRequestId) {
+    throw new HttpError(
+      'Este descanso é coletivo e não pode ser cancelado individualmente.',
+      409,
+      SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED,
+    );
+  }
 
   if (character.version !== input.expectedVersion) {
     throw new HttpError('A ficha mudou durante o descanso; recarregue e tente novamente.', 409);
