@@ -6,11 +6,18 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import { getOnlineUsers } from '../../realtime/presence.js';
 import {
   toShortRestRequestDto,
+  type ShortRestCompletionDto,
   type ShortRestRequestDto,
 } from './short-rest-request.dto.js';
+import {
+  completeCollectiveShortRest,
+  publishCollectiveCompletion,
+  type CollectiveCompletionOutcome,
+} from './collective-completion.js';
 import type {
   CreateShortRestRequestInput,
   RespondShortRestRequestInput,
+  SetReadyInput,
   ShortRestRequestActionInput,
 } from './rest.schema.js';
 
@@ -34,6 +41,8 @@ const CREATE_TYPE = 'SHORT_REST_REQUEST_CREATE';
 const RESPOND_TYPE = 'SHORT_REST_REQUEST_RESPOND';
 const FORCE_TYPE = 'SHORT_REST_REQUEST_FORCE_APPROVE';
 const CANCEL_TYPE = 'SHORT_REST_REQUEST_CANCEL';
+const READY_TYPE = 'SHORT_REST_REQUEST_READY';
+const FORCE_COMPLETE_TYPE = 'SHORT_REST_REQUEST_FORCE_COMPLETE';
 
 /** Mesma chave idempotente usada para outra operação. */
 const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
@@ -47,6 +56,10 @@ const NOT_A_PARTICIPANT = 'NOT_A_PARTICIPANT';
 const SHORT_REST_SESSION_ALREADY_ACTIVE = 'SHORT_REST_SESSION_ALREADY_ACTIVE';
 /** Motivo gravado quando todos recusaram (nenhum ACCEPTED). */
 const NO_PARTICIPANTS = 'NO_PARTICIPANTS';
+/** A solicitação ainda não foi aprovada (não dá para ficar pronto ainda). */
+const SHORT_REST_REQUEST_NOT_APPROVED = 'SHORT_REST_REQUEST_NOT_APPROVED';
+/** Só quem ACEITOU o descanso pode marcar-se pronto. */
+const NOT_ACCEPTED = 'NOT_ACCEPTED';
 
 /** Autor da requisição (vem sempre do token). */
 export interface Actor {
@@ -103,19 +116,26 @@ async function lockRequest(tx: Prisma.TransactionClient, requestId: string): Pro
   await tx.$queryRaw`SELECT "id" FROM "short_rest_requests" WHERE "id" = ${requestId} FOR UPDATE`;
 }
 
-/** Carrega a solicitação já no formato do DTO (com usuários e classes). */
+/**
+ * `include` padrão para montar o DTO: usuários, classes (para a Song of Rest) e
+ * as SESSÕES da solicitação (de onde sai o `ready` de cada participante).
+ */
+const REQUEST_DTO_INCLUDE = {
+  requestedBy: { select: { id: true, username: true, displayName: true } },
+  participants: {
+    include: {
+      user: { select: { id: true, username: true, displayName: true } },
+      character: { select: { classes: true } },
+    },
+  },
+  sessions: { select: { characterId: true, readyAt: true } },
+} as const;
+
+/** Carrega a solicitação já no formato do DTO (com usuários, classes e sessões). */
 async function loadRequestDto(client: Db, requestId: string): Promise<ShortRestRequestDto> {
   const request = await client.shortRestRequest.findUniqueOrThrow({
     where: { id: requestId },
-    include: {
-      requestedBy: { select: { id: true, username: true, displayName: true } },
-      participants: {
-        include: {
-          user: { select: { id: true, username: true, displayName: true } },
-          character: { select: { classes: true } },
-        },
-      },
-    },
+    include: REQUEST_DTO_INCLUDE,
   });
   return toShortRestRequestDto(request);
 }
@@ -180,8 +200,11 @@ async function settleIfAnswered(
   }
 
   // Uma sessão ACTIVE SÓ para cada ACCEPTED. DECLINED fica completamente fora.
+  // O vínculo `shortRestRequestId` é o que permite concluir TODAS juntas depois.
   for (const participant of accepted) {
-    await tx.shortRestSession.create({ data: { characterId: participant.characterId } });
+    await tx.shortRestSession.create({
+      data: { characterId: participant.characterId, shortRestRequestId: requestId },
+    });
   }
 
   await tx.shortRestRequest.update({
@@ -517,19 +540,242 @@ export async function cancelShortRestRequest(
   return { ...dto, replayed: false };
 }
 
-/** Solicitação aguardando resposta (a única PENDING global) ou `null`. */
+/**
+ * Solicitação "aberta" da mesa: a única PENDING ou, se ela já foi aprovada, a
+ * que está EM ANDAMENTO (APPROVED). Devolve `null` quando não há descanso
+ * coletivo aberto (COMPLETED/CANCELLED não contam).
+ */
 export async function getOpenShortRestRequest(): Promise<ShortRestRequestDto | null> {
-  const request = await prisma.shortRestRequest.findFirst({
+  const pending = await prisma.shortRestRequest.findFirst({
     where: { status: 'PENDING' },
-    include: {
-      requestedBy: { select: { id: true, username: true, displayName: true } },
-      participants: {
-        include: {
-          user: { select: { id: true, username: true, displayName: true } },
-          character: { select: { classes: true } },
-        },
-      },
-    },
+    include: REQUEST_DTO_INCLUDE,
   });
-  return request ? toShortRestRequestDto(request) : null;
+  if (pending) return toShortRestRequestDto(pending);
+
+  const approved = await prisma.shortRestRequest.findFirst({
+    where: { status: 'APPROVED' },
+    orderBy: { approvedAt: 'desc' },
+    include: REQUEST_DTO_INCLUDE,
+  });
+  return approved ? toShortRestRequestDto(approved) : null;
+}
+
+/**
+ * Resultado das operações que podem CONCLUIR o descanso coletivo (ready e
+ * force-complete): o DTO da solicitação + o resultado da Song of Rest (quando a
+ * conclusão aconteceu nesta chamada; `null` quando o descanso segue aberto).
+ */
+export interface ShortRestCollectiveResult extends ShortRestRequestDto {
+  replayed: boolean;
+  completion: ShortRestCompletionDto | null;
+}
+
+/** Snapshot idempotente persistido em `ShortRestOperation.result`. */
+interface StoredCollectiveResult {
+  request: ShortRestRequestDto;
+  completion: ShortRestCompletionDto | null;
+}
+
+/** Formata o snapshot guardado de volta à resposta pública. */
+function storedToResult(stored: StoredCollectiveResult, replayed: boolean): ShortRestCollectiveResult {
+  return { ...stored.request, replayed, completion: stored.completion };
+}
+
+/**
+ * MARCA/DESMARCA "pronto para finalizar".
+ *
+ * Só um participante ACCEPTED (com sessão ACTIVE e solicitação APPROVED) pode.
+ * Enquanto pronto, ele não gasta outro Dado de Vida (ver `spendHitDie`). Quando
+ * TODOS os ACCEPTED ficam prontos, a conclusão coletiva dispara na MESMA
+ * transação — o lock da linha da solicitação garante que só uma chamada
+ * concorrente conclua.
+ */
+export async function setShortRestReady(
+  actor: Actor,
+  requestId: string,
+  input: SetReadyInput,
+): Promise<ShortRestCollectiveResult> {
+  const fingerprint = JSON.stringify({ requestId, ready: input.ready });
+  const previous = await findOperation(input.operationId);
+  if (previous) {
+    return storedToResult(
+      replaySnapshot<StoredCollectiveResult>(previous, READY_TYPE, fingerprint),
+      true,
+    );
+  }
+
+  let outcome!: {
+    request: ShortRestRequestDto;
+    completion: ShortRestCompletionDto | null;
+    detail: CollectiveCompletionOutcome | null;
+  };
+  try {
+    outcome = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, requestId);
+
+      const request = await tx.shortRestRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new HttpError('Solicitação de descanso não encontrada.', 404);
+      if (request.status === 'PENDING') {
+        throw new HttpError(
+          'Esta solicitação de descanso ainda não foi aprovada.',
+          409,
+          SHORT_REST_REQUEST_NOT_APPROVED,
+        );
+      }
+      if (request.status !== 'APPROVED') {
+        throw new HttpError('Este descanso coletivo já terminou.', 409, SHORT_REST_REQUEST_CLOSED);
+      }
+
+      const participant = await tx.shortRestRequestParticipant.findUnique({
+        where: { requestId_userId: { requestId, userId: actor.userId } },
+      });
+      if (!participant) {
+        throw new HttpError(
+          'Você não participa desta solicitação de descanso.',
+          403,
+          NOT_A_PARTICIPANT,
+        );
+      }
+      if (participant.response !== 'ACCEPTED') {
+        throw new HttpError(
+          'Apenas quem aceitou o descanso pode marcar-se pronto.',
+          403,
+          NOT_ACCEPTED,
+        );
+      }
+
+      const session = await tx.shortRestSession.findFirst({
+        where: {
+          shortRestRequestId: requestId,
+          characterId: participant.characterId,
+          status: 'ACTIVE',
+        },
+      });
+      if (!session) {
+        throw new HttpError('Sua sessão de descanso não está ativa.', 409, SHORT_REST_REQUEST_CLOSED);
+      }
+
+      await tx.shortRestSession.updateMany({
+        where: { id: session.id, status: 'ACTIVE' },
+        data: { readyAt: input.ready ? new Date() : null },
+      });
+
+      // Conclusão automática: nenhuma sessão do descanso pendente de ready.
+      let detail: CollectiveCompletionOutcome | null = null;
+      if (input.ready) {
+        const notReady = await tx.shortRestSession.count({
+          where: { shortRestRequestId: requestId, status: 'ACTIVE', readyAt: null },
+        });
+        if (notReady === 0) detail = await completeCollectiveShortRest(tx, requestId);
+      }
+
+      const loaded = await loadRequestDto(tx, requestId);
+      await tx.shortRestOperation.create({
+        data: {
+          operationId: input.operationId,
+          type: READY_TYPE,
+          requestFingerprint: fingerprint,
+          result: {
+            request: loaded,
+            completion: detail?.completion ?? null,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return { request: loaded, completion: detail?.completion ?? null, detail };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(input.operationId);
+      if (raced) {
+        return storedToResult(
+          replaySnapshot<StoredCollectiveResult>(raced, READY_TYPE, fingerprint),
+          true,
+        );
+      }
+    }
+    throw error;
+  }
+
+  publishRequest(outcome.request);
+  if (outcome.detail) await publishCollectiveCompletion(requestId, outcome.detail);
+  return { ...outcome.request, replayed: false, completion: outcome.completion };
+}
+
+/**
+ * FORÇA a conclusão coletiva (exclusivo do mestre).
+ *
+ * Ignora o `ready` faltante: conclui todas as sessões ACCEPTED, aplica a Song of
+ * Rest normalmente e restaura os recursos. DECLINED continua fora e as respostas
+ * não mudam. Idempotente por `operationId` (um reenvio NÃO rola de novo).
+ */
+export async function forceCompleteShortRestRequest(
+  actor: Actor,
+  requestId: string,
+  input: ShortRestRequestActionInput,
+): Promise<ShortRestCollectiveResult> {
+  const fingerprint = JSON.stringify({ requestId });
+  const previous = await findOperation(input.operationId);
+  if (previous) {
+    return storedToResult(
+      replaySnapshot<StoredCollectiveResult>(previous, FORCE_COMPLETE_TYPE, fingerprint),
+      true,
+    );
+  }
+
+  let outcome!: {
+    request: ShortRestRequestDto;
+    completion: ShortRestCompletionDto;
+    detail: CollectiveCompletionOutcome;
+  };
+  try {
+    outcome = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, requestId);
+
+      const request = await tx.shortRestRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new HttpError('Solicitação de descanso não encontrada.', 404);
+      if (request.status === 'PENDING') {
+        throw new HttpError(
+          'Esta solicitação de descanso ainda não foi aprovada.',
+          409,
+          SHORT_REST_REQUEST_NOT_APPROVED,
+        );
+      }
+      if (request.status !== 'APPROVED') {
+        throw new HttpError('Este descanso coletivo já terminou.', 409, SHORT_REST_REQUEST_CLOSED);
+      }
+
+      const detail = await completeCollectiveShortRest(tx, requestId);
+
+      const loaded = await loadRequestDto(tx, requestId);
+      await tx.shortRestOperation.create({
+        data: {
+          operationId: input.operationId,
+          type: FORCE_COMPLETE_TYPE,
+          requestFingerprint: fingerprint,
+          result: {
+            request: loaded,
+            completion: detail.completion,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return { request: loaded, completion: detail.completion, detail };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(input.operationId);
+      if (raced) {
+        return storedToResult(
+          replaySnapshot<StoredCollectiveResult>(raced, FORCE_COMPLETE_TYPE, fingerprint),
+          true,
+        );
+      }
+    }
+    throw error;
+  }
+
+  publishRequest(outcome.request);
+  await publishCollectiveCompletion(requestId, outcome.detail);
+  return { ...outcome.request, replayed: false, completion: outcome.completion };
 }

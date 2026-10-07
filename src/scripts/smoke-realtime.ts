@@ -213,7 +213,36 @@ async function setCharacterClasses(
   });
 }
 
+/**
+ * Jogadores de fora do smoke que foram temporariamente tirados da elegibilidade.
+ * Restaurados no `cleanup`.
+ */
+const foreignDemotedUsernames: string[] = [];
 
+/**
+ * Jogadores ONLINE que o smoke NÃO controla atrapalhariam a lista congelada de
+ * um Descanso Curto coletivo: o servidor convida TODOS os jogadores conectados
+ * com ficha, e o servidor pode ter um cliente real de prontidão (mesa global).
+ * Para o teste não depender de quem mais está online, o smoke os torna
+ * temporariamente inelegíveis (papel MASTER, que o filtro de elegibilidade já
+ * ignora) e restaura no `cleanup`. NÃO impersona ninguém.
+ */
+async function demoteForeignOnlinePlayers(
+  online: { userId: string; username: string; role: string }[],
+  controlledUserIds: Set<string>,
+): Promise<string[]> {
+  const foreign = online.filter(
+    (user) => user.role === 'PLAYER' && !controlledUserIds.has(user.userId),
+  );
+  if (foreign.length === 0) return [];
+
+  await prisma.user.updateMany({
+    where: { id: { in: foreign.map((user) => user.userId) } },
+    data: { role: 'MASTER' },
+  });
+  for (const user of foreign) foreignDemotedUsernames.push(user.username);
+  return foreign.map((user) => user.username);
+}
 
 /**
  * Garante DUAS perícias proficientes e devolve as chaves — é o mínimo que a
@@ -13345,7 +13374,15 @@ async function main(): Promise<void> {
 
     // Sockets: A, B e D online; C nunca conecta (offline de propósito).
     const collectiveSocketA = connect(collectiveTokenA);
+    const collectivePresence = waitForPresence(collectiveSocketA, () => true).catch(() => null);
     await waitFor<any>(collectiveSocketA, 'connection:ready').catch(() => null);
+    // Quem o smoke não controla (um cliente real conectado na mesa global) sai
+    // temporariamente da elegibilidade; é restaurado no cleanup.
+    const collectiveOnlineList: any[] = (await collectivePresence)?.online ?? [];
+    await demoteForeignOnlinePlayers(
+      collectiveOnlineList,
+      new Set([collectiveUserIdA, collectiveUserIdB, collectiveUserIdD]),
+    );
     const collectiveMasterSocket = connect(masterToken);
     await waitFor<any>(collectiveMasterSocket, 'connection:ready').catch(() => null);
     const collectiveOnline = waitForPresence(
@@ -13657,9 +13694,11 @@ async function main(): Promise<void> {
       '22c) PLAYER não cancela a solicitação (403)',
       (await collectiveCancel(collectiveReq5.id, `op-${suffix}-rq-5-cancel-player`, collectiveTokenA)).status === 403,
     );
+    const collectiveAfterCancelGet = await collectiveCurrent();
     check(
-      '22d) a solicitação PENDING some da leitura (GET) depois de resolvida',
-      (await collectiveCurrent()) === null,
+      '22d) a solicitação cancelada não é mais devolvida pela leitura (GET)',
+      collectiveAfterCancelGet === null || collectiveAfterCancelGet.id !== collectiveReq5.id,
+      JSON.stringify(collectiveAfterCancelGet?.id),
     );
 
     // --- 45.6 Conflito com sessão ACTIVE ----------------------------------
@@ -13901,6 +13940,733 @@ async function main(): Promise<void> {
     collectiveMasterSocket.close();
   }
 
+  // --- 46. Descanso Curto coletivo: conclusão + Song of Rest ----------------
+  {
+    console.log('\n46) Descanso Curto coletivo: conclusão e Canção de Descanso');
+
+    // Reaproveita contas já existentes (o cadastro tem rate limit de produção).
+    const colTokenA = testsPlayerToken;
+    const colMeA = await api('/api/auth/me', { token: colTokenA });
+    const colUserA: string = colMeA.data?.user?.sub;
+    const colNameA: string = colMeA.data?.user?.username;
+    check('46) conta do solicitante disponível', colMeA.status === 200 && Boolean(colUserA));
+
+    const colMasterMe = await api('/api/auth/me', { token: masterToken });
+    const colMasterId: string = colMasterMe.data?.user?.sub;
+
+    const colPlayers = (
+      await prisma.user.findMany({
+        where: { role: 'PLAYER', username: { endsWith: `_${suffix}` }, id: { not: colUserA } },
+        include: { character: { select: { id: true } } },
+        orderBy: { username: 'asc' },
+      })
+    )
+      .filter((user) => user.character !== null)
+      .slice(0, 3);
+    check('46) três jogadores existentes com ficha', colPlayers.length === 3);
+
+    const colB = colPlayers[0];
+    const colC = colPlayers[1];
+    const colD = colPlayers[2];
+    const colTokenFor = (user: (typeof colPlayers)[number]) =>
+      signToken({ sub: user.id, username: user.username, displayName: user.displayName, role: user.role });
+    const colTokenB = colTokenFor(colB);
+    const colTokenC = colTokenFor(colC);
+    const colTokenD = colTokenFor(colD);
+
+    const colCharA = await prisma.character.findUniqueOrThrow({ where: { userId: colUserA } });
+    const colCharB = await prisma.character.findUniqueOrThrow({ where: { userId: colB.id } });
+    const colCharC = await prisma.character.findUniqueOrThrow({ where: { userId: colC.id } });
+    const colCharD = await prisma.character.findUniqueOrThrow({ where: { userId: colD.id } });
+    const colCharIds = [colCharA.id, colCharB.id, colCharC.id, colCharD.id];
+
+    // Todos ONLINE: a solicitação só convida jogadores conectados.
+    const colSocketA = connect(colTokenA);
+    const colPresence = waitForPresence(colSocketA, () => true).catch(() => null);
+    await waitFor<any>(colSocketA, 'connection:ready').catch(() => null);
+    const colOnlineList: any[] = (await colPresence)?.online ?? [];
+    await demoteForeignOnlinePlayers(
+      colOnlineList,
+      new Set([colUserA, colB.id, colC.id, colD.id]),
+    );
+    const colMasterSocket = connect(masterToken);
+    await waitFor<any>(colMasterSocket, 'connection:ready').catch(() => null);
+    const colOnline = waitForPresence(colSocketA, (online) =>
+      [colNameA, colB.username, colC.username, colD.username].every((name) =>
+        online.some((user: any) => user.username === name),
+      ),
+    );
+    const colSocketB = connect(colTokenB);
+    const colSocketC = connect(colTokenC);
+    const colSocketD = connect(colTokenD);
+    await Promise.all([
+      waitFor<any>(colSocketB, 'connection:ready').catch(() => null),
+      waitFor<any>(colSocketC, 'connection:ready').catch(() => null),
+      waitFor<any>(colSocketD, 'connection:ready').catch(() => null),
+      colOnline.catch(() => null),
+    ]);
+
+    const colCurrent = async () =>
+      (await api('/api/rest/short/request', { token: colTokenA })).data.request;
+    const colCreate = (operationId: string) =>
+      api('/api/rest/short/request', { method: 'POST', token: colTokenA, body: { operationId } });
+    const colRespond = (token: string, requestId: string, response: string, operationId: string) =>
+      api(`/api/rest/short/${requestId}/respond`, {
+        method: 'POST',
+        token,
+        body: { response, operationId },
+      });
+    const colReady = (token: string, requestId: string, ready: boolean, operationId: string) =>
+      api(`/api/rest/short/${requestId}/ready`, {
+        method: 'POST',
+        token,
+        body: { ready, operationId },
+      });
+    const colForceComplete = (requestId: string, operationId: string) =>
+      api(`/api/rest/short/${requestId}/force-complete`, {
+        method: 'POST',
+        token: masterToken,
+        body: { operationId },
+      });
+    const colSheet = async (token: string) =>
+      (await api('/api/characters/me', { token })).data.character;
+    const colSpend = async (token: string, sessionId: string, die: number, operationId: string) => {
+      const sheet = await colSheet(token);
+      return api('/api/characters/me/rest/short/hit-die', {
+        method: 'POST',
+        token,
+        body: { sessionId, die, expectedVersion: sheet.version, operationId },
+      });
+    };
+    const colSessionOf = (requestId: string, characterId: string) =>
+      prisma.shortRestSession.findFirst({
+        where: { shortRestRequestId: requestId, characterId },
+      });
+    const colSongCount = async () => {
+      const hist = await api('/api/dice/history', { token: masterToken });
+      return (hist.data?.rolls ?? []).filter(
+        (roll: any) =>
+          roll.kind === 'rest' && roll.label === 'Descanso Curto — Canção de Descanso',
+      ).length;
+    };
+    const colSetup = async (
+      specs: Record<
+        string,
+        {
+          classes: { classKey: string; level: number }[];
+          hpCurrent: number;
+          hpMax: number;
+          hpTemp?: number;
+          classState?: any;
+          hitDice?: any;
+        }
+      >,
+    ) => {
+      for (const [userId, spec] of Object.entries(specs)) {
+        await setCharacterClasses(userId, spec.classes);
+        await prisma.character.update({
+          where: { userId },
+          data: {
+            hpCurrent: spec.hpCurrent,
+            hpMax: spec.hpMax,
+            hpTemp: spec.hpTemp ?? 0,
+            classState: spec.classState ?? { active: [], used: {}, choices: {} },
+            hitDice: spec.hitDice ?? {},
+          },
+        });
+      }
+    };
+    /** Cancela sessões ativas dos envolvidos e solicitações abertas deixadas antes. */
+    const colReset = async () => {
+      await prisma.shortRestSession.updateMany({
+        where: { characterId: { in: colCharIds }, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+      await prisma.shortRestRequest.updateMany({
+        where: { status: { in: ['PENDING', 'APPROVED'] } },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+    };
+    /** Cria a solicitação (A) e responde por B, C e D; a última resposta resolve. */
+    const colApprove = async (
+      tag: string,
+      plan: { B: 'ACCEPTED' | 'DECLINED'; C: 'ACCEPTED' | 'DECLINED'; D: 'ACCEPTED' | 'DECLINED' },
+    ) => {
+      const created = await colCreate(`op-${suffix}-c46-${tag}`);
+      const requestId = created.data?.id;
+      let last: any = null;
+      for (const key of ['B', 'C', 'D'] as const) {
+        const token = key === 'B' ? colTokenB : key === 'C' ? colTokenC : colTokenD;
+        last = await colRespond(token, requestId, plan[key], `op-${suffix}-c46-${tag}-${key}`);
+      }
+      return { requestId, created, last: last?.data, lastStatus: last?.status };
+    };
+    /** Marca ready para todos os ACCEPTED indicados (na ordem) e devolve o último. */
+    const colReadyAll = async (
+      requestId: string,
+      tag: string,
+      tokens: { token: string; key: string }[],
+    ) => {
+      let last: any = null;
+      for (const entry of tokens) {
+        last = await colReady(entry.token, requestId, true, `op-${suffix}-c46-${tag}-${entry.key}`);
+      }
+      return last;
+    };
+
+    // --- 46.A Vínculo da sessão, ready e conclusão automática ----------------
+    {
+      await colReset();
+      await colSetup({
+        [colUserA]: {
+          classes: [{ classKey: 'fighter', level: 9 }],
+          hpCurrent: 10,
+          hpMax: 40,
+          classState: {
+            active: ['keep'],
+            used: { 'second-wind': 1, 'action-surge': 1, indomitable: 1, 'contador-legado': 2 },
+            choices: {},
+          },
+        },
+        [colB.id]: { classes: [{ classKey: 'fighter', level: 9 }], hpCurrent: 20, hpMax: 40 },
+        [colC.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+      });
+
+      const approved = await colApprove('a', { B: 'ACCEPTED', C: 'DECLINED', D: 'ACCEPTED' });
+      const sessionA = await colSessionOf(approved.requestId, colCharA.id);
+      const sessionB = await colSessionOf(approved.requestId, colCharB.id);
+      const sessionC = await colSessionOf(approved.requestId, colCharC.id);
+      const sessionD = await colSessionOf(approved.requestId, colCharD.id);
+      check(
+        '1) ACCEPTED ganham sessão ACTIVE vinculada à solicitação; DECLINED não',
+        approved.lastStatus === 200 &&
+          approved.last?.status === 'APPROVED' &&
+          sessionA?.status === 'ACTIVE' &&
+          sessionA?.shortRestRequestId === approved.requestId &&
+          sessionB?.shortRestRequestId === approved.requestId &&
+          sessionD?.shortRestRequestId === approved.requestId &&
+          sessionC === null,
+        JSON.stringify({
+          status: approved.last?.status,
+          c: sessionC?.status ?? null,
+          links: [sessionA?.shortRestRequestId, sessionB?.shortRestRequestId, sessionD?.shortRestRequestId],
+        }),
+      );
+
+      // 27) A conclusão individual de uma sessão coletiva é bloqueada.
+      const soloComplete = await api('/api/characters/me/rest/short/complete', {
+        method: 'POST',
+        token: colTokenA,
+        body: {
+          sessionId: sessionA!.id,
+          expectedVersion: (await colSheet(colTokenA)).version,
+          operationId: `op-${suffix}-c46-a-solo-complete`,
+        },
+      });
+      check(
+        '27) complete individual em sessão coletiva é rejeitado (409 SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED)',
+        soloComplete.status === 409 &&
+          soloComplete.data?.error === 'SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED',
+        JSON.stringify(soloComplete.data),
+      );
+      const soloCancel = await api('/api/characters/me/rest/short/cancel', {
+        method: 'POST',
+        token: colTokenA,
+        body: {
+          sessionId: sessionA!.id,
+          expectedVersion: (await colSheet(colTokenA)).version,
+          operationId: `op-${suffix}-c46-a-solo-cancel`,
+        },
+      });
+      check(
+        'a) cancel individual em sessão coletiva também é rejeitado (409)',
+        soloCancel.status === 409 &&
+          soloCancel.data?.error === 'SHORT_REST_COLLECTIVE_COMPLETION_REQUIRED',
+        JSON.stringify(soloCancel.data),
+      );
+
+      // Gasta 1 Dado de Vida antes de ficar pronto.
+      const spendA1 = await colSpend(colTokenA, sessionA!.id, 10, `op-${suffix}-c46-a-hd1`);
+      check('2) gasto de Dado de Vida antes de ficar pronto funciona', spendA1.status === 200);
+
+      // 2) A fica pronto; 5) ainda não é hora de concluir (B e D pendentes).
+      const readyEvent = waitFor<any>(colSocketA, 'short-rest:request-updated').catch(() => null);
+      const readyA = await colReady(colTokenA, approved.requestId, true, `op-${suffix}-c46-a-ready1`);
+      const readyPayload = await readyEvent;
+      check(
+        '23a) ficar pronto emite short-rest:request-updated com o novo estado',
+        readyPayload?.request?.id === approved.requestId &&
+          readyPayload?.request?.participants?.some(
+            (p: any) => p.userId === colUserA && p.ready === true,
+          ),
+        JSON.stringify(readyPayload?.request?.participants),
+      );
+      check(
+        '2) jogador marca ready=true',
+        readyA.status === 200 &&
+          readyA.data?.status === 'APPROVED' &&
+          readyA.data?.participants?.find((p: any) => p.userId === colUserA)?.ready === true &&
+          Boolean(readyA.data?.participants?.find((p: any) => p.userId === colUserA)?.readyAt),
+        JSON.stringify(readyA.data?.participants),
+      );
+      check(
+        '5) nem todos prontos → a solicitação continua APPROVED',
+        readyA.data?.status === 'APPROVED' && readyA.data?.completion === null,
+        JSON.stringify({ status: readyA.data?.status, completion: readyA.data?.completion }),
+      );
+
+      // 3) ready bloqueia novo gasto de Dado de Vida.
+      const afterReadySpend = await colSpend(
+        colTokenA,
+        sessionA!.id,
+        10,
+        `op-${suffix}-c46-a-hd-ready`,
+      );
+      check(
+        '3) ready=true impede novo gasto de Dado de Vida (409 SHORT_REST_SESSION_READY)',
+        afterReadySpend.status === 409 && afterReadySpend.data?.error === 'SHORT_REST_SESSION_READY',
+        JSON.stringify(afterReadySpend.data),
+      );
+
+      // 4) desmarcar ready volta a permitir o gasto.
+      const unreadyA = await colReady(colTokenA, approved.requestId, false, `op-${suffix}-c46-a-unready1`);
+      const spendA2 = await colSpend(colTokenA, sessionA!.id, 10, `op-${suffix}-c46-a-hd2`);
+      check(
+        '4) jogador faz ready=false e volta a poder gastar Dado de Vida',
+        unreadyA.status === 200 &&
+          unreadyA.data?.participants?.find((p: any) => p.userId === colUserA)?.ready === false &&
+          spendA2.status === 200,
+        JSON.stringify({ unready: unreadyA.data?.participants, spend: spendA2.status }),
+      );
+
+      // Prontos: A, depois B (D ainda não) — e por fim D dispara a conclusão.
+      await colReady(colTokenA, approved.requestId, true, `op-${suffix}-c46-a-ready2`);
+      const readyB = await colReady(colTokenB, approved.requestId, true, `op-${suffix}-c46-a-ready3`);
+      check(
+        '5b) com A e B prontos e D pendente, ainda APPROVED',
+        readyB.data?.status === 'APPROVED',
+        JSON.stringify({ status: readyB.data?.status }),
+      );
+      const readyD = await colReady(colTokenD, approved.requestId, true, `op-${suffix}-c46-a-ready4`);
+      check(
+        '6) todos prontos → conclusão automática (COMPLETED)',
+        readyD.status === 200 &&
+          readyD.data?.status === 'COMPLETED' &&
+          Boolean(readyD.data?.completedAt) &&
+          readyD.data?.completion?.sessions?.length === 3,
+        JSON.stringify({ status: readyD.data?.status, completion: readyD.data?.completion }),
+      );
+      check(
+        '8) a solicitação passa a COMPLETED',
+        (await colCurrent()) === null &&
+          (await prisma.shortRestRequest.findUniqueOrThrow({ where: { id: approved.requestId } }))
+            .status === 'COMPLETED',
+      );
+
+      const sessionsAfter = await prisma.shortRestSession.findMany({
+        where: { shortRestRequestId: approved.requestId },
+      });
+      check(
+        '7) todas as sessões ACCEPTED ficam COMPLETED; DECLINED segue sem sessão',
+        sessionsAfter.length === 3 &&
+          sessionsAfter.every((session) => session.status === 'COMPLETED') &&
+          sessionC === null,
+        JSON.stringify(sessionsAfter.map((s) => s.status)),
+      );
+      check(
+        '14) sem Bardo, bestSong é null e nenhuma cura extra é aplicada',
+        readyD.data?.completion?.songOfRest?.die === null &&
+          (readyD.data?.completion?.songOfRest?.rolls ?? []).length === 0,
+        JSON.stringify(readyD.data?.completion?.songOfRest),
+      );
+
+      const classStateAfter = (await colSheet(colTokenA)).classState;
+      check(
+        '10/11/12/13) recursos short restaurados; long/none/desconhecidos e active preservados',
+        classStateAfter?.used?.['second-wind'] === undefined &&
+          classStateAfter?.used?.['action-surge'] === undefined &&
+          classStateAfter?.used?.indomitable === 1 &&
+          classStateAfter?.used?.['contador-legado'] === 2 &&
+          JSON.stringify(classStateAfter?.active) === JSON.stringify(['keep']),
+        JSON.stringify(classStateAfter),
+      );
+
+      // 41/42) depois de COMPLETED nada mais é aceito.
+      const readyAfter = await colReady(colTokenA, approved.requestId, true, `op-${suffix}-c46-a-late-ready`);
+      check(
+        '41) depois de COMPLETED não se marca/desmarca ready (409)',
+        readyAfter.status === 409 && readyAfter.data?.error === 'SHORT_REST_REQUEST_CLOSED',
+        JSON.stringify(readyAfter.data),
+      );
+      const spendAfter = await colSpend(colTokenA, sessionA!.id, 10, `op-${suffix}-c46-a-late-hd`);
+      check('42) depois de COMPLETED não se gasta Dado de Vida (409)', spendAfter.status === 409);
+
+      // 28) O fluxo INDIVIDUAL (sem request) continua funcionando.
+      const soloStart = await api('/api/characters/me/rest/short/start', {
+        method: 'POST',
+        token: colTokenA,
+        body: { expectedVersion: (await colSheet(colTokenA)).version, operationId: `op-${suffix}-c46-solo-start` },
+      });
+      const soloSession = soloStart.data?.session?.id;
+      const soloDone = await api('/api/characters/me/rest/short/complete', {
+        method: 'POST',
+        token: colTokenA,
+        body: {
+          sessionId: soloSession,
+          expectedVersion: (await colSheet(colTokenA)).version,
+          operationId: `op-${suffix}-c46-solo-done`,
+        },
+      });
+      check(
+        '28) sessão individual (não coletiva) continua concluindo normalmente',
+        soloStart.status === 200 && soloDone.status === 200 && soloDone.data?.session?.status === 'COMPLETED',
+        JSON.stringify({ start: soloStart.status, done: soloDone.status }),
+      );
+    }
+
+    // --- 46.B Song of Rest aplicada (rolagens individuais, teto de PV) -------
+    {
+      await colReset();
+      await colSetup({
+        [colUserA]: { classes: [{ classKey: 'bard', level: 3 }], hpCurrent: 10, hpMax: 100, hpTemp: 4 },
+        [colB.id]: { classes: [{ classKey: 'fighter', level: 9 }], hpCurrent: 52, hpMax: 52 },
+        [colC.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 40, hpMax: 60 },
+      });
+      const songBefore = await colSongCount();
+
+      const approved = await colApprove('b', { B: 'ACCEPTED', C: 'DECLINED', D: 'ACCEPTED' });
+      const sessionA = await colSessionOf(approved.requestId, colCharA.id);
+      const sessionB = await colSessionOf(approved.requestId, colCharB.id);
+      const sessionD = await colSessionOf(approved.requestId, colCharD.id);
+
+      const spendA = await colSpend(colTokenA, sessionA!.id, 8, `op-${suffix}-c46-b-hd-a`);
+      const spendB1 = await colSpend(colTokenB, sessionB!.id, 10, `op-${suffix}-c46-b-hd-b1`);
+      const spendB2 = await colSpend(colTokenB, sessionB!.id, 10, `op-${suffix}-c46-b-hd-b2`);
+      const hpAAfterSpend = spendA.data?.hp?.after;
+
+      await colReady(colTokenA, approved.requestId, true, `op-${suffix}-c46-b-ready-a`);
+      await colReady(colTokenB, approved.requestId, true, `op-${suffix}-c46-b-ready-b`);
+      const completedEvent = waitFor<any>(colSocketA, 'short-rest:completed').catch(() => null);
+      const done = await colReady(colTokenD, approved.requestId, true, `op-${suffix}-c46-b-ready-d`);
+      const completedPayload = await completedEvent;
+      check(
+        '23b) a conclusão emite short-rest:completed com o resultado da Song of Rest',
+        completedPayload?.requestId === approved.requestId &&
+          completedPayload?.completion?.songOfRest?.die === 6 &&
+          (completedPayload?.completion?.songOfRest?.rolls ?? []).length === 2,
+        JSON.stringify(completedPayload),
+      );
+      const song = done.data?.completion?.songOfRest;
+      const rollA = (song?.rolls ?? []).find((r: any) => r.characterId === colCharA.id);
+      const rollB = (song?.rolls ?? []).find((r: any) => r.characterId === colCharB.id);
+      const rollD = (song?.rolls ?? []).find((r: any) => r.characterId === colCharD.id);
+
+      check(
+        '15) um Bardo ACCEPTED (d6) → bestSong d6',
+        done.data?.status === 'COMPLETED' && song?.die === 6,
+        JSON.stringify(song),
+      );
+      check(
+        '18/20) só quem gastou ≥ 1 Hit Die recebe UMA rolagem (D com 0 HD não recebe)',
+        Boolean(rollA) && Boolean(rollB) && rollD === undefined && (song?.rolls ?? []).length === 2,
+        JSON.stringify({ rolls: (song?.rolls ?? []).map((r: any) => r.characterId), d: rollD }),
+      );
+      check(
+        '19/22) cada destinatário tem a PRÓPRIA rolagem (1 Bardo com 1 HD, 1 Fighter com 2 HD)',
+        rollA?.die === 6 &&
+          rollB?.die === 6 &&
+          rollA?.value >= 1 &&
+          rollA?.value <= 6 &&
+          rollB?.value >= 1 &&
+          rollB?.value <= 6,
+        JSON.stringify({ rollA, rollB }),
+      );
+      check(
+        '23) a Song of Rest NÃO soma modificador de Constituição (cura = dado)',
+        rollA?.hpBefore === hpAAfterSpend &&
+          rollA?.hpAfter === Math.min(100, (hpAAfterSpend ?? 0) + (rollA?.value ?? 0)) &&
+          rollA?.actualHealed === (rollA?.hpAfter ?? 0) - (rollA?.hpBefore ?? 0),
+        JSON.stringify({ rollA, hpAAfterSpend }),
+      );
+      check(
+        '24/26) a cura respeita o PV máximo (B já no teto → actualHealed 0, mesmo com rolagem)',
+        rollB?.hpBefore === 52 && rollB?.hpAfter === 52 && rollB?.actualHealed === 0 && rollB?.value >= 1,
+        JSON.stringify(rollB),
+      );
+      check(
+        '25) o PV temporário permanece intacto após a Song of Rest',
+        (await colSheet(colTokenA)).hpTemp === 4,
+      );
+      check(
+        '39/40) um log "Descanso Curto — Canção de Descanso" por destinatário elegível',
+        (await colSongCount()) - songBefore === 2 &&
+          spendB1.status === 200 &&
+          spendB2.status === 200,
+        JSON.stringify({ delta: (await colSongCount()) - songBefore }),
+      );
+    }
+
+    // --- 46.C Melhor dado entre ACCEPTED e Bardo que fornece sem gastar HD --
+    {
+      // 16/21) Bardo d10 (0 HD) + Bardo d6 (1 HD) → d10; quem fornece não recebe.
+      await colReset();
+      await colSetup({
+        [colUserA]: { classes: [{ classKey: 'bard', level: 13 }], hpCurrent: 30, hpMax: 100 },
+        [colB.id]: { classes: [{ classKey: 'bard', level: 3 }], hpCurrent: 10, hpMax: 100 },
+        [colC.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+      });
+      const approved16 = await colApprove('c1', { B: 'ACCEPTED', C: 'DECLINED', D: 'DECLINED' });
+      const sessionB16 = await colSessionOf(approved16.requestId, colCharB.id);
+      await colSpend(colTokenB, sessionB16!.id, 8, `op-${suffix}-c46-c1-hd-b`);
+      await colReady(colTokenA, approved16.requestId, true, `op-${suffix}-c46-c1-ready-a`);
+      const done16 = await colReady(colTokenB, approved16.requestId, true, `op-${suffix}-c46-c1-ready-b`);
+      const song16 = done16.data?.completion?.songOfRest;
+      const roll16A = (song16?.rolls ?? []).find((r: any) => r.characterId === colCharA.id);
+      const roll16B = (song16?.rolls ?? []).find((r: any) => r.characterId === colCharB.id);
+      check(
+        '16) Bardo ACCEPTED d10 + Bardo ACCEPTED d6 → somente d10 (não acumula)',
+        song16?.die === 10 && song16?.rolls?.length === 1,
+        JSON.stringify(song16),
+      );
+      check(
+        '21) o Bardo que fornece o dado sem gastar Hit Die não recebe cura para si',
+        roll16A === undefined && roll16B?.die === 10,
+        JSON.stringify({ rollA: roll16A, rollB: roll16B }),
+      );
+
+      // 17) Bardo DECLINED d12 + Bardo ACCEPTED d6 → d6.
+      await colReset();
+      await colSetup({
+        [colUserA]: { classes: [{ classKey: 'bard', level: 3 }], hpCurrent: 10, hpMax: 100 },
+        [colB.id]: { classes: [{ classKey: 'fighter', level: 9 }], hpCurrent: 20, hpMax: 100 },
+        [colC.id]: { classes: [{ classKey: 'bard', level: 17 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+      });
+      const approved17 = await colApprove('c2', { B: 'ACCEPTED', C: 'DECLINED', D: 'DECLINED' });
+      const sessionB17 = await colSessionOf(approved17.requestId, colCharB.id);
+      await colSpend(colTokenB, sessionB17!.id, 10, `op-${suffix}-c46-c2-hd-b`);
+      await colReady(colTokenA, approved17.requestId, true, `op-${suffix}-c46-c2-ready-a`);
+      const done17 = await colReady(colTokenB, approved17.requestId, true, `op-${suffix}-c46-c2-ready-b`);
+      const song17 = done17.data?.completion?.songOfRest;
+      const roll17B = (song17?.rolls ?? []).find((r: any) => r.characterId === colCharB.id);
+      check(
+        '17) Bardo DECLINED d12 + Bardo ACCEPTED d6 → d6 (o recusado não conta)',
+        song17?.die === 6 && song17?.rolls?.length === 1 && roll17B?.die === 6,
+        JSON.stringify(song17),
+      );
+    }
+
+    // --- 46.E Force-complete do mestre ----------------------------------------
+    {
+      await colReset();
+      await colSetup({
+        [colUserA]: { classes: [{ classKey: 'bard', level: 3 }], hpCurrent: 10, hpMax: 100 },
+        [colB.id]: { classes: [{ classKey: 'fighter', level: 9 }], hpCurrent: 20, hpMax: 100 },
+        [colC.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+      });
+      const approvedE = await colApprove('e', { B: 'ACCEPTED', C: 'DECLINED', D: 'ACCEPTED' });
+      const sessionBE = await colSessionOf(approvedE.requestId, colCharB.id);
+      await colSpend(colTokenB, sessionBE!.id, 10, `op-${suffix}-c46-e-hd-b`);
+      // Só A fica pronto; B e D ficam pendentes.
+      await colReady(colTokenA, approvedE.requestId, true, `op-${suffix}-c46-e-ready-a`);
+
+      const songBeforeE = await colSongCount();
+      const forced = await colForceComplete(approvedE.requestId, `op-${suffix}-c46-e-force`);
+      const songE = forced.data?.completion?.songOfRest;
+      const sessionsE = await prisma.shortRestSession.findMany({
+        where: { shortRestRequestId: approvedE.requestId },
+      });
+      check(
+        '29) MASTER force-complete conclui o descanso (COMPLETED)',
+        forced.status === 200 &&
+          forced.data?.status === 'COMPLETED' &&
+          forced.data?.completion?.sessions?.length === 3,
+        JSON.stringify({ status: forced.data?.status, completion: forced.data?.completion }),
+      );
+      check(
+        '30) force-complete ignora o ready faltante de B e D',
+        sessionsE.length === 3 && sessionsE.every((session) => session.status === 'COMPLETED'),
+        JSON.stringify(sessionsE.map((s) => s.status)),
+      );
+      check(
+        '31) force-complete não inclui o DECLINED (C sem sessão, sem rolagem)',
+        (await colSessionOf(approvedE.requestId, colCharC.id)) === null &&
+          !(songE?.rolls ?? []).some((r: any) => r.characterId === colCharC.id),
+      );
+      check(
+        '30b) force-complete aplica a Song of Rest normalmente (B com 1 HD recebe d6)',
+        songE?.die === 6 &&
+          (songE?.rolls ?? []).length === 1 &&
+          (songE?.rolls ?? [])[0]?.characterId === colCharB.id,
+        JSON.stringify(songE),
+      );
+
+      const forcedReplay = await colForceComplete(approvedE.requestId, `op-${suffix}-c46-e-force`);
+      check(
+        '32) force-complete idempotente: replay sem reroll e sem nova cura',
+        forcedReplay.status === 200 &&
+          forcedReplay.data?.replayed === true &&
+          (forcedReplay.data?.completion?.songOfRest?.rolls ?? []).length ===
+            (songE?.rolls ?? []).length &&
+          (forcedReplay.data?.completion?.songOfRest?.rolls ?? []).every(
+            (roll: any, index: number) =>
+              roll.characterId === songE?.rolls?.[index]?.characterId &&
+              roll.value === songE?.rolls?.[index]?.value &&
+              roll.actualHealed === songE?.rolls?.[index]?.actualHealed,
+          ) &&
+          (await colSongCount()) - songBeforeE === 1,
+        JSON.stringify({ replayed: forcedReplay.data?.replayed, rolls: forcedReplay.data?.completion?.songOfRest?.rolls }),
+      );
+      const forcedAgain = await colForceComplete(approvedE.requestId, `op-${suffix}-c46-e-force2`);
+      check(
+        'e) force-complete com outra chave num descanso concluído é rejeitado (409)',
+        forcedAgain.status === 409 && forcedAgain.data?.error === 'SHORT_REST_REQUEST_CLOSED',
+        JSON.stringify(forcedAgain.data),
+      );
+    }
+
+    // --- 46.F Concorrência: só uma conclusão vence --------------------------
+    {
+      // 33/35) Duas marcações "ready" finais simultâneas.
+      await colReset();
+      await colSetup({
+        [colUserA]: { classes: [{ classKey: 'bard', level: 3 }], hpCurrent: 10, hpMax: 100 },
+        [colB.id]: { classes: [{ classKey: 'fighter', level: 9 }], hpCurrent: 20, hpMax: 100 },
+        [colC.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+      });
+      const approvedF1 = await colApprove('f1', { B: 'ACCEPTED', C: 'DECLINED', D: 'DECLINED' });
+      const sessionBF1 = await colSessionOf(approvedF1.requestId, colCharB.id);
+      await colSpend(colTokenB, sessionBF1!.id, 10, `op-${suffix}-c46-f1-hd-b`);
+      await colReady(colTokenA, approvedF1.requestId, true, `op-${suffix}-c46-f1-ready-a`);
+      const songBeforeF1 = await colSongCount();
+      const [f1a, f1b] = await Promise.all([
+        colReady(colTokenB, approvedF1.requestId, true, `op-${suffix}-c46-f1-ready-1`),
+        colReady(colTokenB, approvedF1.requestId, true, `op-${suffix}-c46-f1-ready-2`),
+      ]);
+      const f1Statuses = [f1a.status, f1b.status].sort((a, b) => a - b);
+      const f1Sessions = await prisma.shortRestSession.findMany({
+        where: { shortRestRequestId: approvedF1.requestId },
+      });
+      check(
+        '33/35) último ready concorrente: uma conclusão só (a outra 409), sessões todas COMPLETED',
+        f1Statuses[0] === 200 &&
+          f1Statuses[1] === 409 &&
+          f1Sessions.every((session) => session.status === 'COMPLETED') &&
+          (await colSongCount()) - songBeforeF1 === 1,
+        JSON.stringify({ statuses: f1Statuses, sessions: f1Sessions.map((s) => s.status) }),
+      );
+
+      // 34) Último ready e force-complete simultâneos.
+      await colReset();
+      await colSetup({
+        [colUserA]: { classes: [{ classKey: 'bard', level: 3 }], hpCurrent: 10, hpMax: 100 },
+        [colB.id]: { classes: [{ classKey: 'fighter', level: 9 }], hpCurrent: 20, hpMax: 100 },
+        [colC.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+      });
+      const approvedF2 = await colApprove('f2', { B: 'ACCEPTED', C: 'DECLINED', D: 'DECLINED' });
+      const sessionBF2 = await colSessionOf(approvedF2.requestId, colCharB.id);
+      await colSpend(colTokenB, sessionBF2!.id, 10, `op-${suffix}-c46-f2-hd-b`);
+      await colReady(colTokenA, approvedF2.requestId, true, `op-${suffix}-c46-f2-ready-a`);
+      const songBeforeF2 = await colSongCount();
+      const [f2a, f2b] = await Promise.all([
+        colReady(colTokenB, approvedF2.requestId, true, `op-${suffix}-c46-f2-ready-b`),
+        colForceComplete(approvedF2.requestId, `op-${suffix}-c46-f2-force`),
+      ]);
+      const f2Statuses = [f2a.status, f2b.status].sort((a, b) => a - b);
+      check(
+        '34) último ready + force-complete simultâneos: somente uma conclusão',
+        f2Statuses[0] === 200 &&
+          f2Statuses[1] === 409 &&
+          (await colSongCount()) - songBeforeF2 === 1,
+        JSON.stringify({ statuses: f2Statuses }),
+      );
+    }
+
+    // --- 46.G Atomicidade: falha não deixa cura/recurso/log parciais --------
+    {
+      await colReset();
+      await colSetup({
+        [colUserA]: {
+          classes: [{ classKey: 'bard', level: 3 }],
+          hpCurrent: 10,
+          hpMax: 100,
+          classState: { active: ['keep'], used: { 'second-wind': 1 }, choices: {} },
+        },
+        [colB.id]: { classes: [{ classKey: 'fighter', level: 9 }], hpCurrent: 20, hpMax: 100 },
+        [colC.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+        [colD.id]: { classes: [{ classKey: 'fighter', level: 5 }], hpCurrent: 30, hpMax: 40 },
+      });
+      const approvedG = await colApprove('g', { B: 'ACCEPTED', C: 'DECLINED', D: 'DECLINED' });
+      const sessionAG = await colSessionOf(approvedG.requestId, colCharA.id);
+      const sessionBG = await colSessionOf(approvedG.requestId, colCharB.id);
+      // B gasta 1 HD e esteja pronto; depois quebramos a sessão do B.
+      await colSpend(colTokenA, sessionAG!.id, 8, `op-${suffix}-c46-g-hd-a`);
+      await colSpend(colTokenB, sessionBG!.id, 10, `op-${suffix}-c46-g-hd-b`);
+
+      const beforeFailure = await colSheet(colTokenA);
+      const songBeforeG = await colSongCount();
+      await prisma.shortRestSession.update({
+        where: { id: sessionBG!.id },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+      await colReady(colTokenA, approvedG.requestId, true, `op-${suffix}-c46-g-ready-a`);
+      const failedReady = await colReady(colTokenB, approvedG.requestId, true, `op-${suffix}-c46-g-ready-b`);
+      const afterFailure = await colSheet(colTokenA);
+      const requestAfterFailure = await prisma.shortRestRequest.findUniqueOrThrow({
+        where: { id: approvedG.requestId },
+      });
+      check(
+        '36/37) falha na conclusão não deixa cura nem recursos parciais',
+        failedReady.status === 409 &&
+          requestAfterFailure.status === 'APPROVED' &&
+          afterFailure.hpCurrent === beforeFailure.hpCurrent &&
+          afterFailure.version === beforeFailure.version &&
+          afterFailure.classState?.used?.['second-wind'] === 1,
+        JSON.stringify({
+          status: failedReady.status,
+          request: requestAfterFailure.status,
+          hp: [beforeFailure.hpCurrent, afterFailure.hpCurrent],
+          used: afterFailure.classState?.used,
+        }),
+      );
+      check(
+        '38) falha antes do commit não publica DiceRoll fantasma',
+        (await colSongCount()) - songBeforeG === 0,
+        JSON.stringify({ delta: (await colSongCount()) - songBeforeG }),
+      );
+
+      // Restaura a sessão do B e conclui pelo mestre: agora funciona.
+      await prisma.shortRestSession.update({
+        where: { id: sessionBG!.id },
+        data: { status: 'ACTIVE', cancelledAt: null },
+      });
+      const fixedComplete = await colForceComplete(approvedG.requestId, `op-${suffix}-c46-g-force`);
+      check(
+        '36b) restaurada a consistência, a conclusão coletiva funciona e aplica a Song',
+        fixedComplete.status === 200 &&
+          fixedComplete.data?.status === 'COMPLETED' &&
+          fixedComplete.data?.completion?.songOfRest?.die === 6 &&
+          (fixedComplete.data?.completion?.songOfRest?.rolls ?? []).length === 2 &&
+          (await colSongCount()) - songBeforeG === 2,
+        JSON.stringify({ status: fixedComplete.data?.status, song: fixedComplete.data?.completion?.songOfRest }),
+      );
+    }
+
+    colSocketA.close();
+    colSocketB.close();
+    colSocketC.close();
+    colSocketD.close();
+    colMasterSocket.close();
+
+    // ===46-SCENARIOS===
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -13957,6 +14723,15 @@ async function cleanup(): Promise<void> {
       data: { customRaceId: null },
     });
     await prisma.customRace.deleteMany({ where: { id: { in: createdCustomRaceIds } } });
+  }
+
+  // Devolve o papel dos jogadores reais que o smoke tornou temporariamente
+  // inelegíveis para o descanso coletivo (ver `demoteForeignOnlinePlayers`).
+  if (foreignDemotedUsernames.length > 0) {
+    await prisma.user.updateMany({
+      where: { username: { in: foreignDemotedUsernames } },
+      data: { role: 'PLAYER' },
+    });
   }
 
   // Operações idempotentes da solicitação coletiva de Descanso Curto. A tabela é

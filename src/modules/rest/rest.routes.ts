@@ -3,6 +3,7 @@ import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   createShortRestRequestSchema,
   respondShortRestRequestSchema,
+  setShortRestReadySchema,
   shortRestRequestActionSchema,
   shortRestRequestIdSchema,
 } from './rest.schema.js';
@@ -10,8 +11,10 @@ import {
   cancelShortRestRequest,
   createShortRestRequest,
   forceApproveShortRestRequest,
+  forceCompleteShortRestRequest,
   getOpenShortRestRequest,
   respondToShortRestRequest,
+  setShortRestReady,
   type Actor,
 } from './rest.service.js';
 
@@ -105,6 +108,54 @@ restRouter.post(
     }
 
     res.json(await forceApproveShortRestRequest(actorFrom(req), id.data, parsed.data));
+  },
+);
+
+/**
+ * POST /api/rest/short/:requestId/ready — marca/desmarca "pronto para finalizar".
+ *
+ * Só participante ACCEPTED, com o descanso aprovado e em andamento. Quando o
+ * ÚLTIMO participante fica pronto, o descanso é concluído coletivamente na
+ * mesma chamada (a resposta traz `completion`).
+ */
+restRouter.post('/short/:requestId/ready', authenticate, async (req, res) => {
+  const id = shortRestRequestIdSchema.safeParse(req.params.requestId);
+  const parsed = setShortRestReadySchema.safeParse(req.body ?? {});
+  if (!id.success) {
+    validationError(res, { requestId: id.error.issues.map((issue) => issue.message) });
+    return;
+  }
+  if (!parsed.success) {
+    validationError(res, parsed.error.flatten().fieldErrors);
+    return;
+  }
+
+  res.json(await setShortRestReady(actorFrom(req), id.data, parsed.data));
+});
+
+/**
+ * POST /api/rest/short/:requestId/force-complete — mestre força a conclusão.
+ *
+ * Conclui todas as sessões ACCEPTED mesmo sem os `ready` faltantes, aplicando a
+ * Song of Rest e restaurando os recursos. DECLINED continua fora.
+ */
+restRouter.post(
+  '/short/:requestId/force-complete',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const id = shortRestRequestIdSchema.safeParse(req.params.requestId);
+    const parsed = shortRestRequestActionSchema.safeParse(req.body ?? {});
+    if (!id.success) {
+      validationError(res, { requestId: id.error.issues.map((issue) => issue.message) });
+      return;
+    }
+    if (!parsed.success) {
+      validationError(res, parsed.error.flatten().fieldErrors);
+      return;
+    }
+
+    res.json(await forceCompleteShortRestRequest(actorFrom(req), id.data, parsed.data));
   },
 );
 

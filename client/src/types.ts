@@ -1937,7 +1937,7 @@ export interface ShortRestSessionDto {
 /** --- Descanso Curto coletivo (solicitação da mesa) ------------------------ */
 
 /** Espelha src/modules/rest/short-rest-request.dto.ts. */
-export type ShortRestRequestStatus = 'PENDING' | 'APPROVED' | 'CANCELLED';
+export type ShortRestRequestStatus = 'PENDING' | 'APPROVED' | 'COMPLETED' | 'CANCELLED';
 export type ShortRestResponse = 'PENDING' | 'ACCEPTED' | 'DECLINED';
 
 export interface ShortRestUserRefDto {
@@ -1955,6 +1955,9 @@ export interface ShortRestRequestParticipantDto {
   respondedAt: string | null;
   /** Fechado pelo mestre no force-approve (nunca conta como aceitação). */
   closedByMaster: boolean;
+  /** Marcou "pronto para finalizar" (só participante ACCEPTED). */
+  ready: boolean;
+  readyAt: string | null;
 }
 
 export interface ShortRestRequestDto {
@@ -1964,16 +1967,40 @@ export interface ShortRestRequestDto {
   participants: ShortRestRequestParticipantDto[];
   createdAt: string;
   approvedAt: string | null;
+  /** Quando o descanso coletivo TERMINOU (todas as sessões concluídas). */
+  completedAt: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
   forcedByUserId: string | null;
-  /** Melhor dado de Canção de Descanso entre os ACEITOS (ainda NÃO cura). */
+  /** Melhor dado de Canção de Descanso entre os ACEITOS. */
   songOfRestDie: 6 | 8 | 10 | 12 | null;
+}
+
+/** Uma rolagem individual da Canção de Descanso de um destinatário. */
+export interface ShortRestSongRollDto {
+  characterId: string;
+  die: number;
+  value: number;
+  hpBefore: number;
+  hpAfter: number;
+  actualHealed: number;
+}
+
+/** Resultado da conclusão coletiva. */
+export interface ShortRestCompletionDto {
+  songOfRest: { die: 6 | 8 | 10 | 12 | null; rolls: ShortRestSongRollDto[] };
+  sessions: { id: string; characterId: string; status: 'COMPLETED' }[];
 }
 
 /** Payload do evento `short-rest:request-updated`. */
 export interface ShortRestRequestUpdatedPayload {
   request: ShortRestRequestDto;
+}
+
+/** Payload do evento `short-rest:completed`. */
+export interface ShortRestCompletedPayload {
+  requestId: string;
+  completion: ShortRestCompletionDto;
 }
 
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */

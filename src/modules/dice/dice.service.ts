@@ -375,6 +375,45 @@ export function recordRestHitDieRoll(
 }
 
 /**
+ * Registra no log a rolagem da CANÇÃO DE DESCANSO (Song of Rest) de UM
+ * personagem beneficiado no descanso coletivo.
+ *
+ * É chamada SÓ DEPOIS que a transação que aplicou a cura foi commitada (ver
+ * `collective-completion.ts`): assim o log nunca mostra uma Song of Rest que
+ * não chegou a acontecer. `kind: 'rest'`, sem modificador — a Song é somente o
+ * dado da Canção (o Bardo não soma atributo nenhum). O dado é rolado pelo
+ * servidor no momento da conclusão.
+ */
+export function recordRestSongOfRestRoll(
+  actor: { userId: string },
+  actorName: string,
+  result: { die: number; value: number },
+): DiceRollDto {
+  const roll: DiceRollDto = {
+    id: randomUUID(),
+    actorUserId: actor.userId,
+    clientId: null,
+    actorName,
+    kind: 'rest',
+    label: 'Descanso Curto — Canção de Descanso',
+    dice: [{ sides: result.die, value: result.value }],
+    bonus: 0,
+    total: result.value,
+    advantage: false,
+    disadvantage: false,
+    isPrivate: false,
+    crit: false,
+    lucky: false,
+    at: new Date().toISOString(),
+  };
+
+  history = [roll, ...history].slice(0, HISTORY_LIMIT);
+  publish(roll, actor);
+
+  return roll;
+}
+
+/**
  * Registra no log a cura de uma poção JÁ rolada e devolve a rolagem.
  *
  * O resultado (dados e total) é calculado antes, por `rollHealingDice` do

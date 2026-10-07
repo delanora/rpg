@@ -31,7 +31,18 @@ export const respondShortRestRequestSchema = z.object({
 
 export type RespondShortRestRequestInput = z.infer<typeof respondShortRestRequestSchema>;
 
-/** Ação do mestre sobre a solicitação (forçar aprovação ou cancelar). */
+/**
+ * Marca/desmarca "pronto para finalizar" (só participante ACCEPTED, com o
+ * descanso coletivo já aprovado e ainda em andamento).
+ */
+export const setShortRestReadySchema = z.object({
+  ready: z.boolean(),
+  operationId: operationIdSchema,
+});
+
+export type SetReadyInput = z.infer<typeof setShortRestReadySchema>;
+
+/** Ação do mestre sobre a solicitação (forçar aprovação/cancelar/concluir). */
 export const shortRestRequestActionSchema = z.object({
   operationId: operationIdSchema,
 });
