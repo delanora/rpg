@@ -1934,6 +1934,48 @@ export interface ShortRestSessionDto {
   hitDiceSpent: number;
 }
 
+/** --- Descanso Curto coletivo (solicitação da mesa) ------------------------ */
+
+/** Espelha src/modules/rest/short-rest-request.dto.ts. */
+export type ShortRestRequestStatus = 'PENDING' | 'APPROVED' | 'CANCELLED';
+export type ShortRestResponse = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+
+export interface ShortRestUserRefDto {
+  userId: string;
+  username: string;
+  displayName: string;
+}
+
+export interface ShortRestRequestParticipantDto {
+  userId: string;
+  username: string;
+  displayName: string;
+  characterId: string;
+  response: ShortRestResponse;
+  respondedAt: string | null;
+  /** Fechado pelo mestre no force-approve (nunca conta como aceitação). */
+  closedByMaster: boolean;
+}
+
+export interface ShortRestRequestDto {
+  id: string;
+  status: ShortRestRequestStatus;
+  requestedBy: ShortRestUserRefDto;
+  participants: ShortRestRequestParticipantDto[];
+  createdAt: string;
+  approvedAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  forcedByUserId: string | null;
+  /** Melhor dado de Canção de Descanso entre os ACEITOS (ainda NÃO cura). */
+  songOfRestDie: 6 | 8 | 10 | 12 | null;
+}
+
+/** Payload do evento `short-rest:request-updated`. */
+export interface ShortRestRequestUpdatedPayload {
+  request: ShortRestRequestDto;
+}
+
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
 
 export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest';

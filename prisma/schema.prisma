@@ -60,6 +60,9 @@ model User {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   character    Character?
+  shortRestRequests       ShortRestRequest[]              @relation("ShortRestRequester")
+  forcedShortRests        ShortRestRequest[]              @relation("ShortRestForcer")
+  shortRestParticipations ShortRestRequestParticipant[]
 
   @@index([role])
   @@map("users")
@@ -221,6 +224,7 @@ model Character {
   combatants Combatant[]
   operations CharacterOperation[]
   shortRestSessions ShortRestSession[]
+  shortRestParticipations ShortRestRequestParticipant[]
 
   @@map("characters")
 }
@@ -298,6 +302,90 @@ model ShortRestSession {
   @@index([status])
   @@index([characterId, status])
   @@map("short_rest_sessions")
+}
+
+/// Estados possíveis de uma SOLICITAÇÃO coletiva de Descanso Curto.
+enum ShortRestRequestStatus {
+  PENDING
+  APPROVED
+  CANCELLED
+}
+
+/// Resposta de um participante à solicitação coletiva.
+enum ShortRestResponse {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+///
+/// SOLICITAÇÃO coletiva de Descanso Curto (consenso da mesa).
+///
+/// Fluxo: um PLAYER solicita → PENDING; cada convidado aceita ou recusa; quando
+/// não há mais PENDING a solicitação é resolvida — APPROVED (criando uma
+/// ShortRestSession ACTIVE SÓ para os ACCEPTED) ou CANCELLED (ninguém aceitou).
+/// O mestre não participa: pode cancelar ou forçar a aprovação.
+///
+/// A mesa é única e global no projeto, então só pode existir UMA solicitação
+/// PENDING por vez (índice único parcial no banco).
+model ShortRestRequest {
+  id                String                 @id @default(cuid())
+  status            ShortRestRequestStatus @default(PENDING)
+  requestedByUserId String
+  requestedBy       User                   @relation("ShortRestRequester", fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  createdAt         DateTime               @default(now())
+  approvedAt        DateTime?
+  cancelledAt       DateTime?
+  /// Motivo do cancelamento quando NÃO veio de aprovação (ex.: NO_PARTICIPANTS).
+  cancelReason      String?
+  /// Mestre que forçou a aprovação (null no fluxo normal).
+  forcedByUserId    String?
+  forcedBy          User?                  @relation("ShortRestForcer", fields: [forcedByUserId], references: [id], onDelete: SetNull)
+  participants      ShortRestRequestParticipant[]
+
+  @@index([status])
+  @@map("short_rest_requests")
+}
+
+///
+/// Participante (com resposta) de uma solicitação coletiva. A lista é CONGELADA
+/// na criação: quem desconecta depois continua aqui com a resposta atual.
+model ShortRestRequestParticipant {
+  id             String            @id @default(cuid())
+  requestId      String
+  request        ShortRestRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterId    String
+  character      Character         @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  response       ShortRestResponse @default(PENDING)
+  respondedAt    DateTime?
+  ///
+  /// Fechado pelo MESTRE no force-approve: turnou de PENDING para DECLINED sem
+  /// ser uma recusa do jogador. NUNCA marca aceitação.
+  closedByMaster Boolean           @default(false)
+
+  @@unique([requestId, userId])
+  @@index([requestId])
+  @@map("short_rest_request_participants")
+}
+
+///
+/// Operação idempotente do fluxo coletivo de Descanso Curto.
+///
+/// Diferente de `CharacterOperation` (por PERSONAGEM), a solicitação é
+/// global/multi-personagem — por isso tem tabela própria, com a mesma
+/// semântica: `operationId` único + tipo + assinatura canônica do payload,
+/// guardando o resultado original para um reenvio devolver igual.
+model ShortRestOperation {
+  id                 String   @id @default(cuid())
+  operationId        String   @unique
+  type               String
+  requestFingerprint String
+  result             Json     @default("{}")
+  createdAt          DateTime @default(now())
+
+  @@map("short_rest_operations")
 }
 
 /// Raça PERSONALIZADA criada pelo mestre (Prompt 2.10).

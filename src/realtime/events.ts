@@ -8,6 +8,7 @@ import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
 import type { MusicStateDto, MusicTrackDto } from '../modules/music/music.dto.js';
 import type { RegionDto } from '../modules/regions/regions.dto.js';
+import type { ShortRestRequestDto } from '../modules/rest/short-rest-request.dto.js';
 
 /**
  * Contrato central de eventos do Socket.io.
@@ -172,6 +173,12 @@ export const ServerEvents = {
   COMBAT_TURN: 'combat:turn',
   /** Combate encerrado pelo mestre. */
   COMBAT_ENDED: 'combat:ended',
+  /**
+   * A solicitação COLETIVA de Descanso Curto mudou (criada, respondida,
+   * aprovada ou cancelada). Vai para toda a mesa — o payload é enxuto (estado
+   * da solicitação e respostas), nunca fichas completas.
+   */
+  SHORT_REST_REQUEST_UPDATED: 'short-rest:request-updated',
   /** Um dado foi rolado (usado para o efeito sonoro e o log). */
   DICE_ROLLED: 'dice:rolled',
   /**
@@ -459,6 +466,17 @@ export interface AttackResolvedPayload {
   /** Verdadeiro quando CA/vida do alvo existem mas ficam ocultas para quem vê. */
   targetStatsHidden: boolean;
   at: string;
+}
+
+/**
+ * Solicitação coletiva de Descanso Curto atualizada.
+ *
+ * O payload traz o DTO enxuto da solicitação (status, participantes e suas
+ * respostas) — nenhuma ficha completa. É a notificação de que a coleta começou,
+ * de que alguém respondeu ou de que a solicitação foi resolvida.
+ */
+export interface ShortRestRequestUpdatedPayload {
+  request: ShortRestRequestDto;
 }
 
 export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];
