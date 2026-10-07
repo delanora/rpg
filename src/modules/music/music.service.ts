@@ -73,6 +73,7 @@ export async function getState(): Promise<MusicStateDto> {
     playing: state.playing && track !== null,
     position: Math.max(0, livePosition(state)),
     repeat: state.repeat,
+    volume: state.volume,
     at: new Date().toISOString(),
   };
 }
@@ -158,7 +159,7 @@ export function initMusic(): void {
 /**
  * Aplica um patch ao estado, persiste, publica para a mesa e reajusta os
  * temporizadores. É o ÚNICO caminho de escrita — toda ação do mestre passa por
- * aqui, então nunca há dois estados divergentes.
+ * aqui, então nunca há dois estados divergentes (volume incluso).
  */
 export async function applyPatch(patch: MusicPatchInput): Promise<MusicStateDto> {
   const current = await readState();
@@ -169,6 +170,9 @@ export async function applyPatch(patch: MusicPatchInput): Promise<MusicStateDto>
   const trackId = patch.trackId !== undefined ? patch.trackId : current.trackId;
   let playing = patch.playing !== undefined ? patch.playing : current.playing;
   const repeat = patch.repeat !== undefined ? patch.repeat : current.repeat;
+  // O volume é da MESA: mora no mesmo estado para o mestre não precisar
+  // reenviá-lo a cada faixa e para quem entra tarde já adotar o vigente.
+  const volume = patch.volume !== undefined ? patch.volume : current.volume;
 
   if (patch.trackId !== undefined && patch.trackId !== current.trackId) {
     // Troca de faixa: começa do zero (salvo quando o patch pede uma posição).
@@ -185,7 +189,7 @@ export async function applyPatch(patch: MusicPatchInput): Promise<MusicStateDto>
 
   await prisma.musicState.update({
     where: { id: STATE_ID },
-    data: { trackId, playing, position, repeat },
+    data: { trackId, playing, position, repeat, volume },
   });
 
   const dto = await getState();

@@ -16,6 +16,12 @@ const RESYNC_MS = 2000;
 /** Desvio tolerado entre o áudio local e a posição esperada (segundos). */
 const DRIFT_TOLERANCE = 0.9;
 
+/** Volume sempre dentro de 0..1 (o valor vem do servidor). */
+function clampVolume(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(1, Math.max(0, value));
+}
+
 export interface MusicController {
   state: MusicStateDto | null;
   tracks: MusicTrackDto[];
@@ -23,6 +29,10 @@ export interface MusicController {
   position: number;
   /** Duração da faixa, em segundos. */
   duration: number;
+  /** Volume da mesa (0 a 1) — o mestre define e todos os clientes seguem. */
+  volume: number;
+  /** Atalho de leitura para o volume em 0. */
+  muted: boolean;
   busy: boolean;
   error: string | null;
   clearError: () => void;
@@ -32,6 +42,8 @@ export interface MusicController {
   toggleRepeat: () => void;
   select: (trackId: string) => void;
   seek: (seconds: number) => void;
+  setVolume: (value: number) => void;
+  toggleMute: () => void;
   upload: (file: File) => Promise<void>;
   remove: (trackId: string) => Promise<void>;
   /** Handlers para o `useRealtime` da página. */
@@ -68,6 +80,8 @@ export function useMusic({ isMaster }: { isMaster: boolean }): MusicController {
   const anchorRef = useRef({ position: 0, at: Date.now(), playing: false });
   /** URL da faixa carregada no `<audio>`. */
   const loadedUrlRef = useRef<string | null>(null);
+  /** Último volume diferente de zero — é para ele que o mudo volta. */
+  const lastVolumeRef = useRef(1);
   stateRef.current = state;
 
   const audio = useCallback((): HTMLAudioElement => {
@@ -90,6 +104,11 @@ export function useMusic({ isMaster }: { isMaster: boolean }): MusicController {
 
       const element = audio();
       const url = next.track?.url ?? null;
+
+      // O volume é da MESA e vem no mesmo estado: aplicamos sempre, então quem
+      // entra no meio da música já ouve no volume que o mestre definiu.
+      element.volume = clampVolume(next.volume);
+      if (next.volume > 0) lastVolumeRef.current = clampVolume(next.volume);
 
       if (url !== loadedUrlRef.current) {
         // Faixa nova (ou nenhuma): recarrega e posiciona no ponto certo.
@@ -247,6 +266,24 @@ export function useMusic({ isMaster }: { isMaster: boolean }): MusicController {
     [run],
   );
 
+  const setVolume = useCallback(
+    (value: number): void => {
+      void run(() => setMusicState({ volume: clampVolume(value) }));
+    },
+    [run],
+  );
+
+  const toggleMute = useCallback((): void => {
+    const current = stateRef.current;
+    if (!current) return;
+    // Mudo é só o volume da mesa em 0: como o volume sincroniza, TODOS
+    // silenciam — e o valor anterior fica guardado para desmutar no mesmo
+    // ponto.
+    void run(() =>
+      setMusicState({ volume: current.volume > 0 ? 0 : lastVolumeRef.current }),
+    );
+  }, [run]);
+
   const upload = useCallback(async (file: File): Promise<void> => {
     setBusy(true);
     try {
@@ -282,11 +319,15 @@ export function useMusic({ isMaster }: { isMaster: boolean }): MusicController {
     [applyState],
   );
 
+  const volume = clampVolume(state?.volume ?? 1);
+
   return {
     state,
     tracks,
     position,
     duration,
+    volume,
+    muted: volume === 0,
     busy,
     error,
     clearError: () => setError(null),
@@ -296,6 +337,8 @@ export function useMusic({ isMaster }: { isMaster: boolean }): MusicController {
     toggleRepeat,
     select,
     seek,
+    setVolume,
+    toggleMute,
     upload,
     remove,
     handlers,

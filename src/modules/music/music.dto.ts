@@ -25,5 +25,10 @@ export interface MusicStateDto {
   position: number;
   /** Repete a faixa atual em loop em vez de passar para a próxima. */
   repeat: boolean;
+  /**
+   * Volume da mesa (0 a 1), definido pelo mestre e seguido por todos: quem
+   * entra no meio da música adota o volume vigente em vez do seu padrão.
+   */
+  volume: number;
   at: string;
 }

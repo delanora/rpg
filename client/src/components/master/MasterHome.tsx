@@ -2,7 +2,15 @@ import type { ReactNode } from 'react';
 import { Icon, type IconName } from '../Icon';
 
 /** Abas do painel do mestre — a home concentra todas elas. */
-export type MasterTab = 'home' | 'sheets' | 'creatures' | 'npcs' | 'regions' | 'items' | 'config';
+export type MasterTab =
+  | 'home'
+  | 'sheets'
+  | 'creatures'
+  | 'npcs'
+  | 'regions'
+  | 'items'
+  | 'config'
+  | 'soundpad';
 
 interface Shortcut {
   tab: MasterTab;
@@ -22,7 +30,7 @@ interface MasterHomeProps {
   regions: number;
   localities: number;
   items: number;
-  /** Quantas faixas a mesa tem — vai no contador do card "Músicas". */
+  /** Quantas faixas a mesa tem — vai no contador do card "Soundpad". */
   musicTrackCount: number;
   levelUpRelease: number;
   startingLevel: number;
@@ -31,18 +39,11 @@ interface MasterHomeProps {
   onOpenTab: (tab: MasterTab) => void;
   onStartCombat: () => void;
   onReleaseLevelUp: () => void;
-  /** Abre o painel de músicas (é o clique do card "Músicas"). */
-  onOpenMusic: () => void;
   /**
    * Busca global, renderizada ACIMA do salão. Vem como slot para a home seguir
    * sem conhecer os dados que a busca consulta.
    */
   search?: ReactNode;
-  /**
-   * Painel de músicas, renderizado como sobreposição. Também é um slot: quem
-   * decide abrir/fechar é o painel do mestre, dono do estado da música.
-   */
-  music?: ReactNode;
 }
 
 /**
@@ -68,9 +69,7 @@ export function MasterHome({
   onOpenTab,
   onStartCombat,
   onReleaseLevelUp,
-  onOpenMusic,
   search,
-  music,
 }: MasterHomeProps) {
   const shortcuts: Shortcut[] = [
     {
@@ -120,6 +119,14 @@ export function MasterHome({
       icon: 'gear',
       count: 0,
       unit: '',
+    },
+    {
+      tab: 'soundpad',
+      label: 'Soundpad',
+      hint: 'Música ambiente para a mesa: enviar faixas, escolher o que toca e o volume.',
+      icon: 'music',
+      count: musicTrackCount,
+      unit: 'faixa(s)',
     },
   ];
 
@@ -206,31 +213,6 @@ export function MasterHome({
               </button>
             </li>
           ))}
-
-          {/* Música ambiente não é uma aba: o card abre o painel que envia,
-              busca e escolhe as faixas — por isso ele fica junto dos demais,
-              com o mesmo desenho, mas no lugar do destino. */}
-          <li>
-            <button
-              type="button"
-              className="home-card"
-              onClick={onOpenMusic}
-              title="Música ambiente da mesa"
-            >
-              <span className="home-card-icon">
-                <Icon name="music" size={22} />
-              </span>
-              <span className="home-card-body">
-                <span className="home-card-name">Músicas</span>
-                <span className="home-card-hint">
-                  Música ambiente para a mesa: enviar faixas e escolher o que toca.
-                </span>
-              </span>
-              <span className="home-card-count" title={`${musicTrackCount} faixa(s)`}>
-                {musicTrackCount}
-              </span>
-            </button>
-          </li>
         </ul>
       </section>
 
@@ -257,9 +239,6 @@ export function MasterHome({
           </div>
         </dl>
       </section>
-
-      {/* Sobreposição: fica por último para cobrir o salão quando aberta. */}
-      {music}
     </div>
   );
 }

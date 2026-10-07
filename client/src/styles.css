@@ -74,9 +74,12 @@
   --card-pad-y: 0.55rem; /* respiro vertical de cards e linhas */
   --card-pad-x: 0.75rem; /* respiro horizontal de cards e linhas */
   --control-h: 2.1rem; /* altura padrão dos controles */
-  /* Altura da barra de música fixa: o rodapé reserva esse espaço e os botões
+  /* Altura da barra de música: o rodapé reserva esse espaço e os botões
      flutuantes sobem para cima dela (ver .has-music-bar). */
-  --music-bar-h: 4.25rem;
+  --music-bar-h: 2.6rem;
+  /* Zona sensível do rodapé que traz a barra de volta: de propósito é bem mais
+     alta que a linha visível — acertar um fio de 2px seria um alvo ruim. */
+  --music-dock-h: 1.6rem;
 
   /* Escala de espaçamento — múltiplos de 8px para um ritmo visual consistente. */
   --space-1: 0.5rem; /* 8px */
@@ -12056,40 +12059,75 @@ input[type='checkbox']:focus-visible,
 }
 
 /* ==========================================================================
-   Música ambiente — barra fixa do mestre, playlist e card do salão
+   Música ambiente — soundpad, barra do rodapé e playlist
    ==========================================================================
 
-   A barra fica no rodapé em qualquer aba do mestre e não é só um controle: é
-   a leitura do estado que o SERVIDOR mantém. Os jogadores não têm nada disso —
+   A barra acompanha o mestre em qualquer aba e não é só um controle: é a
+   leitura do estado que o SERVIDOR mantém. Os jogadores não têm nada disso —
    eles só escutam o mesmo estado. */
 
-/* --- Barra fixa de reprodução -------------------------------------------- */
+/* --- Dock: o rodapé que revela a barra no hover -------------------------- */
 
-.music-bar {
+/*
+ * O dock é a área sensível do rodapé (existe sempre, é quem recebe o mouse) e
+ * a barra sobe quando o ponteiro entra nele — como a barra de tarefas no modo
+ * "ocultar automaticamente". O foco pelo teclado também traz a barra de volta,
+ * senão os controles ficariam inalcançáveis.
+ */
+.music-dock {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 58;
+  height: var(--music-dock-h);
+  display: flex;
+  align-items: flex-end;
+}
+
+/* A pista de que existe um player ali: uma linha dourada na borda. */
+.music-dock-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* --- Barra de reprodução ------------------------------------------------- */
+
+.music-bar {
+  width: 100%;
   height: var(--music-bar-h);
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0 0.9rem;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
   border-top: 1px solid var(--gold-deep);
   background: linear-gradient(180deg, var(--leather-2), var(--leather-deep));
   box-shadow: 0 -12px 26px -16px rgba(0, 0, 0, 0.9);
+  /* Escondida: sai de cena por baixo, deixando só a linha do dock. */
+  transform: translateY(100%);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.music-dock:hover .music-bar,
+.music-dock:focus-within .music-bar {
+  transform: translateY(0);
 }
 
 .music-bar-now {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  flex: 0 1 16rem;
+  gap: 0.35rem;
+  flex: 0 1 13rem;
   min-width: 0;
   color: var(--gold-bright);
   font-family: var(--font-display);
-  font-size: 0.88rem;
+  font-size: 0.78rem;
 }
 
 .music-bar-title {
@@ -12101,14 +12139,15 @@ input[type='checkbox']:focus-visible,
 .music-bar-time {
   flex: 0 0 auto;
   font-family: var(--font-display);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   color: #cdb892;
 }
 
 .music-bar-progress {
   flex: 1 1 auto;
-  min-width: 4rem;
+  min-width: 3rem;
+  height: 0.9rem;
   accent-color: var(--gold);
   cursor: pointer;
 }
@@ -12121,7 +12160,7 @@ input[type='checkbox']:focus-visible,
 .music-bar-controls {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.25rem;
 }
 
 /* Os botões da barra (e o da lista) seguem a mesma placa de couro dos FABs. */
@@ -12131,8 +12170,8 @@ input[type='checkbox']:focus-visible,
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 2rem;
-  height: 2rem;
+  width: 1.6rem;
+  height: 1.6rem;
   padding: 0;
   border: 1px solid var(--gold-deep);
   border-radius: var(--radius);
@@ -12163,8 +12202,25 @@ input[type='checkbox']:focus-visible,
 }
 
 .music-bar-controls .music-bar-play {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 1.95rem;
+  height: 1.95rem;
+}
+
+/* Volume da mesa: botão de mudo + fader compacto, no mesmo tom do repeat. */
+.music-bar-volume {
+  gap: 0.35rem;
+}
+
+.music-bar-volume-range {
+  width: 4.5rem;
+  height: 0.9rem;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.music-bar-controls .music-bar-mute.active {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .music-bar-list.active,
@@ -12177,7 +12233,7 @@ input[type='checkbox']:focus-visible,
 /* Aviso de erro do mestre, discreto e clicável (fecha). */
 .music-bar-error {
   flex: 0 1 auto;
-  max-width: 18rem;
+  max-width: 14rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12346,18 +12402,7 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
-/* --- Painel de músicas do salão (abre pelo card) ------------------------ */
-
-.music-modal {
-  max-width: 42rem;
-}
-
-/* A busca fica fixa no topo: só a lista rola, para o modal não esticar. */
-.music-modal .music-tracks {
-  max-height: min(50vh, 24rem);
-  overflow-y: auto;
-  padding-right: 0.15rem;
-}
+/* --- Soundpad (a aba): envio das faixas e a lista ----------------------- */
 
 .music-upload-toolbar {
   display: flex;
@@ -12380,7 +12425,7 @@ input[type='checkbox']:focus-visible,
 /* --- Nada pode ficar escondido atrás da barra ---------------------------- */
 
 .app-shell.has-music-bar .app-main {
-  padding-bottom: calc(3rem + var(--music-bar-h));
+  padding-bottom: calc(1rem + var(--music-bar-h));
 }
 
 /* Botões flutuantes do mestre: sobem juntos, mantendo o passo entre eles. */
@@ -12409,13 +12454,28 @@ input[type='checkbox']:focus-visible,
   bottom: var(--music-bar-h);
 }
 
-/* Telas estreitas: o título da faixa sai de cena e sobram os controles. */
+/* Telas estreitas: o título da faixa e o fader saem de cena, sobram os controles. */
 @media (max-width: 720px) {
   .music-bar-now {
     flex: 0 1 auto;
   }
 
-  .music-bar-title {
+  .music-bar-title,
+  .music-bar-volume-range {
     display: none;
+  }
+}
+
+/*
+ * Sem mouse (toque) não existe hover: a barra ficaria impossível de abrir, então
+ * ela fica à mostra e o dock passa a ocupar a altura dela.
+ */
+@media (hover: none) {
+  .music-dock {
+    height: var(--music-bar-h);
+  }
+
+  .music-bar {
+    transform: none;
   }
 }

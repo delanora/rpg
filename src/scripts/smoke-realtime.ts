@@ -12167,6 +12167,49 @@ async function main(): Promise<void> {
       JSON.stringify(repeatOn.data?.state),
     );
 
+    // Volume da MESA: mora no mesmo estado, então chega junto com a música.
+    const volumeEvent = waitForMusic(
+      musicPlayerSocket,
+      (state) => Math.abs((state?.volume ?? -1) - 0.35) < 0.001,
+    );
+    const volumeSet = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { volume: 0.35 },
+    });
+    check(
+      'o mestre ajusta o volume da mesa (200) e ele volta no estado',
+      volumeSet.status === 200 && Math.abs((volumeSet.data?.state?.volume ?? -1) - 0.35) < 0.001,
+      JSON.stringify(volumeSet.data?.state),
+    );
+    check(
+      'o JOGADOR recebe o volume novo pelo music:state (ouve no volume do mestre)',
+      (await volumeEvent.catch(() => null)) !== null,
+      'sem evento de volume',
+    );
+
+    const badVolume = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { volume: 1.5 },
+    });
+    check(
+      'volume fora de 0..1 é recusado (400)',
+      badVolume.status === 400,
+      `status ${badVolume.status}`,
+    );
+
+    const muted = await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { volume: 0 },
+    });
+    check(
+      'o mestre silencia a mesa (volume 0)',
+      muted.status === 200 && muted.data?.state?.volume === 0,
+      JSON.stringify(muted.data?.state),
+    );
+
     const paused = await api('/api/music/state', {
       method: 'POST',
       token: masterToken,
@@ -12253,6 +12296,13 @@ async function main(): Promise<void> {
       removedAgain.status === 404,
       `status ${removedAgain.status}`,
     );
+
+    // Devolve o volume da mesa ao padrão para não deixar a mesa muda.
+    await api('/api/music/state', {
+      method: 'POST',
+      token: masterToken,
+      body: { volume: 1 },
+    });
 
     musicMasterSocket.close();
     musicPlayerSocket.close();
