@@ -22,6 +22,8 @@ import type {
   CombatUpdatedPayload,
   DiceRolledPayload,
   GameConfigPayload,
+  MusicStatePayload,
+  MusicTracksPayload,
   PresentationClosedPayload,
   PresentationShownPayload,
   PresencePayload,
@@ -54,6 +56,8 @@ export interface ServerToClientEvents {
   'presentation:shown': (payload: PresentationShownPayload) => void;
   'presentation:closed': (payload: PresentationClosedPayload) => void;
   'game:config': (payload: GameConfigPayload) => void;
+  'music:state': (payload: MusicStatePayload) => void;
+  'music:tracks': (payload: MusicTracksPayload) => void;
   'combat:started': (payload: CombatStartedPayload) => void;
   'combat:updated': (payload: CombatUpdatedPayload) => void;
   'combat:turn': (payload: CombatTurnPayload) => void;

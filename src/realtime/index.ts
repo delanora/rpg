@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { corsOrigins } from '../config/env.js';
 import { clearActiveRollFrom, getActiveRoll } from '../modules/dice/dice.service.js';
+import { getState as getMusicState } from '../modules/music/music.service.js';
 import { getCurrentPresentation } from '../modules/presentation/presentation.service.js';
 import type { AppServer, AppSocket } from '../types/socket.js';
 import { socketAuth } from './auth.js';
@@ -64,6 +65,12 @@ export function createRealtimeServer(httpServer: HttpServer): AppServer {
     if (presentation) {
       socket.emit(ServerEvents.PRESENTATION_SHOWN, { presentation });
     }
+
+    // Quem entra no meio de uma música já recebe o estado da reprodução, então
+    // começa a tocar na faixa e no ponto certos — sem depender de ninguém.
+    void getMusicState()
+      .then((state) => socket.emit(ServerEvents.MUSIC_STATE, { state }))
+      .catch(() => undefined);
 
     // Idem para a janela de dados: quem chega durante uma rolagem já recebe a
     // faixa de "está rolando" no topo do tabuleiro.

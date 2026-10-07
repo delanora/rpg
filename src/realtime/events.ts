@@ -6,6 +6,7 @@ import type { DiceRollDto, DiceRollKind, RollBoardDto } from '../modules/dice/di
 import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
+import type { MusicStateDto, MusicTrackDto } from '../modules/music/music.dto.js';
 import type { RegionDto } from '../modules/regions/regions.dto.js';
 
 /**
@@ -152,6 +153,16 @@ export const ServerEvents = {
   /** O mestre liberou um Level Up (ou outra config da mesa mudou). */
   GAME_CONFIG: 'game:config',
 
+  // Música ambiente (entrega para toda a mesa: todos escutam a mesma faixa)
+  /**
+   * Estado da reprodução mudou (tocar, pausar, trocar de faixa, repetir).
+   * O servidor é a fonte de verdade: este evento é o que mantém mestre e
+   * jogadores no MESMO ponto da mesma música.
+   */
+  MUSIC_STATE: 'music:state',
+  /** Catálogo de faixas mudou (upload/remoção). Entrega só aos mestres. */
+  MUSIC_TRACKS: 'music:tracks',
+
   // Combate (entrega para toda a mesa: jogadores e mestre participam)
   /** Combate iniciado — também é o gatilho do pedido de iniciativa. */
   COMBAT_STARTED: 'combat:started',
@@ -262,6 +273,16 @@ export interface PresentationClosedPayload {
 /** Configuração da mesa alterada (Level Up liberado, nível inicial...). */
 export interface GameConfigPayload {
   config: GameConfigDto;
+}
+
+/** Estado da reprodução da música ambiente — vai para a mesa inteira. */
+export interface MusicStatePayload {
+  state: MusicStateDto;
+}
+
+/** Catálogo de faixas (só a interface do mestre consome). */
+export interface MusicTracksPayload {
+  tracks: MusicTrackDto[];
 }
 
 /** --- Combate ----------------------------------------------------------------- */

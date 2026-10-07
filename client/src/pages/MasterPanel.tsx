@@ -19,6 +19,9 @@ import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../com
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
+import { MusicCard } from '../music/MusicCard';
+import { MusicPlayerBar } from '../music/MusicPlayerBar';
+import { useMusic } from '../music/useMusic';
 import { fetchGameConfig, releaseLevelUp, setExtraCoins, setStartingLevel } from '../gameApi';
 import { closePresentation } from '../presentationApi';
 import type {
@@ -75,9 +78,13 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Janela de dados: rolagem livre (pública/privada), avisos e log da sessão.
   const dice = useDiceRoller(user);
 
+  // Música ambiente: o mestre comanda e todos escutam a mesma faixa.
+  const music = useMusic({ isMaster: user.role === 'MASTER' });
+
   const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
+    ...music.handlers,
 
     // Fichas dos jogadores chegam ao vivo — é o requisito central do painel.
     onSheetUpdated: (payload) => {
@@ -588,7 +595,18 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const npcs = creatures.filter((creature) => creature.kind === 'NPC');
 
   return (
-    <div className={combat ? 'app-shell theme-master combat-active' : 'app-shell theme-master'}>
+    <div
+      className={[
+        'app-shell',
+        'theme-master',
+        combat ? 'combat-active' : '',
+        // A barra de música é fixa no rodapé: a classe avisa o CSS para subir
+        // os botões flutuantes e nada ficar escondido atrás dela.
+        'has-music-bar',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <PresentationOverlay
         presentation={presentation}
         isMaster={user.role === 'MASTER'}
@@ -718,6 +736,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onOpenTab={setTab}
             onStartCombat={() => setShowStartDialog(true)}
             onReleaseLevelUp={() => void releaseLevelUpForTable()}
+            music={<MusicCard music={music} />}
             search={
               <MasterSearch
                 characters={characters}
@@ -793,6 +812,11 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           onStart={handleStartCombat}
         />
       ) : null}
+
+      {/* Barra de música: fixa no rodapé, disponível em qualquer aba do
+          mestre (inclusive em combate). Os jogadores não têm interface —
+          eles só escutam, pelo mesmo estado sincronizado. */}
+      <MusicPlayerBar music={music} />
 
       {/* Botão "Dados" sempre disponível, inclusive em combate. */}
       <DiceDock roller={dice} />

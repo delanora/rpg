@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { env } from './config/env.js';
 import { prisma } from './config/prisma.js';
 import { createApp } from './http/app.js';
+import { initMusic } from './modules/music/music.service.js';
 import { createRealtimeServer } from './realtime/index.js';
 
 async function bootstrap(): Promise<void> {
@@ -13,6 +14,10 @@ async function bootstrap(): Promise<void> {
   await new Promise<void>((resolve) => {
     httpServer.listen(env.PORT, resolve);
   });
+
+  // Música ambiente: o estado da reprodução é persistido, então retomamos o
+  // agendamento do fim da faixa (se o fim já passou, a mesa recebe a próxima).
+  initMusic();
 
   console.log(`🐉 Codex do Aventureiro — ${env.NODE_ENV}`);
   console.log(`   HTTP + WebSocket em http://localhost:${env.PORT}`);

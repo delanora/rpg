@@ -56,6 +56,11 @@ export function createApp(): Express {
     }),
   );
 
+  // O upload de música manda o ARQUIVO inteiro como data URL no JSON e é bem
+  // maior que o resto. Este parser dedicado, montado ANTES do global, dá a
+  // folga só a esta rota: com o corpo já lido, o parser global a ignora.
+  app.use('/api/music/tracks', express.json({ limit: '40mb' }));
+
   // As fichas trafegam por eventos e são pequenas; o limite maior existe
   // apenas para o upload de imagens de localidade (data URL em JSON).
   app.use(express.json({ limit: '8mb' }));
