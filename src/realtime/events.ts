@@ -12,6 +12,7 @@ import type {
   ShortRestCompletionDto,
   ShortRestRequestDto,
 } from '../modules/rest/short-rest-request.dto.js';
+import type { LongRestRequestDto } from '../modules/rest/long-rest-request.dto.js';
 
 /**
  * Contrato central de eventos do Socket.io.
@@ -188,6 +189,13 @@ export const ServerEvents = {
    * sessões) — as fichas seguem por `sheet:updated`, como sempre.
    */
   SHORT_REST_COMPLETED: 'short-rest:completed',
+  /**
+   * A solicitação COLETIVA de Descanso Longo mudou (criada, respondida,
+   * aprovada ou cancelada). Vai para toda a mesa — o payload é enxuto (estado
+   * da solicitação e respostas), nunca fichas completas. Ainda NENHUM benefício
+   * de Long Rest é aplicado.
+   */
+  LONG_REST_REQUEST_UPDATED: 'long-rest:request-updated',
   /** Um dado foi rolado (usado para o efeito sonoro e o log). */
   DICE_ROLLED: 'dice:rolled',
   /**
@@ -497,6 +505,17 @@ export interface ShortRestRequestUpdatedPayload {
 export interface ShortRestCompletedPayload {
   requestId: string;
   completion: ShortRestCompletionDto;
+}
+
+/**
+ * Solicitação coletiva de Descanso Longo atualizada.
+ *
+ * O payload traz o DTO enxuto da solicitação (status, participantes, respostas
+ * e o `sessionId` de cada um) — nenhuma ficha completa. É a notificação de que a
+ * coleta começou, de que alguém respondeu ou de que foi resolvida.
+ */
+export interface LongRestRequestUpdatedPayload {
+  request: LongRestRequestDto;
 }
 
 export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];
