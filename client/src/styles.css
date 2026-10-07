@@ -12144,17 +12144,91 @@ input[type='checkbox']:focus-visible,
   color: #cdb892;
 }
 
-.music-bar-progress {
-  flex: 1 1 auto;
-  min-width: 3rem;
+/* --- Controles deslizantes (progresso e volume) -------------------------- */
+
+/*
+ * Os dois ranges do player dividem o mesmo desenho minimalista: um fio de 3px,
+ * com a parte já percorrida em dourado suave e um marcador pequeno que só se
+ * acende quando o mouse chega perto. O miolo grosso do range nativo — que
+ * puxava o olho para o meio do rodapé — sai de cena.
+ *
+ * A cor da parte vazia acompanha o `#cdb892` dos tempos (a barra é couro
+ * escuro nos dois temas, então é um tom fixo de propósito).
+ */
+.music-range {
   height: 0.9rem;
-  accent-color: var(--gold);
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
   cursor: pointer;
 }
 
-.music-bar-progress:disabled {
-  cursor: default;
+/* O preenchimento vem de `--music-fill`, que o componente calcula. */
+.music-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--gold) var(--music-fill, 0%),
+    rgba(205, 184, 146, 0.22) var(--music-fill, 0%)
+  );
+}
+
+.music-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 8px;
+  height: 8px;
+  margin-top: -2.5px;
+  border: none;
+  border-radius: 50%;
+  background: var(--gold-bright);
   opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
+.music-range:hover::-webkit-slider-thumb,
+.music-range:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+/* O Firefox desenha a trilha e o preenchimento em pseudo-elementos distintos. */
+.music-range::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(205, 184, 146, 0.22);
+}
+
+.music-range::-moz-range-progress {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--gold);
+}
+
+.music-range::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border: none;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  opacity: 0.5;
+}
+
+.music-range:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.music-bar-progress {
+  flex: 1 1 auto;
+  min-width: 3rem;
+}
+
+.music-bar-volume-range {
+  flex: 0 0 auto;
+  width: 4.5rem;
 }
 
 .music-bar-controls {
@@ -12163,7 +12237,11 @@ input[type='checkbox']:focus-visible,
   gap: 0.25rem;
 }
 
-/* Os botões da barra (e o da lista) seguem a mesma placa de couro dos FABs. */
+/*
+ * Botões do player: só o ícone. Nada de placa nem moldura em volta — quem
+ * desenha o controle é o brilho do glifo; no hover ele clareia sobre uma tinta
+ * dourada discreta. As linhas que emolduravam cada botão eram o que pesava.
+ */
 .music-bar-controls button,
 .music-bar-list {
   display: inline-flex;
@@ -12173,61 +12251,61 @@ input[type='checkbox']:focus-visible,
   width: 1.6rem;
   height: 1.6rem;
   padding: 0;
-  border: 1px solid var(--gold-deep);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--leather-2), var(--leather));
-  color: var(--gold-bright);
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #bda882;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.18s ease,
+    background 0.15s ease,
     color 0.15s ease;
 }
 
 .music-bar-controls button:hover:not(:disabled),
 .music-bar-list:hover {
-  border-color: var(--gold);
-  box-shadow: 0 0 14px -5px var(--glow);
+  background: rgba(184, 145, 42, 0.16);
+  color: var(--gold-bright);
 }
 
 .music-bar-controls button:focus-visible,
 .music-bar-list:focus-visible {
   outline: 2px solid var(--gold);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .music-bar-controls button:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 
+/* O play é a ação principal: uma moeda dourada suave, cheia no hover. */
 .music-bar-controls .music-bar-play {
   width: 1.95rem;
   height: 1.95rem;
+  background: rgba(184, 145, 42, 0.16);
+  color: var(--gold-bright);
 }
 
-/* Volume da mesa: botão de mudo + fader compacto, no mesmo tom do repeat. */
+.music-bar-controls .music-bar-play:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #3a2410;
+}
+
+/* Volume da mesa: botão de mudo + fader compacto. */
 .music-bar-volume {
   gap: 0.35rem;
 }
 
-.music-bar-volume-range {
-  width: 4.5rem;
-  height: 0.9rem;
-  accent-color: var(--gold);
-  cursor: pointer;
-}
-
 .music-bar-controls .music-bar-mute.active {
-  border-color: var(--danger);
-  color: var(--danger);
+  background: rgba(155, 34, 38, 0.26);
+  color: #eaa9a2;
 }
 
+/* Ativo sem moldura: só a tinta dourada marca o estado. */
 .music-bar-list.active,
 .music-bar-repeat.active {
-  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
-  border-color: var(--gold);
-  color: #3a2410;
+  background: rgba(184, 145, 42, 0.24);
+  color: var(--gold-bright);
 }
 
 /* Aviso de erro do mestre, discreto e clicável (fecha). */
@@ -12290,22 +12368,30 @@ input[type='checkbox']:focus-visible,
   color: var(--gold);
 }
 
+/* Fecha o painel: mesma ideia dos botões da barra, sem moldura em volta. */
 .music-panel-close {
   width: 1.6rem;
   height: 1.6rem;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border: none;
+  border-radius: 50%;
   background: transparent;
   color: var(--ink-soft);
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .music-panel-close:hover {
-  border-color: var(--gold);
+  background: rgba(184, 145, 42, 0.16);
   color: var(--gold-deep);
+}
+
+[data-theme='dark'] .music-panel-close:hover {
+  color: var(--gold-bright);
 }
 
 /* --- Lista de faixas (card do salão e painel da barra) ------------------- */
