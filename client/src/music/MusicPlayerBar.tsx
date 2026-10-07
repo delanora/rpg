@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Icon } from '../components/Icon';
 import { formatTime } from './format';
 import { MusicTrackList } from './MusicTrackList';
@@ -31,6 +31,10 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
   const shown = seekDraft ?? music.position;
   const volume = volumeDraft ?? music.volume;
   const muted = volume === 0;
+  // A parte já percorrida dos controles é desenhada pelo CSS a partir daqui
+  // (ver `.music-range` no styles.css).
+  const progressFill = { '--music-fill': `${Math.min(100, (shown / max) * 100)}%` } as CSSProperties;
+  const volumeFill = { '--music-fill': `${Math.round(volume * 100)}%` } as CSSProperties;
 
   function commitSeek(): void {
     if (seekDraft === null) return;
@@ -99,7 +103,8 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
         <span className="music-bar-time">{formatTime(shown)}</span>
 
         <input
-          className="music-bar-progress"
+          className="music-bar-progress music-range"
+          style={progressFill}
           type="range"
           min={0}
           max={max}
@@ -174,7 +179,8 @@ export function MusicPlayerBar({ music }: { music: MusicController }) {
           </button>
 
           <input
-            className="music-bar-volume-range"
+            className="music-bar-volume-range music-range"
+            style={volumeFill}
             type="range"
             min={0}
             max={100}
