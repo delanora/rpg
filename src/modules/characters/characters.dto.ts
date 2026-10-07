@@ -17,6 +17,7 @@ import {
 import {
   applySaveProficiencies,
   asiLevelsFor,
+  bardLevel,
   classEntriesLabel,
   classOptionsFor,
   computeFeatAdjustments,
@@ -37,6 +38,7 @@ import {
   normalizeProficiencies,
   pactMagicSlots,
   preparedSpellCountFor,
+  songOfRestDie,
   spellSlotsForClasses,
   totalCharacterLevel,
   type ActiveClassFeature,
@@ -467,6 +469,12 @@ export function toCharacterDto(
   // Dados de Vida: TOTAL derivado das classes, USO lido de `character.hitDice`
   // (o `used` é sempre limitado ao máximo — ver shared/hit-dice.ts).
   const hitDice = deriveHitDice(classEntries, character.hitDice);
+  // Canção de Descanso: elegibilidade e dado pelo nível de BARDO (nunca pelo
+  // nível total do personagem — ver `songOfRestDie`). NÃO é recurso nem cura.
+  const songOfRest = (() => {
+    const die = songOfRestDie(bardLevel(classEntries));
+    return { eligible: die !== null, die };
+  })();
   const classState = normalizeClassState(character.classState);
   // Subclasse de paladino (juramento): as magias de juramento são DERIVADAS do
   // nível de PALADINO + juramento (Prompt 6.3) — ver `oath-spells.ts`.
@@ -777,6 +785,8 @@ export function toCharacterDto(
     hpBonus: classAdjustments.hpBonus,
     // Dados de Vida por tipo + totais (base do descanso curto).
     hitDice,
+    // Canção de Descanso (só informa elegibilidade + dado; sem cura aqui).
+    songOfRest,
     armorClassOverride: character.armorClass,
     spellSlots,
     pactSlots,

@@ -696,6 +696,35 @@ export function restoreShortRestResources(
 }
 
 /**
+ * Nível ACUMULADO na classe Bardo (0 se o personagem não tiver Bardo).
+ *
+ * Multiclasse NUNCA soma outras classes: a Canção de Descanso progride apenas
+ * pelo nível de BARDO (PHB 2014).
+ */
+export function bardLevel(entries: readonly ClassEntry[]): number {
+  for (const entry of entries) {
+    if (entry.classKey === 'bard') return Math.max(0, Math.trunc(entry.level));
+  }
+  return 0;
+}
+
+/**
+ * Dado da Canção de Descanso (Song of Rest) em função do nível de BARDO.
+ *
+ * Bardo 2–8 → d6; 9–12 → d8; 13–16 → d10; 17+ → d12; abaixo do 2º → `null`
+ * (não elegível). Função PURA: NÃO rola nada nem consome recurso — a Canção de
+ * Descanso não é um recurso consumível (não entra em `classState.used`) e a
+ * aplicação real pertence ao descanso coletivo (etapa futura).
+ */
+export function songOfRestDie(level: number): 6 | 8 | 10 | 12 | null {
+  if (!Number.isFinite(level) || level < 2) return null;
+  if (level >= 17) return 12;
+  if (level >= 13) return 10;
+  if (level >= 9) return 8;
+  return 6;
+}
+
+/**
  * Uma fórmula de Defesa sem Armadura concedida por uma classe.
  *
  * As fórmulas **não se acumulam**: a ficha usa a que der o MAIOR valor. Por

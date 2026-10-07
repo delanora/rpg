@@ -1837,6 +1837,23 @@ export async function completeShortRest(
     throw new HttpError('A ficha mudou durante o descanso; recarregue e tente novamente.', 409);
   }
 
+  // TODO (Fase 5.1 — Canção de Descanso / Song of Rest): NÃO é aplicada aqui.
+  // A cura extra (d6 no Bardo 2–8, d8 no 9–12, d10 no 13–16, d12 no 17+) depende
+  // de criaturas que participaram do MESMO descanso coletivo com um Bardo
+  // elegível presente. O projeto ainda não tem participantes de descanso
+  // coletivo/consenso (etapa futura). Quando houver, a implementação deve:
+  //   1. identificar os Bardos participantes da sessão;
+  //   2. determinar o MELHOR dado aplicável e decidir o caso de VÁRIOS Bardos —
+  //      NÃO somar Song of Rest nem rolar múltiplas vezes; seguir o PHB 2014 e a
+  //      regra geral de efeitos de MESMO NOME (decisão explícita pendente);
+  //   3. identificar as criaturas que gastaram >= 1 Dado de Vida;
+  //   4. rolar a cura extra UMA única vez por criatura elegível (não é por dado);
+  //   5. aplicar a cura sem ultrapassar o PV máximo EFETIVO (derived.hpMax);
+  //   6. registrar a rolagem (kind 'rest');
+  //   7. impedir aplicação duplicada.
+  // A base já pronta é `songOfRestDie`/`bardLevel` (shared/classes.ts) e a
+  // informação derivada `derived.songOfRest` (que o frontend/futuro fluxo lê).
+  //
   // Recursos DERIVADOS ATUAIS (respeitam o nível/recarga de cada característica)
   // e o estado com os de recarga curta restaurados.
   const classState = normalizeClassState(character.classState);
