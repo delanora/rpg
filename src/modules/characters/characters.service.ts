@@ -1432,15 +1432,18 @@ export async function useInventoryItem(
 // Descanso curto — gasto de UM Dado de Vida
 // ---------------------------------------------------------------------------
 
-/** Tipo da operação gravada em `CharacterOperation.kind`. */
-const SHORT_REST_HIT_DIE_KIND = 'short-rest-hit-die';
+/** Tipo LÓGICO da operação — a identidade dela em `CharacterOperation.type`. */
+const SHORT_REST_HIT_DIE_TYPE = 'SHORT_REST_HIT_DIE';
 
 /**
- * Resultado IMUTÁVEL da operação. É o que fica guardado em
- * `CharacterOperation.result` para um reenvio devolver igual — sem rolar de
- * novo. (O `character` da resposta é montado na hora, a partir da ficha atual.)
+ * Snapshot IMUTÁVEL da operação, guardado em `CharacterOperation.result`.
+ *
+ * Contém a ficha JÁ COM a escrita (o `character` original da operação), além da
+ * rolagem, do PV e dos Dados de Vida. Um reenvio devolve este snapshot
+ * INTEGRAL — nunca o reconstrói a partir do estado atual da ficha.
  */
-interface HitDieOutcome {
+interface HitDieSnapshot {
+  character: CharacterDto;
   roll: { die: number; value: number; conMod: number; healing: number; actualHealed: number };
   hp: { before: number; after: number; max: number };
   hitDice: HitDiceDerivation;
@@ -1448,8 +1451,43 @@ interface HitDieOutcome {
 }
 
 /** Resposta do gasto de um Dado de Vida (ver `spendHitDie`). */
-export interface SpendHitDieResult extends HitDieOutcome {
-  character: CharacterDto;
+export interface SpendHitDieResult extends HitDieSnapshot {
+  /** `true` quando a resposta é o REPLAY de uma operação já processada. */
+  replayed: boolean;
+}
+
+/**
+ * Assinatura CANÔNICA do payload semântico da operação.
+ *
+ * Só entra o que muda o efeito — a face do dado. `expectedVersion` NÃO entra (é
+ * controle de concorrência, não identidade) e nenhum campo derivado pelo
+ * servidor entra. Determinístico: mesmo payload → mesma string; payload
+ * diferente → string diferente.
+ */
+function hitDieRequestFingerprint(die: number): string {
+  return JSON.stringify({ die });
+}
+
+/**
+ * Resolve um `operationId` JÁ existente: replay do resultado original quando a
+ * identidade lógica bate, ou conflito de reuso de chave quando não bate.
+ *
+ * Devolve o snapshot PERSISTIDO tal como está — nunca mistura com o estado
+ * atual da ficha.
+ */
+function resolveExistingOperation(
+  previous: { type: string; requestFingerprint: string; result: Prisma.JsonValue },
+  fingerprint: string,
+): SpendHitDieResult {
+  if (previous.type !== SHORT_REST_HIT_DIE_TYPE || previous.requestFingerprint !== fingerprint) {
+    throw new HttpError(
+      'Esta chave de operação já foi usada para outra operação. Gere um novo identificador.',
+      409,
+      'IDEMPOTENCY_KEY_REUSED',
+    );
+  }
+
+  return { ...(previous.result as unknown as HitDieSnapshot), replayed: true };
 }
 
 /**
@@ -1461,9 +1499,9 @@ export interface SpendHitDieResult extends HitDieOutcome {
  * a operação gera aleatoriedade e um retry poderia rolar outro dado e consumir
  * dois; um conflito vale 409.
  *
- * Ordem: carregar → idempotência (`operationId`) → conferir `expectedVersion`
- * (409 ANTES de rolar) → disponibilidade → rolar → gravar (guardado por versão)
- * → registrar a rolagem → responder.
+ * Ordem: carregar → idempotência (`operationId` + identidade) → conferir
+ * `expectedVersion` (409 ANTES de rolar) → disponibilidade → rolar → gravar
+ * (guardado por versão) → registrar a rolagem → responder.
  *
  * Resultados <= 0 de `rawRoll + conMod`: a regra do PHB 2014 diz apenas "some o
  * modificador de Constituição" — NÃO há cura mínima de 1. Um modificador muito
@@ -1477,21 +1515,19 @@ export async function spendHitDie(
   const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
   if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
 
-  // 1) Idempotência: o MESMO operationId devolve o resultado original, sem
-  // rolar de novo. Vem ANTES da checagem de versão de propósito — no reenvio o
-  // `expectedVersion` original já não é o atual, e ainda assim queremos o
-  // resultado guardado (e não um 409).
+  const fingerprint = hitDieRequestFingerprint(input.die);
+
+  // 1) Idempotência: se o `operationId` já existe, valida a IDENTIDADE lógica
+  // (tipo + fingerprint). Bate → replay do resultado ORIGINAL, sem rolar,
+  // consumir, curar nem escrever. Diverge → 409 de reuso de chave. Vem ANTES da
+  // checagem de versão de propósito — no reenvio legítimo, o `expectedVersion`
+  // original já não é o atual e ainda assim queremos o snapshot guardado.
   const previous = await prisma.characterOperation.findUnique({
     where: {
       characterId_operationId: { characterId: character.id, operationId: input.operationId },
     },
   });
-  if (previous) {
-    return {
-      character: await toSheetDto(character, actor.username),
-      ...(previous.result as unknown as HitDieOutcome),
-    };
-  }
+  if (previous) return resolveExistingOperation(previous, fingerprint);
 
   // 2) Concorrência: a versão enviada tem de ser a atual — ANTES de rolar.
   if (character.version !== input.expectedVersion) {
@@ -1526,25 +1562,30 @@ export async function spendHitDie(
   const actualHealed = hpAfter - hpBefore;
 
   const nextUsage = markHitDieSpent(character.hitDice, input.die);
-  const outcome: HitDieOutcome = {
+  const outcome = {
     roll: { die: input.die, value, conMod, healing, actualHealed },
     hp: { before: hpBefore, after: hpAfter, max: hpMax },
     hitDice: deriveHitDice(classEntries, nextUsage),
     version: input.expectedVersion + 1,
   };
 
-  // 5) Cura + consumo na MESMA transação, guardada pela versão. A operação
-  // idempotente nasce JUNTO: se o (characterId, operationId) já existir, o
-  // banco recusa e o reenvio cai no catch abaixo.
-  let updated: Character;
+  // 5) Cria a operação, cura + consome e grava o SNAPSHOT COMPLETO, tudo na
+  // MESMA transação. A operação nasce ANTES da escrita: numa corrida com o
+  // MESMO `operationId`, a segunda requisição espera a primeira e cai no catch
+  // (P2002), devolvendo o replay. A escrita guardada por versão cobre a corrida
+  // com `operationId` DIFERENTE (a perdedora não acha mais a versão → 409).
+  let committed!: { updated: Character; snapshot: HitDieSnapshot };
   try {
-    updated = await prisma.$transaction(async (tx) => {
+    committed = await prisma.$transaction(async (tx) => {
       await tx.characterOperation.create({
         data: {
           characterId: character.id,
           operationId: input.operationId,
-          kind: SHORT_REST_HIT_DIE_KIND,
-          result: outcome as unknown as Prisma.InputJsonValue,
+          type: SHORT_REST_HIT_DIE_TYPE,
+          requestFingerprint: fingerprint,
+          // Placeholder: o snapshot completo entra no MESMO commit, logo abaixo
+          // (nunca fica visível a outra requisição incompleto).
+          result: {},
         },
       });
 
@@ -1565,40 +1606,48 @@ export async function spendHitDie(
         );
       }
 
-      return tx.character.findUniqueOrThrow({ where: { id: character.id } });
+      const updated = await tx.character.findUniqueOrThrow({ where: { id: character.id } });
+      const snapshot: HitDieSnapshot = {
+        character: await toSheetDto(updated, actor.username),
+        ...outcome,
+      };
+      await tx.characterOperation.update({
+        where: {
+          characterId_operationId: { characterId: character.id, operationId: input.operationId },
+        },
+        data: { result: snapshot as unknown as Prisma.InputJsonValue },
+      });
+
+      return { updated, snapshot };
     });
   } catch (error) {
-    // Corrida no MESMO operationId: outra requisição já gravou — devolve o
-    // resultado dela, sem rolar nem consumir de novo.
+    // Corrida no MESMO operationId: outra requisição já gravou — valida a
+    // identidade e devolve o replay (ou o conflito de reuso de chave).
     if ((error as { code?: string }).code === 'P2002') {
       const raced = await prisma.characterOperation.findUnique({
         where: {
           characterId_operationId: { characterId: character.id, operationId: input.operationId },
         },
       });
-      if (raced) {
-        const current = await prisma.character.findUnique({ where: { id: character.id } });
-        if (!current) throw new HttpError('Esta ficha ainda não foi criada.', 404);
-        return {
-          character: await toSheetDto(current, actor.username),
-          ...(raced.result as unknown as HitDieOutcome),
-        };
-      }
+      if (raced) return resolveExistingOperation(raced, fingerprint);
     }
     throw error;
   }
 
   // 6) Registra a rolagem no histórico da mesa como `kind: 'rest'`.
-  recordRestHitDieRoll(actor, updated.name || actor.displayName, {
-    die: outcome.roll.die,
-    value: outcome.roll.value,
-    conMod: outcome.roll.conMod,
-    healing: outcome.roll.healing,
+  recordRestHitDieRoll(actor, committed.updated.name || actor.displayName, {
+    die: committed.snapshot.roll.die,
+    value: committed.snapshot.roll.value,
+    conMod: committed.snapshot.roll.conMod,
+    healing: committed.snapshot.roll.healing,
   });
 
-  await publishChange(actor, updated, { hpCurrent: hpAfter, hitDice: nextUsage });
+  await publishChange(actor, committed.updated, {
+    hpCurrent: committed.snapshot.hp.after,
+    hitDice: nextUsage,
+  });
 
-  return { character: await toSheetDto(updated, actor.username), ...outcome };
+  return { ...committed.snapshot, replayed: false };
 }
 
 // ---------------------------------------------------------------------------
