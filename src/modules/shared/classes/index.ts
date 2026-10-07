@@ -673,6 +673,29 @@ export interface ActiveResource {
 }
 
 /**
+ * Devolve o estado de classe com os recursos de recarga CURTA restaurados.
+ *
+ * Um recurso volta ao máximo quando o seu contador de usos deixa de existir
+ * (`used[id]` removido) — a MESMA convenção que a ficha já usa. Só entram os
+ * recursos cujo `recharge === 'short'`; recursos de recarga LONGA, sem recarga
+ * ('none') e QUALQUER outro contador (inclusive de recursos que não existem
+ * mais) ficam intactos. `state.active` (toggles) NÃO é tocado.
+ *
+ * É a regra autoritativa do SERVIDOR: o frontend deixa de ser a autoridade da
+ * recuperação (ver `POST /me/rest/short/complete`).
+ */
+export function restoreShortRestResources(
+  state: ClassState,
+  resources: readonly ActiveResource[],
+): ClassState {
+  const used = { ...state.used };
+  for (const resource of resources) {
+    if (resource.recharge === 'short') delete used[resource.id];
+  }
+  return { ...state, used };
+}
+
+/**
  * Uma fórmula de Defesa sem Armadura concedida por uma classe.
  *
  * As fórmulas **não se acumulam**: a ficha usa a que der o MAIOR valor. Por

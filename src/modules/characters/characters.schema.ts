@@ -403,21 +403,69 @@ export type UseInventoryItemInput = z.infer<typeof useInventoryItemSchema>;
  * mãos (a escrita só vale se ela ainda for a atual); `operationId` identifica o
  * pedido para que um reenvio não role o dado nem o consuma de novo.
  */
+/**
+ * Identificador de operação idempotente (ex.: um UUID gerado no cliente).
+ * Formato seguro e com tamanho limitado — é a chave usada em
+ * `CharacterOperation` para reconhecer um reenvio.
+ */
+export const operationIdSchema = z
+  .string()
+  .trim()
+  .min(8, 'Identificador de operação muito curto.')
+  .max(100, 'Identificador de operação muito longo.')
+  .regex(/^[A-Za-z0-9_-]+$/, 'Identificador de operação inválido.');
+
+/** Id de uma sessão de Descanso Curto (cuid do banco). */
+const shortRestSessionIdSchema = z
+  .string()
+  .trim()
+  .min(1, 'Informe a sessão de descanso.')
+  .max(60);
+
+/** Versão da ficha que o cliente acredita ser a atual (inteiro >= 1). */
+const expectedVersionSchema = z.number().int().min(1);
+
+/**
+ * Inicia uma sessão de Descanso Curto.
+ *
+ * `expectedVersion` valida que o cliente tem a ficha atual; `operationId`
+ * protege o início contra reenvio (idempotente).
+ */
+export const startShortRestSchema = z.object({
+  expectedVersion: expectedVersionSchema,
+  operationId: operationIdSchema,
+});
+
+export type StartShortRestInput = z.infer<typeof startShortRestSchema>;
+
+/**
+ * Ação sobre uma sessão existente (finalizar ou cancelar).
+ *
+ * `sessionId` identifica a sessão (entra no fingerprint da operação); os outros
+ * dois campos são a proteção contra concorrência e duplicação.
+ */
+export const shortRestSessionActionSchema = z.object({
+  sessionId: shortRestSessionIdSchema,
+  expectedVersion: expectedVersionSchema,
+  operationId: operationIdSchema,
+});
+
+export type ShortRestSessionActionInput = z.infer<typeof shortRestSessionActionSchema>;
+
+/**
+ * Gasta UM Dado de Vida DENTRO de uma sessão de Descanso Curto.
+ *
+ * Altera o endpoint anterior: agora exige a sessão ATIVA (`sessionId`). O
+ * cliente NUNCA diz quantos gastar — o endpoint gasta exatamente um dado do
+ * tipo escolhido.
+ */
 export const spendHitDieSchema = z.object({
+  /** Sessão de Descanso Curto à qual o gasto pertence. */
+  sessionId: shortRestSessionIdSchema,
   /** Face do Dado de Vida a gastar (só os d6/d8/d10/d12 do PHB). */
   die: z.union([z.literal(6), z.literal(8), z.literal(10), z.literal(12)]),
-  /** Versão da ficha que o cliente acredita ser a atual (inteiro >= 1). */
-  expectedVersion: z.number().int().min(1),
-  /**
-   * Identificador do pedido (ex.: um UUID gerado no cliente). Formato seguro e
-   * com tamanho limitado — é a chave de idempotência.
-   */
-  operationId: z
-    .string()
-    .trim()
-    .min(8, 'Identificador de operação muito curto.')
-    .max(100, 'Identificador de operação muito longo.')
-    .regex(/^[A-Za-z0-9_-]+$/, 'Identificador de operação inválido.'),
+  expectedVersion: expectedVersionSchema,
+  operationId: operationIdSchema,
 });
 
 export type SpendHitDieInput = z.infer<typeof spendHitDieSchema>;

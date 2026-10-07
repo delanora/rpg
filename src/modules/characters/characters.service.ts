@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto';
-import type { Character, Prisma } from '@prisma/client';
+import type { Character, Prisma, ShortRestSession } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
 import { deleteUploadedImage } from '../../lib/uploads.js';
@@ -37,10 +37,16 @@ import type {
   LevelDownInput,
   LevelUpInput,
   MoveInventoryItemInput,
+  ShortRestSessionActionInput,
   SpendHitDieInput,
+  StartShortRestInput,
   UpdateCharacterInput,
   UseInventoryItemInput,
 } from './characters.schema.js';
+import {
+  toShortRestSessionDto,
+  type ShortRestSessionDto,
+} from './short-rest.dto.js';
 import { isConsumableItem } from '../shared/item-details.js';
 import { rollDie, rollHealingDice } from '../shared/dice.js';
 import {
@@ -74,6 +80,7 @@ import {
   normalizeProficiencies,
   preparedSpellCountFor,
   resolveFeatureChoices,
+  restoreShortRestResources,
   sameFeatureChoices,
   subclassProficiencyGrant,
   totalCharacterLevel,
@@ -1432,16 +1439,95 @@ export async function useInventoryItem(
 // Descanso curto — gasto de UM Dado de Vida
 // ---------------------------------------------------------------------------
 
-/** Tipo LÓGICO da operação — a identidade dela em `CharacterOperation.type`. */
+/** Tipo LÓGICO das operações de Descanso Curto (`CharacterOperation.type`). */
 const SHORT_REST_HIT_DIE_TYPE = 'SHORT_REST_HIT_DIE';
+const SHORT_REST_START_TYPE = 'SHORT_REST_START';
+const SHORT_REST_COMPLETE_TYPE = 'SHORT_REST_COMPLETE';
+const SHORT_REST_CANCEL_TYPE = 'SHORT_REST_CANCEL';
+
+/** Código de erro quando a MESMA chave idempotente é usada para outra operação. */
+const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
+
+/** Código de erro quando já existe um Descanso Curto ativo para o personagem. */
+const SHORT_REST_ALREADY_ACTIVE = 'SHORT_REST_ALREADY_ACTIVE';
 
 /**
- * Snapshot IMUTÁVEL da operação, guardado em `CharacterOperation.result`.
- *
- * Contém a ficha JÁ COM a escrita (o `character` original da operação), além da
- * rolagem, do PV e dos Dados de Vida. Um reenvio devolve este snapshot
- * INTEGRAL — nunca o reconstrói a partir do estado atual da ficha.
+ * Assinatura CANÔNICA do payload semântico de um gasto de Dado de Vida.
+ * Inclui a SESSÃO (a operação pertence a um descanso específico) e a face do
+ * dado. `expectedVersion` NÃO entra (é controle de concorrência, não
+ * identidade) e nenhum campo derivado entra.
  */
+function hitDieRequestFingerprint(sessionId: string, die: number): string {
+  return JSON.stringify({ sessionId, die });
+}
+
+/** Assinatura canônica do payload semântico de uma ação de sessão (complete/cancel). */
+function sessionRequestFingerprint(sessionId: string): string {
+  return JSON.stringify({ sessionId });
+}
+
+/**
+ * Devolve o snapshot PERSISTIDO de uma operação já existente quando a
+ * identidade lógica (tipo + fingerprint) bate — ou lança 409
+ * `IDEMPOTENCY_KEY_REUSED` quando a MESMA chave foi usada para uma operação
+ * diferente. NUNCA reconstrói nada com o estado atual da ficha.
+ */
+function replaySnapshot<T>(
+  previous: { type: string; requestFingerprint: string; result: Prisma.JsonValue },
+  type: string,
+  fingerprint: string,
+): T {
+  if (previous.type !== type || previous.requestFingerprint !== fingerprint) {
+    throw new HttpError(
+      'Esta chave de operação já foi usada para outra operação. Gere um novo identificador.',
+      409,
+      IDEMPOTENCY_KEY_REUSED,
+    );
+  }
+  return previous.result as unknown as T;
+}
+
+/** Busca a operação idempotente por (personagem, operationId). */
+function findOperation(characterId: string, operationId: string) {
+  return prisma.characterOperation.findUnique({
+    where: { characterId_operationId: { characterId, operationId } },
+  });
+}
+
+/** Violação de unicidade do Prisma (P2002). */
+function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string }).code === 'P2002';
+}
+
+/** Quantos Dados de Vida foram gastos numa sessão (derivado das operações). */
+function countHitDiceSpent(
+  client: Prisma.TransactionClient | typeof prisma,
+  sessionId: string,
+): Promise<number> {
+  return client.characterOperation.count({
+    where: { shortRestSessionId: sessionId, type: SHORT_REST_HIT_DIE_TYPE },
+  });
+}
+
+/**
+ * Carrega a sessão de Descanso Curto do personagem e exige que esteja ATIVA.
+ * Sessão de outro personagem responde 404 (não revela que ela existe).
+ */
+async function loadActiveSession(
+  characterId: string,
+  sessionId: string,
+): Promise<ShortRestSession> {
+  const session = await prisma.shortRestSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.characterId !== characterId) {
+    throw new HttpError('Sessão de descanso não encontrada.', 404);
+  }
+  if (session.status !== 'ACTIVE') {
+    throw new HttpError('Esta sessão de descanso não está mais ativa.', 409);
+  }
+  return session;
+}
+
+/** Snapshot IMUTÁVEL do gasto de um Dado de Vida (guardado em `result`). */
 interface HitDieSnapshot {
   character: CharacterDto;
   roll: { die: number; value: number; conMod: number; healing: number; actualHealed: number };
@@ -1450,63 +1536,137 @@ interface HitDieSnapshot {
   version: number;
 }
 
-/** Resposta do gasto de um Dado de Vida (ver `spendHitDie`). */
+/** Resposta do gasto de um Dado de Vida. */
 export interface SpendHitDieResult extends HitDieSnapshot {
-  /** `true` quando a resposta é o REPLAY de uma operação já processada. */
+  replayed: boolean;
+}
+
+/** Snapshot do início de uma sessão. */
+interface ShortRestStartSnapshot {
+  session: ShortRestSessionDto;
+}
+
+/** Resposta de `POST /me/rest/short/start`. */
+export interface ShortRestStartResult extends ShortRestStartSnapshot {
+  replayed: boolean;
+}
+
+/** Snapshot da conclusão de uma sessão. */
+interface ShortRestCompleteSnapshot {
+  session: ShortRestSessionDto;
+  character: CharacterDto;
+}
+
+/** Resposta de `POST /me/rest/short/complete`. */
+export interface ShortRestCompleteResult extends ShortRestCompleteSnapshot {
+  replayed: boolean;
+}
+
+/** Snapshot do cancelamento de uma sessão. */
+interface ShortRestCancelSnapshot {
+  session: ShortRestSessionDto;
+}
+
+/** Resposta de `POST /me/rest/short/cancel`. */
+export interface ShortRestCancelResult extends ShortRestCancelSnapshot {
   replayed: boolean;
 }
 
 /**
- * Assinatura CANÔNICA do payload semântico da operação.
+ * INICIA um Descanso Curto: cria a sessão ACTIVE.
  *
- * Só entra o que muda o efeito — a face do dado. `expectedVersion` NÃO entra (é
- * controle de concorrência, não identidade) e nenhum campo derivado pelo
- * servidor entra. Determinístico: mesmo payload → mesma string; payload
- * diferente → string diferente.
+ * Não cura, não gasta Dado de Vida, não recupera recursos, não limpa toggles,
+ * não mexe em PV nem em espaços de magia. `expectedVersion` valida que o cliente
+ * tem a ficha atual; `operationId` torna o início idempotente. A garantia de
+ * que só existe UMA sessão ACTIVE por personagem é o índice único parcial no
+ * banco (a checagem anterior é só para a mensagem amigável).
  */
-function hitDieRequestFingerprint(die: number): string {
-  return JSON.stringify({ die });
-}
+export async function startShortRest(
+  actor: Actor,
+  input: StartShortRestInput,
+): Promise<ShortRestStartResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
 
-/**
- * Resolve um `operationId` JÁ existente: replay do resultado original quando a
- * identidade lógica bate, ou conflito de reuso de chave quando não bate.
- *
- * Devolve o snapshot PERSISTIDO tal como está — nunca mistura com o estado
- * atual da ficha.
- */
-function resolveExistingOperation(
-  previous: { type: string; requestFingerprint: string; result: Prisma.JsonValue },
-  fingerprint: string,
-): SpendHitDieResult {
-  if (previous.type !== SHORT_REST_HIT_DIE_TYPE || previous.requestFingerprint !== fingerprint) {
+  const fingerprint = '{}';
+
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<ShortRestStartSnapshot>(previous, SHORT_REST_START_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  if (character.version !== input.expectedVersion) {
     throw new HttpError(
-      'Esta chave de operação já foi usada para outra operação. Gere um novo identificador.',
+      'A ficha mudou desde que a tela foi carregada; recarregue antes de iniciar o Descanso Curto.',
       409,
-      'IDEMPOTENCY_KEY_REUSED',
     );
   }
 
-  return { ...(previous.result as unknown as HitDieSnapshot), replayed: true };
+  const active = await prisma.shortRestSession.findFirst({
+    where: { characterId: character.id, status: 'ACTIVE' },
+    select: { id: true },
+  });
+  if (active) {
+    throw new HttpError(
+      'Já existe um Descanso Curto ativo para este personagem.',
+      409,
+      SHORT_REST_ALREADY_ACTIVE,
+    );
+  }
+
+  let snapshot!: ShortRestStartSnapshot;
+  try {
+    snapshot = await prisma.$transaction(async (tx) => {
+      const session = await tx.shortRestSession.create({ data: { characterId: character.id } });
+      const dto = toShortRestSessionDto(session, 0);
+      await tx.characterOperation.create({
+        data: {
+          characterId: character.id,
+          operationId: input.operationId,
+          type: SHORT_REST_START_TYPE,
+          requestFingerprint: fingerprint,
+          shortRestSessionId: session.id,
+          result: { session: dto } as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return { session: dto };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      // Corrida na chave idempotente (→ replay) OU duas sessões ativas.
+      const raced = await findOperation(character.id, input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<ShortRestStartSnapshot>(raced, SHORT_REST_START_TYPE, fingerprint),
+          replayed: true,
+        };
+      }
+      throw new HttpError(
+        'Já existe um Descanso Curto ativo para este personagem.',
+        409,
+        SHORT_REST_ALREADY_ACTIVE,
+      );
+    }
+    throw error;
+  }
+
+  return { replayed: false, session: snapshot.session };
 }
 
 /**
- * Gasta UM Dado de Vida do descanso curto (PHB 2014).
+ * Gasta UM Dado de Vida DENTRO de uma sessão de Descanso Curto ACTIVE.
  *
- * O SERVIDOR é a autoridade: valida a disponibilidade, rola o dado justo
- * (`crypto.randomInt`), soma o modificador de Constituição do personagem, cura
- * e consome o dado na MESMA escrita. A rolagem NÃO é repetida automaticamente —
- * a operação gera aleatoriedade e um retry poderia rolar outro dado e consumir
- * dois; um conflito vale 409.
+ * O SERVIDOR é a autoridade: valida a sessão, a disponibilidade, rola o dado
+ * justo (`crypto.randomInt`), soma o modificador de Constituição, cura e
+ * consome o dado na MESMA escrita. Sem retry automático (um retry poderia rolar
+ * outro dado e consumir dois). O gasto fica VINCULADO à sessão.
  *
- * Ordem: carregar → idempotência (`operationId` + identidade) → conferir
- * `expectedVersion` (409 ANTES de rolar) → disponibilidade → rolar → gravar
- * (guardado por versão) → registrar a rolagem → responder.
- *
- * Resultados <= 0 de `rawRoll + conMod`: a regra do PHB 2014 diz apenas "some o
- * modificador de Constituição" — NÃO há cura mínima de 1. Um modificador muito
- * negativo (ex.: CON 1) pode zerar ou negar a cura; `max(before, before + raw)`
- * garante que o PV atual NUNCA CAI e `actualHealed` registra o que de fato entrou.
+ * Resultados <= 0 de `rawRoll + conMod`: o PHB 2014 só manda somar o
+ * modificador — NÃO há cura mínima de 1. `max(before, before + raw)` garante que
+ * o PV nunca cai e `actualHealed` registra o que de fato entrou.
  */
 export async function spendHitDie(
   actor: Actor,
@@ -1515,21 +1675,22 @@ export async function spendHitDie(
   const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
   if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
 
-  const fingerprint = hitDieRequestFingerprint(input.die);
+  const fingerprint = hitDieRequestFingerprint(input.sessionId, input.die);
 
-  // 1) Idempotência: se o `operationId` já existe, valida a IDENTIDADE lógica
-  // (tipo + fingerprint). Bate → replay do resultado ORIGINAL, sem rolar,
-  // consumir, curar nem escrever. Diverge → 409 de reuso de chave. Vem ANTES da
-  // checagem de versão de propósito — no reenvio legítimo, o `expectedVersion`
-  // original já não é o atual e ainda assim queremos o snapshot guardado.
-  const previous = await prisma.characterOperation.findUnique({
-    where: {
-      characterId_operationId: { characterId: character.id, operationId: input.operationId },
-    },
-  });
-  if (previous) return resolveExistingOperation(previous, fingerprint);
+  // 1) Idempotência ANTES de tudo: mesma chave + mesma identidade → replay;
+  // identidade diferente → 409.
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<HitDieSnapshot>(previous, SHORT_REST_HIT_DIE_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
 
-  // 2) Concorrência: a versão enviada tem de ser a atual — ANTES de rolar.
+  // 2) A sessão precisa existir, ser do personagem e estar ATIVA.
+  await loadActiveSession(character.id, input.sessionId);
+
+  // 3) Concorrência: a versão enviada tem de ser a atual — ANTES de rolar.
   if (character.version !== input.expectedVersion) {
     throw new HttpError(
       'A ficha mudou desde que a tela foi carregada; recarregue antes de gastar o Dado de Vida.',
@@ -1537,7 +1698,7 @@ export async function spendHitDie(
     );
   }
 
-  // 3) Disponibilidade: o tipo precisa existir para as classes atuais e ainda
+  // 4) Disponibilidade: o tipo precisa existir para as classes atuais e ainda
   // ter dado sobrando. O cliente nunca diz QUANTOS gastar — o endpoint gasta 1.
   const classEntries = normalizeClassEntries(character.classes);
   const available = deriveHitDice(classEntries, character.hitDice);
@@ -1546,7 +1707,7 @@ export async function spendHitDie(
     throw new HttpError(`Não há Dado de Vida d${input.die} disponível para gastar.`, 400);
   }
 
-  // 4) Rolagem no servidor: dado justo + modificador de Constituição real.
+  // 5) Rolagem no servidor: dado justo + modificador de Constituição real.
   const classAdjustments = characterClassAdjustments(character);
   const constitution = effectiveAbilitiesOf(character, classAdjustments).constitution;
   const conMod = abilityModifier(constitution);
@@ -1569,11 +1730,9 @@ export async function spendHitDie(
     version: input.expectedVersion + 1,
   };
 
-  // 5) Cria a operação, cura + consome e grava o SNAPSHOT COMPLETO, tudo na
-  // MESMA transação. A operação nasce ANTES da escrita: numa corrida com o
-  // MESMO `operationId`, a segunda requisição espera a primeira e cai no catch
-  // (P2002), devolvendo o replay. A escrita guardada por versão cobre a corrida
-  // com `operationId` DIFERENTE (a perdedora não acha mais a versão → 409).
+  // 6) Operação + cura + consumo + snapshot, na MESMA transação. A operação
+  // nasce antes da escrita: corrida com o MESMO `operationId` vira replay; a
+  // escrita guardada por versão cobre a corrida com chave DIFERENTE.
   let committed!: { updated: Character; snapshot: HitDieSnapshot };
   try {
     committed = await prisma.$transaction(async (tx) => {
@@ -1583,8 +1742,7 @@ export async function spendHitDie(
           operationId: input.operationId,
           type: SHORT_REST_HIT_DIE_TYPE,
           requestFingerprint: fingerprint,
-          // Placeholder: o snapshot completo entra no MESMO commit, logo abaixo
-          // (nunca fica visível a outra requisição incompleto).
+          shortRestSessionId: input.sessionId,
           result: {},
         },
       });
@@ -1597,8 +1755,6 @@ export async function spendHitDie(
           version: { increment: 1 },
         },
       });
-      // A versão mudou entre a leitura e a escrita: NADA foi aplicado e o
-      // rollback remove a operação. 409 SEM retry (nunca rolar de novo).
       if (written.count === 0) {
         throw new HttpError(
           'A ficha mudou durante o gasto do Dado de Vida; tente novamente.',
@@ -1621,20 +1777,18 @@ export async function spendHitDie(
       return { updated, snapshot };
     });
   } catch (error) {
-    // Corrida no MESMO operationId: outra requisição já gravou — valida a
-    // identidade e devolve o replay (ou o conflito de reuso de chave).
-    if ((error as { code?: string }).code === 'P2002') {
-      const raced = await prisma.characterOperation.findUnique({
-        where: {
-          characterId_operationId: { characterId: character.id, operationId: input.operationId },
-        },
-      });
-      if (raced) return resolveExistingOperation(raced, fingerprint);
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(character.id, input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<HitDieSnapshot>(raced, SHORT_REST_HIT_DIE_TYPE, fingerprint),
+          replayed: true,
+        };
+      }
     }
     throw error;
   }
 
-  // 6) Registra a rolagem no histórico da mesa como `kind: 'rest'`.
   recordRestHitDieRoll(actor, committed.updated.name || actor.displayName, {
     die: committed.snapshot.roll.die,
     value: committed.snapshot.roll.value,
@@ -1648,6 +1802,207 @@ export async function spendHitDie(
   });
 
   return { ...committed.snapshot, replayed: false };
+}
+
+/**
+ * FINALIZA um Descanso Curto (sessão ACTIVE → COMPLETED).
+ *
+ * Restaura os recursos de recarga CURTA a partir dos recursos DERIVADOS ATUAIS
+ * do personagem (nunca por ids fixos), sem tocar em recursos de recarga longa,
+ * sem recarga, nem nos toggles ativos. Gastar 0 Dados de Vida continua sendo um
+ * Descanso Curto válido. A transição é guardada por `status = 'ACTIVE'` e a
+ * escrita da ficha por `version`, então duas chamadas concorrentes só aplicam
+ * uma — e a operação idempotente devolve o snapshot original num reenvio.
+ */
+export async function completeShortRest(
+  actor: Actor,
+  input: ShortRestSessionActionInput,
+): Promise<ShortRestCompleteResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const fingerprint = sessionRequestFingerprint(input.sessionId);
+
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<ShortRestCompleteSnapshot>(previous, SHORT_REST_COMPLETE_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  const session = await loadActiveSession(character.id, input.sessionId);
+
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError('A ficha mudou durante o descanso; recarregue e tente novamente.', 409);
+  }
+
+  // Recursos DERIVADOS ATUAIS (respeitam o nível/recarga de cada característica)
+  // e o estado com os de recarga curta restaurados.
+  const classState = normalizeClassState(character.classState);
+  const classAdjustments = characterClassAdjustments(character);
+  const nextState = restoreShortRestResources(classState, classAdjustments.resources);
+
+  let committed!: {
+    updated: Character;
+    session: ShortRestSessionDto;
+    character: CharacterDto;
+  };
+  try {
+    committed = await prisma.$transaction(async (tx) => {
+      await tx.characterOperation.create({
+        data: {
+          characterId: character.id,
+          operationId: input.operationId,
+          type: SHORT_REST_COMPLETE_TYPE,
+          requestFingerprint: fingerprint,
+          shortRestSessionId: session.id,
+          result: {},
+        },
+      });
+
+      // Transição ACTIVE → COMPLETED: só uma requisição vence.
+      const closed = await tx.shortRestSession.updateMany({
+        where: { id: session.id, status: 'ACTIVE' },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+      if (closed.count === 0) {
+        throw new HttpError('Esta sessão de descanso não está mais ativa.', 409);
+      }
+
+      // Ficha com os recursos restaurados, guardada pela versão.
+      const written = await tx.character.updateMany({
+        where: { id: character.id, version: input.expectedVersion },
+        data: {
+          classState: nextState as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      if (written.count === 0) {
+        throw new HttpError('A ficha mudou durante o descanso; tente novamente.', 409);
+      }
+
+      const updated = await tx.character.findUniqueOrThrow({ where: { id: character.id } });
+      const refreshed = await tx.shortRestSession.findUniqueOrThrow({ where: { id: session.id } });
+      const spent = await countHitDiceSpent(tx, session.id);
+      const sessionDto = toShortRestSessionDto(refreshed, spent);
+      const characterDto = await toSheetDto(updated, actor.username);
+      await tx.characterOperation.update({
+        where: {
+          characterId_operationId: { characterId: character.id, operationId: input.operationId },
+        },
+        data: {
+          result: { session: sessionDto, character: characterDto } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return { updated, session: sessionDto, character: characterDto };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(character.id, input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<ShortRestCompleteSnapshot>(
+            raced,
+            SHORT_REST_COMPLETE_TYPE,
+            fingerprint,
+          ),
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
+
+  await publishChange(actor, committed.updated, { classState: nextState });
+
+  return { replayed: false, session: committed.session, character: committed.character };
+}
+
+/**
+ * CANCELA um Descanso Curto (sessão ACTIVE → CANCELLED).
+ *
+ * NÃO recupera recursos, NÃO devolve Dados de Vida já gastos, NÃO reverte HP
+ * curado e NÃO apaga rolagens: cancelar significa apenas que o descanso não foi
+ * concluído. Não altera a ficha (nem a versão). Guardado pela mesma transição
+ * condicional e idempotência das demais operações.
+ */
+export async function cancelShortRest(
+  actor: Actor,
+  input: ShortRestSessionActionInput,
+): Promise<ShortRestCancelResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const fingerprint = sessionRequestFingerprint(input.sessionId);
+
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<ShortRestCancelSnapshot>(previous, SHORT_REST_CANCEL_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  const session = await loadActiveSession(character.id, input.sessionId);
+
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError('A ficha mudou durante o descanso; recarregue e tente novamente.', 409);
+  }
+
+  let snapshot!: ShortRestCancelSnapshot;
+  try {
+    snapshot = await prisma.$transaction(async (tx) => {
+      await tx.characterOperation.create({
+        data: {
+          characterId: character.id,
+          operationId: input.operationId,
+          type: SHORT_REST_CANCEL_TYPE,
+          requestFingerprint: fingerprint,
+          shortRestSessionId: session.id,
+          result: {},
+        },
+      });
+
+      const closed = await tx.shortRestSession.updateMany({
+        where: { id: session.id, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+      if (closed.count === 0) {
+        throw new HttpError('Esta sessão de descanso não está mais ativa.', 409);
+      }
+
+      const refreshed = await tx.shortRestSession.findUniqueOrThrow({ where: { id: session.id } });
+      const spent = await countHitDiceSpent(tx, session.id);
+      const dto = toShortRestSessionDto(refreshed, spent);
+      await tx.characterOperation.update({
+        where: {
+          characterId_operationId: { characterId: character.id, operationId: input.operationId },
+        },
+        data: { result: { session: dto } as unknown as Prisma.InputJsonValue },
+      });
+
+      return { session: dto };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(character.id, input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<ShortRestCancelSnapshot>(
+            raced,
+            SHORT_REST_CANCEL_TYPE,
+            fingerprint,
+          ),
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
+
+  return { replayed: false, session: snapshot.session };
 }
 
 // ---------------------------------------------------------------------------

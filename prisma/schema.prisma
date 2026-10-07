@@ -220,6 +220,7 @@ model Character {
   updatedAt  DateTime    @updatedAt
   combatants Combatant[]
   operations CharacterOperation[]
+  shortRestSessions ShortRestSession[]
 
   @@map("characters")
 }
@@ -252,10 +253,51 @@ model CharacterOperation {
   /// escrita + a rolagem + PV + Dados de Vida + versão). O reenvio devolve este
   /// snapshot INTEGRAL — nunca reconstruído a partir do estado atual da ficha.
   result      Json      @default("{}")
+  ///
+  /// Sessão de Descanso Curto a que a operação pertence (null nas operações
+  /// fora do descanso). É o vínculo que permite auditar a sessão e derivar
+  /// quantos Dados de Vida foram gastos nela (`hitDiceSpent`).
+  shortRestSessionId String?
+  shortRestSession   ShortRestSession? @relation(fields: [shortRestSessionId], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
 
+  @@index([shortRestSessionId])
   @@unique([characterId, operationId])
   @@map("character_operations")
+}
+
+/// Estados possíveis de uma sessão de Descanso Curto.
+enum ShortRestStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+///
+/// SESSÃO PERSISTENTE de Descanso Curto (PHB 2014).
+///
+/// Ciclo: iniciar → ACTIVE (gastar 0 ou mais Dados de Vida) → finalizar
+/// (COMPLETED, recupera os recursos de recarga curta) OU cancelar (CANCELLED,
+/// sem recuperar nada nem desfazer os gastos já feitos).
+///
+/// A duração de 1 hora é da ficção da mesa: `startedAt` é só auditoria e NÃO
+/// trava a finalização. O consenso entre os jogadores (futuro) será construído
+/// sobre esta sessão, ligada ao PERSONAGEM — a mesa é única e global no projeto.
+model ShortRestSession {
+  id          String          @id @default(cuid())
+  characterId String
+  character   Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  status      ShortRestStatus @default(ACTIVE)
+  /// Início da sessão (auditoria). Não é trava temporal.
+  startedAt   DateTime        @default(now())
+  completedAt DateTime?
+  cancelledAt DateTime?
+  /// Operações do descanso (gastos de Dado de Vida, conclusão, cancelamento).
+  operations  CharacterOperation[]
+
+  @@index([status])
+  @@index([characterId, status])
+  @@map("short_rest_sessions")
 }
 
 /// Raça PERSONALIZADA criada pelo mestre (Prompt 2.10).
