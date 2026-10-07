@@ -49,9 +49,14 @@ interface IdentitySectionProps extends SheetSectionProps {
     hint: string;
     onOpen: () => void;
   };
+  /** Descanso Curto: abre o painel no estado atual (abaixo, em Vida e Defesa). */
+  shortRest?: {
+    active: boolean;
+    onOpen: () => void;
+  };
 }
 
-export function IdentitySection({ character, update, levelUp }: IdentitySectionProps) {
+export function IdentitySection({ character, update, levelUp, shortRest }: IdentitySectionProps) {
   // O avatar é estado de jogo (segue editável com a criação finalizada); os
   // demais campos da identidade são construção.
   const { readOnly, lockedConstruction } = useSheetAccess();
@@ -594,7 +599,7 @@ export function IdentitySection({ character, update, levelUp }: IdentitySectionP
         </div>
 
       {/* Vida e Defesa fecha o Personagem, logo abaixo do cabeçalho. */}
-      <VitalsSection character={character} update={update} embedded />
+      <VitalsSection character={character} update={update} embedded shortRest={shortRest} />
     </Section>
   );
 }

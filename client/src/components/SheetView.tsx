@@ -49,6 +49,11 @@ interface SheetViewProps {
     hint: string;
     onOpen: () => void;
   };
+  /** Descanso Curto: o botão da ficha abre o painel único no estado atual. */
+  shortRest?: {
+    active: boolean;
+    onOpen: () => void;
+  };
   /** Em `true`, nenhum campo é editável (visão do mestre). */
   readOnly?: boolean;
   /**
@@ -95,6 +100,7 @@ export function SheetView({
   onCoinsChange,
   onRollSkill,
   levelUp,
+  shortRest,
   readOnly = false,
   creationLocked = false,
   masterView = false,
@@ -110,7 +116,12 @@ export function SheetView({
       <div className="sheet">
         {/* Personagem (identidade, nível e vida e defesa), de ponta a ponta. */}
         <div className="sheet-identity">
-          <IdentitySection character={character} update={update} levelUp={levelUp} />
+          <IdentitySection
+            character={character}
+            update={update}
+            levelUp={levelUp}
+            shortRest={shortRest}
+          />
         </div>
 
         {/* Os seis atributos, com salvaguardas e perícias, de ponta a ponta. */}

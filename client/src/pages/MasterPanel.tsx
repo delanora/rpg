@@ -44,6 +44,8 @@ import type {
   RegionPatch,
   SessionUser,
 } from '../types';
+import { ShortRestModal } from '../rest/ShortRestModal';
+import { useShortRest } from '../rest/useShortRest';
 import { useRealtime } from '../useRealtime';
 
 type Tab = MasterTab;
@@ -71,6 +73,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Abrem UM por vez, no mesmo espaço acima dos botões flutuantes.
   const [logOpen, setLogOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  // Painel do Descanso Curto coletivo (controles do mestre).
+  const [shortRestOpen, setShortRestOpen] = useState(false);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -81,10 +85,14 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Música ambiente: o mestre comanda e todos escutam a mesma faixa.
   const music = useMusic({ isMaster: user.role === 'MASTER' });
 
+  // Descanso Curto coletivo: o mestre acompanha a solicitação e usa os controles.
+  const shortRest = useShortRest();
+
   const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
     ...music.handlers,
+    ...shortRest.handlers,
 
     // Fichas dos jogadores chegam ao vivo — é o requisito central do painel.
     onSheetUpdated: (payload) => {
@@ -830,6 +838,31 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
       {/* Botão "Dados" sempre disponível, inclusive em combate. */}
       <DiceDock roller={dice} />
+
+      {/* Descanso Curto da mesa: só aparece enquanto há solicitação aberta. */}
+      {shortRest.request !== null &&
+      (shortRest.request.status === 'PENDING' || shortRest.request.status === 'APPROVED') ? (
+        <button
+          type="button"
+          className="short-rest-fab"
+          onClick={() => setShortRestOpen(true)}
+        >
+          <Icon name="flame" size={16} />
+          <span>
+            Descanso Curto
+            {shortRest.request.status === 'PENDING' ? ' • aguardando' : ' • em andamento'}
+          </span>
+        </button>
+      ) : null}
+
+      {shortRestOpen ? (
+        <ShortRestModal
+          open
+          onClose={() => setShortRestOpen(false)}
+          rest={shortRest}
+          isMaster
+        />
+      ) : null}
 
       {/* Pilha flutuante do mestre, no canto inferior esquerdo: o LOG abre
           acima do botão dos dados e as ANOTAÇÕES ficam abaixo dele. */}

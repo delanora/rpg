@@ -12565,3 +12565,326 @@ input[type='checkbox']:focus-visible,
     transform: none;
   }
 }
+
+/* ==========================================================================
+   Descanso Curto coletivo — painel único (mesmo pergaminho/grimório da ficha)
+   ========================================================================== */
+
+.short-rest-modal {
+  max-width: 40rem;
+}
+
+.short-rest-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.short-rest-header h2 {
+  flex: 1;
+  margin: 0;
+}
+
+.short-rest-lead {
+  margin: 0.35rem 0 0.6rem;
+  font-family: var(--font-display);
+  color: var(--ink);
+}
+
+.short-rest-summary {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.short-rest-summary li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: var(--card-pad-y) var(--card-pad-x);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.short-rest-resources {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.short-rest-resources li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  font-size: 0.9rem;
+}
+
+.short-rest-decision {
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.6rem 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  border: 1px solid var(--gold-hair);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.short-rest-decision p {
+  margin: 0;
+}
+
+/* Lista de participantes */
+.short-rest-people {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.short-rest-person {
+  display: grid;
+  grid-template-columns: 1.1rem 1fr auto;
+  align-items: center;
+  gap: var(--gap-icon);
+  padding: var(--card-pad-y) var(--card-pad-x);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.short-rest-person-mark {
+  text-align: center;
+  font-weight: 700;
+}
+
+.short-rest-person.is-ready .short-rest-person-mark {
+  color: var(--ok);
+}
+
+.short-rest-person.is-resting .short-rest-person-mark,
+.short-rest-person.is-accepted .short-rest-person-mark,
+.short-rest-person.is-done .short-rest-person-mark {
+  color: var(--gold-deep);
+}
+
+.short-rest-person.is-out {
+  opacity: 0.72;
+}
+
+.short-rest-person.is-out .short-rest-person-mark {
+  color: var(--danger);
+}
+
+.short-rest-person-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.short-rest-you {
+  padding: 0 0.4rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gold-deep);
+}
+
+.short-rest-person-state {
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+/* Dados de Vida */
+.short-rest-dice {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.short-rest-die {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: var(--card-pad-y) var(--card-pad-x);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.short-rest-die-face {
+  min-width: 2.2rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .short-rest-die-face {
+  color: var(--gold-bright);
+}
+
+.short-rest-die-pips {
+  flex: 1;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.short-rest-die-pips span {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--gold);
+}
+
+.short-rest-die-pips span.is-ready {
+  background: var(--gold);
+}
+
+.short-rest-die-pips span.is-spent {
+  background: transparent;
+  border-color: var(--line);
+  opacity: 0.6;
+}
+
+.short-rest-die-count {
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+.short-rest-dice .btn {
+  margin-left: auto;
+}
+
+/* PV na mesa de descanso */
+.short-rest-hp {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.3rem 0 0.7rem;
+}
+
+.short-rest-stat-label {
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+.short-rest-stat-value {
+  font-family: var(--font-display);
+}
+
+.short-rest-roll {
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.6rem 0.75rem;
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  font-size: 0.9rem;
+}
+
+.short-rest-roll-title {
+  font-size: var(--text-aux);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gold-deep);
+}
+
+.short-rest-song {
+  margin: 0 0 0.6rem;
+  font-family: var(--font-display);
+}
+
+.short-rest-confirm {
+  margin: 0.5rem 0 0.3rem;
+  padding: 0.6rem 0.75rem;
+  display: grid;
+  gap: 0.4rem;
+  border: 1px dashed var(--danger);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.short-rest-confirm p {
+  margin: 0;
+}
+
+.short-rest-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* Atalho flutuante do mestre (só enquanto há solicitação aberta). */
+.short-rest-fab {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 4.5rem;
+  z-index: 56;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.95rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--leather-2), var(--leather));
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow: var(--shadow-deep);
+}
+
+.short-rest-fab:hover {
+  border-color: var(--gold-bright);
+}
+
+@media (max-width: 640px) {
+  .short-rest-modal {
+    max-width: 100%;
+  }
+
+  .short-rest-die {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .short-rest-dice .btn {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .short-rest-hp {
+    grid-template-columns: 1fr;
+  }
+
+  .short-rest-person {
+    grid-template-columns: 1.1rem 1fr;
+  }
+
+  .short-rest-person-state {
+    grid-column: 2;
+  }
+}

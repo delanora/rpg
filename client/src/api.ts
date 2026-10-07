@@ -15,6 +15,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** Código legível pela máquina (ex.: `SHORT_REST_REQUEST_CLOSED`), se houver. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -43,6 +45,15 @@ function describeError(data: unknown, status: number): string {
   return `Erro inesperado (HTTP ${status}).`;
 }
 
+/** Código de erro devolvido pelo servidor (`{ error: 'CODIGO' }`), se houver. */
+function describeCode(data: unknown): string | undefined {
+  if (data && typeof data === 'object') {
+    const record = data as Record<string, unknown>;
+    if (typeof record.error === 'string') return record.error;
+  }
+  return undefined;
+}
+
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const token = getToken();
 
@@ -59,7 +70,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   const data: unknown = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
-    throw new ApiError(describeError(data, response.status), response.status);
+    throw new ApiError(describeError(data, response.status), response.status, describeCode(data));
   }
 
   return data as T;

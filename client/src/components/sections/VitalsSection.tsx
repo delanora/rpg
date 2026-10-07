@@ -72,9 +72,23 @@ interface VitalsSectionProps extends SheetSectionProps {
    * de card e o cabeçalho vira um subtítulo, mas o conteúdo é o mesmo.
    */
   embedded?: boolean;
+  /**
+   * Descanso Curto: a seção só abre o painel e mostra o indicador — nenhuma
+   * regra (recuperação de recursos, Dados de Vida) é decidida aqui.
+   */
+  shortRest?: {
+    /** Há uma solicitação coletiva PENDING/APPROVED em andamento. */
+    active: boolean;
+    onOpen: () => void;
+  };
 }
 
-export function VitalsSection({ character, update, embedded = false }: VitalsSectionProps) {
+export function VitalsSection({
+  character,
+  update,
+  embedded = false,
+  shortRest,
+}: VitalsSectionProps) {
   // PV atual/temporário, usos de recursos e espaços continuam editáveis pelo
   // jogador depois de finalizar a criação; PV máximo, CA, iniciativa e
   // deslocamento são construção (e a CA manual é privilégio do mestre).
@@ -116,15 +130,6 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
     applyClassState({ ...classState, active: [...classState.active, toggle.id], used });
   }
 
-  /** Descanso curto: repõe apenas os recursos de recarga curta (ex.: Ki). */
-  function shortRest(): void {
-    const used = { ...classState.used };
-    for (const resource of classAdjustments.resources) {
-      if (resource.recharge === 'short') delete used[resource.id];
-    }
-    applyClassState({ ...classState, used });
-  }
-
   /**
    * Descanso longo: restaura o HP ao máximo, recarrega todos os espaços de
    * magia e zera o estado de classe (toggles encerrados e usos devolvidos).
@@ -145,9 +150,6 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
     });
   }
 
-  const hasShortResource = classAdjustments.resources.some(
-    (resource) => resource.recharge === 'short',
-  );
   const kiResource = classAdjustments.resources.find((resource) => resource.id === 'ki');
   const hasClassPanel =
     classAdjustments.toggles.length > 0 ||
@@ -455,17 +457,6 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
             </ul>
           ) : null}
 
-          <div className="class-rest">
-            {hasShortResource ? (
-              <button type="button" className="btn btn-small" disabled={readOnly} onClick={shortRest}>
-                descanso curto
-              </button>
-            ) : null}
-            <button type="button" className="btn btn-small" disabled={readOnly} onClick={longRest}>
-              descanso longo
-            </button>
-          </div>
-
           <p className="section-note">
             {classAdjustments.unarmoredDefense
               ? `CA sem armadura: ${classAdjustments.unarmoredDefenseBase} + DES${
@@ -506,6 +497,23 @@ export function VitalsSection({ character, update, embedded = false }: VitalsSec
           </p>
         </section>
       ) : null}
+
+      {/* Descansos: abrem o painel/persistem; nenhuma regra roda no cliente. */}
+      <div className="class-rest">
+        {shortRest ? (
+          <button
+            type="button"
+            className={shortRest.active ? 'btn btn-small btn-primary' : 'btn btn-small'}
+            disabled={readOnly}
+            onClick={shortRest.onOpen}
+          >
+            descanso curto{shortRest.active ? ' • em andamento' : ''}
+          </button>
+        ) : null}
+        <button type="button" className="btn btn-small" disabled={readOnly} onClick={longRest}>
+          descanso longo
+        </button>
+      </div>
     </Section>
   );
 }

@@ -26,6 +26,9 @@ import { fetchGameConfig } from '../gameApi';
 import { moveInventoryItem, useInventoryItem } from '../inventoryApi';
 import { resultBreakdown } from '../dice/format';
 import { closePresentation } from '../presentationApi';
+import { ShortRestModal } from '../rest/ShortRestModal';
+import { ShortRestNotice } from '../rest/ShortRestNotice';
+import { useShortRest } from '../rest/useShortRest';
 import type {
   Character,
   CharacterPatch,
@@ -54,6 +57,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const [coinTargets, setCoinTargets] = useState<TransferTarget[]>([]);
   // Seção da ficha aberta logo abaixo do painel de combate (ou nenhuma).
   const [combatView, setCombatView] = useState<SheetShortcut | null>(null);
+  // Painel único do Descanso Curto coletivo (aberto pelo botão de Vida e Defesa).
+  const [shortRestOpen, setShortRestOpen] = useState(false);
 
   // Clicar de novo no mesmo atalho fecha a seção aberta.
   const openSheetSection = useCallback((target: SheetShortcut) => {
@@ -72,10 +77,18 @@ export function SheetPage({ user }: { user: SessionUser }) {
   // toca num `<audio>` fora do DOM — nenhuma interface é renderizada.
   const music = useMusic({ isMaster: false });
 
+  // Descanso Curto coletivo: estado + realtime + ações (o servidor é autoridade).
+  const shortRest = useShortRest({
+    characterId: character?.id,
+    onCharacterUpdated: (updated) =>
+      setCharacter((prev) => (!prev || updated.version >= prev.version ? updated : prev)),
+  });
+
   const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
     ...music.handlers,
+    ...shortRest.handlers,
 
     onSheetUpdated: (payload) => {
       // Só aceita a própria ficha e versões mais novas (evita respostas fora de ordem).
@@ -321,6 +334,13 @@ export function SheetPage({ user }: { user: SessionUser }) {
         </div>
       ) : null}
 
+      {/* Descanso Curto proposto pela mesa: avisa sem depender de abrir o botão. */}
+      <ShortRestNotice
+        request={shortRest.request}
+        characterId={character?.id}
+        onOpen={() => setShortRestOpen(true)}
+      />
+
       <main className="app-main app-main-wide">
         {loading ? (
           <p className="splash">Carregando a ficha...</p>
@@ -396,12 +416,28 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   onCoinsChange={adoptCoins}
                   onRollSkill={dice.openSkillRoll}
                   creationLocked={character.creationFinalized}
+                  shortRest={{
+                    active:
+                      shortRest.request?.status === 'PENDING' ||
+                      shortRest.request?.status === 'APPROVED',
+                    onOpen: () => setShortRestOpen(true),
+                  }}
                   levelUp={{
                     available: levelUpAvailable,
                     hint: levelUpHint,
                     onOpen: () => setLevelUpOpen(true),
                   }}
                 />
+
+                {/* Painel único do Descanso Curto: reabre no estado atual. */}
+                {shortRestOpen ? (
+                  <ShortRestModal
+                    open
+                    onClose={() => setShortRestOpen(false)}
+                    rest={shortRest}
+                    character={character}
+                  />
+                ) : null}
 
                 {/*
                  * Aberta, a janela segue montada depois do confirmar para mostrar o resumo
