@@ -19,7 +19,7 @@ import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../com
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
-import { MusicCard } from '../music/MusicCard';
+import { MusicPanel } from '../music/MusicPanel';
 import { MusicPlayerBar } from '../music/MusicPlayerBar';
 import { useMusic } from '../music/useMusic';
 import { fetchGameConfig, releaseLevelUp, setExtraCoins, setStartingLevel } from '../gameApi';
@@ -71,6 +71,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Abrem UM por vez, no mesmo espaço acima dos botões flutuantes.
   const [logOpen, setLogOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  // Painel de músicas do salão: abre pelo card "Músicas", não por uma aba.
+  const [musicOpen, setMusicOpen] = useState(false);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -730,13 +732,17 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             regions={regions.length}
             localities={localities.length}
             items={items.length}
+            musicTrackCount={music.tracks.length}
             levelUpRelease={gameConfig?.levelUpRelease ?? 0}
             startingLevel={gameConfig?.startingLevel ?? 1}
             extraCoins={gameConfig?.extraCoins ?? false}
             onOpenTab={setTab}
             onStartCombat={() => setShowStartDialog(true)}
             onReleaseLevelUp={() => void releaseLevelUpForTable()}
-            music={<MusicCard music={music} />}
+            onOpenMusic={() => setMusicOpen(true)}
+            music={
+              musicOpen ? <MusicPanel music={music} onClose={() => setMusicOpen(false)} /> : undefined
+            }
             search={
               <MasterSearch
                 characters={characters}
