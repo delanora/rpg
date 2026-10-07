@@ -12273,6 +12273,53 @@ async function main(): Promise<void> {
       JSON.stringify(secondUpload.data),
     );
 
+    // Correção da duração: o cliente do mestre mede o arquivo e devolve o
+    // valor ao catálogo — sem duração o servidor não agenda o fim da faixa, e
+    // sem esse agendamento o repetir não existe.
+    const fixedDuration = await api(`/api/music/tracks/${secondId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { duration: 212 },
+    });
+    check(
+      'o mestre corrige a duração de uma faixa (200) e o catálogo acompanha',
+      fixedDuration.status === 200 && fixedDuration.data?.track?.duration === 212,
+      JSON.stringify(fixedDuration.data),
+    );
+
+    const playerFix = await api(`/api/music/tracks/${secondId}`, {
+      method: 'PATCH',
+      token: musicPlayerToken,
+      body: { duration: 212 },
+    });
+    check(
+      'o jogador não corrige o catálogo (403)',
+      playerFix.status === 403,
+      `status ${playerFix.status}`,
+    );
+
+    const badDuration = await api(`/api/music/tracks/${secondId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { duration: -1 },
+    });
+    check(
+      'duração negativa é recusada (400)',
+      badDuration.status === 400,
+      `status ${badDuration.status}`,
+    );
+
+    const missingTrack = await api('/api/music/tracks/nao-existe', {
+      method: 'PATCH',
+      token: masterToken,
+      body: { duration: 10 },
+    });
+    check(
+      'corrigir uma faixa inexistente devolve 404',
+      missingTrack.status === 404,
+      `status ${missingTrack.status}`,
+    );
+
     // Antes de remover, garante que a faixa EM REPRODUÇÃO é a nossa.
     await api('/api/music/state', {
       method: 'POST',

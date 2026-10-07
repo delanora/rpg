@@ -4,9 +4,11 @@ import {
   deleteMusicTrack,
   fetchMusicState,
   fetchMusicTracks,
+  measureAudioDuration,
   readAudioFile,
   setMusicState,
   skipMusic,
+  updateMusicTrackDuration,
   uploadMusicTrack,
 } from './musicApi';
 
@@ -82,6 +84,8 @@ export function useMusic({ isMaster }: { isMaster: boolean }): MusicController {
   const loadedUrlRef = useRef<string | null>(null);
   /** Último volume diferente de zero — é para ele que o mudo volta. */
   const lastVolumeRef = useRef(1);
+  /** Faixas já medidas por este cliente (evita medir de novo a cada evento). */
+  const measuredRef = useRef(new Set<string>());
   stateRef.current = state;
 
   const audio = useCallback((): HTMLAudioElement => {
@@ -207,6 +211,31 @@ export function useMusic({ isMaster }: { isMaster: boolean }): MusicController {
       active = false;
     };
   }, [applyState, isMaster]);
+
+  /**
+   * Faixa sem duração é um problema silencioso: o servidor só agenda o FIM da
+   * música quando conhece a duração, e é desse agendamento que dependem o
+   * repetir e a virada automática. Como o navegador é o único que decodifica
+   * áudio, o mestre mede o arquivo e devolve a duração ao catálogo — uma vez
+   * por faixa (o `measuredRef` guarda o que já foi tentado).
+   */
+  useEffect(() => {
+    if (!isMaster) return;
+
+    for (const track of tracks) {
+      if (track.duration > 0 || measuredRef.current.has(track.id)) continue;
+      measuredRef.current.add(track.id);
+
+      void measureAudioDuration(track.url)
+        .then((duration) => {
+          if (duration <= 0) return;
+          return updateMusicTrackDuration(track.id, duration).then((updated) =>
+            setTracks((prev) => prev.map((item) => (item.id === updated.id ? updated : item))),
+          );
+        })
+        .catch(() => undefined);
+    }
+  }, [isMaster, tracks]);
 
   /** Roda um comando do mestre e adota o estado que o servidor devolver. */
   const run = useCallback(
