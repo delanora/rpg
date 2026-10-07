@@ -5,6 +5,7 @@ import { deleteUploadedImage } from '../lib/uploads.js';
 import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
 import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
+import { restoreShortRestResources } from '../modules/shared/classes.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
 import {
   allRaces,
@@ -12419,17 +12420,56 @@ async function main(): Promise<void> {
       prisma.character.update({ where: { userId: restUserId }, data: data as any });
     const restSheet = async () =>
       (await api('/api/characters/me', { token: restToken })).data.character;
-    const spend = (die: number, expectedVersion: number, operationId: string) =>
+    // Sessão de Descanso Curto ativa que atravessa os testes de gasto.
+    let restSessionId = '';
+    const spend = (
+      die: number,
+      expectedVersion: number,
+      operationId: string,
+      sessionId = restSessionId,
+    ) =>
       api('/api/characters/me/rest/short/hit-die', {
         method: 'POST',
         token: restToken,
-        body: { die, expectedVersion, operationId },
+        body: { sessionId, die, expectedVersion, operationId },
       });
+    const startRest = (expectedVersion: number, operationId: string) =>
+      api('/api/characters/me/rest/short/start', {
+        method: 'POST',
+        token: restToken,
+        body: { expectedVersion, operationId },
+      });
+    const completeRest = (sessionId: string, expectedVersion: number, operationId: string) =>
+      api('/api/characters/me/rest/short/complete', {
+        method: 'POST',
+        token: restToken,
+        body: { sessionId, expectedVersion, operationId },
+      });
+    const cancelRest = (sessionId: string, expectedVersion: number, operationId: string) =>
+      api('/api/characters/me/rest/short/cancel', {
+        method: 'POST',
+        token: restToken,
+        body: { sessionId, expectedVersion, operationId },
+      });
+
+    // Inicia a sessão que os testes de gasto de Dado de Vida usam.
+    let restNow = await restSheet();
+    const startOp = `op-${suffix}-start`;
+    const started = await startRest(restNow.version, startOp);
+    restSessionId = started.data?.session?.id ?? '';
+    check(
+      '1) iniciar Descanso Curto cria uma sessão ACTIVE',
+      started.status === 200 &&
+        started.data?.replayed === false &&
+        started.data?.session?.status === 'ACTIVE' &&
+        Boolean(restSessionId),
+      JSON.stringify(started.data),
+    );
 
     // 1) Single-class Fighter 3 → 3d10.
     await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 3 }]);
     await setRest({ hitDice: {}, hpCurrent: 10, hpMax: 30, hpTemp: 3, constitution: 14 });
-    let restNow = await restSheet();
+    restNow = await restSheet();
     check(
       '1) Fighter 3 deriva 3d10',
       restNow.derived.hitDice.total === 3 &&
@@ -12775,6 +12815,255 @@ async function main(): Promise<void> {
         usedTotal === 1 &&
         rowAfterDiff.version === diffVersion + 1,
       JSON.stringify({ statuses: diffStatuses, errors: diffErrors, usedTotal }),
+    );
+    // ---------------------------------------------------------------------
+    // Sessão de Descanso Curto: única ativa, start idempotente, complete/cancel
+    // ---------------------------------------------------------------------
+
+    // 2) Não pode haver DUAS sessões ativas para o mesmo personagem.
+    restNow = await restSheet();
+    const secondStart = await startRest(restNow.version, `op-${suffix}-start2`);
+    check(
+      '2) iniciar um segundo descanso com um ativo é rejeitado (409)',
+      secondStart.status === 409,
+      JSON.stringify({ status: secondStart.status, data: secondStart.data }),
+    );
+
+    // Start idempotente: mesma chave devolve a MESMA sessão.
+    const startReplay = await startRest(restNow.version, startOp);
+    check(
+      '2b) reenviar o start com a mesma chave devolve a mesma sessão (replay)',
+      startReplay.status === 200 &&
+        startReplay.data?.replayed === true &&
+        startReplay.data?.session?.id === restSessionId,
+      JSON.stringify(startReplay.data),
+    );
+
+    // 4) sessionId inexistente → recusado.
+    const noSession = await api('/api/characters/me/rest/short/hit-die', {
+      method: 'POST',
+      token: restToken,
+      body: {
+        sessionId: 'sessao-inexistente',
+        die: 10,
+        expectedVersion: restNow.version,
+        operationId: `op-${suffix}-nosession`,
+      },
+    });
+    check(
+      '4) gastar Dado de Vida sem sessão válida é recusado (404)',
+      noSession.status === 404,
+      `status ${noSession.status}`,
+    );
+
+    // Guerreiro 9: Fôlego/Surto são curto; Indomável é longo.
+    await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 9 }]);
+    await setRest({
+      hitDice: {},
+      constitution: 14,
+      classState: {
+        active: ['sobrenatural-x'],
+        used: { 'second-wind': 1, 'action-surge': 1, indomitable: 1, 'contador-legado': 2 },
+        choices: {},
+      },
+    });
+    restNow = await restSheet();
+
+    // 7) 0 Dados de Vida gastos + finalizar → recursos curtos recuperados.
+    // 8/9/10) curto recuperado; longo e outros contadores preservados.
+    // 11) classState.active intacto.
+    const completeOp = `op-${suffix}-complete`;
+    const completed = await completeRest(restSessionId, restNow.version, completeOp);
+    const usedAfterComplete = ((await restRow()).classState as any)?.used ?? {};
+    check(
+      '7/12) finalizar ACTIVE → COMPLETED e registra completedAt',
+      completed.status === 200 &&
+        completed.data?.replayed === false &&
+        completed.data?.session?.status === 'COMPLETED' &&
+        Boolean(completed.data?.session?.completedAt) &&
+        completed.data?.session?.hitDiceSpent > 0,
+      JSON.stringify(completed.data?.session),
+    );
+    check(
+      '8) recursos de recarga curta (Fôlego/Surto) são recuperados',
+      usedAfterComplete['second-wind'] === undefined &&
+        usedAfterComplete['action-surge'] === undefined,
+      JSON.stringify(usedAfterComplete),
+    );
+    check(
+      '9) recurso de recarga longa (Indomável) permanece usado',
+      usedAfterComplete['indomitable'] === 1,
+      JSON.stringify(usedAfterComplete),
+    );
+    check(
+      '10) contadores que não são de recarga curta permanecem',
+      usedAfterComplete['contador-legado'] === 2,
+      JSON.stringify(usedAfterComplete),
+    );
+    check(
+      '11) classState.active permanece intacto',
+      JSON.stringify(completed.data?.character?.classState?.active) ===
+        JSON.stringify(['sobrenatural-x']),
+      JSON.stringify(completed.data?.character?.classState?.active),
+    );
+
+    // 6) gastar em sessão COMPLETED → recusado.
+    check(
+      '6) gastar Dado de Vida em sessão COMPLETED é recusado (409)',
+      (await spend(10, (await restSheet()).version, `op-${suffix}-after-complete`)).status === 409,
+    );
+
+    // 13) complete duplicado (mesma chave) → replay, sem segunda alteração.
+    const completeReplay = await completeRest(restSessionId, restNow.version, completeOp);
+    check(
+      '13) complete duplicado devolve replay e não altera de novo',
+      completeReplay.status === 200 &&
+        completeReplay.data?.replayed === true &&
+        completeReplay.data?.session?.status === 'COMPLETED',
+      JSON.stringify(completeReplay.data?.session),
+    );
+
+    // 18/19) sessão COMPLETED não pode ser cancelada.
+    check(
+      '19) cancelar uma sessão COMPLETED é recusado (409)',
+      (await cancelRest(restSessionId, restNow.version, `op-${suffix}-cancel-completed`)).status ===
+        409,
+    );
+
+    // 14) complete concorrente: só uma execução efetiva.
+    restNow = await restSheet();
+    const startS2 = await startRest(restNow.version, `op-${suffix}-start-s2`);
+    const session2 = startS2.data?.session?.id;
+    check(
+      '14a) novo descanso após finalizar cria outra sessão ACTIVE',
+      startS2.status === 200 && Boolean(session2),
+      JSON.stringify(startS2.data),
+    );
+    await setRest({
+      constitution: 14,
+      classState: { active: [], used: { 'second-wind': 1 }, choices: {} },
+    });
+    restNow = await restSheet();
+    const [compA, compB] = await Promise.all([
+      completeRest(session2, restNow.version, `op-${suffix}-s2-comp-a`),
+      completeRest(session2, restNow.version, `op-${suffix}-s2-comp-b`),
+    ]);
+    const s2Statuses = [compA.status, compB.status].sort((a, b) => a - b);
+    const s2Row = await prisma.shortRestSession.findUniqueOrThrow({ where: { id: session2 } });
+    check(
+      '14) complete concorrente: uma execução efetiva e a outra 409',
+      s2Statuses[0] === 200 && s2Statuses[1] === 409 && s2Row.status === 'COMPLETED',
+      JSON.stringify({ statuses: s2Statuses, status: s2Row.status }),
+    );
+
+    // 15/16/17) cancelar ACTIVE → CANCELLED, sem devolver HD nem reverter HP.
+    restNow = await restSheet();
+    const startS3 = await startRest(restNow.version, `op-${suffix}-start-s3`);
+    const session3 = startS3.data?.session?.id;
+    await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 3 }]);
+    await setRest({ hitDice: {}, hpCurrent: 20, hpMax: 60, constitution: 14 });
+    restNow = await restSheet();
+    const s3HdOp = `op-${suffix}-s3-hd`;
+    const spentInS3 = await spend(10, restNow.version, s3HdOp, session3);
+    const afterSpend = await restRow();
+    const hpAfterSpend = afterSpend.hpCurrent;
+    const usedAfterSpend = (afterSpend.hitDice as any)?.usedByDie?.['10'] ?? 0;
+    const cancelOp = `op-${suffix}-s3-cancel`;
+    const cancelled = await cancelRest(session3, (await restSheet()).version, cancelOp);
+    const afterCancel = await restRow();
+    check(
+      '15) cancelar ACTIVE → CANCELLED e registra o Dado de Vida gasto',
+      cancelled.status === 200 &&
+        cancelled.data?.session?.status === 'CANCELLED' &&
+        Boolean(cancelled.data?.session?.cancelledAt) &&
+        cancelled.data?.session?.hitDiceSpent === 1,
+      JSON.stringify(cancelled.data?.session),
+    );
+    check(
+      '16) cancelar NÃO devolve o Dado de Vida gasto',
+      ((afterCancel.hitDice as any)?.usedByDie?.['10'] ?? 0) === usedAfterSpend &&
+        usedAfterSpend === 1 &&
+        spentInS3.status === 200,
+      JSON.stringify(afterCancel.hitDice),
+    );
+    check(
+      '17) cancelar NÃO reverte o HP curado',
+      afterCancel.hpCurrent === hpAfterSpend,
+      JSON.stringify({ antes: hpAfterSpend, depois: afterCancel.hpCurrent }),
+    );
+
+    // 15b) cancel idempotente (mesma chave → replay).
+    const cancelReplay = await cancelRest(session3, (await restSheet()).version, cancelOp);
+    check(
+      '15b) cancel duplicado devolve replay',
+      cancelReplay.status === 200 &&
+        cancelReplay.data?.replayed === true &&
+        cancelReplay.data?.session?.status === 'CANCELLED',
+      JSON.stringify(cancelReplay.data?.session),
+    );
+
+    // 5) gastar em sessão CANCELLED → recusado; 18) complete em CANCELLED → recusado.
+    check(
+      '5) gastar Dado de Vida em sessão CANCELLED é recusado (409)',
+      (await spend(10, (await restSheet()).version, `op-${suffix}-cancel-spend`, session3))
+        .status === 409,
+    );
+    check(
+      '18) finalizar uma sessão CANCELLED é recusado (409)',
+      (await completeRest(session3, (await restSheet()).version, `op-${suffix}-cancel-complete`))
+        .status === 409,
+    );
+
+    // 20/21) a chave é única POR operação: reusar `s3HdOp` em OUTRA sessão → 409.
+    const reuseAcrossSession = await spend(10, (await restSheet()).version, s3HdOp);
+    check(
+      '20/21) a mesma chave em outra sessão devolve 409 IDEMPOTENCY_KEY_REUSED',
+      reuseAcrossSession.status === 409 &&
+        reuseAcrossSession.data?.error === 'IDEMPOTENCY_KEY_REUSED',
+      JSON.stringify({ status: reuseAcrossSession.status, data: reuseAcrossSession.data }),
+    );
+
+    // 22) multiclasse gasta d10 e d6 dentro de uma sessão.
+    await setCharacterClasses(restUserId, [
+      { classKey: 'fighter', level: 3 },
+      { classKey: 'wizard', level: 2 },
+    ]);
+    await setRest({ hitDice: {}, hpCurrent: 10, hpMax: 80, constitution: 14 });
+    restNow = await restSheet();
+    const startMc = await startRest(restNow.version, `op-${suffix}-start-mc`);
+    const sessionMc = startMc.data?.session?.id;
+    const mcSpend10 = await spend(10, (await restSheet()).version, `op-${suffix}-mc-10`, sessionMc);
+    const mcSpend6 = await spend(6, (await restSheet()).version, `op-${suffix}-mc-6`, sessionMc);
+    check(
+      '22) multiclasse gasta d10 e d6 dentro de uma sessão',
+      mcSpend10.status === 200 &&
+        mcSpend6.status === 200 &&
+        mcSpend6.data?.hitDice?.used === 2 &&
+        mcSpend6.data?.hitDice?.byDie?.length === 2,
+      JSON.stringify({ a: mcSpend10.status, b: mcSpend6.status, hd: mcSpend6.data?.hitDice }),
+    );
+
+    // 10b) função pura: só o curto é removido.
+    const restored = restoreShortRestResources(
+      {
+        active: ['keep'],
+        used: { 'a-short': 1, 'b-long': 1, 'c-none': 1, legacy: 3 },
+        choices: {},
+      },
+      [
+        { id: 'a-short', name: 'Curto', recharge: 'short', max: 1, used: 1, remaining: 0, unlimited: false },
+        { id: 'b-long', name: 'Longo', recharge: 'long', max: 1, used: 1, remaining: 0, unlimited: false },
+        { id: 'c-none', name: 'Nenhum', recharge: 'none', max: 1, used: 1, remaining: 0, unlimited: false },
+      ],
+    );
+    check(
+      '10b) a função pura remove só o curto e preserva longo/none/legado e os toggles',
+      restored.used['a-short'] === undefined &&
+        restored.used['b-long'] === 1 &&
+        restored.used['c-none'] === 1 &&
+        restored.used['legacy'] === 3 &&
+        JSON.stringify(restored.active) === JSON.stringify(['keep']),
+      JSON.stringify(restored),
     );
   }
 

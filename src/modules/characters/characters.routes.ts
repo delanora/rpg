@@ -8,9 +8,11 @@ import {
   levelDownSchema,
   levelUpSchema,
   moveInventoryItemSchema,
+  shortRestSessionActionSchema,
   spellbookSchema,
   spendCoinsSchema,
   spendHitDieSchema,
+  startShortRestSchema,
   transferCoinsSchema,
   updateCharacterSchema,
   useInventoryItemSchema,
@@ -26,10 +28,13 @@ import {
   levelUpCharacter,
   listCharacters,
   listTransferTargets,
+  cancelShortRest,
+  completeShortRest,
   moveInventoryItem,
   setClassSpellbook,
   spendCoins,
   spendHitDie,
+  startShortRest,
   transferCoins,
   updateCharacter,
   updateCharacterAsMaster,
@@ -295,6 +300,68 @@ charactersRouter.post('/me/rest/short/hit-die', authenticate, async (req, res) =
   }
 
   res.json(await spendHitDie(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/rest/short/start — inicia uma sessão de Descanso Curto.
+ *
+ * Cria a sessão ACTIVE (não cura, não gasta Dado de Vida, não recupera nada).
+ * Só existe UMA sessão ativa por personagem (índice único parcial no banco) e o
+ * início é idempotente por `operationId`.
+ */
+charactersRouter.post('/me/rest/short/start', authenticate, async (req, res) => {
+  const parsed = startShortRestSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await startShortRest(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/rest/short/complete — finaliza a sessão de Descanso.
+ *
+ * Restaura os recursos de recarga curta (regra do SERVIDOR) e marca a sessão
+ * COMPLETED. Gastar 0 Dados de Vida continua sendo um descanso válido. Guardado
+ * por status/version e idempotente por `operationId`.
+ */
+charactersRouter.post('/me/rest/short/complete', authenticate, async (req, res) => {
+  const parsed = shortRestSessionActionSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await completeShortRest(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/rest/short/cancel — cancela a sessão ativa.
+ *
+ * Marca CANCELLED sem recuperar recursos nem desfazer o que já aconteceu
+ * (Dados de Vida gastos e HP curado permanecem). Idempotente por `operationId`.
+ */
+charactersRouter.post('/me/rest/short/cancel', authenticate, async (req, res) => {
+  const parsed = shortRestSessionActionSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await cancelShortRest(actorFrom(req), parsed.data));
 });
 
 /**

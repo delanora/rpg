@@ -1913,6 +1913,22 @@ export interface DiceRolledPayload {
   breakdown?: DamageBreakdownPayload;
 }
 
+/** --- Descanso Curto (sessão persistente) --------------------------------- */
+
+export type ShortRestStatus = 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+
+/** Sessão de Descanso Curto (espelha src/modules/characters/short-rest.dto.ts). */
+export interface ShortRestSessionDto {
+  id: string;
+  status: ShortRestStatus;
+  /** ISO — só auditoria; a duração de 1h é da ficção, não trava a finalização. */
+  startedAt: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  /** Dados de Vida gastos na sessão (derivado das operações). */
+  hitDiceSpent: number;
+}
+
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
 
 export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest';
