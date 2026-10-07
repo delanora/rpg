@@ -24,6 +24,17 @@ export const musicPatchSchema = z.object({
   volume: z.number().min(0).max(1).optional(),
 });
 
+/**
+ * Correção da duração de uma faixa já enviada.
+ *
+ * O navegador do mestre é o único que decodifica áudio, então é ele quem mede
+ * e devolve o valor quando o upload ficou sem duração — sem ela o servidor não
+ * tem como agendar o fim da faixa.
+ */
+export const trackDurationSchema = z.object({
+  duration: z.number().min(0).max(MAX_SECONDS),
+});
+
 /** Pular para a faixa seguinte/anterior. */
 export const musicSkipSchema = z.object({
   direction: z.enum(['next', 'prev']),
@@ -31,3 +42,4 @@ export const musicSkipSchema = z.object({
 
 export type UploadTrackInput = z.infer<typeof uploadTrackSchema>;
 export type MusicPatchInput = z.infer<typeof musicPatchSchema>;
+export type TrackDurationInput = z.infer<typeof trackDurationSchema>;

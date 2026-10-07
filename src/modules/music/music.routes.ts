@@ -1,12 +1,18 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
-import { musicPatchSchema, musicSkipSchema, uploadTrackSchema } from './music.schema.js';
+import {
+  musicPatchSchema,
+  musicSkipSchema,
+  trackDurationSchema,
+  uploadTrackSchema,
+} from './music.schema.js';
 import {
   addTrack,
   applyPatch,
   deleteTrack,
   getState,
   listTracks,
+  setTrackDuration,
   skip,
 } from './music.service.js';
 
@@ -45,6 +51,23 @@ masterOnly.post('/tracks', async (req, res) => {
   }
 
   res.status(201).json({ track: await addTrack(parsed.data) });
+});
+
+/**
+ * PATCH /api/music/tracks/:id — corrige a duração medida pelo navegador.
+ *
+ * O upload já manda a duração; esta rota existe para o catálogo que ficou sem
+ * ela (upload antigo, ou um navegador que não conseguiu medir o arquivo).
+ */
+masterOnly.patch('/tracks/:id', async (req, res) => {
+  const parsed = trackDurationSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  res.json({ track: await setTrackDuration(req.params.id, parsed.data.duration) });
 });
 
 /** DELETE /api/music/tracks/:id — remove a faixa e o arquivo. */

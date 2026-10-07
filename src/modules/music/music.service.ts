@@ -243,6 +243,30 @@ export async function addTrack(input: UploadTrackInput): Promise<MusicTrackDto> 
   return toTrackDto(track);
 }
 
+/**
+ * Grava a duração medida pelo navegador numa faixa que ficou sem ela.
+ *
+ * Sem a duração o servidor não consegue agendar o fim da faixa — e sem esse
+ * agendamento o repetir e a virada automática simplesmente não existem. Como o
+ * cliente é quem decodifica o áudio, ele mede e avisa aqui; se a faixa
+ * corrigida for a que está tocando agora, o fim é reagendado na hora.
+ */
+export async function setTrackDuration(id: string, duration: number): Promise<MusicTrackDto> {
+  const track = await prisma.musicTrack.findUnique({ where: { id } });
+  if (!track) throw new HttpError('Faixa não encontrada.', 404);
+
+  const updated = await prisma.musicTrack.update({
+    where: { id },
+    data: { duration: Math.max(0, duration) },
+  });
+
+  const state = await readState();
+  if (state.trackId === id && state.playing) await schedule();
+
+  await publishTracks();
+  return toTrackDto(updated);
+}
+
 /** Remove uma faixa (o arquivo junto). Se era a que tocava, a música para. */
 export async function deleteTrack(id: string): Promise<void> {
   const track = await prisma.musicTrack.findUnique({ where: { id } });
