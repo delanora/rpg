@@ -16,6 +16,7 @@ import type {
   ItemDeletedPayload,
   ItemUpdatedPayload,
   LocalityCreatedPayload,
+  LongRestRequestUpdatedPayload,
   LocalityDeletedPayload,
   LocalityUpdatedPayload,
   MusicStatePayload,
@@ -72,6 +73,8 @@ export interface RealtimeHandlers {
   onShortRestRequestUpdated?: (payload: ShortRestRequestUpdatedPayload) => void;
   /** O Descanso Curto coletivo terminou (Song of Rest + sessões concluídas). */
   onShortRestCompleted?: (payload: ShortRestCompletedPayload) => void;
+  /** Solicitação coletiva de Descanso Longo criada/alterada (só infraestrutura). */
+  onLongRestRequestUpdated?: (payload: LongRestRequestUpdatedPayload) => void;
 }
 
 /**
@@ -144,6 +147,10 @@ export function useRealtime(handlers: RealtimeHandlers) {
     );
     socket.on('short-rest:completed', (payload) =>
       handlersRef.current.onShortRestCompleted?.(payload),
+    );
+
+    socket.on('long-rest:request-updated', (payload) =>
+      handlersRef.current.onLongRestRequestUpdated?.(payload),
     );
 
     return () => {

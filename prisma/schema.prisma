@@ -63,6 +63,9 @@ model User {
   shortRestRequests       ShortRestRequest[]              @relation("ShortRestRequester")
   forcedShortRests        ShortRestRequest[]              @relation("ShortRestForcer")
   shortRestParticipations ShortRestRequestParticipant[]
+  longRestRequests        LongRestRequest[]               @relation("LongRestRequester")
+  forcedLongRests         LongRestRequest[]               @relation("LongRestForcer")
+  longRestParticipations  LongRestRequestParticipant[]
 
   @@index([role])
   @@map("users")
@@ -225,6 +228,8 @@ model Character {
   operations CharacterOperation[]
   shortRestSessions ShortRestSession[]
   shortRestParticipations ShortRestRequestParticipant[]
+  longRestSessions LongRestSession[]
+  longRestParticipations LongRestRequestParticipant[]
 
   @@map("characters")
 }
@@ -404,6 +409,141 @@ model ShortRestOperation {
   createdAt          DateTime @default(now())
 
   @@map("short_rest_operations")
+}
+
+// -----------------------------------------------------------------------------
+// Descanso Longo coletivo (Fase 5.2 — Prompt 1)
+//
+// Só a INFRAESTRUTURA: solicitação, participantes, sessões individuais, fluxo
+// de consenso e idempotência. NENHUM benefício de Long Rest é aplicado ainda
+// (HP, Dados de Vida, espaços, recursos, inventário). A sessão existe apenas
+// como vínculo persistente de que a mesa entrou no descanso.
+// -----------------------------------------------------------------------------
+
+/// Estados possíveis de uma sessão de Descanso Longo.
+enum LongRestStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+///
+/// SESSÃO PERSISTENTE de Descanso Longo (PHB 2014).
+///
+/// Nesta etapa a sessão representa apenas que a mesa aceitou entrar no descanso
+/// — NÃO aplica benefícios. `longRestRequestId` é o vínculo persistente com a
+/// solicitação coletiva (nulo em sessões individuais futuras).
+model LongRestSession {
+  id                String          @id @default(cuid())
+  characterId       String
+  character         Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  ///
+  /// Solicitação COLETIVA que criou esta sessão (null numa sessão individual).
+  longRestRequestId String?
+  longRestRequest   LongRestRequest? @relation(fields: [longRestRequestId], references: [id], onDelete: Cascade)
+  status            LongRestStatus  @default(ACTIVE)
+  /// Início da sessão (auditoria). Não é trava temporal.
+  startedAt         DateTime        @default(now())
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+
+  @@index([status])
+  @@index([characterId, status])
+  @@index([longRestRequestId])
+  @@map("long_rest_sessions")
+}
+
+/// Estados possíveis de uma SOLICITAÇÃO coletiva de Descanso Longo.
+///
+/// COMPLETED já existe no enum para a próxima etapa (aplicação dos benefícios),
+/// mas NESTA etapa nenhuma solicitação chega a COMPLETED — ela termina em
+/// APPROVED (sessões criadas) ou CANCELLED.
+enum LongRestRequestStatus {
+  PENDING
+  APPROVED
+  COMPLETED
+  CANCELLED
+}
+
+/// Resposta de um participante à solicitação coletiva de Descanso Longo.
+enum LongRestResponse {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+///
+/// SOLICITAÇÃO coletiva de Descanso Longo (consenso da mesa).
+///
+/// Fluxo: um PLAYER solicita → PENDING; cada convidado aceita ou recusa; quando
+/// não há mais PENDING a solicitação é resolvida — APPROVED (criando uma
+/// LongRestSession ACTIVE SÓ para os ACCEPTED) ou CANCELLED (ninguém aceitou).
+/// O mestre não participa: pode cancelar ou forçar a aprovação.
+///
+/// A mesa é única e global, então só pode existir UMA solicitação PENDING por
+/// vez (índice único parcial no banco).
+model LongRestRequest {
+  id                String                 @id @default(cuid())
+  status            LongRestRequestStatus  @default(PENDING)
+  requestedByUserId String
+  requestedBy       User                   @relation("LongRestRequester", fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  createdAt         DateTime               @default(now())
+  approvedAt        DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  /// Motivo do cancelamento quando NÃO veio de aprovação (ex.: NO_PARTICIPANTS).
+  cancelReason      String?
+  /// Mestre que forçou a aprovação (null no fluxo normal).
+  forcedByUserId    String?
+  forcedBy          User?                  @relation("LongRestForcer", fields: [forcedByUserId], references: [id], onDelete: SetNull)
+  participants      LongRestRequestParticipant[]
+  /// Sessões individuais criadas por esta solicitação (uma por ACCEPTED).
+  sessions          LongRestSession[]
+
+  @@index([status])
+  @@map("long_rest_requests")
+}
+
+///
+/// Participante (com resposta) de uma solicitação coletiva de Descanso Longo.
+/// A lista é CONGELADA na criação: quem desconecta depois continua aqui com a
+/// resposta atual.
+model LongRestRequestParticipant {
+  id             String           @id @default(cuid())
+  requestId      String
+  request        LongRestRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  characterId    String
+  character      Character        @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  response       LongRestResponse @default(PENDING)
+  respondedAt    DateTime?
+  ///
+  /// Fechado pelo MESTRE no force-approve: virou DECLINED sem ser uma recusa do
+  /// jogador. NUNCA marca aceitação.
+  closedByMaster Boolean          @default(false)
+
+  @@unique([requestId, userId])
+  @@index([requestId])
+  @@map("long_rest_request_participants")
+}
+
+///
+/// Operação idempotente do fluxo coletivo de Descanso Longo.
+///
+/// A solicitação é global/multi-personagem (não dá para reusar
+/// `CharacterOperation`, que é por personagem), então tem tabela própria — mesma
+/// semântica: `operationId` único + tipo + assinatura canônica do payload,
+/// guardando o resultado original para um reenvio devolver igual.
+model LongRestOperation {
+  id                 String   @id @default(cuid())
+  operationId        String   @unique
+  type               String
+  requestFingerprint String
+  result             Json     @default("{}")
+  createdAt          DateTime @default(now())
+
+  @@map("long_rest_operations")
 }
 
 /// Raça PERSONALIZADA criada pelo mestre (Prompt 2.10).

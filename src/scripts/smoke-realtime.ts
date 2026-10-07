@@ -14667,6 +14667,472 @@ async function main(): Promise<void> {
     // ===46-SCENARIOS===
   }
 
+  // --- 47. Descanso Longo coletivo (SÓ infraestrutura) ----------------------
+  {
+    console.log('\n47) Descanso Longo coletivo (infraestrutura, sem benefícios)');
+
+    const lrTokenA = testsPlayerToken;
+    const lrMeA = await api('/api/auth/me', { token: lrTokenA });
+    const lrUserIdA: string = lrMeA.data?.user?.sub;
+    const lrUsernameA: string = lrMeA.data?.user?.username;
+    const lrMasterMe = await api('/api/auth/me', { token: masterToken });
+    const lrMasterUserId: string = lrMasterMe.data?.user?.sub;
+    check(
+      '47) conta do solicitante do Descanso Longo disponível',
+      lrMeA.status === 200 && Boolean(lrUserIdA),
+      JSON.stringify(lrMeA.data),
+    );
+
+    if (!(await prisma.character.findUnique({ where: { userId: lrUserIdA } }))) {
+      await api('/api/characters/me', {
+        method: 'POST',
+        token: lrTokenA,
+        body: { name: 'Descanso Longo A' },
+      });
+    }
+
+    const lrPlayers = (
+      await prisma.user.findMany({
+        where: { role: 'PLAYER', username: { endsWith: `_${suffix}` }, id: { not: lrUserIdA } },
+        include: { character: { select: { id: true } } },
+        orderBy: { username: 'asc' },
+      })
+    )
+      .filter((user) => user.character !== null)
+      .slice(0, 3);
+    check(
+      '47) jogadores existentes com ficha para o Descanso Longo',
+      lrPlayers.length === 3,
+      `encontrados: ${lrPlayers.length}`,
+    );
+
+    const lrB = lrPlayers[0];
+    const lrC = lrPlayers[1]; // fica OFFLINE de propósito
+    const lrD = lrPlayers[2];
+    const lrTokenB = signToken({
+      sub: lrB.id,
+      username: lrB.username,
+      displayName: lrB.displayName,
+      role: lrB.role,
+    });
+    const lrTokenC = signToken({
+      sub: lrC.id,
+      username: lrC.username,
+      displayName: lrC.displayName,
+      role: lrC.role,
+    });
+    const lrTokenD = signToken({
+      sub: lrD.id,
+      username: lrD.username,
+      displayName: lrD.displayName,
+      role: lrD.role,
+    });
+    const lrUserIdB = lrB.id;
+    const lrUserIdD = lrD.id;
+    const lrUsernameB = lrB.username;
+    const lrUsernameD = lrD.username;
+
+    const lrCharA = await prisma.character.findUniqueOrThrow({ where: { userId: lrUserIdA } });
+    const lrCharB = await prisma.character.findUniqueOrThrow({ where: { userId: lrUserIdB } });
+    const lrCharD = await prisma.character.findUniqueOrThrow({ where: { userId: lrUserIdD } });
+
+    const lrClearSessions = () =>
+      prisma.longRestSession.updateMany({
+        where: { characterId: { in: [lrCharA.id, lrCharB.id, lrCharD.id] }, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+    const lrCancelPending = () =>
+      prisma.longRestRequest.updateMany({
+        where: { status: 'PENDING' },
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+      });
+    const lrActiveSessions = (characterId: string) =>
+      prisma.longRestSession.findMany({ where: { characterId, status: 'ACTIVE' } });
+    const lrReset = async () => {
+      await lrClearSessions();
+      await lrCancelPending();
+    };
+    await lrReset();
+
+    // Sockets: A, B e D online; C nunca conecta (offline de propósito).
+    const lrSocketA = connect(lrTokenA);
+    const lrPresence = waitForPresence(lrSocketA, () => true).catch(() => null);
+    await waitFor<any>(lrSocketA, 'connection:ready').catch(() => null);
+    const lrOnlineList: any[] = (await lrPresence)?.online ?? [];
+    await demoteForeignOnlinePlayers(
+      lrOnlineList,
+      new Set([lrUserIdA, lrUserIdB, lrUserIdD]),
+    );
+    const lrMasterSocket = connect(masterToken);
+    await waitFor<any>(lrMasterSocket, 'connection:ready').catch(() => null);
+    const lrOnline = waitForPresence(
+      lrSocketA,
+      (online) =>
+        online.some((user: any) => user.username === lrUsernameA) &&
+        online.some((user: any) => user.username === lrUsernameB) &&
+        online.some((user: any) => user.username === lrUsernameD),
+    );
+    const lrSocketB = connect(lrTokenB);
+    const lrSocketD = connect(lrTokenD);
+    await Promise.all([
+      waitFor<any>(lrSocketB, 'connection:ready').catch(() => null),
+      waitFor<any>(lrSocketD, 'connection:ready').catch(() => null),
+      lrOnline.catch(() => null),
+    ]);
+
+    const lrCurrent = async () =>
+      (await api('/api/rest/long/request', { token: lrTokenA })).data.request;
+    const lrCreate = (token: string, operationId: string) =>
+      api('/api/rest/long/request', { method: 'POST', token, body: { operationId } });
+    const lrRespond = (
+      token: string,
+      requestId: string,
+      response: string,
+      operationId: string,
+    ) =>
+      api(`/api/rest/long/${requestId}/respond`, {
+        method: 'POST',
+        token,
+        body: { response, operationId },
+      });
+    const lrForce = (requestId: string, operationId: string, token = masterToken) =>
+      api(`/api/rest/long/${requestId}/force-approve`, {
+        method: 'POST',
+        token,
+        body: { operationId },
+      });
+    const lrCancel = (requestId: string, operationId: string, token = masterToken) =>
+      api(`/api/rest/long/${requestId}/cancel`, {
+        method: 'POST',
+        token,
+        body: { operationId },
+      });
+
+    // Snapshot (campos que o Long Rest NÃO pode tocar nesta etapa).
+    const lrSnapshot = async (characterId: string) => {
+      const c = await prisma.character.findUniqueOrThrow({ where: { id: characterId } });
+      return JSON.stringify({
+        hpCurrent: c.hpCurrent,
+        hpMax: c.hpMax,
+        hpTemp: c.hpTemp,
+        hitDice: c.hitDice,
+        spells: c.spells,
+        classState: c.classState,
+        inventory: c.inventory,
+        version: c.version,
+      });
+    };
+    const lrBeforeA = await lrSnapshot(lrCharA.id);
+    const lrBeforeB = await lrSnapshot(lrCharB.id);
+    const lrBeforeD = await lrSnapshot(lrCharD.id);
+
+    // --- 47.1 Criação, congelamento e única PENDING ------------------------
+    check(
+      '1) criar a solicitação de Long Rest sem token é recusado (401)',
+      (await api('/api/rest/long/request', { method: 'POST', body: { operationId: `op-${suffix}-lr-noauth` } })).status === 401,
+    );
+
+    const lrEventPromise = waitFor<any>(lrSocketA, 'long-rest:request-updated').catch(() => null);
+    const lrCreated1 = await lrCreate(lrTokenA, `op-${suffix}-lr-1`);
+    const lrEvent = await lrEventPromise;
+    const lrReq1 = lrCreated1.data;
+    check(
+      '1) PLAYER cria a solicitação de Long Rest (201, PENDING, realtime)',
+      lrCreated1.status === 201 &&
+        lrReq1?.status === 'PENDING' &&
+        lrReq1?.replayed === false &&
+        lrEvent?.request?.id === lrReq1?.id,
+      JSON.stringify({ status: lrCreated1.status, body: lrReq1, event: lrEvent?.request?.id }),
+    );
+    const lrPartA = lrReq1?.participants?.find((p: any) => p.userId === lrUserIdA);
+    const lrPartB = lrReq1?.participants?.find((p: any) => p.userId === lrUserIdB);
+    const lrPartD = lrReq1?.participants?.find((p: any) => p.userId === lrUserIdD);
+    check(
+      '2) o solicitante nasce ACCEPTED',
+      lrPartA?.response === 'ACCEPTED' && Boolean(lrPartA?.respondedAt) && lrPartA?.sessionId === null,
+      JSON.stringify(lrPartA),
+    );
+    check(
+      '3) os demais jogadores ONLINE entram PENDING',
+      lrPartB?.response === 'PENDING' && lrPartD?.response === 'PENDING' && lrPartB?.respondedAt === null,
+      JSON.stringify({ b: lrPartB, d: lrPartD }),
+    );
+    check(
+      '4) MASTER não entra como participante',
+      !(lrReq1?.participants ?? []).some((p: any) => p.userId === lrMasterUserId),
+      JSON.stringify((lrReq1?.participants ?? []).map((p: any) => p.userId)),
+    );
+    check(
+      '5) quem está OFFLINE não entra (C) e a lista tem 3 participantes',
+      !(lrReq1?.participants ?? []).some((p: any) => p.userId === lrC.id) &&
+        (lrReq1?.participants ?? []).length === 3,
+      JSON.stringify((lrReq1?.participants ?? []).map((p: any) => p.username)),
+    );
+    const lrPendingGet = await lrCurrent();
+    check(
+      '22) GET recupera a solicitação PENDING a partir do servidor',
+      lrPendingGet?.id === lrReq1?.id && lrPendingGet?.status === 'PENDING',
+      JSON.stringify({ id: lrPendingGet?.id, status: lrPendingGet?.status }),
+    );
+
+    const lrSecond = await lrCreate(lrTokenA, `op-${suffix}-lr-1b`);
+    check(
+      '6) segunda solicitação PENDING global → 409 LONG_REST_REQUEST_ALREADY_PENDING',
+      lrSecond.status === 409 && lrSecond.data?.error === 'LONG_REST_REQUEST_ALREADY_PENDING',
+      JSON.stringify({ status: lrSecond.status, data: lrSecond.data }),
+    );
+    const lrCreateReplay = await lrCreate(lrTokenA, `op-${suffix}-lr-1`);
+    check(
+      '6b) reenvio do create é idempotente (replayed, mesmo id)',
+      lrCreateReplay.status === 201 &&
+        lrCreateReplay.data?.replayed === true &&
+        lrCreateReplay.data?.id === lrReq1?.id,
+      JSON.stringify({ replayed: lrCreateReplay.data?.replayed, id: lrCreateReplay.data?.id }),
+    );
+
+    // --- 47.8 Presença congelada ------------------------------------------
+    lrSocketB.close();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const lrFrozen = await lrCurrent();
+    check(
+      '21) presença é congelada: desconectar não tira o participante da lista',
+      (lrFrozen?.participants ?? []).length === 3 &&
+        (lrFrozen?.participants ?? []).some((p: any) => p.userId === lrUserIdB),
+      JSON.stringify((lrFrozen?.participants ?? []).map((p: any) => p.username)),
+    );
+    // Reconecta o B: as solicitações seguintes congelam a lista a partir de
+    // quem está online, e o B precisa continuar sendo convidado.
+    const lrSocketB2 = connect(lrTokenB);
+    const lrBOnlineAgain = waitForPresence(lrSocketA, (online) =>
+      online.some((user: any) => user.username === lrUsernameB),
+    ).catch(() => null);
+    await Promise.all([
+      waitFor<any>(lrSocketB2, 'connection:ready').catch(() => null),
+      lrBOnlineAgain,
+    ]);
+
+    // --- 47.2 Respostas, troca e aprovação --------------------------------
+    const lrBAccepted = await lrRespond(lrTokenB, lrReq1.id, 'ACCEPTED', `op-${suffix}-lr-1-b1`);
+    check(
+      '7) ACCEPTED funciona',
+      lrBAccepted.status === 200 &&
+        lrBAccepted.data?.participants?.find((p: any) => p.userId === lrUserIdB)?.response === 'ACCEPTED',
+      JSON.stringify(lrBAccepted.data?.participants),
+    );
+    const lrBDeclined = await lrRespond(lrTokenB, lrReq1.id, 'DECLINED', `op-${suffix}-lr-1-b2`);
+    check(
+      '9) a resposta pode mudar enquanto PENDING (ACCEPTED → DECLINED)',
+      lrBDeclined.status === 200 &&
+        lrBDeclined.data?.status === 'PENDING' &&
+        lrBDeclined.data?.participants?.find((p: any) => p.userId === lrUserIdB)?.response === 'DECLINED',
+      JSON.stringify({ status: lrBDeclined.data?.status, participants: lrBDeclined.data?.participants }),
+    );
+    await lrRespond(lrTokenB, lrReq1.id, 'ACCEPTED', `op-${suffix}-lr-1-b3`);
+    const lrDDeclined = await lrRespond(lrTokenD, lrReq1.id, 'DECLINED', `op-${suffix}-lr-1-d1`);
+    const lrApproved = lrDDeclined.data;
+    check(
+      '8) DECLINED funciona',
+      lrDDeclined.status === 200 &&
+        lrDDeclined.data?.participants?.find((p: any) => p.userId === lrUserIdD)?.response === 'DECLINED',
+      JSON.stringify(lrDDeclined.data?.participants),
+    );
+    check(
+      '10) o último PENDING resolve a solicitação → APPROVED',
+      lrApproved?.status === 'APPROVED' && Boolean(lrApproved?.approvedAt),
+      JSON.stringify({ status: lrApproved?.status, approvedAt: lrApproved?.approvedAt }),
+    );
+    const lrRespA1 = lrApproved?.participants?.find((p: any) => p.userId === lrUserIdA);
+    const lrRespB1 = lrApproved?.participants?.find((p: any) => p.userId === lrUserIdB);
+    const lrRespD1 = lrApproved?.participants?.find((p: any) => p.userId === lrUserIdD);
+    check(
+      '12) APPROVED cria UMA sessão ACTIVE por ACCEPTED (A e B)',
+      (await lrActiveSessions(lrCharA.id)).length === 1 &&
+        (await lrActiveSessions(lrCharB.id)).length === 1 &&
+        Boolean(lrRespA1?.sessionId) &&
+        Boolean(lrRespB1?.sessionId),
+      JSON.stringify({ a: await lrActiveSessions(lrCharA.id), b: await lrActiveSessions(lrCharB.id) }),
+    );
+    check(
+      '13) DECLINED não recebe sessão (D)',
+      (await lrActiveSessions(lrCharD.id)).length === 0 && lrRespD1?.sessionId === null,
+      JSON.stringify({ d: await lrActiveSessions(lrCharD.id), part: lrRespD1 }),
+    );
+    check(
+      '14) a sessão criada está vinculada à solicitação',
+      (await lrActiveSessions(lrCharA.id))[0]?.longRestRequestId === lrReq1.id,
+      JSON.stringify(await lrActiveSessions(lrCharA.id)),
+    );
+
+    // --- 47.20/23 GET recupera APPROVED ------------------------------------
+    const lrAfterApproved = await lrCurrent();
+    check(
+      '23) GET recupera a solicitação APPROVED (sem estado React)',
+      lrAfterApproved?.id === lrReq1?.id && lrAfterApproved?.status === 'APPROVED',
+      JSON.stringify({ id: lrAfterApproved?.id, status: lrAfterApproved?.status }),
+    );
+
+    // --- 47.24–30 Nenhum benefício foi aplicado ----------------------------
+    check(
+      '24/25) nenhum benefício: hpCurrent e hpTemp intactos (A, B, D)',
+      (await lrSnapshot(lrCharA.id)) === lrBeforeA &&
+        (await lrSnapshot(lrCharB.id)) === lrBeforeB &&
+        (await lrSnapshot(lrCharD.id)) === lrBeforeD,
+      JSON.stringify({
+        a: (await lrSnapshot(lrCharA.id)) === lrBeforeA,
+        b: (await lrSnapshot(lrCharB.id)) === lrBeforeB,
+        d: (await lrSnapshot(lrCharD.id)) === lrBeforeD,
+      }),
+    );
+
+    // --- 47.4 Force-approve ------------------------------------------------
+    await lrReset();
+    const lrReq4 = (await lrCreate(lrTokenA, `op-${suffix}-lr-4`)).data;
+    const lrForced = await lrForce(lrReq4.id, `op-${suffix}-lr-4-force`);
+    const lrForcedB = lrForced.data?.participants?.find((p: any) => p.userId === lrUserIdB);
+    const lrForcedD = lrForced.data?.participants?.find((p: any) => p.userId === lrUserIdD);
+    check(
+      '14/15) force-approve ignora PENDING (DECLINED + closedByMaster, nunca ACCEPTED)',
+      lrForced.status === 200 &&
+        lrForcedB?.response === 'DECLINED' &&
+        lrForcedB?.closedByMaster === true &&
+        lrForcedD?.closedByMaster === true &&
+        lrForcedB?.response !== 'ACCEPTED',
+      JSON.stringify({ b: lrForcedB, d: lrForcedD }),
+    );
+    check(
+      '11/12) force-approve aprova com sessões só para ACCEPTED (A)',
+      lrForced.data?.status === 'APPROVED' &&
+        (await lrActiveSessions(lrCharA.id)).length === 1 &&
+        (await lrActiveSessions(lrCharB.id)).length === 0 &&
+        (await lrActiveSessions(lrCharD.id)).length === 0 &&
+        lrForced.data?.forcedByUserId != null,
+      JSON.stringify({
+        status: lrForced.data?.status,
+        a: (await lrActiveSessions(lrCharA.id)).length,
+        b: (await lrActiveSessions(lrCharB.id)).length,
+        d: (await lrActiveSessions(lrCharD.id)).length,
+      }),
+    );
+
+    // --- 47.3 Todos recusam → CANCELLED / NO_PARTICIPANTS ------------------
+    await lrReset();
+    const lrReq3 = (await lrCreate(lrTokenA, `op-${suffix}-lr-3`)).data;
+    await lrRespond(lrTokenA, lrReq3.id, 'DECLINED', `op-${suffix}-lr-3-a`);
+    await lrRespond(lrTokenB, lrReq3.id, 'DECLINED', `op-${suffix}-lr-3-b`);
+    const lrAllDeclined = await lrRespond(lrTokenD, lrReq3.id, 'DECLINED', `op-${suffix}-lr-3-d`);
+    check(
+      '11) todos recusam → CANCELLED / NO_PARTICIPANTS, sem sessões',
+      lrAllDeclined.status === 200 &&
+        lrAllDeclined.data?.status === 'CANCELLED' &&
+        lrAllDeclined.data?.cancelReason === 'NO_PARTICIPANTS' &&
+        (await lrActiveSessions(lrCharA.id)).length === 0 &&
+        (await lrActiveSessions(lrCharB.id)).length === 0 &&
+        (await lrActiveSessions(lrCharD.id)).length === 0,
+      JSON.stringify({ status: lrAllDeclined.data?.status, reason: lrAllDeclined.data?.cancelReason }),
+    );
+
+    // --- 47.5 Cancelamento pelo mestre -------------------------------------
+    await lrReset();
+    const lrReq5 = (await lrCreate(lrTokenA, `op-${suffix}-lr-5`)).data;
+    const lrCancelled = await lrCancel(lrReq5.id, `op-${suffix}-lr-5-cancel`);
+    check(
+      '16) MASTER cancela a solicitação PENDING → CANCELLED, sem sessões',
+      lrCancelled.status === 200 &&
+        lrCancelled.data?.status === 'CANCELLED' &&
+        (await lrActiveSessions(lrCharA.id)).length === 0,
+      JSON.stringify({ status: lrCancelled.data?.status }),
+    );
+    const lrCancelReplay = await lrCancel(lrReq5.id, `op-${suffix}-lr-5-cancel`);
+    check(
+      '16b) reenvio do cancel é idempotente (replayed)',
+      lrCancelReplay.status === 200 && lrCancelReplay.data?.replayed === true,
+      JSON.stringify({ replayed: lrCancelReplay.data?.replayed }),
+    );
+
+    // --- 47.6 Conflito com uma sessão ACTIVE -------------------------------
+    await lrReset();
+    await prisma.longRestSession.create({ data: { characterId: lrCharA.id } });
+    const lrReq6 = (await lrCreate(lrTokenA, `op-${suffix}-lr-6`)).data;
+    await lrRespond(lrTokenD, lrReq6.id, 'DECLINED', `op-${suffix}-lr-6-d`);
+    const lrConflict = await lrRespond(lrTokenB, lrReq6.id, 'ACCEPTED', `op-${suffix}-lr-6-b`);
+    check(
+      '17) conflito com sessão ACTIVE falha atomicamente (409 LONG_REST_SESSION_ALREADY_ACTIVE)',
+      lrConflict.status === 409 && lrConflict.data?.error === 'LONG_REST_SESSION_ALREADY_ACTIVE',
+      JSON.stringify({ status: lrConflict.status, data: lrConflict.data }),
+    );
+    const lrAfterConflict = await prisma.longRestRequest.findUniqueOrThrow({ where: { id: lrReq6.id } });
+    check(
+      '17b) a solicitação continua PENDING e nenhuma sessão parcial foi criada',
+      lrAfterConflict.status === 'PENDING' && (await lrActiveSessions(lrCharB.id)).length === 0,
+      JSON.stringify({ status: lrAfterConflict.status, b: await lrActiveSessions(lrCharB.id) }),
+    );
+    await lrReset();
+
+    // --- 47.7 Concorrência -------------------------------------------------
+    await lrReset();
+    const lrReq7 = (await lrCreate(lrTokenA, `op-${suffix}-lr-7`)).data;
+    await lrRespond(lrTokenD, lrReq7.id, 'DECLINED', `op-${suffix}-lr-7-d`);
+    const [lrRaceB1, lrRaceB2] = await Promise.all([
+      lrRespond(lrTokenB, lrReq7.id, 'ACCEPTED', `op-${suffix}-lr-7-b1`),
+      lrRespond(lrTokenB, lrReq7.id, 'DECLINED', `op-${suffix}-lr-7-b2`),
+    ]);
+    const lrRaceStatuses = [lrRaceB1.status, lrRaceB2.status].sort((a, b) => a - b);
+    const lrReq7After = await prisma.longRestRequest.findUniqueOrThrow({ where: { id: lrReq7.id } });
+    check(
+      '19) duas respostas finais concorrentes → uma resolução válida, sem sessões duplicadas',
+      lrRaceStatuses[0] === 200 &&
+        lrRaceStatuses[1] === 409 &&
+        lrReq7After.status === 'APPROVED' &&
+        (await lrActiveSessions(lrCharA.id)).length === 1 &&
+        (await lrActiveSessions(lrCharB.id)).length <= 1,
+      JSON.stringify({
+        statuses: lrRaceStatuses,
+        status: lrReq7After.status,
+        a: (await lrActiveSessions(lrCharA.id)).length,
+        b: (await lrActiveSessions(lrCharB.id)).length,
+      }),
+    );
+
+    await lrReset();
+    const lrReq8 = (await lrCreate(lrTokenA, `op-${suffix}-lr-8`)).data;
+    const [lrForce1, lrForce2] = await Promise.all([
+      lrForce(lrReq8.id, `op-${suffix}-lr-8-f1`),
+      lrForce(lrReq8.id, `op-${suffix}-lr-8-f2`),
+    ]);
+    const lrForceStatuses = [lrForce1.status, lrForce2.status].sort((a, b) => a - b);
+    check(
+      '20) force-approve concorrente → sem duplicidade (uma sessão por ACCEPTED)',
+      lrForceStatuses[0] === 200 &&
+        lrForceStatuses[1] === 409 &&
+        (await lrActiveSessions(lrCharA.id)).length === 1 &&
+        (await lrActiveSessions(lrCharB.id)).length === 0 &&
+        (await lrActiveSessions(lrCharD.id)).length === 0,
+      JSON.stringify({
+        statuses: lrForceStatuses,
+        a: (await lrActiveSessions(lrCharA.id)).length,
+        b: (await lrActiveSessions(lrCharB.id)).length,
+      }),
+    );
+
+    // --- 47.18 Criação de sessões não é duplicada -------------------------
+    const lrSessionsForA = await prisma.longRestSession.findMany({
+      where: { longRestRequestId: lrReq8.id },
+    });
+    check(
+      '18) as sessões da solicitação não são duplicadas (uma por ACCEPTED)',
+      lrSessionsForA.length === 1 && lrSessionsForA[0].characterId === lrCharA.id,
+      JSON.stringify(lrSessionsForA),
+    );
+
+    // Limpeza do estado deixado pela seção (sessões e PENDING).
+    await lrReset();
+
+    lrSocketA.close();
+    lrSocketB2.close();
+    lrSocketD.close();
+    lrMasterSocket.close();
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -14738,6 +15204,10 @@ async function cleanup(): Promise<void> {
   // global (sem FK para usuário), então a limpeza é explícita — todas as chaves do
   // teste carregam o sufixo da execução.
   await prisma.shortRestOperation.deleteMany({ where: { operationId: { contains: suffix } } });
+
+  // Operações idempotentes da solicitação coletiva de Descanso Longo (mesma
+  // tabela global sem FK para usuário).
+  await prisma.longRestOperation.deleteMany({ where: { operationId: { contains: suffix } } });
 
   if (createdUsernames.length > 0) {
     // A ficha é removida junto com o usuário (onDelete: Cascade); as solicitações

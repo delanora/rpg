@@ -2008,6 +2008,49 @@ export interface ShortRestCompletedPayload {
   completion: ShortRestCompletionDto;
 }
 
+/** --- Descanso Longo coletivo (solicitação da mesa) ----------------------- */
+
+/** Espelha src/modules/rest/long-rest-request.dto.ts. */
+export type LongRestRequestStatus = 'PENDING' | 'APPROVED' | 'COMPLETED' | 'CANCELLED';
+export type LongRestResponse = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+
+export interface LongRestUserRefDto {
+  userId: string;
+  username: string;
+  displayName: string;
+}
+
+export interface LongRestRequestParticipantDto {
+  userId: string;
+  username: string;
+  displayName: string;
+  characterId: string;
+  response: LongRestResponse;
+  respondedAt: string | null;
+  /** Fechado pelo mestre no force-approve (nunca conta como aceitação). */
+  closedByMaster: boolean;
+  /** Sessão individual criada na aprovação (null enquanto PENDING/recusado). */
+  sessionId: string | null;
+}
+
+export interface LongRestRequestDto {
+  id: string;
+  status: LongRestRequestStatus;
+  requestedBy: LongRestUserRefDto;
+  participants: LongRestRequestParticipantDto[];
+  createdAt: string;
+  approvedAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  forcedByUserId: string | null;
+}
+
+/** Payload do evento `long-rest:request-updated`. */
+export interface LongRestRequestUpdatedPayload {
+  request: LongRestRequestDto;
+}
+
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
 
 export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest';

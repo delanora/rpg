@@ -29,6 +29,7 @@ import type {
   PresencePayload,
   RegionCreatedPayload,
   RegionDeletedPayload,
+  LongRestRequestUpdatedPayload,
   RegionUpdatedPayload,
   ShortRestCompletedPayload,
   ShortRestRequestUpdatedPayload,
@@ -70,6 +71,7 @@ export interface ServerToClientEvents {
   'combat:attack': (payload: AttackResolvedPayload) => void;
   'short-rest:request-updated': (payload: ShortRestRequestUpdatedPayload) => void;
   'short-rest:completed': (payload: ShortRestCompletedPayload) => void;
+  'long-rest:request-updated': (payload: LongRestRequestUpdatedPayload) => void;
 }
 
 export interface ClientToServerEvents {
