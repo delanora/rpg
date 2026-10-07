@@ -239,9 +239,18 @@ model CharacterOperation {
   /// Identificador do pedido gerado pelo cliente. É único POR PERSONAGEM —
   /// reenviar o mesmo pedido devolve o resultado guardado.
   operationId String
-  /// Tipo da operação (ex.: "short-rest-hit-die").
-  kind        String
-  /// Resposta original da operação (rolagem, PV antes/depois, Dados de Vida).
+  /// Tipo lógico da operação — a IDENTIDADE dela (ex.: "SHORT_REST_HIT_DIE").
+  /// É validado junto do `requestFingerprint` no reenvio: mesma chave com tipo
+  /// diferente é conflito de idempotência, não replay.
+  type        String
+  /// Assinatura CANÔNICA do payload semântico da operação — só o que muda o
+  /// efeito (ex.: `{"die":10}`). NÃO inclui `expectedVersion` (é controle de
+  /// concorrência, não identidade) nem campos derivados pelo servidor.
+  requestFingerprint String
+  ///
+  /// Snapshot COMPLETO da resposta original da operação (a ficha depois da
+  /// escrita + a rolagem + PV + Dados de Vida + versão). O reenvio devolve este
+  /// snapshot INTEGRAL — nunca reconstruído a partir do estado atual da ficha.
   result      Json      @default("{}")
   createdAt   DateTime  @default(now())
 

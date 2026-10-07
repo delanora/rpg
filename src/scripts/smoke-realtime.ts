@@ -12462,8 +12462,9 @@ async function main(): Promise<void> {
     const firstSpend = await spend(10, restNow.version, firstOp);
     const restAfterFirst = await restRow();
     check(
-      '3) gastar 1d10 devolve 200 e sobe o total usado',
+      '3) gastar 1d10 devolve 200, replayed=false e sobe o total usado',
       firstSpend.status === 200 &&
+        firstSpend.data?.replayed === false &&
         firstSpend.data?.hitDice?.used === 1 &&
         firstSpend.data?.hitDice?.remaining === 2 &&
         firstSpend.data?.version === restNow.version + 1,
@@ -12520,8 +12521,9 @@ async function main(): Promise<void> {
     const replayed = await spend(10, restNow.version, firstOp);
     const restAfterReplay = await restRow();
     check(
-      '10) reenviar o mesmo operationId devolve o resultado original sem consumir outro dado',
+      '10) reenviar o mesmo operationId devolve o resultado original (replayed=true) sem consumir outro dado',
       replayed.status === 200 &&
+        replayed.data?.replayed === true &&
         replayed.data?.roll?.value === restRoll?.value &&
         replayed.data?.hitDice?.used === 1 &&
         replayed.data?.version === restNow.version + 1 &&
@@ -12647,6 +12649,132 @@ async function main(): Promise<void> {
       restNow.derived.hitDice.used === 0 &&
         restNow.derived.hitDice.remaining === restNow.derived.hitDice.total,
       JSON.stringify(restNow.derived.hitDice),
+    );
+    // --- Replay idempotente: snapshot original, identidade e corridas --------
+    const restCharacterId = (await restRow()).id;
+    const originalCharacter = firstSpend.data?.character;
+    const originalVersion = firstSpend.data?.version;
+
+    // Altera a ficha DEPOIS da operação original (estado atual ≠ snapshot).
+    await prisma.character.update({
+      where: { userId: restUserId },
+      data: { hpCurrent: 7, hitDice: { usedByDie: { '10': 2 } }, version: { increment: 1 } },
+    });
+    const versionAfterMutation = (await restRow()).version;
+    const historyBeforeReplay = await api('/api/dice/history', { token: masterToken });
+    const countBeforeReplay = (historyBeforeReplay.data?.rolls ?? []).filter(
+      (roll: any) => roll.kind === 'rest' && roll.actorUserId === restUserId,
+    ).length;
+
+    const replayOld = await spend(10, (originalVersion ?? 1) - 1, firstOp);
+    const rowAfterReplay = await restRow();
+    const historyAfterReplay = await api('/api/dice/history', { token: masterToken });
+    const countAfterReplay = (historyAfterReplay.data?.rolls ?? []).filter(
+      (roll: any) => roll.kind === 'rest' && roll.actorUserId === restUserId,
+    ).length;
+
+    check(
+      '2/7) replay devolve o SNAPSHOT ORIGINAL, sem misturar com o estado atual',
+      replayOld.status === 200 &&
+        replayOld.data?.replayed === true &&
+        replayOld.data?.character?.hpCurrent === originalCharacter?.hpCurrent &&
+        replayOld.data?.character?.version === originalCharacter?.version &&
+        replayOld.data?.version === originalVersion &&
+        replayOld.data?.hitDice?.used === 1,
+      JSON.stringify({ replayed: replayOld.data?.character, original: originalCharacter }),
+    );
+    check(
+      '3/4/5/6) replay não escreve: ficha, versão e log de rolagens intactos',
+      rowAfterReplay.hpCurrent === 7 &&
+        (rowAfterReplay.hitDice as any)?.usedByDie?.['10'] === 2 &&
+        rowAfterReplay.version === versionAfterMutation &&
+        countAfterReplay === countBeforeReplay,
+      JSON.stringify({
+        hp: rowAfterReplay.hpCurrent,
+        version: rowAfterReplay.version,
+        rolls: [countBeforeReplay, countAfterReplay],
+      }),
+    );
+
+    // 8) Mesma operationId com payload DIFERENTE → 409 IDEMPOTENCY_KEY_REUSED.
+    const reusedDie = await spend(6, (originalVersion ?? 1) - 1, firstOp);
+    check(
+      '8) reusar a chave com outro dado devolve 409 IDEMPOTENCY_KEY_REUSED',
+      reusedDie.status === 409 && reusedDie.data?.error === 'IDEMPOTENCY_KEY_REUSED',
+      JSON.stringify({ status: reusedDie.status, data: reusedDie.data }),
+    );
+
+    // 9) Mesma operationId com outro TYPE → 409 IDEMPOTENCY_KEY_REUSED.
+    const otherTypeOperationId = `op-${suffix}-othertype`;
+    await prisma.characterOperation.create({
+      data: {
+        characterId: restCharacterId,
+        operationId: otherTypeOperationId,
+        type: 'SOMETHING_ELSE',
+        requestFingerprint: '{"die":10}',
+        result: {},
+      },
+    });
+    const otherType = await spend(10, (originalVersion ?? 1) - 1, otherTypeOperationId);
+    check(
+      '9) reusar a chave com outro type devolve 409 IDEMPOTENCY_KEY_REUSED',
+      otherType.status === 409 && otherType.data?.error === 'IDEMPOTENCY_KEY_REUSED',
+      JSON.stringify({ status: otherType.status, data: otherType.data }),
+    );
+
+    // 10r) Corrida com MESMA chave e MESMO payload: uma execução real e um replay.
+    await setCharacterClasses(restUserId, [{ classKey: 'fighter', level: 3 }]);
+    await setRest({ hitDice: {}, hpCurrent: 10, hpMax: 60, constitution: 14 });
+    restNow = await restSheet();
+    const sameOp = `op-${suffix}-same`;
+    const sameVersion = restNow.version;
+    const [sameA, sameB] = await Promise.all([
+      spend(10, sameVersion, sameOp),
+      spend(10, sameVersion, sameOp),
+    ]);
+    const sameReplayed = [sameA.data?.replayed, sameB.data?.replayed].sort(
+      (a: any, b: any) => Number(a) - Number(b),
+    );
+    const rowAfterSame = await restRow();
+    check(
+      '10r) corrida com mesma chave e mesmo payload: uma execução real e um replay',
+      sameA.status === 200 &&
+        sameB.status === 200 &&
+        sameReplayed[0] === false &&
+        sameReplayed[1] === true &&
+        (rowAfterSame.hitDice as any)?.usedByDie?.['10'] === 1 &&
+        rowAfterSame.version === sameVersion + 1,
+      JSON.stringify({ statuses: [sameA.status, sameB.status], replayed: sameReplayed }),
+    );
+
+    // 11) Corrida com MESMA chave e payload DIFERENTE: uma executa, a outra dá
+    // conflito de idempotência (usa multiclasse para d10 e d6 valerem).
+    await setCharacterClasses(restUserId, [
+      { classKey: 'fighter', level: 3 },
+      { classKey: 'wizard', level: 2 },
+    ]);
+    await setRest({ hitDice: {}, hpCurrent: 10, hpMax: 60, constitution: 14 });
+    restNow = await restSheet();
+    const diffOp = `op-${suffix}-diff`;
+    const diffVersion = restNow.version;
+    const [diffA, diffB] = await Promise.all([
+      spend(10, diffVersion, diffOp),
+      spend(6, diffVersion, diffOp),
+    ]);
+    const diffStatuses = [diffA.status, diffB.status].sort((a, b) => a - b);
+    const diffErrors = [diffA.data?.error, diffB.data?.error];
+    const rowAfterDiff = await restRow();
+    const usedTotal =
+      ((rowAfterDiff.hitDice as any)?.usedByDie?.['10'] ?? 0) +
+      ((rowAfterDiff.hitDice as any)?.usedByDie?.['6'] ?? 0);
+    check(
+      '11) corrida com mesma chave e payload diferente: uma executa e a outra dá IDEMPOTENCY_KEY_REUSED',
+      diffStatuses[0] === 200 &&
+        diffStatuses[1] === 409 &&
+        diffErrors.includes('IDEMPOTENCY_KEY_REUSED') &&
+        usedTotal === 1 &&
+        rowAfterDiff.version === diffVersion + 1,
+      JSON.stringify({ statuses: diffStatuses, errors: diffErrors, usedTotal }),
     );
   }
 
