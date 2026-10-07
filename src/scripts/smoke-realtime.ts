@@ -1491,18 +1491,24 @@ async function main(): Promise<void> {
   );
 
   // Mesmo sem tipo de dano na arma, o Ataque Furtivo continua nomeado na
-  // composição, com os 2d6 e cada resultado individual.
+  // composição, com os dados e cada resultado individual. Num acerto CRÍTICO
+  // os dados da parcela dobram (2d6 → 4d6), então o esperado sai da própria
+  // expressão da rolagem — sem isso o teste ficava vermelho em 1 de cada ~10
+  // execuções, só por causa do dado.
   {
     const typelessParts = typelessResult?.components?.[0]?.breakdown?.parts ?? [];
     const typelessSneak = typelessParts.find((part: any) => part.source === 'sneakAttack');
+    const sneakExpression: string = typelessResult?.sneakAttack?.expression ?? '';
+    const [sneakBase, sneakSides] = sneakExpression.split('d').map(Number);
+    const expectedDice = typelessResult?.critical ? sneakBase * 2 : sneakBase;
     check(
       'sem tipo de dano, o Ataque Furtivo continua nomeado com os dados individuais',
       typelessResult === null ||
         (typelessSneak?.label === 'Ataque Furtivo' &&
-          typelessSneak.dice === '2d6' &&
-          typelessSneak.rolls.length === 2 &&
+          typelessSneak.dice === `${expectedDice}d${sneakSides}` &&
+          typelessSneak.rolls.length === expectedDice &&
           typelessSneak.value === typelessSneak.rolls.reduce((sum: number, r: number) => sum + r, 0)),
-      JSON.stringify(typelessParts),
+      JSON.stringify({ critical: typelessResult?.critical, sneakExpression, typelessParts }),
     );
   }
 
