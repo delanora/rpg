@@ -12009,6 +12009,12 @@ async function main(): Promise<void> {
     // — viva até o cleanup — como "o jogador que só escuta".
     const musicPlayerToken = testsPlayerToken;
 
+    // O estado da música é da MESA (linha única): tiramos uma foto agora e
+    // devolvemos tudo no fim, senão rodar o smoke pararia a música de quem
+    // está jogando.
+    const musicBefore = (await api('/api/music/state', { token: masterToken })).data?.state ?? null;
+    const musicStartedAt = Date.now();
+
     // O estado é de leitura livre para a mesa (é o que o jogador segue para
     // escutar); o catálogo e os comandos são só do mestre.
     const anonState = await api('/api/music/state');
@@ -12350,12 +12356,27 @@ async function main(): Promise<void> {
       `status ${removedAgain.status}`,
     );
 
-    // Devolve o volume da mesa ao padrão para não deixar a mesa muda.
-    await api('/api/music/state', {
+    // Devolve a mesa ao estado da foto: se a música estava tocando, volta na
+    // faixa certa e no ponto em que ela "andaria" durante o teste.
+    const elapsed = ((Date.now() - musicStartedAt) / 1000) * (musicBefore?.playing ? 1 : 0);
+    const restored = await api('/api/music/state', {
       method: 'POST',
       token: masterToken,
-      body: { volume: 1 },
+      body: {
+        trackId: musicBefore?.track?.id ?? null,
+        playing: Boolean(musicBefore?.playing),
+        repeat: Boolean(musicBefore?.repeat),
+        volume: musicBefore?.volume ?? 1,
+        ...(musicBefore?.track ? { position: (musicBefore.position ?? 0) + elapsed } : {}),
+      },
     });
+    check(
+      'o smoke devolve o estado da música da mesa como estava antes',
+      restored.status === 200 &&
+        (restored.data?.state?.track?.id ?? null) === (musicBefore?.track?.id ?? null) &&
+        restored.data?.state?.playing === Boolean(musicBefore?.playing),
+      JSON.stringify({ antes: musicBefore, depois: restored.data?.state }),
+    );
 
     musicMasterSocket.close();
     musicPlayerSocket.close();
