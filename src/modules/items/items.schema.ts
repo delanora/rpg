@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CAMP_SUPPLY_VALUE_MAX,
   ITEM_CATEGORIES,
   ITEM_RARITIES,
   itemDetailsSchema,
@@ -18,6 +19,23 @@ export const itemDetailsInputSchema = itemDetailsSchema;
 /** Preço em peças de ouro/prata/cobre. */
 export const itemPriceInputSchema = itemPriceSchema;
 
+/**
+ * RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso Longo coletivo).
+ *
+ * Propriedade EXPLÍCITA do item — nunca inferida por nome/categoria/descrição.
+ * Ligado, o valor precisa ser inteiro > 0 (senão uma unidade não contribuiria
+ * nada). Independente de `details.consumable`.
+ */
+export const campSupplyInputSchema = z
+  .object({
+    enabled: z.boolean(),
+    value: z.number().int().min(0).max(CAMP_SUPPLY_VALUE_MAX),
+  })
+  .refine((campSupply) => !campSupply.enabled || campSupply.value > 0, {
+    message: 'Um recurso de acampamento ligado precisa de um valor maior que zero.',
+    path: ['value'],
+  });
+
 /** Campos editáveis de um item do catálogo. */
 const itemFields = z.object({
   name: z.string().trim().min(1, 'O item precisa de um nome.').max(120),
@@ -32,6 +50,8 @@ const itemFields = z.object({
   imageUrl: z.string().trim().max(500),
   details: itemDetailsInputSchema,
   price: itemPriceInputSchema,
+  /** Recurso de acampamento (opcional; sem ele o item fica como estava). */
+  campSupply: campSupplyInputSchema,
 });
 
 /** Criação: só o nome é obrigatório. */
@@ -45,6 +65,7 @@ export const createItemSchema = z.object({
   imageUrl: z.string().trim().max(500).optional(),
   details: itemDetailsInputSchema.optional(),
   price: itemPriceInputSchema.partial().optional(),
+  campSupply: campSupplyInputSchema.optional(),
 });
 
 /** Edição: aceita qualquer subconjunto de campos. */

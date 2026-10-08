@@ -275,6 +275,44 @@ export const itemDetailsSchema = z
 
 export type ItemDetails = z.infer<typeof itemDetailsSchema>;
 
+/**
+ * RECURSO DE ACAMPAMENTO — mecânica OPCIONAL do Descanso Longo coletivo
+ * (inspirada no fluxo de Baldur's Gate 3; NÃO é regra do PHB 2014).
+ *
+ * É uma propriedade EXPLÍCITA do item, independente da categoria e de
+ * `details.consumable`: o mestre marca que um item vale pontos de acampamento.
+ * `enabled = false` → não conta; `enabled = true` → `value` precisa ser > 0.
+ * Nunca é inferida por nome, categoria, descrição ou tags.
+ */
+
+/** Valor máximo de pontos por unidade de um recurso de acampamento. */
+export const CAMP_SUPPLY_VALUE_MAX = 1000;
+
+/**
+ * Formato ARMAZENADO (tolerante) do recurso de acampamento do item e do espelho
+ * no inventário. A regra "enabled exige value > 0" é validada na EDIÇÃO do item
+ * (src/modules/items/items.schema.ts), não aqui, para não rejeitar leitura de
+ * dados antigos.
+ */
+export const campSupplySchema = z.object({
+  enabled: z.boolean().default(false),
+  value: z.number().int().min(0).max(CAMP_SUPPLY_VALUE_MAX).default(0),
+});
+
+export type CampSupply = z.infer<typeof campSupplySchema>;
+
+/** Recurso de acampamento DESLIGADO (padrão de itens e de pilhas avulsas). */
+export const DISABLED_CAMP_SUPPLY: CampSupply = { enabled: false, value: 0 };
+
+/**
+ * Normaliza um recurso de acampamento vindo do banco/JSONB: devolve o desligado
+ * quando os dados são incoerentes.
+ */
+export function normalizeCampSupply(value: unknown): CampSupply {
+  const parsed = campSupplySchema.safeParse(value ?? {});
+  return parsed.success ? parsed.data : { ...DISABLED_CAMP_SUPPLY };
+}
+
 /** Preço em peças de ouro (PO), prata (PP) e cobre (PC). */
 export const itemPriceSchema = z.object({
   gold: z.number().int().min(0).max(9_999_999),

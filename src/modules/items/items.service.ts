@@ -74,6 +74,8 @@ export async function createItem(input: CreateItemInput): Promise<ItemDto> {
       priceGold: price.gold ?? 0,
       priceSilver: price.silver ?? 0,
       priceCopper: price.copper ?? 0,
+      campSupplyEnabled: input.campSupply?.enabled ?? false,
+      campSupplyValue: input.campSupply?.value ?? 0,
     },
   });
 
@@ -107,6 +109,13 @@ export async function updateItem(id: string, patch: UpdateItemInput): Promise<It
     if (patch.price.gold !== undefined) data.priceGold = patch.price.gold;
     if (patch.price.silver !== undefined) data.priceSilver = patch.price.silver;
     if (patch.price.copper !== undefined) data.priceCopper = patch.price.copper;
+  }
+
+  // Recurso de acampamento (mecânica opcional). Uma vez ligado, o valor é > 0
+  // (validado no schema da rota).
+  if (patch.campSupply !== undefined) {
+    data.campSupplyEnabled = patch.campSupply.enabled;
+    data.campSupplyValue = patch.campSupply.value;
   }
 
   const item = await prisma.item.update({ where: { id }, data });
@@ -173,6 +182,7 @@ export async function sendItemToCharacter(
       rarity: itemRarityOf(item.rarity),
       requiresAttunement: item.requiresAttunement,
       details: sanitizeItemDetails(item.category, item.details),
+      campSupply: { enabled: item.campSupplyEnabled, value: item.campSupplyValue },
     });
   }
 

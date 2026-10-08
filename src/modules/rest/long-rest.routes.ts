@@ -5,13 +5,16 @@ import {
   longRestRequestActionSchema,
   longRestRequestIdSchema,
   respondLongRestRequestSchema,
+  setCampSupplyContributionSchema,
 } from './long-rest.schema.js';
 import {
+  abortLongRestRequest,
   cancelLongRestRequest,
   createLongRestRequest,
   forceApproveLongRestRequest,
   getOpenLongRestRequest,
   respondToLongRestRequest,
+  setCampSupplyContribution,
   type Actor,
 } from './long-rest.service.js';
 
@@ -106,6 +109,54 @@ longRestRouter.post(
     }
 
     res.json(await forceApproveLongRestRequest(actorFrom(req), id.data, parsed.data));
+  },
+);
+
+/**
+ * PUT /api/rest/long/:requestId/camp-supplies — contribui com recursos de
+ * acampamento (mecânica OPCIONAL). Só um participante ACCEPTED com sessão
+ * ACTIVE, com item do PRÓPRIO inventário. `quantity = 0` remove a contribuição.
+ * A seleção reserva a quantidade (nada é consumido nesta etapa).
+ */
+longRestRouter.put('/long/:requestId/camp-supplies', authenticate, async (req, res) => {
+  const id = longRestRequestIdSchema.safeParse(req.params.requestId);
+  const parsed = setCampSupplyContributionSchema.safeParse(req.body ?? {});
+  if (!id.success) {
+    validationError(res, { requestId: id.error.issues.map((issue) => issue.message) });
+    return;
+  }
+  if (!parsed.success) {
+    validationError(res, parsed.error.flatten().fieldErrors);
+    return;
+  }
+
+  res.json(await setCampSupplyContribution(actorFrom(req), id.data, parsed.data));
+});
+
+/**
+ * POST /api/rest/long/:requestId/abort — mestre ABORTA um descanso em andamento.
+ *
+ * Só vale para APPROVED: encerra as sessões ACTIVE (CANCELLED) e cancela a
+ * solicitação (`cancelReason: ABORTED`), liberando as reservas de acampamento.
+ * Para uma solicitação PENDING o mestre usa `/cancel`.
+ */
+longRestRouter.post(
+  '/long/:requestId/abort',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const id = longRestRequestIdSchema.safeParse(req.params.requestId);
+    const parsed = longRestRequestActionSchema.safeParse(req.body ?? {});
+    if (!id.success) {
+      validationError(res, { requestId: id.error.issues.map((issue) => issue.message) });
+      return;
+    }
+    if (!parsed.success) {
+      validationError(res, parsed.error.flatten().fieldErrors);
+      return;
+    }
+
+    res.json(await abortLongRestRequest(actorFrom(req), id.data, parsed.data));
   },
 );
 

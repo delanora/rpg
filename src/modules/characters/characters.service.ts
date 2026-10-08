@@ -32,6 +32,11 @@ import {
   type CatalogSnapshot,
 } from './inventory-sync.js';
 import { inventoryListSchema } from './characters.schema.js';
+import {
+  availableQuantity,
+  reservedQuantities,
+  reservedQuantity,
+} from '../rest/camp-supply-reservations.js';
 import type {
   CreateCharacterInput,
   LevelDownInput,
@@ -1383,6 +1388,19 @@ export async function useInventoryItem(
     }
     if (item.quantity <= 0) {
       throw new HttpError(`Não há mais unidades de ${item.name}.`, 400);
+    }
+
+    // As unidades RESERVADAS para recursos de acampamento não podem ser usadas.
+    // A leitura é refeita a cada tentativa: se uma reserva concorrente entrar,
+    // o `version` muda e a escrita condicionada falha — este laço tenta de novo
+    // e já enxerga a reserva nova.
+    const reserved = await reservedQuantity(item.id);
+    if (availableQuantity(item.quantity, reserved) <= 0) {
+      throw new HttpError(
+        `As unidades de ${item.name} estão reservadas para o Descanso Longo.`,
+        409,
+        'INVENTORY_RESERVED',
+      );
     }
 
     // Poção de Cura com `healingDice`: rola a cura agora (dado justo) para que
@@ -2746,7 +2764,23 @@ async function applyCharacterPatch(
   if (patch.toolProficiencies !== undefined) {
     data.toolProficiencies = [...new Set(patch.toolProficiencies)];
   }
-  if (patch.inventory !== undefined) data.inventory = patch.inventory;
+  if (patch.inventory !== undefined) {
+    // O inventário NÃO pode reduzir/remover uma pilha abaixo da quantidade
+    // RESERVADA para recursos de acampamento (mecânica opcional). Evita que um
+    // PATCH do mestre deixe uma reserva apontando para quantidade inexistente.
+    const reserved = await reservedQuantities(patch.inventory.map((entry) => entry.id));
+    for (const [inventoryItemId, reservedQty] of reserved) {
+      const entry = patch.inventory.find((item) => item.id === inventoryItemId);
+      if ((entry?.quantity ?? 0) < reservedQty) {
+        throw new HttpError(
+          'Há itens com quantidades reservadas para o Descanso Longo; libere ou reduza essas reservas antes.',
+          409,
+          'INVENTORY_RESERVED',
+        );
+      }
+    }
+    data.inventory = patch.inventory;
+  }
   // Moedas: só o MESTRE chega aqui (o jogador é barrado em assertPlayerCanPatch).
   if (patch.coins !== undefined) {
     data.coins = normalizeCoins(patch.coins) as unknown as Prisma.InputJsonValue;

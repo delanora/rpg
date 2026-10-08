@@ -169,10 +169,25 @@ export interface InventoryItem {
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
   /**
+   * RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso Longo coletivo):
+   * espelha o item do catálogo; desligado numa pilha avulsa. O servidor sempre
+   * envia; itens montados localmente podem omitir.
+   */
+  campSupply?: CampSupply;
+  /**
    * Proficiência do personagem com ESTE item (Arma/Cajado, Armadura, Escudo);
    * `null`/ausente quando a categoria não tem regra. Vem pronta do servidor.
    */
   proficiency?: { proficient: boolean } | null;
+}
+
+/**
+ * RECURSO DE ACAMPAMENTO de um item (mecânica OPCIONAL do Descanso Longo
+ * coletivo). `enabled` + pontos por unidade; propriedade explícita do item.
+ */
+export interface CampSupply {
+  enabled: boolean;
+  value: number;
 }
 
 /** Corpo de `POST /api/characters/me/inventory/move`. */
@@ -968,6 +983,14 @@ export interface GameConfig {
    * Desligado, a ficha mostra só PO (gp), PP (sp) e PC (cp).
    */
   extraCoins: boolean;
+  /**
+   * RECURSOS DE ACAMPAMENTO do Descanso Longo coletivo (mecânica OPCIONAL,
+   * inspirada no Baldur's Gate 3 — NÃO é regra do PHB 2014). DESLIGADO por
+   * padrão: com `false`, o Descanso Longo oficial não muda em nada.
+   */
+  campSuppliesEnabled: boolean;
+  /** Custo em pontos por participante ACCEPTED (padrão 10). */
+  campSupplyCostPerParticipant: number;
   updatedAt: string;
 }
 
@@ -2033,6 +2056,33 @@ export interface LongRestRequestParticipantDto {
   sessionId: string | null;
 }
 
+/** Contribuição de recurso de acampamento (visão mínima exposta à mesa). */
+export interface LongRestCampSupplyContributionDto {
+  characterId: string;
+  inventoryItemId: string;
+  quantity: number;
+  /** `quantity × campSupply.value` atual do item (derivado no servidor). */
+  points: number;
+}
+
+/** Pontos de acampamento por personagem (visão coletiva). */
+export interface LongRestCampSupplyByCharacterDto {
+  characterId: string;
+  points: number;
+}
+
+/** Seção de recursos de acampamento do DTO (mecânica OPCIONAL). */
+export interface LongRestCampSuppliesDto {
+  enabled: boolean;
+  costPerParticipant: number;
+  required: number;
+  contributed: number;
+  remaining: number;
+  satisfied: boolean;
+  byCharacter: LongRestCampSupplyByCharacterDto[];
+  contributions: LongRestCampSupplyContributionDto[];
+}
+
 export interface LongRestRequestDto {
   id: string;
   status: LongRestRequestStatus;
@@ -2044,6 +2094,8 @@ export interface LongRestRequestDto {
   cancelledAt: string | null;
   cancelReason: string | null;
   forcedByUserId: string | null;
+  /** Recursos de acampamento (mecânica opcional). */
+  campSupplies: LongRestCampSuppliesDto;
 }
 
 /** Payload do evento `long-rest:request-updated`. */

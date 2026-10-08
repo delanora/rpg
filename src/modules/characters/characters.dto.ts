@@ -66,7 +66,7 @@ import {
 import { parseJson } from '../shared/json.js';
 import { deriveHitDice } from '../shared/hit-dice.js';
 import { coinsWeight, normalizeCoins, type CoinPurse } from '../shared/coins.js';
-import type { ItemDetails, ItemRarity } from '../shared/item-details.js';
+import type { CampSupply, ItemDetails, ItemRarity } from '../shared/item-details.js';
 import { normalizeCreationDraft, type CreationDraft } from '../shared/creation.js';
 import { getTool, TOOL_CATEGORY_LABELS, type ToolCategory } from '../shared/tools/index.js';
 import { applicableUnarmoredDefenses, effectiveAbilitiesOf } from './armor-class.js';
@@ -109,6 +109,12 @@ export interface InventoryItemDto {
   requiresAttunement: boolean;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
+  /**
+   * RECURSO DE ACAMPAMENTO (mecânica opcional do Descanso Longo coletivo).
+   * Vem do item do catálogo (espelhado) ou é `{ enabled:false, value:0 }` numa
+   * pilha avulsa. É o que a ficha usa para saber o que pode ser oferecido.
+   */
+  campSupply: CampSupply;
   /**
    * Estado de proficiência do personagem com ESTE item, quando a categoria tem
    * regra (Arma/Cajado, Armadura, Escudo). `null` nas demais — é o que o popup

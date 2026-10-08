@@ -3,7 +3,7 @@ import { attackSchema, damageTypeListSchema } from '../shared/attacks.js';
 import { coinsSchema, coinAmountSchema, coinDeltaSchema } from '../shared/coins.js';
 import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
 import { getTool } from '../shared/tools.js';
-import { ITEM_RARITIES, itemDetailsSchema } from '../shared/item-details.js';
+import { ITEM_RARITIES, campSupplySchema, itemDetailsSchema } from '../shared/item-details.js';
 import {
   ABILITY_KEYS,
   ABILITY_SCORE_MAX,
@@ -156,6 +156,12 @@ export const inventoryItemSchema = z.object({
   requiresAttunement: z.boolean().default(false),
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: itemDetailsSchema.default({}),
+  /**
+   * RECURSO DE ACAMPAMENTO (mecânica opcional do Descanso Longo coletivo).
+   * Espelha o item do catálogo; em pilhas avulsas nasce desligado. Ver
+   * src/modules/shared/item-details.ts.
+   */
+  campSupply: campSupplySchema.default({ enabled: false, value: 0 }),
 });
 
 /** Lista de itens do inventário (limite de itens da mochila). */

@@ -38,6 +38,18 @@ model GameConfig {
   /// Desligado (padrão), a interface mostra só PO (gp), PP (sp) e PC (cp); os
   /// valores das cinco denominações existem sempre no banco.
   extraCoins     Boolean  @default(false)
+  ///
+  /// RECURSOS DE ACAMPAMENTO do Descanso Longo coletivo (mecânica OPCIONAL,
+  /// inspirada no fluxo de Baldur's Gate 3 — NÃO é regra do PHB 2014).
+  ///
+  /// DESLIGADO por padrão: quando `false`, nenhuma contribuição é exigida e o
+  /// Descanso Longo oficial segue inalterado. O mestre liga/desliga.
+  campSuppliesEnabled Boolean @default(false)
+  ///
+  /// Custo em PONTOS de recurso de acampamento POR PARTICIPANTE ACCEPTED.
+  /// Só vale quando `campSuppliesEnabled` é true. O total exigido é
+  /// `acceptedParticipants × campSupplyCostPerParticipant`. Padrão 10.
+  campSupplyCostPerParticipant Int @default(10)
   updatedAt      DateTime @updatedAt
 
   @@map("game_config")
@@ -230,6 +242,7 @@ model Character {
   shortRestParticipations ShortRestRequestParticipant[]
   longRestSessions LongRestSession[]
   longRestParticipations LongRestRequestParticipant[]
+  campSupplyContributions LongRestCampSupplyContribution[]
 
   @@map("characters")
 }
@@ -499,6 +512,11 @@ model LongRestRequest {
   participants      LongRestRequestParticipant[]
   /// Sessões individuais criadas por esta solicitação (uma por ACCEPTED).
   sessions          LongRestSession[]
+  ///
+  /// Contribuições de RECURSO DE ACAMPAMENTO (mecânica opcional). Só existem
+  /// enquanto a solicitação está APPROVED; ao CANCELLED/COMPLETED, o helper de
+  /// reserva as ignora (não é preciso apagá-las).
+  campSupplyContributions LongRestCampSupplyContribution[]
 
   @@index([status])
   @@map("long_rest_requests")
@@ -544,6 +562,40 @@ model LongRestOperation {
   createdAt          DateTime @default(now())
 
   @@map("long_rest_operations")
+}
+
+///
+/// CONTRIBUIÇÃO de RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso Longo
+/// coletivo, NÃO é regra do PHB 2014).
+///
+/// Registra que um jogador ACCEPTED reservou `quantity` unidades de UMA pilha do
+/// próprio inventário (`inventoryItemId` = id da entrada no JSONB `inventory`)
+/// para a solicitação coletiva. Os pontos são DERIVADOS na leitura
+/// (`quantity × campSupplyValue ATUAL do item`) — não há snapshot de subtotal.
+///
+/// A quantidade reservada NÃO sai do inventário nesta etapa: o helper de reserva
+/// soma estas linhas (só de solicitações APPROVED) e as demais operações de
+/// inventário respeitam `quantity − reservado`.
+model LongRestCampSupplyContribution {
+  id              String          @id @default(cuid())
+  requestId       String
+  request         LongRestRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  characterId     String
+  character       Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  /// Id da ENTRADA no inventário (não é o id do catálogo): duas pilhas do mesmo
+  /// item são entradas diferentes e podem ter contribuições independentes.
+  inventoryItemId String
+  /// Quantidade reservada nesta pilha (> 0).
+  quantity        Int
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  /// Uma contribuição POR PILHA dentro da mesma solicitação (atualizável).
+  @@unique([requestId, inventoryItemId])
+  @@index([requestId])
+  @@index([characterId])
+  @@index([inventoryItemId])
+  @@map("long_rest_camp_supply_contributions")
 }
 
 /// Raça PERSONALIZADA criada pelo mestre (Prompt 2.10).
@@ -720,6 +772,14 @@ model Item {
   priceGold   Int      @default(0)
   priceSilver Int      @default(0)
   priceCopper Int      @default(0)
+  ///
+  /// RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso Longo coletivo).
+  /// Propriedade EXPLÍCITA do item — nunca inferida por nome, categoria ou
+  /// descrição. Quando `true`, `campSupplyValue` precisa ser > 0 (pontos que
+  /// uma unidade contribui). Independente de `details.consumable`.
+  campSupplyEnabled Boolean @default(false)
+  /// Pontos que UMA unidade deste item vale como recurso de acampamento.
+  campSupplyValue   Int     @default(0)
   version     Int      @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

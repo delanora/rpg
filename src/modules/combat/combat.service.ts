@@ -14,6 +14,7 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import { characterArmorClass, characterCritThreshold } from '../characters/armor-class.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import { characterClassAdjustments } from '../characters/characters.dto.js';
+import { availableQuantity, reservedQuantities } from '../rest/camp-supply-reservations.js';
 import {
   computeMulticlassAdjustments,
   featureEffectsOf,
@@ -700,7 +701,16 @@ async function consumeAmmo(
       current.inventory,
       [],
     );
-    const stack = chooseAmmoStack(ammoStacks(inventory, ammoType), preferredInventoryId);
+    // As pilhas RESERVADAS para recursos de acampamento não podem ser gastas:
+    // só entram na escolha as que ainda têm quantidade disponível. A leitura é
+    // refeita a cada tentativa (o `version` muda se uma reserva concorrente
+    // entrar), então duas requisições nunca consomem a mesma unidade reservada.
+    const stacks = ammoStacks(inventory, ammoType);
+    const reserved = await reservedQuantities(stacks.map((item) => item.id));
+    const usable = stacks.filter(
+      (item) => availableQuantity(item.quantity, reserved.get(item.id) ?? 0) >= 1,
+    );
+    const stack = chooseAmmoStack(usable, preferredInventoryId);
     if (!stack) return null;
 
     const bonus: AmmoBonus = {
