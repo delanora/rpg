@@ -18,6 +18,7 @@ export type IconName =
   | 'crown'
   | 'sun'
   | 'moon'
+  | 'bed'
   | 'volume'
   | 'mute'
   | 'users'
@@ -119,6 +120,14 @@ const ICONS: Record<IconName, ReactNode> = {
     </>
   ),
   moon: <path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z" />,
+  /* Cama: travesseiro/estrado e o colchão visto de lado (descanso longo). */
+  bed: (
+    <>
+      <path d="M3 20v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8" />
+      <path d="M5 10V6a1.8 1.8 0 0 1 1.8-1.8h10.4A1.8 1.8 0 0 1 19 6v4" />
+      <path d="M3 17.5h18" />
+    </>
+  ),
   volume: (
     <>
       <path d="M4 9h3l4-3.5v13L7 15H4Z" />

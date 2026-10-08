@@ -503,15 +503,23 @@ export function VitalsSection({
         {shortRest ? (
           <button
             type="button"
-            className={shortRest.active ? 'btn btn-small btn-primary' : 'btn btn-small'}
+            className={`btn btn-small class-rest-btn${shortRest.active ? ' btn-primary' : ''}`}
             disabled={readOnly}
             onClick={shortRest.onOpen}
           >
-            descanso curto{shortRest.active ? ' • em andamento' : ''}
+            <Icon name="flame" size={15} />
+            <span>Descanso Curto</span>
+            {shortRest.active ? <span className="class-rest-badge">em andamento</span> : null}
           </button>
         ) : null}
-        <button type="button" className="btn btn-small" disabled={readOnly} onClick={longRest}>
-          descanso longo
+        <button
+          type="button"
+          className="btn btn-small class-rest-btn"
+          disabled={readOnly}
+          onClick={longRest}
+        >
+          <Icon name="bed" size={15} />
+          <span>Descanso Longo</span>
         </button>
       </div>
     </Section>
