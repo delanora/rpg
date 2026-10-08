@@ -1932,22 +1932,41 @@ select option {
   color: var(--ink-soft);
 }
 
-/* Ações de descanso: dois "botões-cartão" lado a lado, com ícone temático. */
+/*
+ * Ações de descanso: dois "botões-cartão" lado a lado, com ícone temático.
+ * Ficam afastados dos cards de CA/Iniciativa acima para não se confundirem
+ * com eles, e ecoam a mesma linguagem de card (borda fina, gradiente de
+ * superfície e brilho interno no topo).
+ */
 .class-rest {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
-  margin: 0.4rem 0 0.75rem;
+  gap: 0.7rem;
+  margin: 1.5rem 0 0.75rem;
 }
 
 .class-rest-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.78rem;
+  gap: var(--gap-icon);
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
   letter-spacing: 0.05em;
   white-space: nowrap;
+}
+
+/* Eco dos cards de vitalidade: borda mais suave + brilho interno (só nos
+   botões comuns; o primário mantém o vinho da ação em andamento). */
+.class-rest-btn:not(.btn-primary) {
+  border-color: var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.class-rest-btn:not(.btn-primary):hover:not(:disabled) {
+  border-color: var(--gold);
+  box-shadow:
+    0 0 16px -3px var(--glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 /* O ícone do descanso usa o dourado de apoio do projeto. */
