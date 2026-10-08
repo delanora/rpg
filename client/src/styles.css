@@ -1932,11 +1932,46 @@ select option {
   color: var(--ink-soft);
 }
 
+/* Ações de descanso: dois "botões-cartão" lado a lado, com ícone temático. */
 .class-rest {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.2rem 0 0.6rem;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0.75rem;
+}
+
+.class-rest-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* O ícone do descanso usa o dourado de apoio do projeto. */
+.class-rest-btn .icon {
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .class-rest-btn .icon {
+  color: var(--gold);
+}
+
+.class-rest-btn.btn-primary .icon {
+  color: #fbeccb;
+}
+
+/* Etiqueta de estado (descanso curto em andamento). */
+.class-rest-badge {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 
