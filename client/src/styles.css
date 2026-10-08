@@ -804,11 +804,15 @@ select option {
   gap: 0.75rem;
   padding: 0.7rem 1.25rem;
   color: #f2e3c4;
-  background:
-    linear-gradient(180deg, var(--leather-2), var(--leather));
-  border-bottom: 2px solid var(--gold-deep);
+  /* Couro chapado (sem degradê), só com um grão sutil por cima. */
+  background-color: var(--leather);
+  background-image: var(--noise);
+  background-size: 165px 165px;
+  background-blend-mode: soft-light;
+  /* Moldura dourada discreta: um fio de 1px, quase imperceptível. */
+  border-bottom: 1px solid var(--gold-hair);
   box-shadow:
-    0 2px 0 rgba(201, 162, 39, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
     0 10px 22px -14px rgba(0, 0, 0, 0.8);
 }
 
@@ -825,14 +829,14 @@ select option {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--gold-bright);
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 0 18px rgba(224, 184, 63, 0.35);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 0 10px rgba(224, 184, 63, 0.18);
 }
 
 .app-header-title h1 .brand-mark {
   width: 1.3em;
   height: 1.3em;
   vertical-align: -0.22em;
-  filter: drop-shadow(0 0 8px rgba(224, 184, 63, 0.5));
+  filter: drop-shadow(0 0 5px rgba(224, 184, 63, 0.28));
 }
 
 .app-header-meta {
@@ -3961,10 +3965,10 @@ input[type='checkbox']:disabled {
 
 /* A "mesa de comando" do mestre tem moldura mais imponente. */
 .app-shell.theme-master .app-header {
-  background: linear-gradient(180deg, #1b0f0b, #0b0605);
-  border-bottom-color: var(--gold);
+  background-color: var(--leather-deep);
+  border-bottom-color: var(--gold-hair);
   box-shadow:
-    0 2px 0 rgba(224, 184, 63, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
     0 12px 26px -14px rgba(0, 0, 0, 0.9);
 }
 
