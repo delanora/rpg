@@ -2,9 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
+  CAMP_SUPPLY_COST_MAX,
+  CAMP_SUPPLY_COST_MIN,
   getGameConfig,
   getMasterNotes,
   releaseLevelUp,
+  setCampSupplies,
   setExtraCoins,
   setMasterNotes,
   setStartingLevel,
@@ -30,6 +33,25 @@ const MASTER_NOTES_MAX = 20000;
 const masterNotesSchema = z.object({
   notes: z.string().max(MASTER_NOTES_MAX),
 });
+
+/**
+ * Recursos de acampamento (mecânica opcional do Descanso Longo coletivo).
+ * Pelo menos um dos campos precisa vir; o custo é validado nos limites.
+ */
+const campSuppliesSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    costPerParticipant: z
+      .number()
+      .int()
+      .min(CAMP_SUPPLY_COST_MIN)
+      .max(CAMP_SUPPLY_COST_MAX)
+      .optional(),
+  })
+  .refine(
+    (value) => value.enabled !== undefined || value.costPerParticipant !== undefined,
+    { message: 'Informe enabled e/ou costPerParticipant.' },
+  );
 
 /** GET /api/game — configuração atual da mesa (usada ao abrir a ficha). */
 gameConfigRouter.get('/', (_req, res) => {
@@ -72,6 +94,23 @@ gameConfigRouter.post('/extra-coins', requireRole('MASTER'), (req, res) => {
   }
 
   void setExtraCoins(parsed.data.enabled)
+    .then((config) => res.json({ config }))
+    .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
+});
+
+/**
+ * POST /api/game/camp-supplies — liga/desliga e ajusta os recursos de
+ * acampamento (mecânica OPCIONAL do Descanso Longo coletivo). Só MASTER.
+ */
+gameConfigRouter.post('/camp-supplies', requireRole('MASTER'), (req, res) => {
+  const parsed = campSuppliesSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten() });
+    return;
+  }
+
+  void setCampSupplies(parsed.data)
     .then((config) => res.json({ config }))
     .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
 });

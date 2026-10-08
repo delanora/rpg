@@ -2,6 +2,7 @@ import type { Item, Role } from '@prisma/client';
 import {
   itemRarityOf,
   sanitizeItemDetails,
+  type CampSupply,
   type ItemDetails,
   type ItemPrice,
   type ItemRarity,
@@ -22,6 +23,11 @@ export interface ItemDto {
   imageUrl: string;
   /** Atributos específicos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
+  /**
+   * RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso Longo coletivo):
+   * `enabled` + pontos por unidade. Propriedade explícita do item.
+   */
+  campSupply: CampSupply;
   /**
    * Preço em PO/PP/PC. Fica `null` para quem não é mestre — o valor de mercado
    * é informação exclusiva do mestre.
@@ -47,6 +53,7 @@ export function toItemDto(item: Item, viewer: Role): ItemDto {
     requiresAttunement: item.requiresAttunement,
     imageUrl: item.imageUrl,
     details: sanitizeItemDetails(item.category, item.details),
+    campSupply: { enabled: item.campSupplyEnabled, value: item.campSupplyValue },
     price:
       viewer === 'MASTER'
         ? { gold: item.priceGold, silver: item.priceSilver, copper: item.priceCopper }

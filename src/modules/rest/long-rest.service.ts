@@ -4,14 +4,24 @@ import { HttpError } from '../../lib/http-error.js';
 import { ServerEvents } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { getOnlineUsers } from '../../realtime/presence.js';
+import { parseJson } from '../shared/json.js';
+import { CAMP_SUPPLY_COST_DEFAULT } from '../shared/camp-supplies.js';
+import { inventoryListSchema } from '../characters/characters.schema.js';
+import type { InventoryItemDto } from '../characters/characters.dto.js';
+import { loadCatalogLookup, syncInventory } from '../characters/inventory-sync.js';
+import { availableQuantity, reservedQuantities } from './camp-supply-reservations.js';
 import {
   toLongRestRequestDto,
+  type LongRestCampSupplyContributionDto,
+  type LongRestCampSuppliesDto,
+  type LongRestRequestBaseDto,
   type LongRestRequestDto,
 } from './long-rest-request.dto.js';
 import type {
   CreateLongRestRequestInput,
   LongRestRequestActionInput,
   RespondLongRestRequestInput,
+  SetCampSupplyContributionInput,
 } from './long-rest.schema.js';
 
 /**
@@ -38,6 +48,10 @@ const CREATE_TYPE = 'LONG_REST_REQUEST_CREATE';
 const RESPOND_TYPE = 'LONG_REST_REQUEST_RESPOND';
 const FORCE_TYPE = 'LONG_REST_REQUEST_FORCE_APPROVE';
 const CANCEL_TYPE = 'LONG_REST_REQUEST_CANCEL';
+/** Abortar um descanso EM ANDAMENTO (APPROVED) — exclusivo do mestre. */
+const ABORT_TYPE = 'LONG_REST_REQUEST_ABORT';
+/** Definir/atualizar/remover UMA contribuição de recurso de acampamento. */
+const CAMP_SUPPLY_SET_TYPE = 'LONG_REST_CAMP_SUPPLY_SET';
 
 /** Mesma chave idempotente usada para outra operação. */
 const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
@@ -51,6 +65,16 @@ const NOT_A_PARTICIPANT = 'NOT_A_PARTICIPANT';
 const LONG_REST_SESSION_ALREADY_ACTIVE = 'LONG_REST_SESSION_ALREADY_ACTIVE';
 /** Motivo gravado quando todos recusaram (nenhum ACCEPTED). */
 const NO_PARTICIPANTS = 'NO_PARTICIPANTS';
+/** Motivo gravado quando o mestre ABORTA um descanso em andamento. */
+const ABORTED = 'ABORTED';
+/** A mecânica de recursos de acampamento está desligada. */
+const CAMP_SUPPLIES_DISABLED = 'CAMP_SUPPLIES_DISABLED';
+/** O item escolhido não é um recurso de acampamento válido. */
+const CAMP_SUPPLY_ITEM_INVALID = 'CAMP_SUPPLY_ITEM_INVALID';
+/** A quantidade pedida excede o disponível (descontando reservas). */
+const CAMP_SUPPLY_NOT_ENOUGH = 'CAMP_SUPPLY_NOT_ENOUGH';
+/** A solicitação não está em andamento (APPROVED) para aceitar contribuições. */
+const LONG_REST_NOT_IN_PROGRESS = 'LONG_REST_NOT_IN_PROGRESS';
 
 /** Autor da requisição (vem sempre do token). */
 export interface Actor {
@@ -119,13 +143,101 @@ const REQUEST_DTO_INCLUDE = {
   sessions: { select: { id: true, characterId: true } },
 } as const;
 
-/** Carrega a solicitação já no formato do DTO (com usuários e sessões). */
+/**
+ * Calcula a seção de RECURSOS DE ACAMPAMENTO (mecânica opcional) para o DTO.
+ *
+ * A config é lida pelo valor ATUAL (sem snapshot por solicitação — PASSO 29);
+ * os pontos de cada contribuição vêm do valor ATUAL do item (`campSupplyValue`),
+ * nunca de um subtotal persistido (PASSO 19/20).
+ */
+async function buildCampSupplies(
+  client: Db,
+  base: LongRestRequestBaseDto,
+): Promise<LongRestCampSuppliesDto> {
+  // Config atual da mesa (a linha única pode ainda não existir: usa os padrões).
+  const config = await client.gameConfig.findUnique({ where: { id: 'main' } });
+  const enabled = config?.campSuppliesEnabled ?? false;
+  const costPerParticipant = config?.campSupplyCostPerParticipant ?? CAMP_SUPPLY_COST_DEFAULT;
+
+  // Cota: só os ACCEPTED efetivos contam (DECLINED/PENDING do force-approve não).
+  const acceptedCharacterIds = base.participants
+    .filter((participant) => participant.response === 'ACCEPTED')
+    .map((participant) => participant.characterId);
+
+  const rows = await client.longRestCampSupplyContribution.findMany({
+    where: { requestId: base.id },
+  });
+
+  // Resolve o valor por item a partir do inventário ATUAL (espelhando o catálogo).
+  const characterIds = [...new Set(rows.map((row) => row.characterId))];
+  const characters = characterIds.length
+    ? await client.character.findMany({
+        where: { id: { in: characterIds } },
+        select: { id: true, inventory: true },
+      })
+    : [];
+  const inventoryByCharacter = new Map<string, InventoryItemDto[]>(
+    characters.map((character) => [
+      character.id,
+      parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []),
+    ]),
+  );
+  const catalog = await loadCatalogLookup([...inventoryByCharacter.values()]);
+
+  const pointsByCharacter = new Map<string, number>();
+  for (const characterId of acceptedCharacterIds) pointsByCharacter.set(characterId, 0);
+
+  const contributions: LongRestCampSupplyContributionDto[] = [];
+  let contributed = 0;
+  for (const row of rows) {
+    const inventory = syncInventory(inventoryByCharacter.get(row.characterId) ?? [], catalog);
+    const item = inventory.find((entry) => entry.id === row.inventoryItemId);
+    const value = item && item.campSupply.enabled ? item.campSupply.value : 0;
+    const points = row.quantity * value;
+    contributed += points;
+    pointsByCharacter.set(row.characterId, (pointsByCharacter.get(row.characterId) ?? 0) + points);
+    contributions.push({
+      characterId: row.characterId,
+      inventoryItemId: row.inventoryItemId,
+      quantity: row.quantity,
+      points,
+    });
+  }
+
+  const required = enabled ? acceptedCharacterIds.length * costPerParticipant : 0;
+  const remaining = Math.max(0, required - contributed);
+  const satisfied = !enabled || contributed >= required;
+
+  return {
+    enabled,
+    costPerParticipant,
+    required,
+    contributed,
+    remaining,
+    satisfied,
+    byCharacter: [...pointsByCharacter.entries()].map(([characterId, points]) => ({
+      characterId,
+      points,
+    })),
+    contributions,
+  };
+}
+
+/** Completa um DTO-base com a seção de recursos de acampamento. */
+async function withCampSupplies(
+  client: Db,
+  base: LongRestRequestBaseDto,
+): Promise<LongRestRequestDto> {
+  return { ...base, campSupplies: await buildCampSupplies(client, base) };
+}
+
+/** Carrega a solicitação já no formato do DTO (com usuários, sessões e camp supplies). */
 async function loadRequestDto(client: Db, requestId: string): Promise<LongRestRequestDto> {
   const request = await client.longRestRequest.findUniqueOrThrow({
     where: { id: requestId },
     include: REQUEST_DTO_INCLUDE,
   });
-  return toLongRestRequestDto(request);
+  return withCampSupplies(client, toLongRestRequestDto(request));
 }
 
 /**
@@ -531,6 +643,290 @@ export async function cancelLongRestRequest(
 }
 
 /**
+ * Define/atualiza/REMOVE a contribuição de UMA pilha do próprio inventário
+ * (mecânica OPCIONAL de recursos de acampamento).
+ *
+ * Server-authoritative: só um participante ACCEPTED com sessão ACTIVE da MESMA
+ * solicitação contribui, apenas com itens do PRÓPRIO inventário, e só quando a
+ * mecânica está ligada. O cliente nunca envia valor/subtotal/total. Selecionar
+ * NÃO consome: a quantidade fica RESERVADA (as operações de inventário respeitam
+ * `quantity − reservado`). `quantity = 0` remove a contribuição.
+ *
+ * Idempotente por `operationId` (tipo `LONG_REST_CAMP_SUPPLY_SET` + fingerprint
+ * `{ requestId, inventoryItemId, quantity }`).
+ */
+export async function setCampSupplyContribution(
+  actor: Actor,
+  requestId: string,
+  input: SetCampSupplyContributionInput,
+): Promise<LongRestRequestResult> {
+  const fingerprint = JSON.stringify({
+    requestId,
+    inventoryItemId: input.inventoryItemId,
+    quantity: input.quantity,
+  });
+  const previous = await findOperation(input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<LongRestRequestDto>(previous, CAMP_SUPPLY_SET_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  let dto!: LongRestRequestDto;
+  try {
+    dto = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, requestId);
+
+      const request = await tx.longRestRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new HttpError('Solicitação de descanso não encontrada.', 404);
+      if (request.status !== 'APPROVED') {
+        throw new HttpError(
+          'Este descanso não está em andamento para receber contribuições.',
+          409,
+          LONG_REST_NOT_IN_PROGRESS,
+        );
+      }
+
+      // Config lida DENTRO da transação (valor ATUAL — PASSO 29).
+      const config = await tx.gameConfig.findUnique({ where: { id: 'main' } });
+      if (!(config?.campSuppliesEnabled ?? false)) {
+        throw new HttpError(
+          'Os recursos de acampamento estão desligados nesta mesa.',
+          403,
+          CAMP_SUPPLIES_DISABLED,
+        );
+      }
+
+      // Só participante ACCEPTED com sessão ACTIVE contribui (PASSO 7).
+      const participant = await tx.longRestRequestParticipant.findUnique({
+        where: { requestId_userId: { requestId, userId: actor.userId } },
+      });
+      if (!participant || participant.response !== 'ACCEPTED') {
+        throw new HttpError(
+          'Você não participa deste descanso como aceito.',
+          403,
+          NOT_A_PARTICIPANT,
+        );
+      }
+      const session = await tx.longRestSession.findFirst({
+        where: {
+          characterId: participant.characterId,
+          longRestRequestId: requestId,
+          status: 'ACTIVE',
+        },
+      });
+      if (!session) {
+        throw new HttpError('Sua sessão de descanso não está ativa.', 409, NOT_A_PARTICIPANT);
+      }
+
+      // Item do PRÓPRIO inventário — o `characterId` NUNCA vem do cliente (PASSO 8).
+      const character = await tx.character.findUnique({
+        where: { id: participant.characterId },
+        select: { id: true, inventory: true },
+      });
+      if (!character) throw new HttpError('Personagem não encontrado.', 404);
+      const inventory = parseJson<InventoryItemDto[]>(
+        inventoryListSchema,
+        character.inventory,
+        [],
+      );
+      const catalog = await loadCatalogLookup([inventory]);
+      const item = syncInventory(inventory, catalog).find(
+        (entry) => entry.id === input.inventoryItemId,
+      );
+      if (!item) throw new HttpError('Item não encontrado no seu inventário.', 404);
+
+      const current = await tx.longRestCampSupplyContribution.findUnique({
+        where: { requestId_inventoryItemId: { requestId, inventoryItemId: input.inventoryItemId } },
+      });
+      const currentQuantity = current?.quantity ?? 0;
+
+      // quantity = 0 remove a contribuição (libera a reserva na hora).
+      if (input.quantity === 0) {
+        if (current) {
+          await tx.longRestCampSupplyContribution.delete({ where: { id: current.id } });
+          await tx.character.update({
+            where: { id: character.id },
+            data: { version: { increment: 1 } },
+          });
+        }
+        const loaded = await loadRequestDto(tx, requestId);
+        await tx.longRestOperation.create({
+          data: {
+            operationId: input.operationId,
+            type: CAMP_SUPPLY_SET_TYPE,
+            requestFingerprint: fingerprint,
+            result: loaded as unknown as Prisma.InputJsonValue,
+          },
+        });
+        return loaded;
+      }
+
+      // O item precisa ser um recurso de acampamento VÁLIDO (PASSO 9.8/9.9).
+      if (!item.campSupply.enabled || item.campSupply.value <= 0) {
+        throw new HttpError(
+          `O item ${item.name} não é um recurso de acampamento.`,
+          400,
+          CAMP_SUPPLY_ITEM_INVALID,
+        );
+      }
+
+      // Reservas ATIVAS desta pilha, DESCONTANDO a contribuição desta própria
+      // solicitação (que está sendo substituída). Nunca permite overcommit.
+      const reserved = await reservedQuantities([item.id]);
+      const reservedByOthers = Math.max(0, (reserved.get(item.id) ?? 0) - currentQuantity);
+      const available = availableQuantity(item.quantity, reservedByOthers);
+      if (input.quantity > available) {
+        throw new HttpError(
+          `Não há ${input.quantity} unidades de ${item.name} disponíveis para reservar ` +
+            `(disponíveis: ${available}).`,
+          409,
+          CAMP_SUPPLY_NOT_ENOUGH,
+        );
+      }
+
+      if (current) {
+        await tx.longRestCampSupplyContribution.update({
+          where: { id: current.id },
+          data: { quantity: input.quantity },
+        });
+      } else {
+        await tx.longRestCampSupplyContribution.create({
+          data: {
+            requestId,
+            characterId: character.id,
+            inventoryItemId: item.id,
+            quantity: input.quantity,
+          },
+        });
+      }
+      // As reservas entram no `version` da ficha: qualquer operação que reduza a
+      // quantidade revalida contra as reservas ao tentar de novo (evita
+      // reservar + consumir simultâneos).
+      await tx.character.update({
+        where: { id: character.id },
+        data: { version: { increment: 1 } },
+      });
+
+      const loaded = await loadRequestDto(tx, requestId);
+      await tx.longRestOperation.create({
+        data: {
+          operationId: input.operationId,
+          type: CAMP_SUPPLY_SET_TYPE,
+          requestFingerprint: fingerprint,
+          result: loaded as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return loaded;
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<LongRestRequestDto>(raced, CAMP_SUPPLY_SET_TYPE, fingerprint),
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
+
+  publishRequest(dto);
+  return { ...dto, replayed: false };
+}
+
+/**
+ * ABORTA um Descanso Longo EM ANDAMENTO (APPROVED) — exclusivo do mestre.
+ *
+ * Encerra as sessões ACTIVE da solicitação (elas viram CANCELLED) e cancela a
+ * solicitação com motivo `ABORTED`. As RESERVAS de acampamento deixam de valer
+ * imediatamente (o helper só conta contribuições de solicitações APPROVED), sem
+ * consumir nem remover nada do inventário. Não confundir com `cancel`, que só
+ * vale para uma solicitação PENDING.
+ */
+export async function abortLongRestRequest(
+  actor: Actor,
+  requestId: string,
+  input: LongRestRequestActionInput,
+): Promise<LongRestRequestResult> {
+  const fingerprint = JSON.stringify({ requestId });
+  const previous = await findOperation(input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<LongRestRequestDto>(previous, ABORT_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  let dto!: LongRestRequestDto;
+  try {
+    dto = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, requestId);
+
+      const request = await tx.longRestRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new HttpError('Solicitação de descanso não encontrada.', 404);
+      if (request.status !== 'APPROVED') {
+        throw new HttpError(
+          'Só é possível abortar um Descanso Longo em andamento (aprovado).',
+          409,
+          LONG_REST_REQUEST_CLOSED,
+        );
+      }
+
+      await tx.longRestSession.updateMany({
+        where: { longRestRequestId: requestId, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+      await tx.longRestRequest.update({
+        where: { id: requestId },
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: ABORTED },
+      });
+
+      const loaded = await loadRequestDto(tx, requestId);
+      await tx.longRestOperation.create({
+        data: {
+          operationId: input.operationId,
+          type: ABORT_TYPE,
+          requestFingerprint: fingerprint,
+          result: loaded as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return loaded;
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<LongRestRequestDto>(raced, ABORT_TYPE, fingerprint),
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
+
+  publishRequest(dto);
+  return { ...dto, replayed: false };
+}
+
+/**
+ * Republica a solicitação aberta (se houver) — usado quando a CONFIG de recursos
+ * de acampamento muda e o `required`/`satisfied` do DTO precisa refletir o valor
+ * ATUAL para quem já está com o descanso aberto.
+ */
+export async function republishOpenLongRestRequest(): Promise<void> {
+  try {
+    const open = await getOpenLongRestRequest();
+    if (open) publishRequest(open);
+  } catch (error) {
+    console.error('[long-rest] falha ao republicar a solicitação após mudança de config:', error);
+  }
+}
+
+/**
  * Solicitação "aberta" da mesa: a única PENDING ou, se ela já foi aprovada, a
  * que está EM ANDAMENTO (APPROVED). Devolve `null` quando não há descanso
  * coletivo aberto (COMPLETED/CANCELLED não contam).
@@ -540,12 +936,12 @@ export async function getOpenLongRestRequest(): Promise<LongRestRequestDto | nul
     where: { status: 'PENDING' },
     include: REQUEST_DTO_INCLUDE,
   });
-  if (pending) return toLongRestRequestDto(pending);
+  if (pending) return withCampSupplies(prisma, toLongRestRequestDto(pending));
 
   const approved = await prisma.longRestRequest.findFirst({
     where: { status: 'APPROVED' },
     orderBy: { approvedAt: 'desc' },
     include: REQUEST_DTO_INCLUDE,
   });
-  return approved ? toLongRestRequestDto(approved) : null;
+  return approved ? withCampSupplies(prisma, toLongRestRequestDto(approved)) : null;
 }

@@ -7,6 +7,10 @@ import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
 import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { restoreShortRestResources, songOfRestDie } from '../modules/shared/classes.js';
+import {
+  availableQuantity,
+  reservedQuantities,
+} from '../modules/rest/camp-supply-reservations.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
 import {
   allRaces,
@@ -15131,6 +15135,436 @@ async function main(): Promise<void> {
     lrSocketB2.close();
     lrSocketD.close();
     lrMasterSocket.close();
+  }
+
+  // --- 48. Recursos de acampamento do Descanso Longo (mecânica OPCIONAL) ----
+  {
+    console.log('\n48) Recursos de acampamento do Descanso Longo (mecânica opcional)');
+
+    const csTokenA = testsPlayerToken;
+    const csMeA = await api('/api/auth/me', { token: csTokenA });
+    const csUserIdA: string = csMeA.data?.user?.sub;
+    check(
+      '48) conta do jogador A disponível para o teste de acampamento',
+      csMeA.status === 200 && Boolean(csUserIdA),
+      JSON.stringify(csMeA.data),
+    );
+    if (!(await prisma.character.findUnique({ where: { userId: csUserIdA } }))) {
+      await api('/api/characters/me', {
+        method: 'POST',
+        token: csTokenA,
+        body: { name: 'Acampamento A' },
+      });
+    }
+
+    const csOthers = (
+      await prisma.user.findMany({
+        where: { role: 'PLAYER', username: { endsWith: `_${suffix}` }, id: { not: csUserIdA } },
+        include: { character: { select: { id: true } } },
+        orderBy: { username: 'asc' },
+      })
+    )
+      .filter((user) => user.character !== null)
+      .slice(0, 3);
+    check(
+      '48) 3 jogadores com ficha para o teste de recursos de acampamento',
+      csOthers.length === 3,
+      `encontrados: ${csOthers.length}`,
+    );
+
+    if (csOthers.length === 3) {
+      const csB = csOthers[0];
+      const csC = csOthers[1];
+      const csD = csOthers[2];
+      const csTokenB = signToken({ sub: csB.id, username: csB.username, displayName: csB.displayName, role: csB.role });
+      const csTokenC = signToken({ sub: csC.id, username: csC.username, displayName: csC.displayName, role: csC.role });
+      const csTokenD = signToken({ sub: csD.id, username: csD.username, displayName: csD.displayName, role: csD.role });
+
+      const csCharA = await prisma.character.findUniqueOrThrow({ where: { userId: csUserIdA } });
+      const csCharB = await prisma.character.findUniqueOrThrow({ where: { userId: csB.id } });
+      const csCharD = await prisma.character.findUniqueOrThrow({ where: { userId: csD.id } });
+      const csAllCharIds = [csCharA.id, csCharB.id, csCharD.id];
+
+      const csSetConfig = (body: Record<string, unknown>) =>
+        api('/api/game/camp-supplies', { method: 'POST', token: masterToken, body });
+      const csInvOf = async (characterId: string): Promise<any[]> => {
+        const c = await prisma.character.findUniqueOrThrow({
+          where: { id: characterId },
+          select: { inventory: true },
+        });
+        return JSON.parse(JSON.stringify(c.inventory)) as any[];
+      };
+      const csReset = async () => {
+        await prisma.longRestSession.updateMany({
+          where: { characterId: { in: csAllCharIds }, status: 'ACTIVE' },
+          data: { status: 'CANCELLED', cancelledAt: new Date() },
+        });
+        await prisma.longRestCampSupplyContribution.deleteMany({
+          where: { characterId: { in: csAllCharIds } },
+        });
+        await prisma.longRestRequest.updateMany({
+          where: { status: { in: ['PENDING', 'APPROVED'] } },
+          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+        });
+      };
+      await csReset();
+      // Estado limpo da configuração (padrões).
+      await csSetConfig({ enabled: false, costPerParticipant: 10 });
+
+      // --- 48.1–48.8 Configuração -----------------------------------------
+      const csConfig0 = await api('/api/game', { token: csTokenA });
+      check('48.1) mecânica desligada por padrão', csConfig0.data?.config?.campSuppliesEnabled === false);
+      check('48.2) custo padrão 10', csConfig0.data?.config?.campSupplyCostPerParticipant === 10);
+      check(
+        '48.5) PLAYER não altera a config (403)',
+        (await api('/api/game/camp-supplies', { method: 'POST', token: csTokenA, body: { enabled: true } })).status === 403,
+      );
+      const csEnable = await csSetConfig({ enabled: true });
+      check(
+        '48.3) MASTER liga a mecânica',
+        csEnable.status === 200 && csEnable.data?.config?.campSuppliesEnabled === true,
+      );
+      check(
+        '48.6) custo 0 é rejeitado',
+        (await csSetConfig({ costPerParticipant: 0 })).status === 400,
+      );
+      check(
+        '48.6) custo fracionário é rejeitado',
+        (await csSetConfig({ costPerParticipant: 2.5 })).status === 400,
+      );
+      const csCost = await csSetConfig({ costPerParticipant: 10 });
+      check('48.2) custo definido em 10', csCost.data?.config?.campSupplyCostPerParticipant === 10);
+
+      // --- 48.9–48.13 Item como recurso de acampamento --------------------
+      const csNormal = await api('/api/items', {
+        method: 'POST',
+        token: masterToken,
+        body: { name: 'Corda comum', category: 'Item Geral' },
+      });
+      if (csNormal.data?.item?.id) createdItemIds.push(csNormal.data.item.id);
+      check(
+        '48.9) item normal NÃO é recurso de acampamento',
+        csNormal.status === 201 && csNormal.data?.item?.campSupply?.enabled === false,
+      );
+      const csFood = await api('/api/items', {
+        method: 'POST',
+        token: masterToken,
+        body: {
+          name: 'Gravetos de viagem',
+          category: 'Item Geral',
+          details: { consumable: true },
+          campSupply: { enabled: true, value: 10 },
+        },
+      });
+      if (csFood.data?.item?.id) createdItemIds.push(csFood.data.item.id);
+      check(
+        '48.10) item com camp supply criado (enabled + value)',
+        csFood.status === 201 &&
+          csFood.data?.item?.campSupply?.enabled === true &&
+          csFood.data?.item?.campSupply?.value === 10,
+      );
+      check(
+        '48.11) camp supply ligado com value 0 é rejeitado',
+        (
+          await api('/api/items', {
+            method: 'POST',
+            token: masterToken,
+            body: { name: 'Inválido', campSupply: { enabled: true, value: 0 } },
+          })
+        ).status === 400,
+      );
+      const csSupplyBItem = await api('/api/items', {
+        method: 'POST',
+        token: masterToken,
+        body: {
+          name: 'Rações secas',
+          category: 'Outro',
+          details: { consumable: true },
+          campSupply: { enabled: true, value: 9 },
+        },
+      });
+      if (csSupplyBItem.data?.item?.id) createdItemIds.push(csSupplyBItem.data.item.id);
+      check(
+        '48.12/48.13) recurso é explícito (item customizado, não depende de nome/categoria)',
+        csSupplyBItem.status === 201 &&
+          csSupplyBItem.data?.item?.category === 'Outro' &&
+          csSupplyBItem.data?.item?.campSupply?.value === 9,
+      );
+
+      // Envia os itens aos inventários.
+      await api(`/api/items/${csFood.data.item.id}/send`, {
+        method: 'POST',
+        token: masterToken,
+        body: { characterId: csCharA.id, quantity: 5 },
+      });
+      await api(`/api/items/${csSupplyBItem.data.item.id}/send`, {
+        method: 'POST',
+        token: masterToken,
+        body: { characterId: csCharB.id, quantity: 4 },
+      });
+      await api(`/api/items/${csNormal.data.item.id}/send`, {
+        method: 'POST',
+        token: masterToken,
+        body: { characterId: csCharA.id, quantity: 3 },
+      });
+
+      const csInvA = await csInvOf(csCharA.id);
+      const csInvB = await csInvOf(csCharB.id);
+      const csFoodA = csInvA.find((entry) => entry.itemId === csFood.data.item.id);
+      const csNormalA = csInvA.find((entry) => entry.itemId === csNormal.data.item.id);
+      const csSupplyB = csInvB.find((entry) => entry.itemId === csSupplyBItem.data.item.id);
+      check(
+        '48) itens enviados com o espelho de campSupply',
+        csFoodA?.campSupply?.value === 10 && csSupplyB?.campSupply?.value === 9 && Boolean(csNormalA),
+        JSON.stringify({ a: csFoodA?.campSupply, b: csSupplyB?.campSupply }),
+      );
+
+      // --- 48.32/35 Solicitação com 4 ACCEPTED ----------------------------
+      const csSocketA = connect(csTokenA);
+      const csPresence = waitForPresence(csSocketA, () => true).catch(() => null);
+      await waitFor<any>(csSocketA, 'connection:ready').catch(() => null);
+      await demoteForeignOnlinePlayers((await csPresence)?.online ?? [], new Set([csUserIdA, csB.id, csC.id, csD.id]));
+      const csMasterSocket = connect(masterToken);
+      await waitFor<any>(csMasterSocket, 'connection:ready').catch(() => null);
+      const csSocketB = connect(csTokenB);
+      const csSocketC = connect(csTokenC);
+      const csSocketD = connect(csTokenD);
+      await Promise.all([
+        waitFor<any>(csSocketB, 'connection:ready').catch(() => null),
+        waitFor<any>(csSocketC, 'connection:ready').catch(() => null),
+        waitFor<any>(csSocketD, 'connection:ready').catch(() => null),
+      ]);
+      await waitForPresence(csSocketA, (online) =>
+        online.some((u: any) => u.username === csB.username) &&
+        online.some((u: any) => u.username === csC.username) &&
+        online.some((u: any) => u.username === csD.username),
+      ).catch(() => null);
+
+      const csCurrent = async () =>
+        (await api('/api/rest/long/request', { token: csTokenA })).data.request;
+      const csCreateRequest = (operationId: string) =>
+        api('/api/rest/long/request', { method: 'POST', token: csTokenA, body: { operationId } });
+      const csRespond = (token: string, requestId: string, response: string, operationId: string) =>
+        api(`/api/rest/long/${requestId}/respond`, { method: 'POST', token, body: { response, operationId } });
+      const csContribute = (token: string, requestId: string, body: Record<string, unknown>) =>
+        api(`/api/rest/long/${requestId}/camp-supplies`, { method: 'PUT', token, body });
+      const csAbort = (requestId: string, operationId: string) =>
+        api(`/api/rest/long/${requestId}/abort`, { method: 'POST', token: masterToken, body: { operationId } });
+
+      await csReset();
+      const csReq = (await csCreateRequest(`op-${suffix}-cs-1`)).data;
+      check('48) solicitação com 4 participantes (todos online)', csReq?.participants?.length === 4);
+
+      // Enquanto PENDING, contribuir é recusado (não há sessão ativa).
+      check(
+        '48.9) contribuir com a solicitação PENDING → 409',
+        (await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 1, operationId: `op-${suffix}-cs-pend` })).status === 409,
+      );
+      await csRespond(csTokenB, csReq.id, 'ACCEPTED', `op-${suffix}-cs-1-b`);
+      await csRespond(csTokenC, csReq.id, 'ACCEPTED', `op-${suffix}-cs-1-c`);
+      const csApproved = await csRespond(csTokenD, csReq.id, 'ACCEPTED', `op-${suffix}-cs-1-d`);
+      check('48.32) 4 ACCEPTED → APPROVED', csApproved.status === 200 && csApproved.data?.status === 'APPROVED');
+      check('48.32) 4 ACCEPTED × 10 → required 40', csApproved.data?.campSupplies?.required === 40);
+      check(
+        '48.35) nada contribuído → remaining 40 / satisfied false',
+        csApproved.data?.campSupplies?.contributed === 0 &&
+          csApproved.data?.campSupplies?.remaining === 40 &&
+          csApproved.data?.campSupplies?.satisfied === false,
+      );
+
+      // --- 48.14–48.23 Contribuições --------------------------------------
+      check(
+        '48.16) PLAYER não contribui com item de outro personagem → 404',
+        (await csContribute(csTokenA, csReq.id, { inventoryItemId: csSupplyB.id, quantity: 1, operationId: `op-${suffix}-cs-16` })).status === 404,
+      );
+      check(
+        '48.17) item sem camp supply é rejeitado → 400',
+        (await csContribute(csTokenA, csReq.id, { inventoryItemId: csNormalA.id, quantity: 1, operationId: `op-${suffix}-cs-17` })).status === 400,
+      );
+      check(
+        '48.18) quantidade acima do disponível é rejeitada → 409',
+        (await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 6, operationId: `op-${suffix}-cs-18` })).status === 409,
+      );
+      const csA3 = await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 3, operationId: `op-${suffix}-cs-a3` });
+      check('48.14) ACCEPTED contribui item próprio (3 × 10 = 30)', csA3.status === 200 && csA3.data?.campSupplies?.contributed === 30);
+      check(
+        '48.41/48.42) contribuir NÃO consome o inventário persistido',
+        (await csInvOf(csCharA.id)).find((entry) => entry.id === csFoodA.id)?.quantity === 5,
+      );
+      check(
+        '48.24) disponível = 5 − 3 = 2',
+        availableQuantity(5, (await reservedQuantities([csFoodA.id])).get(csFoodA.id) ?? 0) === 2,
+      );
+      check(
+        '48.22) mesmo operationId + payload → replay',
+        (await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 3, operationId: `op-${suffix}-cs-a3` })).data?.replayed === true,
+      );
+      check(
+        '48.23) mesma chave com payload diferente → 409 IDEMPOTENCY_KEY_REUSED',
+        (
+          await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 2, operationId: `op-${suffix}-cs-a3` })
+        ).data?.error === 'IDEMPOTENCY_KEY_REUSED',
+      );
+      const csB1 = await csContribute(csTokenB, csReq.id, { inventoryItemId: csSupplyB.id, quantity: 1, operationId: `op-${suffix}-cs-b1` });
+      check(
+        '48.34/48.35) contribuições somam (30+9=39) → remaining 1 / satisfied false',
+        csB1.data?.campSupplies?.contributed === 39 &&
+          csB1.data?.campSupplies?.remaining === 1 &&
+          csB1.data?.campSupplies?.satisfied === false,
+      );
+      const csA4 = await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 4, operationId: `op-${suffix}-cs-a4` });
+      check(
+        '48.36/48.37/48.38) excesso permitido (30→40 +9 = 49), satisfeito e não truncado',
+        csA4.data?.campSupplies?.contributed === 49 &&
+          csA4.data?.campSupplies?.satisfied === true &&
+          csA4.data?.campSupplies?.remaining === 0,
+      );
+      const csA2 = await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 2, operationId: `op-${suffix}-cs-a2` });
+      check(
+        '48.20) diminuir contribuição (A 2×10 + B 1×9 = 29)',
+        csA2.data?.campSupplies?.contributed === 29,
+        JSON.stringify(csA2.data?.campSupplies?.contributed),
+      );
+
+      // --- 48.39/48.40 Config muda durante o descanso ---------------------
+      await csSetConfig({ costPerParticipant: 15 });
+      const csRecalc = await csCurrent();
+      check('48.39) custo alterado recalcula (4 × 15 = 60)', csRecalc?.campSupplies?.required === 60);
+      await csSetConfig({ enabled: false });
+      const csDisabled = await csCurrent();
+      check(
+        '48.7/48.40) feature desativada → required 0 / satisfied true',
+        csDisabled?.campSupplies?.enabled === false &&
+          csDisabled?.campSupplies?.required === 0 &&
+          csDisabled?.campSupplies?.satisfied === true,
+      );
+      // Religa para os testes de reserva.
+      await csSetConfig({ enabled: true, costPerParticipant: 10 });
+
+      // --- 48.25–48.27 Reserva × uso --------------------------------------
+      // A reserva de A é 2; a pilha tem 5 → disponível 3.
+      const csUseOnce = () =>
+        api('/api/characters/me/inventory/use', { method: 'POST', token: csTokenA, body: { itemInventoryId: csFoodA.id } });
+      const csUse1 = await csUseOnce();
+      const csUse2 = await csUseOnce();
+      const csUse3 = await csUseOnce();
+      check(
+        '48.25) uso até o disponível é permitido (3 usos)',
+        csUse1.status === 200 && csUse2.status === 200 && csUse3.status === 200,
+        JSON.stringify([csUse1.status, csUse2.status, csUse3.status]),
+      );
+      const csUse4 = await csUseOnce();
+      check(
+        '48.26) uso além do disponível (reservado) é recusado → 409',
+        csUse4.status === 409,
+        JSON.stringify(csUse4.data),
+      );
+      const csInvAAfterUses = await csInvOf(csCharA.id);
+      const csQtyAfterUses = csInvAAfterUses.find((entry) => entry.id === csFoodA.id)?.quantity ?? 0;
+      const csReservedNow = (await reservedQuantities([csFoodA.id])).get(csFoodA.id) ?? 0;
+      check('48) quantidade persistida = 2 e reservada = 2', csQtyAfterUses === 2 && csReservedNow === 2, JSON.stringify({ csQtyAfterUses, csReservedNow }));
+
+      // 48.27 — o mestre não pode reduzir abaixo do reservado.
+      const csMasterInv = JSON.parse(JSON.stringify(csInvAAfterUses)) as any[];
+      const csTarget = csMasterInv.find((entry) => entry.id === csFoodA.id);
+      csTarget.quantity = 1;
+      check(
+        '48.27) o mestre não reduz abaixo do reservado → 409',
+        (await api(`/api/characters/${csCharA.id}`, { method: 'PATCH', token: masterToken, body: { inventory: csMasterInv } })).status === 409,
+      );
+
+      // --- 48.29/48.28 Concorrência ---------------------------------------
+      const [csRace1, csRace2] = await Promise.all([
+        csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 2, operationId: `op-${suffix}-cs-race1` }),
+        csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 2, operationId: `op-${suffix}-cs-race2` }),
+      ]);
+      const csReservedAfterRace = (await reservedQuantities([csFoodA.id])).get(csFoodA.id) ?? 0;
+      const csQtyAfterRace = (await csInvOf(csCharA.id)).find((entry) => entry.id === csFoodA.id)?.quantity ?? 0;
+      check(
+        '48.28/48.29) reservas concorrentes nunca ultrapassam a pilha',
+        csReservedAfterRace <= csQtyAfterRace && csRace1.status < 500 && csRace2.status < 500,
+        JSON.stringify({ csReservedAfterRace, csQtyAfterRace, s1: csRace1.status, s2: csRace2.status }),
+      );
+
+      // --- 48.21/48.31 Remoção libera a reserva ---------------------------
+      await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 0, operationId: `op-${suffix}-cs-a0` });
+      check(
+        '48.21/48.31) remover a contribuição libera a reserva',
+        ((await reservedQuantities([csFoodA.id])).get(csFoodA.id) ?? 0) === 0,
+      );
+
+      // --- 48.29/48.30 Abort libera a reserva (sem consumir) --------------
+      await csContribute(csTokenA, csReq.id, { inventoryItemId: csFoodA.id, quantity: 2, operationId: `op-${suffix}-cs-a2b` });
+      const csBeforeAbortQty = (await csInvOf(csCharA.id)).find((entry) => entry.id === csFoodA.id)?.quantity ?? 0;
+      const csAborted = await csAbort(csReq.id, `op-${suffix}-cs-abort`);
+      check(
+        '48.30) MASTER aborta o descanso em andamento → CANCELLED',
+        csAborted.status === 200 && csAborted.data?.status === 'CANCELLED' && csAborted.data?.cancelReason === 'ABORTED',
+      );
+      check(
+        '48.30) abortar libera as reservas (solicitação não está mais APPROVED)',
+        ((await reservedQuantities([csFoodA.id])).get(csFoodA.id) ?? 0) === 0,
+      );
+      check(
+        '48.43) abortar NÃO consome o inventário',
+        (await csInvOf(csCharA.id)).find((entry) => entry.id === csFoodA.id)?.quantity === csBeforeAbortQty,
+      );
+
+      // --- 48.15 DECLINED não contribui -----------------------------------
+      await csReset();
+      const csReq2 = (await csCreateRequest(`op-${suffix}-cs-2`)).data;
+      await csRespond(csTokenD, csReq2.id, 'DECLINED', `op-${suffix}-cs-2-d`);
+      await csRespond(csTokenB, csReq2.id, 'ACCEPTED', `op-${suffix}-cs-2-b`);
+      const csApproved2 = await csRespond(csTokenC, csReq2.id, 'ACCEPTED', `op-${suffix}-cs-2-c`);
+      check(
+        '48.15/48.33) DECLINED não entra na cota (3 ACCEPTED × 10 = 30)',
+        csApproved2.data?.status === 'APPROVED' && csApproved2.data?.campSupplies?.required === 30,
+        JSON.stringify({ status: csApproved2.data?.status, cs: csApproved2.data?.campSupplies?.required }),
+      );
+      check(
+        '48.15) DECLINED não pode contribuir → 403',
+        (await csContribute(csTokenD, csReq2.id, { inventoryItemId: csFoodA.id, quantity: 1, operationId: `op-${suffix}-cs-2-d1` })).status === 403,
+      );
+      check(
+        '48.26) MASTER não contribui como participante → 403',
+        (await csContribute(masterToken, csReq2.id, { inventoryItemId: csFoodA.id, quantity: 1, operationId: `op-${suffix}-cs-2-m` })).status === 403,
+      );
+
+      // --- 48.44–48.49 Nenhum benefício é aplicado ------------------------
+      const csNoBenefits = async (characterId: string) => {
+        const c = await prisma.character.findUniqueOrThrow({ where: { id: characterId } });
+        return JSON.stringify({
+          hpCurrent: c.hpCurrent,
+          hpTemp: c.hpTemp,
+          hitDice: c.hitDice,
+          spells: c.spells,
+          classState: c.classState,
+        });
+      };
+      const csSnapA = await csNoBenefits(csCharA.id);
+      const csSnapB = await csNoBenefits(csCharB.id);
+      // Um novo descanso aprovado + abort não altera HP/recursos.
+      await csReset();
+      const csReq3 = (await csCreateRequest(`op-${suffix}-cs-3`)).data;
+      await csRespond(csTokenB, csReq3.id, 'ACCEPTED', `op-${suffix}-cs-3-b`);
+      await csRespond(csTokenC, csReq3.id, 'ACCEPTED', `op-${suffix}-cs-3-c`);
+      await csRespond(csTokenD, csReq3.id, 'ACCEPTED', `op-${suffix}-cs-3-d`);
+      await csAbort(csReq3.id, `op-${suffix}-cs-3-abort`);
+      check(
+        '48.44/48.45/48.46/48.47/48.48/48.49) nenhum benefício: HP, hpTemp, Dados de Vida, espaços e recursos intactos',
+        (await csNoBenefits(csCharA.id)) === csSnapA && (await csNoBenefits(csCharB.id)) === csSnapB,
+      );
+
+      // Restaura a configuração padrão e limpa o estado.
+      await csSetConfig({ enabled: false, costPerParticipant: 10 });
+      await csReset();
+
+      csSocketA.close();
+      csSocketB.close();
+      csSocketC.close();
+      csSocketD.close();
+      csMasterSocket.close();
+    }
   }
 
   console.log(

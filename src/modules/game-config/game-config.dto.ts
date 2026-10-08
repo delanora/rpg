@@ -21,6 +21,17 @@ export interface GameConfigDto {
    * cinco denominações existem sempre no banco.
    */
   extraCoins: boolean;
+  /**
+   * RECURSOS DE ACAMPAMENTO do Descanso Longo coletivo (mecânica OPCIONAL,
+   * inspirada no Baldur's Gate 3 — NÃO é regra do PHB 2014). DESLIGADO por
+   * padrão: com `false`, o Descanso Longo oficial não é afetado em nada.
+   */
+  campSuppliesEnabled: boolean;
+  /**
+   * Custo em PONTOS por participante ACCEPTED (padrão 10). Só vale quando
+   * `campSuppliesEnabled` é true.
+   */
+  campSupplyCostPerParticipant: number;
   updatedAt: string;
 }
 

@@ -3,6 +3,8 @@ import { prisma } from '../../config/prisma.js';
 import {
   itemDetailsSchema,
   itemRarityOf,
+  normalizeCampSupply,
+  type CampSupply,
   type ItemDetails,
   type ItemRarity,
 } from '../shared/item-details.js';
@@ -30,6 +32,8 @@ export interface CatalogSnapshot {
   requiresAttunement: boolean;
   imageUrl: string;
   details: ItemDetails;
+  /** Recurso de acampamento do item no catálogo (mecânica opcional). */
+  campSupply: CampSupply;
 }
 
 /** Mínimo que um item de inventário precisa ter para ser sincronizado. */
@@ -43,6 +47,7 @@ interface SyncableItem {
   requiresAttunement: boolean;
   imageUrl: string;
   details: ItemDetails;
+  campSupply: CampSupply;
 }
 
 /** Leitura tolerante do JSONB: só precisamos dos vínculos com o catálogo. */
@@ -82,6 +87,10 @@ export async function loadCatalogLookup(
         requiresAttunement: item.requiresAttunement,
         imageUrl: item.imageUrl,
         details: parseJson<ItemDetails>(itemDetailsSchema, item.details, {}),
+        campSupply: normalizeCampSupply({
+          enabled: item.campSupplyEnabled,
+          value: item.campSupplyValue,
+        }),
       },
     ]),
   );
@@ -109,6 +118,7 @@ export function syncInventory<T extends SyncableItem>(
       requiresAttunement: snapshot.requiresAttunement,
       imageUrl: snapshot.imageUrl,
       details: snapshot.details,
+      campSupply: snapshot.campSupply,
     };
   });
 }

@@ -38,5 +38,20 @@ export const longRestRequestActionSchema = z.object({
 
 export type LongRestRequestActionInput = z.infer<typeof longRestRequestActionSchema>;
 
+/**
+ * Contribuição de RECURSO DE ACAMPAMENTO de UMA pilha do próprio inventário
+ * (mecânica opcional). `quantity = 0` REMOVE a contribuição. O cliente NUNCA
+ * envia valor/subtotal: o servidor deriva tudo.
+ */
+export const setCampSupplyContributionSchema = z.object({
+  /** Id da entrada do inventário do PRÓPRIO personagem (não é o id do catálogo). */
+  inventoryItemId: z.string().trim().min(1, 'Informe o item.').max(120),
+  /** Quantidade a reservar (0 remove). */
+  quantity: z.number().int().min(0).max(1_000_000),
+  operationId: operationIdSchema,
+});
+
+export type SetCampSupplyContributionInput = z.infer<typeof setCampSupplyContributionSchema>;
+
 /** Id vindo da rota (`:requestId`). */
 export { longRestRequestIdSchema };

@@ -3,16 +3,25 @@ import { prisma } from '../../config/prisma.js';
 import { LEVEL_MAX, LEVEL_MIN } from '../shared/dnd5e.js';
 import { ServerEvents, type GameConfigPayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
+import { republishOpenLongRestRequest } from '../rest/long-rest.service.js';
+import {
+  CAMP_SUPPLY_COST_MAX,
+  CAMP_SUPPLY_COST_MIN,
+} from '../shared/camp-supplies.js';
 import type { GameConfigDto, MasterNotesDto } from './game-config.dto.js';
 
 /** Linha única da configuração da mesa. */
 const CONFIG_ID = 'main';
+
+export { CAMP_SUPPLY_COST_MAX, CAMP_SUPPLY_COST_MIN };
 
 function toGameConfigDto(config: GameConfig): GameConfigDto {
   return {
     levelUpRelease: config.levelUpRelease,
     startingLevel: config.startingLevel,
     extraCoins: config.extraCoins,
+    campSuppliesEnabled: config.campSuppliesEnabled,
+    campSupplyCostPerParticipant: config.campSupplyCostPerParticipant,
     updatedAt: config.updatedAt.toISOString(),
   };
 }
@@ -122,5 +131,39 @@ export async function setStartingLevel(level: number): Promise<GameConfigDto> {
 
   const dto = toGameConfigDto(config);
   broadcast(dto);
+  return dto;
+}
+
+/**
+ * Liga/desliga e/ou ajusta o custo dos RECURSOS DE ACAMPAMENTO (mecânica
+ * OPCIONAL do Descanso Longo coletivo).
+ *
+ * A configuração é a fonte ÚNICA: o DTO do Long Rest aberto lê o valor ATUAL
+ * (PASSO 29). Por isso, além de publicar `game:config`, recalculamos e
+ * republicamos a solicitação aberta (se houver) para os participantes verem o
+ * `required`/`satisfied` já com o novo valor. Publicar `game:config` e depois a
+ * solicitação garante que os clientes recebam a config antes do DTO derivado.
+ */
+export async function setCampSupplies(input: {
+  enabled?: boolean;
+  costPerParticipant?: number;
+}): Promise<GameConfigDto> {
+  await getGameConfig();
+
+  const data: { campSuppliesEnabled?: boolean; campSupplyCostPerParticipant?: number } = {};
+  if (input.enabled !== undefined) data.campSuppliesEnabled = input.enabled;
+  if (input.costPerParticipant !== undefined) {
+    data.campSupplyCostPerParticipant = Math.min(
+      CAMP_SUPPLY_COST_MAX,
+      Math.max(CAMP_SUPPLY_COST_MIN, Math.floor(input.costPerParticipant)),
+    );
+  }
+
+  const config = await prisma.gameConfig.update({ where: { id: CONFIG_ID }, data });
+
+  const dto = toGameConfigDto(config);
+  broadcast(dto);
+  // O Long Rest aberto reflete a config ATUAL — republica o DTO recalculado.
+  await republishOpenLongRestRequest();
   return dto;
 }

@@ -46,6 +46,46 @@ export interface LongRestRequestParticipantDto {
   sessionId: string | null;
 }
 
+/**
+ * Contribuição de RECURSO DE ACAMPAMENTO (mecânica OPCIONAL). Visão MÍNIMA
+ * exposta à mesa: id da pilha (opaco) e pontos derivados — sem nome/descrição do
+ * item alheio, para não vazar detalhes do inventário de outros jogadores. O
+ * próprio jogador mapeia `inventoryItemId` na sua ficha (que já traz `campSupply`).
+ */
+export interface LongRestCampSupplyContributionDto {
+  characterId: string;
+  inventoryItemId: string;
+  quantity: number;
+  /** Pontos = `quantity × campSupply.value ATUAL` do item (nunca persistido). */
+  points: number;
+}
+
+/** Pontos de acampamento por personagem (visão coletiva). */
+export interface LongRestCampSupplyByCharacterDto {
+  characterId: string;
+  points: number;
+}
+
+/**
+ * Seção de RECURSOS DE ACAMPAMENTO do DTO (mecânica OPCIONAL, DESLIGADA por
+ * padrão). Com `enabled = false`, `required` é 0 e `satisfied` é sempre true — o
+ * Descanso Longo oficial não muda.
+ */
+export interface LongRestCampSuppliesDto {
+  enabled: boolean;
+  costPerParticipant: number;
+  /** `acceptedParticipants × costPerParticipant` (0 quando desligado). */
+  required: number;
+  /** Soma dos pontos das contribuições válidas. */
+  contributed: number;
+  /** `max(0, required − contributed)`. */
+  remaining: number;
+  /** `true` quando desligado ou `contributed ≥ required`. */
+  satisfied: boolean;
+  byCharacter: LongRestCampSupplyByCharacterDto[];
+  contributions: LongRestCampSupplyContributionDto[];
+}
+
 export interface LongRestRequestDto {
   id: string;
   status: LongRestRequestStatusDto;
@@ -61,6 +101,8 @@ export interface LongRestRequestDto {
   cancelReason: string | null;
   /** Mestre que forçou a aprovação (`null` no fluxo normal). */
   forcedByUserId: string | null;
+  /** Recursos de acampamento (mecânica opcional) — ver `LongRestCampSuppliesDto`. */
+  campSupplies: LongRestCampSuppliesDto;
 }
 
 /** Forma carregada da solicitação usada para montar o DTO. */
@@ -72,6 +114,13 @@ export type LongRestRequestWithParticipants = LongRestRequest & {
   sessions: Pick<LongRestSession, 'id' | 'characterId'>[];
 };
 
+/**
+ * DTO da solicitação SEM a seção de recursos de acampamento. É o que a função
+ * síncrona monta a partir da linha; o serviço anexa `campSupplies` (que exige
+ * leituras de config/contribuições/catálogo) para fechar o `LongRestRequestDto`.
+ */
+export type LongRestRequestBaseDto = Omit<LongRestRequestDto, 'campSupplies'>;
+
 const ISO = (value: Date | null): string | null => (value ? value.toISOString() : null);
 
 /**
@@ -81,7 +130,7 @@ const ISO = (value: Date | null): string | null => (value ? value.toISOString() 
  */
 export function toLongRestRequestDto(
   request: LongRestRequestWithParticipants,
-): LongRestRequestDto {
+): LongRestRequestBaseDto {
   const sessionByCharacter = new Map(
     request.sessions.map((session) => [session.characterId, session]),
   );
