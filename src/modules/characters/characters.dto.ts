@@ -39,6 +39,8 @@ import {
   pactMagicSlots,
   preparedSpellCountFor,
   songOfRestDie,
+  effectiveSpellSlots,
+  spellSlotMaxByLevel,
   spellSlotsForClasses,
   totalCharacterLevel,
   type ActiveClassFeature,
@@ -551,6 +553,11 @@ export function toCharacterDto(
   spells.pactMagic = {
     used: pactSlots === null ? 0 : Math.max(0, Math.min(spells.pactMagic?.used ?? 0, pactSlots.max)),
   };
+  // O `max` dos espaços NORMAIS tem AUTORIDADE DERIVADA (`spellSlots`): o valor
+  // gravado no JSON é legado. A leitura devolve `{ max: derivado, used: efetivo }`
+  // e já inclui os níveis que só existem no derivado (Level Up), para a ficha e
+  // o futuro motor de conjuração nunca dependerem do max persistido.
+  spells.slots = effectiveSpellSlots(spells.slots, spellSlotMaxByLevel(spellSlots));
   // Magias de juramento do Paladino: entram SÓ no DTO (origem 'oath'), sempre
   // preparadas e fora do limite. Se a magia já estiver na lista do jogador por
   // outra via, não duplicamos.

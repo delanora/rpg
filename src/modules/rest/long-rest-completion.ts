@@ -388,6 +388,9 @@ export async function completeLongRest(
       .sort((a, b) => b.die - a.die);
 
     // --- Espaços de magia NORMAIS: zera o uso mantendo a estrutura (PASSO 24)
+    //     O benefício oficial é `used → 0`; o `max` gravado é LEGADO (a
+    //     autoridade é o `derived.spellSlots`) e só é preservado fisicamente — a
+    //     auditoria olha o USO, nunca o max.
     const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
       list: [],
       slots: {},
