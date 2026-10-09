@@ -1830,6 +1830,53 @@ export function spellSlotsForClasses(entries: ClassEntry[]): { level: number; ma
 }
 
 /**
+ * Mapa `{ "<nível>": max }` dos espaços NORMAIS derivados. Só entram os níveis
+ * com espaço de verdade (o mesmo recorte de `spellSlotsForClasses`); a ausência
+ * de uma chave significa "sem espaço nesse nível" (max efetivo 0).
+ */
+export function spellSlotMaxByLevel(
+  slots: readonly { level: number; max: number }[],
+): Record<string, number> {
+  const byLevel: Record<string, number> = {};
+  for (const slot of slots) {
+    if (slot.max > 0) byLevel[String(slot.level)] = slot.max;
+  }
+  return byLevel;
+}
+
+/**
+ * Uso EFETIVO de um espaço normal: o estado gravado é sempre limitado pelo MAX
+ * DERIVADO — nunca negativo e nunca acima do pool do nível (PHB 2014).
+ */
+export function effectiveSpellSlotUsed(used: number, derivedMax: number): number {
+  return Math.max(0, Math.min(used, Math.max(0, derivedMax)));
+}
+
+/**
+ * Espaços NORMAIS efetivos de uma ficha: `max` vem SEMPRE do derivado
+ * (`maxByLevel`) e `used` é o PERSISTIDO limitado por ele.
+ *
+ * O `max` gravado no JSON é LEGADO e não governa nada: esta é a leitura oficial
+ * enquanto ele existir — e é o que o futuro MOTOR DE CONJURAÇÃO deve assumir
+ * (max = `derived.spellSlots[nível].max`, used = o daqui). Níveis que só existem
+ * no JSON antigo, sem espaço derivado, saem com 0/0.
+ */
+export function effectiveSpellSlots(
+  persistedSlots: Record<string, { max: number; used: number }>,
+  derivedMaxByLevel: Record<string, number>,
+): Record<string, { max: number; used: number }> {
+  const levels = [...new Set([...Object.keys(persistedSlots), ...Object.keys(derivedMaxByLevel)])];
+  const slots: Record<string, { max: number; used: number }> = {};
+
+  for (const level of levels) {
+    const max = derivedMaxByLevel[level] ?? 0;
+    slots[level] = { max, used: effectiveSpellSlotUsed(persistedSlots[level]?.used ?? 0, max) };
+  }
+
+  return slots;
+}
+
+/**
  * Quantas magias a classe PREPARA por dia (PHB 2014, cap. 3/10).
  *
  *  • Clérigo, Druida e Mago: modificador do atributo + NÍVEL NA CLASSE (mínimo 1).
