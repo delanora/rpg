@@ -5,38 +5,52 @@ import { ServerEvents } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { getOnlineUsers } from '../../realtime/presence.js';
 import { parseJson } from '../shared/json.js';
-import { CAMP_SUPPLY_COST_DEFAULT } from '../shared/camp-supplies.js';
 import { inventoryListSchema } from '../characters/characters.schema.js';
 import type { InventoryItemDto } from '../characters/characters.dto.js';
 import { loadCatalogLookup, syncInventory } from '../characters/inventory-sync.js';
 import { availableQuantity, reservedQuantities } from './camp-supply-reservations.js';
+import { computeCampSupplies } from './camp-supplies-calculator.js';
+import {
+  assertHitDiceSelection,
+  completeLongRest,
+  publishLongRestCompletion,
+  LONG_REST_REQUEST_CLOSED,
+  type CampSupplyOverrideInput,
+  type LongRestCompletionDto,
+  type LongRestCompletionOutcome,
+} from './long-rest-completion.js';
+import { normalizeHitDiceSelection, type HitDiceSelection } from '../shared/hit-dice.js';
 import {
   toLongRestRequestDto,
-  type LongRestCampSupplyContributionDto,
-  type LongRestCampSuppliesDto,
   type LongRestRequestBaseDto,
   type LongRestRequestDto,
 } from './long-rest-request.dto.js';
 import type {
   CreateLongRestRequestInput,
+  ForceCompleteLongRestInput,
   LongRestRequestActionInput,
   RespondLongRestRequestInput,
   SetCampSupplyContributionInput,
+  SetHitDiceRecoveryInput,
+  SetLongRestReadyInput,
 } from './long-rest.schema.js';
 
 /**
- * Solicitação COLETIVA de Descanso Longo (consenso da mesa) — SÓ INFRAESTRUTURA.
+ * Solicitação COLETIVA de Descanso Longo (consenso da mesa) — com CONCLUSÃO REAL.
  *
  * Fluxo: um PLAYER solicita → a lista de convidados é CONGELADA (jogadores
  * PLAYER conectados com ficha) → solicitante nasce ACCEPTED, os demais PENDING →
  * cada um aceita/recusa enquanto a solicitação está PENDING → quando não há mais
  * PENDING ela é resolvida: APPROVED (cria uma `LongRestSession` ACTIVE SÓ para os
- * ACCEPTED) ou CANCELLED (ninguém aceitou). O MESTRE não participa: só pode
- * FORÇAR a aprovação ou CANCELAR.
+ * ACCEPTED) ou CANCELLED (ninguém aceitou). O MESTRE não participa do descanso:
+ * pode forçar a aprovação, cancelar/abortar e FORÇAR a conclusão.
  *
- * IMPORTANTE: NENHUM benefício de descanso é aplicado nesta etapa. A sessão
- * existe apenas como vínculo persistente de que o personagem entrou no
- * descanso (HP, Dados de Vida, espaços, recursos e inventário não mudam).
+ * Depois de aprovado, cada ACCEPTED marca "pronto para descansar" e escolhe os
+ * Dados de Vida a recuperar. Quando TODOS estão prontos (e os recursos de
+ * acampamento permitem), a conclusão aplica os benefícios do PHB 2014 na MESMA
+ * transação; o mestre também pode concluir por conta própria (`force-complete`),
+ * com ou sem a exceção narrativa de suprimentos. O motor de benefícios vive em
+ * `long-rest-completion.ts`.
  *
  * Idempotência: a solicitação é global/multi-personagem, então NÃO reaproveita
  * `CharacterOperation` (que é por personagem) — usa `LongRestOperation`, com a
@@ -52,13 +66,17 @@ const CANCEL_TYPE = 'LONG_REST_REQUEST_CANCEL';
 const ABORT_TYPE = 'LONG_REST_REQUEST_ABORT';
 /** Definir/atualizar/remover UMA contribuição de recurso de acampamento. */
 const CAMP_SUPPLY_SET_TYPE = 'LONG_REST_CAMP_SUPPLY_SET';
+/** Marcar/desmarcar "pronto para descansar" (pode concluir automaticamente). */
+const READY_TYPE = 'LONG_REST_REQUEST_READY';
+/** Escolher quais Dados de Vida recuperar na conclusão. */
+const HIT_DICE_TYPE = 'LONG_REST_HIT_DICE_SELECTION';
+/** Concluir o descanso forçado pelo mestre (com ou sem exceção narrativa). */
+const COMPLETE_TYPE = 'LONG_REST_REQUEST_COMPLETE';
 
 /** Mesma chave idempotente usada para outra operação. */
 const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
 /** Já existe uma solicitação coletiva aguardando resposta (uma PENDING global). */
 const LONG_REST_REQUEST_ALREADY_PENDING = 'LONG_REST_REQUEST_ALREADY_PENDING';
-/** A solicitação já foi resolvida (APPROVED/CANCELLED) — não aceita mais mudanças. */
-const LONG_REST_REQUEST_CLOSED = 'LONG_REST_REQUEST_CLOSED';
 /** Quem chamou não é participante da solicitação. */
 const NOT_A_PARTICIPANT = 'NOT_A_PARTICIPANT';
 /** Um dos personagens aceitos já tem um Descanso Longo ativo. */
@@ -75,6 +93,10 @@ const CAMP_SUPPLY_ITEM_INVALID = 'CAMP_SUPPLY_ITEM_INVALID';
 const CAMP_SUPPLY_NOT_ENOUGH = 'CAMP_SUPPLY_NOT_ENOUGH';
 /** A solicitação não está em andamento (APPROVED) para aceitar contribuições. */
 const LONG_REST_NOT_IN_PROGRESS = 'LONG_REST_NOT_IN_PROGRESS';
+/** A solicitação ainda não foi aprovada (PENDING): não há descanso em curso. */
+const LONG_REST_REQUEST_NOT_APPROVED = 'LONG_REST_REQUEST_NOT_APPROVED';
+/** Quem chamou aceitou o descanso? Só ACCEPTED age no descanso em curso. */
+const NOT_ACCEPTED = 'NOT_ACCEPTED';
 
 /** Autor da requisição (vem sempre do token). */
 export interface Actor {
@@ -138,97 +160,41 @@ async function lockRequest(tx: Prisma.TransactionClient, requestId: string): Pro
 const REQUEST_DTO_INCLUDE = {
   requestedBy: { select: { id: true, username: true, displayName: true } },
   participants: {
-    include: { user: { select: { id: true, username: true, displayName: true } } },
+    include: {
+      user: { select: { id: true, username: true, displayName: true } },
+      // Classes + uso dos Dados de Vida: o mínimo para derivar a cota do
+      // Descanso Longo e as opções por tipo no DTO.
+      character: { select: { classes: true, hitDice: true } },
+    },
   },
-  sessions: { select: { id: true, characterId: true } },
+  sessions: {
+    select: {
+      id: true,
+      characterId: true,
+      readyAt: true,
+      hitDiceRecoverySelection: true,
+    },
+  },
 } as const;
 
 /**
- * Calcula a seção de RECURSOS DE ACAMPAMENTO (mecânica opcional) para o DTO.
- *
- * A config é lida pelo valor ATUAL (sem snapshot por solicitação — PASSO 29);
- * os pontos de cada contribuição vêm do valor ATUAL do item (`campSupplyValue`),
- * nunca de um subtotal persistido (PASSO 19/20).
+ * Completa um DTO-base com a seção de recursos de acampamento (mecânica
+ * opcional). Todo o cálculo vive em `camp-supplies-calculator.ts` — a config, as
+ * contribuições e o VALOR do item são lidos pelo valor ATUAL, nunca de um
+ * subtotal persistido.
  */
-async function buildCampSupplies(
-  client: Db,
-  base: LongRestRequestBaseDto,
-): Promise<LongRestCampSuppliesDto> {
-  // Config atual da mesa (a linha única pode ainda não existir: usa os padrões).
-  const config = await client.gameConfig.findUnique({ where: { id: 'main' } });
-  const enabled = config?.campSuppliesEnabled ?? false;
-  const costPerParticipant = config?.campSupplyCostPerParticipant ?? CAMP_SUPPLY_COST_DEFAULT;
-
-  // Cota: só os ACCEPTED efetivos contam (DECLINED/PENDING do force-approve não).
-  const acceptedCharacterIds = base.participants
-    .filter((participant) => participant.response === 'ACCEPTED')
-    .map((participant) => participant.characterId);
-
-  const rows = await client.longRestCampSupplyContribution.findMany({
-    where: { requestId: base.id },
-  });
-
-  // Resolve o valor por item a partir do inventário ATUAL (espelhando o catálogo).
-  const characterIds = [...new Set(rows.map((row) => row.characterId))];
-  const characters = characterIds.length
-    ? await client.character.findMany({
-        where: { id: { in: characterIds } },
-        select: { id: true, inventory: true },
-      })
-    : [];
-  const inventoryByCharacter = new Map<string, InventoryItemDto[]>(
-    characters.map((character) => [
-      character.id,
-      parseJson<InventoryItemDto[]>(inventoryListSchema, character.inventory, []),
-    ]),
-  );
-  const catalog = await loadCatalogLookup([...inventoryByCharacter.values()]);
-
-  const pointsByCharacter = new Map<string, number>();
-  for (const characterId of acceptedCharacterIds) pointsByCharacter.set(characterId, 0);
-
-  const contributions: LongRestCampSupplyContributionDto[] = [];
-  let contributed = 0;
-  for (const row of rows) {
-    const inventory = syncInventory(inventoryByCharacter.get(row.characterId) ?? [], catalog);
-    const item = inventory.find((entry) => entry.id === row.inventoryItemId);
-    const value = item && item.campSupply.enabled ? item.campSupply.value : 0;
-    const points = row.quantity * value;
-    contributed += points;
-    pointsByCharacter.set(row.characterId, (pointsByCharacter.get(row.characterId) ?? 0) + points);
-    contributions.push({
-      characterId: row.characterId,
-      inventoryItemId: row.inventoryItemId,
-      quantity: row.quantity,
-      points,
-    });
-  }
-
-  const required = enabled ? acceptedCharacterIds.length * costPerParticipant : 0;
-  const remaining = Math.max(0, required - contributed);
-  const satisfied = !enabled || contributed >= required;
-
-  return {
-    enabled,
-    costPerParticipant,
-    required,
-    contributed,
-    remaining,
-    satisfied,
-    byCharacter: [...pointsByCharacter.entries()].map(([characterId, points]) => ({
-      characterId,
-      points,
-    })),
-    contributions,
-  };
-}
-
-/** Completa um DTO-base com a seção de recursos de acampamento. */
 async function withCampSupplies(
   client: Db,
   base: LongRestRequestBaseDto,
 ): Promise<LongRestRequestDto> {
-  return { ...base, campSupplies: await buildCampSupplies(client, base) };
+  const acceptedCharacterIds = base.participants
+    .filter((participant) => participant.response === 'ACCEPTED')
+    .map((participant) => participant.characterId);
+
+  return {
+    ...base,
+    campSupplies: await computeCampSupplies(client, base.id, acceptedCharacterIds),
+  };
 }
 
 /** Carrega a solicitação já no formato do DTO (com usuários, sessões e camp supplies). */
@@ -238,6 +204,92 @@ async function loadRequestDto(client: Db, requestId: string): Promise<LongRestRe
     include: REQUEST_DTO_INCLUDE,
   });
   return withCampSupplies(client, toLongRestRequestDto(request));
+}
+
+/**
+ * Carrega o participante de quem chamou, exigindo que ele tenha ACEITADO o
+ * descanso. Só ACCEPTED age num descanso em andamento (ready, Dados de Vida).
+ */
+async function loadAcceptedParticipant(
+  tx: Prisma.TransactionClient,
+  requestId: string,
+  userId: string,
+) {
+  const participant = await tx.longRestRequestParticipant.findUnique({
+    where: { requestId_userId: { requestId, userId } },
+  });
+  if (!participant) {
+    throw new HttpError(
+      'Você não participa desta solicitação de descanso.',
+      403,
+      NOT_A_PARTICIPANT,
+    );
+  }
+  if (participant.response !== 'ACCEPTED') {
+    throw new HttpError(
+      'Apenas quem aceitou o descanso pode fazer isso.',
+      403,
+      NOT_ACCEPTED,
+    );
+  }
+  return participant;
+}
+
+/** Sessão ACTIVE deste personagem na solicitação (o descanso em curso). */
+async function requireActiveSession(
+  tx: Prisma.TransactionClient,
+  requestId: string,
+  characterId: string,
+) {
+  const session = await tx.longRestSession.findFirst({
+    where: { longRestRequestId: requestId, characterId, status: 'ACTIVE' },
+  });
+  if (!session) {
+    throw new HttpError(
+      'Sua sessão de descanso não está ativa.',
+      409,
+      LONG_REST_REQUEST_CLOSED,
+    );
+  }
+  return session;
+}
+
+/** Garante que a solicitação está EM ANDAMENTO (APPROVED) para agir no descanso. */
+function assertApproved(request: { status: string }): void {
+  if (request.status === 'PENDING') {
+    throw new HttpError(
+      'Esta solicitação de descanso ainda não foi aprovada.',
+      409,
+      LONG_REST_REQUEST_NOT_APPROVED,
+    );
+  }
+  if (request.status !== 'APPROVED') {
+    throw new HttpError(
+      'Este descanso coletivo já terminou.',
+      409,
+      LONG_REST_REQUEST_CLOSED,
+    );
+  }
+}
+
+/**
+ * Assinatura canônica da seleção de Dados de Vida (chaves ordenadas, sem
+ * zeros) — dois envios equivalentes caem no MESMO fingerprint idempotente.
+ */
+function selectionFingerprint(selection: HitDiceSelection): string {
+  const entries = Object.entries(normalizeHitDiceSelection(selection)).sort(
+    ([a], [b]) => Number(a) - Number(b),
+  );
+  return JSON.stringify(Object.fromEntries(entries));
+}
+
+/** Normaliza a exceção narrativa recebida (ausente/desligada → sem exceção). */
+function normalizeOverride(
+  override: { enabled?: boolean; type: CampSupplyOverrideInput['type']; note?: string } | undefined,
+): CampSupplyOverrideInput | null {
+  if (!override || override.enabled === false) return null;
+  const note = override.note?.trim();
+  return { type: override.type, ...(note ? { note } : {}) };
 }
 
 /**
@@ -323,6 +375,31 @@ function publishRequest(request: LongRestRequestDto): void {
 /** Resultado padrão de qualquer operação da solicitação. */
 export interface LongRestRequestResult extends LongRestRequestDto {
   replayed: boolean;
+}
+
+/**
+ * Resultado das operações que podem CONCLUIR o descanso (`ready` do último
+ * participante e `force-complete` do mestre): o DTO da solicitação + o resultado
+ * da conclusão (quando ela aconteceu nesta chamada; `null` quando o descanso
+ * segue aberto).
+ */
+export interface LongRestCollectiveResult extends LongRestRequestDto {
+  replayed: boolean;
+  completion: LongRestCompletionDto | null;
+}
+
+/** Snapshot idempotente persistido em `LongRestOperation.result`. */
+interface StoredLongRestResult {
+  request: LongRestRequestDto;
+  completion: LongRestCompletionDto | null;
+}
+
+/** Formata o snapshot guardado de volta à resposta pública. */
+function storedToResult(
+  stored: StoredLongRestResult,
+  replayed: boolean,
+): LongRestCollectiveResult {
+  return { ...stored.request, replayed, completion: stored.completion };
 }
 
 /**
@@ -835,6 +912,262 @@ export async function setCampSupplyContribution(
 
   publishRequest(dto);
   return { ...dto, replayed: false };
+}
+
+/**
+ * MARCA/DESMARCA "pronto para descansar" (PASSO 2/3).
+ *
+ * Só um participante ACCEPTED, com sessão ACTIVE e a solicitação APPROVED.
+ * Ready é apenas "terminei minhas decisões": recursos de acampamento
+ * insuficientes NÃO impedem o ready — e, com todos prontos e suprimento
+ * faltando, a solicitação segue APPROVED (estado válido, PASSO 9).
+ *
+ * Conclusão AUTOMÁTICA (PASSO 8): quando o ÚLTIMO participante fica pronto e os
+ * recursos de acampamento estão satisfeitos (ou a mecânica está desligada), o
+ * descanso é concluído na MESMA transação. O lock da solicitação garante que só
+ * uma das chamadas concorrentes conclua.
+ */
+export async function setLongRestReady(
+  actor: Actor,
+  requestId: string,
+  input: SetLongRestReadyInput,
+): Promise<LongRestCollectiveResult> {
+  const fingerprint = JSON.stringify({ requestId, ready: input.ready });
+  const previous = await findOperation(input.operationId);
+  if (previous) {
+    return storedToResult(
+      replaySnapshot<StoredLongRestResult>(previous, READY_TYPE, fingerprint),
+      true,
+    );
+  }
+
+  let outcome!: { request: LongRestRequestDto; detail: LongRestCompletionOutcome | null };
+  try {
+    outcome = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, requestId);
+
+      const request = await tx.longRestRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new HttpError('Solicitação de descanso não encontrada.', 404);
+      assertApproved(request);
+
+      const participant = await loadAcceptedParticipant(tx, requestId, actor.userId);
+      const session = await requireActiveSession(tx, requestId, participant.characterId);
+
+      await tx.longRestSession.updateMany({
+        where: { id: session.id, status: 'ACTIVE' },
+        data: { readyAt: input.ready ? new Date() : null },
+      });
+
+      // Conclusão automática: nenhuma sessão ACTIVE pendente de ready E os
+      // recursos de acampamento satisfeitos (desligados contam como satisfeitos).
+      let detail: LongRestCompletionOutcome | null = null;
+      if (input.ready) {
+        const notReady = await tx.longRestSession.count({
+          where: { longRestRequestId: requestId, status: 'ACTIVE', readyAt: null },
+        });
+        if (notReady === 0) {
+          const open = await loadRequestDto(tx, requestId);
+          if (open.campSupplies.satisfied) {
+            detail = await completeLongRest(tx, requestId, {
+              forcedByUserId: null,
+              override: null,
+            });
+          }
+        }
+      }
+
+      const loaded = await loadRequestDto(tx, requestId);
+      await tx.longRestOperation.create({
+        data: {
+          operationId: input.operationId,
+          type: READY_TYPE,
+          requestFingerprint: fingerprint,
+          result: {
+            request: loaded,
+            completion: detail?.completion ?? null,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return { request: loaded, detail };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(input.operationId);
+      if (raced) {
+        return storedToResult(
+          replaySnapshot<StoredLongRestResult>(raced, READY_TYPE, fingerprint),
+          true,
+        );
+      }
+    }
+    throw error;
+  }
+
+  publishRequest(outcome.request);
+  if (outcome.detail) await publishLongRestCompletion(outcome.detail);
+  return {
+    ...outcome.request,
+    replayed: false,
+    completion: outcome.detail?.completion ?? null,
+  };
+}
+
+/**
+ * ESCOLHE os Dados de Vida a recuperar (PASSO 4/5/6/7).
+ *
+ * O PHB 2014 manda recuperar metade do total (mínimo 1), mas NÃO define
+ * prioridade entre tipos — em multiclasse o JOGADOR escolhe. A seleção fica
+ * persistida na sessão ACTIVE e só é APLICADA na conclusão do descanso.
+ *
+ * Server-authoritative: a validação roda contra a ficha ATUAL (tipos 6/8/10/12,
+ * inteiro ≥ 0, nunca mais do que foi gasto daquele tipo e soma ≤ cota efetiva).
+ * Seleção vazia/zero é permitida.
+ */
+export async function setHitDiceRecovery(
+  actor: Actor,
+  requestId: string,
+  input: SetHitDiceRecoveryInput,
+): Promise<LongRestCollectiveResult> {
+  const fingerprint = JSON.stringify({
+    requestId,
+    selection: selectionFingerprint(input.selection),
+  });
+  const previous = await findOperation(input.operationId);
+  if (previous) {
+    return storedToResult(
+      replaySnapshot<StoredLongRestResult>(previous, HIT_DICE_TYPE, fingerprint),
+      true,
+    );
+  }
+
+  let loaded!: LongRestRequestDto;
+  try {
+    loaded = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, requestId);
+
+      const request = await tx.longRestRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new HttpError('Solicitação de descanso não encontrada.', 404);
+      assertApproved(request);
+
+      const participant = await loadAcceptedParticipant(tx, requestId, actor.userId);
+      const session = await requireActiveSession(tx, requestId, participant.characterId);
+
+      const character = await tx.character.findUniqueOrThrow({
+        where: { id: participant.characterId },
+      });
+      const selection = assertHitDiceSelection(character, input.selection);
+
+      await tx.longRestSession.updateMany({
+        where: { id: session.id, status: 'ACTIVE' },
+        data: { hitDiceRecoverySelection: selection as Prisma.InputJsonValue },
+      });
+
+      const dto = await loadRequestDto(tx, requestId);
+      await tx.longRestOperation.create({
+        data: {
+          operationId: input.operationId,
+          type: HIT_DICE_TYPE,
+          requestFingerprint: fingerprint,
+          result: { request: dto, completion: null } as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return dto;
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(input.operationId);
+      if (raced) {
+        return storedToResult(
+          replaySnapshot<StoredLongRestResult>(raced, HIT_DICE_TYPE, fingerprint),
+          true,
+        );
+      }
+    }
+    throw error;
+  }
+
+  publishRequest(loaded);
+  return { ...loaded, replayed: false, completion: null };
+}
+
+/**
+ * FORÇA a conclusão do Descanso Longo — exclusivo do MESTRE.
+ *
+ * Sem exceção, o force-complete NORMAL ignora apenas o `ready` que falta: os
+ * recursos de acampamento continuam valendo e, se estiverem insuficientes, a
+ * resposta é 409 `CAMP_SUPPLIES_INSUFFICIENT` com `required`/`contributed`/
+ * `remaining`.
+ *
+ * Com `campSupplyOverride`, o mestre DECLARA a exceção narrativa (NARRATIVE —
+ * resolveu na ficção — ou ADMINISTRATIVE — dispensou por decisão de mesa) e o
+ * descanso conclui mesmo faltando suprimento. A exceção fica registrada no
+ * resultado idempotente e as contribuições existentes seguem sendo consumidas:
+ * os pontos que faltam NÃO são inventados nem cobrados.
+ */
+export async function forceCompleteLongRest(
+  actor: Actor,
+  requestId: string,
+  input: ForceCompleteLongRestInput,
+): Promise<LongRestCollectiveResult> {
+  const override = normalizeOverride(input.campSupplyOverride);
+  const fingerprint = JSON.stringify({
+    requestId,
+    override: override ? { type: override.type, note: override.note ?? null } : null,
+  });
+  const previous = await findOperation(input.operationId);
+  if (previous) {
+    return storedToResult(
+      replaySnapshot<StoredLongRestResult>(previous, COMPLETE_TYPE, fingerprint),
+      true,
+    );
+  }
+
+  let outcome!: { request: LongRestRequestDto; detail: LongRestCompletionOutcome };
+  try {
+    outcome = await prisma.$transaction(async (tx) => {
+      await lockRequest(tx, requestId);
+
+      const request = await tx.longRestRequest.findUnique({ where: { id: requestId } });
+      if (!request) throw new HttpError('Solicitação de descanso não encontrada.', 404);
+      assertApproved(request);
+
+      const detail = await completeLongRest(tx, requestId, {
+        forcedByUserId: actor.userId,
+        override,
+      });
+
+      const loaded = await loadRequestDto(tx, requestId);
+      await tx.longRestOperation.create({
+        data: {
+          operationId: input.operationId,
+          type: COMPLETE_TYPE,
+          requestFingerprint: fingerprint,
+          result: {
+            request: loaded,
+            completion: detail.completion,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return { request: loaded, detail };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(input.operationId);
+      if (raced) {
+        return storedToResult(
+          replaySnapshot<StoredLongRestResult>(raced, COMPLETE_TYPE, fingerprint),
+          true,
+        );
+      }
+    }
+    throw error;
+  }
+
+  publishRequest(outcome.request);
+  await publishLongRestCompletion(outcome.detail);
+  return { ...outcome.request, replayed: false, completion: outcome.detail.completion };
 }
 
 /**

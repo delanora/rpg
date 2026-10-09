@@ -130,25 +130,16 @@ export function VitalsSection({
     applyClassState({ ...classState, active: [...classState.active, toggle.id], used });
   }
 
-  /**
-   * Descanso longo: restaura o HP ao máximo, recarrega todos os espaços de
-   * magia e zera o estado de classe (toggles encerrados e usos devolvidos).
+  /*
+   * Descanso Longo: a autoridade mecânica é do SERVIDOR.
+   *
+   * O `longRest()` antigo aplicava os benefícios na ficha LOCAL (PV ao máximo,
+   * espaços recarregados, `classState.used` apagado). Isso não pode coexistir com
+   * a conclusão real do descanso coletivo — que é transacional e precisa do
+   * consenso da mesa, do ready, da seleção de Dados de Vida e do consumo dos
+   * recursos de acampamento. Enquanto o painel coletivo não chega (UI pendente),
+   * o botão fica DESATIVADO: nenhuma ficha é alterada por aqui.
    */
-  function longRest(): void {
-    const slots = Object.fromEntries(
-      Object.entries(character.spells.slots).map(([level, slot]) => [
-        level,
-        { ...slot, used: 0 },
-      ]),
-    );
-    update({
-      hpCurrent: hpMax,
-      spells: { ...character.spells, slots },
-      // O descanso longo NÃO apaga as escolhas de característica (Estilo de
-      // Luta, Inimigo Favorito): só encerra toggles e devolve usos.
-      classState: { ...classState, active: [], used: {} },
-    });
-  }
 
   const kiResource = classAdjustments.resources.find((resource) => resource.id === 'ki');
   const hasClassPanel =
@@ -515,8 +506,8 @@ export function VitalsSection({
         <button
           type="button"
           className="btn btn-small class-rest-btn"
-          disabled={readOnly}
-          onClick={longRest}
+          disabled
+          title="O Descanso Longo é conduzido pela solicitação coletiva da mesa (pronto + conclusão do servidor)."
         >
           <Icon name="bed" size={15} />
           <span>Descanso Longo</span>

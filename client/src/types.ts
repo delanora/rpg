@@ -2054,6 +2054,32 @@ export interface LongRestRequestParticipantDto {
   closedByMaster: boolean;
   /** Sessão individual criada na aprovação (null enquanto PENDING/recusado). */
   sessionId: string | null;
+  /** Marcou "pronto para descansar" (só existe em ACCEPTED). */
+  ready: boolean;
+  readyAt: string | null;
+  /** Dados de Vida recuperáveis nesta sessão (null fora do descanso em curso). */
+  hitDiceRecovery: LongRestHitDiceRecoveryDto | null;
+}
+
+/** Uma face de Dado de Vida com o uso atual e a escolha desta sessão. */
+export interface LongRestHitDieOptionDto {
+  die: number;
+  max: number;
+  used: number;
+  remaining: number;
+  selected: number;
+}
+
+/**
+ * Estado de recuperação de Dados de Vida da sessão: cota do PHB (metade do
+ * total, mínimo 1), uso atual e a escolha do JOGADOR (os tipos, em multiclasse).
+ */
+export interface LongRestHitDiceRecoveryDto {
+  baseAllowance: number;
+  allowance: number;
+  usedTotal: number;
+  selectedTotal: number;
+  options: LongRestHitDieOptionDto[];
 }
 
 /** Contribuição de recurso de acampamento (visão mínima exposta à mesa). */
@@ -2096,6 +2122,78 @@ export interface LongRestRequestDto {
   forcedByUserId: string | null;
   /** Recursos de acampamento (mecânica opcional). */
   campSupplies: LongRestCampSuppliesDto;
+  /**
+   * Todos os ACCEPTED prontos. Com `campSupplies.satisfied === false` este é um
+   * estado VÁLIDO: falta apenas a mesa resolver a questão dos suprimentos.
+   */
+  allReady: boolean;
+}
+
+/** Categorias amplas da exceção narrativa do mestre (`campSupplyOverride`). */
+export type CampSupplyOverrideType = 'NARRATIVE' | 'ADMINISTRATIVE';
+
+/** Uma pilha de suprimento efetivamente consumida na conclusão. */
+export interface LongRestConsumedCampSupplyDto {
+  characterId: string;
+  inventoryItemId: string;
+  quantity: number;
+  points: number;
+}
+
+/** Um tipo de Dado de Vida recuperado na conclusão. */
+export interface LongRestHitDiceRecoveredDto {
+  die: number;
+  count: number;
+}
+
+/** Benefícios aplicados a UM participante ACCEPTED (auditoria da conclusão). */
+export interface LongRestCharacterCompletionDto {
+  characterId: string;
+  userId: string;
+  username: string;
+  hpBefore: number;
+  hpAfter: number;
+  hpTempBefore: number;
+  hitDiceRecovered: LongRestHitDiceRecoveredDto[];
+  spellSlotLevelsRestored: number[];
+  classResourcesRestored: string[];
+  racialUsesRestored: string[];
+  activeTogglesCleared: string[];
+}
+
+/** Auditoria dos recursos de acampamento no resultado da conclusão. */
+export interface LongRestCampSupplyAuditDto {
+  enabled: boolean;
+  costPerParticipant: number;
+  required: number;
+  contributed: number;
+  consumedPoints: number;
+  remainingAtCompletion: number;
+  requirementSatisfiedNormally: boolean;
+  overridden: boolean;
+  overrideType: CampSupplyOverrideType | null;
+  overrideNote: string | null;
+  overriddenByUserId: string | null;
+}
+
+/** Resultado da conclusão real do Descanso Longo coletivo. */
+export interface LongRestCompletionDto {
+  requestId: string;
+  completedAt: string;
+  forcedByUserId: string | null;
+  campSupplies: LongRestCampSupplyAuditDto;
+  suppliesConsumed: LongRestConsumedCampSupplyDto[];
+  characters: LongRestCharacterCompletionDto[];
+  sessions: { id: string; characterId: string; status: 'COMPLETED' }[];
+}
+
+/**
+ * Resposta de `ready`, `hit-dice` e `force-complete`: a solicitação + a
+ * conclusão (quando ela aconteceu nesta chamada).
+ */
+export interface LongRestCollectiveResultDto extends LongRestRequestDto {
+  replayed: boolean;
+  completion: LongRestCompletionDto | null;
 }
 
 /** Payload do evento `long-rest:request-updated`. */

@@ -2,19 +2,25 @@ import { Router, type Response } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   createLongRestRequestSchema,
+  forceCompleteLongRestSchema,
   longRestRequestActionSchema,
   longRestRequestIdSchema,
   respondLongRestRequestSchema,
   setCampSupplyContributionSchema,
+  setHitDiceRecoverySchema,
+  setLongRestReadySchema,
 } from './long-rest.schema.js';
 import {
   abortLongRestRequest,
   cancelLongRestRequest,
   createLongRestRequest,
   forceApproveLongRestRequest,
+  forceCompleteLongRest,
   getOpenLongRestRequest,
   respondToLongRestRequest,
   setCampSupplyContribution,
+  setHitDiceRecovery,
+  setLongRestReady,
   type Actor,
 } from './long-rest.service.js';
 
@@ -132,6 +138,80 @@ longRestRouter.put('/long/:requestId/camp-supplies', authenticate, async (req, r
 
   res.json(await setCampSupplyContribution(actorFrom(req), id.data, parsed.data));
 });
+
+/**
+ * POST /api/rest/long/:requestId/ready — marca/desmarca "pronto para descansar".
+ *
+ * Só participante ACCEPTED com sessão ACTIVE. Recursos de acampamento
+ * insuficientes NÃO impedem o ready; quando o ÚLTIMO participante fica pronto e
+ * os suprimentos permitem, o Descanso Longo conclui na mesma chamada (a resposta
+ * traz `completion`).
+ */
+longRestRouter.post('/long/:requestId/ready', authenticate, async (req, res) => {
+  const id = longRestRequestIdSchema.safeParse(req.params.requestId);
+  const parsed = setLongRestReadySchema.safeParse(req.body ?? {});
+  if (!id.success) {
+    validationError(res, { requestId: id.error.issues.map((issue) => issue.message) });
+    return;
+  }
+  if (!parsed.success) {
+    validationError(res, parsed.error.flatten().fieldErrors);
+    return;
+  }
+
+  res.json(await setLongRestReady(actorFrom(req), id.data, parsed.data));
+});
+
+/**
+ * PUT /api/rest/long/:requestId/hit-dice — escolhe os Dados de Vida a recuperar.
+ *
+ * Só participante ACCEPTED com sessão ACTIVE. A escolha é persistida na sessão e
+ * aplicada apenas na conclusão do descanso (em multiclasse o jogador decide os
+ * tipos — o PHB não tem prioridade automática).
+ */
+longRestRouter.put('/long/:requestId/hit-dice', authenticate, async (req, res) => {
+  const id = longRestRequestIdSchema.safeParse(req.params.requestId);
+  const parsed = setHitDiceRecoverySchema.safeParse(req.body ?? {});
+  if (!id.success) {
+    validationError(res, { requestId: id.error.issues.map((issue) => issue.message) });
+    return;
+  }
+  if (!parsed.success) {
+    validationError(res, parsed.error.flatten().fieldErrors);
+    return;
+  }
+
+  res.json(await setHitDiceRecovery(actorFrom(req), id.data, parsed.data));
+});
+
+/**
+ * POST /api/rest/long/:requestId/force-complete — mestre conclui o descanso.
+ *
+ * Sem `campSupplyOverride`, ignora só o `ready` faltante e continua respeitando
+ * os recursos de acampamento (409 `CAMP_SUPPLIES_INSUFFICIENT` com
+ * `required`/`contributed`/`remaining` quando faltam). Com `campSupplyOverride`,
+ * o mestre declara a exceção narrativa e o descanso conclui — os suprimentos
+ * existentes seguem sendo consumidos e a exceção fica registrada.
+ */
+longRestRouter.post(
+  '/long/:requestId/force-complete',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const id = longRestRequestIdSchema.safeParse(req.params.requestId);
+    const parsed = forceCompleteLongRestSchema.safeParse(req.body ?? {});
+    if (!id.success) {
+      validationError(res, { requestId: id.error.issues.map((issue) => issue.message) });
+      return;
+    }
+    if (!parsed.success) {
+      validationError(res, parsed.error.flatten().fieldErrors);
+      return;
+    }
+
+    res.json(await forceCompleteLongRest(actorFrom(req), id.data, parsed.data));
+  },
+);
 
 /**
  * POST /api/rest/long/:requestId/abort — mestre ABORTA um descanso em andamento.
