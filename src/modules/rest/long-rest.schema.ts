@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { operationIdSchema } from '../characters/characters.schema.js';
+import {
+  CAMP_SUPPLY_OVERRIDE_NOTE_MAX,
+  CAMP_SUPPLY_OVERRIDE_TYPES,
+} from '../shared/camp-supplies.js';
 
 /**
  * Schemas da solicitação COLETIVA de Descanso Longo.
@@ -52,6 +56,68 @@ export const setCampSupplyContributionSchema = z.object({
 });
 
 export type SetCampSupplyContributionInput = z.infer<typeof setCampSupplyContributionSchema>;
+
+/**
+ * Marca/desmarca "pronto para descansar" (PASSO 2).
+ *
+ * Ready significa apenas "terminei minhas decisões pessoais": NÃO é aprovação
+ * mecânica e recursos de acampamento insuficientes não impedem o ready.
+ */
+export const setLongRestReadySchema = z.object({
+  ready: z.boolean(),
+  operationId: operationIdSchema,
+});
+
+export type SetLongRestReadyInput = z.infer<typeof setLongRestReadySchema>;
+
+/**
+ * Seleção dos Dados de Vida a recuperar: mapa face → quantidade.
+ * Só as faces do PHB (d6, d8, d10, d12); a VALIDAÇÃO contra o uso real e a cota
+ * do descanso é do servidor (a ficha é a fonte de verdade).
+ */
+export const hitDiceRecoverySelectionSchema = z.record(
+  z.enum(['6', '8', '10', '12']),
+  z.number().int().min(0).max(1000),
+);
+
+export const setHitDiceRecoverySchema = z.object({
+  /** `{}` (ou só zeros) é permitido: o jogador não precisa recuperar o máximo. */
+  selection: hitDiceRecoverySelectionSchema.default({}),
+  operationId: operationIdSchema,
+});
+
+export type SetHitDiceRecoveryInput = z.infer<typeof setHitDiceRecoverySchema>;
+
+/**
+ * Exceção NARRATIVA do mestre (`campSupplyOverride`) — deliberada e registrada.
+ *
+ * `enabled: false` equivale a não haver exceção. A `note` é OPCIONAL e curta: a
+ * justificativa dá contexto à mesa, não vira formulário burocrático.
+ */
+export const campSupplyOverrideSchema = z.object({
+  enabled: z.boolean().default(true),
+  type: z.enum(CAMP_SUPPLY_OVERRIDE_TYPES),
+  note: z
+    .string()
+    .trim()
+    .max(
+      CAMP_SUPPLY_OVERRIDE_NOTE_MAX,
+      `A anotação da exceção pode ter no máximo ${CAMP_SUPPLY_OVERRIDE_NOTE_MAX} caracteres.`,
+    )
+    .optional(),
+});
+
+/**
+ * Conclusão forçada pelo MESTRE. Sem `campSupplyOverride`, o force-complete
+ * NORMAL continua respeitando os recursos de acampamento (só ignora o `ready`
+ * que falta). Só o mestre alcança esta rota.
+ */
+export const forceCompleteLongRestSchema = z.object({
+  operationId: operationIdSchema,
+  campSupplyOverride: campSupplyOverrideSchema.optional(),
+});
+
+export type ForceCompleteLongRestInput = z.infer<typeof forceCompleteLongRestSchema>;
 
 /** Id vindo da rota (`:requestId`). */
 export { longRestRequestIdSchema };

@@ -15567,6 +15567,1128 @@ async function main(): Promise<void> {
     }
   }
 
+  // ==========================================================================
+  // 49) Descanso Longo coletivo: CONCLUSÃO REAL
+  //     (ready, Dados de Vida, recursos de acampamento, exceção narrativa,
+  //      benefícios do PHB 2014, atomicidade, idempotência e aborto)
+  // ==========================================================================
+  console.log('\n49) Descanso Longo coletivo: conclusão real (ready, Dados de Vida, suprimentos)');
+  {
+    const lcTokenA = testsPlayerToken;
+    const lcMeA = await api('/api/auth/me', { token: lcTokenA });
+    const lcUserIdA: string = lcMeA.data?.user?.sub;
+    check(
+      '49) conta do jogador A disponível para a conclusão do Descanso Longo',
+      lcMeA.status === 200 && Boolean(lcUserIdA),
+      JSON.stringify(lcMeA.data),
+    );
+    if (!(await prisma.character.findUnique({ where: { userId: lcUserIdA } }))) {
+      await api('/api/characters/me', {
+        method: 'POST',
+        token: lcTokenA,
+        body: { name: 'Conclusão Longa A' },
+      });
+    }
+    const lcMasterMe = await api('/api/auth/me', { token: masterToken });
+    const lcMasterUserId: string = lcMasterMe.data?.user?.sub;
+
+    const lcOthers = (
+      await prisma.user.findMany({
+        where: { role: 'PLAYER', username: { endsWith: `_${suffix}` }, id: { not: lcUserIdA } },
+        include: { character: { select: { id: true } } },
+        orderBy: { username: 'asc' },
+      })
+    )
+      .filter((user) => user.character !== null)
+      .slice(0, 3);
+    check(
+      '49) 3 jogadores com ficha para a conclusão do Descanso Longo',
+      lcOthers.length === 3,
+      `encontrados: ${lcOthers.length}`,
+    );
+
+    if (lcOthers.length === 3) {
+      const lcB = lcOthers[0];
+      const lcC = lcOthers[1];
+      const lcD = lcOthers[2];
+      const lcTokenB = signToken({ sub: lcB.id, username: lcB.username, displayName: lcB.displayName, role: lcB.role });
+      const lcTokenC = signToken({ sub: lcC.id, username: lcC.username, displayName: lcC.displayName, role: lcC.role });
+      const lcTokenD = signToken({ sub: lcD.id, username: lcD.username, displayName: lcD.displayName, role: lcD.role });
+      const lcTokens: Record<string, string> = { A: lcTokenA, B: lcTokenB, C: lcTokenC, D: lcTokenD };
+      const lcUserIds: Record<string, string> = { A: lcUserIdA, B: lcB.id, C: lcC.id, D: lcD.id };
+
+      const lcCharA = await prisma.character.findUniqueOrThrow({ where: { userId: lcUserIdA } });
+      const lcCharB = await prisma.character.findUniqueOrThrow({ where: { userId: lcB.id } });
+      const lcCharC = await prisma.character.findUniqueOrThrow({ where: { userId: lcC.id } });
+      const lcCharD = await prisma.character.findUniqueOrThrow({ where: { userId: lcD.id } });
+      const lcAllCharIds = [lcCharA.id, lcCharB.id, lcCharC.id, lcCharD.id];
+
+      // --- Helpers ----------------------------------------------------------
+      const lcSetConfig = (body: Record<string, unknown>) =>
+        api('/api/game/camp-supplies', { method: 'POST', token: masterToken, body });
+      const lcItem = async (name: string, value: number): Promise<any> => {
+        const created = await api('/api/items', {
+          method: 'POST',
+          token: masterToken,
+          body: {
+            name,
+            category: 'Item Geral',
+            details: { consumable: true },
+            campSupply: { enabled: true, value },
+          },
+        });
+        if (created.data?.item?.id) createdItemIds.push(created.data.item.id);
+        return created.data?.item;
+      };
+      const lcSend = (itemId: string, characterId: string, quantity: number) =>
+        api(`/api/items/${itemId}/send`, {
+          method: 'POST',
+          token: masterToken,
+          body: { characterId, quantity },
+        });
+      const lcInvOf = async (characterId: string): Promise<any[]> => {
+        const row = await prisma.character.findUniqueOrThrow({
+          where: { id: characterId },
+          select: { inventory: true },
+        });
+        return JSON.parse(JSON.stringify(row.inventory)) as any[];
+      };
+      const lcRowOf = (characterId: string) =>
+        prisma.character.findUniqueOrThrow({ where: { id: characterId } });
+      const lcSetCharacter = (userId: string, data: Record<string, unknown>) =>
+        prisma.character.update({ where: { userId }, data: data as any });
+      /** Snapshot largo: tudo que a conclusão pode tocar (e o que ela NÃO pode). */
+      const lcSnapshot = async (characterId: string): Promise<string> => {
+        const c = await lcRowOf(characterId);
+        return JSON.stringify({
+          hpCurrent: c.hpCurrent,
+          hpMax: c.hpMax,
+          hpTemp: c.hpTemp,
+          hitDice: c.hitDice,
+          spells: c.spells,
+          classState: c.classState,
+          inventory: c.inventory,
+          features: c.features,
+          version: c.version,
+        });
+      };
+      const lcReset = async () => {
+        await prisma.longRestSession.updateMany({
+          where: { characterId: { in: lcAllCharIds }, status: 'ACTIVE' },
+          data: { status: 'CANCELLED', cancelledAt: new Date() },
+        });
+        await prisma.longRestCampSupplyContribution.deleteMany({
+          where: { characterId: { in: lcAllCharIds } },
+        });
+        await prisma.longRestRequest.updateMany({
+          where: { status: { in: ['PENDING', 'APPROVED'] } },
+          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+        });
+      };
+      const lcSetup = async (
+        specs: Record<
+          string,
+          {
+            classes?: { classKey: string; subclass?: string; level: number }[];
+            hpCurrent?: number;
+            hpMax?: number;
+            hpTemp?: number;
+            hitDice?: unknown;
+            spells?: unknown;
+            classState?: unknown;
+            raceId?: string;
+            features?: unknown;
+          }
+        >,
+      ) => {
+        for (const [key, spec] of Object.entries(specs)) {
+          await lcSetCharacter(lcUserIds[key], {
+            ...(spec.classes
+              ? {
+                  classes: spec.classes.map((entry) => ({
+                    classKey: entry.classKey,
+                    subclass: entry.subclass ?? '',
+                    level: entry.level,
+                  })),
+                }
+              : {}),
+            ...(spec.hpCurrent === undefined ? {} : { hpCurrent: spec.hpCurrent }),
+            ...(spec.hpMax === undefined ? {} : { hpMax: spec.hpMax }),
+            hpTemp: spec.hpTemp ?? 0,
+            hitDice: (spec.hitDice ?? {}) as any,
+            spells: (spec.spells ?? { list: [], slots: {} }) as any,
+            classState: (spec.classState ?? { active: [], used: {}, choices: {} }) as any,
+            ...(spec.raceId === undefined ? {} : { raceId: spec.raceId }),
+            ...(spec.features === undefined ? {} : { features: spec.features as any }),
+          });
+        }
+      };
+
+      const lcCurrent = async () =>
+        (await api('/api/rest/long/request', { token: lcTokenA })).data.request;
+      const lcCreateRequest = (operationId: string, token = lcTokenA) =>
+        api('/api/rest/long/request', { method: 'POST', token, body: { operationId } });
+      const lcRespond = (token: string, requestId: string, response: string, operationId: string) =>
+        api(`/api/rest/long/${requestId}/respond`, {
+          method: 'POST',
+          token,
+          body: { response, operationId },
+        });
+      const lcReady = (token: string, requestId: string, ready: boolean, operationId: string) =>
+        api(`/api/rest/long/${requestId}/ready`, {
+          method: 'POST',
+          token,
+          body: { ready, operationId },
+        });
+      const lcHitDice = (
+        token: string,
+        requestId: string,
+        selection: Record<string, number>,
+        operationId: string,
+      ) =>
+        api(`/api/rest/long/${requestId}/hit-dice`, {
+          method: 'PUT',
+          token,
+          body: { selection, operationId },
+        });
+      const lcForceComplete = (
+        requestId: string,
+        override: Record<string, unknown> | null,
+        operationId: string,
+        token = masterToken,
+      ) =>
+        api(`/api/rest/long/${requestId}/force-complete`, {
+          method: 'POST',
+          token,
+          body: { operationId, ...(override ? { campSupplyOverride: override } : {}) },
+        });
+      const lcContribute = (token: string, requestId: string, body: Record<string, unknown>) =>
+        api(`/api/rest/long/${requestId}/camp-supplies`, { method: 'PUT', token, body });
+      const lcAbort = (requestId: string, operationId: string) =>
+        api(`/api/rest/long/${requestId}/abort`, {
+          method: 'POST',
+          token: masterToken,
+          body: { operationId },
+        });
+      /**
+       * Cria a solicitação (A) e responde por B, C e D. Devolve o DTO da
+       * ÚLTIMA resposta — já resolvido (APPROVED com as sessões dos ACCEPTED),
+       * e não o snapshot PENDING da criação.
+       */
+      const lcApprove = async (
+        tag: string,
+        responses: Record<string, string>,
+      ): Promise<any> => {
+        const created = await lcCreateRequest(`op-${suffix}-49-${tag}-create`);
+        const requestId = created.data.id;
+        let last = created.data;
+        for (const [key, response] of Object.entries(responses)) {
+          const answered = await lcRespond(
+            lcTokens[key],
+            requestId,
+            response,
+            `op-${suffix}-49-${tag}-${key}`,
+          );
+          last = answered.data ?? last;
+        }
+        return last;
+      };
+      /**
+       * Espera um evento que SATISFAÇA o predicado (o `waitFor` genérico
+       * devolve o primeiro evento, e aqui passam vários no meio do caminho).
+       */
+      const lcWaitEvent = (socket: any, event: string, matches: (payload: any) => boolean) =>
+        new Promise<any>((resolve) => {
+          const timer = setTimeout(() => {
+            socket.off(event, handler);
+            resolve(null);
+          }, 5000);
+          function handler(payload: any): void {
+            if (!matches(payload)) return;
+            clearTimeout(timer);
+            socket.off(event, handler);
+            resolve(payload);
+          }
+          socket.on(event, handler);
+        });
+      const lcParticipant = (payload: any, key: string) =>
+        (payload?.participants ?? []).find((p: any) => p.userId === lcUserIds[key]);
+
+      // Sockets: A, B, C e D online (a lista de convidados é congelada).
+      const lcSocketA = connect(lcTokenA);
+      const lcPresence = waitForPresence(lcSocketA, () => true).catch(() => null);
+      await waitFor<any>(lcSocketA, 'connection:ready').catch(() => null);
+      await demoteForeignOnlinePlayers(
+        (await lcPresence)?.online ?? [],
+        new Set([lcUserIdA, lcB.id, lcC.id, lcD.id]),
+      );
+      const lcMasterSocket = connect(masterToken);
+      await waitFor<any>(lcMasterSocket, 'connection:ready').catch(() => null);
+      const lcSocketB = connect(lcTokenB);
+      const lcSocketC = connect(lcTokenC);
+      const lcSocketD = connect(lcTokenD);
+      await Promise.all([
+        waitFor<any>(lcSocketB, 'connection:ready').catch(() => null),
+        waitFor<any>(lcSocketC, 'connection:ready').catch(() => null),
+        waitFor<any>(lcSocketD, 'connection:ready').catch(() => null),
+      ]);
+      await waitForPresence(lcSocketA, (online) =>
+        online.some((u: any) => u.username === lcB.username) &&
+        online.some((u: any) => u.username === lcC.username) &&
+        online.some((u: any) => u.username === lcD.username),
+      ).catch(() => null);
+
+      await lcReset();
+
+      // Nada de benefício pode acontecer enquanto a solicitação não conclui.
+      const lcFighter = [{ classKey: 'fighter', level: 3 }];
+      await lcSetup({
+        A: { classes: lcFighter, hpCurrent: 10, hpMax: 30 },
+        B: { classes: lcFighter, hpCurrent: 10, hpMax: 30 },
+        C: { classes: lcFighter, hpCurrent: 10, hpMax: 30 },
+      });
+
+      // --- 49.1–49.9 READY ------------------------------------------------
+      await lcSetConfig({ enabled: true, costPerParticipant: 10 });
+      const lcReqReady = await lcApprove('ready', {
+        B: 'ACCEPTED',
+        C: 'ACCEPTED',
+        D: 'ACCEPTED',
+      });
+      check(
+        '49) solicitação com 4 participantes ACCEPTED (todos online)',
+        lcReqReady?.status === 'APPROVED' && lcReqReady?.participants?.length === 4,
+        JSON.stringify({ status: lcReqReady?.status, n: lcReqReady?.participants?.length }),
+      );
+      check(
+        '49.19) sem contribuições e mecânica ligada: required 40 / satisfied false',
+        lcReqReady?.campSupplies?.required === 40 &&
+          lcReqReady?.campSupplies?.contributed === 0 &&
+          lcReqReady?.campSupplies?.satisfied === false,
+        JSON.stringify(lcReqReady?.campSupplies),
+      );
+
+      const lcReadyEvent = waitFor<any>(lcSocketA, 'long-rest:request-updated').catch(() => null);
+      const lcReadyA = await lcReady(lcTokenA, lcReqReady.id, true, `op-${suffix}-49-ready-a`);
+      const lcReadyEv = await lcReadyEvent;
+      check(
+        '49.1) ACCEPTED marca ready=true (200) e a mesa recebe o realtime',
+        lcReadyA.status === 200 &&
+          lcParticipant(lcReadyA.data, 'A')?.ready === true &&
+          lcReadyA.data?.allReady === false &&
+          lcReadyA.data?.completion === null &&
+          lcReadyEv?.request?.id === lcReqReady.id,
+        JSON.stringify({ status: lcReadyA.status, allReady: lcReadyA.data?.allReady, ev: lcReadyEv?.request?.id }),
+      );
+      check(
+        '49.5) ready é permitido com recursos de acampamento insuficientes',
+        lcReadyA.data?.campSupplies?.satisfied === false &&
+          lcParticipant(lcReadyA.data, 'A')?.readyAt !== null,
+        JSON.stringify(lcReadyA.data?.campSupplies),
+      );
+      const lcUnreadyA = await lcReady(lcTokenA, lcReqReady.id, false, `op-${suffix}-49-unready-a`);
+      check(
+        '49.2) ACCEPTED desmarca ready=false (readyAt volta a null)',
+        lcUnreadyA.status === 200 &&
+          lcParticipant(lcUnreadyA.data, 'A')?.ready === false &&
+          lcParticipant(lcUnreadyA.data, 'A')?.readyAt === null,
+        JSON.stringify(lcParticipant(lcUnreadyA.data, 'A')),
+      );
+      await lcReady(lcTokenA, lcReqReady.id, true, `op-${suffix}-49-ready-a2`);
+      await lcReady(lcTokenB, lcReqReady.id, true, `op-${suffix}-49-ready-b`);
+      await lcReady(lcTokenC, lcReqReady.id, true, `op-${suffix}-49-ready-c`);
+      const lcAllReady = await lcReady(lcTokenD, lcReqReady.id, true, `op-${suffix}-49-ready-d`);
+      check(
+        '49.6/49.9/49.19) todos ready + suprimento insuficiente: allReady true, request continua APPROVED (sem conclusão)',
+        lcAllReady.status === 200 &&
+          lcAllReady.data?.allReady === true &&
+          lcAllReady.data?.status === 'APPROVED' &&
+          lcAllReady.data?.completion === null &&
+          lcAllReady.data?.campSupplies?.remaining === 40,
+        JSON.stringify({
+          status: lcAllReady.data?.status,
+          allReady: lcAllReady.data?.allReady,
+          completion: lcAllReady.data?.completion,
+        }),
+      );
+      check(
+        '49) estado narrativo de falta de suprimentos fica visível no GET',
+        (await lcCurrent())?.allReady === true &&
+          (await lcCurrent())?.campSupplies?.remaining === 40,
+      );
+
+      // 49.3) DECLINED não pode marcar ready.
+      await lcReset();
+      const lcReqDeclined = await lcApprove('declined', {
+        B: 'DECLINED',
+        C: 'DECLINED',
+        D: 'DECLINED',
+      });
+      check(
+        '49.3) DECLINED não pode marcar ready (403 NOT_ACCEPTED)',
+        (await lcReady(lcTokenB, lcReqDeclined.id, true, `op-${suffix}-49-declined-ready`)).status === 403,
+      );
+
+      // --- 49.7–49.16 HIT DICE --------------------------------------------
+      await lcSetConfig({ enabled: false, costPerParticipant: 10 });
+      await lcReset();
+      await lcSetup({ A: { classes: lcFighter, hpCurrent: 10, hpMax: 30 } });
+      const lcReqHd = await lcApprove('hd', { B: 'DECLINED', C: 'DECLINED', D: 'DECLINED' });
+      const lcHdAt = async (
+        classes: { classKey: string; level: number }[],
+        usedByDie: Record<string, number>,
+        selection: Record<string, number>,
+        tag: string,
+      ) => {
+        await lcSetCharacter(lcUserIdA, { classes, hitDice: { usedByDie } });
+        const response = await lcHitDice(lcTokenA, lcReqHd.id, selection, `op-${suffix}-49-${tag}`);
+        return {
+          status: response.status,
+          error: response.data?.error,
+          recovery: lcParticipant(response.data, 'A')?.hitDiceRecovery,
+          data: response.data,
+        };
+      };
+      const lcHd1 = await lcHdAt([{ classKey: 'fighter', level: 1 }], { '10': 1 }, { '10': 1 }, 'hd-l1');
+      check(
+        '49.7) nível 1 → cota base 1, usada 1 e seleção aceita',
+        lcHd1.status === 200 &&
+          lcHd1.recovery?.baseAllowance === 1 &&
+          lcHd1.recovery?.allowance === 1 &&
+          lcHd1.recovery?.selectedTotal === 1,
+        JSON.stringify(lcHd1.recovery),
+      );
+      const lcHd2 = await lcHdAt([{ classKey: 'fighter', level: 2 }], { '10': 2 }, { '10': 1 }, 'hd-l2');
+      check(
+        '49.8) nível 2 → cota base 1',
+        lcHd2.status === 200 && lcHd2.recovery?.baseAllowance === 1 && lcHd2.recovery?.allowance === 1,
+        JSON.stringify(lcHd2.recovery),
+      );
+      const lcHd5 = await lcHdAt([{ classKey: 'fighter', level: 5 }], { '10': 2 }, { '10': 2 }, 'hd-l5');
+      check(
+        '49.9) nível 5 → cota base 2 (seleção no limite é aceita)',
+        lcHd5.status === 200 && lcHd5.recovery?.baseAllowance === 2 && lcHd5.recovery?.selectedTotal === 2,
+        JSON.stringify(lcHd5.recovery),
+      );
+      const lcHd8 = await lcHdAt([{ classKey: 'fighter', level: 8 }], { '10': 4 }, { '10': 4 }, 'hd-l8');
+      check(
+        '49.10) nível 8 → cota base 4',
+        lcHd8.status === 200 &&
+          lcHd8.recovery?.baseAllowance === 4 &&
+          lcHd8.recovery?.allowance === 4,
+        JSON.stringify(lcHd8.recovery),
+      );
+      const lcHdUsed = await lcHdAt([{ classKey: 'fighter', level: 8 }], { '10': 1 }, { '10': 2 }, 'hd-used');
+      check(
+        '49.11) nunca recupera mais do que foi gasto (usado 1, pedido 2) → 400 HIT_DICE_INVALID',
+        lcHdUsed.status === 400 && lcHdUsed.error === 'HIT_DICE_INVALID',
+        JSON.stringify({ status: lcHdUsed.status, error: lcHdUsed.error }),
+      );
+      const lcHdMulti = await lcHdAt(
+        [{ classKey: 'fighter', level: 3 }, { classKey: 'wizard', level: 2 }],
+        { '10': 2, '6': 1 },
+        { '6': 1, '10': 1 },
+        'hd-multi',
+      );
+      check(
+        '49.12) multiclasse: o JOGADOR escolhe os tipos (1d6 + 1d10) e a cota é 2',
+        lcHdMulti.status === 200 &&
+          lcHdMulti.recovery?.allowance === 2 &&
+          lcHdMulti.recovery?.selectedTotal === 2 &&
+          lcHdMulti.recovery?.options?.some((o: any) => o.die === 6 && o.selected === 1) &&
+          lcHdMulti.recovery?.options?.some((o: any) => o.die === 10 && o.selected === 1),
+        JSON.stringify(lcHdMulti.recovery),
+      );
+      const lcHdAbove = await lcHdAt(
+        [{ classKey: 'fighter', level: 3 }, { classKey: 'wizard', level: 2 }],
+        { '10': 2, '6': 1 },
+        { '6': 2 },
+        'hd-above',
+      );
+      check(
+        '49.13) acima do usado (d6 gasto 1, pedido 2) → 400',
+        lcHdAbove.status === 400 && lcHdAbove.error === 'HIT_DICE_INVALID',
+      );
+      const lcHdOver = await lcHdAt(
+        [{ classKey: 'fighter', level: 3 }, { classKey: 'wizard', level: 2 }],
+        { '10': 2, '6': 1 },
+        { '10': 2, '6': 1 },
+        'hd-over',
+      );
+      check(
+        '49.14) soma acima da cota (3 > 2) → 400',
+        lcHdOver.status === 400 && lcHdOver.error === 'HIT_DICE_INVALID',
+      );
+      const lcHdZero = await lcHdAt(
+        [{ classKey: 'fighter', level: 3 }, { classKey: 'wizard', level: 2 }],
+        { '10': 2, '6': 1 },
+        {},
+        'hd-zero',
+      );
+      check(
+        '49.15) seleção zero é permitida (o jogador não é obrigado ao máximo)',
+        lcHdZero.status === 200 && lcHdZero.recovery?.selectedTotal === 0,
+        JSON.stringify(lcHdZero.recovery),
+      );
+      const lcHdBadType = await lcHdAt(
+        [{ classKey: 'fighter', level: 3 }, { classKey: 'wizard', level: 2 }],
+        { '10': 2, '6': 1 },
+        { '7': 1 },
+        'hd-bad-type',
+      );
+      check(
+        '49.7) tipo fora de 6/8/10/12 (d7) → 400',
+        lcHdBadType.status === 400,
+        JSON.stringify({ status: lcHdBadType.status, error: lcHdBadType.error }),
+      );
+
+      // 49.16) A conclusão aplica SOMENTE a seleção escolhida.
+      await lcHitDice(lcTokenA, lcReqHd.id, { '6': 1, '10': 1 }, `op-${suffix}-49-hd-final`);
+      const lcHdComplete = await lcReady(lcTokenA, lcReqHd.id, true, `op-${suffix}-49-hd-ready`);
+      const lcHdChar = await lcRowOf(lcCharA.id);
+      check(
+        '49.16) conclusão aplica a seleção: d10 2→1 e d6 1→0 (e o PV vai ao máximo)',
+        lcHdComplete.data?.status === 'COMPLETED' &&
+          (lcHdChar.hitDice as any)?.usedByDie?.['10'] === 1 &&
+          (lcHdChar.hitDice as any)?.usedByDie?.['6'] === 0 &&
+          lcHdChar.hpCurrent === 30,
+        JSON.stringify({ hitDice: lcHdChar.hitDice, hp: lcHdChar.hpCurrent }),
+      );
+      check(
+        '49.4) ready depois de COMPLETED é recusado (409)',
+        (await lcReady(lcTokenA, lcReqHd.id, true, `op-${suffix}-49-hd-after`)).status === 409,
+      );
+
+      // --- 49.17 Mecânica DESLIGADA: não exige e NÃO consome ----------------
+      const lcFood = await lcItem(`Provisões de viagem ${suffix}`, 10);
+      const lcBread = await lcItem(`Pão de campanha ${suffix}`, 10);
+      await lcSend(lcFood.id, lcCharA.id, 12);
+      await lcSend(lcBread.id, lcCharB.id, 6);
+
+      await lcReset();
+      await lcSetConfig({ enabled: true, costPerParticipant: 10 });
+      await lcSetup({
+        A: { classes: lcFighter, hpCurrent: 10, hpMax: 30 },
+        B: { classes: lcFighter, hpCurrent: 10, hpMax: 30 },
+        C: { classes: lcFighter, hpCurrent: 10, hpMax: 30 },
+        D: { classes: lcFighter, hpCurrent: 10, hpMax: 30 },
+      });
+      const lcReqOff = await lcApprove('off', { B: 'ACCEPTED', C: 'ACCEPTED', D: 'ACCEPTED' });
+      const lcFoodA = (await lcInvOf(lcCharA.id)).find((entry) => entry.itemId === lcFood.id);
+      const lcOffContribution = await lcContribute(lcTokenA, lcReqOff.id, {
+        inventoryItemId: lcFoodA.id,
+        quantity: 1,
+        operationId: `op-${suffix}-49-off-contribute`,
+      });
+      check(
+        '49) contribuir enquanto ligado reserva 1 unidade (10 pontos)',
+        lcOffContribution.status === 200 && lcOffContribution.data?.campSupplies?.contributed === 10,
+        JSON.stringify(lcOffContribution.data?.campSupplies),
+      );
+      const lcOffQuantityBefore = (await lcInvOf(lcCharA.id)).find(
+        (entry) => entry.id === lcFoodA.id,
+      )?.quantity;
+      await lcSetConfig({ enabled: false, costPerParticipant: 10 });
+      await lcReady(lcTokenA, lcReqOff.id, true, `op-${suffix}-49-off-ready-a`);
+      await lcReady(lcTokenB, lcReqOff.id, true, `op-${suffix}-49-off-ready-b`);
+      await lcReady(lcTokenC, lcReqOff.id, true, `op-${suffix}-49-off-ready-c`);
+      const lcOffDone = await lcReady(lcTokenD, lcReqOff.id, true, `op-${suffix}-49-off-ready-d`);
+      check(
+        '49.17) mecânica desligada: conclui sem exigir E sem consumir as pilhas reservadas',
+        lcOffDone.data?.status === 'COMPLETED' &&
+          lcOffDone.data?.completion?.campSupplies?.enabled === false &&
+          lcOffDone.data?.completion?.campSupplies?.consumedPoints === 0 &&
+          (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA.id)?.quantity ===
+            lcOffQuantityBefore,
+        JSON.stringify({
+          status: lcOffDone.data?.status,
+          audit: lcOffDone.data?.completion?.campSupplies,
+        }),
+      );
+
+      // --- 49.18 Satisfeito: conclusão automática + consumo ----------------
+      await lcReset();
+      await lcSetConfig({ enabled: true, costPerParticipant: 10 });
+      const lcReqOk = await lcApprove('satisfied', { B: 'ACCEPTED', C: 'ACCEPTED', D: 'ACCEPTED' });
+      const lcFoodA2 = (await lcInvOf(lcCharA.id)).find((entry) => entry.itemId === lcFood.id);
+      await lcContribute(lcTokenA, lcReqOk.id, {
+        inventoryItemId: lcFoodA2.id,
+        quantity: 4,
+        operationId: `op-${suffix}-49-ok-contribute`,
+      });
+      await lcReady(lcTokenA, lcReqOk.id, true, `op-${suffix}-49-ok-ready-a`);
+      await lcReady(lcTokenB, lcReqOk.id, true, `op-${suffix}-49-ok-ready-b`);
+      await lcReady(lcTokenC, lcReqOk.id, true, `op-${suffix}-49-ok-ready-c`);
+      const lcOkDone = await lcReady(lcTokenD, lcReqOk.id, true, `op-${suffix}-49-ok-ready-d`);
+      check(
+        '49.18) enabled + satisfied → conclusão automática com o consumo dos 40 pontos',
+        lcOkDone.data?.status === 'COMPLETED' &&
+          lcOkDone.data?.completion?.campSupplies?.requirementSatisfiedNormally === true &&
+          lcOkDone.data?.completion?.campSupplies?.overridden === false &&
+          lcOkDone.data?.completion?.campSupplies?.consumedPoints === 40,
+        JSON.stringify(lcOkDone.data?.completion?.campSupplies),
+      );
+      check(
+        '49.18) as 4 unidades saem do inventário (excesso não é cobrado nem devolvido)',
+        (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA2.id)?.quantity ===
+          lcFoodA2.quantity - 4,
+      );
+
+      // --- 49.20/49.21 FORCE-COMPLETE normal com suprimento insuficiente ---
+      await lcReset();
+      const lcReqForce = await lcApprove('force', {
+        B: 'ACCEPTED',
+        C: 'ACCEPTED',
+        D: 'ACCEPTED',
+      });
+      const lcFoodA3 = (await lcInvOf(lcCharA.id)).find((entry) => entry.itemId === lcFood.id);
+      const lcBreadB3 = (await lcInvOf(lcCharB.id)).find((entry) => entry.itemId === lcBread.id);
+      await lcContribute(lcTokenA, lcReqForce.id, {
+        inventoryItemId: lcFoodA3.id,
+        quantity: 2,
+        operationId: `op-${suffix}-49-force-contribute-a`,
+      });
+      const lcForceSupplies = await lcContribute(lcTokenB, lcReqForce.id, {
+        inventoryItemId: lcBreadB3.id,
+        quantity: 1,
+        operationId: `op-${suffix}-49-force-contribute-b`,
+      });
+      check(
+        '49) 30 pontos de 40 (4 ACCEPTED × 10) — insuficiente',
+        lcForceSupplies.data?.campSupplies?.contributed === 30 &&
+          lcForceSupplies.data?.campSupplies?.remaining === 10 &&
+          lcForceSupplies.data?.campSupplies?.satisfied === false,
+        JSON.stringify(lcForceSupplies.data?.campSupplies),
+      );
+      const lcBeforeForce = await lcSnapshot(lcCharA.id);
+      const lcForceBlocked = await lcForceComplete(lcReqForce.id, null, `op-${suffix}-49-force-blocked`);
+      check(
+        '49.20) force-complete NORMAL com suprimento insuficiente → 409 CAMP_SUPPLIES_INSUFFICIENT',
+        lcForceBlocked.status === 409 && lcForceBlocked.data?.error === 'CAMP_SUPPLIES_INSUFFICIENT',
+        JSON.stringify({ status: lcForceBlocked.status, error: lcForceBlocked.data?.error }),
+      );
+      check(
+        '49.21) a resposta traz required/contributed/remaining para o frontend',
+        lcForceBlocked.data?.details?.required === 40 &&
+          lcForceBlocked.data?.details?.contributed === 30 &&
+          lcForceBlocked.data?.details?.remaining === 10,
+        JSON.stringify(lcForceBlocked.data?.details),
+      );
+      check(
+        '49.20/49.50/49.52/49.55) o 409 não consome, não recupera e deixa a solicitação em APPROVED',
+        (await lcSnapshot(lcCharA.id)) === lcBeforeForce &&
+          (await lcCurrent())?.status === 'APPROVED' &&
+          (await prisma.longRestSession.count({
+            where: { longRestRequestId: lcReqForce.id, status: 'ACTIVE' },
+          })) === 4,
+      );
+
+      // --- 49.22–49.34 EXCEÇÃO NARRATIVA do mestre -------------------------
+      check(
+        '49.22) PLAYER não pode usar campSupplyOverride → 403',
+        (
+          await lcForceComplete(
+            lcReqForce.id,
+            { enabled: true, type: 'NARRATIVE' },
+            `op-${suffix}-49-force-player`,
+            lcTokenA,
+          )
+        ).status === 403,
+      );
+      check(
+        '49.27) nota acima do limite (301) é rejeitada → 400',
+        (
+          await lcForceComplete(
+            lcReqForce.id,
+            { enabled: true, type: 'NARRATIVE', note: 'x'.repeat(301) },
+            `op-${suffix}-49-force-long-note`,
+          )
+        ).status === 400,
+      );
+      const lcInventoryIdsBefore = (await lcInvOf(lcCharA.id)).map((entry) => entry.id).sort();
+      const lcOverrideOp = `op-${suffix}-49-force-narrative`;
+      const lcOverride = await lcForceComplete(
+        lcReqForce.id,
+        { enabled: true, type: 'NARRATIVE', note: 'O grupo negociou abrigo e comida no posto de guarda.' },
+        lcOverrideOp,
+      );
+      const lcOverrideAudit = lcOverride.data?.completion?.campSupplies;
+      check(
+        '49.23/49.29) MASTER conclui com exceção NARRATIVE mesmo faltando 10 pontos (200 COMPLETED)',
+        lcOverride.status === 200 &&
+          lcOverride.data?.status === 'COMPLETED' &&
+          lcOverrideAudit?.overridden === true &&
+          lcOverrideAudit?.overrideType === 'NARRATIVE',
+        JSON.stringify({ status: lcOverride.status, audit: lcOverrideAudit }),
+      );
+      check(
+        '49.26/49.28) a nota é persistida e a auditoria fica registrada no resultado',
+        lcOverrideAudit?.overrideNote === 'O grupo negociou abrigo e comida no posto de guarda.' &&
+          lcOverrideAudit?.overriddenByUserId === lcMasterUserId,
+        JSON.stringify(lcOverrideAudit),
+      );
+      check(
+        '49.30/49.31/49.32/49.33) os 30 pontos continuam valendo (consumidos) e os 10 faltantes NÃO são inventados',
+        lcOverrideAudit?.required === 40 &&
+          lcOverrideAudit?.contributed === 30 &&
+          lcOverrideAudit?.consumedPoints === 30 &&
+          lcOverrideAudit?.remainingAtCompletion === 10 &&
+          lcOverrideAudit?.requirementSatisfiedNormally === false &&
+          (lcOverride.data?.completion?.suppliesConsumed ?? []).length === 2 &&
+          lcOverride.data?.completion?.suppliesConsumed?.reduce(
+            (sum: number, row: any) => sum + row.points,
+            0,
+          ) === 30,
+        JSON.stringify(lcOverride.data?.completion?.campSupplies),
+      );
+      check(
+        '49.30) as pilhas contribuídas saem do inventário (2 de A e 1 de B)',
+        (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA3.id)?.quantity ===
+          lcFoodA3.quantity - 2 &&
+          (await lcInvOf(lcCharB.id)).find((entry) => entry.id === lcBreadB3.id)?.quantity ===
+            lcBreadB3.quantity - 1,
+      );
+      check(
+        '49.37/49.38) o sistema NÃO inventa recurso: nenhum item novo na ficha e nenhum ponto fictício',
+        JSON.stringify((await lcInvOf(lcCharA.id)).map((entry) => entry.id).sort()) ===
+          JSON.stringify(lcInventoryIdsBefore),
+        JSON.stringify({ antes: lcInventoryIdsBefore, depois: (await lcInvOf(lcCharA.id)).map((entry) => entry.id) }),
+      );
+      const lcStoredOverride = await prisma.longRestOperation.findUnique({
+        where: { operationId: lcOverrideOp },
+      });
+      check(
+        '49.28) a exceção fica no snapshot idempotente da operação',
+        lcStoredOverride?.type === 'LONG_REST_REQUEST_COMPLETE' &&
+          (lcStoredOverride?.result as any)?.completion?.campSupplies?.overridden === true &&
+          (lcStoredOverride?.result as any)?.completion?.campSupplies?.overrideType === 'NARRATIVE',
+        JSON.stringify((lcStoredOverride?.result as any)?.completion?.campSupplies),
+      );
+      const lcAfterOverride = await lcInvOf(lcCharA.id);
+      const lcReplay = await lcForceComplete(
+        lcReqForce.id,
+        { enabled: true, type: 'NARRATIVE', note: 'O grupo negociou abrigo e comida no posto de guarda.' },
+        lcOverrideOp,
+      );
+      check(
+        '49.34/49.57) replay não consome de novo (replayed true e inventário intacto)',
+        lcReplay.data?.replayed === true &&
+          JSON.stringify(await lcInvOf(lcCharA.id)) === JSON.stringify(lcAfterOverride),
+        JSON.stringify({ replayed: lcReplay.data?.replayed }),
+      );
+
+      // 49.24/49.25) ADMINISTRATIVE, sem nota.
+      await lcReset();
+      const lcReqAdmin = await lcApprove('admin', {
+        B: 'ACCEPTED',
+        C: 'ACCEPTED',
+        D: 'ACCEPTED',
+      });
+      const lcAdmin = await lcForceComplete(
+        lcReqAdmin.id,
+        { enabled: true, type: 'ADMINISTRATIVE' },
+        `op-${suffix}-49-force-admin`,
+      );
+      check(
+        '49.24/49.25) MASTER pode dispensar administrativamente, sem exigir nota',
+        lcAdmin.status === 200 &&
+          lcAdmin.data?.completion?.campSupplies?.overrideType === 'ADMINISTRATIVE' &&
+          lcAdmin.data?.completion?.campSupplies?.overrideNote === null,
+        JSON.stringify(lcAdmin.data?.completion?.campSupplies),
+      );
+
+      // --- 49.35/49.36 ROLEPLAY FLEXÍVEL --------------------------------
+      await lcReset();
+      const lcReqRole = await lcApprove('role', { B: 'ACCEPTED', C: 'ACCEPTED', D: 'ACCEPTED' });
+      const lcFoodA4 = (await lcInvOf(lcCharA.id)).find((entry) => entry.itemId === lcFood.id);
+      await lcContribute(lcTokenA, lcReqRole.id, {
+        inventoryItemId: lcFoodA4.id,
+        quantity: 1,
+        operationId: `op-${suffix}-49-role-contribute-1`,
+      });
+      // O mestre concede mais provisões (roleplay) e o grupo completa o requisito
+      // normalmente — sem precisar de exceção.
+      await lcSend(lcFood.id, lcCharA.id, 3);
+      const lcRoleComplete = await lcContribute(lcTokenA, lcReqRole.id, {
+        inventoryItemId: lcFoodA4.id,
+        quantity: 4,
+        operationId: `op-${suffix}-49-role-contribute-2`,
+      });
+      check(
+        '49.35) itens concedidos antes da conclusão levam o requisito a 40/40 normalmente',
+        lcRoleComplete.status === 200 && lcRoleComplete.data?.campSupplies?.satisfied === true,
+        JSON.stringify(lcRoleComplete.data?.campSupplies),
+      );
+      const lcRoleDone = await lcForceComplete(lcReqRole.id, null, `op-${suffix}-49-role-complete`);
+      check(
+        '49.36) com o requisito satisfeito o force-complete NORMAL conclui sem exceção',
+        lcRoleDone.status === 200 &&
+          lcRoleDone.data?.completion?.campSupplies?.requirementSatisfiedNormally === true &&
+          lcRoleDone.data?.completion?.campSupplies?.overridden === false &&
+          lcRoleDone.data?.completion?.campSupplies?.consumedPoints === 40,
+        JSON.stringify(lcRoleDone.data?.completion?.campSupplies),
+      );
+
+      // --- 49.39–49.48/49.63–49.66 BENEFÍCIOS ---------------------------
+      await lcSetConfig({ enabled: false, costPerParticipant: 10 });
+      await lcReset();
+      const lcTextFeature = [
+        {
+          id: 'narrative-trait',
+          name: 'Traço narrativo',
+          source: 'class',
+          description: 'Dá acesso ao posto de guarda (sem efeito mecânico estruturado).',
+        },
+      ];
+      await lcSetup({
+        A: {
+          classes: [{ classKey: 'fighter', level: 3 }, { classKey: 'wizard', level: 2 }],
+          hpCurrent: 4,
+          hpMax: 30,
+          hpTemp: 3,
+          hitDice: { usedByDie: { '10': 2, '6': 1 } },
+          spells: { list: [], slots: { '1': { max: 3, used: 2 }, '2': { max: 1, used: 1 } } },
+          classState: { active: [], used: { 'second-wind': 1 }, choices: {} },
+        },
+        B: {
+          classes: [{ classKey: 'sorcerer', subclass: 'Linhagem Dracônica', level: 3 }],
+          hpCurrent: 5,
+          hpMax: 20,
+          hpTemp: 2,
+          hitDice: { usedByDie: { '6': 1 } },
+          spells: { list: [], slots: { '1': { max: 4, used: 3 } } },
+          classState: { active: [], used: { 'sorcery-points': 2 }, choices: {} },
+        },
+        C: {
+          classes: [{ classKey: 'fighter', level: 3 }],
+          hpCurrent: 6,
+          hpMax: 30,
+          hpTemp: 9,
+          hitDice: { usedByDie: { '10': 1 } },
+          classState: {
+            active: ['second-wind'],
+            used: {
+              'second-wind': 1,
+              'action-surge': 1,
+              'narrative-charges': 2,
+              'race-spell:hellish-rebuke': 1,
+            },
+            choices: {},
+          },
+          raceId: 'tiefling',
+          features: lcTextFeature,
+        },
+      });
+      const lcReqBen = await lcApprove('benefits', {
+        B: 'ACCEPTED',
+        C: 'ACCEPTED',
+        D: 'DECLINED',
+      });
+      const lcSessionA = await prisma.longRestSession.findFirstOrThrow({
+        where: { longRestRequestId: lcReqBen.id, characterId: lcCharA.id, status: 'ACTIVE' },
+      });
+      await lcHitDice(lcTokenA, lcReqBen.id, { '10': 1, '6': 1 }, `op-${suffix}-49-ben-hd-a`);
+      check(
+        '49.6/49) a seleção de Dados de Vida fica persistida na sessão ACTIVE',
+        Boolean(lcSessionA.id) &&
+          JSON.stringify(
+            (
+              await prisma.longRestSession.findUniqueOrThrow({ where: { id: lcSessionA.id } })
+            ).hitDiceRecoverySelection,
+          ).includes('"10":1'),
+      );
+      const lcBeforeD = await lcSnapshot(lcCharD.id);
+      const lcSheetEvent = lcWaitEvent(
+        lcSocketA,
+        'sheet:updated',
+        (payload) => payload?.userId === lcUserIdA && payload?.changes?.hpCurrent === 30,
+      );
+      const lcDoneEvent = lcWaitEvent(
+        lcSocketA,
+        'long-rest:request-updated',
+        (payload) => payload?.request?.id === lcReqBen.id && payload?.request?.status === 'COMPLETED',
+      );
+      await lcReady(lcTokenA, lcReqBen.id, true, `op-${suffix}-49-ben-ready-a`);
+      await lcReady(lcTokenB, lcReqBen.id, true, `op-${suffix}-49-ben-ready-b`);
+      const lcBenDone = await lcReady(lcTokenC, lcReqBen.id, true, `op-${suffix}-49-ben-ready-c`);
+      const lcSheetEv = await lcSheetEvent;
+      const lcDoneEv = await lcDoneEvent;
+      const lcAfterA = await lcRowOf(lcCharA.id);
+      const lcAfterB = await lcRowOf(lcCharB.id);
+      const lcAfterC = await lcRowOf(lcCharC.id);
+      check(
+        '49.66) realtime DEPOIS do commit: a ficha de A e o status COMPLETED chegam',
+        lcBenDone.data?.status === 'COMPLETED' &&
+          lcSheetEv?.userId === lcUserIdA &&
+          lcDoneEv?.request?.status === 'COMPLETED',
+        JSON.stringify({ sheet: lcSheetEv?.userId, status: lcDoneEv?.request?.status }),
+      );
+      check(
+        '49.39/49.41/49.42) A: PV ao máximo efetivo, PV temporário zerado e espaços normais sem uso',
+        lcAfterA.hpCurrent === 30 &&
+          lcAfterA.hpTemp === 0 &&
+          (lcAfterA.spells as any)?.slots?.['1']?.used === 0 &&
+          (lcAfterA.spells as any)?.slots?.['2']?.used === 0,
+        JSON.stringify({ hp: lcAfterA.hpCurrent, hpTemp: lcAfterA.hpTemp, slots: (lcAfterA.spells as any)?.slots }),
+      );
+      check(
+        '49.40) B: hpBonus de Resiliência Dracônica respeitado (20 + 3)',
+        lcAfterB.hpCurrent === 23 && lcAfterB.hpMax === 20,
+        JSON.stringify({ hp: lcAfterB.hpCurrent, hpMax: lcAfterB.hpMax }),
+      );
+      check(
+        '49.44) B: recurso de recarga LONGA restaurado (Pontos de Feitiçaria)',
+        (lcAfterB.classState as any)?.used?.['sorcery-points'] === undefined,
+        JSON.stringify(lcAfterB.classState),
+      );
+      check(
+        '49.43) C: recursos de recarga CURTA restaurados (um Descanso Longo também vale)',
+        (lcAfterC.classState as any)?.used?.['second-wind'] === undefined &&
+          (lcAfterC.classState as any)?.used?.['action-surge'] === undefined,
+        JSON.stringify(lcAfterC.classState),
+      );
+      check(
+        '49.45) C: contador sem recarga (não previsto nas classes) é PRESERVADO',
+        (lcAfterC.classState as any)?.used?.['narrative-charges'] === 2,
+        JSON.stringify(lcAfterC.classState),
+      );
+      check(
+        '49.46) C: toggles ativos são encerrados no descanso (classState.active = [])',
+        JSON.stringify((lcAfterC.classState as any)?.active) === '[]',
+        JSON.stringify(lcAfterC.classState),
+      );
+      check(
+        '49.47) C: uso racial 1x/descanso longo é resetado (Tiefling → Repreensão Infernal)',
+        (lcAfterC.classState as any)?.used?.['race-spell:hellish-rebuke'] === undefined,
+        JSON.stringify(lcAfterC.classState),
+      );
+      check(
+        '49.48) C: traço TEXTUAL não ganha efeito inventado (features intactas)',
+        JSON.stringify(lcAfterC.features) === JSON.stringify(lcTextFeature),
+        JSON.stringify(lcAfterC.features),
+      );
+      check(
+        '49.41) C: PV temporário removido ao final do Descanso Longo',
+        lcAfterC.hpTemp === 0 && lcAfterC.hpCurrent === 30,
+        JSON.stringify({ hpTemp: lcAfterC.hpTemp, hp: lcAfterC.hpCurrent }),
+      );
+      check(
+        '49.63) DECLINED não recebe NADA (ficha de D byte a byte igual)',
+        (await lcSnapshot(lcCharD.id)) === lcBeforeD,
+      );
+      check(
+        '49.64) MASTER não recebe benefícios (não entra na conclusão)',
+        !(lcBenDone.data?.completion?.characters ?? []).some(
+          (row: any) => row.userId === lcMasterUserId,
+        ) &&
+          (await prisma.longRestSession.count({
+            where: { longRestRequestId: lcReqBen.id, characterId: { in: lcAllCharIds } },
+          })) === 3,
+        JSON.stringify((lcBenDone.data?.completion?.characters ?? []).map((row: any) => row.username)),
+      );
+      check(
+        '49.65) apenas os ACCEPTED entram na transação (A, B e C — nunca D)',
+        JSON.stringify(
+          (lcBenDone.data?.completion?.characters ?? []).map((row: any) => row.characterId).sort(),
+        ) === JSON.stringify([lcCharA.id, lcCharB.id, lcCharC.id].sort()),
+        JSON.stringify((lcBenDone.data?.completion?.characters ?? []).map((row: any) => row.characterId)),
+      );
+
+      // --- 49.49–49.57 ATOMICIDADE ---------------------------------------
+      // (a) Erro de Dados de Vida injetado no banco: a primeira ficha NÃO pode
+      // ficar aplicada (rollback total).
+      await lcReset();
+      await lcSetup({
+        A: { classes: lcFighter, hpCurrent: 4, hpMax: 30, hitDice: { usedByDie: { '10': 2 } } },
+        B: {
+          classes: lcFighter,
+          hpCurrent: 5,
+          hpMax: 30,
+          hitDice: { usedByDie: { '10': 1 } },
+          classState: { active: [], used: { 'second-wind': 1 }, choices: {} },
+        },
+      });
+      const lcReqAtomic = await lcApprove('atomic', {
+        B: 'ACCEPTED',
+        C: 'DECLINED',
+        D: 'DECLINED',
+      });
+      const lcSessionAtomicB = await prisma.longRestSession.findFirstOrThrow({
+        where: { longRestRequestId: lcReqAtomic.id, characterId: lcCharB.id, status: 'ACTIVE' },
+      });
+      // Seleção ABSURDA gravada direto no banco: a conclusão precisa revalidar e
+      // desfazer o que já tiver escrito.
+      await prisma.longRestSession.update({
+        where: { id: lcSessionAtomicB.id },
+        data: { hitDiceRecoverySelection: { '10': 99 } as any },
+      });
+      const lcBeforeAtomicA = await lcSnapshot(lcCharA.id);
+      const lcBeforeAtomicB = await lcSnapshot(lcCharB.id);
+      const lcAtomicFail = await lcForceComplete(lcReqAtomic.id, null, `op-${suffix}-49-atomic-hd`);
+      check(
+        '49.51) erro de Hit Dice na conclusão → 409 e a transação inteira é revertida',
+        lcAtomicFail.status === 409 && lcAtomicFail.data?.error === 'HIT_DICE_INVALID',
+        JSON.stringify({ status: lcAtomicFail.status, error: lcAtomicFail.data?.error }),
+      );
+      check(
+        '49.49/49.53/49.54/49.55) nenhum benefício parcial, sessões ainda ACTIVE e request APPROVED',
+        (await lcSnapshot(lcCharA.id)) === lcBeforeAtomicA &&
+          (await lcSnapshot(lcCharB.id)) === lcBeforeAtomicB &&
+          (await prisma.longRestSession.count({
+            where: { longRestRequestId: lcReqAtomic.id, status: 'ACTIVE' },
+          })) === 2 &&
+          (await prisma.longRestRequest.findUniqueOrThrow({ where: { id: lcReqAtomic.id } }))
+            .status === 'APPROVED',
+      );
+
+      // (b) Erro de inventário: pilha contribuída que não existe mais.
+      await lcSetConfig({ enabled: true, costPerParticipant: 10 });
+      await prisma.longRestSession.update({
+        where: { id: lcSessionAtomicB.id },
+        data: { hitDiceRecoverySelection: {} as any },
+      });
+      const lcFoodA5 = (await lcInvOf(lcCharA.id)).find((entry) => entry.itemId === lcFood.id);
+      await lcContribute(lcTokenA, lcReqAtomic.id, {
+        inventoryItemId: lcFoodA5.id,
+        quantity: 1,
+        operationId: `op-${suffix}-49-atomic-contribute`,
+      });
+      await prisma.character.update({
+        where: { id: lcCharA.id },
+        data: {
+          inventory: (await lcInvOf(lcCharA.id)).map((entry) =>
+            entry.id === lcFoodA5.id ? { ...entry, quantity: 0 } : entry,
+          ) as any,
+        },
+      });
+      const lcBeforeInventoryFail = await lcSnapshot(lcCharA.id);
+      const lcInventoryFail = await lcForceComplete(
+        lcReqAtomic.id,
+        { enabled: true, type: 'NARRATIVE' },
+        `op-${suffix}-49-atomic-inventory`,
+      );
+      check(
+        '49.50) erro de inventário (pilha reservada sumiu) → 409 CAMP_SUPPLY_NOT_ENOUGH e rollback',
+        lcInventoryFail.status === 409 &&
+          lcInventoryFail.data?.error === 'CAMP_SUPPLY_NOT_ENOUGH' &&
+          (await lcSnapshot(lcCharA.id)) === lcBeforeInventoryFail &&
+          (await prisma.longRestRequest.findUniqueOrThrow({ where: { id: lcReqAtomic.id } }))
+            .status === 'APPROVED',
+        JSON.stringify({ status: lcInventoryFail.status, error: lcInventoryFail.data?.error }),
+      );
+      await prisma.character.update({
+        where: { id: lcCharA.id },
+        data: {
+          inventory: (await lcInvOf(lcCharA.id)).map((entry) =>
+            entry.id === lcFoodA5.id ? { ...entry, quantity: lcFoodA5.quantity } : entry,
+          ) as any,
+        },
+      });
+
+      // (c) Concorrência: só UMA conclusão vence.
+      const lcBeforeConcurrency = await lcSnapshot(lcCharA.id);
+      const [lcRace1, lcRace2] = await Promise.all([
+        lcForceComplete(
+          lcReqAtomic.id,
+          { enabled: true, type: 'NARRATIVE' },
+          `op-${suffix}-49-atomic-race-2`,
+        ),
+        lcForceComplete(
+          lcReqAtomic.id,
+          { enabled: true, type: 'NARRATIVE' },
+          `op-${suffix}-49-atomic-race-3`,
+        ),
+      ]);
+      const lcRaceStatuses = [lcRace1.status, lcRace2.status].sort((a, b) => a - b);
+      check(
+        '49.56) duas conclusões concorrentes: uma vence e a outra recebe 409 (uma única conclusão)',
+        lcRaceStatuses[0] === 200 &&
+          lcRaceStatuses[1] === 409 &&
+          (await prisma.longRestSession.count({
+            where: { longRestRequestId: lcReqAtomic.id, status: 'COMPLETED' },
+          })) === 2 &&
+          (await prisma.longRestSession.count({
+            where: { longRestRequestId: lcReqAtomic.id, status: 'ACTIVE' },
+          })) === 0,
+        JSON.stringify({ statuses: lcRaceStatuses }),
+      );
+      check(
+        '49.52) o consumo aconteceu exatamente uma vez (1 unidade reservada saiu da pilha)',
+        (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA5.id)?.quantity ===
+          lcFoodA5.quantity - 1 &&
+          (await lcSnapshot(lcCharA.id)) !== lcBeforeConcurrency,
+        JSON.stringify({ antes: lcFoodA5.quantity, depois: (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA5.id)?.quantity }),
+      );
+      const lcRaceWinner = [lcRace1, lcRace2].find((response) => response.status === 200);
+      const lcWinnerOperationId = [
+        `op-${suffix}-49-atomic-race-2`,
+        `op-${suffix}-49-atomic-race-3`,
+      ][lcRace1.status === 200 ? 0 : 1];
+      const lcAfterRace = await lcSnapshot(lcCharA.id);
+      const lcRaceReplay = await lcForceComplete(
+        lcReqAtomic.id,
+        { enabled: true, type: 'NARRATIVE' },
+        lcWinnerOperationId,
+      );
+      check(
+        '49.57) replay do vencedor não reaplica benefícios nem consome de novo',
+        lcRaceReplay.data?.replayed === true && (await lcSnapshot(lcCharA.id)) === lcAfterRace,
+        JSON.stringify({ replayed: lcRaceReplay.data?.replayed, winner: Boolean(lcRaceWinner) }),
+      );
+
+      // --- 49.58–49.62 ABORT --------------------------------------------
+      await lcReset();
+      await lcSetConfig({ enabled: true, costPerParticipant: 10 });
+      await lcSetup({
+        A: { classes: lcFighter, hpCurrent: 7, hpMax: 30, hitDice: { usedByDie: { '10': 2 } } },
+        B: { classes: lcFighter, hpCurrent: 8, hpMax: 30 },
+      });
+      const lcReqAbort = await lcApprove('abort', { B: 'ACCEPTED', C: 'ACCEPTED', D: 'ACCEPTED' });
+      const lcFoodA6 = (await lcInvOf(lcCharA.id)).find((entry) => entry.itemId === lcFood.id);
+      await lcContribute(lcTokenA, lcReqAbort.id, {
+        inventoryItemId: lcFoodA6.id,
+        quantity: 1,
+        operationId: `op-${suffix}-49-abort-contribute`,
+      });
+      const lcBeforeAbort = await lcSnapshot(lcCharA.id);
+      const lcAbortResult = await lcAbort(lcReqAbort.id, `op-${suffix}-49-abort`);
+      check(
+        '49.58/49.59/49.62) abort cancela a solicitação, não consome e não recupera nada',
+        lcAbortResult.status === 200 &&
+          lcAbortResult.data?.status === 'CANCELLED' &&
+          lcAbortResult.data?.cancelReason === 'ABORTED' &&
+          (await lcSnapshot(lcCharA.id)) === lcBeforeAbort,
+        JSON.stringify({ status: lcAbortResult.data?.status, reason: lcAbortResult.data?.cancelReason }),
+      );
+      check(
+        '49.60) abort LIBERA as reservas (a quantidade volta a estar disponível)',
+        availableQuantity(
+          (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA6.id)?.quantity ?? 0,
+          (await reservedQuantities([lcFoodA6.id])).get(lcFoodA6.id) ?? 0,
+        ) === (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA6.id)?.quantity,
+      );
+      check(
+        '49.61) abort cancela as sessões do descanso',
+        (await prisma.longRestSession.count({
+          where: { longRestRequestId: lcReqAbort.id, status: 'CANCELLED' },
+        })) === 4,
+      );
+      // Restaura a configuração padrão e limpa o estado do teste.
+      await lcSetConfig({ enabled: false, costPerParticipant: 10 });
+      await lcReset();
+      check(
+        '49.67) não há descanso coletivo aberto depois de tudo (infraestrutura segue íntegra)',
+        (await lcCurrent()) === null,
+      );
+
+      lcSocketA.close();
+      lcSocketB.close();
+      lcSocketC.close();
+      lcSocketD.close();
+      lcMasterSocket.close();
+    }
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'

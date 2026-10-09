@@ -696,6 +696,27 @@ export function restoreShortRestResources(
 }
 
 /**
+ * Devolve o estado de classe com os recursos de recarga CURTA e LONGA
+ * restaurados (Descanso Longo, PHB 2014).
+ *
+ * Um Descanso Longo também satisfaz as recuperações de um Descanso Curto, então
+ * entram os recursos `recharge === 'short'` E `recharge === 'long'`. Recursos
+ * sem recarga (`'none'`, ex.: usos limitados pela narrativa) e QUALQUER outro
+ * contador (inclusive de recursos que não existem mais) ficam intactos — NUNCA
+ * fazer `used = {}`. `state.active` (toggles) não é tocado aqui.
+ */
+export function restoreLongRestResources(
+  state: ClassState,
+  resources: readonly ActiveResource[],
+): ClassState {
+  const used = { ...state.used };
+  for (const resource of resources) {
+    if (resource.recharge === 'short' || resource.recharge === 'long') delete used[resource.id];
+  }
+  return { ...state, used };
+}
+
+/**
  * Nível ACUMULADO na classe Bardo (0 se o personagem não tiver Bardo).
  *
  * Multiclasse NUNCA soma outras classes: a Canção de Descanso progride apenas

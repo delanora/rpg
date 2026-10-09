@@ -459,6 +459,17 @@ model LongRestSession {
   startedAt         DateTime        @default(now())
   completedAt       DateTime?
   cancelledAt       DateTime?
+  ///
+  /// Quando o participante marcou "pronto para descansar". `ready` = readyAt != null.
+  /// Ready significa apenas "terminei minhas decisões pessoais" — NÃO exige que os
+  /// recursos de acampamento estejam satisfeitos. Null num descanso sem ready.
+  readyAt           DateTime?
+  ///
+  /// Dados de Vida a RECUPERAR na conclusão, escolhidos pelo JOGADOR em
+  /// multiclasse (o PHB não define prioridade entre tipos): mapa face → quantidade,
+  /// ex.: `{"6":1,"10":1}`. Vale só para a sessão ACTIVE — a recuperação em si
+  /// acontece quando o Descanso Longo conclui.
+  hitDiceRecoverySelection Json     @default("{}")
 
   @@index([status])
   @@index([characterId, status])

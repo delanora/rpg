@@ -39,9 +39,15 @@ export function errorHandler(
         ? 'INTERNAL_ERROR'
         : 'REQUEST_ERROR';
 
+  // Dados estruturados do erro (ex.: `required`/`contributed`/`remaining` no 409
+  // de recursos de acampamento insuficientes). Só vêm de erros de aplicação.
+  const details =
+    err instanceof HttpError && err.details ? { details: err.details } : {};
+
   res.status(status).json({
     error: code,
     message,
+    ...details,
     ...(env.NODE_ENV === 'development' && err instanceof Error
       ? { stack: err.stack }
       : {}),

@@ -1,4 +1,11 @@
 import type { LongRestRequest, LongRestRequestParticipant, LongRestSession } from '@prisma/client';
+import { normalizeClassEntries } from '../shared/classes.js';
+import {
+  deriveHitDice,
+  hitDiceRecoveryAllowance,
+  normalizeHitDiceSelection,
+  selectedHitDiceTotal,
+} from '../shared/hit-dice.js';
 
 /**
  * DTO da SOLICITAÇÃO coletiva de Descanso Longo.
@@ -8,12 +15,10 @@ import type { LongRestRequest, LongRestRequestParticipant, LongRestSession } fro
  * (na resposta HTTP e no evento `long-rest:request-updated`) — só o necessário:
  * nenhuma ficha completa.
  *
- * Ciclo de status: `PENDING → APPROVED` (sessões criadas para os ACCEPTED) ou
- * `PENDING → CANCELLED`. `COMPLETED` existe no enum para a próxima etapa
- * (aplicação dos benefícios), mas NESTA etapa nenhuma solicitação chega lá.
- *
- * NENHUM benefício de descanso é calculado aqui: a sessão só registra que o
- * personagem entrou no descanso.
+ * Ciclo de status: `PENDING → APPROVED → COMPLETED` (ou `PENDING → CANCELLED`, ou
+ * `APPROVED → CANCELLED` no aborto). APPROVED = sessões em andamento (o grupo
+ * decide ready/seleção de Dados de Vida); COMPLETED = o Descanso Longo aplicou os
+ * benefícios.
  */
 
 export type LongRestRequestStatusDto = 'PENDING' | 'APPROVED' | 'COMPLETED' | 'CANCELLED';
@@ -41,9 +46,48 @@ export interface LongRestRequestParticipantDto {
   /**
    * Id da SESSÃO de Descanso Longo deste participante (`null` enquanto a
    * solicitação está PENDING ou quando ele recusou). É o vínculo persistente
-   * criado na aprovação — ainda sem benefícios aplicados.
+   * criado na aprovação — e onde vive o `ready` e a seleção de Dados de Vida.
    */
   sessionId: string | null;
+  /** Marcou "pronto para descansar" (só existe em ACCEPTED). */
+  ready: boolean;
+  readyAt: string | null;
+  /**
+   * Dados de Vida recuperáveis nesta sessão (só ACCEPTED com sessão): a cota do
+   * PHB 2014, o uso atual por tipo e a escolha já persistida. `null` fora de um
+   * descanso em andamento.
+   */
+  hitDiceRecovery: LongRestHitDiceRecoveryDto | null;
+}
+
+/** Uma face de Dado de Vida com o uso atual e a escolha desta sessão. */
+export interface LongRestHitDieOptionDto {
+  /** Faces do dado: 6, 8, 10 ou 12. */
+  die: number;
+  /** Total disponível (soma dos níveis das classes com esse dado de vida). */
+  max: number;
+  /** Gastos. */
+  used: number;
+  remaining: number;
+  /** Quantos o jogador escolheu recuperar nesta sessão. */
+  selected: number;
+}
+
+/**
+ * Estado de recuperação de Dados de Vida da sessão: cota calculada pelo PHB
+ * (metade do total, mínimo 1), uso atual e a escolha do JOGADOR (que decide os
+ * TIPOS em multiclasse — o PHB não define prioridade).
+ */
+export interface LongRestHitDiceRecoveryDto {
+  /** `max(1, floor(total / 2))`. */
+  baseAllowance: number;
+  /** `min(usado, baseAllowance)` — máximo recuperável AGORA. */
+  allowance: number;
+  /** Total de Dados de Vida gastos. */
+  usedTotal: number;
+  /** Soma da escolha atual. */
+  selectedTotal: number;
+  options: LongRestHitDieOptionDto[];
 }
 
 /**
@@ -103,6 +147,12 @@ export interface LongRestRequestDto {
   forcedByUserId: string | null;
   /** Recursos de acampamento (mecânica opcional) — ver `LongRestCampSuppliesDto`. */
   campSupplies: LongRestCampSuppliesDto;
+  /**
+   * TODOS os ACCEPTED marcaram ready. Junto de `campSupplies.satisfied === false`
+   * este é um estado VÁLIDO: o grupo terminou as decisões mas ainda há uma
+   * questão de suprimentos para a mesa resolver (gancho de roleplay).
+   */
+  allReady: boolean;
 }
 
 /** Forma carregada da solicitação usada para montar o DTO. */
@@ -110,8 +160,16 @@ export type LongRestRequestWithParticipants = LongRestRequest & {
   requestedBy: { id: string; username: string; displayName: string };
   participants: (LongRestRequestParticipant & {
     user: { id: string; username: string; displayName: string };
+    /**
+     * Classes + uso persistido dos Dados de Vida: o mínimo para derivar a cota
+     * do PHB e as opções por tipo SEM abrir a ficha inteira.
+     */
+    character: { classes: unknown; hitDice: unknown };
   })[];
-  sessions: Pick<LongRestSession, 'id' | 'characterId'>[];
+  sessions: Pick<
+    LongRestSession,
+    'id' | 'characterId' | 'readyAt' | 'hitDiceRecoverySelection'
+  >[];
 };
 
 /**
@@ -124,9 +182,38 @@ export type LongRestRequestBaseDto = Omit<LongRestRequestDto, 'campSupplies'>;
 const ISO = (value: Date | null): string | null => (value ? value.toISOString() : null);
 
 /**
+ * Estado de Dados de Vida da sessão: cota do PHB, uso atual e a escolha
+ * persistida. Calculado a partir das classes + do uso da ficha, sem expor nada
+ * além do necessário.
+ */
+function hitDiceRecoveryOf(
+  character: { classes: unknown; hitDice: unknown },
+  selection: unknown,
+): LongRestHitDiceRecoveryDto {
+  const hitDice = deriveHitDice(normalizeClassEntries(character.classes), character.hitDice);
+  const allowance = hitDiceRecoveryAllowance(hitDice.total, hitDice.used);
+  const chosen = normalizeHitDiceSelection(selection);
+
+  return {
+    baseAllowance: allowance.base,
+    allowance: allowance.effective,
+    usedTotal: hitDice.used,
+    selectedTotal: selectedHitDiceTotal(chosen),
+    options: hitDice.byDie.map((entry) => ({
+      die: entry.die,
+      max: entry.max,
+      used: entry.used,
+      remaining: entry.remaining,
+      selected: chosen[String(entry.die)] ?? 0,
+    })),
+  };
+}
+
+/**
  * Monta o DTO da solicitação. O `sessionId` de cada participante sai da SESSÃO
  * daquele personagem (a fonte real é a sessão; o participante só existe para
- * todos os convidados).
+ * todos os convidados) — e é dela também que saem o `ready` e a seleção de
+ * Dados de Vida.
  */
 export function toLongRestRequestDto(
   request: LongRestRequestWithParticipants,
@@ -135,11 +222,15 @@ export function toLongRestRequestDto(
     request.sessions.map((session) => [session.characterId, session]),
   );
 
+  let acceptedCount = 0;
+  let allReady = false;
   const participants = request.participants.map((participant) => {
     const session =
       participant.response === 'ACCEPTED'
         ? sessionByCharacter.get(participant.characterId) ?? null
         : null;
+    const readyAt = session?.readyAt ?? null;
+    if (participant.response === 'ACCEPTED') acceptedCount += 1;
     return {
       userId: participant.userId,
       username: participant.user.username,
@@ -149,8 +240,20 @@ export function toLongRestRequestDto(
       respondedAt: ISO(participant.respondedAt),
       closedByMaster: participant.closedByMaster,
       sessionId: session?.id ?? null,
+      ready: readyAt !== null,
+      readyAt: ISO(readyAt),
+      hitDiceRecovery: session
+        ? hitDiceRecoveryOf(participant.character, session.hitDiceRecoverySelection)
+        : null,
     };
   });
+  // "Todos prontos" só faz sentido com pelo menos um ACCEPTED — e exige que
+  // TODOS tenham marcado (é o gatilho da conclusão automática).
+  allReady =
+    acceptedCount > 0 &&
+    participants
+      .filter((participant) => participant.response === 'ACCEPTED')
+      .every((participant) => participant.ready);
   // Ordem estável para a interface: quem solicitou primeiro, depois por nome.
   participants.sort((a, b) => {
     if (a.userId === request.requestedBy.id) return -1;
@@ -173,5 +276,6 @@ export function toLongRestRequestDto(
     cancelledAt: ISO(request.cancelledAt),
     cancelReason: request.cancelReason,
     forcedByUserId: request.forcedByUserId,
+    allReady,
   };
 }
