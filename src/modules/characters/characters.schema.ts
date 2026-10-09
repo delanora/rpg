@@ -213,9 +213,21 @@ export const spellSlotSchema = z.object({
   used: nonNegativeInt.default(0),
 });
 
+/**
+ * Magia de Pacto (Bruxo): a ÚNICA informação persistida é o USO. O total
+ * (`max`) e o nível do espaço (`slotLevel`) são DERIVADOS do nível de Bruxo
+ * (`pactMagicSlots`) e vivem só no `derived` do DTO — nunca no estado gravado.
+ *
+ * Fichas antigas (sem `pactMagic`) parseiam como `{ used: 0 }`.
+ */
+export const pactMagicStateSchema = z.object({
+  used: nonNegativeInt.default(0),
+});
+
 export const spellsStateSchema = z.object({
   list: z.array(spellSchema).max(300).default([]),
   slots: z.record(z.string(), spellSlotSchema).default({}),
+  pactMagic: pactMagicStateSchema.default({ used: 0 }),
 });
 
 export type SpellsStateInput = z.infer<typeof spellsStateSchema>;

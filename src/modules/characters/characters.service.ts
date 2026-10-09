@@ -83,6 +83,7 @@ import {
   normalizeClassEntries,
   normalizeClassState,
   normalizeProficiencies,
+  pactMagicSlots,
   preparedSpellCountFor,
   resolveFeatureChoices,
   restoreShortRestResources,
@@ -255,7 +256,7 @@ function withExpertiseSkills(
 }
 
 function emptySpells(): Prisma.InputJsonValue {
-  return { list: [], slots: {} };
+  return { list: [], slots: {}, pactMagic: { used: 0 } };
 }
 
 /**
@@ -1896,6 +1897,18 @@ export async function completeShortRest(
   const classAdjustments = characterClassAdjustments(character);
   const nextState = restoreShortRestResources(classState, classAdjustments.resources);
 
+  // A MAGIA DE PACTO (pool PRÓPRIO do Bruxo, PHB 2014) também recupera no
+  // Descanso Curto: só o USO volta a zero, na MESMA escrita da ficha. O total é
+  // derivado do nível de Bruxo e os espaços NORMAIS não são tocados aqui.
+  const spells = parseJson<SpellsStateInput>(spellsStateSchema, character.spells, {
+    list: [],
+    slots: {},
+    pactMagic: { used: 0 },
+  });
+  const pactMax = pactMagicSlots(normalizeClassEntries(character.classes))?.max ?? null;
+  const pactMagicRestored = pactMax !== null && (spells.pactMagic?.used ?? 0) > 0;
+  const nextSpells = { ...spells, pactMagic: { used: 0 } };
+
   let committed!: {
     updated: Character;
     session: ShortRestSessionDto;
@@ -1928,6 +1941,7 @@ export async function completeShortRest(
         where: { id: character.id, version: input.expectedVersion },
         data: {
           classState: nextState as unknown as Prisma.InputJsonValue,
+          spells: nextSpells as unknown as Prisma.InputJsonValue,
           version: { increment: 1 },
         },
       });
@@ -1968,7 +1982,11 @@ export async function completeShortRest(
     throw error;
   }
 
-  await publishChange(actor, committed.updated, { classState: nextState });
+  await publishChange(actor, committed.updated, {
+    classState: nextState,
+    spells: nextSpells,
+    ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
+  });
 
   return { replayed: false, session: committed.session, character: committed.character };
 }
@@ -2210,6 +2228,7 @@ export async function setClassSpellbook(
     const stored = parseJson<SpellsStateInput>(spellsStateSchema, character.spells, {
       list: [],
       slots: {},
+      pactMagic: { used: 0 },
     });
     // Mantém as magias que NÃO são desta classe (texto livre ou de outra classe).
     const others = stored.list.filter((spell) => spell.classKey !== entry.classKey);
@@ -2422,9 +2441,17 @@ export async function republishSheetsWithCatalogItem(itemId: string): Promise<vo
  * Espaços de magia de uma ficha já finalizada: o jogador só gasta e recupera
  * usos. A lista de magias conhecidas e o TOTAL de cada nível vêm da classe e
  * do Level Up, então continuam como estavam.
+ *
+ * A MAGIA DE PACTO é um POOL PRÓPRIO (PHB 2014): só o `used` é persistido, e ele
+ * é limitado pelo `max` DERIVADO (`pactMagicSlots`) — o cliente nunca define o
+ * total. Sem Bruxo (`pactMax === null`) o uso é forçado a zero.
  */
-function mergeSpellUsage(storedRaw: unknown, incoming: SpellsStateInput): Prisma.InputJsonValue {
-  const stored = parseJson<SpellsStateInput>(spellsStateSchema, storedRaw, { list: [], slots: {} });
+function mergeSpellUsage(
+  storedRaw: unknown,
+  incoming: SpellsStateInput,
+  pactMax: number | null,
+): Prisma.InputJsonValue {
+  const stored = parseJson<SpellsStateInput>(spellsStateSchema, storedRaw, emptySpellsInput());
   const slots: SpellsStateInput['slots'] = {};
 
   for (const [level, slot] of Object.entries(stored.slots)) {
@@ -2432,7 +2459,25 @@ function mergeSpellUsage(storedRaw: unknown, incoming: SpellsStateInput): Prisma
     slots[level] = { max: slot.max, used: Math.max(0, Math.min(used, slot.max)) };
   }
 
-  return { list: stored.list, slots } as unknown as Prisma.InputJsonValue;
+  return {
+    list: stored.list,
+    slots,
+    pactMagic: { used: clampPactMagicUsed(incoming.pactMagic?.used ?? 0, pactMax) },
+  } as unknown as Prisma.InputJsonValue;
+}
+
+/** Estado inicial de `spells` quando o JSONB está vazio/inválido. */
+function emptySpellsInput(): SpellsStateInput {
+  return { list: [], slots: {}, pactMagic: { used: 0 } };
+}
+
+/**
+ * O `used` de Pact Magic SEMPRE respeita o `max` DERIVADO: sem Bruxo não existe
+ * pool, então o uso positivo persistido é forçado a zero (PHB 2014).
+ */
+function clampPactMagicUsed(used: number, pactMax: number | null): number {
+  if (pactMax === null) return 0;
+  return Math.max(0, Math.min(used, pactMax));
 }
 
 /**
@@ -2789,10 +2834,16 @@ async function applyCharacterPatch(
     data.coins = normalizeCoins(patch.coins) as unknown as Prisma.InputJsonValue;
   }
   if (patch.spells !== undefined) {
+    // O `max` da Magia de Pacto é DERIVADO do nível de Bruxo (nunca vem do
+    // cliente): com ou sem travas de jogador, o uso é limitado por ele.
+    const pactMax = pactMagicSlots(classes)?.max ?? null;
     data.spells =
       fromPlayer && existing.creationFinalized
-        ? mergeSpellUsage(existing.spells, patch.spells)
-        : patch.spells;
+        ? mergeSpellUsage(existing.spells, patch.spells, pactMax)
+        : ({
+            ...patch.spells,
+            pactMagic: { used: clampPactMagicUsed(patch.spells.pactMagic?.used ?? 0, pactMax) },
+          } as unknown as Prisma.InputJsonValue);
   }
 
   // A CA manual é o override do mestre (`null` limpa e volta ao automático).

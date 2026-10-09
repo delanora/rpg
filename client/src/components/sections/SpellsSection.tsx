@@ -154,6 +154,14 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
     });
   }
 
+  // Magia de Pacto (Bruxo): o TOTAL e o nível do espaço vêm do nível de Bruxo
+  // (`derived.pactSlots`); só os USADOS são gravados na ficha. Pool PRÓPRIO —
+  // nada aqui toca os espaços normais.
+  const pactUsed = character.spells.pactMagic?.used ?? 0;
+  function setPactUsed(next: number): void {
+    update({ spells: { ...character.spells, pactMagic: { used: next } } });
+  }
+
   function addSpell(): void {
     update({
       spells: {
@@ -391,6 +399,74 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
             );
           })}
         </div>
+      ) : null}
+
+      {/* Magia de Pacto: pool separado do Bruxo (todos os espaços têm o mesmo
+          nível e recuperam no Descanso Curto). O total e o nível são derivados;
+          só os usados ficam na ficha. */}
+      {pactSlots ? (
+        <>
+          <h3 className="subsection-title">Magia de Pacto</h3>
+          <p className="section-note">
+            Recurso próprio do Bruxo: <strong>{pactSlots.max}</strong> espaço(s) de{' '}
+            {SPELL_LEVEL_LABELS[pactSlots.slotLevel]}, todos do mesmo nível. O total e o nível saem
+            do nível de Bruxo; só os usados ficam gravados na ficha.
+          </p>
+          <div className="grid grid-slots">
+            <div className="slot-card">
+              <span className="slot-level">{SPELL_LEVEL_LABELS[pactSlots.slotLevel]}</span>
+
+              <span
+                className="slot-pips"
+                role="group"
+                aria-label={`Magia de Pacto: ${pactUsed} de ${pactSlots.max} usados`}
+              >
+                {Array.from({ length: pactSlots.max }, (_, index) => {
+                  const isUsed = index < pactUsed;
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      className={isUsed ? 'slot-pip used' : 'slot-pip'}
+                      disabled={readOnly}
+                      title={isUsed ? 'Marcar como disponível' : 'Marcar como gasto'}
+                      aria-label={
+                        isUsed
+                          ? `Recuperar espaço de Pacto ${index + 1}`
+                          : `Gastar espaço de Pacto ${index + 1}`
+                      }
+                      onClick={() => setPactUsed(isUsed ? index : index + 1)}
+                    >
+                      <Icon name="sparkle" size={13} />
+                    </button>
+                  );
+                })}
+              </span>
+
+              <label className="slot-field">
+                <span>usados</span>
+                <InlineField
+                  value={pactUsed}
+                  mode="number"
+                  min={0}
+                  ariaLabel="Espaços de Pacto usados"
+                  onCommit={(value) => setPactUsed(clampInt(value, 0, pactSlots.max, pactUsed))}
+                />
+              </label>
+              <label className="slot-field">
+                <span>total</span>
+                <InlineField
+                  value={pactSlots.max}
+                  mode="number"
+                  readOnly
+                  title="Derivado do nível de Bruxo"
+                  ariaLabel="Espaços de Pacto (derivados do nível de Bruxo)"
+                  onCommit={() => undefined}
+                />
+              </label>
+            </div>
+          </div>
+        </>
       ) : null}
 
       {sorcery ? (

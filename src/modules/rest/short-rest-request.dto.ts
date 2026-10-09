@@ -96,7 +96,17 @@ export interface ShortRestCompletionDto {
     /** Uma rolagem por personagem elegível (≥ 1 Dado de Vida gasto). */
     rolls: ShortRestSongRollDto[];
   };
-  sessions: { id: string; characterId: string; status: 'COMPLETED' }[];
+  sessions: {
+    id: string;
+    characterId: string;
+    status: 'COMPLETED';
+    /**
+     * A Magia de Pacto (Bruxo) deste participante foi efetivamente recuperada
+     * (tinha uso e ele tem pool). Pool PRÓPRIO, recuperado no Descanso CURTO —
+     * os espaços NORMAIS não voltam aqui (PHB 2014).
+     */
+    pactMagicRestored: boolean;
+  }[];
 }
 
 /** Forma carregada da solicitação usada para montar o DTO. */
