@@ -705,6 +705,8 @@ async function consumeAmmo(
     // só entram na escolha as que ainda têm quantidade disponível. A leitura é
     // refeita a cada tentativa (o `version` muda se uma reserva concorrente
     // entrar), então duas requisições nunca consomem a mesma unidade reservada.
+    // Com a mecânica desligada, `reservedQuantities` devolve zero: munição de
+    // contribuições antigas volta a ser gastável normalmente.
     const stacks = ammoStacks(inventory, ammoType);
     const reserved = await reservedQuantities(stacks.map((item) => item.id));
     const usable = stacks.filter(
