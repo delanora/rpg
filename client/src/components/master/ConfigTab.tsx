@@ -278,13 +278,27 @@ interface ConfigTabProps {
   /** Exibe PL (pp) e PE (ep) no bloco de moedas das fichas. */
   extraCoins: boolean;
   onChangeExtraCoins: (enabled: boolean) => void;
+  /**
+   * Recursos de Acampamento do Descanso Longo coletivo (regra OPCIONAL —
+   * inspirada em BG3, NÃO é regra do PHB 2014).
+   */
+  campSuppliesEnabled: boolean;
+  campSupplyCost: number;
+  onChangeCampSupplies: (input: { enabled?: boolean; costPerParticipant?: number }) => void;
 }
+
+/** Limites do custo por participante (os MESMOS do servidor). */
+const CAMP_SUPPLY_COST_MIN = 1;
+const CAMP_SUPPLY_COST_MAX = 1000;
 
 export function ConfigTab({
   startingLevel,
   onChangeStartingLevel,
   extraCoins,
   onChangeExtraCoins,
+  campSuppliesEnabled,
+  campSupplyCost,
+  onChangeCampSupplies,
 }: ConfigTabProps) {
   const [section, setSection] = useState<ConfigSection>('classes');
   // Busca do compêndio: filtra a lista da seção aberta, sem rota nova.
@@ -302,10 +316,16 @@ export function ConfigTab({
   // O nível inicial é editado localmente e só sobe ao servidor quando o campo
   // é confirmado (Enter ou sair do campo) — evita uma requisição por tecla.
   const [levelDraft, setLevelDraft] = useState(String(startingLevel));
+  // Mesma ideia para o custo dos recursos de acampamento: só sobe ao confirmar.
+  const [costDraft, setCostDraft] = useState(String(campSupplyCost));
 
   useEffect(() => {
     setLevelDraft(String(startingLevel));
   }, [startingLevel]);
+
+  useEffect(() => {
+    setCostDraft(String(campSupplyCost));
+  }, [campSupplyCost]);
 
   useEffect(() => {
     let active = true;
@@ -377,6 +397,21 @@ export function ConfigTab({
     } catch (err) {
       setCustomRaceError(err instanceof Error ? err.message : 'Falha ao remover a raça.');
     }
+  }
+
+  function commitCampSupplyCost(): void {
+    const parsed = Number(costDraft);
+    if (!Number.isFinite(parsed)) {
+      setCostDraft(String(campSupplyCost));
+      return;
+    }
+
+    const clamped = Math.min(
+      CAMP_SUPPLY_COST_MAX,
+      Math.max(CAMP_SUPPLY_COST_MIN, Math.floor(parsed)),
+    );
+    setCostDraft(String(clamped));
+    if (clamped !== campSupplyCost) onChangeCampSupplies({ costPerParticipant: clamped });
   }
 
   function commitLevel(): void {
@@ -463,6 +498,49 @@ export function ConfigTab({
           />
           <span>MOSTRAR PL/PE</span>
         </label>
+      </section>
+
+      {/* Recursos de Acampamento (regra OPCIONAL do Descanso Longo) ---------- */}
+      <section className="config-card config-card-level">
+        <div className="config-level-copy">
+          <h2>
+            <Icon name="moon" size={18} /> Recursos de Acampamento
+            <span className="config-badge config-badge-optional">Regra opcional</span>
+          </h2>
+          <p>
+            Quando ativado, o grupo precisa reunir recursos suficientes para concluir
+            normalmente um Descanso Longo. É uma mecânica opcional da mesa (inspirada em
+            Baldur's Gate 3), não uma regra do Livro do Jogador — o Mestre pode resolvê-la
+            narrativamente a qualquer momento.
+          </p>
+        </div>
+
+        <div className="config-camp-supply-fields">
+          <label className="field field-check">
+            <input
+              type="checkbox"
+              checked={campSuppliesEnabled}
+              onChange={(event) => onChangeCampSupplies({ enabled: event.target.checked })}
+            />
+            <span>USAR RECURSOS DE ACAMPAMENTO</span>
+          </label>
+
+          <label className="field config-level-field">
+            <span>CUSTO POR PARTICIPANTE</span>
+            <input
+              type="number"
+              min={CAMP_SUPPLY_COST_MIN}
+              max={CAMP_SUPPLY_COST_MAX}
+              value={costDraft}
+              disabled={!campSuppliesEnabled}
+              onChange={(event) => setCostDraft(event.target.value)}
+              onBlur={commitCampSupplyCost}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+            />
+          </label>
+        </div>
       </section>
 
       {/* Consulta das listas -------------------------------------------------- */}

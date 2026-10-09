@@ -22,7 +22,13 @@ import { useDiceRoller } from '../dice/useDiceRoller';
 import { MusicPlayerBar } from '../music/MusicPlayerBar';
 import { SoundpadTab } from '../music/SoundpadTab';
 import { useMusic } from '../music/useMusic';
-import { fetchGameConfig, releaseLevelUp, setExtraCoins, setStartingLevel } from '../gameApi';
+import {
+  fetchGameConfig,
+  releaseLevelUp,
+  setCampSupplies,
+  setExtraCoins,
+  setStartingLevel,
+} from '../gameApi';
 import { closePresentation } from '../presentationApi';
 import type {
   Attack,
@@ -44,6 +50,8 @@ import type {
   RegionPatch,
   SessionUser,
 } from '../types';
+import { LongRestModal } from '../rest/LongRestModal';
+import { useLongRest } from '../rest/useLongRest';
 import { ShortRestModal } from '../rest/ShortRestModal';
 import { useShortRest } from '../rest/useShortRest';
 import { useRealtime } from '../useRealtime';
@@ -75,6 +83,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [notesOpen, setNotesOpen] = useState(false);
   // Painel do Descanso Curto coletivo (controles do mestre).
   const [shortRestOpen, setShortRestOpen] = useState(false);
+  // Painel do Descanso Longo coletivo (acompanha e conduz a mesa).
+  const [longRestOpen, setLongRestOpen] = useState(false);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -88,11 +98,16 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Descanso Curto coletivo: o mestre acompanha a solicitação e usa os controles.
   const shortRest = useShortRest();
 
+  // Descanso Longo coletivo: participantes, preparativos, suprimentos e as
+  // decisões do mestre (começar, concluir, exceções, abortar).
+  const longRest = useLongRest();
+
   const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
     ...music.handlers,
     ...shortRest.handlers,
+    ...longRest.handlers,
 
     // Fichas dos jogadores chegam ao vivo — é o requisito central do painel.
     onSheetUpdated: (payload) => {
@@ -505,6 +520,25 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /**
+   * Recursos de Acampamento (regra OPCIONAL do Descanso Longo): liga/desliga e
+   * ajusta o custo. O servidor recalcula a solicitação aberta e republica.
+   */
+  const changeCampSupplies = useCallback(
+    async (input: { enabled?: boolean; costPerParticipant?: number }) => {
+      try {
+        const config = await setCampSupplies(input);
+        setGameConfig(config);
+        setError(null);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Falha ao salvar os Recursos de Acampamento.',
+        );
+      }
+    },
+    [],
+  );
+
   const createItem = useCallback(async (): Promise<Item> => {
     const { item } = await api<{ item: Item }>('/api/items', {
       method: 'POST',
@@ -794,6 +828,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onChangeStartingLevel={changeStartingLevel}
             extraCoins={gameConfig?.extraCoins ?? false}
             onChangeExtraCoins={changeExtraCoins}
+            campSuppliesEnabled={gameConfig?.campSuppliesEnabled ?? false}
+            campSupplyCost={gameConfig?.campSupplyCostPerParticipant ?? 10}
+            onChangeCampSupplies={changeCampSupplies}
           />
         ) : tab === 'items' ? (
           <ItemsTab
@@ -839,27 +876,53 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       {/* Botão "Dados" sempre disponível, inclusive em combate. */}
       <DiceDock roller={dice} />
 
-      {/* Descanso Curto da mesa: só aparece enquanto há solicitação aberta. */}
-      {shortRest.request !== null &&
-      (shortRest.request.status === 'PENDING' || shortRest.request.status === 'APPROVED') ? (
-        <button
-          type="button"
-          className="short-rest-fab"
-          onClick={() => setShortRestOpen(true)}
-        >
-          <Icon name="flame" size={16} />
-          <span>
-            Descanso Curto
-            {shortRest.request.status === 'PENDING' ? ' • aguardando' : ' • em andamento'}
-          </span>
-        </button>
-      ) : null}
+      {/* Descansos da mesa: só aparecem enquanto há solicitação aberta. */}
+      <div className="rest-fab-stack">
+        {shortRest.request !== null &&
+        (shortRest.request.status === 'PENDING' || shortRest.request.status === 'APPROVED') ? (
+          <button
+            type="button"
+            className="short-rest-fab"
+            onClick={() => setShortRestOpen(true)}
+          >
+            <Icon name="flame" size={16} />
+            <span>
+              Descanso Curto
+              {shortRest.request.status === 'PENDING' ? ' • aguardando' : ' • em andamento'}
+            </span>
+          </button>
+        ) : null}
+
+        {longRest.request !== null &&
+        (longRest.request.status === 'PENDING' || longRest.request.status === 'APPROVED') ? (
+          <button
+            type="button"
+            className="short-rest-fab"
+            onClick={() => setLongRestOpen(true)}
+          >
+            <Icon name="bed" size={16} />
+            <span>
+              Descanso Longo
+              {longRest.request.status === 'PENDING' ? ' • aguardando' : ' • em andamento'}
+            </span>
+          </button>
+        ) : null}
+      </div>
 
       {shortRestOpen ? (
         <ShortRestModal
           open
           onClose={() => setShortRestOpen(false)}
           rest={shortRest}
+          isMaster
+        />
+      ) : null}
+
+      {longRestOpen ? (
+        <LongRestModal
+          open
+          onClose={() => setLongRestOpen(false)}
+          rest={longRest}
           isMaster
         />
       ) : null}

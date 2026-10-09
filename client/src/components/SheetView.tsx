@@ -54,6 +54,11 @@ interface SheetViewProps {
     active: boolean;
     onOpen: () => void;
   };
+  /** Descanso Longo: o botão da ficha abre o painel coletivo no estado atual. */
+  longRest?: {
+    active: boolean;
+    onOpen: () => void;
+  };
   /** Em `true`, nenhum campo é editável (visão do mestre). */
   readOnly?: boolean;
   /**
@@ -101,6 +106,7 @@ export function SheetView({
   onRollSkill,
   levelUp,
   shortRest,
+  longRest,
   readOnly = false,
   creationLocked = false,
   masterView = false,
@@ -121,6 +127,7 @@ export function SheetView({
             update={update}
             levelUp={levelUp}
             shortRest={shortRest}
+            longRest={longRest}
           />
         </div>
 
