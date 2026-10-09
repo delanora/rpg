@@ -232,6 +232,21 @@ export const spellsStateSchema = z.object({
 
 export type SpellsStateInput = z.infer<typeof spellsStateSchema>;
 
+/**
+ * PATCH de `spells`: igual ao estado gravado, mas `pactMagic` NÃO ganha o
+ * default — no PATCH a AUSÊNCIA da chave significa "não mexer", e o serviço
+ * preserva o uso armazenado (ver `characters.service.ts`). Sem isso um PATCH
+ * parcial do mestre equivaleria a recuperar a Magia de Pacto de graça.
+ *
+ * Só a ENTRADA usa este schema; leitura, criação e os descansos continuam com
+ * `spellsStateSchema` (onde o default `{ used: 0 }` segue desejável).
+ */
+export const spellsPatchSchema = spellsStateSchema.extend({
+  pactMagic: pactMagicStateSchema.optional(),
+});
+
+export type SpellsPatchInput = z.infer<typeof spellsPatchSchema>;
+
 /** Uma magia escolhida do catálogo para uma classe. */
 export const spellbookEntrySchema = z.object({
   key: z.string().trim().min(1).max(80),
@@ -586,7 +601,7 @@ export const updateCharacterSchema = z
      * mestre por aqui e pelas ações de gastar, trocar e transferir.
      */
     coins: coinsSchema,
-    spells: spellsStateSchema,
+    spells: spellsPatchSchema,
     attacks: z.array(attackSchema).max(100),
     features: z.array(featureSchema).max(200),
     classState: classStateSchema,

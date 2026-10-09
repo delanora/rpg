@@ -17727,6 +17727,134 @@ async function main(): Promise<void> {
         );
       }
 
+      // --- 51.F PATCH parcial do MASTER: omitir NÃO reseta a Magia de Pacto --
+      {
+        await pmSetup(pmUserIdA, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+        });
+        check(
+          '51.F) MASTER: ponto de partida com a Magia de Pacto usada (2 de 2)',
+          (await pmRawPact(pmUserIdA))?.used === 2,
+          JSON.stringify(await pmRawPact(pmUserIdA)),
+        );
+
+        // Troca a LISTA de magias e NÃO manda `pactMagic`: o uso é preservado
+        // (um PATCH administrativo não pode conceder recuperação implícita).
+        const listEdit = await pmMasterPatch(pmCharA.id, {
+          spells: {
+            list: [
+              {
+                id: 'pm-51',
+                name: 'Magia do mestre',
+                level: 1,
+                school: '',
+                prepared: false,
+                description: '',
+                classKey: '',
+              },
+            ],
+          },
+        });
+        const afterListEdit = await pmRawPact(pmUserIdA);
+        check(
+          '51.F) PATCH parcial de spells SEM pactMagic preserva o uso (2) em vez de zerar',
+          listEdit.status === 200 && afterListEdit?.used === 2,
+          JSON.stringify(afterListEdit),
+        );
+        check(
+          '51.F) regressão: editar a lista de magias pelo MASTER não recupera a Magia de Pacto',
+          listEdit.status === 200 &&
+            listEdit.data?.character?.spells?.pactMagic?.used === 2 &&
+            (listEdit.data?.character?.spells?.list ?? []).some((s: any) => s.id === 'pm-51'),
+          JSON.stringify({ pact: listEdit.data?.character?.spells?.pactMagic }),
+        );
+
+        // Mandando `pactMagic`, a alteração é aplicada normalmente.
+        const explicit = await pmMasterPatch(pmCharA.id, {
+          spells: { pactMagic: { used: 1 } },
+        });
+        check(
+          '51.F) PATCH com pactMagic.used=1 aplica a mudança',
+          explicit.status === 200 && (await pmRawPact(pmUserIdA))?.used === 1,
+          JSON.stringify(await pmRawPact(pmUserIdA)),
+        );
+        const clamped = await pmMasterPatch(pmCharA.id, {
+          spells: { pactMagic: { used: 99 } },
+        });
+        check(
+          '51.F) PATCH com used acima do max continua CLAMPADO (99 → 2)',
+          clamped.status === 200 && (await pmRawPact(pmUserIdA))?.used === 2,
+          JSON.stringify(await pmRawPact(pmUserIdA)),
+        );
+        const negative = await pmMasterPatch(pmCharA.id, {
+          spells: { pactMagic: { used: -1 } },
+        });
+        check(
+          '51.F) PATCH com used negativo continua inválido (400) e nada muda',
+          negative.status === 400 && (await pmRawPact(pmUserIdA))?.used === 2,
+          JSON.stringify({ status: negative.status, pact: await pmRawPact(pmUserIdA) }),
+        );
+
+        // Ficha LEGADA (sem `pactMagic`): preserva o valor EFETIVO (0) e grava o default.
+        await pmSetup(pmUserIdA, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: {} },
+        });
+        const legacyPatch = await pmMasterPatch(pmCharA.id, { spells: { list: [] } });
+        check(
+          '51.F) ficha legada sem pactMagic: o PATCH parcial preserva o efetivo 0 e grava o default',
+          legacyPatch.status === 200 && (await pmRawPact(pmUserIdA))?.used === 0,
+          JSON.stringify(await pmRawPact(pmUserIdA)),
+        );
+
+        // Sem Bruxo, o MASTER também não persiste uso positivo.
+        await pmSetup(pmUserIdA, {
+          classes: [{ classKey: 'fighter', subclass: '', level: 5 }],
+          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+        });
+        const noPool = await pmMasterPatch(pmCharA.id, { spells: { pactMagic: { used: 1 } } });
+        check(
+          '51.F) sem Pact Magic, o MASTER não persiste uso positivo (segue 0)',
+          noPool.status === 200 && (await pmRawPact(pmUserIdA))?.used === 0,
+          JSON.stringify(await pmRawPact(pmUserIdA)),
+        );
+
+        // PLAYER: comportamento EXISTENTE preservado nesta fase — a UI manda o
+        // objeto `spells` inteiro, então a ausência de `pactMagic` segue valendo 0.
+        const creationBefore = await prisma.character.findUniqueOrThrow({
+          where: { userId: pmUserIdA },
+          select: { creationFinalized: true },
+        });
+        await pmSetup(pmUserIdA, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+          creationFinalized: true,
+        });
+        const playerExplicit = await api('/api/characters/me', {
+          method: 'PATCH',
+          token: pmTokenA,
+          body: { spells: { list: [], slots: {}, pactMagic: { used: 1 } } },
+        });
+        const playerOmitted = await api('/api/characters/me', {
+          method: 'PATCH',
+          token: pmTokenA,
+          body: { spells: { list: [], slots: {} } },
+        });
+        check(
+          '51.F) PLAYER: o clamp do uso continua valendo (used=1 aceito)',
+          playerExplicit.status === 200 &&
+            playerExplicit.data?.character?.spells?.pactMagic?.used === 1,
+          JSON.stringify(playerExplicit.data?.character?.spells?.pactMagic),
+        );
+        check(
+          '51.F) PLAYER: omitir `pactMagic` mantém o comportamento de sempre (zero), sem regressão',
+          playerOmitted.status === 200 && (await pmRawPact(pmUserIdA))?.used === 0,
+          JSON.stringify(await pmRawPact(pmUserIdA)),
+        );
+        await pmSetup(pmUserIdA, { creationFinalized: creationBefore.creationFinalized });
+      }
+
       await pmReset();
 
       pmSocketA.close();

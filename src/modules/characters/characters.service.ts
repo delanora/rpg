@@ -60,7 +60,12 @@ import {
   type HitDiceDerivation,
 } from '../shared/hit-dice.js';
 import { parseJson } from '../shared/json.js';
-import { raceChoicesSchema, spellsStateSchema, type SpellsStateInput } from './characters.schema.js';
+import {
+  raceChoicesSchema,
+  spellsStateSchema,
+  type SpellsPatchInput,
+  type SpellsStateInput,
+} from './characters.schema.js';
 import { validateSpellbook } from '../shared/spells/spellbook.js';
 import {
   applySaveProficiencies,
@@ -2445,10 +2450,14 @@ export async function republishSheetsWithCatalogItem(itemId: string): Promise<vo
  * A MAGIA DE PACTO é um POOL PRÓPRIO (PHB 2014): só o `used` é persistido, e ele
  * é limitado pelo `max` DERIVADO (`pactMagicSlots`) — o cliente nunca define o
  * total. Sem Bruxo (`pactMax === null`) o uso é forçado a zero.
+ *
+ * `incoming` é a entrada do PATCH (`pactMagic` pode estar AUSENTE). No caminho do
+ * JOGADOR a ausência continua valendo zero (comportamento de sempre: a UI manda
+ * o objeto inteiro); quem PRESERVA o valor armazenado é o caminho do mestre.
  */
 function mergeSpellUsage(
   storedRaw: unknown,
-  incoming: SpellsStateInput,
+  incoming: SpellsPatchInput,
   pactMax: number | null,
 ): Prisma.InputJsonValue {
   const stored = parseJson<SpellsStateInput>(spellsStateSchema, storedRaw, emptySpellsInput());
@@ -2837,13 +2846,23 @@ async function applyCharacterPatch(
     // O `max` da Magia de Pacto é DERIVADO do nível de Bruxo (nunca vem do
     // cliente): com ou sem travas de jogador, o uso é limitado por ele.
     const pactMax = pactMagicSlots(classes)?.max ?? null;
-    data.spells =
-      fromPlayer && existing.creationFinalized
-        ? mergeSpellUsage(existing.spells, patch.spells, pactMax)
-        : ({
-            ...patch.spells,
-            pactMagic: { used: clampPactMagicUsed(patch.spells.pactMagic?.used ?? 0, pactMax) },
-          } as unknown as Prisma.InputJsonValue);
+    if (fromPlayer && existing.creationFinalized) {
+      data.spells = mergeSpellUsage(existing.spells, patch.spells, pactMax);
+    } else {
+      // PATCH é uma atualização PARCIAL: omitir `pactMagic` significa "não
+      // mexer". Sem isso, um ajuste administrativo da ficha (a lista de magias,
+      // por exemplo) zeraria o uso e concederia uma recuperação implícita — algo
+      // que só o descanso curto/longo (ou o fluxo especial do mestre) pode fazer.
+      const preservedPactUsed =
+        patch.spells.pactMagic?.used ??
+        parseJson<SpellsStateInput>(spellsStateSchema, existing.spells, emptySpellsInput())
+          .pactMagic?.used ??
+        0;
+      data.spells = {
+        ...patch.spells,
+        pactMagic: { used: clampPactMagicUsed(preservedPactUsed, pactMax) },
+      } as unknown as Prisma.InputJsonValue;
+    }
   }
 
   // A CA manual é o override do mestre (`null` limpa e volta ao automático).
