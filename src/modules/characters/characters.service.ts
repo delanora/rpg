@@ -1393,7 +1393,8 @@ export async function useInventoryItem(
     // As unidades RESERVADAS para recursos de acampamento não podem ser usadas.
     // A leitura é refeita a cada tentativa: se uma reserva concorrente entrar,
     // o `version` muda e a escrita condicionada falha — este laço tenta de novo
-    // e já enxerga a reserva nova.
+    // e já enxerga a reserva nova. Com a mecânica DESLIGADA não há reserva
+    // efetiva: contribuições antigas (histórico) não bloqueiam o consumo.
     const reserved = await reservedQuantity(item.id);
     if (availableQuantity(item.quantity, reserved) <= 0) {
       throw new HttpError(
@@ -2768,6 +2769,8 @@ async function applyCharacterPatch(
     // O inventário NÃO pode reduzir/remover uma pilha abaixo da quantidade
     // RESERVADA para recursos de acampamento (mecânica opcional). Evita que um
     // PATCH do mestre deixe uma reserva apontando para quantidade inexistente.
+    // Com a mecânica desligada (ou sem solicitação em andamento) não há reserva
+    // efetiva e o mestre edita livremente.
     const reserved = await reservedQuantities(patch.inventory.map((entry) => entry.id));
     for (const [inventoryItemId, reservedQty] of reserved) {
       const entry = patch.inventory.find((item) => item.id === inventoryItemId);

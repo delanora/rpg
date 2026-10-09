@@ -16689,6 +16689,333 @@ async function main(): Promise<void> {
     }
   }
 
+  // ==========================================================================
+  // 50) Reservas de Camp Supplies com a mecânica DESATIVADA
+  //     (contribuições antigas viram histórico e não bloqueiam o inventário;
+  //      ao religar, a reserva é reavaliada contra o inventário ATUAL)
+  // ==========================================================================
+  console.log('\n50) Reservas de Camp Supplies com a mecânica desativada');
+  {
+    const rsTokenA = testsPlayerToken;
+    const rsMeA = await api('/api/auth/me', { token: rsTokenA });
+    const rsUserIdA: string = rsMeA.data?.user?.sub;
+    const rsCharA = await prisma.character.findUniqueOrThrow({ where: { userId: rsUserIdA } });
+    const rsOthers = (
+      await prisma.user.findMany({
+        where: { role: 'PLAYER', username: { endsWith: `_${suffix}` }, id: { not: rsUserIdA } },
+        include: { character: { select: { id: true } } },
+        orderBy: { username: 'asc' },
+      })
+    )
+      .filter((user) => user.character !== null)
+      .slice(0, 1);
+    check(
+      '50) jogador parceiro disponível para a solicitação do teste de reserva',
+      rsOthers.length === 1,
+      `encontrados: ${rsOthers.length}`,
+    );
+
+    if (rsOthers.length === 1) {
+      const rsB = rsOthers[0];
+      const rsTokenB = signToken({
+        sub: rsB.id,
+        username: rsB.username,
+        displayName: rsB.displayName,
+        role: rsB.role,
+      });
+      const rsSetConfig = (body: Record<string, unknown>) =>
+        api('/api/game/camp-supplies', { method: 'POST', token: masterToken, body });
+      const rsItem = async (name: string, value: number): Promise<any> => {
+        const created = await api('/api/items', {
+          method: 'POST',
+          token: masterToken,
+          body: {
+            name,
+            category: 'Item Geral',
+            details: { consumable: true },
+            campSupply: { enabled: true, value },
+          },
+        });
+        if (created.data?.item?.id) createdItemIds.push(created.data.item.id);
+        return created.data?.item;
+      };
+      const rsSend = (itemId: string, characterId: string, quantity: number) =>
+        api(`/api/items/${itemId}/send`, {
+          method: 'POST',
+          token: masterToken,
+          body: { characterId, quantity },
+        });
+      const rsInvOf = async (): Promise<any[]> => {
+        const row = await prisma.character.findUniqueOrThrow({
+          where: { id: rsCharA.id },
+          select: { inventory: true },
+        });
+        return JSON.parse(JSON.stringify(row.inventory)) as any[];
+      };
+      const rsQuantity = async (inventoryItemId: string): Promise<number> =>
+        (await rsInvOf()).find((entry) => entry.id === inventoryItemId)?.quantity ?? 0;
+      const rsReserved = async (inventoryItemId: string): Promise<number> =>
+        (await reservedQuantities([inventoryItemId])).get(inventoryItemId) ?? 0;
+      const rsReset = async () => {
+        await prisma.longRestSession.updateMany({
+          where: { characterId: rsCharA.id, status: 'ACTIVE' },
+          data: { status: 'CANCELLED', cancelledAt: new Date() },
+        });
+        await prisma.longRestCampSupplyContribution.deleteMany({
+          where: { characterId: rsCharA.id },
+        });
+        await prisma.longRestRequest.updateMany({
+          where: { status: { in: ['PENDING', 'APPROVED'] } },
+          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+        });
+      };
+      const rsCurrent = async () =>
+        (await api('/api/rest/long/request', { token: rsTokenA })).data.request;
+      /** Cria a solicitação (A) com o parceiro B e aprova (B ACCEPTED). */
+      const rsApprove = async (tag: string): Promise<any> => {
+        const created = await api('/api/rest/long/request', {
+          method: 'POST',
+          token: rsTokenA,
+          body: { operationId: `op-${suffix}-50-${tag}-create` },
+        });
+        const answered = await api(`/api/rest/long/${created.data.id}/respond`, {
+          method: 'POST',
+          token: rsTokenB,
+          body: { response: 'ACCEPTED', operationId: `op-${suffix}-50-${tag}-b` },
+        });
+        return answered.data ?? created.data;
+      };
+      const rsContribute = (requestId: string, body: Record<string, unknown>) =>
+        api(`/api/rest/long/${requestId}/camp-supplies`, { method: 'PUT', token: rsTokenA, body });
+      const rsReady = (token: string, requestId: string, operationId: string) =>
+        api(`/api/rest/long/${requestId}/ready`, {
+          method: 'POST',
+          token,
+          body: { ready: true, operationId },
+        });
+      const rsUse = (inventoryItemId: string) =>
+        api('/api/characters/me/inventory/use', {
+          method: 'POST',
+          token: rsTokenA,
+          body: { itemInventoryId: inventoryItemId },
+        });
+      /** PATCH do mestre com o inventário inteiro, mexendo em UMA pilha. */
+      const rsMasterQuantity = async (inventoryItemId: string, quantity: number) => {
+        const inventory = (await rsInvOf()).map((entry) =>
+          entry.id === inventoryItemId ? { ...entry, quantity } : entry,
+        );
+        return patchAsMaster(rsUserIdA, { inventory });
+      };
+
+      await rsReset();
+      await rsSetConfig({ enabled: false, costPerParticipant: 10 });
+      const rsItemA = await rsItem(`Provisões reservadas ${suffix}`, 10);
+      const rsItemB = await rsItem(`Rações reservadas ${suffix}`, 10);
+      await rsSend(rsItemA.id, rsCharA.id, 6);
+      await rsSend(rsItemB.id, rsCharA.id, 4);
+
+      const rsSocketA = connect(rsTokenA);
+      const rsPresence = waitForPresence(rsSocketA, () => true).catch(() => null);
+      await waitFor<any>(rsSocketA, 'connection:ready').catch(() => null);
+      await demoteForeignOnlinePlayers((await rsPresence)?.online ?? [], new Set([rsUserIdA, rsB.id]));
+      const rsSocketB = connect(rsTokenB);
+      await waitFor<any>(rsSocketB, 'connection:ready').catch(() => null);
+      await waitForPresence(rsSocketA, (online) =>
+        online.some((u: any) => u.username === rsB.username),
+      ).catch(() => null);
+
+      await rsSetConfig({ enabled: true, costPerParticipant: 10 });
+      const rsReq = await rsApprove('base');
+      const rsStackA = (await rsInvOf()).find((entry) => entry.itemId === rsItemA.id);
+      const rsStackB = (await rsInvOf()).find((entry) => entry.itemId === rsItemB.id);
+      const rsQtyA0 = rsStackA.quantity;
+
+      // --- A) Reserva normal com a mecânica ligada --------------------------
+      const rsReserveA = await rsContribute(rsReq.id, {
+        inventoryItemId: rsStackA.id,
+        quantity: 3,
+        operationId: `op-${suffix}-50-reserve-a`,
+      });
+      const rsReserveB = await rsContribute(rsReq.id, {
+        inventoryItemId: rsStackB.id,
+        quantity: 4,
+        operationId: `op-${suffix}-50-reserve-b`,
+      });
+      check(
+        '50.A) APPROVED + mecânica ligada: contribuir ×3 reserva 3 (e deixa 3 de 6)',
+        rsReserveA.status === 200 &&
+          (await rsReserved(rsStackA.id)) === 3 &&
+          availableQuantity(rsQtyA0, await rsReserved(rsStackA.id)) === 3,
+        JSON.stringify({ reserved: await rsReserved(rsStackA.id), qty: rsQtyA0 }),
+      );
+      check(
+        '50.C) com a mecânica LIGADA a pilha toda reservada não pode ser usada → 409 INVENTORY_RESERVED',
+        rsReserveB.status === 200 &&
+          availableQuantity(rsStackB.quantity, await rsReserved(rsStackB.id)) === 0 &&
+          (await rsUse(rsStackB.id)).status === 409,
+      );
+
+      // --- B/C) Mecânica desligada: reserva zero e inventário liberado -------
+      await rsSetConfig({ enabled: false, costPerParticipant: 10 });
+      check(
+        '50.B) MASTER desativa: as reservas viram 0 na hora (nada é apagado)',
+        (await rsReserved(rsStackA.id)) === 0 &&
+          (await rsReserved(rsStackB.id)) === 0 &&
+          availableQuantity(rsStackB.quantity, await rsReserved(rsStackB.id)) ===
+            rsStackB.quantity,
+        JSON.stringify({
+          a: await rsReserved(rsStackA.id),
+          b: await rsReserved(rsStackB.id),
+        }),
+      );
+      const rsUseDisabled = await rsUse(rsStackB.id);
+      check(
+        '50.C) com a mecânica desligada o item reservado volta a ser consumível',
+        rsUseDisabled.status === 200 && (await rsQuantity(rsStackB.id)) === rsStackB.quantity - 1,
+        JSON.stringify({ status: rsUseDisabled.status, qty: await rsQuantity(rsStackB.id) }),
+      );
+      const rsPatchDisabled = await rsMasterQuantity(rsStackA.id, 2);
+      check(
+        '50.C) o MASTER reduz a pilha abaixo da reserva antiga → 200 (sem bloqueio)',
+        rsPatchDisabled.status === 200 && (await rsQuantity(rsStackA.id)) === 2,
+        JSON.stringify({ status: rsPatchDisabled.status }),
+      );
+
+      // --- D) Contribuições seguem persistidas ------------------------------
+      const rsPersisted = await prisma.longRestCampSupplyContribution.findMany({
+        where: { requestId: rsReq.id },
+      });
+      check(
+        '50.D) as contribuições continuam persistidas como histórico',
+        rsPersisted.length === 2 &&
+          rsPersisted.some(
+            (row) => row.inventoryItemId === rsStackA.id && row.quantity === 3,
+          ) &&
+          rsPersisted.some(
+            (row) => row.inventoryItemId === rsStackB.id && row.quantity === 4,
+          ),
+        JSON.stringify(rsPersisted.map((row) => ({ id: row.inventoryItemId, q: row.quantity }))),
+      );
+
+      // --- E/F/G) Ao religar: reavaliação contra o inventário ATUAL ---------
+      await rsSetConfig({ enabled: true, costPerParticipant: 10 });
+      const rsReservedAgainA = await rsReserved(rsStackA.id);
+      const rsReservedAgainB = await rsReserved(rsStackB.id);
+      const rsQtyNowA = await rsQuantity(rsStackA.id);
+      const rsQtyNowB = await rsQuantity(rsStackB.id);
+      check(
+        '50.E/50.G) ao religar a reserva é reavaliada: nunca passa do que a pilha tem e nunca é negativa',
+        rsReservedAgainA === 2 &&
+          rsReservedAgainB === 3 &&
+          rsReservedAgainA <= rsQtyNowA &&
+          rsReservedAgainB <= rsQtyNowB &&
+          availableQuantity(rsQtyNowA, rsReservedAgainA) >= 0 &&
+          availableQuantity(rsQtyNowB, rsReservedAgainB) >= 0,
+        JSON.stringify({
+          a: { reserved: rsReservedAgainA, qty: rsQtyNowA },
+          b: { reserved: rsReservedAgainB, qty: rsQtyNowB },
+        }),
+      );
+      const rsStaleAgain = await rsContribute(rsReq.id, {
+        inventoryItemId: rsStackA.id,
+        quantity: 3,
+        operationId: `op-${suffix}-50-stale`,
+      });
+      check(
+        '50.E) a contribuição antiga não é aceita de olhos fechados: reservar 3 de uma pilha de 2 → 409',
+        rsStaleAgain.status === 409 && rsStaleAgain.data?.error === 'CAMP_SUPPLY_NOT_ENOUGH',
+        JSON.stringify({ status: rsStaleAgain.status, error: rsStaleAgain.data?.error }),
+      );
+      const rsRefit = await rsContribute(rsReq.id, {
+        inventoryItemId: rsStackA.id,
+        quantity: 2,
+        operationId: `op-${suffix}-50-refit`,
+      });
+      check(
+        '50.F) reajustada para o que a pilha comporta, a contribuição volta a ser válida e reservada',
+        rsRefit.status === 200 &&
+          (await rsReserved(rsStackA.id)) === 2 &&
+          availableQuantity(await rsQuantity(rsStackA.id), 2) === 0,
+        JSON.stringify({ reserved: await rsReserved(rsStackA.id) }),
+      );
+
+      // --- H) Conclusão com a mecânica desligada ----------------------------
+      await rsSetConfig({ enabled: false, costPerParticipant: 10 });
+      // Simula a quantidade alterada enquanto a mecânica estava desligada: a
+      // contribuição persistida aponta de novo para mais do que a pilha tem.
+      await prisma.longRestCampSupplyContribution.updateMany({
+        where: { requestId: rsReq.id, inventoryItemId: rsStackA.id },
+        data: { quantity: 5 },
+      });
+      const rsInventoryBeforeH = JSON.stringify(await rsInvOf());
+      await rsReady(rsTokenA, rsReq.id, `op-${suffix}-50-ready-a`);
+      const rsDoneDisabled = await rsReady(rsTokenB, rsReq.id, `op-${suffix}-50-ready-b`);
+      check(
+        '50.H) concluir com a mecânica desligada: não exige pontos, não consome e não falha pelas contribuições obsoletas',
+        rsDoneDisabled.status === 200 &&
+          rsDoneDisabled.data?.status === 'COMPLETED' &&
+          rsDoneDisabled.data?.completion?.campSupplies?.enabled === false &&
+          rsDoneDisabled.data?.completion?.campSupplies?.consumedPoints === 0 &&
+          (rsDoneDisabled.data?.completion?.suppliesConsumed ?? []).length === 0 &&
+          JSON.stringify(await rsInvOf()) === rsInventoryBeforeH,
+        JSON.stringify({
+          status: rsDoneDisabled.data?.status,
+          audit: rsDoneDisabled.data?.completion?.campSupplies,
+        }),
+      );
+
+      // --- I) Regressão: reservas seguem normais com a mecânica LIGADA -------
+      await rsSetConfig({ enabled: true, costPerParticipant: 10 });
+      await rsReset();
+      const rsReqReg = await rsApprove('regression');
+      const rsStackA2 = (await rsInvOf()).find((entry) => entry.itemId === rsItemA.id);
+      const rsRegReserve = await rsContribute(rsReqReg.id, {
+        inventoryItemId: rsStackA2.id,
+        quantity: 1,
+        operationId: `op-${suffix}-50-reg-1`,
+      });
+      check(
+        '50.I) regressão: com a mecânica ligada a reserva continua igual (1 de 2, resta 1 usável)',
+        rsRegReserve.status === 200 &&
+          (await rsReserved(rsStackA2.id)) === 1 &&
+          availableQuantity(rsStackA2.quantity, 1) === 1,
+        JSON.stringify({ reserved: await rsReserved(rsStackA2.id), qty: rsStackA2.quantity }),
+      );
+      check(
+        '50.I) regressão: reservar acima do disponível continua 409',
+        (
+          await rsContribute(rsReqReg.id, {
+            inventoryItemId: rsStackA2.id,
+            quantity: 3,
+            operationId: `op-${suffix}-50-reg-2`,
+          })
+        ).status === 409,
+      );
+      check(
+        '50.I) regressão: o MASTER continua barrado de reduzir abaixo da reserva ativa → 409',
+        (await rsMasterQuantity(rsStackA2.id, 0)).status === 409,
+      );
+      const rsAbort = await api(`/api/rest/long/${rsReqReg.id}/abort`, {
+        method: 'POST',
+        token: masterToken,
+        body: { operationId: `op-${suffix}-50-abort` },
+      });
+      check(
+        '50) abortar libera a reserva e não deixa descanso aberto',
+        rsAbort.status === 200 &&
+          (await rsReserved(rsStackA2.id)) === 0 &&
+          (await rsCurrent()) === null,
+        JSON.stringify({ status: rsAbort.status, reserved: await rsReserved(rsStackA2.id) }),
+      );
+
+      await rsSetConfig({ enabled: false, costPerParticipant: 10 });
+      await rsReset();
+
+      rsSocketA.close();
+      rsSocketB.close();
+    }
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
