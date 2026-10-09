@@ -17008,6 +17008,144 @@ async function main(): Promise<void> {
         JSON.stringify({ status: rsAbort.status, reserved: await rsReserved(rsStackA2.id) }),
       );
 
+      // --- 50.A–50.G) Contribuição ÓRFÃ (a pilha saiu do inventário) --------
+      const rsReqOrphan = await rsApprove('orphan');
+      const rsStackOrphan = (await rsInvOf()).find((entry) => entry.itemId === rsItemA.id);
+
+      // A/F) contribuição normal continua igual; quantity 0 remove.
+      await rsContribute(rsReqOrphan.id, {
+        inventoryItemId: rsStackOrphan.id,
+        quantity: 1,
+        operationId: `op-${suffix}-50-orphan-reserve`,
+      });
+      const rsOrphanReserved = await rsReserved(rsStackOrphan.id);
+      const rsOrphanRemove = await rsContribute(rsReqOrphan.id, {
+        inventoryItemId: rsStackOrphan.id,
+        quantity: 0,
+        operationId: `op-${suffix}-50-orphan-remove`,
+      });
+      check(
+        '50.A/50.F) contribuição normal (quantity 1) reserva 1; quantity 0 remove a contribuição (200)',
+        rsOrphanReserved === 1 &&
+          rsOrphanRemove.status === 200 &&
+          (rsOrphanRemove.data?.campSupplies?.contributions ?? []).length === 0 &&
+          (await prisma.longRestCampSupplyContribution.count({
+            where: { requestId: rsReqOrphan.id, inventoryItemId: rsStackOrphan.id },
+          })) === 0,
+        JSON.stringify({ reserved: rsOrphanReserved, status: rsOrphanRemove.status }),
+      );
+
+      // A pilha SAI do inventário com a contribuição ainda persistida.
+      await rsContribute(rsReqOrphan.id, {
+        inventoryItemId: rsStackOrphan.id,
+        quantity: 1,
+        operationId: `op-${suffix}-50-orphan-again`,
+      });
+      await prisma.character.update({
+        where: { id: rsCharA.id },
+        data: {
+          inventory: (await rsInvOf()).filter(
+            (entry) => entry.id !== rsStackOrphan.id,
+          ) as any,
+        },
+      });
+      check(
+        '50) cenário da borda montado: pilha fora do inventário com a contribuição persistida',
+        (await rsQuantity(rsStackOrphan.id)) === 0 &&
+          (await prisma.longRestCampSupplyContribution.count({
+            where: { requestId: rsReqOrphan.id },
+          })) === 1,
+      );
+
+      // C) quantity > 0 com pilha inexistente continua falhando normalmente.
+      const rsOrphanAdd = await rsContribute(rsReqOrphan.id, {
+        inventoryItemId: rsStackOrphan.id,
+        quantity: 1,
+        operationId: `op-${suffix}-50-orphan-add`,
+      });
+      check(
+        '50.C) pilha inexistente + quantity > 0 → continua 404 (nada muda)',
+        rsOrphanAdd.status === 404 &&
+          (await prisma.longRestCampSupplyContribution.count({
+            where: { requestId: rsReqOrphan.id },
+          })) === 1,
+        JSON.stringify({ status: rsOrphanAdd.status }),
+      );
+
+      // D) PLAYER não remove a contribuição de OUTRO personagem.
+      const rsOrphanForeign = await api(`/api/rest/long/${rsReqOrphan.id}/camp-supplies`, {
+        method: 'PUT',
+        token: rsTokenB,
+        body: {
+          inventoryItemId: rsStackOrphan.id,
+          quantity: 0,
+          operationId: `op-${suffix}-50-orphan-foreign`,
+        },
+      });
+      check(
+        '50.D) outro PLAYER não pode remover a contribuição → 403 e ela permanece',
+        rsOrphanForeign.status === 403 &&
+          rsOrphanForeign.data?.error === 'CONTRIBUTION_NOT_YOURS' &&
+          (await prisma.longRestCampSupplyContribution.count({
+            where: { requestId: rsReqOrphan.id },
+          })) === 1,
+        JSON.stringify({ status: rsOrphanForeign.status, error: rsOrphanForeign.data?.error }),
+      );
+
+      // B/G) contribuição existe + pilha NÃO existe + quantity = 0 → sucesso.
+      const rsInventoryBeforeOrphan = JSON.stringify(await rsInvOf());
+      const rsOrphanCleanOp = `op-${suffix}-50-orphan-clean`;
+      const rsOrphanCleaned = await rsContribute(rsReqOrphan.id, {
+        inventoryItemId: rsStackOrphan.id,
+        quantity: 0,
+        operationId: rsOrphanCleanOp,
+      });
+      check(
+        '50.B) contribuição órfã removida SEM 404 (200), sem recriar/exigir o item e sem tocar no inventário',
+        rsOrphanCleaned.status === 200 &&
+          (rsOrphanCleaned.data?.campSupplies?.contributions ?? []).length === 0 &&
+          (await prisma.longRestCampSupplyContribution.count({
+            where: { requestId: rsReqOrphan.id },
+          })) === 0 &&
+          JSON.stringify(await rsInvOf()) === rsInventoryBeforeOrphan,
+        JSON.stringify({ status: rsOrphanCleaned.status }),
+      );
+      check(
+        '50.G) a reserva da contribuição órfã deixa de existir (reservedQuantity = 0)',
+        (await rsReserved(rsStackOrphan.id)) === 0,
+      );
+
+      // E) replay do mesmo operationId → idempotente, sem segunda mutação.
+      const rsVersionBeforeReplay = (
+        await prisma.character.findUniqueOrThrow({ where: { id: rsCharA.id } })
+      ).version;
+      const rsReplayOnce = await rsContribute(rsReqOrphan.id, {
+        inventoryItemId: rsStackOrphan.id,
+        quantity: 0,
+        operationId: rsOrphanCleanOp,
+      });
+      const rsReplayTwice = await rsContribute(rsReqOrphan.id, {
+        inventoryItemId: rsStackOrphan.id,
+        quantity: 0,
+        operationId: rsOrphanCleanOp,
+      });
+      check(
+        '50.E) replay do mesmo operationId → replayed, sem segunda mutação (ficha intacta)',
+        rsReplayOnce.status === 200 &&
+          rsReplayOnce.data?.replayed === true &&
+          rsReplayTwice.data?.replayed === true &&
+          (await prisma.longRestOperation.count({ where: { operationId: rsOrphanCleanOp } })) === 1 &&
+          (await prisma.character.findUniqueOrThrow({ where: { id: rsCharA.id } })).version ===
+            rsVersionBeforeReplay,
+        JSON.stringify({ replayed: rsReplayOnce.data?.replayed }),
+      );
+
+      await api(`/api/rest/long/${rsReqOrphan.id}/abort`, {
+        method: 'POST',
+        token: masterToken,
+        body: { operationId: `op-${suffix}-50-orphan-abort` },
+      });
+
       await rsSetConfig({ enabled: false, costPerParticipant: 10 });
       await rsReset();
 
