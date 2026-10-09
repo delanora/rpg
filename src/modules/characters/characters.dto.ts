@@ -39,7 +39,6 @@ import {
   pactMagicSlots,
   preparedSpellCountFor,
   songOfRestDie,
-  effectiveSpellSlots,
   spellSlotMaxByLevel,
   spellSlotsForClasses,
   totalCharacterLevel,
@@ -83,7 +82,7 @@ import {
   inventoryListSchema,
   raceChoicesSchema,
   spellSchema,
-  spellSlotSchema,
+  spellSlotsUsedFrom,
   spellsStateSchema,
   type InventorySlot,
 } from './characters.schema.js';
@@ -183,10 +182,13 @@ export interface ClassEntryDto {
 }
 
 export type SpellDto = z.infer<typeof spellSchema>;
-export type SpellSlotDto = z.infer<typeof spellSlotSchema>;
 export interface SpellsStateDto {
   list: SpellDto[];
-  slots: Record<string, SpellSlotDto>;
+  /**
+   * Uso por nível dos espaços NORMAIS (`{ "1": 2 }`). Ausência de chave = 0.
+   * O `max` NÃO existe aqui: é regra DERIVADA (`derived.spellSlots`).
+   */
+  slotsUsed: Record<string, number>;
   /**
    * Magia de Pacto (Bruxo): a ÚNICA informação PERSISTIDA é o uso. O `max` e o
    * `slotLevel` são DERIVADOS e vivem em `derived.pactSlots` — nunca aqui.
@@ -544,7 +546,7 @@ export function toCharacterDto(
   );
   const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
     list: [],
-    slots: {},
+    slotsUsed: {},
     pactMagic: { used: 0 },
   });
   // O uso de Pact Magic é PERSISTIDO, mas o pool é DERIVADO do nível de Bruxo
@@ -553,11 +555,11 @@ export function toCharacterDto(
   spells.pactMagic = {
     used: pactSlots === null ? 0 : Math.max(0, Math.min(spells.pactMagic?.used ?? 0, pactSlots.max)),
   };
-  // O `max` dos espaços NORMAIS tem AUTORIDADE DERIVADA (`spellSlots`): o valor
-  // gravado no JSON é legado. A leitura devolve `{ max: derivado, used: efetivo }`
-  // e já inclui os níveis que só existem no derivado (Level Up), para a ficha e
-  // o futuro motor de conjuração nunca dependerem do max persistido.
-  spells.slots = effectiveSpellSlots(spells.slots, spellSlotMaxByLevel(spellSlots));
+  // O uso dos espaços NORMAIS é PERSISTIDO (`slotsUsed`) e o teto é DERIVADO
+  // (`derived.spellSlots`): a leitura saneia o uso contra o derivado ATUAL e
+  // descarta o que não cabe. É a leitura OFICIAL do futuro motor de conjuração:
+  // `max` = `derived.spellSlots[nível].max`, `used` = `spells.slotsUsed[nível]`.
+  spells.slotsUsed = spellSlotsUsedFrom(character.spells, spellSlotMaxByLevel(spellSlots));
   // Magias de juramento do Paladino: entram SÓ no DTO (origem 'oath'), sempre
   // preparadas e fora do limite. Se a magia já estiver na lista do jogador por
   // outra via, não duplicamos.

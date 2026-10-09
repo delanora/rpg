@@ -9,7 +9,7 @@ import {
 import { useEffect, useState } from 'react';
 import { fetchCompendium } from '../../gameApi';
 import { useSheetAccess } from '../../readonly';
-import type { CompendiumSpell, Spell, SpellSlot } from '../../types';
+import type { CompendiumSpell, Spell } from '../../types';
 import { clampInt, newId } from '../../utils';
 import { FieldInfo } from '../FieldInfo';
 import { Icon } from '../Icon';
@@ -17,9 +17,6 @@ import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 import { SpellPicker } from './SpellPicker';
-
-const SLOT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
-const EMPTY_SLOT: SpellSlot = { max: 0, used: 0 };
 
 /** Abreviações dos tipos de conjuração mostradas no bloco de Conjuração. */
 const SPELLCASTING_SHORT: Record<string, string> = {
@@ -40,14 +37,15 @@ const SORCERY_SLOT_COSTS: Record<number, number> = { 1: 2, 2: 3, 3: 5, 4: 6, 5: 
 
 interface SlotPipsProps {
   level: number;
-  slot: SpellSlot;
+  max: number;
+  used: number;
   readOnly: boolean;
-  onChange: (patch: Partial<SpellSlot>) => void;
+  onChange: (used: number) => void;
 }
 
 /** Espaços de magia como estrelas clicáveis: gastas ficam apagadas. */
-function SlotPips({ level, slot, readOnly, onChange }: SlotPipsProps) {
-  if (slot.max <= 0) {
+function SlotPips({ level, max, used, readOnly, onChange }: SlotPipsProps) {
+  if (max <= 0) {
     return (
       <span className="slot-pips">
         <span className="slot-empty">—</span>
@@ -55,16 +53,16 @@ function SlotPips({ level, slot, readOnly, onChange }: SlotPipsProps) {
     );
   }
 
-  const used = Math.min(slot.used, slot.max);
+  const usedCount = Math.min(used, max);
 
   return (
     <span
       className="slot-pips"
       role="group"
-      aria-label={`Espaços de ${level}º nível: ${used} de ${slot.max} usados`}
+      aria-label={`Espaços de ${level}º nível: ${usedCount} de ${max} usados`}
     >
-      {Array.from({ length: slot.max }, (_, index) => {
-        const isUsed = index < used;
+      {Array.from({ length: max }, (_, index) => {
+        const isUsed = index < usedCount;
         return (
           <button
             key={index}
@@ -73,7 +71,7 @@ function SlotPips({ level, slot, readOnly, onChange }: SlotPipsProps) {
             disabled={readOnly}
             title={isUsed ? 'Marcar como disponível' : 'Marcar como gasto'}
             aria-label={isUsed ? `Recuperar espaço ${index + 1}` : `Gastar espaço ${index + 1}`}
-            onClick={() => onChange({ used: isUsed ? index : index + 1 })}
+            onClick={() => onChange(isUsed ? index : index + 1)}
           >
             <Icon name="sparkle" size={13} />
           </button>
@@ -84,10 +82,13 @@ function SlotPips({ level, slot, readOnly, onChange }: SlotPipsProps) {
 }
 
 export function SpellsSection({ character, update }: SheetSectionProps) {
-  // Gastar/recuperar espaços é estado de jogo; a lista de magias conhecidas e
-  // o TOTAL de cada nível são construção (vêm da classe e do Level Up).
+  // Gastar/recuperar espaços é estado de jogo; o TOTAL de cada nível é DERIVADO
+  // do nível de conjurador (não fica gravado) e a lista de magias conhecidas é
+  // construção (vem da classe e do Level Up).
   const { readOnly, lockedConstruction } = useSheetAccess();
-  const { list, slots } = character.spells;
+  const { list } = character.spells;
+  // Uso persistido dos espaços NORMAIS por nível (`{ "1": 2 }`); ausente = 0.
+  const slotsUsed = character.spells.slotsUsed ?? {};
   // Catálogo de magias (para o seletor por classe). Buscado uma vez na montagem.
   const [catalogSpells, setCatalogSpells] = useState<CompendiumSpell[]>([]);
   useEffect(() => {
@@ -97,8 +98,9 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   }, []);
   const spellcasting = character.derived.spellcasting;
   // Espaços pela regra do PHB (tabela da própria classe, ou a combinada quando
-  // há duas ou mais classes conjuradoras) e Magia de Pacto à parte.
-  const combinedSlots = character.derived.spellSlots ?? [];
+  // há duas ou mais classes conjuradoras): o TOTAL de cada nível vem SEMPRE
+  // daqui. A Magia de Pacto é um pool próprio, calculado à parte.
+  const derivedSlots = character.derived.spellSlots ?? [];
   const pactSlots = character.derived.pactSlots ?? null;
 
   // Conjuração por classe: como cada uma conjura e como aprende as magias. O
@@ -146,11 +148,10 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
     update({ spells: { ...character.spells, list: list.map((spell) => (spell.id === id ? { ...spell, ...patch } : spell)) } });
   }
 
-  function setSlot(level: number, patch: Partial<SpellSlot>): void {
-    const key = String(level);
-    const current = slots[key] ?? EMPTY_SLOT;
+  /** Grava o USO de um nível — o total é derivado e nunca é enviado. */
+  function setSlotUsed(level: number, next: number): void {
     update({
-      spells: { ...character.spells, slots: { ...slots, [key]: { ...current, ...patch } } },
+      spells: { ...character.spells, slotsUsed: { ...slotsUsed, [String(level)]: next } },
     });
   }
 
@@ -197,30 +198,31 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
   }
 
   // Fonte de Magia (Feiticeiro): converte pontos de feitiçaria em espaços de
-  // magia gastos e vice-versa, usando os campos já existentes (used/total).
+  // magia gastos e vice-versa. O TOTAL de cada nível é derivado; só o USO é
+  // gravado na ficha (`slotsUsed`).
   const sorcery = character.classAdjustments.resources.find(
     (resource) => resource.id === 'sorcery-points',
   );
+  const sorceryLevels = derivedSlots.filter((slot) => slot.level <= 5);
 
   function spendPointsForSlot(level: number, cost: number): void {
     if (!sorcery) return;
-    const key = String(level);
-    const slot = slots[key] ?? EMPTY_SLOT;
-    if (sorcery.remaining < cost || slot.used <= 0) return;
+    const used = slotsUsed[String(level)] ?? 0;
+    if (sorcery.remaining < cost || used <= 0) return;
     update({
       classState: {
         ...character.classState,
         used: { ...character.classState.used, [sorcery.id]: (character.classState.used[sorcery.id] ?? 0) + cost },
       },
-      spells: { ...character.spells, slots: { ...slots, [key]: { ...slot, used: slot.used - 1 } } },
+      spells: { ...character.spells, slotsUsed: { ...slotsUsed, [String(level)]: used - 1 } },
     });
   }
 
   function convertSlotToPoints(level: number): void {
     if (!sorcery) return;
-    const key = String(level);
-    const slot = slots[key] ?? EMPTY_SLOT;
-    if (slot.used >= slot.max || sorcery.remaining + level > sorcery.max) return;
+    const slot = derivedSlots.find((item) => item.level === level);
+    const used = slotsUsed[String(level)] ?? 0;
+    if (!slot || used >= slot.max || sorcery.remaining + level > sorcery.max) return;
     update({
       classState: {
         ...character.classState,
@@ -229,18 +231,12 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
           [sorcery.id]: Math.max(0, (character.classState.used[sorcery.id] ?? 0) - level),
         },
       },
-      spells: { ...character.spells, slots: { ...slots, [key]: { ...slot, used: slot.used + 1 } } },
+      spells: { ...character.spells, slotsUsed: { ...slotsUsed, [String(level)]: used + 1 } },
     });
   }
 
   // Agrupa as magias por nível (0 = truques) para exibir em blocos.
   const levels = [...new Set(list.map((spell) => spell.level))].sort((a, b) => a - b);
-
-  // Só os níveis com espaços ganham o card grande; os níveis zerados ficam numa
-  // linha compacta (mas ainda com o campo de total, para poder configurá-los).
-  const slotTotal = (level: number): number => (slots[String(level)] ?? EMPTY_SLOT).max;
-  const activeSlotLevels = SLOT_LEVELS.filter((level) => slotTotal(level) > 0);
-  const emptySlotLevels = SLOT_LEVELS.filter((level) => slotTotal(level) <= 0);
 
   return (
     <Section
@@ -301,7 +297,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
           )
         : null}
 
-      {combinedSlots.length > 0 || pactSlots ? (
+      {derivedSlots.length > 0 || pactSlots ? (
         <>
           <h3 className="subsection-title">Espaços pela regra de multiclasse</h3>
           <p className="section-note">
@@ -309,7 +305,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
             terço-conjurador. As magias preparadas continuam sendo contadas por classe.
           </p>
           <div className="slot-reference">
-            {combinedSlots.map((slot) => (
+            {derivedSlots.map((slot) => (
               <span className="slot-ref" key={slot.level}>
                 {SPELL_LEVEL_LABELS[slot.level]}: <strong>{slot.max}</strong>
               </span>
@@ -326,12 +322,13 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
 
       <h3 className="subsection-title">Espaços de magia</h3>
 
-      {activeSlotLevels.length === 0 ? (
+      {derivedSlots.length === 0 ? (
         <p className="empty-hint">Nenhum espaço de magia configurado.</p>
       ) : (
         <div className="grid grid-slots">
-          {activeSlotLevels.map((level) => {
-            const slot = slots[String(level)] ?? EMPTY_SLOT;
+          {derivedSlots.map((slot) => {
+            const level = slot.level;
+            const used = Math.min(slotsUsed[String(level)] ?? 0, slot.max);
 
             return (
               <div className="slot-card" key={level}>
@@ -339,34 +336,33 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
 
                 <SlotPips
                   level={level}
-                  slot={slot}
+                  max={slot.max}
+                  used={used}
                   readOnly={readOnly}
-                  onChange={(patch) => setSlot(level, patch)}
+                  onChange={(next) => setSlotUsed(level, next)}
                 />
 
                 <label className="slot-field">
                   <span>usados</span>
                   <InlineField
-                    value={slot.used}
+                    value={used}
                     mode="number"
                     min={0}
                     ariaLabel={`Espaços usados de ${level}º nível`}
-                    onCommit={(value) =>
-                      setSlot(level, { used: clampInt(value, 0, 99, slot.used) })
-                    }
+                    onCommit={(value) => setSlotUsed(level, clampInt(value, 0, slot.max, used))}
                   />
                 </label>
                 <label className="slot-field">
                   <span>total</span>
+                  {/* O total é DERIVADO do nível de conjurador: não é editável
+                      nem fica gravado na ficha. */}
                   <InlineField
                     value={slot.max}
                     mode="number"
-                    min={0}
-                    readOnly={lockedConstruction}
-                    ariaLabel={`Espaços totais de ${level}º nível`}
-                    onCommit={(value) =>
-                      setSlot(level, { max: clampInt(value, 0, 99, slot.max) })
-                    }
+                    readOnly
+                    title="Derivado do nível de conjurador"
+                    ariaLabel={`Espaços totais de ${level}º nível (derivados)`}
+                    onCommit={() => undefined}
                   />
                 </label>
               </div>
@@ -374,32 +370,6 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
           })}
         </div>
       )}
-
-      {/* Níveis sem espaços: uma linha compacta em vez de um card vazio cada. */}
-      {emptySlotLevels.length > 0 ? (
-        <div className="slot-inactive">
-          <span className="slot-inactive-label">Sem espaços</span>
-          {emptySlotLevels.map((level) => {
-            const slot = slots[String(level)] ?? EMPTY_SLOT;
-            return (
-              <label className="slot-inactive-item" key={level}>
-                <span className="slot-inactive-level">{SPELL_LEVEL_LABELS[level]}</span>
-                <InlineField
-                  className="slot-inactive-total"
-                  value={slot.max}
-                  mode="number"
-                  min={0}
-                  readOnly={lockedConstruction}
-                  ariaLabel={`Espaços totais de ${level}º nível`}
-                  onCommit={(value) =>
-                    setSlot(level, { max: clampInt(value, 0, 99, slot.max) })
-                  }
-                />
-              </label>
-            );
-          })}
-        </div>
-      ) : null}
 
       {/* Magia de Pacto: pool separado do Bruxo (todos os espaços têm o mesmo
           nível e recuperam no Descanso Curto). O total e o nível são derivados;
@@ -477,16 +447,17 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
             magia gastos ou espaços em pontos (1º = 2, 2º = 3, 3º = 5, 4º = 6, 5º = 7; sem 6º+).
           </p>
           <div className="sorcery-convert">
-            {SLOT_LEVELS.filter((level) => level <= 5).map((level) => {
+            {sorceryLevels.map((slot) => {
+              const level = slot.level;
               const cost = SORCERY_SLOT_COSTS[level];
-              const slot = slots[String(level)] ?? EMPTY_SLOT;
+              const used = Math.min(slotsUsed[String(level)] ?? 0, slot.max);
               return (
                 <div className="sorcery-row" key={level}>
                   <span className="sorcery-level">{SPELL_LEVEL_LABELS[level]}</span>
                   <button
                     type="button"
                     className="btn btn-small"
-                    disabled={readOnly || sorcery.remaining < cost || slot.used <= 0}
+                    disabled={readOnly || sorcery.remaining < cost || used <= 0}
                     onClick={() => spendPointsForSlot(level, cost)}
                   >
                     {cost} pts → recuperar 1 espaço
@@ -495,7 +466,7 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
                     type="button"
                     className="btn btn-small"
                     disabled={
-                      readOnly || slot.used >= slot.max || sorcery.remaining + level > sorcery.max
+                      readOnly || used >= slot.max || sorcery.remaining + level > sorcery.max
                     }
                     onClick={() => convertSlotToPoints(level)}
                   >

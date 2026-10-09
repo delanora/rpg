@@ -7,7 +7,11 @@ import {
   characterMaxHp,
   type SpellsStateDto,
 } from '../characters/characters.dto.js';
-import { spellsStateSchema } from '../characters/characters.schema.js';
+import {
+  spellSlotsUsedFrom,
+  spellsStateSchema,
+  withSpellSlotsUsed,
+} from '../characters/characters.schema.js';
 import { parseJson } from '../shared/json.js';
 import { publishChange, type SheetOwner } from '../characters/characters.service.js';
 import { recordRestSongOfRestRoll } from '../dice/dice.service.js';
@@ -18,6 +22,8 @@ import {
   normalizeClassState,
   pactMagicSlots,
   restoreShortRestResources,
+  spellSlotMaxByLevel,
+  spellSlotsForClasses,
 } from '../shared/classes.js';
 import { rollDie } from '../shared/dice.js';
 import type { ShortRestCompletionDto, ShortRestSongRollDto } from './short-rest-request.dto.js';
@@ -155,14 +161,23 @@ export async function completeCollectiveShortRest(
     // CURTO. Só o USO é persistido; o total vem do nível dele (`pactMagicSlots`,
     // derivado). Os espaços NORMAIS NÃO são tocados aqui — eles só voltam no
     // Descanso Longo.
+    const classEntries = normalizeClassEntries(character.classes);
     const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
       list: [],
-      slots: {},
+      slotsUsed: {},
       pactMagic: { used: 0 },
     });
-    const pactMax = pactMagicSlots(normalizeClassEntries(character.classes))?.max ?? null;
+    const pactMax = pactMagicSlots(classEntries)?.max ?? null;
     const pactMagicRestored = pactMax !== null && (spells.pactMagic?.used ?? 0) > 0;
-    const nextSpells = { ...spells, pactMagic: { used: 0 } };
+    // O `slotsUsed` é apenas reescrito como está (saneado contra o derivado
+    // atual) — nenhum espaço normal volta num Descanso Curto.
+    const nextSpells = {
+      ...withSpellSlotsUsed(
+        character.spells,
+        spellSlotsUsedFrom(character.spells, spellSlotMaxByLevel(spellSlotsForClasses(classEntries))),
+      ),
+      pactMagic: { used: 0 },
+    };
 
     const hpBefore = character.hpCurrent;
     let hpAfter = hpBefore;

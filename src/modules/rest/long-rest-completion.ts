@@ -7,6 +7,8 @@ import {
   normalizeClassState,
   pactMagicSlots,
   restoreLongRestResources,
+  spellSlotMaxByLevel,
+  spellSlotsForClasses,
   totalCharacterLevel,
 } from '../shared/classes.js';
 import {
@@ -19,7 +21,13 @@ import {
   type HitDiceSelection,
 } from '../shared/hit-dice.js';
 import { raceSpells } from '../shared/races/index.js';
-import { inventoryListSchema, raceChoicesSchema, spellsStateSchema } from '../characters/characters.schema.js';
+import {
+  inventoryListSchema,
+  raceChoicesSchema,
+  spellSlotsUsedFrom,
+  spellsStateSchema,
+  withSpellSlotsUsed,
+} from '../characters/characters.schema.js';
 import {
   characterClassAdjustments,
   characterMaxHp,
@@ -387,26 +395,31 @@ export async function completeLongRest(
       .map(([die, count]) => ({ die: Number(die), count }))
       .sort((a, b) => b.die - a.die);
 
-    // --- Espaços de magia NORMAIS: zera o uso mantendo a estrutura (PASSO 24)
-    //     O benefício oficial é `used → 0`; o `max` gravado é LEGADO (a
-    //     autoridade é o `derived.spellSlots`) e só é preservado fisicamente — a
-    //     auditoria olha o USO, nunca o max.
+    // --- Espaços de magia NORMAIS: o USO volta a ZERO (PASSO 24) ------------
+    //     O teto é DERIVADO (`derived.spellSlots`) e não é persistido: `slotsUsed`
+    //     fica VAZIO, porque ausência de chave significa 0 usados. A auditoria
+    //     olha o USO que existia antes, nunca um max.
+    const classEntries = normalizeClassEntries(character.classes);
     const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
       list: [],
-      slots: {},
+      slotsUsed: {},
       pactMagic: { used: 0 },
     });
-    const spellSlotLevelsRestored: number[] = [];
-    const nextSlots: Record<string, { max: number; used: number }> = {};
-    for (const [level, slot] of Object.entries(spells.slots)) {
-      if (slot.used > 0) spellSlotLevelsRestored.push(Number(level));
-      nextSlots[level] = { ...slot, used: 0 };
-    }
+    const usedBefore = spellSlotsUsedFrom(
+      character.spells,
+      spellSlotMaxByLevel(spellSlotsForClasses(classEntries)),
+    );
+    const spellSlotLevelsRestored = Object.keys(usedBefore)
+      .map(Number)
+      .sort((a, b) => a - b);
+    const nextSpells = {
+      ...withSpellSlotsUsed(character.spells, {}),
+      pactMagic: { used: 0 },
+    };
 
     // --- MAGIA DE PACTO: pool PRÓPRIO, também zerado pelo descanso (PHB 2014).
     //     Só o USO é persistido; o total vem do nível de Bruxo (nunca gravado).
-    const pactMax =
-      pactMagicSlots(normalizeClassEntries(character.classes))?.max ?? null;
+    const pactMax = pactMagicSlots(classEntries)?.max ?? null;
     const pactMagicRestored = pactMax !== null && (spells.pactMagic?.used ?? 0) > 0;
 
     // --- Recursos de CLASSE: recarga curta E longa (PASSO 26) ---------------
@@ -452,7 +465,7 @@ export async function completeLongRest(
         hpCurrent: hpAfter,
         hpTemp: 0,
         hitDice: hitDiceAfter as unknown as Prisma.InputJsonValue,
-        spells: { ...spells, slots: nextSlots, pactMagic: { used: 0 } } as unknown as Prisma.InputJsonValue,
+        spells: nextSpells as unknown as Prisma.InputJsonValue,
         classState: nextClassState as unknown as Prisma.InputJsonValue,
         ...(nextInventory
           ? { inventory: nextInventory as unknown as Prisma.InputJsonValue }
@@ -510,7 +523,7 @@ export async function completeLongRest(
         hpCurrent: hpAfter,
         hpTemp: 0,
         hitDice: hitDiceAfter,
-        spells: { ...spells, slots: nextSlots, pactMagic: { used: 0 } },
+        spells: nextSpells,
         ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
         classState: nextClassState,
         ...(nextInventory ? { inventory: nextInventory } : {}),
