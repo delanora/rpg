@@ -97,6 +97,8 @@ const LONG_REST_NOT_IN_PROGRESS = 'LONG_REST_NOT_IN_PROGRESS';
 const LONG_REST_REQUEST_NOT_APPROVED = 'LONG_REST_REQUEST_NOT_APPROVED';
 /** Quem chamou aceitou o descanso? Só ACCEPTED age no descanso em curso. */
 const NOT_ACCEPTED = 'NOT_ACCEPTED';
+/** A contribuição alvo é de OUTRO personagem (só o dono mexe nela). */
+const CONTRIBUTION_NOT_YOURS = 'CONTRIBUTION_NOT_YOURS';
 
 /** Autor da requisição (vem sempre do token). */
 export interface Actor {
@@ -727,7 +729,13 @@ export async function cancelLongRestRequest(
  * solicitação contribui, apenas com itens do PRÓPRIO inventário, e só quando a
  * mecânica está ligada. O cliente nunca envia valor/subtotal/total. Selecionar
  * NÃO consome: a quantidade fica RESERVADA (as operações de inventário respeitam
- * `quantity − reservado`). `quantity = 0` remove a contribuição.
+ * `quantity − reservado`).
+ *
+ * `quantity = 0` REMOVE a contribuição — e só isso: é uma remoção, não uma nova
+ * contribuição, então NÃO revalida o item (a pilha pode ter saído do inventário,
+ * o item pode ter deixado de ser recurso de acampamento e a quantidade não é
+ * conferida). Sem contribuição existente, é um no-op coerente. `quantity > 0`
+ * continua exigindo item existente, válido e quantidade disponível.
  *
  * Idempotente por `operationId` (tipo `LONG_REST_CAMP_SUPPLY_SET` + fingerprint
  * `{ requestId, inventoryItemId, quantity }`).
@@ -797,29 +805,33 @@ export async function setCampSupplyContribution(
         throw new HttpError('Sua sessão de descanso não está ativa.', 409, NOT_A_PARTICIPANT);
       }
 
-      // Item do PRÓPRIO inventário — o `characterId` NUNCA vem do cliente (PASSO 8).
+      // Contribuição JÁ existente desta pilha (se houver). A busca é por
+      // `requestId + inventoryItemId` e NÃO depende de o item existir: remover
+      // uma contribuição histórica é válido mesmo com a pilha fora do inventário.
+      const current = await tx.longRestCampSupplyContribution.findUnique({
+        where: { requestId_inventoryItemId: { requestId, inventoryItemId: input.inventoryItemId } },
+      });
+      // Só o DONO mexe na própria contribuição (nunca a de outro personagem).
+      if (current && current.characterId !== participant.characterId) {
+        throw new HttpError(
+          'Esta contribuição de acampamento pertence a outro personagem.',
+          403,
+          CONTRIBUTION_NOT_YOURS,
+        );
+      }
+
       const character = await tx.character.findUnique({
         where: { id: participant.characterId },
         select: { id: true, inventory: true },
       });
       if (!character) throw new HttpError('Personagem não encontrado.', 404);
-      const inventory = parseJson<InventoryItemDto[]>(
-        inventoryListSchema,
-        character.inventory,
-        [],
-      );
-      const catalog = await loadCatalogLookup([inventory]);
-      const item = syncInventory(inventory, catalog).find(
-        (entry) => entry.id === input.inventoryItemId,
-      );
-      if (!item) throw new HttpError('Item não encontrado no seu inventário.', 404);
 
-      const current = await tx.longRestCampSupplyContribution.findUnique({
-        where: { requestId_inventoryItemId: { requestId, inventoryItemId: input.inventoryItemId } },
-      });
-      const currentQuantity = current?.quantity ?? 0;
-
-      // quantity = 0 remove a contribuição (libera a reserva na hora).
+      // `quantity = 0` significa REMOVER esta contribuição (libera a reserva na
+      // hora) — NÃO é uma nova contribuição. Por isso este caminho não revalida
+      // o item: não exige que a pilha ainda exista, que o item continue marcado
+      // como recurso de acampamento nem a quantidade disponível. Sem
+      // contribuição existente é um no-op idempotente (a operação é registrada e
+      // o DTO atual volta), como já era.
       if (input.quantity === 0) {
         if (current) {
           await tx.longRestCampSupplyContribution.delete({ where: { id: current.id } });
@@ -839,6 +851,20 @@ export async function setCampSupplyContribution(
         });
         return loaded;
       }
+
+      // Daqui em diante (`quantity > 0`) o item precisa EXISTIR no inventário do
+      // PRÓPRIO personagem — o `characterId` NUNCA vem do cliente (PASSO 8).
+      const currentQuantity = current?.quantity ?? 0;
+      const inventory = parseJson<InventoryItemDto[]>(
+        inventoryListSchema,
+        character.inventory,
+        [],
+      );
+      const catalog = await loadCatalogLookup([inventory]);
+      const item = syncInventory(inventory, catalog).find(
+        (entry) => entry.id === input.inventoryItemId,
+      );
+      if (!item) throw new HttpError('Item não encontrado no seu inventário.', 404);
 
       // O item precisa ser um recurso de acampamento VÁLIDO (PASSO 9.8/9.9).
       if (!item.campSupply.enabled || item.campSupply.value <= 0) {
