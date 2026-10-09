@@ -99,6 +99,25 @@ export async function setExtraCoins(enabled: boolean): Promise<GameConfig> {
 }
 
 /**
+ * Recursos de Acampamento do Descanso Longo coletivo (mecânica OPCIONAL,
+ * inspirada no Baldur's Gate 3 — NÃO é regra do PHB 2014). Só MASTER.
+ *
+ * Liga/desliga a exigência e ajusta o custo por participante. O servidor
+ * recalcula e republica a solicitação aberta, então a mesa vê o novo
+ * `required` na hora.
+ */
+export async function setCampSupplies(input: {
+  enabled?: boolean;
+  costPerParticipant?: number;
+}): Promise<GameConfig> {
+  const { config } = await api<{ config: GameConfig }>('/api/game/camp-supplies', {
+    method: 'POST',
+    body: input,
+  });
+  return config;
+}
+
+/**
  * Define o nível inicial da mesa (somente mestre).
  *
  * É o nível em que os personagens novos começam: o assistente de criação aplica

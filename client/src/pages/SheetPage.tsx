@@ -26,6 +26,9 @@ import { fetchGameConfig } from '../gameApi';
 import { moveInventoryItem, useInventoryItem } from '../inventoryApi';
 import { resultBreakdown } from '../dice/format';
 import { closePresentation } from '../presentationApi';
+import { LongRestModal } from '../rest/LongRestModal';
+import { LongRestNotice } from '../rest/LongRestNotice';
+import { useLongRest } from '../rest/useLongRest';
 import { ShortRestModal } from '../rest/ShortRestModal';
 import { ShortRestNotice } from '../rest/ShortRestNotice';
 import { useShortRest } from '../rest/useShortRest';
@@ -59,6 +62,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
   const [combatView, setCombatView] = useState<SheetShortcut | null>(null);
   // Painel único do Descanso Curto coletivo (aberto pelo botão de Vida e Defesa).
   const [shortRestOpen, setShortRestOpen] = useState(false);
+  // Painel único do Descanso Longo coletivo (mesma área, ao lado do Curto).
+  const [longRestOpen, setLongRestOpen] = useState(false);
 
   // Clicar de novo no mesmo atalho fecha a seção aberta.
   const openSheetSection = useCallback((target: SheetShortcut) => {
@@ -84,11 +89,16 @@ export function SheetPage({ user }: { user: SessionUser }) {
       setCharacter((prev) => (!prev || updated.version >= prev.version ? updated : prev)),
   });
 
+  // Descanso Longo coletivo: o painel conduz o processo (solicitação →
+  // preparativos → resultado). A ficha atualizada chega pelo `sheet:updated`.
+  const longRest = useLongRest({ characterId: character?.id });
+
   const { connection, lastEventAt } = useRealtime({
     ...combatState.handlers,
     ...dice.handlers,
     ...music.handlers,
     ...shortRest.handlers,
+    ...longRest.handlers,
 
     onSheetUpdated: (payload) => {
       // Só aceita a própria ficha e versões mais novas (evita respostas fora de ordem).
@@ -341,6 +351,13 @@ export function SheetPage({ user }: { user: SessionUser }) {
         onOpen={() => setShortRestOpen(true)}
       />
 
+      {/* Descanso Longo: convite pendente ou preparativos em andamento. */}
+      <LongRestNotice
+        request={longRest.request}
+        characterId={character?.id}
+        onOpen={() => setLongRestOpen(true)}
+      />
+
       <main className="app-main app-main-wide">
         {loading ? (
           <p className="splash">Carregando a ficha...</p>
@@ -422,6 +439,12 @@ export function SheetPage({ user }: { user: SessionUser }) {
                       shortRest.request?.status === 'APPROVED',
                     onOpen: () => setShortRestOpen(true),
                   }}
+                  longRest={{
+                    active:
+                      longRest.request?.status === 'PENDING' ||
+                      longRest.request?.status === 'APPROVED',
+                    onOpen: () => setLongRestOpen(true),
+                  }}
                   levelUp={{
                     available: levelUpAvailable,
                     hint: levelUpHint,
@@ -435,6 +458,16 @@ export function SheetPage({ user }: { user: SessionUser }) {
                     open
                     onClose={() => setShortRestOpen(false)}
                     rest={shortRest}
+                    character={character}
+                  />
+                ) : null}
+
+                {/* Painel único do Descanso Longo: o mesmo, no estado atual. */}
+                {longRestOpen ? (
+                  <LongRestModal
+                    open
+                    onClose={() => setLongRestOpen(false)}
+                    rest={longRest}
                     character={character}
                   />
                 ) : null}

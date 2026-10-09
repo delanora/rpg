@@ -81,6 +81,15 @@ interface VitalsSectionProps extends SheetSectionProps {
     active: boolean;
     onOpen: () => void;
   };
+  /**
+   * Descanso Longo: o botão abre o painel coletivo no estado atual. Duas ações
+   * distintas lado a lado (Curto x Longo) — nenhuma regra é decidida aqui.
+   */
+  longRest?: {
+    /** Há uma solicitação coletiva PENDING/APPROVED em andamento. */
+    active: boolean;
+    onOpen: () => void;
+  };
 }
 
 export function VitalsSection({
@@ -88,6 +97,7 @@ export function VitalsSection({
   update,
   embedded = false,
   shortRest,
+  longRest,
 }: VitalsSectionProps) {
   // PV atual/temporário, usos de recursos e espaços continuam editáveis pelo
   // jogador depois de finalizar a criação; PV máximo, CA, iniciativa e
@@ -133,12 +143,11 @@ export function VitalsSection({
   /*
    * Descanso Longo: a autoridade mecânica é do SERVIDOR.
    *
-   * O `longRest()` antigo aplicava os benefícios na ficha LOCAL (PV ao máximo,
-   * espaços recarregados, `classState.used` apagado). Isso não pode coexistir com
-   * a conclusão real do descanso coletivo — que é transacional e precisa do
-   * consenso da mesa, do ready, da seleção de Dados de Vida e do consumo dos
-   * recursos de acampamento. Enquanto o painel coletivo não chega (UI pendente),
-   * o botão fica DESATIVADO: nenhuma ficha é alterada por aqui.
+   * Nenhum benefício é aplicado na ficha LOCAL (o `longRest()` antigo fazia isso:
+   * PV ao máximo, espaços recarregados, `classState.used` apagado). A conclusão
+   * real é transacional e depende do consenso da mesa, do ready, da seleção de
+   * Dados de Vida e do consumo dos recursos de acampamento — por isso o botão
+   * abre o painel coletivo e NADA é alterado por aqui.
    */
 
   const kiResource = classAdjustments.resources.find((resource) => resource.id === 'ki');
@@ -503,15 +512,19 @@ export function VitalsSection({
             {shortRest.active ? <span className="class-rest-badge">em andamento</span> : null}
           </button>
         ) : null}
-        <button
-          type="button"
-          className="btn btn-small class-rest-btn"
-          disabled
-          title="O Descanso Longo é conduzido pela solicitação coletiva da mesa (pronto + conclusão do servidor)."
-        >
-          <Icon name="bed" size={15} />
-          <span>Descanso Longo</span>
-        </button>
+        {longRest ? (
+          <button
+            type="button"
+            className={`btn btn-small class-rest-btn${longRest.active ? ' btn-primary' : ''}`}
+            disabled={readOnly}
+            title="O Descanso Longo é coletivo: a mesa responde, escolhe os preparativos e o servidor conclui."
+            onClick={longRest.onOpen}
+          >
+            <Icon name="bed" size={15} />
+            <span>Descanso Longo</span>
+            {longRest.active ? <span className="class-rest-badge">em andamento</span> : null}
+          </button>
+        ) : null}
       </div>
     </Section>
   );
