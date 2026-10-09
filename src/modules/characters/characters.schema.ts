@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { attackSchema, damageTypeListSchema } from '../shared/attacks.js';
 import { coinsSchema, coinAmountSchema, coinDeltaSchema } from '../shared/coins.js';
-import { MAX_CLASSES, getClassDefinition } from '../shared/classes.js';
+import { MAX_CLASSES, effectiveSpellSlotUsed, getClassDefinition } from '../shared/classes.js';
 import { getTool } from '../shared/tools.js';
 import { ITEM_RARITIES, campSupplySchema, itemDetailsSchema } from '../shared/item-details.js';
 import {
@@ -208,10 +208,10 @@ export const spellSchema = z.object({
     .optional(),
 });
 
-export const spellSlotSchema = z.object({
-  max: nonNegativeInt.default(0),
-  used: nonNegativeInt.default(0),
-});
+/** Chave de nível de espaço de magia: 1 a 9 (não existe 0 nem 10+). */
+export const spellSlotLevelSchema = z
+  .string()
+  .regex(/^[1-9]$/, 'Nível de espaço de magia inválido (use 1 a 9).');
 
 /**
  * Magia de Pacto (Bruxo): a ÚNICA informação persistida é o USO. O total
@@ -224,28 +224,118 @@ export const pactMagicStateSchema = z.object({
   used: nonNegativeInt.default(0),
 });
 
+/**
+ * Estado de magias GRAVADO (formato ATUAL):
+ *
+ *   { list, slotsUsed: { "1": 2 }, pactMagic: { used: 1 } }
+ *
+ * SÓ O CONSUMO é persistido. A capacidade máxima é REGRA DERIVADA
+ * (`derived.spellSlots` / `derived.pactSlots`) e NUNCA vai para o banco.
+ *
+ * O shape antigo (`slots[level] = { max, used }`) sobrevive apenas na LEITURA e
+ * na ENTRADA, durante a janela de migração — ver `spellSlotsUsedFrom` e o
+ * backfill em `src/scripts/migrate-spell-slots.ts`.
+ */
 export const spellsStateSchema = z.object({
   list: z.array(spellSchema).max(300).default([]),
-  slots: z.record(z.string(), spellSlotSchema).default({}),
+  /** Uso por nível (chaves 1..9). Ausência de chave = 0 usados. */
+  slotsUsed: z.record(z.string(), nonNegativeInt).default({}),
   pactMagic: pactMagicStateSchema.default({ used: 0 }),
 });
 
 export type SpellsStateInput = z.infer<typeof spellsStateSchema>;
 
 /**
- * PATCH de `spells`: igual ao estado gravado, mas `pactMagic` NÃO ganha o
- * default — no PATCH a AUSÊNCIA da chave significa "não mexer", e o serviço
- * preserva o uso armazenado (ver `characters.service.ts`). Sem isso um PATCH
- * parcial do mestre equivaleria a recuperar a Magia de Pacto de graça.
+ * Shape ANTIGO de um espaço (`{ max, used }`), aceito SÓ na entrada de um PATCH
+ * durante a janela de deploy: o serviço aproveita o `used` e DESCARTA o `max`.
+ * Nada deste shape é persistido. Ver `characters.service.ts`.
+ */
+const legacySpellSlotSchema = z.object({
+  max: nonNegativeInt.default(0),
+  used: nonNegativeInt.default(0),
+});
+
+/**
+ * PATCH de `spells`: igual ao estado gravado, mas com as chaves que precisam
+ * distinguir AUSÊNCIA de valor:
  *
- * Só a ENTRADA usa este schema; leitura, criação e os descansos continuam com
- * `spellsStateSchema` (onde o default `{ used: 0 }` segue desejável).
+ * - `slotsUsed`/`pactMagic` são OPCIONAIS: omitir significa "não mexer" (o
+ *   serviço preserva o uso gravado). Sem isso, um ajuste administrativo da
+ *   ficha — editar a lista de magias, por exemplo — zeraria o uso e concederia
+ *   uma recuperação de espaço que só o descanso longo faz.
+ * - `slots` (shape antigo) é aceito e convertido apenas no `used`.
+ * - As chaves de `slotsUsed` são validadas (1..9).
  */
 export const spellsPatchSchema = spellsStateSchema.extend({
+  slotsUsed: z.record(spellSlotLevelSchema, nonNegativeInt).optional(),
   pactMagic: pactMagicStateSchema.optional(),
+  slots: z.record(z.string(), legacySpellSlotSchema).optional(),
 });
 
 export type SpellsPatchInput = z.infer<typeof spellsPatchSchema>;
+
+/**
+ * Uso dos espaços NORMAIS a partir do estado GRAVADO, já SANEADO contra o max
+ * DERIVADO de cada nível:
+ *
+ *   used = min(max(0, gravado), derivado)
+ *
+ * Níveis fora de 1..9, níveis SEM espaço derivado (max 0) e usos zerados NÃO
+ * entram — ausência de chave significa uso 0 (é o formato gravado:
+ * `slotsUsed`).
+ *
+ * O shape ANTIGO (`slots[level] = { max, used }`) é aceito SÓ aqui, durante a
+ * migração: o `max` é DESCARTADO (capacidade é regra derivada) e apenas o `used`
+ * é aproveitado. Se as duas formas aparecerem, o `slotsUsed` explícito vence
+ * nível a nível.
+ */
+export function spellSlotsUsedFrom(
+  raw: unknown,
+  maxByLevel: Record<string, number>,
+): Record<string, number> {
+  const source = (raw ?? {}) as { slotsUsed?: unknown; slots?: unknown };
+  const used: Record<string, number> = {};
+  const explicit = new Set<string>();
+
+  const take = (level: string, value: unknown): void => {
+    if (!/^[1-9]$/.test(level)) return;
+    if (typeof value !== 'number' || !Number.isInteger(value)) return;
+    const max = maxByLevel[level] ?? 0;
+    if (max <= 0) return;
+    const clamped = effectiveSpellSlotUsed(value, max);
+    if (clamped > 0) used[level] = clamped;
+  };
+
+  if (source.slotsUsed && typeof source.slotsUsed === 'object') {
+    for (const [level, value] of Object.entries(source.slotsUsed as Record<string, unknown>)) {
+      if (!/^[1-9]$/.test(level)) continue;
+      explicit.add(level);
+      take(level, value);
+    }
+  }
+  if (source.slots && typeof source.slots === 'object') {
+    for (const [level, slot] of Object.entries(source.slots as Record<string, unknown>)) {
+      if (explicit.has(level)) continue;
+      take(level, (slot as { used?: unknown } | null)?.used);
+    }
+  }
+
+  return used;
+}
+
+/**
+ * Reescreve o `slotsUsed` PRESERVANDO o resto do estado gravado (`list`,
+ * `pactMagic` e campos adicionais) e DESCARTANDO o shape antigo `slots`. É o
+ * que os descansos, o Level Down e o backfill usam para persistir o uso saneado
+ * sem tocar no resto.
+ */
+export function withSpellSlotsUsed(
+  raw: unknown,
+  slotsUsed: Record<string, number>,
+): Record<string, unknown> {
+  const { slots: _legacy, ...rest } = (raw ?? {}) as Record<string, unknown>;
+  return { ...rest, slotsUsed };
+}
 
 /** Uma magia escolhida do catálogo para uma classe. */
 export const spellbookEntrySchema = z.object({

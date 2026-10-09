@@ -256,14 +256,14 @@ export interface Spell {
   raceUses?: { max: number; used: number };
 }
 
-export interface SpellSlot {
-  max: number;
-  used: number;
-}
-
 export interface SpellsState {
   list: Spell[];
-  slots: Record<string, SpellSlot>;
+  /**
+   * Uso dos espaços NORMAIS por nível (`{ "1": 2, "2": 1 }`): é o ÚNICO estado
+   * de espaço persistido. O TOTAL (max) é DERIVADO do nível de conjurador —
+   * ver `derived.spellSlots` — e nunca é gravado aqui. Chave ausente = 0.
+   */
+  slotsUsed: Record<string, number>;
   /**
    * Magia de Pacto (Bruxo): o ÚNICO campo persistido é o `used` — o pool é
    * próprio e separado dos espaços normais. O `max` e o `slotLevel` são SEMPRE

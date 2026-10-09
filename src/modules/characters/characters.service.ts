@@ -62,7 +62,9 @@ import {
 import { parseJson } from '../shared/json.js';
 import {
   raceChoicesSchema,
+  spellSlotsUsedFrom,
   spellsStateSchema,
+  withSpellSlotsUsed,
   type SpellsPatchInput,
   type SpellsStateInput,
 } from './characters.schema.js';
@@ -264,7 +266,7 @@ function withExpertiseSkills(
 }
 
 function emptySpells(): Prisma.InputJsonValue {
-  return { list: [], slots: {}, pactMagic: { used: 0 } };
+  return { list: [], slotsUsed: {}, pactMagic: { used: 0 } };
 }
 
 /**
@@ -1200,6 +1202,17 @@ export async function levelDownCharacter(
     skills,
     proficiencies,
     classState: nextClassState,
+    // --- Espaços de magia: o USO é revalidado contra o derivado RESULTANTE ---
+    // O teto vem das classes que sobraram: o uso que não cabe mais é DESCARTADO
+    // — e isso é PERSISTIDO, para que subir de nível de novo não ressuscite um
+    // uso antigo (o espaço perdido volta disponível, não "já gasto").
+    spells: withSpellSlotsUsed(
+      target.spells,
+      spellSlotsUsedFrom(
+        target.spells,
+        spellSlotMaxByLevel(spellSlotsForClasses(nextEntries)),
+      ),
+    ) as unknown as Prisma.InputJsonValue,
     ...abilityData,
     version: { increment: 1 },
   };
@@ -1907,15 +1920,23 @@ export async function completeShortRest(
 
   // A MAGIA DE PACTO (pool PRÓPRIO do Bruxo, PHB 2014) também recupera no
   // Descanso Curto: só o USO volta a zero, na MESMA escrita da ficha. O total é
-  // derivado do nível de Bruxo e os espaços NORMAIS não são tocados aqui.
+  // derivado do nível de Bruxo e os espaços NORMAIS não são tocados aqui — o
+  // `slotsUsed` é apenas reescrito como está (já saneado contra o derivado).
+  const classEntries = normalizeClassEntries(character.classes);
   const spells = parseJson<SpellsStateInput>(spellsStateSchema, character.spells, {
     list: [],
-    slots: {},
+    slotsUsed: {},
     pactMagic: { used: 0 },
   });
-  const pactMax = pactMagicSlots(normalizeClassEntries(character.classes))?.max ?? null;
+  const pactMax = pactMagicSlots(classEntries)?.max ?? null;
   const pactMagicRestored = pactMax !== null && (spells.pactMagic?.used ?? 0) > 0;
-  const nextSpells = { ...spells, pactMagic: { used: 0 } };
+  const nextSpells = {
+    ...withSpellSlotsUsed(
+      character.spells,
+      spellSlotsUsedFrom(character.spells, spellSlotMaxByLevel(spellSlotsForClasses(classEntries))),
+    ),
+    pactMagic: { used: 0 },
+  };
 
   let committed!: {
     updated: Character;
@@ -2235,7 +2256,7 @@ export async function setClassSpellbook(
 
     const stored = parseJson<SpellsStateInput>(spellsStateSchema, character.spells, {
       list: [],
-      slots: {},
+      slotsUsed: {},
       pactMagic: { used: 0 },
     });
     // Mantém as magias que NÃO são desta classe (texto livre ou de outra classe).
@@ -2253,9 +2274,19 @@ export async function setClassSpellbook(
       })),
     ];
 
+    // O USO dos espaços continua como estava (já saneado contra o derivado das
+    // classes atuais) — trocar o livro de magias não mexe em espaço nenhum.
+    const nextState = {
+      ...withSpellSlotsUsed(
+        character.spells,
+        spellSlotsUsedFrom(character.spells, spellSlotMaxByLevel(spellSlotsForClasses(entries))),
+      ),
+      list,
+    };
+
     return tx.character.update({
       where: { userId: actor.userId },
-      data: { spells: { ...stored, list } as unknown as Prisma.InputJsonValue },
+      data: { spells: nextState as unknown as Prisma.InputJsonValue },
     });
   });
 
@@ -2446,20 +2477,60 @@ export async function republishSheetsWithCatalogItem(itemId: string): Promise<vo
 }
 
 /**
+ * Uso EXPLÍCITO enviado num PATCH: aceita `slotsUsed` (formato atual) e o shape
+ * LEGADO (`slots[level].used`, aproveitando só o `used`). NÃO saneia nem clampa:
+ * devolve o mapa por nível INCLUSIVE zeros (`used = 0` é uma recuperação
+ * deliberada) para o merge distinguir "não mandou" de "mandou zero". O
+ * `slotsUsed` explícito vence o legado nível a nível.
+ */
+function incomingSlotsUsed(incoming: SpellsPatchInput): Record<string, number> {
+  const used: Record<string, number> = {};
+  const explicit = new Set<string>();
+
+  for (const [level, value] of Object.entries(incoming.slotsUsed ?? {})) {
+    if (!/^[1-9]$/.test(level)) continue;
+    explicit.add(level);
+    used[level] = value;
+  }
+  for (const [level, slot] of Object.entries(incoming.slots ?? {})) {
+    if (!/^[1-9]$/.test(level) || explicit.has(level)) continue;
+    used[level] = slot.used;
+  }
+
+  return used;
+}
+
+/**
+ * Uso EFETIVO resultante de um PATCH, nível a nível: o valor EXPLÍCITO enviado
+ * (ou o gravado, quando o nível não veio) limitado pelo `max` DERIVADO. Níveis
+ * sem espaço derivado e usos zerados não entram (ausência = 0).
+ */
+function resolveSlotsUsed(
+  storedUsed: Record<string, number>,
+  incomingUsed: Record<string, number>,
+  maxByLevel: Record<string, number>,
+): Record<string, number> {
+  const slotsUsed: Record<string, number> = {};
+
+  for (const level of new Set([...Object.keys(storedUsed), ...Object.keys(incomingUsed)])) {
+    const raw = incomingUsed[level] !== undefined ? incomingUsed[level] : (storedUsed[level] ?? 0);
+    const capped = effectiveSpellSlotUsed(raw, maxByLevel[level] ?? 0);
+    if (capped > 0) slotsUsed[level] = capped;
+  }
+
+  return slotsUsed;
+}
+
+/**
  * Espaços de magia de uma ficha já finalizada: o jogador só gasta e recupera
- * usos. A lista de magias conhecidas e o TOTAL de cada nível vêm da classe e
- * do Level Up, então continuam como estavam.
+ * usos. A lista de magias conhecidas vem do livro/Level Up e continua como
+ * estava; o TOTAL de cada nível é DERIVADO (`spellSlotsForClasses`).
  *
  * A MAGIA DE PACTO é um POOL PRÓPRIO (PHB 2014): só o `used` é persistido, e ele
  * é limitado pelo `max` DERIVADO (`pactMagicSlots`) — o cliente nunca define o
- * total. Sem Bruxo (`pactMax === null`) o uso é forçado a zero.
- *
- * `incoming` é a entrada do PATCH (`pactMagic` pode estar AUSENTE). No caminho do
- * JOGADOR a ausência continua valendo zero (comportamento de sempre: a UI manda
- * o objeto inteiro); quem PRESERVA o valor armazenado é o caminho do mestre.
- *
- * O `used` gravado é SEMPRE limitado pelo `max` DERIVADO do nível
- * (`spellSlotsForClasses`) — o `max` antigo do JSON não limita mais nada.
+ * total. Sem Bruxo (`pactMax === null`) o uso é forçado a zero; no caminho do
+ * JOGADOR a ausência de `pactMagic` continua valendo zero (a UI manda o objeto
+ * inteiro).
  */
 function mergeSpellUsage(
   storedRaw: unknown,
@@ -2468,21 +2539,15 @@ function mergeSpellUsage(
 ): Prisma.InputJsonValue {
   const stored = parseJson<SpellsStateInput>(spellsStateSchema, storedRaw, emptySpellsInput());
   const maxByLevel = spellSlotMaxByLevel(spellSlotsForClasses(classes));
-  const slots: SpellsStateInput['slots'] = {};
-
-  // Os níveis DERIVADOS entram mesmo sem entrada gravada: é o que permite gastar
-  // um espaço recém-ganho no Level Up antes de qualquer sincronização do JSON.
-  for (const level of new Set([...Object.keys(stored.slots), ...Object.keys(maxByLevel)])) {
-    const used = incoming.slots?.[level]?.used ?? stored.slots[level]?.used ?? 0;
-    slots[level] = {
-      max: stored.slots[level]?.max ?? 0,
-      used: effectiveSpellSlotUsed(used, maxByLevel[level] ?? 0),
-    };
-  }
+  const slotsUsed = resolveSlotsUsed(
+    spellSlotsUsedFrom(storedRaw, maxByLevel),
+    incomingSlotsUsed(incoming),
+    maxByLevel,
+  );
 
   return {
+    ...withSpellSlotsUsed(storedRaw, slotsUsed),
     list: stored.list,
-    slots,
     pactMagic: {
       used: clampPactMagicUsed(incoming.pactMagic?.used ?? 0, pactMagicSlots(classes)?.max ?? null),
     },
@@ -2491,7 +2556,7 @@ function mergeSpellUsage(
 
 /** Estado inicial de `spells` quando o JSONB está vazio/inválido. */
 function emptySpellsInput(): SpellsStateInput {
-  return { list: [], slots: {}, pactMagic: { used: 0 } };
+  return { list: [], slotsUsed: {}, pactMagic: { used: 0 } };
 }
 
 /**
@@ -2866,36 +2931,22 @@ async function applyCharacterPatch(
         emptySpellsInput(),
       );
       const maxByLevel = spellSlotMaxByLevel(spellSlotsForClasses(classes));
-      const incomingSlots = patch.spells.slots ?? {};
-      const slots: SpellsStateInput['slots'] = {};
 
       // PATCH é uma atualização PARCIAL: omitir um nível (ou o `used` dele)
       // PRESERVA o que já estava gravado. Sem isso, um ajuste administrativo da
       // ficha — editar a lista de magias, por exemplo — zeraria o uso e daria uma
       // recuperação de espaços que só o descanso longo concede.
-      for (const level of new Set([
-        ...Object.keys(stored.slots),
-        ...Object.keys(maxByLevel),
-        ...Object.keys(incomingSlots),
-      ])) {
-        const incomingSlot = incomingSlots[level];
-        slots[level] = {
-          // O `max` gravado é LEGADO (a autoridade é o derivado) e continua sendo
-          // preservado para compatibilidade — o mestre pode gravá-lo, o jogador
-          // não. Ele NUNCA é usado como limite.
-          max: incomingSlot?.max ?? stored.slots[level]?.max ?? 0,
-          used: effectiveSpellSlotUsed(
-            incomingSlot?.used ?? stored.slots[level]?.used ?? 0,
-            maxByLevel[level] ?? 0,
-          ),
-        };
-      }
+      const slotsUsed = resolveSlotsUsed(
+        spellSlotsUsedFrom(existing.spells, maxByLevel),
+        incomingSlotsUsed(patch.spells),
+        maxByLevel,
+      );
 
-      // A Magia de Pacto segue a mesma regra: omitir `pactMagic` preserva o uso,
-      // e o `max` continua DERIVADO do nível de Bruxo (nunca vem do cliente).
+      // A lista é uma coleção: o mestre substitui a que mandou. Os espaços
+      // NORMAIS e a Magia de Pacto seguem a regra acima (omissão preserva).
       data.spells = {
-        ...patch.spells,
-        slots,
+        ...withSpellSlotsUsed(existing.spells, slotsUsed),
+        list: patch.spells.list,
         pactMagic: {
           used: clampPactMagicUsed(
             patch.spells.pactMagic?.used ?? stored.pactMagic?.used ?? 0,

@@ -6,7 +6,14 @@ import { deleteUploadedImage } from '../lib/uploads.js';
 import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
 import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
-import { restoreShortRestResources, songOfRestDie } from '../modules/shared/classes.js';
+import { spellSlotsUsedFrom, withSpellSlotsUsed } from '../modules/characters/characters.schema.js';
+import {
+  normalizeClassEntries,
+  restoreShortRestResources,
+  songOfRestDie,
+  spellSlotMaxByLevel,
+  spellSlotsForClasses,
+} from '../modules/shared/classes.js';
 import {
   availableQuantity,
   reservedQuantities,
@@ -617,7 +624,7 @@ async function main(): Promise<void> {
       features: [{ id: 'f1', name: 'Visão no escuro', source: 'race', description: 'Enxerga no escuro até 18m.' }],
       spells: {
         list: [{ id: 's1', name: 'Mísseis Mágicos', level: 1, school: 'Evocação', prepared: true, description: '' }],
-        slots: { '1': { max: 2, used: 1 } },
+        slotsUsed: { '1': 1 },
       },
   });
   check('peso total é somado (3 + 1,5 = 4,5)', withItems.data?.character?.derived?.totalWeight === 4.5, `recebido: ${withItems.data?.character?.derived?.totalWeight}`);
@@ -643,8 +650,9 @@ async function main(): Promise<void> {
     JSON.stringify(fixedAttack),
   );
   check('características são gravadas', withItems.data?.character?.features?.length === 1);
-  // O `max` do JSON é LEGADO desde a 5.2.5C: esta ficha é um GUERREIRO (sem
-  // conjuração), então o espaço gravado não vira espaço EFETIVO (0/0).
+  // Desde a 5.2.5D o `max` NÃO é mais persistido: esta ficha é um GUERREIRO (sem
+  // conjuração), então o uso enviado não tem espaço derivado que o sustente e o
+  // shape legado `slots` não aparece em lugar nenhum.
   const withItemsRaw = JSON.parse(
     JSON.stringify(
       (
@@ -656,13 +664,14 @@ async function main(): Promise<void> {
     ),
   );
   check(
-    'magias e espaços são gravados',
+    'magias são gravadas e o consumo sem espaço derivado não é persistido',
     withItems.data?.character?.spells?.list?.length === 1 &&
-      withItems.data?.character?.spells?.slots?.['1']?.max === 0 &&
-      withItemsRaw?.slots?.['1']?.max === 2,
+      withItems.data?.character?.spells?.slotsUsed?.['1'] === undefined &&
+      JSON.stringify(withItemsRaw?.slotsUsed) === '{}' &&
+      withItemsRaw?.slots === undefined,
     JSON.stringify({
-      dto: withItems.data?.character?.spells?.slots,
-      raw: withItemsRaw?.slots,
+      dto: withItems.data?.character?.spells?.slotsUsed,
+      raw: withItemsRaw,
     }),
   );
 
@@ -4795,7 +4804,9 @@ async function main(): Promise<void> {
     JSON.stringify({ status: statePatch.status, hp: stateSheet?.hpCurrent }),
   );
 
-  // Espaços de magia: o USO muda, mas a lista e o TOTAL (da classe) não.
+  // Espaços de magia: o USO muda, mas a lista e o TOTAL (derivado da classe) não.
+  // O mestre ainda manda o shape LEGADO (`slots`) de propósito: ele é aceito,
+  // convertido em uso e DESCARTADO — nunca persistido.
   await api(`/api/characters/${playerCharacterId}`, {
     method: 'PATCH',
     token: masterToken,
@@ -4809,7 +4820,7 @@ async function main(): Promise<void> {
         list: [
           { id: 'inventada', name: 'Magia inventada', level: 1, school: '', prepared: false, description: '' },
         ],
-        slots: { '1': { max: 9, used: 1 } },
+        slotsUsed: { '1': 1 },
       },
     },
   });
@@ -4819,9 +4830,8 @@ async function main(): Promise<void> {
     slotsPatched.status === 200,
     JSON.stringify(slotsAfter),
   );
-  // Desde a 5.2.5C o MAX é DERIVADO: esta ficha é um BÁRBARO (sem conjuração),
-  // então o espaço legado gravado pelo mestre deixa de ter efeito — a leitura
-  // efetiva é 0/0. O total gravado, porém, segue no JSON (compatibilidade).
+  // Desde a 5.2.5D o `max` NÃO é mais persistido: esta ficha é um BÁRBARO (sem
+  // conjuração), então não existe espaço derivado que sustente o uso enviado.
   const slotsRawAfter = JSON.parse(
     JSON.stringify(
       (
@@ -4833,19 +4843,22 @@ async function main(): Promise<void> {
     ),
   );
   check(
-    'criação finalizada: sem conjuração não existe espaço EFETIVO (max derivado 0 / used 0)',
-    slotsAfter?.slots?.['1']?.max === 0 && slotsAfter?.slots?.['1']?.used === 0,
-    JSON.stringify(slotsAfter?.slots),
+    'criação finalizada: sem conjuração não existe espaço EFETIVO (derivado vazio / uso 0)',
+    (slotsAfter?.slotsUsed?.['1'] ?? 0) === 0 &&
+      JSON.stringify(slotsAfter?.derived?.spellSlots ?? []) === '[]' &&
+      slotsAfter?.slots === undefined,
+    JSON.stringify({ slotsUsed: slotsAfter?.slotsUsed, derived: slotsAfter?.derived?.spellSlots }),
   );
   check(
-    'criação finalizada: o jogador não muda o total LEGADO nem a lista (que segue vazia)',
+    'criação finalizada: o `max` deixou de existir no estado gravado e a lista do jogador segue vazia',
     // As magias DERIVADAS (juramento/raça) não são gravadas: a lista contada é a
     // que o jogador realmente escolheu.
     (slotsAfter?.list ?? []).filter(
       (spell: any) => spell.oath !== true && spell.race !== true,
     ).length === 0 &&
-      slotsRawAfter?.slots?.['1']?.max === 2,
-    JSON.stringify(slotsRawAfter?.slots),
+      slotsRawAfter?.slots === undefined &&
+      JSON.stringify(slotsRawAfter?.slotsUsed ?? {}) === '{}',
+    JSON.stringify(slotsRawAfter),
   );
   const masterProficiencies = await api(`/api/characters/${playerCharacterId}`, {
     method: 'PATCH',
@@ -7147,7 +7160,7 @@ async function main(): Promise<void> {
   // anterior, e a contagem de classe fica isolada.
   await prisma.character.update({
     where: { userId: spellbook.userId },
-    data: { spells: { list: [], slots: {} } as any },
+    data: { spells: { list: [], slotsUsed: {} } as any },
   });
 
   // Drow no 5º nível: truque + as duas magias 1x/descanso longo, com CD/ataque.
@@ -15755,7 +15768,7 @@ async function main(): Promise<void> {
             ...(spec.hpMax === undefined ? {} : { hpMax: spec.hpMax }),
             hpTemp: spec.hpTemp ?? 0,
             hitDice: (spec.hitDice ?? {}) as any,
-            spells: (spec.spells ?? { list: [], slots: {} }) as any,
+            spells: (spec.spells ?? { list: [], slotsUsed: {} }) as any,
             classState: (spec.classState ?? { active: [], used: {}, choices: {} }) as any,
             ...(spec.raceId === undefined ? {} : { raceId: spec.raceId }),
             ...(spec.features === undefined ? {} : { features: spec.features as any }),
@@ -16386,7 +16399,7 @@ async function main(): Promise<void> {
           hpMax: 30,
           hpTemp: 3,
           hitDice: { usedByDie: { '10': 2, '6': 1 } },
-          spells: { list: [], slots: { '1': { max: 3, used: 2 }, '2': { max: 1, used: 1 } } },
+          spells: { list: [], slotsUsed: { '1': 2, '2': 1 } },
           classState: { active: [], used: { 'second-wind': 1 }, choices: {} },
         },
         B: {
@@ -16395,7 +16408,7 @@ async function main(): Promise<void> {
           hpMax: 20,
           hpTemp: 2,
           hitDice: { usedByDie: { '6': 1 } },
-          spells: { list: [], slots: { '1': { max: 4, used: 3 } } },
+          spells: { list: [], slotsUsed: { '1': 3 } },
           classState: { active: [], used: { 'sorcery-points': 2 }, choices: {} },
         },
         C: {
@@ -16463,12 +16476,12 @@ async function main(): Promise<void> {
         JSON.stringify({ sheet: lcSheetEv?.userId, status: lcDoneEv?.request?.status }),
       );
       check(
-        '49.39/49.41/49.42) A: PV ao máximo efetivo, PV temporário zerado e espaços normais sem uso',
+        '49.39/49.41/49.42) A: PV ao máximo efetivo, PV temporário zerado e `slotsUsed` vazio (sem uso)',
         lcAfterA.hpCurrent === 30 &&
           lcAfterA.hpTemp === 0 &&
-          (lcAfterA.spells as any)?.slots?.['1']?.used === 0 &&
-          (lcAfterA.spells as any)?.slots?.['2']?.used === 0,
-        JSON.stringify({ hp: lcAfterA.hpCurrent, hpTemp: lcAfterA.hpTemp, slots: (lcAfterA.spells as any)?.slots }),
+          JSON.stringify((lcAfterA.spells as any)?.slotsUsed ?? {}) === '{}' &&
+          (lcAfterA.spells as any)?.slots === undefined,
+        JSON.stringify({ hp: lcAfterA.hpCurrent, hpTemp: lcAfterA.hpTemp, slots: (lcAfterA.spells as any)?.slotsUsed }),
       );
       check(
         '49.40) B: hpBonus de Resiliência Dracônica respeitado (20 + 3)',
@@ -17276,7 +17289,7 @@ async function main(): Promise<void> {
         const spells = await pmRowsOf(token);
         return {
           list: (spells?.list ?? []).filter((s: any) => s.oath !== true && s.race !== true),
-          slots: spells?.slots ?? {},
+          slotsUsed: spells?.slotsUsed ?? {},
         };
       };
       /** PATCH do próprio jogador trocando o uso da Magia de Pacto. */
@@ -17286,13 +17299,13 @@ async function main(): Promise<void> {
           token,
           body: { spells: { ...(await pmStoredShape(token)), pactMagic } },
         });
-      /** PATCH do próprio jogador trocando os espaços NORMAIS (Pact intacto). */
-      const pmPatchSlots = async (token: string, slots: unknown) => {
+      /** PATCH do próprio jogador trocando o USO dos espaços NORMAIS (Pact intacto). */
+      const pmPatchSlotsUsed = async (token: string, slotsUsed: unknown) => {
         const stored = await pmStoredShape(token);
         return api('/api/characters/me', {
           method: 'PATCH',
           token,
-          body: { spells: { ...stored, slots } },
+          body: { spells: { ...stored, slotsUsed } },
         });
       };
       const pmReset = async () => {
@@ -17342,7 +17355,7 @@ async function main(): Promise<void> {
         // Ficha ANTIGA: `spells` sem `pactMagic` (como as gravadas antes desta fase).
         await pmSetup(pmUserIdA, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: {} },
+          spells: { list: [], slotsUsed: {} },
         });
         const legacy = await pmSheet(pmTokenA);
         check(
@@ -17356,7 +17369,7 @@ async function main(): Promise<void> {
         // `spells` sem `pactMagic` na ESCRITA cai no default `{ used: 0 }` (o
         // mesmo shape que `emptySpells()` grava na criação).
         const defaulted = await pmMasterPatch(pmCharA.id, {
-          spells: { list: [], slots: {} },
+          spells: { list: [], slotsUsed: {} },
         });
         check(
           '51.A) spells sem pactMagic grava o default used=0 (compatibilidade retroativa)',
@@ -17383,7 +17396,7 @@ async function main(): Promise<void> {
         const setWarlock3 = () =>
           pmSetup(pmUserIdA, {
             classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-            spells: { list: [], slots: {}, pactMagic: { used: 0 } },
+            spells: { list: [], slotsUsed: {}, pactMagic: { used: 0 } },
           });
         await setWarlock3();
 
@@ -17415,7 +17428,7 @@ async function main(): Promise<void> {
         // Sem Bruxo: uso positivo não é aceito (o pool não existe).
         await pmSetup(pmUserIdA, {
           classes: [{ classKey: 'fighter', subclass: '', level: 5 }],
-          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 2 } },
         });
         const positiveWithoutPool = await pmPatchPact(pmTokenA, { used: 1 });
         check(
@@ -17442,7 +17455,7 @@ async function main(): Promise<void> {
 
         // MASTER não é bypass ESTRUTURAL: os mesmos campos não existem.
         const masterInjected = await pmMasterPatch(pmCharA.id, {
-          spells: { list: [], slots: {}, pactMagic: { used: 2, max: 99, slotLevel: 9 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 2, max: 99, slotLevel: 9 } },
         });
         const rawAfterMaster = await pmRawPact(pmUserIdA);
         check(
@@ -17452,7 +17465,7 @@ async function main(): Promise<void> {
           JSON.stringify(rawAfterMaster),
         );
         const masterClamped = await pmMasterPatch(pmCharA.id, {
-          spells: { list: [], slots: {}, pactMagic: { used: 7 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 7 } },
         });
         check(
           '51.B) MASTER também é limitado pelo max DERIVADO (7 → 2)',
@@ -17467,14 +17480,11 @@ async function main(): Promise<void> {
           { classKey: 'wizard', subclass: '', level: 5 },
           { classKey: 'warlock', subclass: '', level: 3 },
         ];
-        const normalSlots = {
-          '1': { max: 4, used: 2 },
-          '2': { max: 3, used: 1 },
-          '3': { max: 2, used: 0 },
-        };
+        // Uso dos espaços normais do Mago (4/3/2 derivados): 2 no 1º, 1 no 2º.
+        const normalUsed = { '1': 2, '2': 1 };
         await pmSetup(pmUserIdA, {
           classes: bothClasses,
-          spells: { list: [], slots: normalSlots, pactMagic: { used: 2 } },
+          spells: { list: [], slotsUsed: normalUsed, pactMagic: { used: 2 } },
         });
         const split = await pmSheet(pmTokenA);
         const splitSlots = JSON.stringify(
@@ -17489,7 +17499,7 @@ async function main(): Promise<void> {
         );
         check(
           '51.C) os USOS vivem em campos independentes',
-          split?.spells?.pactMagic?.used === 2 && split?.spells?.slots?.['1']?.used === 2,
+          split?.spells?.pactMagic?.used === 2 && split?.spells?.slotsUsed?.['1'] === 2,
           JSON.stringify({ spells: split?.spells }),
         );
 
@@ -17499,21 +17509,18 @@ async function main(): Promise<void> {
           '51.C) marcar Pact Magic não toca nos espaços NORMAIS',
           pactChanged.status === 200 &&
             (await pmRawSpells(pmUserIdA)).pactMagic.used === 0 &&
-            (await pmRawSpells(pmUserIdA)).slots['1'].used === 2,
+            (await pmRawSpells(pmUserIdA)).slotsUsed['1'] === 2,
           JSON.stringify(await pmRawSpells(pmUserIdA)),
         );
 
         // Alterar o espaço normal NÃO altera o Pact Magic.
-        const slotChanged = await pmPatchSlots(pmTokenA, {
-          '1': { max: 4, used: 0 },
-          '2': { max: 3, used: 1 },
-          '3': { max: 2, used: 0 },
-        });
+        const slotChanged = await pmPatchSlotsUsed(pmTokenA, { '1': 0, '2': 1 });
         const afterSlot = await pmRawSpells(pmUserIdA);
         check(
           '51.C) gastar/recuperar espaço normal não toca na Magia de Pacto',
           slotChanged.status === 200 &&
-            afterSlot.slots['1'].used === 0 &&
+            (afterSlot.slotsUsed['1'] ?? 0) === 0 &&
+            afterSlot.slotsUsed['2'] === 1 &&
             afterSlot.pactMagic.used === 0 &&
             (await pmRawPact(pmUserIdA))?.used === 0,
           JSON.stringify(afterSlot),
@@ -17522,21 +17529,21 @@ async function main(): Promise<void> {
 
       // --- 51.D DESCANSO CURTO coletivo: Pact recupera, normal NÃO ----------
       {
-        const normalSlots = { '1': { max: 4, used: 2 }, '2': { max: 3, used: 1 } };
+        const normalUsed = { '1': 2, '2': 1 };
         await pmSetup(pmUserIdA, {
           classes: [
             { classKey: 'wizard', subclass: '', level: 5 },
             { classKey: 'warlock', subclass: '', level: 3 },
           ],
-          spells: { list: [], slots: normalSlots, pactMagic: { used: 2 } },
+          spells: { list: [], slotsUsed: normalUsed, pactMagic: { used: 2 } },
         });
         await pmSetup(pmUserIdB, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: {}, pactMagic: { used: 1 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 1 } },
         });
         await pmSetup(pmUserIdC, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 2 } },
         });
 
         const created = await api('/api/rest/short/request', {
@@ -17594,7 +17601,7 @@ async function main(): Promise<void> {
         );
 
         const pactA = await pmRawPact(pmUserIdA);
-        const slotsA = (await pmRawSpells(pmUserIdA)).slots;
+        const slotsA = (await pmRawSpells(pmUserIdA)).slotsUsed;
         check(
           '51.D) Descanso Curto recupera a Magia de Pacto (used 2 → 0)',
           pactA?.used === 0,
@@ -17602,7 +17609,7 @@ async function main(): Promise<void> {
         );
         check(
           '51.D) Descanso Curto NÃO recupera os espaços NORMAIS (used segue 2 / 1)',
-          slotsA['1'].used === 2 && slotsA['2'].used === 1,
+          slotsA['1'] === 2 && slotsA['2'] === 1,
           JSON.stringify(slotsA),
         );
         check(
@@ -17649,19 +17656,19 @@ async function main(): Promise<void> {
           ],
           spells: {
             list: [],
-            slots: { '1': { max: 4, used: 2 }, '2': { max: 3, used: 1 } },
+            slotsUsed: { '1': 2, '2': 1 },
             pactMagic: { used: 2 },
           },
           hitDice: {},
         });
         await pmSetup(pmUserIdB, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: { '1': { max: 2, used: 1 } }, pactMagic: { used: 1 } },
+          spells: { list: [], slotsUsed: { '1': 1 }, pactMagic: { used: 1 } },
         });
         // C tem pool (Bruxo) mas NADA gasto: o resultado NÃO deve fingir mudança.
         await pmSetup(pmUserIdC, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: {}, pactMagic: { used: 0 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 0 } },
         });
         await pmSetup(pmUserIdD, {
           classes: [
@@ -17670,7 +17677,7 @@ async function main(): Promise<void> {
           ],
           spells: {
             list: [],
-            slots: { '1': { max: 4, used: 2 } },
+            slotsUsed: { '1': 2 },
             pactMagic: { used: 2 },
           },
         });
@@ -17730,13 +17737,13 @@ async function main(): Promise<void> {
         const charC = characters.find((c: any) => c.characterId === pmC.character!.id);
 
         check(
-          '51.E) o Descanso Longo zera os espaços NORMAIS',
-          (await pmRawSpells(pmUserIdA)).slots['1'].used === 0 &&
-            (await pmRawSpells(pmUserIdA)).slots['2'].used === 0 &&
-            (await pmRawSpells(pmUserIdB)).slots['1'].used === 0,
+          '51.E) o Descanso Longo limpa os espaços NORMAIS (`slotsUsed` volta a vazio)',
+          JSON.stringify((await pmRawSpells(pmUserIdA)).slotsUsed) === '{}' &&
+            JSON.stringify((await pmRawSpells(pmUserIdB)).slotsUsed) === '{}' &&
+            (await pmRawSpells(pmUserIdA)).slots === undefined,
           JSON.stringify({
-            a: (await pmRawSpells(pmUserIdA)).slots,
-            b: (await pmRawSpells(pmUserIdB)).slots,
+            a: (await pmRawSpells(pmUserIdA)).slotsUsed,
+            b: (await pmRawSpells(pmUserIdB)).slotsUsed,
           }),
         );
         check(
@@ -17760,7 +17767,7 @@ async function main(): Promise<void> {
         check(
           '51.E) o DECLINED NÃO recebe benefício (Pact e espaços intactos)',
           (await pmRawPact(pmUserIdD))?.used === 2 &&
-            (await pmRawSpells(pmUserIdD)).slots['1'].used === 2 &&
+            (await pmRawSpells(pmUserIdD)).slotsUsed['1'] === 2 &&
             characters.every((c: any) => c.characterId !== pmD.character!.id),
           JSON.stringify({ d: await pmRawPact(pmUserIdD) }),
         );
@@ -17770,7 +17777,7 @@ async function main(): Promise<void> {
       {
         await pmSetup(pmUserIdA, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 2 } },
         });
         check(
           '51.F) MASTER: ponto de partida com a Magia de Pacto usada (2 de 2)',
@@ -17838,7 +17845,7 @@ async function main(): Promise<void> {
         // Ficha LEGADA (sem `pactMagic`): preserva o valor EFETIVO (0) e grava o default.
         await pmSetup(pmUserIdA, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: {} },
+          spells: { list: [], slotsUsed: {} },
         });
         const legacyPatch = await pmMasterPatch(pmCharA.id, { spells: { list: [] } });
         check(
@@ -17850,7 +17857,7 @@ async function main(): Promise<void> {
         // Sem Bruxo, o MASTER também não persiste uso positivo.
         await pmSetup(pmUserIdA, {
           classes: [{ classKey: 'fighter', subclass: '', level: 5 }],
-          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 2 } },
         });
         const noPool = await pmMasterPatch(pmCharA.id, { spells: { pactMagic: { used: 1 } } });
         check(
@@ -17867,18 +17874,18 @@ async function main(): Promise<void> {
         });
         await pmSetup(pmUserIdA, {
           classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
-          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+          spells: { list: [], slotsUsed: {}, pactMagic: { used: 2 } },
           creationFinalized: true,
         });
         const playerExplicit = await api('/api/characters/me', {
           method: 'PATCH',
           token: pmTokenA,
-          body: { spells: { list: [], slots: {}, pactMagic: { used: 1 } } },
+          body: { spells: { list: [], slotsUsed: {}, pactMagic: { used: 1 } } },
         });
         const playerOmitted = await api('/api/characters/me', {
           method: 'PATCH',
           token: pmTokenA,
-          body: { spells: { list: [], slots: {} } },
+          body: { spells: { list: [], slotsUsed: {} } },
         });
         check(
           '51.F) PLAYER: o clamp do uso continua valendo (used=1 aceito)',
@@ -17904,11 +17911,11 @@ async function main(): Promise<void> {
   }
 
   // ==========================================================================
-  // 52) MAX dos espaços NORMAIS passa a ser DERIVADO
-  //     (o `max` do JSON vira LEGADO; o `used` segue PERSISTIDO e é sempre
-  //      limitado pelo max derivado — PHB 2014)
+  // 52) Espaços NORMAIS: o CONSUMO é persistido (`slotsUsed`) e o MAX é DERIVADO
+  //     (`derived.spellSlots`). O shape antigo `slots[level] = { max, used }`
+  //     deixou de existir: nenhum `max` de espaço de magia é persistido (PHB 2014)
   // ==========================================================================
-  console.log('\n52) Espaços normais: max DERIVADO e used persistido');
+  console.log('\n52) Espaços normais: consumo PERSISTIDO (slotsUsed) e max DERIVADO');
   {
     const s2TokenA = testsPlayerToken;
     const s2MeA = await api('/api/auth/me', { token: s2TokenA });
@@ -17930,30 +17937,25 @@ async function main(): Promise<void> {
     const s2CharA = await prisma.character.findUniqueOrThrow({ where: { userId: s2UserIdA } });
 
     // --- Helpers -----------------------------------------------------------
-    const s2Row = async (): Promise<any> => {
+    /** O JSONB GRAVADO (cru), como o banco devolve. */
+    const s2Raw = async (): Promise<any> => {
       const row = await prisma.character.findUniqueOrThrow({
         where: { userId: s2UserIdA },
-        select: { spells: true, creationFinalized: true },
+        select: { spells: true },
       });
-      return {
-        spells: JSON.parse(JSON.stringify(row.spells)),
-        creationFinalized: row.creationFinalized,
-      };
+      return JSON.parse(JSON.stringify(row.spells));
     };
-    const s2RawSlots = async (): Promise<Record<string, { max: number; used: number }>> =>
-      (await s2Row()).spells?.slots ?? {};
+    const s2StoredUsed = async (): Promise<Record<string, number>> =>
+      (await s2Raw())?.slotsUsed ?? {};
+    const s2StoredPact = async (): Promise<number> => (await s2Raw())?.pactMagic?.used ?? 0;
     const s2Sheet = async (): Promise<any> =>
       (await api('/api/characters/me', { token: s2TokenA })).data?.character;
-    const s2DtoSlots = async (): Promise<Record<string, { max: number; used: number }>> =>
-      (await s2Sheet())?.spells?.slots ?? {};
-    /** `{"1":[max,used],...}` — comparável por JSON.stringify. */
-    const s2Slots = (slots: Record<string, { max: number; used: number }>): string =>
+    const s2DtoUsed = async (): Promise<Record<string, number>> =>
+      (await s2Sheet())?.spells?.slotsUsed ?? {};
+    /** `[[level, max], ...]` do derivado — comparável por JSON.stringify. */
+    const s2DerivedMax = async (): Promise<string> =>
       JSON.stringify(
-        Object.fromEntries(
-          Object.keys(slots)
-            .sort((a, b) => Number(a) - Number(b))
-            .map((level) => [level, [slots[level].max, slots[level].used]]),
-        ),
+        ((await s2Sheet())?.derived?.spellSlots ?? []).map((slot: any) => [slot.level, slot.max]),
       );
     const s2Set = (data: Record<string, unknown>) =>
       prisma.character.update({ where: { userId: s2UserIdA }, data: data as any });
@@ -17962,9 +17964,11 @@ async function main(): Promise<void> {
     const s2PlayerPatch = (body: unknown) =>
       api('/api/characters/me', { method: 'PATCH', token: s2TokenA, body });
     const s2Wizard = (level: number) => [{ classKey: 'wizard', subclass: '', level }];
-    const s2CreationBefore = (await s2Row()).creationFinalized;
+    const s2CreationBefore = await prisma.character
+      .findUniqueOrThrow({ where: { userId: s2UserIdA }, select: { creationFinalized: true } })
+      .then((row) => row.creationFinalized);
 
-    // --- 52.A DIVERGÊNCIA: o derivado é a autoridade ------------------------
+    // --- 52.A O shape LEGADO é lido e convertido: só o `used` sobrevive -----
     {
       await s2Set({
         classes: s2Wizard(5),
@@ -17978,103 +17982,147 @@ async function main(): Promise<void> {
           },
         },
       });
-      const dto = await s2DtoSlots();
+      const sheet = await s2Sheet();
       check(
-        '52.A) max persistido divergente: o DTO devolve o max DERIVADO e o used efetivo',
-        s2Slots(dto) === JSON.stringify({ '1': [4, 2], '2': [3, 1], '3': [2, 2], '4': [0, 0] }),
-        s2Slots(dto),
+        '52.A) `slots` legado: o DTO aproveita só o `used` e DESCARTA o `max` (2 / 1 / 5→2)',
+        JSON.stringify(sheet?.spells?.slotsUsed ?? {}) ===
+          JSON.stringify({ '1': 2, '2': 1, '3': 2 }),
+        JSON.stringify(sheet?.spells?.slotsUsed),
       );
       check(
-        '52.A) o `max` LEGADO continua gravado no JSON (compatibilidade)',
-        (await s2RawSlots())['1'].max === 3 && (await s2RawSlots())['2'].max === 99,
-        JSON.stringify(await s2RawSlots()),
+        '52.A) o DTO não expõe mais `spells.slots` (o shape antigo saiu da aplicação)',
+        sheet?.spells?.slots === undefined,
+        JSON.stringify(Object.keys(sheet?.spells ?? {})),
       );
       check(
-        '52.A) nível sem espaço derivado (Mago 5 não tem 4º) não vira espaço falso',
-        dto['4']?.max === 0 && dto['4']?.used === 0,
-        JSON.stringify(dto['4']),
+        '52.A) `derived.spellSlots` continua a ÚNICA autoridade do max (4 / 3 / 2 de Mago 5)',
+        (await s2DerivedMax()) === JSON.stringify([[1, 4], [2, 3], [3, 2]]),
+        await s2DerivedMax(),
+      );
+      check(
+        '52.A) nível sem espaço derivado (4º) não vira uso: nada de nível falso',
+        (sheet?.spells?.slotsUsed ?? {})['4'] === undefined,
+        JSON.stringify(sheet?.spells?.slotsUsed),
       );
     }
 
-    // --- 52.B LEVEL UP: o DTO acompanha sem tocar no JSON -------------------
+    // --- 52.B Um PATCH reescreve a ficha no formato NOVO --------------------
     {
-      await s2Set({
-        classes: s2Wizard(2),
-        spells: { list: [], slots: { '1': { max: 3, used: 2 } } },
-      });
-      // Subir de nível muda as CLASSES; o `spells` gravado fica intocado.
+      const rewrite = await s2MasterPatch({ spells: { list: [] } });
+      const raw = await s2Raw();
+      check(
+        '52.B) o PATCH administrativo grava `slotsUsed` e o shape `slots` desaparece do JSON',
+        rewrite.status === 200 &&
+          raw.slots === undefined &&
+          JSON.stringify(raw.slotsUsed) === JSON.stringify({ '1': 2, '2': 1, '3': 2 }),
+        JSON.stringify(raw),
+      );
+      check(
+        '52.B) o uso persistido é o MESMO que o DTO já mostrava (leitura e escrita coerentes)',
+        JSON.stringify(rewrite.data?.character?.spells?.slotsUsed ?? {}) ===
+          JSON.stringify({ '1': 2, '2': 1, '3': 2 }),
+        JSON.stringify(rewrite.data?.character?.spells?.slotsUsed),
+      );
+    }
+
+    // --- 52.C LEVEL UP: o nível novo aparece SEM inicializar `slotsUsed` -----
+    {
+      await s2Set({ classes: s2Wizard(2), spells: { list: [], slotsUsed: { '1': 2 } } });
       await setCharacterClasses(s2UserIdA, s2Wizard(3));
-      const afterUp = await s2DtoSlots();
       check(
-        '52.B) Level Up: o DTO reflete o novo derivado (4 de 1º, 2 de 2º) sem sincronizar o JSON',
-        s2Slots(afterUp) === JSON.stringify({ '1': [4, 2], '2': [2, 0] }),
-        s2Slots(afterUp),
+        '52.C) Level Up: o 2º nível aparece no derivado (4 / 2) sem sincronizar o JSON',
+        (await s2DerivedMax()) === JSON.stringify([[1, 4], [2, 2]]),
+        await s2DerivedMax(),
       );
       check(
-        '52.B) o `max` gravado continua com o valor antigo (3) — ele não governa nada',
-        (await s2RawSlots())['1'].max === 3 && (await s2RawSlots())['2'] === undefined,
-        JSON.stringify(await s2RawSlots()),
+        '52.C) o uso gravado segue só com o 1º nível (o 2º entra como 0 usado)',
+        JSON.stringify(await s2StoredUsed()) === JSON.stringify({ '1': 2 }) &&
+          ((await s2Sheet())?.spells?.slotsUsed ?? {})['2'] === undefined,
+        JSON.stringify(await s2StoredUsed()),
       );
     }
 
-    // --- 52.C LEVEL DOWN: encolhe e clampa ----------------------------------
+    // --- 52.D LEVEL DOWN: a sanitização é PERSISTIDA -------------------------
     {
       await s2Set({
-        classes: s2Wizard(5),
-        spells: {
-          list: [],
-          slots: {
-            '1': { max: 4, used: 4 },
-            '2': { max: 3, used: 3 },
-            '3': { max: 2, used: 2 },
-          },
-        },
+        classes: s2Wizard(3),
+        spells: { list: [], slotsUsed: { '1': 1, '2': 2 } },
+        levelHistory: [],
+        features: [],
+        classState: { active: [], used: {}, choices: {} },
+        hpMax: 30,
+        hpCurrent: 30,
       });
-      await setCharacterClasses(s2UserIdA, s2Wizard(2));
-      const afterDown = await s2DtoSlots();
       check(
-        '52.C) Level Down: o max efetivo cai e o `used` acima do novo max é clampado',
-        s2Slots(afterDown) === JSON.stringify({ '1': [3, 3], '2': [0, 0], '3': [0, 0] }),
-        s2Slots(afterDown),
+        '52.D) ponto de partida (Mago 3): derivado 4 / 2 e uso 1 / 2',
+        (await s2DerivedMax()) === JSON.stringify([[1, 4], [2, 2]]) &&
+          JSON.stringify(await s2StoredUsed()) === JSON.stringify({ '1': 1, '2': 2 }),
+        JSON.stringify({ used: await s2StoredUsed() }),
+      );
+
+      const down = await api(`/api/characters/${s2CharA.id}/level-down`, {
+        method: 'POST',
+        token: masterToken,
+        body: { classKey: 'wizard' },
+      });
+      const rawAfterDown = await s2Raw();
+      check(
+        '52.D) Level Down (Mago 3 → 2): o nível perdido SAI de `slotsUsed` — a sanitização é GRAVADA',
+        down.status === 200 &&
+          JSON.stringify(rawAfterDown.slotsUsed) === JSON.stringify({ '1': 1 }) &&
+          rawAfterDown.slots === undefined,
+        JSON.stringify({ status: down.status, raw: rawAfterDown }),
       );
       check(
-        '52.C) o clamp é de LEITURA: o JSON segue com o uso antigo (sem escrita no Level Down)',
-        (await s2RawSlots())['1'].used === 4 && (await s2RawSlots())['1'].max === 4,
-        JSON.stringify(await s2RawSlots()),
+        '52.D) o DTO confere: derivado 3 e uso 1 no 1º nível (o 2º deixou de existir)',
+        (await s2DerivedMax()) === JSON.stringify([[1, 3]]) &&
+          JSON.stringify(await s2DtoUsed()) === JSON.stringify({ '1': 1 }),
+        JSON.stringify({ derived: await s2DerivedMax(), used: await s2DtoUsed() }),
       );
     }
 
-    // --- 52.D MULTICLASSE: o max efetivo continua vindo da tabela correta ---
+    // --- 52.E PASSO 17: subir de novo NÃO ressuscita o uso antigo -----------
+    {
+      await setCharacterClasses(s2UserIdA, s2Wizard(3));
+      check(
+        '52.E) voltar a Mago 3 traz o 2º nível de volta com 0 usado (o uso antigo não ressuscita)',
+        (await s2DerivedMax()) === JSON.stringify([[1, 4], [2, 2]]) &&
+          JSON.stringify(await s2StoredUsed()) === JSON.stringify({ '1': 1 }) &&
+          ((await s2Sheet())?.spells?.slotsUsed ?? {})['2'] === undefined,
+        JSON.stringify({ stored: await s2StoredUsed() }),
+      );
+    }
+
+    // --- 52.F MULTICLASSE: o derivado combina; o uso continua PERSISTIDO ----
     {
       const maxes = async (
         entries: { classKey: string; subclass?: string; level: number }[],
       ): Promise<string> => {
         await setCharacterClasses(s2UserIdA, entries);
-        await s2Set({ spells: { list: [], slots: { '1': { max: 1, used: 1 } } } });
-        const slots = await s2DtoSlots();
-        return Object.keys(slots)
-          .filter((level) => slots[level].max > 0)
-          .sort((a, b) => Number(a) - Number(b))
-          .map((level) => `${level}:${slots[level].max}`)
+        await s2Set({ spells: { list: [], slotsUsed: { '1': 1 } } });
+        const sheet = await s2Sheet();
+        return ((sheet?.derived?.spellSlots ?? []) as any[])
+          .filter((slot) => slot.max > 0)
+          .map((slot) => `${slot.level}:${slot.max}`)
           .join(' ');
       };
 
       check(
-        '52.D) full + full (Mago 3 / Clérigo 3): tabela combinada 4/3/3',
+        '52.F) full + full (Mago 3 / Clérigo 3): tabela combinada 4/3/3',
         (await maxes([
           { classKey: 'wizard', level: 3 },
           { classKey: 'cleric', level: 3 },
         ])) === '1:4 2:3 3:3',
       );
       check(
-        '52.D) full + half (Mago 3 / Paladino 4): nível de conjurador 5 → 4/3/2',
+        '52.F) full + half (Mago 3 / Paladino 4): nível de conjurador 5 → 4/3/2',
         (await maxes([
           { classKey: 'wizard', level: 3 },
           { classKey: 'paladin', level: 4 },
         ])) === '1:4 2:3 3:2',
       );
       check(
-        '52.D) full + third (Mago 3 / Cavaleiro Arcano 6): 3 + 2 → 4/3/2',
+        '52.F) full + third (Mago 3 / Cavaleiro Arcano 6): 3 + 2 → 4/3/2',
         (await maxes([
           { classKey: 'wizard', level: 3 },
           { classKey: 'fighter', subclass: 'Cavaleiro Arcano', level: 6 },
@@ -18086,162 +18134,145 @@ async function main(): Promise<void> {
           { classKey: 'wizard', subclass: '', level: 5 },
           { classKey: 'warlock', subclass: '', level: 3 },
         ],
-        spells: { list: [], slots: { '1': { max: 1, used: 1 } }, pactMagic: { used: 2 } },
+        spells: { list: [], slotsUsed: { '1': 1 }, pactMagic: { used: 2 } },
       });
       const mixed = await s2Sheet();
       check(
-        '52.D) Mago + Bruxo: o pool NORMAL é do multiclass e a Magia de Pacto segue separada',
-        s2Slots(mixed?.spells?.slots ?? {}) ===
-          JSON.stringify({ '1': [4, 1], '2': [3, 0], '3': [2, 0] }) &&
+        '52.F) Mago + Bruxo: o pool NORMAL é do multiclasse e a Magia de Pacto fica SEPARADA',
+        (await s2DerivedMax()) === JSON.stringify([[1, 4], [2, 3], [3, 2]]) &&
           mixed?.derived?.pactSlots?.max === 2 &&
           mixed?.derived?.pactSlots?.slotLevel === 2 &&
-          mixed?.spells?.pactMagic?.used === 2,
-        JSON.stringify({ slots: mixed?.spells?.slots, pact: mixed?.derived?.pactSlots }),
+          mixed?.spells?.pactMagic?.used === 2 &&
+          JSON.stringify(await s2StoredUsed()) === JSON.stringify({ '1': 1 }),
+        JSON.stringify({ derived: mixed?.derived, used: await s2StoredUsed() }),
       );
     }
 
-    // --- 52.E PATCH do JOGADOR: clamp pelo DERIVADO --------------------------
+    // --- 52.G PATCH do JOGADOR: só o USO, sempre clampado pelo DERIVADO ----
     {
       await s2Set({
         classes: s2Wizard(5),
-        spells: { list: [], slots: { '1': { max: 99, used: 0 } } },
+        spells: { list: [], slotsUsed: {} },
         creationFinalized: true,
       });
 
-      const okSpend = await s2PlayerPatch({
-        spells: { list: [], slots: { '1': { max: 99, used: 3 } } },
-      });
+      const okSpend = await s2PlayerPatch({ spells: { list: [], slotsUsed: { '1': 3 } } });
       check(
-        '52.E) PLAYER gasta dentro do derivado: aceito (used 3)',
-        okSpend.status === 200 && okSpend.data?.character?.spells?.slots?.['1']?.used === 3,
-        JSON.stringify(okSpend.data?.character?.spells?.slots),
+        '52.G) PLAYER gasta dentro do derivado: aceito (3 de 4)',
+        okSpend.status === 200 &&
+          (await s2StoredUsed())['1'] === 3 &&
+          okSpend.data?.character?.spells?.slotsUsed?.['1'] === 3,
+        JSON.stringify({ stored: await s2StoredUsed() }),
       );
 
-      const overSpend = await s2PlayerPatch({
-        spells: { list: [], slots: { '1': { max: 99, used: 9 } } },
-      });
+      const overSpend = await s2PlayerPatch({ spells: { list: [], slotsUsed: { '1': 9 } } });
       check(
-        '52.E) PLAYER acima do derivado: clampado pelo DERIVADO (4), não pelo max gravado (99)',
-        overSpend.status === 200 &&
-          (await s2RawSlots())['1'].used === 4 &&
-          overSpend.data?.character?.spells?.slots?.['1']?.max === 4,
-        JSON.stringify({ raw: (await s2RawSlots())['1'] }),
+        '52.G) PLAYER acima do derivado: clampado no DERIVADO (9 → 4)',
+        overSpend.status === 200 && (await s2StoredUsed())['1'] === 4,
+        JSON.stringify(await s2StoredUsed()),
       );
 
-      const maxInjection = await s2PlayerPatch({
-        spells: { list: [], slots: { '1': { max: 1, used: 3 } } },
+      const ghostLevel = await s2PlayerPatch({
+        spells: { list: [], slotsUsed: { '1': 1, '4': 2 } },
       });
       check(
-        '52.E) o `max` enviado pelo PLAYER não vira limite nem sobrescreve o legado',
-        maxInjection.status === 200 &&
-          (await s2RawSlots())['1'].max === 99 &&
-          (await s2RawSlots())['1'].used === 3,
-        JSON.stringify({ raw: (await s2RawSlots())['1'] }),
+        '52.G) PLAYER em nível SEM espaço derivado: o uso é descartado (nada de espaço falso)',
+        ghostLevel.status === 200 &&
+          (await s2StoredUsed())['4'] === undefined &&
+          (await s2StoredUsed())['1'] === 1,
+        JSON.stringify(await s2StoredUsed()),
+      );
+
+      const legacyPayload = await s2PlayerPatch({
+        spells: { list: [], slots: { '1': { max: 1, used: 2 } } },
+      });
+      check(
+        '52.G) payload LEGADO do PLAYER: só o `used` é aproveitado e o `max` não vira nada',
+        legacyPayload.status === 200 &&
+          (await s2StoredUsed())['1'] === 2 &&
+          (await s2Raw()).slots === undefined,
+        JSON.stringify(await s2Raw()),
       );
     }
 
-    // --- 52.F PATCH do MASTER: o max gravado não governa --------------------
+    // --- 52.H PATCH do MASTER: ajusta o USO; não existe campo para o `max` --
     {
-      await s2Set({
-        classes: s2Wizard(5),
-        spells: { list: [], slots: { '1': { max: 99, used: 1 } } },
-      });
+      await s2Set({ classes: s2Wizard(5), spells: { list: [], slotsUsed: { '1': 1 } } });
 
-      const wrongMax = await s2MasterPatch({
-        spells: { list: [], slots: { '1': { max: 999, used: 1 } } },
-      });
+      const masterUsed = await s2MasterPatch({ spells: { list: [], slotsUsed: { '1': 2 } } });
       check(
-        '52.F) MASTER pode gravar o `max` legado, mas o estado EFETIVO segue o derivado (4)',
-        wrongMax.status === 200 &&
-          (await s2RawSlots())['1'].max === 999 &&
-          wrongMax.data?.character?.spells?.slots?.['1']?.max === 4,
-        JSON.stringify({ raw: (await s2RawSlots())['1'] }),
+        '52.H) MASTER ajusta o uso dentro do limite (2)',
+        masterUsed.status === 200 && (await s2StoredUsed())['1'] === 2,
+        JSON.stringify(await s2StoredUsed()),
       );
 
-      const masterUsed = await s2MasterPatch({
+      const masterOver = await s2MasterPatch({ spells: { list: [], slotsUsed: { '1': 9 } } });
+      check(
+        '52.H) MASTER acima do derivado: clampado (9 → 4)',
+        masterOver.status === 200 && (await s2StoredUsed())['1'] === 4,
+        JSON.stringify(await s2StoredUsed()),
+      );
+
+      const masterLegacyMax = await s2MasterPatch({
         spells: { list: [], slots: { '1': { max: 999, used: 2 } } },
       });
       check(
-        '52.F) MASTER ajusta o `used` dentro do derivado',
-        masterUsed.status === 200 && (await s2RawSlots())['1'].used === 2,
-        JSON.stringify((await s2RawSlots())['1']),
+        '52.H) MASTER não tem campo para persistir `max`: o valor enviado é descartado',
+        masterLegacyMax.status === 200 &&
+          (await s2Raw()).slots === undefined &&
+          (await s2StoredUsed())['1'] === 2,
+        JSON.stringify(await s2Raw()),
       );
 
-      const masterOver = await s2MasterPatch({
-        spells: { list: [], slots: { '1': { max: 999, used: 9 } } },
-      });
+      await s2Set({ spells: { list: [], slotsUsed: { '1': 2, '2': 2 } } });
+      const partial = await s2MasterPatch({ spells: { list: [], slotsUsed: { '1': 1 } } });
       check(
-        '52.F) MASTER acima do derivado: clampado pelo derivado',
-        masterOver.status === 200 && (await s2RawSlots())['1'].used === 4,
-        JSON.stringify((await s2RawSlots())['1']),
-      );
-
-      // PATCH parcial: citar UM nível não zera o uso dos outros (não é
-      // recuperação implícita de espaço).
-      await s2Set({
-        spells: {
-          list: [],
-          slots: { '1': { max: 99, used: 2 }, '2': { max: 3, used: 2 } },
-        },
-      });
-      const partial = await s2MasterPatch({
-        spells: { list: [], slots: { '1': { max: 99, used: 1 } } },
-      });
-      check(
-        '52.F) PATCH parcial do MASTER preserva o `used` dos níveis não citados',
+        '52.H) PATCH parcial preserva o uso dos níveis não citados (o 2º segue com 2)',
         partial.status === 200 &&
-          (await s2RawSlots())['2'].used === 2 &&
-          (await s2RawSlots())['1'].used === 1,
-        JSON.stringify(await s2RawSlots()),
+          (await s2StoredUsed())['1'] === 1 &&
+          (await s2StoredUsed())['2'] === 2,
+        JSON.stringify(await s2StoredUsed()),
       );
     }
 
-    // --- 52.G DTO/UI: os dois lugares mostram o MESMO total -----------------
+    // --- 52.I SEM CONJURAÇÃO: nenhum uso sobrevive --------------------------
     {
-      await s2Set({
-        classes: s2Wizard(5),
-        spells: { list: [], slots: { '1': { max: 3, used: 1 }, '2': { max: 1, used: 0 } } },
-      });
-      const sheet = await s2Sheet();
-      const derivedMax: Record<string, number> = {};
-      for (const slot of sheet?.derived?.spellSlots ?? []) derivedMax[String(slot.level)] = slot.max;
-      const everySlotMatches = Object.entries(
-        sheet?.spells?.slots as Record<string, { max: number }>,
-      ).every(([level, slot]) => slot.max === (derivedMax[level] ?? 0));
-      check(
-        '52.G) os cards (spells.slots) e a referência derivada nunca discordam',
-        everySlotMatches &&
-          sheet?.spells?.slots?.['1']?.max === 4 &&
-          sheet?.spells?.slots?.['2']?.max === 3,
-        JSON.stringify({ slots: sheet?.spells?.slots, derived: derivedMax }),
-      );
-
-      // Sem classe conjuradora, nenhum slot legado cria espaço falso.
       await s2Set({
         classes: [{ classKey: 'fighter', subclass: '', level: 5 }],
-        spells: { list: [], slots: { '1': { max: 9, used: 3 } } },
+        spells: { list: [], slotsUsed: { '1': 3 } },
       });
-      const noCaster = await s2DtoSlots();
+      const noCaster = await s2Sheet();
       check(
-        '52.G) sem conjuração nenhum espaço legado vira espaço efetivo (tudo 0/0)',
-        s2Slots(noCaster) === JSON.stringify({ '1': [0, 0] }) &&
-          (await s2RawSlots())['1'].max === 9,
-        JSON.stringify({ dto: noCaster, raw: await s2RawSlots() }),
+        '52.I) sem classe conjuradora: `derived.spellSlots` vazio e uso efetivo {} (nada de espaço falso)',
+        JSON.stringify(noCaster?.derived?.spellSlots ?? []) === '[]' &&
+          JSON.stringify(noCaster?.spells?.slotsUsed ?? {}) === '{}',
+        JSON.stringify({
+          derived: noCaster?.derived?.spellSlots,
+          used: noCaster?.spells?.slotsUsed,
+        }),
+      );
+      const masterNoCaster = await s2MasterPatch({ spells: { list: [], slotsUsed: { '1': 2 } } });
+      check(
+        '52.I) o MASTER também não persiste uso positivo de quem não conjura',
+        masterNoCaster.status === 200 && JSON.stringify(await s2StoredUsed()) === '{}',
+        JSON.stringify(await s2StoredUsed()),
       );
     }
 
-    // --- 52.H Long Rest coletivo: zera o USO; o max legado não decide nada --
+    // --- 52.J DESCANSO LONGO coletivo: `slotsUsed` volta a {} e Pact zera ---
     {
+      await api('/api/game/camp-supplies', {
+        method: 'POST',
+        token: masterToken,
+        body: { enabled: false, costPerParticipant: 10 },
+      });
+
       await s2Set({
         classes: [
           { classKey: 'wizard', subclass: '', level: 5 },
           { classKey: 'warlock', subclass: '', level: 3 },
         ],
-        spells: {
-          list: [],
-          slots: { '1': { max: 99, used: 3 }, '2': { max: 1, used: 1 } },
-          pactMagic: { used: 2 },
-        },
+        spells: { list: [], slotsUsed: { '1': 3, '2': 1 }, pactMagic: { used: 2 } },
         hitDice: {},
         hpCurrent: 1,
       });
@@ -18277,7 +18308,7 @@ async function main(): Promise<void> {
       }
       const lrCurrent = (await api('/api/rest/long/request', { token: s2TokenA })).data?.request;
       check(
-        '52.I) Descanso Longo coletivo aprovado (A e só ele aceitou)',
+        '52.J) Descanso Longo coletivo aprovado (A e só ele aceitou)',
         lrCurrent?.status === 'APPROVED' && lrCurrent?.id === lrId,
         JSON.stringify(lrCurrent?.status),
       );
@@ -18287,28 +18318,173 @@ async function main(): Promise<void> {
         token: masterToken,
         body: { operationId: `op-${suffix}-52-lr-force` },
       });
-      const rawAfter = await s2RawSlots();
-      const dtoAfter = await s2DtoSlots();
+      const rawAfter = await s2Raw();
       check(
-        '52.I) Long Rest zera o `used` dos espaços normais',
-        forced.status === 200 && rawAfter['1'].used === 0 && rawAfter['2'].used === 0,
+        '52.J) Long Rest: `slotsUsed` fica {} (ausência = 0 usado) e o shape `slots` não existe',
+        forced.status === 200 &&
+          JSON.stringify(rawAfter.slotsUsed) === '{}' &&
+          rawAfter.slots === undefined,
         JSON.stringify({ status: forced.status, raw: rawAfter }),
       );
       check(
-        '52.I) o `max` legado errado (99) não influencia o efeito: a autoridade é o derivado (4)',
-        rawAfter['1'].max === 99 && dtoAfter['1'].max === 4 && dtoAfter['1'].used === 0,
-        JSON.stringify({ raw: rawAfter['1'], dto: dtoAfter['1'] }),
+        '52.J) a auditoria conta os níveis que tinham uso ANTES (1 e 2)',
+        forced.data?.completion?.characters?.[0]?.spellSlotLevelsRestored?.includes(1) === true &&
+          forced.data?.completion?.characters?.[0]?.spellSlotLevelsRestored?.includes(2) === true,
+        JSON.stringify(forced.data?.completion?.characters?.[0]),
       );
       check(
-        '52.I) a Magia de Pacto continua zerando à parte, na mesma conclusão',
-        (await s2Row()).spells?.pactMagic?.used === 0 &&
-          forced.data?.completion?.characters?.[0]?.pactMagicRestored === true &&
-          forced.data?.completion?.characters?.[0]?.spellSlotLevelsRestored?.includes(1) === true,
-        JSON.stringify(forced.data?.completion?.characters?.[0]),
+        '52.J) a Magia de Pacto zera na MESMA conclusão (pool separado)',
+        (await s2StoredPact()) === 0 &&
+          forced.data?.completion?.characters?.[0]?.pactMagicRestored === true,
+        JSON.stringify({ pact: await s2StoredPact() }),
       );
     }
 
     await s2Set({ creationFinalized: s2CreationBefore });
+  }
+
+  // ==========================================================================
+  // 53) MIGRAÇÃO do shape legado dos espaços (`slots` → `slotsUsed`)
+  //     O backfill (`npm run migrate:spell-slots`) reusa os MESMOS helpers do
+  //     servidor: só o `used` sobrevive, saneado contra o derivado ATUAL
+  // ==========================================================================
+  console.log('\n53) Migração do shape legado dos espaços de magia');
+  {
+    // --- Transformação (funções puras, sem tocar no banco) -----------------
+    const wizardFiveMax = spellSlotMaxByLevel(
+      spellSlotsForClasses(normalizeClassEntries([{ classKey: 'wizard', level: 5 }])),
+    );
+    const legacyFull = {
+      list: [{ id: 's1' }],
+      slots: { '1': { max: 4, used: 2 } },
+      pactMagic: { used: 1 },
+      extra: 'mantido',
+    };
+    const migrated = withSpellSlotsUsed(
+      legacyFull,
+      spellSlotsUsedFrom(legacyFull, wizardFiveMax),
+    );
+
+    check(
+      '53.1) ficha antiga `{max:4,used:2}` migra para `slotsUsed["1"] = 2`',
+      JSON.stringify(migrated.slotsUsed) === JSON.stringify({ '1': 2 }),
+      JSON.stringify(migrated),
+    );
+    check(
+      '53.2) o `max` gravado é IGNORADO (um max errado não vira teto)',
+      JSON.stringify(spellSlotsUsedFrom({ slots: { '1': { max: 999, used: 3 } } }, wizardFiveMax)) ===
+        JSON.stringify({ '1': 3 }),
+    );
+    check(
+      '53.3) `used` acima do derivado é CLAMPADO na migração (9 → 4)',
+      JSON.stringify(spellSlotsUsedFrom({ slots: { '1': { max: 9, used: 9 } } }, wizardFiveMax)) ===
+        JSON.stringify({ '1': 4 }),
+    );
+    check(
+      '53.4) nível SEM espaço derivado (9º num Mago 5) é removido da migração',
+      JSON.stringify(
+        spellSlotsUsedFrom(
+          { slots: { '1': { max: 4, used: 1 }, '9': { max: 4, used: 3 } } },
+          wizardFiveMax,
+        ),
+      ) === JSON.stringify({ '1': 1 }),
+    );
+    check(
+      '53.5) uso zerado não vira chave (ausência = 0 usado)',
+      JSON.stringify(spellSlotsUsedFrom({ slots: { '1': { max: 4, used: 0 } } }, wizardFiveMax)) ===
+        '{}',
+    );
+    check(
+      '53.6) `list`, `pactMagic` e campos adicionais são PRESERVADOS',
+      JSON.stringify(migrated.list) === JSON.stringify(legacyFull.list) &&
+        JSON.stringify(migrated.pactMagic) === JSON.stringify({ used: 1 }) &&
+        migrated.extra === 'mantido',
+      JSON.stringify(migrated),
+    );
+    check(
+      '53.7) o shape `slots` é descartado por INTEIRO (nem `max`, nem `used`)',
+      !('slots' in migrated),
+      JSON.stringify(Object.keys(migrated)),
+    );
+    const migratedAgain = withSpellSlotsUsed(
+      migrated,
+      spellSlotsUsedFrom(migrated, wizardFiveMax),
+    );
+    check(
+      '53.8) rodar a migração duas vezes produz o MESMO resultado (idempotente)',
+      JSON.stringify(migratedAgain) === JSON.stringify(migrated),
+      JSON.stringify({ first: migrated, second: migratedAgain }),
+    );
+
+    // --- Ponta a ponta: ficha NÃO migrada no banco --------------------------
+    const s3Me = await api('/api/auth/me', { token: testsPlayerToken });
+    const s3UserId: string = s3Me.data?.user?.sub;
+    const s3Char = await prisma.character.findUniqueOrThrow({ where: { userId: s3UserId } });
+    await prisma.character.update({
+      where: { userId: s3UserId },
+      data: {
+        classes: [{ classKey: 'wizard', subclass: '', level: 5 }] as any,
+        spells: {
+          list: [],
+          slots: { '1': { max: 99, used: 3 }, '2': { max: 1, used: 0 } },
+        } as any,
+      },
+    });
+    const s3Dto = (await api('/api/characters/me', { token: testsPlayerToken })).data?.character;
+    check(
+      '53.9) ficha ainda com o shape legado: o DTO entrega `slotsUsed` já saneado (3 de 4)',
+      JSON.stringify(s3Dto?.spells?.slotsUsed ?? {}) === JSON.stringify({ '1': 3 }),
+      JSON.stringify(s3Dto?.spells?.slotsUsed),
+    );
+    check(
+      '53.10) o DTO não tem `spells.slots` (nem durante a janela de migração)',
+      s3Dto?.spells?.slots === undefined,
+      JSON.stringify(Object.keys(s3Dto?.spells ?? {})),
+    );
+    const s3Patch = await api(`/api/characters/${s3Char.id}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { spells: { list: [] } },
+    });
+    const s3Raw = JSON.parse(
+      JSON.stringify(
+        (
+          await prisma.character.findUniqueOrThrow({
+            where: { userId: s3UserId },
+            select: { spells: true },
+          })
+        ).spells,
+      ),
+    );
+    check(
+      '53.11) uma única escrita já reescreve a ficha sem `slots` e com `slotsUsed`',
+      s3Patch.status === 200 &&
+        s3Raw.slots === undefined &&
+        JSON.stringify(s3Raw.slotsUsed) === JSON.stringify({ '1': 3 }),
+      JSON.stringify(s3Raw),
+    );
+    const s3Second = await api(`/api/characters/${s3Char.id}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { spells: { list: [] } },
+    });
+    const s3RawSecond = JSON.parse(
+      JSON.stringify(
+        (
+          await prisma.character.findUniqueOrThrow({
+            where: { userId: s3UserId },
+            select: { spells: true },
+          })
+        ).spells,
+      ),
+    );
+    check(
+      '53.12) repetir a mesma escrita não muda o estado e NUNCA recria `slots`',
+      s3Second.status === 200 &&
+        s3RawSecond.slots === undefined &&
+        JSON.stringify(s3RawSecond.slotsUsed) === JSON.stringify({ '1': 3 }),
+      JSON.stringify(s3RawSecond),
+    );
   }
 
   console.log(
