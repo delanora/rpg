@@ -185,6 +185,11 @@ export type SpellSlotDto = z.infer<typeof spellSlotSchema>;
 export interface SpellsStateDto {
   list: SpellDto[];
   slots: Record<string, SpellSlotDto>;
+  /**
+   * Magia de Pacto (Bruxo): a ÚNICA informação PERSISTIDA é o uso. O `max` e o
+   * `slotLevel` são DERIVADOS e vivem em `derived.pactSlots` — nunca aqui.
+   */
+  pactMagic: { used: number };
 }
 
 export type AttackDto = Attack;
@@ -538,7 +543,14 @@ export function toCharacterDto(
   const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
     list: [],
     slots: {},
+    pactMagic: { used: 0 },
   });
+  // O uso de Pact Magic é PERSISTIDO, mas o pool é DERIVADO do nível de Bruxo
+  // (`pactSlots`): a leitura nunca devolve uso acima do total — nem uso positivo
+  // de quem não tem Bruxo (PHB 2014, pool próprio).
+  spells.pactMagic = {
+    used: pactSlots === null ? 0 : Math.max(0, Math.min(spells.pactMagic?.used ?? 0, pactSlots.max)),
+  };
   // Magias de juramento do Paladino: entram SÓ no DTO (origem 'oath'), sempre
   // preparadas e fora do limite. Se a magia já estiver na lista do jogador por
   // outra via, não duplicamos.

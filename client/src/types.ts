@@ -264,6 +264,12 @@ export interface SpellSlot {
 export interface SpellsState {
   list: Spell[];
   slots: Record<string, SpellSlot>;
+  /**
+   * Magia de Pacto (Bruxo): o ÚNICO campo persistido é o `used` — o pool é
+   * próprio e separado dos espaços normais. O `max` e o `slotLevel` são SEMPRE
+   * derivados do nível de Bruxo (ver `derived.pactSlots`); nunca gravá-los aqui.
+   */
+  pactMagic: { used: number };
 }
 
 /**

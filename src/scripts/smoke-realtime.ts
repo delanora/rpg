@@ -17154,6 +17154,588 @@ async function main(): Promise<void> {
     }
   }
 
+  // ==========================================================================
+  // 51) Magia de Pacto PERSISTENTE: uso, pools separados e Descansos
+  //     (PHB 2014: o Bruxo tem um pool PRÓPRIO; só o USO é persistido e o
+  //      `max`/`slotLevel` são SEMPRE derivados do nível de Bruxo)
+  // ==========================================================================
+  console.log('\n51) Magia de Pacto persistente (pools separados, Short/Long Rest)');
+  {
+    const pmTokenA = testsPlayerToken;
+    const pmMeA = await api('/api/auth/me', { token: pmTokenA });
+    const pmUserIdA: string = pmMeA.data?.user?.sub;
+    check(
+      '51) conta do Bruxo A disponível',
+      pmMeA.status === 200 && Boolean(pmUserIdA),
+      JSON.stringify(pmMeA.data),
+    );
+
+    if (pmUserIdA && !(await prisma.character.findUnique({ where: { userId: pmUserIdA } }))) {
+      await api('/api/characters/me', {
+        method: 'POST',
+        token: pmTokenA,
+        body: { name: 'Bruxo A' },
+      });
+    }
+
+    const pmOthers = (
+      await prisma.user.findMany({
+        where: { role: 'PLAYER', username: { endsWith: `_${suffix}` }, id: { not: pmUserIdA } },
+        include: { character: { select: { id: true } } },
+        orderBy: { username: 'asc' },
+      })
+    )
+      .filter((user) => user.character !== null)
+      .slice(0, 3);
+    check(
+      '51) três jogadores com ficha para os Descansos coletivos',
+      pmOthers.length === 3,
+      `encontrados: ${pmOthers.length}`,
+    );
+
+    if (pmUserIdA && pmOthers.length === 3) {
+      const pmB = pmOthers[0];
+      const pmC = pmOthers[1];
+      const pmD = pmOthers[2];
+      const pmTokenFor = (user: (typeof pmOthers)[number]) =>
+        signToken({
+          sub: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          role: user.role,
+        });
+      const pmTokenB = pmTokenFor(pmB);
+      const pmTokenC = pmTokenFor(pmC);
+      const pmTokenD = pmTokenFor(pmD);
+      const pmUserIdB = pmB.id;
+      const pmUserIdC = pmC.id;
+      const pmUserIdD = pmD.id;
+
+      const pmCharA = await prisma.character.findUniqueOrThrow({ where: { userId: pmUserIdA } });
+      const pmAllCharIds = [pmCharA.id, pmB.character!.id, pmC.character!.id, pmD.character!.id];
+
+      // --- Helpers ----------------------------------------------------------
+      const pmSheet = async (token: string): Promise<any> =>
+        (await api('/api/characters/me', { token })).data?.character;
+      /** PATCH do mestre na ficha de um jogador. */
+      const pmMasterPatch = (characterId: string, body: unknown) =>
+        api(`/api/characters/${characterId}`, { method: 'PATCH', token: masterToken, body });
+      const pmRawSpells = async (userId: string): Promise<any> => {
+        const row = await prisma.character.findUniqueOrThrow({
+          where: { userId },
+          select: { spells: true },
+        });
+        return JSON.parse(JSON.stringify(row.spells));
+      };
+      const pmRawPact = async (userId: string): Promise<any> =>
+        (await pmRawSpells(userId))?.pactMagic;
+      const pmSetup = (userId: string, data: Record<string, unknown>) =>
+        prisma.character.update({ where: { userId }, data: data as any });
+      const pmRowsOf = async (token: string): Promise<any> => (await pmSheet(token))?.spells;
+      /** Só o que é GRAVADO na ficha (juramento/raça são derivados, não voltam). */
+      const pmStoredShape = async (token: string) => {
+        const spells = await pmRowsOf(token);
+        return {
+          list: (spells?.list ?? []).filter((s: any) => s.oath !== true && s.race !== true),
+          slots: spells?.slots ?? {},
+        };
+      };
+      /** PATCH do próprio jogador trocando o uso da Magia de Pacto. */
+      const pmPatchPact = async (token: string, pactMagic: unknown) =>
+        api('/api/characters/me', {
+          method: 'PATCH',
+          token,
+          body: { spells: { ...(await pmStoredShape(token)), pactMagic } },
+        });
+      /** PATCH do próprio jogador trocando os espaços NORMAIS (Pact intacto). */
+      const pmPatchSlots = async (token: string, slots: unknown) => {
+        const stored = await pmStoredShape(token);
+        return api('/api/characters/me', {
+          method: 'PATCH',
+          token,
+          body: { spells: { ...stored, slots } },
+        });
+      };
+      const pmReset = async () => {
+        await prisma.shortRestSession.updateMany({
+          where: { characterId: { in: pmAllCharIds }, status: 'ACTIVE' },
+          data: { status: 'CANCELLED', cancelledAt: new Date() },
+        });
+        await prisma.longRestSession.updateMany({
+          where: { characterId: { in: pmAllCharIds }, status: 'ACTIVE' },
+          data: { status: 'CANCELLED', cancelledAt: new Date() },
+        });
+        await prisma.longRestCampSupplyContribution.deleteMany({
+          where: { characterId: { in: pmAllCharIds } },
+        });
+        await prisma.shortRestRequest.updateMany({
+          where: { status: { in: ['PENDING', 'APPROVED'] } },
+          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+        });
+        await prisma.longRestRequest.updateMany({
+          where: { status: { in: ['PENDING', 'APPROVED'] } },
+          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+        });
+      };
+
+      // Todos ONLINE: as solicitações coletivas convidam os jogadores conectados.
+      const pmSocketA = connect(pmTokenA);
+      const pmPresence = waitForPresence(pmSocketA, () => true).catch(() => null);
+      await waitFor<any>(pmSocketA, 'connection:ready').catch(() => null);
+      const pmOnlineList: any[] = (await pmPresence)?.online ?? [];
+      await demoteForeignOnlinePlayers(
+        pmOnlineList,
+        new Set([pmUserIdA, pmB.id, pmC.id, pmD.id]),
+      );
+      const pmSocketB = connect(pmTokenB);
+      const pmSocketC = connect(pmTokenC);
+      const pmSocketD = connect(pmTokenD);
+      await Promise.all([
+        waitFor<any>(pmSocketB, 'connection:ready').catch(() => null),
+        waitFor<any>(pmSocketC, 'connection:ready').catch(() => null),
+        waitFor<any>(pmSocketD, 'connection:ready').catch(() => null),
+      ]);
+
+      await pmReset();
+
+      // --- 51.A PARSE/ESTADO: legado, sem Bruxo e o default do schema -------
+      {
+        // Ficha ANTIGA: `spells` sem `pactMagic` (como as gravadas antes desta fase).
+        await pmSetup(pmUserIdA, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: {} },
+        });
+        const legacy = await pmSheet(pmTokenA);
+        check(
+          '51.A) ficha antiga SEM pactMagic parseia como used=0 e mantém a Magia de Pacto derivada',
+          legacy?.spells?.pactMagic?.used === 0 &&
+            legacy?.derived?.pactSlots?.max === 2 &&
+            legacy?.derived?.pactSlots?.slotLevel === 2,
+          JSON.stringify({ pact: legacy?.spells?.pactMagic, derived: legacy?.derived?.pactSlots }),
+        );
+
+        // `spells` sem `pactMagic` na ESCRITA cai no default `{ used: 0 }` (o
+        // mesmo shape que `emptySpells()` grava na criação).
+        const defaulted = await pmMasterPatch(pmCharA.id, {
+          spells: { list: [], slots: {} },
+        });
+        check(
+          '51.A) spells sem pactMagic grava o default used=0 (compatibilidade retroativa)',
+          defaulted.status === 200 &&
+            defaulted.data?.character?.spells?.pactMagic?.used === 0 &&
+            (await pmRawPact(pmUserIdA))?.used === 0,
+          JSON.stringify({ dto: defaulted.data?.character?.spells?.pactMagic }),
+        );
+
+        // Sem Bruxo: `derived.pactSlots` é null e NÃO existe uso persistido.
+        await pmSetup(pmUserIdA, {
+          classes: [{ classKey: 'fighter', subclass: '', level: 5 }],
+        });
+        const noWarlock = await pmSheet(pmTokenA);
+        check(
+          '51.A) personagem sem Bruxo: pactSlots=null e used efetivo 0',
+          noWarlock?.derived?.pactSlots === null && noWarlock?.spells?.pactMagic?.used === 0,
+          JSON.stringify({ derived: noWarlock?.derived?.pactSlots }),
+        );
+      }
+
+      // --- 51.B VALIDAÇÃO server-authoritative contra o max DERIVADO -------
+      {
+        const setWarlock3 = () =>
+          pmSetup(pmUserIdA, {
+            classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+            spells: { list: [], slots: {}, pactMagic: { used: 0 } },
+          });
+        await setWarlock3();
+
+        const one = await pmPatchPact(pmTokenA, { used: 1 });
+        check(
+          '51.B) Bruxo max=2: used=1 é aceito (200)',
+          one.status === 200 && one.data?.character?.spells?.pactMagic?.used === 1,
+          JSON.stringify(one.data?.character?.spells?.pactMagic),
+        );
+        const two = await pmPatchPact(pmTokenA, { used: 2 });
+        check(
+          '51.B) used=2 (o teto do pool) é aceito',
+          two.status === 200 && two.data?.character?.spells?.pactMagic?.used === 2,
+          JSON.stringify(two.data?.character?.spells?.pactMagic),
+        );
+        const over = await pmPatchPact(pmTokenA, { used: 3 });
+        check(
+          '51.B) used=3 acima do max DERIVADO é CLAMPADO para 2',
+          over.status === 200 && over.data?.character?.spells?.pactMagic?.used === 2,
+          JSON.stringify(over.data?.character?.spells?.pactMagic),
+        );
+        const negative = await pmPatchPact(pmTokenA, { used: -1 });
+        check(
+          '51.B) used negativo é rejeitado (400) e o valor anterior permanece',
+          negative.status === 400 && (await pmRawPact(pmUserIdA))?.used === 2,
+          JSON.stringify({ status: negative.status, pact: await pmRawPact(pmUserIdA) }),
+        );
+
+        // Sem Bruxo: uso positivo não é aceito (o pool não existe).
+        await pmSetup(pmUserIdA, {
+          classes: [{ classKey: 'fighter', subclass: '', level: 5 }],
+          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+        });
+        const positiveWithoutPool = await pmPatchPact(pmTokenA, { used: 1 });
+        check(
+          '51.B) sem Pact Magic, used positivo não é aceito (forçado a 0)',
+          positiveWithoutPool.status === 200 &&
+            positiveWithoutPool.data?.character?.spells?.pactMagic?.used === 0 &&
+            (await pmRawPact(pmUserIdA))?.used === 0,
+          JSON.stringify({ pact: await pmRawPact(pmUserIdA) }),
+        );
+
+        // PLAYER: `max`/`slotLevel` não existem no estado — são descartados.
+        await setWarlock3();
+        const injected = await pmPatchPact(pmTokenA, { used: 1, max: 99, slotLevel: 9 });
+        const rawAfterPlayer = await pmRawPact(pmUserIdA);
+        check(
+          '51.B) PLAYER não grava pactMagic.max/slotLevel (payload desconhecido é descartado)',
+          injected.status === 200 &&
+            JSON.stringify(rawAfterPlayer) === JSON.stringify({ used: 1 }) &&
+            rawAfterPlayer !== undefined &&
+            !('max' in rawAfterPlayer) &&
+            !('slotLevel' in rawAfterPlayer),
+          JSON.stringify(rawAfterPlayer),
+        );
+
+        // MASTER não é bypass ESTRUTURAL: os mesmos campos não existem.
+        const masterInjected = await pmMasterPatch(pmCharA.id, {
+          spells: { list: [], slots: {}, pactMagic: { used: 2, max: 99, slotLevel: 9 } },
+        });
+        const rawAfterMaster = await pmRawPact(pmUserIdA);
+        check(
+          '51.B) MASTER também não cria pactMagic.max/slotLevel',
+          masterInjected.status === 200 &&
+            JSON.stringify(rawAfterMaster) === JSON.stringify({ used: 2 }),
+          JSON.stringify(rawAfterMaster),
+        );
+        const masterClamped = await pmMasterPatch(pmCharA.id, {
+          spells: { list: [], slots: {}, pactMagic: { used: 7 } },
+        });
+        check(
+          '51.B) MASTER também é limitado pelo max DERIVADO (7 → 2)',
+          masterClamped.status === 200 && (await pmRawPact(pmUserIdA))?.used === 2,
+          JSON.stringify(await pmRawPact(pmUserIdA)),
+        );
+      }
+
+      // --- 51.C POOLS SEPARADOS: Wizard 5 / Warlock 3 -----------------------
+      {
+        const bothClasses = [
+          { classKey: 'wizard', subclass: '', level: 5 },
+          { classKey: 'warlock', subclass: '', level: 3 },
+        ];
+        const normalSlots = {
+          '1': { max: 4, used: 2 },
+          '2': { max: 3, used: 1 },
+          '3': { max: 2, used: 0 },
+        };
+        await pmSetup(pmUserIdA, {
+          classes: bothClasses,
+          spells: { list: [], slots: normalSlots, pactMagic: { used: 2 } },
+        });
+        const split = await pmSheet(pmTokenA);
+        const splitSlots = JSON.stringify(
+          (split?.derived?.spellSlots ?? []).map((slot: any) => [slot.level, slot.max]),
+        );
+        check(
+          '51.C) Wizard 5 / Warlock 3: espaços normais do Mago e Pact Magic SEPARADOS (derivados)',
+          splitSlots === JSON.stringify([[1, 4], [2, 3], [3, 2]]) &&
+            split?.derived?.pactSlots?.max === 2 &&
+            split?.derived?.pactSlots?.slotLevel === 2,
+          JSON.stringify({ slots: splitSlots, pact: split?.derived?.pactSlots }),
+        );
+        check(
+          '51.C) os USOS vivem em campos independentes',
+          split?.spells?.pactMagic?.used === 2 && split?.spells?.slots?.['1']?.used === 2,
+          JSON.stringify({ spells: split?.spells }),
+        );
+
+        // Alterar o Pact Magic NÃO altera os espaços normais.
+        const pactChanged = await pmPatchPact(pmTokenA, { used: 0 });
+        check(
+          '51.C) marcar Pact Magic não toca nos espaços NORMAIS',
+          pactChanged.status === 200 &&
+            (await pmRawSpells(pmUserIdA)).pactMagic.used === 0 &&
+            (await pmRawSpells(pmUserIdA)).slots['1'].used === 2,
+          JSON.stringify(await pmRawSpells(pmUserIdA)),
+        );
+
+        // Alterar o espaço normal NÃO altera o Pact Magic.
+        const slotChanged = await pmPatchSlots(pmTokenA, {
+          '1': { max: 4, used: 0 },
+          '2': { max: 3, used: 1 },
+          '3': { max: 2, used: 0 },
+        });
+        const afterSlot = await pmRawSpells(pmUserIdA);
+        check(
+          '51.C) gastar/recuperar espaço normal não toca na Magia de Pacto',
+          slotChanged.status === 200 &&
+            afterSlot.slots['1'].used === 0 &&
+            afterSlot.pactMagic.used === 0 &&
+            (await pmRawPact(pmUserIdA))?.used === 0,
+          JSON.stringify(afterSlot),
+        );
+      }
+
+      // --- 51.D DESCANSO CURTO coletivo: Pact recupera, normal NÃO ----------
+      {
+        const normalSlots = { '1': { max: 4, used: 2 }, '2': { max: 3, used: 1 } };
+        await pmSetup(pmUserIdA, {
+          classes: [
+            { classKey: 'wizard', subclass: '', level: 5 },
+            { classKey: 'warlock', subclass: '', level: 3 },
+          ],
+          spells: { list: [], slots: normalSlots, pactMagic: { used: 2 } },
+        });
+        await pmSetup(pmUserIdB, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: {}, pactMagic: { used: 1 } },
+        });
+        await pmSetup(pmUserIdC, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: {}, pactMagic: { used: 2 } },
+        });
+
+        const created = await api('/api/rest/short/request', {
+          method: 'POST',
+          token: pmTokenA,
+          body: { operationId: `op-${suffix}-51-short-create` },
+        });
+        const shortId: string = created.data?.id;
+        const acceptedB = await api(`/api/rest/short/${shortId}/respond`, {
+          method: 'POST',
+          token: pmTokenB,
+          body: { response: 'ACCEPTED', operationId: `op-${suffix}-51-short-b` },
+        });
+        await api(`/api/rest/short/${shortId}/respond`, {
+          method: 'POST',
+          token: pmTokenC,
+          body: { response: 'DECLINED', operationId: `op-${suffix}-51-short-c` },
+        });
+        // D também está online e foi convidado: precisa responder para a
+        // solicitação resolver (a lista de convidados é congelada).
+        const resolved = await api(`/api/rest/short/${shortId}/respond`, {
+          method: 'POST',
+          token: pmTokenD,
+          body: { response: 'DECLINED', operationId: `op-${suffix}-51-short-d` },
+        });
+        check(
+          '51.D) solicitação coletiva APPROVED: A (solicitante) + B ACCEPTED, C e D DECLINED',
+          acceptedB.status === 200 &&
+            resolved.data?.status === 'APPROVED' &&
+            resolved.data?.participants?.find((p: any) => p.userId === pmUserIdB)?.response ===
+              'ACCEPTED' &&
+            resolved.data?.participants?.find((p: any) => p.userId === pmUserIdC)?.response ===
+              'DECLINED',
+          JSON.stringify(resolved.data?.participants),
+        );
+
+        const readyA = await api(`/api/rest/short/${shortId}/ready`, {
+          method: 'POST',
+          token: pmTokenA,
+          body: { ready: true, operationId: `op-${suffix}-51-short-ra` },
+        });
+        const readyB = await api(`/api/rest/short/${shortId}/ready`, {
+          method: 'POST',
+          token: pmTokenB,
+          body: { ready: true, operationId: `op-${suffix}-51-short-rb` },
+        });
+        const completion = readyB.data?.completion;
+        check(
+          '51.D) todos prontos → conclusão coletiva COMPLETED com as sessões dos ACCEPTED',
+          readyA.status === 200 &&
+            readyB.status === 200 &&
+            readyB.data?.status === 'COMPLETED' &&
+            completion?.sessions?.length === 2,
+          JSON.stringify({ completion }),
+        );
+
+        const pactA = await pmRawPact(pmUserIdA);
+        const slotsA = (await pmRawSpells(pmUserIdA)).slots;
+        check(
+          '51.D) Descanso Curto recupera a Magia de Pacto (used 2 → 0)',
+          pactA?.used === 0,
+          JSON.stringify(pactA),
+        );
+        check(
+          '51.D) Descanso Curto NÃO recupera os espaços NORMAIS (used segue 2 / 1)',
+          slotsA['1'].used === 2 && slotsA['2'].used === 1,
+          JSON.stringify(slotsA),
+        );
+        check(
+          '51.D) o parceiro ACCEPTED também recupera (used 1 → 0)',
+          (await pmRawPact(pmUserIdB))?.used === 0,
+          JSON.stringify(await pmRawPact(pmUserIdB)),
+        );
+        check(
+          '51.D) o DECLINED NÃO recebe o benefício (used segue 2)',
+          (await pmRawPact(pmUserIdC))?.used === 2,
+          JSON.stringify(await pmRawPact(pmUserIdC)),
+        );
+        check(
+          '51.D) o resultado registra quem teve a Magia de Pacto recuperada',
+          completion?.sessions?.every((s: any) => s.pactMagicRestored === true) === true,
+          JSON.stringify(completion?.sessions),
+        );
+
+        // Idempotência: uma nova tentativa de conclusão não gera segunda mutação.
+        const again = await api(`/api/rest/short/${shortId}/force-complete`, {
+          method: 'POST',
+          token: masterToken,
+          body: { operationId: `op-${suffix}-51-short-again` },
+        });
+        check(
+          '51.D) nova conclusão não gera segunda mutação (rejeitada e used segue 0)',
+          again.status >= 400 && (await pmRawPact(pmUserIdA))?.used === 0,
+          JSON.stringify({ status: again.status, pact: await pmRawPact(pmUserIdA) }),
+        );
+      }
+
+      // --- 51.E DESCANSO LONGO coletivo: normal E Pact zerados (da mesma vez) -
+      {
+        await api('/api/game/camp-supplies', {
+          method: 'POST',
+          token: masterToken,
+          body: { enabled: false, costPerParticipant: 10 },
+        });
+
+        await pmSetup(pmUserIdA, {
+          classes: [
+            { classKey: 'wizard', subclass: '', level: 5 },
+            { classKey: 'warlock', subclass: '', level: 3 },
+          ],
+          spells: {
+            list: [],
+            slots: { '1': { max: 4, used: 2 }, '2': { max: 3, used: 1 } },
+            pactMagic: { used: 2 },
+          },
+          hitDice: {},
+        });
+        await pmSetup(pmUserIdB, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: { '1': { max: 2, used: 1 } }, pactMagic: { used: 1 } },
+        });
+        // C tem pool (Bruxo) mas NADA gasto: o resultado NÃO deve fingir mudança.
+        await pmSetup(pmUserIdC, {
+          classes: [{ classKey: 'warlock', subclass: '', level: 3 }],
+          spells: { list: [], slots: {}, pactMagic: { used: 0 } },
+        });
+        await pmSetup(pmUserIdD, {
+          classes: [
+            { classKey: 'wizard', subclass: '', level: 5 },
+            { classKey: 'warlock', subclass: '', level: 3 },
+          ],
+          spells: {
+            list: [],
+            slots: { '1': { max: 4, used: 2 } },
+            pactMagic: { used: 2 },
+          },
+        });
+
+        const created = await api('/api/rest/long/request', {
+          method: 'POST',
+          token: pmTokenA,
+          body: { operationId: `op-${suffix}-51-long-create` },
+        });
+        const longId: string = created.data?.id;
+        await api(`/api/rest/long/${longId}/respond`, {
+          method: 'POST',
+          token: pmTokenB,
+          body: { response: 'ACCEPTED', operationId: `op-${suffix}-51-long-b` },
+        });
+        await api(`/api/rest/long/${longId}/respond`, {
+          method: 'POST',
+          token: pmTokenC,
+          body: { response: 'ACCEPTED', operationId: `op-${suffix}-51-long-c` },
+        });
+        const resolved = await api(`/api/rest/long/${longId}/respond`, {
+          method: 'POST',
+          token: pmTokenD,
+          body: { response: 'DECLINED', operationId: `op-${suffix}-51-long-d` },
+        });
+        check(
+          '51.E) solicitação de Descanso Longo APPROVED (A + B + C; D DECLINED)',
+          resolved.data?.status === 'APPROVED',
+          JSON.stringify({ status: resolved.data?.status }),
+        );
+
+        // Conclusão CONCORRENTE: só uma vence (a outra falha, sem meia-mutação).
+        const [force1, force2] = await Promise.all([
+          api(`/api/rest/long/${longId}/force-complete`, {
+            method: 'POST',
+            token: masterToken,
+            body: { operationId: `op-${suffix}-51-long-force-1` },
+          }),
+          api(`/api/rest/long/${longId}/force-complete`, {
+            method: 'POST',
+            token: masterToken,
+            body: { operationId: `op-${suffix}-51-long-force-2` },
+          }),
+        ]);
+        const winners = [force1, force2].filter((response) => response.status === 200);
+        const losers = [force1, force2].filter((response) => response.status !== 200);
+        check(
+          '51.E) conclusão concorrente: exatamente uma vence (sem recuperação duplicada)',
+          winners.length === 1 && losers.length === 1 && losers[0].status >= 400,
+          JSON.stringify({ statuses: [force1.status, force2.status] }),
+        );
+
+        const completion = winners[0]?.data?.completion;
+        const characters = completion?.characters ?? [];
+        const charA = characters.find((c: any) => c.characterId === pmCharA.id);
+        const charB = characters.find((c: any) => c.characterId === pmB.character!.id);
+        const charC = characters.find((c: any) => c.characterId === pmC.character!.id);
+
+        check(
+          '51.E) o Descanso Longo zera os espaços NORMAIS',
+          (await pmRawSpells(pmUserIdA)).slots['1'].used === 0 &&
+            (await pmRawSpells(pmUserIdA)).slots['2'].used === 0 &&
+            (await pmRawSpells(pmUserIdB)).slots['1'].used === 0,
+          JSON.stringify({
+            a: (await pmRawSpells(pmUserIdA)).slots,
+            b: (await pmRawSpells(pmUserIdB)).slots,
+          }),
+        );
+        check(
+          '51.E) o Descanso Longo MESMO também zera a Magia de Pacto',
+          (await pmRawPact(pmUserIdA))?.used === 0 &&
+            (await pmRawPact(pmUserIdB))?.used === 0,
+          JSON.stringify({ a: await pmRawPact(pmUserIdA), b: await pmRawPact(pmUserIdB) }),
+        );
+        check(
+          '51.E) o resultado registra Pact recuperado e os níveis de espaço restaurados',
+          charA?.pactMagicRestored === true &&
+            charA?.spellSlotLevelsRestored?.includes(1) === true &&
+            charA?.spellSlotLevelsRestored?.includes(2) === true,
+          JSON.stringify({ charA }),
+        );
+        check(
+          '51.E) sem uso a recuperar, o resultado NÃO finge mudança (pactMagicRestored=false)',
+          charB?.pactMagicRestored === true && charC?.pactMagicRestored === false,
+          JSON.stringify({ b: charB?.pactMagicRestored, c: charC?.pactMagicRestored }),
+        );
+        check(
+          '51.E) o DECLINED NÃO recebe benefício (Pact e espaços intactos)',
+          (await pmRawPact(pmUserIdD))?.used === 2 &&
+            (await pmRawSpells(pmUserIdD)).slots['1'].used === 2 &&
+            characters.every((c: any) => c.characterId !== pmD.character!.id),
+          JSON.stringify({ d: await pmRawPact(pmUserIdD) }),
+        );
+      }
+
+      await pmReset();
+
+      pmSocketA.close();
+      pmSocketB.close();
+      pmSocketC.close();
+      pmSocketD.close();
+    }
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'

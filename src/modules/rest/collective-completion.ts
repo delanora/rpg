@@ -2,7 +2,13 @@ import type { Character, Prisma } from '@prisma/client';
 import { HttpError } from '../../lib/http-error.js';
 import { ServerEvents } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
-import { characterClassAdjustments, characterMaxHp } from '../characters/characters.dto.js';
+import {
+  characterClassAdjustments,
+  characterMaxHp,
+  type SpellsStateDto,
+} from '../characters/characters.dto.js';
+import { spellsStateSchema } from '../characters/characters.schema.js';
+import { parseJson } from '../shared/json.js';
 import { publishChange, type SheetOwner } from '../characters/characters.service.js';
 import { recordRestSongOfRestRoll } from '../dice/dice.service.js';
 import {
@@ -10,6 +16,7 @@ import {
   bestSongOfRestDie,
   normalizeClassEntries,
   normalizeClassState,
+  pactMagicSlots,
   restoreShortRestResources,
 } from '../shared/classes.js';
 import { rollDie } from '../shared/dice.js';
@@ -25,7 +32,8 @@ import type { ShortRestCompletionDto, ShortRestSongRollDto } from './short-rest-
  *   3. rola INDIVIDUALMENTE para cada personagem que gastou ≥ 1 Dado de Vida;
  *   4. aplica a cura (respeitando o PV máximo efetivo);
  *   5. restaura os recursos de recarga CURTA;
- *   6. conclui todas as sessões e a solicitação.
+ *   6. zera o uso da Magia de Pacto (pool PRÓPRIO do Bruxo, também CURTO);
+ *   7. conclui todas as sessões e a solicitação.
  *
  * ATENÇÃO (não violar): as rolagens são feitas aqui, mas os EFEITOS colaterais
  * (log de DiceRoll e eventos realtime) só acontecem DEPOIS do commit — ver
@@ -119,7 +127,12 @@ export async function completeCollectiveShortRest(
   const rolls: ShortRestSongRollDto[] = [];
   const diceToRecord: PendingSongRoll[] = [];
   const sheets: ChangedSheet[] = [];
-  const completedSessions: { id: string; characterId: string; status: 'COMPLETED' }[] = [];
+  const completedSessions: {
+    id: string;
+    characterId: string;
+    status: 'COMPLETED';
+    pactMagicRestored: boolean;
+  }[] = [];
 
   for (const participant of accepted) {
     const session = sessionByCharacter.get(participant.characterId)!;
@@ -137,6 +150,19 @@ export async function completeCollectiveShortRest(
       normalizeClassState(character.classState),
       characterClassAdjustments(character).resources,
     );
+
+    // MAGIA DE PACTO (PHB 2014): pool PRÓPRIO do Bruxo, recuperado no Descanso
+    // CURTO. Só o USO é persistido; o total vem do nível dele (`pactMagicSlots`,
+    // derivado). Os espaços NORMAIS NÃO são tocados aqui — eles só voltam no
+    // Descanso Longo.
+    const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
+      list: [],
+      slots: {},
+      pactMagic: { used: 0 },
+    });
+    const pactMax = pactMagicSlots(normalizeClassEntries(character.classes))?.max ?? null;
+    const pactMagicRestored = pactMax !== null && (spells.pactMagic?.used ?? 0) > 0;
+    const nextSpells = { ...spells, pactMagic: { used: 0 } };
 
     const hpBefore = character.hpCurrent;
     let hpAfter = hpBefore;
@@ -166,6 +192,7 @@ export async function completeCollectiveShortRest(
       data: {
         hpCurrent: hpAfter,
         classState: nextState as unknown as Prisma.InputJsonValue,
+        spells: nextSpells as unknown as Prisma.InputJsonValue,
         version: { increment: 1 },
       },
     });
@@ -187,12 +214,22 @@ export async function completeCollectiveShortRest(
       );
     }
 
-    completedSessions.push({ id: session.id, characterId: participant.characterId, status: 'COMPLETED' });
+    completedSessions.push({
+      id: session.id,
+      characterId: participant.characterId,
+      status: 'COMPLETED',
+      pactMagicRestored,
+    });
     sheets.push({
       userId: participant.userId,
       username: participant.user.username,
       character: updated,
-      changes: { hpCurrent: hpAfter, classState: nextState },
+      changes: {
+        hpCurrent: hpAfter,
+        classState: nextState,
+        spells: nextSpells,
+        ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
+      },
     });
   }
 

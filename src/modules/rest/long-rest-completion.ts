@@ -5,6 +5,7 @@ import { parseJson } from '../shared/json.js';
 import {
   normalizeClassEntries,
   normalizeClassState,
+  pactMagicSlots,
   restoreLongRestResources,
   totalCharacterLevel,
 } from '../shared/classes.js';
@@ -54,10 +55,10 @@ import {
  * `sheet:updated` e o `long-rest:request-updated` do chamador) só acontecem
  * DEPOIS do commit — ver `publishLongRestCompletion`.
  *
- * FORA DO ESCOPO por decisão explícita (PASSO 25): a MAGIA DE PACTO não tem
- * contador de usos persistido (`pactMagicSlots` só deriva `max`/`slotLevel`), e
- * inventar um modelo de persistência aqui seria criar uma source of truth nova
- * sem necessidade. Fica para a etapa 5.2.5 — ver o relatório final.
+ * A MAGIA DE PACTO (Bruxo) é um POOL PRÓPRIO (PHB 2014) e recupera nos dois
+ * descansos: aqui o `spells.pactMagic.used` volta a zero na MESMA escrita
+ * atômica dos espaços normais. O `max`/`slotLevel` continuam DERIVADOS do nível
+ * de Bruxo (`pactMagicSlots`) — nunca persistidos.
  */
 
 /** Código de erro: a solicitação não está mais em andamento. */
@@ -110,6 +111,12 @@ export interface LongRestCharacterCompletionDto {
   classResourcesRestored: string[];
   /** Ids de usos RACIAIS restaurados (ex.: `race-spell:...`). */
   racialUsesRestored: string[];
+  /**
+   * A Magia de Pacto (Bruxo) foi efetivamente recuperada (tinha uso e o
+   * personagem tem pool). `false` quando não havia o que recuperar — o descanso
+   * não "finge" uma mudança (PHB 2014: pool próprio do Bruxo).
+   */
+  pactMagicRestored: boolean;
   /** Toggles de classe que estavam ativos e foram encerrados. */
   activeTogglesCleared: string[];
 }
@@ -384,6 +391,7 @@ export async function completeLongRest(
     const spells = parseJson<SpellsStateDto>(spellsStateSchema, character.spells, {
       list: [],
       slots: {},
+      pactMagic: { used: 0 },
     });
     const spellSlotLevelsRestored: number[] = [];
     const nextSlots: Record<string, { max: number; used: number }> = {};
@@ -391,6 +399,12 @@ export async function completeLongRest(
       if (slot.used > 0) spellSlotLevelsRestored.push(Number(level));
       nextSlots[level] = { ...slot, used: 0 };
     }
+
+    // --- MAGIA DE PACTO: pool PRÓPRIO, também zerado pelo descanso (PHB 2014).
+    //     Só o USO é persistido; o total vem do nível de Bruxo (nunca gravado).
+    const pactMax =
+      pactMagicSlots(normalizeClassEntries(character.classes))?.max ?? null;
+    const pactMagicRestored = pactMax !== null && (spells.pactMagic?.used ?? 0) > 0;
 
     // --- Recursos de CLASSE: recarga curta E longa (PASSO 26) ---------------
     const classAdjustments = characterClassAdjustments(character);
@@ -435,7 +449,7 @@ export async function completeLongRest(
         hpCurrent: hpAfter,
         hpTemp: 0,
         hitDice: hitDiceAfter as unknown as Prisma.InputJsonValue,
-        spells: { ...spells, slots: nextSlots } as unknown as Prisma.InputJsonValue,
+        spells: { ...spells, slots: nextSlots, pactMagic: { used: 0 } } as unknown as Prisma.InputJsonValue,
         classState: nextClassState as unknown as Prisma.InputJsonValue,
         ...(nextInventory
           ? { inventory: nextInventory as unknown as Prisma.InputJsonValue }
@@ -481,6 +495,7 @@ export async function completeLongRest(
       spellSlotLevelsRestored,
       classResourcesRestored,
       racialUsesRestored,
+      pactMagicRestored,
       activeTogglesCleared,
     });
 
@@ -492,7 +507,8 @@ export async function completeLongRest(
         hpCurrent: hpAfter,
         hpTemp: 0,
         hitDice: hitDiceAfter,
-        spells: { ...spells, slots: nextSlots },
+        spells: { ...spells, slots: nextSlots, pactMagic: { used: 0 } },
+        ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
         classState: nextClassState,
         ...(nextInventory ? { inventory: nextInventory } : {}),
       },
