@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { HpBar } from '../components/HpBar';
 import { setCampSupplies } from '../gameApi';
 import type { Character } from '../types';
 import { CampSuppliesPanel } from './CampSuppliesPanel';
 import { CampSupplyOverrideDialog } from './CampSupplyOverrideDialog';
-import { CampSupplySuggestions } from './CampSupplySuggestions';
 import { LongRestHitDicePanel } from './LongRestHitDicePanel';
 import { LongRestParticipants } from './LongRestParticipants';
 import { LongRestResultView } from './LongRestResultView';
+import { NarrativeSuggestionsPanel } from './NarrativeSuggestionsPanel';
+import { buildNarrativeContext, rankNarrativeSuggestions } from './narrativeSuggestions';
 import type { LongRestController } from './useLongRest';
 
 /**
@@ -25,6 +26,10 @@ import type { LongRestController } from './useLongRest';
  *
  * `Recursos de Acampamento` é uma regra OPCIONAL (inspirada em BG3), nunca
  * apresentada como regra oficial do PHB 2014.
+ *
+ * A assistência narrativa (5.2.8 — "Ideias para o Mestre") é MESTRE-ONLY: ela é
+ * calculada no cliente do Mestre a partir das fichas que ele já carrega
+ * (`characters`) e nunca é renderizada nem enviada ao jogador.
  */
 const STEPS = ['Solicitação', 'Participação', 'Preparativos', 'Descanso', 'Resultado'];
 
@@ -41,6 +46,7 @@ export function LongRestModal({
   onClose,
   rest,
   character,
+  characters,
   isMaster = false,
 }: {
   open: boolean;
@@ -48,6 +54,12 @@ export function LongRestModal({
   rest: LongRestController;
   /** Ficha do jogador (ausente no painel do mestre). */
   character?: Character;
+  /**
+   * Fichas da mesa (só no painel do MESTRE). Alimentam a assistência narrativa
+   * (5.2.8): perícias de quem PARTICIPA (ACCEPTED), moedas e itens de acampamento.
+   * O jogador nunca passa esta prop — a análise não chega até ele.
+   */
+  characters?: Character[];
   isMaster?: boolean;
 }) {
   const { request, completion, error, pending, me } = rest;
@@ -111,6 +123,24 @@ export function LongRestModal({
     if (!configOpen) return;
     setCostDraft(String(request?.campSupplies.costPerParticipant ?? 10));
   }, [configOpen, request?.campSupplies.costPerParticipant]);
+
+  /**
+   * 5.2.8B: contexto REAL da mesa para priorizar as ideias — apenas os
+   * participantes ACCEPTED do descanso, com o que as fichas do Mestre já trazem.
+   * Sem fichas carregadas, o ranking cai na biblioteca fixa sem destaque.
+   */
+  const narrativeRanking = useMemo(
+    () =>
+      rankNarrativeSuggestions(
+        buildNarrativeContext({
+          participants: request?.participants ?? [],
+          characters: characters ?? [],
+          remainingPoints: request?.campSupplies.remaining ?? 0,
+          requiredPoints: request?.campSupplies.required ?? 0,
+        }),
+      ),
+    [characters, request],
+  );
 
   if (!open) return null;
 
@@ -512,7 +542,10 @@ export function LongRestModal({
                       A situação ainda pode ser resolvida em jogo.
                     </p>
 
-                    {suggestionsOpen ? <CampSupplySuggestions /> : null}
+                    {/* 5.2.8 — ideias narrativas (exclusivo do Mestre). */}
+                    {suggestionsOpen ? (
+                      <NarrativeSuggestionsPanel ranking={narrativeRanking} />
+                    ) : null}
 
                     {confirm === 'override-narrative' ? (
                       <CampSupplyOverrideDialog
