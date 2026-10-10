@@ -1,4 +1,4 @@
-import { describeItemDetails, rarityLabel } from '../../dnd';
+import { categoryLabel, describeItemDetails, rarityLabel } from '../../dnd';
 import type { Character, Compendium, Creature, Item, Locality, Region } from '../../types';
 import type { IconName } from '../Icon';
 import type { MasterTab } from './MasterHome';
@@ -145,7 +145,7 @@ export function buildSearchGroups(data: MasterSearchData): SearchGroup[] {
         id: `items:${item.id}`,
         label: item.name,
         hint: joinHint([
-          item.category,
+          categoryLabel(item.category),
           rarityLabel(item.rarity),
           describeItemDetails(item.category, item.details),
         ]),
@@ -153,6 +153,7 @@ export function buildSearchGroups(data: MasterSearchData): SearchGroup[] {
         fields: [
           item.name,
           item.category,
+          categoryLabel(item.category),
           rarityLabel(item.rarity),
           item.description,
           describeItemDetails(item.category, item.details),

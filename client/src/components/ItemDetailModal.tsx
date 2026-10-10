@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { itemDetailRows, rarityColor, rarityLabel, rarityTint } from '../dnd';
+import { categoryLabel, itemDetailRows, rarityColor, rarityLabel, rarityTint } from '../dnd';
 import type { InventoryItem } from '../types';
 import { clampInt } from '../utils';
 import { Icon } from './Icon';
@@ -123,7 +123,9 @@ export function ItemDetailModal({
           <div className="item-modal-heading">
             <h2 className="item-modal-name">{item.name}</h2>
             <p className="item-modal-tags">
-              {item.category ? <span className="item-modal-tag">{item.category}</span> : null}
+              {item.category ? (
+                <span className="item-modal-tag">{categoryLabel(item.category)}</span>
+              ) : null}
               {rarity ? (
                 <span
                   className="item-modal-tag is-rarity"

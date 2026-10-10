@@ -9,12 +9,27 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import type { InventoryItemDto } from '../characters/characters.dto.js';
 import { republishSheetsWithCatalogItem, toSheetDto } from '../characters/characters.service.js';
 import { inventoryItemSchema } from '../characters/characters.schema.js';
-import { itemRarityOf, sanitizeItemDetails } from '../shared/item-details.js';
+import { isCampSupplyCategory, itemRarityOf, sanitizeItemDetails } from '../shared/item-details.js';
 import { parseJson } from '../shared/json.js';
 import { toItemDto, type ItemDto } from './items.dto.js';
 import type { CreateItemInput, UpdateItemInput } from './items.schema.js';
 
 const inventoryListSchema = z.array(inventoryItemSchema);
+
+/**
+ * A categoria `CAMP_SUPPLY` exige um valor por unidade > 0 (uma unidade sem
+ * valor não contribuiria nada). Fora dela o valor é irrelevante — mas NUNCA é
+ * apagado por troca de categoria.
+ */
+function assertCampSupplyValue(category: string, value: number): void {
+  if (isCampSupplyCategory(category) && value <= 0) {
+    throw new HttpError(
+      'Um recurso de acampamento precisa de um valor por unidade maior que zero.',
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+}
 
 /**
  * O catálogo é compartilhado, mas o preço é exclusivo do mestre: os mestres
@@ -60,6 +75,11 @@ export async function getItem(id: string, viewer: Role): Promise<ItemDto> {
 export async function createItem(input: CreateItemInput): Promise<ItemDto> {
   const category = input.category ?? 'Item Geral';
   const price = input.price ?? {};
+  const campSupplyValue = input.campSupply?.value ?? 0;
+
+  // A CATEGORIA é a fonte de verdade da mecânica de acampamento: fora dela o
+  // espelho fica desligado; dentro dela o valor por unidade é obrigatório.
+  assertCampSupplyValue(category, campSupplyValue);
 
   const item = await prisma.item.create({
     data: {
@@ -74,8 +94,8 @@ export async function createItem(input: CreateItemInput): Promise<ItemDto> {
       priceGold: price.gold ?? 0,
       priceSilver: price.silver ?? 0,
       priceCopper: price.copper ?? 0,
-      campSupplyEnabled: input.campSupply?.enabled ?? false,
-      campSupplyValue: input.campSupply?.value ?? 0,
+      campSupplyEnabled: isCampSupplyCategory(category),
+      campSupplyValue,
     },
   });
 
@@ -85,6 +105,9 @@ export async function createItem(input: CreateItemInput): Promise<ItemDto> {
 
 export async function updateItem(id: string, patch: UpdateItemInput): Promise<ItemDto> {
   const current = await findItem(id);
+  // Categoria EFETIVA depois do patch: fonte de verdade da mecânica de
+  // acampamento e base da re-normalização dos atributos.
+  const category = patch.category ?? current.category;
 
   const data: Prisma.ItemUpdateInput = { version: { increment: 1 } };
   if (patch.name !== undefined) data.name = patch.name;
@@ -98,7 +121,6 @@ export async function updateItem(id: string, patch: UpdateItemInput): Promise<It
   // Atributos são re-normalizados com a categoria final (a troca de categoria
   // limpa os campos que não se aplicam mais).
   if (patch.details !== undefined || patch.category !== undefined) {
-    const category = patch.category ?? current.category;
     data.details = sanitizeItemDetails(
       category,
       patch.details ?? current.details,
@@ -111,11 +133,15 @@ export async function updateItem(id: string, patch: UpdateItemInput): Promise<It
     if (patch.price.copper !== undefined) data.priceCopper = patch.price.copper;
   }
 
-  // Recurso de acampamento (mecânica opcional). Uma vez ligado, o valor é > 0
-  // (validado no schema da rota).
-  if (patch.campSupply !== undefined) {
-    data.campSupplyEnabled = patch.campSupply.enabled;
-    data.campSupplyValue = patch.campSupply.value;
+  // RECURSO DE ACAMPAMENTO: a CATEGORIA final é a fonte de verdade. O espelho
+  // `campSupplyEnabled` é DERIVADO dela (nunca uma segunda decisão) e o valor
+  // por unidade é obrigatório (> 0) quando a categoria é de acampamento. O valor
+  // só muda quando informado — trocar de categoria NÃO o apaga.
+  if (patch.category !== undefined || patch.campSupply !== undefined) {
+    const finalValue = patch.campSupply?.value ?? current.campSupplyValue;
+    assertCampSupplyValue(category, finalValue);
+    data.campSupplyEnabled = isCampSupplyCategory(category);
+    if (patch.campSupply !== undefined) data.campSupplyValue = patch.campSupply.value;
   }
 
   const item = await prisma.item.update({ where: { id }, data });

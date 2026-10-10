@@ -551,7 +551,23 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   }, []);
 
   const patchItem = useCallback(async (id: string, patch: ItemPatch) => {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    // Merge OTIMISTA tipado: o patch de `campSupply` traz só o valor por unidade
+    // e é mesclado sobre o espelho atual do item (o `enabled` é derivado da
+    // categoria no SERVIDOR e chega no item autoritativo logo abaixo).
+    const { campSupply, ...rest } = patch;
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...rest,
+              campSupply: campSupply
+                ? { ...(item.campSupply ?? { enabled: false, value: 0 }), value: campSupply.value }
+                : (item.campSupply ?? { enabled: false, value: 0 }),
+            }
+          : item,
+      ),
+    );
 
     try {
       const { item } = await api<{ item: Item }>(`/api/items/${id}`, {

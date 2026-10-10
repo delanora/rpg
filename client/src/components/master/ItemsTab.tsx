@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
-import { describeItemDetails, rarityColor, rarityLabel } from '../../dnd';
+import { categoryLabel, describeItemDetails, rarityColor, rarityLabel } from '../../dnd';
 import type { CanonicalWeapon, Character, Compendium, Item, ItemPatch } from '../../types';
 import { Portrait } from '../Portrait';
 import { CoinsGrantPanel } from './CoinsGrantPanel';
@@ -77,7 +77,7 @@ export function ItemsTab({
     matchesSearch(
       query,
       item.name,
-      item.category,
+      categoryLabel(item.category),
       rarityLabel(item.rarity),
       describeItemDetails(item.category, item.details),
       priceLabel(item),
@@ -140,7 +140,7 @@ export function ItemsTab({
                     <span className="item-info">
                       <span className="card-name">{item.name}</span>
                       <span className="card-line">
-                        {item.category}
+                        {categoryLabel(item.category)}
                         {item.rarity ? (
                           <span style={{ color: rarityColor(item.rarity) ?? undefined }}>
                             {' · '}
