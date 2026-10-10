@@ -72,9 +72,14 @@ export function LongRestParticipants({
                 <span className="short-rest-person-badge">
                   <span aria-hidden="true">{mark}</span> {label}
                 </span>
+                {/* 5.2.7B.1: o valor da contribuição ganha legibilidade e o
+                    rótulo vira secundário (“20 recursos” + “Contribuição”). */}
                 {points !== undefined ? (
                   <span className="short-rest-person-contrib">
-                    Contribuição: {points} recurso{points === 1 ? '' : 's'}
+                    <strong className="short-rest-person-contrib-value">
+                      {points} recurso{points === 1 ? '' : 's'}
+                    </strong>
+                    <span className="short-rest-person-contrib-label">Contribuição</span>
                   </span>
                 ) : null}
               </span>

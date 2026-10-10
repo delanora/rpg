@@ -63,8 +63,12 @@ export function LongRestHitDicePanel({
           <li className="long-rest-die" key={option.die}>
             <span className="long-rest-die-face">d{option.die}</span>
 
+            {/* 5.2.7B.1: linha mais curta e mais legível — “1 gasto · 5
+                disponíveis”. Nenhum valor ou regra muda: só o texto. */}
             <span className="long-rest-die-facts">
-              gastos: {option.used} · não gastos: {option.remaining}
+              <strong>{option.used}</strong>{' '}
+              {option.used === 1 ? 'gasto' : 'gastos'} · <strong>{option.remaining}</strong>{' '}
+              {option.remaining === 1 ? 'disponível' : 'disponíveis'}
             </span>
 
             {noControls ? null : (
