@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
 import { ServerEvents } from '../../realtime/events.js';
@@ -13,6 +13,7 @@ import { computeCampSupplies } from './camp-supplies-calculator.js';
 import {
   assertHitDiceSelection,
   completeLongRest,
+  completionForViewer,
   publishLongRestCompletion,
   LONG_REST_REQUEST_CLOSED,
   type CampSupplyOverrideInput,
@@ -105,6 +106,12 @@ export interface Actor {
   userId: string;
   username: string;
   displayName: string;
+  /**
+   * Papel do usuário — define a VISIBILIDADE da resposta (o Mestre é o único que
+   * recebe a `overrideNote`; ver `completionForViewer`). Vem do banco, nunca do
+   * corpo da requisição.
+   */
+  role: Role;
 }
 
 type Db = Prisma.TransactionClient | typeof prisma;
@@ -396,12 +403,21 @@ interface StoredLongRestResult {
   completion: LongRestCompletionDto | null;
 }
 
-/** Formata o snapshot guardado de volta à resposta pública. */
+/**
+ * Formata o snapshot guardado de volta à resposta pública, já com a
+ * visibilidade do PAPEL de quem pediu (o replay não pode devolver a nota do
+ * Mestre para quem não é Mestre).
+ */
 function storedToResult(
   stored: StoredLongRestResult,
   replayed: boolean,
+  role: Role,
 ): LongRestCollectiveResult {
-  return { ...stored.request, replayed, completion: stored.completion };
+  return {
+    ...stored.request,
+    replayed,
+    completion: stored.completion ? completionForViewer(stored.completion, role) : null,
+  };
 }
 
 /**
@@ -964,6 +980,7 @@ export async function setLongRestReady(
     return storedToResult(
       replaySnapshot<StoredLongRestResult>(previous, READY_TYPE, fingerprint),
       true,
+      actor.role,
     );
   }
 
@@ -1024,6 +1041,7 @@ export async function setLongRestReady(
         return storedToResult(
           replaySnapshot<StoredLongRestResult>(raced, READY_TYPE, fingerprint),
           true,
+          actor.role,
         );
       }
     }
@@ -1035,7 +1053,8 @@ export async function setLongRestReady(
   return {
     ...outcome.request,
     replayed: false,
-    completion: outcome.detail?.completion ?? null,
+    // Só o MASTER recebe a nota da exceção (a conclusão automática nem tem uma).
+    completion: outcome.detail ? completionForViewer(outcome.detail.completion, actor.role) : null,
   };
 }
 
@@ -1064,6 +1083,7 @@ export async function setHitDiceRecovery(
     return storedToResult(
       replaySnapshot<StoredLongRestResult>(previous, HIT_DICE_TYPE, fingerprint),
       true,
+      actor.role,
     );
   }
 
@@ -1107,6 +1127,7 @@ export async function setHitDiceRecovery(
         return storedToResult(
           replaySnapshot<StoredLongRestResult>(raced, HIT_DICE_TYPE, fingerprint),
           true,
+          actor.role,
         );
       }
     }
@@ -1146,6 +1167,7 @@ export async function forceCompleteLongRest(
     return storedToResult(
       replaySnapshot<StoredLongRestResult>(previous, COMPLETE_TYPE, fingerprint),
       true,
+      actor.role,
     );
   }
 
@@ -1185,6 +1207,7 @@ export async function forceCompleteLongRest(
         return storedToResult(
           replaySnapshot<StoredLongRestResult>(raced, COMPLETE_TYPE, fingerprint),
           true,
+          actor.role,
         );
       }
     }
@@ -1193,7 +1216,11 @@ export async function forceCompleteLongRest(
 
   publishRequest(outcome.request);
   await publishLongRestCompletion(outcome.detail);
-  return { ...outcome.request, replayed: false, completion: outcome.detail.completion };
+  return {
+    ...outcome.request,
+    replayed: false,
+    completion: completionForViewer(outcome.detail.completion, actor.role),
+  };
 }
 
 /**

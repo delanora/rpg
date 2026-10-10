@@ -1,3 +1,4 @@
+import type { Role } from '@prisma/client';
 import { Router, type Response } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
@@ -26,14 +27,19 @@ import {
 
 export const longRestRouter = Router();
 
-/** Extrai o autor da requisição (sempre do token, jamais do corpo). */
+/**
+ * Extrai o autor da requisição (sempre do token/banco, jamais do corpo). O
+ * `role` acompanha porque a RESPOSTA tem visibilidade por papel (a nota do
+ * override é privada do Mestre).
+ */
 function actorFrom(req: {
-  user?: { sub: string; username: string; displayName: string };
+  user?: { sub: string; username: string; displayName: string; role: Role };
 }): Actor {
   return {
     userId: req.user!.sub,
     username: req.user!.username,
     displayName: req.user!.displayName,
+    role: req.user!.role,
   };
 }
 
