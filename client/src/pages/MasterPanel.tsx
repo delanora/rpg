@@ -923,6 +923,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           open
           onClose={() => setLongRestOpen(false)}
           rest={longRest}
+          characters={characters}
           isMaster
         />
       ) : null}
