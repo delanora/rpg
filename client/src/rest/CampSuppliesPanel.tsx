@@ -13,6 +13,11 @@ import type { Character, LongRestCampSuppliesDto } from '../types';
  *
  * Desligada, a mecânica não exige, reserva nem consome nada (PASSO 15): as
  * contribuições antigas continuam visíveis como histórico, nunca como bloqueio.
+ *
+ * Contribuições ÓRFÃS (a pilha saiu do inventário ou deixou de ser recurso de
+ * acampamento depois de reservada) ganham a própria linha com um botão de
+ * remoção: o servidor aceita `quantity = 0` sem revalidar o item, e sem isto o
+ * jogador ficaria preso — a reserva órfã bloqueia a conclusão do descanso.
  */
 export function CampSuppliesPanel({
   supplies,
@@ -68,6 +73,18 @@ export function CampSuppliesPanel({
   const eligibleItems = character
     ? character.inventory.filter(
         (item) => item.campSupply?.enabled === true && item.quantity > 0,
+      )
+    : [];
+  // Contribuições do PRÓPRIO jogador que não têm mais linha de stepper (a pilha
+  // saiu do inventário, zerou ou deixou de ser recurso). Só elas podem ser
+  // removidas por aqui — a de outro personagem o servidor recusa
+  // (CONTRIBUTION_NOT_YOURS).
+  const eligibleIds = new Set(eligibleItems.map((item) => item.id));
+  const orphanContributions = character
+    ? supplies.contributions.filter(
+        (contribution) =>
+          contribution.characterId === character.id &&
+          !eligibleIds.has(contribution.inventoryItemId),
       )
     : [];
 
@@ -163,6 +180,42 @@ export function CampSuppliesPanel({
             })}
           </ul>
         )
+      ) : null}
+
+      {/* Contribuições órfãs: destravam o descanso sem exigir abort (PASSO 14). */}
+      {character && onChange && orphanContributions.length > 0 ? (
+        <ul className="camp-supply-items">
+          {orphanContributions.map((contribution) => {
+            const busy = busyItemId === contribution.inventoryItemId;
+            return (
+              <li
+                className={busy ? 'camp-supply-item is-busy' : 'camp-supply-item'}
+                key={contribution.inventoryItemId}
+              >
+                <div className="camp-supply-item-head">
+                  <span className="camp-supply-item-name">Item fora do inventário</span>
+                  {busy ? <span className="muted">removendo…</span> : null}
+                </div>
+
+                <span className="camp-supply-item-facts">
+                  Reserva de {contribution.quantity} unidade(s) · {contribution.points} ponto(s) —
+                  a pilha não está mais disponível na sua ficha.
+                </span>
+
+                <div className="camp-supply-actions">
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={disabled || busyItemId !== null}
+                    onClick={() => onChange(contribution.inventoryItemId, 0)}
+                  >
+                    Remover contribuição
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       ) : null}
 
       {/* Quebra de pontos por personagem (visão do mestre). */}
