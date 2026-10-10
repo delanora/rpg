@@ -13591,3 +13591,372 @@ input[type='checkbox']:focus-visible,
     grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
   }
 }
+
+/* ==========================================================================
+   Polimento visual do Descanso (5.2.7B) — só apresentação
+   Acampamento medieval / grimório discreto: noite, fogueira, couro e luz quente.
+   ========================================================================== */
+
+/* --- Cartões de Recursos de Acampamento: mais largos, menos verticais ----- */
+.camp-supply-grid {
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.camp-supply-card {
+  gap: 0.3rem;
+  padding: 0.7rem 0.6rem 0.6rem;
+}
+
+.camp-supply-card:hover {
+  border-color: var(--gold-deep);
+}
+
+/* Seleção: borda lateral + fundo quente + o selo textual "✓ Selecionado". */
+.camp-supply-card.is-selected {
+  border-color: var(--gold-deep);
+  border-left-width: 3px;
+  background: linear-gradient(180deg, rgba(184, 145, 42, 0.22), var(--surface-2));
+}
+
+/* Sprite como elemento principal do cartão. */
+.camp-supply-card-sprite {
+  width: 4rem;
+  height: 4rem;
+  border-color: var(--gold-hair);
+  background: radial-gradient(circle at 50% 35%, var(--surface), var(--surface-3));
+}
+
+.camp-supply-card-sprite-img {
+  image-rendering: auto;
+}
+
+/* Nome tem prioridade sobre os metadados. */
+.camp-supply-card-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.camp-supply-selected-tag {
+  border-color: var(--gold-deep);
+  background: var(--gold-deep);
+  color: var(--surface);
+  font-weight: 700;
+}
+
+/* Metadados em bloco secundário, separados do nome por um fio discreto. */
+.camp-supply-card-meta {
+  width: 100%;
+  margin-top: 0.15rem;
+  padding-top: 0.3rem;
+  display: grid;
+  gap: 0.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.camp-supply-card-available {
+  font-size: 0.82rem;
+  color: var(--ink);
+}
+
+.camp-supply-card-unit {
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+}
+
+.camp-supply-card-contrib {
+  width: 100%;
+  display: grid;
+  gap: 0.05rem;
+}
+
+.camp-supply-card-selected {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+.camp-supply-card-points {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--gold-deep);
+}
+
+/* Stepper legível: quantidade central com área de clique confortável. */
+.camp-supply-card-actions {
+  gap: 0.4rem;
+}
+
+.camp-supply-card-actions .stepper-btn {
+  min-width: 2.2rem;
+  min-height: var(--control-h);
+}
+
+.camp-supply-card-actions .stepper-value {
+  min-width: 2rem;
+  font-size: 1.05rem;
+}
+
+/* --- Recursos do grupo: número, barra e situação ------------------------- */
+.camp-supply-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.camp-supply-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.camp-supply-group-title {
+  font-size: var(--text-subsection);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.camp-supply-group-count {
+  font-family: var(--font-display);
+  font-size: var(--text-value);
+}
+
+.camp-supply-group-count strong {
+  font-size: 1.35rem;
+  color: var(--gold-deep);
+}
+
+.camp-supply-bar {
+  height: 0.6rem;
+}
+
+.camp-supply-bar.is-complete .camp-supply-bar-fill {
+  background: linear-gradient(90deg, var(--ok), var(--ok-bright));
+}
+
+.camp-supply-bar.is-over {
+  box-shadow: 0 0 0 1px var(--gold-hair);
+}
+
+.camp-supply-status {
+  margin: 0;
+  font-size: var(--text-aux);
+}
+
+.camp-supply-status.is-ok {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+/* Insuficiente é situação de jogo, não falha técnica: âmbar, nunca vermelho. */
+.camp-supply-status.is-short {
+  color: var(--warn);
+}
+
+/* --- Resumo individual ligado ao grid ----------------------------------- */
+.camp-supply-mine {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.camp-supply-mine-label {
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+.camp-supply-mine-value {
+  font-family: var(--font-display);
+  color: var(--gold-deep);
+}
+
+/* --- Responsividade do grid --------------------------------------------- */
+@media (max-width: 760px) {
+  .camp-supply-grid {
+    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .camp-supply-grid {
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 0.5rem;
+  }
+
+  .camp-supply-card-sprite {
+    width: 3.2rem;
+    height: 3.2rem;
+  }
+}
+
+/* --- Participantes com presença (retrato + classe + situação) ------------ */
+.short-rest-person {
+  grid-template-columns: auto 1fr auto;
+  gap: 0.55rem;
+}
+
+.short-rest-person-avatar {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface-3);
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--gold-deep);
+}
+
+.short-rest-person-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.short-rest-person-id {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.short-rest-person-sub {
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+}
+
+.short-rest-person-side {
+  display: grid;
+  gap: 0.15rem;
+  justify-items: end;
+  text-align: right;
+}
+
+.short-rest-person-badge {
+  padding: 0 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.short-rest-person.is-waiting .short-rest-person-badge {
+  border-color: var(--gold-hair);
+  color: var(--gold-deep);
+}
+
+.short-rest-person.is-ready .short-rest-person-badge {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.short-rest-person.is-resting .short-rest-person-badge,
+.short-rest-person.is-accepted .short-rest-person-badge,
+.short-rest-person.is-done .short-rest-person-badge {
+  border-color: var(--gold);
+  color: var(--gold-deep);
+}
+
+.short-rest-person.is-out .short-rest-person-badge {
+  color: var(--ink-faint);
+}
+
+.short-rest-person-contrib {
+  font-size: var(--text-micro);
+  color: var(--gold-deep);
+}
+
+/* --- Hierarquia das seções do Descanso ---------------------------------- */
+.rest-section {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.7rem 0;
+}
+
+.rest-section-title {
+  margin: 0;
+  font-size: var(--text-subsection);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--gold-deep);
+}
+
+/* Atmosfera: fio dourado sob o cabeçalho (luz quente da fogueira). */
+.long-rest-modal .short-rest-header {
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--gold-hair);
+}
+
+.long-rest-modal .short-rest-header h2 svg {
+  color: var(--gold-deep);
+}
+
+.short-rest-modal .short-rest-header {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Situação (faltam recursos) e as ações do Mestre, em blocos separados. */
+.rest-situation {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.rest-situation-lead {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.rest-ideas {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.rest-master-actions {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.rest-actions-title {
+  margin: 0;
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+/* --- Resultado ----------------------------------------------------------- */
+.rest-result-head {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0.2rem 0 0.7rem;
+}
+
+.rest-result-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--ok);
+}
+
+.rest-result-lead {
+  margin: 0;
+  color: var(--ink-soft);
+}

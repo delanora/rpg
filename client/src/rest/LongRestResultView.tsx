@@ -38,7 +38,10 @@ export function LongRestResultView({
 
   return (
     <div className="long-rest-result-view">
-      <p className="short-rest-lead">Descanso Longo concluído.</p>
+      <div className="rest-result-head">
+        <p className="rest-result-title">✓ Descanso concluído</p>
+        <p className="rest-result-lead">O grupo recuperou as forças.</p>
+      </div>
 
       {!completion ? (
         <>

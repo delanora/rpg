@@ -114,6 +114,9 @@ export function CampSuppliesPanel({
     supplies.required > 0
       ? Math.min(100, Math.round((supplies.contributed / supplies.required) * 100))
       : 100;
+  // Excedente: o que passou do requisito. Continua sendo consumido (nunca é
+  // truncado) e por isso é mostrado como aviso, não como erro.
+  const excess = Math.max(0, supplies.contributed - supplies.required);
   // Enquanto UMA pilha está salvando, os steppers ficam bloqueados (evita clique
   // duplo e resposta fora de ordem). O resto do painel não congela.
   const blockSteppers = disabled || busyItemId !== null;
@@ -125,30 +128,44 @@ export function CampSuppliesPanel({
         <span className="camp-supply-badge">Regra opcional</span>
       </div>
 
-      {/* Progresso coletivo: mostramos o número cru, inclusive o excesso. */}
-      <div className="camp-supply-progress">
-        <div className="camp-supply-bar">
+      {/* Recursos do grupo: número real (inclusive o excesso) + barra. */}
+      <section className="camp-supply-group" aria-label="Recursos do grupo">
+        <div className="camp-supply-group-head">
+          <span className="camp-supply-group-title">Recursos do grupo</span>
+          <span className="camp-supply-group-count">
+            <strong>{supplies.contributed}</strong> / {supplies.required}
+          </span>
+        </div>
+        <div
+          className={`camp-supply-bar${supplies.satisfied ? ' is-complete' : ''}${
+            excess > 0 ? ' is-over' : ''
+          }`}
+        >
           <div className="camp-supply-bar-fill" style={{ width: `${percent}%` }} />
         </div>
-        <p className="camp-supply-numbers">
-          Grupo: {supplies.contributed} / {supplies.required} recursos
+        <p className={`camp-supply-status${supplies.satisfied ? ' is-ok' : ' is-short'}`}>
           {supplies.satisfied
-            ? ' · Requisito atendido'
-            : ` · Faltam: ${supplies.remaining}`}
+            ? 'Requisito atendido'
+            : `Faltam ${supplies.remaining} recurso${supplies.remaining === 1 ? '' : 's'}`}
         </p>
-      </div>
-      {supplies.satisfied && supplies.contributed > supplies.required ? (
-        <p className="camp-supply-hint">
-          O excesso também será consumido — os itens selecionados são reservados por inteiro.
-        </p>
-      ) : null}
+        {excess > 0 ? (
+          <p className="camp-supply-hint">
+            {excess === 1
+              ? '1 recurso excedente também será consumido.'
+              : `${excess} recursos excedentes também serão consumidos.`}
+          </p>
+        ) : null}
+      </section>
 
       {/* --- Grid do próprio jogador -------------------------------------- */}
       {canContribute ? (
         <>
-          <p className="camp-supply-totals">
-            Sua contribuição: <strong>{myPoints}</strong> recurso{myPoints === 1 ? '' : 's'}
-          </p>
+          <div className="camp-supply-mine">
+            <span className="camp-supply-mine-label">Sua contribuição</span>
+            <strong className="camp-supply-mine-value">
+              {myPoints} recurso{myPoints === 1 ? '' : 's'}
+            </strong>
+          </div>
 
           {eligibleItems.length === 0 ? (
             <p className="section-note">
@@ -199,18 +216,24 @@ export function CampSuppliesPanel({
                       <span className="camp-supply-selected-tag">✓ Selecionado</span>
                     ) : null}
 
-                    <span className="camp-supply-card-facts">Disponível: {available}</span>
-                    <span className="camp-supply-card-facts">
-                      {value} recurso{value === 1 ? '' : 's'} por unidade
+                    <span className="camp-supply-card-meta">
+                      <span className="camp-supply-card-available">
+                        Disponível: <strong>{available}</strong>
+                      </span>
+                      <span className="camp-supply-card-unit">
+                        {value} recurso{value === 1 ? '' : 's'} por unidade
+                      </span>
                     </span>
 
                     {selected ? (
-                      <>
-                        <span className="camp-supply-card-facts">Selecionado: {reserved}</span>
-                        <span className="camp-supply-card-points">
-                          Contribuição: {reserved * value}
+                      <span className="camp-supply-card-contrib">
+                        <span className="camp-supply-card-selected">
+                          Selecionado: <strong>{reserved}</strong>
                         </span>
-                      </>
+                        <span className="camp-supply-card-points">
+                          +{reserved * value} recurso{reserved * value === 1 ? '' : 's'}
+                        </span>
+                      </span>
                     ) : null}
 
                     {busy ? <span className="muted">salvando…</span> : null}
