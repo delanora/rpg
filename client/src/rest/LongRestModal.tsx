@@ -169,6 +169,15 @@ export function LongRestModal({
     names[participant.characterId] = participant.displayName;
   }
 
+  // 5.2.7B: fichas conhecidas para retrato/classe nos participantes. O Mestre
+  // recebe a mesa inteira; o jogador, a própria ficha.
+  const knownCharacters = characters ?? (character ? [character] : undefined);
+  // characterId → recursos de acampamento (visão coletiva dos participantes).
+  const contributionPoints: Record<string, number> = {};
+  for (const entry of supplies?.byCharacter ?? []) {
+    contributionPoints[entry.characterId] = entry.points;
+  }
+
   async function saveSupply(inventoryItemId: string, quantity: number): Promise<void> {
     setSupplyItemId(inventoryItemId);
     await rest.setSupply(inventoryItemId, quantity);
@@ -420,7 +429,11 @@ export function LongRestModal({
             ) : null}
 
             <h3 className="subsection-title">Quem foi convidado</h3>
-            <LongRestParticipants request={request} myCharacterId={character?.id} />
+            <LongRestParticipants
+              request={request}
+              myCharacterId={character?.id}
+              characters={knownCharacters}
+            />
 
             {isMaster ? (
               confirm === 'force-approve' ? (
@@ -466,19 +479,29 @@ export function LongRestModal({
         {/* ---- APPROVED: preparativos e descanso -------------------------- */}
         {request?.status === 'APPROVED' && isMaster ? (
           <div className="short-rest-active">
-            <p className="short-rest-lead">Preparativos do descanso.</p>
-            <p className="section-note">
-              {waitingCount > 0
-                ? `${waitingCount} participante(s) ainda preparando.`
-                : 'Todos os participantes terminaram os preparativos.'}
-            </p>
+            <section className="rest-section">
+              <h3 className="rest-section-title">Estado do grupo</h3>
+              <p className="short-rest-lead">Preparativos do descanso.</p>
+              <p className="section-note">
+                {waitingCount > 0
+                  ? `${waitingCount} participante(s) ainda preparando.`
+                  : 'Todos os participantes terminaram os preparativos.'}
+              </p>
+            </section>
 
-            <h3 className="subsection-title">Participantes</h3>
-            <LongRestParticipants request={request} myCharacterId={character?.id} />
+            <section className="rest-section">
+              <h3 className="rest-section-title">Participantes</h3>
+              <LongRestParticipants
+                request={request}
+                myCharacterId={character?.id}
+                characters={knownCharacters}
+                contributions={contributionPoints}
+              />
+            </section>
 
             {supplies ? (
-              <>
-                <h3 className="subsection-title">Recursos de Acampamento</h3>
+              <section className="rest-section">
+                <h3 className="rest-section-title">Recursos de Acampamento</h3>
                 <CampSuppliesPanel supplies={supplies} names={names} />
                 <div className="long-rest-config">
                   <p className="section-note">
@@ -530,22 +553,30 @@ export function LongRestModal({
 
                 {/* Prontos, mas sem recursos: estado VÁLIDO, resolvível em jogo. */}
                 {request.allReady && !supplies.satisfied ? (
-                  <div className="long-rest-blocked" role="status">
-                    <p>
-                      <strong>O grupo está pronto para descansar.</strong>
+                  <div className="rest-situation" role="status">
+                    <h4 className="rest-section-title">Situação</h4>
+                    <p className="rest-situation-lead">
+                      O grupo ainda precisa de {supplies.remaining} recurso
+                      {supplies.remaining === 1 ? '' : 's'}.
                     </p>
-                    <p>
-                      Recursos: {supplies.contributed} / {supplies.required} — faltam{' '}
-                      {supplies.remaining} ponto(s).
-                    </p>
-                    <p className="section-note">
-                      A situação ainda pode ser resolvida em jogo.
-                    </p>
+                    <p className="section-note">Talvez exista outra saída para a cena...</p>
 
-                    {/* 5.2.8 — ideias narrativas (exclusivo do Mestre). */}
-                    {suggestionsOpen ? (
-                      <NarrativeSuggestionsPanel ranking={narrativeRanking} />
-                    ) : null}
+                    {/* 5.2.8 — ideias narrativas (exclusivo do Mestre). Vêm ANTES
+                        das ações administrativas: inspiração primeiro. */}
+                    <div className="rest-ideas">
+                      <h4 className="rest-actions-title">Ideias para o Mestre</h4>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        disabled={busy}
+                        onClick={() => setSuggestionsOpen((value) => !value)}
+                      >
+                        {suggestionsOpen ? 'Recolher ideias' : 'Ver ideias para o Mestre'}
+                      </button>
+                      {suggestionsOpen ? (
+                        <NarrativeSuggestionsPanel ranking={narrativeRanking} />
+                      ) : null}
+                    </div>
 
                     {confirm === 'override-narrative' ? (
                       <CampSupplyOverrideDialog
@@ -564,53 +595,48 @@ export function LongRestModal({
                         onConfirm={(input) => void rest.forceComplete(input)}
                       />
                     ) : (
-                      <div className="modal-actions modal-actions-wrap">
-                        <button
-                          type="button"
-                          className="btn btn-small"
-                          disabled={busy}
-                          onClick={() => {
-                            setSuggestionsOpen(false);
-                            setNotice('Aguardando novas contribuições ou uma decisão do Mestre.');
-                          }}
-                        >
-                          Aguardar recursos
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-small"
-                          disabled={busy}
-                          onClick={() => setSuggestionsOpen((value) => !value)}
-                        >
-                          Ideias para o Mestre
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-small btn-primary"
-                          disabled={busy}
-                          onClick={() => {
-                            setSuggestionsOpen(false);
-                            setConfirm('override-narrative');
-                          }}
-                        >
-                          Conceder exceção narrativa
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-small btn-danger"
-                          disabled={busy}
-                          onClick={() => {
-                            setSuggestionsOpen(false);
-                            setConfirm('override-administrative');
-                          }}
-                        >
-                          Forçar administrativamente
-                        </button>
+                      <div className="rest-master-actions">
+                        <h4 className="rest-actions-title">Ações do Mestre</h4>
+                        <div className="modal-actions modal-actions-wrap">
+                          <button
+                            type="button"
+                            className="btn btn-small"
+                            disabled={busy}
+                            onClick={() => {
+                              setSuggestionsOpen(false);
+                              setNotice('Aguardando novas contribuições ou uma decisão do Mestre.');
+                            }}
+                          >
+                            Aguardar recursos
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-small btn-primary"
+                            disabled={busy}
+                            onClick={() => {
+                              setSuggestionsOpen(false);
+                              setConfirm('override-narrative');
+                            }}
+                          >
+                            Conceder exceção narrativa
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-small btn-danger"
+                            disabled={busy}
+                            onClick={() => {
+                              setSuggestionsOpen(false);
+                              setConfirm('override-administrative');
+                            }}
+                          >
+                            Forçar administrativamente
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
                 ) : null}
-              </>
+              </section>
             ) : null}
 
             {confirm === 'force-complete' ? (
@@ -658,46 +684,91 @@ export function LongRestModal({
 
         {request?.status === 'APPROVED' && !isMaster && character && me?.response === 'ACCEPTED' ? (
           <div className="short-rest-active">
-            <p className="short-rest-lead">Preparativos para o descanso.</p>
+            <section className="rest-section">
+              <h3 className="rest-section-title">Estado do grupo</h3>
+              <p className="short-rest-lead">Preparativos para o descanso.</p>
+              <div className="rest-summary-line">
+                <span>Participantes</span>
+                <strong>{acceptedCount}</strong>
+                <span>· prontos</span>
+                <strong>{acceptedCount - waitingCount}</strong>
+              </div>
+            </section>
 
-            <div className="rest-summary-line">
-              <span>Participantes</span>
-              <strong>{acceptedCount}</strong>
-              <span>· prontos</span>
-              <strong>{acceptedCount - waitingCount}</strong>
-            </div>
-
-            <div className="short-rest-hp">
-              <span className="short-rest-stat-label">Pontos de vida</span>
-              <HpBar
-                current={character.hpCurrent}
-                max={character.derived.hpMax}
-                temp={character.hpTemp}
-                showLabel={false}
+            <section className="rest-section">
+              <h3 className="rest-section-title">Participantes</h3>
+              <LongRestParticipants
+                request={request}
+                myCharacterId={character.id}
+                characters={knownCharacters}
+                contributions={contributionPoints}
               />
-              <strong className="short-rest-stat-value">
-                {character.hpCurrent} / {character.derived.hpMax}
-              </strong>
-            </div>
+            </section>
 
-            <h3 className="subsection-title">Dados de Vida</h3>
-            {me.hitDiceRecovery ? (
-              <LongRestHitDicePanel
-                recovery={me.hitDiceRecovery}
-                busy={pending === 'hit-dice'}
-                onSetSelection={(selection) => void rest.setHitDice(selection)}
-              />
-            ) : (
-              <p className="section-note">Sua sessão de descanso não está ativa.</p>
-            )}
-            <p className="section-note">
-              Você decide a distribuição — 0 é uma escolha válida. Marcar-se pronto não trava esta
-              seleção.
-            </p>
+            <section className="rest-section">
+              <h3 className="rest-section-title">Preparativos</h3>
+
+              <div className="short-rest-hp">
+                <span className="short-rest-stat-label">Pontos de vida</span>
+                <HpBar
+                  current={character.hpCurrent}
+                  max={character.derived.hpMax}
+                  temp={character.hpTemp}
+                  showLabel={false}
+                />
+                <strong className="short-rest-stat-value">
+                  {character.hpCurrent} / {character.derived.hpMax}
+                </strong>
+              </div>
+
+              <h4 className="rest-actions-title">Dados de Vida</h4>
+              {me.hitDiceRecovery ? (
+                <LongRestHitDicePanel
+                  recovery={me.hitDiceRecovery}
+                  busy={pending === 'hit-dice'}
+                  onSetSelection={(selection) => void rest.setHitDice(selection)}
+                />
+              ) : (
+                <p className="section-note">Sua sessão de descanso não está ativa.</p>
+              )}
+              <p className="section-note">
+                Você decide a distribuição — 0 é uma escolha válida. Marcar-se pronto não trava esta
+                seleção.
+              </p>
+
+              {me.ready ? (
+                <div className="short-rest-decision">
+                  <p>
+                    <strong>✓ Preparativos concluídos.</strong> Este estado é só seu — o descanso
+                    conclui quando todos terminarem e os recursos permitirem.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={busy}
+                    onClick={() => void rest.setReady(false)}
+                  >
+                    Alterar preparativos
+                  </button>
+                </div>
+              ) : (
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={busy}
+                    title="Concluir os preparativos significa que você terminou o que precisava fazer antes de descansar."
+                    onClick={() => void rest.setReady(true)}
+                  >
+                    {pending === 'ready' ? 'marcando…' : 'Pronto para descansar'}
+                  </button>
+                </div>
+              )}
+            </section>
 
             {supplies?.enabled ? (
-              <>
-                <h3 className="subsection-title">Recursos de Acampamento</h3>
+              <section className="rest-section">
+                <h3 className="rest-section-title">Recursos de Acampamento</h3>
                 <CampSuppliesPanel
                   supplies={supplies}
                   character={character}
@@ -706,65 +777,34 @@ export function LongRestModal({
                     void saveSupply(inventoryItemId, quantity)
                   }
                 />
-              </>
+              </section>
             ) : null}
-
-            {me.ready ? (
-              <div className="short-rest-decision">
-                <p>
-                  <strong>✓ Você está pronto para descansar.</strong> O descanso conclui quando
-                  todos estiverem prontos e os recursos permitirem.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  disabled={busy}
-                  onClick={() => void rest.setReady(false)}
-                >
-                  Alterar preparativos
-                </button>
-              </div>
-            ) : (
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={busy}
-                  title="Marcar como pronto significa que você terminou seus preparativos pessoais."
-                  onClick={() => void rest.setReady(true)}
-                >
-                  {pending === 'ready' ? 'marcando…' : 'Pronto para descansar'}
-                </button>
-              </div>
-            )}
 
             {/* Todos prontos, mas faltam recursos: estado normal, não é erro. */}
             {request.allReady && supplies && !supplies.satisfied ? (
-              <div className="long-rest-blocked" role="status">
-                <p>
-                  <strong>
-                    O grupo está pronto para descansar, mas ainda faltam recursos de acampamento.
-                  </strong>
-                </p>
-                <p>
-                  {supplies.contributed} / {supplies.required} — faltam {supplies.remaining}{' '}
-                  ponto(s).
-                </p>
-                <p className="section-note">
-                  Aguardando novas contribuições ou uma decisão do Mestre.
-                </p>
-              </div>
+              <section className="rest-section">
+                <h3 className="rest-section-title">Situação</h3>
+                <div className="rest-situation" role="status">
+                  <p className="rest-situation-lead">
+                    O grupo ainda precisa de {supplies.remaining} recurso
+                    {supplies.remaining === 1 ? '' : 's'}.
+                  </p>
+                  <p className="section-note">
+                    Aguardando novas contribuições ou uma decisão do Mestre.
+                  </p>
+                </div>
+              </section>
             ) : null}
 
             {request.allReady && supplies?.satisfied ? (
-              <p className="section-note">
-                Todos prontos e os recursos foram atendidos — o descanso conclui na marcação de
-                pronto.
-              </p>
+              <section className="rest-section">
+                <h3 className="rest-section-title">Situação</h3>
+                <p className="section-note">
+                  Todos prontos e os recursos foram atendidos — o descanso conclui na marcação de
+                  pronto.
+                </p>
+              </section>
             ) : null}
-
-            <h3 className="subsection-title">Mesa</h3>
-            <LongRestParticipants request={request} myCharacterId={character.id} />
           </div>
         ) : null}
 
@@ -776,7 +816,11 @@ export function LongRestModal({
             </p>
             <p className="section-note">Você pode acompanhar o andamento da mesa.</p>
             <h3 className="subsection-title">Mesa</h3>
-            <LongRestParticipants request={request} myCharacterId={character?.id} />
+            <LongRestParticipants
+              request={request}
+              myCharacterId={character?.id}
+              characters={knownCharacters}
+            />
           </div>
         ) : null}
 
@@ -804,7 +848,11 @@ export function LongRestModal({
                   : 'A solicitação foi encerrada sem aplicar benefícios.'}
             </p>
             <h3 className="subsection-title">Status da mesa</h3>
-            <LongRestParticipants request={request} myCharacterId={character?.id} />
+            <LongRestParticipants
+              request={request}
+              myCharacterId={character?.id}
+              characters={knownCharacters}
+            />
             {declined.length === 0 ? null : (
               <p className="section-note">
                 Não participaram deste descanso: {declined.map((p) => p.displayName).join(', ')}.

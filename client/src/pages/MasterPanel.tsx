@@ -930,6 +930,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           open
           onClose={() => setShortRestOpen(false)}
           rest={shortRest}
+          characters={characters}
           isMaster
         />
       ) : null}

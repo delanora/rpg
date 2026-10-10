@@ -30,12 +30,15 @@ export function ShortRestModal({
   onClose,
   rest,
   character,
+  characters,
   isMaster = false,
 }: {
   open: boolean;
   onClose: () => void;
   rest: ShortRestController;
   character?: Character;
+  /** Fichas da mesa (só no painel do MESTRE) — retrato/classe dos participantes. */
+  characters?: Character[];
   isMaster?: boolean;
 }) {
   const { request, completion, error, pending } = rest;
@@ -87,6 +90,9 @@ export function ShortRestModal({
   }, [open]);
 
   if (!open) return null;
+
+  // 5.2.7B: fichas conhecidas para retrato/classe (Mestre: mesa; jogador: a própria).
+  const knownCharacters = characters ?? (character ? [character] : undefined);
 
   const me = request?.participants.find((participant) => participant.characterId === character?.id);
   const requesterName = request?.requestedBy.displayName ?? 'Alguém';
@@ -256,6 +262,7 @@ export function ShortRestModal({
               participants={request.participants}
               status={request.status}
               myCharacterId={character?.id}
+              characters={knownCharacters}
             />
 
             {isMaster ? (
@@ -304,7 +311,11 @@ export function ShortRestModal({
           <div className="short-rest-active">
             <p className="short-rest-lead">Descanso Curto em andamento.</p>
             <h3 className="subsection-title">Mesa</h3>
-            <ShortRestParticipants participants={request.participants} status={request.status} />
+            <ShortRestParticipants
+              participants={request.participants}
+              status={request.status}
+              characters={knownCharacters}
+            />
             {confirm === 'force-complete' ? (
               <ConfirmStrip
                 message="Participantes que ainda não marcaram “Pronto” terão o descanso encerrado agora."
@@ -356,8 +367,8 @@ export function ShortRestModal({
             {me.ready ? (
               <div className="short-rest-decision">
                 <p>
-                  <strong>✓ Você está pronto para finalizar.</strong> O descanso termina quando
-                  todos ficarem prontos.
+                  <strong>✓ Preparativos concluídos.</strong> Este estado é só seu — o descanso
+                  termina quando todos ficarem prontos.
                 </p>
                 <button
                   type="button"
@@ -386,6 +397,7 @@ export function ShortRestModal({
               participants={request.participants}
               status={request.status}
               myCharacterId={character.id}
+              characters={knownCharacters}
             />
           </div>
         ) : null}
@@ -402,6 +414,7 @@ export function ShortRestModal({
               participants={request.participants}
               status={request.status}
               myCharacterId={character?.id}
+              characters={knownCharacters}
             />
           </div>
         ) : null}
@@ -452,6 +465,7 @@ export function ShortRestModal({
               participants={request.participants}
               status={request.status}
               myCharacterId={character?.id}
+              characters={knownCharacters}
             />
             <div className="modal-actions">
               <button type="button" className="btn btn-primary" onClick={close}>

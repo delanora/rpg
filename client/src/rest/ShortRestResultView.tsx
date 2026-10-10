@@ -29,7 +29,10 @@ export function ShortRestResultView({
 
   return (
     <div className="short-rest-result">
-      <p className="short-rest-lead">A pausa terminou — você recuperou forças.</p>
+      <div className="rest-result-head">
+        <p className="rest-result-title">✓ Pausa concluída</p>
+        <p className="rest-result-lead">Você recuperou forças.</p>
+      </div>
 
       <div className="short-rest-stat">
         <span className="short-rest-stat-label">Pontos de vida</span>
