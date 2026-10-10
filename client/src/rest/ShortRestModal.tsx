@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatModifier } from '../dnd';
 import { HpBar } from '../components/HpBar';
 import { Icon } from '../components/Icon';
@@ -19,6 +19,11 @@ import type { ShortRestController } from './useShortRest';
  *
  * O frontend só apresenta o estado e envia intenções; quem participa, quem está
  * pronto, qual Canção de Descanso usar e quanto curar são decisões do servidor.
+ *
+ * Ciclo do estado resolvido: COMPLETED/CANCELLED continuam visíveis até o
+ * usuário fechar; fechar passa por `close()` e descarta o estado resolvido no
+ * hook (ver `dismissResolved`), então o próximo clique abre o fluxo inicial sem
+ * F5. Fechar um descanso VIVO (PENDING/APPROVED) preserva tudo.
  */
 export function ShortRestModal({
   open,
@@ -41,6 +46,16 @@ export function ShortRestModal({
   const [lastRoll, setLastRoll] = useState<SpendHitDieResult | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Fechar o painel: além do estado local abaixo, descarta a solicitação JÁ
+   * RESOLVIDA que ainda estava na tela. O resultado fica visível até o usuário
+   * fechar (nada some na conclusão) e um descanso em andamento é preservado.
+   */
+  const close = useCallback(() => {
+    rest.dismissResolved();
+    onClose();
+  }, [onClose, rest.dismissResolved]);
+
   // Ao fechar, esquece confirmações e a última rolagem (o estado real vive no
   // servidor; reabrir reconstrói tudo do GET/eventos).
   useEffect(() => {
@@ -60,11 +75,11 @@ export function ShortRestModal({
         setConfirm(null);
         return;
       }
-      if (pending === null) onClose();
+      if (pending === null) close();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, confirm, pending, onClose]);
+  }, [open, confirm, pending, close]);
 
   // Foco inicial no painel (o leitor de tela anuncia o título; o Tab segue daqui).
   useEffect(() => {
@@ -98,7 +113,7 @@ export function ShortRestModal({
             className="levelup-close"
             title="Fechar (Esc)"
             aria-label="Fechar o painel de Descanso Curto"
-            onClick={onClose}
+            onClick={close}
           >
             <Icon name="x" size={15} />
           </button>
@@ -397,7 +412,7 @@ export function ShortRestModal({
             request={request}
             completion={completion}
             character={character}
-            onClose={onClose}
+            onClose={close}
           />
         ) : null}
 
@@ -418,7 +433,7 @@ export function ShortRestModal({
               </>
             ) : null}
             <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={onClose}>
+              <button type="button" className="btn btn-primary" onClick={close}>
                 Fechar
               </button>
             </div>
@@ -439,7 +454,7 @@ export function ShortRestModal({
               myCharacterId={character?.id}
             />
             <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={onClose}>
+              <button type="button" className="btn btn-primary" onClick={close}>
                 Fechar
               </button>
             </div>
