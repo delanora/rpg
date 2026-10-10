@@ -302,6 +302,42 @@ function normalizeOverride(
 }
 
 /**
+ * Fecha sessões ACTIVE INVÁLIDAS de um conjunto de personagens: as que estão
+ * presas a uma solicitação já TERMINAL (COMPLETED/CANCELLED).
+ *
+ * Uma sessão ACTIVE só é válida enquanto o descanso correspondente está em
+ * andamento (solicitação APPROVED) ou quando é individual (sem solicitação).
+ * Abort e conclusão já fecham as sessões na escrita, então este estado só
+ * sobrevive como dado antigo/harness — e o índice único parcial
+ * `long_rest_sessions_one_active_key` impede abrir o descanso seguinte enquanto
+ * ele existir. Normalizar aqui evita que um resíduo trave a mesa para sempre.
+ */
+async function closeStrandedSessions(
+  tx: Prisma.TransactionClient,
+  characterIds: string[],
+): Promise<void> {
+  if (characterIds.length === 0) return;
+  // Solicitação concluída ⇒ a sessão também concluiu.
+  await tx.longRestSession.updateMany({
+    where: {
+      characterId: { in: characterIds },
+      status: 'ACTIVE',
+      longRestRequest: { status: 'COMPLETED' },
+    },
+    data: { status: 'COMPLETED', completedAt: new Date() },
+  });
+  // Solicitação cancelada ⇒ a sessão foi cancelada (nenhum benefício aplicado).
+  await tx.longRestSession.updateMany({
+    where: {
+      characterId: { in: characterIds },
+      status: 'ACTIVE',
+      longRestRequest: { status: 'CANCELLED' },
+    },
+    data: { status: 'CANCELLED', cancelledAt: new Date() },
+  });
+}
+
+/**
  * Resolve a solicitação quando não resta nenhum PENDING.
  *
  * `forcedByUserId` (force-approve do mestre) fecha os PENDING como DECLINED com
@@ -349,10 +385,25 @@ async function settleIfAnswered(
     return;
   }
 
-  // Conflito: qualquer ACCEPTED com sessão ativa ABORTA tudo (nada parcial).
   const characterIds = accepted.map((participant) => participant.characterId);
+
+  // Integridade na escrita: fecha sessões ACTIVE INVÁLIDAS antes de avaliar o
+  // conflito. Abort e conclusão fecham as sessões, então uma sessão ACTIVE presa
+  // a solicitação terminal só existe por dado antigo — e o banco tem um índice
+  // único parcial ("uma sessão ACTIVE por personagem") que a enxergaria e
+  // impediria abrir o próximo descanso para sempre. Normalizamos em vez de
+  // deixar a mesa travada.
+  await closeStrandedSessions(tx, characterIds);
+
+  // Conflito: qualquer ACCEPTED com sessão ativa VIVA ABORTA tudo (nada parcial).
+  // Só conta como conflito a sessão individual (sem solicitação) ou a vinculada a
+  // uma solicitação ainda APPROVED — o descanso realmente em andamento.
   const activeCount = await tx.longRestSession.count({
-    where: { characterId: { in: characterIds }, status: 'ACTIVE' },
+    where: {
+      characterId: { in: characterIds },
+      status: 'ACTIVE',
+      OR: [{ longRestRequestId: null }, { longRestRequest: { status: 'APPROVED' } }],
+    },
   });
   if (activeCount > 0) {
     throw new HttpError(

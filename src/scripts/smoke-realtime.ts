@@ -69,6 +69,40 @@ function check(label: string, condition: boolean, detail = ''): void {
   }
 }
 
+/**
+ * Fecha descansos longos abertos SEM deixar `LongRestSession` ACTIVE órfã.
+ *
+ * Cancelar só a solicitação deixava a sessão ACTIVE presa ao personagem — e
+ * como o conflito de aprovação é por sessão ACTIVE, o jogador (conta REAL, que
+ * o smoke reaproveita) ficava travado nas execuções seguintes. Aqui a
+ * solicitação e as SESSÕES dela fecham na mesma passada, e a rede de segurança
+ * normaliza qualquer sessão ACTIVE presa a uma solicitação terminal.
+ */
+async function cancelOpenLongRests(): Promise<void> {
+  const open = await prisma.longRestRequest.findMany({
+    where: { status: { in: ['PENDING', 'APPROVED'] } },
+    select: { id: true },
+  });
+  const ids = open.map((request) => request.id);
+  if (ids.length > 0) {
+    await prisma.longRestSession.updateMany({
+      where: { longRestRequestId: { in: ids }, status: 'ACTIVE' },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+    });
+    await prisma.longRestRequest.updateMany({
+      where: { id: { in: ids } },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+    });
+  }
+  await prisma.longRestSession.updateMany({
+    where: {
+      status: 'ACTIVE',
+      longRestRequest: { status: { in: ['COMPLETED', 'CANCELLED'] } },
+    },
+    data: { status: 'CANCELLED', cancelledAt: new Date() },
+  });
+}
+
 interface ApiOptions {
   method?: string;
   body?: unknown;
@@ -14798,11 +14832,7 @@ async function main(): Promise<void> {
         where: { characterId: { in: [lrCharA.id, lrCharB.id, lrCharD.id] }, status: 'ACTIVE' },
         data: { status: 'CANCELLED', cancelledAt: new Date() },
       });
-    const lrCancelPending = () =>
-      prisma.longRestRequest.updateMany({
-        where: { status: 'PENDING' },
-        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
-      });
+    const lrCancelPending = () => cancelOpenLongRests();
     const lrActiveSessions = (characterId: string) =>
       prisma.longRestSession.findMany({ where: { characterId, status: 'ACTIVE' } });
     const lrReset = async () => {
@@ -15255,10 +15285,7 @@ async function main(): Promise<void> {
         await prisma.longRestCampSupplyContribution.deleteMany({
           where: { characterId: { in: csAllCharIds } },
         });
-        await prisma.longRestRequest.updateMany({
-          where: { status: { in: ['PENDING', 'APPROVED'] } },
-          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
-        });
+        await cancelOpenLongRests();
       };
       await csReset();
       // Estado limpo da configuração (padrões).
@@ -15832,10 +15859,7 @@ async function main(): Promise<void> {
         await prisma.longRestCampSupplyContribution.deleteMany({
           where: { characterId: { in: lcAllCharIds } },
         });
-        await prisma.longRestRequest.updateMany({
-          where: { status: { in: ['PENDING', 'APPROVED'] } },
-          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
-        });
+        await cancelOpenLongRests();
       };
       const lcSetup = async (
         specs: Record<
@@ -17082,10 +17106,7 @@ async function main(): Promise<void> {
         await prisma.longRestCampSupplyContribution.deleteMany({
           where: { characterId: rsCharA.id },
         });
-        await prisma.longRestRequest.updateMany({
-          where: { status: { in: ['PENDING', 'APPROVED'] } },
-          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
-        });
+        await cancelOpenLongRests();
       };
       const rsCurrent = async () =>
         (await api('/api/rest/long/request', { token: rsTokenA })).data.request;
@@ -17590,10 +17611,7 @@ async function main(): Promise<void> {
           where: { status: { in: ['PENDING', 'APPROVED'] } },
           data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
         });
-        await prisma.longRestRequest.updateMany({
-          where: { status: { in: ['PENDING', 'APPROVED'] } },
-          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
-        });
+        await cancelOpenLongRests();
       };
 
       // Todos ONLINE: as solicitações coletivas convidam os jogadores conectados.
@@ -18753,6 +18771,218 @@ async function main(): Promise<void> {
     );
   }
 
+  // --- 54. Lifecycle de LongRestSession (sessão ↔ solicitação) --------------
+  // Regressão do bug "personagem já tem um Descanso Longo ativo" com a mesa
+  // ociosa: uma sessão ACTIVE presa a uma solicitação TERMINAL (resíduo de
+  // dados) não pode travar o jogador; uma sessão ACTIVE VIVA (solicitação
+  // APPROVED) continua bloqueando a abertura de outro descanso.
+  {
+    console.log('\n54) Lifecycle de LongRestSession (integridade sessão ↔ solicitação)');
+
+    const tokenA = testsPlayerToken;
+    const me54 = await api('/api/auth/me', { token: tokenA });
+    const userIdA54: string = me54.data?.user?.sub;
+    const masterMe54 = await api('/api/auth/me', { token: masterToken });
+    const masterUserId54: string = masterMe54.data?.user?.sub;
+    const charA54 = await prisma.character.findUniqueOrThrow({ where: { userId: userIdA54 } });
+
+    const createRequest = (tag: string) =>
+      api(`/api/rest/long/request`, {
+        method: 'POST',
+        token: tokenA,
+        body: { operationId: `op-${suffix}-54-${tag}` },
+      });
+    const forceApprove = (requestId: string, tag: string) =>
+      api(`/api/rest/long/${requestId}/force-approve`, {
+        method: 'POST',
+        token: masterToken,
+        body: { operationId: `op-${suffix}-54-${tag}-fa` },
+      });
+    /**
+     * Inicia um descanso DE VERDADE e garante APPROVED. Se outros jogadores
+     * estiverem online a solicitação nasce PENDING e o Mestre aprova — assim o
+     * teste não depende de quem está conectado na mesa.
+     */
+    const startLongRest = async (
+      tag: string,
+    ): Promise<{ requestId?: string; status?: string; error?: string }> => {
+      const created = await createRequest(tag);
+      if (created.status !== 201) {
+        return { error: (created.data?.error as string | undefined) ?? `status ${created.status}` };
+      }
+      if (created.data?.status === 'PENDING') {
+        const forced = await forceApprove(created.data.id, tag);
+        if (forced.status !== 200) {
+          return { error: (forced.data?.error as string | undefined) ?? `status ${forced.status}` };
+        }
+      }
+      const request = await prisma.longRestRequest.findUniqueOrThrow({
+        where: { id: created.data.id },
+      });
+      return { requestId: request.id, status: request.status };
+    };
+    const sessionsOf = (requestId: string) =>
+      prisma.longRestSession.findMany({ where: { longRestRequestId: requestId } });
+    /** Cancela apenas as solicitações PENDING (preserva a fixture APPROVED). */
+    const cancelPendingLeftovers = async () => {
+      const pending = await prisma.longRestRequest.findMany({
+        where: { status: 'PENDING' },
+        select: { id: true },
+      });
+      const ids = pending.map((row) => row.id);
+      if (ids.length === 0) return;
+      await prisma.longRestSession.updateMany({
+        where: { longRestRequestId: { in: ids }, status: 'ACTIVE' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
+      });
+      await prisma.longRestRequest.updateMany({
+        where: { id: { in: ids } },
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE' },
+      });
+    };
+
+    await cancelOpenLongRests();
+
+    // 54.1) O Mestre coordena, mas NÃO é participante automático.
+    const first = await createRequest('c1');
+    check('54.1) solicitação criada (201)', first.status === 201, JSON.stringify(first.data));
+    const firstParticipants = await prisma.longRestRequestParticipant.findMany({
+      where: { requestId: first.data.id },
+      select: { userId: true },
+    });
+    check(
+      '54.1) o MASTER NÃO entra como participante automático',
+      !firstParticipants.some((participant) => participant.userId === masterUserId54),
+      JSON.stringify(firstParticipants),
+    );
+
+    // 54.2) Uma sessão VIVA (solicitação APPROVED) continua bloqueando.
+    await cancelOpenLongRests();
+    const live = await startLongRest('live');
+    const liveSessions = live.requestId ? await sessionsOf(live.requestId) : [];
+    check(
+      '54.2) fixture: solicitação APPROVED com sessão ACTIVE',
+      live.status === 'APPROVED' && liveSessions.some((session) => session.status === 'ACTIVE'),
+      JSON.stringify({ status: live.status, sessions: liveSessions.map((s) => s.status) }),
+    );
+    check(
+      '54.2) a sessão ativa é do personagem solicitante',
+      liveSessions.some(
+        (session) => session.characterId === charA54.id && session.status === 'ACTIVE',
+      ),
+      JSON.stringify(liveSessions),
+    );
+    // O conflito aparece na CRIAÇÃO (mesa sozinha) ou na APROVAÇÃO (mais gente
+    // online) — em ambos os caminhos o erro tem de ser o mesmo.
+    const conflict = await createRequest('blocked');
+    let conflictError: string | undefined = conflict.data?.error;
+    if (conflict.status === 201) {
+      const forced = await forceApprove(conflict.data.id, 'blocked');
+      conflictError = (forced.data?.error as string | undefined) ?? `status ${forced.status}`;
+    }
+    check(
+      '54.2) um descanso REALMENTE em andamento continua bloqueando',
+      conflictError === 'LONG_REST_SESSION_ALREADY_ACTIVE',
+      String(conflictError),
+    );
+    await cancelPendingLeftovers();
+
+    // 54.3) ACTIVE presa a solicitação CANCELLED (resíduo) NÃO pode travar.
+    await cancelOpenLongRests();
+    const cancelledFixture = await startLongRest('residue-cancelled');
+    await prisma.longRestRequest.update({
+      where: { id: cancelledFixture.requestId ?? '' },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'SMOKE_ORPHAN' },
+    });
+    const residueCancelled = await sessionsOf(cancelledFixture.requestId ?? '');
+    check(
+      '54.3) fixture: a sessão segue ACTIVE com a solicitação CANCELLED',
+      residueCancelled.some((session) => session.status === 'ACTIVE'),
+      JSON.stringify(residueCancelled.map((s) => s.status)),
+    );
+    const afterCancelled = await startLongRest('after-cancelled');
+    check(
+      '54.3) o resíduo NÃO trava a mesa: novo descanso é aprovado',
+      afterCancelled.status === 'APPROVED',
+      JSON.stringify(afterCancelled),
+    );
+
+    // 54.4) ACTIVE presa a solicitação COMPLETED (resíduo) NÃO pode travar.
+    await cancelOpenLongRests();
+    const completedFixture = await startLongRest('residue-completed');
+    await prisma.longRestRequest.update({
+      where: { id: completedFixture.requestId ?? '' },
+      data: { status: 'COMPLETED', completedAt: new Date() },
+    });
+    const residueCompleted = await sessionsOf(completedFixture.requestId ?? '');
+    check(
+      '54.4) fixture: a sessão segue ACTIVE com a solicitação COMPLETED',
+      residueCompleted.some((session) => session.status === 'ACTIVE'),
+      JSON.stringify(residueCompleted.map((s) => s.status)),
+    );
+    const afterCompleted = await startLongRest('after-completed');
+    check(
+      '54.4) o resíduo NÃO trava a mesa: novo descanso é aprovado',
+      afterCompleted.status === 'APPROVED',
+      JSON.stringify(afterCompleted),
+    );
+
+    // 54.5) Abort fecha as sessões e libera o jogador para um novo descanso.
+    await cancelOpenLongRests();
+    // Tag diferente do `operationId` do abort: o create NÃO pode usar a mesma
+    // chave idempotente (senão o abort vira replay e é recusado com 409).
+    const toAbort = await startLongRest('to-abort');
+    const aborted = await api(`/api/rest/long/${toAbort.requestId ?? ''}/abort`, {
+      method: 'POST',
+      token: masterToken,
+      body: { operationId: `op-${suffix}-54-abort` },
+    });
+    const abortedSessions = await sessionsOf(toAbort.requestId ?? '');
+    check(
+      '54.5) abort cancela a solicitação e nenhuma sessão fica ACTIVE',
+      aborted.status === 200 && abortedSessions.every((session) => session.status !== 'ACTIVE'),
+      JSON.stringify({
+        status: aborted.status,
+        error: aborted.data?.error,
+        sessions: abortedSessions.map((s) => s.status),
+      }),
+    );
+    const afterAbort = await startLongRest('after-abort');
+    check(
+      '54.5) depois do abort o PLAYER inicia um novo descanso',
+      afterAbort.status === 'APPROVED',
+      JSON.stringify(afterAbort),
+    );
+
+    // 54.6) Concorrência: dois descansos realmente simultâneos → um só vence.
+    await cancelOpenLongRests();
+    const [raceA, raceB] = await Promise.all([
+      createRequest('race-a'),
+      createRequest('race-b'),
+    ]);
+    const raceStatuses = [raceA.status, raceB.status].sort((a, b) => a - b);
+    check(
+      '54.6) dois Long Rests simultâneos: um criado (201), o outro recusado (409)',
+      raceStatuses.length === 2 && raceStatuses[0] === 201 && raceStatuses[1] === 409,
+      JSON.stringify(raceStatuses),
+    );
+
+    // 54.7) Rede de segurança: nenhuma sessão ACTIVE sobrevive presa a uma
+    // solicitação terminal.
+    await cancelOpenLongRests();
+    const stranded = await prisma.longRestSession.count({
+      where: {
+        status: 'ACTIVE',
+        longRestRequest: { status: { in: ['COMPLETED', 'CANCELLED'] } },
+      },
+    });
+    check(
+      '54.7) nenhuma sessão ACTIVE presa a solicitação terminal',
+      stranded === 0,
+      `restantes: ${stranded}`,
+    );
+  }
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -18761,6 +18991,11 @@ async function main(): Promise<void> {
 }
 
 async function cleanup(): Promise<void> {
+  // Descansos Longos abertos: fecha a solicitação E as sessões dela. As contas
+  // reais reaproveitadas pelo smoke NÃO são apagadas, então deixar uma sessão
+  // ACTIVE presa travaria esses jogadores na próxima execução.
+  await cancelOpenLongRests();
+
   // Combates criados pelo teste (os combatentes somem em cascata).
   if (createdCombatIds.length > 0) {
     await prisma.combat.deleteMany({ where: { id: { in: createdCombatIds } } });
