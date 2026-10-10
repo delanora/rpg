@@ -43,7 +43,10 @@ export interface UseLongRestOptions {
 }
 
 export interface LongRestController {
-  /** Solicitação aberta (PENDING/APPROVED) ou a última resolvida vista ao vivo. */
+  /**
+   * Solicitação aberta (PENDING/APPROVED) ou a última resolvida, enquanto o
+   * resultado ainda está na tela (sai de cena com `dismissResolved`).
+   */
   request: LongRestRequestDto | null;
   /**
    * O convite do PERSONAGEM do jogador nesta solicitação (ou `null` quando ele
@@ -57,6 +60,13 @@ export interface LongRestController {
   /** Ação em andamento (ou `null`). */
   pending: LongRestAction | null;
   clearError: () => void;
+  /**
+   * Esquece a solicitação JÁ RESOLVIDA (COMPLETED/CANCELLED) que está na tela.
+   * Chamada ao fechar o resultado: o próximo clique no botão volta ao fluxo
+   * inicial (nova solicitação) sem F5. Nunca toca uma solicitação viva
+   * (PENDING/APPROVED) e não fala com o servidor.
+   */
+  dismissResolved: () => void;
   refresh: () => Promise<void>;
   create: () => Promise<void>;
   respond: (response: LongRestDecision) => Promise<void>;
@@ -223,6 +233,18 @@ export function useLongRest({ characterId }: UseLongRestOptions = {}): LongRestC
 
   const clearError = useCallback(() => setError(null), []);
 
+  /**
+   * Limpa o estado ativo depois que o resultado de um descanso RESOLVIDO sai da
+   * tela. A solicitação concluída não é "reaberta" pelo servidor (o GET só
+   * devolve PENDING/APPROVED), então guardá-la no cliente prenderia a UI no ramo
+   * do resultado para sempre — era exatamente o BUG 1.
+   */
+  const dismissResolved = useCallback(() => {
+    if (!request || (request.status !== 'COMPLETED' && request.status !== 'CANCELLED')) return;
+    setRequest(null);
+    setCompletion(null);
+  }, [request]);
+
   const me = useMemo(
     () =>
       characterId
@@ -253,6 +275,7 @@ export function useLongRest({ characterId }: UseLongRestOptions = {}): LongRestC
     error,
     pending,
     clearError,
+    dismissResolved,
     refresh,
     create,
     respond,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { HpBar } from '../components/HpBar';
 import { setCampSupplies } from '../gameApi';
@@ -63,6 +63,18 @@ export function LongRestModal({
   const [notice, setNotice] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Fechar o painel: além do estado local abaixo, descarta a solicitação JÁ
+   * RESOLVIDA que ainda estava na tela. O resultado (COMPLETED/CANCELLED)
+   * continua visível até o usuário fechar — só então o estado ativo é limpo, e o
+   * próximo clique volta ao fluxo inicial em vez de mostrar o descanso antigo.
+   * Uma solicitação viva (PENDING/APPROVED) é preservada pelo hook.
+   */
+  const close = useCallback(() => {
+    rest.dismissResolved();
+    onClose();
+  }, [onClose, rest.dismissResolved]);
+
   // Ao fechar, esquece confirmações e painéis locais (o estado real vive no
   // servidor; reabrir reconstrói tudo do GET/eventos).
   useEffect(() => {
@@ -85,11 +97,11 @@ export function LongRestModal({
         setConfirm(null);
         return;
       }
-      if (pending === null) onClose();
+      if (pending === null) close();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, confirm, pending, onClose]);
+  }, [open, confirm, pending, close]);
 
   useEffect(() => {
     if (open) dialogRef.current?.focus();
@@ -186,7 +198,7 @@ export function LongRestModal({
             className="levelup-close"
             title="Fechar (Esc)"
             aria-label="Fechar o painel de Descanso Longo"
-            onClick={onClose}
+            onClick={close}
           >
             <Icon name="x" size={15} />
           </button>
@@ -743,7 +755,7 @@ export function LongRestModal({
             character={character}
             myCharacterId={character?.id}
             isMaster={isMaster}
-            onClose={onClose}
+            onClose={close}
           />
         ) : null}
 
@@ -766,7 +778,7 @@ export function LongRestModal({
               </p>
             )}
             <div className="modal-actions">
-              <button type="button" className="btn btn-primary" onClick={onClose}>
+              <button type="button" className="btn btn-primary" onClick={close}>
                 Fechar
               </button>
             </div>
