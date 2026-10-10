@@ -16094,6 +16094,98 @@ async function main(): Promise<void> {
         JSON.stringify({ status: lcHdBadType.status, error: lcHdBadType.error }),
       );
 
+      // 49.68–49.75) A cota é GLOBAL sobre o TOTAL de Dados de Vida do
+      // personagem (nunca metade por classe). Caso do teste manual (BUG 2):
+      // Guerreiro 6 / Mago 1 = 6d10 + 1d6, todos gastos → floor(7/2) = 3.
+      const lcHdClasses7 = [
+        { classKey: 'fighter', level: 6 },
+        { classKey: 'wizard', level: 1 },
+      ];
+      const lcHdUsed7 = { '10': 6, '6': 1 };
+      const lcHdSel1 = await lcHdAt(lcHdClasses7, lcHdUsed7, { '10': 1 }, 'hd-m7-1');
+      check(
+        '49.68) Guerreiro 6 / Mago 1 (6d10+1d6, todos gastos): cota base 3 e 1d10 válido',
+        lcHdSel1.status === 200 &&
+          lcHdSel1.recovery?.baseAllowance === 3 &&
+          lcHdSel1.recovery?.allowance === 3 &&
+          lcHdSel1.recovery?.usedTotal === 7 &&
+          lcHdSel1.recovery?.selectedTotal === 1,
+        JSON.stringify(lcHdSel1.recovery),
+      );
+      const lcHdSel2 = await lcHdAt(lcHdClasses7, lcHdUsed7, { '10': 2 }, 'hd-m7-2');
+      check(
+        '49.69) 2d10 (total 2) válido',
+        lcHdSel2.status === 200 && lcHdSel2.recovery?.selectedTotal === 2,
+        JSON.stringify(lcHdSel2.recovery),
+      );
+      const lcHdSel3 = await lcHdAt(lcHdClasses7, lcHdUsed7, { '10': 3 }, 'hd-m7-3');
+      check(
+        '49.70) 3d10 (total 3 = cota) válido',
+        lcHdSel3.status === 200 &&
+          lcHdSel3.recovery?.selectedTotal === 3 &&
+          lcHdSel3.recovery?.options?.find((o: any) => o.die === 10)?.selected === 3,
+        JSON.stringify(lcHdSel3.recovery),
+      );
+      const lcHdSelMix = await lcHdAt(lcHdClasses7, lcHdUsed7, { '10': 2, '6': 1 }, 'hd-m7-mix');
+      check(
+        '49.71) 2d10 + 1d6 (total 3) válido — a distribuição é do jogador',
+        lcHdSelMix.status === 200 &&
+          lcHdSelMix.recovery?.selectedTotal === 3 &&
+          lcHdSelMix.recovery?.options?.find((o: any) => o.die === 6)?.used === 1,
+        JSON.stringify(lcHdSelMix.recovery),
+      );
+      const lcHdSelOver = await lcHdAt(
+        lcHdClasses7,
+        lcHdUsed7,
+        { '10': 3, '6': 1 },
+        'hd-m7-over',
+      );
+      check(
+        '49.72) 3d10 + 1d6 (total 4 > cota 3) → 400 HIT_DICE_INVALID',
+        lcHdSelOver.status === 400 && lcHdSelOver.error === 'HIT_DICE_INVALID',
+        JSON.stringify({ status: lcHdSelOver.status, error: lcHdSelOver.error }),
+      );
+      const lcHdPartial7 = await lcHdAt(lcHdClasses7, { '10': 1 }, { '10': 1 }, 'hd-m7-partial');
+      check(
+        '49.73) só 1 dado gasto: a cota base segue 3, mas a efetiva é 1',
+        lcHdPartial7.status === 200 &&
+          lcHdPartial7.recovery?.baseAllowance === 3 &&
+          lcHdPartial7.recovery?.allowance === 1,
+        JSON.stringify(lcHdPartial7.recovery),
+      );
+      const lcHdL7 = await lcHdAt(
+        [{ classKey: 'fighter', level: 7 }],
+        { '10': 4 },
+        { '10': 3 },
+        'hd-l7',
+      );
+      check(
+        '49.74) nível 7 → cota base 3',
+        lcHdL7.status === 200 && lcHdL7.recovery?.baseAllowance === 3,
+        JSON.stringify(lcHdL7.recovery),
+      );
+      const lcHdMulti7b = await lcHdAt(
+        [{ classKey: 'fighter', level: 4 }, { classKey: 'wizard', level: 3 }],
+        { '10': 4, '6': 3 },
+        { '6': 3 },
+        'hd-m7-alt',
+      );
+      check(
+        '49.75) outra multiclasse com total 7 (4d10 + 3d6) também tem cota 3',
+        lcHdMulti7b.status === 200 &&
+          lcHdMulti7b.recovery?.baseAllowance === 3 &&
+          lcHdMulti7b.recovery?.allowance === 3 &&
+          lcHdMulti7b.recovery?.selectedTotal === 3,
+        JSON.stringify(lcHdMulti7b.recovery),
+      );
+      // Restaura a classe/uso que o 49.16 espera antes da conclusão.
+      await lcHdAt(
+        [{ classKey: 'fighter', level: 3 }, { classKey: 'wizard', level: 2 }],
+        { '10': 2, '6': 1 },
+        {},
+        'hd-restore',
+      );
+
       // 49.16) A conclusão aplica SOMENTE a seleção escolhida.
       await lcHitDice(lcTokenA, lcReqHd.id, { '6': 1, '10': 1 }, `op-${suffix}-49-hd-final`);
       const lcHdComplete = await lcReady(lcTokenA, lcReqHd.id, true, `op-${suffix}-49-hd-ready`);

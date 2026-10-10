@@ -11,6 +11,11 @@ import type { LongRestHitDiceRecoveryDto } from '../types';
  *
  * Recuperar 0 é permitido e nada é pré-selecionado no cliente: a UI mostra
  * exatamente o que já está persistido na sessão (`option.selected`).
+ *
+ * O teto de cada face é o que foi GASTO dela (`option.used`) — só se recupera o
+ * que se gastou. `option.remaining` é o estoque NÃO gasto, que não limita nada
+ * aqui. Quem limita o total é a cota GLOBAL do descanso (`allowance`), calculada
+ * pelo servidor sobre o TOTAL de Dados de Vida do personagem — nunca por classe.
  */
 export function LongRestHitDicePanel({
   recovery,
@@ -59,7 +64,7 @@ export function LongRestHitDicePanel({
             <span className="long-rest-die-face">d{option.die}</span>
 
             <span className="long-rest-die-facts">
-              gastos: {option.used} · disponíveis: {option.remaining}
+              gastos: {option.used} · não gastos: {option.remaining}
             </span>
 
             {noControls ? null : (
@@ -81,7 +86,7 @@ export function LongRestHitDicePanel({
                   disabled={
                     disabled ||
                     busy ||
-                    option.selected >= option.remaining ||
+                    option.selected >= option.used ||
                     recovery.selectedTotal >= recovery.allowance
                   }
                   onClick={() => change(option.die, option.selected + 1)}
