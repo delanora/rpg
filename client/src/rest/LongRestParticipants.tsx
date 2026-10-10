@@ -25,7 +25,12 @@ export function LongRestParticipants({
   myCharacterId?: string;
   /** Fichas conhecidas (Mestre: mesa inteira; jogador: a própria). Opcional. */
   characters?: Character[];
-  /** characterId → recursos de acampamento contribuídos (visão coletiva). */
+  /**
+   * characterId → recursos de acampamento contribuídos (visão coletiva).
+   * O CHAMADOR só repassa este mapa com a mecânica opcional ATIVA: com Camp
+   * Supplies desligado não há contribuição a mostrar, e a linha some por
+   * completo (sem "0 recursos", sem rótulo e sem espaço reservado).
+   */
   contributions?: Record<string, number>;
 }) {
   const { participants, status } = request;
