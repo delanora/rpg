@@ -1,4 +1,4 @@
-import type { Character, Prisma } from '@prisma/client';
+import type { Character, Prisma, Role } from '@prisma/client';
 import { HttpError } from '../../lib/http-error.js';
 import type { CampSupplyOverrideType } from '../shared/camp-supplies.js';
 import { parseJson } from '../shared/json.js';
@@ -149,7 +149,12 @@ export interface LongRestCampSupplyAuditDto {
   /** A exigência foi DISPENSADA pelo mestre (nunca em silêncio). */
   overridden: boolean;
   overrideType: CampSupplyOverrideType | null;
-  overrideNote: string | null;
+  /**
+   * Justificativa narrativa do Mestre — informação PRIVADA (ver
+   * `completionForViewer`). Só o MASTER recebe este campo; para os demais ele é
+   * OMITIDO do JSON (não vem como `null`).
+   */
+  overrideNote?: string | null;
   overriddenByUserId: string | null;
 }
 
@@ -164,6 +169,29 @@ export interface LongRestCompletionDto {
   suppliesConsumed: ConsumedCampSupply[];
   characters: LongRestCharacterCompletionDto[];
   sessions: { id: string; characterId: string; status: 'COMPLETED' }[];
+}
+
+/**
+ * Visão do resultado para QUEM vai recebê-lo.
+ *
+ * A `overrideNote` é anotação de bastidor do Mestre (dívida futura, intenção
+ * escondida de NPC, pista, custo ainda não revelado): não pode ser entregue a
+ * quem não é Mestre. O jogador continua sabendo que houve exceção e de QUE TIPO
+ * (`overridden`, `overrideType`) e vê os números do requisito — a transparência
+ * mecânica não muda; só a justificativa narrativa fica reservada.
+ *
+ * O campo é REMOVIDO da saída para não-MASTER (e não zerado para `null`, o que
+ * ainda revelaria a existência de uma estrutura privada). A privacidade é
+ * aplicada na SAÍDA: banco, snapshot idempotente e auditoria seguem completos.
+ */
+export function completionForViewer(
+  completion: LongRestCompletionDto,
+  role: Role,
+): LongRestCompletionDto {
+  if (role === 'MASTER') return completion;
+  const { overrideNote: masterOnlyNote, ...publicCampSupplies } = completion.campSupplies;
+  void masterOnlyNote;
+  return { ...completion, campSupplies: publicCampSupplies };
 }
 
 /** Ficha alterada pela conclusão, para publicar `sheet:updated` DEPOIS do commit. */

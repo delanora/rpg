@@ -2178,7 +2178,12 @@ export interface LongRestCampSupplyAuditDto {
   requirementSatisfiedNormally: boolean;
   overridden: boolean;
   overrideType: CampSupplyOverrideType | null;
-  overrideNote: string | null;
+  /**
+   * Justificativa narrativa do Mestre — informação PRIVADA: o servidor só envia
+   * este campo para o MASTER (para o jogador ele é OMITIDO, não vem `null`). O
+   * jogador continua vendo `overridden`/`overrideType` e os números do requisito.
+   */
+  overrideNote?: string | null;
   overriddenByUserId: string | null;
 }
 

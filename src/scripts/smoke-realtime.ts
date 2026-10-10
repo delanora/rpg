@@ -18,6 +18,7 @@ import {
   availableQuantity,
   reservedQuantities,
 } from '../modules/rest/camp-supply-reservations.js';
+import { completionForViewer } from '../modules/rest/long-rest-completion.js';
 import { SKILLS, normalizeSkills } from '../modules/shared/dnd5e.js';
 import {
   allRaces,
@@ -16198,6 +16199,18 @@ async function main(): Promise<void> {
           lcHdChar.hpCurrent === 30,
         JSON.stringify({ hitDice: lcHdChar.hitDice, hp: lcHdChar.hpCurrent }),
       );
+      const lcHdAudit = lcHdComplete.data?.completion?.campSupplies;
+      check(
+        '49.81) conclusão automática entregue ao PLAYER: sem a chave privada `overrideNote`, com os números do requisito',
+        lcHdAudit !== undefined &&
+          !Object.prototype.hasOwnProperty.call(lcHdAudit, 'overrideNote') &&
+          lcHdAudit.overridden === false &&
+          lcHdAudit.overrideType === null &&
+          typeof lcHdAudit.required === 'number' &&
+          typeof lcHdAudit.contributed === 'number' &&
+          typeof lcHdAudit.consumedPoints === 'number',
+        JSON.stringify(lcHdAudit),
+      );
       check(
         '49.4) ready depois de COMPLETED é recusado (409)',
         (await lcReady(lcTokenA, lcReqHd.id, true, `op-${suffix}-49-hd-after`)).status === 409,
@@ -16350,6 +16363,13 @@ async function main(): Promise<void> {
         ).status === 400,
       );
       const lcInventoryIdsBefore = (await lcInvOf(lcCharA.id)).map((entry) => entry.id).sort();
+      // 5.2.6B) O que um PLAYER enxerga ANTES e DURANTE a exceção do Mestre.
+      const lcPlayerGetDuringApproved = await api('/api/rest/long/request', { token: lcTokenB });
+      const lcPlayerRealtimeOnOverride = lcWaitEvent(
+        lcSocketB,
+        'long-rest:request-updated',
+        (payload: any) => payload?.request?.id === lcReqForce.id,
+      );
       const lcOverrideOp = `op-${suffix}-49-force-narrative`;
       const lcOverride = await lcForceComplete(
         lcReqForce.id,
@@ -16370,6 +16390,42 @@ async function main(): Promise<void> {
         lcOverrideAudit?.overrideNote === 'O grupo negociou abrigo e comida no posto de guarda.' &&
           lcOverrideAudit?.overriddenByUserId === lcMasterUserId,
         JSON.stringify(lcOverrideAudit),
+      );
+
+      // --- 5.2.6B PRIVACIDADE REAL da overrideNote (só o MASTER recebe) ------
+      const lcMasterView = completionForViewer(lcOverride.data.completion, 'MASTER');
+      const lcPlayerView = completionForViewer(lcOverride.data.completion, 'PLAYER');
+      check(
+        '49.76) o Mestre recebe a nota e o jogador recebe o MESMO resultado SEM a chave privada (overridden/tipo/números continuam públicos)',
+        lcMasterView.campSupplies.overrideNote ===
+          'O grupo negociou abrigo e comida no posto de guarda.' &&
+          !Object.prototype.hasOwnProperty.call(lcPlayerView.campSupplies, 'overrideNote') &&
+          lcPlayerView.campSupplies.overridden === true &&
+          lcPlayerView.campSupplies.overrideType === 'NARRATIVE' &&
+          lcPlayerView.campSupplies.consumedPoints === 30 &&
+          lcPlayerView.campSupplies.required === 40 &&
+          lcPlayerView.campSupplies.requirementSatisfiedNormally === false &&
+          !JSON.stringify(lcPlayerView.campSupplies).includes('posto de guarda'),
+        JSON.stringify({ master: lcMasterView.campSupplies, player: lcPlayerView.campSupplies }),
+      );
+      const lcPlayerRealtimePayload = await lcPlayerRealtimeOnOverride;
+      const lcPlayerRealtimeJson = JSON.stringify(lcPlayerRealtimePayload?.request ?? {});
+      check(
+        '49.77) realtime para o PLAYER não leva a nota nem a chave `overrideNote`',
+        lcPlayerRealtimePayload?.request?.id === lcReqForce.id &&
+          lcPlayerRealtimePayload?.request?.status === 'COMPLETED' &&
+          !lcPlayerRealtimeJson.includes('posto de guarda') &&
+          !lcPlayerRealtimeJson.includes('overrideNote'),
+        lcPlayerRealtimeJson.slice(0, 240),
+      );
+      const lcPlayerGetJson = JSON.stringify(lcPlayerGetDuringApproved.data ?? {});
+      check(
+        '49.78) GET do PLAYER (descanso em andamento) não traz a nota nem a chave privada',
+        lcPlayerGetDuringApproved.status === 200 &&
+          lcPlayerGetJson.includes(`"id":"${lcReqForce.id}"`) &&
+          !lcPlayerGetJson.includes('posto de guarda') &&
+          !lcPlayerGetJson.includes('overrideNote'),
+        lcPlayerGetJson.slice(0, 240),
       );
       check(
         '49.30/49.31/49.32/49.33) os 30 pontos continuam valendo (consumidos) e os 10 faltantes NÃO são inventados',
@@ -16420,6 +16476,12 @@ async function main(): Promise<void> {
           JSON.stringify(await lcInvOf(lcCharA.id)) === JSON.stringify(lcAfterOverride),
         JSON.stringify({ replayed: lcReplay.data?.replayed }),
       );
+      check(
+        '49.79) o replay do MASTER devolve a nota (a visibilidade é do PAPEL de quem pede, não do caminho)',
+        lcReplay.data?.completion?.campSupplies?.overrideNote ===
+          'O grupo negociou abrigo e comida no posto de guarda.',
+        JSON.stringify(lcReplay.data?.completion?.campSupplies),
+      );
 
       // 49.24/49.25) ADMINISTRATIVE, sem nota.
       await lcReset();
@@ -16438,6 +16500,18 @@ async function main(): Promise<void> {
         lcAdmin.status === 200 &&
           lcAdmin.data?.completion?.campSupplies?.overrideType === 'ADMINISTRATIVE' &&
           lcAdmin.data?.completion?.campSupplies?.overrideNote === null,
+        JSON.stringify(lcAdmin.data?.completion?.campSupplies),
+      );
+      check(
+        '49.80) o MASTER mantém a CHAVE `overrideNote` no resultado (visibilidade por papel, não "null por acaso")',
+        Object.prototype.hasOwnProperty.call(
+          lcAdmin.data?.completion?.campSupplies ?? {},
+          'overrideNote',
+        ) &&
+          !Object.prototype.hasOwnProperty.call(
+            completionForViewer(lcAdmin.data.completion, 'PLAYER').campSupplies,
+            'overrideNote',
+          ),
         JSON.stringify(lcAdmin.data?.completion?.campSupplies),
       );
 
