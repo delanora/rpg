@@ -67,6 +67,13 @@ export interface LongRestController {
    * (PENDING/APPROVED) e não fala com o servidor.
    */
   dismissResolved: () => void;
+  /**
+   * Reconcilia a solicitação com o servidor (fonte única da verdade). O GET só
+   * devolve uma solicitação ABERTA (PENDING/APPROVED) ou `null`: com aberta, ela
+   * passa a ser a atual; com `null`, o descanso ativo acaba e também o resultado
+   * em tela é descartado — o cliente não preserva COMPLETED/CANCELLED por conta
+   * própria (mesmo contrato do `dismissResolved`).
+   */
   refresh: () => Promise<void>;
   create: () => Promise<void>;
   respond: (response: LongRestDecision) => Promise<void>;
@@ -98,17 +105,19 @@ export function useLongRest({ characterId }: UseLongRestOptions = {}): LongRestC
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<LongRestAction | null>(null);
 
+  /**
+   * Reconcilia com o servidor: a solicitação aberta devolvida vira a atual e, se
+   * não há nenhuma aberta, o estado ativo é limpo inteiro. Guardar uma
+   * solicitação resolvida aqui prenderia a UI no resultado antigo (era a raiz do
+   * BUG 1) — quem mostra o resultado é o realtime/a resposta da conclusão, e o
+   * `completion` só é tocado quando o servidor confirma que não há descanso
+   * aberto.
+   */
   const refresh = useCallback(async () => {
     try {
       const current = await fetchOpenLongRestRequest();
-      setRequest((previous) => {
-        if (current) return current;
-        // Mantém na tela uma solicitação já resolvida (para o resultado não
-        // desaparecer); só limpa quando não há nada aberto nem recente.
-        return previous && previous.status !== 'PENDING' && previous.status !== 'APPROVED'
-          ? previous
-          : null;
-      });
+      setRequest(current);
+      if (!current) setCompletion(null);
     } catch (err) {
       setError(longRestErrorMessage(err));
     }
