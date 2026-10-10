@@ -173,7 +173,16 @@ export function CampSuppliesPanel({
             </p>
           ) : (
             <ul
-              className="camp-supply-grid"
+              // 5.2.7B.1: com 1 ou 2 itens o grid ganha uma largura própria
+              // (card com presença, sem esticar pela linha inteira); com 3+ o
+              // comportamento multi-coluna normal é preservado. Só apresentação.
+              className={`camp-supply-grid${
+                eligibleItems.length === 1
+                  ? ' is-single'
+                  : eligibleItems.length === 2
+                    ? ' is-pair'
+                    : ''
+              }`}
               aria-label="Seus recursos de acampamento disponíveis"
             >
               {eligibleItems.map((item) => {

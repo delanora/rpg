@@ -13960,3 +13960,262 @@ input[type='checkbox']:focus-visible,
   margin: 0;
   color: var(--ink-soft);
 }
+
+/* ==========================================================================
+   5.2.7B.1 — Compactação e hierarquia final do Descanso Longo (só apresentação)
+   A tela fica mais curta, o participante ganha presença e o botão de pronto
+   fecha os Preparativos — sem ornamento novo, sem mudar mecânica.
+   Tudo scoped no `.long-rest-modal` para o Descanso Curto seguir intacto.
+   ========================================================================== */
+
+/* --- Ritmo vertical da tela --------------------------------------------- */
+.long-rest-modal .rest-section {
+  gap: 0.3rem;
+  margin: 0.5rem 0;
+}
+
+/* As notas param de empurrar o conteúdo: dentro das seções o gap do grid já
+   separa os blocos; fora delas (estado inicial) o respiro continua. */
+.long-rest-modal .section-note {
+  margin: 0.45rem 0 0;
+}
+
+.long-rest-modal .rest-section .section-note {
+  margin: 0.1rem 0 0;
+}
+
+.long-rest-modal .subsection-title {
+  margin: 0.6rem 0 0.35rem;
+}
+
+.long-rest-modal .rest-steps {
+  margin: 0.4rem 0 0.6rem;
+}
+
+.long-rest-modal .short-rest-header {
+  padding-bottom: 0.3rem;
+}
+
+.long-rest-modal .short-rest-hp {
+  margin: 0.1rem 0 0.35rem;
+}
+
+.long-rest-modal .modal-actions {
+  margin-top: 0.35rem;
+}
+
+/* --- Estado do grupo: uma linha, com os números legíveis ---------------- */
+.rest-summary-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+.rest-summary-line strong {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--ink);
+}
+
+/* --- Participante: presença sem altura extra ---------------------------- */
+.long-rest-modal .short-rest-person {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  padding: 0.5rem var(--card-pad-x);
+}
+
+/* Retrato discretamente maior: parte da cena, não um avatar técnico. */
+.long-rest-modal .short-rest-person-avatar {
+  width: 2.7rem;
+  height: 2.7rem;
+  font-size: 0.95rem;
+}
+
+.long-rest-modal .short-rest-person-name {
+  font-size: 1.02rem;
+}
+
+.long-rest-modal .short-rest-person-sub {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+.long-rest-modal .short-rest-person-side {
+  gap: 0.2rem;
+}
+
+/* Contribuição: valor em destaque e rótulo secundário, no mesmo bloco. */
+.long-rest-modal .short-rest-person-contrib {
+  display: grid;
+  gap: 0;
+  justify-items: end;
+  line-height: 1.15;
+}
+
+.short-rest-person-contrib-value {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--gold-deep);
+}
+
+.short-rest-person-contrib-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-faint);
+}
+
+/* --- Dados de Vida: linha compacta -------------------------------------- */
+.long-rest-modal .long-rest-dice-total {
+  margin: 0 0 0.35rem;
+  font-size: 0.88rem;
+}
+
+.long-rest-modal .long-rest-dice {
+  gap: 0.28rem;
+  margin: 0 0 0.35rem;
+}
+
+.long-rest-modal .long-rest-die {
+  gap: 0.5rem;
+  padding: 0.42rem var(--card-pad-x);
+}
+
+.long-rest-modal .long-rest-die-face {
+  min-width: 1.9rem;
+}
+
+.long-rest-modal .long-rest-die-facts strong {
+  font-family: var(--font-display);
+  color: var(--ink);
+}
+
+/* --- Fechamento dos Preparativos: resumo + botão ------------------------ */
+.rest-ready {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.rest-ready.is-ready {
+  border-color: var(--line);
+}
+
+.rest-ready-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 1.2rem;
+}
+
+.rest-ready-fact {
+  display: grid;
+  gap: 0.02rem;
+}
+
+.rest-ready-fact-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.rest-ready-fact strong {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.rest-ready-note {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+.rest-ready .modal-actions {
+  margin-top: 0.1rem;
+}
+
+/* --- Recursos de Acampamento: espaçamentos mais curtos ------------------ */
+.camp-supply {
+  gap: 0.45rem;
+  margin: 0.35rem 0 0.6rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.camp-supply-group {
+  gap: 0.28rem;
+}
+
+.camp-supply-group-count strong {
+  font-size: 1.3rem;
+}
+
+/* Resumo individual: uma linha visual forte, sem virar um card alto. */
+.camp-supply-mine {
+  padding: 0.32rem 0.6rem;
+}
+
+.camp-supply-mine-value {
+  font-size: var(--text-value);
+}
+
+/* --- Card selecionado: “Selecionado” e “+N recursos” no mesmo bloco ----- */
+.camp-supply-card-contrib {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0 0.4rem;
+}
+
+.camp-supply-card-points {
+  font-size: var(--text-aux);
+}
+
+/* --- Grid: 1 item com presença, 2 confortáveis, 3+ multi-coluna ---------- */
+.camp-supply-grid {
+  gap: 0.55rem;
+}
+
+/* 1 item: card maior e intencional, sem esticar pela largura inteira. */
+.camp-supply-grid.is-single {
+  grid-template-columns: minmax(0, 20rem);
+  justify-content: start;
+}
+
+.camp-supply-grid.is-single .camp-supply-card {
+  gap: 0.35rem;
+  padding: 0.85rem 0.7rem 0.75rem;
+}
+
+.camp-supply-grid.is-single .camp-supply-card-sprite {
+  width: 4.6rem;
+  height: 4.6rem;
+}
+
+/* 2 itens: dois cards confortáveis, lado a lado. */
+.camp-supply-grid.is-pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 32rem;
+}
+
+/* Telas estreitas: um card por linha — stepper e texto nunca se apertam. */
+@media (max-width: 520px) {
+  .camp-supply-grid.is-single,
+  .camp-supply-grid.is-pair {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
+}

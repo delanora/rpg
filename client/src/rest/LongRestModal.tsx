@@ -178,6 +178,16 @@ export function LongRestModal({
     contributionPoints[entry.characterId] = entry.points;
   }
 
+  // 5.2.7B.1: quanto ESTE personagem já reservou — resumo do fechamento dos
+  // preparativos. Mesma derivação de exibição do painel de acampamento (o dado
+  // autoritativo continua sendo o do servidor); nada é calculado nem decidido aqui.
+  const myPoints =
+    character && supplies
+      ? supplies.contributions
+          .filter((contribution) => contribution.characterId === character.id)
+          .reduce((total, contribution) => total + contribution.points, 0)
+      : 0;
+
   async function saveSupply(inventoryItemId: string, quantity: number): Promise<void> {
     setSupplyItemId(inventoryItemId);
     await rest.setSupply(inventoryItemId, quantity);
@@ -481,12 +491,16 @@ export function LongRestModal({
           <div className="short-rest-active">
             <section className="rest-section">
               <h3 className="rest-section-title">Estado do grupo</h3>
-              <p className="short-rest-lead">Preparativos do descanso.</p>
-              <p className="section-note">
-                {waitingCount > 0
-                  ? `${waitingCount} participante(s) ainda preparando.`
-                  : 'Todos os participantes terminaram os preparativos.'}
-              </p>
+              {/* 5.2.7B.1: uma única linha de estado — o texto que repetia
+                  "preparativos do descanso" saiu (a lista de participantes e o
+                  selo de cada um já dizem quem está pronto). */}
+              <div className="rest-summary-line">
+                <strong>{acceptedCount}</strong>
+                <span>{acceptedCount === 1 ? 'participante' : 'participantes'}</span>
+                <span aria-hidden="true">·</span>
+                <strong>{acceptedCount - waitingCount}</strong>
+                <span>{acceptedCount - waitingCount === 1 ? 'pronto' : 'prontos'}</span>
+              </div>
             </section>
 
             <section className="rest-section">
@@ -686,12 +700,14 @@ export function LongRestModal({
           <div className="short-rest-active">
             <section className="rest-section">
               <h3 className="rest-section-title">Estado do grupo</h3>
-              <p className="short-rest-lead">Preparativos para o descanso.</p>
+              {/* 5.2.7B.1: só o estado, em uma linha — sem repetir o título da
+                  seção de Preparativos logo abaixo. */}
               <div className="rest-summary-line">
-                <span>Participantes</span>
                 <strong>{acceptedCount}</strong>
-                <span>· prontos</span>
+                <span>{acceptedCount === 1 ? 'participante' : 'participantes'}</span>
+                <span aria-hidden="true">·</span>
                 <strong>{acceptedCount - waitingCount}</strong>
+                <span>{acceptedCount - waitingCount === 1 ? 'pronto' : 'prontos'}</span>
               </div>
             </section>
 
@@ -736,34 +752,62 @@ export function LongRestModal({
                 seleção.
               </p>
 
-              {me.ready ? (
-                <div className="short-rest-decision">
-                  <p>
-                    <strong>✓ Preparativos concluídos.</strong> Este estado é só seu — o descanso
-                    conclui quando todos terminarem e os recursos permitirem.
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    disabled={busy}
-                    onClick={() => void rest.setReady(false)}
-                  >
-                    Alterar preparativos
-                  </button>
+              {/*
+               * 5.2.7B.1: o botão deixa de ficar solto à direita — ele FECHA a
+               * seção de Preparativos, precedido por um resumo compacto do que
+               * foi preparado (dados escolhidos e contribuição). A nota mantém
+               * explícito que marcar-se pronto conclui os preparativos PESSOAIS,
+               * não o descanso em si.
+               */}
+              <div className={`rest-ready${me.ready ? ' is-ready' : ''}`}>
+                <div className="rest-ready-facts">
+                  <span className="rest-ready-fact">
+                    <span className="rest-ready-fact-label">Dados de Vida</span>
+                    <strong>
+                      {me.hitDiceRecovery
+                        ? `${me.hitDiceRecovery.selectedTotal} / ${me.hitDiceRecovery.allowance} selecionados`
+                        : '—'}
+                    </strong>
+                  </span>
+                  {supplies?.enabled ? (
+                    <span className="rest-ready-fact">
+                      <span className="rest-ready-fact-label">Contribuição</span>
+                      <strong>
+                        {myPoints} recurso{myPoints === 1 ? '' : 's'}
+                      </strong>
+                    </span>
+                  ) : null}
                 </div>
-              ) : (
+
+                <p className="rest-ready-note">
+                  {me.ready
+                    ? '✓ Preparativos concluídos — este estado é só seu: o descanso conclui quando todos terminarem e os recursos permitirem.'
+                    : 'Marcar-se pronto conclui seus preparativos pessoais — não é o descanso em si, que só acontece quando todos estiverem prontos.'}
+                </p>
+
                 <div className="modal-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={busy}
-                    title="Concluir os preparativos significa que você terminou o que precisava fazer antes de descansar."
-                    onClick={() => void rest.setReady(true)}
-                  >
-                    {pending === 'ready' ? 'marcando…' : 'Pronto para descansar'}
-                  </button>
+                  {me.ready ? (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      disabled={busy}
+                      onClick={() => void rest.setReady(false)}
+                    >
+                      Alterar preparativos
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={busy}
+                      title="Concluir os preparativos significa que você terminou o que precisava fazer antes de descansar."
+                      onClick={() => void rest.setReady(true)}
+                    >
+                      {pending === 'ready' ? 'marcando…' : 'Pronto para descansar'}
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
             </section>
 
             {supplies?.enabled ? (
