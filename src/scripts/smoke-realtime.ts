@@ -15304,44 +15304,142 @@ async function main(): Promise<void> {
         token: masterToken,
         body: {
           name: 'Gravetos de viagem',
-          category: 'Item Geral',
+          // 5.2.7A: a CATEGORIA é a fonte de verdade do recurso de acampamento.
+          category: 'CAMP_SUPPLY',
           details: { consumable: true },
-          campSupply: { enabled: true, value: 10 },
+          campSupply: { value: 10 },
         },
       });
       if (csFood.data?.item?.id) createdItemIds.push(csFood.data.item.id);
       check(
-        '48.10) item com camp supply criado (enabled + value)',
+        '48.10) item com camp supply criado (categoria → enabled + value)',
         csFood.status === 201 &&
           csFood.data?.item?.campSupply?.enabled === true &&
           csFood.data?.item?.campSupply?.value === 10,
       );
       check(
-        '48.11) camp supply ligado com value 0 é rejeitado',
+        '48.11) categoria de acampamento com value 0 é rejeitada',
         (
           await api('/api/items', {
             method: 'POST',
             token: masterToken,
-            body: { name: 'Inválido', campSupply: { enabled: true, value: 0 } },
+            body: { name: 'Inválido', category: 'CAMP_SUPPLY', campSupply: { value: 0 } },
           })
         ).status === 400,
+      );
+      check(
+        '48.11b) categoria de acampamento SEM o valor também é rejeitada',
+        (
+          await api('/api/items', {
+            method: 'POST',
+            token: masterToken,
+            body: { name: 'Inválido 2', category: 'CAMP_SUPPLY' },
+          })
+        ).status === 400,
+      );
+      // 5.2.7A: o payload ANTIGO (flag explícita, sem a categoria) continua sendo
+      // ACEITO, mas NÃO liga o recurso — quem decide é a categoria.
+      const csLegacyFlag = await api('/api/items', {
+        method: 'POST',
+        token: masterToken,
+        body: {
+          name: 'Payload antigo',
+          category: 'Item Geral',
+          campSupply: { enabled: true, value: 7 },
+        },
+      });
+      if (csLegacyFlag.data?.item?.id) createdItemIds.push(csLegacyFlag.data.item.id);
+      check(
+        '48.11c) flag antiga sem a categoria NÃO liga o recurso (espelho derivado)',
+        csLegacyFlag.status === 201 && csLegacyFlag.data?.item?.campSupply?.enabled === false,
       );
       const csSupplyBItem = await api('/api/items', {
         method: 'POST',
         token: masterToken,
         body: {
           name: 'Rações secas',
-          category: 'Outro',
+          category: 'CAMP_SUPPLY',
           details: { consumable: true },
-          campSupply: { enabled: true, value: 9 },
+          campSupply: { value: 9 },
         },
       });
       if (csSupplyBItem.data?.item?.id) createdItemIds.push(csSupplyBItem.data.item.id);
       check(
-        '48.12/48.13) recurso é explícito (item customizado, não depende de nome/categoria)',
+        '48.12/48.13) a CATEGORIA marca o recurso e o VALOR é por unidade',
         csSupplyBItem.status === 201 &&
-          csSupplyBItem.data?.item?.category === 'Outro' &&
+          csSupplyBItem.data?.item?.category === 'CAMP_SUPPLY' &&
+          csSupplyBItem.data?.item?.campSupply?.enabled === true &&
           csSupplyBItem.data?.item?.campSupply?.value === 9,
+      );
+      // 5.2.7A: trocar de categoria liga/desliga o ESPELHO sem apagar o valor.
+      // Item DEDICADO — não mexemos no csFood, que é usado como consumível logo
+      // adiante (48.25).
+      const csToggle = await api('/api/items', {
+        method: 'POST',
+        token: masterToken,
+        body: {
+          name: 'Recurso alternável',
+          category: 'CAMP_SUPPLY',
+          campSupply: { value: 10 },
+        },
+      });
+      if (csToggle.data?.item?.id) createdItemIds.push(csToggle.data.item.id);
+      const csPatchOff = await api(`/api/items/${csToggle.data.item.id}`, {
+        method: 'PATCH',
+        token: masterToken,
+        body: { category: 'Poção' },
+      });
+      check(
+        '48.13b) sair da categoria desliga o espelho e PRESERVA o valor',
+        csToggle.status === 201 &&
+          csPatchOff.status === 200 &&
+          csPatchOff.data?.item?.campSupply?.enabled === false &&
+          csPatchOff.data?.item?.campSupply?.value === 10,
+      );
+      const csPatchBack = await api(`/api/items/${csToggle.data.item.id}`, {
+        method: 'PATCH',
+        token: masterToken,
+        body: { category: 'CAMP_SUPPLY' },
+      });
+      check(
+        '48.13c) voltar para a categoria reativa o recurso (valor preservado)',
+        csPatchBack.status === 200 &&
+          csPatchBack.data?.item?.campSupply?.enabled === true &&
+          csPatchBack.data?.item?.campSupply?.value === 10,
+      );
+      check(
+        '48.13d) ligar a categoria num item sem valor é recusado (400)',
+        (
+          await api(`/api/items/${csNormal.data.item.id}`, {
+            method: 'PATCH',
+            token: masterToken,
+            body: { category: 'CAMP_SUPPLY' },
+          })
+        ).status === 400,
+      );
+      // 5.2.7A: o preço monetário JÁ EXISTENTE é reutilizado (nenhum preço novo)
+      // e continua sendo informação só do mestre.
+      const csPriced = await api('/api/items', {
+        method: 'POST',
+        token: masterToken,
+        body: {
+          name: 'Peixe assado',
+          category: 'CAMP_SUPPLY',
+          campSupply: { value: 20 },
+          price: { gold: 2, silver: 0, copper: 0 },
+        },
+      });
+      if (csPriced.data?.item?.id) createdItemIds.push(csPriced.data.item.id);
+      check(
+        '48.13e) recurso de acampamento reutiliza o preço existente (sem preço novo)',
+        csPriced.status === 201 &&
+          csPriced.data?.item?.price?.gold === 2 &&
+          csPriced.data?.item?.campSupply?.value === 20,
+      );
+      check(
+        '48.13f) o preço NÃO vai para o jogador no catálogo',
+        (await api(`/api/items/${csPriced.data.item.id}`, { token: csTokenA })).data?.item
+          ?.price === null,
       );
 
       // Envia os itens aos inventários.
@@ -15685,9 +15783,10 @@ async function main(): Promise<void> {
           token: masterToken,
           body: {
             name,
-            category: 'Item Geral',
+            // 5.2.7A: a categoria é a fonte de verdade do recurso de acampamento.
+            category: 'CAMP_SUPPLY',
             details: { consumable: true },
-            campSupply: { enabled: true, value },
+            campSupply: { value },
           },
         });
         if (created.data?.item?.id) createdItemIds.push(created.data.item.id);
@@ -16949,9 +17048,10 @@ async function main(): Promise<void> {
           token: masterToken,
           body: {
             name,
-            category: 'Item Geral',
+            // 5.2.7A: a categoria é a fonte de verdade do recurso de acampamento.
+            category: 'CAMP_SUPPLY',
             details: { consumable: true },
-            campSupply: { enabled: true, value },
+            campSupply: { value },
           },
         });
         if (created.data?.item?.id) createdItemIds.push(created.data.item.id);

@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import {
   DAMAGE_TYPES,
+  ITEM_CATEGORY_LABELS,
   ITEM_RARITY_LABELS,
   MAX_EXTRA_DAMAGES,
   POTION_CATEGORY_LABELS,
   WEAPON_CATEGORY_LABELS,
   WEAPON_PROPERTY_LABELS,
   WEAPON_TYPE_LABELS,
+  categoryLabel,
   damageExpression,
   damageIsEmpty,
   rarityColor,
@@ -77,12 +79,54 @@ function CategoryFields({
   item,
   weapons,
   onPatchDetails,
+  onCampSupplyValue,
 }: {
   item: Item;
   weapons: CanonicalWeapon[];
   onPatchDetails: (patch: ItemDetails) => void;
+  /** Valor POR UNIDADE em Recursos de Acampamento (categoria `CAMP_SUPPLY`). */
+  onCampSupplyValue: (value: number) => void;
 }) {
   const details = item.details;
+
+  // RECURSO DE ACAMPAMENTO: a categoria liga o campo próprio do valor por
+  // unidade. OBRIGATÓRIO (> 0) — o servidor recusa um recurso sem valor.
+  if (item.category === 'CAMP_SUPPLY') {
+    const value = item.campSupply?.value ?? 0;
+    return (
+      <div className="grid grid-3">
+        <label className="field">
+          <span>Valor em Recursos de Acampamento por unidade</span>
+          <InlineField
+            value={value}
+            mode="number"
+            min={1}
+            max={1000}
+            ariaLabel="Valor em recursos de acampamento por unidade"
+            onCommit={(next) => onCampSupplyValue(clampInt(next, 1, 1000, value || 1))}
+          />
+          <span className="field-hint">
+            pontos que UMA unidade contribui (ex.: 1 maçã = 1; 1 peixe assado = 20)
+          </span>
+        </label>
+        <label className="field field-check">
+          <span>Consumível (usável)</span>
+          <input
+            type="checkbox"
+            checked={Boolean(details.consumable)}
+            aria-label="Item consumível"
+            onChange={(event) => onPatchDetails({ consumable: event.target.checked })}
+          />
+          <span className="field-hint">a comida também pode ser comida (usa 1 unidade da pilha)</span>
+        </label>
+        <p className="section-note">
+          Item de categoria <strong>Recurso de Acampamento</strong>: só ele aparece no grid de
+          recursos do Descanso Longo. O preço em PO/PP/PC continua no bloco abaixo (visível apenas
+          para o mestre) e NUNCA aparece para o jogador.
+        </p>
+      </div>
+    );
+  }
 
   if (item.category === 'Arma' || item.category === 'Cajado') {
     const properties = details.properties ?? [];
@@ -832,10 +876,20 @@ export function ItemEditor({ item, characters, weapons, onPatch, onDelete, onSen
               value={item.category}
               mode="select"
               options={[...ITEM_CATEGORIES]}
+              optionLabels={ITEM_CATEGORY_LABELS}
               ariaLabel="Categoria do item"
-              onCommit={(value) =>
-                onPatch({ category: value as ItemPatch['category'], details: {} })
-              }
+              onCommit={(value) => {
+                const patch: ItemPatch = {
+                  category: value as ItemPatch['category'],
+                  details: {},
+                };
+                // Entrar na categoria de acampamento exige um valor por unidade:
+                // já sugere 1 para o item não ficar inválido (o mestre ajusta).
+                if (value === 'CAMP_SUPPLY' && (item.campSupply?.value ?? 0) <= 0) {
+                  patch.campSupply = { value: 1 };
+                }
+                onPatch(patch);
+              }}
             />
           </label>
 
@@ -899,11 +953,16 @@ export function ItemEditor({ item, characters, weapons, onPatch, onDelete, onSen
       </Section>
 
       <Section
-        title={`Atributos — ${item.category}`}
+        title={`Atributos — ${categoryLabel(item.category)}`}
         icon="sword"
         subtitle="Os campos mudam conforme a categoria escolhida"
       >
-        <CategoryFields item={item} weapons={weapons} onPatchDetails={patchDetails} />
+        <CategoryFields
+          item={item}
+          weapons={weapons}
+          onPatchDetails={patchDetails}
+          onCampSupplyValue={(value) => onPatch({ campSupply: { value } })}
+        />
       </Section>
 
       <Section title="Valor (PO / PP / PC)" icon="crown" subtitle="Visível apenas para o mestre">

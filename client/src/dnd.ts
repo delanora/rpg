@@ -339,6 +339,21 @@ export const ITEM_RARITY_LABELS: Record<ItemRarity, string> = {
 };
 
 /**
+ * Rótulos em PORTUGUÊS das categorias de item cujo VALOR gravado não é o próprio
+ * texto da interface. Hoje só a categoria técnica de acampamento (`CAMP_SUPPLY`
+ * → "Recurso de Acampamento"); as demais já são gravadas em português e não
+ * precisam de rótulo.
+ */
+export const ITEM_CATEGORY_LABELS: Record<string, string> = {
+  CAMP_SUPPLY: 'Recurso de Acampamento',
+};
+
+/** Rótulo exibido de uma categoria (o valor estável gravado não muda). */
+export function categoryLabel(category: string): string {
+  return ITEM_CATEGORY_LABELS[category] ?? category;
+}
+
+/**
  * CORES das raridades — FONTE ÚNICA do sistema visual de raridade.
  *
  * Para mudar a cor de uma raridade, altere SÓ aqui: todo o app (inventário,

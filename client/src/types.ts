@@ -1702,6 +1702,12 @@ export const ITEM_CATEGORIES = [
   'Item Geral',
   'Tesouro',
   'Outro',
+  /**
+   * RECURSO DE ACAMPAMENTO (mecânica opcional do Descanso Longo coletivo). O
+   * valor é técnico; a interface mostra "Recurso de Acampamento"
+   * (`ITEM_CATEGORY_LABELS` em `dnd.ts`).
+   */
+  'CAMP_SUPPLY',
 ] as const;
 
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
@@ -1780,6 +1786,11 @@ export interface Item {
   details: ItemDetails;
   /** Preço em PO/PP/PC; `null` para jogadores (valor é exclusivo do mestre). */
   price: ItemPrice | null;
+  /**
+   * RECURSO DE ACAMPAMENTO do item. O flag `enabled` é DERIVADO da categoria
+   * (`CAMP_SUPPLY`) pelo servidor; `value` é o valor POR UNIDADE.
+   */
+  campSupply: CampSupply;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -1795,6 +1806,11 @@ export interface ItemPatch {
   imageUrl?: string;
   details?: ItemDetails;
   price?: ItemPrice;
+  /**
+   * Valor em Recursos de Acampamento POR UNIDADE. Só faz sentido com a categoria
+   * `CAMP_SUPPLY` (o servidor liga/desliga o espelho pela categoria).
+   */
+  campSupply?: { value: number };
 }
 
 export interface ItemCreatedPayload {

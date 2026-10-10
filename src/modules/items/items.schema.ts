@@ -20,21 +20,18 @@ export const itemDetailsInputSchema = itemDetailsSchema;
 export const itemPriceInputSchema = itemPriceSchema;
 
 /**
- * RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso Longo coletivo).
+ * VALOR POR UNIDADE de um RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso
+ * Longo coletivo).
  *
- * Propriedade EXPLÍCITA do item — nunca inferida por nome/categoria/descrição.
- * Ligado, o valor precisa ser inteiro > 0 (senão uma unidade não contribuiria
- * nada). Independente de `details.consumable`.
+ * A CATEGORIA (`CAMP_SUPPLY`) é a FONTE DE VERDADE: o servidor deriva
+ * `campSupplyEnabled` dela, então este schema carrega só o VALOR e nunca uma
+ * segunda decisão. O valor precisa ser inteiro > 0 quando a categoria efetiva é
+ * de acampamento — isso é validado no serviço, junto da categoria final (que no
+ * PATCH pode vir do item atual).
  */
-export const campSupplyInputSchema = z
-  .object({
-    enabled: z.boolean(),
-    value: z.number().int().min(0).max(CAMP_SUPPLY_VALUE_MAX),
-  })
-  .refine((campSupply) => !campSupply.enabled || campSupply.value > 0, {
-    message: 'Um recurso de acampamento ligado precisa de um valor maior que zero.',
-    path: ['value'],
-  });
+export const campSupplyInputSchema = z.object({
+  value: z.number().int().min(0).max(CAMP_SUPPLY_VALUE_MAX),
+});
 
 /** Campos editáveis de um item do catálogo. */
 const itemFields = z.object({

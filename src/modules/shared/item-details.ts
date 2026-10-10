@@ -21,6 +21,10 @@ export const ITEM_CATEGORIES = [
   'Item Geral',
   'Tesouro',
   'Outro',
+  // RECURSO DE ACAMPAMENTO (mecânica OPCIONAL do Descanso Longo coletivo). O
+  // valor é TÉCNICO; a interface mostra "Recurso de Acampamento". É a FONTE DE
+  // VERDADE da mecânica — `campSupplyEnabled` é um espelho derivado dela.
+  'CAMP_SUPPLY',
 ] as const;
 
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
@@ -313,6 +317,23 @@ export function normalizeCampSupply(value: unknown): CampSupply {
   return parsed.success ? parsed.data : { ...DISABLED_CAMP_SUPPLY };
 }
 
+/**
+ * Categoria REAL que representa um RECURSO DE ACAMPAMENTO (mecânica OPCIONAL —
+ * homebrew inspirado no fluxo de Baldur's Gate 3, NÃO é regra do PHB 2014).
+ *
+ * É a FONTE DE VERDADE: escolher esta categoria no item significa
+ * `campSupplyEnabled = true` e exigir `campSupplyValue > 0` (valor POR UNIDADE).
+ * O flag `campSupplyEnabled` continua existindo no banco apenas como ESPELHO
+ * derivado (o servidor o força na escrita) — nunca como uma segunda decisão
+ * independente na interface. O rótulo "Recurso de Acampamento" vive na UI.
+ */
+export const CAMP_SUPPLY_CATEGORY = 'CAMP_SUPPLY';
+
+/** O item é um recurso de acampamento (a CATEGORIA é a fonte de verdade). */
+export function isCampSupplyCategory(category: string): boolean {
+  return category === CAMP_SUPPLY_CATEGORY;
+}
+
 /** Preço em peças de ouro (PO), prata (PP) e cobre (PC). */
 export const itemPriceSchema = z.object({
   gold: z.number().int().min(0).max(9_999_999),
@@ -365,6 +386,10 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   'Item Geral': ['effectRoll', 'consumable'],
   Tesouro: [],
   Outro: ['effectRoll', 'consumable'],
+  // Recurso de acampamento: o valor por unidade mora na coluna
+  // `campSupplyValue`, não em `details`. `consumable` continua valendo (a comida
+  // pode ser usada/comida, consumindo 1 unidade da pilha).
+  CAMP_SUPPLY: ['consumable'],
 };
 
 /** Categorias que funcionam como arma (têm as propriedades de arma). */
