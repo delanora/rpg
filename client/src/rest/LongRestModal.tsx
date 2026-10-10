@@ -173,9 +173,18 @@ export function LongRestModal({
   // recebe a mesa inteira; o jogador, a própria ficha.
   const knownCharacters = characters ?? (character ? [character] : undefined);
   // characterId → recursos de acampamento (visão coletiva dos participantes).
+  //
+  // 5.2.7B.1b: com a regra OPCIONAL DESLIGADA a contribuição não é informação da
+  // mesa. O servidor continua mandando um ponto por participante (0, porque
+  // `satisfied` é sempre verdadeiro sem a regra), mas sem a mecânica o card do
+  // participante NÃO deve exibir "0 recursos"/"Contribuição" — nem para o
+  // jogador, nem para o Mestre. Nada é recalculado aqui: só deixamos de repassar
+  // esse mapa quando a flag diz que a mecânica está fora.
   const contributionPoints: Record<string, number> = {};
-  for (const entry of supplies?.byCharacter ?? []) {
-    contributionPoints[entry.characterId] = entry.points;
+  if (supplies?.enabled) {
+    for (const entry of supplies.byCharacter) {
+      contributionPoints[entry.characterId] = entry.points;
+    }
   }
 
   // 5.2.7B.1: quanto ESTE personagem já reservou — resumo do fechamento dos
