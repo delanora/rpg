@@ -11,9 +11,6 @@ import {
   WEAPON_TYPE_LABELS,
   categoryLabel,
   damageExpression,
-  damageIsEmpty,
-  rarityColor,
-  rarityLabel,
 } from '../../dnd';
 import {
   AMMO_TYPES,
@@ -234,316 +231,315 @@ function CategoryFields({
 
     return (
       <>
-      {/* Linha 1 — o dano principal: quantos dados, qual dado e o tipo. */}
-      <div className="grid grid-3">
-        <label className="field">
-          <span>Dados de dano</span>
-          <InlineField
-            value={details.damageCount ?? 0}
-            mode="number"
-            min={0}
-            max={50}
-            ariaLabel="Quantidade de dados de dano"
-            onCommit={(value) => onPatchDetails({ damageCount: clampInt(value, 0, 50, 0) })}
-          />
-        </label>
-
-        <label className="field">
-          <span>Dado</span>
-          <InlineField
-            value={details.damageDie ? String(details.damageDie) : ''}
-            mode="select"
-            options={DIE_OPTIONS}
-            ariaLabel="Tipo do dado de dano"
-            onCommit={(value) => onPatchDetails({ damageDie: value ? Number(value) : 0 })}
-          />
-        </label>
-
-        <label className="field">
-          <span>Tipo de dano</span>
-          <InlineField
-            value={details.damageType ?? ''}
-            mode="select"
-            options={DAMAGE_TYPES}
-            ariaLabel="Tipo de dano"
-            onCommit={(value) =>
-              onPatchDetails({ damageType: (value || undefined) as ItemDetails['damageType'] })
-            }
-          />
-        </label>
-      </div>
-
-      {/* Linha 2 — modificadores do ataque e o gatilho de dano adicional. */}
-      <div className="grid grid-3">
-        <label className="field">
-          <span>Bônus de ataque</span>
-          <InlineField
-            value={details.attackBonus ?? 0}
-            mode="number"
-            min={-30}
-            max={30}
-            ariaLabel="Bônus de ataque"
-            onCommit={(value) => onPatchDetails({ attackBonus: clampInt(value, -30, 30, 0) })}
-          />
-        </label>
-
-        <label className="field">
-          <span>Bônus de dano</span>
-          <InlineField
-            value={details.damageBonus ?? 0}
-            mode="number"
-            min={-9999}
-            max={9999}
-            ariaLabel="Bônus de dano"
-            onCommit={(value) => onPatchDetails({ damageBonus: clampInt(value, -9999, 9999, 0) })}
-          />
-          <span className="field-hint">
-            dano resumido:{' '}
-            <strong>
-              {damageExpression({
-                count: details.damageCount ?? 0,
-                sides: details.damageDie ?? 0,
-                bonus: details.damageBonus ?? 0,
-                type: details.damageType ?? null,
-              })}
-            </strong>
-          </span>
-        </label>
-
-        {/*
-          * "+" junto dos modificadores: a arma pode dar VÁRIOS tipos de dano
-          * (ex.: espada flamejante = cortante + fogo), cada um com os seus dados.
-          * Tipos já usados continuam disponíveis no seletor.
-          */}
-        <div className="field">
-          <span aria-hidden="true">&nbsp;</span>
-          <button
-            type="button"
-            className="btn btn-small damage-add"
-            disabled={extraDamages.length >= MAX_EXTRA_DAMAGES}
-            title="Adicionar outro tipo de dano (ex.: 1d6 de fogo numa espada flamejante)"
-            aria-label={`Adicionar outro tipo de dano em ${item.name}`}
-            onClick={() =>
-              onPatchDetails({
-                extraDamages: [
-                  ...extraDamages,
-                  {
-                    count: details.damageCount ?? 0,
-                    sides: details.damageDie ?? 0,
-                    bonus: 0,
-                    type: null,
-                  },
-                ],
-              })
-            }
-          >
-            + outro tipo de dano
-          </button>
-        </div>
-      </div>
-
-      {/* Danos ADICIONAIS da arma (um por tipo), logo abaixo do principal. */}
-      {extraDamages.map((extra, index) => (
-        <div className="damage-extra-row" key={index}>
+      {/* Dano principal — todos os números do ataque numa linha compacta, com o
+          resumo do dano logo abaixo como leitura (não como campo). */}
+      <div className="item-editor-subblock">
+        <h4 className="item-editor-subtitle">Dano principal</h4>
+        <div className="grid item-editor-damage-row">
           <label className="field">
             <span>Dados</span>
             <InlineField
-              value={extra.count}
+              value={details.damageCount ?? 0}
               mode="number"
               min={0}
               max={50}
-              ariaLabel={`Dados do ${index + 2}º dano de ${item.name}`}
-              onCommit={(value) => patchExtraDamage(index, { count: clampInt(value, 0, 50, 0) })}
+              ariaLabel="Quantidade de dados de dano"
+              onCommit={(value) => onPatchDetails({ damageCount: clampInt(value, 0, 50, 0) })}
             />
           </label>
+
           <label className="field">
             <span>Dado</span>
             <InlineField
-              value={extra.sides ? String(extra.sides) : ''}
+              value={details.damageDie ? String(details.damageDie) : ''}
               mode="select"
               options={DIE_OPTIONS}
-              ariaLabel={`Dado do ${index + 2}º dano de ${item.name}`}
-              onCommit={(value) => patchExtraDamage(index, { sides: value ? Number(value) : 0 })}
+              ariaLabel="Tipo do dado de dano"
+              onCommit={(value) => onPatchDetails({ damageDie: value ? Number(value) : 0 })}
             />
           </label>
+
           <label className="field">
             <span>Tipo de dano</span>
             <InlineField
-              value={extra.type ?? ''}
+              value={details.damageType ?? ''}
               mode="select"
               options={DAMAGE_TYPES}
-              ariaLabel={`Tipo do ${index + 2}º dano de ${item.name}`}
+              ariaLabel="Tipo de dano"
               onCommit={(value) =>
-                patchExtraDamage(index, { type: (value || null) as DamageType | null })
+                onPatchDetails({ damageType: (value || undefined) as ItemDetails['damageType'] })
               }
             />
           </label>
+
           <label className="field">
-            <span>Bônus</span>
+            <span>Bônus de ataque</span>
             <InlineField
-              value={extra.bonus}
+              value={details.attackBonus ?? 0}
+              mode="number"
+              min={-30}
+              max={30}
+              ariaLabel="Bônus de ataque"
+              onCommit={(value) => onPatchDetails({ attackBonus: clampInt(value, -30, 30, 0) })}
+            />
+          </label>
+
+          <label className="field">
+            <span>Bônus de dano</span>
+            <InlineField
+              value={details.damageBonus ?? 0}
               mode="number"
               min={-9999}
               max={9999}
-              ariaLabel={`Bônus do ${index + 2}º dano de ${item.name}`}
-              onCommit={(value) => patchExtraDamage(index, { bonus: clampInt(value, -9999, 9999, 0) })}
+              ariaLabel="Bônus de dano"
+              onCommit={(value) => onPatchDetails({ damageBonus: clampInt(value, -9999, 9999, 0) })}
             />
-            {!damageIsEmpty(extra) ? (
-              <span className="field-hint">
-                dano: <strong>{damageExpression(extra)}</strong>
-              </span>
-            ) : null}
           </label>
-          <button
-            type="button"
-            className="btn btn-danger btn-small"
-            title="Remover este tipo de dano"
-            aria-label={`Remover o ${index + 2}º dano de ${item.name}`}
-            onClick={() =>
-              onPatchDetails({
-                extraDamages: extraDamages.filter((_, at) => at !== index),
-              })
-            }
-          >
-            remover
-          </button>
         </div>
-      ))}
 
-      <h3 className="subsection-title">Perfil da arma</h3>
-      <label className="field">
-        <span>Arma do PHB</span>
-        <InlineField
-          value={details.canonicalWeaponId ?? ''}
-          mode="select"
-          options={weapons.map((weapon) => weapon.id)}
-          optionLabels={weaponOptionLabels}
-          ariaLabel="Arma do PHB vinculada"
-          onCommit={changeCanonicalWeapon}
-        />
-        <span className="field-hint">vazio = arma homebrew (sem vínculo canônico)</span>
-      </label>
-
-      <div className="grid grid-3">
-        <label className="field">
-          <span>Uso</span>
-          <InlineField
-            value={weaponType}
-            mode="select"
-            options={WEAPON_TYPES}
-            optionLabels={WEAPON_TYPE_LABELS}
-            ariaLabel="Uso da arma"
-            onCommit={changeWeaponType}
-          />
-          <span className="field-hint">corpo a corpo padrão 1,5 m · 3 m com Alcance</span>
-        </label>
-
-        <label className="field">
-          <span>Categoria</span>
-          <InlineField
-            value={details.weaponCategory ?? 'simple'}
-            mode="select"
-            options={WEAPON_CATEGORIES}
-            optionLabels={WEAPON_CATEGORY_LABELS}
-            ariaLabel="Categoria da arma"
-            onCommit={(value) =>
-              onPatchDetails({ weaponCategory: (value || 'simple') as WeaponCategory })
-            }
-          />
-        </label>
-
-        {hasVersatile ? (
-          <label className="field">
-            <span>Dado com as duas mãos</span>
-            <InlineField
-              value={details.versatileDie ? `d${details.versatileDie}` : ''}
-              mode="select"
-              options={DIE_OPTIONS.map((die) => `d${die}`)}
-              ariaLabel="Dado do dano versátil"
-              onCommit={(value) =>
-                onPatchDetails({ versatileDie: value ? Number(value.slice(1)) : undefined })
-              }
-            />
-          </label>
-        ) : null}
-
-        {hasAmmunition ? (
-          <label className="field">
-            <span>Munição exigida</span>
-            <InlineField
-              value={details.ammoType ?? ''}
-              mode="select"
-              options={AMMO_TYPES}
-              ariaLabel="Tipo de munição exigida"
-              onCommit={(value) => onPatchDetails({ ammoType: (value || 'Flecha') as AmmoType })}
-            />
-            <span className="field-hint">consumida a cada ataque (1 unidade)</span>
-          </label>
-        ) : null}
+        <p className="item-editor-readout">
+          <span className="item-editor-readout-label">Dano resumido</span>
+          <span className="item-editor-readout-value">
+            {damageExpression({
+              count: details.damageCount ?? 0,
+              sides: details.damageDie ?? 0,
+              bonus: details.damageBonus ?? 0,
+              type: details.damageType ?? null,
+            })}
+            {details.damageType ? ` ${details.damageType}` : ''}
+          </span>
+        </p>
       </div>
 
-      <h3 className="subsection-title">Propriedades</h3>
-      <div className="property-grid item-editor-properties">
-        {listedProperties.map((property) => (
-          <label key={property} className="field field-check property-check">
-            <input
-              type="checkbox"
-              checked={properties.includes(property)}
-              aria-label={WEAPON_PROPERTY_LABELS[property]}
-              onChange={() => toggleProperty(property)}
-            />
-            <span>{WEAPON_PROPERTY_LABELS[property]}</span>
-          </label>
+      {/* Dano adicional — bloco próprio; cada linha tem os seus dados e um
+          botão de remover. Sem nenhum dano extra, fica só o gatilho. */}
+      <div className="item-editor-subblock">
+        <h4 className="item-editor-subtitle">Dano adicional</h4>
+        {extraDamages.map((extra, index) => (
+          <div className="item-editor-extra" key={index}>
+            <label className="field">
+              <span>Dados</span>
+              <InlineField
+                value={extra.count}
+                mode="number"
+                min={0}
+                max={50}
+                ariaLabel={`Dados do ${index + 2}º dano de ${item.name}`}
+                onCommit={(value) => patchExtraDamage(index, { count: clampInt(value, 0, 50, 0) })}
+              />
+            </label>
+            <label className="field">
+              <span>Dado</span>
+              <InlineField
+                value={extra.sides ? String(extra.sides) : ''}
+                mode="select"
+                options={DIE_OPTIONS}
+                ariaLabel={`Dado do ${index + 2}º dano de ${item.name}`}
+                onCommit={(value) => patchExtraDamage(index, { sides: value ? Number(value) : 0 })}
+              />
+            </label>
+            <label className="field">
+              <span>Tipo de dano</span>
+              <InlineField
+                value={extra.type ?? ''}
+                mode="select"
+                options={DAMAGE_TYPES}
+                ariaLabel={`Tipo do ${index + 2}º dano de ${item.name}`}
+                onCommit={(value) =>
+                  patchExtraDamage(index, { type: (value || null) as DamageType | null })
+                }
+              />
+            </label>
+            <label className="field">
+              <span>Bônus</span>
+              <InlineField
+                value={extra.bonus}
+                mode="number"
+                min={-9999}
+                max={9999}
+                ariaLabel={`Bônus do ${index + 2}º dano de ${item.name}`}
+                onCommit={(value) =>
+                  patchExtraDamage(index, { bonus: clampInt(value, -9999, 9999, 0) })
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="btn btn-danger btn-small"
+              title="Remover este tipo de dano"
+              aria-label={`Remover o ${index + 2}º dano de ${item.name}`}
+              onClick={() =>
+                onPatchDetails({
+                  extraDamages: extraDamages.filter((_, at) => at !== index),
+                })
+              }
+            >
+              remover
+            </button>
+          </div>
         ))}
+        <button
+          type="button"
+          className="btn btn-small damage-add item-editor-add-damage"
+          disabled={extraDamages.length >= MAX_EXTRA_DAMAGES}
+          title="Adicionar outro tipo de dano (ex.: 1d6 de fogo numa espada flamejante)"
+          aria-label={`Adicionar outro tipo de dano em ${item.name}`}
+          onClick={() =>
+            onPatchDetails({
+              extraDamages: [
+                ...extraDamages,
+                {
+                  count: details.damageCount ?? 0,
+                  sides: details.damageDie ?? 0,
+                  bonus: 0,
+                  type: null,
+                },
+              ],
+            })
+          }
+        >
+          + adicionar outro tipo de dano
+        </button>
       </div>
 
-      {showRange ? (
-        <div className="grid grid-3">
-          <label className="field">
-            <span>Alcance normal (m)</span>
+      {/* Perfil da arma — vínculo PHB, uso, categoria e alcance juntos. */}
+      <div className="item-editor-subblock">
+        <h4 className="item-editor-subtitle">Perfil da arma</h4>
+        <div className="grid item-editor-profile">
+          <label className="field item-editor-phb">
+            <span>Arma do PHB</span>
             <InlineField
-              value={details.rangeNormal ?? 0}
-              mode="number"
-              min={0}
-              max={1000}
-              ariaLabel="Alcance normal em metros"
-              onCommit={(value) =>
-                onPatchDetails({ rangeNormal: clampInt(value, 0, 1000, details.rangeNormal ?? 0) })
-              }
+              value={details.canonicalWeaponId ?? ''}
+              mode="select"
+              options={weapons.map((weapon) => weapon.id)}
+              optionLabels={weaponOptionLabels}
+              ariaLabel="Arma do PHB vinculada"
+              onCommit={changeCanonicalWeapon}
+            />
+            <span className="field-hint">vazio = arma homebrew</span>
+          </label>
+
+          <label className="field">
+            <span>Uso</span>
+            <InlineField
+              value={weaponType}
+              mode="select"
+              options={WEAPON_TYPES}
+              optionLabels={WEAPON_TYPE_LABELS}
+              ariaLabel="Uso da arma"
+              onCommit={changeWeaponType}
             />
           </label>
 
           <label className="field">
-            <span>Alcance longo (m)</span>
+            <span>Categoria</span>
             <InlineField
-              value={details.rangeLong ?? 0}
-              mode="number"
-              min={0}
-              max={1000}
-              ariaLabel="Alcance longo em metros"
+              value={details.weaponCategory ?? 'simple'}
+              mode="select"
+              options={WEAPON_CATEGORIES}
+              optionLabels={WEAPON_CATEGORY_LABELS}
+              ariaLabel="Categoria da arma"
               onCommit={(value) =>
-                onPatchDetails({ rangeLong: clampInt(value, 0, 1000, details.rangeLong ?? 0) })
+                onPatchDetails({ weaponCategory: (value || 'simple') as WeaponCategory })
               }
             />
           </label>
 
-          <p className="field-hint">
-            1 casa = 1,5 m no grid · ex.: arco curto 24/96 · adaga arremessada 6/18
-          </p>
+          {hasVersatile ? (
+            <label className="field">
+              <span>Dado com as duas mãos</span>
+              <InlineField
+                value={details.versatileDie ? `d${details.versatileDie}` : ''}
+                mode="select"
+                options={DIE_OPTIONS.map((die) => `d${die}`)}
+                ariaLabel="Dado do dano versátil"
+                onCommit={(value) =>
+                  onPatchDetails({ versatileDie: value ? Number(value.slice(1)) : undefined })
+                }
+              />
+            </label>
+          ) : null}
+
+          {hasAmmunition ? (
+            <label className="field">
+              <span>Munição exigida</span>
+              <InlineField
+                value={details.ammoType ?? ''}
+                mode="select"
+                options={AMMO_TYPES}
+                ariaLabel="Tipo de munição exigida"
+                onCommit={(value) => onPatchDetails({ ammoType: (value || 'Flecha') as AmmoType })}
+              />
+            </label>
+          ) : null}
+
+          {showRange ? (
+            <>
+              <label className="field">
+                <span>Alcance normal (m)</span>
+                <InlineField
+                  value={details.rangeNormal ?? 0}
+                  mode="number"
+                  min={0}
+                  max={1000}
+                  ariaLabel="Alcance normal em metros"
+                  onCommit={(value) =>
+                    onPatchDetails({
+                      rangeNormal: clampInt(value, 0, 1000, details.rangeNormal ?? 0),
+                    })
+                  }
+                />
+              </label>
+
+              <label className="field">
+                <span>Alcance longo (m)</span>
+                <InlineField
+                  value={details.rangeLong ?? 0}
+                  mode="number"
+                  min={0}
+                  max={1000}
+                  ariaLabel="Alcance longo em metros"
+                  onCommit={(value) =>
+                    onPatchDetails({
+                      rangeLong: clampInt(value, 0, 1000, details.rangeLong ?? 0),
+                    })
+                  }
+                />
+              </label>
+            </>
+          ) : null}
+
+          {item.category === 'Cajado' ? (
+            <label className="field field-check item-editor-focus">
+              <span>Foco de conjuração</span>
+              <input
+                type="checkbox"
+                checked={Boolean(details.spellcastingFocus)}
+                aria-label="Foco de conjuração"
+                onChange={(event) => onPatchDetails({ spellcastingFocus: event.target.checked })}
+              />
+            </label>
+          ) : null}
         </div>
-      ) : null}
+      </div>
 
-      {item.category === 'Cajado' ? (
-        <label className="field field-check">
-          <span>Foco de conjuração</span>
-          <input
-            type="checkbox"
-            checked={Boolean(details.spellcastingFocus)}
-            aria-label="Foco de conjuração"
-            onChange={(event) => onPatchDetails({ spellcastingFocus: event.target.checked })}
-          />
-        </label>
-      ) : null}
+      {/* Propriedades — grade compacta de toggles (3 colunas no desktop). */}
+      <div className="item-editor-subblock">
+        <h4 className="item-editor-subtitle">Propriedades</h4>
+        <div className="property-grid item-editor-properties">
+          {listedProperties.map((property) => (
+            <label key={property} className="field field-check property-check">
+              <input
+                type="checkbox"
+                checked={properties.includes(property)}
+                aria-label={WEAPON_PROPERTY_LABELS[property]}
+                onChange={() => toggleProperty(property)}
+              />
+              <span>{WEAPON_PROPERTY_LABELS[property]}</span>
+            </label>
+          ))}
+        </div>
+      </div>
       </>
     );
   }
@@ -848,8 +844,8 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
         </div>
       )}
 
-      <Section title="Identidade do item" icon="scroll" badge="A">
-        {/* Nome e categoria em destaque: o que o item É, antes de tudo. */}
+      <Section title="Identidade do item" icon="scroll">
+        {/* Linha 1 — Nome e categoria em destaque: o que o item É. */}
         <div className="grid item-editor-identity">
           <label className="field">
             <span>Nome</span>
@@ -887,10 +883,10 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
           </label>
         </div>
 
-        {/* Peso, raridade e sintonização em uma linha: os traços gerais do item.
-            Raridade e sintonização são propriedades do ITEM, independentes da
-            categoria e uma da outra (nada é inferido automaticamente). */}
-        <div className="grid grid-3 item-editor-traits">
+        {/* Linha 2 — peso, raridade e sintonização. Raridade e sintonização são
+            propriedades do ITEM, independentes da categoria e uma da outra
+            (nada é inferido automaticamente); o helper fica discreto. */}
+        <div className="grid item-editor-traits">
           <label className="field">
             <span>Peso (kg)</span>
             <InlineField
@@ -912,32 +908,29 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
               ariaLabel="Raridade do item"
               onCommit={(value) => onPatch({ rarity: (value || null) as ItemRarity | null })}
             />
-            {item.rarity ? (
-              <span className="field-hint">
-                raridade:{' '}
-                <strong style={{ color: rarityColor(item.rarity) ?? undefined }}>
-                  {rarityLabel(item.rarity)}
-                </strong>
-              </span>
-            ) : (
-              <span className="field-hint">sem raridade classificada —</span>
-            )}
           </label>
 
-          <label className="field field-check">
+          <label className="field item-editor-attune">
             <span>Requer sintonização</span>
-            <input
-              type="checkbox"
-              checked={item.requiresAttunement}
-              aria-label="Requer sintonização"
-              onChange={(event) => onPatch({ requiresAttunement: event.target.checked })}
-            />
-            <span className="field-hint">propriedade manual, não ligada à raridade</span>
+            <span className="item-editor-attune-box">
+              <input
+                type="checkbox"
+                checked={item.requiresAttunement}
+                aria-label="Requer sintonização"
+                onChange={(event) => onPatch({ requiresAttunement: event.target.checked })}
+              />
+              <span className="item-editor-attune-state">
+                {item.requiresAttunement ? 'Sim' : 'Não'}
+              </span>
+            </span>
+            <span className="field-hint">propriedade manual do mestre</span>
           </label>
         </div>
 
+        {/* Linha 3 — descrição em largura inteira, com cara de textarea. */}
         <h3 className="subsection-title">Descrição</h3>
         <InlineField
+          className="item-editor-desc"
           value={item.description}
           mode="textarea"
           ariaLabel="Descrição do item"
@@ -949,7 +942,6 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
       <Section
         title={`Atributos — ${categoryLabel(item.category)}`}
         icon="sword"
-        badge="B"
         subtitle="Os campos mudam conforme a categoria escolhida"
       >
         <CategoryFields
@@ -960,112 +952,103 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
         />
       </Section>
 
-      <Section title="Valor (PO / PP / PC)" icon="crown" badge="C">
-        <div className="grid item-editor-price">
-          <label className="field">
-            <span>PO (ouro)</span>
-            <InlineField
-              value={price.gold}
-              mode="number"
-              min={0}
-              ariaLabel="Preço em peças de ouro"
-              onCommit={(value) => patchPrice({ gold: clampInt(value, 0, 9_999_999, price.gold) })}
-            />
-          </label>
-          <label className="field">
-            <span>PP (prata)</span>
-            <InlineField
-              value={price.silver}
-              mode="number"
-              min={0}
-              ariaLabel="Preço em peças de prata"
-              onCommit={(value) =>
-                patchPrice({ silver: clampInt(value, 0, 9_999_999, price.silver) })
-              }
-            />
-          </label>
-          <label className="field">
-            <span>PC (cobre)</span>
-            <InlineField
-              value={price.copper}
-              mode="number"
-              min={0}
-              ariaLabel="Preço em peças de cobre"
-              onCommit={(value) =>
-                patchPrice({ copper: clampInt(value, 0, 9_999_999, price.copper) })
-              }
-            />
-          </label>
-        </div>
-
-        {/* Recurso de acampamento: o valor por unidade fica destacado aqui, no
-            bloco de valor — é ele que o Descanso Longo consome. */}
-        {item.category === 'CAMP_SUPPLY' ? (
-          <p className="item-editor-supply">
-            <Icon name="coin" size={16} />
-            <span className="item-editor-supply-label">Recurso de acampamento</span>
-            <span className="item-editor-supply-value">
-              {item.campSupply?.value ?? 0} por unidade
-            </span>
-          </p>
-        ) : null}
-
-        {/* Nota discreta do rodapé do card: o preço é exclusivo do mestre. */}
-        <p className="item-editor-value-note">
-          <Icon name="eye" size={14} />
-          Visível apenas para o mestre — o jogador nunca vê o preço.
-        </p>
-      </Section>
-
-      <Section title="Sprite" icon="star" badge="D" subtitle="PNG, JPEG, WEBP ou GIF · até 5 MB">
-        <div className="item-editor-sprite">
-          <span
-            className={
-              item.imageUrl ? 'item-editor-sprite-preview' : 'item-editor-sprite-preview is-empty'
-            }
-            aria-hidden={item.imageUrl ? undefined : 'true'}
-          >
-            {item.imageUrl ? (
-              <img src={item.imageUrl} alt={item.name} />
-            ) : (
-              <Icon name="flask" size={44} />
-            )}
-          </span>
-
-          <div className="item-editor-sprite-actions">
-            <div className="toolbar">
-              <label
-                className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}
-              >
-                {uploading ? 'enviando...' : item.imageUrl ? 'trocar sprite' : '+ adicionar sprite'}
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  disabled={uploading}
-                  onChange={(event) => {
-                    void handleFile(event.target.files);
-                    event.target.value = '';
-                  }}
-                />
-              </label>
-              {item.imageUrl ? (
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  onClick={() => onPatch({ imageUrl: '' })}
-                >
-                  remover sprite
-                </button>
-              ) : null}
-            </div>
-            <p className="field-hint">
-              Uma arte quadrada (ex.: 512×512) funciona melhor na ficha e no card.
-            </p>
-            {error ? <p className="form-error">{error}</p> : null}
+      {/* Economia e Sprite lado a lado no desktop: juntos, ocupam a altura de
+          um único bloco e fecham o editor. */}
+      <div className="item-editor-economy">
+        <Section title="Valor" icon="crown">
+          <div className="grid item-editor-price">
+            <label className="field">
+              <span>PO (ouro)</span>
+              <InlineField
+                value={price.gold}
+                mode="number"
+                min={0}
+                ariaLabel="Preço em peças de ouro"
+                onCommit={(value) => patchPrice({ gold: clampInt(value, 0, 9_999_999, price.gold) })}
+              />
+            </label>
+            <label className="field">
+              <span>PP (prata)</span>
+              <InlineField
+                value={price.silver}
+                mode="number"
+                min={0}
+                ariaLabel="Preço em peças de prata"
+                onCommit={(value) =>
+                  patchPrice({ silver: clampInt(value, 0, 9_999_999, price.silver) })
+                }
+              />
+            </label>
+            <label className="field">
+              <span>PC (cobre)</span>
+              <InlineField
+                value={price.copper}
+                mode="number"
+                min={0}
+                ariaLabel="Preço em peças de cobre"
+                onCommit={(value) =>
+                  patchPrice({ copper: clampInt(value, 0, 9_999_999, price.copper) })
+                }
+              />
+            </label>
           </div>
-        </div>
-      </Section>
+
+          <p className="item-editor-value-note">
+            <Icon name="eye" size={13} />
+            Visível apenas para o mestre.
+          </p>
+        </Section>
+
+        <Section title="Sprite" icon="star">
+          <div className="item-editor-sprite">
+            <span
+              className={
+                item.imageUrl ? 'item-editor-sprite-preview' : 'item-editor-sprite-preview is-empty'
+              }
+              aria-hidden={item.imageUrl ? undefined : 'true'}
+            >
+              {item.imageUrl ? (
+                <img src={item.imageUrl} alt={item.name} />
+              ) : (
+                <Icon name="flask" size={40} />
+              )}
+            </span>
+
+            <div className="item-editor-sprite-actions">
+              <div className="toolbar">
+                <label
+                  className={
+                    uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'
+                  }
+                >
+                  {uploading ? 'enviando...' : item.imageUrl ? 'trocar sprite' : '+ adicionar sprite'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    disabled={uploading}
+                    onChange={(event) => {
+                      void handleFile(event.target.files);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+                {item.imageUrl ? (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() => onPatch({ imageUrl: '' })}
+                  >
+                    remover sprite
+                  </button>
+                ) : null}
+              </div>
+              <span className="field-hint">PNG, JPEG, WEBP ou GIF · até 5 MB</span>
+              {error ? <p className="form-error">{error}</p> : null}
+            </div>
+          </div>
+        </Section>
+      </div>
     </div>
   );
 }
