@@ -23,7 +23,7 @@ import { useDiceRoller } from '../dice/useDiceRoller';
 import { useMusic } from '../music/useMusic';
 import { fetchTransferTargets } from '../coinsApi';
 import { fetchGameConfig } from '../gameApi';
-import { toggleFeature } from '../featuresApi';
+import { requestEldritchMaster, toggleFeature } from '../featuresApi';
 import { moveInventoryItem, useInventoryItem } from '../inventoryApi';
 import { resultBreakdown } from '../dice/format';
 import { closePresentation } from '../presentationApi';
@@ -278,6 +278,16 @@ export function SheetPage({ user }: { user: SessionUser }) {
     [],
   );
 
+  /**
+   * Mestre Místico (Bruxo 20, 5.3C): ação AUTHORITATIVE própria — não é
+   * Descanso Curto. Recupera só a Magia de Pacto gasta e consome a feature; a
+   * ficha devolvida passa a ser a da tela.
+   */
+  const eldritchMasterAction = useCallback(async (expectedVersion: number) => {
+    const { character: saved } = await requestEldritchMaster(expectedVersion);
+    setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+  }, []);
+
   /** Fechamento da imagem apresentada (só o mestre chega aqui na prática). */
   const closePresentedImage = useCallback(() => {
     void closePresentation().catch(() => setPresentation(null));
@@ -469,6 +479,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   onInventoryMove={moveItem}
                   onInventoryUse={useItem}
                   onFeatureToggle={toggleFeatureAction}
+                  onEldritchMaster={eldritchMasterAction}
                   extraCoins={gameConfig?.extraCoins ?? false}
                   coinTargets={coinTargets}
                   onCoinsChange={adoptCoins}

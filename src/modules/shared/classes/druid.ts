@@ -95,6 +95,14 @@ const DRUID_SUBCLASSES: SubclassDefinition[] = [
         level: 2,
         description:
           'Uma vez por dia, durante um descanso curto, recupere espaços de magia gastos totalizando metade do seu nível de druida, arredondado para cima. Nenhum espaço de 6º nível ou superior pode ser recuperado assim.',
+        // Disponível 1x/descanso longo. A recuperação em si é um handler
+        // especial (5.3C) validado dentro de uma sessão de Descanso Curto.
+        effect: {
+          type: 'resource',
+          id: 'natural-recovery',
+          name: 'Recuperação Natural',
+          resource: { name: 'Recuperação Natural', recharge: 'long', max: 1 },
+        },
       },
       {
         id: 'lands-stride',

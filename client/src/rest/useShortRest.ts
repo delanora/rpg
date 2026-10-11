@@ -13,6 +13,11 @@ import {
   spendShortRestHitDie,
   type SpendHitDieResult,
 } from './restApi';
+import {
+  recoverSlots,
+  type RecoverSlotsResult,
+  type RecoveryFeatureId,
+} from '../featuresApi';
 
 /**
  * Ação em andamento — usado para desabilitar só o botão certo (nunca a ficha
@@ -23,6 +28,7 @@ export type ShortRestAction =
   | 'respond'
   | 'ready'
   | 'spend'
+  | 'recover'
   | 'force-approve'
   | 'force-complete'
   | 'cancel';
@@ -66,6 +72,15 @@ export interface ShortRestController {
   respond: (response: 'ACCEPTED' | 'DECLINED') => Promise<void>;
   setReady: (ready: boolean) => Promise<void>;
   spendHitDie: (die: number, expectedVersion: number) => Promise<SpendHitDieResult | null>;
+  /**
+   * Recupera espaços por uma feature especial (Arcane/Natural Recovery) na sessão
+   * ativa do descanso. O servidor deriva e valida tudo; aqui só disparamos.
+   */
+  recover: (
+    featureId: RecoveryFeatureId,
+    slots: Record<string, number>,
+    expectedVersion: number,
+  ) => Promise<RecoverSlotsResult | null>;
   forceApprove: () => Promise<void>;
   forceComplete: () => Promise<void>;
   cancel: () => Promise<void>;
@@ -191,6 +206,29 @@ export function useShortRest({
     [characterId, onCharacterUpdated, request, run],
   );
 
+  const recover = useCallback(
+    async (
+      featureId: RecoveryFeatureId,
+      slots: Record<string, number>,
+      expectedVersion: number,
+    ): Promise<RecoverSlotsResult | null> => {
+      if (!request || !characterId) return null;
+      const sessionId =
+        request.participants.find((participant) => participant.characterId === characterId)
+          ?.sessionId ?? null;
+      if (!sessionId) {
+        setError('Sua sessão de descanso não está ativa.');
+        return null;
+      }
+      const result = await run('recover', () =>
+        recoverSlots({ sessionId, featureId, slots, expectedVersion }),
+      );
+      if (result) onCharacterUpdated?.(result.character);
+      return result;
+    },
+    [characterId, onCharacterUpdated, request, run],
+  );
+
   const forceApprove = useCallback(async () => {
     if (!request) return;
     const result = await run('force-approve', () => forceApproveShortRest(request.id));
@@ -252,6 +290,7 @@ export function useShortRest({
     respond,
     setReady,
     spendHitDie,
+    recover,
     forceApprove,
     forceComplete,
     cancel,

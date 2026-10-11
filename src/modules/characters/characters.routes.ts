@@ -4,10 +4,12 @@ import {
   createCharacterSchema,
   creationRollRequestSchema,
   creationStepSchema,
+  eldritchMasterSchema,
   giveCoinsSchema,
   levelDownSchema,
   levelUpSchema,
   moveInventoryItemSchema,
+  recoverSlotsSchema,
   shortRestSessionActionSchema,
   spellbookSchema,
   spendCoinsSchema,
@@ -32,12 +34,14 @@ import {
   cancelShortRest,
   completeShortRest,
   moveInventoryItem,
+  recoverSlots,
   setClassSpellbook,
   spendCoins,
   spendHitDie,
   startShortRest,
   toggleFeature,
   transferCoins,
+  useEldritchMaster,
   updateCharacter,
   updateCharacterAsMaster,
   useInventoryItem,
@@ -311,6 +315,48 @@ charactersRouter.post('/me/features/toggle', authenticate, async (req, res) => {
   }
 
   res.json(await toggleFeature(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/features/recovery — Recuperação Arcana/Natural (5.3C).
+ *
+ * DURANTE um Descanso Curto ACTIVE, o jogador escolhe os espaços gastos a
+ * recuperar; o servidor valida a posse da feature, o nível da CLASSE, o
+ * orçamento, os máximos/gastos e o limite de nível 5, e grava a recuperação + o
+ * consumo da feature na mesma operação.
+ */
+charactersRouter.post('/me/features/recovery', authenticate, async (req, res) => {
+  const parsed = recoverSlotsSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await recoverSlots(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/features/eldritch-master — Mestre Místico (Bruxo 20).
+ *
+ * Ação PRÓPRIA (não é Descanso Curto): recupera SOMENTE a Magia de Pacto gasta
+ * e consome a feature 1x/descanso longo. Sem espaços gastos, não consome nada.
+ */
+charactersRouter.post('/me/features/eldritch-master', authenticate, async (req, res) => {
+  const parsed = eldritchMasterSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await useEldritchMaster(actorFrom(req), parsed.data));
 });
 
 charactersRouter.post('/me/rest/short/hit-die', authenticate, async (req, res) => {

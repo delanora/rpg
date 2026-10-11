@@ -9,7 +9,7 @@ import {
 import { useEffect, useState } from 'react';
 import { fetchCompendium } from '../../gameApi';
 import { useSheetAccess } from '../../readonly';
-import type { CompendiumSpell, Spell } from '../../types';
+import type { Character, CompendiumSpell, Spell } from '../../types';
 import { clampInt, newId } from '../../utils';
 import { FieldInfo } from '../FieldInfo';
 import { Icon } from '../Icon';
@@ -81,7 +81,13 @@ function SlotPips({ level, max, used, readOnly, onChange }: SlotPipsProps) {
   );
 }
 
-export function SpellsSection({ character, update }: SheetSectionProps) {
+export function SpellsSection({
+  character,
+  update,
+  onEldritchMaster,
+}: SheetSectionProps & {
+  onEldritchMaster?: (expectedVersion: number) => void | Promise<void>;
+}) {
   // Gastar/recuperar espaços é estado de jogo; o TOTAL de cada nível é DERIVADO
   // do nível de conjurador (não fica gravado) e a lista de magias conhecidas é
   // construção (vem da classe e do Level Up).
@@ -439,6 +445,8 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
         </>
       ) : null}
 
+      <EldritchMasterAction character={character} onUse={onEldritchMaster} />
+
       {sorcery ? (
         <>
           <h3 className="subsection-title">Fonte de Magia</h3>
@@ -619,5 +627,105 @@ export function SpellsSection({ character, update }: SheetSectionProps) {
         ))
       )}
     </Section>
+  );
+}
+
+/**
+ * Mestre Místico (Bruxo 20, 5.3C) — ação PRÓPRIA, separada do Descanso Curto.
+ *
+ * O "1 minuto de súplica" é tempo NARRATIVO: nenhum timer é criado aqui. O
+ * servidor valida o nível de Bruxo, a disponibilidade e se há Pact Magic gasta,
+ * recupera SÓ o pool de Pacto e marca a feature. Sem espaços gastos, o botão
+ * fica desabilitado e o servidor também recusa.
+ */
+function EldritchMasterAction({
+  character,
+  onUse,
+}: {
+  character: Character;
+  onUse?: (expectedVersion: number) => void | Promise<void>;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const owned = character.activeFeatures.some((feature) => feature.id === 'eldritch-master');
+  if (!owned) return null;
+
+  const used = (character.classState.used['eldritch-master'] ?? 0) > 0;
+  const pactUsed = character.spells.pactMagic?.used ?? 0;
+
+  async function confirmUse(): Promise<void> {
+    if (!onUse) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onUse(character.version);
+      setConfirm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível usar o Mestre Místico.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="eldritch-master">
+      <h3 className="subsection-title">Mestre Místico</h3>
+      <p className="section-note">
+        Passe 1 minuto suplicando ao seu patrono para recuperar TODOS os seus espaços de Magia de
+        Pacto gastos. Uma vez usado, só recupera num Descanso Longo.
+      </p>
+
+      {used ? (
+        <p className="section-note">Utilizado — recupera após um Descanso Longo.</p>
+      ) : confirm ? (
+        <div className="short-rest-confirm" role="alertdialog" aria-label="Confirmação">
+          <p>
+            Seu personagem passará 1 minuto suplicando ao patrono. Ao concluir, seus espaços de
+            Magia de Pacto gastos serão recuperados.
+          </p>
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={busy}
+              onClick={() => setConfirm(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn btn-small btn-primary"
+              disabled={busy}
+              onClick={() => void confirmUse()}
+            >
+              {busy ? 'suplicando…' : 'Confirmar'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!onUse || pactUsed <= 0}
+            title={
+              pactUsed <= 0
+                ? 'Todos os seus espaços de Magia de Pacto já estão disponíveis.'
+                : 'Suplicar ao patrono (1x por descanso longo)'
+            }
+            onClick={() => setConfirm(true)}
+          >
+            Suplicar ao Patrono
+          </button>
+        </div>
+      )}
+
+      {pactUsed <= 0 && !used ? (
+        <p className="section-note">Todos os seus espaços de Magia de Pacto já estão disponíveis.</p>
+      ) : null}
+      {error ? <p className="form-error">{error}</p> : null}
+    </section>
   );
 }

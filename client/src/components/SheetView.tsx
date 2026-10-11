@@ -41,6 +41,11 @@ interface SheetViewProps {
     active: boolean,
     expectedVersion: number,
   ) => void | Promise<void>;
+  /**
+   * Mestre Místico (Bruxo 20, 5.3C): ação própria do servidor, separada do
+   * Descanso Curto. A ficha devolvida passa a ser a da tela.
+   */
+  onEldritchMaster?: (expectedVersion: number) => void | Promise<void>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins?: boolean;
   /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
@@ -84,10 +89,17 @@ function renderTab(
   character: Character,
   update: (patch: CharacterPatch) => void,
   onRoll?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void,
+  onEldritchMaster?: (expectedVersion: number) => void | Promise<void>,
 ) {
   switch (key) {
     case 'spells':
-      return <SpellsSection character={character} update={update} />;
+      return (
+        <SpellsSection
+          character={character}
+          update={update}
+          onEldritchMaster={onEldritchMaster}
+        />
+      );
     case 'attacks':
       return <AttacksSection character={character} update={update} />;
     case 'features':
@@ -110,6 +122,7 @@ export function SheetView({
   onInventoryMove,
   onInventoryUse,
   onFeatureToggle,
+  onEldritchMaster,
   extraCoins = false,
   coinTargets,
   onCoinsChange,
@@ -178,7 +191,7 @@ export function SheetView({
 
           {/* A `key` reinicia a animação de "virar a página" a cada troca de aba. */}
           <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
-            {renderTab(tab, character, update, onRollSkill)}
+            {renderTab(tab, character, update, onRollSkill, onEldritchMaster)}
           </div>
         </div>
 

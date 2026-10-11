@@ -19597,6 +19597,382 @@ async function main(): Promise<void> {
     );
   }
 
+  // --- 57. Handlers especiais de recuperação (5.3C) --------------------------
+  // Recuperação Arcana/Natural DENTRO do Descanso Curto (server-authoritative) e
+  // Mestre Místico (Bruxo 20) como ação própria. O cliente só manda a intenção;
+  // o servidor deriva posse, nível da CLASSE, orçamento, limites e o consumo.
+  console.log('\n57) Handlers especiais de recuperação (5.3C)');
+  // IIFE: mantém o corpo fora da análise de fluxo do `main` (o arquivo é grande).
+  await (async () => {
+    const recUser = await prisma.user.create({
+      data: {
+        username: `recovery_${suffix}`,
+        displayName: 'Recuperação 5.3C',
+        passwordHash: 'nao-usado-no-smoke',
+      },
+      select: { id: true, username: true, displayName: true, role: true },
+    });
+    createdUsernames.push(recUser.username);
+    const token = signToken({
+      sub: recUser.id,
+      username: recUser.username,
+      displayName: recUser.displayName,
+      role: recUser.role,
+    });
+    const userId = recUser.id;
+    await api('/api/characters/me', { method: 'POST', token, body: {} });
+
+    const sheetOf57 = async () => (await api('/api/characters/me', { token })).data.character;
+    const setChar = (data: Record<string, unknown>) =>
+      prisma.character.update({ where: { userId }, data: data as any });
+    const setup = async (
+      classes: { classKey: string; subclass?: string; level: number }[],
+      opts: {
+        slotsUsed?: Record<string, number>;
+        pactUsed?: number;
+        used?: Record<string, number>;
+        active?: string[];
+      } = {},
+    ) => {
+      await setCharacterClasses(userId, classes);
+      await setChar({
+        spells: {
+          list: [],
+          slotsUsed: opts.slotsUsed ?? {},
+          pactMagic: { used: opts.pactUsed ?? 0 },
+        },
+        classState: { active: opts.active ?? [], used: opts.used ?? {}, choices: {} },
+      });
+    };
+    let opN = 0;
+    const nextOp = (tag: string) => `op-${suffix}-57-${tag}-${opN++}`;
+    const startSession = async (): Promise<string> => {
+      const res = await api('/api/characters/me/rest/short/start', {
+        method: 'POST',
+        token,
+        body: { expectedVersion: (await sheetOf57()).version, operationId: nextOp('start') },
+      });
+      return (res.data?.session?.id as string) ?? '';
+    };
+    const cancelSession = async (sessionId: string) =>
+      api('/api/characters/me/rest/short/cancel', {
+        method: 'POST',
+        token,
+        body: {
+          sessionId,
+          expectedVersion: (await sheetOf57()).version,
+          operationId: nextOp('cancel'),
+        },
+      });
+    const recover = (
+      sessionId: string,
+      featureId: string,
+      slots: Record<string, number>,
+      expectedVersion: number,
+    ) =>
+      api('/api/characters/me/features/recovery', {
+        method: 'POST',
+        token,
+        body: { sessionId, featureId, slots, expectedVersion, operationId: nextOp('rec') },
+      });
+    const eldritch = (expectedVersion: number) =>
+      api('/api/characters/me/features/eldritch-master', {
+        method: 'POST',
+        token,
+        body: { expectedVersion, operationId: nextOp('em') },
+      });
+    const slotsUsedOf = (sheet: any): Record<string, number> => sheet?.spells?.slotsUsed ?? {};
+    const featureUsedOf = (sheet: any, id: string): number =>
+      ((sheet?.classState?.used as Record<string, number>) ?? {})[id] ?? 0;
+
+    // A/J) Mago 1 → orçamento 1; recupera 1 espaço de 1º; marca a feature.
+    await setup([{ classKey: 'wizard', level: 1 }], { slotsUsed: { '1': 1 } });
+    let sid = await startSession();
+    let sh = await sheetOf57();
+    let res = await recover(sid, 'arcane-recovery', { '1': 1 }, sh.version);
+    check(
+      '57.A/J) Mago 1: orçamento 1, recupera 1 espaço de 1º e consome a feature',
+      res.status === 200 &&
+        res.data?.budget === 1 &&
+        res.data?.spent === 1 &&
+        slotsUsedOf(res.data.character)['1'] === undefined &&
+        featureUsedOf(res.data.character, 'arcane-recovery') === 1 &&
+        res.data?.slots?.[0]?.level === 1,
+      JSON.stringify({ status: res.status, budget: res.data?.budget, slots: slotsUsedOf(res.data?.character) }),
+    );
+
+    // K) Segunda tentativa antes da recarga (descanso longo) → 409.
+    const second = await recover(sid, 'arcane-recovery', { '1': 1 }, (await sheetOf57()).version);
+    check(
+      '57.K) segunda recuperação antes do descanso longo → 409 RECOVERY_ALREADY_USED',
+      second.status === 409 && second.data?.error === 'RECOVERY_ALREADY_USED',
+      JSON.stringify({ status: second.status, error: second.data?.error }),
+    );
+    await cancelSession(sid);
+
+    // I) Seleção zero não gasta a feature.
+    await setup([{ classKey: 'wizard', level: 5 }], { slotsUsed: { '1': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'arcane-recovery', {}, sh.version);
+    const afterZero = await sheetOf57();
+    check(
+      '57.I) seleção zero → 400 RECOVERY_EMPTY e nada é gasto',
+      res.status === 400 &&
+        res.data?.error === 'RECOVERY_EMPTY' &&
+        featureUsedOf(afterZero, 'arcane-recovery') === 0 &&
+        slotsUsedOf(afterZero)['1'] === 1,
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+    await cancelSession(sid);
+
+    // B) Mago 5 → orçamento 3.
+    await setup([{ classKey: 'wizard', level: 5 }], { slotsUsed: { '1': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'arcane-recovery', { '1': 1 }, sh.version);
+    check(
+      '57.B) Mago 5: orçamento 3',
+      res.status === 200 && res.data?.budget === 3,
+      JSON.stringify({ budget: res.data?.budget }),
+    );
+    await cancelSession(sid);
+
+    // F) Acima do orçamento → 400.
+    await setup([{ classKey: 'wizard', level: 5 }], { slotsUsed: { '1': 1, '2': 2 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'arcane-recovery', { '2': 2 }, sh.version);
+    check(
+      '57.F) seleção acima do orçamento → 400 RECOVERY_OVER_BUDGET',
+      res.status === 400 && res.data?.error === 'RECOVERY_OVER_BUDGET',
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+    await cancelSession(sid);
+
+    // G) Espaço de 6º+ → 400.
+    await setup([{ classKey: 'wizard', level: 11 }], { slotsUsed: { '6': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'arcane-recovery', { '6': 1 }, sh.version);
+    check(
+      '57.G) espaço de 6º+ não pode ser recuperado → 400 RECOVERY_LEVEL_TOO_HIGH',
+      res.status === 400 && res.data?.error === 'RECOVERY_LEVEL_TOO_HIGH',
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+    await cancelSession(sid);
+
+    // H) Não recupera mais do que gastou → 400.
+    await setup([{ classKey: 'wizard', level: 5 }], { slotsUsed: { '1': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'arcane-recovery', { '1': 2 }, sh.version);
+    check(
+      '57.H) recuperar mais espaços do que gastou → 400 RECOVERY_EXCEEDS_USED',
+      res.status === 400 && res.data?.error === 'RECOVERY_EXCEEDS_USED',
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+    await cancelSession(sid);
+
+    // C/E) Mago 9 → orçamento 5; seleção 3º + 2º (total 5) é válida.
+    await setup([{ classKey: 'wizard', level: 9 }], { slotsUsed: { '2': 1, '3': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'arcane-recovery', { '3': 1, '2': 1 }, sh.version);
+    const afterE = res.data?.character;
+    check(
+      '57.C/E) Mago 9: orçamento 5 e recupera 3º + 2º (total 5)',
+      res.status === 200 &&
+        res.data?.budget === 5 &&
+        res.data?.spent === 5 &&
+        slotsUsedOf(afterE)['3'] === undefined &&
+        slotsUsedOf(afterE)['2'] === undefined,
+      JSON.stringify({ status: res.status, budget: res.data?.budget, spent: res.data?.spent, slots: slotsUsedOf(afterE) }),
+    );
+    await cancelSession(sid);
+
+    // D) Multiclasse usa o nível de MAGO (não o total).
+    await setup([{ classKey: 'wizard', level: 5 }, { classKey: 'fighter', level: 5 }], { slotsUsed: { '1': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'arcane-recovery', { '1': 1 }, sh.version);
+    check(
+      '57.D) Mago 5 / Guerreiro 5 → orçamento 3 (nível da CLASSE)',
+      res.status === 200 && res.data?.budget === 3,
+      JSON.stringify({ budget: res.data?.budget }),
+    );
+    await cancelSession(sid);
+
+    // Sem sessão de Descanso Curto ativa → 404 (a recuperação vive no descanso).
+    await setup([{ classKey: 'wizard', level: 5 }], { slotsUsed: { '1': 1 } });
+    res = await recover('sessao-inexistente', 'arcane-recovery', { '1': 1 }, (await sheetOf57()).version);
+    check(
+      '57) recuperação fora de um Descanso Curto ativo → 404',
+      res.status === 404,
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+
+    // L) Druida da Terra 2 → orçamento 1.
+    await setup([{ classKey: 'druid', level: 2, subclass: 'Círculo da Terra' }], { slotsUsed: { '1': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'natural-recovery', { '1': 1 }, sh.version);
+    check(
+      '57.L) Druida da Terra 2: orçamento 1 e consome a feature',
+      res.status === 200 && res.data?.budget === 1 && featureUsedOf(res.data.character, 'natural-recovery') === 1,
+      JSON.stringify({ status: res.status, budget: res.data?.budget }),
+    );
+    await cancelSession(sid);
+
+    // M/N) Druida 6 / Clérigo 4 → orçamento 3 (nível de DRUIDA).
+    await setup(
+      [
+        { classKey: 'druid', level: 6, subclass: 'Círculo da Terra' },
+        { classKey: 'cleric', level: 4 },
+      ],
+      { slotsUsed: { '1': 1 } },
+    );
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'natural-recovery', { '1': 1 }, sh.version);
+    check(
+      '57.M/N) Druida 6 / Clérigo 4 → orçamento 3 (nível da CLASSE)',
+      res.status === 200 && res.data?.budget === 3,
+      JSON.stringify({ budget: res.data?.budget }),
+    );
+    await cancelSession(sid);
+
+    // O) Recuperação Natural também recusa 6º+.
+    await setup([{ classKey: 'druid', level: 11, subclass: 'Círculo da Terra' }], { slotsUsed: { '6': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    res = await recover(sid, 'natural-recovery', { '6': 1 }, sh.version);
+    check(
+      '57.O) Recuperação Natural recusa espaço de 6º+ → 400',
+      res.status === 400 && res.data?.error === 'RECOVERY_LEVEL_TOO_HIGH',
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+    await cancelSession(sid);
+
+    // Q) Druida da Lua não possui a feature (nem pelo endpoint).
+    await setup([{ classKey: 'druid', level: 2, subclass: 'Círculo da Lua' }], { slotsUsed: { '1': 1 } });
+    sid = await startSession();
+    sh = await sheetOf57();
+    const luaHasFeature = (sh.activeFeatures ?? []).some((f: any) => f.id === 'natural-recovery');
+    res = await recover(sid, 'natural-recovery', { '1': 1 }, sh.version);
+    check(
+      '57.Q) Druida da Lua não possui Recuperação Natural (feature e endpoint recusam)',
+      !luaHasFeature && res.status === 404,
+      JSON.stringify({ has: luaHasFeature, status: res.status }),
+    );
+    await cancelSession(sid);
+
+    // P) Descanso Longo devolve a Recuperação Natural (recurso de recarga longa).
+    const nrState = normalizeClassState({ active: [], used: { 'natural-recovery': 1 }, choices: {} });
+    const nrAdj = computeMulticlassAdjustments(
+      [{ classKey: 'druid', subclass: 'Círculo da Terra', level: 6 }],
+      nrState,
+    );
+    check(
+      '57.P) Recuperação Natural é recurso de recarga LONGA e volta no Descanso Longo',
+      nrAdj.resources.some((r: any) => r.id === 'natural-recovery' && r.recharge === 'long') &&
+        restoreLongRestResources(nrState, nrAdj.resources).used['natural-recovery'] === undefined,
+      JSON.stringify(nrAdj.resources.filter((r: any) => r.id === 'natural-recovery')),
+    );
+
+    // --- Mestre Místico (Bruxo 20) -------------------------------------------
+
+    // R) Bruxo 19 → indisponível (exige nível 20 NA CLASSE).
+    await setup([{ classKey: 'warlock', level: 19 }], { pactUsed: 1 });
+    res = await eldritch((await sheetOf57()).version);
+    check(
+      '57.R) Bruxo 19 não usa o Mestre Místico → 403',
+      res.status === 403 && res.data?.error === 'ELDRITCH_MASTER_REQUIRES_20',
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+
+    // S/T/W) Bruxo 20 recupera a Magia de Pacto e marca a feature.
+    await setup([{ classKey: 'warlock', level: 20 }], { pactUsed: 2 });
+    res = await eldritch((await sheetOf57()).version);
+    check(
+      '57.S/T/W) Bruxo 20: recupera Pact Magic para 0 e marca a feature',
+      res.status === 200 &&
+        res.data?.restoredSlots === 2 &&
+        res.data.character.spells.pactMagic.used === 0 &&
+        featureUsedOf(res.data.character, 'eldritch-master') === 1,
+      JSON.stringify({ status: res.status, restored: res.data?.restoredSlots, used: res.data?.character?.spells?.pactMagic?.used }),
+    );
+
+    // X) Segunda utilização antes do descanso longo → 409.
+    const emAgain = await eldritch((await sheetOf57()).version);
+    check(
+      '57.X) segunda utilização antes do Descanso Longo → 409 ELDRITCH_MASTER_USED',
+      emAgain.status === 409 && emAgain.data?.error === 'ELDRITCH_MASTER_USED',
+      JSON.stringify({ status: emAgain.status, error: emAgain.data?.error }),
+    );
+
+    // U) Espaços NORMAIS intactos (Mago 3 / Bruxo 20).
+    await setup([{ classKey: 'wizard', level: 3 }, { classKey: 'warlock', level: 20 }], { slotsUsed: { '1': 2 }, pactUsed: 1 });
+    res = await eldritch((await sheetOf57()).version);
+    check(
+      '57.U) Mestre Místico não toca nos espaços NORMAIS',
+      res.status === 200 &&
+        slotsUsedOf(res.data.character)['1'] === 2 &&
+        res.data.character.spells.pactMagic.used === 0,
+      JSON.stringify({ status: res.status, slots: slotsUsedOf(res.data?.character) }),
+    );
+
+    // V) Outros recursos de classe intactos (Fúria).
+    await setup(
+      [{ classKey: 'barbarian', level: 5 }, { classKey: 'warlock', level: 20 }],
+      { pactUsed: 1, used: { rage: 1 } },
+    );
+    res = await eldritch((await sheetOf57()).version);
+    check(
+      '57.V) Mestre Místico não toca nos recursos de outras classes',
+      res.status === 200 && (res.data.character.classState.used ?? {}).rage === 1,
+      JSON.stringify({ status: res.status, used: res.data?.character?.classState?.used }),
+    );
+
+    // Z) Sem Pact Magic gasta → 409 e a feature NÃO é consumida.
+    await setup([{ classKey: 'warlock', level: 20 }], { pactUsed: 0 });
+    res = await eldritch((await sheetOf57()).version);
+    const afterZ = await sheetOf57();
+    check(
+      '57.Z) sem Pact Magic gasta → 409 NO_PACT_SLOTS_USED e a feature não é consumida',
+      res.status === 409 &&
+        res.data?.error === 'NO_PACT_SLOTS_USED' &&
+        featureUsedOf(afterZ, 'eldritch-master') === 0,
+      JSON.stringify({ status: res.status, error: res.data?.error }),
+    );
+
+    // Y) Mestre Místico volta no Descanso Longo (recurso de recarga longa).
+    const emState = normalizeClassState({ active: [], used: { 'eldritch-master': 1 }, choices: {} });
+    const emAdj = computeMulticlassAdjustments(
+      [{ classKey: 'warlock', subclass: '', level: 20 }],
+      emState,
+    );
+    check(
+      '57.Y) Mestre Místico volta no Descanso Longo (recurso de recarga longa)',
+      emAdj.resources.some((r: any) => r.id === 'eldritch-master' && r.recharge === 'long') &&
+        restoreLongRestResources(emState, emAdj.resources).used['eldritch-master'] === undefined,
+      JSON.stringify(emAdj.resources.find((r: any) => r.id === 'eldritch-master')),
+    );
+
+    // AA) Duas chamadas concorrentes: só uma consome.
+    await setup([{ classKey: 'warlock', level: 20 }], { pactUsed: 1 });
+    sh = await sheetOf57();
+    const [emA, emB] = await Promise.all([eldritch(sh.version), eldritch(sh.version)]);
+    const afterAA = await sheetOf57();
+    check(
+      '57.AA) duas chamadas concorrentes do Mestre Místico: só uma consome',
+      [emA.status, emB.status].filter((st) => st === 200).length === 1 &&
+        featureUsedOf(afterAA, 'eldritch-master') === 1 &&
+        afterAA.spells.pactMagic.used === 0,
+      JSON.stringify({ statuses: [emA.status, emB.status], used: featureUsedOf(afterAA, 'eldritch-master') }),
+    );
+  })();
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'

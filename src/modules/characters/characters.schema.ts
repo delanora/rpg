@@ -609,6 +609,38 @@ export const toggleFeatureSchema = z.object({
 
 export type ToggleFeatureInput = z.infer<typeof toggleFeatureSchema>;
 
+/**
+ * Recuperação de espaços de magia por uma feature ESPECIAL (5.3C): Recuperação
+ * Arcana (Mago) e Recuperação Natural (Druida do Círculo da Terra).
+ *
+ * O cliente diz só QUAIS espaços quer recuperar (`slots`, por nível) dentro de
+ * uma sessão de Descanso Curto ACTIVE. O servidor deriva a posse da feature, o
+ * nível da CLASSE, o orçamento (`ceil(nível/2)`), os máximos/gastos de cada
+ * nível e o limite de nível 5 — `slots` é a INTENÇÃO, nunca a regra.
+ */
+export const recoverSlotsSchema = z.object({
+  sessionId: shortRestSessionIdSchema,
+  featureId: z.enum(['arcane-recovery', 'natural-recovery']),
+  /** Quantos espaços recuperar por nível (chaves 1..9; ausência = 0). */
+  slots: z.record(spellSlotLevelSchema, nonNegativeInt).default({}),
+  expectedVersion: expectedVersionSchema,
+  operationId: operationIdSchema,
+});
+
+export type RecoverSlotsInput = z.infer<typeof recoverSlotsSchema>;
+
+/**
+ * Ação própria do Mestre Místico (Bruxo 20, 5.3C). NÃO é um Descanso Curto:
+ * recupera APENAS a Magia de Pacto gasta, consome a feature (1x/descanso longo)
+ * e não cria sessão de descanso nem toca em PV/Dados de Vida/outros recursos.
+ */
+export const eldritchMasterSchema = z.object({
+  expectedVersion: expectedVersionSchema,
+  operationId: operationIdSchema,
+});
+
+export type EldritchMasterInput = z.infer<typeof eldritchMasterSchema>;
+
 // --- Moedas -----------------------------------------------------------------
 //
 // Só o mestre dá ou retira (PATCH e `POST /:id/coins`); o jogador gasta, troca

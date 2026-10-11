@@ -5,7 +5,9 @@ import { Icon } from '../components/Icon';
 import type { Character } from '../types';
 import { HitDicePanel } from './HitDicePanel';
 import { ShortRestParticipants } from './ShortRestParticipants';
+import { ShortRestRecovery } from './ShortRestRecovery';
 import { ShortRestResultView } from './ShortRestResultView';
+import type { RecoverSlotsResult } from '../featuresApi';
 import type { SpendHitDieResult } from './restApi';
 import type { ShortRestController } from './useShortRest';
 
@@ -47,6 +49,8 @@ export function ShortRestModal({
   );
   const [spendingDie, setSpendingDie] = useState<number | null>(null);
   const [lastRoll, setLastRoll] = useState<SpendHitDieResult | null>(null);
+  // Recuperação Arcana/Natural aplicada nesta sessão (para o resumo final).
+  const [lastRecovery, setLastRecovery] = useState<RecoverSlotsResult | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -66,6 +70,7 @@ export function ShortRestModal({
     setConfirm(null);
     setSpendingDie(null);
     setLastRoll(null);
+    setLastRecovery(null);
   }, [open]);
 
   // Esc fecha quando é seguro: nunca no meio de uma ação; a confirmação fecha
@@ -364,6 +369,15 @@ export function ShortRestModal({
 
             {lastRoll ? <RollFeedback result={lastRoll} /> : null}
 
+            {/* Recuperação especial (Arcane/Natural): opcional e ANTES do ready. */}
+            <ShortRestRecovery
+              character={character}
+              disabled={me.ready || busy}
+              pending={pending === 'recover'}
+              onRecover={rest.recover}
+              onApplied={setLastRecovery}
+            />
+
             {me.ready ? (
               <div className="short-rest-decision">
                 <p>
@@ -425,6 +439,7 @@ export function ShortRestModal({
             request={request}
             completion={completion}
             character={character}
+            recovery={lastRecovery}
             onClose={close}
           />
         ) : null}
