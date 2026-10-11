@@ -14893,13 +14893,12 @@ input[type='checkbox']:focus-visible,
   color: var(--ok-bright);
 }
 
-/* Aviso de uso do item na confirmação de exclusão. */
+/* Aviso de uso do item na confirmação de exclusão: cabeçalho, quem usa (chips)
+   e a consequência em duas linhas. O destaque aqui é ESTRUTURAL — nada de
+   negrito solto no meio da frase; quem separa as ideias são os blocos. */
 .delete-item-usage {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.45rem;
   margin: 0.6rem 0;
-  padding: 0.55rem 0.7rem;
+  padding: 0.6rem 0.7rem 0.65rem;
   border: 1px solid var(--gold-deep);
   border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(184, 145, 42, 0.14), var(--surface-2));
@@ -14907,13 +14906,71 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
-.delete-item-usage .icon {
-  flex: 0 0 auto;
+.delete-item-usage-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-aux);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--gold-deep);
 }
 
-[data-theme='dark'] .delete-item-usage .icon {
+.delete-item-usage-title .icon {
+  flex: 0 0 auto;
+}
+
+[data-theme='dark'] .delete-item-usage-title {
   color: var(--gold-bright);
+}
+
+.delete-item-usage-lead {
+  margin: 0.25rem 0 0;
+}
+
+/* Rótulos das duas mini-seções: mesmo peso, sem competir com o título do modal. */
+.delete-item-usage-label {
+  margin: 0.55rem 0 0.25rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Chips dos nomes: lista em wrap. A especificidade extra derruba o `ul`
+   genérico do diálogo (`.delete-dialog ul`), que é grid com marcadores. */
+.delete-item-usage .delete-item-usage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.delete-item-usage-chip {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Consequência em dois bullets curtos (mesma especificidade contra o `ul`). */
+.delete-item-usage .delete-item-usage-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding-left: 1.05rem;
+  font-size: var(--text-aux);
+  line-height: 1.45;
 }
 
 @media (max-width: 700px) {
