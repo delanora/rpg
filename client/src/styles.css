@@ -4826,8 +4826,12 @@ input[type='checkbox']:disabled {
  * atrás do modal, por maior que fosse o seu z-index. Por isso ela também vai
  * por portal e ganha uma faixa própria: ACIMA dos modais (60) e abaixo do
  * lightbox (70), para o overlay escurecido cobrir o modal de baixo.
+ *
+ * `is-deliver` (a janela de entrega do item) usa a MESMA faixa: ela é irmã
+ * desse caso — um modal aberto por cima de outro.
  */
-.modal-backdrop.is-confirm {
+.modal-backdrop.is-confirm,
+.modal-backdrop.is-deliver {
   z-index: 62;
 }
 
@@ -14762,17 +14766,18 @@ input[type='checkbox']:focus-visible,
   margin-left: auto;
 }
 
-/* Entrega contextual do item (ação "entregar" do modal, ao lado de Editar).
-   Mesmo desenho do painel de moedas: título + subtítulo à esquerda com o item
-   ancorado à direita, e o corpo em dois blocos (destinatário / quantidade) que
-   empilham em tela estreita. */
+/* Janela de ENTREGA do item — modal próprio, aberto por cima do modal do item.
+   Em vez de um bloco enfiado na ficha (que empilhava a ação com os detalhes
+   completos), ela traz só o necessário: cabeçalho com o resumo do item e dois
+   cards (destinatário / quantidade) que empilham em tela estreita, no mesmo
+   desenho do painel de moedas. */
+.items-deliver-dialog {
+  max-width: 32rem;
+}
+
 .items-deliver {
   display: grid;
-  gap: 0.7rem;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--gold-deep);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(184, 145, 42, 0.12), var(--surface-2));
+  gap: 0.9rem;
 }
 
 .items-deliver-head {
@@ -14790,16 +14795,18 @@ input[type='checkbox']:focus-visible,
   min-width: 10rem;
 }
 
-.items-deliver-title {
+/* Especificidade extra de propósito: o título é o `h2` do modal e precisa
+   vencer o tamanho/cor padrão de `.modal h2`. */
+.items-deliver-dialog .items-deliver-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--gold-deep);
 }
 
-[data-theme='dark'] .items-deliver-title {
+[data-theme='dark'] .items-deliver-dialog .items-deliver-title {
   color: var(--gold-bright);
 }
 
@@ -14856,8 +14863,8 @@ input[type='checkbox']:focus-visible,
   display: grid;
   align-content: start;
   gap: 0.5rem;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--line);
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
 }
@@ -14919,19 +14926,21 @@ input[type='checkbox']:focus-visible,
   text-align: center;
 }
 
+/* Rodapé: as ações ficam separadas do corpo por um fio, com a principal mais
+   larga que o "cancelar" ao lado. */
 .items-deliver-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  padding-top: 0.1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
 }
 
-/* A ação principal fica maior e mais larga que o "cancelar" ao lado. */
 .items-deliver-actions .btn-primary {
-  min-width: 7.5rem;
-  padding: 0.4rem 0.9rem;
-  font-size: 0.8rem;
+  min-width: 8rem;
+  padding: 0.45rem 1rem;
 }
 
 /* Em telas estreitas os dois blocos empilham e o item ancorado ocupa a linha
