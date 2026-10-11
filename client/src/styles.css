@@ -14762,7 +14762,10 @@ input[type='checkbox']:focus-visible,
   margin-left: auto;
 }
 
-/* Entrega contextual do item (ação "entregar" do modal, ao lado de Editar). */
+/* Entrega contextual do item (ação "entregar" do modal, ao lado de Editar).
+   Mesmo desenho do painel de moedas: título + subtítulo à esquerda com o item
+   ancorado à direita, e o corpo em dois blocos (destinatário / quantidade) que
+   empilham em tela estreita. */
 .items-deliver {
   display: grid;
   gap: 0.7rem;
@@ -14775,14 +14778,24 @@ input[type='checkbox']:focus-visible,
 .items-deliver-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 0.55rem 0.9rem;
+  flex-wrap: wrap;
+}
+
+.items-deliver-heading {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1 1 12rem;
+  min-width: 10rem;
 }
 
 .items-deliver-title {
   margin: 0;
   font-family: var(--font-display);
   font-size: 0.95rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--gold-deep);
 }
 
@@ -14790,33 +14803,120 @@ input[type='checkbox']:focus-visible,
   color: var(--gold-bright);
 }
 
-.items-deliver-item {
-  margin-left: auto;
-  font-size: var(--text-aux);
+.items-deliver-sub {
+  margin: 0;
+  font-size: var(--text-micro);
+  line-height: 1.35;
   color: var(--ink-soft);
-  overflow-wrap: anywhere;
 }
 
-.items-deliver-fields {
+/* Item ancorado no cabeçalho: sprite + nome + categoria/raridade. */
+.items-deliver-anchor {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 15rem;
+  min-width: 11rem;
+  padding: 0.3rem 0.55rem 0.3rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.items-deliver-anchor-info {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.items-deliver-anchor-name {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.items-deliver-anchor-meta {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.items-deliver-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 0.7rem;
+  align-items: stretch;
 }
 
-.items-deliver-field {
-  flex: 1 1 11rem;
-  min-width: 9rem;
+.items-deliver-block {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
 }
 
-.items-deliver-qty {
-  flex: 0 1 9rem;
+.items-deliver-block-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
 }
 
+/* --- Bloco 1: destinatário ------------------------------------------------ */
+
+.items-deliver-target {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.items-deliver-target-info {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.items-deliver-target-info strong {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.items-deliver-target-owner {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+/* A frase do envio fecha o bloco, separada por um fio dourado. */
 .items-deliver-hint {
   margin: 0;
-  font-size: var(--text-aux);
-  font-style: italic;
+  padding-top: 0.45rem;
+  border-top: 1px dashed var(--gold-hair);
+  font-size: var(--text-micro);
+  line-height: 1.35;
   color: var(--ink-soft);
+}
+
+/* --- Bloco 2: quantidade -------------------------------------------------- */
+
+.items-deliver-block.is-qty {
+  justify-items: center;
+  text-align: center;
 }
 
 .items-deliver-actions {
@@ -14824,31 +14924,63 @@ input[type='checkbox']:focus-visible,
   justify-content: flex-end;
   gap: 0.5rem;
   flex-wrap: wrap;
+  padding-top: 0.1rem;
 }
 
-/* Stepper de quantidade: [ − ] N [ + ] */
+/* A ação principal fica maior e mais larga que o "cancelar" ao lado. */
+.items-deliver-actions .btn-primary {
+  min-width: 7.5rem;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+/* Em telas estreitas os dois blocos empilham e o item ancorado ocupa a linha
+   inteira do cabeçalho. */
+@media (max-width: 560px) {
+  .items-deliver-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .items-deliver-head {
+    align-items: flex-start;
+  }
+
+  .items-deliver-anchor {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+}
+
+/* Stepper de quantidade: [ − ] N [ + ] num único controle, na altura dos
+   botões do modal (área de clique confortável no toque). */
 .items-stepper {
   display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+  align-items: stretch;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #fffaf0, var(--surface-2));
+  overflow: hidden;
+}
+
+[data-theme='dark'] .items-stepper {
+  background: linear-gradient(180deg, #2b2018, #1d1510);
 }
 
 .items-stepper-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 2.2rem;
+  height: 2.2rem;
   padding: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  border: 0;
+  background: transparent;
   color: var(--ink);
   cursor: pointer;
 }
 
 .items-stepper-btn:hover:not(:disabled) {
-  border-color: var(--gold);
+  background: rgba(184, 145, 42, 0.16);
   color: var(--gold-deep);
 }
 
@@ -14856,25 +14988,29 @@ input[type='checkbox']:focus-visible,
   color: var(--gold-bright);
 }
 
+/* O contorno fica DENTRO da moldura: o `overflow: hidden` do stepper cortaria
+   um outline desenhado para fora. */
 .items-stepper-btn:focus-visible {
   outline: 2px solid var(--gold);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 .items-stepper-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
 }
 
 .items-stepper-value {
-  min-width: 2.6rem;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.4rem;
+  padding: 0 0.5rem;
+  border-inline: 1px solid var(--line-strong);
   background: var(--surface);
   text-align: center;
   font-family: var(--font-display);
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
 }
 
