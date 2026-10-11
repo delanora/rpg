@@ -9,10 +9,14 @@ import { rollDice } from '../modules/shared/dice.js';
 import { spellSlotsUsedFrom, withSpellSlotsUsed } from '../modules/characters/characters.schema.js';
 import {
   CLASS_DEFINITIONS,
+  computeClassAdjustments,
   computeMulticlassAdjustments,
+  getActiveClassFeatures,
+  getClassDefinition,
   invalidToggleCost,
   normalizeClassEntries,
   normalizeClassState,
+  reconcileClassResourceState,
   restoreLongRestResources,
   restoreShortRestResources,
   songOfRestDie,
@@ -19971,6 +19975,397 @@ async function main(): Promise<void> {
         afterAA.spells.pactMagic.used === 0,
       JSON.stringify({ statuses: [emA.status, emB.status], used: featureUsedOf(afterAA, 'eldritch-master') }),
     );
+  })();
+
+  // --- 58. Robustez estrutural dos contadores (5.3D.1) ----------------------
+  // Level Down clampa used>max e PERSISTE; Level Up não mexe no used; a
+  // Inspiração de Bardo não depende mais da ordem do catálogo; recurso
+  // compartilhado (Canalizar Divindade) segue valendo; ilimitado não é clampado;
+  // atributo que derruba o máximo reconcilia. `classState.active` fica FORA.
+  console.log('\n58) Robustez estrutural dos contadores (5.3D.1)');
+  // IIFE: mantém o corpo fora da análise de fluxo do `main` (arquivo grande).
+  await (async () => {
+    const recUser = await prisma.user.create({
+      data: {
+        username: `reconcile_${suffix}`,
+        displayName: 'Reconciliação 5.3D.1',
+        passwordHash: 'nao-usado-no-smoke',
+      },
+      select: { id: true, username: true, displayName: true, role: true },
+    });
+    createdUsernames.push(recUser.username);
+    const token = signToken({
+      sub: recUser.id,
+      username: recUser.username,
+      displayName: recUser.displayName,
+      role: recUser.role,
+    });
+    const userId = recUser.id;
+    await api('/api/characters/me', { method: 'POST', token, body: {} });
+
+    const sheetOf58 = async () => (await api('/api/characters/me', { token })).data.character;
+    const setChar = (data: Record<string, unknown>) =>
+      prisma.character.update({ where: { userId }, data: data as any });
+    const setup = async (
+      classes: { classKey: string; subclass?: string; level: number }[],
+      opts: { used?: Record<string, number>; charisma?: number } = {},
+    ) => {
+      await setCharacterClasses(userId, classes);
+      await setChar({
+        classState: { active: [], used: opts.used ?? {}, choices: {} },
+        ...(opts.charisma !== undefined ? { charisma: opts.charisma } : {}),
+      });
+    };
+    const charId = (await sheetOf58()).id as string;
+    const levelDown = (body: unknown) =>
+      api(`/api/characters/${charId}/level-down`, { method: 'POST', token: masterToken, body });
+    const gainLevel = async (body: any) => {
+      await api('/api/game/level-up', { method: 'POST', token: masterToken });
+      return api('/api/characters/me/level-up', { method: 'POST', token, body });
+    };
+    const resOf = (sheet: any, id: string) =>
+      (sheet?.classAdjustments?.resources ?? []).find((r: any) => r.id === id);
+    const derResOf = (adj: any, id: string) =>
+      (adj?.resources ?? []).find((r: any) => r.id === id);
+    const usedOf = (sheet: any, id: string) => sheet?.classState?.used?.[id];
+
+    const ABIL = {
+      strength: 10,
+      dexterity: 10,
+      constitution: 10,
+      intelligence: 10,
+      wisdom: 10,
+      charisma: 18,
+    };
+    const featsOf = (classKey: string, level: number, subclass = '', reverse = false) => {
+      const def = getClassDefinition(classKey)!;
+      const list = getActiveClassFeatures(def, level, subclass);
+      return reverse ? [...list].reverse() : list;
+    };
+    const classAdj58 = (classKey: string, level: number, subclass: string, used: Record<string, number>) =>
+      computeClassAdjustments(
+        featsOf(classKey, level, subclass),
+        level,
+        normalizeClassState({ active: [], used, choices: {} }),
+        ABIL,
+      );
+
+    await (async () => {
+    // A) Battle Master 15 (max 6) com used 6 → Level Down para 14 (max 5).
+    await setup([{ classKey: 'fighter', subclass: 'battle-master', level: 15 }], {
+      used: { 'superiority-dice': 6 },
+    });
+    let down = await levelDown({ classKey: 'fighter' });
+    let sheet = down.data?.character;
+    check(
+      '58.A) Level Down clampa used>max SEM devolver usos (6 usados, max 6→5 ⇒ used 5/remaining 0)',
+      down.status === 200 &&
+        usedOf(sheet, 'superiority-dice') === 5 &&
+        resOf(sheet, 'superiority-dice')?.max === 5 &&
+        resOf(sheet, 'superiority-dice')?.used === 5 &&
+        resOf(sheet, 'superiority-dice')?.remaining === 0,
+      JSON.stringify({ used: usedOf(sheet, 'superiority-dice'), res: resOf(sheet, 'superiority-dice') }),
+    );
+
+    // B) used 3 cai junto com o max (6→5) → continua 3.
+    await setup([{ classKey: 'fighter', subclass: 'battle-master', level: 15 }], {
+      used: { 'superiority-dice': 3 },
+    });
+    down = await levelDown({ classKey: 'fighter' });
+    sheet = down.data?.character;
+    check(
+      '58.B) max cai de 6 para 5 com used 3 ⇒ used continua 3 (sem clamp indevido)',
+      down.status === 200 &&
+        usedOf(sheet, 'superiority-dice') === 3 &&
+        resOf(sheet, 'superiority-dice')?.remaining === 2,
+      JSON.stringify({ used: usedOf(sheet, 'superiority-dice') }),
+    );
+
+    // C) Feature removida pelo nível (Ataque Acelerado no 2º do guerreiro).
+    await setup([{ classKey: 'fighter', level: 2 }], { used: { 'action-surge': 1 } });
+    down = await levelDown({ classKey: 'fighter' });
+    sheet = down.data?.character;
+    check(
+      '58.C) feature removida pelo Level Down ⇒ used obsoleto removido',
+      down.status === 200 &&
+        usedOf(sheet, 'action-surge') === undefined &&
+        resOf(sheet, 'action-surge') === undefined,
+      JSON.stringify({ used: sheet?.classState?.used }),
+    );
+
+    // D) Recurso COMPARTILHADO ainda concedido pela outra classe não é apagado.
+    await setup(
+      [
+        { classKey: 'cleric', subclass: 'life', level: 6 },
+        { classKey: 'paladin', subclass: 'devotion', level: 3 },
+      ],
+      { used: { 'channel-divinity': 1 } },
+    );
+    down = await levelDown({ classKey: 'cleric' });
+    sheet = down.data?.character;
+    check(
+      '58.D) recurso compartilhado preservado/clampado ao max restante (Clérigo 6→5, Paladino 3)',
+      down.status === 200 &&
+        usedOf(sheet, 'channel-divinity') === 1 &&
+        resOf(sheet, 'channel-divinity')?.max === 1 &&
+        resOf(sheet, 'channel-divinity')?.shared === true,
+      JSON.stringify({ used: usedOf(sheet, 'channel-divinity'), res: resOf(sheet, 'channel-divinity') }),
+    );
+
+    // E) Level Up: max 4→5 com used 3 ⇒ used 3 (NÃO zera nem devolve).
+    await setup([{ classKey: 'fighter', subclass: 'battle-master', level: 6 }], {
+      used: { 'superiority-dice': 3 },
+    });
+    let up = await gainLevel(levelUpRequestFor(await sheetOf58(), 'fighter'));
+    sheet = up.data?.character;
+    check(
+      '58.E) Level Up não mexe no used só porque o max subiu (used 3, max 4→5 ⇒ used 3/remaining 2)',
+      up.status === 200 &&
+        usedOf(sheet, 'superiority-dice') === 3 &&
+        resOf(sheet, 'superiority-dice')?.max === 5 &&
+        resOf(sheet, 'superiority-dice')?.remaining === 2,
+      JSON.stringify({ used: usedOf(sheet, 'superiority-dice'), res: resOf(sheet, 'superiority-dice') }),
+    );
+
+    // F) Portent 2→3 no 14º ⇒ used preservado.
+    await setup([{ classKey: 'wizard', subclass: 'divination', level: 13 }], {
+      used: { portent: 2 },
+    });
+    up = await gainLevel(levelUpRequestFor(await sheetOf58(), 'wizard'));
+    sheet = up.data?.character;
+    check(
+      '58.F) Portent 2→3 no Level Up ⇒ used preservado (used 2)',
+      up.status === 200 &&
+        usedOf(sheet, 'portent') === 2 &&
+        resOf(sheet, 'portent')?.max === 3,
+      JSON.stringify({ used: usedOf(sheet, 'portent'), res: resOf(sheet, 'portent') }),
+    );
+
+    })();
+
+    await (async () => {
+    // G–J) Inspiração de Bardo: LONG até o 4º; SHORT a partir do 5º.
+    const bardRecharge = (level: number) =>
+      derResOf(classAdj58('bard', level, '', {}), 'bardic-inspiration')?.recharge;
+    check(
+      '58.G/H/I/J) Inspiração de Bardo: LONG no 1º e no 4º; SHORT no 5º e no 10º',
+      bardRecharge(1) === 'long' &&
+        bardRecharge(4) === 'long' &&
+        bardRecharge(5) === 'short' &&
+        bardRecharge(10) === 'short',
+      JSON.stringify({ l1: bardRecharge(1), l4: bardRecharge(4), l5: bardRecharge(5), l10: bardRecharge(10) }),
+    );
+
+    // K) A ORDEM das declarações no catálogo não muda o resultado.
+    const featsBard5 = featsOf('bard', 5);
+    const reversedBard5 = featsOf('bard', 5, '', true);
+    const stateBard5 = normalizeClassState({ active: [], used: {}, choices: {} });
+    const normalK = computeClassAdjustments(featsBard5, 5, stateBard5, ABIL);
+    const reversedK = computeClassAdjustments(reversedBard5, 5, stateBard5, ABIL);
+    check(
+      '58.K) ordem das declarações não muda o resultado (Fonte de Inspiração vence por NÍVEL, não por ordem)',
+      derResOf(normalK, 'bardic-inspiration')?.recharge === 'short' &&
+        derResOf(reversedK, 'bardic-inspiration')?.recharge === 'short' &&
+        derResOf(reversedK, 'bardic-inspiration')?.max === derResOf(normalK, 'bardic-inspiration')?.max,
+      JSON.stringify({
+        normal: derResOf(normalK, 'bardic-inspiration')?.recharge,
+        reversed: derResOf(reversedK, 'bardic-inspiration')?.recharge,
+      }),
+    );
+
+    // L/M) Atributo (PATCH do mestre) que derruba o máximo derivado de CAR.
+    await setup([{ classKey: 'bard', level: 10 }], {
+      used: { 'bardic-inspiration': 4 },
+      charisma: 18,
+    });
+    const beforeL = await sheetOf58();
+    const dropL = await api(`/api/characters/${charId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { charisma: 14 },
+    });
+    check(
+      '58.L) CAR cai (18→14) derruba o max (4→2) ⇒ used reconciliado para 2/remaining 0',
+      dropL.status === 200 &&
+        usedOf(beforeL, 'bardic-inspiration') === 4 &&
+        usedOf(dropL.data?.character, 'bardic-inspiration') === 2 &&
+        resOf(dropL.data?.character, 'bardic-inspiration')?.remaining === 0,
+      JSON.stringify({ before: usedOf(beforeL, 'bardic-inspiration'), after: usedOf(dropL.data?.character, 'bardic-inspiration') }),
+    );
+    const raiseM = await api(`/api/characters/${charId}`, {
+      method: 'PATCH',
+      token: masterToken,
+      body: { charisma: 18 },
+    });
+    check(
+      '58.M) CAR sobe de volta ⇒ used continua 2 e o remaining aumenta (4−2 = 2)',
+      raiseM.status === 200 &&
+        usedOf(raiseM.data?.character, 'bardic-inspiration') === 2 &&
+        resOf(raiseM.data?.character, 'bardic-inspiration')?.max === 4 &&
+        resOf(raiseM.data?.character, 'bardic-inspiration')?.remaining === 2,
+      JSON.stringify({ used: usedOf(raiseM.data?.character, 'bardic-inspiration'), res: resOf(raiseM.data?.character, 'bardic-inspiration') }),
+    );
+
+    })();
+
+    await (async () => {
+    let down: any;
+    let sheet: any;
+    // N) Canalizar Divindade compartilhado: Clérigo 18 / Paladino 3 ⇒ max 3.
+    const mixN = computeMulticlassAdjustments(
+      [
+        { classKey: 'cleric', subclass: 'life', level: 18 },
+        { classKey: 'paladin', subclass: 'devotion', level: 3 },
+      ],
+      normalizeClassState({ active: [], used: { 'channel-divinity': 3 }, choices: {} }),
+      ABIL,
+    );
+    check(
+      '58.N) Canalizar Divindade compartilhado (Clérigo 18/Paladino 3) ⇒ max 3',
+      derResOf(mixN, 'channel-divinity')?.max === 3 &&
+        derResOf(mixN, 'channel-divinity')?.shared === true,
+      JSON.stringify(derResOf(mixN, 'channel-divinity')),
+    );
+
+    // O) used 3 com o máximo caindo (Clérigo 18→17, max 3→2) ⇒ used 2.
+    await setup(
+      [
+        { classKey: 'cleric', subclass: 'life', level: 18 },
+        { classKey: 'paladin', subclass: 'devotion', level: 3 },
+      ],
+      { used: { 'channel-divinity': 3 } },
+    );
+    down = await levelDown({ classKey: 'cleric' });
+    sheet = down.data?.character;
+    check(
+      '58.O) used 3 com Clérigo caindo (max 3→2) ⇒ used 2 e o pool compartilhado não quebra',
+      down.status === 200 &&
+        usedOf(sheet, 'channel-divinity') === 2 &&
+        resOf(sheet, 'channel-divinity')?.max === 2 &&
+        resOf(sheet, 'channel-divinity')?.shared === true,
+      JSON.stringify({ used: usedOf(sheet, 'channel-divinity'), res: resOf(sheet, 'channel-divinity') }),
+    );
+
+    // P) Clérigo sai inteiro; o Paladino mantém o pool (max 1) e o used clampa.
+    await setup(
+      [
+        { classKey: 'cleric', subclass: 'life', level: 1 },
+        { classKey: 'paladin', subclass: 'devotion', level: 3 },
+      ],
+      { used: { 'channel-divinity': 2 } },
+    );
+    down = await levelDown({ classKey: 'cleric' });
+    sheet = down.data?.character;
+    check(
+      '58.P) Clérigo removido, Paladino continua ⇒ max 1 e used clampado ≤ 1',
+      down.status === 200 &&
+        down.data?.levelDown?.classRemoved === true &&
+        usedOf(sheet, 'channel-divinity') === 1 &&
+        resOf(sheet, 'channel-divinity')?.max === 1,
+      JSON.stringify({ used: usedOf(sheet, 'channel-divinity'), res: resOf(sheet, 'channel-divinity') }),
+    );
+
+    // Q) Concorrência: dois Level Down com a mesma versão ⇒ só um aplica.
+    await setup([{ classKey: 'fighter', subclass: 'battle-master', level: 15 }], {
+      used: { 'superiority-dice': 6 },
+    });
+    const [downQ1, downQ2] = await Promise.all([
+      levelDown({ classKey: 'fighter' }),
+      levelDown({ classKey: 'fighter' }),
+    ]);
+    const afterQ = await sheetOf58();
+    check(
+      '58.Q) dois Level Down concorrentes: só um aplica (o outro 409) e o used fica 5',
+      [downQ1.status, downQ2.status].filter((st) => st === 200).length === 1 &&
+        usedOf(afterQ, 'superiority-dice') === 5,
+      JSON.stringify({ statuses: [downQ1.status, downQ2.status], used: usedOf(afterQ, 'superiority-dice') }),
+    );
+
+    })();
+
+    await (async () => {
+    // --- Regressões das fases anteriores (5.3A/5.3B e recursos clássicos) ---
+    // Rage ilimitada no 20º não é clampada como finita.
+    const rageAdj = classAdj58('barbarian', 20, '', { rage: 9 });
+    const rageRes = derResOf(rageAdj, 'rage');
+    check(
+      '58.R1) recurso ILIMITADO (Fúria no 20º) não é clampado como finito',
+      rageRes?.unlimited === true &&
+        rageRes?.used === 9 &&
+        reconcileClassResourceState(
+          normalizeClassState({ active: [], used: { rage: 9 }, choices: {} }),
+          [rageRes],
+        ).used.rage === 9,
+      JSON.stringify(rageRes),
+    );
+
+    // Ki do monge = nível; used preservado numa redução que ainda cabe.
+    const kiAdj = classAdj58('monk', 9, '', { ki: 9 });
+    check(
+      '58.R2) Ki do monge (perLevel) preservado e clampado pelo próprio nível',
+      derResOf(kiAdj, 'ki')?.max === 9 && derResOf(kiAdj, 'ki')?.used === 9,
+      JSON.stringify(derResOf(kiAdj, 'ki')),
+    );
+
+    // 5.3B: o custo FIXO do toggle continua derivado do catálogo.
+    const monkCosts = classAdj58('monk', 18, '', {}).toggles;
+    const costOf = (id: string) => monkCosts.find((t: any) => t.id === id)?.cost;
+    check(
+      '58.R3) 5.3B: custo fixo dos toggles de ki preservado (Fúria dos Golpes 1, Passo do Vento 1, Defesa Paciente 1, Corpo Vazio 4)',
+      costOf('flurry-of-blows') === 1 &&
+        costOf('step-of-the-wind') === 1 &&
+        costOf('patient-defense') === 1 &&
+        costOf('empty-body-invisibility') === 4,
+      JSON.stringify({ flurry: costOf('flurry-of-blows'), emptyBody: costOf('empty-body-invisibility') }),
+    );
+
+    // 5.3C: os restauradores de descanso continuam removendo só o que recarrega.
+    const restState = normalizeClassState({
+      active: [],
+      used: { 'superiority-dice': 3, 'action-surge': 1, portent: 2 },
+      choices: {},
+    });
+    const restResources = classAdj58('fighter', 15, 'battle-master', {
+      'superiority-dice': 3,
+      'action-surge': 1,
+    }).resources;
+    check(
+      '58.R4) 5.3C: Descanso Curto restaura só os recursos `short` e não toca no restante',
+      restoreShortRestResources(restState, restResources).used['superiority-dice'] === undefined &&
+        restoreShortRestResources(restState, restResources).used['action-surge'] === undefined &&
+        restoreShortRestResources(restState, restResources).used.portent === 2,
+      JSON.stringify(restoreShortRestResources(restState, restResources).used),
+    );
+
+    // Multiclasse: cada classe no PRÓPRIO nível, sem somar pools comuns.
+    const multiAdj = computeMulticlassAdjustments(
+      [
+        { classKey: 'barbarian', subclass: '', level: 5 },
+        { classKey: 'monk', subclass: '', level: 3 },
+      ],
+      normalizeClassState({ active: [], used: {}, choices: {} }),
+      ABIL,
+    );
+    check(
+      '58.R5) multiclasse: múltiplos recursos no mesmo personagem, cada um no seu nível de classe',
+      derResOf(multiAdj, 'rage')?.max === 3 && derResOf(multiAdj, 'ki')?.max === 3,
+      JSON.stringify({ rage: derResOf(multiAdj, 'rage')?.max, ki: derResOf(multiAdj, 'ki')?.max }),
+    );
+
+    // Reconcile preserva `active` (fora do escopo) e `choices`.
+    const keepState = normalizeClassState({
+      active: ['rage'],
+      used: { rage: 1 },
+      choices: { 'fighting-style': ['defense'] },
+    });
+    const kept = reconcileClassResourceState(keepState, classAdj58('barbarian', 5, '', { rage: 1 }).resources);
+    check(
+      '58.R6) reconciliation NÃO toca em classState.active nem em choices',
+      JSON.stringify(kept.active) === JSON.stringify(['rage']) &&
+        JSON.stringify(kept.choices) === JSON.stringify({ 'fighting-style': ['defense'] }),
+      JSON.stringify({ active: kept.active, choices: kept.choices }),
+    );
+    })();
   })();
 
   console.log(

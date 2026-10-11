@@ -746,6 +746,54 @@ export function restoreLongRestResources(
 }
 
 /**
+ * Reconcilia o estado de recursos de classe (`classState.used`) com os recursos
+ * DERIVADOS depois de uma mudança ESTRUTURAL (5.3D.1): Level Down, remoção de
+ * classe/feature, redução de máximo ou mudança de um atributo que altera um
+ * `max` derivado (ex.: Inspiração de Bardo = mod. de CAR).
+ *
+ * Regras (NENHUMA delas mexe em `active` — os toggles ficam para a 5.3D.2):
+ * • remove os ids OBSOLETOS que o chamador apontar (`obsoleteIds`, ex.: o que a
+ *   classe que saiu concedia — ver `removableClassStateIds`, que já desconta os
+ *   recursos COMPARTILHADOS ainda concedidos por outra classe);
+ * • para cada recurso AINDA concedido: clampa `used` ao `max` FINITO
+ *   (`used = min(used, max)`) SEM devolver usos (max 6→5 com used 6 vira used 5,
+ *   nunca 4); recurso ILIMITADO (`max < 0`) é preservado como está;
+ * • chave AUSENTE equivale a 0 — zeros não são persistidos;
+ * • ids de `used` que não são recursos de classe desta ficha (ex.:
+ *   `race-spell:*`) e não estão em `obsoleteIds` são PRESERVADOS.
+ *
+ * `choices` e `active` ficam intactos.
+ */
+export function reconcileClassResourceState(
+  state: ClassState,
+  resources: readonly ActiveResource[],
+  obsoleteIds: ReadonlySet<string> = new Set(),
+): ClassState {
+  const byId = new Map(resources.map((resource) => [resource.id, resource]));
+  const used: Record<string, number> = {};
+
+  for (const [id, value] of Object.entries(state.used)) {
+    if (obsoleteIds.has(id)) continue;
+    const resource = byId.get(id);
+    if (!resource) {
+      // Contador que não é recurso de classe desta ficha (ex.: magia racial):
+      // preservado — nunca é limpo por aqui.
+      used[id] = value;
+      continue;
+    }
+    if (resource.max < 0) {
+      // Ilimitado: não é clampar como se fosse finito; preserva o persistido.
+      if (value > 0) used[id] = value;
+      continue;
+    }
+    const clamped = Math.min(value, Math.max(0, resource.max));
+    if (clamped > 0) used[id] = clamped;
+  }
+
+  return { active: state.active, used, choices: state.choices };
+}
+
+/**
  * Nível ACUMULADO na classe Bardo (0 se o personagem não tiver Bardo).
  *
  * Multiclasse NUNCA soma outras classes: a Canção de Descanso progride apenas
@@ -871,6 +919,53 @@ export interface ClassAdjustments {
 }
 
 /**
+ * Declaração de recurso com o nível da característica que a fez (5.3D.1).
+ * Guarda o nível para resolver a EVOLUÇÃO de um mesmo `id` na MESMA classe por
+ * "maior nível vence", sem depender da ordem do array do catálogo.
+ */
+interface ResourceDeclaration {
+  resource: ActiveResource;
+  /** Nível da característica de origem (o da classe em `computeClassAdjustments`). */
+  sourceLevel: number;
+  /** Declaração que EVOLUI o recurso de mesmo id (ver `ClassFeatureResource.progression`). */
+  progression: boolean;
+}
+
+/**
+ * Resolve as declarações do MESMO `id` de recurso dentro de UMA classe.
+ *
+ * • Sem evolução, vale o comportamento histórico "último vence" — cobre o par
+ *   intencional recurso+toggle (Fúria, Totalidade do Corpo), que usa o MESMO id
+ *   em tipos DIFERENTES e por isso nem chega aqui (só recursos entram).
+ * • Com `progression`, vence a declaração vinda da característica de MAIOR
+ *   nível aplicável — a ordem do array do catálogo deixa de importar. É o caso
+ *   da Inspiração de Bardo (Fonte de Inspiração, 5º, re-declara `short`).
+ *
+ * NÃO trata recursos de POOL COMPARTILHADO entre CLASSES: essa combinação é do
+ * `mergeResources`/`combineResource` (5.3A).
+ */
+function resolveResourceDeclarations(
+  declarations: readonly ResourceDeclaration[],
+): ActiveResource[] {
+  const byId = new Map<string, ResourceDeclaration>();
+  for (const decl of declarations) {
+    const previous = byId.get(decl.resource.id);
+    if (!previous) {
+      byId.set(decl.resource.id, decl);
+      continue;
+    }
+    if (previous.progression || decl.progression) {
+      // Maior nível vence; no empate, a última (determinística) fica.
+      if (decl.sourceLevel >= previous.sourceLevel) byId.set(decl.resource.id, decl);
+      continue;
+    }
+    // Histórico "último vence".
+    byId.set(decl.resource.id, decl);
+  }
+  return [...byId.values()].map((decl) => decl.resource);
+}
+
+/**
  * Reúne os ajustes mecânicos das features ativas: toggles, recursos, bônus de
  * dano, resistências, deslocamento, dados de crítico, escolhas de característica
  * (Estilo de Luta) e bônus de atributo.
@@ -883,7 +978,8 @@ export function computeClassAdjustments(
 ): ClassAdjustments {
   const activeSet = new Set(state.active);
   const toggles: ActiveToggle[] = [];
-  const resources: ActiveResource[] = [];
+  /** Declarações de recurso (com o nível de origem), resolvidas no fim. */
+  const resourceDeclarations: ResourceDeclaration[] = [];
   /** `cost` declarado por id de toggle (o default 1 entra no fim). */
   const declaredToggleCosts = new Map<string, number>();
   let meleeDamageBonus = 0;
@@ -917,6 +1013,7 @@ export function computeClassAdjustments(
     effect: ClassFeatureEffect,
     effectId: string,
     sourceName: string,
+    sourceLevel: number,
   ): void {
     {
       switch (effect.type) {
@@ -936,16 +1033,24 @@ export function computeClassAdjustments(
           const resource = effect.resource;
           if (!resource) break;
           const max = resourceMaxAtLevel(resource, level, abilities);
-          const used = Math.max(0, state.used[effectId] ?? 0);
-          resources.push({
-            id: effectId,
-            name: effect.name ?? resource.name,
-            recharge: resource.recharge,
-            max,
-            used,
-            remaining: max < 0 ? -1 : Math.max(0, max - used),
-            unlimited: max < 0,
-            shared: resource.shared === true,
+          const persistedUsed = Math.max(0, state.used[effectId] ?? 0);
+          // 5.3D.1: o `used` EFETIVO nunca passa do `max` FINITO; o ilimitado
+          // (max < 0) preserva o valor persistido. O clamp NÃO devolve usos:
+          // max 6→5 com used 6 vira used 5 / remaining 0 (nunca used 4).
+          const used = max < 0 ? persistedUsed : Math.min(persistedUsed, max);
+          resourceDeclarations.push({
+            resource: {
+              id: effectId,
+              name: effect.name ?? resource.name,
+              recharge: resource.recharge,
+              max,
+              used,
+              remaining: max < 0 ? -1 : Math.max(0, max - used),
+              unlimited: max < 0,
+              shared: resource.shared === true,
+            },
+            sourceLevel,
+            progression: resource.progression === true,
           });
           break;
         }
@@ -1049,7 +1154,7 @@ export function computeClassAdjustments(
 
   for (const feature of features) {
     for (const effect of featureEffectsOf(feature)) {
-      applyEffect(effect, effect.id ?? feature.id, feature.name);
+      applyEffect(effect, effect.id ?? feature.id, feature.name, feature.level);
     }
 
     // Efeitos das OPÇÕES ESCOLHIDAS: o +1 CA da "Defesa" só vale com essa opção
@@ -1058,10 +1163,13 @@ export function computeClassAdjustments(
       const chosen = state.choices[feature.id] ?? [];
       for (const option of feature.choice.options) {
         if (!option.effect || !chosen.includes(option.key)) continue;
-        applyEffect(option.effect, option.effect.id ?? feature.id, feature.name);
+        applyEffect(option.effect, option.effect.id ?? feature.id, feature.name, feature.level);
       }
     }
   }
+
+  // Resolve as declarações do mesmo id (evolução por maior nível — 5.3D.1).
+  const resources = resolveResourceDeclarations(resourceDeclarations);
 
   // Liga cada toggle sem recurso explícito ao recurso de mesmo id (ex.: Fúria).
   const resourceIds = new Set(resources.map((resource) => resource.id));

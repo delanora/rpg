@@ -105,6 +105,9 @@ const BARD_FEATURES: ClassFeatureDefinition[] = [
         recharge: 'short',
         abilityMod: 'charisma',
         min: 1,
+        // 5.3D.1: EVOLUI a Inspiração de Bardo declarada no 1º nível — a versão
+        // de MAIOR nível vence, sem depender da ordem do catálogo.
+        progression: true,
       },
     },
   },

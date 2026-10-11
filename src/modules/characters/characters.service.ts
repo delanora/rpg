@@ -97,6 +97,7 @@ import {
   normalizeProficiencies,
   pactMagicSlots,
   preparedSpellCountFor,
+  reconcileClassResourceState,
   resolveFeatureChoices,
   spellSlotMaxByLevel,
   spellSlotsForClasses,
@@ -113,6 +114,7 @@ import { applyRaceWeaponProficiencies, raceHpBonusDelta } from '../shared/races/
 import {
   classEntryProficiencyGrant,
   classProficiencyGrant,
+  grantedClassStateIdsFor,
   normalizeLevelHistory,
   removableClassStateIds,
   subtractProficiencies,
@@ -120,6 +122,7 @@ import {
 } from '../shared/level-history.js';
 import type { AbilityKey } from '../shared/dnd5e.js';
 import {
+  ABILITY_KEYS,
   ABILITY_LABELS,
   LEVEL_MAX,
   SKILL_KEYS,
@@ -889,6 +892,28 @@ async function applyLevelUp(
       )
     : [...entries, { classKey: definition.key, subclass, level: 1 }];
 
+  // 5.3D.1: o Level Up só AUMENTA o máximo — o `used` NÃO muda só porque o
+  // máximo subiu (used 3 com max 4→5 continua 3, remaining 2). A reconciliação
+  // abaixo é idempotente e serve para CORRIGIR estado legado (used > max gravado
+  // por dados antigos), preservando o valor quando ele já cabe no máximo novo.
+  const levelUpState: ClassState = {
+    active: classState.active,
+    used: classState.used,
+    choices: nextChoices,
+  };
+  const levelUpAbilities: Record<AbilityKey, number> = {
+    ...abilitiesOf(character),
+    ...ABILITY_KEYS.reduce<Partial<Record<AbilityKey, number>>>((acc, key) => {
+      const value = data[key];
+      if (typeof value === 'number') acc[key] = value;
+      return acc;
+    }, {}),
+  };
+  data.classState = reconcileClassResourceState(
+    levelUpState,
+    computeMulticlassAdjustments(nextEntries, levelUpState, levelUpAbilities).resources,
+  );
+
   // --- Pontos de vida do nível que está sendo ganho ------------------------
   // O PV ganho usa o modificador de Constituição já atualizado pelo Aumento de
   // Atributo (se houve); mínimo de 1 PV por nível, mesmo com CON negativa.
@@ -1180,13 +1205,35 @@ export async function levelDownCharacter(
   const removedIds = classRemoved
     ? removableClassStateIds(entry, nextEntries)
     : new Set<string>();
-  const nextClassState = {
+  // 5.3D.1: além de remover o que a classe que saiu levava, RECONCILIA os usos
+  // dos recursos que continuam — um máximo que caiu com o nível (Battle Master
+  // 6→5) precisa CLAMPAR o `used` no MESMO JSONB (used 6 vira 5, remaining 0;
+  // NUNCA used 4). O clamp roda contra os recursos DERIVADOS das classes que
+  // restaram, já com os atributos que a redução reverteu (`abilityData`).
+  // O que deixou de ser concedido com a redução NÃO é só o que a classe inteira
+  // levava: um nível a menos também tira as features daquele nível (ex.: Ataque
+  // Acelerado no 2º do guerreiro). O id que qualquer classe RESTANTE ainda
+  // concede (ex.: recurso COMPARTILHADO) é descontado.
+  const previousIds = new Set<string>();
+  for (const item of entries) for (const id of grantedClassStateIdsFor(item)) previousIds.add(id);
+  const remainingIds = new Set<string>();
+  for (const item of nextEntries) for (const id of grantedClassStateIdsFor(item)) remainingIds.add(id);
+  const obsoleteIds = new Set([...previousIds].filter((id) => !remainingIds.has(id)));
+
+  const trimmedState: ClassState = {
     active: classState.active.filter((id) => !removedIds.has(id)),
-    used: Object.fromEntries(
-      Object.entries(classState.used).filter(([id]) => !removedIds.has(id)),
-    ),
+    used: classState.used,
     choices,
   };
+  const nextAbilities: Record<AbilityKey, number> = {
+    ...abilitiesOf(target),
+    ...(abilityData as Partial<Record<AbilityKey, number>>),
+  };
+  const nextClassState = reconcileClassResourceState(
+    trimmedState,
+    computeMulticlassAdjustments(nextEntries, trimmedState, nextAbilities).resources,
+    obsoleteIds,
+  );
 
   // A Expertise daquele nível sai junto das escolhas revertidas: as perícias
   // voltam ao bônus normal (as ferramentas não vivem em `skills`).
@@ -3542,6 +3589,30 @@ async function applyCharacterPatch(
       classes.flatMap((item) => expertiseFeaturesOf(item.classKey, item.subclass)),
       nextClassState.choices,
       normalizeSkills(data.skills ?? existing.skills),
+    );
+  }
+
+  // --- 5.3D.1: recursos derivados de ATRIBUTO ------------------------------
+  // O PATCH (do mestre, ou do assistente antes de finalizar) pode reduzir um
+  // atributo de que o MÁXIMO de um recurso depende (ex.: Inspiração de Bardo =
+  // mod. de CAR). O `used` é RECONCILIADO no mesmo JSONB para nunca ficar acima
+  // do novo máximo; `active` NÃO é tocado. Sem mudança de atributo, nada muda.
+  const abilityChanged = ABILITY_KEYS.some(
+    (key) => patch[key] !== undefined && patch[key] !== existing[key],
+  );
+  if (abilityChanged) {
+    const baseState = normalizeClassState(data.classState ?? existing.classState);
+    const nextAbilities = ABILITY_KEYS.reduce<Record<AbilityKey, number>>(
+      (acc, key) => {
+        const value = patch[key];
+        acc[key] = typeof value === 'number' ? value : existing[key];
+        return acc;
+      },
+      {} as Record<AbilityKey, number>,
+    );
+    data.classState = reconcileClassResourceState(
+      baseState,
+      computeMulticlassAdjustments(classes, baseState, nextAbilities).resources,
     );
   }
 

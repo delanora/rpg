@@ -22,6 +22,14 @@ export type SpellLearning = 'known' | 'prepared' | 'none';
 /** Recurso com contador concedido por uma característica (ex.: Fúria). */
 export interface ClassFeatureResource {
   name: string;
+  /**
+   * Quando o contador volta ao máximo. ATENÇÃO à regra do projeto (5.3D.1): uma
+   * característica do PHB descrita como "uma vez por dia" NÃO vira `long`
+   * automaticamente — só quando houver DECISÃO EXPLÍCITA do projeto. A
+   * Recuperação Arcana é a ÚNICA confirmada (1 uso / Descanso Longo, como
+   * aproximação operacional; não há calendário/contador de dia). Qualquer outro
+   * "once per day" fica PENDENTE e pede confirmação antes de virar descanso.
+   */
   recharge: 'short' | 'long' | 'none';
   /** Máximo fixo (quando não varia com o nível). */
   max?: number;
@@ -50,7 +58,20 @@ export interface ClassFeatureResource {
    * virar `short` no 5º nível.
    */
   shared?: boolean;
-}  /**
+  /**
+   * Declaração que EVOLUI o recurso de MESMO `id` já concedido antes NA MESMA
+   * CLASSE (5.3D.1). É o caso da Inspiração de Bardo: a característica base
+   * (1º nível) a declara `recharge: 'long'` e a Fonte de Inspiração (5º) a
+   * re-declara `recharge: 'short'`. Com a flag, o motor NÃO depende da ordem do
+   * array do catálogo: entre as declarações aplicáveis do MESMO id nesta classe,
+   * vence a da característica de MAIOR nível. Não vale para recursos de POOL
+   * COMPARTILHADO entre classes (`shared`, que segue a regra própria da 5.3A) e
+   * não deduplica o par intencional recurso+toggle (tipos diferentes).
+   */
+  progression?: boolean;
+}
+
+/**
    * Efeito mecânico opcional de uma característica. É a ponte entre o texto da
    * característica e a aplicação automática na ficha (bônus numérico, recurso
    * com contador etc.). Preenchido junto com as features de cada classe.
