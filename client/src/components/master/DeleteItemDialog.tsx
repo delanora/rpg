@@ -21,6 +21,59 @@ interface DeleteItemDialogProps {
 }
 
 /**
+ * Aviso de que o item está em inventários, dentro da confirmação de exclusão.
+ *
+ * O conteúdo são sempre as mesmas três ideias — quem usa, e o que a exclusão
+ * faz —
+ * mas cada uma no seu bloco: um cabeçalho curto, os nomes em chips (nunca
+ * soltos no meio de uma frase, que quebravam no meio do nome) e a consequência
+ * em dois bullets. O destaque é estrutural; nenhuma palavra do texto é
+ * ressaltada isoladamente.
+ *
+ * Exportado à parte por um motivo prático: é a única parte do diálogo que
+ * depende só dos personagens, então dá para conferi-la em SSR — o diálogo
+ * inteiro é um portal no `<body>`, que o renderer de servidor não aceita.
+ */
+export function DeleteItemUsage({ characters }: { characters: Character[] }) {
+  if (characters.length === 0) return null;
+
+  // Singular/plural: com um só personagem é "a cópia"/"o inventário".
+  const single = characters.length === 1;
+
+  return (
+    <section className="delete-item-usage">
+      <p className="delete-item-usage-title">
+        <Icon name="info" size={15} /> Item em uso
+      </p>
+      <p className="delete-item-usage-lead">Este item já foi entregue a personagens.</p>
+
+      <p className="delete-item-usage-label">Em uso por:</p>
+      <ul className="delete-item-usage-chips">
+        {characters.map((character) => (
+          <li key={character.id} className="delete-item-usage-chip">
+            {character.name}
+          </li>
+        ))}
+      </ul>
+
+      <p className="delete-item-usage-label">Ao excluir este item:</p>
+      <ul className="delete-item-usage-list">
+        <li>
+          {single
+            ? 'a cópia já entregue permanece no inventário;'
+            : 'as cópias já entregues permanecem nos inventários;'}
+        </li>
+        <li>
+          {single
+            ? 'essa cópia deixa de receber atualizações do catálogo do mestre.'
+            : 'essas cópias deixam de receber atualizações do catálogo do mestre.'}
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+/**
  * Confirmação da exclusão de um item do catálogo.
  *
  * A ação é irreversível: o texto diz exatamente o que desaparece e, quando o
@@ -107,14 +160,7 @@ export function DeleteItemDialog({ item, usedBy, onCancel, onConfirm }: DeleteIt
           <li>O sprite, os atributos e o preço cadastrados são perdidos.</li>
         </ul>
 
-        {usedBy.length > 0 ? (
-          <p className="delete-item-usage">
-            <Icon name="info" size={16} /> Este item está no inventário de{' '}
-            <strong>{usedBy.map((character) => character.name).join(', ')}</strong>. A cópia que
-            está com os personagens <strong>permanece</strong>, mas deixa de ser atualizada pelo
-            catálogo.
-          </p>
-        ) : null}
+        <DeleteItemUsage characters={usedBy} />
 
         {error ? <p className="form-error">{error}</p> : null}
 
