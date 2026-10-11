@@ -1,22 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api';
-import { categoryLabel, describeItemDetails, rarityColor, rarityLabel } from '../../dnd';
+import { categoryLabel, rarityColor, rarityLabel, rarityTint } from '../../dnd';
 import type { CanonicalWeapon, Character, Compendium, Item, ItemPatch } from '../../types';
 import { Portrait } from '../Portrait';
 import { CoinsGrantPanel } from './CoinsGrantPanel';
-import { ItemEditor } from './ItemEditor';
+import { DeleteItemDialog } from './DeleteItemDialog';
+import { ItemModal, type ItemModalMode } from './ItemModal';
 import { SearchField } from './SearchField';
-import { matchesSearch } from './search';
-
-/** Preço resumido (PO/PP/PC) — visível apenas no painel do mestre. */
-function priceLabel(item: Item): string {
-  if (!item.price) return '';
-  const parts: string[] = [];
-  if (item.price.gold) parts.push(`${item.price.gold} PO`);
-  if (item.price.silver) parts.push(`${item.price.silver} PP`);
-  if (item.price.copper) parts.push(`${item.price.copper} PC`);
-  return parts.length > 0 ? parts.join(' · ') : 'sem valor';
-}
+import {
+  EMPTY_ITEM_FILTERS,
+  categoryFilterOptions,
+  damageTypeFilterOptions,
+  filterItems,
+  itemSummary,
+  itemUsage,
+  priceLabel,
+  rarityFilterOptions,
+  type ItemFilters,
+} from './itemCatalog';
 
 interface ItemsTabProps {
   items: Item[];
@@ -35,11 +36,13 @@ interface ItemsTabProps {
 }
 
 /**
- * Catálogo central de itens: cards com sprite + editor + envio ao jogador.
+ * Catálogo central de itens do mestre.
  *
- * No topo da aba fica o painel **Entregar moedas**: é por aqui que o mestre dá
- * (ou retira) dinheiro dos jogadores sem abrir a ficha de cada um — antes isso
- * só era possível pelo bloco de moedas dentro da ficha.
+ * No topo da aba fica o painel **Entregar moedas** (intocado). Abaixo, o
+ * catálogo virou um **grid de cards** com busca e filtros rápidos no cabeçalho,
+ * altura limitada e rolagem interna. Clicar num card abre o **modal do item**,
+ * que começa em visualização e alterna para edição sem trocar de tela; excluir
+ * passa por uma confirmação própria.
  */
 export function ItemsTab({
   items,
@@ -52,8 +55,13 @@ export function ItemsTab({
   onCoinsChange,
 }: ItemsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mode, setMode] = useState<ItemModalMode>('view');
+  // Item recém-criado por "Novo item": o modal já abre em edição, vazio.
+  const [creatingId, setCreatingId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<ItemFilters>(EMPTY_ITEM_FILTERS);
   // Catálogo canônico de armas para o seletor "Arma do PHB" (vem do compêndio).
   const [weapons, setWeapons] = useState<CanonicalWeapon[]>([]);
 
@@ -71,27 +79,51 @@ export function ItemsTab({
     };
   }, []);
 
-  const selected = items.find((item) => item.id === selectedId) ?? null;
-  // Busca local: filtra o catálogo lateral sem mexer no editor aberto ao lado.
-  const visible = items.filter((item) =>
-    matchesSearch(
-      query,
-      item.name,
-      categoryLabel(item.category),
-      rarityLabel(item.rarity),
-      describeItemDetails(item.category, item.details),
-      priceLabel(item),
-    ),
+  const visible = useMemo(() => filterItems(items, filters), [items, filters]);
+  const categoryOptions = useMemo(() => categoryFilterOptions(items), [items]);
+  const rarityOptions = useMemo(() => rarityFilterOptions(items), [items]);
+  const damageOptions = useMemo(() => damageTypeFilterOptions(items), [items]);
+  const hasActiveFilters = Boolean(
+    filters.query || filters.category || filters.rarity || filters.damageType,
   );
+
+  const selected = items.find((item) => item.id === selectedId) ?? null;
+  const usedBy = selected ? itemUsage(selected, characters) : [];
+
+  function openItem(id: string): void {
+    setSelectedId(id);
+    setMode('view');
+    setCreatingId(null);
+    setConfirming(false);
+  }
+
+  function closeItem(): void {
+    setSelectedId(null);
+    setMode('view');
+    setCreatingId(null);
+    setConfirming(false);
+  }
 
   async function handleCreate(): Promise<void> {
     setCreating(true);
+    setError(null);
     try {
       const created = await onCreate();
       setSelectedId(created.id);
+      setMode('edit');
+      setCreatingId(created.id);
+      setConfirming(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao criar o item.');
     } finally {
       setCreating(false);
     }
+  }
+
+  async function handleDelete(): Promise<void> {
+    if (!selected) return;
+    await onDelete(selected.id);
+    closeItem();
   }
 
   return (
@@ -102,88 +134,192 @@ export function ItemsTab({
         onCharacter={onCoinsChange}
       />
 
-      <div className="master-layout">
-        <aside className="master-list">
-          <div className="toolbar toolbar-wrap">
+      <section className="items-catalog" aria-label="Catálogo de itens">
+        <header className="items-head">
+          <div className="items-toolbar">
             <SearchField
-              value={query}
-              onChange={setQuery}
-              placeholder="Buscar por nome, categoria ou raridade"
+              value={filters.query}
+              onChange={(query) => setFilters((prev) => ({ ...prev, query }))}
+              placeholder="Buscar por nome, categoria, raridade ou tipo de dano"
               label="Buscar itens"
-              className="search-grow"
             />
             <button
               type="button"
               className="btn btn-primary btn-small"
-              onClick={handleCreate}
+              onClick={() => void handleCreate()}
               disabled={creating}
             >
               {creating ? 'criando...' : '+ novo item'}
             </button>
           </div>
 
+          <div className="items-filters">
+            <label className="items-filter">
+              <span>Categoria</span>
+              <select
+                value={filters.category}
+                aria-label="Filtrar por categoria"
+                onChange={(event) =>
+                  setFilters((prev) => ({ ...prev, category: event.target.value }))
+                }
+              >
+                <option value="">todas</option>
+                {categoryOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="items-filter">
+              <span>Raridade</span>
+              <select
+                value={filters.rarity}
+                aria-label="Filtrar por raridade"
+                onChange={(event) => setFilters((prev) => ({ ...prev, rarity: event.target.value }))}
+              >
+                <option value="">todas</option>
+                {rarityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="items-filter">
+              <span>Tipo de dano</span>
+              <select
+                value={filters.damageType}
+                aria-label="Filtrar por tipo de dano"
+                onChange={(event) =>
+                  setFilters((prev) => ({ ...prev, damageType: event.target.value }))
+                }
+              >
+                <option value="">todos</option>
+                {damageOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {hasActiveFilters ? (
+              <button
+                type="button"
+                className="btn btn-small items-clear"
+                onClick={() => setFilters(EMPTY_ITEM_FILTERS)}
+              >
+                limpar filtros
+              </button>
+            ) : null}
+          </div>
+
+          {error ? <p className="form-error">{error}</p> : null}
+        </header>
+
+        <div className="items-grid">
           {items.length === 0 ? (
-            <p className="empty-hint">Nenhum item no catálogo ainda.</p>
+            <p className="empty-hint">
+              Nenhum item no catálogo ainda. Use <strong>+ novo item</strong> para criar o primeiro.
+            </p>
           ) : visible.length === 0 ? (
-            <p className="empty-hint">Nenhum item corresponde à busca.</p>
+            <p className="empty-hint">Nenhum item encontrado com os filtros atuais.</p>
           ) : (
-            <ul className="item-cards">
-              {visible.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className={selected?.id === item.id ? 'item-card active' : 'item-card'}
-                    style={{ borderLeftColor: rarityColor(item.rarity) ?? undefined }}
-                    onClick={() => setSelectedId(item.id)}
-                  >
-                    <Portrait src={item.imageUrl} alt={item.name} icon="flask" />
-                    <span className="item-info">
-                      <span className="card-name">{item.name}</span>
-                      <span className="card-line">
-                        {categoryLabel(item.category)}
-                        {item.rarity ? (
-                          <span style={{ color: rarityColor(item.rarity) ?? undefined }}>
-                            {' · '}
-                            {rarityLabel(item.rarity)}
-                          </span>
-                        ) : null}
-                        {item.weight > 0 ? ` · ${item.weight} kg` : ''}
-                        {item.requiresAttunement ? ' · sintonização' : ''}
-                      </span>
-                      {describeItemDetails(item.category, item.details) ? (
-                        <span className="card-line">
-                          {describeItemDetails(item.category, item.details)}
+            <ul className="items-cards">
+              {visible.map((item) => {
+                const color = rarityColor(item.rarity);
+                const accent = rarityTint(item.rarity, '99');
+                const summary = itemSummary(item);
+                const price = priceLabel(item);
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className="items-card"
+                      style={{
+                        borderLeftColor: color ?? undefined,
+                        background: accent
+                          ? `linear-gradient(180deg, ${accent}22, var(--surface-2))`
+                          : undefined,
+                      }}
+                      aria-label={`Abrir detalhes de ${item.name}`}
+                      onClick={() => openItem(item.id)}
+                    >
+                      <Portrait
+                        src={item.imageUrl}
+                        alt={item.name}
+                        size="lg"
+                        icon="flask"
+                        zoomable={false}
+                      />
+                      <span className="items-card-body">
+                        <span className="items-card-name">{item.name}</span>
+                        <span className="items-card-tags">
+                          <span className="items-card-tag">{categoryLabel(item.category)}</span>
+                          {rarityLabel(item.rarity) ? (
+                            <span
+                              className="items-card-tag is-rarity"
+                              style={
+                                color && accent ? { color, borderColor: accent } : undefined
+                              }
+                            >
+                              {rarityLabel(item.rarity)}
+                            </span>
+                          ) : null}
+                          {item.requiresAttunement ? (
+                            <span className="items-card-tag is-attunement">sintonização</span>
+                          ) : null}
                         </span>
-                      ) : null}
-                      <span className="card-owner">{priceLabel(item)}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
+                        <span className="items-card-meta">
+                          {item.weight > 0 ? `${item.weight} kg` : 'sem peso'}
+                          {' · '}
+                          {price || 'sem valor'}
+                        </span>
+                        {summary ? <span className="items-card-summary">{summary}</span> : null}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
-        </aside>
+        </div>
 
-        <section className="master-detail">
-          {selected ? (
-            <ItemEditor
-              item={selected}
-              characters={characters}
-              weapons={weapons}
-              onPatch={(patch) => onPatch(selected.id, patch)}
-              onDelete={() => {
-                onDelete(selected.id);
-                setSelectedId(null);
-              }}
-              onSend={(characterId, quantity) => onSend(selected.id, characterId, quantity)}
-            />
-          ) : (
-            <p className="empty-hint">
-              Selecione um item para editar o sprite e a descrição, ou crie um novo.
-            </p>
-          )}
-        </section>
-      </div>
+        {items.length > 0 ? (
+          <p className="items-count">
+            {visible.length} de {items.length} ite{items.length === 1 ? 'm' : 'ns'}
+            {hasActiveFilters ? ' com os filtros atuais' : ''}
+          </p>
+        ) : null}
+      </section>
+
+      {selected ? (
+        <ItemModal
+          item={selected}
+          mode={mode}
+          creating={selected.id === creatingId}
+          characters={characters}
+          weapons={weapons}
+          suspended={confirming}
+          onPatch={(patch) => onPatch(selected.id, patch)}
+          onSend={(characterId, quantity) => onSend(selected.id, characterId, quantity)}
+          onModeChange={setMode}
+          onRequestDelete={() => setConfirming(true)}
+          onClose={closeItem}
+        />
+      ) : null}
+
+      {selected && confirming ? (
+        <DeleteItemDialog
+          item={selected}
+          usedBy={usedBy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={handleDelete}
+        />
+      ) : null}
     </div>
   );
 }

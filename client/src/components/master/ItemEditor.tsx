@@ -72,6 +72,11 @@ interface ItemEditorProps {
   onPatch: (patch: ItemPatch) => void;
   onDelete: () => void;
   onSend: (characterId: string, quantity: number) => Promise<void>;
+  /**
+   * Renderiza SÓ o formulário, sem o cabeçalho próprio (nome + remover item).
+   * Usado dentro do modal de item, que já traz o título e as ações no topo.
+   */
+  embedded?: boolean;
 }
 
 /** Campos numéricos/selects específicos da categoria do item. */
@@ -791,7 +796,15 @@ function CategoryFields({
 }
 
 /** Editor de um item: identidade, atributos por categoria, preço e envio. */
-export function ItemEditor({ item, characters, weapons, onPatch, onDelete, onSend }: ItemEditorProps) {
+export function ItemEditor({
+  item,
+  characters,
+  weapons,
+  onPatch,
+  onDelete,
+  onSend,
+  embedded = false,
+}: ItemEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState('');
@@ -846,15 +859,17 @@ export function ItemEditor({ item, characters, weapons, onPatch, onDelete, onSen
 
   return (
     <div className="creature-editor">
-      <div className="detail-head">
-        <h2>
-          <Portrait src={item.imageUrl} alt={item.name} icon="flask" />
-          {item.name}
-        </h2>
-        <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
-          remover item
-        </button>
-      </div>
+      {embedded ? null : (
+        <div className="detail-head">
+          <h2>
+            <Portrait src={item.imageUrl} alt={item.name} icon="flask" />
+            {item.name}
+          </h2>
+          <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
+            remover item
+          </button>
+        </div>
+      )}
 
       <Section title="Item" icon="scroll">
         <div className="grid grid-3">

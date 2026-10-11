@@ -14529,3 +14529,261 @@ input[type='checkbox']:focus-visible,
     max-width: none;
   }
 }
+
+/* ==========================================================================
+   Catálogo de itens do mestre — cards, filtros e modal
+   ========================================================================== */
+
+.items-catalog {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.items-head {
+  display: grid;
+  gap: 0.6rem;
+}
+
+/* Busca e "novo item" na MESMA linha (o botão fica ao lado da barra). */
+.items-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.items-toolbar .search-field {
+  flex: 1 1 16rem;
+  min-width: 10rem;
+}
+
+.items-toolbar .btn {
+  flex: 0 0 auto;
+}
+
+/* Filtros rápidos: quebram de linha sem estourar o layout em telas estreitas. */
+.items-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.items-filter {
+  display: grid;
+  gap: 0.2rem;
+  flex: 1 1 9rem;
+  min-width: 8rem;
+}
+
+.items-filter > span {
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.items-filter select {
+  width: 100%;
+}
+
+.items-clear {
+  flex: 0 0 auto;
+  margin-bottom: 0.05rem;
+}
+
+/* Container do grid: ALTURA LIMITADA + rolagem interna — a aba não cresce
+   indefinidamente para baixo por causa do catálogo. */
+.items-grid {
+  max-height: min(68vh, 40rem);
+  overflow-y: auto;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.items-grid .empty-hint {
+  padding: 1.4rem 0.6rem;
+  text-align: center;
+}
+
+.items-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.7rem;
+}
+
+/* Card médio: sprite, nome, categoria, raridade, peso, valor e resumo. */
+.items-card {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.2s ease;
+}
+
+.items-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--gold);
+  box-shadow: 0 0 16px -6px var(--glow);
+}
+
+.items-card:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.items-card .portrait {
+  width: 3.25rem;
+  height: 3.25rem;
+}
+
+.items-card-body {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.items-card-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.2;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.items-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.items-card-tag {
+  padding: 0.08rem 0.45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: var(--text-micro);
+  white-space: nowrap;
+}
+
+.items-card-tag.is-rarity {
+  font-weight: 600;
+}
+
+.items-card-tag.is-attunement {
+  border-color: var(--gold-deep);
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .items-card-tag.is-attunement {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.items-card-meta {
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+}
+
+/* Resumo: no máximo duas linhas, para os cards ficarem com a mesma altura. */
+.items-card-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.items-count {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+}
+
+/* Modal do item: barra de ações no TOPO (editar / excluir / fechar). */
+.items-modal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.items-modal-mode {
+  margin-right: auto;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .items-modal-mode {
+  color: var(--gold-bright);
+}
+
+.items-modal-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* Aviso de uso do item na confirmação de exclusão. */
+.delete-item-usage {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin: 0.6rem 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(184, 145, 42, 0.14), var(--surface-2));
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+.delete-item-usage .icon {
+  flex: 0 0 auto;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .delete-item-usage .icon {
+  color: var(--gold-bright);
+}
+
+@media (max-width: 700px) {
+  .items-grid {
+    max-height: 60vh;
+  }
+
+  .items-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .items-toolbar .search-field,
+  .items-toolbar .btn {
+    flex: 1 1 100%;
+  }
+}
