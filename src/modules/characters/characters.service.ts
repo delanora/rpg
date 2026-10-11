@@ -39,9 +39,11 @@ import {
 } from '../rest/camp-supply-reservations.js';
 import type {
   CreateCharacterInput,
+  EldritchMasterInput,
   LevelDownInput,
   LevelUpInput,
   MoveInventoryItemInput,
+  RecoverSlotsInput,
   ShortRestSessionActionInput,
   SpendHitDieInput,
   StartShortRestInput,
@@ -80,6 +82,7 @@ import {
   effectiveSpellcasting,
   findSubclass,
   firstClassProficiencies,
+  getActiveClassFeatures,
   getClassDefinition,
   isAsiLevel,
   mergeProficiencies,
@@ -1492,6 +1495,10 @@ const SHORT_REST_HIT_DIE_TYPE = 'SHORT_REST_HIT_DIE';
 const SHORT_REST_START_TYPE = 'SHORT_REST_START';
 const SHORT_REST_COMPLETE_TYPE = 'SHORT_REST_COMPLETE';
 const SHORT_REST_CANCEL_TYPE = 'SHORT_REST_CANCEL';
+/** Recuperação de espaços por feature especial dentro do Descanso Curto (5.3C). */
+const SHORT_REST_RECOVERY_TYPE = 'SHORT_REST_RECOVERY';
+/** Ação própria do Mestre Místico (Bruxo 20) — NÃO é Descanso Curto (5.3C). */
+const ELDRITCH_MASTER_TYPE = 'ELDRITCH_MASTER';
 
 /** Código de erro quando a MESMA chave idempotente é usada para outra operação. */
 const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
@@ -1519,6 +1526,22 @@ function hitDieRequestFingerprint(sessionId: string, die: number): string {
 /** Assinatura canônica do payload semântico de uma ação de sessão (complete/cancel). */
 function sessionRequestFingerprint(sessionId: string): string {
   return JSON.stringify({ sessionId });
+}
+
+/**
+ * Assinatura canônica de uma recuperação de espaços (5.3C): sessão, feature e a
+ * seleção POR NÍVEL, com as chaves ordenadas e os zeros descartados. Dois
+ * pedidos com a mesma seleção (em qualquer ordem) compartilham o fingerprint.
+ */
+function recoveryRequestFingerprint(
+  sessionId: string,
+  featureId: string,
+  slots: Record<string, number>,
+): string {
+  const normalized = Object.entries(slots)
+    .filter(([, count]) => count > 0)
+    .sort(([a], [b]) => Number(a) - Number(b));
+  return JSON.stringify({ sessionId, featureId, slots: normalized });
 }
 
 /**
@@ -1885,6 +1908,375 @@ export async function toggleFeature(
     cost: input.active ? cost : 0,
     resourceId: toggle.resourceId,
     changed: true,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Recuperação especial de espaços (5.3C)
+// ---------------------------------------------------------------------------
+
+/**
+ * Features especiais cuja recuperação de espaços depende do nível da CLASSE
+ * (nunca do nível total) e é limitada a 1x/descanso longo. O `classKey` é a
+ * classe que CONCEDE a feature; o orçamento é `ceil(nível da classe / 2)`.
+ */
+const RECOVERY_FEATURES: Record<string, { classKey: string; name: string }> = {
+  'arcane-recovery': { classKey: 'wizard', name: 'Recuperação Arcana' },
+  'natural-recovery': { classKey: 'druid', name: 'Recuperação Natural' },
+};
+
+/** Nível MÁXIMO de espaço que uma recuperação especial pode devolver (PHB). */
+const RECOVERY_MAX_SLOT_LEVEL = 5;
+
+/** Ids das features ATIVAS (classe + subclasse) das entradas atuais. */
+function activeFeatureIdSet(entries: ClassEntry[]): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    const definition = getClassDefinition(entry.classKey);
+    for (const feature of getActiveClassFeatures(definition, entry.level, entry.subclass)) {
+      ids.add(feature.id);
+    }
+  }
+  return ids;
+}
+
+/** Snapshot IMUTÁVEL de uma recuperação de espaços (guardado em `result`). */
+interface RecoverSlotsSnapshot {
+  character: CharacterDto;
+  featureId: string;
+  featureName: string;
+  /** Orçamento em níveis = ceil(nível da classe / 2). */
+  budget: number;
+  /** Níveis efetivamente gastos na seleção (soma de nível × quantidade). */
+  spent: number;
+  /** Espaços recuperados, por nível (só os níveis com quantidade > 0). */
+  slots: { level: number; count: number }[];
+  version: number;
+}
+
+/** Resposta de `POST /me/features/recovery`. */
+export interface RecoverSlotsResult extends RecoverSlotsSnapshot {
+  replayed: boolean;
+}
+
+/**
+ * Handler ESPECIAL de Recuperação Arcana/Natural (5.3C).
+ *
+ * O jogador escolhe, DENTRO de uma sessão de Descanso Curto ACTIVE, quais
+ * espaços gastos quer recuperar. O SERVIDOR é a autoridade: deriva a posse da
+ * feature, o nível da CLASSE, o orçamento (`ceil(nível/2)`), os máximos/gastos
+ * de cada nível e o limite de nível 5. A feature só é consumida quando a
+ * seleção tem ao menos um espaço — abrir a UI e cancelar, ou selecionar zero,
+ * não gasta nada. Seleção inválida não escreve nada.
+ */
+export async function recoverSlots(
+  actor: Actor,
+  input: RecoverSlotsInput,
+): Promise<RecoverSlotsResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const feature = RECOVERY_FEATURES[input.featureId];
+  if (!feature) throw new HttpError('Recuperação desconhecida.', 400);
+
+  const entries = normalizeClassEntries(character.classes);
+  const fingerprint = recoveryRequestFingerprint(input.sessionId, input.featureId, input.slots);
+
+  // 1) Idempotência ANTES de tudo (mesma chave + mesma seleção → replay).
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<RecoverSlotsSnapshot>(previous, SHORT_REST_RECOVERY_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  // 2) Só faz sentido DURANTE o Descanso Curto: exige sessão ACTIVE do próprio
+  // personagem e, se ele já marcou "pronto", precisa desmarcar antes.
+  const session = await loadActiveSession(character.id, input.sessionId);
+  if (session.readyAt) {
+    throw new HttpError(
+      'Você marcou que terminou o descanso; desmarque "pronto" antes de recuperar espaços.',
+      409,
+      SHORT_REST_SESSION_READY,
+    );
+  }
+
+  // 3) Concorrência: a versão enviada tem de ser a atual.
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError(
+      'A ficha mudou desde que a tela foi carregada; recarregue antes de recuperar espaços.',
+      409,
+    );
+  }
+
+  // 4) Posse da feature + nível da CLASSE (nunca o nível total).
+  const classLevel = entries.find((entry) => entry.classKey === feature.classKey)?.level ?? 0;
+  if (classLevel <= 0 || !activeFeatureIdSet(entries).has(input.featureId)) {
+    throw new HttpError('Esta característica não está disponível na sua ficha.', 404);
+  }
+
+  // 5) Disponibilidade: 1x/descanso longo.
+  const classState = normalizeClassState(character.classState);
+  if ((classState.used[input.featureId] ?? 0) > 0) {
+    throw new HttpError(
+      `Você já usou ${feature.name}; ela recupera num descanso longo.`,
+      409,
+      'RECOVERY_ALREADY_USED',
+    );
+  }
+
+  // 6) Regra derivada: máximos (tabela de espaços) e gastos atuais.
+  const maxByLevel = spellSlotMaxByLevel(spellSlotsForClasses(entries));
+  const used = spellSlotsUsedFrom(character.spells, maxByLevel);
+  const budget = Math.ceil(classLevel / 2);
+
+  // 7) Valida a seleção — o servidor NUNCA confia no orçamento/máximos do cliente.
+  const selection: { level: number; count: number }[] = [];
+  let spent = 0;
+  for (const [rawLevel, rawCount] of Object.entries(input.slots ?? {})) {
+    if (!/^[1-9]$/.test(rawLevel)) {
+      throw new HttpError('Nível de espaço de magia inválido.', 400, 'RECOVERY_INVALID_SLOT');
+    }
+    const level = Number(rawLevel);
+    const count = rawCount ?? 0;
+    if (count <= 0) continue;
+    if (level > RECOVERY_MAX_SLOT_LEVEL) {
+      throw new HttpError(
+        'Nenhum espaço de 6º nível ou superior pode ser recuperado assim.',
+        400,
+        'RECOVERY_LEVEL_TOO_HIGH',
+      );
+    }
+    if ((maxByLevel[rawLevel] ?? 0) <= 0) {
+      throw new HttpError(`Você não possui espaços de ${level}º nível.`, 400, 'RECOVERY_NO_SLOTS');
+    }
+    if (count > (used[rawLevel] ?? 0)) {
+      throw new HttpError(
+        `Você não pode recuperar mais espaços de ${level}º nível do que gastou.`,
+        400,
+        'RECOVERY_EXCEEDS_USED',
+      );
+    }
+    spent += level * count;
+    selection.push({ level, count });
+  }
+  if (selection.length === 0 || spent <= 0) {
+    throw new HttpError(
+      'Selecione ao menos um espaço de magia para recuperar.',
+      400,
+      'RECOVERY_EMPTY',
+    );
+  }
+  if (spent > budget) {
+    throw new HttpError(
+      `A seleção excede o total recuperável (${budget} nível(is)).`,
+      400,
+      'RECOVERY_OVER_BUDGET',
+    );
+  }
+  selection.sort((a, b) => a.level - b.level);
+
+  // 8) Aplica: devolve os espaços ao `slotsUsed` e consome a feature.
+  const nextUsed: Record<string, number> = { ...used };
+  for (const { level, count } of selection) {
+    const key = String(level);
+    const left = (nextUsed[key] ?? 0) - count;
+    if (left > 0) nextUsed[key] = left;
+    else delete nextUsed[key];
+  }
+  const nextSpells = withSpellSlotsUsed(character.spells, nextUsed);
+  const nextClassState: ClassState = {
+    active: [...classState.active],
+    used: { ...classState.used, [input.featureId]: 1 },
+    choices: classState.choices,
+  };
+
+  // 9) Operação + espaços + consumo da feature na MESMA transação, guardados
+  // por versão (duas abas não recuperam os mesmos espaços duas vezes).
+  let committed!: { updated: Character; snapshot: RecoverSlotsSnapshot };
+  try {
+    committed = await prisma.$transaction(async (tx) => {
+      await tx.characterOperation.create({
+        data: {
+          characterId: character.id,
+          operationId: input.operationId,
+          type: SHORT_REST_RECOVERY_TYPE,
+          requestFingerprint: fingerprint,
+          shortRestSessionId: session.id,
+          result: {},
+        },
+      });
+
+      const written = await tx.character.updateMany({
+        where: { id: character.id, version: input.expectedVersion },
+        data: {
+          spells: nextSpells as unknown as Prisma.InputJsonValue,
+          classState: nextClassState as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      if (written.count === 0) {
+        throw new HttpError('A ficha mudou durante a recuperação; tente novamente.', 409);
+      }
+
+      const updated = await tx.character.findUniqueOrThrow({ where: { id: character.id } });
+      const snapshot: RecoverSlotsSnapshot = {
+        character: await toSheetDto(updated, actor.username),
+        featureId: input.featureId,
+        featureName: feature.name,
+        budget,
+        spent,
+        slots: selection,
+        version: input.expectedVersion + 1,
+      };
+      await tx.characterOperation.update({
+        where: {
+          characterId_operationId: { characterId: character.id, operationId: input.operationId },
+        },
+        data: { result: snapshot as unknown as Prisma.InputJsonValue },
+      });
+
+      return { updated, snapshot };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(character.id, input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<RecoverSlotsSnapshot>(raced, SHORT_REST_RECOVERY_TYPE, fingerprint),
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
+
+  await publishChange(actor, committed.updated, {
+    spells: nextSpells,
+    classState: nextClassState,
+  });
+
+  return { ...committed.snapshot, replayed: false };
+}
+
+/** Snapshot IMUTÁVEL de um uso do Mestre Místico (guardado em `result`). */
+interface EldritchMasterSnapshot {
+  character: CharacterDto;
+  /** Quantos espaços de Magia de Pacto foram efetivamente recuperados. */
+  restoredSlots: number;
+  version: number;
+}
+
+/** Resposta de `POST /me/features/eldritch-master`. */
+export interface EldritchMasterResult extends EldritchMasterSnapshot {
+  replayed: boolean;
+}
+
+/**
+ * Mestre Místico (Bruxo 20, 5.3C) — ação PRÓPRIA, não um Descanso Curto.
+ *
+ * Recupera SOMENTE a Magia de Pacto gasta (`pactMagic.used = 0`), consome a
+ * feature (1x/descanso longo, reusando o recurso `eldritch-master` do catálogo)
+ * e nada mais é tocado: HP, Dados de Vida, recursos de recarga curta e espaços
+ * normais ficam como estão. Sem espaços de Pacto gastos, NÃO consome a feature.
+ * Exige nível 20 NA CLASSE Bruxo (não o nível total).
+ */
+export async function useEldritchMaster(
+  actor: Actor,
+  input: EldritchMasterInput,
+): Promise<EldritchMasterResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const fingerprint = JSON.stringify({ featureId: 'eldritch-master' });
+
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<EldritchMasterSnapshot>(previous, ELDRITCH_MASTER_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError(
+      'A ficha mudou desde que a tela foi carregada; recarregue antes de usar o Mestre Místico.',
+      409,
+    );
+  }
+
+  const entries = normalizeClassEntries(character.classes);
+  const warlock = entries.find((entry) => entry.classKey === 'warlock');
+  if (!warlock || warlock.level < 20) {
+    throw new HttpError(
+      'O Mestre Místico exige nível 20 de Bruxo.',
+      403,
+      'ELDRITCH_MASTER_REQUIRES_20',
+    );
+  }
+
+  const classState = normalizeClassState(character.classState);
+  if ((classState.used['eldritch-master'] ?? 0) > 0) {
+    throw new HttpError(
+      'Você já usou o Mestre Místico; ele recupera num descanso longo.',
+      409,
+      'ELDRITCH_MASTER_USED',
+    );
+  }
+
+  const spells = parseJson<SpellsStateInput>(spellsStateSchema, character.spells, {
+    list: [],
+    slotsUsed: {},
+    pactMagic: { used: 0 },
+  });
+  const restoredSlots = spells.pactMagic?.used ?? 0;
+  if (restoredSlots <= 0) {
+    throw new HttpError(
+      'Todos os seus espaços de Magia de Pacto já estão disponíveis.',
+      409,
+      'NO_PACT_SLOTS_USED',
+    );
+  }
+
+  // Recupera SÓ a Magia de Pacto; os espaços normais são reescritos como estão.
+  const nextSpells = {
+    ...withSpellSlotsUsed(
+      character.spells,
+      spellSlotsUsedFrom(character.spells, spellSlotMaxByLevel(spellSlotsForClasses(entries))),
+    ),
+    pactMagic: { used: 0 },
+  };
+  const nextClassState: ClassState = {
+    active: [...classState.active],
+    used: { ...classState.used, 'eldritch-master': 1 },
+    choices: classState.choices,
+  };
+
+  const written = await prisma.character.updateMany({
+    where: { id: character.id, version: input.expectedVersion },
+    data: {
+      spells: nextSpells as unknown as Prisma.InputJsonValue,
+      classState: nextClassState as unknown as Prisma.InputJsonValue,
+      version: { increment: 1 },
+    },
+  });
+  if (written.count === 0) {
+    throw new HttpError('A ficha mudou durante a ação; tente novamente.', 409);
+  }
+
+  const updated = await prisma.character.findUniqueOrThrow({ where: { id: character.id } });
+  await publishChange(actor, updated, {
+    spells: nextSpells,
+    classState: nextClassState,
+    pactMagicRestored: true,
+  });
+
+  return {
+    character: await toSheetDto(updated, actor.username),
+    restoredSlots,
+    version: input.expectedVersion + 1,
+    replayed: false,
   };
 }
 

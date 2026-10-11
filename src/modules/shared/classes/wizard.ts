@@ -15,6 +15,17 @@ const WIZARD_FEATURES: ClassFeatureDefinition[] = [
     level: 1,
     description:
       'Uma vez por dia, durante um descanso curto, recupere espaços de magia gastos totalizando metade do seu nível de mago, arredondado para cima. Nenhum espaço de 6º nível ou superior pode ser recuperado assim.',
+    // Disponível 1x/descanso longo. A RECUPERAÇÃO em si é um handler especial
+    // (5.3C): o jogador escolhe os espaços gastos dentro de uma sessão de
+    // Descanso Curto e o servidor valida o orçamento. Aqui só modelamos a
+    // disponibilidade como recurso de recarga longa — o uso é gravado em
+    // `classState.used['arcane-recovery']`.
+    effect: {
+      type: 'resource',
+      id: 'arcane-recovery',
+      name: 'Recuperação Arcana',
+      resource: { name: 'Recuperação Arcana', recharge: 'long', max: 1 },
+    },
   },
   {
     id: 'spell-mastery',

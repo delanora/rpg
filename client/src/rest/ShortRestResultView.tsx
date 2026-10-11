@@ -1,4 +1,6 @@
 import type { Character, ShortRestCompletionDto, ShortRestRequestDto } from '../types';
+import type { RecoverSlotsResult } from '../featuresApi';
+import { recoverySummaryLines } from './ShortRestRecovery';
 
 /**
  * Resumo do Descanso Curto concluído.
@@ -12,11 +14,14 @@ export function ShortRestResultView({
   request,
   completion,
   character,
+  recovery,
   onClose,
 }: {
   request: ShortRestRequestDto;
   completion: ShortRestCompletionDto | null;
   character: Character;
+  /** Recuperação especial aplicada nesta pausa (Arcane/Natural); null se não usou. */
+  recovery?: RecoverSlotsResult | null;
   onClose: () => void;
 }) {
   const me = request.participants.find((participant) => participant.characterId === character.id);
@@ -45,6 +50,21 @@ export function ShortRestResultView({
       <p className="section-note">
         Recursos de Descanso Curto recuperados automaticamente pelo servidor.
       </p>
+
+      {/* Recuperação especial só aparece quando houve recuperação REAL — nunca
+          uma linha falsa. */}
+      {recovery && recovery.slots.length > 0 ? (
+        <>
+          <h3 className="subsection-title">{recovery.featureName}</h3>
+          <ul className="short-rest-summary">
+            {recoverySummaryLines(recovery).map((line) => (
+              <li key={line}>
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
 
       <h3 className="subsection-title">Canção de Descanso</h3>
       {roll ? (
