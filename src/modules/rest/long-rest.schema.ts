@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { operationIdSchema } from '../characters/characters.schema.js';
+import { activeEffectRestOverrideSchema } from './rest.schema.js';
 import {
   CAMP_SUPPLY_OVERRIDE_NOTE_MAX,
   CAMP_SUPPLY_OVERRIDE_TYPES,
@@ -115,6 +116,9 @@ export const campSupplyOverrideSchema = z.object({
 export const forceCompleteLongRestSchema = z.object({
   operationId: operationIdSchema,
   campSupplyOverride: campSupplyOverrideSchema.optional(),
+  // 5.3D.2: override do MESTRE sobre o lifecycle dos efeitos ativos. Só o
+  // force-complete (rota do mestre) aceita; o `ready` do jogador não o carrega.
+  activeEffectOverrides: activeEffectRestOverrideSchema.optional(),
 });
 
 export type ForceCompleteLongRestInput = z.infer<typeof forceCompleteLongRestSchema>;

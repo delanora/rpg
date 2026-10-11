@@ -19,6 +19,7 @@ import { ranger } from './ranger.js';
 import { warlock } from './warlock.js';
 import { sorcerer } from './sorcerer.js';
 import type {
+  ActiveEffectLifecycle,
   ClassDefinition,
   ClassFeatureDefinition,
   ClassFeatureEffect,
@@ -665,6 +666,11 @@ export interface ActiveToggle {
    * valor que o SERVIDOR cobra ao ativar (`POST /me/features/toggle`).
    */
   cost: number;
+  /**
+   * Lifecycle do EFEITO ATIVO (5.3D.2), vindo do catálogo. AUSENTE = preservado
+   * em qualquer descanso. É o que `cleanupActiveEffectsForRest` consulta.
+   */
+  lifecycle?: ActiveEffectLifecycle;
 }
 
 /** Um recurso com contador (ex.: usos de Fúria por descanso longo). */
@@ -743,6 +749,109 @@ export function restoreLongRestResources(
     if (resource.recharge === 'short' || resource.recharge === 'long') delete used[resource.id];
   }
   return { ...state, used };
+}
+
+/** Um efeito ativo que deixou `classState.active` (auditoria do descanso). */
+export interface EndedActiveEffect {
+  id: string;
+  name: string;
+  /** Por que saiu: um descanso ou um override explícito do MESTRE. */
+  reason: 'short-rest' | 'long-rest' | 'master-end';
+}
+
+/** Um efeito que o MESTRE mandou PRESERVAR apesar do lifecycle (auditoria). */
+export interface MasterPreservedActiveEffect {
+  id: string;
+  name: string;
+}
+
+/**
+ * Override EXPLÍCITO do MESTRE sobre o lifecycle num descanso (5.3D.2).
+ *
+ * Não é bypass silencioso: o que for preservado/encerrado por aqui é registrado
+ * no resultado do descanso. PLAYER não tem acesso a isto (só as rotas de
+ * force-complete do mestre carregam o campo).
+ */
+export interface ActiveEffectRestOverride {
+  /** Ids a PRESERVAR mesmo que o lifecycle os encerrasse no descanso. */
+  preserve?: readonly string[];
+  /** Ids a ENCERRAR mesmo que o lifecycle os preservasse no descanso. */
+  end?: readonly string[];
+}
+
+/** Resultado da limpeza do `active` num descanso. */
+export interface ActiveEffectCleanupResult {
+  /** Ids que continuam ativos (órfãos/desconhecidos preservados). */
+  active: string[];
+  /** Efeitos encerrados (para o resumo do descanso). */
+  ended: EndedActiveEffect[];
+  /** Preservados por override do MESTRE (para o resumo/auditoria). */
+  masterPreserved: MasterPreservedActiveEffect[];
+}
+
+/** O lifecycle manda encerrar no descanso pedido? `turn` encerra nos dois. */
+function lifecycleEndsOn(rest: 'short' | 'long', lifecycle: ActiveEffectLifecycle): boolean {
+  if (rest === 'short') return lifecycle.endsOnShortRest === true || lifecycle.mode === 'turn';
+  return lifecycle.endsOnLongRest === true || lifecycle.mode === 'turn';
+}
+
+/**
+ * Aplica o lifecycle de `classState.active` num descanso (5.3D.2), de forma
+ * SELETIVA e orientada por METADATA (nunca por id hardcoded).
+ *
+ * Regras:
+ * • efeito SEM metadata (ou id DESCONHECIDO) → PRESERVADO (default seguro);
+ * • lifecycle manda encerrar (`endsOnShortRest`/`endsOnLongRest`, ou `mode:
+ *   'turn'`) → encerrado, com o motivo do descanso;
+ * • override do MESTRE: `preserve` mantém mesmo quando o lifecycle encerraria;
+ *   `end` encerra mesmo quando o lifecycle preservaria (motivo `master-end`).
+ *
+ * NÃO toca em `used` (encerrar um efeito NUNCA reembolsa recurso). `active`
+ * mantém a ORDEM original dos ids preservados.
+ */
+export function cleanupActiveEffectsForRest(
+  active: readonly string[],
+  toggles: readonly ActiveToggle[],
+  rest: 'short' | 'long',
+  overrides: ActiveEffectRestOverride = {},
+): ActiveEffectCleanupResult {
+  const byId = new Map(toggles.map((toggle) => [toggle.id, toggle]));
+  const preserve = new Set(overrides.preserve ?? []);
+  const end = new Set(overrides.end ?? []);
+
+  const kept: string[] = [];
+  const ended: EndedActiveEffect[] = [];
+  const masterPreserved: MasterPreservedActiveEffect[] = [];
+
+  for (const id of active) {
+    const toggle = byId.get(id);
+    const lifecycle = toggle?.lifecycle;
+
+    if (preserve.has(id)) {
+      // Preservação explícita do mestre: registrada SÓ quando o lifecycle
+      // realmente encerraria (senão não houve override de fato).
+      if (toggle && lifecycle && lifecycleEndsOn(rest, lifecycle)) {
+        masterPreserved.push({ id, name: toggle.name });
+      }
+      kept.push(id);
+      continue;
+    }
+
+    const masterEnds = end.has(id);
+    const endsByLifecycle = Boolean(toggle && lifecycle && lifecycleEndsOn(rest, lifecycle));
+    if (masterEnds || endsByLifecycle) {
+      ended.push({
+        id,
+        name: toggle?.name ?? id,
+        reason: masterEnds ? 'master-end' : rest === 'short' ? 'short-rest' : 'long-rest',
+      });
+      continue;
+    }
+
+    kept.push(id);
+  }
+
+  return { active: kept, ended, masterPreserved };
 }
 
 /**
@@ -1026,6 +1135,7 @@ export function computeClassAdjustments(
             // O custo final só é conhecido depois de ligar o recurso IMPLÍCITO
             // (toggle de mesmo id do recurso) — ver o laço no fim da montagem.
             cost: 0,
+            ...(effect.lifecycle ? { lifecycle: effect.lifecycle } : {}),
           });
           if (effect.cost !== undefined) declaredToggleCosts.set(effectId, effect.cost);
           break;

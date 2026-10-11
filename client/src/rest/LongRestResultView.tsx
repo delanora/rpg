@@ -81,7 +81,8 @@ export function LongRestResultView({
           hasPact ||
           entry.classResourcesRestored.length > 0 ||
           entry.racialUsesRestored.length > 0 ||
-          entry.activeTogglesCleared.length > 0;
+          (entry.activeEffectsEnded?.length ?? 0) > 0 ||
+          (entry.masterPreservedActiveEffects?.length ?? 0) > 0;
 
         const consumed = consumedByCharacter(entry.characterId);
 
@@ -139,10 +140,19 @@ export function LongRestResultView({
                   </li>
                 ) : null}
 
-                {entry.activeTogglesCleared.length > 0 ? (
+                {(entry.activeEffectsEnded?.length ?? 0) > 0 ? (
                   <li>
-                    <span>Efeitos ativos</span>
-                    <strong>encerrados</strong>
+                    <span>Efeitos encerrados</span>
+                    <strong>{entry.activeEffectsEnded.map((effect) => effect.name).join(', ')}</strong>
+                  </li>
+                ) : null}
+
+                {(entry.masterPreservedActiveEffects?.length ?? 0) > 0 ? (
+                  <li>
+                    <span>Preservados pelo mestre</span>
+                    <strong>
+                      {entry.masterPreservedActiveEffects.map((effect) => effect.name).join(', ')}
+                    </strong>
                   </li>
                 ) : null}
               </ul>

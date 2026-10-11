@@ -93,6 +93,7 @@ import {
   featuresWithSubclass,
   normalizeClassEntries,
   normalizeClassState,
+  cleanupActiveEffectsForRest,
   effectiveSpellSlotUsed,
   normalizeProficiencies,
   pactMagicSlots,
@@ -121,6 +122,7 @@ import {
   type LevelHistoryRecord,
 } from '../shared/level-history.js';
 import type { AbilityKey } from '../shared/dnd5e.js';
+import type { EndedActiveEffect } from '../shared/classes.js';
 import {
   ABILITY_KEYS,
   ABILITY_LABELS,
@@ -1680,6 +1682,8 @@ export interface ShortRestStartResult extends ShortRestStartSnapshot {
 interface ShortRestCompleteSnapshot {
   session: ShortRestSessionDto;
   character: CharacterDto;
+  /** Efeitos ativos encerrados pelo lifecycle no descanso (5.3D.2). */
+  activeEffectsEnded?: EndedActiveEffect[];
 }
 
 /** Resposta de `POST /me/rest/short/complete`. */
@@ -2527,7 +2531,15 @@ export async function completeShortRest(
   // e o estado com os de recarga curta restaurados.
   const classState = normalizeClassState(character.classState);
   const classAdjustments = characterClassAdjustments(character);
-  const nextState = restoreShortRestResources(classState, classAdjustments.resources);
+  const restored = restoreShortRestResources(classState, classAdjustments.resources);
+  // 5.3D.2: limpeza SELETIVA de `active` por lifecycle (não apaga todo mundo):
+  // a Fúria e os efeitos de curta duração saem; o desconhecido é preservado.
+  const cleanup = cleanupActiveEffectsForRest(
+    restored.active,
+    classAdjustments.toggles,
+    'short',
+  );
+  const nextState = { ...restored, active: cleanup.active };
 
   // A MAGIA DE PACTO (pool PRÓPRIO do Bruxo, PHB 2014) também recupera no
   // Descanso Curto: só o USO volta a zero, na MESMA escrita da ficha. O total é
@@ -2553,6 +2565,7 @@ export async function completeShortRest(
     updated: Character;
     session: ShortRestSessionDto;
     character: CharacterDto;
+    activeEffectsEnded: EndedActiveEffect[];
   };
   try {
     committed = await prisma.$transaction(async (tx) => {
@@ -2599,11 +2612,15 @@ export async function completeShortRest(
           characterId_operationId: { characterId: character.id, operationId: input.operationId },
         },
         data: {
-          result: { session: sessionDto, character: characterDto } as unknown as Prisma.InputJsonValue,
+          result: {
+            session: sessionDto,
+            character: characterDto,
+            activeEffectsEnded: cleanup.ended,
+          } as unknown as Prisma.InputJsonValue,
         },
       });
 
-      return { updated, session: sessionDto, character: characterDto };
+      return { updated, session: sessionDto, character: characterDto, activeEffectsEnded: cleanup.ended };
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -2628,7 +2645,12 @@ export async function completeShortRest(
     ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
   });
 
-  return { replayed: false, session: committed.session, character: committed.character };
+  return {
+    replayed: false,
+    session: committed.session,
+    character: committed.character,
+    activeEffectsEnded: committed.activeEffectsEnded,
+  };
 }
 
 /**

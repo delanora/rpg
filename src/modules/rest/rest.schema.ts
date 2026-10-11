@@ -42,9 +42,26 @@ export const setShortRestReadySchema = z.object({
 
 export type SetReadyInput = z.infer<typeof setShortRestReadySchema>;
 
+/**
+ * Override EXPLÍCITO do MESTRE sobre o lifecycle dos efeitos ativos num
+ * descanso (5.3D.2).
+ *
+ * `preserve` mantém um efeito que o lifecycle encerraria; `end` encerra um que o
+ * lifecycle preservaria. Só as rotas de force-complete do MESTRE aceitam este
+ * campo — o PLAYER usa as rotas de `ready`, que têm outro schema e não o
+ * carregam (não há como o jogador burlar o lifecycle).
+ */
+export const activeEffectRestOverrideSchema = z.object({
+  preserve: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+  end: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+});
+
+export type ActiveEffectRestOverrideInput = z.infer<typeof activeEffectRestOverrideSchema>;
+
 /** Ação do mestre sobre a solicitação (forçar aprovação/cancelar/concluir). */
 export const shortRestRequestActionSchema = z.object({
   operationId: operationIdSchema,
+  activeEffectOverrides: activeEffectRestOverrideSchema.optional(),
 });
 
 export type ShortRestRequestActionInput = z.infer<typeof shortRestRequestActionSchema>;

@@ -16,7 +16,15 @@ const BARBARIAN_FEATURES: ClassFeatureDefinition[] = [
     description:
       'Ação bônus para entrar em fúria por 1 minuto (ou até não atacar nem sofrer dano por 1 turno). Em fúria: vantagem em testes e salvaguardas de Força; bônus de dano corpo a corpo com Força (+2 até o 8º nível, +3 do 9º ao 15º, +4 do 16º ao 20º); resistência a dano contundente, perfurante e cortante. Usos por descanso longo: 2 (níveis 1-2), 3 (3-5), 4 (6-11), 5 (12-16), 6 (17-19) e ilimitado (20).',
     effects: [
-      { type: 'toggle', id: 'rage', name: 'Fúria' },
+      {
+        type: 'toggle',
+        id: 'rage',
+        name: 'Fúria',
+        // 5.3D.2: a Fúria dura 1 minuto — não sobrevive a nenhum descanso. A
+        // duração completa (manter por atacar/sofrer dano, Fúria Persistente) é
+        // da Fase 6; aqui Short/Long Rest simplesmente a encerram.
+        lifecycle: { mode: 'short-duration', endsOnShortRest: true, endsOnLongRest: true },
+      },
       {
         type: 'resource',
         id: 'rage',
@@ -67,7 +75,13 @@ const BARBARIAN_FEATURES: ClassFeatureDefinition[] = [
     level: 2,
     description:
       'Você pode atacar de forma descuidada: ganha vantagem em ataques corpo a corpo com Força neste turno, mas ataques contra você têm vantagem até o seu próximo turno.',
-    effect: { type: 'toggle', id: 'reckless-attack', name: 'Ataque Descuidado' },
+    effect: {
+      type: 'toggle',
+      id: 'reckless-attack',
+      name: 'Ataque Descuidado',
+      // 5.3D.2: dura até o seu próximo turno — qualquer descanso a encerra.
+      lifecycle: { mode: 'turn', endsOnShortRest: true, endsOnLongRest: true },
+    },
   },
   {
     id: 'danger-sense',

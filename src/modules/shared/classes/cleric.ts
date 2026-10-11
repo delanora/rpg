@@ -54,7 +54,16 @@ const CHANNEL_DIVINITY_RESOURCE = {
  * `channel-divinity` (como as opções de Ki do monge).
  */
 function channelDivinityOption(id: string, name: string) {
-  return { type: 'toggle' as const, id, name, resourceId: 'channel-divinity' };
+  return {
+    type: 'toggle' as const,
+    id,
+    name,
+    resourceId: 'channel-divinity',
+    // 5.3D.2: as opções de Canalizar Divindade duram no MÁXIMO 10 minutos
+    // (Expulsar Mortos-Vivos 1 min, Conhecimento dos Séculos 10 min...) — nenhuma
+    // sobrevive a um Short/Long Rest. A duração exata fica para a Fase 6.
+    lifecycle: { mode: 'short-duration' as const, endsOnShortRest: true, endsOnLongRest: true },
+  };
 }
 
 /** Recurso de uso limitado por Sabedoria (Lampejo Protetor, Sacerdote de Guerra...). */
