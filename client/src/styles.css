@@ -6248,6 +6248,316 @@ input[type='checkbox']:disabled {
   color: var(--ink-soft);
 }
 
+/* ==========================================================================
+   Entregar moedas (aba Itens do Mestre)
+   ==========================================================================
+
+   Painel em DOIS blocos — "Quem recebe" e "Quanto" — para o mestre ler o
+   saldo atual, digitar e conferir o efeito de CADA denominação antes de
+   aplicar. Todas as regras ficam presas em `.coin-grant` para não mexer no
+   bloco de moedas da ficha (`.coin-form`, `.coin-fields`, `.coin-input`), que é
+   compartilhado com o `CoinsPanel`. */
+
+.coin-grant .coin-grant-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.coin-grant .coin-grant-block {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.coin-grant-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* --- Bloco 1: quem recebe ------------------------------------------------- */
+
+.coin-grant .coin-grant-target {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.coin-grant-target-info {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.coin-grant-target-info strong {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coin-grant-target-owner {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+.coin-grant .coin-grant-purse {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.coin-grant-purse-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.22rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-grant-purse-cell .coin-value {
+  font-size: 0.82rem;
+}
+
+.coin-grant-purse-cell.is-plus {
+  border-color: var(--ok-bright);
+}
+
+.coin-grant-purse-cell.is-minus {
+  border-color: var(--danger);
+}
+
+.coin-grant-purse-cell.is-short {
+  border-style: dashed;
+  border-color: var(--danger);
+}
+
+.coin-grant-purse-arrow {
+  color: var(--ink-faint);
+}
+
+/* --- Bloco 2: quanto ------------------------------------------------------ */
+
+.coin-grant .coin-grant-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.coin-grant-legend-item {
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--text-micro);
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+}
+
+.coin-grant-legend-item.is-plus {
+  border-color: var(--ok-bright);
+  color: var(--ok);
+}
+
+.coin-grant-legend-item.is-minus {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.coin-grant .coin-grant-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.coin-grant-row {
+  display: grid;
+  grid-template-columns: minmax(5.2rem, 1fr) auto 4.6rem 2.3rem minmax(3.4rem, auto);
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.coin-grant-row.is-short {
+  border-color: var(--danger);
+}
+
+.coin-grant-row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.coin-grant-denom {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.coin-grant-denom-name {
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coin-grant-current {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-grant .coin-grant-input {
+  width: 4.6rem;
+  text-align: right;
+}
+
+.coin-grant-effect {
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-grant-effect.is-plus {
+  color: var(--ok);
+}
+
+.coin-grant-effect.is-minus,
+.coin-grant-short {
+  color: var(--danger);
+}
+
+.coin-grant-effect.is-none {
+  color: var(--ink-faint);
+}
+
+.coin-grant-after {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-grant-after strong {
+  font-size: 0.82rem;
+  color: var(--ink);
+}
+
+.coin-grant-after-idle {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+.coin-grant-short {
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* --- Resumo e ações ------------------------------------------------------ */
+
+.coin-grant .coin-grant-summary {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px dashed var(--gold-hair);
+  border-radius: var(--radius);
+}
+
+.coin-grant-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.coin-grant-summary-line strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-grant-summary-line strong.is-short {
+  color: var(--danger);
+}
+
+.coin-grant-summary-label {
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.coin-grant-summary-arrow {
+  color: var(--ink-faint);
+}
+
+.coin-grant-summary-change {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+.coin-grant .coin-grant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.coin-grant-feedback {
+  margin: 0.6rem 0 0;
+}
+
+/* Em telas estreitas o painel empilha os blocos e a linha das moedas quebra —
+   o saldo atual (que já aparece na carteira acima) sai de cena. */
+@media (max-width: 900px) {
+  .coin-grant .coin-grant-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .coin-grant-row {
+    grid-template-columns: minmax(0, 1fr) 4.6rem 2.3rem;
+  }
+
+  .coin-grant-row .coin-grant-current {
+    display: none;
+  }
+
+  .coin-grant-row .coin-grant-after {
+    grid-column: 1 / -1;
+    padding-left: 1.35rem;
+  }
+}
+
 /* --- Set de equipamento: grade 3×3 no estilo clássico do Tibia ----------- */
 .equip-set {
   position: relative;

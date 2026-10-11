@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react';
 import {
   COIN_KEYS,
   COIN_LABELS,
+  COIN_METAL,
   COIN_NAMES,
   canPay,
   coinsWeight,
@@ -14,15 +15,6 @@ import { useSheetAccess } from '../../readonly';
 import type { Character, CoinAmount, CoinKey, CoinPurse, TransferTarget } from '../../types';
 import { clampInt } from '../../utils';
 import { Icon } from '../Icon';
-
-/** Metal de cada denominação — define a cor do ícone de moeda. */
-const COIN_METAL: Record<CoinKey, string> = {
-  pp: 'is-platinum',
-  gp: 'is-gold',
-  ep: 'is-electrum',
-  sp: 'is-silver',
-  cp: 'is-copper',
-};
 
 /**
  * Bloco de moedas da ficha, logo abaixo da mochila.

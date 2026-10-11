@@ -1,10 +1,17 @@
-import { useState, type ReactElement } from 'react';
-import { COIN_KEYS, COIN_LABELS, COIN_NAMES, formatCoins, visibleCoinKeys } from '../../coins';
+import { useState } from 'react';
+import { COIN_LABELS, COIN_METAL, COIN_NAMES, formatCoins } from '../../coins';
 import { giveCoins } from '../../coinsApi';
-import type { Character, CoinDelta, CoinKey, CoinPurse } from '../../types';
-import { clampInt } from '../../utils';
+import type { Character } from '../../types';
 import { Icon } from '../Icon';
+import { Portrait } from '../Portrait';
 import { Section } from '../Section';
+import {
+  EMPTY_DRAFT,
+  describeDelta,
+  effectLabel,
+  grantPreview,
+  type Draft,
+} from './coinGrant';
 
 /**
  * Entrega de moedas do mestre, direto na aba **Itens**.
@@ -13,10 +20,19 @@ import { Section } from '../Section';
  * negativo RETIRA — pelo mesmo `POST /api/characters/:id/coins` do bloco de
  * moedas da ficha, sem precisar abrir (nem editar) a ficha do jogador.
  *
- * O saldo atual e o saldo DEPOIS da entrega aparecem lado a lado antes de
- * aplicar, então dá para conferir quanto o jogador vai ficar. Na confirmação o
- * painel do mestre adota a ficha devolvida pelo servidor e o jogador vê o saldo
- * mudar na hora (`sheet:updated`).
+ * O painel é organizado em DOIS blocos, na ordem em que a decisão acontece:
+ *
+ *   1. **Quem recebe** — o seletor e a carteira ATUAL do jogador (mesmas células
+ *      de moeda coloridas da ficha), que já mostram `atual → depois` conforme o
+ *      mestre digita;
+ *   2. **Quanto** — uma linha por denominação com o saldo, o campo, o efeito
+ *      (+/−) e o saldo resultante, seguida do resumo `Saldo: X → Y`.
+ *
+ * Antes de aplicar, o mestre confere o efeito de CADA denominação (a linha fica
+ * marcada quando a retirada passaria do saldo) — a prévia inteira é derivada em
+ * `./coinGrant`, sem nenhuma regra de servidor no cliente. Na confirmação o
+ * painel adota a ficha devolvida pelo servidor e o jogador vê o saldo mudar na
+ * hora (`sheet:updated`).
  */
 
 interface CoinsGrantPanelProps {
@@ -27,85 +43,23 @@ interface CoinsGrantPanelProps {
   onCharacter: (character: Character) => void;
 }
 
-/** Rascunho dos campos: uma string por denominação. */
-type Draft = Record<CoinKey, string>;
-
-const EMPTY_DRAFT: Draft = { pp: '', gp: '', ep: '', sp: '', cp: '' };
-
-/** Delta informado pelo mestre (só as denominações com valor diferente de zero). */
-function draftToDelta(draft: Draft): CoinDelta {
-  const delta: CoinDelta = {};
-  for (const key of COIN_KEYS) {
-    const raw = draft[key].trim();
-    if (raw === '') continue;
-    const value = clampInt(raw, -9_999_999, 9_999_999, 0);
-    if (value !== 0) delta[key] = value;
-  }
-  return delta;
-}
-
-/** Saldo que o jogador fica DEPOIS do delta (negativo = o servidor recusa). */
-function purseAfter(coins: CoinPurse, delta: CoinDelta): CoinPurse {
-  const next = { ...coins };
-  for (const key of COIN_KEYS) next[key] = coins[key] + (delta[key] ?? 0);
-  return next;
-}
-
-/** "Entregue: 20 PO · Retirado: 5 PP" — o que a ação fez, para a mensagem. */
-function describeDelta(delta: CoinDelta): string {
-  const given = COIN_KEYS.filter((key) => (delta[key] ?? 0) > 0).map(
-    (key) => `${delta[key]} ${COIN_LABELS[key]}`,
-  );
-  const taken = COIN_KEYS.filter((key) => (delta[key] ?? 0) < 0).map(
-    (key) => `${-(delta[key] ?? 0)} ${COIN_LABELS[key]}`,
-  );
-
-  const parts: string[] = [];
-  if (given.length > 0) parts.push(`Entregue: ${given.join(', ')}`);
-  if (taken.length > 0) parts.push(`Retirado: ${taken.join(', ')}`);
-  return parts.join(' · ');
-}
-
 export function CoinsGrantPanel({ characters, extraCoins, onCharacter }: CoinsGrantPanelProps) {
-  const [targetId, setTargetId] = useState('');
+  // Com UM jogador só na mesa a escolha já vem feita: o mestre não precisa
+  // clicar no seletor só para ver a carteira e a prévia da entrega.
+  const [targetId, setTargetId] = useState(() =>
+    characters.length === 1 ? characters[0].id : '',
+  );
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const selected = characters.find((character) => character.id === targetId) ?? null;
-  const delta = draftToDelta(draft);
-  const after = selected ? purseAfter(selected.coins, delta) : null;
+  const { selected, delta, after, hasDelta, insufficient, actionLabel, actionIcon, rows } =
+    grantPreview(characters, targetId, draft, extraCoins);
 
-  // Denominações exibidas: as ligadas na mesa, mais qualquer uma com saldo (para
-  // não esconder moeda que o jogador já tem).
-  const visible = visibleCoinKeys(extraCoins);
-  const displayed = COIN_KEYS.filter(
-    (key) => visible.includes(key) || (selected?.coins[key] ?? 0) > 0,
-  );
-
-  /** Campos de valor, um por denominação (aceita negativos no dar/retirar). */
-  function amountFields(): ReactElement {
-    return (
-      <div className="coin-fields">
-        {displayed.map((key) => (
-          <label key={key} className="coin-field">
-            <span title={COIN_NAMES[key]}>{COIN_LABELS[key]}</span>
-            <input
-              type="number"
-              className="coin-input"
-              value={draft[key]}
-              step={1}
-              disabled={busy}
-              aria-label={`${COIN_NAMES[key]} (${COIN_LABELS[key]})`}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, [key]: event.target.value }))
-              }
-            />
-          </label>
-        ))}
-      </div>
-    );
+  function clearDraft(): void {
+    setDraft(EMPTY_DRAFT);
+    setError(null);
   }
 
   async function submit(): Promise<void> {
@@ -113,15 +67,13 @@ export function CoinsGrantPanel({ characters, extraCoins, onCharacter }: CoinsGr
       setError('Escolha o jogador que recebe as moedas.');
       return;
     }
-    if (COIN_KEYS.every((key) => (delta[key] ?? 0) === 0)) {
+    if (!hasDelta) {
       setError('Informe quanto entregar.');
       return;
     }
-
-    const negative = COIN_KEYS.filter((key) => (after?.[key] ?? 0) < 0);
-    if (negative.length > 0) {
+    if (insufficient.length > 0) {
       setError(
-        `Retirada maior que o saldo em ${negative.map((key) => COIN_LABELS[key]).join(', ')} ` +
+        `Retirada maior que o saldo em ${insufficient.map((key) => COIN_LABELS[key]).join(', ')} ` +
           `(saldo atual: ${formatCoins(selected.coins, extraCoins)}).`,
       );
       return;
@@ -147,15 +99,19 @@ export function CoinsGrantPanel({ characters, extraCoins, onCharacter }: CoinsGr
   return (
     <Section
       title="Entregar moedas"
-      icon="bag"
+      icon="coin"
+      className="coin-grant"
       subtitle="Dê (ou retire) moedas de um jogador sem abrir a ficha — o saldo dele muda na hora"
     >
       {characters.length === 0 ? (
         <p className="empty-hint">Nenhum jogador com ficha ainda.</p>
       ) : (
-        <div className="coin-form">
-          <div className="toolbar toolbar-wrap">
-            <label className="field field-inline">
+        <div className="coin-grant-body">
+          {/* ---- 1. Quem recebe ------------------------------------------- */}
+          <div className="coin-grant-block">
+            <h3 className="coin-grant-title">Quem recebe</h3>
+
+            <label className="field">
               <span>Jogador</span>
               <select
                 value={targetId}
@@ -175,33 +131,153 @@ export function CoinsGrantPanel({ characters, extraCoins, onCharacter }: CoinsGr
                 ))}
               </select>
             </label>
+
+            {selected ? (
+              <>
+                <div className="coin-grant-target">
+                  <Portrait src={selected.avatarUrl} alt={selected.name} icon="users" />
+                  <span className="coin-grant-target-info">
+                    <strong>{selected.name}</strong>
+                    <span className="coin-grant-target-owner">
+                      {selected.ownerUsername ?? 'sem conta vinculada'}
+                    </span>
+                  </span>
+                </div>
+
+                {/* Carteira ATUAL já com a prévia: `atual → depois`. */}
+                <ul className="coin-grant-purse" aria-label={`Saldo de ${selected.name}`}>
+                  {rows.map((row) => (
+                    <li
+                      key={row.key}
+                      className={`coin-grant-purse-cell${
+                        row.diff > 0 ? ' is-plus' : row.diff < 0 ? ' is-minus' : ''
+                      }${row.short ? ' is-short' : ''}`}
+                    >
+                      <Icon
+                        name="coin"
+                        size={14}
+                        className={`coin-icon ${COIN_METAL[row.key]}`}
+                      />
+                      <span className="coin-label">{COIN_LABELS[row.key]}</span>
+                      <span className="coin-value">{row.current}</span>
+                      {row.diff !== 0 ? (
+                        <>
+                          <span className="coin-grant-purse-arrow" aria-hidden="true">
+                            →
+                          </span>
+                          <strong className="coin-value">{row.next}</strong>
+                        </>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="empty-hint">
+                Escolha o jogador para ver a carteira dele e a prévia do saldo.
+              </p>
+            )}
           </div>
 
-          <p className="coin-hint">Positivo entrega, negativo retira.</p>
-          {amountFields()}
+          {/* ---- 2. Quanto ------------------------------------------------ */}
+          <div className="coin-grant-block">
+            <h3 className="coin-grant-title">Quanto</h3>
 
-          {selected && after ? (
-            <p className="coin-hint">
-              Saldo: {formatCoins(selected.coins, extraCoins)} →{' '}
-              <strong>{formatCoins(after, extraCoins)}</strong>
-            </p>
-          ) : null}
+            <div className="coin-grant-legend">
+              <span className="coin-grant-legend-item is-plus">positivo entrega</span>
+              <span className="coin-grant-legend-item is-minus">negativo retira</span>
+            </div>
 
-          <div className="coins-actions">
-            <button
-              type="button"
-              className="btn btn-primary btn-small"
-              disabled={busy || !selected}
-              onClick={() => void submit()}
-            >
-              <Icon name="plus" size={14} /> {busy ? 'entregando...' : 'entregar'}
-            </button>
+            <ul className="coin-grant-rows">
+              {rows.map((row) => (
+                <li key={row.key} className={`coin-grant-row${row.short ? ' is-short' : ''}`}>
+                  <label className="coin-grant-row-head" title={COIN_NAMES[row.key]}>
+                    <Icon name="coin" size={14} className={`coin-icon ${COIN_METAL[row.key]}`} />
+                    <span className="coin-grant-denom">{COIN_LABELS[row.key]}</span>
+                    <span className="coin-grant-denom-name">{COIN_NAMES[row.key]}</span>
+                  </label>
+
+                  <span className="coin-grant-current">
+                    {row.current === null ? 'saldo —' : `saldo ${row.current}`}
+                  </span>
+
+                  <input
+                    type="number"
+                    className="coin-input coin-grant-input"
+                    value={draft[row.key]}
+                    step={1}
+                    placeholder="0"
+                    disabled={busy}
+                    aria-label={`${COIN_NAMES[row.key]} (${COIN_LABELS[row.key]}): quanto entregar (positivo) ou retirar (negativo)`}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, [row.key]: event.target.value }))
+                    }
+                  />
+
+                  <span
+                    className={`coin-grant-effect${
+                      row.diff > 0 ? ' is-plus' : row.diff < 0 ? ' is-minus' : ' is-none'
+                    }`}
+                  >
+                    {effectLabel(row.diff)}
+                  </span>
+
+                  <span className="coin-grant-after">
+                    {row.next === null ? null : row.diff === 0 ? (
+                      <span className="coin-grant-after-idle">sem mudança</span>
+                    ) : (
+                      <>
+                        → <strong>{row.next}</strong>
+                        {row.short ? <em className="coin-grant-short"> insuficiente</em> : null}
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="coin-grant-summary">
+              <span className="coin-grant-summary-line">
+                <span className="coin-grant-summary-label">Saldo</span>
+                <strong>{selected ? formatCoins(selected.coins, extraCoins) : '—'}</strong>
+                <span className="coin-grant-summary-arrow" aria-hidden="true">
+                  →
+                </span>
+                <strong className={insufficient.length > 0 ? 'is-short' : undefined}>
+                  {after ? formatCoins(after, extraCoins) : '—'}
+                </strong>
+              </span>
+              <span className="coin-grant-summary-change">
+                {hasDelta
+                  ? describeDelta(delta)
+                  : 'Digite quanto entregar (ou retire com um valor negativo).'}
+              </span>
+            </div>
+
+            <div className="coin-grant-actions">
+              <button
+                type="button"
+                className="btn btn-primary btn-small"
+                disabled={busy || !selected || !hasDelta || insufficient.length > 0}
+                onClick={() => void submit()}
+              >
+                <Icon name={actionIcon} size={14} /> {busy ? 'aplicando…' : actionLabel}
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                disabled={busy || !hasDelta}
+                onClick={clearDraft}
+              >
+                <Icon name="x" size={13} /> limpar
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {success ? <p className="form-success">{success}</p> : null}
-      {error ? <p className="form-error">{error}</p> : null}
+      {success ? <p className="form-success coin-grant-feedback">{success}</p> : null}
+      {error ? <p className="form-error coin-grant-feedback">{error}</p> : null}
     </Section>
   );
 }

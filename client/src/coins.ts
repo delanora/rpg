@@ -27,6 +27,19 @@ export const COIN_NAMES: Record<CoinKey, string> = {
   cp: 'cobre',
 };
 
+/**
+ * Metal de cada denominação — a classe que colore o ícone de moeda (ver
+ * `.coin-icon.is-*` em `styles.css`). Vive aqui para a ficha e o painel do
+ * Mestre desenharem a MESMA moeda colorida.
+ */
+export const COIN_METAL: Record<CoinKey, string> = {
+  pp: 'is-platinum',
+  gp: 'is-gold',
+  ep: 'is-electrum',
+  sp: 'is-silver',
+  cp: 'is-copper',
+};
+
 /** Valor de UMA moeda em peças de cobre (conversões do PHB). */
 export const COPPER_PER_COIN: Record<CoinKey, number> = {
   pp: 1000,

@@ -27,6 +27,7 @@ export type IconName =
   | 'wind'
   | 'weight'
   | 'plus'
+  | 'minus'
   | 'x'
   | 'sparkle'
   | 'flame'
@@ -170,6 +171,7 @@ const ICONS: Record<IconName, ReactNode> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  minus: <path d="M5 12h14" />,
   x: <path d="M6 6l12 12M18 6 6 18" />,
   sparkle: <path d="M12 3l1.7 6.3L20 11l-6.3 1.7L12 19l-1.7-6.3L4 11l6.3-1.7Z" />,
   flame: (
