@@ -5,6 +5,7 @@ import {
   featureEffectsOf,
   featuresWithSubclass,
   firstClassProficiencies,
+  getActiveClassFeatures,
   getClassDefinition,
   mergeProficiencies,
   multiclassProficiencyGrant,
@@ -215,6 +216,32 @@ export function subtractProficiencies(
     weapons: keep(current.weapons, removed.weapons, stillGranted.weapons),
     tools: keep(current.tools, removed.tools, stillGranted.tools),
   };
+}
+
+/**
+ * Ids de estado de runtime que a classe concede ATÉ o NÍVEL do registro — a
+ * versão CIENTE DE NÍVEL do `classStateIdsFor` (que lista TODAS as features da
+ * classe, útil só para a saída de classe INTEIRA).
+ *
+ * Serve para detectar o que um Level Down tirou quando a classe CONTINUA na
+ * ficha: ex.: Ataque Acelerado (2º do guerreiro) sai ao voltar ao 1º. A diferença
+ * entre os ids ANTES e DEPOIS (descontando o que as demais classes concedem) é o
+ * conjunto obsoleto que a reconciliação remove de `classState.used` (5.3D.1).
+ */
+export function grantedClassStateIdsFor(entry: ClassEntry): Set<string> {
+  const ids = new Set<string>();
+  const definition = getClassDefinition(entry.classKey);
+  if (!definition) return ids;
+
+  for (const feature of getActiveClassFeatures(definition, entry.level, entry.subclass)) {
+    ids.add(feature.id);
+    for (const effect of featureEffectsOf(feature)) ids.add(effect.id ?? feature.id);
+    for (const option of feature.choice?.options ?? []) {
+      if (option.effect) ids.add(option.effect.id ?? feature.id);
+    }
+  }
+
+  return ids;
 }
 
 /**
