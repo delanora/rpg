@@ -31,6 +31,10 @@ export function ShortRestResultView({
   );
   const songDie = completion?.songOfRest.die ?? null;
   const hpMax = character.derived.hpMax;
+  // Efeitos encerrados pelo lifecycle NESTA pausa (5.3D.2) — só os desta ficha.
+  const endedEffects =
+    completion?.sessions.find((session) => session.characterId === character.id)
+      ?.activeEffectsEnded ?? [];
 
   return (
     <div className="short-rest-result">
@@ -60,6 +64,19 @@ export function ShortRestResultView({
             {recoverySummaryLines(recovery).map((line) => (
               <li key={line}>
                 <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {endedEffects.length > 0 ? (
+        <>
+          <h3 className="subsection-title">Efeitos encerrados</h3>
+          <ul className="short-rest-summary">
+            {endedEffects.map((effect) => (
+              <li key={effect.id}>
+                <span>{effect.name}</span>
               </li>
             ))}
           </ul>

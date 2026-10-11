@@ -3,6 +3,7 @@ import { HttpError } from '../../lib/http-error.js';
 import type { CampSupplyOverrideType } from '../shared/camp-supplies.js';
 import { parseJson } from '../shared/json.js';
 import {
+  cleanupActiveEffectsForRest,
   normalizeClassEntries,
   normalizeClassState,
   pactMagicSlots,
@@ -10,6 +11,9 @@ import {
   spellSlotMaxByLevel,
   spellSlotsForClasses,
   totalCharacterLevel,
+  type ActiveEffectRestOverride,
+  type EndedActiveEffect,
+  type MasterPreservedActiveEffect,
 } from '../shared/classes.js';
 import {
   applyHitDiceRecovery,
@@ -92,6 +96,11 @@ export interface LongRestCompletionOptions {
   forcedByUserId: string | null;
   /** Exceção narrativa declarada (só MASTER chega aqui). */
   override: CampSupplyOverrideInput | null;
+  /**
+   * Override EXPLÍCITO do MESTRE sobre o lifecycle de `active` (5.3D.2). Só o
+   * force-complete do mestre carrega isto — o fluxo automático passa vazio.
+   */
+  activeEffectOverrides?: ActiveEffectRestOverride;
 }
 
 /** Um tipo de Dado de Vida recuperado (auditoria do resultado). */
@@ -125,8 +134,16 @@ export interface LongRestCharacterCompletionDto {
    * não "finge" uma mudança (PHB 2014: pool próprio do Bruxo).
    */
   pactMagicRestored: boolean;
-  /** Toggles de classe que estavam ativos e foram encerrados. */
-  activeTogglesCleared: string[];
+  /**
+   * Efeitos ativos encerrados pelo lifecycle do descanso (5.3D.2) — inclui o
+   * motivo (`long-rest` ou override `master-end`).
+   */
+  activeEffectsEnded: EndedActiveEffect[];
+  /**
+   * Efeitos que o MESTRE mandou PRESERVAR apesar do lifecycle (auditoria).
+   * Vazio no fluxo automático.
+   */
+  masterPreservedActiveEffects: MasterPreservedActiveEffect[];
 }
 
 /**
@@ -476,11 +493,17 @@ export async function completeLongRest(
       delete nextUsed[resourceId];
     }
 
-    // --- Toggles ativos: encerrados no descanso (TODO: motor de duração 6) ---
-    // TODO(Fase 6): trocar esta limpeza pelo motor de duração/efeitos, que saberá
-    // quais efeitos realmente terminam num Descanso Longo (ex.: Fúria).
-    const activeTogglesCleared = [...restored.active];
-    const nextClassState = { ...restored, used: nextUsed, active: [] as string[] };
+    // --- Efeitos ativos: limpeza SELETIVA por lifecycle (5.3D.2) ------------
+    // NÃO é mais `active = []`: encerra só o que a metadata manda (ex.: Fúria),
+    // PRESERVA o desconhecido/sem metadata e aplica o override do mestre. Não
+    // reembolsa recurso nenhum (`used` fica como o descanso deixou).
+    const cleanup = cleanupActiveEffectsForRest(
+      restored.active,
+      classAdjustments.toggles,
+      'long',
+      options.activeEffectOverrides ?? {},
+    );
+    const nextClassState = { ...restored, used: nextUsed, active: cleanup.active };
 
     const hpBefore = character.hpCurrent;
     const hpAfter = characterMaxHp(character);
@@ -540,7 +563,8 @@ export async function completeLongRest(
       classResourcesRestored,
       racialUsesRestored,
       pactMagicRestored,
-      activeTogglesCleared,
+      activeEffectsEnded: cleanup.ended,
+      masterPreservedActiveEffects: cleanup.masterPreserved,
     });
 
     sheets.push({

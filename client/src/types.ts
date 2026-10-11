@@ -2041,10 +2041,30 @@ export interface ShortRestSongRollDto {
   actualHealed: number;
 }
 
+/** Efeito ativo encerrado por lifecycle/override (5.3D.2). */
+export interface EndedActiveEffectDto {
+  id: string;
+  name: string;
+  reason: 'short-rest' | 'long-rest' | 'master-end';
+}
+
+/** Efeito preservado por override explícito do MESTRE (auditoria). */
+export interface MasterPreservedActiveEffectDto {
+  id: string;
+  name: string;
+}
+
 /** Resultado da conclusão coletiva. */
 export interface ShortRestCompletionDto {
   songOfRest: { die: 6 | 8 | 10 | 12 | null; rolls: ShortRestSongRollDto[] };
-  sessions: { id: string; characterId: string; status: 'COMPLETED' }[];
+  sessions: {
+    id: string;
+    characterId: string;
+    status: 'COMPLETED';
+    pactMagicRestored?: boolean;
+    activeEffectsEnded?: EndedActiveEffectDto[];
+    masterPreservedActiveEffects?: MasterPreservedActiveEffectDto[];
+  }[];
 }
 
 /** Payload do evento `short-rest:request-updated`. */
@@ -2195,7 +2215,10 @@ export interface LongRestCharacterCompletionDto {
   spellSlotLevelsRestored: number[];
   classResourcesRestored: string[];
   racialUsesRestored: string[];
-  activeTogglesCleared: string[];
+  /** Efeitos ativos encerrados pelo lifecycle do descanso (5.3D.2). */
+  activeEffectsEnded: EndedActiveEffectDto[];
+  /** Preservados por override explícito do MESTRE (auditoria). */
+  masterPreservedActiveEffects: MasterPreservedActiveEffectDto[];
 }
 
 /** Auditoria dos recursos de acampamento no resultado da conclusão. */

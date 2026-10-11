@@ -1212,6 +1212,9 @@ export async function forceCompleteLongRest(
   const fingerprint = JSON.stringify({
     requestId,
     override: override ? { type: override.type, note: override.note ?? null } : null,
+    // 5.3D.2: o override do mestre sobre os efeitos ativos entra na chave
+    // idempotente — um reenvio com overrides diferentes não é o mesmo resultado.
+    activeEffectOverrides: input.activeEffectOverrides ?? null,
   });
   const previous = await findOperation(input.operationId);
   if (previous) {
@@ -1234,6 +1237,7 @@ export async function forceCompleteLongRest(
       const detail = await completeLongRest(tx, requestId, {
         forcedByUserId: actor.userId,
         override,
+        activeEffectOverrides: input.activeEffectOverrides,
       });
 
       const loaded = await loadRequestDto(tx, requestId);

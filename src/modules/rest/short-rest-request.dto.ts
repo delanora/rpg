@@ -3,7 +3,13 @@ import type {
   ShortRestRequestParticipant,
   ShortRestSession,
 } from '@prisma/client';
-import { bardLevel, bestSongOfRestDie, normalizeClassEntries } from '../shared/classes.js';
+import {
+  bardLevel,
+  bestSongOfRestDie,
+  normalizeClassEntries,
+  type EndedActiveEffect,
+  type MasterPreservedActiveEffect,
+} from '../shared/classes.js';
 
 /**
  * DTO da SOLICITAÇÃO coletiva de Descanso Curto.
@@ -106,6 +112,10 @@ export interface ShortRestCompletionDto {
      * os espaços NORMAIS não voltam aqui (PHB 2014).
      */
     pactMagicRestored: boolean;
+    /** Efeitos ativos encerrados pelo lifecycle do descanso (5.3D.2). */
+    activeEffectsEnded: EndedActiveEffect[];
+    /** Preservados por override explícito do MESTRE (auditoria). */
+    masterPreservedActiveEffects: MasterPreservedActiveEffect[];
   }[];
 }
 

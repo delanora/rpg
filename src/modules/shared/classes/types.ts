@@ -16,6 +16,36 @@ import type { AbilityKey } from '../dnd5e.js';
 /** Como a classe obtém e usa magias. */
 export type SpellcastingType = 'none' | 'full' | 'half' | 'third' | 'pact';
 
+/**
+ * Como um efeito ATIVO (`classState.active`) termina (5.3D.2).
+ *
+ * O objetivo AQUI é só responder "o efeito sobrevive a um descanso?" — nada de
+ * relógio, rodadas ou concentração (Fase 6).
+ *
+ * • `turn` — dura um turno/algumas rodadas; qualquer descanso já excede isso;
+ * • `short-duration` — minutos (≤10), também não sobrevive a um descanso;
+ * • `long-duration` — horas ou mais; pode sobreviver quando a regra permitir;
+ * • `manual` — duração não controlada pelo sistema (homebrew/narrativa);
+ * • `special` — caso especial; preserva por padrão.
+ *
+ * `endsOnShortRest`/`endsOnLongRest` são a decisão EXPLÍCITA de encerrar naquele
+ * descanso. `mode: 'turn'` implica encerrar nos dois (ver o helper de limpeza).
+ */
+export type ActiveEffectLifecycleMode =
+  | 'turn'
+  | 'short-duration'
+  | 'long-duration'
+  | 'manual'
+  | 'special';
+
+export interface ActiveEffectLifecycle {
+  mode: ActiveEffectLifecycleMode;
+  /** Encerra ao CONCLUIR um Descanso Curto (só quando explicitamente verdadeiro). */
+  endsOnShortRest?: boolean;
+  /** Encerra ao CONCLUIR um Descanso Longo (só quando explicitamente verdadeiro). */
+  endsOnLongRest?: boolean;
+}
+
 /** De onde vêm as magias: lista fixa (conhecidas) ou recalculada (preparadas). */
 export type SpellLearning = 'known' | 'prepared' | 'none';
 
@@ -242,6 +272,13 @@ export interface ClassFeatureResource {
   round?: 'down' | 'up';
   /** Recurso com contador em `type: 'resource'`. */
   resource?: ClassFeatureResource;
+  /**
+   * Lifecycle do EFEITO ATIVO de um toggle (5.3D.2): quando ele deixa
+   * `classState.active`. AUSENTE = o efeito é PRESERVADO em qualquer descanso
+   * (default seguro — nunca apagamos estado por desconhecimento). A limpeza vem
+   * SEMPRE daqui (metadata), nunca de um `if (id === ...)`.
+   */
+  lifecycle?: ActiveEffectLifecycle;
   /** Só vale enquanto o toggle com este id estiver ativo (ex.: efeitos da Fúria). */
   requiresActive?: string;
   /** Observações livres sobre o efeito. */

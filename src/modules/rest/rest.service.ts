@@ -714,7 +714,11 @@ export async function forceCompleteShortRestRequest(
   requestId: string,
   input: ShortRestRequestActionInput,
 ): Promise<ShortRestCollectiveResult> {
-  const fingerprint = JSON.stringify({ requestId });
+  const fingerprint = JSON.stringify({
+    requestId,
+    // 5.3D.2: o override do mestre sobre os efeitos ativos entra na chave.
+    activeEffectOverrides: input.activeEffectOverrides ?? null,
+  });
   const previous = await findOperation(input.operationId);
   if (previous) {
     return storedToResult(
@@ -745,7 +749,9 @@ export async function forceCompleteShortRestRequest(
         throw new HttpError('Este descanso coletivo já terminou.', 409, SHORT_REST_REQUEST_CLOSED);
       }
 
-      const detail = await completeCollectiveShortRest(tx, requestId);
+      const detail = await completeCollectiveShortRest(tx, requestId, {
+        activeEffectOverrides: input.activeEffectOverrides,
+      });
 
       const loaded = await loadRequestDto(tx, requestId);
       await tx.shortRestOperation.create({

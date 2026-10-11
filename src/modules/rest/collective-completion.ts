@@ -18,12 +18,16 @@ import { recordRestSongOfRestRoll } from '../dice/dice.service.js';
 import {
   bardLevel,
   bestSongOfRestDie,
+  cleanupActiveEffectsForRest,
   normalizeClassEntries,
   normalizeClassState,
   pactMagicSlots,
   restoreShortRestResources,
   spellSlotMaxByLevel,
   spellSlotsForClasses,
+  type ActiveEffectRestOverride,
+  type EndedActiveEffect,
+  type MasterPreservedActiveEffect,
 } from '../shared/classes.js';
 import { rollDie } from '../shared/dice.js';
 import type { ShortRestCompletionDto, ShortRestSongRollDto } from './short-rest-request.dto.js';
@@ -83,6 +87,7 @@ export interface CollectiveCompletionOutcome {
 export async function completeCollectiveShortRest(
   tx: Prisma.TransactionClient,
   requestId: string,
+  options: { activeEffectOverrides?: ActiveEffectRestOverride } = {},
 ): Promise<CollectiveCompletionOutcome> {
   const request = await tx.shortRestRequest.findUnique({
     where: { id: requestId },
@@ -138,6 +143,8 @@ export async function completeCollectiveShortRest(
     characterId: string;
     status: 'COMPLETED';
     pactMagicRestored: boolean;
+    activeEffectsEnded: EndedActiveEffect[];
+    masterPreservedActiveEffects: MasterPreservedActiveEffect[];
   }[] = [];
 
   for (const participant of accepted) {
@@ -150,12 +157,21 @@ export async function completeCollectiveShortRest(
       where: { shortRestSessionId: session.id, type: HIT_DIE_TYPE },
     });
 
-    // Recursos de recarga CURTA restaurados (long/none/desconhecidos e os
-    // toggles ativos do classState são preservados).
-    const nextState = restoreShortRestResources(
+    // Recursos de recarga CURTA restaurados (long/none/desconhecidos restantes).
+    const adjustments = characterClassAdjustments(character);
+    const restored = restoreShortRestResources(
       normalizeClassState(character.classState),
-      characterClassAdjustments(character).resources,
+      adjustments.resources,
     );
+    // 5.3D.2: limpeza SELETIVA de `active` por lifecycle (não apaga todo mundo).
+    // Desconhecidos/sem metadata são PRESERVADOS e o override do mestre vale.
+    const cleanup = cleanupActiveEffectsForRest(
+      restored.active,
+      adjustments.toggles,
+      'short',
+      options.activeEffectOverrides ?? {},
+    );
+    const nextState = { ...restored, active: cleanup.active };
 
     // MAGIA DE PACTO (PHB 2014): pool PRÓPRIO do Bruxo, recuperado no Descanso
     // CURTO. Só o USO é persistido; o total vem do nível dele (`pactMagicSlots`,
@@ -234,6 +250,8 @@ export async function completeCollectiveShortRest(
       characterId: participant.characterId,
       status: 'COMPLETED',
       pactMagicRestored,
+      activeEffectsEnded: cleanup.ended,
+      masterPreservedActiveEffects: cleanup.masterPreserved,
     });
     sheets.push({
       userId: participant.userId,

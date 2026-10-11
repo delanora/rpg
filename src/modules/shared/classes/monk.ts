@@ -53,14 +53,29 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
     level: 2,
     description:
       'Gaste 1 ponto de ki para fazer dois ataques desarmados adicionais como ação bônus.',
-    effect: { type: 'toggle', id: 'flurry-of-blows', name: 'Rajada de Golpes (1 ki)', resourceId: 'ki' },
+    effect: {
+      type: 'toggle',
+      id: 'flurry-of-blows',
+      name: 'Rajada de Golpes (1 ki)',
+      resourceId: 'ki',
+      // 5.3D.2: ação instantânea — não é um efeito que dura. Candidato a sair de
+      // `active` no futuro (o toggle só serve de botão de "usar feature").
+      lifecycle: { mode: 'turn', endsOnShortRest: true, endsOnLongRest: true },
+    },
   },
   {
     id: 'patient-defense',
     name: 'Defesa Paciente',
     level: 2,
     description: 'Gaste 1 ponto de ki para usar a ação Esquivar como ação bônus.',
-    effect: { type: 'toggle', id: 'patient-defense', name: 'Defesa Paciente (1 ki)', resourceId: 'ki' },
+    effect: {
+      type: 'toggle',
+      id: 'patient-defense',
+      name: 'Defesa Paciente (1 ki)',
+      resourceId: 'ki',
+      // 5.3D.2: Esquiva dura até o início do próximo turno.
+      lifecycle: { mode: 'turn', endsOnShortRest: true, endsOnLongRest: true },
+    },
   },
   {
     id: 'step-of-the-wind',
@@ -68,7 +83,14 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
     level: 2,
     description:
       'Gaste 1 ponto de ki para usar Disparada ou Desengajar como ação bônus; neste turno seu salto em distância é dobrado.',
-    effect: { type: 'toggle', id: 'step-of-the-wind', name: 'Passo de Vento (1 ki)', resourceId: 'ki' },
+    effect: {
+      type: 'toggle',
+      id: 'step-of-the-wind',
+      name: 'Passo de Vento (1 ki)',
+      resourceId: 'ki',
+      // 5.3D.2: Desengajar/Disparar como ação bônus — instantâneo.
+      lifecycle: { mode: 'turn', endsOnShortRest: true, endsOnLongRest: true },
+    },
   },
   {
     id: 'unarmored-movement',
@@ -112,7 +134,14 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
     level: 5,
     description:
       'Ao acertar um ataque corpo a corpo, gaste 1 ponto de ki para forçar o alvo a um teste de resistência de Constituição; se falhar, fica atordoado até o fim do seu próximo turno.',
-    effect: { type: 'toggle', id: 'stunning-strike', name: 'Golpe Atordoante (1 ki)', resourceId: 'ki' },
+    effect: {
+      type: 'toggle',
+      id: 'stunning-strike',
+      name: 'Golpe Atordoante (1 ki)',
+      resourceId: 'ki',
+      // 5.3D.2: disparado no acerto — instantâneo (o atordoamento em si é do alvo).
+      lifecycle: { mode: 'turn', endsOnShortRest: true, endsOnLongRest: true },
+    },
   },
   {
     id: 'ki-empowered-strikes',
@@ -166,6 +195,8 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
         id: 'diamond-soul-reroll',
         name: 'Alma de Diamante — rerrolar (1 ki)',
         resourceId: 'ki',
+        // 5.3D.2: rerrolagem instantânea.
+        lifecycle: { mode: 'turn', endsOnShortRest: true, endsOnLongRest: true },
       },
     ],
   },
@@ -189,6 +220,8 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
       resourceId: 'ki',
       // PHB 2014: 4 pontos de ki (o nome cita o custo, mas quem cobra é o `cost`).
       cost: 4,
+      // 5.3D.2: invisibilidade por 1 minuto — não sobrevive a um descanso.
+      lifecycle: { mode: 'short-duration', endsOnShortRest: true, endsOnLongRest: true },
     },
   },
   {
@@ -232,6 +265,10 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
             id: 'wholeness-of-body',
             name: 'Totalidade do Corpo',
             resourceId: 'wholeness-of-body',
+            // 5.3D.2: cura instantânea (ação). O `active` aqui é só o rastro
+            // histórico do endpoint de toggle — encerramos em qualquer descanso
+            // (candidato a deixar de ser toggle na Fase 6).
+            lifecycle: { mode: 'turn', endsOnShortRest: true, endsOnLongRest: true },
           },
         ],
       },
@@ -255,6 +292,9 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
           resourceId: 'ki',
           // PHB 2014: 3 pontos de ki para implantar as vibrações.
           cost: 3,
+          // 5.3D.2: as vibrações ficam implantadas por dias até serem disparadas
+          // — SOBREVIVEM a Short/Long Rest enquanto o monge não usar a ação.
+          lifecycle: { mode: 'special' },
         },
       },
     ],
@@ -278,6 +318,8 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
           resourceId: 'ki',
           // PHB 2014: 2 pontos de ki.
           cost: 2,
+          // 5.3D.2: magia de 1–10 min — não sobrevive a um descanso.
+          lifecycle: { mode: 'short-duration', endsOnShortRest: true, endsOnLongRest: true },
         },
       },
       {

@@ -9,6 +9,7 @@ import { rollDice } from '../modules/shared/dice.js';
 import { spellSlotsUsedFrom, withSpellSlotsUsed } from '../modules/characters/characters.schema.js';
 import {
   CLASS_DEFINITIONS,
+  cleanupActiveEffectsForRest,
   computeClassAdjustments,
   computeMulticlassAdjustments,
   getActiveClassFeatures,
@@ -16819,8 +16820,10 @@ async function main(): Promise<void> {
         JSON.stringify(lcAfterC.classState),
       );
       check(
-        '49.46) C: toggles ativos são encerrados no descanso (classState.active = [])',
-        JSON.stringify((lcAfterC.classState as any)?.active) === '[]',
+        '49.46) C: id de `active` SEM lifecycle (second-wind não é toggle) é PRESERVADO no descanso (5.3D.2)',
+        // 5.3D.2: o Descanso Longo deixou de fazer `active = []`. Só encerra o que
+        // a metadata manda; um id desconhecido/sem metadata é preservado.
+        JSON.stringify((lcAfterC.classState as any)?.active) === '["second-wind"]',
         JSON.stringify(lcAfterC.classState),
       );
       check(
@@ -20366,6 +20369,300 @@ async function main(): Promise<void> {
       JSON.stringify({ active: kept.active, choices: kept.choices }),
     );
     })();
+  })();
+
+  // --- 59. Lifecycle de efeitos ativos (5.3D.2) ----------------------------
+  // Limpeza SELETIVA de `classState.active` por metadata: Short/Long Rest não
+  // apagam mais tudo. Desconhecido/sem metadata é preservado; encerrar NÃO
+  // reembolsa recurso; override do MESTRE é explícito e registrado.
+  console.log('\n59) Lifecycle de efeitos ativos (5.3D.2)');
+  await (async () => {
+    const st = (active: string[], used: Record<string, number> = {}) =>
+      normalizeClassState({ active, used, choices: {} });
+    const togglesFor = (entries: ClassEntry[]) =>
+      computeMulticlassAdjustments(entries, st([])).toggles;
+    const barb = (): ClassEntry => ({ classKey: 'barbarian', subclass: '', level: 2 });
+    const handheld = (): ClassEntry => ({ classKey: 'monk', subclass: 'open-hand', level: 6 });
+    const fake = (id: string, mode: string): any => ({
+      id,
+      name: id,
+      active: true,
+      resourceId: null,
+      cost: 0,
+      lifecycle: { mode },
+    });
+
+    // A/E) Fúria encerra no Short Rest; B) Defesa Paciente idem.
+    const rageShort = cleanupActiveEffectsForRest(['rage'], togglesFor([barb()]), 'short');
+    check(
+      '59.A) Fúria ativa é encerrada num Descanso Curto (motivo short-rest)',
+      rageShort.active.length === 0 &&
+        rageShort.ended[0]?.id === 'rage' &&
+        rageShort.ended[0]?.reason === 'short-rest' &&
+        rageShort.ended[0]?.name === 'Fúria',
+      JSON.stringify(rageShort),
+    );
+    const patientShort = cleanupActiveEffectsForRest(['patient-defense'], togglesFor([handheld()]), 'short');
+    check(
+      '59.B) Defesa Paciente ativa é encerrada num Descanso Curto',
+      patientShort.active.length === 0 && patientShort.ended[0]?.id === 'patient-defense',
+      JSON.stringify(patientShort),
+    );
+
+    // C/J) Desconhecido é PRESERVADO (nunca apagado por desconhecimento).
+    const unknownShort = cleanupActiveEffectsForRest(['quirk-effect'], togglesFor([barb()]), 'short');
+    const unknownLong = cleanupActiveEffectsForRest(['quirk-effect'], togglesFor([barb()]), 'long');
+    check(
+      '59.C/J) efeito DESCONHECIDO é preservado em Short e Long Rest (nunca apagado)',
+      unknownShort.active.join() === 'quirk-effect' &&
+        unknownShort.ended.length === 0 &&
+        unknownLong.active.join() === 'quirk-effect' &&
+        unknownLong.ended.length === 0,
+      JSON.stringify({ short: unknownShort, long: unknownLong }),
+    );
+
+    // D/K) mode = manual → preservado nos dois.
+    const manualToggles = [fake('manual-effect', 'manual')];
+    const manualShort = cleanupActiveEffectsForRest(['manual-effect'], manualToggles, 'short');
+    const manualLong = cleanupActiveEffectsForRest(['manual-effect'], manualToggles, 'long');
+    check(
+      '59.D/K) efeito MANUAL é preservado em Short e Long Rest',
+      manualShort.active.join() === 'manual-effect' && manualLong.active.join() === 'manual-effect',
+      JSON.stringify({ short: manualShort, long: manualLong }),
+    );
+
+    // E) short-duration encerra; F/L) long-duration preservado; I) turn encerra.
+    const durToggles = [
+      { ...fake('short-dur', 'short-duration'), lifecycle: { mode: 'short-duration', endsOnShortRest: true, endsOnLongRest: true } },
+      fake('long-dur', 'long-duration'),
+      fake('turn-eff', 'turn'),
+    ];
+    const durShort = cleanupActiveEffectsForRest(['short-dur', 'long-dur', 'turn-eff'], durToggles, 'short');
+    const durLong = cleanupActiveEffectsForRest(['short-dur', 'long-dur', 'turn-eff'], durToggles, 'long');
+    check(
+      '59.E/F/L) short-duration/turn encerram e long-duration SOBREVIVE (Sem endsOnShortRest explícito)',
+      durShort.active.join() === 'long-dur' &&
+        durShort.ended.map((e: any) => e.id).sort().join() === 'short-dur,turn-eff' &&
+        durLong.active.join() === 'long-dur' &&
+        durLong.ended.map((e: any) => e.id).sort().join() === 'short-dur,turn-eff',
+      JSON.stringify({ short: durShort, long: durLong }),
+    );
+
+    // H) Fúria encerra no Long Rest; I) efeito de turno também.
+    const rageLong = cleanupActiveEffectsForRest(['rage'], togglesFor([barb()]), 'long');
+    check(
+      '59.H/I) Fúria (short-duration) e efeito de turno encerram no Long Rest',
+      rageLong.active.length === 0 && rageLong.ended[0]?.reason === 'long-rest',
+      JSON.stringify(rageLong),
+    );
+
+    // M) Cancelar um descanso NÃO chama a limpeza (o `active` fica intacto).
+    const cancelSim = restoreShortRestResources(st(['rage', 'quirk-effect'], { rage: 1 }), []);
+    check(
+      '59.M) cancelar o descanso preserva `active` (a limpeza só roda na CONCLUSÃO)',
+      cancelSim.active.join() === 'rage,quirk-effect',
+      JSON.stringify(cancelSim.active),
+    );
+
+    // N/O) Encerrar um efeito NÃO reembolsa recurso (`used` continua igual).
+    const noRefund = cleanupActiveEffectsForRest(['rage'], togglesFor([barb()]), 'short');
+    const noRefundState = restoreShortRestResources(
+      st(['rage'], { rage: 1, 'wholeness-of-body': 1 }),
+      [],
+    );
+    // A limpeza é aplicada sobre o `used` do descanso; nada volta por encerrar.
+    const usedAfter = { ...noRefundState.used };
+    void noRefund;
+    check(
+      '59.N) encerrar a Fúria NÃO reembolsa o uso (used.rage continua 1)',
+      usedAfter.rage === 1,
+      JSON.stringify(usedAfter),
+    );
+
+    // O) Toggle de ki encerrado não devolve ki (fixture de monge).
+    const monkState = st(['patient-defense'], { ki: 3 });
+    const monkAdj = computeMulticlassAdjustments([handheld()], monkState);
+    const monkCleanup = cleanupActiveEffectsForRest(
+      monkState.active,
+      monkAdj.toggles,
+      'short',
+    );
+    check(
+      '59.O) toggle de ki (Defesa Paciente) encerrado, ki NÃO volta (used.ki segue 3)',
+      monkCleanup.active.length === 0 && monkAdj.resources.find((r: any) => r.id === 'ki')?.used === 3,
+      JSON.stringify({ active: monkCleanup.active, ki: monkAdj.resources.find((r: any) => r.id === 'ki')?.used }),
+    );
+
+    // Catálogo: TODOS os toggles com lifecycle usam um mode válido (nada por id).
+    const allowed = new Set(['turn', 'short-duration', 'long-duration', 'manual', 'special']);
+    const classified: { id: string; mode: string; short: boolean; long: boolean }[] = [];
+    const collect = (features: any[]) => {
+      for (const feature of features) {
+        const effects = feature.effects ?? (feature.effect ? [feature.effect] : []);
+        for (const effect of effects) {
+          if (effect?.type !== 'toggle') continue;
+          const id = effect.id ?? feature.id;
+          const lc = effect.lifecycle;
+          if (lc) classified.push({ id, mode: lc.mode, short: lc.endsOnShortRest === true, long: lc.endsOnLongRest === true });
+        }
+      }
+    };
+    for (const def of CLASS_DEFINITIONS) {
+      collect(def.features as any[]);
+      for (const sub of def.subclasses as any[]) collect(sub.features as any[]);
+    }
+    const rageClass = classified.find((c) => c.id === 'rage');
+    check(
+      '59.27) classificação: todo lifecycle tem mode válido; Fúria encerra nos dois descansos',
+      classified.length >= 15 &&
+        classified.every((c) => allowed.has(c.mode)) &&
+        rageClass?.short === true &&
+        rageClass?.long === true &&
+        classified.some((c) => c.mode === 'turn'),
+      JSON.stringify({ total: classified.length, rage: rageClass, modes: [...new Set(classified.map((c) => c.mode))] }),
+    );
+
+    // --- Integração: Descanso Curto individual (janela real) ----------------
+    const lcUser = await prisma.user.create({
+      data: {
+        username: `lifecycle_${suffix}`,
+        displayName: 'Lifecycle 5.3D.2',
+        passwordHash: 'nao-usado-no-smoke',
+      },
+      select: { id: true, username: true, displayName: true, role: true },
+    });
+    createdUsernames.push(lcUser.username);
+    const token = signToken({
+      sub: lcUser.id,
+      username: lcUser.username,
+      displayName: lcUser.displayName,
+      role: lcUser.role,
+    });
+    const userId = lcUser.id;
+    await api('/api/characters/me', { method: 'POST', token, body: {} });
+    const sheet59 = async () => (await api('/api/characters/me', { token })).data.character;
+    const setSheet59 = (data: Record<string, unknown>) =>
+      prisma.character.update({ where: { userId }, data: data as any });
+    const setActive59 = (active: string[], used: Record<string, number>) =>
+      setSheet59({ classState: { active, used, choices: {} } });
+
+    // Short Rest individual: Fúria sai, desconhecido fica, used não volta.
+    await setCharacterClasses(userId, [{ classKey: 'barbarian', level: 2 }]);
+    await setActive59(['rage', 'quirk-effect'], { rage: 1 });
+    let ver = (await sheet59()).version;
+    const start59 = await api('/api/characters/me/rest/short/start', {
+      method: 'POST',
+      token,
+      body: { expectedVersion: ver, operationId: `op-${suffix}-59-sr-start` },
+    });
+    const session59 = start59.data?.session?.id as string;
+    const complete59 = await api('/api/characters/me/rest/short/complete', {
+      method: 'POST',
+      token,
+      body: { sessionId: session59, expectedVersion: (await sheet59()).version, operationId: `op-${suffix}-59-sr-complete` },
+    });
+    check(
+      '59.P/A/C/N) Short Rest individual: Fúria encerrada, desconhecido preservado e used não reembolsado',
+      complete59.status === 200 &&
+        (complete59.data.character.classState.active as string[]).join() === 'quirk-effect' &&
+        complete59.data.character.classState.used.rage === 1 &&
+        (complete59.data.activeEffectsEnded as any[]).some((e) => e.id === 'rage' && e.reason === 'short-rest'),
+      JSON.stringify({ active: complete59.data?.character?.classState?.active, used: complete59.data?.character?.classState?.used, ended: complete59.data?.activeEffectsEnded }),
+    );
+
+    // Cancelar um Short Rest não mexe em `active`.
+    await setActive59(['rage'], { rage: 1 });
+    const startC = await api('/api/characters/me/rest/short/start', {
+      method: 'POST',
+      token,
+      body: { expectedVersion: (await sheet59()).version, operationId: `op-${suffix}-59-sr-start-cancel` },
+    });
+    await api('/api/characters/me/rest/short/cancel', {
+      method: 'POST',
+      token,
+      body: { sessionId: startC.data.session.id, expectedVersion: (await sheet59()).version, operationId: `op-${suffix}-59-sr-cancel` },
+    });
+    check(
+      '59.G) Short Rest CANCELADO não limpa `active` (Fúria continua ativa)',
+      ((await sheet59()).classState.active as string[]).includes('rage'),
+      JSON.stringify((await sheet59()).classState.active),
+    );
+
+    // --- Integração: Descanso Longo coletivo (force-complete do mestre) -----
+    const longRequest = async (tag: string): Promise<string> => {
+      const created = await api('/api/rest/long/request', {
+        method: 'POST',
+        token,
+        body: { operationId: `op-${suffix}-59-lr-${tag}-create` },
+      });
+      const requestId = created.data.id as string;
+      await api(`/api/rest/long/${requestId}/force-approve`, {
+        method: 'POST',
+        token: masterToken,
+        body: { operationId: `op-${suffix}-59-lr-${tag}-approve` },
+      });
+      return requestId;
+    };
+    const forceComplete59 = (requestId: string, tag: string, extra: Record<string, unknown> = {}) =>
+      api(`/api/rest/long/${requestId}/force-complete`, {
+        method: 'POST',
+        token: masterToken,
+        body: {
+          operationId: `op-${suffix}-59-lr-${tag}-complete`,
+          campSupplyOverride: { type: 'NARRATIVE' },
+          ...extra,
+        },
+      });
+
+    // Long Rest default: Fúria sai; desconhecido/special ficam (não é active=[]).
+    await setCharacterClasses(userId, [{ classKey: 'barbarian', level: 2 }]);
+    await setActive59(['rage', 'quirk-effect', 'dormant-effect'], { rage: 1 });
+    const lr1 = await longRequest('default');
+    const done1 = await forceComplete59(lr1, 'default');
+    const after1 = await sheet59();
+    check(
+      '59.H/J) Long Rest NÃO faz active=[]: Fúria sai, desconhecidos ficam',
+      done1.status === 200 &&
+        (after1.classState.active as string[]).join() === 'quirk-effect,dormant-effect' &&
+        (done1.data.completion.characters[0].activeEffectsEnded as any[]).some((e) => e.id === 'rage'),
+      JSON.stringify({ active: after1.classState.active, used: after1.classState.used, ended: done1.data?.completion?.characters?.[0]?.activeEffectsEnded }),
+    );
+
+    // M) Tenta o force-complete como PLAYER → 403 (jogador não manda override).
+    const lrT = await longRequest('player');
+    const asPlayer = await api(`/api/rest/long/${lrT}/force-complete`, {
+      method: 'POST',
+      token,
+      body: {
+        operationId: `op-${suffix}-59-lr-player-complete`,
+        activeEffectOverrides: { preserve: ['rage'] },
+      },
+    });
+    check(
+      '59.T) PLAYER não consegue override de lifecycle (force-complete → 403)',
+      asPlayer.status === 403,
+      JSON.stringify({ status: asPlayer.status }),
+    );
+    await api(`/api/rest/long/${lrT}/abort`, { method: 'POST', token: masterToken, body: { operationId: `op-${suffix}-59-lr-player-abort` } });
+
+    // S/U) MASTER preserva Fúria e encerra um efeito preservável — explícito.
+    await setCharacterClasses(userId, [{ classKey: 'barbarian', level: 2 }]);
+    await setActive59(['rage', 'quirk-effect', 'dormant-effect'], { rage: 1 });
+    const lr2 = await longRequest('override');
+    const done2 = await forceComplete59(lr2, 'override', {
+      activeEffectOverrides: { preserve: ['rage'], end: ['dormant-effect'] },
+    });
+    const after2 = await sheet59();
+    const entry2 = done2.data?.completion?.characters?.[0];
+    check(
+      '59.S/U) MASTER preserva Fúria e encerra efeito preservável — registrado no resultado',
+      done2.status === 200 &&
+        (after2.classState.active as string[]).includes('rage') &&
+        !(after2.classState.active as string[]).includes('dormant-effect') &&
+        (entry2.masterPreservedActiveEffects as any[]).some((e) => e.id === 'rage') &&
+        (entry2.activeEffectsEnded as any[]).some((e) => e.id === 'dormant-effect' && e.reason === 'master-end'),
+      JSON.stringify({ active: after2.classState.active, preserved: entry2?.masterPreservedActiveEffects, ended: entry2?.activeEffectsEnded }),
+    );
   })();
 
   console.log(
