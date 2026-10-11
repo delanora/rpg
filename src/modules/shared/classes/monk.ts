@@ -318,8 +318,12 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
           resourceId: 'ki',
           // PHB 2014: 2 pontos de ki.
           cost: 2,
-          // 5.3D.2: magia de 1–10 min — não sobrevive a um descanso.
-          lifecycle: { mode: 'short-duration', endsOnShortRest: true, endsOnLongRest: true },
+          // 5.3D.2.1: Artes das Sombras é UMA feature que conjura OPÇÕES com
+          // durações próprias (Escuridão, Silêncio, Disfarce Menor, Ilusão Menor...).
+          // Não presumimos uma duração única para o estado genérico `shadow-arts`:
+          // `special` sem flags = PRESERVADO em Short/Long Rest. A duração real
+          // da opção escolhida fica para a Fase 6.
+          lifecycle: { mode: 'special' },
         },
       },
       {
