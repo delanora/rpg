@@ -310,17 +310,16 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
       'Monge que canaliza o ki para controlar os elementos, aprendendo disciplinas elementais que gastam ki como magias.',
     features: [
       {
+        // As disciplinas do Caminho dos Quatro Elementos têm custos de ki NÃO
+        // uniformes (1 a 6) e o sistema ainda não modela disciplinas individuais
+        // nem custo variável. Declarar um único `cost` fixo aqui cobraria um
+        // valor sabidamente incorreto, então esta feature fica apenas
+        // informativa/manual (sem `effect`), como as de 6º/11º/17º nível.
         id: 'elemental-discipline-3',
         name: 'Discípulo dos Elementos',
         level: 3,
         description:
           'Você aprende disciplinas elementais que gastam ki (CD = CD de ki): Elemental Attunement (controle elemental), Fangs of the Fire Snake (1 ki), Fist of Four Thunders (2 ki), Fist of Unbroken Air (2 ki), Rush of the Gale Spirits (2 ki), Shape the Flowing River (1 ki), Sweeping Cinder Strike (1 ki) e Water Whip (2 ki).',
-        effect: {
-          type: 'toggle',
-          id: 'elemental-discipline-3',
-          name: 'Disciplina Elemental (ki)',
-          resourceId: 'ki',
-        },
       },
       {
         id: 'elemental-discipline-6',
