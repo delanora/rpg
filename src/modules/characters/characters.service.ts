@@ -45,6 +45,7 @@ import type {
   ShortRestSessionActionInput,
   SpendHitDieInput,
   StartShortRestInput,
+  ToggleFeatureInput,
   UpdateCharacterInput,
   UseInventoryItemInput,
 } from './characters.schema.js';
@@ -102,6 +103,7 @@ import {
   totalCharacterLevel,
   type ClassEntry,
   type ClassFeatureDefinition,
+  type ClassState,
   type ProficienciesState,
 } from '../shared/classes.js';
 import { applyRaceWeaponProficiencies, raceHpBonusDelta } from '../shared/races/index.js';
@@ -1721,6 +1723,171 @@ export async function startShortRest(
  * modificador — NÃO há cura mínima de 1. `max(before, before + raw)` garante que
  * o PV nunca cai e `actualHealed` registra o que de fato entrou.
  */
+/** Resultado de ligar/desligar uma característica com toggle (5.3B). */
+export interface ToggleFeatureResult {
+  character: CharacterDto;
+  toggleId: string;
+  /** Estado FINAL da característica. */
+  active: boolean;
+  /** Custo efetivamente cobrado (0 quando desligou ou não mudou nada). */
+  cost: number;
+  /** Recurso consumido pela característica (nulo quando não há). */
+  resourceId: string | null;
+  /** `false` quando a ação foi um no-op idempotente (já estava no estado). */
+  changed: boolean;
+}
+
+/**
+ * Recursos cujo `used` é SERVER-AUTHORITATIVE: os que algum toggle da ficha
+ * consome (ex.: `ki`, `rage`, `channel-divinity`). O cliente não os edita pelo
+ * PATCH (5.3B) — a ativação de uma característica passa por
+ * `POST /me/features/toggle`, que cobra o `cost` do catálogo.
+ */
+function toggleOwnedResourceIds(character: Character): Set<string> {
+  const ids = new Set<string>();
+  for (const toggle of characterClassAdjustments(character).toggles) {
+    if (toggle.resourceId !== null) ids.add(toggle.resourceId);
+  }
+  return ids;
+}
+
+/**
+ * Estado de classe do PATCH do JOGADOR com o que é do SERVIDOR preservado: a
+ * lista `active` e o `used` dos recursos de toggle ficam como estão no banco
+ * (o cliente não é autoridade — 5.3B, ver `toggleFeature`). `choices` continua
+ * vindo do cliente, como antes (validado por `assertPlayerCanPatch`).
+ */
+function preserveServerOwnedClassState(
+  character: Character,
+  incoming: ClassState,
+): ClassState {
+  const stored = normalizeClassState(character.classState);
+  const owned = toggleOwnedResourceIds(character);
+  const used: Record<string, number> = { ...incoming.used };
+  for (const id of owned) {
+    if (stored.used[id] === undefined) delete used[id];
+    else used[id] = stored.used[id];
+  }
+  return { active: [...stored.active], used, choices: incoming.choices };
+}
+
+/**
+ * Liga/desliga uma CARACTERÍSTICA com toggle (5.3B) — ação AUTHORITATIVE do
+ * servidor.
+ *
+ * O cliente manda só `{ toggleId, active, expectedVersion }`: o servidor deriva
+ * a característica das classes/subclasse/nível ATUAIS, o recurso que ela consome
+ * e o CUSTO do catálogo (`ClassFeatureResource.cost`, padrão 1), valida o saldo
+ * e grava `used` + `active` na MESMA operação lógica, guardada por `version`.
+ *
+ * • Desligar NUNCA devolve o recurso gasto.
+ * • Ligar algo já ligado (ou desligar algo já desligado) é NO-OP idempotente:
+ *   um duplo clique não cobra duas vezes.
+ * • Sem saldo, nada muda e volta 409 `INSUFFICIENT_RESOURCE`.
+ */
+export async function toggleFeature(
+  actor: Actor,
+  input: ToggleFeatureInput,
+): Promise<ToggleFeatureResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const adjustments = characterClassAdjustments(character);
+  const toggle = adjustments.toggles.find((item) => item.id === input.toggleId);
+  if (!toggle) {
+    throw new HttpError('Esta característica não está disponível na sua ficha.', 404);
+  }
+
+  // O custo é do CATÁLOGO (nunca do cliente). Um valor inválido é bug de
+  // programação — ver `invalidToggleCost` no catálogo de classes.
+  const cost = toggle.cost;
+  if (!Number.isInteger(cost) || cost < 0) {
+    throw new HttpError('O custo desta característica está inválido no catálogo.', 500);
+  }
+  const resource = toggle.resourceId
+    ? (adjustments.resources.find((item) => item.id === toggle.resourceId) ?? null)
+    : null;
+  if (cost > 0 && !resource) {
+    throw new HttpError('O recurso desta característica não está disponível na sua ficha.', 500);
+  }
+
+  const classState = normalizeClassState(character.classState);
+  const currentActive = classState.active.includes(toggle.id);
+
+  // Já está no estado pedido → idempotente (duplo clique / aba repetida): não
+  // cobra, não escreve e não depende da versão.
+  if (currentActive === input.active) {
+    return {
+      character: await toSheetDto(character, actor.username),
+      toggleId: toggle.id,
+      active: currentActive,
+      cost: 0,
+      resourceId: toggle.resourceId,
+      changed: false,
+    };
+  }
+
+  // Concorrência: a versão enviada tem de ser a atual (antes de cobrar).
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError(
+      'A ficha mudou desde que a tela foi carregada; recarregue antes de usar a característica.',
+      409,
+    );
+  }
+
+  const nextUsed: Record<string, number> = { ...classState.used };
+  let nextActive: string[];
+
+  if (input.active) {
+    if (resource && cost > 0 && !resource.unlimited) {
+      const used = nextUsed[resource.id] ?? 0;
+      if (resource.max - used < cost) {
+        throw new HttpError(
+          `Você não possui ${resource.name} suficiente para usar ${toggle.name}.`,
+          409,
+          'INSUFFICIENT_RESOURCE',
+        );
+      }
+      nextUsed[resource.id] = used + cost;
+    }
+    nextActive = [...classState.active, toggle.id];
+  } else {
+    // Desligar NUNCA reembolsa o recurso gasto na ativação.
+    nextActive = classState.active.filter((id) => id !== toggle.id);
+  }
+
+  const nextClassState: ClassState = {
+    active: nextActive,
+    used: nextUsed,
+    choices: classState.choices,
+  };
+
+  // `used` + `active` na MESMA escrita, guardada pela versão: ou os dois
+  // acontecem, ou nenhum. A corrida com a mesma versão só aplica uma.
+  const written = await prisma.character.updateMany({
+    where: { id: character.id, version: input.expectedVersion },
+    data: {
+      classState: nextClassState as unknown as Prisma.InputJsonValue,
+      version: { increment: 1 },
+    },
+  });
+  if (written.count === 0) {
+    throw new HttpError('A ficha mudou durante a ação; tente novamente.', 409);
+  }
+
+  const updated = await prisma.character.findUniqueOrThrow({ where: { id: character.id } });
+  await publishChange(actor, updated, { classState: nextClassState });
+
+  return {
+    character: await toSheetDto(updated, actor.username),
+    toggleId: toggle.id,
+    active: input.active,
+    cost: input.active ? cost : 0,
+    resourceId: toggle.resourceId,
+    changed: true,
+  };
+}
+
 export async function spendHitDie(
   actor: Actor,
   input: SpendHitDieInput,
@@ -2969,7 +3136,13 @@ async function applyCharacterPatch(
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
   if (patch.features !== undefined) data.features = patch.features;
   if (patch.classState !== undefined) {
-    const nextClassState = normalizeClassState(patch.classState);
+    const incoming = normalizeClassState(patch.classState);
+    // O jogador NÃO é autoridade sobre `active` nem sobre o `used` dos recursos
+    // consumidos por toggles (5.3B): o estado gravado é preservado e a ativação
+    // passa por `POST /me/features/toggle`. O mestre continua editando tudo.
+    const nextClassState = fromPlayer
+      ? preserveServerOwnedClassState(existing, incoming)
+      : incoming;
     data.classState = nextClassState;
     // As escolhas de Expertise mandam na ficha: ligar/desligar a perícia dobrada
     // não pode depender de um segundo campo.

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   ABILITY_ABBREVIATIONS,
   formatChallengeRating,
@@ -6,7 +7,7 @@ import {
   speedInSquares,
 } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
-import type { ActiveResource, ActiveToggle, ArmorClassDetail, ClassState } from '../../types';
+import type { ActiveToggle, ArmorClassDetail } from '../../types';
 import { clampInt } from '../../utils';
 import { HpBar } from '../HpBar';
 import { Icon } from '../Icon';
@@ -90,6 +91,16 @@ interface VitalsSectionProps extends SheetSectionProps {
     active: boolean;
     onOpen: () => void;
   };
+  /**
+   * Liga/desliga uma característica com toggle no SERVIDOR (5.3B). O cliente NÃO
+   * calcula o custo nem edita `used`/`active`: pede a mudança e reflete a ficha
+   * devolvida. Sem esta prop os toggles ficam inertes (nenhuma autoridade local).
+   */
+  onFeatureToggle?: (
+    toggleId: string,
+    active: boolean,
+    expectedVersion: number,
+  ) => void | Promise<void>;
 }
 
 export function VitalsSection({
@@ -98,12 +109,13 @@ export function VitalsSection({
   embedded = false,
   shortRest,
   longRest,
+  onFeatureToggle,
 }: VitalsSectionProps) {
   // PV atual/temporário, usos de recursos e espaços continuam editáveis pelo
   // jogador depois de finalizar a criação; PV máximo, CA, iniciativa e
   // deslocamento são construção (e a CA manual é privilégio do mestre).
   const { readOnly, lockedConstruction, masterView } = useSheetAccess();
-  const { derived, classAdjustments, classState } = character;
+  const { derived, classAdjustments } = character;
   const armorClass: ArmorClassDetail = derived.armorClass;
 
   // O destaque é do valor, não do card: só o HP entra em estado crítico. O
@@ -119,25 +131,30 @@ export function VitalsSection({
   // Percepção passiva = 10 + o total da perícia Percepção (proficiência inclusa).
   const perception = derived.skills.perception;
 
-  function applyClassState(next: ClassState): void {
-    update({ classState: next });
-  }
+  /** Toggle com requisição em andamento (bloqueia o botão e o duplo clique). */
+  const [pendingToggle, setPendingToggle] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
-  /** Ativa/encerra um toggle; ao ativar, consome um uso do recurso ligado. */
-  function toggleFeature(toggle: ActiveToggle, resource?: ActiveResource): void {
-    if (toggle.active) {
-      applyClassState({
-        ...classState,
-        active: classState.active.filter((id) => id !== toggle.id),
-      });
-      return;
+  /**
+   * Pede ao SERVIDOR para ligar/desligar a característica (5.3B). O servidor
+   * deriva a feature, o recurso e o CUSTO do catálogo, valida o saldo e grava
+   * `used` + `active` juntos; aqui só se dispara a ação e se reflete o resultado.
+   * Um duplo clique é inofensivo: enquanto há requisição o botão fica desabilitado
+   * e o próprio servidor trata um reenvio como no-op.
+   */
+  async function requestToggle(toggle: ActiveToggle): Promise<void> {
+    if (!onFeatureToggle || pendingToggle !== null) return;
+    setPendingToggle(toggle.id);
+    setToggleError(null);
+    try {
+      await onFeatureToggle(toggle.id, !toggle.active, character.version);
+    } catch (err) {
+      setToggleError(
+        err instanceof Error ? err.message : 'Não foi possível usar a característica.',
+      );
+    } finally {
+      setPendingToggle(null);
     }
-
-    const used = { ...classState.used };
-    if (resource && !resource.unlimited) {
-      used[resource.id] = Math.min(resource.max, (used[resource.id] ?? 0) + 1);
-    }
-    applyClassState({ ...classState, active: [...classState.active, toggle.id], used });
   }
 
   /*
@@ -432,6 +449,12 @@ export function VitalsSection({
                 const resource = classAdjustments.resources.find(
                   (item) => item.id === toggle.resourceId,
                 );
+                // Sem saldo para o custo INTEIRO da característica não há ação.
+                const insufficient =
+                  !toggle.active &&
+                  resource !== undefined &&
+                  !resource.unlimited &&
+                  resource.remaining < toggle.cost;
                 return (
                   <li key={toggle.id} className="class-resource">
                     <span className="class-resource-name">{toggle.name}</span>
@@ -442,20 +465,28 @@ export function VitalsSection({
                       }
                       disabled={
                         readOnly ||
-                        (!toggle.active &&
-                          resource !== undefined &&
-                          !resource.unlimited &&
-                          resource.remaining <= 0)
+                        onFeatureToggle === undefined ||
+                        pendingToggle !== null ||
+                        insufficient
                       }
-                      onClick={() => toggleFeature(toggle, resource)}
+                      title={
+                        insufficient && resource
+                          ? `São necessários ${toggle.cost} de ${resource.name}.`
+                          : undefined
+                      }
+                      onClick={() => {
+                        void requestToggle(toggle);
+                      }}
                     >
-                      {toggle.active ? 'Encerrar' : 'Ativar'}
+                      {pendingToggle === toggle.id ? '…' : toggle.active ? 'Encerrar' : 'Ativar'}
                     </button>
                   </li>
                 );
               })}
             </ul>
           ) : null}
+
+          {toggleError ? <p className="form-error">{toggleError}</p> : null}
 
           <p className="section-note">
             {classAdjustments.unarmoredDefense

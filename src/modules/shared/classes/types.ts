@@ -146,6 +146,16 @@ export interface ClassFeatureResource {
   choiceId?: string;
   /** Recurso consumido pelo toggle (ex.: 'ki'); vazio = recurso de mesmo id. */
   resourceId?: string;
+  /**
+   * CUSTO FIXO do toggle no recurso ligado (5.3B), em unidades do PRÓPRIO
+   * recurso (`{ type: 'toggle' }`). Ausente = 1 (compatibilidade); `0` = a
+   * característica usa o recurso mas não gasta nada. Um toggle SEM recurso
+   * nunca cobra. O valor é REGRA, não apresentação: o nome pode citar o custo
+   * entre parênteses, mas quem cobra é este campo. Custo VARIÁVEL (ex.:
+   * Disciplina Elemental, que gasta de 1 a 6 ki) NÃO é suportado nesta fase —
+   * ver a auditoria 5.3.
+   */
+  cost?: number;
   /** Valor base em `type: 'unarmoredDefense'` (padrão 10; Linhagem Dracônica usa 13). */
   base?: number;
   /** Multiplica o valor pelo nível do personagem (ex.: +1 PV por nível). */

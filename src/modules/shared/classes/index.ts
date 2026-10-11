@@ -659,6 +659,12 @@ export interface ActiveToggle {
   active: boolean;
   /** Recurso consumido ao ativar (ex.: 'rage'); nulo quando não há custo. */
   resourceId: string | null;
+  /**
+   * Custo FIXO em unidades do recurso ligado (5.3B): `0` quando o toggle não
+   * consome recurso, `1` quando o recurso é ligado sem `cost` explícito. É o
+   * valor que o SERVIDOR cobra ao ativar (`POST /me/features/toggle`).
+   */
+  cost: number;
 }
 
 /** Um recurso com contador (ex.: usos de Fúria por descanso longo). */
@@ -677,6 +683,22 @@ export interface ActiveResource {
    * "último vence" (que dependeria da ordem das classes).
    */
   shared?: boolean;
+}
+
+/**
+ * Valida o `cost` declarado num efeito de TOGGLE (5.3B).
+ *
+ * Devolve a mensagem do problema, ou `null` quando está válido. É a guarda do
+ * catálogo: um `cost` que não seja inteiro >= 0 é ERRO de programação e o teste
+ * que varre as classes falha com a mensagem — nunca é corrigido em silêncio
+ * (nada de transformar -2 em 0).
+ */
+export function invalidToggleCost(effect: ClassFeatureEffect): string | null {
+  if (effect.type !== 'toggle' || effect.cost === undefined) return null;
+  if (typeof effect.cost !== 'number' || !Number.isInteger(effect.cost) || effect.cost < 0) {
+    return `cost inválido no toggle "${effect.id ?? '?'}": ${String(effect.cost)} (esperado inteiro >= 0)`;
+  }
+  return null;
 }
 
 /**
@@ -862,6 +884,8 @@ export function computeClassAdjustments(
   const activeSet = new Set(state.active);
   const toggles: ActiveToggle[] = [];
   const resources: ActiveResource[] = [];
+  /** `cost` declarado por id de toggle (o default 1 entra no fim). */
+  const declaredToggleCosts = new Map<string, number>();
   let meleeDamageBonus = 0;
   const resistances = new Set<string>();
   let speedBonus = 0;
@@ -902,7 +926,11 @@ export function computeClassAdjustments(
             name: effect.name ?? sourceName,
             active: activeSet.has(effectId),
             resourceId: effect.resourceId ?? null,
+            // O custo final só é conhecido depois de ligar o recurso IMPLÍCITO
+            // (toggle de mesmo id do recurso) — ver o laço no fim da montagem.
+            cost: 0,
           });
+          if (effect.cost !== undefined) declaredToggleCosts.set(effectId, effect.cost);
           break;
         case 'resource': {
           const resource = effect.resource;
@@ -1039,6 +1067,9 @@ export function computeClassAdjustments(
   const resourceIds = new Set(resources.map((resource) => resource.id));
   for (const toggle of toggles) {
     if (toggle.resourceId === null && resourceIds.has(toggle.id)) toggle.resourceId = toggle.id;
+    // Custo FIXO (5.3B): sem recurso não há custo; com recurso vale o `cost`
+    // declarado no catálogo e, sem ele, 1 (compatibilidade).
+    toggle.cost = toggle.resourceId === null ? 0 : (declaredToggleCosts.get(toggle.id) ?? 1);
   }
 
   return {

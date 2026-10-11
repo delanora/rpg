@@ -593,6 +593,22 @@ export const spendHitDieSchema = z.object({
 
 export type SpendHitDieInput = z.infer<typeof spendHitDieSchema>;
 
+/**
+ * Liga/desliga uma CARACTERÍSTICA com toggle (5.3B).
+ *
+ * O cliente diz apenas QUAL toggle e o ESTADO desejado; o servidor deriva a
+ * feature, o recurso, o custo (`cost` do catálogo) e o saldo. `expectedVersion`
+ * é a `version` da ficha que o cliente tem em mãos — a escrita só vale se ela
+ * ainda for a atual (o outro lado de uma corrida recebe 409 no padrão da API).
+ */
+export const toggleFeatureSchema = z.object({
+  toggleId: z.string().trim().min(1, 'Informe a característica.').max(120),
+  active: z.boolean(),
+  expectedVersion: expectedVersionSchema,
+});
+
+export type ToggleFeatureInput = z.infer<typeof toggleFeatureSchema>;
+
 // --- Moedas -----------------------------------------------------------------
 //
 // Só o mestre dá ou retira (PATCH e `POST /:id/coins`); o jogador gasta, troca

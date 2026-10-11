@@ -32,6 +32,15 @@ interface SheetViewProps {
   onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>;
   /** Usa (consome) 1 unidade de um item consumível do inventário. */
   onInventoryUse?: (itemInventoryId: string) => void | Promise<void>;
+  /**
+   * Liga/desliga uma característica com toggle (endpoint AUTHORITATIVE do
+   * servidor — 5.3B). O custo e o estado são decididos pelo servidor.
+   */
+  onFeatureToggle?: (
+    toggleId: string,
+    active: boolean,
+    expectedVersion: number,
+  ) => void | Promise<void>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins?: boolean;
   /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
@@ -100,6 +109,7 @@ export function SheetView({
   update,
   onInventoryMove,
   onInventoryUse,
+  onFeatureToggle,
   extraCoins = false,
   coinTargets,
   onCoinsChange,
@@ -128,6 +138,7 @@ export function SheetView({
             levelUp={levelUp}
             shortRest={shortRest}
             longRest={longRest}
+            onFeatureToggle={onFeatureToggle}
           />
         </div>
 
