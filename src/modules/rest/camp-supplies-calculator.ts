@@ -108,11 +108,24 @@ export async function computeCampSupplies(
   };
 }
 
-/** Uma pilha efetivamente consumida (linha de auditoria do resultado). */
+/**
+ * Uma pilha efetivamente consumida (linha de auditoria do resultado).
+ *
+ * Além de quem/qual/o quanto, a linha guarda o NOME do item e a quantidade da
+ * pilha ANTES e DEPOIS do consumo: é o que permite ao jogador (e ao Mestre)
+ * conferir, no resultado do descanso, exatamente o que saiu de cada mochila —
+ * sem depender da quantidade que a tela dele mostrava antes.
+ */
 export interface ConsumedCampSupply {
   characterId: string;
   inventoryItemId: string;
+  /** Nome do item no catálogo no instante do consumo. */
+  name: string;
   quantity: number;
+  /** Quantidade da pilha antes do consumo. */
+  quantityBefore: number;
+  /** Quantidade restante na pilha (0 = a pilha saiu do inventário). */
+  quantityAfter: number;
   points: number;
 }
 
@@ -178,16 +191,19 @@ export function consumeCampSupplies(input: {
     }
 
     const points = row.quantity * item.campSupply.value;
+    // Consome a quantidade reservada; a pilha sai da ficha quando zera.
+    const remaining = item.quantity - row.quantity;
     consumedPoints += points;
     consumed.push({
       characterId: row.characterId,
       inventoryItemId: row.inventoryItemId,
+      name: item.name,
       quantity: row.quantity,
+      quantityBefore: item.quantity,
+      quantityAfter: remaining,
       points,
     });
 
-    // Consome a quantidade reservada; a pilha sai da ficha quando zera.
-    const remaining = item.quantity - row.quantity;
     const next = current
       .map((entry) => (entry.id === row.inventoryItemId ? { ...entry, quantity: remaining } : entry))
       .filter((entry) => entry.id !== row.inventoryItemId || remaining > 0);

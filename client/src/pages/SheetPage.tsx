@@ -158,6 +158,30 @@ export function SheetPage({ user }: { user: SessionUser }) {
   }, []);
 
   /**
+   * RECONCILIA a ficha quando um Descanso Longo coletivo CONCLUI.
+   *
+   * O resultado chega pelo `sheet:updated`, mas um evento perdido (socket caído,
+   * aba adormecida) deixaria a mochila mostrando a quantidade ANTIGA dos
+   * recursos de acampamento — e o jogador concluiria que nada foi consumido.
+   * Uma leitura autoritativa no fecho do descanso garante que a mochila reflita
+   * o débito (a resposta é a fonte de verdade, como em qualquer edição).
+   */
+  useEffect(() => {
+    if (!longRest.completion) return;
+    let active = true;
+    void api<{ character: Character | null }>('/api/characters/me')
+      .then(({ character: fresh }) => {
+        if (!active || !fresh) return;
+        setCharacter((prev) => (!prev || fresh.version >= prev.version ? fresh : prev));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [longRest.completion]);
+
+  /**
    * Aplica a edição inline: atualiza a tela na hora (otimista) e envia o PATCH.
    * A resposta do servidor é a fonte de verdade (traz os valores derivados).
    */

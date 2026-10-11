@@ -2154,11 +2154,21 @@ export interface LongRestRequestDto {
 /** Categorias amplas da exceção narrativa do mestre (`campSupplyOverride`). */
 export type CampSupplyOverrideType = 'NARRATIVE' | 'ADMINISTRATIVE';
 
-/** Uma pilha de suprimento efetivamente consumida na conclusão. */
+/**
+ * Uma pilha de suprimento efetivamente consumida na conclusão.
+ *
+ * `name`/`quantityBefore`/`quantityAfter` são opcionais porque conclusões
+ * antigas (snapshot idempotente gravado antes desta auditoria) não os têm.
+ */
 export interface LongRestConsumedCampSupplyDto {
   characterId: string;
   inventoryItemId: string;
+  name?: string;
   quantity: number;
+  /** Quantidade da pilha antes do consumo. */
+  quantityBefore?: number;
+  /** Quantidade restante na pilha (0 = saiu do inventário). */
+  quantityAfter?: number;
   points: number;
 }
 

@@ -1,5 +1,10 @@
 import type { ReactElement } from 'react';
-import type { Character, LongRestCompletionDto, LongRestRequestDto } from '../types';
+import type {
+  Character,
+  LongRestCompletionDto,
+  LongRestConsumedCampSupplyDto,
+  LongRestRequestDto,
+} from '../types';
 
 /**
  * Resumo do Descanso Longo concluído (PASSO 40).
@@ -12,6 +17,12 @@ import type { Character, LongRestCompletionDto, LongRestRequestDto } from '../ty
  * A `overrideNote` do mestre só aparece na visão do MESTRE (PASSO 43): o
  * jogador recebe só o aviso de que a mesa resolveu a falta de recursos. E quem
  * recusou o convite nunca aparece como beneficiado (PASSO 44).
+ *
+ * Os RECURSOS DE ACAMPAMENTO consumidos aparecem por PERSONAGEM, em cima da
+ * auditoria da conclusão (`suppliesConsumed`): o jogador vê o que saiu da
+ * PRÓPRIA mochila (nome do item, quantas unidades e de quanto para quanto a
+ * pilha ficou) e o Mestre vê o de cada participante. O nome e as quantidades
+ * vêm do servidor justamente para não depender do que a tela mostrava antes.
  */
 export function LongRestResultView({
   request,
@@ -33,6 +44,10 @@ export function LongRestResultView({
       ? completion.characters
       : completion.characters.filter((entry) => entry.characterId === myCharacterId)
     : [];
+
+  /** Pilhas que saíram da mochila DESTE personagem (auditoria do servidor). */
+  const consumedByCharacter = (characterId: string): LongRestConsumedCampSupplyDto[] =>
+    (completion?.suppliesConsumed ?? []).filter((supply) => supply.characterId === characterId);
 
   const declined = request.participants.filter((participant) => participant.response === 'DECLINED');
 
@@ -67,6 +82,8 @@ export function LongRestResultView({
           entry.classResourcesRestored.length > 0 ||
           entry.racialUsesRestored.length > 0 ||
           entry.activeTogglesCleared.length > 0;
+
+        const consumed = consumedByCharacter(entry.characterId);
 
         return (
           <div className="long-rest-result" key={entry.characterId}>
@@ -132,6 +149,21 @@ export function LongRestResultView({
             ) : (
               <p className="section-note">Nada a recuperar nesta ficha — já estava tudo em dia.</p>
             )}
+
+            {/* Recursos de Acampamento que saíram da mochila deste personagem. */}
+            {consumed.length > 0 ? (
+              <>
+                <p className="result-note">Saiu da mochila no acampamento:</p>
+                <ul className="result-facts">
+                  {consumed.map((supply) => (
+                    <li key={supply.inventoryItemId}>
+                      <span>{supply.name ?? 'Recurso de acampamento'}</span>
+                      <strong>{describeConsumedSupply(supply)}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
           </div>
         );
       })}
@@ -174,4 +206,19 @@ export function LongRestResultView({
       </div>
     </div>
   );
+}
+
+/**
+ * Descreve UMA pilha consumida: quantidade + o efeito na mochila.
+ *
+ * `quantityBefore`/`quantityAfter` são opcionais (conclusões antigas não os
+ * têm): sem eles, mostramos só a quantidade consumida.
+ */
+function describeConsumedSupply(supply: LongRestConsumedCampSupplyDto): string {
+  const units = supply.quantity === 1 ? '1 unidade' : `${supply.quantity} unidades`;
+  if (supply.quantityAfter === 0) return `${units} · saiu do inventário`;
+  if (supply.quantityBefore !== undefined && supply.quantityAfter !== undefined) {
+    return `${units} · ${supply.quantityBefore} → ${supply.quantityAfter}`;
+  }
+  return units;
 }

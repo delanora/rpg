@@ -16413,6 +16413,24 @@ async function main(): Promise<void> {
         (await lcInvOf(lcCharA.id)).find((entry) => entry.id === lcFoodA2.id)?.quantity ===
           lcFoodA2.quantity - 4,
       );
+      // A auditoria é a PROVA do que saiu de cada mochila: o resultado do
+      // descanso mostra nome e quantidade ANTES→DEPOIS, sem depender do que a
+      // tela do jogador mostrava.
+      const lcOkConsumed = (lcOkDone.data?.completion?.suppliesConsumed ?? []) as any[];
+      check(
+        '49.18) a auditoria do consumo diz o nome e de quanto para quanto a pilha ficou',
+        lcOkConsumed.length === 1 &&
+          lcOkConsumed.every(
+            (row) =>
+              typeof row.name === 'string' &&
+              row.name.length > 0 &&
+              row.name === lcFood.name &&
+              row.quantityBefore === lcFoodA2.quantity &&
+              row.quantityAfter === lcFoodA2.quantity - 4 &&
+              row.quantityAfter === row.quantityBefore - row.quantity,
+          ),
+        JSON.stringify(lcOkConsumed),
+      );
 
       // --- 49.20/49.21 FORCE-COMPLETE normal com suprimento insuficiente ---
       await lcReset();
