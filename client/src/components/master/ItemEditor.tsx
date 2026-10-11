@@ -795,7 +795,7 @@ function CategoryFields({
  * Editor de um item: identidade, atributos por categoria, preço e sprite.
  *
  * A ENTREGA ao jogador saiu daqui: virou ação contextual do modal do item
- * (`ItemDeliverPanel`), para o mestre entregar sem entrar no modo de edição.
+ * (`ItemDeliverDialog`), para o mestre entregar sem entrar no modo de edição.
  */
 export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false }: ItemEditorProps) {
   const [uploading, setUploading] = useState(false);

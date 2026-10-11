@@ -4,7 +4,7 @@ import { categoryLabel, itemDetailRows, rarityColor, rarityLabel, rarityTint } f
 import type { CanonicalWeapon, Character, Item, ItemPatch } from '../../types';
 import { Icon } from '../Icon';
 import { useLightbox } from '../Lightbox';
-import { ItemDeliverPanel } from './ItemDeliverPanel';
+import { ItemDeliverDialog } from './ItemDeliverDialog';
 import { ItemEditor } from './ItemEditor';
 import { priceLabel } from './itemCatalog';
 
@@ -24,13 +24,17 @@ interface ItemModalCardProps {
   onModeChange: (mode: ItemModalMode) => void;
   /** Pede a confirmação de exclusão (o diálogo mora no pai). */
   onRequestDelete: () => void;
-  /** Painel de ENTREGA aberto (ação contextual do modal). */
+  /**
+   * Janela de ENTREGA aberta por cima (ação contextual do modal): o Esc daqui
+   * é ignorado enquanto ela está no ar e, quando ela fecha, o foco volta ao
+   * botão "entregar".
+   */
   delivering: boolean;
   /** Aviso discreto do último envio bem-sucedido (o modal segue aberto). */
   feedback: string | null;
-  /** Abre/fecha o painel de entrega. */
+  /** Abre/fecha a janela de entrega. */
   onDeliverOpen: (open: boolean) => void;
-  /** A entrega deu certo: mostra o aviso e fecha só o painel. */
+  /** A entrega deu certo: mostra o aviso e fecha só a janela. */
   onDelivered: (message: string) => void;
   /**
    * Confirmação de exclusão aberta por cima: o Esc não fecha o modal e, quando
@@ -69,7 +73,9 @@ export function ItemModalCard({
 }: ItemModalCardProps) {
   const { open: openLightbox } = useLightbox();
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const deliverButtonRef = useRef<HTMLButtonElement>(null);
   const wasSuspended = useRef(false);
+  const wasDelivering = useRef(false);
 
   // Cancelou a confirmação de exclusão? O foco volta para o botão "excluir"
   // (o diálogo mora em outro portal e não sabe para onde devolver o foco).
@@ -77,6 +83,13 @@ export function ItemModalCard({
     if (wasSuspended.current && !suspended) deleteButtonRef.current?.focus();
     wasSuspended.current = suspended;
   }, [suspended]);
+
+  // Fechou a janela de entrega? O foco volta para o botão "entregar" — a
+  // janela é outro portal e não sabe para onde devolvê-lo.
+  useEffect(() => {
+    if (wasDelivering.current && !delivering) deliverButtonRef.current?.focus();
+    wasDelivering.current = delivering;
+  }, [delivering]);
 
   const rarity = rarityLabel(item.rarity);
   const color = rarityColor(item.rarity);
@@ -97,6 +110,7 @@ export function ItemModalCard({
         <div className="items-modal-bar-actions">
           {/* "Entregar" fica imediatamente ao lado de "Editar". */}
           <button
+            ref={deliverButtonRef}
             type="button"
             className="btn btn-small"
             disabled={characters.length === 0}
@@ -134,8 +148,11 @@ export function ItemModalCard({
 
       {feedback ? <p className="items-modal-feedback">✓ {feedback}</p> : null}
 
+      {/* A entrega NÃO entra aqui: ela abre como janela própria por cima deste
+          modal (ver `ItemDeliverDialog`), para não misturar a ação com a ficha
+          completa do item. */}
       {delivering ? (
-        <ItemDeliverPanel
+        <ItemDeliverDialog
           item={item}
           characters={characters}
           onSend={onSend}
@@ -280,10 +297,11 @@ export function ItemModal({ onClose, suspended = false, ...card }: ItemModalProp
       role="dialog"
       aria-modal="true"
       aria-label={card.creating ? 'Novo item' : `Detalhes de ${card.item.name}`}
-      // Com a confirmação de exclusão aberta por cima, o modal continua VISÍVEL
-      // mas fica inativo: `inert` tira o fundo do alcance do mouse e do Tab, e
-      // esconde do leitor de tela — o foco vive só na confirmação.
-      inert={suspended || undefined}
+      // Com a confirmação de exclusão (ou a janela de entrega) aberta por cima,
+      // o modal continua VISÍVEL mas fica inativo: `inert` tira o fundo do
+      // alcance do mouse e do Tab, e esconde do leitor de tela — o foco vive só
+      // na janela de cima.
+      inert={suspended || delivering || undefined}
       onClick={onClose}
     >
       {/* O clique dentro do cartão não fecha (só a área escurecida fecha). */}
