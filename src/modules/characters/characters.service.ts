@@ -108,8 +108,8 @@ import { applyRaceWeaponProficiencies, raceHpBonusDelta } from '../shared/races/
 import {
   classEntryProficiencyGrant,
   classProficiencyGrant,
-  classStateIdsFor,
   normalizeLevelHistory,
+  removableClassStateIds,
   subtractProficiencies,
   type LevelHistoryRecord,
 } from '../shared/level-history.js';
@@ -1169,7 +1169,12 @@ export async function levelDownCharacter(
   const saves = applySaveProficiencies(savesBase, newLocked);
 
   // --- Estado de runtime: a classe que sai leva os recursos dela -----------
-  const removedIds = classRemoved ? classStateIdsFor(entry) : new Set<string>();
+  // Descontando o que as classes RESTANTES ainda concedem: um recurso de POOL
+  // COMPARTILHADO (Canalizar Divindade clérigo/paladino) NÃO pode ser apagado
+  // enquanto qualquer origem continuar na ficha (ver `removableClassStateIds`).
+  const removedIds = classRemoved
+    ? removableClassStateIds(entry, nextEntries)
+    : new Set<string>();
   const nextClassState = {
     active: classState.active.filter((id) => !removedIds.has(id)),
     used: Object.fromEntries(

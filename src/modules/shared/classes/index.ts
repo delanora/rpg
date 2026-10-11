@@ -670,6 +670,13 @@ export interface ActiveResource {
   used: number;
   remaining: number;
   unlimited: boolean;
+  /**
+   * Recurso de POOL COMPARTILHADO no multiclasse (ver `ClassFeatureResource.shared`).
+   * O `id` é único e `used` vem de `classState.used[id]`; o merge multiclasse
+   * resolve `max` como o MAIOR entre as origens — nunca a soma e nunca o
+   * "último vence" (que dependeria da ordem das classes).
+   */
+  shared?: boolean;
 }
 
 /**
@@ -910,6 +917,7 @@ export function computeClassAdjustments(
             used,
             remaining: max < 0 ? -1 : Math.max(0, max - used),
             unlimited: max < 0,
+            shared: resource.shared === true,
           });
           break;
         }
@@ -1516,6 +1524,70 @@ export function getMulticlassFeatures(entries: ClassEntry[]): ActiveClassFeature
   });
 }
 
+/**
+ * Ordem de "conservadorismo" da recarga: `none` só volta em eventos explícitos,
+ * `long` exige um descanso longo e `short` volta em qualquer descanso. Serve
+ * para desempatar recargas CONFLITANTES de um recurso compartilhado: o pool fica
+ * com a regra mais restritiva (nunca restaura antes do que qualquer origem manda).
+ */
+const RECHARGE_RANK: Record<'short' | 'long' | 'none', number> = {
+  short: 0,
+  long: 1,
+  none: 2,
+};
+
+/** Recarga do pool compartilhado em caso de conflito (determinística e comutativa). */
+function mergeSharedRecharge(
+  a: 'short' | 'long' | 'none',
+  b: 'short' | 'long' | 'none',
+): 'short' | 'long' | 'none' {
+  // `>=` mantém o resultado idêntico quando as recargas são iguais — logo a
+  // ordem das origens não muda nada.
+  return RECHARGE_RANK[a] >= RECHARGE_RANK[b] ? a : b;
+}
+
+/**
+ * Combina duas declarações do MESMO id de recurso (multiclasse / talentos).
+ *
+ * • Recurso NORMAL → "último vence" (comportamento histórico): cobre o par
+ *   intencional recurso+toggle da Fúria e da Totalidade do Corpo, e a Inspiração
+ *   de Bardo que vira `short` no 5º nível — nos três casos as duas declarações
+ *   vivem na MESMA classe, então a ordem é a do catálogo (determinística).
+ * • Recurso COMPARTILHADO (`shared: true`) → UM pool só: `max` = o MAIOR máximo
+ *   entre as origens (NUNCA a soma), `used` compartilhado (mesmo `id`),
+ *   `remaining` recalculado. O resultado é INDEPENDENTE da ordem das classes:
+ *   `Math.max` é comutativo e `used` sai do mesmo `classState.used[id]`.
+ */
+function combineResource(previous: ActiveResource, next: ActiveResource): ActiveResource {
+  if (!previous.shared && !next.shared) return next;
+
+  const unlimited = previous.max < 0 || next.max < 0;
+  const max = unlimited ? -1 : Math.max(previous.max, next.max);
+  const used = Math.max(previous.used, next.used);
+  return {
+    ...next,
+    recharge: mergeSharedRecharge(previous.recharge, next.recharge),
+    max,
+    used,
+    remaining: unlimited ? -1 : Math.max(0, max - used),
+    unlimited,
+    shared: true,
+  };
+}
+
+/** Dedup por `id` aplicando `combineResource` (ordem-independente p/ shared). */
+function mergeResources(
+  base: readonly ActiveResource[],
+  extra: readonly ActiveResource[],
+): ActiveResource[] {
+  const map = new Map<string, ActiveResource>();
+  for (const resource of [...base, ...extra]) {
+    const previous = map.get(resource.id);
+    map.set(resource.id, previous ? combineResource(previous, resource) : resource);
+  }
+  return [...map.values()];
+}
+
 export function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments): ClassAdjustments {
   const byId = <T extends { id: string }>(items: T[]): T[] => {
     const map = new Map<string, T>();
@@ -1531,7 +1603,7 @@ export function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments
 
   return {
     toggles: byId([...base.toggles, ...extra.toggles]),
-    resources: byId([...base.resources, ...extra.resources]),
+    resources: mergeResources(base.resources, extra.resources),
     activeToggleIds: [...new Set([...base.activeToggleIds, ...extra.activeToggleIds])],
     meleeDamageBonus: base.meleeDamageBonus + extra.meleeDamageBonus,
     resistances: [...new Set([...base.resistances, ...extra.resistances])],
