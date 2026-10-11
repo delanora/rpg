@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { categoryLabel, rarityLabel } from '../../dnd';
+import { categoryLabel, rarityColor, rarityLabel, rarityTint } from '../../dnd';
 import type { Character, Item } from '../../types';
 import { Icon } from '../Icon';
 import { Portrait } from '../Portrait';
@@ -43,10 +43,16 @@ interface ItemDeliverCardProps {
 }
 
 /**
- * Conteúdo da janela de entrega: cabeçalho (título + resumo do item), os dois
- * cards (destinatário / quantidade) e o rodapé de ações. Só apresentação — o
- * estado e a chamada de envio ficam no `ItemDeliverDialog` —, o que deixa este
- * cartão montável sem portal (é assim que ele é conferido em SSR).
+ * Conteúdo da janela de entrega — **só apresentação**: o estado e a chamada de
+ * envio ficam no `ItemDeliverDialog`, o que deixa este cartão montável sem
+ * portal (é assim que ele é conferido em SSR).
+ *
+ * Composição: cabeçalho (título, subtítulo e o X de fechar), corpo em duas
+ * colunas — o card do item à esquerda (só resumo visual: arte, nome inteiro,
+ * categoria e raridade) e o painel de formulário à direita (jogador, resumo do
+ * personagem, quantidade e a frase do envio) — e o rodapé de ações de largura
+ * total. Duas áreas e meia: nada de card dentro de card, e nada da ficha do
+ * item (atributos, descrição, peso, preço) aqui.
  */
 export function ItemDeliverCard({
   item,
@@ -63,6 +69,8 @@ export function ItemDeliverCard({
 }: ItemDeliverCardProps) {
   const target = characters.find((character) => character.id === targetId) ?? null;
   const rarity = rarityLabel(item.rarity);
+  const rarityAccent = rarityTint(item.rarity, '99');
+  const rarityInk = rarityColor(item.rarity);
 
   return (
     <div
@@ -78,28 +86,55 @@ export function ItemDeliverCard({
             Envie uma cópia deste item para o inventário de um personagem.
           </p>
         </div>
-
-        {/* Resumo do item — só o sprite, o nome e a categoria/raridade: a ficha
-            completa continua no modal atrás, esta janela não a repete. */}
-        <div className="items-deliver-anchor">
-          <Portrait src={item.imageUrl} alt={item.name} size="sm" icon="flask" zoomable={false} />
-          <span className="items-deliver-anchor-info">
-            <strong className="items-deliver-anchor-name">{item.name}</strong>
-            <span className="items-deliver-anchor-meta">
-              {categoryLabel(item.category)}
-              {rarity ? ` · ${rarity}` : ''}
-            </span>
-          </span>
-        </div>
+        <button
+          type="button"
+          className="items-deliver-close"
+          aria-label="Fechar entrega"
+          disabled={sending}
+          onClick={onCancel}
+        >
+          <Icon name="x" size={16} />
+        </button>
       </header>
 
-      {characters.length === 0 ? (
-        <p className="empty-hint">Nenhum jogador com ficha ainda.</p>
-      ) : (
-        <div className="items-deliver-body">
-          <section className="items-deliver-block">
-            <h3 className="items-deliver-block-title">Destinatário</h3>
+      <div className="items-deliver-body">
+        {/* Coluna esquerda: resumo do item. A ficha completa continua no modal
+            atrás desta janela. */}
+        <article className="items-deliver-item-card">
+          {item.imageUrl ? (
+            <img className="items-deliver-art" src={item.imageUrl} alt={item.name} />
+          ) : (
+            <span className="items-deliver-art is-empty" aria-hidden="true">
+              <Icon name="flask" size={44} />
+            </span>
+          )}
 
+          <h3 className="items-deliver-item-name">{item.name}</h3>
+
+          <p className="items-deliver-item-tags">
+            <span className="item-modal-tag">{categoryLabel(item.category)}</span>
+            {rarity ? (
+              <span
+                className="item-modal-tag is-rarity"
+                style={
+                  rarityInk && rarityAccent
+                    ? { color: rarityInk, borderColor: rarityAccent }
+                    : undefined
+                }
+              >
+                {rarity}
+              </span>
+            ) : null}
+            {item.requiresAttunement ? (
+              <span className="item-modal-tag is-attunement">Requer Sintonização</span>
+            ) : null}
+          </p>
+        </article>
+
+        {/* Sem ninguém para receber, o painel de formulário não aparece: o que
+            fica é o aviso de mesa vazia (abaixo), como antes. */}
+        {characters.length > 0 ? (
+          <div className="items-deliver-form">
             <label className="field">
               <span>Jogador</span>
               <select
@@ -135,44 +170,50 @@ export function ItemDeliverCard({
               </div>
             ) : null}
 
-            <p className="items-deliver-hint">
-              {target
-                ? quantity > 1
-                  ? `${quantity} unidades serão adicionadas ao inventário de ${target.name}.`
-                  : `O item será adicionado ao inventário de ${target.name}.`
-                : 'Escolha o jogador que vai receber o item.'}
-            </p>
-          </section>
-
-          <section className="items-deliver-block is-qty">
-            <h3 className="items-deliver-block-title">Quantidade</h3>
-
-            <div className="items-stepper">
-              <button
-                type="button"
-                className="items-stepper-btn"
-                aria-label="Diminuir quantidade"
-                disabled={sending || quantity <= MIN_QUANTITY}
-                onClick={() => onQuantityChange(-1)}
-              >
-                <Icon name="minus" size={14} />
-              </button>
-              <output className="items-stepper-value" aria-live="polite">
-                {quantity}
-              </output>
-              <button
-                type="button"
-                className="items-stepper-btn"
-                aria-label="Aumentar quantidade"
-                disabled={sending || quantity >= MAX_QUANTITY}
-                onClick={() => onQuantityChange(1)}
-              >
-                <Icon name="plus" size={14} />
-              </button>
+            <div className="field">
+              <span>Quantidade</span>
+              <div className="items-stepper">
+                <button
+                  type="button"
+                  className="items-stepper-btn"
+                  aria-label="Diminuir quantidade"
+                  disabled={sending || quantity <= MIN_QUANTITY}
+                  onClick={() => onQuantityChange(-1)}
+                >
+                  <Icon name="minus" size={16} />
+                </button>
+                <output className="items-stepper-value" aria-live="polite">
+                  {quantity}
+                </output>
+                <button
+                  type="button"
+                  className="items-stepper-btn"
+                  aria-label="Aumentar quantidade"
+                  disabled={sending || quantity >= MAX_QUANTITY}
+                  onClick={() => onQuantityChange(1)}
+                >
+                  <Icon name="plus" size={16} />
+                </button>
+              </div>
             </div>
-          </section>
-        </div>
-      )}
+
+            <p className="items-deliver-hint">
+              <Icon name="info" size={13} />
+              <span>
+                {target
+                  ? quantity > 1
+                    ? `${quantity} unidades serão adicionadas ao inventário de ${target.name}.`
+                    : `O item será adicionado ao inventário de ${target.name}.`
+                  : 'Escolha o jogador que vai receber o item.'}
+              </span>
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      {characters.length === 0 ? (
+        <p className="empty-hint">Nenhum jogador com ficha ainda.</p>
+      ) : null}
 
       {error ? <p className="form-error">{error}</p> : null}
 
