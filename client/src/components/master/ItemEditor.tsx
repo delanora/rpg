@@ -29,7 +29,6 @@ import {
 import type {
   AmmoType,
   CanonicalWeapon,
-  Character,
   Damage,
   DamageType,
   Item,
@@ -43,7 +42,6 @@ import type {
   WeaponType,
 } from '../../types';
 import { clampFloat, clampInt } from '../../utils';
-import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
@@ -66,12 +64,10 @@ function nextVersatileDie(die: number): number {
 
 interface ItemEditorProps {
   item: Item;
-  characters: Character[];
   /** Catálogo canônico de armas do PHB (seletor "Arma do PHB"). */
   weapons: CanonicalWeapon[];
   onPatch: (patch: ItemPatch) => void;
   onDelete: () => void;
-  onSend: (characterId: string, quantity: number) => Promise<void>;
   /**
    * Renderiza SÓ o formulário, sem o cabeçalho próprio (nome + remover item).
    * Usado dentro do modal de item, que já traz o título e as ações no topo.
@@ -795,22 +791,15 @@ function CategoryFields({
   return <p className="section-note">Esta categoria não tem atributos especiais além do preço.</p>;
 }
 
-/** Editor de um item: identidade, atributos por categoria, preço e envio. */
-export function ItemEditor({
-  item,
-  characters,
-  weapons,
-  onPatch,
-  onDelete,
-  onSend,
-  embedded = false,
-}: ItemEditorProps) {
+/**
+ * Editor de um item: identidade, atributos por categoria, preço e sprite.
+ *
+ * A ENTREGA ao jogador saiu daqui: virou ação contextual do modal do item
+ * (`ItemDeliverPanel`), para o mestre entregar sem entrar no modo de edição.
+ */
+export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false }: ItemEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [targetId, setTargetId] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [sending, setSending] = useState(false);
-  const [sentTo, setSentTo] = useState<string | null>(null);
 
   function patchDetails(patch: ItemDetails): void {
     onPatch({ details: { ...item.details, ...patch } });
@@ -835,23 +824,6 @@ export function ItemEditor({
       setError(err instanceof Error ? err.message : 'Falha ao enviar a imagem.');
     } finally {
       setUploading(false);
-    }
-  }
-
-  async function handleSend(): Promise<void> {
-    if (!targetId) return;
-    const amount = Math.max(1, Math.min(1_000_000, Math.trunc(Number(quantity) || 1)));
-    setSending(true);
-    setError(null);
-    setSentTo(null);
-    try {
-      await onSend(targetId, amount);
-      const name = characters.find((character) => character.id === targetId)?.name ?? 'jogador';
-      setSentTo(`${amount}× ${item.name} → ${name}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao enviar o item.');
-    } finally {
-      setSending(false);
     }
   }
 
@@ -1049,51 +1021,6 @@ export function ItemEditor({
             ) : null}
           </div>
         </div>
-      </Section>
-
-      <Section
-        title="Enviar para jogador"
-        icon="users"
-        subtitle="O mestre não tem limite de quantidade — envie quantos itens quiser"
-      >
-        {characters.length === 0 ? (
-          <p className="empty-hint">Nenhum jogador com ficha ainda.</p>
-        ) : (
-          <div className="toolbar toolbar-wrap">
-            <label className="field field-inline">
-              <span>Jogador</span>
-              <select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
-                <option value="">escolha o jogador</option>
-                {characters.map((character) => (
-                  <option key={character.id} value={character.id}>
-                    {character.name}
-                    {character.ownerUsername ? ` (${character.ownerUsername})` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field field-inline">
-              <span>Quantidade</span>
-              <input
-                type="number"
-                min={1}
-                max={1_000_000}
-                value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              className="btn btn-primary btn-small"
-              disabled={sending || !targetId}
-              onClick={() => void handleSend()}
-            >
-              <Icon name="plus" size={14} /> {sending ? 'enviando...' : 'enviar'}
-            </button>
-          </div>
-        )}
-
-        {sentTo ? <p className="form-success">Enviado: {sentTo}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
       </Section>
     </div>
