@@ -20663,6 +20663,95 @@ async function main(): Promise<void> {
         (entry2.activeEffectsEnded as any[]).some((e) => e.id === 'dormant-effect' && e.reason === 'master-end'),
       JSON.stringify({ active: after2.classState.active, preserved: entry2?.masterPreservedActiveEffects, ended: entry2?.activeEffectsEnded }),
     );
+
+    // --- 5.3D.2.1: Shadow Arts é `special` (preservado, sem duração presumida) --
+    await (async () => {
+      const shadowToggles = togglesFor([{ classKey: 'monk', subclass: 'shadow', level: 3 }]);
+      const shadow = shadowToggles.find((t: any) => t.id === 'shadow-arts');
+      check(
+        '59.2.1A/B/C) shadow-arts é `special` e NÃO tem flags de encerramento por descanso',
+        shadow?.lifecycle?.mode === 'special' &&
+          shadow?.lifecycle?.endsOnShortRest !== true &&
+          shadow?.lifecycle?.endsOnLongRest !== true,
+        JSON.stringify(shadow?.lifecycle),
+      );
+      const saShort = cleanupActiveEffectsForRest(['shadow-arts'], shadowToggles, 'short');
+      const saLong = cleanupActiveEffectsForRest(['shadow-arts'], shadowToggles, 'long');
+      check(
+        '59.2.1D/E) shadow-arts ativo PERMANECE no Short e no Long Rest',
+        saShort.active.join() === 'shadow-arts' &&
+          saShort.ended.length === 0 &&
+          saLong.active.join() === 'shadow-arts' &&
+          saLong.ended.length === 0,
+        JSON.stringify({ short: saShort, long: saLong }),
+      );
+
+      // Regressão de 5.3D.2: Quivering Palm (special) e um desconhecido continuam
+      // preservados em ambos os descansos.
+      const openHandToggles = togglesFor([{ classKey: 'monk', subclass: 'open-hand', level: 17 }]);
+      const regShort = cleanupActiveEffectsForRest(['quivering-palm', 'quirk-effect'], openHandToggles, 'short');
+      const regLong = cleanupActiveEffectsForRest(['quivering-palm', 'quirk-effect'], openHandToggles, 'long');
+      check(
+        '59.2.1) regressão: Quivering Palm (special) e desconhecido seguem PRESERVADOS',
+        regShort.active.join() === 'quivering-palm,quirk-effect' &&
+          regLong.active.join() === 'quivering-palm,quirk-effect',
+        JSON.stringify({ short: regShort, long: regLong }),
+      );
+
+      // G (helper): encerrar NÃO mexe em `used` (nada de reembolso de Ki).
+      const stateG = st(['shadow-arts', 'quirk-effect'], { ki: 1 });
+      const cleanedG = cleanupActiveEffectsForRest(stateG.active, shadowToggles, 'long', {
+        end: ['shadow-arts'],
+      });
+      check(
+        '59.2.1G) encerrar shadow-arts via override NÃO altera `used` (nenhum reembolso de Ki)',
+        cleanedG.active.join() === 'quirk-effect' &&
+          cleanedG.ended.some((e: any) => e.id === 'shadow-arts' && e.reason === 'master-end') &&
+          stateG.used.ki === 1,
+        JSON.stringify({ cleaned: cleanedG, used: stateG.used }),
+      );
+
+      // F) MASTER encerra shadow-arts num descanso REAL via override (force-complete).
+      await setCharacterClasses(userId, [{ classKey: 'monk', subclass: 'shadow', level: 3 }]);
+      await setActive59(['shadow-arts', 'quirk-effect'], { ki: 1 });
+      const lrSa = await longRequest('shadow');
+      const doneSa = await forceComplete59(lrSa, 'shadow', {
+        activeEffectOverrides: { end: ['shadow-arts'] },
+      });
+      const afterSa = await sheet59();
+      const entrySa = doneSa.data?.completion?.characters?.[0];
+      check(
+        '59.2.1F) MASTER encerra shadow-arts por override (reason master-end); desconhecido fica',
+        doneSa.status === 200 &&
+          !(afterSa.classState.active as string[]).includes('shadow-arts') &&
+          (afterSa.classState.active as string[]).includes('quirk-effect') &&
+          (entrySa.activeEffectsEnded as any[]).some(
+            (e: any) => e.id === 'shadow-arts' && e.reason === 'master-end',
+          ),
+        JSON.stringify({ active: afterSa.classState.active, ended: entrySa?.activeEffectsEnded }),
+      );
+
+      // H) PLAYER continua sem override de lifecycle.
+      const lrH = await longRequest('shadow-player');
+      const asPlayerH = await api(`/api/rest/long/${lrH}/force-complete`, {
+        method: 'POST',
+        token,
+        body: {
+          operationId: `op-${suffix}-59-lr-shadow-player`,
+          activeEffectOverrides: { end: ['shadow-arts'] },
+        },
+      });
+      check(
+        '59.2.1H) PLAYER continua sem poder usar override de lifecycle (403)',
+        asPlayerH.status === 403,
+        JSON.stringify({ status: asPlayerH.status }),
+      );
+      await api(`/api/rest/long/${lrH}/abort`, {
+        method: 'POST',
+        token: masterToken,
+        body: { operationId: `op-${suffix}-59-lr-shadow-player-abort` },
+      });
+    })();
   })();
 
   console.log(
