@@ -15162,3 +15162,300 @@ input[type='checkbox']:focus-visible,
     flex: 1 1 100%;
   }
 }
+
+/* ==========================================================================
+   Redesenho do editor de item — hero do item e seções A–D
+   ========================================================================== */
+
+/* --- Hero / cartão-resumo do item (modo edição do modal) ------------------ */
+
+.item-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1rem;
+  padding: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(184, 145, 42, 0.18), transparent 58%),
+    linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+}
+
+.item-hero-figure {
+  flex: 0 0 auto;
+}
+
+.item-hero-art {
+  display: grid;
+  place-items: center;
+  width: 7.5rem;
+  height: 7.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: radial-gradient(circle at 50% 32%, var(--surface), var(--surface-3));
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+  overflow: hidden;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .item-hero-art {
+  color: var(--gold-bright);
+}
+
+.item-hero-art.is-empty {
+  color: var(--ink-faint);
+}
+
+.item-hero-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.item-hero-body {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.item-hero-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1.15;
+  color: var(--gold-deep);
+  overflow-wrap: anywhere;
+}
+
+[data-theme='dark'] .item-hero-name {
+  color: var(--gold-bright);
+}
+
+.item-hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.item-hero-summary {
+  margin: 0;
+  font-size: var(--text-aux);
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.item-hero-summary.is-empty {
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+/* --- Seções do editor: cards com respiro ---------------------------------- */
+
+.item-editor {
+  display: grid;
+  gap: 1rem;
+}
+
+/* Marcador de sequência (A/B/C/D) à frente do título da seção. */
+.section-badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 999px;
+  background: rgba(184, 145, 42, 0.14);
+  color: var(--gold-deep);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+[data-theme='dark'] .section-badge {
+  color: var(--gold-bright);
+}
+
+/* Seção A: nome + categoria em destaque, depois peso/raridade/sintonização. */
+.item-editor-identity {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.item-editor-traits {
+  margin-top: 0.8rem;
+}
+
+/* Seção B: propriedades de arma em grade de cartões, não uma lista solta. */
+.item-editor-properties {
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem;
+  margin: 0.2rem 0 0.5rem;
+}
+
+.item-editor-properties .property-check {
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.item-editor-properties .property-check:hover {
+  border-color: var(--gold);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px var(--gold-hair);
+}
+
+.item-editor-properties .property-check:focus-within {
+  border-color: var(--gold);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 0 3px var(--gold-hair);
+}
+
+.item-editor-properties .property-check:has(input:checked) {
+  border-color: var(--gold-deep);
+  background: linear-gradient(180deg, rgba(184, 145, 42, 0.18), var(--surface-2));
+  color: var(--ink);
+}
+
+/* Seção C: os três valores lado a lado + nota do mestre + recurso de campanha. */
+.item-editor-price {
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+}
+
+.item-editor-value-note {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.75rem 0 0;
+  font-size: var(--text-micro);
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+
+.item-editor-value-note .icon {
+  flex: 0 0 auto;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .item-editor-value-note .icon {
+  color: var(--gold-bright);
+}
+
+.item-editor-supply {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.85rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(184, 145, 42, 0.16), var(--surface-2));
+}
+
+.item-editor-supply .icon {
+  flex: 0 0 auto;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .item-editor-supply .icon {
+  color: var(--gold-bright);
+}
+
+.item-editor-supply-label {
+  font-family: var(--font-display);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.item-editor-supply-value {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* Seção D: bloco de mídia — preview grande + ações alinhadas. */
+.item-editor-sprite {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+
+.item-editor-sprite-preview {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 9rem;
+  height: 9rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: radial-gradient(circle at 50% 32%, var(--surface), var(--surface-3));
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+  overflow: hidden;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .item-editor-sprite-preview {
+  color: var(--gold-bright);
+}
+
+.item-editor-sprite-preview.is-empty {
+  color: var(--ink-faint);
+}
+
+.item-editor-sprite-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.item-editor-sprite-actions {
+  display: grid;
+  gap: 0.5rem;
+  align-content: center;
+  min-width: 0;
+}
+
+.item-editor-sprite-actions .toolbar {
+  flex-wrap: wrap;
+}
+
+/* Barra de ações do modal do item: "entregar" ganha tom dourado de apoio. */
+.items-modal-bar-actions .btn-deliver {
+  border-color: var(--gold-hair);
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .items-modal-bar-actions .btn-deliver {
+  color: var(--gold-bright);
+}
+
+/* Telas estreitas: hero e grades empilham sem espremer campos. */
+@media (max-width: 640px) {
+  .item-hero {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .item-hero-tags {
+    justify-content: center;
+  }
+
+  .item-editor-identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

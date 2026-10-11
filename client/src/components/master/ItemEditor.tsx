@@ -42,6 +42,7 @@ import type {
   WeaponType,
 } from '../../types';
 import { clampFloat, clampInt } from '../../utils';
+import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
@@ -233,6 +234,7 @@ function CategoryFields({
 
     return (
       <>
+      {/* Linha 1 — o dano principal: quantos dados, qual dado e o tipo. */}
       <div className="grid grid-3">
         <label className="field">
           <span>Dados de dano</span>
@@ -269,38 +271,10 @@ function CategoryFields({
             }
           />
         </label>
+      </div>
 
-        {/*
-          * "+" ao lado da linha de dano: a arma pode dar VÁRIOS tipos de dano
-          * (ex.: espada flamejante = cortante + fogo), cada um com os seus dados.
-          * Tipos já usados continuam disponíveis no seletor.
-          */}
-        <div className="field">
-          <span aria-hidden="true">&nbsp;</span>
-          <button
-            type="button"
-            className="btn btn-small damage-add"
-            disabled={extraDamages.length >= MAX_EXTRA_DAMAGES}
-            title="Adicionar outro tipo de dano (ex.: 1d6 de fogo numa espada flamejante)"
-            aria-label={`Adicionar outro tipo de dano em ${item.name}`}
-            onClick={() =>
-              onPatchDetails({
-                extraDamages: [
-                  ...extraDamages,
-                  {
-                    count: details.damageCount ?? 0,
-                    sides: details.damageDie ?? 0,
-                    bonus: 0,
-                    type: null,
-                  },
-                ],
-              })
-            }
-          >
-            + outro tipo de dano
-          </button>
-        </div>
-
+      {/* Linha 2 — modificadores do ataque e o gatilho de dano adicional. */}
+      <div className="grid grid-3">
         <label className="field">
           <span>Bônus de ataque</span>
           <InlineField
@@ -335,6 +309,37 @@ function CategoryFields({
             </strong>
           </span>
         </label>
+
+        {/*
+          * "+" junto dos modificadores: a arma pode dar VÁRIOS tipos de dano
+          * (ex.: espada flamejante = cortante + fogo), cada um com os seus dados.
+          * Tipos já usados continuam disponíveis no seletor.
+          */}
+        <div className="field">
+          <span aria-hidden="true">&nbsp;</span>
+          <button
+            type="button"
+            className="btn btn-small damage-add"
+            disabled={extraDamages.length >= MAX_EXTRA_DAMAGES}
+            title="Adicionar outro tipo de dano (ex.: 1d6 de fogo numa espada flamejante)"
+            aria-label={`Adicionar outro tipo de dano em ${item.name}`}
+            onClick={() =>
+              onPatchDetails({
+                extraDamages: [
+                  ...extraDamages,
+                  {
+                    count: details.damageCount ?? 0,
+                    sides: details.damageDie ?? 0,
+                    bonus: 0,
+                    type: null,
+                  },
+                ],
+              })
+            }
+          >
+            + outro tipo de dano
+          </button>
+        </div>
       </div>
 
       {/* Danos ADICIONAIS da arma (um por tipo), logo abaixo do principal. */}
@@ -478,7 +483,7 @@ function CategoryFields({
       </div>
 
       <h3 className="subsection-title">Propriedades</h3>
-      <div className="property-grid">
+      <div className="property-grid item-editor-properties">
         {listedProperties.map((property) => (
           <label key={property} className="field field-check property-check">
             <input
@@ -830,7 +835,7 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
   const price = item.price ?? { gold: 0, silver: 0, copper: 0 };
 
   return (
-    <div className="creature-editor">
+    <div className="creature-editor item-editor">
       {embedded ? null : (
         <div className="detail-head">
           <h2>
@@ -843,8 +848,9 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
         </div>
       )}
 
-      <Section title="Item" icon="scroll">
-        <div className="grid grid-3">
+      <Section title="Identidade do item" icon="scroll" badge="A">
+        {/* Nome e categoria em destaque: o que o item É, antes de tudo. */}
+        <div className="grid item-editor-identity">
           <label className="field">
             <span>Nome</span>
             <InlineField
@@ -879,7 +885,12 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
               }}
             />
           </label>
+        </div>
 
+        {/* Peso, raridade e sintonização em uma linha: os traços gerais do item.
+            Raridade e sintonização são propriedades do ITEM, independentes da
+            categoria e uma da outra (nada é inferido automaticamente). */}
+        <div className="grid grid-3 item-editor-traits">
           <label className="field">
             <span>Peso (kg)</span>
             <InlineField
@@ -890,11 +901,7 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
               onCommit={(value) => onPatch({ weight: clampFloat(value, 0, 100000, item.weight) })}
             />
           </label>
-        </div>
 
-        {/* Raridade e sintonização: propriedades do ITEM, independentes da
-            categoria e uma da outra (nada é inferido automaticamente). */}
-        <div className="grid grid-3">
           <label className="field">
             <span>Raridade</span>
             <InlineField
@@ -942,6 +949,7 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
       <Section
         title={`Atributos — ${categoryLabel(item.category)}`}
         icon="sword"
+        badge="B"
         subtitle="Os campos mudam conforme a categoria escolhida"
       >
         <CategoryFields
@@ -952,8 +960,8 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
         />
       </Section>
 
-      <Section title="Valor (PO / PP / PC)" icon="crown" subtitle="Visível apenas para o mestre">
-        <div className="grid grid-3">
+      <Section title="Valor (PO / PP / PC)" icon="crown" badge="C">
+        <div className="grid item-editor-price">
           <label className="field">
             <span>PO (ouro)</span>
             <InlineField
@@ -989,39 +997,74 @@ export function ItemEditor({ item, weapons, onPatch, onDelete, embedded = false 
             />
           </label>
         </div>
+
+        {/* Recurso de acampamento: o valor por unidade fica destacado aqui, no
+            bloco de valor — é ele que o Descanso Longo consome. */}
+        {item.category === 'CAMP_SUPPLY' ? (
+          <p className="item-editor-supply">
+            <Icon name="coin" size={16} />
+            <span className="item-editor-supply-label">Recurso de acampamento</span>
+            <span className="item-editor-supply-value">
+              {item.campSupply?.value ?? 0} por unidade
+            </span>
+          </p>
+        ) : null}
+
+        {/* Nota discreta do rodapé do card: o preço é exclusivo do mestre. */}
+        <p className="item-editor-value-note">
+          <Icon name="eye" size={14} />
+          Visível apenas para o mestre — o jogador nunca vê o preço.
+        </p>
       </Section>
 
-      <Section title="Sprite" icon="star" subtitle="PNG, JPEG, WEBP ou GIF · até 5 MB">
-        <div className="item-sprite-row">
-          <Portrait src={item.imageUrl} alt={item.name} size="lg" icon="flask" />
-          <div className="toolbar">
-            <label
-              className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}
-            >
-              {uploading ? 'enviando...' : item.imageUrl ? 'trocar sprite' : '+ adicionar sprite'}
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                disabled={uploading}
-                onChange={(event) => {
-                  void handleFile(event.target.files);
-                  event.target.value = '';
-                }}
-              />
-            </label>
+      <Section title="Sprite" icon="star" badge="D" subtitle="PNG, JPEG, WEBP ou GIF · até 5 MB">
+        <div className="item-editor-sprite">
+          <span
+            className={
+              item.imageUrl ? 'item-editor-sprite-preview' : 'item-editor-sprite-preview is-empty'
+            }
+            aria-hidden={item.imageUrl ? undefined : 'true'}
+          >
             {item.imageUrl ? (
-              <button
-                type="button"
-                className="btn btn-small"
-                onClick={() => onPatch({ imageUrl: '' })}
+              <img src={item.imageUrl} alt={item.name} />
+            ) : (
+              <Icon name="flask" size={44} />
+            )}
+          </span>
+
+          <div className="item-editor-sprite-actions">
+            <div className="toolbar">
+              <label
+                className={uploading ? 'btn btn-small file-btn disabled' : 'btn btn-small file-btn'}
               >
-                remover sprite
-              </button>
-            ) : null}
+                {uploading ? 'enviando...' : item.imageUrl ? 'trocar sprite' : '+ adicionar sprite'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  disabled={uploading}
+                  onChange={(event) => {
+                    void handleFile(event.target.files);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+              {item.imageUrl ? (
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => onPatch({ imageUrl: '' })}
+                >
+                  remover sprite
+                </button>
+              ) : null}
+            </div>
+            <p className="field-hint">
+              Uma arte quadrada (ex.: 512×512) funciona melhor na ficha e no card.
+            </p>
+            {error ? <p className="form-error">{error}</p> : null}
           </div>
         </div>
-        {error ? <p className="form-error">{error}</p> : null}
       </Section>
     </div>
   );

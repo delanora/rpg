@@ -6,10 +6,70 @@ import { Icon } from '../Icon';
 import { useLightbox } from '../Lightbox';
 import { ItemDeliverDialog } from './ItemDeliverDialog';
 import { ItemEditor } from './ItemEditor';
-import { priceLabel } from './itemCatalog';
+import { itemSummary, priceLabel } from './itemCatalog';
 
 /** O modal abre em visualização e o botão Editar alterna para o formulário. */
 export type ItemModalMode = 'view' | 'edit';
+
+/**
+ * Cabeçalho editorial do item no MODO EDIÇÃO: sprite, nome, badges
+ * (categoria/raridade/sintonização) e o resumo mecânico da categoria. Fica no
+ * topo do formulário como "cartão-resumo", contextualizando o que se edita — a
+ * mesma linguagem do cabeçalho de visualização. Não é um campo: nada aqui é
+ * editável, tudo já vive nas seções abaixo.
+ */
+export function ItemHero({ item }: { item: Item }) {
+  const rarity = rarityLabel(item.rarity);
+  const color = rarityColor(item.rarity);
+  const accent = rarityTint(item.rarity, '99');
+  const summary = itemSummary(item);
+
+  return (
+    <header className="item-hero">
+      <div className="item-hero-figure">
+        <span
+          className={item.imageUrl ? 'item-hero-art' : 'item-hero-art is-empty'}
+          aria-hidden={item.imageUrl ? undefined : 'true'}
+        >
+          {item.imageUrl ? (
+            <img src={item.imageUrl} alt={item.name} />
+          ) : (
+            <Icon name="flask" size={44} />
+          )}
+        </span>
+      </div>
+
+      <div className="item-hero-body">
+        <h3 className="item-hero-name">{item.name.trim() || 'Novo item'}</h3>
+        <p className="item-hero-tags">
+          <span className="item-modal-tag">{categoryLabel(item.category)}</span>
+          {rarity ? (
+            <span
+              className="item-modal-tag is-rarity"
+              style={color && accent ? { color, borderColor: accent } : undefined}
+            >
+              {rarity}
+            </span>
+          ) : null}
+          <span
+            className={
+              item.requiresAttunement ? 'item-modal-tag is-attunement' : 'item-modal-tag is-muted'
+            }
+          >
+            {item.requiresAttunement ? 'Requer Sintonização' : 'Não exige sintonização'}
+          </span>
+        </p>
+        {summary ? (
+          <p className="item-hero-summary">{summary}</p>
+        ) : (
+          <p className="item-hero-summary is-empty">
+            Defina os atributos abaixo — o resumo aparece aqui conforme a categoria.
+          </p>
+        )}
+      </div>
+    </header>
+  );
+}
 
 interface ItemModalCardProps {
   item: Item;
@@ -106,13 +166,18 @@ export function ItemModalCard({
   return (
     <>
       <div className="items-modal-bar">
-        {creating ? <span className="items-modal-mode">Novo item</span> : null}
+        {creating ? (
+          <span className="items-modal-mode">Novo item</span>
+        ) : mode === 'edit' ? (
+          <span className="items-modal-mode">Editando item</span>
+        ) : null}
         <div className="items-modal-bar-actions">
-          {/* "Entregar" fica imediatamente ao lado de "Editar". */}
+          {/* "Entregar": ação secundária de destaque (dourada, sem competir com
+              a principal). Fica ao lado de "Concluir edição". */}
           <button
             ref={deliverButtonRef}
             type="button"
-            className="btn btn-small"
+            className="btn btn-small btn-deliver"
             disabled={characters.length === 0}
             title={
               characters.length === 0
@@ -128,7 +193,12 @@ export function ItemModalCard({
               <Icon name="quill" size={14} /> editar
             </button>
           ) : (
-            <button type="button" className="btn btn-small" onClick={() => onModeChange('view')}>
+            // A ação PRINCIPAL da edição: concluir e voltar à visualização.
+            <button
+              type="button"
+              className="btn btn-primary btn-small"
+              onClick={() => onModeChange('view')}
+            >
               <Icon name="eye" size={14} /> concluir edição
             </button>
           )}
@@ -242,13 +312,18 @@ export function ItemModalCard({
           </section>
         </>
       ) : (
-        <ItemEditor
-          embedded
-          item={item}
-          weapons={weapons}
-          onPatch={onPatch}
-          onDelete={onRequestDelete}
-        />
+        <>
+          {/* O hero do item abre o formulário: quem é o item, de que tipo e o
+              que ele faz, antes de qualquer campo. */}
+          <ItemHero item={item} />
+          <ItemEditor
+            embedded
+            item={item}
+            weapons={weapons}
+            onPatch={onPatch}
+            onDelete={onRequestDelete}
+          />
+        </>
       )}
     </>
   );
