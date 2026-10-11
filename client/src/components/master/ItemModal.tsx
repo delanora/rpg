@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { categoryLabel, itemDetailRows, rarityColor, rarityLabel, rarityTint } from '../../dnd';
 import type { CanonicalWeapon, Character, Item, ItemPatch } from '../../types';
 import { Icon } from '../Icon';
 import { useLightbox } from '../Lightbox';
+import { ItemDeliverPanel } from './ItemDeliverPanel';
 import { ItemEditor } from './ItemEditor';
 import { priceLabel } from './itemCatalog';
 
@@ -23,10 +24,22 @@ interface ItemModalCardProps {
   onModeChange: (mode: ItemModalMode) => void;
   /** Pede a confirmação de exclusão (o diálogo mora no pai). */
   onRequestDelete: () => void;
+  /** Painel de ENTREGA aberto (ação contextual do modal). */
+  delivering: boolean;
+  /** Aviso discreto do último envio bem-sucedido (o modal segue aberto). */
+  feedback: string | null;
+  /** Abre/fecha o painel de entrega. */
+  onDeliverOpen: (open: boolean) => void;
+  /** A entrega deu certo: mostra o aviso e fecha só o painel. */
+  onDelivered: (message: string) => void;
   onClose: () => void;
 }
 
-interface ItemModalProps extends ItemModalCardProps {
+interface ItemModalProps
+  extends Omit<
+    ItemModalCardProps,
+    'delivering' | 'feedback' | 'onDeliverOpen' | 'onDelivered'
+  > {
   /** Enquanto a confirmação de exclusão está aberta por cima, o Esc não fecha. */
   suspended?: boolean;
 }
@@ -45,6 +58,10 @@ export function ItemModalCard({
   onSend,
   onModeChange,
   onRequestDelete,
+  delivering,
+  feedback,
+  onDeliverOpen,
+  onDelivered,
   onClose,
 }: ItemModalCardProps) {
   const { open: openLightbox } = useLightbox();
@@ -66,6 +83,20 @@ export function ItemModalCard({
       <div className="items-modal-bar">
         {creating ? <span className="items-modal-mode">Novo item</span> : null}
         <div className="items-modal-bar-actions">
+          {/* "Entregar" fica imediatamente ao lado de "Editar". */}
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={characters.length === 0}
+            title={
+              characters.length === 0
+                ? 'Nenhum jogador com ficha ainda.'
+                : `Entregar uma cópia de ${item.name} a um jogador`
+            }
+            onClick={() => onDeliverOpen(!delivering)}
+          >
+            <Icon name="bag" size={14} /> entregar
+          </button>
           {mode === 'view' ? (
             <button type="button" className="btn btn-small" onClick={() => onModeChange('edit')}>
               <Icon name="quill" size={14} /> editar
@@ -83,6 +114,18 @@ export function ItemModalCard({
           </button>
         </div>
       </div>
+
+      {feedback ? <p className="items-modal-feedback">✓ {feedback}</p> : null}
+
+      {delivering ? (
+        <ItemDeliverPanel
+          item={item}
+          characters={characters}
+          onSend={onSend}
+          onDelivered={onDelivered}
+          onCancel={() => onDeliverOpen(false)}
+        />
+      ) : null}
 
       {mode === 'view' ? (
         <>
@@ -168,11 +211,9 @@ export function ItemModalCard({
         <ItemEditor
           embedded
           item={item}
-          characters={characters}
           weapons={weapons}
           onPatch={onPatch}
           onDelete={onRequestDelete}
-          onSend={onSend}
         />
       )}
     </>
@@ -190,12 +231,15 @@ export function ItemModalCard({
  */
 export function ItemModal({ onClose, suspended = false, ...card }: ItemModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [delivering, setDelivering] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Esc fecha (menos quando a confirmação de exclusão está por cima) e a
-  // rolagem do fundo fica travada enquanto o modal está aberto.
+  // Esc fecha (menos quando a confirmação de exclusão ou o painel de entrega
+  // estão por cima — os dois tratam o próprio Esc) e a rolagem do fundo fica
+  // travada enquanto o modal está aberto.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape' && !suspended) onClose();
+      if (event.key === 'Escape' && !suspended && !delivering) onClose();
     }
 
     const previousOverflow = document.body.style.overflow;
@@ -206,7 +250,7 @@ export function ItemModal({ onClose, suspended = false, ...card }: ItemModalProp
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [onClose, suspended]);
+  }, [onClose, suspended, delivering]);
 
   // Foco no próprio diálogo ao abrir: o teclado já opera o modal.
   useEffect(() => {
@@ -228,7 +272,17 @@ export function ItemModal({ onClose, suspended = false, ...card }: ItemModalProp
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
-        <ItemModalCard {...card} onClose={onClose} />
+        <ItemModalCard
+          {...card}
+          delivering={delivering}
+          feedback={feedback}
+          onDeliverOpen={setDelivering}
+          onDelivered={(message) => {
+            setFeedback(message);
+            setDelivering(false);
+          }}
+          onClose={onClose}
+        />
       </div>
     </div>,
     document.body,
