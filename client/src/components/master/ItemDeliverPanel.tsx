@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { categoryLabel, rarityLabel } from '../../dnd';
 import type { Character, Item } from '../../types';
 import { Icon } from '../Icon';
 import { Portrait } from '../Portrait';
@@ -31,6 +32,11 @@ interface ItemDeliverPanelProps {
  * quantidade, e o item entra no inventário do jogador. Nada sai do catálogo e
  * nenhum outro inventário é tocado. O painel aparece DENTRO do modal (que
  * continua aberto), fecha sozinho no sucesso e só ele fecha no cancelamento.
+ *
+ * VISUAL: cabeçalho com o item ancorado à direita (sprite + nome + categoria),
+ * e o corpo em dois blocos — quem recebe (select + card do personagem + a frase
+ * do envio) e quanto (stepper) — no mesmo desenho do painel de moedas. Tudo
+ * empilha em telas estreitas; nada aqui guarda rolagem própria.
  */
 export function ItemDeliverPanel({
   item,
@@ -59,6 +65,7 @@ export function ItemDeliverPanel({
   }, [onCancel, sending]);
 
   const target = characters.find((character) => character.id === targetId) ?? null;
+  const rarity = rarityLabel(item.rarity);
 
   function changeQuantity(delta: number): void {
     setQuantity((current) => Math.min(MAX_QUANTITY, Math.max(MIN_QUANTITY, current + delta)));
@@ -85,35 +92,82 @@ export function ItemDeliverPanel({
 
   return (
     <section className="items-deliver" aria-label={`Entregar ${item.name}`}>
-      <div className="items-deliver-head">
-        <Portrait src={item.imageUrl} alt={item.name} size="sm" icon="flask" zoomable={false} />
-        <h3 className="items-deliver-title">Entregar item</h3>
-        <span className="items-deliver-item">{item.name}</span>
-      </div>
+      <header className="items-deliver-head">
+        <div className="items-deliver-heading">
+          <h3 className="items-deliver-title">Entregar item</h3>
+          <p className="items-deliver-sub">
+            Envie uma cópia deste item para o inventário de um personagem.
+          </p>
+        </div>
+
+        {/* O item entregue fica ancorado no cabeçalho: o mestre não perde de
+            vista o que está saindo do catálogo. */}
+        <div className="items-deliver-anchor">
+          <Portrait src={item.imageUrl} alt={item.name} size="sm" icon="flask" zoomable={false} />
+          <span className="items-deliver-anchor-info">
+            <strong className="items-deliver-anchor-name">{item.name}</strong>
+            <span className="items-deliver-anchor-meta">
+              {categoryLabel(item.category)}
+              {rarity ? ` · ${rarity}` : ''}
+            </span>
+          </span>
+        </div>
+      </header>
 
       {characters.length === 0 ? (
         <p className="empty-hint">Nenhum jogador com ficha ainda.</p>
       ) : (
-        <div className="items-deliver-fields">
-          <label className="field items-deliver-field">
-            <span>Jogador</span>
-            <select
-              ref={selectRef}
-              value={targetId}
-              aria-label="Jogador que vai receber o item"
-              onChange={(event) => setTargetId(event.target.value)}
-            >
-              {characters.map((character) => (
-                <option key={character.id} value={character.id}>
-                  {character.name}
-                  {character.ownerUsername ? ` (${character.ownerUsername})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="items-deliver-body">
+          <div className="items-deliver-block">
+            <h4 className="items-deliver-block-title">Destinatário</h4>
 
-          <div className="field items-deliver-field items-deliver-qty">
-            <span>Quantidade</span>
+            <label className="field">
+              <span>Jogador</span>
+              <select
+                ref={selectRef}
+                value={targetId}
+                aria-label="Jogador que vai receber o item"
+                onChange={(event) => setTargetId(event.target.value)}
+              >
+                {characters.map((character) => (
+                  <option key={character.id} value={character.id}>
+                    {character.name}
+                    {character.ownerUsername ? ` (${character.ownerUsername})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {target ? (
+              <div className="items-deliver-target">
+                <Portrait
+                  src={target.avatarUrl}
+                  alt={target.name}
+                  size="sm"
+                  icon="users"
+                  zoomable={false}
+                />
+                <span className="items-deliver-target-info">
+                  <strong>{target.name}</strong>
+                  <span className="items-deliver-target-owner">
+                    {target.ownerUsername ?? 'sem conta vinculada'}
+                  </span>
+                </span>
+              </div>
+            ) : null}
+
+            <p className="items-deliver-hint">
+              {target
+                ? quantity > 1
+                  ? `${quantity} unidades serão adicionadas ao inventário de ${target.name}.`
+                  : `O item será adicionado ao inventário de ${target.name}.`
+                : 'Escolha o jogador que vai receber o item.'}
+            </p>
+          </div>
+
+          <div className="items-deliver-block is-qty">
+            <h4 className="items-deliver-block-title">Quantidade</h4>
+
             <div className="items-stepper">
               <button
                 type="button"
@@ -140,14 +194,6 @@ export function ItemDeliverPanel({
           </div>
         </div>
       )}
-
-      <p className="items-deliver-hint">
-        {target
-          ? quantity > 1
-            ? `${quantity} unidades serão adicionadas ao inventário de ${target.name}.`
-            : `O item será adicionado ao inventário de ${target.name}.`
-          : 'Escolha o jogador que vai receber o item.'}
-      </p>
 
       {error ? <p className="form-error">{error}</p> : null}
 
