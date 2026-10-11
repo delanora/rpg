@@ -4817,6 +4817,20 @@ input[type='checkbox']:disabled {
   animation: ink-in 0.22s ease both;
 }
 
+/*
+ * CONFIRMAÇÃO SOBRE UM MODAL (ex.: excluir item com o modal do item aberto).
+ *
+ * Os modais são montados por portal no `<body>` com `z-index: 60` e o `#root`
+ * do app é um stacking context (`position: relative; z-index: 1`) — uma
+ * confirmação renderizada DENTRO do `#root` fica presa nesse nível e aparece
+ * atrás do modal, por maior que fosse o seu z-index. Por isso ela também vai
+ * por portal e ganha uma faixa própria: ACIMA dos modais (60) e abaixo do
+ * lightbox (70), para o overlay escurecido cobrir o modal de baixo.
+ */
+.modal-backdrop.is-confirm {
+  z-index: 62;
+}
+
 .modal {
   position: relative;
   width: 100%;

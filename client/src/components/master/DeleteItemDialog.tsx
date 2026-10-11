@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { categoryLabel } from '../../dnd';
 import type { Character, Item } from '../../types';
 import { Icon } from '../Icon';
@@ -26,10 +27,25 @@ interface DeleteItemDialogProps {
  * painel já sabe que o item está em algum inventário, avisa quem o tem — nada
  * de um "tem certeza?" genérico. Só o segundo clique (no botão vermelho) apaga;
  * Esc e "cancelar" fecham.
+ *
+ * SOBREPOSIÇÃO: o diálogo é montado por **portal no `<body>`**, como o modal do
+ * item. Não é detalhe estético: o `#root` do app é um stacking context
+ * (`position: relative; z-index: 1`) e o modal do item vive no `<body>` com
+ * `z-index: 60` — qualquer confirmação renderizada DENTRO do `#root` fica presa
+ * ao nível 1 e aparece ATRÁS do modal, por mais alto que fosse o seu z-index. A
+ * classe `is-confirm` põe a confirmação logo acima da faixa dos modais (60) e
+ * abaixo do lightbox (70).
  */
 export function DeleteItemDialog({ item, usedBy, onCancel, onConfirm }: DeleteItemDialogProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Foco na própria confirmação: o modal do item atrás fica inativo para o
+  // teclado (quem devolve o foco ao botão "excluir" é o modal, ao sair daqui).
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   // Esc cancela — nunca confirma, para um toque errado não apagar nada.
   useEffect(() => {
@@ -55,14 +71,23 @@ export function DeleteItemDialog({ item, usedBy, onCancel, onConfirm }: DeleteIt
     }
   }
 
-  return (
+  return createPortal(
     <div
-      className="modal-backdrop"
+      className="modal-backdrop is-confirm"
       role="dialog"
       aria-modal="true"
       aria-label={`Excluir ${item.name}`}
+      // Clicar fora cancela SÓ a confirmação (o modal do item continua aberto).
+      onClick={() => {
+        if (!busy) onCancel();
+      }}
     >
-      <div className="modal delete-dialog">
+      <div
+        ref={dialogRef}
+        className="modal delete-dialog"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <h2>
           <Icon name="trash" size={20} /> Excluir item
         </h2>
@@ -108,6 +133,7 @@ export function DeleteItemDialog({ item, usedBy, onCancel, onConfirm }: DeleteIt
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

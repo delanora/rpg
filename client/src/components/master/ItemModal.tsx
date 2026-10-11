@@ -32,17 +32,19 @@ interface ItemModalCardProps {
   onDeliverOpen: (open: boolean) => void;
   /** A entrega deu certo: mostra o aviso e fecha só o painel. */
   onDelivered: (message: string) => void;
+  /**
+   * Confirmação de exclusão aberta por cima: o Esc não fecha o modal e, quando
+   * ela sai de cena sem excluir, o foco volta ao botão "excluir".
+   */
+  suspended?: boolean;
   onClose: () => void;
 }
 
-interface ItemModalProps
-  extends Omit<
-    ItemModalCardProps,
-    'delivering' | 'feedback' | 'onDeliverOpen' | 'onDelivered'
-  > {
-  /** Enquanto a confirmação de exclusão está aberta por cima, o Esc não fecha. */
-  suspended?: boolean;
-}
+/** O wrapper cuida do portal/rolagem/Esc; o resto é do cartão. */
+type ItemModalProps = Omit<
+  ItemModalCardProps,
+  'delivering' | 'feedback' | 'onDeliverOpen' | 'onDelivered'
+>;
 
 /**
  * Conteúdo do modal do item (barra de ações no topo + corpo em visualização ou
@@ -62,9 +64,19 @@ export function ItemModalCard({
   feedback,
   onDeliverOpen,
   onDelivered,
+  suspended = false,
   onClose,
 }: ItemModalCardProps) {
   const { open: openLightbox } = useLightbox();
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const wasSuspended = useRef(false);
+
+  // Cancelou a confirmação de exclusão? O foco volta para o botão "excluir"
+  // (o diálogo mora em outro portal e não sabe para onde devolver o foco).
+  useEffect(() => {
+    if (wasSuspended.current && !suspended) deleteButtonRef.current?.focus();
+    wasSuspended.current = suspended;
+  }, [suspended]);
 
   const rarity = rarityLabel(item.rarity);
   const color = rarityColor(item.rarity);
@@ -106,7 +118,12 @@ export function ItemModalCard({
               <Icon name="eye" size={14} /> concluir edição
             </button>
           )}
-          <button type="button" className="btn btn-danger btn-small" onClick={onRequestDelete}>
+          <button
+            ref={deleteButtonRef}
+            type="button"
+            className="btn btn-danger btn-small"
+            onClick={onRequestDelete}
+          >
             <Icon name="trash" size={14} /> excluir
           </button>
           <button type="button" className="btn btn-small" onClick={onClose}>
@@ -263,6 +280,10 @@ export function ItemModal({ onClose, suspended = false, ...card }: ItemModalProp
       role="dialog"
       aria-modal="true"
       aria-label={card.creating ? 'Novo item' : `Detalhes de ${card.item.name}`}
+      // Com a confirmação de exclusão aberta por cima, o modal continua VISÍVEL
+      // mas fica inativo: `inert` tira o fundo do alcance do mouse e do Tab, e
+      // esconde do leitor de tela — o foco vive só na confirmação.
+      inert={suspended || undefined}
       onClick={onClose}
     >
       {/* O clique dentro do cartão não fecha (só a área escurecida fecha). */}
@@ -274,6 +295,7 @@ export function ItemModal({ onClose, suspended = false, ...card }: ItemModalProp
       >
         <ItemModalCard
           {...card}
+          suspended={suspended}
           delivering={delivering}
           feedback={feedback}
           onDeliverOpen={setDelivering}
