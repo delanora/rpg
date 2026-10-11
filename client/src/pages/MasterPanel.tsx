@@ -256,6 +256,37 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * RECONCILIA as fichas quando um Descanso Longo coletivo CONCLUI.
+   *
+   * O débito dos recursos de acampamento chega pelo `sheet:updated`, mas um
+   * evento perdido deixaria a mochila de um jogador mostrando a quantidade
+   * antiga — e o Mestre concluiria que nada foi consumido. Uma leitura
+   * autoritativa no fecho do descanso mantém a aba de fichas verdadeira. Só
+   * aceita versão igual ou mais nova, como o próprio tempo real.
+   */
+  useEffect(() => {
+    if (!longRest.completion) return;
+    let active = true;
+    void api<{ characters: Character[] }>('/api/characters')
+      .then(({ characters: fresh }) => {
+        if (!active) return;
+        setCharacters((prev) => {
+          const byId = new Map(prev.map((item) => [item.id, item]));
+          for (const character of fresh) {
+            const current = byId.get(character.id);
+            if (!current || character.version >= current.version) byId.set(character.id, character);
+          }
+          return [...byId.values()].sort(byName);
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [longRest.completion]);
+
   /** Fechamento da imagem apresentada — só o mestre tem esta ação. */
   const closePresentedImage = useCallback(() => {
     void closePresentation().catch(() => setPresentation(null));
