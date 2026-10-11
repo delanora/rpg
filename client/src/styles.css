@@ -15288,43 +15288,130 @@ input[type='checkbox']:focus-visible,
   padding: 0.9rem 1rem;
 }
 
-/* Campos do editor parecem INPUTS de verdade, mesmo antes de clicar: é o que
-   tira a cara de "texto solto" dos bônus e do peso. */
+/* --------------------------------------------------------------------------
+   Controles do editor — regra BASE para TODOS os campos editáveis.
+
+   Os campos em repouso são renderizados como `.inline-display` (um botão) e,
+   ao clicar, viram `input`/`textarea`/`select`. A regra é única para os dois
+   modos e para os controles nativos: o fundo NUNCA vira claro no hover — no
+   tema escuro ele mantém o marrom profundo, mudando só a borda (dourada) e um
+   realce sutil. Sem `!important`: a base fecha os estados normal/hover/focus.
+   -------------------------------------------------------------------------- */
+
+/* Onde o campo é renderizado como botão (display) ou texto estático. */
 .item-editor .inline-display,
 .item-editor .inline-static {
   min-height: 2.35rem;
   padding: 0.4rem 0.55rem;
-  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, #fffaf0, var(--surface-2));
-  box-shadow: inset 0 1px 3px rgba(43, 33, 21, 0.12);
   cursor: text;
 }
 
-[data-theme='dark'] .item-editor .inline-display,
-[data-theme='dark'] .item-editor .inline-static {
-  background: linear-gradient(180deg, #2b2018, #1d1510);
-}
-
-.item-editor .inline-display:hover {
-  border-color: var(--gold);
-  background: linear-gradient(180deg, #fffdf6, var(--surface-2));
-}
-
+/* Normal: fundo/tinta/borda iguais para nativos e campos inline.
+   Checkboxes/radios ficam de fora (têm tratamento próprio). */
+.item-editor input:not([type='checkbox']):not([type='radio']),
+.item-editor textarea,
+.item-editor select,
+.item-editor .inline-display,
+.item-editor .inline-static,
+.item-editor .inline-input,
 .item-editor .inline-select {
-  min-height: 2.35rem;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
   background: linear-gradient(180deg, #fffaf0, var(--surface-2));
   box-shadow: inset 0 1px 3px rgba(43, 33, 21, 0.12);
 }
 
+[data-theme='dark'] .item-editor input:not([type='checkbox']):not([type='radio']),
+[data-theme='dark'] .item-editor textarea,
+[data-theme='dark'] .item-editor select,
+[data-theme='dark'] .item-editor .inline-display,
+[data-theme='dark'] .item-editor .inline-static,
+[data-theme='dark'] .item-editor .inline-input,
 [data-theme='dark'] .item-editor .inline-select {
   background: linear-gradient(180deg, #2b2018, #1d1510);
 }
 
+/* Hover: só a borda dourada e um tom um pouco mais claro — nunca branco. */
+.item-editor input:not([type='checkbox']):not([type='radio']):hover,
+.item-editor textarea:hover,
+.item-editor select:hover,
+.item-editor .inline-display:hover,
+.item-editor .inline-static:hover,
+.item-editor .inline-input:hover,
+.item-editor .inline-select:hover {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, #fffdf6, var(--surface-3));
+}
+
+[data-theme='dark'] .item-editor input:not([type='checkbox']):not([type='radio']):hover,
+[data-theme='dark'] .item-editor textarea:hover,
+[data-theme='dark'] .item-editor select:hover,
+[data-theme='dark'] .item-editor .inline-display:hover,
+[data-theme='dark'] .item-editor .inline-static:hover,
+[data-theme='dark'] .item-editor .inline-input:hover,
+[data-theme='dark'] .item-editor .inline-select:hover {
+  background: linear-gradient(180deg, #35281d, #241a13);
+}
+
+/* Foco: fundo escuro preservado, borda dourada e um realce discreto. */
+.item-editor input:not([type='checkbox']):not([type='radio']):focus,
+.item-editor textarea:focus,
+.item-editor select:focus,
+.item-editor .inline-input:focus,
+.item-editor .inline-select:focus {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, #fffdf6, var(--surface-3));
+  box-shadow: 0 0 12px -3px var(--glow), inset 0 1px 3px rgba(43, 33, 21, 0.12);
+}
+
+[data-theme='dark'] .item-editor input:not([type='checkbox']):not([type='radio']):focus,
+[data-theme='dark'] .item-editor textarea:focus,
+[data-theme='dark'] .item-editor select:focus,
+[data-theme='dark'] .item-editor .inline-input:focus,
+[data-theme='dark'] .item-editor .inline-select:focus {
+  background: linear-gradient(180deg, #35281d, #241a13);
+}
+
+/* Os controles nativos do editor não desenham o contorno azul do navegador:
+   o realce de foco é a borda dourada + glow acima. */
+.item-editor input:not([type='checkbox']):not([type='radio']):focus,
+.item-editor textarea:focus,
+.item-editor select:focus {
+  outline: none;
+}
+
+/* Teclado continua visível nos campos inline e no botão de edição. */
 .item-editor .inline-display:focus-visible,
-.item-editor .inline-select:focus-visible {
+.item-editor .inline-select:focus-visible,
+.item-editor .inline-input:focus-visible {
   outline: 2px solid var(--gold);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+
+/* Placeholder segue suave em qualquer estado. */
+.item-editor input::placeholder,
+.item-editor textarea::placeholder {
+  color: var(--ink-faint);
+  opacity: 1;
+}
+
+/* Autofill do navegador não pinta o campo de amarelo/branco. */
+.item-editor input:-webkit-autofill,
+.item-editor input:-webkit-autofill:hover,
+.item-editor input:-webkit-autofill:focus,
+.item-editor textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  box-shadow: 0 0 0 1000px var(--surface-2) inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
+[data-theme='dark'] .item-editor input:-webkit-autofill,
+[data-theme='dark'] .item-editor input:-webkit-autofill:hover,
+[data-theme='dark'] .item-editor input:-webkit-autofill:focus,
+[data-theme='dark'] .item-editor textarea:-webkit-autofill {
+  box-shadow: 0 0 0 1000px #241a13 inset;
 }
 
 /* --- Identidade: nome/categoria, traços e descrição ----------------------- */
