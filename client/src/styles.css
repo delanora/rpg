@@ -14767,32 +14767,31 @@ input[type='checkbox']:focus-visible,
 }
 
 /* Janela de ENTREGA do item — modal próprio, aberto por cima do modal do item.
-   Em vez de um bloco enfiado na ficha (que empilhava a ação com os detalhes
-   completos), ela traz só o necessário: cabeçalho com o resumo do item e dois
-   cards (destinatário / quantidade) que empilham em tela estreita, no mesmo
-   desenho do painel de moedas. */
+   Composição horizontal: cabeçalho (título + subtítulo + X), duas colunas no
+   corpo — o card do item à esquerda e o painel de formulário à direita — e um
+   rodapé de ações de largura total. A ficha completa do item fica no modal de
+   trás: aqui só o resumo visual. */
 .items-deliver-dialog {
-  max-width: 32rem;
-}
-
-.items-deliver {
   display: grid;
-  gap: 0.9rem;
+  gap: 1.1rem;
+  /* Clara e horizontal no desktop (≈832px), encolhendo com a viewport nas
+     telas estreitas (o `.modal-backdrop` já reserva 1rem de cada lado). */
+  max-width: min(52rem, calc(100vw - 2rem));
 }
 
 .items-deliver-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 0.55rem 0.9rem;
-  flex-wrap: wrap;
+  gap: 0.9rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--line);
 }
 
 .items-deliver-heading {
   display: grid;
-  gap: 0.15rem;
-  flex: 1 1 12rem;
-  min-width: 10rem;
+  gap: 0.2rem;
+  min-width: 0;
 }
 
 /* Especificidade extra de propósito: o título é o `h2` do modal e precisa
@@ -14800,7 +14799,7 @@ input[type='checkbox']:focus-visible,
 .items-deliver-dialog .items-deliver-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--gold-deep);
@@ -14812,80 +14811,116 @@ input[type='checkbox']:focus-visible,
 
 .items-deliver-sub {
   margin: 0;
-  font-size: var(--text-micro);
+  font-size: var(--text-aux);
   line-height: 1.35;
   color: var(--ink-soft);
 }
 
-/* Item ancorado no cabeçalho: sprite + nome + categoria/raridade. */
-.items-deliver-anchor {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex: 0 1 15rem;
-  min-width: 11rem;
-  padding: 0.3rem 0.55rem 0.3rem 0.35rem;
-  border: 1px solid var(--line);
+.items-deliver-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.items-deliver-anchor-info {
-  display: grid;
-  gap: 0.05rem;
-  min-width: 0;
-}
-
-.items-deliver-anchor-name {
-  font-family: var(--font-display);
-  font-size: 0.9rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.items-deliver-anchor-meta {
-  font-size: var(--text-micro);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   color: var(--ink-soft);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
 }
 
-.items-deliver-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 0.7rem;
-  align-items: stretch;
+.items-deliver-close:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold-deep);
 }
 
-.items-deliver-block {
+[data-theme='dark'] .items-deliver-close:hover:not(:disabled) {
+  color: var(--gold-bright);
+}
+
+.items-deliver-close:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.items-deliver-close:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- Coluna esquerda: card do item ---------------------------------------- */
+
+.items-deliver-item-card {
   display: grid;
-  align-content: start;
-  gap: 0.5rem;
-  padding: 0.7rem 0.75rem;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: 1rem 0.9rem;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  text-align: center;
 }
 
-.items-deliver-block-title {
+.items-deliver-art {
+  width: 8.5rem;
+  height: 8.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  object-fit: cover;
+}
+
+.items-deliver-art.is-empty {
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-faint);
+}
+
+/* Nome completo, sem corte: até três linhas, quebrando onde couber. */
+.items-deliver-item-name {
   margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-label);
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
+  font-size: 1.02rem;
+  line-height: 1.25;
+  color: var(--ink);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  overflow-wrap: anywhere;
 }
 
-/* --- Bloco 1: destinatário ------------------------------------------------ */
+.items-deliver-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3rem;
+  margin: 0;
+}
 
+/* Corpo: card do item (~280px) + painel de formulário. Destinatário e
+   quantidade vivem empilhados no painel, não como dois cards lado a lado. */
+.items-deliver-body {
+  display: grid;
+  grid-template-columns: 17.5rem minmax(0, 1fr);
+  gap: 1.4rem;
+  align-items: start;
+}
+
+/* --- Coluna direita: painel de formulário --------------------------------- */
+
+.items-deliver-form {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+/* Resumo do personagem: linha compacta, sem borda própria. */
 .items-deliver-target {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--line);
+  gap: 0.55rem;
+  padding: 0.35rem 0.45rem;
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.04);
 }
@@ -14909,62 +14944,64 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
-/* A frase do envio fecha o bloco, separada por um fio dourado. */
+/* Frase do envio: ícone discreto + texto, logo abaixo do stepper. */
 .items-deliver-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
   margin: 0;
-  padding-top: 0.45rem;
-  border-top: 1px dashed var(--gold-hair);
-  font-size: var(--text-micro);
+  font-size: var(--text-aux);
   line-height: 1.35;
   color: var(--ink-soft);
 }
 
-/* --- Bloco 2: quantidade -------------------------------------------------- */
-
-.items-deliver-block.is-qty {
-  justify-items: center;
-  text-align: center;
+.items-deliver-hint .icon {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  color: var(--gold-deep);
 }
 
-/* Rodapé: as ações ficam separadas do corpo por um fio, com a principal mais
-   larga que o "cancelar" ao lado. */
+[data-theme='dark'] .items-deliver-hint .icon {
+  color: var(--gold-bright);
+}
+
+/* Rodapé de largura total: as ações ficam separadas do corpo por um fio, com a
+   principal mais larga que o "cancelar" ao lado. */
 .items-deliver-actions {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
-  padding-top: 0.75rem;
+  padding-top: 0.9rem;
   border-top: 1px solid var(--line);
 }
 
 .items-deliver-actions .btn-primary {
-  min-width: 8rem;
+  min-width: 9rem;
   padding: 0.45rem 1rem;
 }
 
-/* Em telas estreitas os dois blocos empilham e o item ancorado ocupa a linha
-   inteira do cabeçalho. */
-@media (max-width: 560px) {
+/* Telas estreitas: uma coluna só, na ordem item → jogador → quantidade →
+   informação → ações (a ordem do DOM). */
+@media (max-width: 700px) {
+  .items-deliver-dialog {
+    max-width: min(34rem, calc(100vw - 2rem));
+  }
+
   .items-deliver-body {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .items-deliver-head {
-    align-items: flex-start;
-  }
-
-  .items-deliver-anchor {
-    flex: 1 1 100%;
-    min-width: 0;
+    gap: 1.1rem;
   }
 }
 
-/* Stepper de quantidade: [ − ] N [ + ] num único controle, na altura dos
-   botões do modal (área de clique confortável no toque). */
+/* Stepper de quantidade: UM controle de largura cheia — laterais fixas,
+   valor flexível, divisórias internas e altura de 44px para o toque. */
 .items-stepper {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr) 3.25rem;
   align-items: stretch;
+  min-height: 2.75rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: linear-gradient(180deg, #fffaf0, var(--surface-2));
@@ -14976,11 +15013,8 @@ input[type='checkbox']:focus-visible,
 }
 
 .items-stepper-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.2rem;
-  height: 2.2rem;
+  display: grid;
+  place-items: center;
   padding: 0;
   border: 0;
   background: transparent;
@@ -15013,13 +15047,13 @@ input[type='checkbox']:focus-visible,
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 3.4rem;
-  padding: 0 0.5rem;
+  min-width: 0;
+  padding: 0 0.6rem;
   border-inline: 1px solid var(--line-strong);
   background: var(--surface);
   text-align: center;
   font-family: var(--font-display);
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-variant-numeric: tabular-nums;
 }
 
