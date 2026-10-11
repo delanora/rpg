@@ -59,9 +59,25 @@ interface IdentitySectionProps extends SheetSectionProps {
     active: boolean;
     onOpen: () => void;
   };
+  /**
+   * Liga/desliga uma característica com toggle pelo servidor (5.3B); repassado
+   * para a Vida e Defesa, onde ficam os recursos de classe.
+   */
+  onFeatureToggle?: (
+    toggleId: string,
+    active: boolean,
+    expectedVersion: number,
+  ) => void | Promise<void>;
 }
 
-export function IdentitySection({ character, update, levelUp, shortRest, longRest }: IdentitySectionProps) {
+export function IdentitySection({
+  character,
+  update,
+  levelUp,
+  shortRest,
+  longRest,
+  onFeatureToggle,
+}: IdentitySectionProps) {
   // O avatar é estado de jogo (segue editável com a criação finalizada); os
   // demais campos da identidade são construção.
   const { readOnly, lockedConstruction } = useSheetAccess();
@@ -610,6 +626,7 @@ export function IdentitySection({ character, update, levelUp, shortRest, longRes
         embedded
         shortRest={shortRest}
         longRest={longRest}
+        onFeatureToggle={onFeatureToggle}
       />
     </Section>
   );

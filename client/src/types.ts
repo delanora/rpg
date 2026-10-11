@@ -912,6 +912,11 @@ export interface ActiveToggle {
   name: string;
   active: boolean;
   resourceId: string | null;
+  /**
+   * Custo FIXO em unidades do recurso ligado (5.3B): 0 quando não há recurso.
+   * Quem cobra é o SERVIDOR ao ligar a característica.
+   */
+  cost: number;
 }
 
 export interface ActiveResource {

@@ -8,7 +8,9 @@ import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { spellSlotsUsedFrom, withSpellSlotsUsed } from '../modules/characters/characters.schema.js';
 import {
+  CLASS_DEFINITIONS,
   computeMulticlassAdjustments,
+  invalidToggleCost,
   normalizeClassEntries,
   normalizeClassState,
   restoreLongRestResources,
@@ -1692,11 +1694,13 @@ async function main(): Promise<void> {
   const rageResource = barbarianSheet.classAdjustments.resources.find((r: any) => r.id === 'rage');
   check('Fúria tem 4 usos no nível 9', rageResource?.max === 4 && rageResource?.remaining === 4, JSON.stringify(rageResource));
 
+  // 5.3B: ligar a Fúria é ação AUTHORITATIVE do servidor — ele cobra o custo 1
+  // e grava `used` + `active` na MESMA operação.
   const raging = (
-    await api('/api/characters/me', {
-      method: 'PATCH',
+    await api('/api/characters/me/features/toggle', {
+      method: 'POST',
       token: playerToken,
-      body: { classState: { active: ['rage'], used: { rage: 1 } } },
+      body: { toggleId: 'rage', active: true, expectedVersion: barbarianSheet.version },
     })
   ).data.character;
   check('Fúria ativa dá +3 de dano no nível 9', raging.classAdjustments.meleeDamageBonus === 3, String(raging.classAdjustments.meleeDamageBonus));
@@ -1745,13 +1749,14 @@ async function main(): Promise<void> {
     JSON.stringify(biteOnRaging.data.result),
   );
 
-  const longRest = (
-    await api('/api/characters/me', {
-      method: 'PATCH',
-      token: playerToken,
-      body: { classState: { active: [], used: {} } },
-    })
-  ).data.character;
+  // O estado do descanso é SERVER-AUTHORITATIVE (5.3B): o jogador não edita
+  // `active` nem o `used` de recursos de toggle. A reposição é simulada direto
+  // no banco (o descanso longo de verdade vive na transação coletiva).
+  await prisma.character.update({
+    where: { userId: playerId },
+    data: { classState: { active: [], used: {}, choices: {} } as any },
+  });
+  const longRest = (await api('/api/characters/me', { token: playerToken })).data.character;
   check(
     'descanso longo repõe os usos de Fúria',
     longRest.classAdjustments.resources.find((r: any) => r.id === 'rage')?.remaining === 4,
@@ -1804,11 +1809,12 @@ async function main(): Promise<void> {
     monkSheet.classAdjustments.toggles.find((t: any) => t.id === 'flurry-of-blows')?.resourceId === 'ki',
   );
 
+  // 5.3B: gastar ki passa pelo endpoint AUTHORITATIVE (Rajada de Golpes custa 1).
   const monkSpent = (
-    await api('/api/characters/me', {
-      method: 'PATCH',
+    await api('/api/characters/me/features/toggle', {
+      method: 'POST',
       token: playerToken,
-      body: { classState: { active: ['flurry-of-blows'], used: { ki: 1 } } },
+      body: { toggleId: 'flurry-of-blows', active: true, expectedVersion: monkSheet.version },
     })
   ).data.character;
   check(
@@ -4824,23 +4830,15 @@ async function main(): Promise<void> {
       hpTemp: 3,
       notes: 'Diário de bordo',
       avatarUrl: '/uploads/characters/avatar.png',
-      // O jogador devolve o classState inteiro (como o cliente faz): sem as
-      // `choices` ele pareceria estar tentando apagá-las.
-      classState: {
-        ...(finalized.data?.character?.classState ?? { active: [], used: {}, choices: {} }),
-        active: ['rage'],
-        used: { rage: 1 },
-      },
     },
   });
   const stateSheet = statePatch.data?.character;
   check(
-    'criação finalizada: PV atual/temporário, anotações, avatar e recursos seguem editáveis (200)',
+    'criação finalizada: PV atual/temporário, anotações e avatar seguem editáveis (200)',
     statePatch.status === 200 &&
       stateSheet?.hpCurrent === 7 &&
       stateSheet?.hpTemp === 3 &&
-      stateSheet?.notes === 'Diário de bordo' &&
-      stateSheet?.classState?.active?.includes('rage'),
+      stateSheet?.notes === 'Diário de bordo',
     JSON.stringify({ status: statePatch.status, hp: stateSheet?.hpCurrent }),
   );
 
@@ -19204,6 +19202,374 @@ async function main(): Promise<void> {
       monkFighter55.resources.some((r) => r.id === 'ki') &&
         monkFighter55.resources.some((r) => r.id === 'superiority-dice'),
       JSON.stringify(monkFighter55.resources.map((r) => r.id)),
+    );
+  }
+
+  // --- 56. Custo FIXO de recursos + toggles SERVER-AUTHORITATIVE (5.3B) -------
+  // O cliente manda só { toggleId, active, expectedVersion }: o servidor deriva
+  // a feature, o recurso e o CUSTO do catálogo, valida o saldo e grava
+  // `used` + `active` juntos, guardado por versão.
+  console.log('\n56) Custo de recursos e toggles no servidor (5.3B)');
+  {
+    // A conta/ficha do jogador PRINCIPAL foi EXCLUÍDA pela seção 13, então esta
+    // seção cria a própria conta: usuário direto no banco + token assinado (o
+    // cadastro pelo endpoint tem limite por IP e o smoke já consome a cota). Os
+    // nomes `playerToken`/`playerId` são LOCAIS a este bloco (shadow).
+    const toggleUser = await prisma.user.create({
+      data: {
+        username: `toggle_${suffix}`,
+        displayName: 'Custo 5.3B',
+        passwordHash: 'nao-usado-no-smoke',
+      },
+      select: { id: true, username: true, displayName: true, role: true },
+    });
+    createdUsernames.push(toggleUser.username);
+    const playerToken = signToken({
+      sub: toggleUser.id,
+      username: toggleUser.username,
+      displayName: toggleUser.displayName,
+      role: toggleUser.role,
+    });
+    const playerId = toggleUser.id;
+    await api('/api/characters/me', { method: 'POST', token: playerToken, body: {} });
+
+    /** Lê a ficha da conta da seção. */
+    const sheetOf = async (token: string) =>
+      (await api('/api/characters/me', { token })).data.character;
+    /** Fixture: grava `classState` direto no banco (o PATCH do jogador não é autoridade). */
+    const setState = (
+      userId: string,
+      classState: unknown = { active: [], used: {}, choices: {} },
+    ) => prisma.character.update({ where: { userId }, data: { classState: classState as any } });
+
+    // Guarda do CATÁLOGO (Passo 12): nenhum `cost` declarado pode ser inválido.
+    const badCosts: string[] = [];
+    for (const definition of CLASS_DEFINITIONS) {
+      const features = [
+        ...definition.features,
+        ...definition.subclasses.flatMap((subclass) => subclass.features),
+      ];
+      for (const feature of features) {
+        const effects = [
+          ...(feature.effect ? [feature.effect] : []),
+          ...(feature.effects ?? []),
+        ];
+        for (const effect of effects) {
+          const problem = invalidToggleCost(effect);
+          if (problem) badCosts.push(problem);
+        }
+      }
+    }
+    check(
+      '56) nenhum toggle declara custo inválido (inteiro >= 0)',
+      badCosts.length === 0,
+      badCosts.join(' | '),
+    );
+
+    const toggleEndpoint = (toggleId: string, active: boolean, expectedVersion: number) =>
+      api('/api/characters/me/features/toggle', {
+        method: 'POST',
+        token: playerToken,
+        body: { toggleId, active, expectedVersion },
+      });
+    /** Ativa/desliga usando a versão ATUAL da ficha. */
+    const toggleNow = async (toggleId: string, active: boolean) =>
+      toggleEndpoint(toggleId, active, (await sheetOf(playerToken)).version);
+    const kiUsedOf = (sheet: any): number =>
+      ((sheet?.classState?.used as Record<string, number>) ?? {}).ki ?? 0;
+    const kiRemainingOf = (sheet: any): number | undefined =>
+      sheet?.classAdjustments?.resources?.find((r: any) => r.id === 'ki')?.remaining;
+    const costOf = (sheet: any, id: string): number | undefined =>
+      sheet?.classAdjustments?.toggles?.find((t: any) => t.id === id)?.cost;
+    const setKi = (used: number) =>
+      setState(playerId, { active: [], used: used > 0 ? { ki: used } : {}, choices: {} });
+
+    // Custos do catálogo (Passo 32) — Monge do Caminho da Sombra (ki = 18).
+    await setCharacterClasses(playerId, [
+      { classKey: 'monk', level: 18, subclass: 'Caminho da Sombra' },
+    ]);
+    await setKi(0);
+    const shadowSheet = await sheetOf(playerToken);
+    check(
+      '56) custos do Monge (Sombra): Rajada/Defesa/Passo/Golpe/Alma = 1, Artes das Sombras = 2, Corpo Vazio = 4',
+      costOf(shadowSheet, 'flurry-of-blows') === 1 &&
+        costOf(shadowSheet, 'patient-defense') === 1 &&
+        costOf(shadowSheet, 'step-of-the-wind') === 1 &&
+        costOf(shadowSheet, 'stunning-strike') === 1 &&
+        costOf(shadowSheet, 'diamond-soul-reroll') === 1 &&
+        costOf(shadowSheet, 'shadow-arts') === 2 &&
+        costOf(shadowSheet, 'empty-body-invisibility') === 4,
+      JSON.stringify({
+        flurry: costOf(shadowSheet, 'flurry-of-blows'),
+        shadowArts: costOf(shadowSheet, 'shadow-arts'),
+        emptyBody: costOf(shadowSheet, 'empty-body-invisibility'),
+      }),
+    );
+
+    // A) toggle SEM `cost` explícito → cobra 1 (Rajada de Golpes).
+    const flurryRes = await toggleNow('flurry-of-blows', true);
+    check(
+      '56.A) toggle sem custo explícito cobra 1 (Rajada de Golpes)',
+      flurryRes.status === 200 &&
+        kiUsedOf(flurryRes.data?.character) === 1 &&
+        kiRemainingOf(flurryRes.data?.character) === 17,
+      JSON.stringify({ status: flurryRes.status, used: kiUsedOf(flurryRes.data?.character) }),
+    );
+
+    // B) cost 2 (Artes das Sombras).
+    await setKi(0);
+    const shadowRes = await toggleNow('shadow-arts', true);
+    check(
+      '56.B) custo 2 → used aumenta 2 (Artes das Sombras)',
+      shadowRes.status === 200 && kiUsedOf(shadowRes.data?.character) === 2,
+      JSON.stringify({ status: shadowRes.status, used: kiUsedOf(shadowRes.data?.character) }),
+    );
+
+    // D) cost 4 (Corpo Vazio).
+    await setKi(0);
+    const emptyBodyRes = await toggleNow('empty-body-invisibility', true);
+    check(
+      '56.D) custo 4 → used aumenta 4 (Corpo Vazio)',
+      emptyBodyRes.status === 200 && kiUsedOf(emptyBodyRes.data?.character) === 4,
+      JSON.stringify({ status: emptyBodyRes.status, used: kiUsedOf(emptyBodyRes.data?.character) }),
+    );
+
+    // G) desativar NÃO devolve o recurso gasto.
+    const emptyBodyOff = await toggleNow('empty-body-invisibility', false);
+    check(
+      '56.G) desativar mantém o custo gasto e só remove o estado ativo',
+      emptyBodyOff.status === 200 &&
+        kiUsedOf(emptyBodyOff.data?.character) === 4 &&
+        !(emptyBodyOff.data?.character?.classState?.active ?? []).includes('empty-body-invisibility'),
+      JSON.stringify({ status: emptyBodyOff.status, used: kiUsedOf(emptyBodyOff.data?.character) }),
+    );
+
+    // H) desativar algo já desativado → no-op, sem custo.
+    const emptyBodyAgain = await toggleNow('empty-body-invisibility', false);
+    check(
+      '56.H) desativar de novo é no-op idempotente sem cobrar',
+      emptyBodyAgain.status === 200 &&
+        kiUsedOf(emptyBodyAgain.data?.character) === 4 &&
+        emptyBodyAgain.data?.changed === false,
+      JSON.stringify({ status: emptyBodyAgain.status, changed: emptyBodyAgain.data?.changed }),
+    );
+
+    // Ativar algo já ativo → não cobra duas vezes (Passo 28).
+    await setKi(0);
+    const firstOn = await toggleNow('flurry-of-blows', true);
+    const secondOn = await toggleNow('flurry-of-blows', true);
+    check(
+      '56) ativar algo já ativo não cobra de novo (idempotente)',
+      firstOn.status === 200 &&
+        secondOn.status === 200 &&
+        kiUsedOf(secondOn.data?.character) === 1 &&
+        secondOn.data?.changed === false,
+      JSON.stringify({ used: kiUsedOf(secondOn.data?.character), changed: secondOn.data?.changed }),
+    );
+
+    // E) remaining EXATAMENTE igual ao custo → ativa.
+    await setKi(14); // ki máx. 18 → remaining 4 (Corpo Vazio custa 4)
+    const exactRes = await toggleNow('empty-body-invisibility', true);
+    check(
+      '56.E) remaining igual ao custo → ativa e zera o saldo',
+      exactRes.status === 200 &&
+        kiUsedOf(exactRes.data?.character) === 18 &&
+        kiRemainingOf(exactRes.data?.character) === 0,
+      JSON.stringify({ status: exactRes.status, used: kiUsedOf(exactRes.data?.character) }),
+    );
+
+    // F) remaining MENOR que o custo → 409 e NADA muda.
+    await setKi(15); // remaining 3 < 4
+    const poorRes = await toggleNow('empty-body-invisibility', true);
+    const afterPoor = await sheetOf(playerToken);
+    check(
+      '56.F) remaining menor que o custo → 409 INSUFFICIENT_RESOURCE, usos e estado intactos',
+      poorRes.status === 409 &&
+        poorRes.data?.error === 'INSUFFICIENT_RESOURCE' &&
+        kiUsedOf(afterPoor) === 15 &&
+        !(afterPoor.classState.active ?? []).includes('empty-body-invisibility'),
+      JSON.stringify({ status: poorRes.status, error: poorRes.data?.error, used: kiUsedOf(afterPoor) }),
+    );
+
+    // K) versão antiga → conflito, nada muda.
+    await setKi(0);
+    const currentSheet = await sheetOf(playerToken);
+    const staleRes = await toggleEndpoint('flurry-of-blows', true, currentSheet.version - 1);
+    const afterStale = await sheetOf(playerToken);
+    check(
+      '56.K) request com versão antiga → 409 e nada muda',
+      staleRes.status === 409 && kiUsedOf(afterStale) === 0 && afterStale.classState.active.length === 0,
+      JSON.stringify({ status: staleRes.status, used: kiUsedOf(afterStale) }),
+    );
+
+    // I) duas ativações CONCORRENTES da mesma feature → só uma cobra.
+    await setKi(0);
+    const sameSheet = await sheetOf(playerToken);
+    const [sameA, sameB] = await Promise.all([
+      toggleEndpoint('flurry-of-blows', true, sameSheet.version),
+      toggleEndpoint('flurry-of-blows', true, sameSheet.version),
+    ]);
+    const afterSame = await sheetOf(playerToken);
+    check(
+      '56.I) duas ativações concorrentes da MESMA feature cobram só uma vez',
+      kiUsedOf(afterSame) === 1 &&
+        [sameA.status, sameB.status].some((status) => status === 200),
+      JSON.stringify({ statuses: [sameA.status, sameB.status], used: kiUsedOf(afterSame) }),
+    );
+
+    // J) duas features DIFERENTES concorrendo pelo MESMO pool não estouram o max.
+    await setKi(14); // remaining 4: Artes das Sombras (2) + Corpo Vazio (4) = 6 > 4
+    const poolSheet = await sheetOf(playerToken);
+    const [poolA, poolB] = await Promise.all([
+      toggleEndpoint('shadow-arts', true, poolSheet.version),
+      toggleEndpoint('empty-body-invisibility', true, poolSheet.version),
+    ]);
+    const afterPool = await sheetOf(playerToken);
+    check(
+      '56.J) duas features diferentes no mesmo pool não ultrapassam o máximo',
+      kiUsedOf(afterPool) <= 18 &&
+        [poolA.status, poolB.status].filter((status) => status === 200).length === 1,
+      JSON.stringify({ statuses: [poolA.status, poolB.status], used: kiUsedOf(afterPool) }),
+    );
+
+    // O PATCH do jogador NÃO é autoridade sobre `active`/`used` de toggle.
+    await setKi(0);
+    const patchTry = await api('/api/characters/me', {
+      method: 'PATCH',
+      token: playerToken,
+      body: { classState: { active: ['flurry-of-blows'], used: { ki: 5 }, choices: {} } },
+    });
+    const afterPatchTry = await sheetOf(playerToken);
+    check(
+      '56) o PATCH do jogador não altera `active` nem o `used` do recurso de toggle',
+      patchTry.status === 200 &&
+        afterPatchTry.classState.active.length === 0 &&
+        kiUsedOf(afterPatchTry) === 0,
+      JSON.stringify({
+        status: patchTry.status,
+        active: afterPatchTry.classState.active,
+        used: kiUsedOf(afterPatchTry),
+      }),
+    );
+
+    // Feature que a ficha NÃO possui → 404 (Passo 25).
+    await setCharacterClasses(playerId, [{ classKey: 'fighter', level: 5 }]);
+    await setState(playerId, { active: [], used: {}, choices: {} });
+    const unavailableRes = await toggleNow('flurry-of-blows', true);
+    check(
+      '56) ativar característica que a ficha não possui → 404',
+      unavailableRes.status === 404,
+      JSON.stringify({ status: unavailableRes.status, error: unavailableRes.data?.error }),
+    );
+
+    // C) cost 3 (Palma Trêmula) — Caminho da Mão Aberta, nível 17+.
+    await setCharacterClasses(playerId, [
+      { classKey: 'monk', level: 18, subclass: 'Caminho da Mão Aberta' },
+    ]);
+    await setState(playerId, { active: [], used: {}, choices: {} });
+    const openHandSheet = await sheetOf(playerToken);
+    check(
+      '56) custos do Monge (Mão Aberta): Palma Trêmula = 3, Totalidade do Corpo = 1',
+      costOf(openHandSheet, 'quivering-palm') === 3 && costOf(openHandSheet, 'wholeness-of-body') === 1,
+      JSON.stringify({
+        quivering: costOf(openHandSheet, 'quivering-palm'),
+        wholeness: costOf(openHandSheet, 'wholeness-of-body'),
+      }),
+    );
+    const palmRes = await toggleNow('quivering-palm', true);
+    check(
+      '56.C) custo 3 → used aumenta 3 (Palma Trêmula)',
+      palmRes.status === 200 && kiUsedOf(palmRes.data?.character) === 3,
+      JSON.stringify({ status: palmRes.status, used: kiUsedOf(palmRes.data?.character) }),
+    );
+    await setKi(16); // remaining 2 < 3
+    const palmPoor = await toggleNow('quivering-palm', true);
+    check(
+      '56.C) Palma Trêmula com 2 de ki → 409',
+      palmPoor.status === 409 && palmPoor.data?.error === 'INSUFFICIENT_RESOURCE',
+      JSON.stringify({ status: palmPoor.status, error: palmPoor.data?.error }),
+    );
+
+    // Regressão: Totalidade do Corpo (recurso + toggle de recarga LONGA).
+    await setState(playerId, { active: [], used: {}, choices: {} });
+    const wholenessRes = await toggleNow('wholeness-of-body', true);
+    const wholenessSheet = wholenessRes.data?.character;
+    const wholenessResource = wholenessSheet?.classAdjustments?.resources?.find(
+      (resource: any) => resource.id === 'wholeness-of-body',
+    );
+    check(
+      '56) Totalidade do Corpo: recurso + toggle seguem ligados e o toggle consome o uso',
+      wholenessRes.status === 200 &&
+        wholenessResource?.max === 1 &&
+        wholenessResource?.remaining === 0 &&
+        (wholenessSheet?.classState?.active ?? []).includes('wholeness-of-body'),
+      JSON.stringify({
+        status: wholenessRes.status,
+        remaining: wholenessResource?.remaining,
+        active: wholenessSheet?.classState?.active,
+      }),
+    );
+
+    // Regressão: Fúria (custo 1) — ativar consome, desativar não devolve.
+    await setCharacterClasses(playerId, [{ classKey: 'barbarian', level: 9 }]);
+    await setState(playerId, { active: [], used: {}, choices: {} });
+    const rageOn = await toggleNow('rage', true);
+    const rageSheet = rageOn.data?.character;
+    const rageAfterOn = rageSheet?.classAdjustments?.resources?.find((r: any) => r.id === 'rage');
+    const rageOff = await toggleNow('rage', false);
+    const rageAfterOff = rageOff.data?.character?.classAdjustments?.resources?.find(
+      (r: any) => r.id === 'rage',
+    );
+    check(
+      '56) Fúria (custo 1): ativar consome 1 uso; desativar não devolve',
+      rageOn.status === 200 &&
+        rageAfterOn?.remaining === 3 &&
+        (rageSheet?.classState?.active ?? []).includes('rage') &&
+        rageOff.status === 200 &&
+        rageAfterOff?.remaining === 3 &&
+        !(rageOff.data?.character?.classState?.active ?? []).includes('rage'),
+      JSON.stringify({
+        on: rageAfterOn?.remaining,
+        off: rageAfterOff?.remaining,
+        active: rageOff.data?.character?.classState?.active,
+      }),
+    );
+
+    // Regressão: Canalizar Divindade (5.3A) segue com UM pool compartilhado, e o
+    // toggle consome desse pool pelo mesmo endpoint.
+    await setCharacterClasses(playerId, [
+      { classKey: 'cleric', level: 18, subclass: 'Domínio da Vida' },
+    ]);
+    await setState(playerId, { active: [], used: {}, choices: {} });
+    const cdRes = await toggleNow('turn-undead', true);
+    const cdSheet = cdRes.data?.character;
+    const cdList = (cdSheet?.classAdjustments?.resources ?? []).filter(
+      (r: any) => r.id === 'channel-divinity',
+    );
+    check(
+      '56) Canalizar Divindade: pool ÚNICO com 3 usos; o toggle consome 1',
+      cdRes.status === 200 &&
+        cdList.length === 1 &&
+        cdList[0]?.max === 3 &&
+        cdList[0]?.remaining === 2,
+      JSON.stringify({ status: cdRes.status, max: cdList[0]?.max, remaining: cdList[0]?.remaining }),
+    );
+
+    // Regressão: o custo NÃO interfere no reset — Short/Long Rest continuam
+    // restaurando só pela recarga.
+    const restState = normalizeClassState({ active: ['shadow-arts'], used: { ki: 8 }, choices: {} });
+    const restAdjustments = computeMulticlassAdjustments(
+      [{ classKey: 'monk', subclass: 'Caminho da Sombra', level: 18 }],
+      restState,
+    );
+    check(
+      '56) Short/Long Rest ignoram o `cost`: Ki (curta) volta e `active` fica intacto no curto',
+      restoreShortRestResources(restState, restAdjustments.resources).used.ki === undefined &&
+        restoreShortRestResources(restState, restAdjustments.resources).active.includes(
+          'shadow-arts',
+        ) &&
+        restoreLongRestResources(restState, restAdjustments.resources).used.ki === undefined,
+      JSON.stringify({ short: restoreShortRestResources(restState, restAdjustments.resources).used }),
     );
   }
 

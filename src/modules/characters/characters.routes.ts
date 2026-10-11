@@ -13,6 +13,7 @@ import {
   spendCoinsSchema,
   spendHitDieSchema,
   startShortRestSchema,
+  toggleFeatureSchema,
   transferCoinsSchema,
   updateCharacterSchema,
   useInventoryItemSchema,
@@ -35,6 +36,7 @@ import {
   spendCoins,
   spendHitDie,
   startShortRest,
+  toggleFeature,
   transferCoins,
   updateCharacter,
   updateCharacterAsMaster,
@@ -288,6 +290,29 @@ charactersRouter.post('/me/inventory/use', authenticate, async (req, res) => {
  * trava a ficha (409 ANTES de rolar) e `operationId` impede que um reenvio role
  * ou consuma de novo. O endpoint gasta EXATAMENTE um dado do tipo escolhido.
  */
+/**
+ * POST /api/characters/me/features/toggle — liga/desliga uma característica.
+ *
+ * Ação AUTHORITATIVE do servidor (5.3B): o cliente manda apenas o id do toggle,
+ * o estado desejado e a versão da ficha. O servidor deriva a característica das
+ * classes atuais, o recurso, o CUSTO do catálogo, valida o saldo e grava
+ * `used` + `active` na mesma operação, guardada por versão. Desligar não devolve
+ * o recurso gasto e um duplo clique não cobra duas vezes.
+ */
+charactersRouter.post('/me/features/toggle', authenticate, async (req, res) => {
+  const parsed = toggleFeatureSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await toggleFeature(actorFrom(req), parsed.data));
+});
+
 charactersRouter.post('/me/rest/short/hit-die', authenticate, async (req, res) => {
   const parsed = spendHitDieSchema.safeParse(req.body ?? {});
 

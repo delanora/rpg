@@ -23,6 +23,7 @@ import { useDiceRoller } from '../dice/useDiceRoller';
 import { useMusic } from '../music/useMusic';
 import { fetchTransferTargets } from '../coinsApi';
 import { fetchGameConfig } from '../gameApi';
+import { toggleFeature } from '../featuresApi';
 import { moveInventoryItem, useInventoryItem } from '../inventoryApi';
 import { resultBreakdown } from '../dice/format';
 import { closePresentation } from '../presentationApi';
@@ -262,6 +263,21 @@ export function SheetPage({ user }: { user: SessionUser }) {
     }
   }, []);
 
+  /**
+   * Liga/desliga uma característica pelo endpoint AUTHORITATIVE do servidor
+   * (5.3B). O cliente NÃO calcula o custo: o servidor deriva a característica, o
+   * recurso e o `cost` do catálogo, valida o saldo e devolve a ficha nova — que
+   * passa a ser a da tela. Erros (saldo insuficiente, conflito de versão) sobem
+   * para o chamador mostrar a mensagem perto do controle.
+   */
+  const toggleFeatureAction = useCallback(
+    async (toggleId: string, active: boolean, expectedVersion: number) => {
+      const { character: saved } = await toggleFeature(toggleId, active, expectedVersion);
+      setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+    },
+    [],
+  );
+
   /** Fechamento da imagem apresentada (só o mestre chega aqui na prática). */
   const closePresentedImage = useCallback(() => {
     void closePresentation().catch(() => setPresentation(null));
@@ -452,6 +468,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   update={update}
                   onInventoryMove={moveItem}
                   onInventoryUse={useItem}
+                  onFeatureToggle={toggleFeatureAction}
                   extraCoins={gameConfig?.extraCoins ?? false}
                   coinTargets={coinTargets}
                   onCoinsChange={adoptCoins}

@@ -187,6 +187,8 @@ const MONK_FEATURES: ClassFeatureDefinition[] = [
       id: 'empty-body-invisibility',
       name: 'Corpo Vazio — invisível (4 ki)',
       resourceId: 'ki',
+      // PHB 2014: 4 pontos de ki (o nome cita o custo, mas quem cobra é o `cost`).
+      cost: 4,
     },
   },
   {
@@ -246,7 +248,14 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
         level: 17,
         description:
           'Gaste 3 pontos de ki para implantar vibrações mortais ao acertar um ataque desarmado. Depois, com uma ação, você força o alvo a um teste de resistência de Constituição; se falhar, morre após 1d4 dias (ou imediatamente, se você gastar 3 pontos de ki ao ativar).',
-        effect: { type: 'toggle', id: 'quivering-palm', name: 'Palma Trêmula (3 ki)', resourceId: 'ki' },
+        effect: {
+          type: 'toggle',
+          id: 'quivering-palm',
+          name: 'Palma Trêmula (3 ki)',
+          resourceId: 'ki',
+          // PHB 2014: 3 pontos de ki para implantar as vibrações.
+          cost: 3,
+        },
       },
     ],
   },
@@ -262,7 +271,14 @@ const MONK_SUBCLASSES: SubclassDefinition[] = [
         level: 3,
         description:
           'Gaste 2 pontos de ki para lançar Escuridão, Silêncio, Disfarce Menor ou Ilusão Menor, sem componentes materiais.',
-        effect: { type: 'toggle', id: 'shadow-arts', name: 'Artes das Sombras (2 ki)', resourceId: 'ki' },
+        effect: {
+          type: 'toggle',
+          id: 'shadow-arts',
+          name: 'Artes das Sombras (2 ki)',
+          resourceId: 'ki',
+          // PHB 2014: 2 pontos de ki.
+          cost: 2,
+        },
       },
       {
         id: 'shadow-step',
