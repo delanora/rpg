@@ -19571,6 +19571,30 @@ async function main(): Promise<void> {
         restoreLongRestResources(restState, restAdjustments.resources).used.ki === undefined,
       JSON.stringify({ short: restoreShortRestResources(restState, restAdjustments.resources).used }),
     );
+
+    // 5.3B.1) As Disciplinas Elementais (Caminho dos Quatro Elementos) têm custos
+    // de ki NÃO uniformes (1–6) e o sistema ainda não modela disciplinas
+    // individuais nem custo variável. A feature fica apenas informativa (sem
+    // `effect`), então o endpoint autoritativo NÃO deve cobrar 1 ki implícito.
+    await setCharacterClasses(playerId, [
+      { classKey: 'monk', level: 18, subclass: 'Caminho dos Quatro Elementos' },
+    ]);
+    await setKi(0);
+    const elementalSheet = await sheetOf(playerToken);
+    const elementalRes = await toggleNow('elemental-discipline-3', true);
+    const afterElemental = await sheetOf(playerToken);
+    check(
+      '56.B1) Disciplina Elemental (nível 3) não é automatizável: sem toggle e o endpoint não cobra 1 ki',
+      costOf(elementalSheet, 'elemental-discipline-3') === undefined &&
+        elementalRes.status === 404 &&
+        kiUsedOf(afterElemental) === 0 &&
+        !(afterElemental.classState?.active ?? []).includes('elemental-discipline-3'),
+      JSON.stringify({
+        cost: costOf(elementalSheet, 'elemental-discipline-3'),
+        status: elementalRes.status,
+        used: kiUsedOf(afterElemental),
+      }),
+    );
   }
 
   console.log(
