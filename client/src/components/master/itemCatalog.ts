@@ -8,9 +8,16 @@
 
 import {
   ITEM_RARITY_LABELS,
+  POTION_CATEGORY_LABELS,
+  WEAPON_CATEGORY_LABELS,
+  WEAPON_PROPERTY_LABELS,
+  WEAPON_TYPE_LABELS,
   categoryLabel,
+  damageExpression,
   damageIsEmpty,
   describeItemDetails,
+  formatModifier,
+  healingDiceLabel,
   normalizeRarity,
   rarityLabel,
 } from '../../dnd';
@@ -172,4 +179,99 @@ export function itemUsage(item: Item, characters: Character[]): Character[] {
   return characters.filter((character) =>
     character.inventory.some((entry) => entry.itemId === item.id),
   );
+}
+
+/**
+ * Linhas curtas do resumo mecânico do item — o texto do hero do editor.
+ *
+ * Deriva TUDO do mesmo `item.details` (nenhuma fonte nova de verdade) e adapta
+ * a leitura à categoria: dano e perfil da arma, CA da armadura, efeito da
+ * poção, valor do recurso de acampamento... Cada linha é uma ideia, para não
+ * virar um parágrafo minúsculo. Vazio quando o item ainda não tem atributos.
+ */
+export function itemHeroLines(item: Item): string[] {
+  const details = item.details;
+  const lines: string[] = [];
+  const push = (value: string | undefined | null): void => {
+    const text = value?.trim();
+    if (text) lines.push(text);
+  };
+
+  if (item.category === 'Arma' || item.category === 'Cajado') {
+    // Dano principal + danos adicionais na MESMA linha ("1d4 Perfurante + 1d6 Fogo").
+    const damage: string[] = [];
+    if (details.damageCount && details.damageDie) {
+      const expression = damageExpression({
+        count: details.damageCount,
+        sides: details.damageDie,
+        bonus: details.damageBonus ?? 0,
+        type: details.damageType ?? null,
+      });
+      damage.push(`${expression}${details.damageType ? ` ${details.damageType}` : ''}`);
+    } else if (details.damageBonus) {
+      damage.push(`dano ${formatModifier(details.damageBonus)}`);
+    } else if (details.damageType) {
+      damage.push(details.damageType);
+    }
+    for (const extra of details.extraDamages ?? []) {
+      if (damageIsEmpty(extra)) continue;
+      damage.push(`+ ${damageExpression(extra)}${extra.type ? ` ${extra.type}` : ''}`);
+    }
+    push(damage.join(' '));
+
+    // Perfil: categoria, uso e munição/foco numa linha.
+    const profile: string[] = [];
+    if (details.weaponCategory) profile.push(WEAPON_CATEGORY_LABELS[details.weaponCategory]);
+    if (details.weaponType) profile.push(WEAPON_TYPE_LABELS[details.weaponType]);
+    if (details.properties?.includes('ammunition') && details.ammoType) {
+      profile.push(`munição ${details.ammoType}`);
+    }
+    if (item.category === 'Cajado' && details.spellcastingFocus) profile.push('foco de conjuração');
+    push(profile.join(' · '));
+
+    // Propriedades + alcance na última linha.
+    const traits: string[] = (details.properties ?? []).map(
+      (property) => WEAPON_PROPERTY_LABELS[property],
+    );
+    if (details.properties?.includes('versatile') && details.versatileDie) {
+      traits.push(`versátil d${details.versatileDie}`);
+    }
+    if (details.rangeNormal !== undefined && details.rangeLong !== undefined) {
+      traits.push(`${details.rangeNormal} / ${details.rangeLong} m`);
+    }
+    push(traits.join(' · '));
+  } else if (item.category === 'Armadura') {
+    if (details.baseArmorClass) {
+      push(`CA ${details.baseArmorClass}${details.armorType ? ` (${details.armorType})` : ''}`);
+    }
+    if (details.armorClassBonus) push(`Bônus de CA ${formatModifier(details.armorClassBonus)}`);
+  } else if (item.category === 'Escudo') {
+    if (details.armorClassBonus) push(`CA ${formatModifier(details.armorClassBonus)}`);
+  } else if (item.category === 'Munição') {
+    push(details.ammoType);
+    const bonus: string[] = [];
+    if (details.attackBonus) bonus.push(`acerto ${formatModifier(details.attackBonus)}`);
+    if (details.damageBonus) bonus.push(`dano ${formatModifier(details.damageBonus)}`);
+    push(bonus.join(' · '));
+  } else if (item.category === 'Poção') {
+    if (details.potionCategory) push(POTION_CATEGORY_LABELS[details.potionCategory]);
+    if (details.healingDice) push(`cura ${healingDiceLabel(details.healingDice)}`);
+    else if (details.effectRoll) push(`efeito ${details.effectRoll}`);
+    push(details.duration);
+  } else if (item.category === 'Anel') {
+    if (details.effectRoll) push(`efeito ${details.effectRoll}`);
+  } else if (item.category === 'CAMP_SUPPLY') {
+    push('Recurso de acampamento');
+    push(`${item.campSupply?.value ?? 0} por unidade`);
+  } else if (item.category === 'Item Geral' || item.category === 'Outro') {
+    if (details.effectRoll) push(`efeito ${details.effectRoll}`);
+    if (details.consumable) push('consumível (usável)');
+  }
+
+  if (lines.length === 0) {
+    // Sem atributos: mostra a primeira linha da descrição, se houver.
+    const fallback = itemSummary(item);
+    if (fallback) lines.push(fallback);
+  }
+  return lines;
 }
