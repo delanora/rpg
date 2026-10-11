@@ -8,12 +8,17 @@ import { RACE_CATALOG } from '../modules/shared/creation.js';
 import { rollDice } from '../modules/shared/dice.js';
 import { spellSlotsUsedFrom, withSpellSlotsUsed } from '../modules/characters/characters.schema.js';
 import {
+  computeMulticlassAdjustments,
   normalizeClassEntries,
+  normalizeClassState,
+  restoreLongRestResources,
   restoreShortRestResources,
   songOfRestDie,
   spellSlotMaxByLevel,
   spellSlotsForClasses,
+  type ClassEntry,
 } from '../modules/shared/classes.js';
+import { removableClassStateIds } from '../modules/shared/level-history.js';
 import {
   availableQuantity,
   reservedQuantities,
@@ -18998,6 +19003,207 @@ async function main(): Promise<void> {
       '54.7) nenhuma sessão ACTIVE presa a solicitação terminal',
       stranded === 0,
       `restantes: ${stranded}`,
+    );
+  }
+
+  // --- 55. Canalizar Divindade: POOL COMPARTILHADO no multiclasse -------------
+  // PHB 2014: um clérigo/paladino usa a MESMA reserva de Canalizar Divindade. O
+  // `max` final é o MAIOR concedido pelas classes (nunca a soma e nunca o "último
+  // vence") e o resultado NÃO pode depender da ordem das classes na ficha. São
+  // funções puras — não tocam banco.
+  console.log('\n55) Canalizar Divindade (pool compartilhado no multiclasse)');
+  {
+    const abilities55 = {
+      strength: 16,
+      dexterity: 14,
+      constitution: 14,
+      intelligence: 16,
+      wisdom: 18,
+      charisma: 16,
+    };
+    const cleric55 = (level: number): ClassEntry => ({ classKey: 'cleric', subclass: 'life', level });
+    const paladin55 = (level: number): ClassEntry => ({
+      classKey: 'paladin',
+      subclass: 'devotion',
+      level,
+    });
+    const cd55 = (entries: ClassEntry[], used: Record<string, number> = {}) => {
+      const state = normalizeClassState({ active: [], used, choices: {} });
+      const adjustments = computeMulticlassAdjustments(entries, state, abilities55);
+      const matches = adjustments.resources.filter((r) => r.id === 'channel-divinity');
+      return { adjustments, matches, resource: matches[0], state };
+    };
+
+    const soloCleric2 = cd55([cleric55(2)]).resource;
+    const soloCleric6 = cd55([cleric55(6)]).resource;
+    const soloCleric18 = cd55([cleric55(18)]).resource;
+    const soloPaladin3 = cd55([paladin55(3)]).resource;
+    const mixC2P3 = cd55([cleric55(2), paladin55(3)]);
+    const mixC5P3 = cd55([cleric55(5), paladin55(3)]);
+    const mixC6P3 = cd55([cleric55(6), paladin55(3)]);
+    const mixC17P3 = cd55([cleric55(17), paladin55(3)]).resource;
+    const mixC18P3 = cd55([cleric55(18), paladin55(3)]);
+    const mixP3C18 = cd55([paladin55(3), cleric55(18)]);
+
+    check('55.A) Clérigo 2 sozinho → Canalizar Divindade max 1', soloCleric2?.max === 1, JSON.stringify(soloCleric2));
+    check('55.B) Clérigo 6 sozinho → max 2', soloCleric6?.max === 2, JSON.stringify(soloCleric6));
+    check('55.C) Clérigo 18 sozinho → max 3', soloCleric18?.max === 3, JSON.stringify(soloCleric18));
+    check('55.D) Paladino 3 sozinho → max 1', soloPaladin3?.max === 1, JSON.stringify(soloPaladin3));
+    check('55.E) Clérigo 2 / Paladino 3 → max 1', mixC2P3.resource?.max === 1, JSON.stringify(mixC2P3.resource));
+    check('55.F) Clérigo 6 / Paladino 3 → max 2', mixC6P3.resource?.max === 2, JSON.stringify(mixC6P3.resource));
+    check('55.G) Clérigo 18 / Paladino 3 → max 3 (não 1, não 4)', mixC18P3.resource?.max === 3, JSON.stringify(mixC18P3.resource));
+    check(
+      '55.H) Paladino 3 / Clérigo 18 → max 3 (ordem NÃO muda o resultado)',
+      mixP3C18.resource?.max === 3 && mixP3C18.resource?.max === mixC18P3.resource?.max,
+      JSON.stringify({ paladinFirst: mixP3C18.resource, clericFirst: mixC18P3.resource }),
+    );
+    check(
+      '55) existe UM único recurso channel-divinity (pool compartilhado)',
+      mixC18P3.matches.length === 1 && mixP3C18.matches.length === 1,
+      JSON.stringify({ clericFirst: mixC18P3.matches.length, paladinFirst: mixP3C18.matches.length }),
+    );
+    check(
+      '55) as duas origens declaram recarga SHORT (sem conflito de catálogo)',
+      soloCleric2?.recharge === 'short' && soloPaladin3?.recharge === 'short' && mixC18P3.resource?.recharge === 'short',
+      JSON.stringify({ cleric: soloCleric2?.recharge, paladin: soloPaladin3?.recharge }),
+    );
+    check(
+      '55) Level Up Clérigo 5→6 eleva o max de 1 para 2 (derivado, sem migração)',
+      mixC5P3.resource?.max === 1 && mixC6P3.resource?.max === 2,
+      JSON.stringify({ cleric5: mixC5P3.resource?.max, cleric6: mixC6P3.resource?.max }),
+    );
+    check(
+      '55) Level Down Clérigo 18→17 derruba o max para 2 (derivação acompanha)',
+      mixC17P3?.max === 2,
+      JSON.stringify(mixC17P3),
+    );
+
+    // I/J/K) used compartilhado + restauração única no Short/Long Rest.
+    const usedState = normalizeClassState({
+      active: [],
+      used: { 'channel-divinity': 2 },
+      choices: {},
+    });
+    const usedAdjustments = computeMulticlassAdjustments([cleric55(18), paladin55(3)], usedState, abilities55);
+    const sharedUsed = usedAdjustments.resources.find((r) => r.id === 'channel-divinity');
+    check(
+      '55.I) used compartilhado: max 3 e used 2 → remaining 1',
+      sharedUsed?.max === 3 && sharedUsed?.used === 2 && sharedUsed?.remaining === 1,
+      JSON.stringify(sharedUsed),
+    );
+    const afterShort55 = restoreShortRestResources(usedState, usedAdjustments.resources);
+    check(
+      '55.J) Short Rest restaura o pool compartilhado uma única vez',
+      afterShort55.used['channel-divinity'] === undefined,
+      JSON.stringify(afterShort55.used),
+    );
+    const afterLong55 = restoreLongRestResources(usedState, usedAdjustments.resources);
+    check(
+      '55.K) Long Rest restaura o pool compartilhado',
+      afterLong55.used['channel-divinity'] === undefined,
+      JSON.stringify(afterLong55.used),
+    );
+
+    // L/M/N) Remoção de classe: o contador sobrevive enquanto QUALQUER origem o
+    // concede; só é apagado quando nenhuma restante o concede.
+    const removedPaladin = removableClassStateIds(paladin55(3), [cleric55(6)]);
+    check(
+      '55.L) remover o Paladino mantém o Clérigo: o contador NÃO é apagado',
+      !removedPaladin.has('channel-divinity'),
+      JSON.stringify([...removedPaladin]),
+    );
+    const removedCleric = removableClassStateIds(cleric55(6), [paladin55(3)]);
+    check(
+      '55.M) remover o Clérigo mantém o Paladino: o contador NÃO é apagado',
+      !removedCleric.has('channel-divinity'),
+      JSON.stringify([...removedCleric]),
+    );
+    const removedLastSource = removableClassStateIds(cleric55(6), []);
+    check(
+      '55.N) sem NENHUMA origem restante, o contador obsoleto é removido',
+      removedLastSource.has('channel-divinity'),
+      JSON.stringify([...removedLastSource]),
+    );
+
+    // O) Bardic Inspiration: não é compartilhada; long no 1º e short no 5º.
+    const bardState55 = normalizeClassState({
+      active: [],
+      used: { 'bardic-inspiration': 3 },
+      choices: {},
+    });
+    const bard1 = computeMulticlassAdjustments(
+      [{ classKey: 'bard', subclass: '', level: 1 }],
+      bardState55,
+      abilities55,
+    ).resources.find((r) => r.id === 'bardic-inspiration');
+    const bardAdjust5 = computeMulticlassAdjustments(
+      [{ classKey: 'bard', subclass: 'lore', level: 5 }],
+      bardState55,
+      abilities55,
+    );
+    const bard5 = bardAdjust5.resources.find((r) => r.id === 'bardic-inspiration');
+    check(
+      '55.O) Bardic Inspiration segue long no 1º e short no 5º (não é compartilhada)',
+      bard1?.recharge === 'long' &&
+        bard5?.recharge === 'short' &&
+        bard1?.max === 3 &&
+        bard5?.max === 3 &&
+        restoreShortRestResources(bardState55, bardAdjust5.resources).used['bardic-inspiration'] ===
+          undefined,
+      JSON.stringify({ bard1, bard5 }),
+    );
+
+    // P) Fúria: o recurso e o toggle de MESMO id continuam ligados.
+    const rageState55 = normalizeClassState({
+      active: ['rage'],
+      used: { rage: 4 },
+      choices: {},
+    });
+    const barbarian55 = computeMulticlassAdjustments(
+      [{ classKey: 'barbarian', subclass: 'berserker', level: 9 }],
+      rageState55,
+      abilities55,
+    );
+    const rageResource = barbarian55.resources.find((r) => r.id === 'rage');
+    const rageToggle = barbarian55.toggles.find((t) => t.id === 'rage');
+    check(
+      '55.P) Fúria: recurso e toggle de mesmo id continuam ligados',
+      rageResource?.max === 4 &&
+        rageResource?.recharge === 'long' &&
+        rageToggle?.active === true &&
+        rageToggle?.resourceId === 'rage',
+      JSON.stringify({ rageResource, rageToggle }),
+    );
+
+    // Q) Outras multiclasses continuam sem colisão de pools.
+    const fighterWarlock55 = computeMulticlassAdjustments(
+      [
+        { classKey: 'fighter', subclass: 'champion', level: 4 },
+        { classKey: 'warlock', subclass: 'fiend', level: 4 },
+      ],
+      normalizeClassState({}),
+      abilities55,
+    );
+    check(
+      '55.Q) Guerreiro/Bruxo: Fôlego e Surto de Ação independentes, sem colisão',
+      fighterWarlock55.resources.some((r) => r.id === 'second-wind') &&
+        fighterWarlock55.resources.some((r) => r.id === 'action-surge') &&
+        !fighterWarlock55.resources.some((r) => r.id === 'channel-divinity'),
+      JSON.stringify(fighterWarlock55.resources.map((r) => r.id)),
+    );
+    const monkFighter55 = computeMulticlassAdjustments(
+      [
+        { classKey: 'monk', subclass: 'shadow', level: 6 },
+        { classKey: 'fighter', subclass: 'battle-master', level: 4 },
+      ],
+      normalizeClassState({}),
+      abilities55,
+    );
+    check(
+      '55.Q) Monge/Guerreiro: Ki e Dados de Superioridade seguem separados',
+      monkFighter55.resources.some((r) => r.id === 'ki') &&
+        monkFighter55.resources.some((r) => r.id === 'superiority-dice'),
+      JSON.stringify(monkFighter55.resources.map((r) => r.id)),
     );
   }
 

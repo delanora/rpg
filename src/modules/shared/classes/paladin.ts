@@ -174,6 +174,10 @@ const CHANNEL_DIVINITY_EFFECT = {
     name: 'Canalizar Divindade',
     recharge: 'short' as const,
     max: 1,
+    // POOL COMPARTILHADO (PHB 2014): o mesmo `channel-divinity` do clérigo. Num
+    // clérigo/paladino vale o MAIOR máximo (clérigo 18 → 3), nunca 1 nem a soma
+    // 3+1 — ver `ClassFeatureResource.shared`.
+    shared: true as const,
   },
 };
 

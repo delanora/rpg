@@ -240,3 +240,30 @@ export function classStateIdsFor(entry: ClassEntry): Set<string> {
 
   return ids;
 }
+
+/**
+ * Ids de estado que a SAÍDA de uma classe realmente APAGA.
+ *
+ * É o que aquela classe concedia MENOS o que as classes RESTANTES ainda
+ * concedem. Sem esse desconto, remover uma classe apagaria um recurso de POOL
+ * COMPARTILHADO mesmo com a outra origem na ficha — ex.: um Clérigo/Paladino que
+ * perde o paladino ficaria sem o contador de Canalizar Divindade, embora o
+ * clérigo continue concedendo a feature (PHB 2014).
+ *
+ * Recurso comum (não compartilhado) não muda: se só aquela classe o concedia, o
+ * id não está no `remaining` e continua sendo removido como antes.
+ */
+export function removableClassStateIds(
+  removed: ClassEntry,
+  remaining: readonly ClassEntry[],
+): Set<string> {
+  const ids = classStateIdsFor(removed);
+  if (ids.size === 0) return ids;
+
+  const kept = new Set<string>();
+  for (const entry of remaining) {
+    for (const id of classStateIdsFor(entry)) kept.add(id);
+  }
+  for (const id of kept) ids.delete(id);
+  return ids;
+}

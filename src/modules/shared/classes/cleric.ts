@@ -42,6 +42,10 @@ const CHANNEL_DIVINITY_RESOURCE = {
       { level: 6, value: 2 },
       { level: 18, value: 3 },
     ],
+    // POOL COMPARTILHADO (PHB 2014): um clérigo/paladino usa a MESMA reserva de
+    // Canalizar Divindade. O `max` final é o MAIOR concedido pelas classes (não
+    // a soma) — ver `ClassFeatureResource.shared`.
+    shared: true as const,
   },
 };
 

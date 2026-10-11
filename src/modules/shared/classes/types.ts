@@ -38,6 +38,18 @@ export interface ClassFeatureResource {
    * de CAR`, nunca menos de 1). Vale depois do modificador.
    */
   min?: number;
+  /**
+   * POOL COMPARTILHADO entre classes no multiclasse (PHB 2014). Quando dois
+   * efeitos declaram o MESMO `id` com `shared: true` — caso da Canalizar
+   * Divindade, concedida pelo clérigo e pelo paladino — o motor NÃO cria dois
+   * contadores nem soma os máximos: mantém UM recurso, com `used` compartilhado
+   * (`classState.used[id]`) e `max` = o MAIOR máximo concedido pelas origens
+   * (independente da ordem das classes na ficha). Sem a flag, o merge segue o
+   * comportamento histórico ("último vence"), que serve para o par intencional
+   * recurso+toggle (Fúria, Totalidade do Corpo) e para a Inspiração de Bardo
+   * virar `short` no 5º nível.
+   */
+  shared?: boolean;
 }  /**
    * Efeito mecânico opcional de uma característica. É a ponte entre o texto da
    * característica e a aplicação automática na ficha (bônus numérico, recurso
