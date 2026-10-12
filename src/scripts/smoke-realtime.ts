@@ -87,6 +87,12 @@ let testsPlayerToken = '';
 let failures = 0;
 let legacyCombatMasterToken = '';
 let originalStartingLevel: number | undefined;
+/**
+ * Escolha do Mestre para a regra OPCIONAL de Exaustão, guardada para devolver
+ * no `cleanup` (as seções 63/64/65 exercitam a mecânica e exigem a regra ligada).
+ */
+let originalExhaustionEnabled: boolean | undefined;
+let exhaustionAdminToken: string | undefined;
 
 function check(label: string, condition: boolean, detail = ''): void {
   if (condition) {
@@ -507,11 +513,48 @@ function levelUpRequestFor(sheet: any, classKey: string, subclassPick = 0): any 
   return request;
 }
 
+/**
+ * Liga/desliga a regra OPCIONAL de Exaustão PELA ROTA (só MASTER).
+ *
+ * A troca não pode ir direto no banco: o servidor mantém um espelho em memória
+ * da configuração da mesa e só o service o atualiza, então um UPDATE cru no
+ * Prisma deixaria o servidor rodando com o valor antigo. O usuário MASTER é
+ * criado sob demanda e entra em `createdUsernames` (a limpeza o remove).
+ */
+async function setExhaustionRule(enabled: boolean): Promise<void> {
+  if (!exhaustionAdminToken) {
+    const admin = await prisma.user.create({
+      data: {
+        username: `smoke_exh_${suffix}`,
+        displayName: 'Mestre Exaustão Smoke',
+        passwordHash: 'fixture',
+        role: 'MASTER',
+      },
+    });
+    createdUsernames.push(admin.username);
+    exhaustionAdminToken = signToken({
+      sub: admin.id,
+      username: admin.username,
+      displayName: admin.displayName,
+      role: admin.role,
+    });
+  }
+  await api('/api/game/exhaustion', { method: 'POST', token: exhaustionAdminToken, body: { enabled } });
+}
+
 async function main(): Promise<void> {
   // As fixtures de criação começam no nível 1; preservar a escolha real da mesa.
   const config = await prisma.gameConfig.findUnique({ where: { id: 'main' } });
   originalStartingLevel = config?.startingLevel ?? 1;
   await prisma.gameConfig.upsert({ where: { id: 'main' }, create: { id: 'main', startingLevel: 1 }, update: { startingLevel: 1 } });
+
+  // A Exaustão é uma REGRA OPCIONAL da mesa (hotfix 6.2/6.3) e as seções 63/64/65
+  // exercitam a mecânica: a mesa é normalizada para LIGADA aqui e a escolha do
+  // Mestre volta no `cleanup`. Sem isso, uma mesa com a regra DESLIGADA faria o
+  // smoke acusar falhas que não são regressão.
+  originalExhaustionEnabled = config?.exhaustionEnabled ?? false;
+  if (originalExhaustionEnabled !== true) await setExhaustionRule(true);
+
   console.log(`\n🔎 Smoke test (Etapas 1 e 2) em ${BASE_URL}\n`);
 
   // --- 1. Cadastro -----------------------------------------------------------
@@ -21591,6 +21634,14 @@ async function cleanup(): Promise<void> {
   // Operações idempotentes da solicitação coletiva de Descanso Longo (mesma
   // tabela global sem FK para usuário).
   await prisma.longRestOperation.deleteMany({ where: { operationId: { contains: suffix } } });
+
+  // Devolve a escolha do Mestre para a regra de Exaustão ANTES de apagar as
+  // contas: a troca passa pela rota autenticada (só se o smoke a normalizou).
+  if (exhaustionAdminToken && originalExhaustionEnabled !== undefined && originalExhaustionEnabled !== true) {
+    await setExhaustionRule(originalExhaustionEnabled).catch((error) =>
+      console.error('[smoke] falha ao restaurar a regra de Exaustão:', error),
+    );
+  }
 
   if (createdUsernames.length > 0) {
     // A ficha é removida junto com o usuário (onDelete: Cascade); as solicitações
