@@ -378,36 +378,40 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
   const mainHand = equippedWeaponIn(input.inventory, 'hand1');
   const offHand = equippedWeaponIn(input.inventory, 'hand2');
   if (mainHand && offHand && isLightMelee(mainHand) && isLightMelee(offHand)) {
-    const details = offHand.details;
-    const properties = details.properties ?? [];
-    const choice = abilityFor('melee', properties.includes('finesse'), modifiers);
-    const proficient = isProficientWithWeapon(
-      input.weaponProficiencies,
-      details.weaponCategory ?? 'simple',
-      offHand.name,
-      details.canonicalWeaponId,
-    );
-    const profBonus = proficient ? proficiency : 0;
-    const die = details.damageDie ?? 0;
-    const dieCount = die > 0 ? (details.damageCount ?? 1) : 0;
+    // Qualquer mão pode ser a secundária: o servidor valida a OUTRA arma
+    // efetivamente usada na Attack Action antes de gastar a Ação Bônus.
+    for (const secondary of [offHand, mainHand]) {
+      const details = secondary.details;
+      const properties = details.properties ?? [];
+      const choice = abilityFor('melee', properties.includes('finesse'), modifiers);
+      const proficient = isProficientWithWeapon(
+        input.weaponProficiencies,
+        details.weaponCategory ?? 'simple',
+        secondary.name,
+        details.canonicalWeaponId,
+      );
+      const profBonus = proficient ? proficiency : 0;
+      const die = details.damageDie ?? 0;
+      const dieCount = die > 0 ? (details.damageCount ?? 1) : 0;
 
-    attacks.push(
-      makeWeaponAttack({
-        id: `offhand:${offHand.id}`,
-        name: `${offHand.name} (mão secundária)`,
-        weapon: offHand,
-        kind: 'melee',
-        attackBonus: clampAttackBonus(choice.modifier + profBonus + (details.attackBonus ?? 0)),
-        // O estilo habilita o modificador; sem ele, só valores negativos entram.
-        damageBonus: (duasArmas ? choice.modifier : Math.min(choice.modifier, 0)) + (details.damageBonus ?? 0),
-        ability: choice.ability,
-        abilityModifier: (duasArmas ? choice.modifier : Math.min(choice.modifier, 0)),
-        die,
-        dieCount,
-        notes: duasArmas ? 'Mão secundária · Combate com Duas Armas · com modificador de dano' : 'Mão secundária · sem o modificador de dano (duas armas leves)',
-        proficient,
-      }),
-    );
+      attacks.push(
+        makeWeaponAttack({
+          id: `offhand:${secondary.id}`,
+          name: `${secondary.name} (mão secundária)`,
+          weapon: secondary,
+          kind: 'melee',
+          attackBonus: clampAttackBonus(choice.modifier + profBonus + (details.attackBonus ?? 0)),
+          // O estilo habilita o modificador; sem ele, só valores negativos entram.
+          damageBonus: (duasArmas ? choice.modifier : Math.min(choice.modifier, 0)) + (details.damageBonus ?? 0),
+          ability: choice.ability,
+          abilityModifier: (duasArmas ? choice.modifier : Math.min(choice.modifier, 0)),
+          die,
+          dieCount,
+          notes: duasArmas ? 'Mão secundária · Combate com Duas Armas · com modificador de dano' : 'Mão secundária · sem o modificador de dano (duas armas leves)',
+          proficient,
+        }),
+      );
+    }
   }
 
   attacks.push(unarmedAttack(modifiers.strength, proficiency));

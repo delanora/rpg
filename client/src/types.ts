@@ -1902,7 +1902,20 @@ export interface PresentationClosedPayload {
 export type CombatStatus = 'PENDING_INITIATIVE' | 'ACTIVE' | 'ENDED';
 export type CombatantKind = 'CHARACTER' | 'CREATURE';
 
+export interface TurnEconomy {
+  actionsGranted: number;
+  actionsUsed: number;
+  bonusActionUsed: boolean;
+  reactionAvailable: boolean;
+  movementBudget: number;
+  movementUsed: number;
+  attackAction: { attackActionId: string; attacksMade: number; attacksAllowed: number } | null;
+  lightWeaponsAttacked: string[];
+  ready: { trigger: string; intent: string } | null;
+}
+
 export interface CombatantDto {
+  turnEconomy: TurnEconomy;
   id: string;
   kind: CombatantKind;
   characterId: string | null;
@@ -1931,6 +1944,8 @@ export interface CombatantDto {
 }
 
 export interface CombatDto {
+  version: number;
+  economyLog: { id: string; actorName: string; message: string; at: string; action?: string }[];
   id: string;
   status: CombatStatus;
   round: number;

@@ -1,5 +1,6 @@
 import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
+import { economyOf, type TurnEconomy } from '../shared/action-economy.js';
 import { characterArmorClass } from '../characters/armor-class.js';
 import type { ArmorProficiencyState } from '../shared/armor-class.js';
 import { characterDerivedAttacks, characterMaxHp } from '../characters/characters.dto.js';
@@ -8,6 +9,8 @@ import { parseJson } from '../shared/json.js';
 
 /** Formato do combate enviado a jogadores e mestre. */
 export interface CombatDto {
+  version: number;
+  economyLog: { id: string; actorName: string; message: string; at: string; action?: string }[];
   id: string;
   status: CombatStatus;
   round: number;
@@ -23,6 +26,7 @@ export interface CombatDto {
 }
 
 export interface CombatantDto {
+  turnEconomy: TurnEconomy;
   id: string;
   kind: CombatantKind;
   /** Ids de origem, para o cliente localizar a ficha/criatura correspondente. */
@@ -61,6 +65,8 @@ export interface CombatantDto {
  * Evita depender dos genéricos do Prisma em toda a aplicação.
  */
 export interface CombatSourced {
+  version: number;
+  economyLog: unknown;
   id: string;
   status: CombatStatus;
   round: number;
@@ -72,6 +78,7 @@ export interface CombatSourced {
 }
 
 export interface CombatantSourced {
+  turnEconomy: unknown;
   id: string;
   kind: CombatantKind;
   characterId: string | null;
@@ -147,6 +154,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     0;
 
   return {
+    turnEconomy: economyOf(combatant.turnEconomy),
     id: combatant.id,
     kind: combatant.kind,
     characterId: combatant.characterId,
@@ -183,6 +191,8 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     combat.status === 'ACTIVE' ? (combatants[combat.currentIndex] ?? null) : null;
 
   const dto: CombatDto = {
+    version: combat.version,
+    economyLog: z.array(z.object({ id: z.string(), actorName: z.string(), message: z.string(), at: z.string(), action: z.string().optional() })).parse(combat.economyLog),
     id: combat.id,
     status: combat.status,
     round: combat.round,

@@ -37,13 +37,15 @@ export function rollInitiativeFor(combatantId: string): Promise<CombatDto> {
   }).then((result) => result.combat);
 }
 
-export function nextTurn(): Promise<CombatDto> {
-  return api<{ combat: CombatDto }>('/api/combat/next-turn', { method: 'POST' }).then(
+export function nextTurn(combat: CombatDto): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/next-turn', { method: 'POST', body: operationFor(combat) }).then(
     (result) => result.combat,
   );
 }
 
-export function resolveAttack(input: {
+export function resolveAttack(combat: CombatDto, input: {
+  attackActionId?: string;
+  prepared?: boolean;
   attackId: string;
   targetCombatantId: string;
   attackerCombatantId?: string;
@@ -57,7 +59,7 @@ export function resolveAttack(input: {
 }): Promise<{ combat: CombatDto; result: AttackResolvedPayload }> {
   return api<{ combat: CombatDto; result: AttackResolvedPayload }>('/api/combat/attack', {
     method: 'POST',
-    body: input,
+    body: { ...operationFor(combat), ...input },
   });
 }
 
@@ -73,4 +75,20 @@ export function applyManualHp(input: {
 
 export function endCombat(): Promise<void> {
   return api<{ combatId: string }>('/api/combat/end', { method: 'POST' }).then(() => undefined);
+}
+
+export function operationFor(combat: CombatDto) {
+  return { combatId: combat.id, expectedVersion: combat.version, operationId: crypto.randomUUID() };
+}
+export type EconomyAction = 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'search' | 'use-object' | 'improvised' | 'ready' | 'execute-ready' | 'move';
+export type EconomyAdjustment = 'grant-action' | 'restore-action' | 'restore-bonus' | 'restore-reaction' | 'set-movement';
+export function executeEconomyAction(combat: CombatDto, input: {
+  combatantId: string; action: EconomyAction; description?: string; trigger?: string; intent?: string; distance?: number;
+}): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/action', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
+}
+export function overrideEconomy(combat: CombatDto, input: {
+  combatantId: string; adjustment: EconomyAdjustment; reason: string; remaining?: number;
+}): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/economy/override', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }

@@ -1,3 +1,6 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { COMBAT_ACTIONS, deriveAttackActionLimit, economyOf, moveDistance, onTurnEnd, onTurnStart, recordAttack, spendEconomy } from '../shared/action-economy.js';
+import type { CombatOperationInput, EconomyActionInput, EconomyOverrideInput } from './combat.schema.js';
 import type { CombatStatus, Prisma, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
@@ -60,8 +63,8 @@ const ACTIVE_STATUSES: CombatStatus[] = ['PENDING_INITIATIVE', 'ACTIVE'];
  * Carrega um combate já com as fichas/criaturas de cada combatente.
  * O HP é lido dessas relações — o combatente não guarda uma segunda cópia.
  */
-function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }) {
-  return prisma.combat.findFirst({
+function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }, db: Prisma.TransactionClient = prisma) {
+  return db.combat.findFirst({
     where,
     include: {
       locality: { select: { id: true, name: true } },
@@ -75,8 +78,8 @@ function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }) {
   });
 }
 
-async function loadCombatById(id: string): Promise<CombatSourced> {
-  const combat = await findCombat({ id });
+async function loadCombatById(id: string, db: Prisma.TransactionClient = prisma): Promise<CombatSourced> {
+  const combat = await findCombat({ id }, db);
   if (!combat) throw new HttpError('Combate não encontrado.', 404);
   return combat;
 }
@@ -163,6 +166,146 @@ function announceRoll(payload: DiceRolledPayload): void {
   emit(ServerEvents.DICE_ROLLED, payload);
 }
 
+/** A unidade canônica já exposta pela ficha e pelas criaturas é metros. */
+function combatantSpeed(combatant: CombatantSourced): number {
+  return Math.max(0, combatant.character?.speed ?? combatant.creature?.speed ?? 0);
+}
+
+function requireOwnTurn(combat: CombatSourced, combatant: CombatantSourced): void {
+  if (orderCombatants(combat.combatants)[combat.currentIndex]?.id !== combatant.id) {
+    throw new HttpError('Esta ação exige o turno do combatente. O Mestre pode corrigir a ordem explicitamente.', 403);
+  }
+}
+
+function actingCombatant(combat: CombatSourced, actor: CombatActor, id: string): CombatantSourced {
+  const combatant = combat.combatants.find((item) => item.id === id);
+  if (!combatant) throw new HttpError('Combatente não encontrado.', 404);
+  if (actor.role !== 'MASTER' && combatant.ownerUserId !== actor.userId) {
+    throw new HttpError('Você só pode agir com seu combatente.', 403);
+  }
+  return combatant;
+}
+
+function equippedLightWeapons(combatant: CombatantSourced) {
+  if (!combatant.character) return [];
+  return inventoryListSchema.parse(combatant.character.inventory).filter((item) =>
+    isWeaponEquipped(item) && (item.slot === 'hand1' || item.slot === 'hand2') &&
+    item.details.weaponType === 'melee' && item.details.properties?.includes('light'),
+  );
+}
+
+function isLightEquippedWeapon(combatant: CombatantSourced, id: string): boolean {
+  return equippedLightWeapons(combatant).some((item) => item.id === id);
+}
+
+function validateOffhand(combatant: CombatantSourced, id: string | undefined, attacked: string[]): void {
+  const weapons = equippedLightWeapons(combatant);
+  const offhand = weapons.find((item) => item.id === id);
+  if (!offhand || !weapons.some((other) => other.id !== id && other.slot !== offhand.slot && attacked.includes(other.id))) {
+    throw new HttpError('Mão secundária exige Attack Action com outra arma corpo a corpo leve empunhada na outra mão.', 409, 'CONFLICT');
+  }
+}
+
+async function appendEconomyLog(db: Prisma.TransactionClient, combat: CombatSourced, combatant: CombatantSourced, message: string, action?: string): Promise<void> {
+  const log = toCombatDto(combat, 'MASTER').economyLog;
+  const entry = { id: randomUUID(), actorName: combatant.name, message, at: new Date().toISOString(), ...(action ? { action } : {}) };
+  combat.economyLog = [...log, entry].slice(-100);
+  await db.combat.update({ where: { id: combat.id }, data: { economyLog: combat.economyLog as Prisma.InputJsonValue } });
+}
+
+/** Uma única versão serializa turno, consumo, ataques e overrides no combate. */
+async function runCombatOperation<T extends { combat: CombatDto }>(
+  actor: CombatActor, input: CombatOperationInput, type: string,
+  apply: (db: Prisma.TransactionClient, combat: CombatSourced) => Promise<T>,
+): Promise<T & { replayed: boolean }> {
+  const fingerprint = createHash('sha256').update(JSON.stringify({ type, actor: actor.userId, input })).digest('hex');
+  const replay = (operation: { fingerprint: string; snapshot: unknown }) => {
+    if (operation.fingerprint !== fingerprint) throw new HttpError('operationId reutilizado com outro payload/autor.', 409, 'IDEMPOTENCY_KEY_REUSED');
+    return { ...(operation.snapshot as T), replayed: true };
+  };
+  const key = { combatId_operationId: { combatId: input.combatId, operationId: input.operationId } };
+  const existing = await prisma.combatOperation.findUnique({ where: key });
+  if (existing) return replay(existing);
+  let result: T;
+  try {
+    result = await prisma.$transaction(async (db) => {
+      const previous = await db.combatOperation.findUnique({ where: key });
+      if (previous) return replay(previous);
+      const changed = await db.combat.updateMany({
+        where: { id: input.combatId, status: 'ACTIVE', version: input.expectedVersion },
+        data: { version: { increment: 1 } },
+      });
+      if (changed.count !== 1) throw new HttpError('Combate mudou ou não está ativo. Atualize e tente novamente.', 409, 'CONFLICT');
+      const combat = await loadCombatById(input.combatId, db);
+      const response = await apply(db, combat);
+      await db.combatOperation.create({ data: {
+        combatId: combat.id, operationId: input.operationId, fingerprint,
+        snapshot: response as unknown as Prisma.InputJsonValue,
+      } });
+      return response;
+    }, { timeout: 15000 });
+  } catch (error) {
+    // Dois retries simultâneos da MESMA operação: o perdedor devolve o snapshot.
+    const previous = await prisma.combatOperation.findUnique({ where: key });
+    if (previous) return replay(previous);
+    throw error;
+  }
+  if ('replayed' in result && result.replayed) return result as T & { replayed: boolean };
+  const latest = toCombatDto(await loadCombatById(input.combatId), 'MASTER');
+  emitCombat(ServerEvents.COMBAT_UPDATED, latest);
+  return { ...result, replayed: false };
+}
+
+export async function executeEconomyAction(actor: CombatActor, input: EconomyActionInput) {
+  return runCombatOperation(actor, input, 'economy-action', async (db, combat) => {
+    const combatant = actingCombatant(combat, actor, input.combatantId);
+    const economy = economyOf(combatant.turnEconomy);
+    if (input.targetCombatantId && !combat.combatants.some((item) => item.id === input.targetCombatantId)) {
+      throw new HttpError('Alvo não encontrado neste combate.', 404);
+    }
+    if (input.action === 'execute-ready') {
+      if (!economy.ready) throw new HttpError('Nenhuma ação preparada.', 409, 'CONFLICT');
+      spendEconomy(economy, 'reaction');
+      await appendEconomyLog(db, combat, combatant, `Executou ação preparada: ${economy.ready.intent}. Gatilho confirmado manualmente.`, input.action);
+      economy.ready = null;
+    } else {
+      requireOwnTurn(combat, combatant);
+      if (input.action === 'move') moveDistance(economy, input.distance!);
+      else {
+        spendEconomy(economy, COMBAT_ACTIONS[input.action].economy);
+        if (input.action === 'dash') economy.movementBudget += combatantSpeed(combatant);
+        if (input.action === 'ready') economy.ready = { trigger: input.trigger!, intent: input.intent! };
+        const context = input.action === 'ready' ? `${input.trigger} → ${input.intent}` : input.description;
+        const target = input.targetCombatantId ? combat.combatants.find((item) => item.id === input.targetCombatantId)?.name : null;
+        await appendEconomyLog(db, combat, combatant, `${COMBAT_ACTIONS[input.action].name}${target ? ` → ${target}` : ''}${context ? `: ${context}` : ''}.`, input.action);
+      }
+    }
+    await db.combatant.update({ where: { id: combatant.id }, data: { turnEconomy: economy } });
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+  });
+}
+
+export async function overrideEconomy(actor: CombatActor, input: EconomyOverrideInput) {
+  requireMaster(actor);
+  return runCombatOperation(actor, input, 'economy-override', async (db, combat) => {
+    const combatant = actingCombatant(combat, actor, input.combatantId);
+    const economy = economyOf(combatant.turnEconomy);
+    const messages = {
+      'grant-action': 'concedeu +1 Ação', 'restore-action': 'recuperou as Ações',
+      'restore-bonus': 'recuperou a Ação Bônus', 'restore-reaction': 'recuperou a Reação',
+      'set-movement': `ajustou Movimento restante para ${input.remaining} m`,
+    };
+    if (input.adjustment === 'grant-action') economy.actionsGranted += 1;
+    if (input.adjustment === 'restore-action') economy.actionsUsed = 0;
+    if (input.adjustment === 'restore-bonus') economy.bonusActionUsed = false;
+    if (input.adjustment === 'restore-reaction') economy.reactionAvailable = true;
+    if (input.adjustment === 'set-movement') economy.movementBudget = economy.movementUsed + input.remaining!;
+    await db.combatant.update({ where: { id: combatant.id }, data: { turnEconomy: economy } });
+    await appendEconomyLog(db, combat, combatant, `Mestre ${actor.username} ${messages[input.adjustment]} para ${combatant.name}: ${input.reason}.`, `override:${input.adjustment}`);
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), 'MASTER') };
+  });
+}
+
 /** --- Consulta ---------------------------------------------------------------- */
 
 export async function getActiveCombat(viewer: Role): Promise<CombatDto | null> {
@@ -187,10 +330,10 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
 
   const entries = input.entries.filter((entry) => entry.quantity > 0);
   const creatureIds = [...new Set(entries.map((entry) => entry.creatureId))];
-  // NPCs são entidades narrativas e não entram em combate.
+  // NPCs e criaturas usam o mesmo combatente e a mesma economia quando escolhidos.
   const creatures = creatureIds.length
     ? await prisma.creature.findMany({
-        where: { id: { in: creatureIds }, kind: 'CREATURE' },
+        where: { id: { in: creatureIds } },
       })
     : [];
   const creatureById = new Map(creatures.map((creature) => [creature.id, creature]));
@@ -266,9 +409,16 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
     return viewer === 'MASTER' ? dto : hideCreatureStats(dto);
   }
 
-  await prisma.combat.update({
-    where: { id: combatId },
-    data: { status: 'ACTIVE', currentIndex: 0, round: 1 },
+  await prisma.$transaction(async (db) => {
+    const changed = await db.combat.updateMany({
+      where: { id: combatId, status: 'PENDING_INITIATIVE' },
+      data: { status: 'ACTIVE', currentIndex: 0, round: 1, version: { increment: 1 } },
+    });
+    if (!changed.count) return;
+    const first = orderCombatants(combat.combatants)[0];
+    if (first) await db.combatant.update({
+      where: { id: first.id }, data: { turnEconomy: onTurnStart(combatantSpeed(first)), sneakAttackUsedThisTurn: false },
+    });
   });
 
   const active = await loadCombatById(combatId);
@@ -347,55 +497,27 @@ export async function rollInitiative(
  * espera pela iniciativa não há turno corrente, então ninguém além do mestre
  * avança.
  */
-export async function nextTurn(actor: CombatActor): Promise<CombatDto> {
-  const combat = await requireActiveCombat();
-
-  const ordered = orderCombatants(combat.combatants);
-
-  if (actor.role !== 'MASTER') {
-    // Sem turno montado (PENDING_INITIATIVE) não há combatente corrente: só o
-    // mestre avançaria. Com o combate ativo, o jogador precisa ser o dono do
-    // combatente atual para encerrar o turno.
-    const current = combat.status === 'ACTIVE' ? ordered[combat.currentIndex] : undefined;
-    if (!current || current.ownerUserId !== actor.userId) {
+export async function nextTurn(actor: CombatActor, input: CombatOperationInput): Promise<CombatDto> {
+  const pending = await prisma.combat.findUnique({ where: { id: input.combatId }, select: { status: true } });
+  if (pending?.status === 'PENDING_INITIATIVE' && actor.role !== 'MASTER') throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
+  const response = await runCombatOperation(actor, input, 'next-turn', async (db, combat) => {
+    const ordered = orderCombatants(combat.combatants);
+    const outgoing = ordered[combat.currentIndex];
+    if (actor.role !== 'MASTER' && outgoing?.ownerUserId !== actor.userId) {
       throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
     }
-  }
-
-  if (combat.status !== 'ACTIVE') {
-    throw new HttpError('A ordem de iniciativa ainda não foi montada.', 409);
-  }
-
-  let index = combat.currentIndex + 1;
-  let round = combat.round;
-
-  if (index >= ordered.length) {
-    index = 0;
-    round += 1;
-  }
-
-  const incoming = ordered[index];
-
-  await prisma.$transaction([
-    prisma.combat.update({
-      where: { id: combat.id },
-      data: { currentIndex: index, round },
-    }),
-    // O turno do combatente que vai agir começa agora: é aqui que a trava
-    // "uma vez por turno" do Ataque Furtivo é zerada (único ponto de avanço
-    // de turno do sistema).
-    prisma.combatant.update({
-      where: { id: incoming.id },
-      data: { sneakAttackUsedThisTurn: false },
-    }),
-  ]);
-
-  const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
-  emitCombat(ServerEvents.COMBAT_UPDATED, dto);
-  emitTurn(dto);
-  // O jogador nunca recebe a vida/CA das criaturas na resposta HTTP (a mesma
-  // visão que ele já recebe em tempo real pelo `emitCombat`).
-  return actor.role === 'MASTER' ? dto : hideCreatureStats(dto);
+    const index = (combat.currentIndex + 1) % ordered.length;
+    const round = combat.round + (index === 0 ? 1 : 0);
+    await db.combatant.update({ where: { id: outgoing.id }, data: { turnEconomy: onTurnEnd(economyOf(outgoing.turnEconomy)) } });
+    const incoming = ordered[index];
+    await db.combat.update({ where: { id: combat.id }, data: { currentIndex: index, round } });
+    await db.combatant.update({ where: { id: incoming.id }, data: {
+      sneakAttackUsedThisTurn: false, turnEconomy: onTurnStart(combatantSpeed(incoming)),
+    } });
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+  });
+  if (!response.replayed) emitTurn(response.combat);
+  return response.combat;
 }
 
 /** --- Dano e cura --------------------------------------------------------------- */
@@ -409,6 +531,8 @@ export async function nextTurn(actor: CombatActor): Promise<CombatDto> {
 async function changeHp(
   combatant: CombatantSourced,
   delta: number,
+  db: Prisma.TransactionClient = prisma,
+  publications?: Set<string>,
 ): Promise<{ hpCurrent: number; hpMax: number } | null> {
   if (combatant.kind === 'CHARACTER' && combatant.characterId && combatant.character) {
     const { character } = combatant;
@@ -425,7 +549,7 @@ async function changeHp(
     //   • dano (delta < 0) consome primeiro os PV temporários; só o excedente
     //     chega aos PV atuais; cura (delta > 0) não mexe nos temporários;
     //   • PV atuais nunca ficam abaixo de 0 nem acima de hpMax.
-    const affected = await prisma.$executeRaw`
+    const affected = await db.$executeRaw`
       UPDATE "characters"
       SET "hpTemp" = GREATEST(0, "hpTemp" - GREATEST(0, -${delta})),
           "hpCurrent" = GREATEST(
@@ -444,23 +568,10 @@ async function changeHp(
 
     // Relê o estado REALMENTE gravado para montar o DTO e publicar — nunca o
     // valor calculado em memória.
-    const stored = await prisma.character.findUniqueOrThrow({ where: { id: character.id } });
+    const stored = await db.character.findUniqueOrThrow({ where: { id: character.id } });
 
-    // Reaproveita o canal da ficha: o jogador vê o próprio HP mudar na hora,
-    // e o mestre vê no painel.
-    const payload = {
-      userId: stored.userId,
-      username: character.user.username,
-      characterId: stored.id,
-      version: stored.version,
-      changes: { hpCurrent: stored.hpCurrent, hpTemp: stored.hpTemp },
-      character: await toSheetDto(stored, character.user.username),
-      at: new Date().toISOString(),
-    };
-
-    const broadcaster = getBroadcaster();
-    broadcaster.toMasters(ServerEvents.SHEET_UPDATED, payload);
-    broadcaster.toUser(stored.userId, ServerEvents.SHEET_UPDATED, payload);
+    if (publications) publications.add(stored.id);
+    else await publishCharacter(stored.id);
 
     return { hpCurrent: stored.hpCurrent, hpMax: stored.hpMax + hpBonus };
   }
@@ -473,7 +584,7 @@ async function changeHp(
     const hpMax = combatant.hpMax ?? combatant.creature?.hpMax ?? 0;
     const ceiling = Math.max(hpMax, 0);
 
-    const affected = await prisma.$executeRaw`
+    const affected = await db.$executeRaw`
       UPDATE "combatants"
       SET "hpCurrent" = GREATEST(0, LEAST(${ceiling}, COALESCE("hpCurrent", 0) + ${delta}))
       WHERE "id" = ${combatant.id}
@@ -481,7 +592,7 @@ async function changeHp(
 
     if (affected === 0) return null;
 
-    const stored = await prisma.combatant.findUniqueOrThrow({ where: { id: combatant.id } });
+    const stored = await db.combatant.findUniqueOrThrow({ where: { id: combatant.id } });
     return { hpCurrent: stored.hpCurrent ?? 0, hpMax };
   }
 
@@ -651,7 +762,7 @@ interface AmmoBonus {
 }
 
 /** Publica a ficha (inventário) para o dono e os mestres — `sheet:updated`. */
-async function publishInventory(characterId: string, inventory: unknown): Promise<void> {
+async function publishCharacter(characterId: string): Promise<void> {
   const updated = await prisma.character.findUnique({
     where: { id: characterId },
     include: { user: { select: { username: true } } },
@@ -663,7 +774,7 @@ async function publishInventory(characterId: string, inventory: unknown): Promis
     username: updated.user.username,
     characterId: updated.id,
     version: updated.version,
-    changes: { inventory },
+    changes: { inventory: updated.inventory, hpCurrent: updated.hpCurrent, hpTemp: updated.hpTemp },
     character: await toSheetDto(updated, updated.user.username),
     at: new Date().toISOString(),
   };
@@ -687,10 +798,12 @@ async function publishInventory(characterId: string, inventory: unknown): Promis
 async function consumeAmmo(
   characterId: string,
   ammoType: AmmoType,
-  preferredInventoryId?: string,
+  preferredInventoryId: string | undefined,
+  db: Prisma.TransactionClient,
+  publications: Set<string>,
 ): Promise<AmmoBonus | null> {
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const current = await prisma.character.findUnique({
+    const current = await db.character.findUnique({
       where: { id: characterId },
       select: { inventory: true, version: true },
     });
@@ -729,7 +842,7 @@ async function consumeAmmo(
           )
         : inventory.filter((item) => item.id !== stack.id);
 
-    const result = await prisma.character.updateMany({
+    const result = await db.character.updateMany({
       where: { id: characterId, version: current.version },
       data: {
         inventory: nextInventory as unknown as Prisma.InputJsonValue,
@@ -738,7 +851,7 @@ async function consumeAmmo(
     });
 
     if (result.count === 1) {
-      await publishInventory(characterId, nextInventory);
+      publications.add(characterId);
       return bonus;
     }
   }
@@ -755,388 +868,404 @@ export async function resolveAttack(
   actor: CombatActor,
   input: AttackInput,
 ): Promise<{ combat: CombatDto; result: AttackResolvedPayload }> {
-  const combat = await requireActiveCombat();
-
-  if (combat.status !== 'ACTIVE') {
-    throw new HttpError('O combate não está em andamento.', 409);
-  }
-
-  const attacker = input.attackerCombatantId
-    ? combat.combatants.find((item) => item.id === input.attackerCombatantId)
-    : combat.combatants.find(
-        (item) => item.kind === 'CHARACTER' && item.ownerUserId === actor.userId,
-      );
-
-  if (!attacker) {
-    throw new HttpError('Você não tem um combatente neste combate.', 403);
-  }
-
-  if (actor.role !== 'MASTER' && attacker.ownerUserId !== actor.userId) {
-    throw new HttpError('Você só pode atacar com o seu próprio personagem.', 403);
-  }
-
-  const target = combat.combatants.find((item) => item.id === input.targetCombatantId);
-  if (!target) throw new HttpError('Alvo não encontrado neste combate.', 404);
-  if (target.id === attacker.id) throw new HttpError('Escolha outro alvo.', 400);
-
-  const attack = combatantAttacks(attacker).find((item) => item.id === input.attackId);
-  if (!attack) {
-    throw new HttpError('Ataque não encontrado nesta ficha ou criatura.', 404);
-  }
-
-  // Ataque derivado de arma que não pode ser empunhada agora (ex.: duas mãos
-  // com a outra mão ocupada): recusa com o motivo, em vez de rolar.
-  if (attack.blocked) {
-    throw new HttpError(attack.blocked, 400);
-  }
-
-  // Munição: só para PERSONAGENS e só quando o ataque aponta para uma arma do
-  // inventário. A arma precisa estar EQUIPADA numa das mãos; se ela exigir
-  // munição (propriedade `ammunition`), 1 unidade é gasta ANTES de rolar —
-  // sem munição, nada é rolado (409). Criaturas nunca consomem.
-  let ammoBonus: AmmoBonus = { attackBonus: 0, damageBonus: 0 };
-  if (attacker.kind === 'CHARACTER' && attacker.character && attack.inventoryItemId) {
-    const inventory = parseJson<InventoryLike[]>(
-      inventoryListSchema,
-      attacker.character.inventory,
-      [],
-    );
-    const weapon = inventory.find((item) => item.id === attack.inventoryItemId);
-    if (!isWeaponEquipped(weapon)) {
-      throw new HttpError('Equipe a arma deste ataque para usá-lo.', 409);
-    }
-    const ammoType = requiredAmmoType(weapon);
-    if (ammoType) {
-      const consumed = await consumeAmmo(attacker.character.id, ammoType, input.ammoInventoryId);
-      if (!consumed) throw new HttpError('Sem munição para esta arma.', 409);
-      ammoBonus = consumed;
-    }
-  }
-
-  // Personagem não tem CA gravada: ela é calculada da ficha (atributos +
-  // equipamento + override do mestre), igual à que aparece no tabuleiro.
-  const targetArmorClass =
-    target.character !== null
-      ? characterArmorClass(target.character).value
-      : (target.armorClass ?? target.creature?.armorClass ?? 10);
-
-  // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
-  // vale) — mesmo critério da janela de dados.
-  const advantage = Boolean(input.advantage) && !input.disadvantage;
-  const disadvantage = Boolean(input.disadvantage) && !input.advantage;
-  // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
-  const firstRoll = rollD20();
-  const secondRoll = advantage || disadvantage ? rollD20() : null;
-  const attackRoll =
-    secondRoll === null
-      ? firstRoll
-      : advantage
-        ? Math.max(firstRoll, secondRoll)
-        : Math.min(firstRoll, secondRoll);
-  const attackDice = secondRoll === null ? [attackRoll] : [firstRoll, secondRoll];
-  // A munição usada soma o próprio bônus de acerto à rolagem.
-  const attackTotal = attackRoll + attack.attackBonus + ammoBonus.attackBonus;
-  // Limiar de crítico: 20 por padrão, 19/18 com o Crítico Aprimorado/Superior
-  // do Campeão (o MENOR limiar prevalece entre as classes). Criaturas não têm
-  // features: ficam no 20 natural.
-  const critThreshold =
-    attacker.character !== null ? characterCritThreshold(attacker.character) : 20;
-  const critical = attackRoll >= critThreshold;
-  // Crítico sempre acerta; 1 natural sempre erra.
-  const hit = critical || (attackRoll !== 1 && attackTotal >= targetArmorClass);
-
-  announceRoll({
-    kind: 'attack',
-    actorName: attacker.name,
-    expression: advantage ? '1d20 (vantagem)' : disadvantage ? '1d20 (desvantagem)' : '1d20',
-    rolls: attackDice,
-    sides: 20,
-    modifier: attack.attackBonus + ammoBonus.attackBonus,
-    total: attackTotal,
-    crit: critical,
-    at: new Date().toISOString(),
-  });
-
-  let damageRolled = 0;
-  let sneakAttackResult: { expression: string; total: number; reason: string } | null = null;
-  // Cada parcela do ataque (principal + `extraDamages`), com o que foi rolado e
-  // o efeito da defesa do alvo — é o que explica o dano final ao mestre.
-  const components: DamageComponentPayload[] = [];
-
-  if (hit) {
-    const attackerAdjustments =
-      attacker.kind === 'CHARACTER' && attacker.character
-        ? characterAdjustments(attacker.character)
-        : null;
-
-    // Bônus de dano corpo a corpo (Fúria): só na parcela FÍSICA — não bonifica
-    // (nem reduz) uma parcela de outro tipo, como o fogo de uma arma flamejante.
-    const meleeBonus =
-      !attack.ranged && attackerAdjustments && attackerAdjustments.meleeDamageBonus > 0
-        ? attackerAdjustments.meleeDamageBonus
-        : 0;
-
-    // Ataque Furtivo: só entra com as condições táticas do PHB (vantagem no
-    // ataque OU aliado adjacente confirmado), sem desvantagem e uma vez por
-    // turno. É dano físico, então vai na 1ª parcela física.
-    const sneak = rollSneakAttack(attacker, attack, critical, {
-      advantage,
-      disadvantage,
-      adjacentAlly: Boolean(input.adjacentAlly),
-      usedThisTurn: attacker.sneakAttackUsedThisTurn,
-    });
-    const sneakRoll = sneak && sneak.total > 0 ? sneak : null;
-
-    const defenses = damageDefensesOf(target);
-    const specs = attackDamages(attack);
-    let total = 0;
-    // A Fúria entra UMA vez, na primeira parcela FÍSICA. O Ataque Furtivo
-    // acompanha o dano da ARMA, então entra UMA vez na primeira parcela — sem
-    // depender do tipo (amarrá-lo à parcela física o descartava em armas sem
-    // tipo de dano).
-    let physicalBonusApplied = false;
-    let sneakApplied = false;
-    // Atributo que alimenta o dano: ataques derivados da arma sabem qual é
-    // (FOR/DES); os gravados à mão não, então a parcela sai como "Bônus".
-    const abilityLabel = attack.ability ? ABILITY_LABELS[attack.ability] : null;
-    const abilityModifier = attack.abilityModifier ?? 0;
-
-    for (let index = 0; index < specs.length; index += 1) {
-      const spec = specs[index];
-      // Parcela vazia (sem dados e sem bônus) não entra no log nem no dano.
-      if (damageIsEmpty(spec)) continue;
-
-      // A expressão textual é derivada só para a rolagem (o crítico dobra os
-      // DADOS da parcela e o modificador entra uma vez).
-      const damage = rollDice(damageExpression(spec), { crit: critical });
-      if (!damage) continue;
-
-      let componentTotal = damage.total;
-
-      // Quebra legível da parcela: cada dado/bônus vira uma parte. É o que o
-      // registro exibe como `1d8(4)+1d6(2)+DES(+3)=9`.
-      // A parcela principal é o golpe/arma; as seguintes são danos extras de
-      // outro tipo (ex.: fogo). O rótulo é montado aqui, não no frontend.
-      const isPrimary = index === 0;
-      const breakdownParts: DamagePartPayload[] = [];
-      if (spec.count > 0 && spec.sides > 0) {
-        breakdownParts.push({
-          source: isPrimary ? 'weapon' : 'extra',
-          label: isPrimary ? 'Arma' : 'Dano extra',
-          // O número de dados reflete o crítico (o dado dobrado sai como 2d8).
-          dice: `${damage.rolls.length}d${spec.sides}`,
-          rolls: damage.rolls,
-          value: damage.total - spec.bonus,
-        });
-      }
-
-      const isPhysical = spec.type !== null && PHYSICAL_DAMAGE_TYPES.has(spec.type);
-
-      // Crítico Brutal: dados de arma extras no crítico (só corpo a corpo),
-      // somados à parcela FÍSICA.
-      if (
-        isPhysical &&
-        critical &&
-        attackerAdjustments &&
-        attackerAdjustments.critExtraDice > 0 &&
-        spec.count > 0 &&
-        spec.sides > 0
-      ) {
-        const extra = rollDice(
-          `${spec.count * attackerAdjustments.critExtraDice}d${spec.sides}`,
-          { crit: false },
+  const publications = new Set<string>();
+  const rolls: DiceRolledPayload[] = [];
+  const response = await runCombatOperation(actor, input, 'attack', async (db, combat) => {
+    const attacker = input.attackerCombatantId
+      ? combat.combatants.find((item) => item.id === input.attackerCombatantId)
+      : combat.combatants.find(
+          (item) => item.kind === 'CHARACTER' && item.ownerUserId === actor.userId,
         );
-        if (extra && extra.total > 0) {
-          componentTotal += extra.total;
+
+    if (!attacker) {
+      throw new HttpError('Você não tem um combatente neste combate.', 403);
+    }
+
+    if (actor.role !== 'MASTER' && attacker.ownerUserId !== actor.userId) {
+      throw new HttpError('Você só pode atacar com o seu próprio personagem.', 403);
+    }
+
+    const target = combat.combatants.find((item) => item.id === input.targetCombatantId);
+    if (!target) throw new HttpError('Alvo não encontrado neste combate.', 404);
+    if (target.id === attacker.id) throw new HttpError('Escolha outro alvo.', 400);
+
+    const attack = combatantAttacks(attacker).find((item) => item.id === input.attackId);
+    if (!attack) {
+      throw new HttpError('Ataque não encontrado nesta ficha ou criatura.', 404);
+    }
+
+    // Ataque derivado de arma que não pode ser empunhada agora (ex.: duas mãos
+    // com a outra mão ocupada): recusa com o motivo, em vez de rolar.
+    if (attack.blocked) {
+      throw new HttpError(attack.blocked, 400);
+    }
+
+    const economy = economyOf(attacker.turnEconomy);
+    if (input.prepared) {
+      if (!economy.ready) throw new HttpError('Nenhuma ação preparada.', 409, 'CONFLICT');
+      if (input.attackActionId || attack.id.startsWith('offhand:')) throw new HttpError('Ataque preparado não é continuação nem mão secundária.', 400);
+      spendEconomy(economy, 'reaction');
+      economy.ready = null;
+      await appendEconomyLog(db, combat, attacker, 'Executou ataque preparado usando Reação; gatilho confirmado manualmente.', 'prepared-attack');
+    } else {
+      requireOwnTurn(combat, attacker);
+      if (attack.id.startsWith('offhand:')) {
+        if (input.attackActionId) throw new HttpError('Mão secundária não integra o contador da Attack Action.', 400);
+        validateOffhand(attacker, attack.inventoryItemId, economy.lightWeaponsAttacked);
+        spendEconomy(economy, 'bonus-action');
+      } else {
+        const limit = attacker.character ? deriveAttackActionLimit(normalizeClassEntries(attacker.character.classes)) : 1;
+        recordAttack(economy, limit, randomUUID(), input.attackActionId);
+        if (attack.inventoryItemId && isLightEquippedWeapon(attacker, attack.inventoryItemId)) {
+          economy.lightWeaponsAttacked = [...new Set([...economy.lightWeaponsAttacked, attack.inventoryItemId])];
+        }
+      }
+    }
+    await db.combatant.update({ where: { id: attacker.id }, data: { turnEconomy: economy } });
+
+    // Munição: só para PERSONAGENS e só quando o ataque aponta para uma arma do
+    // inventário. A arma precisa estar EQUIPADA numa das mãos; se ela exigir
+    // munição (propriedade `ammunition`), 1 unidade é gasta ANTES de rolar —
+    // sem munição, nada é rolado (409). Criaturas nunca consomem.
+    let ammoBonus: AmmoBonus = { attackBonus: 0, damageBonus: 0 };
+    if (attacker.kind === 'CHARACTER' && attacker.character && attack.inventoryItemId) {
+      const inventory = parseJson<InventoryLike[]>(
+        inventoryListSchema,
+        attacker.character.inventory,
+        [],
+      );
+      const weapon = inventory.find((item) => item.id === attack.inventoryItemId);
+      if (!isWeaponEquipped(weapon)) {
+        throw new HttpError('Equipe a arma deste ataque para usá-lo.', 409);
+      }
+      const ammoType = requiredAmmoType(weapon);
+      if (ammoType) {
+        const consumed = await consumeAmmo(attacker.character.id, ammoType, input.ammoInventoryId, db, publications);
+        if (!consumed) throw new HttpError('Sem munição para esta arma.', 409);
+        ammoBonus = consumed;
+      }
+    }
+
+    // Personagem não tem CA gravada: ela é calculada da ficha (atributos +
+    // equipamento + override do mestre), igual à que aparece no tabuleiro.
+    const targetArmorClass =
+      target.character !== null
+        ? characterArmorClass(target.character).value
+        : (target.armorClass ?? target.creature?.armorClass ?? 10);
+
+    // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
+    // vale) — mesmo critério da janela de dados.
+    const advantage = Boolean(input.advantage) && !input.disadvantage;
+    const disadvantage = Boolean(input.disadvantage) && !input.advantage;
+    // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
+    const firstRoll = rollD20();
+    const secondRoll = advantage || disadvantage ? rollD20() : null;
+    const attackRoll =
+      secondRoll === null
+        ? firstRoll
+        : advantage
+          ? Math.max(firstRoll, secondRoll)
+          : Math.min(firstRoll, secondRoll);
+    const attackDice = secondRoll === null ? [attackRoll] : [firstRoll, secondRoll];
+    // A munição usada soma o próprio bônus de acerto à rolagem.
+    const attackTotal = attackRoll + attack.attackBonus + ammoBonus.attackBonus;
+    // Limiar de crítico: 20 por padrão, 19/18 com o Crítico Aprimorado/Superior
+    // do Campeão (o MENOR limiar prevalece entre as classes). Criaturas não têm
+    // features: ficam no 20 natural.
+    const critThreshold =
+      attacker.character !== null ? characterCritThreshold(attacker.character) : 20;
+    const critical = attackRoll >= critThreshold;
+    // Crítico sempre acerta; 1 natural sempre erra.
+    const hit = critical || (attackRoll !== 1 && attackTotal >= targetArmorClass);
+
+    rolls.push({
+      kind: 'attack',
+      actorName: attacker.name,
+      expression: advantage ? '1d20 (vantagem)' : disadvantage ? '1d20 (desvantagem)' : '1d20',
+      rolls: attackDice,
+      sides: 20,
+      modifier: attack.attackBonus + ammoBonus.attackBonus,
+      total: attackTotal,
+      crit: critical,
+      at: new Date().toISOString(),
+    });
+
+    let damageRolled = 0;
+    let sneakAttackResult: { expression: string; total: number; reason: string } | null = null;
+    // Cada parcela do ataque (principal + `extraDamages`), com o que foi rolado e
+    // o efeito da defesa do alvo — é o que explica o dano final ao mestre.
+    const components: DamageComponentPayload[] = [];
+
+    if (hit) {
+      const attackerAdjustments =
+        attacker.kind === 'CHARACTER' && attacker.character
+          ? characterAdjustments(attacker.character)
+          : null;
+
+      // Bônus de dano corpo a corpo (Fúria): só na parcela FÍSICA — não bonifica
+      // (nem reduz) uma parcela de outro tipo, como o fogo de uma arma flamejante.
+      const meleeBonus =
+        !attack.ranged && attackerAdjustments && attackerAdjustments.meleeDamageBonus > 0
+          ? attackerAdjustments.meleeDamageBonus
+          : 0;
+
+      // Ataque Furtivo: só entra com as condições táticas do PHB (vantagem no
+      // ataque OU aliado adjacente confirmado), sem desvantagem e uma vez por
+      // turno. É dano físico, então vai na 1ª parcela física.
+      const sneak = rollSneakAttack(attacker, attack, critical, {
+        advantage,
+        disadvantage,
+        adjacentAlly: Boolean(input.adjacentAlly),
+        usedThisTurn: attacker.sneakAttackUsedThisTurn,
+      });
+      const sneakRoll = sneak && sneak.total > 0 ? sneak : null;
+
+      const defenses = damageDefensesOf(target);
+      const specs = attackDamages(attack);
+      let total = 0;
+      // A Fúria entra UMA vez, na primeira parcela FÍSICA. O Ataque Furtivo
+      // acompanha o dano da ARMA, então entra UMA vez na primeira parcela — sem
+      // depender do tipo (amarrá-lo à parcela física o descartava em armas sem
+      // tipo de dano).
+      let physicalBonusApplied = false;
+      let sneakApplied = false;
+      // Atributo que alimenta o dano: ataques derivados da arma sabem qual é
+      // (FOR/DES); os gravados à mão não, então a parcela sai como "Bônus".
+      const abilityLabel = attack.ability ? ABILITY_LABELS[attack.ability] : null;
+      const abilityModifier = attack.abilityModifier ?? 0;
+
+      for (let index = 0; index < specs.length; index += 1) {
+        const spec = specs[index];
+        // Parcela vazia (sem dados e sem bônus) não entra no log nem no dano.
+        if (damageIsEmpty(spec)) continue;
+
+        // A expressão textual é derivada só para a rolagem (o crítico dobra os
+        // DADOS da parcela e o modificador entra uma vez).
+        const damage = rollDice(damageExpression(spec), { crit: critical });
+        if (!damage) continue;
+
+        let componentTotal = damage.total;
+
+        // Quebra legível da parcela: cada dado/bônus vira uma parte. É o que o
+        // registro exibe como `1d8(4)+1d6(2)+DES(+3)=9`.
+        // A parcela principal é o golpe/arma; as seguintes são danos extras de
+        // outro tipo (ex.: fogo). O rótulo é montado aqui, não no frontend.
+        const isPrimary = index === 0;
+        const breakdownParts: DamagePartPayload[] = [];
+        if (spec.count > 0 && spec.sides > 0) {
           breakdownParts.push({
-            source: 'critical',
-            label: 'Crítico Brutal',
-            dice: extra.expression,
-            rolls: extra.rolls,
-            value: extra.total,
+            source: isPrimary ? 'weapon' : 'extra',
+            label: isPrimary ? 'Arma' : 'Dano extra',
+            // O número de dados reflete o crítico (o dado dobrado sai como 2d8).
+            dice: `${damage.rolls.length}d${spec.sides}`,
+            rolls: damage.rolls,
+            value: damage.total - spec.bonus,
           });
         }
-      }
 
-      // Fúria: bônus FÍSICO, UMA vez, na primeira parcela física.
-      if (isPhysical && !physicalBonusApplied) {
-        if (meleeBonus > 0) {
-          componentTotal += meleeBonus;
-          breakdownParts.push({ source: 'rage', label: 'Fúria', dice: '', rolls: [], value: meleeBonus });
+        const isPhysical = spec.type !== null && PHYSICAL_DAMAGE_TYPES.has(spec.type);
+
+        // Crítico Brutal: dados de arma extras no crítico (só corpo a corpo),
+        // somados à parcela FÍSICA.
+        if (
+          isPhysical &&
+          critical &&
+          attackerAdjustments &&
+          attackerAdjustments.critExtraDice > 0 &&
+          spec.count > 0 &&
+          spec.sides > 0
+        ) {
+          const extra = rollDice(
+            `${spec.count * attackerAdjustments.critExtraDice}d${spec.sides}`,
+            { crit: false },
+          );
+          if (extra && extra.total > 0) {
+            componentTotal += extra.total;
+            breakdownParts.push({
+              source: 'critical',
+              label: 'Crítico Brutal',
+              dice: extra.expression,
+              rolls: extra.rolls,
+              value: extra.total,
+            });
+          }
         }
-        physicalBonusApplied = true;
-      }
 
-      // Ataque Furtivo: acompanha o dano da ARMA. Entra UMA vez, na primeira
-      // parcela — inclusive quando ela não tem tipo de dano.
-      if (sneakRoll && !sneakApplied) {
-        componentTotal += sneakRoll.total;
-        sneakAttackResult = {
-          expression: sneakRoll.expression,
-          total: sneakRoll.total,
-          reason: sneakRoll.reason,
-        };
-        breakdownParts.push({
-          source: 'sneakAttack',
-          label: 'Ataque Furtivo',
-          // No crítico os dados dobram: sai como 4d6, com os 4 resultados.
-          dice: `${sneakRoll.rolls.length}d${sneakRoll.sides}`,
-          rolls: sneakRoll.rolls,
-          value: sneakRoll.total,
-        });
-        sneakApplied = true;
-      }
-
-      // Atributo + o resto do bônus fixo (mágico etc.): só na parcela PRINCIPAL
-      // o ataque sabe qual atributo o alimenta.
-      if (index === 0 && abilityLabel && abilityModifier !== 0) {
-        breakdownParts.push({
-          source: 'attribute',
-          label: abilityLabel,
-          dice: '',
-          rolls: [],
-          value: abilityModifier,
-        });
-      }
-      const flatBonus = spec.bonus - (index === 0 && abilityLabel ? abilityModifier : 0);
-      if (flatBonus !== 0) {
-        // Na parcela principal de um ataque derivado da arma, o bônus fixo é o
-        // bônus estruturado da arma (mágico). Nos demais, é um bônus genérico.
-        const weaponBonus = index === 0 && abilityLabel !== null;
-        breakdownParts.push({
-          source: weaponBonus ? 'weaponBonus' : 'flat',
-          label: weaponBonus ? 'Bônus da arma' : 'Bônus',
-          dice: '',
-          rolls: [],
-          value: flatBonus,
-        });
-      }
-
-      // Bônus de dano da munição: entra UMA vez, na parcela PRINCIPAL.
-      if (index === 0 && ammoBonus.damageBonus !== 0) {
-        componentTotal += ammoBonus.damageBonus;
-        breakdownParts.push({
-          source: 'ammo',
-          label: 'Munição',
-          dice: '',
-          rolls: [],
-          value: ammoBonus.damageBonus,
-        });
-      }
-
-      const breakdown: DamageBreakdownPayload = { parts: breakdownParts, total: componentTotal };
-
-      // Log da PARCELA, já com os bônus dela (por tipo), para o mestre ver cada
-      // tipo separadamente — agora com a quebra parte a parte.
-      announceRoll({
-        kind: 'damage',
-        actorName: spec.type ? `${attacker.name} — ${spec.type}` : attacker.name,
-        expression: damage.expression,
-        rolls: damage.rolls,
-        sides: damage.sides,
-        modifier: componentTotal - damage.total,
-        total: componentTotal,
-        crit: critical,
-        at: new Date().toISOString(),
-        breakdown,
-      });
-
-      // Defesa do alvo POR TIPO e POR PARCELA: imunidade zera, vulnerabilidade
-      // dobra, resistência halva. Cada parcela é resolvida independentemente.
-      const { applied, modifier } = applyDamageDefense(spec.type, componentTotal, defenses);
-      components.push({
-        type: spec.type ?? '',
-        expression: damage.expression,
-        rolled: componentTotal,
-        applied,
-        modifier,
-        breakdown,
-      });
-      total += applied;
-    }
-
-    // Aviso quando alguma defesa mexeu no dano — sem ele o total não bate com a
-    // soma crua das rolagens e o mestre não entende o porquê.
-    const defended = components.filter((component) => component.modifier !== null);
-    if (defended.length > 0) {
-      const parts = defended.map((component) => {
-        const label = component.type || 'sem tipo';
-        if (component.modifier === 'immunity') return `${label} imune (0)`;
-        if (component.modifier === 'vulnerability') {
-          return `${label} vulnerável (${component.rolled}×2=${component.applied})`;
+        // Fúria: bônus FÍSICO, UMA vez, na primeira parcela física.
+        if (isPhysical && !physicalBonusApplied) {
+          if (meleeBonus > 0) {
+            componentTotal += meleeBonus;
+            breakdownParts.push({ source: 'rage', label: 'Fúria', dice: '', rolls: [], value: meleeBonus });
+          }
+          physicalBonusApplied = true;
         }
-        return `${label} resistido (${component.rolled}→${component.applied})`;
-      });
-      announceRoll({
-        kind: 'damage',
-        actorName: `${attacker.name} — Defesas de ${target.name}`,
-        expression: parts.join(' · '),
-        rolls: [],
-        sides: 0,
-        modifier: 0,
-        total,
-        crit: false,
-        at: new Date().toISOString(),
-      });
+
+        // Ataque Furtivo: acompanha o dano da ARMA. Entra UMA vez, na primeira
+        // parcela — inclusive quando ela não tem tipo de dano.
+        if (sneakRoll && !sneakApplied) {
+          componentTotal += sneakRoll.total;
+          sneakAttackResult = {
+            expression: sneakRoll.expression,
+            total: sneakRoll.total,
+            reason: sneakRoll.reason,
+          };
+          breakdownParts.push({
+            source: 'sneakAttack',
+            label: 'Ataque Furtivo',
+            // No crítico os dados dobram: sai como 4d6, com os 4 resultados.
+            dice: `${sneakRoll.rolls.length}d${sneakRoll.sides}`,
+            rolls: sneakRoll.rolls,
+            value: sneakRoll.total,
+          });
+          sneakApplied = true;
+        }
+
+        // Atributo + o resto do bônus fixo (mágico etc.): só na parcela PRINCIPAL
+        // o ataque sabe qual atributo o alimenta.
+        if (index === 0 && abilityLabel && abilityModifier !== 0) {
+          breakdownParts.push({
+            source: 'attribute',
+            label: abilityLabel,
+            dice: '',
+            rolls: [],
+            value: abilityModifier,
+          });
+        }
+        const flatBonus = spec.bonus - (index === 0 && abilityLabel ? abilityModifier : 0);
+        if (flatBonus !== 0) {
+          // Na parcela principal de um ataque derivado da arma, o bônus fixo é o
+          // bônus estruturado da arma (mágico). Nos demais, é um bônus genérico.
+          const weaponBonus = index === 0 && abilityLabel !== null;
+          breakdownParts.push({
+            source: weaponBonus ? 'weaponBonus' : 'flat',
+            label: weaponBonus ? 'Bônus da arma' : 'Bônus',
+            dice: '',
+            rolls: [],
+            value: flatBonus,
+          });
+        }
+
+        // Bônus de dano da munição: entra UMA vez, na parcela PRINCIPAL.
+        if (index === 0 && ammoBonus.damageBonus !== 0) {
+          componentTotal += ammoBonus.damageBonus;
+          breakdownParts.push({
+            source: 'ammo',
+            label: 'Munição',
+            dice: '',
+            rolls: [],
+            value: ammoBonus.damageBonus,
+          });
+        }
+
+        const breakdown: DamageBreakdownPayload = { parts: breakdownParts, total: componentTotal };
+
+        // Log da PARCELA, já com os bônus dela (por tipo), para o mestre ver cada
+        // tipo separadamente — agora com a quebra parte a parte.
+        rolls.push({
+          kind: 'damage',
+          actorName: spec.type ? `${attacker.name} — ${spec.type}` : attacker.name,
+          expression: damage.expression,
+          rolls: damage.rolls,
+          sides: damage.sides,
+          modifier: componentTotal - damage.total,
+          total: componentTotal,
+          crit: critical,
+          at: new Date().toISOString(),
+          breakdown,
+        });
+
+        // Defesa do alvo POR TIPO e POR PARCELA: imunidade zera, vulnerabilidade
+        // dobra, resistência halva. Cada parcela é resolvida independentemente.
+        const { applied, modifier } = applyDamageDefense(spec.type, componentTotal, defenses);
+        components.push({
+          type: spec.type ?? '',
+          expression: damage.expression,
+          rolled: componentTotal,
+          applied,
+          modifier,
+          breakdown,
+        });
+        total += applied;
+      }
+
+      // Aviso quando alguma defesa mexeu no dano — sem ele o total não bate com a
+      // soma crua das rolagens e o mestre não entende o porquê.
+      const defended = components.filter((component) => component.modifier !== null);
+      if (defended.length > 0) {
+        const parts = defended.map((component) => {
+          const label = component.type || 'sem tipo';
+          if (component.modifier === 'immunity') return `${label} imune (0)`;
+          if (component.modifier === 'vulnerability') {
+            return `${label} vulnerável (${component.rolled}×2=${component.applied})`;
+          }
+          return `${label} resistido (${component.rolled}→${component.applied})`;
+        });
+        rolls.push({
+          kind: 'damage',
+          actorName: `${attacker.name} — Defesas de ${target.name}`,
+          expression: parts.join(' · '),
+          rolls: [],
+          sides: 0,
+          modifier: 0,
+          total,
+          crit: false,
+          at: new Date().toISOString(),
+        });
+      }
+
+      // Trava "uma vez por turno": só marca quando o Ataque Furtivo realmente
+      // entrou neste ataque.
+      if (sneakRoll) {
+        await db.combatant.update({
+          where: { id: attacker.id },
+          data: { sneakAttackUsedThisTurn: true },
+        });
+      }
+
+      damageRolled = total;
+      // Nada a debitar (tudo imune, por exemplo) — não escreve no HP à toa.
+      if (total > 0) await changeHp(target, -total, db, publications);
     }
 
-    // Trava "uma vez por turno": só marca quando o Ataque Furtivo realmente
-    // entrou neste ataque.
-    if (sneakRoll) {
-      await prisma.combatant.update({
-        where: { id: attacker.id },
-        data: { sneakAttackUsedThisTurn: true },
-      });
-    }
+    const dto = toCombatDto(await loadCombatById(combat.id, db), 'MASTER');
 
-    damageRolled = total;
-    // Nada a debitar (tudo imune, por exemplo) — não escreve no HP à toa.
-    if (total > 0) await changeHp(target, -total);
-  }
+    const targetAfter = dto.combatants.find((item) => item.id === target.id);
 
-  const dto = toCombatDto(await loadCombatById(combat.id), 'MASTER');
-  emitCombat(ServerEvents.COMBAT_UPDATED, dto);
+    const result: AttackResolvedPayload = {
+      attackerName: attacker.name,
+      attackName: attack.name,
+      targetName: target.name,
+      attackRoll,
+      attackRolls: attackDice,
+      advantage,
+      disadvantage,
+      attackBonus: attack.attackBonus + ammoBonus.attackBonus,
+      attackTotal,
+      targetArmorClass,
+      hit,
+      critical,
+      damageRolled,
+      damageType: attack.damage.type ?? '',
+      components,
+      sneakAttack: sneakAttackResult,
+      targetHpCurrent: targetAfter?.hpCurrent ?? 0,
+      targetHpMax: targetAfter?.hpMax ?? 0,
+      targetStatsHidden: false,
+      at: new Date().toISOString(),
+    };
 
-  const targetAfter = dto.combatants.find((item) => item.id === target.id);
-  const targetIsCreature = target.kind === 'CREATURE';
-
-  const result: AttackResolvedPayload = {
-    attackerName: attacker.name,
-    attackName: attack.name,
-    targetName: target.name,
-    attackRoll,
-    attackRolls: attackDice,
-    advantage,
-    disadvantage,
-    attackBonus: attack.attackBonus + ammoBonus.attackBonus,
-    attackTotal,
-    targetArmorClass,
-    hit,
-    critical,
-    damageRolled,
-    damageType: attack.damage.type ?? '',
-    components,
-    sneakAttack: sneakAttackResult,
-    targetHpCurrent: targetAfter?.hpCurrent ?? 0,
-    targetHpMax: targetAfter?.hpMax ?? 0,
-    targetStatsHidden: false,
-    at: new Date().toISOString(),
-  };
-
-  // Jogador atacando criatura não vê a CA nem a vida dela; o mestre vê tudo.
-  const resultForPlayers = targetIsCreature ? hideTargetStats(result) : result;
-
-  try {
+    return { combat: actor.role === 'MASTER' ? dto : hideCreatureStats(dto), result };
+  });
+  if (!response.replayed) {
+    for (const id of publications) await publishCharacter(id);
+    for (const roll of rolls) announceRoll(roll);
+    const result = response.result;
+    const targetIsCreature = response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind === 'CREATURE';
     const broadcaster = getBroadcaster();
     broadcaster.toMasters(ServerEvents.ATTACK_RESOLVED, result);
-    broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, resultForPlayers);
-  } catch (error) {
-    console.error('[combat] falha ao publicar o ataque em tempo real:', error);
+    broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, targetIsCreature ? hideTargetStats(result) : result);
   }
-
-  return actor.role === 'MASTER'
-    ? { combat: dto, result }
-    : { combat: hideCreatureStats(dto), result: resultForPlayers };
+  return { ...response, result: actor.role !== 'MASTER' && response.result.targetStatsHidden === false && response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind === 'CREATURE' ? hideTargetStats(response.result) : response.result };
 }
 
 /** Ajuste manual de HP pelo mestre (dano ou cura). */
@@ -1152,7 +1281,13 @@ export async function applyManualHp(
   if (!combatant) throw new HttpError('Combatente não encontrado.', 404);
 
   const delta = input.mode === 'damage' ? -input.amount : input.amount;
-  const applied = await changeHp(combatant, delta);
+  const publications = new Set<string>();
+  const applied = await prisma.$transaction(async (db) => {
+    const active = await db.combat.updateMany({ where: { id: combat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
+    if (!active.count) throw new HttpError('Combate encerrado.', 409, 'CONFLICT');
+    return changeHp(combatant, delta, db, publications);
+  });
+  for (const id of publications) await publishCharacter(id);
 
   if (!applied) {
     throw new HttpError('A ficha ou criatura deste combatente não existe mais.', 409);
@@ -1172,7 +1307,7 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
 
   await prisma.combat.update({
     where: { id: combat.id },
-    data: { status: 'ENDED', endedAt: new Date() },
+    data: { status: 'ENDED', endedAt: new Date(), version: { increment: 1 } },
   });
 
   emit(ServerEvents.COMBAT_ENDED, { combatId: combat.id });

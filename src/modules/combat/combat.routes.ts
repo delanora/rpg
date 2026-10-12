@@ -1,8 +1,13 @@
 import type { Role } from '@prisma/client';
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
-import { attackSchema, manualHpSchema, startCombatSchema } from './combat.schema.js';
 import {
+  attackSchema, manualHpSchema, startCombatSchema,
+  combatOperationSchema, economyActionSchema, economyOverrideSchema,
+} from './combat.schema.js';
+import {
+  executeEconomyAction,
+  overrideEconomy,
   applyManualHp,
   endCombat,
   getActiveCombat,
@@ -52,7 +57,12 @@ combatRouter.post('/initiative/:combatantId', authenticate, requireRole('MASTER'
  * o jogador só encerra o próprio turno (verificado no serviço).
  */
 combatRouter.post('/next-turn', authenticate, async (req, res) => {
-  res.json({ combat: await nextTurn(actorFrom(req)) });
+  const parsed = combatOperationSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json({ combat: await nextTurn(actorFrom(req), parsed.data) });
 });
 
 /** POST /api/combat/attack — rola um ataque contra um alvo do combate. */
@@ -82,4 +92,22 @@ combatRouter.post('/hp', authenticate, requireRole('MASTER'), async (req, res) =
 /** POST /api/combat/end — encerra o modo de combate (mestre). */
 combatRouter.post('/end', authenticate, requireRole('MASTER'), async (req, res) => {
   res.json(await endCombat(actorFrom(req)));
+});
+
+combatRouter.post('/action', authenticate, async (req, res) => {
+  const parsed = economyActionSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json(await executeEconomyAction(actorFrom(req), parsed.data));
+});
+
+combatRouter.post('/economy/override', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = economyOverrideSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json(await overrideEconomy(actorFrom(req), parsed.data));
 });

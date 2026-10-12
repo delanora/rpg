@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import {
@@ -118,6 +118,8 @@ interface CombatActionPanelProps {
   inventory?: InventoryItem[];
   busy: boolean;
   onAttack: (input: {
+    prepared?: boolean;
+    attackActionId?: string;
     attackId: string;
     targetCombatantId: string;
     attackerCombatantId?: string;
@@ -151,6 +153,9 @@ export function CombatActionPanel({
   const [ammoId, setAmmoId] = useState('');
   const [rollMode, setRollMode] = useState<RollMode>('normal');
   const [adjacentAlly, setAdjacentAlly] = useState(false);
+  const [prepared, setPrepared] = useState(false);
+  const hasReady = Boolean(attacker?.turnEconomy.ready);
+  useEffect(() => setPrepared(false), [attacker?.id, hasReady]);
 
   const baseAttacks = attackerChoices && attacksFor && attacker ? attacksFor(attacker.id) : attacks;
   // Ataques de arma não equipada somem (só dá para avaliar com o inventário).
@@ -180,7 +185,14 @@ export function CombatActionPanel({
 
   const advantage = rollMode === 'advantage';
   const disadvantage = rollMode === 'disadvantage';
-  const ready = Boolean(attacker && attackId && targetId) && !ammoMissing;
+  const economy = attacker?.turnEconomy;
+  const continuation = economy?.attackAction && economy.attackAction.attacksMade < economy.attackAction.attacksAllowed ? economy.attackAction.attackActionId : undefined;
+  const offhand = attackId.startsWith('offhand:');
+  const executingPrepared = prepared && hasReady;
+  const available = executingPrepared
+    ? Boolean(economy?.ready && economy.reactionAvailable && !offhand)
+    : combat.currentCombatantId === attacker?.id && Boolean(economy && (offhand ? !economy.bonusActionUsed : continuation || economy.actionsUsed < economy.actionsGranted));
+  const ready = Boolean(attacker && attackId && targetId) && !ammoMissing && available;
 
   return (
     <section className="combat-block attack-panel">
@@ -208,6 +220,12 @@ export function CombatActionPanel({
         </label>
       ) : null}
 
+      {attacker?.turnEconomy.ready ? (
+        <label className="dice-toggle">
+          <input type="checkbox" checked={prepared} onChange={event => setPrepared(event.target.checked)} />
+          Executar ataque preparado (Reação; confirme o gatilho com o Mestre)
+        </label>
+      ) : null}
       {!attacker ? (
         <p className="empty-hint">Escolha o atacante para ver os ataques.</p>
       ) : availableAttacks.length === 0 ? (
@@ -397,6 +415,7 @@ export function CombatActionPanel({
               onClick={() => {
                 onAttack({
                   attackId,
+                  ...(executingPrepared ? { prepared: true } : !offhand && continuation ? { attackActionId: continuation } : {}),
                   targetCombatantId: targetId,
                   advantage,
                   disadvantage,
