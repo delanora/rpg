@@ -23,7 +23,15 @@ export const startCombatSchema = z.object({
  * Sem `attackerCombatantId`, o atacante é o personagem do próprio solicitante.
  * Com ele (somente o mestre), qualquer combatente pode atacar.
  */
-export const attackSchema = z.object({
+export const combatOperationSchema = z.object({
+  combatId: z.string().min(1),
+  expectedVersion: z.number().int().nonnegative(),
+  operationId: z.string().min(1).max(128),
+});
+
+export const attackSchema = combatOperationSchema.extend({
+  attackActionId: z.string().min(1).optional(),
+  prepared: z.boolean().optional(),
   targetCombatantId: z.string().min(1),
   attackId: z.string().min(1),
   attackerCombatantId: z.string().min(1).optional(),
@@ -57,3 +65,29 @@ export const manualHpSchema = z.object({
 export type StartCombatInput = z.infer<typeof startCombatSchema>;
 export type AttackInput = z.infer<typeof attackSchema>;
 export type ManualHpInput = z.infer<typeof manualHpSchema>;
+
+export const economyActionSchema = combatOperationSchema.extend({
+  combatantId: z.string().min(1),
+  action: z.enum(['dash', 'disengage', 'dodge', 'help', 'hide', 'search', 'use-object', 'improvised', 'ready', 'execute-ready', 'move']),
+  description: z.string().trim().max(500).optional(),
+  targetCombatantId: z.string().min(1).optional(),
+  trigger: z.string().trim().min(1).max(500).optional(),
+  intent: z.string().trim().min(1).max(500).optional(),
+  distance: z.number().positive().max(9999).optional(),
+}).superRefine((input, ctx) => {
+  if (input.action === 'ready' && (!input.trigger || !input.intent)) ctx.addIssue({ code: 'custom', message: 'Informe gatilho e intenção.' });
+  if (input.action === 'improvised' && !input.description) ctx.addIssue({ code: 'custom', message: 'Descreva a ação improvisada.' });
+  if (input.action === 'move' && !input.distance) ctx.addIssue({ code: 'custom', message: 'Informe a distância em metros.' });
+});
+
+export const economyOverrideSchema = combatOperationSchema.extend({
+  combatantId: z.string().min(1),
+  adjustment: z.enum(['grant-action', 'restore-action', 'restore-bonus', 'restore-reaction', 'set-movement']),
+  remaining: z.number().nonnegative().max(9999).optional(),
+  reason: z.string().trim().min(1).max(500),
+}).superRefine((input, ctx) => {
+  if (input.adjustment === 'set-movement' && input.remaining === undefined) ctx.addIssue({ code: 'custom', message: 'Informe o Movimento restante.' });
+});
+export type CombatOperationInput = z.infer<typeof combatOperationSchema>;
+export type EconomyActionInput = z.infer<typeof economyActionSchema>;
+export type EconomyOverrideInput = z.infer<typeof economyOverrideSchema>;

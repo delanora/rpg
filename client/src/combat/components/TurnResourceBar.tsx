@@ -1,12 +1,6 @@
-import { Icon, type IconName } from '../../components/Icon';
-import { speedInSquares } from '../../dnd';
+import { Icon } from '../../components/Icon';
 
-/** Recursos ainda NÃO governados pelo backend (Fase 8.1). */
-const PENDING_RESOURCES = [
-  { key: 'action', label: 'Ação', icon: 'sword' },
-  { key: 'bonus', label: 'Ação bônus', icon: 'sparkle' },
-  { key: 'reaction', label: 'Reação', icon: 'shield' },
-] as const satisfies readonly { key: string; label: string; icon: IconName }[];
+import type { TurnEconomy } from '../../types';
 
 interface TurnResourceBarProps {
   /** O combate está ativo (fora da espera pela iniciativa). */
@@ -15,7 +9,7 @@ interface TurnResourceBarProps {
   /** Verdadeiro quando o turno atual é do próprio jogador. */
   isMyTurn?: boolean;
   /** Deslocamento do personagem em metros, quando o sistema já conhece. */
-  movementMeters?: number | null;
+  economy?: TurnEconomy;
   busy?: boolean;
   /**
    * Fim do turno: usa o MESMO avanço já existente (`next-turn`). O mestre pode
@@ -25,22 +19,16 @@ interface TurnResourceBarProps {
   onEndTurn?: () => void;
 }
 
-/**
- * Barra inferior persistente (e compacta) dos recursos do turno — preparação
- * visual para a Fase 8.1. Mostra o deslocamento que o personagem já possui e
- * deixa Ação/Ação bônus/Reação como "em preparação" (o backend ainda não
- * controla a economia de ações). O Fim do turno aparece para o mestre sempre e
- * para o jogador quando é o turno dele.
- */
+/** Economia persistida no servidor; encerrar usa o avanço único existente. */
 export function TurnResourceBar({
   active,
   isMaster,
   isMyTurn = false,
-  movementMeters = null,
+  economy,
   busy = false,
   onEndTurn,
 }: TurnResourceBarProps) {
-  const hasMovement = Boolean(active && movementMeters && movementMeters > 0);
+
   // O mestre encerra a qualquer momento; o jogador, só no próprio turno.
   const canEndTurn = Boolean(active && onEndTurn && (isMaster || isMyTurn));
 
@@ -55,28 +43,15 @@ export function TurnResourceBar({
         .join(' ')}
       aria-label="Recursos do turno"
     >
-      {/* Movimento: valor real da ficha, sem consumo. */}
-      <div className="turn-resource">
-        <span className="turn-resource-icon">
-          <Icon name="wind" size={13} />
-        </span>
-        <span className="turn-resource-label">Movimento</span>
-        <span
-          className="turn-resource-value"
-          title={hasMovement ? speedInSquares(movementMeters ?? 0) : 'Deslocamento não informado'}
-        >
-          {hasMovement ? `${movementMeters} m` : '—'}
-        </span>
-      </div>
-
-      {/* Ação / Ação bônus / Reação: ainda não controladas pelo backend. */}
-      {PENDING_RESOURCES.map((resource) => (
-        <div key={resource.key} className="turn-resource">
-          <span className="turn-resource-icon">
-            <Icon name={resource.icon} size={13} />
-          </span>
+      {[
+        { label: 'Ação', value: economy ? `${economy.actionsGranted - economy.actionsUsed} / ${economy.actionsGranted}` : '—' },
+        { label: 'Ação bônus', value: economy ? (economy.bonusActionUsed ? 'Utilizada' : 'Disponível*') : '—' },
+        { label: 'Reação', value: economy ? (economy.reactionAvailable ? 'Disponível' : 'Utilizada') : '—' },
+        { label: 'Movimento', value: economy ? `${Number((economy.movementBudget - economy.movementUsed).toFixed(2))} / ${economy.movementBudget} m` : '—' },
+      ].map(resource => (
+        <div className="turn-resource" key={resource.label} title={resource.label === 'Ação bônus' ? 'Somente uma regra específica concede uma Ação Bônus utilizável.' : undefined}>
           <span className="turn-resource-label">{resource.label}</span>
-          <span className="turn-resource-state">{active ? 'Fase 8.1' : 'em espera'}</span>
+          <span className="turn-resource-value">{active ? resource.value : 'em espera'}</span>
         </div>
       ))}
 

@@ -1,3 +1,4 @@
+import { smokeActionEconomy } from './smoke-action-economy.js';
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
@@ -81,6 +82,8 @@ const createdMusicTrackIds: string[] = [];
 let testsPlayerToken = '';
 
 let failures = 0;
+let legacyCombatMasterToken = '';
+let originalStartingLevel: number | undefined;
 
 function check(label: string, condition: boolean, detail = ''): void {
   if (condition) {
@@ -135,6 +138,11 @@ async function api<T = any>(
   path: string,
   { method = 'GET', body, token }: ApiOptions = {},
 ): Promise<{ status: number; data: T }> {
+  // As seções históricas de avanço agora enviam o relógio do combate.
+  if (path === '/api/combat/next-turn' && body === undefined) {
+    const current = await api('/api/combat/active', { token });
+    if (current.data.combat) body = { combatId: current.data.combat.id, expectedVersion: current.data.combat.version, operationId: crypto.randomUUID() };
+  }
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers: {
@@ -146,6 +154,67 @@ async function api<T = any>(
 
   const data = (await res.json().catch(() => ({}))) as T;
   return { status: res.status, data };
+}
+
+/**
+ * Testes anteriores à economia exercitam dano/munição repetidamente. Preparam
+ * turno e concessões por HTTP, explícitas e logadas, sem bypass de produção.
+ * A seção 6.1 usa api diretamente para testar os limites reais.
+ */
+async function legacyAttack(options: ApiOptions): Promise<{ status: number; data: any }> {
+  const claims = options.token ? JSON.parse(Buffer.from(options.token.split('.')[1], 'base64url').toString()) : {};
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    let state = (await api('/api/combat/active', { token: legacyCombatMasterToken })).data.combat;
+    if (!state) return api('/api/combat/attack', options);
+    const input = options.body as any;
+    const attacker = input?.attackerCombatantId
+      ? state.combatants.find((item: any) => item.id === input.attackerCombatantId)
+      : state.combatants.find((item: any) => item.ownerUserId === claims.sub);
+    if (state.status === 'ACTIVE' && attacker && (claims.role === 'MASTER' || attacker.ownerUserId === claims.sub)) {
+      for (let turn = 0; state.currentCombatantId !== attacker.id && turn <= state.combatants.length; turn += 1) {
+        const next = await api('/api/combat/next-turn', { method: 'POST', token: legacyCombatMasterToken });
+        state = next.data.combat ?? (await api('/api/combat/active', { token: legacyCombatMasterToken })).data.combat;
+      }
+      const updated = state.combatants.find((item: any) => item.id === attacker.id);
+      if (updated.turnEconomy.actionsUsed >= updated.turnEconomy.actionsGranted) {
+        const grant = await api('/api/combat/economy/override', { method: 'POST', token: legacyCombatMasterToken, body: {
+          combatId: state.id, expectedVersion: state.version, operationId: crypto.randomUUID(), combatantId: attacker.id,
+          adjustment: 'grant-action', reason: 'Preparação explícita do smoke legado de dano/munição',
+        } });
+        if (grant.status === 409) continue;
+        state = grant.data.combat ?? state;
+      }
+    }
+    if (state.status === 'ACTIVE' && attacker?.characterId && input?.attackId?.startsWith('offhand:') && (claims.role === 'MASTER' || attacker.ownerUserId === claims.sub)) {
+      const stored = await prisma.character.findUniqueOrThrow({ where: { id: attacker.characterId }, select: { inventory: true } });
+      const inventory = stored.inventory as any[];
+      const secondary = inventory.find(item => item.id === input.attackId.slice('offhand:'.length));
+      const other = inventory.find(item => item.slot === (secondary?.slot === 'hand2' ? 'hand1' : 'hand2'));
+      const economy = state.combatants.find((item: any) => item.id === attacker.id).turnEconomy;
+      if (other && !economy.lightWeaponsAttacked.includes(other.id)) {
+        const primary = await api('/api/combat/attack', { method: 'POST', token: legacyCombatMasterToken, body: {
+          combatId: state.id, expectedVersion: state.version, operationId: crypto.randomUUID(), attackerCombatantId: attacker.id,
+          targetCombatantId: input.targetCombatantId, attackId: `weapon:${other.id}`,
+        } });
+        if (primary.status === 409) continue;
+        state = primary.data.combat ?? state;
+      }
+      if (state.combatants.find((item: any) => item.id === attacker.id).turnEconomy.bonusActionUsed) {
+        const restored = await api('/api/combat/economy/override', { method: 'POST', token: legacyCombatMasterToken, body: {
+          combatId: state.id, expectedVersion: state.version, operationId: crypto.randomUUID(), combatantId: attacker.id,
+          adjustment: 'restore-bonus', reason: 'Preparação explícita do smoke legado de mão secundária',
+        } });
+        if (restored.status === 409) continue;
+        state = restored.data.combat ?? state;
+      }
+    }
+    const response = await api('/api/combat/attack', { ...options, body: {
+      ...input, combatId: state.id, expectedVersion: state.version, operationId: crypto.randomUUID(),
+    } });
+    if (response.status === 409 && response.data.message?.startsWith('Combate mudou')) continue;
+    return response;
+  }
+  throw new Error('Smoke legado não conseguiu preparar ataque após concorrência.');
 }
 
 /** Aguarda um evento do socket, com timeout. */
@@ -412,6 +481,10 @@ function levelUpRequestFor(sheet: any, classKey: string, subclassPick = 0): any 
 }
 
 async function main(): Promise<void> {
+  // As fixtures de criação começam no nível 1; preservar a escolha real da mesa.
+  const config = await prisma.gameConfig.findUnique({ where: { id: 'main' } });
+  originalStartingLevel = config?.startingLevel ?? 1;
+  await prisma.gameConfig.upsert({ where: { id: 'main' }, create: { id: 'main', startingLevel: 1 }, update: { startingLevel: 1 } });
   console.log(`\n🔎 Smoke test (Etapas 1 e 2) em ${BASE_URL}\n`);
 
   // --- 1. Cadastro -----------------------------------------------------------
@@ -478,6 +551,7 @@ async function main(): Promise<void> {
 
   const playerToken: string = playerLogin.data?.token;
   const masterToken: string = masterLogin.data?.token;
+  legacyCombatMasterToken = masterToken;
   const playerId: string = playerLogin.data?.user?.id;
 
   /**
@@ -1246,7 +1320,7 @@ async function main(): Promise<void> {
   );
 
   // Ataque: o dano só entra quando acerta a CA.
-  const attack = await api('/api/combat/attack', {
+  const attack = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p1', targetCombatantId: creatureCombatant.id },
@@ -1362,7 +1436,7 @@ async function main(): Promise<void> {
   );
 
   const ammoSpendEvent = waitFor<any>(playerSocket, 'sheet:updated');
-  const firstShot = await api('/api/combat/attack', {
+  const firstShot = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
@@ -1383,7 +1457,7 @@ async function main(): Promise<void> {
     afterFirst.inventory.find((e: any) => e.id === magicArrowId)?.quantity === 2,
   );
 
-  const magicShot = await api('/api/combat/attack', {
+  const magicShot = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: {
@@ -1408,7 +1482,7 @@ async function main(): Promise<void> {
   await patchAsMaster(playerId, {
     inventory: [bowItem, { ...arrowItem, quantity: 1 }, { ...magicArrowItem, quantity: 1 }],
   });
-  await api('/api/combat/attack', {
+  await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
@@ -1423,7 +1497,7 @@ async function main(): Promise<void> {
 
   // Sem munição: 409 e nada é rolado.
   await patchAsMaster(playerId, { inventory: [bowItem] });
-  const emptyQuiver = await api('/api/combat/attack', {
+  const emptyQuiver = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
@@ -1438,7 +1512,7 @@ async function main(): Promise<void> {
   await patchAsMaster(playerId, {
     inventory: [{ ...bowItem, slot: null }, { ...arrowItem, quantity: 5 }],
   });
-  const unequippedBow = await api('/api/combat/attack', {
+  const unequippedBow = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'bow', targetCombatantId: creatureCombatant.id },
@@ -1511,7 +1585,7 @@ async function main(): Promise<void> {
 
   // Sem vantagem e sem aliado adjacente, a arma sutil NÃO recebe o extra.
   await advanceToPlayerTurn();
-  const noCondition = await api('/api/combat/attack', {
+  const noCondition = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p1', targetCombatantId: creatureCombatant.id },
@@ -1523,7 +1597,7 @@ async function main(): Promise<void> {
   );
 
   // Desvantagem impede o Ataque Furtivo, mesmo com aliado adjacente confirmado.
-  const withDisadvantage = await api('/api/combat/attack', {
+  const withDisadvantage = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: {
@@ -1540,7 +1614,7 @@ async function main(): Promise<void> {
   );
 
   // Só com aliado adjacente confirmado já recebe (com a razão no log).
-  const allyAttack = await api('/api/combat/attack', {
+  const allyAttack = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, adjacentAlly: true },
@@ -1557,7 +1631,7 @@ async function main(): Promise<void> {
   );
 
   // Uma vez por turno: se o ataque anterior aplicou, este não aplica de novo.
-  const repeated = await api('/api/combat/attack', {
+  const repeated = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, advantage: true },
@@ -1570,7 +1644,7 @@ async function main(): Promise<void> {
 
   // Turno novo: com vantagem, volta a aplicar (razão 'vantagem').
   await advanceToPlayerTurn();
-  const advantageAttack = await api('/api/combat/attack', {
+  const advantageAttack = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, advantage: true },
@@ -1599,7 +1673,7 @@ async function main(): Promise<void> {
   });
   let typelessResult: any = null;
   for (let attempt = 0; attempt < 30 && !typelessResult; attempt += 1) {
-    const shot = await api('/api/combat/attack', {
+    const shot = await legacyAttack({
       method: 'POST',
       token: playerToken,
       body: { attackId: 'p1', targetCombatantId: creatureCombatant.id, advantage: true },
@@ -1644,7 +1718,7 @@ async function main(): Promise<void> {
       ],
     },
   });
-  const plainAttack = await api('/api/combat/attack', {
+  const plainAttack = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p2', targetCombatantId: creatureCombatant.id },
@@ -1731,7 +1805,7 @@ async function main(): Promise<void> {
     raging.classAdjustments.toggles.find((t: any) => t.id === 'rage')?.resourceId === 'rage',
   );
 
-  const rageAttack = await api('/api/combat/attack', {
+  const rageAttack = await legacyAttack({
     method: 'POST',
     token: playerToken,
     body: { attackId: 'p1', targetCombatantId: creatureCombatant.id },
@@ -1744,7 +1818,7 @@ async function main(): Promise<void> {
 
   // A resistência do alvo usa o TIPO ESTRUTURADO do ataque: o Lobo morde o
   // bárbaro em Fúria (Cortante) e o dano cai pela metade (1d6+2 ⇒ no máximo 4).
-  const biteOnRaging = await api('/api/combat/attack', {
+  const biteOnRaging = await legacyAttack({
     method: 'POST',
     token: masterToken,
     body: {
@@ -2784,7 +2858,7 @@ async function main(): Promise<void> {
   );
   check(
     'jogador NÃO usa o ataque de outra ficha (404)',
-    (await api('/api/combat/attack', {
+    (await legacyAttack({
       method: 'POST',
       token: playerToken,
       body: { attackId: 'c1', targetCombatantId: creatureCombatant.id },
@@ -2792,7 +2866,7 @@ async function main(): Promise<void> {
   );
   check(
     'não é possível atacar a si mesmo (400)',
-    (await api('/api/combat/attack', {
+    (await legacyAttack({
       method: 'POST',
       token: playerToken,
       body: { attackId: 'p1', targetCombatantId: playerCombatant.id },
@@ -8175,7 +8249,7 @@ async function main(): Promise<void> {
   async function rollAttacks(token: string, times: number): Promise<any[]> {
     const results: any[] = [];
     for (let index = 0; index < times; index += 1) {
-      const response = await api('/api/combat/attack', {
+      const response = await legacyAttack({
         method: 'POST',
         token,
         body: { attackId: 'crit1', targetCombatantId: targetCombatant.id },
@@ -8872,7 +8946,7 @@ async function main(): Promise<void> {
       },
     ],
   });
-  const plainHit = await api('/api/combat/attack', {
+  const plainHit = await legacyAttack({
     method: 'POST',
     token: archer.token,
     body: { attackId: 'plain-sword-atk', targetCombatantId: ammoTargetCombatant.id },
@@ -8927,7 +9001,7 @@ async function main(): Promise<void> {
 
   let ammoDamageResult: any = null;
   for (let attempt = 0; attempt < 12 && ammoDamageResult === null; attempt += 1) {
-    const shot = await api('/api/combat/attack', {
+    const shot = await legacyAttack({
       method: 'POST',
       token: archer.token,
       body: { attackId: 'bow2-atk', targetCombatantId: ammoTargetCombatant.id },
@@ -8964,12 +9038,12 @@ async function main(): Promise<void> {
     attacks: [bowAttack2],
   });
   const race = await Promise.all([
-    api('/api/combat/attack', {
+    legacyAttack({
       method: 'POST',
       token: archer.token,
       body: { attackId: 'bow2-atk', targetCombatantId: ammoTargetCombatant.id },
     }),
-    api('/api/combat/attack', {
+    legacyAttack({
       method: 'POST',
       token: archer.token,
       body: { attackId: 'bow2-atk', targetCombatantId: ammoTargetCombatant.id },
@@ -9623,7 +9697,7 @@ async function main(): Promise<void> {
     options: { sneak?: boolean; advantage?: boolean; adjacentAlly?: boolean } = {},
   ): Promise<any> => {
     for (let attempt = 0; attempt < 25; attempt += 1) {
-      const shot = await api('/api/combat/attack', {
+      const shot = await legacyAttack({
         method: 'POST',
         token: duelist.token,
         body: {
@@ -9741,7 +9815,7 @@ async function main(): Promise<void> {
 
   // Arma de duas mãos com a outra mão ocupada: o combate recusa (400).
   await masterPatch(duelist.characterId, { inventory: [greataxe, shield] });
-  const blockedShot = await api('/api/combat/attack', {
+  const blockedShot = await legacyAttack({
     method: 'POST',
     token: duelist.token,
     body: { attackId: 'weapon:a-greataxe', targetCombatantId: dummyCombatant.id },
@@ -10520,7 +10594,7 @@ async function main(): Promise<void> {
 
   const attackMulti = async (): Promise<any> => {
     for (let attempt = 0; attempt < 25; attempt += 1) {
-      const shot = await api('/api/combat/attack', {
+      const shot = await legacyAttack({
         method: 'POST',
         token: multiSheetOwner.token,
         body: { attackId: 'weapon:multi-blade', targetCombatantId: multiTarget.id },
@@ -21391,6 +21465,8 @@ async function main(): Promise<void> {
     })();
   })();
 
+  await smokeActionEconomy(BASE_URL, check);
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -21478,6 +21554,7 @@ async function cleanup(): Promise<void> {
     await prisma.user.deleteMany({ where: { username: { in: createdUsernames } } });
   }
 
+  if (originalStartingLevel !== undefined) await prisma.gameConfig.update({ where: { id: 'main' }, data: { startingLevel: originalStartingLevel } });
   await prisma.$disconnect();
 }
 

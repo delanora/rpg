@@ -17,6 +17,7 @@ import { CombatDashboard } from './components/CombatDashboard';
 import { CombatLog } from './components/CombatLog';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
+import { EconomyControls } from './components/EconomyControls';
 import { TurnResourceBar } from './components/TurnResourceBar';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
@@ -76,7 +77,6 @@ export function CombatTracker({
   sneakAttackExpression = null,
   sneakAttackFor,
   characterInventory,
-  movementMeters = null,
   attacksFor,
   onCombatChange,
   onCombatEnd,
@@ -167,7 +167,7 @@ export function CombatTracker({
               }
             />
           }
-          right={<CombatLog log={log} />}
+          right={<CombatLog log={log} economyLog={combat.economyLog} />}
           bottom={<TurnResourceBar active={false} isMaster={isMaster} />}
         />
 
@@ -214,7 +214,7 @@ export function CombatTracker({
               type="button"
               className="btn btn-primary btn-small"
               disabled={busy}
-              onClick={() => void run(nextTurn)}
+              onClick={() => void run(() => nextTurn(combat))}
             >
               Próximo turno →
             </button>
@@ -277,7 +277,7 @@ export function CombatTracker({
                   void (async () => {
                     setBusy(true);
                     try {
-                      const { combat: updated, result } = await resolveAttack(input);
+                      const { combat: updated, result } = await resolveAttack(combat, input);
                       onCombatChange(updated);
                       setAttackResult(result);
                     } catch (error) {
@@ -294,7 +294,7 @@ export function CombatTracker({
               <>
                 {!isMyTurn ? (
                   <p className="section-note">
-                    Você pode atacar a qualquer momento; o mestre controla a ordem dos turnos.
+                    Fora do seu turno, somente ações preparadas com Reação podem ser resolvidas aqui.
                   </p>
                 ) : null}
                 <CombatActionPanel
@@ -308,7 +308,7 @@ export function CombatTracker({
                     void (async () => {
                       setBusy(true);
                       try {
-                        const { combat: updated, result } = await resolveAttack(input);
+                        const { combat: updated, result } = await resolveAttack(combat, input);
                         onCombatChange(updated);
                         setAttackResult(result);
                       } catch (error) {
@@ -321,6 +321,11 @@ export function CombatTracker({
                 />
               </>
             ) : null}
+
+            <EconomyControls
+              combat={combat} combatant={isMaster ? (masterAttackerCombatant ?? current) : myCombatant}
+              isMaster={isMaster} busy={busy} onRun={(action) => void run(action)}
+            />
 
             {/* Resultado da última rolagem (somente exibição). */}
             {attackResult ? (
@@ -356,15 +361,15 @@ export function CombatTracker({
             ) : null}
           </>
         }
-        right={<CombatLog log={log} />}
+        right={<CombatLog log={log} economyLog={combat.economyLog} />}
         bottom={
           <TurnResourceBar
             active
             isMaster={isMaster}
             isMyTurn={isMyTurn}
-            movementMeters={movementMeters}
+            economy={(isMaster ? (masterAttackerCombatant ?? current) : myCombatant)?.turnEconomy}
             busy={busy}
-            onEndTurn={() => void run(nextTurn)}
+            onEndTurn={() => void run(() => nextTurn(combat))}
           />
         }
       />

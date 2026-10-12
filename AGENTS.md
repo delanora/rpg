@@ -430,9 +430,9 @@ a **Fase 5 está funcionalmente concluída**.
 A existência de funcionalidades atuais de combate e ferramentas do Mestre não
 significa que as respectivas fases futuras estejam concluídas.
 
-**Fase 6 — planejada, ainda não implementar:**
+**Fase 6 — engine mecânica em andamento:**
 
-- 6.1 Action Economy
+- 6.1 Action Economy — fundação implementada (PHB 2014)
 - 6.2 Conditions + Exhaustion
 - 6.3 0 HP / Death Saves / Stabilization / Instant Death
 - 6.4 Concentration
@@ -443,9 +443,25 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.9 Special Spell Handlers
 - 6.10 Class/Racial Feature Integration
 
-Não iniciar a Fase 6.1 sem especificação posterior e decisões explícitas com o
-usuário. Não assumir regras de ações, reações, movimento, turnos ou overrides do
-Mestre. Decisões ambíguas devem ser reportadas antes de implementar.
+A 6.1 usa `Combatant.turnEconomy`, `Combat.version` e `CombatOperation`:
+consumo, ataque, munição e dano são atômicos; retries devolvem snapshot sem
+reaplicar. `nextTurn` mantém a ordem única e os hooks `onTurnEnd`/`onTurnStart`.
+Reação recupera no início próprio, nunca no fim. Movimento é fracionável em
+metros, usando o deslocamento atual da ficha/criatura; Dash soma esse valor.
+
+Attack Action persiste id, quantidade realizada e limite derivado no servidor
+pelo maior Extra Attack aplicável (não soma em multiclasse). Mão secundária
+usa Ação Bônus, exige outra arma corpo a corpo leve usada em Attack Action e
+fica fora do contador. Ready é assistido: preparar gasta Ação, executar gasta
+Reação, sem detectar gatilho ou executar magia. Ações improvisadas e ajustes
+explícitos do Mestre são logados. A disponibilidade de Ação Bônus não concede
+uma ação genérica. Fora de combate não há orçamento de turno na ficha.
+
+Lâmina Sedenta aguarda vínculo confiável de arma do pacto. Action Surge, Haste,
+Protection, Great Weapon Fighting e execução avançada de características
+permanecem pendentes. Não iniciar Fases 6.2+ sem especificação posterior e
+decisões explícitas com o usuário. Decisões ambíguas devem ser reportadas antes
+de implementar.
 
 ### Marcos da Fase 5 e correção posterior
 
@@ -500,8 +516,9 @@ qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
 ### Lacunas conhecidas (não são bugs, são fases futuras)
 
-- Motor de **ações/reações em combate** pertence à Fase 6.1. Referências antigas
-  no código a `TODO (Fase 5 — motor de ações)` usam a numeração anterior.
+- Fundação de **ações/reações em combate** implementada na Fase 6.1; integração
+  do catálogo ainda é futura. Referências antigas no código a
+  `TODO (Fase 5 — motor de ações)` usam a numeração anterior.
 - Execução real de magias/efeitos e integração de características de classe/raça
   pertencem à Fase 6; o catálogo estruturado não equivale à execução mecânica.
 - Companheiro animal do Senhor das Feras como ficha própria permanece futuro.

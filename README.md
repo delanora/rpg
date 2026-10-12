@@ -858,12 +858,53 @@ O rolador fica em `src/modules/shared/dice.ts` e usa `crypto.randomInt` (não `M
 | `POST` | `/api/combat` | **mestre** | Inicia o combate (`{ creatureIds }`). |
 | `POST` | `/api/combat/initiative` | autenticado | O jogador rola a **própria** iniciativa. |
 | `POST` | `/api/combat/initiative/:combatantId` | **mestre** | O mestre rola por um combatente (criatura). |
-| `POST` | `/api/combat/next-turn` | **mestre** | Avança o turno. |
-| `POST` | `/api/combat/attack` | autenticado | `{ attackerCombatantId?, targetCombatantId, attackId }` — o serviço confere se o ataque pertence ao autor. |
+| `POST` | `/api/combat/next-turn` | mestre ou dono do turno | Avança com `{ combatId, expectedVersion, operationId }`. |
+| `POST` | `/api/combat/attack` | autenticado | `{ combatId, expectedVersion, operationId, attackerCombatantId?, targetCombatantId, attackId, attackActionId?, prepared? }` — execução e economia atômicas. |
+| `POST` | `/api/combat/action` | autenticado | Ação estrutural ou movimento: envelope de operação + `{ combatantId, action, description?, targetCombatantId?, trigger?, intent?, distance? }`. |
+| `POST` | `/api/combat/economy/override` | **mestre** | Envelope de operação + `{ combatantId, adjustment, reason, remaining? }`; ajuste explícito e logado. |
 | `POST` | `/api/combat/hp` | **mestre** | Dano/cura manual (`{ combatantId, amount, mode }`). |
 | `POST` | `/api/combat/end` | **mestre** | Encerra o combate. |
 
 O atacante vem sempre da **ficha do usuário do token** — um jogador não consegue usar o ataque de outra ficha. A identidade nunca vem do corpo da requisição.
+
+### Fase 6.1 — economia de ações (PHB 2014)
+
+A economia é persistida em `Combatant.turnEconomy`, com `Combat.version` e
+`CombatOperation` para concorrência e retry. Não vive na ficha permanente.
+O início do próprio turno recupera Ação, Ação Bônus, Reação e Movimento; o fim
+não recupera a Reação. Ações comuns e movimento exigem o turno do combatente,
+inclusive para o Mestre. Fora do combate os fluxos existentes de ficha não
+consomem orçamento de turno.
+
+A primeira rolagem normal inicia uma Attack Action e gasta uma Ação. Para
+continuar, o cliente envia o `attackActionId` devolvido pelo servidor. O limite
+é derivado das features atuais: 1, 2, 3 ou 4; fontes de multiclasse usam o maior
+valor, nunca a soma. A mão secundária fica fora desse contador: exige ataque
+prévio com outra arma corpo a corpo leve na outra mão e gasta Ação Bônus.
+Lâmina Sedenta permanece pendente porque não há vínculo confiável de arma do
+pacto. Nenhuma limitação é ignorada automaticamente pelo Mestre.
+
+`action` aceita `dash`, `disengage`, `dodge`, `help`, `hide`, `search`,
+`use-object`, `improvised`, `ready`, `execute-ready` e `move`. Movimento é
+fracionável em **metros** e excedentes são rejeitados. Disparada gasta Ação e
+acrescenta o deslocamento atual ao orçamento. Usar um Objeto é a opção com
+custo de Ação; interações simples gratuitas não passam por ela.
+
+As demais ações registram intenção/contexto sem calcular vantagem, testes,
+condições ou resultado narrativo. Preparar salva gatilho e intenção e gasta
+Ação; `execute-ready` gasta Reação para resolução assistida. Para rolar um
+ataque preparado, `/attack` recebe `prepared: true`, gasta Reação e não abre
+outra Attack Action. O gatilho é confirmado na mesa, sem detecção automática;
+Preparar magia aguarda concentração e execução de magias.
+
+Overrides aceitam `grant-action`, `restore-action`, `restore-bonus`,
+`restore-reaction` e `set-movement` (com `remaining` em metros). Exigem motivo
+e aparecem em `economyLog`, sincronizado por `combat:updated`. A UI mantém a
+barra compacta e oferece ações assistidas, movimento e ajustes do Mestre.
+Ação Bônus não possui botão genérico: somente regras específicas a consomem.
+A classificação de casting time tem helper de economia, sem conjuração nesta
+fase. Action Surge, Haste, Protection, Great Weapon Fighting e efeitos das
+Fases 6.2+ permanecem pendentes.
 
 ### Eventos de tempo real
 

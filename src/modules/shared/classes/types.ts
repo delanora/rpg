@@ -107,6 +107,8 @@ export interface ClassFeatureResource {
    * com contador etc.). Preenchido junto com as features de cada classe.
    */
   export interface ClassFeatureEffect {
+  /** Metadado para integração futura; a 6.1 não migra nem executa o catálogo. */
+  economy?: 'action' | 'bonus-action' | 'reaction';
   type:
     | 'bonus'
     | 'resource'

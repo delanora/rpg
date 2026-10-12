@@ -6,6 +6,7 @@ import { DamageComponent } from './DamageComponent';
 
 interface CombatLogProps {
   log: CombatLogEntry[];
+  economyLog?: { id: string; actorName: string; message: string; at: string }[];
 }
 
 const KIND_ICON: Record<CombatLogEntry['kind'], IconName> = {
@@ -42,6 +43,7 @@ interface EntryView {
 
 /** Linha curta dos eventos simples (iniciativa, turno). */
 function describeEntry(entry: CombatLogEntry): EntryView {
+  if (entry.message) return { icon: 'book', variant: 'feature', title: 'Ação de combate', primary: entry.message };
   if (entry.kind === 'turn') {
     return {
       icon: KIND_ICON.turn,
@@ -76,6 +78,7 @@ interface DetailRow {
 /** Detalhes expansíveis dos eventos simples. */
 function detailRows(entry: CombatLogEntry): DetailRow[] {
   const rows: DetailRow[] = [];
+  if (entry.message) return rows;
   if (entry.kind === 'turn') {
     rows.push({ label: 'Rodada', value: String(entry.round ?? '—') });
     return rows;
@@ -227,18 +230,20 @@ function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean 
  * O QUE ACONTECEU? Página lateral do livro de combate. O ataque e o dano viram
  * UM cartão estruturado; iniciativa e turno continuam cartões simples.
  */
-export function CombatLog({ log }: CombatLogProps) {
+export function CombatLog({ log, economyLog = [] }: CombatLogProps) {
+  const entries: CombatLogEntry[] = [...log, ...economyLog.map(entry => ({ ...entry, kind: 'feature' as const }))]
+    .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100);
   return (
     <section className="combat-block combat-log-panel">
       <h3>
         <Icon name="scroll" size={15} /> Registro
       </h3>
 
-      {log.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="empty-hint">Sem eventos ainda.</p>
       ) : (
         <ol className="combat-log">
-          {log.map((entry, index) => {
+          {entries.map((entry, index) => {
             const recent = index === 0;
             if (entry.kind === 'result') {
               return <AttackCard key={entry.id} entry={entry} recent={recent} />;

@@ -838,6 +838,9 @@ enum CombatantKind {
 /// P2002 do INSERT é traduzido para o mesmo 409.
 model Combat {
   id           String       @id @default(cuid())
+  version      Int          @default(0)
+  /// Eventos estruturais da economia (ataques mantêm o canal de resultado existente).
+  economyLog   Json         @default("[]")
   status       CombatStatus @default(PENDING_INITIATIVE)
   round        Int          @default(1)
   /// Posição na ordem calculada (ordenada por iniciativa).
@@ -851,6 +854,7 @@ model Combat {
   updatedAt  DateTime     @updatedAt
   endedAt    DateTime?
   combatants Combatant[]
+  operations CombatOperation[]
 
   @@index([status])
   @@map("combats")
@@ -890,12 +894,28 @@ model Combatant {
   /// Trava do Ataque Furtivo: "uma vez por turno". A flag é zerada quando o
   /// turno do combatente começa (ver `nextTurn`).
   sneakAttackUsedThisTurn Boolean @default(false)
+  /// Estado transitório de combate, validado pelo domínio de economia de ações.
+  turnEconomy Json @default("{}")
 
   createdAt DateTime @default(now())
 
   @@index([combatId])
   @@index([ownerUserId])
   @@map("combatants")
+}
+
+/// Retry de ações/ataques não pode gastar economia, munição ou PV novamente.
+model CombatOperation {
+  id          String @id @default(cuid())
+  combatId    String
+  combat      Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+  operationId String
+  fingerprint String
+  snapshot    Json
+  createdAt   DateTime @default(now())
+
+  @@unique([combatId, operationId])
+  @@map("combat_operations")
 }
 
 // -----------------------------------------------------------------------------

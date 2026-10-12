@@ -33,6 +33,7 @@ export interface CombatLogEntry {
   kind: CombatLogKind;
   /** Quem protagonizou o evento (quem rolou, atacou ou começou o turno). */
   actorName: string;
+  message?: string;
   at: string;
   crit?: boolean;
 
@@ -132,7 +133,10 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
  * uma única conexão de socket na aplicação.
  */
 export function useCombatState(userId: string) {
-  const [combat, setCombat] = useState<CombatDto | null>(null);
+  const [combat, storeCombat] = useState<CombatDto | null>(null);
+  const setCombat = useCallback((incoming: CombatDto | null) => {
+    storeCombat(previous => previous && incoming && previous.id === incoming.id && previous.version > incoming.version ? previous : incoming);
+  }, []);
   const [log, setLog] = useState<CombatLogEntry[]>([]);
   const [turnAlert, setTurnAlert] = useState<TurnAlert | null>(null);
 
@@ -181,7 +185,7 @@ export function useCombatState(userId: string) {
         setLog((previous) => [describeAttack(payload), ...previous].slice(0, 40));
       },
     }),
-    [userId],
+    [userId, setCombat],
   );
 
   const dismissTurnAlert = useCallback(() => setTurnAlert(null), []);
