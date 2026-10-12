@@ -24,6 +24,7 @@
     "migrate:spell-slots": "tsx src/scripts/migrate-spell-slots.ts",
     "smoke": "tsx src/scripts/smoke-realtime.ts",
     "test:operation-id": "tsx client/scripts/check-operation-id.ts",
+    "test:combat-ui": "tsx --tsconfig client/tsconfig.json client/scripts/check-combat-ui.ts",
     "setup": "npm install && npm --prefix client install",
     "dev:client": "npm --prefix client run dev",
     "build:client": "npm --prefix client run build",

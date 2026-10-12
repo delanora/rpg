@@ -4,31 +4,8 @@ import { useAuth } from '../auth';
 import { fetchMechanicalState, mutateMechanicalState } from '../mechanicalApi';
 import { useSheetAccess } from '../readonly';
 import { Section } from './Section';
-import type { ConditionEffects, MechanicalDto, MechanicalEntity, MechanicalState } from '../types';
-
-/**
- * Etiquetas de condições ativas. Apresentação apenas: nomes e efeitos vêm do
- * servidor. A Exaustão é uma REGRA OPCIONAL da mesa — quando está desligada, o
- * nível salvo continua na ficha (nunca é apagado), mas o status NÃO aparece.
- */
-export function ConditionBadges({ state, effects, exhaustionEnabled = effects.exhaustionEnabled }: {
-  state: MechanicalState;
-  effects: ConditionEffects;
-  /** Sobrepõe o valor derivado do DTO (usado pela ficha, que ouve `game:config`). */
-  exhaustionEnabled?: boolean;
-}) {
-  const grouped = [...new Set(state.conditions.map(instance => instance.condition))];
-  if (grouped.length === 0 && !exhaustionEnabled) return null;
-  return <div className="combat-shortcuts">
-    {grouped.map(condition => {
-      const sources = state.conditions.filter(instance => instance.condition === condition);
-      return <span className="tag" key={condition} title={sources.map(instance => instance.sourceLabel ?? 'Origem não informada').join(' · ')}>
-        {effects.labels[condition]}{sources.length > 1 ? ` ×${sources.length}` : ''}{condition === 'poisoned' && effects.poisonSuspended ? ' (suspenso)' : ''}
-      </span>;
-    })}
-    {exhaustionEnabled ? <span className="tag">Exaustão {state.exhaustionLevel}/6</span> : null}
-  </div>;
-}
+import { ConditionBadges } from '../combat/components/ConditionBadges';
+import type { MechanicalDto, MechanicalEntity } from '../types';
 
 /**
  * Uma interface para personagem, cadastro e instância; sem segunda conexão WS.
@@ -102,9 +79,12 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
   const exhaustOn = exhaustionEnabled ?? current.effects.exhaustionEnabled;
   const hasConditions = current.state.conditions.length > 0;
 
+  // No combate as condições vivem no CARD da iniciativa; aqui o bloco é apenas
+  // "estado e ajustes" (notas, Levantar, administração do Mestre, histórico).
+  const showBadges = variant !== 'combat';
   const body = <>
-    <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} />
-    {hasConditions ? null : <p className="field-hint">Nenhuma condição ativa.</p>}
+    {showBadges ? <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} /> : null}
+    {showBadges && !hasConditions ? <p className="field-hint">Nenhuma condição ativa.</p> : null}
     {current.effects.exhaustionSummary.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.assistedNotes.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
@@ -147,8 +127,7 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     return <Section title="CONDIÇÕES" icon="flame" className="conditions-section">{body}</Section>;
   }
 
-  return <section className="combat-block">
-    <h3>CONDIÇÕES — {current.name}</h3>
-    {body}
-  </section>;
+  // Variante de combate: sem título próprio (o wrapper do painel já rotula) e
+  // sem as etiquetas, que agora moram no card da iniciativa.
+  return <div className="mechanical-body">{body}</div>;
 }

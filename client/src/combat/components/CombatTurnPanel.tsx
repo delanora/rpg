@@ -47,7 +47,7 @@ export function CombatTurnPanel({ combatant, round, isMyTurn, empty }: CombatTur
         <Portrait
           src={combatant.imageUrl ?? ''}
           alt=""
-          size="lg"
+          size="md"
           icon={combatant.kind === 'CREATURE' ? 'flame' : 'users'}
         />
 
