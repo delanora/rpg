@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AbilityKey } from './dnd5e.js';
 import type { TurnEconomy } from './action-economy.js';
 import { exhaustionRuleEnabled } from './exhaustion-flag.js';
+import { canSeeAttacker } from './vision.js';
 
 export const CONDITION_LABELS = {
   blinded: 'Cego', charmed: 'Enfeitiçado', deafened: 'Surdo', frightened: 'Amedrontado',
@@ -24,6 +25,12 @@ export type ConditionInstance = z.infer<typeof conditionInstanceSchema>;
 export const mechanicalStateSchema = z.object({
   conditions: z.array(conditionInstanceSchema).max(200).default([]),
   exhaustionLevel: z.number().int().min(0).max(6).default(0),
+  /**
+   * Capacidade CONFIÁVEL de enxergar o invisível (Ver o Invisível, truesight,
+   * percepção especial...). Ponto de extensão mínimo: enquanto nenhuma feature o
+   * preenche, permanece falso e a Esquiva não vale contra atacante Invisível.
+   */
+  seesInvisible: z.boolean().default(false),
   log: z.array(z.object({ id: z.string(), message: z.string(), actorName: z.string(), at: z.string() })).max(100).default([]),
 });
 export type MechanicalState = z.infer<typeof mechanicalStateSchema>;
@@ -99,6 +106,7 @@ export function deriveConditionEffects(value: unknown) {
     hesitantSpeech: active.has('stunned'), unawareSurroundings: petrified || active.has('unconscious'),
     dropsHeldObjects: active.has('unconscious'), hpMaxMultiplier: exhaustionLevel >= 4 ? 0.5 : 1,
     fatalByExhaustion: exhaustionLevel === 6,
+    seesInvisible: state.seesInvisible === true,
   };
 }
 export type ConditionEffects = ReturnType<typeof deriveConditionEffects>;
@@ -126,10 +134,28 @@ export function deriveSaveEffects(value: unknown, ability: AbilityKey, advantage
   };
 }
 
-export function conditionAttackMode(attacker: unknown, target: unknown, advantage: boolean, disadvantage: boolean) {
+export interface AttackVisibilityContext {
+  /** O alvo está sob Esquiva (Dodge) neste momento. */
+  targetDodging?: boolean;
+}
+
+/**
+ * Modo de uma jogada de ataque a partir das condições. A Esquiva (PHB 2014) do
+ * alvo impõe desvantagem SOMENTE quando o alvo CONSEGUE ver o atacante — nunca
+ * basta o atacante estar Invisível (ver `canSeeAttacker`). Invisible continua
+ * produzindo os SEUS próprios efeitos; aqui só cuidamos da fonte "Dodge".
+ */
+export function conditionAttackMode(
+  attacker: unknown,
+  target: unknown,
+  advantage: boolean,
+  disadvantage: boolean,
+  context: AttackVisibilityContext = {},
+) {
   const own = deriveConditionEffects(attacker), other = deriveConditionEffects(target);
+  const dodge = context.targetDodging && canSeeAttacker(target, attacker) ? ['dodge'] : [];
   return resolveRollMode(
     [...own.attackAdvantages, ...other.attacksAgainstAdvantages, ...(advantage ? ['manual'] : [])],
-    [...own.attackDisadvantages, ...other.attacksAgainstDisadvantages, ...(disadvantage ? ['manual'] : [])],
+    [...own.attackDisadvantages, ...other.attacksAgainstDisadvantages, ...dodge, ...(disadvantage ? ['manual'] : [])],
   );
 }

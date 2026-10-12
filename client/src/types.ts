@@ -2015,6 +2015,8 @@ export interface TurnEconomy {
   attackAction: { attackActionId: string; attacksMade: number; attacksAllowed: number } | null;
   lightWeaponsAttacked: string[];
   ready: { trigger: string; intent: string } | null;
+  /** Esquiva (Dodge) ativa até o início do próprio próximo turno. */
+  dodging?: boolean;
 }
 
 export interface CombatantDto {
@@ -2622,6 +2624,8 @@ export interface ConditionInstance {
 }
 export interface MechanicalState {
   conditions: ConditionInstance[]; exhaustionLevel: number;
+  /** Meio confiável de enxergar o invisível (ex.: Ver o Invisível). */
+  seesInvisible?: boolean;
   log: { id: string; message: string; actorName: string; at: string }[];
 }
 export interface ConditionEffects {

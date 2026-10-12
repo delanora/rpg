@@ -39,6 +39,11 @@ export const turnEconomySchema = z.object({
   /** Armas leves usadas em Attack Action: mão secundária exige OUTRA arma. */
   lightWeaponsAttacked: z.array(z.string()).default([]),
   ready: z.object({ trigger: z.string(), intent: z.string() }).nullable().default(null),
+  /**
+   * Esquiva (Dodge) ativa até o início do PRÓPRIO próximo turno. Como
+   * `onTurnStart` recria a economia zerada, o flag cai sozinho no momento certo.
+   */
+  dodging: z.boolean().default(false),
 });
 export type TurnEconomy = z.infer<typeof turnEconomySchema>;
 
