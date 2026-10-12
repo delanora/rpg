@@ -279,6 +279,13 @@ interface ConfigTabProps {
   extraCoins: boolean;
   onChangeExtraCoins: (enabled: boolean) => void;
   /**
+   * Regra OPCIONAL de Exaustão do PHB 2014 (controlada pelo Mestre). Ligada, os
+   * níveis de Exaustão produzem efeitos e aparecem na ficha/combate; desligada,
+   * o valor salvo continua intacto, mas fica inerte e oculto.
+   */
+  exhaustionEnabled: boolean;
+  onChangeExhaustion: (enabled: boolean) => void;
+  /**
    * Recursos de Acampamento do Descanso Longo coletivo (regra OPCIONAL —
    * inspirada em BG3, NÃO é regra do PHB 2014).
    */
@@ -296,6 +303,8 @@ export function ConfigTab({
   onChangeStartingLevel,
   extraCoins,
   onChangeExtraCoins,
+  exhaustionEnabled,
+  onChangeExhaustion,
   campSuppliesEnabled,
   campSupplyCost,
   onChangeCampSupplies,
@@ -497,6 +506,32 @@ export function ConfigTab({
             onChange={(event) => onChangeExtraCoins(event.target.checked)}
           />
           <span>MOSTRAR PL/PE</span>
+        </label>
+      </section>
+
+      {/* Exaustão (regra OPCIONAL do PHB 2014) ------------------------------- */}
+      <section className="config-card config-card-level">
+        <div className="config-level-copy">
+          <h2>
+            <Icon name="flame" size={18} /> Exaustão
+            <span className="config-badge config-badge-optional">Regra opcional</span>
+          </h2>
+          <p>
+            Quando ativada, os níveis de Exaustão (1 a 6) produzem os efeitos do Livro do
+            Jogador — desvantagens, redução de deslocamento e de PV máximo — e o nível 6 entra
+            na resolução de morte do Mestre. Desligada, os níveis já salvos nas fichas{' '}
+            <strong>não são apagados</strong>: eles ficam inertes e ocultos, e voltam a valer se
+            você religar a regra aqui.
+          </p>
+        </div>
+
+        <label className="field config-level-field field-check">
+          <input
+            type="checkbox"
+            checked={exhaustionEnabled}
+            onChange={(event) => onChangeExhaustion(event.target.checked)}
+          />
+          <span>USAR REGRA DE EXAUSTÃO</span>
         </label>
       </section>
 

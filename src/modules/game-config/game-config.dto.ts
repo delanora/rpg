@@ -32,6 +32,14 @@ export interface GameConfigDto {
    * `campSuppliesEnabled` é true.
    */
   campSupplyCostPerParticipant: number;
+  /**
+   * Usa a REGRA de Exaustão do PHB 2014 (regra OPCIONAL da mesa, controlada
+   * pelo Mestre). DESLIGADA nas campanhas novas; as mesas que já existiam foram
+   * backfilladas para LIGADA, para não mudar o comportamento de quem já joga
+   * com Exaustão. Desligada, o nível salvo em cada ficha continua intacto, mas
+   * fica mecanicamente inerte — e a interface esconde o status.
+   */
+  exhaustionEnabled: boolean;
   updatedAt: string;
 }
 

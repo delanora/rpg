@@ -50,6 +50,16 @@ model GameConfig {
   /// Só vale quando `campSuppliesEnabled` é true. O total exigido é
   /// `acceptedParticipants × campSupplyCostPerParticipant`. Padrão 10.
   campSupplyCostPerParticipant Int @default(10)
+  ///
+  /// Usa a REGRA de Exaustão do PHB 2014 (regra OPCIONAL da mesa).
+  ///
+  /// DESLIGADA por padrão: campanhas novas nascem SEM Exaustão. As mesas que
+  /// já existiam foram BACKFILLadas para `true` na migration que criou a coluna
+  /// — desligar é uma decisão explícita do Mestre, nunca um efeito silencioso
+  /// sobre mesas em andamento. Desligada, o nível SALVO em cada ficha continua
+  /// intacto, mas fica mecanicamente inerte (sem desvantagens, sem redução de
+  /// deslocamento/PV máximo e sem resolução fatal no nível 6).
+  exhaustionEnabled Boolean @default(false)
   updatedAt      DateTime @updatedAt
 
   @@map("game_config")

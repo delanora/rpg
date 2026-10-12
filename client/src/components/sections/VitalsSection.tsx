@@ -122,6 +122,10 @@ export function VitalsSection({
   // máximo é o EFETIVO (gravado + `hpBonus` de features/talentos).
   const hpMax = derived.hpMax;
   const maxModified = character.effectiveMaxHp !== hpMax;
+  // O deslocamento também é EFETIVO: condições e Exaustão (quando a regra da
+  // mesa está ligada) reduzem/zeram o valor no PRÓPRIO campo principal — o
+  // bloco de Condições não repete o número.
+  const speedModified = character.effectiveSpeed !== character.speed;
   const hpRatio = character.effectiveMaxHp > 0 ? character.hpCurrent / character.effectiveMaxHp : 0;
   const hpClass =
     hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
@@ -342,24 +346,47 @@ export function VitalsSection({
               <span className="vital-value-row">
                 <InlineField
                   className="vital-value"
-                  value={character.speed}
+                  value={character.effectiveSpeed}
                   mode="number"
                   min={0}
                   max={999}
-                  readOnly={lockedConstruction}
-                  ariaLabel="Deslocamento em metros"
+                  readOnly={lockedConstruction || speedModified}
+                  ariaLabel="Deslocamento efetivo em metros"
+                  // O campo mostra o EFETIVO; o que se grava é a base — a redução
+                  // por condições/Exaustão é derivada e nunca é escrita.
                   onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
                 />
                 <span className="vital-unit">/m</span>
               </span>
+
+              {speedModified ? (
+                <span className="vital-hint">
+                  base{' '}
+                  <InlineField
+                    value={character.speed}
+                    mode="number"
+                    min={0}
+                    max={999}
+                    readOnly={lockedConstruction}
+                    ariaLabel="Deslocamento base em metros"
+                    onCommit={(value) => update({ speed: clampInt(value, 0, 999, character.speed) })}
+                  />
+                  {' '}· reduzido só no efetivo.
+                </span>
+              ) : null}
             </div>
             <span className="vital-tip" role="tooltip">
               <strong>Deslocamento</strong>
               {/* O tabuleiro conta em quadrados de 1,5 m (5 pés) — PHB. */}
               <span>
-                {character.speed} metros equivalem a {speedInSquares(character.speed)} no
-                tabuleiro.
+                {character.effectiveSpeed} metros equivalem a{' '}
+                {speedInSquares(character.effectiveSpeed)} no tabuleiro.
               </span>
+              {speedModified ? (
+                <span>
+                  Base {character.speed} m: condições e Exaustão ajustam o deslocamento efetivo.
+                </span>
+              ) : null}
               <span>
                 É o quanto o personagem anda gastando o movimento do turno — e pode dividir o
                 deslocamento entre andar e agir.

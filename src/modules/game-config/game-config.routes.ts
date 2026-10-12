@@ -8,6 +8,7 @@ import {
   getMasterNotes,
   releaseLevelUp,
   setCampSupplies,
+  setExhaustion,
   setExtraCoins,
   setMasterNotes,
   setStartingLevel,
@@ -32,6 +33,11 @@ const MASTER_NOTES_MAX = 20000;
 
 const masterNotesSchema = z.object({
   notes: z.string().max(MASTER_NOTES_MAX),
+});
+
+/** Liga/desliga a regra OPCIONAL de Exaustão do PHB 2014 (só MASTER). */
+const exhaustionSchema = z.object({
+  enabled: z.boolean(),
 });
 
 /**
@@ -111,6 +117,24 @@ gameConfigRouter.post('/camp-supplies', requireRole('MASTER'), (req, res) => {
   }
 
   void setCampSupplies(parsed.data)
+    .then((config) => res.json({ config }))
+    .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
+});
+
+/**
+ * POST /api/game/exhaustion — liga/desliga a regra OPCIONAL de Exaustão
+ * (PHB 2014). Só MASTER. Sem apagar nada: o nível salvo em cada ficha continua
+ * intacto e volta a valer se a regra for religada.
+ */
+gameConfigRouter.post('/exhaustion', requireRole('MASTER'), (req, res) => {
+  const parsed = exhaustionSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  void setExhaustion(parsed.data.enabled)
     .then((config) => res.json({ config }))
     .catch(() => res.status(500).json({ error: 'INTERNAL_ERROR' }));
 });

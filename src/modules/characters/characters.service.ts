@@ -1,4 +1,4 @@
-import { mechanicalStateOf } from '../shared/conditions.js';
+import { effectiveExhaustionLevel } from '../shared/conditions.js';
 import {
   clearDeathLifecycle,
   deathStateOf,
@@ -1010,7 +1010,7 @@ async function applyLevelUp(
       ] as unknown as Prisma.InputJsonValue,
       // O PV ganho vale tanto para o máximo quanto para o PV atual.
       hpMax: character.hpMax + hpGained + conDelta,
-      hpCurrent: mechanicalStateOf(character.mechanicalState).exhaustionLevel >= 4
+      hpCurrent: effectiveExhaustionLevel(character.mechanicalState) >= 4
         ? Math.min(Math.max(0, character.hpCurrent + hpGained + conDelta), characterMaxHp({ ...character, ...data, classes: nextEntries as unknown as Prisma.JsonValue, hpMax: character.hpMax + hpGained + conDelta } as Character))
         : Math.max(0, character.hpCurrent + hpGained + conDelta),
       lastLevelUpRelease: options.consumeRelease
@@ -1326,7 +1326,7 @@ export async function levelDownCharacter(
     version: { increment: 1 },
   };
   if (removedFeats.length > 0) data.features = keptFeatures;
-  if (mechanicalStateOf(target.mechanicalState).exhaustionLevel >= 4) data.hpCurrent = Math.min(data.hpCurrent as number, characterMaxHp({ ...target, ...data } as Character));
+  if (effectiveExhaustionLevel(target.mechanicalState) >= 4) data.hpCurrent = Math.min(data.hpCurrent as number, characterMaxHp({ ...target, ...data } as Character));
 
   // `version` no WHERE: dois cliques seguidos não tiram dois níveis.
   const result = await prisma.character.updateMany({
@@ -3967,7 +3967,7 @@ async function applyCharacterPatch(
     }
   }
 
-  if (mechanicalStateOf(existing.mechanicalState).exhaustionLevel >= 4) {
+  if (effectiveExhaustionLevel(existing.mechanicalState) >= 4) {
     data.hpCurrent = Math.min((data.hpCurrent as number | undefined) ?? existing.hpCurrent, characterMaxHp({ ...existing, ...data } as Character));
   }
   const written = await prisma.character.updateMany({

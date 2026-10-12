@@ -575,6 +575,9 @@ async function changeHp(
     // O teto de PV de um personagem é DERIVADO: o gravado + o `hpBonus` de
     // features/talentos (Resiliência Dracônica, Vigoroso), como na ficha.
     const hpBonus = characterClassAdjustments(character).hpBonus;
+    // O teto reduzido pela Exaustão 4+ é calculado AQUI (e não no SQL) para
+    // respeitar a regra opcional da mesa: desligada, o multiplicador é 1.
+    const hpMaxMultiplier = deriveConditionEffects(character.mechanicalState).hpMaxMultiplier;
 
     // A escrita é ATÔMICA no banco (`UPDATE ... SET hpCurrent = ...`): o valor
     // novo é calculado a partir do que está GRAVADO, não do snapshot lido no
@@ -591,7 +594,7 @@ async function changeHp(
           "hpCurrent" = GREATEST(
             0,
             LEAST(
-              GREATEST(FLOOR(("hpMax" + ${hpBonus}) * CASE WHEN COALESCE(("mechanicalState"->>'exhaustionLevel')::int, 0) >= 4 THEN 0.5 ELSE 1 END), 0),
+              GREATEST(FLOOR(("hpMax" + ${hpBonus}) * ${hpMaxMultiplier}), 0),
               "hpCurrent" + ${delta} + LEAST("hpTemp", GREATEST(0, -${delta}))
             )
           ),

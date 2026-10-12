@@ -1139,6 +1139,13 @@ export interface GameConfig {
   campSuppliesEnabled: boolean;
   /** Custo em pontos por participante ACCEPTED (padrão 10). */
   campSupplyCostPerParticipant: number;
+  /**
+   * Usa a REGRA de Exaustão do PHB 2014 (regra OPCIONAL da mesa, controlada
+   * pelo Mestre). Desligada nas campanhas novas e LIGADA nas mesas que já
+   * existiam (backfill da migration). Desligada, o nível salvo em cada ficha
+   * continua intacto — mas é mecanicamente inerte e o status fica oculto.
+   */
+  exhaustionEnabled: boolean;
   updatedAt: string;
 }
 
@@ -2618,6 +2625,8 @@ export interface MechanicalState {
   log: { id: string; message: string; actorName: string; at: string }[];
 }
 export interface ConditionEffects {
+  /** Falso quando a mesa não usa a regra de Exaustão — a UI esconde o status. */
+  exhaustionEnabled: boolean;
   exhaustionSummary: string[];
   assistedNotes: string[];
   labels: Record<string, string>; active: string[];

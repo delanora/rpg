@@ -110,7 +110,11 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
         const level = input.exhaustionLevel ?? state.exhaustionLevel + input.exhaustionDelta!;
         if (level < 0 || level > 6) throw new HttpError('Exaustão deve ficar entre 0 e 6.', 400, 'VALIDATION_ERROR');
         state.exhaustionLevel = level;
-        log(state, actor, `Exaustão de ${loaded.name} ajustada para ${level}${input.reason ? `: ${input.reason}` : ''}.${level === 6 ? ' Exaustão fatal: morte pela regra; resolução assistida pelo Mestre.' : ''}`);
+        // A regra é OPCIONAL: desligada, o nível é SALVO mas permanece inerte,
+        // então nem o log anuncia fatalidade. `fatalByExhaustion` já respeita a
+        // configuração da mesa.
+        const fatal = deriveConditionEffects(state).fatalByExhaustion;
+        log(state, actor, `Exaustão de ${loaded.name} ajustada para ${level}${input.reason ? `: ${input.reason}` : ''}.${fatal ? ' Exaustão fatal: morte pela regra; resolução assistida pelo Mestre.' : ''}`);
       } else {
         const effects = deriveConditionEffects(state), speed = effectiveSpeed(loaded.baseSpeed, state);
         if (!effects.prone) throw new HttpError('A criatura não está caída.', 409, 'CONFLICT');
@@ -141,7 +145,9 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
       // Fase 6.3: Exaustão nível 6 indica morte pelas regras — abre a MESMA
       // decisão do Mestre usada pela morte instantânea. Nada de marcar morte
       // automaticamente; a Exaustão continua no nível 6 até o Mestre mexer.
-      if (input.action === 'exhaustion' && state.exhaustionLevel === 6) {
+      // Regra OPCIONAL da mesa (hotfix de Exaustão): com a regra DESLIGADA, o
+      // nível 6 continua salvo, mas NÃO abre a decisão de morte.
+      if (input.action === 'exhaustion' && deriveConditionEffects(state).fatalByExhaustion) {
         await registerFatalExhaustion(input.entity, actor.username, db);
       }
       const response = dto(await loadEntity(input.entity, db));
