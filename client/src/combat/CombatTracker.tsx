@@ -2,23 +2,23 @@ import { MechanicalPanel } from '../components/MechanicalPanel';
 import { useState } from 'react';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
-import type { Attack, AttackResolvedPayload, CombatDto, InventoryItem, SessionUser } from '../types';
+import type { Attack, CombatDto, InventoryItem, SessionUser } from '../types';
 import {
   applyManualHp,
   endCombat,
+  executeEconomyAction,
   nextTurn,
   resolveAttack,
   rollInitiativeFor,
   rollMyInitiative,
 } from './combatApi';
 import { CombatIntro } from './CombatIntro';
-import { AttackResultPanel } from './components/AttackResultPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
 import { CombatDashboard } from './components/CombatDashboard';
 import { CombatLog } from './components/CombatLog';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
-import { EconomyControls } from './components/EconomyControls';
+import { MasterEconomyPanel } from './components/MasterEconomyPanel';
 import { TurnResourceBar } from './components/TurnResourceBar';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
@@ -64,9 +64,13 @@ interface CombatTrackerProps {
 
 /**
  * Ponto de composição do painel de combate. Continua dono do estado local e das
- * ações (rolagens, ataque, dano manual, turno e encerramento); a reorganização
- * visual roda as colunas Iniciativa · Turno/Ações · Log e a barra de recursos,
- * sem tocar em backend, Socket.io ou regras.
+ * ações (rolagens, ataque, dano manual, turno e encerramento).
+ *
+ * REFINO DE UI: o centro virou o fluxo de ataque (ataque → alvo → modo →
+ * resumo → rolar). As Conditions ficam no CARD da iniciativa; o resultado do
+ * ataque aparece só no Registro; a economia (Ação/Ação bônus/Reação/
+ * Deslocamento/Encerrar) vive na barra persistente. Nada de regra mudou — só a
+ * organização e a apresentação.
  */
 export function CombatTracker({
   combat,
@@ -89,14 +93,19 @@ export function CombatTracker({
 
   const [busy, setBusy] = useState(false);
   const [masterAttacker, setMasterAttacker] = useState('');
-  // Último resultado de ataque resolvido pelo servidor (só para exibição).
-  const [attackResult, setAttackResult] = useState<AttackResolvedPayload | null>(null);
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
   const isMyTurn = Boolean(current && current.ownerUserId === user.id);
 
   const rolledCount = combat.combatants.filter((item) => item.rolled).length;
+
+  const masterAttackerCombatant =
+    combat.combatants.find((item) => item.id === masterAttacker) ?? null;
+  // Combatente que a barra/economia controla agora: o atacante escolhido pelo
+  // Mestre (ou o turno atual) e, para o jogador, o próprio personagem.
+  const actingCombatant = isMaster ? (masterAttackerCombatant ?? current) : myCombatant;
+  const ownTurn = Boolean(actingCombatant && actingCombatant.id === combat.currentCombatantId);
 
   async function run(action: () => Promise<CombatDto>): Promise<void> {
     setBusy(true);
@@ -107,6 +116,22 @@ export function CombatTracker({
     } finally {
       setBusy(false);
     }
+  }
+
+  // Resolve um ataque e deixa o Registro (via socket) exibir o desfecho — o
+  // centro não duplica mais o resultado.
+  function attack(input: Parameters<typeof resolveAttack>[1]): void {
+    void (async () => {
+      setBusy(true);
+      try {
+        const { combat: updated } = await resolveAttack(combat, input);
+        onCombatChange(updated);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : 'Falha na rolagem.');
+      } finally {
+        setBusy(false);
+      }
+    })();
   }
 
   // --- Aguardando iniciativas ------------------------------------------------
@@ -183,9 +208,6 @@ export function CombatTracker({
   }
 
   // --- Combate ativo ----------------------------------------------------------
-  const masterAttackerCombatant =
-    combat.combatants.find((item) => item.id === masterAttacker) ?? null;
-
   return (
     <section className="combat-panel">
       <CombatIntro combatId={combat.id} />
@@ -256,14 +278,6 @@ export function CombatTracker({
           <>
             <CombatTurnPanel combatant={current} round={combat.round} isMyTurn={isMyTurn} />
 
-            {isMaster ? (
-              <ManualHpPanel
-                combatants={combat.combatants}
-                busy={busy}
-                onApply={(input) => void run(() => applyManualHp(input))}
-              />
-            ) : null}
-
             {isMaster && attacksFor ? (
               <CombatActionPanel
                 combat={combat}
@@ -274,20 +288,7 @@ export function CombatTracker({
                 sneakAttackFor={sneakAttackFor}
                 onSelectAttacker={setMasterAttacker}
                 busy={busy}
-                onAttack={(input) => {
-                  void (async () => {
-                    setBusy(true);
-                    try {
-                      const { combat: updated, result } = await resolveAttack(combat, input);
-                      onCombatChange(updated);
-                      setAttackResult(result);
-                    } catch (error) {
-                      onError(error instanceof Error ? error.message : 'Falha na rolagem.');
-                    } finally {
-                      setBusy(false);
-                    }
-                  })();
-                }}
+                onAttack={attack}
               />
             ) : null}
 
@@ -305,67 +306,66 @@ export function CombatTracker({
                   inventory={characterInventory}
                   sneakAttack={sneakAttackExpression}
                   busy={busy}
-                  onAttack={(input) => {
-                    void (async () => {
-                      setBusy(true);
-                      try {
-                        const { combat: updated, result } = await resolveAttack(combat, input);
-                        onCombatChange(updated);
-                        setAttackResult(result);
-                      } catch (error) {
-                        onError(error instanceof Error ? error.message : 'Falha na rolagem.');
-                      } finally {
-                        setBusy(false);
-                      }
-                    })();
-                  }}
+                  onAttack={attack}
                 />
               </>
             ) : null}
 
-            {(isMaster ? (masterAttackerCombatant ?? current) : myCombatant) ? (
-              <MechanicalPanel
-                entity={{ kind: 'combatant', id: (isMaster ? (masterAttackerCombatant ?? current) : myCombatant)!.id }}
-                refreshVersion={combat.version}
-                sourceChoices={combat.combatants.map(item => ({ entity: { kind: 'combatant' as const, id: item.id }, name: item.name }))}
-              />
-            ) : null}
-            <EconomyControls
-              combat={combat} combatant={isMaster ? (masterAttackerCombatant ?? current) : myCombatant}
-              isMaster={isMaster} busy={busy} onRun={(action) => void run(action)}
-            />
-
-            {/* Resultado da última rolagem (somente exibição). */}
-            {attackResult ? (
-              <AttackResultPanel
-                result={attackResult}
-                onDismiss={() => setAttackResult(null)}
+            {isMaster ? (
+              <ManualHpPanel
+                combatants={combat.combatants}
+                busy={busy}
+                onApply={(input) => void run(() => applyManualHp(input))}
               />
             ) : null}
 
-            {/* Atalhos: levam direto às seções da ficha sem sair do combate. */}
+            {/* Atalhos da ficha: linha compacta, sem competir com o ataque. */}
             {onOpenSection ? (
-              <section className="combat-block">
-                <h3>
-                  <Icon name="book" size={15} /> Atalhos da ficha
-                </h3>
-                <div className="combat-shortcuts">
-                  {COMBAT_SHORTCUTS.map((shortcut) => {
-                    const isOpen = shortcut.key === openSection;
-                    return (
-                      <button
-                        key={shortcut.key}
-                        type="button"
-                        className={isOpen ? 'btn btn-small active' : 'btn btn-small'}
-                        aria-expanded={isOpen}
-                        onClick={() => onOpenSection(shortcut.key)}
-                      >
-                        <Icon name={shortcut.icon} size={15} /> {shortcut.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+              <div className="combat-shortcuts combat-shortcuts-inline">
+                {COMBAT_SHORTCUTS.map((shortcut) => {
+                  const isOpen = shortcut.key === openSection;
+                  return (
+                    <button
+                      key={shortcut.key}
+                      type="button"
+                      className={isOpen ? 'btn btn-small active' : 'btn btn-small'}
+                      aria-expanded={isOpen}
+                      onClick={() => onOpenSection(shortcut.key)}
+                    >
+                      <Icon name={shortcut.icon} size={14} /> {shortcut.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {/*
+              Estado e ajustes (drawer recolhido): notas derivadas, Levantar e a
+              administração do Mestre. As ETIQUETAS de condição NÃO vivem aqui —
+              elas ficam no card da iniciativa. Fica fora do fluxo de ataque.
+            */}
+            {actingCombatant ? (
+              <details className="combat-status">
+                <summary className="combat-status-summary">
+                  <Icon name="info" size={14} /> Estado e ajustes — {actingCombatant.name}
+                </summary>
+                <MechanicalPanel
+                  entity={{ kind: 'combatant', id: actingCombatant.id }}
+                  refreshVersion={combat.version}
+                  sourceChoices={combat.combatants.map((item) => ({
+                    entity: { kind: 'combatant' as const, id: item.id },
+                    name: item.name,
+                  }))}
+                />
+                {isMaster ? (
+                  <MasterEconomyPanel
+                    combat={combat}
+                    combatant={actingCombatant}
+                    busy={busy}
+                    onRun={(action) => void run(action)}
+                  />
+                ) : null}
+              </details>
             ) : null}
           </>
         }
@@ -375,8 +375,17 @@ export function CombatTracker({
             active
             isMaster={isMaster}
             isMyTurn={isMyTurn}
-            economy={(isMaster ? (masterAttackerCombatant ?? current) : myCombatant)?.turnEconomy}
+            economy={actingCombatant?.turnEconomy}
             busy={busy}
+            ownTurn={ownTurn}
+            canAct={actingCombatant ? actingCombatant.conditionEffects.canAct : false}
+            effectiveSpeed={actingCombatant?.effectiveSpeed}
+            onEconomyAction={(input) => {
+              if (!actingCombatant) return;
+              void run(() =>
+                executeEconomyAction(combat, { combatantId: actingCombatant.id, ...input }),
+              );
+            }}
             onEndTurn={() => void run(() => nextTurn(combat))}
           />
         }

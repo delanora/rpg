@@ -116,6 +116,26 @@
   --damage-slashing: #6b7078;
   --damage-thunder: #3f5573;
   --damage-default: #7a6a52;
+
+  /*
+   * Condições SEM relação clara com um tipo de dano ganham cor própria —
+   * memória visual. Quem tem relação (Envenenado ↔ Veneno) reaproveita a
+   * família `--damage-*` pelo seletor `[data-condition]`. A cor é só reforço:
+   * o nome da condição continua sempre escrito.
+   */
+  --condition-blinded: #4a4a4a;
+  --condition-charmed: #b5559a;
+  --condition-deafened: #5c6b7a;
+  --condition-frightened: #7b4fa0;
+  --condition-grappled: #8a5a2b;
+  --condition-incapacitated: #8f2f2f;
+  --condition-invisible: #3f8f9c;
+  --condition-paralyzed: #3f6fa0;
+  --condition-petrified: #6e6a63;
+  --condition-prone: #a9772a;
+  --condition-restrained: #a1502a;
+  --condition-stunned: #b39a2f;
+  --condition-unconscious: #4a2f6e;
 }
 
 [data-theme='dark'] {
@@ -170,6 +190,21 @@
   --damage-slashing: #b3bac4;
   --damage-thunder: #7f9dc9;
   --damage-default: #b7a583;
+
+  /* Condições no couro: mesmas matizes, clareadas para manter contraste. */
+  --condition-blinded: #b9b2a4;
+  --condition-charmed: #e08fca;
+  --condition-deafened: #9fb4c4;
+  --condition-frightened: #b78fdc;
+  --condition-grappled: #c99055;
+  --condition-incapacitated: #d76b63;
+  --condition-invisible: #7cc9d4;
+  --condition-paralyzed: #7fb0dd;
+  --condition-petrified: #b3aa9c;
+  --condition-prone: #d9a24e;
+  --condition-restrained: #e08a5c;
+  --condition-stunned: #d8c46a;
+  --condition-unconscious: #a382d6;
 }
 
 /* ==========================================================================
@@ -16097,5 +16132,406 @@ input[type='checkbox']:focus-visible,
 @media (max-width: 760px) {
   .conditions-section .section-body {
     padding: 0.65rem 0.7rem 0.7rem;
+  }
+}
+
+/* ==========================================================================
+   REFINO DA UI DE COMBATE — chips de condição, menu de Ação e deslocamento.
+   Só apresentação/interação: nada aqui recalcula regra, movimento ou dados.
+   ========================================================================== */
+
+/* --- Chips de condição (card da iniciativa e ficha) ---------------------- */
+
+.condition-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
+
+.condition-chip {
+  --condition-accent: var(--ink-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.02rem 0.42rem;
+  border: 1px solid var(--condition-accent);
+  border-left-width: 3px;
+  border-radius: 999px;
+  color: var(--condition-accent);
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.45;
+  cursor: help;
+}
+
+/* A cor da condição é só reforço: o nome continua sempre escrito na etiqueta. */
+.condition-chip[data-condition='blinded'] { --condition-accent: var(--condition-blinded); }
+.condition-chip[data-condition='charmed'] { --condition-accent: var(--condition-charmed); }
+.condition-chip[data-condition='deafened'] { --condition-accent: var(--condition-deafened); }
+.condition-chip[data-condition='frightened'] { --condition-accent: var(--condition-frightened); }
+.condition-chip[data-condition='grappled'] { --condition-accent: var(--condition-grappled); }
+.condition-chip[data-condition='incapacitated'] { --condition-accent: var(--condition-incapacitated); }
+.condition-chip[data-condition='invisible'] { --condition-accent: var(--condition-invisible); }
+.condition-chip[data-condition='paralyzed'] { --condition-accent: var(--condition-paralyzed); }
+.condition-chip[data-condition='petrified'] { --condition-accent: var(--condition-petrified); }
+.condition-chip[data-condition='prone'] { --condition-accent: var(--condition-prone); }
+.condition-chip[data-condition='restrained'] { --condition-accent: var(--condition-restrained); }
+.condition-chip[data-condition='stunned'] { --condition-accent: var(--condition-stunned); }
+.condition-chip[data-condition='unconscious'] { --condition-accent: var(--condition-unconscious); }
+/* Relação clara com um tipo de dano: compartilha a MESMA família visual. */
+.condition-chip[data-condition='poisoned'] { --condition-accent: var(--damage-poison); }
+
+.condition-chip.exhaustion {
+  --condition-accent: var(--gold-deep);
+  cursor: default;
+}
+
+.condition-chip.more {
+  --condition-accent: var(--gold-deep);
+}
+
+/* Popover da condição: mais estreito que o tooltip padrão da ficha. */
+.condition-tip {
+  width: min(20rem, 80vw);
+}
+
+.condition-tip-sources {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+/* --- Drawer "Estado e ajustes" (centro, recolhido por padrão) ------------ */
+
+.combat-status {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.combat-status > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.7rem;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.combat-status > summary::-webkit-details-marker {
+  display: none;
+}
+
+.combat-status > summary .icon {
+  color: var(--gold-deep);
+}
+
+.combat-status[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.mechanical-body {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.combat-subpanel {
+  margin: 0 0.7rem 0.6rem;
+}
+
+.combat-subpanel > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+}
+
+.combat-subpanel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.combat-subpanel[open] > summary {
+  margin-bottom: 0.35rem;
+}
+
+/* --- Atalhos da ficha em linha (não competem com o fluxo de ataque) ------ */
+
+.combat-shortcuts-inline .btn {
+  flex: 0 1 auto;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+/* --- Barra persistente: permite que menu/popover escapem ----------------- */
+
+.turn-resource-bar {
+  position: relative;
+  overflow: visible;
+}
+
+.turn-resource {
+  position: relative;
+}
+
+/* O "i" dentro da barra abre para CIMA (a barra vive no rodapé). */
+.turn-resource-label .field-info .icon {
+  width: 11px;
+  height: 11px;
+}
+
+.turn-resource-label .info-tip-text {
+  top: auto;
+  bottom: calc(100% + 0.45rem);
+  left: 0;
+  transform: none;
+  width: min(16rem, 80vw);
+}
+
+/* --- Menu de Ação (abre para cima, ancorado à barra) --------------------- */
+
+.action-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.action-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: var(--radius);
+  background-image: linear-gradient(180deg, var(--surface), var(--surface-2));
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.action-menu-trigger.active,
+.action-menu-trigger[aria-expanded='true'] {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #2b2115;
+}
+
+.action-menu-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-menu {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 60;
+  display: grid;
+  gap: 0.1rem;
+  width: min(22rem, 88vw);
+  max-height: min(60vh, 34rem);
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  background-image: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+}
+
+.action-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.25rem;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gold-deep);
+}
+
+.action-menu-item {
+  display: grid;
+  gap: 0.05rem;
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.action-menu-item:hover,
+.action-menu-item:focus-visible {
+  border-color: var(--gold-hair);
+  background: var(--surface-3);
+}
+
+.action-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-menu-item-head {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.action-menu-item-desc {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
+.action-menu-form {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  padding: 0.45rem 0.5rem 0.2rem;
+  border-top: 1px solid var(--line);
+}
+
+.action-menu-form .field {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.action-menu-form .field > span {
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+}
+
+.action-menu-form input {
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+}
+
+/* --- Deslocamento inline na barra (popover de metros) ------------------- */
+
+.turn-resource.move-cell {
+  gap: 0.3rem;
+}
+
+.move-spend {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.move-spend:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.move-popover {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 60;
+  display: grid;
+  gap: 0.5rem;
+  width: min(15rem, 80vw);
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  background-image: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+}
+
+.move-popover-head {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--gold-deep);
+}
+
+.move-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.move-stepper button {
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.move-stepper button:hover {
+  border-color: var(--gold);
+}
+
+.move-stepper input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-display);
+  text-align: center;
+}
+
+/* --- Compactação leve do cabeçalho do turno ----------------------------- */
+
+.combat-turn-panel {
+  gap: 0.45rem;
+  padding: 0.7rem 0.8rem;
+}
+
+/* --- Responsividade: menu/popover não estouram a tela ------------------- */
+
+@media (max-width: 760px) {
+  .action-menu,
+  .move-popover,
+  .condition-tip,
+  .turn-resource-label .info-tip-text {
+    width: min(92vw, 22rem);
   }
 }

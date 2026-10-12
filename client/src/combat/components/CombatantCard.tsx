@@ -1,4 +1,4 @@
-import { ConditionBadges } from '../../components/MechanicalPanel';
+import { ConditionBadges } from './ConditionBadges';
 import type { ReactNode } from 'react';
 import { HpBar } from '../../components/HpBar';
 import { Icon } from '../../components/Icon';
