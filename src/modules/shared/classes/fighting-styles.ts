@@ -7,15 +7,9 @@ import type { FeatureChoiceOption } from './types.js';
 // um subconjunto (o Guerreiro tem os seis; o Paladino e o Patrulheiro, quatro).
 // Fica em módulo próprio para os três nunca saírem de sincronia.
 //
-// EFEITO NUMÉRICO AUTOMÁTICO: só a **Defesa** (+1 CA enquanto usar armadura).
-// TODAS as demais dependem de combate por ação/reação/rolagem — ficam como
-// escolha INFORMATIVA (PENDENTE Fase 5):
-//   • Arquearia: +2 nas rolagens de ataque à distância;
-//   • Duelismo: +2 de dano com arma de uma mão empunhada sozinha;
-//   • Combate com Armas Grandes: rerrolar 1 e 2 no dano de arma de duas mãos;
-//   • Proteção: usar a reação e o escudo para dar desvantagem a um ataque
-//     contra um aliado a até 1,5 m;
-//   • Combate com Duas Armas: somar o mod. de atributo ao dano da segunda arma.
+// Defesa, Arquearia, Duelismo e Combate com Duas Armas têm efeitos derivados.
+// Armas Grandes aguarda um pipeline de rerrolagem de dados de arma (Fase 6).
+// Proteção aguarda reação, alcance e seleção de alvo (Fase 6).
 //
 // O livro proíbe escolher o MESMO estilo duas vezes: se o personagem receber
 // Estilo de Luta de mais de uma classe, os bônus também não se acumulam (ver
@@ -26,6 +20,7 @@ export const FIGHTING_STYLE_ARCHERY: FeatureChoiceOption = {
   key: 'archery',
   name: 'Arquearia',
   description: '+2 nas rolagens de ataque com armas à distância.',
+  effect: { type: 'weaponAttackModifier', weaponCondition: 'rangedWeapon', value: 2, name: 'Arquearia' },
 };
 
 export const FIGHTING_STYLE_DEFENSE: FeatureChoiceOption = {
@@ -43,7 +38,8 @@ export const FIGHTING_STYLE_DEFENSE: FeatureChoiceOption = {
 export const FIGHTING_STYLE_DUELING: FeatureChoiceOption = {
   key: 'dueling',
   name: 'Duelismo',
-  description: '+2 de dano com arma de uma mão empunhada sozinha.',
+  description: '+2 de dano com arma corpo a corpo em uma mão, sem outra arma empunhada (escudo permitido).',
+  effect: { type: 'weaponAttackModifier', weaponCondition: 'dueling', value: 2, name: 'Duelismo' },
 };
 
 export const FIGHTING_STYLE_GREAT_WEAPON: FeatureChoiceOption = {
@@ -63,6 +59,7 @@ export const FIGHTING_STYLE_TWO_WEAPON: FeatureChoiceOption = {
   key: 'two-weapon-fighting',
   name: 'Combate com Duas Armas',
   description: 'Soma o modificador de atributo ao dano do segundo ataque com a outra arma.',
+  effect: { type: 'weaponAttackModifier', weaponCondition: 'offhandAbility', name: 'Combate com Duas Armas' },
 };
 
 /** Os seis estilos (Guerreiro). */

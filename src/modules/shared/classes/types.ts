@@ -125,6 +125,7 @@ export interface ClassFeatureResource {
     | 'abilityBonus'
     /** Bônus fixo de CA (Estilo de Luta Defesa: +1 com armadura). */
     | 'armorClass'
+    | 'weaponAttackModifier'
     /** Bônus em TODAS as salvaguardas (Aura de Proteção do paladino). */
     | 'saveBonus'
     /**
@@ -188,6 +189,8 @@ export interface ClassFeatureResource {
      */
     | 'spell'
     | 'other';
+  /** Condição do ajuste derivado de arma (PHB 2014). */
+  weaponCondition?: 'rangedWeapon' | 'dueling' | 'offhandAbility';
   /** Identificador do toggle/recurso (ex.: 'rage'). Vazio = id da feature. */
   id?: string;
   /**
@@ -289,8 +292,7 @@ export interface ClassFeatureResource {
  * Uma opção que a característica oferece (ex.: 'Defesa' no Estilo de Luta).
  *
  * A chave é o que fica gravado em `classState.choices`; o efeito mecânico, quando
- * houver, só vale se ESTA opção for a escolhida (hoje só a Defesa tem efeito:
- * +1 CA com armadura — as demais ficam informativas até a Fase 5).
+ * houver, só vale se ESTA opção for a escolhida (os passivos são derivados; reação e rerrolagem aguardam a Fase 6).
  */
 export interface FeatureChoiceOption {
   /** Valor estável gravado na ficha (ex.: 'defense'). */

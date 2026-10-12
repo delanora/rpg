@@ -462,7 +462,9 @@ Quatro efeitos numéricos saem daí para o `derived`: o **Estilo de Luta Defesa*
 
 A **subclasse escolhida no mesmo nível em que já pede uma escolha** (Caçador e Colégio do Conhecimento, ambos no 3º) funciona: o catálogo de classes do personagem expõe as escolhas de cada subclasse (`classOptions[].subclassChoices`) e o assistente de Level Up mostra o passo assim que a subclasse é selecionada — a subida só fecha com a escolha feita.
 
-As demais escolhas (Arquearia, Duelismo, Proteção...) ficam registradas e descritas; o efeito em combate por ação/reação entra na Fase 5.
+Os Estilos de Luta usam a escolha em `classState.choices` e ajustes derivados compartilhados entre ficha e combate. **Arquearia** soma +2 ao ataque de armas classificadas como à distância, sem alterar dano (adaga arremessada continua arma corpo a corpo). **Duelismo** soma +2 ao dano de arma corpo a corpo em uma mão, sem outra arma empunhada; escudo é permitido. Como não há seleção de pegada, uma arma versátil elegível usa uma mão com Duelismo e mantém a preferência por duas mãos sem ele. **Combate com Duas Armas** inclui o modificador no ataque derivado `offhand:`, sem alterar os ataques comuns.
+
+**Combate com Armas Grandes** aguarda um hook de rerrolagem dos dados de arma; **Proteção** aguarda reação, alcance e alvo na engine da **Fase 6**. Ambos continuam escolhas persistidas, sem bônus numérico fictício. A seleção atual permite repetir estilos entre fontes (incluindo Campeão), uma lacuna frente ao PHB 2014; a derivação não acumula seus efeitos. Level Down remove escolhas de características que deixam de ser concedidas, inclusive em fichas legadas sem histórico.
 
 ### Características de classe cadastradas
 

@@ -7465,6 +7465,86 @@ async function main(): Promise<void> {
     JSON.stringify(armorClassOf(defenseArmored)),
   );
 
+  await (async () => {
+    console.log('  Estilos de Luta PHB 2014: ataques derivados e progressão');
+    const arma = (nome: string, detalhes: Record<string, unknown>, mao = 'hand1') => ({
+      ...equipped(nome, 'Armadura', detalhes), category: 'Arma', slot: mao,
+    });
+    const arco = arma('Arco longo', { weaponType: 'ranged', weaponCategory: 'martial', damageDie: 8, rangeNormal: 45, rangeLong: 180, properties: ['two-handed'] });
+    const adaga = arma('Adaga', { weaponType: 'melee', weaponCategory: 'simple', damageDie: 4, rangeNormal: 6, rangeLong: 18, properties: ['light', 'finesse', 'thrown'] });
+    const espada = arma('Espada longa', { weaponType: 'melee', weaponCategory: 'martial', damageDie: 8, versatileDie: 10, properties: ['versatile'] });
+    const escudo = { ...equipped('Escudo', 'Escudo', { shieldBonus: 2 }), slot: 'hand2' };
+    const segunda = { ...adaga, id: 'segunda-adaga-estilos', slot: 'hand2' };
+    const defesaEscudo = await masterPatch(chosen.characterId, { inventory: [escudo] });
+    check('Defesa: escudo sozinho não concede bônus', armorClassOf(defesaEscudo)?.classBonus === 0);
+
+    const ataques = (resposta: any) => {
+      if (resposta.status !== 200) throw new Error(`Fixture de estilos inválida: ${JSON.stringify(resposta.data)}`);
+      return resposta.data?.character?.derivedAttacks ?? [];
+    };
+    const ataque = (resposta: any, id: string) => ataques(resposta).find((item: any) => item.id === id);
+    await masterPatch(chosen.characterId, { strength: 18, dexterity: 16, proficiencies: { armor: ['Armaduras leves', 'Escudos'], weapons: ['Armas simples', 'Armas marciais'], tools: [] } });
+    const estilo = async (classe: string, nivel: number, chave: string) => {
+      await setCharacterClasses(chosen.userId, [{ classKey: classe, level: nivel }]);
+      await setState(chosen.userId, { active: [], used: {}, choices: { [`${classe}-fighting-style`]: [chave] } });
+    };
+    for (const classe of ['fighter', 'ranger']) {
+      await estilo(classe, classe === 'fighter' ? 1 : 2, 'archery');
+      const ficha = await masterPatch(chosen.characterId, { inventory: [arco] });
+      const a = ataque(ficha, `weapon:${arco.id}`);
+      check(`${classe}: Arquearia +7 ataque e +3 dano`, a?.attackBonus === 7 && a?.damage?.bonus === 3 && a?.notes.includes('Arquearia'), JSON.stringify(ataques(ficha)));
+      const thrown = await masterPatch(chosen.characterId, { inventory: [adaga] });
+      check(`${classe}: adaga arremessada não recebe Arquearia`, ataque(thrown, `thrown:${adaga.id}`)?.attackBonus === 6);
+    }
+    for (const classe of ['fighter', 'paladin', 'ranger']) {
+      await estilo(classe, classe === 'fighter' ? 1 : 2, 'dueling');
+      const ficha = await masterPatch(chosen.characterId, { inventory: [adaga] });
+      const a = ataque(ficha, `weapon:${adaga.id}`);
+      check(`${classe}: Duelismo +6 dano, sem bônus de ataque`, a?.damage?.bonus === 6 && a?.attackBonus === 6 && a?.notes.includes('Duelismo'), JSON.stringify(ataques(ficha)));
+      const comEscudo = await masterPatch(chosen.characterId, { inventory: [espada, escudo] });
+      check(`${classe}: Duelismo permite escudo`, ataque(comEscudo, `weapon:${espada.id}`)?.damage?.bonus === 6);
+      const sozinha = await masterPatch(chosen.characterId, { inventory: [espada] });
+      check(`${classe}: espada versátil com Duelismo usa uma mão`, ataque(sozinha, `weapon:${espada.id}`)?.damage?.sides === 8 && ataque(sozinha, `weapon:${espada.id}`)?.damage?.bonus === 6);
+      const duas = await masterPatch(chosen.characterId, { inventory: [espada, segunda] });
+      check(`${classe}: segunda arma impede Duelismo`, ataque(duas, `weapon:${espada.id}`)?.damage?.bonus === 4);
+      const pesada = { ...espada, details: { ...espada.details, versatileDie: undefined, properties: ['two-handed'] } };
+      const duasMaos = await masterPatch(chosen.characterId, { inventory: [pesada] });
+      check(`${classe}: arma de duas mãos não recebe Duelismo`, ataque(duasMaos, `weapon:${espada.id}`)?.damage?.bonus === 4);
+    }
+    for (const chave of ['two-weapon-fighting', 'great-weapon-fighting', 'protection']) {
+      await estilo('fighter', 1, chave);
+      const ficha = await masterPatch(chosen.characterId, { inventory: [adaga, segunda] });
+      check(`${chave}: escolha persistida e efeito restrito`, ficha.data?.character?.classState?.choices?.['fighter-fighting-style']?.[0] === chave && ataque(ficha, `weapon:${adaga.id}`)?.damage?.bonus === 4 && ataque(ficha, `offhand:${segunda.id}`)?.damage?.bonus === (chave === 'two-weapon-fighting' ? 4 : 0), JSON.stringify(ataques(ficha)));
+    }
+    await estilo('fighter', 1, 'great-weapon-fighting');
+    const grande = arma('Espada grande', { weaponType: 'melee', damageDie: 6, damageCount: 2, properties: ['two-handed'] });
+    const grandes = await masterPatch(chosen.characterId, { inventory: [grande] });
+    check('Armas Grandes não inventa bônus de dano', ataque(grandes, `weapon:${grande.id}`)?.damage?.bonus === 4 && ataque(grandes, `weapon:${grande.id}`)?.damage?.count === 2);
+    await estilo('ranger', 2, 'two-weapon-fighting');
+    const par = await masterPatch(chosen.characterId, { inventory: [adaga, segunda] });
+    check('Patrulheiro: Duas Armas altera apenas o ataque secundário', ataque(par, `offhand:${segunda.id}`)?.damage?.bonus === 4 && ataque(par, `weapon:${adaga.id}`)?.damage?.bonus === 4);
+    const negativo = await masterPatch(chosen.characterId, { strength: 8, dexterity: 8 });
+    check('Duas Armas preserva modificador negativo', ataque(negativo, `offhand:${segunda.id}`)?.damage?.bonus === -1);
+    await masterPatch(chosen.characterId, { strength: 18, dexterity: 16 });
+    await setCharacterClasses(chosen.userId, [{ classKey: 'cleric', level: 3 }, { classKey: 'paladin', level: 3 }, { classKey: 'fighter', level: 1 }]);
+    await setState(chosen.userId, { active: [], used: {}, choices: { 'paladin-fighting-style': ['defense'], 'fighter-fighting-style': ['archery'] } });
+    const multi = await masterPatch(chosen.characterId, { inventory: [arco, equipped('Couro', 'Armadura', { armorType: 'Leve', baseArmorClass: 12 })], levelHistory: [] });
+    check('multiclasse: Defesa e Arquearia coexistem', armorClassOf(multi)?.classBonus === 1 && ataque(multi, `weapon:${arco.id}`)?.attackBonus === 8);
+    await setState(chosen.userId, { active: [], used: {}, choices: { 'paladin-fighting-style': ['defense'], 'fighter-fighting-style': ['defense'] } });
+    const duplicado = await masterPatch(chosen.characterId, { inventory: [equipped('Couro', 'Armadura', { armorType: 'Leve', baseArmorClass: 12 })] });
+    check('Defesa duplicada entre classes não acumula', armorClassOf(duplicado)?.classBonus === 1);
+    await setState(chosen.userId, { active: [], used: {}, choices: { 'paladin-fighting-style': ['defense'], 'fighter-fighting-style': ['archery'] } });
+    const down = await api(`/api/characters/${chosen.characterId}/level-down`, { method: 'POST', token: masterToken, body: { classKey: 'fighter' } });
+    check('Level Down remove escolha de Guerreiro sem histórico', down.status === 200 && !down.data?.character?.classState?.choices?.['fighter-fighting-style']);
+    await api('/api/game/level-up', { method: 'POST', token: masterToken });
+    const up = await api('/api/characters/me/level-up', { method: 'POST', token: chosen.token, body: { classKey: 'fighter', hp: 'average', choices: { 'fighter-fighting-style': ['dueling'] } } });
+    check('novo Level Up persiste Duelismo', up.status === 200 && up.data?.character?.classState?.choices?.['fighter-fighting-style']?.[0] === 'dueling', JSON.stringify(up.data));
+    const novoArco = await masterPatch(chosen.characterId, { inventory: [arco] });
+    check('Arquearia não fica fantasma depois de Level Down/Up', ataque(novoArco, `weapon:${arco.id}`)?.attackBonus === 6);
+    const novaAdaga = await masterPatch(chosen.characterId, { inventory: [adaga] });
+    check('Duelismo funciona depois de Level Down/Up', ataque(novaAdaga, `weapon:${adaga.id}`)?.damage?.bonus === 6);
+  })();
+
   // Pau para Toda Obra do Bardo: metade da proficiência (para baixo) onde não há.
   await setCharacterClasses(chosen.userId, [{ classKey: 'bard', level: 2 }]);
   await setState(chosen.userId);

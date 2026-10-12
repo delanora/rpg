@@ -1243,6 +1243,14 @@ export async function levelDownCharacter(
   const remainingIds = new Set<string>();
   for (const item of nextEntries) for (const id of grantedClassStateIdsFor(item)) remainingIds.add(id);
   const obsoleteIds = new Set([...previousIds].filter((id) => !remainingIds.has(id)));
+  // Escolhas legadas também saem quando a característica deixa de existir,
+  // mesmo sem registro de Level Up; preserva as concedidas por outra origem.
+  for (const id of obsoleteIds) {
+    if (id in choices) {
+      delete choices[id];
+      if (!revertedChoices.includes(id)) revertedChoices.push(id);
+    }
+  }
 
   const trimmedState: ClassState = {
     active: classState.active.filter((id) => !removedIds.has(id)),
