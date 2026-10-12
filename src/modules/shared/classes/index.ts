@@ -994,6 +994,7 @@ export interface UnarmoredDefenseOption {
 
 /** Ajustes calculados a partir das features ativas e do estado de classe. */
 export interface ClassAdjustments {
+  weaponAttackModifiers: { condition: NonNullable<ClassFeatureEffect['weaponCondition']>; value: number; name: string }[];
   toggles: ActiveToggle[];
   resources: ActiveResource[];
   activeToggleIds: string[];
@@ -1111,6 +1112,7 @@ export function computeClassAdjustments(
   abilities?: Record<AbilityKey, number>,
 ): ClassAdjustments {
   const activeSet = new Set(state.active);
+  const weaponAttackModifiers: ClassAdjustments['weaponAttackModifiers'] = [];
   const toggles: ActiveToggle[] = [];
   /** Declarações de recurso (com o nível de origem), resolvidas no fim. */
   const resourceDeclarations: ResourceDeclaration[] = [];
@@ -1244,6 +1246,11 @@ export function computeClassAdjustments(
           if (effect.max !== undefined) abilityCaps[ability] = effect.max;
           break;
         }
+        case 'weaponAttackModifier':
+          if (effect.weaponCondition && !weaponAttackModifiers.some((item) => item.condition === effect.weaponCondition)) {
+            weaponAttackModifiers.push({ condition: effect.weaponCondition, value: effect.value ?? 0, name: effect.name ?? sourceName });
+          }
+          break;
         case 'armorClass':
           // Bônus fixo de CA (Estilo de Luta Defesa). Dois "Estilos de Luta" não
           // se acumulam: vale o MAIOR (o livro proíbe repetir a mesma opção).
@@ -1333,6 +1340,7 @@ export function computeClassAdjustments(
     wildShapeFlying: (overrideWildShapeCr ?? baseWildShapeCr) > 0 && level >= 8,
     abilityBonuses,
     abilityCaps,
+    weaponAttackModifiers,
     armorClassBonus,
     armorClassBonusRequiresArmor,
     armorClassBonusLabel,
@@ -1876,6 +1884,7 @@ export function mergeAdjustments(base: ClassAdjustments, extra: ClassAdjustments
   }
 
   return {
+    weaponAttackModifiers: [...base.weaponAttackModifiers, ...extra.weaponAttackModifiers.filter((item) => !base.weaponAttackModifiers.some((known) => known.condition === item.condition))],
     toggles: byId([...base.toggles, ...extra.toggles]),
     resources: mergeResources(base.resources, extra.resources),
     activeToggleIds: [...new Set([...base.activeToggleIds, ...extra.activeToggleIds])],
@@ -1959,6 +1968,7 @@ function emptyAdjustments(): ClassAdjustments {
     abilityBonuses: {},
     abilityCaps: {},
     saveProficiencies: [],
+    weaponAttackModifiers: [],
     armorClassBonus: 0,
     armorClassBonusRequiresArmor: false,
     armorClassBonusLabel: '',

@@ -722,6 +722,7 @@ export function toCharacterDto(
     abilities: effectiveAbilities,
     level,
     weaponProficiencies,
+    weaponAttackModifiers: classAdjustments.weaponAttackModifiers,
     inventory,
   });
 
@@ -1009,6 +1010,7 @@ export function characterDerivedAttacks(character: Character): CombatAttack[] {
     abilities: effectiveAbilitiesOf(character, classAdjustments),
     level: totalCharacterLevel(classEntries),
     weaponProficiencies: normalizeProficiencies(character.proficiencies).weapons,
+    weaponAttackModifiers: classAdjustments.weaponAttackModifiers,
     inventory,
   });
 }

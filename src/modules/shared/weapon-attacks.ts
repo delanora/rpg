@@ -1,3 +1,4 @@
+import type { ClassAdjustments } from './classes.js';
 import { WEAPON_SLOTS } from './ammo.js';
 import type { CombatAttack } from './attacks.js';
 import {
@@ -26,12 +27,12 @@ import type { ItemDetails, WeaponCategory } from './item-details.js';
  * - **Proficiência**: soma o bônus quando a lista de proficiências de arma da
  *   ficha traz a CATEGORIA ("Armas simples"/"Armas marciais") ou o NOME da arma
  *   ("Espadas longas"), tolerante a plural/acento.
- * - **Versátil**: com a outra mão livre, empunha com as duas mãos e usa
- *   `versatileDie`.
+ * - **Versátil**: com a outra mão livre, prefere duas mãos e `versatileDie`;
+ *   com Duelismo elegível, usa uma mão e o dado normal.
  * - **Duas mãos**: exige a outra mão livre; ocupada, o ataque fica bloqueado.
  * - **Segunda arma leve** (combate com duas armas): duas armas LEVES corpo a
  *   corpo, uma em cada mão, geram um ataque extra da mão secundária que NÃO
- *   soma o modificador de dano (salvo se ele for negativo).
+ *   soma o modificador de dano, salvo se negativo ou com Combate com Duas Armas.
  * - **Arremesso**: arma com a propriedade `thrown` ganha uma variante à
  *   distância (mesma habilidade do corpo a corpo, mas `ranged`).
  * - **Golpe desarmado**: sempre disponível (1 + FOR de dano de concussão,
@@ -58,6 +59,7 @@ export interface WeaponAttackInput {
   level: number;
   /** Lista de proficiências de ARMA (texto), ex.: ['Armas simples', 'Adagas']. */
   weaponProficiencies: readonly string[];
+  weaponAttackModifiers?: ClassAdjustments['weaponAttackModifiers'];
   inventory: readonly WeaponInventoryItem[];
 }
 
@@ -173,6 +175,7 @@ function attackNote(options: {
   proficiency: number;
   twoHands: boolean;
   die: number;
+  estilos?: string[];
 }): string {
   const parts = [
     KIND_LABEL[options.kind],
@@ -184,6 +187,7 @@ function attackNote(options: {
       : 'sem proficiência',
   );
   if (options.twoHands) parts.push(`duas mãos 1d${options.die}`);
+  parts.push(...(options.estilos ?? []));
   return parts.join(' · ');
 }
 
@@ -264,6 +268,10 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
   const modifiers = modifiersOf(input.abilities);
   const proficiency = proficiencyBonus(input.level);
   const attacks: CombatAttack[] = [];
+  const ajustes = input.weaponAttackModifiers ?? [];
+  const arquearia = ajustes.find((item) => item.condition === 'rangedWeapon');
+  const duelismo = ajustes.find((item) => item.condition === 'dueling');
+  const duasArmas = ajustes.some((item) => item.condition === 'offhandAbility');
 
   for (const slot of WEAPON_SLOTS) {
     const weapon = equippedWeaponIn(input.inventory, slot);
@@ -295,8 +303,14 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
       ? `A arma ${weapon.name} é de duas mãos: libere a outra mão para usá-la.`
       : undefined;
 
-    // Versátil com a outra mão livre: empunha com as duas mãos e troca o dado.
-    const twoHands = versatile && !otherHandBusy && (details.versatileDie ?? 0) > 0;
+    // Versátil pode usar duas mãos e trocar o dado quando a outra mão está livre.
+    // Sem controle de pegada, Duelismo escolhe uma mão quando elegível;
+    // sem o estilo, preservamos a preferência histórica por duas mãos.
+    const duelismoValido = Boolean(duelismo) && details.weaponType !== 'ranged' && !twoHanded &&
+      !equippedWeaponIn(input.inventory, otherSlot);
+    const bonusDuelismo = duelismoValido ? (duelismo?.value ?? 0) : 0;
+    const bonusArquearia = details.weaponType === 'ranged' ? (arquearia?.value ?? 0) : 0;
+    const twoHands = !duelismoValido && versatile && !otherHandBusy && (details.versatileDie ?? 0) > 0;
     const die = twoHands ? (details.versatileDie ?? 0) : baseDie;
     const dieCount = die > 0 ? (details.damageCount ?? 1) : 0;
 
@@ -309,8 +323,8 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
         name: weapon.name,
         weapon,
         kind,
-        attackBonus: clampAttackBonus(choice.modifier + profBonus + magicAttack),
-        damageBonus: choice.modifier + magicDamage,
+        attackBonus: clampAttackBonus(choice.modifier + profBonus + magicAttack + bonusArquearia),
+        damageBonus: choice.modifier + magicDamage + bonusDuelismo,
         ability: choice.ability,
         abilityModifier: choice.modifier,
         die,
@@ -322,6 +336,7 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
           proficiency: profBonus,
           twoHands,
           die,
+          estilos: [...(bonusArquearia ? [`Arquearia +${bonusArquearia} (ataque)`] : []), ...(bonusDuelismo ? [`Duelismo +${bonusDuelismo} (dano)`] : [])],
         }),
         proficient,
         ...(blocked === undefined ? {} : { blocked }),
@@ -337,8 +352,8 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
           name: `${weapon.name} (arremesso)`,
           weapon,
           kind: 'thrown',
-          attackBonus: clampAttackBonus(throwChoice.modifier + profBonus + magicAttack),
-          damageBonus: throwChoice.modifier + magicDamage,
+          attackBonus: clampAttackBonus(throwChoice.modifier + profBonus + magicAttack + bonusArquearia),
+          damageBonus: throwChoice.modifier + magicDamage + bonusDuelismo,
           ability: throwChoice.ability,
           abilityModifier: throwChoice.modifier,
           die: baseDie,
@@ -350,6 +365,7 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
             proficiency: profBonus,
             twoHands: false,
             die: baseDie,
+            estilos: [...(bonusArquearia ? [`Arquearia +${bonusArquearia} (ataque)`] : []), ...(bonusDuelismo ? [`Duelismo +${bonusDuelismo} (dano)`] : [])],
           }),
           proficient,
         }),
@@ -382,13 +398,13 @@ export function deriveWeaponAttacks(input: WeaponAttackInput): CombatAttack[] {
         weapon: offHand,
         kind: 'melee',
         attackBonus: clampAttackBonus(choice.modifier + profBonus + (details.attackBonus ?? 0)),
-        // Mão secundária: o modificador de dano NÃO entra, salvo se negativo.
-        damageBonus: Math.min(choice.modifier, 0) + (details.damageBonus ?? 0),
+        // O estilo habilita o modificador; sem ele, só valores negativos entram.
+        damageBonus: (duasArmas ? choice.modifier : Math.min(choice.modifier, 0)) + (details.damageBonus ?? 0),
         ability: choice.ability,
-        abilityModifier: Math.min(choice.modifier, 0),
+        abilityModifier: (duasArmas ? choice.modifier : Math.min(choice.modifier, 0)),
         die,
         dieCount,
-        notes: 'Mão secundária · sem o modificador de dano (duas armas leves)',
+        notes: duasArmas ? 'Mão secundária · Combate com Duas Armas · com modificador de dano' : 'Mão secundária · sem o modificador de dano (duas armas leves)',
         proficient,
       }),
     );
