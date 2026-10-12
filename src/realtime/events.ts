@@ -1,3 +1,4 @@
+import type { MechanicalDto } from '../modules/mechanical/mechanical.service.js';
 import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
@@ -173,6 +174,7 @@ export const ServerEvents = {
   COMBAT_STARTED: 'combat:started',
   /** Estado completo do combate mudou (HP, rolagens, ordem...). */
   COMBAT_UPDATED: 'combat:updated',
+  MECHANICAL_UPDATED: 'mechanical:updated',
   /** Virou o turno de alguém. */
   COMBAT_TURN: 'combat:turn',
   /** Combate encerrado pelo mestre. */
@@ -442,7 +444,7 @@ export interface DamageComponentPayload {
   rolled: number;
   /** Total que entrou no HP depois da defesa do alvo. */
   applied: number;
-  modifier: 'resistance' | 'immunity' | 'vulnerability' | null;
+  modifier: 'resistance' | 'immunity' | 'vulnerability' | 'resistance-vulnerability' | null;
   /** Quebra legível do que compôs `rolled` (dados + bônus por parte). */
   breakdown: DamageBreakdownPayload;
 }
@@ -520,3 +522,5 @@ export interface LongRestRequestUpdatedPayload {
 
 export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];
 export type ServerEvent = (typeof ServerEvents)[keyof typeof ServerEvents];
+
+export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }

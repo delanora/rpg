@@ -1,3 +1,4 @@
+import type { MechanicalUpdatedPayload } from './types';
 import { useEffect, useRef, useState } from 'react';
 import { createSocket } from './socket';
 import type {
@@ -53,6 +54,7 @@ export interface RealtimeHandlers {
   onItemUpdated?: (payload: ItemUpdatedPayload) => void;
   onItemDeleted?: (payload: ItemDeletedPayload) => void;
   onCombatStarted?: (payload: CombatStartedPayload) => void;
+  onMechanicalUpdated?: (payload: MechanicalUpdatedPayload) => void;
   onCombatUpdated?: (payload: CombatUpdatedPayload) => void;
   onCombatTurn?: (payload: CombatTurnPayload) => void;
   onCombatEnded?: (payload: CombatEndedPayload) => void;
@@ -134,6 +136,7 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('music:tracks', (payload) => handlersRef.current.onMusicTracks?.(payload));
 
     socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
+    socket.on('mechanical:updated', (payload) => handlersRef.current.onMechanicalUpdated?.(payload));
     socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));
     socket.on('combat:turn', (payload) => handlersRef.current.onCombatTurn?.(payload));
     socket.on('combat:ended', (payload) => handlersRef.current.onCombatEnded?.(payload));

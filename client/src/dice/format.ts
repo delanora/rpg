@@ -6,6 +6,7 @@ import type { DiceRollDto } from '../types';
  * ficam de fora.
  */
 export function resultBreakdown(roll: DiceRollDto): string {
+  if (roll.autoFail) return 'Falha automática por condição (sem rolagem).';
   const parts = roll.dice.filter((die) => !die.dropped).map((die) => String(die.value));
   const expression = parts.join(' + ') || '0';
   const bonus =
@@ -21,7 +22,7 @@ export function resultBreakdown(roll: DiceRollDto): string {
  */
 export function historyLine(roll: DiceRollDto): string {
   const label = roll.kind === 'free' ? 'Rolagem livre' : roll.label;
-  return `${roll.actorName}: ${label}: ${roll.total}`;
+  return `${roll.actorName}: ${label}: ${roll.autoFail ? 'falha automática' : roll.total}`;
 }
 
 /**
@@ -36,6 +37,7 @@ export function historyLine(roll: DiceRollDto): string {
  * é apenas rotulado com a origem, que o tipo da rolagem informa.
  */
 export function rollDebug(roll: DiceRollDto): string {
+  if (roll.autoFail) return 'Falha automática por condição (sem rolagem).';
   const kept = roll.dice.filter((die) => !die.dropped);
   const dropped = roll.dice.filter((die) => die.dropped);
 

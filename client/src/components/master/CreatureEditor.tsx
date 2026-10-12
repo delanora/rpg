@@ -1,3 +1,4 @@
+import { MechanicalPanel } from '../MechanicalPanel';
 import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import {
@@ -96,7 +97,7 @@ export function CreatureEditor({
   );
 
   // Mesmo destaque da ficha: a cor é do valor crítico, não do card.
-  const hpRatio = creature.hpMax > 0 ? creature.hpCurrent / creature.hpMax : 0;
+  const hpRatio = creature.effectiveMaxHp > 0 ? creature.hpCurrent / creature.effectiveMaxHp : 0;
   const hpClass = hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
 
   /** Alterna o vínculo com uma localidade — sempre mantendo ao menos uma. */
@@ -112,6 +113,7 @@ export function CreatureEditor({
 
   return (
     <div className="creature-editor">
+      <MechanicalPanel entity={{ kind: 'creature', id: creature.id }} refreshVersion={creature.version} />
       <div className="detail-head">
         <h2>
           <Icon name="flame" size={22} /> {creature.name}

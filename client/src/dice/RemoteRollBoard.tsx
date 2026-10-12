@@ -123,7 +123,7 @@ export function RemoteRollBoard({ board, onClose }: RemoteRollBoardProps) {
         <div className="dice-readout">
           {settled && result ? (
             <div className={result.crit ? 'dice-total is-crit' : 'dice-total'}>
-              <span className="dice-total-value">{result.total}</span>
+              <span className="dice-total-value">{result.autoFail ? 'Falha automática' : result.total}</span>
               <span className="dice-total-detail">{resultBreakdown(result)}</span>
               <span className="dice-total-tags">
                 {result.advantage ? <em>vantagem</em> : null}

@@ -1,3 +1,4 @@
+import { mechanicalStateOf } from '../shared/conditions.js';
 import { randomInt, randomUUID } from 'node:crypto';
 import type { Character, Prisma, ShortRestSession } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
@@ -991,6 +992,7 @@ async function applyLevelUp(
       userId: actor.userId,
       // Condição de corrida: só grava se a liberação ainda não foi usada.
       lastLevelUpRelease: character.lastLevelUpRelease,
+      version: character.version,
     },
     data: {
       ...(data as Prisma.CharacterUpdateManyMutationInput),
@@ -1001,7 +1003,9 @@ async function applyLevelUp(
       ] as unknown as Prisma.InputJsonValue,
       // O PV ganho vale tanto para o máximo quanto para o PV atual.
       hpMax: character.hpMax + hpGained + conDelta,
-      hpCurrent: Math.max(0, character.hpCurrent + hpGained + conDelta),
+      hpCurrent: mechanicalStateOf(character.mechanicalState).exhaustionLevel >= 4
+        ? Math.min(Math.max(0, character.hpCurrent + hpGained + conDelta), characterMaxHp({ ...character, ...data, classes: nextEntries as unknown as Prisma.JsonValue, hpMax: character.hpMax + hpGained + conDelta } as Character))
+        : Math.max(0, character.hpCurrent + hpGained + conDelta),
       lastLevelUpRelease: options.consumeRelease
         ? config.levelUpRelease
         : character.lastLevelUpRelease,
@@ -1315,6 +1319,7 @@ export async function levelDownCharacter(
     version: { increment: 1 },
   };
   if (removedFeats.length > 0) data.features = keptFeatures;
+  if (mechanicalStateOf(target.mechanicalState).exhaustionLevel >= 4) data.hpCurrent = Math.min(data.hpCurrent as number, characterMaxHp({ ...target, ...data } as Character));
 
   // `version` no WHERE: dois cliques seguidos não tiram dois níveis.
   const result = await prisma.character.updateMany({
@@ -1536,7 +1541,7 @@ export async function useInventoryItem(
     // TODO (Fase 5 — motor de ações): consumir 1 Ação do turno ao usar poção de
     // cura durante o combate; bloquear se a Ação já foi gasta naquele turno.
     const nextHp =
-      healing === null ? null : Math.min(character.hpMax, character.hpCurrent + healing.total);
+      healing === null ? null : Math.min(characterMaxHp(character), character.hpCurrent + healing.total);
 
     // A entrada some quando a última unidade é usada.
     const next = inventory
@@ -3923,10 +3928,15 @@ async function applyCharacterPatch(
     );
   }
 
-  const character = await prisma.character.update({
-    where: { userId: owner.userId },
-    data: data as Prisma.CharacterUpdateInput,
+  if (mechanicalStateOf(existing.mechanicalState).exhaustionLevel >= 4) {
+    data.hpCurrent = Math.min((data.hpCurrent as number | undefined) ?? existing.hpCurrent, characterMaxHp({ ...existing, ...data } as Character));
+  }
+  const written = await prisma.character.updateMany({
+    where: { userId: owner.userId, version: existing.version },
+    data: data as Prisma.CharacterUpdateManyMutationInput,
   });
+  if (!written.count) throw new HttpError('Ficha mudou. Atualize e tente novamente.', 409, 'CONFLICT');
+  const character = await prisma.character.findUniqueOrThrow({ where: { userId: owner.userId } });
 
   await publishChange(owner, character, patch as Record<string, unknown>, editedBy);
   return toSheetDto(character, owner.username);

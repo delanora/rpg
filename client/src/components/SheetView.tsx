@@ -1,3 +1,4 @@
+import { MechanicalPanel } from './MechanicalPanel';
 import { useState } from 'react';
 import { SheetAccessProvider } from '../readonly';
 import type { Character, CharacterPatch, InventoryMoveRequest, TransferTarget } from '../types';
@@ -59,7 +60,7 @@ interface SheetViewProps {
   /** Adota a ficha devolvida por uma ação de moedas (gastar/trocar/transferir). */
   onCoinsChange?: (character: Character) => void;
   /** Abre a janela de dados com 1d20 + bônus da perícia/salvaguarda. */
-  onRollSkill?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void;
+  onRollSkill?: (input: { kind: 'skill' | 'save'; label: string; bonus: number; ability?: import('../types').AbilityKey; entity?: import('../types').MechanicalEntity }) => void;
   /**
    * Level Up do jogador: vive no círculo de nível do cabeçalho. A visão do
    * mestre não passa nada, e o círculo fica só de leitura.
@@ -94,7 +95,7 @@ function renderTab(
   key: TabKey,
   character: Character,
   update: (patch: CharacterPatch) => void,
-  onRoll?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void,
+  onRoll?: (input: { kind: 'skill' | 'save'; label: string; bonus: number; ability?: import('../types').AbilityKey; entity?: import('../types').MechanicalEntity }) => void,
   onEldritchMaster?: (expectedVersion: number) => void | Promise<void>,
   onRacialUse?: (resourceId: string, expectedVersion: number) => void | Promise<void>,
 ) {
@@ -150,6 +151,7 @@ export function SheetView({
 
   return (
     <SheetAccessProvider value={{ readOnly, creationLocked, masterView }}>
+      <MechanicalPanel entity={{ kind: 'character', id: character.id }} refreshVersion={character.version} />
       {/* `position: fixed` no botão e no painel: não participam da grade. */}
       <div className="sheet">
         {/* Personagem (identidade, nível e vida e defesa), de ponta a ponta. */}

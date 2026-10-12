@@ -93,6 +93,9 @@ model User {
 // -----------------------------------------------------------------------------
 
 model Character {
+  /// Estado mecânico próprio: instâncias de condições, exaustão e log; nunca economia de turno.
+  mechanicalState Json @default("{\"conditions\":[],\"exhaustionLevel\":0,\"log\":[]}")
+
   id     String @id @default(cuid())
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -714,6 +717,9 @@ model Locality {
 }
 
 model Creature {
+  /// Estado mecânico próprio: instâncias de condições, exaustão e log; nunca economia de turno.
+  mechanicalState Json @default("{\"conditions\":[],\"exhaustionLevel\":0,\"log\":[]}")
+
   id String @id @default(cuid())
 
   // Identificação
@@ -861,6 +867,10 @@ model Combat {
 }
 
 model Combatant {
+  mechanicalVersion Int @default(0)
+  /// Estado mecânico próprio: instâncias de condições, exaustão e log; nunca economia de turno.
+  mechanicalState Json @default("{\"conditions\":[],\"exhaustionLevel\":0,\"log\":[]}")
+
   id       String  @id @default(cuid())
   combatId String
   combat   Combat  @relation(fields: [combatId], references: [id], onDelete: Cascade)
@@ -961,4 +971,18 @@ model MusicState {
   updatedAt DateTime @updatedAt
 
   @@map("music_state")
+}
+
+/// Chave polimórfica: personagens, templates e instâncias usam o mesmo domínio.
+model MechanicalOperation {
+  id String @id @default(cuid())
+  entityKind String
+  entityId String
+  operationId String
+  fingerprint String
+  snapshot Json
+  createdAt DateTime @default(now())
+
+  @@unique([entityKind, entityId, operationId])
+  @@map("mechanical_operations")
 }

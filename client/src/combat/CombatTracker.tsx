@@ -1,3 +1,4 @@
+import { MechanicalPanel } from '../components/MechanicalPanel';
 import { useState } from 'react';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
@@ -167,7 +168,7 @@ export function CombatTracker({
               }
             />
           }
-          right={<CombatLog log={log} economyLog={combat.economyLog} />}
+          right={<CombatLog log={log} economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]} />}
           bottom={<TurnResourceBar active={false} isMaster={isMaster} />}
         />
 
@@ -322,6 +323,13 @@ export function CombatTracker({
               </>
             ) : null}
 
+            {(isMaster ? (masterAttackerCombatant ?? current) : myCombatant) ? (
+              <MechanicalPanel
+                entity={{ kind: 'combatant', id: (isMaster ? (masterAttackerCombatant ?? current) : myCombatant)!.id }}
+                refreshVersion={combat.version}
+                sourceChoices={combat.combatants.map(item => ({ entity: { kind: 'combatant' as const, id: item.id }, name: item.name }))}
+              />
+            ) : null}
             <EconomyControls
               combat={combat} combatant={isMaster ? (masterAttackerCombatant ?? current) : myCombatant}
               isMaster={isMaster} busy={busy} onRun={(action) => void run(action)}
@@ -361,7 +369,7 @@ export function CombatTracker({
             ) : null}
           </>
         }
-        right={<CombatLog log={log} economyLog={combat.economyLog} />}
+        right={<CombatLog log={log} economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]} />}
         bottom={
           <TurnResourceBar
             active

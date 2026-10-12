@@ -904,7 +904,71 @@ barra compacta e oferece ações assistidas, movimento e ajustes do Mestre.
 Ação Bônus não possui botão genérico: somente regras específicas a consomem.
 A classificação de casting time tem helper de economia, sem conjuração nesta
 fase. Action Surge, Haste, Protection, Great Weapon Fighting e efeitos das
-Fases 6.2+ permanecem pendentes.
+Fases 6.3+ permanecem pendentes.
+
+### Fase 6.2 — Condições e Exaustão (PHB 2014)
+
+Condições são instâncias independentes em `mechanicalState`, com origem e autor.
+Duas fontes de Envenenado continuam ativas até remover ambas; a interface
+agrupa o nome e mostra suas fontes. Exaustão é um nível separado de 0 a 6.
+MASTER administra; PLAYER visualiza e pode usar a ação específica de levantar.
+
+Personagens guardam estado na ficha; NPCs/cadastros têm estado próprio fora de
+combate. Cada cópia de criatura recebe snapshot inicial independente, seguindo
+os PV por participante. Alterações não voltam ao bestiário; encerrar combate
+não limpa condições. Não há duração automática, mapa, itens no chão ou death
+engine nesta fase.
+
+| Método | Rota | Contrato |
+|---|---|---|
+| GET | `/api/mechanical/:kind/:id` | `kind`: `character`, `creature` ou `combatant`; retorna estado, efeitos, versões, speed/PV máximo efetivos e contexto de combate. Mestre ou dono da ficha. |
+| POST | `/api/mechanical/mutate` | `{ entity: {kind,id}, expectedVersion, expectedCombatVersion?, operationId, action, ... }`; versão do combate obrigatória quando a entidade participa de combate pendente/ativo. |
+
+Ações: `apply` (`condition`, `sourceEntity?`, `sourceLabel?`, `sourceType?`,
+`sourceId?`), `remove` (`instanceId`), `exhaustion` (`exhaustionLevel` OU
+`exhaustionDelta` de +1/−1) e `stand`. Só `stand` é permitido ao jogador dono.
+Fontes e níveis são administrados explicitamente e logados; retries não reaplicam.
+Handlers futuros podem usar autoridade interna de regra, nunca concedida pelo
+payload HTTP do jogador.
+
+O servidor deriva bloqueios de Ação/Ação Bônus/Reação, speed efetivo,
+modificadores de ataques/checks/saves e máximo de PV. Incapacitado isolado não
+bloqueia movimento; Paralisação, Atordoamento, Petrificação e Inconsciência
+incluem bloqueio de movimento. Advantage/disadvantage cancelam quando há
+qualquer fonte de cada lado. Invisible não cria Hidden.
+
+Levantar custa metade do speed efetivo durante o próprio turno, sem Action ou
+Bonus; fora de combate não há orçamento. O gasto anterior é preservado ao
+receber/perder condições de speed. Caído usa rastejar com custo de movimento
+dobrado. Efeitos contra Caído e críticos por proximidade não são aplicados sem
+distância confiável. Amedrontado mantém fonte e regras assistidas pelo Mestre,
+sem assumir linha de visão ou direção do movimento.
+
+Petrificação preserva veneno anterior como suspenso, sem neutralizar sua fonte.
+O dano segue imunidade, depois resistência e vulnerabilidade, nesta ordem;
+resistências não acumulam. Doença, peso e envelhecimento ficam informativos.
+Esses detalhes seguem as [condições oficiais de 2014](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/appendix-a-conditions) e a [ordem de resistência/vulnerabilidade](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/combat).
+
+Inconsciente cai e larga o que segura, com aviso no log/resultado. O inventário
+não é transferido para a mochila. A colocação/manuseio dos objetos é resolvida
+manualmente pelo Mestre; acordar não levanta automaticamente.
+
+Exaustão é cumulativa: checks com desvantagem (1), metade do speed (2), ataques
+/saves com desvantagem (3), metade do máximo de PV arredondado para baixo (4),
+speed zero (5), fatalidade sinalizada (6). O máximo base fica preservado, PV
+acima do máximo efetivo é reduzido, e remover Exaustão não cura. Nível 6 não
+cria `dead`, não zera PV nem inicia death saves. Long Rest não altera Exaustão
+automaticamente: recuperação específica aguarda decisão/integração posterior.
+
+Saves passam `ability` canônico e `entity` opcional em `/api/dice/roll`;
+STR/DEX com falha automática retornam `autoFail: true` sem dados rolados.
+Sem atributo canônico não há inferência por rótulo. A janela identifica o
+resultado como falha automática; rolagens livres mantêm o fluxo narrativo.
+
+A UI adiciona badges, fontes, Exaustão, controles mínimos do Mestre e histórico
+mecânico na ficha, bestiário e combate, reaproveitando estilos e a conexão WS.
+`mechanical:updated` complementa os eventos existentes. Os testes específicos
+estão em `src/scripts/smoke-conditions.ts`, executados pelo smoke completo.
 
 ### Eventos de tempo real
 

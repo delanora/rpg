@@ -1,3 +1,4 @@
+import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed } from '../shared/conditions.js';
 import type { Creature, CreatureKind } from '@prisma/client';
 import { z } from 'zod';
 import { toLocalitySummary, type LocalitySummaryDto } from '../localities/localities.dto.js';
@@ -23,6 +24,10 @@ export interface CreatureDto {
 
   hpCurrent: number;
   hpMax: number;
+  mechanicalState: ReturnType<typeof mechanicalStateOf>;
+  conditionEffects: ReturnType<typeof deriveConditionEffects>;
+  effectiveMaxHp: number;
+  effectiveSpeed: number;
   armorClass: number;
   speed: number;
 
@@ -92,6 +97,10 @@ export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
     charisma: creature.charisma,
     hpCurrent: creature.hpCurrent,
     hpMax: creature.hpMax,
+    mechanicalState: mechanicalStateOf(creature.mechanicalState),
+    conditionEffects: deriveConditionEffects(creature.mechanicalState),
+    effectiveMaxHp: effectiveMaxHp(creature.hpMax, creature.mechanicalState),
+    effectiveSpeed: effectiveSpeed(creature.speed, creature.mechanicalState),
     armorClass: creature.armorClass,
     speed: creature.speed,
     attacks,

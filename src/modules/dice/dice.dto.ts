@@ -75,6 +75,8 @@ export interface ActiveRollDto {
 }
 
 export interface DiceRollDto {
+  /** Falha automática de salvaguarda; não houve rolagem. */
+  autoFail?: boolean;
   id: string;
   /** Dono da rolagem — a mesa usa isso para casar a rolagem com o tabuleiro. */
   actorUserId: string;

@@ -1,3 +1,5 @@
+import { entitySchema } from '../shared/conditions.js';
+import { ABILITY_KEYS } from '../shared/dnd5e.js';
 import { z } from 'zod';
 
 /**
@@ -8,6 +10,8 @@ import { z } from 'zod';
  * token (e da ficha do usuário).
  */
 export const tableRollSchema = z.object({
+  entity: entitySchema.optional(),
+  ability: z.enum(ABILITY_KEYS).optional(),
   /** Cada dado do pool, uma entrada por dado (permite empilhar d6, d6...). */
   dice: z.array(z.object({ sides: z.number().int().min(2).max(1000) })).min(1).max(50),
   advantage: z.boolean().optional(),

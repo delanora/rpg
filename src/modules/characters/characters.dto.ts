@@ -1,3 +1,4 @@
+import { effectiveMaxHp, effectiveSpeed, mechanicalStateOf, deriveConditionEffects } from '../shared/conditions.js';
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
@@ -344,6 +345,10 @@ export interface CharacterDto {
   hpCurrent: number;
   hpMax: number;
   hpTemp: number;
+  mechanicalState: ReturnType<typeof mechanicalStateOf>;
+  conditionEffects: ReturnType<typeof deriveConditionEffects>;
+  effectiveMaxHp: number;
+  effectiveSpeed: number;
   /** CA efetiva: o override do mestre quando existe, senão a calculada. */
   armorClass: number;
   /** Override manual da CA definido pelo mestre (`null` = automático). */
@@ -907,6 +912,10 @@ export function toCharacterDto(
     hpCurrent: character.hpCurrent,
     hpMax: character.hpMax,
     hpTemp: character.hpTemp,
+    mechanicalState: mechanicalStateOf(character.mechanicalState),
+    conditionEffects: deriveConditionEffects(character.mechanicalState),
+    effectiveMaxHp: characterMaxHp(character),
+    effectiveSpeed: effectiveSpeed(character.speed, character.mechanicalState),
     armorClass: derived.armorClass.value,
     armorClassOverride: derived.armorClass.override,
     initiativeBonus: character.initiativeBonus,
@@ -991,8 +1000,12 @@ export function characterRacialAdjustments(character: Character): RacialAdjustme
  * features/talentos (Resiliência Dracônica, Vigoroso). O gravado segue a base
  * editável — o bônus nunca é escrito na ficha.
  */
-export function characterMaxHp(character: Character): number {
+export function characterBaseMaxHp(character: Character): number {
   return Math.max(0, character.hpMax + characterClassAdjustments(character).hpBonus);
+}
+
+export function characterMaxHp(character: Character): number {
+  return effectiveMaxHp(characterBaseMaxHp(character), character.mechanicalState);
 }
 
 /**

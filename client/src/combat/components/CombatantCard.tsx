@@ -1,3 +1,4 @@
+import { ConditionBadges } from '../../components/MechanicalPanel';
 import type { ReactNode } from 'react';
 import { HpBar } from '../../components/HpBar';
 import { Icon } from '../../components/Icon';
@@ -68,6 +69,7 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
           {trailing ? <span className="combatant-card-tail">{trailing}</span> : null}
         </div>
 
+        <ConditionBadges state={combatant.mechanicalState} effects={combatant.conditionEffects} />
         {/* Vida e CA de criaturas ficam ocultas para os jogadores. */}
         {combatant.statsHidden ? (
           <span className="combatant-card-hidden" title="Vida e CA visíveis apenas para o mestre">
