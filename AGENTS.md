@@ -407,11 +407,47 @@ Só depois reinicie o serviço e rode o smoke. **Sem navegador/Chrome neste ambi
 
 ## 10. Estado atual do projeto (roadmap)
 
-Etapas macro (README): 0 (stack) · 1 (auth/tempo real) · 2 (ficha) · 3 (painel do
-mestre/criaturas) · 4 (combate) · 5 (design visual) — todas concluídas.
-💡 **Etapa 6 — Otimização e performance** está em aberto.
+Referência do handoff oficial: `HEAD = origin/main = 91d537d` antes desta
+atualização documental. As Fases 0–4 estão concluídas no escopo base/original;
+a **Fase 5 está funcionalmente concluída**.
 
-Dentro da Etapa 5, a série **5.3.x** vem endurecendo o motor de regras e descanso:
+### Roadmap oficial
+
+| Fase | Tema |
+|------|------|
+| 0 | Estabilidade |
+| 1 | Regras fundamentais |
+| 2 | Personagem/raças/backgrounds |
+| 3 | Itens/inventário/economia |
+| 4 | Catálogo de classes/feats/spells |
+| 5 | Descansos/recursos/lifecycle |
+| 6 | Engine mecânica |
+| 7 | Combate |
+| 8 | Compêndio/ferramentas do Mestre |
+| 9 | Legacy/qualidade dos dados |
+| 10 | Segurança/escala/qualidade |
+
+A existência de funcionalidades atuais de combate e ferramentas do Mestre não
+significa que as respectivas fases futuras estejam concluídas.
+
+**Fase 6 — planejada, ainda não implementar:**
+
+- 6.1 Action Economy
+- 6.2 Conditions + Exhaustion
+- 6.3 0 HP / Death Saves / Stabilization / Instant Death
+- 6.4 Concentration
+- 6.5 Generic Effect Engine
+- 6.6 Basic Spell Execution
+- 6.7 Duration / Effects
+- 6.8 Components / Materials
+- 6.9 Special Spell Handlers
+- 6.10 Class/Racial Feature Integration
+
+Não iniciar a Fase 6.1 sem especificação posterior e decisões explícitas com o
+usuário. Não assumir regras de ações, reações, movimento, turnos ou overrides do
+Mestre. Decisões ambíguas devem ser reportadas antes de implementar.
+
+### Marcos da Fase 5 e correção posterior
 
 | Fase | Tema | Commit (histórico da sessão) |
 |------|------|------------------------------|
@@ -419,21 +455,56 @@ Dentro da Etapa 5, a série **5.3.x** vem endurecendo o motor de regras e descan
 | 5.3B | — | `adf61a1` |
 | 5.3B.1 | — | `31f31e1` |
 | 5.3C | — | `0491692` |
-| 5.3D.1 | lifecycle explícito dos efeitos ativos | `6907fd8` |
-| 5.3D.2 | reconciliação de recursos de classe na progressão | `c87b4ba` |
-| 5.3D.2.1 | preserva estado de Artes das Sombras | `5d5846e` |
+| 5.3D.1 | reconciliação estrutural de recursos: used/max, Level Up/Down e progressão de Inspiração de Bardo | `6907fd8` |
+| 5.3D.2 | lifecycle explícito de `classState.active` e limpeza seletiva em descansos | `c87b4ba` |
+| 5.3D.2.1 | Artes das Sombras (Shadow Arts) com lifecycle `special` | `5d5846e` |
 | 5.3E.1 | **recursos raciais PHB 2014 separados do estado de classe** | `c9485b6` |
+| 5.3E.2 | apresentação unificada de recursos de classe e raça | `be60167` |
+| Pós-Fase 5 | correção dos Estilos de Luta passivos | `91d537d` |
+
+A validação visual da 5.3E.2 foi concluída pelo usuário. O polimento visual
+permanece como pendência futura não bloqueante; não iniciar redesign geral sem
+tarefa específica.
+
+### Estilos de Luta após `91d537d`
+
+- **Defesa (Defense):** automatizado; +1 CA enquanto usar armadura.
+- **Arquearia (Archery):** automatizado; +2 no ataque com armas à distância,
+  sem alterar dano. Arremessar uma arma corpo a corpo não concede esse bônus.
+- **Duelismo (Dueling):** automatizado; +2 no dano com arma corpo a corpo em
+  uma mão, sem segunda arma empunhada; escudo permitido. Não altera ataque.
+- **Combate com Duas Armas (Two-Weapon Fighting):** automatizado; modificador
+  de atributo no dano do ataque apropriado com a mão secundária (offhand).
+- **Combate com Armas Grandes (Great Weapon Fighting):** deferido para a
+  Fase 6; exige suporte à rerrolagem dos dados de dano.
+- **Proteção (Protection):** deferido para a Fase 6; exige reação, alvo e alcance.
+
+Os estilos coexistem em multiclasse. A seleção ainda pode permitir o mesmo
+estilo por fontes diferentes, mas os efeitos não acumulam. Essa lacuna conhecida
+não deve ser corrigida fora de tarefa específica.
+
+### Política de “once per day”
+
+Somente os seguintes casos têm conversão explicitamente aprovada para Descanso
+Longo (Long Rest):
+
+- Recuperação Arcana (Arcane Recovery).
+- Usos diários de Legado Infernal do tiefling (Tiefling Infernal Legacy).
+- Usos diários de Magia Drow (Drow Magic).
+
+**Não existe conversão global automática de once/day para Long Rest.** Para
+qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
 > Migrations: **42**. Os hashes acima são o estado no momento em que este arquivo
 > foi escrito — confirme com `git log` antes de assumir.
 
 ### Lacunas conhecidas (não são bugs, são fases futuras)
 
-- Motor de **ações/reações em combate** (custo de Ação) é Fase 5: pontos de
-  resolução trazem `TODO (Fase 5 — motor de ações)`.
-- Efeitos de escolhas descritivas (Arquearia, Duelismo, Proteção...) ainda não
-  automatizados; ficam registrados/descritos na ficha.
-- Companheiro animal do Senhor das Feras como ficha própria (Fase 5).
+- Motor de **ações/reações em combate** pertence à Fase 6.1. Referências antigas
+  no código a `TODO (Fase 5 — motor de ações)` usam a numeração anterior.
+- Execução real de magias/efeitos e integração de características de classe/raça
+  pertencem à Fase 6; o catálogo estruturado não equivale à execução mecânica.
+- Companheiro animal do Senhor das Feras como ficha própria permanece futuro.
 - Raças **personalizadas** do mestre (`custom_races`) **não** modelam recursos.
 
 ---
