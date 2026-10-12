@@ -1054,7 +1054,8 @@ select option {
 .sheet-identity,
 .sheet-resources,
 .sheet-abilities,
-.sheet-tabs-area {
+.sheet-tabs-area,
+.conditions-section {
   min-width: 0;
   grid-column: 1 / -1;
 }
@@ -1064,22 +1065,31 @@ select option {
   grid-row: 1;
 }
 
-/* Recursos do Personagem (5.3E.2): classe + raça, logo abaixo do Personagem. */
-.sheet-resources {
+/*
+ * Condições: DENTRO do fluxo, logo depois de Vida e Defesa. O bloco altera os
+ * campos PRINCIPAIS (PV máximo e deslocamento efetivos) — não repete os números.
+ * Sem condições e sem a regra de Exaustão, a seção nem é renderizada.
+ */
+.conditions-section {
   grid-row: 2;
+}
+
+/* Recursos do Personagem (5.3E.2): classe + raça, logo abaixo das Condições. */
+.sheet-resources {
+  grid-row: 3;
 }
 
 /*
  * Os seis atributos (cada um com a salvaguarda e as perícias dele) logo abaixo.
  */
 .sheet-abilities {
-  grid-row: 3;
+  grid-row: 4;
 }
 
 /* As abas (magias, ataques, características) fecham a ficha. O inventário
    saiu do fluxo: virou botão/painel flutuante (ver §27). */
 .sheet-tabs-area {
-  grid-row: 4;
+  grid-row: 5;
   display: grid;
   align-content: start;
   gap: var(--space-2);
@@ -16029,3 +16039,63 @@ input[type='checkbox']:focus-visible,
 }
 
 .death-banner-item.pending { color: var(--danger); font-weight: 600; }
+
+/* ==========================================================================
+   Condições e Exaustão — DENTRO da ficha (hotfix da Fase 6.2/6.3)
+   ==========================================================================
+
+   O bloco deixou de ser um painel solto acima da ficha: agora é uma seção
+   interna, na MESMA grade das demais (`.sheet-conditions`), logo abaixo de Vida
+   e Defesa. A regra visual é: CONDIÇÕES ALTERAM OS CAMPOS PRINCIPAIS DA FICHA;
+   não duplicam esses valores num segundo painel (nem "deslocamento efetivo",
+   nem "PV máximo efetivo"). */
+
+.conditions-section .section-body {
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+  /* Mais enxuto que as demais seções: o bloco é um detalhe, não um protagonista. */
+  padding: 0.75rem 0.95rem 0.8rem;
+}
+
+.conditions-section .field-hint {
+  margin: 0;
+}
+
+/* Histórico mecânico e administração: recolhidos por padrão, discretos. */
+.conditions-history,
+.conditions-admin {
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+.conditions-history > summary,
+.conditions-admin > summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.conditions-history[open] > summary,
+.conditions-admin[open] > summary {
+  margin-bottom: 0.35rem;
+}
+
+/* Quando o deslocamento efetivo difere da base, a base vira uma nota miúda no
+   próprio card vital — o mesmo padrão do "PV base" em Vida e Defesa. */
+.vital-hint {
+  font-size: var(--text-micro);
+  line-height: 1.25;
+  text-align: center;
+  color: var(--ink-faint);
+}
+
+/* Em telas estreitas o bloco continua na largura útil da ficha, sem colunas. */
+@media (max-width: 760px) {
+  .conditions-section .section-body {
+    padding: 0.65rem 0.7rem 0.7rem;
+  }
+}

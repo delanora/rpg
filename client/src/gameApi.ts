@@ -26,6 +26,21 @@ export async function releaseLevelUp(): Promise<GameConfig> {
 }
 
 /**
+ * Liga/desliga a REGRA de Exaustão do PHB 2014 (regra OPCIONAL, só mestre).
+ *
+ * O servidor é a fonte de verdade: nada é apagado nas fichas e o evento
+ * `game:config` avisa a mesa inteira, então os status de Exaustão somem/voltam
+ * sem recarregar a página.
+ */
+export async function setExhaustionEnabled(enabled: boolean): Promise<GameConfig> {
+  const { config } = await api<{ config: GameConfig }>('/api/game/exhaustion', {
+    method: 'POST',
+    body: { enabled },
+  });
+  return config;
+}
+
+/**
  * Anotações privadas do mestre sobre a mesa (somente mestre).
  *
  * Ficam na configuração da mesa, mas fora do `GameConfigDto` de propósito: o

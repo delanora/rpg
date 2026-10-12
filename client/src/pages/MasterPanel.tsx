@@ -31,6 +31,7 @@ import {
   fetchGameConfig,
   releaseLevelUp,
   setCampSupplies,
+  setExhaustionEnabled,
   setExtraCoins,
   setStartingLevel,
 } from '../gameApi';
@@ -574,6 +575,20 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   }, []);
 
   /**
+   * Regra OPCIONAL de Exaustão (PHB 2014): só o Mestre altera. O servidor
+   * republica as fichas e o combate com os valores derivados recalculados.
+   */
+  const changeExhaustion = useCallback(async (enabled: boolean) => {
+    try {
+      const config = await setExhaustionEnabled(enabled);
+      setGameConfig(config);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao alternar a regra de Exaustão.');
+    }
+  }, []);
+
+  /**
    * Recursos de Acampamento (regra OPCIONAL do Descanso Longo): liga/desliga e
    * ajusta o custo. O servidor recalcula a solicitação aberta e republica.
    */
@@ -920,6 +935,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onReopenCreation={reopenCreation}
             onLevelDown={levelDown}
             extraCoins={gameConfig?.extraCoins ?? false}
+            exhaustionEnabled={gameConfig?.exhaustionEnabled ?? true}
             onCoinsChange={adoptCoins}
           />
         ) : tab === 'regions' ? (
@@ -940,6 +956,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onChangeStartingLevel={changeStartingLevel}
             extraCoins={gameConfig?.extraCoins ?? false}
             onChangeExtraCoins={changeExtraCoins}
+            exhaustionEnabled={gameConfig?.exhaustionEnabled ?? true}
+            onChangeExhaustion={changeExhaustion}
             campSuppliesEnabled={gameConfig?.campSuppliesEnabled ?? false}
             campSupplyCost={gameConfig?.campSupplyCostPerParticipant ?? 10}
             onChangeCampSupplies={changeCampSupplies}

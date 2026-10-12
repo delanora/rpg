@@ -64,6 +64,12 @@ interface SheetViewProps {
   deathRefreshKey?: string;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins?: boolean;
+  /**
+   * Regra OPCIONAL de Exaustão da mesa (aba Mesa, controlada pelo Mestre).
+   * Desligada, o bloco de Condições mostra só as condições e o status de
+   * Exaustão desaparece — o valor salvo na ficha continua intacto.
+   */
+  exhaustionEnabled?: boolean;
   /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
   coinTargets?: TransferTarget[];
   /** Adota a ficha devolvida por uma ação de moedas (gastar/trocar/transferir). */
@@ -143,6 +149,7 @@ export function SheetView({
   onEldritchMaster,
   onRacialUse,
   extraCoins = false,
+  exhaustionEnabled = true,
   coinTargets,
   onCoinsChange,
   onRollSkill,
@@ -162,7 +169,6 @@ export function SheetView({
 
   return (
     <SheetAccessProvider value={{ readOnly, creationLocked, masterView }}>
-      <MechanicalPanel entity={{ kind: 'character', id: character.id }} refreshVersion={character.version} />
       {/* `position: fixed` no botão e no painel: não participam da grade. */}
       <div className="sheet">
         {/* Personagem (identidade, nível e vida e defesa), de ponta a ponta. */}
@@ -176,6 +182,20 @@ export function SheetView({
             onFeatureToggle={onFeatureToggle}
           />
         </div>
+
+        {/*
+         * Condições e Exaustão: DENTRO do fluxo da ficha, logo abaixo de Vida e
+         * Defesa e acima de Recursos. O bloco altera os campos PRINCIPAIS da
+         * ficha (PV máximo efetivo, deslocamento efetivo) — não repete os valores
+         * num segundo painel. Sem condições e com a regra de Exaustão desligada,
+         * a seção inteira fica oculta.
+         */}
+        <MechanicalPanel
+          entity={{ kind: 'character', id: character.id }}
+          refreshVersion={character.version}
+          exhaustionEnabled={exhaustionEnabled}
+          variant="sheet"
+        />
 
         {/*
          * Recursos do Personagem (5.3E.2): classe e raça num só lugar, agrupados

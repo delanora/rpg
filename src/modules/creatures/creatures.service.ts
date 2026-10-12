@@ -1,4 +1,4 @@
-import { effectiveMaxHp, mechanicalStateOf } from '../shared/conditions.js';
+import { effectiveExhaustionLevel, effectiveMaxHp } from '../shared/conditions.js';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
@@ -113,7 +113,9 @@ export async function updateCreature(
     data.localities = { set: patch.localityIds.map((localityId) => ({ id: localityId })) };
   }
 
-  if (mechanicalStateOf(current.mechanicalState).exhaustionLevel >= 4) data.hpCurrent = Math.min((data.hpCurrent as number | undefined) ?? current.hpCurrent, effectiveMaxHp((data.hpMax as number | undefined) ?? current.hpMax, current.mechanicalState));
+  // A Exaustão 4+ só limita o PV se a REGRA da mesa estiver ligada (o nível
+  // salvo continua intacto e volta a valer ao religar).
+  if (effectiveExhaustionLevel(current.mechanicalState) >= 4) data.hpCurrent = Math.min((data.hpCurrent as number | undefined) ?? current.hpCurrent, effectiveMaxHp((data.hpMax as number | undefined) ?? current.hpMax, current.mechanicalState));
   let creature;
   try {
     creature = await prisma.creature.update({

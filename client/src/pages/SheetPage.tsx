@@ -499,6 +499,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   onEldritchMaster={eldritchMasterAction}
                   onRacialUse={racialUseAction}
                   extraCoins={gameConfig?.extraCoins ?? false}
+                  exhaustionEnabled={gameConfig?.exhaustionEnabled ?? true}
                   coinTargets={coinTargets}
                   onCoinsChange={adoptCoins}
                   onRollSkill={dice.openSkillRoll}

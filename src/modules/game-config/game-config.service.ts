@@ -1,8 +1,11 @@
 import type { GameConfig } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { LEVEL_MAX, LEVEL_MIN } from '../shared/dnd5e.js';
+import { setExhaustionRuleEnabled } from '../shared/exhaustion-flag.js';
 import { ServerEvents, type GameConfigPayload } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
+import { emitCombat, loadCombatById, publishCharacter } from '../combat/combat.service.js';
+import { toCombatDto } from '../combat/combat.dto.js';
 import { republishOpenLongRestRequest } from '../rest/long-rest.service.js';
 import {
   CAMP_SUPPLY_COST_MAX,
@@ -16,12 +19,17 @@ const CONFIG_ID = 'main';
 export { CAMP_SUPPLY_COST_MAX, CAMP_SUPPLY_COST_MIN };
 
 function toGameConfigDto(config: GameConfig): GameConfigDto {
+  // Espelha a regra de Exaustão para o domínio mecânico (funções puras e
+  // síncronas não podem consultar o banco). Toda leitura/escrita da configuração
+  // passa por aqui, então o espelho acompanha o valor persistido.
+  setExhaustionRuleEnabled(config.exhaustionEnabled);
   return {
     levelUpRelease: config.levelUpRelease,
     startingLevel: config.startingLevel,
     extraCoins: config.extraCoins,
     campSuppliesEnabled: config.campSuppliesEnabled,
     campSupplyCostPerParticipant: config.campSupplyCostPerParticipant,
+    exhaustionEnabled: config.exhaustionEnabled,
     updatedAt: config.updatedAt.toISOString(),
   };
 }
@@ -35,6 +43,17 @@ export async function getGameConfig(): Promise<GameConfigDto> {
   });
 
   return toGameConfigDto(config);
+}
+
+/**
+ * Carrega a configuração no boot do servidor (e sobe o espelho da Exaustão).
+ *
+ * Sem isso, o espelho ficaria no padrão do módulo até a primeira requisição. O
+ * `getGameConfig` cria a linha única quando ela ainda não existe — uma campanha
+ * NOVA nasce com `exhaustionEnabled = false`, exatamente o default da coluna.
+ */
+export async function primeGameConfig(): Promise<void> {
+  await getGameConfig();
 }
 
 /**
@@ -111,6 +130,46 @@ export async function setExtraCoins(enabled: boolean): Promise<GameConfigDto> {
   const dto = toGameConfigDto(config);
   broadcast(dto);
   return dto;
+}
+
+/**
+ * Liga/desliga a REGRA de Exaustão do PHB 2014 (regra OPCIONAL, só o Mestre).
+ *
+ * A configuração é a fonte ÚNICA: o domínio mecânico lê o espelho (síncrono) e o
+ * nível SALVO em cada ficha nunca é apagado — desligar apenas o torna inerte, e
+ * religar faz o valor anterior voltar a valer. Como os valores DERIVADOS (PV
+ * máximo efetivo, deslocamento efetivo, desvantagens) mudam sem que nenhuma
+ * ficha tenha sido editada, republicamos as fichas e o combate ativo depois de
+ * gravar: os clientes refletem a mudança sem recarregar a página.
+ */
+export async function setExhaustion(enabled: boolean): Promise<GameConfigDto> {
+  await getGameConfig();
+  const config = await prisma.gameConfig.update({
+    where: { id: CONFIG_ID },
+    data: { exhaustionEnabled: enabled },
+  });
+
+  const dto = toGameConfigDto(config);
+  broadcast(dto);
+  await republishExhaustionDerived();
+  return dto;
+}
+
+/**
+ * Republica o que é DERIVADO da Exaustão: as fichas (PV máximo e deslocamento
+ * efetivos) e o combate ativo (deslocamento efetivo dos combatentes). É só
+ * notificação: nenhuma ficha é alterada, apenas recalculada para quem está
+ * conectado.
+ */
+async function republishExhaustionDerived(): Promise<void> {
+  const characters = await prisma.character.findMany({ select: { id: true } });
+  await Promise.all(characters.map((character) => publishCharacter(character.id)));
+
+  const combat = await prisma.combat.findFirst({
+    where: { status: { in: ['ACTIVE', 'PENDING_INITIATIVE'] } },
+    select: { id: true },
+  });
+  if (combat) emitCombat(ServerEvents.COMBAT_UPDATED, toCombatDto(await loadCombatById(combat.id), 'MASTER'));
 }
 
 /**

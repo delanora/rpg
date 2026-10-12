@@ -3,6 +3,7 @@ import { env } from './config/env.js';
 import { prisma } from './config/prisma.js';
 import { createApp } from './http/app.js';
 import { initMusic } from './modules/music/music.service.js';
+import { primeGameConfig } from './modules/game-config/game-config.service.js';
 import { createRealtimeServer } from './realtime/index.js';
 
 async function bootstrap(): Promise<void> {
@@ -10,6 +11,10 @@ async function bootstrap(): Promise<void> {
   const httpServer = createServer(app);
 
   const io = createRealtimeServer(httpServer);
+
+  // Configuração da mesa: carrega antes de aceitar requisições para o domínio
+  // mecânico já conhecer a regra opcional de Exaustão (`exhaustionEnabled`).
+  await primeGameConfig();
 
   await new Promise<void>((resolve) => {
     httpServer.listen(env.PORT, resolve);

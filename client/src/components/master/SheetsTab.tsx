@@ -31,6 +31,8 @@ interface SheetsTabProps {
   onLevelDown: (characterId: string, request: LevelDownRequest) => Promise<LevelDownResult>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins: boolean;
+  /** Regra OPCIONAL de Exaustão ligada pelo mestre (aba Mesa). */
+  exhaustionEnabled: boolean;
   /** Ação de moedas devolveu a ficha inteira — atualiza a lista do painel. */
   onCoinsChange: (character: Character) => void;
 }
@@ -49,6 +51,7 @@ export function SheetsTab({
   onReopenCreation,
   onLevelDown,
   extraCoins,
+  exhaustionEnabled,
   onCoinsChange,
 }: SheetsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -200,6 +203,7 @@ export function SheetsTab({
               character={selected}
               update={(patch) => onUpdate(selected.id, patch)}
               extraCoins={extraCoins}
+              exhaustionEnabled={exhaustionEnabled}
               onCoinsChange={onCoinsChange}
               readOnly={!editing}
               masterView
