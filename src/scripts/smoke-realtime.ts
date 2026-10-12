@@ -1,4 +1,5 @@
 import { smokeConditions } from './smoke-conditions.js';
+import { smokeDeath } from './smoke-death.js';
 import { smokeActionEconomy } from './smoke-action-economy.js';
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
@@ -176,6 +177,26 @@ async function legacyAttack(options: ApiOptions): Promise<{ status: number; data
       ? state.combatants.find((item: any) => item.id === input.attackerCombatantId)
       : state.combatants.find((item: any) => item.ownerUserId === claims.sub);
     if (state.status === 'ACTIVE' && attacker && (claims.role === 'MASTER' || attacker.ownerUserId === claims.sub)) {
+      // Fase 6.3: um combatente a 0 PV fica "aguardando a resolução do Mestre" e
+      // NÃO pode agir. Os cenários legados (anteriores à 6.3) espancavam as
+      // criaturas até 0 PV e esperavam que elas continuassem atacando: o Mestre
+      // repara o fixture EXPLICITAMENTE (revive administrativo, logado) — o
+      // mesmo padrão de preparação explícita já usado abaixo para a economia.
+      if (state.combatants.find((item: any) => item.id === attacker.id)?.deathBlocksActions) {
+        const current = await api(`/api/death/combatant/${attacker.id}`, { token: legacyCombatMasterToken });
+        if (current.status === 200 && typeof current.data.death?.version === 'number') {
+          const revived = await api('/api/death/override', { method: 'POST', token: legacyCombatMasterToken, body: {
+            entity: { kind: 'combatant', id: attacker.id },
+            expectedVersion: current.data.death.version,
+            operationId: crypto.randomUUID(),
+            action: 'revive',
+            reason: 'Preparação explícita do smoke legado: o combatente voltou a 1 PV para continuar o cenário',
+          } });
+          if (revived.status === 200) {
+            state = (await api('/api/combat/active', { token: legacyCombatMasterToken })).data.combat ?? state;
+          }
+        }
+      }
       for (let turn = 0; state.currentCombatantId !== attacker.id && turn <= state.combatants.length; turn += 1) {
         const next = await api('/api/combat/next-turn', { method: 'POST', token: legacyCombatMasterToken });
         state = next.data.combat ?? (await api('/api/combat/active', { token: legacyCombatMasterToken })).data.combat;
@@ -2879,6 +2900,20 @@ async function main(): Promise<void> {
   );
 
   // Dano/cura manual do mestre.
+  // Fase 6.3: as seções anteriores espancaram a criatura até 0 PV. A 0 PV ela
+  // fica "aguardando a resolução do Mestre" e a cura é bloqueada (a decisão do
+  // Mestre vem primeiro). O fixture devolve a criatura ao PV máximo — explícito
+  // e sem bypass de regra — para exercitar o dano/cura manual normais.
+  await prisma.combatant.update({
+    where: { id: creatureCombatant.id },
+    data: { hpCurrent: masterCreature.hpMax ?? 20, deathState: {} as never },
+  });
+  Object.assign(
+    masterCreature,
+    (await api('/api/combat/active', { token: masterToken })).data.combat.combatants.find(
+      (item: any) => item.id === creatureCombatant.id,
+    ),
+  );
   const hpBefore = masterCreature.hpCurrent;
   const manualDamage = await api('/api/combat/hp', {
     method: 'POST',
@@ -21472,6 +21507,7 @@ async function main(): Promise<void> {
 
   await smokeActionEconomy(BASE_URL, check);
   await smokeConditions(BASE_URL, check);
+  await smokeDeath(BASE_URL, check);
 
   console.log(
     failures === 0

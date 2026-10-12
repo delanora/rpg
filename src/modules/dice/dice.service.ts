@@ -1,5 +1,7 @@
 import { deriveConditionEffects, deriveSaveEffects, resolveRollMode } from '../shared/conditions.js';
 import { getMechanicalState } from '../mechanical/mechanical.service.js';
+import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
+import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
 import type { Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
@@ -208,7 +210,13 @@ function publish(roll: DiceRollDto, actor: { userId: string }): void {
 
     // Rolagem privada não gera aviso para mais ninguém: vai só para as sessões
     // de quem rolou. A pública chega a toda a mesa (jogadores e mestres).
-    if (roll.isPrivate) {
+    //
+    // `audience: 'masters'` (Teste contra a Morte de NPC/criatura) vai SÓ para a
+    // sala dos mestres: a privacidade é do SERVIDOR — nunca chega aos jogadores,
+    // nem para ser escondida no cliente.
+    if (roll.audience === 'masters') {
+      broadcaster.toMasters(ServerEvents.DICE_ROLL, payload);
+    } else if (roll.isPrivate) {
       broadcaster.toUser(actor.userId, ServerEvents.DICE_ROLL, payload);
     } else if (roll.kind === 'creation') {
       // Rolagem de criação de personagem: a mesa NÃO é avisada (e nem vê o
@@ -223,8 +231,75 @@ function publish(roll: DiceRollDto, actor: { userId: string }): void {
   }
 }
 
+/**
+ * Rola e APLICA um Teste contra a Morte (PHB 2014) na bandeja existente.
+ *
+ * Reutiliza o mesmo caminho de rolagem (DTO, histórico, evento `dice:roll`,
+ * animação), mas a autoridade é do servidor: ele valida a elegibilidade (0 PV,
+ * início do próprio turno, sem decisão pendente, uma rolagem por turno), rola o
+ * d20 e aplica o resultado no ciclo de morte. O pool enviado pelo cliente é
+ * IGNORADO — sempre um d20.
+ *
+ * A audiência decide a publicação: PERSONAGEM rola para a mesa (público);
+ * criatura/NPC rola SÓ para a sala dos mestres (privado de verdade).
+ */
+async function rollDeathSave(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
+  const ownCharacter = input.entity
+    ? null
+    : await prisma.character.findUnique({ where: { userId: actor.userId }, select: { id: true } });
+  const entity = input.entity ?? (ownCharacter ? { kind: 'character' as const, id: ownCharacter.id } : null);
+  if (!entity) {
+    throw new HttpError('Informe de quem é o Teste contra a Morte.', 400, 'VALIDATION_ERROR');
+  }
+
+  const deathActor: DeathActor = { userId: actor.userId, username: actor.username, role: actor.role };
+  const availability = await deathSaveAvailability(deathActor, entity);
+  if (!availability.available) {
+    throw new HttpError(availability.reason || 'Teste contra a Morte indisponível.', 409, 'CONFLICT');
+  }
+
+  // O dado é do SERVIDOR (crypto) — o cliente não escolhe faces nem resultado.
+  const value = rollD20();
+  // Anúncio da mesa ("está rolando") só na rolagem PÚBLICA: o Teste privado de
+  // um NPC não avisa ninguém de que uma rolagem aconteceu.
+  if (availability.audience === 'table') markRollTumbling(actor);
+
+  const outcome = await applyDeathSave(deathActor, entity, value);
+  const roll: DiceRollDto = {
+    id: randomUUID(),
+    actorUserId: actor.userId,
+    clientId: input.clientId ?? null,
+    actorName: availability.name,
+    kind: 'death-save',
+    label: input.label?.trim() || 'Teste contra a Morte',
+    dice: [{ sides: 20, value }],
+    bonus: 0,
+    total: value,
+    advantage: false,
+    disadvantage: false,
+    isPrivate: outcome.audience === 'masters',
+    audience: outcome.audience,
+    crit: value === 20,
+    // Sortudo (Halfling) sobre um 1 natural no Teste contra a Morte fica para a
+    // integração de características (Fase 6.10) — aqui, nenhum rerrolar implícito.
+    lucky: false,
+    at: new Date().toISOString(),
+  };
+
+  if (activeRoll?.userId === actor.userId) {
+    activeRoll = { ...activeRoll, lastRoll: roll };
+  }
+  history = [roll, ...history].slice(0, HISTORY_LIMIT);
+  publish(roll, actor);
+
+  return roll;
+}
+
 export async function rollTableDice(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
   const kind: DiceRollKind = input.kind ?? 'free';
+
+  // Teste contra a Morte (Fase 6.3): caminho PRÓPRIO e server-authoritative.
+  if (kind === 'death-save') return rollDeathSave(actor, input);
 
   // Antes de sortear, avisa a mesa que os dados estão rolando (a janela de
   // quem assiste entra na mesma animação de queda). A rolagem da criação de

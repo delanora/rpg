@@ -20,6 +20,7 @@ import type {
   CombatStartedPayload,
   CombatTurnPayload,
   CombatUpdatedPayload,
+  DeathUpdatedPayload,
   MechanicalUpdatedPayload,
   DiceRolledPayload,
   GameConfigPayload,
@@ -64,6 +65,8 @@ export interface ServerToClientEvents {
   'music:tracks': (payload: MusicTracksPayload) => void;
   'combat:started': (payload: CombatStartedPayload) => void;
   'mechanical:updated': (payload: MechanicalUpdatedPayload) => void;
+  /** Ciclo de morte (6.3): dono do personagem e sala dos mestres. */
+  'death:updated': (payload: DeathUpdatedPayload) => void;
   'combat:updated': (payload: CombatUpdatedPayload) => void;
   'combat:turn': (payload: CombatTurnPayload) => void;
   'combat:ended': (payload: CombatEndedPayload) => void;

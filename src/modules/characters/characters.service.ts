@@ -1,4 +1,11 @@
 import { mechanicalStateOf } from '../shared/conditions.js';
+import {
+  clearDeathLifecycle,
+  deathStateOf,
+  hasDeathLifecycle,
+  logDeath,
+  removeHpZeroUnconscious,
+} from '../shared/death.js';
 import { randomInt, randomUUID } from 'node:crypto';
 import type { Character, Prisma, ShortRestSession } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
@@ -3926,6 +3933,38 @@ async function applyCharacterPatch(
       baseState,
       computeMulticlassAdjustments(classes, baseState, nextAbilities).resources,
     );
+  }
+
+  // --- Fase 6.3: ciclo de morte na edição inline de PV ---------------------
+  // Elevar o PV acima de 0 é CURA: limpa successes/falhas, a estabilização, a
+  // decisão pendente e a Inconsciência causada por 0 PV — nunca condições
+  // independentes. Reduzir a 0 por aqui NÃO infere morte nem inicia Death
+  // Saves: o fluxo canônico de 0 PV é o dano (ataque/ajuste do Mestre), e o
+  // sistema nunca decide morte sozinho.
+  const nextHpCurrent = (data.hpCurrent as number | undefined) ?? existing.hpCurrent;
+  if (nextHpCurrent > 0 && nextHpCurrent !== existing.hpCurrent) {
+    const death = deathStateOf(existing.deathState);
+    if (death.dead) {
+      throw new HttpError(
+        'O personagem está morto: o Mestre precisa reverter a morte explicitamente.',
+        409,
+        'CONFLICT',
+      );
+    }
+    if (death.pending) {
+      throw new HttpError(
+        'Há uma decisão de morte pendente: o Mestre precisa resolvê-la antes de curar.',
+        409,
+        'CONFLICT',
+      );
+    }
+    const cleaned = removeHpZeroUnconscious(existing.mechanicalState);
+    if (hasDeathLifecycle(death) || cleaned.removed) {
+      clearDeathLifecycle(death);
+      logDeath(death, owner.username, `${existing.name} voltou a ter PV (${nextHpCurrent}): o ciclo de morte foi encerrado.`);
+      data.deathState = death as unknown as Prisma.InputJsonValue;
+      data.mechanicalState = cleaned.state as unknown as Prisma.InputJsonValue;
+    }
   }
 
   if (mechanicalStateOf(existing.mechanicalState).exhaustionLevel >= 4) {

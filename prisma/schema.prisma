@@ -95,6 +95,13 @@ model User {
 model Character {
   /// Estado mecânico próprio: instâncias de condições, exaustão e log; nunca economia de turno.
   mechanicalState Json @default("{\"conditions\":[],\"exhaustionLevel\":0,\"log\":[]}")
+  ///
+  /// Ciclo de MORTE (Fase 6.3) — estado PRÓPRIO, nunca em `classState`,
+  /// `racialState`, `turnEconomy` ou numa condição genérica: contadores de
+  /// Testes contra a Morte (sucessos/falhas 0..3), `stabilized`, `dead` (SÓ por
+  /// decisão do Mestre), `deathSaves`, a DECISÃO PENDENTE do Mestre, a oferta
+  /// pendente da Resistência Implacável e o log. Ver src/modules/shared/death.ts.
+  deathState Json @default("{}")
 
   id     String @id @default(cuid())
   userId String @unique
@@ -870,6 +877,11 @@ model Combatant {
   mechanicalVersion Int @default(0)
   /// Estado mecânico próprio: instâncias de condições, exaustão e log; nunca economia de turno.
   mechanicalState Json @default("{\"conditions\":[],\"exhaustionLevel\":0,\"log\":[]}")
+  ///
+  /// Ciclo de MORTE da INSTÂNCIA (Fase 6.3). Cada cópia de criatura tem o
+  /// próprio `deathState` (Goblin 1 ≠ Goblin 2) e nada é gravado no template
+  /// `Creature`. Personagens usam o `deathState` da própria ficha.
+  deathState Json @default("{}")
 
   id       String  @id @default(cuid())
   combatId String
@@ -971,6 +983,25 @@ model MusicState {
   updatedAt DateTime @updatedAt
 
   @@map("music_state")
+}
+
+///
+/// Operação idempotente do ciclo de MORTE (Fase 6.3).
+///
+/// Mesma semântica de `MechanicalOperation`: `operationId` único por entidade +
+/// fingerprint canônico + snapshot da resposta. Retry NUNCA aplica duas vezes uma
+/// falha/sucesso, uma decisão do Mestre ou o consumo da Resistência Implacável.
+model DeathOperation {
+  id          String   @id @default(cuid())
+  entityKind  String
+  entityId    String
+  operationId String
+  fingerprint String
+  snapshot    Json
+  createdAt   DateTime @default(now())
+
+  @@unique([entityKind, entityId, operationId])
+  @@map("death_operations")
 }
 
 /// Chave polimórfica: personagens, templates e instâncias usam o mesmo domínio.

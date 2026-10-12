@@ -1,4 +1,6 @@
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
+import { deathBlocksActions } from '../shared/death.js';
+import { applyDamageConsequences, applyHealConsequences, onTurnStartDeath } from '../death/death.service.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { COMBAT_ACTIONS, deriveAttackActionLimit, economyOf, moveDistance, onTurnEnd, onTurnStart, recordAttack, spendEconomy } from '../shared/action-economy.js';
 import type { CombatOperationInput, EconomyActionInput, EconomyOverrideInput } from './combat.schema.js';
@@ -42,6 +44,7 @@ import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice } from '../shared/dice.js';
 import {
   combatantAttacks,
+  combatantDeathState,
   combatantMechanicalState,
   hideCreatureStats,
   orderCombatants,
@@ -50,6 +53,7 @@ import {
   type CombatSourced,
   type CombatantSourced,
 } from './combat.dto.js';
+import type { MechanicalEntity } from '../shared/conditions.js';
 import type { AttackInput, ManualHpInput, StartCombatInput } from './combat.schema.js';
 
 /** Quem está agindo (vem sempre do token). */
@@ -168,6 +172,31 @@ function announceRoll(payload: DiceRolledPayload): void {
   emit(ServerEvents.DICE_ROLLED, payload);
 }
 
+/**
+ * Entidade CANÔNICA do ciclo de morte de um combatente: personagens usam a
+ * ficha (estado canônico); criaturas usam a PRÓPRIA instância (nunca o template).
+ */
+function deathEntityOf(combatant: CombatantSourced): MechanicalEntity {
+  return combatant.characterId
+    ? { kind: 'character', id: combatant.characterId }
+    : { kind: 'combatant', id: combatant.id };
+}
+
+/**
+ * Economia de um combatente que NÃO pode agir (morto/pendência de morte): sem
+ * Ação, sem Ação Bônus, sem Reação e sem Movimento (integração com a 6.1).
+ */
+function blockedTurnEconomy() {
+  return economyOf({
+    actionsGranted: 0,
+    actionsUsed: 0,
+    bonusActionUsed: true,
+    reactionAvailable: false,
+    movementBudget: 0,
+    movementUsed: 0,
+  });
+}
+
 /** A unidade canônica já exposta pela ficha e pelas criaturas é metros. */
 function combatantSpeed(combatant: CombatantSourced): number {
   return Math.max(0, combatant.character?.speed ?? combatant.creature?.speed ?? 0);
@@ -264,6 +293,10 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
     const economy = economyOf(combatant.turnEconomy);
     if (input.targetCombatantId && !combat.combatants.some((item) => item.id === input.targetCombatantId)) {
       throw new HttpError('Alvo não encontrado neste combate.', 404);
+    }
+    // Fase 6.3: morte (ou morte pendente de decisão) não gasta economia de ações.
+    if (deathBlocksActions(combatantDeathState(combatant))) {
+      throw new HttpError('Aguardando a resolução do Mestre: este combatente não pode agir.', 409, 'CONFLICT');
     }
     const effects = deriveConditionEffects(combatantMechanicalState(combatant));
     if (input.action !== 'move' && !effects.canAct) throw new HttpError('Condição impede Ações, Ações Bônus e Reações.', 409, 'CONFLICT');
@@ -499,9 +532,17 @@ export async function nextTurn(actor: CombatActor, input: CombatOperationInput):
     await db.combatant.update({ where: { id: outgoing.id }, data: { turnEconomy: onTurnEnd(economyOf(outgoing.turnEconomy)) } });
     const incoming = ordered[index];
     await db.combat.update({ where: { id: combat.id }, data: { currentIndex: index, round } });
+    // O turno de quem está morto (ou com morte pendente) NÃO concede Ação,
+    // Ação Bônus, Reação nem Movimento — o registro segue no combate até o
+    // Mestre removê-lo.
+    const incomingDeath = combatantDeathState(incoming);
+    const blocked = deathBlocksActions(incomingDeath);
     await db.combatant.update({ where: { id: incoming.id }, data: {
-      sneakAttackUsedThisTurn: false, turnEconomy: onTurnStart(combatantSpeed(incoming)),
+      sneakAttackUsedThisTurn: false,
+      turnEconomy: blocked ? blockedTurnEconomy() : onTurnStart(combatantSpeed(incoming)),
     } });
+    // O Teste contra a Morte é liberado no INÍCIO do próprio turno (1 por turno).
+    await onTurnStartDeath(deathEntityOf(incoming), db);
     return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
   });
   if (!response.replayed) emitTurn(response.combat);
@@ -521,9 +562,16 @@ async function changeHp(
   delta: number,
   db: Prisma.TransactionClient = prisma,
   publications?: Set<string>,
-): Promise<{ hpCurrent: number; hpMax: number } | null> {
+): Promise<{ hpCurrent: number; hpMax: number; hpBefore: number; hpTempBefore: number } | null> {
   if (combatant.kind === 'CHARACTER' && combatant.characterId && combatant.character) {
     const { character } = combatant;
+    // PV ANTES da escrita: a aritmética da morte instantânea (dano restante ×
+    // PV máximo) precisa do valor anterior — a atualização é atômica no banco.
+    const before = await db.character.findUnique({
+      where: { id: character.id },
+      select: { hpCurrent: true, hpTemp: true },
+    });
+    if (!before) return null;
     // O teto de PV de um personagem é DERIVADO: o gravado + o `hpBonus` de
     // features/talentos (Resiliência Dracônica, Vigoroso), como na ficha.
     const hpBonus = characterClassAdjustments(character).hpBonus;
@@ -561,7 +609,12 @@ async function changeHp(
     if (publications) publications.add(stored.id);
     else await publishCharacter(stored.id);
 
-    return { hpCurrent: stored.hpCurrent, hpMax: effectiveMaxHp(stored.hpMax + hpBonus, stored.mechanicalState) };
+    return {
+      hpCurrent: stored.hpCurrent,
+      hpMax: effectiveMaxHp(stored.hpMax + hpBonus, stored.mechanicalState),
+      hpBefore: before.hpCurrent,
+      hpTempBefore: before.hpTemp,
+    };
   }
 
   if (combatant.kind === 'CREATURE') {
@@ -571,6 +624,13 @@ async function changeHp(
     // novo é calculado a partir do que está gravado, na mesma escrita atômica.
     const hpMax = combatant.hpMax ?? combatant.creature?.hpMax ?? 0;
     const ceiling = effectiveMaxHp(hpMax, combatant.mechanicalState);
+    // PV ANTES da escrita (mesma razão do personagem): a morte instantânea das
+    // criaturas depende do dano restante após derrubá-la a 0 PV.
+    const before = await db.combatant.findUnique({
+      where: { id: combatant.id },
+      select: { hpCurrent: true },
+    });
+    if (!before) return null;
 
     const affected = await db.$executeRaw`
       UPDATE "combatants"
@@ -581,7 +641,7 @@ async function changeHp(
     if (affected === 0) return null;
 
     const stored = await db.combatant.findUniqueOrThrow({ where: { id: combatant.id } });
-    return { hpCurrent: stored.hpCurrent ?? 0, hpMax: ceiling };
+    return { hpCurrent: stored.hpCurrent ?? 0, hpMax: ceiling, hpBefore: before.hpCurrent ?? 0, hpTempBefore: 0 };
   }
 
   return null;
@@ -890,6 +950,9 @@ export async function resolveAttack(
       throw new HttpError(attack.blocked, 400);
     }
 
+    if (deathBlocksActions(combatantDeathState(attacker))) {
+      throw new HttpError('Aguardando a resolução do Mestre: este combatente não pode agir.', 409, 'CONFLICT');
+    }
     const effects = deriveConditionEffects(combatantMechanicalState(attacker));
     if (!effects.canAct) throw new HttpError('Condição impede realizar ataques ou Reações.', 409, 'CONFLICT');
     const targetIdentities = [`combatant:${target.id}`, ...(target.characterId ? [`character:${target.characterId}`] : []), ...(target.creature?.kind === 'NPC' && combat.combatants.filter(item => item.creatureId === target.creatureId).length === 1 ? [`creature:${target.creatureId}`] : [])];
@@ -1218,7 +1281,26 @@ export async function resolveAttack(
 
       damageRolled = total;
       // Nada a debitar (tudo imune, por exemplo) — não escreve no HP à toa.
-      if (total > 0) await changeHp(target, -total, db, publications);
+      if (total > 0) {
+        const applied = await changeHp(target, -total, db, publications);
+        // Fase 6.3: o dano que chega a 0 PV dispara o ciclo de morte (morte
+        // instantânea → decisão do Mestre; queda normal → Testes contra a
+        // Morte/Resistência Implacável; dano já a 0 PV → falhas).
+        if (applied) {
+          await applyDamageConsequences(
+            deathEntityOf(target),
+            {
+              damage: total,
+              hpBefore: applied.hpBefore,
+              hpTempBefore: applied.hpTempBefore,
+              critical,
+              sourceName: attacker.name,
+            },
+            db,
+            attacker.name,
+          );
+        }
+      }
     }
 
     const dto = toCombatDto(await loadCombatById(combat.id, db), 'MASTER');
@@ -1279,7 +1361,25 @@ export async function applyManualHp(
   const applied = await prisma.$transaction(async (db) => {
     const active = await db.combat.updateMany({ where: { id: combat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
     if (!active.count) throw new HttpError('Combate encerrado.', 409, 'CONFLICT');
-    return changeHp(combatant, delta, db, publications);
+    const result = await changeHp(combatant, delta, db, publications);
+    // Fase 6.3: o ajuste manual do Mestre passa pelo MESMO ciclo de morte do
+    // ataque (dano a 0 PV, falhas, morte instantânea) e a CURA limpa o ciclo.
+    // Curar com decisão pendente ou personagem morto é recusado — o Mestre
+    // resolve a decisão primeiro (a transação volta atrás, sem mexer no PV).
+    if (result) {
+      const entity = deathEntityOf(combatant);
+      if (delta < 0) {
+        await applyDamageConsequences(
+          entity,
+          { damage: input.amount, hpBefore: result.hpBefore, hpTempBefore: result.hpTempBefore, critical: false, sourceName: actor.username },
+          db,
+          actor.username,
+        );
+      } else {
+        await applyHealConsequences(entity, result.hpCurrent, db, actor.username);
+      }
+    }
+    return result;
   });
   for (const id of publications) await publishCharacter(id);
 

@@ -23,8 +23,12 @@ export const tableRollSchema = z.object({
   /**
    * `creation` = rolagem da criação de personagem: não avisa a mesa, só entra
    * no histórico do mestre (o assistente monta o pedido no servidor).
+   *
+   * `death-save` = Teste contra a Morte (Fase 6.3): o servidor valida a
+   * elegibilidade, rola o d20 e aplica o resultado no ciclo de morte. O pool do
+   * cliente é IGNORADO (sempre um d20).
    */
-  kind: z.enum(['skill', 'save', 'free', 'creation']).optional(),
+  kind: z.enum(['skill', 'save', 'free', 'creation', 'death-save']).optional(),
   /** Só vale para o mestre; rolagem de jogador é sempre pública. */
   private: z.boolean().optional(),
   /** Identificador do pedido, gerado no cliente (ver DiceRollDto.clientId). */
@@ -40,7 +44,7 @@ export const tableRollSchema = z.object({
 export const activeRollSchema = z.object({
   active: z.boolean(),
   label: z.string().trim().max(80).optional(),
-  kind: z.enum(['skill', 'save', 'free']).optional(),
+  kind: z.enum(['skill', 'save', 'free', 'death-save']).optional(),
   /** Só vale para o mestre; rolagem de jogador é sempre pública. */
   private: z.boolean().optional(),
   /** O tabuleiro montado: a mesa assiste, só o autor interage. */

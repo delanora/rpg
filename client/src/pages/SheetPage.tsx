@@ -502,6 +502,15 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   coinTargets={coinTargets}
                   onCoinsChange={adoptCoins}
                   onRollSkill={dice.openSkillRoll}
+                  onRollDeathSave={(entity) =>
+                    dice.openSkillRoll({
+                      kind: 'death-save',
+                      label: 'Teste contra a Morte',
+                      bonus: 0,
+                      entity,
+                    })
+                  }
+                  deathRefreshKey={`${character.version}:${combat?.currentCombatantId ?? ''}`}
                   creationLocked={character.creationFinalized}
                   shortRest={{
                     active:
