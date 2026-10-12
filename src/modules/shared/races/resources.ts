@@ -39,6 +39,12 @@ export interface RacialResourceDefinition {
   minLevel?: number;
   /** Como o jogador o aciona (a resolução mecânica é manual nesta fase). */
   actionType?: RacialResourceActionType;
+  /**
+   * Rótulo HUMANO do botão de ação, quando existe uma ação real (5.3E.2): ex.:
+   * 'Usar Sopro', 'Marcar uso'. Ausente = o recurso não ganha botão no card
+   * (as magias raciais são acionadas na aba Magias, não duplicadas aqui).
+   */
+  actionLabel?: string;
   /** Id do traço racial que concede o recurso (informativo/UI). */
   traitId?: string;
   /** Id da magia racial associada, quando houver (catálogo `shared/spells`). */
@@ -62,6 +68,7 @@ const DRAGONBORN: RacialResourceDefinition[] = [
     max: 1,
     recharge: 'short',
     actionType: 'action',
+    actionLabel: 'Usar Sopro',
     traitId: 'breath-weapon',
     notes:
       'PHB 2014: recarrega num descanso curto ou longo. Dano, área, CD e salvaguarda ' +
@@ -83,6 +90,7 @@ const HALF_ORC: RacialResourceDefinition[] = [
     max: 1,
     recharge: 'long',
     actionType: 'manual',
+    actionLabel: 'Marcar uso',
     traitId: 'relentless-endurance',
     notes:
       'PHB 2014: 1×/descanso longo. Marcação MANUAL nesta fase; não altera PV. O gatilho ' +
@@ -236,6 +244,8 @@ export interface RacialResource {
   used: number;
   remaining: number;
   actionType?: RacialResourceActionType;
+  /** Rótulo humano do botão de ação (ex.: 'Usar Sopro'); ausente = sem botão. */
+  actionLabel?: string;
   traitId?: string;
   /** Id da magia racial associada (`shared/spells`), quando houver. */
   spellId?: string;
@@ -264,6 +274,7 @@ export function racialResources(
       used,
       remaining: Math.max(0, definition.max - used),
       ...(definition.actionType ? { actionType: definition.actionType } : {}),
+      ...(definition.actionLabel ? { actionLabel: definition.actionLabel } : {}),
       ...(definition.traitId ? { traitId: definition.traitId } : {}),
       ...(definition.spellId ? { spellId: definition.spellId } : {}),
       ...(definition.notes ? { notes: definition.notes } : {}),

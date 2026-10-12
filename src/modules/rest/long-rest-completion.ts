@@ -3,6 +3,7 @@ import { HttpError } from '../../lib/http-error.js';
 import type { CampSupplyOverrideType } from '../shared/camp-supplies.js';
 import { parseJson } from '../shared/json.js';
 import {
+  classResourcesRestoredByRest,
   cleanupActiveEffectsForRest,
   normalizeClassEntries,
   normalizeClassState,
@@ -476,12 +477,17 @@ export async function completeLongRest(
     const pactMagicRestored = pactMax !== null && (spells.pactMagic?.used ?? 0) > 0;
 
     // --- Recursos de CLASSE: recarga curta E longa (PASSO 26) ---------------
+    // A auditoria (5.3E.2) lista os NOMES dos recursos que TINHAM uso gasto —
+    // recurso já cheio não entra (PASSO 41: nunca "restaurado" sem restauração
+    // real). O cliente usa isso para o resultado agrupado por origem.
     const classAdjustments = characterClassAdjustments(character);
     const classState = normalizeClassState(character.classState);
+    const classResourcesRestored = classResourcesRestoredByRest(
+      classState,
+      classAdjustments.resources,
+      'long',
+    ).map((resource) => resource.name);
     const restored = restoreLongRestResources(classState, classAdjustments.resources);
-    const classResourcesRestored = classAdjustments.resources
-      .filter((resource) => resource.recharge === 'short' || resource.recharge === 'long')
-      .map((resource) => resource.id);
 
     // --- Recursos RACIAIS (5.3E.1): estado PRÓPRIO `racialState` ------------
     // Um Descanso Longo restaura TODOS os recursos raciais de recarga curta ou
