@@ -1052,6 +1052,7 @@ select option {
 /* --- Ficha: posição de cada seção na grade -------------------------------- */
 
 .sheet-identity,
+.sheet-resources,
 .sheet-abilities,
 .sheet-tabs-area {
   min-width: 0;
@@ -1063,17 +1064,22 @@ select option {
   grid-row: 1;
 }
 
+/* Recursos do Personagem (5.3E.2): classe + raça, logo abaixo do Personagem. */
+.sheet-resources {
+  grid-row: 2;
+}
+
 /*
  * Os seis atributos (cada um com a salvaguarda e as perícias dele) logo abaixo.
  */
 .sheet-abilities {
-  grid-row: 2;
+  grid-row: 3;
 }
 
 /* As abas (magias, ataques, características) fecham a ficha. O inventário
    saiu do fluxo: virou botão/painel flutuante (ver §27). */
 .sheet-tabs-area {
-  grid-row: 3;
+  grid-row: 4;
   display: grid;
   align-content: start;
   gap: var(--space-2);
@@ -15699,5 +15705,147 @@ input[type='checkbox']:focus-visible,
 
   .item-editor-extra {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* --------------------------------------------------------------------------- */
+/* Recursos do Personagem (5.3E.2) — classe + raça, agrupados por origem        */
+/* --------------------------------------------------------------------------- */
+
+.resource-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+.resource-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-icon);
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: var(--text-subsection);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .resource-group-title {
+  color: var(--gold-bright);
+}
+
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.55rem;
+}
+
+.resource-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: var(--card-pad-y) var(--card-pad-x);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.resource-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.resource-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.resource-origin {
+  flex: none;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.resource-card-body {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.resource-count {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.resource-recharge {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.resource-card.is-empty {
+  opacity: 0.75;
+}
+
+.resource-card.is-empty .resource-count {
+  color: var(--wine);
+}
+
+[data-theme='dark'] .resource-card.is-empty .resource-count {
+  color: var(--gold-deep);
+}
+
+.resource-status {
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+}
+
+.resource-action {
+  justify-self: start;
+}
+
+/* Resultado de descanso: recursos restaurados agrupados por origem. */
+.restored-resources {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.restored-resource-group {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.restored-resource-origin {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.restored-resource-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.7rem;
+  margin: 0;
+  padding: 0;
+}
+
+.restored-resource-list li {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@media (max-width: 640px) {
+  .resource-grid {
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   }
 }

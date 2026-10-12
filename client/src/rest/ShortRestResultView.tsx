@@ -1,14 +1,15 @@
 import type { Character, ShortRestCompletionDto, ShortRestRequestDto } from '../types';
 import type { RecoverSlotsResult } from '../featuresApi';
+import { RestoredResources } from './RestoredResources';
 import { recoverySummaryLines } from './ShortRestRecovery';
 
 /**
  * Resumo do Descanso Curto concluído.
  *
- * A lista de recursos recuperados NÃO é inventada pelo cliente: o backend
- * restaura as recargas curtas, mas não devolve o diff, então mostramos a
- * mensagem genérica (Passo 22). A Song of Rest só aparece quando existe uma
- * rolagem REAL para este personagem — nenhum dado é gerado aqui.
+ * Os recursos restaurados saem da AUDITORIA do servidor (5.3E.2) — nomes de
+ * classe e de raça, agrupados por origem — e nunca de uma mensagem genérica. A
+ * Song of Rest só aparece quando existe uma rolagem REAL para este personagem:
+ * nenhum dado é gerado aqui.
  */
 export function ShortRestResultView({
   request,
@@ -31,10 +32,11 @@ export function ShortRestResultView({
   );
   const songDie = completion?.songOfRest.die ?? null;
   const hpMax = character.derived.hpMax;
-  // Efeitos encerrados pelo lifecycle NESTA pausa (5.3D.2) — só os desta ficha.
-  const endedEffects =
-    completion?.sessions.find((session) => session.characterId === character.id)
-      ?.activeEffectsEnded ?? [];
+  // A sessão DESTA ficha carrega a auditoria do descanso (recursos restaurados
+  // por origem + efeitos encerrados), sem inventar nada no cliente.
+  const mySession = completion?.sessions.find((session) => session.characterId === character.id);
+  // Efeitos encerrados pelo lifecycle NESTA pausa (5.3C/5.3D.2).
+  const endedEffects = mySession?.activeEffectsEnded ?? [];
 
   return (
     <div className="short-rest-result">
@@ -50,10 +52,13 @@ export function ShortRestResultView({
         </span>
       </div>
 
-      <h3 className="subsection-title">Recursos recuperados</h3>
-      <p className="section-note">
-        Recursos de Descanso Curto recuperados automaticamente pelo servidor.
-      </p>
+      {/* Recursos restaurados agrupados por ORIGEM (Classe/Raça), com os nomes
+          reais do servidor — nunca um rótulo genérico. Se nada foi restaurado,
+          o bloco some. */}
+      <RestoredResources
+        classResources={mySession?.classResourcesRestored}
+        racialResources={mySession?.racialResourcesRestored}
+      />
 
       {/* Recuperação especial só aparece quando houve recuperação REAL — nunca
           uma linha falsa. */}

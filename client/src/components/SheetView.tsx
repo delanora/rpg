@@ -8,6 +8,7 @@ import { FeaturesSection } from './sections/FeaturesSection';
 import { IdentitySection } from './sections/IdentitySection';
 import { InventoryDock } from './InventoryDock';
 import { NotesSection } from './sections/NotesSection';
+import { ResourcesSection } from './sections/ResourcesSection';
 import { SpellsSection } from './sections/SpellsSection';
 import { ToolsSection } from './sections/ToolsSection';
 
@@ -160,6 +161,18 @@ export function SheetView({
             shortRest={shortRest}
             longRest={longRest}
             onFeatureToggle={onFeatureToggle}
+          />
+        </div>
+
+        {/*
+         * Recursos do Personagem (5.3E.2): classe e raça num só lugar, agrupados
+         * por origem — os recursos raciais deixam de ficar perdidos em Vida e
+         * Defesa. Os toggles de feature continuam dentro de Vida e Defesa.
+         */}
+        <div className="sheet-resources">
+          <ResourcesSection
+            character={character}
+            update={update}
             onRacialUse={onRacialUse}
           />
         </div>

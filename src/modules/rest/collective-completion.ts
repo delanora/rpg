@@ -24,6 +24,7 @@ import { recordRestSongOfRestRoll } from '../dice/dice.service.js';
 import {
   bardLevel,
   bestSongOfRestDie,
+  classResourcesRestoredByRest,
   cleanupActiveEffectsForRest,
   normalizeClassEntries,
   normalizeClassState,
@@ -151,6 +152,8 @@ export async function completeCollectiveShortRest(
     pactMagicRestored: boolean;
     activeEffectsEnded: EndedActiveEffect[];
     masterPreservedActiveEffects: MasterPreservedActiveEffect[];
+    /** Nomes dos recursos de CLASSE restaurados (5.3E.2). */
+    classResourcesRestored: string[];
     /** Nomes dos recursos RACIAIS restaurados (5.3E.1). */
     racialResourcesRestored: string[];
   }[] = [];
@@ -166,11 +169,16 @@ export async function completeCollectiveShortRest(
     });
 
     // Recursos de recarga CURTA restaurados (long/none/desconhecidos restantes).
+    // A auditoria (5.3E.2) lista os NOMES dos que tinham uso gasto, para o
+    // resultado do descanso agrupar "Classe" com nomes reais — nunca um id.
     const adjustments = characterClassAdjustments(character);
-    const restored = restoreShortRestResources(
-      normalizeClassState(character.classState),
+    const classStateBefore = normalizeClassState(character.classState);
+    const classResourcesRestored = classResourcesRestoredByRest(
+      classStateBefore,
       adjustments.resources,
-    );
+      'short',
+    ).map((resource) => resource.name);
+    const restored = restoreShortRestResources(classStateBefore, adjustments.resources);
     // 5.3D.2: limpeza SELETIVA de `active` por lifecycle (não apaga todo mundo).
     // Desconhecidos/sem metadata são PRESERVADOS e o override do mestre vale.
     const cleanup = cleanupActiveEffectsForRest(
@@ -277,6 +285,7 @@ export async function completeCollectiveShortRest(
       pactMagicRestored,
       activeEffectsEnded: cleanup.ended,
       masterPreservedActiveEffects: cleanup.masterPreserved,
+      classResourcesRestored,
       racialResourcesRestored,
     });
     sheets.push({

@@ -95,6 +95,7 @@ import {
   featuresWithSubclass,
   normalizeClassEntries,
   normalizeClassState,
+  classResourcesRestoredByRest,
   cleanupActiveEffectsForRest,
   effectiveSpellSlotUsed,
   normalizeProficiencies,
@@ -1714,6 +1715,8 @@ interface ShortRestCompleteSnapshot {
   character: CharacterDto;
   /** Efeitos ativos encerrados pelo lifecycle no descanso (5.3D.2). */
   activeEffectsEnded?: EndedActiveEffect[];
+  /** Nomes dos recursos de CLASSE restaurados (5.3E.2). */
+  classResourcesRestored?: string[];
   /** Nomes dos recursos RACIAIS restaurados (5.3E.1), ex.: ['Arma de Sopro']. */
   racialResourcesRestored?: string[];
 }
@@ -2740,6 +2743,13 @@ export async function completeShortRest(
   // e o estado com os de recarga curta restaurados.
   const classState = normalizeClassState(character.classState);
   const classAdjustments = characterClassAdjustments(character);
+  // Auditoria (5.3E.2): nomes dos recursos de classe que tinham uso gasto — o
+  // resultado do descanso mostra nomes reais, nunca o rótulo genérico nem id.
+  const classResourcesRestored = classResourcesRestoredByRest(
+    classState,
+    classAdjustments.resources,
+    'short',
+  ).map((resource) => resource.name);
   const restored = restoreShortRestResources(classState, classAdjustments.resources);
   // 5.3D.2: limpeza SELETIVA de `active` por lifecycle (não apaga todo mundo):
   // a Fúria e os efeitos de curta duração saem; o desconhecido é preservado.
@@ -2793,6 +2803,7 @@ export async function completeShortRest(
     session: ShortRestSessionDto;
     character: CharacterDto;
     activeEffectsEnded: EndedActiveEffect[];
+    classResourcesRestored: string[];
     racialResourcesRestored: string[];
   };
   try {
@@ -2845,6 +2856,7 @@ export async function completeShortRest(
             session: sessionDto,
             character: characterDto,
             activeEffectsEnded: cleanup.ended,
+            classResourcesRestored,
             racialResourcesRestored,
           } as unknown as Prisma.InputJsonValue,
         },
@@ -2855,6 +2867,7 @@ export async function completeShortRest(
         session: sessionDto,
         character: characterDto,
         activeEffectsEnded: cleanup.ended,
+        classResourcesRestored,
         racialResourcesRestored,
       };
     });
@@ -2887,6 +2900,7 @@ export async function completeShortRest(
     session: committed.session,
     character: committed.character,
     activeEffectsEnded: committed.activeEffectsEnded,
+    classResourcesRestored: committed.classResourcesRestored,
     racialResourcesRestored: committed.racialResourcesRestored,
   };
 }

@@ -962,6 +962,8 @@ export interface RacialResource {
   remaining: number;
   /** Como o jogador o aciona (a resolução mecânica é manual nesta fase). */
   actionType?: 'action' | 'bonus-action' | 'manual';
+  /** Rótulo humano do botão de ação (ex.: 'Usar Sopro'); ausente = sem botão. */
+  actionLabel?: string;
   traitId?: string;
   /** Id da magia racial associada, quando houver. */
   spellId?: string;
@@ -2108,6 +2110,8 @@ export interface ShortRestCompletionDto {
     pactMagicRestored?: boolean;
     activeEffectsEnded?: EndedActiveEffectDto[];
     masterPreservedActiveEffects?: MasterPreservedActiveEffectDto[];
+    /** Nomes dos recursos de CLASSE restaurados no Descanso Curto (5.3E.2). */
+    classResourcesRestored?: string[];
     /** Nomes dos recursos RACIAIS restaurados no Descanso Curto (5.3E.1). */
     racialResourcesRestored?: string[];
   }[];

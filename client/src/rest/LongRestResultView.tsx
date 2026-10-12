@@ -5,6 +5,7 @@ import type {
   LongRestConsumedCampSupplyDto,
   LongRestRequestDto,
 } from '../types';
+import { RestoredResources } from './RestoredResources';
 
 /**
  * Resumo do Descanso Longo concluído (PASSO 40).
@@ -74,15 +75,23 @@ export function LongRestResultView({
         const recovered = entry.hitDiceRecovered.filter((die) => die.count > 0);
         const levels = [...entry.spellSlotLevelsRestored].sort((a, b) => a - b);
         const hasPact = !isMaster && Boolean(character?.derived?.pactSlots);
+        const ended = entry.activeEffectsEnded ?? [];
+        const preserved = entry.masterPreservedActiveEffects ?? [];
+        const classResources = entry.classResourcesRestored ?? [];
+        // 5.3E.2: a auditoria usa `racialResourcesRestored` (nomes) — a lista
+        // legada `racialUsesRestored` fica vazia desde a 5.3E.1.
+        const racialResources = entry.racialResourcesRestored ?? [];
+        const hasRestoredResources = classResources.length > 0 || racialResources.length > 0;
+        // Linhas "de fatos" (PV, dados, espaços, pacto, efeitos) mostram a <ul>; os
+        // recursos restaurados têm o próprio bloco agrupado por origem.
         const hasRows =
           entry.hpAfter !== entry.hpBefore ||
           recovered.length > 0 ||
           levels.length > 0 ||
           hasPact ||
-          entry.classResourcesRestored.length > 0 ||
-          entry.racialUsesRestored.length > 0 ||
-          (entry.activeEffectsEnded?.length ?? 0) > 0 ||
-          (entry.masterPreservedActiveEffects?.length ?? 0) > 0;
+          ended.length > 0 ||
+          preserved.length > 0;
+        const hasAnything = hasRows || hasRestoredResources;
 
         const consumed = consumedByCharacter(entry.characterId);
 
@@ -126,39 +135,32 @@ export function LongRestResultView({
                   </li>
                 ) : null}
 
-                {entry.classResourcesRestored.length > 0 ? (
-                  <li>
-                    <span>Recursos de classe</span>
-                    <strong>restaurados</strong>
-                  </li>
-                ) : null}
-
-                {entry.racialUsesRestored.length > 0 ? (
-                  <li>
-                    <span>Usos de magias raciais</span>
-                    <strong>restaurados</strong>
-                  </li>
-                ) : null}
-
-                {(entry.activeEffectsEnded?.length ?? 0) > 0 ? (
+                {ended.length > 0 ? (
                   <li>
                     <span>Efeitos encerrados</span>
-                    <strong>{entry.activeEffectsEnded.map((effect) => effect.name).join(', ')}</strong>
+                    <strong>{ended.map((effect) => effect.name).join(', ')}</strong>
                   </li>
                 ) : null}
 
-                {(entry.masterPreservedActiveEffects?.length ?? 0) > 0 ? (
+                {preserved.length > 0 ? (
                   <li>
                     <span>Preservados pelo mestre</span>
-                    <strong>
-                      {entry.masterPreservedActiveEffects.map((effect) => effect.name).join(', ')}
-                    </strong>
+                    <strong>{preserved.map((effect) => effect.name).join(', ')}</strong>
                   </li>
                 ) : null}
               </ul>
-            ) : (
+            ) : null}
+
+            {/* Recursos restaurados por ORIGEM (Classe/Raça), com os nomes reais
+                do servidor (5.3E.2) — substitui as antigas linhas genéricas. */}
+            <RestoredResources
+              classResources={classResources}
+              racialResources={racialResources}
+            />
+
+            {!hasAnything ? (
               <p className="section-note">Nada a recuperar nesta ficha — já estava tudo em dia.</p>
-            )}
+            ) : null}
 
             {/* Recursos de Acampamento que saíram da mochila deste personagem. */}
             {consumed.length > 0 ? (

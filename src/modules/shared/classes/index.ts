@@ -751,6 +751,31 @@ export function restoreLongRestResources(
   return { ...state, used };
 }
 
+/**
+ * Recursos de CLASSE que um descanso REALMENTE restaura (auditoria do resultado
+ * do descanso, 5.3E.2).
+ *
+ * Diferente de `restoreShortRestResources`/`restoreLongRestResources` (que
+ * simplesmente apagam o `used`), aqui o filtro é por RECARGA compatível E por
+ * USO GASTO: um recurso que já estava cheio não entra na lista. Devolve os
+ * RECURSOS (o chamador usa o `name` humano), na ordem do catálogo — assim o
+ * resultado de descanso mostra nomes reais, nunca um rótulo genérico nem o id
+ * técnico. NÃO altera nenhum estado; é só a auditoria do que foi restaurado.
+ */
+export function classResourcesRestoredByRest(
+  state: ClassState,
+  resources: readonly ActiveResource[],
+  rest: 'short' | 'long',
+): ActiveResource[] {
+  return resources.filter((resource) => {
+    const rechargeMatches =
+      rest === 'short'
+        ? resource.recharge === 'short'
+        : resource.recharge === 'short' || resource.recharge === 'long';
+    return rechargeMatches && (state.used[resource.id] ?? 0) > 0;
+  });
+}
+
 /** Um efeito ativo que deixou `classState.active` (auditoria do descanso). */
 export interface EndedActiveEffect {
   id: string;

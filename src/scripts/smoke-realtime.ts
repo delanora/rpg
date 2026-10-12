@@ -20769,10 +20769,9 @@ async function main(): Promise<void> {
     })();
   })();
 
-  console.log('\n60) Recursos raciais PHB 2014 (5.3E.1)');
+  console.log('\n60) Recursos raciais PHB 2014 (5.3E.1 + apresentação 5.3E.2)');
   // IIFE: mantém o corpo fora da análise de fluxo do `main` (arquivo grande).
-  await (async () => {
-    // --- A–E/I/O/T/X: normalização, catálogo e reconciliação (unidade) ------–
+  await (async () => {      // --- A–E/I/O/T/X: normalização, catálogo e reconciliação (unidade) -----
     await (async () => {
       check(
         '60.A) normalizeRacialState vazio/ausente devolve `used` vazio (novo personagem = default)',
@@ -20970,6 +20969,16 @@ async function main(): Promise<void> {
           resOf(dragon, 'breath-weapon')?.remaining === 1,
         JSON.stringify(resOf(dragon, 'breath-weapon')),
       );
+      // 5.3E.2) o recurso racial carrega NOME humano e o RÓTULO de ação humano
+      // (nunca o id técnico) — base da área "Recursos do Personagem".
+      const breathDto = resOf(dragon, 'breath-weapon');
+      check(
+        '60.E2.1) recurso racial expõe nome e rótulo de ação humanos (sem id técnico)',
+        breathDto?.name === 'Arma de Sopro' &&
+          breathDto?.actionLabel === 'Usar Sopro' &&
+          breathDto?.name !== breathDto?.id,
+        JSON.stringify(breathDto),
+      );
       const useG = await useRacial('breath-weapon', dragon.version, 'db-1');
       check(
         '60.G) uso válido do Sopro consome 1 (used 1 / remaining 0)',
@@ -20978,6 +20987,13 @@ async function main(): Promise<void> {
           useG.data.remaining === 0 &&
           useG.data.character.racialState.used['breath-weapon'] === 1,
         JSON.stringify({ status: useG.status, used: useG.data?.used }),
+      );
+      // 5.3E.2) recurso em 0/max CONTINUA no DTO (não some ao esgotar).
+      check(
+        '60.E2.2) recurso esgotado (0/max) permanece presente na ficha',
+        resOf(useG.data.character, 'breath-weapon')?.remaining === 0 &&
+          resOf(useG.data.character, 'breath-weapon')?.max === 1,
+        JSON.stringify(resOf(useG.data.character, 'breath-weapon')),
       );
       const useH = await useRacial('breath-weapon', useG.data.character.version, 'db-2');
       check(
@@ -21004,8 +21020,12 @@ async function main(): Promise<void> {
         [jA.status, jB.status].sort().join() === '200,409' && jWinner.data.used === 1,
         JSON.stringify({ a: jA.status, b: jB.status, used: jWinner.data?.used }),
       );
-      // I) Descanso Curto individual restaura o Sopro (recarga curta).
-      await setSheet({ racialState: { used: { 'breath-weapon': 1 } } });
+      // I) Descanso Curto individual restaura o Sopro (recarga curta) E o
+      // recurso de CLASSE de recarga curta (Retomar o Fôlego, 5.3E.2).
+      await setSheet({
+        racialState: { used: { 'breath-weapon': 1 } },
+        classState: { active: [], used: { 'second-wind': 1 }, choices: {} },
+      });
       const srStart = await api('/api/characters/me/rest/short/start', {
         method: 'POST',
         token,
@@ -21029,6 +21049,36 @@ async function main(): Promise<void> {
           used: srDone.data?.character?.racialState?.used,
           restored: srDone.data?.racialResourcesRestored,
         }),
+      );
+      // 5.3E.2 I/J) o resultado do descanso agrupa CLASSE e RAÇA por NOME, sem
+      // id técnico algum (a UI usa essas listas para montar os grupos).
+      const srClassNames = srDone.data.classResourcesRestored ?? [];
+      const srRaceNames = srDone.data.racialResourcesRestored ?? [];
+      const srAllLabels = JSON.stringify([srClassNames, srRaceNames]);
+      check(
+        '60.E2.3) Descanso Curto reporta classe e raça por nome, sem ids técnicos',
+        srClassNames.includes('Retomar o Fôlego') &&
+          srRaceNames.includes('Arma de Sopro') &&
+          !srAllLabels.includes('second-wind') &&
+          !srAllLabels.includes('breath-weapon') &&
+          srDone.data.character.classState.used['second-wind'] === undefined,
+        JSON.stringify({ srClassNames, srRaceNames }),
+      );
+
+      // F) recurso COMPARTILHADO no multiclasse (Canalizar Divindade): um
+      // clérigo/paladino declara o MESMO id -> UM recurso só, nunca dois cards.
+      await setupRace({ raceId: 'human', race: 'Humano' }, [
+        { classKey: 'cleric', level: 2 },
+        { classKey: 'paladin', level: 3 },
+      ]);
+      const multi = await sheet();
+      const channels = (multi.classAdjustments.resources as any[]).filter(
+        (r: any) => r.id === 'channel-divinity',
+      );
+      check(
+        '60.E2.4) Canalizar Divindade compartilhado aparece UMA vez (sem duplicar)',
+        channels.length === 1 && channels[0].max >= 1,
+        JSON.stringify(channels),
       );
 
       // --- MEIO-ORC: L/M/N/P + O (Descanso Longo) ---------------------------
@@ -21059,12 +21109,25 @@ async function main(): Promise<void> {
         useN.status === 409 && useN.data?.error === 'INSUFFICIENT_RESOURCE',
         JSON.stringify({ status: useN.status }),
       );
+      // J) o LONGO restaura o recurso de CLASSE gasto (Retomar o Fôlego) e
+      // reporta os nomes por origem no resultado — a fonte dos grupos da UI.
+      await setSheet({ classState: { active: [], used: { 'second-wind': 1 }, choices: {} } });
       const lrOrc = await longRequest('orc');
-      await forceComplete(lrOrc, 'orc');
+      const doneOrc = await forceComplete(lrOrc, 'orc');
       check(
         '60.O) Descanso Longo restaura a Resistência Implacável',
         (await sheet()).racialState.used['relentless-endurance'] === undefined,
         JSON.stringify((await sheet()).racialState),
+      );
+      const orcEntry = (doneOrc.data?.completion?.characters ?? [])[0] ?? {};
+      check(
+        '60.E2.5) Descanso Longo reporta classe e raça por nome (agrupáveis por origem)',
+        (orcEntry.classResourcesRestored ?? []).includes('Retomar o Fôlego') &&
+          (orcEntry.racialResourcesRestored ?? []).includes('Resistência Implacável'),
+        JSON.stringify({
+          classResources: orcEntry.classResourcesRestored,
+          racialResources: orcEntry.racialResourcesRestored,
+        }),
       );
 
       // --- TIEFLING: Q/R/S + T (Descanso Longo) -----------------------------
