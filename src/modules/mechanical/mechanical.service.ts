@@ -9,6 +9,7 @@ import { toCreatureDto } from '../creatures/creatures.dto.js';
 import { emitCombat, loadCombatById, publishCharacter, type CombatActor } from '../combat/combat.service.js';
 import { orderCombatants, toCombatDto } from '../combat/combat.dto.js';
 import { economyOf, moveDistance } from '../shared/action-economy.js';
+import { registerFatalExhaustion } from '../death/death.service.js';
 import { CONDITION_LABELS, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
 import type { MechanicalMutationInput } from './mechanical.schema.js';
 
@@ -137,6 +138,12 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
           ? await db.creature.updateMany({ where: { id: loaded.entity.id, version: input.expectedVersion }, data: { ...data, version: { increment: 1 } } })
           : await db.combatant.updateMany({ where: { id: loaded.entity.id, mechanicalVersion: input.expectedVersion }, data: { ...data, mechanicalVersion: { increment: 1 } } });
       if (!changed.count) throw new HttpError('Estado mecânico mudou.', 409, 'CONFLICT');
+      // Fase 6.3: Exaustão nível 6 indica morte pelas regras — abre a MESMA
+      // decisão do Mestre usada pela morte instantânea. Nada de marcar morte
+      // automaticamente; a Exaustão continua no nível 6 até o Mestre mexer.
+      if (input.action === 'exhaustion' && state.exhaustionLevel === 6) {
+        await registerFatalExhaustion(input.entity, actor.username, db);
+      }
       const response = dto(await loadEntity(input.entity, db));
       await db.mechanicalOperation.create({ data: { entityKind: canonical.kind, entityId: canonical.id, operationId: input.operationId, fingerprint, snapshot: response as unknown as Prisma.InputJsonValue } });
       return response;

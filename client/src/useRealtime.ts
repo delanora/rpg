@@ -1,4 +1,4 @@
-import type { MechanicalUpdatedPayload } from './types';
+import type { DeathUpdatedPayload, MechanicalUpdatedPayload } from './types';
 import { useEffect, useRef, useState } from 'react';
 import { createSocket } from './socket';
 import type {
@@ -55,6 +55,11 @@ export interface RealtimeHandlers {
   onItemDeleted?: (payload: ItemDeletedPayload) => void;
   onCombatStarted?: (payload: CombatStartedPayload) => void;
   onMechanicalUpdated?: (payload: MechanicalUpdatedPayload) => void;
+  /**
+   * Ciclo de morte mudou (Fase 6.3). Chega ao dono (personagens) e à sala dos
+   * MESTRES — o Teste contra a Morte de um NPC nunca é enviado a jogadores.
+   */
+  onDeathUpdated?: (payload: DeathUpdatedPayload) => void;
   onCombatUpdated?: (payload: CombatUpdatedPayload) => void;
   onCombatTurn?: (payload: CombatTurnPayload) => void;
   onCombatEnded?: (payload: CombatEndedPayload) => void;
@@ -137,6 +142,7 @@ export function useRealtime(handlers: RealtimeHandlers) {
 
     socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
     socket.on('mechanical:updated', (payload) => handlersRef.current.onMechanicalUpdated?.(payload));
+    socket.on('death:updated', (payload) => handlersRef.current.onDeathUpdated?.(payload));
     socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));
     socket.on('combat:turn', (payload) => handlersRef.current.onCombatTurn?.(payload));
     socket.on('combat:ended', (payload) => handlersRef.current.onCombatEnded?.(payload));

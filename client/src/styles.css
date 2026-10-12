@@ -15849,3 +15849,183 @@ input[type='checkbox']:focus-visible,
     grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Ciclo de morte (Fase 6.3): 0 PV, Testes contra a Morte, estabilização,
+   decisão do Mestre e a faixa de pendências do painel dele.
+   --------------------------------------------------------------------------- */
+
+.death-panel {
+  margin-top: 0.9rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.6rem;
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.death-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--danger);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+.death-tag {
+  margin-left: auto;
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.death-tag.dead { color: var(--danger); }
+.death-tag.stabilized { color: var(--ok); }
+.death-tag.pending { color: var(--warn); }
+
+.death-text {
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--ink);
+}
+
+.death-pending { color: var(--warn); }
+
+.death-counters {
+  display: flex;
+  gap: 1.4rem;
+  font-size: var(--text-aux);
+}
+
+.death-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-soft);
+}
+
+.death-pips { display: inline-flex; gap: 0.22rem; }
+
+.death-pip {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+  border: 1px solid var(--ink-soft);
+}
+
+.death-pips-success .death-pip.filled { background: var(--ok); border-color: var(--ok); }
+.death-pips-failure .death-pip.filled { background: var(--danger); border-color: var(--danger); }
+
+.death-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.death-admin { opacity: 0.9; }
+
+.death-button {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--ink-soft);
+  border-radius: 0.45rem;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-micro);
+  text-align: left;
+  cursor: pointer;
+}
+
+.death-button strong { font-family: var(--font-display); font-size: var(--text-aux); }
+.death-button span { color: var(--ink-soft); font-size: var(--text-micro); }
+.death-button:hover:not(:disabled) { border-color: var(--danger); }
+.death-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.death-button.primary { border-color: var(--ok); }
+.death-button.danger { border-color: var(--danger); color: var(--danger); }
+
+.death-hint { font-size: var(--text-micro); color: var(--ink-soft); }
+.death-error { margin: 0; font-size: var(--text-micro); color: var(--danger); }
+.death-roll-result { margin: 0; font-size: var(--text-aux); color: var(--ink); }
+
+.death-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.death-stage {
+  width: min(34rem, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 1.1rem 1.2rem 1.3rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.death-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--danger);
+}
+
+.death-stage-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-section);
+}
+
+.death-stage-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.death-options { display: flex; flex-direction: column; gap: 0.5rem; }
+.death-options .death-button { width: 100%; }
+
+.death-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.9rem;
+  border-bottom: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+  font-size: var(--text-aux);
+}
+
+.death-banner-label { font-family: var(--font-display); letter-spacing: 0.06em; }
+
+.death-banner-item {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-micro);
+  cursor: pointer;
+}
+
+.death-banner-item.pending { color: var(--danger); font-weight: 600; }

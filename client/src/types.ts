@@ -779,10 +779,97 @@ export interface CharacterTool {
   defaultAbility: AbilityKey | null;
 }
 
+/** --- Ciclo de morte (Fase 6.3) --------------------------------------------- */
+
+/** O que disparou a decisão pendente do Mestre. */
+export type DeathPendingKind = 'instant-death' | 'failures' | 'npc-zero' | 'exhaustion';
+
+export interface DeathPending {
+  id: string;
+  kind: DeathPendingKind;
+  reason: string;
+  createdAt: string;
+  /** Aritmética da morte instantânea (auditoria do Mestre). */
+  cause: { damage: number; remaining: number; hpMax: number } | null;
+}
+
+/** Oferta pendente da Resistência Implacável (Meio-Orc). */
+export interface RelentlessOffer {
+  id: string;
+  resourceId: string;
+  createdAt: string;
+}
+
+/**
+ * Ciclo de MORTE (Fase 6.3). Estado PRÓPRIO da ficha/instância: não vive em
+ * `classState`, `racialState`, `turnEconomy` nem numa condição genérica.
+ */
+export interface DeathState {
+  successes: number;
+  failures: number;
+  stabilized: boolean;
+  dead: boolean;
+  /** A criatura está no fluxo de Testes contra a Morte. */
+  deathSaves: boolean;
+  /** Decisão pendente do MESTRE (o sistema nunca declara morte sozinho). */
+  pending: DeathPending | null;
+  relentless: RelentlessOffer | null;
+  saveTurnKey: string | null;
+  log: { id: string; actorName: string; message: string; at: string }[];
+}
+
+/** Decisão do Mestre sobre uma morte pendente. */
+export type DeathDecision =
+  | 'confirm-death'
+  | 'narrative-1hp'
+  | 'fall-to-zero'
+  | 'roll-death-saves';
+
+/** Ação administrativa explícita do Mestre no ciclo de morte. */
+export type DeathOverrideAction =
+  | 'add-success'
+  | 'remove-success'
+  | 'add-failure'
+  | 'remove-failure'
+  | 'stabilize'
+  | 'unstabilize'
+  | 'confirm-death'
+  | 'narrative-1hp'
+  | 'keep-at-zero'
+  | 'death-saves'
+  | 'revive';
+
+/** Ciclo de morte de uma entidade (GET /api/death/:kind/:id). */
+export interface DeathDto {
+  entity: MechanicalEntity;
+  kind: 'character' | 'creature';
+  name: string;
+  ownerUserId: string | null;
+  hpCurrent: number;
+  hpMax: number;
+  version: number;
+  death: DeathState;
+  log: { id: string; actorName: string; message: string; at: string }[];
+  pending: DeathPending | null;
+  pendingLabel: string | null;
+  deathSave: { available: boolean; reason: string; mode: boolean; turnKey: string | null };
+  relentless: { available: boolean; name: string; resourceId: string } | null;
+  combat: { id: string; version: number; status: string; inOwnTurn: boolean } | null;
+  at: string;
+}
+
+/** Payload do evento `death:updated`. */
+export interface DeathUpdatedPayload {
+  death: DeathDto;
+}
+
 /** Ficha completa devolvida pela API. */
 export interface Character {
   mechanicalState: MechanicalState;
   conditionEffects: ConditionEffects;
+  deathState: DeathState;
+  /** Verdadeiro quando o ciclo de morte impede agir (morto/pendente/oferta). */
+  deathBlocksActions: boolean;
   effectiveMaxHp: number;
   effectiveSpeed: number;
   id: string;
@@ -1926,6 +2013,12 @@ export interface TurnEconomy {
 export interface CombatantDto {
   mechanicalState: MechanicalState;
   conditionEffects: ConditionEffects;
+  /**
+   * Ciclo de morte da instância. `null` para criaturas/NPCs vistos por um
+   * jogador: os Testes contra a Morte de NPC são privados do Mestre.
+   */
+  deathState: DeathState | null;
+  deathBlocksActions: boolean;
   mechanicalVersion: number;
   effectiveSpeed: number;
   turnEconomy: TurnEconomy;
@@ -2349,7 +2442,18 @@ export interface LongRestRequestUpdatedPayload {
 
 /** --- Janela de dados (rolagem livre, perícia e salvaguarda) ----------------- */
 
-export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest';
+export type DiceRollKind =
+  | 'skill'
+  | 'save'
+  | 'free'
+  | 'creation'
+  | 'item'
+  | 'rest'
+  /** Teste contra a Morte (Fase 6.3): o servidor valida, rola e aplica. */
+  | 'death-save';
+
+/** Audiência de uma rolagem: a mesa inteira ou só a sala dos mestres. */
+export type DiceRollAudience = 'table' | 'masters';
 
 /** Um dado já rolado (espelha src/modules/dice/dice.dto.ts). */
 export interface RolledDie {
@@ -2374,6 +2478,8 @@ export interface DiceRollDto {
   advantage: boolean;
   disadvantage: boolean;
   isPrivate: boolean;
+  /** Ausente = `table`. `masters` só em Teste contra a Morte de NPC (privado). */
+  audience?: DiceRollAudience;
   crit: boolean;
   /** 1 natural num d20 de quem tem o Sortudo: a janela oferece rolar de novo. */
   lucky: boolean;

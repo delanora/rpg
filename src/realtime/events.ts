@@ -3,6 +3,7 @@ import type { Role } from '@prisma/client';
 import type { CharacterDto } from '../modules/characters/characters.dto.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
+import type { DeathDto } from '../modules/death/death.service.js';
 import type { DiceRollDto, DiceRollKind, RollBoardDto } from '../modules/dice/dice.dto.js';
 import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
@@ -175,6 +176,13 @@ export const ServerEvents = {
   /** Estado completo do combate mudou (HP, rolagens, ordem...). */
   COMBAT_UPDATED: 'combat:updated',
   MECHANICAL_UPDATED: 'mechanical:updated',
+  /**
+   * Ciclo de MORTE mudou (0 PV, Testes contra a Morte, decisão pendente). Vai
+   * para o dono (personagens) e para a sala dos MESTRES. Death Saves de
+   * criaturas/NPCs NUNCA chegam aos jogadores — a privacidade é aplicada no
+   * servidor, não escondida no cliente.
+   */
+  DEATH_UPDATED: 'death:updated',
   /** Virou o turno de alguém. */
   COMBAT_TURN: 'combat:turn',
   /** Combate encerrado pelo mestre. */
@@ -524,3 +532,6 @@ export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];
 export type ServerEvent = (typeof ServerEvents)[keyof typeof ServerEvents];
 
 export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }
+
+/** Ciclo de morte de uma entidade (Fase 6.3). */
+export interface DeathUpdatedPayload { death: DeathDto; }

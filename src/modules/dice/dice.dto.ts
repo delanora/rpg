@@ -6,7 +6,17 @@
  * e de salvaguarda, públicas ou privadas.
  */
 
-export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest';
+export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest' | 'death-save';
+
+/**
+ * Audiência de uma rolagem (Fase 6.3).
+ *
+ * `table` = a mesa inteira assiste (rolagens públicas, inclusive o Teste contra
+ * a Morte de um PERSONAGEM). `masters` = só a sala dos MESTRES recebe o evento —
+ * é o canal do Teste contra a Morte de NPC/criatura, que é PRIVADO: o servidor
+ * não envia resultado, contador nem a existência da rolagem aos jogadores.
+ */
+export type DiceRollAudience = 'table' | 'masters';
 
 /** Um dado já rolado. */
 export interface RolledDie {
@@ -101,6 +111,12 @@ export interface DiceRollDto {
   advantage: boolean;
   disadvantage: boolean;
   isPrivate: boolean;
+  /**
+   * Para quem o evento foi publicado. Ausente = `table` (rolagem pública).
+   * `masters` só existe em rolagem de Mestre (hoje, o Teste contra a Morte de
+   * uma criatura/NPC).
+   */
+  audience?: DiceRollAudience;
   /** Algum d20 válido saiu 20. */
   crit: boolean;
   /**

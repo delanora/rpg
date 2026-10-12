@@ -1,5 +1,7 @@
 import { MechanicalPanel } from './MechanicalPanel';
 import { useState } from 'react';
+import { DeathPanel } from '../death/DeathPanel';
+import type { MechanicalEntity } from '../types';
 import { SheetAccessProvider } from '../readonly';
 import type { Character, CharacterPatch, InventoryMoveRequest, TransferTarget } from '../types';
 import { Icon, type IconName } from './Icon';
@@ -53,6 +55,13 @@ interface SheetViewProps {
    * máximo e a recarga. NÃO executa dano/save/magia nesta fase.
    */
   onRacialUse?: (resourceId: string, expectedVersion: number) => void | Promise<void>;
+  /**
+   * Abre a janela de dados com o d20 do Teste contra a Morte (Fase 6.3). O
+   * jogador decide QUANDO rolar; o servidor valida e aplica o resultado.
+   */
+  onRollDeathSave?: (entity: MechanicalEntity) => void;
+  /** Muda com a versão da ficha/turno do combate: refaz a elegibilidade. */
+  deathRefreshKey?: string;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins?: boolean;
   /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
@@ -137,6 +146,8 @@ export function SheetView({
   coinTargets,
   onCoinsChange,
   onRollSkill,
+  onRollDeathSave,
+  deathRefreshKey,
   levelUp,
   shortRest,
   longRest,
@@ -176,6 +187,13 @@ export function SheetView({
             character={character}
             update={update}
             onRacialUse={onRacialUse}
+          />
+          {/* Ciclo de morte (6.3): 0 PV, Testes contra a Morte, estabilização,
+              oferta da Resistência Implacável e "aguardando o Mestre". */}
+          <DeathPanel
+            character={character}
+            refreshKey={deathRefreshKey}
+            onRollDeathSave={onRollDeathSave}
           />
         </div>
 

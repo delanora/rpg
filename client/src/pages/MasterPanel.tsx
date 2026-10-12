@@ -13,6 +13,11 @@ import { RollLogPanel } from '../components/master/RollLogPanel';
 import { ItemsTab } from '../components/master/ItemsTab';
 import { RegionsTab } from '../components/master/RegionsTab';
 import { SheetsTab } from '../components/master/SheetsTab';
+import {
+  DeathPendingBanner,
+  DeathResolutionModal,
+} from '../death/DeathResolutionModal';
+import { fetchDeath } from '../deathApi';
 import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../combat/combatApi';
@@ -36,6 +41,7 @@ import type {
   CharacterPatch,
   Compendium,
   Creature,
+  DeathDto,
   CreatureKind,
   CreaturePatch,
   GameConfig,
@@ -85,6 +91,12 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [shortRestOpen, setShortRestOpen] = useState(false);
   // Painel do Descanso Longo coletivo (acompanha e conduz a mesa).
   const [longRestOpen, setLongRestOpen] = useState(false);
+  //
+  // Ciclo de MORTE (6.3): o Mestre é o único que decide o desfecho. As entradas
+  // chegam pelo evento `death:updated` (personagens e criaturas) e o modal abre
+  // a decisão pendente. A chave é `kind:id` da entidade.
+  const [deathMap, setDeathMap] = useState<Record<string, DeathDto>>({});
+  const [deathModal, setDeathModal] = useState<DeathDto | null>(null);
 
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
@@ -108,6 +120,16 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     ...music.handlers,
     ...shortRest.handlers,
     ...longRest.handlers,
+
+    // Morte (6.3): só a sala dos mestres recebe o ciclo de morte de criaturas.
+    onDeathUpdated: (payload) => {
+      const entry = payload.death;
+      const key = `${entry.entity.kind}:${entry.entity.id}`;
+      setDeathMap((prev) => ({ ...prev, [key]: entry }));
+      setDeathModal((current) =>
+        current && `${current.entity.kind}:${current.entity.id}` === key ? entry : current,
+      );
+    },
 
     // Fichas dos jogadores chegam ao vivo — é o requisito central do painel.
     onSheetUpdated: (payload) => {
@@ -683,6 +705,46 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const monsters = creatures.filter((creature) => creature.kind === 'CREATURE');
   const npcs = creatures.filter((creature) => creature.kind === 'NPC');
 
+  // O Teste contra a Morte privado de uma criatura só fica disponível no turno
+  // dela: a cada virada de turno, as entradas de criaturas são relidas para a
+  // elegibilidade (e o PENDENTE de morte continua até o Mestre decidir).
+  const currentTurnId = combat?.currentCombatantId ?? '';
+  useEffect(() => {
+    const creatures = Object.values(deathMap).filter((entry) => entry.kind === 'creature');
+    if (creatures.length === 0) return;
+    let active = true;
+    void Promise.all(
+      creatures.map((entry) => fetchDeath(entry.entity).catch(() => null)),
+    ).then((updated) => {
+      if (!active) return;
+      setDeathMap((prev) => {
+        const next = { ...prev };
+        for (const entry of updated) {
+          if (entry) next[`${entry.entity.kind}:${entry.entity.id}`] = entry;
+        }
+        return next;
+      });
+    });
+    return () => {
+      active = false;
+    };
+    // `deathMap` é lido apenas para saber QUAIS criaturas rele­r; a dependência é
+    // a virada de turno.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTurnId]);
+
+  /**
+   * Entradas do ciclo de morte que precisam do Mestre AGORA: decisões pendentes
+   * e Testes contra a Morte privados de criaturas no turno delas.
+   */
+  const deathEntries = Object.values(deathMap)
+    .filter(
+      (entry) =>
+        Boolean(entry.pending) ||
+        (entry.kind === 'creature' && entry.death.deathSaves && entry.deathSave.available),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div
       className={[
@@ -703,6 +765,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       />
 
       <AppHeader connection={connection} lastEventAt={lastEventAt} user={user} />
+
+      {/* Decisões de morte em aberto (6.3): visíveis em qualquer aba. */}
+      <DeathPendingBanner entries={deathEntries} onOpen={setDeathModal} />
 
       {/* A barra de abas é a navegação do mestre: em combate ela dá lugar ao
           combate, e na home ela some — de lá o mestre entra nas abas pelos
@@ -973,6 +1038,19 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           rest={longRest}
           characters={characters}
           isMaster
+        />
+      ) : null}
+
+      {/* Janela "Destino de [Nome]" — EXCLUSIVA do Mestre (6.3). */}
+      {deathModal ? (
+        <DeathResolutionModal
+          death={deathModal}
+          onClose={() => setDeathModal(null)}
+          onResolved={(entry) => {
+            const key = `${entry.entity.kind}:${entry.entity.id}`;
+            setDeathMap((prev) => ({ ...prev, [key]: entry }));
+            setDeathModal(entry.pending ? entry : null);
+          }}
         />
       ) : null}
 

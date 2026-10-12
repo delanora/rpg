@@ -1,4 +1,5 @@
 import { effectiveMaxHp, effectiveSpeed, mechanicalStateOf, deriveConditionEffects } from '../shared/conditions.js';
+import { deathBlocksActions, deathStateOf, type DeathState } from '../shared/death.js';
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
@@ -347,6 +348,14 @@ export interface CharacterDto {
   hpTemp: number;
   mechanicalState: ReturnType<typeof mechanicalStateOf>;
   conditionEffects: ReturnType<typeof deriveConditionEffects>;
+  /**
+   * Ciclo de MORTE da ficha (Fase 6.3): contadores de Testes contra a Morte,
+   * estabilizado, morto, decisão pendente do Mestre, oferta da Resistência
+   * Implacável e log. Estado PRÓPRIO — nunca em `classState`/`racialState`.
+   */
+  deathState: DeathState;
+  /** Verdadeiro quando o ciclo de morte impede agir (morto/pendente/oferta). */
+  deathBlocksActions: boolean;
   effectiveMaxHp: number;
   effectiveSpeed: number;
   /** CA efetiva: o override do mestre quando existe, senão a calculada. */
@@ -873,6 +882,8 @@ export function toCharacterDto(
         : [],
   });
 
+  const deathState = deathStateOf(character.deathState);
+
   return {
     id: character.id,
     userId: character.userId,
@@ -914,6 +925,8 @@ export function toCharacterDto(
     hpTemp: character.hpTemp,
     mechanicalState: mechanicalStateOf(character.mechanicalState),
     conditionEffects: deriveConditionEffects(character.mechanicalState),
+    deathState,
+    deathBlocksActions: deathBlocksActions(deathState),
     effectiveMaxHp: characterMaxHp(character),
     effectiveSpeed: effectiveSpeed(character.speed, character.mechanicalState),
     armorClass: derived.armorClass.value,

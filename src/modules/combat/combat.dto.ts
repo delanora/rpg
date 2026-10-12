@@ -1,4 +1,5 @@
 import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, reconcileMovement } from '../shared/conditions.js';
+import { deathBlocksActions, deathStateOf, type DeathState } from '../shared/death.js';
 import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
 import { economyOf, type TurnEconomy } from '../shared/action-economy.js';
@@ -31,6 +32,14 @@ export interface CombatantDto {
   mechanicalState: ReturnType<typeof mechanicalStateOf>;
   conditionEffects: ReturnType<typeof deriveConditionEffects>;
   mechanicalVersion: number;
+  /**
+   * Ciclo de MORTE da instância (Fase 6.3). Fica `null` para criaturas/NPCs
+   * quando quem vê é um JOGADOR: os Testes contra a Morte de NPC são privados
+   * do Mestre (resultado, contador e até a existência da rolagem).
+   */
+  deathState: DeathState | null;
+  /** Verdadeiro quando o estado de morte impede Ação/Ação Bônus/Reação/Movimento. */
+  deathBlocksActions: boolean;
   effectiveSpeed: number;
   id: string;
   kind: CombatantKind;
@@ -85,6 +94,8 @@ export interface CombatSourced {
 export interface CombatantSourced {
   turnEconomy: unknown;
   mechanicalState: unknown;
+  /** Ciclo de morte da INSTÂNCIA (criaturas); personagens usam o da ficha. */
+  deathState: unknown;
   mechanicalVersion: number;
   id: string;
   kind: CombatantKind;
@@ -141,6 +152,15 @@ export function combatantMechanicalState(combatant: CombatantSourced) {
   return combatant.character?.mechanicalState ?? combatant.mechanicalState;
 }
 
+/**
+ * Ciclo de morte do combatente: personagens usam o estado da FICHA (canônico);
+ * criaturas usam o estado PRÓPRIO da instância (Goblin 1 ≠ Goblin 2), nunca o
+ * template do bestiário.
+ */
+export function combatantDeathState(combatant: CombatantSourced): DeathState {
+  return combatant.character ? deathStateOf(combatant.character.deathState) : deathStateOf(combatant.deathState);
+}
+
 function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const source = combatant.character ?? combatant.creature;
 
@@ -163,9 +183,12 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     combatant.creature?.armorClass ??
     0;
 
+  const deathState = combatantDeathState(combatant);
   return {
     turnEconomy: reconcileMovement(economyOf(combatant.turnEconomy), source?.speed ?? 0, effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant))),
     mechanicalState: mechanicalStateOf(combatantMechanicalState(combatant)),
+    deathState,
+    deathBlocksActions: deathBlocksActions(deathState),
     conditionEffects: deriveConditionEffects(combatantMechanicalState(combatant)),
     mechanicalVersion: combatant.character?.version ?? combatant.mechanicalVersion,
     effectiveSpeed: effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant)),
@@ -231,7 +254,17 @@ export function hideCreatureStats(dto: CombatDto): CombatDto {
     ...dto,
     combatants: dto.combatants.map((combatant) =>
       combatant.kind === 'CREATURE'
-        ? { ...combatant, hpCurrent: null, hpMax: null, armorClass: null, statsHidden: true }
+        ? {
+            ...combatant,
+            hpCurrent: null,
+            hpMax: null,
+            armorClass: null,
+            // Death Saves de NPC/criatura são PRIVADOS do Mestre: o servidor não
+            // envia contador, resultado nem a existência da rolagem.
+            deathState: null,
+            deathBlocksActions: false,
+            statsHidden: true,
+          }
         : combatant,
     ),
   };
