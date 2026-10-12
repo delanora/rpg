@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
 import { setExhaustionRuleEnabled } from '../modules/shared/exhaustion-flag.js';
@@ -41,8 +42,22 @@ export async function smokeExhaustionRule(baseUrl: string, check: Check): Promis
     check('65) A. campanha NOVA nasce com a Exaustão DESLIGADA', fresh.exhaustionEnabled === false);
     await prisma.gameConfig.delete({ where: { id: fresh.id } });
 
-    // B) A configuração que JÁ EXISTIA foi backfillada para `true` na migration.
-    check('65) B. campanha EXISTENTE permanece com a Exaustão LIGADA (backfill da migration)', original === true);
+    // B) O ARTEFATO da migration: a coluna nasce `DEFAULT false` (campanha NOVA
+    //    desligada) e o backfill marca como `true` as configurações EXISTENTES —
+    //    é isso que impede uma mesa em andamento de mudar de comportamento em
+    //    silêncio. O valor VIVO da mesa pode ter sido alterado pelo Mestre depois
+    //    do backfill (o smoke normaliza a regra para ligada nas seções 63/64 e
+    //    devolve a escolha no fim), então o que se verifica aqui é o arquivo.
+    const migrationSql = await readFile(
+      new URL('../../prisma/migrations/20261012170000_add_exhaustion_enabled/migration.sql', import.meta.url),
+      'utf8',
+    );
+    check(
+      '65) B. a migration cria a coluna DESLIGADA para campanhas novas e faz backfill das EXISTENTES para ligada',
+      /ADD COLUMN "exhaustionEnabled" BOOLEAN NOT NULL DEFAULT false/.test(migrationSql) &&
+        /UPDATE "game_config" SET "exhaustionEnabled" = true/.test(migrationSql),
+    );
+    console.log('   (o smoke normaliza a regra de Exaustão para LIGADA e devolve a escolha do Mestre ao final)');
 
     // Gating das derivações PURAS (as mesmas funções que o servidor usa).
     setExhaustionRuleEnabled(false);
