@@ -33,6 +33,8 @@ export const turnEconomySchema = z.object({
   reactionAvailable: z.boolean().default(true),
   movementBudget: z.number().nonnegative().default(0),
   movementUsed: z.number().nonnegative().default(0),
+  /** Ajuste administrativo em distância real; não é ampliado ao remover condições. */
+  movementOverrideBudget: z.number().nonnegative().nullable().default(null),
   attackAction: attackActionSchema.nullable().default(null),
   /** Armas leves usadas em Attack Action: mão secundária exige OUTRA arma. */
   lightWeaponsAttacked: z.array(z.string()).default([]),

@@ -1,3 +1,4 @@
+import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { COMBAT_ACTIONS, deriveAttackActionLimit, economyOf, moveDistance, onTurnEnd, onTurnStart, recordAttack, spendEconomy } from '../shared/action-economy.js';
 import type { CombatOperationInput, EconomyActionInput, EconomyOverrideInput } from './combat.schema.js';
@@ -41,6 +42,7 @@ import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice } from '../shared/dice.js';
 import {
   combatantAttacks,
+  combatantMechanicalState,
   hideCreatureStats,
   orderCombatants,
   toCombatDto,
@@ -78,7 +80,7 @@ function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }, db:
   });
 }
 
-async function loadCombatById(id: string, db: Prisma.TransactionClient = prisma): Promise<CombatSourced> {
+export async function loadCombatById(id: string, db: Prisma.TransactionClient = prisma): Promise<CombatSourced> {
   const combat = await findCombat({ id }, db);
   if (!combat) throw new HttpError('Combate não encontrado.', 404);
   return combat;
@@ -122,7 +124,7 @@ function emit(event: (typeof ServerEvents)[keyof typeof ServerEvents], payload: 
  * Estado do combate com visões distintas: o mestre recebe a vida e a CA das
  * criaturas, os jogadores não. Os personagens continuam visíveis para todos.
  */
-function emitCombat(
+export function emitCombat(
   event: (typeof ServerEvents)[keyof typeof ServerEvents],
   dto: CombatDto,
 ): void {
@@ -263,6 +265,8 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
     if (input.targetCombatantId && !combat.combatants.some((item) => item.id === input.targetCombatantId)) {
       throw new HttpError('Alvo não encontrado neste combate.', 404);
     }
+    const effects = deriveConditionEffects(combatantMechanicalState(combatant));
+    if (input.action !== 'move' && !effects.canAct) throw new HttpError('Condição impede Ações, Ações Bônus e Reações.', 409, 'CONFLICT');
     if (input.action === 'execute-ready') {
       if (!economy.ready) throw new HttpError('Nenhuma ação preparada.', 409, 'CONFLICT');
       spendEconomy(economy, 'reaction');
@@ -270,10 +274,17 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
       economy.ready = null;
     } else {
       requireOwnTurn(combat, combatant);
-      if (input.action === 'move') moveDistance(economy, input.distance!);
+      if (input.action === 'move') {
+        const available = reconcileMovement(economy, combatantSpeed(combatant), effectiveSpeed(combatantSpeed(combatant), combatantMechanicalState(combatant)));
+        moveDistance(available, input.distance! * effects.movementCostMultiplier);
+        economy.movementUsed = available.movementUsed;
+      }
       else {
         spendEconomy(economy, COMBAT_ACTIONS[input.action].economy);
-        if (input.action === 'dash') economy.movementBudget += combatantSpeed(combatant);
+        if (input.action === 'dash' && !effects.speedZero) {
+          if (economy.movementOverrideBudget !== null) economy.movementOverrideBudget += effectiveSpeed(combatantSpeed(combatant), combatantMechanicalState(combatant));
+          else economy.movementBudget += combatantSpeed(combatant);
+        }
         if (input.action === 'ready') economy.ready = { trigger: input.trigger!, intent: input.intent! };
         const context = input.action === 'ready' ? `${input.trigger} → ${input.intent}` : input.description;
         const target = input.targetCombatantId ? combat.combatants.find((item) => item.id === input.targetCombatantId)?.name : null;
@@ -299,7 +310,11 @@ export async function overrideEconomy(actor: CombatActor, input: EconomyOverride
     if (input.adjustment === 'restore-action') economy.actionsUsed = 0;
     if (input.adjustment === 'restore-bonus') economy.bonusActionUsed = false;
     if (input.adjustment === 'restore-reaction') economy.reactionAvailable = true;
-    if (input.adjustment === 'set-movement') economy.movementBudget = economy.movementUsed + input.remaining!;
+    if (input.adjustment === 'set-movement') {
+      const base = combatantSpeed(combatant), speed = effectiveSpeed(base, combatantMechanicalState(combatant));
+      if (speed <= 0 && input.remaining! > 0) throw new HttpError('Deslocamento efetivo zero; remova a condição explicitamente antes de conceder movimento.', 409, 'CONFLICT');
+      economy.movementOverrideBudget = economy.movementUsed + input.remaining!;
+    }
     await db.combatant.update({ where: { id: combatant.id }, data: { turnEconomy: economy } });
     await appendEconomyLog(db, combat, combatant, `Mestre ${actor.username} ${messages[input.adjustment]} para ${combatant.name}: ${input.reason}.`, `override:${input.adjustment}`);
     return { combat: toCombatDto(await loadCombatById(combat.id, db), 'MASTER') };
@@ -352,6 +367,7 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
       hpCurrent: creature.hpCurrent,
       hpMax: creature.hpMax,
       armorClass: creature.armorClass,
+      mechanicalState: { ...mechanicalStateOf(creature.mechanicalState), conditions: mechanicalStateOf(creature.mechanicalState).conditions.map(instance => ({ ...instance, id: randomUUID() })), log: [] } as unknown as Prisma.InputJsonValue,
     }));
   });
 
@@ -437,54 +453,26 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
  * jogador). Com `combatantId`, só o mestre — serve para rolar pelas criaturas
  * e por jogadores ausentes.
  */
-export async function rollInitiative(
-  actor: CombatActor,
-  combatantId?: string,
-): Promise<CombatDto> {
-  const combat = await requireActiveCombat();
-
-  if (combat.status !== 'PENDING_INITIATIVE') {
-    throw new HttpError('A ordem de iniciativa já foi montada.', 409);
-  }
-
-  const combatant = combatantId
-    ? combat.combatants.find((item) => item.id === combatantId)
-    : combat.combatants.find((item) => item.ownerUserId === actor.userId);
-
-  if (!combatant) {
-    if (combatantId) throw new HttpError('Combatente não encontrado.', 404);
-    throw new HttpError('Você não tem um personagem neste combate.', 403);
-  }
-
-  if (actor.role !== 'MASTER' && combatant.ownerUserId !== actor.userId) {
-    throw new HttpError('Você só pode rolar a sua própria iniciativa.', 403);
-  }
-
-  if (combatant.initiative !== null) {
-    throw new HttpError(`${combatant.name} já rolou a iniciativa.`, 409);
-  }
-
-  const roll = rollD20();
-  const total = roll + combatant.dexterityMod;
-
-  await prisma.combatant.update({
-    where: { id: combatant.id },
-    data: { initiative: total, initiativeRoll: roll },
+export async function rollInitiative(actor: CombatActor, combatantId?: string): Promise<CombatDto> {
+  const selectedCombat = await requireActiveCombat();
+  const payload = await prisma.$transaction(async db => {
+    // A rolagem existente não recebe expectedVersion; o lock do combate ordena
+    // participantes diferentes e impede usar condições de um snapshot antigo.
+    const locked = await db.combat.updateMany({ where: { id: selectedCombat.id, status: 'PENDING_INITIATIVE' }, data: { version: { increment: 1 } } });
+    if (!locked.count) throw new HttpError('A ordem de iniciativa já foi montada.', 409);
+    const combat = await loadCombatById(selectedCombat.id, db);
+    const combatant = combatantId ? combat.combatants.find(item => item.id === combatantId) : combat.combatants.find(item => item.ownerUserId === actor.userId);
+    if (!combatant) throw new HttpError('Combatente não encontrado.', combatantId ? 404 : 403);
+    if (actor.role !== 'MASTER' && combatant.ownerUserId !== actor.userId) throw new HttpError('Você só pode rolar a sua própria iniciativa.', 403);
+    if (combatant.initiative !== null) throw new HttpError(`${combatant.name} já rolou a iniciativa.`, 409);
+    const disadvantage = deriveConditionEffects(combatantMechanicalState(combatant)).checkDisadvantage;
+    const first = rollD20(), second = disadvantage ? rollD20() : null;
+    const roll = second === null ? first : Math.min(first, second), total = roll + combatant.dexterityMod;
+    await db.combatant.update({ where: { id: combatant.id }, data: { initiative: total, initiativeRoll: roll } });
+    return { kind: 'initiative' as const, actorName: combatant.name, expression: disadvantage ? '1d20 (desvantagem)' : '1d20', rolls: second === null ? [roll] : [first, second], sides: 20, modifier: combatant.dexterityMod, total, crit: roll === 20, at: new Date().toISOString() };
   });
-
-  announceRoll({
-    kind: 'initiative',
-    actorName: combatant.name,
-    expression: '1d20',
-    rolls: [roll],
-    sides: 20,
-    modifier: combatant.dexterityMod,
-    total,
-    crit: roll === 20,
-    at: new Date().toISOString(),
-  });
-
-  return finalizeInitiative(combat.id, actor.role);
+  announceRoll(payload);
+  return finalizeInitiative(selectedCombat.id, actor.role);
 }
 
 /** --- Turnos ------------------------------------------------------------------- */
@@ -555,7 +543,7 @@ async function changeHp(
           "hpCurrent" = GREATEST(
             0,
             LEAST(
-              GREATEST("hpMax" + ${hpBonus}, 0),
+              GREATEST(FLOOR(("hpMax" + ${hpBonus}) * CASE WHEN COALESCE(("mechanicalState"->>'exhaustionLevel')::int, 0) >= 4 THEN 0.5 ELSE 1 END), 0),
               "hpCurrent" + ${delta} + LEAST("hpTemp", GREATEST(0, -${delta}))
             )
           ),
@@ -573,7 +561,7 @@ async function changeHp(
     if (publications) publications.add(stored.id);
     else await publishCharacter(stored.id);
 
-    return { hpCurrent: stored.hpCurrent, hpMax: stored.hpMax + hpBonus };
+    return { hpCurrent: stored.hpCurrent, hpMax: effectiveMaxHp(stored.hpMax + hpBonus, stored.mechanicalState) };
   }
 
   if (combatant.kind === 'CREATURE') {
@@ -582,7 +570,7 @@ async function changeHp(
     // O teto vem do snapshot carregado (não muda durante o combate); o valor
     // novo é calculado a partir do que está gravado, na mesma escrita atômica.
     const hpMax = combatant.hpMax ?? combatant.creature?.hpMax ?? 0;
-    const ceiling = Math.max(hpMax, 0);
+    const ceiling = effectiveMaxHp(hpMax, combatant.mechanicalState);
 
     const affected = await db.$executeRaw`
       UPDATE "combatants"
@@ -593,7 +581,7 @@ async function changeHp(
     if (affected === 0) return null;
 
     const stored = await db.combatant.findUniqueOrThrow({ where: { id: combatant.id } });
-    return { hpCurrent: stored.hpCurrent ?? 0, hpMax };
+    return { hpCurrent: stored.hpCurrent ?? 0, hpMax: ceiling };
   }
 
   return null;
@@ -649,23 +637,28 @@ function damageDefensesOf(target: CombatantSourced): {
   resistances: Set<string>;
   immunities: Set<string>;
   vulnerabilities: Set<string>;
+  allResistance?: boolean;
 } {
   if (target.kind === 'CHARACTER' && target.character) {
     const adjustments = characterAdjustments(target.character);
+    const effects = deriveConditionEffects(combatantMechanicalState(target));
     return {
       resistances: new Set([
         ...adjustments.resistances,
         ...(target.character.raceResistances ?? []),
       ]),
-      immunities: new Set(),
+      allResistance: effects.allDamageResistance,
+      immunities: new Set(effects.poisonImmune ? ['Veneno'] : []),
       vulnerabilities: new Set(),
     };
   }
 
   const creature = target.creature;
+  const effects = deriveConditionEffects(combatantMechanicalState(target));
   return {
+    allResistance: effects.allDamageResistance,
     resistances: new Set(damageTypeList(creature?.resistances)),
-    immunities: new Set(damageTypeList(creature?.immunities)),
+    immunities: new Set([...damageTypeList(creature?.immunities), ...(effects.poisonImmune ? ['Veneno'] : [])]),
     vulnerabilities: new Set(damageTypeList(creature?.vulnerabilities)),
   };
 }
@@ -680,17 +673,14 @@ function damageDefensesOf(target: CombatantSourced): {
 function applyDamageDefense(
   damageType: string | null,
   total: number,
-  defenses: { resistances: Set<string>; immunities: Set<string>; vulnerabilities: Set<string> },
+  defenses: { resistances: Set<string>; immunities: Set<string>; vulnerabilities: Set<string>; allResistance?: boolean },
 ): { applied: number; modifier: DamageComponentPayload['modifier'] } {
-  if (!damageType) return { applied: total, modifier: null };
-  if (defenses.immunities.has(damageType)) return { applied: 0, modifier: 'immunity' };
-  if (defenses.vulnerabilities.has(damageType)) {
-    return { applied: total * 2, modifier: 'vulnerability' };
-  }
-  if (defenses.resistances.has(damageType)) {
-    return { applied: Math.floor(total / 2), modifier: 'resistance' };
-  }
-  return { applied: total, modifier: null };
+  if (damageType && defenses.immunities.has(damageType)) return { applied: 0, modifier: 'immunity' };
+  const resistance = defenses.allResistance || Boolean(damageType && defenses.resistances.has(damageType));
+  const vulnerability = Boolean(damageType && defenses.vulnerabilities.has(damageType));
+  // PHB 2014: resistência primeiro (arredonda para baixo), depois vulnerabilidade.
+  const resisted = resistance ? Math.floor(total / 2) : total;
+  return { applied: vulnerability ? resisted * 2 : resisted, modifier: resistance && vulnerability ? 'resistance-vulnerability' : resistance ? 'resistance' : vulnerability ? 'vulnerability' : null };
 }
 
 /**
@@ -762,7 +752,7 @@ interface AmmoBonus {
 }
 
 /** Publica a ficha (inventário) para o dono e os mestres — `sheet:updated`. */
-async function publishCharacter(characterId: string): Promise<void> {
+export async function publishCharacter(characterId: string): Promise<void> {
   const updated = await prisma.character.findUnique({
     where: { id: characterId },
     include: { user: { select: { username: true } } },
@@ -900,6 +890,10 @@ export async function resolveAttack(
       throw new HttpError(attack.blocked, 400);
     }
 
+    const effects = deriveConditionEffects(combatantMechanicalState(attacker));
+    if (!effects.canAct) throw new HttpError('Condição impede realizar ataques ou Reações.', 409, 'CONFLICT');
+    const targetIdentities = [`combatant:${target.id}`, ...(target.characterId ? [`character:${target.characterId}`] : []), ...(target.creature?.kind === 'NPC' && combat.combatants.filter(item => item.creatureId === target.creatureId).length === 1 ? [`creature:${target.creatureId}`] : [])];
+    if (effects.charmers.some(source => targetIdentities.includes(`${source.kind}:${source.id}`))) throw new HttpError('Enfeitiçado: você não pode atacar quem o enfeitiçou.', 409, 'CONFLICT');
     const economy = economyOf(attacker.turnEconomy);
     if (input.prepared) {
       if (!economy.ready) throw new HttpError('Nenhuma ação preparada.', 409, 'CONFLICT');
@@ -955,8 +949,7 @@ export async function resolveAttack(
 
     // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
     // vale) — mesmo critério da janela de dados.
-    const advantage = Boolean(input.advantage) && !input.disadvantage;
-    const disadvantage = Boolean(input.disadvantage) && !input.advantage;
+    const { advantage, disadvantage } = conditionAttackMode(combatantMechanicalState(attacker), combatantMechanicalState(target), Boolean(input.advantage), Boolean(input.disadvantage));
     // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
     const firstRoll = rollD20();
     const secondRoll = advantage || disadvantage ? rollD20() : null;
@@ -1195,7 +1188,8 @@ export async function resolveAttack(
         const parts = defended.map((component) => {
           const label = component.type || 'sem tipo';
           if (component.modifier === 'immunity') return `${label} imune (0)`;
-          if (component.modifier === 'vulnerability') {
+          if (component.modifier === 'resistance-vulnerability') return `${label} resistência seguida de vulnerabilidade (${component.applied})`;
+        if (component.modifier === 'vulnerability') {
             return `${label} vulnerável (${component.rolled}×2=${component.applied})`;
           }
           return `${label} resistido (${component.rolled}→${component.applied})`;

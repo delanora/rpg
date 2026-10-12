@@ -1,3 +1,5 @@
+import { deriveConditionEffects, deriveSaveEffects, resolveRollMode } from '../shared/conditions.js';
+import { getMechanicalState } from '../mechanical/mechanical.service.js';
 import { randomUUID } from 'node:crypto';
 import type { Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
@@ -227,14 +229,24 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
   // Antes de sortear, avisa a mesa que os dados estão rolando (a janela de
   // quem assiste entra na mesma animação de queda). A rolagem da criação de
   // personagem passa longe disso: ela não é anunciada na mesa.
-  if (kind !== 'creation') markRollTumbling(actor);
+
 
   // Vantagem e desvantagem são mutuamente exclusivas; se vierem as duas, o
   // servidor ignora as duas (a interface já impede).
-  const advantage = Boolean(input.advantage) && !input.disadvantage;
-  const disadvantage = Boolean(input.disadvantage) && !input.advantage;
+  const ownCharacter = await prisma.character.findUnique({ where: { userId: actor.userId }, select: { id: true } });
+  const entity = input.entity ?? (ownCharacter ? { kind: 'character' as const, id: ownCharacter.id } : null);
+  const mechanical = entity && (kind === 'skill' || kind === 'save')
+    ? await getMechanicalState({ userId: actor.userId, username: actor.displayName, role: actor.role }, entity) : null;
+  const state = mechanical?.state ?? {};
+  const effects = deriveConditionEffects(state);
+  const advantages = input.advantage ? ['manual'] : [], disadvantages = input.disadvantage ? ['manual'] : [];
+  const mode = kind === 'save' && input.ability
+    ? deriveSaveEffects(state, input.ability, advantages, disadvantages)
+    : { autoFail: false, ...resolveRollMode(advantages, [...disadvantages, ...(kind === 'skill' && effects.checkDisadvantage || kind === 'save' && effects.saveDisadvantage ? ['conditions'] : [])]) };
+  const { advantage, disadvantage } = mode;
 
-  const dice = input.dice.flatMap((die) => rollGroup(die.sides, advantage, disadvantage));
+  if (kind !== 'creation' && !mode.autoFail) markRollTumbling(actor);
+  const dice = mode.autoFail ? [] : input.dice.flatMap((die) => rollGroup(die.sides, advantage, disadvantage));
 
   const bonus = input.bonus ?? 0;
   const diceTotal = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
@@ -250,12 +262,13 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
     id: randomUUID(),
     actorUserId: actor.userId,
     clientId: input.clientId ?? null,
-    actorName: character?.name?.trim() || actor.displayName,
+    actorName: mechanical?.name || character?.name?.trim() || actor.displayName,
     kind,
+    ...(mode.autoFail ? { autoFail: true } : {}),
     label: input.label ?? '',
     dice,
     bonus,
-    total: diceTotal + bonus,
+    total: mode.autoFail ? 0 : diceTotal + bonus,
     advantage,
     disadvantage,
     isPrivate: Boolean(input.private) && actor.role === 'MASTER',

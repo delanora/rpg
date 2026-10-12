@@ -1,3 +1,4 @@
+import { effectiveMaxHp, mechanicalStateOf } from '../shared/conditions.js';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
@@ -112,11 +113,19 @@ export async function updateCreature(
     data.localities = { set: patch.localityIds.map((localityId) => ({ id: localityId })) };
   }
 
-  const creature = await prisma.creature.update({
-    where: { id },
+  if (mechanicalStateOf(current.mechanicalState).exhaustionLevel >= 4) data.hpCurrent = Math.min((data.hpCurrent as number | undefined) ?? current.hpCurrent, effectiveMaxHp((data.hpMax as number | undefined) ?? current.hpMax, current.mechanicalState));
+  let creature;
+  try {
+    creature = await prisma.creature.update({
+    where: { id, version: current.version },
     data: data as Prisma.CreatureUpdateInput,
     include: withLocalities,
   });
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2025') throw new HttpError('Criatura mudou. Atualize e tente novamente.', 409, 'CONFLICT');
+    throw error;
+  }
+
 
   // Ícone trocado sai do disco (o antigo não é mais referenciado).
   if (patch.imageUrl !== undefined && patch.imageUrl !== current.imageUrl && current.imageUrl) {

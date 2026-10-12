@@ -1,3 +1,4 @@
+import { smokeConditions } from './smoke-conditions.js';
 import { smokeActionEconomy } from './smoke-action-economy.js';
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
@@ -153,6 +154,10 @@ async function api<T = any>(
   });
 
   const data = (await res.json().catch(() => ({}))) as T;
+  if (path === '/api/combat' && method === 'POST' && res.status === 201) {
+    const id = (data as { combat?: { id: string } }).combat?.id;
+    if (id) createdCombatIds.push(id);
+  }
   return { status: res.status, data };
 }
 
@@ -21466,6 +21471,7 @@ async function main(): Promise<void> {
   })();
 
   await smokeActionEconomy(BASE_URL, check);
+  await smokeConditions(BASE_URL, check);
 
   console.log(
     failures === 0
@@ -21484,8 +21490,8 @@ async function cleanup(): Promise<void> {
   if (createdCombatIds.length > 0) {
     await prisma.combat.deleteMany({ where: { id: { in: createdCombatIds } } });
   }
-  // Rede de segurança: se o teste abortou no meio de um combate, não deixa lixo.
-  await prisma.combat.deleteMany({ where: { status: { in: ['PENDING_INITIATIVE', 'ACTIVE'] } } });
+  // A API registra o id logo ao criar. Nunca apagar um combate não criado
+  // por este smoke: a mesa pode ter iniciado uma luta durante a execução.
 
   if (createdCreatureIds.length > 0) {
     await prisma.creature.deleteMany({ where: { id: { in: createdCreatureIds } } });

@@ -121,7 +121,8 @@ export function VitalsSection({
   // O destaque é do valor, não do card: só o HP entra em estado crítico. O
   // máximo é o EFETIVO (gravado + `hpBonus` de features/talentos).
   const hpMax = derived.hpMax;
-  const hpRatio = hpMax > 0 ? character.hpCurrent / hpMax : 0;
+  const maxModified = character.effectiveMaxHp !== hpMax;
+  const hpRatio = character.effectiveMaxHp > 0 ? character.hpCurrent / character.effectiveMaxHp : 0;
   const hpClass =
     hpRatio <= 0 ? ' is-down' : hpRatio <= 0.25 ? ' is-critical' : '';
 
@@ -208,12 +209,12 @@ export function VitalsSection({
             <span className="hp-editor-sep">/</span>
             <InlineField
               className="hp-editor-value hp-editor-value-max"
-              value={hpMax}
+              value={character.effectiveMaxHp}
               mode="number"
               min={0}
               max={9999}
-              readOnly={lockedConstruction}
-              ariaLabel="Pontos de vida máximos"
+              readOnly={lockedConstruction || maxModified}
+              ariaLabel="Pontos de vida máximos efetivos"
               // O editor mostra o máximo EFETIVO; o que se grava é a base (sem o
               // bônus derivado de features/talentos, que é recalculado).
               onCommit={(value) =>
@@ -222,9 +223,13 @@ export function VitalsSection({
             />
           </div>
 
+          {maxModified ? <div className="field-hint">
+            PV base: <InlineField value={character.hpMax} mode="number" min={0} max={9999} readOnly={lockedConstruction} ariaLabel="Pontos de vida máximos base" onCommit={value => update({ hpMax: clampInt(value, 0, 9999, character.hpMax) })} />
+            {' '}· redução aplicada somente ao máximo efetivo.
+          </div> : null}
           <HpBar
             current={character.hpCurrent}
-            max={hpMax}
+            max={character.effectiveMaxHp}
             temp={character.hpTemp}
             showLabel={false}
           />

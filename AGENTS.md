@@ -195,7 +195,7 @@ Padrão de modelagem: **campos simples e muito consultados em colunas**;
   `armorClass` (só override do mestre), `initiativeBonus`, `speed` (fracionário),
   `notes`, `version`, `creationFinalized`, `toolProficiencies` (`text[]`),
   `languages`, `darkvision`, `raceResistances`, `lastLevelUpRelease`, `raceId`/`subraceId`.
-- **JSONB:** `classes`, `classState`, `racialState`, `spells`, `hitDice`, `coins`,
+- **JSONB:** `classes`, `classState`, `racialState`, `mechanicalState`, `spells`, `hitDice`, `coins`,
   `levelHistory`, `features`, `inventory`, `attacks`, `skills`, `saves`,
   `proficiencies`, `raceChoices`, `creationDraft`.
 
@@ -433,7 +433,7 @@ significa que as respectivas fases futuras estejam concluídas.
 **Fase 6 — engine mecânica em andamento:**
 
 - 6.1 Action Economy — fundação implementada (PHB 2014)
-- 6.2 Conditions + Exhaustion
+- 6.2 Conditions + Exhaustion — implementada (PHB 2014)
 - 6.3 0 HP / Death Saves / Stabilization / Instant Death
 - 6.4 Concentration
 - 6.5 Generic Effect Engine
@@ -459,9 +459,51 @@ uma ação genérica. Fora de combate não há orçamento de turno na ficha.
 
 Lâmina Sedenta aguarda vínculo confiável de arma do pacto. Action Surge, Haste,
 Protection, Great Weapon Fighting e execução avançada de características
-permanecem pendentes. Não iniciar Fases 6.2+ sem especificação posterior e
+permanecem pendentes. Não iniciar Fases 6.3+ sem especificação posterior e
 decisões explícitas com o usuário. Decisões ambíguas devem ser reportadas antes
 de implementar.
+
+### Condições e Exaustão (6.2)
+
+- `mechanicalState` é JSONB dedicado em `Character`, `Creature` e `Combatant`:
+  instâncias/fontes de condições, `exhaustionLevel` separado (0–6) e log. Nunca
+  guardar essas condições em `classState`, `racialState` ou `turnEconomy`.
+- A mesma engine atende personagens, NPCs, templates e instâncias. Cada cópia
+  de criatura recebe snapshot inicial com IDs de condição próprios e evolui
+  independentemente; não devolve alterações ao bestiário ao encerrar combate.
+  Personagens mantêm o estado canônico da ficha. Condições não somem ao encerrar.
+- Regras agregadas em `shared/conditions.ts`. Efeitos de Incapacitated são
+  derivados para Paralyzed/Stunned/Petrified/Unconscious. Incapacitated isolado
+  não impede Movement. Advantage/disadvantage cancelam pela presença, não soma.
+- Orçamento de movimento nominal da 6.1 é preservado; `reconcileMovement`
+  projeta saldo utilizável pelo speed efetivo, sem apagar gasto. Ajustes do Mestre
+  mantêm limite absoluto, sem multiplicar saldo ao remover half speed. Levantar gasta
+  metade do speed efetivo e nenhuma Action/Bonus; fora de combate não há orçamento.
+- Saves tipados identificam atributo/entidade; falha automática STR/DEX não
+  rola dado. Rótulos livres não são interpretados como atributo. Desvantagens
+  de checks também alcançam iniciativa. Rolagem livre continua narrativa.
+- PV máximo efetivo é derivado, com piso inteiro em Exhaustion 4+, sem destruir
+  a base. Cura, descanso, progressão e PATCH respeitam a redução; baixar Exaustão
+  não cura PV. Long Rest NÃO reduz Exaustão automaticamente nesta fase.
+- API `/api/mechanical`: MASTER administra fontes e Exaustão; PLAYER só usa a
+  operação específica de levantar no próprio personagem. Versões de entidade
+  e combate + `MechanicalOperation` protegem concorrência/retry; aliases de
+  combatente de personagem usam chave canônica. Autoridade de regra é argumento
+  interno do domínio, nunca um campo aceito da requisição HTTP.
+- Petrified suspende Poisoned preexistente, não apaga sua fonte; rejeita novo
+  envenenamento, imuniza dano Veneno e resiste a todo dano. Resistência se aplica
+  antes de vulnerabilidade. Não há catálogo estruturado de condition immunities.
+- Unconscious causa Prone; a queda persiste depois de acordar até levantar ou
+  remoção explícita. Largar objetos é assistido/logado: nunca guardar na mochila
+  ou inventar ground items. Invisible não aplica Hidden.
+- Sem distância/posição/linha de visão confiáveis: Frightened fica assistido;
+  modificadores contra Prone e críticos de proximidade ficam pendentes. Checks
+  de visão/audição, sociais, doença, peso e envelhecimento expõem flags futuros.
+- Exhaustion 6 sinaliza fatalidade, sem zerar PV, criar dead ou death saves.
+  Death lifecycle, concentração, magias e duração genérica continuam futuros.
+- Realtime reutiliza ficha/criatura/combate e acrescenta `mechanical:updated`
+  tipado. Publicação só após commit. `smoke-conditions.ts` integra o smoke; a
+  limpeza de combates do teste se limita aos IDs criados pela própria execução.
 
 ### Marcos da Fase 5 e correção posterior
 
@@ -511,7 +553,7 @@ Longo (Long Rest):
 **Não existe conversão global automática de once/day para Long Rest.** Para
 qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
-> Migrations: **42**. Os hashes acima são o estado no momento em que este arquivo
+> Migrations: **43**. Os hashes acima são o estado no momento em que este arquivo
 > foi escrito — confirme com `git log` antes de assumir.
 
 ### Lacunas conhecidas (não são bugs, são fases futuras)

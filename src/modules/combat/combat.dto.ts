@@ -1,3 +1,4 @@
+import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, reconcileMovement } from '../shared/conditions.js';
 import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
 import { economyOf, type TurnEconomy } from '../shared/action-economy.js';
@@ -27,6 +28,10 @@ export interface CombatDto {
 
 export interface CombatantDto {
   turnEconomy: TurnEconomy;
+  mechanicalState: ReturnType<typeof mechanicalStateOf>;
+  conditionEffects: ReturnType<typeof deriveConditionEffects>;
+  mechanicalVersion: number;
+  effectiveSpeed: number;
   id: string;
   kind: CombatantKind;
   /** Ids de origem, para o cliente localizar a ficha/criatura correspondente. */
@@ -79,6 +84,8 @@ export interface CombatSourced {
 
 export interface CombatantSourced {
   turnEconomy: unknown;
+  mechanicalState: unknown;
+  mechanicalVersion: number;
   id: string;
   kind: CombatantKind;
   characterId: string | null;
@@ -130,6 +137,10 @@ export function combatantAttacks(combatant: CombatantSourced): CombatAttack[] {
   return [];
 }
 
+export function combatantMechanicalState(combatant: CombatantSourced) {
+  return combatant.character?.mechanicalState ?? combatant.mechanicalState;
+}
+
 function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const source = combatant.character ?? combatant.creature;
 
@@ -139,8 +150,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   // Personagens: o PV máximo é DERIVADO (gravado + `hpBonus` de features/talentos
   // — Resiliência Dracônica, Vigoroso). Criaturas: o snapshot do combatente.
   const hpMax =
-    combatant.hpMax ??
-    (combatant.character ? characterMaxHp(combatant.character) : (source?.hpMax ?? 0));
+    combatant.character ? characterMaxHp(combatant.character) : effectiveMaxHp(combatant.hpMax ?? source?.hpMax ?? 0, combatant.mechanicalState);
   // A CA de personagem é CALCULADA (atributos + equipamento), nunca lida de
   // uma coluna — a ficha só guarda o override manual do mestre. O MESMO detalhe
   // traz o estado de proficiência (armadura/escudo), para o combate enxergar o
@@ -154,7 +164,11 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     0;
 
   return {
-    turnEconomy: economyOf(combatant.turnEconomy),
+    turnEconomy: reconcileMovement(economyOf(combatant.turnEconomy), source?.speed ?? 0, effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant))),
+    mechanicalState: mechanicalStateOf(combatantMechanicalState(combatant)),
+    conditionEffects: deriveConditionEffects(combatantMechanicalState(combatant)),
+    mechanicalVersion: combatant.character?.version ?? combatant.mechanicalVersion,
+    effectiveSpeed: effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant)),
     id: combatant.id,
     kind: combatant.kind,
     characterId: combatant.characterId,

@@ -25,7 +25,7 @@ export function EconomyControls({ combat, combatant, isMaster, busy, onRun }: {
   if (!combatant) return null;
   const ownTurn = combat.currentCombatantId === combatant.id;
   const economy = combatant.turnEconomy;
-  const canAction = ownTurn && economy.actionsUsed < economy.actionsGranted;
+  const canAction = combatant.conditionEffects.canAct && ownTurn && economy.actionsUsed < economy.actionsGranted;
   return (
     <section className="combat-block">
       <h3>Economia — {combatant.name}</h3>
@@ -43,11 +43,11 @@ export function EconomyControls({ combat, combatant, isMaster, busy, onRun }: {
       <p className="field-hint">Efeitos de esquiva, ajuda, esconder e demais testes são resolvidos pelo Mestre. Preparar magia aguarda concentração e execução de magias.</p>
       <div className="hp-controls">
         <input type="number" min="0.01" step="0.5" aria-label="Distância em metros" value={distance} onChange={event => setDistance(event.target.value)} />
-        <button className="btn btn-small" disabled={busy || !ownTurn || !Number.isFinite(Number(distance)) || Number(distance) <= 0} onClick={() => onRun(() => executeEconomyAction(combat, { combatantId: combatant.id, action: 'move', distance: Number(distance) }))}>Mover (m)</button>
+        <button className="btn btn-small" disabled={busy || combatant.effectiveSpeed <= 0 || !ownTurn || !Number.isFinite(Number(distance)) || Number(distance) <= 0} onClick={() => onRun(() => executeEconomyAction(combat, { combatantId: combatant.id, action: 'move', distance: Number(distance) }))}>Mover (m)</button>
       </div>
       {economy.ready ? <div>
         <p className="field-hint">Preparada: {economy.ready.trigger} → {economy.ready.intent}</p>
-        <button className="btn btn-small" disabled={busy || !economy.reactionAvailable} onClick={() => onRun(() => executeEconomyAction(combat, { combatantId: combatant.id, action: 'execute-ready' }))}>Confirmar gatilho e usar Reação (assistido)</button>
+        <button className="btn btn-small" disabled={busy || !combatant.conditionEffects.canReact || !economy.reactionAvailable} onClick={() => onRun(() => executeEconomyAction(combat, { combatantId: combatant.id, action: 'execute-ready' }))}>Confirmar gatilho e usar Reação (assistido)</button>
         <p className="field-hint">Para rolar o ataque preparado, use a opção de Reação no painel Atacar.</p>
       </div> : null}
       {isMaster ? <details>

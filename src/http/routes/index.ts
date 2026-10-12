@@ -1,3 +1,4 @@
+import { mechanicalRouter } from '../../modules/mechanical/mechanical.routes.js';
 import { Router } from 'express';
 import { authRouter } from '../../modules/auth/auth.routes.js';
 import { charactersRouter } from '../../modules/characters/characters.routes.js';
@@ -41,3 +42,5 @@ apiRouter.use('/presentation', presentationRouter);
 apiRouter.use('/combat', combatRouter);
 apiRouter.use('/rest', restRouter);
 apiRouter.use('/rest', longRestRouter);
+
+apiRouter.use('/mechanical', mechanicalRouter);

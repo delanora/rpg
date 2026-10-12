@@ -13,6 +13,7 @@ import type { DamageComponentPayload, DamagePartPayload } from '../../types';
 
 const DEFENSE_LABEL: Record<NonNullable<DamageComponentPayload['modifier']>, string> = {
   resistance: 'resistência',
+  'resistance-vulnerability': 'resistência e vulnerabilidade',
   immunity: 'imunidade',
   vulnerability: 'vulnerabilidade',
 };

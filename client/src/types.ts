@@ -781,6 +781,10 @@ export interface CharacterTool {
 
 /** Ficha completa devolvida pela API. */
 export interface Character {
+  mechanicalState: MechanicalState;
+  conditionEffects: ConditionEffects;
+  effectiveMaxHp: number;
+  effectiveSpeed: number;
   id: string;
   userId: string;
   ownerUsername?: string;
@@ -1601,6 +1605,10 @@ export interface LocalityPatch {
 
 /** Criatura/NPC cadastrado pelo mestre. */
 export interface Creature {
+  mechanicalState: MechanicalState;
+  conditionEffects: ConditionEffects;
+  effectiveMaxHp: number;
+  effectiveSpeed: number;
   id: string;
   name: string;
   kind: CreatureKind;
@@ -1909,12 +1917,17 @@ export interface TurnEconomy {
   reactionAvailable: boolean;
   movementBudget: number;
   movementUsed: number;
+  movementOverrideBudget: number | null;
   attackAction: { attackActionId: string; attacksMade: number; attacksAllowed: number } | null;
   lightWeaponsAttacked: string[];
   ready: { trigger: string; intent: string } | null;
 }
 
 export interface CombatantDto {
+  mechanicalState: MechanicalState;
+  conditionEffects: ConditionEffects;
+  mechanicalVersion: number;
+  effectiveSpeed: number;
   turnEconomy: TurnEconomy;
   id: string;
   kind: CombatantKind;
@@ -2347,6 +2360,7 @@ export interface RolledDie {
 }
 
 export interface DiceRollDto {
+  autoFail?: boolean;
   id: string;
   /** Dono da rolagem — casa a rolagem com o tabuleiro anunciado. */
   actorUserId: string;
@@ -2428,6 +2442,8 @@ export interface TableRollActiveRequest {
 
 /** Pedido de rolagem enviado ao servidor. */
 export interface TableRollRequest {
+  entity?: MechanicalEntity;
+  ability?: AbilityKey;
   dice: { sides: number }[];
   advantage?: boolean;
   disadvantage?: boolean;
@@ -2448,7 +2464,7 @@ export interface DamageComponentPayload {
   expression: string;
   rolled: number;
   applied: number;
-  modifier: 'resistance' | 'immunity' | 'vulnerability' | null;
+  modifier: 'resistance' | 'immunity' | 'vulnerability' | 'resistance-vulnerability' | null;
   /** Quebra legível do que compôs `rolled` (dados + bônus por parte). */
   breakdown: DamageBreakdownPayload;
 }
@@ -2485,3 +2501,28 @@ export interface AttackResolvedPayload {
   targetStatsHidden: boolean;
   at: string;
 }
+
+export type MechanicalEntity = { kind: 'character' | 'creature' | 'combatant'; id: string };
+export interface ConditionInstance {
+  id: string; condition: string; sourceType?: string; sourceId?: string;
+  sourceEntity?: MechanicalEntity; sourceLabel?: string; appliedBy?: string; appliedAt: string;
+}
+export interface MechanicalState {
+  conditions: ConditionInstance[]; exhaustionLevel: number;
+  log: { id: string; message: string; actorName: string; at: string }[];
+}
+export interface ConditionEffects {
+  exhaustionSummary: string[];
+  assistedNotes: string[];
+  labels: Record<string, string>; active: string[];
+  canAct: boolean; canReact: boolean; canBonusAct: boolean; incapacitated: boolean;
+  prone: boolean; speedZero: boolean; poisonSuspended: boolean; fatalByExhaustion: boolean;
+  fearRequiresLineOfSight: boolean; proximityCritical: boolean; proneTargetRequiresDistance: boolean;
+  sightChecksAutoFail: boolean; hearingChecksAutoFail: boolean; dropsHeldObjects: boolean;
+}
+export interface MechanicalDto {
+  entity: MechanicalEntity; name: string; version: number; state: MechanicalState; effects: ConditionEffects;
+  effectiveSpeed: number; effectiveMaxHp: number; hpCurrent: number;
+  combat: { id: string; version: number; status: string } | null;
+}
+export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }

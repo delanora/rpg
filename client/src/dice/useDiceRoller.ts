@@ -47,6 +47,8 @@ export interface RemoteBoard {
 
 /** Contexto da rolagem aberta (livre ou de perícia/salvaguarda). */
 export interface RollContext {
+  entity?: import('../types').MechanicalEntity;
+  ability?: import('../types').AbilityKey;
   kind: DiceRollKind;
   /** Perícia/salvaguarda; vazio na rolagem livre. */
   label: string;
@@ -185,6 +187,10 @@ export function useDiceRoller(user: SessionUser) {
         disadvantage: payload.board.disadvantage,
       };
 
+      if (payload.lastRoll?.autoFail) {
+        setRemote({ ...board, phase: 'settled', result: payload.lastRoll });
+        return;
+      }
       if (!tumbling) {
         setRemote({ ...board, phase: 'idle', result: null });
         return;
@@ -362,6 +368,8 @@ export function useDiceRoller(user: SessionUser) {
         kind: context?.kind ?? 'free',
         private: isPrivate && isMaster,
         clientId,
+        entity: context?.entity,
+        ability: context?.ability,
       });
 
       setResult(roll);

@@ -37,7 +37,7 @@ function formatModifier(value: number): string {
  * rolagem (visão do mestre), a linha fica só de leitura, sem o botão.
  */
 export function ToolsSection({ character, onRoll }: SheetSectionProps & {
-  onRoll?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void;
+  onRoll?: (input: { kind: 'skill' | 'save'; label: string; bonus: number; entity?: import('../../types').MechanicalEntity }) => void;
 }) {
   const { derived } = character;
 
@@ -109,7 +109,7 @@ export function ToolsSection({ character, onRoll }: SheetSectionProps & {
                       title={isExpertise ? EXPERTISE_TOOLTIP : 'Rolar teste de ferramenta'}
                       onClick={() =>
                         onRoll({
-                          kind: 'skill',
+                          kind: 'skill', entity: { kind: 'character', id: character.id },
                           label: `${tool.name} (${ABILITY_LABELS[ability]})`,
                           bonus,
                         })

@@ -192,7 +192,7 @@ export function CombatActionPanel({
   const available = executingPrepared
     ? Boolean(economy?.ready && economy.reactionAvailable && !offhand)
     : combat.currentCombatantId === attacker?.id && Boolean(economy && (offhand ? !economy.bonusActionUsed : continuation || economy.actionsUsed < economy.actionsGranted));
-  const ready = Boolean(attacker && attackId && targetId) && !ammoMissing && available;
+  const ready = Boolean(attacker && attackId && targetId) && !ammoMissing && available && Boolean(attacker?.conditionEffects.canAct);
 
   return (
     <section className="combat-block attack-panel">

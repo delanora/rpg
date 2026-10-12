@@ -1,3 +1,4 @@
+import type { MechanicalUpdatedPayload } from '../realtime/events.js';
 import type { Role } from '@prisma/client';
 import type { Server, Socket } from 'socket.io';
 import type {
@@ -59,6 +60,7 @@ export interface ServerToClientEvents {
 
   // Combate
   'combat:started': (payload: CombatStartedPayload) => void;
+  'mechanical:updated': (payload: MechanicalUpdatedPayload) => void;
   'combat:updated': (payload: CombatUpdatedPayload) => void;
   'combat:turn': (payload: CombatTurnPayload) => void;
   'combat:ended': (payload: CombatEndedPayload) => void;
