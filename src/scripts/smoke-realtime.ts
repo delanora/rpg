@@ -40,6 +40,16 @@ import {
   raceHpBonus,
   raceHpBonusDelta,
 } from '../modules/shared/races/index.js';
+import {
+  allRacialResourceDefinitions,
+  invalidRacialResource,
+  normalizeRacialState,
+  racialResourceDefinitions,
+  racialResources,
+  racialResourcesRestoredByRest,
+  reconcileRacialResourceState,
+  restoreRacialResourcesForRest,
+} from '../modules/shared/races/resources.js';
 import { getSpell, spellsByLevel, SPELLS } from '../modules/shared/spells/index.js';
 
 /**
@@ -15880,6 +15890,7 @@ async function main(): Promise<void> {
             hitDice?: unknown;
             spells?: unknown;
             classState?: unknown;
+            racialState?: unknown;
             raceId?: string;
             features?: unknown;
           }
@@ -15902,6 +15913,7 @@ async function main(): Promise<void> {
             hitDice: (spec.hitDice ?? {}) as any,
             spells: (spec.spells ?? { list: [], slotsUsed: {} }) as any,
             classState: (spec.classState ?? { active: [], used: {}, choices: {} }) as any,
+            racialState: (spec.racialState ?? {}) as any,
             ...(spec.raceId === undefined ? {} : { raceId: spec.raceId }),
             ...(spec.features === undefined ? {} : { features: spec.features as any }),
           });
@@ -16738,10 +16750,12 @@ async function main(): Promise<void> {
               'second-wind': 1,
               'action-surge': 1,
               'narrative-charges': 2,
-              'race-spell:hellish-rebuke': 1,
             },
             choices: {},
           },
+          // 5.3E.1: o uso diário da magia racial vive no `racialState` PRÓPRIO
+          // (não mais em `classState.used['race-spell:...']`).
+          racialState: { used: { 'tiefling-hellish-rebuke': 1 } },
           raceId: 'tiefling',
           features: lcTextFeature,
         },
@@ -16828,8 +16842,9 @@ async function main(): Promise<void> {
       );
       check(
         '49.47) C: uso racial 1x/descanso longo é resetado (Tiefling → Repreensão Infernal)',
-        (lcAfterC.classState as any)?.used?.['race-spell:hellish-rebuke'] === undefined,
-        JSON.stringify(lcAfterC.classState),
+        (lcAfterC.racialState as any)?.used?.['tiefling-hellish-rebuke'] === undefined &&
+          (lcAfterC.classState as any)?.used?.['race-spell:hellish-rebuke'] === undefined,
+        JSON.stringify({ racial: lcAfterC.racialState, class: lcAfterC.classState }),
       );
       check(
         '49.48) C: traço TEXTUAL não ganha efeito inventado (features intactas)',
@@ -20751,6 +20766,485 @@ async function main(): Promise<void> {
         token: masterToken,
         body: { operationId: `op-${suffix}-59-lr-shadow-player-abort` },
       });
+    })();
+  })();
+
+  console.log('\n60) Recursos raciais PHB 2014 (5.3E.1)');
+  // IIFE: mantém o corpo fora da análise de fluxo do `main` (arquivo grande).
+  await (async () => {
+    // --- A–E/I/O/T/X: normalização, catálogo e reconciliação (unidade) ------–
+    await (async () => {
+      check(
+        '60.A) normalizeRacialState vazio/ausente devolve `used` vazio (novo personagem = default)',
+        JSON.stringify(normalizeRacialState({})) === JSON.stringify({ used: {} }) &&
+          JSON.stringify(normalizeRacialState(undefined)) === JSON.stringify({ used: {} }),
+        JSON.stringify(normalizeRacialState({})),
+      );
+      const malformed = normalizeRacialState({
+        used: { ok: 2, frac: 1.9, neg: -3, nan: Number.NaN, inf: Infinity, str: 'x', nul: null },
+      });
+      check(
+        '60.B) racialState MALFORMADO é normalizado sem quebrar (só inteiros finitos >= 0)',
+        malformed.used.ok === 2 &&
+          malformed.used.frac === 1 &&
+          malformed.used.neg === undefined &&
+          malformed.used.nan === undefined &&
+          malformed.used.inf === undefined &&
+          malformed.used.str === undefined &&
+          malformed.used.nul === undefined,
+        JSON.stringify(malformed),
+      );
+
+      const allDefs = allRacialResourceDefinitions();
+      check(
+        '60.CAT) catálogo racial válido; Sopro curto, Resistência/once-day longos',
+        allDefs.length >= 5 &&
+          allDefs.every((definition) => invalidRacialResource(definition) === null) &&
+          racialResourceDefinitions({ raceId: 'dragonborn' }).find((d) => d.id === 'breath-weapon')
+            ?.recharge === 'short' &&
+          racialResourceDefinitions({ raceId: 'half-orc' }).find(
+            (d) => d.id === 'relentless-endurance',
+          )?.recharge === 'long' &&
+          racialResourceDefinitions({ raceId: 'tiefling' }, 5).every((d) => d.recharge === 'long') &&
+          racialResourceDefinitions({ raceId: 'elf', subraceId: 'drow-elf' }, 5).every(
+            (d) => d.recharge === 'long',
+          ),
+        JSON.stringify(allDefs.map((d) => [d.id, d.recharge])),
+      );
+
+      // C/D) clamp e remoção de órfão na reconciliação (troca de raça).
+      const drowRes = racialResources(
+        { raceId: 'elf', subraceId: 'drow-elf' },
+        { used: {} },
+        5,
+      );
+      const reconciled = reconcileRacialResourceState(
+        { used: { 'drow-faerie-fire': 1, 'breath-weapon': 1, 'drow-darkness': 3 } },
+        drowRes,
+      );
+      check(
+        '60.C/D) reconciliação: órfão (Sopro) fora, uso válido preservado e used>max clampado',
+        reconciled.used['breath-weapon'] === undefined &&
+          reconciled.used['drow-faerie-fire'] === 1 &&
+          reconciled.used['drow-darkness'] === 1,
+        JSON.stringify(reconciled),
+      );
+      const toHuman = reconcileRacialResourceState(
+        { used: { 'drow-faerie-fire': 1 } },
+        racialResources({ raceId: 'human' }, { used: {} }, 5),
+      );
+      check(
+        '60.D2) virar Humano não deixa estado racial órfão',
+        JSON.stringify(toHuman.used) === '{}',
+        JSON.stringify(toHuman),
+      );
+
+      // I/O/T/X) recarga por descanso (unidade).
+      const tieflingRes = racialResources(
+        { raceId: 'tiefling' },
+        { used: {} },
+        5,
+      );
+      const afterShort = restoreRacialResourcesForRest(
+        { used: { 'tiefling-hellish-rebuke': 1 } },
+        tieflingRes,
+        'short',
+      );
+      const afterLong = restoreRacialResourcesForRest(
+        { used: { 'tiefling-hellish-rebuke': 1, 'tiefling-darkness': 1 } },
+        tieflingRes,
+        'long',
+      );
+      const breathRes = racialResources({ raceId: 'dragonborn' }, { used: {} }, 1);
+      const breathAfterShort = restoreRacialResourcesForRest(
+        { used: { 'breath-weapon': 1 } },
+        breathRes,
+        'short',
+      );
+      const restoredNames = racialResourcesRestoredByRest(
+        { used: { 'tiefling-hellish-rebuke': 1 } },
+        tieflingRes,
+        'long',
+      ).map((resource) => resource.name);
+      check(
+        '60.I/O/T/X) Sopro volta no CURTO; daily do Tiefling só no LONGO; nomes restaurados',
+        afterShort.used['tiefling-hellish-rebuke'] === 1 &&
+          afterLong.used['tiefling-hellish-rebuke'] === undefined &&
+          afterLong.used['tiefling-darkness'] === undefined &&
+          breathAfterShort.used['breath-weapon'] === undefined &&
+          restoredNames.join() === 'Repreensão Infernal',
+        JSON.stringify({ afterShort, afterLong, breathAfterShort, restoredNames }),
+      );
+    })();
+
+    // --- Integração pelo endpoint server-authoritative ----------------------
+    await (async () => {
+      const rrUser = await prisma.user.create({
+        data: {
+          username: `racial_${suffix}`,
+          displayName: 'Recursos Raciais 5.3E.1',
+          passwordHash: 'nao-usado-no-smoke',
+        },
+        select: { id: true, username: true, displayName: true, role: true },
+      });
+      createdUsernames.push(rrUser.username);
+      const token = signToken({
+        sub: rrUser.id,
+        username: rrUser.username,
+        displayName: rrUser.displayName,
+        role: rrUser.role,
+      });
+      const userId = rrUser.id;
+      await api('/api/characters/me', { method: 'POST', token, body: {} });
+      const sheet = async () => (await api('/api/characters/me', { token })).data.character;
+      const setSheet = (data: Record<string, unknown>) =>
+        prisma.character.update({ where: { userId }, data: data as any });
+      /** Grava a ficha-base: raça/sub-raça + escolhas + racialState + classes. */
+      const setupRace = async (
+        race: Record<string, unknown>,
+        classes: { classKey: string; level: number }[],
+      ) => {
+        await setCharacterClasses(userId, classes);
+        await setSheet({
+          raceId: null,
+          subraceId: null,
+          customRaceId: null,
+          raceChoices: {},
+          racialState: {},
+          classState: { active: [], used: {}, choices: {} },
+          ...race,
+        });
+      };
+      const resOf = (sheetData: any, id: string) =>
+        (sheetData?.racialAdjustments?.resources ?? []).find((r: any) => r.id === id);
+      const useRacial = (resourceId: string, expectedVersion: number, tag: string) =>
+        api('/api/characters/me/racial-features/use', {
+          method: 'POST',
+          token,
+          body: { resourceId, expectedVersion, operationId: `op-${suffix}-60-${tag}` },
+        });
+      const longRequest = async (tag: string): Promise<string> => {
+        const created = await api('/api/rest/long/request', {
+          method: 'POST',
+          token,
+          body: { operationId: `op-${suffix}-60-lr-${tag}-create` },
+        });
+        const requestId = created.data.id as string;
+        await api(`/api/rest/long/${requestId}/force-approve`, {
+          method: 'POST',
+          token: masterToken,
+          body: { operationId: `op-${suffix}-60-lr-${tag}-approve` },
+        });
+        return requestId;
+      };
+      const forceComplete = (requestId: string, tag: string) =>
+        api(`/api/rest/long/${requestId}/force-complete`, {
+          method: 'POST',
+          token: masterToken,
+          body: {
+            operationId: `op-${suffix}-60-lr-${tag}-complete`,
+            campSupplyOverride: { type: 'NARRATIVE' },
+          },
+        });
+
+      // A) ficha nova: racialState default e sem recursos raciais.
+      const fresh = await sheet();
+      check(
+        '60.A2) ficha nova expõe racialState vazio/default e nenhum recurso racial',
+        JSON.stringify(fresh.racialState) === JSON.stringify({ used: {} }) &&
+          (fresh.racialAdjustments.resources as any[]).length === 0,
+        JSON.stringify({ racialState: fresh.racialState, adj: fresh.racialAdjustments }),
+      );
+
+      // --- DRACONATO: F/G/H/J/K + I (Descanso Curto) ------------------------
+      await setupRace(
+        { raceId: 'dragonborn', raceChoices: { 'draconic-ancestry': 'red' }, race: 'Draconato' },
+        [{ classKey: 'fighter', level: 1 }],
+      );
+      const dragon = await sheet();
+      check(
+        '60.F) Draconato possui o Sopro Dracônico (origin race, max 1, recarga curta)',
+        resOf(dragon, 'breath-weapon')?.max === 1 &&
+          resOf(dragon, 'breath-weapon')?.recharge === 'short' &&
+          resOf(dragon, 'breath-weapon')?.origin === 'race' &&
+          resOf(dragon, 'breath-weapon')?.remaining === 1,
+        JSON.stringify(resOf(dragon, 'breath-weapon')),
+      );
+      const useG = await useRacial('breath-weapon', dragon.version, 'db-1');
+      check(
+        '60.G) uso válido do Sopro consome 1 (used 1 / remaining 0)',
+        useG.status === 200 &&
+          useG.data.used === 1 &&
+          useG.data.remaining === 0 &&
+          useG.data.character.racialState.used['breath-weapon'] === 1,
+        JSON.stringify({ status: useG.status, used: useG.data?.used }),
+      );
+      const useH = await useRacial('breath-weapon', useG.data.character.version, 'db-2');
+      check(
+        '60.H) sem uso restante → 409 INSUFFICIENT_RESOURCE',
+        useH.status === 409 && useH.data?.error === 'INSUFFICIENT_RESOURCE',
+        JSON.stringify({ status: useH.status, error: useH.data?.error }),
+      );
+      const useK = await useRacial('breath-weapon', useG.data.version + 50, 'db-1');
+      check(
+        '60.K) operationId repetido NÃO gasta de novo (replay do snapshot original)',
+        useK.status === 200 && useK.data.replayed === true && useK.data.used === 1,
+        JSON.stringify({ status: useK.status, replayed: useK.data?.replayed, used: useK.data?.used }),
+      );
+      // J) concorrência: duas chamadas com a MESMA versão consomem um uso só.
+      await setSheet({ racialState: {} });
+      const vJ = (await sheet()).version;
+      const [jA, jB] = await Promise.all([
+        useRacial('breath-weapon', vJ, 'db-j1'),
+        useRacial('breath-weapon', vJ, 'db-j2'),
+      ]);
+      const jWinner = jA.status === 200 ? jA : jB;
+      check(
+        '60.J) duas chamadas concorrentes: uma vence e a outra 409 (o último uso é único)',
+        [jA.status, jB.status].sort().join() === '200,409' && jWinner.data.used === 1,
+        JSON.stringify({ a: jA.status, b: jB.status, used: jWinner.data?.used }),
+      );
+      // I) Descanso Curto individual restaura o Sopro (recarga curta).
+      await setSheet({ racialState: { used: { 'breath-weapon': 1 } } });
+      const srStart = await api('/api/characters/me/rest/short/start', {
+        method: 'POST',
+        token,
+        body: { expectedVersion: (await sheet()).version, operationId: `op-${suffix}-60-sr-start` },
+      });
+      const srDone = await api('/api/characters/me/rest/short/complete', {
+        method: 'POST',
+        token,
+        body: {
+          sessionId: srStart.data.session.id,
+          expectedVersion: (await sheet()).version,
+          operationId: `op-${suffix}-60-sr-complete`,
+        },
+      });
+      check(
+        '60.I) Descanso Curto restaura o Sopro e reporta o nome no resultado',
+        srDone.status === 200 &&
+          srDone.data.character.racialState.used['breath-weapon'] === undefined &&
+          (srDone.data.racialResourcesRestored ?? []).includes('Arma de Sopro'),
+        JSON.stringify({
+          used: srDone.data?.character?.racialState?.used,
+          restored: srDone.data?.racialResourcesRestored,
+        }),
+      );
+
+      // --- MEIO-ORC: L/M/N/P + O (Descanso Longo) ---------------------------
+      await setupRace({ raceId: 'half-orc', race: 'Meio-Orc' }, [{ classKey: 'fighter', level: 3 }]);
+      const orc = await sheet();
+      const hpBefore = orc.hpCurrent;
+      check(
+        '60.L) Meio-Orc possui Resistência Implacável (max 1, recarga longa)',
+        resOf(orc, 'relentless-endurance')?.max === 1 &&
+          resOf(orc, 'relentless-endurance')?.recharge === 'long',
+        JSON.stringify(resOf(orc, 'relentless-endurance')),
+      );
+      const useM = await useRacial('relentless-endurance', orc.version, 'ho-1');
+      check(
+        '60.M/P) uso manual marca 1 uso e NÃO altera o PV',
+        useM.status === 200 &&
+          useM.data.used === 1 &&
+          useM.data.character.hpCurrent === hpBefore,
+        JSON.stringify({ used: useM.data?.used, hp: useM.data?.character?.hpCurrent, hpBefore }),
+      );
+      const useN = await useRacial(
+        'relentless-endurance',
+        useM.data.character.version,
+        'ho-2',
+      );
+      check(
+        '60.N) segunda tentativa → 409 INSUFFICIENT_RESOURCE',
+        useN.status === 409 && useN.data?.error === 'INSUFFICIENT_RESOURCE',
+        JSON.stringify({ status: useN.status }),
+      );
+      const lrOrc = await longRequest('orc');
+      await forceComplete(lrOrc, 'orc');
+      check(
+        '60.O) Descanso Longo restaura a Resistência Implacável',
+        (await sheet()).racialState.used['relentless-endurance'] === undefined,
+        JSON.stringify((await sheet()).racialState),
+      );
+
+      // --- TIEFLING: Q/R/S + T (Descanso Longo) -----------------------------
+      await setupRace({ raceId: 'tiefling', race: 'Tiefling' }, [{ classKey: 'wizard', level: 5 }]);
+      const tiefling = await sheet();
+      check(
+        '60.Q) magias raciais AT-WILL (Taumaturgia) NÃO geram recurso',
+        (tiefling.racialAdjustments.resources as any[]).every(
+          (r: any) => r.spellId !== 'thaumaturgy',
+        ) &&
+          (tiefling.spells.list as any[]).some((s: any) => s.id === 'thaumaturgy' && s.race),
+        JSON.stringify((tiefling.racialAdjustments.resources as any[]).map((r: any) => r.spellId)),
+      );
+      check(
+        '60.R) magias limitadas do Legado Infernal geram recursos LONG (um por magia)',
+        resOf(tiefling, 'tiefling-hellish-rebuke')?.recharge === 'long' &&
+          resOf(tiefling, 'tiefling-darkness')?.recharge === 'long' &&
+          resOf(tiefling, 'tiefling-hellish-rebuke')?.spellId === 'hellish-rebuke',
+        JSON.stringify((tiefling.racialAdjustments.resources as any[]).map((r: any) => r.id)),
+      );
+      const useS = await useRacial('tiefling-hellish-rebuke', tiefling.version, 'tf-1');
+      check(
+        '60.S) uso consome SOMENTE aquele recurso (Escuridão segue disponível)',
+        useS.status === 200 &&
+          useS.data.character.racialState.used['tiefling-hellish-rebuke'] === 1 &&
+          resOf(useS.data.character, 'tiefling-darkness')?.remaining === 1,
+        JSON.stringify(useS.data?.character?.racialState),
+      );
+      const lrTf = await longRequest('tf');
+      await forceComplete(lrTf, 'tf');
+      check(
+        '60.T) Descanso Longo restaura o uso diário do Legado Infernal',
+        (await sheet()).racialState.used['tiefling-hellish-rebuke'] === undefined,
+        JSON.stringify((await sheet()).racialState),
+      );
+
+      // --- DROW: U/V/W + X (Descanso Longo) ---------------------------------
+      await setupRace(
+        { raceId: 'elf', subraceId: 'drow-elf', race: 'Elfo (Drow)' },
+        [{ classKey: 'wizard', level: 5 }],
+      );
+      const drow = await sheet();
+      check(
+        '60.U) Magia Drow AT-WILL (Luzes Dançantes) NÃO gera recurso',
+        (drow.racialAdjustments.resources as any[]).every(
+          (r: any) => r.spellId !== 'dancing-lights',
+        ) &&
+          (drow.spells.list as any[]).some((s: any) => s.id === 'dancing-lights' && s.race),
+        JSON.stringify((drow.racialAdjustments.resources as any[]).map((r: any) => r.spellId)),
+      );
+      check(
+        '60.V) Fogo das Fadas e Escuridão geram recursos LONG independentes',
+        resOf(drow, 'drow-faerie-fire')?.recharge === 'long' &&
+          resOf(drow, 'drow-darkness')?.recharge === 'long' &&
+          resOf(drow, 'drow-faerie-fire')?.max === 1 &&
+          resOf(drow, 'drow-darkness')?.max === 1,
+        JSON.stringify((drow.racialAdjustments.resources as any[]).map((r: any) => r.id)),
+      );
+      const useW = await useRacial('drow-faerie-fire', drow.version, 'dw-1');
+      check(
+        '60.W) uso independente: consome Fogo das Fadas e deixa Escuridão disponível',
+        useW.status === 200 &&
+          useW.data.character.racialState.used['drow-faerie-fire'] === 1 &&
+          resOf(useW.data.character, 'drow-darkness')?.remaining === 1,
+        JSON.stringify(useW.data?.character?.racialState),
+      );
+      // Z) endpoint válido: forma completa + versão obsoleta → 409.
+      const useZ = await useRacial('drow-darkness', useW.data.character.version, 'z-valid');
+      check(
+        '60.Z) endpoint válido funciona e devolve a forma completa do recurso',
+        useZ.status === 200 &&
+          useZ.data.resourceId === 'drow-darkness' &&
+          useZ.data.recharge === 'long' &&
+          useZ.data.max === 1 &&
+          useZ.data.used === 1 &&
+          useZ.data.remaining === 0 &&
+          useZ.data.replayed === false,
+        JSON.stringify(useZ.data),
+      );
+      const staleZ = await useRacial('drow-darkness', useZ.data.version + 50, 'z-stale');
+      check(
+        '60.Z2) versão obsoleta → 409 (o servidor não confia na versão do cliente)',
+        staleZ.status === 409,
+        JSON.stringify({ status: staleZ.status }),
+      );
+      const drowSpell = (useZ.data.character.spells.list as any[]).find(
+        (s: any) => s.id === 'darkness' && s.race === true,
+      );
+      check(
+        '60.DTO) a magia racial expõe raceUses (1/1) e raceResourceId, sem `race-spell:*` em classState',
+        drowSpell?.raceUses?.used === 1 &&
+          drowSpell?.raceResourceId === 'drow-darkness' &&
+          Object.keys(useZ.data.character.classState.used).every(
+            (key: string) => !key.startsWith('race-spell:'),
+          ),
+        JSON.stringify({ raceUses: drowSpell?.raceUses, res: drowSpell?.raceResourceId }),
+      );
+
+      // Y) PATCH do PLAYER não é autoridade sobre racialState.used.
+      const patchY = await api('/api/characters/me', {
+        method: 'PATCH',
+        token,
+        body: { racialState: { used: { 'drow-darkness': 0, 'breath-weapon': 5 } } },
+      });
+      check(
+        '60.Y) PATCH do PLAYER é ignorado: racialState.used preservado e sem chave inventada',
+        patchY.status === 200 &&
+          (patchY.data.character.racialState as any).used['drow-darkness'] === 1 &&
+          (patchY.data.character.racialState as any).used['drow-faerie-fire'] === 1 &&
+          (patchY.data.character.racialState as any).used['breath-weapon'] === undefined,
+        JSON.stringify(patchY.data?.character?.racialState),
+      );
+
+      // X) Descanso Longo restaura os usos da Magia Drow.
+      const lrDrow = await longRequest('drow');
+      await forceComplete(lrDrow, 'drow');
+      check(
+        '60.X) Descanso Longo restaura os usos da Magia Drow',
+        (await sheet()).racialState.used['drow-darkness'] === undefined &&
+          (await sheet()).racialState.used['drow-faerie-fire'] === undefined,
+        JSON.stringify((await sheet()).racialState),
+      );
+
+      // --- D3/E) troca de raça pelo MESTRE remove órfão; classState intacto ---
+      await setSheet({
+        racialState: { used: { 'drow-faerie-fire': 1 } },
+        classState: { active: [], used: { 'second-wind': 1 }, choices: {} },
+      });
+      const charId = (await sheet()).id as string;
+      const masterPatch = await api(`/api/characters/${charId}`, {
+        method: 'PATCH',
+        token: masterToken,
+        body: { raceId: 'human', subraceId: null, raceChoices: {} },
+      });
+      const afterChange = masterPatch.data?.character;
+      check(
+        '60.D3) MASTER troca Drow→Humano: estado racial órfão SAI (used vazio)',
+        masterPatch.status === 200 &&
+          JSON.stringify(afterChange.racialState.used) === '{}' &&
+          (afterChange.racialAdjustments.resources as any[]).length === 0,
+        JSON.stringify({ racial: afterChange?.racialState, adj: afterChange?.racialAdjustments }),
+      );
+      check(
+        '60.E) a troca de raça NÃO mexe no `classState` (estado de classe intacto)',
+        afterChange.classState.used['second-wind'] === 1,
+        JSON.stringify(afterChange?.classState),
+      );
+
+      // --- CUSTOM: raça personalizada não quebra (limitação reportada) -------
+      const createdCustom = await api('/api/custom-races', {
+        method: 'POST',
+        token: masterToken,
+        body: {
+          name: `Nevoa Racial ${suffix}`,
+          description: 'Raça de teste da 5.3E.1 (sem recursos modelados).',
+          abilityScoreIncrease: [{ ability: 'strength', amount: 2 }],
+          speed: 9,
+          size: 'Medium',
+          darkvision: 0,
+          damageResistances: [],
+          languages: ['Comum'],
+          bonusLanguageChoices: 0,
+          traits: [],
+        },
+      });
+      const customRaceId: string | undefined = createdCustom.data?.customRace?.id;
+      if (typeof customRaceId === 'string') createdCustomRaceIds.push(customRaceId);
+      await setSheet({ raceId: null, subraceId: null, customRaceId, race: 'Névoa Racial' });
+      const customSheet = await sheet();
+      check(
+        '60.CUSTOM) raça personalizada carrega sem quebrar e sem recursos raciais (limitação)',
+        typeof customRaceId === 'string' &&
+          customSheet.customRaceId === customRaceId &&
+          (customSheet.racialAdjustments.resources as any[]).length === 0 &&
+          JSON.stringify(customSheet.racialState) === JSON.stringify({ used: {} }),
+        JSON.stringify({
+          customRaceId: customSheet.customRaceId,
+          adj: customSheet.racialAdjustments,
+        }),
+      );
     })();
   })();
 

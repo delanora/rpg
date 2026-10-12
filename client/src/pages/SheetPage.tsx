@@ -23,7 +23,7 @@ import { useDiceRoller } from '../dice/useDiceRoller';
 import { useMusic } from '../music/useMusic';
 import { fetchTransferTargets } from '../coinsApi';
 import { fetchGameConfig } from '../gameApi';
-import { requestEldritchMaster, toggleFeature } from '../featuresApi';
+import { requestEldritchMaster, toggleFeature, useRacialFeature } from '../featuresApi';
 import { moveInventoryItem, useInventoryItem } from '../inventoryApi';
 import { resultBreakdown } from '../dice/format';
 import { closePresentation } from '../presentationApi';
@@ -288,6 +288,19 @@ export function SheetPage({ user }: { user: SessionUser }) {
     setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
   }, []);
 
+  /**
+   * Uso de um recurso RACIAL limitado (5.3E.1): ação AUTHORITATIVE do servidor.
+   * O cliente manda só o id do recurso e a versão; a ficha devolvida passa a ser
+   * a da tela. NÃO executa dano/save/magia nesta fase.
+   */
+  const racialUseAction = useCallback(
+    async (resourceId: string, expectedVersion: number) => {
+      const { character: saved } = await useRacialFeature(resourceId, expectedVersion);
+      setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+    },
+    [],
+  );
+
   /** Fechamento da imagem apresentada (só o mestre chega aqui na prática). */
   const closePresentedImage = useCallback(() => {
     void closePresentation().catch(() => setPresentation(null));
@@ -455,7 +468,11 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 </div>
 
                 {combatView === 'spells' ? (
-                  <SpellsSection character={character} update={update} />
+                  <SpellsSection
+                    character={character}
+                    update={update}
+                    onRacialUse={racialUseAction}
+                  />
                 ) : null}
                 {combatView === 'attacks' ? (
                   <AttacksSection character={character} update={update} />
@@ -480,6 +497,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   onInventoryUse={useItem}
                   onFeatureToggle={toggleFeatureAction}
                   onEldritchMaster={eldritchMasterAction}
+                  onRacialUse={racialUseAction}
                   extraCoins={gameConfig?.extraCoins ?? false}
                   coinTargets={coinTargets}
                   onCoinsChange={adoptCoins}

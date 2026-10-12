@@ -21,6 +21,7 @@ import { getGameConfig } from '../game-config/game-config.service.js';
 import {
   characterClassAdjustments,
   characterMaxHp,
+  characterRacialAdjustments,
   toCharacterDto,
   type CharacterDto,
   type InventoryItemDto,
@@ -50,6 +51,7 @@ import type {
   ToggleFeatureInput,
   UpdateCharacterInput,
   UseInventoryItemInput,
+  UseRacialFeatureInput,
 } from './characters.schema.js';
 import {
   toShortRestSessionDto,
@@ -112,6 +114,15 @@ import {
   type ProficienciesState,
 } from '../shared/classes.js';
 import { applyRaceWeaponProficiencies, raceHpBonusDelta } from '../shared/races/index.js';
+import {
+  normalizeRacialState,
+  racialResources,
+  racialResourcesRestoredByRest,
+  reconcileRacialResourceState,
+  restoreRacialResourcesForRest,
+  type RacialResource,
+  type RacialState,
+} from '../shared/races/resources.js';
 import {
   classEntryProficiencyGrant,
   classProficiencyGrant,
@@ -206,6 +217,7 @@ const PLAYER_STATE_KEYS = [
   'notes',
   'avatarUrl',
   'classState',
+  'racialState',
   'spells',
 ] as const;
 
@@ -243,6 +255,7 @@ const CREATION_FIELD_LABELS: Record<string, string> = {
   attacks: 'ataques',
   features: 'características',
   inventory: 'Inventário',
+  racialState: 'usos de recursos raciais',
 };
 
 /**
@@ -916,6 +929,14 @@ async function applyLevelUp(
     computeMulticlassAdjustments(nextEntries, levelUpState, levelUpAbilities).resources,
   );
 
+  // 5.3E.1: os recursos RACIAIS acompanham o novo nível TOTAL (um Level Up
+  // pode PASSAR a conceder um recurso diário; a reconciliação é idempotente e
+  // corrige `used` acima do máximo). Nunca toca em `classState`.
+  data.racialState = reconcileRacialResourceState(
+    normalizeRacialState(character.racialState),
+    racialResourcesForLevel(character, totalCharacterLevel(nextEntries)),
+  ) as unknown as Prisma.InputJsonValue;
+
   // --- Pontos de vida do nível que está sendo ganho ------------------------
   // O PV ganho usa o modificador de Constituição já atualizado pelo Aumento de
   // Atributo (se houve); mínimo de 1 PV por nível, mesmo com CON negativa.
@@ -1237,6 +1258,14 @@ export async function levelDownCharacter(
     obsoleteIds,
   );
 
+  // 5.3E.1: um Level Down pode REMOVER um recurso racial (ex.: Drow abaixo do 3º
+  // nível perde o Fogo das Fadas). O estado racial é reconciliado contra o novo
+  // nível — os órfãos saem e `used` é clampado. O `classState` segue intocado aqui.
+  const nextRacialState = reconcileRacialResourceState(
+    normalizeRacialState(target.racialState),
+    racialResourcesForLevel(target, totalCharacterLevel(nextEntries)),
+  );
+
   // A Expertise daquele nível sai junto das escolhas revertidas: as perícias
   // voltam ao bônus normal (as ferramentas não vivem em `skills`).
   Object.assign(
@@ -1261,6 +1290,7 @@ export async function levelDownCharacter(
     skills,
     proficiencies,
     classState: nextClassState,
+    racialState: nextRacialState as unknown as Prisma.InputJsonValue,
     // --- Espaços de magia: o USO é revalidado contra o derivado RESULTANTE ---
     // O teto vem das classes que sobraram: o uso que não cabe mais é DESCARTADO
     // — e isso é PERSISTIDO, para que subir de nível de novo não ressuscite um
@@ -1684,6 +1714,8 @@ interface ShortRestCompleteSnapshot {
   character: CharacterDto;
   /** Efeitos ativos encerrados pelo lifecycle no descanso (5.3D.2). */
   activeEffectsEnded?: EndedActiveEffect[];
+  /** Nomes dos recursos RACIAIS restaurados (5.3E.1), ex.: ['Arma de Sopro']. */
+  racialResourcesRestored?: string[];
 }
 
 /** Resposta de `POST /me/rest/short/complete`. */
@@ -1846,6 +1878,33 @@ function preserveServerOwnedClassState(
 }
 
 /**
+ * Estado RACIAL do PATCH do JOGADOR com o SERVIDOR preservado (5.3E.1).
+ *
+ * O jogador NUNCA é autoridade sobre `racialState.used`: o estado GRAVADO é
+ * mantido como está e a alteração passa pelo endpoint server-authoritative
+ * (`POST /me/racial-features/use`) ou pelo descanso. O mestre continua editando
+ * livremente (o PATCH dele NÃO passa por aqui).
+ */
+function preserveServerOwnedRacialState(character: Character): RacialState {
+  return normalizeRacialState(character.racialState);
+}
+
+/**
+ * Recursos raciais DERIVADOS de uma ficha para um NÍVEL TOTAL informado (o
+ * Level Up/Down ainda não gravou as classes novas). Mesmo catálogo do DTO.
+ */
+function racialResourcesForLevel(character: Character, level: number): RacialResource[] {
+  return racialResources(
+    {
+      raceId: character.customRaceId ? null : character.raceId,
+      subraceId: character.customRaceId ? null : character.subraceId,
+    },
+    normalizeRacialState(character.racialState),
+    level,
+  );
+}
+
+/**
  * Liga/desliga uma CARACTERÍSTICA com toggle (5.3B) — ação AUTHORITATIVE do
  * servidor.
  *
@@ -1960,6 +2019,156 @@ export async function toggleFeature(
     resourceId: toggle.resourceId,
     changed: true,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Recursos RACIAIS limitados (5.3E.1)
+// ---------------------------------------------------------------------------
+
+/** Tipo LÓGICO do uso de um recurso racial (`CharacterOperation.type`). */
+const RACIAL_FEATURE_USE_TYPE = 'RACIAL_FEATURE_USE';
+
+/** Snapshot IMUTÁVEL de um uso de recurso racial (guardado em `result`). */
+interface UseRacialFeatureSnapshot {
+  character: CharacterDto;
+  resourceId: string;
+  resourceName: string;
+  recharge: 'short' | 'long';
+  max: number;
+  used: number;
+  remaining: number;
+  version: number;
+}
+
+/** Resposta de `POST /me/racial-features/use`. */
+export interface UseRacialFeatureResult extends UseRacialFeatureSnapshot {
+  replayed: boolean;
+}
+
+/**
+ * Consome UM uso de um recurso racial limitado (5.3E.1) — ação
+ * server-authoritative.
+ *
+ * O cliente manda só `{ resourceId, expectedVersion, operationId }`. O servidor
+ * deriva a RAÇA atual, a POSSE do recurso (catálogo `shared/races/resources`), o
+ * máximo, a recarga e o usado — nunca confia em custo/máximo do cliente. Sem
+ * saldo → 409 `INSUFFICIENT_RESOURCE`. A ação é INSTANTÂNEA (não cria toggle) e
+ * NÃO executa dano/save/magia nesta fase — apenas marca o uso. `operationId`
+ * repetido devolve o snapshot original sem gastar de novo; duas chamadas
+ * concorrentes com a mesma versão só aplicam uma.
+ */
+export async function useRacialFeature(
+  actor: Actor,
+  input: UseRacialFeatureInput,
+): Promise<UseRacialFeatureResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  const fingerprint = JSON.stringify({ resourceId: input.resourceId });
+
+  // 1) Idempotência ANTES de tudo (mesma chave + mesmo recurso → replay).
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    return {
+      ...replaySnapshot<UseRacialFeatureSnapshot>(previous, RACIAL_FEATURE_USE_TYPE, fingerprint),
+      replayed: true,
+    };
+  }
+
+  // 2) Posse: o recurso tem de estar DERIVADO da raça/sub-raça atuais.
+  const adjustments = characterRacialAdjustments(character);
+  const resource = adjustments.resources.find((item) => item.id === input.resourceId);
+  if (!resource) {
+    throw new HttpError('Este recurso racial não está disponível na sua ficha.', 404);
+  }
+
+  // 3) Concorrência: a versão enviada tem de ser a atual (antes de cobrar).
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError(
+      'A ficha mudou desde que a tela foi carregada; recarregue antes de usar o recurso.',
+      409,
+    );
+  }
+
+  // 4) Disponibilidade (o servidor é a autoridade).
+  if (resource.remaining < 1) {
+    throw new HttpError(
+      `Você já usou ${resource.name}; ela recupera no descanso.`,
+      409,
+      'INSUFFICIENT_RESOURCE',
+    );
+  }
+
+  // 5) Aplica: used + 1 (nunca acima do máximo).
+  const state = normalizeRacialState(character.racialState);
+  const nextUsed = Math.min(resource.max, resource.used + 1);
+  const nextState: RacialState = { used: { ...state.used, [resource.id]: nextUsed } };
+
+  // 6) Operação + ficha na MESMA transação, guardadas por versão.
+  let committed!: { updated: Character; snapshot: UseRacialFeatureSnapshot };
+  try {
+    committed = await prisma.$transaction(async (tx) => {
+      await tx.characterOperation.create({
+        data: {
+          characterId: character.id,
+          operationId: input.operationId,
+          type: RACIAL_FEATURE_USE_TYPE,
+          requestFingerprint: fingerprint,
+          result: {},
+        },
+      });
+
+      const written = await tx.character.updateMany({
+        where: { id: character.id, version: input.expectedVersion },
+        data: {
+          racialState: nextState as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      if (written.count === 0) {
+        throw new HttpError('A ficha mudou durante a ação; tente novamente.', 409);
+      }
+
+      const updated = await tx.character.findUniqueOrThrow({ where: { id: character.id } });
+      const snapshot: UseRacialFeatureSnapshot = {
+        character: await toSheetDto(updated, actor.username),
+        resourceId: resource.id,
+        resourceName: resource.name,
+        recharge: resource.recharge,
+        max: resource.max,
+        used: nextUsed,
+        remaining: Math.max(0, resource.max - nextUsed),
+        version: input.expectedVersion + 1,
+      };
+      await tx.characterOperation.update({
+        where: {
+          characterId_operationId: { characterId: character.id, operationId: input.operationId },
+        },
+        data: { result: snapshot as unknown as Prisma.InputJsonValue },
+      });
+
+      return { updated, snapshot };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(character.id, input.operationId);
+      if (raced) {
+        return {
+          ...replaySnapshot<UseRacialFeatureSnapshot>(
+            raced,
+            RACIAL_FEATURE_USE_TYPE,
+            fingerprint,
+          ),
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
+
+  await publishChange(actor, committed.updated, { racialState: nextState });
+
+  return { ...committed.snapshot, replayed: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -2541,6 +2750,22 @@ export async function completeShortRest(
   );
   const nextState = { ...restored, active: cleanup.active };
 
+  // 5.3E.1: recursos RACIAIS de recarga CURTA (ex.: o Sopro Dracônico do PHB
+  // 2014) voltam pelo MESMO caminho, no estado PRÓPRIO `racialState` — nunca em
+  // `classState`. Só entram os que realmente tinham uso gasto.
+  const racialAdjustments = characterRacialAdjustments(character);
+  const racialState = normalizeRacialState(character.racialState);
+  const racialRestored = racialResourcesRestoredByRest(
+    racialState,
+    racialAdjustments.resources,
+    'short',
+  );
+  const nextRacialState = restoreRacialResourcesForRest(
+    racialState,
+    racialAdjustments.resources,
+    'short',
+  );
+
   // A MAGIA DE PACTO (pool PRÓPRIO do Bruxo, PHB 2014) também recupera no
   // Descanso Curto: só o USO volta a zero, na MESMA escrita da ficha. O total é
   // derivado do nível de Bruxo e os espaços NORMAIS não são tocados aqui — o
@@ -2561,11 +2786,14 @@ export async function completeShortRest(
     pactMagic: { used: 0 },
   };
 
+  const racialResourcesRestored = racialRestored.map((resource) => resource.name);
+
   let committed!: {
     updated: Character;
     session: ShortRestSessionDto;
     character: CharacterDto;
     activeEffectsEnded: EndedActiveEffect[];
+    racialResourcesRestored: string[];
   };
   try {
     committed = await prisma.$transaction(async (tx) => {
@@ -2594,6 +2822,7 @@ export async function completeShortRest(
         where: { id: character.id, version: input.expectedVersion },
         data: {
           classState: nextState as unknown as Prisma.InputJsonValue,
+          racialState: nextRacialState as unknown as Prisma.InputJsonValue,
           spells: nextSpells as unknown as Prisma.InputJsonValue,
           version: { increment: 1 },
         },
@@ -2616,11 +2845,18 @@ export async function completeShortRest(
             session: sessionDto,
             character: characterDto,
             activeEffectsEnded: cleanup.ended,
+            racialResourcesRestored,
           } as unknown as Prisma.InputJsonValue,
         },
       });
 
-      return { updated, session: sessionDto, character: characterDto, activeEffectsEnded: cleanup.ended };
+      return {
+        updated,
+        session: sessionDto,
+        character: characterDto,
+        activeEffectsEnded: cleanup.ended,
+        racialResourcesRestored,
+      };
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -2641,6 +2877,7 @@ export async function completeShortRest(
 
   await publishChange(actor, committed.updated, {
     classState: nextState,
+    racialState: nextRacialState,
     spells: nextSpells,
     ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
   });
@@ -2650,6 +2887,7 @@ export async function completeShortRest(
     session: committed.session,
     character: committed.character,
     activeEffectsEnded: committed.activeEffectsEnded,
+    racialResourcesRestored: committed.racialResourcesRestored,
   };
 }
 
@@ -3526,6 +3764,31 @@ async function applyCharacterPatch(
       data.proficiencies = { ...base, weapons: mergedWeapons } as ProficienciesState;
     }
   }
+  // --- Estado dos RECURSOS RACIAIS (5.3E.1) --------------------------------
+  // O jogador não é autoridade sobre `racialState` (preservado); o mestre edita.
+  // Na TROCA de raça/sub-raça o estado é RECONCILIADO contra os recursos que a
+  // raça NOVA concede: os órfãos saem e os usos são clampados ao máximo. NUNCA
+  // toca em `classState`.
+  const nextRacialResources: RacialResource[] = racialResources(
+    {
+      raceId: nextCustomRaceId ? null : nextRaceId,
+      subraceId: nextCustomRaceId ? null : nextSubraceId,
+    },
+    normalizeRacialState(existing.racialState),
+    totalCharacterLevel(classes),
+  );
+  if (patch.racialState !== undefined || raceChanged) {
+    const baseRacialState = fromPlayer
+      ? preserveServerOwnedRacialState(existing)
+      : patch.racialState !== undefined
+        ? normalizeRacialState(patch.racialState)
+        : normalizeRacialState(existing.racialState);
+    data.racialState = reconcileRacialResourceState(
+      baseRacialState,
+      nextRacialResources,
+    ) as unknown as Prisma.InputJsonValue;
+  }
+
   // Proficiências simples em ferramenta (ids do catálogo): só o mestre grava, e
   // o valor enviado substitui o anterior por inteiro. Sem repetição.
   if (patch.toolProficiencies !== undefined) {
