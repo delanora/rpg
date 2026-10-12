@@ -4,6 +4,7 @@ import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
 import { inventoryListSchema } from '../modules/characters/characters.schema.js';
 import { CONDITION_LABELS, conditionAttackMode, deriveConditionEffects, deriveSaveEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, resolveRollMode, type Condition, type MechanicalEntity } from '../modules/shared/conditions.js';
+import { canSeeAttacker } from '../modules/shared/vision.js';
 import { onTurnStart } from '../modules/shared/action-economy.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { MechanicalDto } from '../modules/mechanical/mechanical.service.js';
@@ -45,6 +46,31 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
     const state = { exhaustionLevel: level }, effects = deriveConditionEffects(state);
     check(`63) Exhaustion ${level}: efeitos cumulativos PHB 2014`, effects.checkDisadvantage === (level >= 1) && effectiveSpeed(30, state) === (level >= 5 ? 0 : level >= 2 ? 15 : 30) && effects.saveDisadvantage === (level >= 3) && effectiveMaxHp(101, state) === (level >= 4 ? 50 : 101) && effects.fatalByExhaustion === (level === 6));
   }
+
+  // Adendo: a Esquiva (Dodge) só impõe desvantagem se o ALVO conseguir VER o
+  // atacante. Nunca derivar apenas de o atacante estar Invisível.
+  console.log('\n66) Esquiva (Dodge) e visibilidade — o alvo precisa ver o atacante');
+  const seesInvisible = (value = true) => mechanicalStateOf({ seesInvisible: value });
+  const dodgeCtx = { targetDodging: true };
+  const invisibleAttacker = sample('invisible');
+  // L. alvo em Esquiva não vê o Invisível → Dodge NÃO adiciona desvantagem (a
+  // vantagem do próprio Invisível permanece).
+  const dodgeL = conditionAttackMode(invisibleAttacker, sample(), false, false, dodgeCtx);
+  check('66) L. Dodge não impõe desvantagem contra atacante Invisível que o alvo não vê', dodgeL.advantage && !dodgeL.disadvantage);
+  check('66) alvo Cego (ou alheio) não vê o atacante; alvo normal e atacante visível, sim', !canSeeAttacker(sample('blinded'), {}) && !canSeeAttacker(sample('unconscious'), {}) && canSeeAttacker(sample(), {}) && !canSeeAttacker(sample(), invisibleAttacker));
+  // M. alvo tem meio CONFIÁVEL de ver o Invisível → Dodge aplica (cancela a
+  // vantagem de Invisible, resultando em rolagem normal).
+  const dodgeM = conditionAttackMode(invisibleAttacker, seesInvisible(), false, false, dodgeCtx);
+  check('66) M. com estado confiável de visão, Dodge aplica desvantagem normalmente', !dodgeM.advantage && !dodgeM.disadvantage);
+  // N. composição normal com outra fonte independente de desvantagem.
+  const dodgeN1 = conditionAttackMode(sample('poisoned'), seesInvisible(), false, false, dodgeCtx);
+  check('66) N. Dodge soma desvantagem independente (sem vantagem) = desvantagem', dodgeN1.disadvantage && !dodgeN1.advantage);
+  const dodgeN2 = conditionAttackMode(sample('invisible', 'poisoned'), seesInvisible(), false, false, dodgeCtx);
+  check('66) N. vantagem de Invisible cancela Dodge + desvantagem independente = normal', !dodgeN2.advantage && !dodgeN2.disadvantage);
+  // O. atacante deixa de estar Invisível → Dodge volta a valer normalmente.
+  const dodgeO = conditionAttackMode({}, seesInvisible(), false, false, dodgeCtx);
+  check('66) O. sem Invisible, Dodge impõe desvantagem normalmente', dodgeO.disadvantage && !dodgeO.advantage);
+  check('66) Dodge não é inferido fora do contexto (alvo vê, mas não está esquivando)', !conditionAttackMode({}, sample(), false, false).disadvantage);
 
   const suffix = randomUUID().slice(0, 8), userIds: string[] = [], entityIds: string[] = [];
   let creatureId: string | undefined, npcId: string | undefined, combatId: string | undefined;

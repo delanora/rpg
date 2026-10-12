@@ -319,6 +319,8 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
           else economy.movementBudget += combatantSpeed(combatant);
         }
         if (input.action === 'ready') economy.ready = { trigger: input.trigger!, intent: input.intent! };
+        // Esquiva vale até o início do próprio próximo turno (ver `dodging`).
+        if (input.action === 'dodge') economy.dodging = true;
         const context = input.action === 'ready' ? `${input.trigger} → ${input.intent}` : input.description;
         const target = input.targetCombatantId ? combat.combatants.find((item) => item.id === input.targetCombatantId)?.name : null;
         await appendEconomyLog(db, combat, combatant, `${COMBAT_ACTIONS[input.action].name}${target ? ` → ${target}` : ''}${context ? `: ${context}` : ''}.`, input.action);
@@ -1015,7 +1017,14 @@ export async function resolveAttack(
 
     // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
     // vale) — mesmo critério da janela de dados.
-    const { advantage, disadvantage } = conditionAttackMode(combatantMechanicalState(attacker), combatantMechanicalState(target), Boolean(input.advantage), Boolean(input.disadvantage));
+    const { advantage, disadvantage } = conditionAttackMode(
+      combatantMechanicalState(attacker),
+      combatantMechanicalState(target),
+      Boolean(input.advantage),
+      Boolean(input.disadvantage),
+      // A Esquiva do alvo só vale se ele CONSEGUIR ver o atacante (ver `canSeeAttacker`).
+      { targetDodging: economyOf(target.turnEconomy).dodging },
+    );
     // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
     const firstRoll = rollD20();
     const secondRoll = advantage || disadvantage ? rollD20() : null;
