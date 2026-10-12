@@ -19,6 +19,7 @@ import {
   transferCoinsSchema,
   updateCharacterSchema,
   useInventoryItemSchema,
+  useRacialFeatureSchema,
 } from './characters.schema.js';
 import { exchangeCoinsSchema } from '../shared/coins.js';
 import {
@@ -45,6 +46,7 @@ import {
   updateCharacter,
   updateCharacterAsMaster,
   useInventoryItem,
+  useRacialFeature,
   type Actor,
 } from './characters.service.js';
 import {
@@ -357,6 +359,29 @@ charactersRouter.post('/me/features/eldritch-master', authenticate, async (req, 
   }
 
   res.json(await useEldritchMaster(actorFrom(req), parsed.data));
+});
+
+/**
+ * POST /api/characters/me/racial-features/use — consome UM uso de um recurso
+ * RACIAL limitado (5.3E.1): Sopro Dracônico, Resistência Implacável, usos
+ * diários do Legado Infernal/Magia Drow.
+ *
+ * O cliente manda só o `resourceId`, a `expectedVersion` e um `operationId`; o
+ * servidor deriva a raça, a posse, o máximo, a recarga e o usado. A ação é
+ * INSTANTÂNEA (não cria toggle) e NÃO executa dano/save/magia nesta fase.
+ */
+charactersRouter.post('/me/racial-features/use', authenticate, async (req, res) => {
+  const parsed = useRacialFeatureSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  res.json(await useRacialFeature(actorFrom(req), parsed.data));
 });
 
 charactersRouter.post('/me/rest/short/hit-die', authenticate, async (req, res) => {

@@ -116,6 +116,8 @@ export interface ShortRestCompletionDto {
     activeEffectsEnded: EndedActiveEffect[];
     /** Preservados por override explícito do MESTRE (auditoria). */
     masterPreservedActiveEffects: MasterPreservedActiveEffect[];
+    /** Nomes dos recursos RACIAIS restaurados no Descanso Curto (5.3E.1). */
+    racialResourcesRestored: string[];
   }[];
 }
 

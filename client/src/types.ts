@@ -252,8 +252,13 @@ export interface Spell {
   raceSaveDC?: number;
   /** Bônus de ataque da magia racial. */
   raceAttackBonus?: number;
-  /** Contador das magias raciais 1x/descanso longo (sem reset automático). */
+  /** Contador das magias raciais 1x/descanso longo (5.3E.1: `racialState`). */
   raceUses?: { max: number; used: number };
+  /**
+   * Id do recurso racial do servidor associado a esta magia (usado pelo botão
+   * "usar" para consumir via `POST /me/racial-features/use`).
+   */
+  raceResourceId?: string;
 }
 
 export interface SpellsState {
@@ -810,6 +815,8 @@ export interface Character {
   activeFeatures: ActiveClassFeature[];
   /** Estado de runtime da classe (toggles ativos e usos gastos). */
   classState: ClassState;
+  /** Estado de runtime dos recursos RACIAIS (só os usos gastos). */
+  racialState: RacialState;
   /**
    * O que CADA nível concedeu (PV, Aumento de Atributo/Talento, escolhas,
    * subclasse, perícia e proficiências). É o que o painel do mestre mostra ao
@@ -818,6 +825,8 @@ export interface Character {
   levelHistory: LevelHistoryRecord[];
   /** Ajustes mecânicos derivados das features (Fúria, resistências, etc.). */
   classAdjustments: ClassAdjustments;
+  /** Recursos raciais limitados derivados (Sopro Dracônico, Legado Infernal...). */
+  racialAdjustments: RacialAdjustments;
   /**
    * Criação encerrada: o jogador só mexe no estado de jogo (PV atual/temporário,
    * usos de recursos, anotações, avatar e movimentação de itens).
@@ -927,6 +936,41 @@ export interface ActiveResource {
   used: number;
   remaining: number;
   unlimited: boolean;
+}
+
+/**
+ * Estado de runtime dos recursos RACIAIS (5.3E.1): só os usos gastos. O máximo e
+ * a recarga são DERIVADOS do catálogo do servidor — nunca persistidos.
+ */
+export interface RacialState {
+  used: Record<string, number>;
+}
+
+/**
+ * Um recurso racial LIMITADO derivado (Sopro Dracônico, Resistência Implacável,
+ * usos diários do Legado Infernal/Magia Drow). Estrutura PRÓPRIA, separada dos
+ * recursos de classe — a raça não é uma classe.
+ */
+export interface RacialResource {
+  id: string;
+  name: string;
+  /** Marca de ORIGEM — sempre 'race'. */
+  origin: 'race';
+  recharge: 'short' | 'long';
+  max: number;
+  used: number;
+  remaining: number;
+  /** Como o jogador o aciona (a resolução mecânica é manual nesta fase). */
+  actionType?: 'action' | 'bonus-action' | 'manual';
+  traitId?: string;
+  /** Id da magia racial associada, quando houver. */
+  spellId?: string;
+  notes?: string;
+}
+
+/** Recursos raciais derivados da ficha (5.3E.1). */
+export interface RacialAdjustments {
+  resources: RacialResource[];
 }
 
 export interface ClassAdjustments {
@@ -2064,6 +2108,8 @@ export interface ShortRestCompletionDto {
     pactMagicRestored?: boolean;
     activeEffectsEnded?: EndedActiveEffectDto[];
     masterPreservedActiveEffects?: MasterPreservedActiveEffectDto[];
+    /** Nomes dos recursos RACIAIS restaurados no Descanso Curto (5.3E.1). */
+    racialResourcesRestored?: string[];
   }[];
 }
 
@@ -2214,7 +2260,10 @@ export interface LongRestCharacterCompletionDto {
   hitDiceRecovered: LongRestHitDiceRecoveredDto[];
   spellSlotLevelsRestored: number[];
   classResourcesRestored: string[];
+  /** Ids LEGADOS (`race-spell:*`) — vazio desde a 5.3E.1. */
   racialUsesRestored: string[];
+  /** Nomes dos recursos RACIAIS restaurados (5.3E.1), ex.: ['Arma de Sopro']. */
+  racialResourcesRestored?: string[];
   /** Efeitos ativos encerrados pelo lifecycle do descanso (5.3D.2). */
   activeEffectsEnded: EndedActiveEffectDto[];
   /** Preservados por override explícito do MESTRE (auditoria). */

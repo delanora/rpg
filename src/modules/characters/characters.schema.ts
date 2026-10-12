@@ -206,6 +206,11 @@ export const spellSchema = z.object({
   raceUses: z
     .object({ max: z.number().int(), used: z.number().int() })
     .optional(),
+  /**
+   * Id do recurso racial do servidor (5.3E.1) associado a esta magia — usado
+   * pelo botão "usar" para consumir via `POST /me/racial-features/use`.
+   */
+  raceResourceId: z.string().optional(),
 });
 
 /** Chave de nível de espaço de magia: 1 a 9 (não existe 0 nem 10+). */
@@ -387,6 +392,17 @@ export const classStateSchema = z.object({
   active: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   used: z.record(z.string(), z.number().int().min(0).max(99)).default({}),
   choices: featureChoicesSchema,
+});
+
+/**
+ * Estado de runtime dos recursos RACIAIS (5.3E.1): só os usos GASTOS por
+ * recurso (`{ used: { [resourceId]: number } }`). O MÁXIMO e a RECARGA são
+ * DERIVADOS do catálogo (`shared/races/resources.ts`) e nunca persistem. O
+ * jogador NÃO é autoridade sobre isto — o PATCH é sanitizado (ver
+ * `preserveServerOwnedRacialState`).
+ */
+export const racialStateSchema = z.object({
+  used: z.record(z.string(), z.number().int().min(0).max(99)).default({}),
 });
 
 // --- Criação ----------------------------------------------------------------
@@ -641,6 +657,23 @@ export const eldritchMasterSchema = z.object({
 
 export type EldritchMasterInput = z.infer<typeof eldritchMasterSchema>;
 
+/**
+ * Uso de um recurso RACIAL limitado (5.3E.1): Sopro Dracônico, Resistência
+ * Implacável, usos diários do Legado Infernal/Magia Drow.
+ *
+ * O cliente manda só o `resourceId`, a versão da ficha e um `operationId`. O
+ * SERVIDOR deriva a raça, a posse do recurso, o máximo, a recarga, o usado e o
+ * disponível — nunca confia em custo/máximo do cliente. A ação é INSTANTÂNEA
+ * (não cria toggle) e NÃO executa dano/save/magia nesta fase.
+ */
+export const useRacialFeatureSchema = z.object({
+  resourceId: z.string().trim().min(1, 'Informe o recurso racial.').max(80),
+  expectedVersion: expectedVersionSchema,
+  operationId: operationIdSchema,
+});
+
+export type UseRacialFeatureInput = z.infer<typeof useRacialFeatureSchema>;
+
 // --- Moedas -----------------------------------------------------------------
 //
 // Só o mestre dá ou retira (PATCH e `POST /:id/coins`); o jogador gasta, troca
@@ -743,6 +776,7 @@ export const updateCharacterSchema = z
     attacks: z.array(attackSchema).max(100),
     features: z.array(featureSchema).max(200),
     classState: classStateSchema,
+    racialState: racialStateSchema,
 
     // Vínculo com o catálogo de itens do mestre
     avatarUrl: shortText(500),

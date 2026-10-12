@@ -10,7 +10,6 @@ import {
   restoreLongRestResources,
   spellSlotMaxByLevel,
   spellSlotsForClasses,
-  totalCharacterLevel,
   type ActiveEffectRestOverride,
   type EndedActiveEffect,
   type MasterPreservedActiveEffect,
@@ -24,10 +23,13 @@ import {
   normalizeHitDiceSelection,
   type HitDiceSelection,
 } from '../shared/hit-dice.js';
-import { raceSpells } from '../shared/races/index.js';
+import {
+  normalizeRacialState,
+  racialResourcesRestoredByRest,
+  restoreRacialResourcesForRest,
+} from '../shared/races/resources.js';
 import {
   inventoryListSchema,
-  raceChoicesSchema,
   spellSlotsUsedFrom,
   spellsStateSchema,
   withSpellSlotsUsed,
@@ -35,6 +37,7 @@ import {
 import {
   characterClassAdjustments,
   characterMaxHp,
+  characterRacialAdjustments,
   type InventoryItemDto,
   type SpellsStateDto,
 } from '../characters/characters.dto.js';
@@ -126,8 +129,13 @@ export interface LongRestCharacterCompletionDto {
   spellSlotLevelsRestored: number[];
   /** Ids de recursos de classe restaurados (recarga curta ou longa). */
   classResourcesRestored: string[];
-  /** Ids de usos RACIAIS restaurados (ex.: `race-spell:...`). */
+  /**
+   * Ids LEGADOS de usos raciais restaurados (`race-spell:*`). Vazio hoje: as
+   * magias raciais migraram para `racialState` (5.3E.1) — mantido no contrato.
+   */
   racialUsesRestored: string[];
+  /** Nomes dos recursos RACIAIS restaurados (5.3E.1), ex.: ['Arma de Sopro']. */
+  racialResourcesRestored: string[];
   /**
    * A Magia de Pacto (Bruxo) foi efetivamente recuperada (tinha uso e o
    * personagem tem pool). `false` quando não havia o que recuperar — o descanso
@@ -475,23 +483,26 @@ export async function completeLongRest(
       .filter((resource) => resource.recharge === 'short' || resource.recharge === 'long')
       .map((resource) => resource.id);
 
-    // --- Usos RACIAIS: 1x/descanso longo persistidos em `classState.used` ----
-    const raceChoices = parseJson<Record<string, string>>(
-      raceChoicesSchema,
-      character.raceChoices,
-      {},
+    // --- Recursos RACIAIS (5.3E.1): estado PRÓPRIO `racialState` ------------
+    // Um Descanso Longo restaura TODOS os recursos raciais de recarga curta ou
+    // longa (Sopro Dracônico, Resistência Implacável e os usos daily aprovados
+    // do Legado Infernal/Magia Drow). NUNCA toca em `classState` — os estados
+    // são separados. A lista legada `racialUsesRestored` (`race-spell:*`) fica
+    // vazia; os nomes humanos vão em `racialResourcesRestored`.
+    const racialAdjustments = characterRacialAdjustments(character);
+    const racialStateBefore = normalizeRacialState(character.racialState);
+    const racialResourcesRestored = racialResourcesRestoredByRest(
+      racialStateBefore,
+      racialAdjustments.resources,
+      'long',
+    ).map((resource) => resource.name);
+    const nextRacialState = restoreRacialResourcesForRest(
+      racialStateBefore,
+      racialAdjustments.resources,
+      'long',
     );
     const racialUsesRestored: string[] = [];
     const nextUsed = { ...restored.used };
-    for (const grant of raceSpells(
-      { raceId: character.raceId, subraceId: character.subraceId, choices: raceChoices },
-      totalCharacterLevel(normalizeClassEntries(character.classes)),
-    )) {
-      if (grant.perRest !== 'long') continue;
-      const resourceId = `race-spell:${grant.key}`;
-      if (nextUsed[resourceId] !== undefined) racialUsesRestored.push(resourceId);
-      delete nextUsed[resourceId];
-    }
 
     // --- Efeitos ativos: limpeza SELETIVA por lifecycle (5.3D.2) ------------
     // NÃO é mais `active = []`: encerra só o que a metadata manda (ex.: Fúria),
@@ -518,6 +529,7 @@ export async function completeLongRest(
         hitDice: hitDiceAfter as unknown as Prisma.InputJsonValue,
         spells: nextSpells as unknown as Prisma.InputJsonValue,
         classState: nextClassState as unknown as Prisma.InputJsonValue,
+        racialState: nextRacialState as unknown as Prisma.InputJsonValue,
         ...(nextInventory
           ? { inventory: nextInventory as unknown as Prisma.InputJsonValue }
           : {}),
@@ -562,6 +574,7 @@ export async function completeLongRest(
       spellSlotLevelsRestored,
       classResourcesRestored,
       racialUsesRestored,
+      racialResourcesRestored,
       pactMagicRestored,
       activeEffectsEnded: cleanup.ended,
       masterPreservedActiveEffects: cleanup.masterPreserved,
@@ -578,6 +591,7 @@ export async function completeLongRest(
         spells: nextSpells,
         ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
         classState: nextClassState,
+        racialState: nextRacialState,
         ...(nextInventory ? { inventory: nextInventory } : {}),
       },
     });

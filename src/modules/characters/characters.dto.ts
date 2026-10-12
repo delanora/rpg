@@ -9,6 +9,12 @@ import {
 } from '../shared/spells/class-tables.js';
 import { oathSpellsAtLevel, resolveOathSpells } from '../shared/spells/oath-spells.js';
 import { raceSpells } from '../shared/races/index.js';
+import {
+  normalizeRacialState,
+  racialResources,
+  type RacialResource,
+  type RacialState,
+} from '../shared/races/resources.js';
 import { SPELL_CLASS_KEYS, type SpellClassKey } from '../shared/spells/types.js';
 import {
   normalizeLevelHistory,
@@ -242,6 +248,15 @@ function resolveTools(ids: readonly string[]): CharacterToolDto[] {
   return tools;
 }
 
+/**
+ * Recursos raciais DERIVADOS da ficha (5.3E.1). Estrutura própria, separada do
+ * `classAdjustments`: a raça não é uma classe. Cada recurso carrega
+ * `origin: 'race'`.
+ */
+export interface RacialAdjustments {
+  resources: RacialResource[];
+}
+
 /** Formato enviado ao frontend. Inclui os valores derivados, nunca gravados. */
 export interface CharacterDto {
   id: string;
@@ -279,6 +294,8 @@ export interface CharacterDto {
   activeFeatures: ActiveClassFeature[];
   /** Estado de runtime da classe (toggles ativos e usos gastos). */
   classState: ClassState;
+  /** Estado de runtime dos recursos RACIAIS (só os usos gastos). */
+  racialState: RacialState;
   /**
    * O que CADA nível concedeu (PV, Aumento de Atributo/Talento, escolhas,
    * subclasse, perícia e proficiências). É o que o painel do mestre usa para
@@ -287,6 +304,8 @@ export interface CharacterDto {
   levelHistory: LevelHistoryRecord[];
   /** Ajustes mecânicos somados das classes (Fúria, resistências, etc.). */
   classAdjustments: ClassAdjustments;
+  /** Recursos raciais limitados derivados (Sopro Dracônico, Legado Infernal...). */
+  racialAdjustments: RacialAdjustments;
   /**
    * Criação encerrada: com `true`, o jogador só mexe no estado de jogo (PV
    * atual/temporário, usos de recursos, anotações, avatar e itens). O mestre
@@ -491,6 +510,18 @@ export function toCharacterDto(
     return { eligible: die !== null, die };
   })();
   const classState = normalizeClassState(character.classState);
+  // Recursos RACIAIS limitados (5.3E.1): estrutura PRÓPRIA, separada do
+  // `classState` — a raça não é uma classe. O máximo/recarga são DERIVADOS do
+  // catálogo; só os usos gastos vivem no `racialState`. Uma raça PERSONALIZADA
+  // não usa o catálogo fixo (ainda não modela recursos — ver limitação).
+  const racialCatalogInput = {
+    raceId: character.customRaceId ? null : character.raceId,
+    subraceId: character.customRaceId ? null : character.subraceId,
+  };
+  const racialState = normalizeRacialState(character.racialState);
+  const racialAdjustments: RacialAdjustments = {
+    resources: racialResources(racialCatalogInput, racialState, level),
+  };
   // Subclasse de paladino (juramento): as magias de juramento são DERIVADAS do
   // nível de PALADINO + juramento (Prompt 6.3) — ver `oath-spells.ts`.
   const paladinEntry = classEntries.find((entry) => entry.classKey === 'paladin') ?? null;
@@ -636,7 +667,10 @@ export function toCharacterDto(
     .filter((grant) => !storedSpellIds.has(grant.key))
     .map((grant) => {
       const score = effectiveAbilities[grant.ability];
-      const resourceId = `race-spell:${grant.key}`;
+      // Contador 1x/descanso longo: o uso agora vive no `racialState` (recurso
+      // racial próprio, um por magia limitada) — não mais em `classState.used`.
+      const raceResource =
+        racialAdjustments.resources.find((resource) => resource.spellId === grant.key) ?? null;
       return {
         id: grant.key,
         name: grant.name,
@@ -650,14 +684,13 @@ export function toCharacterDto(
         raceSaveDC: spellSaveDc(level, score),
         raceAttackBonus: spellAttackBonus(level, score),
         ...(grant.castLevel !== undefined ? { raceCastLevel: grant.castLevel } : {}),
-        // Contador 1x/descanso longo: o reset automático NÃO existe nesta fase
-        // (Categoria B) — `used` só muda por ação explícita do jogador.
-        ...(grant.perRest
+        // Contador 1x/descanso longo: derivado do recurso racial (o `used` só
+        // muda pelo endpoint server-authoritative ou pelo descanso). O id do
+        // recurso permite ao cliente consumir via API.
+        ...(grant.perRest && raceResource
           ? {
-              raceUses: {
-                max: 1,
-                used: Math.min(1, Math.max(0, classState.used[resourceId] ?? 0)),
-              },
+              raceUses: { max: raceResource.max, used: raceResource.used },
+              raceResourceId: raceResource.id,
             }
           : {}),
       };
@@ -852,8 +885,10 @@ export function toCharacterDto(
     classOptions: classOptionsFor(abilities, classEntries),
     activeFeatures: activeFeaturesWithOathNames,
     classState,
+    racialState,
     levelHistory: normalizeLevelHistory(character.levelHistory),
     classAdjustments,
+    racialAdjustments,
     creationFinalized: character.creationFinalized,
     creationDraft: normalizeCreationDraft(character.creationDraft),
     level,
@@ -929,6 +964,25 @@ export function characterClassAdjustments(character: Character): ClassAdjustment
       abilities,
     ),
   );
+}
+
+/**
+ * Recursos raciais DERIVADOS de uma ficha lida DIRETO do banco (sem passar pelo
+ * DTO): o mesmo catálogo de `racialAdjustments` no DTO. O descanso e o endpoint
+ * de uso usam isto para nunca divergirem da ficha.
+ */
+export function characterRacialAdjustments(character: Character): RacialAdjustments {
+  const classEntries = normalizeClassEntries(character.classes);
+  return {
+    resources: racialResources(
+      {
+        raceId: character.customRaceId ? null : character.raceId,
+        subraceId: character.customRaceId ? null : character.subraceId,
+      },
+      normalizeRacialState(character.racialState),
+      totalCharacterLevel(classEntries),
+    ),
+  };
 }
 
 /**

@@ -85,8 +85,11 @@ export function SpellsSection({
   character,
   update,
   onEldritchMaster,
+  onRacialUse,
 }: SheetSectionProps & {
   onEldritchMaster?: (expectedVersion: number) => void | Promise<void>;
+  /** Uso de um recurso RACIAL limitado (5.3E.1) — server-authoritative. */
+  onRacialUse?: (resourceId: string, expectedVersion: number) => void | Promise<void>;
 }) {
   // Gastar/recuperar espaços é estado de jogo; o TOTAL de cada nível é DERIVADO
   // do nível de conjurador (não fica gravado) e a lista de magias conhecidas é
@@ -186,21 +189,25 @@ export function SpellsSection({
   }
 
   /**
-   * Contador das magias raciais 1x/descanso longo: alterna usado/disponível.
-   * NÃO há reset automático nesta fase (Categoria B) — o uso só muda por ação
-   * explícita do jogador. O estado vive em `classState.used`.
+   * Uso de uma magia racial LIMITADA (5.3E.1): consome o recurso racial no
+   * SERVIDOR (`POST /me/racial-features/use`). O `used` vive em `racialState`
+   * (nunca em `classState`) e só volta no descanso — não há "repor" manual.
    */
-  function toggleRaceUse(spell: Spell): void {
-    if (!spell.raceUses) return;
-    const id = `race-spell:${spell.id}`;
-    const used = character.classState.used[id] ?? 0;
-    const next = used >= spell.raceUses.max ? 0 : used + 1;
-    update({
-      classState: {
-        ...character.classState,
-        used: { ...character.classState.used, [id]: next },
-      },
-    });
+  const [pendingRaceUse, setPendingRaceUse] = useState<string | null>(null);
+  const [raceUseError, setRaceUseError] = useState<string | null>(null);
+  async function useRaceSpell(spell: Spell): Promise<void> {
+    if (!onRacialUse || !spell.raceResourceId || pendingRaceUse !== null) return;
+    setPendingRaceUse(spell.id);
+    setRaceUseError(null);
+    try {
+      await onRacialUse(spell.raceResourceId, character.version);
+    } catch (err) {
+      setRaceUseError(
+        err instanceof Error ? err.message : 'Não foi possível usar a magia racial.',
+      );
+    } finally {
+      setPendingRaceUse(null);
+    }
   }
 
   // Fonte de Magia (Feiticeiro): converte pontos de feitiçaria em espaços de
@@ -597,15 +604,27 @@ export function SpellsSection({
                             <button
                               type="button"
                               className="btn btn-small"
-                              disabled={readOnly}
+                              disabled={
+                                readOnly ||
+                                onRacialUse === undefined ||
+                                spell.raceResourceId === undefined ||
+                                pendingRaceUse !== null ||
+                                spell.raceUses.used >= spell.raceUses.max
+                              }
                               title={
                                 spell.raceUses.used >= spell.raceUses.max
-                                  ? 'Devolver o uso (descanso longo)'
-                                  : 'Marcar como usado (1x por descanso longo)'
+                                  ? 'Já usada; recupera num descanso longo'
+                                  : 'Usar (1x por descanso longo; a magia é resolvida manualmente)'
                               }
-                              onClick={() => toggleRaceUse(spell)}
+                              onClick={() => {
+                                void useRaceSpell(spell);
+                              }}
                             >
-                              {spell.raceUses.used >= spell.raceUses.max ? 'repor' : 'usar'}
+                              {pendingRaceUse === spell.id
+                                ? '…'
+                                : spell.raceUses.used >= spell.raceUses.max
+                                  ? 'usada'
+                                  : 'usar'}
                             </button>
                           ) : null}
                         </span>
@@ -622,10 +641,11 @@ export function SpellsSection({
                     </li>
                   );
                 })}
-            </ul>
-          </div>
-        ))
-      )}
+              </ul>
+              {raceUseError ? <p className="form-error">{raceUseError}</p> : null}
+            </div>
+          ))
+        )}
     </Section>
   );
 }

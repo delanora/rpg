@@ -5,8 +5,14 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import {
   characterClassAdjustments,
   characterMaxHp,
+  characterRacialAdjustments,
   type SpellsStateDto,
 } from '../characters/characters.dto.js';
+import {
+  normalizeRacialState,
+  racialResourcesRestoredByRest,
+  restoreRacialResourcesForRest,
+} from '../shared/races/resources.js';
 import {
   spellSlotsUsedFrom,
   spellsStateSchema,
@@ -145,6 +151,8 @@ export async function completeCollectiveShortRest(
     pactMagicRestored: boolean;
     activeEffectsEnded: EndedActiveEffect[];
     masterPreservedActiveEffects: MasterPreservedActiveEffect[];
+    /** Nomes dos recursos RACIAIS restaurados (5.3E.1). */
+    racialResourcesRestored: string[];
   }[] = [];
 
   for (const participant of accepted) {
@@ -172,6 +180,22 @@ export async function completeCollectiveShortRest(
       options.activeEffectOverrides ?? {},
     );
     const nextState = { ...restored, active: cleanup.active };
+
+    // 5.3E.1: recursos RACIAIS de recarga CURTA (ex.: Sopro Dracônico) voltam
+    // pelo mesmo caminho, no estado PRÓPRIO `racialState` — nunca em
+    // `classState`. Só entram os que tinham uso gasto.
+    const racialAdjustments = characterRacialAdjustments(character);
+    const racialStateBefore = normalizeRacialState(character.racialState);
+    const racialResourcesRestored = racialResourcesRestoredByRest(
+      racialStateBefore,
+      racialAdjustments.resources,
+      'short',
+    ).map((resource) => resource.name);
+    const nextRacialState = restoreRacialResourcesForRest(
+      racialStateBefore,
+      racialAdjustments.resources,
+      'short',
+    );
 
     // MAGIA DE PACTO (PHB 2014): pool PRÓPRIO do Bruxo, recuperado no Descanso
     // CURTO. Só o USO é persistido; o total vem do nível dele (`pactMagicSlots`,
@@ -223,6 +247,7 @@ export async function completeCollectiveShortRest(
       data: {
         hpCurrent: hpAfter,
         classState: nextState as unknown as Prisma.InputJsonValue,
+        racialState: nextRacialState as unknown as Prisma.InputJsonValue,
         spells: nextSpells as unknown as Prisma.InputJsonValue,
         version: { increment: 1 },
       },
@@ -252,6 +277,7 @@ export async function completeCollectiveShortRest(
       pactMagicRestored,
       activeEffectsEnded: cleanup.ended,
       masterPreservedActiveEffects: cleanup.masterPreserved,
+      racialResourcesRestored,
     });
     sheets.push({
       userId: participant.userId,
@@ -260,6 +286,7 @@ export async function completeCollectiveShortRest(
       changes: {
         hpCurrent: hpAfter,
         classState: nextState,
+        racialState: nextRacialState,
         spells: nextSpells,
         ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
       },

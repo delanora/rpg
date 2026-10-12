@@ -7,7 +7,7 @@ import {
   speedInSquares,
 } from '../../dnd';
 import { useSheetAccess } from '../../readonly';
-import type { ActiveToggle, ArmorClassDetail } from '../../types';
+import type { ActiveToggle, ArmorClassDetail, RacialResource } from '../../types';
 import { clampInt } from '../../utils';
 import { HpBar } from '../HpBar';
 import { Icon } from '../Icon';
@@ -101,6 +101,11 @@ interface VitalsSectionProps extends SheetSectionProps {
     active: boolean,
     expectedVersion: number,
   ) => void | Promise<void>;
+  /**
+   * Uso de um recurso RACIAL limitado no SERVIDOR (5.3E.1): o servidor deriva a
+   * posse, o máximo e a recarga. Sem esta prop os recursos raciais só aparecem.
+   */
+  onRacialUse?: (resourceId: string, expectedVersion: number) => void | Promise<void>;
 }
 
 export function VitalsSection({
@@ -110,6 +115,7 @@ export function VitalsSection({
   shortRest,
   longRest,
   onFeatureToggle,
+  onRacialUse,
 }: VitalsSectionProps) {
   // PV atual/temporário, usos de recursos e espaços continuam editáveis pelo
   // jogador depois de finalizar a criação; PV máximo, CA, iniciativa e
@@ -134,6 +140,32 @@ export function VitalsSection({
   /** Toggle com requisição em andamento (bloqueia o botão e o duplo clique). */
   const [pendingToggle, setPendingToggle] = useState<string | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+
+  // Recursos RACIAIS limitados derivados pelo servidor (5.3E.1).
+  const racialResources = character.racialAdjustments.resources;
+  /** Recurso racial com requisição em andamento (bloqueia o duplo clique). */
+  const [pendingRacial, setPendingRacial] = useState<string | null>(null);
+  const [racialError, setRacialError] = useState<string | null>(null);
+
+  /**
+   * Pede ao SERVIDOR para consumir UM uso do recurso racial. O servidor deriva a
+   * raça, a posse, o máximo e a recarga; aqui só se dispara a ação. NÃO rola
+   * dano, não pede salvaguarda e não altera PV nesta fase.
+   */
+  async function requestRacialUse(resource: RacialResource): Promise<void> {
+    if (!onRacialUse || pendingRacial !== null) return;
+    setPendingRacial(resource.id);
+    setRacialError(null);
+    try {
+      await onRacialUse(resource.id, character.version);
+    } catch (err) {
+      setRacialError(
+        err instanceof Error ? err.message : 'Não foi possível usar o recurso racial.',
+      );
+    } finally {
+      setPendingRacial(null);
+    }
+  }
 
   /**
    * Pede ao SERVIDOR para ligar/desligar a característica (5.3B). O servidor
@@ -526,6 +558,64 @@ export function VitalsSection({
               ? `Resistências: ${classAdjustments.resistances.join(', ')}.`
               : ''}
           </p>
+        </section>
+      ) : null}
+
+      {/* Recursos RACIAIS limitados (5.3E.1): estrutura própria, separada dos
+          recursos de classe. A resolução mecânica (dano/save/magia) é manual. */}
+      {racialResources.length > 0 ? (
+        <section className="class-state racial-state">
+          <h3 className="subsection-title">Recursos Raciais</h3>
+
+          <ul className="class-resources">
+            {racialResources.map((resource) => {
+              const usedUp = resource.remaining <= 0;
+              const manual = resource.actionType === 'manual';
+              return (
+                <li key={resource.id} className="class-resource">
+                  <span className="class-resource-name" title={resource.notes ?? undefined}>
+                    {resource.name}
+                  </span>
+                  <span className="class-resource-count">
+                    {resource.remaining}/{resource.max}
+                  </span>
+                  <span className="class-resource-recharge">
+                    {resource.recharge === 'short'
+                      ? 'Recupera em Descanso Curto'
+                      : 'Recupera em Descanso Longo'}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-small btn-primary"
+                    disabled={
+                      readOnly ||
+                      onRacialUse === undefined ||
+                      pendingRacial !== null ||
+                      usedUp
+                    }
+                    title={
+                      usedUp
+                        ? `${resource.name} já foi usado; recupera no descanso.`
+                        : manual
+                          ? `Marcar ${resource.name} como utilizada? (não altera PV nesta fase)`
+                          : `Usar ${resource.name} (dano/salvaguarda resolvidos manualmente)`
+                    }
+                    onClick={() => {
+                      void requestRacialUse(resource);
+                    }}
+                  >
+                    {pendingRacial === resource.id ? '…' : manual ? 'Marcar uso' : 'Usar'}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <p className="section-note">
+            Nesta fase o servidor controla só a disponibilidade e o consumo. Dano, alcance, CD e
+            salvaguarda destes recursos são resolvidos manualmente (o motor mecânico entra depois).
+          </p>
+          {racialError ? <p className="form-error">{racialError}</p> : null}
         </section>
       ) : null}
 

@@ -62,6 +62,37 @@ export function requestEldritchMaster(expectedVersion: number): Promise<Eldritch
   });
 }
 
+/** Resultado do uso de um recurso RACIAL limitado (5.3E.1). */
+export interface UseRacialFeatureResult {
+  character: Character;
+  resourceId: string;
+  resourceName: string;
+  recharge: 'short' | 'long';
+  max: number;
+  used: number;
+  remaining: number;
+  version: number;
+  replayed: boolean;
+}
+
+/**
+ * Consome UM uso de um recurso racial limitado: Sopro Dracônico, Resistência
+ * Implacável ou os usos diários do Legado Infernal/Magia Drow (5.3E.1).
+ *
+ * O cliente manda só o id do recurso e a `version` da ficha; o SERVIDOR deriva
+ * a posse, o máximo, a recarga e o saldo. NÃO executa dano/save/magia nesta
+ * fase — apenas marca o uso.
+ */
+export function useRacialFeature(
+  resourceId: string,
+  expectedVersion: number,
+): Promise<UseRacialFeatureResult> {
+  return api<UseRacialFeatureResult>('/api/characters/me/racial-features/use', {
+    method: 'POST',
+    body: { resourceId, expectedVersion, operationId: newId() },
+  });
+}
+
 /** Resultado de ligar/desligar uma característica (o servidor é a autoridade). */
 export interface FeatureToggleResult {
   character: Character;

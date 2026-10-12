@@ -68,6 +68,11 @@ interface IdentitySectionProps extends SheetSectionProps {
     active: boolean,
     expectedVersion: number,
   ) => void | Promise<void>;
+  /**
+   * Uso de um recurso RACIAL limitado (5.3E.1), repassado para a Vida e Defesa,
+   * onde ficam os recursos raciais.
+   */
+  onRacialUse?: (resourceId: string, expectedVersion: number) => void | Promise<void>;
 }
 
 export function IdentitySection({
@@ -77,6 +82,7 @@ export function IdentitySection({
   shortRest,
   longRest,
   onFeatureToggle,
+  onRacialUse,
 }: IdentitySectionProps) {
   // O avatar é estado de jogo (segue editável com a criação finalizada); os
   // demais campos da identidade são construção.
@@ -627,6 +633,7 @@ export function IdentitySection({
         shortRest={shortRest}
         longRest={longRest}
         onFeatureToggle={onFeatureToggle}
+        onRacialUse={onRacialUse}
       />
     </Section>
   );

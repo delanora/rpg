@@ -46,6 +46,11 @@ interface SheetViewProps {
    * Descanso Curto. A ficha devolvida passa a ser a da tela.
    */
   onEldritchMaster?: (expectedVersion: number) => void | Promise<void>;
+  /**
+   * Uso de um recurso RACIAL limitado (5.3E.1): o servidor deriva a posse, o
+   * máximo e a recarga. NÃO executa dano/save/magia nesta fase.
+   */
+  onRacialUse?: (resourceId: string, expectedVersion: number) => void | Promise<void>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na aba Mesa. */
   extraCoins?: boolean;
   /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
@@ -90,6 +95,7 @@ function renderTab(
   update: (patch: CharacterPatch) => void,
   onRoll?: (input: { kind: 'skill' | 'save'; label: string; bonus: number }) => void,
   onEldritchMaster?: (expectedVersion: number) => void | Promise<void>,
+  onRacialUse?: (resourceId: string, expectedVersion: number) => void | Promise<void>,
 ) {
   switch (key) {
     case 'spells':
@@ -98,6 +104,7 @@ function renderTab(
           character={character}
           update={update}
           onEldritchMaster={onEldritchMaster}
+          onRacialUse={onRacialUse}
         />
       );
     case 'attacks':
@@ -123,6 +130,7 @@ export function SheetView({
   onInventoryUse,
   onFeatureToggle,
   onEldritchMaster,
+  onRacialUse,
   extraCoins = false,
   coinTargets,
   onCoinsChange,
@@ -152,6 +160,7 @@ export function SheetView({
             shortRest={shortRest}
             longRest={longRest}
             onFeatureToggle={onFeatureToggle}
+            onRacialUse={onRacialUse}
           />
         </div>
 
@@ -191,7 +200,7 @@ export function SheetView({
 
           {/* A `key` reinicia a animação de "virar a página" a cada troca de aba. */}
           <div className="sheet-panel" key={tab} role="tabpanel" aria-label={active.label}>
-            {renderTab(tab, character, update, onRollSkill, onEldritchMaster)}
+            {renderTab(tab, character, update, onRollSkill, onEldritchMaster, onRacialUse)}
           </div>
         </div>
 
