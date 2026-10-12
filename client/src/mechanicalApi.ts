@@ -1,4 +1,5 @@
 import { api } from './api';
+import { createOperationId } from './utils';
 import type { MechanicalDto, MechanicalEntity } from './types';
 export function fetchMechanicalState(entity: MechanicalEntity): Promise<MechanicalDto> {
   return api<{ mechanical: MechanicalDto }>(`/api/mechanical/${entity.kind}/${entity.id}`).then(result => result.mechanical);
@@ -9,6 +10,7 @@ export function mutateMechanicalState(current: MechanicalDto, input: {
 }): Promise<MechanicalDto> {
   return api<{ mechanical: MechanicalDto }>('/api/mechanical/mutate', { method: 'POST', body: {
     ...input, entity: current.entity, expectedVersion: current.version,
-    ...(current.combat ? { expectedCombatVersion: current.combat.version } : {}), operationId: crypto.randomUUID(),
+    // Helper central: `crypto.randomUUID` não existe fora de contexto seguro.
+    ...(current.combat ? { expectedCombatVersion: current.combat.version } : {}), operationId: createOperationId(),
   } }).then(result => result.mechanical);
 }

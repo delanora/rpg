@@ -1,4 +1,5 @@
 import { api } from '../api';
+import { createOperationId } from '../utils';
 import type { AttackResolvedPayload, CombatDto } from '../types';
 
 /** Ações de combate — todas devolvem o estado atualizado do combate. */
@@ -77,8 +78,15 @@ export function endCombat(): Promise<void> {
   return api<{ combatId: string }>('/api/combat/end', { method: 'POST' }).then(() => undefined);
 }
 
+/**
+ * Corpo comum das operações de combate.
+ *
+ * O `operationId` vem do helper CENTRAL (`createOperationId`): a chamada direta
+ * a `crypto.randomUUID()` quebrava em contexto NÃO seguro (HTTP por IP de
+ * rede), onde ele é `undefined` — e isso derrubava TODAS as ações de combate.
+ */
 export function operationFor(combat: CombatDto) {
-  return { combatId: combat.id, expectedVersion: combat.version, operationId: crypto.randomUUID() };
+  return { combatId: combat.id, expectedVersion: combat.version, operationId: createOperationId() };
 }
 export type EconomyAction = 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'search' | 'use-object' | 'improvised' | 'ready' | 'execute-ready' | 'move';
 export type EconomyAdjustment = 'grant-action' | 'restore-action' | 'restore-bonus' | 'restore-reaction' | 'set-movement';
