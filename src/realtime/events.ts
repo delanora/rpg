@@ -335,6 +335,12 @@ export interface CombatTurnPayload {
   combatantName: string;
   /** Dono do turno, quando for um personagem de jogador. */
   ownerUserId: string | null;
+  /**
+   * Tipo do combatente. O Mestre usa isto para o toast de "TURNO DO MESTRE"
+   * sem precisar de uma segunda leitura; turnos pulados (morto/estabilizado)
+   * NÃO geram evento — o evento é sempre do combatente que vai agir.
+   */
+  kind: 'CHARACTER' | 'CREATURE' | 'NPC';
   round: number;
   index: number;
 }

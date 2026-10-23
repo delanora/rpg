@@ -845,9 +845,14 @@ enum CombatStatus {
   ENDED
 }
 
+/// Tipo do combatente. NPC é um tipo PRÓPRIO: ele reutiliza o cadastro
+/// persistente de `Creature` (kind NPC) e a mesma engine mecânica, mas nunca é
+/// silenciosamente tratado como cópia de criatura-template — o mesmo NPC só
+/// entra uma vez por combate (ver a migration `unique_npc_combatant`).
 enum CombatantKind {
   CHARACTER
   CREATURE
+  NPC
 }
 
 /// Um combate ativo por vez.

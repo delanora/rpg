@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { playCrit, playDice, playTurn } from '../sound';
 import type {
   AttackResolvedPayload,
@@ -76,9 +76,16 @@ export interface CombatLogEntry {
 }
 
 export interface TurnAlert {
+  /** "É SEU TURNO!" (jogador) ou "TURNO DO MESTRE" (criatura/NPC). */
+  title: string;
   combatantName: string;
   round: number;
+  /** Audiência do toast — só apresentação; a privacidade é do servidor. */
+  role: 'PLAYER' | 'MASTER';
 }
+
+/** Duração do toast central: 2 s, sem clique. */
+export const TURN_TOAST_MS = 2000;
 
 let logSequence = 0;
 const nextLogId = (): string => `log-${(logSequence += 1)}`;
@@ -134,13 +141,21 @@ function describeAttack(payload: AttackResolvedPayload): CombatLogEntry {
  * Devolve os handlers que devem ser mesclados no `useRealtime` — assim existe
  * uma única conexão de socket na aplicação.
  */
-export function useCombatState(userId: string) {
+export function useCombatState(userId: string, role: 'PLAYER' | 'MASTER') {
   const [combat, storeCombat] = useState<CombatDto | null>(null);
   const setCombat = useCallback((incoming: CombatDto | null) => {
     storeCombat(previous => previous && incoming && previous.id === incoming.id && previous.version > incoming.version ? previous : incoming);
   }, []);
   const [log, setLog] = useState<CombatLogEntry[]>([]);
   const [turnAlert, setTurnAlert] = useState<TurnAlert | null>(null);
+
+  // Toast do turno: some sozinho em 2 s. O timer é refeito a cada turno novo —
+  // um turno que chega durante o fade reinicia a contagem, sem empilhar.
+  useEffect(() => {
+    if (!turnAlert) return;
+    const timer = setTimeout(() => setTurnAlert(null), TURN_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [turnAlert]);
 
   const handlers = useMemo<RealtimeHandlers>(
     () => ({
@@ -155,10 +170,21 @@ export function useCombatState(userId: string) {
         setTurnAlert(null);
       },
       onCombatTurn: (payload) => {
-        // O som e o destaque são para quem vai jogar agora.
-        if (payload.ownerUserId === userId) {
+        // Audiência do toast (o servidor já pulou turnos de mortos/estabilizados,
+        // então o evento é sempre de quem VAI agir):
+        // • jogador: só o PRÓPRIO personagem;
+        // • Mestre: criaturas/NPCs que ele controla (ownerUserId nulo).
+        const ownCharacter = payload.ownerUserId === userId && payload.kind === 'CHARACTER';
+        const masterCombatant =
+          role === 'MASTER' && payload.ownerUserId === null && payload.kind !== 'CHARACTER';
+        if (ownCharacter || masterCombatant) {
           playTurn();
-          setTurnAlert({ combatantName: payload.combatantName, round: payload.round });
+          setTurnAlert({
+            title: ownCharacter ? 'É SEU TURNO!' : 'TURNO DO MESTRE',
+            combatantName: payload.combatantName,
+            round: payload.round,
+            role: ownCharacter ? 'PLAYER' : 'MASTER',
+          });
         }
         // O início de turno entra no log de todos — dado já enviado pelo socket.
         setLog((previous) =>
@@ -187,7 +213,7 @@ export function useCombatState(userId: string) {
         setLog((previous) => [describeAttack(payload), ...previous].slice(0, 40));
       },
     }),
-    [userId, setCombat],
+    [userId, role, setCombat],
   );
 
   const dismissTurnAlert = useCallback(() => setTurnAlert(null), []);

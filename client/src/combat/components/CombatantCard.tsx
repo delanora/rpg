@@ -5,6 +5,7 @@ import { HpBar } from '../../components/HpBar';
 import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import type { CombatantDto, DeathState } from '../../types';
+import { combatantKindIcon, combatantKindLabel } from '../combatVisuals';
 
 /** O ciclo de morte está ativo? (contadores, estabilização, pending, Death Saves). */
 function hasDeathLifecycle(death: DeathState): boolean {
@@ -87,7 +88,7 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
             src={combatant.imageUrl ?? ''}
             alt=""
             size="sm"
-            icon={combatant.kind === 'CREATURE' ? 'flame' : 'users'}
+            icon={combatantKindIcon(combatant.kind)}
           />
 
           <span className="combatant-card-id">
@@ -104,9 +105,7 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
                 <span className="combatant-card-status proximo">PRÓXIMO</span>
               ) : null}
             </span>
-            <span className="combatant-card-kind">
-              {combatant.kind === 'CREATURE' ? 'criatura' : 'personagem'}
-            </span>
+            <span className="combatant-card-kind">{combatantKindLabel(combatant.kind)}</span>
           </span>
 
           {trailing ? <span className="combatant-card-tail">{trailing}</span> : null}

@@ -3,8 +3,9 @@ import { Icon } from '../components/Icon';
 
 /**
  * Contador de Testes contra a Morte (PHB 2014): CORAÇÕES para sucessos e
- * CAVEIRAS para falhas. Leitura instantânea, tooltip por hover (sem ícone "i")
- * e animação curta apenas no pip que acabou de acender (via realtime).
+ * CAVEIRA COM OSSOS CRUZADOS para falhas. Leitura instantânea, tooltip por
+ * hover (sem ícone "i") e animação curta apenas no pip que acabou de acender
+ * (via realtime).
  *
  * É apresentação pura: o servidor decide os valores; aqui só desenhamos.
  */
@@ -15,7 +16,8 @@ function pipsLabel(kind: 'success' | 'failure'): string {
 
 /** Uma trilha de 3 marcas (preenchidas até `filled`). `pulse` acende a última nova. */
 function DeathPips({ filled, kind, pulse }: { filled: number; kind: 'success' | 'failure'; pulse?: boolean }) {
-  const icon = kind === 'success' ? 'heart' : 'skull';
+  // Falha usa CAVEIRA COM OSSOS CRUZADOS (não a caveira simples).
+  const icon = kind === 'success' ? 'heart' : 'crossbones';
   const label = pipsLabel(kind);
   return (
     <span

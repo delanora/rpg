@@ -17,6 +17,7 @@ import {
   rollMyInitiative,
 } from './combatApi';
 import { CombatIntro } from './CombatIntro';
+import { BattleWaitingPanel } from './components/BattleWaitingPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
 import { CombatDashboard } from './components/CombatDashboard';
 import { CombatLog } from './components/CombatLog';
@@ -25,7 +26,11 @@ import { DeathSavePanel } from './components/DeathSavePanel';
 import { DeathSaveSkipDialog } from './components/DeathSaveSkipDialog';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
 import { MasterEconomyPanel } from './components/MasterEconomyPanel';
+import { ReactionPanel } from './components/ReactionPanel';
 import { TurnResourceBar } from './components/TurnResourceBar';
+import { TurnToast } from './components/TurnToast';
+import { reactionOpportunitiesForViewer, type ReactionOpportunity } from './reactions';
+import { actingCombatantFor, currentUserControlsCombatant } from './turnControl';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
 /**
@@ -46,7 +51,6 @@ interface CombatTrackerProps {
   log: CombatLogEntry[];
   user: SessionUser;
   turnAlert: TurnAlert | null;
-  onDismissTurnAlert: () => void;
   /** Ataques do próprio personagem (fluxo do jogador). */
   characterAttacks?: Attack[];
   /** Dados de Ataque Furtivo do próprio personagem (ex.: "2d6"). */
@@ -59,6 +63,12 @@ interface CombatTrackerProps {
   movementMeters?: number | null;
   /** Mestre: ataques de qualquer combatente, para escolher o atacante. */
   attacksFor?: (combatantId: string) => Attack[];
+  /**
+   * REACTION WINDOW (arquitetura): oportunidades concretas para ESTE usuário.
+   * Vazio por padrão — nenhuma interface de Reação é renderizada sem uma
+   * oportunidade real (nada de barra permanente fora do turno).
+   */
+  reactionOpportunities?: ReactionOpportunity[];
   onCombatChange: (combat: CombatDto) => void;
   onCombatEnd: () => void;
   onError: (message: string) => void;
@@ -77,23 +87,24 @@ interface CombatTrackerProps {
  * Ponto de composição do painel de combate. Continua dono do estado local e das
  * ações (rolagens, ataque, dano manual, turno e encerramento).
  *
- * REFINO DE UI: o centro virou o fluxo de ataque (ataque → alvo → modo →
- * resumo → rolar). As Conditions ficam no CARD da iniciativa; o resultado do
- * ataque aparece só no Registro; a economia (Ação/Ação bônus/Reação/
- * Deslocamento/Encerrar) vive na barra persistente. Nada de regra mudou — só a
- * organização e a apresentação.
+ * PRIVACIDADE DE TURNO: a interface OPERACIONAL (ataques, alvos, bônus,
+ * economia, movimento, Encerrar Turno) só é renderizada para quem controla o
+ * combatente atual (`currentUserControlsCombatant`). Quem assiste vê o
+ * `BattleWaitingPanel` — animação de espada × escudo e o nome do turno, sem
+ * detalhes operacionais. O Mestre mantém os controles administrativos (dano
+ * manual, ajustes e o avanço do turno) sem receber a barra do jogador.
  */
 export function CombatTracker({
   combat,
   log,
   user,
   turnAlert,
-  onDismissTurnAlert,
   characterAttacks = [],
   sneakAttackExpression = null,
   sneakAttackFor,
   characterInventory,
   attacksFor,
+  reactionOpportunities = [],
   onCombatChange,
   onCombatEnd,
   onError,
@@ -104,24 +115,64 @@ export function CombatTracker({
   const isMaster = user.role === 'MASTER';
 
   const [busy, setBusy] = useState(false);
-  const [masterAttacker, setMasterAttacker] = useState('');
+  /**
+   * OVERRIDE MANUAL DO MESTRE, preso AO TURNO em que foi feito.
+   *
+   * Quando o turno vira, `turnId` não bate mais e a seleção volta sozinha para
+   * o novo combatente atual — sem efeito nem frame intermediário. Para o Mestre,
+   * criaturas/NPCs são auto-selecionados; trocar é possível, mas não persiste.
+   */
+  const [masterPick, setMasterPick] = useState<{ turnId: string; combatantId: string } | null>(
+    null,
+  );
+  // OVERRIDE explícito: o Mestre assume o turno de um personagem de jogador
+  // (jogador ausente). Vale só para AQUELE turno — nada de virar controlador
+  // permanente, e nada de mostrar a barra do jogador sem intenção declarada.
+  const [masterAssumed, setMasterAssumed] = useState<string | null>(null);
   // Leitura do ciclo de morte do combatente do turno (elegibilidade do Teste).
   const [currentDeath, setCurrentDeath] = useState<DeathDto | null>(null);
   // Confirmação do Mestre para avançar sem o Teste Contra a Morte do turno.
   const [skipDeathConfirm, setSkipDeathConfirm] = useState<{ name: string } | null>(null);
+  // Janelas de Reação já RECUSADAS/resolvidas (fecham localmente; o servidor
+  // continua dono de qualquer efeito mecânico futuro).
+  const [closedReactions, setClosedReactions] = useState<string[]>([]);
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
   const isMyTurn = Boolean(current && current.ownerUserId === user.id);
 
-  const rolledCount = combat.combatants.filter((item) => item.rolled).length;
+  // Quem controla o turno AGORA (derivação única — ver `turnControl.ts`).
+  const controlsCurrent = currentUserControlsCombatant(current, user);
+  const currentId = current?.id ?? '';
+  const masterAttackerId =
+    masterPick && masterPick.turnId === currentId ? masterPick.combatantId : currentId;
+  const masterOverrideActive =
+    isMaster &&
+    ((masterAttackerId !== currentId && masterAttackerId !== '') ||
+      (masterAssumed !== null && masterAssumed === currentId));
+  const showOperational = controlsCurrent || masterOverrideActive;
 
-  const masterAttackerCombatant =
-    combat.combatants.find((item) => item.id === masterAttacker) ?? null;
-  // Combatente que a barra/economia controla agora: o atacante escolhido pelo
-  // Mestre (ou o turno atual) e, para o jogador, o próprio personagem.
-  const actingCombatant = isMaster ? (masterAttackerCombatant ?? current) : myCombatant;
+  // Combatente que a interface representa (atacante do Mestre / próprio personagem).
+  const actingCombatant = actingCombatantFor(
+    combat.combatants,
+    current,
+    user,
+    isMaster ? masterAttackerId : '',
+  );
+  const masterAttackerCombatant = isMaster ? actingCombatant : null;
   const ownTurn = Boolean(actingCombatant && actingCombatant.id === combat.currentCombatantId);
+
+  // Oportunidades de Reação DESTE usuário (hoje sempre vazio: a janela é o
+  // ponto de extensão, ver `reactions.ts`). Nunca existe barra permanente.
+  const myReactionOpportunities = reactionOpportunitiesForViewer(
+    reactionOpportunities,
+    user.id,
+  ).filter((opportunity) => !closedReactions.includes(opportunity.id));
+  const reactionOpportunity = myReactionOpportunities[0] ?? null;
+  const closeReaction = (opportunityId: string): void =>
+    setClosedReactions((previous) => [...previous, opportunityId]);
+
+  const rolledCount = combat.combatants.filter((item) => item.rolled).length;
 
   // Ciclo de morte do combatente DO TURNO (o único que pode rolar Teste agora).
   const deathLifecycle = (state: DeathState | null): boolean =>
@@ -174,11 +225,12 @@ export function CombatTracker({
   const deathRollAvailable = currentDeath?.deathSave.available ?? false;
   const deathRollReason = currentDeath?.deathSave.reason ?? '';
   const deathOwner = Boolean(current && current.ownerUserId === user.id);
+  // Criatura/NPC: só o Mestre rola (Teste privado). Personagem: só o dono.
+  const deathPrivate = isMaster && Boolean(current && current.kind !== 'CHARACTER');
   const deathCanRoll = Boolean(
     showDeathTurn &&
-      ((!isMaster && deathOwner && Boolean(onRollDeathSave)) || (isMaster && current?.kind === 'CREATURE')),
+      ((!isMaster && deathOwner && Boolean(onRollDeathSave)) || deathPrivate),
   );
-  const deathPrivate = isMaster && current?.kind === 'CREATURE';
 
   // CHAVE DO TURNO atual — mesma fórmula do servidor. O DTO do combate carrega
   // `saveTurnKey`; com ela o cliente sabe, sem adivinhar, se o Teste deste turno
@@ -227,7 +279,7 @@ export function CombatTracker({
       : null;
 
   // ESTABILIZAR: alvos vivos a 0 PV, sem estabilização nem decisão pendente.
-  // Para o jogador, criaturas não entram (vida/ciclo ocultos); personagens sim.
+  // Para o jogador, criaturas/NPCs não entram (vida/ciclo ocultos); personagens sim.
   const stabilizeTargets = actingCombatant
     ? combat.combatants
         .filter((item) => item.id !== actingCombatant.id)
@@ -408,18 +460,8 @@ export function CombatTracker({
     <section className="combat-panel">
       <CombatIntro combatId={combat.id} />
 
-      {turnAlert ? (
-        <div className="turn-alert" role="alert">
-          <Icon name="sword" size={22} />
-          <strong>É o seu turno!</strong>
-          <span>
-            {turnAlert.combatantName} — rodada {turnAlert.round}
-          </span>
-          <button type="button" className="btn btn-small" onClick={onDismissTurnAlert}>
-            entendido
-          </button>
-        </div>
-      ) : null}
+      {/* Toast central (2 s, sem clique, sem bloquear a interface). */}
+      <TurnToast alert={turnAlert} />
 
       <header className="combat-head">
         <h2>
@@ -474,8 +516,30 @@ export function CombatTracker({
           <>
             <CombatTurnPanel combatant={current} round={combat.round} isMyTurn={isMyTurn} />
 
+            {/* Janela de Reação: SÓ com oportunidade concreta para este usuário. */}
+            {reactionOpportunity ? (
+              <ReactionPanel
+                opportunity={reactionOpportunity}
+                busy={busy}
+                onChoose={() => {
+                  // Nenhuma reação mecânica existe hoje: NÃO aplicamos um efeito
+                  // falso. A janela fecha e a limitação é dita com clareza.
+                  closeReaction(reactionOpportunity.id);
+                  onError(
+                    'A execução mecânica de Reações entra com a Spell Engine; nenhum efeito foi aplicado.',
+                  );
+                }}
+                onDecline={() => {
+                  // Recusar NÃO gasta a Reação e fecha a janela.
+                  closeReaction(reactionOpportunity.id);
+                }}
+              />
+            ) : null}
+
             {/* Turno em Testes contra a Morte: o fluxo normal do combatente do
-                turno dá lugar ao painel dramático (nada de ataque/alvo/ações). */}
+                turno dá lugar ao painel dramático (nada de ataque/alvo/ações).
+                Para criatura/NPC o ciclo é privado: o DTO do jogador não traz
+                `deathState`, então este painel nem aparece para ele. */}
             {showDeathTurn && current && turnDeath ? (
               <DeathSavePanel
                 name={current.name}
@@ -497,43 +561,91 @@ export function CombatTracker({
                 }
                 busy={busy}
               />
-            ) : null}
-
-            {/* O Mestre continua com o painel de ataques (ele conduz a mesa e
-                também rola os Testes privados de criaturas). */}
-            {isMaster && attacksFor ? (
-              <CombatActionPanel
-                combat={combat}
-                attacker={masterAttackerCombatant}
-                attacks={[]}
-                attackerChoices={combat.combatants.filter((item) => !item.missing)}
-                attacksFor={attacksFor}
-                sneakAttackFor={sneakAttackFor}
-                onSelectAttacker={setMasterAttacker}
-                busy={busy}
-                onAttack={attack}
-              />
-            ) : null}
-
-            {!isMaster && myCombatant && !showDeathTurn ? (
+            ) : showOperational ? (
               <>
-                {!isMyTurn ? (
-                  <p className="section-note">
-                    Fora do seu turno, somente ações preparadas com Reação podem ser resolvidas aqui.
-                  </p>
+                {/* Mestre: painel de ataques do combatente que ele controla
+                    (criatura/NPC do turno ou override explícito). */}
+                {isMaster && attacksFor && masterAttackerCombatant ? (
+                  <CombatActionPanel
+                    combat={combat}
+                    attacker={masterAttackerCombatant}
+                    attacks={[]}
+                    attackerChoices={combat.combatants.filter((item) => !item.missing)}
+                    attacksFor={attacksFor}
+                    sneakAttackFor={sneakAttackFor}
+                    onSelectAttacker={(combatantId) =>
+                      setMasterPick({ turnId: currentId, combatantId })
+                    }
+                    busy={busy}
+                    onAttack={attack}
+                  />
                 ) : null}
-                <CombatActionPanel
-                  combat={combat}
-                  attacker={myCombatant}
-                  attacks={characterAttacks}
-                  inventory={characterInventory}
-                  sneakAttack={sneakAttackExpression}
-                  busy={busy}
-                  onAttack={attack}
-                />
-              </>
-            ) : null}
 
+                {!isMaster && myCombatant ? (
+                  <CombatActionPanel
+                    combat={combat}
+                    attacker={myCombatant}
+                    attacks={characterAttacks}
+                    inventory={characterInventory}
+                    sneakAttack={sneakAttackExpression}
+                    busy={busy}
+                    onAttack={attack}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <>
+                {/* Quem NÃO controla o turno: apresentação neutra, sem ataques,
+                    bônus, economia, alvos ou Encerrar Turno. */}
+                {current ? (
+                  <BattleWaitingPanel
+                    name={current.name}
+                    kind={current.kind}
+                    isMaster={isMaster}
+                  />
+                ) : null}
+
+                {/* Autoridade do Mestre preservada de forma EXPLÍCITA: ele
+                    pode assumir o turno de um personagem (jogador ausente). */}
+                {isMaster && current ? (
+                  <button
+                    type="button"
+                    className="btn btn-small combat-assume-turn"
+                    disabled={busy}
+                    onClick={() => {
+                      setMasterAssumed(currentId);
+                      setMasterPick({ turnId: currentId, combatantId: currentId });
+                    }}
+                  >
+                    <Icon name="crown" size={13} /> Assumir o turno de {current.name}
+                  </button>
+                ) : null}
+
+                {/* EXCEÇÃO — REAÇÃO já suportada pelo motor: uma ação preparada
+                    só pode ser resolvida fora do próprio turno. Enquanto ela
+                    existir, a janela contextual reaproveita o painel de ataque
+                    do PRÓPRIO personagem (nunca o de outro jogador). */}
+                {!isMaster && myCombatant?.turnEconomy.ready ? (
+                  <>
+                    <p className="section-note">
+                      Você tem uma ação preparada. Resolvê-la consome a sua Reação.
+                    </p>
+                    <CombatActionPanel
+                      combat={combat}
+                      attacker={myCombatant}
+                      attacks={characterAttacks}
+                      inventory={characterInventory}
+                      sneakAttack={sneakAttackExpression}
+                      busy={busy}
+                      onAttack={attack}
+                    />
+                  </>
+                ) : null}
+              </>
+            )}
+
+            {/* Administração do Mestre: sempre disponível, sem virar a interface
+                operacional do jogador do turno. */}
             {isMaster ? (
               <ManualHpPanel
                 combatants={combat.combatants}
@@ -594,38 +706,40 @@ export function CombatTracker({
         }
         right={<CombatLog log={log} economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]} />}
         bottom={
-          <TurnResourceBar
-            active
-            isMaster={isMaster}
-            isMyTurn={isMyTurn}
-            economy={actingCombatant?.turnEconomy}
-            busy={busy}
-            ownTurn={ownTurn}
-            canAct={actingCombatant ? actingCombatant.conditionEffects.canAct : false}
-            effectiveSpeed={actingCombatant?.effectiveSpeed}
-            deathBlocked={Boolean(actingCombatant && deathLifecycle(actingCombatant.deathState))}
-            deathSavePending={!isMaster && deathSavePending}
-            standUp={standUpContext}
-            onStandUp={standUp}
-            stabilizeTargets={stabilizeTargets}
-            onStabilize={(targetCombatantId) => {
-              if (!actingCombatant) return;
-              void run(() =>
-                executeEconomyAction(combat, {
-                  combatantId: actingCombatant.id,
-                  action: 'stabilize',
-                  targetCombatantId,
-                }),
-              );
-            }}
-            onEconomyAction={(input) => {
-              if (!actingCombatant) return;
-              void run(() =>
-                executeEconomyAction(combat, { combatantId: actingCombatant.id, ...input }),
-              );
-            }}
-            onEndTurn={() => void endTurn()}
-          />
+          // A barra persistente NÃO é renderizada para quem não controla o
+          // turno (nem para o Mestre observando o personagem de um jogador).
+          showOperational && actingCombatant ? (
+            <TurnResourceBar
+              active
+              isMaster={isMaster}
+              isMyTurn={isMyTurn}
+              economy={actingCombatant.turnEconomy}
+              busy={busy}
+              ownTurn={ownTurn}
+              canAct={actingCombatant.conditionEffects.canAct}
+              effectiveSpeed={actingCombatant.effectiveSpeed}
+              deathBlocked={deathLifecycle(actingCombatant.deathState)}
+              deathSavePending={!isMaster && deathSavePending}
+              standUp={standUpContext}
+              onStandUp={standUp}
+              stabilizeTargets={stabilizeTargets}
+              onStabilize={(targetCombatantId) => {
+                void run(() =>
+                  executeEconomyAction(combat, {
+                    combatantId: actingCombatant.id,
+                    action: 'stabilize',
+                    targetCombatantId,
+                  }),
+                );
+              }}
+              onEconomyAction={(input) => {
+                void run(() =>
+                  executeEconomyAction(combat, { combatantId: actingCombatant.id, ...input }),
+                );
+              }}
+              onEndTurn={() => void endTurn()}
+            />
+          ) : undefined
         }
       />
 

@@ -99,8 +99,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const [deathMap, setDeathMap] = useState<Record<string, DeathDto>>({});
   const [deathModal, setDeathModal] = useState<DeathDto | null>(null);
 
-  const combatState = useCombatState(user.id);
-  const { combat, log, turnAlert, dismissTurnAlert } = combatState;
+  const combatState = useCombatState(user.id, user.role);
+  const { combat, log, turnAlert } = combatState;
 
   // RECONNECT: as decisões em aberto são relidas do servidor ao montar o painel
   // (o evento `death:updated` não sobrevive a um refresh). A primeira pendência
@@ -918,7 +918,6 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             log={log}
             user={user}
             turnAlert={turnAlert}
-            onDismissTurnAlert={dismissTurnAlert}
             attacksFor={attacksFor}
             sneakAttackFor={sneakAttackFor}
             onCombatChange={combatState.setCombat}
@@ -1019,7 +1018,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         <CombatStartDialog
           localities={localities}
           regions={regions}
-          creatures={monsters}
+          creatures={creatures}
           onCancel={() => setShowStartDialog(false)}
           onStart={handleStartCombat}
         />

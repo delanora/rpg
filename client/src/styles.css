@@ -16732,3 +16732,261 @@ input[type='checkbox']:focus-visible,
 .turn-resource-bar.death-blocked .death-blocked-note .turn-resource-label {
   color: var(--danger);
 }
+
+/* ==========================================================================
+   HOTFIX DE TURNO — privacidade da interface, toast central e painel neutro.
+   Nada aqui aplica regra: a privacidade de vida/CA/morte é do servidor.
+   ========================================================================== */
+
+/*
+ * TOAST CENTRAL de início de turno.
+ *
+ * Overlay fixo, SEM clique e SEM bloquear a interface (`pointer-events: none`).
+ * O estado some em 2 s (`useCombatState`); a animação só faz o fade/scale curto
+ * no fim desse tempo — não é uma faixa presa no layout.
+ */
+.turn-toast {
+  position: fixed;
+  top: 16%;
+  left: 50%;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1rem 2.2rem;
+  border-radius: var(--radius);
+  pointer-events: none;
+  text-align: center;
+  color: #f6ecd8;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 226, 150, 0.22), transparent 62%),
+    linear-gradient(180deg, rgba(43, 24, 14, 0.96), rgba(15, 9, 6, 0.96));
+  border: 1px solid var(--gold-deep);
+  box-shadow: 0 0 40px -8px var(--glow), 0 22px 44px -20px rgba(0, 0, 0, 0.9);
+  transform: translate(-50%, 0);
+  animation: turn-toast-in 2s ease forwards;
+}
+
+.turn-toast.player {
+  border-color: var(--gold-bright);
+}
+
+.turn-toast.master {
+  border-color: var(--wine);
+}
+
+.turn-toast-icon {
+  display: inline-flex;
+  color: var(--gold-bright);
+}
+
+.turn-toast-title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+
+.turn-toast-name {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+  color: #efe3cb;
+}
+
+@keyframes turn-toast-in {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.94); }
+  12% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  78% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -6px) scale(0.98); }
+}
+
+/* PAINEL NEUTRO do espectador: ocupa o lugar do painel operacional sem
+   revelar ataques, bônus, alvos, economia, movimento ou Encerrar Turno. */
+.battle-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 1.4rem 1rem 1.1rem;
+  border-radius: var(--radius);
+  border: 1px dashed color-mix(in srgb, var(--gold-deep) 55%, transparent);
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255, 226, 150, 0.08), transparent 65%),
+    color-mix(in srgb, var(--ink) 6%, transparent);
+  text-align: center;
+}
+
+.battle-waiting-anim {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  width: 100%;
+  height: 46px;
+  color: var(--gold-deep);
+}
+
+.battle-waiting-sword,
+.battle-waiting-shield {
+  display: inline-flex;
+  filter: drop-shadow(0 0 8px rgba(255, 219, 140, 0.18));
+}
+
+.battle-waiting-sword { animation: waiting-sword 2.4s ease-in-out infinite; }
+.battle-waiting-shield { animation: waiting-shield 2.4s ease-in-out infinite; }
+
+/* Impacto curto entre a espada e o escudo. */
+.battle-waiting-clash {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  opacity: 0;
+  box-shadow: 0 0 16px 4px var(--glow);
+  animation: waiting-clash 2.4s ease-in-out infinite;
+}
+
+.battle-waiting-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.battle-waiting-name {
+  margin: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.35rem;
+  color: var(--ink);
+}
+
+.battle-waiting-kind {
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+  text-transform: lowercase;
+}
+
+@keyframes waiting-sword {
+  0%, 100% { transform: translateX(-7px) rotate(-6deg); }
+  40% { transform: translateX(3px) rotate(2deg); }
+  55% { transform: translateX(1px) rotate(0deg); }
+}
+
+@keyframes waiting-shield {
+  0%, 100% { transform: translateX(7px) rotate(5deg); }
+  40% { transform: translateX(-3px) rotate(-2deg); }
+  55% { transform: translateX(-1px) rotate(0deg); }
+}
+
+@keyframes waiting-clash {
+  0%, 34%, 100% { opacity: 0; transform: scale(0.6); }
+  44% { opacity: 1; transform: scale(1.5); }
+  58% { opacity: 0; transform: scale(2.1); }
+}
+
+/* REACTION PANEL — pequeno e contextual. NÃO é a Action Economy de volta. */
+.reaction-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--gold-deep);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+}
+
+.reaction-panel-eyebrow {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.reaction-panel-trigger {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.reaction-panel-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.reaction-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid color-mix(in srgb, var(--gold-deep) 50%, transparent);
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.reaction-option:hover:not(:disabled) {
+  border-color: var(--gold-bright);
+}
+
+.reaction-option span {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+.reaction-decline {
+  align-self: flex-start;
+}
+
+/* Seleção de combatentes: filtro de tipo, busca por nome e metadados. */
+.combat-pick-filters {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.combat-pick-list .check-row {
+  align-items: center;
+}
+
+.combat-pick-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--text-micro);
+}
+
+.combat-pick-meta .tag.npc {
+  border-color: var(--gold-deep);
+  color: var(--gold-deep);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-toast,
+  .battle-waiting-sword,
+  .battle-waiting-shield,
+  .battle-waiting-clash {
+    animation: none;
+  }
+}

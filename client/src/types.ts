@@ -2005,7 +2005,8 @@ export interface PresentationClosedPayload {
 /** --- Combate ---------------------------------------------------------------- */
 
 export type CombatStatus = 'PENDING_INITIATIVE' | 'ACTIVE' | 'ENDED';
-export type CombatantKind = 'CHARACTER' | 'CREATURE';
+/** NPC é tipo PRÓPRIO de combatente (não é cópia de criatura-template). */
+export type CombatantKind = 'CHARACTER' | 'CREATURE' | 'NPC';
 
 export interface TurnEconomy {
   actionsGranted: number;
@@ -2089,6 +2090,8 @@ export interface CombatTurnPayload {
   combatantId: string;
   combatantName: string;
   ownerUserId: string | null;
+  /** Tipo do combatente (o Mestre usa no toast do turno das criaturas/NPCs). */
+  kind: 'CHARACTER' | 'CREATURE' | 'NPC';
   round: number;
   index: number;
 }

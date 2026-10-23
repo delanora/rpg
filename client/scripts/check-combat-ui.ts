@@ -21,13 +21,24 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ConditionBadges } from '../src/combat/components/ConditionBadges';
 import { DeathCounter } from '../src/death/DeathCounter';
 import { DeathSavePanel } from '../src/combat/components/DeathSavePanel';
+import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel';
+import { ReactionPanel } from '../src/combat/components/ReactionPanel';
+import { TurnToast } from '../src/combat/components/TurnToast';
+import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
+import { currentUserControlsCombatant } from '../src/combat/turnControl';
 import {
   CONDITION_VISUALS,
   ECONOMY_ACTION_VISUALS,
   conditionDamageFamily,
   conditionDescription,
 } from '../src/combat/combatVisuals';
-import type { ConditionEffects, DeathState, MechanicalState } from '../src/types';
+import type {
+  CombatantDto,
+  ConditionEffects,
+  DeathState,
+  MechanicalState,
+  SessionUser,
+} from '../src/types';
 
 /** Fixture do ciclo de morte usada nas verificações de UI. */
 function deathOf(patch: Partial<DeathState> = {}): DeathState {
@@ -329,6 +340,264 @@ console.log('Check-combat-ui — refino da UI de combate');
   // Bindings: o jogador rola pelo dice tray e o Mestre abre o modal do pendente.
   check('AJ) SheetPage liga o dice tray ao CombatTracker', source('src/pages/SheetPage.tsx').includes('onRollDeathSave') && source('src/pages/SheetPage.tsx').includes("kind: 'death-save'"));
   check('AK) MasterPanel abre a resolução ao surgir pendente', source('src/pages/MasterPanel.tsx').includes('if (entry.pending) return entry;'));
+}
+
+// ============================================================================
+// HOTFIX DE TURNO — auto-seleção, privacidade da interface, toast, NPC, busca
+// e arquitetura de Reaction Window. Nada aqui exige navegador.
+// ============================================================================
+{
+  const tracker = source('src/combat/CombatTracker.tsx');
+  const control = source('src/combat/turnControl.ts');
+  const state = source('src/combat/useCombatState.ts');
+  const service = source('../src/modules/combat/combat.service.ts');
+  const turnOrder = source('../src/modules/combat/turn-order.ts');
+  const dto = source('../src/modules/combat/combat.dto.ts');
+  const dialog = source('src/combat/CombatStartDialog.tsx');
+  const bar = source('src/combat/components/TurnResourceBar.tsx');
+  // `here` = client/scripts; a raiz do repositório está dois níveis acima.
+  const root = (relative: string): string => readFileSync(resolve(here, '..', '..', relative), 'utf8');
+
+  const master = { id: 'master-1', role: 'MASTER' } as unknown as SessionUser;
+  const playerB = { id: 'player-b', role: 'PLAYER' } as unknown as SessionUser;
+  const creature = { kind: 'CREATURE', ownerUserId: null } as unknown as CombatantDto;
+  const npc = { kind: 'NPC', ownerUserId: null } as unknown as CombatantDto;
+  const playerA = { kind: 'CHARACTER', ownerUserId: 'player-a' } as unknown as CombatantDto;
+
+  // WA/WB. currentUserControlsCombatant é a derivação ÚNICA.
+  check(
+    'WA) Mestre controla criatura/NPC, mas NÃO o personagem de jogador',
+    currentUserControlsCombatant(creature, master) &&
+      currentUserControlsCombatant(npc, master) &&
+      !currentUserControlsCombatant(playerA, master),
+  );
+  check(
+    'WB) Jogador controla só o próprio combatente',
+    currentUserControlsCombatant(playerA, playerB) === false &&
+      currentUserControlsCombatant(
+        { kind: 'CHARACTER', ownerUserId: 'player-b' } as unknown as CombatantDto,
+        playerB,
+      ) === true,
+  );
+  check(
+    'WB2) auto-seleção do Mestre é derivada do turno e o override morre na virada',
+    control.includes('actingCombatantFor') &&
+      tracker.includes('masterPick') &&
+      tracker.includes('masterPick.turnId === currentId') &&
+      tracker.includes('turnId: currentId') &&
+      tracker.includes('masterAttackerId') &&
+      // Override do Mestre para o turno de um jogador é EXPLÍCITO e temporário.
+      tracker.includes('masterAssumed') &&
+      tracker.includes('Assumir o turno de'),
+  );
+
+  // WC/WD. Toast central, 2 s, sem clique e com audiência correta.
+  const toast = renderToStaticMarkup(
+    createElement(TurnToast, {
+      alert: { title: 'É SEU TURNO!', combatantName: 'Razzil', round: 2, role: 'PLAYER' },
+    }),
+  );
+  check(
+    'WC) toast central mostra o título e o nome do combatente',
+    toast.includes('turn-toast') && toast.includes('É SEU TURNO!') && toast.includes('Razzil'),
+  );
+  check(
+    'WD) toast dura 2 s, não exige clique e não fica preso no layout',
+    state.includes('export const TURN_TOAST_MS = 2000') &&
+      state.includes('setTimeout') &&
+      !toast.includes('<button') &&
+      tracker.includes('<TurnToast') &&
+      !tracker.includes('turn-alert'),
+  );
+  check(
+    'WE) audiência: jogador só o próprio turno; Mestre só criatura/NPC',
+    state.includes("payload.ownerUserId === userId && payload.kind === 'CHARACTER'") &&
+      state.includes("role === 'MASTER' && payload.ownerUserId === null && payload.kind !== 'CHARACTER'") &&
+      state.includes("title: ownCharacter ? 'É SEU TURNO!' : 'TURNO DO MESTRE'"),
+  );
+
+  // WF/WG. Painel neutro do espectador e gate da interface operacional.
+  const waiting = renderToStaticMarkup(
+    createElement(BattleWaitingPanel, { name: 'Goblin', kind: 'CREATURE', isMaster: false }),
+  );
+  check(
+    'WF) painel neutro tem espada × escudo, nome do turno e NENHUM controle operacional',
+    waiting.includes('battle-waiting') &&
+      waiting.includes('battle-waiting-sword') &&
+      waiting.includes('battle-waiting-shield') &&
+      waiting.includes('Goblin') &&
+      !waiting.includes('Atacar') &&
+      !waiting.includes('Encerrar turno') &&
+      !waiting.includes('Deslocamento'),
+  );
+  check(
+    'WG) tracker só renderiza o painel operacional/barra para quem controla o turno',
+    tracker.includes('showOperational = controlsCurrent') &&
+      tracker.includes('<BattleWaitingPanel') &&
+      tracker.includes('showOperational && actingCombatant') &&
+      source('src/styles.css').includes('@keyframes waiting-sword'),
+  );
+
+  // WH. Barra persistente some no turno alheio.
+  check(
+    'WH) turno alheio não renderiza a barra normal nem o Encerrar Turno',
+    tracker.includes('showOperational && actingCombatant ? (') &&
+      tracker.includes('bottom={') &&
+      !tracker.includes('onDismissTurnAlert'),
+  );
+
+  // WI–WK. Privacidade de morte no SERVIDOR (não via CSS).
+  check(
+    'WI) DTO do jogador remove vida/CA/deathState/condições de 0 PV de criatura e NPC',
+    dto.includes('isMasterOnlyCombatant(combatant.kind)') &&
+      dto.includes('HP_ZERO_SOURCE') &&
+      dto.includes('HP_ZERO_PRONE_LABEL') &&
+      dto.includes('economyLog: dto.economyLog.filter') &&
+      dto.includes('deathState: null') &&
+      dto.includes('conditionEffects: deriveConditionEffects(privateState)'),
+  );
+  check(
+    'WJ) entrada da iniciativa PERMANECE (nada é removido do combate ao morrer)',
+    !service.includes('combatant.delete') &&
+      dto.includes('combatants: dto.combatants.map') &&
+      tracker.includes('combat.combatants.map'),
+  );
+  check(
+    'WK) Estabilizar/override de criatura/NPC entram como linha PRIVADA no Registro',
+    service.includes('{ private: isMasterOnlyCombatant(targetCombatant.kind) }') &&
+      service.includes("{ private: isMasterOnlyCombatant(outgoing.kind) }") &&
+      source('../src/modules/death/death.service.ts').includes("private: target.kind !== 'character'"),
+  );
+
+  // WL/WM. Skip de mortos e estabilizados, com laço limitado.
+  check(
+    'WL) turno pula morto e estabilizado a 0 com laço LIMITADO e fallback reportável',
+    turnOrder.includes('step < total') &&
+      turnOrder.includes('return null;') &&
+      service.includes('planNextTurn(') &&
+      service.includes('receivesTurn(ordered[position])') &&
+      service.includes('autoSkippedAtZero(candidate)') &&
+      service.includes("'NO_ELIGIBLE_COMBATANT'") &&
+      service.includes('onTurnStartDeath(deathEntityOf(candidate), db)'),
+  );
+  check(
+    'WM) 0 PV com Death Saves ATIVOS NÃO é pulado (a regra pura só conhece `stabilized`)',
+    service.includes('death.stabilized && !death.pending') && !turnOrder.includes('deathSaves'),
+  );
+
+  // WN–WP. NPC: tipo próprio, unicidade e engine completa.
+  check(
+    'WN) NPC é tipo PRÓPRIO de combatente (schema + migration)',
+    /enum CombatantKind \{[^}]*NPC/s.test(root('prisma/schema.prisma')) &&
+      root('prisma/migrations/20261023120000_add_npc_combatant_kind/migration.sql').includes("'NPC'"),
+  );
+  check(
+    'WO) mesmo NPC persistente só entra UMA vez (índice parcial + checagem)',
+    root('prisma/migrations/20261023120100_unique_npc_combatant/migration.sql').includes('WHERE "kind" = \'NPC\'') &&
+      service.includes('npcSeen.has(creature.id)') &&
+      service.includes("entry.quantity !== 1"),
+  );
+  check(
+    'WP) criatura-template mantém múltiplas cópias independentes',
+    service.includes("kind: creature.kind === 'NPC' ? ('NPC' as const) : ('CREATURE' as const)") &&
+      service.includes('`${creature.name} ${index + 1}`'),
+  );
+  check(
+    'WP2) NPC usa a MESMA engine (HP da instância, iniciativa e ciclo de morte)',
+    service.includes("if (combatant.kind !== 'CHARACTER')") &&
+      service.includes('combatant.creature?.hpMax') &&
+      service.includes('deathEntityOf(incoming)'),
+  );
+
+  // WQ–WS. Busca + tipo + localidade cumulativos.
+  check(
+    'WQ) filtros TIPO + LOCALIDADE + NOME são cumulativos',
+    dialog.includes("kindFilter !== 'ALL'") &&
+      dialog.includes('creature.localities.some') &&
+      dialog.includes('nameQuery') &&
+      dialog.includes('toLowerCase().includes(term)'),
+  );
+  check(
+    'WR) sem localidade a busca é global e cada resultado mostra nome/tipo/localidade',
+    dialog.includes('Sem localidade selecionada, a busca procura entre todas') &&
+      dialog.includes("{isNpc ? 'NPC' : 'Criatura'}") &&
+      dialog.includes("join(', ')"),
+  );
+  check(
+    'WS) NPC é selecionado uma vez; criatura aceita quantidade',
+    dialog.includes("creature.kind === 'NPC' ? 1 : MAX_QUANTITY") &&
+      dialog.includes("creature.kind === 'NPC' ? Math.min(1") &&
+      dialog.includes('MAX_QUANTITY = 30'),
+  );
+
+  // WT–WV. Crossbones (não caveira simples) e sem quadrado.
+  const failuresMarkup = renderToStaticMarkup(
+    createElement(DeathCounter, { successes: 0, failures: 2, showNumbers: false }),
+  );
+  check(
+    'WT) falha usa CAVEIRA COM OSSOS CRUZADOS (não a caveira simples)',
+    source('src/death/DeathCounter.tsx').includes("kind === 'success' ? 'heart' : 'crossbones'") &&
+      source('src/components/Icon.tsx').includes('crossbones') &&
+      failuresMarkup.includes('death-pips-failure') &&
+      !failuresMarkup.includes('death-icon-square'),
+  );
+  check(
+    'WU) ossos cruzados são traço (fill="none"); preenchimento pinta só o interior',
+    source('src/components/Icon.tsx').includes('d="M4 20 20 4" fill="none"') &&
+      source('src/styles.css').includes('.death-pip.filled .icon { fill: currentColor; }') &&
+      !/\.death-pip[^{]*\{[^}]*background:\s*var\(--(ok|danger)\)/.test(source('src/styles.css')),
+  );
+
+  // WW–WY. Reaction Window: arquitetura pronta, SEM UI permanente.
+  const opportunity: ReactionOpportunity = {
+    id: 'r1',
+    reactorUserId: 'player-b',
+    reactorCombatantId: 'cb',
+    trigger: 'Você foi alvo de um ataque.',
+    sourceCombatantId: 'ca',
+    targetCombatantId: 'cb',
+    availableReactions: [{ id: 'shield', label: 'Escudo', description: '+5 CA até o início do próximo turno.' }],
+    expiresAt: null,
+  };
+  const reactionMarkup = renderToStaticMarkup(
+    createElement(ReactionPanel, {
+      opportunity,
+      onChoose: () => undefined,
+      onDecline: () => undefined,
+    }),
+  );
+  check(
+    'WW) ReactionPanel é contextual: só as opções do reactor + "Não reagir"',
+    reactionMarkup.includes('Reação disponível') &&
+      reactionMarkup.includes('Escudo') &&
+      reactionMarkup.includes('Não reagir') &&
+      !reactionMarkup.includes('Ação bônus') &&
+      !reactionMarkup.includes('Encerrar turno') &&
+      !reactionMarkup.includes('Deslocamento'),
+  );
+  check(
+    'WX) sem oportunidade não existe UI de Reação (nada permanente fora do turno)',
+    !bar.includes('Reação disponível') &&
+      tracker.includes('myReactionOpportunities[0]') &&
+      tracker.includes('<ReactionPanel') &&
+      tracker.includes('reactionOpportunities = []'),
+  );
+  check(
+    'WY) oportunidades são filtradas por identidade e aceitam VÁRIOS reactores',
+    reactionOpportunitiesForViewer(
+      [opportunity, { ...opportunity, id: 'r2', reactorUserId: 'player-a' }],
+      'player-b',
+    ).length === 1 &&
+      reactionOpportunitiesForViewer([], 'player-b').length === 0,
+  );
+
+  // WZ. Nada de contra-ataque genérico/Shield falso.
+  check(
+    'WZ) nenhum "Contra-ataque" genérico nem Shield executável inventado',
+    !tracker.includes('Contra-ataque') &&
+      !tracker.includes('contra-ataque') &&
+      source('src/combat/reactions.ts').includes('Enquanto nenhuma regra concreta'),
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
