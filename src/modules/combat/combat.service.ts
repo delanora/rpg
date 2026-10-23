@@ -1,9 +1,21 @@
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
-import { deathBlocksActions } from '../shared/death.js';
-import { applyDamageConsequences, applyHealConsequences, onTurnStartDeath, publishDeathUpdated } from '../death/death.service.js';
+import { deathBlocksActions, deathSaveRequiredThisTurn, turnKey } from '../shared/death.js';
+import {
+  applyDamageConsequences,
+  applyHealConsequences,
+  applyStabilization,
+  onTurnStartDeath,
+  publishDeathUpdated,
+} from '../death/death.service.js';
+import { medicineBonus, stabilizationSucceeds, STABILIZE_DC } from '../shared/medicine.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { COMBAT_ACTIONS, deriveAttackActionLimit, economyOf, moveDistance, onTurnEnd, onTurnStart, recordAttack, spendEconomy } from '../shared/action-economy.js';
-import type { CombatOperationInput, EconomyActionInput, EconomyOverrideInput } from './combat.schema.js';
+import type {
+  CombatOperationInput,
+  EconomyActionInput,
+  EconomyOverrideInput,
+  NextTurnInput,
+} from './combat.schema.js';
 import type { CombatStatus, Prisma, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
@@ -28,6 +40,7 @@ import {
   multiclassSneakAttack,
   normalizeClassEntries,
   normalizeClassState,
+  totalCharacterLevel,
   type ClassAdjustments,
 } from '../shared/classes.js';
 import {
@@ -38,7 +51,7 @@ import {
   type InventoryLike,
 } from '../shared/ammo.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
-import { ABILITY_LABELS, abilityModifier, type AbilityKey } from '../shared/dnd5e.js';
+import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice } from '../shared/dice.js';
@@ -54,6 +67,7 @@ import {
   type CombatantSourced,
 } from './combat.dto.js';
 import type { MechanicalEntity } from '../shared/conditions.js';
+import type { DiceRollDto } from '../dice/dice.dto.js';
 import type { AttackInput, ManualHpInput, StartCombatInput } from './combat.schema.js';
 
 /** Quem está agindo (vem sempre do token). */
@@ -183,6 +197,44 @@ function deathEntityOf(combatant: CombatantSourced): MechanicalEntity {
 }
 
 /**
+ * Bônus do teste de SABEDORIA (MEDICINA) do combatente que age — PHB 2014.
+ *
+ * Personagem: mod. de Sabedoria + proficiência (dobrada com Expertise) ou
+ * metade da proficiência sem proficiência (Pau para Toda Obra). Criatura/NPC:
+ * só o modificador de Sabedoria (o cadastro não tem perícias). NADA vem do
+ * cliente. O total é usado contra a CD 10.
+ */
+function medicineCheckBonus(combatant: CombatantSourced): number {
+  const character = combatant.character;
+  const level = character ? totalCharacterLevel(normalizeClassEntries(character.classes)) : 1;
+  const wisdom = character?.wisdom ?? combatant.creature?.wisdom ?? 10;
+  const skill = normalizeSkills(character?.skills).medicine ?? {
+    proficient: false,
+    expertise: false,
+  };
+  let halfProficiency = 0;
+  if (character) {
+    const proficiency = proficiencyBonus(level);
+    halfProficiency = characterClassAdjustments(character).halfProficiency.reduce((top, grant) => {
+      if (grant.target !== 'checks') return top;
+      return Math.max(top, grant.round === 'up' ? Math.ceil(proficiency / 2) : Math.floor(proficiency / 2));
+    }, 0);
+  }
+  return medicineBonus({
+    wisdom,
+    level,
+    proficient: skill.proficient,
+    expertise: skill.expertise,
+    halfProficiency,
+  }).total;
+}
+
+/** `+3` / `-1` para o texto do Registro. */
+function signed(value: number): string {
+  return value >= 0 ? `+${value}` : String(value);
+}
+
+/**
  * Economia de um combatente que NÃO pode agir (morto/pendência de morte): sem
  * Ação, sem Ação Bônus, sem Reação e sem Movimento (integração com a 6.1).
  */
@@ -195,6 +247,44 @@ function blockedTurnEconomy() {
     movementBudget: 0,
     movementUsed: 0,
   });
+}
+
+/**
+ * Restaura a economia do turno depois de um 20 natural no Teste contra a Morte.
+ *
+ * O turno de quem está a 0 PV começa BLOQUEADO (`blockedTurnEconomy`). Voltar
+ * com 1 PV devolve o turno normal: Ação, Ação Bônus, Reação e Movimento cheio.
+ * A Queda NÃO é removida aqui — levantar custa metade do deslocamento e é uma
+ * escolha do jogador (menu contextual de Ações). A versão do combate sobe e o
+ * DTO atualizado é publicado para todos (sem isso a barra ficaria em 0 m).
+ */
+export async function restoreTurnEconomyAfterRevival(entity: MechanicalEntity): Promise<void> {
+  const participant = await prisma.combatant.findFirst({
+    where: {
+      combat: { status: 'ACTIVE' },
+      ...(entity.kind === 'character' ? { characterId: entity.id } : { id: entity.id }),
+    },
+    include: {
+      character: { select: { speed: true, mechanicalState: true } },
+      creature: { select: { speed: true } },
+    },
+  });
+  if (!participant) return;
+  const baseSpeed = participant.character?.speed ?? participant.creature?.speed ?? 0;
+  const state = participant.character?.mechanicalState ?? participant.mechanicalState;
+  await prisma.$transaction([
+    prisma.combatant.update({
+      where: { id: participant.id },
+      data: {
+        turnEconomy: onTurnStart(effectiveSpeed(baseSpeed, state)) as unknown as Prisma.InputJsonValue,
+      },
+    }),
+    prisma.combat.update({
+      where: { id: participant.combatId },
+      data: { version: { increment: 1 } },
+    }),
+  ]);
+  emitCombat(ServerEvents.COMBAT_UPDATED, toCombatDto(await loadCombatById(participant.combatId), 'MASTER'));
 }
 
 /** A unidade canônica já exposta pela ficha e pelas criaturas é metros. */
@@ -288,7 +378,13 @@ async function runCombatOperation<T extends { combat: CombatDto }>(
 }
 
 export async function executeEconomyAction(actor: CombatActor, input: EconomyActionInput) {
-  return runCombatOperation(actor, input, 'economy-action', async (db, combat) => {
+  const result = await runCombatOperation<{
+    combat: CombatDto;
+    /** Alvo cujo ciclo de morte mudou (publicado DEPOIS do commit). */
+    deathEntity?: MechanicalEntity;
+    /** Rolagem pública do teste de Medicina (bandeja de dados). */
+    diceRoll?: DiceRollDto;
+  }>(actor, input, 'economy-action', async (db, combat) => {
     const combatant = actingCombatant(combat, actor, input.combatantId);
     const economy = economyOf(combatant.turnEconomy);
     if (input.targetCombatantId && !combat.combatants.some((item) => item.id === input.targetCombatantId)) {
@@ -305,6 +401,71 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
       spendEconomy(economy, 'reaction');
       await appendEconomyLog(db, combat, combatant, `Executou ação preparada: ${economy.ready.intent}. Gatilho confirmado manualmente.`, input.action);
       economy.ready = null;
+    } else if (input.action === 'stabilize') {
+      // ESTABILIZAR (PHB 2014, p. 178): AÇÃO + Sabedoria (Medicina) CD 10.
+      // Qualquer criatura capaz de agir pode tentar; proficiência só soma. A
+      // Ação é gasta com sucesso OU falha; o alvo só muda se o teste passar.
+      requireOwnTurn(combat, combatant);
+      const targetCombatant = combat.combatants.find((item) => item.id === input.targetCombatantId);
+      if (!targetCombatant) throw new HttpError('Alvo não encontrado neste combate.', 404);
+      if (targetCombatant.id === combatant.id) {
+        throw new HttpError('Escolha outra criatura para estabilizar.', 400, 'VALIDATION_ERROR');
+      }
+      const targetDeath = combatantDeathState(targetCombatant);
+      const targetHp = targetCombatant.character
+        ? targetCombatant.character.hpCurrent
+        : (targetCombatant.hpCurrent ?? targetCombatant.creature?.hpCurrent ?? 0);
+      if (targetDeath.dead) throw new HttpError('Uma criatura morta não pode ser estabilizada.', 409, 'CONFLICT');
+      if (targetDeath.pending) {
+        throw new HttpError('Há uma decisão de morte pendente: o Mestre precisa resolvê-la antes.', 409, 'CONFLICT');
+      }
+      if (targetHp > 0) throw new HttpError('O alvo precisa estar a 0 PV.', 409, 'CONFLICT');
+      if (targetDeath.stabilized) throw new HttpError('O alvo já está estabilizado.', 409, 'CONFLICT');
+
+      spendEconomy(economy, 'action');
+      const natural = rollD20();
+      const bonus = medicineCheckBonus(combatant);
+      const total = natural + bonus;
+      const success = stabilizationSucceeds(total);
+      let deathEntity: MechanicalEntity | undefined;
+      if (success) {
+        deathEntity = deathEntityOf(targetCombatant);
+        await applyStabilization(deathEntity, actor.username, db);
+      }
+      const outcome = success
+        ? `SUCESSO — ${targetCombatant.name} estabilizado (0 PV, Inconsciente, Caído).`
+        : 'FALHA — o alvo permanece como estava.';
+      await appendEconomyLog(
+        db,
+        combat,
+        combatant,
+        `Medicina para estabilizar ${targetCombatant.name}: ${total} (d20 ${natural} ${signed(bonus)}) vs CD ${STABILIZE_DC} — ${outcome}`,
+        'stabilize',
+      );
+      // Rolagem PÚBLICA: entra na bandeja de dados existente (nada privado aqui).
+      const diceRoll: DiceRollDto = {
+        id: randomUUID(),
+        actorUserId: actor.userId,
+        clientId: null,
+        actorName: combatant.name,
+        kind: 'skill',
+        label: `Medicina — estabilizar ${targetCombatant.name}`,
+        dice: [{ sides: 20, value: natural }],
+        bonus,
+        total,
+        advantage: false,
+        disadvantage: false,
+        isPrivate: false,
+        crit: natural === 20,
+        lucky: false,
+        at: new Date().toISOString(),
+      };
+      await db.combatant.update({ where: { id: combatant.id }, data: { turnEconomy: economy } });
+      return {
+        combat: toCombatDto(await loadCombatById(combat.id, db), actor.role),
+        ...(deathEntity ? { deathEntity } : {}),
+        diceRoll,
+      };
     } else {
       requireOwnTurn(combat, combatant);
       if (input.action === 'move') {
@@ -329,6 +490,15 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
     await db.combatant.update({ where: { id: combatant.id }, data: { turnEconomy: economy } });
     return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
   });
+  // Eventos DEPOIS do commit: nada de anunciar rolagem/estabilização que
+  // falhou na transação. O replay idempotente não republica.
+  if (!result.replayed) {
+    if (result.diceRoll) emit(ServerEvents.DICE_ROLL, { roll: result.diceRoll });
+    if (result.deathEntity) await publishDeathUpdated(result.deathEntity);
+  }
+  // `replayed` continua na resposta: o smoke/consumidores distinguem um retry
+  // idempotente (mesmo operationId) de uma execução nova.
+  return { combat: result.combat, replayed: result.replayed };
 }
 
 export async function overrideEconomy(actor: CombatActor, input: EconomyOverrideInput) {
@@ -520,7 +690,7 @@ export async function rollInitiative(actor: CombatActor, combatantId?: string): 
  * espera pela iniciativa não há turno corrente, então ninguém além do mestre
  * avança.
  */
-export async function nextTurn(actor: CombatActor, input: CombatOperationInput): Promise<CombatDto> {
+export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promise<CombatDto> {
   const pending = await prisma.combat.findUnique({ where: { id: input.combatId }, select: { status: true } });
   if (pending?.status === 'PENDING_INITIATIVE' && actor.role !== 'MASTER') throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
   const response = await runCombatOperation(actor, input, 'next-turn', async (db, combat) => {
@@ -528,6 +698,35 @@ export async function nextTurn(actor: CombatActor, input: CombatOperationInput):
     const outgoing = ordered[combat.currentIndex];
     if (actor.role !== 'MASTER' && outgoing?.ownerUserId !== actor.userId) {
       throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
+    }
+    // PHB 2014: quem está a 0 PV faz o Teste contra a Morte no INÍCIO do próprio
+    // turno. Encerrar sem rolar é um bypass — o SERVIDOR recusa (o cliente só
+    // espelha). O Mestre pode avançar, mas com confirmação explícita
+    // (`skipDeathSave`), e o override fica registrado, sem inventar resultado.
+    const currentKey = turnKey(combat.id, combat.round, combat.currentIndex);
+    const mustRollBeforeEnding = deathSaveRequiredThisTurn(combatantDeathState(outgoing), currentKey);
+    if (mustRollBeforeEnding) {
+      if (actor.role !== 'MASTER') {
+        throw new HttpError(
+          'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.',
+          409,
+          'DEATH_SAVE_PENDING',
+        );
+      }
+      if (!input.skipDeathSave) {
+        throw new HttpError(
+          `${outgoing.name} ainda não realizou o Teste Contra a Morte deste turno. Deseja avançar mesmo assim?`,
+          409,
+          'DEATH_SAVE_PENDING',
+        );
+      }
+      await appendEconomyLog(
+        db,
+        combat,
+        outgoing,
+        `Mestre ${actor.username} avançou o turno sem o Teste Contra a Morte de ${outgoing.name} (override; nenhum sucesso/falha foi somado).`,
+        'death-override',
+      );
     }
     const index = (combat.currentIndex + 1) % ordered.length;
     const round = combat.round + (index === 0 ? 1 : 0);

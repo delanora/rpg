@@ -10,9 +10,7 @@ import { Icon } from '../components/Icon';
  */
 
 function pipsLabel(kind: 'success' | 'failure'): string {
-  return kind === 'success'
-    ? 'Sucessos no Teste contra a Morte'
-    : 'Falhas no Teste contra a Morte';
+  return kind === 'success' ? 'Sucessos' : 'Falhas';
 }
 
 /** Uma trilha de 3 marcas (preenchidas até `filled`). `pulse` acende a última nova. */
@@ -20,7 +18,11 @@ function DeathPips({ filled, kind, pulse }: { filled: number; kind: 'success' | 
   const icon = kind === 'success' ? 'heart' : 'skull';
   const label = pipsLabel(kind);
   return (
-    <span className={`death-pips death-pips-${kind}`} role="img" aria-label={`${label}: ${filled}/3`}>
+    <span
+      className={`death-pips death-pips-${kind}`}
+      role="img"
+      aria-label={`${label}: ${filled} de 3`}
+    >
       {[0, 1, 2].map((index) => {
         const on = index < filled;
         const classes = ['death-pip', on ? 'filled' : ''];
@@ -30,7 +32,8 @@ function DeathPips({ filled, kind, pulse }: { filled: number; kind: 'success' | 
             key={index}
             className={classes.filter(Boolean).join(' ')}
             // Tooltip nativo: reafirma a contagem ao passar o mouse sobre o ícone.
-            title={`${label}: ${filled}/3`}
+            title={`${label}: ${filled} de 3`}
+            aria-hidden="true"
           >
             <Icon name={icon} size={12} />
           </span>

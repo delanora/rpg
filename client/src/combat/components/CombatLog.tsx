@@ -6,7 +6,19 @@ import { DamageComponent } from './DamageComponent';
 
 interface CombatLogProps {
   log: CombatLogEntry[];
-  economyLog?: { id: string; actorName: string; message: string; at: string }[];
+  economyLog?: { id: string; actorName: string; message: string; at: string; action?: string }[];
+}
+
+/**
+ * Rótulo/ícone das linhas persistidas com significado próprio (Teste contra a
+ * Morte, estabilização, override do Mestre). As demais ações de economia
+ * continuam no cartão genérico de "Ação de combate".
+ */
+function actionHead(action?: string): { icon: IconName; title: string } | null {
+  if (action === 'death-save') return { icon: 'heart', title: 'Teste contra a Morte' };
+  if (action === 'stabilize') return { icon: 'flask', title: 'Estabilização' };
+  if (action === 'death-override') return { icon: 'crown', title: 'Decisão do Mestre' };
+  return null;
 }
 
 const KIND_ICON: Record<CombatLogEntry['kind'], IconName> = {
@@ -43,7 +55,15 @@ interface EntryView {
 
 /** Linha curta dos eventos simples (iniciativa, turno). */
 function describeEntry(entry: CombatLogEntry): EntryView {
-  if (entry.message) return { icon: 'book', variant: 'feature', title: 'Ação de combate', primary: entry.message };
+  if (entry.message) {
+    const head = actionHead(entry.action);
+    return {
+      icon: head?.icon ?? 'book',
+      variant: head ? `feature ${entry.action}` : 'feature',
+      title: head?.title ?? 'Ação de combate',
+      primary: entry.message,
+    };
+  }
   if (entry.kind === 'turn') {
     return {
       icon: KIND_ICON.turn,
@@ -231,7 +251,10 @@ function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean 
  * UM cartão estruturado; iniciativa e turno continuam cartões simples.
  */
 export function CombatLog({ log, economyLog = [] }: CombatLogProps) {
-  const entries: CombatLogEntry[] = [...log, ...economyLog.map(entry => ({ ...entry, kind: 'feature' as const }))]
+  const entries: CombatLogEntry[] = [
+    ...log,
+    ...economyLog.map((entry) => ({ ...entry, kind: 'feature' as const })),
+  ]
     .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 100);
   return (
     <section className="combat-block combat-log-panel">

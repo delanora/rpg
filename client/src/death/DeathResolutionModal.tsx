@@ -151,6 +151,18 @@ export function DeathResolutionModal({
                   : ' e entra no fluxo normal de Testes contra a Morte.'}
               </span>
             </button>
+            <button
+              type="button"
+              className="death-button"
+              disabled={busy}
+              onClick={() => void decide('leave-stabilized')}
+            >
+              <strong>Deixar estabilizado</strong>
+              <span>
+                0 PV, vivo e Inconsciente; contadores zerados e sem novos Testes contra
+                a Morte. Permanece Caído — não recupera PV.
+              </span>
+            </button>
             {isCreature ? (
               <button
                 type="button"

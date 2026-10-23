@@ -68,7 +68,21 @@ export type ManualHpInput = z.infer<typeof manualHpSchema>;
 
 export const economyActionSchema = combatOperationSchema.extend({
   combatantId: z.string().min(1),
-  action: z.enum(['dash', 'disengage', 'dodge', 'help', 'hide', 'search', 'use-object', 'improvised', 'ready', 'execute-ready', 'move']),
+  action: z.enum([
+    'dash',
+    'disengage',
+    'dodge',
+    'help',
+    'hide',
+    'search',
+    'use-object',
+    'improvised',
+    'ready',
+    'execute-ready',
+    'move',
+    // SABEDORIA (MEDICINA) CD 10 para estabilizar outra criatura a 0 PV.
+    'stabilize',
+  ]),
   description: z.string().trim().max(500).optional(),
   targetCombatantId: z.string().min(1).optional(),
   trigger: z.string().trim().min(1).max(500).optional(),
@@ -78,7 +92,18 @@ export const economyActionSchema = combatOperationSchema.extend({
   if (input.action === 'ready' && (!input.trigger || !input.intent)) ctx.addIssue({ code: 'custom', message: 'Informe gatilho e intenção.' });
   if (input.action === 'improvised' && !input.description) ctx.addIssue({ code: 'custom', message: 'Descreva a ação improvisada.' });
   if (input.action === 'move' && !input.distance) ctx.addIssue({ code: 'custom', message: 'Informe a distância em metros.' });
+  if (input.action === 'stabilize' && !input.targetCombatantId) ctx.addIssue({ code: 'custom', message: 'Escolha quem estabilizar.' });
 });
+
+/**
+ * Avanço de turno. `skipDeathSave` é a CONFIRMAÇÃO do Mestre para avançar sem o
+ * Teste contra a Morte obrigatório daquele turno — sem ela, o servidor recusa e
+ * o cliente abre a confirmação.
+ */
+export const nextTurnSchema = combatOperationSchema.extend({
+  skipDeathSave: z.boolean().optional(),
+});
+export type NextTurnInput = z.infer<typeof nextTurnSchema>;
 
 export const economyOverrideSchema = combatOperationSchema.extend({
   combatantId: z.string().min(1),

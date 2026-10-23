@@ -823,7 +823,9 @@ export type DeathDecision =
   | 'confirm-death'
   | 'narrative-1hp'
   | 'fall-to-zero'
-  | 'roll-death-saves';
+  | 'roll-death-saves'
+  /** "Deixar estabilizado": 0 PV, vivo, Inconsciente, contadores zerados. */
+  | 'leave-stabilized';
 
 /** Ação administrativa explícita do Mestre no ciclo de morte. */
 export type DeathOverrideAction =
@@ -832,6 +834,7 @@ export type DeathOverrideAction =
   | 'add-failure'
   | 'remove-failure'
   | 'stabilize'
+  | 'leave-stabilized'
   | 'unstabilize'
   | 'confirm-death'
   | 'narrative-1hp'

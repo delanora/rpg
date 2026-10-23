@@ -1,5 +1,7 @@
 import { MechanicalPanel } from '../components/MechanicalPanel';
 import { useEffect, useState } from 'react';
+import { ApiError } from '../api';
+import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
 import { fetchDeath, rollNpcDeathSave } from '../deathApi';
@@ -8,6 +10,7 @@ import {
   applyManualHp,
   endCombat,
   executeEconomyAction,
+  fetchActiveCombat,
   nextTurn,
   resolveAttack,
   rollInitiativeFor,
@@ -19,6 +22,7 @@ import { CombatDashboard } from './components/CombatDashboard';
 import { CombatLog } from './components/CombatLog';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { DeathSavePanel } from './components/DeathSavePanel';
+import { DeathSaveSkipDialog } from './components/DeathSaveSkipDialog';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
 import { MasterEconomyPanel } from './components/MasterEconomyPanel';
 import { TurnResourceBar } from './components/TurnResourceBar';
@@ -103,6 +107,8 @@ export function CombatTracker({
   const [masterAttacker, setMasterAttacker] = useState('');
   // Leitura do ciclo de morte do combatente do turno (elegibilidade do Teste).
   const [currentDeath, setCurrentDeath] = useState<DeathDto | null>(null);
+  // Confirmação do Mestre para avançar sem o Teste Contra a Morte do turno.
+  const [skipDeathConfirm, setSkipDeathConfirm] = useState<{ name: string } | null>(null);
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
@@ -174,6 +180,68 @@ export function CombatTracker({
   );
   const deathPrivate = isMaster && current?.kind === 'CREATURE';
 
+  // CHAVE DO TURNO atual — mesma fórmula do servidor. O DTO do combate carrega
+  // `saveTurnKey`; com ela o cliente sabe, sem adivinhar, se o Teste deste turno
+  // já aconteceu (a fonte de verdade continua no SERVIDOR).
+  const currentTurnKey = `${combat.id}:${combat.round}:${combat.currentIndex}`;
+  const turnDeathState = current?.deathState ?? null;
+  const deathSavePending = Boolean(
+    turnDeathState &&
+      turnDeathState.deathSaves &&
+      !turnDeathState.dead &&
+      !turnDeathState.stabilized &&
+      !turnDeathState.pending &&
+      !turnDeathState.relentless &&
+      turnDeathState.saveTurnKey !== currentTurnKey,
+  );
+
+  // LEVANTAR-SE (PHB 2014): só aparece quando o combatente que age está CAÍDO
+  // e pode agir. O custo exibido é informativo — o SERVIDOR recalcula metade do
+  // deslocamento efetivo e não gasta Ação.
+  const actingProne = Boolean(actingCombatant?.conditionEffects.prone);
+  const actingCanAct = Boolean(actingCombatant?.conditionEffects.canAct);
+  const standSpeed = actingCombatant?.effectiveSpeed ?? 0;
+  const standCost = standSpeed / 2;
+  const movementLeft = actingCombatant?.turnEconomy
+    ? Number(
+        (
+          actingCombatant.turnEconomy.movementBudget - actingCombatant.turnEconomy.movementUsed
+        ).toFixed(2),
+      )
+    : 0;
+  // O contexto aparece SEMPRE que o combatente ativo está Caído; quando a
+  // regra impede (velocidade 0 / movimento insuficiente), o item explica o
+  // motivo em vez de simplesmente sumir. O SERVIDOR continua validando.
+  const standUpContext =
+    actingProne && ownTurn && actingCanAct
+      ? {
+          cost: standCost,
+          available: standSpeed > 0 && movementLeft + 1e-8 >= standCost,
+          reason:
+            standSpeed <= 0
+              ? 'Você não pode se levantar enquanto seu deslocamento efetivo for 0.'
+              : movementLeft + 1e-8 < standCost
+                ? `Movimento insuficiente: levantar custa ${standCost} m e restam ${movementLeft} m neste turno.`
+                : undefined,
+        }
+      : null;
+
+  // ESTABILIZAR: alvos vivos a 0 PV, sem estabilização nem decisão pendente.
+  // Para o jogador, criaturas não entram (vida/ciclo ocultos); personagens sim.
+  const stabilizeTargets = actingCombatant
+    ? combat.combatants
+        .filter((item) => item.id !== actingCombatant.id)
+        .filter(
+          (item) =>
+            item.hpCurrent === 0 &&
+            item.deathState !== null &&
+            !item.deathState.dead &&
+            !item.deathState.stabilized &&
+            !item.deathState.pending,
+        )
+        .map((item) => ({ id: item.id, name: item.name }))
+    : [];
+
   async function rollNpcDeathSaveTurn(): Promise<void> {
     if (!deathEntity) return;
     setBusy(true);
@@ -186,6 +254,53 @@ export function CombatTracker({
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * Avança o turno. O Mestre pode pular um Teste Contra a Morte pendente, mas
+   * só DEPOIS de confirmar (o servidor devolve `DEATH_SAVE_PENDING`). O jogador
+   * não tem essa escolha: o primeiro pedido já é recusado.
+   */
+  async function endTurn(skipDeathSave = false): Promise<void> {
+    setBusy(true);
+    try {
+      onCombatChange(await nextTurn(combat, { skipDeathSave }));
+      setSkipDeathConfirm(null);
+    } catch (error) {
+      if (
+        isMaster &&
+        !skipDeathSave &&
+        error instanceof ApiError &&
+        error.code === 'DEATH_SAVE_PENDING'
+      ) {
+        setSkipDeathConfirm({ name: current?.name ?? 'Este combatente' });
+      } else {
+        onError(error instanceof Error ? error.message : 'Falha ao avançar o turno.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Levantar-se gasta metade do deslocamento efetivo (servidor valida). */
+  function standUp(): void {
+    if (!actingCombatant) return;
+    void (async () => {
+      setBusy(true);
+      try {
+        await standUpRequest({
+          entity: { kind: 'combatant', id: actingCombatant.id },
+          expectedVersion: actingCombatant.mechanicalVersion,
+          expectedCombatVersion: combat.version,
+        });
+        const fresh = await fetchActiveCombat().catch(() => null);
+        if (fresh) onCombatChange(fresh);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : 'Falha ao levantar-se.');
+      } finally {
+        setBusy(false);
+      }
+    })();
   }
 
   async function run(action: () => Promise<CombatDto>): Promise<void> {
@@ -318,7 +433,7 @@ export function CombatTracker({
               type="button"
               className="btn btn-primary btn-small"
               disabled={busy}
-              onClick={() => void run(() => nextTurn(combat))}
+              onClick={() => void endTurn()}
             >
               Próximo turno →
             </button>
@@ -489,16 +604,39 @@ export function CombatTracker({
             canAct={actingCombatant ? actingCombatant.conditionEffects.canAct : false}
             effectiveSpeed={actingCombatant?.effectiveSpeed}
             deathBlocked={Boolean(actingCombatant && deathLifecycle(actingCombatant.deathState))}
+            deathSavePending={!isMaster && deathSavePending}
+            standUp={standUpContext}
+            onStandUp={standUp}
+            stabilizeTargets={stabilizeTargets}
+            onStabilize={(targetCombatantId) => {
+              if (!actingCombatant) return;
+              void run(() =>
+                executeEconomyAction(combat, {
+                  combatantId: actingCombatant.id,
+                  action: 'stabilize',
+                  targetCombatantId,
+                }),
+              );
+            }}
             onEconomyAction={(input) => {
               if (!actingCombatant) return;
               void run(() =>
                 executeEconomyAction(combat, { combatantId: actingCombatant.id, ...input }),
               );
             }}
-            onEndTurn={() => void run(() => nextTurn(combat))}
+            onEndTurn={() => void endTurn()}
           />
         }
       />
+
+      {skipDeathConfirm ? (
+        <DeathSaveSkipDialog
+          name={skipDeathConfirm.name}
+          busy={busy}
+          onCancel={() => setSkipDeathConfirm(null)}
+          onConfirm={() => void endTurn(true)}
+        />
+      ) : null}
     </section>
   );
 }

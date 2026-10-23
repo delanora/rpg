@@ -71,6 +71,13 @@ const TUMBLE_MS = 1150;
 /** Os avisos públicos somem sozinhos depois de 3 segundos. */
 const TOAST_MS = 3000;
 
+/**
+ * Bandeja do Teste contra a Morte: fecha sozinha 3 s depois que o RESULTADO
+ * aparece (nunca durante a animação). Qualquer interação do usuário na janela
+ * cancela o fechamento — ninguém perde a leitura do resultado.
+ */
+const DEATH_SAVE_AUTO_CLOSE_MS = 3000;
+
 export function useDiceRoller(user: SessionUser) {
   const isMaster = user.role === 'MASTER';
 
@@ -96,6 +103,9 @@ export function useDiceRoller(user: SessionUser) {
   const settleTimer = useRef<number | null>(null);
   const remoteSettleTimer = useRef<number | null>(null);
   const toastTimers = useRef<number[]>([]);
+  // Auto-fechamento da bandeja do Teste contra a Morte (só esse fluxo).
+  const autoCloseTimer = useRef<number | null>(null);
+  const autoCloseCancelled = useRef(false);
   // Quando os dados de outra pessoa começaram a cair (o aviso do resultado sai
   // quando eles pousam, nunca antes de quem rolou ver o resultado).
   const remoteTumbleAt = useRef<number | null>(null);
@@ -125,10 +135,22 @@ export function useDiceRoller(user: SessionUser) {
     () => () => {
       if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
       if (remoteSettleTimer.current !== null) window.clearTimeout(remoteSettleTimer.current);
+      if (autoCloseTimer.current !== null) window.clearTimeout(autoCloseTimer.current);
       toastTimers.current.forEach((timer) => window.clearTimeout(timer));
     },
     [],
   );
+
+  /**
+   * Interação durante a janela de 3 s CANCELA o fechamento automático.
+   * Antes de a janela começar (animação, pool) não há nada para cancelar.
+   */
+  const cancelAutoClose = useCallback(() => {
+    if (autoCloseTimer.current === null) return;
+    autoCloseCancelled.current = true;
+    window.clearTimeout(autoCloseTimer.current);
+    autoCloseTimer.current = null;
+  }, []);
 
   /** O tabuleiro assistido sai da tela quando a janela do autor fecha. */
   const clearRemote = useCallback(() => {
@@ -241,6 +263,7 @@ export function useDiceRoller(user: SessionUser) {
   const openSkillRoll = useCallback(
     (input: RollContext) => {
       reset();
+      autoCloseCancelled.current = false;
       setContext(input);
       setPool([{ sides: 20, locked: true }]);
       setOpen(true);
@@ -248,7 +271,36 @@ export function useDiceRoller(user: SessionUser) {
     [reset],
   );
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    if (autoCloseTimer.current !== null) {
+      window.clearTimeout(autoCloseTimer.current);
+      autoCloseTimer.current = null;
+    }
+    setOpen(false);
+  }, []);
+
+  // Fechamento automático da bandeja do TESTE CONTRA A MORTE: o relógio só
+  // começa quando a animação terminou e o resultado está visível (`settled`).
+  // Escopo restrito a `kind === 'death-save'` — as outras rolagens não mudam.
+  useEffect(() => {
+    if (autoCloseTimer.current !== null) {
+      window.clearTimeout(autoCloseTimer.current);
+      autoCloseTimer.current = null;
+    }
+    if (!open) return;
+    if (phase !== 'settled' || !result || context?.kind !== 'death-save') return;
+    if (autoCloseCancelled.current) return;
+    autoCloseTimer.current = window.setTimeout(() => {
+      autoCloseTimer.current = null;
+      setOpen(false);
+    }, DEATH_SAVE_AUTO_CLOSE_MS);
+    return () => {
+      if (autoCloseTimer.current !== null) {
+        window.clearTimeout(autoCloseTimer.current);
+        autoCloseTimer.current = null;
+      }
+    };
+  }, [open, phase, result?.id, context?.kind]);
 
   // A rolagem privada do mestre não é divulgada para a mesa.
   const isPrivateRoll = isPrivate && isMaster;
@@ -353,6 +405,8 @@ export function useDiceRoller(user: SessionUser) {
     setPhase('tumbling');
     setResult(null);
     setError(null);
+    // Nova rolagem = nova janela de leitura: o auto-fechamento vale de novo.
+    autoCloseCancelled.current = false;
 
     // Não há anúncio de queda daqui: o servidor marca a fase `tumbling` no
     // começo da própria rolagem. Dois pedidos paralelos (anúncio + rolagem)
@@ -524,6 +578,7 @@ export function useDiceRoller(user: SessionUser) {
     openFree,
     openSkillRoll,
     close,
+    cancelAutoClose,
     addDie,
     removeDie,
     clearPool,

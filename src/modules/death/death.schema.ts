@@ -25,7 +25,14 @@ export const deathStabilizeSchema = z.object({ ...base });
 /** Decisão do Mestre sobre uma pendência de morte. */
 export const deathResolveSchema = z.object({
   ...base,
-  decision: z.enum(['confirm-death', 'narrative-1hp', 'fall-to-zero', 'roll-death-saves']),
+  decision: z.enum([
+    'confirm-death',
+    'narrative-1hp',
+    'fall-to-zero',
+    'roll-death-saves',
+    // "Deixar estabilizado": 0 PV, vivo, Inconsciente, contadores zerados.
+    'leave-stabilized',
+  ]),
 });
 
 /** Override administrativo do Mestre (contadores, estabilizar, ressuscitar). */
@@ -37,6 +44,7 @@ export const deathMutationSchema = z.object({
     'add-failure',
     'remove-failure',
     'stabilize',
+    'leave-stabilized',
     'unstabilize',
     'confirm-death',
     'narrative-1hp',

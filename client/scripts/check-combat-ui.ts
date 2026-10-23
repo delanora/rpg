@@ -193,7 +193,93 @@ console.log('Check-combat-ui — refino da UI de combate');
   const counter = renderToStaticMarkup(
     createElement(DeathCounter, { successes: 2, failures: 1, showNumbers: true }),
   );
-  check('AB) contador tem sucessos (corações) e falhas (caveiras)', counter.includes('Sucessos no Teste contra a Morte: 2/3') && counter.includes('Falhas no Teste contra a Morte: 1/3') && counter.includes('death-pips-success') && counter.includes('death-pips-failure'));
+  check('AB) contador tem sucessos (corações) e falhas (caveiras)', counter.includes('Sucessos: 2 de 3') && counter.includes('Falhas: 1 de 3') && counter.includes('death-pips-success') && counter.includes('death-pips-failure'));
+
+  // AB2. Acessibilidade: contagem em texto (não só cor) e o MESMO ícone preenchido.
+  check(
+    'AB2) contador expõe aria-label/title "N de 3" e preenche o próprio ícone',
+    counter.includes('aria-label="Sucessos: 2 de 3"') &&
+      counter.includes('title="Falhas: 1 de 3"') &&
+      (counter.match(/death-pip filled/g) ?? []).length === 3 &&
+      (counter.match(/death-pip"/g) ?? []).length === 3 &&
+      !counter.includes('background'),
+    counter.match(/death-pip[^"]*/g)?.slice(0, 6),
+  );
+
+  // AB3. CSS: coração verde / caveira cinza, SEM quadrado (nada de background).
+  {
+    const css = source('src/styles.css');
+    const filledHeart = /(^|\n)\.death-pips-success \.death-pip\.filled\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+    const filledSkull = /(^|\n)\.death-pips-failure \.death-pip\.filled\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+    const filledIcon = /\.death-pip\.filled \.icon\s*\{[^}]*fill:\s*currentColor/.test(css);
+    check(
+      'AB3) sucesso preenche o coração de VERDE e falha preenche a caveira de CINZA (sem background/quadrado)',
+      filledIcon &&
+        filledHeart.includes('var(--ok)') &&
+        !filledHeart.includes('background') &&
+        /#[0-9a-f]{6}/i.test(filledSkull) &&
+        !filledSkull.includes('background') &&
+        !/\.death-pip[^{]*\{[^}]*background:\s*var\(--(ok|danger)\)/.test(css),
+      { filledHeart, filledSkull, filledIcon },
+    );
+  }
+
+  // AB4. Menu de Ação: LEVANTAR-SE/ESTABILIZAR só existem com contexto.
+  {
+    const menu = source('src/combat/components/ActionMenu.tsx');
+    check(
+      'AB4) menu contextual: Levantar-se só quando Caído e Estabilizar só com alvo elegível',
+      menu.includes('canStand') &&
+        menu.includes('stabilizeTargets.length > 0') &&
+        menu.includes('canStand ?') &&
+        menu.includes('canStabilize ?') &&
+        menu.includes('metade do deslocamento') &&
+        menu.includes('Custo: 1 Ação') &&
+        menu.includes('alcance físico'),
+    );
+  }
+
+  // AB5. Encerrar turno: bloqueio + confirmação do Mestre.
+  {
+    const bar = source('src/combat/components/TurnResourceBar.tsx');
+    check(
+      'AB5) Encerrar turno bloqueia sem o Teste Contra a Morte e avisa o motivo',
+      bar.includes('deathSavePending') &&
+        bar.includes('Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.'),
+    );
+  }
+
+  // AB6. Registro lateral reconhece Teste contra a Morte / estabilização.
+  {
+    const log = source('src/combat/components/CombatLog.tsx');
+    check(
+      'AB6) Registro rotula Teste contra a Morte e estabilização (persistidos)',
+      log.includes("action === 'death-save'") &&
+        log.includes('Teste contra a Morte') &&
+        log.includes("action === 'stabilize'"),
+    );
+  }
+
+  // AB7. "Deixar estabilizado" no modal do Mestre.
+  check(
+    'AB7) modal do Mestre oferece "Deixar estabilizado"',
+    source('src/death/DeathResolutionModal.tsx').includes("decide('leave-stabilized')"),
+  );
+
+  // AB8. Bandeja do Teste contra a Morte fecha em 3 s e interação cancela.
+  {
+    const roller = source('src/dice/useDiceRoller.ts');
+    const dock = source('src/dice/DiceDock.tsx');
+    check(
+      'AB8) bandeja do Teste contra a Morte fecha 3 s após o resultado; interação cancela',
+      roller.includes('DEATH_SAVE_AUTO_CLOSE_MS = 3000') &&
+        roller.includes("phase !== 'settled'") &&
+        roller.includes("context?.kind !== 'death-save'") &&
+        roller.includes('cancelAutoClose') &&
+        dock.includes('onPointerDown={cancelAutoClose}') &&
+        dock.includes('onMouseEnter={cancelAutoClose}'),
+    );
+  }
 
   // AC. O card da iniciativa mostra o estado de morte.
   const card = source('src/combat/components/CombatantCard.tsx');
