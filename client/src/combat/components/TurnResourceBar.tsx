@@ -43,6 +43,20 @@ interface TurnResourceBarProps {
    * economia normal fica bloqueada e a barra mostra isso claramente.
    */
   deathBlocked?: boolean;
+  /**
+   * O Teste contra a Morte DESTE turno ainda não foi rolado: o jogador não pode
+   * encerrar o turno (o servidor também recusa).
+   */
+  deathSavePending?: boolean;
+  /**
+   * LEVANTAR-SE contextual (só Caído): custo em metros, sem gastar Ação.
+   * `available: false` mostra o motivo do bloqueio (velocidade 0 / movimento).
+   */
+  standUp?: { cost: number; available: boolean; reason?: string } | null;
+  onStandUp?: () => void;
+  /** Alvos válidos de ESTABILIZAR (0 PV, vivos, não estabilizados). */
+  stabilizeTargets?: { id: string; name: string }[];
+  onStabilize?: (targetCombatantId: string) => void;
 }
 
 /**
@@ -63,6 +77,11 @@ export function TurnResourceBar({
   canAct = true,
   effectiveSpeed,
   deathBlocked = false,
+  deathSavePending = false,
+  standUp = null,
+  onStandUp,
+  stabilizeTargets = [],
+  onStabilize,
 }: TurnResourceBarProps) {
   // O mestre encerra a qualquer momento; o jogador, só no próprio turno.
   const canEndTurn = Boolean(active && onEndTurn && (isMaster || isMyTurn));
@@ -71,6 +90,12 @@ export function TurnResourceBar({
   const remaining = economy ? Number((economy.movementBudget - economy.movementUsed).toFixed(2)) : 0;
   const canUseAction = Boolean(
     active && onEconomyAction && economy && canAct && ownTurn && actionsLeft > 0,
+  );
+  // O menu pode abrir por CONTEXTO mesmo sem Ação livre (Levantar-se não gasta
+  // Ação) — mas só quando há algo realmente executável.
+  const hasContext = Boolean((standUp && onStandUp) || (stabilizeTargets.length > 0 && onStabilize));
+  const canOpenMenu = Boolean(
+    active && onEconomyAction && canAct && ownTurn && (actionsLeft > 0 || hasContext),
   );
   const canMove = Boolean(
     active && onEconomyAction && economy && canAct && ownTurn && (effectiveSpeed ?? 0) > 0 && remaining > 0,
@@ -91,9 +116,14 @@ export function TurnResourceBar({
             <button
               type="button"
               className="end-turn"
-              disabled={busy}
+              disabled={busy || deathSavePending}
               onClick={onEndTurn}
               aria-label="Encerrar turno"
+              title={
+                deathSavePending
+                  ? 'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.'
+                  : undefined
+              }
             >
               <span className="end-turn-text">Encerrar turno</span>
               <span className="end-turn-arrow" aria-hidden="true">
@@ -109,6 +139,12 @@ export function TurnResourceBar({
             </span>
           )}
         </div>
+        {deathSavePending ? (
+          <p className="turn-resource-warning" role="status">
+            <Icon name="skull" size={13} /> Role o Teste Contra a Morte antes de
+            encerrar o turno.
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -127,8 +163,14 @@ export function TurnResourceBar({
       {/* AÇÃO — o próprio bloco abre o menu para cima. */}
       <div className="turn-resource action-cell">
         <ActionMenu
-          disabled={busy || !canUseAction}
+          disabled={busy || !canOpenMenu}
+          actionsDisabled={busy || !canUseAction}
           onSelect={(action, extra) => onEconomyAction?.({ action, ...extra })}
+          standUp={standUp}
+          onStandUp={onStandUp}
+          stabilizeTargets={stabilizeTargets}
+          onStabilize={onStabilize}
+          busy={busy}
         />
         <FieldInfo>{RESOURCE_INFO.action}</FieldInfo>
         <span className="turn-resource-value">

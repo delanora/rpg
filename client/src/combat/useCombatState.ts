@@ -34,6 +34,8 @@ export interface CombatLogEntry {
   /** Quem protagonizou o evento (quem rolou, atacou ou começou o turno). */
   actorName: string;
   message?: string;
+  /** Ação catalogada do registro (ex.: `death-save`, `stabilize`). */
+  action?: string;
   at: string;
   crit?: boolean;
 

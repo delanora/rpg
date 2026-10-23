@@ -7,6 +7,7 @@ import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js
 import { characterMaxHp, characterRacialAdjustments } from '../characters/characters.dto.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import { hideCreatureStats, orderCombatants, toCombatDto, type CombatSourced } from '../combat/combat.dto.js';
+import { appendCombatJournal } from '../combat/combat-journal.js';
 import { mechanicalStateOf, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
 import {
   addHpZeroUnconscious,
@@ -19,6 +20,7 @@ import {
   logDeath,
   pendingReasonLabel,
   removeHpZeroUnconscious,
+  stabilizeDeathLifecycle,
   turnKey,
   type DeathPending,
   type DeathState,
@@ -731,6 +733,17 @@ export async function applyDeathSave(
     // chave do turno já gravada devolve 409 (nunca dois resultados).
     if (!(await writeTarget(prisma, target, patch))) continue;
 
+    // REGISTRO lateral do combate: o Teste de PERSONAGEM é público (mesa e
+    // Mestre). O de NPC/criatura NUNCA entra aqui — o registro é público.
+    if (target.kind === 'character' && target.combat) {
+      await appendCombatJournal({
+        combatId: target.combat.id,
+        actorName: target.name,
+        message: deathSaveJournalLine(value, outcome, death),
+        action: 'death-save',
+      });
+    }
+
     const response: DeathSaveResult = {
       entity: target.entity,
       name: target.name,
@@ -831,6 +844,32 @@ async function publishTarget(dto: DeathDto): Promise<void> {
 }
 
 /**
+ * Linha do REGISTRO para um Teste contra a Morte de PERSONAGEM.
+ * Ex.: `Teste contra a Morte: 14 → SUCESSO ♥ (2/3).`
+ */
+function deathSaveJournalLine(
+  value: number,
+  outcome: { failures: number; naturalOne: boolean; naturalTwenty: boolean },
+  death: DeathState,
+): string {
+  if (outcome.naturalTwenty) {
+    return 'Teste contra a Morte: 20 natural → RECUPEROU 1 PV (continua Caído).';
+  }
+  if (outcome.naturalOne) {
+    return `Teste contra a Morte: 1 natural → 2 FALHAS ☠☠ (${death.failures}/3).`;
+  }
+  if (death.pending) {
+    return `Teste contra a Morte: ${value} → FALHA ☠ (${death.failures}/3) — aguardando o Mestre.`;
+  }
+  if (death.stabilized) {
+    return `Teste contra a Morte: ${value} → 3 SUCESSOS ♥♥♥ — ESTABILIZADO.`;
+  }
+  return outcome.failures > 0
+    ? `Teste contra a Morte: ${value} → FALHA ☠ (${death.failures}/3).`
+    : `Teste contra a Morte: ${value} → SUCESSO ♥ (${death.successes}/3).`;
+}
+
+/**
  * Publica SÓ o evento do ciclo de morte (`death:updated`) de uma entidade,
  * DEPOIS do commit.
  *
@@ -843,6 +882,9 @@ export async function publishDeathUpdated(entity: MechanicalEntity): Promise<voi
   try {
     const target = await loadTarget(entity);
     await publishDeath(toDeathDto(target));
+    // A ficha também é dona do ciclo: sem `sheet:updated`, o painel dela ficaria
+    // com o estado antigo depois de uma estabilização vinda do combate.
+    if (target.kind === 'character') await publishSheet(target.entity.id);
   } catch (error) {
     console.error('[death] falha ao publicar o ciclo de morte após o dano:', error);
   }
@@ -950,6 +992,25 @@ export async function resolveDeathPending(
       logDeath(death, actor.username, `Mestre ${actor.username} determinou Testes contra a Morte PRIVADOS para ${target.name}.`);
       return { death, mechanical: addHpZeroUnconscious(mechanical).state, hpCurrent: 0 };
     }
+    if (input.decision === 'leave-stabilized') {
+      // DEIXAR ESTABILIZADO: 0 PV, vivo, Inconsciente, Caído, contadores
+      // zerados. NÃO recupera PV e NÃO ressuscita ninguém.
+      death.dead = false;
+      stabilizeDeathLifecycle(death);
+      logDeath(death, actor.username, `Mestre ${actor.username} deixou ${target.name} estabilizado a 0 PV.`);
+      if (target.combat) {
+        await appendCombatJournal(
+          {
+            combatId: target.combat.id,
+            actorName: target.name,
+            message: `Mestre deixou ${target.name} estabilizado a 0 PV.`,
+            action: 'stabilize',
+          },
+          _db,
+        );
+      }
+      return { death, mechanical: addHpZeroUnconscious(mechanical).state, hpCurrent: 0 };
+    }
     if (input.decision === 'confirm-death') {
       death.dead = true;
       death.stabilized = false;
@@ -1013,13 +1074,24 @@ export async function overrideDeath(
     } else if (action === 'remove-failure') {
       death.failures = Math.max(0, death.failures - 1);
       logDeath(death, actor.username, `Mestre ${actor.username} removeu 1 falha de ${target.name} (${death.failures}/3)${input.reason ? `: ${input.reason}` : ''}.`);
-    } else if (action === 'stabilize') {
+    } else if (action === 'stabilize' || action === 'leave-stabilized') {
       if (death.dead) throw new HttpError('Um personagem morto não pode ser estabilizado.', 409, 'CONFLICT');
-      death.stabilized = true;
-      death.deathSaves = false;
-      death.pending = null;
-      death.relentless = null;
-      logDeath(death, actor.username, `Mestre ${actor.username} estabilizou ${target.name}${input.reason ? `: ${input.reason}` : ''}.`);
+      death.dead = false;
+      // Contadores ZERADOS: o ciclo terminou (PHB 2014) — 3 sucessos, Medicina
+      // e a decisão do Mestre chegam ao MESMO estado.
+      stabilizeDeathLifecycle(death);
+      logDeath(death, actor.username, `Mestre ${actor.username} deixou ${target.name} estabilizado a 0 PV${input.reason ? `: ${input.reason}` : ''}.`);
+      if (target.combat) {
+        await appendCombatJournal(
+          {
+            combatId: target.combat.id,
+            actorName: target.name,
+            message: `Mestre deixou ${target.name} estabilizado a 0 PV.`,
+            action: 'stabilize',
+          },
+          _db,
+        );
+      }
       return { death, mechanical: addHpZeroUnconscious(mechanical).state, hpCurrent: 0 };
     } else if (action === 'unstabilize') {
       death.stabilized = false;
@@ -1081,16 +1153,62 @@ export async function stabilizeTarget(
     }
     if (target.hpCurrent > 0) throw new HttpError('Estabilizar exige 0 PV.', 409, 'CONFLICT');
     if (death.stabilized) throw new HttpError('A criatura já está estabilizada.', 409, 'CONFLICT');
-    death.stabilized = true;
-    death.deathSaves = false;
-    death.relentless = null;
+    stabilizeDeathLifecycle(death);
     logDeath(death, actor.username, `${target.name} foi ESTABILIZADO a 0 PV${input.reason ? ` — ${input.reason}` : ''}.`);
+    if (target.combat) {
+      await appendCombatJournal(
+        {
+          combatId: target.combat.id,
+          actorName: target.name,
+          message: `${target.name} foi estabilizado a 0 PV (Inconsciente, sem novos Testes contra a Morte).`,
+          action: 'stabilize',
+        },
+        _db,
+      );
+    }
     return {
       death,
       mechanical: addHpZeroUnconscious(target.mechanical).state,
       hpCurrent: 0,
     };
   });
+}
+
+/**
+ * ESTABILIZAÇÃO por SABEDORIA (MEDICINA) CD 10 — PHB 2014, p. 178.
+ *
+ * Chamada pelo combate DEPOIS de o servidor rolar o teste (a rolagem e o
+ * consumo da Ação ficam no domínio do combate; aqui só a consequência no ciclo
+ * de morte). O alvo precisa estar a 0 PV, vivo, sem decisão pendente e ainda
+ * não estabilizado. Chega ao MESMO estado da estabilização do Mestre.
+ */
+export async function applyStabilization(
+  entity: MechanicalEntity,
+  actorName: string,
+  db: Prisma.TransactionClient,
+): Promise<{ name: string }> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const target = await loadTarget(entity, db);
+    if (target.death.dead) throw new HttpError('Uma criatura morta não pode ser estabilizada.', 409, 'CONFLICT');
+    if (target.death.pending) {
+      throw new HttpError('Há uma decisão de morte pendente: o Mestre precisa resolvê-la antes.', 409, 'CONFLICT');
+    }
+    if (target.hpCurrent > 0) throw new HttpError('O alvo não está a 0 PV.', 409, 'CONFLICT');
+    if (target.death.stabilized) throw new HttpError('O alvo já está estabilizado.', 409, 'CONFLICT');
+    stabilizeDeathLifecycle(target.death);
+    logDeath(
+      target.death,
+      actorName,
+      `${target.name} foi ESTABILIZADO por Medicina (Sabedoria, CD 10). Segue a 0 PV, Inconsciente e Caído.`,
+    );
+    const patch: TargetPatch = {
+      death: target.death,
+      mechanical: addHpZeroUnconscious(target.mechanical).state,
+      hpCurrent: 0,
+    };
+    if (await writeTarget(db, target, patch)) return { name: target.name };
+  }
+  throw new HttpError('Não foi possível estabilizar o alvo.', 409, 'CONFLICT');
 }
 
 /* -------------------------------------------------------------------------- */

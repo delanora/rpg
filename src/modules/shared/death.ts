@@ -144,6 +144,43 @@ export function clearDeathLifecycle(state: DeathState): DeathState {
   return state;
 }
 
+/**
+ * A criatura PRECISA rolar o Teste contra a Morte DESTE turno antes de
+ * encerrá-lo? (PHB 2014: o Teste acontece no início do turno de quem está a
+ * 0 PV.) Serve ao bloqueio do "Encerrar turno" do jogador e à confirmação do
+ * Mestre; `saveTurnKey` é a fonte de verdade persistida no servidor.
+ */
+export function deathSaveRequiredThisTurn(
+  state: DeathState,
+  currentTurnKey: string | null,
+): boolean {
+  if (!currentTurnKey) return false;
+  if (state.dead || state.pending !== null || state.relentless !== null) return false;
+  if (state.stabilized || !state.deathSaves) return false;
+  return state.saveTurnKey !== currentTurnKey;
+}
+
+/**
+ * ESTABILIZAÇÃO (PHB 2014): 0 PV, vivo, Inconsciente, sem novos Testes contra a
+ * Morte e com os contadores ZERADOS (o ciclo acabou). A Queda NÃO é removida —
+ * a criatura continua Caída até levantar-se; a Inconsciência sai só com cura.
+ *
+ * Chamado por 3 caminhos que devem dar o MESMO estado:
+ *  • 3 sucessos no Teste contra a Morte;
+ *  • Medicina CD 10 de outra criatura;
+ *  • decisão do Mestre ("Deixar estabilizado").
+ */
+export function stabilizeDeathLifecycle(state: DeathState): DeathState {
+  state.successes = 0;
+  state.failures = 0;
+  state.stabilized = true;
+  state.deathSaves = false;
+  state.pending = null;
+  state.relentless = null;
+  state.saveTurnKey = null;
+  return state;
+}
+
 /** Resultado de UM Teste contra a Morte (PHB 2014). */
 export interface DeathSaveOutcome {
   /** Sucessos somados por esta rolagem (0, 1 ou 2). */

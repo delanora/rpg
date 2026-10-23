@@ -41,6 +41,7 @@ export function DiceDock({ roller }: DiceDockProps) {
     history,
     openFree,
     close,
+    cancelAutoClose,
     addDie,
     removeDie,
     clearPool,
@@ -145,7 +146,16 @@ export function DiceDock({ roller }: DiceDockProps) {
       {open
         ? createPortal(
             <div className="dice-overlay" role="dialog" aria-modal="true" onClick={close}>
-              <div className="dice-stage" onClick={(event) => event.stopPropagation()}>
+              <div
+                className="dice-stage"
+                onClick={(event) => event.stopPropagation()}
+                // Teste contra a Morte: interagir nos 3 s cancela o fechamento
+                // automático (hover, clique, foco ou tecla) — leitura em paz.
+                onPointerDown={cancelAutoClose}
+                onMouseEnter={cancelAutoClose}
+                onFocusCapture={cancelAutoClose}
+                onKeyDown={cancelAutoClose}
+              >
                 <header className="dice-head">
                   <h2>
                     <Icon name="die" size={18} />

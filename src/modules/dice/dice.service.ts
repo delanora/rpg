@@ -1,5 +1,6 @@
 import { deriveConditionEffects, deriveSaveEffects, resolveRollMode } from '../shared/conditions.js';
 import { getMechanicalState } from '../mechanical/mechanical.service.js';
+import { restoreTurnEconomyAfterRevival } from '../combat/combat.service.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
@@ -265,6 +266,11 @@ async function rollDeathSave(actor: DiceActor, input: TableRollInput): Promise<D
   if (availability.audience === 'table') markRollTumbling(actor);
 
   const outcome = await applyDeathSave(deathActor, entity, value);
+  // 20 natural: o personagem volta com 1 PV e SAI do fluxo. O turno dele volta
+  // a ter a economia normal (é com o Movimento que ele se levanta; a Queda
+  // continua até o "Levantar-se"). Sem isso, o turno iniciado como Teste
+  // contra a Morte ficaria com 0 m e não haveria forma de levantar.
+  if (outcome.revived) await restoreTurnEconomyAfterRevival(entity);
   const roll: DiceRollDto = {
     id: randomUUID(),
     actorUserId: actor.userId,

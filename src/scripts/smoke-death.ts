@@ -8,19 +8,24 @@ import {
   damageBreakdown,
   deathBlocksActions,
   deathSaveOutcome,
+  deathSaveRequiredThisTurn,
   deathStateOf,
   hasDeathLifecycle,
   removeHpZeroUnconscious,
+  stabilizeDeathLifecycle,
 } from '../modules/shared/death.js';
+import { medicineBonus, stabilizationSucceeds, STABILIZE_DC } from '../modules/shared/medicine.js';
 import { mechanicalStateOf, type MechanicalEntity } from '../modules/shared/conditions.js';
 import {
   answerRelentless,
   applyDamageConsequences,
   applyDeathSave,
+  applyStabilization,
   type DeathActor,
   type DeathDto,
 } from '../modules/death/death.service.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
+import { restoreTurnEconomyAfterRevival } from '../modules/combat/combat.service.js';
 
 type Check = (label: string, condition: boolean, detail?: string) => void;
 
@@ -65,6 +70,68 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
       outcomes.every(([, outcome]) => outcome.successes + outcome.failures <= 2),
     JSON.stringify(outcomes),
   );
+  // Mapeamento DETERMINÍSTICO dos 20 resultados possíveis (sem RNG): é o que
+  // garante as probabilidades do PHB 2014 — 1 → 2 falhas; 2–9 → 1 falha;
+  // 10–19 → 1 sucesso; 20 → 1 PV. Nenhuma tabela de pesos artificial.
+  const mapping = Array.from({ length: 20 }, (_, index) => deathSaveOutcome(index + 1));
+  const mappingOk = mapping.every((outcome, index) => {
+    const value = index + 1;
+    if (value === 20) return outcome.revived && outcome.successes === 0 && outcome.failures === 0;
+    if (value === 1) return outcome.failures === 2 && outcome.successes === 0 && !outcome.revived;
+    if (value >= 10) return outcome.successes === 1 && outcome.failures === 0 && !outcome.revived;
+    return outcome.failures === 1 && outcome.successes === 0 && !outcome.revived;
+  });
+  check(
+    '64.45) os 20 resultados do d20 mapeiam exatamente para o PHB 2014 (10–19 sucesso; 2–9 falha; 1 = 2 falhas; 20 = 1 PV)',
+    mappingOk &&
+      mapping.filter((outcome) => outcome.successes > 0).length === 10 &&
+      mapping.filter((outcome) => outcome.failures === 1).length === 8 &&
+      mapping.filter((outcome) => outcome.failures === 2).length === 1 &&
+      mapping.filter((outcome) => outcome.revived).length === 1,
+    mapping.map((outcome, index) => `${index + 1}:${outcome.successes}/${outcome.failures}${outcome.revived ? '/revive' : ''}`).join(' '),
+  );
+  // Medicina (Sabedoria) CD 10: sem proficiência soma só Sabedoria; com
+  // proficiência soma o bônus; Expertise dobra; metade da proficiência vale
+  // quando a mesa tem Pau para Toda Obra.
+  const medicinePlain = medicineBonus({ wisdom: 14, level: 5, proficient: false, expertise: false });
+  const medicineProficient = medicineBonus({ wisdom: 14, level: 5, proficient: true, expertise: false });
+  const medicineExpertise = medicineBonus({ wisdom: 14, level: 5, proficient: true, expertise: true });
+  const medicineHalf = medicineBonus({ wisdom: 14, level: 5, proficient: false, expertise: false, halfProficiency: 1 });
+  check(
+    '64.51) Medicina = Sabedoria + proficiência (Expertise dobra; sem proficiência tenta mesmo assim)',
+    STABILIZE_DC === 10 &&
+      medicinePlain.total === 2 &&
+      medicineProficient.total === 5 &&
+      medicineExpertise.total === 8 &&
+      medicineHalf.total === 3 &&
+      stabilizationSucceeds(10) &&
+      !stabilizationSucceeds(9),
+    JSON.stringify({ medicinePlain, medicineProficient, medicineExpertise, medicineHalf }),
+  );
+  // Trava do turno: o Teste é obrigatório até a chave daquele turno ser gravada.
+  const pendingKey = 'combat:1:0';
+  check(
+    '64.31) o Teste Contra a Morte só deixa de ser obrigatório quando a chave DESTE turno foi gravada',
+    deathSaveRequiredThisTurn(deathStateOf({ deathSaves: true }), pendingKey) &&
+      !deathSaveRequiredThisTurn(deathStateOf({ deathSaves: true, saveTurnKey: pendingKey }), pendingKey) &&
+      // Chave de OUTRO turno não vale: o Teste deste turno continua pendente.
+      deathSaveRequiredThisTurn(deathStateOf({ deathSaves: true, saveTurnKey: 'combat:2:0' }), pendingKey) &&
+      !deathSaveRequiredThisTurn(deathStateOf({ deathSaves: true, stabilized: true }), pendingKey) &&
+      !deathSaveRequiredThisTurn(deathStateOf({ deathSaves: true }), null),
+  );
+  const stabilizedCycle = stabilizeDeathLifecycle(
+    deathStateOf({ successes: 2, failures: 1, deathSaves: true }),
+  );
+  check(
+    '64.16/19) estabilizar zera o ciclo, mantém 0 PV e NÃO revive nem recupera PV',
+    stabilizedCycle.stabilized &&
+      !stabilizedCycle.deathSaves &&
+      stabilizedCycle.successes === 0 &&
+      stabilizedCycle.failures === 0 &&
+      stabilizedCycle.pending === null,
+    JSON.stringify(stabilizedCycle),
+  );
+
   const zeroed = addHpZeroUnconscious({}).state;
   const again = addHpZeroUnconscious(zeroed).state;
   check(
@@ -260,9 +327,11 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
       // morte mexem na versão do combate, e o `expectedVersion` precisa estar
       // fresco (senão o avanço devolve 409 e o turno nunca anda).
       state = ((await request('/combat/active', undefined, masterToken)).data.combat as CombatDto | null) ?? state;
+      // `skipDeathSave` é a CONFIRMAÇÃO do Mestre (o harness avança sem esperar
+      // o Teste Contra a Morte). O bloqueio sem confirmação é verificado à parte.
       const response = await request(
         '/combat/next-turn',
-        { combatId: state.id, expectedVersion: state.version, operationId: randomUUID() },
+        { combatId: state.id, expectedVersion: state.version, operationId: randomUUID(), skipDeathSave: true },
         masterToken,
       );
       if (response.data.combat) state = response.data.combat;
@@ -958,6 +1027,358 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
 
     // Fecha a decisão aberta pelo ataque para as verificações seguintes.
     await resolve(characterEntity(heroA), 'narrative-1hp', attackedDeath.version);
+
+    /* ---------------------------------------------------------------------- */
+    /* HOTFIX — encerrar turno, Registro, Medicina e "Deixar estabilizado"    */
+    /* ---------------------------------------------------------------------- */
+
+    // --- 28) O Teste Contra a Morte de PERSONAGEM entra no Registro ---------
+    const journalRows = async () =>
+      (await prisma.combat.findUniqueOrThrow({ where: { id: combat.id }, select: { economyLog: true } }))
+        .economyLog as { action?: string; message?: string }[];
+    const journalDeath = await journalRows();
+    check(
+      '64.28) o Teste contra a Morte de PERSONAGEM aparece no Registro lateral (persistido)',
+      journalDeath.some(
+        (entry) => entry.action === 'death-save' && /Teste contra a Morte/.test(entry.message ?? ''),
+      ),
+      JSON.stringify(journalDeath.filter((entry) => entry.action === 'death-save').slice(-2)),
+    );
+
+    // --- 31/32/33/34) Encerrar turno com Teste Contra a Morte pendente ------
+    await resetHero(heroE, 0, { deathSaves: true });
+    await prisma.character.update({
+      where: { id: heroE.character.id },
+      data: { mechanicalState: addHpZeroUnconscious({}).state as never },
+    });
+    await advanceTo(combatantE, true);
+    const turnE = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const playerEnd = await request(
+      '/combat/next-turn',
+      { combatId: turnE.id, expectedVersion: turnE.version, operationId: randomUUID() },
+      heroE.token,
+    );
+    // Q) Rola o Teste deste turno e o MESMO jogador passa a poder encerrar.
+    const rolledE = await request(
+      '/dice/roll',
+      {
+        entity: characterEntity(heroE),
+        kind: 'death-save',
+        label: 'Teste contra a Morte',
+        dice: [{ sides: 20 }],
+      },
+      heroE.token,
+    );
+    const turnEAfterRoll = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const endAfterRoll = await request(
+      '/combat/next-turn',
+      { combatId: turnEAfterRoll.id, expectedVersion: turnEAfterRoll.version, operationId: randomUUID() },
+      heroE.token,
+    );
+    // Reabre o cenário de Teste PENDENTE para a confirmação do Mestre.
+    await resetHero(heroE, 0, { deathSaves: true });
+    await advanceTo(combatantE, true);
+    const turnESkip = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const masterEnd = await request(
+      '/combat/next-turn',
+      { combatId: turnESkip.id, expectedVersion: turnESkip.version, operationId: randomUUID() },
+      masterToken,
+    );
+    const beforeSkip = await readDeath(characterEntity(heroE));
+    const skip = await request(
+      '/combat/next-turn',
+      {
+        combatId: turnESkip.id,
+        expectedVersion: turnESkip.version,
+        operationId: randomUUID(),
+        skipDeathSave: true,
+      },
+      masterToken,
+    );
+    const afterSkip = await readDeath(characterEntity(heroE));
+    const journalSkip = await journalRows();
+    check(
+      '64.31/32/33/34) PLAYER não encerra sem o Teste Contra a Morte; MASTER só avança confirmando, sem inventar resultado',
+      playerEnd.status === 409 &&
+        playerEnd.data.error === 'DEATH_SAVE_PENDING' &&
+        rolledE.status === 201 &&
+        endAfterRoll.status === 200 &&
+        masterEnd.status === 409 &&
+        masterEnd.data.error === 'DEATH_SAVE_PENDING' &&
+        skip.status === 200 &&
+        skip.data.combat.currentCombatantId !== combatantE &&
+        afterSkip.death.successes === beforeSkip.death.successes &&
+        afterSkip.death.failures === beforeSkip.death.failures &&
+        journalSkip.some(
+          (entry) =>
+            entry.action === 'death-override' &&
+            /avançou o turno sem o Teste Contra a Morte/.test(entry.message ?? ''),
+        ),
+      JSON.stringify({
+        player: [playerEnd.status, playerEnd.data.error],
+        rolled: rolledE.status,
+        endAfterRoll: endAfterRoll.status,
+        master: [masterEnd.status, masterEnd.data.error],
+        skip: skip.status,
+        death: afterSkip.death,
+      }),
+    );
+
+    // --- 9–17/43/51) ESTABILIZAR por Sabedoria (Medicina) CD 10 ------------
+    await resetHero(heroF, 40);
+    await advanceTo(combatantF, true);
+    const turnF = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const invalidStabilize = await request(
+      '/combat/action',
+      {
+        combatId: turnF.id,
+        expectedVersion: turnF.version,
+        operationId: randomUUID(),
+        combatantId: combatantF,
+        action: 'stabilize',
+        targetCombatantId: combatantA,
+      },
+      heroF.token,
+    );
+    const targetBefore = await readDeath(characterEntity(heroE));
+    const turnFAgain = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const stabilizeAttempt = await request(
+      '/combat/action',
+      {
+        combatId: turnFAgain.id,
+        expectedVersion: turnFAgain.version,
+        operationId: randomUUID(),
+        combatantId: combatantF,
+        action: 'stabilize',
+        targetCombatantId: combatantE,
+      },
+      heroF.token,
+    );
+    const targetAfter = await readDeath(characterEntity(heroE));
+    const journalStabilize = await journalRows();
+    const stabilizeLine = journalStabilize
+      .filter((entry) => entry.action === 'stabilize')
+      .map((entry) => entry.message ?? '')
+      .find((message) => message.includes('Medicina para estabilizar')) ?? '';
+    const stabilizeWorked = stabilizeLine.includes('SUCESSO');
+    const combatAfterStabilize = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const actorEconomy = combatAfterStabilize.combatants.find((item) => item.id === combatantF)?.turnEconomy;
+    const targetMechanical = mechanicalStateOf(
+      (await prisma.character.findUniqueOrThrow({ where: { id: heroE.character.id } })).mechanicalState,
+    );
+    check(
+      '64.9/10/12/15/16/17/51) ESTABILIZAR usa Sabedoria (Medicina) CD 10, consome a Ação e só muda o alvo no sucesso',
+      invalidStabilize.status === 409 &&
+        stabilizeAttempt.status === 200 &&
+        stabilizeLine.includes(`vs CD ${10}`) &&
+        actorEconomy?.actionsUsed === 1 &&
+        (stabilizeWorked
+          ? targetAfter.death.stabilized &&
+            !targetAfter.death.deathSaves &&
+            targetAfter.death.successes === 0 &&
+            targetAfter.death.failures === 0 &&
+            targetAfter.hpCurrent === 0 &&
+            targetMechanical.conditions.some((item) => item.condition === 'unconscious') &&
+            targetMechanical.conditions.some((item) => item.condition === 'prone')
+          : !targetAfter.death.stabilized &&
+            targetAfter.death.failures === targetBefore.death.failures &&
+            targetAfter.death.successes === targetBefore.death.successes),
+      JSON.stringify({ line: stabilizeLine, worked: stabilizeWorked, death: targetAfter.death }),
+    );
+
+    // --- 18/19/50) "Deixar estabilizado" na decisão pendente do Mestre ------
+    await resetHero(heroE, 0, { deathSaves: true, failures: 2 });
+    await prisma.character.update({
+      where: { id: heroE.character.id },
+      data: { mechanicalState: addHpZeroUnconscious({}).state as never },
+    });
+    await manualHp(combatantE, 1, 'damage');
+    const pendingE = await readDeath(characterEntity(heroE));
+    const leave = await resolve(characterEntity(heroE), 'leave-stabilized', pendingE.version);
+    const left = await readDeath(characterEntity(heroE));
+    const leftMechanical = mechanicalStateOf(
+      (await prisma.character.findUniqueOrThrow({ where: { id: heroE.character.id } })).mechanicalState,
+    );
+    check(
+      '64.18/19/50) "Deixar estabilizado": 0 PV, vivo, estabilizado, contadores zerados, Inconsciente e Caído',
+      pendingE.death.pending?.kind === 'failures' &&
+        leave.status === 200 &&
+        left.hpCurrent === 0 &&
+        !left.death.dead &&
+        left.death.stabilized &&
+        !left.death.deathSaves &&
+        left.death.successes === 0 &&
+        left.death.failures === 0 &&
+        left.death.pending === null &&
+        leftMechanical.conditions.some((item) => item.condition === 'unconscious') &&
+        leftMechanical.conditions.some((item) => item.condition === 'prone'),
+      JSON.stringify({ pending: pendingE.death.pending?.kind, status: leave.status, death: left.death }),
+    );
+
+    // --- 16) Medicina aplicada no domínio = MESMO estado da estabilização ---
+    await resetHero(heroE, 0, { deathSaves: true, successes: 2, failures: 1 });
+    await prisma.character.update({
+      where: { id: heroE.character.id },
+      data: { mechanicalState: { ...addHpZeroUnconscious({}).state, conditions: [] } as never },
+    });
+    const directStabilize = await prisma.$transaction(async (tx) => {
+      await applyStabilization(characterEntity(heroE), 'Medicina (smoke)', tx);
+      return tx.character.findUniqueOrThrow({ where: { id: heroE.character.id } });
+    });
+    const directDeath = deathStateOf(directStabilize.deathState);
+    const directMechanical = mechanicalStateOf(directStabilize.mechanicalState);
+    check(
+      '64.16) estabilização por Medicina zera os contadores e mantém Inconsciente + Caído a 0 PV',
+      directStabilize.hpCurrent === 0 &&
+        directDeath.stabilized &&
+        !directDeath.deathSaves &&
+        directDeath.successes === 0 &&
+        directDeath.failures === 0 &&
+        directMechanical.conditions.some((item) => item.condition === 'unconscious') &&
+        directMechanical.conditions.some((item) => item.condition === 'prone'),
+      JSON.stringify({ hp: directStabilize.hpCurrent, death: directDeath }),
+    );
+
+    // --- 52) LEVANTAR-SE: metade do deslocamento efetivo, sem gastar Ação --
+    const proneState = {
+      conditions: [
+        {
+          id: randomUUID(),
+          condition: 'prone',
+          sourceType: 'posture',
+          sourceLabel: 'Queda',
+          appliedAt: new Date().toISOString(),
+        },
+      ],
+      exhaustionLevel: 0,
+      log: [],
+    };
+    await prisma.character.update({
+      where: { id: heroF.character.id },
+      data: { hpCurrent: 40, mechanicalState: proneState as never },
+    });
+    const heroFRow = await prisma.character.findUniqueOrThrow({ where: { id: heroF.character.id } });
+    // Leitura FRESCA: o estado mecânico mudou (Caído sem Exaustão) — o DTO
+    // anterior ainda trazia a velocidade efetiva da Exaustão 6.
+    const combatBeforeStand = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const combatantFBefore = combatBeforeStand.combatants.find((item) => item.id === combatantF)!;
+    const standEntity = characterEntity(heroF);
+    const stand = await request(
+      '/mechanical/mutate',
+      {
+        entity: standEntity,
+        expectedVersion: heroFRow.version,
+        expectedCombatVersion: combatBeforeStand.version,
+        action: 'stand',
+        operationId: randomUUID(),
+      },
+      heroF.token,
+    );
+    const combatAfterStand = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const economyAfterStand = combatAfterStand.combatants.find((item) => item.id === combatantF)!.turnEconomy;
+    const mechAfterStand = mechanicalStateOf(
+      (await prisma.character.findUniqueOrThrow({ where: { id: heroF.character.id } })).mechanicalState,
+    );
+    check(
+      '64.52/AL/AN/AO/AR) Levantar-se custa METADE do deslocamento efetivo, não gasta Ação e remove só Caído',
+      stand.status === 200 &&
+        combatantFBefore.effectiveSpeed > 0 &&
+        Math.abs(economyAfterStand.movementUsed - combatantFBefore.effectiveSpeed / 2) < 1e-6 &&
+        economyAfterStand.actionsUsed === combatantFBefore.turnEconomy.actionsUsed &&
+        !mechAfterStand.conditions.some((item) => item.condition === 'prone'),
+      JSON.stringify({
+        status: stand.status,
+        speed: combatantFBefore.effectiveSpeed,
+        economy: economyAfterStand,
+      }),
+    );
+    const heroFNoProne = await prisma.character.findUniqueOrThrow({ where: { id: heroF.character.id } });
+    const combatStandAgain = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const standAgain = await request(
+      '/mechanical/mutate',
+      {
+        entity: standEntity,
+        expectedVersion: heroFNoProne.version,
+        expectedCombatVersion: combatStandAgain.version,
+        action: 'stand',
+        operationId: randomUUID(),
+      },
+      heroF.token,
+    );
+    check(
+      '64.52/AM) Levantar-se não existe para quem NÃO está Caído (servidor recusa)',
+      standAgain.status === 409,
+      JSON.stringify({ status: standAgain.status, message: standAgain.data.message }),
+    );
+    await prisma.character.update({
+      where: { id: heroF.character.id },
+      data: {
+        mechanicalState: {
+          ...proneState,
+          conditions: [
+            ...proneState.conditions,
+            {
+              id: randomUUID(),
+              condition: 'grappled',
+              sourceType: 'test',
+              appliedAt: new Date().toISOString(),
+            },
+          ],
+        } as never,
+      },
+    });
+    const heroFGrappled = await prisma.character.findUniqueOrThrow({ where: { id: heroF.character.id } });
+    const combatZeroSpeed = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const standZeroSpeed = await request(
+      '/mechanical/mutate',
+      {
+        entity: standEntity,
+        expectedVersion: heroFGrappled.version,
+        expectedCombatVersion: combatZeroSpeed.version,
+        action: 'stand',
+        operationId: randomUUID(),
+      },
+      heroF.token,
+    );
+    check(
+      '64.52/AP) deslocamento efetivo 0 bloqueia Levantar-se com a mensagem da regra',
+      standZeroSpeed.status === 409 &&
+        /deslocamento efetivo for 0/.test(String(standZeroSpeed.data.message ?? '')),
+      JSON.stringify({ status: standZeroSpeed.status, message: standZeroSpeed.data.message }),
+    );
+
+    // --- 40/41) 20 natural devolve o turno normal (e o Movimento p/ levantar) -
+    // Estado saudável: o teste anterior deixou Grabbed/Caído (deslocamento 0).
+    await prisma.character.update({
+      where: { id: heroF.character.id },
+      data: { mechanicalState: { conditions: [], exhaustionLevel: 0, log: [] } as never },
+    });
+    await prisma.combatant.update({
+      where: { id: combatantF },
+      data: {
+        turnEconomy: {
+          actionsGranted: 0,
+          actionsUsed: 0,
+          bonusActionUsed: true,
+          reactionAvailable: false,
+          movementBudget: 0,
+          movementUsed: 0,
+        } as never,
+      },
+    });
+    await restoreTurnEconomyAfterRevival(characterEntity(heroF));
+    const afterRevival = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const revivalEconomy = afterRevival.combatants.find((item) => item.id === combatantF)!.turnEconomy;
+    check(
+      '64.40/41) 20 natural devolve o turno normal: Ação e Movimento cheio (base para Levantar-se, sem gastar Ação)',
+      revivalEconomy.actionsGranted === 1 &&
+        revivalEconomy.actionsUsed === 0 &&
+        revivalEconomy.movementBudget === 9 &&
+        revivalEconomy.movementUsed === 0 &&
+        !revivalEconomy.bonusActionUsed &&
+        revivalEconomy.reactionAvailable,
+      JSON.stringify(revivalEconomy),
+    );
 
     // --- 46) Reconexão de verdade: sockets novos leem o mesmo estado -------
     for (const socket of sockets) socket.disconnect();

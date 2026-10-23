@@ -15955,17 +15955,12 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
-.death-pips { display: inline-flex; gap: 0.22rem; }
-
-.death-pip {
-  width: 0.72rem;
-  height: 0.72rem;
-  border-radius: 50%;
-  border: 1px solid var(--ink-soft);
-}
-
-.death-pips-success .death-pip.filled { background: var(--ok); border-color: var(--ok); }
-.death-pips-failure .death-pip.filled { background: var(--danger); border-color: var(--danger); }
+/*
+ * Contador de Testes contra a Morte (6.3): SÓ os ícones (coração/caveira).
+ * Não há caixa/fundo — o preenchimento é o INTERIOR do próprio ícone; por isso
+ * a geometria vive apenas no bloco da Fase 6.3 mais abaixo (sem `background`
+ * nem `border-radius`, que transformavam o sucesso num quadrado verde).
+ */
 
 .death-actions {
   display: flex;
@@ -16547,6 +16542,37 @@ input[type='checkbox']:focus-visible,
   gap: 0.5rem;
 }
 
+/* Aviso na barra de recursos: Teste Contra a Morte pendente no próprio turno. */
+.turn-resource-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0 0.4rem;
+  font-size: var(--text-micro);
+  color: var(--warn);
+}
+
+/* Contexto do menu de Ação (Levantar-se/Estabilizar). */
+.action-menu-head-context {
+  margin-top: 0.15rem;
+  border-top: 1px solid color-mix(in srgb, var(--ink-faint) 35%, transparent);
+  padding-top: 0.35rem;
+}
+
+.action-menu-item.context .action-menu-item-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--gold-deep);
+}
+
+.action-menu-form-head {
+  margin: 0 0 0.2rem;
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
 .death-counter-side {
   display: inline-flex;
   align-items: center;
@@ -16574,9 +16600,11 @@ input[type='checkbox']:focus-visible,
   height: auto;
   border: none;
   border-radius: 0;
+  background: none;
   color: var(--ink-faint);
   opacity: 0.5;
   cursor: help;
+  line-height: 0;
 }
 
 .death-pip .icon {
@@ -16584,8 +16612,18 @@ input[type='checkbox']:focus-visible,
   height: 13px;
 }
 
+/*
+ * PREENCHIDO = o MESMO coração/caveira com o interior pintado. O SVG usa
+ * `fill="none"` como atributo; a regra CSS vence e pinta as formas do ícone.
+ * Nunca trocamos o ícone por um quadrado.
+ */
+.death-pip.filled .icon { fill: currentColor; }
+
+/* Sucesso: interior VERDE (coração). */
 .death-pips-success .death-pip.filled { color: var(--ok); opacity: 1; }
-.death-pips-failure .death-pip.filled { color: var(--danger); opacity: 1; }
+
+/* Falha: interior CINZA claro/médio, coerente com o dark fantasy. */
+.death-pips-failure .death-pip.filled { color: #a9a49a; opacity: 1; }
 
 /* Só o ícone recém-aceso pulsa — animação curta (item 49). */
 .death-pip.just-filled { animation: death-pip-pop 0.5s ease; }

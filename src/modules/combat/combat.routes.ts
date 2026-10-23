@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   attackSchema, manualHpSchema, startCombatSchema,
-  combatOperationSchema, economyActionSchema, economyOverrideSchema,
+  combatOperationSchema, economyActionSchema, economyOverrideSchema, nextTurnSchema,
 } from './combat.schema.js';
 import {
   executeEconomyAction,
@@ -57,7 +57,7 @@ combatRouter.post('/initiative/:combatantId', authenticate, requireRole('MASTER'
  * o jogador só encerra o próprio turno (verificado no serviço).
  */
 combatRouter.post('/next-turn', authenticate, async (req, res) => {
-  const parsed = combatOperationSchema.safeParse(req.body ?? {});
+  const parsed = nextTurnSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
     return;

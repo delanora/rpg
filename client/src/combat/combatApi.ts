@@ -38,10 +38,18 @@ export function rollInitiativeFor(combatantId: string): Promise<CombatDto> {
   }).then((result) => result.combat);
 }
 
-export function nextTurn(combat: CombatDto): Promise<CombatDto> {
-  return api<{ combat: CombatDto }>('/api/combat/next-turn', { method: 'POST', body: operationFor(combat) }).then(
-    (result) => result.combat,
-  );
+/**
+ * Avança o turno. `skipDeathSave` é a confirmação do MESTRE para pular o Teste
+ * contra a Morte obrigatório do turno (o jogador nunca tem essa opção).
+ */
+export function nextTurn(
+  combat: CombatDto,
+  options: { skipDeathSave?: boolean } = {},
+): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/next-turn', {
+    method: 'POST',
+    body: { ...operationFor(combat), ...(options.skipDeathSave ? { skipDeathSave: true } : {}) },
+  }).then((result) => result.combat);
 }
 
 export function resolveAttack(combat: CombatDto, input: {
@@ -88,10 +96,25 @@ export function endCombat(): Promise<void> {
 export function operationFor(combat: CombatDto) {
   return { combatId: combat.id, expectedVersion: combat.version, operationId: createOperationId() };
 }
-export type EconomyAction = 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'search' | 'use-object' | 'improvised' | 'ready' | 'execute-ready' | 'move';
+export type EconomyAction =
+  | 'dash'
+  | 'disengage'
+  | 'dodge'
+  | 'help'
+  | 'hide'
+  | 'search'
+  | 'use-object'
+  | 'improvised'
+  | 'ready'
+  | 'execute-ready'
+  | 'move'
+  /** Sabedoria (Medicina) CD 10 para estabilizar outra criatura a 0 PV. */
+  | 'stabilize';
 export type EconomyAdjustment = 'grant-action' | 'restore-action' | 'restore-bonus' | 'restore-reaction' | 'set-movement';
 export function executeEconomyAction(combat: CombatDto, input: {
   combatantId: string; action: EconomyAction; description?: string; trigger?: string; intent?: string; distance?: number;
+  /** ESTABILIZAR: quem está a 0 PV (o servidor valida elegibilidade). */
+  targetCombatantId?: string;
 }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/action', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }

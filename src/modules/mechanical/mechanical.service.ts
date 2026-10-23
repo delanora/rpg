@@ -118,14 +118,28 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
       } else {
         const effects = deriveConditionEffects(state), speed = effectiveSpeed(loaded.baseSpeed, state);
         if (!effects.prone) throw new HttpError('A criatura não está caída.', 409, 'CONFLICT');
-        if (speed <= 0) throw new HttpError('A condição impede levantar.', 409, 'CONFLICT');
+        if (speed <= 0) {
+          throw new HttpError(
+            'Você não pode se levantar enquanto seu deslocamento efetivo for 0.',
+            409,
+            'CONFLICT',
+          );
+        }
         if (loaded.combat) {
           if (loaded.combat.status !== 'ACTIVE') throw new HttpError('Aguarde o início do combate para levantar com movimento.', 409, 'CONFLICT');
           const combat = await loadCombatById(loaded.combat.id, db);
           if (orderCombatants(combat.combatants)[combat.currentIndex]?.id !== loaded.combat.combatantId) throw new HttpError('Levantar exige o próprio turno.', 403);
           const participant = combat.combatants.find(item => item.id === loaded.combat!.combatantId)!;
           const budget = economyOf(participant.turnEconomy), available = reconcileMovement(budget, loaded.baseSpeed, speed);
-          moveDistance(available, speed / 2);
+          const cost = speed / 2;
+          if (available.movementBudget - available.movementUsed + 1e-8 < cost) {
+            throw new HttpError(
+              `Movimento insuficiente para levantar-se: custa ${cost} m (metade do deslocamento efetivo).`,
+              409,
+              'CONFLICT',
+            );
+          }
+          moveDistance(available, cost);
           budget.movementUsed = available.movementUsed;
           await db.combatant.update({ where: { id: participant.id }, data: { turnEconomy: budget } });
         }
