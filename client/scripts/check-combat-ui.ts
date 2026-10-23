@@ -19,6 +19,7 @@ import { dirname, resolve } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ConditionBadges } from '../src/combat/components/ConditionBadges';
+import { CombatStateBadges } from '../src/combat/components/CombatStateBadges';
 import { DeathCounter } from '../src/death/DeathCounter';
 import { DeathSavePanel } from '../src/combat/components/DeathSavePanel';
 import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel';
@@ -27,8 +28,10 @@ import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant } from '../src/combat/turnControl';
 import {
+  COMBAT_STATE_VISUALS,
   CONDITION_VISUALS,
   ECONOMY_ACTION_VISUALS,
+  combatStatesOf,
   conditionDamageFamily,
   conditionDescription,
 } from '../src/combat/combatVisuals';
@@ -597,6 +600,122 @@ console.log('Check-combat-ui — refino da UI de combate');
     !tracker.includes('Contra-ataque') &&
       !tracker.includes('contra-ataque') &&
       source('src/combat/reactions.ts').includes('Enquanto nenhuma regra concreta'),
+  );
+}
+
+// ============================================================================
+// HOTFIX — ESTADOS DE COMBATE, PRONE, INVENTÁRIO DE NPC E USAR ITEM.
+// ============================================================================
+{
+  // CB1. Dodge e Ready aparecem no card como estados PRÓPRIOS (não Conditions).
+  const dodge = renderToStaticMarkup(
+    createElement(CombatStateBadges, { turnEconomy: { dodging: true, ready: null } }),
+  );
+  const ready = renderToStaticMarkup(
+    createElement(CombatStateBadges, {
+      turnEconomy: { dodging: false, ready: { trigger: 'x', intent: 'y' } },
+    }),
+  );
+  check(
+    'CB1) Esquiva ativa mostra ESQUIVANDO com tooltip próprio',
+    dodge.includes('ESQUIVANDO') &&
+      dodge.includes(COMBAT_STATE_VISUALS.dodging.description) &&
+      dodge.includes('data-combat-state="dodging"'),
+  );
+  check(
+    'CB2) Ready pendente mostra PREPARANDO AÇÃO; sem Ready/Dodge não há etiqueta',
+    ready.includes('PREPARANDO AÇÃO') &&
+      ready.includes(COMBAT_STATE_VISUALS.ready.description) &&
+      renderToStaticMarkup(
+        createElement(CombatStateBadges, { turnEconomy: { dodging: false, ready: null } }),
+      ) === '',
+  );
+  check(
+    'CB3) estados terminam quando o estado mecânico termina (derivação, sem flag visual)',
+    combatStatesOf({ dodging: true, ready: null }).join(',') === 'dodging' &&
+      combatStatesOf({ dodging: false, ready: null }).length === 0 &&
+      source('src/combat/components/CombatantCard.tsx').includes('<CombatStateBadges'),
+  );
+  check(
+    'CB4) NÃO são Conditions: componente/classes separados e Hidden não é inventado',
+    !dodge.includes('condition-chip') &&
+      dodge.includes('combat-state-chip') &&
+      combatStatesOf({ dodging: false, ready: null }).length === 0 &&
+      !source('../src/modules/shared/conditions.ts').includes("active.has('hidden')"),
+  );
+  check(
+    'CB5) cores semânticas vêm de COMBAT_STATE_VISUALS/data-attribute (sem cor aleatória)',
+    ['hidden', 'dodging', 'ready', 'concentrating'].every(
+      (id) => COMBAT_STATE_VISUALS[id as keyof typeof COMBAT_STATE_VISUALS].tone === id,
+    ) &&
+      source('src/styles.css').includes(".combat-state-chip[data-combat-state='dodging']") &&
+      source('src/styles.css').includes(".combat-state-chip[data-combat-state='ready']"),
+  );
+
+  // CB6. Prone: vantagem melee / desvantagem ranged, por MODO do ataque.
+  const conditions = source('../src/modules/shared/conditions.ts');
+  const combatService = source('../src/modules/combat/combat.service.ts');
+  check(
+    'CB6) regra de Caído usa o modo do ataque (nunca o tipo de dano)',
+    conditions.includes("context.attackRanged === true ? 'prone-ranged' : 'prone-melee'") &&
+      conditions.includes('attackRanged: attack.ranged') === false &&
+      combatService.includes('attackRanged: attack.ranged'),
+  );
+
+  // CB7. Usar Item no menu e no fluxo de combate.
+  const menu = source('src/combat/components/ActionMenu.tsx');
+  check(
+    'CB7) menu Usar Item lista consumíveis com quantidade e marca resolução do Mestre',
+    menu.includes('Usar Item') &&
+      menu.includes('×{item.quantity}') &&
+      menu.includes('Resolução pelo Mestre') &&
+      menu.includes('Custo: 1 Ação'),
+  );
+  check(
+    'CB8) alvo é escolhido no próprio seletor e a distância é avisada',
+    menu.includes('Em mim mesmo') &&
+      menu.includes('O alvo precisa estar ao alcance físico') &&
+      menu.includes('itemTargetId'),
+  );
+  check(
+    'CB9) painel usa a lista AUTORIZADA pelo servidor (sem inventário local)',
+    source('src/combat/CombatTracker.tsx').includes('fetchCombatItems') &&
+      source('src/combat/CombatTracker.tsx').includes('useCombatItem') &&
+      source('src/combat/components/TurnResourceBar.tsx').includes('usableItems={usableItems}'),
+  );
+
+  // CB10. Inventário do NPC é master-only e reutiliza o motor existente.
+  const creatureRoutes = source('../src/modules/creatures/creatures.routes.ts');
+  const creatureService = source('../src/modules/creatures/creatures.service.ts');
+  check(
+    'CB10) rotas do inventário de NPC são master-only e exigem versão',
+    creatureRoutes.includes("creaturesRouter.use(authenticate, requireRole('MASTER'))") &&
+      creatureRoutes.includes('/inventory/attune') &&
+      creatureRoutes.includes('/coins') &&
+      creatureService.includes('requireNpc(creature)'),
+  );
+  check(
+    'CB11) NPC equipa arma/armadura pelo MESMO motor (CA e ataques derivados)',
+    source('../src/modules/creatures/npc-sheet.ts').includes('deriveWeaponAttacks(') &&
+      source('../src/modules/creatures/npc-sheet.ts').includes('computeArmorClass(') &&
+      source('../src/modules/creatures/creatures.service.ts').includes('itemRarityOf(item.rarity)'),
+  );
+  check(
+    'CB12) sintonização usa limite único de 3 e moedas usam o motor existente',
+    source('../src/modules/shared/attunement.ts').includes('ATTUNEMENT_LIMIT = 3') &&
+      creatureService.includes('attunementError(') &&
+      creatureService.includes('normalizeCoins('),
+  );
+  check(
+    'CB13) inventário de NPC não entra no DTO do jogador (estado operacional oculto)',
+    source('../src/modules/combat/combat.dto.ts').includes('dodging: false, ready: null') &&
+      !source('../src/modules/combat/combat.dto.ts').includes('inventory:'),
+  );
+
+  // CB14. WIP histórico preservado (o commit não pode engolir a hover card).
+  check(
+    'CB14) inventário do jogador (WIP) não foi redesenhado pelo hotfix',
+    !source('src/components/sections/InventorySection.tsx').includes('NpcInventorySection'),
   );
 }
 

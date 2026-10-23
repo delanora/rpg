@@ -773,6 +773,18 @@ model Creature {
   /// URL pública do ícone/retrato da criatura/NPC (`uploads/creatures/...`).
   imageUrl String @default("")
 
+  ///
+  /// INVENTÁRIO PERSISTENTE do NPC (mesmo formato de `Character.inventory`).
+  /// Só o Mestre lê/escreve: a lista de itens, moedas e equipamento secreto
+  /// nunca entra no DTO do jogador. Criaturas-TEMPLATE continuam usando apenas
+  /// o statblock e mantêm este campo vazio (nada de inventário por goblin).
+  inventory Json @default("[]")
+  ///
+  /// Carteira do NPC (`{ pp, gp, ep, sp, cp }`, inteiros >= 0). Usa o MESMO
+  /// motor de moedas da ficha (`shared/coins.ts`) e as mesmas proteções de
+  /// saldo/versão — nunca uma segunda implementação.
+  coins Json @default("{\"pp\":0,\"gp\":0,\"ep\":0,\"sp\":0,\"cp\":0}")
+
   /// Localidades às quais esta criatura/NPC pertence (uma ou mais).
   localities Locality[]
 

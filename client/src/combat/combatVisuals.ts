@@ -86,6 +86,67 @@ export const CONDITION_VISUALS: Record<string, ConditionVisual> = {
   },
 };
 
+/* -------------------------------------------------------------------------- */
+/* ESTADOS DE COMBATE (NÃO são Conditions)                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * FONTE ÚNICA dos estados mecânicos TEMPORÁRIOS do turno. Eles não estão no
+ * catálogo de Conditions do PHB (nem entram em `mechanicalState.conditions`):
+ * vêm da economia de turno (`dodging`, `ready`) e de um estado real do motor.
+ * Hidden NÃO existe mecanicamente hoje — por isso não é inventado aqui.
+ */
+export type CombatStateId = 'hidden' | 'dodging' | 'ready' | 'concentrating';
+
+export interface CombatStateVisual {
+  label: string;
+  description: string;
+  /** Tom semântico (CSS `data-combat-state`), nunca cor sorteada no render. */
+  tone: CombatStateId;
+}
+
+export const COMBAT_STATE_VISUALS: Record<CombatStateId, CombatStateVisual> = {
+  hidden: {
+    label: 'ESCONDIDO',
+    description:
+      'Você está escondido de criaturas que ainda não detectaram sua posição.',
+    tone: 'hidden',
+  },
+  dodging: {
+    label: 'ESQUIVANDO',
+    description:
+      'Até o início do próximo turno, ataques visíveis contra você têm desvantagem e você recebe vantagem em testes de resistência de Destreza, desde que possa se beneficiar de Esquiva.',
+    tone: 'dodging',
+  },
+  ready: {
+    label: 'PREPARANDO AÇÃO',
+    description:
+      'Você preparou uma ação para executar como Reação quando o gatilho ocorrer.',
+    tone: 'ready',
+  },
+  concentrating: {
+    label: 'CONCENTRANDO',
+    description: 'Concentração ativa em um efeito (motor de magias ainda não implementado).',
+    tone: 'concentrating',
+  },
+};
+
+/**
+ * Estados que devem aparecer AGORA, derivados do estado mecânico real. Quando
+ * a Esquiva termina (novo turno recria a economia) ou o Ready resolve, a
+ * etiqueta desaparece sozinha. A Concentração é ponto de extensão: só entra
+ * quando o motor a modelar.
+ */
+export function combatStatesOf(turnEconomy: {
+  dodging?: boolean;
+  ready?: unknown;
+}): CombatStateId[] {
+  const states: CombatStateId[] = [];
+  if (turnEconomy.dodging === true) states.push('dodging');
+  if (turnEconomy.ready) states.push('ready');
+  return states;
+}
+
 /** Texto de tooltip de uma condição; nunca deixa a etiqueta sem explicação. */
 export function conditionDescription(condition: string): string {
   return CONDITION_VISUALS[condition]?.description ?? 'Condição ativa.';

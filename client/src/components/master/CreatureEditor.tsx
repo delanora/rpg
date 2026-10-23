@@ -8,13 +8,14 @@ import {
   formatModifier,
   speedInSquares,
 } from '../../dnd';
-import type { Creature, CreaturePatch, Locality, Region } from '../../types';
+import type { Creature, CreaturePatch, Item, Locality, Region } from '../../types';
 import { clampInt } from '../../utils';
 import { AttacksTable } from '../AttacksTable';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
+import { NpcInventorySection } from './NpcInventorySection';
 
 interface DamageChipsProps {
   label: string;
@@ -60,6 +61,12 @@ interface CreatureEditorProps {
   regions: Region[];
   onPatch: (patch: CreaturePatch) => void;
   onDelete: () => void;
+  /** Catálogo de itens (só usado pelo inventário do NPC). */
+  items?: Item[];
+  /** Atualiza o cadastro após uma escrita do inventário/moedas do NPC. */
+  onCreatureChange?: (creature: Creature) => void;
+  /** Mensagens de erro do painel (inventário do NPC). */
+  onError?: (message: string) => void;
 }
 
 export function CreatureEditor({
@@ -68,6 +75,9 @@ export function CreatureEditor({
   regions,
   onPatch,
   onDelete,
+  items = [],
+  onCreatureChange,
+  onError,
 }: CreatureEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -338,6 +348,13 @@ export function CreatureEditor({
             </span>
           </div>
         </div>
+        {creature.kind === 'NPC' ? (
+          <p className="section-note">
+            CA efetiva com o equipamento: <strong>{creature.effectiveArmorClass}</strong>.
+            O campo acima é a CA BASE do statblock — armadura, escudo e bônus mágicos
+            equipados entram na conta automaticamente.
+          </p>
+        ) : null}
       </Section>
 
       <Section title="Ataques" icon="sword">
@@ -347,6 +364,15 @@ export function CreatureEditor({
           onChange={(attacks) => onPatch({ attacks })}
         />
       </Section>
+
+      {creature.kind === 'NPC' ? (
+        <NpcInventorySection
+          creature={creature}
+          items={items}
+          onCreatureChange={onCreatureChange ?? (() => {})}
+          onError={onError ?? (() => {})}
+        />
+      ) : null}
 
       <Section title="Resistências, Imunidades e Vulnerabilidades" icon="flame">
         <DamageChips

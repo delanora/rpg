@@ -1,4 +1,5 @@
 import { ConditionBadges } from './ConditionBadges';
+import { CombatStateBadges } from './CombatStateBadges';
 import { DeathCounter } from '../../death/DeathCounter';
 import type { ReactNode } from 'react';
 import { HpBar } from '../../components/HpBar';
@@ -112,6 +113,9 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
         </div>
 
         <ConditionBadges state={combatant.mechanicalState} effects={combatant.conditionEffects} />
+        {/* Estados de TURNO (Esquiva/Preparar) ficam ao lado das condições, mas
+            em linha e semântica próprias: nunca misturados ao catálogo PHB. */}
+        <CombatStateBadges turnEconomy={combatant.turnEconomy} />
         {combatant.deathState && hasDeathLifecycle(combatant.deathState) ? (
           <DeathRow death={combatant.deathState} />
         ) : null}

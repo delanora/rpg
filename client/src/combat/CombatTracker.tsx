@@ -1,20 +1,22 @@
 import { MechanicalPanel } from '../components/MechanicalPanel';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api';
 import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
 import { fetchDeath, rollNpcDeathSave } from '../deathApi';
-import type { Attack, CombatDto, DeathDto, DeathState, InventoryItem, MechanicalEntity, SessionUser } from '../types';
+import type { Attack, CombatDto, CombatUsableItem, DeathDto, DeathState, InventoryItem, MechanicalEntity, SessionUser } from '../types';
 import {
   applyManualHp,
   endCombat,
   executeEconomyAction,
   fetchActiveCombat,
+  fetchCombatItems,
   nextTurn,
   resolveAttack,
   rollInitiativeFor,
   rollMyInitiative,
+  useCombatItem,
 } from './combatApi';
 import { CombatIntro } from './CombatIntro';
 import { BattleWaitingPanel } from './components/BattleWaitingPanel';
@@ -161,6 +163,28 @@ export function CombatTracker({
   );
   const masterAttackerCombatant = isMaster ? actingCombatant : null;
   const ownTurn = Boolean(actingCombatant && actingCombatant.id === combat.currentCombatantId);
+
+  // USAR ITEM: a lista vem do SERVIDOR (autorização + catálogo) e é recarregada
+  // quando a versão do combate muda (consumo, dano, virada de turno).
+  const [usableItems, setUsableItems] = useState<CombatUsableItem[]>([]);
+  const actingCombatantId = actingCombatant?.id ?? '';
+  useEffect(() => {
+    if (!actingCombatantId || !showOperational || !ownTurn) {
+      setUsableItems([]);
+      return;
+    }
+    let live = true;
+    fetchCombatItems(actingCombatantId)
+      .then((items) => {
+        if (live) setUsableItems(items);
+      })
+      .catch(() => {
+        if (live) setUsableItems([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [actingCombatantId, combat.version, showOperational, ownTurn]);
 
   // Oportunidades de Reação DESTE usuário (hoje sempre vazio: a janela é o
   // ponto de extensão, ver `reactions.ts`). Nunca existe barra permanente.
@@ -368,6 +392,36 @@ export function CombatTracker({
 
   // Resolve um ataque e deixa o Registro (via socket) exibir o desfecho — o
   // centro não duplica mais o resultado.
+  /**
+   * Trava SÍNCRONA contra duplo clique em "Usar Item": o estado `busy` só
+   * desabilita o botão no próximo render, então dois cliques no mesmo tick
+   * gerariam dois operationIds diferentes. O servidor continua sendo a
+   * autoridade (Ação/quantidade), mas o cliente não dispara a segunda intenção.
+   */
+  const itemBusyRef = useRef(false);
+
+  /** Usar consumível: o servidor valida turno/Ação, consome e aplica. */
+  function useItem(itemInventoryId: string, targetCombatantId?: string): void {
+    if (!actingCombatant || itemBusyRef.current) return;
+    itemBusyRef.current = true;
+    void (async () => {
+      setBusy(true);
+      try {
+        const { combat: updated } = await useCombatItem(combat, {
+          combatantId: actingCombatant.id,
+          itemInventoryId,
+          ...(targetCombatantId ? { targetCombatantId } : {}),
+        });
+        onCombatChange(updated);
+      } catch (error) {
+        onError(error instanceof Error ? error.message : 'Falha ao usar o item.');
+      } finally {
+        itemBusyRef.current = false;
+        setBusy(false);
+      }
+    })();
+  }
+
   function attack(input: Parameters<typeof resolveAttack>[1]): void {
     void (async () => {
       setBusy(true);
@@ -723,6 +777,18 @@ export function CombatTracker({
               standUp={standUpContext}
               onStandUp={standUp}
               stabilizeTargets={stabilizeTargets}
+              usableItems={usableItems}
+              itemTargets={
+                actingCombatant
+                  ? [
+                      { id: actingCombatant.id, name: actingCombatant.name },
+                      ...combat.combatants
+                        .filter((item) => item.id !== actingCombatant.id && !item.missing)
+                        .map((item) => ({ id: item.id, name: item.name })),
+                    ]
+                  : []
+              }
+              onUseItem={useItem}
               onStabilize={(targetCombatantId) => {
                 void run(() =>
                   executeEconomyAction(combat, {

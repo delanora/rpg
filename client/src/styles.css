@@ -136,6 +136,11 @@
   --condition-restrained: #a1502a;
   --condition-stunned: #b39a2f;
   --condition-unconscious: #4a2f6e;
+  /* Estados de TURNO (não são Conditions). */
+  --combat-state-hidden: #33406e;
+  --combat-state-dodging: #2f6f8f;
+  --combat-state-ready: #a9772a;
+  --combat-state-concentration: #6b4a9e;
 }
 
 [data-theme='dark'] {
@@ -205,6 +210,10 @@
   --condition-restrained: #e08a5c;
   --condition-stunned: #d8c46a;
   --condition-unconscious: #a382d6;
+  --combat-state-hidden: #8fa3e0;
+  --combat-state-dodging: #7cc9d4;
+  --combat-state-ready: #d9a24e;
+  --combat-state-concentration: #b78fdc;
 }
 
 /* ==========================================================================
@@ -16189,6 +16198,40 @@ input[type='checkbox']:focus-visible,
   --condition-accent: var(--gold-deep);
 }
 
+/* --- Etiquetas de ESTADO DE COMBATE (Dodge/Ready) ------------------------ */
+/* Semântica separada das Conditions: linha própria e classe própria, mesmo
+   que fiquem visualmente próximas no card. */
+.combat-state-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.1rem;
+}
+
+.combat-state-chip {
+  --combat-state-accent: var(--ink-faint);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.02rem 0.42rem;
+  border: 1px dashed var(--combat-state-accent);
+  border-left-width: 3px;
+  border-radius: 999px;
+  color: var(--combat-state-accent);
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.45;
+  cursor: help;
+  background: color-mix(in srgb, var(--combat-state-accent) 8%, transparent);
+}
+
+.combat-state-chip[data-combat-state='hidden'] { --combat-state-accent: var(--combat-state-hidden); }
+.combat-state-chip[data-combat-state='dodging'] { --combat-state-accent: var(--combat-state-dodging); }
+.combat-state-chip[data-combat-state='ready'] { --combat-state-accent: var(--combat-state-ready); }
+.combat-state-chip[data-combat-state='concentrating'] { --combat-state-accent: var(--combat-state-concentration); }
+
 /* Popover da condição: mais estreito que o tooltip padrão da ficha. */
 .condition-tip {
   width: min(20rem, 80vw);
@@ -16989,4 +17032,96 @@ input[type='checkbox']:focus-visible,
   .battle-waiting-clash {
     animation: none;
   }
+}
+
+/* ==========================================================================
+   INVENTÁRIO DO NPC (painel do Mestre) e seletor "Usar Item" do combate.
+   Só apresentação: as regras (CA, ataques, sintonização, moedas) vivem no
+   servidor e reutilizam os motores da ficha.
+   ========================================================================== */
+
+.npc-inventory {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.npc-inventory-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.npc-qty input {
+  width: 5.2rem;
+}
+
+.npc-inventory-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.npc-inventory-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.35rem 0.45rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.npc-inventory-name {
+  flex: 1 1 12rem;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+}
+
+.npc-inventory-name em {
+  color: var(--ink-faint);
+  font-style: normal;
+}
+
+.npc-slot select {
+  max-width: 9rem;
+}
+
+.npc-attune {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.npc-coins {
+  display: grid;
+  gap: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+}
+
+.npc-coins-current {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+
+.npc-coins-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: flex-end;
+}
+
+/* Nota do seletor de item: distância é resolvida pelo Mestre. */
+.action-menu-note {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--ink-faint);
 }

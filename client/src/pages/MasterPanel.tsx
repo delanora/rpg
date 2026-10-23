@@ -714,7 +714,14 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         );
       }
       if (combatant.creatureId) {
-        return creatures.find((creature) => creature.id === combatant.creatureId)?.attacks ?? [];
+        const creature = creatures.find((item) => item.id === combatant.creatureId);
+        if (!creature) return [];
+        // NPC: ataques PRÓPRIOS + armas equipadas (derivados pelo servidor). Os
+        // ataques de arma não equipada somem pela mesma regra da ficha.
+        return availableAttacks(
+          [...creature.attacks, ...(creature.derivedAttacks ?? [])],
+          creature.inventory ?? [],
+        );
       }
       return [];
     },
@@ -1010,6 +1017,13 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onCreate={createCreature}
             onPatch={patchCreature}
             onDelete={deleteCreature}
+            items={items}
+            onCreatureChange={(updated) =>
+              setCreatures((prev) =>
+                prev.map((creature) => (creature.id === updated.id ? updated : creature)),
+              )
+            }
+            onError={setError}
           />
         )}
       </main>

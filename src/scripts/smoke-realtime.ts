@@ -1,4 +1,5 @@
 import { smokeConditions } from './smoke-conditions.js';
+import { smokeCombatItems } from './smoke-combat-items.js';
 import { smokeDeath } from './smoke-death.js';
 import { smokeExhaustionRule } from './smoke-exhaustion-rule.js';
 import { smokeActionEconomy } from './smoke-action-economy.js';
@@ -21561,6 +21562,7 @@ async function main(): Promise<void> {
 
   await smokeActionEconomy(BASE_URL, check);
   await smokeConditions(BASE_URL, check);
+  await smokeCombatItems(BASE_URL, check);
   await smokeDeath(BASE_URL, check);
   await smokeExhaustionRule(BASE_URL, check);
 

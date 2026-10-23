@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Creature, CreatureKind, CreaturePatch, Locality, Region } from '../../types';
+import type { Creature, CreatureKind, CreaturePatch, Item, Locality, Region } from '../../types';
 import { Portrait } from '../Portrait';
 import { CreatureEditor } from './CreatureEditor';
 import { SearchField } from './SearchField';
@@ -15,6 +15,11 @@ interface CreaturesTabProps {
   onCreate: (localityId: string) => Promise<Creature>;
   onPatch: (id: string, patch: CreaturePatch) => void;
   onDelete: (id: string) => void;
+  /** Catálogo de itens do Mestre (inventário do NPC). */
+  items?: Item[];
+  /** Substitui o NPC após escritas de inventário/moedas. */
+  onCreatureChange?: (creature: Creature) => void;
+  onError?: (message: string) => void;
 }
 
 const LABELS: Record<CreatureKind, { singular: string; novo: string; vazio: string }> = {
@@ -38,6 +43,9 @@ export function CreaturesTab({
   onCreate,
   onPatch,
   onDelete,
+  items = [],
+  onCreatureChange,
+  onError,
 }: CreaturesTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -138,7 +146,7 @@ export function CreaturesTab({
                   <span className="card-owner">{creature.type || 'sem tipo'}</span>
                   <span className="card-line">
                     {creature.challengeRating ? `ND ${creature.challengeRating} · ` : ''}
-                    CA {creature.armorClass}
+                    CA {creature.effectiveArmorClass ?? creature.armorClass}
                   </span>
                   <span className="card-hp">
                     HP {creature.hpCurrent}/{creature.hpMax}
@@ -166,6 +174,9 @@ export function CreaturesTab({
               onDelete(selected.id);
               setSelectedId(null);
             }}
+            items={items}
+            onCreatureChange={onCreatureChange}
+            onError={onError}
           />
         ) : (
           <p className="empty-hint">

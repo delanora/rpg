@@ -154,6 +154,12 @@ export const inventoryItemSchema = z.object({
   rarity: z.enum(ITEM_RARITIES).nullable().default(null),
   /** O item exige sintonização (propriedade manual do mestre). */
   requiresAttunement: z.boolean().default(false),
+  /**
+   * Sintonização ATIVA deste item (PHB 2014, máximo 3 por criatura). Só itens
+   * que EXIGEM sintonização podem ser marcados; a regra vive em
+   * `shared/attunement.ts` e é aplicada pelo inventário do NPC.
+   */
+  attuned: z.boolean().default(false),
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: itemDetailsSchema.default({}),
   /**

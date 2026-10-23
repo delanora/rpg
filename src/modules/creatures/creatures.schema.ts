@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { attackSchema, damageTypeListSchema } from '../shared/attacks.js';
 import { ABILITY_SCORE_MAX, ABILITY_SCORE_MIN } from '../shared/dnd5e.js';
+import { inventorySlotSchema } from '../characters/characters.schema.js';
+import { itemDetailsSchema } from '../shared/item-details.js';
+import { coinDeltaSchema } from '../shared/coins.js';
 
 const abilityScore = z
   .number()
@@ -63,3 +66,60 @@ export const updateCreatureSchema = creatureFields.partial().extend({
 
 export type CreateCreatureInput = z.infer<typeof createCreatureSchema>;
 export type UpdateCreatureInput = z.infer<typeof updateCreatureSchema>;
+
+/* -------------------------------------------------------------------------- */
+/* Inventário e moedas do NPC (master-only, versionados)                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Adicionar item ao inventário do NPC. `itemId` copia o snapshot do catálogo;
+ * sem ele, o item é avulso e exige ao menos o nome. `expectedVersion` é a
+ * trava de concorrência do cadastro do NPC.
+ */
+export const npcAddItemSchema = z
+  .object({
+    expectedVersion: z.number().int().nonnegative(),
+    itemId: z.string().min(1).max(60).optional(),
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().max(2000).optional(),
+    category: z.string().trim().max(40).optional(),
+    quantity: z.number().int().min(1).max(1_000_000).default(1),
+    details: itemDetailsSchema.optional(),
+    requiresAttunement: z.boolean().optional(),
+  })
+  .refine((input) => Boolean(input.itemId || input.name), {
+    message: 'Informe o item do catálogo ou o nome do item.',
+  });
+
+/** Mover/equipar um item (mesma semântica da ficha: troca se o slot estiver ocupado). */
+export const npcMoveItemSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  itemInventoryId: z.string().min(1),
+  targetSlot: inventorySlotSchema.nullable(),
+});
+
+/** Remover unidades (a entrada some quando a quantidade chega a 0). */
+export const npcRemoveItemSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  itemInventoryId: z.string().min(1),
+  quantity: z.number().int().min(1).max(1_000_000).default(1),
+});
+
+/** Sintonizar/dessintonizar UM item (limite de 3 em `shared/attunement.ts`). */
+export const npcAttuneSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  itemInventoryId: z.string().min(1),
+  attuned: z.boolean(),
+});
+
+/** Moedas do NPC: o Mestre dá (positivo) ou retira (negativo), como na ficha. */
+export const npcCoinsSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  delta: coinDeltaSchema,
+});
+
+export type NpcAddItemInput = z.infer<typeof npcAddItemSchema>;
+export type NpcMoveItemInput = z.infer<typeof npcMoveItemSchema>;
+export type NpcRemoveItemInput = z.infer<typeof npcRemoveItemSchema>;
+export type NpcAttuneInput = z.infer<typeof npcAttuneSchema>;
+export type NpcCoinsInput = z.infer<typeof npcCoinsSchema>;

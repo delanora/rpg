@@ -2,7 +2,7 @@ import type { Role } from '@prisma/client';
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
-  attackSchema, manualHpSchema, startCombatSchema,
+  attackSchema, manualHpSchema, startCombatSchema, useItemSchema,
   combatOperationSchema, economyActionSchema, economyOverrideSchema, nextTurnSchema,
 } from './combat.schema.js';
 import {
@@ -11,10 +11,12 @@ import {
   applyManualHp,
   endCombat,
   getActiveCombat,
+  listCombatItems,
   nextTurn,
   resolveAttack,
   rollInitiative,
   startCombat,
+  useCombatItem,
   type CombatActor,
 } from './combat.service.js';
 
@@ -75,6 +77,26 @@ combatRouter.post('/attack', authenticate, async (req, res) => {
   }
 
   res.json(await resolveAttack(actorFrom(req), parsed.data));
+});
+
+/**
+ * GET /api/combat/items/:combatantId — itens USÁVEIS do combatente (poções e
+ * consumíveis com saldo) para o seletor compacto de "Usar Item". O servidor
+ * autoriza Mestre OU dono do personagem; o inventário de NPC nunca vai para
+ * jogador.
+ */
+combatRouter.get('/items/:combatantId', authenticate, async (req, res) => {
+  res.json({ items: await listCombatItems(actorFrom(req), String(req.params.combatantId)) });
+});
+
+/** POST /api/combat/use-item — usa um consumível durante o turno (1 Ação). */
+combatRouter.post('/use-item', authenticate, async (req, res) => {
+  const parsed = useItemSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json(await useCombatItem(actorFrom(req), parsed.data));
 });
 
 /** POST /api/combat/hp — dano/cura manual do mestre. */

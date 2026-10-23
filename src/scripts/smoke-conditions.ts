@@ -32,7 +32,23 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
   check('63) Poisoned modifica ataques/checks', conditionAttackMode(sample('poisoned'), {}, false, false).disadvantage && deriveConditionEffects(sample('poisoned')).checkDisadvantage);
   check('63) Invisible modifica ataques sem Hidden', conditionAttackMode(sample('invisible'), {}, false, false).advantage && conditionAttackMode({}, sample('invisible'), false, false).disadvantage && !deriveConditionEffects(sample('invisible')).active.includes('hidden' as Condition));
   check('63) Restrained: ataques, DEX save, speed', conditionAttackMode(sample('restrained'), {}, false, false).disadvantage && conditionAttackMode({}, sample('restrained'), false, false).advantage && deriveSaveEffects(sample('restrained'), 'dexterity').disadvantage && !deriveSaveEffects(sample('restrained'), 'strength').disadvantage);
-  check('63) Prone: desvantagem própria sem inventar distância ao alvo', conditionAttackMode(sample('prone'), {}, false, false).disadvantage && !conditionAttackMode({}, sample('prone'), false, false).advantage && !conditionAttackMode({}, sample('prone'), false, false).disadvantage);
+  check('63) Prone: desvantagem própria continua (ataques do caído)', conditionAttackMode(sample('prone'), {}, false, false).disadvantage);
+  // PRONE (PHB 2014) — aproximação aprovada sem geometria: MELEE = atacante a
+  // até 1,5 m → vantagem; RANGED = fora de 1,5 m → desvantagem. A composição é
+  // a normal (uma fonte de cada lado cancela; nunca "double").
+  const proneMelee = conditionAttackMode({}, sample('prone'), false, false, { attackRanged: false });
+  const proneRanged = conditionAttackMode({}, sample('prone'), false, false, { attackRanged: true });
+  check('65.G) alvo Caído + ataque CORPO A CORPO = vantagem', proneMelee.advantage && !proneMelee.disadvantage);
+  check('65.H) alvo Caído + ataque À DISTÂNCIA = desvantagem', proneRanged.disadvantage && !proneRanged.advantage);
+  const proneMeleeOtherDisadvantage = conditionAttackMode({}, sample('prone', 'invisible'), false, false, { attackRanged: false });
+  check('65.I) vantagem (Caído melee) + outra desvantagem = rolagem normal', !proneMeleeOtherDisadvantage.advantage && !proneMeleeOtherDisadvantage.disadvantage);
+  const proneRangedOtherAdvantage = conditionAttackMode({}, sample('prone', 'restrained'), false, false, { attackRanged: true });
+  check('65.J) desvantagem (Caído ranged) + outra vantagem = rolagem normal', !proneRangedOtherAdvantage.advantage && !proneRangedOtherAdvantage.disadvantage);
+  const proneTwoAdvantages = conditionAttackMode({}, sample('prone', 'restrained'), false, false, { attackRanged: false });
+  check('65.K) múltiplas vantagens continuam apenas vantagem', proneTwoAdvantages.advantage && !proneTwoAdvantages.disadvantage);
+  const proneTwoDisadvantages = conditionAttackMode({}, sample('prone', 'invisible'), false, false, { attackRanged: true });
+  check('65.L) múltiplas desvantagens continuam apenas desvantagem', proneTwoDisadvantages.disadvantage && !proneTwoDisadvantages.advantage);
+  check('65.M) Caído não vira tipo de dano: só o MODO do ataque decide', conditionAttackMode({}, sample('prone'), false, false, { attackRanged: false }).advantage && conditionAttackMode({}, sample('prone'), false, false, { attackRanged: true }).disadvantage);
   check('63) proximidade de Paralyzed/Unconscious é flag pendente', deriveConditionEffects(sample('paralyzed')).proximityCritical && deriveConditionEffects(sample('unconscious')).proximityCritical);
   check('63) Unconscious deriva Prone sem death saves', deriveConditionEffects(sample('unconscious')).prone && !('deathSaves' in deriveConditionEffects(sample('unconscious'))));
   check('63) Poisoned contra Restrained cancela vantagem/desvantagem', !conditionAttackMode(sample('poisoned'), sample('restrained'), false, false).advantage && !conditionAttackMode(sample('poisoned'), sample('restrained'), false, false).disadvantage);
