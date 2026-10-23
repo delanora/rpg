@@ -10,6 +10,7 @@ export type IconName =
   | 'shield'
   | 'heart'
   | 'skull'
+  | 'crossbones'
   | 'flask'
   | 'scroll'
   | 'star'
@@ -76,6 +77,27 @@ const ICONS: Record<IconName, ReactNode> = {
       <circle cx="9" cy="10.2" r="1.5" fill="currentColor" stroke="none" />
       <circle cx="15" cy="10.2" r="1.5" fill="currentColor" stroke="none" />
       <path d="M12 13.4l-1.1 2h2.2z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  /**
+   * CAVEIRA COM OSSOS CRUZADOS — falha do Teste contra a Morte.
+   *
+   * Os ossos e as juntas ficam ATRÁS da caveira e são desenhados só com traço
+   * (`fill="none"`): quando o pip é preenchido, `.death-pip.filled .icon`
+   * pinta apenas o INTERIOR da caveira e as juntas — nunca vira um quadrado.
+   */
+  crossbones: (
+    <>
+      <path d="M4 20 20 4" fill="none" />
+      <path d="M4 4 20 20" fill="none" />
+      <circle cx="4" cy="20" r="1" fill="currentColor" stroke="none" />
+      <circle cx="20" cy="4" r="1" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="4" r="1" fill="currentColor" stroke="none" />
+      <circle cx="20" cy="20" r="1" fill="currentColor" stroke="none" />
+      <path d="M12 2.4c-3.3 0-6 2.3-6 5.2 0 1.7.9 3.2 2.1 4.1v2.4c0 .6.5 1.1 1.1 1.1h.8v-1.9h1v1.9h1v-1.9h1v1.9h.8c.6 0 1.1-.5 1.1-1.1v-2.4c1.2-.9 2.1-2.4 2.1-4.1 0-2.9-2.7-5.2-6-5.2Z" />
+      <circle cx="9.6" cy="7.6" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="14.4" cy="7.6" r="1.15" fill="currentColor" stroke="none" />
+      <path d="M12 9.6l-.9 1.5h1.8z" fill="currentColor" stroke="none" />
     </>
   ),
   flask: (

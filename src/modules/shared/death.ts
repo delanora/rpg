@@ -33,6 +33,13 @@ import { mechanicalStateOf, type ConditionInstance, type MechanicalState } from 
 /** Sufixo de `sourceType` das instâncias de Inconsciência causadas por 0 PV. */
 export const HP_ZERO_SOURCE = 'hp-zero';
 
+/**
+ * Rótulo da Queda DERIVADA da inconsciência por 0 PV. É o marcador que a visão
+ * do jogador usa para filtrar essa Queda sem esconder uma Queda independente
+ * (empurrão, queda de cavalo...).
+ */
+export const HP_ZERO_PRONE_LABEL = 'Queda por inconsciência';
+
 /** Instâncias que o ciclo de morte pode remover (só as de 0 PV, nunca outras). */
 const HP_ZERO_SOURCE_TYPE = HP_ZERO_SOURCE;
 
@@ -290,7 +297,7 @@ export function addHpZeroUnconscious(value: unknown): { state: MechanicalState; 
         id: randomUUID(),
         condition: 'prone',
         sourceType: 'posture',
-        sourceLabel: 'Queda por inconsciência',
+        sourceLabel: HP_ZERO_PRONE_LABEL,
         appliedAt: at,
       },
     ];

@@ -10,6 +10,7 @@ import {
   weaponOf,
 } from '../../ammo';
 import { WEAPON_TYPE_LABELS, damageExpression, formatModifier } from '../../dnd';
+import { combatantKindIcon } from '../combatVisuals';
 import type { Attack, CombatDto, CombatantDto, InventoryItem } from '../../types';
 import { clampInt } from '../../utils';
 
@@ -272,7 +273,7 @@ export function CombatActionPanel({
                     src={item.imageUrl ?? ''}
                     alt=""
                     size="sm"
-                    icon={item.kind === 'CREATURE' ? 'flame' : 'users'}
+                    icon={combatantKindIcon(item.kind)}
                   />
                   <span className="target-card-body">
                     <span className="target-card-name">

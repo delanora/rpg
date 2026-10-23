@@ -1,4 +1,6 @@
 import type { DamageTypeSlug } from '../damage';
+import type { IconName } from '../components/Icon';
+import type { CombatantKind } from '../types';
 import type { EconomyAction } from './combatApi';
 
 /**
@@ -134,4 +136,21 @@ export const ECONOMY_ACTION_VISUALS: EconomyActionVisual[] = [
 /** Descrição de uma ação de economia pelo id; fallback honesto. */
 export function economyActionDescription(id: EconomyAction): string {
   return ECONOMY_ACTION_VISUALS.find((item) => item.id === id)?.description ?? '';
+}
+
+/**
+ * Rótulo e ícone do TIPO de combatente — o NPC NÃO é "personagem" nem
+ * "criatura": é um tipo próprio do cadastro narrativo do Mestre.
+ * Só apresentação; `kind` vem do servidor.
+ */
+export function combatantKindLabel(kind: CombatantKind): string {
+  if (kind === 'CREATURE') return 'criatura';
+  if (kind === 'NPC') return 'NPC';
+  return 'personagem';
+}
+
+export function combatantKindIcon(kind: CombatantKind): IconName {
+  if (kind === 'CREATURE') return 'flame';
+  if (kind === 'NPC') return 'scroll';
+  return 'users';
 }

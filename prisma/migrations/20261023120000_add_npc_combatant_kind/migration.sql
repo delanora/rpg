@@ -1,0 +1,12 @@
+-- NPC é um TIPO PRÓPRIO de combatente.
+--
+-- O NPC persistente continua sendo uma linha de `creatures` com `kind = 'NPC'`
+-- (o cadastro narrativo do mestre, com localidades). O combatente só marca o
+-- tipo para que DTO/regras tratem NPC sem fingir que é uma cópia de
+-- criatura-template. A engine (iniciativa, HP, Conditions, deathState, Action
+-- Economy) é a mesma.
+--
+-- A migration é separada do índice único parcial porque o PostgreSQL não
+-- permite USAR um valor de enum recém-adicionado na mesma transação em que ele
+-- foi criado (ver `20261023120100_unique_npc_combatant`).
+ALTER TYPE "CombatantKind" ADD VALUE IF NOT EXISTS 'NPC';

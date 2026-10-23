@@ -11,7 +11,9 @@ import { prisma } from '../../config/prisma.js';
  * socket (e por isso sumiam ao recarregar).
  *
  * NUNCA use este caminho para um Teste contra a Morte PRIVADO de NPC/criatura:
- * o registro é público e vazaria o resultado para os jogadores.
+ * o registro é público e vazaria o resultado para os jogadores. Eventos do
+ * lifecycle de 0 PV de criatura/NPC (estabilização, override) entram com
+ * `private: true` — o servidor os remove da visão do jogador.
  */
 export interface CombatJournalEntry {
   id: string;
@@ -19,6 +21,11 @@ export interface CombatJournalEntry {
   message: string;
   at: string;
   action?: string;
+  /**
+   * Linha visível SÓ para o Mestre (ex.: estabilizar criatura/NPC denuncia
+   * que ela estava a 0 PV). O DTO do jogador descarta entradas privadas.
+   */
+  private?: boolean;
 }
 
 const entrySchema = {
@@ -42,7 +49,13 @@ const entrySchema = {
  * é estado de regra): em caso de corrida, tenta de novo com o valor fresco.
  */
 export async function appendCombatJournal(
-  input: { combatId: string; actorName: string; message: string; action?: string },
+  input: {
+    combatId: string;
+    actorName: string;
+    message: string;
+    action?: string;
+    private?: boolean;
+  },
   db: Prisma.TransactionClient = prisma,
 ): Promise<void> {
   const entry: CombatJournalEntry = {
@@ -51,6 +64,7 @@ export async function appendCombatJournal(
     message: input.message,
     at: new Date().toISOString(),
     ...(input.action ? { action: input.action } : {}),
+    ...(input.private ? { private: true } : {}),
   };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const combat = await db.combat.findUnique({

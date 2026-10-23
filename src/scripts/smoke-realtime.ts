@@ -1349,7 +1349,16 @@ async function main(): Promise<void> {
   check('mesa é avisada do primeiro turno', (await turnEvent.catch(() => null)) !== null);
 
   const nextTurn = await api('/api/combat/next-turn', { method: 'POST', token: masterToken });
-  check('mestre avança o turno', nextTurn.data.combat.currentIndex === 1);
+  // Mortos e estabilizados a 0 são PULADOS pelo servidor: o índice pode saltar
+  // (a mesa pode ter uma ficha estabilizada). O que importa é sair do primeiro
+  // e apontar para o combatente que realmente vai agir.
+  check(
+    'mestre avança o turno',
+    nextTurn.data.combat.currentIndex !== 0 &&
+      nextTurn.data.combat.currentCombatantId ===
+        nextTurn.data.combat.combatants[nextTurn.data.combat.currentIndex]?.id,
+    JSON.stringify({ index: nextTurn.data.combat.currentIndex }),
+  );
 
   // Avança até dar a volta e começar a rodada 2 (o número de combatentes varia).
   let wrapped = nextTurn.data.combat;
@@ -1357,8 +1366,9 @@ async function main(): Promise<void> {
     wrapped = (await api('/api/combat/next-turn', { method: 'POST', token: masterToken })).data.combat;
   }
   check(
-    'ao passar do último, volta ao início com nova rodada',
-    wrapped.currentIndex === 0 && wrapped.round === 2,
+    'ao passar do último, vira a rodada e para no próximo elegível',
+    wrapped.round === 2 &&
+      wrapped.currentCombatantId === wrapped.combatants[wrapped.currentIndex]?.id,
     JSON.stringify({ index: wrapped.currentIndex, round: wrapped.round }),
   );
 

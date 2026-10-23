@@ -26,6 +26,7 @@ import {
 } from '../modules/death/death.service.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import { restoreTurnEconomyAfterRevival } from '../modules/combat/combat.service.js';
+import { planNextTurn } from '../modules/combat/turn-order.js';
 
 type Check = (label: string, condition: boolean, detail?: string) => void;
 
@@ -90,6 +91,31 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
       mapping.filter((outcome) => outcome.revived).length === 1,
     mapping.map((outcome, index) => `${index + 1}:${outcome.successes}/${outcome.failures}${outcome.revived ? '/revive' : ''}`).join(' '),
   );
+  // Planejamento do próximo turno (regra pura usada por `nextTurn` e
+  // `finalizeInitiative`): mortos/estabilizados são pulados, uma volta no
+  // máximo e `null` quando ninguém pode agir.
+  const onlyPositions = (positions: number[]) => (index: number) => positions.includes(index);
+  const skipPlan = planNextTurn(4, 0, onlyPositions([3]));
+  const wrapPlan = planNextTurn(3, 2, onlyPositions([0]));
+  check(
+    '65.A2) plano de turno pula posições inelegíveis, conta a volta e nunca passa de uma volta',
+    skipPlan?.index === 3 &&
+      skipPlan.rounds === 0 &&
+      skipPlan.skipped.join(',') === '1,2' &&
+      wrapPlan?.index === 0 &&
+      wrapPlan.rounds === 1 &&
+      planNextTurn(4, 0, onlyPositions([0]))?.index === 0 &&
+      planNextTurn(4, 0, onlyPositions([0]))?.rounds === 1 &&
+      planNextTurn(4, 0, () => false) === null,
+    JSON.stringify({ skipPlan, wrapPlan }),
+  );
+  check(
+    '65.B2) um único combatente elegível recebe o turno e vira a rodada',
+    planNextTurn(1, 0, () => true)?.index === 0 &&
+      planNextTurn(1, 0, () => true)?.rounds === 1 &&
+      planNextTurn(0, 0, () => true) === null,
+  );
+
   // Medicina (Sabedoria) CD 10: sem proficiência soma só Sabedoria; com
   // proficiência soma o bônus; Expertise dobra; metade da proficiência vale
   // quando a mesa tem Pau para Toda Obra.
@@ -161,6 +187,9 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
   const sockets: Socket[] = [];
   let creatureId: string | undefined;
   let combatId: string | undefined;
+  // Fixtures do hotfix de turno/NPC (criadas e apagadas por esta execução).
+  let hotfixCombatId: string | undefined;
+  let npcId: string | undefined;
 
   const connect = async (token: string): Promise<Socket> => {
     const socket = io(baseUrl, { autoConnect: false, transports: ['websocket'], auth: { token } });
@@ -875,29 +904,28 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
       JSON.stringify({ statuses: twin.map((item) => item.status), pending: concurrentPending.pending?.kind }),
     );
 
-    // --- AZ–BC) Estado de morto e a economia de ações ----------------------
-    const deadTurn = await advanceTo(combatantB, true);
-    const deadEconomy = state.combatants.find((item) => item.id === combatantB)!.turnEconomy;
+    // --- AZ–BC) Morto NÃO recebe turno (regra do hotfix) -------------------
+    // O servidor pula o morto: a iniciativa não pára nele e nenhuma economia
+    // é liberada. A Ação/Ataque continuam recusados pelo ciclo de morte.
+    const beforeDeadAdvance = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    await advance();
+    const trackerAfterDeath = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
     const deadAction = await request('/combat/action', {
-      combatId: state.id, expectedVersion: state.version, operationId: randomUUID(),
+      combatId: trackerAfterDeath.id, expectedVersion: trackerAfterDeath.version, operationId: randomUUID(),
       combatantId: combatantB, action: 'dodge', description: 'Morto tentando agir',
     }, heroB.token);
     const deadAttack = await request('/combat/attack', {
-      combatId: state.id, expectedVersion: state.version, operationId: randomUUID(),
+      combatId: trackerAfterDeath.id, expectedVersion: trackerAfterDeath.version, operationId: randomUUID(),
       attackerCombatantId: combatantB, targetCombatantId: goblin1, attackId: 'unarmed',
     }, masterToken);
     check(
-      '64.AZ/BA/BB) morto não tem Ação, Ação Bônus, Reação nem Movimento',
-      deadTurn &&
-        deadEconomy.actionsGranted === 0 &&
-        deadEconomy.bonusActionUsed &&
-        !deadEconomy.reactionAvailable &&
-        deadEconomy.movementBudget === 0 &&
+      '64.AZ/BA/BB) morto é PULADO no avanço e não pode gastar Ação/Movimento (Ação/Ataque 409)',
+      beforeDeadAdvance.currentCombatantId !== combatantB &&
+        trackerAfterDeath.currentCombatantId !== combatantB &&
         deadAction.status === 409 &&
         deadAttack.status === 409,
-      JSON.stringify({ state: deadEconomy, action: deadAction.status, attack: deadAttack.status }),
+      JSON.stringify({ current: trackerAfterDeath.currentCombatantId, action: deadAction.status, attack: deadAttack.status }),
     );
-    const trackerAfterDeath = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
     check(
       '64.BC) o combatente morto NÃO é removido do combate automaticamente',
       trackerAfterDeath.combatants.some((item) => item.id === combatantB),
@@ -1409,10 +1437,353 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
       '64.C) a Resistência Implacável consumida continua consumida (só o descanso longo devolve)',
       ((await prisma.character.findUniqueOrThrow({ where: { id: heroD.character.id } })).racialState as { used?: Record<string, number> }).used?.['relentless-endurance'] === 1,
     );
+
+    // ==================================================================
+    // 65) HOTFIX — NPC no combate, privacidade de morte e skip de turnos
+    // ==================================================================
+    await (async () => {
+      // O combate anterior precisa sair do caminho para exercitar a CRIAÇÃO.
+      const ended = await request('/combat/end', {}, masterToken);
+      check('65.A) combate anterior encerrado para testar a entrada de NPC', ended.status === 200, JSON.stringify(ended.data));
+
+      const npc = await prisma.creature.create({
+        data: {
+          name: `Bartolomeu ${suffix}`,
+          kind: 'NPC',
+          type: 'Humanoide',
+          hpMax: 20,
+          hpCurrent: 20,
+          armorClass: 13,
+          speed: 9,
+          attacks: [
+            {
+              id: 'rapier',
+              name: 'Rapieira',
+              attackBonus: 4,
+              damage: { count: 1, sides: 8, bonus: 2, type: 'Perfurante' },
+              extraDamages: [],
+              finesse: true,
+              ranged: false,
+              notes: '',
+            },
+          ] as never,
+        },
+      });
+      npcId = npc.id;
+
+      // NPC é entidade única: quantidade > 1 e duplicata são recusadas.
+      const npcTwice = await request(
+        '/combat',
+        { entries: [{ creatureId: npc.id, quantity: 2 }] },
+        masterToken,
+      );
+      check(
+        '65.B) NPC não aceita quantidade > 1 (409 com motivo claro)',
+        npcTwice.status === 409 && /NPC/.test(String(npcTwice.data.message ?? '')),
+        JSON.stringify(npcTwice.data),
+      );
+      const npcDuplicate = await request(
+        '/combat',
+        { entries: [{ creatureId: npc.id, quantity: 1 }, { creatureId: npc.id, quantity: 1 }] },
+        masterToken,
+      );
+      check(
+        '65.C) o MESMO NPC persistente não entra duas vezes no combate',
+        npcDuplicate.status === 409 && /já está neste combate/.test(String(npcDuplicate.data.message ?? '')),
+        JSON.stringify(npcDuplicate.data),
+      );
+
+      const started = await request(
+        '/combat',
+        { entries: [{ creatureId: npc.id, quantity: 1 }, { creatureId: creature.id, quantity: 2 }] },
+        masterToken,
+      );
+      const hotfixCombat = started.data.combat as CombatDto;
+      hotfixCombatId = hotfixCombat.id;
+      const npcCombatant = hotfixCombat.combatants.find((item) => item.creatureId === npc.id)!;
+      const goblins = hotfixCombat.combatants
+        .filter((item) => item.creatureId === creature.id)
+        .map((item) => item.id);
+      check(
+        '65.D) NPC entra como TIPO próprio e a criatura-template mantém cópias independentes',
+        started.status === 201 &&
+          npcCombatant.kind === 'NPC' &&
+          goblins.length === 2 &&
+          new Set(goblins).size === 2 &&
+          hotfixCombat.combatants.filter((item) => item.kind === 'NPC').length === 1,
+        JSON.stringify({ status: started.status, kinds: hotfixCombat.combatants.map((item) => item.kind) }),
+      );
+
+      // Ordem CONTROLADA (sem RNG): heróis primeiro, depois NPC e criaturas.
+      const heroCombatants = hotfixCombat.combatants.filter((item) => item.kind === 'CHARACTER');
+      const order = [
+        heroCombatants[0].id,
+        heroCombatants[1].id,
+        npcCombatant.id,
+        goblins[0],
+        goblins[1],
+        ...heroCombatants.slice(2).map((item) => item.id),
+      ];
+      for (const [index, id] of order.entries()) {
+        await prisma.combatant.update({
+          where: { id },
+          data: { initiative: 1000 - index, initiativeRoll: 20 - (index % 10) },
+        });
+      }
+      const activate = () =>
+        prisma.combat.update({
+          where: { id: hotfixCombat.id },
+          data: { status: 'ACTIVE', currentIndex: 1, round: 1, version: { increment: 1 } },
+        });
+      await activate();
+
+      const activeMaster = async (): Promise<CombatDto> =>
+        (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+      const activePlayer = async (auth: string): Promise<CombatDto> =>
+        (await request('/combat/active', undefined, auth)).data.combat as CombatDto;
+      const advanceFrom = async (current: CombatDto) =>
+        request(
+          '/combat/next-turn',
+          {
+            combatId: current.id,
+            expectedVersion: current.version,
+            operationId: randomUUID(),
+            skipDeathSave: true,
+          },
+          masterToken,
+        );
+
+      // --- NPC entra no MESMO ciclo de morte (decisão pendente do Mestre) --
+      const damaged = await request(
+        '/combat/hp',
+        { combatantId: npcCombatant.id, amount: 20, mode: 'damage' },
+        masterToken,
+      );
+      const masterAfterDamage = damaged.data.combat as CombatDto;
+      const npcAfterDamage = masterAfterDamage.combatants.find((item) => item.id === npcCombatant.id)!;
+      check(
+        '65.E) NPC a 0 PV entra no lifecycle de morte (pendente do Mestre) com HP da PRÓPRIA instância',
+        damaged.status === 200 &&
+          npcAfterDamage.hpCurrent === 0 &&
+          npcAfterDamage.deathState?.pending?.kind === 'npc-zero',
+        JSON.stringify({ hp: npcAfterDamage.hpCurrent, pending: npcAfterDamage.deathState?.pending?.kind }),
+      );
+
+      // --- PRIVACIDADE (DTO do jogador, decidida no servidor) --------------
+      const playerView = await activePlayer(heroA.token);
+      const hiddenNpc = playerView.combatants.find((item) => item.id === npcCombatant.id)!;
+      check(
+        '65.F) PLAYER não recebe HP/CA/deathState/pendência de NPC (o Mestre recebe)',
+        hiddenNpc.deathState === null &&
+          hiddenNpc.hpCurrent === null &&
+          hiddenNpc.armorClass === null &&
+          hiddenNpc.statsHidden &&
+          !hiddenNpc.deathBlocksActions &&
+          npcAfterDamage.deathState?.pending !== null,
+      );
+
+      // O Mestre escolhe DEIXAR ESTABILIZADO: é o caminho REAL que aplica
+      // Inconsciente + Caído. A privacidade é verificada nesse estado.
+      const pendingNpcDeath = await readDeath({ kind: 'combatant', id: npcCombatant.id });
+      const stabilized = await resolve(
+        { kind: 'combatant', id: npcCombatant.id },
+        'leave-stabilized',
+        pendingNpcDeath.version,
+      );
+      const masterStabilized = await activeMaster();
+      const visibleNpc = masterStabilized.combatants.find((item) => item.id === npcCombatant.id)!;
+      const playerStabilized = await activePlayer(heroA.token);
+      const hiddenStabilized = playerStabilized.combatants.find(
+        (item) => item.id === npcCombatant.id,
+      )!;
+      check(
+        '65.G) ESTABILIZADO: o Mestre vê 0 PV + Inconsciente/Caído; o PLAYER não vê nada disso',
+        stabilized.status === 200 &&
+          visibleNpc.hpCurrent === 0 &&
+          visibleNpc.deathState?.stabilized === true &&
+          visibleNpc.mechanicalState.conditions.some((item) => item.condition === 'unconscious') &&
+          visibleNpc.mechanicalState.conditions.some((item) => item.condition === 'prone') &&
+          hiddenStabilized.deathState === null &&
+          hiddenStabilized.hpCurrent === null &&
+          !hiddenStabilized.mechanicalState.conditions.some(
+            (item) => item.condition === 'unconscious' || item.condition === 'prone',
+          ) &&
+          hiddenStabilized.conditionEffects.canAct &&
+          !hiddenStabilized.conditionEffects.prone,
+        JSON.stringify({
+          status: stabilized.status,
+          master: visibleNpc.mechanicalState.conditions.map((item) => item.condition),
+          player: hiddenStabilized.mechanicalState.conditions.map((item) => item.condition),
+        }),
+      );
+      check(
+        '65.H) a linha de estabilização de NPC é PRIVADA no Registro (o jogador não lê)',
+        masterStabilized.economyLog.some(
+          (entry) => entry.action === 'stabilize' && entry.private === true,
+        ) &&
+          !playerStabilized.economyLog.some((entry) => entry.action === 'stabilize'),
+        JSON.stringify({
+          master: masterStabilized.economyLog.filter((entry) => entry.action === 'stabilize').length,
+          player: playerStabilized.economyLog.filter((entry) => entry.action === 'stabilize').length,
+        }),
+      );
+      check(
+        '65.I) a entrada do NPC PERMANECE na iniciativa visível (não denuncia o estado)',
+        playerStabilized.combatants.length === hotfixCombat.combatants.length &&
+          playerStabilized.combatants.some((item) => item.id === npcCombatant.id) &&
+          playerView.combatants.some((item) => item.id === npcCombatant.id),
+      );
+
+      // Mestre CONFIRMA a morte pela mesma rota do ciclo (sem fluxo paralelo).
+      const stabilizedDeathDto = await readDeath({ kind: 'combatant', id: npcCombatant.id });
+      const confirmed = await override(
+        { kind: 'combatant', id: npcCombatant.id },
+        'confirm-death',
+        stabilizedDeathDto.version,
+        'Morte confirmada no teste do hotfix',
+      );
+      const playerAfterDeath = await activePlayer(heroA.token);
+      const deadForPlayer = playerAfterDeath.combatants.find((item) => item.id === npcCombatant.id)!;
+      check(
+        '65.J) MORTO de NPC não chega ao PLAYER e ele segue na iniciativa',
+        confirmed.status === 200 &&
+          deadForPlayer.deathState === null &&
+          playerAfterDeath.combatants.some((item) => item.id === npcCombatant.id),
+        JSON.stringify({ status: confirmed.status, death: deadForPlayer.deathState }),
+      );
+
+      // --- SKIP DE MORTO ---------------------------------------------------
+      const beforeDeadSkip = await activeMaster();
+      const deadSkip = await advanceFrom(beforeDeadSkip);
+      const afterDeadSkip = deadSkip.data.combat as CombatDto;
+      check(
+        '65.K) turno de combatente MORTO é pulado sem parar nele',
+        deadSkip.status === 200 &&
+          afterDeadSkip.currentCombatantId === goblins[0] &&
+          afterDeadSkip.currentCombatantId !== npcCombatant.id,
+        JSON.stringify({ status: deadSkip.status, current: afterDeadSkip.currentCombatantId, expected: goblins[0] }),
+      );
+      const skipMasterView = afterDeadSkip.economyLog.some(
+        (entry) => entry.action === 'turn-skip' && entry.private === true,
+      );
+      const skipPlayerView = (await activePlayer(heroA.token)).economyLog.some(
+        (entry) => entry.action === 'turn-skip',
+      );
+      check(
+        '65.L) o motivo do pulo é PRIVADO do Mestre (não vaza para o Registro do jogador)',
+        skipMasterView && !skipPlayerView,
+        JSON.stringify({ skipMasterView, skipPlayerView }),
+      );
+
+      // --- SKIP DE ESTABILIZADO A 0 PV (sem Death Save e sem economia) -----
+      await prisma.combatant.update({
+        where: { id: goblins[0] },
+        data: {
+          hpCurrent: 0,
+          // Economia BLOQUEADA, como um estabilizado que nunca agiu: o skip não
+          // pode conceder Ação/Movimento por cima.
+          turnEconomy: {
+            actionsGranted: 0,
+            actionsUsed: 0,
+            bonusActionUsed: true,
+            reactionAvailable: false,
+            movementBudget: 0,
+            movementUsed: 0,
+          } as never,
+          deathState: {
+            successes: 0, failures: 0, stabilized: true, dead: false,
+            deathSaves: false, pending: null, relentless: null, saveTurnKey: null, log: [],
+          } as never,
+        },
+      });
+      const resetStab = await prisma.combat.update({
+        where: { id: hotfixCombat.id },
+        data: { currentIndex: 1, version: { increment: 1 } },
+      });
+      void resetStab;
+      const beforeStabSkip = await activeMaster();
+      const stabSkip = await advanceFrom(beforeStabSkip);
+      const afterStabSkip = stabSkip.data.combat as CombatDto;
+      const stabilizedRow = await prisma.combatant.findUniqueOrThrow({ where: { id: goblins[0] } });
+      const stabilizedDeath = deathStateOf(stabilizedRow.deathState);
+      check(
+        '65.M) morto + estabilizado a 0 são pulados juntos até o próximo elegível',
+        stabSkip.status === 200 && afterStabSkip.currentCombatantId === goblins[1],
+        JSON.stringify({ status: stabSkip.status, current: afterStabSkip.currentCombatantId }),
+      );
+      check(
+        '65.N) estabilizado não rola Death Save nem recebe Ação/Movimento',
+        !stabilizedDeath.deathSaves &&
+          stabilizedDeath.saveTurnKey === null &&
+          stabilizedDeath.successes === 0 &&
+          stabilizedDeath.failures === 0 &&
+          ((stabilizedRow.turnEconomy as { actionsGranted?: number } | null)?.actionsGranted ?? 0) === 0,
+        JSON.stringify({ death: { ...stabilizedDeath, log: [] }, economy: stabilizedRow.turnEconomy }),
+      );
+
+      // --- 0 PV COM DEATH SAVES ATIVOS **NÃO** É PULADO --------------------
+      await prisma.combatant.update({
+        where: { id: goblins[1] },
+        data: {
+          hpCurrent: 0,
+          deathState: {
+            successes: 0, failures: 0, stabilized: false, dead: false,
+            deathSaves: true, pending: null, relentless: null, saveTurnKey: null, log: [],
+          } as never,
+        },
+      });
+      await prisma.combat.update({
+        where: { id: hotfixCombat.id },
+        data: { currentIndex: 3, version: { increment: 1 } },
+      });
+      const beforeSaveTurn = await activeMaster();
+      const saveTurn = await advanceFrom(beforeSaveTurn);
+      const afterSaveTurn = saveTurn.data.combat as CombatDto;
+      const saveTurnRow = afterSaveTurn.combatants.find((item) => item.id === goblins[1])!;
+      check(
+        '65.O) 0 PV com Testes contra a Morte ATIVOS continua recebendo o turno (não é pulado)',
+        saveTurn.status === 200 &&
+          afterSaveTurn.currentCombatantId === goblins[1] &&
+          saveTurnRow.deathState?.deathSaves === true &&
+          saveTurnRow.turnEconomy.actionsGranted === 0,
+        JSON.stringify({ status: saveTurn.status, current: afterSaveTurn.currentCombatantId }),
+      );
+
+      // --- FALLBACK SEGURO: todos mortos/inválidos -------------------------
+      const deadState = {
+        successes: 0, failures: 0, stabilized: false, dead: true,
+        deathSaves: false, pending: null, relentless: null, saveTurnKey: null, log: [],
+      };
+      for (const item of (await activeMaster()).combatants) {
+        if (item.characterId) {
+          await prisma.character.update({
+            where: { id: item.characterId },
+            data: { hpCurrent: 0, deathState: deadState as never },
+          });
+        } else {
+          await prisma.combatant.update({
+            where: { id: item.id },
+            data: { hpCurrent: 0, deathState: deadState as never },
+          });
+        }
+      }
+      const beforeAllDead = await activeMaster();
+      const allDead = await advanceFrom(beforeAllDead);
+      const afterAllDead = await activeMaster();
+      check(
+        '65.P) todos mortos/estabilizados: fallback SEGURO (409 reportável, sem laço e sem mudar o turno)',
+        allDead.status === 409 &&
+          allDead.data.error === 'NO_ELIGIBLE_COMBATANT' &&
+          afterAllDead.currentCombatantId === beforeAllDead.currentCombatantId,
+        JSON.stringify({ status: allDead.status, error: allDead.data.error }),
+      );
+    })();
   } finally {
     for (const socket of sockets) socket.disconnect();
     if (combatId) await prisma.combat.deleteMany({ where: { id: combatId } });
+    if (hotfixCombatId) await prisma.combat.deleteMany({ where: { id: hotfixCombatId } });
     if (creatureId) await prisma.creature.deleteMany({ where: { id: creatureId } });
+    if (npcId) await prisma.creature.deleteMany({ where: { id: npcId } });
     if (userIds.length > 0) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   }
 }

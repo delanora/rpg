@@ -73,8 +73,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
 
   const openShortcut = COMBAT_SHORTCUTS.find((item) => item.key === combatView) ?? null;
 
-  const combatState = useCombatState(user.id);
-  const { combat, log, turnAlert, dismissTurnAlert } = combatState;
+  const combatState = useCombatState(user.id, user.role);
+  const { combat, log, turnAlert } = combatState;
 
   // Janela de dados (botão flutuante + avisos + rolagens de perícia).
   const dice = useDiceRoller(user);
@@ -432,7 +432,6 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 log={log}
                 user={user}
                 turnAlert={turnAlert}
-                onDismissTurnAlert={dismissTurnAlert}
                 characterAttacks={[
                   ...(character?.attacks ?? []),
                   ...(character?.derivedAttacks ?? []),

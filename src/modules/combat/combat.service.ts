@@ -55,11 +55,13 @@ import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, typ
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice } from '../shared/dice.js';
+import { planNextTurn } from './turn-order.js';
 import {
   combatantAttacks,
   combatantDeathState,
   combatantMechanicalState,
-  hideCreatureStats,
+  hideMasterPrivateState,
+  isMasterOnlyCombatant,
   orderCombatants,
   toCombatDto,
   type CombatDto,
@@ -149,7 +151,7 @@ export function emitCombat(
   try {
     const broadcaster = getBroadcaster();
     broadcaster.toMasters(event, { combat: dto });
-    broadcaster.toPlayers(event, { combat: hideCreatureStats(dto) });
+    broadcaster.toPlayers(event, { combat: hideMasterPrivateState(dto) });
   } catch (error) {
     console.error('[combat] falha ao publicar o combate em tempo real:', error);
   }
@@ -177,6 +179,7 @@ function emitTurn(dto: CombatDto): void {
     combatantId: current.id,
     combatantName: current.name,
     ownerUserId: current.ownerUserId,
+    kind: current.kind,
     round: dto.round,
     index: dto.currentIndex,
   });
@@ -292,6 +295,34 @@ function combatantSpeed(combatant: CombatantSourced): number {
   return Math.max(0, combatant.character?.speed ?? combatant.creature?.speed ?? 0);
 }
 
+/** PV do combatente: personagem lê ao vivo da ficha; instância usa o snapshot. */
+function combatantHp(combatant: CombatantSourced): number {
+  return combatant.character
+    ? combatant.character.hpCurrent
+    : (combatant.hpCurrent ?? combatant.creature?.hpCurrent ?? 0);
+}
+
+/**
+ * RECEBE turno? (regra única usada por `nextTurn` e `finalizeInitiative`)
+ *
+ * • `dead` nunca recebe — o turno não pára nele;
+ * • 0 PV + `stabilized` (sem pendência) também não: o início do turno processa
+ *   os hooks, mas como não pode agir o restante é pulado automaticamente;
+ * • 0 PV com Testes contra a Morte ATIVOS RECEBE (é nele que se rola);
+ * • pendência do Mestre recebe o turno (ele precisa resolver).
+ */
+function receivesTurn(combatant: CombatantSourced): boolean {
+  const death = combatantDeathState(combatant);
+  if (death.dead) return false;
+  return !(autoSkippedAtZero(combatant));
+}
+
+/** Estabilizado a 0 PV sem pendência: turno processado e pulado na hora. */
+function autoSkippedAtZero(combatant: CombatantSourced): boolean {
+  const death = combatantDeathState(combatant);
+  return !death.dead && combatantHp(combatant) <= 0 && death.stabilized && !death.pending;
+}
+
 function requireOwnTurn(combat: CombatSourced, combatant: CombatantSourced): void {
   if (orderCombatants(combat.combatants)[combat.currentIndex]?.id !== combatant.id) {
     throw new HttpError('Esta ação exige o turno do combatente. O Mestre pode corrigir a ordem explicitamente.', 403);
@@ -327,9 +358,28 @@ function validateOffhand(combatant: CombatantSourced, id: string | undefined, at
   }
 }
 
-async function appendEconomyLog(db: Prisma.TransactionClient, combat: CombatSourced, combatant: CombatantSourced, message: string, action?: string): Promise<void> {
+/**
+ * Registra um evento estrutural. `options.private` marca o que o DTO do
+ * jogador descarta: coisas que denunciariam o lifecycle de morte de uma
+ * criatura/NPC (estabilização ou override do Teste Contra a Morte).
+ */
+async function appendEconomyLog(
+  db: Prisma.TransactionClient,
+  combat: CombatSourced,
+  combatant: CombatantSourced,
+  message: string,
+  action?: string,
+  options: { private?: boolean } = {},
+): Promise<void> {
   const log = toCombatDto(combat, 'MASTER').economyLog;
-  const entry = { id: randomUUID(), actorName: combatant.name, message, at: new Date().toISOString(), ...(action ? { action } : {}) };
+  const entry = {
+    id: randomUUID(),
+    actorName: combatant.name,
+    message,
+    at: new Date().toISOString(),
+    ...(action ? { action } : {}),
+    ...(options.private ? { private: true } : {}),
+  };
   combat.economyLog = [...log, entry].slice(-100);
   await db.combat.update({ where: { id: combat.id }, data: { economyLog: combat.economyLog as Prisma.InputJsonValue } });
 }
@@ -441,6 +491,9 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
         combatant,
         `Medicina para estabilizar ${targetCombatant.name}: ${total} (d20 ${natural} ${signed(bonus)}) vs CD ${STABILIZE_DC} — ${outcome}`,
         'stabilize',
+        // Estabilizar um PERSONAGEM é público; estabilizar criatura/NPC revela
+        // que ela estava a 0 PV — só o Mestre lê essa linha.
+        { private: isMasterOnlyCombatant(targetCombatant.kind) },
       );
       // Rolagem PÚBLICA: entra na bandeja de dados existente (nada privado aqui).
       const diceRoll: DiceRollDto = {
@@ -558,15 +611,37 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
     : [];
   const creatureById = new Map(creatures.map((creature) => [creature.id, creature]));
 
+  /**
+   * Cópia de combate a partir do cadastro persistente. Criatura-template pode
+   * gerar N cópias independentes; NPC entra UMA vez (é uma entidade narrativa
+   * única) e recebe `kind: 'NPC'` no combatente — nunca é convertido em
+   * criatura-template.
+   */
+  const npcSeen = new Set<string>();
   const creatureCombatants = entries.flatMap((entry) => {
     const creature = creatureById.get(entry.creatureId);
     if (!creature) return [];
 
-    return Array.from({ length: entry.quantity }, (_, index) => ({
-      kind: 'CREATURE' as const,
+    if (creature.kind === 'NPC') {
+      if (entry.quantity !== 1) {
+        throw new HttpError(
+          `${creature.name} é um NPC: cada NPC entra uma única vez no combate.`,
+          409,
+          'CONFLICT',
+        );
+      }
+      if (npcSeen.has(creature.id)) {
+        throw new HttpError(`${creature.name} já está neste combate.`, 409, 'CONFLICT');
+      }
+      npcSeen.add(creature.id);
+    }
+
+    const quantity = creature.kind === 'NPC' ? 1 : entry.quantity;
+    return Array.from({ length: quantity }, (_, index) => ({
+      kind: creature.kind === 'NPC' ? ('NPC' as const) : ('CREATURE' as const),
       creatureId: creature.id,
       // Cópias da mesma criatura recebem um sufixo para se distinguirem.
-      name: entry.quantity > 1 ? `${creature.name} ${index + 1}` : creature.name,
+      name: quantity > 1 ? `${creature.name} ${index + 1}` : creature.name,
       dexterityMod: abilityModifier(creature.dexterity),
       // Snapshot de vitais: cada cópia rastreia a própria vida.
       hpCurrent: creature.hpCurrent,
@@ -627,16 +702,26 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
   if (!everyoneRolled || combat.status !== 'PENDING_INITIATIVE') {
     const dto = toCombatDto(combat, 'MASTER');
     emitCombat(ServerEvents.COMBAT_UPDATED, dto);
-    return viewer === 'MASTER' ? dto : hideCreatureStats(dto);
+    return viewer === 'MASTER' ? dto : hideMasterPrivateState(dto);
   }
+
+  // O combate começa no PRIMEIRO combatente ELEGÍVEL — se a ordem abre com um
+  // morto/estabilizado a 0, ele não recebe turno (mesma regra de `nextTurn`).
+  const ordered = orderCombatants(combat.combatants);
+  const startPlan = planNextTurn(
+    ordered.length,
+    ordered.length - 1,
+    (position) => receivesTurn(ordered[position]),
+  );
+  const startIndex = startPlan?.index ?? 0;
 
   await prisma.$transaction(async (db) => {
     const changed = await db.combat.updateMany({
       where: { id: combatId, status: 'PENDING_INITIATIVE' },
-      data: { status: 'ACTIVE', currentIndex: 0, round: 1, version: { increment: 1 } },
+      data: { status: 'ACTIVE', currentIndex: startIndex, round: 1, version: { increment: 1 } },
     });
     if (!changed.count) return;
-    const first = orderCombatants(combat.combatants)[0];
+    const first = ordered[startIndex];
     if (first) await db.combatant.update({
       where: { id: first.id }, data: { turnEconomy: onTurnStart(combatantSpeed(first)), sneakAttackUsedThisTurn: false },
     });
@@ -646,7 +731,7 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
   const dto = toCombatDto(active, 'MASTER');
   emitCombat(ServerEvents.COMBAT_UPDATED, dto);
   emitTurn(dto);
-  return viewer === 'MASTER' ? dto : hideCreatureStats(dto);
+  return viewer === 'MASTER' ? dto : hideMasterPrivateState(dto);
 }
 
 /** --- Iniciativa -------------------------------------------------------------- */
@@ -726,12 +811,44 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         outgoing,
         `Mestre ${actor.username} avançou o turno sem o Teste Contra a Morte de ${outgoing.name} (override; nenhum sucesso/falha foi somado).`,
         'death-override',
+        // O override de uma criatura/NPC denuncia que ela estava no fluxo de
+        // morte: linha privada do Mestre.
+        { private: isMasterOnlyCombatant(outgoing.kind) },
       );
     }
-    const index = (combat.currentIndex + 1) % ordered.length;
-    const round = combat.round + (index === 0 ? 1 : 0);
-    await db.combatant.update({ where: { id: outgoing.id }, data: { turnEconomy: onTurnEnd(economyOf(outgoing.turnEconomy)) } });
+
+    // ------------------------------------------------------------------
+    // BUSCA DO PRÓXIMO TURNO ELEGÍVEL (server-authoritative).
+    // A regra pura vive em `turn-order.ts`; aqui só aplicamos os hooks.
+    // Sempre no MÁXIMO uma volta — `null` = fallback reportável.
+    // ------------------------------------------------------------------
+    const plan = planNextTurn(
+      ordered.length,
+      combat.currentIndex,
+      (position) => receivesTurn(ordered[position]),
+    );
+    if (!plan) {
+      // Fallback SEGURO e reportável: nada é alterado no combate (a transação
+      // volta atrás). O Mestre encerra o combate ou corrige o estado.
+      throw new HttpError(
+        'Nenhum combatente apto a agir: todos estão mortos ou estabilizados a 0 PV.',
+        409,
+        'NO_ELIGIBLE_COMBATANT',
+      );
+    }
+    const index = plan.index;
+    const round = combat.round + plan.rounds;
+    const skipped = plan.skipped.map((position) => ordered[position]);
+    // Hooks de início de turno dos pulados: estabilizado a 0 processa o início
+    // (sem Death Save) e o restante do turno é descartado; morto não roda nada.
+    for (const candidate of skipped) {
+      if (autoSkippedAtZero(candidate)) {
+        await onTurnStartDeath(deathEntityOf(candidate), db);
+      }
+    }
     const incoming = ordered[index];
+
+    await db.combatant.update({ where: { id: outgoing.id }, data: { turnEconomy: onTurnEnd(economyOf(outgoing.turnEconomy)) } });
     await db.combat.update({ where: { id: combat.id }, data: { currentIndex: index, round } });
     // O turno de quem está morto (ou com morte pendente) NÃO concede Ação,
     // Ação Bônus, Reação nem Movimento — o registro segue no combate até o
@@ -744,6 +861,18 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     } });
     // O Teste contra a Morte é liberado no INÍCIO do próprio turno (1 por turno).
     await onTurnStartDeath(deathEntityOf(incoming), db);
+    // O motivo do pulo é informativo e PRIVADO quando envolve criatura/NPC.
+    if (skipped.length > 0) {
+      const names = skipped.map((item) => item.name).join(', ');
+      await appendEconomyLog(
+        db,
+        combat,
+        incoming,
+        `Turno(s) sem ação pulado(s) automaticamente: ${names}.`,
+        'turn-skip',
+        { private: skipped.some((item) => isMasterOnlyCombatant(item.kind)) },
+      );
+    }
     return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
   });
   if (!response.replayed) emitTurn(response.combat);
@@ -821,7 +950,8 @@ async function changeHp(
     };
   }
 
-  if (combatant.kind === 'CREATURE') {
+  // NPC usa a MESMA trilha da criatura: o HP é o snapshot da instância.
+  if (combatant.kind !== 'CHARACTER') {
     // A vida é do próprio combatente (snapshot): várias cópias iguais rastreiam
     // o dano independentemente e o bestiário não é alterado pelo combate.
     // O teto vem do snapshot carregado (não muda durante o combate); o valor
@@ -1546,19 +1676,23 @@ export async function resolveAttack(
       at: new Date().toISOString(),
     };
 
-    return { combat: actor.role === 'MASTER' ? dto : hideCreatureStats(dto), result };
+    return { combat: actor.role === 'MASTER' ? dto : hideMasterPrivateState(dto), result };
   });
   if (!response.replayed) {
     for (const id of publications) await publishCharacter(id);
     for (const entity of deathTargets) await publishDeathUpdated(entity);
     for (const roll of rolls) announceRoll(roll);
     const result = response.result;
-    const targetIsCreature = response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind === 'CREATURE';
+    // O resultado do ataque em criatura/NPC também esconde CA/PV (vale para
+    // NPC: é estado privado do Mestre).
+    const targetIsCreature = isMasterOnlyCombatant(
+      response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind ?? 'CHARACTER',
+    );
     const broadcaster = getBroadcaster();
     broadcaster.toMasters(ServerEvents.ATTACK_RESOLVED, result);
     broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, targetIsCreature ? hideTargetStats(result) : result);
   }
-  return { ...response, result: actor.role !== 'MASTER' && response.result.targetStatsHidden === false && response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind === 'CREATURE' ? hideTargetStats(response.result) : response.result };
+  return { ...response, result: actor.role !== 'MASTER' && response.result.targetStatsHidden === false && isMasterOnlyCombatant(response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind ?? 'CHARACTER') ? hideTargetStats(response.result) : response.result };
 }
 
 /** Ajuste manual de HP pelo mestre (dano ou cura). */

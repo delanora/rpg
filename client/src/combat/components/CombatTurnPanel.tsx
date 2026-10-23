@@ -3,6 +3,7 @@ import { HpBar } from '../../components/HpBar';
 import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import type { CombatantDto } from '../../types';
+import { combatantKindIcon, combatantKindLabel } from '../combatVisuals';
 
 interface CombatTurnPanelProps {
   combatant: CombatantDto | null;
@@ -48,14 +49,12 @@ export function CombatTurnPanel({ combatant, round, isMyTurn, empty }: CombatTur
           src={combatant.imageUrl ?? ''}
           alt=""
           size="md"
-          icon={combatant.kind === 'CREATURE' ? 'flame' : 'users'}
+          icon={combatantKindIcon(combatant.kind)}
         />
 
         <div className="combat-turn-id">
           <span className="combat-turn-name">{combatant.name}</span>
-          <span className="combat-turn-kind">
-            {combatant.kind === 'CREATURE' ? 'criatura' : 'personagem'}
-          </span>
+          <span className="combat-turn-kind">{combatantKindLabel(combatant.kind)}</span>
           {combatant.missing ? <em className="tag">removido</em> : null}
         </div>
 

@@ -6,7 +6,7 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js';
 import { characterMaxHp, characterRacialAdjustments } from '../characters/characters.dto.js';
 import { toSheetDto } from '../characters/characters.service.js';
-import { hideCreatureStats, orderCombatants, toCombatDto, type CombatSourced } from '../combat/combat.dto.js';
+import { hideMasterPrivateState, orderCombatants, toCombatDto, type CombatSourced } from '../combat/combat.dto.js';
 import { appendCombatJournal } from '../combat/combat-journal.js';
 import { mechanicalStateOf, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
 import {
@@ -397,7 +397,7 @@ async function publishCombat(combatId: string): Promise<void> {
     const broadcaster = getBroadcaster();
     const master = toCombatDto(combat, 'MASTER');
     broadcaster.toMasters(ServerEvents.COMBAT_UPDATED, { combat: master });
-    broadcaster.toPlayers(ServerEvents.COMBAT_UPDATED, { combat: hideCreatureStats(master) });
+    broadcaster.toPlayers(ServerEvents.COMBAT_UPDATED, { combat: hideMasterPrivateState(master) });
   } catch (error) {
     console.error('[death] falha ao publicar o combate em tempo real:', error);
   }
@@ -1005,6 +1005,9 @@ export async function resolveDeathPending(
             actorName: target.name,
             message: `Mestre deixou ${target.name} estabilizado a 0 PV.`,
             action: 'stabilize',
+            // Estabilizar um PERSONAGEM é público; em criatura/NPC a linha
+            // denuncia o lifecycle de 0 PV — só o Mestre lê.
+            private: target.kind !== 'character',
           },
           _db,
         );
@@ -1088,6 +1091,9 @@ export async function overrideDeath(
             actorName: target.name,
             message: `Mestre deixou ${target.name} estabilizado a 0 PV.`,
             action: 'stabilize',
+            // Estabilizar um PERSONAGEM é público; em criatura/NPC a linha
+            // denuncia o lifecycle de 0 PV — só o Mestre lê.
+            private: target.kind !== 'character',
           },
           _db,
         );
@@ -1162,6 +1168,7 @@ export async function stabilizeTarget(
           actorName: target.name,
           message: `${target.name} foi estabilizado a 0 PV (Inconsciente, sem novos Testes contra a Morte).`,
           action: 'stabilize',
+          private: target.kind !== 'character',
         },
         _db,
       );

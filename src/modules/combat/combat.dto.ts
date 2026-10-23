@@ -1,5 +1,11 @@
 import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, reconcileMovement } from '../shared/conditions.js';
-import { deathBlocksActions, deathStateOf, type DeathState } from '../shared/death.js';
+import {
+  deathBlocksActions,
+  deathStateOf,
+  HP_ZERO_PRONE_LABEL,
+  HP_ZERO_SOURCE,
+  type DeathState,
+} from '../shared/death.js';
 import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@prisma/client';
 import { z } from 'zod';
 import { economyOf, type TurnEconomy } from '../shared/action-economy.js';
@@ -12,7 +18,13 @@ import { parseJson } from '../shared/json.js';
 /** Formato do combate enviado a jogadores e mestre. */
 export interface CombatDto {
   version: number;
-  economyLog: { id: string; actorName: string; message: string; at: string; action?: string }[];
+  /**
+   * Eventos estruturais do combate. `private` marca o que só o Mestre pode ler
+   * (ex.: override de Teste contra a Morte ou estabilização de criatura/NPC):
+   * a linha continua existindo no banco e na visão do Mestre, mas o DTO do
+   * jogador a descarta — privacidade no SERVIDOR, nunca só no CSS.
+   */
+  economyLog: { id: string; actorName: string; message: string; at: string; action?: string; private?: boolean }[];
   id: string;
   status: CombatStatus;
   round: number;
@@ -229,7 +241,18 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
 
   const dto: CombatDto = {
     version: combat.version,
-    economyLog: z.array(z.object({ id: z.string(), actorName: z.string(), message: z.string(), at: z.string(), action: z.string().optional() })).parse(combat.economyLog),
+    economyLog: z
+      .array(
+        z.object({
+          id: z.string(),
+          actorName: z.string(),
+          message: z.string(),
+          at: z.string(),
+          action: z.string().optional(),
+          private: z.boolean().optional(),
+        }),
+      )
+      .parse(combat.economyLog),
     id: combat.id,
     status: combat.status,
     round: combat.round,
@@ -242,30 +265,68 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     endedAt: combat.endedAt ? combat.endedAt.toISOString() : null,
   };
 
-  return viewer === 'MASTER' ? dto : hideCreatureStats(dto);
+  return viewer === 'MASTER' ? dto : hideMasterPrivateState(dto);
+}
+
+/** Criaturas e NPCs são controlados pelo Mestre e têm estado de vida privado. */
+export function isMasterOnlyCombatant(kind: CombatantKind): boolean {
+  return kind !== 'CHARACTER';
 }
 
 /**
- * Esconde vida e CA das criaturas de um DTO já montado. Só as criaturas somem:
- * a vida dos personagens continua visível para a mesa.
+ * VISÃO DO JOGADOR — o servidor remove o que pertence ao Mestre.
+ *
+ * Para criaturas e NPCs (nunca para personagens de jogador):
+ * • vida, CA e `deathState` somem (MORTO, INCONSCIENTE, ESTABILIZADO, Death
+ *   Saves, decisão pendente) — a entrada PERMANECE na iniciativa, para não
+ *   denunciar que a criatura saiu da cena;
+ * • as Conditions que denunciam o lifecycle de 0 PV (Inconsciente e a Queda
+ *   derivada dela) são filtradas e os EFEITOS são recalculados do estado
+ *   filtrado — não adianta esconder a etiqueta e entregar `canAct: false`;
+ * • entradas PRIVADAS do Registro (override/estabilização de NPC) somem.
+ *
+ * Condições normais (Envenenado, Caído por outra fonte, etc.) continuam
+ * públicas: o foco é o lifecycle de 0 PV/morte.
  */
-export function hideCreatureStats(dto: CombatDto): CombatDto {
+export function hideMasterPrivateState(dto: CombatDto): CombatDto {
   return {
     ...dto,
+    economyLog: dto.economyLog.filter((entry) => entry.private !== true),
     combatants: dto.combatants.map((combatant) =>
-      combatant.kind === 'CREATURE'
-        ? {
-            ...combatant,
-            hpCurrent: null,
-            hpMax: null,
-            armorClass: null,
-            // Death Saves de NPC/criatura são PRIVADOS do Mestre: o servidor não
-            // envia contador, resultado nem a existência da rolagem.
-            deathState: null,
-            deathBlocksActions: false,
-            statsHidden: true,
-          }
+      isMasterOnlyCombatant(combatant.kind)
+        ? hideCombatantPrivateState(combatant)
         : combatant,
     ),
+  };
+}
+
+function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
+  // A 0 PV o lifecycle aplica Inconsciente (fonte `hp-zero`) e a Queda
+  // derivada. Acima de 0 PV nada é filtrado: Caído por um empurrão, por
+  // exemplo, continua sendo informação pública.
+  const atZeroHp = (combatant.hpCurrent ?? 0) <= 0;
+  const state = combatant.mechanicalState;
+  const conditions = atZeroHp
+    ? state.conditions.filter(
+        (instance) =>
+          !(instance.condition === 'unconscious' && instance.sourceType === HP_ZERO_SOURCE) &&
+          !(instance.condition === 'prone' && instance.sourceLabel === HP_ZERO_PRONE_LABEL),
+      )
+    : state.conditions;
+  const privateState =
+    conditions.length === state.conditions.length ? state : { ...state, conditions };
+
+  return {
+    ...combatant,
+    hpCurrent: null,
+    hpMax: null,
+    armorClass: null,
+    // Death Saves de NPC/criatura são PRIVADOS do Mestre: o servidor não envia
+    // contador, resultado nem a existência da rolagem.
+    deathState: null,
+    deathBlocksActions: false,
+    statsHidden: true,
+    mechanicalState: privateState,
+    conditionEffects: deriveConditionEffects(privateState),
   };
 }
