@@ -16,15 +16,34 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ConditionBadges } from '../src/combat/components/ConditionBadges';
+import { DeathCounter } from '../src/death/DeathCounter';
+import { DeathSavePanel } from '../src/combat/components/DeathSavePanel';
 import {
   CONDITION_VISUALS,
   ECONOMY_ACTION_VISUALS,
   conditionDamageFamily,
   conditionDescription,
 } from '../src/combat/combatVisuals';
-import type { ConditionEffects, MechanicalState } from '../src/types';
+import type { ConditionEffects, DeathState, MechanicalState } from '../src/types';
+
+/** Fixture do ciclo de morte usada nas verificações de UI. */
+function deathOf(patch: Partial<DeathState> = {}): DeathState {
+  return {
+    successes: 0,
+    failures: 0,
+    stabilized: false,
+    dead: false,
+    deathSaves: false,
+    pending: null,
+    relentless: null,
+    saveTurnKey: null,
+    log: [],
+    ...patch,
+  };
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = (relative: string): string =>
@@ -166,6 +185,64 @@ console.log('Check-combat-ui — refino da UI de combate');
 {
   check('Toda condição do PHB 2014 tem descrição', Object.keys(LABELS).every((id) => (CONDITION_VISUALS[id]?.description ?? '').length > 0));
   check('Só Envenenado compartilha família com tipo de dano', Object.entries(CONDITION_VISUALS).filter(([, value]) => value.damageFamily).map(([id]) => id).join(',') === 'poisoned');
+}
+
+// --- Fase 6.3: Testes contra a Morte no combate (UI) ------------------------
+{
+  // AB. Contador usa corações (sucessos) e caveiras (falhas), com tooltip.
+  const counter = renderToStaticMarkup(
+    createElement(DeathCounter, { successes: 2, failures: 1, showNumbers: true }),
+  );
+  check('AB) contador tem sucessos (corações) e falhas (caveiras)', counter.includes('Sucessos no Teste contra a Morte: 2/3') && counter.includes('Falhas no Teste contra a Morte: 1/3') && counter.includes('death-pips-success') && counter.includes('death-pips-failure'));
+
+  // AC. O card da iniciativa mostra o estado de morte.
+  const card = source('src/combat/components/CombatantCard.tsx');
+  check('AC) card da iniciativa renderiza o contador/estado de morte', card.includes("from '../../death/DeathCounter'") && card.includes('<DeathCounter') && card.includes('death-status'));
+
+  // AD. O painel central substitui o fluxo normal no turno.
+  const tracker = source('src/combat/CombatTracker.tsx');
+  const savesPanel = renderToStaticMarkup(
+    createElement(DeathSavePanel, {
+      name: 'TESTE-DRACONATO',
+      death: deathOf({ deathSaves: true, successes: 1 }),
+      rollAvailable: true,
+      canRoll: true,
+      rollLabel: 'Rolar Teste contra a Morte',
+    }),
+  );
+  check('AD) painel de Teste contra a Morte substitui o fluxo de ataque', tracker.includes('<DeathSavePanel') && !savesPanel.includes('Escolha o ataque') && savesPanel.includes('Rolar Teste contra a Morte'));
+
+  // AE. Pending mostra a mensagem apropriada (sem botões de decisão).
+  const pending = renderToStaticMarkup(
+    createElement(DeathSavePanel, {
+      name: 'Umbrae',
+      death: deathOf({ pending: { id: 'p', kind: 'failures', reason: '', createdAt: '', cause: null } }),
+      rollAvailable: false,
+      canRoll: false,
+      rollLabel: 'Rolar Teste contra a Morte',
+    }),
+  );
+  check('AE) pendente mostra "mãos do Mestre" e não oferece rolagem', pending.includes('mãos do Mestre') && !pending.includes('Rolar Teste contra a Morte'));
+
+  // AF. Estabilizado mostra o estado; AG. Morto mostra o estado.
+  const stabilized = renderToStaticMarkup(
+    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ stabilized: true, successes: 3 }), rollAvailable: false, canRoll: false, rollLabel: 'Rolar' }),
+  );
+  const dead = renderToStaticMarkup(
+    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ dead: true, failures: 3 }), rollAvailable: false, canRoll: false, rollLabel: 'Rolar' }),
+  );
+  check('AF) estabilizado é mostrado', stabilized.includes('ESTABILIZADO') && !stabilized.includes('death-turn-roll'));
+  check('AG) morto é mostrado', dead.includes('MORTO'));
+
+  // AH. Economia bloqueada no ciclo de morte.
+  check('AH) barra persistente fica bloqueada em death state', source('src/combat/components/TurnResourceBar.tsx').includes('death-blocked') && tracker.includes('deathBlocked'));
+
+  // Privacidade: o DTO do jogador zera o ciclo de morte de criaturas.
+  check('AI) DTO esconde deathState de criatura do jogador', source('../src/modules/combat/combat.dto.ts').includes('deathState: null'));
+
+  // Bindings: o jogador rola pelo dice tray e o Mestre abre o modal do pendente.
+  check('AJ) SheetPage liga o dice tray ao CombatTracker', source('src/pages/SheetPage.tsx').includes('onRollDeathSave') && source('src/pages/SheetPage.tsx').includes("kind: 'death-save'"));
+  check('AK) MasterPanel abre a resolução ao surgir pendente', source('src/pages/MasterPanel.tsx').includes('if (entry.pending) return entry;'));
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

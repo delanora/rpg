@@ -11,6 +11,7 @@ import {
 import {
   answerRelentless,
   getDeathState,
+  listPendingDeaths,
   overrideDeath,
   resolveDeathPending,
   stabilizeTarget,
@@ -25,6 +26,16 @@ deathRouter.use(authenticate);
 function actor(req: { user?: { sub: string; username: string; role: Role } }): DeathActor {
   return { userId: req.user!.sub, username: req.user!.username, role: req.user!.role };
 }
+
+/**
+ * GET /api/death/pending — decisões de morte em aberto para o MESTRE.
+ *
+ * Vem ANTES de `/:kind/:id` (senão "pending" seria lido como um `kind`).
+ * Serve ao reconnect: o evento `death:updated` não sobrevive a um refresh.
+ */
+deathRouter.get('/pending', async (req, res) => {
+  res.json({ deaths: await listPendingDeaths(actor(req)) });
+});
 
 /** GET /api/death/:kind/:id — ciclo de morte de uma entidade (Mestre ou dono). */
 deathRouter.get('/:kind/:id', async (req, res) => {

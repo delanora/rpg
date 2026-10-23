@@ -17,7 +17,7 @@ import {
   DeathPendingBanner,
   DeathResolutionModal,
 } from '../death/DeathResolutionModal';
-import { fetchDeath } from '../deathApi';
+import { fetchDeath, fetchPendingDeaths } from '../deathApi';
 import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
 import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../combat/combatApi';
@@ -102,6 +102,29 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   const combatState = useCombatState(user.id);
   const { combat, log, turnAlert, dismissTurnAlert } = combatState;
 
+  // RECONNECT: as decisões em aberto são relidas do servidor ao montar o painel
+  // (o evento `death:updated` não sobrevive a um refresh). A primeira pendência
+  // abre o modal — o Mestre não precisa caçar o combatente.
+  useEffect(() => {
+    let active = true;
+    fetchPendingDeaths()
+      .then((entries) => {
+        if (!active || entries.length === 0) return;
+        setDeathMap((prev) => {
+          const next = { ...prev };
+          for (const entry of entries) next[`${entry.entity.kind}:${entry.entity.id}`] = entry;
+          return next;
+        });
+        setDeathModal((current) => current ?? entries.find((entry) => entry.pending) ?? null);
+      })
+      .catch(() => {
+        // Sem leitura (sessão sem permissão): o painel segue com os eventos.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // Janela de dados: rolagem livre (pública/privada), avisos e log da sessão.
   const dice = useDiceRoller(user);
 
@@ -127,9 +150,13 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       const entry = payload.death;
       const key = `${entry.entity.kind}:${entry.entity.id}`;
       setDeathMap((prev) => ({ ...prev, [key]: entry }));
-      setDeathModal((current) =>
-        current && `${current.entity.kind}:${current.entity.id}` === key ? entry : current,
-      );
+      // Abre IMEDIATAMENTE a decisão quando surge um pendente novo (NPC a 0 PV,
+      // morte instantânea, 3 falhas): o Mestre decide sem caçar o combatente.
+      setDeathModal((current) => {
+        if (current && `${current.entity.kind}:${current.entity.id}` === key) return entry;
+        if (entry.pending) return entry;
+        return current;
+      });
     },
 
     // Fichas dos jogadores chegam ao vivo — é o requisito central do painel.

@@ -9,6 +9,7 @@ export type IconName =
   | 'sword'
   | 'shield'
   | 'heart'
+  | 'skull'
   | 'flask'
   | 'scroll'
   | 'star'
@@ -67,6 +68,15 @@ const ICONS: Record<IconName, ReactNode> = {
   shield: <path d="M12 22c5.5-2.7 9-6.6 9-11V5l-9-3-9 3v6c0 4.4 3.5 8.3 9 11Z" />,
   heart: (
     <path d="M12 20.5C6.5 17 3 13.4 3 9.6 3 6.7 5.3 4.5 8 4.5c1.6 0 3.1.8 4 2 .9-1.2 2.4-2 4-2 2.7 0 5 2.2 5 5.1 0 3.8-3.5 7.4-9 10.9Z" />
+  ),
+  /* Caveira: usada no contador de FALHAS do Teste contra a Morte. */
+  skull: (
+    <>
+      <path d="M12 3c-4.4 0-8 3.1-8 7 0 2.2 1.1 4.1 2.8 5.4V19a1.5 1.5 0 0 0 1.5 1.5h1.2V18h1v2.5h1V18h1v2.5h1.2A1.5 1.5 0 0 0 17.2 19v-3.6C18.9 14.1 20 12.2 20 10c0-3.9-3.6-7-8-7Z" />
+      <circle cx="9" cy="10.2" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="10.2" r="1.5" fill="currentColor" stroke="none" />
+      <path d="M12 13.4l-1.1 2h2.2z" fill="currentColor" stroke="none" />
+    </>
   ),
   flask: (
     <>

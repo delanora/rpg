@@ -879,6 +879,86 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
       JSON.stringify({ hp: afterExhaustChoice.hpCurrent }),
     );
 
+    // --- 53/54/59) INTEGRAÇÃO RUNTIME: dano por ATAQUE real até a morte -----
+    // Os testes anteriores exercitam `manualHp` e os endpoints de morte. Aqui o
+    // dano entra pelo caminho REAL do combate
+    // (`/combat/attack` → changeHp → applyDamageConsequences) e o evento
+    // `death:updated` precisa chegar ao Mestre SEM refresh: é exatamente o que
+    // abre a resolução pendente no navegador. Foi a lacuna que os testes
+    // anteriores (que chamavam o serviço direto) não pegavam.
+    const attacker = await prisma.combatant.create({
+      data: {
+        combatId: combat.id,
+        kind: 'CREATURE',
+        creatureId: creature.id,
+        name: 'Goblin Ataque',
+        hpCurrent: 12,
+        hpMax: 12,
+        armorClass: 12,
+        initiative: -100,
+        dexterityMod: 0,
+      },
+    });
+    const stabilizedBefore = await readDeath(characterEntity(heroA));
+    let hitResult: { hit?: boolean } | null = null;
+    let attackDeathEvent: { pending?: { kind?: string } | null } | null = null;
+    // O ataque pode errar num 1 natural: repete a rodada até acertar (3 vezes).
+    for (let attempt = 0; attempt < 3 && hitResult?.hit !== true; attempt += 1) {
+      await advanceTo(attacker.id, true);
+      const combatNow = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+      let onDeath: ((payload: any) => void) | null = null;
+      const eventPromise = new Promise<any>((resolveEvent) => {
+        const timer = setTimeout(() => resolveEvent(null), 4000);
+        onDeath = (payload: any) => {
+          clearTimeout(timer);
+          resolveEvent(payload.death);
+        };
+        masterSocket.once('death:updated', onDeath);
+      });
+      const attacked = await request('/combat/attack', {
+        combatId: combatNow.id,
+        expectedVersion: combatNow.version,
+        operationId: randomUUID(),
+        attackerCombatantId: attacker.id,
+        targetCombatantId: combatantA,
+        attackId: 'bite',
+      }, masterToken);
+      hitResult = attacked.status === 200 ? (attacked.data.result as { hit?: boolean }) : null;
+      const payload = await eventPromise;
+      if (onDeath) masterSocket.off('death:updated', onDeath);
+      if (hitResult?.hit === true) attackDeathEvent = payload;
+    }
+    const attackedDeath = await readDeath(characterEntity(heroA));
+    check(
+      '64.53/54/59) ataque REAL a 0 PV: morte instantânea vira decisão do Mestre, sem falhas antes, com evento sem refresh',
+      stabilizedBefore.death.stabilized &&
+        hitResult?.hit === true &&
+        attackedDeath.hpCurrent === 0 &&
+        attackedDeath.death.pending?.kind === 'instant-death' &&
+        attackedDeath.death.failures === 0 &&
+        attackDeathEvent?.pending?.kind === 'instant-death',
+      JSON.stringify({
+        hit: hitResult?.hit,
+        pending: attackedDeath.death.pending?.kind,
+        failures: attackedDeath.death.failures,
+        event: attackDeathEvent?.pending?.kind,
+      }),
+    );
+    const pendingList = await request('/death/pending', undefined, masterToken);
+    const pendingListPlayer = await request('/death/pending', undefined, spectatorToken);
+    check(
+      '64.51) reconnect: o Mestre recupera as decisões pendentes pelo servidor (jogador não)',
+      pendingList.status === 200 &&
+        (pendingList.data.deaths as { entity: { id: string }; pending: { kind: string } | null }[]).some(
+          (entry) => entry.entity.id === heroA.character.id && entry.pending?.kind === 'instant-death',
+        ) &&
+        pendingListPlayer.status === 403,
+      JSON.stringify({ status: pendingList.status, player: pendingListPlayer.status }),
+    );
+
+    // Fecha a decisão aberta pelo ataque para as verificações seguintes.
+    await resolve(characterEntity(heroA), 'narrative-1hp', attackedDeath.version);
+
     // --- 46) Reconexão de verdade: sockets novos leem o mesmo estado -------
     for (const socket of sockets) socket.disconnect();
     const reconnected = await connect(masterToken);

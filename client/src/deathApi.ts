@@ -23,6 +23,15 @@ export function fetchDeath(entity: MechanicalEntity): Promise<DeathDto> {
   );
 }
 
+/**
+ * Decisões de morte em aberto (só Mestre). Usado no RECONNECT: o evento
+ * `death:updated` não sobrevive a um refresh, então o painel recupera daqui as
+ * pendências e reabre o modal sem esperar um novo evento.
+ */
+export function fetchPendingDeaths(): Promise<DeathDto[]> {
+  return api<{ deaths: DeathDto[] }>('/api/death/pending').then((response) => response.deaths);
+}
+
 /** Decisão do Mestre sobre a morte pendente. */
 export function resolveDeath(input: {
   entity: MechanicalEntity;

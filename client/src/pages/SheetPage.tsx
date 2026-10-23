@@ -445,6 +445,14 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 onError={setError}
                 onOpenSection={openSheetSection}
                 openSection={combatView}
+                onRollDeathSave={(entity) =>
+                  dice.openSkillRoll({
+                    kind: 'death-save',
+                    label: 'Teste contra a Morte',
+                    bonus: 0,
+                    entity,
+                  })
+                }
               />
             ) : null}
 

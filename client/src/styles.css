@@ -16535,3 +16535,162 @@ input[type='checkbox']:focus-visible,
     width: min(92vw, 22rem);
   }
 }
+
+/* ==========================================================================
+   FASE 6.3 — contador de Testes contra a Morte e integração ao combate.
+   Corações = sucessos; caveiras = falhas. Só apresentação.
+   ========================================================================== */
+
+.death-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.death-counter-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.death-counter-num {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.death-pips {
+  display: inline-flex;
+  gap: 0.18rem;
+}
+
+.death-pip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  color: var(--ink-faint);
+  opacity: 0.5;
+  cursor: help;
+}
+
+.death-pip .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.death-pips-success .death-pip.filled { color: var(--ok); opacity: 1; }
+.death-pips-failure .death-pip.filled { color: var(--danger); opacity: 1; }
+
+/* Só o ícone recém-aceso pulsa — animação curta (item 49). */
+.death-pip.just-filled { animation: death-pip-pop 0.5s ease; }
+
+@keyframes death-pip-pop {
+  0% { transform: scale(1); filter: none; }
+  40% { transform: scale(1.28); filter: drop-shadow(0 0 6px var(--glow)); }
+  100% { transform: scale(1); filter: none; }
+}
+
+/* Estado no card da iniciativa (compacto, uma linha). */
+.death-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.1rem;
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.death-status .icon { width: 12px; height: 12px; }
+.death-status.dead { color: var(--danger); }
+.death-status.pending { color: var(--warn); }
+.death-status.stabilized { color: var(--ok); }
+
+/* Painel central do turno em Testes contra a Morte. */
+.death-turn-panel {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  border: 2px solid var(--danger);
+  border-radius: 6px;
+  background-image:
+    linear-gradient(180deg, var(--surface), var(--surface-2)),
+    var(--ornament);
+  background-position:
+    0 0,
+    right 5px top 5px;
+  background-size:
+    auto,
+    13px 13px;
+  background-repeat: no-repeat;
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px rgba(122, 31, 31, 0.3),
+    0 0 28px -12px rgba(122, 31, 31, 0.7);
+}
+
+.death-turn-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+}
+
+.death-turn-eyebrow .icon { color: var(--danger); }
+.death-turn-name { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+.death-turn-note { display: flex; align-items: center; gap: 0.35rem; margin: 0; font-size: var(--text-aux); }
+.death-turn-note.dead { color: var(--danger); }
+.death-turn-note.pending { color: var(--warn); }
+.death-turn-note.stabilized { color: var(--ok); }
+.death-turn-hint { margin: 0; font-size: var(--text-micro); line-height: 1.4; color: var(--ink-soft); }
+
+.death-turn-roll {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.death-turn-roll:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-deep); }
+.death-turn-roll:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Barra persistente bloqueada durante o ciclo de morte. */
+.turn-resource-bar.death-blocked {
+  grid-template-columns: 1fr auto;
+  border-color: var(--danger);
+}
+
+.turn-resource-bar.death-blocked .death-blocked-note {
+  gap: 0.45rem;
+  justify-content: flex-start;
+  padding-left: 0.7rem;
+}
+
+.turn-resource-bar.death-blocked .death-blocked-note .icon,
+.turn-resource-bar.death-blocked .death-blocked-note .turn-resource-label {
+  color: var(--danger);
+}

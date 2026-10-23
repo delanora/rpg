@@ -38,6 +38,11 @@ interface TurnResourceBarProps {
   canAct?: boolean;
   /** Velocidade efetiva em metros (<= 0 bloqueia o gasto de deslocamento). */
   effectiveSpeed?: number;
+  /**
+   * O combatente está no ciclo de morte (0 PV/Death Saves/pendente/morto): a
+   * economia normal fica bloqueada e a barra mostra isso claramente.
+   */
+  deathBlocked?: boolean;
 }
 
 /**
@@ -57,6 +62,7 @@ export function TurnResourceBar({
   ownTurn = false,
   canAct = true,
   effectiveSpeed,
+  deathBlocked = false,
 }: TurnResourceBarProps) {
   // O mestre encerra a qualquer momento; o jogador, só no próprio turno.
   const canEndTurn = Boolean(active && onEndTurn && (isMaster || isMyTurn));
@@ -69,6 +75,43 @@ export function TurnResourceBar({
   const canMove = Boolean(
     active && onEconomyAction && economy && canAct && ownTurn && (effectiveSpeed ?? 0) > 0 && remaining > 0,
   );
+
+  // Em ciclo de morte a barra continua visível, mas inativa e explícita.
+  if (active && deathBlocked) {
+    return (
+      <section className="turn-resource-bar death-blocked" aria-label="Recursos do turno">
+        <div className="turn-resource death-blocked-note">
+          <Icon name="skull" size={14} />
+          <span className="turn-resource-label">
+            Sem economia de turno — Testes contra a Morte
+          </span>
+        </div>
+        <div className="turn-resource end">
+          {canEndTurn ? (
+            <button
+              type="button"
+              className="end-turn"
+              disabled={busy}
+              onClick={onEndTurn}
+              aria-label="Encerrar turno"
+            >
+              <span className="end-turn-text">Encerrar turno</span>
+              <span className="end-turn-arrow" aria-hidden="true">
+                <svg viewBox="0 0 20 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 6h13" />
+                  <path d="M9.5 1.5 15 6l-5.5 4.5" />
+                </svg>
+              </span>
+            </button>
+          ) : (
+            <span className="turn-resource-state">
+              {isMyTurn ? 'encerre quando quiser' : 'aguardando'}
+            </span>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
