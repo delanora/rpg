@@ -830,6 +830,24 @@ async function publishTarget(dto: DeathDto): Promise<void> {
   if (dto.combat) await publishCombat(dto.combat.id);
 }
 
+/**
+ * Publica SÓ o evento do ciclo de morte (`death:updated`) de uma entidade,
+ * DEPOIS do commit.
+ *
+ * O caminho de COMBATE (ataque e ajuste manual de PV) já publica
+ * `combat:updated`/`sheet:updated` por conta própria — mas o contador e o
+ * modal de resolução do Mestre dependem deste evento. Sem ele, o backend fica
+ * correto no banco e o runtime não mostra a decisão pendente sem refresh.
+ */
+export async function publishDeathUpdated(entity: MechanicalEntity): Promise<void> {
+  try {
+    const target = await loadTarget(entity);
+    await publishDeath(toDeathDto(target));
+  } catch (error) {
+    console.error('[death] falha ao publicar o ciclo de morte após o dano:', error);
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Leitura                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -843,6 +861,43 @@ export async function getDeathState(
     throw new HttpError('Apenas o Mestre ou o dono pode consultar o ciclo de morte.', 403);
   }
   return toDeathDto(target, actor);
+}
+
+/**
+ * Entidades com DECISÃO DE MORTE PENDENTE — leitura exclusiva do Mestre.
+ *
+ * Existe para o RECONNECT: `death:updated` é um evento (não sobrevive a um
+ * refresh), então ao abrir/recarregar o painel o Mestre recupera daqui as
+ * decisões em aberto e o modal pode abrir sem esperar um novo evento.
+ */
+export async function listPendingDeaths(actor: DeathActor): Promise<DeathDto[]> {
+  if (actor.role !== 'MASTER') {
+    throw new HttpError('Apenas o Mestre acompanha as decisões de morte.', 403);
+  }
+  const [characters, combatants] = await Promise.all([
+    prisma.character.findMany({ select: { id: true, deathState: true } }),
+    prisma.combatant.findMany({
+      where: { characterId: null, combat: { status: { in: ['PENDING_INITIATIVE', 'ACTIVE'] } } },
+      select: { id: true, deathState: true },
+    }),
+  ]);
+  const entities: MechanicalEntity[] = [
+    ...characters
+      .filter((row) => deathStateOf(row.deathState).pending !== null)
+      .map((row) => ({ kind: 'character' as const, id: row.id })),
+    ...combatants
+      .filter((row) => deathStateOf(row.deathState).pending !== null)
+      .map((row) => ({ kind: 'combatant' as const, id: row.id })),
+  ];
+  const entries: DeathDto[] = [];
+  for (const entity of entities) {
+    try {
+      entries.push(toDeathDto(await loadTarget(entity), actor));
+    } catch {
+      // Entidade removida no meio do caminho: só ela fica de fora.
+    }
+  }
+  return entries;
 }
 
 /** DTO de leitura usado pela bandeja de dados (autoridade da rolagem). */

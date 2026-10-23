@@ -1,8 +1,9 @@
 import { MechanicalPanel } from '../components/MechanicalPanel';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
-import type { Attack, CombatDto, InventoryItem, SessionUser } from '../types';
+import { fetchDeath, rollNpcDeathSave } from '../deathApi';
+import type { Attack, CombatDto, DeathDto, DeathState, InventoryItem, MechanicalEntity, SessionUser } from '../types';
 import {
   applyManualHp,
   endCombat,
@@ -17,6 +18,7 @@ import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel
 import { CombatDashboard } from './components/CombatDashboard';
 import { CombatLog } from './components/CombatLog';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
+import { DeathSavePanel } from './components/DeathSavePanel';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
 import { MasterEconomyPanel } from './components/MasterEconomyPanel';
 import { TurnResourceBar } from './components/TurnResourceBar';
@@ -60,6 +62,11 @@ interface CombatTrackerProps {
   onOpenSection?: (target: SheetShortcut) => void;
   /** Atalho aberto no momento (só para marcar o botão correspondente). */
   openSection?: SheetShortcut | null;
+  /**
+   * Jogador: abre a BANDEJA DE DADOS existente para o Teste contra a Morte
+   * (o servidor rola e aplica; a bandeja só anima). Sem isso, o botão não aparece.
+   */
+  onRollDeathSave?: (entity: MechanicalEntity) => void;
 }
 
 /**
@@ -88,11 +95,14 @@ export function CombatTracker({
   onError,
   onOpenSection,
   openSection = null,
+  onRollDeathSave,
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
 
   const [busy, setBusy] = useState(false);
   const [masterAttacker, setMasterAttacker] = useState('');
+  // Leitura do ciclo de morte do combatente do turno (elegibilidade do Teste).
+  const [currentDeath, setCurrentDeath] = useState<DeathDto | null>(null);
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
@@ -106,6 +116,77 @@ export function CombatTracker({
   // Mestre (ou o turno atual) e, para o jogador, o próprio personagem.
   const actingCombatant = isMaster ? (masterAttackerCombatant ?? current) : myCombatant;
   const ownTurn = Boolean(actingCombatant && actingCombatant.id === combat.currentCombatantId);
+
+  // Ciclo de morte do combatente DO TURNO (o único que pode rolar Teste agora).
+  const deathLifecycle = (state: DeathState | null): boolean =>
+    Boolean(state && (state.dead || state.pending || state.stabilized || state.deathSaves || state.successes > 0 || state.failures > 0));
+  // A entidade do ciclo de morte é a INSTÂNCIA de combate: o NPC/criatura tem
+  // Death Saves próprios por cópia (nunca no template do bestiário) e o
+  // personagem é resolvido para a ficha pelo próprio servidor.
+  const deathEntity: MechanicalEntity | null = current ? { kind: 'combatant', id: current.id } : null;
+  const needsDeathRead = deathLifecycle(current?.deathState ?? null) && deathEntity !== null;
+  // Assinatura do estado de morte que veio no DTO do combate: muda quando o
+  // dano/rolagem alteram successes, failures, pending, etc. — e é o gatilho da
+  // releitura da ELEGIBILIDADE (o DTO do combate não a carrega).
+  const currentDeathKey = current?.deathState
+    ? [
+        current.deathState.successes,
+        current.deathState.failures,
+        current.deathState.stabilized ? 1 : 0,
+        current.deathState.dead ? 1 : 0,
+        current.deathState.deathSaves ? 1 : 0,
+        current.deathState.pending?.id ?? '',
+      ].join(':')
+    : '';
+  useEffect(() => {
+    if (!needsDeathRead || !deathEntity) {
+      setCurrentDeath(null);
+      return;
+    }
+    let live = true;
+    fetchDeath(deathEntity)
+      .then((entry) => {
+        if (live) setCurrentDeath(entry);
+      })
+      .catch(() => {
+        if (live) setCurrentDeath(null);
+      });
+    return () => {
+      live = false;
+    };
+    // A releitura acompanha a virada de turno, a versão do combate e cada
+    // atualização do ciclo de morte (dano, falhas, rolagem do Teste).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsDeathRead, deathEntity?.kind, deathEntity?.id, combat.version, currentDeathKey]);
+
+  // O painel central vira MODO TESTE CONTRA A MORTE quando o turno é de um
+  // combatente no ciclo de morte. O estado exibido vem SEMPRE do DTO do combate
+  // (é o que chega por `combat:updated`, sem refresh); a leitura de `/api/death`
+  // só complementa a ELEGIBILIDADE da rolagem.
+  const turnDeath = current?.deathState ?? currentDeath?.death ?? null;
+  const showDeathTurn = Boolean(current && turnDeath && (turnDeath.dead || turnDeath.pending || turnDeath.stabilized || turnDeath.deathSaves));
+  const deathRollAvailable = currentDeath?.deathSave.available ?? false;
+  const deathRollReason = currentDeath?.deathSave.reason ?? '';
+  const deathOwner = Boolean(current && current.ownerUserId === user.id);
+  const deathCanRoll = Boolean(
+    showDeathTurn &&
+      ((!isMaster && deathOwner && Boolean(onRollDeathSave)) || (isMaster && current?.kind === 'CREATURE')),
+  );
+  const deathPrivate = isMaster && current?.kind === 'CREATURE';
+
+  async function rollNpcDeathSaveTurn(): Promise<void> {
+    if (!deathEntity) return;
+    setBusy(true);
+    try {
+      await rollNpcDeathSave(deathEntity);
+      const fresh = await fetchDeath(deathEntity).catch(() => null);
+      if (fresh) setCurrentDeath(fresh);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'Falha ao rolar o Teste contra a Morte.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function run(action: () => Promise<CombatDto>): Promise<void> {
     setBusy(true);
@@ -278,6 +359,33 @@ export function CombatTracker({
           <>
             <CombatTurnPanel combatant={current} round={combat.round} isMyTurn={isMyTurn} />
 
+            {/* Turno em Testes contra a Morte: o fluxo normal do combatente do
+                turno dá lugar ao painel dramático (nada de ataque/alvo/ações). */}
+            {showDeathTurn && current && turnDeath ? (
+              <DeathSavePanel
+                name={current.name}
+                death={turnDeath}
+                rollAvailable={deathRollAvailable}
+                rollReason={deathRollReason}
+                canRoll={deathCanRoll}
+                rollLabel={
+                  deathPrivate
+                    ? 'Rolar Teste contra a Morte (privado)'
+                    : 'Rolar Teste contra a Morte'
+                }
+                onRoll={
+                  deathPrivate
+                    ? () => void rollNpcDeathSaveTurn()
+                    : onRollDeathSave && deathEntity
+                      ? () => onRollDeathSave(deathEntity)
+                      : undefined
+                }
+                busy={busy}
+              />
+            ) : null}
+
+            {/* O Mestre continua com o painel de ataques (ele conduz a mesa e
+                também rola os Testes privados de criaturas). */}
             {isMaster && attacksFor ? (
               <CombatActionPanel
                 combat={combat}
@@ -292,7 +400,7 @@ export function CombatTracker({
               />
             ) : null}
 
-            {!isMaster && myCombatant ? (
+            {!isMaster && myCombatant && !showDeathTurn ? (
               <>
                 {!isMyTurn ? (
                   <p className="section-note">
@@ -380,6 +488,7 @@ export function CombatTracker({
             ownTurn={ownTurn}
             canAct={actingCombatant ? actingCombatant.conditionEffects.canAct : false}
             effectiveSpeed={actingCombatant?.effectiveSpeed}
+            deathBlocked={Boolean(actingCombatant && deathLifecycle(actingCombatant.deathState))}
             onEconomyAction={(input) => {
               if (!actingCombatant) return;
               void run(() =>

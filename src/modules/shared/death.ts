@@ -120,12 +120,16 @@ export function hasDeathLifecycle(state: DeathState): boolean {
 }
 
 /**
- * O estado de morte IMPEDE agir? (morto, decisão pendente do Mestre ou oferta
- * da Resistência Implacável aguardando resposta). Integra com a 6.1: o
- * combatente não gasta Ação/Ação Bônus/Reação/Movimento.
+ * O estado de morte IMPEDE agir? (morto, decisão pendente do Mestre, oferta da
+ * Resistência Implacável aguardando resposta ou 0 PV no fluxo de Testes contra
+ * a Morte). Integra com a 6.1: o combatente não gasta Ação/Ação Bônus/Reação/
+ * Movimento — no turno de Teste contra a Morte o recurso do turno é a rolagem.
+ *
+ * `stabilized` NÃO bloqueia por si só: estabilizado já sai do fluxo
+ * (`deathSaves = false`) e continua Inconsciente pelos efeitos da 6.2.
  */
 export function deathBlocksActions(state: DeathState): boolean {
-  return state.dead || state.pending !== null || state.relentless !== null;
+  return state.dead || state.pending !== null || state.relentless !== null || state.deathSaves;
 }
 
 /** Fecha o ciclo (cura, "1 PV" narrativo, reinício do ciclo). NUNCA ressuscita. */

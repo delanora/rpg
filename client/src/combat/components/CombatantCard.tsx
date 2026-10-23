@@ -1,9 +1,52 @@
 import { ConditionBadges } from './ConditionBadges';
+import { DeathCounter } from '../../death/DeathCounter';
 import type { ReactNode } from 'react';
 import { HpBar } from '../../components/HpBar';
 import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
-import type { CombatantDto } from '../../types';
+import type { CombatantDto, DeathState } from '../../types';
+
+/** O ciclo de morte está ativo? (contadores, estabilização, pending, Death Saves). */
+function hasDeathLifecycle(death: DeathState): boolean {
+  return (
+    death.dead ||
+    death.pending !== null ||
+    death.stabilized ||
+    death.deathSaves ||
+    death.successes > 0 ||
+    death.failures > 0
+  );
+}
+
+/**
+ * Estado de morte no card da iniciativa (compacto, uma linha): MORTO / decisão
+ * do Mestre / ESTABILIZADO ou o contador corações-caveiras. Para criaturas
+ * vistas por jogadores, `deathState` chega `null` — nenhum vazamento.
+ */
+function DeathRow({ death }: { death: DeathState }) {
+  if (death.dead) {
+    return (
+      <span className="death-status dead">
+        <Icon name="skull" size={12} /> MORTO
+      </span>
+    );
+  }
+  if (death.pending) {
+    return (
+      <span className="death-status pending">
+        <Icon name="crown" size={12} /> AGUARDANDO O MESTRE
+      </span>
+    );
+  }
+  if (death.stabilized) {
+    return (
+      <span className="death-status stabilized">
+        <Icon name="heart" size={12} /> ESTABILIZADO
+      </span>
+    );
+  }
+  return <DeathCounter successes={death.successes} failures={death.failures} />;
+}
 
 interface CombatantCardProps {
   combatant: CombatantDto;
@@ -70,6 +113,9 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
         </div>
 
         <ConditionBadges state={combatant.mechanicalState} effects={combatant.conditionEffects} />
+        {combatant.deathState && hasDeathLifecycle(combatant.deathState) ? (
+          <DeathRow death={combatant.deathState} />
+        ) : null}
         {/* Vida e CA de criaturas ficam ocultas para os jogadores. */}
         {combatant.statsHidden ? (
           <span className="combatant-card-hidden" title="Vida e CA visíveis apenas para o mestre">

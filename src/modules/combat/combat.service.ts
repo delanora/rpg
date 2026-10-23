@@ -1,6 +1,6 @@
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
 import { deathBlocksActions } from '../shared/death.js';
-import { applyDamageConsequences, applyHealConsequences, onTurnStartDeath } from '../death/death.service.js';
+import { applyDamageConsequences, applyHealConsequences, onTurnStartDeath, publishDeathUpdated } from '../death/death.service.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { COMBAT_ACTIONS, deriveAttackActionLimit, economyOf, moveDistance, onTurnEnd, onTurnStart, recordAttack, spendEconomy } from '../shared/action-economy.js';
 import type { CombatOperationInput, EconomyActionInput, EconomyOverrideInput } from './combat.schema.js';
@@ -925,6 +925,9 @@ export async function resolveAttack(
 ): Promise<{ combat: CombatDto; result: AttackResolvedPayload }> {
   const publications = new Set<string>();
   const rolls: DiceRolledPayload[] = [];
+  // Entidades cujo ciclo de morte mudou nesta transação: o evento `death:updated`
+  // só pode sair DEPOIS do commit (é ele que abre a resolução do Mestre).
+  const deathTargets: MechanicalEntity[] = [];
   const response = await runCombatOperation(actor, input, 'attack', async (db, combat) => {
     const attacker = input.attackerCombatantId
       ? combat.combatants.find((item) => item.id === input.attackerCombatantId)
@@ -1299,8 +1302,9 @@ export async function resolveAttack(
         // instantânea → decisão do Mestre; queda normal → Testes contra a
         // Morte/Resistência Implacável; dano já a 0 PV → falhas).
         if (applied) {
-          await applyDamageConsequences(
-            deathEntityOf(target),
+          const entity = deathEntityOf(target);
+          const death = await applyDamageConsequences(
+            entity,
             {
               damage: total,
               hpBefore: applied.hpBefore,
@@ -1311,6 +1315,7 @@ export async function resolveAttack(
             db,
             attacker.name,
           );
+          if (death.changed) deathTargets.push(entity);
         }
       }
     }
@@ -1346,6 +1351,7 @@ export async function resolveAttack(
   });
   if (!response.replayed) {
     for (const id of publications) await publishCharacter(id);
+    for (const entity of deathTargets) await publishDeathUpdated(entity);
     for (const roll of rolls) announceRoll(roll);
     const result = response.result;
     const targetIsCreature = response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind === 'CREATURE';
@@ -1370,6 +1376,7 @@ export async function applyManualHp(
 
   const delta = input.mode === 'damage' ? -input.amount : input.amount;
   const publications = new Set<string>();
+  const deathTargets: MechanicalEntity[] = [];
   const applied = await prisma.$transaction(async (db) => {
     const active = await db.combat.updateMany({ where: { id: combat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
     if (!active.count) throw new HttpError('Combate encerrado.', 409, 'CONFLICT');
@@ -1380,20 +1387,23 @@ export async function applyManualHp(
     // resolve a decisão primeiro (a transação volta atrás, sem mexer no PV).
     if (result) {
       const entity = deathEntityOf(combatant);
-      if (delta < 0) {
-        await applyDamageConsequences(
-          entity,
-          { damage: input.amount, hpBefore: result.hpBefore, hpTempBefore: result.hpTempBefore, critical: false, sourceName: actor.username },
-          db,
-          actor.username,
-        );
-      } else {
-        await applyHealConsequences(entity, result.hpCurrent, db, actor.username);
-      }
+      const death =
+        delta < 0
+          ? await applyDamageConsequences(
+              entity,
+              { damage: input.amount, hpBefore: result.hpBefore, hpTempBefore: result.hpTempBefore, critical: false, sourceName: actor.username },
+              db,
+              actor.username,
+            )
+          : await applyHealConsequences(entity, result.hpCurrent, db, actor.username);
+      if (death.changed) deathTargets.push(entity);
     }
     return result;
   });
   for (const id of publications) await publishCharacter(id);
+  // Mesmo evento do ataque: o Mestre recebe a decisão pendente sem refresh e o
+  // contador de quem está a 0 PV atualiza na hora.
+  for (const entity of deathTargets) await publishDeathUpdated(entity);
 
   if (!applied) {
     throw new HttpError('A ficha ou criatura deste combatente não existe mais.', 409);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { answerRelentless, fetchDeath, overrideDeath } from '../deathApi';
+import { DeathCounter } from './DeathCounter';
 import { useSheetAccess } from '../readonly';
 import type { Character, DeathDto, MechanicalEntity } from '../types';
 
@@ -13,17 +14,6 @@ interface DeathPanelProps {
   refreshKey?: string;
   /** Abre a janela de dados com o d20 do Teste contra a Morte. */
   onRollDeathSave?: (entity: MechanicalEntity) => void;
-}
-
-/** Três marcas de sucesso/falha (PHB 2014). */
-function Pips({ filled, kind }: { filled: number; kind: 'success' | 'failure' }) {
-  return (
-    <span className={`death-pips death-pips-${kind}`} aria-label={`${filled} de 3`}>
-      {[0, 1, 2].map((index) => (
-        <span key={index} className={index < filled ? 'death-pip filled' : 'death-pip'} />
-      ))}
-    </span>
-  );
 }
 
 /**
@@ -123,12 +113,7 @@ export function DeathPanel({ character, refreshKey, onRollDeathSave }: DeathPane
 
       {!state.dead ? (
         <div className="death-counters">
-          <span className="death-counter">
-            Sucessos <Pips filled={state.successes} kind="success" />
-          </span>
-          <span className="death-counter">
-            Falhas <Pips filled={state.failures} kind="failure" />
-          </span>
+          <DeathCounter successes={state.successes} failures={state.failures} showNumbers />
         </div>
       ) : null}
 
