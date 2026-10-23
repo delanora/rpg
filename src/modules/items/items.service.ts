@@ -207,6 +207,7 @@ export async function sendItemToCharacter(
       category: item.category,
       rarity: itemRarityOf(item.rarity),
       requiresAttunement: item.requiresAttunement,
+      attuned: false,
       details: sanitizeItemDetails(item.category, item.details),
       campSupply: { enabled: item.campSupplyEnabled, value: item.campSupplyValue },
     });

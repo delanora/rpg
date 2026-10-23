@@ -10,6 +10,7 @@ import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@pr
 import { z } from 'zod';
 import { economyOf, type TurnEconomy } from '../shared/action-economy.js';
 import { characterArmorClass } from '../characters/armor-class.js';
+import { npcAttacks, npcEffectiveArmorClass } from '../creatures/npc-sheet.js';
 import type { ArmorProficiencyState } from '../shared/armor-class.js';
 import { characterDerivedAttacks, characterMaxHp } from '../characters/characters.dto.js';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
@@ -155,7 +156,9 @@ export function combatantAttacks(combatant: CombatantSourced): CombatAttack[] {
     ];
   }
   if (combatant.creature) {
-    return parseJson<Attack[]>(attackListSchema, combatant.creature.attacks, []);
+    // NPC: ataques PRÓPRIOS + armas equipadas no inventário persistente. O
+    // template de criatura continua só com o statblock.
+    return npcAttacks(combatant.creature);
   }
   return [];
 }
@@ -191,9 +194,11 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     combatant.character !== null ? characterArmorClass(combatant.character) : null;
   const armorClass =
     armorClassDetail?.value ??
-    combatant.armorClass ??
-    combatant.creature?.armorClass ??
-    0;
+    // NPC: CA DERIVADA do equipamento (armadura/escudo/bônus), nunca a cópia
+    // congelada do snapshot. Criatura-template: o snapshot, como antes.
+    (combatant.creature?.kind === 'NPC'
+      ? npcEffectiveArmorClass(combatant.creature)
+      : (combatant.armorClass ?? combatant.creature?.armorClass ?? 0));
 
   const deathState = combatantDeathState(combatant);
   return {
@@ -321,6 +326,9 @@ function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
     hpCurrent: null,
     hpMax: null,
     armorClass: null,
+    // Esquiva/Preparar de NPC/criatura são estado operacional do Mestre: o
+    // jogador não recebe os flags (sem badge e sem inferir a tática secreta).
+    turnEconomy: { ...combatant.turnEconomy, dodging: false, ready: null },
     // Death Saves de NPC/criatura são PRIVADOS do Mestre: o servidor não envia
     // contador, resultado nem a existência da rolagem.
     deathState: null,

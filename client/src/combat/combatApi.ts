@@ -1,6 +1,6 @@
 import { api } from '../api';
 import { createOperationId } from '../utils';
-import type { AttackResolvedPayload, CombatDto } from '../types';
+import type { AttackResolvedPayload, CombatDto, CombatUsableItem } from '../types';
 
 /** Ações de combate — todas devolvem o estado atualizado do combate. */
 
@@ -70,6 +70,28 @@ export function resolveAttack(combat: CombatDto, input: {
     method: 'POST',
     body: { ...operationFor(combat), ...input },
   });
+}
+
+/**
+ * Itens USÁVEIS do combatente (poções/consumíveis com saldo). A rota é
+ * autorizada no servidor: Mestre ou dono do personagem; inventário de NPC
+ * nunca chega a jogador.
+ */
+export function fetchCombatItems(combatantId: string): Promise<CombatUsableItem[]> {
+  return api<{ items: CombatUsableItem[] }>(
+    `/api/combat/items/${encodeURIComponent(combatantId)}`,
+  ).then((result) => result.items);
+}
+
+/** Usar um consumível: o servidor gasta a Ação, consome a unidade e aplica. */
+export function useCombatItem(
+  combat: CombatDto,
+  input: { combatantId: string; itemInventoryId: string; targetCombatantId?: string },
+): Promise<{ combat: CombatDto; healing: { total: number } | null }> {
+  return api<{ combat: CombatDto; healing: { total: number } | null }>(
+    '/api/combat/use-item',
+    { method: 'POST', body: { ...operationFor(combat), ...input } },
+  );
 }
 
 export function applyManualHp(input: {

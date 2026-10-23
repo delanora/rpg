@@ -20,6 +20,18 @@ import type { CombatStatus, Prisma, Role } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
 import { inventoryListSchema } from '../characters/characters.schema.js';
+import type { InventoryItemDto } from '../characters/characters.dto.js';
+import { loadCatalogLookup, syncInventory } from '../characters/inventory-sync.js';
+import { creatureInventory, npcEffectiveArmorClass } from '../creatures/npc-sheet.js';
+import { toCreatureDto } from '../creatures/creatures.dto.js';
+import { getCreature } from '../creatures/creatures.service.js';
+import {
+  healingSpecOf,
+  itemUseEconomy,
+  usableCombatItems,
+  type CombatUsableItemDto,
+} from '../shared/item-use.js';
+import { recordHealingRoll } from '../dice/dice.service.js';
 import {
   ServerEvents,
   type AttackResolvedPayload,
@@ -32,7 +44,11 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import { characterArmorClass, characterCritThreshold } from '../characters/armor-class.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import { characterClassAdjustments } from '../characters/characters.dto.js';
-import { availableQuantity, reservedQuantities } from '../rest/camp-supply-reservations.js';
+import {
+  availableQuantity,
+  reservedQuantities,
+  reservedQuantity,
+} from '../rest/camp-supply-reservations.js';
 import {
   computeMulticlassAdjustments,
   featureEffectsOf,
@@ -54,7 +70,7 @@ import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attack
 import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
-import { rollD20, rollDice } from '../shared/dice.js';
+import { rollD20, rollDice, rollHealingDice, type HealingDiceResult } from '../shared/dice.js';
 import { planNextTurn } from './turn-order.js';
 import {
   combatantAttacks,
@@ -70,7 +86,12 @@ import {
 } from './combat.dto.js';
 import type { MechanicalEntity } from '../shared/conditions.js';
 import type { DiceRollDto } from '../dice/dice.dto.js';
-import type { AttackInput, ManualHpInput, StartCombatInput } from './combat.schema.js';
+import type {
+  AttackInput,
+  ManualHpInput,
+  StartCombatInput,
+  UseItemInput,
+} from './combat.schema.js';
 
 /** Quem está agindo (vem sempre do token). */
 export interface CombatActor {
@@ -577,6 +598,18 @@ export async function overrideEconomy(actor: CombatActor, input: EconomyOverride
     await appendEconomyLog(db, combat, combatant, `Mestre ${actor.username} ${messages[input.adjustment]} para ${combatant.name}: ${input.reason}.`, `override:${input.adjustment}`);
     return { combat: toCombatDto(await loadCombatById(combat.id, db), 'MASTER') };
   });
+}
+
+/**
+ * Reemite o combate ativo quando o EQUIPAMENTO/CA de um NPC muda fora do
+ * turno. O NPC pode estar na luta enquanto o Mestre equipa uma armadura no
+ * painel: sem isto, a CA/ataques do combatente ficariam velhos até o próximo
+ * evento de combate. Só o Mestre recebe o DTO completo.
+ */
+export async function refreshCombatForCreature(creatureId: string): Promise<void> {
+  const combat = await findCombat({ status: { in: ACTIVE_STATUSES } }).catch(() => null);
+  if (!combat?.combatants.some((combatant) => combatant.creatureId === creatureId)) return;
+  emitCombat(ServerEvents.COMBAT_UPDATED, toCombatDto(await loadCombatById(combat.id), 'MASTER'));
 }
 
 /** --- Consulta ---------------------------------------------------------------- */
@@ -1345,7 +1378,9 @@ export async function resolveAttack(
     const targetArmorClass =
       target.character !== null
         ? characterArmorClass(target.character).value
-        : (target.armorClass ?? target.creature?.armorClass ?? 10);
+        : target.creature?.kind === 'NPC'
+          ? npcEffectiveArmorClass(target.creature)
+          : (target.armorClass ?? target.creature?.armorClass ?? 10);
 
     // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
     // vale) — mesmo critério da janela de dados.
@@ -1355,7 +1390,9 @@ export async function resolveAttack(
       Boolean(input.advantage),
       Boolean(input.disadvantage),
       // A Esquiva do alvo só vale se ele CONSEGUIR ver o atacante (ver `canSeeAttacker`).
-      { targetDodging: economyOf(target.turnEconomy).dodging },
+      // `attackRanged` resolve Caído (PHB 2014) por MODO do ataque — nunca
+      // pelo tipo de dano: arco = desvantagem, lança em corpo a corpo = vantagem.
+      { targetDodging: economyOf(target.turnEconomy).dodging, attackRanged: attack.ranged },
     );
     // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
     const firstRoll = rollD20();
@@ -1693,6 +1730,244 @@ export async function resolveAttack(
     broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, targetIsCreature ? hideTargetStats(result) : result);
   }
   return { ...response, result: actor.role !== 'MASTER' && response.result.targetStatsHidden === false && isMasterOnlyCombatant(response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind ?? 'CHARACTER') ? hideTargetStats(response.result) : response.result };
+}
+
+/* -------------------------------------------------------------------------- */
+/* USAR ITEM EM COMBATE                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Inventário do combatente para uso de item: a ficha do personagem ou o
+ * inventário PERSISTENTE do NPC. Criaturas-template não têm inventário.
+ */
+function combatantInventoryOf(combatant: CombatantSourced): InventoryItemDto[] {
+  if (combatant.character) {
+    return parseJson<InventoryItemDto[]>(inventoryListSchema, combatant.character.inventory, []);
+  }
+  if (combatant.creature?.kind === 'NPC') {
+    return creatureInventory(combatant.creature.inventory);
+  }
+  return [];
+}
+
+/** Quem pode ler/usar o inventário deste combatente? (Mestre ou dono.) */
+function assertCanControlInventory(actor: CombatActor, combatant: CombatantSourced): void {
+  if (actor.role === 'MASTER') return;
+  if (combatant.kind === 'CHARACTER' && combatant.ownerUserId === actor.userId) return;
+  throw new HttpError('Você só pode usar o inventário do seu personagem.', 403);
+}
+
+/**
+ * Lista COMPACTA de itens usáveis do combatente (poções/consumíveis, com
+ * saldo). Não lista armas equipadas nem lixo. O mestre recebe a lista de NPCs;
+ * jogadores jamais recebem a de um NPC (rota protegida no servidor).
+ */
+export async function listCombatItems(
+  actor: CombatActor,
+  combatantId: string,
+): Promise<CombatUsableItemDto[]> {
+  const combat = await requireActiveCombat();
+  const combatant = combat.combatants.find((item) => item.id === combatantId);
+  if (!combatant) throw new HttpError('Combatente não encontrado.', 404);
+  assertCanControlInventory(actor, combatant);
+
+  const raw = combatantInventoryOf(combatant);
+  const catalog = await loadCatalogLookup([raw]);
+  const inventory = syncInventory(raw, catalog);
+
+  return usableCombatItems(inventory).map((item) => {
+    const healing = healingSpecOf(item.details);
+    return {
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      category: item.category,
+      imageUrl: item.imageUrl,
+      quantity: item.quantity,
+      requiresAttunement: item.requiresAttunement,
+      automated: healing !== null,
+      manual: healing === null,
+      healing,
+      effectRoll: item.details.effectRoll ?? null,
+      targetable: true,
+    };
+  });
+}
+
+/**
+ * USAR ITEM (server-authoritative).
+ *
+ * Valida controle + turno + condição, gasta a Ação, CONSOME a unidade e aplica
+ * o efeito automatizado na MESMA transação (item não se perde se a cura
+ * falhar). Itens sem efeito modelado são consumidos e registrados como
+ * "resolução pelo Mestre" — nenhum efeito é inventado. `operationId` impede
+ * que um duplo clique consuma duas unidades.
+ */
+export async function useCombatItem(
+  actor: CombatActor,
+  input: UseItemInput,
+): Promise<{ combat: CombatDto; replayed: boolean; healing: HealingDiceResult | null }> {
+  const publications = new Set<string>();
+  const deathTargets: MechanicalEntity[] = [];
+  let usedItemName = '';
+  let creatureChangedId: string | null = null;
+
+  const response = await runCombatOperation<{
+    combat: CombatDto;
+    healing: HealingDiceResult | null;
+  }>(actor, input, 'use-item', async (db, combat) => {
+    const combatant = actingCombatant(combat, actor, input.combatantId);
+    requireOwnTurn(combat, combatant);
+    if (deathBlocksActions(combatantDeathState(combatant))) {
+      throw new HttpError('Aguardando a resolução do Mestre: este combatente não pode agir.', 409, 'CONFLICT');
+    }
+    const effects = deriveConditionEffects(combatantMechanicalState(combatant));
+    if (!effects.canAct) throw new HttpError('Condição impede usar itens.', 409, 'CONFLICT');
+
+    const target = input.targetCombatantId
+      ? combat.combatants.find((item) => item.id === input.targetCombatantId)
+      : combatant;
+    if (!target) throw new HttpError('Alvo não encontrado neste combate.', 404);
+
+    const targetDeath = combatantDeathState(target);
+    if (targetDeath.dead) {
+      throw new HttpError('O alvo está morto: o Mestre precisa reverter a morte.', 409, 'CONFLICT');
+    }
+    if (targetDeath.pending) {
+      throw new HttpError('Há uma decisão de morte pendente: o Mestre precisa resolvê-la.', 409, 'CONFLICT');
+    }
+
+    const raw = combatantInventoryOf(combatant);
+    if (combatant.kind === 'CREATURE' && raw.length === 0) {
+      throw new HttpError(
+        'Criaturas-template não possuem inventário persistente: use o statblock.',
+        400,
+        'VALIDATION_ERROR',
+      );
+    }
+    // Atributos exibidos/efeito lidos do catálogo (mesma fonte da ficha).
+    const catalog = await loadCatalogLookup([raw]);
+    const inventory = syncInventory(raw, catalog);
+    const item = inventory.find((entry) => entry.id === input.itemInventoryId);
+    if (!item) throw new HttpError('Item não encontrado no inventário.', 404);
+    if (item.quantity <= 0) throw new HttpError(`Não há mais unidades de ${item.name}.`, 409, 'CONFLICT');
+    if (!usableCombatItems([item]).length) {
+      throw new HttpError(`${item.name} não é um consumível utilizável.`, 400, 'VALIDATION_ERROR');
+    }
+
+    // Unidades reservadas ao Descanso Longo não podem ser consumidas (regressão
+    // de Camp Supplies). NPCs não participam de reservas de acampamento.
+    if (combatant.character) {
+      const reserved = await reservedQuantity(item.id);
+      if (availableQuantity(item.quantity, reserved) <= 0) {
+        throw new HttpError(
+          `As unidades de ${item.name} estão reservadas para o Descanso Longo.`,
+          409,
+          'INVENTORY_RESERVED',
+        );
+      }
+    }
+
+    const healingSpec = healingSpecOf(item.details);
+    // Rola a cura DEPOIS das validações e ANTES da escrita; se qualquer etapa
+    // falhar, a transação desfaz o consumo e nenhum PV muda.
+    const healing = healingSpec ? rollHealingDice(healingSpec) : null;
+
+    const economy = economyOf(combatant.turnEconomy);
+    spendEconomy(economy, itemUseEconomy(item.details));
+
+    const nextInventory = inventory
+      .map((entry) =>
+        entry.id === item.id ? { ...entry, quantity: entry.quantity - 1 } : entry,
+      )
+      .filter((entry) => entry.quantity > 0);
+
+    if (combatant.character) {
+      const written = await db.character.updateMany({
+        where: { id: combatant.character.id, version: combatant.character.version },
+        data: {
+          inventory: nextInventory as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      if (written.count !== 1) {
+        throw new HttpError('A ficha mudou durante o uso do item. Tente novamente.', 409, 'CONFLICT');
+      }
+      publications.add(combatant.character.id);
+    } else if (combatant.creature && combatant.creature.kind === 'NPC') {
+      const written = await db.creature.updateMany({
+        where: { id: combatant.creature.id, version: combatant.creature.version, kind: 'NPC' },
+        data: {
+          inventory: nextInventory as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      if (written.count !== 1) {
+        throw new HttpError('O NPC mudou durante o uso do item. Tente novamente.', 409, 'CONFLICT');
+      }
+      creatureChangedId = combatant.creature.id;
+    }
+
+    let healedAmount = 0;
+    if (healing) {
+      const applied = await changeHp(target, healing.total, db, publications);
+      if (!applied) {
+        throw new HttpError('O alvo não existe mais neste combate.', 409, 'CONFLICT');
+      }
+      healedAmount = applied.hpCurrent - applied.hpBefore;
+      const entity = deathEntityOf(target);
+      const death = await applyHealConsequences(entity, applied.hpCurrent, db, combatant.name);
+      if (death.changed) deathTargets.push(entity);
+    }
+
+    await db.combatant.update({
+      where: { id: combatant.id },
+      data: { turnEconomy: economy },
+    });
+
+    usedItemName = item.name;
+    const targetPart = target.id === combatant.id ? '' : ` em ${target.name}`;
+    const outcome = healing
+      ? ` Cura aplicada: +${healing.total} PV (${target.name}).`
+      : ' Efeito resolvido pelo Mestre.';
+    await appendEconomyLog(
+      db,
+      combat,
+      combatant,
+      `${combatant.name} usou ${item.name}${targetPart}.${outcome}`,
+      'use-item',
+      // Inventário de NPC é privado do Mestre: a linha não vai para jogadores.
+      { private: isMasterOnlyCombatant(combatant.kind) || isMasterOnlyCombatant(target.kind) },
+    );
+
+    return {
+      combat: toCombatDto(await loadCombatById(combat.id, db), actor.role),
+      healing,
+    };
+  });
+
+  if (!response.replayed) {
+    for (const id of publications) await publishCharacter(id);
+    for (const entity of deathTargets) await publishDeathUpdated(entity);
+    // Inventário persistente do NPC mudou: só os MESTRES recebem o cadastro.
+    if (creatureChangedId) {
+      try {
+        const creature = await getCreature(creatureChangedId);
+        getBroadcaster().toMasters(ServerEvents.CREATURE_UPDATED, {
+          creature,
+          changes: { inventory: creature.inventory },
+        });
+      } catch (error) {
+        console.error('[combat] falha ao publicar o NPC após usar item:', error);
+      }
+    }
+    // A bandeja de dados existente anuncia a cura (dados justos do servidor).
+    if (response.healing && usedItemName) {
+      recordHealingRoll(actor, response.combat.combatants.find((item) => item.id === input.combatantId)?.name ?? actor.username, usedItemName, response.healing);
+    }
+  }
+
+  return { combat: response.combat, replayed: response.replayed, healing: response.healing };
 }
 
 /** Ajuste manual de HP pelo mestre (dano ou cura). */

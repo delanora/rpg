@@ -116,6 +116,8 @@ export interface InventoryItemDto {
   rarity: ItemRarity | null;
   /** O item exige sintonização (propriedade manual do mestre). */
   requiresAttunement: boolean;
+  /** Sintonização ATIVA (PHB 2014, máximo 3 por criatura). */
+  attuned: boolean;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
   /**

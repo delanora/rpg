@@ -55,6 +55,19 @@ export const attackSchema = combatOperationSchema.extend({
   adjacentAlly: z.boolean().optional(),
 });
 
+/**
+ * USAR ITEM em combate: o cliente manda só a INTENÇÃO (item + alvo). O
+ * servidor valida controle/turno, gasta a Ação, consome a unidade e aplica o
+ * efeito automatizado — sem confiar em quantidade, alvo ou custo do cliente.
+ */
+export const useItemSchema = combatOperationSchema.extend({
+  combatantId: z.string().min(1),
+  itemInventoryId: z.string().min(1),
+  /** Sem alvo = usa em si mesmo. */
+  targetCombatantId: z.string().min(1).optional(),
+});
+export type UseItemInput = z.infer<typeof useItemSchema>;
+
 /** Dano/cura manual aplicado pelo mestre. */
 export const manualHpSchema = z.object({
   combatantId: z.string().min(1),

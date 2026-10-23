@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import type { EconomyAction } from '../combatApi';
+import type { CombatUsableItem } from '../../types';
 import { ECONOMY_ACTION_VISUALS, type EconomyActionVisual } from '../combatVisuals';
 
 /** Alvo válido para ESTABILIZAR (0 PV, vivo, sem estabilização/pendência). */
@@ -27,6 +28,14 @@ interface ActionMenuProps {
   /** ESTABILIZAR — só aparece se existir ao menos um alvo elegível. */
   stabilizeTargets?: StabilizeTarget[];
   onStabilize?: (targetCombatantId: string) => void;
+  /**
+   * USAR ITEM — consumíveis com saldo do combatente. O servidor decide a
+   * lista/efeito. `itemTargets` inclui o próprio usuário (primeiro); o custo é
+   * 1 Ação (o servidor valida e consome atomicamente).
+   */
+  usableItems?: CombatUsableItem[];
+  itemTargets?: StabilizeTarget[];
+  onUseItem?: (itemInventoryId: string, targetCombatantId?: string) => void;
   busy?: boolean;
 }
 
@@ -49,11 +58,16 @@ export function ActionMenu({
   onStandUp,
   stabilizeTargets = [],
   onStabilize,
+  usableItems = [],
+  itemTargets = [],
+  onUseItem,
   busy = false,
 }: ActionMenuProps) {
   const [open, setOpen] = useState(false);
   // Formulário inline para as ações que exigem texto/escolha.
-  const [form, setForm] = useState<'none' | 'ready' | 'improvised' | 'stabilize'>('none');
+  const [form, setForm] = useState<'none' | 'ready' | 'improvised' | 'stabilize' | 'item'>('none');
+  // Alvo do item (vazio = o próprio usuário, sempre a primeira opção).
+  const [itemTargetId, setItemTargetId] = useState('');
   const [trigger, setTrigger] = useState('');
   const [intent, setIntent] = useState('');
   const [description, setDescription] = useState('');
@@ -62,6 +76,7 @@ export function ActionMenu({
   const canStand = Boolean(standUp && onStandUp);
   const canActuallyStand = Boolean(standUp?.available);
   const canStabilize = stabilizeTargets.length > 0 && Boolean(onStabilize);
+  const canUseItem = usableItems.length > 0 && Boolean(onUseItem);
   const standCost = standUp ? Number(standUp.cost.toFixed(2)) : 0;
 
   // Fora do turno/menu: recolhe tudo para não deixar estado pendurado.
@@ -138,7 +153,7 @@ export function ActionMenu({
           ))}
 
           {/* Contexto: só entra quando a regra permite. */}
-          {canStand || canStabilize ? (
+          {canStand || canStabilize || canUseItem ? (
             <p className="action-menu-head action-menu-head-context">
               <Icon name="sparkle" size={13} /> Contexto
             </p>
@@ -186,6 +201,77 @@ export function ActionMenu({
                 alcance físico; o Mestre resolve posicionamento quando necessário.
               </span>
             </button>
+          ) : null}
+
+          {canUseItem ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="action-menu-item context"
+              disabled={busy || actionsDisabled}
+              title="O alvo precisa estar ao alcance físico. O Mestre resolve o posicionamento quando necessário."
+              onClick={() => setForm(form === 'item' ? 'none' : 'item')}
+            >
+              <span className="action-menu-item-head">
+                <Icon name="flask" size={12} /> Usar Item
+              </span>
+              <span className="action-menu-item-desc">
+                Custo: 1 Ação — consome uma unidade. Itens sem efeito modelado são
+                resolvidos pelo Mestre.
+              </span>
+            </button>
+          ) : null}
+
+          {form === 'item' && canUseItem ? (
+            <div className="action-menu-form">
+              {itemTargets.length > 1 ? (
+                <label className="field">
+                  <span>Alvo</span>
+                  <select
+                    value={itemTargetId}
+                    onChange={(event) => setItemTargetId(event.target.value)}
+                  >
+                    <option value="">Em mim mesmo</option>
+                    {itemTargets.slice(1).map((target) => (
+                      <option key={target.id} value={target.id}>
+                        {target.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {usableItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="menuitem"
+                  className="action-menu-item"
+                  disabled={busy}
+                  title={item.description || undefined}
+                  onClick={() => {
+                    onUseItem?.(item.id, itemTargetId || undefined);
+                    setForm('none');
+                    setItemTargetId('');
+                    setOpen(false);
+                  }}
+                >
+                  <span className="action-menu-item-head">
+                    {item.name} ×{item.quantity}
+                  </span>
+                  <span className="action-menu-item-desc">
+                    {item.automated
+                      ? `Cura ${item.healing?.count ?? 0}d${item.healing?.sides ?? 0}${
+                          item.healing?.bonus ? `+${item.healing.bonus}` : ''
+                        } — aplicada pelo servidor.`
+                      : 'Resolução pelo Mestre — nenhum efeito é inventado.'}
+                  </span>
+                </button>
+              ))}
+              <p className="action-menu-note">
+                O alvo precisa estar ao alcance físico. O Mestre resolve o
+                posicionamento quando necessário.
+              </p>
+            </div>
           ) : null}
 
           {form === 'stabilize' && canStabilize ? (

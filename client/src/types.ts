@@ -166,6 +166,8 @@ export interface InventoryItem {
   rarity: ItemRarity | null;
   /** O item exige sintonização (propriedade manual do mestre). */
   requiresAttunement: boolean;
+  /** Sintonização ATIVA (PHB 2014, máximo 3). */
+  attuned?: boolean;
   /** Atributos da categoria (dano, CA, rolagem de efeito...). */
   details: ItemDetails;
   /**
@@ -1724,9 +1726,17 @@ export interface Creature {
   hpCurrent: number;
   hpMax: number;
   armorClass: number;
+  /** CA EFETIVA do NPC (armadura/escudo/bônus equipados); igual à base em criaturas. */
+  effectiveArmorClass: number;
+  /** Inventário persistente do NPC (vazio em criaturas-template). */
+  inventory: InventoryItem[];
+  /** Carteira do NPC (mesmo motor de moedas da ficha). */
+  coins: CoinPurse;
   speed: number;
 
   attacks: Attack[];
+  /** Ataques derivados das armas EQUIPADAS do NPC (vazio em criaturas). */
+  derivedAttacks: Attack[];
   resistances: string[];
   immunities: string[];
   /** Tipos de dano aos quais a criatura é vulnerável (dano dobrado). */
@@ -2021,6 +2031,25 @@ export interface TurnEconomy {
   ready: { trigger: string; intent: string } | null;
   /** Esquiva (Dodge) ativa até o início do próprio próximo turno. */
   dodging?: boolean;
+}
+
+/**
+ * Item usável durante o combate (seletor compacto de "Usar Item"). O servidor
+ * decide a lista e o efeito; `manual` = resolução pelo Mestre.
+ */
+export interface CombatUsableItem {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  imageUrl: string;
+  quantity: number;
+  requiresAttunement: boolean;
+  automated: boolean;
+  manual: boolean;
+  healing: { count: number; sides: number; bonus: number } | null;
+  effectRoll: string | null;
+  targetable: boolean;
 }
 
 export interface CombatantDto {

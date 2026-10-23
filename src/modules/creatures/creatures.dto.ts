@@ -2,9 +2,12 @@ import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpe
 import type { Creature, CreatureKind } from '@prisma/client';
 import { z } from 'zod';
 import { toLocalitySummary, type LocalitySummaryDto } from '../localities/localities.dto.js';
-import { attackSchema, type Attack } from '../shared/attacks.js';
+import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
 import { ABILITY_KEYS, type AbilityKey, abilityModifier } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
+import { normalizeCoins, type CoinPurse } from '../shared/coins.js';
+import type { InventoryItemDto } from '../characters/characters.dto.js';
+import { creatureInventory, npcAttacks, npcEffectiveArmorClass } from './npc-sheet.js';
 
 /** Formato da criatura enviado ao frontend. */
 export interface CreatureDto {
@@ -32,6 +35,24 @@ export interface CreatureDto {
   speed: number;
 
   attacks: Attack[];
+  /**
+   * Ataques do NPC em combate: os PRÓPRIOS + os derivados das armas equipadas.
+   * Em criaturas-template fica vazio (o cliente usa só `attacks`).
+   */
+  derivedAttacks: CombatAttack[];
+  /**
+   * Inventário PERSISTENTE do NPC (mesmo formato da ficha). SEMPRE vazio em
+   * criaturas-template: estas continuam apenas no statblock. Só o Mestre lê
+   * este módulo — a rota de criaturas é master-only.
+   */
+  inventory: InventoryItemDto[];
+  /** Carteira do NPC (mesmo motor de moedas da ficha). */
+  coins: CoinPurse;
+  /**
+   * CA EFETIVA do NPC (armadura/escudo/bônus equipados). `armorClass` continua
+   * sendo a CA BASE editável do statblock.
+   */
+  effectiveArmorClass: number;
   resistances: string[];
   immunities: string[];
   /** Tipos de dano aos quais a criatura é vulnerável (dano dobrado). */
@@ -61,6 +82,13 @@ const damageListSchema = z.array(z.string().max(60));
 
 export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
   const attacks = parseJson<Attack[]>(attackListSchema, creature.attacks, []);
+  // NPC persistente: inventário e ataques derivados das armas equipadas. O
+  // template de criatura não recebe inventário e segue só com `attacks`.
+  const inventory = creature.kind === 'NPC' ? creatureInventory(creature.inventory) : [];
+  const derivedAttacks =
+    creature.kind === 'NPC' ? npcAttacks(creature).slice(attacks.length) : [];
+  const effectiveArmorClass =
+    creature.kind === 'NPC' ? npcEffectiveArmorClass(creature) : creature.armorClass;
   const resistances = parseJson<string[]>(damageListSchema, creature.resistances, []);
   const immunities = parseJson<string[]>(damageListSchema, creature.immunities, []);
   const vulnerabilities = parseJson<string[]>(
@@ -102,6 +130,10 @@ export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
     effectiveMaxHp: effectiveMaxHp(creature.hpMax, creature.mechanicalState),
     effectiveSpeed: effectiveSpeed(creature.speed, creature.mechanicalState),
     armorClass: creature.armorClass,
+    effectiveArmorClass,
+    inventory,
+    coins: normalizeCoins(creature.coins),
+    derivedAttacks,
     speed: creature.speed,
     attacks,
     resistances,

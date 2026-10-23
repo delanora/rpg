@@ -244,7 +244,7 @@ export function CombatStartDialog({
                           : 'sem localidade'}
                       </span>
                       <span className="muted">
-                        HP {creature.hpMax} · CA {creature.armorClass}
+                        HP {creature.hpMax} · CA {creature.effectiveArmorClass ?? creature.armorClass}
                         {creature.challengeRating ? ` · ND ${creature.challengeRating}` : ''}
                       </span>
                     </span>

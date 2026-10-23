@@ -80,7 +80,8 @@ export function deriveConditionEffects(value: unknown) {
     ].filter(Boolean),
     assistedNotes: [
       active.has('frightened') ? 'Amedrontado: linha de visão da fonte e aproximação são resolvidas pelo Mestre; não há posição/visibilidade modeladas.' : '',
-      prone || active.has('paralyzed') || active.has('unconscious') ? 'Modificadores que dependem de distância de 1,5 m (5 pés) aguardam distância confiável.' : '',
+      prone ? 'Caído: a vantagem/desvantagem contra o alvo usa o MODO do ataque (corpo a corpo × à distância), aproximação deliberada até existir geometria real.' : '',
+      active.has('paralyzed') || active.has('unconscious') ? 'Modificadores que dependem de distância de 1,5 m (5 pés) aguardam distância confiável.' : '',
       active.has('unconscious') ? 'Inconsciente: larga objetos segurados; colocação/manuseio no chão são resolvidos manualmente pelo Mestre. O inventário não é movido.' : '',
       active.has('charmed') && !state.conditions.some(instance => instance.condition === 'charmed' && instance.sourceEntity) ? 'Enfeitiçado: origem não vinculada; restrição contra o enfeitiçador permanece assistida.' : '',
     ].filter(Boolean),
@@ -89,6 +90,13 @@ export function deriveConditionEffects(value: unknown) {
     prone, movementCostMultiplier: prone ? 2 : 1,
     attackAdvantages: active.has('invisible') ? ['invisible'] : [],
     attackDisadvantages: [active.has('blinded') ? 'blinded' : '', poisoned ? 'poisoned' : '', prone ? 'prone' : '', active.has('restrained') ? 'restrained' : '', exhaustionLevel >= 3 ? 'exhaustion' : ''].filter(Boolean),
+    /**
+     * Vantagem/desvantagem CONTRA o alvo que NÃO depende de distância. Caído
+     * (Prone) fica de fora de propósito: a regra do PHB 2014 depende de o
+     * atacante estar a até 1,5 m, e o modo do ataque é resolvido em
+     * `conditionAttackMode` (aprovação temporária: corpo a corpo = 1,5 m;
+     * à distância = fora).
+     */
     attacksAgainstAdvantages: ['blinded', 'restrained', 'paralyzed', 'petrified', 'stunned', 'unconscious'].filter(condition => active.has(condition as Condition)),
     attacksAgainstDisadvantages: active.has('invisible') ? ['invisible'] : [],
     autoFailSaves: ['paralyzed', 'petrified', 'stunned', 'unconscious'].some(condition => active.has(condition as Condition)) ? ['strength', 'dexterity'] as AbilityKey[] : [],
@@ -137,13 +145,22 @@ export function deriveSaveEffects(value: unknown, ability: AbilityKey, advantage
 export interface AttackVisibilityContext {
   /** O alvo está sob Esquiva (Dodge) neste momento. */
   targetDodging?: boolean;
+  /**
+   * O ataque é À DISTÂNCIA? Usado SÓ para a regra de Caído (PHB 2014):
+   * corpo a corpo (false/ausente) = atacante a até 1,5 m → vantagem; à
+   * distância = fora de 1,5 m → desvantagem. Não confundir com TIPO DE DANO.
+   */
+  attackRanged?: boolean;
 }
 
 /**
- * Modo de uma jogada de ataque a partir das condições. A Esquiva (PHB 2014) do
- * alvo impõe desvantagem SOMENTE quando o alvo CONSEGUE ver o atacante — nunca
- * basta o atacante estar Invisível (ver `canSeeAttacker`). Invisible continua
- * produzindo os SEUS próprios efeitos; aqui só cuidamos da fonte "Dodge".
+ * Modo de uma jogada de ataque a partir das condições.
+ *
+ * • Esquiva do alvo: desvantagem SOMENTE quando ele CONSEGUE ver o atacante.
+ * • Caído (Prone): como não há geometria confiável, a decisão aprovada é
+ *   MELEE → vantagem / RANGED → desvantagem contra o alvo. A composição é a
+ *   normal de `resolveRollMode`: nenhuma fonte "dobra" o modo e uma vantagem
+ *   qualquer cancela uma desvantagem qualquer.
  */
 export function conditionAttackMode(
   attacker: unknown,
@@ -154,8 +171,23 @@ export function conditionAttackMode(
 ) {
   const own = deriveConditionEffects(attacker), other = deriveConditionEffects(target);
   const dodge = context.targetDodging && canSeeAttacker(target, attacker) ? ['dodge'] : [];
+  // Caído no ALVO: melee = 1,5 m (vantagem); à distância = fora (desvantagem).
+  const proneAgainst = other.prone
+    ? [context.attackRanged === true ? 'prone-ranged' : 'prone-melee']
+    : [];
   return resolveRollMode(
-    [...own.attackAdvantages, ...other.attacksAgainstAdvantages, ...(advantage ? ['manual'] : [])],
-    [...own.attackDisadvantages, ...other.attacksAgainstDisadvantages, ...dodge, ...(disadvantage ? ['manual'] : [])],
+    [
+      ...own.attackAdvantages,
+      ...other.attacksAgainstAdvantages,
+      ...(context.attackRanged === true ? [] : proneAgainst),
+      ...(advantage ? ['manual'] : []),
+    ],
+    [
+      ...own.attackDisadvantages,
+      ...other.attacksAgainstDisadvantages,
+      ...(context.attackRanged === true ? proneAgainst : []),
+      ...dodge,
+      ...(disadvantage ? ['manual'] : []),
+    ],
   );
 }
