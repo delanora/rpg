@@ -5,6 +5,7 @@ import { fetchMechanicalState, mutateMechanicalState } from '../mechanicalApi';
 import { useSheetAccess } from '../readonly';
 import { Section } from './Section';
 import { ConditionBadges } from '../combat/components/ConditionBadges';
+import { MasterConditionsPanel } from '../combat/components/MasterConditionsPanel';
 import type { MechanicalDto, MechanicalEntity } from '../types';
 
 /**
@@ -64,13 +65,17 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     adopt(next);
   }, [entity.kind, entity.id, adopt]);
   useEffect(() => { let live = true; fetchMechanicalState({ kind: entity.kind, id: entity.id }).then(next => { if (live) adopt(next); }).catch(err => { if (live) setError(err.message); }); return () => { live = false; }; }, [entity.kind, entity.id, refreshVersion, adopt]);
+  // Trava SÍNCRONA: dois cliques no mesmo tick não criam duas fontes manuais
+  // (o estado `busy` só chega no próximo render).
+  const busyRef = useRef(false);
   async function execute(input: Parameters<typeof mutateMechanicalState>[1]) {
-    if (!current) return;
+    if (!current || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true); setError('');
     const requestedKey = targetKey;
     try { const next = await mutateMechanicalState(current, input); if (targetRef.current === requestedKey) adopt(next); }
     catch (err) { setError(err instanceof Error ? err.message : 'Falha ao atualizar estado mecânico.'); await refresh().catch(() => {}); }
-    finally { setBusy(false); }
+    finally { busyRef.current = false; setBusy(false); }
   }
   if (!current) return error ? <p className="error">{error}</p> : null;
 
@@ -82,13 +87,36 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
   // No combate as condições vivem no CARD da iniciativa; aqui o bloco é apenas
   // "estado e ajustes" (notas, Levantar, administração do Mestre, histórico).
   const showBadges = variant !== 'combat';
+  // Exaustão tem controles PRÓPRIOS (não entra no seletor de Conditions) e é
+  // compartilhada pelas duas variantes — só quando a mesa usa a regra.
+  const exhaustionControls = exhaustOn ? <div className="hp-controls">
+    <button className="btn btn-small" disabled={busy || current.state.exhaustionLevel === 0} onClick={() => void execute({ action: 'exhaustion', exhaustionDelta: -1 })}>−1 Exaustão</button>
+    <button className="btn btn-small" disabled={busy || current.state.exhaustionLevel === 6} onClick={() => void execute({ action: 'exhaustion', exhaustionDelta: 1 })}>+1 Exaustão</button>
+    <input aria-label="Nível de Exaustão" type="number" min="0" max="6" value={level} onChange={event => setLevel(event.target.value)} />
+    <button className="btn btn-small" disabled={busy || !Number.isInteger(Number(level)) || Number(level) < 0 || Number(level) > 6} onClick={() => void execute({ action: 'exhaustion', exhaustionLevel: Number(level) })}>Definir e registrar</button>
+  </div> : null;
+  const protectedSet = new Set(current.protectedInstanceIds ?? []);
   const body = <>
     {showBadges ? <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} /> : null}
     {showBadges && !hasConditions ? <p className="field-hint">Nenhuma condição ativa.</p> : null}
     {current.effects.exhaustionSummary.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.assistedNotes.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
-    {isMaster ? <details className="conditions-admin">
+    {/* COMBATE: ferramenta compacta de Conditions do Mestre (mesmo domínio). */}
+    {isMaster && variant === 'combat' ? <>
+      <MasterConditionsPanel
+        name={current.name}
+        state={current.state}
+        effects={current.effects}
+        protectedInstanceIds={current.protectedInstanceIds ?? []}
+        sources={choices}
+        busy={busy}
+        onApply={(condition, source) => void execute({ action: 'apply', condition, ...(source ? { sourceEntity: source.entity } : {}) })}
+        onRemove={(instanceId) => void execute({ action: 'remove', instanceId })}
+      />
+      {exhaustionControls}
+    </> : null}
+    {isMaster && variant === 'sheet' ? <details className="conditions-admin">
       <summary>Administrar condições e fontes</summary>
       <div className="hp-controls">
         <select aria-label="Condição" value={condition} onChange={event => setCondition(event.target.value)}>
@@ -102,16 +130,15 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
         <button className="btn btn-small" disabled={busy} onClick={() => void execute({ action: 'apply', condition, ...(source ? { sourceEntity: choices.find(choice => `${choice.entity.kind}:${choice.entity.id}` === source)!.entity } : sourceLabel.trim() ? { sourceLabel } : {}) })}>Aplicar e registrar</button>
       </div>
       {current.state.conditions.map(instance => <div className="hp-controls" key={instance.id}>
-        <span>{current.effects.labels[instance.condition]} — {instance.sourceLabel ?? 'Origem não informada'}</span>
-        <button className="btn btn-small" disabled={busy} onClick={() => void execute({ action: 'remove', instanceId: instance.id })}>Remover esta fonte</button>
+        <span>{current.effects.labels[instance.condition]} — {protectedSet.has(instance.id) ? '0 PV (derivada)' : instance.sourceLabel ?? 'Origem não informada'}</span>
+        <button
+          className="btn btn-small"
+          disabled={busy || protectedSet.has(instance.id)}
+          title={protectedSet.has(instance.id) ? 'Esta condição é mantida por outro estado e não pode ser removida diretamente.' : undefined}
+          onClick={() => void execute({ action: 'remove', instanceId: instance.id })}
+        >Remover esta fonte</button>
       </div>)}
-      {/* Controles de Exaustão só existem quando a mesa usa a regra. */}
-      {exhaustOn ? <div className="hp-controls">
-        <button className="btn btn-small" disabled={busy || current.state.exhaustionLevel === 0} onClick={() => void execute({ action: 'exhaustion', exhaustionDelta: -1 })}>−1 Exaustão</button>
-        <button className="btn btn-small" disabled={busy || current.state.exhaustionLevel === 6} onClick={() => void execute({ action: 'exhaustion', exhaustionDelta: 1 })}>+1 Exaustão</button>
-        <input aria-label="Nível de Exaustão" type="number" min="0" max="6" value={level} onChange={event => setLevel(event.target.value)} />
-        <button className="btn btn-small" disabled={busy || !Number.isInteger(Number(level)) || Number(level) < 0 || Number(level) > 6} onClick={() => void execute({ action: 'exhaustion', exhaustionLevel: Number(level) })}>Definir e registrar</button>
-      </div> : null}
+      {exhaustionControls}
     </details> : null}
     {error ? <p className="error">{error}</p> : null}
     <details className="conditions-history"><summary>Histórico mecânico</summary>

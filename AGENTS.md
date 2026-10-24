@@ -501,6 +501,19 @@ de implementar.
   de visão/audição, sociais, doença, peso e envelhecimento expõem flags futuros.
 - Exhaustion 6 sinaliza fatalidade, sem zerar PV, criar dead ou death saves.
   Death lifecycle, concentração, magias e duração genérica continuam futuros.
+- Ferramenta do MESTRE em "Estado e ajustes" (combate): lista as condições do
+  combatente selecionado com a ORIGEM, adiciona por seletor compacto com busca
+  (as 14 do PHB; Exaustão tem controles próprios) e remove fonte por fonte.
+  Aplicação manual grava `sourceType: 'manual'` — ou a criatura escolhida como
+  fonte (`sourceEntity` + `sourceId`) — e `sourceLabel: 'Mestre'` quando não há
+  fonte. Cada aplicação cria uma INSTÂNCIA nova; nunca sobrescreve as existentes.
+- Condições DERIVADAS de 0 PV (Inconsciente `hp-zero` e a Queda que a acompanha)
+  são protegidas: o DTO expõe `protectedInstanceIds`, a UI trava a remoção e o
+  servidor responde 409 `CONDITION_DERIVED`. O caminho é resolver PV/estado de
+  morte; remover a fonte manual nunca apaga a derivada.
+- Invisible segue tão pública quanto qualquer outra condição: não existe
+  visibility/private por instância, então não há o que vazar — e log privado de
+  condição ainda não é modelado (limitação conhecida, não silenciosa).
 - Realtime reutiliza ficha/criatura/combate e acrescenta `mechanical:updated`
   tipado. Publicação só após commit. `smoke-conditions.ts` integra o smoke; a
   limpeza de combates do teste se limita aos IDs criados pela própria execução.

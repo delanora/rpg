@@ -10,6 +10,7 @@ import { emitCombat, loadCombatById, publishCharacter, type CombatActor } from '
 import { orderCombatants, toCombatDto } from '../combat/combat.dto.js';
 import { economyOf, moveDistance } from '../shared/action-economy.js';
 import { registerFatalExhaustion } from '../death/death.service.js';
+import { HP_ZERO_SOURCE } from '../shared/death.js';
 import { CONDITION_LABELS, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
 import type { MechanicalMutationInput } from './mechanical.schema.js';
 
@@ -39,10 +40,34 @@ async function loadEntity(entity: MechanicalEntity, db: Prisma.TransactionClient
     combat: row.combat.status !== 'ENDED' ? { id: row.combat.id, version: row.combat.version, status: row.combat.status, combatantId: row.id } : null };
 }
 
+/**
+ * Instâncias que NÃO podem ser removidas manualmente porque são DERIVADAS de
+ * outro estado: a Inconsciência e a Queda do ciclo de 0 PV. Removê-las por aqui
+ * deixaria o personagem "acordado" com 0 PV, quebrando a fonte de verdade do
+ * lifecycle. A UI usa esta lista para travar o botão e explicar o motivo.
+ */
+function protectedInstanceIds(state: MechanicalState): string[] {
+  const hpZeroUnconscious = state.conditions.some(
+    (instance) => instance.condition === 'unconscious' && instance.sourceType === HP_ZERO_SOURCE,
+  );
+  return state.conditions
+    .filter(
+      (instance) =>
+        (instance.condition === 'unconscious' && instance.sourceType === HP_ZERO_SOURCE) ||
+        // A Queda derivada acompanha a inconsciência de 0 PV. Sem ela, uma
+        // Queda independente (de um empurrão ou do Mestre) é removível.
+        (hpZeroUnconscious && instance.condition === 'prone'),
+    )
+    .map((instance) => instance.id);
+}
+
 function dto(entity: LoadedEntity) {
-  return { entity: entity.entity, name: entity.name, version: entity.version, state: entity.state,
-    effects: deriveConditionEffects(entity.state), effectiveSpeed: effectiveSpeed(entity.baseSpeed, entity.state),
-    effectiveMaxHp: effectiveMaxHp(entity.baseMaxHp, entity.state), hpCurrent: entity.hpCurrent,
+  const state = entity.state;
+  return { entity: entity.entity, name: entity.name, version: entity.version, state,
+    effects: deriveConditionEffects(state), effectiveSpeed: effectiveSpeed(entity.baseSpeed, state),
+    effectiveMaxHp: effectiveMaxHp(entity.baseMaxHp, state), hpCurrent: entity.hpCurrent,
+    /** Derivadas do lifecycle de 0 PV: sem remoção manual (ver acima). */
+    protectedInstanceIds: protectedInstanceIds(state),
     combat: entity.combat ? { id: entity.combat.id, version: entity.combat.version, status: entity.combat.status } : null };
 }
 export type MechanicalDto = ReturnType<typeof dto>;
@@ -92,9 +117,16 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
         if (input.condition === 'poisoned' && deriveConditionEffects(state).poisonImmune) throw new HttpError('Petrificado: imune a novo envenenamento.', 409, 'CONDITION_IMMUNE');
         let sourceLabel = input.sourceLabel;
         if (input.sourceEntity) sourceLabel = (await loadEntity(input.sourceEntity, db)).name;
+        // Aplicação MANUAL do Mestre sem fonte escolhida: a instância continua
+        // rastreável ("Mestre" + operationId), em vez de ficar órfã. Regras
+        // internas (`authority`) não recebem esse carimbo.
+        const manual = actor.role === 'MASTER' && !authority;
+        if (manual && !sourceLabel) sourceLabel = 'Mestre';
+        const sourceType = input.sourceType ?? (manual ? 'manual' : undefined);
+        const sourceId = input.sourceId ?? (input.sourceEntity ? input.sourceEntity.id : manual ? input.operationId : undefined);
         state.conditions.push({ id: randomUUID(), condition: input.condition!, appliedBy: actor.userId, appliedAt: new Date().toISOString(),
           ...(input.sourceEntity ? { sourceEntity: input.sourceEntity } : {}), ...(sourceLabel ? { sourceLabel } : {}),
-          ...(input.sourceType ? { sourceType: input.sourceType } : {}), ...(input.sourceId ? { sourceId: input.sourceId } : {}) });
+          ...(sourceType ? { sourceType } : {}), ...(sourceId ? { sourceId } : {}) });
         log(state, actor, `${loaded.name} ficou ${CONDITION_LABELS[input.condition!]}${sourceLabel ? ` — ${sourceLabel}` : ''}.`);
         if (input.condition === 'unconscious') {
           // Queda é postura física independente: continua caído depois de acordar.
@@ -104,6 +136,15 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
       } else if (input.action === 'remove') {
         const instance = state.conditions.find(item => item.id === input.instanceId);
         if (!instance) throw new HttpError('Instância de condição não encontrada.', 404);
+        // Condição DERIVADA (0 PV): remover por aqui quebraria o lifecycle — a
+        // saída é resolver PV/estado de morte, que é quem mantém a instância.
+        if (protectedInstanceIds(state).includes(instance.id)) {
+          throw new HttpError(
+            'Esta condição é mantida por outro estado e não pode ser removida diretamente.',
+            409,
+            'CONDITION_DERIVED',
+          );
+        }
         state.conditions = state.conditions.filter(item => item.id !== instance.id);
         log(state, actor, `${CONDITION_LABELS[instance.condition]} removido de ${loaded.name}${instance.sourceLabel ? ` — ${instance.sourceLabel}` : ''}.`);
       } else if (input.action === 'exhaustion') {

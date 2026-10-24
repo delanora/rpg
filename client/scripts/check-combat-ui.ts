@@ -761,6 +761,61 @@ console.log('Check-combat-ui — refino da UI de combate');
       !bagList.includes('useCombatItem(') &&
       sheetPage.includes('useCombatItem(combat, {'),
   );
+
+  // CB18–CB21. CONDIÇÕES do Mestre dentro de "Estado e ajustes".
+  const conditionsPanel = source('src/combat/components/MasterConditionsPanel.tsx');
+  const mechanicalPanel = source('src/components/MechanicalPanel.tsx');
+  const styles = source('src/styles.css');
+  const mechanicalService = source('../src/modules/mechanical/mechanical.service.ts');
+  check(
+    'CB18) a ferramenta de Conditions é do Mestre e vive na variante de combate',
+    mechanicalPanel.includes("isMaster && variant === 'combat'") &&
+      mechanicalPanel.includes('<MasterConditionsPanel') &&
+      mechanicalPanel.includes('onApply={(condition, source) =>') &&
+      mechanicalPanel.includes("onRemove={(instanceId) => void execute({ action: 'remove'") &&
+      !conditionsPanel.includes('fetch('),
+  );
+  check(
+    'CB19) catálogo único (labels do servidor), com busca e fonte opcional',
+    conditionsPanel.includes('Object.entries(effects.labels)') &&
+      conditionsPanel.includes('Buscar condição') &&
+      conditionsPanel.includes('Fonte (opcional)') &&
+      conditionsPanel.includes('Adicionar condição') &&
+      conditionsPanel.includes('Condições — {name}') &&
+      !conditionsPanel.includes("'blinded'") &&
+      !conditionsPanel.includes('exhaustionLevel'),
+  );
+  check(
+    'CB20) derived (0 PV) protegida: cadeado e sem remoção manual',
+    conditionsPanel.includes('protectedInstanceIds') &&
+      conditionsPanel.includes('Esta condição é mantida por outro estado') &&
+      conditionsPanel.includes('master-condition-lock') &&
+      mechanicalPanel.includes('protectedInstanceIds={current.protectedInstanceIds ?? []}') &&
+      mechanicalService.includes('protectedInstanceIds') &&
+      mechanicalService.includes("'CONDITION_DERIVED'"),
+  );
+  check(
+    'CB21) aplicação manual tem fonte rastreável e o log/real-time existentes',
+    mechanicalService.includes("sourceLabel = 'Mestre'") &&
+      mechanicalService.includes("sourceType = input.sourceType ?? (manual ? 'manual' : undefined)") &&
+      mechanicalService.includes('input.operationId') &&
+      mechanicalService.includes('ServerEvents.MECHANICAL_UPDATED') &&
+      mechanicalService.includes('toCombatDto('),
+  );
+  check(
+    'CB22) o seletor de Conditions não inclui Exaustão (controles próprios)',
+    mechanicalPanel.includes('exhaustionControls') &&
+      mechanicalPanel.includes("action: 'exhaustion'") &&
+      conditionsPanel.includes('effects.labels') &&
+      !conditionsPanel.includes('exhaustion'),
+  );
+  check(
+    'CB23) estilos da ferramenta usam os tokens existentes (sem paleta nova)',
+    styles.includes('.master-conditions {') &&
+      styles.includes('.condition-picker-list') &&
+      styles.includes('.master-condition-lock') &&
+      !styles.includes('#ff0000'),
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
