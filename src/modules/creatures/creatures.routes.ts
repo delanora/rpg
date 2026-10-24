@@ -7,6 +7,7 @@ import {
   npcCoinsSchema,
   npcMoveItemSchema,
   npcRemoveItemSchema,
+  npcUseItemSchema,
   updateCreatureSchema,
 } from './creatures.schema.js';
 import {
@@ -20,6 +21,7 @@ import {
   moveNpcItem,
   removeNpcItem,
   updateCreature,
+  useNpcItem,
 } from './creatures.service.js';
 
 export const creaturesRouter = Router();
@@ -117,6 +119,19 @@ creaturesRouter.post('/:id/inventory/attune', async (req, res) => {
     return;
   }
   res.json({ creature: await attuneNpcItem(req.params.id, parsed.data) });
+});
+
+/**
+ * POST /api/creatures/:id/inventory/use — usa 1 unidade de um consumível do NPC
+ * FORA do combate (em combate a rota é recusada: vale o turno/Ação do motor).
+ */
+creaturesRouter.post('/:id/inventory/use', async (req, res) => {
+  const parsed = npcUseItemSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json({ creature: await useNpcItem(req.params.id, parsed.data) });
 });
 
 /** POST /api/creatures/:id/coins — dá/retira moedas do NPC. */

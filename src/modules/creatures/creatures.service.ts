@@ -15,6 +15,7 @@ import type {
   NpcCoinsInput,
   NpcMoveItemInput,
   NpcRemoveItemInput,
+  NpcUseItemInput,
   UpdateCreatureInput,
 } from './creatures.schema.js';
 import { creatureInventory } from './npc-sheet.js';
@@ -22,11 +23,14 @@ import { inventoryListSchema } from '../characters/characters.schema.js';
 import type { InventoryItemDto } from '../characters/characters.dto.js';
 import { parseJson } from '../shared/json.js';
 import {
+  isConsumableItem,
   itemDetailsSchema,
   itemRarityOf,
   sanitizeItemDetails,
   type ItemDetails,
 } from '../shared/item-details.js';
+import { healingSpecOf } from '../shared/item-use.js';
+import { rollHealingDice } from '../shared/dice.js';
 import { attunementError } from '../shared/attunement.js';
 import { COIN_KEYS, COIN_NAMES, normalizeCoins, type CoinPurse } from '../shared/coins.js';
 
@@ -319,6 +323,73 @@ export async function removeNpcItem(id: string, input: NpcRemoveItemInput): Prom
     )
     .filter((entry) => entry.quantity > 0);
   return writeNpcInventory(id, input.expectedVersion, next);
+}
+
+/**
+ * Uso de consumível FORA do combate pelo Mestre.
+ *
+ * Mesma regra da ficha: consome UMA unidade (a entrada some ao zerar) e, se o
+ * consumível tem cura estruturada, aplica no PV do NPC na MESMA escrita. Itens
+ * sem efeito modelado são consumidos sem inventar efeito (resolução do Mestre).
+ *
+ * Em combate a rota é recusada: lá quem manda é o motor de combate (turno +
+ * Ação + ciclo de morte), pelo mesmo endpoint do jogador.
+ */
+export async function useNpcItem(id: string, input: NpcUseItemInput): Promise<CreatureDto> {
+  const creature = await findCreature(id);
+  requireNpc(creature);
+
+  const inCombat = await prisma.combatant.findFirst({
+    where: { creatureId: id, combat: { status: { in: ['PENDING_INITIATIVE', 'ACTIVE'] } } },
+    select: { id: true },
+  });
+  if (inCombat) {
+    throw new HttpError(
+      'Durante o combate, use o consumível pelo inventário de combate no turno do NPC.',
+      409,
+      'COMBAT_ITEM_REQUIRED',
+    );
+  }
+
+  const inventory = creatureInventory(creature.inventory);
+  const item = inventory.find((entry) => entry.id === input.itemInventoryId);
+  if (!item) throw new HttpError('Item não encontrado no inventário do NPC.', 404);
+  if (!isConsumableItem(item.category, item.details)) {
+    throw new HttpError(`${item.name} não é um consumível utilizável.`, 400, 'VALIDATION_ERROR');
+  }
+  if (item.quantity <= 0) {
+    throw new HttpError(`Não há mais unidades de ${item.name}.`, 409, 'CONFLICT');
+  }
+
+  const healingSpec = healingSpecOf(item.details);
+  const healing = healingSpec ? rollHealingDice(healingSpec) : null;
+  const nextInventory = inventory
+    .map((entry) =>
+      entry.id === item.id ? { ...entry, quantity: entry.quantity - 1 } : entry,
+    )
+    .filter((entry) => entry.quantity > 0);
+
+  const written = await prisma.creature.updateMany({
+    where: { id, version: input.expectedVersion, kind: 'NPC' },
+    data: {
+      inventory: nextInventory as unknown as Prisma.InputJsonValue,
+      ...(healing
+        ? { hpCurrent: Math.min(creature.hpMax, creature.hpCurrent + healing.total) }
+        : {}),
+      version: { increment: 1 },
+    },
+  });
+  if (written.count !== 1) {
+    throw new HttpError('NPC mudou. Atualize e tente novamente.', 409, 'CONFLICT');
+  }
+
+  const updated = await findCreature(id);
+  const dto = toCreatureDto(updated);
+  broadcast(ServerEvents.CREATURE_UPDATED, {
+    creature: dto,
+    changes: { inventory: nextInventory },
+  });
+  return dto;
 }
 
 /** Sintonização pelo MESMO limite de 3 (`shared/attunement.ts`). */

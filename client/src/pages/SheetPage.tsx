@@ -16,7 +16,7 @@ import {
   COMBAT_SHORTCUTS,
   type SheetShortcut,
 } from '../combat/CombatTracker';
-import { fetchActiveCombat } from '../combat/combatApi';
+import { fetchActiveCombat, useCombatItem } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
@@ -75,6 +75,18 @@ export function SheetPage({ user }: { user: SessionUser }) {
 
   const combatState = useCombatState(user.id, user.role);
   const { combat, log, turnAlert } = combatState;
+
+  // Alvos de "Usar em..." durante o combate: os OUTROS combatentes (o próprio
+  // personagem é o duplo clique "usar em mim"). Fora do combate não há alvo
+  // remoto: o uso em outro jogador é resolvido pelo Mestre.
+  const ownCombatant =
+    combat?.combatants.find((entry) => entry.ownerUserId === user.id) ?? null;
+  const inventoryTargets =
+    combat && ownCombatant
+      ? combat.combatants
+          .filter((entry) => entry.id !== ownCombatant.id && !entry.missing)
+          .map((entry) => ({ id: entry.id, name: entry.name }))
+      : [];
 
   // Janela de dados (botão flutuante + avisos + rolagens de perícia).
   const dice = useDiceRoller(user);
@@ -244,24 +256,70 @@ export function SheetPage({ user }: { user: SessionUser }) {
   }, []);
 
   /**
-   * Usa (consome) 1 unidade de um item consumível do inventário.
+   * Usa (consome) 1 unidade de um item consumível — duplo clique no inventário
+   * ou "Usar em...".
    *
-   * O servidor desconta a unidade e devolve a ficha nova; se o item tiver
-   * `effectRoll`, a rolagem do efeito volta junto e é mostrada no aviso.
+   * EM COMBATE quem manda é o motor de combate: o servidor valida o turno e a
+   * Ação, consome a unidade, aplica a cura (inclusive no alvo a 0 PV, pelo
+   * ciclo de morte existente) e publica o log. Fora do combate vale o endpoint
+   * da ficha, idempotente por `operationId`. Sem confirmação modal.
    */
-  const useItem = useCallback(async (itemInventoryId: string) => {
-    try {
-      const { character: saved, roll } = await useInventoryItem(itemInventoryId);
-      setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
-      setItemNotice(
-        roll ? `${roll.label}: ${resultBreakdown(roll)} = ${roll.total}` : 'Item consumido.',
-      );
-      setError(null);
-    } catch (err) {
-      setItemNotice(null);
-      setError(err instanceof Error ? err.message : 'Não foi possível usar o item.');
-    }
-  }, []);
+  const useItem = useCallback(
+    async (itemInventoryId: string, targetId?: string): Promise<void> => {
+      const itemName =
+        character?.inventory.find((entry) => entry.id === itemInventoryId)?.name ?? 'Item';
+
+      if (combat) {
+        const combatant =
+          combat.combatants.find((entry) => entry.ownerUserId === user.id) ?? null;
+        if (combatant) {
+          try {
+            const { combat: updated, healing } = await useCombatItem(combat, {
+              combatantId: combatant.id,
+              itemInventoryId,
+              ...(targetId ? { targetCombatantId: targetId } : {}),
+            });
+            combatState.setCombat(updated);
+            const targetName = targetId
+              ? (combat.combatants.find((entry) => entry.id === targetId)?.name ?? null)
+              : null;
+            setItemNotice(
+              `${itemName} usada${targetName ? ` em ${targetName}` : ''}.${
+                healing ? ` +${healing.total} PV` : ''
+              }`,
+            );
+            setError(null);
+          } catch (err) {
+            setItemNotice(null);
+            setError(err instanceof Error ? err.message : 'Não foi possível usar o item.');
+          }
+          return;
+        }
+      }
+
+      try {
+        const { character: saved, roll } = await useInventoryItem(itemInventoryId);
+        setCharacter((prev) => (!prev || saved.version >= prev.version ? saved : prev));
+        setItemNotice(
+          roll
+            ? `${itemName} usada — ${roll.label}: ${resultBreakdown(roll)} = ${roll.total}`
+            : `${itemName} usada.`,
+        );
+        setError(null);
+      } catch (err) {
+        setItemNotice(null);
+        setError(err instanceof Error ? err.message : 'Não foi possível usar o item.');
+      }
+    },
+    // A ficha/combate são o contexto do uso (turno e alvos).
+    [character, combat, combatState],
+  );
+
+  /** "Usar em..." — outro combatente (o servidor valida turno/Ação e alcance). */
+  const useItemOn = useCallback(
+    (itemInventoryId: string, targetId: string) => useItem(itemInventoryId, targetId),
+    [useItem],
+  );
 
   /**
    * Liga/desliga uma característica pelo endpoint AUTHORITATIVE do servidor
@@ -502,6 +560,8 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   update={update}
                   onInventoryMove={moveItem}
                   onInventoryUse={useItem}
+                  inventoryTargets={inventoryTargets}
+                  onInventoryUseOn={useItemOn}
                   onFeatureToggle={toggleFeatureAction}
                   onEldritchMaster={eldritchMasterAction}
                   onRacialUse={racialUseAction}

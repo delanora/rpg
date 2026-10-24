@@ -5,13 +5,13 @@ import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
 import { fetchDeath, rollNpcDeathSave } from '../deathApi';
-import type { Attack, CombatDto, CombatUsableItem, DeathDto, DeathState, InventoryItem, MechanicalEntity, SessionUser } from '../types';
+import type { Attack, CombatDto, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser } from '../types';
+import { InventoryDock } from '../components/InventoryDock';
 import {
   applyManualHp,
   endCombat,
   executeEconomyAction,
   fetchActiveCombat,
-  fetchCombatItems,
   nextTurn,
   resolveAttack,
   rollInitiativeFor,
@@ -83,6 +83,16 @@ interface CombatTrackerProps {
    * (o servidor rola e aplica; a bandeja só anima). Sem isso, o botão não aparece.
    */
   onRollDeathSave?: (entity: MechanicalEntity) => void;
+  /**
+   * MESTRE: inventário persistente do NPC do turno, no MESMO painel flutuante
+   * da ficha. O consumo em combate continua passando pelo motor de combate
+   * (turno + Ação), então "Usar Item" saiu do menu de Ações.
+   */
+  npcInventory?: {
+    creatureFor: (creatureId: string) => Creature | null;
+    items: Item[];
+    onCreatureChange: (creature: Creature) => void;
+  };
 }
 
 /**
@@ -113,6 +123,7 @@ export function CombatTracker({
   onOpenSection,
   openSection = null,
   onRollDeathSave,
+  npcInventory,
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
 
@@ -164,27 +175,12 @@ export function CombatTracker({
   const masterAttackerCombatant = isMaster ? actingCombatant : null;
   const ownTurn = Boolean(actingCombatant && actingCombatant.id === combat.currentCombatantId);
 
-  // USAR ITEM: a lista vem do SERVIDOR (autorização + catálogo) e é recarregada
-  // quando a versão do combate muda (consumo, dano, virada de turno).
-  const [usableItems, setUsableItems] = useState<CombatUsableItem[]>([]);
-  const actingCombatantId = actingCombatant?.id ?? '';
-  useEffect(() => {
-    if (!actingCombatantId || !showOperational || !ownTurn) {
-      setUsableItems([]);
-      return;
-    }
-    let live = true;
-    fetchCombatItems(actingCombatantId)
-      .then((items) => {
-        if (live) setUsableItems(items);
-      })
-      .catch(() => {
-        if (live) setUsableItems([]);
-      });
-    return () => {
-      live = false;
-    };
-  }, [actingCombatantId, combat.version, showOperational, ownTurn]);
+  // Inventário do NPC do turno (Mestre): lido do cadastro já carregado no
+  // painel. O MESMO componente do jogador desenha o painel flutuante.
+  const npcInventoryCreature =
+    isMaster && npcInventory && actingCombatant?.creatureId
+      ? npcInventory.creatureFor(actingCombatant.creatureId)
+      : null;
 
   // Oportunidades de Reação DESTE usuário (hoje sempre vazio: a janela é o
   // ponto de extensão, ver `reactions.ts`). Nunca existe barra permanente.
@@ -393,33 +389,36 @@ export function CombatTracker({
   // Resolve um ataque e deixa o Registro (via socket) exibir o desfecho — o
   // centro não duplica mais o resultado.
   /**
-   * Trava SÍNCRONA contra duplo clique em "Usar Item": o estado `busy` só
-   * desabilita o botão no próximo render, então dois cliques no mesmo tick
-   * gerariam dois operationIds diferentes. O servidor continua sendo a
-   * autoridade (Ação/quantidade), mas o cliente não dispara a segunda intenção.
+   * Trava SÍNCRONA contra duplo clique no consumível: o estado `busy` só
+   * desabilita no próximo render, então dois cliques no mesmo tick gerariam
+   * dois pedidos. O servidor continua sendo a autoridade (turno/Ação/quantidade
+   * e `operationId`), mas o cliente não dispara a segunda intenção.
    */
   const itemBusyRef = useRef(false);
 
-  /** Usar consumível: o servidor valida turno/Ação, consome e aplica. */
-  function useItem(itemInventoryId: string, targetCombatantId?: string): void {
+  /**
+   * Usar consumível (duplo clique ou "Usar em..."): o servidor valida
+   * turno/Ação, consome a unidade e aplica — nunca pelo menu de Ações.
+   */
+  async function useItem(itemInventoryId: string, targetCombatantId?: string): Promise<void> {
     if (!actingCombatant || itemBusyRef.current) return;
     itemBusyRef.current = true;
-    void (async () => {
-      setBusy(true);
-      try {
-        const { combat: updated } = await useCombatItem(combat, {
-          combatantId: actingCombatant.id,
-          itemInventoryId,
-          ...(targetCombatantId ? { targetCombatantId } : {}),
-        });
-        onCombatChange(updated);
-      } catch (error) {
-        onError(error instanceof Error ? error.message : 'Falha ao usar o item.');
-      } finally {
-        itemBusyRef.current = false;
-        setBusy(false);
-      }
-    })();
+    setBusy(true);
+    try {
+      const { combat: updated } = await useCombatItem(combat, {
+        combatantId: actingCombatant.id,
+        itemInventoryId,
+        ...(targetCombatantId ? { targetCombatantId } : {}),
+      });
+      onCombatChange(updated);
+    } catch (error) {
+      // Mensagens do servidor: "Você já usou sua Ação neste turno." /
+      // "Você só pode usar este item no seu turno."
+      onError(error instanceof Error ? error.message : 'Falha ao usar o item.');
+    } finally {
+      itemBusyRef.current = false;
+      setBusy(false);
+    }
   }
 
   function attack(input: Parameters<typeof resolveAttack>[1]): void {
@@ -708,6 +707,33 @@ export function CombatTracker({
               />
             ) : null}
 
+            {/*
+              INVENTÁRIO DO NPC — MESMO painel flutuante da ficha do jogador.
+              O Mestre abre o inventário do NPC do turno e usa por duplo clique
+              ou "Usar em..."; o servidor continua validando turno/Ação.
+            */}
+            {showOperational && npcInventory && npcInventoryCreature?.kind === 'NPC' ? (
+              <InventoryDock
+                npc={{
+                  creature: npcInventoryCreature,
+                  items: npcInventory.items,
+                  onChange: npcInventory.onCreatureChange,
+                  onError,
+                }}
+                onUseItem={(itemInventoryId) => useItem(itemInventoryId)}
+                itemTargets={
+                  actingCombatant
+                    ? combat.combatants
+                        .filter((item) => item.id !== actingCombatant.id && !item.missing)
+                        .map((item) => ({ id: item.id, name: item.name }))
+                    : []
+                }
+                onUseItemOn={(itemInventoryId, targetCombatantId) =>
+                  useItem(itemInventoryId, targetCombatantId)
+                }
+              />
+            ) : null}
+
             {/* Atalhos da ficha: linha compacta, sem competir com o ataque. */}
             {onOpenSection ? (
               <div className="combat-shortcuts combat-shortcuts-inline">
@@ -777,18 +803,6 @@ export function CombatTracker({
               standUp={standUpContext}
               onStandUp={standUp}
               stabilizeTargets={stabilizeTargets}
-              usableItems={usableItems}
-              itemTargets={
-                actingCombatant
-                  ? [
-                      { id: actingCombatant.id, name: actingCombatant.name },
-                      ...combat.combatants
-                        .filter((item) => item.id !== actingCombatant.id && !item.missing)
-                        .map((item) => ({ id: item.id, name: item.name })),
-                    ]
-                  : []
-              }
-              onUseItem={useItem}
               onStabilize={(targetCombatantId) => {
                 void run(() =>
                   executeEconomyAction(combat, {

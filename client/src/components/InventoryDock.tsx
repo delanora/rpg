@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon } from './Icon';
-import { InventorySection, type InventorySectionProps } from './sections/InventorySection';
+import { InventorySection, type InventoryPanelProps } from './sections/InventorySection';
 
 /**
  * Botão flutuante do INVENTÁRIO e o painel com o set de equipamento.
@@ -14,7 +14,7 @@ import { InventorySection, type InventorySectionProps } from './sections/Invento
  * a posição de cima — ver `.inv-fab`/`.dice-fab` em styles.css). Fecha pelo
  * "X", pelo próprio botão e pelo Esc.
  */
-export function InventoryDock(props: InventorySectionProps) {
+export function InventoryDock(props: InventoryPanelProps) {
   const [open, setOpen] = useState(false);
 
   // Esc fecha o painel.
@@ -27,7 +27,10 @@ export function InventoryDock(props: InventorySectionProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  const itemCount = props.character.inventory.length;
+  // O MESMO botão/painel serve para o personagem e para o NPC do Mestre.
+  const itemCount = props.npc
+    ? props.npc.creature.inventory.length
+    : props.character.inventory.length;
 
   return (
     <>

@@ -1,16 +1,24 @@
-import { useMemo, useRef, useState } from 'react';
-import type { DragEvent } from 'react';
-import { isConsumableItem, rarityTint } from '../../dnd';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import { api } from '../../api';
+import {
+  categoryLabel,
+  isConsumableItem,
+  rarityTint,
+} from '../../dnd';
 import { useSheetAccess } from '../../readonly';
 import type {
   Character,
+  Creature,
   InventoryItem,
   InventoryMoveRequest,
   InventorySlot,
+  Item,
   TransferTarget,
 } from '../../types';
 import { newId } from '../../utils';
 import { Icon, type IconName } from '../Icon';
+import { ItemContextMenu, type ItemMenuOption } from '../ItemContextMenu';
 import { ItemDetailModal } from '../ItemDetailModal';
 import { CoinsPanel } from './CoinsPanel';
 import type { SheetSectionProps } from './common';
@@ -47,18 +55,51 @@ const SLOT_ICON: Record<InventorySlot, IconName> = {
   ammo: 'ammo',
 };
 
-export interface InventorySectionProps extends SheetSectionProps {
+/**
+ * AÇÕES DO DONO do inventário — iguais para personagem e NPC.
+ *
+ * O que muda é quem ESCREVE: personagem usa os endpoints da própria ficha; o
+ * NPC (bloco `npc`) usa as rotas master-only do cadastro. A aparência, os
+ * cards, os menus e os gestos são os MESMOS componentes.
+ */
+interface InventoryCommonProps {
   /** Move/equipa um item no servidor (trata a troca no backend). */
   onMoveItem?: (request: InventoryMoveRequest) => void | Promise<void>;
   /** Usa (consome) 1 unidade de um item consumível (Poção ou marcado). */
   onUseItem?: (itemInventoryId: string) => void | Promise<void>;
+  /** Alvos de "Usar em..." (o próprio usuário fica de fora: duplo clique = em si). */
+  itemTargets?: { id: string; name: string }[];
+  /** Usa o consumível em OUTRA criatura (o servidor valida turno/Ação). */
+  onUseItemOn?: (itemInventoryId: string, targetId: string) => void | Promise<void>;
   /** Denominações extras (PL/PE) ligadas pelo mestre na mesa. */
   extraCoins?: boolean;
   /** Destinos possíveis de transferência de moedas (outros jogadores). */
   coinTargets?: TransferTarget[];
   /** Adota a ficha devolvida por uma ação de moedas. */
   onCoinsChange?: (character: Character) => void;
+  /** Painel de moedas próprio do dono (inventário de NPC). */
+  coinsPanel?: ReactNode;
 }
+
+/** Dono PERSONAGEM (jogador ou ficha aberta no painel do mestre). */
+export interface InventorySectionProps extends SheetSectionProps, InventoryCommonProps {
+  npc?: undefined;
+}
+
+/** Dono NPC: as escritas vão para o cadastro do NPC (master-only). */
+export interface NpcInventoryPanelProps extends InventoryCommonProps {
+  npc: {
+    creature: Creature;
+    /** Catálogo do Mestre, para adicionar itens prontos. */
+    items: Item[];
+    onChange: (creature: Creature) => void;
+    onError: (message: string) => void;
+  };
+  character?: undefined;
+  update?: undefined;
+}
+
+export type InventoryPanelProps = InventorySectionProps | NpcInventoryPanelProps;
 
 interface CellPosition {
   x: number;
@@ -145,26 +186,30 @@ function BodyDoll() {
   );
 }
 
-export function InventorySection({
-  character,
-  update,
-  onMoveItem,
-  onUseItem,
-  extraCoins = false,
-  coinTargets = [],
-  onCoinsChange,
-}: InventorySectionProps) {
+export function InventorySection(props: InventoryPanelProps) {
+  const {
+    onMoveItem,
+    onUseItem,
+    itemTargets = [],
+    onUseItemOn,
+    extraCoins = false,
+    coinTargets = [],
+    onCoinsChange,
+    coinsPanel,
+  } = props;
   // Movimentar/equipar e USAR item são estado de jogo (valem sempre para o
   // jogador); criar, remover e mudar a QUANTIDADE são do mestre — o jogador
   // nunca altera a quantidade (regra do servidor).
   const { readOnly, masterView } = useSheetAccess();
-  const inventory = character.inventory;
-  // Sem o callback do endpoint (ex.: visão do mestre) não há arrastar/soltar.
-  const canMove = !readOnly && onMoveItem !== undefined;
+  const inventory = props.npc ? props.npc.creature.inventory : props.character.inventory;
+  // No NPC quem escreve é o Mestre (rotas master-only), então a movimentação
+  // segue liberada mesmo sem estar "em edição" na ficha.
+  const canMove = props.npc ? true : !readOnly && onMoveItem !== undefined;
   // Controles de CONSTRUÇÃO do inventário: só o mestre, e só em modo de edição.
-  const canEditItems = masterView && !readOnly;
-  // O jogador pode usar consumíveis (nunca o mestre, que só administra).
-  const canUseItems = !masterView && !readOnly;
+  const canEditItems = props.npc ? true : masterView && !readOnly;
+  // O jogador pode usar consumíveis (nunca o mestre, que só administra). No
+  // inventário do NPC o Mestre usa pelo mesmo gesto.
+  const canUseItems = props.npc ? true : !masterView && !readOnly;
 
   const draggingRef = useRef<string | null>(null);
 
@@ -175,6 +220,33 @@ export function InventorySection({
   const [modalItemId, setModalItemId] = useState<string | null>(null);
   // A mochila NÃO abre junto com o inventário: só ao clicar no ícone dela.
   const [backpackOpen, setBackpackOpen] = useState(false);
+  // MENU CONTEXTUAL do item (clique direito) e o seletor compacto dele
+  // ("Usar em..." / "Equipar..."). Vive no portal do menu, sem modal.
+  const [menu, setMenu] = useState<{ item: InventoryItem; x: number; y: number } | null>(null);
+  const [picker, setPicker] = useState<{
+    item: InventoryItem;
+    x: number;
+    y: number;
+    mode: 'target' | 'slot';
+  } | null>(null);
+  // Trava SÍNCRONA do duplo clique: o estado do React só atualiza no próximo
+  // render, então dois cliques no mesmo tick disparariam duas intenções.
+  const usingRef = useRef(false);
+  // Clique simples abre a ficha detalhada; em consumível ele espera o segundo
+  // clique (senão o modal abriria e engoliria o duplo clique).
+  const clickTimer = useRef<number | null>(null);
+  const [npcBusy, setNpcBusy] = useState(false);
+  const [catalogItemId, setCatalogItemId] = useState('');
+  const [catalogQuantity, setCatalogQuantity] = useState(1);
+  const [manualName, setManualName] = useState('');
+
+  // Um timer pendente não pode abrir o modal depois que a seção sair da tela.
+  useEffect(
+    () => () => {
+      if (clickTimer.current !== null) window.clearTimeout(clickTimer.current);
+    },
+    [],
+  );
 
   const { cells, rows, firstFree } = useMemo(() => layoutBackpack(inventory), [inventory]);
   const equipped = useMemo(() => {
@@ -187,12 +259,60 @@ export function InventorySection({
 
   const backpackCount = inventory.filter((item) => item.slot === null).length;
   const modalItem = inventory.find((item) => item.id === modalItemId) ?? null;
+  // O NPC não tem "capacidade de carga" derivada: mostra só o peso carregado.
+  const npcWeight = props.npc
+    ? Number(
+        props.npc.creature.inventory
+          .reduce((sum, item) => sum + item.weight * item.quantity, 0)
+          .toFixed(2),
+      )
+    : 0;
+
+  /** Item que pode ser consumido (Poção ou marcado como consumível). */
+  function isUsable(item: InventoryItem): boolean {
+    return isConsumableItem(item.category, item.details);
+  }
+
+  /**
+   * Efeito AUTOMATIZADO pelo servidor. Fora da cura estruturada, o uso é
+   * registrado e o Mestre resolve — a UI diz isso, não inventa efeito.
+   */
+  function isAutomated(item: InventoryItem): boolean {
+    return item.details.potionCategory === 'healing' && Boolean(item.details.healingDice);
+  }
+
+  /**
+   * Escrita no cadastro do NPC (rotas master-only, com `expectedVersion`).
+   * Devolve quando a resposta chega, para o gesto poder segurar o "usando...".
+   */
+  async function npcWrite(path: string, body: Record<string, unknown>): Promise<void> {
+    if (!props.npc) return;
+    const { npc: owner } = props;
+    setNpcBusy(true);
+    try {
+      const { creature } = await api<{ creature: Creature }>(
+        `/api/creatures/${owner.creature.id}${path}`,
+        { method: 'POST', body: { expectedVersion: owner.creature.version, ...body } },
+      );
+      owner.onChange(creature);
+    } catch (error) {
+      owner.onError(
+        error instanceof Error ? error.message : 'Falha ao alterar o inventário do NPC.',
+      );
+    } finally {
+      setNpcBusy(false);
+    }
+  }
 
   function patchItem(id: string, patch: Partial<InventoryItem>): void {
+    const { update } = props;
+    if (!update) return;
     update({ inventory: inventory.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
   }
 
   function addItem(): void {
+    const { update } = props;
+    if (!update) return;
     update({
       inventory: [
         ...inventory,
@@ -217,26 +337,166 @@ export function InventorySection({
   }
 
   function removeItem(id: string): void {
+    if (props.npc) {
+      void npcWrite('/inventory/remove', { itemInventoryId: id, quantity: 1 });
+      return;
+    }
+    const { update } = props;
+    if (!update) return;
     update({ inventory: inventory.filter((item) => item.id !== id) });
     setModalItemId((current) => (current === id ? null : current));
   }
 
   /**
-   * Consome 1 unidade do item (o servidor é quem desconta). Devolve a promessa
-   * para o modal do item poder segurar o botão "usando..." até a resposta.
+   * Usa 1 unidade EM SI MESMO — o gesto do duplo clique.
+   *
+   * Fora do combate o servidor desconta a unidade (com `operationId`); durante
+   * o combate quem manda é o motor de combate (turno + Ação), que chega aqui
+   * pelos callbacks do contexto de combate. A trava síncrona impede dois
+   * requests do MESMO gesto.
    */
-  function useItem(id: string): Promise<void> {
-    if (!onUseItem) return Promise.resolve();
-    return Promise.resolve(onUseItem(id));
+  function useOnSelf(item: InventoryItem): Promise<void> {
+    if (usingRef.current) return Promise.resolve();
+    usingRef.current = true;
+    const run = async (): Promise<void> => {
+      try {
+        if (onUseItem) await onUseItem(item.id);
+        else if (props.npc) await npcWrite('/inventory/use', { itemInventoryId: item.id });
+      } finally {
+        usingRef.current = false;
+      }
+    };
+    return run();
+  }
+
+  /** "Usar em..." — outro alvo; o servidor valida o alcance/turno. */
+  function useOnTarget(item: InventoryItem, targetId: string): Promise<void> {
+    if (usingRef.current) return Promise.resolve();
+    if (!onUseItemOn) return Promise.resolve();
+    usingRef.current = true;
+    return Promise.resolve(onUseItemOn(item.id, targetId)).finally(() => {
+      usingRef.current = false;
+    });
   }
 
   /**
-   * Clique: abre a FICHA DETALHADA (modal centralizado). Para o jogador, o modal
-   * ganha o botão "Usar" quando o item é consumível; para o mestre, os controles
-   * de quantidade e remoção.
+   * Clique: abre a FICHA DETALHADA (modal centralizado). Em consumível espera
+   * ~230 ms para o duplo clique (usar em si) não ser engolido pelo modal.
    */
   function openDetail(item: InventoryItem): void {
     setModalItemId(item.id);
+  }
+
+  function handleItemClick(item: InventoryItem): void {
+    if (!canUseItems || !isUsable(item)) {
+      openDetail(item);
+      return;
+    }
+    if (clickTimer.current !== null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      return;
+    }
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      openDetail(item);
+    }, 230);
+  }
+
+  /** Duplo clique no consumível = USAR EM MIM (sem seletor, sem confirmação). */
+  function handleItemDoubleClick(item: InventoryItem): void {
+    if (!canUseItems || !isUsable(item)) return;
+    if (clickTimer.current !== null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
+    void useOnSelf(item);
+  }
+
+  function openItemMenu(item: InventoryItem, event: ReactMouseEvent<HTMLElement>): void {
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu({ item, x: event.clientX, y: event.clientY });
+  }
+
+  /** Move/equipa pelo mesmo motor: coordenadas só existem na ficha do jogador. */
+  function moveItemTo(id: string, slot: InventorySlot | null): void {
+    if (props.npc) {
+      void npcWrite('/inventory/move', { itemInventoryId: id, targetSlot: slot });
+      return;
+    }
+    if (!onMoveItem) return;
+    void onMoveItem({ itemInventoryId: id, targetSlot: slot });
+  }
+
+  /** Opções do menu contextual: aparecem só as que fazem sentido no contexto. */
+  function itemMenuOptions(item: InventoryItem, x: number, y: number): ItemMenuOption[] {
+    const options: ItemMenuOption[] = [];
+    if (canUseItems && isUsable(item)) {
+      options.push({
+        id: 'use',
+        label: 'Usar',
+        icon: 'flask',
+        hint: 'Usar em mim mesmo (duplo clique)',
+        onSelect: () => void useOnSelf(item),
+      });
+      if (onUseItemOn && itemTargets.length > 0) {
+        options.push({
+          id: 'use-on',
+          label: 'Usar em...',
+          icon: 'users',
+          hint: 'O alvo precisa estar ao alcance físico.',
+          onSelect: () => setPicker({ item, x, y, mode: 'target' }),
+        });
+      }
+    }
+
+    options.push({ id: 'inspect', label: 'Inspecionar', icon: 'search', onSelect: () => openDetail(item) });
+
+    if (canMove) {
+      if (item.slot) {
+        options.push({
+          id: 'unequip',
+          label: 'Desequipar',
+          icon: 'bag',
+          onSelect: () => moveItemTo(item.id, null),
+        });
+      } else {
+        options.push({
+          id: 'equip',
+          label: 'Equipar...',
+          icon: 'shield',
+          onSelect: () => setPicker({ item, x, y, mode: 'slot' }),
+        });
+      }
+    }
+
+    if (props.npc && item.requiresAttunement) {
+      options.push({
+        id: 'attune',
+        label: item.attuned ? 'Dessintonizar' : 'Sintonizar',
+        icon: 'sparkle',
+        disabled: npcBusy,
+        onSelect: () =>
+          void npcWrite('/inventory/attune', {
+            itemInventoryId: item.id,
+            attuned: !item.attuned,
+          }),
+      });
+    }
+
+    if (canEditItems) {
+      options.push({
+        id: 'remove',
+        label: props.npc ? 'Remover 1' : 'Remover',
+        icon: 'trash',
+        danger: true,
+        disabled: npcBusy,
+        onSelect: () => removeItem(item.id),
+      });
+    }
+
+    return options;
   }
 
   function beginDrag(event: DragEvent, id: string): void {
@@ -266,7 +526,16 @@ export function InventorySection({
   function moveDraggedTo(request: (id: string) => InventoryMoveRequest): void {
     const id = draggingRef.current;
     endDrag();
-    if (!id || !canMove || !onMoveItem) return;
+    if (!id || !canMove) return;
+    if (props.npc) {
+      // O NPC não guarda posição na grade: soltar na mochila = slot nulo.
+      void npcWrite('/inventory/move', {
+        itemInventoryId: id,
+        targetSlot: request(id).targetSlot ?? null,
+      });
+      return;
+    }
+    if (!onMoveItem) return;
     void onMoveItem(request(id));
   }
 
@@ -300,7 +569,10 @@ export function InventorySection({
         draggable={canMove}
         onDragStart={(event) => beginDrag(event, item.id)}
         onDragEnd={endDrag}
-        onClick={() => openDetail(item)}
+        onClick={() => handleItemClick(item)}
+        // Duplo clique: usar em si. Menu contextual: opções do item.
+        onDoubleClick={() => handleItemDoubleClick(item)}
+        onContextMenu={(event) => openItemMenu(item, event)}
         aria-label={`${item.name}${item.quantity > 1 ? ` (${item.quantity})` : ''}`}
       >
         <ItemSprite item={item} />
@@ -383,10 +655,77 @@ export function InventorySection({
     <>
       <div className="inventory-board">
         {canEditItems ? (
-          <div className="inventory-toolbar">
-            <button type="button" className="btn btn-small" onClick={addItem}>
-              + item avulso
-            </button>
+          <div className={props.npc ? 'inventory-toolbar is-npc' : 'inventory-toolbar'}>
+            {props.npc ? (
+              <>
+                <select
+                  className="inv-toolbar-select"
+                  value={catalogItemId}
+                  disabled={npcBusy}
+                  aria-label="Item do catálogo"
+                  onChange={(event) => setCatalogItemId(event.target.value)}
+                >
+                  <option value="">— item do catálogo —</option>
+                  {props.npc.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({categoryLabel(item.category)})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  className="inv-toolbar-qty"
+                  min={1}
+                  value={catalogQuantity}
+                  disabled={npcBusy}
+                  aria-label="Quantidade"
+                  onChange={(event) =>
+                    setCatalogQuantity(Math.max(1, Number(event.target.value) || 1))
+                  }
+                />
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  disabled={npcBusy || !catalogItemId}
+                  onClick={() => {
+                    void npcWrite('/inventory', {
+                      itemId: catalogItemId,
+                      quantity: catalogQuantity,
+                    }).then(() => {
+                      setCatalogItemId('');
+                      setCatalogQuantity(1);
+                    });
+                  }}
+                >
+                  + adicionar
+                </button>
+                <input
+                  className="inv-toolbar-name"
+                  value={manualName}
+                  maxLength={120}
+                  placeholder="Item avulso"
+                  disabled={npcBusy}
+                  aria-label="Nome do item avulso"
+                  onChange={(event) => setManualName(event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  disabled={npcBusy || !manualName.trim()}
+                  onClick={() => {
+                    void npcWrite('/inventory', { name: manualName.trim(), quantity: 1 }).then(
+                      () => setManualName(''),
+                    );
+                  }}
+                >
+                  + avulso
+                </button>
+              </>
+            ) : (
+              <button type="button" className="btn btn-small" onClick={addItem}>
+                + item avulso
+              </button>
+            )}
           </div>
         ) : null}
 
@@ -469,20 +808,30 @@ export function InventorySection({
 
             {/* Moedas: campo aparte do grid, abaixo dele (só quando alguém pode
                 movimentá-las ou o mestre está vendo a ficha). */}
-            {onCoinsChange ? (
-              <CoinsPanel
-                character={character}
-                extraCoins={extraCoins}
-                targets={coinTargets}
-                onCharacter={onCoinsChange}
-              />
-            ) : null}
+            {props.npc
+              ? coinsPanel ?? null
+              : props.character && onCoinsChange
+                ? (
+                    <CoinsPanel
+                      character={props.character}
+                      extraCoins={extraCoins}
+                      targets={coinTargets}
+                      onCharacter={onCoinsChange}
+                    />
+                  )
+                : null}
           </div>
         ) : null}
 
         <p className="inventory-weight">
-          Peso total: {character.derived.totalWeight} kg · capacidade{' '}
-          {character.derived.carryingCapacity} kg
+          {props.npc ? (
+            <>Peso total: {npcWeight} kg</>
+          ) : (
+            <>
+              Peso total: {props.character.derived.totalWeight} kg · capacidade{' '}
+              {props.character.derived.carryingCapacity} kg
+            </>
+          )}
         </p>
 
       </div>
@@ -492,18 +841,67 @@ export function InventorySection({
           item={modalItem}
           onClose={() => setModalItemId(null)}
           onUse={
-            canUseItems && isConsumableItem(modalItem.category, modalItem.details)
-              ? () => useItem(modalItem.id)
-              : undefined
+            canUseItems && isUsable(modalItem) ? () => useOnSelf(modalItem) : undefined
           }
           onQuantityChange={
-            canEditItems
+            canEditItems && !props.npc
               ? (quantity) => patchItem(modalItem.id, { quantity })
               : undefined
           }
           onRemove={canEditItems ? () => removeItem(modalItem.id) : undefined}
         />
       ) : null}
+
+      {/* MENU CONTEXTUAL do item (clique direito). */}
+      {menu ? (
+        <ItemContextMenu
+          x={menu.x}
+          y={menu.y}
+          title={menu.item.name}
+          note={
+            canUseItems && isUsable(menu.item) && !isAutomated(menu.item)
+              ? 'Resolução pelo Mestre — nenhum efeito é inventado.'
+              : undefined
+          }
+          options={itemMenuOptions(menu.item, menu.x, menu.y)}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
+
+      {/* SELETOR COMPACTO do próprio menu: alvos de "Usar em..." ou slot. */}
+      {picker ? (
+        <ItemContextMenu
+          x={picker.x}
+          y={picker.y}
+          title={
+            picker.mode === 'target'
+              ? `Usar ${picker.item.name} em...`
+              : `Equipar ${picker.item.name}`
+          }
+          note={
+            picker.mode === 'target'
+              ? 'O alvo precisa estar ao alcance físico. O Mestre resolve o posicionamento quando necessário.'
+              : undefined
+          }
+          options={
+            picker.mode === 'target'
+              ? itemTargets.map((target) => ({
+                  id: target.id,
+                  label: target.name,
+                  icon: 'users' as const,
+                  onSelect: () => void useOnTarget(picker.item, target.id),
+                }))
+              : (Object.keys(SLOT_LABELS) as InventorySlot[]).map((slot) => ({
+                  id: slot,
+                  label: SLOT_LABELS[slot],
+                  icon: SLOT_ICON[slot],
+                  onSelect: () => moveItemTo(picker.item.id, slot),
+                }))
+          }
+          onClose={() => setPicker(null)}
+        />
+      ) : null}
+
     </>
   );
 }

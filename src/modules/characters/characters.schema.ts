@@ -529,18 +529,6 @@ export const moveInventoryItemSchema = z.object({
 export type MoveInventoryItemInput = z.infer<typeof moveInventoryItemSchema>;
 
 /**
- * Usa (consome) UMA unidade de um item do inventário.
- *
- * Só vale para Poção ou para item marcado como consumível pelo mestre; se o
- * item tiver `effectRoll`, o servidor rola a expressão e devolve o resultado.
- */
-export const useInventoryItemSchema = z.object({
-  itemInventoryId: z.string().min(1, 'Informe o item.'),
-});
-
-export type UseInventoryItemInput = z.infer<typeof useInventoryItemSchema>;
-
-/**
  * Gasta UM Dado de Vida no descanso curto (PHB 2014).
  *
  * O cliente NUNCA diz quantos gastar: o endpoint gasta exatamente um dado do
@@ -559,6 +547,23 @@ export const operationIdSchema = z
   .min(8, 'Identificador de operação muito curto.')
   .max(100, 'Identificador de operação muito longo.')
   .regex(/^[A-Za-z0-9_-]+$/, 'Identificador de operação inválido.');
+
+/**
+ * Usa (consome) UMA unidade de um item do inventário.
+ *
+ * Só vale para Poção ou para item marcado como consumível pelo mestre; se o
+ * item tiver `effectRoll`, o servidor rola a expressão e devolve o resultado.
+ *
+ * `operationId` é a chave de idempotência (`CharacterOperation`): um duplo
+ * clique/reenvio devolve o MESMO resultado, sem consumir outra unidade. É
+ * opcional para não quebrar chamadas antigas, mas o cliente novo sempre manda.
+ */
+export const useInventoryItemSchema = z.object({
+  itemInventoryId: z.string().min(1, 'Informe o item.'),
+  operationId: operationIdSchema.optional(),
+});
+
+export type UseInventoryItemInput = z.infer<typeof useInventoryItemSchema>;
 
 /** Id de uma sessão de Descanso Curto (cuid do banco). */
 const shortRestSessionIdSchema = z

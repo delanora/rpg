@@ -930,6 +930,17 @@ export function MasterPanel({ user }: { user: SessionUser }) {
             onCombatChange={combatState.setCombat}
             onCombatEnd={() => combatState.setCombat(null)}
             onError={setError}
+            npcInventory={{
+              creatureFor: (creatureId) =>
+                creatures.find((creature) => creature.id === creatureId) ?? null,
+              items,
+              onCreatureChange: (updated) =>
+                setCreatures((prev) =>
+                  prev.map((creature) =>
+                    creature.id === updated.id ? updated : creature,
+                  ),
+                ),
+            }}
           />
         ) : tab === 'home' ? (
           <MasterHome

@@ -57,6 +57,8 @@ export async function smokeCombatItems(baseUrl: string, check: Check): Promise<v
         inventory: [
           { ...potion, id: 'potion-self', quantity: 2 },
           { ...potion, id: 'potion-ally', quantity: 1 },
+          // Reserva para os testes FORA do combate (o endpoint da ficha).
+          { ...potion, id: 'potion-out', quantity: 2 },
         ],
       },
     });
@@ -454,6 +456,17 @@ export async function smokeCombatItems(baseUrl: string, check: Check): Promise<v
         heroAfter.hpCurrent > heroBefore.hpCurrent,
     );
 
+    // --- 40.C: Ação já gasta bloqueia ANTES de consumir a unidade ----------
+    const outReserveBefore = (await heroInventory()).find((item) => item.id === 'potion-out')!;
+    const noAction = await useItem(heroCombatant.id, 'potion-out');
+    const outReserveAfter = (await heroInventory()).find((item) => item.id === 'potion-out');
+    check(
+      '67.AX) Ação já gasta: bloqueia com a mensagem curta e NÃO consome a unidade',
+      noAction.status === 409 &&
+        noAction.data.message === 'Você já usou sua Ação neste turno.' &&
+        outReserveAfter?.quantity === outReserveBefore.quantity,
+    );
+
     // --- AA: mesmo operationId não consome duas vezes ---------------------
     // Restaura a Ação para que o PRIMEIRO pedido seja realmente aceito; o
     // retry reenvia o MESMO payload (inclusive expectedVersion), como um retry
@@ -501,6 +514,15 @@ export async function smokeCombatItems(baseUrl: string, check: Check): Promise<v
       combat.combatants.find((item) => item.id === heroCombatant.id)?.turnEconomy.dodging === true,
     );
     await advanceTo(npcCombatant.id);
+    // --- 40.D: fora do PRÓPRIO turno o consumível é bloqueado -------------
+    const outOfTurnUse = await useItem(heroCombatant.id, 'potion-out');
+    const outOfTurnQty = (await heroInventory()).find((item) => item.id === 'potion-out')?.quantity;
+    check(
+      '67.AW) fora do próprio turno: bloqueado, mensagem própria e NENHUM recurso gasto',
+      outOfTurnUse.status === 403 &&
+        outOfTurnUse.data.message === 'Você só pode usar este item no seu turno.' &&
+        outOfTurnQty === 2,
+    );
     await advanceTo(heroCombatant.id);
     check(
       '58.B) ao começar o próximo turno a Esquiva termina (badge some)',
@@ -608,6 +630,17 @@ export async function smokeCombatItems(baseUrl: string, check: Check): Promise<v
           npcHpBefore,
     );
 
+    // --- 20/40.B: durante o combate a ficha NÃO burla turno/Ação ----------
+    const guardedSheetUse = await request(
+      '/characters/me/inventory/use',
+      { itemInventoryId: 'potion-out', operationId: randomUUID() },
+      playerToken,
+    );
+    check(
+      '67.AY) durante o combate o uso pela ficha é recusado (o turno/Ação mandam)',
+      guardedSheetUse.status === 409 && guardedSheetUse.data.error === 'COMBAT_ITEM_REQUIRED',
+    );
+
     // --- AV: consumível persistente após o combate -----------------------
     const potionAfterCombat = npcAfter.inventory.find((item) => item.itemId === npcPotion.id)?.quantity ?? 0;
     await request('/combat/end', {});
@@ -615,6 +648,59 @@ export async function smokeCombatItems(baseUrl: string, check: Check): Promise<v
     check(
       '67.AV) consumível usado no combate continua decrementado depois do combate',
       npcFinal.inventory.find((item) => item.itemId === npcPotion.id)?.quantity === potionAfterCombat,
+    );
+
+    // --- 40.A/E/F: uso FORA do combate com operationId --------------------
+    const outBefore = (await heroInventory()).find((item) => item.id === 'potion-out')!;
+    const outOperation = randomUUID();
+    const outFirst = await request(
+      '/characters/me/inventory/use',
+      { itemInventoryId: 'potion-out', operationId: outOperation },
+      playerToken,
+    );
+    const outReplay = await request(
+      '/characters/me/inventory/use',
+      { itemInventoryId: 'potion-out', operationId: outOperation },
+      playerToken,
+    );
+    const outAfter = (await heroInventory()).find((item) => item.id === 'potion-out');
+    check(
+      '67.BA) fora do combate: consome exatamente 1 e o MESMO operationId não consome de novo',
+      outFirst.status === 200 &&
+        outReplay.status === 200 &&
+        // O JSONB reordena chaves: compara a VERSÃO devolvida, não o texto.
+        outReplay.data.character.version === outFirst.data.character.version &&
+        outAfter?.quantity === outBefore.quantity - 1,
+    );
+
+    // --- 44/45 (backend): NPC fora do combate e privacidade ---------------
+    const npcOutBefore = await readNpc();
+    const npcOutPotion = npcOutBefore.inventory.find((item) => item.itemId === npcPotion.id);
+    const npcOut = npcOutPotion
+      ? await request(`/creatures/${npcId}/inventory/use`, {
+          expectedVersion: npcOutBefore.version,
+          itemInventoryId: npcOutPotion.id,
+        })
+      : null;
+    const npcOutAfter = await readNpc();
+    check(
+      '67.BB) NPC usa consumível FORA do combate pela rota master-only (unidade persiste)',
+      npcOut !== null &&
+        npcOut.status === 200 &&
+        npcOutPotion !== undefined &&
+        (npcOutAfter.inventory.find((item) => item.id === npcOutPotion.id)?.quantity ?? 0) ===
+          npcOutPotion.quantity - 1,
+    );
+    const playerNpcUse = npcOutPotion
+      ? await request(
+          `/creatures/${npcId}/inventory/use`,
+          { expectedVersion: npcOutAfter.version, itemInventoryId: npcOutPotion.id },
+          playerToken,
+        )
+      : null;
+    check(
+      '67.BC) PLAYER não usa o inventário do NPC (rota master-only responde 403)',
+      playerNpcUse?.status === 403,
     );
   } finally {
     if (combatId) await prisma.combat.deleteMany({ where: { id: combatId } });

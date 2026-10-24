@@ -17125,3 +17125,123 @@ input[type='checkbox']:focus-visible,
   line-height: 1.35;
   color: var(--ink-faint);
 }
+
+/* ==========================================================================
+   MENU CONTEXTUAL DO ITEM (inventário do jogador e do NPC).
+
+   Vive num portal com `position: fixed`: abre acima do painel do inventário,
+   não é recortado pelo `overflow` e não empurra o layout. O MESMO menu serve
+   de seletor compacto para "Usar em..." e "Equipar...".
+   ========================================================================== */
+.item-menu {
+  position: fixed;
+  z-index: 72;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  background-image: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow-deep), inset 0 0 0 1px var(--gold-hair);
+  font-family: var(--font-body);
+  max-height: min(70vh, 30rem);
+  overflow-y: auto;
+}
+
+.item-menu-head {
+  margin: 0 0 0.15rem;
+  padding: 0.2rem 0.45rem;
+  border-bottom: 1px solid var(--gold-hair);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  color: var(--gold-deep);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-menu-option {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item-menu-option:hover:not(:disabled),
+.item-menu-option:focus-visible:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--gold-deep);
+  outline: none;
+}
+
+.item-menu-option:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.item-menu-option.is-danger {
+  color: var(--danger);
+}
+
+.item-menu-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.item-menu-option-hint {
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: var(--ink-faint);
+}
+
+.item-menu-note {
+  margin: 0.2rem 0.45rem 0;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: var(--ink-faint);
+}
+
+/* Barra de ferramentas do inventário do NPC: mesmos controles, no painel. */
+.inventory-toolbar.is-npc {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 0.35rem;
+}
+
+.inv-toolbar-select,
+.inv-toolbar-name,
+.inv-toolbar-qty {
+  min-width: 0;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.74rem;
+}
+
+.inv-toolbar-select {
+  max-width: 11rem;
+}
+
+.inv-toolbar-name {
+  width: 8rem;
+}
+
+.inv-toolbar-qty {
+  width: 3.4rem;
+}

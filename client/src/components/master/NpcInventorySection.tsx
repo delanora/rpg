@@ -1,26 +1,10 @@
 import { useState } from 'react';
 import { api } from '../../api';
-import { COIN_KEYS, COIN_LABELS } from '../../coins';
-import type { CoinKey } from '../../types';
-import { categoryLabel } from '../../dnd';
-import type { Creature, InventorySlot, Item } from '../../types';
+import { COIN_KEYS, COIN_LABELS, COIN_METAL, COIN_NAMES, coinsWeight } from '../../coins';
+import type { CoinKey, Creature, Item } from '../../types';
+import { InventoryDock } from '../InventoryDock';
 import { Icon } from '../Icon';
 import { Section } from '../Section';
-
-/** Slots oferecidos ao NPC (mesma nomenclatura da ficha do jogador). */
-const NPC_SLOTS: { key: InventorySlot | ''; label: string }[] = [
-  { key: '', label: 'Mochila' },
-  { key: 'hand1', label: 'Mão principal' },
-  { key: 'hand2', label: 'Mão secundária' },
-  { key: 'chest', label: 'Peitoral' },
-  { key: 'helmet', label: 'Elmo' },
-  { key: 'necklace', label: 'Colar' },
-  { key: 'ring1', label: 'Anel 1' },
-  { key: 'ring2', label: 'Anel 2' },
-  { key: 'legs', label: 'Pernas' },
-  { key: 'boots', label: 'Botas' },
-  { key: 'ammo', label: 'Munição' },
-];
 
 interface NpcInventorySectionProps {
   creature: Creature;
@@ -31,16 +15,13 @@ interface NpcInventorySectionProps {
 }
 
 /**
- * INVENTÁRIO PERSISTENTE DO NPC — contexto do Mestre.
+ * INVENTÁRIO DO NPC — a MESMA experiência visual do inventário do jogador.
  *
- * Mesmo domínio da ficha: itens/quantidade/equipamento/sintonização/moedas
- * vivem no NPC (não no combatente) e sobrevivem ao combate. Não é um segundo
- * inventário: as rotas escrevem `Creature.inventory`/`Creature.coins` e usam o
- * MESMO motor de CA, armas e moedas. A seção só aparece para NPC — criatura
- * template continua no statblock.
- *
- * Toda escrita manda `expectedVersion`; um 409 pede para atualizar (o evento
- * `creature:updated` também mantém a tela em sincronia).
+ * Não existe um segundo inventário nem um dropdown simplificado: o painel
+ * flutuante (`InventoryDock` → `InventorySection`) é literalmente o mesmo
+ * componente, com o dono trocado (`npc`) e as escritas indo para o cadastro do
+ * NPC (rotas master-only, versionadas). Equipar, sintonizar, moedas, usar e
+ * "Usar em..." seguem o mesmo motor de CA, armas e consumíveis.
  */
 export function NpcInventorySection({
   creature,
@@ -48,12 +29,63 @@ export function NpcInventorySection({
   onCreatureChange,
   onError,
 }: NpcInventorySectionProps) {
-  const [catalogItemId, setCatalogItemId] = useState('');
-  const [catalogQuantity, setCatalogQuantity] = useState(1);
-  const [manualName, setManualName] = useState('');
-  const [manualCategory, setManualCategory] = useState('Item Geral');
-  const [manualQuantity, setManualQuantity] = useState(1);
-  const [coinDelta, setCoinDelta] = useState<Record<CoinKey, number>>({
+  const attunedCount = creature.inventory.filter((item) => item.attuned).length;
+  const derivedAttacks = creature.derivedAttacks ?? [];
+
+  return (
+    <>
+      <Section
+        title="Equipamento do NPC"
+        icon="shield"
+        subtitle="O inventário e as moedas abrem no painel flutuante — o MESMO da ficha do jogador"
+      >
+        <p className="section-note">
+          CA efetiva: <strong>{creature.effectiveArmorClass}</strong> (base{' '}
+          {creature.armorClass}) · Sintonizados: <strong>{attunedCount}/3</strong>
+        </p>
+
+        {derivedAttacks.length > 0 ? (
+          <p className="section-note">
+            Ataques de arma equipada: {derivedAttacks.map((attack) => attack.name).join(' · ')}
+          </p>
+        ) : null}
+
+        <p className="section-note">
+          Use o botão <strong>Inventário</strong> para equipar, sintonizar, usar consumíveis
+          (duplo clique usa em si; o menu do item tem “Usar em...”) e gerenciar moedas.
+        </p>
+      </Section>
+
+      <InventoryDock
+        npc={{
+          creature,
+          items,
+          onChange: onCreatureChange,
+          onError,
+        }}
+        coinsPanel={
+          <NpcCoinsPanel creature={creature} onCreatureChange={onCreatureChange} onError={onError} />
+        }
+      />
+    </>
+  );
+}
+
+/**
+ * MOEDAS do NPC: mesmas denominações, mesmos cards e mesmo motor de carteira da
+ * ficha. O Mestre dá (positivo) ou retira (negativo) por denominação — o saldo
+ * nunca fica negativo (o servidor recusa).
+ */
+function NpcCoinsPanel({
+  creature,
+  onCreatureChange,
+  onError,
+}: {
+  creature: Creature;
+  onCreatureChange: (creature: Creature) => void;
+  onError: (message: string) => void;
+}) {
+  const [delta, setDelta] = useState<Record<CoinKey, number>>({
     pp: 0,
     gp: 0,
     ep: 0,
@@ -61,237 +93,78 @@ export function NpcInventorySection({
     cp: 0,
   });
   const [busy, setBusy] = useState(false);
+  const coins = creature.coins;
+  const empty = COIN_KEYS.every((key) => delta[key] === 0);
 
-  async function run(path: string, body: Record<string, unknown>): Promise<void> {
+  async function apply(): Promise<void> {
+    if (empty || busy) return;
+    const changes = Object.fromEntries(
+      COIN_KEYS.filter((key) => delta[key] !== 0).map((key) => [key, delta[key]]),
+    );
     setBusy(true);
     try {
       const { creature: updated } = await api<{ creature: Creature }>(
-        `/api/creatures/${creature.id}${path}`,
-        { method: 'POST', body: { expectedVersion: creature.version, ...body } },
+        `/api/creatures/${creature.id}/coins`,
+        { method: 'POST', body: { expectedVersion: creature.version, delta: changes } },
       );
       onCreatureChange(updated);
+      setDelta({ pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 });
     } catch (error) {
-      onError(error instanceof Error ? error.message : 'Falha ao alterar o inventário do NPC.');
+      onError(error instanceof Error ? error.message : 'Falha ao alterar as moedas do NPC.');
     } finally {
       setBusy(false);
     }
   }
 
-  async function addCatalog(): Promise<void> {
-    if (!catalogItemId) return;
-    await run('/inventory', { itemId: catalogItemId, quantity: catalogQuantity });
-    setCatalogItemId('');
-    setCatalogQuantity(1);
-  }
-
-  async function addManual(): Promise<void> {
-    if (!manualName.trim()) return;
-    await run('/inventory', {
-      name: manualName.trim(),
-      category: manualCategory,
-      quantity: manualQuantity,
-    });
-    setManualName('');
-    setManualQuantity(1);
-  }
-
-  const attunedCount = creature.inventory.filter((item) => item.attuned).length;
-  const derivedAttacks = creature.derivedAttacks ?? [];
-
   return (
-    <Section
-      title="Inventário do NPC"
-      icon="bag"
-      subtitle="Persistente fora do combate · equipamento altera CA e ataques · visível apenas para o Mestre"
-    >
-      <div className="npc-inventory">
-        <p className="section-note">
-          CA efetiva: <strong>{creature.effectiveArmorClass}</strong> (base {creature.armorClass}) ·
-          Sintonizados: <strong>{attunedCount}/3</strong>
-        </p>
-
-        {derivedAttacks.length > 0 ? (
-          <p className="section-note">
-            Ataques de arma equipada:{' '}
-            {derivedAttacks.map((attack) => attack.name).join(' · ')}
-          </p>
-        ) : null}
-
-        <div className="npc-inventory-add">
-          <label className="field field-inline">
-            <span>Item do catálogo</span>
-            <select value={catalogItemId} onChange={(event) => setCatalogItemId(event.target.value)}>
-              <option value="">— escolher —</option>
-              {items.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} ({categoryLabel(item.category)})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field field-inline npc-qty">
-            <span>Qtd.</span>
-            <input
-              type="number"
-              min={1}
-              value={catalogQuantity}
-              onChange={(event) => setCatalogQuantity(Math.max(1, Number(event.target.value) || 1))}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn btn-small btn-primary"
-            disabled={busy || !catalogItemId}
-            onClick={() => void addCatalog()}
-          >
-            adicionar
-          </button>
-        </div>
-
-        <div className="npc-inventory-add">
-          <label className="field field-inline">
-            <span>Item avulso</span>
-            <input
-              value={manualName}
-              maxLength={120}
-              placeholder="Nome do item"
-              onChange={(event) => setManualName(event.target.value)}
-            />
-          </label>
-          <label className="field field-inline">
-            <span>Categoria</span>
-            <select value={manualCategory} onChange={(event) => setManualCategory(event.target.value)}>
-              {['Arma', 'Armadura', 'Escudo', 'Poção', 'Anel', 'Cajado', 'Munição', 'Item Geral', 'Tesouro', 'Outro'].map(
-                (category) => (
-                  <option key={category} value={category}>
-                    {categoryLabel(category)}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-          <label className="field field-inline npc-qty">
-            <span>Qtd.</span>
-            <input
-              type="number"
-              min={1}
-              value={manualQuantity}
-              onChange={(event) => setManualQuantity(Math.max(1, Number(event.target.value) || 1))}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={busy || !manualName.trim()}
-            onClick={() => void addManual()}
-          >
-            adicionar avulso
-          </button>
-        </div>
-
-        {creature.inventory.length === 0 ? (
-          <p className="empty-hint">Nenhum item ainda. Armas equipadas acrescentam ataques; armadura/escudo alteram a CA.</p>
-        ) : (
-          <ul className="npc-inventory-list">
-            {creature.inventory.map((item) => (
-              <li key={item.id} className="npc-inventory-row">
-                <span className="npc-inventory-name">
-                  {item.name}
-                  {item.quantity > 1 ? <em> ×{item.quantity}</em> : null}
-                  {item.requiresAttunement ? (
-                    <span className="tag">sintonização</span>
-                  ) : null}
-                </span>
-
-                <label className="field field-inline npc-slot">
-                  <span>Slot</span>
-                  <select
-                    value={item.slot ?? ''}
-                    disabled={busy}
-                    onChange={(event) =>
-                      void run('/inventory/move', {
-                        itemInventoryId: item.id,
-                        targetSlot: event.target.value || null,
-                      })
-                    }
-                  >
-                    {NPC_SLOTS.map((slot) => (
-                      <option key={slot.label} value={slot.key}>
-                        {slot.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {item.requiresAttunement ? (
-                  <label className="npc-attune">
-                    <input
-                      type="checkbox"
-                      checked={item.attuned === true}
-                      disabled={busy}
-                      onChange={(event) =>
-                        void run('/inventory/attune', {
-                          itemInventoryId: item.id,
-                          attuned: event.target.checked,
-                        })
-                      }
-                    />
-                    sintonizado
-                  </label>
-                ) : null}
-
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  disabled={busy}
-                  onClick={() =>
-                    void run('/inventory/remove', { itemInventoryId: item.id, quantity: 1 })
-                  }
-                >
-                  −1
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div className="npc-coins">
-          <p className="field-label">
-            <Icon name="coin" size={14} /> Moedas do NPC
-          </p>
-          <p className="npc-coins-current">
-            {COIN_KEYS.map((key) => `${creature.coins?.[key] ?? 0} ${COIN_LABELS[key]}`).join(' · ')}
-          </p>
-          <div className="npc-coins-form">
-            {COIN_KEYS.map((key) => (
-              <label key={key} className="field field-inline npc-qty">
-                <span>{COIN_LABELS[key]} (+/−)</span>
-                <input
-                  type="number"
-                  value={coinDelta[key]}
-                  onChange={(event) =>
-                    setCoinDelta((prev) => ({ ...prev, [key]: Number(event.target.value) || 0 }))
-                  }
-                />
-              </label>
-            ))}
-            <button
-              type="button"
-              className="btn btn-small"
-              disabled={busy || COIN_KEYS.every((key) => coinDelta[key] === 0)}
-              onClick={() => {
-                const delta = Object.fromEntries(
-                  COIN_KEYS.filter((key) => coinDelta[key] !== 0).map((key) => [key, coinDelta[key]]),
-                );
-                void run('/coins', { delta });
-                setCoinDelta({ pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 });
-              }}
-            >
-              aplicar
-            </button>
-          </div>
-        </div>
+    <div className="coins-panel">
+      <div className="coins-head">
+        <span>Moedas</span>
+        <span className="coins-weight">{coinsWeight(coins)} kg</span>
       </div>
-    </Section>
+
+      <div className="coins-grid">
+        {COIN_KEYS.map((key) => (
+          <div key={key} className="coin-cell" title={COIN_NAMES[key]}>
+            <Icon name="coin" size={15} className={`coin-icon ${COIN_METAL[key]}`} />
+            <span className="coin-label">{COIN_LABELS[key]}</span>
+            <span className="coin-value">{coins[key]}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="coin-form">
+        <p className="coin-hint">Positivo dá, negativo retira.</p>
+        <div className="coin-fields">
+          {COIN_KEYS.map((key) => (
+            <label key={key} className="coin-field">
+              <span title={COIN_NAMES[key]}>{COIN_LABELS[key]}</span>
+              <input
+                type="number"
+                className="coin-input"
+                value={delta[key]}
+                step={1}
+                disabled={busy}
+                aria-label={`${COIN_NAMES[key]} (${COIN_LABELS[key]})`}
+                onChange={(event) =>
+                  setDelta((current) => ({
+                    ...current,
+                    [key]: Number(event.target.value) || 0,
+                  }))
+                }
+              />
+            </label>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary btn-small"
+          disabled={busy || empty}
+          onClick={() => void apply()}
+        >
+          Aplicar
+        </button>
+      </div>
+    </div>
   );
 }

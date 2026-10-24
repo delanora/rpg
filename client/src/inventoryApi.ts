@@ -1,5 +1,6 @@
 import { api } from './api';
 import type { Character, DiceRollDto, InventoryMoveRequest } from './types';
+import { createOperationId } from './utils';
 
 /**
  * Move/equipa um item do inventário no servidor.
@@ -18,14 +19,19 @@ export async function moveInventoryItem(request: InventoryMoveRequest): Promise<
 /**
  * Usa (consome) UMA unidade de um item do inventário (Poção ou consumível).
  *
- * O servidor desconta a unidade, remove a entrada quando chega a zero e, se o
- * item tiver `effectRoll`, devolve também a rolagem do efeito (`roll`).
+ * Cada chamada gera um `operationId`: um duplo clique/reenvio devolve o MESMO
+ * resultado, sem consumir outra unidade. O servidor desconta a unidade, remove
+ * a entrada quando chega a zero e, se o item tiver `effectRoll`, devolve também
+ * a rolagem do efeito (`roll`).
+ *
+ * Durante o combate este endpoint é RECUSADO (o turno/Ação mandam): o uso vai
+ * por `useCombatItem`.
  */
 export async function useInventoryItem(
   itemInventoryId: string,
 ): Promise<{ character: Character; roll: DiceRollDto | null }> {
   return api<{ character: Character; roll: DiceRollDto | null }>(
     '/api/characters/me/inventory/use',
-    { method: 'POST', body: { itemInventoryId } },
+    { method: 'POST', body: { itemInventoryId, operationId: createOperationId() } },
   );
 }

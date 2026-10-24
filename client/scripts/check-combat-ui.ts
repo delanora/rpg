@@ -662,26 +662,41 @@ console.log('Check-combat-ui — refino da UI de combate');
       combatService.includes('attackRanged: attack.ranged'),
   );
 
-  // CB7. Usar Item no menu e no fluxo de combate.
+  // CB7. USO DIRETO pelo inventário: "Usar Item" saiu do menu de Ações.
   const menu = source('src/combat/components/ActionMenu.tsx');
+  const inventory = source('src/components/sections/InventorySection.tsx');
+  const itemMenu = source('src/components/ItemContextMenu.tsx');
   check(
-    'CB7) menu Usar Item lista consumíveis com quantidade e marca resolução do Mestre',
-    menu.includes('Usar Item') &&
-      menu.includes('×{item.quantity}') &&
-      menu.includes('Resolução pelo Mestre') &&
-      menu.includes('Custo: 1 Ação'),
+    'CB7) consumível é usado pelo inventário (duplo clique); o menu de Ações não tem "Usar Item"',
+    !menu.includes('Usar Item') &&
+      !menu.includes('usableItems') &&
+      !source('src/combat/components/TurnResourceBar.tsx').includes('usableItems') &&
+      inventory.includes('handleItemDoubleClick') &&
+      inventory.includes('onDoubleClick') &&
+      inventory.includes('Resolução pelo Mestre'),
   );
   check(
-    'CB8) alvo é escolhido no próprio seletor e a distância é avisada',
-    menu.includes('Em mim mesmo') &&
-      menu.includes('O alvo precisa estar ao alcance físico') &&
-      menu.includes('itemTargetId'),
+    'CB8) duplo clique = usar em si; "Usar em..." abre o seletor COMPACTO de alvos',
+    inventory.includes("label: 'Usar em...'") &&
+      inventory.includes('itemTargets.map') &&
+      itemMenu.includes('role="menu"') &&
+      inventory.includes('O alvo precisa estar ao alcance físico'),
   );
   check(
-    'CB9) painel usa a lista AUTORIZADA pelo servidor (sem inventário local)',
-    source('src/combat/CombatTracker.tsx').includes('fetchCombatItems') &&
-      source('src/combat/CombatTracker.tsx').includes('useCombatItem') &&
-      source('src/combat/components/TurnResourceBar.tsx').includes('usableItems={usableItems}'),
+    'CB9) o uso em combate continua no motor do servidor (turno + Ação), também no NPC',
+    source('src/combat/CombatTracker.tsx').includes('useCombatItem') &&
+      source('src/combat/CombatTracker.tsx').includes('InventoryDock') &&
+      source('../src/modules/combat/combat.service.ts').includes(
+        'Você já usou sua Ação neste turno.',
+      ) &&
+      source('../src/modules/combat/combat.service.ts').includes(
+        'Você só pode usar este item no seu turno.',
+      ),
+  );
+  check(
+    'CB9b) inventário do NPC usa o MESMO painel flutuante (sem dropdown simplificado)',
+    source('src/components/master/NpcInventorySection.tsx').includes('<InventoryDock') &&
+      !source('src/components/master/NpcInventorySection.tsx').includes('npc-inventory-row'),
   );
 
   // CB10. Inventário do NPC é master-only e reutiliza o motor existente.
