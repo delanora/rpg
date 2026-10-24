@@ -5,6 +5,7 @@ import { signToken } from '../lib/jwt.js';
 import { inventoryListSchema } from '../modules/characters/characters.schema.js';
 import { CONDITION_LABELS, conditionAttackMode, deriveConditionEffects, deriveSaveEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, resolveRollMode, type Condition, type MechanicalEntity } from '../modules/shared/conditions.js';
 import { canSeeAttacker } from '../modules/shared/vision.js';
+import { addHpZeroUnconscious, HP_ZERO_PRONE_LABEL } from '../modules/shared/death.js';
 import { onTurnStart } from '../modules/shared/action-economy.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { MechanicalDto } from '../modules/mechanical/mechanical.service.js';
@@ -103,6 +104,7 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
     const character = await prisma.character.create({ data: { userId: player.id, name: 'Condições Jogador', hpCurrent: 101, hpMax: 101, speed: 30, classes: [{ classKey: 'fighter', level: 5, subclass: '' }], inventory, attacks: [
       { id: 'fire', name: 'Dano fixo fogo', attackBonus: 30, damage: { count: 0, sides: 0, bonus: 9, type: 'Fogo' }, extraDamages: [], finesse: false, ranged: false, notes: '' },
       { id: 'poison', name: 'Dano fixo veneno', attackBonus: 30, damage: { count: 0, sides: 0, bonus: 9, type: 'Veneno' }, extraDamages: [], finesse: false, ranged: false, notes: '' },
+      { id: 'ranged-fire', name: 'Dano fixo à distância', attackBonus: 30, damage: { count: 0, sides: 0, bonus: 9, type: 'Fogo' }, extraDamages: [], finesse: false, ranged: true, notes: '' },
     ] } }); entityIds.push(character.id);
     const creature = await prisma.creature.create({ data: { name: 'Goblin Template Condições', hpCurrent: 1000, hpMax: 1000, speed: 9, vulnerabilities: ['Fogo'] } }); creatureId = creature.id; entityIds.push(creature.id);
     const npc = await prisma.creature.create({ data: { name: 'NPC persistente Condições', kind: 'NPC', hpCurrent: 80, hpMax: 80, speed: 9 } }); npcId = npc.id; entityIds.push(npc.id);
@@ -168,13 +170,17 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
     for (const participant of combat.combatants.filter(item => !item.rolled && item.id !== npcParticipant.id)) await request(`/combat/initiative/${participant.id}`, {});
     const refreshCombat = async () => { combat = (await request('/combat/active')).data.combat; return combat; };
     await refreshCombat();
-    async function toOwnTurn() {
+    async function advanceTo(combatantId: string) {
       await refreshCombat();
-      for (let i = 0; combat.currentCombatantId !== playerCombatant.id && i <= combat.combatants.length; i += 1) {
+      for (let i = 0; combat.currentCombatantId !== combatantId && i <= combat.combatants.length; i += 1) {
         const next = await request('/combat/next-turn', { combatId, expectedVersion: combat.version, operationId: randomUUID() });
         if (next.status !== 200) throw new Error(`Falha no avanço: ${JSON.stringify(next.data)}`);
         combat = next.data.combat;
       }
+      if (combat.currentCombatantId !== combatantId) throw new Error(`Não alcançou o turno de ${combatantId}.`);
+    }
+    async function toOwnTurn() {
+      await advanceTo(playerCombatant.id);
     }
     async function override(adjustment = 'restore-action', extra: Record<string, unknown> = {}) {
       await refreshCombat();
@@ -250,6 +256,72 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
     await apply('paralyzed', copyA); const paralyzed = await hit();
     check('63) Paralyzed real dá vantagem, sem inventar crítico por alcance', paralyzed.status === 200 && paralyzed.data.result.advantage && paralyzed.data.result.critical === (paralyzed.data.result.attackRoll >= 20));
     await clear(copyA);
+    // ESQUIVA × INVISÍVEL — integração real: o alvo só impõe desvantagem a
+    // quem ele consegue VER. A Invisibilidade entra/ sai pelo controle manual.
+    await advanceTo(copyA.id);
+    const dodged = await request('/combat/action', {
+      combatId,
+      expectedVersion: (await refreshCombat()).version,
+      operationId: randomUUID(),
+      combatantId: copyA.id,
+      action: 'dodge',
+    });
+    check('63.MCN) alvo entra em Esquiva no próprio turno', dodged.status === 200, JSON.stringify(dodged.data));
+    await advanceTo(playerCombatant.id);
+    await override();
+    const dodgeVisible = await attack();
+    check(
+      '63.MCO) Esquiva contra atacante VISÍVEL impõe desvantagem',
+      dodgeVisible.status === 200 && dodgeVisible.data.result.disadvantage && !dodgeVisible.data.result.advantage,
+      JSON.stringify(dodgeVisible.data),
+    );
+    await apply('invisible');
+    await override();
+    const dodgeInvisible = await attack();
+    check(
+      '63.MCP) Invisível: a Esquiva NÃO soma desvantagem e a vantagem do Invisível vale',
+      dodgeInvisible.status === 200 && dodgeInvisible.data.result.advantage && !dodgeInvisible.data.result.disadvantage,
+      JSON.stringify(dodgeInvisible.data),
+    );
+    await clear();
+    await override();
+    const dodgeRestored = await attack();
+    check(
+      '63.MCQ) removida a Invisibilidade, a Esquiva volta a impor desvantagem',
+      dodgeRestored.status === 200 && dodgeRestored.data.result.disadvantage && !dodgeRestored.data.result.advantage,
+      JSON.stringify(dodgeRestored.data),
+    );
+
+    // A Esquiva do alvo termina ao começar o próximo turno dele; voltamos ao
+    // turno do jogador para as próximas seções não herdarem desvantagem.
+    await advanceTo(copyA.id);
+    await advanceTo(playerCombatant.id);
+
+    // CAÍDO aplicado pelo Mestre → a regra de MODO do ataque já existente
+    // responde: corpo a corpo contra Caído = vantagem; à distância = desvantagem.
+    await clear(copyA);
+    const proneApplied = await apply('prone', copyA);
+    await override();
+    const proneMeleeAttack = await attack();
+    check(
+      '63.MCR) Caído pelo Mestre: ataque CORPO A CORPO recebe vantagem',
+      proneApplied.status === 200 &&
+        proneMeleeAttack.status === 200 &&
+        proneMeleeAttack.data.result.advantage &&
+        !proneMeleeAttack.data.result.disadvantage,
+      JSON.stringify(proneMeleeAttack.data),
+    );
+    await override();
+    const proneRangedAttack = await attack({ attackId: 'ranged-fire' });
+    check(
+      '63.MCS) Caído pelo Mestre: ataque À DISTÂNCIA recebe desvantagem',
+      proneRangedAttack.status === 200 &&
+        proneRangedAttack.data.result.disadvantage &&
+        !proneRangedAttack.data.result.advantage,
+      JSON.stringify(proneRangedAttack.data),
+    );
+    await clear(copyA);
+
     await apply('poisoned', copyA); await apply('petrified', copyA);
     const stone = await hit();
     check('63) Petrified compõe resistência antes de vulnerabilidade: 9 → 4 → 8', stone.status === 200 && stone.data.result.components[0].rolled === 9 && stone.data.result.components[0].applied === 8 && stone.data.result.components[0].modifier === 'resistance-vulnerability');
@@ -307,6 +379,147 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
     ]);
     check('63) versões concorrentes aceitam só uma escrita', conflicting.filter(res => res.status === 200).length === 1 && conflicting.filter(res => res.status === 409).length === 1);
     await clear();
+
+    // ======================================================================
+    // 67) CONTROLE MANUAL DE CONDITIONS PELO MESTRE
+    // Ferramenta do "Estado e ajustes": mesmo domínio, fontes próprias e
+    // Conditions DERIVADAS protegidas (0 PV).
+    // ======================================================================
+    console.log('\n67) Controle manual de Conditions pelo Mestre');
+    const playerAlias: MechanicalEntity = { kind: 'combatant', id: playerCombatant.id };
+    const playerAttempt = await mutation(playerAlias, { action: 'apply', condition: 'invisible' }, playerToken);
+    check(
+      '63.MCA) PLAYER não usa o controle administrativo no combatente',
+      playerAttempt.status === 403 &&
+        (await read(ownEntity)).state.conditions.length === 0,
+    );
+    const appliedManual = await apply('invisible', playerAlias);
+    const manualInstance = appliedManual.data.mechanical.state.conditions.find((instance: any) => instance.condition === 'invisible');
+    check(
+      '63.MCB) Mestre aplica Invisível manualmente com fonte identificável',
+      appliedManual.status === 200 &&
+        manualInstance?.sourceType === 'manual' &&
+        manualInstance?.sourceLabel === 'Mestre' &&
+        Boolean(manualInstance?.sourceId),
+      JSON.stringify(manualInstance),
+    );
+    const manualState = await read(ownEntity);
+    check(
+      '63.MCC) Invisível manual chega à engine e ao histórico mecânico',
+      manualState.effects.active.includes('invisible') &&
+        manualState.effects.attackAdvantages.includes('invisible') &&
+        manualState.state.log.some(entry => entry.message.includes('Invisível') && entry.message.includes('Mestre')),
+    );
+    const playerView = (await request('/combat/active', undefined, playerToken)).data.combat as CombatDto;
+    check(
+      '63.MCD) badge do card recebe a condição no DTO do PLAYER',
+      playerView.combatants
+        .find(item => item.id === playerCombatant.id)
+        ?.mechanicalState.conditions.some(instance => instance.condition === 'invisible') === true,
+    );
+    // Múltiplas fontes: cada aplicação manual é uma instância. Remover uma NÃO
+    // apaga as outras (nada de sobrescrever a lista).
+    const manualSourceA = await apply('invisible');
+    const manualSourceB = await apply('invisible');
+    let doubled = await read();
+    const invisibleSources = doubled.state.conditions.filter(instance => instance.condition === 'invisible');
+    check(
+      '63.MCE) cada aplicação manual cria fonte própria (não sobrescreve)',
+      manualSourceA.status === 200 &&
+        manualSourceB.status === 200 &&
+        invisibleSources.length === 3 &&
+        new Set(invisibleSources.map(instance => instance.sourceId)).size === 3,
+      JSON.stringify(invisibleSources),
+    );
+    await remove(invisibleSources[0].id);
+    doubled = await read();
+    check(
+      '63.MCF) remover UMA fonte preserva as demais',
+      doubled.state.conditions.filter(instance => instance.condition === 'invisible').length === 2 &&
+        doubled.effects.active.includes('invisible'),
+    );
+    await clear();
+    // Source-aware: a criatura FONTE escolhida chega à engine (sem inventar).
+    const fearApplied = await apply('frightened', ownEntity, { sourceEntity: { kind: 'combatant', id: copyA.id } });
+    const fearState = await read();
+    const fearInstance = fearState.state.conditions.find(instance => instance.condition === 'frightened');
+    check(
+      '63.MCG) Amedrontado com FONTE: criatura, rótulo e sourceId corretos',
+      fearApplied.status === 200 &&
+        fearInstance?.sourceEntity?.id === copyA.id &&
+        fearInstance?.sourceLabel === copies[0].name &&
+        fearInstance?.sourceId === copyA.id &&
+        fearState.effects.fearSources[0]?.source?.id === copyA.id,
+      JSON.stringify({ fear: fearInstance, sources: fearState.effects.fearSources }),
+    );
+    await clear();
+    const grappleApplied = await apply('grappled', ownEntity, { sourceEntity: { kind: 'combatant', id: copyA.id } });
+    const grappleState = await read();
+    check(
+      '63.MCH) Agarrado com FONTE e deslocamento zero (engine existente)',
+      grappleApplied.status === 200 &&
+        grappleState.effects.active.includes('grappled') &&
+        grappleState.effectiveSpeed === 0 &&
+        grappleState.state.conditions.find(instance => instance.condition === 'grappled')?.sourceEntity?.id === copyA.id,
+    );
+    await clear();
+    // DERIVADAS de 0 PV: fixture com as MESMAS funções do ciclo de morte.
+    await prisma.creature.update({
+      where: { id: npc.id },
+      data: { mechanicalState: addHpZeroUnconscious({}).state as never },
+    });
+    const npcEntity: MechanicalEntity = { kind: 'creature', id: npc.id };
+    const npcZero = await read(npcEntity);
+    const hpZeroUnconscious = npcZero.state.conditions.find(instance => instance.condition === 'unconscious' && instance.sourceType === 'hp-zero');
+    const hpZeroProne = npcZero.state.conditions.find(instance => instance.condition === 'prone' && instance.sourceLabel === HP_ZERO_PRONE_LABEL);
+    check(
+      '63.MCI) o DTO marca Inconsciente/Caído de 0 PV como protegidos',
+      (npcZero.protectedInstanceIds ?? []).length === 2 &&
+        Boolean(hpZeroUnconscious) &&
+        Boolean(hpZeroProne) &&
+        (npcZero.protectedInstanceIds ?? []).includes(hpZeroUnconscious!.id),
+      JSON.stringify(npcZero.protectedInstanceIds),
+    );
+    const removeUnconsciousZero = await remove(hpZeroUnconscious!.id, npcEntity);
+    const removeProneZero = await remove(hpZeroProne!.id, npcEntity);
+    const npcAfterProtected = await read(npcEntity);
+    check(
+      '63.MCJ) remover derivada de 0 PV é recusado e o estado continua íntegro',
+      removeUnconsciousZero.status === 409 &&
+        removeProneZero.status === 409 &&
+        npcAfterProtected.effects.active.includes('unconscious') &&
+        npcAfterProtected.effects.prone,
+      JSON.stringify({ inconsciente: removeUnconsciousZero.data, caido: removeProneZero.data }),
+    );
+    const manualUnconscious = await apply('unconscious', npcEntity);
+    let npcMixed = await read(npcEntity);
+    const unconsciousInstances = npcMixed.state.conditions.filter(instance => instance.condition === 'unconscious');
+    check(
+      '63.MCK) Inconsciente MANUAL convive com a fonte de 0 PV',
+      manualUnconscious.status === 200 &&
+        unconsciousInstances.length === 2 &&
+        unconsciousInstances.some(instance => instance.sourceType === 'manual') &&
+        unconsciousInstances.some(instance => instance.sourceType === 'hp-zero'),
+      JSON.stringify(unconsciousInstances),
+    );
+    await remove(unconsciousInstances.find(instance => instance.sourceType === 'manual')!.id, npcEntity);
+    npcMixed = await read(npcEntity);
+    check(
+      '63.MCL) remover a fonte manual mantém a Inconsciência de 0 PV',
+      npcMixed.state.conditions.some(instance => instance.condition === 'unconscious' && instance.sourceType === 'hp-zero') &&
+        npcMixed.effects.active.includes('unconscious') &&
+        (npcMixed.protectedInstanceIds ?? []).length === 2,
+    );
+    await apply('invisible', npcEntity);
+    const npcInvisible = await read(npcEntity);
+    check(
+      '63.MCM) Invisível manual em NPC/Creature é editável (não é derivada)',
+      npcInvisible.state.conditions.some(instance => instance.condition === 'invisible' && instance.sourceType === 'manual') &&
+        !(npcInvisible.protectedInstanceIds ?? []).some(instanceId =>
+          npcInvisible.state.conditions.find(instance => instance.id === instanceId)?.condition === 'invisible',
+        ),
+    );
+    await clear(npcEntity);
     socket.auth = { token: playerToken };
     await new Promise<void>((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); socket.connect(); });
     const notification = new Promise<boolean>(resolve => { const timer = setTimeout(() => resolve(false), 4000); socket.once('mechanical:updated', payload => { clearTimeout(timer); resolve(payload.mechanical.state.conditions.some((instance: { condition: string }) => instance.condition === 'poisoned')); }); });

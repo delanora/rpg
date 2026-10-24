@@ -2677,6 +2677,8 @@ export interface ConditionEffects {
 export interface MechanicalDto {
   entity: MechanicalEntity; name: string; version: number; state: MechanicalState; effects: ConditionEffects;
   effectiveSpeed: number; effectiveMaxHp: number; hpCurrent: number;
+  /** Instâncias DERIVADAS de outro estado (0 PV): sem remoção manual. */
+  protectedInstanceIds?: string[];
   combat: { id: string; version: number; status: string } | null;
 }
 export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }

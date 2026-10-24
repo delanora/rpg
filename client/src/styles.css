@@ -17245,3 +17245,197 @@ input[type='checkbox']:focus-visible,
 .inv-toolbar-qty {
   width: 3.4rem;
 }
+
+/* ==========================================================================
+   CONDIÇÕES DO MESTRE — ferramenta compacta dentro de "Estado e ajustes".
+
+   Vive no drawer do combate (recolhido por padrão), então não ocupa espaço
+   permanente. Mesmas cores/tokens das Conditions da ficha: nada de paleta
+   paralela. A lista usa os mesmos nomes/origens que o servidor devolve.
+   ========================================================================== */
+.master-conditions {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.master-conditions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.master-conditions-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.master-conditions-title .icon {
+  color: var(--gold-deep);
+}
+
+.master-conditions-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.master-condition-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: var(--text-aux);
+}
+
+.master-condition-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.master-condition-origin {
+  font-size: var(--text-micro);
+  color: var(--ink-soft);
+}
+
+.master-condition-lock {
+  display: inline-flex;
+  align-items: center;
+  color: var(--gold-deep);
+  cursor: help;
+}
+
+.master-condition-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.master-condition-remove:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.master-condition-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Seletor compacto: busca + lista, nunca modal grande. */
+.condition-picker {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.condition-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.condition-picker-search input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-aux);
+  outline: none;
+}
+
+.condition-picker-source {
+  display: grid;
+  gap: 0.2rem;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.condition-picker-source select {
+  padding: 0.24rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-aux);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.condition-picker-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.25rem;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.condition-picker-option {
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-aux);
+  text-align: left;
+  cursor: pointer;
+}
+
+.condition-picker-option:hover:not(:disabled),
+.condition-picker-option:focus-visible {
+  border-color: var(--gold-deep);
+  background: var(--surface-2);
+}
+
+.condition-picker-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
