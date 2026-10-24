@@ -105,6 +105,17 @@ export const npcRemoveItemSchema = z.object({
   quantity: z.number().int().min(1).max(1_000_000).default(1),
 });
 
+/**
+ * Usar (consumir) UMA unidade de um consumível do NPC FORA do combate.
+ *
+ * Em combate a autoridade é o motor de combate (turno + Ação) — esta rota é
+ * recusada, para não virar um atalho da economia de turno.
+ */
+export const npcUseItemSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  itemInventoryId: z.string().min(1),
+});
+
 /** Sintonizar/dessintonizar UM item (limite de 3 em `shared/attunement.ts`). */
 export const npcAttuneSchema = z.object({
   expectedVersion: z.number().int().nonnegative(),
@@ -121,5 +132,6 @@ export const npcCoinsSchema = z.object({
 export type NpcAddItemInput = z.infer<typeof npcAddItemSchema>;
 export type NpcMoveItemInput = z.infer<typeof npcMoveItemSchema>;
 export type NpcRemoveItemInput = z.infer<typeof npcRemoveItemSchema>;
+export type NpcUseItemInput = z.infer<typeof npcUseItemSchema>;
 export type NpcAttuneInput = z.infer<typeof npcAttuneSchema>;
 export type NpcCoinsInput = z.infer<typeof npcCoinsSchema>;

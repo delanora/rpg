@@ -36,6 +36,10 @@ interface SheetViewProps {
   onInventoryMove?: (request: InventoryMoveRequest) => void | Promise<void>;
   /** Usa (consome) 1 unidade de um item consumível do inventário. */
   onInventoryUse?: (itemInventoryId: string) => void | Promise<void>;
+  /** Alvos de "Usar em..." (durante o combate: outros combatentes). */
+  inventoryTargets?: { id: string; name: string }[];
+  /** Usa o consumível em OUTRO alvo (o servidor valida turno/Ação). */
+  onInventoryUseOn?: (itemInventoryId: string, targetId: string) => void | Promise<void>;
   /**
    * Liga/desliga uma característica com toggle (endpoint AUTHORITATIVE do
    * servidor — 5.3B). O custo e o estado são decididos pelo servidor.
@@ -145,6 +149,8 @@ export function SheetView({
   update,
   onInventoryMove,
   onInventoryUse,
+  inventoryTargets,
+  onInventoryUseOn,
   onFeatureToggle,
   onEldritchMaster,
   onRacialUse,
@@ -229,6 +235,8 @@ export function SheetView({
           update={update}
           onMoveItem={onInventoryMove}
           onUseItem={onInventoryUse}
+          itemTargets={inventoryTargets}
+          onUseItemOn={onInventoryUseOn}
           extraCoins={extraCoins}
           coinTargets={coinTargets}
           onCoinsChange={onCoinsChange}

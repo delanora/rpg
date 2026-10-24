@@ -1817,7 +1817,12 @@ export async function useCombatItem(
     healing: HealingDiceResult | null;
   }>(actor, input, 'use-item', async (db, combat) => {
     const combatant = actingCombatant(combat, actor, input.combatantId);
-    requireOwnTurn(combat, combatant);
+    // Mensagem específica do ITEM: quem tenta beber uma poção pelo inventário
+    // fora do turno precisa saber POR QUE nada aconteceu (mesma regra de
+    // `requireOwnTurn`, com o texto curto pedido pela UX).
+    if (orderCombatants(combat.combatants)[combat.currentIndex]?.id !== combatant.id) {
+      throw new HttpError('Você só pode usar este item no seu turno.', 403, 'CONFLICT');
+    }
     if (deathBlocksActions(combatantDeathState(combatant))) {
       throw new HttpError('Aguardando a resolução do Mestre: este combatente não pode agir.', 409, 'CONFLICT');
     }
@@ -1874,7 +1879,18 @@ export async function useCombatItem(
     const healing = healingSpec ? rollHealingDice(healingSpec) : null;
 
     const economy = economyOf(combatant.turnEconomy);
-    spendEconomy(economy, itemUseEconomy(item.details));
+    const useCost = itemUseEconomy(item.details);
+    // Ação já gasta: bloqueia ANTES de consumir a unidade, com o texto curto.
+    if (useCost === 'action' && economy.actionsUsed >= economy.actionsGranted) {
+      throw new HttpError('Você já usou sua Ação neste turno.', 409, 'CONFLICT');
+    }
+    if (useCost === 'bonus-action' && economy.bonusActionUsed) {
+      throw new HttpError('Você já usou sua Ação Bônus neste turno.', 409, 'CONFLICT');
+    }
+    if (useCost === 'reaction' && !economy.reactionAvailable) {
+      throw new HttpError('Você já usou sua Reação neste turno.', 409, 'CONFLICT');
+    }
+    spendEconomy(economy, useCost);
 
     const nextInventory = inventory
       .map((entry) =>

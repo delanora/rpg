@@ -6,7 +6,7 @@ import {
   logDeath,
   removeHpZeroUnconscious,
 } from '../shared/death.js';
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import type { Character, Prisma, ShortRestSession } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
@@ -1479,6 +1479,12 @@ export async function moveInventoryItem(
 /** Tentativas de reescrita quando duas requisições disputam o inventário. */
 const INVENTORY_WRITE_ATTEMPTS = 6;
 
+/** Tipo LÓGICO do uso de consumível fora do combate (`CharacterOperation.type`). */
+const USE_ITEM_TYPE = 'USE_ITEM';
+
+/** Escrita perdida por concorrência de `version` — o laço tenta de novo. */
+class StaleInventoryWrite extends Error {}
+
 /**
  * Usa (consome) UMA unidade de um item do inventário do próprio jogador.
  *
@@ -1496,6 +1502,33 @@ export async function useInventoryItem(
   actor: Actor,
   input: UseInventoryItemInput,
 ): Promise<{ character: CharacterDto; roll: DiceRollDto | null }> {
+  // Idempotência: o MESMO `operationId` devolve o snapshot original. Sem isso,
+  // um duplo clique em dois requests válidos consumiria duas unidades.
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify({ itemInventoryId: input.itemInventoryId }))
+    .digest('hex');
+  const current = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!current) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+  if (input.operationId) {
+    const previous = await findOperation(current.id, input.operationId);
+    if (previous) return replaySnapshot(previous, USE_ITEM_TYPE, fingerprint);
+  }
+
+  // Durante o combate a autoridade é o motor de combate (turno + Ação). Usar o
+  // consumível por aqui burlaria a economia de turno, então é recusado — o
+  // cliente manda o uso para `POST /api/combat/use-item`.
+  const inCombat = await prisma.combatant.findFirst({
+    where: { characterId: current.id, combat: { status: { in: ['PENDING_INITIATIVE', 'ACTIVE'] } } },
+    select: { id: true },
+  });
+  if (inCombat) {
+    throw new HttpError(
+      'Durante o combate, use o consumível pelo inventário de combate no seu turno.',
+      409,
+      'COMBAT_ITEM_REQUIRED',
+    );
+  }
+
   for (let attempt = 0; attempt < INVENTORY_WRITE_ATTEMPTS; attempt += 1) {
     const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
     if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
@@ -1545,8 +1578,8 @@ export async function useInventoryItem(
         ? rollHealingDice(item.details.healingDice)
         : null;
 
-    // TODO (Fase 5 — motor de ações): consumir 1 Ação do turno ao usar poção de
-    // cura durante o combate; bloquear se a Ação já foi gasta naquele turno.
+    // Em combate este endpoint é recusado antes daqui: o consumo da Ação e o
+    // turno são do motor de combate. Fora dele, a cura entra na escrita.
     const nextHp =
       healing === null ? null : Math.min(characterMaxHp(character), character.hpCurrent + healing.total);
 
@@ -1555,32 +1588,73 @@ export async function useInventoryItem(
       .map((entry) => (entry.id === item.id ? { ...entry, quantity: entry.quantity - 1 } : entry))
       .filter((entry) => entry.quantity > 0);
 
-    const written = await prisma.character.updateMany({
-      where: { id: character.id, version: character.version },
-      data: {
-        inventory: next as unknown as Prisma.InputJsonValue,
-        ...(nextHp === null ? {} : { hpCurrent: nextHp }),
-        version: { increment: 1 },
-      },
-    });
-    if (written.count === 0) continue;
-
-    const updated = await prisma.character.findUnique({ where: { id: character.id } });
-    if (!updated) throw new HttpError('Esta ficha ainda não foi criada.', 404);
-
-    const actorName = updated.name || actor.displayName;
-    const roll =
-      healing !== null
-        ? recordHealingRoll(actor, actorName, item.name, healing)
-        : item.details.effectRoll
-          ? rollItemEffect(actor, actorName, item.name, item.details.effectRoll)
+    // TRANSAÇÃO: reservar a chave idempotente, descontar a unidade, aplicar a
+    // cura e guardar o snapshot acontecem JUNTOS. Um duplo clique que chegue
+    // junto falha na chave (P2002), desfaz a escrita e devolve o snapshot do
+    // vencedor — nunca ficam duas unidades consumidas nem estado parcial.
+    let applied: {
+      updated: Character;
+      snapshot: { character: CharacterDto; roll: DiceRollDto | null };
+    };
+    try {
+      applied = await prisma.$transaction(async (tx) => {
+        const operation = input.operationId
+          ? await tx.characterOperation.create({
+              data: {
+                characterId: character.id,
+                operationId: input.operationId,
+                type: USE_ITEM_TYPE,
+                requestFingerprint: fingerprint,
+                result: {},
+              },
+            })
           : null;
 
-    await publishChange(actor, updated, {
+        const written = await tx.character.updateMany({
+          where: { id: character.id, version: character.version },
+          data: {
+            inventory: next as unknown as Prisma.InputJsonValue,
+            ...(nextHp === null ? {} : { hpCurrent: nextHp }),
+            version: { increment: 1 },
+          },
+        });
+        if (written.count === 0) throw new StaleInventoryWrite();
+
+        const updated = await tx.character.findUnique({ where: { id: character.id } });
+        if (!updated) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+        const actorName = updated.name || actor.displayName;
+        const roll =
+          healing !== null
+            ? recordHealingRoll(actor, actorName, item.name, healing)
+            : item.details.effectRoll
+              ? rollItemEffect(actor, actorName, item.name, item.details.effectRoll)
+              : null;
+
+        const snapshot = { character: await toSheetDto(updated, actor.username), roll };
+        if (operation) {
+          await tx.characterOperation.update({
+            where: { id: operation.id },
+            data: { result: snapshot as unknown as Prisma.InputJsonValue },
+          });
+        }
+        return { updated, snapshot };
+      });
+    } catch (error) {
+      if (error instanceof StaleInventoryWrite) continue;
+      // Corrida na MESMA chave idempotente: o perdedor devolve o snapshot.
+      if (isUniqueViolation(error) && input.operationId) {
+        const raced = await findOperation(character.id, input.operationId);
+        if (raced) return replaySnapshot(raced, USE_ITEM_TYPE, fingerprint);
+      }
+      throw error;
+    }
+
+    await publishChange(actor, applied.updated, {
       inventory: next,
       ...(nextHp === null ? {} : { hpCurrent: nextHp }),
     });
-    return { character: await toSheetDto(updated, actor.username), roll };
+    return applied.snapshot;
   }
 
   throw new HttpError('O inventário mudou durante a operação; tente novamente.', 409);

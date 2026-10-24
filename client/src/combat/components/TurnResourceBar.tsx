@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { FieldInfo } from '../../components/FieldInfo';
 import { Icon } from '../../components/Icon';
-import type { CombatUsableItem, TurnEconomy } from '../../types';
+import type { TurnEconomy } from '../../types';
 import type { EconomyAction } from '../combatApi';
 import { RESOURCE_INFO } from '../combatVisuals';
 import { ActionMenu } from './ActionMenu';
@@ -57,11 +57,6 @@ interface TurnResourceBarProps {
   /** Alvos válidos de ESTABILIZAR (0 PV, vivos, não estabilizados). */
   stabilizeTargets?: { id: string; name: string }[];
   onStabilize?: (targetCombatantId: string) => void;
-  /** Consumíveis usáveis do combatente (seletor "Usar Item"). */
-  usableItems?: CombatUsableItem[];
-  /** Alvos possíveis, com o próprio usuário primeiro. */
-  itemTargets?: { id: string; name: string }[];
-  onUseItem?: (itemInventoryId: string, targetCombatantId?: string) => void;
 }
 
 /**
@@ -87,9 +82,6 @@ export function TurnResourceBar({
   onStandUp,
   stabilizeTargets = [],
   onStabilize,
-  usableItems = [],
-  itemTargets = [],
-  onUseItem,
 }: TurnResourceBarProps) {
   // O mestre encerra a qualquer momento; o jogador, só no próprio turno.
   const canEndTurn = Boolean(active && onEndTurn && (isMaster || isMyTurn));
@@ -101,10 +93,9 @@ export function TurnResourceBar({
   );
   // O menu pode abrir por CONTEXTO mesmo sem Ação livre (Levantar-se não gasta
   // Ação) — mas só quando há algo realmente executável.
+  // Consumíveis NÃO entram aqui: o inventário é o ponto de uso (duplo clique).
   const hasContext = Boolean(
-    (standUp && onStandUp) ||
-      (stabilizeTargets.length > 0 && onStabilize) ||
-      (usableItems.length > 0 && onUseItem),
+    (standUp && onStandUp) || (stabilizeTargets.length > 0 && onStabilize),
   );
   const canOpenMenu = Boolean(
     active && onEconomyAction && canAct && ownTurn && (actionsLeft > 0 || hasContext),
@@ -182,9 +173,6 @@ export function TurnResourceBar({
           onStandUp={onStandUp}
           stabilizeTargets={stabilizeTargets}
           onStabilize={onStabilize}
-          usableItems={usableItems}
-          itemTargets={itemTargets}
-          onUseItem={onUseItem}
           busy={busy}
         />
         <FieldInfo>{RESOURCE_INFO.action}</FieldInfo>
