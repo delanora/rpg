@@ -545,7 +545,19 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 {combatView === 'features' ? (
                   <FeaturesSection character={character} update={update} />
                 ) : null}
-                {combatView === 'inventory' ? <BagListSection character={character} /> : null}
+                {/*
+                  Mochila em LINHA, como sempre: usa o MESMO motor de uso do
+                  inventário (duplo clique = usar em si, "Usar em..." no menu
+                  do item). Em combate o servidor valida turno e Ação.
+                */}
+                {combatView === 'inventory' ? (
+                  <BagListSection
+                    character={character}
+                    onUseItem={useItem}
+                    itemTargets={inventoryTargets}
+                    onUseItemOn={useItemOn}
+                  />
+                ) : null}
               </section>
             ) : null}
 
