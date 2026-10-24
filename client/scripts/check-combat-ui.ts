@@ -732,6 +732,35 @@ console.log('Check-combat-ui — refino da UI de combate');
     'CB14) inventário do jogador (WIP) não foi redesenhado pelo hotfix',
     !source('src/components/sections/InventorySection.tsx').includes('NpcInventorySection'),
   );
+
+  // CB15–CB17. Mochila do combate: LINHA (como antes), com uso pelo mesmo motor.
+  const bagList = source('src/components/sections/BagListSection.tsx');
+  const sheetPage = source('src/pages/SheetPage.tsx');
+  check(
+    'CB15) a mochila do combate continua em LINHA (sem modal/portal)',
+    sheetPage.includes("combatView === 'inventory'") &&
+      sheetPage.includes('<BagListSection') &&
+      bagList.includes('<ul className="bag-list">') &&
+      !bagList.includes('createPortal') &&
+      !bagList.includes('combat-modal'),
+  );
+  check(
+    'CB16) a linha usa o MESMO motor de uso do inventário (duplo clique + Usar em...)',
+    bagList.includes('isConsumableItem(') &&
+      bagList.includes('ItemContextMenu') &&
+      bagList.includes('onDoubleClick') &&
+      bagList.includes("label: 'Usar em...'") &&
+      sheetPage.includes('onUseItem={useItem}') &&
+      sheetPage.includes('onUseItemOn={useItemOn}') &&
+      sheetPage.includes('itemTargets={inventoryTargets}'),
+  );
+  check(
+    'CB17) o uso na lista reaproveita o motor de combate (turno + Ação) do SheetPage',
+    bagList.includes('onUseItem?: (itemInventoryId: string)') &&
+      bagList.includes('usingRef') &&
+      !bagList.includes('useCombatItem(') &&
+      sheetPage.includes('useCombatItem(combat, {'),
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
