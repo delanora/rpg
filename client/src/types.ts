@@ -2494,7 +2494,12 @@ export type DiceRollKind =
   | 'item'
   | 'rest'
   /** Teste contra a Morte (Fase 6.3): o servidor valida, rola e aplica. */
-  | 'death-save';
+  | 'death-save'
+  /**
+   * Teste de CONCENTRAÇÃO (Fase 6.4): salvaguarda de Constituição que resolve
+   * uma pendência derivada de dano. O servidor decide bônus, modo e CD.
+   */
+  | 'concentration';
 
 /** Audiência de uma rolagem: a mesa inteira ou só a sala dos mestres. */
 export type DiceRollAudience = 'table' | 'masters';
@@ -2602,6 +2607,10 @@ export interface TableRollRequest {
   kind?: DiceRollKind;
   private?: boolean;
   clientId?: string;
+  /** Concentração: teste pendente que esta rolagem resolve (server-authoritative). */
+  pendingConcentrationSaveId?: string;
+  /** NPC/criatura: visibilidade do teste escolhida pelo Mestre ao rolar. */
+  visibility?: 'public' | 'private';
 }
 
 /**
@@ -2657,10 +2666,35 @@ export interface ConditionInstance {
   id: string; condition: string; sourceType?: string; sourceId?: string;
   sourceEntity?: MechanicalEntity; sourceLabel?: string; appliedBy?: string; appliedAt: string;
 }
+/** CONCENTRAÇÃO (PHB 2014): estado próprio, nunca uma Condition. */
+export interface ConcentrationState {
+  id: string;
+  label: string;
+  sourceType: 'manual' | 'spell' | 'effect' | 'feature';
+  sourceId?: string;
+  /** Efeito do Mestre marcado como privado não chega aos jogadores. */
+  visibility: 'public' | 'private';
+  startedAt: string;
+  startedBy?: string;
+}
+
+/** Teste de concentração pendente, um por evento de dano. */
+export interface ConcentrationSave {
+  id: string;
+  concentrationId: string;
+  dc: number;
+  damage: number;
+  eventId: string;
+  sourceName?: string;
+  at: string;
+}
+
 export interface MechanicalState {
   conditions: ConditionInstance[]; exhaustionLevel: number;
   /** Meio confiável de enxergar o invisível (ex.: Ver o Invisível). */
   seesInvisible?: boolean;
+  concentration?: ConcentrationState | null;
+  pendingConcentrationSaves?: ConcentrationSave[];
   log: { id: string; message: string; actorName: string; at: string }[];
 }
 export interface ConditionEffects {

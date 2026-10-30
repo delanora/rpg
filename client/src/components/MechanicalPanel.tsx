@@ -58,6 +58,9 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
   const [source, setSource] = useState('');
   const [sourceLabel, setSourceLabel] = useState('');
   const [level, setLevel] = useState('0');
+  // CONCENTRAÇÃO (manual, enquanto não há Spell Engine): só o NOME do efeito.
+  const [concentrationLabel, setConcentrationLabel] = useState('');
+  const [concentrationVisibility, setConcentrationVisibility] = useState<'public' | 'private'>('public');
   const refresh = useCallback(async () => {
     const requestedKey = `${entity.kind}:${entity.id}`;
     const next = await fetchMechanicalState({ kind: entity.kind, id: entity.id });
@@ -96,11 +99,74 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     <button className="btn btn-small" disabled={busy || !Number.isInteger(Number(level)) || Number(level) < 0 || Number(level) > 6} onClick={() => void execute({ action: 'exhaustion', exhaustionLevel: Number(level) })}>Definir e registrar</button>
   </div> : null;
   const protectedSet = new Set(current.protectedInstanceIds ?? []);
+  const concentration = current.state.concentration ?? null;
+  /**
+   * CONCENTRAÇÃO: encerrar é do DONO (jogador) ou do Mestre e NÃO gasta Ação;
+   * iniciar manualmente é administração do Mestre (o efeito em si continua
+   * sendo resolvido à parte — nada de bônus/Conditions inventados).
+   */
+  const concentrationControls = concentration ? (
+    <div className="concentration-admin hp-controls">
+      <span className="field-hint">
+        Concentrando em: <strong>{concentration.label}</strong>
+        {concentration.visibility === 'private' ? ' (privado do Mestre)' : ''}
+      </span>
+      <button
+        type="button"
+        className="btn btn-small"
+        disabled={busy}
+        onClick={() => void execute({ action: 'concentrate-end', concentrationId: concentration.id })}
+      >
+        Encerrar concentração
+      </button>
+    </div>
+  ) : isMaster ? (
+    <div className="concentration-admin">
+      <div className="hp-controls">
+        <input
+          aria-label="Efeito da concentração"
+          placeholder="Bless, Segurar Pessoa, efeito narrativo..."
+          maxLength={80}
+          value={concentrationLabel}
+          onChange={(event) => setConcentrationLabel(event.target.value)}
+        />
+        <select
+          aria-label="Visibilidade da concentração"
+          value={concentrationVisibility}
+          onChange={(event) =>
+            setConcentrationVisibility(event.target.value === 'private' ? 'private' : 'public')
+          }
+        >
+          <option value="public">Público</option>
+          <option value="private">Privado (só o Mestre)</option>
+        </select>
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy || concentrationLabel.trim() === ''}
+          onClick={() =>
+            void execute({
+              action: 'concentrate',
+              label: concentrationLabel.trim(),
+              visibility: concentrationVisibility,
+            })
+          }
+        >
+          Iniciar concentração
+        </button>
+      </div>
+      <p className="field-hint">
+        Só cria o estado de concentração (uma por criatura); o efeito continua sendo
+        resolvido separadamente.
+      </p>
+    </div>
+  ) : null;
   const body = <>
     {showBadges ? <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} /> : null}
     {showBadges && !hasConditions ? <p className="field-hint">Nenhuma condição ativa.</p> : null}
     {current.effects.exhaustionSummary.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.assistedNotes.map(text => <p key={text} className="field-hint">{text}</p>)}
+    {concentrationControls}
     {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
     {/* COMBATE: ferramenta compacta de Conditions do Mestre (mesmo domínio). */}
     {isMaster && variant === 'combat' ? <>
@@ -150,7 +216,10 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
 
   // Sem condições e com a regra de Exaustão desligada, a seção some por inteiro.
   if (variant === 'sheet') {
-    if (!hasConditions && !exhaustOn) return null;
+    // O Mestre precisa do bloco para INICIAR concentração fora de combate;
+    // o jogador só o vê quando há algo para mostrar (condição, Exaustão ou
+    // concentração ativa).
+    if (!hasConditions && !exhaustOn && !concentration && !isMaster) return null;
     return <Section title="CONDIÇÕES" icon="flame" className="conditions-section">{body}</Section>;
   }
 

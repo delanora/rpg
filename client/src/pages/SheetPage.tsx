@@ -510,6 +510,18 @@ export function SheetPage({ user }: { user: SessionUser }) {
                     entity,
                   })
                 }
+                // CONCENTRAÇÃO: a MESMA bandeja de dados; o servidor calcula
+                // bônus (CON + proficiência), modo e CD, e resolve a pendência.
+                onRollConcentrationSave={(entity, save) =>
+                  dice.openSkillRoll({
+                    kind: 'concentration',
+                    ability: 'constitution',
+                    label: `Concentração (Constituição) — CD ${save.dc}`,
+                    bonus: 0,
+                    entity,
+                    pendingConcentrationSaveId: save.id,
+                  })
+                }
               />
             ) : null}
 

@@ -435,7 +435,8 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.1 Action Economy — fundação implementada (PHB 2014)
 - 6.2 Conditions + Exhaustion — implementada (PHB 2014)
 - 6.3 0 HP / Death Saves / Stabilization / Instant Death
-- 6.4 Concentration
+- 6.4 Concentration — implementada (PHB 2014: estado, dano → save, fila e
+  público/privado de NPC); duração automática continua na 6.7
 - 6.5 Generic Effect Engine
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
@@ -500,7 +501,7 @@ de implementar.
   modificadores contra Prone e críticos de proximidade ficam pendentes. Checks
   de visão/audição, sociais, doença, peso e envelhecimento expõem flags futuros.
 - Exhaustion 6 sinaliza fatalidade, sem zerar PV, criar dead ou death saves.
-  Death lifecycle, concentração, magias e duração genérica continuam futuros.
+  Magias, duração genérica e o motor de efeitos continuam futuros.
 - Ferramenta do MESTRE em "Estado e ajustes" (combate): lista as condições do
   combatente selecionado com a ORIGEM, adiciona por seletor compacto com busca
   (as 14 do PHB; Exaustão tem controles próprios) e remove fonte por fonte.
@@ -517,6 +518,44 @@ de implementar.
 - Realtime reutiliza ficha/criatura/combate e acrescenta `mechanical:updated`
   tipado. Publicação só após commit. `smoke-conditions.ts` integra o smoke; a
   limpeza de combates do teste se limita aos IDs criados pela própria execução.
+
+### Concentração (6.4)
+
+- Concentração NÃO é Condition: `mechanicalState.concentration` guarda
+  `{ id, label, sourceType, sourceId?, visibility, startedAt, startedBy }`,
+  e `pendingConcentrationSaves[]` guarda os testes derivados de dano. Vale
+  dentro e fora de combate (personagem lê a ficha; criatura/NPC lê a instância).
+- UMA por criatura: `action: 'concentrate'` encerra a anterior (log), zera as
+  pendências antigas e cria um `id` novo. `concentrate-end` é do DONO (jogador)
+  ou do Mestre, não gasta Ação/Bônus/Reação e pode citar `concentrationId` para
+  um pedido antigo nunca encerrar a concentração nova.
+- Iniciar manualmente (`label` + `visibility`) só cria o estado: não aplica
+  bônus, Conditions, dano, save nem duração. Efeito privado do Mestre não vai
+  para o DTO do jogador (o servidor filtra, não o CSS).
+- Dano FINAL > 0 gera UM teste por EVENTO, com `dc = max(10, floor(dano / 2))`;
+  vários componentes num mesmo ataque viram um único teste (dano total) e hits
+  separados viram pendências separadas (a lista nunca é sobrescrita). Dano 0
+  (imunidade/resistência total) não pede teste.
+- Incapacitado (Inconsciente/Paralisado/Atordoado/Petrificado), 0 PV e morte
+  encerram a concentração NA HORA, sem teste; remover a condição não reativa.
+  A checagem roda na MESMA transação do dano (ataque e ajuste manual do Mestre).
+- O teste é Saving Throw de CONSTITUIÇÃO de verdade: `POST /api/dice/roll` com
+  `kind: 'concentration'` + `pendingConcentrationSaveId`. O servidor calcula
+  bônus (modificador + proficiência + bônus de save), aplica as regras de
+  vantagem/desvantagem existentes e ignora bônus/CD do cliente. Natural 1/20 não
+  é auto-falha/sucesso.
+- Sucesso mantém a concentração e limpa só a pendência resolvida; falha encerra
+  e descarta as pendências restantes da MESMA concentração. Pendência de uma
+  concentração substituída responde 409 e não toca na nova.
+- Jogador: a bandeja existente mostra “Concentração (Constituição) — CD X”.
+  Criatura/NPC: o Mestre escolhe PÚBLICO ou PRIVADO em cada teste; privado é
+  `audience: 'masters'` (não chega a jogador) e o registro do combate é privado.
+- A etiqueta CONCENTRANDO (`CombatStateId: 'concentrating'`, tooltip com o nome)
+  deriva do estado real; o controle de iniciar/encerrar vive em “Estado e
+  ajustes” (mesma API `/api/mechanical`), sem segunda bandeja.
+- `smoke-concentration.ts` cobre CD, fila, substituição, Incapacitado/0 PV,
+  multi-componente, hits separados, proficiência, vantagem/desvantagem e
+  público/privado de NPC.
 
 ### Marcos da Fase 5 e correção posterior
 

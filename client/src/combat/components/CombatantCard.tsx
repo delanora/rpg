@@ -115,7 +115,10 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
         <ConditionBadges state={combatant.mechanicalState} effects={combatant.conditionEffects} />
         {/* Estados de TURNO (Esquiva/Preparar) ficam ao lado das condições, mas
             em linha e semântica próprias: nunca misturados ao catálogo PHB. */}
-        <CombatStateBadges turnEconomy={combatant.turnEconomy} />
+        <CombatStateBadges
+          turnEconomy={combatant.turnEconomy}
+          concentration={combatant.mechanicalState.concentration}
+        />
         {combatant.deathState && hasDeathLifecycle(combatant.deathState) ? (
           <DeathRow death={combatant.deathState} />
         ) : null}

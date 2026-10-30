@@ -8,7 +8,20 @@ import {
 } from '../shared/conditions.js';
 import { economyOf } from '../shared/action-economy.js';
 import { getMechanicalState } from '../mechanical/mechanical.service.js';
-import { restoreTurnEconomyAfterRevival } from '../combat/combat.service.js';
+import {
+  appendConcentrationLog,
+  emitCombat,
+  loadCombatById,
+  publishCharacter,
+  restoreTurnEconomyAfterRevival,
+} from '../combat/combat.service.js';
+import { toCombatDto } from '../combat/combat.dto.js';
+import {
+  concentrationSaveBonus,
+  loadConcentrationTarget,
+  resolveConcentrationSave,
+} from '../concentration/concentration.service.js';
+import { concentrationSaveLabel } from '../shared/concentration.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
@@ -342,11 +355,130 @@ async function dodgeBenefitForSave(entity: MechanicalEntity | null): Promise<boo
   });
 }
 
+/**
+ * Publica o estado mecânico/combate depois do teste de concentração.
+ *
+ * A ficha do jogador recebe `mechanical:updated` (o dono e os Mestres); o
+ * combate é republicado com a visão de cada papel, para a etiqueta CONCENTRANDO
+ * e a pendência sumirem/atualizarem na hora.
+ */
+async function publishConcentrationChange(
+  actor: DiceActor,
+  entity: MechanicalEntity,
+  combatId: string | null,
+): Promise<void> {
+  try {
+    if (entity.kind === 'character') await publishCharacter(entity.id);
+    const mechanical = await getMechanicalState(
+      { userId: actor.userId, username: actor.displayName, role: actor.role },
+      entity,
+    );
+    const broadcaster = getBroadcaster();
+    broadcaster.toMasters(ServerEvents.MECHANICAL_UPDATED, { mechanical });
+    if (entity.kind === 'character') {
+      const owner = await prisma.character.findUnique({ where: { id: entity.id }, select: { userId: true } });
+      if (owner) broadcaster.toUser(owner.userId, ServerEvents.MECHANICAL_UPDATED, { mechanical });
+    }
+  } catch (error) {
+    console.error('[dice] falha ao publicar o estado de concentração:', error);
+  }
+  if (combatId) {
+    try {
+      emitCombat(ServerEvents.COMBAT_UPDATED, toCombatDto(await loadCombatById(combatId), 'MASTER'));
+    } catch (error) {
+      console.error('[dice] falha ao publicar o combate após a concentração:', error);
+    }
+  }
+}
+
+/**
+ * TESTE DE CONCENTRAÇÃO — Saving Throw de CONSTITUIÇÃO de verdade.
+ *
+ * O servidor é dono do tipo de save, do bônus (modificador + proficiência da
+ * ficha), do modo de rolagem (Condições + fontes) e do CD — o cliente manda só
+ * o ID da pendência. A bandeja existente mostra “Concentração (Constituição) —
+ * CD X”; nada de segunda bandeja nem de `rollConcentration()` paralelo.
+ */
+async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
+  const entity = input.entity;
+  if (!entity) throw new HttpError('Informe a criatura que está concentrando.', 400, 'VALIDATION_ERROR');
+  if (!input.pendingConcentrationSaveId) {
+    throw new HttpError('Informe o teste de concentração pendente.', 400, 'VALIDATION_ERROR');
+  }
+  const target = await loadConcentrationTarget(entity);
+  if (actor.role !== 'MASTER' && target.ownerUserId !== actor.userId) {
+    throw new HttpError('Você só pode rolar o teste de concentração do seu personagem.', 403);
+  }
+  const pending = target.state.pendingConcentrationSaves.find(
+    (item) => item.id === input.pendingConcentrationSaveId,
+  );
+  if (!pending) throw new HttpError('Este teste de concentração não está mais pendente.', 409, 'CONFLICT');
+
+  // Teste de NPC/criatura: o Mestre escolhe público/privado AO ROLAR. Teste de
+  // jogador é sempre público (o campo é ignorado).
+  const privateRoll = actor.role === 'MASTER' && input.visibility === 'private';
+  const combatId = target.combat?.id ?? null;
+
+  // Mesmas regras de vantagem/desvantagem de qualquer salvaguarda.
+  const mode = deriveSaveEffects(
+    target.state,
+    'constitution',
+    input.advantage ? ['manual'] : [],
+    input.disadvantage ? ['manual'] : [],
+  );
+  const bonus = await concentrationSaveBonus(entity);
+  const dice = mode.autoFail ? [] : rollGroup(20, mode.advantage, mode.disadvantage);
+  const kept = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
+  // Natural 1/20 NÃO é sucesso/falha automática: vale o total contra o CD.
+  const total = mode.autoFail ? 0 : kept + bonus;
+
+  const outcome = await resolveConcentrationSave(entity, pending.id, total, prisma, actor.displayName);
+
+  // Registro de combate: público no teste de jogador/público; privado no de
+  // criatura quando o Mestre escolhe privado (o DTO do jogador descarta).
+  if (combatId) {
+    await appendConcentrationLog(
+      combatId,
+      outcome.name,
+      `CONCENTRAÇÃO ${outcome.label}: ${mode.autoFail ? 'falha automática' : `${total} vs CD ${pending.dc}`} — ${outcome.success ? 'SUCESSO' : 'FALHA; concentração encerrada'}.`,
+      { private: privateRoll },
+    );
+  }
+
+  const roll: DiceRollDto = {
+    id: randomUUID(),
+    actorUserId: actor.userId,
+    clientId: input.clientId ?? null,
+    actorName: outcome.name,
+    kind: 'concentration',
+    ...(mode.autoFail ? { autoFail: true } : {}),
+    label: concentrationSaveLabel(pending.dc),
+    dice,
+    bonus,
+    total,
+    advantage: mode.advantage,
+    disadvantage: mode.disadvantage,
+    isPrivate: privateRoll,
+    ...(privateRoll ? { audience: 'masters' as const } : {}),
+    crit: dice.some((die) => die.sides === 20 && !die.dropped && die.value === 20),
+    lucky: false,
+    at: new Date().toISOString(),
+  };
+
+  history = [roll, ...history].slice(0, HISTORY_LIMIT);
+  publish(roll, actor);
+  await publishConcentrationChange(actor, entity, combatId);
+  return roll;
+}
+
 export async function rollTableDice(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
   const kind: DiceRollKind = input.kind ?? 'free';
 
   // Teste contra a Morte (Fase 6.3): caminho PRÓPRIO e server-authoritative.
   if (kind === 'death-save') return rollDeathSave(actor, input);
+
+  // Teste de CONCENTRAÇÃO (Fase 6.4): resolve uma pendência derivada de dano.
+  if (kind === 'concentration') return rollConcentrationSave(actor, input);
 
   // Antes de sortear, avisa a mesa que os dados estão rolando (a janela de
   // quem assiste entra na mesma animação de queda). A rolagem da criação de

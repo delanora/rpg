@@ -5,7 +5,7 @@ import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
 import { fetchDeath, rollNpcDeathSave } from '../deathApi';
-import type { Attack, CombatDto, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser } from '../types';
+import type { Attack, CombatDto, ConcentrationSave, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser } from '../types';
 import { InventoryDock } from '../components/InventoryDock';
 import {
   applyManualHp,
@@ -14,6 +14,7 @@ import {
   fetchActiveCombat,
   nextTurn,
   resolveAttack,
+  rollConcentrationSaveAsMaster,
   rollInitiativeFor,
   rollMyInitiative,
   useCombatItem,
@@ -24,6 +25,7 @@ import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel
 import { CombatDashboard } from './components/CombatDashboard';
 import { CombatLog } from './components/CombatLog';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
+import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
 import { DeathSavePanel } from './components/DeathSavePanel';
 import { DeathSaveSkipDialog } from './components/DeathSaveSkipDialog';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
@@ -84,6 +86,11 @@ interface CombatTrackerProps {
    */
   onRollDeathSave?: (entity: MechanicalEntity) => void;
   /**
+   * Jogador: abre a MESMA bandeja de dados para o Teste de Concentração
+   * pendente do próprio personagem (o servidor calcula bônus/CD e aplica).
+   */
+  onRollConcentrationSave?: (entity: MechanicalEntity, save: ConcentrationSave) => void;
+  /**
    * MESTRE: inventário persistente do NPC do turno, no MESMO painel flutuante
    * da ficha. O consumo em combate continua passando pelo motor de combate
    * (turno + Ação), então "Usar Item" saiu do menu de Ações.
@@ -123,6 +130,7 @@ export function CombatTracker({
   onOpenSection,
   openSection = null,
   onRollDeathSave,
+  onRollConcentrationSave,
   npcInventory,
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
@@ -421,6 +429,46 @@ export function CombatTracker({
     }
   }
 
+  /**
+   * Entidade CANÔNICA do estado mecânico: personagem usa a ficha, criatura usa
+   * a própria instância do combate. É onde a pendência de concentração mora.
+   */
+  const concentrationEntity: MechanicalEntity | null = actingCombatant
+    ? actingCombatant.characterId
+      ? { kind: 'character', id: actingCombatant.characterId }
+      : { kind: 'combatant', id: actingCombatant.id }
+    : null;
+  const concentrationSaves = actingCombatant?.mechanicalState.pendingConcentrationSaves ?? [];
+  const canRollOwnConcentration = Boolean(
+    !isMaster && actingCombatant && myCombatant && actingCombatant.id === myCombatant.id,
+  );
+
+  /**
+   * Mestre: rola o teste de concentração de criatura/NPC escolhendo a
+   * visibilidade NA HORA. O servidor resolve CD/bônus/concentração e republica
+   * o combate; aqui só revalidamos o estado para quem está com socket lento.
+   */
+  async function rollConcentrationForMaster(
+    save: ConcentrationSave,
+    visibility: 'public' | 'private',
+  ): Promise<void> {
+    if (!concentrationEntity || busy) return;
+    setBusy(true);
+    try {
+      await rollConcentrationSaveAsMaster({
+        entity: concentrationEntity,
+        pendingConcentrationSaveId: save.id,
+        visibility,
+      });
+      const updated = await fetchActiveCombat().catch(() => null);
+      if (updated) onCombatChange(updated);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'Falha no teste de concentração.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function attack(input: Parameters<typeof resolveAttack>[1]): void {
     void (async () => {
       setBusy(true);
@@ -568,6 +616,27 @@ export function CombatTracker({
         center={
           <>
             <CombatTurnPanel combatant={current} round={combat.round} isMyTurn={isMyTurn} />
+
+            {/* CONCENTRAÇÃO (PHB 2014): dano em quem está concentrando abre este
+                teste. O jogador rola pela bandeja; o Mestre escolhe público ×
+                privado por teste de criatura/NPC. */}
+            {concentrationEntity && concentrationSaves.length > 0 ? (
+              <ConcentrationSavePanel
+                name={actingCombatant?.name ?? ''}
+                saves={concentrationSaves}
+                isMaster={isMaster}
+                canRoll={canRollOwnConcentration}
+                busy={busy}
+                onRollPlayer={
+                  onRollConcentrationSave
+                    ? (save) => onRollConcentrationSave(concentrationEntity, save)
+                    : undefined
+                }
+                onRollMaster={(save, visibility) =>
+                  void rollConcentrationForMaster(save, visibility)
+                }
+              />
+            ) : null}
 
             {/* Janela de Reação: SÓ com oportunidade concreta para este usuário. */}
             {reactionOpportunity ? (

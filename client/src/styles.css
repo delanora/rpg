@@ -17001,6 +17001,29 @@ input[type='checkbox']:focus-visible,
   align-self: flex-start;
 }
 
+/* CONCENTRAÇÃO (Fase 6.4): reusa o painel da Reação; o tom violete é o mesmo
+   da etiqueta CONCENTRANDO (nunca uma paleta nova). */
+.concentration-panel {
+  border-color: color-mix(in srgb, var(--combat-state-concentration) 55%, var(--gold-deep));
+  background: color-mix(in srgb, var(--combat-state-concentration) 8%, transparent);
+}
+
+.concentration-panel .reaction-panel-eyebrow {
+  color: var(--combat-state-concentration);
+}
+
+.concentration-save {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.concentration-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
 /* Seleção de combatentes: filtro de tipo, busca por nome e metadados. */
 .combat-pick-filters {
   display: flex;

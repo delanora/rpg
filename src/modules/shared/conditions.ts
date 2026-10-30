@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { AbilityKey } from './dnd5e.js';
+import { concentrationSaveSchema, concentrationStateSchema } from './concentration.js';
 import type { TurnEconomy } from './action-economy.js';
 import { exhaustionRuleEnabled } from './exhaustion-flag.js';
 import { canSeeAttacker } from './vision.js';
@@ -31,6 +32,13 @@ export const mechanicalStateSchema = z.object({
    * preenche, permanece falso e a Esquiva não vale contra atacante Invisível.
    */
   seesInvisible: z.boolean().default(false),
+  /**
+   * CONCENTRAÇÃO (PHB 2014) — estado mecânico próprio, NUNCA uma Condition.
+   * Uma criatura mantém no máximo UMA; iniciar outra encerra a anterior.
+   */
+  concentration: concentrationStateSchema.nullable().default(null),
+  /** Testes de concentração pendentes (um por evento de dano), em ordem. */
+  pendingConcentrationSaves: z.array(concentrationSaveSchema).max(20).default([]),
   log: z.array(z.object({ id: z.string(), message: z.string(), actorName: z.string(), at: z.string() })).max(100).default([]),
 });
 export type MechanicalState = z.infer<typeof mechanicalStateSchema>;

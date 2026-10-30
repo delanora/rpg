@@ -816,6 +816,65 @@ console.log('Check-combat-ui — refino da UI de combate');
       styles.includes('.master-condition-lock') &&
       !styles.includes('#ff0000'),
   );
+
+  // CB26–CB31. CONCENTRAÇÃO (Fase 6.4): estado próprio, CD, dano e bandeja.
+  const sharedConditions = source('../src/modules/shared/conditions.ts');
+  const diceService = source('../src/modules/dice/dice.service.ts');
+  const concentrationShared = source('../src/modules/shared/concentration.ts');
+  const concentrationService = source('../src/modules/concentration/concentration.service.ts');
+  const concentrationPanel = source('../client/src/combat/components/ConcentrationSavePanel.tsx');
+  const combatStateBadges = source('../client/src/combat/components/CombatStateBadges.tsx');
+  const combatVisuals = source('../client/src/combat/combatVisuals.ts');
+  const combatTrackerCode = source('../client/src/combat/CombatTracker.tsx');
+  const diceRoller = source('../client/src/dice/useDiceRoller.ts');
+  const smokeConcentration = source('../src/scripts/smoke-concentration.ts');
+  check(
+    'CB26) Concentração é estado mecânico PRÓPRIO (nunca uma Condition)',
+    sharedConditions.includes('concentration: concentrationStateSchema.nullable()') &&
+      sharedConditions.includes('pendingConcentrationSaves') &&
+      concentrationShared.includes('concentrationStateSchema') &&
+      !/CONDITION_LABELS[\s\S]{0,400}concentration/.test(sharedConditions),
+  );
+  check(
+    'CB27) CD = max(10, floor(dano / 2)) e o dano usado é o FINAL',
+    concentrationShared.includes('return Math.max(10, Math.floor(Math.max(0, damage) / 2));') &&
+      concentrationService.includes('const dc = concentrationDc(damage);') &&
+      combatService.includes('noteDamageConcentration(entity, total, db, attacker.name)') &&
+      combatService.includes('noteDamageConcentration(entity, input.amount, db, actor.username)'),
+  );
+  check(
+    'CB28) uma pendência por evento, fila preservada e Incapacitado/0 PV encerram SEM save',
+    concentrationService.includes('pendingConcentrationSaves = [...state.pendingConcentrationSaves, save]') &&
+      concentrationService.includes('deriveConditionEffects(state).incapacitated || zeroHp') &&
+      concentrationService.includes('state.concentration = null;\n    state.pendingConcentrationSaves = [];') &&
+      mechanicalService.includes('perdeu a concentração em ${state.concentration.label} ao ') &&
+      mechanicalService.includes('derived.incapacitated || derived.fatalByExhaustion'),
+  );
+  check(
+    'CB29) o teste usa o MESMO pipeline de salvaguarda (Constituição) e a bandeja existente',
+    diceService.includes("kind === 'concentration'") &&
+      diceService.includes("deriveSaveEffects(\n    target.state,\n    'constitution',") &&
+      diceService.includes('await concentrationSaveBonus(entity)') &&
+      diceRoller.includes('pendingConcentrationSaveId') &&
+      concentrationPanel.includes('Rolar teste de Constituição (CD') &&
+      !source('../client/src/dice/DiceDock.tsx').includes('ConcentrationSavePanel'),
+  );
+  check(
+    'CB30) etiqueta CONCENTRANDO deriva do estado real, com nome no tooltip',
+    combatVisuals.includes("if (concentrating) states.push('concentrating');") &&
+      combatStateBadges.includes('Concentrando em: {concentration.label}') &&
+      combatStateBadges.includes('Concentrando em: ') &&
+      combatTrackerCode.includes('concentration={combatant.mechanicalState.concentration}') === false &&
+      source('../client/src/combat/components/CombatantCard.tsx').includes('concentration={combatant.mechanicalState.concentration}'),
+  );
+  check(
+    'CB31) NPC: teste privado não vaza CD/rolagem e o Mestre escolhe ao rolar',
+    source('../src/modules/combat/combat.dto.ts').includes('pendingConcentrationSaves: []') &&
+      source('../src/modules/combat/combat.dto.ts').includes('concentration.visibility === \'public\'') &&
+      concentrationPanel.includes("onRollMaster?.(save, 'private')") &&
+      concentrationPanel.includes("onRollMaster?.(save, 'public')") &&
+      smokeConcentration.includes("audience === 'masters'"),
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
