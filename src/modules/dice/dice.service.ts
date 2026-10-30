@@ -1,4 +1,12 @@
-import { deriveConditionEffects, deriveSaveEffects, resolveRollMode } from '../shared/conditions.js';
+import {
+  deriveConditionEffects,
+  deriveSaveEffects,
+  dodgeBenefitAvailable,
+  effectiveSpeed,
+  resolveRollMode,
+  type MechanicalEntity,
+} from '../shared/conditions.js';
+import { economyOf } from '../shared/action-economy.js';
 import { getMechanicalState } from '../mechanical/mechanical.service.js';
 import { restoreTurnEconomyAfterRevival } from '../combat/combat.service.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
@@ -301,6 +309,39 @@ async function rollDeathSave(actor: DiceActor, input: TableRollInput): Promise<D
   return roll;
 }
 
+/**
+ * Esquiva ATIVA e VÁLIDA do autor da rolagem, para a salvaguarda de Destreza.
+ *
+ * `dodging` mora no estado de TURNO do combatente (`Combatant.turnEconomy`),
+ * não no `MechanicalState` da ficha — por isso a busca acontece aqui, e não
+ * dentro de `deriveSaveEffects`. O deslocamento usado é o mesmo do combate
+ * (`effectiveSpeed` sobre a velocidade base), nunca o movimento restante.
+ *
+ * Fora de combate não existe turno: sem combatente ativo, não há Esquiva.
+ */
+async function dodgeBenefitForSave(entity: MechanicalEntity | null): Promise<boolean> {
+  if (!entity || entity.kind === 'creature') return false;
+  const combatant = await prisma.combatant.findFirst({
+    where: {
+      ...(entity.kind === 'combatant' ? { id: entity.id } : { characterId: entity.id }),
+      combat: { status: { in: ['PENDING_INITIATIVE', 'ACTIVE'] } },
+    },
+    include: {
+      character: { select: { speed: true, mechanicalState: true } },
+      creature: { select: { speed: true } },
+    },
+  });
+  if (!combatant) return false;
+  // Personagem usa o estado CANÔNICO da ficha; a instância usa o próprio.
+  const mechanical = combatant.character?.mechanicalState ?? combatant.mechanicalState;
+  const baseSpeed = Math.max(0, combatant.character?.speed ?? combatant.creature?.speed ?? 0);
+  return dodgeBenefitAvailable({
+    dodging: economyOf(combatant.turnEconomy).dodging,
+    mechanicalState: mechanical,
+    effectiveSpeed: effectiveSpeed(baseSpeed, mechanical),
+  });
+}
+
 export async function rollTableDice(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
   const kind: DiceRollKind = input.kind ?? 'free';
 
@@ -321,8 +362,11 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
   const state = mechanical?.state ?? {};
   const effects = deriveConditionEffects(state);
   const advantages = input.advantage ? ['manual'] : [], disadvantages = input.disadvantage ? ['manual'] : [];
+  // Esquiva: só a salvaguarda de Destreza se beneficia, e só com o benefício
+  // válido (não Incapacitado, deslocamento efetivo > 0).
+  const dodge = kind === 'save' ? await dodgeBenefitForSave(entity) : false;
   const mode = kind === 'save' && input.ability
-    ? deriveSaveEffects(state, input.ability, advantages, disadvantages)
+    ? deriveSaveEffects(state, input.ability, advantages, disadvantages, { dodge })
     : { autoFail: false, ...resolveRollMode(advantages, [...disadvantages, ...(kind === 'skill' && effects.checkDisadvantage || kind === 'save' && effects.saveDisadvantage ? ['conditions'] : [])]) };
   const { advantage, disadvantage } = mode;
 

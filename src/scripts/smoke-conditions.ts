@@ -3,7 +3,7 @@ import { io } from 'socket.io-client';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
 import { inventoryListSchema } from '../modules/characters/characters.schema.js';
-import { CONDITION_LABELS, conditionAttackMode, deriveConditionEffects, deriveSaveEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, resolveRollMode, type Condition, type MechanicalEntity } from '../modules/shared/conditions.js';
+import { CONDITION_LABELS, conditionAttackMode, deriveConditionEffects, deriveSaveEffects, dodgeBenefitAvailable, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, resolveRollMode, type Condition, type MechanicalEntity } from '../modules/shared/conditions.js';
 import { canSeeAttacker } from '../modules/shared/vision.js';
 import { addHpZeroUnconscious, HP_ZERO_PRONE_LABEL } from '../modules/shared/death.js';
 import { onTurnStart } from '../modules/shared/action-economy.js';
@@ -88,6 +88,66 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
   const dodgeO = conditionAttackMode({}, seesInvisible(), false, false, dodgeCtx);
   check('66) O. sem Invisible, Dodge impõe desvantagem normalmente', dodgeO.disadvantage && !dodgeO.advantage);
   check('66) Dodge não é inferido fora do contexto (alvo vê, mas não está esquivando)', !conditionAttackMode({}, sample(), false, false).disadvantage);
+
+  // HOTFIX da Esquiva (PHB 2014): os benefícios só valem com a criatura apta a
+  // agir e com deslocamento EFETIVO > 0. `movementRemaining` não é deslocamento.
+  console.log('\n68) Esquiva (Dodge): validade, composição e salvaguarda de Destreza');
+  const dodgeValid = { dodging: true, mechanicalState: sample(), effectiveSpeed: 30 };
+  check('68.A) Esquiva sem Incapacitated e com deslocamento > 0 vale', dodgeBenefitAvailable(dodgeValid));
+  check('68.B) Incapacitated suspende a Esquiva', !dodgeBenefitAvailable({ ...dodgeValid, mechanicalState: sample('incapacitated') }));
+  check(
+    '68.C) deslocamento efetivo 0 suspende a Esquiva (Agarrado inclusive)',
+    !dodgeBenefitAvailable({ ...dodgeValid, effectiveSpeed: 0 }) &&
+      !dodgeBenefitAvailable({ ...dodgeValid, mechanicalState: sample('grappled'), effectiveSpeed: effectiveSpeed(30, sample('grappled')) }) &&
+      !dodgeBenefitAvailable({ dodging: true, mechanicalState: sample('grappled') }),
+  );
+  const spentTurn = onTurnStart(30);
+  spentTurn.movementUsed = spentTurn.movementBudget;
+  check(
+    '68.D) movimento restante zero NÃO suspende a Esquiva',
+    spentTurn.movementUsed === spentTurn.movementBudget &&
+      dodgeBenefitAvailable({ dodging: true, mechanicalState: sample(), effectiveSpeed: effectiveSpeed(30, sample()) }),
+  );
+  const dodgeCtxSpeed = { targetDodging: true, targetSpeed: 30 };
+  const dodgeVisiblePure = conditionAttackMode({}, sample(), false, false, dodgeCtxSpeed);
+  check('68.E) atacante visível + Esquiva válida = desvantagem', dodgeVisiblePure.disadvantage && !dodgeVisiblePure.advantage);
+  const dodgeIncapPure = conditionAttackMode({}, sample('incapacitated'), false, false, dodgeCtxSpeed);
+  check('68.F) Esquiva + Incapacitated = sem desvantagem da Esquiva', !dodgeIncapPure.disadvantage && !dodgeIncapPure.advantage);
+  const dodgeZeroPure = conditionAttackMode({}, sample(), false, false, { targetDodging: true, targetSpeed: 0 });
+  check('68.G) Esquiva + deslocamento 0 = sem desvantagem da Esquiva', !dodgeZeroPure.disadvantage && !dodgeZeroPure.advantage);
+  const dodgeUnseenPure = conditionAttackMode(sample('invisible'), sample(), false, false, dodgeCtxSpeed);
+  check('68.H) Invisível não visto: vantagem mantida e sem desvantagem da Esquiva', dodgeUnseenPure.advantage && !dodgeUnseenPure.disadvantage);
+  const proneDodgeMelee = conditionAttackMode({}, sample('prone'), false, false, { ...dodgeCtxSpeed, attackRanged: false });
+  check('68.I) Caído + Esquiva válida + corpo a corpo = normal', !proneDodgeMelee.advantage && !proneDodgeMelee.disadvantage);
+  const proneGrappledDodge = conditionAttackMode({}, sample('prone', 'grappled'), false, false, { targetDodging: true, targetSpeed: 0, attackRanged: false });
+  check('68.J) Caído + Agarrado + Esquiva suspensa + corpo a corpo = vantagem', proneGrappledDodge.advantage && !proneGrappledDodge.disadvantage);
+  const proneDodgeRanged = conditionAttackMode({}, sample('prone'), false, false, { ...dodgeCtxSpeed, attackRanged: true });
+  check('68.K) Caído + Esquiva válida + à distância = desvantagem', proneDodgeRanged.disadvantage && !proneDodgeRanged.advantage);
+  const dexWithDodge = deriveSaveEffects(sample(), 'dexterity', [], [], { dodge: true });
+  check('68.L) Esquiva válida dá vantagem na salvaguarda de Destreza', dexWithDodge.advantage && !dexWithDodge.disadvantage);
+  check(
+    '68.M–Q) Esquiva não dá vantagem em FOR/CON/INT/SAB/CAR',
+    (['strength', 'constitution', 'intelligence', 'wisdom', 'charisma'] as const).every((ability) => {
+      const mode = deriveSaveEffects(sample(), ability, [], [], { dodge: true });
+      return !mode.advantage && !mode.disadvantage;
+    }),
+  );
+  check(
+    '68.R) Esquiva + Incapacitated não dá vantagem em Destreza',
+    !deriveSaveEffects(sample('incapacitated'), 'dexterity', [], [], {
+      dodge: dodgeBenefitAvailable({ dodging: true, mechanicalState: sample('incapacitated'), effectiveSpeed: 30 }),
+    }).advantage,
+  );
+  check(
+    '68.S) Esquiva suspensa por deslocamento 0 não dá vantagem em Destreza',
+    !deriveSaveEffects(sample(), 'dexterity', [], [], {
+      dodge: dodgeBenefitAvailable({ dodging: true, mechanicalState: sample(), effectiveSpeed: 0 }),
+    }).advantage,
+  );
+  const dodgePlusDisadvantage = deriveSaveEffects(sample(), 'dexterity', [], ['manual'], { dodge: true });
+  check('68.T) vantagem da Esquiva + outra desvantagem = normal', !dodgePlusDisadvantage.advantage && !dodgePlusDisadvantage.disadvantage);
+  const dodgePlusAdvantage = deriveSaveEffects(sample(), 'dexterity', ['manual'], [], { dodge: true });
+  check('68.U) duas fontes de vantagem continuam vantagem', dodgePlusAdvantage.advantage && !dodgePlusAdvantage.disadvantage);
 
   const suffix = randomUUID().slice(0, 8), userIds: string[] = [], entityIds: string[] = [];
   let creatureId: string | undefined, npcId: string | undefined, combatId: string | undefined;
@@ -291,6 +351,96 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
       dodgeRestored.status === 200 && dodgeRestored.data.result.disadvantage && !dodgeRestored.data.result.advantage,
       JSON.stringify(dodgeRestored.data),
     );
+
+    // HOTFIX: Incapacitated e deslocamento efetivo 0 suspendem os BENEFÍCIOS da
+    // Esquiva sem apagar `dodging` — removida a condição dentro da duração, o
+    // benefício volta sozinho.
+    await apply('incapacitated', copyA);
+    await override();
+    const dodgeIncapacitated = await attack();
+    check(
+      '63.MCT) Esquiva + Incapacitated: ataque visível volta ao normal',
+      dodgeIncapacitated.status === 200 &&
+        !dodgeIncapacitated.data.result.disadvantage &&
+        !dodgeIncapacitated.data.result.advantage,
+      JSON.stringify(dodgeIncapacitated.data),
+    );
+    await remove((await read(copyA)).state.conditions.find((instance) => instance.condition === 'incapacitated')!.id, copyA);
+    await override();
+    const dodgeRestoredFromIncap = await attack();
+    check(
+      '63.MCU) removido o Incapacitated, a Esquiva volta a valer dentro da duração',
+      dodgeRestoredFromIncap.status === 200 &&
+        dodgeRestoredFromIncap.data.result.disadvantage &&
+        !dodgeRestoredFromIncap.data.result.advantage,
+      JSON.stringify(dodgeRestoredFromIncap.data),
+    );
+    await apply('grappled', copyA);
+    await override();
+    const dodgeGrappled = await attack();
+    check(
+      '63.MCV) Esquiva + Agarrado (deslocamento 0): ataque volta ao normal',
+      dodgeGrappled.status === 200 &&
+        !dodgeGrappled.data.result.disadvantage &&
+        !dodgeGrappled.data.result.advantage,
+      JSON.stringify(dodgeGrappled.data),
+    );
+    await apply('prone', copyA);
+    await override();
+    const proneGrappledDodge = await attack();
+    check(
+      '63.MCW) Caído + Agarrado + Esquiva suspensa: corpo a corpo = vantagem',
+      proneGrappledDodge.status === 200 &&
+        proneGrappledDodge.data.result.advantage &&
+        !proneGrappledDodge.data.result.disadvantage,
+      JSON.stringify(proneGrappledDodge.data),
+    );
+    await clear(copyA);
+
+    // CAMINHO REAL DA FICHA: o botão de salvaguarda envia `kind: 'save'` +
+    // `ability` + a própria entidade para `/api/dice/roll`. É este fluxo (e não
+    // um helper isolado) que precisa enxergar a Esquiva.
+    await override();
+    const playerDodge = await action('dodge');
+    check('63.MCX) personagem entra em Esquiva no próprio turno', playerDodge.status === 200, JSON.stringify(playerDodge.data));
+    const dexSaveDodging = await request('/dice/roll', {
+      dice: [{ sides: 20 }], kind: 'save', ability: 'dexterity', entity: ownEntity,
+      label: 'Salvaguarda de Destreza',
+    }, playerToken);
+    check(
+      '63.MCY) salvaguarda de Destreza na ficha recebe vantagem pela Esquiva',
+      dexSaveDodging.status === 201 && dexSaveDodging.data.roll.advantage && dexSaveDodging.data.roll.dice.length === 2,
+      JSON.stringify(dexSaveDodging.data),
+    );
+    const conSaveDodging = await request('/dice/roll', {
+      dice: [{ sides: 20 }], kind: 'save', ability: 'constitution', entity: ownEntity,
+      label: 'Salvaguarda de Constituição',
+    }, playerToken);
+    check(
+      '63.MCZ) outras salvaguardas (CON) não recebem vantagem da Esquiva',
+      conSaveDodging.status === 201 && !conSaveDodging.data.roll.advantage,
+      JSON.stringify(conSaveDodging.data),
+    );
+    await apply('incapacitated');
+    const dexSaveDodgeIncap = await request('/dice/roll', {
+      dice: [{ sides: 20 }], kind: 'save', ability: 'dexterity', entity: ownEntity,
+    }, playerToken);
+    check(
+      '63.MDA) Esquiva + Incapacitated: salvaguarda de Destreza sem vantagem',
+      dexSaveDodgeIncap.status === 201 && !dexSaveDodgeIncap.data.roll.advantage,
+      JSON.stringify(dexSaveDodgeIncap.data),
+    );
+    await remove((await read()).state.conditions.find((instance) => instance.condition === 'incapacitated')!.id);
+    await apply('grappled');
+    const dexSaveDodgeGrappled = await request('/dice/roll', {
+      dice: [{ sides: 20 }], kind: 'save', ability: 'dexterity', entity: ownEntity,
+    }, playerToken);
+    check(
+      '63.MDB) Esquiva + Agarrado (deslocamento 0): salvaguarda de Destreza sem vantagem',
+      dexSaveDodgeGrappled.status === 201 && !dexSaveDodgeGrappled.data.roll.advantage,
+      JSON.stringify(dexSaveDodgeGrappled.data),
+    );
+    await clear();
 
     // A Esquiva do alvo termina ao começar o próximo turno dele; voltamos ao
     // turno do jogador para as próximas seções não herdarem desvantagem.
