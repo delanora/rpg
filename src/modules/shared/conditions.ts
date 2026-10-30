@@ -133,18 +133,61 @@ export function reconcileMovement(state: TurnEconomy, baseSpeed: number, speed: 
   return { ...state, movementBudget: Math.max(state.movementUsed, speed <= 0 ? state.movementUsed : (state.movementOverrideBudget ?? state.movementBudget * ratio)) };
 }
 
+/**
+ * Validade dos BENEFÍCIOS da Esquiva (Dodge) — PHB 2014.
+ *
+ * O estado `dodging` é registrado em `Combatant.turnEconomy` e continua lá até
+ * o início do próprio próximo turno, mas os benefícios só valem enquanto a
+ * criatura PODE se beneficiar deles:
+ *
+ *   • Incapacitada (Inconsciente, Paralisada, Atordoada, Petrificada) suspende
+ *     tanto a desvantagem dos ataques quanto a vantagem em Destreza;
+ *   • deslocamento EFETIVO 0 (Agarrado, Contido, Exaustão 5+...) também.
+ *
+ * Nada é apagado do estado: se a condição sair antes do fim da duração, o
+ * benefício volta sozinho (a validade é DERIVADA, nunca gravada).
+ *
+ * `effectiveSpeed` é o deslocamento efetivo em metros — NUNCA o movimento
+ * restante do turno: gastar todo o movimento não encerra a Esquiva.
+ */
+export function dodgeBenefitAvailable(input: {
+  dodging: boolean;
+  mechanicalState: unknown;
+  /** Ausente = deriva do próprio estado mecânico (`speedZero`). */
+  effectiveSpeed?: number;
+}): boolean {
+  if (!input.dodging) return false;
+  const effects = deriveConditionEffects(input.mechanicalState);
+  if (effects.incapacitated) return false;
+  return (input.effectiveSpeed ?? (effects.speedZero ? 0 : 1)) > 0;
+}
+
 /** Atributo canônico, sem interpretar rótulo livre do cliente. */
-export function deriveSaveEffects(value: unknown, ability: AbilityKey, advantages: readonly unknown[] = [], disadvantages: readonly unknown[] = []) {
+export function deriveSaveEffects(
+  value: unknown,
+  ability: AbilityKey,
+  advantages: readonly unknown[] = [],
+  disadvantages: readonly unknown[] = [],
+  options: { dodge?: boolean } = {},
+) {
   const effects = deriveConditionEffects(value);
+  // A Esquiva dá vantagem APENAS em Destreza; as demais salvaguardas seguem
+  // com as fontes normais (o chamador já validou se o benefício está ativo).
+  const dodge = options.dodge === true && ability === 'dexterity' ? ['dodge'] : [];
   return {
     autoFail: effects.autoFailSaves.includes(ability),
-    ...resolveRollMode(advantages, [...disadvantages, ...(effects.saveDisadvantage || (ability === 'dexterity' && effects.dexSaveDisadvantage) ? ['conditions'] : [])]),
+    ...resolveRollMode([...advantages, ...dodge], [...disadvantages, ...(effects.saveDisadvantage || (ability === 'dexterity' && effects.dexSaveDisadvantage) ? ['conditions'] : [])]),
   };
 }
 
 export interface AttackVisibilityContext {
   /** O alvo está sob Esquiva (Dodge) neste momento. */
   targetDodging?: boolean;
+  /**
+   * Deslocamento EFETIVO do alvo, em metros (nunca o movimento restante).
+   * Omitido, a validade da Esquiva cai no que o estado mecânico já prova.
+   */
+  targetSpeed?: number;
   /**
    * O ataque é À DISTÂNCIA? Usado SÓ para a regra de Caído (PHB 2014):
    * corpo a corpo (false/ausente) = atacante a até 1,5 m → vantagem; à
@@ -156,7 +199,9 @@ export interface AttackVisibilityContext {
 /**
  * Modo de uma jogada de ataque a partir das condições.
  *
- * • Esquiva do alvo: desvantagem SOMENTE quando ele CONSEGUE ver o atacante.
+ * • Esquiva do alvo: desvantagem SOMENTE quando ele CONSEGUE ver o atacante E
+ *   o benefício está ativo (`dodgeBenefitAvailable`: não Incapacitado e
+ *   deslocamento efetivo > 0).
  * • Caído (Prone): como não há geometria confiável, a decisão aprovada é
  *   MELEE → vantagem / RANGED → desvantagem contra o alvo. A composição é a
  *   normal de `resolveRollMode`: nenhuma fonte "dobra" o modo e uma vantagem
@@ -170,7 +215,11 @@ export function conditionAttackMode(
   context: AttackVisibilityContext = {},
 ) {
   const own = deriveConditionEffects(attacker), other = deriveConditionEffects(target);
-  const dodge = context.targetDodging && canSeeAttacker(target, attacker) ? ['dodge'] : [];
+  const dodge = dodgeBenefitAvailable({
+    dodging: context.targetDodging === true,
+    mechanicalState: target,
+    effectiveSpeed: context.targetSpeed,
+  }) && canSeeAttacker(target, attacker) ? ['dodge'] : [];
   // Caído no ALVO: melee = 1,5 m (vantagem); à distância = fora (desvantagem).
   const proneAgainst = other.prone
     ? [context.attackRanged === true ? 'prone-ranged' : 'prone-melee']

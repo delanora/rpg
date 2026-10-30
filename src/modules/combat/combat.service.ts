@@ -1389,10 +1389,16 @@ export async function resolveAttack(
       combatantMechanicalState(target),
       Boolean(input.advantage),
       Boolean(input.disadvantage),
-      // A Esquiva do alvo só vale se ele CONSEGUIR ver o atacante (ver `canSeeAttacker`).
+      // A Esquiva do alvo só vale se ele CONSEGUIR ver o atacante (ver `canSeeAttacker`)
+      // E se o benefício estiver ativo: Incapacitado ou deslocamento efetivo 0
+      // suspendem a Esquiva sem apagar o estado (PHB 2014).
       // `attackRanged` resolve Caído (PHB 2014) por MODO do ataque — nunca
       // pelo tipo de dano: arco = desvantagem, lança em corpo a corpo = vantagem.
-      { targetDodging: economyOf(target.turnEconomy).dodging, attackRanged: attack.ranged },
+      {
+        targetDodging: economyOf(target.turnEconomy).dodging,
+        targetSpeed: effectiveSpeed(combatantSpeed(target), combatantMechanicalState(target)),
+        attackRanged: attack.ranged,
+      },
     );
     // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
     const firstRoll = rollD20();
