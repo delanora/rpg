@@ -28,9 +28,20 @@ export const tableRollSchema = z.object({
    * elegibilidade, rola o d20 e aplica o resultado no ciclo de morte. O pool do
    * cliente é IGNORADO (sempre um d20).
    */
-  kind: z.enum(['skill', 'save', 'free', 'creation', 'death-save']).optional(),
+  kind: z.enum(['skill', 'save', 'free', 'creation', 'death-save', 'concentration']).optional(),
   /** Só vale para o mestre; rolagem de jogador é sempre pública. */
   private: z.boolean().optional(),
+  /**
+   * CONCENTRAÇÃO: teste PENDENTE que esta rolagem resolve. O servidor confere
+   * se ele ainda existe (e se é da concentração ativa) — o cliente nunca diz
+   * o CD, o bônus nem o resultado.
+   */
+  pendingConcentrationSaveId: z.string().min(1).max(64).optional(),
+  /**
+   * Visibilidade do teste de uma criatura/NPC, escolhida pelo Mestre NA HORA
+   * de rolar. Jogador é sempre público (o campo é ignorado).
+   */
+  visibility: z.enum(['public', 'private']).optional(),
   /** Identificador do pedido, gerado no cliente (ver DiceRollDto.clientId). */
   clientId: z.string().trim().max(64).optional(),
 });

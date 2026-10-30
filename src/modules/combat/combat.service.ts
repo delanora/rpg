@@ -71,6 +71,7 @@ import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, typ
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice, rollHealingDice, type HealingDiceResult } from '../shared/dice.js';
+import { noteDamageConcentration } from '../concentration/concentration.service.js';
 import { planNextTurn } from './turn-order.js';
 import {
   combatantAttacks,
@@ -387,7 +388,7 @@ function validateOffhand(combatant: CombatantSourced, id: string | undefined, at
 async function appendEconomyLog(
   db: Prisma.TransactionClient,
   combat: CombatSourced,
-  combatant: CombatantSourced,
+  combatant: { name: string },
   message: string,
   action?: string,
   options: { private?: boolean } = {},
@@ -403,6 +404,33 @@ async function appendEconomyLog(
   };
   combat.economyLog = [...log, entry].slice(-100);
   await db.combat.update({ where: { id: combat.id }, data: { economyLog: combat.economyLog as Prisma.InputJsonValue } });
+}
+
+/**
+ * Linha do registro para eventos de CONCENTRAÇÃO resolvidos FORA da transação
+ * do combate (a bandeja de dados rola o teste). Usa a MESMA versão otimista do
+ * combate: em conflito a linha não é gravada — a rolagem e o estado mecânico,
+ * que já foram persistidos, continuam valendo.
+ */
+export async function appendConcentrationLog(
+  combatId: string,
+  actorName: string,
+  message: string,
+  options: { private?: boolean } = {},
+): Promise<void> {
+  try {
+    await prisma.$transaction(async (db) => {
+      const changed = await db.combat.updateMany({
+        where: { id: combatId, status: { in: ACTIVE_STATUSES } },
+        data: { version: { increment: 1 } },
+      });
+      if (!changed.count) return;
+      const combat = await loadCombatById(combatId, db);
+      await appendEconomyLog(db, combat, { name: actorName }, message, 'concentration', options);
+    });
+  } catch (error) {
+    console.error('[combat] falha ao registrar o evento de concentração:', error);
+  }
 }
 
 /** Uma única versão serializa turno, consumo, ataques e overrides no combate. */
@@ -1290,6 +1318,8 @@ export async function resolveAttack(
   // Entidades cujo ciclo de morte mudou nesta transação: o evento `death:updated`
   // só pode sair DEPOIS do commit (é ele que abre a resolução do Mestre).
   const deathTargets: MechanicalEntity[] = [];
+  // Alvos cuja CONCENTRAÇÃO mudou (pendência criada ou encerrada pelo dano).
+  const concentrationTargets: MechanicalEntity[] = [];
   const response = await runCombatOperation(actor, input, 'attack', async (db, combat) => {
     const attacker = input.attackerCombatantId
       ? combat.combatants.find((item) => item.id === input.attackerCombatantId)
@@ -1688,6 +1718,11 @@ export async function resolveAttack(
             attacker.name,
           );
           if (death.changed) deathTargets.push(entity);
+          // CONCENTRAÇÃO (PHB 2014): UM teste por evento de dano, com o dano
+          // FINAL de todos os componentes. Se o dano já deixou a criatura
+          // Inconsciente/Incapacitada, a concentração termina sem teste.
+          const concentration = await noteDamageConcentration(entity, total, db, attacker.name);
+          if (concentration.changed) concentrationTargets.push(entity);
         }
       }
     }
@@ -1724,6 +1759,9 @@ export async function resolveAttack(
   if (!response.replayed) {
     for (const id of publications) await publishCharacter(id);
     for (const entity of deathTargets) await publishDeathUpdated(entity);
+    for (const entity of concentrationTargets) {
+      if (entity.kind === 'character') await publishCharacter(entity.id);
+    }
     for (const roll of rolls) announceRoll(roll);
     const result = response.result;
     // O resultado do ataque em criatura/NPC também esconde CA/PV (vale para
@@ -2007,6 +2045,7 @@ export async function applyManualHp(
   const delta = input.mode === 'damage' ? -input.amount : input.amount;
   const publications = new Set<string>();
   const deathTargets: MechanicalEntity[] = [];
+  const concentrationTargets: MechanicalEntity[] = [];
   const applied = await prisma.$transaction(async (db) => {
     const active = await db.combat.updateMany({ where: { id: combat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
     if (!active.count) throw new HttpError('Combate encerrado.', 409, 'CONFLICT');
@@ -2027,6 +2066,12 @@ export async function applyManualHp(
             )
           : await applyHealConsequences(entity, result.hpCurrent, db, actor.username);
       if (death.changed) deathTargets.push(entity);
+      // O ajuste manual do Mestre é um EVENTO de dano como outro qualquer:
+      // gera UM teste de concentração com o dano final aplicado.
+      if (delta < 0) {
+        const concentration = await noteDamageConcentration(entity, input.amount, db, actor.username);
+        if (concentration.changed) concentrationTargets.push(entity);
+      }
     }
     return result;
   });
@@ -2034,6 +2079,9 @@ export async function applyManualHp(
   // Mesmo evento do ataque: o Mestre recebe a decisão pendente sem refresh e o
   // contador de quem está a 0 PV atualiza na hora.
   for (const entity of deathTargets) await publishDeathUpdated(entity);
+  for (const entity of concentrationTargets) {
+    if (entity.kind === 'character') await publishCharacter(entity.id);
+  }
 
   if (!applied) {
     throw new HttpError('A ficha ou criatura deste combatente não existe mais.', 409);

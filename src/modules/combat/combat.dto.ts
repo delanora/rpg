@@ -318,8 +318,17 @@ function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
           !(instance.condition === 'prone' && instance.sourceLabel === HP_ZERO_PRONE_LABEL),
       )
     : state.conditions;
-  const privateState =
-    conditions.length === state.conditions.length ? state : { ...state, conditions };
+  // CONCENTRAÇÃO de criatura/NPC: privada por padrão; quando o Mestre a marca
+  // como pública, os jogadores veem a etiqueta e o nome do efeito. Os TESTES
+  // pendentes são do Mestre (CD, dano, evento) — nunca vão para o jogador.
+  const concentration =
+    state.concentration && state.concentration.visibility === 'public' ? state.concentration : null;
+  const privateState = {
+    ...state,
+    conditions,
+    concentration,
+    pendingConcentrationSaves: [],
+  };
 
   return {
     ...combatant,

@@ -126,7 +126,7 @@ export const COMBAT_STATE_VISUALS: Record<CombatStateId, CombatStateVisual> = {
   },
   concentrating: {
     label: 'CONCENTRANDO',
-    description: 'Concentração ativa em um efeito (motor de magias ainda não implementado).',
+    description: 'Esta criatura está mantendo concentração em um efeito.',
     tone: 'concentrating',
   },
 };
@@ -140,10 +140,13 @@ export const COMBAT_STATE_VISUALS: Record<CombatStateId, CombatStateVisual> = {
 export function combatStatesOf(turnEconomy: {
   dodging?: boolean;
   ready?: unknown;
-}): CombatStateId[] {
+}, concentrating = false): CombatStateId[] {
   const states: CombatStateId[] = [];
   if (turnEconomy.dodging === true) states.push('dodging');
   if (turnEconomy.ready) states.push('ready');
+  // CONCENTRAÇÃO (Fase 6.4): deriva do estado mecânico real, nunca de uma flag
+  // só visual. Iniciar outra concentração encerra a anterior no servidor.
+  if (concentrating) states.push('concentrating');
   return states;
 }
 

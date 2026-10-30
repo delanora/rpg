@@ -54,6 +54,11 @@ export interface RollContext {
   label: string;
   /** Bônus fixo pré-aplicado ao total. */
   bonus: number;
+  /**
+   * Concentração (Fase 6.4): teste PENDENTE que esta rolagem resolve. O
+   * servidor valida a pendência, calcula o bônus/CD e aplica o resultado.
+   */
+  pendingConcentrationSaveId?: string;
 }
 
 export type RollPhase = 'idle' | 'tumbling' | 'settled';
@@ -424,6 +429,9 @@ export function useDiceRoller(user: SessionUser) {
         clientId,
         entity: context?.entity,
         ability: context?.ability,
+        ...(context?.pendingConcentrationSaveId
+          ? { pendingConcentrationSaveId: context.pendingConcentrationSaveId }
+          : {}),
       });
 
       setResult(roll);

@@ -1,6 +1,6 @@
 import { api } from '../api';
 import { createOperationId } from '../utils';
-import type { AttackResolvedPayload, CombatDto, CombatUsableItem } from '../types';
+import type { AttackResolvedPayload, CombatDto, CombatUsableItem, DiceRollDto } from '../types';
 
 /** Ações de combate — todas devolvem o estado atualizado do combate. */
 
@@ -102,6 +102,26 @@ export function applyManualHp(input: {
   return api<{ combat: CombatDto }>('/api/combat/hp', { method: 'POST', body: input }).then(
     (result) => result.combat,
   );
+}
+
+/**
+ * TESTE DE CONCENTRAÇÃO de uma criatura/NPC: o Mestre escolhe AO ROLAR se o
+ * teste é público ou privado. O servidor é dono do CD, do bônus e do resultado.
+ * O jogador usa a bandeja existente (`kind: 'concentration'`).
+ */
+export function rollConcentrationSaveAsMaster(input: {
+  entity: { kind: 'character' | 'creature' | 'combatant'; id: string };
+  pendingConcentrationSaveId: string;
+  visibility: 'public' | 'private';
+}): Promise<DiceRollDto> {
+  return api<{ roll: DiceRollDto }>('/api/dice/roll', {
+    method: 'POST',
+    body: {
+      kind: 'concentration',
+      dice: [{ sides: 20 }],
+      ...input,
+    },
+  }).then((result) => result.roll);
 }
 
 export function endCombat(): Promise<void> {

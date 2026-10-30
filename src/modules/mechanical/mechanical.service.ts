@@ -88,7 +88,11 @@ function log(state: MechanicalState, actor: CombatActor, message: string): void 
 export async function mutateMechanicalState(actor: CombatActor, input: MechanicalMutationInput, authority?: { ruleId: string }) {
   // Apenas handlers internos podem conceder autoridade de regra após validá-la.
   // A rota HTTP nunca lê/transmite este terceiro argumento do payload.
-  if (actor.role !== 'MASTER' && !authority && input.action !== 'stand') throw new HttpError('Apenas o Mestre administra condições e Exaustão.', 403);
+  // O jogador só pode LEVANTAR-SE e ENCERRAR a própria concentração; todo o
+  // resto (Condições, Exaustão, iniciar concentração) é administração do Mestre.
+  if (actor.role !== 'MASTER' && !authority && input.action !== 'stand' && input.action !== 'concentrate-end') {
+    throw new HttpError('Apenas o Mestre administra condições e Exaustão.', 403);
+  }
   const fingerprint = createHash('sha256').update(JSON.stringify({ actor: actor.userId, rule: authority?.ruleId, input })).digest('hex');
   const canonical = (await loadEntity(input.entity)).entity;
   const where = { entityKind_entityId_operationId: { entityKind: canonical.kind, entityId: canonical.id, operationId: input.operationId } };
@@ -102,7 +106,7 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
   try {
     result = await prisma.$transaction(async db => {
       const loaded = await loadEntity(input.entity, db);
-      if (actor.role !== 'MASTER' && !authority && loaded.ownerUserId !== actor.userId) throw new HttpError('Você só pode levantar seu personagem.', 403);
+      if (actor.role !== 'MASTER' && !authority && loaded.ownerUserId !== actor.userId) throw new HttpError('Você só pode alterar o estado do seu personagem.', 403);
       if (loaded.version !== input.expectedVersion) throw new HttpError('Estado mecânico mudou. Atualize e tente novamente.', 409, 'CONFLICT');
       if (loaded.combat) {
         const guarded = await db.combat.updateMany({ where: { id: loaded.combat.id, version: input.expectedCombatVersion ?? -1, status: { in: ['ACTIVE', 'PENDING_INITIATIVE'] } }, data: { version: { increment: 1 } } });
@@ -156,7 +160,37 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
         // configuração da mesa.
         const fatal = deriveConditionEffects(state).fatalByExhaustion;
         log(state, actor, `Exaustão de ${loaded.name} ajustada para ${level}${input.reason ? `: ${input.reason}` : ''}.${fatal ? ' Exaustão fatal: morte pela regra; resolução assistida pelo Mestre.' : ''}`);
-      } else {
+      } else if (input.action === 'concentrate') {
+        // CONCENTRAÇÃO MANUAL (enquanto não há Spell Engine): só cria o estado —
+        // NUNCA aplica bônus, Conditions, dano, save ou duração.
+        const previous = state.concentration;
+        if (previous) {
+          log(state, actor, `${loaded.name} encerrou a concentração em ${previous.label} ao iniciar outra.`);
+        }
+        state.concentration = {
+          id: randomUUID(),
+          label: input.label!,
+          sourceType: input.sourceType === 'spell' || input.sourceType === 'effect' || input.sourceType === 'feature' ? input.sourceType : 'manual',
+          ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+          // Efeito manual do Mestre pode ser PRIVADO: nome e save não vazam.
+          visibility: input.visibility ?? 'public',
+          startedAt: new Date().toISOString(),
+          startedBy: actor.userId,
+        };
+        // Pendências da concentração anterior morrem com ela (o id muda).
+        state.pendingConcentrationSaves = [];
+        log(state, actor, `${loaded.name} começou a se concentrar em ${state.concentration.label}.`);
+      } else if (input.action === 'concentrate-end') {
+        const current = state.concentration;
+        if (!current) throw new HttpError('Esta criatura não está concentrando.', 409, 'CONFLICT');
+        // Um pedido antigo (concentração A) nunca encerra a nova (B).
+        if (input.concentrationId && input.concentrationId !== current.id) {
+          throw new HttpError('Esta concentração não está mais ativa.', 409, 'CONFLICT');
+        }
+        log(state, actor, `${loaded.name} encerrou a concentração em ${current.label}.`);
+        state.concentration = null;
+        state.pendingConcentrationSaves = [];
+      } else if (input.action === 'stand') {
         const effects = deriveConditionEffects(state), speed = effectiveSpeed(loaded.baseSpeed, state);
         if (!effects.prone) throw new HttpError('A criatura não está caída.', 409, 'CONFLICT');
         if (speed <= 0) {
@@ -186,6 +220,20 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
         }
         state.conditions = state.conditions.filter(item => item.condition !== 'prone');
         log(state, actor, `${loaded.name} levantou${loaded.combat ? `, gastando ${speed / 2} m de Movimento` : ''}.`);
+      }
+      // CONCENTRAÇÃO: ficar Incapacitado encerra IMEDIATAMENTE, sem save —
+      // Inconsciente, Paralisado, Atordoado e Petrificado passam pela MESMA
+      // derivação (`incapacitated`). Remover a condição depois NÃO reativa a
+      // concentração: ela acabou.
+      const derived = deriveConditionEffects(state);
+      if (state.concentration && (derived.incapacitated || derived.fatalByExhaustion)) {
+        log(
+          state,
+          actor,
+          `${loaded.name} perdeu a concentração em ${state.concentration.label} ao ${derived.fatalByExhaustion ? 'ser marcado como morto pela Exaustão' : 'ficar Incapacitado'}.`,
+        );
+        state.concentration = null;
+        state.pendingConcentrationSaves = [];
       }
       // Validação integral antes da escrita: limita fontes e valida estrutura.
       mechanicalStateOf(state);

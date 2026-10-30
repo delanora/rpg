@@ -21,8 +21,11 @@ export function standUp(input: {
 }
 
 export function mutateMechanicalState(current: MechanicalDto, input: {
-  action: 'apply' | 'remove' | 'exhaustion' | 'stand'; condition?: string; instanceId?: string;
+  action: 'apply' | 'remove' | 'exhaustion' | 'stand' | 'concentrate' | 'concentrate-end';
+  condition?: string; instanceId?: string;
   sourceEntity?: MechanicalEntity; sourceLabel?: string; exhaustionLevel?: number; exhaustionDelta?: number;
+  /** Concentração: nome do efeito, visibilidade e id da concentração encerrada. */
+  label?: string; visibility?: 'public' | 'private'; concentrationId?: string;
 }): Promise<MechanicalDto> {
   return api<{ mechanical: MechanicalDto }>('/api/mechanical/mutate', { method: 'POST', body: {
     ...input, entity: current.entity, expectedVersion: current.version,

@@ -6,7 +6,15 @@
  * e de salvaguarda, públicas ou privadas.
  */
 
-export type DiceRollKind = 'skill' | 'save' | 'free' | 'creation' | 'item' | 'rest' | 'death-save';
+export type DiceRollKind =
+  | 'skill'
+  | 'save'
+  | 'free'
+  | 'creation'
+  | 'item'
+  | 'rest'
+  | 'death-save'
+  | 'concentration';
 
 /**
  * Audiência de uma rolagem (Fase 6.3).
