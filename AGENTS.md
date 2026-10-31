@@ -497,6 +497,14 @@ de implementar.
 - Unconscious causa Prone; a queda persiste depois de acordar até levantar ou
   remoção explícita. Largar objetos é assistido/logado: nunca guardar na mochila
   ou inventar ground items. Invisible não aplica Hidden.
+- **Invisible é uma RELAÇÃO de visão**, não um bônus solto (`shared/vision.ts`
+  → `canSee(viewer, subject)`): o atacante Invisível só tem vantagem contra quem
+  NÃO o enxerga, e atacar um alvo Invisível só tem desvantagem quando o ATACANTE
+  não o enxerga. `MechanicalState.seesInvisible` é o único meio CONFIÁVEL de
+  ver o invisível hoje; sem ele, vale a suposição assistida de visibilidade (o
+  projeto não modela posição/linha de visão). A Esquiva usa a mesma relação.
+  Nunca derivar vantagem/desvantagem só de "tem Invisible" fora de
+  `conditionAttackMode`.
 - Sem distância/posição/linha de visão confiáveis: Frightened fica assistido;
   modificadores contra Prone e críticos de proximidade ficam pendentes. Checks
   de visão/audição, sociais, doença, peso e envelhecimento expõem flags futuros.
@@ -512,9 +520,12 @@ de implementar.
   são protegidas: o DTO expõe `protectedInstanceIds`, a UI trava a remoção e o
   servidor responde 409 `CONDITION_DERIVED`. O caminho é resolver PV/estado de
   morte; remover a fonte manual nunca apaga a derivada.
-- Invisible segue tão pública quanto qualquer outra condição: não existe
-  visibility/private por instância, então não há o que vazar — e log privado de
-  condição ainda não é modelado (limitação conhecida, não silenciosa).
+- Condições não têm visibility/private por INSTÂNCIA: são tão públicas quanto
+  hoje (sem o que vazar), e log privado de condição ainda não é modelado
+  (limitação conhecida, não silenciosa). A privacidade que existe no servidor é
+  a do lifecycle de NPC/criatura a 0 PV (`hideCombatantPrivateState`: Inconsciente
+  `hp-zero` + Queda derivada filtradas, efeitos recalculados) — não confiar em
+  CSS/UI para esconder estado.
 - Realtime reutiliza ficha/criatura/combate e acrescenta `mechanical:updated`
   tipado. Publicação só após commit. `smoke-conditions.ts` integra o smoke; a
   limpeza de combates do teste se limita aos IDs criados pela própria execução.

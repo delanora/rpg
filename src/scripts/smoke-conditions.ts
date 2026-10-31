@@ -75,15 +75,50 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
   const dodgeL = conditionAttackMode(invisibleAttacker, sample(), false, false, dodgeCtx);
   check('66) L. Dodge não impõe desvantagem contra atacante Invisível que o alvo não vê', dodgeL.advantage && !dodgeL.disadvantage);
   check('66) alvo Cego (ou alheio) não vê o atacante; alvo normal e atacante visível, sim', !canSeeAttacker(sample('blinded'), {}) && !canSeeAttacker(sample('unconscious'), {}) && canSeeAttacker(sample(), {}) && !canSeeAttacker(sample(), invisibleAttacker));
-  // M. alvo tem meio CONFIÁVEL de ver o Invisível → Dodge aplica (cancela a
-  // vantagem de Invisible, resultando em rolagem normal).
+  // M. alvo tem meio CONFIÁVEL de ver o Invisível → a Invisibilidade NÃO concede
+  // vantagem; sobra só a desvantagem da Esquiva do alvo.
   const dodgeM = conditionAttackMode(invisibleAttacker, seesInvisible(), false, false, dodgeCtx);
-  check('66) M. com estado confiável de visão, Dodge aplica desvantagem normalmente', !dodgeM.advantage && !dodgeM.disadvantage);
+  check(
+    '66) M. quem enxerga o Invisível não sofre a vantagem dele: só a Esquiva vale',
+    dodgeM.disadvantage && !dodgeM.advantage,
+  );
+  const seenInvisible = conditionAttackMode(invisibleAttacker, seesInvisible(), false, false);
+  check(
+    '66) M2. atacante Invisível contra quem o enxerga = rolagem normal',
+    !seenInvisible.advantage && !seenInvisible.disadvantage,
+  );
+  const seenInvisibleTarget = conditionAttackMode(seesInvisible(), sample('invisible'), false, false);
+  check(
+    '66) M3. alvo Invisível + atacante que o enxerga = sem desvantagem',
+    !seenInvisibleTarget.disadvantage && !seenInvisibleTarget.advantage,
+  );
+  const bothInvisible = conditionAttackMode(sample('invisible'), sample('invisible'), false, false);
+  check(
+    '66) M4. Invisíveis dos dois lados: vantagem e desvantagem se cancelam',
+    !bothInvisible.advantage && !bothInvisible.disadvantage,
+  );
+  check(
+    '66) M5. canSee é uma relação (observador × observado), não um flag do atacante',
+    canSeeAttacker(seesInvisible(), invisibleAttacker) &&
+      !canSeeAttacker(sample(), invisibleAttacker) &&
+      canSeeAttacker(sample('invisible'), sample()) &&
+      canSeeAttacker(sample(), sample('invisible')) === false,
+  );
   // N. composição normal com outra fonte independente de desvantagem.
   const dodgeN1 = conditionAttackMode(sample('poisoned'), seesInvisible(), false, false, dodgeCtx);
   check('66) N. Dodge soma desvantagem independente (sem vantagem) = desvantagem', dodgeN1.disadvantage && !dodgeN1.advantage);
-  const dodgeN2 = conditionAttackMode(sample('invisible', 'poisoned'), seesInvisible(), false, false, dodgeCtx);
-  check('66) N. vantagem de Invisible cancela Dodge + desvantagem independente = normal', !dodgeN2.advantage && !dodgeN2.disadvantage);
+  // Sem visão do Invisível: a vantagem dele cancela a desvantagem independente.
+  const dodgeN2 = conditionAttackMode(sample('invisible', 'poisoned'), sample(), false, false, dodgeCtx);
+  check(
+    '66) N2. vantagem do Invisível não visto cancela desvantagem independente = normal',
+    !dodgeN2.advantage && !dodgeN2.disadvantage,
+  );
+  // Enxergando o Invisível, sobra só a desvantagem independente (sem Esquiva).
+  const dodgeN3 = conditionAttackMode(sample('invisible', 'poisoned'), seesInvisible(), false, false);
+  check(
+    '66) N3. enxergando o Invisível, a desvantagem independente permanece',
+    dodgeN3.disadvantage && !dodgeN3.advantage,
+  );
   // O. atacante deixa de estar Invisível → Dodge volta a valer normalmente.
   const dodgeO = conditionAttackMode({}, seesInvisible(), false, false, dodgeCtx);
   check('66) O. sem Invisible, Dodge impõe desvantagem normalmente', dodgeO.disadvantage && !dodgeO.advantage);
