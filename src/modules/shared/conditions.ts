@@ -3,7 +3,7 @@ import type { AbilityKey } from './dnd5e.js';
 import { concentrationSaveSchema, concentrationStateSchema } from './concentration.js';
 import type { TurnEconomy } from './action-economy.js';
 import { exhaustionRuleEnabled } from './exhaustion-flag.js';
-import { canSeeAttacker } from './vision.js';
+import { canSee, canSeeAttacker } from './vision.js';
 
 export const CONDITION_LABELS = {
   blinded: 'Cego', charmed: 'Enfeitiçado', deafened: 'Surdo', frightened: 'Amedrontado',
@@ -207,6 +207,11 @@ export interface AttackVisibilityContext {
 /**
  * Modo de uma jogada de ataque a partir das condições.
  *
+ * • INVISÍVEL é uma RELAÇÃO, não um bônus solto (PHB 2014): o atacante
+ *   Invisível só tem vantagem contra quem NÃO consegue vê-lo, e atacar um alvo
+ *   Invisível só tem desvantagem quando o ATACANTE não consegue vê-lo. Quem
+ *   enxerga o invisível (Ver o Invisível/percepção especial) não sofre nada —
+ *   daí `canSee` nos dois sentidos.
  * • Esquiva do alvo: desvantagem SOMENTE quando ele CONSEGUE ver o atacante E
  *   o benefício está ativo (`dodgeBenefitAvailable`: não Incapacitado e
  *   deslocamento efetivo > 0).
@@ -223,6 +228,16 @@ export function conditionAttackMode(
   context: AttackVisibilityContext = {},
 ) {
   const own = deriveConditionEffects(attacker), other = deriveConditionEffects(target);
+  // Visibilidade nas DUAS direções: o alvo enxerga o atacante? o atacante
+  // enxerga o alvo? Só o que não é visto produz vantagem/desvantagem.
+  const attackerUnseen = !canSee(target, attacker);
+  const targetUnseen = !canSee(attacker, target);
+  const ownAdvantages = own.attackAdvantages.filter(
+    source => source !== 'invisible' || attackerUnseen,
+  );
+  const targetDisadvantages = other.attacksAgainstDisadvantages.filter(
+    source => source !== 'invisible' || targetUnseen,
+  );
   const dodge = dodgeBenefitAvailable({
     dodging: context.targetDodging === true,
     mechanicalState: target,
@@ -234,14 +249,14 @@ export function conditionAttackMode(
     : [];
   return resolveRollMode(
     [
-      ...own.attackAdvantages,
+      ...ownAdvantages,
       ...other.attacksAgainstAdvantages,
       ...(context.attackRanged === true ? [] : proneAgainst),
       ...(advantage ? ['manual'] : []),
     ],
     [
       ...own.attackDisadvantages,
-      ...other.attacksAgainstDisadvantages,
+      ...targetDisadvantages,
       ...(context.attackRanged === true ? proneAgainst : []),
       ...dodge,
       ...(disadvantage ? ['manual'] : []),
