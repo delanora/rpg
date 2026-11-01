@@ -7,6 +7,8 @@ import { Icon } from '../components/Icon';
 import { LevelUpDialog } from '../components/LevelUpDialog';
 import { PresentationOverlay } from '../components/PresentationOverlay';
 import { SheetView } from '../components/SheetView';
+import { AbilityCardsSection } from '../components/sections/AbilityCardsSection';
+import { SheetAccessProvider } from '../readonly';
 import { BagListSection } from '../components/sections/BagListSection';
 import { FeaturesSection } from '../components/sections/FeaturesSection';
 import { AttacksSection } from '../components/sections/AttacksSection';
@@ -556,6 +558,27 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 ) : null}
                 {combatView === 'features' ? (
                   <FeaturesSection character={character} update={update} />
+                ) : null}
+                {/*
+                 * ATRIBUTOS: a MESMA seção da ficha (atributo, salvaguarda e
+                 * perícias) aberta no painel do combate. As travas são as da
+                 * ficha — depois da criação os números viram rolagem, nunca
+                 * edição no meio da batalha.
+                 */}
+                {combatView === 'attributes' ? (
+                  <SheetAccessProvider
+                    value={{
+                      readOnly: false,
+                      creationLocked: character.creationFinalized,
+                      masterView: false,
+                    }}
+                  >
+                    <AbilityCardsSection
+                      character={character}
+                      update={update}
+                      onRoll={dice.openSkillRoll}
+                    />
+                  </SheetAccessProvider>
                 ) : null}
                 {/*
                   Mochila em LINHA, como sempre: usa o MESMO motor de uso do

@@ -81,6 +81,16 @@
      alta que a linha visível — acertar um fio de 2px seria um alvo ruim. */
   --music-dock-h: 1.6rem;
 
+  /*
+   * Pilha flutuante do MESTRE (Anotações na base → Dados → Log). `--fab-step`
+   * é o passo entre dois botões — o MESMO respiro da pilha do jogador
+   * (inventário → dados, 3rem). `--fab-lift` é quanto a pilha sobe quando a
+   * barra de música ocupa o rodapé (ver `.app-shell.has-music-bar`).
+   */
+  --fab-base: 1.2rem;
+  --fab-step: 3rem;
+  --fab-lift: 0rem;
+
   /* Escala de espaçamento — múltiplos de 8px para um ritmo visual consistente. */
   --space-1: 0.5rem; /* 8px */
   --space-2: 1rem; /* 16px */
@@ -840,7 +850,12 @@ select option {
 .app-header {
   position: sticky;
   top: 0;
-  z-index: 20;
+  /*
+   * Acima das barras `sticky` do combate (`.combat-bottom`, z-index 20): a
+   * faixa do topo é a referência da página, então quando a barra de recursos
+   * do turno sobe ao rolar ela passa POR BAIXO da faixa — nunca por cima.
+   */
+  z-index: 30;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3927,6 +3942,21 @@ input[type='checkbox']:disabled {
   flex: 0 1 auto;
 }
 
+/*
+ * Em combate a navegação do mestre desce para baixo do quadro de batalha e
+ * perde a largura de "barra do topo": ela passa a viver dentro de <main>,
+ * alinhada ao conteúdo (e ao quadro de combate).
+ */
+.tabs-under-combat {
+  /* Fica acima da barra `sticky` de recursos do turno (z-index 20) para ela
+     deslizar por baixo das abas em vez de cobri-las. */
+  position: relative;
+  z-index: 21;
+  margin: 1.15rem auto 1.35rem;
+  padding: 0.45rem 0;
+  border-bottom: none;
+}
+
 /* Sub-abas dentro de um editor (ex.: Visão geral / Localidades da região). */
 .subtabs {
   margin: 0 0 1rem;
@@ -4168,9 +4198,17 @@ input[type='checkbox']:disabled {
   background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(122, 31, 31, 0.12), transparent 70%);
 }
 
+/*
+ * O QUADRO DE BATALHA usa 85% da JANELA — mais largo que o container da ficha
+ * (1420px), porque o painel tem três colunas. Ele escapa do container pelo
+ * centro: a margem esquerda é metade da diferença (negativa quando a janela é
+ * maior que o container). O restante da página continua exatamente como era.
+ */
 .combat-panel {
   position: relative;
   padding: 1.1rem;
+  width: 85vw;
+  margin-left: calc((100% - 85vw) / 2);
   margin-bottom: 1.1rem;
   display: grid;
   gap: 0.85rem;
@@ -4855,6 +4893,40 @@ input[type='checkbox']:disabled {
   font-size: 0.9rem;
   letter-spacing: 0.04em;
   color: #d7c19a;
+}
+
+/*
+ * SEU TURNO — mesma tomada de tela do início da batalha, com o selo um pouco
+ * maior e a moldura pulsando: é o aviso mais importante da rodada e precisa ser
+ * visto de longe (o som acompanha, em `sound.ts` → `playTurnHorn`).
+ */
+.combat-intro.is-turn {
+  z-index: 92;
+  background: radial-gradient(circle at 50% 45%, rgba(150, 26, 26, 0.6), rgba(6, 3, 2, 0.95) 70%);
+}
+
+.combat-intro-seal.is-turn {
+  width: min(70vw, 380px);
+  border-width: 4px;
+  animation:
+    seal-in 2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards,
+    turn-seal-pulse 0.9s ease-in-out 0.15s 2;
+}
+
+.combat-intro-text.is-turn {
+  font-size: clamp(1.15rem, 2.6vw, 1.8rem);
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 22px rgba(224, 184, 63, 0.55);
+}
+
+@keyframes turn-seal-pulse {
+  0% { box-shadow: 0 0 70px rgba(224, 184, 63, 0.6), inset 0 0 46px rgba(224, 184, 63, 0.28); }
+  50% {
+    box-shadow:
+      0 0 110px rgba(255, 216, 106, 0.85),
+      inset 0 0 60px rgba(255, 216, 106, 0.42);
+  }
+  100% { box-shadow: 0 0 70px rgba(224, 184, 63, 0.6), inset 0 0 46px rgba(224, 184, 63, 0.28); }
 }
 
 /* ==========================================================================
@@ -7617,13 +7689,13 @@ input[type='checkbox']:focus-visible,
    (3.0rem) e o painel abre acima do conjunto.
    --------------------------------------------------------------------------- */
 .dice-fab.is-master {
-  bottom: 7.25rem;
+  bottom: calc(var(--fab-base) + var(--fab-step) + var(--fab-lift));
 }
 
 .roll-log-fab {
   position: fixed;
   left: 1.25rem;
-  bottom: 10.25rem;
+  bottom: calc(var(--fab-base) + 2 * var(--fab-step) + var(--fab-lift));
   z-index: 56;
   display: inline-flex;
   align-items: center;
@@ -7672,7 +7744,7 @@ input[type='checkbox']:focus-visible,
 .notes-fab.master-notes-fab {
   left: 1.25rem;
   right: auto;
-  bottom: 4.25rem;
+  bottom: calc(var(--fab-base) + var(--fab-lift));
 }
 
 /*
@@ -7682,7 +7754,8 @@ input[type='checkbox']:focus-visible,
 .master-fab-panel {
   position: fixed;
   left: 1.25rem;
-  bottom: 13.6rem;
+  /* Abre logo acima do botão de Log (topo da pilha). */
+  bottom: calc(var(--fab-base) + 2 * var(--fab-step) + 3rem + var(--fab-lift));
   z-index: 55;
   width: min(32rem, 92vw);
   max-height: calc(100vh - 12rem);
@@ -9982,7 +10055,60 @@ input[type='checkbox']:focus-visible,
   display: grid;
   grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr) minmax(15rem, 22rem);
   gap: 0.85rem;
-  align-items: start;
+  /* As três colunas têm a MESMA altura: quem manda é a mais alta (o centro). */
+  align-items: stretch;
+}
+
+/*
+ * INICIATIVA e REGISTRO terminam na MESMA linha: as duas colunas esticam até a
+ * altura do bloco central, com um teto comum para não virarem caixas vazias
+ * enormes. Dentro delas as listas continuam rolando (barra de rolagem
+ * preservada) — o corte é só o fim visual do card.
+ */
+.combat-col-left,
+.combat-col-right {
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
+}
+
+/* Só o REGISTRO tem teto de altura: é ele quem rola dentro do próprio bloco. */
+.combat-col-right {
+  max-height: 42rem;
+}
+
+.combat-col-left > .combat-block,
+.combat-col-right > .combat-block {
+  min-height: 0;
+  /* Título na altura do conteúdo; a lista fica com todo o resto. */
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/*
+ * A lista de INICIATIVA não vira container de rolagem.
+ *
+ * Os popovers das etiquetas (condições, Esquiva/Preparado/Concentrando) são
+ * posicionados ABSOLUTOS dentro do card e são largos: dentro de um container
+ * com `overflow` eles ficam recortados na borda da coluna e a explicação some
+ * atrás do painel do centro. Sem rolagem aqui, o popover passa por cima de
+ * tudo — a lista simplesmente cresce com o número de combatentes.
+ */
+.combat-col-left .combatant-list {
+  min-height: 0;
+}
+
+.combat-col-right .combat-log {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/*
+ * No desktop o teto do registro é a PRÓPRIA coluna (sem `max-height` fixo).
+ * Seletor mais específico que `.combat-log-panel .combat-log` para vencer a
+ * regra de 26rem, que continua valendo nas telas estreitas.
+ */
+.combat-col-right .combat-log-panel .combat-log {
+  max-height: none;
 }
 
 .combat-col {
@@ -9998,6 +10124,12 @@ input[type='checkbox']:focus-visible,
   padding: 0;
   display: grid;
   gap: 0.4rem;
+}
+
+/* Card com popover aberto sobe acima dos cards seguintes. */
+.combatant-card:hover,
+.combatant-card:focus-within {
+  z-index: 5;
 }
 
 .combatant-card {
@@ -12956,21 +13088,13 @@ input[type='checkbox']:focus-visible,
   padding-bottom: calc(1rem + var(--music-bar-h));
 }
 
-/* Botões flutuantes do mestre: sobem juntos, mantendo o passo entre eles. */
-.app-shell.has-music-bar .notes-fab.master-notes-fab {
-  bottom: calc(4.25rem + var(--music-bar-h));
-}
-
-.app-shell.has-music-bar .dice-fab.is-master {
-  bottom: calc(7.25rem + var(--music-bar-h));
-}
-
-.app-shell.has-music-bar .roll-log-fab {
-  bottom: calc(10.25rem + var(--music-bar-h));
-}
-
-.app-shell.has-music-bar .master-fab-panel {
-  bottom: calc(13.6rem + var(--music-bar-h));
+/*
+ * Pilha do mestre quando a barra de música ocupa o rodapé: ela sobe JUNTA, e
+ * só o suficiente para limpar a barra (base fica ~1,5rem acima dela em vez de
+ * 1,2rem do chão). A janela de dados mantém a subida que já tinha.
+ */
+.app-shell.has-music-bar {
+  --fab-lift: calc(var(--music-bar-h) - 0.4rem);
 }
 
 .app-shell.has-music-bar .dice-window {
@@ -16343,6 +16467,20 @@ input[type='checkbox']:focus-visible,
   width: min(20rem, 80vw);
 }
 
+/*
+ * Na ficha a faixa de condições vive no PÉ do card, e a seção recorta o que sai
+ * dela (`overflow: hidden` da moldura). O popover abre para CIMA, então fica
+ * inteiro dentro do card em vez de ser cortado pela borda de baixo.
+ */
+.conditions-strip .condition-tip {
+  top: auto;
+  bottom: calc(100% + 0.45rem);
+  /* A faixa é alinhada à DIREITA: o popover cresce para a esquerda, dentro do
+     card, em vez de vazar pela borda direita. */
+  left: auto;
+  right: 0;
+}
+
 .condition-tip-sources {
   display: block;
   margin-top: 0.3rem;
@@ -16416,9 +16554,18 @@ input[type='checkbox']:focus-visible,
 
 /* --- Atalhos da ficha em linha (não competem com o fluxo de ataque) ------ */
 
+/*
+ * A fileira de atalhos ocupa a LARGURA INTEIRA da coluna em que vive — a mesma
+ * do card acima dela. Os botões dividem essa largura em partes iguais; se não
+ * couberem na linha, quebram mantendo a última linha preenchida.
+ */
+.combat-shortcuts-inline {
+  width: 100%;
+}
+
 .combat-shortcuts-inline .btn {
-  flex: 0 1 auto;
-  padding: 0.25rem 0.6rem;
+  flex: 1 1 6rem;
+  padding: 0.25rem 0.5rem;
   font-size: 0.72rem;
 }
 

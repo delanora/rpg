@@ -121,7 +121,7 @@ export function playCrit(): void {
   });
 }
 
-/** Aviso de que chegou o seu turno. */
+/** Aviso CURTO de turno (criatura/NPC do Mestre): dois toques discretos. */
 export function playTurn(): void {
   const audio = getContext();
   if (!audio || muted) return;
@@ -129,6 +129,38 @@ export function playTurn(): void {
   const now = audio.currentTime;
   playTone(audio, 587.33, now, 0.18, { type: 'sine', gain: 0.1 });
   playTone(audio, 880, now + 0.13, 0.32, { type: 'sine', gain: 0.1 });
+}
+
+/**
+ * CHAMADO DE BATALHA — o seu turno chegou.
+ *
+ * Bem mais presente que o aviso curto: dois tambores graves (ruído + queda de
+ * frequência), uma corneta ascendente em terças e um brilho final. Tudo
+ * sintetizado, sem arquivo de áudio; respeita o mudo global como os demais.
+ */
+export function playTurnHorn(): void {
+  const audio = getContext();
+  if (!audio || muted) return;
+
+  const now = audio.currentTime;
+
+  // Tambores: golpe de pele (ruído curto) + corpo grave caindo.
+  playClick(audio, now, 0.1, 0.34);
+  playTone(audio, 96, now, 0.3, { type: 'triangle', gain: 0.16, sweepTo: 48 });
+  playClick(audio, now + 0.24, 0.1, 0.28);
+  playTone(audio, 84, now + 0.24, 0.32, { type: 'triangle', gain: 0.14, sweepTo: 42 });
+
+  // Corneta: uma terça maior subindo, com corpo de palheta.
+  [392, 493.88, 587.33].forEach((frequency, index) => {
+    playTone(audio, frequency, now + 0.46 + index * 0.09, 0.42, {
+      type: 'square',
+      gain: 0.045,
+    });
+  });
+  playTone(audio, 587.33, now + 0.78, 0.72, { type: 'triangle', gain: 0.09 });
+
+  // Fecho: o brilho do aço.
+  playTone(audio, 1174.66, now + 0.84, 0.5, { type: 'sine', gain: 0.05, sweepTo: 1567.98 });
 }
 
 /** Um gesto do usuário em qualquer lugar libera o áudio para o resto da sessão. */
