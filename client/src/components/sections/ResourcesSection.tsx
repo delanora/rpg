@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { buildResourceGroups, type DisplayedResource } from '../../resourceDisplay';
 import { useSheetAccess } from '../../readonly';
 import { Section } from '../Section';
@@ -59,7 +59,15 @@ export function ResourcesSection({ character, onRacialUse }: ResourcesSectionPro
           <section className="resource-group" key={group.origin}>
             {/* Hierarquia por título/divisor leve — sem caixa dentro de caixa. */}
             <h3 className="resource-group-title">{group.label}</h3>
-            <div className="resource-grid">
+            {/*
+             * A grade tem SEMPRE o número de colunas igual ao de recursos: 1
+             * recurso ocupa a largura inteira, 2 dividem pela metade, 3 em
+             * terços e assim por diante — sem deixar coluna vazia à direita.
+             */}
+            <div
+              className="resource-grid"
+              style={{ '--resource-cols': group.resources.length } as CSSProperties}
+            >
               {group.resources.map((resource) => {
                 const empty = !resource.unlimited && resource.remaining <= 0;
                 const busy = pending === resource.id;

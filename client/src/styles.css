@@ -1098,8 +1098,7 @@ select option {
 .sheet-identity,
 .sheet-resources,
 .sheet-abilities,
-.sheet-tabs-area,
-.conditions-section {
+.sheet-tabs-area {
   min-width: 0;
   grid-column: 1 / -1;
 }
@@ -1110,30 +1109,27 @@ select option {
 }
 
 /*
- * Condições: DENTRO do fluxo, logo depois de Vida e Defesa. O bloco altera os
- * campos PRINCIPAIS (PV máximo e deslocamento efetivos) — não repete os números.
- * Sem condições e sem a regra de Exaustão, a seção nem é renderizada.
+ * As Condições NÃO ocupam linha própria: elas moram dentro de "Vida e Defesa"
+ * (o card da linha 1), coladas nos números que alteram — PV máximo e
+ * deslocamento efetivos. Sem condições e sem a regra de Exaustão, nada aparece.
  */
-.conditions-section {
-  grid-row: 2;
-}
 
-/* Recursos do Personagem (5.3E.2): classe + raça, logo abaixo das Condições. */
+/* Recursos do Personagem (5.3E.2): classe + raça, logo abaixo do Personagem. */
 .sheet-resources {
-  grid-row: 3;
+  grid-row: 2;
 }
 
 /*
  * Os seis atributos (cada um com a salvaguarda e as perícias dele) logo abaixo.
  */
 .sheet-abilities {
-  grid-row: 4;
+  grid-row: 3;
 }
 
 /* As abas (magias, ataques, características) fecham a ficha. O inventário
    saiu do fluxo: virou botão/painel flutuante (ver §27). */
 .sheet-tabs-area {
-  grid-row: 5;
+  grid-row: 4;
   display: grid;
   align-content: start;
   gap: var(--space-2);
@@ -15787,9 +15783,14 @@ input[type='checkbox']:focus-visible,
   color: var(--gold-bright);
 }
 
+/*
+ * Divisão DINÂMICA: uma coluna por recurso (`--resource-cols` vem do número de
+ * recursos do grupo). 1 recurso ocupa o card inteiro, 2 dividem pela metade, 3
+ * em terços... sem coluna vazia sobrando à direita.
+ */
 .resource-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  grid-template-columns: repeat(var(--resource-cols, 1), minmax(0, 1fr));
   gap: 0.55rem;
 }
 
@@ -15822,7 +15823,9 @@ input[type='checkbox']:focus-visible,
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-soft);
-  white-space: nowrap;
+  /* Colunas estreitas (muitos recursos): a origem quebra em vez de vazar. */
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .resource-card-body {
@@ -15899,8 +15902,13 @@ input[type='checkbox']:focus-visible,
 }
 
 @media (max-width: 640px) {
+  /* Mesma divisão dinâmica; só o vão encolhe para caber no celular. */
   .resource-grid {
-    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: 0.4rem;
+  }
+
+  .resource-origin {
+    display: none;
   }
 }
 
@@ -16083,32 +16091,67 @@ input[type='checkbox']:focus-visible,
    Condições e Exaustão — DENTRO da ficha (hotfix da Fase 6.2/6.3)
    ==========================================================================
 
-   O bloco deixou de ser um painel solto acima da ficha: agora é uma seção
-   interna, na MESMA grade das demais (`.sheet-conditions`), logo abaixo de Vida
-   e Defesa. A regra visual é: CONDIÇÕES ALTERAM OS CAMPOS PRINCIPAIS DA FICHA;
-   não duplicam esses valores num segundo painel (nem "deslocamento efetivo",
-   nem "PV máximo efetivo"). */
+   As condições não têm card, cabeçalho nem título próprios na ficha: são uma
+   FAIXA no rodapé de "Vida e Defesa", ao lado dos descansos e logo abaixo dos
+   números que elas mesmas alteram — quem está envenenado vê a etiqueta sem que
+   a ficha ganhe um bloco de destaque para isso. O histórico abre numa janela
+   ao clicar na etiqueta. A regra visual continua: CONDIÇÕES ALTERAM OS CAMPOS
+   PRINCIPAIS DA FICHA e não duplicam esses valores num segundo painel. */
 
-.conditions-section .section-body {
-  display: grid;
-  gap: 0.4rem;
-  align-content: start;
-  /* Mais enxuto que as demais seções: o bloco é um detalhe, não um protagonista. */
-  padding: 0.75rem 0.95rem 0.8rem;
+/*
+ * RODAPÉ do card "Vida e Defesa": Descanso Curto/Longo à esquerda e as
+ * condições à direita, na MESMA linha. Vazio (sem descansos e sem condições),
+ * ele nem aparece.
+ */
+.vitals-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.55rem 0.9rem;
+  margin-top: 1.2rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--line);
 }
 
-.conditions-section .field-hint {
+.vitals-footer:empty {
+  display: none;
+}
+
+/* Os botões de descanso perdem a margem própria dentro do rodapé. */
+.vitals-footer .class-rest {
   margin: 0;
 }
 
-/* Histórico mecânico e administração: recolhidos por padrão, discretos. */
-.conditions-history,
+/* Canto inferior direito do card: nada de título nem de coluna própria. */
+.conditions-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  margin-left: auto;
+  text-align: right;
+}
+
+.conditions-strip .condition-chips {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.conditions-strip .field-hint {
+  margin: 0;
+}
+
+.conditions-strip .hp-controls {
+  justify-content: flex-end;
+}
+
+/* Administração (Mestre): recolhida e discreta no canto do card. */
 .conditions-admin {
   font-size: var(--text-aux);
   color: var(--ink-soft);
 }
 
-.conditions-history > summary,
 .conditions-admin > summary {
   cursor: pointer;
   font-family: var(--font-display);
@@ -16118,7 +16161,6 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
-.conditions-history[open] > summary,
 .conditions-admin[open] > summary {
   margin-bottom: 0.35rem;
 }
@@ -16132,11 +16174,70 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-faint);
 }
 
-/* Em telas estreitas o bloco continua na largura útil da ficha, sem colunas. */
+/* Em telas estreitas o rodapé empilha e a faixa usa a largura toda. */
 @media (max-width: 760px) {
-  .conditions-section .section-body {
-    padding: 0.65rem 0.7rem 0.7rem;
+  .vitals-footer {
+    align-items: flex-start;
   }
+
+  .conditions-strip {
+    align-items: flex-start;
+    text-align: left;
+    gap: 0.25rem;
+  }
+
+  .conditions-strip .condition-chips,
+  .conditions-strip .hp-controls {
+    justify-content: flex-start;
+  }
+}
+
+/*
+ * Janela do HISTÓRICO MECÂNICO (aberta por clique numa etiqueta de condição).
+ * Reaproveita o modal do sistema: só a lista de entradas ganha forma própria.
+ */
+.condition-history-modal {
+  max-width: 32rem;
+}
+
+.condition-history-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  padding: 0.2rem;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.condition-history-close:hover {
+  color: var(--ink);
+}
+
+.condition-history-context {
+  margin: 0 0 0.6rem;
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+.condition-history-list {
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-aux);
+  color: var(--ink);
+}
+
+.condition-history-list li {
+  padding: 0.3rem 0.5rem;
+  border-left: 2px solid var(--gold-hair);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 /* ==========================================================================
@@ -16170,6 +16271,11 @@ input[type='checkbox']:focus-visible,
   text-transform: uppercase;
   line-height: 1.45;
   cursor: help;
+}
+
+/* Etiqueta que abre a janela do histórico (só na ficha). */
+.condition-chip.is-clickable {
+  cursor: pointer;
 }
 
 /* A cor da condição é só reforço: o nome continua sempre escrito na etiqueta. */

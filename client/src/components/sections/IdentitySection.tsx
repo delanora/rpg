@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { fileToImagePayload, uploadAvatar } from '../../api';
 import { fetchBackgroundCatalog, fetchRaceCatalog } from '../../creationApi';
 import { ABILITY_LABELS, ALIGNMENTS, SKILLS, alignmentDescription } from '../../dnd';
@@ -68,6 +68,12 @@ interface IdentitySectionProps extends SheetSectionProps {
     active: boolean,
     expectedVersion: number,
   ) => void | Promise<void>;
+  /**
+   * Conteúdo injetado DENTRO de "Vida e Defesa" (hoje: a faixa de Condições e
+   * Exaustão). Fica aqui porque é a Vida e Defesa que mostra os números que as
+   * condições alteram — o bloco não merece uma seção própria na ficha.
+   */
+  conditions?: ReactNode;
 }
 
 export function IdentitySection({
@@ -77,6 +83,7 @@ export function IdentitySection({
   shortRest,
   longRest,
   onFeatureToggle,
+  conditions,
 }: IdentitySectionProps) {
   // O avatar é estado de jogo (segue editável com a criação finalizada); os
   // demais campos da identidade são construção.
@@ -627,6 +634,7 @@ export function IdentitySection({
         shortRest={shortRest}
         longRest={longRest}
         onFeatureToggle={onFeatureToggle}
+        conditions={conditions}
       />
     </Section>
   );

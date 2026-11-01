@@ -179,6 +179,12 @@ export function SheetView({
       <div className="sheet">
         {/* Personagem (identidade, nível e vida e defesa), de ponta a ponta. */}
         <div className="sheet-identity">
+          {/*
+           * Condições e Exaustão: entram DENTRO de "Vida e Defesa", logo abaixo
+           * dos números que elas alteram (PV máximo efetivo, deslocamento
+           * efetivo) — como faixa compacta, sem card próprio. Sem condições e
+           * com a regra de Exaustão desligada, nada aparece.
+           */}
           <IdentitySection
             character={character}
             update={update}
@@ -186,22 +192,16 @@ export function SheetView({
             shortRest={shortRest}
             longRest={longRest}
             onFeatureToggle={onFeatureToggle}
+            conditions={
+              <MechanicalPanel
+                entity={{ kind: 'character', id: character.id }}
+                refreshVersion={character.version}
+                exhaustionEnabled={exhaustionEnabled}
+                variant="sheet"
+              />
+            }
           />
         </div>
-
-        {/*
-         * Condições e Exaustão: DENTRO do fluxo da ficha, logo abaixo de Vida e
-         * Defesa e acima de Recursos. O bloco altera os campos PRINCIPAIS da
-         * ficha (PV máximo efetivo, deslocamento efetivo) — não repete os valores
-         * num segundo painel. Sem condições e com a regra de Exaustão desligada,
-         * a seção inteira fica oculta.
-         */}
-        <MechanicalPanel
-          entity={{ kind: 'character', id: character.id }}
-          refreshVersion={character.version}
-          exhaustionEnabled={exhaustionEnabled}
-          variant="sheet"
-        />
 
         {/*
          * Recursos do Personagem (5.3E.2): classe e raça num só lugar, agrupados
