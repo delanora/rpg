@@ -394,21 +394,35 @@ console.log('Check-combat-ui — refino da UI de combate');
       tracker.includes('Assumir o turno de'),
   );
 
-  // WC/WD. Toast central, 2 s, sem clique e com audiência correta.
-  const toast = renderToStaticMarkup(
+  // WC/WD. Aviso de turno: TELA CHEIA para o jogador, toast curto para o Mestre.
+  const playerTurn = renderToStaticMarkup(
     createElement(TurnToast, {
       alert: { title: 'É SEU TURNO!', combatantName: 'Razzil', round: 2, role: 'PLAYER' },
     }),
   );
-  check(
-    'WC) toast central mostra o título e o nome do combatente',
-    toast.includes('turn-toast') && toast.includes('É SEU TURNO!') && toast.includes('Razzil'),
+  const masterTurn = renderToStaticMarkup(
+    createElement(TurnToast, {
+      alert: { title: 'TURNO DO MESTRE', combatantName: 'Goblin', round: 2, role: 'MASTER' },
+    }),
   );
   check(
-    'WD) toast dura 2 s, não exige clique e não fica preso no layout',
-    state.includes('export const TURN_TOAST_MS = 2000') &&
+    'WC) o turno do jogador é uma tomada de TELA CHEIA, como o início da batalha',
+    playerTurn.includes('combat-intro') &&
+      playerTurn.includes('is-turn') &&
+      playerTurn.includes('É SEU TURNO!') &&
+      playerTurn.includes('Razzil') &&
+      playerTurn.includes('Rodada 2'),
+  );
+  check(
+    'WD) Mestre mantém o toast; 2 s, sem clique e com o chamado de batalha',
+    masterTurn.includes('turn-toast') &&
+      masterTurn.includes('TURNO DO MESTRE') &&
+      state.includes('export const TURN_TOAST_MS = 2000') &&
       state.includes('setTimeout') &&
-      !toast.includes('<button') &&
+      state.includes('playTurnHorn()') &&
+      source('src/sound.ts').includes('export function playTurnHorn()') &&
+      !playerTurn.includes('<button') &&
+      !masterTurn.includes('<button') &&
       tracker.includes('<TurnToast') &&
       !tracker.includes('turn-alert'),
   );

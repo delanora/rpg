@@ -794,6 +794,95 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  /*
+   * Navegação das abas do mestre. Em combate ela precisa aparecer ABAIXO do
+   * quadro de batalha, então o markup vive aqui e é renderizado no lugar
+   * certo de cada contexto (acima do conteúdo ou dentro de <main>).
+   */
+  const tabsBar = (
+    <nav className={combat ? 'tabs tabs-inline tabs-under-combat' : 'tabs tabs-inline'}>
+      {/* Com o combate aberto a barra aparece mesmo na home, então "Início"
+          também pode ser o estado atual. */}
+      <button
+        type="button"
+        className={tab === 'home' ? 'tab active' : 'tab'}
+        onClick={() => setTab('home')}
+      >
+        <Icon name="home" size={16} /> Início
+      </button>
+      <button
+        type="button"
+        className={tab === 'sheets' ? 'tab active' : 'tab'}
+        onClick={() => setTab('sheets')}
+      >
+        <Icon name="users" size={16} /> Fichas
+      </button>
+      <button
+        type="button"
+        className={tab === 'creatures' ? 'tab active' : 'tab'}
+        onClick={() => setTab('creatures')}
+      >
+        <Icon name="flame" size={16} /> Criaturas
+      </button>
+      <button
+        type="button"
+        className={tab === 'npcs' ? 'tab active' : 'tab'}
+        onClick={() => setTab('npcs')}
+      >
+        <Icon name="crown" size={16} /> NPCs
+      </button>
+      <button
+        type="button"
+        className={tab === 'regions' ? 'tab active' : 'tab'}
+        onClick={() => setTab('regions')}
+      >
+        <Icon name="book" size={16} /> Regiões
+      </button>
+      <button
+        type="button"
+        className={tab === 'items' ? 'tab active' : 'tab'}
+        onClick={() => setTab('items')}
+      >
+        <Icon name="flask" size={16} /> Itens
+      </button>
+
+      <button
+        type="button"
+        className={tab === 'config' ? 'tab active' : 'tab'}
+        onClick={() => setTab('config')}
+      >
+        <Icon name="table" size={16} /> Mesa
+      </button>
+
+      <button
+        type="button"
+        className={tab === 'soundpad' ? 'tab active' : 'tab'}
+        onClick={() => setTab('soundpad')}
+      >
+        <Icon name="music" size={16} /> Soundpad
+      </button>
+
+      {/* Cada clique libera UM Level Up por jogador: não há mais bloquear. */}
+      <button
+        type="button"
+        className="btn btn-levelup"
+        onClick={() => void releaseLevelUpForTable()}
+        title={`Libera um Level Up para quem ainda não usou a liberação atual. Liberações dadas: ${gameConfig?.levelUpRelease ?? 0}.`}
+      >
+        <Icon name="sparkle" size={16} /> LIBERAR LEVEL UP
+        {gameConfig ? <span className="config-count">{gameConfig.levelUpRelease}</span> : null}
+      </button>
+
+      <button
+        type="button"
+        className="btn btn-primary btn-combat"
+        onClick={() => setShowStartDialog(true)}
+      >
+        <Icon name="sword" size={16} /> COMBATE
+      </button>
+    </nav>
+  );
+
   return (
     <div
       className={[
@@ -818,88 +907,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       {/* Decisões de morte em aberto (6.3): visíveis em qualquer aba. */}
       <DeathPendingBanner entries={deathEntries} onOpen={setDeathModal} />
 
-      {/* A barra de abas é a navegação do mestre: em combate ela dá lugar ao
-          combate, e na home ela some — de lá o mestre entra nas abas pelos
-          cartões do salão e volta pelo "Início". */}
-      {combat || tab === 'home' ? null : (
-        <nav className="tabs tabs-inline">
-          {/* Sempre inativo: a barra só existe fora da home, então "Início" é o
-              caminho de volta, nunca o estado atual. */}
-          <button type="button" className="tab" onClick={() => setTab('home')}>
-            <Icon name="home" size={16} /> Início
-          </button>
-          <button
-            type="button"
-            className={tab === 'sheets' ? 'tab active' : 'tab'}
-            onClick={() => setTab('sheets')}
-          >
-            <Icon name="users" size={16} /> Fichas
-          </button>
-          <button
-            type="button"
-            className={tab === 'creatures' ? 'tab active' : 'tab'}
-            onClick={() => setTab('creatures')}
-          >
-            <Icon name="flame" size={16} /> Criaturas
-          </button>
-          <button
-            type="button"
-            className={tab === 'npcs' ? 'tab active' : 'tab'}
-            onClick={() => setTab('npcs')}
-          >
-            <Icon name="crown" size={16} /> NPCs
-          </button>
-          <button
-            type="button"
-            className={tab === 'regions' ? 'tab active' : 'tab'}
-            onClick={() => setTab('regions')}
-          >
-            <Icon name="book" size={16} /> Regiões
-          </button>
-          <button
-            type="button"
-            className={tab === 'items' ? 'tab active' : 'tab'}
-            onClick={() => setTab('items')}
-          >
-            <Icon name="flask" size={16} /> Itens
-          </button>
-
-          <button
-            type="button"
-            className={tab === 'config' ? 'tab active' : 'tab'}
-            onClick={() => setTab('config')}
-          >
-            <Icon name="table" size={16} /> Mesa
-          </button>
-
-          <button
-            type="button"
-            className={tab === 'soundpad' ? 'tab active' : 'tab'}
-            onClick={() => setTab('soundpad')}
-          >
-            <Icon name="music" size={16} /> Soundpad
-          </button>
-
-          {/* Cada clique libera UM Level Up por jogador: não há mais bloquear. */}
-          <button
-            type="button"
-            className="btn btn-levelup"
-            onClick={() => void releaseLevelUpForTable()}
-            title={`Libera um Level Up para quem ainda não usou a liberação atual. Liberações dadas: ${gameConfig?.levelUpRelease ?? 0}.`}
-          >
-            <Icon name="sparkle" size={16} /> LIBERAR LEVEL UP
-            {gameConfig ? <span className="config-count">{gameConfig.levelUpRelease}</span> : null}
-          </button>
-
-          <button
-            type="button"
-            className="btn btn-primary btn-combat"
-            onClick={() => setShowStartDialog(true)}
-          >
-            <Icon name="sword" size={16} /> COMBATE
-          </button>
-        </nav>
-      )}
+      {/* Fora de combate a navegação fica acima do conteúdo; em combate
+          ela desce para logo abaixo do quadro de batalha (ver <main>). */}
+      {combat || tab === 'home' ? null : tabsBar}
 
       {error ? (
         <div className="banner banner-error">
@@ -919,123 +929,132 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       >
         {loading ? (
           <p className="splash">Carregando o painel...</p>
-        ) : combat ? (
-          <CombatTracker
-            combat={combat}
-            log={log}
-            user={user}
-            turnAlert={turnAlert}
-            attacksFor={attacksFor}
-            sneakAttackFor={sneakAttackFor}
-            onCombatChange={combatState.setCombat}
-            onCombatEnd={() => combatState.setCombat(null)}
-            onError={setError}
-            npcInventory={{
-              creatureFor: (creatureId) =>
-                creatures.find((creature) => creature.id === creatureId) ?? null,
-              items,
-              onCreatureChange: (updated) =>
-                setCreatures((prev) =>
-                  prev.map((creature) =>
-                    creature.id === updated.id ? updated : creature,
-                  ),
-                ),
-            }}
-          />
-        ) : tab === 'home' ? (
-          <MasterHome
-            userName={user.displayName}
-            sheets={characters.length}
-            creatures={monsters.length}
-            npcs={npcs.length}
-            regions={regions.length}
-            localities={localities.length}
-            items={items.length}
-            musicTrackCount={music.tracks.length}
-            levelUpRelease={gameConfig?.levelUpRelease ?? 0}
-            startingLevel={gameConfig?.startingLevel ?? 1}
-            extraCoins={gameConfig?.extraCoins ?? false}
-            onOpenTab={setTab}
-            onStartCombat={() => setShowStartDialog(true)}
-            onReleaseLevelUp={() => void releaseLevelUpForTable()}
-            search={
-              <MasterSearch
+        ) : (
+          <>
+            {/* Combate SEMPRE no topo; a aba escolhida abre abaixo dele. */}
+            {combat ? (
+              <CombatTracker
+                combat={combat}
+                log={log}
+                user={user}
+                turnAlert={turnAlert}
+                attacksFor={attacksFor}
+                sneakAttackFor={sneakAttackFor}
+                onCombatChange={combatState.setCombat}
+                onCombatEnd={() => combatState.setCombat(null)}
+                onError={setError}
+                npcInventory={{
+                  creatureFor: (creatureId) =>
+                    creatures.find((creature) => creature.id === creatureId) ?? null,
+                  items,
+                  onCreatureChange: (updated) =>
+                    setCreatures((prev) =>
+                      prev.map((creature) =>
+                        creature.id === updated.id ? updated : creature,
+                      ),
+                    ),
+                }}
+              />
+            ) : null}
+
+            {combat ? tabsBar : null}
+
+            {tab === 'home' ? (
+              <MasterHome
+                userName={user.displayName}
+                sheets={characters.length}
+                creatures={monsters.length}
+                npcs={npcs.length}
+                regions={regions.length}
+                localities={localities.length}
+                items={items.length}
+                musicTrackCount={music.tracks.length}
+                levelUpRelease={gameConfig?.levelUpRelease ?? 0}
+                startingLevel={gameConfig?.startingLevel ?? 1}
+                extraCoins={gameConfig?.extraCoins ?? false}
+                onOpenTab={setTab}
+                onStartCombat={() => setShowStartDialog(true)}
+                onReleaseLevelUp={() => void releaseLevelUpForTable()}
+                search={
+                  <MasterSearch
+                    characters={characters}
+                    creatures={monsters}
+                    npcs={npcs}
+                    regions={regions}
+                    localities={localities}
+                    items={items}
+                    compendium={compendium}
+                    onOpenTab={setTab}
+                  />
+                }
+              />
+            ) : tab === 'sheets' ? (
+              <SheetsTab
                 characters={characters}
-                creatures={monsters}
-                npcs={npcs}
+                onUpdate={patchCharacter}
+                onDelete={deleteCharacter}
+                onReopenCreation={reopenCreation}
+                onLevelDown={levelDown}
+                extraCoins={gameConfig?.extraCoins ?? false}
+                exhaustionEnabled={gameConfig?.exhaustionEnabled ?? true}
+                onCoinsChange={adoptCoins}
+              />
+            ) : tab === 'regions' ? (
+              <RegionsTab
                 regions={regions}
                 localities={localities}
-                items={items}
-                compendium={compendium}
-                onOpenTab={setTab}
+                creatures={creatures}
+                onCreate={createRegion}
+                onPatch={patchRegion}
+                onDelete={deleteRegion}
+                onCreateLocality={createLocality}
+                onPatchLocality={patchLocality}
+                onDeleteLocality={deleteLocality}
               />
-            }
-          />
-        ) : tab === 'sheets' ? (
-          <SheetsTab
-            characters={characters}
-            onUpdate={patchCharacter}
-            onDelete={deleteCharacter}
-            onReopenCreation={reopenCreation}
-            onLevelDown={levelDown}
-            extraCoins={gameConfig?.extraCoins ?? false}
-            exhaustionEnabled={gameConfig?.exhaustionEnabled ?? true}
-            onCoinsChange={adoptCoins}
-          />
-        ) : tab === 'regions' ? (
-          <RegionsTab
-            regions={regions}
-            localities={localities}
-            creatures={creatures}
-            onCreate={createRegion}
-            onPatch={patchRegion}
-            onDelete={deleteRegion}
-            onCreateLocality={createLocality}
-            onPatchLocality={patchLocality}
-            onDeleteLocality={deleteLocality}
-          />
-        ) : tab === 'config' ? (
-          <ConfigTab
-            startingLevel={gameConfig?.startingLevel ?? 1}
-            onChangeStartingLevel={changeStartingLevel}
-            extraCoins={gameConfig?.extraCoins ?? false}
-            onChangeExtraCoins={changeExtraCoins}
-            exhaustionEnabled={gameConfig?.exhaustionEnabled ?? true}
-            onChangeExhaustion={changeExhaustion}
-            campSuppliesEnabled={gameConfig?.campSuppliesEnabled ?? false}
-            campSupplyCost={gameConfig?.campSupplyCostPerParticipant ?? 10}
-            onChangeCampSupplies={changeCampSupplies}
-          />
-        ) : tab === 'items' ? (
-          <ItemsTab
-            items={items}
-            characters={characters}
-            onCreate={createItem}
-            onPatch={patchItem}
-            onDelete={deleteItem}
-            onSend={sendItem}
-            extraCoins={gameConfig?.extraCoins ?? false}
-            onCoinsChange={adoptCoins}
-          />
-        ) : tab === 'soundpad' ? (
-          <SoundpadTab music={music} />
-        ) : (
-          <CreaturesTab
-            kind={tab === 'npcs' ? 'NPC' : 'CREATURE'}
-            creatures={tab === 'npcs' ? npcs : monsters}
-            localities={localities}
-            regions={regions}
-            onCreate={createCreature}
-            onPatch={patchCreature}
-            onDelete={deleteCreature}
-            items={items}
-            onCreatureChange={(updated) =>
-              setCreatures((prev) =>
-                prev.map((creature) => (creature.id === updated.id ? updated : creature)),
-              )
-            }
-            onError={setError}
-          />
+            ) : tab === 'config' ? (
+              <ConfigTab
+                startingLevel={gameConfig?.startingLevel ?? 1}
+                onChangeStartingLevel={changeStartingLevel}
+                extraCoins={gameConfig?.extraCoins ?? false}
+                onChangeExtraCoins={changeExtraCoins}
+                exhaustionEnabled={gameConfig?.exhaustionEnabled ?? true}
+                onChangeExhaustion={changeExhaustion}
+                campSuppliesEnabled={gameConfig?.campSuppliesEnabled ?? false}
+                campSupplyCost={gameConfig?.campSupplyCostPerParticipant ?? 10}
+                onChangeCampSupplies={changeCampSupplies}
+              />
+            ) : tab === 'items' ? (
+              <ItemsTab
+                items={items}
+                characters={characters}
+                onCreate={createItem}
+                onPatch={patchItem}
+                onDelete={deleteItem}
+                onSend={sendItem}
+                extraCoins={gameConfig?.extraCoins ?? false}
+                onCoinsChange={adoptCoins}
+              />
+            ) : tab === 'soundpad' ? (
+              <SoundpadTab music={music} />
+            ) : (
+              <CreaturesTab
+                kind={tab === 'npcs' ? 'NPC' : 'CREATURE'}
+                creatures={tab === 'npcs' ? npcs : monsters}
+                localities={localities}
+                regions={regions}
+                onCreate={createCreature}
+                onPatch={patchCreature}
+                onDelete={deleteCreature}
+                items={items}
+                onCreatureChange={(updated) =>
+                  setCreatures((prev) =>
+                    prev.map((creature) => (creature.id === updated.id ? updated : creature)),
+                  )
+                }
+                onError={setError}
+              />
+            )}
+          </>
         )}
       </main>
 

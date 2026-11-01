@@ -45,6 +45,7 @@ export const COMBAT_SHORTCUTS = [
   { key: 'spells', label: 'Magias', icon: 'star' },
   { key: 'attacks', label: 'Ataques', icon: 'sword' },
   { key: 'features', label: 'Características', icon: 'book' },
+  { key: 'attributes', label: 'Atributos', icon: 'shield' },
   { key: 'inventory', label: 'Mochila', icon: 'bag' },
 ] as const satisfies readonly { key: string; label: string; icon: IconName }[];
 

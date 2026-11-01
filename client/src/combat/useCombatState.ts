@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { playCrit, playDice, playTurn } from '../sound';
+import { playCrit, playDice, playTurn, playTurnHorn } from '../sound';
 import type {
   AttackResolvedPayload,
   CombatDto,
@@ -178,7 +178,9 @@ export function useCombatState(userId: string, role: 'PLAYER' | 'MASTER') {
         const masterCombatant =
           role === 'MASTER' && payload.ownerUserId === null && payload.kind !== 'CHARACTER';
         if (ownCharacter || masterCombatant) {
-          playTurn();
+          // Jogador: chamado de batalha (tambores + corneta). Mestre: toque curto.
+          if (ownCharacter) playTurnHorn();
+          else playTurn();
           setTurnAlert({
             title: ownCharacter ? 'É SEU TURNO!' : 'TURNO DO MESTRE',
             combatantName: payload.combatantName,
