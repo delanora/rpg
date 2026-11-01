@@ -10,21 +10,35 @@ const MAX_VISIBLE_CONDITIONS = 4;
  * semântica vem do atributo `data-condition` no CSS, que reaproveita a família
  * `--damage-*` quando há associação clara (Envenenado ↔ Veneno).
  */
-function ConditionChip({ condition, label, count, suspended, sources }: {
+function ConditionChip({ condition, label, count, suspended, sources, onOpenHistory }: {
   condition: string;
   label: string;
   count: number;
   suspended: boolean;
   sources: string[];
+  /** Quando existe, a etiqueta abre a janela do histórico mecânico. */
+  onOpenHistory?: (condition: string) => void;
 }) {
   const family = conditionDamageFamily(condition);
   return (
     <span
-      className="condition-chip info-tip"
+      className={onOpenHistory ? 'condition-chip info-tip is-clickable' : 'condition-chip info-tip'}
       data-condition={condition}
       data-damage-family={family ?? undefined}
       tabIndex={0}
-      role="note"
+      role={onOpenHistory ? 'button' : 'note'}
+      aria-haspopup={onOpenHistory ? 'dialog' : undefined}
+      onClick={onOpenHistory ? () => onOpenHistory(condition) : undefined}
+      onKeyDown={
+        onOpenHistory
+          ? (event) => {
+              // Teclado: Enter/Espaço fazem o mesmo que o clique.
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              onOpenHistory(condition);
+            }
+          : undefined
+      }
     >
       <span className="condition-chip-label">
         {label}
@@ -50,11 +64,16 @@ function ConditionChip({ condition, label, count, suspended, sources }: {
  * Para várias condições, mostra até `MAX_VISIBLE_CONDITIONS` e resume o resto
  * em um chip `+N` (com a lista no tooltip): 6 condições não esticam o card.
  */
-export function ConditionBadges({ state, effects, exhaustionEnabled = effects.exhaustionEnabled }: {
+export function ConditionBadges({ state, effects, exhaustionEnabled = effects.exhaustionEnabled, onOpenHistory }: {
   state: MechanicalState;
   effects: ConditionEffects;
   /** Sobrepõe o valor derivado do DTO (usado pela ficha, que ouve `game:config`). */
   exhaustionEnabled?: boolean;
+  /**
+   * Abre a janela do histórico ao clicar numa etiqueta. Só a FICHA passa isto;
+   * no card da iniciativa as etiquetas continuam apenas informativas.
+   */
+  onOpenHistory?: (condition: string) => void;
 }) {
   const grouped = [...new Set(state.conditions.map((instance) => instance.condition))];
   if (grouped.length === 0 && !exhaustionEnabled) return null;
@@ -72,6 +91,7 @@ export function ConditionBadges({ state, effects, exhaustionEnabled = effects.ex
             count={sources.length}
             suspended={condition === 'poisoned' && effects.poisonSuspended}
             sources={sources.map((instance) => instance.sourceLabel ?? 'Origem não informada')}
+            onOpenHistory={onOpenHistory}
           />
         );
       })}

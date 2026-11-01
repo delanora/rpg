@@ -520,6 +520,13 @@ de implementar.
   são protegidas: o DTO expõe `protectedInstanceIds`, a UI trava a remoção e o
   servidor responde 409 `CONDITION_DERIVED`. O caminho é resolver PV/estado de
   morte; remover a fonte manual nunca apaga a derivada.
+- Na FICHA as condições não têm card, cabeçalho nem título próprios: viram uma
+  FAIXA (`.conditions-strip`) no canto inferior direito de "Vida e Defesa",
+  logo abaixo dos números que elas alteram, com a administração do Mestre
+  recolhida. O HISTÓRICO não ocupa espaço fixo: clicar numa etiqueta abre
+  `ConditionHistoryModal` com o `mechanicalState.log` inteiro (contexto = a
+  condição clicada). O destaque de condição pertence ao COMBATE (etiquetas no
+  card da iniciativa) — a ficha identifica o estado sem gastar uma seção para ele.
 - Condições não têm visibility/private por INSTÂNCIA: são tão públicas quanto
   hoje (sem o que vazar), e log privado de condição ainda não é modelado
   (limitação conhecida, não silenciosa). A privacidade que existe no servidor é

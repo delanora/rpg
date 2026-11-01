@@ -3,17 +3,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth';
 import { fetchMechanicalState, mutateMechanicalState } from '../mechanicalApi';
 import { useSheetAccess } from '../readonly';
-import { Section } from './Section';
 import { ConditionBadges } from '../combat/components/ConditionBadges';
+import { ConditionHistoryModal } from './ConditionHistoryModal';
 import { MasterConditionsPanel } from '../combat/components/MasterConditionsPanel';
 import type { MechanicalDto, MechanicalEntity } from '../types';
 
 /**
  * Uma interface para personagem, cadastro e instância; sem segunda conexão WS.
  *
- * `variant` escolhe a linguagem visual: `sheet` é a seção DENTRO da ficha (mesma
- * moldura das demais seções, título "CONDIÇÕES") e `combat` é o bloco do painel
- * de combate. Em nenhum dos dois o bloco repete "deslocamento efetivo" ou "PV
+ * `variant` escolhe a linguagem visual: `sheet` é a faixa compacta DENTRO de
+ * "Vida e Defesa" (sem card nem cabeçalho próprios) e `combat` é o bloco do
+ * painel de combate. Em nenhum dos dois o bloco repete "deslocamento efetivo" ou "PV
  * máximo efetivo": esses valores vivem nos campos principais da ficha e já são
  * calculados com as condições/exaustão.
  */
@@ -58,6 +58,9 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
   const [source, setSource] = useState('');
   const [sourceLabel, setSourceLabel] = useState('');
   const [level, setLevel] = useState('0');
+  // HISTÓRICO: aberto ao clicar numa etiqueta de condição (não há mais o
+  // bloco recolhido "Histórico mecânico" ocupando espaço na ficha).
+  const [history, setHistory] = useState<string | null>(null);
   // CONCENTRAÇÃO (manual, enquanto não há Spell Engine): só o NOME do efeito.
   const [concentrationLabel, setConcentrationLabel] = useState('');
   const [concentrationVisibility, setConcentrationVisibility] = useState<'public' | 'private'>('public');
@@ -162,7 +165,8 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     </div>
   ) : null;
   const body = <>
-    {showBadges ? <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} /> : null}
+    {/* Clicar numa etiqueta abre a janela do HISTÓRICO mecânico (na ficha). */}
+    {showBadges ? <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} onOpenHistory={setHistory} /> : null}
     {showBadges && !hasConditions ? <p className="field-hint">Nenhuma condição ativa.</p> : null}
     {current.effects.exhaustionSummary.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.assistedNotes.map(text => <p key={text} className="field-hint">{text}</p>)}
@@ -207,20 +211,32 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
       {exhaustionControls}
     </details> : null}
     {error ? <p className="error">{error}</p> : null}
-    <details className="conditions-history"><summary>Histórico mecânico</summary>
-      {current.state.log.length === 0
-        ? <p className="field-hint">Nada registrado até aqui.</p>
-        : [...current.state.log].reverse().map(entry => <p key={entry.id} className="field-hint">{entry.message}</p>)}
-    </details>
   </>;
 
-  // Sem condições e com a regra de Exaustão desligada, a seção some por inteiro.
+  // Sem condições e com a regra de Exaustão desligada, o bloco some por inteiro.
   if (variant === 'sheet') {
     // O Mestre precisa do bloco para INICIAR concentração fora de combate;
     // o jogador só o vê quando há algo para mostrar (condição, Exaustão ou
     // concentração ativa).
     if (!hasConditions && !exhaustOn && !concentration && !isMaster) return null;
-    return <Section title="CONDIÇÕES" icon="flame" className="conditions-section">{body}</Section>;
+    /*
+     * Na ficha as condições NÃO têm card próprio nem título: são uma faixa no
+     * CANTO INFERIOR DIREITO de "Vida e Defesa", o card de onde vêm os números
+     * que elas alteram. Só as etiquetas ficam à vista; clicar em qualquer uma
+     * abre a janela do histórico mecânico.
+     */
+    return (
+      <>
+        <div className="conditions-strip">{body}</div>
+        {history ? (
+          <ConditionHistoryModal
+            condition={current.effects.labels[history] ?? history}
+            entries={[...current.state.log].reverse()}
+            onClose={() => setHistory(null)}
+          />
+        ) : null}
+      </>
+    );
   }
 
   // Variante de combate: sem título próprio (o wrapper do painel já rotula) e

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ABILITY_ABBREVIATIONS,
   formatChallengeRating,
@@ -101,6 +101,13 @@ interface VitalsSectionProps extends SheetSectionProps {
     active: boolean,
     expectedVersion: number,
   ) => void | Promise<void>;
+  /**
+   * Faixa de CONDIÇÕES e Exaustão (vem do `MechanicalPanel`, variante `sheet`).
+   * Ocupa o rodapé do card, junto dos números que ela mesma altera: PV máximo e
+   * deslocamento efetivos. Fora do card a faixa seria um segundo bloco de
+   * destaque para a mesma informação.
+   */
+  conditions?: ReactNode;
 }
 
 export function VitalsSection({
@@ -110,6 +117,7 @@ export function VitalsSection({
   shortRest,
   longRest,
   onFeatureToggle,
+  conditions,
 }: VitalsSectionProps) {
   // PV atual/temporário, usos de recursos e espaços continuam editáveis pelo
   // jogador depois de finalizar a criação; PV máximo, CA, iniciativa e
@@ -552,33 +560,44 @@ export function VitalsSection({
         </section>
       ) : null}
 
-      {/* Descansos: abrem o painel/persistem; nenhuma regra roda no cliente. */}
-      <div className="class-rest">
-        {shortRest ? (
-          <button
-            type="button"
-            className={`btn btn-small class-rest-btn${shortRest.active ? ' btn-primary' : ''}`}
-            disabled={readOnly}
-            onClick={shortRest.onOpen}
-          >
-            <Icon name="flame" size={15} />
-            <span>Descanso Curto</span>
-            {shortRest.active ? <span className="class-rest-badge">em andamento</span> : null}
-          </button>
+      {/*
+       * RODAPÉ do card: Descanso Curto/Longo à ESQUERDA e as condições (com a
+       * Exaustão) no canto DIREITO, na MESMA linha. Sem descansos e sem
+       * condições o rodapé fica vazio e o CSS o remove por inteiro.
+       */}
+      <div className="vitals-footer">
+        {shortRest || longRest ? (
+          <div className="class-rest">
+            {shortRest ? (
+              <button
+                type="button"
+                className={`btn btn-small class-rest-btn${shortRest.active ? ' btn-primary' : ''}`}
+                disabled={readOnly}
+                onClick={shortRest.onOpen}
+              >
+                <Icon name="flame" size={15} />
+                <span>Descanso Curto</span>
+                {shortRest.active ? <span className="class-rest-badge">em andamento</span> : null}
+              </button>
+            ) : null}
+            {longRest ? (
+              <button
+                type="button"
+                className={`btn btn-small class-rest-btn${longRest.active ? ' btn-primary' : ''}`}
+                disabled={readOnly}
+                title="O Descanso Longo é coletivo: a mesa responde, escolhe os preparativos e o servidor conclui."
+                onClick={longRest.onOpen}
+              >
+                <Icon name="bed" size={15} />
+                <span>Descanso Longo</span>
+                {longRest.active ? <span className="class-rest-badge">em andamento</span> : null}
+              </button>
+            ) : null}
+          </div>
         ) : null}
-        {longRest ? (
-          <button
-            type="button"
-            className={`btn btn-small class-rest-btn${longRest.active ? ' btn-primary' : ''}`}
-            disabled={readOnly}
-            title="O Descanso Longo é coletivo: a mesa responde, escolhe os preparativos e o servidor conclui."
-            onClick={longRest.onOpen}
-          >
-            <Icon name="bed" size={15} />
-            <span>Descanso Longo</span>
-            {longRest.active ? <span className="class-rest-badge">em andamento</span> : null}
-          </button>
-        ) : null}
+
+        {/* Condições e Exaustão: faixa compacta no canto direito do rodapé. */}
+        {conditions}
       </div>
     </Section>
   );
