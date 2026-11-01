@@ -24,7 +24,15 @@ export function errorHandler(
       ? Number((err as { status?: number }).status) || 500
       : 500;
 
-  const message = err instanceof Error ? err.message : 'Erro interno do servidor';
+  // A mensagem de um erro 5xx é INTERNA (Prisma, filesystem, bug): pode citar
+  // tabela, coluna ou detalhe de query e não ajuda o cliente. Só os erros de
+  // aplicação (4xx, sempre `HttpError`) têm mensagem pensada para ser lida.
+  const message =
+    status >= 500
+      ? 'Erro interno do servidor'
+      : err instanceof Error
+        ? err.message
+        : 'Erro interno do servidor';
 
   if (status >= 500) {
     console.error('[erro]', err);
