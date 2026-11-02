@@ -148,7 +148,16 @@ export async function effectModifierSetsFor(
       status: 'active',
       OR: [...byKind.entries()].map(([kind, ids]) => ({ targetEntityKind: kind, targetEntityId: { in: ids } })),
     },
-    select: { id: true, label: true, visibility: true, modifiers: true, targetEntityKind: true, targetEntityId: true },
+    select: {
+      id: true,
+      label: true,
+      visibility: true,
+      modifiers: true,
+      targetEntityKind: true,
+      targetEntityId: true,
+      createdAt: true,
+    },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
 
   // 3) Compõe o resumo por alvo canônico e projeta para cada chave pedida.
@@ -573,7 +582,7 @@ async function refreshDerivedViews(targets: readonly MechanicalEntity[]): Promis
  * Registro persistente (a entrada só aparece na próxima leitura do combate —
  * este hook não incrementa a versão do combate).
  */
-async function appendEffectLog(
+export async function appendEffectLog(
   target: MechanicalEntity,
   actorName: string,
   makeMessage: (targetName: string) => string,

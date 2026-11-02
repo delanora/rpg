@@ -101,3 +101,17 @@ export type EndEffectInput = z.infer<typeof endEffectSchema>;
 
 /** Leitura por alvo (a chave polimórfica vem da URL). */
 export const effectTargetSchema = entitySchema;
+
+/**
+ * FASE 6.5G — aplicação CONTROLADA de Bless (ferramenta de prova do Mestre).
+ *
+ * Não é a Spell Execution Engine: sem slot, Ação, alcance, componentes ou
+ * preparação. O cliente manda apenas o caster e até 3 alvos; o servidor valida
+ * existência, canonicaliza e rejeita duplicados.
+ */
+export const applyBlessSchema = z.object({
+  operationId: z.string().trim().min(1).max(128),
+  caster: entitySchema,
+  targets: z.array(entitySchema).min(1).max(3),
+});
+export type ApplyBlessInput = z.infer<typeof applyBlessSchema>;

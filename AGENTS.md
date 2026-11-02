@@ -438,7 +438,8 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.4 Concentration — implementada (PHB 2014: estado, dano → save, fila e
   público/privado de NPC); duração automática continua na 6.7
 - 6.5 Generic Effect Engine — **6.5A (fundação), 6.5B (modificadores
-  mecânicos), 6.5C (Effect → Condition) e 6.5D (cleanup central) implementadas**:
+  mecânicos), 6.5C (Effect → Condition), 6.5D (cleanup central) e 6.5G (Bless,
+  primeiro efeito real) implementadas**:
   `EffectInstance` em tabela própria, lifecycle criar/encerrar (individual e
   por grupo), leitura por alvo/fonte, privacidade no servidor, vínculo explícito
   com Concentração, modificadores tipados que entram nos pipelines reais de
@@ -662,6 +663,39 @@ de implementar.
   idempotência de retry, concorrência, fontes múltiplas, grupo multi-alvo com
   isolamento, privacidade, 0 PV protegido, fonte a 0 PV, saída do combate e
   remoção estrutural de criatura.
+
+### Bless — primeiro efeito real (6.5G)
+
+- Definição em `src/modules/effects/definitions/bless.ts`: `definitionId`
+  `spell.bless` (mesmo id do catálogo de magias, sem duplicar nome/nível/range),
+  até 3 alvos, **+1d4 OPCIONAL** em Attack Rolls e Saving Throws e exigência de
+  Concentração. Nenhum resolver de ataque/save/concentração conhece "Bless":
+  eles leem apenas modificadores tipados.
+- `optional: true` (default `false`) é genérico: o modificador é OFERECIDO pelo
+  servidor e só entra se o ator escolher na rolagem. `stackingKey` é genérica:
+  duas aplicações de Bless no mesmo alvo persistem como instâncias, mas a
+  derivação mantém UMA contribuição (a fonte mais antiga); quando ela termina, a
+  outra assume automaticamente. Bless NÃO cria Condition "Blessed", não grava
+  flag na ficha/combatente e não altera bônus base.
+- Identidade do modificador: `key` declarada pela definição (fallback: índice),
+  resolvida como `effectId:key`. O cliente devolve apenas esses IDs em
+  `selectedEffectModifiers`; o servidor revalida no momento da rolagem
+  (`INVALID_EFFECT_MODIFIER`), rola o d4 e nunca aceita valor/estrutura do
+  cliente. Falha automática (Paralyzed em FOR/DES etc.) não é contornada.
+- Aplicação `POST /api/effects/bless` é **MASTER-only** e é ferramenta de prova:
+  não consome Ação/slot, não valida alcance/componentes/preparação e não tem
+  duração automática (Duration Engine futura). Cria UM grupo + uma instância por
+  alvo (1–3, sem repetição), liga a Concentração do caster ao grupo pelo motor
+  existente (substituindo a anterior na mesma transação) e é idempotente por
+  `operationId`.
+- UI: `MasterEffectsPanel` ganhou o bloco temporário "Bless — prova da engine"
+  (caster = entidade do painel, até 3 alvos). A bandeja de dados e o painel de
+  ataque exibem os modificadores opcionais oferecidos, desmarcados por padrão;
+  o teste de Concentração usa a MESMA bandeja e aceita o d4 quando elegível.
+- `smoke-bless-effect.ts` cobre definição/limites, ataque e save com e sem o d4,
+  teste de habilidade sem opção, IDs inválidos, dois Bless sem acumular (e o
+  fallback quando o primeiro termina), Concentração (self-bless, falha,
+  substituição e encerramento), alvo isolado, idempotência e invariante.
 
 ### Modificadores de Effect (6.5B)
 

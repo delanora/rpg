@@ -3,6 +3,7 @@ import { playCrit, playDice } from '../sound';
 import type {
   DiceRollDto,
   DiceRollKind,
+  EffectOptionalModifierDto,
   RollBoardDie,
   SessionUser,
   TableRollActivePayload,
@@ -13,6 +14,7 @@ import {
   clearDiceHistory as clearDiceHistoryRequest,
   fetchActiveRoll,
   fetchDiceHistory,
+  fetchEffectOptions,
   rollTableDice,
 } from './diceApi';
 
@@ -98,6 +100,10 @@ export function useDiceRoller(user: SessionUser) {
   const [phase, setPhase] = useState<RollPhase>('idle');
   const [result, setResult] = useState<DiceRollDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Modificadores OPCIONAIS (6.5G) oferecidos pelo SERVIDOR para esta rolagem.
+  // Default: desmarcado (o PHB diz "pode" — a escolha é real).
+  const [effectOptions, setEffectOptions] = useState<EffectOptionalModifierDto[]>([]);
+  const [selectedEffectModifiers, setSelectedEffectModifiers] = useState<string[]>([]);
   const [toasts, setToasts] = useState<DiceToast[]>([]);
   const [history, setHistory] = useState<DiceRollDto[]>([]);
   // Tabuleiro de outra pessoa da mesa, espelhado aqui (só para assistir).
@@ -249,6 +255,8 @@ export function useDiceRoller(user: SessionUser) {
 
   const reset = useCallback(() => {
     setContext(null);
+    setEffectOptions([]);
+    setSelectedEffectModifiers([]);
     setPool([]);
     setAdvantageValue(false);
     setDisadvantageValue(false);
@@ -275,6 +283,46 @@ export function useDiceRoller(user: SessionUser) {
     },
     [reset],
   );
+
+  /**
+   * Busca as opções OPCIONAIS quando a bandeja abre para um teste com entidade.
+   * O servidor deriva o escopo: `save` (inclui Concentração/CON), `check` ou
+   * `attack`. Um Bless NÃO aparece em teste de habilidade.
+   */
+  useEffect(() => {
+    if (!open || !context?.entity) {
+      setEffectOptions([]);
+      return;
+    }
+    const roll =
+      context.kind === 'save' || context.kind === 'concentration'
+        ? ('save' as const)
+        : context.kind === 'skill'
+          ? ('check' as const)
+          : null;
+    if (!roll) {
+      setEffectOptions([]);
+      return;
+    }
+    let live = true;
+    const ability = context.kind === 'concentration' ? 'constitution' : context.ability;
+    fetchEffectOptions(context.entity, roll, ability)
+      .then((options) => {
+        if (live) setEffectOptions(options);
+      })
+      .catch(() => {
+        if (live) setEffectOptions([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, context?.entity, context?.kind, context?.ability]);
+
+  const toggleEffectModifier = useCallback((id: string) => {
+    setSelectedEffectModifiers((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  }, []);
 
   const close = useCallback(() => {
     if (autoCloseTimer.current !== null) {
@@ -437,6 +485,7 @@ export function useDiceRoller(user: SessionUser) {
         ...(context?.pendingConcentrationSaveId
           ? { pendingConcentrationSaveId: context.pendingConcentrationSaveId }
           : {}),
+        ...(selectedEffectModifiers.length > 0 ? { selectedEffectModifiers } : {}),
       });
 
       setResult(roll);
@@ -473,6 +522,7 @@ export function useDiceRoller(user: SessionUser) {
     announcing,
     isPrivateRoll,
     board,
+    selectedEffectModifiers,
   ]);
 
   const dismissToast = useCallback((id: string) => {
@@ -585,6 +635,9 @@ export function useDiceRoller(user: SessionUser) {
     phase,
     result,
     error,
+    effectOptions,
+    selectedEffectModifiers,
+    toggleEffectModifier,
     toasts,
     history,
     handlers,

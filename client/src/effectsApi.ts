@@ -40,6 +40,23 @@ export function createManualEffect(input: {
   }).then((result) => result.effect);
 }
 
+/**
+ * APLICAÇÃO CONTROLADA DE BLESS (Mestre, 6.5G).
+ *
+ * Ferramenta de prova da engine — não é conjuração de jogador: o servidor cria
+ * o grupo, uma instância por alvo (até 3) e a concentração do caster. Nenhum
+ * dado de magia (slot/Ação/alcance) é enviado ou consumido.
+ */
+export function applyBlessEffect(input: {
+  caster: MechanicalEntity;
+  targets: MechanicalEntity[];
+}): Promise<{ groupId: string; effects: EffectDto[] }> {
+  return api<{ groupId: string; effects: EffectDto[] }>('/api/effects/bless', {
+    method: 'POST',
+    body: { ...input, operationId: createOperationId() },
+  });
+}
+
 /** Encerra UMA instância (o servidor nunca encerra por label). */
 export function endEffect(effectId: string): Promise<EffectDto> {
   return api<{ effect: EffectDto }>(`/api/effects/${effectId}/end`, {

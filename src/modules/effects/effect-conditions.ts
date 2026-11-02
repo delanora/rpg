@@ -70,8 +70,13 @@ function logInto(state: MechanicalState, actorName: string, message: string): vo
   ].slice(-100);
 }
 
-/** Grava o estado mecânico e incrementa a versão canônica (+ combate ativo). */
-async function saveMechanicalState(
+/**
+ * Grava o estado mecânico e incrementa a versão canônica (+ combate ativo).
+ *
+ * Exportado para outros fluxos de domínio (Bless 6.5G) gravarem concentração
+ * sem chamar HTTP interno e sem duplicar a regra de versão.
+ */
+export async function saveMechanicalState(
   loaded: LoadedEntity,
   state: MechanicalState,
   db: Prisma.TransactionClient | typeof prisma,

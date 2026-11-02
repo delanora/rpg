@@ -65,6 +65,8 @@ export function resolveAttack(combat: CombatDto, input: {
   disadvantage?: boolean;
   /** Confirmação manual: há aliado adjacente ao alvo (habilita o Furtivo). */
   adjacentAlly?: boolean;
+  /** IDs dos modificadores OPCIONAIS oferecidos pelo servidor (6.5G). */
+  selectedEffectModifiers?: string[];
 }): Promise<{ combat: CombatDto; result: AttackResolvedPayload }> {
   return api<{ combat: CombatDto; result: AttackResolvedPayload }>('/api/combat/attack', {
     method: 'POST',

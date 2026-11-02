@@ -1030,6 +1030,57 @@ console.log('Check-combat-ui — refino da UI de combate');
       effectLifecycleSmoke.includes('72.L)') &&
       source('../src/scripts/smoke-realtime.ts').includes('smokeEffectLifecycle(BASE_URL, check)'),
   );
+
+  // CB47–CB51. Primeiro efeito REAL: Bless (Fase 6.5G).
+  const blessDefinition = source('../src/modules/effects/definitions/bless.ts');
+  const blessService = source('../src/modules/effects/bless.service.ts');
+  const effectOptional = source('../src/modules/dice/effect-optional.ts');
+  check(
+    'CB47) Bless é DEFINIÇÃO genérica (+1d4 opcional em ataque/save, stacking) sem hardcode nos resolvers',
+    blessDefinition.includes("export const BLESS_DEFINITION_ID = `spell.${BLESS_SPELL_ID}`") &&
+      blessDefinition.includes("kind: 'roll-dice'") &&
+      blessDefinition.includes("sides: 4") &&
+      blessDefinition.includes("roll: 'attack'") &&
+      blessDefinition.includes("roll: 'save'") &&
+      blessDefinition.includes('optional: true') &&
+      blessDefinition.includes('stackingKey: BLESS_DEFINITION_ID') &&
+      // Nenhum resolver conhece o `definitionId` da magia (comentário não é regra).
+      !source('../src/modules/dice/dice.service.ts').includes('spell.bless') &&
+      !source('../src/modules/combat/combat.service.ts').includes('spell.bless') &&
+      !source('../src/modules/concentration/concentration.service.ts').includes('spell.bless'),
+  );
+  check(
+    'CB48) aplicação de Bless é MASTER-only, 1–3 alvos ÚNICOS e no mesmo motor de Concentração',
+    blessService.includes("actor.role !== 'MASTER'") &&
+      blessService.includes('Bless não pode repetir o mesmo alvo') &&
+      blessService.includes("sourceType: 'effect'") &&
+      blessService.includes('sourceId: groupId') &&
+      blessService.includes('endEffectsForConcentration') &&
+      source('../src/modules/effects/effects.routes.ts').includes("effectsRouter.post('/bless', requireRole('MASTER')") &&
+      source('../src/modules/effects/effects.schema.ts').includes('.min(1).max(3)'),
+  );
+  check(
+    'CB49) modificador OPCIONAL é server-derived e o cliente devolve apenas IDs',
+    effectOptional.includes('selectOptionalModifiers') &&
+      effectOptional.includes("'INVALID_EFFECT_MODIFIER'") &&
+      effectOptional.includes('autoFail') &&
+      source('../src/modules/dice/dice.schema.ts').includes('selectedEffectModifiers') &&
+      source('../src/modules/combat/combat.schema.ts').includes('selectedEffectModifiers') &&
+      source('../client/src/dice/DiceDock.tsx').includes('selectedEffectModifiers.includes(option.id)') &&
+      !source('../client/src/dice/useDiceRoller.ts').includes('selectedEffectModifiers: [{'),
+  );
+  check(
+    'CB50) Bless NÃO cria Condition/flag: é EffectInstance + modificadores',
+    !/blessed/i.test(source('../src/modules/shared/conditions.ts')) &&
+      !/blessed/i.test(source('../prisma/schema.prisma')) &&
+      !blessDefinition.includes("condition: 'blessed'"),
+  );
+  check(
+    'CB51) Bless tem smoke próprio e cobre os dois Bless sem acumular (stackingKey)',
+    source('../src/scripts/smoke-bless-effect.ts').includes('Bless') &&
+      source('../src/scripts/smoke-bless-effect.ts').includes('73.I.1)') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeBlessEffect(BASE_URL, check)'),
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

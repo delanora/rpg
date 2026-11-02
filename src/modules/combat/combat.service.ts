@@ -1,5 +1,6 @@
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
 import { effectModifierSetsFor, publishEffects } from '../effects/effects.service.js';
+import { rollSelectedOptional } from '../dice/effect-optional.js';
 import {
   effectArmorClassBonuses,
   emptyEffectModifierSet,
@@ -1467,6 +1468,12 @@ export async function resolveAttack(
     );
     const targetEffectMods = target.effectModifiers ?? emptyEffectModifierSet();
     const targetEffectArmor = effectArmorClassBonuses(targetEffectMods);
+    // OPCIONAIS (6.5G): o servidor valida os IDs escolhidos e rola os dados
+    // aqui — nunca no cliente. Efeito encerrado entre render e clique → 400.
+    const optionalEffectRoll = rollSelectedOptional(
+      attackerEffectMods,
+      input.selectedEffectModifiers,
+    );
 
     // Personagem não tem CA gravada: ela é calculada da ficha (atributos +
     // equipamento + override do mestre), igual à que aparece no tabuleiro.
@@ -1517,20 +1524,24 @@ export async function resolveAttack(
     const attackDice = secondRoll === null ? [attackRoll] : [firstRoll, secondRoll];
     // Dados extras de EFEITOS: rolados AQUI (servidor), como pool independente.
     // Nunca somados ao bônus fixo: o breakdown mostra cada dado.
-    const effectDice = attackerEffectMods.dice.flatMap((modifier) =>
-      Array.from({ length: modifier.count }, () => ({
-        sides: modifier.sides,
-        value: rollDie(modifier.sides),
-        sign: modifier.sign,
-      })),
-    );
+    const effectDice = [
+      ...attackerEffectMods.dice.flatMap((modifier) =>
+        Array.from({ length: modifier.count }, () => ({
+          sides: modifier.sides,
+          value: rollDie(modifier.sides),
+          sign: modifier.sign,
+        })),
+      ),
+      ...optionalEffectRoll.dice.map(({ sides, value, sign }) => ({ sides, value, sign })),
+    ];
     const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
+    const effectBonusTotal = attackerEffectMods.bonus + optionalEffectRoll.bonus;
     // A munição usada soma o próprio bônus de acerto à rolagem.
     const attackTotal =
       attackRoll +
       attack.attackBonus +
       ammoBonus.attackBonus +
-      attackerEffectMods.bonus +
+      effectBonusTotal +
       effectDiceTotal;
     // Limiar de crítico: 20 por padrão, 19/18 com o Crítico Aprimorado/Superior
     // do Campeão (o MENOR limiar prevalece entre as classes). Criaturas não têm
@@ -1547,8 +1558,8 @@ export async function resolveAttack(
       expression: advantage ? '1d20 (vantagem)' : disadvantage ? '1d20 (desvantagem)' : '1d20',
       rolls: attackDice,
       sides: 20,
-      modifier: attack.attackBonus + ammoBonus.attackBonus + attackerEffectMods.bonus,
-      ...(attackerEffectMods.bonus !== 0 ? { effectBonus: attackerEffectMods.bonus } : {}),
+      modifier: attack.attackBonus + ammoBonus.attackBonus + effectBonusTotal,
+      ...(effectBonusTotal !== 0 ? { effectBonus: effectBonusTotal } : {}),
       ...(effectDice.length > 0 ? { effectDice } : {}),
       total: attackTotal,
       crit: critical,
