@@ -6,7 +6,9 @@ import { useSheetAccess } from '../readonly';
 import { ConditionBadges } from '../combat/components/ConditionBadges';
 import { ConditionHistoryModal } from './ConditionHistoryModal';
 import { MasterConditionsPanel } from '../combat/components/MasterConditionsPanel';
-import type { MechanicalDto, MechanicalEntity } from '../types';
+import { MasterEffectsPanel } from '../combat/components/MasterEffectsPanel';
+import { fetchEffects } from '../effectsApi';
+import type { EffectDto, MechanicalDto, MechanicalEntity } from '../types';
 
 /**
  * Uma interface para personagem, cadastro e instância; sem segunda conexão WS.
@@ -17,8 +19,10 @@ import type { MechanicalDto, MechanicalEntity } from '../types';
  * máximo efetivo": esses valores vivem nos campos principais da ficha e já são
  * calculados com as condições/exaustão.
  */
-export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], exhaustionEnabled, variant = 'combat' }: {
+export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, sourceChoices = [], exhaustionEnabled, variant = 'combat' }: {
   entity: MechanicalEntity; refreshVersion: number;
+  /** Contador do evento `effects:updated` (efeitos não mudam a versão da ficha). */
+  effectsRefresh?: number;
   sourceChoices?: { entity: MechanicalEntity; name: string }[];
   /** Regra de Exaustão ligada na mesa (vem da configuração, em tempo real). */
   exhaustionEnabled?: boolean;
@@ -32,6 +36,9 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
   targetRef.current = targetKey;
   useEffect(() => { setCurrent(null); setSource(''); setSourceLabel(''); setError(''); }, [targetKey]);
   const [current, setCurrent] = useState<MechanicalDto | null>(null);
+  // EFEITOS GENÉRICOS (6.5A): estado PRÓPRIO, fora do `mechanicalState`. O
+  // servidor filtra a privacidade; aqui só se exibe o que chegou.
+  const [effectList, setEffectList] = useState<EffectDto[]>([]);
   const adopt = useCallback((next: MechanicalDto) => setCurrent(previous => {
     if (previous?.entity.id === next.entity.id && previous.entity.kind === next.entity.kind) {
       if (previous.version > next.version) return previous;
@@ -71,6 +78,11 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     adopt(next);
   }, [entity.kind, entity.id, adopt]);
   useEffect(() => { let live = true; fetchMechanicalState({ kind: entity.kind, id: entity.id }).then(next => { if (live) adopt(next); }).catch(err => { if (live) setError(err.message); }); return () => { live = false; }; }, [entity.kind, entity.id, refreshVersion, adopt]);
+  const reloadEffects = useCallback(async () => {
+    try { setEffectList(await fetchEffects({ kind: entity.kind, id: entity.id })); }
+    catch { /* leitura de efeitos é complementar: a ficha não quebra sem ela */ }
+  }, [entity.kind, entity.id]);
+  useEffect(() => { void reloadEffects(); }, [reloadEffects, refreshVersion, effectsRefresh]);
   // Trava SÍNCRONA: dois cliques no mesmo tick não criam duas fontes manuais
   // (o estado `busy` só chega no próximo render).
   const busyRef = useRef(false);
@@ -165,8 +177,19 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     </div>
   ) : null;
   const body = <>
-    {/* Clicar numa etiqueta abre a janela do HISTÓRICO mecânico (na ficha). */}
+    {/* Clique numa etiqueta abre a janela do HISTÓRICO mecânico (na ficha). */}
     {showBadges ? <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} onOpenHistory={setHistory} /> : null}
+    {/*
+     * EFEITOS GENÉRICOS: área PRÓPRIA, jamais misturada com Conditions do PHB.
+     * Na ficha é uma linha simples (o jogador só recebe os públicos); no combate
+     * o Mestre ganha a lista completa com encerrar + criação manual.
+     */}
+    {variant === 'sheet' && effectList.length > 0 ? (
+      <p className="field-hint effects-line">
+        <strong>Efeitos:</strong>{' '}
+        {effectList.map((effect) => effect.label).join(' · ')}
+      </p>
+    ) : null}
     {showBadges && !hasConditions ? <p className="field-hint">Nenhuma condição ativa.</p> : null}
     {current.effects.exhaustionSummary.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.assistedNotes.map(text => <p key={text} className="field-hint">{text}</p>)}
@@ -174,6 +197,13 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
     {/* COMBATE: ferramenta compacta de Conditions do Mestre (mesmo domínio). */}
     {isMaster && variant === 'combat' ? <>
+      <MasterEffectsPanel
+        entity={entity}
+        targetName={current.name}
+        effects={effectList}
+        busy={busy}
+        onChanged={reloadEffects}
+      />
       <MasterConditionsPanel
         name={current.name}
         state={current.state}
@@ -218,7 +248,7 @@ export function MechanicalPanel({ entity, refreshVersion, sourceChoices = [], ex
     // O Mestre precisa do bloco para INICIAR concentração fora de combate;
     // o jogador só o vê quando há algo para mostrar (condição, Exaustão ou
     // concentração ativa).
-    if (!hasConditions && !exhaustOn && !concentration && !isMaster) return null;
+    if (!hasConditions && !exhaustOn && !concentration && effectList.length === 0 && !isMaster) return null;
     /*
      * Na ficha as condições NÃO têm card próprio nem título: são uma faixa no
      * CANTO INFERIOR DIREITO de "Vida e Defesa", o card de onde vêm os números

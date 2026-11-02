@@ -22,6 +22,7 @@ import {
   resolveConcentrationSave,
 } from '../concentration/concentration.service.js';
 import { concentrationSaveLabel } from '../shared/concentration.js';
+import { publishEffects } from '../effects/effects.service.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
@@ -441,6 +442,9 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
   const total = mode.autoFail ? 0 : kept + bonus;
 
   const outcome = await resolveConcentrationSave(entity, pending.id, total, prisma, actor.displayName);
+  // Falha na concentração encerra o grupo de efeitos que ela mantinha (quando
+  // a concentração aponta explicitamente para um grupo).
+  if (outcome.endedEffectTargets.length > 0) await publishEffects(outcome.endedEffectTargets);
 
   // Registro de combate: público no teste de jogador/público; privado no de
   // criatura quando o Mestre escolhe privado (o DTO do jogador descarta).

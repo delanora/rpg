@@ -887,6 +887,39 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../client/src/combat/components/CombatantCard.tsx').includes('concentration={combatant.mechanicalState.concentration}'),
   );
   check(
+    'CB32) Effects são um módulo PRÓPRIO (não Condition) e têm tabela separada',
+    source('../src/modules/effects/effects.service.ts').includes('export async function createEffect') &&
+      source('../src/modules/effects/effects.service.ts').includes('export async function endEffectGroup') &&
+      source('../src/modules/effects/effects.service.ts').includes('targetEntityKind') &&
+      source('../prisma/schema.prisma').includes('model EffectInstance') &&
+      source('../prisma/schema.prisma').includes('@@map(\"effect_instances\")') &&
+      // Effect NÃO entra no catálogo de Conditions do PHB.
+      !/CONDITION_LABELS[\s\S]{0,400}effect/.test(sharedConditions) &&
+      !source('../src/modules/shared/conditions.ts').includes('effect:'),
+  );
+  check(
+    'CB33) a privacidade dos efeitos é filtrada no SERVIDOR (DTO), não no CSS',
+    source('../src/modules/effects/effects.dto.ts').includes("row.visibility === 'public'") &&
+      source('../src/modules/effects/effects.dto.ts').includes('effectsVisibleTo') &&
+      source('../src/modules/effects/effects.service.ts').includes('effectsVisibleTo(rows, false)'),
+  );
+  check(
+    'CB34) UI de efeitos existe no "Estado e ajustes" do Mestre, com encerrar por instância',
+    source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('Adicionar efeito manual') &&
+      source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('endEffect(effect.id)') &&
+      source('../client/src/components/MechanicalPanel.tsx').includes('<MasterEffectsPanel') &&
+      source('../client/src/effectsApi.ts').includes("api<{ effect: EffectDto }>('/api/effects'") &&
+      !source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('advantage') &&
+      !source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('condition:'),
+  );
+  check(
+    'CB35) efeito NÃO depende de combate (sem combatId na criação) e reusa o evento effects:updated',
+    !source('../src/modules/effects/effects.schema.ts').includes('combatId') &&
+      source('../src/realtime/events.ts').includes("EFFECTS_UPDATED: 'effects:updated'") &&
+      source('../client/src/useRealtime.ts').includes("socket.on('effects:updated'") &&
+      source('../client/src/pages/SheetPage.tsx').includes('onEffectsUpdated'),
+  );
+  check(
     'CB31) NPC: teste privado não vaza CD/rolagem e o Mestre escolhe ao rolar',
     source('../src/modules/combat/combat.dto.ts').includes('pendingConcentrationSaves: []') &&
       source('../src/modules/combat/combat.dto.ts').includes('concentration.visibility === \'public\'') &&

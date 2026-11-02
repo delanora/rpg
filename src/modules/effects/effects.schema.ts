@@ -1,0 +1,84 @@
+import { z } from 'zod';
+import { entitySchema } from '../shared/conditions.js';
+
+/**
+ * FASE 6.5A — contrato da Generic Effect Engine (SÓ a fundação).
+ *
+ * Um `EffectInstance` registra que uma origem mecânica está produzindo
+ * consequências sobre UM alvo. Ele **não** é Condition, não é Concentração e
+ * não aplica modificadores nesta fase: modificadores (6.5B), Conditions (6.5C)
+ * e duração (6.7) virão depois, consumindo esta tabela.
+ *
+ * As colunas são String no banco (não enum do Postgres) para a engine crescer
+ * sem migration a cada fonte nova; o contrato tipado fica AQUI, validado por
+ * Zod na borda HTTP.
+ */
+export const effectSourceTypeSchema = z.enum([
+  'manual',
+  'spell',
+  'feature',
+  'item',
+  'condition',
+  'system',
+]);
+export type EffectSourceType = z.infer<typeof effectSourceTypeSchema>;
+
+export const effectStatusSchema = z.enum(['active', 'ended']);
+export type EffectStatus = z.infer<typeof effectStatusSchema>;
+
+export const effectVisibilitySchema = z.enum(['public', 'private']);
+export type EffectVisibility = z.infer<typeof effectVisibilitySchema>;
+
+/**
+ * Por que o efeito terminou. Enum MÍNIMA e extensível — sem inventar regra de
+ * duração/dispel nesta fase.
+ */
+export const effectEndReasonSchema = z.enum([
+  'manual',
+  'group',
+  'concentration',
+  'duration',
+  'dispel',
+  'source-ended',
+  'target-invalid',
+  'replaced',
+  'system',
+]);
+export type EffectEndReason = z.infer<typeof effectEndReasonSchema>;
+
+/**
+ * Criação de efeito manual (MASTER). Nomes de origem/alvo NÃO vêm do cliente:
+ * o servidor resolve os dois a partir dos ids (e do token, no caso de `createdBy`).
+ *
+ * `groupId` é opcional de propósito: a MESMA aplicação em vários alvos
+ * compartilha o grupo (Bless em três personagens = três instâncias + um grupo),
+ * o que permite encerrar tudo junto (Concentração/dispel) sem perder a remoção
+ * individual.
+ */
+export const createEffectSchema = z.object({
+  /** Idempotência: retry com o mesmo id devolve a MESMA instância. */
+  operationId: z.string().trim().min(1).max(128),
+  /** Nome humano do efeito. Nunca decide regra mecânica. */
+  label: z.string().trim().min(1).max(80),
+  target: entitySchema,
+  visibility: effectVisibilitySchema.default('public'),
+  sourceType: effectSourceTypeSchema.default('manual'),
+  /** Id lógico da origem (cast, item usado, feature). Opcional nesta fase. */
+  sourceId: z.string().trim().max(128).optional(),
+  /** Entidade responsável (Cleric que lançou Bless, Bárbaro da Fúria...). */
+  sourceEntity: entitySchema.optional(),
+  groupId: z.string().trim().max(128).optional(),
+  /** Identificador mecânico separado do label ("spell.bless"). */
+  definitionId: z.string().trim().max(128).optional(),
+});
+export type CreateEffectInput = z.infer<typeof createEffectSchema>;
+
+/** Encerramento pelo Mestre: idempotente por natureza (ended → ended). */
+export const endEffectSchema = z.object({
+  operationId: z.string().trim().min(1).max(128).optional(),
+  reason: effectEndReasonSchema.optional(),
+});
+export type EndEffectInput = z.infer<typeof endEffectSchema>;
+
+/** Leitura por alvo (a chave polimórfica vem da URL). */
+export const effectTargetSchema = entitySchema;

@@ -5,6 +5,7 @@ import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { CreatureDto } from '../modules/creatures/creatures.dto.js';
 import type { DeathDto } from '../modules/death/death.service.js';
 import type { DiceRollDto, DiceRollKind, RollBoardDto } from '../modules/dice/dice.dto.js';
+import type { EffectDto } from '../modules/effects/effects.dto.js';
 import type { GameConfigDto } from '../modules/game-config/game-config.dto.js';
 import type { ItemDto } from '../modules/items/items.dto.js';
 import type { LocalityDto } from '../modules/localities/localities.dto.js';
@@ -176,6 +177,12 @@ export const ServerEvents = {
   /** Estado completo do combate mudou (HP, rolagens, ordem...). */
   COMBAT_UPDATED: 'combat:updated',
   MECHANICAL_UPDATED: 'mechanical:updated',
+  /**
+   * Efeitos ATIVOS de um alvo mudaram (Fase 6.5A). Vai para os MESTRES com
+   * tudo e para o DONO do personagem só com os `public` — o filtro de
+   * privacidade é do servidor, nunca do CSS.
+   */
+  EFFECTS_UPDATED: 'effects:updated',
   /**
    * Ciclo de MORTE mudou (0 PV, Testes contra a Morte, decisão pendente). Vai
    * para o dono (personagens) e para a sala dos MESTRES. Death Saves de
@@ -538,6 +545,12 @@ export type ClientEvent = (typeof ClientEvents)[keyof typeof ClientEvents];
 export type ServerEvent = (typeof ServerEvents)[keyof typeof ServerEvents];
 
 export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }
+
+/** Efeitos ativos de UM alvo (lista já filtrada pelo papel de quem recebe). */
+export interface EffectsUpdatedPayload {
+  entity: { kind: 'character' | 'creature' | 'combatant'; id: string };
+  effects: EffectDto[];
+}
 
 /** Ciclo de morte de uma entidade (Fase 6.3). */
 export interface DeathUpdatedPayload { death: DeathDto; }

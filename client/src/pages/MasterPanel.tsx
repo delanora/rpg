@@ -96,6 +96,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   // Ciclo de MORTE (6.3): o Mestre é o único que decide o desfecho. As entradas
   // chegam pelo evento `death:updated` (personagens e criaturas) e o modal abre
   // a decisão pendente. A chave é `kind:id` da entidade.
+  // EFEITOS (6.5A): tabela própria — um efeito criado não muda a versão da
+  // ficha/combate. O contador avisa os painéis a reler a lista.
+  const [effectsRefresh, setEffectsRefresh] = useState(0);
   const [deathMap, setDeathMap] = useState<Record<string, DeathDto>>({});
   const [deathModal, setDeathModal] = useState<DeathDto | null>(null);
 
@@ -144,6 +147,10 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     ...music.handlers,
     ...shortRest.handlers,
     ...longRest.handlers,
+
+    // Efeitos (6.5A): o Mestre recebe tudo (público + privado), já filtrado no
+    // servidor. Só o contador muda aqui; a lista é buscada pelo painel do alvo.
+    onEffectsUpdated: () => setEffectsRefresh((value) => value + 1),
 
     // Morte (6.3): só a sala dos mestres recebe o ciclo de morte de criaturas.
     onDeathUpdated: (payload) => {
@@ -938,6 +945,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
                 log={log}
                 user={user}
                 turnAlert={turnAlert}
+                effectsRefresh={effectsRefresh}
                 attacksFor={attacksFor}
                 sneakAttackFor={sneakAttackFor}
                 onCombatChange={combatState.setCombat}

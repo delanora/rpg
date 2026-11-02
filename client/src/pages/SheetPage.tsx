@@ -49,6 +49,9 @@ import { useRealtime } from '../useRealtime';
 export function SheetPage({ user }: { user: SessionUser }) {
   const { logout } = useAuth();
   const [character, setCharacter] = useState<Character | null>(null);
+  // EFEITOS (6.5A): a tabela é própria, então uma mudança de efeito não altera
+  // a versão da ficha. Este contador força a releitura da lista.
+  const [effectsRefresh, setEffectsRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [presentation, setPresentation] = useState<Presentation | null>(null);
@@ -129,6 +132,10 @@ export function SheetPage({ user }: { user: SessionUser }) {
         setMasterNotice(`${payload.editedBy} (mestre) alterou sua ficha às ${time}.`);
       }
     },
+
+    // Efeitos ativos do alvo mudaram (Fase 6.5A). O servidor já filtrou o que
+    // este papel pode ver — nada de privacidade decidida no cliente.
+    onEffectsUpdated: () => setEffectsRefresh((value) => value + 1),
 
     // O mestre excluiu este personagem: a conta do jogador também foi
     // embora, então a única saída é voltar para o login.
@@ -492,6 +499,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 log={log}
                 user={user}
                 turnAlert={turnAlert}
+                effectsRefresh={effectsRefresh}
                 characterAttacks={[
                   ...(character?.attacks ?? []),
                   ...(character?.derivedAttacks ?? []),
@@ -604,6 +612,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
                     (a montagem só muda por ele ou pelas mãos do mestre). */}
                 <SheetView
                   character={character}
+                  effectsRefresh={effectsRefresh}
                   update={update}
                   onInventoryMove={moveItem}
                   onInventoryUse={useItem}

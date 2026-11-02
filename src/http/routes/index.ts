@@ -6,6 +6,7 @@ import { combatRouter } from '../../modules/combat/combat.routes.js';
 import { compendiumRouter } from '../../modules/compendium/compendium.routes.js';
 import { creaturesRouter } from '../../modules/creatures/creatures.routes.js';
 import { deathRouter } from '../../modules/death/death.routes.js';
+import { effectsRouter } from '../../modules/effects/effects.routes.js';
 import { customRacesRouter } from '../../modules/custom-races/custom-races.routes.js';
 import { diceRouter } from '../../modules/dice/dice.routes.js';
 import { gameConfigRouter } from '../../modules/game-config/game-config.routes.js';
@@ -46,3 +47,4 @@ apiRouter.use('/rest', longRestRouter);
 
 apiRouter.use('/mechanical', mechanicalRouter);
 apiRouter.use('/death', deathRouter);
+apiRouter.use('/effects', effectsRouter);

@@ -72,6 +72,7 @@ import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice, rollHealingDice, type HealingDiceResult } from '../shared/dice.js';
 import { noteDamageConcentration } from '../concentration/concentration.service.js';
+import { publishEffects } from '../effects/effects.service.js';
 import { planNextTurn } from './turn-order.js';
 import {
   combatantAttacks,
@@ -1320,6 +1321,9 @@ export async function resolveAttack(
   const deathTargets: MechanicalEntity[] = [];
   // Alvos cuja CONCENTRAÇÃO mudou (pendência criada ou encerrada pelo dano).
   const concentrationTargets: MechanicalEntity[] = [];
+  // Alvos cujo GRUPO de efeitos foi encerrado porque a concentração acabou no
+  // dano (0 PV/Incapacitado). Publicado depois do commit.
+  const effectTargets: MechanicalEntity[] = [];
   const response = await runCombatOperation(actor, input, 'attack', async (db, combat) => {
     const attacker = input.attackerCombatantId
       ? combat.combatants.find((item) => item.id === input.attackerCombatantId)
@@ -1729,6 +1733,7 @@ export async function resolveAttack(
             sourceName: attacker.name,
           });
           if (concentration.changed) concentrationTargets.push(entity);
+          effectTargets.push(...concentration.endedEffectTargets);
         }
       }
     }
@@ -1768,6 +1773,7 @@ export async function resolveAttack(
     for (const entity of concentrationTargets) {
       if (entity.kind === 'character') await publishCharacter(entity.id);
     }
+    if (effectTargets.length > 0) await publishEffects(effectTargets);
     for (const roll of rolls) announceRoll(roll);
     const result = response.result;
     // O resultado do ataque em criatura/NPC também esconde CA/PV (vale para
@@ -2057,6 +2063,7 @@ export async function applyManualHp(
   const publications = new Set<string>();
   const deathTargets: MechanicalEntity[] = [];
   const concentrationTargets: MechanicalEntity[] = [];
+  const effectTargets: MechanicalEntity[] = [];
   const applied = await prisma.$transaction(async (db) => {
     const active = await db.combat.updateMany({ where: { id: combat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
     if (!active.count) throw new HttpError('Combate encerrado.', 409, 'CONFLICT');
@@ -2085,6 +2092,7 @@ export async function applyManualHp(
           sourceName: actor.username,
         });
         if (concentration.changed) concentrationTargets.push(entity);
+        effectTargets.push(...concentration.endedEffectTargets);
       }
     }
     return result;
@@ -2096,6 +2104,7 @@ export async function applyManualHp(
   for (const entity of concentrationTargets) {
     if (entity.kind === 'character') await publishCharacter(entity.id);
   }
+  if (effectTargets.length > 0) await publishEffects(effectTargets);
 
   if (!applied) {
     throw new HttpError('A ficha ou criatura deste combatente não existe mais.', 409);

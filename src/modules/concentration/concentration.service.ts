@@ -13,6 +13,7 @@ import { abilityModifier, normalizeSaves, proficiencyBonus } from '../shared/dnd
 import { getClassDefinition, totalCharacterLevel } from '../shared/classes.js';
 import { normalizeClassEntries } from '../shared/classes.js';
 import { characterClassAdjustments } from '../characters/characters.dto.js';
+import { endEffectsForConcentration } from '../effects/effects.service.js';
 
 /**
  * CONCENTRAÇÃO — o estado já mora em `mechanicalState` (ver `shared/concentration`).
@@ -187,12 +188,18 @@ export async function noteDamageConcentration(
   damage: number,
   db: Prisma.TransactionClient,
   event: ConcentrationDamageEvent,
-): Promise<{ changed: boolean; ended: boolean; dc: number | null }> {
+): Promise<{
+  changed: boolean;
+  ended: boolean;
+  dc: number | null;
+  /** Alvos de grupo de efeitos encerrado junto (publicar depois do commit). */
+  endedEffectTargets: MechanicalEntity[];
+}> {
   const target = await loadConcentrationTarget(entity, db);
   const state = target.state;
   const sourceName = event.sourceName;
   const concentration = state.concentration;
-  if (!concentration) return { changed: false, ended: false, dc: null };
+  if (!concentration) return { changed: false, ended: false, dc: null, endedEffectTargets: [] };
 
   // Incapacitado (Inconsciente/Paralisado/Atordoado/Petrificado) ou já a 0 PV:
   // a concentração acaba SEM teste — inclusive quando o dano foi morte
@@ -208,20 +215,22 @@ export async function noteDamageConcentration(
         at: new Date().toISOString(),
       },
     ].slice(-100);
+    // Vínculo EXPLÍCITO com grupo de efeitos (sourceType 'effect').
+    const endedEffectTargets = await endEffectsForConcentration(concentration, db);
     state.concentration = null;
     state.pendingConcentrationSaves = [];
     await saveConcentrationState(target, state, db);
-    return { changed: true, ended: true, dc: null };
+    return { changed: true, ended: true, dc: null, endedEffectTargets };
   }
 
-  if (damage <= 0) return { changed: false, ended: false, dc: null };
+  if (damage <= 0) return { changed: false, ended: false, dc: null, endedEffectTargets: [] };
 
   // Mesmo evento já pendente NESTA concentração: nada muda. O escopo é
   // `concentrationId + eventId` — um id antigo nunca atinge a concentração nova.
   const duplicated = state.pendingConcentrationSaves.some(
     (item) => item.concentrationId === concentration.id && item.eventId === event.eventId,
   );
-  if (duplicated) return { changed: false, ended: false, dc: null };
+  if (duplicated) return { changed: false, ended: false, dc: null, endedEffectTargets: [] };
 
   const dc = concentrationDc(damage);
   const save: ConcentrationSave = {
@@ -245,7 +254,7 @@ export async function noteDamageConcentration(
     },
   ].slice(-100);
   await saveConcentrationState(target, state, db);
-  return { changed: true, ended: false, dc };
+  return { changed: true, ended: false, dc, endedEffectTargets: [] };
 }
 
 /**
@@ -269,6 +278,8 @@ export async function resolveConcentrationSave(
   ended: boolean;
   label: string;
   concentrationId: string;
+  /** Alvos de grupo de efeitos encerrado pela falha (publicar depois). */
+  endedEffectTargets: MechanicalEntity[];
 }> {
   const target = await loadConcentrationTarget(entity, db);
   const state = target.state;
@@ -292,10 +303,21 @@ export async function resolveConcentrationSave(
       },
     ].slice(-100);
     await saveConcentrationState(target, state, db);
-    return { name: target.name, pending, success, ended: false, label: '', concentrationId: pending.concentrationId };
+    return {
+      name: target.name,
+      pending,
+      success,
+      ended: false,
+      label: '',
+      concentrationId: pending.concentrationId,
+      endedEffectTargets: [],
+    };
   }
 
   const label = concentration.label;
+  // Falha encerra a concentração E o grupo de efeitos que ela mantinha — só
+  // quando a concentração declara explicitamente `sourceType: 'effect'`.
+  const endedEffectTargets = success ? [] : await endEffectsForConcentration(concentration, db);
   if (!success) {
     state.concentration = null;
     state.pendingConcentrationSaves = [];
@@ -310,5 +332,13 @@ export async function resolveConcentrationSave(
     },
   ].slice(-100);
   await saveConcentrationState(target, state, db);
-  return { name: target.name, pending, success, ended: !success, label, concentrationId: pending.concentrationId };
+  return {
+    name: target.name,
+    pending,
+    success,
+    ended: !success,
+    label,
+    concentrationId: pending.concentrationId,
+    endedEffectTargets,
+  };
 }

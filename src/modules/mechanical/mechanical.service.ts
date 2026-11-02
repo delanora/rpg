@@ -12,6 +12,7 @@ import { economyOf, moveDistance } from '../shared/action-economy.js';
 import { registerFatalExhaustion } from '../death/death.service.js';
 import { HP_ZERO_SOURCE } from '../shared/death.js';
 import { CONDITION_LABELS, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
+import { endEffectsForConcentration, publishEffects } from '../effects/effects.service.js';
 import type { MechanicalMutationInput } from './mechanical.schema.js';
 
 interface LoadedEntity {
@@ -102,6 +103,9 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
   };
   const existing = await prisma.mechanicalOperation.findUnique({ where });
   if (existing) return replay(existing);
+  // Alvos de GRUPOS de efeito encerrados junto com a concentração. Publicados
+  // só depois do commit (o service de Effects não abre transação própria).
+  const endedEffectTargets: MechanicalEntity[] = [];
   let result: MechanicalDto;
   try {
     result = await prisma.$transaction(async db => {
@@ -188,6 +192,10 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
           throw new HttpError('Esta concentração não está mais ativa.', 409, 'CONFLICT');
         }
         log(state, actor, `${loaded.name} encerrou a concentração em ${current.label}.`);
+        // Vínculo EXPLÍCITO: concentração que aponta para um grupo de efeitos
+        // encerra o grupo. Concentração manual legada (sourceType 'manual') não
+        // consulta efeito nenhum.
+        endedEffectTargets.push(...(await endEffectsForConcentration(current, db)));
         state.concentration = null;
         state.pendingConcentrationSaves = [];
       } else if (input.action === 'stand') {
@@ -232,6 +240,7 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
           actor,
           `${loaded.name} perdeu a concentração em ${state.concentration.label} ao ${derived.fatalByExhaustion ? 'ser marcado como morto pela Exaustão' : 'ficar Incapacitado'}.`,
         );
+        endedEffectTargets.push(...(await endEffectsForConcentration(state.concentration, db)));
         state.concentration = null;
         state.pendingConcentrationSaves = [];
       }
@@ -262,6 +271,7 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
     if (previous) return replay(previous);
     throw error;
   }
+  if (endedEffectTargets.length > 0) await publishEffects(endedEffectTargets);
   const broadcaster = getBroadcaster();
   if (result.entity.kind === 'character') {
     await publishCharacter(result.entity.id);
