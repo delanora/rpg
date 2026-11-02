@@ -33,6 +33,11 @@ export type EffectVisibility = z.infer<typeof effectVisibilitySchema>;
 /**
  * Por que o efeito terminou. Enum MÍNIMA e extensível — sem inventar regra de
  * duração/dispel nesta fase.
+ *
+ * 6.5D acrescentou `source-removed`/`target-removed` (remoção ESTRUTURAL da
+ * entidade, não morte). `group`/`source-ended`/`target-invalid` continuam
+ * aceitos para não invalidar o histórico já gravado — `endReason` é auditoria
+ * e NUNCA decide como a limpeza é feita.
  */
 export const effectEndReasonSchema = z.enum([
   'manual',
@@ -40,7 +45,9 @@ export const effectEndReasonSchema = z.enum([
   'concentration',
   'duration',
   'dispel',
+  'source-removed',
   'source-ended',
+  'target-removed',
   'target-invalid',
   'replaced',
   'system',

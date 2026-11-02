@@ -10,7 +10,8 @@ import {
   emptyEffectModifierSet,
   type EffectModifierSet,
 } from './effect-modifiers.js';
-import { applyEffectConditions, removeEffectConditions, type EffectConditionTarget } from './effect-conditions.js';
+import { applyEffectConditions, type EffectConditionTarget } from './effect-conditions.js';
+import { endEffectInstances, uniqueTargets } from './effect-lifecycle.js';
 import { effectsVisibleTo, toEffectDto, type EffectDto } from './effects.dto.js';
 import type { CreateEffectInput, EffectEndReason } from './effects.schema.js';
 
@@ -401,31 +402,14 @@ export async function endEffect(
   const result = await prisma.$transaction(async (db) => {
     if (input.operationId) {
       const prior = await db.effectOperation.findUnique({ where: { operationId: input.operationId } });
-      if (prior) return replay(prior);
+      if (prior) return { ...replay(prior), changed: false };
     }
-    const row = await getEffectById(effectId, db);
-    const changed = await db.effectInstance.updateMany({
-      where: { id: effectId, status: 'active' },
-      data: { status: 'ended', endedAt: new Date(), endReason: reason },
-    });
-    const current = changed.count
-      ? await getEffectById(effectId, db)
-      : row;
-    // CLEANUP (6.5C): remove só as Conditions com `sourceType='effect'` e
-    // `sourceId` DESTE efeito. Fonte manual, outro efeito e `hp-zero` ficam.
-    await removeEffectConditions(
-      [
-        {
-          id: current.id,
-          target: {
-            kind: current.targetEntityKind as MechanicalEntity['kind'],
-            id: current.targetEntityId,
-          },
-          conditions: current.conditions,
-        },
-      ],
-      db,
-    );
+    await getEffectById(effectId, db);
+    // LIFECYCLE CENTRAL (6.5D): MESMO pipeline do endEffectGroup. A guarda
+    // `status = 'active'` preserva o primeiro `endedAt`/`endReason` e evita
+    // cleanup/log duplicados em retry ou encerramento concorrente.
+    const ended = await endEffectInstances({ id: effectId }, reason, db);
+    const current = await getEffectById(effectId, db);
     const effect = toEffectDto(current);
     if (input.operationId) {
       await db.effectOperation.create({
@@ -437,11 +421,11 @@ export async function endEffect(
         },
       });
     }
-    return { effect, replayed: false };
+    return { effect, replayed: false, changed: ended.length > 0 };
   });
 
   await publishEffects([result.effect.targetEntity]);
-  if (result.effect.status === 'ended') {
+  if (result.changed) {
     await appendEffectLog(
       result.effect.targetEntity,
       actor.username,
@@ -449,7 +433,7 @@ export async function endEffect(
       result.effect.visibility === 'private',
     );
   }
-  return result;
+  return { effect: result.effect, replayed: result.replayed };
 }
 
 /**
@@ -466,41 +450,10 @@ export async function endEffectGroup(
   /** Alvo já carregado pelo chamador (ver `removeEffectConditions`). */
   context?: EffectConditionTarget,
 ): Promise<MechanicalEntity[]> {
-  const rows = await db.effectInstance.findMany({
-    where: { groupId, status: 'active' },
-    select: { id: true, targetEntityKind: true, targetEntityId: true, conditions: true },
-  });
-  if (rows.length === 0) return [];
-  await db.effectInstance.updateMany({
-    where: { groupId, status: 'active' },
-    data: { status: 'ended', endedAt: new Date(), endReason: reason },
-  });
-  // Remove as Conditions de TODAS as instâncias encerradas, agrupadas por alvo
-  // (um lote por alvo, sem N+1 por Condition).
-  await removeEffectConditions(
-    rows.map((row) => ({
-      id: row.id,
-      target: {
-        kind: row.targetEntityKind as MechanicalEntity['kind'],
-        id: row.targetEntityId,
-      },
-      conditions: row.conditions,
-    })),
-    db,
-    context,
-  );
-  const seen = new Set<string>();
-  const targets: MechanicalEntity[] = [];
-  for (const row of rows) {
-    const key = `${row.targetEntityKind}:${row.targetEntityId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    targets.push({
-      kind: row.targetEntityKind as MechanicalEntity['kind'],
-      id: row.targetEntityId,
-    });
-  }
-  return targets;
+  // Mesmo lifecycle do `endEffect`, aplicado em LOTE: a transição de status e
+  // a remoção das Conditions de cada instância acontecem num pipeline único.
+  const ended = await endEffectInstances({ groupId }, reason, db, context);
+  return uniqueTargets(ended);
 }
 
 /**
