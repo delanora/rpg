@@ -126,21 +126,32 @@ export async function smokeConcentration(baseUrl: string, check: Check): Promise
         own.state.log.some((entry) => entry.message.includes('encerrou a concentração em Bless')),
     );
 
-    // --- Filas, save antigo e dano 0 (domínio) -------------------------------
-    const queueTarget = await loadConcentrationTarget(ownEntity);
-    const queueState = queueTarget.state;
+    // --- Filas, save antigo, identidade do evento e dano 0 (domínio) ---------
     // Dois eventos de dano ANTES de resolver o primeiro: duas pendências.
-    await noteDamageConcentration(ownEntity, 22, prisma, 'Fonte A');
-    await noteDamageConcentration(ownEntity, 44, prisma, 'Fonte B');
+    const eventA = `evt-${suffix}-A`;
+    const eventB = `evt-${suffix}-B`;
+    await noteDamageConcentration(ownEntity, 22, prisma, { eventId: eventA, sourceName: 'Fonte A' });
+    // Repetir o MESMO evento (retry/republicação) não pode criar outro teste.
+    const replay = await noteDamageConcentration(ownEntity, 22, prisma, { eventId: eventA, sourceName: 'Fonte A' });
     let queued = (await loadConcentrationTarget(ownEntity)).state;
     check(
-      '69.AF) dois eventos de dano geram DUAS pendências (sem sobrescrever)',
+      '69.F/G) o mesmo evento de dano NÃO cria uma segunda pendência',
+      replay.changed === false && queued.pendingConcentrationSaves.length === 1 &&
+        queued.pendingConcentrationSaves[0].eventId === eventA,
+      JSON.stringify({ replay, pendings: queued.pendingConcentrationSaves }),
+    );
+    await noteDamageConcentration(ownEntity, 44, prisma, { eventId: eventB, sourceName: 'Fonte B' });
+    queued = (await loadConcentrationTarget(ownEntity)).state;
+    check(
+      '69.AF/H) dois eventos distintos geram DUAS pendências, cada uma com o SEU eventId',
       queued.pendingConcentrationSaves.length === 2 &&
         queued.pendingConcentrationSaves[0].dc === 11 &&
-        queued.pendingConcentrationSaves[1].dc === 22,
+        queued.pendingConcentrationSaves[1].dc === 22 &&
+        queued.pendingConcentrationSaves[0].eventId === eventA &&
+        queued.pendingConcentrationSaves[1].eventId === eventB,
       JSON.stringify(queued.pendingConcentrationSaves),
     );
-    check('69.P) dano efetivo 0 não gera teste', (await noteDamageConcentration(ownEntity, 0, prisma, 'Fonte nula')).changed === false);
+    check('69.P) dano efetivo 0 não gera teste', (await noteDamageConcentration(ownEntity, 0, prisma, { eventId: `evt-${suffix}-zero`, sourceName: 'Fonte nula' })).changed === false);
 
     // Sucesso mantém a concentração e remove SÓ a pendência resolvida.
     const firstPending = queued.pendingConcentrationSaves[0];
@@ -162,7 +173,7 @@ export async function smokeConcentration(baseUrl: string, check: Check): Promise
     // Save pendente de A não pode quebrar a concentração B: a troca invalida a
     // pendência antiga, e uma rolagem atrasada é recusada sem tocar em B.
     await concentrate(ownEntity, 'A');
-    await noteDamageConcentration(ownEntity, 22, prisma, 'Fonte antiga');
+    await noteDamageConcentration(ownEntity, 22, prisma, { eventId: `evt-${suffix}-stale`, sourceName: 'Fonte antiga' });
     const stalePending = (await read()).state.pendingConcentrationSaves[0];
     await concentrate(ownEntity, 'B');
     const staleRoll = await request('/dice/roll', {
@@ -216,6 +227,8 @@ export async function smokeConcentration(baseUrl: string, check: Check): Promise
     check('69.AM/AP) o teste do jogador aparece público no card', (await refreshCombat(playerToken)).combatants.find((item) => item.id === playerCombatant.id)!.mechanicalState.pendingConcentrationSaves.length === 1);
 
     const pendingId = own.state.pendingConcentrationSaves[0].id;
+    // Identidade do evento do ajuste manual de PV (gerada no ponto de origem).
+    const manualEventId = own.state.pendingConcentrationSaves[0].eventId;
     const roll = await request('/dice/roll', { kind: 'concentration', entity: ownEntity, pendingConcentrationSaveId: pendingId, dice: [{ sides: 20 }] }, playerToken);
     own = await read();
     const rollTotal = roll.data.roll?.total ?? 0;
@@ -230,20 +243,79 @@ export async function smokeConcentration(baseUrl: string, check: Check): Promise
     // Repetir o mesmo teste não é possível (pendência resolvida = idempotência).
     check('69) teste já resolvido não é rolado de novo', (await request('/dice/roll', { kind: 'concentration', entity: ownEntity, pendingConcentrationSaveId: pendingId, dice: [{ sides: 20 }] }, playerToken)).status === 409);
 
-    // Vantagem/desvantagem passam pelo MESMO pipeline de salvaguarda.
-    await mutation(ownEntity, { action: 'concentrate-end' });
-    await concentrate();
-    await damage(playerCombatant.id, 5);
-    let nextPending = (await read()).state.pendingConcentrationSaves.at(-1)!;
-    const advRoll = await request('/dice/roll', { kind: 'concentration', entity: ownEntity, pendingConcentrationSaveId: nextPending.id, advantage: true, dice: [{ sides: 20 }] }, playerToken);
-    check('69) vantagem declarada soma 2d20 e mantém o maior', advRoll.status === 201 && advRoll.data.roll.advantage === true && advRoll.data.roll.dice.length === 2);
+    // --- SEGURANÇA: o cliente NÃO escolhe o modo do teste --------------------
+    // Cada rolagem parte de uma concentração/pendência nova. O payload tenta
+    // impor vantagem/desvantagem sem NENHUMA fonte mecânica — o servidor ignora.
+    const rollConcentrationMalicious = async (extra: Record<string, unknown>) => {
+      await mutation(ownEntity, { action: 'concentrate-end' });
+      await concentrate();
+      await damage(playerCombatant.id, 5);
+      const pending = (await read()).state.pendingConcentrationSaves.at(-1)!;
+      const res = await request(
+        '/dice/roll',
+        { kind: 'concentration', entity: ownEntity, pendingConcentrationSaveId: pending.id, dice: [{ sides: 20 }], ...extra },
+        playerToken,
+      );
+      return { res, pending };
+    };
 
-    await mutation(ownEntity, { action: 'concentrate-end' });
-    await concentrate();
-    await damage(playerCombatant.id, 5);
-    nextPending = (await read()).state.pendingConcentrationSaves.at(-1)!;
-    const mixRoll = await request('/dice/roll', { kind: 'concentration', entity: ownEntity, pendingConcentrationSaveId: nextPending.id, advantage: true, disadvantage: true, dice: [{ sides: 20 }] }, playerToken);
-    check('69) vantagem + desvantagem cancelam (rolagem normal)', mixRoll.status === 201 && !mixRoll.data.roll.advantage && !mixRoll.data.roll.disadvantage && mixRoll.data.roll.dice.length === 1);
+    const normal = await rollConcentrationMalicious({});
+    check(
+      '69.A) teste de concentração normal rola UM d20, sem modo forçado',
+      normal.res.status === 201 && normal.res.data.roll.dice.length === 1 &&
+        normal.res.data.roll.advantage === false && normal.res.data.roll.disadvantage === false,
+      JSON.stringify(normal.res.data.roll),
+    );
+
+    const advPayload = await rollConcentrationMalicious({ advantage: true });
+    check(
+      '69.B) advantage enviado pelo cliente NÃO vira vantagem',
+      advPayload.res.status === 201 && advPayload.res.data.roll.advantage === false &&
+        advPayload.res.data.roll.dice.length === 1,
+      JSON.stringify(advPayload.res.data.roll),
+    );
+
+    const disPayload = await rollConcentrationMalicious({ disadvantage: true });
+    check(
+      '69.C) disadvantage enviado pelo cliente NÃO vira desvantagem',
+      disPayload.res.status === 201 && disPayload.res.data.roll.disadvantage === false &&
+        disPayload.res.data.roll.dice.length === 1,
+      JSON.stringify(disPayload.res.data.roll),
+    );
+
+    const bothPayload = await rollConcentrationMalicious({ advantage: true, disadvantage: true });
+    check(
+      '69) advantage + disadvantage do cliente seguem sem efeito (rolagem normal)',
+      bothPayload.res.status === 201 && !bothPayload.res.data.roll.advantage &&
+        !bothPayload.res.data.roll.disadvantage && bothPayload.res.data.roll.dice.length === 1,
+      JSON.stringify(bothPayload.res.data.roll),
+    );
+
+    check(
+      '69) ajustes manuais de PV de eventos diferentes usam eventIds diferentes',
+      Boolean(manualEventId) && manualEventId !== normal.pending.eventId &&
+        normal.pending.eventId !== advPayload.pending.eventId &&
+        advPayload.pending.eventId !== disPayload.pending.eventId,
+      JSON.stringify({ manualEventId, normal: normal.pending.eventId, adv: advPayload.pending.eventId, dis: disPayload.pending.eventId }),
+    );
+
+    // --- Fonte mecânica REAL: Exaustão 3+ impõe desvantagem em salvaguardas --
+    const storedConfig = await prisma.gameConfig.findUnique({ where: { id: 'main' } });
+    const originalExhaustion = storedConfig?.exhaustionEnabled ?? false;
+    try {
+      await request('/game/exhaustion', { enabled: true });
+      await mutation(ownEntity, { action: 'exhaustion', exhaustionLevel: 3 });
+      const exhaustRoll = await rollConcentrationMalicious({ advantage: true });
+      check(
+        '69.D/E) desvantagem mecânica real (Exaustão 3) vale e advantage do cliente não a cancela',
+        exhaustRoll.res.status === 201 && exhaustRoll.res.data.roll.disadvantage === true &&
+          exhaustRoll.res.data.roll.advantage === false && exhaustRoll.res.data.roll.dice.length === 2,
+        JSON.stringify(exhaustRoll.res.data.roll),
+      );
+    } finally {
+      await mutation(ownEntity, { action: 'exhaustion', exhaustionLevel: 0 }).catch(() => undefined);
+      await request('/game/exhaustion', { enabled: originalExhaustion });
+    }
 
     // --- Incapacitated encerra SEM save / remover não reativa ---------------
     await mutation(ownEntity, { action: 'concentrate-end' });
@@ -289,33 +361,39 @@ export async function smokeConcentration(baseUrl: string, check: Check): Promise
           reason: 'Ataques do smoke de concentração',
         });
         await refreshCombat();
+        // O `operationId` do ataque É a identidade do evento de dano: devolvido
+        // junto para o teste comparar com o `eventId` da pendência.
+        const operationId = randomUUID();
         const res = await request('/combat/attack', {
           combatId: combat.id,
           expectedVersion: combat.version,
-          operationId: randomUUID(),
+          operationId,
           attackId,
           targetCombatantId: npcCombatant.id,
         }, playerToken);
-        if (res.status !== 200 || res.data.result.hit) return res;
+        if (res.status !== 200 || res.data.result.hit) return { res, operationId };
       }
       throw new Error(`Não obteve acerto com ${attackId}.`);
     }
     const attack = await attackNpc('two');
     const npcState = (await read({ kind: 'combatant', id: npcCombatant.id })).state;
     check(
-      '69.Q/R) ataque com 2 componentes gera UM único teste, com o dano TOTAL',
-      attack.status === 200 && npcState.pendingConcentrationSaves.length === 1 &&
-        npcState.pendingConcentrationSaves[0].damage === attack.data.result.damageRolled &&
-        npcState.pendingConcentrationSaves[0].dc === concentrationDc(attack.data.result.damageRolled),
-      JSON.stringify({ start: npcStarted.status, attack: attack.status, message: attack.data.message, version: combat.version, current: combat.currentCombatantId, player: playerCombatant.id, result: attack.data.result?.damageRolled, pendings: npcState.pendingConcentrationSaves }),
+      '69.Q/R/F/I) ataque com 2 componentes gera UM único teste, com o dano TOTAL e o eventId do ataque',
+      attack.res.status === 200 && npcState.pendingConcentrationSaves.length === 1 &&
+        npcState.pendingConcentrationSaves[0].damage === attack.res.data.result.damageRolled &&
+        npcState.pendingConcentrationSaves[0].dc === concentrationDc(attack.res.data.result.damageRolled) &&
+        npcState.pendingConcentrationSaves[0].eventId === attack.operationId,
+      JSON.stringify({ start: npcStarted.status, attack: attack.res.status, message: attack.res.data.message, version: combat.version, current: combat.currentCombatantId, player: playerCombatant.id, result: attack.res.data.result?.damageRolled, operationId: attack.operationId, pendings: npcState.pendingConcentrationSaves }),
     );
     const secondAttack = await attackNpc('heavy');
     const npcState2 = (await read({ kind: 'combatant', id: npcCombatant.id })).state;
     check(
-      '69.S) hit separado NÃO sobrescreve o teste anterior',
-      secondAttack.status === 200 && npcState2.pendingConcentrationSaves.length === 2 &&
-        npcState2.pendingConcentrationSaves[1].damage === secondAttack.data.result.damageRolled,
-      JSON.stringify({ status: secondAttack.status, message: secondAttack.data.message, result: secondAttack.data.result && { hit: secondAttack.data.result.hit, damage: secondAttack.data.result.damageRolled, roll: secondAttack.data.result.attackRoll }, pendings: npcState2.pendingConcentrationSaves }),
+      '69.S/J) hit separado NÃO sobrescreve o teste anterior e tem o PRÓPRIO eventId',
+      secondAttack.res.status === 200 && npcState2.pendingConcentrationSaves.length === 2 &&
+        npcState2.pendingConcentrationSaves[1].damage === secondAttack.res.data.result.damageRolled &&
+        npcState2.pendingConcentrationSaves[1].eventId === secondAttack.operationId &&
+        npcState2.pendingConcentrationSaves[0].eventId !== npcState2.pendingConcentrationSaves[1].eventId,
+      JSON.stringify({ status: secondAttack.res.status, message: secondAttack.res.data.message, result: secondAttack.res.data.result && { hit: secondAttack.res.data.result.hit, damage: secondAttack.res.data.result.damageRolled, roll: secondAttack.res.data.result.attackRoll }, operationId: secondAttack.operationId, pendings: npcState2.pendingConcentrationSaves }),
     );
 
     // --- NPC: público × privado ---------------------------------------------
