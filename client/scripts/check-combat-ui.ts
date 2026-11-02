@@ -928,6 +928,13 @@ console.log('Check-combat-ui — refino da UI de combate');
       !source('../src/modules/combat/combat.service.ts').includes('definitionId'),
   );
   check(
+    'CB38) a Esquiva valida pelo deslocamento EFETIVO (inclui speed-flat dos efeitos)',
+    source('../src/modules/dice/dice.service.ts').includes('dodgeBenefitForSave(entity, effectSet?.speedBonus ?? 0)') &&
+      source('../src/modules/dice/dice.service.ts').includes('effectiveSpeed(baseSpeed, mechanical, effectSpeedBonus)') &&
+      source('../src/modules/combat/combat.service.ts').includes('targetSpeed: effectiveSpeed(\n          combatantSpeed(target),\n          combatantMechanicalState(target),\n          targetEffectMods.speedBonus,') &&
+      source('../src/modules/shared/conditions.ts').includes('effectSpeedBonus'),
+  );
+  check(
     'CB37) CA/deslocamento com efeito são DERIVADOS (nunca gravados na ficha)',
     source('../src/modules/characters/characters.dto.ts').includes('effectArmorClassBonuses(effectModifiers)') &&
       source('../src/modules/characters/characters.dto.ts').includes('effectModifiers?.speedBonus') &&

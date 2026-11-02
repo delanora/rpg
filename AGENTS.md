@@ -512,6 +512,13 @@ de implementar.
   projeto não modela posição/linha de visão). A Esquiva usa a mesma relação.
   Nunca derivar vantagem/desvantagem só de "tem Invisible" fora de
   `conditionAttackMode`.
+- **A Esquiva valida pelo deslocamento EFETIVO** —
+  `effectiveSpeed(base, estado, speed-flat dos Efeitos)`, nunca a velocidade
+  base: um `speed-flat` que leve a velocidade a 0 suspende os benefícios
+  (ataque sem desvantagem e Destreza sem vantagem), e Condition que zera
+  (Grappled etc.) vence por último mesmo com bônus de efeito. Movimento
+  RESTANTE zero não invalida. Ataque (`conditionAttackMode`) e Teste de
+  Destreza usam a MESMA derivação.
 - Sem distância/posição/linha de visão confiáveis: Frightened fica assistido;
   modificadores contra Prone e críticos de proximidade ficam pendentes. Checks
   de visão/audição, sociais, doença, peso e envelhecimento expõem flags futuros.

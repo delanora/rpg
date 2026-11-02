@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
 import {
@@ -514,6 +515,50 @@ export async function smokeEffects(baseUrl: string, check: Check): Promise<void>
     );
     await end(charEffectAc.data.effect.id);
     await end(npcEffectAc.data.effect.id);
+
+    // --- Esquiva: a validade usa o deslocamento EFETIVO (com speed-flat) -----
+    // O estado de turno é fixture: o foco aqui é a DERIVAÇÃO da velocidade.
+    async function setDodging(value: boolean) {
+      const row = await prisma.combatant.findUniqueOrThrow({ where: { id: charCombatant.id } });
+      const economy = row.turnEconomy as Record<string, unknown>;
+      await prisma.combatant.update({
+        where: { id: charCombatant.id },
+        data: { turnEconomy: { ...economy, dodging: value } as Prisma.InputJsonValue },
+      });
+    }
+    await setDodging(true);
+    const dodgeBase = await roll({ kind: 'save', ability: 'dexterity', bonus: 0 });
+    const zeroSpeed = await create({ label: 'Teste speed 0', modifiers: [{ kind: 'speed-flat', value: -9 }] });
+    const dodgeZeroSpeed = await roll({ kind: 'save', ability: 'dexterity', bonus: 0 });
+    await end(zeroSpeed.data.effect.id);
+    const partialSpeed = await create({ label: 'Teste speed 3', modifiers: [{ kind: 'speed-flat', value: -6 }] });
+    const dodgePartialSpeed = await roll({ kind: 'save', ability: 'dexterity', bonus: 0 });
+    await end(partialSpeed.data.effect.id);
+    await setDodging(false);
+    check(
+      '70B) Esquiva usa o deslocamento EFETIVO: speed-flat 0 suspende, speed-flat parcial mantém',
+      dodgeBase.data.roll.advantage === true &&
+        dodgeZeroSpeed.data.roll.advantage === false &&
+        dodgeZeroSpeed.data.roll.disadvantage === false &&
+        dodgePartialSpeed.data.roll.advantage === true,
+      JSON.stringify({ base: dodgeBase.data.roll.advantage, zero: dodgeZeroSpeed.data.roll.advantage, parcial: dodgePartialSpeed.data.roll.advantage }),
+    );
+    // Esquiva + Grappled + speed-flat positivo: o zero por Condition vence por último.
+    await mutateCharacterA({ action: 'apply', condition: 'grappled' });
+    await setDodging(true);
+    const grappleBonus = await create({ label: 'Teste speed 100', modifiers: [{ kind: 'speed-flat', value: 100 }] });
+    const dodgeGrappled = await roll({ kind: 'save', ability: 'dexterity', bonus: 0 });
+    await end(grappleBonus.data.effect.id);
+    await setDodging(false);
+    const grappledRows = (await request(`/mechanical/character/${characterA.id}`)).data.mechanical.state.conditions;
+    for (const row of grappledRows) {
+      if (row.condition === 'grappled') await mutateCharacterA({ action: 'remove', instanceId: row.id });
+    }
+    check(
+      '70B) Grappled + bônus de deslocamento: Esquiva continua inválida (zero vence por último)',
+      dodgeGrappled.data.roll.advantage === false && dodgeGrappled.data.roll.disadvantage === false,
+      JSON.stringify(dodgeGrappled.data.roll),
+    );
 
     // --- Efeito PRIVADO: mecânica vale, nome não vaza ----------------------
     const secretSave = await create({
