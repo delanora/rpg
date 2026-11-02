@@ -8,6 +8,7 @@ import { ConditionHistoryModal } from './ConditionHistoryModal';
 import { MasterConditionsPanel } from '../combat/components/MasterConditionsPanel';
 import { MasterEffectsPanel } from '../combat/components/MasterEffectsPanel';
 import { fetchEffects } from '../effectsApi';
+import { describeEffectModifiers } from '../effectModifiers';
 import type { EffectDto, MechanicalDto, MechanicalEntity } from '../types';
 
 /**
@@ -185,9 +186,15 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
      * o Mestre ganha a lista completa com encerrar + criação manual.
      */}
     {variant === 'sheet' && effectList.length > 0 ? (
-      <p className="field-hint effects-line">
+      <p className="field-hint effects-line" data-effects-line>
         <strong>Efeitos:</strong>{' '}
-        {effectList.map((effect) => effect.label).join(' · ')}
+        {effectList
+          .map((effect) =>
+            effect.modifiers.length > 0
+              ? `${effect.label} (${describeEffectModifiers(effect.modifiers)})`
+              : effect.label,
+          )
+          .join(' · ')}
       </p>
     ) : null}
     {showBadges && !hasConditions ? <p className="field-hint">Nenhuma condição ativa.</p> : null}

@@ -1,5 +1,6 @@
 import type { EffectInstance } from '@prisma/client';
 import type { MechanicalEntity } from '../shared/conditions.js';
+import { parseEffectModifiers, type EffectModifier } from './effect-modifiers.js';
 import {
   effectEndReasonSchema,
   effectSourceTypeSchema,
@@ -36,6 +37,11 @@ export interface EffectDto {
   targetEntity: MechanicalEntity;
   visibility: EffectVisibility;
   status: EffectStatus;
+  /**
+   * Modificadores mecânicos tipados da instância (6.5B). Efeito `private` nem
+   * chega ao jogador (o filtro é no servidor), então aqui não há vazamento.
+   */
+  modifiers: EffectModifier[];
   createdAt: string;
   createdBy: string | null;
   endedAt: string | null;
@@ -64,6 +70,7 @@ export function toEffectDto(row: EffectInstance): EffectDto {
     targetEntity: { kind: row.targetEntityKind as MechanicalEntity['kind'], id: row.targetEntityId },
     visibility: effectVisibilitySchema.catch('private').parse(row.visibility),
     status: effectStatusSchema.catch('ended').parse(row.status),
+    modifiers: parseEffectModifiers(row.modifiers),
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy ?? null,
     endedAt: row.endedAt ? row.endedAt.toISOString() : null,

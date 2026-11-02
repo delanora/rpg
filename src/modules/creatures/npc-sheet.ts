@@ -100,17 +100,23 @@ export function npcAttacks(creature: Creature): CombatAttack[] {
 export function npcArmorClass(
   creature: Creature,
   inventory: readonly InventoryItemDto[] = creatureInventory(creature.inventory),
+  /** Bônus de CA de EFEITOS ativos (6.5B) — derivado, nunca gravado. */
+  effectBonuses: readonly { label: string | null; value: number }[] = [],
 ): ArmorClassDetail {
   return computeArmorClass({
     dexterityModifier: abilityModifier(creature.dexterity),
     pieces: armorPiecesFrom(inventory),
     unarmored: [{ label: 'CA base do statblock', value: creature.armorClass }],
+    effectBonuses,
   });
 }
 
 /** CA efetiva do NPC (a do statblock continua sendo a base editável). */
-export function npcEffectiveArmorClass(creature: Creature): number {
-  return npcArmorClass(creature).value;
+export function npcEffectiveArmorClass(
+  creature: Creature,
+  effectBonuses: readonly { label: string | null; value: number }[] = [],
+): number {
+  return npcArmorClass(creature, creatureInventory(creature.inventory), effectBonuses).value;
 }
 
 /**

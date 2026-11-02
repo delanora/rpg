@@ -11,7 +11,12 @@ export function resultBreakdown(roll: DiceRollDto): string {
   const expression = parts.join(' + ') || '0';
   const bonus =
     roll.bonus === 0 ? '' : roll.bonus > 0 ? ` + ${roll.bonus}` : ` − ${Math.abs(roll.bonus)}`;
-  return `${expression}${bonus}`;
+  // Dados extras de EFEITOS ativos (6.5B): cada um mostra o próprio sinal, para
+  // o breakdown nunca "esconder" de onde veio a parcela.
+  const effectDice = (roll.effectModifiers?.dice ?? [])
+    .map((die) => (die.sign > 0 ? ` + ${die.value}` : ` − ${die.value}`))
+    .join('');
+  return `${expression}${bonus}${effectDice}`;
 }
 
 /**

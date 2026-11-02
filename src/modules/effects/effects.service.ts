@@ -5,6 +5,11 @@ import { HttpError } from '../../lib/http-error.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { ServerEvents } from '../../realtime/events.js';
 import type { MechanicalEntity } from '../shared/conditions.js';
+import {
+  buildEffectModifierSet,
+  emptyEffectModifierSet,
+  type EffectModifierSet,
+} from './effect-modifiers.js';
 import { effectsVisibleTo, toEffectDto, type EffectDto } from './effects.dto.js';
 import type { CreateEffectInput, EffectEndReason } from './effects.schema.js';
 
@@ -86,6 +91,89 @@ export async function getEffectById(
   const row = await db.effectInstance.findUnique({ where: { id: effectId } });
   if (!row) throw new HttpError('Efeito não encontrado.', 404);
   return row;
+}
+
+/**
+ * RESOLVEDOR CENTRAL (6.5B): resumo de modificadores dos efeitos ATIVOS.
+ *
+ * É a ÚNICA porta que os pipelines de rolagem/CA/deslocamento consultam — eles
+ * nunca leem a tabela de efeitos diretamente nem conhecem `label` de magia.
+ *
+ * • Uma consulta por LOTE (sem N+1 na iniciativa/ataque): as entidades são
+ *   canonicalizadas e agrupadas por (kind, id) antes do `findMany`.
+ * • Combatente de PERSONAGEM usa a chave da FICHA (mesma fonte de verdade da
+ *   6.5A) — nada é duplicado no combatente.
+ * • Só `status = 'active'` entra: encerrado/Efeito acabado de concentração não
+ *   modifica mais nada no mesmo instante.
+ * • O mapa de retorno é indexado pela chave da entidade PEDIDA
+ *   (`kind:id`), inclusive quando ela é um combatente de personagem.
+ */
+export async function effectModifierSetsFor(
+  entities: readonly MechanicalEntity[],
+  db: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<Map<string, EffectModifierSet>> {
+  const result = new Map<string, EffectModifierSet>();
+  if (entities.length === 0) return result;
+
+  // 1) Combatentes: descobre quais representam um PERSONAGEM (chave canônica).
+  const combatantIds = [...new Set(entities.filter((e) => e.kind === 'combatant').map((e) => e.id))];
+  const combatants = combatantIds.length
+    ? await db.combatant.findMany({
+        where: { id: { in: combatantIds } },
+        select: { id: true, characterId: true },
+      })
+    : [];
+  const characterOfCombatant = new Map(combatants.map((row) => [row.id, row.characterId]));
+
+  const canonicalOf = (entity: MechanicalEntity): MechanicalEntity => {
+    if (entity.kind !== 'combatant') return entity;
+    const characterId = characterOfCombatant.get(entity.id);
+    return characterId ? { kind: 'character', id: characterId } : entity;
+  };
+
+  // 2) Chaves canônicas únicas → uma consulta agrupada por tipo.
+  const canonicalKeys = new Map<string, MechanicalEntity>();
+  for (const entity of entities) {
+    const canonical = canonicalOf(entity);
+    canonicalKeys.set(`${canonical.kind}:${canonical.id}`, canonical);
+  }
+  const byKind = new Map<string, string[]>();
+  for (const canonical of canonicalKeys.values()) {
+    byKind.set(canonical.kind, [...(byKind.get(canonical.kind) ?? []), canonical.id]);
+  }
+  const rows = await db.effectInstance.findMany({
+    where: {
+      status: 'active',
+      OR: [...byKind.entries()].map(([kind, ids]) => ({ targetEntityKind: kind, targetEntityId: { in: ids } })),
+    },
+    select: { id: true, label: true, visibility: true, modifiers: true, targetEntityKind: true, targetEntityId: true },
+  });
+
+  // 3) Compõe o resumo por alvo canônico e projeta para cada chave pedida.
+  const setsByCanonical = new Map<string, ReturnType<typeof buildEffectModifierSet>>();
+  const rowsByCanonical = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const key = `${row.targetEntityKind}:${row.targetEntityId}`;
+    rowsByCanonical.set(key, [...(rowsByCanonical.get(key) ?? []), row]);
+  }
+  for (const [key, targetRows] of rowsByCanonical) {
+    setsByCanonical.set(key, buildEffectModifierSet(targetRows));
+  }
+  for (const entity of entities) {
+    const canonical = canonicalOf(entity);
+    const key = `${canonical.kind}:${canonical.id}`;
+    result.set(`${entity.kind}:${entity.id}`, setsByCanonical.get(key) ?? emptyEffectModifierSet());
+  }
+  return result;
+}
+
+/** Atalho para UM alvo (rolagem de dados, teste de concentração). */
+export async function effectModifierSetFor(
+  entity: MechanicalEntity,
+  db: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<EffectModifierSet> {
+  const sets = await effectModifierSetsFor([entity], db);
+  return sets.get(`${entity.kind}:${entity.id}`) ?? emptyEffectModifierSet();
 }
 
 /** Instâncias ATIVAS de um alvo — sem filtro de privacidade (uso interno). */
@@ -222,6 +310,7 @@ export async function createEffect(
           sourceId: input.sourceId ?? null,
           ...(source ? { sourceEntityKind: source.entity.kind, sourceEntityId: source.entity.id } : {}),
           sourceLabel,
+          modifiers: input.modifiers as unknown as Prisma.InputJsonValue,
           targetEntityKind: target.entity.kind,
           targetEntityId: target.entity.id,
           visibility: input.visibility,
@@ -413,6 +502,59 @@ export async function publishEffects(targets: readonly MechanicalEntity[]): Prom
       }
     } catch (error) {
       console.error('[effects] falha ao publicar efeitos:', error);
+    }
+  }
+  // CA/deslocamento derivados da ficha/combate dependem dos efeitos: depois de
+  // publicar a lista, republica quem exibe esses valores.
+  await refreshDerivedViews(targets);
+}
+
+/**
+ * Republica as VISÕES DERIVADAS que dependem de efeitos (6.5B).
+ *
+ * CA/deslocamento da ficha e do tabuleiro são calculados a partir dos efeitos
+ * ativos, mas o efeito NÃO incrementa a versão da ficha/combate. Sem esta
+ * reemissão o valor exibido ficaria velho até o próximo evento.
+ *
+ * Os imports são DINÂMICOS de propósito: `combat` e `characters` importam este
+ * módulo, então uma importação estática criaria ciclo.
+ */
+async function refreshDerivedViews(targets: readonly MechanicalEntity[]): Promise<void> {
+  try {
+    const combat = await import('../combat/combat.service.js');
+    await combat.refreshCombatForEffects();
+  } catch (error) {
+    console.error('[effects] falha ao republicar o combate:', error);
+  }
+
+  for (const target of targets) {
+    try {
+      if (target.kind === 'character') {
+        const row = await prisma.character.findUnique({
+          where: { id: target.id },
+          include: { user: { select: { username: true } } },
+        });
+        if (!row) continue;
+        const { publishChange } = await import('../characters/characters.service.js');
+        await publishChange(
+          { userId: row.userId, username: row.user.username },
+          row,
+          { effects: 'updated' },
+        );
+      } else if (target.kind === 'creature') {
+        const row = await prisma.creature.findUnique({ where: { id: target.id } });
+        if (!row) continue;
+        const [{ toCreatureDto }, { getBroadcaster }] = await Promise.all([
+          import('../creatures/creatures.dto.js'),
+          import('../../realtime/hub.js'),
+        ]);
+        getBroadcaster().toMasters(ServerEvents.CREATURE_UPDATED, {
+          creature: toCreatureDto(row, await effectModifierSetFor(target)),
+          changes: { effects: 'updated' },
+        });
+      }
+    } catch (error) {
+      console.error('[effects] falha ao republicar a visão derivada:', error);
     }
   }
 }

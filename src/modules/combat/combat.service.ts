@@ -1,4 +1,10 @@
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
+import { effectModifierSetsFor, publishEffects } from '../effects/effects.service.js';
+import {
+  effectArmorClassBonuses,
+  emptyEffectModifierSet,
+  rollModifiersFor,
+} from '../effects/effect-modifiers.js';
 import { deathBlocksActions, deathSaveRequiredThisTurn, turnKey } from '../shared/death.js';
 import {
   applyDamageConsequences,
@@ -70,9 +76,8 @@ import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attack
 import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
-import { rollD20, rollDice, rollHealingDice, type HealingDiceResult } from '../shared/dice.js';
+import { rollD20, rollDice, rollDie, rollHealingDice, type HealingDiceResult } from '../shared/dice.js';
 import { noteDamageConcentration } from '../concentration/concentration.service.js';
-import { publishEffects } from '../effects/effects.service.js';
 import { planNextTurn } from './turn-order.js';
 import {
   combatantAttacks,
@@ -123,16 +128,43 @@ function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }, db:
   });
 }
 
+/**
+ * Anexa a cada combatente o resumo dos EFEITOS ativos (Fase 6.5B) numa ÚNICA
+ * consulta em lote. Combatente de personagem usa a chave da FICHA, então o
+ * mesmo efeito alimenta ficha e combate sem cópia. Sem isso, CA/deslocamento
+ * do DTO ficariam sem os modificadores.
+ */
+async function withEffectModifiers(
+  combat: CombatSourced,
+  db: Prisma.TransactionClient = prisma,
+): Promise<CombatSourced> {
+  const entities = combat.combatants.map((combatant) =>
+    combatant.characterId
+      ? { kind: 'character' as const, id: combatant.characterId }
+      : { kind: 'combatant' as const, id: combatant.id },
+  );
+  const sets = await effectModifierSetsFor(entities, db);
+  return {
+    ...combat,
+    combatants: combat.combatants.map((combatant) => ({
+      ...combatant,
+      effectModifiers: sets.get(
+        combatant.characterId ? `character:${combatant.characterId}` : `combatant:${combatant.id}`,
+      ),
+    })),
+  };
+}
+
 export async function loadCombatById(id: string, db: Prisma.TransactionClient = prisma): Promise<CombatSourced> {
   const combat = await findCombat({ id }, db);
   if (!combat) throw new HttpError('Combate não encontrado.', 404);
-  return combat;
+  return withEffectModifiers(combat, db);
 }
 
 async function requireActiveCombat(): Promise<CombatSourced> {
   const combat = await findCombat({ status: { in: ACTIVE_STATUSES } });
   if (!combat) throw new HttpError('Nenhum combate em andamento.', 404);
-  return combat;
+  return withEffectModifiers(combat);
 }
 
 function requireMaster(actor: CombatActor): void {
@@ -630,6 +662,25 @@ export async function overrideEconomy(actor: CombatActor, input: EconomyOverride
 }
 
 /**
+ * Reemite o combate ativo depois de uma mudança de EFEITOS (6.5B).
+ *
+ * Um efeito pode alterar CA/deslocamento derivados de um combatente, e isso
+ * NÃO muda a versão do combate — sem esta reemissão o tabuleiro ficaria com o
+ * valor antigo até o próximo evento. Import dinâmico do lado de `effects`
+ * evita o ciclo de módulos (effects ←→ combat).
+ */
+export async function refreshCombatForEffects(): Promise<void> {
+  const combat = await findCombat({ status: { in: ACTIVE_STATUSES } }).catch(() => null);
+  if (!combat) return;
+  try {
+    const loaded = await withEffectModifiers(combat);
+    emitCombat(ServerEvents.COMBAT_UPDATED, toCombatDto(loaded, 'MASTER'));
+  } catch (error) {
+    console.error('[combat] falha ao republicar o combate após mudança de efeitos:', error);
+  }
+}
+
+/**
  * Reemite o combate ativo quando o EQUIPAMENTO/CA de um NPC muda fora do
  * turno. O NPC pode estar na luta enquanto o Mestre equipa uma armadura no
  * painel: sem isto, a CA/ataques do combatente ficariam velhos até o próximo
@@ -645,7 +696,8 @@ export async function refreshCombatForCreature(creatureId: string): Promise<void
 
 export async function getActiveCombat(viewer: Role): Promise<CombatDto | null> {
   const combat = await findCombat({ status: { in: ACTIVE_STATUSES } });
-  return combat ? toCombatDto(combat, viewer) : null;
+  if (!combat) return null;
+  return toCombatDto(await withEffectModifiers(combat), viewer);
 }
 
 /** --- Início ------------------------------------------------------------------ */
@@ -1407,14 +1459,25 @@ export async function resolveAttack(
       }
     }
 
+    // EFEITOS ativos (6.5B): o resumo vem do lote carregado junto do combate.
+    // Nada aqui conhece nome de magia — só os modificadores tipados.
+    const attackerEffectMods = rollModifiersFor(
+      attacker.effectModifiers ?? emptyEffectModifierSet(),
+      'attack',
+    );
+    const targetEffectMods = target.effectModifiers ?? emptyEffectModifierSet();
+    const targetEffectArmor = effectArmorClassBonuses(targetEffectMods);
+
     // Personagem não tem CA gravada: ela é calculada da ficha (atributos +
     // equipamento + override do mestre), igual à que aparece no tabuleiro.
+    // O bônus de CA de EFEITOS entra nessa MESMA conta (nunca é gravado).
     const targetArmorClass =
       target.character !== null
-        ? characterArmorClass(target.character).value
+        ? characterArmorClass(target.character, targetEffectArmor).value
         : target.creature?.kind === 'NPC'
-          ? npcEffectiveArmorClass(target.creature)
-          : (target.armorClass ?? target.creature?.armorClass ?? 10);
+          ? npcEffectiveArmorClass(target.creature, targetEffectArmor)
+          : (target.armorClass ?? target.creature?.armorClass ?? 10) +
+            targetEffectArmor.reduce((sum, piece) => sum + piece.value, 0);
 
     // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
     // vale) — mesmo critério da janela de dados.
@@ -1430,8 +1493,16 @@ export async function resolveAttack(
       // pelo tipo de dano: arco = desvantagem, lança em corpo a corpo = vantagem.
       {
         targetDodging: economyOf(target.turnEconomy).dodging,
-        targetSpeed: effectiveSpeed(combatantSpeed(target), combatantMechanicalState(target)),
+        targetSpeed: effectiveSpeed(
+          combatantSpeed(target),
+          combatantMechanicalState(target),
+          targetEffectMods.speedBonus,
+        ),
         attackRanged: attack.ranged,
+        // Vantagem/desvantagem de EFEITOS no atacante: mesmas regras das
+        // Conditions (qualquer uma de cada lado cancela o outro).
+        effectAdvantages: attackerEffectMods.advantage,
+        effectDisadvantages: attackerEffectMods.disadvantage,
       },
     );
     // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
@@ -1444,8 +1515,23 @@ export async function resolveAttack(
           ? Math.max(firstRoll, secondRoll)
           : Math.min(firstRoll, secondRoll);
     const attackDice = secondRoll === null ? [attackRoll] : [firstRoll, secondRoll];
+    // Dados extras de EFEITOS: rolados AQUI (servidor), como pool independente.
+    // Nunca somados ao bônus fixo: o breakdown mostra cada dado.
+    const effectDice = attackerEffectMods.dice.flatMap((modifier) =>
+      Array.from({ length: modifier.count }, () => ({
+        sides: modifier.sides,
+        value: rollDie(modifier.sides),
+        sign: modifier.sign,
+      })),
+    );
+    const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
     // A munição usada soma o próprio bônus de acerto à rolagem.
-    const attackTotal = attackRoll + attack.attackBonus + ammoBonus.attackBonus;
+    const attackTotal =
+      attackRoll +
+      attack.attackBonus +
+      ammoBonus.attackBonus +
+      attackerEffectMods.bonus +
+      effectDiceTotal;
     // Limiar de crítico: 20 por padrão, 19/18 com o Crítico Aprimorado/Superior
     // do Campeão (o MENOR limiar prevalece entre as classes). Criaturas não têm
     // features: ficam no 20 natural.
@@ -1461,7 +1547,9 @@ export async function resolveAttack(
       expression: advantage ? '1d20 (vantagem)' : disadvantage ? '1d20 (desvantagem)' : '1d20',
       rolls: attackDice,
       sides: 20,
-      modifier: attack.attackBonus + ammoBonus.attackBonus,
+      modifier: attack.attackBonus + ammoBonus.attackBonus + attackerEffectMods.bonus,
+      ...(attackerEffectMods.bonus !== 0 ? { effectBonus: attackerEffectMods.bonus } : {}),
+      ...(effectDice.length > 0 ? { effectDice } : {}),
       total: attackTotal,
       crit: critical,
       at: new Date().toISOString(),

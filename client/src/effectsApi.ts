@@ -1,6 +1,6 @@
 import { api } from './api';
 import { createOperationId } from './utils';
-import type { EffectDto, EffectVisibility, MechanicalEntity } from './types';
+import type { EffectDto, EffectModifierDto, EffectVisibility, MechanicalEntity } from './types';
 
 /**
  * EFEITOS GENÉRICOS (Fase 6.5A) — só lifecycle.
@@ -15,11 +15,18 @@ export function fetchEffects(entity: MechanicalEntity): Promise<EffectDto[]> {
   );
 }
 
-/** Criação MANUAL (Mestre): nome + visibilidade + alvo já selecionado. */
+/**
+ * Criação MANUAL (Mestre): nome + visibilidade + alvo já selecionado.
+ *
+ * `modifiers` são as fixtures de teste da engine (Fase 6.5B): nada aqui é
+ * conteúdo de PHB. O servidor valida cada modificador com a união tipada —
+ * um cliente adulterado não consegue inventar um modificador fora do schema.
+ */
 export function createManualEffect(input: {
   label: string;
   target: MechanicalEntity;
   visibility: EffectVisibility;
+  modifiers?: EffectModifierDto[];
 }): Promise<EffectDto> {
   return api<{ effect: EffectDto }>('/api/effects', {
     method: 'POST',

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { entitySchema } from '../shared/conditions.js';
+import { effectModifierListSchema } from './effect-modifiers.js';
 
 /**
  * FASE 6.5A — contrato da Generic Effect Engine (SÓ a fundação).
@@ -70,6 +71,12 @@ export const createEffectSchema = z.object({
   groupId: z.string().trim().max(128).optional(),
   /** Identificador mecânico separado do label ("spell.bless"). */
   definitionId: z.string().trim().max(128).optional(),
+  /**
+   * MODIFICADORES mecânicos (6.5B). Só o Mestre os envia, e o servidor valida
+   * cada um com a união discriminada de `effect-modifiers.ts`. Nada de JSON
+   * livre: quantidade, dados e valores têm limites no schema.
+   */
+  modifiers: effectModifierListSchema.default([]),
 });
 export type CreateEffectInput = z.infer<typeof createEffectSchema>;
 

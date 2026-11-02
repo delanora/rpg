@@ -7,6 +7,10 @@ import { ABILITY_KEYS, type AbilityKey, abilityModifier } from '../shared/dnd5e.
 import { parseJson } from '../shared/json.js';
 import { normalizeCoins, type CoinPurse } from '../shared/coins.js';
 import type { InventoryItemDto } from '../characters/characters.dto.js';
+import {
+  effectArmorClassBonuses,
+  type EffectModifierSet,
+} from '../effects/effect-modifiers.js';
 import { creatureInventory, npcAttacks, npcEffectiveArmorClass } from './npc-sheet.js';
 
 /** Formato da criatura enviado ao frontend. */
@@ -80,15 +84,26 @@ export type CreatureWithLocalities = Creature & {
 const attackListSchema = z.array(attackSchema);
 const damageListSchema = z.array(z.string().max(60));
 
-export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
+/**
+ * DTO da criatura. `effectModifiers` (6.5B) é o resumo dos EFEITOS ativos da
+ * PRÓPRIA criatura (template, nunca de uma instância de combate): CA e
+ * deslocamento exibidos são derivados, nada é gravado.
+ */
+export function toCreatureDto(
+  creature: CreatureWithLocalities,
+  effectModifiers?: EffectModifierSet,
+): CreatureDto {
   const attacks = parseJson<Attack[]>(attackListSchema, creature.attacks, []);
   // NPC persistente: inventário e ataques derivados das armas equipadas. O
   // template de criatura não recebe inventário e segue só com `attacks`.
   const inventory = creature.kind === 'NPC' ? creatureInventory(creature.inventory) : [];
   const derivedAttacks =
     creature.kind === 'NPC' ? npcAttacks(creature).slice(attacks.length) : [];
+  const effectArmorBonuses = effectModifiers ? effectArmorClassBonuses(effectModifiers) : [];
+  const effectArmorBonus = effectArmorBonuses.reduce((sum, piece) => sum + piece.value, 0);
   const effectiveArmorClass =
-    creature.kind === 'NPC' ? npcEffectiveArmorClass(creature) : creature.armorClass;
+    (creature.kind === 'NPC' ? npcEffectiveArmorClass(creature, effectArmorBonuses) : creature.armorClass) +
+    (creature.kind === 'NPC' ? 0 : effectArmorBonus);
   const resistances = parseJson<string[]>(damageListSchema, creature.resistances, []);
   const immunities = parseJson<string[]>(damageListSchema, creature.immunities, []);
   const vulnerabilities = parseJson<string[]>(
@@ -128,7 +143,11 @@ export function toCreatureDto(creature: CreatureWithLocalities): CreatureDto {
     mechanicalState: mechanicalStateOf(creature.mechanicalState),
     conditionEffects: deriveConditionEffects(creature.mechanicalState),
     effectiveMaxHp: effectiveMaxHp(creature.hpMax, creature.mechanicalState),
-    effectiveSpeed: effectiveSpeed(creature.speed, creature.mechanicalState),
+    effectiveSpeed: effectiveSpeed(
+      creature.speed,
+      creature.mechanicalState,
+      effectModifiers?.speedBonus ?? 0,
+    ),
     armorClass: creature.armorClass,
     effectiveArmorClass,
     inventory,

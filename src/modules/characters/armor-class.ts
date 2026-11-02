@@ -106,7 +106,14 @@ export function armorPiecesOf(inventory: unknown) {
  * Usada pelo combate (o combatente não guarda cópia da CA dos personagens) e
  * por qualquer caminho que não passe pelo DTO da ficha.
  */
-export function characterArmorClass(character: Character): ArmorClassDetail {
+export function characterArmorClass(
+  character: Character,
+  /**
+   * Bônus de CA de EFEITOS ativos (6.5B). Derivado, nunca gravado: a ficha
+   * continua guardando só o override manual do Mestre.
+   */
+  effectBonuses: readonly { label: string | null; value: number }[] = [],
+): ArmorClassDetail {
   const entries = normalizeClassEntries(character.classes);
   const adjustments = computeMulticlassAdjustments(entries, normalizeClassState(character.classState));
   const abilities = effectiveAbilitiesOf(character, adjustments);
@@ -142,5 +149,6 @@ export function characterArmorClass(character: Character): ArmorClassDetail {
           ]
         : [],
     override: character.armorClass,
+    effectBonuses,
   });
 }

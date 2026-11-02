@@ -7,6 +7,7 @@ import { deleteUploadedImage } from '../../lib/uploads.js';
 import { ServerEvents, type ServerEvent } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { assertLocalitiesExist } from '../localities/localities.service.js';
+import { effectModifierSetFor } from '../effects/effects.service.js';
 import { toCreatureDto, type CreatureDto, type CreatureWithLocalities } from './creatures.dto.js';
 import type {
   CreateCreatureInput,
@@ -74,7 +75,7 @@ export async function listCreatures(): Promise<CreatureDto[]> {
     orderBy: { name: 'asc' },
     include: withLocalities,
   });
-  return creatures.map(toCreatureDto);
+  return creatures.map((creature) => toCreatureDto(creature));
 }
 
 export async function findCreature(id: string): Promise<CreatureWithLocalities> {
@@ -83,8 +84,17 @@ export async function findCreature(id: string): Promise<CreatureWithLocalities> 
   return creature;
 }
 
+/**
+ * DTO da criatura com os EFEITOS ativos dela (6.5B): CA/deslocamento
+ * exibidos são derivados dos modificadores, nunca gravados na criatura.
+ */
+async function creatureDto(creature: CreatureWithLocalities): Promise<CreatureDto> {
+  const effectModifiers = await effectModifierSetFor({ kind: 'creature', id: creature.id });
+  return toCreatureDto(creature, effectModifiers);
+}
+
 export async function getCreature(id: string): Promise<CreatureDto> {
-  return toCreatureDto(await findCreature(id));
+  return creatureDto(await findCreature(id));
 }
 
 export async function createCreature(input: CreateCreatureInput): Promise<CreatureDto> {
@@ -110,7 +120,7 @@ export async function createCreature(input: CreateCreatureInput): Promise<Creatu
     include: withLocalities,
   });
 
-  const dto = toCreatureDto(creature);
+  const dto = await creatureDto(creature);
   broadcast(ServerEvents.CREATURE_CREATED, { creature: dto });
   return dto;
 }
@@ -159,7 +169,7 @@ export async function updateCreature(
     await deleteUploadedImage(current.imageUrl);
   }
 
-  const dto = toCreatureDto(creature);
+  const dto = await creatureDto(creature);
   broadcast(ServerEvents.CREATURE_UPDATED, { creature: dto, changes: patch });
   return dto;
 }
@@ -220,7 +230,7 @@ async function writeNpcInventory(
   }
 
   const creature = await findCreature(id);
-  const dto = toCreatureDto(creature);
+  const dto = await creatureDto(creature);
   broadcast(ServerEvents.CREATURE_UPDATED, { creature: dto, changes: { inventory } });
   // NPC já em combate: CA/ataques derivados mudaram — reemite o combate.
   const combat = await import('../combat/combat.service.js');
@@ -384,7 +394,7 @@ export async function useNpcItem(id: string, input: NpcUseItemInput): Promise<Cr
   }
 
   const updated = await findCreature(id);
-  const dto = toCreatureDto(updated);
+  const dto = await creatureDto(updated);
   broadcast(ServerEvents.CREATURE_UPDATED, {
     creature: dto,
     changes: { inventory: nextInventory },
@@ -432,7 +442,7 @@ export async function giveNpcCoins(id: string, input: NpcCoinsInput): Promise<Cr
   }
 
   const updated = await findCreature(id);
-  const dto = toCreatureDto(updated);
+  const dto = await creatureDto(updated);
   broadcast(ServerEvents.CREATURE_UPDATED, { creature: dto, changes: { coins: next } });
   const combat = await import('../combat/combat.service.js');
   await combat.refreshCombatForCreature(id).catch(() => undefined);

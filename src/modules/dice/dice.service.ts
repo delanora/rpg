@@ -22,7 +22,13 @@ import {
   resolveConcentrationSave,
 } from '../concentration/concentration.service.js';
 import { concentrationSaveLabel } from '../shared/concentration.js';
-import { publishEffects } from '../effects/effects.service.js';
+import { effectModifierSetFor, publishEffects } from '../effects/effects.service.js';
+import {
+  publicEffectLabel,
+  rollModifierSourceLabels,
+  rollModifiersFor,
+  type EffectRollModifiers,
+} from '../effects/effect-modifiers.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
@@ -429,17 +435,36 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
   // Mesmas regras de vantagem/desvantagem de qualquer salvaguarda — mas as
   // fontes extras vêm SÓ do servidor. `input.advantage`/`input.disadvantage`
   // não entram na conta (ver comentário da função).
-  const mode = deriveSaveEffects(
-    target.state,
+  //
+  // EFEITOS ativos (6.5B) entram como fonte SERVER-SIDE: um efeito que modifica
+  // Saving Throws de Constituição vale aqui (ex.: +2, +1d4, vantagem). Nada
+  // disso vem do payload do cliente.
+  const effectMods = rollModifiersFor(
+    await effectModifierSetFor(entity),
+    'save',
     'constitution',
-    [], // concentração: nenhuma fonte de vantagem concedida ainda
-    [], // desvantagem real (Exaustão 3+) é derivada DENTRO do estado
   );
-  const bonus = await concentrationSaveBonus(entity);
+  const mode = deriveSaveEffects(target.state, 'constitution', [], [], {
+    effects: { advantage: effectMods.advantage, disadvantage: effectMods.disadvantage },
+  });
+  const baseBonus = await concentrationSaveBonus(entity);
+  const effectBonus = mode.autoFail ? 0 : effectMods.bonus;
+  const bonus = baseBonus + effectBonus;
+  const effectDice = mode.autoFail
+    ? []
+    : effectMods.dice.flatMap((modifier) =>
+        Array.from({ length: modifier.count }, () => ({
+          sides: modifier.sides,
+          value: rollDie(modifier.sides),
+          sign: modifier.sign,
+          label: publicEffectLabel(modifier.source),
+        })),
+      );
+  const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
   const dice = mode.autoFail ? [] : rollGroup(20, mode.advantage, mode.disadvantage);
   const kept = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
   // Natural 1/20 NÃO é sucesso/falha automática: vale o total contra o CD.
-  const total = mode.autoFail ? 0 : kept + bonus;
+  const total = mode.autoFail ? 0 : kept + bonus + effectDiceTotal;
 
   const outcome = await resolveConcentrationSave(entity, pending.id, total, prisma, actor.displayName);
   // Falha na concentração encerra o grupo de efeitos que ela mantinha (quando
@@ -470,6 +495,15 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
     total,
     advantage: mode.advantage,
     disadvantage: mode.disadvantage,
+    ...(effectBonus !== 0 || effectDice.length > 0
+      ? {
+          effectModifiers: {
+            bonus: effectBonus,
+            dice: effectDice.map(({ sides, value, sign, label }) => ({ sides, value, sign, label })),
+            sources: rollModifierSourceLabels(effectMods),
+          },
+        }
+      : {}),
     isPrivate: privateRoll,
     ...(privateRoll ? { audience: 'masters' as const } : {}),
     crit: dice.some((die) => die.sides === 20 && !die.dropped && die.value === 20),
@@ -505,19 +539,56 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
     ? await getMechanicalState({ userId: actor.userId, username: actor.displayName, role: actor.role }, entity) : null;
   const state = mechanical?.state ?? {};
   const effects = deriveConditionEffects(state);
-  const advantages = input.advantage ? ['manual'] : [], disadvantages = input.disadvantage ? ['manual'] : [];
+  // EFEITOS ATIVOS (6.5B): o servidor resolve os modificadores da entidade.
+  // Só salvaguarda e teste de habilidade têm escopo aqui (rolagem livre não).
+  const effectRollKind = kind === 'save' ? 'save' : kind === 'skill' ? 'check' : null;
+  const effectMods: EffectRollModifiers =
+    entity && effectRollKind
+      ? rollModifiersFor(await effectModifierSetFor(entity), effectRollKind, input.ability)
+      : { bonus: 0, dice: [], advantage: [], disadvantage: [], sources: [] };
+  const advantages = input.advantage ? ['manual'] : [];
+  const disadvantages = input.disadvantage ? ['manual'] : [];
   // Esquiva: só a salvaguarda de Destreza se beneficia, e só com o benefício
   // válido (não Incapacitado, deslocamento efetivo > 0).
   const dodge = kind === 'save' ? await dodgeBenefitForSave(entity) : false;
   const mode = kind === 'save' && input.ability
-    ? deriveSaveEffects(state, input.ability, advantages, disadvantages, { dodge })
-    : { autoFail: false, ...resolveRollMode(advantages, [...disadvantages, ...(kind === 'skill' && effects.checkDisadvantage || kind === 'save' && effects.saveDisadvantage ? ['conditions'] : [])]) };
+    ? deriveSaveEffects(state, input.ability, advantages, disadvantages, {
+        dodge,
+        effects: { advantage: effectMods.advantage, disadvantage: effectMods.disadvantage },
+      })
+    : {
+        autoFail: false,
+        ...resolveRollMode(
+          [...advantages, ...effectMods.advantage],
+          [
+            ...disadvantages,
+            ...effectMods.disadvantage,
+            ...(kind === 'skill' && effects.checkDisadvantage || kind === 'save' && effects.saveDisadvantage
+              ? ['conditions']
+              : []),
+          ],
+        ),
+      };
   const { advantage, disadvantage } = mode;
 
   if (kind !== 'creation' && !mode.autoFail) markRollTumbling(actor);
   const dice = mode.autoFail ? [] : input.dice.flatMap((die) => rollGroup(die.sides, advantage, disadvantage));
 
-  const bonus = input.bonus ?? 0;
+  // Dados extras de efeito: pool INDEPENDENTE (nunca viram bônus fixo).
+  const effectDice = mode.autoFail
+    ? []
+    : effectMods.dice.flatMap((modifier) =>
+        Array.from({ length: modifier.count }, () => ({
+          sides: modifier.sides,
+          value: rollDie(modifier.sides),
+          sign: modifier.sign,
+          label: publicEffectLabel(modifier.source),
+        })),
+      );
+  const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
+  const effectBonus = mode.autoFail ? 0 : effectMods.bonus;
+
+  const bonus = (input.bonus ?? 0) + effectBonus;
   const diceTotal = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
 
   // O nome de quem rolou vem da ficha do usuário (cai no nome de exibição
@@ -537,9 +608,18 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
     label: input.label ?? '',
     dice,
     bonus,
-    total: mode.autoFail ? 0 : diceTotal + bonus,
+    total: mode.autoFail ? 0 : diceTotal + bonus + effectDiceTotal,
     advantage,
     disadvantage,
+    ...(effectBonus !== 0 || effectDice.length > 0
+      ? {
+          effectModifiers: {
+            bonus: effectBonus,
+            dice: effectDice.map(({ sides, value, sign, label }) => ({ sides, value, sign, label })),
+            sources: rollModifierSourceLabels(effectMods),
+          },
+        }
+      : {}),
     isPrivate: Boolean(input.private) && actor.role === 'MASTER',
     crit: dice.some((die) => die.sides === 20 && !die.dropped && die.value === 20),
     // Sortudo (Halfling): 1 natural num d20 de quem tem o traço. O combate fica
