@@ -92,9 +92,27 @@ export interface ActiveRollDto {
   at: string;
 }
 
+/**
+ * Modificadores de EFEITO ativo aplicados a uma rolagem (Fase 6.5B).
+ *
+ * Já estão refletidos em `bonus`/`total`. Aqui vão só para o breakdown e para
+ * a bandeja poder explicar de onde veio cada parcela. `label: null` = efeito
+ * PRIVADO: o jogador vê o bônus/dado, nunca o nome.
+ */
+export interface RollEffectModifiersDto {
+  /** Bônus fixo somado (origem dos efeitos). */
+  bonus: number;
+  /** Dados extras rolados pelo servidor (podem ter sinal negativo). */
+  dice: { sides: number; value: number; sign: 1 | -1; label: string | null }[];
+  /** Fontes que contribuíram (rótulo seguro; `null` quando privadas). */
+  sources: (string | null)[];
+}
+
 export interface DiceRollDto {
   /** Falha automática de salvaguarda; não houve rolagem. */
   autoFail?: boolean;
+  /** Modificadores de efeitos ativos (ausente = nenhum). */
+  effectModifiers?: RollEffectModifiersDto;
   id: string;
   /** Dono da rolagem — a mesa usa isso para casar a rolagem com o tabuleiro. */
   actorUserId: string;

@@ -417,6 +417,10 @@ export interface DiceRolledPayload {
   total: number;
   crit: boolean;
   at: string;
+  /** Bônus fixo vindo de EFEITOS ativos (já incluído em `modifier`/`total`). */
+  effectBonus?: number;
+  /** Dados extras de EFEITOS ativos, rolados pelo servidor (6.5B). */
+  effectDice?: { sides: number; value: number; sign: 1 | -1 }[];
   /** Presente nas rolagens de DANO: a quebra de cada parte da parcela. */
   breakdown?: DamageBreakdownPayload;
 }

@@ -127,9 +127,21 @@ export function deriveConditionEffects(value: unknown) {
 }
 export type ConditionEffects = ReturnType<typeof deriveConditionEffects>;
 
-export function effectiveSpeed(base: number, value: unknown): number {
+/**
+ * Deslocamento EFETIVO em metros.
+ *
+ * Ordem explícita (Fase 6.5B):
+ *   (base + modificadores de EFEITO) × multiplicadores (Exaustão 2) → zero
+ *
+ * Assim um Efeito de +3 m com Exaustão 2 dá `(9+3)/2 = 6` m, e qualquer estado
+ * que zere o deslocamento (Agarrado/Contido/Paralisado/Atordoado/Inconsciente/
+ * Exaustão 5+) continua vencendo POR ÚLTIMO. O valor base da ficha nunca é
+ * alterado: o bônus é derivado, então encerrar o efeito devolve tudo.
+ */
+export function effectiveSpeed(base: number, value: unknown, effectSpeedBonus = 0): number {
   const effects = deriveConditionEffects(value);
-  return effects.speedZero ? 0 : Math.max(0, base * effects.speedMultiplier);
+  if (effects.speedZero) return 0;
+  return Math.max(0, Math.floor((base + effectSpeedBonus) * effects.speedMultiplier));
 }
 export function effectiveMaxHp(base: number, value: unknown): number {
   return Math.max(0, Math.floor(base * deriveConditionEffects(value).hpMaxMultiplier));
@@ -176,15 +188,24 @@ export function deriveSaveEffects(
   ability: AbilityKey,
   advantages: readonly unknown[] = [],
   disadvantages: readonly unknown[] = [],
-  options: { dodge?: boolean } = {},
+  options: { dodge?: boolean; effects?: { advantage: readonly string[]; disadvantage: readonly string[] } } = {},
 ) {
   const effects = deriveConditionEffects(value);
   // A Esquiva dá vantagem APENAS em Destreza; as demais salvaguardas seguem
   // com as fontes normais (o chamador já validou se o benefício está ativo).
   const dodge = options.dodge === true && ability === 'dexterity' ? ['dodge'] : [];
+  // Fontes de EFEITO ativo (6.5B) vêm do servidor e entram como qualquer outra
+  // fonte: uma vantagem cancela uma desvantagem, sem "dupla vantagem".
   return {
     autoFail: effects.autoFailSaves.includes(ability),
-    ...resolveRollMode([...advantages, ...dodge], [...disadvantages, ...(effects.saveDisadvantage || (ability === 'dexterity' && effects.dexSaveDisadvantage) ? ['conditions'] : [])]),
+    ...resolveRollMode(
+      [...advantages, ...dodge, ...(options.effects?.advantage ?? [])],
+      [
+        ...disadvantages,
+        ...(effects.saveDisadvantage || (ability === 'dexterity' && effects.dexSaveDisadvantage) ? ['conditions'] : []),
+        ...(options.effects?.disadvantage ?? []),
+      ],
+    ),
   };
 }
 
@@ -202,6 +223,10 @@ export interface AttackVisibilityContext {
    * distância = fora de 1,5 m → desvantagem. Não confundir com TIPO DE DANO.
    */
   attackRanged?: boolean;
+  /** Fontes de vantagem vindas de EFEITOS ativos do ATACANTE (6.5B). */
+  effectAdvantages?: readonly string[];
+  /** Fontes de desvantagem vindas de EFEITOS ativos do ATACANTE (6.5B). */
+  effectDisadvantages?: readonly string[];
 }
 
 /**
@@ -252,6 +277,7 @@ export function conditionAttackMode(
       ...ownAdvantages,
       ...other.attacksAgainstAdvantages,
       ...(context.attackRanged === true ? [] : proneAgainst),
+      ...(context.effectAdvantages ?? []),
       ...(advantage ? ['manual'] : []),
     ],
     [
@@ -259,6 +285,7 @@ export function conditionAttackMode(
       ...targetDisadvantages,
       ...(context.attackRanged === true ? proneAgainst : []),
       ...dodge,
+      ...(context.effectDisadvantages ?? []),
       ...(disadvantage ? ['manual'] : []),
     ],
   );

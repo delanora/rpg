@@ -1106,6 +1106,11 @@ model EffectInstance {
   /// `source-ended` | `target-invalid` | `replaced` | `system`.
   endReason String?
 
+  /// MODIFICADORES mecânicos tipados (6.5B), validados por Zod na escrita:
+  /// `[{ kind: 'roll-flat', roll: 'attack', value: 2 }]`. Stack: numéricos
+  /// somam, dados formam pool, vantagem/desvantagem são conjuntos de fontes.
+  modifiers Json @default("[]")
+
   /// Extensões futuras (detalhes narrativos). Regra mecânica NÃO mora aqui.
   metadata Json @default("{}")
 

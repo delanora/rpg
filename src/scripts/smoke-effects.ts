@@ -7,8 +7,13 @@ import {
   resolveConcentrationSave,
 } from '../modules/concentration/concentration.service.js';
 import { endEffectGroup } from '../modules/effects/effects.service.js';
+import {
+  buildEffectModifierSet,
+  parseEffectModifiers,
+  rollModifiersFor,
+} from '../modules/effects/effect-modifiers.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
-import type { MechanicalEntity } from '../modules/shared/conditions.js';
+import { resolveRollMode, type MechanicalEntity } from '../modules/shared/conditions.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 
 type Check = (label: string, condition: boolean, detail?: string) => void;
@@ -201,9 +206,13 @@ export async function smokeEffects(baseUrl: string, check: Check): Promise<void>
       const state = await request(`/mechanical/character/${characterA.id}`);
       const operationId = randomUUID();
       operationIds.push(operationId);
+      const mechanical = state.data.mechanical;
       return request('/mechanical/mutate', {
         entity: entityA,
-        expectedVersion: state.data.mechanical.version,
+        expectedVersion: mechanical.version,
+        // Com combate ativo a mutação exige a versão do combate também — sem
+        // ela o servidor recusa (409) e o teste mentiria.
+        ...(mechanical.combat ? { expectedCombatVersion: mechanical.combat.version } : {}),
         operationId,
         ...extra,
       });
@@ -303,6 +312,230 @@ export async function smokeEffects(baseUrl: string, check: Check): Promise<void>
         !JSON.stringify(playerCombat.economyLog).includes('Segredo do NPC') &&
         JSON.stringify(masterCombat.economyLog).includes('Segredo do NPC'),
       JSON.stringify({ playerLog: playerCombat.economyLog.slice(-2), masterLog: masterCombat.economyLog.slice(-2) }),
+    );
+
+    // =====================================================================
+    // FASE 6.5B — MODIFICADORES MECÂNICOS GENÉRICOS
+    // =====================================================================
+    console.log('\n70B) Fase 6.5B — modificadores de efeito');
+
+    // --- Composição PURA (sem DB): stacking, pool de dados, cancelamento ---
+    const composed = buildEffectModifierSet([
+      { id: 'mod-1', label: 'Um', visibility: 'public', modifiers: [{ kind: 'roll-flat', roll: 'attack', value: 1 }] },
+      { id: 'mod-2', label: 'Dois', visibility: 'public', modifiers: [{ kind: 'roll-flat', roll: 'attack', value: 2 }] },
+      { id: 'mod-3', label: 'Dados', visibility: 'public', modifiers: [{ kind: 'roll-dice', roll: 'attack', count: 1, sides: 4, sign: 1 }, { kind: 'roll-dice', roll: 'attack', count: 1, sides: 6, sign: 1 }] },
+      { id: 'mod-4', label: 'CA', visibility: 'public', modifiers: [{ kind: 'ac-flat', value: 1 }, { kind: 'ac-flat', value: 2 }] },
+      { id: 'mod-5', label: 'Vantagens', visibility: 'public', modifiers: [{ kind: 'roll-advantage', roll: 'save' }, { kind: 'roll-advantage', roll: 'save' }] },
+      { id: 'mod-6', label: 'Desvantagem', visibility: 'private', modifiers: [{ kind: 'roll-disadvantage', roll: 'save' }] },
+    ]);
+    const attackMods = rollModifiersFor(composed, 'attack');
+    const saveMods = rollModifiersFor(composed, 'save', 'dexterity');
+    check(
+      '70B) numéricos STACKAM e dados de fontes diferentes formam pool independente',
+      attackMods.bonus === 3 && attackMods.dice.length === 2 &&
+        attackMods.dice.some((die) => die.sides === 4) && attackMods.dice.some((die) => die.sides === 6) &&
+        composed.acBonus === 3,
+      JSON.stringify({ attackMods, acBonus: composed.acBonus }),
+    );
+    check(
+      '70B) vantagem/desvantagem são conjuntos de fontes (não "dupla vantagem") e cancelam',
+      saveMods.advantage.length >= 2 && saveMods.disadvantage.length === 1 &&
+        !resolveRollMode(saveMods.advantage, saveMods.disadvantage).advantage &&
+        !resolveRollMode(saveMods.advantage, saveMods.disadvantage).disadvantage,
+      JSON.stringify(saveMods),
+    );
+    check(
+      '70B) JSON inválido/absurdo vira lista vazia (nenhuma regra nasce de dado corrompido)',
+      parseEffectModifiers([{ kind: 'roll-flat', roll: 'attack', value: 999 }]).length === 0 &&
+        parseEffectModifiers('nope').length === 0 &&
+        parseEffectModifiers([{ kind: 'roll-dice', roll: 'save', count: 1, sides: 7, sign: 1 }]).length === 0,
+    );
+
+    // --- Criação com modificadores e validação SERVER-SIDE ------------------
+    const invalidModifier = await create({ label: 'Inválido', modifiers: [{ kind: 'ac-flat', value: 500 }] });
+    check('70B) servidor recusa modificador fora do schema (400)', invalidModifier.status === 400, JSON.stringify(invalidModifier.data));
+    const unknownKind = await create({ label: 'Inválido', modifiers: [{ kind: 'summon-dragon' }] });
+    check('70B) servidor recusa kind desconhecido (400)', unknownKind.status === 400);
+
+    const baseSheet = (await request('/characters/me', undefined, playerToken)).data.character;
+    const acEffect = await create({ label: 'Teste +2 AC', modifiers: [{ kind: 'ac-flat', value: 2 }] });
+    const speedEffect = await create({ label: 'Teste +3m', modifiers: [{ kind: 'speed-flat', value: 3 }] });
+    const withAc = (await request('/characters/me', undefined, playerToken)).data.character;
+    check(
+      '70B) AC derivada da ficha soma o modificador de efeito e devolve o valor original ao encerrar',
+      acEffect.status === 201 && withAc.armorClass === baseSheet.armorClass + 2 &&
+        withAc.effectiveSpeed === baseSheet.effectiveSpeed + 3,
+      JSON.stringify({ base: baseSheet.armorClass, comEfeito: withAc.armorClass, speed: withAc.effectiveSpeed }),
+    );
+    await end(acEffect.data.effect.id);
+    await end(speedEffect.data.effect.id);
+    const afterAcEnd = (await request('/characters/me', undefined, playerToken)).data.character;
+    check(
+      '70B) encerrar o efeito devolve CA/deslocamento (nada foi gravado na ficha)',
+      afterAcEnd.armorClass === baseSheet.armorClass && afterAcEnd.effectiveSpeed === baseSheet.effectiveSpeed,
+      JSON.stringify({ armorClass: afterAcEnd.armorClass, speed: afterAcEnd.effectiveSpeed }),
+    );
+
+    // --- Rolagem de SALVAGUARDA: bônus fixo + dado extra --------------------
+    async function roll(body: Record<string, unknown>, token = playerToken) {
+      return request('/dice/roll', { entity: entityA, dice: [{ sides: 20 }], ...body }, token);
+    }
+    const conEffect = await create({
+      label: 'Teste +2 Con',
+      modifiers: [{ kind: 'roll-flat', roll: 'save', ability: 'constitution', value: 2 }],
+    });
+    const saveCon = await roll({ kind: 'save', ability: 'constitution', bonus: 0 });
+    const saveDex = await roll({ kind: 'save', ability: 'dexterity', bonus: 0 });
+    check(
+      '70B) salvaguarda com filtro de atributo: CON recebe +2, DES não',
+      conEffect.status === 201 && saveCon.data.roll.effectModifiers?.bonus === 2 &&
+        (saveDex.data.roll.effectModifiers?.bonus ?? 0) === 0,
+      JSON.stringify({ con: saveCon.data.roll.effectModifiers, dex: saveDex.data.roll.effectModifiers }),
+    );
+    const diceEffect = await create({
+      label: 'Teste +1d4 Save',
+      modifiers: [{ kind: 'roll-dice', roll: 'save', count: 1, sides: 4, sign: 1 }],
+    });
+    const saveDice = await roll({ kind: 'save', ability: 'wisdom', bonus: 0 });
+    const rolledDie = saveDice.data.roll.effectModifiers?.dice?.[0];
+    check(
+      '70B) dado extra do efeito é rolado no SERVIDOR e entra no total',
+      diceEffect.status === 201 && rolledDie?.sides === 4 && rolledDie.value >= 1 && rolledDie.value <= 4 &&
+        saveDice.data.roll.total ===
+          saveDice.data.roll.dice.filter((die: { dropped?: boolean }) => !die.dropped).reduce((sum: number, die: { value: number }) => sum + die.value, 0) +
+            saveDice.data.roll.bonus + rolledDie.value,
+      JSON.stringify(saveDice.data.roll),
+    );
+    await end(conEffect.data.effect.id);
+    await end(diceEffect.data.effect.id);
+
+    // --- Vantagem/desvantagem e interação com Exaustão/Dodge ---------------
+    const advEffect = await create({
+      label: 'Teste Vantagem Save',
+      modifiers: [{ kind: 'roll-advantage', roll: 'save' }],
+    });
+    const saveAdv = await roll({ kind: 'save', ability: 'strength', bonus: 0 });
+    const disEffect = await create({
+      label: 'Teste Desvantagem Save',
+      modifiers: [{ kind: 'roll-disadvantage', roll: 'save' }],
+    });
+    const saveBoth = await roll({ kind: 'save', ability: 'strength', bonus: 0 });
+    check(
+      '70B) vantagem de efeito vale; vantagem + desvantagem voltam a NORMAL',
+      advEffect.status === 201 && saveAdv.data.roll.advantage === true &&
+        disEffect.status === 201 && saveBoth.data.roll.advantage === false && saveBoth.data.roll.disadvantage === false,
+      JSON.stringify({ adv: saveAdv.data.roll, both: saveBoth.data.roll }),
+    );
+    await end(disEffect.data.effect.id);
+    // Exaustão 3 (desvantagem em saves) + vantagem de efeito = NORMAL: prova a
+    // integração entre o motor de Conditions e o de Efeitos.
+    await mutateCharacterA({ action: 'exhaustion', exhaustionLevel: 3 });
+    const exhaustedWithAdv = await roll({ kind: 'save', ability: 'strength', bonus: 0 });
+    check(
+      '70B) vantagem de efeito cancela a desvantagem de Exaustão 3 (modo normal)',
+      exhaustedWithAdv.data.roll.advantage === false && exhaustedWithAdv.data.roll.disadvantage === false,
+      JSON.stringify(exhaustedWithAdv.data.roll),
+    );
+    await mutateCharacterA({ action: 'exhaustion', exhaustionLevel: 0 });
+    await end(advEffect.data.effect.id);
+
+    // --- Teste de habilidade (check) e Poisoned ----------------------------
+    const checkEffect = await create({
+      label: 'Teste +2 Wisdom',
+      modifiers: [{ kind: 'roll-flat', roll: 'check', ability: 'wisdom', value: 2 }],
+    });
+    const wisdomCheck = await roll({ kind: 'skill', ability: 'wisdom', label: 'Percepção', bonus: 0 });
+    const charismaCheck = await roll({ kind: 'skill', ability: 'charisma', label: 'Persuasão', bonus: 0 });
+    check(
+      '70B) teste de habilidade recebe o benefício só no atributo do modificador',
+      checkEffect.status === 201 && wisdomCheck.data.roll.effectModifiers?.bonus === 2 &&
+        (charismaCheck.data.roll.effectModifiers?.bonus ?? 0) === 0,
+      JSON.stringify({ wis: wisdomCheck.data.roll.effectModifiers, cha: charismaCheck.data.roll.effectModifiers }),
+    );
+    await mutateCharacterA({ action: 'apply', condition: 'poisoned' });
+    const poisonedCheck = await roll({ kind: 'skill', ability: 'wisdom', label: 'Percepção', bonus: 0 });
+    check(
+      '70B) Poisoned continua dando desvantagem em teste (Conditions preservadas)',
+      poisonedCheck.data.roll.disadvantage === true,
+      JSON.stringify(poisonedCheck.data.roll),
+    );
+    const poisonedRows = (await request(`/mechanical/character/${characterA.id}`)).data.mechanical.state.conditions;
+    for (const row of poisonedRows) {
+      if (row.condition === 'poisoned') await mutateCharacterA({ action: 'remove', instanceId: row.id });
+    }
+    await end(checkEffect.data.effect.id);
+
+    // --- Concentração: modificador de Constituição vale no Constitution Save ---
+    const concBonusEffect = await create({
+      label: 'Teste +2 Constitution Save',
+      modifiers: [{ kind: 'roll-flat', roll: 'save', ability: 'constitution', value: 2 }],
+    });
+    await mutateCharacterA({ action: 'concentrate', label: 'Concentração com efeito', visibility: 'public' });
+    await noteDamageConcentration(entityA, 22, prisma, { eventId: `eff-${suffix}-mod`, sourceName: 'Smoke' });
+    const concPending = (await loadConcentrationTarget(entityA)).state.pendingConcentrationSaves.at(-1)!;
+    const concRoll = await roll({
+      kind: 'concentration',
+      pendingConcentrationSaveId: concPending.id,
+      advantage: true,
+    });
+    check(
+      '70B) Concentration Save recebe o bônus de Constituição do efeito e IGNORA advantage do cliente',
+      concBonusEffect.status === 201 && concRoll.data.roll.effectModifiers?.bonus === 2 &&
+        concRoll.data.roll.advantage === false && concRoll.data.roll.dice.length === 1,
+      JSON.stringify(concRoll.data.roll),
+    );
+    const concState = (await request(`/mechanical/character/${characterA.id}`)).data.mechanical;
+    if (concState.state.concentration) {
+      await mutateCharacterA({ action: 'concentrate-end', concentrationId: concState.state.concentration.id });
+    }
+    await end(concBonusEffect.data.effect.id);
+
+    // --- Tabela de combate: CA derivada do personagem e isolamento de NPC ---
+    const charEffectAc = await create({ label: 'Teste +2 AC combate', modifiers: [{ kind: 'ac-flat', value: 2 }] });
+    const npcEffectAc = await create({
+      label: 'Teste +2 AC goblin',
+      target: { kind: 'combatant', id: goblinA.id },
+      modifiers: [{ kind: 'ac-flat', value: 2 }],
+    });
+    const combatWithEffects = (await request('/combat/active')).data.combat as CombatDto;
+    const charCard = combatWithEffects.combatants.find((item) => item.characterId === characterA.id)!;
+    const goblinCardA = combatWithEffects.combatants.find((item) => item.id === goblinA.id)!;
+    const goblinCardB = combatWithEffects.combatants.find((item) => item.id === goblinB.id)!;
+    check(
+      '70B) CA do personagem no combate usa o MESMO efeito da ficha (sem duplicar)',
+      charEffectAc.status === 201 && charCard.armorClass === afterAcEnd.armorClass + 2 &&
+        (await prisma.effectInstance.count({ where: { targetEntityKind: 'combatant', targetEntityId: charCombatant.id, status: 'active' } })) === 0,
+      JSON.stringify({ armorClass: charCard.armorClass, ficha: afterAcEnd.armorClass }),
+    );
+    check(
+      '70B) modificador numa criatura NÃO contamina a outra cópia do mesmo template',
+      npcEffectAc.status === 201 && goblinCardA.armorClass === (goblinCardB.armorClass ?? 0) + 2,
+      JSON.stringify({ a: goblinCardA.armorClass, b: goblinCardB.armorClass }),
+    );
+    await end(charEffectAc.data.effect.id);
+    await end(npcEffectAc.data.effect.id);
+
+    // --- Efeito PRIVADO: mecânica vale, nome não vaza ----------------------
+    const secretSave = await create({
+      label: 'Ritual Secreto',
+      visibility: 'private',
+      modifiers: [{ kind: 'roll-flat', roll: 'save', value: 2 }],
+    });
+    const secretRoll = await roll({ kind: 'save', ability: 'charisma', bonus: 0 });
+    check(
+      '70B) efeito PRIVADO aplica a mecânica (bônus +2) e sanitiza o nome no breakdown',
+      secretSave.status === 201 && secretRoll.data.roll.effectModifiers?.bonus === 2 &&
+        secretRoll.data.roll.effectModifiers.sources.length > 0 &&
+        secretRoll.data.roll.effectModifiers.sources.every((label: string | null) => label === null) &&
+        !JSON.stringify(secretRoll.data.roll).includes('Ritual Secreto'),
+      JSON.stringify(secretRoll.data.roll.effectModifiers),
+    );
+    await end(secretSave.data.effect.id);
+    const afterSecretEnd = await roll({ kind: 'save', ability: 'charisma', bonus: 0 });
+    check(
+      '70B) efeito ended não modifica mais nenhuma rolagem',
+      (afterSecretEnd.data.roll.effectModifiers?.bonus ?? 0) === 0,
+      JSON.stringify(afterSecretEnd.data.roll.effectModifiers),
     );
 
     // 70: efeito sobrevive ao combate (fora → dentro → fora).

@@ -25,6 +25,7 @@ import {
   rollItemEffect,
 } from '../dice/dice.service.js';
 import type { DiceRollDto } from '../dice/dice.dto.js';
+import { effectModifierSetFor } from '../effects/effects.service.js';
 import { getGameConfig } from '../game-config/game-config.service.js';
 import {
   characterClassAdjustments,
@@ -1389,7 +1390,9 @@ export async function toSheetDto(
   ownerUsername?: string,
 ): Promise<CharacterDto> {
   const catalog = await loadCatalogLookup([character.inventory]);
-  return toCharacterDto(character, ownerUsername, catalog);
+  // EFEITOS ATIVOS (6.5B): CA e deslocamento da ficha usam o resumo derivado.
+  const effectModifiers = await effectModifierSetFor({ kind: 'character', id: character.id });
+  return toCharacterDto(character, ownerUsername, catalog, effectModifiers);
 }
 
 /** Ficha do usuário autenticado, no formato entregue ao frontend. */

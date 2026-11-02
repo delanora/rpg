@@ -128,6 +128,10 @@ export interface ArmorClassDetail {
   classBonus: number;
   /** Rótulos dos bônus de classe aplicados (ex.: ["Estilo de Luta (Defesa)"]). */
   classBonusLabels: string[];
+  /** Bônus de EFEITOS ativos somado à CA final (6.5B); `0` sem efeitos. */
+  effectBonus: number;
+  /** Rótulos dos efeitos aplicados; efeito privado chega com rótulo neutro. */
+  effectBonusLabels: string[];
   /**
    * Proficiência do equipamento defensivo equipado (armadura por tipo e
    * escudo). Informativo: NÃO altera a CA (PHB 2014 — vestir armadura sem
@@ -235,6 +239,12 @@ export interface ArmorClassInput {
   armorProficiencies?: readonly string[];
   /** Override manual do mestre (`null`/`0`/ausente = automático). */
   override?: number | null;
+  /**
+   * Bônus derivados de EFEITOS ativos (Fase 6.5B) — NUNCA gravados na ficha.
+   * Entram no valor FINAL (inclusive sobre o override), então encerrar o
+   * efeito devolve a CA anterior automaticamente.
+   */
+  effectBonuses?: readonly { label: string | null; value: number }[];
 }
 
 /** Calcula a CA aplicando armadura, escudo, bônus e o override do mestre. */
@@ -284,6 +294,15 @@ export function computeArmorClass(input: ArmorClassInput): ArmorClassDetail {
   }
   automatic += classBonus;
 
+  // Modificadores de EFEITO ativo: derivados, somados DEPOIS da conta normal
+  // (e também sobre o override do Mestre). Nada é gravado na ficha.
+  let effectBonus = 0;
+  const effectBonusLabels: string[] = [];
+  for (const bonus of input.effectBonuses ?? []) {
+    effectBonus += bonus.value;
+    effectBonusLabels.push(bonus.label ?? 'Modificador de efeito');
+  }
+
   // Proficiência do equipamento defensivo (armadura por tipo + escudo). Só
   // informa: a CA acima NÃO muda por causa da falta de proficiência.
   const armorProficiency = armorProficiencyOf(input.armorProficiencies ?? [], pieces);
@@ -293,7 +312,7 @@ export function computeArmorClass(input: ArmorClassInput): ArmorClassDetail {
   };
 
   return {
-    value: override ?? automatic,
+    value: (override ?? automatic) + effectBonus,
     automatic,
     override,
     armor: pieces.armor,
@@ -304,6 +323,8 @@ export function computeArmorClass(input: ArmorClassInput): ArmorClassDetail {
     unarmoredLabel,
     classBonus,
     classBonusLabels,
+    effectBonus,
+    effectBonusLabels,
     armorProficiency,
     armorNonProficiency,
   };

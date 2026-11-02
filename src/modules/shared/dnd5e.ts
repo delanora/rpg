@@ -378,6 +378,11 @@ export interface DerivedInput {
   armorProficiencies?: readonly string[];
   /** Override manual da CA definido pelo mestre (`0`/ausente = automático). */
   armorClassOverride?: number | null;
+  /**
+   * Bônus de CA de EFEITOS ativos (Fase 6.5B). Derivados: entram no valor
+   * final e desaparecem sozinhos quando o efeito termina.
+   */
+  effectArmorBonuses?: readonly { label: string | null; value: number }[];
   /** Bônus somado a todas as salvaguardas (Aura de Proteção). */
   saveBonus?: number;
   /**
@@ -510,6 +515,7 @@ export function deriveStats(input: DerivedInput): DerivedStats {
           (option.ability ? modifiers[option.ability] : 0),
       })),
       override: input.armorClassOverride ?? null,
+      effectBonuses: input.effectArmorBonuses ?? [],
     }),
     carryingCapacity: carryingCapacity(input.abilities.strength),
     totalWeight: Math.round(totalWeight * 100) / 100,

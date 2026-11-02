@@ -1,4 +1,8 @@
 import { effectiveMaxHp, effectiveSpeed, mechanicalStateOf, deriveConditionEffects } from '../shared/conditions.js';
+import {
+  effectArmorClassBonuses,
+  type EffectModifierSet,
+} from '../effects/effect-modifiers.js';
 import { deathBlocksActions, deathStateOf, type DeathState } from '../shared/death.js';
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
@@ -500,6 +504,12 @@ export function toCharacterDto(
   ownerUsername?: string,
   /** Itens do catálogo, para o inventário espelhar os dados atuais do mestre. */
   catalog?: Map<string, CatalogSnapshot>,
+  /**
+   * EFEITOS ATIVOS já resolvidos (Fase 6.5B). CA e deslocamento exibidos são
+   * DERIVADOS: nada disso é gravado na ficha e encerrar o efeito devolve os
+   * valores anteriores.
+   */
+  effectModifiers?: EffectModifierSet,
 ): CharacterDto {
   const skills = normalizeSkills(character.skills);
 
@@ -857,6 +867,8 @@ export function toCharacterDto(
     // Proficiências de armadura — resolvem o estado de proficiência do
     // equipamento (não mudam a CA).
     armorProficiencies: proficiencies.armor,
+    // Bônus de CA de efeitos ativos (derivado; some quando o efeito termina).
+    effectArmorBonuses: effectModifiers ? effectArmorClassBonuses(effectModifiers) : [],
     // PV máximo efetivo: o gravado + o bônus de features/talentos.
     hpMax: character.hpMax,
     hpBonus: classAdjustments.hpBonus,
@@ -930,7 +942,11 @@ export function toCharacterDto(
     deathState,
     deathBlocksActions: deathBlocksActions(deathState),
     effectiveMaxHp: characterMaxHp(character),
-    effectiveSpeed: effectiveSpeed(character.speed, character.mechanicalState),
+    effectiveSpeed: effectiveSpeed(
+      character.speed,
+      character.mechanicalState,
+      effectModifiers?.speedBonus ?? 0,
+    ),
     armorClass: derived.armorClass.value,
     armorClassOverride: derived.armorClass.override,
     initiativeBonus: character.initiativeBonus,

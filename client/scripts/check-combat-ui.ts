@@ -872,8 +872,10 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB29) o teste usa o MESMO pipeline de salvaguarda (Constituição) e a bandeja existente',
     diceService.includes("kind === 'concentration'") &&
-      diceService.includes("deriveSaveEffects(\n    target.state,\n    'constitution',") &&
+      diceService.includes("deriveSaveEffects(target.state, 'constitution', [], [], {") &&
       diceService.includes('await concentrationSaveBonus(entity)') &&
+      // O bônus de efeito entra como fonte SERVER-SIDE, nunca do payload.
+      diceService.includes("rollModifiersFor(\n    await effectModifierSetFor(entity),\n    'save',\n    'constitution',") &&
       diceRoller.includes('pendingConcentrationSaveId') &&
       concentrationPanel.includes('Rolar teste de Constituição (CD') &&
       !source('../client/src/dice/DiceDock.tsx').includes('ConcentrationSavePanel'),
@@ -909,8 +911,29 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('endEffect(effect.id)') &&
       source('../client/src/components/MechanicalPanel.tsx').includes('<MasterEffectsPanel') &&
       source('../client/src/effectsApi.ts').includes("api<{ effect: EffectDto }>('/api/effects'") &&
-      !source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('advantage') &&
+      source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('describeEffectModifiers') &&
       !source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('condition:'),
+  );
+  check(
+    'CB36) modificadores de Effect são tipados, validados e consumidos pelos pipelines reais',
+    source('../src/modules/effects/effect-modifiers.ts').includes('discriminatedUnion') &&
+      source('../src/modules/effects/effect-modifiers.ts').includes('MAX_EFFECT_MODIFIERS') &&
+      source('../src/modules/effects/effect-modifiers.ts').includes('export function publicEffectLabel') &&
+      source('../src/modules/effects/effects.service.ts').includes('export async function effectModifierSetsFor') &&
+      source('../src/modules/dice/dice.service.ts').includes("rollModifiersFor") &&
+      source('../src/modules/combat/combat.service.ts').includes('attackerEffectMods') &&
+      source('../src/modules/combat/combat.service.ts').includes('effectArmorClassBonuses') &&
+      // Nenhum pipeline conhece nome de magia: a regra vem só do modificador.
+      !source('../src/modules/dice/dice.service.ts').includes("label === 'Bless'") &&
+      !source('../src/modules/combat/combat.service.ts').includes('definitionId'),
+  );
+  check(
+    'CB37) CA/deslocamento com efeito são DERIVADOS (nunca gravados na ficha)',
+    source('../src/modules/characters/characters.dto.ts').includes('effectArmorClassBonuses(effectModifiers)') &&
+      source('../src/modules/characters/characters.dto.ts').includes('effectModifiers?.speedBonus') &&
+      source('../src/modules/shared/conditions.ts').includes('effectSpeedBonus') &&
+      source('../src/modules/shared/armor-class.ts').includes('effectBonuses') &&
+      source('../src/modules/characters/characters.service.ts').includes('effectModifierSetFor'),
   );
   check(
     'CB35) efeito NÃO depende de combate (sem combatId na criação) e reusa o evento effects:updated',

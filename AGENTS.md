@@ -437,12 +437,14 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.3 0 HP / Death Saves / Stabilization / Instant Death
 - 6.4 Concentration — implementada (PHB 2014: estado, dano → save, fila e
   público/privado de NPC); duração automática continua na 6.7
-- 6.5 Generic Effect Engine — **6.5A (fundação) implementada**: `EffectInstance`
-  em tabela própria, lifecycle criar/encerrar (individual e por grupo), leitura
-  por alvo/fonte, privacidade no servidor e vínculo explícito com Concentração.
-  **NÃO implementadas:** 6.5B (modificadores), 6.5C (Effect → Condition), 6.5D
-  (cleanup mecânico), 6.5E (integração completa com Concentração), 6.5F
-  (visibilidade/realtime avançados) e 6.5G (Bless)
+- 6.5 Generic Effect Engine — **6.5A (fundação) e 6.5B (modificadores
+  mecânicos) implementadas**: `EffectInstance` em tabela própria, lifecycle
+  criar/encerrar (individual e por grupo), leitura por alvo/fonte, privacidade
+  no servidor, vínculo explícito com Concentração e modificadores tipados que
+  entram nos pipelines reais de ataque/salvaguarda/teste, CA e deslocamento.
+  **NÃO implementadas:** 6.5C (Effect → Condition), 6.5D (cleanup mecânico),
+  6.5E (integração completa com Concentração), 6.5F (visibilidade/realtime
+  avançados) e 6.5G (Bless).
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
@@ -574,13 +576,53 @@ de implementar.
   e `sourceId = groupId`. Encerrar a concentração (voluntário, Incapacitado, 0 PV
   ou falha no save) encerra o grupo. Concentração manual legada continua sem
   consultar efeito nenhum. Efeito terminar NÃO encerra concentração.
-- Nada de bônus, +1d4, CA, deslocamento, resistência, Condition automática ou
-  duração: isso pertence a 6.5B/C e 6.7. O log mínimo usa o Registro do combate
-  (`economyLog`, ação `effect`) e entrada privada não chega ao PLAYER; fora de
-  combate não há Registro persistente (limitação conhecida).
+- O log mínimo usa o Registro do combate (`economyLog`, ação `effect`) e entrada
+  privada não chega ao PLAYER; fora de combate não há Registro persistente
+  (limitação conhecida).
 - `smoke-effects.ts` cobre criação/privacidade/permissão, alvo por alvo, grupo,
-  idempotência, isolamento de template, projeção do combatente, log privado e o
-  vínculo com Concentração.
+  idempotência, isolamento de template, projeção do combatente, log privado, o
+  vínculo com Concentração e (6.5B) todos os modificadores.
+
+### Modificadores de Effect (6.5B)
+
+- **O pipeline nunca conhece nome de magia/feature.** Ele lê só modificadores
+  tipados (`src/modules/effects/effect-modifiers.ts`): união discriminada
+  `roll-flat | roll-dice | roll-advantage | roll-disadvantage | ac-flat |
+  speed-flat`, com `roll: attack | save | check` e filtro opcional de `ability`.
+  Validação Zod com limites (valor −100..100, CA −100..100, speed −1000..1000,
+  `count` 1..20, dados 4/6/8/10/12/20/100, máx. 12 por instância). JSON inválido
+  na leitura vira lista VAZIA (nunca "ganha" regra por dado corrompido).
+- Persistência: coluna `effect_instances.modifiers` (JSONB, default `[]`).
+  Migration aditiva — efeitos antigos ficam sem modificador (comportamento
+  anterior preservado).
+- **Resolvedor central:** `effectModifierSetsFor(entities)` faz UMA consulta em
+  lote (sem N+1 na iniciativa/ataque), canonicaliza combatente→FICHA e devolve
+  um resumo por entidade. `effectModifierSetFor(entity)` é o atalho de alvo único.
+  Só `status = 'active'` conta: efeito encerrado (ou grupo encerrado pela
+  Concentração) deixa de valer imediatamente, sem cache.
+- **Stacking:** numéricos SOMAM; dados formam pool independente (rolados no
+  servidor, com sinal); vantagem/desvantagem são CONJUNTOS de fontes — qualquer
+  quantidade vira uma fonte e os dois lados se cancelam (`resolveRollMode`),
+  nunca "dupla vantagem". Nada depende da ordem das linhas no banco.
+- **Pipelines:** `dice.service` (save/check: bônus fixo + dados + modo, com
+  `effectModifiers` no DTO para o breakdown), Concentration Save (Saving Throw
+  de Constituição — fontes server-side; `advantage`/`disadvantage` do cliente
+  continuam ignorados), `combat.service` (ataque: bônus/dados/modo do atacante;
+  CA do alvo) e `effectiveSpeed` (ordem: `(base + efeitos) × multiplicadores →
+  zero override`, então Grappled/Exaustão 5 continuam zerando).
+- **CA/deslocamento são DERIVADOS:** `computeArmorClass` recebe
+  `effectBonuses` e `effectiveSpeed` recebe o bônus de efeito. A ficha e as
+  criaturas nunca gravam o valor: encerrar o efeito devolve o anterior. O
+  tabuleiro usa o MESMO resumo do combatente (sem segunda conta).
+- **Privacidade não é inatividade:** efeito `private` continua modificando o
+  alvo; o rótulo é sanitizado (`publicEffectLabel` → `null`) no breakdown e no
+  DTO. Modificador só pode ser criado pelo MASTER (payload validado no servidor).
+- `publishEffects` também republica as visões derivadas: ficha do dono
+  (`sheet:updated`), criatura para os Mestres e `combat:updated`, porque efeito
+  não incrementa a versão da ficha/combate.
+- **Não implementado aqui:** resistência/imunidade/vulnerabilidade, dano extra,
+  PV temporário, rerolls, faixa de crítico, modificador de CD, proficiência por
+  efeito, Condition automática, duração, Bless/Hold Person e Spell Engine.
 
 ### Concentração (6.4)
 

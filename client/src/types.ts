@@ -2526,6 +2526,8 @@ export interface DiceRollDto {
   total: number;
   advantage: boolean;
   disadvantage: boolean;
+  /** Modificadores de EFEITOS ativos aplicados (6.5B); ausente = nenhum. */
+  effectModifiers?: RollEffectModifiersDto;
   isPrivate: boolean;
   /** Ausente = `table`. `masters` só em Teste contra a Morte de NPC (privado). */
   audience?: DiceRollAudience;
@@ -2738,6 +2740,14 @@ export type EffectEndReason =
   | 'replaced'
   | 'system';
 
+/** Modificadores de efeito aplicados a uma rolagem (o bônus já está no total). */
+export interface RollEffectModifiersDto {
+  bonus: number;
+  dice: { sides: number; value: number; sign: 1 | -1; label: string | null }[];
+  /** Fontes que contribuíram; `null` = efeito privado (sem nome). */
+  sources: (string | null)[];
+}
+
 export interface EffectDto {
   id: string;
   groupId: string | null;
@@ -2750,11 +2760,33 @@ export interface EffectDto {
   targetEntity: MechanicalEntity;
   visibility: EffectVisibility;
   status: EffectStatus;
+  /** Modificadores mecânicos tipados da instância (6.5B). */
+  modifiers: EffectModifierDto[];
   createdAt: string;
   createdBy: string | null;
   endedAt: string | null;
   endReason: EffectEndReason | null;
 }
+
+/** Espelha a união discriminada de `src/modules/effects/effect-modifiers.ts`. */
+export type EffectModifierDto = EffectModifierRollDto | EffectModifierStatDto;
+
+export type EffectRollType = 'attack' | 'save' | 'check';
+
+interface EffectModifierRollBase {
+  roll: EffectRollType;
+  ability?: AbilityKey;
+}
+
+export type EffectModifierRollDto =
+  | ({ kind: 'roll-flat'; value: number } & EffectModifierRollBase)
+  | ({ kind: 'roll-dice'; count: number; sides: number; sign: 1 | -1 } & EffectModifierRollBase)
+  | ({ kind: 'roll-advantage' } & EffectModifierRollBase)
+  | ({ kind: 'roll-disadvantage' } & EffectModifierRollBase);
+
+export type EffectModifierStatDto =
+  | { kind: 'ac-flat'; value: number }
+  | { kind: 'speed-flat'; value: number };
 
 /** Efeitos ativos de um alvo (o servidor já filtrou o que o papel pode ver). */
 export interface EffectsUpdatedPayload {

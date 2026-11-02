@@ -10,6 +10,11 @@ import type { Character, CombatStatus, CombatantKind, Creature, Role } from '@pr
 import { z } from 'zod';
 import { economyOf, type TurnEconomy } from '../shared/action-economy.js';
 import { characterArmorClass } from '../characters/armor-class.js';
+import {
+  effectArmorClassBonuses,
+  emptyEffectModifierSet,
+  type EffectModifierSet,
+} from '../effects/effect-modifiers.js';
 import { npcAttacks, npcEffectiveArmorClass } from '../creatures/npc-sheet.js';
 import type { ArmorProficiencyState } from '../shared/armor-class.js';
 import { characterDerivedAttacks, characterMaxHp } from '../characters/characters.dto.js';
@@ -127,6 +132,11 @@ export interface CombatantSourced {
   sneakAttackUsedThisTurn: boolean;
   character: (Character & { user: { username: string } }) | null;
   creature: Creature | null;
+  /**
+   * EFEITOS ativos do combatente, já resolvidos em lote por `loadCombatById`
+   * (Fase 6.5B). Ausente = sem efeitos (CA/deslocamento sem modificadores).
+   */
+  effectModifiers?: EffectModifierSet;
 }
 
 const attackListSchema = z.array(attackSchema);
@@ -178,6 +188,9 @@ export function combatantDeathState(combatant: CombatantSourced): DeathState {
 
 function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const source = combatant.character ?? combatant.creature;
+  // Modificadores de EFEITOS ativos: CRU do resumo em lote, sem segunda conta.
+  const effectModifiers = combatant.effectModifiers ?? emptyEffectModifierSet();
+  const effectArmorBonuses = effectArmorClassBonuses(effectModifiers);
 
   // Criaturas usam o snapshot do combatente (permite várias cópias iguais,
   // cada uma com a própria vida). Personagens leem ao vivo da ficha.
@@ -191,24 +204,35 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   // traz o estado de proficiência (armadura/escudo), para o combate enxergar o
   // que a ficha já mostra — sem uma segunda conta.
   const armorClassDetail =
-    combatant.character !== null ? characterArmorClass(combatant.character) : null;
+    combatant.character !== null
+      ? characterArmorClass(combatant.character, effectArmorBonuses)
+      : null;
   const armorClass =
     armorClassDetail?.value ??
     // NPC: CA DERIVADA do equipamento (armadura/escudo/bônus), nunca a cópia
-    // congelada do snapshot. Criatura-template: o snapshot, como antes.
+    // congelada do snapshot. Criatura-template: o snapshot + efeitos, como antes.
     (combatant.creature?.kind === 'NPC'
-      ? npcEffectiveArmorClass(combatant.creature)
-      : (combatant.armorClass ?? combatant.creature?.armorClass ?? 0));
+      ? npcEffectiveArmorClass(combatant.creature, effectArmorBonuses)
+      : (combatant.armorClass ?? combatant.creature?.armorClass ?? 0) +
+        effectArmorBonuses.reduce((sum, piece) => sum + piece.value, 0));
 
   const deathState = combatantDeathState(combatant);
   return {
-    turnEconomy: reconcileMovement(economyOf(combatant.turnEconomy), source?.speed ?? 0, effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant))),
+    turnEconomy: reconcileMovement(
+      economyOf(combatant.turnEconomy),
+      source?.speed ?? 0,
+      effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant), effectModifiers.speedBonus),
+    ),
     mechanicalState: mechanicalStateOf(combatantMechanicalState(combatant)),
     deathState,
     deathBlocksActions: deathBlocksActions(deathState),
     conditionEffects: deriveConditionEffects(combatantMechanicalState(combatant)),
     mechanicalVersion: combatant.character?.version ?? combatant.mechanicalVersion,
-    effectiveSpeed: effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant)),
+    effectiveSpeed: effectiveSpeed(
+      source?.speed ?? 0,
+      combatantMechanicalState(combatant),
+      effectModifiers.speedBonus,
+    ),
     id: combatant.id,
     kind: combatant.kind,
     characterId: combatant.characterId,
