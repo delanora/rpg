@@ -25,7 +25,11 @@ import {
   rollItemEffect,
 } from '../dice/dice.service.js';
 import type { DiceRollDto } from '../dice/dice.dto.js';
-import { effectModifierSetFor } from '../effects/effects.service.js';
+import { effectModifierSetFor, publishEffects } from '../effects/effects.service.js';
+import {
+  endEffectsSourcedByEntity,
+  endEffectsTargetingEntity,
+} from '../effects/effect-lifecycle.js';
 import { getGameConfig } from '../game-config/game-config.service.js';
 import {
   characterClassAdjustments,
@@ -4210,7 +4214,16 @@ export async function deleteCharacter(
   const { username } = character.user;
   const name = character.name;
 
-  await prisma.$transaction(async (tx) => {
+  const affected = await prisma.$transaction(async (tx) => {
+    // LIFECYCLE (6.5D): a ficha VAI SUMIR do banco. Encerra os efeitos que a
+    // tinham como alvo e os que ela originava ANTES do delete, na mesma
+    // transação — assim nenhuma instância `active` fica órfã. Morrer não é
+    // remoção estrutural e não passa por aqui.
+    const targets = [
+      ...(await endEffectsTargetingEntity({ kind: 'character', id: characterId }, tx)),
+      ...(await endEffectsSourcedByEntity({ kind: 'character', id: characterId }, tx)),
+    ];
+
     // Fora do combate antes de sumir: o combatente guarda só identidade, mas
     // sem o personagem ele vira uma linha fantasma na ordem de turnos.
     await tx.combatant.deleteMany({
@@ -4219,7 +4232,12 @@ export async function deleteCharacter(
 
     // A ficha sai junto (onDelete: Cascade na relação User -> Character).
     await tx.user.delete({ where: { id: userId } });
+    return targets;
   });
+
+  // Outros alvos que perderam consequências mecânicas (o personagem removido
+  // não é republicado). Falha de realtime nunca desfaz a exclusão.
+  await publishEffects(affected.filter((target) => !(target.kind === 'character' && target.id === characterId)));
 
   if (character.avatarUrl) await deleteUploadedImage(character.avatarUrl);
 

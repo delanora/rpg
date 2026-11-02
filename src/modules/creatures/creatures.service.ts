@@ -7,7 +7,11 @@ import { deleteUploadedImage } from '../../lib/uploads.js';
 import { ServerEvents, type ServerEvent } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { assertLocalitiesExist } from '../localities/localities.service.js';
-import { effectModifierSetFor } from '../effects/effects.service.js';
+import { effectModifierSetFor, publishEffects } from '../effects/effects.service.js';
+import {
+  endEffectsSourcedByEntity,
+  endEffectsTargetingEntity,
+} from '../effects/effect-lifecycle.js';
 import { toCreatureDto, type CreatureDto, type CreatureWithLocalities } from './creatures.dto.js';
 import type {
   CreateCreatureInput,
@@ -176,9 +180,23 @@ export async function updateCreature(
 
 export async function deleteCreature(id: string): Promise<void> {
   const current = await findCreature(id);
-  await prisma.creature.delete({ where: { id } });
+  // LIFECYCLE (6.5D): a entidade VAI SUMIR do banco. Encerra, na MESMA
+  // transação, os efeitos que a tinham como alvo (`target-removed`) e os que
+  // ela originava (`source-removed`) — inclusive os das instâncias de combate
+  // dela. Morrer não faria isso; remoção estrutural faz.
+  const affected = await prisma.$transaction(async (db) => {
+    const targets = [
+      ...(await endEffectsTargetingEntity({ kind: 'creature', id }, db)),
+      ...(await endEffectsSourcedByEntity({ kind: 'creature', id }, db)),
+    ];
+    await db.creature.delete({ where: { id } });
+    return targets;
+  });
   if (current.imageUrl) await deleteUploadedImage(current.imageUrl);
   broadcast(ServerEvents.CREATURE_DELETED, { creatureId: id });
+  // Publica o estado derivado de quem recebeu/sofreu os efeitos encerrados; a
+  // própria criatura não existe mais. Falha de realtime não desfaz a remoção.
+  await publishEffects(affected.filter((target) => !(target.kind === 'creature' && target.id === id)));
 }
 
 /* -------------------------------------------------------------------------- */

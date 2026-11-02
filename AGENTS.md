@@ -438,15 +438,16 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.4 Concentration — implementada (PHB 2014: estado, dano → save, fila e
   público/privado de NPC); duração automática continua na 6.7
 - 6.5 Generic Effect Engine — **6.5A (fundação), 6.5B (modificadores
-  mecânicos) e 6.5C (Effect → Condition) implementadas**: `EffectInstance` em
-  tabela própria, lifecycle criar/encerrar (individual e por grupo), leitura por
-  alvo/fonte, privacidade no servidor, vínculo explícito com Concentração,
-  modificadores tipados que entram nos pipelines reais de
-  ataque/salvaguarda/teste, CA e deslocamento, e Conditions aplicadas pelo
-  MESMO motor de Conditions (`sourceType = 'effect'`).
-  **NÃO implementadas:** 6.5D (cleanup mecânico avançado/reaplicação),
-  6.5E (integração completa com Concentração), 6.5F (visibilidade/realtime
-  avançados) e 6.5G (Bless).
+  mecânicos), 6.5C (Effect → Condition) e 6.5D (cleanup central) implementadas**:
+  `EffectInstance` em tabela própria, lifecycle criar/encerrar (individual e
+  por grupo), leitura por alvo/fonte, privacidade no servidor, vínculo explícito
+  com Concentração, modificadores tipados que entram nos pipelines reais de
+  ataque/salvaguarda/teste, CA e deslocamento, Conditions aplicadas pelo MESMO
+  motor de Conditions (`sourceType = 'effect'`) e UM lifecycle de encerramento
+  que desmonta modificadores e Conditions, inclusive na remoção estrutural de
+  entidades.
+  **NÃO implementadas:** 6.5E (integração completa com Concentração), 6.5F
+  (visibilidade/realtime avançados) e 6.5G (Bless).
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
@@ -629,6 +630,38 @@ de implementar.
   combatente de personagem, isolamento de NPC, 0 PV protegido, remoção manual,
   retry, encerramento concorrente, Charmed/Frightened/Invisible e a interação
   com modificadores/Esquiva.
+
+### Lifecycle de encerramento (6.5D)
+
+- **Um Effect ENCERRADO não produz consequência nenhuma.** `endEffect` e
+  `endEffectGroup` compartilham o MESMO pipeline (`effect-lifecycle.ts` →
+  `endEffectInstances`): transição `active → ended` guardada por status, depois
+  remoção das Conditions. Não há segunda implementação de limpeza no grupo nem
+  no fluxo de Concentração.
+- MODIFICADORES não são apagados nem zerados: o resolver só lê
+  `status = 'active'`, então o efeito deixa de participar da derivação no mesmo
+  instante. Nada é escrito na CA/velocidade base da ficha.
+- Identidade do cleanup continua `sourceType + sourceId`; fonte manual, outro
+  Effect e as derivadas protegidas (`hp-zero`) permanecem. `endReason` é
+  histórico/auditoria e NUNCA ramifica a limpeza.
+- Retry/concorrência: a guarda `status = 'active'` preserva o primeiro
+  `endedAt`/`endReason`, remove as Conditions uma vez e só registra log quando
+  houve transição real.
+- `endReason` ganhou `source-removed`/`target-removed` (remoção ESTRUTURAL de
+  entidade, não morte). `group`/`source-ended`/`target-invalid` continuam
+  aceitos para o histórico já gravado.
+- Remoção estrutural: `deleteCreature` e `deleteCharacter` encerram, na MESMA
+  transação do delete, os efeitos que tinham a entidade como ALVO
+  (`target-removed`) e como ORIGEM (`source-removed`) — inclusive os das
+  instâncias de combate da criatura. Sair da iniciativa ou chegar a 0 PV NÃO
+  encerra efeito persistente; combate termina e a ficha segue com ele.
+- Diagnóstico `findEndedEffectsWithLiveConditions` é READ-ONLY e verifica o
+  invariante "efeito ended sem Condition viva da própria fonte"; o smoke da
+  6.5D usa e espera zero. Nenhum GET repara/muta o banco.
+- `smoke-effect-lifecycle.ts` cobre cleanup combinado (CA/speed/Condition),
+  idempotência de retry, concorrência, fontes múltiplas, grupo multi-alvo com
+  isolamento, privacidade, 0 PV protegido, fonte a 0 PV, saída do combate e
+  remoção estrutural de criatura.
 
 ### Modificadores de Effect (6.5B)
 

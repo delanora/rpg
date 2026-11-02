@@ -937,12 +937,13 @@ console.log('Check-combat-ui — refino da UI de combate');
       !source('../src/modules/mechanical/condition-instances.ts').includes('sourceLabel ==='),
   );
   check(
-    'CB40) Conditions do Effect entram/saem nas transações de create/end/group',
+    'CB40) Conditions do Effect entram na criação e saem no lifecycle (sem cópia no service)',
     source('../src/modules/effects/effects.service.ts').includes('applyEffectConditions(row, target.entity, db)') &&
-      source('../src/modules/effects/effects.service.ts').includes('removeEffectConditions(') &&
       source('../src/modules/effects/effects.service.ts').includes('endEffectsForConcentration(applied.endedConcentration, db)') &&
-      source('../src/modules/effects/effects.service.ts').includes('conditions: row.conditions') &&
-      source('../src/modules/effects/effects.service.ts').includes('endEffectGroup') &&
+      source('../src/modules/effects/effects.service.ts').includes('export async function endEffectGroup') &&
+      source('../src/modules/effects/effect-lifecycle.ts').includes('removeEffectConditions(rows.map(toCleanupItem), db, context)') &&
+      // A limpeza NÃO é duplicada no service: ela mora no lifecycle.
+      !source('../src/modules/effects/effects.service.ts').includes('conditions: row.conditions') &&
       source('../prisma/schema.prisma').includes('conditions Json @default(\"[]\")'),
   );
   check(
@@ -981,6 +982,53 @@ console.log('Check-combat-ui — refino da UI de combate');
       concentrationPanel.includes("onRollMaster?.(save, 'private')") &&
       concentrationPanel.includes("onRollMaster?.(save, 'public')") &&
       smokeConcentration.includes("audience === 'masters'"),
+  );
+
+  // CB42–CB46. Lifecycle de encerramento (Fase 6.5D).
+  const effectLifecycle = source('../src/modules/effects/effect-lifecycle.ts');
+  const effectsServiceSource = source('../src/modules/effects/effects.service.ts');
+  const creaturesService = source('../src/modules/creatures/creatures.service.ts');
+  const charactersService = source('../src/modules/characters/characters.service.ts');
+  const effectLifecycleSmoke = source('../src/scripts/smoke-effect-lifecycle.ts');
+  check(
+    'CB42) encerramento tem UM pipeline: endEffect e endEffectGroup usam o mesmo lifecycle',
+    effectLifecycle.includes('export async function endEffectInstances') &&
+      effectsServiceSource.includes('endEffectInstances({ id: effectId }, reason, db)') &&
+      effectsServiceSource.includes('endEffectInstances({ groupId }, reason, db, context)') &&
+      !effectsServiceSource.includes('updateMany({\n    where: { groupId, status'),
+  );
+  check(
+    'CB43) cleanup remove por sourceId e NÃO usa label/condition como identidade',
+    effectLifecycle.includes('removeEffectConditions(rows.map(toCleanupItem), db, context)') &&
+      effectLifecycle.includes("status: 'active'") &&
+      !effectLifecycle.includes('sourceLabel') &&
+      !effectLifecycle.includes('parseEffectConditions(row.conditions).forEach'),
+  );
+  check(
+    'CB44) remoção ESTRUTURAL de entidade encerra efeitos (target-removed/source-removed)',
+    effectLifecycle.includes('export async function endEffectsTargetingEntity') &&
+      effectLifecycle.includes('export async function endEffectsSourcedByEntity') &&
+      creaturesService.includes('endEffectsTargetingEntity({ kind: \'creature\', id }, db)') &&
+      creaturesService.includes('endEffectsSourcedByEntity({ kind: \'creature\', id }, db)') &&
+      charactersService.includes('endEffectsTargetingEntity({ kind: \'character\', id: characterId }, tx)') &&
+      charactersService.includes('endEffectsSourcedByEntity({ kind: \'character\', id: characterId }, tx)') &&
+      source('../src/modules/effects/effects.schema.ts').includes("'source-removed'") &&
+      source('../src/modules/effects/effects.schema.ts').includes("'target-removed'"),
+  );
+  check(
+    'CB45) endReason é histórico/auditoria e não ramifica a limpeza',
+    effectLifecycle.includes('reason: EffectEndReason') &&
+      !effectLifecycle.includes("reason === 'concentration'") &&
+      !effectLifecycle.includes("reason === 'manual'") &&
+      source('../src/modules/effects/effects.service.ts').includes("endEffectGroup(concentration.sourceId, 'concentration', db, context)"),
+  );
+  check(
+    'CB46) invariante de lifecycle é diagnóstico READ-ONLY e tem smoke próprio',
+    effectLifecycle.includes('export async function findEndedEffectsWithLiveConditions') &&
+      !effectLifecycle.includes('prisma.$transaction') &&
+      effectLifecycleSmoke.includes('findEndedEffectsWithLiveConditions') &&
+      effectLifecycleSmoke.includes('72.L)') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeEffectLifecycle(BASE_URL, check)'),
   );
 }
 
