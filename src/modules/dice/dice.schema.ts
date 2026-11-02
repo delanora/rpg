@@ -44,6 +44,12 @@ export const tableRollSchema = z.object({
   visibility: z.enum(['public', 'private']).optional(),
   /** Identificador do pedido, gerado no cliente (ver DiceRollDto.clientId). */
   clientId: z.string().trim().max(64).optional(),
+  /**
+   * Modificadores OPCIONAIS escolhidos (6.5G): apenas os IDs oferecidos pelo
+   * servidor. O servidor revalida no momento da rolagem — o cliente nunca
+   * define dado, valor nem bônus.
+   */
+  selectedEffectModifiers: z.array(z.string().min(1).max(160)).max(20).optional(),
 });
 
 /**

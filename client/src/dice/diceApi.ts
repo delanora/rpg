@@ -1,6 +1,9 @@
 import { api } from '../api';
 import type {
+  AbilityKey,
   DiceRollDto,
+  EffectOptionalModifierDto,
+  MechanicalEntity,
   TableRollActivePayload,
   TableRollActiveRequest,
   TableRollRequest,
@@ -13,6 +16,23 @@ export async function rollTableDice(request: TableRollRequest): Promise<DiceRoll
     body: request,
   });
   return roll;
+}
+
+/**
+ * OPÇÕES OPCIONAIS de efeito para uma rolagem (6.5G).
+ *
+ * O servidor deriva dos efeitos ATIVOS do alvo; a bandeja só mostra o que ele
+ * oferece. O cliente nunca monta um modificador sozinho.
+ */
+export function fetchEffectOptions(
+  entity: MechanicalEntity,
+  roll: 'attack' | 'save' | 'check',
+  ability?: AbilityKey,
+): Promise<EffectOptionalModifierDto[]> {
+  const query = new URLSearchParams({ roll, ...(ability ? { ability } : {}) });
+  return api<{ options: EffectOptionalModifierDto[] }>(
+    `/api/dice/options/${entity.kind}/${entity.id}?${query.toString()}`,
+  ).then((result) => result.options);
 }
 
 /**

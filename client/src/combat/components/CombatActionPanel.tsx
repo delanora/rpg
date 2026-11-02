@@ -10,8 +10,15 @@ import {
   weaponOf,
 } from '../../ammo';
 import { WEAPON_TYPE_LABELS, damageExpression, formatModifier } from '../../dnd';
+import { fetchEffectOptions } from '../../dice/diceApi';
 import { combatantKindIcon } from '../combatVisuals';
-import type { Attack, CombatDto, CombatantDto, InventoryItem } from '../../types';
+import type {
+  Attack,
+  CombatDto,
+  CombatantDto,
+  EffectOptionalModifierDto,
+  InventoryItem,
+} from '../../types';
 import { clampInt } from '../../utils';
 
 /** Modos de rolagem são mutuamente exclusivos (nenhum/vantagem/desvantagem). */
@@ -128,6 +135,8 @@ interface CombatActionPanelProps {
     advantage?: boolean;
     disadvantage?: boolean;
     adjacentAlly?: boolean;
+    /** IDs dos modificadores OPCIONAIS oferecidos pelo servidor (6.5G). */
+    selectedEffectModifiers?: string[];
   }) => void;
 }
 
@@ -155,8 +164,31 @@ export function CombatActionPanel({
   const [rollMode, setRollMode] = useState<RollMode>('normal');
   const [adjacentAlly, setAdjacentAlly] = useState(false);
   const [prepared, setPrepared] = useState(false);
+  // Efeitos OPCIONAIS de ataque (6.5G): o servidor deriva quais existem para
+  // este atacante; a UI só oferece a escolha (desmarcada por padrão).
+  const [effectOptions, setEffectOptions] = useState<EffectOptionalModifierDto[]>([]);
+  const [selectedEffects, setSelectedEffects] = useState<string[]>([]);
   const hasReady = Boolean(attacker?.turnEconomy.ready);
   useEffect(() => setPrepared(false), [attacker?.id, hasReady]);
+
+  useEffect(() => {
+    setSelectedEffects([]);
+    if (!attacker) {
+      setEffectOptions([]);
+      return;
+    }
+    let live = true;
+    fetchEffectOptions({ kind: 'combatant', id: attacker.id }, 'attack')
+      .then((options) => {
+        if (live) setEffectOptions(options);
+      })
+      .catch(() => {
+        if (live) setEffectOptions([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [attacker?.id]);
 
   const baseAttacks = attackerChoices && attacksFor && attacker ? attacksFor(attacker.id) : attacks;
   // Ataques de arma não equipada somem (só dá para avaliar com o inventário).
@@ -318,6 +350,35 @@ export function CombatActionPanel({
             </div>
           </div>
 
+          {/* Modificadores OPCIONAIS reais (6.5G): ex.: Bless +1d4. Só aparecem
+              quando o servidor oferece algo; a escolha é do ator. */}
+          {effectOptions.length > 0 ? (
+            <div className="attack-effect">
+              <span className="attack-effect-head">
+                <Icon name="sparkle" size={13} /> Efeitos opcionais
+              </span>
+              {effectOptions.map((option) => (
+                <label className="dice-toggle" key={option.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedEffects.includes(option.id)}
+                    onChange={() =>
+                      setSelectedEffects((prev) =>
+                        prev.includes(option.id)
+                          ? prev.filter((item) => item !== option.id)
+                          : [...prev, option.id],
+                      )
+                    }
+                  />
+                  {option.label}{' '}
+                  {option.kind === 'roll-dice'
+                    ? `+${option.count ?? 1}d${option.sides ?? 4}`
+                    : `+${option.value ?? 0}`}
+                </label>
+              ))}
+            </div>
+          ) : null}
+
           {/* Ataque Furtivo disponível (a condição já vem do sistema). */}
           {sneakEligible ? (
             <div className="attack-effect">
@@ -423,6 +484,9 @@ export function CombatActionPanel({
                   ...(adjacentAlly && sneakEligible ? { adjacentAlly: true } : {}),
                   ...(attackerChoices ? { attackerCombatantId: attacker.id } : {}),
                   ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
+                  ...(selectedEffects.length > 0
+                    ? { selectedEffectModifiers: selectedEffects }
+                    : {}),
                 });
               }}
             >

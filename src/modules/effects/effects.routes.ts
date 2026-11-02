@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import { entitySchema } from '../shared/conditions.js';
-import { createEffectSchema, endEffectSchema } from './effects.schema.js';
+import { applyBlessSchema, createEffectSchema, endEffectSchema } from './effects.schema.js';
 import { createEffect, endEffect, listEffectsForTarget } from './effects.service.js';
+import { applyBless } from './bless.service.js';
 
 /**
  * FASE 6.5A — API própria dos Effects.
@@ -27,6 +28,28 @@ effectsRouter.get('/:entityKind/:entityId', async (req, res) => {
     role: req.user!.role,
   };
   res.json({ effects: await listEffectsForTarget(actor, parsed.data) });
+});
+
+/**
+ * POST /api/effects/bless — APLICAÇÃO CONTROLADA de Bless (só MASTER).
+ *
+ * Ferramenta de prova da engine (6.5G): NÃO é conjuração de jogador, não gasta
+ * Ação/slot e não valida alcance/componentes. Cria o grupo, uma instância por
+ * alvo e a concentração do caster no mesmo motor existente.
+ */
+effectsRouter.post('/bless', requireRole('MASTER'), async (req, res) => {
+  const parsed = applyBlessSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  const actor = {
+    userId: req.user!.sub,
+    username: req.user!.username,
+    role: req.user!.role,
+  };
+  const result = await applyBless(actor, parsed.data);
+  res.status(result.replayed ? 200 : 201).json(result);
 });
 
 /** POST /api/effects — criação MANUAL de um efeito (só MASTER). */

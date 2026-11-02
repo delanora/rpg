@@ -2613,6 +2613,8 @@ export interface TableRollRequest {
   pendingConcentrationSaveId?: string;
   /** NPC/criatura: visibilidade do teste escolhida pelo Mestre ao rolar. */
   visibility?: 'public' | 'private';
+  /** IDs dos modificadores OPCIONAIS oferecidos pelo servidor (6.5G). */
+  selectedEffectModifiers?: string[];
 }
 
 /**
@@ -2735,7 +2737,9 @@ export type EffectEndReason =
   | 'concentration'
   | 'duration'
   | 'dispel'
+  | 'source-removed'
   | 'source-ended'
+  | 'target-removed'
   | 'target-invalid'
   | 'replaced'
   | 'system';
@@ -2762,6 +2766,11 @@ export interface EffectDto {
   status: EffectStatus;
   /** Modificadores mecânicos tipados da instância (6.5B). */
   modifiers: EffectModifierDto[];
+  /**
+   * CONDITIONS que a instância aplica (6.5C) — chaves do catálogo PHB.
+   * A Condition REAL vive no estado mecânico do alvo; isto é a definição.
+   */
+  conditions: string[];
   createdAt: string;
   createdBy: string | null;
   endedAt: string | null;
@@ -2776,6 +2785,12 @@ export type EffectRollType = 'attack' | 'save' | 'check';
 interface EffectModifierRollBase {
   roll: EffectRollType;
   ability?: AbilityKey;
+  /** 6.5G: "pode" — só entra se o ator escolher na rolagem. */
+  optional?: boolean;
+  /** Mesma chave = não acumula (a fonte mais antiga vence). */
+  stackingKey?: string;
+  /** Identidade estável dentro da instância. */
+  key?: string;
 }
 
 export type EffectModifierRollDto =
@@ -2787,6 +2802,25 @@ export type EffectModifierRollDto =
 export type EffectModifierStatDto =
   | { kind: 'ac-flat'; value: number }
   | { kind: 'speed-flat'; value: number };
+
+/**
+ * Modificador OPCIONAL oferecido pelo SERVIDOR (6.5G).
+ *
+ * O cliente só devolve `id` na rolagem — nunca `value`/`sides`/resultado. O
+ * rótulo já vem sanitizado (efeito privado vira "Efeito").
+ */
+export interface EffectOptionalModifierDto {
+  id: string;
+  roll: EffectRollType;
+  ability?: AbilityKey;
+  kind: 'roll-dice' | 'roll-flat';
+  count?: number;
+  sides?: number;
+  sign?: 1 | -1;
+  value?: number;
+  stackingKey: string | null;
+  label: string;
+}
 
 /** Efeitos ativos de um alvo (o servidor já filtrou o que o papel pode ver). */
 export interface EffectsUpdatedPayload {

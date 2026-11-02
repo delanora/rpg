@@ -27,8 +27,12 @@ import {
   publicEffectLabel,
   rollModifierSourceLabels,
   rollModifiersFor,
+  toOptionalModifierDtos,
+  type EffectOptionalModifierDto,
   type EffectRollModifiers,
 } from '../effects/effect-modifiers.js';
+import { rollSelectedOptional } from './effect-optional.js';
+import type { AbilityKey } from '../shared/dnd5e.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
@@ -74,6 +78,52 @@ export function clearDiceHistory(): void {
  */
 export function forgetRollsFrom(userId: string): void {
   history = history.filter((roll) => roll.actorUserId !== userId);
+}
+
+/** A entidade é do próprio ator? (Mestre lê qualquer uma.) */
+async function entityBelongsTo(actor: DiceActor, entity: MechanicalEntity): Promise<boolean> {
+  if (actor.role === 'MASTER') return true;
+  if (entity.kind === 'combatant') {
+    const row = await prisma.combatant.findUnique({
+      where: { id: entity.id },
+      select: { characterId: true },
+    });
+    if (!row?.characterId) return false;
+    const character = await prisma.character.findUnique({
+      where: { id: row.characterId },
+      select: { userId: true },
+    });
+    return character?.userId === actor.userId;
+  }
+  if (entity.kind !== 'character') return false;
+  const row = await prisma.character.findUnique({
+    where: { id: entity.id },
+    select: { userId: true },
+  });
+  return row?.userId === actor.userId;
+}
+
+/**
+ * OPÇÕES OPCIONAIS de efeito para UMA rolagem (6.5G).
+ *
+ * O servidor deriva do estado real (efeitos ATIVOS do alvo, já resolvido o
+ * stacking e a privacidade) quais modificadores o ator PODE usar. O cliente
+ * recebe só `id`, escopo e rótulo seguro — nunca valores ou estrutura livre.
+ *
+ * Bless não aparece em Ability Checks (seus modificadores só declaram ataque e
+ * salvaguarda); um efeito de teste com `ability` só aparece no atributo certo.
+ */
+export async function optionalEffectModifiersFor(
+  actor: DiceActor,
+  entity: MechanicalEntity,
+  roll: 'attack' | 'save' | 'check',
+  ability?: AbilityKey,
+): Promise<EffectOptionalModifierDto[]> {
+  if (!(await entityBelongsTo(actor, entity))) {
+    throw new HttpError('Você só pode consultar as opções do seu personagem.', 403);
+  }
+  const set = await effectModifierSetFor(entity);
+  return toOptionalModifierDtos(rollModifiersFor(set, roll, ability).optional);
 }
 
 /** Autor da rolagem, sempre carimbado a partir do token. */
@@ -453,19 +503,35 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
   const mode = deriveSaveEffects(target.state, 'constitution', [], [], {
     effects: { advantage: effectMods.advantage, disadvantage: effectMods.disadvantage },
   });
+  // OPCIONAIS escolhidos (6.5G): revalidados AQUI e rolados pelo servidor. Um
+  // Bless do próprio caster pode entrar neste Constitution Save — o efeito
+  // ainda está ativo no momento do teste.
+  const optionalEffects = rollSelectedOptional(
+    effectMods,
+    input.selectedEffectModifiers,
+    mode.autoFail,
+  );
   const baseBonus = await concentrationSaveBonus(entity);
-  const effectBonus = mode.autoFail ? 0 : effectMods.bonus;
+  const effectBonus = mode.autoFail ? 0 : effectMods.bonus + optionalEffects.bonus;
   const bonus = baseBonus + effectBonus;
   const effectDice = mode.autoFail
     ? []
-    : effectMods.dice.flatMap((modifier) =>
-        Array.from({ length: modifier.count }, () => ({
-          sides: modifier.sides,
-          value: rollDie(modifier.sides),
-          sign: modifier.sign,
-          label: publicEffectLabel(modifier.source),
+    : [
+        ...effectMods.dice.flatMap((modifier) =>
+          Array.from({ length: modifier.count }, () => ({
+            sides: modifier.sides,
+            value: rollDie(modifier.sides),
+            sign: modifier.sign,
+            label: publicEffectLabel(modifier.source),
+          })),
+        ),
+        ...optionalEffects.dice.map(({ sides, value, sign, label }) => ({
+          sides,
+          value,
+          sign,
+          label,
         })),
-      );
+      ];
   const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
   const dice = mode.autoFail ? [] : rollGroup(20, mode.advantage, mode.disadvantage);
   const kept = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
@@ -553,7 +619,7 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
   const effectSet = entity && effectRollKind ? await effectModifierSetFor(entity) : null;
   const effectMods: EffectRollModifiers = effectSet && effectRollKind
     ? rollModifiersFor(effectSet, effectRollKind, input.ability)
-    : { bonus: 0, dice: [], advantage: [], disadvantage: [], sources: [] };
+    : { bonus: 0, dice: [], advantage: [], disadvantage: [], sources: [], optional: [] };
   const advantages = input.advantage ? ['manual'] : [];
   const disadvantages = input.disadvantage ? ['manual'] : [];
   // Esquiva: só a salvaguarda de Destreza se beneficia, e só com o benefício
@@ -581,22 +647,38 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
       };
   const { advantage, disadvantage } = mode;
 
+  // OPCIONAIS (6.5G): só entram os IDs oferecidos pelo servidor para ESTA
+  // rolagem. Falha automática continua falha automática (nenhum d4 é rolado).
+  const optionalEffects = rollSelectedOptional(
+    effectMods,
+    input.selectedEffectModifiers,
+    mode.autoFail,
+  );
+
   if (kind !== 'creation' && !mode.autoFail) markRollTumbling(actor);
   const dice = mode.autoFail ? [] : input.dice.flatMap((die) => rollGroup(die.sides, advantage, disadvantage));
 
   // Dados extras de efeito: pool INDEPENDENTE (nunca viram bônus fixo).
   const effectDice = mode.autoFail
     ? []
-    : effectMods.dice.flatMap((modifier) =>
-        Array.from({ length: modifier.count }, () => ({
-          sides: modifier.sides,
-          value: rollDie(modifier.sides),
-          sign: modifier.sign,
-          label: publicEffectLabel(modifier.source),
+    : [
+        ...effectMods.dice.flatMap((modifier) =>
+          Array.from({ length: modifier.count }, () => ({
+            sides: modifier.sides,
+            value: rollDie(modifier.sides),
+            sign: modifier.sign,
+            label: publicEffectLabel(modifier.source),
+          })),
+        ),
+        ...optionalEffects.dice.map(({ sides, value, sign, label }) => ({
+          sides,
+          value,
+          sign,
+          label,
         })),
-      );
+      ];
   const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
-  const effectBonus = mode.autoFail ? 0 : effectMods.bonus;
+  const effectBonus = mode.autoFail ? 0 : effectMods.bonus + optionalEffects.bonus;
 
   const bonus = (input.bonus ?? 0) + effectBonus;
   const diceTotal = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);

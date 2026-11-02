@@ -53,6 +53,12 @@ export const attackSchema = combatOperationSchema.extend({
    * Furtivo. Só é considerada para personagens com a feature.
    */
   adjacentAlly: z.boolean().optional(),
+  /**
+   * Modificadores OPCIONAIS escolhidos no painel de ataque (6.5G): apenas IDs
+   * oferecidos pelo servidor. Revalidados no momento do ataque (efeito pode ter
+   * terminado entre a renderização e o clique).
+   */
+  selectedEffectModifiers: z.array(z.string().min(1).max(160)).max(20).optional(),
 });
 
 /**

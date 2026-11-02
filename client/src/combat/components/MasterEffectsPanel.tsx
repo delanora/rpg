@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { describeEffectModifiers, EFFECT_ROLL_LABELS } from '../../effectModifiers';
-import { createManualEffect, endEffect } from '../../effectsApi';
+import { applyBlessEffect, createManualEffect, endEffect } from '../../effectsApi';
 import type {
   AbilityKey,
   EffectDto,
@@ -56,6 +56,7 @@ export function MasterEffectsPanel({
   targetName,
   effects,
   conditionLabels,
+  choices = [],
   busy = false,
   onChanged,
 }: {
@@ -64,6 +65,8 @@ export function MasterEffectsPanel({
   effects: EffectDto[];
   /** Rótulos PT-BR do catálogo de Conditions (vem do estado mecânico). */
   conditionLabels: Record<string, string>;
+  /** Entidades que o Mestre pode escolher como alvo do Bless de prova. */
+  choices?: { entity: MechanicalEntity; name: string }[];
   busy?: boolean;
   /** Recarrega a lista (o servidor já filtrou pelo papel). */
   onChanged: () => Promise<void>;
@@ -84,6 +87,9 @@ export function MasterEffectsPanel({
   const [negative, setNegative] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
+  // BLESS (6.5G): ferramenta temporária de PROVA da engine. O caster é a
+  // entidade deste painel; até 3 alvos da lista da mesa.
+  const [blessTargets, setBlessTargets] = useState<string[]>([]);
 
   const locked = busy || working;
 
@@ -351,6 +357,65 @@ export function MasterEffectsPanel({
         Fixtures de engine: bônus/dado em rolagem, CA e deslocamento entram nos pipelines do
         servidor. Nenhuma magia, duração ou Condition é criada aqui.
       </p>
+      <details className="conditions-admin" data-bless-proof>
+        <summary>
+          Bless — prova da engine (6.5G){blessTargets.length > 0 ? ` (${blessTargets.length}/3)` : ''}
+        </summary>
+        <p className="field-hint">
+          Ferramenta TEMPORÁRIA do Mestre: cria o grupo de efeitos, até 3 alvos e a
+          Concentração do caster. Não gasta Ação nem slot, não valida alcance/componentes e
+          ainda não tem duração automática.
+        </p>
+        <div className="hp-controls">
+          {choices.map((choice) => {
+            const key = `${choice.entity.kind}:${choice.entity.id}`;
+            const checked = blessTargets.includes(key);
+            return (
+              <label key={key} className="field-hint">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!checked && blessTargets.length >= 3}
+                  onChange={(event) =>
+                    setBlessTargets((list) =>
+                      event.target.checked
+                        ? [...list, key]
+                        : list.filter((item) => item !== key),
+                    )
+                  }
+                />{' '}
+                {choice.name}
+              </label>
+            );
+          })}
+          {choices.length === 0 ? (
+            <span className="field-hint">Nenhum personagem/criatura para escolher.</span>
+          ) : null}
+        </div>
+        <div className="hp-controls">
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={locked || blessTargets.length === 0}
+            onClick={() =>
+              void run(async () => {
+                const targets = blessTargets.flatMap((key) => {
+                  const choice = choices.find(
+                    (item) => `${item.entity.kind}:${item.entity.id}` === key,
+                  );
+                  return choice ? [choice.entity] : [];
+                });
+                if (targets.length === 0) return;
+                await applyBlessEffect({ caster: entity, targets });
+                setBlessTargets([]);
+              })
+            }
+          >
+            <Icon name="sparkle" size={13} /> Aplicar Bless
+          </button>
+        </div>
+      </details>
+
       {error ? <p className="error">{error}</p> : null}
     </div>
   );

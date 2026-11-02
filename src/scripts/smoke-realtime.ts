@@ -3,6 +3,7 @@ import { smokeConcentration } from './smoke-concentration.js';
 import { smokeEffects } from './smoke-effects.js';
 import { smokeEffectConditions } from './smoke-effect-conditions.js';
 import { smokeEffectLifecycle } from './smoke-effect-lifecycle.js';
+import { smokeBlessEffect } from './smoke-bless-effect.js';
 import { smokeCombatItems } from './smoke-combat-items.js';
 import { smokeDeath } from './smoke-death.js';
 import { smokeExhaustionRule } from './smoke-exhaustion-rule.js';
@@ -21571,6 +21572,7 @@ async function main(): Promise<void> {
   await smokeEffects(BASE_URL, check);
   await smokeEffectConditions(BASE_URL, check);
   await smokeEffectLifecycle(BASE_URL, check);
+  await smokeBlessEffect(BASE_URL, check);
   await smokeDeath(BASE_URL, check);
   await smokeExhaustionRule(BASE_URL, check);
 

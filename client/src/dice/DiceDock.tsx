@@ -37,6 +37,9 @@ export function DiceDock({ roller }: DiceDockProps) {
     phase,
     result,
     error,
+    effectOptions,
+    selectedEffectModifiers,
+    toggleEffectModifier,
     toasts,
     history,
     openFree,
@@ -280,6 +283,27 @@ export function DiceDock({ roller }: DiceDockProps) {
                     </button>
                   ))}
                 </div>
+
+                {/* Modificadores OPCIONAIS reais (6.5G): só aparecem quando o
+                    servidor oferece algo para ESTA rolagem. Nascem
+                    DESMARCADOS — usar é escolha do ator, não automático. */}
+                {effectOptions.length > 0 ? (
+                  <div className="dice-effect-options" role="group" aria-label="Efeitos opcionais">
+                    {effectOptions.map((option) => (
+                      <label className="dice-toggle" key={option.id}>
+                        <input
+                          type="checkbox"
+                          checked={selectedEffectModifiers.includes(option.id)}
+                          onChange={() => toggleEffectModifier(option.id)}
+                        />
+                        {option.label}{' '}
+                        {option.kind === 'roll-dice'
+                          ? `+${option.count ?? 1}d${option.sides ?? 4}`
+                          : `+${option.value ?? 0}`}
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
 
                 <div className="dice-controls">
                   {/* No teste de concentração o modo é do SERVIDOR (Constituição

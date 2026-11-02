@@ -31,13 +31,43 @@ const rollScope = {
 };
 const flatValue = z.number().int().min(-100).max(100);
 
+const modifierKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9._:-]+$/, { message: 'Chave de modificador inválida.' });
+
+/**
+ * Identidade e STACKING de um modificador de rolagem.
+ *
+ * • `key`: identidade estável DENTRO da instância (fallback: índice). É o que
+ *   o cliente devolve ao escolher um modificador OPCIONAL — nunca o label.
+ * • `stackingKey`: modificadores com a mesma chave NÃO se somam ("a mesma
+ *   magia não acumula"). Vence a fonte mais antiga; quando ela termina, a
+ *   seguinte assume automaticamente, sem recriar efeito.
+ */
+const rollIdentity = {
+  key: modifierKeySchema.optional(),
+  stackingKey: modifierKeySchema.optional(),
+};
+
+/**
+ * `optional: true` — o PHB diz "pode" (ex.: Bless). O modificador é OFERECIDO
+ * pelo servidor na rolagem e só entra se o ator escolher. Default: obrigatório
+ * (todo modificador artificial criado antes da 6.5G continua automático).
+ */
+const optionalFlag = { optional: z.boolean().optional() };
+
 export const effectModifierSchema = z.discriminatedUnion('kind', [
   /** Bônus fixo (+2) em ataque, salvaguarda ou teste de habilidade. */
-  z.object({ kind: z.literal('roll-flat'), ...rollScope, value: flatValue }),
+  z.object({ kind: z.literal('roll-flat'), ...rollScope, ...rollIdentity, ...optionalFlag, value: flatValue }),
   /** Dado extra rolado pelo SERVIDOR (+1d4, -1d4). */
   z.object({
     kind: z.literal('roll-dice'),
     ...rollScope,
+    ...rollIdentity,
+    ...optionalFlag,
     count: z.number().int().min(1).max(20),
     sides: z.number().int().refine(
       (sides) => (EFFECT_MODIFIER_DICE_SIDES as readonly number[]).includes(sides),
@@ -46,9 +76,9 @@ export const effectModifierSchema = z.discriminatedUnion('kind', [
     sign: z.union([z.literal(1), z.literal(-1)]),
   }),
   /** Fonte de vantagem (qualquer quantidade = uma fonte; nunca "dupla"). */
-  z.object({ kind: z.literal('roll-advantage'), ...rollScope }),
+  z.object({ kind: z.literal('roll-advantage'), ...rollScope, ...rollIdentity }),
   /** Fonte de desvantagem (idem). */
-  z.object({ kind: z.literal('roll-disadvantage'), ...rollScope }),
+  z.object({ kind: z.literal('roll-disadvantage'), ...rollScope, ...rollIdentity }),
   /** CA derivada (+1, +2, -1). Nunca grava na ficha. */
   z.object({ kind: z.literal('ac-flat'), value: flatValue }),
   /** Deslocamento derivado em metros (+3, -3). Nunca grava na ficha. */
@@ -113,6 +143,41 @@ export interface EffectDiceModifier {
   source: EffectModifierSource;
 }
 
+/**
+ * Modificador OPCIONAL derivado (6.5G): o cliente só devolve o `id` — nunca o
+ * valor, o dado nem uma estrutura inventada. O servidor revalida no momento da
+ * rolagem (o efeito pode ter terminado entre a renderização e o clique).
+ */
+export interface EffectOptionalModifier {
+  id: string;
+  effectId: string;
+  roll: EffectRollType;
+  ability?: AbilityKey;
+  kind: 'roll-dice' | 'roll-flat';
+  count?: number;
+  sides?: number;
+  sign?: 1 | -1;
+  value?: number;
+  stackingKey: string | null;
+  /** Rótulo SEGURO: efeito privado vira "Efeito" (nunca o nome secreto). */
+  label: string;
+  visibility: 'public' | 'private';
+}
+
+/** Forma enviada ao cliente (sem metadados internos). */
+export interface EffectOptionalModifierDto {
+  id: string;
+  roll: EffectRollType;
+  ability?: AbilityKey;
+  kind: 'roll-dice' | 'roll-flat';
+  count?: number;
+  sides?: number;
+  sign?: 1 | -1;
+  value?: number;
+  stackingKey: string | null;
+  label: string;
+}
+
 /** Modificadores de UM tipo de rolagem, normalizados para o pipeline. */
 export interface EffectRollModifiers {
   /** Soma dos bônus fixos. */
@@ -125,6 +190,8 @@ export interface EffectRollModifiers {
   disadvantage: string[];
   /** Fontes que contribuíram (tooltip/log). */
   sources: EffectModifierSource[];
+  /** Modificadores que o ator PODE usar nesta rolagem (nunca automáticos). */
+  optional: EffectOptionalModifier[];
 }
 
 /** Resumo derivado, já sem DB: é o que os pipelines consomem. */
@@ -141,7 +208,7 @@ export interface EffectModifierSet {
 }
 
 export function emptyRollModifiers(): EffectRollModifiers {
-  return { bonus: 0, dice: [], advantage: [], disadvantage: [], sources: [] };
+  return { bonus: 0, dice: [], advantage: [], disadvantage: [], sources: [], optional: [] };
 }
 
 export function emptyEffectModifierSet(): EffectModifierSet {
@@ -166,6 +233,18 @@ export interface ActiveEffectRow {
   label: string;
   visibility: string;
   modifiers: unknown;
+  /** Desempate DETERMINÍSTICO do stacking (fonte mais antiga vence). */
+  createdAt?: string | Date | null;
+}
+
+/**
+ * Identidade ESTÁVEL de um modificador dentro da instância.
+ * Preferência: `modifier.key` declarada pela definição; fallback: o índice no
+ * JSON. O cliente nunca escolhe o conteúdo — só devolve este id.
+ */
+export function effectModifierId(effectId: string, modifier: EffectModifier, index: number): string {
+  const key = 'key' in modifier && modifier.key ? modifier.key : String(index);
+  return `${effectId}:${key}`;
 }
 
 function addSource(target: EffectModifierSource[], source: EffectModifierSource): void {
@@ -183,9 +262,31 @@ function addSource(target: EffectModifierSource[], source: EffectModifierSource)
  *    uma fonte, e a presença dos dois lados cancela (`resolveRollMode`);
  *  • nada depende da ordem das linhas no banco nem do `label`.
  */
+function rowTime(row: ActiveEffectRow): number {
+  if (!row.createdAt) return 0;
+  const time =
+    typeof row.createdAt === 'string' ? Date.parse(row.createdAt) : row.createdAt.getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
 export function buildEffectModifierSet(rows: readonly ActiveEffectRow[]): EffectModifierSet {
   const set = emptyEffectModifierSet();
-  for (const row of rows) {
+  // Ordem DETERMINÍSTICA: fonte mais antiga primeiro (e o id como desempate).
+  // Nada depende da ordem que o banco devolveu.
+  const ordered = [...rows].sort((a, b) => rowTime(a) - rowTime(b) || a.id.localeCompare(b.id));
+  // Stacking é resolvido POR ALVO de rolagem: dois efeitos ativos com a mesma
+  // `stackingKey` produzem UMA contribuição (nunca 2d4 de dois Bless).
+  const seenStacking = new Map<EffectRollModifiers, Set<string>>();
+  const alreadyStacked = (target: EffectRollModifiers, key: string | null): boolean => {
+    if (!key) return false;
+    const seen = seenStacking.get(target) ?? new Set<string>();
+    if (seen.has(key)) return true;
+    seen.add(key);
+    seenStacking.set(target, seen);
+    return false;
+  };
+
+  for (const row of ordered) {
     const source: EffectModifierSource = {
       effectId: row.id,
       label: row.label,
@@ -193,18 +294,18 @@ export function buildEffectModifierSet(rows: readonly ActiveEffectRow[]): Effect
     };
     const modifiers = parseEffectModifiers(row.modifiers);
     let contributed = false;
-    for (const modifier of modifiers) {
+    modifiers.forEach((modifier, index) => {
       if (modifier.kind === 'ac-flat') {
         set.acBonus += modifier.value;
         contributed = true;
         addSource(set.sources, source);
-        continue;
+        return;
       }
       if (modifier.kind === 'speed-flat') {
         set.speedBonus += modifier.value;
         contributed = true;
         addSource(set.sources, source);
-        continue;
+        return;
       }
       // Modificador de rolagem: entra no escopo declarado e, se houver
       // `ability`, SÓ naquele atributo (saves e checks).
@@ -213,14 +314,62 @@ export function buildEffectModifierSet(rows: readonly ActiveEffectRow[]): Effect
         ...(modifier.roll === 'save' ? abilityTargets(set.saves, modifier.ability) : []),
         ...(modifier.roll === 'check' ? abilityTargets(set.checks, modifier.ability) : []),
       ];
+      const id = effectModifierId(row.id, modifier, index);
+      const stackingKey = modifier.stackingKey ?? null;
+      let applied = false;
       for (const target of targets) {
-        applyRollModifier(target, modifier, source);
-        contributed = true;
+        if (alreadyStacked(target, stackingKey)) continue;
+        applyRollModifier(target, modifier, source, id);
+        applied = true;
       }
-      if (contributed) addSource(set.sources, source);
-    }
+      if (applied) {
+        contributed = true;
+        // Fonte de modificador OPCIONAL não entra em `sources` até ser usada:
+        // o breakdown só lista o que realmente foi aplicado.
+        if (!('optional' in modifier && modifier.optional)) addSource(set.sources, source);
+      }
+    });
   }
   return set;
+}
+
+/**
+ * Valida a escolha do cliente contra as opções REALMENTE oferecidas pelo
+ * servidor para esta rolagem. Ids inválidos são rejeitados (nunca ignorados em
+ * silêncio): efeito encerrado, outro ator, outro escopo ou payload inventado.
+ */
+export function selectOptionalModifiers(
+  mods: EffectRollModifiers,
+  selected: readonly string[] | undefined,
+): { options: EffectOptionalModifier[]; invalid: string[] } {
+  if (!selected || selected.length === 0) return { options: [], invalid: [] };
+  const byId = new Map(mods.optional.map((option) => [option.id, option]));
+  const options: EffectOptionalModifier[] = [];
+  const invalid: string[] = [];
+  for (const id of new Set(selected)) {
+    const option = byId.get(id);
+    if (option) options.push(option);
+    else invalid.push(id);
+  }
+  return { options, invalid };
+}
+
+/** DTO seguro para o cliente (sem effectId/metadados internos). */
+export function toOptionalModifierDtos(
+  options: readonly EffectOptionalModifier[],
+): EffectOptionalModifierDto[] {
+  return options.map((option) => ({
+    id: option.id,
+    roll: option.roll,
+    ...(option.ability ? { ability: option.ability } : {}),
+    kind: option.kind,
+    ...(option.count !== undefined ? { count: option.count } : {}),
+    ...(option.sides !== undefined ? { sides: option.sides } : {}),
+    ...(option.sign !== undefined ? { sign: option.sign } : {}),
+    ...(option.value !== undefined ? { value: option.value } : {}),
+    stackingKey: option.stackingKey,
+    label: option.label,
+  }));
 }
 
 function abilityTargets(
@@ -234,13 +383,44 @@ function applyRollModifier(
   target: EffectRollModifiers,
   modifier: EffectModifier,
   source: EffectModifierSource,
+  id: string,
 ): void {
   if (modifier.kind === 'roll-flat') {
+    if (modifier.optional) {
+      target.optional.push({
+        id,
+        effectId: source.effectId,
+        roll: modifier.roll,
+        ...(modifier.ability ? { ability: modifier.ability } : {}),
+        kind: 'roll-flat',
+        value: modifier.value,
+        stackingKey: modifier.stackingKey ?? null,
+        label: publicEffectLabel(source) ?? 'Efeito',
+        visibility: source.visibility,
+      });
+      return;
+    }
     target.bonus += modifier.value;
     addSource(target.sources, source);
     return;
   }
   if (modifier.kind === 'roll-dice') {
+    if (modifier.optional) {
+      target.optional.push({
+        id,
+        effectId: source.effectId,
+        roll: modifier.roll,
+        ...(modifier.ability ? { ability: modifier.ability } : {}),
+        kind: 'roll-dice',
+        count: modifier.count,
+        sides: modifier.sides,
+        sign: modifier.sign,
+        stackingKey: modifier.stackingKey ?? null,
+        label: publicEffectLabel(source) ?? 'Efeito',
+        visibility: source.visibility,
+      });
+      return;
+    }
     target.dice.push({
       count: modifier.count,
       sides: modifier.sides,
@@ -304,11 +484,12 @@ export function describeEffectModifier(modifier: EffectModifier): string {
   if (modifier.kind === 'speed-flat') {
     return `Deslocamento ${modifier.value >= 0 ? '+' : ''}${modifier.value} m`;
   }
+  const optional = 'optional' in modifier && modifier.optional ? ' (opcional)' : '';
   if (modifier.kind === 'roll-flat') {
-    return `${modifier.value >= 0 ? '+' : ''}${modifier.value} em ${scope}`;
+    return `${modifier.value >= 0 ? '+' : ''}${modifier.value} em ${scope}${optional}`;
   }
   if (modifier.kind === 'roll-dice') {
-    return `${modifier.sign > 0 ? '+' : '−'}${modifier.count}d${modifier.sides} em ${scope}`;
+    return `${modifier.sign > 0 ? '+' : '−'}${modifier.count}d${modifier.sides} em ${scope}${optional}`;
   }
   if (modifier.kind === 'roll-advantage') return `Vantagem em ${scope}`;
   return `Desvantagem em ${scope}`;

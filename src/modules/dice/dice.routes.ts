@@ -5,10 +5,13 @@ import {
   clearDiceHistory,
   getActiveRoll,
   getDiceHistory,
+  optionalEffectModifiersFor,
   rollTableDice,
   setActiveRoll,
   type DiceActor,
 } from './dice.service.js';
+import { entitySchema } from '../shared/conditions.js';
+import { ABILITY_KEYS, type AbilityKey } from '../shared/dnd5e.js';
 
 /** Autor da requisição, sempre carimbado a partir do token (nunca do corpo). */
 function actor(req: Request): DiceActor {
@@ -41,6 +44,41 @@ diceRouter.get('/history', requireRole('MASTER'), (_req, res) => {
 diceRouter.delete('/history', requireRole('MASTER'), (_req, res) => {
   clearDiceHistory();
   res.status(204).end();
+});
+
+/**
+ * GET /api/dice/options/:entityKind/:entityId — opções OPCIONAIS de efeito
+ * (6.5G) para UMA rolagem. O cliente só escolhe entre o que o servidor deriva;
+ * ele nunca inventa um modificador nem envia o valor do dado.
+ */
+diceRouter.get('/options/:entityKind/:entityId', async (req, res) => {
+  const parsed = entitySchema.safeParse({
+    kind: req.params.entityKind,
+    id: req.params.entityId,
+  });
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  const roll = req.query.roll;
+  if (roll !== 'attack' && roll !== 'save' && roll !== 'check') {
+    res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Rolagem inválida.' });
+    return;
+  }
+  const abilityParam = typeof req.query.ability === 'string' ? req.query.ability : undefined;
+  if (abilityParam && !(ABILITY_KEYS as readonly string[]).includes(abilityParam)) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Atributo inválido.' });
+    return;
+  }
+
+  res.json({
+    options: await optionalEffectModifiersFor(
+      actor(req),
+      parsed.data,
+      roll,
+      abilityParam as AbilityKey | undefined,
+    ),
+  });
 });
 
 /**
