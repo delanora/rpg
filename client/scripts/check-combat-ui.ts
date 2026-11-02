@@ -928,6 +928,31 @@ console.log('Check-combat-ui — refino da UI de combate');
       !source('../src/modules/combat/combat.service.ts').includes('definitionId'),
   );
   check(
+    'CB39) Effect → Condition usa o MESMO conditionSchema e rastreia sourceType/sourceId',
+    source('../src/modules/effects/effect-modifiers.ts').includes('z.array(conditionSchema)') &&
+      source('../src/modules/effects/effect-conditions.ts').includes("sourceType: 'effect'") &&
+      source('../src/modules/effects/effect-conditions.ts').includes('sourceId: effect.id') &&
+      source('../src/modules/mechanical/condition-instances.ts').includes("instance.sourceType === sourceType") &&
+      // Cleanup NUNCA usa condition/label como identidade.
+      !source('../src/modules/mechanical/condition-instances.ts').includes('sourceLabel ==='),
+  );
+  check(
+    'CB40) Conditions do Effect entram/saem nas transações de create/end/group',
+    source('../src/modules/effects/effects.service.ts').includes('applyEffectConditions(row, target.entity, db)') &&
+      source('../src/modules/effects/effects.service.ts').includes('removeEffectConditions(') &&
+      source('../src/modules/effects/effects.service.ts').includes('endEffectsForConcentration(applied.endedConcentration, db)') &&
+      source('../src/modules/effects/effects.service.ts').includes('conditions: row.conditions') &&
+      source('../src/modules/effects/effects.service.ts').includes('endEffectGroup') &&
+      source('../prisma/schema.prisma').includes('conditions Json @default(\"[]\")'),
+  );
+  check(
+    'CB41) UI do Mestre configura Conditions e a origem privada é sanitizada na GRAVAÇÃO',
+    source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('Condições aplicadas') &&
+      source('../client/src/combat/components/MasterEffectsPanel.tsx').includes('conditions,') &&
+      source('../src/modules/effects/effect-conditions.ts').includes("sourceLabel: isPrivate ? 'Efeito' : effect.label") &&
+      source('../src/modules/effects/effects.dto.ts').includes('parseEffectConditions(row.conditions)'),
+  );
+  check(
     'CB38) a Esquiva valida pelo deslocamento EFETIVO (inclui speed-flat dos efeitos)',
     source('../src/modules/dice/dice.service.ts').includes('dodgeBenefitForSave(entity, effectSet?.speedBonus ?? 0)') &&
       source('../src/modules/dice/dice.service.ts').includes('effectiveSpeed(baseSpeed, mechanical, effectSpeedBonus)') &&

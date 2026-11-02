@@ -208,6 +208,7 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
         entity={entity}
         targetName={current.name}
         effects={effectList}
+        conditionLabels={current.effects.labels}
         busy={busy}
         onChanged={reloadEffects}
       />

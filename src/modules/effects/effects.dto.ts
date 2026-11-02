@@ -1,6 +1,11 @@
 import type { EffectInstance } from '@prisma/client';
 import type { MechanicalEntity } from '../shared/conditions.js';
-import { parseEffectModifiers, type EffectModifier } from './effect-modifiers.js';
+import {
+  parseEffectConditions,
+  parseEffectModifiers,
+  type EffectCondition,
+  type EffectModifier,
+} from './effect-modifiers.js';
 import {
   effectEndReasonSchema,
   effectSourceTypeSchema,
@@ -42,6 +47,11 @@ export interface EffectDto {
    * chega ao jogador (o filtro é no servidor), então aqui não há vazamento.
    */
   modifiers: EffectModifier[];
+  /**
+   * Conditions que a instância APLICA no alvo (6.5C). Efeito `private` nem
+   * chega ao jogador, então esta definição também não vaza.
+   */
+  conditions: EffectCondition[];
   createdAt: string;
   createdBy: string | null;
   endedAt: string | null;
@@ -71,6 +81,7 @@ export function toEffectDto(row: EffectInstance): EffectDto {
     visibility: effectVisibilitySchema.catch('private').parse(row.visibility),
     status: effectStatusSchema.catch('ended').parse(row.status),
     modifiers: parseEffectModifiers(row.modifiers),
+    conditions: parseEffectConditions(row.conditions),
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy ?? null,
     endedAt: row.endedAt ? row.endedAt.toISOString() : null,

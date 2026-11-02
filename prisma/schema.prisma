@@ -1111,6 +1111,11 @@ model EffectInstance {
   /// somam, dados formam pool, vantagem/desvantagem são conjuntos de fontes.
   modifiers Json @default("[]")
 
+  /// CONDITIONS que este efeito aplica (6.5C): `["paralyzed"]`. É a DEFINIÇÃO
+  /// do efeito — as instâncias reais vivem em `mechanicalState.conditions[]`
+  /// com `sourceType = 'effect'` e `sourceId = EffectInstance.id`.
+  conditions Json @default("[]")
+
   /// Extensões futuras (detalhes narrativos). Regra mecânica NÃO mora aqui.
   metadata Json @default("{}")
 

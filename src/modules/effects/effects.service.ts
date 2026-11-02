@@ -10,6 +10,7 @@ import {
   emptyEffectModifierSet,
   type EffectModifierSet,
 } from './effect-modifiers.js';
+import { applyEffectConditions, removeEffectConditions, type EffectConditionTarget } from './effect-conditions.js';
 import { effectsVisibleTo, toEffectDto, type EffectDto } from './effects.dto.js';
 import type { CreateEffectInput, EffectEndReason } from './effects.schema.js';
 
@@ -270,9 +271,11 @@ function replayError(): never {
 /**
  * CRIA um efeito manual. Só o Mestre (validado também na rota).
  *
- * Não aplica modificador, Condition, dano, save nem inicia Concentração: só
- * registra a instância. `operationId` torna o retry idempotente — o segundo
- * pedido devolve o snapshot da MESMA instância.
+ * A instância é gravada com os MODIFICADORES (6.5B) e com as CONDITIONS
+ * (6.5C) que ela aplica. As Conditions viram `ConditionInstance` reais no
+ * `mechanicalState` do alvo DENTRO da mesma transação — nunca existe efeito
+ * gravado sem a Condition que ele declara. `operationId` torna o retry
+ * idempotente: o snapshot devolvido NÃO reaplica Condition.
  */
 export async function createEffect(
   actor: EffectActor,
@@ -289,6 +292,9 @@ export async function createEffect(
   const existing = await prisma.effectOperation.findUnique({ where: { operationId: input.operationId } });
   if (existing) return replay(existing);
 
+  // Alvos de grupos encerrados pelo cascade de Concentração (publicados depois
+  // do commit, como no resto do domínio).
+  const endedEffectTargets: MechanicalEntity[] = [];
   let result: { effect: EffectDto; replayed: boolean };
   try {
     result = await prisma.$transaction(async (db) => {
@@ -311,6 +317,7 @@ export async function createEffect(
           ...(source ? { sourceEntityKind: source.entity.kind, sourceEntityId: source.entity.id } : {}),
           sourceLabel,
           modifiers: input.modifiers as unknown as Prisma.InputJsonValue,
+          conditions: input.conditions as unknown as Prisma.InputJsonValue,
           targetEntityKind: target.entity.kind,
           targetEntityId: target.entity.id,
           visibility: input.visibility,
@@ -318,7 +325,23 @@ export async function createEffect(
           createdBy: actor.userId,
         },
       });
-      const effect = toEffectDto(row);
+
+      // CONDITIONS (6.5C) na MESMA transação: nunca existe efeito sem a
+      // Condition que ele declara, nem Condition sem o efeito. O alvo é a
+      // chave CANÔNICA (combatente de personagem → ficha).
+      const applied = await applyEffectConditions(row, target.entity, db);
+      // Incapacitou o ALVO que estava concentrando: encerra a concentração dele
+      // e, se ela mantinha um grupo, encerra o grupo (e as Conditions dele).
+      // Pode ser o MESMO efeito recém-criado (auto-incapacitação) — o fluxo
+      // termina aqui, sem recursão.
+      if (applied.endedConcentration) {
+        endedEffectTargets.push(
+          ...(await endEffectsForConcentration(applied.endedConcentration, db)),
+        );
+      }
+      // Relê: o cascade acima pode ter encerrado este próprio efeito.
+      const fresh = await getEffectById(row.id, db);
+      const effect = toEffectDto(fresh);
       await db.effectOperation.create({
         data: {
           operationId: input.operationId,
@@ -336,7 +359,7 @@ export async function createEffect(
     throw error;
   }
 
-  await publishEffects([result.effect.targetEntity]);
+  await publishEffects([result.effect.targetEntity, ...endedEffectTargets]);
   await appendEffectLog(
     result.effect.targetEntity,
     actor.username,
@@ -388,6 +411,21 @@ export async function endEffect(
     const current = changed.count
       ? await getEffectById(effectId, db)
       : row;
+    // CLEANUP (6.5C): remove só as Conditions com `sourceType='effect'` e
+    // `sourceId` DESTE efeito. Fonte manual, outro efeito e `hp-zero` ficam.
+    await removeEffectConditions(
+      [
+        {
+          id: current.id,
+          target: {
+            kind: current.targetEntityKind as MechanicalEntity['kind'],
+            id: current.targetEntityId,
+          },
+          conditions: current.conditions,
+        },
+      ],
+      db,
+    );
     const effect = toEffectDto(current);
     if (input.operationId) {
       await db.effectOperation.create({
@@ -425,16 +463,32 @@ export async function endEffectGroup(
   groupId: string,
   reason: EffectEndReason = 'group',
   db: Prisma.TransactionClient | typeof prisma = prisma,
+  /** Alvo já carregado pelo chamador (ver `removeEffectConditions`). */
+  context?: EffectConditionTarget,
 ): Promise<MechanicalEntity[]> {
   const rows = await db.effectInstance.findMany({
     where: { groupId, status: 'active' },
-    select: { targetEntityKind: true, targetEntityId: true },
+    select: { id: true, targetEntityKind: true, targetEntityId: true, conditions: true },
   });
   if (rows.length === 0) return [];
   await db.effectInstance.updateMany({
     where: { groupId, status: 'active' },
     data: { status: 'ended', endedAt: new Date(), endReason: reason },
   });
+  // Remove as Conditions de TODAS as instâncias encerradas, agrupadas por alvo
+  // (um lote por alvo, sem N+1 por Condition).
+  await removeEffectConditions(
+    rows.map((row) => ({
+      id: row.id,
+      target: {
+        kind: row.targetEntityKind as MechanicalEntity['kind'],
+        id: row.targetEntityId,
+      },
+      conditions: row.conditions,
+    })),
+    db,
+    context,
+  );
   const seen = new Set<string>();
   const targets: MechanicalEntity[] = [];
   for (const row of rows) {
@@ -459,9 +513,10 @@ export async function endEffectGroup(
 export async function endEffectsForConcentration(
   concentration: { sourceType?: string; sourceId?: string } | null | undefined,
   db: Prisma.TransactionClient | typeof prisma = prisma,
+  context?: EffectConditionTarget,
 ): Promise<MechanicalEntity[]> {
   if (!concentration || concentration.sourceType !== 'effect' || !concentration.sourceId) return [];
-  return endEffectGroup(concentration.sourceId, 'concentration', db);
+  return endEffectGroup(concentration.sourceId, 'concentration', db, context);
 }
 
 /**

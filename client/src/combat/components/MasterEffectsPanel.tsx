@@ -55,18 +55,24 @@ export function MasterEffectsPanel({
   entity,
   targetName,
   effects,
+  conditionLabels,
   busy = false,
   onChanged,
 }: {
   entity: MechanicalEntity;
   targetName: string;
   effects: EffectDto[];
+  /** Rótulos PT-BR do catálogo de Conditions (vem do estado mecânico). */
+  conditionLabels: Record<string, string>;
   busy?: boolean;
   /** Recarrega a lista (o servidor já filtrou pelo papel). */
   onChanged: () => Promise<void>;
 }) {
   const [label, setLabel] = useState('');
   const [visibility, setVisibility] = useState<EffectVisibility>('public');
+  // CONDITIONS aplicadas pelo efeito (6.5C): a Condition REAL nasce no estado
+  // mecânico do alvo; aqui só se declara o que o efeito deve aplicar.
+  const [conditions, setConditions] = useState<string[]>([]);
   const [pending, setPending] = useState<EffectModifierDto[]>([]);
   // Construtor compacto de UM modificador por vez.
   const [kind, setKind] = useState<ModifierKind>('roll-flat');
@@ -144,6 +150,11 @@ export function MasterEffectsPanel({
                 Origem: {effect.sourceLabel ?? (effect.sourceType === 'manual' ? 'Mestre' : effect.sourceType)}
                 {effect.groupId ? ' · grupo' : ''} · {effect.visibility === 'private' ? 'privado' : 'público'}
               </span>
+              {effect.conditions.length > 0 ? (
+                <span className="master-condition-origin" data-effect-conditions>
+                  Condições: {effect.conditions.map((key) => conditionLabels[key] ?? key).join(', ')}
+                </span>
+              ) : null}
               {effect.modifiers.length > 0 ? (
                 <span className="master-condition-origin" data-effect-modifiers>
                   {describeEffectModifiers(effect.modifiers)}
@@ -292,6 +303,27 @@ export function MasterEffectsPanel({
         </ul>
       ) : null}
 
+      <details className="conditions-admin">
+        <summary>
+          Condições aplicadas{conditions.length > 0 ? ` (${conditions.length})` : ''}
+        </summary>
+        <div className="hp-controls">
+          {Object.entries(conditionLabels).map(([key, name]) => (
+            <label key={key} className="field-hint">
+              <input
+                type="checkbox"
+                checked={conditions.includes(key)}
+                onChange={(event) =>
+                  setConditions((list) =>
+                    event.target.checked ? [...list, key] : list.filter((item) => item !== key),
+                  )
+                }
+              />{' '}
+              {name}
+            </label>
+          ))}
+        </div>
+      </details>
       <div className="hp-controls">
         <button
           type="button"
@@ -304,9 +336,11 @@ export function MasterEffectsPanel({
                 target: entity,
                 visibility,
                 modifiers: pending,
+                conditions,
               });
               setLabel('');
               setPending([]);
+              setConditions([]);
             })
           }
         >

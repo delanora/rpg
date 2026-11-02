@@ -216,7 +216,7 @@ export async function noteDamageConcentration(
       },
     ].slice(-100);
     // Vínculo EXPLÍCITO com grupo de efeitos (sourceType 'effect').
-    const endedEffectTargets = await endEffectsForConcentration(concentration, db);
+    const endedEffectTargets = await endEffectsForConcentration(concentration, db, { entity: target.entity, state });
     state.concentration = null;
     state.pendingConcentrationSaves = [];
     await saveConcentrationState(target, state, db);
@@ -317,7 +317,7 @@ export async function resolveConcentrationSave(
   const label = concentration.label;
   // Falha encerra a concentração E o grupo de efeitos que ela mantinha — só
   // quando a concentração declara explicitamente `sourceType: 'effect'`.
-  const endedEffectTargets = success ? [] : await endEffectsForConcentration(concentration, db);
+  const endedEffectTargets = success ? [] : await endEffectsForConcentration(concentration, db, { entity: target.entity, state });
   if (!success) {
     state.concentration = null;
     state.pendingConcentrationSaves = [];

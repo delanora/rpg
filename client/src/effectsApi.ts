@@ -27,6 +27,8 @@ export function createManualEffect(input: {
   target: MechanicalEntity;
   visibility: EffectVisibility;
   modifiers?: EffectModifierDto[];
+  /** Conditions que o efeito aplica (6.5C) — chaves do catálogo PHB. */
+  conditions?: string[];
 }): Promise<EffectDto> {
   return api<{ effect: EffectDto }>('/api/effects', {
     method: 'POST',
