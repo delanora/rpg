@@ -184,6 +184,67 @@ export async function smokeConditions(baseUrl: string, check: Check): Promise<vo
   const dodgePlusAdvantage = deriveSaveEffects(sample(), 'dexterity', ['manual'], [], { dodge: true });
   check('68.U) duas fontes de vantagem continuam vantagem', dodgePlusAdvantage.advantage && !dodgePlusAdvantage.disadvantage);
 
+  // HOTFIX 6.5B.1 — A Esquiva usa o deslocamento EFETIVO, que agora inclui os
+  // modificadores de EFEITO (`speed-flat`). A composição é a MESMA de todo o
+  // domínio: `effectiveSpeed(base, estado, bônusDeEfeito)`.
+  const dodgeSpeedWith = (base: number, state: unknown, effectBonus: number) =>
+    effectiveSpeed(base, state, effectBonus);
+  const dodgeWithEffects = (base: number, state: unknown, effectBonus: number) =>
+    dodgeBenefitAvailable({
+      dodging: true,
+      mechanicalState: state,
+      effectiveSpeed: dodgeSpeedWith(base, state, effectBonus),
+    });
+  check(
+    '68.V) speed-flat que zera o deslocamento INVALIDA a Esquiva (ataque normal)',
+    dodgeSpeedWith(9, sample(), -9) === 0 && !dodgeWithEffects(9, sample(), -9) &&
+      (() => {
+        const mode = conditionAttackMode({}, sample(), false, false, {
+          targetDodging: true,
+          targetSpeed: dodgeSpeedWith(9, sample(), -9),
+        });
+        return !mode.advantage && !mode.disadvantage;
+      })(),
+  );
+  check(
+    '68.W) speed-flat parcial (9 − 6 = 3 m) mantém a Esquiva válida',
+    dodgeSpeedWith(9, sample(), -6) === 3 && dodgeWithEffects(9, sample(), -6) &&
+      conditionAttackMode({}, sample(), false, false, {
+        targetDodging: true,
+        targetSpeed: dodgeSpeedWith(9, sample(), -6),
+      }).disadvantage,
+  );
+  check(
+    '68.X) Grappled zera por ÚLTIMO: bônus de efeito não ressuscita a Esquiva',
+    dodgeSpeedWith(9, sample('grappled'), 100) === 0 &&
+      !dodgeWithEffects(9, sample('grappled'), 3) &&
+      (() => {
+        const mode = conditionAttackMode({}, sample('grappled'), false, false, {
+          targetDodging: true,
+          targetSpeed: dodgeSpeedWith(9, sample('grappled'), 3),
+        });
+        return !mode.advantage && !mode.disadvantage;
+      })(),
+  );
+  check(
+    '68.Y) deslocamento base 0 + efeito +3 m vale 3 m (Esquiva funciona)',
+    dodgeSpeedWith(0, sample(), 3) === 3 && dodgeWithEffects(0, sample(), 3),
+  );
+  check(
+    '68.Z) salvaguarda de Destreza da Esquiva segue o mesmo deslocamento efetivo',
+    deriveSaveEffects(sample(), 'dexterity', [], [], { dodge: dodgeWithEffects(9, sample(), -6) }).advantage &&
+      !deriveSaveEffects(sample(), 'dexterity', [], [], { dodge: dodgeWithEffects(9, sample(), -9) }).advantage,
+  );
+  const proneDodgeInvalid = conditionAttackMode({}, sample('prone'), false, false, {
+    targetDodging: true,
+    targetSpeed: dodgeSpeedWith(9, sample('prone'), -9),
+    attackRanged: false,
+  });
+  check(
+    '68.AA) Caído + Esquiva INVALIDADA por efeito + corpo a corpo = vantagem (composição preservada)',
+    proneDodgeInvalid.advantage && !proneDodgeInvalid.disadvantage,
+  );
+
   const suffix = randomUUID().slice(0, 8), userIds: string[] = [], entityIds: string[] = [];
   let creatureId: string | undefined, npcId: string | undefined, combatId: string | undefined;
   const socket = io(baseUrl, { autoConnect: false, transports: ['websocket'] });

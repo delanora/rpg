@@ -334,12 +334,18 @@ async function rollDeathSave(actor: DiceActor, input: TableRollInput): Promise<D
  *
  * `dodging` mora no estado de TURNO do combatente (`Combatant.turnEconomy`),
  * não no `MechanicalState` da ficha — por isso a busca acontece aqui, e não
- * dentro de `deriveSaveEffects`. O deslocamento usado é o mesmo do combate
- * (`effectiveSpeed` sobre a velocidade base), nunca o movimento restante.
+ * dentro de `deriveSaveEffects`. O deslocamento usado é o MESMO do combate —
+ * `effectiveSpeed(base, estado, bônus de efeito)` —, nunca o movimento restante:
+ * um `speed-flat` que zere a velocidade invalida a Esquiva, e gastar o
+ * movimento do turno NÃO invalida.
  *
  * Fora de combate não existe turno: sem combatente ativo, não há Esquiva.
  */
-async function dodgeBenefitForSave(entity: MechanicalEntity | null): Promise<boolean> {
+async function dodgeBenefitForSave(
+  entity: MechanicalEntity | null,
+  /** Soma dos `speed-flat` dos EFEITOS ativos (6.5B) — já resolvida em lote. */
+  effectSpeedBonus = 0,
+): Promise<boolean> {
   if (!entity || entity.kind === 'creature') return false;
   const combatant = await prisma.combatant.findFirst({
     where: {
@@ -358,7 +364,7 @@ async function dodgeBenefitForSave(entity: MechanicalEntity | null): Promise<boo
   return dodgeBenefitAvailable({
     dodging: economyOf(combatant.turnEconomy).dodging,
     mechanicalState: mechanical,
-    effectiveSpeed: effectiveSpeed(baseSpeed, mechanical),
+    effectiveSpeed: effectiveSpeed(baseSpeed, mechanical, effectSpeedBonus),
   });
 }
 
@@ -542,15 +548,19 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
   // EFEITOS ATIVOS (6.5B): o servidor resolve os modificadores da entidade.
   // Só salvaguarda e teste de habilidade têm escopo aqui (rolagem livre não).
   const effectRollKind = kind === 'save' ? 'save' : kind === 'skill' ? 'check' : null;
-  const effectMods: EffectRollModifiers =
-    entity && effectRollKind
-      ? rollModifiersFor(await effectModifierSetFor(entity), effectRollKind, input.ability)
-      : { bonus: 0, dice: [], advantage: [], disadvantage: [], sources: [] };
+  // UMA leitura de efeitos por rolagem: serve ao modificador da rolagem E à
+  // validade da Esquiva (speed-flat). Nada de segunda consulta.
+  const effectSet = entity && effectRollKind ? await effectModifierSetFor(entity) : null;
+  const effectMods: EffectRollModifiers = effectSet && effectRollKind
+    ? rollModifiersFor(effectSet, effectRollKind, input.ability)
+    : { bonus: 0, dice: [], advantage: [], disadvantage: [], sources: [] };
   const advantages = input.advantage ? ['manual'] : [];
   const disadvantages = input.disadvantage ? ['manual'] : [];
   // Esquiva: só a salvaguarda de Destreza se beneficia, e só com o benefício
   // válido (não Incapacitado, deslocamento efetivo > 0).
-  const dodge = kind === 'save' ? await dodgeBenefitForSave(entity) : false;
+  const dodge = kind === 'save'
+    ? await dodgeBenefitForSave(entity, effectSet?.speedBonus ?? 0)
+    : false;
   const mode = kind === 'save' && input.ability
     ? deriveSaveEffects(state, input.ability, advantages, disadvantages, {
         dodge,
