@@ -12,16 +12,20 @@ import { economyOf, moveDistance } from '../shared/action-economy.js';
 import { registerFatalExhaustion } from '../death/death.service.js';
 import { HP_ZERO_SOURCE } from '../shared/death.js';
 import { CONDITION_LABELS, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
-import { endEffectsForConcentration, publishEffects } from '../effects/effects.service.js';
+import { endEffectsForConcentration, effectModifierSetFor, publishEffects } from '../effects/effects.service.js';
+import {
+  applyConditionInstances,
+  conditionBlockedReason,
+} from './condition-instances.js';
 import type { MechanicalMutationInput } from './mechanical.schema.js';
 
-interface LoadedEntity {
+export interface LoadedEntity {
   entity: MechanicalEntity; name: string; version: number; ownerUserId: string | null;
   state: MechanicalState; baseSpeed: number; baseMaxHp: number; hpCurrent: number;
   combat: { id: string; version: number; status: string; combatantId: string } | null;
 }
 
-async function loadEntity(entity: MechanicalEntity, db: Prisma.TransactionClient = prisma): Promise<LoadedEntity> {
+export async function loadEntity(entity: MechanicalEntity, db: Prisma.TransactionClient = prisma): Promise<LoadedEntity> {
   if (entity.kind === 'character') {
     const row = await db.character.findUnique({ where: { id: entity.id } });
     if (!row) throw new HttpError('Personagem não encontrado.', 404);
@@ -62,10 +66,17 @@ function protectedInstanceIds(state: MechanicalState): string[] {
     .map((instance) => instance.id);
 }
 
-function dto(entity: LoadedEntity) {
+/**
+ * DTO do estado mecânico.
+ *
+ * `effectSpeedBonus` vem do resolvedor central de Effects (6.5B): o deslocamento
+ * EFETIVO mostrado na ficha/combate é o MESMO usado por movimento e Esquiva —
+ * `effectiveSpeed` já aplica multiplicadores e o zero override por último.
+ */
+function dto(entity: LoadedEntity, effectSpeedBonus = 0) {
   const state = entity.state;
   return { entity: entity.entity, name: entity.name, version: entity.version, state,
-    effects: deriveConditionEffects(state), effectiveSpeed: effectiveSpeed(entity.baseSpeed, state),
+    effects: deriveConditionEffects(state), effectiveSpeed: effectiveSpeed(entity.baseSpeed, state, effectSpeedBonus),
     effectiveMaxHp: effectiveMaxHp(entity.baseMaxHp, state), hpCurrent: entity.hpCurrent,
     /** Derivadas do lifecycle de 0 PV: sem remoção manual (ver acima). */
     protectedInstanceIds: protectedInstanceIds(state),
@@ -78,7 +89,7 @@ export async function getMechanicalState(actor: CombatActor, entity: MechanicalE
   if (actor.role !== 'MASTER' && loaded.ownerUserId !== actor.userId) {
     throw new HttpError('Apenas o Mestre ou o dono pode consultar este estado.', 403);
   }
-  return dto(loaded);
+  return dto(loaded, (await effectModifierSetFor(entity)).speedBonus);
 }
 
 function log(state: MechanicalState, actor: CombatActor, message: string): void {
@@ -122,7 +133,10 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
       }
       const state = loaded.state;
       if (input.action === 'apply') {
-        if (input.condition === 'poisoned' && deriveConditionEffects(state).poisonImmune) throw new HttpError('Petrificado: imune a novo envenenamento.', 409, 'CONDITION_IMMUNE');
+        // Regras de bloqueio SEMPRE vêm do helper de domínio, para o Effect
+        // Engine não criar um atalho "porque veio de um efeito".
+        const blocked = conditionBlockedReason(state, input.condition!);
+        if (blocked) throw new HttpError(blocked, 409, 'CONDITION_IMMUNE');
         let sourceLabel = input.sourceLabel;
         if (input.sourceEntity) sourceLabel = (await loadEntity(input.sourceEntity, db)).name;
         // Aplicação MANUAL do Mestre sem fonte escolhida: a instância continua
@@ -132,13 +146,16 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
         if (manual && !sourceLabel) sourceLabel = 'Mestre';
         const sourceType = input.sourceType ?? (manual ? 'manual' : undefined);
         const sourceId = input.sourceId ?? (input.sourceEntity ? input.sourceEntity.id : manual ? input.operationId : undefined);
-        state.conditions.push({ id: randomUUID(), condition: input.condition!, appliedBy: actor.userId, appliedAt: new Date().toISOString(),
-          ...(input.sourceEntity ? { sourceEntity: input.sourceEntity } : {}), ...(sourceLabel ? { sourceLabel } : {}),
-          ...(sourceType ? { sourceType } : {}), ...(sourceId ? { sourceId } : {}) });
+        // Helper compartilhado com o Effect Engine: mesma regra de instância
+        // por fonte e de Queda derivada de Unconscious.
+        applyConditionInstances(
+          state,
+          [input.condition!],
+          { sourceType, sourceId, sourceLabel, sourceEntity: input.sourceEntity },
+          actor.userId,
+        );
         log(state, actor, `${loaded.name} ficou ${CONDITION_LABELS[input.condition!]}${sourceLabel ? ` — ${sourceLabel}` : ''}.`);
         if (input.condition === 'unconscious') {
-          // Queda é postura física independente: continua caído depois de acordar.
-          if (!state.conditions.some(instance => instance.condition === 'prone')) state.conditions.push({ id: randomUUID(), condition: 'prone', sourceType: 'posture', sourceLabel: 'Queda por inconsciência', appliedBy: actor.userId, appliedAt: new Date().toISOString() });
           log(state, actor, `${loaded.name} cai e larga o que estiver segurando. Colocação/manuseio dos objetos devem ser resolvidos manualmente pelo Mestre; inventário não foi movido.`);
         }
       } else if (input.action === 'remove') {
@@ -195,7 +212,11 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
         // Vínculo EXPLÍCITO: concentração que aponta para um grupo de efeitos
         // encerra o grupo. Concentração manual legada (sourceType 'manual') não
         // consulta efeito nenhum.
-        endedEffectTargets.push(...(await endEffectsForConcentration(current, db)));
+        // O cleanup das Conditions do grupo pode cair NESTE mesmo alvo: o
+        // contexto evita reler/regravar a linha no meio da nossa transação.
+        endedEffectTargets.push(
+          ...(await endEffectsForConcentration(current, db, { entity: loaded.entity, state })),
+        );
         state.concentration = null;
         state.pendingConcentrationSaves = [];
       } else if (input.action === 'stand') {
@@ -240,7 +261,9 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
           actor,
           `${loaded.name} perdeu a concentração em ${state.concentration.label} ao ${derived.fatalByExhaustion ? 'ser marcado como morto pela Exaustão' : 'ficar Incapacitado'}.`,
         );
-        endedEffectTargets.push(...(await endEffectsForConcentration(state.concentration, db)));
+        endedEffectTargets.push(
+          ...(await endEffectsForConcentration(state.concentration, db, { entity: loaded.entity, state })),
+        );
         state.concentration = null;
         state.pendingConcentrationSaves = [];
       }
@@ -262,7 +285,7 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
       if (input.action === 'exhaustion' && deriveConditionEffects(state).fatalByExhaustion) {
         await registerFatalExhaustion(input.entity, actor.username, db);
       }
-      const response = dto(await loadEntity(input.entity, db));
+      const response = dto(await loadEntity(input.entity, db), (await effectModifierSetFor(input.entity, db)).speedBonus);
       await db.mechanicalOperation.create({ data: { entityKind: canonical.kind, entityId: canonical.id, operationId: input.operationId, fingerprint, snapshot: response as unknown as Prisma.InputJsonValue } });
       return response;
     }, { timeout: 15000 });

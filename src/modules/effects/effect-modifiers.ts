@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ABILITY_KEYS, ABILITY_LABELS, type AbilityKey } from '../shared/dnd5e.js';
+import { conditionSchema, type Condition } from '../shared/conditions.js';
 
 /**
  * FASE 6.5B — MODIFICADORES MECÂNICOS GENÉRICOS de um Effect.
@@ -68,6 +69,26 @@ export function parseEffectModifiers(value: unknown): EffectModifierList {
   const parsed = effectModifierListSchema.safeParse(value ?? []);
   return parsed.success ? parsed.data : [];
 }
+
+/**
+ * FASE 6.5C — Conditions que ESTE efeito declara aplicar.
+ *
+ * É DEFINIÇÃO da instância de efeito ("este efeito deve aplicar Paralyzed"),
+ * não o estado mecânico real (que vive em `mechanicalState.conditions[]`).
+ * Usa o `conditionSchema` EXISTENTE — nenhum enum paralelo de Conditions.
+ */
+export const MAX_EFFECT_CONDITIONS = 20;
+export const effectConditionListSchema = z.array(conditionSchema).max(MAX_EFFECT_CONDITIONS);
+export type EffectConditionList = z.infer<typeof effectConditionListSchema>;
+
+/** Leitura FECHADA: JSON inválido nunca vira Condition aplicada. */
+export function parseEffectConditions(value: unknown): EffectConditionList {
+  const parsed = effectConditionListSchema.safeParse(value ?? []);
+  return parsed.success ? parsed.data : [];
+}
+
+/** Rótulos PT-BR das Conditions (reexportado para o log do Effect). */
+export type EffectCondition = Condition;
 
 /** Origem de um modificador derivado — mantém rastreabilidade até a instância. */
 export interface EffectModifierSource {

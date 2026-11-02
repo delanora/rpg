@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { entitySchema } from '../shared/conditions.js';
-import { effectModifierListSchema } from './effect-modifiers.js';
+import { effectConditionListSchema, effectModifierListSchema } from './effect-modifiers.js';
 
 /**
  * FASE 6.5A — contrato da Generic Effect Engine (SÓ a fundação).
@@ -77,6 +77,11 @@ export const createEffectSchema = z.object({
    * livre: quantidade, dados e valores têm limites no schema.
    */
   modifiers: effectModifierListSchema.default([]),
+  /**
+   * CONDITIONS que o efeito aplica (6.5C). Só MASTER envia; usa o MESMO
+   * `conditionSchema` do domínio (nada de enum paralelo) e tem limite duro.
+   */
+  conditions: effectConditionListSchema.default([]),
 });
 export type CreateEffectInput = z.infer<typeof createEffectSchema>;
 

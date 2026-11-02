@@ -437,12 +437,14 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.3 0 HP / Death Saves / Stabilization / Instant Death
 - 6.4 Concentration — implementada (PHB 2014: estado, dano → save, fila e
   público/privado de NPC); duração automática continua na 6.7
-- 6.5 Generic Effect Engine — **6.5A (fundação) e 6.5B (modificadores
-  mecânicos) implementadas**: `EffectInstance` em tabela própria, lifecycle
-  criar/encerrar (individual e por grupo), leitura por alvo/fonte, privacidade
-  no servidor, vínculo explícito com Concentração e modificadores tipados que
-  entram nos pipelines reais de ataque/salvaguarda/teste, CA e deslocamento.
-  **NÃO implementadas:** 6.5C (Effect → Condition), 6.5D (cleanup mecânico),
+- 6.5 Generic Effect Engine — **6.5A (fundação), 6.5B (modificadores
+  mecânicos) e 6.5C (Effect → Condition) implementadas**: `EffectInstance` em
+  tabela própria, lifecycle criar/encerrar (individual e por grupo), leitura por
+  alvo/fonte, privacidade no servidor, vínculo explícito com Concentração,
+  modificadores tipados que entram nos pipelines reais de
+  ataque/salvaguarda/teste, CA e deslocamento, e Conditions aplicadas pelo
+  MESMO motor de Conditions (`sourceType = 'effect'`).
+  **NÃO implementadas:** 6.5D (cleanup mecânico avançado/reaplicação),
   6.5E (integração completa com Concentração), 6.5F (visibilidade/realtime
   avançados) e 6.5G (Bless).
 - 6.6 Basic Spell Execution
@@ -590,6 +592,44 @@ de implementar.
   idempotência, isolamento de template, projeção do combatente, log privado, o
   vínculo com Concentração e (6.5B) todos os modificadores.
 
+### Effect → Condition (6.5C)
+
+- **Effect NÃO tem motor próprio de Conditions.** A instância declara
+  `conditions` (`effect_instances.conditions`, JSONB, migration aditiva) — a
+  DEFINIÇÃO — e a criação materializa `ConditionInstance` NORMAIS em
+  `mechanicalState.conditions[]` do alvo, com `sourceType: 'effect'` e
+  `sourceId = EffectInstance.id`. Toda interpretação continua em
+  `deriveConditionEffects` (Paralyzed ⇒ Incapacitated/speed 0/auto-fail,
+  Invisible ⇒ visão, Charmed/Frightened ⇒ charmers/fearSources).
+- Schema em `effect-modifiers.ts` reutiliza o `conditionSchema` real (máx. 20
+  por instância). JSON inválido na leitura vira lista VAZIA.
+- Identidade do cleanup é `sourceType + sourceId` — nunca `label`/`condition`.
+  Duas fontes iguais coexistem; encerrar A preserva B, a Condition MANUAL e as
+  protegidas (`hp-zero`). Remover a Condition na mão NÃO encerra o efeito e o
+  refresh não a reaplica; `endEffect` depois disso continua funcionando.
+- Atomicidade: Effect + Conditions são criados na MESMA transação e o
+  encerramento (individual ou de grupo) remove as Conditions na mesma
+  transação — nunca efeito sem Condition nem Condition órfã. Quando o alvo do
+  cleanup é a MESMA entidade que o chamador está gravando (mutação mecânica,
+  teste de Concentração), o helper recebe o estado em memória
+  (`EffectConditionTarget`) e não relê/regrava a linha — sem conflito de versão.
+- Privacidade: efeito `private` grava `sourceLabel: 'Efeito'` na instância, então
+  o nome secreto não existe em DTO algum; a mecânica (Incapacitado, visão,
+  CA/deslocamento) continua valendo. `sourceEntity` é preservado porque é
+  relação mecânica (Charmed/Frightened), não segredo.
+- Concentração: falha/Incapacitação/0 PV → `endEffectGroup` → Conditions do
+  grupo removidas no mesmo instante. Effect que Incapacita o próprio
+  concentrador encerra a concentração dele e o grupo — o fluxo termina sem
+  recursão. Encerrar uma Condition NUNCA encerra concentração ou efeito.
+- UI: `MasterEffectsPanel` permite marcar Conditions (multi-select compacto) na
+  criação manual e mostra `Condições:` nas instâncias ativas; o PLAYER continua
+  vendo Conditions somente na área de Conditions do motor atual.
+- `smoke-effect-conditions.ts` cobre create/derive/end, múltiplas fontes, manual
+  + efeito, grupo, Concentração (falha e auto-incapacitação), privacidade,
+  combatente de personagem, isolamento de NPC, 0 PV protegido, remoção manual,
+  retry, encerramento concorrente, Charmed/Frightened/Invisible e a interação
+  com modificadores/Esquiva.
+
 ### Modificadores de Effect (6.5B)
 
 - **O pipeline nunca conhece nome de magia/feature.** Ele lê só modificadores
@@ -717,7 +757,9 @@ Longo (Long Rest):
 **Não existe conversão global automática de once/day para Long Rest.** Para
 qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
-> Migrations: **44** (a 6.5A adicionou `effect_instances` + `effect_operations`).
+> Migrations: **51** (são 51 diretórios em `prisma/migrations`; a 6.5A criou
+> `effect_instances` + `effect_operations`, a 6.5B acrescentou `modifiers` e a
+> 6.5C, `conditions`).
 > Os hashes acima são o estado no momento em que este arquivo
 > foi escrito — confirme com `git log` antes de assumir.
 

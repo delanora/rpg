@@ -1714,11 +1714,6 @@ select option {
   box-shadow: none;
 }
 
-/* Sem a moldura da seção, a hairline interna sobrando viraria moldura dupla. */
-.vitals-embedded.sheet-section::after {
-  content: none;
-}
-
 /* O título "Vida e Defesa" saiu: o bloco de vida já diz o que é. */
 .vitals-embedded > .section-header {
   display: none;
@@ -1874,15 +1869,6 @@ select option {
   box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
   overflow: hidden;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.sheet-section::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 1px solid var(--gold-hair);
-  border-radius: 3px;
-  pointer-events: none;
 }
 
 /* Mesma altura, respiro e alinhamento em TODAS as seções da ficha. */
@@ -9279,15 +9265,6 @@ input[type='checkbox']:focus-visible,
   box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
 
-.wizard-body::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 1px solid var(--gold-hair);
-  border-radius: 3px;
-  pointer-events: none;
-}
-
 .wizard-body h2 {
   font-size: 1.2rem;
   color: var(--wine);
@@ -15458,10 +15435,6 @@ input[type='checkbox']:focus-visible,
 
 .item-editor .sheet-section {
   border-color: var(--line);
-}
-
-.item-editor .sheet-section::after {
-  display: none;
 }
 
 .item-editor .section-body {
