@@ -417,11 +417,16 @@ export function useDiceRoller(user: SessionUser) {
     // começo da própria rolagem. Dois pedidos paralelos (anúncio + rolagem)
     // podiam chegar fora de ordem e o anúncio apagava o resultado recém-chegado
     // no tabuleiro de quem assiste — o dado ficava na tela sem total.
+    // Concentração: o modo da rolagem é derivado no SERVIDOR (Constituição +
+    // condições/exaustão). Não mandamos vantagem/desvantagem da bandeja — o
+    // servidor as ignoraria de qualquer forma.
+    const sendRollMode = context?.kind !== 'concentration';
+
     try {
       const roll = await rollTableDice({
         dice: pool.map((die) => ({ sides: die.sides })),
-        advantage,
-        disadvantage,
+        advantage: sendRollMode && advantage,
+        disadvantage: sendRollMode && disadvantage,
         bonus: context?.bonus ?? 0,
         label: context?.label ?? '',
         kind: context?.kind ?? 'free',

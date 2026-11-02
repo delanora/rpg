@@ -31,8 +31,7 @@ export type ConcentrationState = z.infer<typeof concentrationStateSchema>;
  * Teste de concentração PENDENTE, derivado de UM evento de dano.
  *
  * Fica no estado (persistido) — não em React, não em memória do processo: um
- * refresh/reconnect mantém a pendência. `eventId` vem do evento de dano, então
- * repetir a mesma operação não cria um segundo teste.
+ * refresh/reconnect mantém a pendência.
  */
 export const concentrationSaveSchema = z.object({
   id: z.string().min(1),
@@ -42,7 +41,16 @@ export const concentrationSaveSchema = z.object({
   dc: z.number().int().min(10),
   /** Dano FINAL recebido no evento (0 nunca gera pendência). */
   damage: z.number().int().nonnegative(),
-  /** Id do evento de dano — idempotência contra retry/republicação. */
+  /**
+   * Id do evento de DANO que originou a pendência (operação de ataque, ajuste
+   * de PV...). É recebido de quem aplicou o dano — nunca gerado pelo hook de
+   * concentração — e serve de rastreabilidade.
+   *
+   * A deduplicação em voo é por `concentrationId + eventId` (a mesma pendência
+   * não nasce duas vezes). A garantia de que o dano só acontece uma vez
+   * continua na operação de dano (`operationId`); este campo não substitui
+   * esse sistema.
+   */
   eventId: z.string().min(1),
   sourceName: z.string().max(80).optional(),
   at: z.string(),

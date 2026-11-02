@@ -282,22 +282,28 @@ export function DiceDock({ roller }: DiceDockProps) {
                 </div>
 
                 <div className="dice-controls">
-                  <label className="dice-toggle">
-                    <input
-                      type="checkbox"
-                      checked={advantage}
-                      onChange={(event) => setAdvantage(event.target.checked)}
-                    />
-                    Vantagem
-                  </label>
-                  <label className="dice-toggle">
-                    <input
-                      type="checkbox"
-                      checked={disadvantage}
-                      onChange={(event) => setDisadvantage(event.target.checked)}
-                    />
-                    Desvantagem
-                  </label>
+                  {/* No teste de concentração o modo é do SERVIDOR (Constituição
+                      + condições/exaustão): os toggles não teriam efeito. */}
+                  {context?.kind === 'concentration' ? null : (
+                    <>
+                      <label className="dice-toggle">
+                        <input
+                          type="checkbox"
+                          checked={advantage}
+                          onChange={(event) => setAdvantage(event.target.checked)}
+                        />
+                        Vantagem
+                      </label>
+                      <label className="dice-toggle">
+                        <input
+                          type="checkbox"
+                          checked={disadvantage}
+                          onChange={(event) => setDisadvantage(event.target.checked)}
+                        />
+                        Desvantagem
+                      </label>
+                    </>
+                  )}
                   {isMaster ? (
                     <label
                       className="dice-toggle"

@@ -850,11 +850,16 @@ console.log('Check-combat-ui — refino da UI de combate');
       !/CONDITION_LABELS[\s\S]{0,400}concentration/.test(sharedConditions),
   );
   check(
-    'CB27) CD = max(10, floor(dano / 2)) e o dano usado é o FINAL',
+    'CB27) CD = max(10, floor(dano / 2)), o dano é o FINAL e o eventId vem do evento',
     concentrationShared.includes('return Math.max(10, Math.floor(Math.max(0, damage) / 2));') &&
       concentrationService.includes('const dc = concentrationDc(damage);') &&
-      combatService.includes('noteDamageConcentration(entity, total, db, attacker.name)') &&
-      combatService.includes('noteDamageConcentration(entity, input.amount, db, actor.username)'),
+      // O dano passado é o FINAL (total do ataque / amount do ajuste) e o id do
+      // evento vem do chamador — nunca gerado dentro do hook de concentração.
+      combatService.includes('noteDamageConcentration(entity, total, db, {') &&
+      combatService.includes('eventId: input.operationId') &&
+      combatService.includes('noteDamageConcentration(entity, input.amount, db, {') &&
+      combatService.includes('eventId: damageEventId') &&
+      !concentrationService.includes('eventId: randomUUID()'),
   );
   check(
     'CB28) uma pendência por evento, fila preservada e Incapacitado/0 PV encerram SEM save',

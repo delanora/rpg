@@ -1721,7 +1721,13 @@ export async function resolveAttack(
           // CONCENTRAÇÃO (PHB 2014): UM teste por evento de dano, com o dano
           // FINAL de todos os componentes. Se o dano já deixou a criatura
           // Inconsciente/Incapacitada, a concentração termina sem teste.
-          const concentration = await noteDamageConcentration(entity, total, db, attacker.name);
+          // O evento de dano É a operação de ataque (uma resolução, um hit):
+          // usar o `operationId` dela mantém a identidade real do evento, e o
+          // retry idempotente devolve o snapshot sem gerar outro teste.
+          const concentration = await noteDamageConcentration(entity, total, db, {
+            eventId: input.operationId,
+            sourceName: attacker.name,
+          });
           if (concentration.changed) concentrationTargets.push(entity);
         }
       }
@@ -2043,6 +2049,11 @@ export async function applyManualHp(
   if (!combatant) throw new HttpError('Combatente não encontrado.', 404);
 
   const delta = input.mode === 'damage' ? -input.amount : input.amount;
+  // O ajuste manual é UM evento de dano, identificado no momento em que ele
+  // nasce (aqui), não dentro do hook de concentração. O ajuste ainda não é uma
+  // operação idempotente por `operationId` (não há retry automático): cada
+  // pedido é um evento novo, com id próprio.
+  const damageEventId = randomUUID();
   const publications = new Set<string>();
   const deathTargets: MechanicalEntity[] = [];
   const concentrationTargets: MechanicalEntity[] = [];
@@ -2069,7 +2080,10 @@ export async function applyManualHp(
       // O ajuste manual do Mestre é um EVENTO de dano como outro qualquer:
       // gera UM teste de concentração com o dano final aplicado.
       if (delta < 0) {
-        const concentration = await noteDamageConcentration(entity, input.amount, db, actor.username);
+        const concentration = await noteDamageConcentration(entity, input.amount, db, {
+          eventId: damageEventId,
+          sourceName: actor.username,
+        });
         if (concentration.changed) concentrationTargets.push(entity);
       }
     }

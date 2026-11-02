@@ -155,12 +155,30 @@ export async function concentrationSaveBonus(
 }
 
 /**
+ * Identidade do EVENTO DE DANO que originou o dano.
+ *
+ * Quem aplica o dano é dono do id — a pendência de concentração apenas o
+ * GUARDA. Nada de `randomUUID()` aqui dentro: um retry da mesma operação (ex.:
+ * reenvio do ataque com o mesmo `operationId`) precisa carregar o MESMO id,
+ * senão a deduplicação vira ficção.
+ */
+export interface ConcentrationDamageEvent {
+  /** Id do evento que aplicou o dano (operação de ataque, ajuste de PV...). */
+  eventId: string;
+  /** Nome visível de quem causou o dano (só para o registro). */
+  sourceName?: string;
+}
+
+/**
  * DANO → PENDÊNCIA de teste de concentração.
  *
  * Regras aplicadas (PHB 2014):
  *  • dano FINAL 0 não gera teste;
  *  • o evento inteiro (todos os componentes) vira UM teste, com o dano total;
  *  • cada evento separado gera a PRÓPRIA pendência (a lista nunca é sobrescrita);
+ *  • o MESMO evento (mesma `concentrationId` + mesmo `eventId`) não cria uma
+ *    segunda pendência — a barreira final de idempotência continua sendo a
+ *    operação de dano, que já só é aplicada uma vez;
  *  • se o dano deixou a criatura Incapacitada/Inconsciente, a concentração
  *    termina na hora e NÃO se pede teste depois.
  */
@@ -168,11 +186,13 @@ export async function noteDamageConcentration(
   entity: MechanicalEntity,
   damage: number,
   db: Prisma.TransactionClient,
-  sourceName?: string,
+  event: ConcentrationDamageEvent,
 ): Promise<{ changed: boolean; ended: boolean; dc: number | null }> {
   const target = await loadConcentrationTarget(entity, db);
   const state = target.state;
-  if (!state.concentration) return { changed: false, ended: false, dc: null };
+  const sourceName = event.sourceName;
+  const concentration = state.concentration;
+  if (!concentration) return { changed: false, ended: false, dc: null };
 
   // Incapacitado (Inconsciente/Paralisado/Atordoado/Petrificado) ou já a 0 PV:
   // a concentração acaba SEM teste — inclusive quando o dano foi morte
@@ -184,7 +204,7 @@ export async function noteDamageConcentration(
       {
         id: randomUUID(),
         actorName: sourceName ?? 'Sistema',
-        message: `${target.name} perdeu a concentração em ${state.concentration.label} ao ${zeroHp ? 'chegar a 0 PV' : 'ficar Incapacitado'}.`,
+        message: `${target.name} perdeu a concentração em ${concentration.label} ao ${zeroHp ? 'chegar a 0 PV' : 'ficar Incapacitado'}.`,
         at: new Date().toISOString(),
       },
     ].slice(-100);
@@ -196,14 +216,21 @@ export async function noteDamageConcentration(
 
   if (damage <= 0) return { changed: false, ended: false, dc: null };
 
+  // Mesmo evento já pendente NESTA concentração: nada muda. O escopo é
+  // `concentrationId + eventId` — um id antigo nunca atinge a concentração nova.
+  const duplicated = state.pendingConcentrationSaves.some(
+    (item) => item.concentrationId === concentration.id && item.eventId === event.eventId,
+  );
+  if (duplicated) return { changed: false, ended: false, dc: null };
+
   const dc = concentrationDc(damage);
   const save: ConcentrationSave = {
     id: randomUUID(),
-    concentrationId: state.concentration.id,
+    concentrationId: concentration.id,
     dc,
     damage,
-    // Id do evento de dano: repúblicações/retries não duplicam o teste.
-    eventId: randomUUID(),
+    // Id REAL do evento de dano (veio do chamador, nunca gerado aqui).
+    eventId: event.eventId,
     ...(sourceName ? { sourceName } : {}),
     at: new Date().toISOString(),
   };
@@ -213,7 +240,7 @@ export async function noteDamageConcentration(
     {
       id: randomUUID(),
       actorName: sourceName ?? 'Sistema',
-      message: `${target.name} sofreu ${damage} de dano concentrando em ${state.concentration.label}: teste de Constituição CD ${dc} pendente.`,
+      message: `${target.name} sofreu ${damage} de dano concentrando em ${concentration.label}: teste de Constituição CD ${dc} pendente.`,
       at: new Date().toISOString(),
     },
   ].slice(-100);

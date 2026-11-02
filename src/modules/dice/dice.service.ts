@@ -398,6 +398,12 @@ async function publishConcentrationChange(
  * ficha), do modo de rolagem (Condições + fontes) e do CD — o cliente manda só
  * o ID da pendência. A bandeja existente mostra “Concentração (Constituição) —
  * CD X”; nada de segunda bandeja nem de `rollConcentration()` paralelo.
+ *
+ * `advantage`/`disadvantage` do corpo da requisição são IGNORADOS: eles são a
+ * escolha do cliente para rolagens livres, não uma fonte mecânica. Confiar
+ * neles deixaria qualquer cliente adulterado pedir vantagem num teste de
+ * Constituição. As fontes abaixo são só server-side (hoje nenhuma feature
+ * concede vantagem em Concentração; War Caster, quando existir, entra AQUI).
  */
 async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
   const entity = input.entity;
@@ -419,12 +425,14 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
   const privateRoll = actor.role === 'MASTER' && input.visibility === 'private';
   const combatId = target.combat?.id ?? null;
 
-  // Mesmas regras de vantagem/desvantagem de qualquer salvaguarda.
+  // Mesmas regras de vantagem/desvantagem de qualquer salvaguarda — mas as
+  // fontes extras vêm SÓ do servidor. `input.advantage`/`input.disadvantage`
+  // não entram na conta (ver comentário da função).
   const mode = deriveSaveEffects(
     target.state,
     'constitution',
-    input.advantage ? ['manual'] : [],
-    input.disadvantage ? ['manual'] : [],
+    [], // concentração: nenhuma fonte de vantagem concedida ainda
+    [], // desvantagem real (Exaustão 3+) é derivada DENTRO do estado
   );
   const bonus = await concentrationSaveBonus(entity);
   const dice = mode.autoFail ? [] : rollGroup(20, mode.advantage, mode.disadvantage);
