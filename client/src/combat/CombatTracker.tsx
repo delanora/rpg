@@ -56,6 +56,8 @@ interface CombatTrackerProps {
   log: CombatLogEntry[];
   user: SessionUser;
   turnAlert: TurnAlert | null;
+  /** Contador de `effects:updated` (efeitos vêm de tabela própria, não da ficha). */
+  effectsRefresh?: number;
   /** Ataques do próprio personagem (fluxo do jogador). */
   characterAttacks?: Attack[];
   /** Dados de Ataque Furtivo do próprio personagem (ex.: "2d6"). */
@@ -119,6 +121,7 @@ export function CombatTracker({
   log,
   user,
   turnAlert,
+  effectsRefresh = 0,
   characterAttacks = [],
   sneakAttackExpression = null,
   sneakAttackFor,
@@ -837,6 +840,7 @@ export function CombatTracker({
                 <MechanicalPanel
                   entity={{ kind: 'combatant', id: actingCombatant.id }}
                   refreshVersion={combat.version}
+                  effectsRefresh={effectsRefresh}
                   sourceChoices={combat.combatants.map((item) => ({
                     entity: { kind: 'combatant' as const, id: item.id },
                     name: item.name,

@@ -74,6 +74,8 @@ interface SheetViewProps {
    * Exaustão desaparece — o valor salvo na ficha continua intacto.
    */
   exhaustionEnabled?: boolean;
+  /** Contador de `effects:updated` — efeitos têm tabela própria e não mudam a versão da ficha. */
+  effectsRefresh?: number;
   /** Destinos possíveis de uma transferência de moedas (outros jogadores). */
   coinTargets?: TransferTarget[];
   /** Adota a ficha devolvida por uma ação de moedas (gastar/trocar/transferir). */
@@ -156,6 +158,7 @@ export function SheetView({
   onRacialUse,
   extraCoins = false,
   exhaustionEnabled = true,
+  effectsRefresh = 0,
   coinTargets,
   onCoinsChange,
   onRollSkill,
@@ -196,6 +199,7 @@ export function SheetView({
               <MechanicalPanel
                 entity={{ kind: 'character', id: character.id }}
                 refreshVersion={character.version}
+                effectsRefresh={effectsRefresh}
                 exhaustionEnabled={exhaustionEnabled}
                 variant="sheet"
               />

@@ -1044,3 +1044,91 @@ model MechanicalOperation {
   @@unique([entityKind, entityId, operationId])
   @@map("mechanical_operations")
 }
+
+// -----------------------------------------------------------------------------
+// Fase 6.5A — Generic Effect Engine (FUNDAÇÃO)
+// -----------------------------------------------------------------------------
+
+/// INSTÂNCIA de um efeito: "uma origem mecânica está produzindo consequências
+/// sobre UM alvo".
+///
+/// NÃO é Condition, NÃO é Concentração e NÃO é magia: é só o registro de que
+/// algo está ativo. Nesta fase a instância NÃO aplica modificadores, Conditions
+/// nem duração — a engine de modificadores (6.5B) e a de Conditions (6.5C)
+/// consumirão esta tabela.
+///
+/// Tabela própria (e não JSON dentro de `mechanicalState`) porque as consultas
+/// são por ALVO, por FONTE e por GRUPO, e o volume cresce com magias/auras.
+/// O alvo/fonte usam a chave polimórfica `kind + id` (Character | Creature |
+/// Combatant), como o resto do domínio mecânico. Personagem em combate é sempre
+/// gravado na FICHA (`character`), nunca duplicado no combatente.
+///
+/// Três eixos de identidade, de propósito:
+///  • `id` — esta instância;
+///  • `groupId` — a MESMA aplicação em vários alvos (Bless em três pessoas);
+///  • `definitionId` — o que o efeito É (ex.: spell.bless), separado do rótulo.
+model EffectInstance {
+  id String @id @default(cuid())
+
+  /// Aplicação que originou este efeito (várias instâncias do mesmo grupo).
+  groupId String?
+  /// Identificador MECÂNICO do efeito (ex.: spell.bless). O `label` é só exibição.
+  definitionId String?
+
+  /// Nome humano ("Bless", "Rage", "Efeito de teste"). NUNCA decide regra.
+  label String
+
+  /// `manual` | `spell` | `feature` | `item` | `condition` | `system`.
+  /// String (não enum do banco) para a engine crescer sem migration a cada fonte.
+  sourceType String @default("manual")
+  /// Id lógico da origem (cast id, item usado, feature...). Opcional.
+  sourceId String?
+  /// Entidade responsável pelo efeito (Cleric que lançou Bless). Opcional.
+  sourceEntityKind String?
+  sourceEntityId   String?
+  /// Origem legível gravada no servidor ("Mestre", nome da criatura).
+  sourceLabel String?
+
+  /// Alvo — UM por instância (PHB: remoção/dispel/privacidade por alvo).
+  targetEntityKind String
+  targetEntityId   String
+
+  /// `public` (o jogador-alvo vê) ou `private` (só o Mestre). Filtrado no DTO.
+  visibility String @default("public")
+  /// `active` | `ended`. Encerrado continua no banco para auditoria/histórico.
+  status String @default("active")
+
+  createdAt DateTime @default(now())
+  /// Usuário (do token) que criou a instância.
+  createdBy String?
+  endedAt   DateTime?
+  /// `manual` | `group` | `concentration` | `duration` | `dispel` |
+  /// `source-ended` | `target-invalid` | `replaced` | `system`.
+  endReason String?
+
+  /// Extensões futuras (detalhes narrativos). Regra mecânica NÃO mora aqui.
+  metadata Json @default("{}")
+
+  @@index([targetEntityKind, targetEntityId, status])
+  @@index([sourceEntityKind, sourceEntityId, status])
+  @@index([groupId])
+  @@index([sourceId])
+  @@map("effect_instances")
+}
+
+/// Idempotência das criações de efeito (mesmo padrão de `MechanicalOperation`).
+///
+/// `operationId` é único: dois pedidos iguais (retry, duplo clique) devolvem o
+/// snapshot da MESMA instância em vez de criar outra. Encerramento não precisa
+/// desta tabela: marcar ENDED duas vezes é o mesmo estado (o primeiro
+/// `endedAt`/`endReason` é preservado).
+model EffectOperation {
+  id          String   @id @default(cuid())
+  operationId String   @unique
+  kind        String
+  fingerprint String
+  snapshot    Json
+  createdAt   DateTime @default(now())
+
+  @@map("effect_operations")
+}

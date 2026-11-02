@@ -2716,3 +2716,48 @@ export interface MechanicalDto {
   combat: { id: string; version: number; status: string } | null;
 }
 export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }
+
+/**
+ * FASE 6.5A — Generic Effect Engine (fundação).
+ *
+ * `EffectInstance` registra que uma origem produz consequências sobre UM alvo.
+ * NÃO é Condition e NÃO é Concentração: tem identidade (`id`), grupo de
+ * aplicação (`groupId`), definição mecânica (`definitionId`) e rótulo humano.
+ */
+export type EffectSourceType = 'manual' | 'spell' | 'feature' | 'item' | 'condition' | 'system';
+export type EffectStatus = 'active' | 'ended';
+export type EffectVisibility = 'public' | 'private';
+export type EffectEndReason =
+  | 'manual'
+  | 'group'
+  | 'concentration'
+  | 'duration'
+  | 'dispel'
+  | 'source-ended'
+  | 'target-invalid'
+  | 'replaced'
+  | 'system';
+
+export interface EffectDto {
+  id: string;
+  groupId: string | null;
+  definitionId: string | null;
+  label: string;
+  sourceType: EffectSourceType;
+  sourceId: string | null;
+  sourceEntity: MechanicalEntity | null;
+  sourceLabel: string | null;
+  targetEntity: MechanicalEntity;
+  visibility: EffectVisibility;
+  status: EffectStatus;
+  createdAt: string;
+  createdBy: string | null;
+  endedAt: string | null;
+  endReason: EffectEndReason | null;
+}
+
+/** Efeitos ativos de um alvo (o servidor já filtrou o que o papel pode ver). */
+export interface EffectsUpdatedPayload {
+  entity: MechanicalEntity;
+  effects: EffectDto[];
+}

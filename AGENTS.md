@@ -437,7 +437,12 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.3 0 HP / Death Saves / Stabilization / Instant Death
 - 6.4 Concentration — implementada (PHB 2014: estado, dano → save, fila e
   público/privado de NPC); duração automática continua na 6.7
-- 6.5 Generic Effect Engine
+- 6.5 Generic Effect Engine — **6.5A (fundação) implementada**: `EffectInstance`
+  em tabela própria, lifecycle criar/encerrar (individual e por grupo), leitura
+  por alvo/fonte, privacidade no servidor e vínculo explícito com Concentração.
+  **NÃO implementadas:** 6.5B (modificadores), 6.5C (Effect → Condition), 6.5D
+  (cleanup mecânico), 6.5E (integração completa com Concentração), 6.5F
+  (visibilidade/realtime avançados) e 6.5G (Bless)
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
@@ -537,6 +542,46 @@ de implementar.
   tipado. Publicação só após commit. `smoke-conditions.ts` integra o smoke; a
   limpeza de combates do teste se limita aos IDs criados pela própria execução.
 
+### Effects genéricos (6.5A)
+
+- **Effect NÃO é Condition, NÃO é Concentração, NÃO é magia.** É o registro de
+  que uma origem mecânica está produzindo consequências sobre UM alvo.
+  `EffectInstance` vive em **tabela própria** (`effect_instances`), não no
+  `mechanicalState`: as consultas são por alvo, por fonte e por grupo, e o
+  volume cresce com spells/auras. `mechanicalState` continua dono de Conditions,
+  Exaustão, Concentração e do log mecânico.
+- Identidade em três eixos: `id` (a instância), `groupId` (a MESMA aplicação em
+  vários alvos — Bless em três pessoas) e `definitionId` ("spell.bless"). O
+  `label` é exibição e NUNCA decide regra. `endReason`/`endedAt` guardam o fim.
+- Alvo/fonte usam a chave polimórfica `kind + id` (character | creature |
+  combatant). **Combatente de personagem é canonicalizado para a FICHA**: a
+  instância é uma só e o combatente apenas projeta (`GET /api/effects/combatant/:id`
+  devolve a mesma linha do personagem). Criatura/NPC em combate usa o id da
+  INSTÂNCIA — duas cópias do mesmo template não compartilham efeito e o template
+  nunca é alterado.
+- API: `/api/effects` (POST manual, só MASTER), `/api/effects/:id/end` (só
+  MASTER, idempotente por estado — encerrar duas vezes mantém o primeiro
+  `endedAt`), `GET /api/effects/:kind/:id` (MASTER vê tudo; PLAYER só o próprio
+  personagem e só `public`). `endEffectGroup(groupId)` é helper de domínio para
+  Concentração/dispel futuros.
+- Privacidade: `visibility = public | private`, filtrada em `effectsVisibleTo`
+  no SERVIDOR. O dono recebe só `public` em `effects:updated`; os Mestres
+  recebem tudo. `metadata` fica fora do DTO nesta fase.
+- Idempotência: `EffectOperation.operationId` único devolve o snapshot da mesma
+  instância (payload diferente → 409 `IDEMPOTENCY_KEY_REUSED`). Encerramento não
+  registra operação porque o estado final já é idempotente.
+- Concentração → grupo: só quando a concentração declara `sourceType: 'effect'`
+  e `sourceId = groupId`. Encerrar a concentração (voluntário, Incapacitado, 0 PV
+  ou falha no save) encerra o grupo. Concentração manual legada continua sem
+  consultar efeito nenhum. Efeito terminar NÃO encerra concentração.
+- Nada de bônus, +1d4, CA, deslocamento, resistência, Condition automática ou
+  duração: isso pertence a 6.5B/C e 6.7. O log mínimo usa o Registro do combate
+  (`economyLog`, ação `effect`) e entrada privada não chega ao PLAYER; fora de
+  combate não há Registro persistente (limitação conhecida).
+- `smoke-effects.ts` cobre criação/privacidade/permissão, alvo por alvo, grupo,
+  idempotência, isolamento de template, projeção do combatente, log privado e o
+  vínculo com Concentração.
+
 ### Concentração (6.4)
 
 - Concentração NÃO é Condition: `mechanicalState.concentration` guarda
@@ -623,7 +668,8 @@ Longo (Long Rest):
 **Não existe conversão global automática de once/day para Long Rest.** Para
 qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
-> Migrations: **43**. Os hashes acima são o estado no momento em que este arquivo
+> Migrations: **44** (a 6.5A adicionou `effect_instances` + `effect_operations`).
+> Os hashes acima são o estado no momento em que este arquivo
 > foi escrito — confirme com `git log` antes de assumir.
 
 ### Lacunas conhecidas (não são bugs, são fases futuras)
