@@ -32,7 +32,14 @@ import {
   type EffectRollModifiers,
 } from '../effects/effect-modifiers.js';
 import { rollSelectedOptional } from './effect-optional.js';
-import type { AbilityKey } from '../shared/dnd5e.js';
+import {
+  loadPendingEffectSaveForRoll,
+  publishHoldPersonResult,
+  resolvePendingEffectSave,
+} from '../effects/hold-person.service.js';
+import { savingThrowBonus } from '../shared/saving-throws.js';
+import { loadEntity } from '../mechanical/mechanical.service.js';
+import { ABILITY_LABELS, type AbilityKey } from '../shared/dnd5e.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
@@ -589,6 +596,110 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
   return roll;
 }
 
+/**
+ * FASE 6.5H — SALVAGUARDA de uma aplicação de efeito pendente.
+ *
+ * Mesmo pipeline de qualquer save: o SERVIDOR rola, calcula o bônus e aplica as
+ * fontes mecânicas existentes (Condições, Exaustão, Esquiva e modificadores de
+ * Effect). O que vem da pendência é a AUTORIDADE: atributo e CD. O cliente só
+ * envia o id — nunca atributo, bônus, CD, dados ou resultado.
+ *
+ * `optionalModifiers` (ex.: Bless +1d4) também passam pela revalidação normal,
+ * então o segundo efeito real compõe com o primeiro sem que este módulo
+ * conheça nenhum dos dois.
+ */
+async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
+  if (!input.pendingEffectSaveId) {
+    throw new HttpError('Informe a salvaguarda pendente.', 400, 'VALIDATION_ERROR');
+  }
+  const { pending, targetEntity } = await loadPendingEffectSaveForRoll(
+    actor,
+    input.pendingEffectSaveId,
+  );
+  const ability = pending.ability;
+  const loaded = await loadEntity(targetEntity);
+  // Salvaguarda de criatura/NPC: visibilidade escolhida pelo Mestre AO ROLAR.
+  const privateRoll = actor.role === 'MASTER' && input.visibility === 'private';
+
+  const effectMods = rollModifiersFor(await effectModifierSetFor(targetEntity), 'save', ability);
+  // Vantagem/desvantagem: só fontes server-side (Condições + Effects). O
+  // `advantage`/`disadvantage` do corpo é escolha de rolagem livre, não vale aqui.
+  const mode = deriveSaveEffects(loaded.state, ability, [], [], {
+    effects: { advantage: effectMods.advantage, disadvantage: effectMods.disadvantage },
+  });
+  const optionalEffects = rollSelectedOptional(
+    effectMods,
+    input.selectedEffectModifiers,
+    mode.autoFail,
+  );
+
+  const baseBonus = await savingThrowBonus(targetEntity, ability);
+  const effectBonus = mode.autoFail ? 0 : effectMods.bonus + optionalEffects.bonus;
+  const bonus = baseBonus + effectBonus;
+  const effectDice = mode.autoFail
+    ? []
+    : [
+        ...effectMods.dice.flatMap((modifier) =>
+          Array.from({ length: modifier.count }, () => ({
+            sides: modifier.sides,
+            value: rollDie(modifier.sides),
+            sign: modifier.sign,
+            label: publicEffectLabel(modifier.source),
+          })),
+        ),
+        ...optionalEffects.dice.map(({ sides, value, sign, label }) => ({
+          sides,
+          value,
+          sign,
+          label,
+        })),
+      ];
+  const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
+  // O pool do cliente é ignorado: a pendência fixa UM d20 (ou dois com
+  // vantagem/desvantagem), sempre rolado pelo servidor.
+  const dice = mode.autoFail ? [] : rollGroup(20, mode.advantage, mode.disadvantage);
+  const kept = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
+  const total = mode.autoFail ? 0 : kept + bonus + effectDiceTotal;
+
+  const outcome = await resolvePendingEffectSave(pending.id, total, actor.displayName);
+  // Pendência resolvida + Paralyzed/Effect/Concentração publicados pelo
+  // lifecycle existente quando houve falha.
+  await publishHoldPersonResult(outcome, actor.username);
+
+  const roll: DiceRollDto = {
+    id: randomUUID(),
+    actorUserId: actor.userId,
+    clientId: input.clientId ?? null,
+    actorName: loaded.name,
+    kind: 'save',
+    ...(mode.autoFail ? { autoFail: true } : {}),
+    label: `${pending.label} — Salvaguarda de ${ABILITY_LABELS[ability]} (CD ${pending.dc})`,
+    dice,
+    bonus,
+    total,
+    advantage: mode.advantage,
+    disadvantage: mode.disadvantage,
+    ...(effectBonus !== 0 || effectDice.length > 0
+      ? {
+          effectModifiers: {
+            bonus: effectBonus,
+            dice: effectDice.map(({ sides, value, sign, label }) => ({ sides, value, sign, label })),
+            sources: rollModifierSourceLabels(effectMods),
+          },
+        }
+      : {}),
+    isPrivate: privateRoll,
+    ...(privateRoll ? { audience: 'masters' as const } : {}),
+    crit: dice.some((die) => die.sides === 20 && !die.dropped && die.value === 20),
+    lucky: false,
+    at: new Date().toISOString(),
+  };
+
+  history = [roll, ...history].slice(0, HISTORY_LIMIT);
+  publish(roll, actor);
+  return roll;
+}
+
 export async function rollTableDice(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
   const kind: DiceRollKind = input.kind ?? 'free';
 
@@ -597,6 +708,10 @@ export async function rollTableDice(actor: DiceActor, input: TableRollInput): Pr
 
   // Teste de CONCENTRAÇÃO (Fase 6.4): resolve uma pendência derivada de dano.
   if (kind === 'concentration') return rollConcentrationSave(actor, input);
+
+  // SALVAGUARDA de aplicação de efeito (Fase 6.5H): Hold Person e futuros
+  // efeitos com save inicial resolvem por aqui, com atributo/CD do servidor.
+  if (input.pendingEffectSaveId) return rollPendingEffectSave(actor, input);
 
   // Antes de sortear, avisa a mesa que os dados estão rolando (a janela de
   // quem assiste entra na mesma animação de queda). A rolagem da criação de

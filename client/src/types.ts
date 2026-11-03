@@ -2722,6 +2722,35 @@ export interface MechanicalDto {
 export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }
 
 /**
+ * FASE 6.5H — aplicação de efeito AGUARDANDO salvaguarda (ex.: Hold Person).
+ *
+ * Nada mecânico existe ainda: nem Effect, nem Condition, nem Concentração. O
+ * atributo e a CD vêm do SERVIDOR; o cliente só escolhe resolver o save.
+ */
+export interface PendingEffectSaveDto {
+  id: string;
+  definitionId: string;
+  label: string;
+  ability: AbilityKey;
+  dc: number;
+  visibility: EffectVisibility;
+  status: 'pending' | 'resolved' | 'cancelled';
+  result: 'success' | 'failure' | null;
+  casterEntity: MechanicalEntity;
+  casterName: string | null;
+  targetEntity: MechanicalEntity;
+  groupId: string | null;
+  effectId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface EffectsPendingPayload {
+  entity: MechanicalEntity;
+  pending: PendingEffectSaveDto[];
+}
+
+/**
  * FASE 6.5A — Generic Effect Engine (fundação).
  *
  * `EffectInstance` registra que uma origem produz consequências sobre UM alvo.

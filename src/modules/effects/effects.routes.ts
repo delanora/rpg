@@ -1,9 +1,24 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import { entitySchema } from '../shared/conditions.js';
-import { applyBlessSchema, createEffectSchema, endEffectSchema } from './effects.schema.js';
-import { createEffect, endEffect, listEffectsForTarget } from './effects.service.js';
+import {
+  applyBlessSchema,
+  applyHoldPersonSchema,
+  createEffectSchema,
+  endEffectSchema,
+} from './effects.schema.js';
+import { createEffect, endEffect, listEffectsForTarget, type EffectActor } from './effects.service.js';
 import { applyBless } from './bless.service.js';
+import {
+  applyHoldPerson,
+  cancelPendingEffectSave,
+  listPendingEffectSaves,
+} from './hold-person.service.js';
+
+/** Autor do pedido, sempre do token (nunca do corpo). */
+function actorOf(req: { user?: { sub: string; username: string; role: 'MASTER' | 'PLAYER' } }): EffectActor {
+  return { userId: req.user!.sub, username: req.user!.username, role: req.user!.role };
+}
 
 /**
  * FASE 6.5A — API própria dos Effects.
@@ -14,6 +29,42 @@ import { applyBless } from './bless.service.js';
  */
 export const effectsRouter = Router();
 effectsRouter.use(authenticate);
+
+/**
+ * GET /api/effects/pending/:entityKind/:entityId — aplicações aguardando
+ * salvaguarda (6.5H). O servidor aplica a privacidade; nenhuma consequência
+ * mecânica existe ainda.
+ */
+effectsRouter.get('/pending/:entityKind/:entityId', async (req, res) => {
+  const parsed = entitySchema.safeParse({ kind: req.params.entityKind, id: req.params.entityId });
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json({ pending: await listPendingEffectSaves(actorOf(req), parsed.data) });
+});
+
+/** POST /api/effects/pending/:id/cancel — cancela a aplicação antes do save. */
+effectsRouter.post('/pending/:id/cancel', requireRole('MASTER'), async (req, res) => {
+  res.json({ pending: await cancelPendingEffectSave(actorOf(req), String(req.params.id)) });
+});
+
+/**
+ * POST /api/effects/hold-person — APLICAÇÃO CONTROLADA (só MASTER, 6.5H).
+ *
+ * Ferramenta de prova da engine: NÃO é conjuração de jogador. Cria apenas a
+ * pendência de salvaguarda de Sabedoria; o Effect/Paralyzed/Concentração só
+ * nascem na FALHA do save, resolvida pelo pipeline real de dados.
+ */
+effectsRouter.post('/hold-person', requireRole('MASTER'), async (req, res) => {
+  const parsed = applyHoldPersonSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  const result = await applyHoldPerson(actorOf(req), parsed.data);
+  res.status(result.replayed ? 200 : 201).json(result);
+});
 
 /** GET /api/effects/:entityKind/:entityId — efeitos ATIVOS do alvo. */
 effectsRouter.get('/:entityKind/:entityId', async (req, res) => {
