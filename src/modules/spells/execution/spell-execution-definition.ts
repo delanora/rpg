@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import type { AbilityKey } from '../../shared/dnd5e.js';
+import type { SpellCastingTimeKind } from '../../shared/spells/types.js';
 import type { LoadedEntity } from '../../mechanical/mechanical.service.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
 import type { CastingResource } from './casting-resource.js';
@@ -45,6 +46,8 @@ export interface SpellValidationContext {
   castAtLevel: number;
   /** Espaço que será gasto no commit (`null` em truques). */
   castingResource: CastingResource | null;
+  /** Custo de Action Economy derivado do casting time (`null` = não executável). */
+  economyCost: 'action' | 'bonus-action' | 'reaction';
 }
 
 export interface SpellExecutionDefinition {
@@ -52,6 +55,12 @@ export interface SpellExecutionDefinition {
   spellId: string;
   requiresConcentration: boolean;
   maxTargets: number;
+  /**
+   * CASTING TIME (6.6D). Opcional de propósito: quando ausente, o serviço usa o
+   * `castingTimeKind` do CATÁLOGO (fonte única). Só sobrescreva quando uma
+   * feature/metamágica mudar o tempo antes do COMMIT.
+   */
+  castingTime?: SpellCastingTimeKind;
   resolution: SpellResolutionDefinition;
   /**
    * Validação ESPECÍFICA da magia (alvo humanoide, limite de alvos...).

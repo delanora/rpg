@@ -32,6 +32,15 @@ import {
   spendCastingResource,
 } from './casting-resource.service.js';
 import type { CastingResource } from './casting-resource.js';
+import type { SpellCastingTimeKind } from '../../shared/spells/types.js';
+import {
+  assertCastingEconomy,
+  castingEconomyFor,
+  castingTurnContext,
+  commitCastingEconomy,
+  committedCastsOnTurn,
+  type CastingTurnContext,
+} from './spell-casting-economy.js';
 import { toSpellCastDto, type SpellCastDto } from './spell-cast.dto.js';
 import type { SpellCastProofInput } from './spell-cast.schema.js';
 
@@ -76,6 +85,12 @@ export interface SpellCastContext {
   castAtLevel: number;
   /** Espaço que o COMMIT vai gastar (`null` em truque). */
   resource: CastingResource | null;
+  /** Tempo de conjuração (snapshot imutável). */
+  castingTimeKind: SpellCastingTimeKind;
+  /** Custo de Action Economy derivado do casting time. */
+  economyCost: 'action' | 'bonus-action' | 'reaction';
+  /** Contexto de turno em combate ATIVO (`null` = fora de combate). */
+  turnContext: CastingTurnContext | null;
 }
 
 export interface SpellCastResult {
@@ -232,6 +247,18 @@ export async function validateSpellCast(
   );
   const castAtLevel = resource ? resource.level : 0;
 
+  // 6.6D: CASTING TIME vem do registry (ou do catálogo) — NUNCA do cliente. O
+  // custo é traduzido para a Action Economy existente; tempos não executáveis
+  // (1 minuto/1 hora) falham aqui, antes de qualquer consumo.
+  const castingTimeKind = execution.castingTime ?? spell.castingTimeKind;
+  const economyCost = castingEconomyFor(castingTimeKind);
+  const turnContext = await castingTurnContext(db, caster);
+  const priorCasts = turnContext ? await committedCastsOnTurn(db, turnContext) : [];
+  assertCastingEconomy(turnContext, economyCost, priorCasts, {
+    spellLevel,
+    castingTime: economyCost,
+  });
+
   const context: SpellValidationContext = {
     db,
     spellId: input.spellId,
@@ -242,6 +269,7 @@ export async function validateSpellCast(
     spellLevel,
     castAtLevel,
     castingResource: resource,
+    economyCost,
   };
   await execution.validateTargets?.(context);
 
@@ -256,6 +284,9 @@ export async function validateSpellCast(
     spellLevel,
     castAtLevel,
     resource,
+    castingTimeKind,
+    economyCost,
+    turnContext,
   };
 }
 
@@ -270,6 +301,13 @@ async function commitSpellCast(
   context: SpellCastContext,
   fingerprint: string,
 ): Promise<SpellCast> {
+  // 6.6D: a AÇÃO (ou Ação Bônus) é consumida no COMMIT, na MESMA transação, e
+  // ANTES do espaço. Falha de qualquer etapa desfaz tudo — nunca fica slot sem
+  // Ação nem Ação sem SpellCast.
+  const economy = context.turnContext
+    ? await commitCastingEconomy(db, context.turnContext, context.economyCost)
+    : null;
+
   // O espaço é gasto ANTES da resolução, na MESMA transação do cast committed:
   // passar no save, cancelar a pendência ou perder a Concentração não devolve o
   // espaço, e o retry (que sai por `operationId`) não gasta de novo.
@@ -309,6 +347,14 @@ async function commitSpellCast(
       castingResourceLevel: spent?.level ?? null,
       castingResourceSourceId: spent?.sourceId ?? null,
       resourceSpentAt: spent ? new Date() : null,
+      // Snapshot do CASTING TIME/turno (6.6D). Fora de combate os campos de
+      // combate ficam nulos; o custo nunca é recalculado depois.
+      castingTimeKind: context.castingTimeKind,
+      combatId: context.turnContext?.combatId ?? null,
+      turnSequence: context.turnContext?.turnSequence ?? null,
+      combatantId: context.turnContext?.combatantId ?? null,
+      economyCostKind: economy?.cost ?? null,
+      economySpentAt: economy?.spentAt ?? null,
       visibility: 'public',
       operationId: context.input.operationId,
       fingerprint,

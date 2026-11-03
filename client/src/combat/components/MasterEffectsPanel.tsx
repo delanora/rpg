@@ -6,8 +6,9 @@ import {
   applyHoldPersonEffect,
   createManualEffect,
   endEffect,
-  fetchCastingResources,
+  fetchCastingState,
   fetchSpellcastingSources,
+  type CastingEconomyDto,
   type CastingResourceChoice,
   type CastingResourceDto,
 } from '../../effectsApi';
@@ -142,6 +143,13 @@ export function MasterEffectsPanel({
   const [resources, setResources] = useState<CastingResourceDto[]>([]);
   const [blessSlot, setBlessSlot] = useState('');
   const [holdSlot, setHoldSlot] = useState('');
+  // DISPONIBILIDADE DE TURNO (6.6D): o servidor decide pelo turnSequence real.
+  const [economy, setEconomy] = useState<CastingEconomyDto>({
+    inCombat: false,
+    isCasterTurn: true,
+    actionAvailable: true,
+    bonusActionAvailable: true,
+  });
 
   useEffect(() => {
     let alive = true;
@@ -159,12 +167,13 @@ export function MasterEffectsPanel({
     setResources([]);
     setBlessSlot('');
     setHoldSlot('');
-    fetchCastingResources(entity)
-      .then((list) => {
+    fetchCastingState(entity)
+      .then((state) => {
         if (!alive) return;
-        setResources(list);
-        setBlessSlot(defaultSlotKey(list, 1));
-        setHoldSlot(defaultSlotKey(list, 2));
+        setResources(state.resources);
+        setEconomy(state.economy);
+        setBlessSlot(defaultSlotKey(state.resources, 1));
+        setHoldSlot(defaultSlotKey(state.resources, 2));
       })
       .catch(() => {
         if (alive) setResources([]);
@@ -183,6 +192,17 @@ export function MasterEffectsPanel({
   const holdResources = eligibleResources(resources, 2);
   const blessChoice = resourceChoiceOf(resources, blessSlot);
   const holdChoice = resourceChoiceOf(resources, holdSlot);
+  // Fora de combate não há economia a checar; em combate, só o ator do turno
+  // com Ação disponível pode conjurar (o servidor revalida no COMMIT).
+  const proofBlocked =
+    economy.inCombat && (!economy.isCasterTurn || !economy.actionAvailable);
+  const economyLabel = !economy.inCombat
+    ? 'Fora de combate'
+    : !economy.isCasterTurn
+      ? 'Não é o turno do conjurador'
+      : economy.actionAvailable
+        ? 'Ação disponível'
+        : 'Ação já utilizada';
 
   async function run(action: () => Promise<unknown>): Promise<void> {
     if (locked) return;
@@ -486,6 +506,7 @@ export function MasterEffectsPanel({
           gasta Ação, não valida alcance/componentes e ainda não tem duração automática.
         </p>
         <div className="hp-controls" data-casting-resource="bless">
+          <span className="field-hint">Conjuração: Ação — {economyLabel}</span>
           <span className="field-hint">Espaço</span>
           {blessResources.length > 1 ? (
             <select
@@ -541,7 +562,11 @@ export function MasterEffectsPanel({
             type="button"
             className="btn btn-small"
             disabled={
-              locked || blessTargets.length === 0 || selectedSource === null || !blessChoice
+              locked ||
+              proofBlocked ||
+              blessTargets.length === 0 ||
+              selectedSource === null ||
+              !blessChoice
             }
             onClick={() =>
               void run(async () => {
@@ -559,7 +584,9 @@ export function MasterEffectsPanel({
                   castingResource: blessChoice,
                 });
                 setBlessTargets([]);
-                setResources(await fetchCastingResources(entity));
+                const refreshed = await fetchCastingState(entity);
+                setResources(refreshed.resources);
+                setEconomy(refreshed.economy);
               })
             }
           >
@@ -577,6 +604,7 @@ export function MasterEffectsPanel({
           valida alcance/componentes e não repete o save no fim do turno.
         </p>
         <div className="hp-controls" data-casting-resource="hold-person">
+          <span className="field-hint">Conjuração: Ação — {economyLabel}</span>
           <span className="field-hint">Espaço</span>
           {holdResources.length > 1 ? (
             <select
@@ -621,7 +649,11 @@ export function MasterEffectsPanel({
             type="button"
             className="btn btn-small"
             disabled={
-              locked || holdPersonTarget === '' || selectedSource === null || !holdChoice
+              locked ||
+              proofBlocked ||
+              holdPersonTarget === '' ||
+              selectedSource === null ||
+              !holdChoice
             }
             onClick={() =>
               void run(async () => {
@@ -636,7 +668,9 @@ export function MasterEffectsPanel({
                   castingResource: holdChoice,
                 });
                 setHoldPersonTarget('');
-                setResources(await fetchCastingResources(entity));
+                const refreshed = await fetchCastingState(entity);
+                setResources(refreshed.resources);
+                setEconomy(refreshed.economy);
               })
             }
           >

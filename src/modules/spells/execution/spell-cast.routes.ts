@@ -1,10 +1,13 @@
 import { Router } from 'express';
+import { prisma } from '../../../config/prisma.js';
 import { authenticate, requireRole } from '../../auth/auth.middleware.js';
 import { entitySchema } from '../../shared/conditions.js';
 import { spellCastProofSchema } from './spell-cast.schema.js';
 import { castProofSpell } from './spell-cast.service.js';
 import { listSpellcastingSources } from './spellcasting-profile.service.js';
 import { castingResourcesForEntity } from './casting-resource.service.js';
+import { castingEconomySummary, castingTurnContext } from './spell-casting-economy.js';
+import { loadEntity } from '../../mechanical/mechanical.service.js';
 
 /**
  * FASE 6.6A — API GENÉRICA de conjuração de PROVA (só MASTER).
@@ -46,7 +49,11 @@ spellsRouter.get('/resources/:entityKind/:entityId', requireRole('MASTER'), asyn
     res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
     return;
   }
-  res.json({ resources: await castingResourcesForEntity(parsed.data) });
+  // Custo de conjuração do TURNO (6.6D): leitura para o painel do Mestre
+  // desabilitar/explicar. Nenhum número aqui vem do cliente.
+  const loaded = await loadEntity(parsed.data);
+  const economy = castingEconomySummary(await castingTurnContext(prisma, loaded));
+  res.json({ resources: await castingResourcesForEntity(parsed.data), economy });
 });
 
 /** POST /api/spells/cast-proof — valida, commita e resolve uma conjuração. */

@@ -833,7 +833,14 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
   await prisma.$transaction(async (db) => {
     const changed = await db.combat.updateMany({
       where: { id: combatId, status: 'PENDING_INITIATIVE' },
-      data: { status: 'ACTIVE', currentIndex: startIndex, round: 1, version: { increment: 1 } },
+      // 6.6D: o PRIMEIRO turno realmente ativado ganha a sequência 1.
+      data: {
+        status: 'ACTIVE',
+        currentIndex: startIndex,
+        round: 1,
+        turnSequence: { increment: 1 },
+        version: { increment: 1 },
+      },
     });
     if (!changed.count) return;
     const first = ordered[startIndex];
@@ -964,7 +971,11 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     const incoming = ordered[index];
 
     await db.combatant.update({ where: { id: outgoing.id }, data: { turnEconomy: onTurnEnd(economyOf(outgoing.turnEconomy)) } });
-    await db.combat.update({ where: { id: combat.id }, data: { currentIndex: index, round } });
+    // 6.6D: cada ativação REAL de turno incrementa a identidade UMA vez.
+    await db.combat.update({
+      where: { id: combat.id },
+      data: { currentIndex: index, round, turnSequence: { increment: 1 } },
+    });
     // O turno de quem está morto (ou com morte pendente) NÃO concede Ação,
     // Ação Bônus, Reação nem Movimento — o registro segue no combate até o
     // Mestre removê-lo.

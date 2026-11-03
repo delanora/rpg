@@ -447,7 +447,8 @@ significa que as respectivas fases futuras estejam concluídas.
   que desmonta modificadores e Conditions, inclusive na remoção estrutural de
   entidades.
 - 6.6 Spell Execution Engine — **6.6A (contrato de conjuração), 6.6B (perfil de
-  conjuração) e 6.6C (espaços/recursos) implementadas**:
+  conjuração), 6.6C (espaços/recursos) e 6.6D (casting time/economia)
+  implementadas**:
   `SpellCast` persistente (status `resolving`/`resolved`/`cancelled` + outcome
   `effect`/`no-effect`/`cancelled`), `SpellExecutionDefinition` por `spellId`
   (`immediate-effect` / `save-effect`) referenciando Effect Definitions, registry
@@ -472,9 +473,21 @@ significa que as respectivas fases futuras estejam concluídas.
   `SpellCast`, com guarda de versão: retry não gasta de novo, a corrida do
   último espaço tem um só vencedor e passar no save/cancelar/perder a
   Concentração NÃO devolve o espaço. `spellLevel` vem do catálogo e
-  `castAtLevel` do espaço escolhido (snapshot no cast). Sem upcast mecânico,
-  Ação, alcance/componentes, preparação, duração, spell attack real e cast de
-  PLAYER (6.6D+).
+  `castAtLevel` do espaço escolhido (snapshot no cast).
+  **6.6D**: o casting time vem do catálogo/execution (`action`/`bonusAction`/
+  `reaction`) e é traduzido para a MESMA Action Economy (`spendEconomy`);
+  `1 minuto`/`1 hora` falham com `SPELL_CASTING_TIME_NOT_IMPLEMENTED` em vez de
+  virarem uma Ação. O COMMIT consome Ação/Bônus (e o espaço) na mesma transação,
+  com guarda de versão, revalidando turno e economia. `Combat.turnSequence` é a
+  identidade MONOTÔNICA do turno (incrementada só na ativação real; reconnect
+  não altera) e o `SpellCast` snapshota `castingTimeKind`/`combatId`/
+  `turnSequence`/`combatantId`. A regra da Bonus Action (PHB 2014) é derivada do
+  histórico de casts committed daquele turno: depois de uma spell de Ação Bônus
+  só um cantrip de 1 Ação passa — NÃO existe "uma magia de nível por turno"
+  (duas Action leveled com Action Surge são válidas). Reaction spell exige
+  Reaction Opportunity server-authoritative, que ainda não existe, então é
+  recusada (`SPELL_REACTION_NOT_AVAILABLE`). Ainda sem upcast mecânico, alcance/
+  componentes, preparação, duração, spell attack real e cast de PLAYER (6.6E+).
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
@@ -822,10 +835,14 @@ de implementar.
   seleção por `kind`+nível, gasto no commit, retry sem segundo gasto, corrida do
   último espaço, espaço inválido/vazio, isolamento do NPC e histórico imutável
   depois do descanso.
-- **Continua pendente (intencional):** Ação/tempo de conjuração (6.6D),
-  alcance/targeting (6.6E), cast de PLAYER (6.6F), duração/save repetido
-  (Duration Engine), Counterspell e upcasting. Spell Save DC (6.6B) e slots
-  (6.6C) estão implementados.
+- `smoke-spell-action-economy.ts` cobre casting time, matriz pura da Bonus
+  Action (bidirecional + Action Surge), Reaction recusada, Ação gasta no
+  COMMIT, fora de turno, Ação extra, corrida pela única Ação, retry sem segundo
+  gasto, snapshot de turno e cast fora de combate.
+- **Continua pendente (intencional):** alcance/targeting (6.6E), cast de PLAYER
+  (6.6F), duração/save repetido (Duration Engine), Counterspell, Reaction
+  windows e upcasting. Spell Save DC (6.6B), slots (6.6C) e casting time/
+  Action Economy (6.6D) estão implementados.
 
 ### Modificadores de Effect (6.5B)
 
