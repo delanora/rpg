@@ -446,8 +446,8 @@ significa que as respectivas fases futuras estejam concluídas.
   motor de Conditions (`sourceType = 'effect'`) e UM lifecycle de encerramento
   que desmonta modificadores e Conditions, inclusive na remoção estrutural de
   entidades.
-- 6.6 Spell Execution Engine — **6.6A (contrato de conjuração) e 6.6B
-  (perfil de conjuração) implementadas**:
+- 6.6 Spell Execution Engine — **6.6A (contrato de conjuração), 6.6B (perfil de
+  conjuração) e 6.6C (espaços/recursos) implementadas**:
   `SpellCast` persistente (status `resolving`/`resolved`/`cancelled` + outcome
   `effect`/`no-effect`/`cancelled`), `SpellExecutionDefinition` por `spellId`
   (`immediate-effect` / `save-effect`) referenciando Effect Definitions, registry
@@ -460,8 +460,21 @@ significa que as respectivas fases futuras estejam concluídas.
   SERVIDOR, statblock de criatura como autoridade (`saveDc`/`attackBonus`
   explícitos) e snapshot imutável no `SpellCast` (migration
   `20261102120000_add_spellcasting_profile`). Hold Person passou a usar a CD
-  derivada — não existe mais CD manual de prova. Ainda sem slot, Ação, alcance/
-  componentes, preparação, duração, spell attack real e cast de PLAYER (6.6C+).
+  derivada — não existe mais CD manual de prova.
+  **6.6C**: `CastingResource` (`spell-slot`/`pact-slot`) ORTOGONAL à fonte — o
+  espaço gasto não decide a matemática, e a fonte não decide o espaço. Slots
+  NORMAIS usam o pool multiclasse derivado (`spellSlotsForClasses`, meio/terço
+  arredondados como no PHB) com uso persistido em `Character.spells`; Magia de
+  Pacto é pool separado (Bruxo fora do nível combinado). Criatura/NPC declara o
+  MÁXIMO no statblock (`Creature.spellcastingResources`) e o USO fica em quem
+  conjura (template ou `Combatant.spellcastingUsed`) — cópias do mesmo template
+  não compartilham gasto. O espaço é gasto no COMMIT, na MESMA transação do
+  `SpellCast`, com guarda de versão: retry não gasta de novo, a corrida do
+  último espaço tem um só vencedor e passar no save/cancelar/perder a
+  Concentração NÃO devolve o espaço. `spellLevel` vem do catálogo e
+  `castAtLevel` do espaço escolhido (snapshot no cast). Sem upcast mecânico,
+  Ação, alcance/componentes, preparação, duração, spell attack real e cast de
+  PLAYER (6.6D+).
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
@@ -805,10 +818,14 @@ de implementar.
   reused key, magia não executável, validação antes do commit, Hold Person
   success/failure, cancelamento, remoção estrutural, self-target, caster
   incapacitado, permissões, histórico, lock e concorrência real.
-- **Continua pendente (intencional):** Spell Save DC derivada (6.6B), slots
-  (6.6C), Ação/tempo de conjuração (6.6D), alcance/targeting (6.6E), cast de
-  PLAYER (6.6F), duração/save repetido (Duration Engine), Counterspell e
-  upcasting.
+- `smoke-spell-slots.ts` cobre tabelas (completo/meio/pacto/multiclasse),
+  seleção por `kind`+nível, gasto no commit, retry sem segundo gasto, corrida do
+  último espaço, espaço inválido/vazio, isolamento do NPC e histórico imutável
+  depois do descanso.
+- **Continua pendente (intencional):** Ação/tempo de conjuração (6.6D),
+  alcance/targeting (6.6E), cast de PLAYER (6.6F), duração/save repetido
+  (Duration Engine), Counterspell e upcasting. Spell Save DC (6.6B) e slots
+  (6.6C) estão implementados.
 
 ### Modificadores de Effect (6.5B)
 

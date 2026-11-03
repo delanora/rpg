@@ -774,6 +774,15 @@ model Creature {
   /// recalculados pela fórmula de personagem (nível de classe/proficiência).
   /// Vazio = criatura sem conjuração utilizável. Só o perfil, nunca um repertório.
   spellcastingProfile Json @default("{}")
+  ///
+  /// ESPAÇOS DE MAGIA DECLARADOS PELO STATBLOCK (Fase 6.6C):
+  /// `{ spellSlots: [{ level, max }], pactSlot: { level, max } | null }`.
+  /// Pertence ao TEMPLATE (é o statblock); o USO fica em `spellcastingUsed`, que
+  /// para uma INSTÂNCIA de combate vive no combatente — cópias do mesmo template
+  /// nunca compartilham espaços gastos. Vazio = criatura sem espaços.
+  spellcastingResources Json @default("{}")
+  /// Espaços já GASTOS deste NPC (fora de combate). Nunca vai para o DTO do jogador.
+  spellcastingUsed      Json @default("{}")
   description String @default("")
 
   /// URL pública do ícone/retrato da criatura/NPC (`uploads/creatures/...`).
@@ -951,6 +960,11 @@ model Combatant {
   sneakAttackUsedThisTurn Boolean @default(false)
   /// Estado transitório de combate, validado pelo domínio de economia de ações.
   turnEconomy Json @default("{}")
+  ///
+  /// Espaços de magia JÁ GASTOS por ESTA cópia da criatura (Fase 6.6C). O máximo
+  /// vem do template (`Creature.spellcastingResources`); o gasto é da instância
+  /// e nunca muta o statblock compartilhado.
+  spellcastingUsed Json @default("{}")
 
   createdAt DateTime @default(now())
 
@@ -1247,6 +1261,19 @@ model SpellCast {
   spellcastingProficiencyBonus Int?
   spellSaveDc               Int?
   spellAttackBonus          Int?
+
+  ///
+  /// SNAPSHOT DO RECURSO GASTO (Fase 6.6C). `spellLevel` é o nível da magia no
+  /// catálogo; `castAtLevel` é o nível do espaço usado (0 em truques). O gasto
+  /// acontece no COMMIT e NUNCA é devolvido — passar no save, cancelar a
+  /// pendência ou perder a Concentração não reembolsam o espaço. Nullable nos
+  /// casts anteriores à migração.
+  spellLevel               Int?
+  castAtLevel              Int?
+  castingResourceKind      String?
+  castingResourceLevel     Int?
+  castingResourceSourceId  String?
+  resourceSpentAt          DateTime?
 
   visibility String @default("public")
 

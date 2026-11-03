@@ -1744,6 +1744,14 @@ export interface Creature {
     saveDc?: number;
     attackBonus?: number;
   };
+  /**
+   * ESPAÇOS DE MAGIA do statblock (6.6C) — só o MÁXIMO. O uso é estado de quem
+   * conjura (template ou instância) e não é editável na ficha.
+   */
+  spellcastingResources: {
+    spellSlots: { level: number; max: number }[];
+    pactSlot: { level: number; max: number } | null;
+  };
   /** Ataques derivados das armas EQUIPADAS do NPC (vazio em criaturas). */
   derivedAttacks: Attack[];
   resistances: string[];
@@ -1769,6 +1777,8 @@ export interface CreaturePatch {
   challengeRating?: string;
   /** Perfil de conjuração do statblock (6.6B): só o perfil, sem repertório. */
   spellcastingProfile?: Creature['spellcastingProfile'];
+  /** Espaços de magia do statblock (6.6C): só o MÁXIMO. */
+  spellcastingResources?: Creature['spellcastingResources'];
   localityIds?: string[];
 
   strength?: number;

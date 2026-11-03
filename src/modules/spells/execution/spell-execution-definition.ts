@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import type { AbilityKey } from '../../shared/dnd5e.js';
 import type { LoadedEntity } from '../../mechanical/mechanical.service.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
+import type { CastingResource } from './casting-resource.js';
 
 /**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
@@ -38,6 +39,12 @@ export interface SpellValidationContext {
   profile: SpellcastingProfile;
   /** CD de magia do perfil (sempre presente). */
   saveDc: number;
+  /** Nível da magia no catálogo (0 = truque). */
+  spellLevel: number;
+  /** Nível em que a conjuração acontece (vem do espaço escolhido). */
+  castAtLevel: number;
+  /** Espaço que será gasto no commit (`null` em truques). */
+  castingResource: CastingResource | null;
 }
 
 export interface SpellExecutionDefinition {

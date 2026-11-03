@@ -27,6 +27,11 @@ import type {
 } from './spell-execution-definition.js';
 import { resolveSpellcastingProfile } from './spellcasting-profile.service.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
+import {
+  resolveCastingResource,
+  spendCastingResource,
+} from './casting-resource.service.js';
+import type { CastingResource } from './casting-resource.js';
 import { toSpellCastDto, type SpellCastDto } from './spell-cast.dto.js';
 import type { SpellCastProofInput } from './spell-cast.schema.js';
 
@@ -65,6 +70,12 @@ export interface SpellCastContext {
   /** Perfil SERVER-SIDE (fonte, atributo, CD, ataque mágico) da conjuração. */
   profile: SpellcastingProfile;
   saveDc: number;
+  /** Nível da magia no catálogo (0 = truque). */
+  spellLevel: number;
+  /** Nível do espaço escolhido (0 = truque). */
+  castAtLevel: number;
+  /** Espaço que o COMMIT vai gastar (`null` em truque). */
+  resource: CastingResource | null;
 }
 
 export interface SpellCastResult {
@@ -89,6 +100,7 @@ function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
         caster: input.caster,
         targets: input.targets,
         spellcastingSource: input.spellcastingSource ?? null,
+        castingResource: input.castingResource ?? null,
       }),
     )
     .digest('hex');
@@ -207,6 +219,19 @@ export async function validateSpellCast(
   const profile = await resolveSpellcastingProfile(caster, input.spellcastingSource, db);
   const saveDc = profile.spellSaveDc;
 
+  // 6.6C: o ESPAÇO é resolvido no VALIDATE, também antes do commit. Recurso
+  // inválido/vazio/estrangeiro rejeita o cast sem gastar nada e sem encerrar a
+  // Concentração anterior. O nível da magia vem do CATÁLOGO (nunca do cliente) e
+  // o `castAtLevel` vem do espaço escolhido — não são campos independentes.
+  const spellLevel = Math.max(0, spell.level);
+  const resource = await resolveCastingResource(
+    caster.entity,
+    spellLevel,
+    input.castingResource,
+    db,
+  );
+  const castAtLevel = resource ? resource.level : 0;
+
   const context: SpellValidationContext = {
     db,
     spellId: input.spellId,
@@ -214,10 +239,24 @@ export async function validateSpellCast(
     targets,
     profile,
     saveDc,
+    spellLevel,
+    castAtLevel,
+    castingResource: resource,
   };
   await execution.validateTargets?.(context);
 
-  return { actor, input, execution, caster, targets, profile, saveDc };
+  return {
+    actor,
+    input,
+    execution,
+    caster,
+    targets,
+    profile,
+    saveDc,
+    spellLevel,
+    castAtLevel,
+    resource,
+  };
 }
 
 /**
@@ -231,6 +270,12 @@ async function commitSpellCast(
   context: SpellCastContext,
   fingerprint: string,
 ): Promise<SpellCast> {
+  // O espaço é gasto ANTES da resolução, na MESMA transação do cast committed:
+  // passar no save, cancelar a pendência ou perder a Concentração não devolve o
+  // espaço, e o retry (que sai por `operationId`) não gasta de novo.
+  const spent = context.resource
+    ? await spendCastingResource(context.caster.entity, context.resource, db)
+    : null;
   return db.spellCast.create({
     data: {
       spellId: context.execution.spellId,
@@ -256,6 +301,14 @@ async function commitSpellCast(
       saveDc: context.saveDc,
       spellSaveDc: context.saveDc,
       spellAttackBonus: context.profile.spellAttackBonus,
+      // Snapshot do RECURSO: derivar de novo depois (nível novo/descanso) nunca
+      // reescreve este registro histórico.
+      spellLevel: context.spellLevel,
+      castAtLevel: context.castAtLevel,
+      castingResourceKind: spent?.kind ?? null,
+      castingResourceLevel: spent?.level ?? null,
+      castingResourceSourceId: spent?.sourceId ?? null,
+      resourceSpentAt: spent ? new Date() : null,
       visibility: 'public',
       operationId: context.input.operationId,
       fingerprint,

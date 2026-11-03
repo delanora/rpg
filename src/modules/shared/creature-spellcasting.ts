@@ -36,3 +36,65 @@ export function creatureSpellcastingProfileOf(input: unknown): CreatureSpellcast
 export function hasCreatureSpellcastingProfile(input: unknown): boolean {
   return creatureSpellcastingProfileOf(input).saveDc !== undefined;
 }
+
+/* -------------------------------------------------------------------------- */
+/* FASE 6.6C — ESPAÇOS DE MAGIA da criatura/NPC                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * O statblock declara os espaços MÁXIMOS. Nada de derivar progressão pelo ND.
+ *
+ *  • MÁXIMO (`Creature.spellcastingResources`): pertence ao TEMPLATE;
+ *  • USO (`spellcastingUsed`): pertence a QUEM CONJURA — o template para um NPC
+ *    avulso, ou a INSTÂNCIA de combate. Duas cópias do mesmo template NUNCA
+ *    compartilham espaços gastos.
+ *
+ * Nível 0 (truques) não entra: truque não gasta espaço.
+ */
+const slotSchema = z.object({
+  level: z.number().int().min(1).max(9),
+  max: z.number().int().min(0).max(20),
+});
+
+export const creatureSpellcastingResourcesSchema = z.object({
+  spellSlots: z.array(slotSchema).max(9).default([]),
+  pactSlot: slotSchema.nullable().default(null),
+});
+
+export type CreatureSpellcastingResources = z.infer<typeof creatureSpellcastingResourcesSchema>;
+
+const usedSchema = z.object({
+  spellSlotsUsed: z.record(z.string(), z.number().int().min(0).max(99)).default({}),
+  pactSlotUsed: z.number().int().min(0).max(99).default(0),
+});
+
+export interface CreatureSpellcastingUsed {
+  spellSlotsUsed: Record<string, number>;
+  pactSlotUsed: number;
+}
+
+/** MÁXIMO declarado pelo statblock (vazio = a criatura não conjura). */
+export function creatureSpellcastingMaxOf(value: unknown): CreatureSpellcastingResources {
+  const parsed = parseJson<CreatureSpellcastingResources>(creatureSpellcastingResourcesSchema, value, {
+    spellSlots: [],
+    pactSlot: null,
+  });
+  return {
+    spellSlots: parsed.spellSlots
+      .filter((slot) => slot.max > 0)
+      .sort((a, b) => a.level - b.level),
+    pactSlot: parsed.pactSlot && parsed.pactSlot.max > 0 ? parsed.pactSlot : null,
+  };
+}
+
+/** USO corrente de quem conjura (template ou instância). */
+export function creatureSpellcastingUsedOf(value: unknown): CreatureSpellcastingUsed {
+  return parseJson<CreatureSpellcastingUsed>(usedSchema, value, {
+    spellSlotsUsed: {},
+    pactSlotUsed: 0,
+  });
+}
+
+export function emptyCreatureSpellcastingUsed(): CreatureSpellcastingUsed {
+  return { spellSlotsUsed: {}, pactSlotUsed: 0 };
+}

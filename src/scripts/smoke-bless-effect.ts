@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
+import { pickCastingResource } from './spell-slot-fixtures.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
 
@@ -87,7 +88,9 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         dexterity: 14,
         // 6.6B: todo cast registra a FONTE de conjuração (perfil derivado).
         intelligence: 16,
-        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+        // 6.6C: Bless (nível 1) agora gasta espaço; o pool completo do Mago 20
+        // sustenta todas as aplicações deste smoke.
+        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
         attacks: attacks as never,
       },
     });
@@ -100,7 +103,7 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         speed: 9,
         dexterity: 14,
         intelligence: 16,
-        classes: [{ classKey: 'cleric', subclass: '', level: 1 }],
+        classes: [{ classKey: 'cleric', subclass: '', level: 20 }],
       },
     });
     const third = await prisma.character.create({
@@ -111,7 +114,7 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         hpMax: 40,
         speed: 9,
         intelligence: 16,
-        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
       },
     });
     characterIds.push(hero.id, ally.id, third.id);
@@ -125,6 +128,8 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        // 6.6C: o statblock declara os espaços; sem eles o NPC não conjura.
+        spellcastingResources: { spellSlots: [{ level: 1, max: 6 }, { level: 2, max: 3 }], pactSlot: null },
       },
     });
     const otherGoblin = await prisma.creature.create({
@@ -135,6 +140,7 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        spellcastingResources: { spellSlots: [{ level: 1, max: 6 }, { level: 2, max: 3 }], pactSlot: null },
       },
     });
     creatureIds.push(goblin.id, otherGoblin.id);
@@ -161,7 +167,12 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
       operationId = randomUUID(),
     ) {
       operationIds.push(operationId);
-      const res = await request('/effects/bless', { operationId, caster, targets }, token);
+      const castingResource = await pickCastingResource(baseUrl, masterToken, caster, 1);
+      const res = await request(
+        '/effects/bless',
+        { operationId, caster, targets, ...(castingResource ? { castingResource } : {}) },
+        token,
+      );
       if (res.status === 201 || res.status === 200) groups.push(res.data.groupId);
       return { ...res, operationId };
     }

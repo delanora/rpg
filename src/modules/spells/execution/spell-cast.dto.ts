@@ -33,6 +33,17 @@ export interface SpellCastDto {
     saveDc: number | null;
     attackBonus: number | null;
   } | null;
+  /**
+   * Snapshot do RECURSO gasto (6.6C). `null` em truques e nos casts antigos:
+   * um descanso posterior NÃO reescreve qual espaço foi usado.
+   */
+  casting: {
+    spellLevel: number;
+    castAtLevel: number;
+    resourceKind: string | null;
+    resourceLevel: number | null;
+    resourceSourceId: string | null;
+  } | null;
   createdAt: string;
   committedAt: string;
   resolvedAt: string | null;
@@ -80,6 +91,16 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
           attackBonus: row.spellAttackBonus ?? null,
         }
       : null;
+  const casting =
+    row.spellLevel !== null || row.castAtLevel !== null
+      ? {
+          spellLevel: row.spellLevel ?? row.castAtLevel ?? 0,
+          castAtLevel: row.castAtLevel ?? row.spellLevel ?? 0,
+          resourceKind: row.castingResourceKind ?? null,
+          resourceLevel: row.castingResourceLevel ?? null,
+          resourceSourceId: row.castingResourceSourceId ?? null,
+        }
+      : null;
   return {
     id: row.id,
     spellId: row.spellId,
@@ -95,6 +116,7 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
     effectGroupId: row.effectGroupId ?? null,
     saveDc: row.saveDc ?? null,
     spellcasting,
+    casting,
     createdAt: row.createdAt.toISOString(),
     committedAt: row.committedAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

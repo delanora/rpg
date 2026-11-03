@@ -147,6 +147,11 @@ export async function updateCreature(
   if (patch.spellcastingProfile !== undefined) {
     data.spellcastingProfile = patch.spellcastingProfile;
   }
+  // Espaços de magia do statblock (6.6C): só o MÁXIMO. O uso corrente fica em
+  // `spellcastingUsed` e NÃO é zerado ao editar o statblock.
+  if (patch.spellcastingResources !== undefined) {
+    data.spellcastingResources = patch.spellcastingResources;
+  }
   if (patch.resistances !== undefined) data.resistances = patch.resistances;
   if (patch.immunities !== undefined) data.immunities = patch.immunities;
   if (patch.vulnerabilities !== undefined) data.vulnerabilities = patch.vulnerabilities;

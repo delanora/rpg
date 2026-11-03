@@ -367,6 +367,90 @@ export function CreatureEditor({
           O statblock é a autoridade: a CD informada aqui vale mesmo que a fórmula de
           personagem sugerisse outro número. Sem CD, a criatura não é fonte de conjuração.
         </p>
+        <div className="grid grid-3">
+          <label className="field">
+            <span>Espaços normais</span>
+            <InlineField
+              value={creature.spellcastingResources.spellSlots
+                .map((slot) => `${slot.level}:${slot.max}`)
+                .join(', ')}
+              ariaLabel="Espaços de magia normais (nível:quantidade)"
+              onCommit={(value) => {
+                const spellSlots = value
+                  .split(',')
+                  .flatMap((part) => {
+                    const [levelText, maxText] = part.split(':').map((item) => item.trim());
+                    const level = clampInt(levelText ?? '', 1, 9, 0);
+                    const max = clampInt(maxText ?? '', 0, 20, 0);
+                    return level > 0 && max > 0 ? [{ level, max }] : [];
+                  })
+                  .filter(
+                    (slot, index, list) =>
+                      list.findIndex((item) => item.level === slot.level) === index,
+                  );
+                onPatch({
+                  spellcastingResources: {
+                    ...creature.spellcastingResources,
+                    spellSlots,
+                  },
+                });
+              }}
+            />
+          </label>
+          <label className="field">
+            <span>Nível do Pacto</span>
+            <InlineField
+              value={creature.spellcastingResources.pactSlot?.level ?? ''}
+              mode="number"
+              min={1}
+              max={9}
+              ariaLabel="Nível do espaço de Pacto"
+              onCommit={(value) => {
+                const text = value.trim();
+                onPatch({
+                  spellcastingResources: {
+                    ...creature.spellcastingResources,
+                    ...(text === ''
+                      ? { pactSlot: null }
+                      : {
+                          pactSlot: {
+                            level: clampInt(text, 1, 9, 1),
+                            max: creature.spellcastingResources.pactSlot?.max ?? 1,
+                          },
+                        }),
+                  },
+                });
+              }}
+            />
+          </label>
+          <label className="field">
+            <span>Espaços de Pacto</span>
+            <InlineField
+              value={creature.spellcastingResources.pactSlot?.max ?? ''}
+              mode="number"
+              min={0}
+              max={20}
+              ariaLabel="Quantidade de espaços de Pacto"
+              onCommit={(value) => {
+                const text = value.trim();
+                const level = creature.spellcastingResources.pactSlot?.level ?? 1;
+                onPatch({
+                  spellcastingResources: {
+                    ...creature.spellcastingResources,
+                    pactSlot:
+                      text === ''
+                        ? null
+                        : { level, max: clampInt(text, 0, 20, 0) },
+                  },
+                });
+              }}
+            />
+          </label>
+        </div>
+        <p className="section-note">
+          Os espaços são gastos no COMMIT de cada conjuração e NÃO recuperam sozinhos. Sem
+          espaços declarados, a criatura não conjura (nada de progressão inferida pelo ND).
+        </p>
       </Section>
 
       <Section title="Vida e Defesa" icon="heart">

@@ -13,9 +13,10 @@ import type { ApplyBlessInput } from './effects.schema.js';
  * Concentração são do contrato genérico. Aqui só se traduz o payload do Bless
  * (caster + até 3 alvos) e se devolve o grupo/efeitos esperados pela UI.
  *
- * Bless segue sendo MASTER-only e NÃO consome Ação/slot nem valida
- * alcance/componentes/preparação/duração. Desde a 6.6B o cast registra a FONTE
- * de conjuração e o snapshot do perfil (CD/ataque mágico), mesmo sem usá-los.
+ * Bless segue sendo MASTER-only e NÃO consome Ação nem valida
+ * alcance/componentes/preparação/duração/upcasting. Desde a 6.6B o cast registra
+ * a FONTE de conjuração e o snapshot do perfil (CD/ataque mágico); desde a 6.6C
+ * gasta um espaço NORMAL/PACTO real no COMMIT (sem efeito de upcast ainda).
  */
 
 export interface BlessResult {
@@ -36,6 +37,8 @@ export async function applyBless(
     // Bless não usa CD/ataque mágico, mas TODO cast real registra sua fonte
     // (6.6B): a matemática de conjuração e a mecânica do efeito são separadas.
     ...(input.spellcastingSource ? { spellcastingSource: input.spellcastingSource } : {}),
+    // 6.6C: Blessed deixa de ser cast grátis — o COMMIT gasta um espaço real.
+    ...(input.castingResource ? { castingResource: input.castingResource } : {}),
   });
   if (!result.effectGroupId) {
     // A definição de Bless é immediate-effect; sem grupo não há o que devolver.
