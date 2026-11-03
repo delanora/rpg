@@ -518,6 +518,8 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
       await prisma.effectInstance.deleteMany({ where: { groupId: { in: groups } } });
     }
     if (operationIds.length > 0) {
+      // 6.6A: a conjuração agora tem identidade própria (SpellCast).
+      await prisma.spellCast.deleteMany({ where: { operationId: { in: operationIds } } });
       await prisma.effectOperation.deleteMany({ where: { operationId: { in: operationIds } } });
     }
     const entityIds = [...characterIds, ...creatureIds];

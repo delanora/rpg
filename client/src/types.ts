@@ -2741,6 +2741,8 @@ export interface PendingEffectSaveDto {
   targetEntity: MechanicalEntity;
   groupId: string | null;
   effectId: string | null;
+  /** Conjuração que originou a pendência (6.6A). */
+  spellCastId: string | null;
   createdAt: string;
   resolvedAt: string | null;
 }

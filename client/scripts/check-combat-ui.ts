@@ -1035,6 +1035,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   const blessDefinition = source('../src/modules/effects/definitions/bless.ts');
   const blessService = source('../src/modules/effects/bless.service.ts');
   const effectOptional = source('../src/modules/dice/effect-optional.ts');
+  const spellExecutionRegistry = source('../src/modules/spells/execution/spell-execution-registry.ts');
   check(
     'CB47) Bless é DEFINIÇÃO genérica (+1d4 opcional em ataque/save, stacking) sem hardcode nos resolvers',
     blessDefinition.includes("export const BLESS_DEFINITION_ID = `spell.${BLESS_SPELL_ID}`") &&
@@ -1050,12 +1051,11 @@ console.log('Check-combat-ui — refino da UI de combate');
       !source('../src/modules/concentration/concentration.service.ts').includes('spell.bless'),
   );
   check(
-    'CB48) aplicação de Bless é MASTER-only, 1–3 alvos ÚNICOS e no mesmo motor de Concentração',
-    blessService.includes("actor.role !== 'MASTER'") &&
-      blessService.includes('Bless não pode repetir o mesmo alvo') &&
-      blessService.includes("sourceType: 'effect'") &&
-      blessService.includes('sourceId: groupId') &&
-      blessService.includes('endEffectsForConcentration') &&
+    'CB48) aplicação de Bless é MASTER-only, 1–3 alvos e DELEGADA ao contrato de conjuração (6.6A)',
+    blessService.includes('castProofSpell(') &&
+      spellExecutionRegistry.includes('maxTargets: BLESS_MAX_TARGETS') &&
+      spellExecutionRegistry.includes("kind: 'immediate-effect'") &&
+      spellExecutionRegistry.includes('BLESS_DEFINITION_ID') &&
       source('../src/modules/effects/effects.routes.ts').includes("effectsRouter.post('/bless', requireRole('MASTER')") &&
       source('../src/modules/effects/effects.schema.ts').includes('.min(1).max(3)'),
   );
@@ -1101,11 +1101,10 @@ console.log('Check-combat-ui — refino da UI de combate');
       !/held-person|'held'/i.test(source('../src/modules/shared/conditions.ts')),
   );
   check(
-    'CB53) aplicação é MASTER-only e cria SÓ a pendência persistente (nada antes do save)',
-    holdPersonService.includes("actor.role !== 'MASTER'") &&
-      holdPersonService.includes('pendingEffectSave.create') &&
-      holdPersonService.includes('status: \'pending\'') &&
-      holdPersonService.includes('isHumanoidEntity(target.entity, db)') &&
+    'CB53) aplicação é MASTER-only, delega ao cast service e valida humanoide ANTES do commit',
+    holdPersonService.includes('castProofSpell(') &&
+      spellExecutionRegistry.includes('isHumanoidEntity(target.entity, db)') &&
+      spellExecutionRegistry.includes("'HOLD_PERSON_TARGET_NOT_HUMANOID'") &&
       source('../src/modules/effects/effects.routes.ts').includes("effectsRouter.post('/hold-person', requireRole('MASTER')") &&
       source('../src/modules/effects/effects.schema.ts').includes('applyHoldPersonSchema'),
   );
@@ -1121,14 +1120,14 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/modules/shared/saving-throws.ts').includes('export async function savingThrowBonus'),
   );
   check(
-    'CB55) falha cria Effect→Paralyzed e Concentração via grupo; sucesso não cria nada',
+    'CB55) falha cria Effect→Paralyzed e Concentração via grupo; sucesso só fecha o cast como no-effect',
     holdPersonService.includes('conditions: HOLD_PERSON_CONDITIONS') &&
       holdPersonService.includes("sourceType: 'effect'") &&
       holdPersonService.includes('sourceId: groupId') &&
       holdPersonService.includes('applyEffectConditions(effectRow, target.entity, db)') &&
-      holdPersonService.includes('endEffectsForConcentration(applied.endedConcentration, db)') &&
       holdPersonService.includes('if (success) {') &&
-      holdPersonService.includes('status: \'resolved\''),
+      holdPersonService.includes("completeLinkedCast(db, row.spellCastId, 'no-effect')") &&
+      holdPersonService.includes("completeLinkedCast(db, row.spellCastId, 'effect', groupId)"),
   );
   check(
     'CB56) pendência sobrevive a reconnect, é cancelada na remoção estrutural e tem smoke próprio',
@@ -1138,6 +1137,80 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/modules/effects/pending-effect-saves.ts').includes("EFFECTS_PENDING") &&
       source('../src/scripts/smoke-hold-person-effect.ts').includes('74.G)') &&
       source('../src/scripts/smoke-realtime.ts').includes('smokeHoldPersonEffect(BASE_URL, check)'),
+  );
+
+  // CB57–CB62. Fundação de conjuração (Fase 6.6A).
+  const spellCastService = source('../src/modules/spells/execution/spell-cast.service.ts');
+  const spellExecutionDefinition = source('../src/modules/spells/execution/spell-execution-definition.ts');
+  const spellCastMigration = source(
+    '../prisma/migrations/20261102080000_add_spell_casting_foundation/migration.sql',
+  );
+  check(
+    'CB57) SpellCast persistente (status/outcome, targets snapshot) com migration aditiva e vínculo à pendência',
+    source('../prisma/schema.prisma').includes('model SpellCast') &&
+      source('../prisma/schema.prisma').includes('spellCastId String?') &&
+      spellCastMigration.includes('spell_casts') &&
+      spellCastMigration.includes('spell_casts_one_resolving_per_caster') &&
+      spellCastService.includes("status: 'resolving'") &&
+      spellCastService.includes("outcome: 'effect'") &&
+      spellCastService.includes("outcome: 'cancelled'") &&
+      source('../src/modules/spells/execution/spell-cast.dto.ts').includes('targetEntities'),
+  );
+  check(
+    'CB58) contrato ÚNICO validate → commit → resolve, registry por spellId e núcleo SEM nome de magia',
+    spellCastService.includes('export async function validateSpellCast') &&
+      spellCastService.includes('async function commitSpellCast') &&
+      spellCastService.includes('castProofSpell') &&
+      spellCastService.includes('spellExecutionDefinition(input.spellId)') &&
+      spellCastService.includes('findEffectDefinition(resolution.effectDefinitionId)') &&
+      !spellCastService.includes('spell.bless') &&
+      !spellCastService.includes('spell.hold-person') &&
+      spellExecutionRegistry.includes('SPELL_EXECUTION_DEFINITIONS') &&
+      spellExecutionDefinition.includes("kind: 'immediate-effect'") &&
+      spellExecutionDefinition.includes("kind: 'save-effect'") &&
+      spellExecutionRegistry.includes('manualSaveDc: true') &&
+      spellExecutionRegistry.includes("applyOn: 'failure'"),
+  );
+  check(
+    'CB59) COMMIT encerra a Concentração anterior ANTES de resolver; nova Concentração só com Effect durável',
+    spellCastService.includes('releasePreviousConcentration') &&
+      spellCastService.includes('if (!state.concentration) return [];') &&
+      spellCastService.includes('state.concentration = null') &&
+      spellCastService.indexOf('await releasePreviousConcentration(db, context)') >
+        spellCastService.indexOf('const cast = await commitSpellCast(db, context, fingerprint)') &&
+      spellCastService.includes('if (context.execution.requiresConcentration)') &&
+      spellCastService.includes('if (!deriveConditionEffects(fresh.state).incapacitated && fresh.hpCurrent > 0)'),
+  );
+  check(
+    'CB60) rotas de prova são wrappers finos; API genérica é MASTER-only e PLAYER segue sem conjurar',
+    blessService.includes('castProofSpell(') &&
+      holdPersonService.includes('castProofSpell(') &&
+      !blessService.includes('endEffectsForConcentration') &&
+      !blessService.includes("sourceType: 'effect'") &&
+      spellCastService.includes("if (actor.role !== 'MASTER')") &&
+      source('../src/modules/spells/execution/spell-cast.routes.ts').includes(
+        "spellsRouter.post('/cast-proof', requireRole('MASTER')",
+      ) &&
+      source('../src/http/routes/index.ts').includes("apiRouter.use('/spells', spellsRouter)"),
+  );
+  check(
+    'CB61) pendência ligada ao SpellCast; cancelar/remover não restaura a concentração anterior',
+    pendingEffectSaves.includes('spellCastId') &&
+      holdPersonService.includes('cancelSpellCastForPending(row.spellCastId, db)') &&
+      spellCastService.includes('export async function cancelSpellCastForPending') &&
+      holdPersonService.includes('enforceCasterConcentration') &&
+      pendingEffectSaves.includes('db.spellCast.updateMany') &&
+      pendingEffectSaves.includes("outcome: 'cancelled'"),
+  );
+  check(
+    'CB62) lock de UM cast resolving por caster vive no BANCO (índice parcial), nunca em Map do processo',
+    spellCastMigration.includes("WHERE \"status\" = 'resolving'") &&
+      spellCastService.includes('SPELL_CAST_IN_PROGRESS') &&
+      spellCastService.includes('spellCast.findFirst') &&
+      !spellCastService.includes('new Map(') &&
+      source('../src/scripts/smoke-spell-casting-foundation.ts').includes('75.F)') &&
+      source('../src/scripts/smoke-spell-casting-foundation.ts').includes('75.P)') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeSpellCastingFoundation(BASE_URL, check)'),
   );
 }
 

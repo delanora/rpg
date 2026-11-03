@@ -437,9 +437,8 @@ significa que as respectivas fases futuras estejam concluídas.
 - 6.3 0 HP / Death Saves / Stabilization / Instant Death
 - 6.4 Concentration — implementada (PHB 2014: estado, dano → save, fila e
   público/privado de NPC); duração automática continua na 6.7
-- 6.5 Generic Effect Engine — **6.5A (fundação), 6.5B (modificadores
-  mecânicos), 6.5C (Effect → Condition), 6.5D (cleanup central) e 6.5G (Bless,
-  primeiro efeito real) implementadas**:
+- 6.5 Generic Effect Engine — **concluída no escopo de provas (6.5A–6.5H)
+  implementadas**:
   `EffectInstance` em tabela própria, lifecycle criar/encerrar (individual e
   por grupo), leitura por alvo/fonte, privacidade no servidor, vínculo explícito
   com Concentração, modificadores tipados que entram nos pipelines reais de
@@ -447,6 +446,14 @@ significa que as respectivas fases futuras estejam concluídas.
   motor de Conditions (`sourceType = 'effect'`) e UM lifecycle de encerramento
   que desmonta modificadores e Conditions, inclusive na remoção estrutural de
   entidades.
+- 6.6 Spell Execution Engine — **6.6A (contrato de conjuração) implementada**:
+  `SpellCast` persistente (status `resolving`/`resolved`/`cancelled` + outcome
+  `effect`/`no-effect`/`cancelled`), `SpellExecutionDefinition` por `spellId`
+  (`immediate-effect` / `save-effect`) referenciando Effect Definitions, registry
+  apenas com magias provadas, pipeline único validate → commit → resolve, commit
+  encerrando a Concentração anterior e lock de UM cast `resolving` por caster no
+  BANCO. Ainda sem slot, Ação, DC derivada, alcance/componentes, duração e cast
+  de PLAYER (6.6B+).
   **NÃO implementadas:** 6.5E (integração completa com Concentração), 6.5F
   (visibilidade/realtime avançados) e 6.5G (Bless).
 - 6.6 Basic Spell Execution
@@ -725,9 +732,11 @@ de implementar.
   atributo, bônus, CD, dados nem resultado.
 - Falha → UM grupo + UMA instância (`conditions: ['paralyzed']`) + Concentração
   do caster (`sourceType: 'effect'`, `sourceId = groupId`) na MESMA transação;
-  sucesso → nada é criado (nem Effect, nem Condition, nem Concentração), e a
-  concentração anterior do caster é preservada. Na falha, a concentração
-  anterior é substituída pelo motor existente (group anterior desmontado).
+  sucesso → nada é criado (nem Effect, nem Condition, nem Concentração).
+  **Desde a 6.6A a concentração anterior NÃO é preservada** no caminho de
+  conjuração: o COMMIT (antes do save) já a encerrou — ver "Fundação de
+  conjuração". A 6.5H preservava a anterior no sucesso por simplificação da
+  prova, semântica agora corrigida.
 - Self-target falha → Paralyzed deixa o caster Incapacitado → Concentração
   termina → lifecycle encerra o grupo → Paralyzed sai; o fluxo estabiliza sem
   recursão. Encerrar apenas a instância de um alvo não encerra a Concentração
@@ -747,6 +756,53 @@ de implementar.
 - **Continua pendente (intencional):** duração de 1 minuto, save repetido no fim
   do turno, upcasting, múltiplos alvos, alcance/linha de visão, componentes,
   Ação/slot e conjuração por PLAYER — tudo da Spell Execution/Duration Engine.
+
+### Fundação de conjuração — Spell Execution Engine (6.6A)
+
+- `SpellCast` (`spell_casts`) é o EVENTO de conjuração: identidade de domínio
+  para auditoria/idempotência/origem e, no futuro, para custos (Ação/slot).
+  `operationId` (único) continua sendo idempotência do request; `SpellCast.id`
+  é a identidade permanente. Mesmo id + mesmo payload → replay do MESMO cast;
+  id + payload diferente → `409 IDEMPOTENCY_KEY_REUSED`.
+- Status mínimo (`resolving` → `resolved`/`cancelled`) e outcome separado
+  (`effect`/`no-effect`/`cancelled`). **Histórico, não estado ativo:**
+  `EffectInstance` segue sendo a fonte de verdade; um Effect encerrado depois
+  NÃO reescreve o cast. `effectGroupId` liga o cast ao grupo, mas não decide se
+  o efeito vale.
+- `SpellExecutionDefinition` (`src/modules/spells/execution/`) diz COMO a magia
+  resolve — `immediate-effect` (Bless) ou `save-effect` (Hold Person) — e
+  referencia a Effect Definition por id, sem duplicar modificadores/Conditions.
+  `requiresConcentration`, `maxTargets`, `manualSaveDc` e `validateTargets`
+  (hook da magia: humanoide, limite de alvos) rodam na fase de VALIDAÇÃO, que é
+  read-only. O registry só contém magias PROVADAS; catálogo sem execução →
+  `409 SPELL_EXECUTION_NOT_IMPLEMENTED`.
+- Pipeline ÚNICO (`castProofSpell`): VALIDATE → COMMIT → RESOLVE → PRODUCE
+  EFFECTS/RESULT → COMPLETE, na mesma transação. O núcleo não tem `if` por nome
+  de magia; as rotas `/api/effects/bless` e `/api/effects/hold-person` viraram
+  wrappers finos e existe `POST /api/spells/cast-proof` (MASTER-only). PLAYER
+  continua sem conjurar por nenhuma rota.
+- **Semântica de Concentração corrigida:** o COMMIT de uma magia concentrada
+  encerra a Concentração ANTERIOR imediatamente (group anterior desmontado pelo
+  lifecycle), ANTES da resolução. A nova Concentração só nasce se a resolução
+  produzir Effect durável e o caster ainda puder concentrar. Passar no save,
+  cancelar a pendência ou ter o alvo removido NÃO restaura a anterior.
+- Lock: **um cast `resolving` por caster**, garantido por índice único parcial
+  no Postgres (`spell_casts_one_resolving_per_caster`), nunca por Map do
+  processo. Retry do mesmo `operationId` é respondido antes do lock; outro
+  caster não é afetado. `409 SPELL_CAST_IN_PROGRESS` no conflito.
+- `PendingEffectSave.spellCastId` (nullable) liga a pendência à conjuração;
+  resolve success → cast `resolved`/`no-effect` sem Effect; failure →
+  Effect+Condition+Concentração+cast na mesma transação. Caster Incapacitado
+  durante a pendência: a falha resolve, mas `enforceCasterConcentration`
+  encerra o grupo (nenhum Effect concentrado permanece).
+- `smoke-spell-casting-foundation.ts` cobre commit boundary, idempotência,
+  reused key, magia não executável, validação antes do commit, Hold Person
+  success/failure, cancelamento, remoção estrutural, self-target, caster
+  incapacitado, permissões, histórico, lock e concorrência real.
+- **Continua pendente (intencional):** Spell Save DC derivada (6.6B), slots
+  (6.6C), Ação/tempo de conjuração (6.6D), alcance/targeting (6.6E), cast de
+  PLAYER (6.6F), duração/save repetido (Duration Engine), Counterspell e
+  upcasting.
 
 ### Modificadores de Effect (6.5B)
 
