@@ -6,6 +6,7 @@ import { smokeEffectLifecycle } from './smoke-effect-lifecycle.js';
 import { smokeBlessEffect } from './smoke-bless-effect.js';
 import { smokeHoldPersonEffect } from './smoke-hold-person-effect.js';
 import { smokeSpellCastingFoundation } from './smoke-spell-casting-foundation.js';
+import { smokeSpellcastingProfile } from './smoke-spellcasting-profile.js';
 import { smokeCombatItems } from './smoke-combat-items.js';
 import { smokeDeath } from './smoke-death.js';
 import { smokeExhaustionRule } from './smoke-exhaustion-rule.js';
@@ -21577,6 +21578,7 @@ async function main(): Promise<void> {
   await smokeBlessEffect(BASE_URL, check);
   await smokeHoldPersonEffect(BASE_URL, check);
   await smokeSpellCastingFoundation(BASE_URL, check);
+  await smokeSpellcastingProfile(BASE_URL, check);
   await smokeDeath(BASE_URL, check);
   await smokeExhaustionRule(BASE_URL, check);
 

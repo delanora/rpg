@@ -12,6 +12,10 @@ import {
   type EffectModifierSet,
 } from '../effects/effect-modifiers.js';
 import { creatureInventory, npcAttacks, npcEffectiveArmorClass } from './npc-sheet.js';
+import {
+  creatureSpellcastingProfileOf,
+  type CreatureSpellcastingProfile,
+} from '../shared/creature-spellcasting.js';
 
 /** Formato da criatura enviado ao frontend. */
 export interface CreatureDto {
@@ -39,6 +43,11 @@ export interface CreatureDto {
   speed: number;
 
   attacks: Attack[];
+  /**
+   * PERFIL DE CONJURAÇÃO explícito do statblock (6.6B). Vazio = criatura sem
+   * conjuração utilizável. Rota master-only: não é repertório de magias.
+   */
+  spellcastingProfile: CreatureSpellcastingProfile;
   /**
    * Ataques do NPC em combate: os PRÓPRIOS + os derivados das armas equipadas.
    * Em criaturas-template fica vazio (o cliente usa só `attacks`).
@@ -155,6 +164,7 @@ export function toCreatureDto(
     derivedAttacks,
     speed: creature.speed,
     attacks,
+    spellcastingProfile: creatureSpellcastingProfileOf(creature.spellcastingProfile),
     resistances,
     immunities,
     vulnerabilities,

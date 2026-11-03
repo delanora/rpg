@@ -768,6 +768,12 @@ model Creature {
   /// 13 tipos canônicos de shared/attacks.ts, validada na escrita. Aplicada no
   /// combate por parcela, junto de resistances/immunities.
   vulnerabilities Json @default("[]")
+  ///
+  /// PERFIL DE CONJURAÇÃO do statblock (Fase 6.6B): `{ ability?, saveDc?, attackBonus? }`.
+  /// Valores EXPLÍCITOS do statblock são a autoridade da criatura — não são
+  /// recalculados pela fórmula de personagem (nível de classe/proficiência).
+  /// Vazio = criatura sem conjuração utilizável. Só o perfil, nunca um repertório.
+  spellcastingProfile Json @default("{}")
   description String @default("")
 
   /// URL pública do ícone/retrato da criatura/NPC (`uploads/creatures/...`).
@@ -1222,8 +1228,25 @@ model SpellCast {
   requiresConcentration Boolean @default(false)
   /// Grupo produzido pela resolução (nunca usado para decidir se está ativo).
   effectGroupId String?
-  /// CD usada na resolução (fallback manual da 6.6A; derivada a partir da 6.6B).
+  /// CD usada na resolução (6.6B: derivada do perfil de conjuração).
   saveDc Int?
+
+  ///
+  /// SNAPSHOT IMUTÁVEL do perfil de conjuração (Fase 6.6B). Nullable apenas para
+  /// casts anteriores à migração; novos casts sempre preenchem. Mudanças
+  /// posteriores de atributo/nível/statblock NÃO recalculam este registro nem a
+  /// pendência que nasceu dele.
+  spellcastingSourceKind    String?
+  spellcastingSourceId      String?
+  spellcastingSourceLabel   String?
+  /// `derived` (personagem) | `explicit` (statblock).
+  spellcastingMode          String?
+  spellcastingAbility       String?
+  spellcastingAbilityScore  Int?
+  spellcastingAbilityModifier Int?
+  spellcastingProficiencyBonus Int?
+  spellSaveDc               Int?
+  spellAttackBonus          Int?
 
   visibility String @default("public")
 

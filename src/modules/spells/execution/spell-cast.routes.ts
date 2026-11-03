@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../../auth/auth.middleware.js';
+import { entitySchema } from '../../shared/conditions.js';
 import { spellCastProofSchema } from './spell-cast.schema.js';
 import { castProofSpell } from './spell-cast.service.js';
+import { listSpellcastingSources } from './spellcasting-profile.service.js';
 
 /**
  * FASE 6.6A — API GENÉRICA de conjuração de PROVA (só MASTER).
@@ -13,6 +15,22 @@ import { castProofSpell } from './spell-cast.service.js';
  */
 export const spellsRouter = Router();
 spellsRouter.use(authenticate);
+
+/**
+ * GET /api/spells/sources/:entityKind/:entityId — fontes de conjuração do
+ * conjurador com os números DERIVADOS (CD/ataque mágico) em modo LEITURA.
+ *
+ * MASTER-only: alimenta o seletor de fonte do fluxo de prova (multiclasse) e
+ * pode revelar a matemática de um statblock, que o jogador não recebe.
+ */
+spellsRouter.get('/sources/:entityKind/:entityId', requireRole('MASTER'), async (req, res) => {
+  const parsed = entitySchema.safeParse({ kind: req.params.entityKind, id: req.params.entityId });
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json({ sources: await listSpellcastingSources(parsed.data) });
+});
 
 /** POST /api/spells/cast-proof — valida, commita e resolve uma conjuração. */
 spellsRouter.post('/cast-proof', requireRole('MASTER'), async (req, res) => {

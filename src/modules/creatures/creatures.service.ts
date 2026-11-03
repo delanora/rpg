@@ -143,6 +143,10 @@ export async function updateCreature(
   }
 
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
+  // Perfil de conjuração do statblock (6.6B): só o perfil, nunca um repertório.
+  if (patch.spellcastingProfile !== undefined) {
+    data.spellcastingProfile = patch.spellcastingProfile;
+  }
   if (patch.resistances !== undefined) data.resistances = patch.resistances;
   if (patch.immunities !== undefined) data.immunities = patch.immunities;
   if (patch.vulnerabilities !== undefined) data.vulnerabilities = patch.vulnerabilities;

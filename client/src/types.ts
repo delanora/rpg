@@ -1735,6 +1735,15 @@ export interface Creature {
   speed: number;
 
   attacks: Attack[];
+  /**
+   * PERFIL DE CONJURAÇÃO explícito do statblock (6.6B). Vazio = criatura sem
+   * conjuração utilizável. Não é repertório de magias.
+   */
+  spellcastingProfile: {
+    ability?: AbilityKey;
+    saveDc?: number;
+    attackBonus?: number;
+  };
   /** Ataques derivados das armas EQUIPADAS do NPC (vazio em criaturas). */
   derivedAttacks: Attack[];
   resistances: string[];
@@ -1758,6 +1767,8 @@ export interface CreaturePatch {
   kind?: CreatureKind;
   type?: string;
   challengeRating?: string;
+  /** Perfil de conjuração do statblock (6.6B): só o perfil, sem repertório. */
+  spellcastingProfile?: Creature['spellcastingProfile'];
   localityIds?: string[];
 
   strength?: number;
@@ -2727,6 +2738,21 @@ export interface MechanicalUpdatedPayload { mechanical: MechanicalDto; }
  * Nada mecânico existe ainda: nem Effect, nem Condition, nem Concentração. O
  * atributo e a CD vêm do SERVIDOR; o cliente só escolhe resolver o save.
  */
+/**
+ * FONTE DE CONJURAÇÃO resolvida pelo SERVIDOR (6.6B).
+ *
+ * Identidade é `kind` + `id` (nunca o rótulo). `spellSaveDc`/`spellAttackBonus`
+ * são DERIVADOS (personagem) ou explícitos do statblock — o cliente só exibe.
+ */
+export interface SpellcastingSourceDto {
+  kind: 'class' | 'subclass' | 'creature' | 'racial' | 'feat' | 'item' | 'feature' | 'manual';
+  id: string;
+  label: string;
+  ability: AbilityKey | null;
+  spellSaveDc: number;
+  spellAttackBonus: number | null;
+}
+
 export interface PendingEffectSaveDto {
   id: string;
   definitionId: string;

@@ -21,7 +21,8 @@ import type { SpellExecutionDefinition } from './spell-execution-definition.js';
  * existir no catálogo NÃO torna a magia executável (`SPELL_EXECUTION_NOT_IMPLEMENTED`).
  *
  * As definições compõem o contrato com validações específicas (limite de alvos,
- * humanoide) e mantêm a CD manual enquanto a 6.6B não deriva o Spell Save DC.
+ * humanoide). A CD de magia NÃO fica aqui: desde a 6.6B ela é derivada do perfil
+ * de conjuração do caster (ou do statblock), nunca da magia.
  */
 export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinition> = {
   [BLESS_SPELL_ID]: {
@@ -47,9 +48,8 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
     spellId: HOLD_PERSON_SPELL_ID,
     requiresConcentration: true,
     maxTargets: 1,
-    // CD manual de prova: a Spell Execution Engine derivará 8 + proficiência +
-    // atributo na 6.6B. O payload de prova não escolhe atributo nem Condition.
-    manualSaveDc: true,
+    // O payload de prova não escolhe atributo, CD nem Condition: a CD vem do
+    // perfil do caster e o atributo da definição da magia.
     resolution: {
       kind: 'save-effect',
       ability: HOLD_PERSON_SAVE_ABILITY,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { entitySchema } from '../shared/conditions.js';
+import { spellcastingSourceRefSchema } from '../spells/execution/spellcasting-source.js';
 import { effectConditionListSchema, effectModifierListSchema } from './effect-modifiers.js';
 
 /**
@@ -113,22 +114,24 @@ export const applyBlessSchema = z.object({
   operationId: z.string().trim().min(1).max(128),
   caster: entitySchema,
   targets: z.array(entitySchema).min(1).max(3),
+  /** Fonte de conjuração (obrigatória só quando o caster é multiclasse). */
+  spellcastingSource: spellcastingSourceRefSchema.optional(),
 });
 export type ApplyBlessInput = z.infer<typeof applyBlessSchema>;
 
 /**
- * FASE 6.5H — aplicação CONTROLADA de Imobilizar Pessoa (ferramenta do Mestre).
+ * FASE 6.5H/6.6B — aplicação CONTROLADA de Imobilizar Pessoa (ferramenta do Mestre).
  *
- * Um alvo, sem upcasting. O cliente manda apenas caster/alvo e a CD de PROVA
- * (fallback: a Spell Execution Engine futura a derivará de 8 + proficiência +
- * atributo de conjuração). Atributo do save, Condition e `definitionId` são
- * fixados no SERVIDOR — o payload não tem como escolhê-los.
+ * Um alvo, sem upcasting. O cliente manda apenas caster/alvo (e a fonte de
+ * conjuração no multiclasse). A CD de magia é DERIVADA do perfil do caster ou
+ * vem do statblock — não existe mais campo de CD no payload. Atributo do save,
+ * Condition e `definitionId` são fixados no SERVIDOR.
  */
 export const applyHoldPersonSchema = z.object({
   operationId: z.string().trim().min(1).max(128),
   caster: entitySchema,
   target: entitySchema,
-  /** CD manual de prova — validada no servidor (1..30). */
-  dc: z.number().int().min(1).max(30),
+  /** Fonte de conjuração (obrigatória só quando o caster é multiclasse). */
+  spellcastingSource: spellcastingSourceRefSchema.optional(),
 });
 export type ApplyHoldPersonInput = z.infer<typeof applyHoldPersonSchema>;

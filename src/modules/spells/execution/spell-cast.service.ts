@@ -25,6 +25,8 @@ import type {
   SpellExecutionDefinition,
   SpellValidationContext,
 } from './spell-execution-definition.js';
+import { resolveSpellcastingProfile } from './spellcasting-profile.service.js';
+import type { SpellcastingProfile } from './spellcasting-source.js';
 import { toSpellCastDto, type SpellCastDto } from './spell-cast.dto.js';
 import type { SpellCastProofInput } from './spell-cast.schema.js';
 
@@ -40,9 +42,13 @@ import type { SpellCastProofInput } from './spell-cast.schema.js';
  *     → COMPLETE (status/outcome)
  *
  * O núcleo NÃO conhece Bless/Hold Person: `spellId → definição` vem do registry
- * e o estado durável vem da Effect Definition referenciada. O que esta fase NÃO
- * faz: Ação, slot, componentes, alcance, preparação, Spell Save DC derivada,
- * upcasting, duração, Counterspell e conjuração de PLAYER.
+ * e o estado durável vem da Effect Definition referenciada.
+ *
+ * 6.6B: a FONTE de conjuração e o perfil (atributo, proficiência, CD de magia,
+ * bônus de ataque mágico) são resolvidos no VALIDATE e SNAPSHOTADOS no commit.
+ * O cliente não envia CD/atributo/proficiência — só, no multiclasse, qual fonte
+ * canônica usar. O que continua fora: Ação, slot, componentes, alcance,
+ * preparação, upcasting, duração, Counterspell e conjuração de PLAYER.
  *
  * Semântica de Concentração (correção da 6.5H): no COMMIT de uma conjuração que
  * exige concentração, a concentração ANTERIOR termina — mesmo que o alvo passe
@@ -56,7 +62,9 @@ export interface SpellCastContext {
   execution: SpellExecutionDefinition;
   caster: LoadedEntity;
   targets: LoadedEntity[];
-  saveDc: number | null;
+  /** Perfil SERVER-SIDE (fonte, atributo, CD, ataque mágico) da conjuração. */
+  profile: SpellcastingProfile;
+  saveDc: number;
 }
 
 export interface SpellCastResult {
@@ -80,7 +88,7 @@ function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
         spellId: input.spellId,
         caster: input.caster,
         targets: input.targets,
-        dc: input.dc ?? null,
+        spellcastingSource: input.spellcastingSource ?? null,
       }),
     )
     .digest('hex');
@@ -194,30 +202,22 @@ export async function validateSpellCast(
     );
   }
 
-  let saveDc: number | null = null;
-  if (execution.resolution.kind === 'save-effect') {
-    if (execution.manualSaveDc) {
-      if (input.dc === undefined) {
-        throw new HttpError(
-          'Informe a CD manual de prova desta conjuração.',
-          400,
-          'VALIDATION_ERROR',
-        );
-      }
-      saveDc = input.dc;
-    }
-  }
+  // 6.6B: fonte + perfil SEMPRE resolvidos antes do commit. Fonte inexistente,
+  // ambígua ou de outro personagem rejeita o cast sem encerrar concentração.
+  const profile = await resolveSpellcastingProfile(caster, input.spellcastingSource, db);
+  const saveDc = profile.spellSaveDc;
 
   const context: SpellValidationContext = {
     db,
     spellId: input.spellId,
     caster,
     targets,
+    profile,
     saveDc,
   };
   await execution.validateTargets?.(context);
 
-  return { actor, input, execution, caster, targets, saveDc };
+  return { actor, input, execution, caster, targets, profile, saveDc };
 }
 
 /**
@@ -243,7 +243,19 @@ async function commitSpellCast(
       })) as unknown as Prisma.InputJsonValue,
       status: 'resolving',
       requiresConcentration: context.execution.requiresConcentration,
+      // SNAPSHOT IMUTÁVEL do perfil: mudar a ficha/statblock depois NÃO
+      // recalcula este cast nem a pendência que nasceu dele.
+      spellcastingSourceKind: context.profile.source.kind,
+      spellcastingSourceId: context.profile.source.id,
+      spellcastingSourceLabel: context.profile.source.label,
+      spellcastingMode: context.profile.mode,
+      spellcastingAbility: context.profile.ability,
+      spellcastingAbilityScore: context.profile.abilityScore,
+      spellcastingAbilityModifier: context.profile.abilityModifier,
+      spellcastingProficiencyBonus: context.profile.proficiencyBonus,
       saveDc: context.saveDc,
+      spellSaveDc: context.saveDc,
+      spellAttackBonus: context.profile.spellAttackBonus,
       visibility: 'public',
       operationId: context.input.operationId,
       fingerprint,
@@ -377,9 +389,6 @@ async function beginPendingSave(
   const resolution = context.execution.resolution;
   if (resolution.kind !== 'save-effect') {
     throw new HttpError('Definição de execução inconsistente.', 409, 'SPELL_EXECUTION_NOT_IMPLEMENTED');
-  }
-  if (context.saveDc === null) {
-    throw new HttpError('CD da salvaguarda ausente.', 400, 'VALIDATION_ERROR');
   }
   const target = context.targets[0];
   const pending = await db.pendingEffectSave.create({

@@ -65,10 +65,20 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       sub: targetUser.id, username: targetUser.username, displayName: targetUser.displayName, role: targetUser.role,
     });
 
-    // Sabedoria 10 e sem proficiência: total do save = d20. CD 1 → sucesso,
-    // CD 30 → falha, sem depender de sorte.
+    // 6.6B: os conjuradores precisam de uma FONTE de conjuração real (Mago). A
+    // CD do save é DERIVADA do perfil — `forceSave` abaixo torna o resultado
+    // determinístico sem o cliente enviar números.
     const caster = await prisma.character.create({
-      data: { userId: casterUser.id, name: 'Caster', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
+      data: {
+        userId: casterUser.id,
+        name: 'Caster',
+        hpCurrent: 40,
+        hpMax: 40,
+        speed: 9,
+        wisdom: 10,
+        intelligence: 16,
+        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+      },
     });
     const target = await prisma.character.create({
       data: { userId: targetUser.id, name: 'Alvo Cast', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
@@ -77,7 +87,16 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       data: { userId: allyUser.id, name: 'Aliado Cast', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
     });
     const second = await prisma.character.create({
-      data: { userId: secondUser.id, name: 'Segundo Caster', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
+      data: {
+        userId: secondUser.id,
+        name: 'Segundo Caster',
+        hpCurrent: 40,
+        hpMax: 40,
+        speed: 9,
+        wisdom: 10,
+        intelligence: 16,
+        classes: [{ classKey: 'cleric', subclass: '', level: 1 }],
+      },
     });
     characterIds.push(caster.id, target.id, ally.id, second.id);
 
@@ -140,14 +159,38 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     async function holdPerson(
       casterRef: { kind: 'character' | 'creature'; id: string },
       targetRef: { kind: 'character' | 'creature'; id: string },
-      dc: number,
       token = masterToken,
       operationId = newOperation(),
     ) {
       return {
-        ...(await request('/effects/hold-person', { operationId, caster: casterRef, target: targetRef, dc }, token)),
+        ...(await request('/effects/hold-person', { operationId, caster: casterRef, target: targetRef }, token)),
         operationId,
       };
+    }
+
+    /**
+     * Resultado DETERMINÍSTICO do save pela matemática real: CD derivada do
+     * caster (INT 1 → 5; INT 30 → 20) e bônus do alvo (SAB 30 → +10; SAB 1 → -5).
+     * O cliente nunca envia CD/atributo — só o servidor calcula.
+     */
+    async function forceSave(
+      outcome: 'success' | 'failure',
+      casterId: string,
+      targetRef: { kind: string; id: string },
+    ): Promise<void> {
+      // O atributo de conjuração depende da FONTE (INT/SAB/CAR), então os três
+      // são ajustados: DC mínima (5) para sucesso, máxima (20) para falha.
+      const casting = outcome === 'failure' ? 30 : 1;
+      await prisma.character.update({
+        where: { id: casterId },
+        data: { intelligence: casting, wisdom: casting, charisma: casting },
+      });
+      const wisdom = outcome === 'failure' ? 1 : 30;
+      if (targetRef.kind === 'character') {
+        await prisma.character.update({ where: { id: targetRef.id }, data: { wisdom } });
+      } else if (targetRef.kind === 'creature') {
+        await prisma.creature.update({ where: { id: targetRef.id }, data: { wisdom } });
+      }
     }
 
     async function rollSave(pendingId: string, token = masterToken) {
@@ -257,7 +300,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // E — validação falha ANTES do commit e NÃO encerra a concentração
     // =====================================================================
     const fourTargets = await bless(casterEntity, [casterEntity, targetEntity, allyEntity, secondEntity]);
-    const nonHumanoid = await holdPerson(casterEntity, beastEntity, 13);
+    const nonHumanoid = await holdPerson(casterEntity, beastEntity);
     const casterAfterInvalid = await mechanicalOf(casterEntity);
     check(
       '75.E) alvos inválidos (4 no Bless / não humanoide) não commitam e mantêm a concentração anterior',
@@ -274,7 +317,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     //     mesmo quando o alvo PASSA no save
     // =====================================================================
     const opF = newOperation();
-    const applyF = await holdPerson(casterEntity, targetEntity, 1, masterToken, opF);
+    await forceSave('success', caster.id, targetEntity);
+    const applyF = await holdPerson(casterEntity, targetEntity, masterToken, opF);
     const castF = await castRow(opF);
     const afterCommitF = await mechanicalOf(casterEntity);
     const groupAConditions = await prisma.effectInstance.findMany({
@@ -311,7 +355,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // G — FALHA: Effect + Condition + Concentração + cast/effectGroupId
     // =====================================================================
     const opG = newOperation();
-    const applyG = await holdPerson(casterEntity, targetEntity, 30, masterToken, opG);
+    await forceSave('failure', caster.id, targetEntity);
+    const applyG = await holdPerson(casterEntity, targetEntity, masterToken, opG);
     const rollG = await rollSave(applyG.data.pending.id);
     const castG = await castRow(opG);
     const targetEffectsG = await effectsOf(targetEntity);
@@ -333,7 +378,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // H — UM cast resolving por caster; outros casters não são bloqueados
     // =====================================================================
     const opH = newOperation();
-    const applyH = await holdPerson(casterEntity, targetEntity, 1, masterToken, opH);
+    await forceSave('success', caster.id, targetEntity);
+    const applyH = await holdPerson(casterEntity, targetEntity, masterToken, opH);
     const blockedCast = await castProof({
       operationId: newOperation(),
       spellId: 'bless',
@@ -341,7 +387,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       targets: [targetEntity],
     });
     const otherCaster = await bless(secondEntity, [allyEntity]);
-    const retryH = await holdPerson(casterEntity, targetEntity, 1, masterToken, opH);
+    const retryH = await holdPerson(casterEntity, targetEntity, masterToken, opH);
     check(
       '75.H) segundo cast do MESMO caster → 409 SPELL_CAST_IN_PROGRESS; outro caster conjura; retry do mesmo operationId não é bloqueado',
       applyH.status === 201 &&
@@ -369,7 +415,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     const concentrationI = await bless(casterEntity, [targetEntity]);
     const concentrationBeforeI = await mechanicalOf(casterEntity);
     const opI = newOperation();
-    const applyI = await holdPerson(casterEntity, targetEntity, 30, masterToken, opI);
+    const applyI = await holdPerson(casterEntity, targetEntity, masterToken, opI);
     const cancelI = await request(`/effects/pending/${applyI.data.pending.id}/cancel`, {}, masterToken);
     const castI = await castRow(opI);
     check(
@@ -394,7 +440,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     creatureIds.push(doomed.id);
     const doomedEntity = { kind: 'creature' as const, id: doomed.id };
     const opJ = newOperation();
-    const applyJ = await holdPerson(casterEntity, doomedEntity, 1, masterToken, opJ);
+    const applyJ = await holdPerson(casterEntity, doomedEntity, masterToken, opJ);
     const deletedJ = await request(`/creatures/${doomed.id}`, {}, masterToken, 'DELETE');
     check(
       '75.J) caster/alvo removido estruturalmente: pendência e SpellCast são cancelados (nada fica resolving)',
@@ -410,7 +456,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // K — self-target: falha resolve o cast e o lifecycle limpa o grupo
     // =====================================================================
     const opK = newOperation();
-    const applyK = await holdPerson(casterEntity, casterEntity, 30, masterToken, opK);
+    await forceSave('failure', caster.id, casterEntity);
+    const applyK = await holdPerson(casterEntity, casterEntity, masterToken, opK);
     const rollK = await rollSave(applyK.data.pending.id, casterToken);
     const castK = await castRow(opK);
     const casterK = await mechanicalOf(casterEntity);
@@ -433,7 +480,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // L — caster incapacitado DURANTE a pendência: nenhum Effect concentrado
     // =====================================================================
     const opL = newOperation();
-    const applyL = await holdPerson(casterEntity, targetEntity, 30, masterToken, opL);
+    await forceSave('failure', caster.id, targetEntity);
+    const applyL = await holdPerson(casterEntity, targetEntity, masterToken, opL);
     const casterBeforeParalyzed = await mechanicalOf(casterEntity);
     const paralyzeCaster = await request(
       '/mechanical/mutate',
@@ -470,7 +518,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       casterToken,
     );
     const playerBless = await bless(casterEntity, [targetEntity], casterToken);
-    const playerHold = await holdPerson(casterEntity, targetEntity, 1, casterToken);
+    const playerHold = await holdPerson(casterEntity, targetEntity, casterToken);
     check(
       '75.M) PLAYER não conjura por NENHUMA rota (cast-proof/Bless/Hold Person → 403)',
       playerGeneric.status === 403 &&
@@ -483,7 +531,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // N — PLAYER ainda resolve o PRÓPRIO save
     // =====================================================================
     const opN = newOperation();
-    const applyN = await holdPerson(secondEntity, targetEntity, 1, masterToken, opN);
+    await forceSave('success', second.id, targetEntity);
+    const applyN = await holdPerson(secondEntity, targetEntity, masterToken, opN);
     const playerSave = await rollSave(applyN.data.pending.id, targetToken);
     check(
       '75.N) PLAYER dono do alvo continua rolando a própria salvaguarda (sem regressão)',
@@ -497,7 +546,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // O — Effect terminar depois NÃO reescreve o histórico do cast
     // =====================================================================
     const opO = newOperation();
-    const applyO = await holdPerson(secondEntity, allyEntity, 30, masterToken, opO);
+    await forceSave('failure', second.id, allyEntity);
+    const applyO = await holdPerson(secondEntity, allyEntity, masterToken, opO);
     const rollO = await rollSave(applyO.data.pending.id);
     const castO = await castRow(opO);
     const allyEffectsO = await effectsOf(allyEntity);
@@ -517,8 +567,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // P — concorrência REAL: dois commits simultâneos do mesmo caster
     // =====================================================================
     const [concurrentA, concurrentB] = await Promise.all([
-      holdPerson(casterEntity, targetEntity, 1),
-      holdPerson(casterEntity, targetEntity, 1),
+      holdPerson(casterEntity, targetEntity),
+      holdPerson(casterEntity, targetEntity),
     ]);
     const statuses = [concurrentA.status, concurrentB.status].sort();
     const resolvingCount = await prisma.spellCast.count({

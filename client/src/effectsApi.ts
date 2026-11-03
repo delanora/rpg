@@ -6,6 +6,7 @@ import type {
   EffectVisibility,
   MechanicalEntity,
   PendingEffectSaveDto,
+  SpellcastingSourceDto,
 } from './types';
 
 /**
@@ -56,6 +57,8 @@ export function createManualEffect(input: {
 export function applyBlessEffect(input: {
   caster: MechanicalEntity;
   targets: MechanicalEntity[];
+  /** Fonte canônica escolhida (só quando o caster é multiclasse). */
+  spellcastingSource?: { kind: SpellcastingSourceDto['kind']; id: string };
 }): Promise<{ groupId: string; effects: EffectDto[] }> {
   return api<{ groupId: string; effects: EffectDto[] }>('/api/effects/bless', {
     method: 'POST',
@@ -64,21 +67,37 @@ export function applyBlessEffect(input: {
 }
 
 /**
- * APLICAÇÃO CONTROLADA DE IMOBILIZAR PESSOA (Mestre, 6.5H).
+ * APLICAÇÃO CONTROLADA DE IMOBILIZAR PESSOA (Mestre, 6.5H/6.6B).
  *
  * Ferramenta de prova da engine — NÃO é conjuração de jogador. O servidor só
  * cria a PENDÊNCIA de salvaguarda de Sabedoria; Effect/Paralyzed/Concentração
- * nascem na falha do save. A CD é manual nesta fase (fallback documentado).
+ * nascem na falha do save. A CD é DERIVADA do perfil de conjuração do caster
+ * (ou do statblock): o cliente NÃO envia CD, atributo nem bônus.
  */
 export function applyHoldPersonEffect(input: {
   caster: MechanicalEntity;
   target: MechanicalEntity;
-  dc: number;
+  /** Fonte canônica escolhida (só quando o caster é multiclasse). */
+  spellcastingSource?: { kind: SpellcastingSourceDto['kind']; id: string };
 }): Promise<{ pending: PendingEffectSaveDto }> {
   return api<{ pending: PendingEffectSaveDto }>('/api/effects/hold-person', {
     method: 'POST',
     body: { ...input, operationId: createOperationId() },
   });
+}
+
+/**
+ * Fontes de conjuração do caster com a CD/ataque mágico DERIVADOS (6.6B).
+ *
+ * Rota MASTER-only: o jogador nunca recebe a matemática de conjuração de um
+ * NPC nem escolhe a fonte de um cast (ainda não há conjuração de PLAYER).
+ */
+export function fetchSpellcastingSources(
+  entity: MechanicalEntity,
+): Promise<SpellcastingSourceDto[]> {
+  return api<{ sources: SpellcastingSourceDto[] }>(
+    `/api/spells/sources/${entity.kind}/${entity.id}`,
+  ).then((result) => result.sources);
 }
 
 /** Pendências de salvaguarda de um alvo (o servidor filtra a privacidade). */

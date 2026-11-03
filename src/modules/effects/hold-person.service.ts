@@ -64,9 +64,10 @@ export interface HoldPersonResolution {
 /**
  * APLICAÇÃO CONTROLADA (Mestre) — delega ao cast service.
  *
- * Todo detalhe mecânico (atributo do save, Condition, definição de efeito,
- * ordem do lifecycle) é do SERVIDOR; o payload só traz caster, alvo e a CD
- * manual de prova.
+ * Todo detalhe mecânico (atributo do save, CD de magia, Condition, definição de
+ * efeito, ordem do lifecycle) é do SERVIDOR; o payload só traz caster, alvo e,
+ * no multiclasse, qual fonte de conjuração. Desde a 6.6B a CD sai do perfil de
+ * conjuração (personagem) ou do statblock (criatura) — nunca do cliente.
  */
 export async function applyHoldPerson(
   actor: EffectActor,
@@ -77,7 +78,7 @@ export async function applyHoldPerson(
     spellId: HOLD_PERSON_SPELL_ID,
     caster: input.caster,
     targets: [input.target],
-    dc: input.dc,
+    ...(input.spellcastingSource ? { spellcastingSource: input.spellcastingSource } : {}),
   });
   if (!result.pending) {
     throw new HttpError('A conjuração não gerou salvaguarda pendente.', 409, 'CONFLICT');

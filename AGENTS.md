@@ -446,16 +446,22 @@ significa que as respectivas fases futuras estejam concluídas.
   motor de Conditions (`sourceType = 'effect'`) e UM lifecycle de encerramento
   que desmonta modificadores e Conditions, inclusive na remoção estrutural de
   entidades.
-- 6.6 Spell Execution Engine — **6.6A (contrato de conjuração) implementada**:
+- 6.6 Spell Execution Engine — **6.6A (contrato de conjuração) e 6.6B
+  (perfil de conjuração) implementadas**:
   `SpellCast` persistente (status `resolving`/`resolved`/`cancelled` + outcome
   `effect`/`no-effect`/`cancelled`), `SpellExecutionDefinition` por `spellId`
   (`immediate-effect` / `save-effect`) referenciando Effect Definitions, registry
   apenas com magias provadas, pipeline único validate → commit → resolve, commit
   encerrando a Concentração anterior e lock de UM cast `resolving` por caster no
-  BANCO. Ainda sem slot, Ação, DC derivada, alcance/componentes, duração e cast
-  de PLAYER (6.6B+).
-  **NÃO implementadas:** 6.5E (integração completa com Concentração), 6.5F
-  (visibilidade/realtime avançados) e 6.5G (Bless).
+  BANCO.
+  **6.6B**: `SpellcastingSource` (`class`/`subclass`/`creature`) com atributo por
+  FONTE (multiclasse Mago/Clérigo usa INT e SAB, com PB do nível TOTAL), Spell
+  Save DC = 8 + PB + atributo e Spell Attack Bonus = PB + atributo derivados no
+  SERVIDOR, statblock de criatura como autoridade (`saveDc`/`attackBonus`
+  explícitos) e snapshot imutável no `SpellCast` (migration
+  `20261102120000_add_spellcasting_profile`). Hold Person passou a usar a CD
+  derivada — não existe mais CD manual de prova. Ainda sem slot, Ação, alcance/
+  componentes, preparação, duração, spell attack real e cast de PLAYER (6.6C+).
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
