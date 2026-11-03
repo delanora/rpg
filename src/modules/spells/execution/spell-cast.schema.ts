@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { entitySchema } from '../../shared/conditions.js';
 import { spellcastingSourceRefSchema } from './spellcasting-source.js';
+import { castingResourceRefSchema } from './casting-resource.js';
 
 /**
  * FASE 6.6A/6.6B — contrato HTTP do CASTING (apenas prova/administração).
@@ -24,6 +25,12 @@ export const spellCastProofSchema = z.object({
    * uma; o servidor revalida a posse e ignora qualquer número enviado.
    */
   spellcastingSource: spellcastingSourceRefSchema.optional(),
+  /**
+   * Espaço a gastar (6.6C). Obrigatório só quando há MAIS de um compatível;
+   * `level` vira o `castAtLevel` do cast. O cliente nunca envia remaining/max e
+   * nunca escolhe um nível abaixo do nível da magia.
+   */
+  castingResource: castingResourceRefSchema.optional(),
 });
 
 export type SpellCastProofInput = z.infer<typeof spellCastProofSchema>;

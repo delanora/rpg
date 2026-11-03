@@ -4,7 +4,10 @@ import { ABILITY_SCORE_MAX, ABILITY_SCORE_MIN } from '../shared/dnd5e.js';
 import { inventorySlotSchema } from '../characters/characters.schema.js';
 import { itemDetailsSchema } from '../shared/item-details.js';
 import { coinDeltaSchema } from '../shared/coins.js';
-import { creatureSpellcastingProfileSchema } from '../shared/creature-spellcasting.js';
+import {
+  creatureSpellcastingProfileSchema,
+  creatureSpellcastingResourcesSchema,
+} from '../shared/creature-spellcasting.js';
 
 const abilityScore = z
   .number()
@@ -47,6 +50,12 @@ const creatureFields = z.object({
    * fórmula de personagem. Só o perfil, nunca o repertório de magias.
    */
   spellcastingProfile: creatureSpellcastingProfileSchema,
+  /**
+   * ESPAÇOS DE MAGIA do statblock (6.6C): o MÁXIMO editável pelo Mestre. Sem
+   * espaços declarados, a criatura NÃO conjura pelo motor de conjuração — nada
+   * de inferir progressão pelo ND ou de cast grátis.
+   */
+  spellcastingResources: creatureSpellcastingResourcesSchema,
   resistances: damageTypeListSchema,
   immunities: damageTypeListSchema,
   vulnerabilities: damageTypeListSchema,

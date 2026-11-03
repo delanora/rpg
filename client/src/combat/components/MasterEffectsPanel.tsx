@@ -6,7 +6,10 @@ import {
   applyHoldPersonEffect,
   createManualEffect,
   endEffect,
+  fetchCastingResources,
   fetchSpellcastingSources,
+  type CastingResourceChoice,
+  type CastingResourceDto,
 } from '../../effectsApi';
 import type {
   AbilityKey,
@@ -53,6 +56,36 @@ const ABILITY_OPTIONS: { value: '' | AbilityKey; label: string }[] = [
 ];
 
 const DICE_SIDES = [4, 6, 8, 10, 12, 20, 100];
+
+/** Espaços que comportam a magia e ainda têm uso livre (6.6C). */
+function eligibleResources(
+  resources: CastingResourceDto[],
+  spellLevel: number,
+): CastingResourceDto[] {
+  return resources.filter(
+    (resource) => resource.level >= spellLevel && resource.remaining > 0,
+  );
+}
+
+function resourceKeyOf(resource: CastingResourceDto): string {
+  return `${resource.kind}:${resource.level}`;
+}
+
+function resourceChoiceOf(
+  resources: CastingResourceDto[],
+  key: string,
+): CastingResourceChoice | null {
+  const found = resources.find((resource) => resourceKeyOf(resource) === key);
+  return found ? { kind: found.kind, level: found.level } : null;
+}
+
+function defaultSlotKey(
+  resources: CastingResourceDto[],
+  spellLevel: number,
+): string {
+  const eligible = eligibleResources(resources, spellLevel);
+  return eligible.length === 1 ? resourceKeyOf(eligible[0]) : '';
+}
 
 function isRollModifier(kind: ModifierKind): boolean {
   return kind.startsWith('roll-');
@@ -104,6 +137,11 @@ export function MasterEffectsPanel({
   // derivados. Só há escolha no multiclasse; não existe campo de CD na UI.
   const [sources, setSources] = useState<SpellcastingSourceDto[]>([]);
   const [sourceKey, setSourceKey] = useState('');
+  // ESPAÇOS DE MAGIA (6.6C): `remaining`/`max` são LEITURA do servidor. O Mestre
+  // só escolhe QUAL gastar; nada de campo manual de slot/remaining.
+  const [resources, setResources] = useState<CastingResourceDto[]>([]);
+  const [blessSlot, setBlessSlot] = useState('');
+  const [holdSlot, setHoldSlot] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -118,6 +156,19 @@ export function MasterEffectsPanel({
       .catch(() => {
         if (alive) setSources([]);
       });
+    setResources([]);
+    setBlessSlot('');
+    setHoldSlot('');
+    fetchCastingResources(entity)
+      .then((list) => {
+        if (!alive) return;
+        setResources(list);
+        setBlessSlot(defaultSlotKey(list, 1));
+        setHoldSlot(defaultSlotKey(list, 2));
+      })
+      .catch(() => {
+        if (alive) setResources([]);
+      });
     return () => {
       alive = false;
     };
@@ -128,6 +179,10 @@ export function MasterEffectsPanel({
     (sources.length === 1 ? sources[0] : null);
 
   const locked = busy || working;
+  const blessResources = eligibleResources(resources, 1);
+  const holdResources = eligibleResources(resources, 2);
+  const blessChoice = resourceChoiceOf(resources, blessSlot);
+  const holdChoice = resourceChoiceOf(resources, holdSlot);
 
   async function run(action: () => Promise<unknown>): Promise<void> {
     if (locked) return;
@@ -427,9 +482,34 @@ export function MasterEffectsPanel({
         </summary>
         <p className="field-hint">
           Ferramenta TEMPORÁRIA do Mestre: cria o grupo de efeitos, até 3 alvos e a
-          Concentração do caster. Não gasta Ação nem slot, não valida alcance/componentes e
-          ainda não tem duração automática.
+          Concentração do caster. Gasta UM espaço de magia real no commit (sem upcast), não
+          gasta Ação, não valida alcance/componentes e ainda não tem duração automática.
         </p>
+        <div className="hp-controls" data-casting-resource="bless">
+          <span className="field-hint">Espaço</span>
+          {blessResources.length > 1 ? (
+            <select
+              aria-label="Espaço de magia do Bless"
+              value={blessSlot}
+              onChange={(event) => setBlessSlot(event.target.value)}
+            >
+              <option value="">Escolha o espaço</option>
+              {blessResources.map((resource) => (
+                <option key={resourceKeyOf(resource)} value={resourceKeyOf(resource)}>
+                  {resource.label} — {resource.remaining}/{resource.max}
+                </option>
+              ))}
+            </select>
+          ) : blessResources.length === 1 ? (
+            <span className="field-hint">
+              {blessResources[0].label} — {blessResources[0].remaining}/{blessResources[0].max}
+            </span>
+          ) : (
+            <span className="field-hint" data-casting-resource-empty>
+              Sem espaço disponível.
+            </span>
+          )}
+        </div>
         <div className="hp-controls">
           {choices.map((choice) => {
             const key = `${choice.entity.kind}:${choice.entity.id}`;
@@ -460,7 +540,9 @@ export function MasterEffectsPanel({
           <button
             type="button"
             className="btn btn-small"
-            disabled={locked || blessTargets.length === 0 || selectedSource === null}
+            disabled={
+              locked || blessTargets.length === 0 || selectedSource === null || !blessChoice
+            }
             onClick={() =>
               void run(async () => {
                 const targets = blessTargets.flatMap((key) => {
@@ -469,13 +551,15 @@ export function MasterEffectsPanel({
                   );
                   return choice ? [choice.entity] : [];
                 });
-                if (targets.length === 0 || selectedSource === null) return;
+                if (targets.length === 0 || selectedSource === null || !blessChoice) return;
                 await applyBlessEffect({
                   caster: entity,
                   targets,
                   spellcastingSource: { kind: selectedSource.kind, id: selectedSource.id },
+                  castingResource: blessChoice,
                 });
                 setBlessTargets([]);
+                setResources(await fetchCastingResources(entity));
               })
             }
           >
@@ -489,9 +573,34 @@ export function MasterEffectsPanel({
         <p className="field-hint">
           Ferramenta TEMPORÁRIA do Mestre: cria apenas a salvaguarda de Sabedoria pendente. Se o
           alvo FALHAR, nascem o efeito, o Paralyzed e a Concentração do caster; se passar, nada é
-          criado. Não gasta Ação nem slot, não valida alcance/componentes e não repete o save no fim
-          do turno.
+          criado — e o espaço gasto NÃO volta. Gasta UM espaço de nível 2+, não gasta Ação, não
+          valida alcance/componentes e não repete o save no fim do turno.
         </p>
+        <div className="hp-controls" data-casting-resource="hold-person">
+          <span className="field-hint">Espaço</span>
+          {holdResources.length > 1 ? (
+            <select
+              aria-label="Espaço de magia do Imobilizar Pessoa"
+              value={holdSlot}
+              onChange={(event) => setHoldSlot(event.target.value)}
+            >
+              <option value="">Escolha o espaço</option>
+              {holdResources.map((resource) => (
+                <option key={resourceKeyOf(resource)} value={resourceKeyOf(resource)}>
+                  {resource.label} — {resource.remaining}/{resource.max}
+                </option>
+              ))}
+            </select>
+          ) : holdResources.length === 1 ? (
+            <span className="field-hint">
+              {holdResources[0].label} — {holdResources[0].remaining}/{holdResources[0].max}
+            </span>
+          ) : (
+            <span className="field-hint" data-casting-resource-empty>
+              Sem espaço disponível.
+            </span>
+          )}
+        </div>
         <div className="hp-controls">
           <select
             aria-label="Alvo de Imobilizar Pessoa"
@@ -511,19 +620,23 @@ export function MasterEffectsPanel({
           <button
             type="button"
             className="btn btn-small"
-            disabled={locked || holdPersonTarget === '' || selectedSource === null}
+            disabled={
+              locked || holdPersonTarget === '' || selectedSource === null || !holdChoice
+            }
             onClick={() =>
               void run(async () => {
                 const choice = choices.find(
                   (item) => `${item.entity.kind}:${item.entity.id}` === holdPersonTarget,
                 );
-                if (!choice || selectedSource === null) return;
+                if (!choice || selectedSource === null || !holdChoice) return;
                 await applyHoldPersonEffect({
                   caster: entity,
                   target: choice.entity,
                   spellcastingSource: { kind: selectedSource.kind, id: selectedSource.id },
+                  castingResource: holdChoice,
                 });
                 setHoldPersonTarget('');
+                setResources(await fetchCastingResources(entity));
               })
             }
           >
@@ -532,6 +645,7 @@ export function MasterEffectsPanel({
         </div>
         <p className="field-hint">
           A CD vem do perfil de conjuração do caster (ou do statblock do NPC) — não há campo manual.
+          O espaço é real e só diminui: passar no save, cancelar ou perder a Concentração não o devolve.
         </p>
       </details>
 

@@ -1287,6 +1287,62 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/scripts/smoke-hold-person-effect.ts').includes("forceSave('success'") &&
       source('../src/scripts/smoke-hold-person-effect.ts').includes("forceSave('failure'")
   );
+
+  // CB68–CB71. ESPAÇOS DE MAGIA / RECURSOS DE CONJURAÇÃO (Fase 6.6C).
+  const castingResource = source('../src/modules/spells/execution/casting-resource.ts');
+  const castingResourceService = source(
+    '../src/modules/spells/execution/casting-resource.service.ts',
+  );
+  const slotsMigration = source(
+    '../prisma/migrations/20261102130000_add_casting_resources/migration.sql',
+  );
+  check(
+    'CB68) recurso é ORTOGONAL à fonte: kind spell-slot/pact-slot, escolha por kind+level e nível mágico vem do catálogo',
+    castingResource.includes("CASTING_RESOURCE_KINDS = ['spell-slot', 'pact-slot']") &&
+      castingResource.includes('SPELL_SLOT_SOURCE_ID') &&
+      castingResource.includes('PACT_SLOT_SOURCE_ID') &&
+      castingResource.includes('selectCastingResource') &&
+      castingResource.includes('resource.level >= spellLevel') &&
+      !castingResource.includes('spellSaveDc') &&
+      castingResourceService.includes('spellSlotsForClasses') &&
+      castingResourceService.includes('pactMagicSlots') &&
+      !castingResourceService.includes('className ===')
+  );
+  check(
+    'CB69) gasto no COMMIT na MESMA transação, com guarda de versão e sem segunda fonte de verdade',
+    spellCastService.indexOf('spendCastingResource(context.caster.entity, context.resource, db)') >
+      0 &&
+      spellCastService.indexOf('spendCastingResource(context.caster.entity, context.resource, db)') <
+        spellCastService.indexOf('db.spellCast.create') &&
+      spellCastService.includes('castingResourceKind: spent?.kind') &&
+      castingResourceService.includes('updateMany') &&
+      castingResourceService.includes('version: row.version') &&
+      castingResourceService.includes('mechanicalVersion: row.mechanicalVersion') &&
+      source('../src/modules/spells/execution/spell-cast.service.ts').includes(
+        'castingResource: input.castingResource ?? null',
+      ) &&
+      !source('../src/modules/spells/execution/casting-resource.service.ts').includes('new Map(')
+  );
+  check(
+    'CB70) migration aditiva guarda o snapshot do recurso e o uso do NPC na instância',
+    slotsMigration.includes('ADD COLUMN "castingResourceKind" TEXT') &&
+      slotsMigration.includes('ADD COLUMN "spellLevel" INTEGER') &&
+      slotsMigration.includes('ADD COLUMN "spellcastingResources" JSONB') &&
+      slotsMigration.includes('ALTER TABLE "combatants"') &&
+      source('../prisma/schema.prisma').includes('spellcastingUsed Json') &&
+      source('../src/modules/effects/effects.schema.ts').includes('castingResource: castingResourceRefSchema')
+  );
+  check(
+    'CB71) UI escolhe o espaço (sem remaining editável) e o smoke da 6.6C está ligado ao npm run smoke',
+    masterEffectsPanel.includes('fetchCastingResources') &&
+      masterEffectsPanel.includes('data-casting-resource="bless"') &&
+      masterEffectsPanel.includes('data-casting-resource="hold-person"') &&
+      !masterEffectsPanel.includes('remaining:') &&
+      source('../client/src/effectsApi.ts').includes('fetchCastingResources') &&
+      source('../src/scripts/smoke-spell-slots.ts').includes('76.5.J)') &&
+      source('../src/scripts/smoke-spell-slots.ts').includes('76.5.L)') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeSpellSlots(BASE_URL, check)')
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

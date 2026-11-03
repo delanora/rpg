@@ -13,8 +13,10 @@ import {
 } from '../effects/effect-modifiers.js';
 import { creatureInventory, npcAttacks, npcEffectiveArmorClass } from './npc-sheet.js';
 import {
+  creatureSpellcastingMaxOf,
   creatureSpellcastingProfileOf,
   type CreatureSpellcastingProfile,
+  type CreatureSpellcastingResources,
 } from '../shared/creature-spellcasting.js';
 
 /** Formato da criatura enviado ao frontend. */
@@ -48,6 +50,11 @@ export interface CreatureDto {
    * conjuração utilizável. Rota master-only: não é repertório de magias.
    */
   spellcastingProfile: CreatureSpellcastingProfile;
+  /**
+   * ESPAÇOS DE MAGIA declarados pelo statblock (6.6C). Só o MÁXIMO: o uso é
+   * estado de quem conjura (template ou instância) e não vai para o DTO.
+   */
+  spellcastingResources: CreatureSpellcastingResources;
   /**
    * Ataques do NPC em combate: os PRÓPRIOS + os derivados das armas equipadas.
    * Em criaturas-template fica vazio (o cliente usa só `attacks`).
@@ -165,6 +172,7 @@ export function toCreatureDto(
     speed: creature.speed,
     attacks,
     spellcastingProfile: creatureSpellcastingProfileOf(creature.spellcastingProfile),
+    spellcastingResources: creatureSpellcastingMaxOf(creature.spellcastingResources),
     resistances,
     immunities,
     vulnerabilities,

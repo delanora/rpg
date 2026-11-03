@@ -4,6 +4,7 @@ import { entitySchema } from '../../shared/conditions.js';
 import { spellCastProofSchema } from './spell-cast.schema.js';
 import { castProofSpell } from './spell-cast.service.js';
 import { listSpellcastingSources } from './spellcasting-profile.service.js';
+import { castingResourcesForEntity } from './casting-resource.service.js';
 
 /**
  * FASE 6.6A — API GENÉRICA de conjuração de PROVA (só MASTER).
@@ -30,6 +31,22 @@ spellsRouter.get('/sources/:entityKind/:entityId', requireRole('MASTER'), async 
     return;
   }
   res.json({ sources: await listSpellcastingSources(parsed.data) });
+});
+
+/**
+ * GET /api/spells/resources/:entityKind/:entityId — espaços do caster em LEITURA.
+ *
+ * MASTER-only enquanto não existe conjuração de PLAYER: alimenta o seletor do
+ * fluxo de prova e permite ver o gasto de um NPC, informação que o jogador não
+ * recebe. `remaining`/`max` são DERIVADOS na hora — nunca vêm do cliente.
+ */
+spellsRouter.get('/resources/:entityKind/:entityId', requireRole('MASTER'), async (req, res) => {
+  const parsed = entitySchema.safeParse({ kind: req.params.entityKind, id: req.params.entityId });
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json({ resources: await castingResourcesForEntity(parsed.data) });
 });
 
 /** POST /api/spells/cast-proof — valida, commita e resolve uma conjuração. */

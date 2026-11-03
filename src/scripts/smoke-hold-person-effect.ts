@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
+import { pickCastingResource } from './spell-slot-fixtures.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
 import type { PendingEffectSaveDto } from '../modules/effects/pending-effect-saves.js';
 
@@ -84,7 +85,9 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
         speed: 9,
         wisdom: 10,
         intelligence: 16,
-        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+        // 6.6C: Hold Person (nível 2) precisa de espaço real; Mago 20 tem o pool
+        // completo, mas o teste continua consumindo UM por conjuração.
+        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
       },
     });
     const target = await prisma.character.create({
@@ -138,7 +141,14 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       operationId: string = randomUUID(),
     ) {
       operationIds.push(operationId);
-      return request('/effects/hold-person', { operationId, caster, target: alvo }, token);
+      // 6.6C: todo cast gasta um espaço REAL de nível >= 2. A escolha vem da
+      // rota de recursos (o servidor valida posse/nível/remaining de novo).
+      const castingResource = await pickCastingResource(baseUrl, masterToken, caster, 2);
+      return request(
+        '/effects/hold-person',
+        { operationId, caster, target: alvo, ...(castingResource ? { castingResource } : {}) },
+        token,
+      );
     }
 
     /**
@@ -219,8 +229,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       first.status === 201 &&
         firstPending.definitionId === 'spell.hold-person' &&
         firstPending.ability === 'wisdom' &&
-        // Derivada: Mago INT 1, nível 1 → 8 + 2 - 5 = 5.
-        firstPending.dc === 5 &&
+        // Derivada: Mago INT 1, nível 20 → 8 + 6 - 5 = 9.
+        firstPending.dc === 9 &&
         firstPending.status === 'pending' &&
         firstPending.targetEntity.kind === 'character' &&
         firstPending.casterEntity.kind === 'character' &&
@@ -241,12 +251,16 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // Payload malicioso: o cliente tenta impor CD/atributo/proficiência. Zod
     // descarta esses campos e o replay do MESMO operationId devolve a pendência
     // original — a CD derivada NÃO muda.
+    // O espaço faz parte do fingerprint (6.6C): o replay legítimo reenvia o
+    // MESMO recurso; campos mecânicos inventados continuam sendo descartados.
+    const replayResource = await pickCastingResource(baseUrl, masterToken, heroEntity, 2);
     const replay = await request(
       '/effects/hold-person',
       {
         operationId: operationIds[0],
         caster: heroEntity,
         target: targetEntity,
+        ...(replayResource ? { castingResource: replayResource } : {}),
         dc: 99,
         spellcastingAbility: 'charisma',
         proficiencyBonus: 10,
@@ -261,7 +275,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
         replay.status === 200 &&
         replay.data.replayed === true &&
         replay.data.pending.id === firstPending.id &&
-        replay.data.pending.dc === 5 &&
+        replay.data.pending.dc === 9 &&
         (await prisma.pendingEffectSave.count({ where: { targetEntityId: beast.id } })) === 0,
       JSON.stringify({ asPlayer: asPlayer.status, beast: beastApply.data, replay: replay.status, dc: replay.data.pending?.dc }),
     );
@@ -364,16 +378,23 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
         hpMax: 10,
         speed: 9,
         intelligence: 16,
-        classes: [{ classKey: 'cleric', subclass: '', level: 1 }],
+        classes: [{ classKey: 'cleric', subclass: '', level: 20 }],
       },
     });
     characterIds.push(casterTwo.id);
+    const blessResource = await pickCastingResource(
+      baseUrl,
+      masterToken,
+      { kind: 'character', id: casterTwo.id },
+      1,
+    );
     const bless = await request(
       '/effects/bless',
       {
         operationId: randomUUID(),
         caster: { kind: 'character', id: casterTwo.id },
         targets: [targetEntity],
+        ...(blessResource ? { castingResource: blessResource } : {}),
       },
       masterToken,
     );

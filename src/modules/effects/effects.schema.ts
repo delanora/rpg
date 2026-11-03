@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { entitySchema } from '../shared/conditions.js';
 import { spellcastingSourceRefSchema } from '../spells/execution/spellcasting-source.js';
+import { castingResourceRefSchema } from '../spells/execution/casting-resource.js';
 import { effectConditionListSchema, effectModifierListSchema } from './effect-modifiers.js';
 
 /**
@@ -116,6 +117,8 @@ export const applyBlessSchema = z.object({
   targets: z.array(entitySchema).min(1).max(3),
   /** Fonte de conjuração (obrigatória só quando o caster é multiclasse). */
   spellcastingSource: spellcastingSourceRefSchema.optional(),
+  /** Espaço gasto no commit (6.6C): obrigatório se houver mais de um válido. */
+  castingResource: castingResourceRefSchema.optional(),
 });
 export type ApplyBlessInput = z.infer<typeof applyBlessSchema>;
 
@@ -133,5 +136,7 @@ export const applyHoldPersonSchema = z.object({
   target: entitySchema,
   /** Fonte de conjuração (obrigatória só quando o caster é multiclasse). */
   spellcastingSource: spellcastingSourceRefSchema.optional(),
+  /** Espaço gasto no commit (6.6C); precisa comportar o nível 2 da magia. */
+  castingResource: castingResourceRefSchema.optional(),
 });
 export type ApplyHoldPersonInput = z.infer<typeof applyHoldPersonSchema>;

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
+import { pickCastingResource, resetCastingSlots } from './spell-slot-fixtures.js';
 import {
   characterLevelOf,
   characterSpellcastingProfile,
@@ -234,6 +235,8 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        // 6.6C: sem espaços declarados o NPC não conjura (nem "de graça").
+        spellcastingResources: { spellSlots: [{ level: 1, max: 4 }, { level: 2, max: 4 }], pactSlot: null },
       },
     });
     const muteCreature = await prisma.creature.create({
@@ -278,11 +281,17 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
       extra: Record<string, unknown> = {},
       operationId = newOperation(),
     ) {
+      // 6.6C: Hold Person exige espaço real de nível >= 2. Este smoke é sobre
+      // PERFIL, então o uso é zerado antes de cada conjuração (equivalente a um
+      // descanso longo); a capacidade continua DERIVADA das classes.
+      if (caster.kind === 'character') await resetCastingSlots(caster.id);
+      const castingResource = await pickCastingResource(baseUrl, masterToken, caster, 2);
       const result = await request('/effects/hold-person', {
         operationId,
         caster,
         target: targetEntity,
         ...(spellcastingSource ? { spellcastingSource } : {}),
+        ...(castingResource ? { castingResource } : {}),
         ...extra,
       });
       if (result.data?.cast?.id) castIds.push(result.data.cast.id);
@@ -346,11 +355,14 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
     // H — Bless (immediate-effect) registra o snapshot do perfil
     // =====================================================================
     const opBless = newOperation();
+    await resetCastingSlots(multiCaster.id);
+    const blessSlot = await pickCastingResource(baseUrl, masterToken, multiEntity, 1);
     const blessCast = await request('/effects/bless', {
       operationId: opBless,
       caster: multiEntity,
       targets: [targetEntity],
       spellcastingSource: { kind: 'class', id: 'wizard' },
+      ...(blessSlot ? { castingResource: blessSlot } : {}),
     });
     const blessRow = await prisma.spellCast.findUnique({ where: { operationId: opBless } });
     if (blessCast.data?.groupId) groupIds.push(blessCast.data.groupId);
@@ -437,11 +449,20 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
     // Cancela para liberar o lock de UM cast resolving por caster; o retry do
     // mesmo operationId continua devolvendo o snapshot ORIGINAL.
     await cancelPending(snapshotApply.data.pending);
+    // O espaço faz parte do fingerprint (6.6C): o retry reenvia o MESMO recurso
+    // gravado no cast original.
+    const snapshotSlot = snapshotCast?.castingResourceKind
+      ? {
+          kind: snapshotCast.castingResourceKind as 'spell-slot' | 'pact-slot',
+          level: snapshotCast.castingResourceLevel ?? 2,
+        }
+      : undefined;
     const retrySnapshot = await request('/effects/hold-person', {
       operationId: opSnapshot,
       caster: multiEntity,
       target: targetEntity,
       spellcastingSource: { kind: 'class', id: 'wizard' },
+      ...(snapshotSlot ? { castingResource: snapshotSlot } : {}),
     });
     const newApply = await holdPerson(multiEntity, { kind: 'class', id: 'wizard' });
     check(
@@ -548,7 +569,7 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
     const noEconomy = await holdPerson(multiEntity, { kind: 'class', id: 'wizard' });
     const after = await prisma.character.findUniqueOrThrow({ where: { id: multiCaster.id } });
     check(
-      '76.P) proof cast continua sem consumir slot/Ação (6.6C/6.6D)',
+      '76.P) proof cast continua sem consumir Ação (espaço é gasto, classState/HP intactos — 6.6D)',
       noEconomy.status === 201 &&
         JSON.stringify(before.classState) === JSON.stringify(after.classState) &&
         before.hpCurrent === after.hpCurrent,

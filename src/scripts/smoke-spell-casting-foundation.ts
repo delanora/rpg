@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
+import { pickCastingResource } from './spell-slot-fixtures.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
 import type { PendingEffectSaveDto } from '../modules/effects/pending-effect-saves.js';
 
@@ -77,7 +78,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
         speed: 9,
         wisdom: 10,
         intelligence: 16,
-        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+        // 6.6C: Hold Person exige espaço de nível 2 — Mago 20 tem o pool inteiro.
+        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
       },
     });
     const target = await prisma.character.create({
@@ -95,7 +97,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
         speed: 9,
         wisdom: 10,
         intelligence: 16,
-        classes: [{ classKey: 'cleric', subclass: '', level: 1 }],
+        classes: [{ classKey: 'cleric', subclass: '', level: 20 }],
       },
     });
     characterIds.push(caster.id, target.id, ally.id, second.id);
@@ -135,11 +137,37 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       return id;
     }
 
+    // 6.6C: o espaço faz parte do payload/fingerprint. O RETRY precisa reenviar
+    // o MESMO recurso — por isso ele é memorizado por `operationId`.
+    const spentResources = new Map<string, { kind: 'spell-slot' | 'pact-slot'; level: number }>();
+    async function resourceFor(
+      operationId: string,
+      casterRef: { kind: string; id: string },
+      spellLevel: number,
+    ) {
+      const cached = spentResources.get(operationId);
+      if (cached) return cached;
+      const picked = await pickCastingResource(baseUrl, masterToken, casterRef, spellLevel);
+      if (picked) spentResources.set(operationId, picked);
+      return picked;
+    }
+
     async function castProof(
       body: Record<string, unknown>,
       token = masterToken,
     ) {
-      const result = await request('/spells/cast-proof', body, token);
+      // 6.6C: o espaço acompanha a intenção; o servidor valida nível/posse.
+      const spellLevel = body.spellId === 'bless' ? 1 : body.spellId === 'hold-person' ? 2 : 0;
+      const casterRef = body.caster as { kind: string; id: string } | undefined;
+      const castingResource =
+        spellLevel > 0 && casterRef
+          ? await resourceFor(String(body.operationId), casterRef, spellLevel)
+          : null;
+      const result = await request(
+        '/spells/cast-proof',
+        { ...body, ...(castingResource ? { castingResource } : {}) },
+        token,
+      );
       if (result.data?.cast?.id) castIds.push(result.data.cast.id);
       if (result.data?.effectGroupId) groupIds.push(result.data.effectGroupId);
       return result;
@@ -151,7 +179,12 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       token = masterToken,
       operationId = newOperation(),
     ) {
-      const result = await request('/effects/bless', { operationId, caster: casterRef, targets }, token);
+      const castingResource = await resourceFor(operationId, casterRef, 1);
+      const result = await request(
+        '/effects/bless',
+        { operationId, caster: casterRef, targets, ...(castingResource ? { castingResource } : {}) },
+        token,
+      );
       if (result.data?.groupId) groupIds.push(result.data.groupId);
       return { ...result, operationId };
     }
@@ -161,9 +194,16 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       targetRef: { kind: 'character' | 'creature'; id: string },
       token = masterToken,
       operationId = newOperation(),
+      forcedResource?: { kind: 'spell-slot' | 'pact-slot'; level: number },
     ) {
+      const castingResource =
+        forcedResource ?? (await resourceFor(operationId, casterRef, 2));
       return {
-        ...(await request('/effects/hold-person', { operationId, caster: casterRef, target: targetRef }, token)),
+        ...(await request(
+          '/effects/hold-person',
+          { operationId, caster: casterRef, target: targetRef, ...(castingResource ? { castingResource } : {}) },
+          token,
+        )),
         operationId,
       };
     }
@@ -566,9 +606,12 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // =====================================================================
     // P — concorrência REAL: dois commits simultâneos do mesmo caster
     // =====================================================================
+    // Mesmo espaço nas duas intenções: a corrida é do LOCK/gasto, não da
+    // escolha do recurso.
+    const concurrencySlot = await pickCastingResource(baseUrl, masterToken, casterEntity, 2);
     const [concurrentA, concurrentB] = await Promise.all([
-      holdPerson(casterEntity, targetEntity),
-      holdPerson(casterEntity, targetEntity),
+      holdPerson(casterEntity, targetEntity, masterToken, newOperation(), concurrencySlot ?? undefined),
+      holdPerson(casterEntity, targetEntity, masterToken, newOperation(), concurrencySlot ?? undefined),
     ]);
     const statuses = [concurrentA.status, concurrentB.status].sort();
     const resolvingCount = await prisma.spellCast.count({
@@ -579,7 +622,13 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       statuses[0] === 201 &&
         statuses[1] === 409 &&
         resolvingCount === 1 &&
-        [concurrentA, concurrentB].some((item) => item.data.error === 'SPELL_CAST_IN_PROGRESS'),
+        // O perdedor falha no LOCK (o vencedor já está resolving) ou na guarda
+        // de versão do espaço; os dois são 409 do SERVIDOR, nunca dois commits.
+        [concurrentA, concurrentB].some(
+          (item) =>
+            item.data.error === 'SPELL_CAST_IN_PROGRESS' ||
+            item.data.error === 'SPELLCASTING_RESOURCE_NOT_AVAILABLE',
+        ),
       JSON.stringify({ statuses, resolvingCount }),
     );
     // Libera o lock do vencedor (CD 1 → sucesso).
@@ -601,7 +650,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     const plainCast = await bless(secondEntity, [allyEntity]);
     const afterCast = await prisma.character.findUniqueOrThrow({ where: { id: second.id } });
     check(
-      '75.Q) proof cast NÃO consome slot nem Ação (classState/HP da ficha intactos — 6.6C/6.6D)',
+      '75.Q) proof cast continua SEM consumir Ação (classState/HP da ficha intactos — 6.6D)',
       plainCast.status === 201 &&
         JSON.stringify(beforeCast.classState) === JSON.stringify(afterCast.classState) &&
         beforeCast.hpCurrent === afterCast.hpCurrent,

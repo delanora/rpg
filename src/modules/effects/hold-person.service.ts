@@ -67,7 +67,9 @@ export interface HoldPersonResolution {
  * Todo detalhe mecânico (atributo do save, CD de magia, Condition, definição de
  * efeito, ordem do lifecycle) é do SERVIDOR; o payload só traz caster, alvo e,
  * no multiclasse, qual fonte de conjuração. Desde a 6.6B a CD sai do perfil de
- * conjuração (personagem) ou do statblock (criatura) — nunca do cliente.
+ * conjuração (personagem) ou do statblock (criatura) — nunca do cliente. Desde a
+ * 6.6C a conjuração também gasta um espaço de magia: passar no save NÃO devolve
+ * o espaço, nem cancelar a pendência depois do commit.
  */
 export async function applyHoldPerson(
   actor: EffectActor,
@@ -79,6 +81,8 @@ export async function applyHoldPerson(
     caster: input.caster,
     targets: [input.target],
     ...(input.spellcastingSource ? { spellcastingSource: input.spellcastingSource } : {}),
+    // 6.6C: o espaço é gasto no COMMIT (nível >= 2), antes da salvaguarda.
+    ...(input.castingResource ? { castingResource: input.castingResource } : {}),
   });
   if (!result.pending) {
     throw new HttpError('A conjuração não gerou salvaguarda pendente.', 409, 'CONFLICT');
