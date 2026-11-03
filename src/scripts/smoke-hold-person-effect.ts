@@ -335,6 +335,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     const blessOption = (blessOptions.data.options ?? [])[0] as { id: string } | undefined;
     // CD 30 garante falha; o ponto aqui é o d4 SERVIDOR-SIDE escolhido pelo cliente.
     const pendingBlessed = await apply(heroEntity, targetEntity, 30);
+    // 6.6A: o COMMIT (antes do save) encerra a concentração ANTERIOR do caster.
+    const heroAtCommit = await mechanicalOf(heroEntity);
     const blessedRoll = await rollSave(pendingBlessed.data.pending.id, targetToken, {
       selectedEffectModifiers: [blessOption?.id],
     });
@@ -349,6 +351,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       bless.status === 201 &&
         blessOptions.data.options.length === 1 &&
         blessOption?.id === `${blessEffect.id}:save` &&
+        heroAtCommit.state.concentration === null &&
         blessedRoll.status === 201 &&
         rollDice.length === 1 &&
         rollDice[0].sides === 4 &&
@@ -504,8 +507,19 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       await prisma.combatOperation.deleteMany({ where: { combatId } });
       await prisma.combat.deleteMany({ where: { id: combatId } });
     }
+    // 6.6A: a pendência pertence ao SpellCast (operationId próprio) — limpa
+    // pelos casts das operações deste teste.
+    const casts = await prisma.spellCast.findMany({
+      where: { operationId: { in: operationIds } },
+      select: { id: true },
+    });
+    const castIds = casts.map((row) => row.id);
+    if (castIds.length > 0) {
+      await prisma.pendingEffectSave.deleteMany({ where: { spellCastId: { in: castIds } } });
+    }
     await prisma.pendingEffectSave.deleteMany({ where: { operationId: { in: operationIds } } });
     if (operationIds.length > 0) {
+      await prisma.spellCast.deleteMany({ where: { operationId: { in: operationIds } } });
       await prisma.effectOperation.deleteMany({ where: { operationId: { in: operationIds } } });
     }
     const entityIds = [...characterIds, ...creatureIds];

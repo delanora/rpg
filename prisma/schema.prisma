@@ -1146,6 +1146,9 @@ model PendingEffectSave {
   /// Grupo/instância criados na FALHA (null enquanto pendente ou no sucesso).
   groupId  String?
   effectId String?
+  /// Conjuração que originou esta pendência (Fase 6.6A). Nullable para
+  /// pendências antigas/fluxos sem SpellCast.
+  spellCastId String?
 
   /// Caster e alvo na chave polimórfica canônica (combatente de personagem → ficha).
   casterEntityKind String
@@ -1177,7 +1180,65 @@ model PendingEffectSave {
 
   @@index([targetEntityKind, targetEntityId, status])
   @@index([casterEntityKind, casterEntityId, status])
+  @@index([spellCastId])
   @@map("pending_effect_saves")
+}
+
+/// EVENTO DE CONJURAÇÃO (Fase 6.6A — Casting Foundation).
+///
+/// NÃO é definição de magia, NÃO é EffectInstance, NÃO é Concentração e NÃO é
+/// PendingEffectSave: é a identidade de domínio de UMA conjuração que aconteceu.
+/// Serve para auditoria, idempotência da operação, origem dos Effects criados e
+/// ponto de acoplamento dos custos futuros (Ação/slot/componentes) — que NÃO
+/// são implementados nesta fase.
+///
+/// Ciclo de vida mínimo e tipado (`resolving` → `resolved`/`cancelled`) com
+/// resultado separado (`effect`/`no-effect`/`cancelled`). O EffectInstance
+/// continua sendo a fonte de verdade do estado mecânico ATIVO: este registro é
+/// histórico e não decide se um efeito está valendo.
+///
+/// `operationId` único torna o retry idempotente; `fingerprint` recusa o mesmo
+/// id com outro payload. A constraint parcial criada na migration garante UM
+/// cast `resolving` por caster mesmo sob concorrência (nunca Map em memória).
+model SpellCast {
+  id String @id @default(cuid())
+
+  /// Id canônico do catálogo (`bless`, `hold-person`).
+  spellId String
+
+  casterEntityKind String
+  casterEntityId   String
+  /// Origem legível carimbada pelo SERVIDOR na validação.
+  casterLabel String?
+
+  /// Snapshot IMUTÁVEL da intenção: `[{ kind, id }]`. Não é fonte de estado.
+  targets Json @default("[]")
+
+  /// `resolving` | `resolved` | `cancelled`.
+  status String @default("resolving")
+  /// `effect` | `no-effect` | `cancelled` (null enquanto resolving).
+  outcome String?
+
+  requiresConcentration Boolean @default(false)
+  /// Grupo produzido pela resolução (nunca usado para decidir se está ativo).
+  effectGroupId String?
+  /// CD usada na resolução (fallback manual da 6.6A; derivada a partir da 6.6B).
+  saveDc Int?
+
+  visibility String @default("public")
+
+  operationId String @unique
+  fingerprint String
+  createdBy   String?
+
+  createdAt   DateTime  @default(now())
+  committedAt DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@index([casterEntityKind, casterEntityId, status])
+  @@index([spellId])
+  @@index([effectGroupId])
+  @@map("spell_casts")
 }
 
 /// Idempotência das criações de efeito (mesmo padrão de `MechanicalOperation`).

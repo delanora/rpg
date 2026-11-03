@@ -39,6 +39,8 @@ export interface PendingEffectSaveDto {
   targetEntity: MechanicalEntity;
   groupId: string | null;
   effectId: string | null;
+  /** Conjuração que originou a pendência (6.6A; null em fluxos antigos). */
+  spellCastId: string | null;
   createdAt: string;
   resolvedAt: string | null;
 }
@@ -75,6 +77,7 @@ export function toPendingEffectSaveDto(row: PendingEffectSave): PendingEffectSav
     targetEntity: entityOf(row.targetEntityKind, row.targetEntityId),
     groupId: row.groupId ?? null,
     effectId: row.effectId ?? null,
+    spellCastId: row.spellCastId ?? null,
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
   };
@@ -112,16 +115,32 @@ export async function cancelPendingEffectSavesForEntity(
   entity: MechanicalEntity,
   db: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<number> {
+  const where = {
+    status: 'pending',
+    OR: [
+      { targetEntityKind: entity.kind, targetEntityId: entity.id },
+      { casterEntityKind: entity.kind, casterEntityId: entity.id },
+    ],
+  };
+  // Cast ligado sai de `resolving` junto: nenhuma conjuração fica pendurada
+  // apontando para entidade removida (6.6A). A concentração anterior NÃO volta.
+  const linked = await db.pendingEffectSave.findMany({
+    where,
+    select: { spellCastId: true },
+  });
   const cancelled = await db.pendingEffectSave.updateMany({
-    where: {
-      status: 'pending',
-      OR: [
-        { targetEntityKind: entity.kind, targetEntityId: entity.id },
-        { casterEntityKind: entity.kind, casterEntityId: entity.id },
-      ],
-    },
+    where,
     data: { status: 'cancelled', resolvedAt: new Date() },
   });
+  const castIds = linked
+    .map((row) => row.spellCastId)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  if (castIds.length > 0) {
+    await db.spellCast.updateMany({
+      where: { id: { in: castIds }, status: 'resolving' },
+      data: { status: 'cancelled', outcome: 'cancelled', resolvedAt: new Date() },
+    });
+  }
   return cancelled.count;
 }
 
