@@ -124,12 +124,43 @@ export interface CastingResourceChoice {
  * `remaining`/`max` são leitura: o cliente nunca os envia de volta. A rota é
  * MASTER-only enquanto não existe conjuração de PLAYER.
  */
+export interface CastingEconomyDto {
+  inCombat: boolean;
+  isCasterTurn: boolean;
+  actionAvailable: boolean;
+  bonusActionAvailable: boolean;
+}
+
 export function fetchCastingResources(
   entity: MechanicalEntity,
 ): Promise<CastingResourceDto[]> {
   return api<{ resources: CastingResourceDto[] }>(
     `/api/spells/resources/${entity.kind}/${entity.id}`,
   ).then((result) => result.resources);
+}
+
+/**
+ * Espaços + disponibilidade de conjuração do TURNO (6.6D), em uma leitura.
+ *
+ * Fora de combate `actionAvailable` é true e nada é consumido; em combate o
+ * servidor decide com `Combat.turnSequence`/`turnEconomy`, nunca o cliente.
+ */
+export function fetchCastingState(entity: MechanicalEntity): Promise<{
+  resources: CastingResourceDto[];
+  economy: CastingEconomyDto;
+}> {
+  return api<{
+    resources: CastingResourceDto[];
+    economy?: CastingEconomyDto;
+  }>(`/api/spells/resources/${entity.kind}/${entity.id}`).then((result) => ({
+    resources: result.resources,
+    economy: result.economy ?? {
+      inCombat: false,
+      isCasterTurn: true,
+      actionAvailable: true,
+      bonusActionAvailable: true,
+    },
+  }));
 }
 
 /** Pendências de salvaguarda de um alvo (o servidor filtra a privacidade). */

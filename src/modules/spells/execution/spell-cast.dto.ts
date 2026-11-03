@@ -43,6 +43,10 @@ export interface SpellCastDto {
     resourceKind: string | null;
     resourceLevel: number | null;
     resourceSourceId: string | null;
+    /** Tempo de conjuração usado (6.6D): action/bonus-action/reaction/long. */
+    timeKind: string | null;
+    /** Custo de economia efetivamente gasto (null fora de combate/truque). */
+    economyCostKind: string | null;
   } | null;
   createdAt: string;
   committedAt: string;
@@ -99,6 +103,8 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
           resourceKind: row.castingResourceKind ?? null,
           resourceLevel: row.castingResourceLevel ?? null,
           resourceSourceId: row.castingResourceSourceId ?? null,
+          timeKind: row.castingTimeKind ?? null,
+          economyCostKind: row.economyCostKind ?? null,
         }
       : null;
   return {

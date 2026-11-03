@@ -898,6 +898,12 @@ model Combat {
   economyLog   Json         @default("[]")
   status       CombatStatus @default(PENDING_INITIATIVE)
   round        Int          @default(1)
+  ///
+  /// IDENTIDADE DE TURNO (Fase 6.6D): inteiro monotônico incrementado UMA vez
+  /// por ativação real de turno (início do combate e cada `nextTurn`). Nunca
+  /// resetado por round, nunca alterado por refresh/reconnect. `version` NÃO
+  /// serve para isso: muda em qualquer operação do combate.
+  turnSequence Int          @default(0)
   /// Posição na ordem calculada (ordenada por iniciativa).
   currentIndex Int          @default(0)
 
@@ -1275,6 +1281,18 @@ model SpellCast {
   castingResourceSourceId  String?
   resourceSpentAt          DateTime?
 
+  ///
+  /// SNAPSHOT DO CASTING TIME E DO TURNO (Fase 6.6D). `castingTimeKind` é o
+  /// tempo usado (action/bonus-action/reaction); fora de combate `combatId`,
+  /// `turnSequence` e `combatantId` ficam nulos. `economySpentAt` só existe
+  /// quando uma Action/Bônus foi realmente consumida no COMMIT.
+  castingTimeKind  String?
+  combatId         String?
+  turnSequence     Int?
+  combatantId      String?
+  economyCostKind  String?
+  economySpentAt   DateTime?
+
   visibility String @default("public")
 
   operationId String @unique
@@ -1288,6 +1306,8 @@ model SpellCast {
   @@index([casterEntityKind, casterEntityId, status])
   @@index([spellId])
   @@index([effectGroupId])
+  /// Histórico de conjurações do MESMO turno (regra da Bonus Action).
+  @@index([combatId, turnSequence, combatantId])
   @@map("spell_casts")
 }
 

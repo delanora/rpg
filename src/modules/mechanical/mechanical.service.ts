@@ -22,7 +22,14 @@ import type { MechanicalMutationInput } from './mechanical.schema.js';
 export interface LoadedEntity {
   entity: MechanicalEntity; name: string; version: number; ownerUserId: string | null;
   state: MechanicalState; baseSpeed: number; baseMaxHp: number; hpCurrent: number;
-  combat: { id: string; version: number; status: string; combatantId: string } | null;
+  combat: {
+    id: string;
+    version: number;
+    status: string;
+    combatantId: string;
+    /** Identidade do turno ativo (6.6D); `version` não serve para isso. */
+    turnSequence: number;
+  } | null;
 }
 
 export async function loadEntity(entity: MechanicalEntity, db: Prisma.TransactionClient = prisma): Promise<LoadedEntity> {
@@ -31,7 +38,7 @@ export async function loadEntity(entity: MechanicalEntity, db: Prisma.Transactio
     if (!row) throw new HttpError('Personagem não encontrado.', 404);
     const participant = await db.combatant.findFirst({ where: { characterId: row.id, combat: { status: { in: ['ACTIVE', 'PENDING_INITIATIVE'] } } }, include: { combat: true } });
     return { entity, name: row.name, version: row.version, ownerUserId: row.userId, state: mechanicalStateOf(row.mechanicalState), baseSpeed: row.speed, baseMaxHp: characterBaseMaxHp(row), hpCurrent: row.hpCurrent,
-      combat: participant ? { id: participant.combat.id, version: participant.combat.version, status: participant.combat.status, combatantId: participant.id } : null };
+      combat: participant ? { id: participant.combat.id, version: participant.combat.version, status: participant.combat.status, combatantId: participant.id, turnSequence: participant.combat.turnSequence } : null };
   }
   if (entity.kind === 'creature') {
     const row = await db.creature.findUnique({ where: { id: entity.id } });
@@ -42,7 +49,7 @@ export async function loadEntity(entity: MechanicalEntity, db: Prisma.Transactio
   if (!row) throw new HttpError('Instância não encontrada.', 404);
   if (row.characterId) return loadEntity({ kind: 'character', id: row.characterId }, db);
   return { entity, name: row.name, version: row.mechanicalVersion, ownerUserId: null, state: mechanicalStateOf(row.mechanicalState), baseSpeed: row.creature?.speed ?? 0, baseMaxHp: row.hpMax ?? row.creature?.hpMax ?? 0, hpCurrent: row.hpCurrent ?? 0,
-    combat: row.combat.status !== 'ENDED' ? { id: row.combat.id, version: row.combat.version, status: row.combat.status, combatantId: row.id } : null };
+    combat: row.combat.status !== 'ENDED' ? { id: row.combat.id, version: row.combat.version, status: row.combat.status, combatantId: row.id, turnSequence: row.combat.turnSequence } : null };
 }
 
 /**

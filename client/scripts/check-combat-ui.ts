@@ -1334,7 +1334,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'CB71) UI escolhe o espaço (sem remaining editável) e o smoke da 6.6C está ligado ao npm run smoke',
-    masterEffectsPanel.includes('fetchCastingResources') &&
+    masterEffectsPanel.includes('fetchCastingState') &&
       masterEffectsPanel.includes('data-casting-resource="bless"') &&
       masterEffectsPanel.includes('data-casting-resource="hold-person"') &&
       !masterEffectsPanel.includes('remaining:') &&
@@ -1342,6 +1342,63 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/scripts/smoke-spell-slots.ts').includes('76.5.J)') &&
       source('../src/scripts/smoke-spell-slots.ts').includes('76.5.L)') &&
       source('../src/scripts/smoke-realtime.ts').includes('smokeSpellSlots(BASE_URL, check)')
+  );
+
+  // CB72–CB75. CASTING TIME & ACTION ECONOMY (Fase 6.6D).
+  const castingEconomy = source(
+    '../src/modules/spells/execution/spell-casting-economy.ts',
+  );
+  const economyMigration = source(
+    '../prisma/migrations/20261102140000_add_casting_time_economy/migration.sql',
+  );
+  check(
+    'CB72) casting time tipado: traduz para a economia existente, long NÃO vira Ação e o cliente nunca escolhe o custo',
+    castingEconomy.includes('castingEconomyFor') &&
+      castingEconomy.includes('SPELL_CASTING_TIME_NOT_IMPLEMENTED') &&
+      castingEconomy.includes("kind === 'action'") &&
+      castingEconomy.includes("kind === 'bonusAction'") &&
+      castingEconomy.includes("kind === 'reaction'") &&
+      !castingEconomy.includes("kind === 'minute'") &&
+      !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('castingTime:') &&
+      !source('../src/modules/effects/effects.schema.ts').includes('turnSequence')
+  );
+  check(
+    'CB73) Ação/Ação Bônus consumidas no COMMIT, depois da revalidação e antes do espaço, com guarda de versão',
+    spellCastService.indexOf('commitCastingEconomy(db, context.turnContext, context.economyCost)') >
+      0 &&
+      spellCastService.indexOf('commitCastingEconomy(db, context.turnContext, context.economyCost)') <
+        spellCastService.indexOf('spendCastingResource(context.caster.entity, context.resource, db)') &&
+      castingEconomy.includes('spendEconomy(economy, cost)') &&
+      castingEconomy.includes('mechanicalVersion: combatant.mechanicalVersion') &&
+      castingEconomy.includes('SPELL_ACTION_UNAVAILABLE') &&
+      castingEconomy.includes('SPELL_BONUS_ACTION_UNAVAILABLE')
+  );
+  check(
+    'CB74) regra da Bonus Action server-side, derivada do histórico do turno (sem "1 leveled spell por turno")',
+    castingEconomy.includes('bonusActionSpellViolation') &&
+      castingEconomy.includes("item.castingTime === 'action' && item.spellLevel === 0") &&
+      castingEconomy.includes('committedCastsOnTurn') &&
+      castingEconomy.includes('turnSequence') &&
+      castingEconomy.includes('SPELL_CAST_OUT_OF_TURN') &&
+      castingEconomy.includes('BONUS_ACTION_SPELL_RESTRICTION') &&
+      !castingEconomy.toLowerCase().includes('one leveled spell') &&
+      !spellCastService.includes('BONUS_ACTION_SPELL_RESTRICTION') &&
+      !spellCastService.includes('actionsUsed +=')
+  );
+  check(
+    'CB75) identidade de turno no BANCO (turnSequence), migration aditiva, UI read-only e smoke ligado',
+    economyMigration.includes('ADD COLUMN "turnSequence" INTEGER NOT NULL DEFAULT 0') &&
+      economyMigration.includes('ADD COLUMN "castingTimeKind" TEXT') &&
+      source('../prisma/schema.prisma').includes('turnSequence Int          @default(0)') &&
+      !castingEconomy.includes('combat.version') &&
+      source('../src/modules/combat/combat.service.ts').includes('turnSequence: { increment: 1 }') &&
+      masterEffectsPanel.includes('Conjuração: Ação') &&
+      masterEffectsPanel.includes('Não é o turno do conjurador') &&
+      masterEffectsPanel.includes('Ação já utilizada') &&
+      source('../src/scripts/smoke-spell-action-economy.ts').includes('76.6.I)') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeSpellActionEconomy(BASE_URL, check)') &&
+      !source('../src/modules/spells/execution/spell-execution-registry.ts').includes('counterspell') &&
+      !source('../src/modules/spells/execution/spell-execution-registry.ts').includes('shield')
   );
 }
 
