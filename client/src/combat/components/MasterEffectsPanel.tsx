@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { describeEffectModifiers, EFFECT_ROLL_LABELS } from '../../effectModifiers';
-import { applyBlessEffect, createManualEffect, endEffect } from '../../effectsApi';
+import {
+  applyBlessEffect,
+  applyHoldPersonEffect,
+  createManualEffect,
+  endEffect,
+} from '../../effectsApi';
 import type {
   AbilityKey,
   EffectDto,
@@ -90,6 +95,11 @@ export function MasterEffectsPanel({
   // BLESS (6.5G): ferramenta temporária de PROVA da engine. O caster é a
   // entidade deste painel; até 3 alvos da lista da mesa.
   const [blessTargets, setBlessTargets] = useState<string[]>([]);
+  // IMOBILIZAR PESSOA (6.5H): alvo ÚNICO + CD manual de prova. O servidor
+  // fixa atributo (Sabedoria) e Condition (Paralyzed); nada disso é escolha
+  // daqui, e nenhum efeito nasce antes do save.
+  const [holdPersonTarget, setHoldPersonTarget] = useState('');
+  const [holdPersonDc, setHoldPersonDc] = useState('13');
 
   const locked = busy || working;
 
@@ -414,6 +424,70 @@ export function MasterEffectsPanel({
             <Icon name="sparkle" size={13} /> Aplicar Bless
           </button>
         </div>
+      </details>
+
+      <details className="conditions-admin" data-hold-person-proof>
+        <summary>Imobilizar Pessoa — prova da engine (6.5H)</summary>
+        <p className="field-hint">
+          Ferramenta TEMPORÁRIA do Mestre: cria apenas a salvaguarda de Sabedoria pendente. Se o
+          alvo FALHAR, nascem o efeito, o Paralyzed e a Concentração do caster; se passar, nada é
+          criado. Não gasta Ação nem slot, não valida alcance/componentes e não repete o save no fim
+          do turno.
+        </p>
+        <div className="hp-controls">
+          <select
+            aria-label="Alvo de Imobilizar Pessoa"
+            value={holdPersonTarget}
+            onChange={(event) => setHoldPersonTarget(event.target.value)}
+          >
+            <option value="">Escolha o alvo</option>
+            {choices.map((choice) => (
+              <option
+                key={`${choice.entity.kind}:${choice.entity.id}`}
+                value={`${choice.entity.kind}:${choice.entity.id}`}
+              >
+                {choice.name}
+              </option>
+            ))}
+          </select>
+          <input
+            aria-label="CD manual de prova"
+            type="number"
+            min={1}
+            max={30}
+            title="CD manual de prova (a Spell Execution Engine futura vai derivar 8 + proficiência + atributo)"
+            value={holdPersonDc}
+            onChange={(event) => setHoldPersonDc(event.target.value)}
+          />
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={
+              locked ||
+              holdPersonTarget === '' ||
+              !Number.isInteger(Number(holdPersonDc)) ||
+              Number(holdPersonDc) < 1 ||
+              Number(holdPersonDc) > 30
+            }
+            onClick={() =>
+              void run(async () => {
+                const choice = choices.find(
+                  (item) => `${item.entity.kind}:${item.entity.id}` === holdPersonTarget,
+                );
+                if (!choice) return;
+                await applyHoldPersonEffect({
+                  caster: entity,
+                  target: choice.entity,
+                  dc: Number(holdPersonDc),
+                });
+                setHoldPersonTarget('');
+              })
+            }
+          >
+            <Icon name="sparkle" size={13} /> Aplicar Imobilizar Pessoa (teste)
+          </button>
+        </div>
+        <p className="field-hint">CD manual de prova — será substituída pela Spell Execution Engine.</p>
       </details>
 
       {error ? <p className="error">{error}</p> : null}

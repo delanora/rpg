@@ -1126,6 +1126,60 @@ model EffectInstance {
   @@map("effect_instances")
 }
 
+/// APLICAÇÃO DE EFEITO aguardando uma SALVAGUARDA (Fase 6.5H).
+///
+/// Existe só para o intervalo entre "o efeito foi direcionado" e "o alvo
+/// passou/falhou no save": nada de Effect ativo antes do resultado. Por isso é
+/// uma tabela própria (e não memória do processo): sobrevive a refresh,
+/// reconnect e restart, e a resolução é uma transição guardada por `status`
+/// (dois requests concorrentes nunca criam dois grupos).
+///
+/// NÃO é a Spell Execution Engine: não há slot, Ação, alcance, componentes,
+/// duração nem upcasting aqui. `ability`/`definitionId` são fixados pelo
+/// SERVIDOR — o cliente só escolhe caster/alvo (Mestre) e resolve o save.
+model PendingEffectSave {
+  id String @id @default(cuid())
+
+  /// Identificador MECÂNICO do efeito que será criado na falha (spell.hold-person).
+  definitionId String
+
+  /// Grupo/instância criados na FALHA (null enquanto pendente ou no sucesso).
+  groupId  String?
+  effectId String?
+
+  /// Caster e alvo na chave polimórfica canônica (combatente de personagem → ficha).
+  casterEntityKind String
+  casterEntityId   String
+  targetEntityKind String
+  targetEntityId   String
+
+  /// Atributo do save (ex.: wisdom). String para a engine crescer sem migration.
+  ability String
+  /// CD informada pelo Mestre no fluxo de PROVA (será derivada pela Spell Engine).
+  dc Int
+
+  /// Origem legível carimbada pelo SERVIDOR (nome do caster na criação).
+  casterLabel String?
+
+  visibility String @default("public")
+  /// `pending` | `resolved` | `cancelled`.
+  status String @default("pending")
+  /// `success` | `failure` (null enquanto pendente).
+  result String?
+
+  /// Idempotência da APLICAÇÃO: retry devolve a MESMA pendência.
+  operationId String @unique
+  fingerprint String
+  createdBy   String?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([targetEntityKind, targetEntityId, status])
+  @@index([casterEntityKind, casterEntityId, status])
+  @@map("pending_effect_saves")
+}
+
 /// Idempotência das criações de efeito (mesmo padrão de `MechanicalOperation`).
 ///
 /// `operationId` é único: dois pedidos iguais (retry, duplo clique) devolvem o

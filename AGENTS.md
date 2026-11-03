@@ -697,6 +697,57 @@ de implementar.
   fallback quando o primeiro termina), Concentração (self-bless, falha,
   substituição e encerramento), alvo isolado, idempotência e invariante.
 
+### Imobilizar Pessoa — segundo efeito real (6.5H)
+
+- Definição em `src/modules/effects/definitions/hold-person.ts`: `definitionId`
+  `spell.hold-person` (mesmo id do catálogo), UM alvo humanoide, salvaguarda de
+  **Sabedoria** e `conditions: ['paralyzed']`. Paralyzed é do motor de
+  Conditions (Incapacitado, deslocamento 0, etc. vêm de `deriveConditionEffects`);
+  não existe Condition "Held"/"Held Person" e nenhum resolver genérico conhece
+  a magia.
+- `PendingEffectSave` (`pending_effect_saves`) representa o intervalo entre
+  "efeito direcionado" e "save rolado": persistente (sobrevive a refresh,
+  reconnect e restart), com `status` (`pending`/`resolved`/`cancelled`),
+  `operationId` único e `fingerprint`. Nenhum Effect/Condition/Concentração
+  existe antes do resultado; a transição é guardada por status, então retry e
+  concorrência nunca criam dois grupos.
+- Aplicação `POST /api/effects/hold-person` é **MASTER-only** e ferramenta de
+  prova: valida caster/alvo no servidor, canonicaliza combatente→ficha, exige
+  humanoide (`Creature.type`; personagens do PHB são humanoides) antes de pedir
+  save e usa **CD manual de prova (1..30)** — `dcSource: 'manual'`, a Spell
+  Execution Engine futura derivará `8 + proficiência + atributo`. Não gasta
+  Ação/slot, não valida alcance/componentes/preparação e não tem upcasting.
+- A salvaguarda é resolvida pelo MESMO endpoint de dados (`POST /api/dice/roll`
+  com `pendingEffectSaveId`): o servidor fixa o atributo e a CD da pendência,
+  rola o d20, calcula o bônus com `savingThrowBonus` (mesma conta da ficha +
+  Esquiva/fontes de Condições + modificadores de Effect) e aceita os
+  modificadores OPCIONAIS server-derived (ex.: Bless +1d4). O cliente não envia
+  atributo, bônus, CD, dados nem resultado.
+- Falha → UM grupo + UMA instância (`conditions: ['paralyzed']`) + Concentração
+  do caster (`sourceType: 'effect'`, `sourceId = groupId`) na MESMA transação;
+  sucesso → nada é criado (nem Effect, nem Condition, nem Concentração), e a
+  concentração anterior do caster é preservada. Na falha, a concentração
+  anterior é substituída pelo motor existente (group anterior desmontado).
+- Self-target falha → Paralyzed deixa o caster Incapacitado → Concentração
+  termina → lifecycle encerra o grupo → Paralyzed sai; o fluxo estabiliza sem
+  recursão. Encerrar apenas a instância de um alvo não encerra a Concentração
+  do caster (relação é Concentração → Grupo, nunca o inverso).
+- Duas aplicações de Hold Person coexistem como ConditionInstances distintas
+  (multi-source do motor): encerrar uma mantém a outra. Remoção ESTRUTURAL de
+  caster/alvo cancela pendências e encerra efeitos (`source-removed`/
+  `target-removed`); morrer ou sair da iniciativa NÃO encerra nada.
+- UI: bloco temporário "Imobilizar Pessoa — prova da engine (6.5H)" no
+  `MasterEffectsPanel` (alvo + CD manual) e painel de **salvaguarda pendente**
+  no estado mecânico do alvo (jogador rola; Mestre escolhe público/privado e
+  pode cancelar). `effects:pending` publica a solicitação (filtro no servidor).
+- `smoke-hold-person-effect.ts` cobre definição, permissão, humanoide, sucesso,
+  falha, derivação de Paralyzed, multi-source, composição com Bless,
+  self-target, isolamento de NPC, cancelamento, remoção estrutural,
+  idempotência e canonicalização para a ficha.
+- **Continua pendente (intencional):** duração de 1 minuto, save repetido no fim
+  do turno, upcasting, múltiplos alvos, alcance/linha de visão, componentes,
+  Ação/slot e conjuração por PLAYER — tudo da Spell Execution/Duration Engine.
+
 ### Modificadores de Effect (6.5B)
 
 - **O pipeline nunca conhece nome de magia/feature.** Ele lê só modificadores

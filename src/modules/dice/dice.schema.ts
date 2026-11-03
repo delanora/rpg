@@ -38,6 +38,12 @@ export const tableRollSchema = z.object({
    */
   pendingConcentrationSaveId: z.string().min(1).max(64).optional(),
   /**
+   * FASE 6.5H — aplicação de efeito aguardando salvaguarda (ex.: Hold Person).
+   * O servidor usa o ATRIBUTO e a CD gravados na pendência; o cliente só
+   * informa o id. Resultado, bônus e dados nunca vêm do corpo.
+   */
+  pendingEffectSaveId: z.string().min(1).max(64).optional(),
+  /**
    * Visibilidade do teste de uma criatura/NPC, escolhida pelo Mestre NA HORA
    * de rolar. Jogador é sempre público (o campo é ignorado).
    */

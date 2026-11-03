@@ -1,6 +1,12 @@
 import { api } from './api';
 import { createOperationId } from './utils';
-import type { EffectDto, EffectModifierDto, EffectVisibility, MechanicalEntity } from './types';
+import type {
+  EffectDto,
+  EffectModifierDto,
+  EffectVisibility,
+  MechanicalEntity,
+  PendingEffectSaveDto,
+} from './types';
 
 /**
  * EFEITOS GENÉRICOS (Fase 6.5A) — só lifecycle.
@@ -55,6 +61,66 @@ export function applyBlessEffect(input: {
     method: 'POST',
     body: { ...input, operationId: createOperationId() },
   });
+}
+
+/**
+ * APLICAÇÃO CONTROLADA DE IMOBILIZAR PESSOA (Mestre, 6.5H).
+ *
+ * Ferramenta de prova da engine — NÃO é conjuração de jogador. O servidor só
+ * cria a PENDÊNCIA de salvaguarda de Sabedoria; Effect/Paralyzed/Concentração
+ * nascem na falha do save. A CD é manual nesta fase (fallback documentado).
+ */
+export function applyHoldPersonEffect(input: {
+  caster: MechanicalEntity;
+  target: MechanicalEntity;
+  dc: number;
+}): Promise<{ pending: PendingEffectSaveDto }> {
+  return api<{ pending: PendingEffectSaveDto }>('/api/effects/hold-person', {
+    method: 'POST',
+    body: { ...input, operationId: createOperationId() },
+  });
+}
+
+/** Pendências de salvaguarda de um alvo (o servidor filtra a privacidade). */
+export function fetchPendingEffectSaves(
+  entity: MechanicalEntity,
+): Promise<PendingEffectSaveDto[]> {
+  return api<{ pending: PendingEffectSaveDto[] }>(
+    `/api/effects/pending/${entity.kind}/${entity.id}`,
+  ).then((result) => result.pending);
+}
+
+/** Cancela a aplicação ANTES do save (ferramenta do Mestre). */
+export function cancelPendingEffectSave(pendingId: string): Promise<PendingEffectSaveDto> {
+  return api<{ pending: PendingEffectSaveDto }>(`/api/effects/pending/${pendingId}/cancel`, {
+    method: 'POST',
+  }).then((result) => result.pending);
+}
+
+/**
+ * Resolve o save pelo MESMO pipeline de dados: o servidor rola o d20, calcula o
+ * bônus (ficha + Condições + Effects) e usa o atributo/CD da pendência. O
+ * cliente não envia resultado, bônus nem atributo.
+ */
+export function rollPendingEffectSave(input: {
+  pendingId: string;
+  visibility?: 'public' | 'private';
+  selectedEffectModifiers?: string[];
+}): Promise<void> {
+  return api('/api/dice/roll', {
+    method: 'POST',
+    body: {
+      kind: 'save',
+      pendingEffectSaveId: input.pendingId,
+      // Pool fixo: o servidor ignora e rola UM d20 (dois com vantagem/desvantagem).
+      dice: [{ sides: 20 }],
+      ...(input.visibility ? { visibility: input.visibility } : {}),
+      ...(input.selectedEffectModifiers?.length
+        ? { selectedEffectModifiers: input.selectedEffectModifiers }
+        : {}),
+      clientId: createOperationId(),
+    },
+  }).then(() => undefined);
 }
 
 /** Encerra UMA instância (o servidor nunca encerra por label). */

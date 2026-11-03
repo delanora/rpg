@@ -7,6 +7,7 @@ import { ConditionBadges } from '../combat/components/ConditionBadges';
 import { ConditionHistoryModal } from './ConditionHistoryModal';
 import { MasterConditionsPanel } from '../combat/components/MasterConditionsPanel';
 import { MasterEffectsPanel } from '../combat/components/MasterEffectsPanel';
+import { PendingEffectSavePanel } from '../combat/components/PendingEffectSavePanel';
 import { fetchEffects } from '../effectsApi';
 import { describeEffectModifiers } from '../effectModifiers';
 import type { EffectDto, MechanicalDto, MechanicalEntity } from '../types';
@@ -201,6 +202,21 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
     {current.effects.exhaustionSummary.map(text => <p key={text} className="field-hint">{text}</p>)}
     {current.effects.assistedNotes.map(text => <p key={text} className="field-hint">{text}</p>)}
     {concentrationControls}
+    {/*
+     * APLICAÇÃO AGUARDANDO SALVAGUARDA (6.5H): mostra a solicitação real ao
+     * alvo (jogador) e ao Mestre, sempre derivada do servidor. Nenhuma
+     * Condition/Effect existe antes do resultado.
+     */}
+    <PendingEffectSavePanel
+      entity={entity}
+      refreshKey={refreshVersion + effectsRefresh}
+      isMaster={isMaster}
+      busy={busy}
+      onChanged={async () => {
+        await refresh().catch(() => {});
+        await reloadEffects();
+      }}
+    />
     {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
     {/* COMBATE: ferramenta compacta de Conditions do Mestre (mesmo domínio). */}
     {isMaster && variant === 'combat' ? <>

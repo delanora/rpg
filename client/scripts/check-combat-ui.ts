@@ -1081,6 +1081,64 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/scripts/smoke-bless-effect.ts').includes('73.I.1)') &&
       source('../src/scripts/smoke-realtime.ts').includes('smokeBlessEffect(BASE_URL, check)'),
   );
+
+  // CB52–CB56. Segundo efeito REAL: Imobilizar Pessoa (Fase 6.5H).
+  const holdPersonDefinition = source('../src/modules/effects/definitions/hold-person.ts');
+  const holdPersonService = source('../src/modules/effects/hold-person.service.ts');
+  const pendingEffectSaves = source('../src/modules/effects/pending-effect-saves.ts');
+  check(
+    'CB52) Hold Person é DEFINIÇÃO canônica (Sabedoria + Paralyzed + Concentração) sem hardcode nos motores',
+    holdPersonDefinition.includes("HOLD_PERSON_DEFINITION_ID = `spell.${HOLD_PERSON_SPELL_ID}`") &&
+      holdPersonDefinition.includes("HOLD_PERSON_SAVE_ABILITY = 'wisdom'") &&
+      holdPersonDefinition.includes("HOLD_PERSON_CONDITIONS: Condition[] = ['paralyzed']") &&
+      holdPersonDefinition.includes('requiresConcentration: true') &&
+      // Nenhum resolver genérico conhece a magia (o caminho do import não é regra).
+      !source('../src/modules/dice/dice.service.ts').includes('spell.hold-person') &&
+      !source('../src/modules/combat/combat.service.ts').includes('spell.hold-person') &&
+      !source('../src/modules/shared/conditions.ts').includes('hold-person') &&
+      !source('../src/modules/effects/effect-conditions.ts').includes('hold-person') &&
+      !/condition:\s*'held'/.test(holdPersonDefinition) &&
+      !/held-person|'held'/i.test(source('../src/modules/shared/conditions.ts')),
+  );
+  check(
+    'CB53) aplicação é MASTER-only e cria SÓ a pendência persistente (nada antes do save)',
+    holdPersonService.includes("actor.role !== 'MASTER'") &&
+      holdPersonService.includes('pendingEffectSave.create') &&
+      holdPersonService.includes('status: \'pending\'') &&
+      holdPersonService.includes('isHumanoidEntity(target.entity, db)') &&
+      source('../src/modules/effects/effects.routes.ts').includes("effectsRouter.post('/hold-person', requireRole('MASTER')") &&
+      source('../src/modules/effects/effects.schema.ts').includes('applyHoldPersonSchema'),
+  );
+  check(
+    'CB54) save pendente é server-authoritative: atributo/CD da pendência e bônus calculado no servidor',
+    source('../src/modules/dice/dice.schema.ts').includes('pendingEffectSaveId') &&
+      source('../src/modules/dice/dice.service.ts').includes('loadPendingEffectSaveForRoll(') &&
+      source('../src/modules/dice/dice.service.ts').includes('savingThrowBonus(targetEntity, ability)') &&
+      source('../src/modules/dice/dice.service.ts').includes(
+        'resolvePendingEffectSave(pending.id, total, actor.displayName)',
+      ) &&
+      !source('../src/modules/dice/dice.service.ts').includes('input.ability ?? pending') &&
+      source('../src/modules/shared/saving-throws.ts').includes('export async function savingThrowBonus'),
+  );
+  check(
+    'CB55) falha cria Effect→Paralyzed e Concentração via grupo; sucesso não cria nada',
+    holdPersonService.includes('conditions: HOLD_PERSON_CONDITIONS') &&
+      holdPersonService.includes("sourceType: 'effect'") &&
+      holdPersonService.includes('sourceId: groupId') &&
+      holdPersonService.includes('applyEffectConditions(effectRow, target.entity, db)') &&
+      holdPersonService.includes('endEffectsForConcentration(applied.endedConcentration, db)') &&
+      holdPersonService.includes('if (success) {') &&
+      holdPersonService.includes('status: \'resolved\''),
+  );
+  check(
+    'CB56) pendência sobrevive a reconnect, é cancelada na remoção estrutural e tem smoke próprio',
+    pendingEffectSaves.includes('pendingEffectSavesForEntity') &&
+      pendingEffectSaves.includes('export async function cancelPendingEffectSavesForEntity') &&
+      source('../src/modules/effects/effect-lifecycle.ts').includes('cancelPendingEffectSavesForEntity(key, db)') &&
+      source('../src/modules/effects/pending-effect-saves.ts').includes("EFFECTS_PENDING") &&
+      source('../src/scripts/smoke-hold-person-effect.ts').includes('74.G)') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeHoldPersonEffect(BASE_URL, check)'),
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

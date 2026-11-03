@@ -6,6 +6,7 @@ import {
   type MechanicalEntity,
 } from '../shared/conditions.js';
 import { removeEffectConditions, type EffectConditionTarget } from './effect-conditions.js';
+import { cancelPendingEffectSavesForEntity } from './pending-effect-saves.js';
 import { parseEffectConditions } from './effect-modifiers.js';
 import type { EffectEndReason } from './effects.schema.js';
 
@@ -144,6 +145,9 @@ export async function endEffectsTargetingEntity(
   reason: EffectEndReason = 'target-removed',
 ): Promise<MechanicalEntity[]> {
   const keys = await mechanicalKeysOf(entity, db);
+  // Aplicação ainda sem save de uma entidade que deixou de existir nunca pode
+  // virar efeito depois (6.5H): a pendência é cancelada ANTES, no mesmo fluxo.
+  for (const key of keys) await cancelPendingEffectSavesForEntity(key, db);
   const ended = await endEffectInstances(
     { OR: keys.map((key) => ({ targetEntityKind: key.kind, targetEntityId: key.id })) },
     reason,
@@ -162,6 +166,9 @@ export async function endEffectsSourcedByEntity(
   reason: EffectEndReason = 'source-removed',
 ): Promise<MechanicalEntity[]> {
   const keys = await mechanicalKeysOf(entity, db);
+  // Caster removido estruturalmente: nenhuma salvaguarda pendente dele pode
+  // criar efeito órfão depois (6.5H).
+  for (const key of keys) await cancelPendingEffectSavesForEntity(key, db);
   const ended = await endEffectInstances(
     { OR: keys.map((key) => ({ sourceEntityKind: key.kind, sourceEntityId: key.id })) },
     reason,

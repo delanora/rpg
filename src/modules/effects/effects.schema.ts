@@ -115,3 +115,20 @@ export const applyBlessSchema = z.object({
   targets: z.array(entitySchema).min(1).max(3),
 });
 export type ApplyBlessInput = z.infer<typeof applyBlessSchema>;
+
+/**
+ * FASE 6.5H — aplicação CONTROLADA de Imobilizar Pessoa (ferramenta do Mestre).
+ *
+ * Um alvo, sem upcasting. O cliente manda apenas caster/alvo e a CD de PROVA
+ * (fallback: a Spell Execution Engine futura a derivará de 8 + proficiência +
+ * atributo de conjuração). Atributo do save, Condition e `definitionId` são
+ * fixados no SERVIDOR — o payload não tem como escolhê-los.
+ */
+export const applyHoldPersonSchema = z.object({
+  operationId: z.string().trim().min(1).max(128),
+  caster: entitySchema,
+  target: entitySchema,
+  /** CD manual de prova — validada no servidor (1..30). */
+  dc: z.number().int().min(1).max(30),
+});
+export type ApplyHoldPersonInput = z.infer<typeof applyHoldPersonSchema>;

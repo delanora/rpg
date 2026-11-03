@@ -184,6 +184,12 @@ export const ServerEvents = {
    */
   EFFECTS_UPDATED: 'effects:updated',
   /**
+   * Aplicação de efeito AGUARDANDO SALVAGUARDA (Fase 6.5H). Vai para os
+   * MESTRES com tudo e para o DONO do alvo só com as pendências `public` — o
+   * filtro é do servidor. Nenhuma consequência mecânica existe antes do save.
+   */
+  EFFECTS_PENDING: 'effects:pending',
+  /**
    * Ciclo de MORTE mudou (0 PV, Testes contra a Morte, decisão pendente). Vai
    * para o dono (personagens) e para a sala dos MESTRES. Death Saves de
    * criaturas/NPCs NUNCA chegam aos jogadores — a privacidade é aplicada no
