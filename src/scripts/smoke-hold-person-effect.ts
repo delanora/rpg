@@ -73,10 +73,19 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       role: targetUser.role,
     });
 
-    // Sabedoria 10 e sem proficiência: bônus de save = 0, então o TOTAL é o d20.
-    // CD 1 → sucesso garantido; CD 30 → falha garantida (nunca depende de sorte).
+    // 6.6B: o caster precisa de uma FONTE de conjuração real (Mago). A CD do save
+    // passa a ser DERIVADA (8 + proficiência + INT) — ver `forceSave` abaixo.
     const hero = await prisma.character.create({
-      data: { userId: heroUser.id, name: 'Caster HP', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
+      data: {
+        userId: heroUser.id,
+        name: 'Caster HP',
+        hpCurrent: 40,
+        hpMax: 40,
+        speed: 9,
+        wisdom: 10,
+        intelligence: 16,
+        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+      },
     });
     const target = await prisma.character.create({
       data: {
@@ -125,12 +134,36 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     async function apply(
       caster: { kind: 'character' | 'creature'; id: string },
       alvo: { kind: 'character' | 'creature' | 'combatant'; id: string },
-      dc: number,
       token = masterToken,
       operationId: string = randomUUID(),
     ) {
       operationIds.push(operationId);
-      return request('/effects/hold-person', { operationId, caster, target: alvo, dc }, token);
+      return request('/effects/hold-person', { operationId, caster, target: alvo }, token);
+    }
+
+    /**
+     * Resultado DETERMINÍSTICO do save sem burlar a autoridade do servidor: a CD
+     * é derivada do caster (INT 1 → CD 5; INT 30 → CD 20) e o bônus do save vem
+     * do alvo (SAB 30 → +10; SAB 1 → -5). O cliente continua sem enviar números.
+     */
+    async function forceSave(
+      outcome: 'success' | 'failure',
+      casterId: string,
+      alvo: { kind: string; id: string },
+    ): Promise<void> {
+      // O atributo de conjuração depende da FONTE (INT/SAB/CAR), então os três
+      // são ajustados: DC mínima (5) para sucesso, máxima (20) para falha.
+      const casting = outcome === 'failure' ? 30 : 1;
+      await prisma.character.update({
+        where: { id: casterId },
+        data: { intelligence: casting, wisdom: casting, charisma: casting },
+      });
+      const wisdom = outcome === 'failure' ? 1 : 30;
+      if (alvo.kind === 'character') {
+        await prisma.character.update({ where: { id: alvo.id }, data: { wisdom } });
+      } else if (alvo.kind === 'creature') {
+        await prisma.creature.update({ where: { id: alvo.id }, data: { wisdom } });
+      }
     }
 
     async function pendingOf(entity: { kind: 'character' | 'creature' | 'combatant'; id: string }) {
@@ -175,7 +208,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // =====================================================================
     // A — aplicação controlada cria SÓ a pendência (nada mecânico)
     // =====================================================================
-    const first = await apply(heroEntity, targetEntity, 1);
+    await forceSave('success', hero.id, targetEntity);
+    const first = await apply(heroEntity, targetEntity);
     const firstPending = first.data.pending as PendingEffectSaveDto;
     const targetPending = await pendingOf(targetEntity);
     const targetMechanicalBefore = await mechanicalOf(targetEntity);
@@ -185,7 +219,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       first.status === 201 &&
         firstPending.definitionId === 'spell.hold-person' &&
         firstPending.ability === 'wisdom' &&
-        firstPending.dc === 1 &&
+        // Derivada: Mago INT 1, nível 1 → 8 + 2 - 5 = 5.
+        firstPending.dc === 5 &&
         firstPending.status === 'pending' &&
         firstPending.targetEntity.kind === 'character' &&
         firstPending.casterEntity.kind === 'character' &&
@@ -201,26 +236,34 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // =====================================================================
     // B — permissões, alvo inválido, CD inválida e idempotência da aplicação
     // =====================================================================
-    const asPlayer = await apply(heroEntity, targetEntity, 1, targetToken);
-    const beastApply = await apply(heroEntity, beastEntity, 1);
-    const invalidDc = await apply(heroEntity, targetEntity, 99);
-    // Replay usa o MESMO operationId da primeira aplicação.
+    const asPlayer = await apply(heroEntity, targetEntity, targetToken);
+    const beastApply = await apply(heroEntity, beastEntity);
+    // Payload malicioso: o cliente tenta impor CD/atributo/proficiência. Zod
+    // descarta esses campos e o replay do MESMO operationId devolve a pendência
+    // original — a CD derivada NÃO muda.
     const replay = await request(
       '/effects/hold-person',
-      { operationId: operationIds[0], caster: heroEntity, target: targetEntity, dc: 1 },
+      {
+        operationId: operationIds[0],
+        caster: heroEntity,
+        target: targetEntity,
+        dc: 99,
+        spellcastingAbility: 'charisma',
+        proficiencyBonus: 10,
+      },
       masterToken,
     );
     check(
-      '74.B) PLAYER não aplica, não humanoide é rejeitado ANTES do save, CD fora da faixa e retry devolve a MESMA pendência',
+      '74.B) PLAYER não aplica, não humanoide é rejeitado ANTES do save e payload malicioso (DC/atributo/PB) NÃO altera a CD derivada',
       asPlayer.status === 403 &&
         beastApply.status === 409 &&
         beastApply.data.error === 'HOLD_PERSON_TARGET_NOT_HUMANOID' &&
-        invalidDc.status === 400 &&
         replay.status === 200 &&
         replay.data.replayed === true &&
         replay.data.pending.id === firstPending.id &&
+        replay.data.pending.dc === 5 &&
         (await prisma.pendingEffectSave.count({ where: { targetEntityId: beast.id } })) === 0,
-      JSON.stringify({ asPlayer: asPlayer.status, beast: beastApply.data, invalidDc: invalidDc.status, replay: replay.status }),
+      JSON.stringify({ asPlayer: asPlayer.status, beast: beastApply.data, replay: replay.status, dc: replay.data.pending?.dc }),
     );
 
     // =====================================================================
@@ -229,9 +272,9 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     const successRoll = await rollSave(firstPending.id, targetToken);
     const afterSuccess = await mechanicalOf(targetEntity);
     check(
-      '74.C) save >= CD resolve SUCESSO: pendência some, zero Effect/Paralyzed e caster NÃO começa a concentrar',
+      '74.C) save >= CD DERIVADA resolve SUCESSO: pendência some, zero Effect/Paralyzed e caster NÃO começa a concentrar',
       successRoll.status === 201 &&
-        successRoll.data.roll.total >= 1 &&
+        successRoll.data.roll.total >= firstPending.dc &&
         (await pendingOf(targetEntity)).length === 0 &&
         (await effectsOf(targetEntity)).length === 0 &&
         afterSuccess.state.conditions.length === 0 &&
@@ -242,7 +285,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // =====================================================================
     // D — FALHA (NPC humanoide): Effect → Paralyzed → Concentração
     // =====================================================================
-    const failApply = await apply(heroEntity, humanoidEntity, 30);
+    await forceSave('failure', hero.id, humanoidEntity);
+    const failApply = await apply(heroEntity, humanoidEntity);
     const failPending = failApply.data.pending as PendingEffectSaveDto;
     const failRoll = await rollSave(failPending.id);
     const humanoidEffects = await effectsOf(humanoidEntity);
@@ -313,7 +357,15 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // F — Bless (6.5G) compõe com o save pendente do Hold Person (6.5H)
     // =====================================================================
     const casterTwo = await prisma.character.create({
-      data: { userId: casterTwoUser.id, name: 'Caster Two', hpCurrent: 10, hpMax: 10, speed: 9 },
+      data: {
+        userId: casterTwoUser.id,
+        name: 'Caster Two',
+        hpCurrent: 10,
+        hpMax: 10,
+        speed: 9,
+        intelligence: 16,
+        classes: [{ classKey: 'cleric', subclass: '', level: 1 }],
+      },
     });
     characterIds.push(casterTwo.id);
     const bless = await request(
@@ -333,8 +385,10 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       targetToken,
     );
     const blessOption = (blessOptions.data.options ?? [])[0] as { id: string } | undefined;
-    // CD 30 garante falha; o ponto aqui é o d4 SERVIDOR-SIDE escolhido pelo cliente.
-    const pendingBlessed = await apply(heroEntity, targetEntity, 30);
+    // Falha garantida pela CD DERIVADA (INT 30 → CD 20; alvo SAB 1 → máx. 15 + 1d4).
+    // O ponto aqui é o d4 SERVIDOR-SIDE escolhido pelo cliente.
+    await forceSave('failure', hero.id, targetEntity);
+    const pendingBlessed = await apply(heroEntity, targetEntity);
     // 6.6A: o COMMIT (antes do save) encerra a concentração ANTERIOR do caster.
     const heroAtCommit = await mechanicalOf(heroEntity);
     const blessedRoll = await rollSave(pendingBlessed.data.pending.id, targetToken, {
@@ -357,7 +411,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
         rollDice[0].sides === 4 &&
         blessedRoll.data.roll.total ===
           kept + blessedRoll.data.roll.bonus + rollDice[0].value &&
-        blessedRoll.data.roll.total < 30,
+        blessedRoll.data.roll.total < pendingBlessed.data.pending.dc,
       JSON.stringify({ options: blessOptions.data.options, roll: blessedRoll.data.roll }),
     );
     // Encerra o Effect do Bless (a concentração do caster 2 não fica presa).
@@ -374,7 +428,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // =====================================================================
     // G — self-target: Paralyzed → Incapacitado → Concentração termina → grupo
     // =====================================================================
-    const selfApply = await apply(heroEntity, heroEntity, 30);
+    await forceSave('failure', hero.id, heroEntity);
+    const selfApply = await apply(heroEntity, heroEntity);
     const selfRoll = await rollSave(selfApply.data.pending.id, heroToken);
     const selfMechanical = await mechanicalOf(heroEntity);
     const selfPendingRow = await prisma.pendingEffectSave.findUniqueOrThrow({
@@ -387,7 +442,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     check(
       '74.G) caster == alvo falha, fica Paralyzed, perde a concentração e o lifecycle limpa o grupo SEM loop',
       selfRoll.status === 201 &&
-        selfRoll.data.roll.total < 30 &&
+        selfRoll.data.roll.total < selfApply.data.pending.dc &&
         selfMechanical.state.concentration === null &&
         selfMechanical.state.conditions.every((item) => item.condition !== 'paralyzed') &&
         selfEffects.length === 0 &&
@@ -408,7 +463,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // =====================================================================
     // I — Cancelar a aplicação antes do save: nada é criado
     // =====================================================================
-    const cancelApply = await apply(heroEntity, otherHumanoidEntity, 1);
+    const cancelApply = await apply(heroEntity, otherHumanoidEntity);
     const cancelled = await request(
       `/effects/pending/${cancelApply.data.pending.id}/cancel`,
       {},
@@ -429,7 +484,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       data: { name: 'NPC Removido', kind: 'NPC', type: 'Humanoide', hpCurrent: 10, hpMax: 10, speed: 9 },
     });
     const doomedEntity = { kind: 'creature' as const, id: doomed.id };
-    const doomedApply = await apply(heroEntity, doomedEntity, 1);
+    const doomedApply = await apply(heroEntity, doomedEntity);
     const doomedDelete = await request(`/creatures/${doomed.id}`, {}, masterToken, 'DELETE');
     const doomedRow = await prisma.pendingEffectSave.findUniqueOrThrow({
       where: { id: doomedApply.data.pending.id },
@@ -445,7 +500,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     // =====================================================================
     // K — resolução repetida não duplica consequência (concorrência lógica)
     // =====================================================================
-    const repeatApply = await apply(heroEntity, humanoidEntity, 30);
+    await forceSave('failure', hero.id, humanoidEntity);
+    const repeatApply = await apply(heroEntity, humanoidEntity);
     const repeatPending = repeatApply.data.pending as PendingEffectSaveDto;
     const firstResolve = await rollSave(repeatPending.id);
     const secondResolve = await rollSave(repeatPending.id);
@@ -494,7 +550,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
     const heroCombatant = await prisma.combatant.findFirstOrThrow({
       where: { combatId, characterId: hero.id },
     });
-    const combatApply = await apply(heroEntity, { kind: 'combatant', id: heroCombatant.id }, 1);
+    const combatApply = await apply(heroEntity, { kind: 'combatant', id: heroCombatant.id });
     check(
       '74.L) alvo combatente de PERSONAGEM é canonicalizado para a FICHA (sem duplicar estado)',
       combatApply.status === 201 &&

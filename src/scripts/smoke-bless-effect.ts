@@ -80,23 +80,62 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         hpCurrent: 60,
         hpMax: 60,
         speed: 9,
-        constitution: 14,
+        // CON 30 garante que o PRIMEIRO concentration save (DC 10) sempre
+        // passa: se ele falhasse, a concentração terminaria e limparia a
+        // SEGUNDA pendência — o teste de 73.H compararia uma rolagem inexistente.
+        constitution: 30,
         dexterity: 14,
+        // 6.6B: todo cast registra a FONTE de conjuração (perfil derivado).
+        intelligence: 16,
+        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
         attacks: attacks as never,
       },
     });
     const ally = await prisma.character.create({
-      data: { userId: allyUser.id, name: 'Aliado Bless', hpCurrent: 40, hpMax: 40, speed: 9, dexterity: 14 },
+      data: {
+        userId: allyUser.id,
+        name: 'Aliado Bless',
+        hpCurrent: 40,
+        hpMax: 40,
+        speed: 9,
+        dexterity: 14,
+        intelligence: 16,
+        classes: [{ classKey: 'cleric', subclass: '', level: 1 }],
+      },
     });
     const third = await prisma.character.create({
-      data: { userId: thirdUser.id, name: 'Terceiro Bless', hpCurrent: 40, hpMax: 40, speed: 9 },
+      data: {
+        userId: thirdUser.id,
+        name: 'Terceiro Bless',
+        hpCurrent: 40,
+        hpMax: 40,
+        speed: 9,
+        intelligence: 16,
+        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+      },
     });
     characterIds.push(hero.id, ally.id, third.id);
+    // 6.6B: para CONJURAR (Bless de stacking abaixo) a criatura precisa do perfil
+    // explícito do statblock — existir no cadastro não a torna conjuradora.
     const goblin = await prisma.creature.create({
-      data: { name: 'Goblin Bless', kind: 'CREATURE', hpCurrent: 20, hpMax: 20, speed: 9 },
+      data: {
+        name: 'Goblin Bless',
+        kind: 'CREATURE',
+        hpCurrent: 20,
+        hpMax: 20,
+        speed: 9,
+        spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+      },
     });
     const otherGoblin = await prisma.creature.create({
-      data: { name: 'Goblin Intocado', kind: 'CREATURE', hpCurrent: 20, hpMax: 20, speed: 9 },
+      data: {
+        name: 'Goblin Intocado',
+        kind: 'CREATURE',
+        hpCurrent: 20,
+        hpMax: 20,
+        speed: 9,
+        spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+      },
     });
     creatureIds.push(goblin.id, otherGoblin.id);
 

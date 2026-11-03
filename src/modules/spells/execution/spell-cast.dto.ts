@@ -19,6 +19,20 @@ export interface SpellCastDto {
   requiresConcentration: boolean;
   effectGroupId: string | null;
   saveDc: number | null;
+  /**
+   * Snapshot do perfil de conjuração (6.6B). `null` nos casts anteriores à
+   * migração: a leitura nunca recalcula nem inventa valores.
+   */
+  spellcasting: {
+    source: { kind: string; id: string; label: string | null };
+    mode: 'derived' | 'explicit' | null;
+    ability: string | null;
+    abilityScore: number | null;
+    abilityModifier: number | null;
+    proficiencyBonus: number | null;
+    saveDc: number | null;
+    attackBonus: number | null;
+  } | null;
   createdAt: string;
   committedAt: string;
   resolvedAt: string | null;
@@ -44,6 +58,28 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
     row.outcome === 'effect' || row.outcome === 'no-effect' || row.outcome === 'cancelled'
       ? row.outcome
       : null;
+  const spellcasting =
+    row.spellcastingSourceKind && row.spellcastingSourceId
+      ? {
+          source: {
+            kind: row.spellcastingSourceKind,
+            id: row.spellcastingSourceId,
+            label: row.spellcastingSourceLabel ?? null,
+          },
+          mode:
+            row.spellcastingMode === 'derived'
+              ? ('derived' as const)
+              : row.spellcastingMode === 'explicit'
+                ? ('explicit' as const)
+                : null,
+          ability: row.spellcastingAbility ?? null,
+          abilityScore: row.spellcastingAbilityScore ?? null,
+          abilityModifier: row.spellcastingAbilityModifier ?? null,
+          proficiencyBonus: row.spellcastingProficiencyBonus ?? null,
+          saveDc: row.spellSaveDc ?? row.saveDc ?? null,
+          attackBonus: row.spellAttackBonus ?? null,
+        }
+      : null;
   return {
     id: row.id,
     spellId: row.spellId,
@@ -58,6 +94,7 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
     requiresConcentration: row.requiresConcentration,
     effectGroupId: row.effectGroupId ?? null,
     saveDc: row.saveDc ?? null,
+    spellcasting,
     createdAt: row.createdAt.toISOString(),
     committedAt: row.committedAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

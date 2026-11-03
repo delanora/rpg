@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { describeEffectModifiers, EFFECT_ROLL_LABELS } from '../../effectModifiers';
 import {
@@ -6,6 +6,7 @@ import {
   applyHoldPersonEffect,
   createManualEffect,
   endEffect,
+  fetchSpellcastingSources,
 } from '../../effectsApi';
 import type {
   AbilityKey,
@@ -14,6 +15,7 @@ import type {
   EffectRollType,
   EffectVisibility,
   MechanicalEntity,
+  SpellcastingSourceDto,
 } from '../../types';
 
 /**
@@ -95,11 +97,35 @@ export function MasterEffectsPanel({
   // BLESS (6.5G): ferramenta temporária de PROVA da engine. O caster é a
   // entidade deste painel; até 3 alvos da lista da mesa.
   const [blessTargets, setBlessTargets] = useState<string[]>([]);
-  // IMOBILIZAR PESSOA (6.5H): alvo ÚNICO + CD manual de prova. O servidor
-  // fixa atributo (Sabedoria) e Condition (Paralyzed); nada disso é escolha
-  // daqui, e nenhum efeito nasce antes do save.
+  // IMOBILIZAR PESSOA (6.5H): alvo ÚNICO. O servidor fixa atributo (Sabedoria),
+  // CD e Condition (Paralyzed); nada disso é escolha daqui.
   const [holdPersonTarget, setHoldPersonTarget] = useState('');
-  const [holdPersonDc, setHoldPersonDc] = useState('13');
+  // FONTE DE CONJURAÇÃO (6.6B): lista do SERVIDOR com CD/ataque mágico já
+  // derivados. Só há escolha no multiclasse; não existe campo de CD na UI.
+  const [sources, setSources] = useState<SpellcastingSourceDto[]>([]);
+  const [sourceKey, setSourceKey] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    setSources([]);
+    setSourceKey('');
+    fetchSpellcastingSources(entity)
+      .then((list) => {
+        if (!alive) return;
+        setSources(list);
+        setSourceKey(list.length === 1 ? `${list[0].kind}:${list[0].id}` : '');
+      })
+      .catch(() => {
+        if (alive) setSources([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [entity.kind, entity.id]);
+
+  const selectedSource =
+    sources.find((item) => `${item.kind}:${item.id}` === sourceKey) ??
+    (sources.length === 1 ? sources[0] : null);
 
   const locked = busy || working;
 
@@ -367,6 +393,34 @@ export function MasterEffectsPanel({
         Fixtures de engine: bônus/dado em rolagem, CA e deslocamento entram nos pipelines do
         servidor. Nenhuma magia, duração ou Condition é criada aqui.
       </p>
+      <div className="hp-controls" data-spellcasting-source>
+        <span className="field-hint">Fonte de conjuração</span>
+        {sources.length > 1 ? (
+          <select
+            aria-label="Fonte de conjuração"
+            value={sourceKey}
+            onChange={(event) => setSourceKey(event.target.value)}
+          >
+            <option value="">Escolha a fonte</option>
+            {sources.map((source) => (
+              <option key={`${source.kind}:${source.id}`} value={`${source.kind}:${source.id}`}>
+                {source.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {selectedSource ? (
+          <span className="field-hint" data-spellcasting-derived>
+            CD {selectedSource.spellSaveDc}
+            {selectedSource.spellAttackBonus === null
+              ? ''
+              : ` · ataque mágico ${selectedSource.spellAttackBonus >= 0 ? '+' : ''}${selectedSource.spellAttackBonus}`}
+          </span>
+        ) : (
+          <span className="field-hint">Sem fonte de conjuração utilizável.</span>
+        )}
+      </div>
+
       <details className="conditions-admin" data-bless-proof>
         <summary>
           Bless — prova da engine (6.5G){blessTargets.length > 0 ? ` (${blessTargets.length}/3)` : ''}
@@ -406,7 +460,7 @@ export function MasterEffectsPanel({
           <button
             type="button"
             className="btn btn-small"
-            disabled={locked || blessTargets.length === 0}
+            disabled={locked || blessTargets.length === 0 || selectedSource === null}
             onClick={() =>
               void run(async () => {
                 const targets = blessTargets.flatMap((key) => {
@@ -415,8 +469,12 @@ export function MasterEffectsPanel({
                   );
                   return choice ? [choice.entity] : [];
                 });
-                if (targets.length === 0) return;
-                await applyBlessEffect({ caster: entity, targets });
+                if (targets.length === 0 || selectedSource === null) return;
+                await applyBlessEffect({
+                  caster: entity,
+                  targets,
+                  spellcastingSource: { kind: selectedSource.kind, id: selectedSource.id },
+                });
                 setBlessTargets([]);
               })
             }
@@ -450,35 +508,20 @@ export function MasterEffectsPanel({
               </option>
             ))}
           </select>
-          <input
-            aria-label="CD manual de prova"
-            type="number"
-            min={1}
-            max={30}
-            title="CD manual de prova (a Spell Execution Engine futura vai derivar 8 + proficiência + atributo)"
-            value={holdPersonDc}
-            onChange={(event) => setHoldPersonDc(event.target.value)}
-          />
           <button
             type="button"
             className="btn btn-small"
-            disabled={
-              locked ||
-              holdPersonTarget === '' ||
-              !Number.isInteger(Number(holdPersonDc)) ||
-              Number(holdPersonDc) < 1 ||
-              Number(holdPersonDc) > 30
-            }
+            disabled={locked || holdPersonTarget === '' || selectedSource === null}
             onClick={() =>
               void run(async () => {
                 const choice = choices.find(
                   (item) => `${item.entity.kind}:${item.entity.id}` === holdPersonTarget,
                 );
-                if (!choice) return;
+                if (!choice || selectedSource === null) return;
                 await applyHoldPersonEffect({
                   caster: entity,
                   target: choice.entity,
-                  dc: Number(holdPersonDc),
+                  spellcastingSource: { kind: selectedSource.kind, id: selectedSource.id },
                 });
                 setHoldPersonTarget('');
               })
@@ -487,7 +530,9 @@ export function MasterEffectsPanel({
             <Icon name="sparkle" size={13} /> Aplicar Imobilizar Pessoa (teste)
           </button>
         </div>
-        <p className="field-hint">CD manual de prova — será substituída pela Spell Execution Engine.</p>
+        <p className="field-hint">
+          A CD vem do perfil de conjuração do caster (ou do statblock do NPC) — não há campo manual.
+        </p>
       </details>
 
       {error ? <p className="error">{error}</p> : null}

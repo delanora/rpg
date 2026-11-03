@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import type { AbilityKey } from '../../shared/dnd5e.js';
 import type { LoadedEntity } from '../../mechanical/mechanical.service.js';
+import type { SpellcastingProfile } from './spellcasting-source.js';
 
 /**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
@@ -33,8 +34,10 @@ export interface SpellValidationContext {
   spellId: string;
   caster: LoadedEntity;
   targets: LoadedEntity[];
-  /** CD já resolvida (manual nesta fase) quando a definição usa save. */
-  saveDc: number | null;
+  /** Perfil SERVER-SIDE da conjuração (fonte/atributo/CD/ataque mágico). */
+  profile: SpellcastingProfile;
+  /** CD de magia do perfil (sempre presente). */
+  saveDc: number;
 }
 
 export interface SpellExecutionDefinition {
@@ -43,11 +46,6 @@ export interface SpellExecutionDefinition {
   requiresConcentration: boolean;
   maxTargets: number;
   resolution: SpellResolutionDefinition;
-  /**
-   * CD informada pelo Mestre enquanto a 6.6B não deriva o Spell Save DC do
-   * caster. A definição continua responsável por dizer que precisa de save.
-   */
-  manualSaveDc?: boolean;
   /**
    * Validação ESPECÍFICA da magia (alvo humanoide, limite de alvos...).
    * Roda depois da validação genérica e ANTES do commit — nunca muta o banco.

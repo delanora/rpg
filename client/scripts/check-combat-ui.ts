@@ -1168,8 +1168,10 @@ console.log('Check-combat-ui — refino da UI de combate');
       spellExecutionRegistry.includes('SPELL_EXECUTION_DEFINITIONS') &&
       spellExecutionDefinition.includes("kind: 'immediate-effect'") &&
       spellExecutionDefinition.includes("kind: 'save-effect'") &&
-      spellExecutionRegistry.includes('manualSaveDc: true') &&
-      spellExecutionRegistry.includes("applyOn: 'failure'"),
+      spellExecutionRegistry.includes("applyOn: 'failure'") &&
+      !spellExecutionRegistry.includes('manualSaveDc') &&
+      spellExecutionDefinition.includes('profile: SpellcastingProfile') &&
+      spellCastService.includes('resolveSpellcastingProfile('),
   );
   check(
     'CB59) COMMIT encerra a Concentração anterior ANTES de resolver; nova Concentração só com Effect durável',
@@ -1211,6 +1213,79 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/scripts/smoke-spell-casting-foundation.ts').includes('75.F)') &&
       source('../src/scripts/smoke-spell-casting-foundation.ts').includes('75.P)') &&
       source('../src/scripts/smoke-realtime.ts').includes('smokeSpellCastingFoundation(BASE_URL, check)'),
+  );
+
+  // CB63–CB67. PERFIL DE CONJURAÇÃO server-side (Fase 6.6B).
+  const spellcastingSource = source('../src/modules/spells/execution/spellcasting-source.ts');
+  const spellcastingProfileService = source(
+    '../src/modules/spells/execution/spellcasting-profile.service.ts',
+  );
+  const profileMigration = source(
+    '../prisma/migrations/20261102120000_add_spellcasting_profile/migration.sql',
+  );
+  const masterEffectsPanel = source('src/combat/components/MasterEffectsPanel.tsx');
+  check(
+    'CB63) CD/ataque mágico DERIVADOS por fonte (8 + PB + atributo) — classe/subclasse e statblock, nunca label',
+    spellcastingSource.includes('spellcastingSourcesForCharacter') &&
+      spellcastingSource.includes('characterSpellcastingProfile') &&
+      spellcastingSource.includes('spellSaveDcFrom') &&
+      spellcastingSource.includes('spellAttackBonusFrom') &&
+      spellcastingSource.includes('creatureSpellcastingProfile') &&
+      spellcastingSource.includes('CREATURE_STATBLOCK_SOURCE_ID') &&
+      spellcastingSource.includes('spellcastingStartsAtLevel') &&
+      spellcastingSource.includes('proficiencyBonus(characterLevelOf(character.classes))') &&
+      spellcastingSource.includes("mode: 'explicit'") &&
+      !spellcastingSource.includes("className === 'Wizard'")
+  );
+  check(
+    'CB64) payload de prova NÃO tem CD/atributo/PB e o perfil é resolvido ANTES do commit',
+    !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('dc:') &&
+      !spellcastingSource.includes('input.dc') &&
+      !source('../src/modules/effects/effects.schema.ts').includes('dc: z.number()') &&
+      spellCastService.indexOf('resolveSpellcastingProfile(caster, input.spellcastingSource, db)') >
+        0 &&
+      spellCastService.indexOf('resolveSpellcastingProfile(caster, input.spellcastingSource, db)') <
+        spellCastService.indexOf('const cast = await commitSpellCast') &&
+      spellcastingProfileService.includes('SPELLCASTING_SOURCE_REQUIRED') &&
+      spellcastingProfileService.includes('SPELLCASTING_SOURCE_INVALID') &&
+      spellcastingProfileService.includes('SPELLCASTING_SOURCE_NOT_AVAILABLE') &&
+      !spellcastingProfileService.includes("className ===") &&
+      !spellcastingProfileService.includes('new Map(')
+  );
+  check(
+    'CB65) snapshot IMUTÁVEL do perfil no SpellCast (migration aditiva) e criatura com perfil explícito',
+    source('../prisma/schema.prisma').includes('spellcastingSourceKind') &&
+      source('../prisma/schema.prisma').includes('spellcastingProfile Json') &&
+      profileMigration.includes('ADD COLUMN "spellSaveDc"') &&
+      profileMigration.includes('ADD COLUMN "spellcastingProfile" JSONB') &&
+      spellCastService.includes('spellcastingAbilityScore: context.profile.abilityScore') &&
+      spellCastService.includes('spellSaveDc: context.saveDc') &&
+      source('../src/modules/spells/execution/spell-cast.dto.ts').includes('spellcasting') &&
+      // O DTO NÃO expõe metadado interno (o comentário pode citar o campo, a
+      // atribuição/tipo não pode existir).
+      !/fingerprint\s*[:?]/.test(source('../src/modules/spells/execution/spell-cast.dto.ts'))
+  );
+  check(
+    'CB66) painel do Mestre SEM CD manual: seletor de fonte (só multiclasse) e CD/ataque read-only',
+    !masterEffectsPanel.includes('holdPersonDc') &&
+      !masterEffectsPanel.includes('CD manual de prova') &&
+      masterEffectsPanel.includes('fetchSpellcastingSources') &&
+      masterEffectsPanel.includes('data-spellcasting-derived') &&
+      masterEffectsPanel.includes('spellcastingSource: { kind: selectedSource.kind, id: selectedSource.id }') &&
+      masterEffectsPanel.includes('Sem fonte de conjuração utilizável.') &&
+      source('../src/modules/effects/hold-person.service.ts').includes('input.spellcastingSource') &&
+      source('../src/modules/effects/bless.service.ts').includes('input.spellcastingSource')
+  );
+  check(
+    'CB67) smoke da 6.6B cobre fórmulas/multiclasse/statblock/snapshot e está ligado ao npm run smoke',
+    source('../src/scripts/smoke-spellcasting-profile.ts').includes('76.D)') &&
+      source('../src/scripts/smoke-spellcasting-profile.ts').includes('76.L)') &&
+      source('../src/scripts/smoke-spellcasting-profile.ts').includes('76.N)') &&
+      source('../src/scripts/smoke-spellcasting-profile.ts').includes('SPELLCASTING_SOURCE_REQUIRED') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeSpellcastingProfile(BASE_URL, check)') &&
+      source('../src/scripts/smoke-hold-person-effect.ts').includes('forceSave') &&
+      source('../src/scripts/smoke-hold-person-effect.ts').includes("forceSave('success'") &&
+      source('../src/scripts/smoke-hold-person-effect.ts').includes("forceSave('failure'")
   );
 }
 

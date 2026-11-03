@@ -281,6 +281,94 @@ export function CreatureEditor({
         </div>
       </Section>
 
+      <Section
+        title="Conjuração"
+        icon="sparkle"
+        subtitle="Perfil EXPLÍCITO do statblock — a Spell Execution Engine usa estes valores, sem recalcular pelo nível de classe"
+      >
+        <div className="grid grid-3">
+          <label className="field">
+            <span>Atributo de conjuração</span>
+            <select
+              value={creature.spellcastingProfile.ability ?? ''}
+              aria-label="Atributo de conjuração"
+              onChange={(event) =>
+                onPatch({
+                  spellcastingProfile: {
+                    ...creature.spellcastingProfile,
+                    ...(event.target.value === ''
+                      ? { ability: undefined }
+                      : { ability: event.target.value as (typeof ABILITY_KEYS)[number] }),
+                  },
+                })
+              }
+            >
+              <option value="">Não declarado</option>
+              {ABILITY_KEYS.map((ability) => (
+                <option key={ability} value={ability}>
+                  {ABILITY_LABELS[ability]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>CD de magia</span>
+            <InlineField
+              value={creature.spellcastingProfile.saveDc ?? ''}
+              mode="number"
+              min={1}
+              max={40}
+              ariaLabel="CD de magia do statblock"
+              onCommit={(value) => {
+                const text = value.trim();
+                onPatch({
+                  spellcastingProfile: {
+                    ...creature.spellcastingProfile,
+                    ...(text === ''
+                      ? { saveDc: undefined }
+                      : { saveDc: clampInt(text, 1, 40, creature.spellcastingProfile.saveDc ?? 10) }),
+                  },
+                });
+              }}
+            />
+          </label>
+
+          <label className="field">
+            <span>Ataque mágico</span>
+            <InlineField
+              value={creature.spellcastingProfile.attackBonus ?? ''}
+              mode="number"
+              min={-20}
+              max={40}
+              ariaLabel="Bônus de ataque mágico do statblock"
+              onCommit={(value) => {
+                const text = value.trim();
+                onPatch({
+                  spellcastingProfile: {
+                    ...creature.spellcastingProfile,
+                    ...(text === ''
+                      ? { attackBonus: undefined }
+                      : {
+                          attackBonus: clampInt(
+                            text,
+                            -20,
+                            40,
+                            creature.spellcastingProfile.attackBonus ?? 0,
+                          ),
+                        }),
+                  },
+                });
+              }}
+            />
+          </label>
+        </div>
+        <p className="section-note">
+          O statblock é a autoridade: a CD informada aqui vale mesmo que a fórmula de
+          personagem sugerisse outro número. Sem CD, a criatura não é fonte de conjuração.
+        </p>
+      </Section>
+
       <Section title="Vida e Defesa" icon="heart">
         <div className="grid grid-4">
           <div className="vital">

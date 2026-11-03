@@ -4,6 +4,7 @@ import { ABILITY_SCORE_MAX, ABILITY_SCORE_MIN } from '../shared/dnd5e.js';
 import { inventorySlotSchema } from '../characters/characters.schema.js';
 import { itemDetailsSchema } from '../shared/item-details.js';
 import { coinDeltaSchema } from '../shared/coins.js';
+import { creatureSpellcastingProfileSchema } from '../shared/creature-spellcasting.js';
 
 const abilityScore = z
   .number()
@@ -40,6 +41,12 @@ const creatureFields = z.object({
   speed: z.number().int().min(0).max(999),
 
   attacks: z.array(attackSchema).max(100),
+  /**
+   * PERFIL DE CONJURAÇÃO do statblock (6.6B): `{ ability?, saveDc?, attackBonus? }`.
+   * Valores explícitos são a autoridade da criatura — a CD NÃO é recalculada por
+   * fórmula de personagem. Só o perfil, nunca o repertório de magias.
+   */
+  spellcastingProfile: creatureSpellcastingProfileSchema,
   resistances: damageTypeListSchema,
   immunities: damageTypeListSchema,
   vulnerabilities: damageTypeListSchema,

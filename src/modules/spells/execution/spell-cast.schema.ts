@@ -1,14 +1,18 @@
 import { z } from 'zod';
 import { entitySchema } from '../../shared/conditions.js';
+import { spellcastingSourceRefSchema } from './spellcasting-source.js';
 
 /**
- * FASE 6.6A — contrato HTTP do CASTING (apenas prova/administração).
+ * FASE 6.6A/6.6B — contrato HTTP do CASTING (apenas prova/administração).
  *
  * A rota genérica é MASTER-only nesta fase: NÃO existe conjuração de PLAYER
  * enquanto slot/Ação/componentes/preparação não forem validados. O cliente
- * envia a INTENÇÃO (magia, caster, alvos e, quando a definição exige, a CD
- * manual de prova); atributo do save, Condition, definição de efeito e ordem
- * do lifecycle são do servidor.
+ * envia a INTENÇÃO (magia, caster, alvos e, no multiclasse, QUAL fonte de
+ * conjuração); atributo do save, CD, bônus de ataque, Condition, definição de
+ * efeito e ordem do lifecycle são do SERVIDOR.
+ *
+ * Não há campo de CD: desde a 6.6B ela é derivada do perfil de conjuração
+ * (personagem) ou vem do statblock (criatura).
  */
 export const spellCastProofSchema = z.object({
   operationId: z.string().trim().min(1).max(128),
@@ -16,10 +20,10 @@ export const spellCastProofSchema = z.object({
   caster: entitySchema,
   targets: z.array(entitySchema).min(1).max(3),
   /**
-   * CD manual de prova (fallback da 6.6A). Só é usada quando a definição
-   * declara `manualSaveDc`; a 6.6B passa a derivá-la do caster.
+   * Fonte de conjuração escolhida. Obrigatória só quando o caster tem MAIS de
+   * uma; o servidor revalida a posse e ignora qualquer número enviado.
    */
-  dc: z.number().int().min(1).max(30).optional(),
+  spellcastingSource: spellcastingSourceRefSchema.optional(),
 });
 
 export type SpellCastProofInput = z.infer<typeof spellCastProofSchema>;
