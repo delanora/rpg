@@ -113,6 +113,28 @@ export interface CastTargetOption {
   isSelf: boolean;
 }
 
+/**
+ * Resumo dos COMPONENTES V/S/M (6.6G), derivado no servidor.
+ *
+ * A UI só EXIBE: nada aqui é decidido pelo cliente, e o `POST /cast` revalida.
+ * `blockedReason` já vem sanitizado (efeito privado nunca aparece).
+ */
+export interface CastComponentsSummary {
+  verbal: { required: boolean; available: boolean };
+  somatic: { required: boolean; available: boolean };
+  material: {
+    required: boolean;
+    available: boolean;
+    description: string | null;
+    consumed: boolean;
+    spellSpecifiedCostGp: number | null;
+    providerKind: 'none' | 'component-pouch' | 'focus' | 'specific-material';
+    providerLabel: string | null;
+  };
+  castableNow: boolean;
+  blockedReason: string | null;
+}
+
 export interface CastOptions {
   spell: { id: string; name: string; level: number; executable: boolean };
   /** Só fontes que AUTORIZAM a magia agora. */
@@ -120,6 +142,8 @@ export interface CastOptions {
   resources: CastResourceOption[];
   /** Máximo de alvos por NÍVEL de espaço — sempre derivado no servidor. */
   targeting: CastTargetingSummary[];
+  /** Componentes da magia pela fonte oferecida (`null` sem fonte autorizada). */
+  components: CastComponentsSummary | null;
   targets: CastTargetOption[];
   inCombat: boolean;
   pendingIntent: SpellCastIntent | null;

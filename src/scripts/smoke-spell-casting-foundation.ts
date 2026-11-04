@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma } from '../config/prisma.js';
+import { grantCastingComponents } from './spell-slot-fixtures.js';
 import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
@@ -143,6 +144,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       },
     });
     characterIds.push(selfCaster.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds });
     // Grimório (registrada) + preparação ACTIVE: as duas condições do Mago.
     await seedSpellRepertoire({
       characterId: selfCaster.id,
@@ -158,6 +161,8 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       data: { name: 'Lobo Cast', kind: 'CREATURE', type: 'Besta', hpCurrent: 20, hpMax: 20, speed: 12 },
     });
     creatureIds.push(humanoid.id, beast.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds, creatures: creatureIds });
 
     const casterEntity = { kind: 'character' as const, id: caster.id };
     const targetEntity = { kind: 'character' as const, id: target.id };

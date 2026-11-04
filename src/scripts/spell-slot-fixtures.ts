@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { getSpell } from '../modules/shared/spells/index.js';
 import { spellsStateSchema, type SpellsStateInput } from '../modules/characters/characters.schema.js';
@@ -11,6 +12,74 @@ import { parseJson } from '../modules/shared/json.js';
  * e escolher um deles e (b) simular um DESCANSO LONGO zerando o uso persistido,
  * que é exatamente o que o motor de descanso grava.
  */
+/**
+ * Bolsa de Componentes de FIXTURE (Fase 6.6G): um item REAL, com a tag mecânica
+ * `componentPouch`, para que as conjurações de teste tenham como fornecer o
+ * material comum. Nenhum smoke ganha bypass: quem não tem bolsa/foco/material
+ * é recusado ANTES do commit, como na ficha de verdade.
+ */
+const FIXTURE_COMPONENT_POUCH = {
+  id: 'fixture-component-pouch',
+  name: 'Bolsa de Componentes',
+  description: '',
+  quantity: 1,
+  weight: 1,
+  slot: null,
+  backpackX: null,
+  backpackY: null,
+  imageUrl: '',
+  itemId: '',
+  category: 'Item Geral',
+  rarity: null,
+  requiresAttunement: false,
+  attuned: false,
+  details: { componentPouch: true },
+  campSupply: { enabled: false, value: 0 },
+};
+
+function hasComponentPouch(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some(
+    (item) =>
+      Boolean(item) &&
+      typeof item === 'object' &&
+      (item as { details?: { componentPouch?: unknown } }).details?.componentPouch === true,
+  );
+}
+
+/**
+ * Concede a bolsa de componentes a conjuradores de FIXTURE (6.6G §187–§190).
+ * Preserva o inventário existente (armas/escudos continuam valendo) e é
+ * idempotente.
+ */
+export async function grantCastingComponents(options: {
+  characters?: readonly string[];
+  creatures?: readonly string[];
+}): Promise<void> {
+  for (const id of options.characters ?? []) {
+    const row = await prisma.character.findUnique({ where: { id }, select: { inventory: true } });
+    if (!row || hasComponentPouch(row.inventory)) continue;
+    const inventory = Array.isArray(row.inventory) ? row.inventory : [];
+    await prisma.character.update({
+      where: { id },
+      data: {
+        inventory: [...inventory, FIXTURE_COMPONENT_POUCH] as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+  for (const id of options.creatures ?? []) {
+    const row = await prisma.creature.findUnique({ where: { id }, select: { inventory: true } });
+    if (!row || hasComponentPouch(row.inventory)) continue;
+    const inventory = Array.isArray(row.inventory) ? row.inventory : [];
+    await prisma.creature.update({
+      where: { id },
+      data: {
+        inventory: [...inventory, FIXTURE_COMPONENT_POUCH] as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+}
+
 export interface CastingResourceChoice {
   kind: 'spell-slot' | 'pact-slot';
   level: number;

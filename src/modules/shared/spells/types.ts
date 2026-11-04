@@ -86,6 +86,14 @@ export interface SpellMaterial {
   costGp?: number;
   /** Verdadeiro quando o material é consumido pela magia. */
   consumed?: boolean;
+  /**
+   * Chave ESTÁVEL do material específico (Fase 6.6G), casada com
+   * `details.spellComponentKeys` do item — nunca com o nome exibido. Ausente =
+   * material comum, substituível por bolsa de componentes ou foco compatível.
+   */
+  componentKey?: string;
+  /** Quantas unidades o material específico consome por conjuração (padrão 1). */
+  quantity?: number;
 }
 
 /** Escalonamento de TRUQUE por nível de PERSONAGEM (5/11/17). */

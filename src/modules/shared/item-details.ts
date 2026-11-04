@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DAMAGE_TYPES, damageListSchema } from './attacks.js';
+import { SPELLCASTING_FOCUS_KINDS } from './spells/components.js';
 
 /**
  * Atributos específicos de cada categoria de item e o preço em PO/PP/PC.
@@ -194,8 +195,34 @@ export const itemDetailsSchema = z
     rangeNormal: z.number().int().min(0).max(1000).optional(),
     /** Alcance longo em metros (à distância ou arremessável). */
     rangeLong: z.number().int().min(0).max(1000).optional(),
-    /** Cajado também é foco de conjuração. */
+    /** Cajado também é foco de conjuração (foco arcano). */
     spellcastingFocus: z.boolean().optional(),
+    // ------------------------------------------------------------------
+    // COMPONENTES DE MAGIA (Fase 6.6G) — tags MECÂNICAS do item.
+    //
+    // A identidade é a TAG, nunca o nome: "Foco Arcano" criado pelo mestre só
+    // serve de foco se `spellFocusKinds` declarar o tipo, e um material só
+    // satisfaz uma magia se `spellComponentKeys` contiver a chave dela.
+    // ------------------------------------------------------------------
+    /**
+     * Focos de conjuração que ESTE item fornece. O tipo aceito depende da FONTE
+     * de conjuração da magia (ver `shared/spells/casting-focus.ts`).
+     */
+    spellFocusKinds: z.array(z.enum(SPELLCASTING_FOCUS_KINDS)).max(4).optional(),
+    /** Bolsa de Componentes (PHB 2014): substitui material comum sem custo. */
+    componentPouch: z.boolean().optional(),
+    /** Chaves ESTÁVEIS dos materiais específicos que este item satisfaz. */
+    spellComponentKeys: z.array(z.string().trim().min(1).max(64)).max(12).optional(),
+    /**
+     * Valor MECÂNICO do item em PO, comparado com o custo declarado PELA MAGIA.
+     * Nunca é o preço de venda do inventário (ver 6.6G §15).
+     */
+    componentValueGp: z.number().min(0).max(1_000_000).optional(),
+    /**
+     * O item é USADO VISIBILMENTE (símbolo sagrado no pescoço, por exemplo):
+     * satisfaz material comum sem ocupar mão — e NÃO cria mão livre para S.
+     */
+    wornVisible: z.boolean().optional(),
     // Armadura / Escudo
     /** Peso da armadura (só a categoria Armadura usa; decide como a Destreza entra). */
     armorType: z.enum(ARMOR_TYPES).optional(),
@@ -392,6 +419,19 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
   CAMP_SUPPLY: ['consumable'],
 };
 
+/**
+ * Tags mecânicas de COMPONENTE, mantidas em QUALQUER categoria: a classificação
+ * do item (arma, escudo, item geral...) não decide se ele pode fornecer V/S/M.
+ */
+const SPELLCASTING_DETAIL_KEYS = [
+  'spellcastingFocus',
+  'spellFocusKinds',
+  'componentPouch',
+  'spellComponentKeys',
+  'componentValueGp',
+  'wornVisible',
+] as const satisfies readonly (keyof ItemDetails)[];
+
 /** Categorias que funcionam como arma (têm as propriedades de arma). */
 function isWeaponCategory(category: string): boolean {
   return category === 'Arma' || category === 'Cajado';
@@ -419,6 +459,16 @@ export function sanitizeItemDetails(category: string, details: unknown): ItemDet
   const keys = DETAIL_KEYS[category as ItemCategory] ?? [];
   const result: ItemDetails = {};
   for (const key of keys) {
+    const value = parsed.data[key];
+    if (value !== undefined) {
+      (result as Record<string, unknown>)[key] = value;
+    }
+  }
+
+  // As tags de COMPONENTE são transversais à categoria (uma bolsa de
+  // componentes é 'Item Geral', um símbolo sagrado pode ser 'Outro', um foco
+  // arcano pode vir de qualquer categoria): nunca são descartadas ao salvar.
+  for (const key of SPELLCASTING_DETAIL_KEYS) {
     const value = parsed.data[key];
     if (value !== undefined) {
       (result as Record<string, unknown>)[key] = value;

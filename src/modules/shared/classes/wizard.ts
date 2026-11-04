@@ -414,7 +414,13 @@ export const wizard: ClassDefinition = {
   hitDie: 6,
   savingThrows: ['intelligence', 'wisdom'],
   subclassLevel: 2, // Tradição Arcana
-  spellcasting: { type: 'full', ability: 'intelligence', learning: 'prepared' },
+  // Foco arcano concedido pela feature de conjuração (PHB 2014).
+  spellcasting: {
+    type: 'full',
+    ability: 'intelligence',
+    learning: 'prepared',
+    focusKinds: ['arcane'],
+  },
   features: WIZARD_FEATURES,
   subclasses: WIZARD_SUBCLASSES,
 };

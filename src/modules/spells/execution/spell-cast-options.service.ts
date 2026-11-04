@@ -7,6 +7,11 @@ import { castingResourcesForEntity } from './casting-resource.service.js';
 import { spellExecutionDefinition } from './spell-execution-registry.js';
 import { targetingSummary } from './spell-targeting.js';
 import {
+  resolveSpellComponents,
+  toComponentsSummary,
+  type SpellComponentsSummary,
+} from './spell-components.service.js';
+import {
   pendingIntentOfCharacter,
   toSpellCastIntentDto,
   type SpellCastIntentDto,
@@ -59,6 +64,11 @@ export interface CastOptionsDto {
   resources: CastResourceOption[];
   /** Resumo por NÍVEL de espaço — o máximo de alvos é derivado no servidor. */
   targeting: ReturnType<typeof targetingSummary>[];
+  /**
+   * Componentes V/S/M da magia pela fonte oferecida (6.6G). `null` quando
+   * nenhuma fonte autoriza — a UI não mostra requisito de uma magia impossível.
+   */
+  components: SpellComponentsSummary | null;
   targets: CastTargetOption[];
   inCombat: boolean;
   /** Intenção pendente do personagem (para restaurar a UI após refresh). */
@@ -188,6 +198,21 @@ export async function castOptionsFor(
       ? [...levels].sort((a, b) => a - b).map((at) => targetingSummary(execution.targeting, at))
       : [];
 
+  // Resumo dos componentes: derivado do inventário REAL e da fonte oferecida —
+  // o cliente nunca informa que possui foco/mão/material. Com mais de uma fonte
+  // autorizando, o resumo é o da PRIMEIRA (a fonte é escolha do jogador no
+  // fluxo, e o POST revalida com a escolhida).
+  const components = availability.authorized[0]
+    ? toComponentsSummary(
+        await resolveSpellComponents({
+          db: prisma,
+          spell,
+          source: availability.authorized[0].view.source,
+          entity: caster.entity,
+        }),
+      )
+    : null;
+
   const roster = await targetRoster(characterId);
   const pendingIntent = await pendingIntentOfCharacter(characterId);
 
@@ -201,6 +226,7 @@ export async function castOptionsFor(
     sources,
     resources,
     targeting,
+    components,
     targets: roster.targets,
     inCombat: roster.inCombat,
     pendingIntent: pendingIntent ? toSpellCastIntentDto(pendingIntent) : null,

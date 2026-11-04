@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { grantCastingComponents } from './spell-slot-fixtures.js';
 import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import {
@@ -263,6 +264,8 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
       data: { name: 'Besta Muda', kind: 'CREATURE', type: 'Humanoide', hpCurrent: 20, hpMax: 20, speed: 9 },
     });
     creatureIds.push(casterCreature.id, muteCreature.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds, creatures: creatureIds });
 
     const multiEntity = { kind: 'character' as const, id: multiCaster.id };
     const fighterEntity = { kind: 'character' as const, id: fighterCaster.id };

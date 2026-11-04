@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ABILITY_KEYS, ABILITY_LABELS, type AbilityKey } from '../shared/dnd5e.js';
 import { conditionSchema, type Condition } from '../shared/conditions.js';
+import { SPELL_COMPONENT_LABELS } from '../shared/spells/components.js';
 
 /**
  * FASE 6.5B — MODIFICADORES MECÂNICOS GENÉRICOS de um Effect.
@@ -83,6 +84,20 @@ export const effectModifierSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('ac-flat'), value: flatValue }),
   /** Deslocamento derivado em metros (+3, -3). Nunca grava na ficha. */
   z.object({ kind: z.literal('speed-flat'), value: z.number().int().min(-1000).max(1000) }),
+  /**
+   * BLOQUEIO genérico de componente de conjuração (Fase 6.6G). Não é uma
+   * Condition nem conhece a magia: diz apenas que a entidade-alvo não consegue
+   * fornecer os componentes listados enquanto o efeito estiver ativo. É o hook
+   * que Silêncio (V) e outras restrições futuras vão usar — a magia em si
+   * continua fora desta fase.
+   */
+  z.object({
+    kind: z.literal('spell-component-block'),
+    components: z
+      .array(z.enum(['verbal', 'somatic', 'material']))
+      .min(1)
+      .max(3),
+  }),
 ]);
 export type EffectModifier = z.infer<typeof effectModifierSchema>;
 
@@ -295,6 +310,9 @@ export function buildEffectModifierSet(rows: readonly ActiveEffectRow[]): Effect
     const modifiers = parseEffectModifiers(row.modifiers);
     let contributed = false;
     modifiers.forEach((modifier, index) => {
+      // Bloqueio de componente (6.6G) não entra em bônus de rolagem/CA/deslocamento:
+      // quem o consome é o resolvedor de componentes da conjuração.
+      if (modifier.kind === 'spell-component-block') return;
       if (modifier.kind === 'ac-flat') {
         set.acBonus += modifier.value;
         contributed = true;
@@ -476,6 +494,11 @@ export function effectArmorClassBonuses(
 
 /** Texto humano de um modificador (para a UI do Mestre e o log). */
 export function describeEffectModifier(modifier: EffectModifier): string {
+  if (modifier.kind === 'spell-component-block') {
+    return `Bloqueia ${modifier.components
+      .map((component) => SPELL_COMPONENT_LABELS[component])
+      .join(', ')}`;
+  }
   const scope =
     modifier.kind === 'ac-flat' || modifier.kind === 'speed-flat'
       ? ''

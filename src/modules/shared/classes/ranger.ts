@@ -353,7 +353,14 @@ export const ranger: ClassDefinition = {
   hitDie: 10,
   savingThrows: ['strength', 'dexterity'],
   subclassLevel: 3, // Arquétipo de Patrulheiro
-  spellcasting: { type: 'half', ability: 'wisdom', learning: 'known' },
+  // PHB 2014: a conjuração do patrulheiro NÃO concede foco. Declarado de
+  // propósito (nada de foco druídico "emprestado" do druida).
+  spellcasting: {
+    type: 'half',
+    ability: 'wisdom',
+    learning: 'known',
+    focusKinds: [],
+  },
   features: RANGER_FEATURES,
   subclasses: RANGER_SUBCLASSES,
 };

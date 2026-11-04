@@ -370,7 +370,14 @@ const FIGHTER_SUBCLASSES: SubclassDefinition[] = [
     name: 'Cavaleiro Arcano',
     description:
       'Guerreiro que aprende magias de abjuração e evocação para reforçar a própria lâmina (terço-conjurador de Inteligência).',
-    spellcasting: { type: 'third', ability: 'intelligence', learning: 'known' },
+    // Cavaleiro Arcano usa a lista do mago, mas o PHB 2014 NÃO lhe concede foco
+    // arcano: aqui é explícito que nenhum foco é herdado da lista.
+    spellcasting: {
+      type: 'third',
+      ability: 'intelligence',
+      learning: 'known',
+      focusKinds: [],
+    },
     features: [
       // PENDENTE (Fase 5): invocar/vincular as armas é uma ação.
       {

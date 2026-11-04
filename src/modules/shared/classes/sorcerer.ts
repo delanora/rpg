@@ -227,7 +227,12 @@ export const sorcerer: ClassDefinition = {
   hitDie: 6,
   savingThrows: ['constitution', 'charisma'],
   subclassLevel: 1, // Origem de Feitiçaria
-  spellcasting: { type: 'full', ability: 'charisma', learning: 'known' },
+  spellcasting: {
+    type: 'full',
+    ability: 'charisma',
+    learning: 'known',
+    focusKinds: ['arcane'],
+  },
   features: SORCERER_FEATURES,
   subclasses: SORCERER_SUBCLASSES,
 };

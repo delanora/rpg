@@ -192,7 +192,13 @@ export const druid: ClassDefinition = {
   hitDie: 8,
   savingThrows: ['intelligence', 'wisdom'],
   subclassLevel: 2, // Círculo Druídico
-  spellcasting: { type: 'full', ability: 'wisdom', learning: 'prepared' },
+  // Foco druídico concedido pela conjuração (PHB 2014).
+  spellcasting: {
+    type: 'full',
+    ability: 'wisdom',
+    learning: 'prepared',
+    focusKinds: ['druidic'],
+  },
   features: DRUID_FEATURES,
   subclasses: DRUID_SUBCLASSES,
 };

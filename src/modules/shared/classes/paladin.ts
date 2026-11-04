@@ -452,7 +452,13 @@ export const paladin: ClassDefinition = {
   hitDie: 10,
   savingThrows: ['wisdom', 'charisma'],
   subclassLevel: 3, // Juramento Sagrado
-  spellcasting: { type: 'half', ability: 'charisma', learning: 'prepared' },
+  // Símbolo Sagrado é o foco do paladino (PHB 2014).
+  spellcasting: {
+    type: 'half',
+    ability: 'charisma',
+    learning: 'prepared',
+    focusKinds: ['holy-symbol'],
+  },
   features: PALADIN_FEATURES,
   subclasses: PALADIN_SUBCLASSES,
 };

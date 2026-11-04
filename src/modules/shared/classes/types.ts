@@ -1,4 +1,5 @@
 import type { AbilityKey } from '../dnd5e.js';
+import type { SpellcastingFocusKind } from '../spells/components.js';
 
 /**
  * Registro das 12 classes do Livro do Jogador (PHB 2014).
@@ -387,6 +388,13 @@ export interface SubclassDefinition {
     type: SpellcastingType;
     ability: AbilityKey | null;
     learning: SpellLearning;
+    /**
+     * FOCOS de conjuração concedidos por ESTA subclasse (Fase 6.6G). Ausente =
+     * a subclasse não muda o que a classe concede. Cavaleiro Arcano e
+     * Trapaceiro Arcano do PHB 2014 NÃO ganham foco arcano declarando `[]`: usar
+     * a lista do Mago não concede foco nenhum.
+     */
+    focusKinds?: SpellcastingFocusKind[];
   };
   /**
    * Proficiências de armadura/arma/ferramenta concedidas pela subclasse (ex.:
@@ -429,6 +437,12 @@ export interface ClassDefinition {
     /** Atributo de conjuração (nulo quando a classe não conjura). */
     ability: AbilityKey | null;
     learning: SpellLearning;
+    /**
+     * FOCOS que a feature de conjuração da classe concede (Fase 6.6G). Vazio =
+     * a classe conjura sem foco (só bolsa de componentes ou material específico),
+     * como o Patrulheiro do PHB 2014.
+     */
+    focusKinds?: SpellcastingFocusKind[];
   };
   /** Características de classe (vazio por enquanto). */
   features: ClassFeatureDefinition[];

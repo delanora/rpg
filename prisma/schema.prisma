@@ -1257,6 +1257,13 @@ model SpellCast {
   /// Nullable apenas para casts anteriores à migração.
   targetingSnapshot Json?
 
+  ///
+  /// SNAPSHOT IMUTÁVEL dos COMPONENTES V/S/M (Fase 6.6G): quais eram exigidos,
+  /// qual fornecedor satisfez o material (foco/bolsa/material específico), se
+  /// houve consumo e qual mão fez o gesto somático. Nullable apenas para casts
+  /// anteriores à migração. Não guarda id interno de item.
+  componentsSnapshot Json?
+
   /// `resolving` | `resolved` | `cancelled`.
   status String @default("resolving")
   /// `effect` | `no-effect` | `cancelled` (null enquanto resolving).

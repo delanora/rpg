@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { grantCastingComponents } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import {
   resetCastingSlots,
@@ -122,6 +123,8 @@ export async function smokeSpellTargeting(baseUrl: string, check: Check): Promis
       data: { name: 'Lobo TGT', kind: 'CREATURE', type: 'Besta', hpCurrent: 20, hpMax: 20, speed: 12 },
     });
     creatureIds.push(humanoid.id, humanoidTwo.id, beast.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds, creatures: creatureIds });
 
     const casterEntity: Ref = { kind: 'character', id: caster.id };
     const allyEntity: Ref = { kind: 'character', id: ally.id };

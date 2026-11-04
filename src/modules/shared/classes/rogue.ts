@@ -202,7 +202,14 @@ const ROGUE_SUBCLASSES: SubclassDefinition[] = [
     name: 'Trapaceiro Arcano',
     description:
       'Ladino que complementa a furtividade com magias de ilusão e encantamento (terço-conjurador de Inteligência).',
-    spellcasting: { type: 'third', ability: 'intelligence', learning: 'known' },
+    // Trapaceiro Arcano: mesma decisão do Cavaleiro Arcano — nenhum foco
+    // concedido por usar a lista do mago (PHB 2014).
+    spellcasting: {
+      type: 'third',
+      ability: 'intelligence',
+      learning: 'known',
+      focusKinds: [],
+    },
     features: [
       {
         id: 'mage-hand-legerdemain',

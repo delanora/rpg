@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { grantCastingComponents } from './spell-slot-fixtures.js';
 import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
@@ -119,6 +120,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       data: { name: 'Lobo HP', kind: 'CREATURE', type: 'Besta', hpCurrent: 30, hpMax: 30, speed: 12 },
     });
     creatureIds.push(humanoid.id, otherHumanoid.id, beast.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds, creatures: creatureIds });
 
     const heroEntity = { kind: 'character' as const, id: hero.id };
     const targetEntity = { kind: 'character' as const, id: target.id };
@@ -389,6 +392,8 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       },
     });
     characterIds.push(casterTwo.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds });
     // 6.6F: este Clérigo também aplica o Bless da composição (74.F) — as duas
     // magias precisam estar no repertório ACTIVE da fonte.
     await seedSpellRepertoire({
