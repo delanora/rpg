@@ -179,15 +179,30 @@ export const spellSchema = z.object({
   level: z.number().int().min(0).max(9),
   school: shortText(60).default(''),
   prepared: z.boolean().default(false),
+  /**
+   * PREPARAÇÃO PLANEJADA (Fase 6.6F).
+   *
+   * `prepared` é o estado ACTIVE — a ÚNICA preparação que autoriza conjurar.
+   * `preparedPlanned` só existe depois que o jogador SALVA um plano para a fonte
+   * desta magia; AUSENTE significa "sem plano" (active == planned). O Descanso
+   * Longo válido promove o plano a active e apaga esta chave.
+   */
+  preparedPlanned: z.boolean().optional(),
   description: shortText(2000).default(''),
   /**
    * Chave da classe quando a magia veio do catálogo (Prompt 6.2); vazia nas
    * magias de texto livre. É o que permite agrupar e trocar as magias POR CLASSE.
+   *
+   * Na conjuração de PLAYER (6.6F) é ela que liga a magia à FONTE: o Clérigo lê
+   * as linhas com `classKey: 'cleric'`, nunca uma lista global de preparadas.
    */
   classKey: shortText(40).default(''),
   /**
    * Magia DERIVADA de juramento (Prompt 6.3), não gravada: sempre preparada, fora
    * do limite e não removível. Nunca vai ao banco — só o DTO a marca assim.
+   *
+   * Para a autorização de conjuração (6.6F) ela é derivada de novo no servidor
+   * (`alwaysPreparedSpellIds`), nunca lida do DTO.
    */
   oath: z.boolean().optional(),
   /**

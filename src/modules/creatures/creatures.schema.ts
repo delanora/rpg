@@ -7,6 +7,7 @@ import { coinDeltaSchema } from '../shared/coins.js';
 import {
   creatureSpellcastingProfileSchema,
   creatureSpellcastingResourcesSchema,
+  creatureSpellRepertoireSchema,
 } from '../shared/creature-spellcasting.js';
 
 const abilityScore = z
@@ -56,6 +57,12 @@ const creatureFields = z.object({
    * de inferir progressão pelo ND ou de cast grátis.
    */
   spellcastingResources: creatureSpellcastingResourcesSchema,
+  /**
+   * REPERTÓRIO EXPLÍCITO do statblock (Fase 6.6F): ids do catálogo que este
+   * NPC/criatura pode conjurar. Sem ele, ter CD e espaços não autoriza magia
+   * nenhuma — nada é inferido por ND ou por espaço disponível.
+   */
+  spellRepertoire: creatureSpellRepertoireSchema,
   resistances: damageTypeListSchema,
   immunities: damageTypeListSchema,
   vulnerabilities: damageTypeListSchema,

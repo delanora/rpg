@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
-import { resetCastingSlots, SPATIAL_EVIDENCE } from './spell-slot-fixtures.js';
+import {
+  resetCastingSlots,
+  seedSpellRepertoire,
+  SPATIAL_EVIDENCE,
+} from './spell-slot-fixtures.js';
 import type { PendingEffectSaveDto } from '../modules/effects/pending-effect-saves.js';
 
 type Check = (label: string, condition: boolean, detail?: string) => void;
@@ -86,8 +90,9 @@ export async function smokeSpellTargeting(baseUrl: string, check: Check): Promis
         speed: 9,
         intelligence: 16,
         wisdom: 10,
-        // Mago 20: perfil derivado completo e pool de espaços 1..9.
-        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
+        // 6.6F: Clérigo 20 — a lista da fonte precisa cobrir Bless E Hold Person
+        // (o Mago não lista Bless; executar não autoriza conjurar).
+        classes: [{ classKey: 'cleric', subclass: '', level: 20 }],
       },
     });
     const ally = await prisma.character.create({
@@ -100,6 +105,12 @@ export async function smokeSpellTargeting(baseUrl: string, check: Check): Promis
       data: { userId: allyThreeUser.id, name: 'Terceiro Aliado', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
     });
     characterIds.push(caster.id, ally.id, allyTwo.id, allyThree.id);
+    // 6.6F: Hold Person do Mago exige REGISTRO no grimório + preparação ACTIVE.
+    await seedSpellRepertoire({
+      characterId: caster.id,
+      classKey: 'cleric',
+      spellIds: ['bless', 'hold-person'],
+    });
 
     const humanoid = await prisma.creature.create({
       data: { name: 'Goblin TGT', kind: 'CREATURE', type: 'Humanoide', hpCurrent: 20, hpMax: 20, speed: 9 },

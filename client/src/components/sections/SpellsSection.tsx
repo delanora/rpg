@@ -17,6 +17,7 @@ import { InlineField } from '../InlineField';
 import { Section } from '../Section';
 import type { SheetSectionProps } from './common';
 import { SpellPicker } from './SpellPicker';
+import { SpellRepertoirePanel } from '../SpellRepertoirePanel';
 
 /** Abreviações dos tipos de conjuração mostradas no bloco de Conjuração. */
 const SPELLCASTING_SHORT: Record<string, string> = {
@@ -268,6 +269,12 @@ export function SpellsSection({
         )
       }
     >
+      {/*
+       * Fase 6.6F: repertório POR FONTE (ACTIVE × PLANEJADO, limite manual,
+       * grimório). O servidor é a autoridade; aqui é leitura + plano.
+       */}
+      <SpellRepertoirePanel characterId={character.id} />
+
       {/*
        * Conjuração (vinda da Identidade): tipos por classe, como as magias são
        * aprendidas e o resumo de CD/ataque (que já aparece no subtítulo).

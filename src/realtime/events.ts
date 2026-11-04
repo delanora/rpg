@@ -178,6 +178,13 @@ export const ServerEvents = {
   COMBAT_UPDATED: 'combat:updated',
   MECHANICAL_UPDATED: 'mechanical:updated',
   /**
+   * INTENÇÃO de conjuração (Fase 6.6F) mudou de estado — criada, aprovada,
+   * negada, cancelada ou invalidada. Vai para os MESTRES (fila de confirmação
+   * espacial) e para o ATOR do pedido. Payload SANITIZADO: nunca traz o
+   * repertório de um NPC nem detalhes internos da regra.
+   */
+  SPELL_INTENT_UPDATED: 'spells:intent-updated',
+  /**
    * Efeitos ATIVOS de um alvo mudaram (Fase 6.5A). Vai para os MESTRES com
    * tudo e para o DONO do personagem só com os `public` — o filtro de
    * privacidade é do servidor, nunca do CSS.
@@ -564,3 +571,14 @@ export interface EffectsUpdatedPayload {
 
 /** Ciclo de morte de uma entidade (Fase 6.3). */
 export interface DeathUpdatedPayload { death: DeathDto; }
+
+/**
+ * Intenção de conjuração (Fase 6.6F) mudou de estado.
+ *
+ * Payload SANITIZADO: id, magia, conjurador, alvos e os REQUISITOS espaciais que
+ * o Mestre precisa confirmar. Nunca fingerprint, versões internas ou repertório
+ * de NPC.
+ */
+export interface SpellIntentUpdatedPayload {
+  intent: import('../modules/spells/execution/spell-intent.service.js').SpellCastIntentDto;
+}

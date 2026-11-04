@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import {
   pickCastingResource,
@@ -209,9 +210,11 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
         intelligence: 16,
         wisdom: 14,
         charisma: 8,
+        // 6.6F: Clérigo 3 dá acesso a magias de nível 2 (Hold Person), permitindo
+        // a MESMA magia preparada em DUAS fontes. PB/CD continuam iguais.
         classes: [
           { classKey: 'wizard', subclass: '', level: 3 },
-          { classKey: 'cleric', subclass: '', level: 2 },
+          { classKey: 'cleric', subclass: '', level: 3 },
         ],
       },
     });
@@ -229,6 +232,17 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
       data: { userId: targetUser.id, name: 'Alvo Perfil', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
     });
     characterIds.push(multiCaster.id, fighterCaster.id, target.id);
+    // 6.6F: a MESMA magia preparada em DUAS fontes — cada uma com seu atributo.
+    await seedSpellRepertoire({
+      characterId: multiCaster.id,
+      classKey: 'wizard',
+      spellIds: ['hold-person'],
+    });
+    await seedSpellRepertoire({
+      characterId: multiCaster.id,
+      classKey: 'cleric',
+      spellIds: ['bless', 'hold-person'],
+    });
 
     const casterCreature = await prisma.creature.create({
       data: {
@@ -239,6 +253,8 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        // 6.6F: repertório explícito do statblock (a CD continua vindo do perfil).
+        spellRepertoire: { spellIds: ['hold-person'] },
         // 6.6C: sem espaços declarados o NPC não conjura (nem "de graça").
         spellcastingResources: { spellSlots: [{ level: 1, max: 4 }, { level: 2, max: 4 }], pactSlot: null },
       },
@@ -356,34 +372,47 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
     );
 
     // =====================================================================
-    // H — Bless (immediate-effect) registra o snapshot do perfil
+    // H — Bless: a FONTE precisa autorizar (Mago não lista Bless) e o snapshot
+    //     grava a matemática da fonte que realmente conjurou
     // =====================================================================
-    const opBless = newOperation();
+    const opBlessWizard = newOperation();
     await resetCastingSlots(multiCaster.id);
+    const wizardBlessSlot = await pickCastingResource(baseUrl, masterToken, multiEntity, 1);
+    const wizardBless = await request('/effects/bless', {
+      operationId: opBlessWizard,
+      caster: multiEntity,
+      targets: [targetEntity],
+      spellcastingSource: { kind: 'class', id: 'wizard' },
+      ...(wizardBlessSlot ? { castingResource: wizardBlessSlot } : {}),
+    });
+    const opBless = newOperation();
     const blessSlot = await pickCastingResource(baseUrl, masterToken, multiEntity, 1);
     const blessCast = await request('/effects/bless', {
       operationId: opBless,
       caster: multiEntity,
       targets: [targetEntity],
-      spellcastingSource: { kind: 'class', id: 'wizard' },
+      spellcastingSource: { kind: 'class', id: 'cleric' },
       ...(blessSlot ? { castingResource: blessSlot } : {}),
     });
     const blessRow = await prisma.spellCast.findUnique({ where: { operationId: opBless } });
     if (blessCast.data?.groupId) groupIds.push(blessCast.data.groupId);
     check(
-      '76.H) Bless (sem CD própria) grava o snapshot: fonte Mago, modo derived, INT 16 (+3), PB +3, CD 14, ataque +6',
-      blessCast.status === 201 &&
+      '76.H) Bless por Mago é RECUSADA (executável ≠ disponível) e a fonte Clérigo grava SAB 14 (+2), PB +3, CD 13, ataque +5',
+      wizardBless.status === 409 &&
+        wizardBless.data.error === 'SPELL_NOT_AVAILABLE_FROM_SOURCE' &&
+        (await castRow(opBlessWizard)) === null &&
+        blessCast.status === 201 &&
         blessRow?.spellcastingSourceKind === 'class' &&
-        blessRow?.spellcastingSourceId === 'wizard' &&
+        blessRow?.spellcastingSourceId === 'cleric' &&
         blessRow?.spellcastingMode === 'derived' &&
-        blessRow?.spellcastingAbility === 'intelligence' &&
-        blessRow?.spellcastingAbilityScore === 16 &&
-        blessRow?.spellcastingAbilityModifier === 3 &&
+        blessRow?.spellcastingAbility === 'wisdom' &&
+        blessRow?.spellcastingAbilityScore === 14 &&
+        blessRow?.spellcastingAbilityModifier === 2 &&
         blessRow?.spellcastingProficiencyBonus === 3 &&
-        blessRow?.saveDc === 14 &&
-        blessRow?.spellSaveDc === 14 &&
-        blessRow?.spellAttackBonus === 6,
-      JSON.stringify({ status: blessCast.status, cast: blessRow }),
+        blessRow?.saveDc === 13 &&
+        blessRow?.spellSaveDc === 13 &&
+        blessRow?.spellAttackBonus === 5,
+      JSON.stringify({ wizard: wizardBless.data, status: blessCast.status, cast: blessRow }),
     );
 
     // =====================================================================

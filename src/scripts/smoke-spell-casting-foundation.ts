@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma } from '../config/prisma.js';
+import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
@@ -79,7 +80,9 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
         wisdom: 10,
         intelligence: 16,
         // 6.6C: Hold Person exige espaço de nível 2 — Mago 20 tem o pool inteiro.
-        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
+        // 6.6F: Bless E Hold Person são da lista do Clérigo; a fonte do conjurador
+        // principal do smoke precisa LISTAR as magias que ele conjura.
+        classes: [{ classKey: 'cleric', subclass: '', level: 20 }],
       },
     });
     const target = await prisma.character.create({
@@ -101,6 +104,52 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       },
     });
     characterIds.push(caster.id, target.id, ally.id, second.id);
+    // 6.6F: repertório ACTIVE dos conjuradores (Clérigo). Sem isso a autorização
+    // recusa antes do commit — e o smoke deixaria de provar o pipeline.
+    for (const id of [caster.id, second.id]) {
+      await seedSpellRepertoire({
+        characterId: id,
+        classKey: 'cleric',
+        spellIds: ['bless', 'hold-person'],
+      });
+    }
+
+    // 6.6F — fixture SEPARADO por propósito (cenário de self-target):
+    // Hold Person do Mago precisa vir da fonte Wizard, com atributo de conjuração
+    // (INT) DIFERENTE do atributo do save (SAB). Num Clérigo os dois são SAB, e o
+    // `forceSave` (INT/SAB/CAR 30 no caster + SAB 1 no alvo, que é o próprio
+    // caster) acabava tornando o save bem-sucedido — o teste provaria o contrário
+    // do que quer provar. Nada de bypass: usa-se a matemática real.
+    const selfUser = await prisma.user.create({
+      data: { username: `sp_f_${suffix}`, displayName: 'Mago Self', passwordHash: 'fixture', role: 'PLAYER' },
+    });
+    userIds.push(selfUser.id);
+    const selfToken = signToken({
+      sub: selfUser.id,
+      username: selfUser.username,
+      displayName: selfUser.displayName,
+      role: selfUser.role,
+    });
+    const selfCaster = await prisma.character.create({
+      data: {
+        userId: selfUser.id,
+        name: 'Mago Self',
+        hpCurrent: 40,
+        hpMax: 40,
+        speed: 9,
+        intelligence: 16,
+        wisdom: 10,
+        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
+      },
+    });
+    characterIds.push(selfCaster.id);
+    // Grimório (registrada) + preparação ACTIVE: as duas condições do Mago.
+    await seedSpellRepertoire({
+      characterId: selfCaster.id,
+      classKey: 'wizard',
+      spellIds: ['hold-person'],
+    });
+    const selfEntity = { kind: 'character' as const, id: selfCaster.id };
 
     const humanoid = await prisma.creature.create({
       data: { name: 'Goblin Cast', kind: 'CREATURE', type: 'Humanoide', hpCurrent: 20, hpMax: 20, speed: 9 },
@@ -496,24 +545,59 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
     // K — self-target: falha resolve o cast e o lifecycle limpa o grupo
     // =====================================================================
     const opK = newOperation();
-    await forceSave('failure', caster.id, casterEntity);
-    const applyK = await holdPerson(casterEntity, casterEntity, masterToken, opK);
-    const rollK = await rollSave(applyK.data.pending.id, casterToken);
+    // INT 30 → CD 24 (8 + PB 6 + 10); SAB 1 → save máximo 20 − 5 + 6 = 21 < 24.
+    // Falha DETERMINÍSTICA, sem natural-20 automático (não existe em save).
+    await forceSave('failure', selfCaster.id, selfEntity);
+    const applyK = await holdPerson(selfEntity, selfEntity, masterToken, opK);
+    const pendingK =
+      applyK.status === 201
+        ? await prisma.pendingEffectSave.findUniqueOrThrow({ where: { id: applyK.data.pending.id } })
+        : null;
+    const selfRowAfterCast = await prisma.character.findUniqueOrThrow({
+      where: { id: selfCaster.id },
+      select: { spells: true },
+    });
+    const rollK = await rollSave(applyK.data.pending.id, selfToken);
     const castK = await castRow(opK);
-    const casterK = await mechanicalOf(casterEntity);
+    const casterK = await mechanicalOf(selfEntity);
     const effectK = castK?.effectGroupId
       ? await prisma.effectInstance.findFirst({ where: { groupId: castK.effectGroupId } })
       : null;
+    // `mechanicalOf` do smoke só expõe concentração; as Conditions vêm da linha
+    // canônica da ficha (nenhuma Condition pode sobrar com a fonte deste Effect).
+    const selfMechanical = await prisma.character.findUniqueOrThrow({
+      where: { id: selfCaster.id },
+      select: { mechanicalState: true },
+    });
+    const selfConditions =
+      ((selfMechanical.mechanicalState as { conditions?: { sourceId?: string | null }[] } | null)
+        ?.conditions ?? []);
+    const residualK = selfConditions.filter((entry) => entry.sourceId === effectK?.id).length;
+    const slotsK = (selfRowAfterCast.spells as { slotsUsed?: Record<string, number> } | null) ?? {};
     check(
-      '75.K) self-target falha: cast resolved/effect, sem concentração permanente e sem Paralyzed (sem loop)',
+      '75.K) self-target falha (CD 24 > save máx. 21): cast resolved/effect pela fonte Mago, espaço gasto, sem concentração permanente e sem Paralyzed (sem loop)',
       applyK.status === 201 &&
+        pendingK?.dc === 24 &&
+        pendingK?.ability === 'wisdom' &&
+        21 < pendingK!.dc &&
+        castK?.spellcastingSourceKind === 'class' &&
+        castK?.spellcastingSourceId === 'wizard' &&
+        castK?.spellcastingAbility === 'intelligence' &&
+        (slotsK.slotsUsed?.['2'] ?? 0) === 1 &&
         rollK.status === 201 &&
         castK?.status === 'resolved' &&
         castK?.outcome === 'effect' &&
         casterK.state.concentration === null &&
         effectK?.status === 'ended' &&
-        (await effectsOf(casterEntity)).filter((effect) => effect.definitionId === 'spell.hold-person').length === 0,
-      JSON.stringify({ cast: castK?.outcome, concentration: casterK.state.concentration }),
+        residualK === 0 &&
+        (await effectsOf(selfEntity)).filter((effect) => effect.definitionId === 'spell.hold-person').length === 0,
+      JSON.stringify({
+        cast: castK?.outcome,
+        dc: pendingK?.dc,
+        slot: slotsK.slotsUsed,
+        concentration: casterK.state.concentration,
+        residual: residualK,
+      }),
     );
 
     // =====================================================================

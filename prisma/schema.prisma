@@ -783,6 +783,13 @@ model Creature {
   spellcastingResources Json @default("{}")
   /// Espaços já GASTOS deste NPC (fora de combate). Nunca vai para o DTO do jogador.
   spellcastingUsed      Json @default("{}")
+  ///
+  /// REPERTÓRIO EXPLÍCITO do statblock (Fase 6.6F): `{ spellIds: [...] }` com ids
+  /// do catálogo que este NPC pode conjurar. Pertence ao TEMPLATE (duas cópias do
+  /// mesmo NPC conhecem as mesmas magias); o GASTO de espaços continua na
+  /// instância. Vazio = a criatura não conjura NADA, mesmo com CD e espaços —
+  /// nenhum repertório é inferido por ND, atributo ou espaço disponível.
+  spellRepertoire       Json @default("{\"spellIds\":[]}")
   description String @default("")
 
   /// URL pública do ícone/retrato da criatura/NPC (`uploads/creatures/...`).
@@ -1319,6 +1326,72 @@ model SpellCast {
   /// Histórico de conjurações do MESMO turno (regra da Bonus Action).
   @@index([combatId, turnSequence, combatantId])
   @@map("spell_casts")
+}
+
+/// FASE 6.6F — INTENÇÃO de conjuração (pré-COMMIT).
+///
+/// Representa "o jogador PEDIU esta conjuração, mas ela ainda NÃO aconteceu":
+/// existe só quando algum requisito espacial é `unknown` e depende do Mestre.
+/// Enquanto `pending`, NENHUM custo existe — sem espaço gasto, sem Ação, sem
+/// Concentração encerrada, sem Effect e sem `SpellCast`. O `SpellCast` (e a
+/// conjuração) só nasce na APROVAÇÃO, que REVALIDA tudo antes do COMMIT.
+///
+/// `operationId` único dá idempotência ao pedido; `castOperationId` é o
+/// `operationId` do `SpellCast` produzido, então retry e aprovação concorrente
+/// convergem para no máximo UM cast (constraint de `spell_casts`).
+model SpellCastIntent {
+  id String @id @default(cuid())
+
+  operationId String @unique
+  fingerprint String
+
+  /// Quem PEDIU (o ator autenticado), nunca o dono da ficha por tabela.
+  actorUserId String
+
+  casterEntityKind String
+  casterEntityId   String
+  casterLabel      String?
+
+  spellId String
+  /// Fonte escolhida pelo cliente (revalidada no servidor); nula = automática.
+  spellcastingSourceKind String?
+  spellcastingSourceId   String?
+  castingResourceKind    String?
+  castingResourceLevel   Int?
+
+  /// Snapshot da INTENÇÃO: `[{ kind, id }]`. Não é estado mecânico.
+  targets Json @default("[]")
+  ///
+  /// Requisitos espaciais que o servidor NÃO sabe medir e o Mestre precisa
+  /// confirmar (`range`, `clearPath`, `sight`, `groupDistance`). A lista é do
+  /// SERVIDOR: o jogador nunca declara o que precisa ser confirmado.
+  requiredConfirmations Json @default("[]")
+
+  /// `pending` | `committed` | `denied` | `cancelled` | `invalidated`.
+  status String @default("pending")
+
+  /// `operationId` do SpellCast resultante (idempotência entre as duas tabelas).
+  castOperationId String?
+
+  /// Contexto do pedido — detecta "o turno/combate mudou", não é snapshot final.
+  combatId    String?
+  turnSequence Int?
+  combatantId String?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  approvedBy  String?
+  approvedAt  DateTime?
+  deniedBy    String?
+  cancelledBy String?
+  spellCastId String?
+  /// Motivo curto do terminal (`invalidated`/`denied`), para a UI explicar.
+  reason      String?
+
+  @@index([status, createdAt])
+  @@index([casterEntityKind, casterEntityId, status])
+  @@map("spell_cast_intents")
 }
 
 /// Idempotência das criações de efeito (mesmo padrão de `MechanicalOperation`).

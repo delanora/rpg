@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { economyOf } from '../modules/shared/action-economy.js';
 import {
@@ -156,7 +157,9 @@ export async function smokeSpellActionEconomy(baseUrl: string, check: Check): Pr
         speed: 9,
         intelligence: 16,
         wisdom: 10,
-        classes: [{ classKey: 'wizard', subclass: '', level: 5 }],
+        // 6.6F: Bless/Hold Person vêm da lista do Clérigo — a fonte do conjurador
+        // precisa autorizar as magias usadas no teste de economia.
+        classes: [{ classKey: 'cleric', subclass: '', level: 5 }],
       },
     });
     const target = await prisma.character.create({
@@ -170,10 +173,19 @@ export async function smokeSpellActionEconomy(baseUrl: string, check: Check): Pr
         hpMax: 20,
         speed: 9,
         intelligence: 16,
-        classes: [{ classKey: 'wizard', subclass: '', level: 5 }],
+        // 6.6F: Bless/Hold Person vêm da lista do Clérigo — a fonte do conjurador
+        // precisa autorizar as magias usadas no teste de economia.
+        classes: [{ classKey: 'cleric', subclass: '', level: 5 }],
       },
     });
     characterIds.push(caster.id, target.id, outCaster.id);
+    for (const id of [caster.id, outCaster.id]) {
+      await seedSpellRepertoire({
+        characterId: id,
+        classKey: 'cleric',
+        spellIds: ['bless', 'hold-person'],
+      });
+    }
 
     const combat = await prisma.combat.create({
       data: {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
@@ -101,6 +102,12 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       },
     });
     characterIds.push(hero.id, target.id);
+    // 6.6F: Hold Person do Mago precisa estar REGISTRADA no grimório E preparada.
+    await seedSpellRepertoire({
+      characterId: hero.id,
+      classKey: 'wizard',
+      spellIds: ['hold-person'],
+    });
 
     const humanoid = await prisma.creature.create({
       data: { name: 'Goblin HP', kind: 'CREATURE', type: 'Humanoide', hpCurrent: 30, hpMax: 30, speed: 9 },
@@ -382,6 +389,13 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       },
     });
     characterIds.push(casterTwo.id);
+    // 6.6F: este Clérigo também aplica o Bless da composição (74.F) — as duas
+    // magias precisam estar no repertório ACTIVE da fonte.
+    await seedSpellRepertoire({
+      characterId: casterTwo.id,
+      classKey: 'cleric',
+      spellIds: ['bless', 'hold-person'],
+    });
     const blessResource = await pickCastingResource(
       baseUrl,
       masterToken,

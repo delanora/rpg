@@ -55,6 +55,12 @@ export interface TargetingSnapshot {
   validationMode: TargetingValidationMode;
   constraints: TargetingConstraintSnapshot[];
   filters: string[];
+  /**
+   * Requisitos que o servidor NÃO sabe medir e ninguém confirmou ainda (6.6F).
+   * Só existe quando a validação rodou em modo DEFERIDO (conjuração de PLAYER):
+   * com o Mestre no fluxo, `unknown` sem confirmação já falha na hora.
+   */
+  requiredConfirmations: SpatialRequirementKind[];
 }
 
 export interface ValidateTargetingInput {
@@ -64,6 +70,13 @@ export interface ValidateTargetingInput {
   targets: readonly LoadedEntity[];
   castAtLevel: number;
   confirmation?: SpatialConfirmation;
+  /**
+   * `true` = não falhar em `unknown` sem confirmação; devolver o requisito como
+   * PENDENTE. É o modo do pré-COMMIT de PLAYER: o pedido vira intenção e o
+   * Mestre confirma depois, sem gastar nada. `fail` autoritativo continua
+   * rejeitando sempre — confirmação não sobrescreve impossibilidade conhecida.
+   */
+  deferUnknown?: boolean;
   /** Injetável para a futura grid; o padrão é o provider assistido. */
   provider?: SpatialProvider;
 }
@@ -121,6 +134,7 @@ function resolveRequirement(
   confirmation: SpatialConfirmation | undefined,
   failCode: string,
   requiredCode: string,
+  deferUnknown: boolean,
 ): RequirementOutcome {
   if (result === 'fail') {
     fail('Um dos alvos não satisfaz um requisito espacial desta magia.', failCode);
@@ -128,6 +142,7 @@ function resolveRequirement(
   if (result === 'pass') return { kind, result, confirmed: false };
   // UNKNOWN: sem confirmação explícita do Mestre o cast não acontece.
   if (!isConfirmed(confirmation, kind)) {
+    if (deferUnknown) return { kind, result, confirmed: false };
     fail('Falta a confirmação espacial do Mestre para esta conjuração.', requiredCode);
   }
   return { kind, result, confirmed: true };
@@ -142,6 +157,7 @@ function resolveRequirement(
 export async function validateTargeting(input: ValidateTargetingInput): Promise<TargetingSnapshot> {
   const { targeting, caster, targets, castAtLevel, db } = input;
   const provider = input.provider ?? assistedSpatialProvider;
+  const deferUnknown = input.deferUnknown === true;
   const maxTargets = maximumTargets(targeting, castAtLevel);
 
   if (targets.length < targeting.minTargets) {
@@ -188,6 +204,7 @@ export async function validateTargeting(input: ValidateTargetingInput): Promise<
       input.confirmation,
       'SPELL_TARGET_OUT_OF_RANGE',
       'SPELL_TARGET_RANGE_CONFIRMATION_REQUIRED',
+      deferUnknown,
     ),
   );
 
@@ -205,6 +222,7 @@ export async function validateTargeting(input: ValidateTargetingInput): Promise<
         input.confirmation,
         'SPELL_TARGET_NOT_VISIBLE',
         'SPELL_TARGET_SIGHT_CONFIRMATION_REQUIRED',
+        deferUnknown,
       ),
     );
   }
@@ -223,6 +241,7 @@ export async function validateTargeting(input: ValidateTargetingInput): Promise<
         input.confirmation,
         'SPELL_TARGET_INVALID',
         'SPELL_TARGET_CLEAR_PATH_CONFIRMATION_REQUIRED',
+        deferUnknown,
       ),
     );
   }
@@ -243,6 +262,7 @@ export async function validateTargeting(input: ValidateTargetingInput): Promise<
         input.confirmation,
         'SPELL_TARGET_INVALID',
         'SPELL_TARGET_GROUP_CONFIRMATION_REQUIRED',
+        deferUnknown,
       ),
     );
   }
@@ -262,5 +282,8 @@ export async function validateTargeting(input: ValidateTargetingInput): Promise<
     validationMode,
     constraints,
     filters: targeting.filters.map(filterKeyOf),
+    requiredConfirmations: constraints
+      .filter((item) => item.result === 'unknown' && !item.confirmed)
+      .map((item) => item.kind),
   };
 }

@@ -29,7 +29,11 @@ import {
   validateTargeting,
   type TargetingSnapshot,
 } from './spell-targeting.service.js';
-import { resolveSpellcastingProfile } from './spellcasting-profile.service.js';
+import {
+  assertCasterControl,
+  resolveSpellAuthorization,
+} from './spell-authorization.service.js';
+import type { SpatialRequirementKind } from './spatial-validation.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
 import {
   resolveCastingResource,
@@ -97,6 +101,15 @@ export interface SpellCastContext {
   turnContext: CastingTurnContext | null;
   /** Snapshot da validação de alvos (6.6E) — gravado no COMMIT. */
   targeting: TargetingSnapshot;
+  /** Requisitos espaciais ainda NÃO confirmados (6.6F: viram intenção). */
+  requiredConfirmations: SpatialRequirementKind[];
+  /** `operationId` gravado no `SpellCast` (difere do request na aprovação). */
+  castOperationId: string;
+  /**
+   * Disponibilidade por repertório (`prepared`, `known`, `cantrip-known`...).
+   * Fica no snapshot do cast para auditoria; nunca vem do cliente.
+   */
+  availabilityKind: string;
 }
 
 export interface SpellCastResult {
@@ -203,11 +216,8 @@ export async function validateSpellCast(
   actor: EffectActor,
   input: SpellCastProofInput,
   db: Prisma.TransactionClient,
+  options: { deferUnknown?: boolean; operationId?: string } = {},
 ): Promise<SpellCastContext> {
-  if (actor.role !== 'MASTER') {
-    throw new HttpError('Apenas o Mestre inicia conjurações de prova.', 403);
-  }
-
   const spell = allSpells().find((item) => item.id === input.spellId);
   if (!spell) {
     throw new HttpError('Magia não encontrada no catálogo.', 404, 'SPELL_NOT_FOUND');
@@ -241,9 +251,18 @@ export async function validateSpellCast(
     targets.push(loaded);
   }
 
-  // 6.6B: fonte + perfil SEMPRE resolvidos antes do commit. Fonte inexistente,
-  // ambígua ou de outro personagem rejeita o cast sem encerrar concentração.
-  const profile = await resolveSpellcastingProfile(caster, input.spellcastingSource, db);
+  // 6.6F: CONTROLE do conjurador (PLAYER só o próprio personagem; NPC é do
+  // Mestre) e AUTORIZAÇÃO por repertório, ANTES de qualquer custo. Fonte que não
+  // concede a magia rejeita aqui — ter Execution Definition nunca basta, e a
+  // fonte pedida nunca é trocada por "a primeira".
+  await assertCasterControl(actor, caster.entity, db);
+  const authorization = await resolveSpellAuthorization(
+    caster,
+    input.spellId,
+    input.spellcastingSource,
+    db,
+  );
+  const profile = authorization.profile;
   const saveDc = profile.spellSaveDc;
 
   // 6.6C: o ESPAÇO é resolvido no VALIDATE, também antes do commit. Recurso
@@ -268,6 +287,7 @@ export async function validateSpellCast(
     caster,
     targets,
     castAtLevel,
+    deferUnknown: options.deferUnknown === true,
     ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
   });
 
@@ -313,6 +333,9 @@ export async function validateSpellCast(
     economyCost,
     turnContext,
     targeting,
+    requiredConfirmations: targeting.requiredConfirmations,
+    castOperationId: options.operationId ?? input.operationId,
+    availabilityKind: authorization.availabilityKind,
   };
 }
 
@@ -385,7 +408,7 @@ async function commitSpellCast(
       economyCostKind: economy?.cost ?? null,
       economySpentAt: economy?.spentAt ?? null,
       visibility: 'public',
-      operationId: context.input.operationId,
+      operationId: context.castOperationId,
       fingerprint,
       createdBy: context.actor.userId,
       committedAt: new Date(),
@@ -558,10 +581,34 @@ export async function castProofSpell(
   actor: EffectActor,
   input: SpellCastProofInput,
 ): Promise<SpellCastResult> {
-  const fingerprint = fingerprintOf(actor, input);
+  return executeCast(actor, input, {
+    operationId: input.operationId,
+    fingerprint: fingerprintOf(actor, input),
+  });
+}
+
+/** Chave de idempotência estável do request (usada pela INTENÇÃO, 6.6F). */
+export function castFingerprint(actor: EffectActor, input: SpellCastProofInput): string {
+  return fingerprintOf(actor, input);
+}
+
+/**
+ * NÚCLEO ÚNICO de conjuração — prova do Mestre, PLAYER e aprovação de intenção.
+ *
+ * `operationId`/`fingerprint` são INJETADOS para que a aprovação de uma
+ * intenção use a chave da própria intenção (estável entre Mestres diferentes) em
+ * vez da chave do request HTTP: retry e aprovação concorrente convergem para o
+ * MESMO `SpellCast` (constraint `operationId` único), nunca para dois.
+ */
+export async function executeCast(
+  actor: EffectActor,
+  input: SpellCastProofInput,
+  castKey: { operationId: string; fingerprint: string; deferUnknown?: boolean },
+): Promise<SpellCastResult> {
+  const fingerprint = castKey.fingerprint;
 
   const existing = await prisma.spellCast.findUnique({
-    where: { operationId: input.operationId },
+    where: { operationId: castKey.operationId },
   });
   if (existing) {
     if (existing.fingerprint !== fingerprint) idempotencyError();
@@ -572,7 +619,7 @@ export async function castProofSpell(
   try {
     outcome = await prisma.$transaction(async (db) => {
       const prior = await db.spellCast.findUnique({
-        where: { operationId: input.operationId },
+        where: { operationId: castKey.operationId },
       });
       if (prior) {
         if (prior.fingerprint !== fingerprint) idempotencyError();
@@ -580,7 +627,7 @@ export async function castProofSpell(
       }
 
       // VALIDATE (read-only) — falha aqui NÃO encerra concentração anterior.
-      const context = await validateSpellCast(actor, input, db);
+      const context = await validateSpellCast(actor, input, db, castKey);
 
       // LOCK: um caster, um cast RESOLVING. A constraint parcial do banco é a
       // barreira final contra corrida; esta leitura dá o erro claro no caso comum.
@@ -629,7 +676,7 @@ export async function castProofSpell(
     // Corrida de retry: o perdedor devolve o snapshot da MESMA conjuração.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       const prior = await prisma.spellCast.findUnique({
-        where: { operationId: input.operationId },
+        where: { operationId: castKey.operationId },
       });
       if (prior) {
         if (prior.fingerprint !== fingerprint) idempotencyError();
@@ -639,7 +686,7 @@ export async function castProofSpell(
       castInProgress();
     }
     const prior = await prisma.spellCast.findUnique({
-      where: { operationId: input.operationId },
+      where: { operationId: castKey.operationId },
     });
     if (prior) {
       if (prior.fingerprint !== fingerprint) idempotencyError();
@@ -668,6 +715,14 @@ export async function castProofSpell(
 
   const { endedTargets: _endedTargets, ...result } = outcome;
   return result;
+}
+
+/** Resultado COMPLETO de um cast já committed (`null` se não existe). */
+export async function castResultForOperation(
+  operationId: string,
+): Promise<SpellCastResult | null> {
+  const row = await prisma.spellCast.findUnique({ where: { operationId } });
+  return row ? replayResult(row) : null;
 }
 
 /**

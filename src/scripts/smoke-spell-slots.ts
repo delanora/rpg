@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import {
   multiclassCasterLevel,
@@ -189,7 +190,10 @@ export async function smokeSpellSlots(baseUrl: string, check: Check): Promise<vo
         speed: 9,
         intelligence: 16,
         wisdom: 10,
-        classes: [{ classKey: 'wizard', subclass: '', level: 5 }],
+        // 6.6F: Bless/Hold Person só existem pelas fontes que as LISTAM — a
+        // progressão de espaços do Clérigo é a mesma do Mago, então as contas de
+        // slot do smoke continuam idênticas.
+        classes: [{ classKey: 'cleric', subclass: '', level: 5 }],
       },
     });
     const lastSlotCaster = await prisma.character.create({
@@ -202,7 +206,7 @@ export async function smokeSpellSlots(baseUrl: string, check: Check): Promise<vo
         hpMax: 20,
         speed: 9,
         intelligence: 16,
-        classes: [{ classKey: 'wizard', subclass: '', level: 1 }],
+        classes: [{ classKey: 'cleric', subclass: '', level: 1 }],
       },
     });
     userIds.push((await prisma.character.findUniqueOrThrow({ where: { id: lastSlotCaster.id } })).userId);
@@ -210,6 +214,13 @@ export async function smokeSpellSlots(baseUrl: string, check: Check): Promise<vo
       data: { userId: targetUser.id, name: 'Alvo Slots', hpCurrent: 40, hpMax: 40, speed: 9, wisdom: 10 },
     });
     characterIds.push(caster.id, lastSlotCaster.id, target.id);
+    for (const id of [caster.id, lastSlotCaster.id]) {
+      await seedSpellRepertoire({
+        characterId: id,
+        classKey: 'cleric',
+        spellIds: ['bless', 'hold-person'],
+      });
+    }
 
     const shaman = await prisma.creature.create({
       data: {
@@ -220,6 +231,8 @@ export async function smokeSpellSlots(baseUrl: string, check: Check): Promise<vo
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        // 6.6F: o NPC só conjura o que o STATBLOCK declara no repertório.
+        spellRepertoire: { spellIds: ['bless'] },
         spellcastingResources: { spellSlots: [{ level: 1, max: 2 }], pactSlot: null },
       },
     });
@@ -232,6 +245,8 @@ export async function smokeSpellSlots(baseUrl: string, check: Check): Promise<vo
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        // 6.6F: o NPC só conjura o que o STATBLOCK declara no repertório.
+        spellRepertoire: { spellIds: ['bless'] },
         spellcastingResources: { spellSlots: [{ level: 1, max: 2 }], pactSlot: null },
       },
     });
