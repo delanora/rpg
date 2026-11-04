@@ -1,12 +1,27 @@
 import { Icon, type IconName } from '../../components/Icon';
 import { formatModifier } from '../../dnd';
-import type { DamageBreakdownPayload } from '../../types';
+import type { CombatResolutionCardDto, DamageBreakdownPayload } from '../../types';
 import type { CombatLogEntry } from '../useCombatState';
 import { DamageComponent } from './DamageComponent';
+import { ResolutionCard } from './ResolutionCard';
 
 interface CombatLogProps {
   log: CombatLogEntry[];
   economyLog?: { id: string; actorName: string; message: string; at: string; action?: string }[];
+  /**
+   * 6.6I — SOLICITAÇÕES ATIVAS (cards interativos). Vêm do read-model do
+   * servidor, acima do histórico: decisão pendente não pode se perder entre
+   * linhas antigas do registro.
+   */
+  requests?: CombatResolutionCardDto[];
+  resolutionBusyId?: string | null;
+  onRollSpellSave?: (
+    card: CombatResolutionCardDto,
+    selected: string[],
+    visibility: 'public' | 'private' | null,
+  ) => void;
+  onDeclineSpellSave?: (card: CombatResolutionCardDto) => void;
+  onRollDeathSave?: (card: CombatResolutionCardDto) => void;
 }
 
 /**
@@ -18,6 +33,9 @@ function actionHead(action?: string): { icon: IconName; title: string } | null {
   if (action === 'death-save') return { icon: 'heart', title: 'Teste contra a Morte' };
   if (action === 'stabilize') return { icon: 'flask', title: 'Estabilização' };
   if (action === 'death-override') return { icon: 'crown', title: 'Decisão do Mestre' };
+  // 6.6I: o resultado da salvaguarda resolvida continua no MESMO registro, no
+  // lugar do card que estava pendente (com o breakdown do servidor).
+  if (action === 'spell-save') return { icon: 'sparkle', title: 'Salvaguarda de magia' };
   return null;
 }
 
@@ -250,7 +268,15 @@ function AttackCard({ entry, recent }: { entry: CombatLogEntry; recent: boolean 
  * O QUE ACONTECEU? Página lateral do livro de combate. O ataque e o dano viram
  * UM cartão estruturado; iniciativa e turno continuam cartões simples.
  */
-export function CombatLog({ log, economyLog = [] }: CombatLogProps) {
+export function CombatLog({
+  log,
+  economyLog = [],
+  requests = [],
+  resolutionBusyId = null,
+  onRollSpellSave = () => undefined,
+  onDeclineSpellSave = () => undefined,
+  onRollDeathSave = () => undefined,
+}: CombatLogProps) {
   const entries: CombatLogEntry[] = [
     ...log,
     ...economyLog.map((entry) => ({ ...entry, kind: 'feature' as const })),
@@ -262,9 +288,24 @@ export function CombatLog({ log, economyLog = [] }: CombatLogProps) {
         <Icon name="scroll" size={15} /> Registro
       </h3>
 
-      {entries.length === 0 ? (
+      {requests.length > 0 ? (
+        <div className="combat-resolution-list" aria-label="Decisões pendentes">
+          {requests.map((card) => (
+            <ResolutionCard
+              key={card.id}
+              card={card}
+              busy={resolutionBusyId === card.id}
+              onRollSpell={onRollSpellSave}
+              onDecline={onDeclineSpellSave}
+              onRollDeath={onRollDeathSave}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {entries.length === 0 && requests.length === 0 ? (
         <p className="empty-hint">Sem eventos ainda.</p>
-      ) : (
+      ) : entries.length === 0 ? null : (
         <ol className="combat-log">
           {entries.map((entry, index) => {
             const recent = index === 0;

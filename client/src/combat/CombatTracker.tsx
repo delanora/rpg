@@ -1,11 +1,16 @@
 import { MechanicalPanel } from '../components/MechanicalPanel';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api';
 import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
 import { formatModifier } from '../dnd';
 import { fetchDeath, rollNpcDeathSave } from '../deathApi';
-import type { Attack, CombatDto, ConcentrationSave, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser } from '../types';
+import type { Attack, CombatDto, CombatResolutionCardDto, ConcentrationSave, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser } from '../types';
+import {
+  declineSpellSaveCard,
+  fetchResolutionRequests,
+  resolveSpellSaveCard,
+} from './resolutionApi';
 import { InventoryDock } from '../components/InventoryDock';
 import {
   applyManualHp,
@@ -156,6 +161,10 @@ export function CombatTracker({
   const [masterAssumed, setMasterAssumed] = useState<string | null>(null);
   // Leitura do ciclo de morte do combatente do turno (elegibilidade do Teste).
   const [currentDeath, setCurrentDeath] = useState<DeathDto | null>(null);
+  /** 6.6I — cards de resolução ativos do registro lateral (read-model do servidor). */
+  const [resolutionRequests, setResolutionRequests] = useState<CombatResolutionCardDto[]>([]);
+  /** Card com uma ação em andamento (desabilita duplo clique). */
+  const [resolutionBusyId, setResolutionBusyId] = useState<string | null>(null);
   // Confirmação do Mestre para avançar sem o Teste Contra a Morte do turno.
   const [skipDeathConfirm, setSkipDeathConfirm] = useState<{ name: string } | null>(null);
   // Janelas de Reação já RECUSADAS/resolvidas (fecham localmente; o servidor
@@ -248,21 +257,31 @@ export function CombatTracker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsDeathRead, deathEntity?.kind, deathEntity?.id, combat.version, currentDeathKey]);
 
+  /**
+   * 6.6I — read-model dos cards de resolução do registro lateral.
+   *
+   * A lista é DERIVADA no servidor (pendências + turno real). O cliente só a
+   * relê quando o combate ou os efeitos mudam — nunca monta o card sozinho.
+   */
+  const refreshResolutions = useCallback(async () => {
+    try {
+      const payload = await fetchResolutionRequests(combat.id);
+      setResolutionRequests(payload.requests);
+    } catch {
+      // Leitura complementar: sem ela o combate continua utilizável.
+    }
+  }, [combat.id]);
+
+  useEffect(() => {
+    void refreshResolutions();
+  }, [refreshResolutions, combat.version, effectsRefresh]);
+
   // O painel central vira MODO TESTE CONTRA A MORTE quando o turno é de um
   // combatente no ciclo de morte. O estado exibido vem SEMPRE do DTO do combate
   // (é o que chega por `combat:updated`, sem refresh); a leitura de `/api/death`
   // só complementa a ELEGIBILIDADE da rolagem.
   const turnDeath = current?.deathState ?? currentDeath?.death ?? null;
   const showDeathTurn = Boolean(current && turnDeath && (turnDeath.dead || turnDeath.pending || turnDeath.stabilized || turnDeath.deathSaves));
-  const deathRollAvailable = currentDeath?.deathSave.available ?? false;
-  const deathRollReason = currentDeath?.deathSave.reason ?? '';
-  const deathOwner = Boolean(current && current.ownerUserId === user.id);
-  // Criatura/NPC: só o Mestre rola (Teste privado). Personagem: só o dono.
-  const deathPrivate = isMaster && Boolean(current && current.kind !== 'CHARACTER');
-  const deathCanRoll = Boolean(
-    showDeathTurn &&
-      ((!isMaster && deathOwner && Boolean(onRollDeathSave)) || deathPrivate),
-  );
 
   // CHAVE DO TURNO atual — mesma fórmula do servidor. O DTO do combate carrega
   // `saveTurnKey`; com ela o cliente sabe, sem adivinhar, se o Teste deste turno
@@ -326,17 +345,73 @@ export function CombatTracker({
         .map((item) => ({ id: item.id, name: item.name }))
     : [];
 
-  async function rollNpcDeathSaveTurn(): Promise<void> {
-    if (!deathEntity) return;
-    setBusy(true);
+  /**
+   * 6.6I — resolve a salvaguarda de magia pelo MESMO endpoint de dados.
+   * O card só escolhe os IDs de modificadores opcionais; atributo, CD, bônus,
+   * dados e resultado são do servidor.
+   */
+  async function rollSpellSave(card: CombatResolutionCardDto, selected: string[], visibility: 'public' | 'private' | null): Promise<void> {
+    if (resolutionBusyId) return;
+    setResolutionBusyId(card.id);
     try {
-      await rollNpcDeathSave(deathEntity);
-      const fresh = await fetchDeath(deathEntity).catch(() => null);
-      if (fresh) setCurrentDeath(fresh);
+      await resolveSpellSaveCard(card, {
+        ...(selected.length > 0 ? { selectedEffectModifiers: selected } : {}),
+        ...(visibility ? { visibility } : {}),
+      });
+      await refreshResolutions();
+      const fresh = await fetchActiveCombat().catch(() => null);
+      if (fresh) onCombatChange(fresh);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'Falha ao resolver a salvaguarda.');
+      await refreshResolutions();
+    } finally {
+      setResolutionBusyId(null);
+    }
+  }
+
+  /** Recusa legítima da salvaguarda OPCIONAL de fim de turno (nunca `initial`). */
+  async function declineResolution(card: CombatResolutionCardDto): Promise<void> {
+    if (resolutionBusyId) return;
+    setResolutionBusyId(card.id);
+    try {
+      await declineSpellSaveCard(card);
+      await refreshResolutions();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'Falha ao recusar a salvaguarda.');
+      await refreshResolutions();
+    } finally {
+      setResolutionBusyId(null);
+    }
+  }
+
+  /**
+   * 6.6I — Teste contra a Morte pelo fluxo EXISTENTE.
+   * Jogador: a bandeja de dados anima e o servidor rola (mesma rota). Mestre:
+   * rola o Teste de criatura/NPC com audiência privada.
+   */
+  async function rollDeathSaveCard(card: CombatResolutionCardDto): Promise<void> {
+    const entity = card.reference.entity;
+    if (!entity) return;
+    if (!isMaster && onRollDeathSave) {
+      onRollDeathSave(entity);
+      return;
+    }
+    if (resolutionBusyId) return;
+    setResolutionBusyId(card.id);
+    try {
+      await rollNpcDeathSave(entity);
+      await refreshResolutions();
+      const freshCombat = await fetchActiveCombat().catch(() => null);
+      if (freshCombat) onCombatChange(freshCombat);
+      if (deathEntity) {
+        const freshDeath = await fetchDeath(deathEntity).catch(() => null);
+        if (freshDeath) setCurrentDeath(freshDeath);
+      }
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Falha ao rolar o Teste contra a Morte.');
+      await refreshResolutions();
     } finally {
-      setBusy(false);
+      setResolutionBusyId(null);
     }
   }
 
@@ -550,7 +625,19 @@ export function CombatTracker({
               }
             />
           }
-          right={<CombatLog log={log} economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]} />}
+          right={
+            <CombatLog
+              log={log}
+              economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
+              requests={resolutionRequests}
+              resolutionBusyId={resolutionBusyId}
+              onRollSpellSave={(card, selected, visibility) =>
+                void rollSpellSave(card, selected, visibility)
+              }
+              onDeclineSpellSave={(card) => void declineResolution(card)}
+              onRollDeathSave={(card) => void rollDeathSaveCard(card)}
+            />
+          }
           bottom={<TurnResourceBar active={false} isMaster={isMaster} />}
         />
 
@@ -671,26 +758,7 @@ export function CombatTracker({
                 Para criatura/NPC o ciclo é privado: o DTO do jogador não traz
                 `deathState`, então este painel nem aparece para ele. */}
             {showDeathTurn && current && turnDeath ? (
-              <DeathSavePanel
-                name={current.name}
-                death={turnDeath}
-                rollAvailable={deathRollAvailable}
-                rollReason={deathRollReason}
-                canRoll={deathCanRoll}
-                rollLabel={
-                  deathPrivate
-                    ? 'Rolar Teste contra a Morte (privado)'
-                    : 'Rolar Teste contra a Morte'
-                }
-                onRoll={
-                  deathPrivate
-                    ? () => void rollNpcDeathSaveTurn()
-                    : onRollDeathSave && deathEntity
-                      ? () => onRollDeathSave(deathEntity)
-                      : undefined
-                }
-                busy={busy}
-              />
+              <DeathSavePanel name={current.name} death={turnDeath} />
             ) : showOperational ? (
               <>
                 {/* Mestre: painel de ataques do combatente que ele controla
@@ -862,7 +930,19 @@ export function CombatTracker({
             ) : null}
           </>
         }
-        right={<CombatLog log={log} economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]} />}
+        right={
+          <CombatLog
+            log={log}
+            economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
+            requests={resolutionRequests}
+            resolutionBusyId={resolutionBusyId}
+            onRollSpellSave={(card, selected, visibility) =>
+              void rollSpellSave(card, selected, visibility)
+            }
+            onDeclineSpellSave={(card) => void declineResolution(card)}
+            onRollDeathSave={(card) => void rollDeathSaveCard(card)}
+          />
+        }
         bottom={
           // A barra persistente NÃO é renderizada para quem não controla o
           // turno (nem para o Mestre observando o personagem de um jogador).

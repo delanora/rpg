@@ -41,6 +41,7 @@ import { savingThrowBonus } from '../shared/saving-throws.js';
 import { loadEntity } from '../mechanical/mechanical.service.js';
 import { ABILITY_LABELS, type AbilityKey } from '../shared/dnd5e.js';
 import { applyDeathSave, deathSaveAvailability, type DeathActor } from '../death/death.service.js';
+import { journalSpellSaveOutcome } from '../combat/resolution-requests.js';
 import { HttpError } from '../../lib/http-error.js';
 import { randomUUID } from 'node:crypto';
 import type { Role } from '@prisma/client';
@@ -665,6 +666,19 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
   // Pendência resolvida + Paralyzed/Effect/Concentração publicados pelo
   // lifecycle existente quando houve falha.
   await publishHoldPersonResult(outcome, actor.username);
+  // 6.6I: o card deixa de estar pendente; o RESULTADO fica no registro lateral,
+  // com a conta rolada pelo servidor (sucesso/falha não é recalculado no cliente).
+  await journalSpellSaveOutcome({
+    target: targetEntity,
+    label: pending.label,
+    ability,
+    dc: pending.dc,
+    total,
+    success: outcome.success,
+    phase: pending.phase,
+    privateRoll,
+    actorName: loaded.name,
+  });
 
   const roll: DiceRollDto = {
     id: randomUUID(),
