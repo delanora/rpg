@@ -53,6 +53,10 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
   [HOLD_PERSON_SPELL_ID]: {
     spellId: HOLD_PERSON_SPELL_ID,
     requiresConcentration: true,
+    // 6.6I: descrição CURTA do card de salvaguarda no registro lateral (a
+    // mecânica continua só em `resolution`; o texto do catálogo nunca é usado).
+    combatPrompt: 'Uma força mágica tenta paralisar seu corpo.',
+    ongoingPrompt: 'Você pode tentar romper a magia.',
     // PHB 2014: "Concentration, up to 1 minute" → 10 rounds em combate.
     duration: { kind: 'timed', amount: 1, unit: 'minute' },
     targeting: {

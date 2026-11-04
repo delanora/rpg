@@ -5,37 +5,20 @@ import type { DeathState } from '../../types';
 interface DeathSavePanelProps {
   name: string;
   death: DeathState;
-  /** O servidor libera a rolagem agora? (próprio turno, não estabilizado...) */
-  rollAvailable: boolean;
-  /** Motivo de indisponibilidade vindo do servidor (quando houver). */
-  rollReason?: string;
-  /** Há botão de rolagem para ESTE espectador (jogador dono ou Mestre da criatura). */
-  canRoll: boolean;
-  /** Texto do botão (público para jogador; privado para o Mestre). */
-  rollLabel: string;
-  onRoll?: () => void;
-  busy?: boolean;
 }
 
 /**
- * PAINEL CENTRAL no turno de um combatente em Testes contra a Morte. Substitui o
- * fluxo normal (ataque/alvo/ações) por um bloco dramático e compacto: o
- * contador corações-caveiras e UM botão de rolagem. O sistema NUNCA rola
- * sozinho — o jogador escolhe o momento (server-authoritative); o Mestre rola o
- * Teste PRIVADO de criaturas.
+ * 6.6I — PAINEL CENTRAL de quem está no ciclo de morte: SÓ ESTADO.
  *
- * Só apresentação: os valores e a elegibilidade vêm do DTO do combate.
+ * O botão de rolagem saiu daqui. A interação ("Rolar Salvaguarda") vive no card
+ * do REGISTRO lateral, junto com o resultado e o histórico — a área central
+ * mantém apenas o que precisa continuar visível sem abrir o log: 0 PV, os
+ * contadores de Sucessos/Falhas e o estado (estabilizado/morto/decisão).
+ *
+ * Nada aqui muta nada: os valores vêm do DTO do combate e a elegibilidade é do
+ * servidor (o card só aparece quando a rolagem é devida).
  */
-export function DeathSavePanel({
-  name,
-  death,
-  rollAvailable,
-  rollReason,
-  canRoll,
-  rollLabel,
-  onRoll,
-  busy = false,
-}: DeathSavePanelProps) {
+export function DeathSavePanel({ name, death }: DeathSavePanelProps) {
   return (
     <section className="death-turn-panel" aria-label="Teste contra a Morte">
       <p className="death-turn-eyebrow">
@@ -66,29 +49,10 @@ export function DeathSavePanel({
       ) : null}
 
       {!death.dead && !death.pending && !death.stabilized ? (
-        <>
-          <p className="death-turn-hint">
-            Role 1d20. 10 ou mais é um sucesso. Três sucessos estabilizam; três falhas
-            colocam o destino nas mãos do Mestre.
-          </p>
-          {canRoll ? (
-            <button
-              type="button"
-              className="death-turn-roll"
-              disabled={busy || !rollAvailable}
-              onClick={onRoll}
-            >
-              <Icon name="die" size={16} /> {rollLabel}
-            </button>
-          ) : (
-            <p className="death-turn-hint">
-              {rollReason || 'Aguardando o turno deste combatente.'}
-            </p>
-          )}
-          {canRoll && !rollAvailable && rollReason ? (
-            <p className="death-turn-hint">{rollReason}</p>
-          ) : null}
-        </>
+        <p className="death-turn-hint">
+          A rolagem fica no Registro, à direita. 10 ou mais é um sucesso; três sucessos
+          estabilizam e três falhas colocam o destino nas mãos do Mestre.
+        </p>
       ) : null}
     </section>
   );

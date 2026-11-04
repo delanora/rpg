@@ -5,6 +5,7 @@ import {
   attackSchema, manualHpSchema, startCombatSchema, useItemSchema,
   combatOperationSchema, economyActionSchema, economyOverrideSchema, nextTurnSchema,
 } from './combat.schema.js';
+import { resolutionRequestsForCombat } from './resolution-requests.js';
 import {
   executeEconomyAction,
   overrideEconomy,
@@ -26,6 +27,18 @@ export const combatRouter = Router();
 function actorFrom(req: { user?: { sub: string; username: string; role: Role } }): CombatActor {
   return { userId: req.user!.sub, username: req.user!.username, role: req.user!.role };
 }
+
+/**
+ * GET /api/combat/:combatId/resolution-requests — cards ATIVOS do registro
+ * lateral (6.6I).
+ *
+ * Read-model: as salvaguardas de magia vêm de `PendingEffectSave` e o Teste
+ * contra a Morte é DERIVADO do estado + turno (nunca persistido como card). O
+ * servidor filtra por papel/posse antes de responder.
+ */
+combatRouter.get('/:combatId/resolution-requests', authenticate, async (req, res) => {
+  res.json(await resolutionRequestsForCombat(actorFrom(req), String(req.params.combatId)));
+});
 
 /** GET /api/combat/active — estado do combate em andamento (ou null). */
 combatRouter.get('/active', authenticate, async (req, res) => {

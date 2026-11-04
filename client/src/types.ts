@@ -2953,3 +2953,61 @@ export interface EffectsUpdatedPayload {
   entity: MechanicalEntity;
   effects: EffectDto[];
 }
+
+/* -------------------------------------------------------------------------- */
+/* 6.6I — CARDS DE RESOLUÇÃO DO REGISTRO LATERAL                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Tipo de solicitação mecânica exibida como card no registro do combate.
+ *
+ * Só `spell-saving-throw` e `death-saving-throw` existem nesta fase; reação,
+ * oportunidade de ataque, Counterspell e Shield entram depois usando a MESMA
+ * apresentação. O card NÃO contém a regra: ele aponta para a pendência
+ * persistida (`PendingEffectSave`) ou para o ciclo de morte real.
+ */
+export type CombatResolutionKind = 'spell-saving-throw' | 'death-saving-throw';
+
+export type CombatResolutionStatus =
+  | 'pending'
+  | 'resolved'
+  | 'declined'
+  | 'cancelled'
+  | 'invalidated';
+
+export type CombatResolutionActionKind = 'roll' | 'decline';
+
+export interface CombatResolutionActionDto {
+  kind: CombatResolutionActionKind;
+  actor: 'owner' | 'master';
+  visibility: 'public' | 'private' | null;
+}
+
+export interface CombatResolutionCardDto {
+  id: string;
+  kind: CombatResolutionKind;
+  status: CombatResolutionStatus;
+  target: {
+    kind: MechanicalEntity['kind'];
+    id: string;
+    name: string;
+    ownerUserId: string | null;
+  };
+  title: string;
+  shortDescription: string | null;
+  ability: AbilityKey | null;
+  phase: 'initial' | 'ongoing' | null;
+  optional: boolean;
+  canResolve: boolean;
+  actions: CombatResolutionActionDto[];
+  presentation: { tone: 'arcane' | 'peril'; icon: 'sparkle' | 'skull' };
+  counters: { successes: number; failures: number; stabilized: boolean } | null;
+  reference: { pendingId: string | null; entity: MechanicalEntity | null };
+  createdAt: string;
+}
+
+export interface ResolutionRequestsPayload {
+  combatId: string;
+  requests: CombatResolutionCardDto[];
+  at: string;
+}

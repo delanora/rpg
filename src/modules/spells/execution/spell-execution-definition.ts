@@ -60,6 +60,17 @@ export interface SpellExecutionDefinition {
   spellId: string;
   requiresConcentration: boolean;
   /**
+   * 6.6I — APRESENTAÇÃO do card de salvaguarda INICIAL no log lateral.
+   * Metadado curto e próprio da magia (nunca o texto integral do catálogo e
+   * nunca parseado): a mecânica continua vindo de `resolution`.
+   */
+  combatPrompt?: string;
+  /**
+   * 6.6I — APRESENTAÇÃO da salvaguarda REPETIDA (fim do turno). Opcional: sem
+   * ele o card usa o texto padrão de "tentar romper".
+   */
+  ongoingPrompt?: string;
+  /**
    * DURAÇÃO (6.6H): dado ESTRUTURADO (kind/amount/unit), nunca parseado do
    * texto da magia. Ausente = sem duração acompanhada nesta engine.
    */

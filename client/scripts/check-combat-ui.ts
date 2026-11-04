@@ -305,31 +305,31 @@ console.log('Check-combat-ui — refino da UI de combate');
     createElement(DeathSavePanel, {
       name: 'TESTE-DRACONATO',
       death: deathOf({ deathSaves: true, successes: 1 }),
-      rollAvailable: true,
-      canRoll: true,
-      rollLabel: 'Rolar Teste contra a Morte',
     }),
   );
-  check('AD) painel de Teste contra a Morte substitui o fluxo de ataque', tracker.includes('<DeathSavePanel') && !savesPanel.includes('Escolha o ataque') && savesPanel.includes('Rolar Teste contra a Morte'));
+  check(
+    'AD) painel central de morte substitui o fluxo de ataque e NÃO tem botão de rolagem',
+    tracker.includes('<DeathSavePanel') &&
+      !savesPanel.includes('Escolha o ataque') &&
+      savesPanel.includes('Teste contra a Morte') &&
+      !savesPanel.includes('<button'),
+  );
 
   // AE. Pending mostra a mensagem apropriada (sem botões de decisão).
   const pending = renderToStaticMarkup(
     createElement(DeathSavePanel, {
       name: 'Umbrae',
       death: deathOf({ pending: { id: 'p', kind: 'failures', reason: '', createdAt: '', cause: null } }),
-      rollAvailable: false,
-      canRoll: false,
-      rollLabel: 'Rolar Teste contra a Morte',
     }),
   );
   check('AE) pendente mostra "mãos do Mestre" e não oferece rolagem', pending.includes('mãos do Mestre') && !pending.includes('Rolar Teste contra a Morte'));
 
   // AF. Estabilizado mostra o estado; AG. Morto mostra o estado.
   const stabilized = renderToStaticMarkup(
-    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ stabilized: true, successes: 3 }), rollAvailable: false, canRoll: false, rollLabel: 'Rolar' }),
+    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ stabilized: true, successes: 3 }) }),
   );
   const dead = renderToStaticMarkup(
-    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ dead: true, failures: 3 }), rollAvailable: false, canRoll: false, rollLabel: 'Rolar' }),
+    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ dead: true, failures: 3 }) }),
   );
   check('AF) estabilizado é mostrado', stabilized.includes('ESTABILIZADO') && !stabilized.includes('death-turn-roll'));
   check('AG) morto é mostrado', dead.includes('MORTO'));
@@ -1802,6 +1802,75 @@ console.log('Check-combat-ui — refino da UI de combate');
     pendingSavePanel.includes("phase === 'ongoing'") &&
       pendingSavePanel.includes('fim do turno') &&
       pendingSavePanel.includes('Não tentar neste turno')
+  );
+
+  // ---------------------------------------------------------------------
+  // 6.6I — RESOLUTION CARDS (registro lateral) e limpeza do centro
+  // ---------------------------------------------------------------------
+  const deathSavePanelSource = source('src/combat/components/DeathSavePanel.tsx');
+  const resolutionService = source('../src/modules/combat/resolution-requests.ts');
+  const resolutionCard = source('src/combat/components/ResolutionCard.tsx');
+  const resolutionApiSource = source('src/combat/resolutionApi.ts');
+  const trackerSource = source('src/combat/CombatTracker.tsx');
+
+  check(
+    'CB113) o Teste contra a Morte saiu do centro: sem botão, contador continua lá',
+    !deathSavePanelSource.includes('<button') &&
+      !deathSavePanelSource.includes('death-turn-roll') &&
+      deathSavePanelSource.includes('DeathCounter') &&
+      deathSavePanelSource.includes('A rolagem fica no Registro')
+  );
+  check(
+    'CB114) o Teste contra a Morte vira card DERIVADO do turno real (sem persistência paralela)',
+    resolutionService.includes("kind: 'death-saving-throw'") &&
+      resolutionService.includes('combat.turnSequence') &&
+      resolutionService.includes('death.saveTurnKey') &&
+      resolutionService.includes('turnKey(') &&
+      !resolutionService.includes('resolutionCard.create')
+  );
+  check(
+    'CB115) o card de salvaguarda de magia deriva de PendingEffectSave (sem segunda engine)',
+    resolutionService.includes('pendingEffectSave.findMany') &&
+      resolutionService.includes("kind: 'spell-saving-throw'") &&
+      resolutionService.includes('pendingId')
+  );
+  check(
+    'CB116) o cliente não envia atributo, CD, bônus nem resultado',
+    !resolutionApiSource.includes('dc:') &&
+      !resolutionApiSource.includes('ability:') &&
+      !resolutionCard.includes('pending.dc') &&
+      resolutionApiSource.includes('rollPendingEffectSave') &&
+      resolutionApiSource.includes('selectedEffectModifiers')
+  );
+  check(
+    'CB117) só a salvaguarda `ongoing` + opcional oferece recusa (initial não)',
+    resolutionService.includes("row.phase === 'ongoing' && row.optional") &&
+      resolutionCard.includes('canDecline') &&
+      resolutionCard.includes('Não tentar neste turno')
+  );
+  check(
+    'CB118) Teste contra a Morte NUNCA tem recusa',
+    resolutionService.includes('Teste contra a Morte NUNCA tem') &&
+      resolutionService.includes("kind: 'death-saving-throw'") &&
+      resolutionCard.includes('onRollDeath') &&
+      !resolutionCard.includes('roll-death-decline')
+  );
+  check(
+    'CB119) a privacidade é filtrada no SERVIDOR (jogador só o próprio personagem)',
+    resolutionService.includes('target.ownerUserId === actor.userId') &&
+      resolutionService.includes("actor.role === 'MASTER'") &&
+      resolutionService.includes("visibility: 'public'")
+  );
+  check(
+    'CB120) o log lateral recebe os cards e o tracker não os monta sozinho',
+    trackerSource.includes('fetchResolutionRequests') &&
+      trackerSource.includes('requests={resolutionRequests}') &&
+      source('src/combat/components/CombatLog.tsx').includes('<ResolutionCard')
+  );
+  check(
+    'CB121) próximo turno continua bloqueado por Teste de morte e fim de turno pendentes',
+    combatServiceSource.includes('DEATH_SAVE_PENDING') &&
+      combatServiceSource.includes('TURN_END_TRIGGER_PENDING')
   );
 }
 

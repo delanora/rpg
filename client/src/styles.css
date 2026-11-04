@@ -17688,3 +17688,114 @@ input[type='checkbox']:focus-visible,
   opacity: 0.5;
   cursor: default;
 }
+/* ------------------------------------------------------------------------- */
+/* 6.6I — CARDS DE RESOLUÇÃO no registro lateral do combate                  */
+/* ------------------------------------------------------------------------- */
+
+.combat-resolution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 0.65rem;
+}
+
+/* O card usa a mesma linguagem dos cartões do registro; o destaque é só um
+   filete dourado/vinho à esquerda e um fundo levemente tingido. */
+.resolution-card {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 0.55rem 0.6rem 0.5rem;
+  background: rgba(184, 145, 42, 0.07);
+}
+
+.resolution-card.arcane {
+  border-left-color: var(--gold);
+}
+
+.resolution-card.peril {
+  border-left-color: var(--wine-bright);
+  background: rgba(122, 31, 31, 0.09);
+}
+
+.resolution-card.ongoing {
+  border-style: dashed;
+  border-left-style: solid;
+}
+
+.resolution-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.resolution-card-icon {
+  display: inline-flex;
+  color: var(--gold-deep);
+}
+
+.resolution-card-icon.peril {
+  color: var(--wine-bright);
+}
+
+.resolution-card-title {
+  font-family: var(--font-display, inherit);
+  font-size: var(--text-subsection);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.resolution-card.peril .resolution-card-title {
+  color: var(--wine-bright);
+}
+
+.resolution-card-target {
+  margin-left: auto;
+  font-size: var(--text-micro);
+  color: var(--muted, inherit);
+  opacity: 0.85;
+}
+
+.resolution-card-description {
+  margin: 0.3rem 0 0;
+  font-size: var(--text-aux);
+  line-height: 1.35;
+}
+
+.resolution-card-meta {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-micro);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.resolution-card.peril .resolution-card-meta {
+  color: var(--wine-bright);
+}
+
+.resolution-card-counters {
+  margin: 0.35rem 0 0;
+}
+
+.resolution-card-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin: 0.35rem 0 0;
+  font-size: var(--text-micro);
+}
+
+.resolution-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.resolution-card-status {
+  margin: 0.35rem 0 0;
+  font-size: var(--text-micro);
+  color: var(--muted, inherit);
+}
