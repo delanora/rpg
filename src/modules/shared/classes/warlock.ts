@@ -363,7 +363,12 @@ export const warlock: ClassDefinition = {
   hitDie: 8,
   savingThrows: ['wisdom', 'charisma'],
   subclassLevel: 1, // Patrono Extraplanar
-  spellcasting: { type: 'pact', ability: 'charisma', learning: 'known' },
+  spellcasting: {
+    type: 'pact',
+    ability: 'charisma',
+    learning: 'known',
+    focusKinds: ['arcane'],
+  },
   features: WARLOCK_FEATURES,
   subclasses: WARLOCK_SUBCLASSES,
 };

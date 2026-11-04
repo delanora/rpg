@@ -535,10 +535,41 @@ export function SpellRepertoirePanel({ characterId }: { characterId: string }) {
             </p>
           ) : null}
 
+          {/*
+            COMPONENTES V/S/M (6.6G): a ficha só EXIBE o que o servidor derivou do
+            inventário/fonte reais. Não existe checkbox de "tenho uma mão livre" —
+            o estado de mãos é server-authoritative e o POST revalida tudo.
+          */}
+          {draft.options.components ? (
+            <div className="spell-components">
+              <p className="muted">Componentes</p>
+              <ul className="spell-components-list">
+                {(['verbal', 'somatic', 'material'] as const).map((kind) => {
+                  const status = draft.options.components![kind];
+                  if (!status.required) return null;
+                  const label = kind === 'verbal' ? 'V' : kind === 'somatic' ? 'S' : 'M';
+                  return (
+                    <li key={kind} className={status.available ? '' : 'is-missing'}>
+                      {label} {status.available ? '✓' : '✕'}
+                      {kind === 'material' && status.available && draft.options.components!.material.providerLabel
+                        ? ` — ${draft.options.components!.material.providerLabel}`
+                        : ''}
+                    </li>
+                  );
+                })}
+              </ul>
+              {draft.options.components.blockedReason ? (
+                <p className="muted spell-cast-feedback-error">
+                  {draft.options.components.blockedReason}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <button
             type="button"
             className="btn btn-small"
-            disabled={!canSubmit}
+            disabled={!canSubmit || draft.options.components?.castableNow === false}
             onClick={() => void submit()}
           >
             {phase === 'submitting' ? 'Conjurando…' : 'Conjurar'}

@@ -250,7 +250,13 @@ export const bard: ClassDefinition = {
   hitDie: 8,
   savingThrows: ['dexterity', 'charisma'],
   subclassLevel: 3, // Colégio de Bardo
-  spellcasting: { type: 'full', ability: 'charisma', learning: 'known' },
+  // Instrumento musical é o foco do bardo (PHB 2014).
+  spellcasting: {
+    type: 'full',
+    ability: 'charisma',
+    learning: 'known',
+    focusKinds: ['musical-instrument'],
+  },
   features: BARD_FEATURES,
   subclasses: BARD_SUBCLASSES,
 };

@@ -61,9 +61,39 @@ export interface SpellCastDto {
     requiresClearPath: boolean;
     constraints: { kind: string; result: string; confirmed: boolean }[];
   } | null;
+  /**
+   * Snapshot dos COMPONENTES V/S/M (6.6G): quais foram exigidos, como o material
+   * foi fornecido e se algo foi consumido. `null` nos casts anteriores.
+   */
+  components: {
+    verbal: boolean;
+    somatic: boolean;
+    somaticHand: string | null;
+    material: boolean;
+    providerKind: string | null;
+    providerLabel: string | null;
+    consumed: boolean;
+    spellSpecifiedCostGp: number | null;
+  } | null;
   createdAt: string;
   committedAt: string;
   resolvedAt: string | null;
+}
+
+function componentsOf(value: unknown): SpellCastDto['components'] {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  return {
+    verbal: item.verbal === true,
+    somatic: item.somatic === true,
+    somaticHand: typeof item.somaticHand === 'string' ? item.somaticHand : null,
+    material: item.material === true,
+    providerKind: typeof item.providerKind === 'string' ? item.providerKind : null,
+    providerLabel: typeof item.providerLabel === 'string' ? item.providerLabel : null,
+    consumed: item.materialConsumed === true,
+    spellSpecifiedCostGp:
+      typeof item.spellSpecifiedCostGp === 'number' ? item.spellSpecifiedCostGp : null,
+  };
 }
 
 function entityOf(value: unknown): MechanicalEntity | null {
@@ -165,6 +195,7 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
     spellcasting,
     casting,
     targeting: targetingOf(row.targetingSnapshot),
+    components: componentsOf(row.componentsSnapshot),
     createdAt: row.createdAt.toISOString(),
     committedAt: row.committedAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

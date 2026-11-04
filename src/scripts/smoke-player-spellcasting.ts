@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { grantCastingComponents } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { getSpell } from '../modules/shared/spells/index.js';
 import { activatePreparationPlans } from '../modules/spells/execution/preparation-plan.js';
@@ -71,6 +72,8 @@ export async function smokePlayerSpellcasting(baseUrl: string, check: Check): Pr
       },
     });
     characterIds.push(cleric.id, wizard.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds });
     castCasters.push(cleric.id, wizard.id);
 
     const request = async (
@@ -424,6 +427,8 @@ export async function smokePlayerSpellcasting(baseUrl: string, check: Check): Pr
       },
     });
     creatureIds.push(npc.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds, creatures: creatureIds });
     const npcCast = await request('/spells/cast', {
       operationId: randomUUID(),
       spellId: 'bless',
@@ -471,6 +476,8 @@ export async function smokePlayerSpellcasting(baseUrl: string, check: Check): Pr
       },
     });
     characterIds.push(multi.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds });
     castCasters.push(multi.id);
     userIds.push((await prisma.character.findUniqueOrThrow({ where: { id: multi.id } })).userId);
     await seedSpellRepertoire({ characterId: multi.id, classKey: 'wizard', spellIds: ['hold-person'] });

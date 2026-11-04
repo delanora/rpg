@@ -23,6 +23,15 @@ export const creatureSpellcastingProfileSchema = z.object({
   saveDc: z.number().int().min(1).max(40).optional(),
   /** Bônus de ataque mágico explícito do statblock (-20..40). */
   attackBonus: z.number().int().min(-20).max(40).optional(),
+  /**
+   * FOCOS que o statblock permite (Fase 6.6G): `arcane`, `holy-symbol`,
+   * `druidic`, `musical-instrument`. Vazio = o NPC conjura só com material
+   * específico ou bolsa de componentes — nada é inferido por ND ou atributo.
+   */
+  focusKinds: z
+    .array(z.enum(['arcane', 'holy-symbol', 'druidic', 'musical-instrument']))
+    .max(4)
+    .optional(),
 });
 
 export type CreatureSpellcastingProfile = z.infer<typeof creatureSpellcastingProfileSchema>;

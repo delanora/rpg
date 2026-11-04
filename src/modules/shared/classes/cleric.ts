@@ -612,7 +612,13 @@ export const cleric: ClassDefinition = {
   hitDie: 8,
   savingThrows: ['wisdom', 'charisma'],
   subclassLevel: 1, // Domínio Divino
-  spellcasting: { type: 'full', ability: 'wisdom', learning: 'prepared' },
+  // Símbolo Sagrado é o foco do clérigo (PHB 2014).
+  spellcasting: {
+    type: 'full',
+    ability: 'wisdom',
+    learning: 'prepared',
+    focusKinds: ['holy-symbol'],
+  },
   features: CLERIC_FEATURES,
   subclasses: CLERIC_SUBCLASSES,
 };

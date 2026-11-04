@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { grantCastingComponents } from './spell-slot-fixtures.js';
 import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { economyOf } from '../modules/shared/action-economy.js';
@@ -179,6 +180,8 @@ export async function smokeSpellActionEconomy(baseUrl: string, check: Check): Pr
       },
     });
     characterIds.push(caster.id, target.id, outCaster.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds });
     for (const id of [caster.id, outCaster.id]) {
       await seedSpellRepertoire({
         characterId: id,

@@ -131,7 +131,7 @@ export const LEVEL_1: readonly Spell[] = [
     rangeKind: 'ranged',
     rangeMeters: 9,
     components: { verbal: true, somatic: true, material: true },
-    material: { text: 'um borrifo de água benta' },
+    material: { text: 'um borrifo de água benta', componentKey: 'holy-water' },
     componentsText: 'V, S, M (um borrifo de água benta)',
     duration: 'Concentração, até 1 minuto',
     concentration: true,

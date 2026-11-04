@@ -50,6 +50,14 @@ import {
   type CastingTurnContext,
 } from './spell-casting-economy.js';
 import { toSpellCastDto, type SpellCastDto } from './spell-cast.dto.js';
+import {
+  assertSpellComponents,
+  consumeSpellComponents,
+  resolveSpellComponents,
+  toComponentsSnapshot,
+  type SpellComponentPlan,
+} from './spell-components.service.js';
+import { publishCharacter } from '../../combat/combat.service.js';
 import type { SpellCastProofInput } from './spell-cast.schema.js';
 
 /**
@@ -101,6 +109,8 @@ export interface SpellCastContext {
   turnContext: CastingTurnContext | null;
   /** Snapshot da validação de alvos (6.6E) — gravado no COMMIT. */
   targeting: TargetingSnapshot;
+  /** Plano de COMPONENTES V/S/M (6.6G), revalidado no COMMIT. */
+  components: SpellComponentPlan;
   /** Requisitos espaciais ainda NÃO confirmados (6.6F: viram intenção). */
   requiredConfirmations: SpatialRequirementKind[];
   /** `operationId` gravado no `SpellCast` (difere do request na aprovação). */
@@ -278,6 +288,18 @@ export async function validateSpellCast(
   );
   const castAtLevel = resource ? resource.level : 0;
 
+  // 6.6G: COMPONENTES (V/S/M) — mãos, foco compatível com a FONTE, bolsa de
+  // componentes e material específico. Falhar aqui é falhar antes de TODO
+  // custo. O plano também é revalidado no COMMIT, porque equipamento e Effects
+  // podem mudar entre a validação e a escrita (intenção pendente inclusive).
+  const components = await resolveSpellComponents({
+    db,
+    spell,
+    source: profile.source,
+    entity: caster.entity,
+  });
+  assertSpellComponents(components);
+
   // 6.6E: TARGETING validado com o `castAtLevel` REAL — a quantidade máxima de
   // alvos é derivada da definição + espaço escolhido, nunca do cliente. Falhar
   // aqui não gasta espaço, Ação nem encerra a Concentração anterior.
@@ -333,6 +355,7 @@ export async function validateSpellCast(
     economyCost,
     turnContext,
     targeting,
+    components,
     requiredConfirmations: targeting.requiredConfirmations,
     castOperationId: options.operationId ?? input.operationId,
     availabilityKind: authorization.availabilityKind,
@@ -363,6 +386,18 @@ async function commitSpellCast(
   const spent = context.resource
     ? await spendCastingResource(context.caster.entity, context.resource, db)
     : null;
+
+  // 6.6G: REVALIDA o plano e consome o material na MESMA transação do cast.
+  // Material nunca é removido sem `SpellCast`, nem `SpellCast` existe sem o
+  // consumo — e o retry (que sai por `operationId`) não consome duas vezes.
+  const finalComponents = await resolveSpellComponents({
+    db,
+    spell: allSpells().find((item) => item.id === context.execution.spellId)!,
+    source: context.profile.source,
+    entity: context.caster.entity,
+  });
+  assertSpellComponents(finalComponents);
+  await consumeSpellComponents(finalComponents, context.caster.entity, db);
   return db.spellCast.create({
     data: {
       spellId: context.execution.spellId,
@@ -407,6 +442,8 @@ async function commitSpellCast(
       combatantId: context.turnContext?.combatantId ?? null,
       economyCostKind: economy?.cost ?? null,
       economySpentAt: economy?.spentAt ?? null,
+      // Snapshot IMUTÁVEL dos componentes/fornecedor usados (6.6G).
+      componentsSnapshot: toComponentsSnapshot(finalComponents) as unknown as Prisma.InputJsonValue,
       visibility: 'public',
       operationId: context.castOperationId,
       fingerprint,
@@ -616,6 +653,8 @@ export async function executeCast(
   }
 
   let outcome: CommittedOutcome;
+  // Ficha cujo inventário mudou (material consumido) — publicado só após commit.
+  let consumedCharacterId: string | null = null;
   try {
     outcome = await prisma.$transaction(async (db) => {
       const prior = await db.spellCast.findUnique({
@@ -628,6 +667,9 @@ export async function executeCast(
 
       // VALIDATE (read-only) — falha aqui NÃO encerra concentração anterior.
       const context = await validateSpellCast(actor, input, db, castKey);
+      if (context.components.consumptions.length > 0) {
+        consumedCharacterId = context.components.characterId;
+      }
 
       // LOCK: um caster, um cast RESOLVING. A constraint parcial do banco é a
       // barreira final contra corrida; esta leitura dá o erro claro no caso comum.
@@ -696,6 +738,9 @@ export async function executeCast(
   }
 
   // REALTIME/LOGS depois do commit: superfícies existentes, sem evento novo.
+  // 6.6G: material consumido muda o INVENTÁRIO — a ficha é republicada pelo
+  // canal de sempre, nunca por decremento otimista do cliente.
+  if (consumedCharacterId) await publishCharacter(consumedCharacterId);
   if (outcome.pendings.length > 0) {
     await publishPendingEffectSaves(outcome.cast.targetEntities);
   }

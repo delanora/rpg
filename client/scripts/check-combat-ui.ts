@@ -1651,6 +1651,63 @@ console.log('Check-combat-ui — refino da UI de combate');
       !castOptionsService.includes('spendEconomy') &&
       !castOptionsService.includes('spendSlot')
   );
+
+  // ------------------------------------------------------------------------
+  // 6.6G — COMPONENTES V/S/M
+  // ------------------------------------------------------------------------
+  const componentsDomain = source('../src/modules/shared/spells/components.ts');
+  const componentsService = source(
+    '../src/modules/spells/execution/spell-components.service.ts',
+  );
+  const castingFocus = source('../src/modules/shared/spells/casting-focus.ts');
+  const castService = source('../src/modules/spells/execution/spell-cast.service.ts');
+  const castSchema = source('../src/modules/spells/execution/spell-cast.schema.ts');
+  check(
+    'CB95) componentes vêm do CATÁLOGO estruturado (nenhum parser de "V, S, M (...)”)',
+    componentsDomain.includes('spellComponentRequirement') &&
+      !componentsDomain.includes('.split(') &&
+      !componentsDomain.includes('.match(') &&
+      !componentsService.includes('.split(') &&
+      !componentsService.includes('.match(') &&
+      componentsDomain.includes('costGp') &&
+      componentsDomain.includes('consumed')
+  );
+  check(
+    'CB96) o serviço de componentes não conhece nome de magia (Bless/Hold Person)',
+    !componentsService.includes("'bless'") && !componentsService.includes("'hold-person'")
+  );
+  check(
+    'CB97) foco é específico da FONTE e o Patrulheiro do PHB 2014 não ganha foco',
+    castingFocus.includes('focusKindsForSource') &&
+      source('../src/modules/shared/classes/ranger.ts').includes('focusKinds: []') &&
+      !castingFocus.includes("=== 'bless'")
+
+  );
+  check(
+    'CB98) S + M pode usar a MESMA mão do foco/material (e S sem M não ganha mão)',
+    componentsService.includes("materialHand === 'device'") &&
+      componentsService.includes("hand: 'material'")
+  );
+  check(
+    'CB99) material consumido é debitado no COMMIT, com guarda de versão',
+    castService.includes('consumeSpellComponents(') &&
+      componentsService.includes('version: row.version') &&
+      componentsService.includes('SPELL_COMPONENT_MATERIAL_UNAVAILABLE')
+  );
+  check(
+    'CB100) o cliente NÃO informa componente (sem hasFocus/freeHand/materialOk no request)',
+    !castSchema.includes('hasFocus') &&
+      !castSchema.includes('freeHand') &&
+      !castSchema.includes('materialOk') &&
+      !repertoirePanel.includes('hasFocus:') &&
+      !repertoirePanel.includes('freeHand:')
+  );
+  check(
+    'CB101) a UI exibe o resumo de componentes e não consome material otimisticamente',
+    repertoirePanel.includes('castableNow') &&
+      repertoirePanel.includes('spell-components') &&
+      !repertoirePanel.includes('quantity - 1')
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

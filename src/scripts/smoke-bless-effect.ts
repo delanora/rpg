@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { grantCastingComponents } from './spell-slot-fixtures.js';
 import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
@@ -120,6 +121,8 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
       },
     });
     characterIds.push(hero.id, ally.id, third.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds });
     // 6.6F: autorização REAL — sem repertório gravado nenhuma destas fichas pode
     // conjurar Bless, ainda que a engine saiba executá-la.
     for (const id of [hero.id, ally.id, third.id]) {
@@ -155,6 +158,8 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
       },
     });
     creatureIds.push(goblin.id, otherGoblin.id);
+    // 6.6G: conjuradores de fixture recebem bolsa de componentes REAL.
+    await grantCastingComponents({ characters: characterIds, creatures: creatureIds });
 
     const heroEntity = { kind: 'character' as const, id: hero.id };
     const allyEntity = { kind: 'character' as const, id: ally.id };

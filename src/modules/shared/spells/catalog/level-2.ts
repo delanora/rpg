@@ -614,7 +614,7 @@ export const LEVEL_2: readonly Spell[] = [
     rangeKind: 'ranged',
     rangeMeters: 18,
     components: { verbal: true, somatic: true, material: true },
-    material: { text: 'um pequeno pedaço reto de ferro' },
+    material: { text: 'um pequeno pedaço reto de ferro', componentKey: 'straight-iron-piece' },
     componentsText: 'V, S, M (um pequeno pedaço reto de ferro)',
     duration: 'Concentração, até 1 minuto',
     concentration: true,

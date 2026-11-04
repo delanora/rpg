@@ -902,6 +902,61 @@ de implementar.
   local. Gasto otimista não existe: slots/Ação/Concentração só mudam pelo estado
   autoritativo (`sheet:updated`, `combat:updated`, `effects:updated`).
 
+### Componentes V/S/M da conjuração (6.6G)
+
+- **Componente é metadado do CATÁLOGO, nunca texto interpretado.** O catálogo já
+  declara `components { verbal, somatic, material }` e, quando há material,
+  `material { text, costGp?, consumed?, componentKey? }`. `shared/spells/components.ts`
+  traduz isso para o formato mecânico (`spellComponentRequirement`); nenhum
+  `split(",")`/regex sobre `componentsText` participa de regra.
+- **Custo e consumo são os da MAGIA.** Preço de mercado do item do inventário
+  NUNCA decide substituição de foco/bolsa. Material comum (sem custo, sem
+  consumo) aceita bolsa de componentes ou foco compatível; material com custo ou
+  consumido exige o item específico, identificado por `details.spellComponentKeys`
+  (chave estável) e, quando houver valor, por `details.componentValueGp`.
+- **Foco é da FONTE, não da lista de magias.** `shared/spells/casting-focus.ts`
+  lê `spellcasting.focusKinds` do metadado da classe/subclasse
+  (`wizard/sorcerer/warlock → arcane`, `cleric/paladin → holy-symbol`,
+  `druid → druidic`, `bard → musical-instrument`, `ranger → []`). Cavaleiro
+  Arcano e Trapaceiro Arcano do PHB 2014 declaram `[]` de propósito: usar a lista
+  do Mago não concede foco. Criatura declara `spellcastingProfile.focusKinds` no
+  statblock. Bolsa de componentes é universal.
+- **Tags mecânicas do item** (JSONB `details`, mantidas em QUALQUER categoria):
+  `spellFocusKinds`, `componentPouch`, `spellComponentKeys`, `componentValueGp`,
+  `wornVisible`. `spellcastingFocus` (campo antigo do Cajado) continua valendo
+  como foco arcano.
+- **Mãos vêm do inventário existente** (`hand1`/`hand2`) — não há segundo sistema
+  de equipamento nem checkboxes de "confirmo que tenho uma mão livre". Arma
+  `two-handed` empunhada sozinha deixa uma mão momentaneamente livre; duas armas
+  (ou arma+escudo) não deixam. **S + M usa a MESMA mão do foco/material; S sem M
+  não ganha essa mão.** Símbolo sagrado apenas `wornVisible` satisfaz M e não cria
+  mão. Escudo marcado com `spellFocusKinds: ['holy-symbol']` funciona como foco
+  segurado. Nada é largado/guardado automaticamente.
+- **Hook genérico de bloqueio:** modificador de Effect `spell-component-block`
+  com `components: ('verbal'|'somatic'|'material')[]`. A mecânica bloqueia e a
+  resposta é SANITIZADA (`SPELL_VERBAL_COMPONENT_UNAVAILABLE`…): o rótulo de um
+  efeito privado nunca vaza. Silêncio e War Caster continuam fora desta fase.
+- **Pipeline:** VALIDATE resolve o plano (`resolveSpellComponents`) e falha ANTES
+  de qualquer custo; o COMMIT REVALIDA e consome o material na MESMA transação,
+  com guarda de `version` da ficha (retry não consome de novo, última unidade tem
+  um só vencedor, quantidade nunca fica negativa). Consumo é por CONJURAÇÃO, não
+  por alvo, e não é devolvido por save bem-sucedido/cancelamento.
+- **Snapshot:** `SpellCast.componentsSnapshot` (JSONB nullable, migration
+  `20261104120000_add_spell_cast_components`) registra V/S/M, mão usada,
+  fornecedor do material e o que foi consumido — sem id interno de item. Casts
+  antigos ficam `null`; nada é inventado retroativamente.
+- **cast-options** passou a devolver `components` (resumo sanitizado + `castableNow`)
+  para a ficha mostrar `V ✓ S ✓ M ✓ — Símbolo Sagrado` e bloquear o envio; o
+  `POST /api/spells/cast` continua sendo a autoridade.
+- **Limitações declaradas:** inventário de NPC não é modelado por instância (não
+  há consumo de material por NPC); duração/save repetido, componentes V/S/M
+  “especiais” de magias específicas, itens mágicos que concedem foco e rituais
+  seguem para fases próprias.
+- `smoke-spell-components.ts` cobre catálogo, bolsa/foco/foco errado, escudo-símbolo,
+  símbolo vestido, arma de duas mãos, duas armas, S+M vs S-only, material com custo
+  e consumido (definições SINTÉTICAS), consumo com guarda de versão, bloqueio
+  privado e a recusa de campos de componente vindos do cliente.
+
 ### Modificadores de Effect (6.5B)
 
 - **O pipeline nunca conhece nome de magia/feature.** Ele lê só modificadores
@@ -1029,7 +1084,8 @@ Longo (Long Rest):
 **Não existe conversão global automática de once/day para Long Rest.** Para
 qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
-> Migrations: **51** (são 51 diretórios em `prisma/migrations`; a 6.5A criou
+> Migrations: **52** (são 52 diretórios em `prisma/migrations`; a 6.6G acrescentou
+> `componentsSnapshot` ao `SpellCast`; a 6.5A criou
 > `effect_instances` + `effect_operations`, a 6.5B acrescentou `modifiers` e a
 > 6.5C, `conditions`).
 > Os hashes acima são o estado no momento em que este arquivo
