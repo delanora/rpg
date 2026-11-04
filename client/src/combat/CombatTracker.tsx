@@ -358,6 +358,10 @@ export function CombatTracker({
         error.code === 'DEATH_SAVE_PENDING'
       ) {
         setSkipDeathConfirm({ name: current?.name ?? 'Este combatente' });
+      } else if (error instanceof ApiError && error.code === 'TURN_END_TRIGGER_PENDING') {
+        // 6.6H: o turno NÃO avançou porque existem salvaguardas de fim de turno
+        // pendentes. A mensagem do servidor diz o que fazer (rolar ou recusar).
+        onError(error.message);
       } else {
         onError(error instanceof Error ? error.message : 'Falha ao avançar o turno.');
       }

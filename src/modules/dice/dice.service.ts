@@ -673,7 +673,12 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
     actorName: loaded.name,
     kind: 'save',
     ...(mode.autoFail ? { autoFail: true } : {}),
-    label: `${pending.label} — Salvaguarda de ${ABILITY_LABELS[ability]} (CD ${pending.dc})`,
+    // 6.6H: a pendência CONTÍNUA é identificada como "no fim do turno" para a
+    // mesa não confundir com a salvaguarda inicial da mesma magia.
+    label:
+      pending.phase === 'ongoing'
+        ? `${pending.label} — Salvaguarda de ${ABILITY_LABELS[ability]} no fim do turno (CD ${pending.dc})`
+        : `${pending.label} — Salvaguarda de ${ABILITY_LABELS[ability]} (CD ${pending.dc})`,
     dice,
     bonus,
     total,

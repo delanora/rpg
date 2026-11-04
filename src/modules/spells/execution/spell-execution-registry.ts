@@ -31,6 +31,8 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
   [BLESS_SPELL_ID]: {
     spellId: BLESS_SPELL_ID,
     requiresConcentration: true,
+    // PHB 2014: "Concentration, up to 1 minute" → 10 rounds em combate.
+    duration: { kind: 'timed', amount: 1, unit: 'minute' },
     targeting: {
       kind: 'creatures',
       minTargets: 1,
@@ -51,6 +53,8 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
   [HOLD_PERSON_SPELL_ID]: {
     spellId: HOLD_PERSON_SPELL_ID,
     requiresConcentration: true,
+    // PHB 2014: "Concentration, up to 1 minute" → 10 rounds em combate.
+    duration: { kind: 'timed', amount: 1, unit: 'minute' },
     targeting: {
       kind: 'creatures',
       minTargets: 1,

@@ -57,6 +57,7 @@ import {
   toComponentsSnapshot,
   type SpellComponentPlan,
 } from './spell-components.service.js';
+import { buildDurationSnapshot } from './spell-duration.js';
 import { publishCharacter } from '../../combat/combat.service.js';
 import type { SpellCastProofInput } from './spell-cast.schema.js';
 
@@ -194,7 +195,7 @@ async function castArtifacts(
   ]);
   const mapped = pendings.map(toPendingEffectSaveDto);
   return {
-    effects: effects.map(toEffectDto),
+    effects: effects.map((row) => toEffectDto(row)),
     pending: mapped[0] ?? null,
     pendings: mapped,
   };
@@ -398,6 +399,29 @@ async function commitSpellCast(
   });
   assertSpellComponents(finalComponents);
   await consumeSpellComponents(finalComponents, context.caster.entity, db);
+
+  // 6.6H: a DURAÇÃO começa AQUI, no COMMIT — nunca quando o Effect nasce depois
+  // da resolution barrier. Em combate a âncora é o round e a ativação REAIS;
+  // fora de combate o acompanhamento é manual (não existe world clock).
+  const durationSnapshot = context.execution.duration
+    ? buildDurationSnapshot({
+        definition: context.execution.duration,
+        combat: context.turnContext
+          ? {
+              combatId: context.turnContext.combatId,
+              anchorCombatantId: context.turnContext.combatantId,
+              roundNumber:
+                (
+                  await db.combat.findUnique({
+                    where: { id: context.turnContext.combatId },
+                    select: { round: true },
+                  })
+                )?.round ?? 1,
+              turnSequence: context.turnContext.turnSequence,
+            }
+          : null,
+      })
+    : null;
   return db.spellCast.create({
     data: {
       spellId: context.execution.spellId,
@@ -444,6 +468,10 @@ async function commitSpellCast(
       economySpentAt: economy?.spentAt ?? null,
       // Snapshot IMUTÁVEL dos componentes/fornecedor usados (6.6G).
       componentsSnapshot: toComponentsSnapshot(finalComponents) as unknown as Prisma.InputJsonValue,
+      // Snapshot IMUTÁVEL da duração/âncora do combate (6.6H).
+      ...(durationSnapshot
+        ? { durationSnapshot: durationSnapshot as unknown as Prisma.InputJsonValue }
+        : {}),
       visibility: 'public',
       operationId: context.castOperationId,
       fingerprint,
@@ -517,6 +545,12 @@ async function resolveImmediateEffect(
         sourceLabel: context.caster.name,
         modifiers: effect.modifiers() as unknown as Prisma.InputJsonValue,
         conditions: effect.conditions() as unknown as Prisma.InputJsonValue,
+        // 6.6H: o Effect HERDA a duração do COMMIT (nunca "mais 1 minuto" a
+        // partir da criação) e o snapshot dos triggers da definição.
+        ...(cast.durationSnapshot
+          ? { durationSnapshot: cast.durationSnapshot as Prisma.InputJsonValue }
+          : {}),
+        turnTriggers: effect.turnTriggers() as unknown as Prisma.InputJsonValue,
         targetEntityKind: target.entity.kind,
         targetEntityId: target.entity.id,
         visibility: 'public',
@@ -696,7 +730,7 @@ export async function executeCast(
           cast: toSpellCastDto(resolved.cast),
           replayed: false,
           effectGroupId: resolved.cast.effectGroupId ?? null,
-          effects: resolved.effects.map(toEffectDto),
+          effects: resolved.effects.map((row) => toEffectDto(row)),
           pending: null,
           pendings: [],
           endedTargets: [...endedTargets, ...resolved.affected],

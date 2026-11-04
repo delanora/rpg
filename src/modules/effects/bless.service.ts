@@ -57,7 +57,7 @@ export async function applyBless(
   });
   return {
     groupId: result.effectGroupId,
-    effects: rows.map(toEffectDto),
+    effects: rows.map((row) => toEffectDto(row)),
     replayed: result.replayed,
   };
 }

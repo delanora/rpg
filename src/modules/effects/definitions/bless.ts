@@ -1,4 +1,5 @@
 import type { EffectModifier } from '../effect-modifiers.js';
+import type { EffectTurnTriggerDefinition } from '../effect-turn-triggers.js';
 
 /**
  * FASE 6.5G — DEFINIÇÃO REAL DE BLESS (PHB 2014, p. 219).
@@ -59,6 +60,15 @@ export function blessModifiers(): EffectModifier[] {
       key: 'save',
     },
   ];
+}
+
+/**
+ * FASE 6.6H — Bless NÃO tem salvaguarda repetida (PHB 2014): só Concentração e
+ * duração máxima. A lista vazia é decisão da DEFINIÇÃO, não do motor: nenhum
+ * `if (spellId === 'bless')` existe no processamento de turno.
+ */
+export function blessTurnTriggers(): EffectTurnTriggerDefinition[] {
+  return [];
 }
 
 /** Metadados da definição (sem copiar o catálogo de magias). */

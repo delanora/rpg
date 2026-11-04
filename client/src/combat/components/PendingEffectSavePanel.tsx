@@ -3,6 +3,7 @@ import { api } from '../../api';
 import { Icon } from '../../components/Icon';
 import {
   cancelPendingEffectSave,
+  declinePendingEffectSave,
   fetchPendingEffectSaves,
   rollPendingEffectSave,
 } from '../../effectsApi';
@@ -115,6 +116,7 @@ export function PendingEffectSavePanel({
             <strong>{item.label}</strong>
             {item.casterName ? ` de ${item.casterName}` : ''} — salvaguarda de{' '}
             {abilityLabel(item.ability)} · CD {item.dc}
+            {item.phase === 'ongoing' ? ' · fim do turno' : ''}
           </p>
           {options.length > 0 ? (
             <div className="hp-controls">
@@ -164,32 +166,58 @@ export function PendingEffectSavePanel({
                 >
                   Rolar privado
                 </button>
+                {item.phase === 'ongoing' && item.optional ? (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={locked}
+                    title="O alvo escolhe não tentar neste turno; o efeito continua ativo."
+                    onClick={() => void run(() => declinePendingEffectSave(item.id))}
+                  >
+                    Não tentar neste turno
+                  </button>
+                ) : null}
+                {item.phase === 'initial' ? (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={locked}
+                    title="Cancela a aplicação sem rolar o save (nenhum efeito é criado)."
+                    onClick={() => void run(() => cancelPendingEffectSave(item.id))}
+                  >
+                    Cancelar aplicação
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <>
                 <button
                   type="button"
                   className="btn btn-small"
                   disabled={locked}
-                  title="Cancela a aplicação sem rolar o save (nenhum efeito é criado)."
-                  onClick={() => void run(() => cancelPendingEffectSave(item.id))}
+                  onClick={() =>
+                    void run(() =>
+                      rollPendingEffectSave({
+                        pendingId: item.id,
+                        selectedEffectModifiers: selected,
+                      }),
+                    )
+                  }
                 >
-                  Cancelar aplicação
+                  Rolar salvaguarda de {abilityLabel(item.ability)} (CD {item.dc})
                 </button>
+                {item.phase === 'ongoing' && item.optional ? (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={locked}
+                    title="Recusar não encerra o efeito; o próximo turno oferece outra chance."
+                    onClick={() => void run(() => declinePendingEffectSave(item.id))}
+                  >
+                    Não tentar neste turno
+                  </button>
+                ) : null}
               </>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-small"
-                disabled={locked}
-                onClick={() =>
-                  void run(() =>
-                    rollPendingEffectSave({
-                      pendingId: item.id,
-                      selectedEffectModifiers: selected,
-                    }),
-                  )
-                }
-              >
-                Rolar salvaguarda de {abilityLabel(item.ability)} (CD {item.dc})
-              </button>
             )}
           </div>
         </div>

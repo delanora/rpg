@@ -499,8 +499,15 @@ significa que as respectivas fases futuras estejam concluídas.
   Hold Person multi-alvo continua UM `SpellCast`/UM espaço/UM slot, com N
   `PendingEffectSave` e RESOLUTION BARRIER transacional (`pg_advisory_xact_lock`):
   nenhum Effect nasce antes do último save; então UM grupo com uma instância por
-  falha e UMA Concentração. Ainda sem upcast de dano/duração, componentes,
-  preparação, spell attack real e cast de PLAYER (6.6F).
+  falha e UMA Concentração.
+  **6.6F/6.6F.1**: conjuração pelo JOGADOR (ownership → repertório → fonte → perfil
+  → recurso → componentes → casting time → economia → targeting) e o wiring da
+  UI na ficha.
+  **6.6G**: componentes V/S/M derivados do CATÁLOGO (nunca do texto), com
+  fornecedor/foco por FONTE e mãos vindas do inventário.
+  **6.6H**: duração ESTRUTURADA, relógio de ROUNDS em combate, triggers de fim
+  de turno, salvaguarda repetida e expiração no lifecycle — ver a seção própria
+  abaixo.
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
@@ -932,6 +939,72 @@ de implementar.
   não ganha essa mão.** Símbolo sagrado apenas `wornVisible` satisfaz M e não cria
   mão. Escudo marcado com `spellFocusKinds: ['holy-symbol']` funciona como foco
   segurado. Nada é largado/guardado automaticamente.
+
+### Duração, expiração e lifecycle por turno (6.6H)
+
+- **Duração é DADO do catálogo/execução** (`SpellDurationDefinition =
+  { kind: 'timed', amount, unit: 'round' | 'minute' | 'hour' }`), nunca parser de
+  `"Concentration, up to 1 minute"`. Concentração e duração são conceitos
+  separados: a duração máxima vale mesmo que a Concentração acabe antes.
+- **Relógio de combate = `Combat.round`** (já existia; reutilizado) + a ATIVAÇÃO
+  corrente (`turnSequence` segue sendo a identidade do turno). Nada de
+  `setTimeout`/`setInterval`/wall clock: pause, lag, refresh e restart não mudam
+  a contagem, e fora de combate **não existe** countdown (o projeto ainda não
+  tem world-time engine).
+- **Conversão**: `durationToCombatRounds` — 1 round = 1, 1 minuto = 10 rounds,
+  1 hora = 600. Nunca milissegundos.
+- **A duração começa no COMMIT.** O `SpellCast` grava `durationSnapshot`
+  (definição, `tracking`, e em combate `combatId`/`anchorCombatantId`/
+  `startedRoundNumber`/`startedTurnSequence`/`rounds`/`dueRoundNumber`) e cada
+  `EffectInstance` COPIA o snapshot — um Hold Person que nasce depois da
+  resolution barrier NÃO ganha 1 minuto novo. Cast antigo nunca é recalculado a
+  partir do catálogo atual.
+- **Fronteira determinística**: a magia expira ao INÍCIO da ativação do
+  `anchorCombatantId` em `dueRoundNumber = startedRoundNumber + rounds`. Se o
+  anchor não puder mais receber turno (morto/removido/inelegível), expira na
+  primeira ativação real daquele round, para a duração não ficar eterna.
+- **Processador central** (`effect-duration.service.ts`) roda no `nextTurn`
+  DEPOIS de avançar e ANTES de publicar o novo turno: encerra o GRUPO inteiro
+  com `duration-expired` (Effects + Conditions + modifiers pelo lifecycle
+  existente), cancela pendências contínuas e, se o grupo ficou vazio, encerra a
+  Concentração. É idempotente (guarda `status = 'active'`) e não reescreve o
+  histórico: um cast que resolveu `effect` continua `resolved/effect`.
+  Exceção: cast ainda `resolving` (barreira inicial) vencido vira
+  `resolved`/`no-effect` + `resolutionReason = 'duration-expired'`, com as
+  pendências iniciais canceladas — nunca fica `resolving` para sempre.
+- **Fora de combate** o snapshot é `tracking: 'manual'` (UI: "1 minuto —
+  acompanhamento manual"). O Mestre expira pelo MESMO lifecycle
+  (`POST /api/effects/:id/expire`) e dispara o gatilho manual
+  (`POST /api/effects/:id/triggers/:triggerKey/fire`, `operationId` = identidade
+  da ocorrência, retry devolve a mesma pendência). Fim de combate não encerra a
+  magia; o tempo restante passa a ser assistido.
+- **Turn triggers são da DEFINIÇÃO do EFEITO**
+  (`EffectTurnTriggerDefinition`: `key`, `timing: 'end-of-target-turn'`,
+  `kind: 'saving-throw'`, `ability`, `dc: { kind: 'origin-spell-cast' }`,
+  `optional`, `repeat`, `onSuccess: 'end-effect'`), snapshotados na instância.
+  Bless declara `[]`; Hold Person declara `repeat-save` (Sabedoria, opcional).
+  Nenhum `if spellId === ...` no motor.
+- **`PendingEffectSave.phase`** distingue `initial` (resolução do cast,
+  obrigatória) de `ongoing` (fim de turno de um Effect, pode ser opcional). A
+  contínua tem `effectInstanceId`, `triggerKey`, `triggerOccurrenceId`
+  determinístico (`combat:<id>:turn:<seq>:effect:<id>:trigger:<key>`),
+  `optional` e `declinedAt`, com índice ÚNICO parcial no Postgres. Ela NUNCA
+  reabre o `SpellCast` e não cria cast/espaço/Ação.
+- **`nextTurn` bloqueia** com 409 `TURN_END_TRIGGER_PENDING` enquanto houver
+  pendência contínua `pending` do ator que está saindo; `turnSequence` e
+  `round` não avançam e o retry não duplica pendências. Basta o alvo ROLAR ou
+  RECUSAR (`decline`, só `ongoing` + `optional`): recusar é `declined`, não é
+  falha, e mantém o efeito ativo.
+- **Sucesso** encerra SOMENTE aquela instância (`repeat-save-success`) pelo
+  lifecycle central — o Paralyzed sai junto, outras fontes permanecem — e o
+  grupo vazio encerra a Concentração (idempotente, sem recursão). **Falha**
+  mantém o efeito. A CD vem do snapshot do cast de origem; bônus/modificadores
+  (inclusive Bless `+1d4` opcional) vêm do estado ATUAL do alvo, sem revalidar
+  alcance/visão/tipo e sem auto-fail de Sabedoria por Paralyzed.
+- `smoke-spell-duration.ts` cobre regras puras, snapshot no COMMIT, tracking
+  manual, bloqueio/recusa/sucesso do fim de turno, grupo vazio, expiração por
+  duração e cast `resolving` vencido, além de fim de combate preservando o
+  efeito.
 - **Hook genérico de bloqueio:** modificador de Effect `spell-component-block`
   com `components: ('verbal'|'somatic'|'material')[]`. A mecânica bloqueia e a
   resposta é SANITIZADA (`SPELL_VERBAL_COMPONENT_UNAVAILABLE`…): o rótulo de um
@@ -1084,7 +1157,12 @@ Longo (Long Rest):
 **Não existe conversão global automática de once/day para Long Rest.** Para
 qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
-> Migrations: **52** (são 52 diretórios em `prisma/migrations`; a 6.6G acrescentou
+> Migrations: **60** (são 60 diretórios em `prisma/migrations`; a 6.6H criou
+> `20261104170000_add_spell_duration_lifecycle` com `durationSnapshot`/
+> `resolutionReason` no `SpellCast`, `durationSnapshot`/`turnTriggers` no
+> `EffectInstance` e `phase`/`effectInstanceId`/`triggerKey`/
+> `triggerOccurrenceId`/`optional`/`declinedAt` no `PendingEffectSave`, além do
+> único parcial da ocorrência contínua; a 6.6G acrescentou
 > `componentsSnapshot` ao `SpellCast`; a 6.5A criou
 > `effect_instances` + `effect_operations`, a 6.5B acrescentou `modifiers` e a
 > 6.5C, `conditions`).

@@ -6,6 +6,7 @@ import {
   applyHoldPersonSchema,
   createEffectSchema,
   endEffectSchema,
+  manualEffectTriggerSchema,
 } from './effects.schema.js';
 import { createEffect, endEffect, listEffectsForTarget, type EffectActor } from './effects.service.js';
 import { applyBless } from './bless.service.js';
@@ -14,6 +15,8 @@ import {
   cancelPendingEffectSave,
   listPendingEffectSaves,
 } from './hold-person.service.js';
+import { declinePendingEffectSave, fireEffectTurnTrigger } from './turn-trigger.service.js';
+import { expireEffectByDuration } from '../spells/execution/effect-duration.service.js';
 
 /** Autor do pedido, sempre do token (nunca do corpo). */
 function actorOf(req: { user?: { sub: string; username: string; role: 'MASTER' | 'PLAYER' } }): EffectActor {
@@ -117,6 +120,46 @@ effectsRouter.post('/', requireRole('MASTER'), async (req, res) => {
   };
   const result = await createEffect(actor, parsed.data);
   res.status(result.replayed ? 200 : 201).json(result);
+});
+
+/**
+ * POST /api/effects/pending-saves/:id/decline — RECUSA de salvaguarda OPCIONAL
+ * (Fase 6.6H). Só `phase = 'ongoing'` + `optional`: o efeito continua ativo e o
+ * próximo turno oferece nova oportunidade. Recusar não é falhar.
+ */
+effectsRouter.post('/pending-saves/:id/decline', async (req, res) => {
+  res.json({ pending: await declinePendingEffectSave(actorOf(req), String(req.params.id)) });
+});
+
+/**
+ * POST /api/effects/:id/expire — expiração de DURAÇÃO pelo Mestre (6.6H).
+ *
+ * Fora de combate é o único caminho (não existe world clock nem timer real); em
+ * combate o processador automático usa o MESMO lifecycle. Não cria um segundo
+ * Effect engine.
+ */
+effectsRouter.post('/:id/expire', requireRole('MASTER'), async (req, res) => {
+  res.json(await expireEffectByDuration(actorOf(req), String(req.params.id)));
+});
+
+/**
+ * POST /api/effects/:id/triggers/:triggerKey/fire — disparo MANUAL do trigger
+ * de turno (6.6H), para quando não há turno de combate aplicável.
+ */
+effectsRouter.post('/:id/triggers/:triggerKey/fire', requireRole('MASTER'), async (req, res) => {
+  const parsed = manualEffectTriggerSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json({
+    pending: await fireEffectTurnTrigger(
+      actorOf(req),
+      String(req.params.id),
+      String(req.params.triggerKey),
+      parsed.data.operationId,
+    ),
+  });
 });
 
 /** POST /api/effects/:id/end — encerramento manual (só MASTER). */

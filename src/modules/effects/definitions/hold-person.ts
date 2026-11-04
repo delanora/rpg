@@ -1,4 +1,5 @@
 import type { Condition } from '../../shared/conditions.js';
+import type { EffectTurnTriggerDefinition } from '../effect-turn-triggers.js';
 
 /**
  * FASE 6.5H — DEFINIÇÃO REAL DE HOLD PERSON (PHB 2014, p. 251).
@@ -35,6 +36,34 @@ export const HOLD_PERSON_SAVE_ABILITY = 'wisdom' as const;
 
 /** Condition do PHB aplicada pelo efeito (nunca uma Condition inventada). */
 export const HOLD_PERSON_CONDITIONS: Condition[] = ['paralyzed'];
+
+/**
+ * FASE 6.6H — SALVAGUARDA REPETIDA (PHB 2014, p. 251).
+ *
+ * "At the end of each of its turns, the target can make another Wisdom saving
+ * throw. On a success, the spell ends on the target."
+ *
+ * • `end-of-target-turn` — no fim do turno DO ALVO, nunca do conjurador;
+ * • `optional: true` — o texto diz "can": o alvo escolhe rolar ou recusar, e
+ *   recusar NÃO encerra o efeito (o próximo turno oferece outra chance);
+ * • `dc: origin-spell-cast` — snapshot do `SpellCast` de origem, jamais
+ *   recalculada com o atributo atual do conjurador;
+ * • `onSuccess: end-effect` — sucesso encerra SOMENTE aquela instância.
+ */
+export function holdPersonTurnTriggers(): EffectTurnTriggerDefinition[] {
+  return [
+    {
+      key: 'repeat-save',
+      timing: 'end-of-target-turn',
+      kind: 'saving-throw',
+      ability: HOLD_PERSON_SAVE_ABILITY,
+      dc: { kind: 'origin-spell-cast' },
+      optional: true,
+      repeat: 'every-turn',
+      onSuccess: 'end-effect',
+    },
+  ];
+}
 
 /** Faixa técnica da CD manual de prova (ver `PENDING_EFFECT_DC_MANUAL`). */
 export const HOLD_PERSON_MIN_DC = 1;

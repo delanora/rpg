@@ -250,6 +250,45 @@ export function rollPendingEffectSave(input: {
   }).then(() => undefined);
 }
 
+/**
+ * FASE 6.6H — RECUSA de uma salvaguarda OPCIONAL de fim de turno.
+ *
+ * "Can make another saving throw": o alvo pode escolher NÃO tentar. Recusar
+ * não é falhar, não rola dado e não encerra o efeito — o próximo turno oferece
+ * outra oportunidade. Só existe em pendências `ongoing` + `optional`.
+ */
+export function declinePendingEffectSave(pendingId: string): Promise<PendingEffectSaveDto> {
+  return api<{ pending: PendingEffectSaveDto }>(`/api/effects/pending-saves/${pendingId}/decline`, {
+    method: 'POST',
+  }).then((result) => result.pending);
+}
+
+/**
+ * Expiração MANUAL da DURAÇÃO (Mestre).
+ *
+ * Fora de combate não existe relógio autoritativo nem timer real: quem declara
+ * que o minuto narrativo passou é o Mestre, e o servidor desmonta o grupo pelo
+ * MESMO lifecycle de encerramento.
+ */
+export function expireEffectDuration(effectId: string): Promise<{
+  targets: MechanicalEntity[];
+  concentrationEnded: boolean;
+  alreadyEnded: boolean;
+}> {
+  return api(`/api/effects/${effectId}/expire`, { method: 'POST' });
+}
+
+/** Disparo MANUAL do trigger de turno (fora de combate, só Mestre). */
+export function fireEffectTurnTrigger(
+  effectId: string,
+  triggerKey: string,
+): Promise<PendingEffectSaveDto> {
+  return api<{ pending: PendingEffectSaveDto }>(
+    `/api/effects/${effectId}/triggers/${encodeURIComponent(triggerKey)}/fire`,
+    { method: 'POST', body: { operationId: createOperationId() } },
+  ).then((result) => result.pending);
+}
+
 /** Encerra UMA instância (o servidor nunca encerra por label). */
 export function endEffect(effectId: string): Promise<EffectDto> {
   return api<{ effect: EffectDto }>(`/api/effects/${effectId}/end`, {

@@ -22,6 +22,7 @@ import {
 } from './pending-effect-saves.js';
 import { cancelSpellCastForPending, castProofSpell } from '../spells/execution/spell-cast.service.js';
 import { tryFinalizeSaveEffectCast } from '../spells/execution/save-effect-finalizer.js';
+import { applyOngoingSaveOutcome } from './turn-trigger.service.js';
 import type { ApplyHoldPersonInput } from './effects.schema.js';
 
 /**
@@ -339,7 +340,15 @@ export async function resolvePendingEffectSave(
       let affectedTargets: MechanicalEntity[] = [target.entity];
       let castTargets: MechanicalEntity[] = [target.entity];
 
-      if (row.spellCastId) {
+      if (row.phase === 'ongoing') {
+        // 6.6H: salvaguarda de efeito CONTÍNUO. Não reabre o SpellCast e não
+        // passa pela resolution barrier: sucesso encerra SOMENTE esta instância
+        // (o lifecycle remove o Paralyzed da própria fonte e, se o grupo ficou
+        // vazio, encerra a Concentração); falha/recusa mantêm o efeito ativo.
+        const outcome = await applyOngoingSaveOutcome(row, success, db);
+        affectedTargets = uniqueEntities([target.entity, ...outcome.targets]);
+        castTargets = [target.entity];
+      } else if (row.spellCastId) {
         // RESOLUTION BARRIER: só cria Effect/Concentração quando TODOS os saves
         // do cast resolveram. Um alvo que passou nunca recebe Paralyzed.
         const finalization = await tryFinalizeSaveEffectCast(row.spellCastId, db);

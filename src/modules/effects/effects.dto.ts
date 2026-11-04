@@ -16,6 +16,7 @@ import {
   type EffectStatus,
   type EffectVisibility,
 } from './effects.schema.js';
+import { durationSummary, parseDurationSnapshot } from '../spells/execution/spell-duration.js';
 
 /**
  * DTO SEGURO de uma instância de efeito.
@@ -52,6 +53,14 @@ export interface EffectDto {
    * chega ao jogador, então esta definição também não vaza.
    */
   conditions: EffectCondition[];
+  /**
+   * DURAÇÃO/lifecycle do efeito contínuo (6.6H), lida do SNAPSHOT da instância —
+   * nunca do catálogo atual. `null` em efeitos sem duração acompanhada. A
+   * privacidade é a MESMA do efeito (efeito `private` não chega ao jogador),
+   * então a duração de um efeito secreto nunca vaza. `remainingRounds` é
+   * leitura para a UI: quem decide expiração é o servidor.
+   */
+  duration: ReturnType<typeof durationSummary> | null;
   createdAt: string;
   createdBy: string | null;
   endedAt: string | null;
@@ -63,7 +72,10 @@ function entityOf(kind: string | null, id: string | null): MechanicalEntity | nu
   return { kind: kind as MechanicalEntity['kind'], id };
 }
 
-export function toEffectDto(row: EffectInstance): EffectDto {
+export function toEffectDto(
+  row: EffectInstance,
+  clock: { roundNumber: number } | null = null,
+): EffectDto {
   const sourceEntity = entityOf(row.sourceEntityKind, row.sourceEntityId);
   const endReason = effectEndReasonSchema.safeParse(row.endReason).success
     ? (row.endReason as EffectEndReason)
@@ -82,6 +94,10 @@ export function toEffectDto(row: EffectInstance): EffectDto {
     status: effectStatusSchema.catch('ended').parse(row.status),
     modifiers: parseEffectModifiers(row.modifiers),
     conditions: parseEffectConditions(row.conditions),
+    duration: (() => {
+      const snapshot = parseDurationSnapshot(row.durationSnapshot);
+      return snapshot ? durationSummary(snapshot, clock) : null;
+    })(),
     createdAt: row.createdAt.toISOString(),
     createdBy: row.createdBy ?? null,
     endedAt: row.endedAt ? row.endedAt.toISOString() : null,
@@ -97,5 +113,5 @@ export function toEffectDto(row: EffectInstance): EffectDto {
 export function effectsVisibleTo(rows: EffectInstance[], isMaster: boolean): EffectDto[] {
   return rows
     .filter((row) => isMaster || row.visibility === 'public')
-    .map(toEffectDto);
+    .map((row) => toEffectDto(row));
 }

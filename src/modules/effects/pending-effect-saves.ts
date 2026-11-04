@@ -20,7 +20,7 @@ import { HOLD_PERSON_DEFINITION_ID, HOLD_PERSON_LABEL } from './definitions/hold
  * fixados pelo SERVIDOR; o cliente só escolhe caster/alvo (Mestre) e resolve.
  */
 
-export type PendingEffectSaveStatus = 'pending' | 'resolved' | 'cancelled';
+export type PendingEffectSaveStatus = 'pending' | 'resolved' | 'cancelled' | 'declined';
 export type PendingEffectSaveResult = 'success' | 'failure';
 
 export interface PendingEffectSaveDto {
@@ -39,6 +39,17 @@ export interface PendingEffectSaveDto {
   targetEntity: MechanicalEntity;
   groupId: string | null;
   effectId: string | null;
+  /**
+   * FASE 6.6H: `initial` = barreira da conjuração; `ongoing` = salvaguarda
+   * repetida de um efeito contínuo (fim do turno do alvo).
+   */
+  phase: 'initial' | 'ongoing';
+  /** `true` quando o alvo pode RECUSAR (o texto diz "can"). */
+  optional: boolean;
+  /** Instância dona do trigger (só `ongoing`). */
+  effectInstanceId: string | null;
+  triggerKey: string | null;
+  declinedAt: string | null;
   /** Conjuração que originou a pendência (6.6A; null em fluxos antigos). */
   spellCastId: string | null;
   createdAt: string;
@@ -56,7 +67,7 @@ function entityOf(kind: string, id: string): MechanicalEntity {
 
 /** DTO seguro: nada de fingerprint/operationId, nada de dado de rolagem. */
 export function toPendingEffectSaveDto(row: PendingEffectSave): PendingEffectSaveDto {
-  const status = (['pending', 'resolved', 'cancelled'] as const).includes(
+  const status = (['pending', 'resolved', 'cancelled', 'declined'] as const).includes(
     row.status as PendingEffectSaveStatus,
   )
     ? (row.status as PendingEffectSaveStatus)
@@ -77,6 +88,11 @@ export function toPendingEffectSaveDto(row: PendingEffectSave): PendingEffectSav
     targetEntity: entityOf(row.targetEntityKind, row.targetEntityId),
     groupId: row.groupId ?? null,
     effectId: row.effectId ?? null,
+    phase: row.phase === 'ongoing' ? 'ongoing' : 'initial',
+    optional: row.optional,
+    effectInstanceId: row.effectInstanceId ?? null,
+    triggerKey: row.triggerKey ?? null,
+    declinedAt: row.declinedAt ? row.declinedAt.toISOString() : null,
     spellCastId: row.spellCastId ?? null,
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

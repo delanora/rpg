@@ -1,5 +1,6 @@
 import type { SpellCast } from '@prisma/client';
 import type { MechanicalEntity } from '../../shared/conditions.js';
+import { durationSummary, parseDurationSnapshot } from './spell-duration.js';
 
 /**
  * DTO SEGURO de uma conjuração (Fase 6.6A).
@@ -75,6 +76,23 @@ export interface SpellCastDto {
     consumed: boolean;
     spellSpecifiedCostGp: number | null;
   } | null;
+  /**
+   * SNAPSHOT da DURAÇÃO (6.6H): definição, modo de acompanhamento e rounds.
+   * `null` em magias sem duração acompanhada ou casts anteriores à migração.
+   */
+  duration: {
+    label: string;
+    unit: string;
+    amount: number;
+    tracking: 'combat' | 'manual';
+    totalRounds: number | null;
+    dueRoundNumber: number | null;
+  } | null;
+  /**
+   * Motivo auditável de um cast fechado SEM Effect por decisão do motor
+   * (ex.: `duration-expired` na barreira inicial). `null` nos demais casos.
+   */
+  resolutionReason: string | null;
   createdAt: string;
   committedAt: string;
   resolvedAt: string | null;
@@ -196,6 +214,20 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
     casting,
     targeting: targetingOf(row.targetingSnapshot),
     components: componentsOf(row.componentsSnapshot),
+    duration: (() => {
+      const snapshot = parseDurationSnapshot(row.durationSnapshot);
+      if (!snapshot) return null;
+      const summary = durationSummary(snapshot, null);
+      return {
+        label: summary.label,
+        unit: summary.unit,
+        amount: summary.amount,
+        tracking: summary.tracking,
+        totalRounds: summary.totalRounds,
+        dueRoundNumber: summary.dueRoundNumber,
+      };
+    })(),
+    resolutionReason: row.resolutionReason ?? null,
     createdAt: row.createdAt.toISOString(),
     committedAt: row.committedAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

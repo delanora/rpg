@@ -1708,6 +1708,101 @@ console.log('Check-combat-ui — refino da UI de combate');
       repertoirePanel.includes('spell-components') &&
       !repertoirePanel.includes('quantity - 1')
   );
+
+  // ------------------------------------------------------------------------
+  // 6.6H — DURAÇÃO, EXPIRAÇÃO E LIFECYCLE POR TURNO
+  // ------------------------------------------------------------------------
+  const durationDomain = source('../src/modules/spells/execution/spell-duration.ts');
+  const durationService = source(
+    '../src/modules/spells/execution/effect-duration.service.ts',
+  );
+  const turnTriggerService = source('../src/modules/effects/turn-trigger.service.ts');
+  const groupLifecycle = source('../src/modules/effects/effect-group-lifecycle.ts');
+  const holdPersonTriggerDefinition = source(
+    '../src/modules/effects/definitions/hold-person.ts',
+  );
+  const combatServiceSource = source('../src/modules/combat/combat.service.ts');
+  const pendingSavePanel = source(
+    'src/combat/components/PendingEffectSavePanel.tsx',
+  );
+  check(
+    'CB102) duração é DADO ESTRUTURADO — nenhum parser do texto da magia',
+    durationDomain.includes('SpellDurationDefinition') &&
+      !durationDomain.includes('At the end of') &&
+      !durationService.includes('At the end of') &&
+      !durationDomain.includes('.split(') &&
+      !durationDomain.includes('.match(')
+  );
+  check(
+    'CB103) 1 minuto de combate = 10 rounds; nenhum timer/wall clock real',
+    durationDomain.includes('minute: 10') &&
+      durationDomain.includes('hour: 600') &&
+      !durationDomain.includes('setTimeout(') &&
+      !durationDomain.includes('setInterval(') &&
+      !durationDomain.includes('Date.now(') &&
+      !durationService.includes('setTimeout(') &&
+      !durationService.includes('setInterval(') &&
+      !durationService.includes('Date.now(')
+  );
+  check(
+    'CB104) a duração começa no COMMIT e o Effect herda o snapshot',
+    castService.includes('buildDurationSnapshot') &&
+      castService.includes('commitSpellCast') &&
+      source('../src/modules/spells/execution/save-effect-finalizer.ts').includes(
+        'cast.durationSnapshot',
+      )
+  );
+  check(
+    'CB105) Hold Person declara o trigger na DEFINIÇÃO (sem hardcode no motor)',
+    holdPersonTriggerDefinition.includes("key: 'repeat-save'") &&
+      holdPersonTriggerDefinition.includes('end-of-target-turn') &&
+      !combatServiceSource.includes('hold-person') &&
+      !turnTriggerService.includes('hold-person')
+  );
+  check(
+    'CB106) salvaguarda repetida NÃO cria SpellCast nem gasta Ação/espaço',
+    turnTriggerService.includes("phase: 'ongoing'") &&
+      turnTriggerService.includes('spellCastId: null') &&
+      !turnTriggerService.includes('spendCastingResource') &&
+      !turnTriggerService.includes('spendEconomy') &&
+      turnTriggerService.includes('spellSaveDc')
+  );
+  check(
+    'CB107) `nextTurn` bloqueia com pendência de fim de turno',
+    combatServiceSource.includes('openEndOfTurnTriggers') &&
+      combatServiceSource.includes('TURN_END_TRIGGER_PENDING')
+  );
+  check(
+    'CB108) recusa só existe em `ongoing` + opcional e é registrada como `declined`',
+    turnTriggerService.includes("phase !== 'ongoing'") &&
+      turnTriggerService.includes("status: 'declined'") &&
+      turnTriggerService.includes('declinedAt') &&
+      pendingSavePanel.includes('declinePendingEffectSave')
+  );
+  check(
+    'CB109) grupo vazio encerra a Concentração (idempotente, sem loop)',
+    groupLifecycle.includes('clearConcentrationForGroup') &&
+      groupLifecycle.includes('remaining > 0') &&
+      !groupLifecycle.includes('while (')
+  );
+  check(
+    'CB110) expiração roda na ativação do turno e só afeta efeitos ativos',
+    combatServiceSource.includes('processDurationExpirations') &&
+      durationService.includes("status: 'active'") &&
+      durationService.includes('duration-expired')
+  );
+  check(
+    'CB111) fora de combate o acompanhamento é MANUAL (sem relógio falso)',
+    durationDomain.includes("tracking: 'manual'") &&
+      durationDomain.includes('acompanhamento manual') &&
+      !durationDomain.includes('world clock')
+  );
+  check(
+    'CB112) a UI distingue salvaguarda inicial × fim de turno',
+    pendingSavePanel.includes("phase === 'ongoing'") &&
+      pendingSavePanel.includes('fim do turno') &&
+      pendingSavePanel.includes('Não tentar neste turno')
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
