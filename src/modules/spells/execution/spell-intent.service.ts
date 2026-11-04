@@ -391,6 +391,28 @@ export async function cancelSpellCastIntent(
 }
 
 /**
+ * Intenção PENDENTE de um personagem (a ficha restaura "aguardando o Mestre"
+ * depois de refresh/reconnect). Combatente de personagem cai na mesma ficha.
+ */
+export async function pendingIntentOfCharacter(characterId: string): Promise<SpellCastIntent | null> {
+  const rows = await prisma.spellCastIntent.findMany({
+    where: { status: 'pending' },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+  });
+  for (const row of rows) {
+    if (row.casterEntityKind === 'character' && row.casterEntityId === characterId) return row;
+    if (row.casterEntityKind !== 'combatant') continue;
+    const combatant = await prisma.combatant.findUnique({
+      where: { id: row.casterEntityId },
+      select: { characterId: true },
+    });
+    if (combatant?.characterId === characterId) return row;
+  }
+  return null;
+}
+
+/**
  * Fila de confirmação: o Mestre vê TODAS as pendentes; o jogador só as dele.
  * Depois de `pending`, a lista lateral não mostra histórico (o cast committed
  * já se apresenta pelos canais normais).

@@ -1,6 +1,6 @@
-import type { DeathUpdatedPayload, EffectsUpdatedPayload, MechanicalUpdatedPayload } from './types';
 import { useEffect, useRef, useState } from 'react';
 import { createSocket } from './socket';
+import { publishSpellIntent } from './spellcastingApi';
 import type {
   AttackResolvedPayload,
   CharacterDeletedPayload,
@@ -11,7 +11,9 @@ import type {
   CreatureCreatedPayload,
   CreatureDeletedPayload,
   CreatureUpdatedPayload,
+  DeathUpdatedPayload,
   DiceRolledPayload,
+  EffectsUpdatedPayload,
   GameConfigPayload,
   ItemCreatedPayload,
   ItemDeletedPayload,
@@ -20,6 +22,7 @@ import type {
   LongRestRequestUpdatedPayload,
   LocalityDeletedPayload,
   LocalityUpdatedPayload,
+  MechanicalUpdatedPayload,
   MusicStatePayload,
   MusicTracksPayload,
   OnlineUser,
@@ -29,6 +32,7 @@ import type {
   RegionDeletedPayload,
   RegionUpdatedPayload,
   SheetUpdatedPayload,
+  SpellIntentUpdatedPayload,
   ShortRestCompletedPayload,
   ShortRestRequestUpdatedPayload,
   TableRollActivePayload,
@@ -60,6 +64,8 @@ export interface RealtimeHandlers {
    * o jogador só recebe os `public`; o Mestre recebe tudo.
    */
   onEffectsUpdated?: (payload: EffectsUpdatedPayload) => void;
+  /** Intenção de conjuração mudou (6.6F): o servidor já filtrou por papel. */
+  onSpellIntentUpdated?: (payload: SpellIntentUpdatedPayload) => void;
   /**
    * Ciclo de morte mudou (Fase 6.3). Chega ao dono (personagens) e à sala dos
    * MESTRES — o Teste contra a Morte de um NPC nunca é enviado a jogadores.
@@ -123,6 +129,12 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('creature:created', (payload) => handlersRef.current.onCreatureCreated?.(payload));
     socket.on('creature:updated', (payload) => handlersRef.current.onCreatureUpdated?.(payload));
     socket.on('creature:deleted', (payload) => handlersRef.current.onCreatureDeleted?.(payload));
+    socket.on('spells:intent-updated', (payload) => {
+      // Fase 6.6F.1: a ficha (que pode estar longe na árvore) escuta por um
+      // barramento de módulo; nada de props atravessando SheetPage → SheetView.
+      publishSpellIntent(payload);
+      handlersRef.current.onSpellIntentUpdated?.(payload);
+    });
 
     socket.on('region:created', (payload) => handlersRef.current.onRegionCreated?.(payload));
     socket.on('region:updated', (payload) => handlersRef.current.onRegionUpdated?.(payload));

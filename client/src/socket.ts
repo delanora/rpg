@@ -12,6 +12,7 @@ import type {
   LocalityDeletedPayload,
   LocalityUpdatedPayload,
   SheetUpdatedPayload,
+  SpellIntentUpdatedPayload,
 } from './events';
 import type {
   AttackResolvedPayload,
@@ -77,6 +78,8 @@ export interface ServerToClientEvents {
   'dice:roll': (payload: TableRollPayload) => void;
   'dice:active': (payload: TableRollActivePayload) => void;
   'combat:attack': (payload: AttackResolvedPayload) => void;
+  /** Intenção de conjuração (6.6F): o servidor filtra por papel (dono/Mestre). */
+  'spells:intent-updated': (payload: SpellIntentUpdatedPayload) => void;
   'short-rest:request-updated': (payload: ShortRestRequestUpdatedPayload) => void;
   'short-rest:completed': (payload: ShortRestCompletedPayload) => void;
   'long-rest:request-updated': (payload: LongRestRequestUpdatedPayload) => void;

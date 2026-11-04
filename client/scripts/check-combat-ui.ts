@@ -1576,6 +1576,81 @@ console.log('Check-combat-ui — refino da UI de combate');
       ) &&
       !spellCastService.includes('new Map(')
   );
+  // ------------------------------------------------------------------ //
+  // 6.6F.1 — WIRING DA CONJURAÇÃO NA FICHA                              //
+  // ------------------------------------------------------------------ //
+  const repertoirePanel = source('../client/src/components/SpellRepertoirePanel.tsx');
+  const castApiClient = source('../client/src/spellcastingApi.ts');
+  const castOptionsService = source(
+    '../src/modules/spells/execution/spell-cast-options.service.ts',
+  );
+  const newIdUses = repertoirePanel.split('operationId: newId()').length - 1;
+
+  check(
+    'CB86) a ficha conjura pela rota GENÉRICA (`/api/spells/cast`) e nunca pelas proof routes',
+    repertoirePanel.includes('await castSpell({') &&
+      castApiClient.includes("'/api/spells/cast'") &&
+      !repertoirePanel.includes('/effects/bless') &&
+      !repertoirePanel.includes('/effects/hold-person') &&
+      !repertoirePanel.includes('/spells/cast-proof')
+  );
+  check(
+    'CB87) fonte ambígua NUNCA é auto-escolhida: selector só existe com mais de uma fonte autorizada',
+    repertoirePanel.includes('sourceAmbiguous') &&
+      repertoirePanel.includes('options.sources.length === 1') &&
+      castOptionsService.includes('availability.authorized.map')
+  );
+  check(
+    'CB88) o cliente NÃO envia `castAtLevel` nem `maxTargets` — só o espaço escolhido',
+    castApiClient.includes('castingResource?: { kind:') &&
+      !castApiClient.includes('castAtLevel?:') &&
+      !castApiClient.includes('maxTargets?:') &&
+      !repertoirePanel.includes('castAtLevel:')
+  );
+  check(
+    'CB89) máximo de alvos é DERIVADO do espaço (por `castAtLevel`), sem hardcode por nome de magia',
+    repertoirePanel.includes('item.castAtLevel === castAtLevel') &&
+      castOptionsService.includes('targetingSummary(execution.targeting, at)') &&
+      !castOptionsService.includes("'bless'") &&
+      !castOptionsService.includes("'hold-person'")
+  );
+  check(
+    'CB90) PLAYER não tem confirmação espacial: nenhum checkbox de alcance/visão/caminho',
+    !repertoirePanel.includes('spatialConfirmation') &&
+      !repertoirePanel.includes('withinRange') &&
+      !repertoirePanel.includes('clearPath') &&
+      source('../src/modules/spells/execution/spell-cast-options.service.ts').includes(
+        'SPELL_CASTER_FORBIDDEN',
+      )
+  );
+  check(
+    'CB91) intenção pendente aparece como "aguardando o Mestre" e pode ser cancelada pelo jogador',
+    repertoirePanel.includes('aguardando confirmação do Mestre') &&
+      repertoirePanel.includes('await cancelIntent(intent.id)') &&
+      repertoirePanel.includes('Nenhum espaço, Ação ou Concentração foi usada')
+  );
+  check(
+    'CB92) `operationId` é gerado UMA vez por tentativa (retry reusa o mesmo id)',
+    newIdUses === 1 && repertoirePanel.includes('operationId: draft.operationId') &&
+      !repertoirePanel.includes('newId()}')
+  );
+  check(
+    'CB93) nenhum gasto otimista: slots/Ação/Concentração só mudam por estado autoritativo',
+    !repertoirePanel.includes('remaining - 1') &&
+      !repertoirePanel.includes('setSlots') &&
+      repertoirePanel.includes('await load();') &&
+      repertoirePanel.includes('subscribeSpellIntents(')
+  );
+  check(
+    'CB94) `cast-options` é READ-ONLY e protegido por ownership (não cria Intent/cast/gasto)',
+    source('../src/modules/spells/execution/spell-cast.routes.ts').includes(
+      "spellsRouter.get('/cast-options/:characterId/:spellId'",
+    ) &&
+      castOptionsService.includes('assertCharacterAccess') &&
+      !castOptionsService.includes('.create(') &&
+      !castOptionsService.includes('spendEconomy') &&
+      !castOptionsService.includes('spendSlot')
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
