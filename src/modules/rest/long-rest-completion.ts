@@ -34,7 +34,9 @@ import {
   spellSlotsUsedFrom,
   spellsStateSchema,
   withSpellSlotsUsed,
+  type SpellsStateInput,
 } from '../characters/characters.schema.js';
+import { activatePreparationPlans } from '../spells/execution/preparation-plan.js';
 import {
   characterClassAdjustments,
   characterMaxHp,
@@ -153,6 +155,17 @@ export interface LongRestCharacterCompletionDto {
    * Vazio no fluxo automático.
    */
   masterPreservedActiveEffects: MasterPreservedActiveEffect[];
+  /**
+   * PREPARAÇÃO DE MAGIAS ativada neste descanso (Fase 6.6F): cada fonte cujo
+   * PLANO virou ACTIVE, com os ids que passaram a valer.
+   */
+  preparationActivated?: { sourceId: string; spellIds: string[] }[];
+  /**
+   * Fontes cujo plano ficou INVÁLIDO e foi preservado (atributo/nível/grimório
+   * mudaram). O ACTIVE anterior continua valendo — nada é escolhido no lugar do
+   * jogador e o descanso NÃO é interrompido por isso.
+   */
+  preparationInvalid?: { sourceId: string; reason: string }[];
 }
 
 /**
@@ -466,10 +479,39 @@ export async function completeLongRest(
     const spellSlotLevelsRestored = Object.keys(usedBefore)
       .map(Number)
       .sort((a, b) => a - b);
-    const nextSpells = {
+    const nextSpells: SpellsStateInput = {
+      ...parseJson<SpellsStateInput>(spellsStateSchema, character.spells, {
+        list: [],
+        slotsUsed: {},
+        pactMagic: { used: 0 },
+      }),
       ...withSpellSlotsUsed(character.spells, {}),
       pactMagic: { used: 0 },
     };
+
+    // --- PREPARAÇÃO DE MAGIAS (6.6F): o plano vira ACTIVE só AQUI -------------
+    // Decisão de produto: o jogador planeja quando quiser; a preparação
+    // MECÂNICA muda apenas num Descanso Longo válido. O plano é REVALIDADO
+    // contra o mundo atual (atributo, nível de classe, subclasse, grimório) e,
+    // se ficou inválido, o ACTIVE anterior é preservado e a fonte é reportada —
+    // nunca corrigimos o plano no lugar do jogador.
+    const preparation = activatePreparationPlans({
+      spells: parseJson<SpellsStateInput>(spellsStateSchema, nextSpells, {
+        list: [],
+        slotsUsed: {},
+        pactMagic: { used: 0 },
+      }),
+      classes: classEntries,
+      abilityScores: {
+        strength: character.strength,
+        dexterity: character.dexterity,
+        constitution: character.constitution,
+        intelligence: character.intelligence,
+        wisdom: character.wisdom,
+        charisma: character.charisma,
+      },
+    });
+    nextSpells.list = preparation.list;
 
     // --- MAGIA DE PACTO: pool PRÓPRIO, também zerado pelo descanso (PHB 2014).
     //     Só o USO é persistido; o total vem do nível de Bruxo (nunca gravado).
@@ -584,6 +626,8 @@ export async function completeLongRest(
       pactMagicRestored,
       activeEffectsEnded: cleanup.ended,
       masterPreservedActiveEffects: cleanup.masterPreserved,
+      preparationActivated: preparation.activated,
+      preparationInvalid: preparation.invalid,
     });
 
     sheets.push({
@@ -598,6 +642,7 @@ export async function completeLongRest(
         ...(pactMagicRestored ? { pactMagicRestored: true } : {}),
         classState: nextClassState,
         racialState: nextRacialState,
+        ...(preparation.activated.length > 0 ? { spellPreparation: preparation.activated } : {}),
         ...(nextInventory ? { inventory: nextInventory } : {}),
       },
     });

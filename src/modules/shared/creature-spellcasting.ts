@@ -98,3 +98,31 @@ export function creatureSpellcastingUsedOf(value: unknown): CreatureSpellcasting
 export function emptyCreatureSpellcastingUsed(): CreatureSpellcastingUsed {
   return { spellSlotsUsed: {}, pactSlotUsed: 0 };
 }
+
+/* -------------------------------------------------------------------------- */
+/* FASE 6.6F — REPERTÓRIO EXPLÍCITO do statblock                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Repertório DECLARADO pelo statblock: os ids do catálogo que este NPC pode
+ * conjurar. Nada é inferido por ND, atributo ou existência de espaço — um NPC
+ * com slots e sem repertório NÃO conjura.
+ *
+ * O repertório pertence ao TEMPLATE (duas cópias do mesmo NPC conhecem as mesmas
+ * magias); o gasto de espaços continua na INSTÂNCIA. Não modela `innate`,
+ * `at-will`, `X/day` nem Arcanum Místico — essas formas ficam para outra fase.
+ */
+export const creatureSpellRepertoireSchema = z.object({
+  spellIds: z.array(z.string().trim().min(1).max(64)).max(60).default([]),
+});
+
+export type CreatureSpellRepertoire = z.infer<typeof creatureSpellRepertoireSchema>;
+
+/** Lê o repertório persistido; JSON inválido/ausente vira lista VAZIA. */
+export function creatureSpellRepertoireOf(value: unknown): CreatureSpellRepertoire {
+  const parsed = parseJson<CreatureSpellRepertoire>(creatureSpellRepertoireSchema, value, {
+    spellIds: [],
+  });
+  // Deduplica preservando a ordem declarada (a ordem não tem regra mecânica).
+  return { spellIds: [...new Set(parsed.spellIds)] };
+}

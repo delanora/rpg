@@ -1184,7 +1184,11 @@ console.log('Check-combat-ui — refino da UI de combate');
       spellExecutionRegistry.includes("applyOn: 'failure'") &&
       !spellExecutionRegistry.includes('manualSaveDc') &&
       spellExecutionDefinition.includes('profile: SpellcastingProfile') &&
-      spellCastService.includes('resolveSpellcastingProfile('),
+      // 6.6F: o perfil passou a ser resolvido na AUTORIZAÇÃO (por fonte), não no
+      // core — mesma pipeline, um só lugar.
+      source('../src/modules/spells/execution/spell-authorization.service.ts').includes(
+        'characterSpellcastingProfile(',
+      ),
   );
   check(
     'CB59) COMMIT encerra a Concentração anterior ANTES de resolver; nova Concentração só com Effect durável',
@@ -1197,12 +1201,19 @@ console.log('Check-combat-ui — refino da UI de combate');
       spellCastService.includes('if (!deriveConditionEffects(fresh.state).incapacitated && fresh.hpCurrent > 0)'),
   );
   check(
-    'CB60) rotas de prova são wrappers finos; API genérica é MASTER-only e PLAYER segue sem conjurar',
+    'CB60) rotas de prova são wrappers finos; a API genérica NÃO é exclusiva do Mestre e o controle do conjurador é do SERVIDOR',
     blessService.includes('castProofSpell(') &&
       holdPersonService.includes('castProofSpell(') &&
       !blessService.includes('endEffectsForConcentration') &&
       !blessService.includes("sourceType: 'effect'") &&
-      spellCastService.includes("if (actor.role !== 'MASTER')") &&
+      // 6.6F: quem conjura é decidido por `assertCasterControl` (PLAYER = próprio
+      // personagem; MASTER = ferramenta), nunca por um guard de role no route.
+      source('../src/modules/spells/execution/spell-authorization.service.ts').includes(
+        'export async function assertCasterControl',
+      ) &&
+      source('../src/modules/spells/execution/spell-intent.service.ts').includes(
+        'SPELL_SPATIAL_CONFIRMATION_FORBIDDEN',
+      ) &&
       source('../src/modules/spells/execution/spell-cast.routes.ts').includes(
         "spellsRouter.post('/cast-proof', requireRole('MASTER')",
       ) &&
@@ -1257,15 +1268,81 @@ console.log('Check-combat-ui — refino da UI de combate');
     !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('dc:') &&
       !spellcastingSource.includes('input.dc') &&
       !source('../src/modules/effects/effects.schema.ts').includes('dc: z.number()') &&
-      spellCastService.indexOf('resolveSpellcastingProfile(caster, input.spellcastingSource, db)') >
-        0 &&
-      spellCastService.indexOf('resolveSpellcastingProfile(caster, input.spellcastingSource, db)') <
-        spellCastService.indexOf('const cast = await commitSpellCast') &&
+      // 6.6F: a resolução do perfil vive na autorização e roda na fase VALIDATE,
+      // ANTES de qualquer custo.
+      spellCastService.includes('resolveSpellAuthorization(') &&
+      spellCastService.indexOf('resolveSpellAuthorization(') > 0 &&
       spellcastingProfileService.includes('SPELLCASTING_SOURCE_REQUIRED') &&
       spellcastingProfileService.includes('SPELLCASTING_SOURCE_INVALID') &&
       spellcastingProfileService.includes('SPELLCASTING_SOURCE_NOT_AVAILABLE') &&
       !spellcastingProfileService.includes("className ===") &&
       !spellcastingProfileService.includes('new Map(')
+  );
+  // CB81–CB85. Conjuração do JOGADOR e repertório (Fase 6.6F).
+  const spellRoutes66f = source('../src/modules/spells/execution/spell-cast.routes.ts');
+  const spellIntentService = source('../src/modules/spells/execution/spell-intent.service.ts');
+  const spellAuth66f = source('../src/modules/spells/execution/spell-authorization.service.ts');
+  const repertoireDomain = source('../src/modules/shared/spells/repertoire.ts');
+  const repertoireService = source('../src/modules/spells/execution/spell-repertoire.service.ts');
+  const intentMigration66f = source(
+    '../prisma/migrations/20261104120000_add_spell_repertoire_and_intents/migration.sql',
+  );
+  check(
+    'CB81) rota genérica /api/spells/cast usa o MESMO core; controle do conjurador e confirmação espacial são do SERVIDOR',
+    spellRoutes66f.includes("spellsRouter.post('/cast',") &&
+      spellRoutes66f.includes('await castSpell(actorOf(req), parsed.data)') &&
+      spellIntentService.includes('await executeCast(') &&
+      !spellIntentService.includes('new Map(') &&
+      spellAuth66f.includes('export async function assertCasterControl') &&
+      spellAuth66f.includes('SPELL_CASTER_FORBIDDEN') &&
+      spellIntentService.includes('SPELL_SPATIAL_CONFIRMATION_FORBIDDEN') &&
+      spellRoutes66f.includes("'/cast-proof', requireRole('MASTER')"),
+  );
+  check(
+    'CB82) elegibilidade por FONTE: lista + known/prepared/grimório, nível da própria classe (slot combinado não define acesso)',
+    repertoireDomain.includes('maxSpellLevelForSource') &&
+      !repertoireDomain.includes('spellSlotsForClasses') &&
+      repertoireDomain.includes('preparedActive') &&
+      repertoireDomain.includes('recorded') &&
+      repertoireService.includes('spellOnList(') &&
+      spellAuth66f.includes('resolveSpellAvailability(') &&
+      spellAuth66f.includes('SPELLCASTING_SOURCE_REQUIRED') &&
+      spellAuth66f.includes('SPELL_NOT_AVAILABLE_FROM_SOURCE'),
+  );
+  check(
+    'CB83) PLANEJADO ≠ ACTIVE: o cast lê o ACTIVE e o Descanso Longo (só ele) ativa o plano revalidado',
+    repertoireDomain.includes('planPreparationProblem') &&
+      spellAuth66f.includes('preparedActive: row.preparedActive') &&
+      source('../src/modules/spells/execution/preparation-plan.ts').includes(
+        'export function activatePreparationPlans',
+      ) &&
+      source('../src/modules/rest/long-rest-completion.ts').includes(
+        'activatePreparationPlans({',
+      ) &&
+      source('../src/modules/spells/execution/spell-preparation.service.ts').includes(
+        'expectedVersion',
+      ),
+  );
+  check(
+    'CB84) intenção PRÉ-COMMIT não gasta nada e a aprovação revalida antes do cast (um pending por caster no BANCO)',
+    intentMigration66f.includes('spell_cast_intents_one_pending_per_caster') &&
+      intentMigration66f.includes('spellRepertoire') &&
+      spellIntentService.includes("status: 'pending'") &&
+      spellIntentService.includes('deferUnknown: true') &&
+      spellIntentService.includes('commitIntent(') &&
+      spellIntentService.includes('SPELL_CAST_INTENT_PENDING') &&
+      !spellIntentService.includes('spellCast.create(') &&
+      spellRoutes66f.includes("'/intents/:id/approve', requireRole('MASTER')"),
+  );
+  check(
+    'CB85) repertório na ficha (ACTIVE × PLANEJADO) e fila de confirmação do Mestre; jogador nunca confirma espaço',
+    source('src/components/SpellRepertoirePanel.tsx').includes('savePreparationPlan') &&
+      !source('src/components/SpellRepertoirePanel.tsx').includes('spatialConfirmation') &&
+      source('src/components/MasterSpellIntentsPanel.tsx').includes('approveIntent') &&
+      source('../src/scripts/smoke-realtime.ts').includes(
+        'smokePlayerSpellcasting(BASE_URL, check)',
+      ) &&
+      source('../src/scripts/smoke-player-spellcasting.ts').includes('SPELL_CAST_INTENT_PENDING'),
   );
   check(
     'CB65) snapshot IMUTÁVEL do perfil no SpellCast (migration aditiva) e criatura com perfil explícito',

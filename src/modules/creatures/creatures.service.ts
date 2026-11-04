@@ -142,6 +142,12 @@ export async function updateCreature(
     if (value !== undefined) data[key] = value;
   }
 
+  // REPERTÓRIO EXPLÍCITO do statblock (6.6F): o Mestre declara quais magias do
+  // catálogo este NPC pode conjurar. Sem isto, ter CD e espaços não autoriza
+  // nada — e editar o repertório NÃO zera os espaços já gastos.
+  if (patch.spellRepertoire !== undefined) {
+    data.spellRepertoire = patch.spellRepertoire;
+  }
   if (patch.attacks !== undefined) data.attacks = patch.attacks;
   // Perfil de conjuração do statblock (6.6B): só o perfil, nunca um repertório.
   if (patch.spellcastingProfile !== undefined) {

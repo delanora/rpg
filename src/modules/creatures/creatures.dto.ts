@@ -15,8 +15,10 @@ import { creatureInventory, npcAttacks, npcEffectiveArmorClass } from './npc-she
 import {
   creatureSpellcastingMaxOf,
   creatureSpellcastingProfileOf,
+  creatureSpellRepertoireOf,
   type CreatureSpellcastingProfile,
   type CreatureSpellcastingResources,
+  type CreatureSpellRepertoire,
 } from '../shared/creature-spellcasting.js';
 
 /** Formato da criatura enviado ao frontend. */
@@ -55,6 +57,12 @@ export interface CreatureDto {
    * estado de quem conjura (template ou instância) e não vai para o DTO.
    */
   spellcastingResources: CreatureSpellcastingResources;
+  /**
+   * REPERTÓRIO EXPLÍCITO do statblock (6.6F): as magias que este NPC pode
+   * conjurar. Rota master-only — o jogador NUNCA recebe o repertório nem os
+   * espaços de um NPC.
+   */
+  spellRepertoire: CreatureSpellRepertoire;
   /**
    * Ataques do NPC em combate: os PRÓPRIOS + os derivados das armas equipadas.
    * Em criaturas-template fica vazio (o cliente usa só `attacks`).
@@ -173,6 +181,7 @@ export function toCreatureDto(
     attacks,
     spellcastingProfile: creatureSpellcastingProfileOf(creature.spellcastingProfile),
     spellcastingResources: creatureSpellcastingMaxOf(creature.spellcastingResources),
+    spellRepertoire: creatureSpellRepertoireOf(creature.spellRepertoire),
     resistances,
     immunities,
     vulnerabilities,

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
+import { seedSpellRepertoire } from './spell-slot-fixtures.js';
 import { signToken } from '../lib/jwt.js';
 import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
@@ -88,9 +89,10 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         dexterity: 14,
         // 6.6B: todo cast registra a FONTE de conjuração (perfil derivado).
         intelligence: 16,
-        // 6.6C: Bless (nível 1) agora gasta espaço; o pool completo do Mago 20
+        // 6.6C: Bless (nível 1) agora gasta espaço; o pool completo do Clérigo 20
         // sustenta todas as aplicações deste smoke.
-        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
+        // 6.6F: a fonte precisa LISTAR a magia — Bless não é do Mago.
+        classes: [{ classKey: 'cleric', subclass: '', level: 20 }],
         attacks: attacks as never,
       },
     });
@@ -114,10 +116,15 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         hpMax: 40,
         speed: 9,
         intelligence: 16,
-        classes: [{ classKey: 'wizard', subclass: '', level: 20 }],
+        classes: [{ classKey: 'cleric', subclass: '', level: 20 }],
       },
     });
     characterIds.push(hero.id, ally.id, third.id);
+    // 6.6F: autorização REAL — sem repertório gravado nenhuma destas fichas pode
+    // conjurar Bless, ainda que a engine saiba executá-la.
+    for (const id of [hero.id, ally.id, third.id]) {
+      await seedSpellRepertoire({ characterId: id, classKey: 'cleric', spellIds: ['bless'] });
+    }
     // 6.6B: para CONJURAR (Bless de stacking abaixo) a criatura precisa do perfil
     // explícito do statblock — existir no cadastro não a torna conjuradora.
     const goblin = await prisma.creature.create({
@@ -128,6 +135,8 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        // 6.6F: o repertório do statblock é EXPLÍCITO (nunca inferido por CR).
+        spellRepertoire: { spellIds: ['bless'] },
         // 6.6C: o statblock declara os espaços; sem eles o NPC não conjura.
         spellcastingResources: { spellSlots: [{ level: 1, max: 6 }, { level: 2, max: 3 }], pactSlot: null },
       },
@@ -140,6 +149,8 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
         hpMax: 20,
         speed: 9,
         spellcastingProfile: { ability: 'charisma', saveDc: 15, attackBonus: 7 },
+        // 6.6F: o repertório do statblock é EXPLÍCITO (nunca inferido por CR).
+        spellRepertoire: { spellIds: ['bless'] },
         spellcastingResources: { spellSlots: [{ level: 1, max: 6 }, { level: 2, max: 3 }], pactSlot: null },
       },
     });

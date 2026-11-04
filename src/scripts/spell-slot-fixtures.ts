@@ -1,12 +1,15 @@
 import { prisma } from '../config/prisma.js';
+import { getSpell } from '../modules/shared/spells/index.js';
+import { spellsStateSchema, type SpellsStateInput } from '../modules/characters/characters.schema.js';
+import { parseJson } from '../modules/shared/json.js';
 
 /**
  * Fixtures dos smokes da Fase 6.6C.
  *
  * Os espaços MÁXIMOS são sempre DERIVADOS — o teste não inventa capacidade. O
- * que ele pode fazer é (a) perguntar ao SERVIDOR quais espaços estão
- * disponíveis e escolher um deles e (b) simular um DESCANSO LONGO zerando o
- * uso persistido, que é exatamente o que o motor de descanso grava.
+ * que ele pode fazer é (a) perguntar ao SERVIDOR quais espaços estão disponíveis
+ * e escolher um deles e (b) simular um DESCANSO LONGO zerando o uso persistido,
+ * que é exatamente o que o motor de descanso grava.
  */
 export interface CastingResourceChoice {
   kind: 'spell-slot' | 'pact-slot';
@@ -33,6 +36,10 @@ const SPELL_CAST_ROUTES = ['/effects/bless', '/effects/hold-person', '/spells/ca
  * Injeta a evidência espacial APENAS nos corpos das rotas de conjuração. Usado
  * pelo `request` dos smokes: sem isso o servidor recusaria (corretamente) um
  * cast cujo alcance é UNKNOWN.
+ *
+ * A rota genérica `/spells/cast` fica FORA de propósito: quando o ator é o
+ * jogador, ele NÃO tem poder de confirmação espacial (6.6F) — o teste escolhe
+ * explicitamente se injeta ou não a evidência.
  */
 export function withSpatialEvidence(path: string, body: unknown): unknown {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
@@ -67,17 +74,98 @@ export async function pickCastingResource(
   return chosen ? { kind: chosen.kind, level: chosen.level } : null;
 }
 
-/** Consome o uso gravado de um personagem (equivalente a um Descanso Longo). */
+const EMPTY_SPELLS: SpellsStateInput = { list: [], slotsUsed: {}, pactMagic: { used: 0 } };
+
+async function spellsStateOf(characterId: string): Promise<SpellsStateInput> {
+  const row = await prisma.character.findUniqueOrThrow({
+    where: { id: characterId },
+    select: { spells: true },
+  });
+  return parseJson<SpellsStateInput>(spellsStateSchema, row.spells, EMPTY_SPELLS);
+}
+
+/**
+ * Consome o uso gravado de um personagem (equivalente a um Descanso Longo).
+ *
+ * Preserva `list` — desde a 6.6F o REPERTÓRIO mora nela; zerar os espaços não
+ * pode apagar o que o personagem conhece/prepara.
+ */
 export async function resetCastingSlots(characterId: string): Promise<void> {
+  const stored = await spellsStateOf(characterId);
   await prisma.character.update({
     where: { id: characterId },
     data: {
-      spells: {
-        list: [],
-        slotsUsed: {},
-        pactMagic: { used: 0 },
-      } as never,
+      spells: { ...stored, slotsUsed: {}, pactMagic: { used: 0 } } as never,
       version: { increment: 1 },
     },
+  });
+}
+
+/**
+ * Semeia o REPERTÓRIO (Fase 6.6F).
+ *
+ * As ferramentas de prova antigas NÃO autorizam mais uma magia: a autorização
+ * passou a exigir a regra real (lista da fonte + known/prepared/grimório). Este
+ * helper grava apenas o estado que o jogador teria escolhido, sem bypass:
+ *
+ *  • Mago → a linha significa "registrada no grimório"; `prepared` é o dia;
+ *  • Clérigo/Druida/Paladino → a linha é a lista preparada ACTIVE;
+ *  • conhecidas (Bardo/etc.) → a linha é a magia conhecida.
+ *
+ * `planned: true` grava o PLANO (`preparedPlanned`), que NÃO autoriza conjuração
+ * antes do Descanso Longo.
+ */
+export async function seedSpellRepertoire(input: {
+  characterId: string;
+  classKey: string;
+  spellIds: readonly string[];
+  /** `true` (padrão) = ACTIVE; `false` = registrada/conhecida, não preparada. */
+  prepared?: boolean;
+  /** Grava um PLANO pendente (só faz sentido com `prepared: false`). */
+  planned?: boolean;
+}): Promise<void> {
+  const stored = await spellsStateOf(input.characterId);
+  const rows = [...stored.list];
+  for (const spellId of input.spellIds) {
+    const spell = getSpell(spellId);
+    if (!spell) throw new Error(`fixture: magia "${spellId}" não existe no catálogo`);
+    const existing = rows.findIndex(
+      (row) => row.id === spellId && row.classKey === input.classKey,
+    );
+    const next = {
+      id: spell.id,
+      name: spell.namePt,
+      level: spell.level,
+      school: spell.school,
+      prepared: input.prepared ?? true,
+      ...(input.planned === undefined ? {} : { preparedPlanned: input.planned }),
+      classKey: input.classKey,
+    } as (typeof rows)[number];
+    if (existing >= 0) rows[existing] = { ...rows[existing], ...next };
+    else rows.push(next);
+  }
+  await prisma.character.update({
+    where: { id: input.characterId },
+    data: {
+      spells: { ...stored, list: rows } as never,
+      version: { increment: 1 },
+    },
+  });
+}
+
+/**
+ * Remove o PLANO (`preparedPlanned`) de uma fonte, deixando a preparação ACTIVE
+ * intacta — usado para provar a semântica de "planejado ≠ ativo".
+ */
+export async function clearSpellPlan(characterId: string, classKey: string): Promise<void> {
+  const stored = await spellsStateOf(characterId);
+  const list = stored.list.map((row) => {
+    if (row.classKey !== classKey) return row;
+    const { preparedPlanned: _planned, ...rest } = row;
+    return rest;
+  });
+  await prisma.character.update({
+    where: { id: characterId },
+    data: { spells: { ...stored, list } as never, version: { increment: 1 } },
   });
 }

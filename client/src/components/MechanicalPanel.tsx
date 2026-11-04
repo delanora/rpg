@@ -7,6 +7,7 @@ import { ConditionBadges } from '../combat/components/ConditionBadges';
 import { ConditionHistoryModal } from './ConditionHistoryModal';
 import { MasterConditionsPanel } from '../combat/components/MasterConditionsPanel';
 import { MasterEffectsPanel } from '../combat/components/MasterEffectsPanel';
+import { MasterSpellIntentsPanel } from './MasterSpellIntentsPanel';
 import { PendingEffectSavePanel } from '../combat/components/PendingEffectSavePanel';
 import { fetchEffects } from '../effectsApi';
 import { describeEffectModifiers } from '../effectModifiers';
@@ -220,6 +221,8 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
     {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
     {/* COMBATE: ferramenta compacta de Conditions do Mestre (mesmo domínio). */}
     {isMaster && variant === 'combat' ? <>
+      {/* 6.6F: fila de confirmação espacial da conjuração do jogador. */}
+      <MasterSpellIntentsPanel />
       <MasterEffectsPanel
         entity={entity}
         targetName={current.name}
