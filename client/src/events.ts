@@ -16,6 +16,7 @@ import type {
   RegionUpdatedPayload,
   Role,
   SheetUpdatedPayload,
+  SpellIntentUpdatedPayload,
 } from './types';
 
 export type {
@@ -35,6 +36,7 @@ export type {
   RegionDeletedPayload,
   RegionUpdatedPayload,
   SheetUpdatedPayload,
+  SpellIntentUpdatedPayload,
 };
 
 export interface ConnectionReadyPayload {

@@ -3,6 +3,7 @@ import {
   approveIntent,
   denyIntent,
   listIntents,
+  subscribeSpellIntents,
   type SpellCastIntent,
 } from '../spellcastingApi';
 
@@ -46,6 +47,9 @@ export function MasterSpellIntentsPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 6.6F.1: intenções criadas pela FICHA chegam por realtime (filtrado no servidor).
+  useEffect(() => subscribeSpellIntents(() => void load()), [load]);
 
   async function act(intentId: string, action: 'approve' | 'deny') {
     const intent = intents.find((item) => item.id === intentId);

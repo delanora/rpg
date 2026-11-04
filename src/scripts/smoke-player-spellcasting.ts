@@ -512,6 +512,71 @@ export async function smokePlayerSpellcasting(baseUrl: string, check: Check): Pr
       wrongSource.status === 409 && wrongSource.data?.error === 'SPELL_NOT_AVAILABLE_FROM_SOURCE',
       JSON.stringify(wrongSource.data),
     );
+    // =====================================================================
+    // J) cast-options — read-model da UI (6.6F.1): read-only e derivado
+    // =====================================================================
+    await seedSpellRepertoire({ characterId: cleric.id, classKey: 'cleric', spellIds: ['bless'] });
+    const castsBeforeOptions = await castCount(cleric.id);
+    const intentsBeforeOptions = await prisma.spellCastIntent.count({
+      where: { casterEntityId: cleric.id },
+    });
+    const options = await request(
+      `/spells/cast-options/${cleric.id}/bless`,
+      undefined,
+      ownerToken,
+    );
+    const optionTargeting = (options.data.targeting ?? []) as any[];
+    const maxAt = (level: number) =>
+      optionTargeting.find((item) => item.castAtLevel === level)?.maxTargets;
+    check(
+      '76.P.23) cast-options devolve fontes autorizadas, espaços válidos e o próprio personagem como alvo',
+      options.status === 200 &&
+        options.data.spell?.executable === true &&
+        options.data.sources?.length === 1 &&
+        options.data.sources?.[0]?.kind === 'class' &&
+        typeof options.data.sources?.[0]?.spellSaveDc === 'number' &&
+        options.data.resources?.length > 0 &&
+        options.data.targets?.some(
+          (target: any) => target.kind === 'character' && target.id === cleric.id && target.isSelf === true,
+        ) === true,
+      JSON.stringify({ status: options.status, data: options.data }).slice(0, 700),
+    );
+    check(
+      '76.P.24) máximo de alvos é DERIVADO do espaço escolhido (Bless 1º→3, 2º→4)',
+      maxAt(1) === 3 && maxAt(2) === 4,
+      JSON.stringify(optionTargeting),
+    );
+    check(
+      '76.P.25) cast-options é READ-ONLY: nenhum cast/intenção criado e nada gasto',
+      (await castCount(cleric.id)) === castsBeforeOptions &&
+        (await prisma.spellCastIntent.count({ where: { casterEntityId: cleric.id } })) ===
+          intentsBeforeOptions &&
+        options.data.pendingIntent === null,
+      JSON.stringify({ before: castsBeforeOptions, data: options.data.pendingIntent }),
+    );
+    const foreignOptions = await request(
+      `/spells/cast-options/${cleric.id}/bless`,
+      undefined,
+      otherToken,
+    );
+    check(
+      '76.P.26) cast-options é ownership-guarded (outro jogador recebe 403)',
+      foreignOptions.status === 403 && foreignOptions.data?.error === 'SPELL_CASTER_FORBIDDEN',
+      JSON.stringify(foreignOptions.data),
+    );
+    const unavailableOptions = await request(
+      `/spells/cast-options/${wizard.id}/bless`,
+      undefined,
+      otherToken,
+    );
+    check(
+      '76.P.27) cast-options NÃO inventa opção: sem fonte que autorize, nenhum espaço/alvo é oferecido',
+      unavailableOptions.status === 200 &&
+        unavailableOptions.data.sources?.length === 0 &&
+        unavailableOptions.data.resources?.length === 0 &&
+        unavailableOptions.data.targeting?.length === 0,
+      JSON.stringify(unavailableOptions.data).slice(0, 400),
+    );
   } finally {
     await prisma.spellCastIntent
       .deleteMany({ where: { OR: [{ actorUserId: { in: userIds } }, { casterEntityId: { in: castCasters } }] } })

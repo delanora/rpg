@@ -447,8 +447,9 @@ significa que as respectivas fases futuras estejam concluídas.
   que desmonta modificadores e Conditions, inclusive na remoção estrutural de
   entidades.
 - 6.6 Spell Execution Engine — **6.6A (contrato de conjuração), 6.6B (perfil de
-  conjuração), 6.6C (espaços/recursos), 6.6D (casting time/economia) e 6.6E
-  (targeting/alcance assistido) implementadas**:
+  conjuração), 6.6C (espaços/recursos), 6.6D (casting time/economia), 6.6E
+  (targeting/alcance assistido), 6.6F (conjuração do jogador/repertório) e 6.6F.1
+  (wiring da UI de conjuração na ficha) implementadas**:
   `SpellCast` persistente (status `resolving`/`resolved`/`cancelled` + outcome
   `effect`/`no-effect`/`cancelled`), `SpellExecutionDefinition` por `spellId`
   (`immediate-effect` / `save-effect`) referenciando Effect Definitions, registry
@@ -853,11 +854,53 @@ de implementar.
   Action (bidirecional + Action Surge), Reaction recusada, Ação gasta no
   COMMIT, fora de turno, Ação extra, corrida pela única Ação, retry sem segundo
   gasto, snapshot de turno e cast fora de combate.
-- **Continua pendente (intencional):** cast de PLAYER (6.6F), known/prepared,
-  duração/save repetido (Duration Engine), componentes V/S/M, Counterspell,
-  Reaction windows, área/cone/linha e upcast de dano/duração. Spell Save DC
-  (6.6B), slots (6.6C), casting time/Action Economy (6.6D) e targeting/alcance
-  assistido (6.6E) estão implementados.
+- **Continua pendente (intencional):** duração/save repetido (Duration Engine),
+  componentes V/S/M (6.6G), Counterspell, Reaction windows, área/cone/linha e
+  upcast de dano/duração. Spell Save DC (6.6B), slots (6.6C), casting time/Action
+  Economy (6.6D), targeting/alcance assistido (6.6E) e conjuração do jogador
+  (6.6F + 6.6F.1) estão implementados.
+
+### Conjuração do jogador e da ficha (6.6F / 6.6F.1)
+
+- **Repertório é POR FONTE** (`shared/spells/repertoire.ts`): `known`,
+  `prepared-list`, `spellbook-prepared` (Mago exige grimório + preparação ACTIVE),
+  `explicit` (statblock de criatura) e `alwaysPrepared`. ACTIVE × PLANEJADO é
+  separado: salvar o plano (`PUT /api/spells/preparation-plan/...`) NÃO conjura
+  nem ativa nada — a preparação só muda no Descanso Longo válido
+  (`activatePreparationPlans`). Ter a magia registrada no grimório não a torna
+  conjurável.
+- `evaluateSpellAvailability(caster, spellId, db)` é a **única** conta de
+  elegibilidade: devolve uma entrada por fonte (`view` + `result`).
+  `resolveSpellAuthorization` só ESCOLHE entre as autorizadas (0 → erro com o
+  motivo mais útil; 1 → automático; >1 → `SPELLCASTING_SOURCE_REQUIRED`), e o
+  read-model da ficha consome a mesma função — nunca há segunda implementação.
+- `POST /api/spells/cast` é a rota do jogador: caster do próprio personagem
+  (ou Mestre), fonte quando ambígua, espaço quando a magia é de nível 1+,
+  `operationId`. Sem geometria confiável o resultado é **202 com
+  `SpellCastIntent`** (`status: 'pending'`) e **zero custo**: nenhum espaço,
+  Ação, Concentração ou Effect antes da aprovação do Mestre, que revalida tudo
+  no commit. `approve/deny/cancel` e a fila ficam em `/api/spells/intents*`.
+- `GET /api/spells/cast-options/:characterId/:spellId` (6.6F.1) é o read-model
+  da UI, **read-only e ownership-guarded** (dono ou Mestre; `403
+  SPELL_CASTER_FORBIDDEN`): fontes que AUTORIZAM agora, espaços com
+  `remaining > 0`, `targeting` resumido **por nível de espaço** (`maxTargets`
+  derivado por `targetingSummary`) e o roster canônico de alvos (combatentes em
+  combate, fichas + bestiário fora; combatente de personagem → ficha, sem
+  duplicar entidade). Não cria Intent/cast e não gasta nada — o POST revalida.
+- `SpellRepertoirePanel` (ficha) conduz o fluxo estado explícito (`idle` →
+  `configuring` → `submitting` → `awaiting-master`): source selector só com
+  ambiguidade (nunca auto-escolhe a primeira), resource selector nunca
+  auto-escolhe "o mais barato", `castAtLevel` é apenas EXIBIÇÃO do nível do
+  espaço escolhido, o máximo de alvos acompanha o espaço (Bless 1º→3 / 2º→4) e
+  alvos em excesso bloqueiam o submit em vez de sumirem sozinhos. O cliente não
+  envia `castAtLevel`, `maxTargets` nem confirmação espacial.
+- `operationId` é gerado UMA vez por tentativa e reusado no retry; intenção
+  pendente é restaurada por `listIntents()` ao abrir/recarregar a ficha e
+  atualizada pelo evento `spells:intent-updated` (filtrado por papel no
+  servidor), consumido por um barramento de módulo (`subscribeSpellIntents`) —
+  aprovar/negar no painel do Mestre reflete na ficha sem depender de estado
+  local. Gasto otimista não existe: slots/Ação/Concentração só mudam pelo estado
+  autoritativo (`sheet:updated`, `combat:updated`, `effects:updated`).
 
 ### Modificadores de Effect (6.5B)
 

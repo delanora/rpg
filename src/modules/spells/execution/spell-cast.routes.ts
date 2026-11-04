@@ -23,6 +23,7 @@ import {
   repertoireForCharacter,
   savePreparationPlan,
 } from './spell-preparation.service.js';
+import { castOptionsFor } from './spell-cast-options.service.js';
 import { spellcastingSourceRefSchema } from './spellcasting-source.js';
 import { spatialConfirmationSchema } from './spatial-validation.js';
 import type { EffectActor } from '../../effects/effects.service.js';
@@ -170,6 +171,23 @@ spellsRouter.put(
 /* -------------------------------------------------------------------------- */
 /* 6.6F — CONJURAÇÃO REAL (PLAYER e MASTER) e INTENÇÕES                        */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * GET /api/spells/cast-options/:characterId/:spellId — opções de conjuração.
+ *
+ * Read-only e PLAYER-safe (só o dono, ou o Mestre): fontes que AUTORIZAM a
+ * magia, espaços válidos, máximo de alvos por espaço e alvos possíveis. Não cria
+ * Intent/SpellCast e não gasta nada — o `POST /cast` revalida tudo.
+ */
+spellsRouter.get('/cast-options/:characterId/:spellId', async (req, res) => {
+  res.json(
+    await castOptionsFor(
+      actorOf(req),
+      String(req.params.characterId),
+      String(req.params.spellId),
+    ),
+  );
+});
 
 /**
  * POST /api/spells/cast — conjuração REAL.

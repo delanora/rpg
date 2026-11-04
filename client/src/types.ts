@@ -2127,6 +2127,38 @@ export interface CombatDto {
   endedAt: string | null;
 }
 
+/**
+ * Intenção de conjuração (Fase 6.6F) — estado PRÉ-COMMIT.
+ *
+ * Enquanto `pending`, NADA foi gasto: sem espaço, sem Ação, sem Concentração
+ * encerrada, sem Effect. O servidor é a autoridade; o DTO já vem sanitizado.
+ */
+export type SpellCastIntentStatus =
+  | 'pending'
+  | 'committed'
+  | 'denied'
+  | 'cancelled'
+  | 'invalidated';
+
+export interface SpellCastIntentDto {
+  id: string;
+  spellId: string;
+  spellName: string;
+  status: SpellCastIntentStatus;
+  caster: { kind: string; id: string; label: string | null };
+  targets: { kind: string; id: string; name: string }[];
+  /** Requisitos que o MESTRE precisa confirmar (a UI do jogador só mostra o texto). */
+  requiredConfirmations: string[];
+  createdAt: string;
+  resolvedAt: string | null;
+  reason: string | null;
+  spellCastId: string | null;
+}
+
+export interface SpellIntentUpdatedPayload {
+  intent: SpellCastIntentDto;
+}
+
 export interface CombatStartedPayload {
   combat: CombatDto;
 }

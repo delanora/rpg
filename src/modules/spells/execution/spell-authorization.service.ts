@@ -137,12 +137,33 @@ function profileOfView(
  *  • nenhuma autoriza → `SPELL_NOT_AVAILABLE_FROM_SOURCE` com o motivo real
  *    (`not-prepared`, `recorded-unprepared`, `not-recorded`...).
  */
-export async function resolveSpellAuthorization(
+/** Uma fonte avaliada para UMA magia (com o perfil derivado daquela fonte). */
+export interface EvaluatedSource {
+  view: SourceRepertoireView;
+  result: ReturnType<typeof resolveSpellAvailability>;
+  profile: SpellcastingProfile;
+}
+
+export interface SpellAvailabilityEvaluation {
+  spell: Spell;
+  /** Todas as fontes do conjurador, autorizando ou não. */
+  entries: EvaluatedSource[];
+  /** Só as que AUTORIZAM a magia agora (ACTIVE/known/grimório). */
+  authorized: EvaluatedSource[];
+}
+
+/**
+ * Avaliação READ-ONLY de todas as fontes para uma magia.
+ *
+ * É a MESMA conta usada na autorização do cast — a UI de conjuração do jogador
+ * (`/api/spells/cast-options`) lê daqui para saber quais fontes oferecer. Nunca
+ * existe uma segunda implementação de elegibilidade para a tela.
+ */
+export async function evaluateSpellAvailability(
   caster: LoadedEntity,
   spellId: string,
-  requested: SpellcastingSourceRef | undefined,
   db: Db = prisma,
-): Promise<SpellAuthorization> {
+): Promise<SpellAvailabilityEvaluation> {
   const spell = allSpells().find((item) => item.id === spellId);
   if (!spell) {
     throw new HttpError('Magia não encontrada no catálogo.', 404, 'SPELL_NOT_FOUND');
@@ -157,7 +178,7 @@ export async function resolveSpellAuthorization(
     );
   }
 
-  const evaluated = snapshot.views.map((view) => {
+  const entries = snapshot.views.map((view) => {
     const row = repertoireRowOf(view, spell.id);
     const result = resolveSpellAvailability({
       definition: view.definition,
@@ -176,10 +197,26 @@ export async function resolveSpellAuthorization(
       maxSpellLevel: view.maxSpellLevel,
       alwaysPrepared: row?.alwaysPrepared ?? false,
     });
-    return { view, result };
+    return { view, result, profile: profileOfView(snapshot.views, snapshot, view) };
   });
 
-  const eligible = evaluated.filter((item) => item.result.eligible);
+  return { spell, entries, authorized: entries.filter((entry) => entry.result.eligible) };
+}
+
+export async function resolveSpellAuthorization(
+  caster: LoadedEntity,
+  spellId: string,
+  requested: SpellcastingSourceRef | undefined,
+  db: Db = prisma,
+): Promise<SpellAuthorization> {
+  // A escolha acontece SÓ entre as fontes que autorizam a magia AGORA. A conta
+  // de elegibilidade vem de `evaluateSpellAvailability` (implementação única,
+  // compartilhada com a UI de opções de conjuração).
+  const { spell, entries: evaluated, authorized: eligible } = await evaluateSpellAvailability(
+    caster,
+    spellId,
+    db,
+  );
 
   if (requested) {
     const match = evaluated.find(
@@ -198,7 +235,7 @@ export async function resolveSpellAuthorization(
     }
     return {
       spell,
-      profile: profileOfView(snapshot.views, snapshot, match.view),
+      profile: match.profile,
       source: match.view.source,
       availabilityKind: match.result.availabilityKind,
       spellLevel: Math.max(0, spell.level),
@@ -233,7 +270,7 @@ export async function resolveSpellAuthorization(
   const chosen = eligible[0];
   return {
     spell,
-    profile: profileOfView(snapshot.views, snapshot, chosen.view),
+    profile: chosen.profile,
     source: chosen.view.source,
     availabilityKind: chosen.result.availabilityKind,
     spellLevel: Math.max(0, spell.level),
