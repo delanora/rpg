@@ -13,6 +13,7 @@ import { smokeSpellTargeting } from './smoke-spell-targeting.js';
 import { smokePlayerSpellcasting } from './smoke-player-spellcasting.js';
 import { smokeSpellComponents } from './smoke-spell-components.js';
 import { smokeSpellDuration } from './smoke-spell-duration.js';
+import { smokeCombatResolutionCards } from './smoke-combat-resolution-cards.js';
 import { smokeCombatItems } from './smoke-combat-items.js';
 import { smokeDeath } from './smoke-death.js';
 import { smokeExhaustionRule } from './smoke-exhaustion-rule.js';
@@ -21593,6 +21594,7 @@ async function main(): Promise<void> {
   await smokeSpellDuration(BASE_URL, check);
   await smokeDeath(BASE_URL, check);
   await smokeExhaustionRule(BASE_URL, check);
+  await smokeCombatResolutionCards(BASE_URL, check);
 
   console.log(
     failures === 0
