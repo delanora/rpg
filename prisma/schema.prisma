@@ -1207,6 +1207,10 @@ model PendingEffectSave {
   @@index([targetEntityKind, targetEntityId, status])
   @@index([casterEntityKind, casterEntityId, status])
   @@index([spellCastId])
+  /// Finalizer do resolution barrier (6.6E): pendências por conjuração/status.
+  @@index([spellCastId, status])
+  /// UM alvo por conjuração — a barreira/retry nunca cria pendência duplicada.
+  @@unique([spellCastId, targetEntityKind, targetEntityId])
   @@map("pending_effect_saves")
 }
 
@@ -1239,6 +1243,12 @@ model SpellCast {
 
   /// Snapshot IMUTÁVEL da intenção: `[{ kind, id }]`. Não é fonte de estado.
   targets Json @default("[]")
+
+  /// SNAPSHOT IMUTÁVEL do TARGETING (Fase 6.6E): quantidade/máximo derivado do
+  /// espaço, alcance em pés, filtros, modo de validação (automático/misto/
+  /// confirmado pelo Mestre) e quais requisitos espaciais foram confirmados.
+  /// Nullable apenas para casts anteriores à migração.
+  targetingSnapshot Json?
 
   /// `resolving` | `resolved` | `cancelled`.
   status String @default("resolving")

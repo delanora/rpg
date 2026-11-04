@@ -1,10 +1,4 @@
-import { HttpError } from '../../../lib/http-error.js';
-import { isHumanoidEntity } from '../../shared/creature-types.js';
-import {
-  BLESS_DEFINITION_ID,
-  BLESS_MAX_TARGETS,
-  BLESS_SPELL_ID,
-} from '../../effects/definitions/bless.js';
+import { BLESS_DEFINITION_ID, BLESS_SPELL_ID } from '../../effects/definitions/bless.js';
 import {
   HOLD_PERSON_DEFINITION_ID,
   HOLD_PERSON_SAVE_ABILITY,
@@ -20,34 +14,54 @@ import type { SpellExecutionDefinition } from './spell-execution-definition.js';
  * magias cujo comportamento mecânico já foi PROVADO (Bless e Hold Person) —
  * existir no catálogo NÃO torna a magia executável (`SPELL_EXECUTION_NOT_IMPLEMENTED`).
  *
- * As definições compõem o contrato com validações específicas (limite de alvos,
- * humanoide). A CD de magia NÃO fica aqui: desde a 6.6B ela é derivada do perfil
- * de conjuração do caster (ou do statblock), nunca da magia.
+ * Desde a 6.6E o TARGETING é declarativo: cada definição diz quantidade base,
+ * progressão por espaço, alcance em PÉS, visão/caminho livre, filtros e
+ * restrições de grupo. Nenhuma dessas regras mora no `spell-cast.service`, e o
+ * máximo de alvos é derivado do espaço escolhido (nunca do cliente).
+ *
+ * PHB 2014:
+ *  • Bless — 30 ft, até 3 criaturas à sua escolha, +1 por espaço acima do 1º;
+ *    NÃO exige ver o alvo; exige caminho livre.
+ *  • Hold Person — 60 ft, humanoides que o conjurador possa VER, +1 por espaço
+ *    acima do 2º; alvos a até 30 ft uns dos outros; caminho livre.
+ *
+ * A CD de magia continua fora daqui: vem do perfil de conjuração do caster.
  */
 export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinition> = {
   [BLESS_SPELL_ID]: {
     spellId: BLESS_SPELL_ID,
     requiresConcentration: true,
-    maxTargets: BLESS_MAX_TARGETS,
+    targeting: {
+      kind: 'creatures',
+      minTargets: 1,
+      targetCount: { base: 3, baseSlotLevel: 1, additionalPerSlotLevel: 1 },
+      range: { kind: 'distance', feet: 30 },
+      // O caster pode ser um dos alvos e qualquer criatura escolhida serve.
+      allowSelf: true,
+      requiresSight: false,
+      requiresClearPath: true,
+      filters: [],
+      groupConstraints: [],
+    },
     resolution: {
       kind: 'immediate-effect',
       effectDefinitionId: BLESS_DEFINITION_ID,
-    },
-    validateTargets: ({ targets }) => {
-      // O limite de 1..3 é regra da CONJURAÇÃO, não da rota HTTP.
-      if (targets.length < 1 || targets.length > BLESS_MAX_TARGETS) {
-        throw new HttpError(
-          `Bless exige de 1 a ${BLESS_MAX_TARGETS} alvos.`,
-          400,
-          'VALIDATION_ERROR',
-        );
-      }
     },
   },
   [HOLD_PERSON_SPELL_ID]: {
     spellId: HOLD_PERSON_SPELL_ID,
     requiresConcentration: true,
-    maxTargets: 1,
+    targeting: {
+      kind: 'creatures',
+      minTargets: 1,
+      targetCount: { base: 1, baseSlotLevel: 2, additionalPerSlotLevel: 1 },
+      range: { kind: 'distance', feet: 60 },
+      allowSelf: true,
+      requiresSight: true,
+      requiresClearPath: true,
+      filters: [{ kind: 'creature-type', value: 'humanoid' }],
+      groupConstraints: [{ kind: 'mutual-distance', feet: 30 }],
+    },
     // O payload de prova não escolhe atributo, CD nem Condition: a CD vem do
     // perfil do caster e o atributo da definição da magia.
     resolution: {
@@ -55,27 +69,6 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
       ability: HOLD_PERSON_SAVE_ABILITY,
       effectDefinitionId: HOLD_PERSON_DEFINITION_ID,
       applyOn: 'failure',
-    },
-    validateTargets: async ({ db, targets, caster }) => {
-      if (targets.length !== 1) {
-        throw new HttpError(
-          'Imobilizar Pessoa afeta exatamente um alvo nesta fase.',
-          400,
-          'VALIDATION_ERROR',
-        );
-      }
-      const target = targets[0];
-      if (!(await isHumanoidEntity(target.entity, db))) {
-        throw new HttpError(
-          'Imobilizar Pessoa só afeta humanoides.',
-          409,
-          'HOLD_PERSON_TARGET_NOT_HUMANOID',
-        );
-      }
-      // Caster e alvo usam a mesma canonicalização do resto do domínio.
-      if (caster.entity.kind === 'creature' && target.entity.kind === 'creature') {
-        return;
-      }
     },
   },
 };

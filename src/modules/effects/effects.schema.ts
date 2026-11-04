@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { entitySchema } from '../shared/conditions.js';
 import { spellcastingSourceRefSchema } from '../spells/execution/spellcasting-source.js';
 import { castingResourceRefSchema } from '../spells/execution/casting-resource.js';
+import { spatialConfirmationSchema } from '../spells/execution/spatial-validation.js';
 import { effectConditionListSchema, effectModifierListSchema } from './effect-modifiers.js';
 
 /**
@@ -114,11 +115,18 @@ export const effectTargetSchema = entitySchema;
 export const applyBlessSchema = z.object({
   operationId: z.string().trim().min(1).max(128),
   caster: entitySchema,
-  targets: z.array(entitySchema).min(1).max(3),
+  /**
+   * Alvos escolhidos. O máximo REAL é derivado pelo servidor (Bless: 3 no
+   * nível 1, +1 por espaço acima — até 11 no 9º). O teto do schema é só uma
+   * barreira de entrada e jamais vira regra.
+   */
+  targets: z.array(entitySchema).min(1).max(12),
   /** Fonte de conjuração (obrigatória só quando o caster é multiclasse). */
   spellcastingSource: spellcastingSourceRefSchema.optional(),
   /** Espaço gasto no commit (6.6C): obrigatório se houver mais de um válido. */
   castingResource: castingResourceRefSchema.optional(),
+  /** Confirmação espacial do Mestre quando o servidor não consegue medir (6.6E). */
+  spatialConfirmation: spatialConfirmationSchema.optional(),
 });
 export type ApplyBlessInput = z.infer<typeof applyBlessSchema>;
 
@@ -130,13 +138,23 @@ export type ApplyBlessInput = z.infer<typeof applyBlessSchema>;
  * vem do statblock — não existe mais campo de CD no payload. Atributo do save,
  * Condition e `definitionId` são fixados no SERVIDOR.
  */
-export const applyHoldPersonSchema = z.object({
-  operationId: z.string().trim().min(1).max(128),
-  caster: entitySchema,
-  target: entitySchema,
-  /** Fonte de conjuração (obrigatória só quando o caster é multiclasse). */
-  spellcastingSource: spellcastingSourceRefSchema.optional(),
-  /** Espaço gasto no commit (6.6C); precisa comportar o nível 2 da magia. */
-  castingResource: castingResourceRefSchema.optional(),
-});
+export const applyHoldPersonSchema = z
+  .object({
+    operationId: z.string().trim().min(1).max(128),
+    caster: entitySchema,
+    /** Compatibilidade do fluxo de 1 alvo (6.5H). */
+    target: entitySchema.optional(),
+    /** 6.6E: até 8 humanoides quando conjurada com espaço superior. */
+    targets: z.array(entitySchema).min(1).max(12).optional(),
+    /** Fonte de conjuração (obrigatória só quando o caster é multiclasse). */
+    spellcastingSource: spellcastingSourceRefSchema.optional(),
+    /** Espaço gasto no commit (6.6C); precisa comportar o nível 2 da magia. */
+    castingResource: castingResourceRefSchema.optional(),
+    /** Visão/alcance/caminho livre/distância entre alvos: confirmação do Mestre. */
+    spatialConfirmation: spatialConfirmationSchema.optional(),
+  })
+  .refine((input) => Boolean(input.target || (input.targets && input.targets.length > 0)), {
+    message: 'Informe ao menos um alvo.',
+    path: ['targets'],
+  });
 export type ApplyHoldPersonInput = z.infer<typeof applyHoldPersonSchema>;

@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
-import { pickCastingResource, resetCastingSlots } from './spell-slot-fixtures.js';
+import {
+  pickCastingResource,
+  resetCastingSlots,
+  withSpatialEvidence,
+} from './spell-slot-fixtures.js';
 import {
   characterLevelOf,
   characterSpellcastingProfile,
@@ -260,7 +264,7 @@ export async function smokeSpellcastingProfile(baseUrl: string, check: Check): P
       const res = await fetch(`${baseUrl}/api${path}`, {
         method: verb,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : { body: JSON.stringify(withSpatialEvidence(path, body)) }),
       });
       return { status: res.status, data: (await res.json().catch(() => ({}))) as any };
     }

@@ -4,13 +4,15 @@ import type { SpellCastingTimeKind } from '../../shared/spells/types.js';
 import type { LoadedEntity } from '../../mechanical/mechanical.service.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
 import type { CastingResource } from './casting-resource.js';
+import type { SpellTargetingDefinition } from './spell-targeting.js';
+import type { TargetingSnapshot } from './spell-targeting.service.js';
 
 /**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
  *
  * Diz COMO uma magia resolve mecanicamente. NÃO copia nome/escola/nível/texto/
- * alcance/componentes do catálogo descritivo e NÃO descreve o estado durável —
- * isso é responsabilidade da Effect Definition referenciada por id.
+ * componentes do catálogo descritivo e NÃO descreve o estado durável — isso é
+ * responsabilidade da Effect Definition referenciada por id.
  *
  * Dois padrões reais nesta fase (os mesmos já provados por Bless e Hold Person):
  *  • `immediate-effect` — a conjuração produz o efeito na hora;
@@ -48,23 +50,31 @@ export interface SpellValidationContext {
   castingResource: CastingResource | null;
   /** Custo de Action Economy derivado do casting time (`null` = não executável). */
   economyCost: 'action' | 'bonus-action' | 'reaction';
+  /** Snapshot da validação de alvos (quantidade/alcance/visão). */
+  targeting: TargetingSnapshot;
 }
 
 export interface SpellExecutionDefinition {
   /** Id canônico do catálogo (`bless`, `hold-person`). */
   spellId: string;
   requiresConcentration: boolean;
-  maxTargets: number;
   /**
    * CASTING TIME (6.6D). Opcional de propósito: quando ausente, o serviço usa o
    * `castingTimeKind` do CATÁLOGO (fonte única). Só sobrescreva quando uma
    * feature/metamágica mudar o tempo antes do COMMIT.
    */
   castingTime?: SpellCastingTimeKind;
+  /**
+   * TARGETING (6.6E): quantidade de alvos, alcance, visão, caminho livre,
+   * filtros e restrições de grupo. Substitui o antigo `maxTargets` fixo — o
+   * máximo agora é DERIVADO do espaço usado no cast.
+   */
+  targeting: SpellTargetingDefinition;
   resolution: SpellResolutionDefinition;
   /**
-   * Validação ESPECÍFICA da magia (alvo humanoide, limite de alvos...).
-   * Roda depois da validação genérica e ANTES do commit — nunca muta o banco.
+   * Validação EXTRA específica da magia, quando os filtros declarativos não
+   * bastarem. Roda depois do targeting genérico e ANTES do commit — nunca muta
+   * o banco.
    */
   validateTargets?: (context: SpellValidationContext) => Promise<void> | void;
 }

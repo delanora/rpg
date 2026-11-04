@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
-import { pickCastingResource } from './spell-slot-fixtures.js';
+import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
 import type { PendingEffectSaveDto } from '../modules/effects/pending-effect-saves.js';
 
@@ -126,7 +126,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       const res = await fetch(`${baseUrl}/api${path}`, {
         method: verb,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : { body: JSON.stringify(withSpatialEvidence(path, body)) }),
       });
       return { status: res.status, data: (await res.json().catch(() => ({}))) as any };
     }
@@ -346,7 +346,7 @@ export async function smokeSpellCastingFoundation(baseUrl: string, check: Check)
       '75.E) alvos inválidos (4 no Bless / não humanoide) não commitam e mantêm a concentração anterior',
       fourTargets.status === 400 &&
         nonHumanoid.status === 409 &&
-        nonHumanoid.data.error === 'HOLD_PERSON_TARGET_NOT_HUMANOID' &&
+        nonHumanoid.data.error === 'SPELL_TARGET_TYPE_INVALID' &&
         casterAfterInvalid.state.concentration?.sourceId === castA.effectGroupId &&
         (await effectsOf(casterEntity)).length === 1,
       JSON.stringify({ four: fourTargets.status, nonHumanoid: nonHumanoid.data, concentration: casterAfterInvalid.state.concentration }),

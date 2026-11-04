@@ -61,6 +61,8 @@ export function applyBlessEffect(input: {
   spellcastingSource?: { kind: SpellcastingSourceDto['kind']; id: string };
   /** Espaço gasto no commit (6.6C); obrigatório se houver mais de um válido. */
   castingResource?: CastingResourceChoice;
+  /** Confirmação espacial do Mestre quando o servidor não consegue medir (6.6E). */
+  spatialConfirmation?: SpatialConfirmationDto;
 }): Promise<{ groupId: string; effects: EffectDto[] }> {
   return api<{ groupId: string; effects: EffectDto[] }>('/api/effects/bless', {
     method: 'POST',
@@ -78,16 +80,59 @@ export function applyBlessEffect(input: {
  */
 export function applyHoldPersonEffect(input: {
   caster: MechanicalEntity;
-  target: MechanicalEntity;
+  /** Até 8 humanoides quando conjurada com espaço superior (6.6E). */
+  targets: MechanicalEntity[];
   /** Fonte canônica escolhida (só quando o caster é multiclasse). */
   spellcastingSource?: { kind: SpellcastingSourceDto['kind']; id: string };
   /** Espaço gasto no commit (6.6C); precisa comportar o nível 2 da magia. */
   castingResource?: CastingResourceChoice;
-}): Promise<{ pending: PendingEffectSaveDto }> {
-  return api<{ pending: PendingEffectSaveDto }>('/api/effects/hold-person', {
-    method: 'POST',
-    body: { ...input, operationId: createOperationId() },
-  });
+  /** Visão/alcance/caminho livre/30 ft entre alvos: confirmação do Mestre. */
+  spatialConfirmation?: SpatialConfirmationDto;
+}): Promise<{ pending: PendingEffectSaveDto; pendings: PendingEffectSaveDto[] }> {
+  return api<{ pending: PendingEffectSaveDto; pendings: PendingEffectSaveDto[] }>(
+    '/api/effects/hold-person',
+    {
+      method: 'POST',
+      body: { ...input, operationId: createOperationId() },
+    },
+  );
+}
+
+/**
+ * Confirmação ESPACIAL do Mestre (6.6E). Não há distância numérica: ele confirma
+ * apenas os requisitos que o SERVIDOR declarou necessários e não consegue medir.
+ */
+export interface SpatialConfirmationDto {
+  withinRange?: boolean;
+  clearPath?: boolean;
+  sight?: boolean;
+  groupDistance?: boolean;
+}
+
+/**
+ * TARGETING derivado do servidor para a magia + espaço escolhido (6.6E).
+ * `maxTargets`/`rangeFeet`/requisitos são LEITURA: nenhum deles é editável.
+ */
+export interface SpellTargetingDto {
+  kind: string;
+  minTargets: number;
+  maxTargets: number;
+  castAtLevel: number;
+  rangeFeet: number | null;
+  allowSelf: boolean;
+  requiresSight: boolean;
+  requiresClearPath: boolean;
+  filters: string[];
+  groupConstraints: { kind: string; feet: number }[];
+}
+
+export function fetchSpellTargeting(
+  spellId: string,
+  castAtLevel: number,
+): Promise<SpellTargetingDto> {
+  return api<{ targeting: SpellTargetingDto }>(
+    `/api/spells/targeting/${spellId}?castAtLevel=${castAtLevel}`,
+  ).then((result) => result.targeting);
 }
 
 /**

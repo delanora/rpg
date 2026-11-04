@@ -1053,11 +1053,11 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB48) aplicação de Bless é MASTER-only, 1–3 alvos e DELEGADA ao contrato de conjuração (6.6A)',
     blessService.includes('castProofSpell(') &&
-      spellExecutionRegistry.includes('maxTargets: BLESS_MAX_TARGETS') &&
+      spellExecutionRegistry.includes('targetCount: { base: 3, baseSlotLevel: 1, additionalPerSlotLevel: 1 }') &&
       spellExecutionRegistry.includes("kind: 'immediate-effect'") &&
       spellExecutionRegistry.includes('BLESS_DEFINITION_ID') &&
       source('../src/modules/effects/effects.routes.ts').includes("effectsRouter.post('/bless', requireRole('MASTER')") &&
-      source('../src/modules/effects/effects.schema.ts').includes('.min(1).max(3)'),
+      source('../src/modules/effects/effects.schema.ts').includes('.min(1).max(12)'),
   );
   check(
     'CB49) modificador OPCIONAL é server-derived e o cliente devolve apenas IDs',
@@ -1103,8 +1103,13 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB53) aplicação é MASTER-only, delega ao cast service e valida humanoide ANTES do commit',
     holdPersonService.includes('castProofSpell(') &&
-      spellExecutionRegistry.includes('isHumanoidEntity(target.entity, db)') &&
-      spellExecutionRegistry.includes("'HOLD_PERSON_TARGET_NOT_HUMANOID'") &&
+      spellExecutionRegistry.includes("filters: [{ kind: 'creature-type', value: 'humanoid' }]") &&
+      source('../src/modules/spells/execution/spell-targeting.service.ts').includes(
+        'isHumanoidEntity(target.entity, db)',
+      ) &&
+      source('../src/modules/spells/execution/spell-targeting.service.ts').includes(
+        "'SPELL_TARGET_TYPE_INVALID'",
+      ) &&
       source('../src/modules/effects/effects.routes.ts').includes("effectsRouter.post('/hold-person', requireRole('MASTER')") &&
       source('../src/modules/effects/effects.schema.ts').includes('applyHoldPersonSchema'),
   );
@@ -1121,13 +1126,21 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'CB55) falha cria Effect→Paralyzed e Concentração via grupo; sucesso só fecha o cast como no-effect',
-    holdPersonService.includes('conditions: HOLD_PERSON_CONDITIONS') &&
-      holdPersonService.includes("sourceType: 'effect'") &&
-      holdPersonService.includes('sourceId: groupId') &&
-      holdPersonService.includes('applyEffectConditions(effectRow, target.entity, db)') &&
-      holdPersonService.includes('if (success) {') &&
-      holdPersonService.includes("completeLinkedCast(db, row.spellCastId, 'no-effect')") &&
-      holdPersonService.includes("completeLinkedCast(db, row.spellCastId, 'effect', groupId)"),
+    source('../src/modules/spells/execution/save-effect-finalizer.ts').includes(
+      'conditions: effect.conditions()',
+    ) &&
+      source('../src/modules/spells/execution/save-effect-finalizer.ts').includes("sourceType: 'spell'") &&
+      source('../src/modules/spells/execution/save-effect-finalizer.ts').includes('sourceId: groupId') &&
+      source('../src/modules/spells/execution/save-effect-finalizer.ts').includes(
+        'applyEffectConditions(row, target.entity, db)',
+      ) &&
+      holdPersonService.includes('tryFinalizeSaveEffectCast(row.spellCastId, db)') &&
+      source('../src/modules/spells/execution/save-effect-finalizer.ts').includes(
+        "await closeCast(db, cast.id, 'no-effect')",
+      ) &&
+      source('../src/modules/spells/execution/save-effect-finalizer.ts').includes(
+        "await closeCast(db, cast.id, 'effect', groupId)",
+      ),
   );
   check(
     'CB56) pendência sobrevive a reconnect, é cancelada na remoção estrutural e tem smoke próprio',
@@ -1200,7 +1213,9 @@ console.log('Check-combat-ui — refino da UI de combate');
     pendingEffectSaves.includes('spellCastId') &&
       holdPersonService.includes('cancelSpellCastForPending(row.spellCastId, db)') &&
       spellCastService.includes('export async function cancelSpellCastForPending') &&
-      holdPersonService.includes('enforceCasterConcentration') &&
+      source('../src/modules/spells/execution/save-effect-finalizer.ts').includes(
+        'enforceCasterConcentration',
+      ) &&
       pendingEffectSaves.includes('db.spellCast.updateMany') &&
       pendingEffectSaves.includes("outcome: 'cancelled'"),
   );
@@ -1399,6 +1414,90 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/scripts/smoke-realtime.ts').includes('smokeSpellActionEconomy(BASE_URL, check)') &&
       !source('../src/modules/spells/execution/spell-execution-registry.ts').includes('counterspell') &&
       !source('../src/modules/spells/execution/spell-execution-registry.ts').includes('shield')
+  );
+
+  // CB76–CB80. TARGETING & RANGE ASSISTIDO (Fase 6.6E).
+  const spellTargeting = source('../src/modules/spells/execution/spell-targeting.ts');
+  const spatialValidation = source('../src/modules/spells/execution/spatial-validation.ts');
+  const targetingService = source('../src/modules/spells/execution/spell-targeting.service.ts');
+  const saveEffectFinalizer = source(
+    '../src/modules/spells/execution/save-effect-finalizer.ts',
+  );
+  const targetingMigration = source(
+    '../prisma/migrations/20261103120000_add_spell_targeting/migration.sql',
+  );
+  const targetingSmoke = source('../src/scripts/smoke-spell-targeting.ts');
+  check(
+    'CB76) targeting é DECLARATIVO por magia; máximo de alvos DERIVADO do espaço, nunca do cliente',
+    spellTargeting.includes('export function maximumTargets') &&
+      spellTargeting.includes('additionalPerSlotLevel') &&
+      spellTargeting.includes('targetingRangeFeet') &&
+      spellExecutionRegistry.includes(
+        'targetCount: { base: 3, baseSlotLevel: 1, additionalPerSlotLevel: 1 }',
+      ) &&
+      spellExecutionRegistry.includes(
+        'targetCount: { base: 1, baseSlotLevel: 2, additionalPerSlotLevel: 1 }',
+      ) &&
+      spellExecutionRegistry.includes("range: { kind: 'distance', feet: 30 }") &&
+      spellExecutionRegistry.includes("range: { kind: 'distance', feet: 60 }") &&
+      !spellExecutionRegistry.includes('maxTargets:') &&
+      spellCastService.includes('validateTargeting({') &&
+      spellCastService.includes('targetingSnapshot: context.targeting') &&
+      !spellCastService.includes("if (input.spellId === 'bless')") &&
+      !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('maxTargets')
+  );
+  check(
+    'CB77) validação espacial TRI-STATE: UNKNOWN exige confirmação do Mestre e um FAIL autoritativo não é sobrescrito',
+    spatialValidation.includes("export type SpatialResult = 'pass' | 'fail' | 'unknown'") &&
+      spatialValidation.includes('assistedSpatialProvider') &&
+      spatialValidation.includes('spatialConfirmationSchema') &&
+      targetingService.includes("if (result === 'fail')") &&
+      targetingService.includes('canSee(caster.state, target.state)') &&
+      targetingService.includes("'SPELL_TARGET_NOT_VISIBLE'") &&
+      targetingService.includes("'SPELL_TARGET_RANGE_CONFIRMATION_REQUIRED'") &&
+      targetingService.includes("'SPELL_TARGET_GROUP_CONFIRMATION_REQUIRED'") &&
+      targetingService.includes('validationMode') &&
+      source('../src/modules/effects/effects.schema.ts').includes(
+        'spatialConfirmation: spatialConfirmationSchema.optional()',
+      ) &&
+      !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('rangeFeet')
+  );
+  check(
+    'CB78) um cast multi-alvo = N pendências, UMA barreira transacional e UM Effect Group (unique no BANCO)',
+    spellCastService.includes('async function beginPendingSaves') &&
+      spellCastService.includes('for (const target of context.targets)') &&
+      saveEffectFinalizer.includes('pg_advisory_xact_lock') &&
+      saveEffectFinalizer.includes('pendings.some((row) => row.status ===') &&
+      saveEffectFinalizer.includes("await closeCast(db, cast.id, 'effect', groupId)") &&
+      source('../prisma/schema.prisma').includes(
+        '@@unique([spellCastId, targetEntityKind, targetEntityId])',
+      ) &&
+      targetingMigration.includes('ADD COLUMN "targetingSnapshot" JSONB') &&
+      targetingMigration.includes('pending_effect_saves_spellCastId_targetEntityKind_targetEntityId_key') &&
+      pendingEffectSaves.includes('spellCastId: { in: castIds }, status')
+  );
+  check(
+    'CB79) UI do Mestre: multi-select por máximo DERIVADO, contagem visível e confirmações espaciais sem distância inventada',
+    masterEffectsPanel.includes('fetchSpellTargeting') &&
+      masterEffectsPanel.includes('data-targeting-confirmation') &&
+      masterEffectsPanel.includes('Alvos:') &&
+      masterEffectsPanel.includes('data-targeting-max') &&
+      !masterEffectsPanel.includes('distância em metros') &&
+      !masterEffectsPanel.includes('distanceFeet:') &&
+      source('../client/src/effectsApi.ts').includes('/spells/targeting/')
+  );
+  check(
+    'CB80) smoke da 6.6E cobre contagem/upcast/visão/barreira/concorrência e PLAYER continua sem targeting',
+    targetingSmoke.includes('76.7.A)') &&
+      targetingSmoke.includes('76.7.C)') &&
+      targetingSmoke.includes('76.7.E)') &&
+      targetingSmoke.includes('76.7.G)') &&
+      targetingSmoke.includes('76.7.L)') &&
+      source('../src/scripts/smoke-realtime.ts').includes('smokeSpellTargeting(BASE_URL, check)') &&
+      source('../src/modules/spells/execution/spell-cast.routes.ts').includes(
+        "spellsRouter.get('/targeting/:spellId', requireRole('MASTER')",
+      ) &&
+      !spellCastService.includes('new Map(')
   );
 }
 

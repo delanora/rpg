@@ -13,6 +13,34 @@ export interface CastingResourceChoice {
   level: number;
 }
 
+/**
+ * Evidência ESPACIAL dos smokes (6.6E) — o Mestre confirmando o que o servidor
+ * não consegue medir: alcance, caminho livre, visão e distância entre alvos.
+ *
+ * É EVIDÊNCIA, não regra: o servidor só exige os requisitos que a magia
+ * declarou, e continua recusando qualquer `fail` autoritativo (canSee=false).
+ */
+export const SPATIAL_EVIDENCE = {
+  withinRange: true,
+  clearPath: true,
+  sight: true,
+  groupDistance: true,
+} as const;
+
+const SPELL_CAST_ROUTES = ['/effects/bless', '/effects/hold-person', '/spells/cast-proof'];
+
+/**
+ * Injeta a evidência espacial APENAS nos corpos das rotas de conjuração. Usado
+ * pelo `request` dos smokes: sem isso o servidor recusaria (corretamente) um
+ * cast cujo alcance é UNKNOWN.
+ */
+export function withSpatialEvidence(path: string, body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  const clean = path.split('?')[0];
+  if (!SPELL_CAST_ROUTES.some((route) => clean.endsWith(route))) return body;
+  return { ...(body as Record<string, unknown>), spatialConfirmation: SPATIAL_EVIDENCE };
+}
+
 interface ResourceDto {
   kind: 'spell-slot' | 'pact-slot';
   level: number;

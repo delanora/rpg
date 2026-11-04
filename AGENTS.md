@@ -447,8 +447,8 @@ significa que as respectivas fases futuras estejam concluídas.
   que desmonta modificadores e Conditions, inclusive na remoção estrutural de
   entidades.
 - 6.6 Spell Execution Engine — **6.6A (contrato de conjuração), 6.6B (perfil de
-  conjuração), 6.6C (espaços/recursos) e 6.6D (casting time/economia)
-  implementadas**:
+  conjuração), 6.6C (espaços/recursos), 6.6D (casting time/economia) e 6.6E
+  (targeting/alcance assistido) implementadas**:
   `SpellCast` persistente (status `resolving`/`resolved`/`cancelled` + outcome
   `effect`/`no-effect`/`cancelled`), `SpellExecutionDefinition` por `spellId`
   (`immediate-effect` / `save-effect`) referenciando Effect Definitions, registry
@@ -486,8 +486,20 @@ significa que as respectivas fases futuras estejam concluídas.
   só um cantrip de 1 Ação passa — NÃO existe "uma magia de nível por turno"
   (duas Action leveled com Action Surge são válidas). Reaction spell exige
   Reaction Opportunity server-authoritative, que ainda não existe, então é
-  recusada (`SPELL_REACTION_NOT_AVAILABLE`). Ainda sem upcast mecânico, alcance/
-  componentes, preparação, duração, spell attack real e cast de PLAYER (6.6E+).
+  recusada (`SPELL_REACTION_NOT_AVAILABLE`).
+  **6.6E**: `SpellTargetingDefinition` por magia (quantidade base + progressão por
+  espaço, alcance em PÉS, visão, caminho livre, filtros e restrições de grupo),
+  com `maximumTargets` derivado de `castAtLevel` — o cliente nunca envia máximo,
+  alcance ou quantidade. Validação espacial TRI-STATE (`pass`/`fail`/`unknown`):
+  o que o servidor não mede é confirmado pelo Mestre (`spatialConfirmation`,
+  booleans por requisito, sem distância digitada), e um `fail` autoritativo
+  (ex.: `canSee = false` por Invisible/Cego) NUNCA é sobrescrito. Canonicalização
+  reaproveita o `loadEntity` (ficha e combatente do mesmo personagem = UM alvo).
+  Hold Person multi-alvo continua UM `SpellCast`/UM espaço/UM slot, com N
+  `PendingEffectSave` e RESOLUTION BARRIER transacional (`pg_advisory_xact_lock`):
+  nenhum Effect nasce antes do último save; então UM grupo com uma instância por
+  falha e UMA Concentração. Ainda sem upcast de dano/duração, componentes,
+  preparação, spell attack real e cast de PLAYER (6.6F).
 - 6.6 Basic Spell Execution
 - 6.7 Duration / Effects
 - 6.8 Components / Materials
@@ -804,10 +816,12 @@ de implementar.
 - `SpellExecutionDefinition` (`src/modules/spells/execution/`) diz COMO a magia
   resolve — `immediate-effect` (Bless) ou `save-effect` (Hold Person) — e
   referencia a Effect Definition por id, sem duplicar modificadores/Conditions.
-  `requiresConcentration`, `maxTargets`, `manualSaveDc` e `validateTargets`
-  (hook da magia: humanoide, limite de alvos) rodam na fase de VALIDAÇÃO, que é
-  read-only. O registry só contém magias PROVADAS; catálogo sem execução →
-  `409 SPELL_EXECUTION_NOT_IMPLEMENTED`.
+  `requiresConcentration`, `castingTime?`, `targeting` (6.6E) e `validateTargets`
+  rodam na fase de VALIDAÇÃO, que é read-only. O `targeting` declara quantidade
+  base + progressão por espaço, alcance em PÉS, visão/caminho livre, filtros
+  (`creature-type: humanoid`) e restrições de grupo (`mutual-distance`); o
+  máximo de alvos é DERIVADO do espaço escolhido. O registry só contém magias
+  PROVADAS; catálogo sem execução → `409 SPELL_EXECUTION_NOT_IMPLEMENTED`.
 - Pipeline ÚNICO (`castProofSpell`): VALIDATE → COMMIT → RESOLVE → PRODUCE
   EFFECTS/RESULT → COMPLETE, na mesma transação. O núcleo não tem `if` por nome
   de magia; as rotas `/api/effects/bless` e `/api/effects/hold-person` viraram
@@ -839,10 +853,11 @@ de implementar.
   Action (bidirecional + Action Surge), Reaction recusada, Ação gasta no
   COMMIT, fora de turno, Ação extra, corrida pela única Ação, retry sem segundo
   gasto, snapshot de turno e cast fora de combate.
-- **Continua pendente (intencional):** alcance/targeting (6.6E), cast de PLAYER
-  (6.6F), duração/save repetido (Duration Engine), Counterspell, Reaction
-  windows e upcasting. Spell Save DC (6.6B), slots (6.6C) e casting time/
-  Action Economy (6.6D) estão implementados.
+- **Continua pendente (intencional):** cast de PLAYER (6.6F), known/prepared,
+  duração/save repetido (Duration Engine), componentes V/S/M, Counterspell,
+  Reaction windows, área/cone/linha e upcast de dano/duração. Spell Save DC
+  (6.6B), slots (6.6C), casting time/Action Economy (6.6D) e targeting/alcance
+  assistido (6.6E) estão implementados.
 
 ### Modificadores de Effect (6.5B)
 

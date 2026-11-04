@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import type { PendingEffectSave, Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../lib/http-error.js';
-import { deriveConditionEffects, type MechanicalEntity } from '../shared/conditions.js';
-import { loadEntity } from '../mechanical/mechanical.service.js';
+import type { MechanicalEntity } from '../shared/conditions.js';
+import { loadEntity, type LoadedEntity } from '../mechanical/mechanical.service.js';
 import { applyEffectConditions, saveMechanicalState } from './effect-conditions.js';
 import {
   appendEffectLog,
@@ -11,13 +11,9 @@ import {
   publishEffects,
   type EffectActor,
 } from './effects.service.js';
+import { findEffectDefinition } from './definitions/registry.js';
 import { toEffectDto, type EffectDto } from './effects.dto.js';
-import {
-  HOLD_PERSON_CONDITIONS,
-  HOLD_PERSON_DEFINITION_ID,
-  HOLD_PERSON_LABEL,
-  HOLD_PERSON_SPELL_ID,
-} from './definitions/hold-person.js';
+import { HOLD_PERSON_SPELL_ID } from './definitions/hold-person.js';
 import {
   definitionLabel,
   publishPendingEffectSaves,
@@ -25,7 +21,7 @@ import {
   type PendingEffectSaveDto,
 } from './pending-effect-saves.js';
 import { cancelSpellCastForPending, castProofSpell } from '../spells/execution/spell-cast.service.js';
-import type { PendingEffectSave } from '@prisma/client';
+import { tryFinalizeSaveEffectCast } from '../spells/execution/save-effect-finalizer.js';
 import type { ApplyHoldPersonInput } from './effects.schema.js';
 
 /**
@@ -37,14 +33,18 @@ import type { ApplyHoldPersonInput } from './effects.schema.js';
  * salvaguarda. Passar no save não restaura a concentração antiga e não cria
  * concentração nova.
  *
- * A resolução assíncrona (save pelo pipeline de dados) continua aqui porque é
- * ela que produz o estado durável: Effect Group + EffectInstance com
- * `conditions: ['paralyzed']` + nova Concentração ligada ao grupo. Tudo ligado
- * ao `SpellCast` (histórico), que NÃO decide se o efeito está ativo.
+ * FASE 6.6E — MULTI-ALVO com RESOLUTION BARRIER: um cast com espaço superior
+ * pode atingir N humanoides. Isso continua sendo UM SpellCast, UM espaço, UMA
+ * Ação e UMA Concentração potencial — o que muda é existir UMA
+ * `PendingEffectSave` por alvo. Nenhum Effect nasce antes de o ÚLTIMO save
+ * resolver: aí o `save-effect-finalizer` cria UM grupo com uma instância por
+ * falha. Cancelar a pendência cancela a CONJURAÇÃO inteira (nada é parcial).
  */
 
 export interface HoldPersonResult {
   pending: PendingEffectSaveDto;
+  /** Todas as pendências do cast (multi-alvo desde 6.6E). */
+  pendings: PendingEffectSaveDto[];
   replayed: boolean;
 }
 
@@ -54,40 +54,66 @@ export interface HoldPersonResolution {
   replayed: boolean;
   target: MechanicalEntity | null;
   caster: MechanicalEntity | null;
+  /** Efeito criado para ESTE alvo (null em sucesso/barrier). */
   effect: EffectDto | null;
-  /** Alvos cujas visões derivadas mudaram (publicar depois do commit). */
+  /** Alvos que falharam e receberam o efeito. */
+  failedTargets: MechanicalEntity[];
+  /** Visões derivadas que mudaram (publicar depois do commit). */
   affectedTargets: MechanicalEntity[];
+  /** Todos os alvos do cast (as pendências deles mudaram). */
+  castTargets: MechanicalEntity[];
   label: string;
   dc: number;
+}
+
+function keyOf(entity: MechanicalEntity): string {
+  return `${entity.kind}:${entity.id}`;
+}
+
+function uniqueEntities(entities: readonly MechanicalEntity[]): MechanicalEntity[] {
+  const seen = new Set<string>();
+  const result: MechanicalEntity[] = [];
+  for (const entity of entities) {
+    const key = keyOf(entity);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entity);
+  }
+  return result;
 }
 
 /**
  * APLICAÇÃO CONTROLADA (Mestre) — delega ao cast service.
  *
  * Todo detalhe mecânico (atributo do save, CD de magia, Condition, definição de
- * efeito, ordem do lifecycle) é do SERVIDOR; o payload só traz caster, alvo e,
- * no multiclasse, qual fonte de conjuração. Desde a 6.6B a CD sai do perfil de
- * conjuração (personagem) ou do statblock (criatura) — nunca do cliente. Desde a
- * 6.6C a conjuração também gasta um espaço de magia: passar no save NÃO devolve
- * o espaço, nem cancelar a pendência depois do commit.
+ * efeito, quantidade de alvos, alcance, ordem do lifecycle) é do SERVIDOR; o
+ * payload só traz caster, alvos, a confirmação espacial quando exigida e, no
+ * multiclasse, qual fonte/espaço. Desde a 6.6C a conjuração gasta um espaço:
+ * passar no save NÃO devolve o espaço, nem cancelar a pendência depois do commit.
  */
 export async function applyHoldPerson(
   actor: EffectActor,
   input: ApplyHoldPersonInput,
 ): Promise<HoldPersonResult> {
+  const targets = input.targets ?? (input.target ? [input.target] : []);
   const result = await castProofSpell(actor, {
     operationId: input.operationId,
     spellId: HOLD_PERSON_SPELL_ID,
     caster: input.caster,
-    targets: [input.target],
+    targets,
     ...(input.spellcastingSource ? { spellcastingSource: input.spellcastingSource } : {}),
     // 6.6C: o espaço é gasto no COMMIT (nível >= 2), antes da salvaguarda.
     ...(input.castingResource ? { castingResource: input.castingResource } : {}),
+    ...(input.spatialConfirmation ? { spatialConfirmation: input.spatialConfirmation } : {}),
   });
-  if (!result.pending) {
+  if (result.pendings.length === 0) {
     throw new HttpError('A conjuração não gerou salvaguarda pendente.', 409, 'CONFLICT');
   }
-  return { pending: result.pending, replayed: result.replayed };
+  return {
+    pending: result.pendings[0],
+    pendings: result.pendings,
+    replayed: result.replayed,
+  };
 }
 
 /** GET de pendências de um alvo, com privacidade aplicada no SERVIDOR. */
@@ -115,11 +141,12 @@ export async function listPendingEffectSaves(
 }
 
 /**
- * Cancela uma pendência antes do save (ferramenta administrativa).
+ * Cancela uma resolução pendente (ferramenta administrativa).
  *
- * O cast vai para `cancelled`/`cancelled` e a Concentração anterior do commit
- * NÃO retorna — cancelar é encerrar uma resolução já iniciada, não desfazer a
- * conjuração.
+ * 6.6E: como um cast multi-alvo é UM evento, cancelar QUALQUER pendência cancela
+ * a conjuração INTEIRA — todas as pendências restantes vão para `cancelled`, o
+ * SpellCast para `cancelled` e nenhum Effect inicial nasce. Sem cancelamento
+ * parcial de alvo nesta fase. A Concentração anterior NÃO volta.
  */
 export async function cancelPendingEffectSave(
   actor: EffectActor,
@@ -136,6 +163,12 @@ export async function cancelPendingEffectSave(
       where: { id: pendingId, status: 'pending' },
       data: { status: 'cancelled', resolvedAt: new Date() },
     });
+    if (row.spellCastId) {
+      await db.pendingEffectSave.updateMany({
+        where: { spellCastId: row.spellCastId, status: 'pending' },
+        data: { status: 'cancelled', resolvedAt: new Date() },
+      });
+    }
     await cancelSpellCastForPending(row.spellCastId, db);
   });
 
@@ -181,72 +214,86 @@ export async function loadPendingEffectSaveForRoll(
 }
 
 function replayedResolution(row: PendingEffectSave): HoldPersonResolution {
+  const target = { kind: row.targetEntityKind as MechanicalEntity['kind'], id: row.targetEntityId };
+  const caster = { kind: row.casterEntityKind as MechanicalEntity['kind'], id: row.casterEntityId };
   return {
     pending: toPendingEffectSaveDto(row),
     success: row.result === 'success',
     replayed: true,
-    target: { kind: row.targetEntityKind as MechanicalEntity['kind'], id: row.targetEntityId },
-    caster: { kind: row.casterEntityKind as MechanicalEntity['kind'], id: row.casterEntityId },
+    target,
+    caster,
     effect: null,
+    failedTargets: [],
     affectedTargets: [],
+    castTargets: [target],
     label: definitionLabel(row.definitionId),
     dc: row.dc,
   };
 }
 
 /**
- * Fecha o `SpellCast` ligado à pendência (histórico; nunca restaura estado).
- * Guardado por status: retry/concorrência não reescrevem um cast já finalizado.
+ * Aplicação de uma pendência SEM SpellCast (linhas anteriores à 6.6A).
+ *
+ * Mantém o comportamento histórico de 1 pendência = 1 efeito, sem tocar no
+ * caminho novo (que sempre tem `spellCastId`).
  */
-async function completeLinkedCast(
+async function finalizeStandalonePending(
   db: Prisma.TransactionClient,
-  spellCastId: string | null,
-  outcome: 'effect' | 'no-effect',
-  effectGroupId?: string,
+  row: PendingEffectSave,
+  caster: LoadedEntity,
+  target: MechanicalEntity,
 ): Promise<void> {
-  if (!spellCastId) return;
-  await db.spellCast.updateMany({
-    where: { id: spellCastId, status: 'resolving' },
+  const effect = findEffectDefinition(row.definitionId);
+  if (!effect) return;
+  const groupId = randomUUID();
+  const effectRow = await db.effectInstance.create({
     data: {
-      status: 'resolved',
-      outcome,
-      ...(effectGroupId ? { effectGroupId } : {}),
-      resolvedAt: new Date(),
+      groupId,
+      definitionId: effect.definitionId,
+      label: effect.label,
+      sourceType: 'spell',
+      sourceId: HOLD_PERSON_SPELL_ID,
+      sourceEntityKind: caster.entity.kind,
+      sourceEntityId: caster.entity.id,
+      sourceLabel: caster.name,
+      modifiers: effect.modifiers() as unknown as Prisma.InputJsonValue,
+      conditions: effect.conditions() as unknown as Prisma.InputJsonValue,
+      targetEntityKind: target.kind,
+      targetEntityId: target.id,
+      visibility: 'public',
+      status: 'active',
+      createdBy: row.createdBy ?? null,
     },
   });
-}
-
-/**
- * REGRA GENÉRICA do motor: um caster Incapacitado ou a 0 PV não mantém
- * concentração. Roda depois da resolução (o save pode ficar pendente por tempo
- * real) e encerra o grupo pelo lifecycle — sem regra específica da magia.
- */
-async function enforceCasterConcentration(
-  caster: MechanicalEntity,
-  db: Prisma.TransactionClient,
-): Promise<MechanicalEntity[]> {
-  const fresh = await loadEntity(caster, db);
-  const state = fresh.state;
-  if (!state.concentration) return [];
-  if (!deriveConditionEffects(state).incapacitated && fresh.hpCurrent > 0) return [];
-
-  const ended = await endEffectsForConcentration(state.concentration, db, {
-    entity: fresh.entity,
-    state,
+  const fresh = await loadEntity(caster.entity, db);
+  fresh.state.concentration = {
+    id: randomUUID(),
+    label: effect.label,
+    sourceType: 'effect',
+    sourceId: groupId,
+    visibility: 'public',
+    startedAt: new Date().toISOString(),
+    ...(row.createdBy ? { startedBy: row.createdBy } : {}),
+  };
+  fresh.state.pendingConcentrationSaves = [];
+  await saveMechanicalState(fresh, fresh.state, db);
+  await applyEffectConditions(effectRow, target, db);
+  await db.pendingEffectSave.update({
+    where: { id: row.id },
+    data: { groupId, effectId: effectRow.id },
   });
-  state.concentration = null;
-  state.pendingConcentrationSaves = [];
-  await saveMechanicalState(fresh, state, db);
-  return ended;
 }
 
 /**
  * RESOLVE a pendência com o TOTAL já rolado pelo pipeline de salvaguarda.
  *
- * Na FALHA: Effect + Condition + Concentração + cast (`resolved`/`effect`) na
- * MESMA transação. No SUCESSO: pending + cast (`resolved`/`no-effect`), sem
- * Effect e sem Concentração nova. Retry/concorrência usam a transição guardada
- * por status da pendência: nunca duplicam consequência.
+ * Em 6.6E o save NÃO cria mais o Effect sozinho: ele grava o resultado e tenta
+ * fechar a conjuração inteira pelo `save-effect-finalizer`. Enquanto sobrar
+ * qualquer alvo pendente, a SpellCast continua `resolving` e nada mecânico nasce.
+ *
+ * Idempotência/concorrência: a transição `pending → resolved` guardada por
+ * status é a reivindicação; retry devolve o snapshot e NUNCA rola/aplica duas
+ * vezes.
  */
 export async function resolvePendingEffectSave(
   pendingId: string,
@@ -287,106 +334,51 @@ export async function resolvePendingEffectSave(
         return replayedResolution(later);
       }
 
-      if (success) {
-        // SUCESSO: nada mecânico nasce; a concentração anterior já terminou no
-        // COMMIT e NÃO é restaurada.
-        await completeLinkedCast(db, row.spellCastId, 'no-effect');
-        const fresh = await db.pendingEffectSave.findUniqueOrThrow({ where: { id: pendingId } });
-        return {
-          pending: toPendingEffectSaveDto(fresh),
-          success: true,
-          replayed: false,
-          target: target.entity,
-          caster: caster.entity,
-          effect: null,
-          affectedTargets: [],
-          label: definitionLabel(row.definitionId),
-          dc: row.dc,
-        } satisfies HoldPersonResolution;
-      }
+      let effect: EffectDto | null = null;
+      let failedTargets: MechanicalEntity[] = [];
+      let affectedTargets: MechanicalEntity[] = [target.entity];
+      let castTargets: MechanicalEntity[] = [target.entity];
 
-      const groupId = randomUUID();
-      const effectRow = await db.effectInstance.create({
-        data: {
-          groupId,
-          definitionId: HOLD_PERSON_DEFINITION_ID,
-          label: HOLD_PERSON_LABEL,
-          sourceType: 'spell',
-          sourceId: HOLD_PERSON_SPELL_ID,
-          sourceEntityKind: caster.entity.kind,
-          sourceEntityId: caster.entity.id,
-          sourceLabel: caster.name,
-          modifiers: [] as unknown as Prisma.InputJsonValue,
-          conditions: HOLD_PERSON_CONDITIONS as unknown as Prisma.InputJsonValue,
-          targetEntityKind: target.entity.kind,
-          targetEntityId: target.entity.id,
-          visibility: 'public',
-          status: 'active',
-          createdBy: row.createdBy ?? null,
-        },
-      });
-
-      // Defensivo: o commit já encerrou a concentração anterior; uma
-      // concentração manual aberta depois é substituída pela nova.
-      const state = caster.state;
-      if (state.concentration) {
-        await endEffectsForConcentration(state.concentration, db, {
-          entity: caster.entity,
-          state,
-        });
-      }
-      state.concentration = {
-        id: randomUUID(),
-        label: HOLD_PERSON_LABEL,
-        sourceType: 'effect',
-        sourceId: groupId,
-        visibility: 'public',
-        startedAt: new Date().toISOString(),
-        ...(row.createdBy ? { startedBy: row.createdBy } : {}),
-      };
-      state.pendingConcentrationSaves = [];
-      await saveMechanicalState(caster, state, db);
-
-      const applied = await applyEffectConditions(effectRow, target.entity, db);
-      const affectedTargets: MechanicalEntity[] = [];
-      if (applied.endedConcentration) {
-        affectedTargets.push(
-          ...(await endEffectsForConcentration(applied.endedConcentration, db)),
+      if (row.spellCastId) {
+        // RESOLUTION BARRIER: só cria Effect/Concentração quando TODOS os saves
+        // do cast resolveram. Um alvo que passou nunca recebe Paralyzed.
+        const finalization = await tryFinalizeSaveEffectCast(row.spellCastId, db);
+        failedTargets = finalization.failedTargets;
+        affectedTargets = uniqueEntities([...affectedTargets, ...finalization.affectedTargets]);
+        castTargets = uniqueEntities([...finalization.castTargets, target.entity]);
+        const own = finalization.effects.find(
+          (item) =>
+            item.targetEntityKind === target.entity.kind &&
+            item.targetEntityId === target.entity.id,
         );
+        effect = own ? toEffectDto(own) : null;
+      } else if (!success) {
+        await finalizeStandalonePending(db, row, caster, target.entity);
+        failedTargets = [target.entity];
+        const own = await db.pendingEffectSave.findUniqueOrThrow({ where: { id: pendingId } });
+        if (own.effectId) {
+          const effectRow = await db.effectInstance.findUniqueOrThrow({ where: { id: own.effectId } });
+          effect = toEffectDto(effectRow);
+        }
       }
-      // Caster incapacitado enquanto o save estava pendente (artefato do tempo
-      // real): a concentração recém-criada não pode permanecer.
-      affectedTargets.push(...(await enforceCasterConcentration(caster.entity, db)));
 
-      await db.pendingEffectSave.update({
-        where: { id: pendingId },
-        data: { groupId, effectId: effectRow.id },
-      });
-      await completeLinkedCast(db, row.spellCastId, 'effect', groupId);
-
-      const freshPending = await db.pendingEffectSave.findUniqueOrThrow({ where: { id: pendingId } });
-      const freshEffect = await db.effectInstance.findUniqueOrThrow({ where: { id: effectRow.id } });
-
+      const fresh = await db.pendingEffectSave.findUniqueOrThrow({ where: { id: pendingId } });
       return {
-        pending: toPendingEffectSaveDto(freshPending),
-        success: false,
+        pending: toPendingEffectSaveDto(fresh),
+        success,
         replayed: false,
         target: target.entity,
         caster: caster.entity,
-        effect: toEffectDto(freshEffect),
-        affectedTargets: [
-          target.entity,
-          ...(caster.entity.kind === target.entity.kind && caster.entity.id === target.entity.id
-            ? []
-            : [caster.entity]),
-          ...affectedTargets,
-        ],
+        effect,
+        failedTargets,
+        affectedTargets,
+        castTargets,
         label: definitionLabel(row.definitionId),
         dc: row.dc,
       } satisfies HoldPersonResolution;
     });
   } catch (error) {
-    // Entidade removida no meio do caminho: a pendência e o cast são
+    // Entidade removida no meio do caminho: as pendências e o cast são
     // CANCELADOS; nenhum efeito aponta para algo inexistente.
     if (error instanceof HttpError && error.status === 404) {
       await prisma.$transaction(async (db) => {
@@ -395,6 +387,12 @@ export async function resolvePendingEffectSave(
           where: { id: pendingId, status: 'pending' },
           data: { status: 'cancelled', resolvedAt: new Date() },
         });
+        if (row?.spellCastId) {
+          await db.pendingEffectSave.updateMany({
+            where: { spellCastId: row.spellCastId, status: 'pending' },
+            data: { status: 'cancelled', resolvedAt: new Date() },
+          });
+        }
         await cancelSpellCastForPending(row?.spellCastId, db);
       });
       throw new HttpError(
@@ -408,36 +406,38 @@ export async function resolvePendingEffectSave(
 }
 
 /**
- * Publica o resultado: pendência removida, consequências (se houver) e as
- * visões derivadas. UMA linha de registro por aplicação.
+ * Publica o resultado: pendências restantes, consequências (se houver) e as
+ * visões derivadas. UMA linha de registro por alvo que mudou.
  */
 export async function publishHoldPersonResult(
   resolution: HoldPersonResolution,
   actorName: string,
 ): Promise<void> {
   if (resolution.replayed) return;
-  const targets = resolution.affectedTargets.filter(
-    (item, index, list) =>
-      list.findIndex((other) => other.kind === item.kind && other.id === item.id) === index,
-  );
-  if (targets.length > 0) {
-    await publishEffects(targets);
-    for (const target of targets) {
-      await appendEffectLog(
-        target,
-        actorName,
-        (name) =>
-          resolution.success
-            ? `${name} resistiu a ${resolution.label} (salvaguarda de Sabedoria).`
-            : `${name} falhou na salvaguarda e ficou Paralisado — ${resolution.label}.`,
-        false,
-      );
-    }
+  const targets = uniqueEntities([
+    ...resolution.castTargets,
+    ...resolution.affectedTargets,
+  ]);
+  for (const failed of resolution.failedTargets) {
+    await appendEffectLog(
+      failed,
+      actorName,
+      (name) => `${name} falhou na salvaguarda e ficou Paralisado — ${resolution.label}.`,
+      false,
+    );
   }
-  if (resolution.target) {
-    await publishPendingEffectSaves([resolution.target]);
-    // Mesmo sem mudança mecânica (SUCESSO), a ficha/combate são republicados
-    // para a solicitação sumir sem refresh manual.
-    await publishEffects([resolution.target]);
+  if (resolution.success && resolution.target) {
+    await appendEffectLog(
+      resolution.target,
+      actorName,
+      (name) => `${name} resistiu a ${resolution.label} (salvaguarda de Sabedoria).`,
+      false,
+    );
+  }
+  // As pendências de TODOS os alvos mudaram (uma resolveu), então a lista é
+  // republicada para cada um — sem vazar pendências privadas de NPC.
+  if (targets.length > 0) {
+    await publishPendingEffectSaves(targets);
+    await publishEffects(targets);
   }
 }
