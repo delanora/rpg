@@ -521,8 +521,8 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'WP2) NPC usa a MESMA engine (HP da instância, iniciativa e ciclo de morte)',
-    service.includes("if (combatant.kind !== 'CHARACTER')") &&
-      service.includes('combatant.creature?.hpMax') &&
+    source('../src/modules/combat/damage-resolution.ts').includes("target.kind === 'CHARACTER'") &&
+      source('../src/modules/combat/damage-resolution.ts').includes('creature?.hpMax') &&
       service.includes('deathEntityOf(incoming)'),
   );
 
@@ -1873,6 +1873,51 @@ console.log('Check-combat-ui — refino da UI de combate');
       combatServiceSource.includes('TURN_END_TRIGGER_PENDING')
   );
 }
+
+  // 6.6I.1 — o núcleo de dano/cura é ÚNICO e o serviço não guarda a regra.
+  const combatServiceSource = source('../src/modules/combat/combat.service.ts');
+  const damageCore = source('../src/modules/combat/damage-resolution.ts');
+  const registrySource = source('../src/modules/spells/execution/spell-execution-registry.ts');
+  const smokeRunner = source('../src/scripts/smoke-realtime.ts');
+  check(
+    'CB122) combat.service usa o núcleo compartilhado e não mantém as helpers privadas de dano',
+    source('../src/modules/combat/combat.service.ts').includes("from './damage-resolution.js'") &&
+      combatServiceSource.includes('resolveDamage(') &&
+      combatServiceSource.includes('resolveHealing(') &&
+      combatServiceSource.includes('applyHpMutation(') &&
+      !combatServiceSource.includes('async function changeHp(') &&
+      !combatServiceSource.includes('function damageDefensesOf(') &&
+      !combatServiceSource.includes('function applyDamageDefense(')
+  );
+  check(
+    'CB123) o núcleo não publica socket, não abre transação e não escreve log (composição do chamador)',
+    damageCore.includes('export function damageDefensesOf') &&
+      damageCore.includes('export function applyDamageDefense') &&
+      damageCore.includes('export async function resolveDamage') &&
+      damageCore.includes('export async function resolveHealing') &&
+      damageCore.includes('export async function applyHpMutation') &&
+      !damageCore.includes('getBroadcaster') &&
+      !damageCore.includes('ServerEvents') &&
+      !damageCore.includes('appendCombatJournal') &&
+      !damageCore.includes('$transaction')
+  );
+  check(
+    'CB124) Sacred Flame e Healing Word continuam NÃO implementadas nesta fase',
+    !registrySource.includes('sacred-flame') &&
+      !registrySource.includes('healing-word') &&
+      !registrySource.includes("spellId: 'sacred-flame'")
+  );
+  check(
+    'CB125) os smokes dos cards e do núcleo integram o runner principal',
+    smokeRunner.includes('smokeCombatResolutionCards(BASE_URL, check)') &&
+      smokeRunner.includes('smokeDamageHealingCore(BASE_URL, check)')
+  );
+  check(
+    'CB126) o smoke dos cards usa o endpoint real e não cria tabela de cards',
+    source('../src/scripts/smoke-combat-resolution-cards.ts').includes('/resolution-requests') &&
+      source('../src/scripts/smoke-combat-resolution-cards.ts').includes('pendingEffectSave') &&
+      !source('../src/scripts/smoke-combat-resolution-cards.ts').includes('resolutionCard.create')
+  );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);

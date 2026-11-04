@@ -79,6 +79,12 @@ import { parseJson } from '../shared/json.js';
 import type { AmmoType } from '../shared/item-details.js';
 import { rollD20, rollDice, rollDie, rollHealingDice, type HealingDiceResult } from '../shared/dice.js';
 import { noteDamageConcentration } from '../concentration/concentration.service.js';
+import {
+  applyHpMutation,
+  resolveDamage,
+  resolveHealing,
+  type DamageResolutionComponent,
+} from './damage-resolution.js';
 import { planNextTurn } from './turn-order.js';
 import {
   combatantAttacks,
@@ -1030,106 +1036,6 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
 
 /** --- Dano e cura --------------------------------------------------------------- */
 
-/**
- * Aplica dano (delta negativo) ou cura (delta positivo) na ficha/criatura de
- * origem, respeitando 0 como piso e o HP máximo como teto.
- *
- * Devolve `null` quando a origem não existe mais (deletada no meio do combate).
- */
-async function changeHp(
-  combatant: CombatantSourced,
-  delta: number,
-  db: Prisma.TransactionClient = prisma,
-  publications?: Set<string>,
-): Promise<{ hpCurrent: number; hpMax: number; hpBefore: number; hpTempBefore: number } | null> {
-  if (combatant.kind === 'CHARACTER' && combatant.characterId && combatant.character) {
-    const { character } = combatant;
-    // PV ANTES da escrita: a aritmética da morte instantânea (dano restante ×
-    // PV máximo) precisa do valor anterior — a atualização é atômica no banco.
-    const before = await db.character.findUnique({
-      where: { id: character.id },
-      select: { hpCurrent: true, hpTemp: true },
-    });
-    if (!before) return null;
-    // O teto de PV de um personagem é DERIVADO: o gravado + o `hpBonus` de
-    // features/talentos (Resiliência Dracônica, Vigoroso), como na ficha.
-    const hpBonus = characterClassAdjustments(character).hpBonus;
-    // O teto reduzido pela Exaustão 4+ é calculado AQUI (e não no SQL) para
-    // respeitar a regra opcional da mesa: desligada, o multiplicador é 1.
-    const hpMaxMultiplier = deriveConditionEffects(character.mechanicalState).hpMaxMultiplier;
-
-    // A escrita é ATÔMICA no banco (`UPDATE ... SET hpCurrent = ...`): o valor
-    // novo é calculado a partir do que está GRAVADO, não do snapshot lido no
-    // início do ataque. Sem isso, dois ataques simultâneos no mesmo alvo
-    // perdiam dano (last-write-wins).
-    //
-    // Regras preservadas, agora no SQL:
-    //   • dano (delta < 0) consome primeiro os PV temporários; só o excedente
-    //     chega aos PV atuais; cura (delta > 0) não mexe nos temporários;
-    //   • PV atuais nunca ficam abaixo de 0 nem acima de hpMax.
-    const affected = await db.$executeRaw`
-      UPDATE "characters"
-      SET "hpTemp" = GREATEST(0, "hpTemp" - GREATEST(0, -${delta})),
-          "hpCurrent" = GREATEST(
-            0,
-            LEAST(
-              GREATEST(FLOOR(("hpMax" + ${hpBonus}) * ${hpMaxMultiplier}), 0),
-              "hpCurrent" + ${delta} + LEAST("hpTemp", GREATEST(0, -${delta}))
-            )
-          ),
-          "version" = "version" + 1
-      WHERE "id" = ${character.id}
-    `;
-
-    // A origem foi deletada no meio do combate.
-    if (affected === 0) return null;
-
-    // Relê o estado REALMENTE gravado para montar o DTO e publicar — nunca o
-    // valor calculado em memória.
-    const stored = await db.character.findUniqueOrThrow({ where: { id: character.id } });
-
-    if (publications) publications.add(stored.id);
-    else await publishCharacter(stored.id);
-
-    return {
-      hpCurrent: stored.hpCurrent,
-      hpMax: effectiveMaxHp(stored.hpMax + hpBonus, stored.mechanicalState),
-      hpBefore: before.hpCurrent,
-      hpTempBefore: before.hpTemp,
-    };
-  }
-
-  // NPC usa a MESMA trilha da criatura: o HP é o snapshot da instância.
-  if (combatant.kind !== 'CHARACTER') {
-    // A vida é do próprio combatente (snapshot): várias cópias iguais rastreiam
-    // o dano independentemente e o bestiário não é alterado pelo combate.
-    // O teto vem do snapshot carregado (não muda durante o combate); o valor
-    // novo é calculado a partir do que está gravado, na mesma escrita atômica.
-    const hpMax = combatant.hpMax ?? combatant.creature?.hpMax ?? 0;
-    const ceiling = effectiveMaxHp(hpMax, combatant.mechanicalState);
-    // PV ANTES da escrita (mesma razão do personagem): a morte instantânea das
-    // criaturas depende do dano restante após derrubá-la a 0 PV.
-    const before = await db.combatant.findUnique({
-      where: { id: combatant.id },
-      select: { hpCurrent: true },
-    });
-    if (!before) return null;
-
-    const affected = await db.$executeRaw`
-      UPDATE "combatants"
-      SET "hpCurrent" = GREATEST(0, LEAST(${ceiling}, COALESCE("hpCurrent", 0) + ${delta}))
-      WHERE "id" = ${combatant.id}
-    `;
-
-    if (affected === 0) return null;
-
-    const stored = await db.combatant.findUniqueOrThrow({ where: { id: combatant.id } });
-    return { hpCurrent: stored.hpCurrent ?? 0, hpMax: ceiling, hpBefore: before.hpCurrent ?? 0, hpTempBefore: 0 };
-  }
-
-  return null;
-}
-
 /** --- Ataque -------------------------------------------------------------------- */
 
 /** Ajustes de features (Fúria, resistências...) de um personagem multiclasse. */
@@ -1167,63 +1073,6 @@ function damageTypeList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
-}
-
-/**
- * Listas de defesa do alvo contra dano, por tipo canônico.
- *
- * Personagem: resistências de CLASSE (Fúria, ...) e de RAÇA (`raceResistances`,
- * preenchido no passo 3 do assistente: Draconato, Anão, Tiefling...).
- * Criatura: `resistances` / `immunities` / `vulnerabilities` do bestiário.
- */
-function damageDefensesOf(target: CombatantSourced): {
-  resistances: Set<string>;
-  immunities: Set<string>;
-  vulnerabilities: Set<string>;
-  allResistance?: boolean;
-} {
-  if (target.kind === 'CHARACTER' && target.character) {
-    const adjustments = characterAdjustments(target.character);
-    const effects = deriveConditionEffects(combatantMechanicalState(target));
-    return {
-      resistances: new Set([
-        ...adjustments.resistances,
-        ...(target.character.raceResistances ?? []),
-      ]),
-      allResistance: effects.allDamageResistance,
-      immunities: new Set(effects.poisonImmune ? ['Veneno'] : []),
-      vulnerabilities: new Set(),
-    };
-  }
-
-  const creature = target.creature;
-  const effects = deriveConditionEffects(combatantMechanicalState(target));
-  return {
-    allResistance: effects.allDamageResistance,
-    resistances: new Set(damageTypeList(creature?.resistances)),
-    immunities: new Set([...damageTypeList(creature?.immunities), ...(effects.poisonImmune ? ['Veneno'] : [])]),
-    vulnerabilities: new Set(damageTypeList(creature?.vulnerabilities)),
-  };
-}
-
-/**
- * Aplica a defesa do alvo a UMA parcela de dano, por tipo.
- *
- * Imunidade zera a parcela; vulnerabilidade dobra; resistência reduz pela
- * metade (arredondando para baixo); sem defesa, a parcela passa inteira. Dano
- * SEM tipo (`null`) nunca aciona defesa.
- */
-function applyDamageDefense(
-  damageType: string | null,
-  total: number,
-  defenses: { resistances: Set<string>; immunities: Set<string>; vulnerabilities: Set<string>; allResistance?: boolean },
-): { applied: number; modifier: DamageComponentPayload['modifier'] } {
-  if (damageType && defenses.immunities.has(damageType)) return { applied: 0, modifier: 'immunity' };
-  const resistance = defenses.allResistance || Boolean(damageType && defenses.resistances.has(damageType));
-  const vulnerability = Boolean(damageType && defenses.vulnerabilities.has(damageType));
-  // PHB 2014: resistência primeiro (arredonda para baixo), depois vulnerabilidade.
-  const resisted = resistance ? Math.floor(total / 2) : total;
-  return { applied: vulnerability ? resisted * 2 : resisted, modifier: resistance && vulnerability ? 'resistance-vulnerability' : resistance ? 'resistance' : vulnerability ? 'vulnerability' : null };
 }
 
 /**
@@ -1630,9 +1479,9 @@ export async function resolveAttack(
       });
       const sneakRoll = sneak && sneak.total > 0 ? sneak : null;
 
-      const defenses = damageDefensesOf(target);
       const specs = attackDamages(attack);
-      let total = 0;
+      const pendingComponents: DamageResolutionComponent[] = [];
+      const pendingBreakdowns: DamageBreakdownPayload[] = [];
       // A Fúria entra UMA vez, na primeira parcela FÍSICA. O Ataque Furtivo
       // acompanha o dano da ARMA, então entra UMA vez na primeira parcela — sem
       // depender do tipo (amarrá-lo à parcela física o descartava em armas sem
@@ -1784,18 +1633,34 @@ export async function resolveAttack(
           breakdown,
         });
 
-        // Defesa do alvo POR TIPO e POR PARCELA: imunidade zera, vulnerabilidade
-        // dobra, resistência halva. Cada parcela é resolvida independentemente.
-        const { applied, modifier } = applyDamageDefense(spec.type, componentTotal, defenses);
-        components.push({
-          type: spec.type ?? '',
+        pendingComponents.push({
+          type: spec.type ?? null,
+          rawAmount: componentTotal,
           expression: damage.expression,
-          rolled: componentTotal,
-          applied,
-          modifier,
-          breakdown,
         });
-        total += applied;
+        pendingBreakdowns.push(breakdown);
+      }
+
+      // 6.6I.1 — defesas e mutação de HP pelo núcleo COMPARTILHADO. Um ataque é
+      // UM evento: as parcelas somam num único dano final, que alimenta o ciclo
+      // de morte e UM teste de Concentração (quando > 0).
+      const damage = await resolveDamage(db, {
+        eventId: input.operationId,
+        source: { kind: 'weapon-attack' },
+        target,
+        components: pendingComponents,
+        publications,
+      });
+      const total = damage.finalDamage;
+      for (const [index, component] of damage.components.entries()) {
+        components.push({
+          type: component.type ?? '',
+          expression: component.expression ?? '',
+          rolled: component.rawAmount,
+          applied: component.applied,
+          modifier: component.modifier,
+          breakdown: pendingBreakdowns[index]!,
+        });
       }
 
       // Aviso quando alguma defesa mexeu no dano — sem ele o total não bate com a
@@ -1836,18 +1701,18 @@ export async function resolveAttack(
       damageRolled = total;
       // Nada a debitar (tudo imune, por exemplo) — não escreve no HP à toa.
       if (total > 0) {
-        const applied = await changeHp(target, -total, db, publications);
+        const applied = damage;
         // Fase 6.3: o dano que chega a 0 PV dispara o ciclo de morte (morte
         // instantânea → decisão do Mestre; queda normal → Testes contra a
         // Morte/Resistência Implacável; dano já a 0 PV → falhas).
-        if (applied) {
+        if (damage.hpAfter !== null) {
           const entity = deathEntityOf(target);
           const death = await applyDamageConsequences(
             entity,
             {
               damage: total,
-              hpBefore: applied.hpBefore,
-              hpTempBefore: applied.hpTempBefore,
+              hpBefore: damage.hpBefore ?? 0,
+              hpTempBefore: damage.hpTempBefore,
               critical,
               sourceName: attacker.name,
             },
@@ -2115,13 +1980,19 @@ export async function useCombatItem(
 
     let healedAmount = 0;
     if (healing) {
-      const applied = await changeHp(target, healing.total, db, publications);
+      const applied = await resolveHealing(db, {
+        eventId: randomUUID(),
+        source: { kind: 'feature', label: item.name },
+        target,
+        amount: healing.total,
+        publications,
+      });
       if (!applied) {
         throw new HttpError('O alvo não existe mais neste combate.', 409, 'CONFLICT');
       }
-      healedAmount = applied.hpCurrent - applied.hpBefore;
+      healedAmount = applied.finalHealing;
       const entity = deathEntityOf(target);
-      const death = await applyHealConsequences(entity, applied.hpCurrent, db, combatant.name);
+      const death = await applyHealConsequences(entity, applied.hpAfter, db, combatant.name);
       if (death.changed) deathTargets.push(entity);
     }
 
@@ -2200,7 +2071,7 @@ export async function applyManualHp(
   const applied = await prisma.$transaction(async (db) => {
     const active = await db.combat.updateMany({ where: { id: combat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
     if (!active.count) throw new HttpError('Combate encerrado.', 409, 'CONFLICT');
-    const result = await changeHp(combatant, delta, db, publications);
+    const result = await applyHpMutation(db, combatant, delta, publications);
     // Fase 6.3: o ajuste manual do Mestre passa pelo MESMO ciclo de morte do
     // ataque (dano a 0 PV, falhas, morte instantânea) e a CURA limpa o ciclo.
     // Curar com decisão pendente ou personagem morto é recusado — o Mestre
