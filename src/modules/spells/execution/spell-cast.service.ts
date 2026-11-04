@@ -25,6 +25,10 @@ import type {
   SpellExecutionDefinition,
   SpellValidationContext,
 } from './spell-execution-definition.js';
+import {
+  validateTargeting,
+  type TargetingSnapshot,
+} from './spell-targeting.service.js';
 import { resolveSpellcastingProfile } from './spellcasting-profile.service.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
 import {
@@ -91,6 +95,8 @@ export interface SpellCastContext {
   economyCost: 'action' | 'bonus-action' | 'reaction';
   /** Contexto de turno em combate ATIVO (`null` = fora de combate). */
   turnContext: CastingTurnContext | null;
+  /** Snapshot da validação de alvos (6.6E) — gravado no COMMIT. */
+  targeting: TargetingSnapshot;
 }
 
 export interface SpellCastResult {
@@ -98,7 +104,10 @@ export interface SpellCastResult {
   replayed: boolean;
   effectGroupId: string | null;
   effects: EffectDto[];
+  /** Primeira pendência (compatibilidade das rotas de prova de 1 alvo). */
   pending: PendingEffectSaveDto | null;
+  /** TODAS as pendências do cast (multi-alvo desde a 6.6E). */
+  pendings: PendingEffectSaveDto[];
 }
 
 interface CommittedOutcome extends SpellCastResult {
@@ -113,9 +122,12 @@ function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
         actor: actor.userId,
         spellId: input.spellId,
         caster: input.caster,
-        targets: input.targets,
+        // 6.6E: o CONJUNTO de alvos é canônico e a ORDEM não tem significado
+        // mecânico em Bless/Hold Person — [A,B] e [B,A] são o mesmo payload.
+        targets: input.targets.map((target) => `${target.kind}:${target.id}`).sort(),
         spellcastingSource: input.spellcastingSource ?? null,
         castingResource: input.castingResource ?? null,
+        spatialConfirmation: input.spatialConfirmation ?? null,
       }),
     )
     .digest('hex');
@@ -140,22 +152,28 @@ function castInProgress(): never {
 async function castArtifacts(
   row: SpellCast,
   db: Prisma.TransactionClient | typeof prisma = prisma,
-): Promise<{ effects: EffectDto[]; pending: PendingEffectSaveDto | null }> {
-  const [effects, pending] = await Promise.all([
+): Promise<{
+  effects: EffectDto[];
+  pending: PendingEffectSaveDto | null;
+  pendings: PendingEffectSaveDto[];
+}> {
+  const [effects, pendings] = await Promise.all([
     row.effectGroupId
       ? db.effectInstance.findMany({
           where: { groupId: row.effectGroupId },
           orderBy: { createdAt: 'asc' },
         })
       : Promise.resolve([] as EffectInstance[]),
-    db.pendingEffectSave.findFirst({
+    db.pendingEffectSave.findMany({
       where: { spellCastId: row.id },
       orderBy: { createdAt: 'asc' },
     }),
   ]);
+  const mapped = pendings.map(toPendingEffectSaveDto);
   return {
     effects: effects.map(toEffectDto),
-    pending: pending ? toPendingEffectSaveDto(pending) : null,
+    pending: mapped[0] ?? null,
+    pendings: mapped,
   };
 }
 
@@ -211,22 +229,16 @@ export async function validateSpellCast(
     const loaded = await loadEntity(reference, db);
     const key = `${loaded.entity.kind}:${loaded.entity.id}`;
     if (seen.has(key)) {
+      // 6.6E: a chave vem do `loadEntity`, que já canonicaliza combatente→ficha;
+      // escolher o personagem pela ficha E pelo combatente é o MESMO alvo.
       throw new HttpError(
         'O mesmo alvo não pode ser escolhido duas vezes na mesma conjuração.',
         400,
-        'VALIDATION_ERROR',
+        'SPELL_TARGET_DUPLICATE',
       );
     }
     seen.add(key);
     targets.push(loaded);
-  }
-
-  if (targets.length > execution.maxTargets) {
-    throw new HttpError(
-      `Esta conjuração aceita no máximo ${execution.maxTargets} alvo(s).`,
-      400,
-      'VALIDATION_ERROR',
-    );
   }
 
   // 6.6B: fonte + perfil SEMPRE resolvidos antes do commit. Fonte inexistente,
@@ -246,6 +258,18 @@ export async function validateSpellCast(
     db,
   );
   const castAtLevel = resource ? resource.level : 0;
+
+  // 6.6E: TARGETING validado com o `castAtLevel` REAL — a quantidade máxima de
+  // alvos é derivada da definição + espaço escolhido, nunca do cliente. Falhar
+  // aqui não gasta espaço, Ação nem encerra a Concentração anterior.
+  const targeting = await validateTargeting({
+    db,
+    targeting: execution.targeting,
+    caster,
+    targets,
+    castAtLevel,
+    ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
+  });
 
   // 6.6D: CASTING TIME vem do registry (ou do catálogo) — NUNCA do cliente. O
   // custo é traduzido para a Action Economy existente; tempos não executáveis
@@ -270,6 +294,7 @@ export async function validateSpellCast(
     castAtLevel,
     castingResource: resource,
     economyCost,
+    targeting,
   };
   await execution.validateTargets?.(context);
 
@@ -287,6 +312,7 @@ export async function validateSpellCast(
     castingTimeKind,
     economyCost,
     turnContext,
+    targeting,
   };
 }
 
@@ -324,6 +350,9 @@ async function commitSpellCast(
         kind: target.entity.kind,
         id: target.entity.id,
       })) as unknown as Prisma.InputJsonValue,
+      // Snapshot IMUTÁVEL do targeting (6.6E): mover alvo, mudar tipo ou ganhar
+      // geometria depois NÃO reescreve como este cast foi validado.
+      targetingSnapshot: context.targeting as unknown as Prisma.InputJsonValue,
       status: 'resolving',
       requiresConcentration: context.execution.requiresConcentration,
       // SNAPSHOT IMUTÁVEL do perfil: mudar a ficha/statblock depois NÃO
@@ -480,37 +509,42 @@ async function resolveImmediateEffect(
  * persistente. O Effect/Concentração só nascem na falha, quando o save é
  * resolvido pelo pipeline de dados.
  */
-async function beginPendingSave(
+async function beginPendingSaves(
   db: Prisma.TransactionClient,
   cast: SpellCast,
   context: SpellCastContext,
-): Promise<PendingEffectSaveDto> {
+): Promise<PendingEffectSaveDto[]> {
   const resolution = context.execution.resolution;
   if (resolution.kind !== 'save-effect') {
     throw new HttpError('Definição de execução inconsistente.', 409, 'SPELL_EXECUTION_NOT_IMPLEMENTED');
   }
-  const target = context.targets[0];
-  const pending = await db.pendingEffectSave.create({
-    data: {
-      definitionId: resolution.effectDefinitionId,
-      // Vínculo explícito pendência → conjuração (nunca fundir os conceitos).
-      spellCastId: cast.id,
-      casterEntityKind: context.caster.entity.kind,
-      casterEntityId: context.caster.entity.id,
-      casterLabel: context.caster.name,
-      targetEntityKind: target.entity.kind,
-      targetEntityId: target.entity.id,
-      ability: resolution.ability,
-      dc: context.saveDc,
-      visibility: 'public',
-      status: 'pending',
-      // Um cast = uma pendência nesta fase; o id do cast é a chave idempotente.
-      operationId: cast.id,
-      fingerprint: `${cast.fingerprint}:save`,
-      createdBy: context.actor.userId,
-    },
-  });
-  return toPendingEffectSaveDto(pending);
+  // 6.6E: UM SpellCast com N alvos gera N pendências (uma por alvo). Nunca N
+  // casts, nunca N espaços, nunca N Ações. Cada pendência tem sua própria
+  // chave idempotente derivada do cast + identidade canônica do alvo.
+  const created: PendingEffectSaveDto[] = [];
+  for (const target of context.targets) {
+    const pending = await db.pendingEffectSave.create({
+      data: {
+        definitionId: resolution.effectDefinitionId,
+        // Vínculo explícito pendência → conjuração (nunca fundir os conceitos).
+        spellCastId: cast.id,
+        casterEntityKind: context.caster.entity.kind,
+        casterEntityId: context.caster.entity.id,
+        casterLabel: context.caster.name,
+        targetEntityKind: target.entity.kind,
+        targetEntityId: target.entity.id,
+        ability: resolution.ability,
+        dc: context.saveDc,
+        visibility: 'public',
+        status: 'pending',
+        operationId: `${cast.id}:${target.entity.kind}:${target.entity.id}`,
+        fingerprint: `${cast.fingerprint}:save:${target.entity.kind}:${target.entity.id}`,
+        createdBy: context.actor.userId,
+      },
+    });
+    created.push(toPendingEffectSaveDto(pending));
+  }
+  return created;
 }
 
 /**
@@ -575,17 +609,19 @@ export async function castProofSpell(
           effectGroupId: resolved.cast.effectGroupId ?? null,
           effects: resolved.effects.map(toEffectDto),
           pending: null,
+          pendings: [],
           endedTargets: [...endedTargets, ...resolved.affected],
         };
       }
 
-      const pending = await beginPendingSave(db, cast, context);
+      const pendings = await beginPendingSaves(db, cast, context);
       return {
         cast: toSpellCastDto(cast),
         replayed: false,
         effectGroupId: null,
         effects: [],
-        pending,
+        pending: pendings[0] ?? null,
+        pendings,
         endedTargets,
       };
     });
@@ -613,7 +649,7 @@ export async function castProofSpell(
   }
 
   // REALTIME/LOGS depois do commit: superfícies existentes, sem evento novo.
-  if (outcome.pending) {
+  if (outcome.pendings.length > 0) {
     await publishPendingEffectSaves(outcome.cast.targetEntities);
   }
   await publishEffects([

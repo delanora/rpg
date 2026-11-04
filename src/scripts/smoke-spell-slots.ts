@@ -13,7 +13,11 @@ import {
   selectCastingResource,
   type CastingResource,
 } from '../modules/spells/execution/casting-resource.js';
-import { pickCastingResource, resetCastingSlots } from './spell-slot-fixtures.js';
+import {
+  pickCastingResource,
+  resetCastingSlots,
+  withSpatialEvidence,
+} from './spell-slot-fixtures.js';
 
 type Check = (label: string, condition: boolean, detail?: string) => void;
 
@@ -244,7 +248,7 @@ export async function smokeSpellSlots(baseUrl: string, check: Check): Promise<vo
       const res = await fetch(`${baseUrl}/api${path}`, {
         method: body === undefined ? 'GET' : 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : { body: JSON.stringify(withSpatialEvidence(path, body)) }),
       });
       return { status: res.status, data: (await res.json().catch(() => ({}))) as any };
     }
@@ -344,7 +348,7 @@ export async function smokeSpellSlots(baseUrl: string, check: Check): Promise<vo
       malicious.status === 400 &&
         malicious.data.error === 'SPELLCASTING_RESOURCE_INVALID' &&
         beastCast.status === 409 &&
-        beastCast.data.error === 'HOLD_PERSON_TARGET_NOT_HUMANOID' &&
+        beastCast.data.error === 'SPELL_TARGET_TYPE_INVALID' &&
         JSON.stringify(beforeMalicious) === JSON.stringify(afterInvalid) &&
         (await prisma.spellCast.count({ where: { casterEntityId: caster.id, status: 'resolving' } })) === 0,
       JSON.stringify({ malicious: malicious.data, beast: beastCast.data, beforeMalicious, afterInvalid }),

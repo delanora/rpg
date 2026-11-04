@@ -4,6 +4,8 @@ import { authenticate, requireRole } from '../../auth/auth.middleware.js';
 import { entitySchema } from '../../shared/conditions.js';
 import { spellCastProofSchema } from './spell-cast.schema.js';
 import { castProofSpell } from './spell-cast.service.js';
+import { spellExecutionDefinition } from './spell-execution-registry.js';
+import { targetingSummary } from './spell-targeting.js';
 import { listSpellcastingSources } from './spellcasting-profile.service.js';
 import { castingResourcesForEntity } from './casting-resource.service.js';
 import { castingEconomySummary, castingTurnContext } from './spell-casting-economy.js';
@@ -56,6 +58,29 @@ spellsRouter.get('/resources/:entityKind/:entityId', requireRole('MASTER'), asyn
   res.json({ resources: await castingResourcesForEntity(parsed.data), economy });
 });
 
+/**
+ * GET /api/spells/targeting/:spellId?castAtLevel=N — TARGETING derivado (6.6E).
+ *
+ * MASTER-only: alimenta a UI de prova com o máximo de alvos do ESPAÇO escolhido,
+ * o alcance em pés e os requisitos espaciais. Nada disso é escolhido no cliente
+ * nem vem de string localizada do catálogo.
+ */
+spellsRouter.get('/targeting/:spellId', requireRole('MASTER'), async (req, res) => {
+  const execution = spellExecutionDefinition(String(req.params.spellId));
+  if (!execution) {
+    res.status(404).json({ error: 'SPELL_EXECUTION_NOT_IMPLEMENTED' });
+    return;
+  }
+  const raw = req.query.castAtLevel;
+  const castAtLevel =
+    raw === undefined ? execution.targeting.targetCount.baseSlotLevel : Number(raw);
+  if (!Number.isInteger(castAtLevel) || castAtLevel < 0 || castAtLevel > 20) {
+    res.status(400).json({ error: 'VALIDATION_ERROR' });
+    return;
+  }
+  res.json({ targeting: targetingSummary(execution.targeting, castAtLevel) });
+});
+
 /** POST /api/spells/cast-proof — valida, commita e resolve uma conjuração. */
 spellsRouter.post('/cast-proof', requireRole('MASTER'), async (req, res) => {
   const parsed = spellCastProofSchema.safeParse(req.body ?? {});
@@ -73,6 +98,7 @@ spellsRouter.post('/cast-proof', requireRole('MASTER'), async (req, res) => {
     cast: result.cast,
     effectGroupId: result.effectGroupId,
     pendingId: result.pending?.id ?? null,
+    pendingIds: result.pendings.map((pending) => pending.id),
     replayed: result.replayed,
   });
 });

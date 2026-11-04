@@ -8,9 +8,11 @@ import {
   endEffect,
   fetchCastingState,
   fetchSpellcastingSources,
+  fetchSpellTargeting,
   type CastingEconomyDto,
   type CastingResourceChoice,
   type CastingResourceDto,
+  type SpellTargetingDto,
 } from '../../effectsApi';
 import type {
   AbilityKey,
@@ -92,6 +94,55 @@ function isRollModifier(kind: ModifierKind): boolean {
   return kind.startsWith('roll-');
 }
 
+/**
+ * EVIDÊNCIA ESPACIAL do Mestre (6.6E). Não é distância: o servidor só aceita a
+ * confirmação dos requisitos que a própria magia declarou e que ele não mede.
+ */
+type SpatialEvidence = {
+  withinRange: boolean;
+  clearPath: boolean;
+  sight: boolean;
+  groupDistance: boolean;
+};
+
+const EMPTY_EVIDENCE: SpatialEvidence = {
+  withinRange: false,
+  clearPath: false,
+  sight: false,
+  groupDistance: false,
+};
+
+/** Requisitos que a UI deve pedir — derivados do targeting do SERVIDOR. */
+function requiredConfirmations(
+  targeting: SpellTargetingDto | null,
+  targetCount: number,
+): { key: keyof SpatialEvidence; label: string }[] {
+  if (!targeting) return [];
+  const list: { key: keyof SpatialEvidence; label: string }[] = [
+    {
+      key: 'withinRange',
+      label:
+        targeting.rangeFeet === null
+          ? 'Todos os alvos estão ao alcance.'
+          : `Todos os alvos estão dentro de ${targeting.rangeFeet} ft.`,
+    },
+  ];
+  if (targeting.requiresSight) {
+    list.push({ key: 'sight', label: 'O conjurador consegue ver todos os alvos.' });
+  }
+  if (targeting.requiresClearPath) {
+    list.push({ key: 'clearPath', label: 'Há caminho livre até todos os alvos.' });
+  }
+  const group = targeting.groupConstraints[0];
+  if (group && targetCount > 1) {
+    list.push({
+      key: 'groupDistance',
+      label: `Todos os alvos estão a até ${group.feet} ft uns dos outros.`,
+    });
+  }
+  return list;
+}
+
 export function MasterEffectsPanel({
   entity,
   targetName,
@@ -133,7 +184,14 @@ export function MasterEffectsPanel({
   const [blessTargets, setBlessTargets] = useState<string[]>([]);
   // IMOBILIZAR PESSOA (6.5H): alvo ÚNICO. O servidor fixa atributo (Sabedoria),
   // CD e Condition (Paralyzed); nada disso é escolha daqui.
-  const [holdPersonTarget, setHoldPersonTarget] = useState('');
+  const [holdPersonTargets, setHoldPersonTargets] = useState<string[]>([]);
+  // TARGETING (6.6E): máximo/alcance/requisitos vêm do SERVIDOR para o espaço
+  // escolhido; as confirmações são o que o Mestre afirma sobre o que o sistema
+  // não consegue medir (nunca uma distância digitada).
+  const [blessTargeting, setBlessTargeting] = useState<SpellTargetingDto | null>(null);
+  const [holdTargeting, setHoldTargeting] = useState<SpellTargetingDto | null>(null);
+  const [blessEvidence, setBlessEvidence] = useState<SpatialEvidence>(EMPTY_EVIDENCE);
+  const [holdEvidence, setHoldEvidence] = useState<SpatialEvidence>(EMPTY_EVIDENCE);
   // FONTE DE CONJURAÇÃO (6.6B): lista do SERVIDOR com CD/ataque mágico já
   // derivados. Só há escolha no multiclasse; não existe campo de CD na UI.
   const [sources, setSources] = useState<SpellcastingSourceDto[]>([]);
@@ -183,6 +241,60 @@ export function MasterEffectsPanel({
     };
   }, [entity.kind, entity.id]);
 
+  // O máximo de alvos depende do ESPAÇO: buscar de novo quando ele muda.
+  useEffect(() => {
+    let alive = true;
+    const level = blessSlot ? Number(blessSlot.split(':')[1]) : 0;
+    if (!blessSlot || !Number.isInteger(level) || level < 1) {
+      setBlessTargeting(null);
+      return () => {
+        alive = false;
+      };
+    }
+    fetchSpellTargeting('bless', level)
+      .then((targeting) => {
+        if (alive) setBlessTargeting(targeting);
+      })
+      .catch(() => {
+        if (alive) setBlessTargeting(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [blessSlot, entity.kind, entity.id]);
+
+  useEffect(() => {
+    let alive = true;
+    const level = holdSlot ? Number(holdSlot.split(':')[1]) : 0;
+    if (!holdSlot || !Number.isInteger(level) || level < 1) {
+      setHoldTargeting(null);
+      return () => {
+        alive = false;
+      };
+    }
+    fetchSpellTargeting('hold-person', level)
+      .then((targeting) => {
+        if (alive) setHoldTargeting(targeting);
+      })
+      .catch(() => {
+        if (alive) setHoldTargeting(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [holdSlot, entity.kind, entity.id]);
+
+  // Trocar caster/espaço invalida alvos e confirmações antigas.
+  useEffect(() => {
+    setBlessEvidence(EMPTY_EVIDENCE);
+    setBlessTargets([]);
+  }, [blessSlot, entity.kind, entity.id]);
+
+  useEffect(() => {
+    setHoldEvidence(EMPTY_EVIDENCE);
+    setHoldPersonTargets([]);
+  }, [holdSlot, entity.kind, entity.id]);
+
   const selectedSource =
     sources.find((item) => `${item.kind}:${item.id}` === sourceKey) ??
     (sources.length === 1 ? sources[0] : null);
@@ -192,6 +304,14 @@ export function MasterEffectsPanel({
   const holdResources = eligibleResources(resources, 2);
   const blessChoice = resourceChoiceOf(resources, blessSlot);
   const holdChoice = resourceChoiceOf(resources, holdSlot);
+  const blessMax = blessTargeting?.maxTargets ?? 3;
+  const holdMax = holdTargeting?.maxTargets ?? 1;
+  const blessRequirements = requiredConfirmations(blessTargeting, blessTargets.length);
+  const holdRequirements = requiredConfirmations(holdTargeting, holdPersonTargets.length);
+  const blessReady =
+    blessTargeting !== null && blessRequirements.every((item) => blessEvidence[item.key]);
+  const holdReady =
+    holdTargeting !== null && holdRequirements.every((item) => holdEvidence[item.key]);
   // Fora de combate não há economia a checar; em combate, só o ator do turno
   // com Ação disponível pode conjurar (o servidor revalida no COMMIT).
   const proofBlocked =
@@ -498,12 +618,13 @@ export function MasterEffectsPanel({
 
       <details className="conditions-admin" data-bless-proof>
         <summary>
-          Bless — prova da engine (6.5G){blessTargets.length > 0 ? ` (${blessTargets.length}/3)` : ''}
+          Bless — prova da engine (6.5G) ({blessTargets.length}/{blessMax})
         </summary>
         <p className="field-hint">
-          Ferramenta TEMPORÁRIA do Mestre: cria o grupo de efeitos, até 3 alvos e a
-          Concentração do caster. Gasta UM espaço de magia real no commit (sem upcast), não
-          gasta Ação, não valida alcance/componentes e ainda não tem duração automática.
+          Ferramenta TEMPORÁRIA do Mestre: cria o grupo de efeitos e a Concentração do
+          caster, consome Ação e UM espaço real. O espaço escolhido define o MÁXIMO de
+          alvos (3 no 1º, +1 por espaço acima); alcance e caminho livre são confirmados
+          abaixo quando o servidor não consegue medir. Sem duração automática.
         </p>
         <div className="hp-controls" data-casting-resource="bless">
           <span className="field-hint">Conjuração: Ação — {economyLabel}</span>
@@ -540,7 +661,7 @@ export function MasterEffectsPanel({
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={!checked && blessTargets.length >= 3}
+                  disabled={!checked && blessTargets.length >= blessMax}
                   onChange={(event) =>
                     setBlessTargets((list) =>
                       event.target.checked
@@ -557,6 +678,26 @@ export function MasterEffectsPanel({
             <span className="field-hint">Nenhum personagem/criatura para escolher.</span>
           ) : null}
         </div>
+        <div className="hp-controls" data-targeting-confirmation="bless">
+          <span className="field-hint" data-targeting-max>
+            Alvos: {blessTargets.length} / {blessMax}
+          </span>
+          {blessRequirements.map((requirement) => (
+            <label key={requirement.key} className="field-hint">
+              <input
+                type="checkbox"
+                checked={blessEvidence[requirement.key]}
+                onChange={(event) =>
+                  setBlessEvidence((current) => ({
+                    ...current,
+                    [requirement.key]: event.target.checked,
+                  }))
+                }
+              />{' '}
+              {requirement.label}
+            </label>
+          ))}
+        </div>
         <div className="hp-controls">
           <button
             type="button"
@@ -566,7 +707,8 @@ export function MasterEffectsPanel({
               proofBlocked ||
               blessTargets.length === 0 ||
               selectedSource === null ||
-              !blessChoice
+              !blessChoice ||
+              !blessReady
             }
             onClick={() =>
               void run(async () => {
@@ -582,8 +724,10 @@ export function MasterEffectsPanel({
                   targets,
                   spellcastingSource: { kind: selectedSource.kind, id: selectedSource.id },
                   castingResource: blessChoice,
+                  spatialConfirmation: blessEvidence,
                 });
                 setBlessTargets([]);
+                setBlessEvidence(EMPTY_EVIDENCE);
                 const refreshed = await fetchCastingState(entity);
                 setResources(refreshed.resources);
                 setEconomy(refreshed.economy);
@@ -598,10 +742,11 @@ export function MasterEffectsPanel({
       <details className="conditions-admin" data-hold-person-proof>
         <summary>Imobilizar Pessoa — prova da engine (6.5H)</summary>
         <p className="field-hint">
-          Ferramenta TEMPORÁRIA do Mestre: cria apenas a salvaguarda de Sabedoria pendente. Se o
-          alvo FALHAR, nascem o efeito, o Paralyzed e a Concentração do caster; se passar, nada é
-          criado — e o espaço gasto NÃO volta. Gasta UM espaço de nível 2+, não gasta Ação, não
-          valida alcance/componentes e não repete o save no fim do turno.
+          Ferramenta TEMPORÁRIA do Mestre: cria UMA salvaguarda de Sabedoria por alvo. Se o
+          espaço for superior ao 2º, cada nível acima permite um humanoide adicional. Nenhum
+          efeito nasce antes de o ÚLTIMO save resolver; então só os alvos que falharam recebem
+          Paralyzed e a Concentração do caster. O espaço gasto NÃO volta e o save não se repete
+          no fim do turno.
         </p>
         <div className="hp-controls" data-casting-resource="hold-person">
           <span className="field-hint">Conjuração: Ação — {economyLabel}</span>
@@ -630,44 +775,82 @@ export function MasterEffectsPanel({
           )}
         </div>
         <div className="hp-controls">
-          <select
-            aria-label="Alvo de Imobilizar Pessoa"
-            value={holdPersonTarget}
-            onChange={(event) => setHoldPersonTarget(event.target.value)}
-          >
-            <option value="">Escolha o alvo</option>
-            {choices.map((choice) => (
-              <option
-                key={`${choice.entity.kind}:${choice.entity.id}`}
-                value={`${choice.entity.kind}:${choice.entity.id}`}
-              >
+          {choices.map((choice) => {
+            const key = `${choice.entity.kind}:${choice.entity.id}`;
+            const checked = holdPersonTargets.includes(key);
+            return (
+              <label key={key} className="field-hint">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!checked && holdPersonTargets.length >= holdMax}
+                  onChange={(event) => {
+                    setHoldEvidence((current) => ({ ...current, groupDistance: false }));
+                    setHoldPersonTargets((list) =>
+                      event.target.checked
+                        ? [...list, key]
+                        : list.filter((item) => item !== key),
+                    );
+                  }}
+                />{' '}
                 {choice.name}
-              </option>
-            ))}
-          </select>
+              </label>
+            );
+          })}
+          {choices.length === 0 ? (
+            <span className="field-hint">Nenhum personagem/criatura para escolher.</span>
+          ) : null}
+        </div>
+        <div className="hp-controls" data-targeting-confirmation="hold-person">
+          <span className="field-hint" data-targeting-max>
+            Alvos: {holdPersonTargets.length} / {holdMax} (filtro: humanoide)
+          </span>
+          {holdRequirements.map((requirement) => (
+            <label key={requirement.key} className="field-hint">
+              <input
+                type="checkbox"
+                checked={holdEvidence[requirement.key]}
+                onChange={(event) =>
+                  setHoldEvidence((current) => ({
+                    ...current,
+                    [requirement.key]: event.target.checked,
+                  }))
+                }
+              />{' '}
+              {requirement.label}
+            </label>
+          ))}
+        </div>
+        <div className="hp-controls">
           <button
             type="button"
             className="btn btn-small"
             disabled={
               locked ||
               proofBlocked ||
-              holdPersonTarget === '' ||
+              holdPersonTargets.length === 0 ||
               selectedSource === null ||
-              !holdChoice
+              !holdChoice ||
+              !holdReady
             }
             onClick={() =>
               void run(async () => {
-                const choice = choices.find(
-                  (item) => `${item.entity.kind}:${item.entity.id}` === holdPersonTarget,
-                );
-                if (!choice || selectedSource === null || !holdChoice) return;
+                const targets = holdPersonTargets.flatMap((key) => {
+                  const choice = choices.find(
+                    (item) => `${item.entity.kind}:${item.entity.id}` === key,
+                  );
+                  return choice ? [choice.entity] : [];
+                });
+                if (targets.length === 0 || selectedSource === null || !holdChoice) return;
                 await applyHoldPersonEffect({
                   caster: entity,
-                  target: choice.entity,
+                  targets,
                   spellcastingSource: { kind: selectedSource.kind, id: selectedSource.id },
                   castingResource: holdChoice,
+                  spatialConfirmation: holdEvidence,
                 });
-                setHoldPersonTarget('');
+                setHoldPersonTargets([]);
+                setHoldEvidence(EMPTY_EVIDENCE);
                 const refreshed = await fetchCastingState(entity);
                 setResources(refreshed.resources);
                 setEconomy(refreshed.economy);

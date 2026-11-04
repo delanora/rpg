@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
-import { pickCastingResource } from './spell-slot-fixtures.js';
+import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
 import type { PendingEffectSaveDto } from '../modules/effects/pending-effect-saves.js';
 
@@ -129,7 +129,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       const res = await fetch(`${baseUrl}/api${path}`, {
         method: verb,
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : { body: JSON.stringify(withSpatialEvidence(path, body)) }),
       });
       return { status: res.status, data: (await res.json().catch(() => ({}))) as any };
     }
@@ -271,7 +271,7 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       '74.B) PLAYER não aplica, não humanoide é rejeitado ANTES do save e payload malicioso (DC/atributo/PB) NÃO altera a CD derivada',
       asPlayer.status === 403 &&
         beastApply.status === 409 &&
-        beastApply.data.error === 'HOLD_PERSON_TARGET_NOT_HUMANOID' &&
+        beastApply.data.error === 'SPELL_TARGET_TYPE_INVALID' &&
         replay.status === 200 &&
         replay.data.replayed === true &&
         replay.data.pending.id === firstPending.id &&

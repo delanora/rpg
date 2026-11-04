@@ -48,6 +48,19 @@ export interface SpellCastDto {
     /** Custo de economia efetivamente gasto (null fora de combate/truque). */
     economyCostKind: string | null;
   } | null;
+  /**
+   * Snapshot do TARGETING (6.6E). `null` nos casts anteriores à migração:
+   * quantos/max/alcance/modo de validação do dia do cast, nunca recalculados.
+   */
+  targeting: {
+    maxTargets: number | null;
+    targetCount: number | null;
+    rangeFeet: number | null;
+    validationMode: string | null;
+    requiresSight: boolean;
+    requiresClearPath: boolean;
+    constraints: { kind: string; result: string; confirmed: boolean }[];
+  } | null;
   createdAt: string;
   committedAt: string;
   resolvedAt: string | null;
@@ -58,6 +71,34 @@ function entityOf(value: unknown): MechanicalEntity | null {
   const item = value as { kind?: unknown; id?: unknown };
   if (typeof item.kind !== 'string' || typeof item.id !== 'string') return null;
   return { kind: item.kind as MechanicalEntity['kind'], id: item.id };
+}
+
+function targetingOf(value: unknown): SpellCastDto['targeting'] {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  const constraints = Array.isArray(item.constraints)
+    ? item.constraints.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') return [];
+        const constraint = entry as { kind?: unknown; result?: unknown; confirmed?: unknown };
+        if (typeof constraint.kind !== 'string' || typeof constraint.result !== 'string') return [];
+        return [
+          {
+            kind: constraint.kind,
+            result: constraint.result,
+            confirmed: constraint.confirmed === true,
+          },
+        ];
+      })
+    : [];
+  return {
+    maxTargets: typeof item.maxTargets === 'number' ? item.maxTargets : null,
+    targetCount: typeof item.targetCount === 'number' ? item.targetCount : null,
+    rangeFeet: typeof item.rangeFeet === 'number' ? item.rangeFeet : null,
+    validationMode: typeof item.validationMode === 'string' ? item.validationMode : null,
+    requiresSight: item.requiresSight === true,
+    requiresClearPath: item.requiresClearPath === true,
+    constraints,
+  };
 }
 
 export function toSpellCastDto(row: SpellCast): SpellCastDto {
@@ -123,6 +164,7 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
     saveDc: row.saveDc ?? null,
     spellcasting,
     casting,
+    targeting: targetingOf(row.targetingSnapshot),
     createdAt: row.createdAt.toISOString(),
     committedAt: row.committedAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

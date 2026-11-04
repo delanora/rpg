@@ -10,7 +10,7 @@ import {
   type CastingTurnContext,
   type PriorSpellCast,
 } from '../modules/spells/execution/spell-casting-economy.js';
-import { pickCastingResource } from './spell-slot-fixtures.js';
+import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
 
 type Check = (label: string, condition: boolean, detail?: string) => void;
 
@@ -217,7 +217,7 @@ export async function smokeSpellActionEconomy(baseUrl: string, check: Check): Pr
       const res = await fetch(`${baseUrl}/api${path}`, {
         method: body === undefined ? 'GET' : 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : { body: JSON.stringify(withSpatialEvidence(path, body)) }),
       });
       return { status: res.status, data: (await res.json().catch(() => ({}))) as any };
     }
@@ -298,7 +298,7 @@ export async function smokeSpellActionEconomy(baseUrl: string, check: Check): Pr
       noAction.status === 409 &&
         noAction.data.error === 'SPELL_ACTION_UNAVAILABLE' &&
         invalidTarget.status === 409 &&
-        invalidTarget.data.error === 'HOLD_PERSON_TARGET_NOT_HUMANOID' &&
+        invalidTarget.data.error === 'SPELL_TARGET_TYPE_INVALID' &&
         economyAfterInvalid.actionsUsed === 0 &&
         JSON.stringify(slotsBeforeInvalid) === JSON.stringify(slotsAfterInvalid),
       JSON.stringify({ noAction: noAction.data, invalid: invalidTarget.data, economy: economyAfterInvalid }),

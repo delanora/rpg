@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
-import { pickCastingResource } from './spell-slot-fixtures.js';
+import { pickCastingResource, withSpatialEvidence } from './spell-slot-fixtures.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import type { EffectDto } from '../modules/effects/effects.dto.js';
 
@@ -155,7 +155,7 @@ export async function smokeBlessEffect(baseUrl: string, check: Check): Promise<v
       const res = await fetch(`${baseUrl}/api${path}`, {
         method: body ? 'POST' : 'GET',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        ...(body ? { body: JSON.stringify(body) } : {}),
+        ...(body ? { body: JSON.stringify(withSpatialEvidence(path, body)) } : {}),
       });
       return { status: res.status, data: (await res.json().catch(() => ({}))) as any };
     }

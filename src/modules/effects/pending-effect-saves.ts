@@ -136,6 +136,13 @@ export async function cancelPendingEffectSavesForEntity(
     .map((row) => row.spellCastId)
     .filter((id): id is string => typeof id === 'string' && id.length > 0);
   if (castIds.length > 0) {
+    // 6.6E: um cast multi-alvo é UM evento. Remover estruturalmente um alvo
+    // cancela a conjuração INTEIRA — nenhuma pendência órfã fica esperando um
+    // save que não pode mais fechar a barreira.
+    await db.pendingEffectSave.updateMany({
+      where: { spellCastId: { in: castIds }, status: 'pending' },
+      data: { status: 'cancelled', resolvedAt: new Date() },
+    });
     await db.spellCast.updateMany({
       where: { id: { in: castIds }, status: 'resolving' },
       data: { status: 'cancelled', outcome: 'cancelled', resolvedAt: new Date() },

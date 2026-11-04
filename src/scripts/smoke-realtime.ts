@@ -9,6 +9,7 @@ import { smokeSpellCastingFoundation } from './smoke-spell-casting-foundation.js
 import { smokeSpellcastingProfile } from './smoke-spellcasting-profile.js';
 import { smokeSpellSlots } from './smoke-spell-slots.js';
 import { smokeSpellActionEconomy } from './smoke-spell-action-economy.js';
+import { smokeSpellTargeting } from './smoke-spell-targeting.js';
 import { smokeCombatItems } from './smoke-combat-items.js';
 import { smokeDeath } from './smoke-death.js';
 import { smokeExhaustionRule } from './smoke-exhaustion-rule.js';
@@ -21583,6 +21584,7 @@ async function main(): Promise<void> {
   await smokeSpellcastingProfile(BASE_URL, check);
   await smokeSpellSlots(BASE_URL, check);
   await smokeSpellActionEconomy(BASE_URL, check);
+  await smokeSpellTargeting(BASE_URL, check);
   await smokeDeath(BASE_URL, check);
   await smokeExhaustionRule(BASE_URL, check);
 

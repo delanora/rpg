@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { entitySchema } from '../../shared/conditions.js';
 import { spellcastingSourceRefSchema } from './spellcasting-source.js';
 import { castingResourceRefSchema } from './casting-resource.js';
+import { spatialConfirmationSchema } from './spatial-validation.js';
 
 /**
  * FASE 6.6A/6.6B — contrato HTTP do CASTING (apenas prova/administração).
@@ -19,7 +20,9 @@ export const spellCastProofSchema = z.object({
   operationId: z.string().trim().min(1).max(128),
   spellId: z.string().trim().min(1).max(64),
   caster: entitySchema,
-  targets: z.array(entitySchema).min(1).max(3),
+  // O limite REAL depende da magia + `castAtLevel` (derivado do espaço); o teto
+  // do schema é só uma barreira de entrada. O servidor revalida pelo targeting.
+  targets: z.array(entitySchema).min(1).max(12),
   /**
    * Fonte de conjuração escolhida. Obrigatória só quando o caster tem MAIS de
    * uma; o servidor revalida a posse e ignora qualquer número enviado.
@@ -31,6 +34,12 @@ export const spellCastProofSchema = z.object({
    * nunca escolhe um nível abaixo do nível da magia.
    */
   castingResource: castingResourceRefSchema.optional(),
+  /**
+   * Confirmação ESPACIAL do Mestre (6.6E). Só para requisitos que o servidor
+   * declarou necessários e não consegue medir (alcance/cobertura/visão). Nunca
+   * contém distância numérica e NUNCA sobrescreve um `fail` autoritativo.
+   */
+  spatialConfirmation: spatialConfirmationSchema.optional(),
 });
 
 export type SpellCastProofInput = z.infer<typeof spellCastProofSchema>;
