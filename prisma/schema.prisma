@@ -1149,6 +1149,16 @@ model EffectInstance {
   /// com `sourceType = 'effect'` e `sourceId = EffectInstance.id`.
   conditions Json @default("[]")
 
+  ///
+  /// LIFECYCLE POR TURNO (Fase 6.6H). `durationSnapshot` é COPIADO do
+  /// `SpellCast` de origem (mesma âncora, nunca "mais 1 minuto" a partir da
+  /// criação); `turnTriggers` é o snapshot dos triggers da Effect Definition
+  /// (`[{ key, timing, kind, ability, dc, optional, ... }]`), para o efeito
+  /// histórico não depender do registry atual. Efeitos sem duração/trigger
+  /// ficam com `null`/`[]`.
+  durationSnapshot Json?
+  turnTriggers     Json @default("[]")
+
   /// Extensões futuras (detalhes narrativos). Regra mecânica NÃO mora aqui.
   metadata Json @default("{}")
 
@@ -1198,9 +1208,29 @@ model PendingEffectSave {
   casterLabel String?
 
   visibility String @default("public")
-  /// `pending` | `resolved` | `cancelled`.
+
+  ///
+  /// FASE 6.6H — FASE da pendência:
+  ///  • `initial` — salvaguarda da RESOLUÇÃO inicial de um `SpellCast`
+  ///    (`resolving`), obrigatória e nunca declinável;
+  ///  • `ongoing` — salvaguarda repetida de um Effect CONTÍNUO no fim do turno
+  ///    de um alvo. NÃO reabre o cast; sua resolução pertence ao lifecycle
+  ///    daquele `EffectInstance`.
+  phase String @default("initial")
+  /// Instância de efeito dona do trigger (só `phase = 'ongoing'`).
+  effectInstanceId String?
+  /// Chave do trigger na definição (`repeat-save`).
+  triggerKey String?
+  /// Identidade determinística da ocorrência (combate+turno+efeito+trigger).
+  triggerOccurrenceId String?
+  /// `true` quando o texto permite RECUSAR ("can make"): recusar não encerra.
+  optional Boolean @default(false)
+  /// Quando o alvo RECUSOU esta ocorrência. Recusar não é falhar (§88).
+  declinedAt DateTime?
+
+  /// `pending` | `resolved` | `cancelled` | `declined`.
   status String @default("pending")
-  /// `success` | `failure` (null enquanto pendente).
+  /// `success` | `failure` (null enquanto pendente ou declinada).
   result String?
 
   /// Idempotência da APLICAÇÃO: retry devolve a MESMA pendência.
@@ -1218,6 +1248,9 @@ model PendingEffectSave {
   @@index([spellCastId, status])
   /// UM alvo por conjuração — a barreira/retry nunca cria pendência duplicada.
   @@unique([spellCastId, targetEntityKind, targetEntityId])
+  /// Lifecycle do efeito contínuo (6.6H): pendências por instância/fase.
+  @@index([effectInstanceId, status])
+  @@index([phase, status])
   @@map("pending_effect_saves")
 }
 
@@ -1263,6 +1296,18 @@ model SpellCast {
   /// houve consumo e qual mão fez o gesto somático. Nullable apenas para casts
   /// anteriores à migração. Não guarda id interno de item.
   componentsSnapshot Json?
+
+  ///
+  /// SNAPSHOT IMUTÁVEL da DURAÇÃO (Fase 6.6H): definição estruturada, modo de
+  /// acompanhamento (`combat`/`manual`) e a âncora do clock de combate (round e
+  /// `turnSequence` do COMMIT, rounds totais e round devido). Tirado no COMMIT —
+  /// nunca quando o Effect nasce depois da resolution barrier. Nullable para
+  /// casts instantâneos e para os anteriores à migração.
+  durationSnapshot Json?
+
+  /// Por que um cast terminou SEM produzir Effect por decisão do motor
+  /// (ex.: `duration-expired` na barreira inicial). Não substitui `outcome`.
+  resolutionReason String?
 
   /// `resolving` | `resolved` | `cancelled`.
   status String @default("resolving")

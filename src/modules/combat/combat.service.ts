@@ -897,9 +897,27 @@ export async function rollInitiative(actor: CombatActor, combatantId?: string): 
  * espera pela iniciativa não há turno corrente, então ninguém além do mestre
  * avança.
  */
+import { openEndOfTurnTriggers } from '../effects/turn-trigger.service.js';
+import { processDurationExpirations } from '../spells/execution/effect-duration.service.js';
+
 export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promise<CombatDto> {
   const pending = await prisma.combat.findUnique({ where: { id: input.combatId }, select: { status: true } });
   if (pending?.status === 'PENDING_INITIATIVE' && actor.role !== 'MASTER') throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
+  // 6.6H: o FIM do turno atual abre as salvaguardas repetidas dos efeitos que
+  // atingem quem está encerrando. Enquanto alguma continuar pendente o turno
+  // NÃO avança — `turnSequence` e `round` permanecem iguais até rolar/recusar.
+  if (pending?.status === 'ACTIVE') {
+    const triggers = await openEndOfTurnTriggers(input.combatId);
+    if (triggers.blocked) {
+      throw new HttpError(
+        'Resolva ou recuse as salvaguardas de fim de turno antes de avançar.',
+        409,
+        'TURN_END_TRIGGER_PENDING',
+      );
+    }
+  }
+  // Alvos cujas visões derivadas mudaram por expiração de duração (6.6H).
+  const expiredTargets: Parameters<typeof publishEffects>[0][number][] = [];
   const response = await runCombatOperation(actor, input, 'next-turn', async (db, combat) => {
     const ordered = orderCombatants(combat.combatants);
     const outgoing = ordered[combat.currentIndex];
@@ -999,8 +1017,13 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         { private: skipped.some((item) => isMasterOnlyCombatant(item.kind)) },
       );
     }
+    // 6.6H: expirações devidas NESTA nova posição do clock são processadas
+    // antes de publicar o turno — um Bless expirado já não concede bônus.
+    const expirations = await processDurationExpirations(db, combat.id);
+    expiredTargets.push(...expirations.targets);
     return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
   });
+  if (expiredTargets.length > 0) await publishEffects(expiredTargets);
   if (!response.replayed) emitTurn(response.combat);
   return response.combat;
 }

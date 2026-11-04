@@ -47,6 +47,10 @@ export const effectEndReasonSchema = z.enum([
   'group',
   'concentration',
   'duration',
+  /** Fase 6.6H: a duração máxima da magia venceu (automática ou manual). */
+  'duration-expired',
+  /** Fase 6.6H: o alvo passou na salvaguarda repetida de fim de turno. */
+  'repeat-save-success',
   'dispel',
   'source-removed',
   'source-ended',
@@ -158,3 +162,15 @@ export const applyHoldPersonSchema = z
     path: ['targets'],
   });
 export type ApplyHoldPersonInput = z.infer<typeof applyHoldPersonSchema>;
+
+/**
+ * FASE 6.6H — disparo MANUAL de um trigger de turno (fora de combate).
+ *
+ * O `operationId` entra na identidade da ocorrência: retry devolve a MESMA
+ * pendência em vez de abrir uma segunda oportunidade. Nada de atributo/CD no
+ * payload — ambos vêm da definição e do snapshot do cast.
+ */
+export const manualEffectTriggerSchema = z.object({
+  operationId: z.string().trim().min(1).max(128),
+});
+export type ManualEffectTriggerInput = z.infer<typeof manualEffectTriggerSchema>;

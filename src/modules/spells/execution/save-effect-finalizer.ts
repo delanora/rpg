@@ -191,6 +191,12 @@ export async function tryFinalizeSaveEffectCast(
         sourceLabel: cast.casterLabel ?? null,
         modifiers: effect.modifiers() as unknown as Prisma.InputJsonValue,
         conditions: effect.conditions() as unknown as Prisma.InputJsonValue,
+        // 6.6H: o Effect nasce DEPOIS da barreira, mas herda o relógio do
+        // COMMIT — nunca ganha "mais 1 minuto" por causa da UI assíncrona.
+        ...(cast.durationSnapshot
+          ? { durationSnapshot: cast.durationSnapshot as Prisma.InputJsonValue }
+          : {}),
+        turnTriggers: effect.turnTriggers() as unknown as Prisma.InputJsonValue,
         targetEntityKind: target.entity.kind,
         targetEntityId: target.entity.id,
         visibility: 'public',

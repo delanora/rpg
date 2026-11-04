@@ -201,7 +201,7 @@ export async function activeEffectsFor(
     },
     orderBy: { createdAt: 'asc' },
   });
-  return rows.map(toEffectDto);
+  return rows.map((row) => toEffectDto(row));
 }
 
 /** Instâncias ATIVAS produzidas por uma entidade (Concentração/aura/limpeza). */
@@ -218,7 +218,7 @@ export async function activeEffectsFrom(
     },
     orderBy: { createdAt: 'asc' },
   });
-  return rows.map(toEffectDto);
+  return rows.map((row) => toEffectDto(row));
 }
 
 /**
@@ -506,7 +506,7 @@ export async function publishEffects(targets: readonly MechanicalEntity[]): Prom
       const broadcaster = getBroadcaster();
       broadcaster.toMasters(ServerEvents.EFFECTS_UPDATED, {
         entity: target,
-        effects: rows.map(toEffectDto),
+        effects: rows.map((row) => toEffectDto(row)),
       });
       if (target.kind === 'character') {
         const owner = await prisma.character.findUnique({ where: { id: target.id }, select: { userId: true } });

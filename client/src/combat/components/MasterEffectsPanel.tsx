@@ -6,6 +6,7 @@ import {
   applyHoldPersonEffect,
   createManualEffect,
   endEffect,
+  expireEffectDuration,
   fetchCastingState,
   fetchSpellcastingSources,
   fetchSpellTargeting,
@@ -396,6 +397,25 @@ export function MasterEffectsPanel({
                 <span className="master-condition-origin" data-effect-modifiers>
                   {describeEffectModifiers(effect.modifiers)}
                 </span>
+              ) : null}
+              {effect.duration ? (
+                <span className="field-hint" data-effect-duration>
+                  {effect.duration.tracking === 'combat' &&
+                  effect.duration.remainingRounds !== null
+                    ? `${effect.duration.label} — ${effect.duration.remainingRounds} rounds restantes`
+                    : effect.duration.label}
+                </span>
+              ) : null}
+              {effect.duration ? (
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  disabled={locked}
+                  title="Expira a duração deste efeito (acompanhamento manual do Mestre)"
+                  onClick={() => void run(() => expireEffectDuration(effect.id))}
+                >
+                  Expirar duração
+                </button>
               ) : null}
               <button
                 type="button"

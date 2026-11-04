@@ -6,6 +6,7 @@ import type { SpellcastingProfile } from './spellcasting-source.js';
 import type { CastingResource } from './casting-resource.js';
 import type { SpellTargetingDefinition } from './spell-targeting.js';
 import type { TargetingSnapshot } from './spell-targeting.service.js';
+import type { SpellDurationDefinition } from './spell-duration.js';
 
 /**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
@@ -58,6 +59,11 @@ export interface SpellExecutionDefinition {
   /** Id canônico do catálogo (`bless`, `hold-person`). */
   spellId: string;
   requiresConcentration: boolean;
+  /**
+   * DURAÇÃO (6.6H): dado ESTRUTURADO (kind/amount/unit), nunca parseado do
+   * texto da magia. Ausente = sem duração acompanhada nesta engine.
+   */
+  duration?: SpellDurationDefinition;
   /**
    * CASTING TIME (6.6D). Opcional de propósito: quando ausente, o serviço usa o
    * `castingTimeKind` do CATÁLOGO (fonte única). Só sobrescreva quando uma

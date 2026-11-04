@@ -5,12 +5,15 @@ import {
   BLESS_LABEL,
   BLESS_MAX_TARGETS,
   blessModifiers,
+  blessTurnTriggers,
 } from './bless.js';
 import {
   HOLD_PERSON_CONDITIONS,
   HOLD_PERSON_DEFINITION_ID,
   HOLD_PERSON_LABEL,
+  holdPersonTurnTriggers,
 } from './hold-person.js';
+import type { EffectTurnTriggerDefinition } from '../effect-turn-triggers.js';
 
 /**
  * FASE 6.6A — REGISTRY DE EFFECT DEFINITIONS.
@@ -30,6 +33,12 @@ export interface EffectDefinition {
   maxTargets: number;
   modifiers: () => EffectModifier[];
   conditions: () => Condition[];
+  /**
+   * TRIGGERS DE TURNO (6.6H): comportamento do EFEITO contínuo, snapshotado na
+   * instância. Bless não tem nenhum; Hold Person oferece a salvaguarda repetida
+   * de Sabedoria no fim do turno do alvo.
+   */
+  turnTriggers: () => EffectTurnTriggerDefinition[];
 }
 
 export const EFFECT_DEFINITIONS: Record<string, EffectDefinition> = {
@@ -40,6 +49,7 @@ export const EFFECT_DEFINITIONS: Record<string, EffectDefinition> = {
     maxTargets: BLESS_MAX_TARGETS,
     modifiers: blessModifiers,
     conditions: () => [],
+    turnTriggers: blessTurnTriggers,
   },
   [HOLD_PERSON_DEFINITION_ID]: {
     definitionId: HOLD_PERSON_DEFINITION_ID,
@@ -48,6 +58,7 @@ export const EFFECT_DEFINITIONS: Record<string, EffectDefinition> = {
     maxTargets: 1,
     modifiers: () => [],
     conditions: () => [...HOLD_PERSON_CONDITIONS],
+    turnTriggers: holdPersonTurnTriggers,
   },
 };
 

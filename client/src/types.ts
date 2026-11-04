@@ -2802,13 +2802,22 @@ export interface PendingEffectSaveDto {
   ability: AbilityKey;
   dc: number;
   visibility: EffectVisibility;
-  status: 'pending' | 'resolved' | 'cancelled';
+  status: 'pending' | 'resolved' | 'cancelled' | 'declined';
   result: 'success' | 'failure' | null;
   casterEntity: MechanicalEntity;
   casterName: string | null;
   targetEntity: MechanicalEntity;
   groupId: string | null;
   effectId: string | null;
+  /**
+   * 6.6H: `initial` = barreira da conjuração; `ongoing` = salvaguarda repetida
+   * no fim do turno do alvo. Recusar só existe no modo `ongoing`.
+   */
+  phase: 'initial' | 'ongoing';
+  optional: boolean;
+  effectInstanceId: string | null;
+  triggerKey: string | null;
+  declinedAt: string | null;
   /** Conjuração que originou a pendência (6.6A). */
   spellCastId: string | null;
   createdAt: string;
@@ -2835,6 +2844,10 @@ export type EffectEndReason =
   | 'group'
   | 'concentration'
   | 'duration'
+  /** 6.6H: a duração máxima venceu (automática em combate ou manual). */
+  | 'duration-expired'
+  /** 6.6H: o alvo passou na salvaguarda repetida de fim de turno. */
+  | 'repeat-save-success'
   | 'dispel'
   | 'source-removed'
   | 'source-ended'
@@ -2870,6 +2883,20 @@ export interface EffectDto {
    * A Condition REAL vive no estado mecânico do alvo; isto é a definição.
    */
   conditions: string[];
+  /**
+   * DURAÇÃO do efeito contínuo (6.6H), derivada do SNAPSHOT no servidor.
+   * `remainingRounds` pode ser `null` (fora de combate / manual): a expiração é
+   * SEMPRE decidida pelo servidor, nunca por este número.
+   */
+  duration: {
+    label: string;
+    unit: string;
+    amount: number;
+    tracking: 'combat' | 'manual';
+    totalRounds: number | null;
+    remainingRounds: number | null;
+    dueRoundNumber: number | null;
+  } | null;
   createdAt: string;
   createdBy: string | null;
   endedAt: string | null;
