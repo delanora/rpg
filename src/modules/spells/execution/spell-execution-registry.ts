@@ -5,6 +5,15 @@ import {
   HOLD_PERSON_SPELL_ID,
 } from '../../effects/definitions/hold-person.js';
 import type { SpellExecutionDefinition } from './spell-execution-definition.js';
+import {
+  SACRED_FLAME_BASE_DICE,
+  SACRED_FLAME_DAMAGE_TYPE,
+  SACRED_FLAME_IGNORE_SAVE_COVER,
+  SACRED_FLAME_LABEL,
+  SACRED_FLAME_SAVE_ABILITY,
+  SACRED_FLAME_SCALING,
+  SACRED_FLAME_SPELL_ID,
+} from './sacred-flame.js';
 
 /**
  * FASE 6.6A — REGISTRY de magias EXECUTÁVEIS.
@@ -24,6 +33,9 @@ import type { SpellExecutionDefinition } from './spell-execution-definition.js';
  *    NÃO exige ver o alvo; exige caminho livre.
  *  • Hold Person — 60 ft, humanoides que o conjurador possa VER, +1 por espaço
  *    acima do 2º; alvos a até 30 ft uns dos outros; caminho livre.
+ *  • Chama Sagrada — truque, 60 ft, UMA criatura que o conjurador veja, save de
+ *    Destreza e 1d8 radiante (2d8/3d8/4d8 pelo nível TOTAL de personagem).
+ *    Instantânea: sem Effect, sem Concentração, sem espaço e sem cobertura.
  *
  * A CD de magia continua fora daqui: vem do perfil de conjuração do caster.
  */
@@ -79,7 +91,43 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
       applyOn: 'failure',
     },
   },
+  [SACRED_FLAME_SPELL_ID]: {
+    spellId: SACRED_FLAME_SPELL_ID,
+    // Instantânea: nenhum Effect persistente, nenhuma Concentração.
+    requiresConcentration: false,
+    combatPrompt: 'Uma radiância flamejante desce sobre você.',
+    // PHB 2014: 1 ação, 18 m (60 pés), V/S, uma criatura que o caster veja.
+    // Sem área, sem filtro de tipo e sem restrição de grupo; o caster pode ser
+    // alvo porque o texto não o proíbe.
+    targeting: {
+      kind: 'creatures',
+      minTargets: 1,
+      targetCount: { base: 1, baseSlotLevel: 0, additionalPerSlotLevel: 0 },
+      range: { kind: 'distance', feet: 60 },
+      allowSelf: true,
+      requiresSight: true,
+      requiresClearPath: true,
+      filters: [],
+      groupConstraints: [],
+    },
+    resolution: {
+      kind: 'save-damage',
+      ability: SACRED_FLAME_SAVE_ABILITY,
+      onSuccess: 'none',
+      damage: {
+        type: SACRED_FLAME_DAMAGE_TYPE,
+        dice: SACRED_FLAME_BASE_DICE,
+        scaling: SACRED_FLAME_SCALING,
+      },
+      ignoreSaveCover: SACRED_FLAME_IGNORE_SAVE_COVER,
+    },
+  },
 };
+
+/** Nome exibível da magia executável (a apresentação nunca decide regra). */
+export function spellDisplayLabel(spellId: string): string | null {
+  return spellId === SACRED_FLAME_SPELL_ID ? SACRED_FLAME_LABEL : null;
+}
 
 /** Definição executável da magia (`null` = catálogo sem execução implementada). */
 export function spellExecutionDefinition(spellId: string): SpellExecutionDefinition | null {

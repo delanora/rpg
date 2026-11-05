@@ -365,6 +365,8 @@ export async function journalSpellSaveOutcome(input: {
   phase: 'initial' | 'ongoing';
   privateRoll: boolean;
   actorName: string;
+  /** Dano instantâneo da resolução (save-damage) — resumido na MESMA linha. */
+  damage?: { type: string; raw: number; final: number; rolls: number[] };
 }): Promise<void> {
   try {
     const combat = await prisma.combat.findFirst({
@@ -382,10 +384,18 @@ export async function journalSpellSaveOutcome(input: {
     if (!combat) return;
     const phaseLabel = input.phase === 'ongoing' ? ' — fim do turno' : '';
     const outcome = input.success ? 'SUCESSO' : 'FALHA';
+    // Sem linha extra de "internals": o desfecho mecânico entra na MESMA linha.
+    const damageLine = input.damage
+      ? ` Dano ${input.damage.type.toLowerCase()}: ${input.damage.final}` +
+        (input.damage.final !== input.damage.raw
+          ? ` (${input.damage.raw} antes das defesas)`
+          : '') +
+        '.'
+      : '';
     await appendCombatJournal({
       combatId: combat.id,
       actorName: input.actorName,
-      message: `${input.label} — Salvaguarda de ${abilityLabel(input.ability)}${phaseLabel}: ${input.total} vs CD ${input.dc} → ${outcome}.`,
+      message: `${input.label} — Salvaguarda de ${abilityLabel(input.ability)}${phaseLabel}: ${input.total} vs CD ${input.dc} → ${outcome}.${damageLine}`,
       action: 'spell-save',
       private: input.privateRoll,
     });

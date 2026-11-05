@@ -353,6 +353,11 @@ Scripts do `package.json` raiz:
 
 ### Smoke test — a verificação do projeto
 
+**Regra de fixtures:** smokes NUNCA devem usar, normalizar ou apagar personagens,
+contas, criaturas ou combates reais da campanha. Cada seção cria as PRÓPRIAS
+fixtures (usuários/personagens com sufixo aleatório) e o `finally` remove apenas
+os IDs que ela criou — nunca "delete all test-looking rows".
+
 **Não há testes unitários.** A verificação é `src/scripts/smoke-realtime.ts`
 (~21k linhas): sobe contas próprias, exercita HTTP + WebSocket de ponta a ponta e
 limpa tudo no fim. Ele cobre dezenas de seções (fichas, regras, combate, level

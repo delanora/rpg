@@ -15,6 +15,7 @@ import { smokeSpellComponents } from './smoke-spell-components.js';
 import { smokeSpellDuration } from './smoke-spell-duration.js';
 import { smokeCombatResolutionCards } from './smoke-combat-resolution-cards.js';
 import { smokeDamageHealingCore } from './smoke-damage-healing-core.js';
+import { smokeSacredFlame } from './smoke-sacred-flame.js';
 import { smokeCombatItems } from './smoke-combat-items.js';
 import { smokeDeath } from './smoke-death.js';
 import { smokeExhaustionRule } from './smoke-exhaustion-rule.js';
@@ -21597,6 +21598,7 @@ async function main(): Promise<void> {
   await smokeExhaustionRule(BASE_URL, check);
   await smokeCombatResolutionCards(BASE_URL, check);
   await smokeDamageHealingCore(BASE_URL, check);
+  await smokeSacredFlame(BASE_URL, check);
 
   console.log(
     failures === 0

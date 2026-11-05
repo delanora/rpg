@@ -21,10 +21,12 @@ import {
   type PendingEffectSaveDto,
 } from '../../effects/pending-effect-saves.js';
 import { spellExecutionDefinition } from './spell-execution-registry.js';
-import type {
-  SpellExecutionDefinition,
-  SpellValidationContext,
+import {
+  spellDefinitionId,
+  type SpellExecutionDefinition,
+  type SpellValidationContext,
 } from './spell-execution-definition.js';
+import { cantripScalingLevelOf } from './cantrip-scaling.service.js';
 import {
   validateTargeting,
   type TargetingSnapshot,
@@ -242,8 +244,21 @@ export async function validateSpellCast(
       'SPELL_EXECUTION_NOT_IMPLEMENTED',
     );
   }
-
   const caster = await loadEntity(input.caster, db);
+
+  // FASE 6.6I.2: magias `save-damage` exigem um nível EXPLÍCITO de
+  // escalonamento (personagem: nível total; NPC: statblock). Sem ele, falha
+  // ANTES de qualquer custo. `half` ainda não é executável.
+  if (execution.resolution.kind === 'save-damage') {
+    if (execution.resolution.onSuccess !== 'none') {
+      throw new HttpError(
+        'A consequência de sucesso desta magia ainda não foi implementada.',
+        409,
+        'SPELL_EXECUTION_NOT_IMPLEMENTED',
+      );
+    }
+    await cantripScalingLevelOf(caster, db);
+  }
   const targets: LoadedEntity[] = [];
   const seen = new Set<string>();
   for (const reference of input.targets) {
@@ -609,9 +624,16 @@ async function beginPendingSaves(
   context: SpellCastContext,
 ): Promise<PendingEffectSaveDto[]> {
   const resolution = context.execution.resolution;
-  if (resolution.kind !== 'save-effect') {
+  if (resolution.kind !== 'save-effect' && resolution.kind !== 'save-damage') {
     throw new HttpError('Definição de execução inconsistente.', 409, 'SPELL_EXECUTION_NOT_IMPLEMENTED');
   }
+  // `save-damage` não aponta para Effect Definition: a identidade mecânica é a
+  // própria magia (`spell.<id>`). `save-effect` continua usando a definição do
+  // efeito durável que nascerá na falha.
+  const pendingDefinitionId =
+    resolution.kind === 'save-effect'
+      ? resolution.effectDefinitionId
+      : spellDefinitionId(context.execution.spellId);
   // 6.6E: UM SpellCast com N alvos gera N pendências (uma por alvo). Nunca N
   // casts, nunca N espaços, nunca N Ações. Cada pendência tem sua própria
   // chave idempotente derivada do cast + identidade canônica do alvo.
@@ -619,7 +641,7 @@ async function beginPendingSaves(
   for (const target of context.targets) {
     const pending = await db.pendingEffectSave.create({
       data: {
-        definitionId: resolution.effectDefinitionId,
+        definitionId: pendingDefinitionId,
         // Vínculo explícito pendência → conjuração (nunca fundir os conceitos).
         spellCastId: cast.id,
         casterEntityKind: context.caster.entity.kind,

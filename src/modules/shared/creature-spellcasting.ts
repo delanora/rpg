@@ -15,6 +15,9 @@ import { parseJson } from './json.js';
  *
  * `ability` é opcional: há statblocks que só publicam a CD. NÃO inferimos o
  * atributo pelo maior valor (isso seria errado).
+ *
+ * FASE 6.6I.2: `cantripScalingLevel` é a ÚNICA fonte de escalonamento de truque
+ * de uma criatura/NPC — explícita e opcional.
  */
 export const creatureSpellcastingProfileSchema = z.object({
   /** Atributo de conjuração quando o statblock o declara. */
@@ -32,6 +35,13 @@ export const creatureSpellcastingProfileSchema = z.object({
     .array(z.enum(['arcane', 'holy-symbol', 'druidic', 'musical-instrument']))
     .max(4)
     .optional(),
+  /**
+   * FASE 6.6I.2 — nível EXPLÍCITO para escalonamento de TRUQUE do statblock.
+   * Criatura não tem nível de personagem: sem este campo, um truque escalável é
+   * RECUSADO antes do COMMIT. NUNCA inferir por ND (CR), dados de vida,
+   * proficiência ou espaços.
+   */
+  cantripScalingLevel: z.number().int().min(1).max(20).optional(),
 });
 
 export type CreatureSpellcastingProfile = z.infer<typeof creatureSpellcastingProfileSchema>;

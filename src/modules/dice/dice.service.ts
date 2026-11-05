@@ -37,6 +37,11 @@ import {
   publishHoldPersonResult,
   resolvePendingEffectSave,
 } from '../effects/hold-person.service.js';
+import { spellExecutionDefinition } from '../spells/execution/spell-execution-registry.js';
+import {
+  publishSaveDamageResult,
+  resolveSaveDamagePending,
+} from '../spells/execution/save-damage-resolution.js';
 import { savingThrowBonus } from '../shared/saving-throws.js';
 import { loadEntity } from '../mechanical/mechanical.service.js';
 import { ABILITY_LABELS, type AbilityKey } from '../shared/dnd5e.js';
@@ -609,6 +614,26 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
  * então o segundo efeito real compõe com o primeiro sem que este módulo
  * conheça nenhum dos dois.
  */
+/**
+ * Desfecho declarado pela execução da magia dona da pendência.
+ *
+ * `null` = pendência legada (sem SpellCast) ou `ongoing`: continuam no fluxo de
+ * efeito contínuo. Uma magia nova não precisa de `if` aqui.
+ */
+async function pendingCastResolutionKind(pending: {
+  spellCastId: string | null;
+  phase: string;
+}): Promise<'immediate-effect' | 'save-effect' | 'save-damage' | null> {
+  if (pending.phase !== 'initial' || !pending.spellCastId) return null;
+  const cast = await prisma.spellCast.findUnique({
+    where: { id: pending.spellCastId },
+    select: { spellId: true },
+  });
+  return cast
+    ? (spellExecutionDefinition(cast.spellId)?.resolution.kind ?? null)
+    : null;
+}
+
 async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
   if (!input.pendingEffectSaveId) {
     throw new HttpError('Informe a salvaguarda pendente.', 400, 'VALIDATION_ERROR');
@@ -662,10 +687,30 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
   const kept = dice.reduce((sum, die) => (die.dropped ? sum : sum + die.value), 0);
   const total = mode.autoFail ? 0 : kept + bonus + effectDiceTotal;
 
-  const outcome = await resolvePendingEffectSave(pending.id, total, actor.displayName);
-  // Pendência resolvida + Paralyzed/Effect/Concentração publicados pelo
-  // lifecycle existente quando houve falha.
-  await publishHoldPersonResult(outcome, actor.username);
+  // FASE 6.6I.2: o MESMO pipeline de salvaguarda serve a dois desfechos. A
+  // magia declara qual é o dela; nada aqui conhece o nome da spell.
+  const resolutionKind = await pendingCastResolutionKind(pending);
+  let success = false;
+  let damageSummary: { type: string; raw: number; final: number; rolls: number[] } | null = null;
+  if (resolutionKind === 'save-damage') {
+    const outcome = await resolveSaveDamagePending(pending.id, total, actor.username);
+    success = outcome.success;
+    await publishSaveDamageResult(outcome);
+    damageSummary = outcome.snapshot && !outcome.success
+      ? {
+          type: outcome.snapshot.damageType,
+          raw: outcome.snapshot.rawDamage,
+          final: outcome.snapshot.finalDamage,
+          rolls: outcome.snapshot.dice.rolls,
+        }
+      : null;
+  } else {
+    const outcome = await resolvePendingEffectSave(pending.id, total, actor.displayName);
+    success = outcome.success;
+    // Pendência resolvida + Paralyzed/Effect/Concentração publicados pelo
+    // lifecycle existente quando houve falha.
+    await publishHoldPersonResult(outcome, actor.username);
+  }
   // 6.6I: o card deixa de estar pendente; o RESULTADO fica no registro lateral,
   // com a conta rolada pelo servidor (sucesso/falha não é recalculado no cliente).
   await journalSpellSaveOutcome({
@@ -674,10 +719,11 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
     ability,
     dc: pending.dc,
     total,
-    success: outcome.success,
+    success,
     phase: pending.phase,
     privateRoll,
     actorName: loaded.name,
+    ...(damageSummary ? { damage: damageSummary } : {}),
   });
 
   const roll: DiceRollDto = {

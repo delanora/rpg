@@ -330,10 +330,10 @@ export async function smokeDamageHealingCore(_baseUrl: string, check: Check): Pr
     );
 
     check(
-      '80.L) nenhuma magia nova foi registrada nesta fase (Sacred Flame/Healing Word)',
-      spellExecutionDefinition('sacred-flame') === null &&
+      '80.L) a 6.6I.2 registrou SOMENTE a Sacred Flame; Healing Word continua fora',
+      spellExecutionDefinition('sacred-flame')?.resolution.kind === 'save-damage' &&
         spellExecutionDefinition('healing-word') === null,
-      'registry de execução intocado',
+      'registry de execução: só a prova da 6.6I.2',
     );
 
     // Contrato em memória: nenhum socket/log/transação própria no núcleo.

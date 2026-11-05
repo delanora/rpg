@@ -4,7 +4,7 @@ import { getBroadcaster } from '../../realtime/hub.js';
 import { ServerEvents } from '../../realtime/events.js';
 import type { AbilityKey } from '../shared/dnd5e.js';
 import type { MechanicalEntity } from '../shared/conditions.js';
-import { HOLD_PERSON_DEFINITION_ID, HOLD_PERSON_LABEL } from './definitions/hold-person.js';
+import { allSpells } from '../shared/spells/index.js';
 
 /**
  * FASE 6.5H — APLICAÇÃO DE EFEITO AGUARDANDO SALVAGUARDA.
@@ -56,9 +56,21 @@ export interface PendingEffectSaveDto {
   resolvedAt: string | null;
 }
 
-/** Rótulo da definição (o `definitionId` é a identidade; isto é exibição). */
+/**
+ * Rótulo da definição (o `definitionId` é a identidade; isto é exibição).
+ *
+ * `spell.<spellId>` resolve pelo CATÁLOGO — assim uma magia nova não precisa de
+ * mais um `if` de nome aqui (Chama Sagrada, Hold Person e as futuras).
+ */
 export function definitionLabel(definitionId: string): string {
-  return definitionId === HOLD_PERSON_DEFINITION_ID ? HOLD_PERSON_LABEL : 'Efeito';
+  const spellId = definitionId.startsWith('spell.')
+    ? definitionId.slice('spell.'.length)
+    : null;
+  if (spellId) {
+    const spell = allSpells().find((item) => item.id === spellId);
+    if (spell) return spell.namePt;
+  }
+  return 'Efeito';
 }
 
 function entityOf(kind: string, id: string): MechanicalEntity {
