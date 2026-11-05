@@ -2105,6 +2105,48 @@ export interface CombatantSpatial {
   occupiedSpace: OccupiedSpace | null;
 }
 
+/**
+ * 6.6M.2 — leitura SERVER-AUTHORITATIVE de distância/alcance para a UI.
+ *
+ * Estes tipos são o RESULTADO sanitizado (`known | unknown | not-assessed` e
+ * `in-range | long-range | out-of-range | unknown`). O cliente exibe o texto e
+ * NUNCA converte distância em faixa: nada aqui é entrada de requisição.
+ */
+export type SpatialDistanceStatus = 'known' | 'unknown' | 'not-assessed';
+
+export interface SpatialDistanceReading {
+  status: SpatialDistanceStatus;
+  /** Pés com a precisão do servidor (2,5 do Tiny incluso); `null` quando oculto. */
+  distanceFeet: number | null;
+  provenance: 'grid-2d' | null;
+  algorithm: string | null;
+  /** Motivo público e sanitizado (nunca coordenada, nome ou ID oculto). */
+  reason: string | null;
+}
+
+export interface SpatialDistanceResponse {
+  distance: SpatialDistanceReading;
+}
+
+export type SpatialRangeStatus = 'in-range' | 'long-range' | 'out-of-range' | 'unknown';
+
+export interface SpatialRangeReading {
+  status: SpatialRangeStatus;
+  distanceFeet: number | null;
+  band: 'normal' | 'long' | 'out' | null;
+  reachFeet: number | null;
+  normalRangeFeet: number | null;
+  longRangeFeet: number | null;
+  algorithm: string | null;
+  /** Rótulo da ação resolvida pelo SERVIDOR (`null` quando oculta). */
+  actionName: string | null;
+  reason: string | null;
+}
+
+export interface SpatialRangePreviewResponse {
+  range: SpatialRangeReading;
+}
+
 /** Configuração espacial da cena (combates legados = `assisted`). */
 export interface SpatialScene {
   mode: 'assisted' | 'grid-2d';
