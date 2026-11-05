@@ -5,7 +5,7 @@ import type { LoadedEntity } from '../../mechanical/mechanical.service.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
 import type { CastingResource } from './casting-resource.js';
 import type { SpellTargetingDefinition } from './spell-targeting.js';
-import type { TargetingSnapshot } from './spell-targeting.service.js';
+import type { SpellTargetingSnapshot } from './spell-targeting.service.js';
 import type { SpellDurationDefinition } from './spell-duration.js';
 import type { LevelScalingDefinition } from '../../shared/spells/cantrip-scaling.js';
 import type { SlotDiceScalingDefinition } from '../../shared/spells/slot-scaling.js';
@@ -151,8 +151,8 @@ export interface SpellValidationContext {
   castingResource: CastingResource | null;
   /** Custo de Action Economy derivado do casting time (`null` = não executável). */
   economyCost: 'action' | 'bonus-action' | 'reaction';
-  /** Snapshot da validação de alvos (quantidade/alcance/visão). */
-  targeting: TargetingSnapshot;
+  /** Snapshot da validação de alvos (explícitos ou ÁREA derivada). */
+  targeting: SpellTargetingSnapshot;
 }
 
 export interface SpellExecutionDefinition {

@@ -16,7 +16,12 @@ export async function publishSpellIntent(row: SpellCastIntent): Promise<void> {
   const { getBroadcaster } = await import('../../../realtime/hub.js');
   const broadcaster = getBroadcaster();
   if (!broadcaster) return;
-  const payload = { intent: toSpellCastIntentDto(row) };
-  broadcaster.toMasters('spells:intent-updated', payload);
-  broadcaster.toUser(row.actorUserId, 'spells:intent-updated', payload);
+  // 6.6J.3: os Mestres recebem as avaliações por candidato; o ator recebe a
+  // visão sanitizada (sem lista de candidatos, que pode conter criatura oculta).
+  broadcaster.toMasters('spells:intent-updated', {
+    intent: toSpellCastIntentDto(row, 'master'),
+  });
+  broadcaster.toUser(row.actorUserId, 'spells:intent-updated', {
+    intent: toSpellCastIntentDto(row, 'player'),
+  });
 }

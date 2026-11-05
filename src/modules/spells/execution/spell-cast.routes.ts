@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../../config/prisma.js';
 import { authenticate, requireRole } from '../../auth/auth.middleware.js';
 import { entitySchema } from '../../shared/conditions.js';
-import { spellCastProofSchema } from './spell-cast.schema.js';
+import { spellCastProofSchema, spellIntentApprovalSchema } from './spell-cast.schema.js';
 import { castProofSpell } from './spell-cast.service.js';
 import {
   approveSpellCastIntent,
@@ -14,7 +14,7 @@ import {
   type CastOutcome,
 } from './spell-intent.service.js';
 import { spellExecutionDefinition } from './spell-execution-registry.js';
-import { targetingSummary } from './spell-targeting.js';
+import { isExplicitTargeting, spellTargetingSummary } from './spell-targeting.js';
 import { listSpellcastingSources } from './spellcasting-profile.service.js';
 import { castingResourcesForEntity } from './casting-resource.service.js';
 import { castingEconomySummary, castingTurnContext } from './spell-casting-economy.js';
@@ -111,13 +111,15 @@ spellsRouter.get('/targeting/:spellId', requireRole('MASTER'), async (req, res) 
     return;
   }
   const raw = req.query.castAtLevel;
-  const castAtLevel =
-    raw === undefined ? execution.targeting.targetCount.baseSlotLevel : Number(raw);
+  const baseLevel = isExplicitTargeting(execution.targeting)
+    ? execution.targeting.targetCount.baseSlotLevel
+    : 0;
+  const castAtLevel = raw === undefined ? baseLevel : Number(raw);
   if (!Number.isInteger(castAtLevel) || castAtLevel < 0 || castAtLevel > 20) {
     res.status(400).json({ error: 'VALIDATION_ERROR' });
     return;
   }
-  res.json({ targeting: targetingSummary(execution.targeting, castAtLevel) });
+  res.json({ targeting: spellTargetingSummary(execution.targeting, castAtLevel) });
 });
 
 /* -------------------------------------------------------------------------- */
@@ -211,9 +213,7 @@ spellsRouter.get('/intents', async (req, res) => {
   res.json({ intents: await listPendingSpellCastIntents(actorOf(req)) });
 });
 
-const intentApprovalSchema = z
-  .object({ spatialConfirmation: spatialConfirmationSchema.optional() })
-  .strict();
+const intentApprovalSchema = spellIntentApprovalSchema;
 
 /**
  * POST /api/spells/intents/:id/approve — o Mestre confirma os requisitos
@@ -232,6 +232,7 @@ spellsRouter.post('/intents/:id/approve', requireRole('MASTER'), async (req, res
       actorOf(req),
       String(req.params.id),
       parsed.data.spatialConfirmation,
+      parsed.data.unknownTargetDecisions ?? [],
     ),
   );
 });

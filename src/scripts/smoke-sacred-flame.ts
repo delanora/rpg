@@ -101,16 +101,18 @@ export async function smokeSacredFlame(baseUrl: string, check: Check): Promise<v
         !definition.duration,
       JSON.stringify(definition),
     );
+    const flameTargeting =
+      definition?.targeting.kind === 'creatures' ? definition.targeting : null;
     check(
       '81.C) alvo: UMA criatura, 60 pés, exige visão, sem filtro de tipo e sem restrição de grupo',
-      definition?.targeting.targetCount.base === 1 &&
-        definition.targeting.targetCount.additionalPerSlotLevel === 0 &&
-        definition.targeting.minTargets === 1 &&
-        definition.targeting.range.kind === 'distance' &&
-        definition.targeting.range.feet === 60 &&
-        definition.targeting.requiresSight &&
-        definition.targeting.filters.length === 0 &&
-        definition.targeting.groupConstraints.length === 0,
+      flameTargeting?.targetCount.base === 1 &&
+        flameTargeting.targetCount.additionalPerSlotLevel === 0 &&
+        flameTargeting.minTargets === 1 &&
+        flameTargeting.range.kind === 'distance' &&
+        flameTargeting.range.feet === 60 &&
+        flameTargeting.requiresSight &&
+        flameTargeting.filters.length === 0 &&
+        flameTargeting.groupConstraints.length === 0,
       JSON.stringify(definition?.targeting),
     );
     check(

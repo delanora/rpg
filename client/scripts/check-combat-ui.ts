@@ -1610,7 +1610,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB89) máximo de alvos é DERIVADO do espaço (por `castAtLevel`), sem hardcode por nome de magia',
     repertoirePanel.includes('item.castAtLevel === castAtLevel') &&
-      castOptionsService.includes('targetingSummary(execution.targeting, at)') &&
+      castOptionsService.includes('spellTargetingSummary(execution.targeting, at)') &&
       !castOptionsService.includes("'bless'") &&
       !castOptionsService.includes("'hold-person'")
   );
@@ -2017,6 +2017,93 @@ console.log('Check-combat-ui — refino da UI de combate');
         combatServiceSource.indexOf("'TURN_END_TRIGGER_PENDING'") &&
       source('src/combat/CombatTracker.tsx').includes('SPELL_RESOLUTION_PENDING')
   );
+  // 6.6J.3 — Area Targeting Foundation (server-derived).
+  const areaTargetingSource = source('../src/modules/spells/execution/area-targeting.ts');
+  const areaServiceSource = source('../src/modules/spells/execution/area-targeting.service.ts');
+  const areaSpatialSource = source('../src/modules/spells/execution/area-spatial.ts');
+  const areaEvaluationSource = source('../src/modules/spells/execution/area-evaluation.ts');
+  const areaSyntheticSource = source(
+    '../src/modules/spells/execution/area-synthetic-definition.ts',
+  );
+  // Aliases locais: este bloco pode rodar em um escopo onde os nomes das seções
+  // anteriores não estão visíveis.
+  const areaCastService = source('../src/modules/spells/execution/spell-cast.service.ts');
+  const areaCastSchema = source('../src/modules/spells/execution/spell-cast.schema.ts');
+  const areaSaveResolution = source('../src/modules/spells/execution/save-damage-resolution.ts');
+  const areaRegistry = source('../src/modules/spells/execution/spell-execution-registry.ts');
+  const areaIntentService = source('../src/modules/spells/execution/spell-intent.service.ts');
+  const areaRoutes = source('../src/modules/spells/execution/spell-cast.routes.ts');
+  const areaRunner = source('../src/scripts/smoke-realtime.ts');
+  check(
+    'CB168) área deriva os atingidos no SERVIDOR: o cliente só envia origem/direção, nunca alvos ou geometria',
+    areaTargetingSource.includes('areaPlacementSchema') &&
+      areaTargetingSource.includes('includeOrigin: z.boolean().optional()') &&
+      !areaTargetingSource.includes('affectedTargetIds') &&
+      areaCastSchema.includes('.strict()') &&
+      !areaCastSchema.includes('affectedTargetIds') &&
+      areaCastService.includes('AREA_TARGETS_CLIENT_SUPPLIED') &&
+      areaCastService.includes('AREA_PLACEMENT_NOT_ALLOWED') &&
+      areaServiceSource.includes('areaCandidatesFor') &&
+      !areaServiceSource.includes('targets: input') &&
+      !areaServiceSource.includes('spellCast.create')
+  );
+  check(
+    'CB169) o resolvedor NÃO conhece nome de magia, NÃO rola dados e NÃO mexe em HP',
+    !areaServiceSource.includes('fireball') &&
+      !areaServiceSource.includes('rollDie') &&
+      !areaServiceSource.includes('applyDamageConsequences') &&
+      !areaServiceSource.includes('pendingEffectSave.create') &&
+      areaServiceSource.includes('AREA_CONTEXT_UNSUPPORTED')
+  );
+  check(
+    'CB170) cinco formas PHB 2014 (sem `emanation`) e inclusão da origem centralizada',
+    areaTargetingSource.includes("['sphere', 'cone', 'cube', 'cylinder', 'line']") &&
+      !areaTargetingSource.includes('emanation') &&
+      areaTargetingSource.includes('originInclusionPolicyOf') &&
+      areaTargetingSource.includes("return 'caster-choice'") &&
+      areaTargetingSource.includes('shapeRequiresDirection') &&
+      areaSpatialSource.includes('unknown') &&
+      !areaSpatialSource.includes('Math.sqrt')
+  );
+  check(
+    'CB171) o Mestre decide SÓ `unknown`: pass/fail autoritativos nunca são sobrescritos',
+    areaEvaluationSource.includes('AREA_DECISION_NOT_UNKNOWN') &&
+      areaEvaluationSource.includes('AREA_RESOLUTION_INCOMPLETE') &&
+      areaEvaluationSource.includes("if (evaluation.affected === 'pass')") &&
+      areaEvaluationSource.includes("if (evaluation.affected === 'fail') continue;") &&
+      areaIntentService.includes('parseAreaTargetingSnapshot') &&
+      areaRoutes.includes('unknownTargetDecisions')
+  );
+  check(
+    'CB172) área reutiliza o pipeline 6.6J.2 (1 cast → N pendências → 1 roll) sem engine de dano própria',
+    areaServiceSource.includes('loadEntity') &&
+      areaCastService.includes('resolveAreaTargets(') &&
+      areaCastService.includes('beginPendingSaves(db, cast, context)') &&
+      areaSaveResolution.includes('finalizeSaveDamageCast(') &&
+      !areaTargetingSource.includes('spellSaveDc')
+  );
+  check(
+    'CB173) área sem ninguém dentro é CAST VÁLIDO: fecha `no-effect` na hora, sem pendência e sem reembolso',
+    areaCastService.includes('closeCastWithoutTargets') &&
+      areaCastService.includes("resolutionReason: 'no-affected-targets'") &&
+      areaCastService.includes('finalizeSaveDamageCast(cast.id, db)')
+  );
+  check(
+    'CB174) definição sintética de área fora do catálogo e NENHUMA spell PHB de área registrada',
+    areaSyntheticSource.includes("'test.synthetic-area-save-damage'") &&
+      !source('../src/modules/shared/spells/index.ts').includes('synthetic-area-save-damage') &&
+      !areaRegistry.includes('fireball') &&
+      !areaRegistry.includes('burning-hands') &&
+      !areaRegistry.includes('thunderwave') &&
+      !areaRegistry.includes('lightning-bolt')
+  );
+  check(
+    'CB175) sem Area Picker visual prematuro e o smoke de área integra o runner principal',
+    !source('src/combat/CombatTracker.tsx').includes('areaPlacement') &&
+      !source('src/components/SheetView.tsx').includes('areaPlacement') &&
+      areaRunner.includes('smokeAreaTargetingFoundation(BASE_URL, check)')
+  );
+
   check(
     'CB167) nenhuma UI multi-alvo dedicada: os Resolution Cards genéricos bastam',
     !source('../src/modules/combat/resolution-requests.ts').includes('MultiTarget') &&
