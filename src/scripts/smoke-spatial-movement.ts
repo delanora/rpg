@@ -14,6 +14,7 @@ import {
 import { walkingMovementTerrain } from '../modules/combat/spatial/movement-terrain.js';
 import {
   administrativeMovementGate,
+  opportunityAttackMovementGate,
   unavailableMovementGate,
 } from '../modules/combat/spatial/movement-reaction-gate.js';
 import { spatialSceneOf } from '../modules/combat/spatial/spatial.types.js';
@@ -140,7 +141,8 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
     '90.G) DUAS fontes de difficult terrain NÃO acumulam (continua 2×, não 3×)',
     twoAlliesStep.steps[0].costFeet === 10 &&
       twoAlliesStep.steps[0].difficultTerrainSources.length === 1 &&
-      twoAlliesStep.steps[0].costFeet !== 15,
+      // Se as duas fontes somassem, o passo custaria 15 e o trecho 20.
+      twoAlliesStep.totalCostFeet !== 20,
   );
   check(
     '90.H) order de tamanho (Tiny 0 … Gargantuan 5) e relação de lado canônica',
@@ -1150,27 +1152,32 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
       // =====================================================================
       const playerCommit = await move(heroCombatant.id, path([165, 170]), playerToken);
       check(
-        '90.AZ) PLAYER não tem movimento voluntário antes do Reaction Gate (409, nada muda)',
-        playerCommit.status === 409 &&
-          playerCommit.data.error === 'MOVEMENT_REACTION_GATE_UNAVAILABLE' &&
-          combatantOf(heroCombatant.id).spatial.position.xFeet === 160 &&
-          combatantOf(heroCombatant.id).turnEconomy.movementUsed === 0,
+        '90.AZ) 6.6L.3.1 substituiu o bloqueio cego pelo gate REAL (sem 409 de "gate indisponível")',
+        playerCommit.data.error !== 'MOVEMENT_REACTION_GATE_UNAVAILABLE' &&
+          [200, 403, 409].includes(playerCommit.status),
         JSON.stringify(playerCommit.data),
       );
       const adminGate = administrativeMovementGate.evaluate({
         moverCombatantId: heroCombatant.id,
         path: path([165, 170]),
       });
-      const playerGate = unavailableMovementGate.evaluate({
+      const opportunityGate = opportunityAttackMovementGate.evaluate({
+        moverCombatantId: heroCombatant.id,
+        path: path([165, 170]),
+      });
+      const unavailableGate = unavailableMovementGate.evaluate({
         moverCombatantId: heroCombatant.id,
         path: path([165, 170]),
       });
       check(
-        '90.BA) o gate é EXPLÍCITO: Mestre usa política administrativa e nunca é player-safe',
-        adminGate.status === 'clear' &&
+        '90.BA) movimento voluntário usa a política de Opportunity Attack (player-safe); placement continua administrativo',
+        opportunityGate.status === 'clear' &&
+          opportunityGate.policy === 'phb-opportunity-attacks' &&
+          opportunityGate.playerSafe === true &&
+          adminGate.status === 'clear' &&
           adminGate.policy === 'administrative-no-reaction' &&
           adminGate.playerSafe === false &&
-          playerGate.status === 'unavailable',
+          unavailableGate.status === 'unavailable',
       );
       const placementBefore = combatantOf(heroCombatant.id).turnEconomy.movementUsed;
       const placement = await place(heroCombatant.id, 0, 120);
@@ -1185,11 +1192,9 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
         }),
       );
       check(
-        '90.BC) nenhuma Opportunity Attack é inventada/resolvida no commit',
-        movementOf(distanceMove).reactionPolicy === 'administrative-no-reaction' &&
-          movementOf(distanceMove).playerSafe === false &&
-          !('opportunityAttack' in movementOf(distanceMove)) &&
-          !('reaction' in movementOf(distanceMove)),
+        '90.BC) o commit do Mestre também passa pelo gate REAL (nunca pelo bypass administrativo)',
+        movementOf(distanceMove).reactionPolicy === 'phb-opportunity-attacks' &&
+          movementOf(distanceMove).playerSafe === true,
         JSON.stringify(movementOf(distanceMove).reactionPolicy),
       );
 

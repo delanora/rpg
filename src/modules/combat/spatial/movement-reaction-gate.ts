@@ -1,29 +1,30 @@
 import type { SpatialPosition2D } from './spatial.types.js';
 
 /**
- * MOVEMENT REACTION GATE (Fase 6.6L.3) — fronteira para a 6.6L.3.1.
+ * MOVEMENT REACTION GATE (Fase 6.6L.3 → 6.6L.3.1).
  *
- * PHB 2014: sair do alcance de uma criatura hostil pode provocar uma
- * Opportunity Attack, que é uma Reação e pode INTERROMPER o movimento antes de
- * a criatura deixar o alcance. Enquanto esse motor não existe, NENHUM movimento
- * voluntário de jogador pode ser liberado — liberar permitiria atravessar o
- * alcance de inimigos sem custo.
+ * PHB 2014: sair do alcance de uma criatura hostil que você consegue ver pode
+ * provocar uma Opportunity Attack, que é uma Reação e INTERROMPE o movimento
+ * antes de a criatura deixar o alcance.
  *
- * O gate é consultado ANTES de qualquer escrita (e marca o snapshot de
- * auditoria). A versão desta fase:
+ * O gate é a fronteira de POLÍTICA do movimento voluntário, consultada ANTES de
+ * qualquer escrita:
  *
- *  • `administrativeMovementGate` — usado pelo Mestre. Política EXPLÍCITA de
- *    "sem reação" (`administrative-no-reaction`) e `playerSafe: false`: serve
- *    para operar o tabuleiro agora, mas NÃO é um movimento de jogador.
- *  • `unavailableMovementGate` — usado para PLAYER: recusa sempre. Nada de
- *    "não há Opportunity Attack" sem saber — o gate diz que não sabe.
- *
- * A 6.6L.3.1 substitui a implementação por uma que conheça alcance, lado,
- * visibilidade e Reação disponível, e poderá pausar o caminho passo a passo
- * (o commit atômico do Mestre continua válido como caminho administrativo).
+ *  • `opportunityAttackMovementGate` — movimento voluntário (jogador OU Mestre
+ *    movendo um NPC): o motor real de Opportunity Attack está ativo, então o
+ *    commit pode pausar em boundaries de reach. `playerSafe: true` só porque a
+ *    janela é persistida, resolvida pelo dono do reactor e o movimento só
+ *    continua depois dela — sem isso, liberar seria sair do alcance de graça.
+ *  • `administrativeMovementGate` — usado APENAS por placement administrativo
+ *    (reposicionar no tabuleiro): nunca é movimento voluntário e nunca é
+ *    player-safe.
+ *  • `unavailableMovementGate` — política de recusa total. Fica no domínio como
+ *    resposta honesta para quem não pode avaliar Reações (ex.: cena assistida).
  */
 
-export type MovementReactionPolicy = 'administrative-no-reaction';
+export type MovementReactionPolicy =
+  | 'administrative-no-reaction'
+  | 'phb-opportunity-attacks';
 
 export interface MovementReactionGateInput {
   moverCombatantId: string;
@@ -31,12 +32,24 @@ export interface MovementReactionGateInput {
 }
 
 export type MovementReactionGateResult =
-  | { status: 'clear'; policy: MovementReactionPolicy; playerSafe: false }
+  | { status: 'clear'; policy: MovementReactionPolicy; playerSafe: boolean }
   | { status: 'unavailable'; reason: string };
 
 export interface MovementReactionGate {
   evaluate(input: MovementReactionGateInput): MovementReactionGateResult;
 }
+
+/**
+ * Movimento voluntário com Opportunity Attack real: o passo que sairia de um
+ * alcance é PAUSADO e a Reação decorre antes dele.
+ */
+export const opportunityAttackMovementGate: MovementReactionGate = {
+  evaluate: () => ({
+    status: 'clear',
+    policy: 'phb-opportunity-attacks',
+    playerSafe: true,
+  }),
+};
 
 /** Autoridade administrativa do Mestre: libera, mas NUNCA é player-safe. */
 export const administrativeMovementGate: MovementReactionGate = {
@@ -47,10 +60,10 @@ export const administrativeMovementGate: MovementReactionGate = {
   }),
 };
 
-/** Movimento voluntário de jogador: indisponível até a 6.6L.3.1. */
+/** Sem motor de Reação disponível: recusa (nunca "não há OA" por omissão). */
 export const unavailableMovementGate: MovementReactionGate = {
   evaluate: () => ({
     status: 'unavailable',
-    reason: 'opportunity-attacks-not-implemented',
+    reason: 'opportunity-attacks-not-assessed',
   }),
 };

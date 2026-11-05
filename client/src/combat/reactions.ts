@@ -1,10 +1,11 @@
 /**
  * REACTION WINDOW — arquitetura de extensão (PHB 2014).
  *
- * Hoje o sistema NÃO possui uma reação mecânica executável (Shield pertence à
- * futura Spell Engine; ataque de oportunidade depende de posicionamento/grid).
- * O que existe aqui é só o PONTO DE EXTENSÃO: um evento de turno pode oferecer
- * a UM participante a chance de reagir ANTES da resolução final.
+ * Desde a 6.6L.3.1 o Ataque de Oportunidade é REAL: a janela nasce no servidor
+ * (movimento pausado antes de sair do alcance) e é lida pelo read model de
+ * `/api/combat/:id/reaction-opportunities` — este contrato é só a forma que o
+ * painel consome. Shield/Counterspell continuam na futura Spell Engine.
+ * A janela é a chance de UM participante reagir ANTES da resolução final.
  *
  * Decisões deliberadas:
  * • a janela é uma LISTA — no futuro mais de um participante pode ter uma
@@ -12,8 +13,9 @@
  *   aqui assume um reactor único;
  * • `reactorUserId` é a identidade do USUÁRIO (não do combatente): cada jogador
  *   vê apenas as PRÓPRIAS opções, e o Mestre vê as dele;
- * • a janela é efêmera (`expiresAt`) e contextual. NUNCA existe uma barra de
- *   Reação permanente fora do próprio turno;
+ * • a janela é contextual e NÃO expira por timeout (`expiresAt` fica `null`):
+ *   ela fecha por decisão (atacar/recusar) ou por adjudicação do Mestre. NUNCA
+ *   existe uma barra de Reação permanente fora do próprio turno;
  * • recusar/resolver fecha a janela e devolve o foco ao turno em andamento.
  *
  * Enquanto nenhuma regra concreta emitir uma oportunidade, a lista chega vazia

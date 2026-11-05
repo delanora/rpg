@@ -3199,7 +3199,7 @@ check(
     !/movementCost|totalCostFeet|difficultTerrain|movementRemaining/.test(
       codeOnly(combatRoutesSource)
     ) &&
-    movementServiceSource.includes('evaluateFor(combat, combatant, input.path, true)')
+    movementServiceSource.includes('evaluateMovementForState(combat, combatant, input.path, true)')
 );
 check(
   'CB214) lado é estado do COMBATANTE (nunca ficha/template) e só o Mestre escreve',
@@ -3229,20 +3229,18 @@ check(
 );
 check(
   'CB217) commit REVALIDA o caminho (preview nunca é autoridade) e é idempotente',
-  movementServiceCode.indexOf('evaluateFor(combat, combatant, input.path, true)') <
-    movementServiceCode.indexOf('moveDistance(economy, feetToMeters') &&
+  movementServiceCode.includes('evaluateMovementForState(combat, combatant, input.path, true)') &&
+    movementServiceCode.includes("status: 'ACTIVE', version: input.expectedVersion") &&
     movementServiceSource.includes("status: 'ACTIVE', version: input.expectedVersion") &&
     movementServiceSource.includes('db.combatOperation.create') &&
     movementServiceSource.includes("'IDEMPOTENCY_KEY_REUSED'")
 );
 check(
-  'CB218) Reaction Gate existe e NÃO libera movimento de jogador antes da 6.6L.3.1',
-  movementGateSource.includes('administrative-no-reaction') &&
-    movementGateSource.includes("reason: 'opportunity-attacks-not-implemented'") &&
-    movementServiceSource.includes(
-      "const gate = actor.role === 'MASTER' ? administrativeMovementGate : unavailableMovementGate"
-    ) &&
-    movementServiceSource.includes('MOVEMENT_REACTION_GATE_UNAVAILABLE')
+  'CB218) movimento voluntário usa o gate REAL de Opportunity Attack (player-safe)',
+  movementGateSource.includes("policy: 'phb-opportunity-attacks'") &&
+    movementGateSource.includes('playerSafe: true') &&
+    movementServiceSource.includes('opportunityAttackMovementGate.evaluate') &&
+    !movementServiceSource.includes("actor.role === 'MASTER' ? administrativeMovementGate")
 );
 check(
   'CB219) sem walls/squeezing/voo/movimento forçado/pathfinding nesta fase',
@@ -3258,6 +3256,89 @@ check(
     movementServiceSource.includes(
       'orderCombatants(combat.combatants)[combat.currentIndex]?.id !== combatant.id'
     )
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6L.3.1 — MOVEMENT REACTION GATE / OPPORTUNITY ATTACK                     */
+/* -------------------------------------------------------------------------- */
+const opportunityDomainSource = source('../src/modules/combat/spatial/opportunity-attack.ts');
+const opportunityServiceSource = source('../src/modules/combat/spatial/opportunity-attack.service.ts');
+const opportunityOpenersSource = source('../src/modules/combat/spatial/opportunity-openers.ts');
+const opportunityDomainCode = codeOnly(opportunityDomainSource);
+const opportunityServiceCode = codeOnly(opportunityServiceSource);
+const opportunityOpenersCode = codeOnly(opportunityOpenersSource);
+const actionEconomySource = source('../src/modules/shared/action-economy.ts');
+const reactionApiSource = source('../client/src/reactionOpportunitiesApi.ts');
+check(
+  'CB221) ReactionPanel é REUTILIZADO e NÃO existe segundo motor de Reação',
+  combatTrackerSource.includes("import { ReactionPanel } from './components/ReactionPanel'") &&
+    combatTrackerSource.includes('resolveOpportunityAttack(') &&
+    reactionApiSource.includes('/reaction-opportunities/') &&
+    !opportunityServiceCode.includes('reactionUsed') &&
+    !combatTrackerSource.includes('reactionUsed')
+);
+check(
+  'CB222) a janela é SERVER-AUTHORITATIVE: cliente manda só attackId/versão/operationId',
+  opportunityServiceSource.includes("operationType: 'opportunity-attack'") &&
+    opportunityServiceSource.includes('forcedReaction: true') &&
+    combatRoutesSource.includes("'/:combatId/reaction-opportunities/:opportunityId/attack'") &&
+    reactionApiSource.includes('attackId, expectedVersion, operationId') &&
+    !reactionApiSource.includes('attackBonus') &&
+    !reactionApiSource.includes('armorClass')
+);
+check(
+  'CB223) privacidade no SERVIDOR: jogador só recebe a janela do próprio personagem',
+  opportunityServiceSource.includes('row.reactorUserId === actor.userId') &&
+    opportunityServiceSource.includes("row.visibilityStatus === 'known-visible'") &&
+    movementServiceSource.includes('revealBlockers ? boundaryDiagnostics(boundaries) : []') &&
+    !movementServiceSource.includes('boundaries: boundaryDiagnostics(boundaries)')
+);
+check(
+  'CB224) reach é POR ATAQUE (nunca raio global) e só corpo a corpo com alcance estruturado',
+  opportunityDomainCode.includes('before <= attack.reachFeet && ahead > attack.reachFeet') &&
+    opportunityOpenersCode.includes('reachFeet') &&
+    opportunityOpenersCode.includes('ranged') &&
+    !opportunityDomainCode.includes('threatRadius')
+);
+check(
+  'CB225) recusar NÃO gasta a Reação (só o ataque consome, via forcedReaction)',
+  !opportunityServiceCode.includes('spendEconomy') &&
+    opportunityServiceSource.includes("const reason = master ? 'master-declined' : 'declined'") &&
+    combatServiceSource.includes('forcedReaction')
+);
+check(
+  'CB226) o passo provocador NÃO é aplicado antes da Reação (checkpoint antes do boundary)',
+  movementServiceSource.includes('const prefix = evaluation.steps.slice(0, boundaryIndex)') &&
+    movementServiceSource.includes('remainingPath: input.path.slice(boundaryIndex)')
+);
+check(
+  'CB227) Disengage vira estado do turnEconomy e suprime a janela do movimento daquele combatente',
+  actionEconomySource.includes('disengaging') &&
+    combatServiceSource.includes('economy.disengaging = true') &&
+    opportunityDomainCode.includes('if (input.disengaging) return { eligible: false')
+);
+check(
+  'CB228) visão UNKNOWN pede adjudicação do Mestre; fato "não vê" nunca é sobrescrito',
+  opportunityDomainCode.includes("input.occludersExist ? 'unknown' : 'known-visible'") &&
+    opportunityDomainCode.includes('return status === \'unknown\'') &&
+    opportunityServiceSource.includes("'OPPORTUNITY_VISIBILITY_FINAL'")
+);
+check(
+  'CB229) sem timeout: nenhuma janela fecha sozinha (sem expiresAt/cron)',
+  !/setTimeout|setInterval|expiresAt|cron/i.test(opportunityServiceSource) &&
+    !/setTimeout|setInterval|expiresAt|cron/i.test(opportunityDomainCode)
+);
+check(
+  'CB230) blockers integrados: turno não avança e outro movimento não inicia com janela aberta',
+  combatServiceSource.includes('MOVEMENT_REACTION_PENDING') &&
+    movementServiceSource.includes('MOVEMENT_PENDING_REACTION') &&
+    combatServiceSource.includes('reactionOpportunity.updateMany')
+);
+check(
+  'CB231) sem Sentinel/Polearm Master/War Caster/magia como OA/LoS/cobertura nesta fase',
+  !/sentinel|polearm|war ?caster|counterspell|shield|lineOfSight|cover/i.test(
+    opportunityDomainCode + opportunityServiceCode + opportunityOpenersCode
+  )
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

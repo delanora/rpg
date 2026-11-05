@@ -228,6 +228,30 @@ export const combatantSidePatchSchema = z
   })
   .strict();
 
+/* -------------------------------------------------------------------------- */
+/* 6.6L.3.1 — Reaction Gate / Opportunity Attack                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Resolver a janela com UM ataque: o cliente envia só o `attackId` oferecido
+ * pelo servidor. Bônus, alcance, dano e CA NUNCA vêm do cliente.
+ */
+export const opportunityAttackPayloadSchema = combatOperationSchema
+  .extend({ attackId: z.string().min(1).max(160) })
+  .strict();
+
+/** Recusar ("não reagir"): não gasta a Reação. */
+export const opportunityDecisionSchema = combatOperationSchema.strict();
+
+/** Adjudicação de VISÃO pelo Mestre (só janelas `unknown`). */
+export const opportunityVisibilitySchema = combatOperationSchema
+  .extend({ visible: z.boolean() })
+  .strict();
+
+export type OpportunityAttackPayload = z.infer<typeof opportunityAttackPayloadSchema>;
+export type OpportunityDecisionPayload = z.infer<typeof opportunityDecisionSchema>;
+export type OpportunityVisibilityPayload = z.infer<typeof opportunityVisibilitySchema>;
+
 export type MovementPreviewInput = z.infer<typeof movementPreviewSchema>;
 export type MovementCommitPayload = z.infer<typeof movementCommitSchema>;
 export type CombatantSidePatch = z.infer<typeof combatantSidePatchSchema>;

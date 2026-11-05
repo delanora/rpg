@@ -42,6 +42,13 @@ import { ReactionPanel } from './components/ReactionPanel';
 import { TurnResourceBar } from './components/TurnResourceBar';
 import { TurnToast } from './components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from './reactions';
+import {
+  declineOpportunityReaction,
+  fetchReactionOpportunities,
+  resolveOpportunityAttack,
+  type ReactionOpportunitiesReadModel,
+  type ServerReactionOpportunity,
+} from '../reactionOpportunitiesApi';
 import { actingCombatantFor, currentUserControlsCombatant } from './turnControl';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
@@ -206,15 +213,85 @@ export function CombatTracker({
       ? npcInventory.creatureFor(actingCombatant.creatureId)
       : null;
 
-  // Oportunidades de Reação DESTE usuário (hoje sempre vazio: a janela é o
-  // ponto de extensão, ver `reactions.ts`). Nunca existe barra permanente.
+  // 6.6L.3.1 — JANELA DE REAÇÃO persistida no SERVIDOR: o read model é a
+  // verdade (o WebSocket só notifica). Recarregar a página ou reconectar não
+  // perde a Opportunity Attack, porque nada depende de estado local.
+  const [remoteReactions, setRemoteReactions] = useState<ReactionOpportunitiesReadModel | null>(null);
+  const [reactionBusy, setReactionBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetchReactionOpportunities(combat.id)
+      .then((model) => {
+        if (live) setRemoteReactions(model);
+      })
+      .catch(() => {
+        if (live) setRemoteReactions(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [combat.id, combat.version]);
+
+  /** Traduz o read model do servidor para o contrato já existente do painel. */
+  const remoteOpportunities: ReactionOpportunity[] = (remoteReactions?.opportunities ?? [])
+    .filter((entry) => entry.status === 'pending' && entry.actionable)
+    .map((entry) => ({
+      id: entry.id,
+      // O SERVIDOR já filtrou por autoridade: quem recebe pode reagir.
+      reactorUserId: user.id,
+      reactorCombatantId: entry.reactorCombatantId,
+      trigger: entry.trigger,
+      sourceCombatantId: entry.moverCombatantId,
+      targetCombatantId: entry.reactorCombatantId,
+      availableReactions: entry.options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.description,
+        sourceId: option.attackId,
+      })),
+      // Sem timeout: a janela fecha por decisão (atacar/recusar), nunca sozinha.
+      expiresAt: null,
+    }));
+
+  // Oportunidades de Reação DESTE usuário (servidor + extensões locais). Nunca
+  // existe barra permanente fora de uma janela concreta.
   const myReactionOpportunities = reactionOpportunitiesForViewer(
-    reactionOpportunities,
+    [...remoteOpportunities, ...reactionOpportunities],
     user.id,
   ).filter((opportunity) => !closedReactions.includes(opportunity.id));
   const reactionOpportunity = myReactionOpportunities[0] ?? null;
   const closeReaction = (opportunityId: string): void =>
     setClosedReactions((previous) => [...previous, opportunityId]);
+  const serverOpportunityOf = (opportunityId: string): ServerReactionOpportunity | undefined =>
+    remoteReactions?.opportunities.find((entry) => entry.id === opportunityId);
+
+  /** Atacar: o SERVIDOR gasta a Reação e rola o ataque na mesma transação. */
+  const resolveServerReaction = (opportunityId: string, attackId: string): void => {
+    setReactionBusy(true);
+    resolveOpportunityAttack(combat.id, opportunityId, attackId, combat.version)
+      .then((response) => {
+        closeReaction(opportunityId);
+        onCombatChange(response.combat);
+      })
+      .catch((error: unknown) => {
+        onError(error instanceof Error ? error.message : 'Não foi possível executar a Reação.');
+      })
+      .finally(() => setReactionBusy(false));
+  };
+
+  /** Recusar: NÃO gasta a Reação e NÃO rola dado. */
+  const declineServerReaction = (opportunityId: string): void => {
+    setReactionBusy(true);
+    declineOpportunityReaction(combat.id, opportunityId, combat.version)
+      .then((response) => {
+        closeReaction(opportunityId);
+        onCombatChange(response.combat);
+      })
+      .catch((error: unknown) => {
+        onError(error instanceof Error ? error.message : 'Não foi possível recusar a Reação.');
+      })
+      .finally(() => setReactionBusy(false));
+  };
 
   const rolledCount = combat.combatants.filter((item) => item.rolled).length;
 
@@ -768,18 +845,25 @@ export function CombatTracker({
             {reactionOpportunity ? (
               <ReactionPanel
                 opportunity={reactionOpportunity}
-                busy={busy}
-                onChoose={() => {
-                  // Nenhuma reação mecânica existe hoje: NÃO aplicamos um efeito
-                  // falso. A janela fecha e a limitação é dita com clareza.
-                  closeReaction(reactionOpportunity.id);
-                  onError(
-                    'A execução mecânica de Reações entra com a Spell Engine; nenhum efeito foi aplicado.',
-                  );
+                busy={busy || reactionBusy}
+                onChoose={(optionId) => {
+                  const entry = serverOpportunityOf(reactionOpportunity.id);
+                  const option = entry?.options.find((item) => item.id === optionId);
+                  if (!entry || !option) {
+                    // Janela de extensão local (sem servidor): nada é aplicado.
+                    closeReaction(reactionOpportunity.id);
+                    onError('Esta janela de Reação não está mais disponível.');
+                    return;
+                  }
+                  resolveServerReaction(entry.id, option.attackId);
                 }}
                 onDecline={() => {
-                  // Recusar NÃO gasta a Reação e fecha a janela.
-                  closeReaction(reactionOpportunity.id);
+                  const entry = serverOpportunityOf(reactionOpportunity.id);
+                  if (!entry) {
+                    closeReaction(reactionOpportunity.id);
+                    return;
+                  }
+                  declineServerReaction(entry.id);
                 }}
               />
             ) : null}
