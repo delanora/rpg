@@ -7,6 +7,7 @@ import {
   type AttackDamageSnapshot,
   type ImmediateHealingSnapshot,
   type SaveDamageCastSnapshot,
+  type SpellAttackOccurrenceSnapshot,
 } from './spell-resolution-snapshot.js';
 
 /**
@@ -17,12 +18,17 @@ import {
  * isso é o Effect Engine).
  */
 /**
- * DTO do ataque mágico (6.6I.4): igual ao snapshot persistido, exceto a CA do
- * alvo, que só é exposta quando ele é um PERSONAGEM. Criatura/NPC segue a
- * política atual de esconder CA/PV — o snapshot no banco continua auditável.
+ * DTO do ataque mágico (6.6I.4/6.6J.4): igual ao snapshot persistido, exceto a
+ * CA do alvo de CADA ocorrência, que só é exposta quando ele é um PERSONAGEM.
+ * Criatura/NPC segue a política atual de esconder CA/PV — o snapshot no banco
+ * continua auditável.
  */
-export type AttackDamageResolutionDto = Omit<AttackDamageSnapshot, 'attack'> & {
-  attack: Omit<AttackDamageSnapshot['attack'], 'targetAc'> & { targetAc: number | null };
+export type AttackDamageResolutionDto = Omit<AttackDamageSnapshot, 'attacks'> & {
+  attacks: (Omit<SpellAttackOccurrenceSnapshot, 'attack'> & {
+    attack: Omit<SpellAttackOccurrenceSnapshot['attack'], 'targetAc'> & {
+      targetAc: number | null;
+    };
+  })[];
 };
 
 /** União exposta no DTO: resolução imediata de cura ou de ataque mágico. */
@@ -203,13 +209,18 @@ function resolutionOf(row: SpellCast): SpellCastResolutionDto | null {
   // já rolados, nunca estado privado de criatura. Só o `attack-damage` esconde
   // a CA do alvo (estado privado do Mestre).
   if (snapshot.kind !== 'attack-damage') return snapshot;
-  const targets = Array.isArray(row.targets)
-    ? row.targets.map(entityOf).filter((entity): entity is MechanicalEntity => entity !== null)
-    : [];
-  const hidesArmorClass = targets.some((entity) => entity.kind !== 'character');
-  return hidesArmorClass
-    ? { ...snapshot, attack: { ...snapshot.attack, targetAc: null } }
-    : snapshot;
+  // 6.6J.4: a decisão é POR OCORRÊNCIA — uma jogada contra criatura não pode
+  // escapar só porque outra jogada do mesmo cast atingiu um personagem.
+  return {
+    ...snapshot,
+    attacks: snapshot.attacks.map((occurrence) => ({
+      ...occurrence,
+      attack: {
+        ...occurrence.attack,
+        targetAc: occurrence.target.kind === 'character' ? occurrence.attack.targetAc : null,
+      },
+    })),
+  };
 }
 
 export function toSpellCastDto(row: SpellCast): SpellCastDto {

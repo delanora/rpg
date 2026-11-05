@@ -2104,6 +2104,84 @@ console.log('Check-combat-ui — refino da UI de combate');
       areaRunner.includes('smokeAreaTargetingFoundation(BASE_URL, check)')
   );
 
+  // 6.6J.4 — Multiple Attacks / Beams Foundation.
+  const multiAttackSource = source(
+    '../src/modules/spells/execution/attack-damage-resolution.ts',
+  );
+  const multiCastService = source('../src/modules/spells/execution/spell-cast.service.ts');
+  const multiSchema = source('../src/modules/spells/execution/spell-cast.schema.ts');
+  const multiSnapshot = source('../src/modules/spells/execution/spell-resolution-snapshot.ts');
+  const multiDefinition = source(
+    '../src/modules/spells/execution/spell-execution-definition.ts',
+  );
+  const multiDto = source('../src/modules/spells/execution/spell-cast.dto.ts');
+  const multiRegistry = source('../src/modules/spells/execution/spell-execution-registry.ts');
+  const multiRunner = source('../src/scripts/smoke-realtime.ts');
+  check(
+    'CB176) múltiplos ataques usam o MESMO resolver compartilhado (d20 vs CA) e o mesmo núcleo de dano',
+    multiAttackSource.includes("from '../../combat/attack-resolution.js'") &&
+      multiAttackSource.includes('selectAttackRoll(') &&
+      multiAttackSource.includes('resolveAttackOutcome(') &&
+      multiAttackSource.includes('targetArmorClassOf(') &&
+      multiAttackSource.includes('resolveDamage(') &&
+      !multiAttackSource.includes('Math.random') &&
+      !multiAttackSource.includes('rollD20(')
+  );
+  check(
+    'CB177) a QUANTIDADE de jogadas vem da definição (server) e o cliente não envia d20/AC/acerto/dano',
+    multiDefinition.includes('attackCountOf(') &&
+      multiDefinition.includes('AttackCountDefinition') &&
+      multiAttackSource.includes('attackCountOf(') &&
+      multiAttackSource.includes('SPELL_ATTACK_COUNT_INVALID') &&
+      !multiSchema.includes('attackCount') &&
+      !multiSchema.includes('naturalRoll') &&
+      !multiSchema.includes('targetAc') &&
+      !multiSchema.includes('critical')
+  );
+  check(
+    'CB178) repetição de alvo só com `allowRepeatedTarget`; a recusa GLOBAL de duplicata continua para as outras magias',
+    multiCastService.includes('allowRepeatedTarget === true') &&
+      multiCastService.includes('repeatedTargetsAllowed') &&
+      multiCastService.includes('SPELL_TARGET_DUPLICATE') &&
+      multiCastService.includes('SPELL_ATTACK_COUNT_INVALID') &&
+      multiSnapshot.includes('selectedModifiers')
+  );
+  check(
+    'CB179) ocorrências e eventos de dano têm identidades DETERMINÍSTICAS por índice, na ordem do snapshot',      multiAttackSource.includes('attack:${index}') &&
+      multiAttackSource.includes('occurrences.push({') &&
+      multiSnapshot.includes('attacks: z.array(spellAttackOccurrenceSnapshotSchema)') &&
+      multiSnapshot.includes('index: z.number().int().nonnegative()')
+  );
+  check(
+    'CB180) snapshot antigo de UMA jogada continua legível (normalização v1 → v2) sem migration de dados',
+    multiSnapshot.includes('legacyAttackDamageSnapshotSchema') &&
+      multiSnapshot.includes('normalizeAttackDamageSnapshot') &&
+      multiSnapshot.includes("'attacks' in value") &&
+      multiDto.includes("occurrence.target.kind === 'character'") &&
+      !source('../prisma/schema.prisma').includes('SpellAttackOccurrence')
+  );
+  check(
+    'CB181) ataque múltiplo não usa Resolution Card nem pede decisão do alvo (resolução imediata)',
+    !multiAttackSource.includes('resolution-requests') &&
+      !multiAttackSource.includes('CombatResolutionRequest') &&
+      !multiCastService.includes('CombatResolutionRequest')
+  );
+  check(
+    'CB182) definição sintética fora do catálogo/registry e NENHUMA spell PHB de múltiplos raios registrada',
+    !multiRegistry.includes('test.synthetic-multi-attack') &&
+      !source('../src/modules/shared/spells/index.ts').includes('synthetic-multi-attack') &&
+      !multiRegistry.includes('eldritch-blast') &&
+      !multiRegistry.includes('scorching-ray') &&
+      !multiRegistry.includes('fire-bolt') &&
+      !multiRegistry.includes('ray-of-frost') &&
+      !multiRegistry.includes('inflict-wounds') &&
+      !multiRegistry.includes('ice-knife')
+  );
+  check(
+    'CB183) o smoke de múltiplos ataques integra o runner principal',
+    multiRunner.includes('smokeMultipleSpellAttacks(BASE_URL, check)')
+  );
+
   check(
     'CB167) nenhuma UI multi-alvo dedicada: os Resolution Cards genéricos bastam',
     !source('../src/modules/combat/resolution-requests.ts').includes('MultiTarget') &&
@@ -2268,8 +2346,8 @@ console.log('Check-combat-ui — refino da UI de combate');
     attackDamage.includes('attack-miss') &&
       attackDamage.includes('spell-cast:${castId}:attack:${index}') &&
       attackDamage.includes(':damage') &&
-      attackDamage.includes("damageSnapshot: AttackDamageSnapshot['damage'] = null") &&
-      spellSnapshot.includes('damage: z')
+      attackDamage.includes("damageSnapshot: SpellAttackOccurrenceSnapshot['damage'] = null") &&
+      spellSnapshot.includes('damage: attackDamageEventSnapshotSchema.nullable()')
   );
   check(
     'CB150) o smoke da fundação de spell attack integra o runner principal',

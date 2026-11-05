@@ -24,38 +24,53 @@ import {
 import { applyDamageConsequences, publishDeathUpdated } from '../../death/death.service.js';
 import { noteDamageConcentration } from '../../concentration/concentration.service.js';
 import { publishCharacter, refreshCombatForEffects } from '../../combat/combat.service.js';
-import type { LoadedEntity } from '../../mechanical/mechanical.service.js';
-import type { SpellExecutionDefinition } from './spell-execution-definition.js';
+import { loadEntity, type LoadedEntity } from '../../mechanical/mechanical.service.js';
+import {
+  attackCountOf,
+  type SpellExecutionDefinition,
+} from './spell-execution-definition.js';
 import {
   attackDamageSnapshotSchema,
   parseSpellResolutionSnapshot,
   type AttackDamageSnapshot,
+  type SpellAttackOccurrenceSnapshot,
 } from './spell-resolution-snapshot.js';
 
 /**
- * FASE 6.6I.4 — RESOLUÇÃO IMEDIATA DE ATAQUE MÁGICO (`attack-damage`).
+ * FASE 6.6I.4 / 6.6J.4 — RESOLUÇÃO IMEDIATA DE ATAQUE MÁGICO (`attack-damage`).
  *
  * Estratégia GENÉRICA de execução de magia: o ataque é resolvido no COMMIT, na
  * mesma transação do `SpellCast`. Não há spell real registrada — a prova usa
- * uma definição SINTÉTICA de teste, e a estratégia já roda no executor de
- * produção (nenhum `if (spellId)` no caminho).
+ * uma definição SINTÉTICA de teste, e a estratégia roda no executor de produção
+ * (nenhum `if (spellId)` no caminho).
  *
- * Invariantes:
- *  • d20, vantagem/desvantagem, 1/20 natural, crítico e dano são do SERVIDOR;
+ * 6.6J.4 — MÚLTIPLAS JOGADAS DE ATAQUE:
+ *  • UM `SpellCast` produz N OCORRÊNCIAS (`attacks[]`), cada uma com d20, dano,
+ *    DamageEvent e consequências PRÓPRIAS;
+ *  • `assignments[index]` diz quem aquela jogada ataca — o MESMO alvo pode
+ *    aparecer várias vezes ([A, A, B]) e NUNCA é reduzido a um conjunto único;
+ *  • o estado mecânico (CA, Conditions, Esquiva, Effects) é RELIDO antes de
+ *    CADA jogada: o ataque 1 vê o alvo como o ataque 0 o deixou;
+ *  • a SEQUÊNCIA é resolvida em ordem 0..N-1, dentro da transação: erro no meio
+ *    desfaz tudo e retry devolve o snapshot sem rolar de novo.
+ *
+ * Invariantes que NÃO mudam:
  *  • o resolver é o MESMO dos ataques de arma (`combat/attack-resolution.ts`);
  *  • o bônus de ataque é o SNAPSHOT do `SpellCast` (6.6B) — nunca recalculado;
- *  • a CA é o estado ATUAL do alvo (`computeArmorClass`/statblock), não um
- *    valor congelado no cast;
- *  • o dano passa SEMPRE por `resolveDamage` (6.6I.1): defesas, HP, morte,
- *    Concentração e defesas por tipo não são reimplementados aqui;
- *  • miss não cria evento de dano, não mexe em HP e não pede Concentração;
+ *  • dano por hit passa SEMPRE por `resolveDamage` (6.6I.1);
+ *  • crítico dobra os dados DAQUELA ocorrência, nunca o bônus fixo;
+ *  • miss não rola dano, não mexe em HP e não pede Concentração;
  *  • nenhum EffectInstance/PendingEffectSave/Concentração do conjurador;
- *  • eventId e occurrenceId são DETERMINÍSTICOS — retry não rola de novo.
+ *  • `occurrenceId`/`eventId` são DETERMINÍSTICOS por índice.
  */
 
 export interface AttackDamageContext {
   caster: LoadedEntity;
-  targets: LoadedEntity[];
+  /**
+   * Assignments na ORDEM do índice. Repetições são legítimas: `[A, A, B]`
+   * significa duas jogadas contra A e uma contra B.
+   */
+  assignments: LoadedEntity[];
 }
 
 export interface AttackDamageOptions {
@@ -69,6 +84,11 @@ export interface AttackDamageOptions {
    * devolve identidades; o servidor revalida (6.5G).
    */
   selectedEffectModifiers?: string[];
+  /**
+   * 6.6J.4: seleção POR OCORRÊNCIA. Usar o mesmo d4 em todos os raios seria
+   * rerrolar por acidente; cada jogada tem a própria escolha.
+   */
+  selectedEffectModifiersByAttack?: Record<number, readonly string[]>;
 }
 
 export interface AttackDamageResult {
@@ -82,7 +102,7 @@ export interface AttackDamageResult {
   affectedEffects: MechanicalEntity[];
 }
 
-/** Identidade do ataque DENTRO do cast (hoje sempre índice 0). */
+/** Identidade do ataque DENTRO do cast (índice estável, começa em 0). */
 export function attackOccurrenceIdOf(castId: string, index = 0): string {
   return `spell-cast:${castId}:attack:${index}`;
 }
@@ -118,6 +138,18 @@ function entityKey(entity: MechanicalEntity): string {
   return `${entity.kind}:${entity.id}`;
 }
 
+function uniqueTargets(occurrences: readonly SpellAttackOccurrenceSnapshot[]) {
+  const seen = new Set<string>();
+  const targets: { kind: string; id: string }[] = [];
+  for (const occurrence of occurrences) {
+    const key = `${occurrence.target.kind}:${occurrence.target.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push(occurrence.target);
+  }
+  return targets;
+}
+
 export async function resolveAttackDamageSpell(
   db: Prisma.TransactionClient,
   cast: SpellCast,
@@ -127,13 +159,17 @@ export async function resolveAttackDamageSpell(
 ): Promise<AttackDamageResult> {
   const resolution = execution.resolution;
   if (resolution.kind !== 'attack-damage') invalidResolution();
-  if (context.targets.length !== 1) {
-    // Um cast = um ataque nesta fase. Eldritch Blast/Scorching Ray (múltiplos
-    // raios) exigem `attacks[]` no snapshot — o contrato atual é 1 ataque.
+
+  // Quantidade é da DEFINIÇÃO, nunca do cliente. Divergência recusa ANTES de
+  // rolar qualquer coisa (e antes de qualquer consequência): nada de "executar
+  // dois raios e ignorar o terceiro".
+  const attackCount = attackCountOf(execution);
+  if (context.assignments.length !== attackCount) {
     throw new HttpError(
-      'Ataque mágico com múltiplos alvos ainda não foi implementado.',
-      409,
-      'SPELL_EXECUTION_NOT_IMPLEMENTED',
+      `Esta conjuração exige exatamente ${attackCount} jogada(s) de ataque.`,
+      400,
+      'SPELL_ATTACK_COUNT_INVALID',
+      { expected: attackCount, received: context.assignments.length },
     );
   }
   if (cast.status !== 'resolving') return replayOf(cast);
@@ -152,166 +188,208 @@ export async function resolveAttackDamageSpell(
     );
   }
 
-  const target = context.targets[0];
   const roll: AttackRollSource = options.roll ?? ((sides: number) => rollDie(sides));
-
-  // Modificadores de Effect: UMA consulta em lote, canonicalizando combatente
-  // de personagem para a FICHA (mesma regra da 6.5A/6.5B).
-  const sets = await effectModifierSetsFor([context.caster.entity, target.entity], db);
-  const attackerSet = sets.get(entityKey(context.caster.entity)) ?? emptyEffectModifierSet();
-  const targetSet = sets.get(entityKey(target.entity)) ?? emptyEffectModifierSet();
-  const attackerMods = rollModifiersFor(attackerSet, 'attack');
-  const armorBonuses = effectArmorClassBonuses(targetSet);
-
-  // Esquiva/Caído/visão: MESMA derivação dos ataques de arma. Nada específico
-  // de magia aqui — só o `attackRanged` do MODO declarado pela definição.
-  const defense = await targetDefenseContextOf(db, target, targetSet.speedBonus);
-  const { advantage, disadvantage } = conditionAttackMode(
-    context.caster.state,
-    target.state,
-    false,
-    false,
-    {
-      targetDodging: defense.targetDodging,
-      targetSpeed: defense.targetSpeed,
-      attackRanged: resolution.attack.kind === 'ranged',
-      effectAdvantages: attackerMods.advantage,
-      effectDisadvantages: attackerMods.disadvantage,
-    },
-  );
-
-  const selection = selectAttackRoll({ advantage, disadvantage, roll });
-  // O d4 opcional (ex.: Bless) usa a MESMA fonte de aleatoriedade do ataque e é
-  // rolado DEPOIS do(s) d20 — a ordem dos dados de um ataque é sempre: d20,
-  // dados de efeito, dados de dano. Assim retry/teste não dependem do RNG.
-  const optional = rollSelectedOptional(attackerMods, options.selectedEffectModifiers, false, roll);
-
-  // Dados de EFEITO no ATAQUE (ex.: Bless +1d4): rolados aqui, no servidor, e
-  // NUNCA dobrados no crítico — eles modificam o ataque, não o dano.
-  const effectDice = [
-    ...attackerMods.dice.flatMap((modifier) =>
-      Array.from({ length: modifier.count }, () => ({
-        sides: modifier.sides,
-        value: roll(modifier.sides),
-        sign: modifier.sign,
-        label: publicEffectLabel(modifier.source),
-      })),
-    ),
-    ...optional.dice.map((die) => ({
-      sides: die.sides,
-      value: die.value,
-      sign: die.sign,
-      label: die.label,
-    })),
-  ];
-  const effectBonus = attackerMods.bonus + optional.bonus;
-  const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
-
-  // Bônus de ataque = SNAPSHOT do commit. Mudar o atributo da ficha depois NÃO
-  // reescreve este ataque.
-  const total = selection.naturalRoll + attackBonus + effectBonus + effectDiceTotal;
-  const targetAc = await targetArmorClassOf(db, target.entity, armorBonuses);
-  const outcome = resolveAttackOutcome({
-    naturalRoll: selection.naturalRoll,
-    total,
-    targetAc,
-    critThreshold: resolution.attack.critThreshold ?? 20,
-  });
-
-  const occurrenceId = attackOccurrenceIdOf(fresh.id);
-  const eventId = attackDamageEventIdOf(fresh.id);
   const publications = new Set<string>();
   const deathTargets: MechanicalEntity[] = [];
   const affectedEffects: MechanicalEntity[] = [];
   let concentrationTarget: MechanicalEntity | null = null;
-  let damageSnapshot: AttackDamageSnapshot['damage'] = null;
-  let noEffectReason: AttackDamageSnapshot['noEffectReason'] = outcome.hit
-    ? null
-    : 'attack-miss';
+  const occurrences: SpellAttackOccurrenceSnapshot[] = [];
 
-  if (outcome.hit) {
-    // Crítico: TODOS os dados do ataque rolam duas vezes; bônus fixo, uma vez.
-    const rolled = rollAttackDamageComponents(resolution.damage.components, outcome.critical, roll);
-    const damage = await resolveDamage(db, {
-      eventId,
-      source: { kind: 'spell', spellCastId: fresh.id, label: execution.spellId },
-      target: await damageTargetOf(db, target.entity),
-      components: rolled.map((component) => ({ type: component.type, rawAmount: component.rawAmount })),
-      publications,
-    });
-    damageSnapshot = {
-      eventId,
-      components: rolled.map((component, index) => ({
-        type: component.type,
-        count: component.count,
-        sides: component.sides,
-        rolls: component.rolls,
-        bonus: component.bonus,
-        raw: component.rawAmount,
-        applied: damage.components[index]?.applied ?? 0,
-        modifier: damage.components[index]?.modifier ?? null,
+  // ORDEM DE RESOLUÇÃO: 0 → 1 → 2. Cada jogada relê o estado ATUAL, porque a
+  // anterior pode ter mudado HP/Conditions/Concentração do alvo.
+  for (let index = 0; index < attackCount; index += 1) {
+    const assignment = context.assignments[index]!;
+    const currentCaster = await loadEntity(context.caster.entity, db);
+    const currentTarget = await loadEntity(assignment.entity, db);
+
+    // Modificadores de Effect: consulta em lote, canonicalizando combatente de
+    // personagem para a FICHA (mesma regra da 6.5A/6.5B). Refeita por ocorrência
+    // porque dano pode encerrar Concentração/Effects entre as jogadas.
+    const sets = await effectModifierSetsFor(
+      [currentCaster.entity, currentTarget.entity],
+      db,
+    );
+    const attackerSet = sets.get(entityKey(currentCaster.entity)) ?? emptyEffectModifierSet();
+    const targetSet = sets.get(entityKey(currentTarget.entity)) ?? emptyEffectModifierSet();
+    const attackerMods = rollModifiersFor(attackerSet, 'attack');
+    const armorBonuses = effectArmorClassBonuses(targetSet);
+
+    // Esquiva/Caído/visão: MESMA derivação dos ataques de arma, com o estado
+    // atualizado do alvo NESTA jogada.
+    const defense = await targetDefenseContextOf(db, currentTarget, targetSet.speedBonus);
+    const { advantage, disadvantage } = conditionAttackMode(
+      currentCaster.state,
+      currentTarget.state,
+      false,
+      false,
+      {
+        targetDodging: defense.targetDodging,
+        targetSpeed: defense.targetSpeed,
+        attackRanged: resolution.attack.kind === 'ranged',
+        effectAdvantages: attackerMods.advantage,
+        effectDisadvantages: attackerMods.disadvantage,
+      },
+    );
+
+    const selection = selectAttackRoll({ advantage, disadvantage, roll });
+    const selected =
+      options.selectedEffectModifiersByAttack?.[index] ??
+      options.selectedEffectModifiers ??
+      [];
+    // O d4 opcional (ex.: Bless) usa a MESMA fonte de aleatoriedade e é rolado
+    // DEPOIS do(s) d20: a ordem dos dados de UMA jogada é sempre d20, dados de
+    // efeito, dados de dano.
+    const optional = rollSelectedOptional(attackerMods, [...selected], false, roll);
+
+    // Dados de EFEITO no ATAQUE (ex.: Bless +1d4): nunca dobrados no crítico.
+    const effectDice = [
+      ...attackerMods.dice.flatMap((modifier) =>
+        Array.from({ length: modifier.count }, () => ({
+          sides: modifier.sides,
+          value: roll(modifier.sides),
+          sign: modifier.sign,
+          label: publicEffectLabel(modifier.source),
+        })),
+      ),
+      ...optional.dice.map((die) => ({
+        sides: die.sides,
+        value: die.value,
+        sign: die.sign,
+        label: die.label,
       })),
-      rawDamage: damage.rawDamage,
-      finalDamage: damage.finalDamage,
-      hpBefore: damage.hpBefore,
-      hpAfter: damage.hpAfter,
-      critical: outcome.critical,
-    };
+    ];
+    const effectBonus = attackerMods.bonus + optional.bonus;
+    const effectDiceTotal = effectDice.reduce((sum, die) => sum + die.value * die.sign, 0);
 
-    if (damage.finalDamage > 0 && damage.hpAfter !== null) {
-      // Ciclo de morte: criatura SOLTA do bestiário não abre Testes contra a
-      // Morte (a instância de combate abre) — mesma regra da 6.6I.2.
-      if (target.entity.kind !== 'creature') {
-        const consequence = await applyDamageConsequences(
-          target.entity,
-          {
-            damage: damage.finalDamage,
-            hpBefore: damage.hpBefore ?? 0,
-            hpTempBefore: damage.hpTempBefore,
-            critical: outcome.critical,
-            sourceName: context.caster.name,
-          },
-          db,
-          context.caster.name,
-        );
-        if (consequence.changed) deathTargets.push(target.entity);
-      }
+    // Bônus de ataque = SNAPSHOT do commit, igual em todas as jogadas.
+    const total = selection.naturalRoll + attackBonus + effectBonus + effectDiceTotal;
+    const targetAc = await targetArmorClassOf(db, currentTarget.entity, armorBonuses);
+    const outcome = resolveAttackOutcome({
+      naturalRoll: selection.naturalRoll,
+      total,
+      targetAc,
+      critThreshold: resolution.attack.critThreshold ?? 20,
+    });
 
-      // UM teste por EVENTO, com o dano FINAL — a identidade é o mesmo eventId.
-      const concentration = await noteDamageConcentration(target.entity, damage.finalDamage, db, {
+    const occurrenceId = attackOccurrenceIdOf(fresh.id, index);
+    const eventId = attackDamageEventIdOf(fresh.id, index);
+    let damageSnapshot: SpellAttackOccurrenceSnapshot['damage'] = null;
+    let occurrenceReason: SpellAttackOccurrenceSnapshot['noEffectReason'] = outcome.hit
+      ? null
+      : 'attack-miss';
+
+    if (outcome.hit) {
+      // Crítico: TODOS os dados da jogada rolam duas vezes; bônus fixo, uma vez.
+      const rolled = rollAttackDamageComponents(
+        resolution.damage.components,
+        outcome.critical,
+        roll,
+      );
+      const damage = await resolveDamage(db, {
         eventId,
-        sourceName: context.caster.name,
+        source: { kind: 'spell', spellCastId: fresh.id, label: execution.spellId },
+        target: await damageTargetOf(db, currentTarget.entity),
+        components: rolled.map((component) => ({
+          type: component.type,
+          rawAmount: component.rawAmount,
+        })),
+        publications,
       });
-      if (concentration.changed) concentrationTarget = target.entity;
-      affectedEffects.push(...concentration.endedEffectTargets);
-    } else if (damage.finalDamage === 0) {
-      // Acertou, mas resistência/imunidade zeraram tudo: sem consequência.
-      noEffectReason = 'zero-damage';
+      damageSnapshot = {
+        eventId,
+        components: rolled.map((component, componentIndex) => ({
+          type: component.type,
+          count: component.count,
+          sides: component.sides,
+          rolls: component.rolls,
+          bonus: component.bonus,
+          raw: component.rawAmount,
+          applied: damage.components[componentIndex]?.applied ?? 0,
+          modifier: damage.components[componentIndex]?.modifier ?? null,
+        })),
+        rawDamage: damage.rawDamage,
+        finalDamage: damage.finalDamage,
+        hpBefore: damage.hpBefore,
+        hpAfter: damage.hpAfter,
+        critical: outcome.critical,
+      };
+
+      if (damage.finalDamage > 0 && damage.hpAfter !== null) {
+        // Ciclo de morte: criatura SOLTA do bestiário não abre Testes contra a
+        // Morte (a instância de combate abre) — mesma regra da 6.6I.2.
+        if (currentTarget.entity.kind !== 'creature') {
+          const consequence = await applyDamageConsequences(
+            currentTarget.entity,
+            {
+              damage: damage.finalDamage,
+              hpBefore: damage.hpBefore ?? 0,
+              hpTempBefore: damage.hpTempBefore,
+              critical: outcome.critical,
+              sourceName: currentCaster.name,
+            },
+            db,
+            currentCaster.name,
+          );
+          if (consequence.changed) deathTargets.push(currentTarget.entity);
+        }
+
+        // UM teste por EVENTO, com o dano FINAL — hits separados no mesmo alvo
+        // NUNCA são somados num único save.
+        const concentration = await noteDamageConcentration(
+          currentTarget.entity,
+          damage.finalDamage,
+          db,
+          { eventId, sourceName: currentCaster.name },
+        );
+        if (concentration.changed) {
+          concentrationTarget = concentrationTarget ?? currentTarget.entity;
+        }
+        affectedEffects.push(...concentration.endedEffectTargets);
+      } else if (damage.finalDamage === 0) {
+        // Acertou, mas resistência/imunidade zeraram tudo: sem consequência.
+        occurrenceReason = 'zero-damage';
+      }
     }
+
+    occurrences.push({
+      index,
+      occurrenceId,
+      target: { kind: currentTarget.entity.kind, id: currentTarget.entity.id },
+      attack: {
+        kind: resolution.attack.kind,
+        naturalRoll: selection.naturalRoll,
+        rolls: selection.rolls,
+        mode: selection.mode,
+        attackBonus,
+        effectBonus,
+        effectDice,
+        sources: rollModifierSourceLabels(attackerMods),
+        total,
+        targetAc,
+        hit: outcome.hit,
+        critical: outcome.critical,
+        autoMiss: outcome.autoMiss,
+        autoHit: outcome.autoHit,
+      },
+      damage: damageSnapshot,
+      selectedModifiers: [...selected],
+      noEffectReason: occurrenceReason,
+    });
   }
+
+  const anyEffect = occurrences.some((occurrence) => (occurrence.damage?.finalDamage ?? 0) > 0);
+  const anyHit = occurrences.some((occurrence) => occurrence.attack.hit);
+  const noEffectReason: AttackDamageSnapshot['noEffectReason'] = anyEffect
+    ? null
+    : anyHit
+      ? 'zero-damage'
+      : 'attack-miss';
 
   const snapshot: AttackDamageSnapshot = {
     kind: 'attack-damage',
-    attack: {
-      kind: resolution.attack.kind,
-      index: 0,
-      occurrenceId,
-      naturalRoll: selection.naturalRoll,
-      rolls: selection.rolls,
-      mode: selection.mode,
-      attackBonus,
-      effectBonus,
-      effectDice,
-      sources: rollModifierSourceLabels(attackerMods),
-      total,
-      targetAc,
-      hit: outcome.hit,
-      critical: outcome.critical,
-      autoMiss: outcome.autoMiss,
-      autoHit: outcome.autoHit,
-    },
-    damage: damageSnapshot,
-    target: { kind: target.entity.kind, id: target.entity.id },
+    attacks: occurrences,
+    // Resumo do conjunto canônico ÚNICO. Nunca reconstrói as ocorrências.
+    targets: uniqueTargets(occurrences),
     casterName: context.caster.name,
     noEffectReason,
     at: new Date().toISOString(),
@@ -323,7 +401,7 @@ export async function resolveAttackDamageSpell(
     where: { id: fresh.id },
     data: {
       status: 'resolved',
-      outcome: (damageSnapshot?.finalDamage ?? 0) > 0 ? 'effect' : 'no-effect',
+      outcome: anyEffect ? 'effect' : 'no-effect',
       resolutionSnapshot: snapshot as unknown as Prisma.InputJsonValue,
       resolutionReason: noEffectReason,
       resolvedAt: new Date(),
