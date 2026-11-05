@@ -3167,5 +3167,98 @@ check(
     !/normalRangeFeet|longRangeFeet|reachFeet/.test(attackPanelSource)
 );
 
+/* -------------------------------------------------------------------------- */
+/* 6.6L.3 — MOVEMENT + OCCUPANCY FOUNDATION                                    */
+/* -------------------------------------------------------------------------- */
+const movementDomainSource = source('../src/modules/combat/spatial/spatial-movement.ts');
+const movementServiceSource = source('../src/modules/combat/spatial/spatial-movement.service.ts');
+const movementGateSource = source('../src/modules/combat/spatial/movement-reaction-gate.ts');
+const movementTerrainSource = source('../src/modules/combat/spatial/movement-terrain.ts');
+const combatSchemaSource = source('../src/modules/combat/combat.schema.ts');
+const movementCombatDtoSource = source('../src/modules/combat/combat.dto.ts');
+const spatialSceneSource = source('../src/modules/combat/spatial/spatial-scene.service.ts');
+const movementCode = codeOnly(movementDomainSource);
+const movementServiceCode = codeOnly(movementServiceSource);
+/** Bloco de um model do schema Prisma (para provar onde o side NÃO entra). */
+const prismaModel = (name: string): string => {
+  const start = prismaSchemaSource.indexOf(`model ${name} {`);
+  const end = start >= 0 ? prismaSchemaSource.indexOf('\n}', start) : -1;
+  return start >= 0 && end > start ? prismaSchemaSource.slice(start, end) : '';
+};
+
+check(
+  'CB212) passo ao servidor: Small+ 5 pés, Tiny 2,5 e diagonal com o MESMO custo',
+  movementDomainSource.includes('alignmentStepFeet(mover.size)') &&
+    movementDomainSource.includes('anchorDistanceFeet(cursor, position)') &&
+    !/Math\.hypot|Math\.sqrt/.test(movementDomainSource)
+);
+check(
+  'CB213) custo do movimento é DERIVADO no servidor (cliente só manda o caminho)',
+  combatSchemaSource.includes('movementPathSchema = z.array(spatialPositionSchema).max(200)') &&
+    /movementCommitSchema = z\s*\.object\(\{[\s\S]{0,400}?\}\)\s*\.strict\(\)/.test(combatSchemaSource) &&
+    !/movementCost|totalCostFeet|difficultTerrain|movementRemaining/.test(
+      codeOnly(combatRoutesSource)
+    ) &&
+    movementServiceSource.includes('evaluateFor(combat, combatant, input.path, true)')
+);
+check(
+  'CB214) lado é estado do COMBATANTE (nunca ficha/template) e só o Mestre escreve',
+  prismaModel('Combatant').includes('sideKey') &&
+    !prismaModel('Character').includes('sideKey') &&
+    !prismaModel('Creature').includes('sideKey') &&
+    movementCombatDtoSource.includes('sideKey: combatant.sideKey ?? null') &&
+    movementCombatDtoSource.includes('return { ...visible, sideKey: null };') &&
+    combatRoutesSource.includes('setCombatantSideKey') &&
+    spatialSceneSource.includes("'combatant-side'")
+);
+check(
+  'CB215) espaço de criatura é difficult terrain e as fontes NÃO acumulam',
+  movementDomainSource.includes("difficultTerrainSources.push('creature-space')") &&
+    movementDomainSource.includes("if (terrainStatus === 'difficult') difficultTerrainSources.push('environmental')") &&
+    movementDomainSource.includes('const difficultTerrain = difficultTerrainSources.length > 0') &&
+    movementDomainSource.includes('distanceFeet * (1 + (crawling ? 1 : 0) + (difficultTerrain ? 1 : 0))')
+);
+check(
+  'CB216) destino ocupado proibido e passagem hostil exige 2 categorias de tamanho',
+  movementDomainSource.includes('MOVEMENT_DESTINATION_OCCUPIED') &&
+    movementDomainSource.includes('HOSTILE_PASSAGE_SIZE_GAP = 2') &&
+    movementDomainSource.includes(
+      'Math.abs(sizeOrderOf(mover) - sizeOrderOf(occupant)) >= HOSTILE_PASSAGE_SIZE_GAP'
+    ) &&
+    movementDomainSource.includes("if (!moverSide || !occupantSide) return 'unknown'")
+);
+check(
+  'CB217) commit REVALIDA o caminho (preview nunca é autoridade) e é idempotente',
+  movementServiceCode.indexOf('evaluateFor(combat, combatant, input.path, true)') <
+    movementServiceCode.indexOf('moveDistance(economy, feetToMeters') &&
+    movementServiceSource.includes("status: 'ACTIVE', version: input.expectedVersion") &&
+    movementServiceSource.includes('db.combatOperation.create') &&
+    movementServiceSource.includes("'IDEMPOTENCY_KEY_REUSED'")
+);
+check(
+  'CB218) Reaction Gate existe e NÃO libera movimento de jogador antes da 6.6L.3.1',
+  movementGateSource.includes('administrative-no-reaction') &&
+    movementGateSource.includes("reason: 'opportunity-attacks-not-implemented'") &&
+    movementServiceSource.includes(
+      "const gate = actor.role === 'MASTER' ? administrativeMovementGate : unavailableMovementGate"
+    ) &&
+    movementServiceSource.includes('MOVEMENT_REACTION_GATE_UNAVAILABLE')
+);
+check(
+  'CB219) sem walls/squeezing/voo/movimento forçado/pathfinding nesta fase',
+  !/pathfind|dijkstra|squeez|flying|swim|climb|forced|walls?|obstacle/i.test(
+    `${movementCode}${movementServiceCode}${codeOnly(movementTerrainSource)}`
+  )
+);
+check(
+  'CB220) placement administrativo continua SEPARADO (não consome movimento)',
+  spatialSceneSource.includes('setCombatantSpatialPosition') &&
+    spatialSceneSource.includes('SPATIAL_POSITION_NOT_GRID_ALIGNED') &&
+    !spatialSceneSource.includes('moveDistance') &&
+    movementServiceSource.includes(
+      'orderCombatants(combat.combatants)[combat.currentIndex]?.id !== combatant.id'
+    )
+);
+
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);

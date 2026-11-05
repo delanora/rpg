@@ -123,6 +123,11 @@ export interface CombatantDto {
    * imagem nem espaço ocupado a jogadores.
    */
   spatial: CombatantSpatialDto | null;
+  /**
+   * LADO do ENCONTRO (6.6L.3), definido pelo Mestre. `null` no DTO do jogador:
+   * a UI não precisa dele hoje e o servidor não amplia superfície à toa.
+   */
+  sideKey: string | null;
   /** Verdadeiro quando a ficha/criatura de origem foi removida. */
   missing: boolean;
   rolled: boolean;
@@ -174,6 +179,8 @@ export interface CombatantSourced {
    */
   spatialPosition?: unknown;
   baseSize?: SpatialSize;
+  /** Lado do ENCONTRO (`null` = relação desconhecida, nunca inferida). */
+  sideKey?: string | null;
   character: (Character & { user: { username: string } }) | null;
   creature: Creature | null;
   /**
@@ -304,6 +311,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
       position: spatialPosition,
       occupiedSpace: occupiedSpaceOf(spatialPosition, effectiveSize),
     },
+    sideKey: combatant.sideKey ?? null,
     statsHidden: false,
     missing: source === null,
     rolled: combatant.initiative !== null,
@@ -378,11 +386,14 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
   return {
     ...dto,
     economyLog: dto.economyLog.filter((entry) => entry.private !== true),
-    combatants: dto.combatants.map((combatant) =>
-      isMasterOnlyCombatant(combatant.kind)
+    combatants: dto.combatants.map((combatant) => {
+      const visible = isMasterOnlyCombatant(combatant.kind)
         ? hideCombatantPrivateState(combatant)
-        : combatant,
-    ),
+        : combatant;
+      // Lado é estado do ENCONTRO administrado pelo Mestre: o jogador não
+      // recebe o mapa de times (nem o dos personagens) nesta fase.
+      return { ...visible, sideKey: null };
+    }),
   };
 }
 
