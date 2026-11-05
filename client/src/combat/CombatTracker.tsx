@@ -49,7 +49,7 @@ import {
   type ReactionOpportunitiesReadModel,
   type ServerReactionOpportunity,
 } from '../reactionOpportunitiesApi';
-import { actingCombatantFor, currentUserControlsCombatant } from './turnControl';
+import { actingCombatantFor, currentUserControlsCombatant, movementAuthorityOf } from './turnControl';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
 /**
@@ -205,6 +205,19 @@ export function CombatTracker({
   );
   const masterAttackerCombatant = isMaster ? actingCombatant : null;
   const ownTurn = Boolean(actingCombatant && actingCombatant.id === combat.currentCombatantId);
+
+  /**
+   * 6.6M.3 — QUEM PODE MOVER no grid agora (derivação única). O Mestre usa o
+   * mesmo fluxo para o movimento MECÂNICO do combatente do turno; Placement
+   * administrativo continua fora daqui. O servidor revalida tudo.
+   */
+  const movementAuthority = movementAuthorityOf({
+    status: combat.status,
+    currentCombatantId: combat.currentCombatantId,
+    combatants: combat.combatants,
+    user,
+    gridActive: combat.spatial.mode === 'grid-2d',
+  });
 
   // Inventário do NPC do turno (Mestre): lido do cadastro já carregado no
   // painel. O MESMO componente do jogador desenha o painel flutuante.
@@ -667,11 +680,11 @@ export function CombatTracker({
           </span>
         </header>
 
-        {/* 6.6M.1 — cena espacial também na preparação (placement é setup). */}
-        <CombatGrid
+        {/* 6.6M.1 — cena espacial também na preparação (placement é setup). */}        <CombatGrid
           combat={combat}
           isMaster={isMaster}
           busy={busy}
+          movement={movementAuthority}
           onCombatChange={onCombatChange}
           onError={onError}
         />
@@ -686,8 +699,7 @@ export function CombatTracker({
             />
           }
           center={
-            <CombatTurnPanel
-              combatant={null}
+            <CombatTurnPanel combatant={null}
               round={combat.round}
               isMyTurn={false}
               empty={
@@ -803,6 +815,7 @@ export function CombatTracker({
         combat={combat}
         isMaster={isMaster}
         busy={busy}
+        movement={movementAuthority}
         onCombatChange={onCombatChange}
         onError={onError}
       />

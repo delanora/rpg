@@ -26,7 +26,10 @@ import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel'
 import { ReactionPanel } from '../src/combat/components/ReactionPanel';
 import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
-import { currentUserControlsCombatant } from '../src/combat/turnControl';
+import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
+import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
+import { MovementPanel } from '../src/combat/grid/MovementPanel';
+import { anchorStepFeet, appendAnchor, pointerAnchor } from '../src/combat/grid/movementPath';
 import { CombatGrid } from '../src/combat/grid/CombatGrid';
 import { GridMeasureOverlay } from '../src/combat/grid/GridMeasurement';
 import { distanceLabel, formatFeet, rangeSummary } from '../src/combat/grid/distanceFormat';
@@ -54,6 +57,7 @@ import type {
   ConditionEffects,
   DeathState,
   MechanicalState,
+  MovementPathReading,
   SessionUser,
 } from '../src/types';
 
@@ -2994,8 +2998,12 @@ check(
   'CB198) placement do Mestre preservado e PLAYER só mede (sem posicionar)',
   combatGridSource.includes("const placementInteractive = isMaster && !locked && mode === 'placement';") &&
     combatGridSource.includes('const measureInteractive = !locked;') &&
+    // 6.6M.3: o modo MOVER tem o próprio gate; os dois antigos seguem intactos.
+    combatGridSource.includes('const movementInteractive = !locked && Boolean(movableUnitId);') &&
     combatGridSource.includes('setSpatialPosition') &&
-    combatGridSource.includes('mode === \'measure\' ? measureInteractive : placementInteractive')
+    combatGridSource.includes('? measureInteractive') &&
+    combatGridSource.includes('? movementInteractive') &&
+    combatGridSource.includes(': placementInteractive')
 );
 check(
   'CB199) React NÃO calcula distância mecânica nem faixa de alcance',
@@ -3438,6 +3446,367 @@ check(
   visibilityGridCssSource.includes('6.6L.3.2') &&
     !source('src/styles.css').includes('.grid-token-hidden') &&
     !source('src/styles.css').includes('.grid-visibility')
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3 — DRAG & DROP MOVEMENT (draft local, regra SEMPRE no servidor)      */
+/* -------------------------------------------------------------------------- */
+const movementGridSource = source('src/combat/grid/CombatGrid.tsx');
+const movementPathSource = source('src/combat/grid/movementPath.ts');
+const movementApiSource = source('src/combat/grid/movementApi.ts');
+const movementPanelSource = source('src/combat/grid/MovementPanel.tsx');
+const movementOverlaySource = source('src/combat/grid/GridMovementOverlay.tsx');
+const movementCssSource = source('src/combat/grid/grid.css');
+const turnControlSource = source('src/combat/turnControl.ts');
+
+/** Corpo SEM comentários: as palavras proibidas não podem existir no payload. */
+const stripComments = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '');
+const movementApiBody = stripComments(movementApiSource);
+const movementClientCode = stripComments(
+  `${movementGridSource}${movementPathSource}${movementPanelSource}${movementOverlaySource}`,
+);
+
+const viewerOf = (role: 'PLAYER' | 'MASTER', id: string): SessionUser =>
+  ({ id, username: id, role } as unknown as SessionUser);
+
+const moverOf = (over: Record<string, unknown> = {}): CombatantDto =>
+  ({
+    id: 'hero',
+    kind: 'CHARACTER',
+    ownerUserId: 'u-player',
+    name: 'Hero',
+    spatialVisibility: 'public',
+    spatial: {
+      tokenImageRef: null,
+      baseSize: 'medium',
+      effectiveSize: 'medium',
+      position: { xFeet: 5, yFeet: 5 },
+      occupiedSpace: null,
+    },
+    deathBlocksActions: false,
+    effectiveSpeed: 30,
+    turnEconomy: { movementBudget: 9, movementUsed: 0 },
+    ...over,
+  }) as unknown as CombatantDto;
+
+const movementAuthority = (
+  over: {
+    status?: 'PENDING_INITIATIVE' | 'ACTIVE';
+    currentCombatantId?: string | null;
+    combatants?: CombatantDto[];
+    user?: SessionUser;
+    gridActive?: boolean;
+  } = {},
+) =>
+  movementAuthorityOf({
+    status: 'ACTIVE',
+    currentCombatantId: 'hero',
+    combatants: [moverOf()],
+    user: viewerOf('PLAYER', 'u-player'),
+    gridActive: true,
+    ...over,
+  });
+
+const movementReading = (over: Partial<MovementPathReading> = {}): MovementPathReading => ({
+  status: 'ok',
+  legal: true,
+  affordable: true,
+  movementMode: 'walking',
+  totalDistanceFeet: 20,
+  totalCostFeet: 25,
+  movementRemainingFeet: 30,
+  destination: { xFeet: 25, yFeet: 5 },
+  steps: [],
+  blocker: null,
+  algorithm: 'phb-grid-2d',
+  reason: null,
+  ...over,
+});
+
+check(
+  'CB242) modo MOVER é explícito no grid, ao lado de Posicionar/Medir (aria-pressed, sem Shift)',
+  movementGridSource.includes("type InteractionMode = 'placement' | 'measure' | 'movement'") &&
+    movementGridSource.includes("aria-pressed={mode === 'movement'}") &&
+    /\bMover\b/.test(movementGridSource) &&
+    movementGridSource.includes('Posicionar') &&
+    movementGridSource.includes('Medir') &&
+    // Sem modificador escondido: o gesto é pointer puro (comentário não conta).
+    !/Shift\+|shiftKey/.test(stripComments(movementGridSource))
+);
+check(
+  'CB243) Placement, Movement e Measure são MUTUAMENTE exclusivos (o clique nunca é ambíguo)',
+  movementGridSource.indexOf("if (mode === 'movement')") > 0 &&
+    movementGridSource.indexOf("if (mode === 'movement')") <
+      movementGridSource.indexOf("if (mode !== 'placement') return;") &&
+    movementGridSource.indexOf("if (mode !== 'placement') return;") <
+      movementGridSource.indexOf('placeAt(selectedId') &&
+    // Placement não usa nada do motor de movimento (caminhos separados).
+    !gridApiSource.includes('movement') &&
+    movementApiSource.includes('movement-preview') &&
+    movementApiSource.includes('spatial/movement`')
+);
+check(
+  'CB244) PLAYER recebe Mover+Medir e NUNCA Posicionar; MASTER recebe os três',
+  (() => {
+    const player = renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([unitOf('hero', 'medium')]),
+        isMaster: false,
+        movement: { combatantId: 'hero', reason: null },
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      }),
+    );
+    const master = renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([unitOf('hero', 'medium')]),
+        isMaster: true,
+        movement: { combatantId: null, reason: 'Nenhum combatente no turno.' },
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      }),
+    );
+    return (
+      /\bMover\b/.test(player) &&
+      /\bMedir\b/.test(player) &&
+      !/\bPosicionar\b/.test(player) &&
+      /\bPosicionar\b/.test(master) &&
+      /\bMover\b/.test(master) &&
+      /\bMedir\b/.test(master)
+    );
+  })()
+);
+check(
+  'CB245) só o combatente DO TURNO controlado pelo usuário pode mover (Mestre: criatura do turno)',
+  turnControlSource.includes('export function movementAuthorityOf') &&
+    turnControlSource.includes('currentUserControlsCombatant(current, user)') &&
+    movementAuthority().combatantId === 'hero' &&
+    movementAuthority({ user: viewerOf('PLAYER', 'outro') }).combatantId === null &&
+    movementAuthority({
+      combatants: [moverOf({ kind: 'NPC', ownerUserId: null })],
+      user: viewerOf('PLAYER', 'u-player'),
+    }).combatantId === null &&
+    movementAuthority({
+      combatants: [moverOf({ kind: 'NPC', ownerUserId: null })],
+      user: viewerOf('MASTER', 'u-master'),
+    }).combatantId === 'hero' &&
+    // Mestre NÃO move o personagem de um jogador no modo Mover.
+    movementAuthority({ user: viewerOf('MASTER', 'u-master') }).combatantId === null &&
+    // Só em combate ACTIVE e com grid ativo.
+    movementAuthority({ status: 'PENDING_INITIATIVE' }).combatantId === null &&
+    movementAuthority({ gridActive: false }).combatantId === null
+);
+check(
+  'CB246) unplaced/morto/deslocamento zero/sem saldo não iniciam movimento (mensagem discreta)',
+  movementAuthority({ combatants: [moverOf({ spatial: null })] }).combatantId === null &&
+    movementAuthority({ combatants: [moverOf({ spatial: null })] }).reason ===
+      'Seu token ainda não foi posicionado pelo Mestre.' &&
+    movementAuthority({ combatants: [moverOf({ deathBlocksActions: true })] }).combatantId === null &&
+    movementAuthority({ combatants: [moverOf({ effectiveSpeed: 0 })] }).combatantId === null &&
+    movementAuthority({
+      combatants: [moverOf({ turnEconomy: { movementBudget: 9, movementUsed: 9 } })],
+    }).combatantId === null &&
+    combatTrackerSource.includes('movementAuthorityOf({') &&
+    combatTrackerSource.includes('movement={movementAuthority}') &&
+    movementGridSource.includes('if (movableUnitId !== combatantId) return;')
+);
+check(
+  'CB247) preview manda SÓ combatantId+path; commit só acrescenta versão/operação (nunca custo)',
+  movementApiBody.includes('combatantId: input.combatantId') &&
+    movementApiBody.includes('path: input.path') &&
+    movementApiBody.includes('expectedVersion: combat.version') &&
+    movementApiBody.includes('operationId: input.operationId') &&
+    !/cost|remaining|speed|difficult|reach|occupiedSpace|\bsize\b/i.test(movementApiBody) &&
+    movementGridSource.includes('createOperationId()') &&
+    !movementApiSource.includes('createOperationId')
+);
+check(
+  'CB248) preview é SERVER-AUTHORITATIVE: debounce por mudança de trajeto + sequência (stale ignorado)',
+  movementGridSource.includes('previewMovement(combat.id, { combatantId: draftCombatantId, path: draftPath })') &&
+    movementGridSource.includes('previewSequence.current !== sequence') &&
+    movementGridSource.includes("setPreviewState('loading')") &&
+    movementGridSource.includes('window.setTimeout') &&
+    movementPathSource.includes('appendAnchor')
+);
+check(
+  'CB249) commit adota o DTO do servidor; token real NÃO anda durante o draft (sem posição otimista)',
+  movementGridSource.includes('commitMovement(combat, {') &&
+    movementGridSource.includes('onCombatChange(result.combat)') &&
+    movementGridSource.includes('operationRef.current ??= createOperationId()') &&
+    !movementGridSource.includes('spatialPosition') &&
+    movementGridSource.includes('GridMovementOverlay') &&
+    !gridTokenSource.includes('ghost') &&
+    movementGridSource.includes('if (preview && previewState === ')
+);
+check(
+  'CB250) trajeto: 5 pés (2,5 Tiny), diagonal, interpolação direta do ponteiro e backtrack por truncamento',
+  (() => {
+    const step = anchorStepFeet('medium');
+    const small = appendAnchor([], { xFeet: 5, yFeet: 0 }, step);
+    const diagonal = appendAnchor(small, { xFeet: 10, yFeet: 5 }, step);
+    const backtrack = appendAnchor(diagonal, { xFeet: 5, yFeet: 0 }, step);
+    const start = [{ xFeet: 0, yFeet: 0 }];
+    const fast = appendAnchor(start, { xFeet: 20, yFeet: 0 }, step);
+    const tiny = appendAnchor(start, { xFeet: 5, yFeet: 0 }, anchorStepFeet('tiny'));
+    const repeat = appendAnchor(small, { xFeet: 5, yFeet: 0 }, step);
+    return (
+      anchorStepFeet('tiny') === 2.5 &&
+      step === 5 &&
+      small.length === 1 &&
+      diagonal.length === 2 &&
+      backtrack.length === 1 &&
+      fast.length === 5 &&
+      fast[4].xFeet === 20 &&
+      fast[4].yFeet === 0 &&
+      tiny.length === 3 &&
+      tiny[1].xFeet === 2.5 &&
+      repeat === small
+    );
+  })()
+);
+check(
+  'CB251) âncora do ponteiro alinha ao passo, respeita o footprint e não sai da cena (Tiny 2,5)',
+  (() => {
+    const medium = pointerAnchor({ xFeet: 47, yFeet: 12, size: 'medium', scene: { widthFeet: 100, heightFeet: 100 } });
+    const tiny = pointerAnchor({ xFeet: 47, yFeet: 12, size: 'tiny', scene: { widthFeet: 100, heightFeet: 100 } });
+    const clamped = pointerAnchor({ xFeet: 400, yFeet: -5, size: 'large', scene: { widthFeet: 100, heightFeet: 100 } });
+    return (
+      medium.xFeet === 45 &&
+      medium.yFeet === 10 &&
+      tiny.xFeet === 47.5 &&
+      tiny.yFeet === 12.5 &&
+      clamped.xFeet === 90 &&
+      clamped.yFeet === 0
+    );
+  })()
+);
+check(
+  'CB252) sem pathfinding/flood-fill/route optimization nesta fase',
+  !/a\*|\bastar\b|\bdijkstra\b|\bshortest\b|\bpathfind|\brouteoptim|\breachable\b|\bflood ?fill\b|\bheatmap\b/i.test(
+    movementClientCode
+  )
+);
+check(
+  'CB253) React NÃO aplica difficult terrain, crawling, tamanho hostil, Dash nem Opportunity Attack',
+  !/difficultTerrain\s*\?|crawling\s*\?|speed\s*\*\s*2|movementBudget\s*\*|reachFeet|opportunityAttack/i.test(
+    movementClientCode
+  ) &&
+    movementPanelSource.includes('movement.totalCostFeet') &&
+    movementPanelSource.includes('movement.movementRemainingFeet') &&
+    movementPanelSource.includes('movement.totalDistanceFeet')
+);
+check(
+  'CB254) painel separa válido × insuficiente × bloqueado com os números do SERVIDOR (sem identidade oculta)',
+  (() => {
+    const render = (over: Partial<MovementPathReading>, pathLength = 2) =>
+      renderToStaticMarkup(
+        createElement(MovementPanel, {
+          combatantName: 'Hero',
+          eligible: true,
+          reason: null,
+          pathLength,
+          movement: movementReading(over),
+          reaction: null,
+          state: 'ready',
+          error: null,
+          pendingNotice: null,
+          busy: false,
+          onClear: () => undefined,
+          onCancel: () => undefined,
+          onConfirm: () => undefined,
+        })
+      );
+    const valid = render({});
+    const insufficient = render({ affordable: false });
+    const blocked = render({
+      status: 'blocked',
+      legal: false,
+      affordable: false,
+      blocker: { code: 'MOVEMENT_PATH_BLOCKED', stepIndex: 1, combatantId: null, combatantName: null },
+    });
+    const idle = renderToStaticMarkup(
+      createElement(MovementPanel, {
+        combatantName: null,
+        eligible: false,
+        reason: 'Seu token ainda não foi posicionado pelo Mestre.',
+        pathLength: 0,
+        movement: null,
+        reaction: null,
+        state: 'idle',
+        error: null,
+        pendingNotice: null,
+        busy: false,
+        onClear: () => undefined,
+        onCancel: () => undefined,
+        onConfirm: () => undefined,
+      })
+    );
+    return (
+      valid.includes('Trajeto válido.') &&
+      valid.includes('Distância') &&
+      valid.includes('Custo') &&
+      valid.includes('Restante após mover') &&
+      !valid.includes('disabled=""') &&
+      insufficient.includes('Movimento insuficiente para este trajeto.') &&
+      insufficient.includes('disabled=""') &&
+      blocked.includes('Caminho bloqueado.') &&
+      !blocked.includes('Ogro') &&
+      idle.includes('Seu token ainda não foi posicionado pelo Mestre.')
+    );
+  })()
+);
+check(
+  'CB255) ghost e linha são APRESENTAÇÃO (aria-hidden) e nunca substituem o token autoritativo',
+  (() => {
+    const overlay = renderToStaticMarkup(
+      createElement(GridMovementOverlay, {
+        path: [
+          { xFeet: 5, yFeet: 0 },
+          { xFeet: 10, yFeet: 0 },
+        ],
+        ghost: { position: { xFeet: 10, yFeet: 0 }, size: 'medium', imageRef: '/a.png' },
+        cellSizeFeet: 5,
+        pixelsPerCell: 44,
+      })
+    );
+    return (
+      overlay.includes('grid-movement-path') &&
+      overlay.includes('grid-movement-ghost') &&
+      overlay.includes('<img') &&
+      overlay.includes('aria-hidden="true"') &&
+      renderToStaticMarkup(
+        createElement(GridMovementOverlay, {
+          path: [],
+          ghost: null,
+          cellSizeFeet: 5,
+          pixelsPerCell: 44,
+        })
+      ) === '' &&
+      !tokenHtml(unitOf('hero', 'medium')).includes('ghost')
+    );
+  })()
+);
+check(
+  'CB256) movimento não filtra por tipo nem visibilidade: NPC público continua no grid, master-only segue no DTO',
+  !/spatialVisibility|\bkind\b/.test(
+    stripComments(`${movementPathSource}${movementApiSource}${movementPanelSource}${movementOverlaySource}`)
+  ) &&
+    movementGridSource.includes('splitByPlacement(combat.combatants)') &&
+    movementGridSource.includes('movableUnitId === combatant.id')
+);
+check(
+  'CB257) ReactionPanel existente é REUTILIZADO — o grid não cria segundo motor de Reação',
+  combatTrackerSource.includes('<ReactionPanel') &&
+    !movementGridSource.includes('ReactionPanel') &&
+    !/resolveOpportunityAttack|declineOpportunityReaction/.test(movementGridSource) &&
+    movementGridSource.includes('pendingNotice')
+);
+check(
+  'CB258) estilos novos continuam em grid.css (styles.css WIP NÃO é tocado)',
+  movementCssSource.includes('6.6M.3') &&
+    movementCssSource.includes('.grid-movement-panel') &&
+    movementCssSource.includes('.grid-movement-ghost') &&
+    !source('src/styles.css').includes('.grid-movement-')
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

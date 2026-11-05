@@ -2156,6 +2156,117 @@ export interface SpatialRangePreviewResponse {
   range: SpatialRangeReading;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3 — Movimento voluntário (leitura e commit SERVER-AUTHORITATIVE)      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Códigos de recusa do Movement Engine. São a identidade ESTÁVEL do motivo; o
+ * cliente só exibe um rótulo curto. O servidor já os sanitiza para o jogador
+ * (sem id/nome de quem bloqueia).
+ */
+export type MovementBlockerCode =
+  | 'MOVEMENT_NOT_ASSESSED'
+  | 'MOVEMENT_PLACEMENT_REQUIRED'
+  | 'MOVEMENT_NOT_CANONICAL'
+  | 'MOVEMENT_OUT_OF_BOUNDS'
+  | 'MOVEMENT_STEP_NOT_CANONICAL'
+  | 'MOVEMENT_STEP_NOT_CONTIGUOUS'
+  | 'MOVEMENT_RELATION_UNKNOWN'
+  | 'MOVEMENT_PATH_BLOCKED'
+  | 'MOVEMENT_DESTINATION_OCCUPIED'
+  | 'MOVEMENT_INSUFFICIENT_REMAINING'
+  | 'MOVEMENT_SPEED_ZERO';
+
+/** Breakdown público de UM passo (custo/distância/dificuldade já resolvidos). */
+export interface MovementStepReading {
+  index: number;
+  position: SpatialPosition;
+  distanceFeet: number;
+  costFeet: number;
+  crawling: boolean;
+  difficultTerrain: boolean;
+  difficultTerrainSources: ('creature-space' | 'environmental')[];
+}
+
+export interface MovementPathBlocker {
+  code: MovementBlockerCode;
+  stepIndex: number | null;
+  /** `null` para o jogador: identidade do bloqueador é privada do Mestre. */
+  combatantId: string | null;
+  combatantName: string | null;
+}
+
+/**
+ * Avaliação do trajeto pretendido. `legal` = geometricamente válido;
+ * `affordable` = cabe no movimento restante. Ambos vêm do servidor.
+ */
+export interface MovementPathReading {
+  status: 'ok' | 'blocked' | 'not-assessed';
+  legal: boolean;
+  affordable: boolean;
+  movementMode: 'walking';
+  totalDistanceFeet: number;
+  totalCostFeet: number;
+  movementRemainingFeet: number;
+  destination: SpatialPosition | null;
+  steps: MovementStepReading[];
+  blocker: MovementPathBlocker | null;
+  algorithm: string;
+  reason: string | null;
+}
+
+/**
+ * Risco de Reação agregado. Para o jogador `boundaries` vem VAZIO (o servidor
+ * não entrega reactor/arma/alcance); o Mestre recebe o diagnóstico completo.
+ */
+export interface MovementReactionReading {
+  risk: string;
+  boundaries: {
+    stepIndex: number;
+    reactorCombatantId: string;
+    reactorName: string;
+    options: { attackId: string; label: string; reachFeet: number }[];
+  }[];
+  relationUnknown: boolean;
+  masterAdjudication: boolean;
+}
+
+export interface MovementPreviewResponse {
+  movement: MovementPathReading;
+  reaction: MovementReactionReading;
+}
+
+/** Movimento pausado aguardando Reação (SEMPRE sanitizado). */
+export interface MovementPauseDto {
+  combatantId: string;
+  combatantName: string;
+  remainingSteps: number;
+  opportunities: number;
+  awaitingMaster: boolean;
+}
+
+/** Auditoria do commit (snapshot do servidor). */
+export interface MovementAuditDto {
+  from: SpatialPosition | null;
+  to: SpatialPosition | null;
+  totalDistanceFeet: number;
+  totalCostFeet: number;
+  movementRemainingBeforeFeet: number;
+  movementRemainingAfterFeet: number;
+  movementMode: 'walking';
+  reactionPolicy: string;
+  playerSafe: boolean;
+  steps: MovementStepReading[];
+}
+
+export interface MovementCommitResponse {
+  combat: CombatDto;
+  movement: MovementAuditDto;
+  pending: MovementPauseDto | null;
+  replayed: boolean;
+}
+
 /** Configuração espacial da cena (combates legados = `assisted`). */
 export interface SpatialScene {
   mode: 'assisted' | 'grid-2d';
