@@ -157,6 +157,53 @@ export function bodyDistanceFeet(a: SpatialBody, b: SpatialBody): number | null 
 }
 
 /**
+ * FASE 6.6M.3.1 — RÉGUA (ponto ↔ ponto / ponto ↔ corpo).
+ *
+ * MESMO algoritmo da 6.6L.2 (`max(|dx|,|dy|)`, nunca Euclidiano). O ponto é
+ * tratado como uma âncora de grid; contra um corpo, a distância é a MENOR entre
+ * o ponto e os quadrados ocupados (footprint, nunca "centro do token").
+ */
+export function pointMeasureDistanceFeet(a: SpatialPosition2D, b: SpatialPosition2D): number {
+  return anchorDistanceFeet(a, b);
+}
+
+/** Ponto alinhado à malha suportada (2,5 pés) — senão a leitura é `unknown`. */
+export function isMeasurePointCanonical(position: SpatialPosition2D): boolean {
+  const aligned = (value: number) => {
+    const remainder = Math.abs(value / TINY_GRID_STEP_FEET - Math.round(value / TINY_GRID_STEP_FEET));
+    return remainder < 1e-9;
+  };
+  return aligned(position.xFeet) && aligned(position.yFeet);
+}
+
+/**
+ * Distância de um PONTO até um corpo espacial (posição + tamanho).
+ *
+ * Ponto dentro do espaço ocupado → 0 pés; fora, o mínimo entre as âncoras dos
+ * quadrados ocupados. Corpo não colocado → `null` (nunca 0 fabricado).
+ */
+export function pointToBodyDistanceFeet(
+  point: SpatialPosition2D,
+  body: SpatialBody,
+): number | null {
+  if (!body.position) return null;
+  const space = occupiedSpaceOf(body.position, body.size);
+  if (!space) return null;
+  const inside =
+    point.xFeet >= space.minXFeet &&
+    point.xFeet <= space.maxXFeet &&
+    point.yFeet >= space.minYFeet &&
+    point.yFeet <= space.maxYFeet;
+  if (inside) return 0;
+  let best = Number.POSITIVE_INFINITY;
+  for (const anchor of squareAnchorsOf(space, body.size)) {
+    const distance = anchorDistanceFeet(point, anchor);
+    if (distance < best) best = distance;
+  }
+  return best === Number.POSITIVE_INFINITY ? null : precise(best);
+}
+
+/**
  * Avaliação completa: modo da cena, colocação e alinhamento canônico entram
  * ANTES de qualquer número. Dado inválido/legado NUNCA é arredondado para a
  * malha — vira `unknown` com motivo auditável (o Mestre reposiciona).

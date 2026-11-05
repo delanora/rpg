@@ -2137,6 +2137,18 @@ export interface SpatialDistanceResponse {
   distance: SpatialDistanceReading;
 }
 
+/**
+ * 6.6M.3.1 — RÉGUA: extremo de uma medição. Ponto é uma coordenada em pés já
+ * alinhada ao grid (só a UI arredonda); combatente é id estável do combate.
+ */
+export type SpatialMeasureEndpoint =
+  | { kind: 'point'; position: SpatialPosition }
+  | { kind: 'combatant'; combatantId: string };
+
+export interface SpatialMeasureResponse {
+  distance: SpatialDistanceReading;
+}
+
 export type SpatialRangeStatus = 'in-range' | 'long-range' | 'out-of-range' | 'unknown';
 
 export interface SpatialRangeReading {

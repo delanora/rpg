@@ -1,34 +1,48 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent } from 'react';
 import type {
   CombatDto,
   MovementPreviewResponse,
   SpatialDistanceReading,
+  SpatialMeasureEndpoint,
   SpatialPosition,
   SpatialSize,
 } from '../../types';
 import { createOperationId } from '../../utils';
 import { GridToken, type GridUnit } from './GridToken';
 import { UnplacedCombatantsTray, GRID_DRAG_MIME } from './UnplacedCombatantsTray';
-import { GridMeasureOverlay, GridMeasurementPanel, type MeasureRequestState } from './GridMeasurement';
 import { SpatialSceneControls } from './SpatialSceneControls';
 import { GridMovementOverlay } from './GridMovementOverlay';
-import { MovementPanel, type MovementPreviewState } from './MovementPanel';
+import { GridRuler } from './GridRuler';
+import { MovementHud, type MovementPreviewState } from './MovementHud';
 import { commitMovement, previewMovement } from './movementApi';
 import { anchorStepFeet, appendAnchor, pointerAnchor } from './movementPath';
 import {
-  getSpatialDistance,
+  measureSpatial,
   setSpatialPosition,
   setSpatialVisibility,
   updateSpatialScene,
 } from './gridApi';
 import {
+  CAMERA_FIT_MARGIN_PX,
+  centerCamera,
+  clampCamera,
+  edgePanSpeed,
+  fitCamera,
+  panBy,
+  sceneToScreen,
+  screenToFeet,
+  zoomAt,
+  cameraPercent,
+  type GridCamera,
+  type Point2D,
+} from './gridCamera';
+import { rulerEndpointKey, rulerSameEndpoint, type RulerRequestState } from './gridRuler';
+import {
   BASE_CELL_SIZE_FEET,
   DEFAULT_PIXELS_PER_CELL,
-  MAX_PIXELS_PER_CELL,
-  MIN_PIXELS_PER_CELL,
   SIZE_FOOTPRINT_FEET,
-  pixelToPlacementFeet,
+  occupiedSpacePixels,
   scenePixels,
   splitByPlacement,
 } from './gridMath';
@@ -38,7 +52,7 @@ export interface CombatGridProps {
   /**
    * Estado AUTORITATIVO vindo do servidor (`Combat.spatial` + `Combatant.spatial`).
    * O grid não mantém segunda fonte de posição: `onCombatChange` recebe o DTO
-   * devolvido por cada PATCH.
+   * devolvido por cada requisição.
    */
   combat: Pick<
     CombatDto,
@@ -62,7 +76,7 @@ export interface CombatGridProps {
  * São TRÊS intenções explícitas e mutuamente exclusivas:
  * • `placement` = organização administrativa da cena (Mestre);
  * • `movement`  = ação mecânica do combatente do turno (Movement Engine);
- * • `measure`   = consulta espacial.
+ * • `measure`   = régua espacial.
  */
 type InteractionMode = 'placement' | 'measure' | 'movement';
 
@@ -77,6 +91,30 @@ interface MovementDraft {
   grab: SpatialPosition;
 }
 
+/** Régua: origem + destino opcionais (ponto no grid ou combatente). */
+interface RulerState {
+  from: SpatialMeasureEndpoint;
+  to: SpatialMeasureEndpoint | null;
+  locked: boolean;
+}
+
+interface PanGesture {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  camera: GridCamera;
+  moved: boolean;
+}
+
+/** Limiar (px) entre clique e arrasto: pan nunca dispara ação acidental. */
+const PAN_THRESHOLD_PX = 4;
+/** Zona de borda (px) que ativa o auto-pan durante o movimento. */
+const AUTO_PAN_EDGE_PX = 52;
+/** Velocidade máxima do auto-pan (px/frame). */
+const AUTO_PAN_MAX_SPEED = 14;
+/** Passo do zoom dos botões (mesma câmera do Ctrl+wheel). */
+const ZOOM_STEP = 1.18;
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : 'Falha ao posicionar a unidade.';
 }
@@ -85,44 +123,30 @@ function clampFeet(value: number, max: number): number {
   return Math.min(Math.max(0, value), Math.max(0, max));
 }
 
+/** Campo de texto/editor: atalhos do grid NÃO disparam ali. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
 /**
- * FASE 6.6M.1 — PRIMEIRO GRID VISUAL DO OBSYRIUM.
+ * GRID DE COMBATE — superfície tática do Obsyrium.
  *
- * Desenha a cena a partir do estado espacial autoritativo (6.6L.1):
- *  • `assisted` NÃO finge geometria — só oferece "Ativar grid" ao Mestre;
- *  • `grid-2d` desenha dimensões reais em pés e cada `occupiedSpace` derivado;
- *  • placement é ADMINISTRATIVO (Mestre), nunca Movement: nada de speed, path,
- *    Reação, Opportunity Attack ou terreno;
- *  • placement envia só `{ position, expectedVersion, operationId }` e adota o
- *    estado que o servidor devolver (rejeição = nenhum estado inventado).
+ * FASE 6.6M.1 — desenho da cena a partir do estado espacial autoritativo.
+ * FASE 6.6M.2 — modo Medir (leitura do servidor, linha decorativa).
+ * FASE 6.6L.3.2 — o grid NÃO decide quem aparece (DTO filtra `master-only`).
+ * FASE 6.6M.3 — movimento voluntário server-authoritative (preview + commit).
+ * FASE 6.6M.3.1 — CÂMERA (pan/zoom/fit/center), RÉGUA (ponto↔ponto em metros),
+ *                 HUD compacto e correção do Drag & Drop real.
  *
- * FASE 6.6M.2 — MODO MEDIR (feedback de distância/alcance).
- *
- *  • `Interação` ganhou um modo EXPLÍCITO: `placement` (organizar a mesa) e
- *    `measure` (consultar relações espaciais). Não existe Shift+Click escondido
- *    e o clique NUNCA é ambíguo: em `measure` ele não dispara placement;
- *  • o número exibido vem de `GET /spatial/distance`; a linha SVG é decoração e
- *    os centros do footprint servem só para desenhá-la. Nenhuma distância é
- *    calculada aqui — o grid nunca vira a fonte da regra;
- *  • medição é estado LOCAL: não persiste, não é transmitida e não entra no DTO;
- *  • PLACEMENT/PLAYER: o Mestre mantém Posicionar; o jogador só recebe Medir.
- *
- * FASE 6.6L.3.2 — VISIBILIDADE ESPACIAL.
- *
- * O grid NÃO decide quem aparece: ele desenha o que o servidor projetou. NPC
- * público chega com `spatial` completo; `master-only` chega com `spatial: null`
- * e simplesmente não existe token (nem `?`, nem ghost). O único controle novo é
- * o do Mestre, que alterna `spatialVisibility` da unidade selecionada.
- *
- * FASE 6.6M.3 — MOVIMENTO VOLUNTÁRIO (drag & drop / tap).
- *
- *  • o cliente constrói só o TRAJETO pretendido (âncoras em pés) e consulta
- *    `movement-preview` quando o trajeto MUDA; legal/custo/saldo são do servidor;
- *  • o TOKEN REAL nunca anda durante o draft — apenas um ghost decorativo;
- *  • soltar com trajeto válido faz o COMMIT e adota o `CombatDto` devolvido:
- *    nenhuma posição otimista, nenhum ajuste local de saldo;
- *  • OA pausada, 0 PV, turno encerrado ou visibilidade alterada invalidam o
- *    draft (o servidor continua sendo quem decide o resultado).
+ * Invariantes:
+ *  • a câmera é CLIENT-ONLY e nunca altera pés/distância/footprint;
+ *  • toda ferramenta converte ponteiro por `screenToFeet` (nunca pixel de tela
+ *    como coordenada mecânica);
+ *  • placement é administrativo; movimento gasta saldo; medir é leitura pura;
+ *  • nada de posição otimista: o token real só anda com o `CombatDto` devolvido.
  */
 export function CombatGrid({
   combat,
@@ -136,17 +160,21 @@ export function CombatGrid({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
-  const [pixelsPerCell, setPixelsPerCell] = useState(DEFAULT_PIXELS_PER_CELL);
-  // --- 6.6M.2: modo de interação e medição (estado APENAS local) ------------
+  // --- 6.6M.3.1: câmera (estado APENAS local) -------------------------------
+  const [camera, setCamera] = useState<GridCamera>({ panX: 0, panY: 0, zoom: 1 });
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const [spacePan, setSpacePan] = useState(false);
+  // --- modos e régua --------------------------------------------------------
   const [mode, setMode] = useState<InteractionMode>('placement');
-  const [measureSourceId, setMeasureSourceId] = useState<string | null>(null);
-  const [measureTargetId, setMeasureTargetId] = useState<string | null>(null);
-  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [ruler, setRuler] = useState<RulerState | null>(null);
+  const [quickRuler, setQuickRuler] = useState(false);
+  const [hoverTokenId, setHoverTokenId] = useState<string | null>(null);
+  const [hoverAnchor, setHoverAnchor] = useState<SpatialPosition | null>(null);
   const [distance, setDistance] = useState<SpatialDistanceReading | null>(null);
-  const [measureState, setMeasureState] = useState<MeasureRequestState>('idle');
-  const [measureRetry, setMeasureRetry] = useState(0);
-  /** Sequência das leituras: resposta atrasada de um alvo antigo é IGNORADA. */
-  const measureSequence = useRef(0);
+  const [rulerState, setRulerState] = useState<RulerRequestState>('idle');
+  const [rulerRetry, setRulerRetry] = useState(0);
+  /** Sequência das leituras: resposta atrasada de um extremo antigo é IGNORADA. */
+  const rulerSequence = useRef(0);
   // --- 6.6M.3: draft de movimento (estado APENAS local) --------------------
   const [draft, setDraft] = useState<MovementDraft | null>(null);
   const [preview, setPreview] = useState<MovementPreviewResponse | null>(null);
@@ -155,65 +183,283 @@ export function CombatGrid({
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
   const [movementBusy, setMovementBusy] = useState(false);
-  /**
-   * Sequência do preview: resposta atrasada de um trajeto ANTIGO nunca
-   * substitui o atual (proteção de leitura obsoleta sem depender de rede).
-   */
   const previewSequence = useRef(0);
-  /** operationId ESTÁVEL por tentativa (retry reusa; novo draft gera outro). */
   const operationRef = useRef<string | null>(null);
-  /** O gesto realmente andou? Diferencia tap (mantém draft) de arrasto vazio. */
   const dragMoved = useRef(false);
-  /** O clique sintético que segue um drag NÃO pode abrir um draft novo. */
   const suppressClick = useRef(false);
+
   const planeRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const cameraRef = useRef(camera);
+  const draftRef = useRef<MovementDraft | null>(draft);
+  const rulerRef = useRef<{ from: SpatialMeasureEndpoint | null; to: SpatialMeasureEndpoint | null }>({
+    from: null,
+    to: null,
+  });
+  const lastPointer = useRef<Point2D | null>(null);
+  const panGesture = useRef<PanGesture | null>(null);
+  const spaceDown = useRef(false);
+  const fittedKey = useRef<string | null>(null);
 
   const scene = combat.spatial;
   const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;
-  const { placed, unplaced } = splitByPlacement(combat.combatants);
-  const dimensions = scenePixels(scene, cellSizeFeet, pixelsPerCell);
+  const geometry = { pixelsPerCell: DEFAULT_PIXELS_PER_CELL, cellSizeFeet };
+  const { placed, unplaced } = useMemo(() => splitByPlacement(combat.combatants), [combat.combatants]);
+  const dimensions = useMemo(
+    () => scenePixels(scene, cellSizeFeet, DEFAULT_PIXELS_PER_CELL),
+    [scene, cellSizeFeet],
+  );
   const locked = busy || sceneBusy || movementBusy;
 
   const movableUnitId = movement?.combatantId ?? null;
   const movableUnit = placed.find((item) => item.id === movableUnitId) ?? null;
   const draftUnit = draft ? (placed.find((item) => item.id === draft.combatantId) ?? null) : null;
-
-  const selectedUnit =
-    mode === 'placement'
-      ? (combat.combatants.find((item) => item.id === selectedId) ?? null)
+  const currentUnit =
+    combat.status === 'ACTIVE'
+      ? (placed.find((item) => item.id === combat.currentCombatantId) ?? null)
       : null;
-  const measureSourceUnit = placed.find((item) => item.id === measureSourceId) ?? null;
-  // Hover é PREVIEW; o clique FIXA o alvo. Sem hover, volta ao alvo fixado.
-  const activeTargetId = mode === 'measure' ? (hoverId ?? measureTargetId) : null;
-  const measureTargetUnit = placed.find((item) => item.id === activeTargetId) ?? null;
 
-  /** Fonte/target ainda existem e visíveis no DTO (privacy change remove). */
-  const sourceVisible = !measureSourceId || combat.combatants.some((item) => item.id === measureSourceId && item.spatial);
-  const targetVisible = !measureTargetId || combat.combatants.some((item) => item.id === measureTargetId && item.spatial);
-
-  /** Feedback de placement (modo Posicionar). */
-  const placementInteractive = isMaster && !locked && mode === 'placement';
-  /** MODO MEDIR: qualquer um com o grid ativo mede o que o servidor autoriza. */
-  const measureInteractive = !locked;
-  /** MODO MOVER: só o combatente autorizado inicia gesto. */
-  const movementInteractive = !locked && Boolean(movableUnitId);
+  const selectedUnit = mode === 'placement' ? (combat.combatants.find((item) => item.id === selectedId) ?? null) : null;
   const draftLast = draft && draft.path.length > 0 ? draft.path[draft.path.length - 1] : null;
 
-  function resetMeasure(): void {
-    measureSequence.current += 1;
-    setMeasureSourceId(null);
-    setMeasureTargetId(null);
-    setHoverId(null);
-    setDistance(null);
-    setMeasureState('idle');
+  cameraRef.current = camera;
+  draftRef.current = draft;
+
+  /* ---------------------------------------------------------------------- */
+  /* CÂMERA                                                                  */
+  /* ---------------------------------------------------------------------- */
+
+  /** Enquadramento inicial: a cena NUNCA nasce colada no canto. */
+  useEffect(() => {
+    if (!viewport.width || !viewport.height) return;
+    const key = `${combat.id}:${dimensions.width.toFixed(1)}x${dimensions.height.toFixed(1)}`;
+    if (fittedKey.current === key) return;
+    fittedKey.current = key;
+    setCamera(fitCamera({ scene: dimensions, viewport, margin: CAMERA_FIT_MARGIN_PX }));
+  }, [combat.id, dimensions, viewport]);
+
+  /** ResizeObserver: pan/zoom continuam válidos em qualquer largura. */
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      setViewport({ width: rect.width, height: rect.height });
+    });
+    observer.observe(node);
+    setViewport({ width: node.clientWidth, height: node.clientHeight });
+    return () => observer.disconnect();
+  }, []);
+
+  function applyCamera(next: GridCamera): void {
+    cameraRef.current = next;
+    setCamera(next);
+  }
+
+  function bounded(next: GridCamera): GridCamera {
+    return clampCamera(next, dimensions, viewport);
+  }
+
+  function fitScene(): void {
+    applyCamera(fitCamera({ scene: dimensions, viewport, margin: CAMERA_FIT_MARGIN_PX }));
+  }
+
+  function centerOn(scenePoint: Point2D): void {
+    applyCamera(bounded(centerCamera(cameraRef.current, scenePoint, viewport)));
+  }
+
+  function centerOnCombatant(combatantId: string): void {
+    const unit = placed.find((item) => item.id === combatantId);
+    const center = unit ? footprintCenterPx(unit) : null;
+    if (center) centerOn(center);
+  }
+
+  function zoomStep(factor: number): void {
+    const anchor = { x: viewport.width / 2, y: viewport.height / 2 };
+    applyCamera(bounded(zoomAt(cameraRef.current, factor, anchor)));
   }
 
   /**
-   * Limpa o draft SEM tocar no estado autoritativo.
-   *
-   * Nenhuma chamada de commit, nenhuma posição local alterada, nenhum saldo
-   * recalculado — o token continua exatamente onde o DTO o colocou.
+   * Ctrl+roda = ZOOM DO GRID (nunca da página); roda = pan vertical;
+   * Shift+roda = pan horizontal. Listener NATIVO com `passive: false`, porque o
+   * handler de wheel do React não permite `preventDefault`.
    */
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node) return undefined;
+    function onWheel(event: WheelEvent): void {
+      event.preventDefault();
+      const rect = node!.getBoundingClientRect();
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      if (event.ctrlKey || event.metaKey) {
+        const factor = Math.exp(-event.deltaY * 0.0016);
+        applyCamera(bounded(zoomAt(cameraRef.current, factor, point)));
+        return;
+      }
+      const horizontal = event.shiftKey ? -event.deltaY : -event.deltaX;
+      const vertical = event.shiftKey ? 0 : -event.deltaY;
+      applyCamera(bounded(panBy(cameraRef.current, horizontal, vertical)));
+    }
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+    // `applyCamera`/`bounded` só tocam a câmera local.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dimensions.width, dimensions.height, viewport.width, viewport.height]);
+
+  /* ---------------------------------------------------------------------- */
+  /* CONVERSÕES (toda ferramenta passa por aqui)                             */
+  /* ---------------------------------------------------------------------- */
+
+  /** Ponteiro (cliente) → px relativos ao VIEWPORT (sem transformação). */
+  function viewportPoint(clientX: number, clientY: number): Point2D | null {
+    const node = viewportRef.current;
+    if (!node) return null;
+    const rect = node.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+
+  /** Ponteiro (cliente) → PÉS na cena, com pan/zoom aplicados. */
+  function feetAt(clientX: number, clientY: number): SpatialPosition | null {
+    const point = viewportPoint(clientX, clientY);
+    if (!point) return null;
+    return screenToFeet(cameraRef.current, point, geometry);
+  }
+
+  /** Âncora (canto mínimo do footprint) a partir do ponteiro. */
+  function anchorAt(
+    clientX: number,
+    clientY: number,
+    size: SpatialSize,
+    grab: SpatialPosition,
+  ): SpatialPosition | null {
+    const feet = feetAt(clientX, clientY);
+    if (!feet) return null;
+    return pointerAnchor({
+      xFeet: feet.xFeet - grab.xFeet,
+      yFeet: feet.yFeet - grab.yFeet,
+      size,
+      scene,
+    });
+  }
+
+  /** Centro do footprint (px de CENA) — só para desenho/centralização. */
+  function footprintCenterPx(unit: GridUnit): Point2D | null {
+    if (!unit.spatial) return null;
+    const box = occupiedSpacePixels(unit.spatial.occupiedSpace ?? {
+      minXFeet: 0,
+      minYFeet: 0,
+      maxXFeet: 0,
+      maxYFeet: 0,
+      widthFeet: 0,
+      heightFeet: 0,
+    }, cellSizeFeet, DEFAULT_PIXELS_PER_CELL);
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* MEDIÇÃO / RÉGUA                                                         */
+  /* ---------------------------------------------------------------------- */
+
+  const rulerActive = mode === 'measure' || quickRuler || ruler !== null;
+
+  const hoveredUnit = hoverTokenId ? (placed.find((item) => item.id === hoverTokenId) ?? null) : null;
+  const hoverTarget: SpatialMeasureEndpoint | null =
+    rulerActive && ruler && !ruler.locked
+      ? hoveredUnit
+        ? { kind: 'combatant', combatantId: hoveredUnit.id }
+        : hoverAnchor
+          ? { kind: 'point', position: hoverAnchor }
+          : null
+      : null;
+  const rulerTo = ruler?.to ?? hoverTarget;
+  const rulerFromKey = ruler ? rulerEndpointKey(ruler.from) : null;
+  const rulerToKey = rulerTo ? rulerEndpointKey(rulerTo) : null;
+  rulerRef.current = { from: ruler?.from ?? null, to: rulerTo ?? null };
+
+  function clearRuler(): void {
+    rulerSequence.current += 1;
+    setRuler(null);
+    setQuickRuler(false);
+    setHoverAnchor(null);
+    setHoverTokenId(null);
+    setDistance(null);
+    setRulerState('idle');
+  }
+
+  /** Fixa um extremo: primeiro clique define origem; o segundo TRAVA a régua. */
+  function pickRulerEndpoint(endpoint: SpatialMeasureEndpoint): void {
+    if (!ruler || ruler.locked) {
+      rulerSequence.current += 1;
+      setDistance(null);
+      setRulerState('idle');
+      setRuler({ from: endpoint, to: null, locked: false });
+      return;
+    }
+    if (rulerSameEndpoint(endpoint, ruler.from)) return;
+    setRuler({ from: ruler.from, to: endpoint, locked: true });
+  }
+
+  function pointEndpointAt(clientX: number, clientY: number): SpatialMeasureEndpoint | null {
+    const feet = feetAt(clientX, clientY);
+    if (!feet) return null;
+    return {
+      kind: 'point',
+      position: pointerAnchor({ xFeet: feet.xFeet, yFeet: feet.yFeet, size: 'small', scene }),
+    };
+  }
+
+  /**
+   * Leitura da régua: UMA requisição por par de extremos ALINHADO (nunca por
+   * pixel), com sequência para descartar resposta obsoleta. O valor exibido é
+   * sempre do servidor — o cliente não converte distância.
+   */
+  useEffect(() => {
+    const current = rulerRef.current;
+    if (!current.from || !current.to || rulerSameEndpoint(current.from, current.to)) {
+      setDistance(null);
+      setRulerState('idle');
+      return;
+    }
+    rulerSequence.current += 1;
+    const sequence = rulerSequence.current;
+    setRulerState('loading');
+    measureSpatial(combat.id, current.from, current.to)
+      .then((response) => {
+        if (rulerSequence.current !== sequence) return;
+        setDistance(response.distance);
+        setRulerState('success');
+      })
+      .catch(() => {
+        if (rulerSequence.current !== sequence) return;
+        // Falha de rede NÃO mantém o valor anterior como se fosse atual.
+        setDistance(null);
+        setRulerState('error');
+      });
+  }, [combat.id, combat.version, rulerFromKey, rulerToKey, rulerRetry]);
+
+  /** Troca de modo limpa a régua e o draft; sair de grid-2d limpa a medição. */
+  useEffect(() => {
+    if (mode === 'measure' && combat.spatial.mode !== 'grid-2d') setMode('placement');
+  }, [combat.spatial.mode, mode]);
+
+  /** REALTIME: extremo que sai do DTO (ficou privado) limpa a régua. */
+  useEffect(() => {
+    if (!ruler) return;
+    const stillThere = (endpoint: SpatialMeasureEndpoint | null): boolean =>
+      !endpoint ||
+      endpoint.kind === 'point' ||
+      combat.combatants.some((item) => item.id === endpoint.combatantId && item.spatial);
+    if (stillThere(ruler.from) && stillThere(ruler.to)) return;
+    clearRuler();
+    // `clearRuler` só toca estado local.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combat.combatants, ruler]);
+
+  /* ---------------------------------------------------------------------- */
+  /* PLACEMENT / MOVIMENTO                                                   */
+  /* ---------------------------------------------------------------------- */
+
   function clearDraft(): void {
     previewSequence.current += 1;
     operationRef.current = null;
@@ -231,7 +477,7 @@ export function CombatGrid({
 
   function changeMode(next: InteractionMode): void {
     if (next === mode) return;
-    resetMeasure();
+    clearRuler();
     clearDraft();
     setDraftNotice(null);
     setPendingNotice(null);
@@ -239,152 +485,7 @@ export function CombatGrid({
     setMode(next);
   }
 
-  /**
-   * Troca de modo limpa a medição; sair de `grid-2d` também (a cena assistida não
-   * oferece medição autoritativa — nada de distância fingida).
-   */
-  useEffect(() => {
-    if (mode === 'measure' && combat.spatial.mode !== 'grid-2d') setMode('placement');
-  }, [combat.spatial.mode, mode]);
-
-  /**
-   * REALTIME: se a fonte ou o alvo saírem do DTO (combatente removido, ficou
-   * privado), a medição é LIMPA em vez de continuar exibindo valor velho.
-   */
-  useEffect(() => {
-    if (mode !== 'measure') return;
-    if (measureSourceId && !sourceVisible) {
-      resetMeasure();
-      return;
-    }
-    if (measureTargetId && !targetVisible) {
-      measureSequence.current += 1;
-      setMeasureTargetId(null);
-      setDistance(null);
-      setMeasureState('idle');
-    }
-    // `resetMeasure` só toca estado local.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, measureSourceId, measureTargetId, sourceVisible, targetVisible]);
-
-  /**
-   * LEITURA da distância: uma requisição por alvo efetivo, com sequência para
-   * descartar resposta atrasada (A → B → C nunca deixa B sobrescrever C). O
-   * efeito também reaponta quando o combate muda (`combat.version`) para nunca
-   * apresentar posição antiga como atual. Zoom/scroll não mudam nada aqui.
-   */
-  useEffect(() => {
-    if (
-      mode !== 'measure' ||
-      !measureSourceId ||
-      !activeTargetId ||
-      activeTargetId === measureSourceId
-    ) {
-      setDistance(null);
-      setMeasureState('idle');
-      return;
-    }
-    measureSequence.current += 1;
-    const sequence = measureSequence.current;
-    setMeasureState('loading');
-    getSpatialDistance(combat.id, measureSourceId, activeTargetId)
-      .then((response) => {
-        if (measureSequence.current !== sequence) return;
-        setDistance(response.distance);
-        setMeasureState('success');
-      })
-      .catch(() => {
-        if (measureSequence.current !== sequence) return;
-        // Falha de rede NÃO mantém o valor anterior como se fosse atual.
-        setDistance(null);
-        setMeasureState('error');
-      });
-  }, [mode, combat.id, combat.version, measureSourceId, activeTargetId, measureRetry]);
-
-  /**
-   * PREVIEW do trajeto: consulta o servidor só quando o caminho EFETIVO muda
-   * (com debounce curto), aborta a requisição anterior e ignora resposta de
-   * sequência antiga. Durante `loading` o painel mostra "Calculando…" — o valor
-   * anterior nunca é apresentado como atual.
-   */
-  const draftPath = draft?.path ?? null;
-  const draftCombatantId = draft?.combatantId ?? null;
-  useEffect(() => {
-    if (!draftPath || !draftCombatantId || draftPath.length === 0) {
-      previewSequence.current += 1;
-      setPreview(null);
-      setPreviewState('idle');
-      setPreviewError(null);
-      return;
-    }
-    previewSequence.current += 1;
-    const sequence = previewSequence.current;
-    setPreviewState('loading');
-    setPreviewError(null);
-    const timer = window.setTimeout(() => {
-      previewMovement(combat.id, { combatantId: draftCombatantId, path: draftPath })
-        .then((response) => {
-          if (previewSequence.current !== sequence) return;
-          setPreview(response);
-          setPreviewState('ready');
-        })
-        .catch((error: unknown) => {
-          if (previewSequence.current !== sequence) return;
-          setPreview(null);
-          setPreviewState('error');
-          setPreviewError(error instanceof Error ? error.message : 'Falha ao calcular o trajeto.');
-        });
-    }, 90);
-    return () => window.clearTimeout(timer);
-  }, [combat.id, draftCombatantId, draftPath]);
-
-  /**
-   * REALTIME durante o draft: versão, turno, posição do source, status do
-   * combate, projeção (ficou master-only) ou perda de autoridade invalidam o
-   * trajeto local. O fantasma nunca fica órfão e nenhum caminho antigo é
-   * enviado depois disso.
-   */
-  useEffect(() => {
-    if (!draft) return;
-    const unit = combat.combatants.find((item) => item.id === draft.combatantId);
-    const position = unit?.spatial?.position ?? null;
-    const invalid =
-      combat.status !== 'ACTIVE' ||
-      combat.currentCombatantId !== draft.combatantId ||
-      !position ||
-      position.xFeet !== draft.startPosition.xFeet ||
-      position.yFeet !== draft.startPosition.yFeet ||
-      (movement ? movement.combatantId !== draft.combatantId : false);
-    if (!invalid) return;
-    clearDraft();
-    setDraftNotice('O movimento foi cancelado: o estado do combate mudou.');
-    // `clearDraft` só toca estado local.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combat.version, combat.status, combat.currentCombatantId, combat.combatants, movement, draft]);
-
-  /** Escape cancela a medição (no modo Medir) e o draft (no modo Mover). */
-  useEffect(() => {
-    if (mode === 'measure') {
-      function onKeyDown(event: KeyboardEvent): void {
-        if (event.key !== 'Escape') return;
-        resetMeasure();
-      }
-      window.addEventListener('keydown', onKeyDown);
-      return () => window.removeEventListener('keydown', onKeyDown);
-    }
-    if (mode === 'movement' && draft) {
-      function onKeyDown(event: KeyboardEvent): void {
-        if (event.key !== 'Escape') return;
-        cancelDraft('Movimento cancelado.');
-      }
-      window.addEventListener('keydown', onKeyDown);
-      return () => window.removeEventListener('keydown', onKeyDown);
-    }
-    return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, draft !== null]);
-
-  async function place(combatantId: string, position: { xFeet: number; yFeet: number }) {
+  async function place(combatantId: string, position: SpatialPosition) {
     setPendingId(combatantId);
     setSceneError(null);
     try {
@@ -399,11 +500,6 @@ export function CombatGrid({
     }
   }
 
-  /**
-   * Alterna a PRESENÇA ESPACIAL da unidade selecionada. Só o Mestre vê o
-   * controle; o servidor recusa qualquer outro papel (403). O estado exibido é
-   * sempre o `CombatDto` devolvido pelo servidor.
-   */
   async function toggleVisibility(combatantId: string) {
     const unit = combat.combatants.find((item) => item.id === combatantId);
     if (!unit) return;
@@ -442,6 +538,431 @@ export function CombatGrid({
     }
   }
 
+  /**
+   * Inicia o DRAFT de movimento. Nada é movido: o token real continua no DTO e
+   * só nasce o trajeto vazio. O `immediate` do gesto guarda o ponto de pega.
+   */
+  function startDraft(combatantId: string, event?: PointerEvent<HTMLButtonElement>): void {
+    if (mode !== 'movement' || locked || rulerActive) return;
+    if (movableUnitId !== combatantId) return;
+    if (draft && draft.combatantId === combatantId) return;
+    const unit = placed.find((item) => item.id === combatantId);
+    const position = unit?.spatial?.position ?? null;
+    if (!unit?.spatial || !position) return;
+    const footprint = SIZE_FOOTPRINT_FEET[unit.spatial.effectiveSize];
+    let grab: SpatialPosition = {
+      xFeet: footprint.widthFeet / 2,
+      yFeet: footprint.heightFeet / 2,
+    };
+    if (event) {
+      // O gesto é do TOKEN: o pan do viewport não pode roubá-lo.
+      event.preventDefault();
+      event.stopPropagation();
+      const feet = feetAt(event.clientX, event.clientY);
+      if (feet) {
+        grab = {
+          xFeet: clampFeet(feet.xFeet - position.xFeet, footprint.widthFeet),
+          yFeet: clampFeet(feet.yFeet - position.yFeet, footprint.heightFeet),
+        };
+      }
+      lastPointer.current = { x: event.clientX, y: event.clientY };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    operationRef.current = null;
+    dragMoved.current = false;
+    setDraftNotice(null);
+    setPendingNotice(null);
+    setPreview(null);
+    setPreviewState('idle');
+    setDraft({ combatantId, startPosition: position, path: [], grab });
+  }
+
+  /** Acrescenta o anchor correspondente ao ponteiro atual (passo do tamanho). */
+  function appendDraftAt(clientX: number, clientY: number): void {
+    const current = draftRef.current;
+    if (!current) return;
+    const unit = placed.find((item) => item.id === current.combatantId);
+    if (!unit?.spatial) return;
+    const anchor = anchorAt(clientX, clientY, unit.spatial.effectiveSize, current.grab);
+    if (!anchor) return;
+    const nextPath = appendAnchor(current.path, anchor, anchorStepFeet(unit.spatial.effectiveSize));
+    if (nextPath === current.path) return;
+    dragMoved.current = true;
+    const next = { ...current, path: nextPath };
+    draftRef.current = next;
+    setDraft(next);
+  }
+
+  function finishDraft(): void {
+    const current = draftRef.current;
+    if (!current) return;
+    const moved = dragMoved.current;
+    dragMoved.current = false;
+    if (current.path.length === 0) {
+      // tap: mantém o draft (fluxo por toque); arrasto sem trajeto: cancela.
+      if (moved) cancelDraft();
+      return;
+    }
+    // O clique sintético do fim do gesto não pode abrir outro draft.
+    suppressClick.current = true;
+    void confirmMovement(current.combatantId, current.path);
+  }
+
+  /* PREVIEW do trajeto: só quando o caminho EFETIVO muda (debounce curto). */
+  const draftPath = draft?.path ?? null;
+  const draftCombatantId = draft?.combatantId ?? null;
+  useEffect(() => {
+    if (!draftPath || !draftCombatantId || draftPath.length === 0) {
+      previewSequence.current += 1;
+      setPreview(null);
+      setPreviewState('idle');
+      setPreviewError(null);
+      return;
+    }
+    previewSequence.current += 1;
+    const sequence = previewSequence.current;
+    setPreviewState('loading');
+    setPreviewError(null);
+    const timer = window.setTimeout(() => {
+      previewMovement(combat.id, { combatantId: draftCombatantId, path: draftPath })
+        .then((response) => {
+          if (previewSequence.current !== sequence) return;
+          setPreview(response);
+          setPreviewState('ready');
+        })
+        .catch((error: unknown) => {
+          if (previewSequence.current !== sequence) return;
+          setPreview(null);
+          setPreviewState('error');
+          setPreviewError(error instanceof Error ? error.message : 'Falha ao calcular o trajeto.');
+        });
+    }, 90);
+    return () => window.clearTimeout(timer);
+  }, [combat.id, draftCombatantId, draftPath]);
+
+  /**
+   * REALTIME durante o draft: versão, turno, posição do source, status do
+   * combate, projeção (ficou master-only) ou perda de autoridade invalidam o
+   * trajeto local. O fantasma nunca fica órfão.
+   */
+  useEffect(() => {
+    if (!draft) return;
+    const unit = combat.combatants.find((item) => item.id === draft.combatantId);
+    const position = unit?.spatial?.position ?? null;
+    const invalid =
+      combat.status !== 'ACTIVE' ||
+      combat.currentCombatantId !== draft.combatantId ||
+      !position ||
+      position.xFeet !== draft.startPosition.xFeet ||
+      position.yFeet !== draft.startPosition.yFeet ||
+      (movement ? movement.combatantId !== draft.combatantId : false);
+    if (!invalid) return;
+    clearDraft();
+    setDraftNotice('O movimento foi cancelado: o estado do combate mudou.');
+    // `clearDraft` só toca estado local.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combat.version, combat.status, combat.currentCombatantId, combat.combatants, movement, draft]);
+
+  /**
+   * GEST O de movimento: listeners no WINDOW enquanto o draft existe.
+   *
+   * Não dependemos do bubbling do plano (nem de o token continuar montado): o
+   * gesto sobrevive ao ponteiro sair do viewport e ao retrato ter foco. Foi o
+   * que faltava no Drag & Drop da 6.6M.3.
+   */
+  useEffect(() => {
+    if (!draft) return undefined;
+    function onMove(event: globalThis.PointerEvent): void {
+      lastPointer.current = { x: event.clientX, y: event.clientY };
+      appendDraftAt(event.clientX, event.clientY);
+    }
+    function onUp(): void {
+      lastPointer.current = null;
+      finishDraft();
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    // Os handlers leem refs: o efeito roda só quando o draft NASCE/termina.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft !== null]);
+
+  /** AUTO-PAN: aproximar o cursor da borda move a câmera e o trajeto continua. */
+  useEffect(() => {
+    if (!draft) return undefined;
+    let frame = 0;
+    function tick(): void {
+      const pointer = lastPointer.current;
+      const node = viewportRef.current;
+      if (pointer && node) {
+        const rect = node.getBoundingClientRect();
+        const dx = edgePanSpeed(pointer.x, rect.left, rect.right, AUTO_PAN_EDGE_PX, AUTO_PAN_MAX_SPEED);
+        const dy = edgePanSpeed(pointer.y, rect.top, rect.bottom, AUTO_PAN_EDGE_PX, AUTO_PAN_MAX_SPEED);
+        if (dx !== 0 || dy !== 0) {
+          // Sinal invertido: empurrar a câmera "para dentro" revela a borda.
+          const next = bounded(panBy(cameraRef.current, -dx, -dy));
+          cameraRef.current = next;
+          setCamera(next);
+          appendDraftAt(pointer.x, pointer.y);
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    }
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft !== null, dimensions.width, dimensions.height, viewport.width, viewport.height]);
+
+  /**
+   * COMMIT do movimento: revalida (preview nunca é autoridade), envia o commit
+   * real e adota o `CombatDto`. O `operationId` é o mesmo em retry da MESMA
+   * tentativa.
+   */
+  async function confirmMovement(combatantId: string, path: SpatialPosition[]): Promise<void> {
+    if (movementBusy) return;
+    const unit = placed.find((item) => item.id === combatantId);
+    if (!unit?.spatial?.position) return;
+    if (preview && previewState === 'ready' && (!preview.movement.legal || !preview.movement.affordable)) {
+      setDraftNotice(
+        preview.movement.legal ? 'Movimento insuficiente para este trajeto.' : 'O trajeto não é válido.',
+      );
+      return;
+    }
+    setMovementBusy(true);
+    setSceneError(null);
+    setDraftNotice(null);
+    try {
+      if (!preview || previewState !== 'ready') {
+        const fresh = await previewMovement(combat.id, { combatantId, path });
+        if (!fresh.movement.legal || !fresh.movement.affordable) {
+          setPreview(fresh);
+          setPreviewState('ready');
+          setDraftNotice(
+            fresh.movement.legal ? 'Movimento insuficiente para este trajeto.' : 'O trajeto não é válido.',
+          );
+          return;
+        }
+      }
+      operationRef.current ??= createOperationId();
+      const result = await commitMovement(combat, {
+        combatantId,
+        path,
+        operationId: operationRef.current,
+      });
+      onCombatChange(result.combat);
+      setPendingNotice(
+        result.pending
+          ? result.pending.awaitingMaster
+            ? 'Aguardando resolução do Mestre.'
+            : 'Movimento pausado por reação.'
+          : null,
+      );
+      clearDraft();
+    } catch (error) {
+      setSceneError(messageOf(error));
+      setDraftNotice(messageOf(error));
+      onError(messageOf(error));
+      clearDraft();
+    } finally {
+      setMovementBusy(false);
+    }
+  }
+
+  function clearPath(): void {
+    if (!draft) return;
+    operationRef.current = null;
+    setDraft({ ...draft, path: [] });
+    setDraftNotice(null);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* INTERAÇÕES DO PALCO                                                     */
+  /* ---------------------------------------------------------------------- */
+
+  function handleViewportPointerDown(event: PointerEvent<HTMLDivElement>): void {
+    const target = event.target as HTMLElement;
+    // Token e HUD têm gestos próprios; o pan é do FUNDO.
+    if (target.closest('.grid-token') || target.closest('.grid-movement-hud')) return;
+    if (event.button !== 0 && event.button !== 1) return;
+    panGesture.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      camera: cameraRef.current,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    // Botão do meio: impede o auto-scroll do navegador.
+    if (event.button === 1) event.preventDefault();
+  }
+
+  function handleViewportPointerMove(event: PointerEvent<HTMLDivElement>): void {
+    const gesture = panGesture.current;
+    if (gesture) {
+      const dx = event.clientX - gesture.startX;
+      const dy = event.clientY - gesture.startY;
+      // Limiar em px² (sem `hypot`: nada de geometria mecânica no grid).
+      if (!gesture.moved && dx * dx + dy * dy < PAN_THRESHOLD_PX * PAN_THRESHOLD_PX) return;
+      gesture.moved = true;
+      const next = bounded(panBy(gesture.camera, dx, dy));
+      cameraRef.current = next;
+      setCamera(next);
+      return;
+    }
+    if (!rulerActive) {
+      if (hoverAnchor) setHoverAnchor(null);
+      return;
+    }
+    // Célula sob o cursor: só apresentação (nunca validação local).
+    const feet = feetAt(event.clientX, event.clientY);
+    if (!feet) return;
+    const anchor = pointerAnchor({ xFeet: feet.xFeet, yFeet: feet.yFeet, size: 'small', scene });
+    if (!hoverAnchor || hoverAnchor.xFeet !== anchor.xFeet || hoverAnchor.yFeet !== anchor.yFeet) {
+      setHoverAnchor(anchor);
+    }
+  }
+
+  function handleViewportPointerUp(event: PointerEvent<HTMLDivElement>): void {
+    const gesture = panGesture.current;
+    panGesture.current = null;
+    if (gesture) {
+      event.currentTarget.releasePointerCapture?.(gesture.pointerId);
+      if (gesture.moved) suppressClick.current = true;
+    }
+  }
+
+  function handleViewportClick(event: MouseEvent<HTMLDivElement>): void {
+    if (suppressClick.current) {
+      suppressClick.current = false;
+      return;
+    }
+    if (rulerActive) {
+      const endpoint = pointEndpointAt(event.clientX, event.clientY);
+      if (endpoint) pickRulerEndpoint(endpoint);
+      return;
+    }
+    if (mode === 'movement') {
+      // Fallback de toque/precisão: clique numa célula acrescenta/trunca o passo.
+      if (!draft || locked) return;
+      const unit = placed.find((item) => item.id === draft.combatantId);
+      if (!unit?.spatial) return;
+      const anchor = anchorAt(event.clientX, event.clientY, unit.spatial.effectiveSize, draft.grab);
+      if (!anchor) return;
+      setDraft({
+        ...draft,
+        path: appendAnchor(draft.path, anchor, anchorStepFeet(unit.spatial.effectiveSize)),
+      });
+      return;
+    }
+    if (mode !== 'placement') return;
+    if (!isMaster || !selectedId || locked) return;
+    const unit = combat.combatants.find((item) => item.id === selectedId);
+    if (!unit?.spatial) return;
+    const feet = feetAt(event.clientX, event.clientY);
+    if (!feet) return;
+    void place(
+      selectedId,
+      pointerAnchor({
+        xFeet: feet.xFeet,
+        yFeet: feet.yFeet,
+        size: unit.spatial.effectiveSize,
+        scene,
+      }),
+    );
+  }
+
+  /** Régua ativa: o botão direito cancela/limpa (e não abre menu do browser). */
+  function handleViewportContextMenu(event: MouseEvent<HTMLDivElement>): void {
+    if (!rulerActive) return;
+    event.preventDefault();
+    clearRuler();
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    if (mode !== 'placement' || !isMaster || locked) return;
+    event.preventDefault();
+    const combatantId =
+      event.dataTransfer.getData(GRID_DRAG_MIME) || event.dataTransfer.getData('text/plain');
+    if (!combatantId) return;
+    const unit = combat.combatants.find((item) => item.id === combatantId);
+    if (!unit?.spatial) return;
+    const feet = feetAt(event.clientX, event.clientY);
+    if (!feet) return;
+    void place(
+      combatantId,
+      pointerAnchor({ xFeet: feet.xFeet, yFeet: feet.yFeet, size: unit.spatial.effectiveSize, scene }),
+    );
+  }
+
+  function selectUnit(combatantId: string): void {
+    if (rulerActive) {
+      const unit = placed.find((item) => item.id === combatantId);
+      if (!unit?.spatial) return;
+      pickRulerEndpoint({ kind: 'combatant', combatantId });
+      return;
+    }
+    if (mode === 'movement') {
+      if (suppressClick.current) return;
+      if (movableUnitId === combatantId) startDraft(combatantId);
+      return;
+    }
+    if (mode === 'placement') setSelectedId(combatantId);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* ATALHOS (F = régua rápida, Esc, Space = pan)                            */
+  /* ---------------------------------------------------------------------- */
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (isEditableTarget(event.target)) return;
+      if (event.key === 'Escape') {
+        if (ruler || quickRuler) clearRuler();
+        if (draft) cancelDraft('Movimento cancelado.');
+        return;
+      }
+      if (event.key === ' ' || event.code === 'Space') {
+        if (spaceDown.current) return;
+        spaceDown.current = true;
+        setSpacePan(true);
+        event.preventDefault();
+        return;
+      }
+      if ((event.key === 'f' || event.key === 'F') && !event.repeat) {
+        if (combat.spatial.mode !== 'grid-2d') return;
+        event.preventDefault();
+        setQuickRuler(true);
+      }
+    }
+    function onKeyUp(event: KeyboardEvent): void {
+      if (event.key === ' ' || event.code === 'Space') {
+        spaceDown.current = false;
+        setSpacePan(false);
+        return;
+      }
+      if (event.key === 'f' || event.key === 'F') {
+        // Depois do primeiro clique a régua continua mesmo soltando F.
+        if (!rulerRef.current.from) setQuickRuler(false);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+    // `clearRuler`/`cancelDraft` só tocam estado local.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruler, quickRuler, draft, combat.spatial.mode, rulerActive]);
+
+  /* ---------------------------------------------------------------------- */
+  /* RENDER                                                                  */
+  /* ---------------------------------------------------------------------- */
+
   if (scene.mode !== 'grid-2d') {
     return (
       <section className="combat-grid-panel" aria-label="Cena de combate">
@@ -468,245 +989,27 @@ export function CombatGrid({
     );
   }
 
-  function placeAt(combatantId: string, offsetX: number, offsetY: number) {
-    const unit = combat.combatants.find((item) => item.id === combatantId);
-    if (!unit?.spatial) return;
-    const size = unit.spatial.effectiveSize;
-    void place(combatantId, {
-      xFeet: pixelToPlacementFeet(offsetX, cellSizeFeet, pixelsPerCell, size),
-      yFeet: pixelToPlacementFeet(offsetY, cellSizeFeet, pixelsPerCell, size),
-    });
-  }
+  const placementInteractive = isMaster && !locked && mode === 'placement';
+  /** MODO MEDIR: qualquer um com o grid ativo mede o que o servidor autoriza. */
+  const measureInteractive = !locked;
+  /** MODO MOVER: só o combatente autorizado inicia gesto. */
+  const movementInteractive = !locked && Boolean(movableUnitId);
 
-  /**
-   * Clique numa unidade.
-   * • `placement`: seleciona para posicionar (só Mestre);
-   * • `measure`: escolhe origem/alvo (nunca posiciona);
-   * • `movement`: garante o draft do combatente autorizado (fluxo por teclado).
-   */
-  function selectUnit(combatantId: string): void {
-    if (mode === 'movement') {
-      if (suppressClick.current) return;
-      if (movableUnitId === combatantId) startDraft(combatantId);
-      return;
-    }
-    if (mode === 'placement') {
-      setSelectedId(combatantId);
-      return;
-    }
-    if (!measureSourceId) {
-      setMeasureSourceId(combatantId);
-      setMeasureTargetId(null);
-      setHoverId(null);
-      return;
-    }
-    // Mesma entidade: não é interação principal (evita "0 pés" acidental).
-    if (combatantId === measureSourceId) return;
-    setMeasureTargetId(combatantId);
-  }
-
-  /** Pés do ponteiro relativos ao plano da cena (scroll/zoom já resolvidos). */
-  function pointerFeet(
-    event: { clientX: number; clientY: number },
-    plane: HTMLElement,
-  ): SpatialPosition {
-    const rect = plane.getBoundingClientRect();
-    return {
-      xFeet: ((event.clientX - rect.left) / pixelsPerCell) * cellSizeFeet,
-      yFeet: ((event.clientY - rect.top) / pixelsPerCell) * cellSizeFeet,
-    };
-  }
-
-  function anchorAt(
-    event: { clientX: number; clientY: number },
-    plane: HTMLElement,
-    size: SpatialSize,
-    grab: SpatialPosition,
-  ): SpatialPosition {
-    const feet = pointerFeet(event, plane);
-    return pointerAnchor({
-      xFeet: feet.xFeet - grab.xFeet,
-      yFeet: feet.yFeet - grab.yFeet,
-      size,
-      scene,
-    });
-  }
-
-  /**
-   * Inicia o DRAFT de movimento (pointer down no token ou ativação por teclado).
-   *
-   * Nada é movido: o token real continua no DTO; só nasce o trajeto vazio.
-   */
-  function startDraft(combatantId: string, event?: PointerEvent<HTMLButtonElement>): void {
-    if (mode !== 'movement' || locked) return;
-    if (movableUnitId !== combatantId) return;
-    if (draft && draft.combatantId === combatantId) return;
-    const unit = placed.find((item) => item.id === combatantId);
-    const position = unit?.spatial?.position ?? null;
-    if (!unit?.spatial || !position) return;
-    const footprint = SIZE_FOOTPRINT_FEET[unit.spatial.effectiveSize];
-    let grab: SpatialPosition = {
-      xFeet: footprint.widthFeet / 2,
-      yFeet: footprint.heightFeet / 2,
-    };
-    if (event && planeRef.current) {
-      // Ponto de pega: o token não salta para o centro do cursor.
-      const feet = pointerFeet(event, planeRef.current);
-      grab = {
-        xFeet: clampFeet(feet.xFeet - position.xFeet, footprint.widthFeet),
-        yFeet: clampFeet(feet.yFeet - position.yFeet, footprint.heightFeet),
-      };
-      // O arrasto sobrevive ao ponteiro sair temporariamente do token.
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-    }
-    operationRef.current = null;
-    dragMoved.current = false;
-    setDraftNotice(null);
-    setPendingNotice(null);
-    setPreview(null);
-    setPreviewState('idle');
-    setDraft({ combatantId, startPosition: position, path: [], grab });
-  }
-
-  function handlePlanePointerMove(event: PointerEvent<HTMLDivElement>): void {
-    if (mode !== 'movement' || !draft) return;
-    const unit = placed.find((item) => item.id === draft.combatantId);
-    if (!unit?.spatial) return;
-    const step = anchorStepFeet(unit.spatial.effectiveSize);
-    const anchor = anchorAt(event, event.currentTarget, unit.spatial.effectiveSize, draft.grab);
-    const nextPath = appendAnchor(draft.path, anchor, step);
-    if (nextPath === draft.path) return;
-    dragMoved.current = true;
-    setDraft({ ...draft, path: nextPath });
-  }
-
-  function handlePlanePointerUp(): void {
-    if (mode !== 'movement' || !draft) return;
-    const moved = dragMoved.current;
-    dragMoved.current = false;
-    if (draft.path.length === 0) {
-      // tap: mantém o draft para o fluxo por toque; arrasto sem trajeto: cancela.
-      if (moved) cancelDraft();
-      return;
-    }
-    // O clique sintético do fim do gesto não pode abrir outro draft.
-    suppressClick.current = true;
-    void confirmMovement(draft.combatantId, draft.path);
-  }
-
-  /**
-   * COMMIT do movimento: revalidação (preview nunca é autoridade), commit real
-   * e adoção do `CombatDto`. Nenhuma posição/saldo é alterado localmente e o
-   * `operationId` é o mesmo em retry da MESMA tentativa.
-   */
-  async function confirmMovement(combatantId: string, path: SpatialPosition[]): Promise<void> {
-    if (movementBusy) return;
-    const unit = placed.find((item) => item.id === combatantId);
-    if (!unit?.spatial?.position) return;
-    // Preview já recusou este trajeto: não gasta rede nem envia commit.
-    if (preview && previewState === 'ready' && (!preview.movement.legal || !preview.movement.affordable)) {
-      setDraftNotice(
-        preview.movement.legal
-          ? 'Movimento insuficiente para este trajeto.'
-          : 'O trajeto não é válido.',
-      );
-      return;
-    }
-    setMovementBusy(true);
-    setSceneError(null);
-    setDraftNotice(null);
-    try {
-      if (!preview || previewState !== 'ready') {
-        // Preview ausente/stale: consulta antes do commit (o servidor revalida de novo).
-        const fresh = await previewMovement(combat.id, { combatantId, path });
-        if (!fresh.movement.legal || !fresh.movement.affordable) {
-          setPreview(fresh);
-          setPreviewState('ready');
-          setDraftNotice(
-            fresh.movement.legal
-              ? 'Movimento insuficiente para este trajeto.'
-              : 'O trajeto não é válido.',
-          );
-          return;
-        }
-      }
-      operationRef.current ??= createOperationId();
-      const result = await commitMovement(combat, {
-        combatantId,
-        path,
-        operationId: operationRef.current,
-      });
-      // Estado AUTORITATIVO — inclusive quando o servidor pausou em checkpoint.
-      onCombatChange(result.combat);
-      setPendingNotice(
-        result.pending
-          ? result.pending.awaitingMaster
-            ? 'Aguardando resolução do Mestre.'
-            : 'Movimento pausado por reação.'
-          : null,
-      );
-      clearDraft();
-    } catch (error) {
-      // 409/403: o servidor prevalece; o trajeto é descartado e nada é inventado.
-      setSceneError(messageOf(error));
-      setDraftNotice(messageOf(error));
-      onError(messageOf(error));
-      clearDraft();
-    } finally {
-      setMovementBusy(false);
-    }
-  }
-
-  function clearPath(): void {
-    if (!draft) return;
-    operationRef.current = null;
-    setDraft({ ...draft, path: [] });
-    setDraftNotice(null);
-  }
-
-  function handlePlaneClick(event: MouseEvent<HTMLDivElement>) {
-    if (mode === 'measure') return;
-    if (suppressClick.current) {
-      suppressClick.current = false;
-      return;
-    }
-    if (mode === 'movement') {
-      // Fallback de toque/precisão: clique numa âncora acrescenta/trunca o passo.
-      if (!draft || locked) return;
-      const unit = placed.find((item) => item.id === draft.combatantId);
-      if (!unit?.spatial) return;
-      const step = anchorStepFeet(unit.spatial.effectiveSize);
-      const anchor = anchorAt(event, event.currentTarget, unit.spatial.effectiveSize, draft.grab);
-      setDraft({ ...draft, path: appendAnchor(draft.path, anchor, step) });
-      return;
-    }
-    if (mode !== 'placement') return;
-    if (!isMaster || !selectedId || locked) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    placeAt(selectedId, event.clientX - rect.left, event.clientY - rect.top);
-  }
-
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
-    if (mode !== 'placement' || !isMaster || locked) return;
-    event.preventDefault();
-    const combatantId =
-      event.dataTransfer.getData(GRID_DRAG_MIME) ||
-      event.dataTransfer.getData('text/plain');
-    if (!combatantId) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    placeAt(combatantId, event.clientX - rect.left, event.clientY - rect.top);
-  }
-
-  const hint =
-    mode === 'measure'
-      ? 'Clique na origem e depois no alvo para medir.'
-      : mode === 'movement'
-        ? movableUnit
-          ? 'Arraste o token do turno para montar o trajeto — ou toque nas células.'
-          : (movement?.reason ?? 'Nenhum combatente pode se mover agora.')
-        : isMaster
-          ? 'Selecione uma unidade e clique no mapa — ou arraste da bandeja.'
-          : 'Visualização da cena.';
+  const hint = rulerActive
+    ? ruler?.locked
+      ? 'Régua fixada. Clique para medir de novo; botão direito ou Esc limpa.'
+      : ruler
+        ? 'Mova o cursor e clique no destino para fixar a régua.'
+        : quickRuler
+          ? 'Clique na origem (token ou espaço vazio) para puxar a régua.'
+          : 'Clique na origem da régua (token ou espaço vazio).'
+    : mode === 'movement'
+      ? movableUnit
+        ? 'Arraste o token do turno. Space/middle arrastam a câmera.'
+        : (movement?.reason ?? 'Nenhum combatente pode se mover agora.')
+      : isMaster
+        ? 'Selecione uma unidade e clique no mapa — ou arraste da bandeja.'
+        : 'Visualização da cena.';
 
   const planeClasses = [
     'grid-plane',
@@ -718,24 +1021,77 @@ export function CombatGrid({
     .filter(Boolean)
     .join(' ');
 
+  const viewportClasses = [
+    'grid-viewport',
+    panGesture.current?.moved ? 'is-panning' : '',
+    spacePan ? 'is-space-pan' : '',
+    rulerActive ? 'is-ruler' : '',
+    draft ? 'is-drafting' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const rulerFromScreen = ruler
+    ? endpointScreenPoint(ruler.from, camera)
+    : null;
+  const rulerToScreen = rulerTo ? endpointScreenPoint(rulerTo, camera) : null;
+  const fromName = endpointName(ruler?.from ?? null);
+  const toName = endpointName(rulerTo);
+
+  function endpointScreenPoint(endpoint: SpatialMeasureEndpoint, current: GridCamera): Point2D | null {
+    if (endpoint.kind === 'point') {
+      const box = occupiedSpacePixels(
+        {
+          minXFeet: endpoint.position.xFeet,
+          minYFeet: endpoint.position.yFeet,
+          maxXFeet: endpoint.position.xFeet,
+          maxYFeet: endpoint.position.yFeet,
+          widthFeet: 0,
+          heightFeet: 0,
+        },
+        cellSizeFeet,
+        DEFAULT_PIXELS_PER_CELL,
+      );
+      const point = { x: box.left, y: box.top };
+      // Ponto é a âncora: usa o centro da CÉLULA para o marcador não ficar no canto.
+      const half = DEFAULT_PIXELS_PER_CELL / 2;
+      return sceneToScreen(current, { x: point.x + half, y: point.y + half });
+    }
+    const unit = placed.find((item) => item.id === endpoint.combatantId);
+    const center = unit ? footprintCenterPx(unit) : null;
+    return center ? sceneToScreen(current, center) : null;
+  }
+
+  function endpointName(endpoint: SpatialMeasureEndpoint | null): string {
+    if (!endpoint) return '—';
+    if (endpoint.kind === 'point') return 'Ponto';
+    return placed.find((item) => item.id === endpoint.combatantId)?.name ?? 'Combatente';
+  }
+
+  const measureRoleOf = (combatantId: string): 'source' | 'target' | null => {
+    if (ruler?.from.kind === 'combatant' && ruler.from.combatantId === combatantId) return 'source';
+    if (rulerTo?.kind === 'combatant' && rulerTo.combatantId === combatantId) return 'target';
+    return null;
+  };
+
+  const currentOffscreen =
+    currentUnit !== null &&
+    (() => {
+      const center = footprintCenterPx(currentUnit);
+      if (!center) return false;
+      const screen = sceneToScreen(camera, center);
+      return (
+        screen.x < 0 ||
+        screen.y < 0 ||
+        screen.x > viewport.width ||
+        screen.y > viewport.height
+      );
+    })();
+
   return (
     <section className="combat-grid-panel" aria-label="Cena de combate">
-      <SpatialSceneControls
-        mode={scene.mode}
-        widthFeet={scene.widthFeet}
-        heightFeet={scene.heightFeet}
-        isMaster={isMaster}
-        busy={locked}
-        onActivate={() => undefined}
-        onResize={(widthFeet, heightFeet) =>
-          void changeScene({ mode: 'grid-2d', widthFeet, heightFeet })
-        }
-        onAssisted={() => void changeScene({ mode: 'assisted' })}
-      />
-
       <div className="grid-toolbar">
-        <span className="grid-toolbar-hint">{hint}</span>
-        <div className="grid-toolbar-right">
+        <div className="grid-toolbar-left">
           <div className="grid-modes" role="group" aria-label="Modo do grid">
             {isMaster ? (
               <button
@@ -762,38 +1118,65 @@ export function CombatGrid({
               type="button"
               className="btn btn-small"
               aria-pressed={mode === 'measure'}
+              title="Régua — medição de qualquer ponto a qualquer ponto"
               onClick={() => changeMode('measure')}
             >
               Medir
             </button>
           </div>
-          <div className="grid-zoom" role="group" aria-label="Zoom visual">
-            <button
-              type="button"
-              className="btn btn-small"
-              disabled={pixelsPerCell <= MIN_PIXELS_PER_CELL}
-              onClick={() =>
-                setPixelsPerCell((current) => Math.max(MIN_PIXELS_PER_CELL, current - 8))
-              }
-              aria-label="Reduzir zoom"
-            >
-              −
-            </button>
-            <span aria-label="Zoom atual">{Math.round((pixelsPerCell / DEFAULT_PIXELS_PER_CELL) * 100)}%</span>
-            <button
-              type="button"
-              className="btn btn-small"
-              disabled={pixelsPerCell >= MAX_PIXELS_PER_CELL}
-              onClick={() =>
-                setPixelsPerCell((current) => Math.min(MAX_PIXELS_PER_CELL, current + 8))
-              }
-              aria-label="Aumentar zoom"
-            >
-              +
-            </button>
-          </div>
+          {currentUnit ? (
+            <span className="grid-turn">
+              Turno de <strong>{currentUnit.name}</strong>
+            </span>
+          ) : null}
+        </div>
+        <div className="grid-camera-controls" role="group" aria-label="Câmera">
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label="Reduzir zoom"
+            onClick={() => zoomStep(1 / ZOOM_STEP)}
+          >
+            −
+          </button>
+          <span className="grid-zoom-value" aria-label="Zoom atual">
+            {cameraPercent(camera.zoom)}%
+          </span>
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label="Aumentar zoom"
+            onClick={() => zoomStep(ZOOM_STEP)}
+          >
+            +
+          </button>
+          <button type="button" className="btn btn-small" aria-label="Enquadrar cena" onClick={fitScene}>
+            Enquadrar
+          </button>
+          <button
+            type="button"
+            className={currentOffscreen ? 'btn btn-small is-offscreen' : 'btn btn-small'}
+            aria-label="Centralizar no turno"
+            disabled={!currentUnit}
+            onClick={() => {
+              if (currentUnit) centerOnCombatant(currentUnit.id);
+            }}
+          >
+            Centralizar
+          </button>
         </div>
       </div>
+
+      <SpatialSceneControls
+        mode={scene.mode}
+        widthFeet={scene.widthFeet}
+        heightFeet={scene.heightFeet}
+        isMaster={isMaster}
+        busy={locked}
+        onActivate={() => undefined}
+        onResize={(widthFeet, heightFeet) => void changeScene({ mode: 'grid-2d', widthFeet, heightFeet })}
+        onAssisted={() => void changeScene({ mode: 'assisted' })}
+      />
 
       {isMaster && mode === 'placement' && selectedUnit ? (
         <div className="grid-visibility">
@@ -816,127 +1199,159 @@ export function CombatGrid({
         </div>
       ) : null}
 
-      {mode === 'measure' ? (
-        <GridMeasurementPanel
-          sourceName={measureSourceUnit?.name ?? null}
-          targetName={measureTargetUnit?.name ?? null}
-          distance={distance}
-          state={measureState}
-          onClear={resetMeasure}
-          onRetry={() => setMeasureRetry((current) => current + 1)}
-        />
-      ) : null}
-
-      {mode === 'movement' ? (
-        <MovementPanel
-          combatantName={movableUnit?.name ?? draftUnit?.name ?? null}
-          eligible={Boolean(movableUnitId)}
-          reason={movement?.reason ?? null}
-          pathLength={draft?.path.length ?? 0}
-          movement={preview?.movement ?? null}
-          reaction={preview?.reaction ?? null}
-          state={previewState}
-          error={previewError}
-          pendingNotice={pendingNotice ?? draftNotice}
-          busy={movementBusy}
-          onClear={clearPath}
-          onCancel={() => cancelDraft('Movimento cancelado.')}
-          onConfirm={() => {
-            if (draft) void confirmMovement(draft.combatantId, draft.path);
-          }}
-        />
-      ) : null}
-
       {sceneError ? (
         <p className="grid-scene-error" role="status">
           {sceneError}
         </p>
       ) : null}
 
-      <div className="grid-viewport">
+      <div className="grid-stage">
         <div
-          ref={planeRef}
-          className={planeClasses}
-          style={
-            {
-              width: `${dimensions.width}px`,
-              height: `${dimensions.height}px`,
-              '--grid-cell': `${pixelsPerCell}px`,
-            } as CSSProperties
-          }
-          data-scene-mode={scene.mode}
-          onClick={handlePlaneClick}
-          onPointerMove={mode === 'movement' ? handlePlanePointerMove : undefined}
-          onPointerUp={mode === 'movement' ? handlePlanePointerUp : undefined}
-          onPointerCancel={mode === 'movement' ? handlePlanePointerUp : undefined}
+          ref={viewportRef}
+          className={viewportClasses}
+          onPointerDown={handleViewportPointerDown}
+          onPointerMove={handleViewportPointerMove}
+          onPointerUp={handleViewportPointerUp}
+          onPointerCancel={handleViewportPointerUp}
+          onClick={handleViewportClick}
+          onContextMenu={handleViewportContextMenu}
           onDragOver={isMaster ? (event) => event.preventDefault() : undefined}
           onDrop={isMaster ? handleDrop : undefined}
           role="presentation"
         >
-          {placed.map((combatant) => (
-            <GridToken
-              key={combatant.id}
-              combatant={combatant}
-              cellSizeFeet={cellSizeFeet}
-              pixelsPerCell={pixelsPerCell}
-              currentTurn={
-                combat.status === 'ACTIVE' && combat.currentCombatantId === combatant.id
+          <div
+            className="grid-camera"
+            style={{
+              transform: `translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})`,
+            }}
+          >
+            <div
+              ref={planeRef}
+              className={planeClasses}
+              style={
+                {
+                  width: `${dimensions.width}px`,
+                  height: `${dimensions.height}px`,
+                  '--grid-cell': `${DEFAULT_PIXELS_PER_CELL}px`,
+                } as CSSProperties
               }
-              selected={mode === 'placement' && selectedId === combatant.id}
-              pending={
-                pendingId === combatant.id ||
-                (movementBusy && draft?.combatantId === combatant.id)
-              }
-              measureRole={
-                mode !== 'measure'
-                  ? null
-                  : measureSourceId === combatant.id
-                    ? 'source'
-                    : activeTargetId === combatant.id
-                      ? 'target'
+              data-scene-mode={scene.mode}
+            >
+              {placed.map((combatant) => (
+                <GridToken
+                  key={combatant.id}
+                  combatant={combatant}
+                  cellSizeFeet={cellSizeFeet}
+                  pixelsPerCell={DEFAULT_PIXELS_PER_CELL}
+                  currentTurn={
+                    combat.status === 'ACTIVE' && combat.currentCombatantId === combatant.id
+                  }
+                  selected={mode === 'placement' && selectedId === combatant.id}
+                  pending={
+                    pendingId === combatant.id ||
+                    (movementBusy && draft?.combatantId === combatant.id)
+                  }
+                  measureRole={rulerActive ? measureRoleOf(combatant.id) : null}
+                  interactive={
+                    rulerActive
+                      ? true
+                      : mode === 'movement'
+                        ? movementInteractive
+                        : placementInteractive
+                  }
+                  movable={mode === 'movement' && !locked && !rulerActive && movableUnitId === combatant.id}
+                  rulerActive={rulerActive}
+                  onSelect={selectUnit}
+                  onMoveStart={(combatantId, event) => startDraft(combatantId, event)}
+                  onCenter={centerOnCombatant}
+                  onHover={rulerActive && measureInteractive ? setHoverTokenId : undefined}
+                />
+              ))}
+
+              {/* TRAJETO pretendido + ghost (o token real não se move). */}
+              {mode === 'movement' && draft ? (
+                <GridMovementOverlay
+                  path={draft.path}
+                  ghost={
+                    draftLast && draftUnit?.spatial
+                      ? {
+                          position: draftLast,
+                          size: draftUnit.spatial.effectiveSize,
+                          imageRef: draftUnit.spatial.tokenImageRef,
+                        }
                       : null
-              }
-              interactive={
-                mode === 'measure'
-                  ? measureInteractive
-                  : mode === 'movement'
-                    ? movementInteractive
-                    : placementInteractive
-              }
-              movable={mode === 'movement' && !locked && movableUnitId === combatant.id}
-              onSelect={selectUnit}
-              onMoveStart={(combatantId, event) => startDraft(combatantId, event)}
-              onHover={mode === 'measure' && measureSourceId ? setHoverId : undefined}
-            />
-          ))}
+                  }
+                  cellSizeFeet={cellSizeFeet}
+                  pixelsPerCell={DEFAULT_PIXELS_PER_CELL}
+                />
+              ) : null}
 
-          {/* LINHA de medição: camada decorativa, sem captura de clique. */}
-          {mode === 'measure' ? (
-            <GridMeasureOverlay
-              source={measureSourceUnit}
-              target={measureTargetUnit}
-              cellSizeFeet={cellSizeFeet}
-              pixelsPerCell={pixelsPerCell}
+              {/* Célula sob o cursor — highlight sutil, sem fingir validade. */}
+              {hoverAnchor && rulerActive ? (
+                <div
+                  className="grid-hover-cell"
+                  aria-hidden="true"
+                  style={{
+                    left: `${(hoverAnchor.xFeet / cellSizeFeet) * DEFAULT_PIXELS_PER_CELL}px`,
+                    top: `${(hoverAnchor.yFeet / cellSizeFeet) * DEFAULT_PIXELS_PER_CELL}px`,
+                    width: `${DEFAULT_PIXELS_PER_CELL}px`,
+                    height: `${DEFAULT_PIXELS_PER_CELL}px`,
+                  }}
+                />
+              ) : null}
+            </div>
+          </div>
+
+          {/* RÉGUA em coordenadas de TELA: label nítida e sempre horizontal. */}
+          {rulerFromScreen && rulerToScreen ? (
+            <GridRuler
+              from={rulerFromScreen}
+              to={rulerToScreen}
+              fromLabel={fromName}
+              toLabel={toName}
+              distance={distance}
+              state={rulerState}
+              locked={ruler?.locked ?? false}
             />
           ) : null}
 
-          {/* 6.6M.3 — TRAJETO pretendido + ghost (o token real não se move). */}
-          {mode === 'movement' && draft ? (
-            <GridMovementOverlay
-              path={draft.path}
-              ghost={
-                draftLast && draftUnit?.spatial
-                  ? {
-                      position: draftLast,
-                      size: draftUnit.spatial.effectiveSize,
-                      imageRef: draftUnit.spatial.tokenImageRef,
-                    }
-                  : null
-              }
-              cellSizeFeet={cellSizeFeet}
-              pixelsPerCell={pixelsPerCell}
+          {rulerState === 'error' ? (
+            <button
+              type="button"
+              className="btn btn-small grid-ruler-retry"
+              onClick={() => setRulerRetry((current) => current + 1)}
+            >
+              Tentar novamente
+            </button>
+          ) : null}
+
+          {draftNotice && !draft ? (
+            <p className="grid-hud-notice" role="status" aria-live="polite">
+              {draftNotice}
+            </p>
+          ) : null}
+
+          {mode === 'movement' ? (
+            <MovementHud
+              combatantName={movableUnit?.name ?? draftUnit?.name ?? null}
+              eligible={Boolean(movableUnitId)}
+              reason={movement?.reason ?? null}
+              pathLength={draft?.path.length ?? 0}
+              movement={preview?.movement ?? null}
+              reaction={preview?.reaction ?? null}
+              state={previewState}
+              error={previewError}
+              pendingNotice={pendingNotice ?? draftNotice}
+              busy={movementBusy}
+              onClear={clearPath}
+              onCancel={() => cancelDraft('Movimento cancelado.')}
+              onConfirm={() => {
+                if (draft) void confirmMovement(draft.combatantId, draft.path);
+              }}
             />
           ) : null}
+
+          <p className="grid-hint">{hint}</p>
         </div>
       </div>
 
@@ -956,3 +1371,4 @@ export function CombatGrid({
     </section>
   );
 }
+

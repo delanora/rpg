@@ -3,6 +3,8 @@ import { createOperationId } from '../../utils';
 import type {
   CombatDto,
   SpatialDistanceResponse,
+  SpatialMeasureEndpoint,
+  SpatialMeasureResponse,
   SpatialPosition,
   SpatialRangePreviewResponse,
   SpatialVisibility,
@@ -42,6 +44,24 @@ export function getSpatialDistance(
   const query = new URLSearchParams({ fromCombatantId, toCombatantId });
   return api<SpatialDistanceResponse>(
     `/api/combat/${encodeURIComponent(combatId)}/spatial/distance?${query.toString()}`,
+  );
+}
+
+/**
+ * 6.6M.3.1 — RÉGUA: leitura PURA entre dois extremos (ponto ou combatente).
+ *
+ * Sem `operationId`, sem `expectedVersion` e sem nenhuma intenção mecânica: o
+ * cliente manda só os extremos alinhados e o servidor devolve a distância do
+ * MESMO algoritmo da 6.6L.2. O React nunca calcula nem converte a medida.
+ */
+export function measureSpatial(
+  combatId: string,
+  from: SpatialMeasureEndpoint,
+  to: SpatialMeasureEndpoint,
+): Promise<SpatialMeasureResponse> {
+  return api<SpatialMeasureResponse>(
+    `/api/combat/${encodeURIComponent(combatId)}/spatial/measure`,
+    { method: 'POST', body: { from, to } },
   );
 }
 
