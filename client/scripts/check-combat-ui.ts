@@ -480,7 +480,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   // WI–WK. Privacidade de morte no SERVIDOR (não via CSS).
   check(
     'WI) DTO do jogador remove vida/CA/deathState/condições de 0 PV de criatura e NPC',
-    dto.includes('isMasterOnlyCombatant(combatant.kind)') &&
+    dto.includes('hasPrivateMechanicalState(combatant.kind)') &&
       dto.includes('HP_ZERO_SOURCE') &&
       dto.includes('HP_ZERO_PRONE_LABEL') &&
       dto.includes('economyLog: dto.economyLog.filter') &&
@@ -495,8 +495,8 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'WK) Estabilizar/override de criatura/NPC entram como linha PRIVADA no Registro',
-    service.includes('{ private: isMasterOnlyCombatant(targetCombatant.kind) }') &&
-      service.includes("{ private: isMasterOnlyCombatant(outgoing.kind) }") &&
+    service.includes('{ private: hasPrivateMechanicalState(targetCombatant.kind) }') &&
+      service.includes("{ private: hasPrivateMechanicalState(outgoing.kind) }") &&
       source('../src/modules/death/death.service.ts').includes("private: target.kind !== 'character'"),
   );
 
@@ -2659,7 +2659,11 @@ const sceneOf = (mode: 'assisted' | 'grid-2d'): SpatialScene => ({
 const unitOf = (
   id: string,
   size: SpatialSize,
-  options: { position?: { xFeet: number; yFeet: number } | null; image?: string | null } = {},
+  options: {
+    position?: { xFeet: number; yFeet: number } | null;
+    image?: string | null;
+    visibility?: 'public' | 'master-only';
+  } = {},
 ): GridUnit => {
   const position = options.position === undefined ? { xFeet: 0, yFeet: 0 } : options.position;
   const footprint = SIZE_FOOTPRINT_FEET[size];
@@ -2679,7 +2683,7 @@ const unitOf = (
         }
       : null,
   };
-  return { id, name: id, spatial };
+  return { id, name: id, spatial, spatialVisibility: options.visibility ?? 'public' };
 };
 
 const combatOf = (units: GridUnit[], mode: 'assisted' | 'grid-2d' = 'grid-2d') => ({
@@ -3207,7 +3211,7 @@ check(
     !prismaModel('Character').includes('sideKey') &&
     !prismaModel('Creature').includes('sideKey') &&
     movementCombatDtoSource.includes('sideKey: combatant.sideKey ?? null') &&
-    movementCombatDtoSource.includes('return { ...visible, sideKey: null };') &&
+    movementCombatDtoSource.includes('return { ...projected, sideKey: null };') &&
     combatRoutesSource.includes('setCombatantSideKey') &&
     spatialSceneSource.includes("'combatant-side'")
 );
@@ -3339,6 +3343,101 @@ check(
   !/sentinel|polearm|war ?caster|counterspell|shield|lineOfSight|cover/i.test(
     opportunityDomainCode + opportunityServiceCode + opportunityOpenersCode
   )
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6L.3.2 — PUBLIC SPATIAL VISIBILITY / NPC GRID PROJECTION                 */
+/* -------------------------------------------------------------------------- */
+const visibilityDtoSource = source('../src/modules/combat/combat.dto.ts');
+const visibilityDomainSource = source('../src/modules/combat/spatial/spatial-visibility.ts');
+const visibilitySceneSource = source('../src/modules/combat/spatial/spatial-scene.service.ts');
+const visibilityDistanceSource = source('../src/modules/combat/spatial/spatial-distance.service.ts');
+const visibilitySchemaSource = source('../src/modules/combat/combat.schema.ts');
+const visibilityRoutesSource = source('../src/modules/combat/combat.routes.ts');
+const visibilityGridSource = source('src/combat/grid/CombatGrid.tsx');
+const visibilityTokenSource = source('src/combat/grid/GridToken.tsx');
+const visibilityGridApiSource = source('src/combat/grid/gridApi.ts');
+const visibilityGridCssSource = source('src/combat/grid/grid.css');
+const visibilityGridMathSource = source('src/combat/grid/gridMath.ts');
+const visibilityPrismaSchema = source('../prisma/schema.prisma');
+const visibilityMigration = source(
+  '../prisma/migrations/20261105220000_add_spatial_visibility/migration.sql',
+);
+check(
+  'CB232) PROJEÇÃO espacial é política SEPARADA do estado mecânico e do tipo da entidade',
+  visibilityDtoSource.includes('export function projectCombatantSpatialState') &&
+    visibilityDtoSource.includes('export function hideCombatantMechanicalState') &&
+    visibilityDtoSource.includes(
+      "if (combatant.spatialVisibility !== 'master-only') return combatant;",
+    ) &&
+    visibilityDtoSource.includes('hasPrivateMechanicalState(combatant.kind)') &&
+    !visibilityDtoSource.includes('isMasterOnlyCombatant')
+);
+check(
+  'CB233) `spatialVisibility` vive SÓ na instância do combatente, com default PUBLIC (migration aditiva)',
+  visibilityPrismaSchema.includes('spatialVisibility String @default("public")') &&
+    (visibilityPrismaSchema.match(/spatialVisibility/g) ?? []).length === 1 &&
+    visibilityMigration.includes('ADD COLUMN "spatialVisibility"') &&
+    visibilityMigration.includes("DEFAULT 'public'")
+);
+check(
+  'CB234) endpoint MASTER-only de ocultar/revelar com enum FECHADO, versão e operationId',
+  visibilityRoutesSource.includes(
+    "'/:combatId/combatants/:combatantId/spatial-visibility'",
+  ) &&
+    visibilityRoutesSource.includes('setCombatantSpatialVisibility(') &&
+    visibilitySchemaSource.includes('z.enum(SPATIAL_VISIBILITIES)') &&
+    visibilitySceneSource.includes("'combatant-spatial-visibility'") &&
+    visibilitySceneSource.includes('requireMaster(actor)')
+);
+check(
+  'CB235) distância/range-preview passam a usar spatialVisibility (NPC público mede; oculto é sanitizado)',
+  visibilityDistanceSource.includes('isSpatiallyVisible(combatant.spatialVisibility)') &&
+    !visibilityDistanceSource.includes("?.kind === 'CHARACTER'") &&
+    visibilityDistanceSource.includes('HIDDEN_READING') &&
+    visibilityDistanceSource.includes('HIDDEN_RANGE_READING')
+);
+check(
+  'CB236) o CLIENTE não decide visibilidade por `kind`: desenha o DTO autorizado (sem token fantasma)',
+  visibilityGridSource.includes('setSpatialVisibility') &&
+    !visibilityGridSource.includes("kind === 'CREATURE'") &&
+    !visibilityGridSource.includes("kind === 'NPC'") &&
+    visibilityTokenSource.includes('if (!rect || !combatant.spatial) return null;') &&
+    visibilityGridMathSource.includes('if (!combatant.spatial) continue;')
+);
+check(
+  'CB237) ocultar/revelar é controle do MESTRE e não é Movimento (sem consumo de movimento)',
+  visibilityGridSource.includes('Ocultar dos jogadores') &&
+    visibilityGridSource.includes('Revelar aos jogadores') &&
+    visibilityGridSource.includes("unit.spatialVisibility === 'master-only' ? 'public' : 'master-only'") &&
+    visibilityGridApiSource.includes('spatial-visibility') &&
+    !visibilitySceneSource.includes('moveDistance')
+);
+check(
+  'CB238) ocultar/revelar entra no Registro como linha PRIVADA (não denuncia entidade oculta)',
+  visibilitySceneSource.includes('{ private: true }') &&
+    visibilitySceneSource.includes('ocultou') &&
+    visibilitySceneSource.includes('revelou') &&
+    visibilitySceneSource.includes("'spatial-visibility'")
+);
+check(
+  'CB239) `?` significa apenas "sem imagem" — presença oculta nem chega a produzir token',
+  visibilityTokenSource.includes('grid-token-fallback') &&
+    visibilityTokenSource.includes('combatant.spatial.tokenImageRef') &&
+    visibilityGridCssSource.includes('.grid-token-hidden') &&
+    visibilityGridCssSource.includes('.grid-visibility')
+);
+check(
+  'CB240) sem Fog of War/Invisible/Hide/LoS/darkvision ligados a spatialVisibility nesta fase',
+  !/fog ?of ?war|visionCone|lineOfSight|darkvision|hideAction|stealth|occluder/i.test(
+    codeOnly(visibilityDomainSource) + codeOnly(visibilitySceneSource)
+  )
+);
+check(
+  'CB241) estilos novos ficam em grid.css (o WIP de client/src/styles.css NÃO é tocado)',
+  visibilityGridCssSource.includes('6.6L.3.2') &&
+    !source('src/styles.css').includes('.grid-token-hidden') &&
+    !source('src/styles.css').includes('.grid-visibility')
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

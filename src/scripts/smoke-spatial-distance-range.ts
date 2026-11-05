@@ -505,6 +505,9 @@ export async function smokeSpatialDistance(baseUrl: string, check: Check): Promi
               kind: 'NPC',
               creatureId: hidden.id,
               name: hidden.name,
+              // 6.6L.3.2: projeção espacial é por INSTÂNCIA — esta criatura é
+              // explicitamente master-only para as checagens de privacidade.
+              spatialVisibility: 'master-only',
               hpCurrent: 20,
               hpMax: 20,
               armorClass: 12,
@@ -831,7 +834,7 @@ export async function smokeSpatialDistance(baseUrl: string, check: Check): Promi
     );
     const playerToCreature = await distanceRead(meleeCombatant.id, hiddenCombatant.id, playerToken);
     check(
-      '89.AR.1) PLAYER NÃO consulta distância até criatura/NPC (unknown, sem oráculo)',
+      '89.AR.1) PLAYER NÃO consulta distância até criatura MASTER-ONLY (unknown, sem oráculo)',
       playerToCreature.status === 200 &&
         playerToCreature.data.distance.status === 'unknown' &&
         playerToCreature.data.distance.reason === 'not-visible',
@@ -1130,7 +1133,7 @@ export async function smokeSpatialDistance(baseUrl: string, check: Check): Promi
         playerToken,
       );
       check(
-        '89.BC.1) PLAYER não descobre alvo oculto pelo range-preview (unknown/not-visible)',
+        '89.BC.1) PLAYER não descobre alvo master-only pelo range-preview (unknown/not-visible)',
         playerToCreature.data.range.status === 'unknown' &&
           playerToCreature.data.range.reason === 'not-visible' &&
           playerToCreature.data.range.distanceFeet === null &&

@@ -5,6 +5,7 @@ import type {
   SpatialDistanceResponse,
   SpatialPosition,
   SpatialRangePreviewResponse,
+  SpatialVisibility,
 } from '../../types';
 
 /**
@@ -59,6 +60,26 @@ export function getSpatialRangePreview(
   return api<SpatialRangePreviewResponse>(
     `/api/combat/${encodeURIComponent(combatId)}/spatial/range-preview?${query.toString()}`,
   );
+}
+
+/**
+ * 6.6L.3.2 — VISIBILIDADE ESPACIAL do combatente (só MASTER).
+ *
+ * O cliente manda apenas o valor do enum + versão/operação; posição, tamanho,
+ * imagem e stats nunca viajam juntos. Não é placement: não gasta Movimento.
+ */
+export function setSpatialVisibility(
+  combat: Pick<CombatDto, 'id' | 'version'>,
+  combatantId: string,
+  spatialVisibility: SpatialVisibility,
+): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>(
+    `/api/combat/${combat.id}/combatants/${encodeURIComponent(combatantId)}/spatial-visibility`,
+    {
+      method: 'PATCH',
+      body: { spatialVisibility, expectedVersion: combat.version, operationId: createOperationId() },
+    },
+  ).then((result) => result.combat);
 }
 
 export function setSpatialPosition(

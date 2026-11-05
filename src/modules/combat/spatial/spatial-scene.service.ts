@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
 import { HttpError } from '../../../lib/http-error.js';
 import type { CombatActor } from '../combat.service.js';
-import { emitCombat, loadCombatById } from '../combat.service.js';
+import { appendEconomyLog, emitCombat, loadCombatById } from '../combat.service.js';
 import { toCombatDto, type CombatDto } from '../combat.dto.js';
 import { ServerEvents } from '../../../realtime/events.js';
 import {
@@ -20,6 +20,10 @@ import {
 } from './spatial.types.js';
 import { isGridAligned } from './spatial-distance.js';
 import { normalizeSideKey } from './spatial-movement.js';
+import {
+  spatialVisibilityOf,
+  type SpatialVisibility,
+} from './spatial-visibility.js';
 
 /**
  * FASE 6.6L.1 — CONFIGURAÇÃO DA CENA E PLACEMENT.
@@ -52,6 +56,11 @@ export interface SpatialOperationInput {
    * isso, fora do fingerprint delas (`JSON.stringify` descarta `undefined`).
    */
   sideKey?: string | null;
+  /**
+   * Visibilidade ESPACIAL (6.6L.3.2). Entra no fingerprint de propósito: a
+   * mesma `operationId` com outro valor é reutilização de chave (409).
+   */
+  spatialVisibility?: SpatialVisibility;
 }
 
 export interface SpatialConfigPatchInput extends SpatialOperationInput {
@@ -70,6 +79,12 @@ export interface CombatantSidePatchInput {
   expectedVersion: number;
   operationId: string;
   sideKey: string | null;
+}
+
+export interface CombatantSpatialVisibilityInput {
+  expectedVersion: number;
+  operationId: string;
+  spatialVisibility: SpatialVisibility;
 }
 
 function requireMaster(actor: CombatActor): void {
@@ -287,6 +302,56 @@ export async function setCombatantSideKey(
       const combatant = combat.combatants.find((item) => item.id === combatantId);
       if (!combatant) throw new HttpError('Combatente não encontrado neste combate.', 404);
       await db.combatant.update({ where: { id: combatant.id }, data: { sideKey } });
+      return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+    },
+  );
+}
+
+/**
+ * VISIBILIDADE ESPACIAL da INSTÂNCIA (6.6L.3.2). MASTER-only.
+ *
+ * Separa PROJEÇÃO de MECÂNICA: `master-only` só remove token/imagem/posição do
+ * DTO do jogador. Ocupação, difficult terrain, Opportunity Attack e autoridade
+ * do Mestre continuam exatamente iguais.
+ *
+ * A linha do Registro é SEMPRE privada: uma mensagem pública denunciaria que
+ * existe (ou deixou de existir) uma entidade oculta na cena.
+ */
+export async function setCombatantSpatialVisibility(
+  actor: CombatActor,
+  combatId: string,
+  combatantId: string,
+  input: CombatantSpatialVisibilityInput,
+): Promise<{ combat: CombatDto }> {
+  requireMaster(actor);
+  const spatialVisibility = spatialVisibilityOf(input.spatialVisibility);
+  return runSpatialOperation(
+    actor,
+    {
+      combatId,
+      expectedVersion: input.expectedVersion,
+      operationId: input.operationId,
+      combatantId,
+      spatialVisibility,
+    },
+    'combatant-spatial-visibility',
+    async (db, combat) => {
+      const combatant = combat.combatants.find((item) => item.id === combatantId);
+      if (!combatant) throw new HttpError('Combatente não encontrado neste combate.', 404);
+      await db.combatant.update({
+        where: { id: combatant.id },
+        data: { spatialVisibility },
+      });
+      await appendEconomyLog(
+        db,
+        combat,
+        combatant,
+        spatialVisibility === 'master-only'
+          ? `Mestre ${actor.username} ocultou ${combatant.name} dos jogadores.`
+          : `Mestre ${actor.username} revelou ${combatant.name} aos jogadores.`,
+        'spatial-visibility',
+        { private: true },
+      );
       return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
     },
   );

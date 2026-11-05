@@ -5,7 +5,12 @@ import { GridToken, type GridUnit } from './GridToken';
 import { UnplacedCombatantsTray, GRID_DRAG_MIME } from './UnplacedCombatantsTray';
 import { GridMeasureOverlay, GridMeasurementPanel, type MeasureRequestState } from './GridMeasurement';
 import { SpatialSceneControls } from './SpatialSceneControls';
-import { getSpatialDistance, setSpatialPosition, updateSpatialScene } from './gridApi';
+import {
+  getSpatialDistance,
+  setSpatialPosition,
+  setSpatialVisibility,
+  updateSpatialScene,
+} from './gridApi';
 import {
   BASE_CELL_SIZE_FEET,
   DEFAULT_PIXELS_PER_CELL,
@@ -60,6 +65,13 @@ function messageOf(error: unknown): string {
  *    calculada aqui — o grid nunca vira a fonte da regra;
  *  • medição é estado LOCAL: não persiste, não é transmitida e não entra no DTO;
  *  • PLACEMENT/PLAYER: o Mestre mantém Posicionar; o jogador só recebe Medir.
+ *
+ * FASE 6.6L.3.2 — VISIBILIDADE ESPACIAL.
+ *
+ * O grid NÃO decide quem aparece: ele desenha o que o servidor projetou. NPC
+ * público chega com `spatial` completo; `master-only` chega com `spatial: null`
+ * e simplesmente não existe token (nem `?`, nem ghost). O único controle novo é
+ * o do Mestre, que alterna `spatialVisibility` da unidade selecionada.
  */
 export function CombatGrid({
   combat,
@@ -90,6 +102,10 @@ export function CombatGrid({
   const dimensions = scenePixels(scene, cellSizeFeet, pixelsPerCell);
   const locked = busy || sceneBusy;
 
+  const selectedUnit =
+    mode === 'placement'
+      ? (combat.combatants.find((item) => item.id === selectedId) ?? null)
+      : null;
   const measureSourceUnit = placed.find((item) => item.id === measureSourceId) ?? null;
   // Hover é PREVIEW; o clique FIXA o alvo. Sem hover, volta ao alvo fixado.
   const activeTargetId = mode === 'measure' ? (hoverId ?? measureTargetId) : null;
@@ -202,6 +218,32 @@ export function CombatGrid({
       setSelectedId(null);
     } catch (error) {
       // O estado confirmado continua o do servidor: nada de posição fantasma.
+      setSceneError(messageOf(error));
+      onError(messageOf(error));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  /**
+   * Alterna a PRESENÇA ESPACIAL da unidade selecionada. Só o Mestre vê o
+   * controle; o servidor recusa qualquer outro papel (403). O estado exibido é
+   * sempre o `CombatDto` devolvido pelo servidor.
+   */
+  async function toggleVisibility(combatantId: string) {
+    const unit = combat.combatants.find((item) => item.id === combatantId);
+    if (!unit) return;
+    setPendingId(combatantId);
+    setSceneError(null);
+    try {
+      onCombatChange(
+        await setSpatialVisibility(
+          combat,
+          combatantId,
+          unit.spatialVisibility === 'master-only' ? 'public' : 'master-only',
+        ),
+      );
+    } catch (error) {
       setSceneError(messageOf(error));
       onError(messageOf(error));
     } finally {
@@ -374,6 +416,27 @@ export function CombatGrid({
           </div>
         </div>
       </div>
+
+      {isMaster && mode === 'placement' && selectedUnit ? (
+        <div className="grid-visibility">
+          <span className="grid-visibility-label">
+            {selectedUnit.name} ·{' '}
+            {selectedUnit.spatialVisibility === 'master-only'
+              ? 'oculto dos jogadores'
+              : 'visível para os jogadores'}
+          </span>
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={locked || pendingId === selectedUnit.id}
+            onClick={() => void toggleVisibility(selectedUnit.id)}
+          >
+            {selectedUnit.spatialVisibility === 'master-only'
+              ? 'Revelar aos jogadores'
+              : 'Ocultar dos jogadores'}
+          </button>
+        </div>
+      ) : null}
 
       {mode === 'measure' ? (
         <GridMeasurementPanel

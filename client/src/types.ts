@@ -2076,6 +2076,15 @@ export interface CombatUsableItem {
 /** Tamanhos mecânicos do PHB 2014 (fundação espacial 6.6L.1). */
 export type SpatialSize = 'tiny' | 'small' | 'medium' | 'large' | 'huge' | 'gargantuan';
 
+/**
+ * 6.6L.3.2 — visibilidade ESPACIAL da instância do combatente.
+ *
+ * `public` = token/imagem/posição/tamanho no grid do jogador (stats continuam
+ * privados). `master-only` = presença espacial omitida do jogador. É PROJEÇÃO,
+ * não Invisible/Hide/LoS: o próprio servidor decide o DTO.
+ */
+export type SpatialVisibility = 'public' | 'master-only';
+
 /** Âncora 2D em PÉS (canto mínimo do espaço ocupado). */
 export interface SpatialPosition {
   xFeet: number;
@@ -2190,7 +2199,12 @@ export interface CombatantDto {
   armorNonProficiency: ArmorProficiencyState | null;
   /** Verdadeiro quando a vida/CA existem, mas ficam ocultas para quem vê. */
   statsHidden: boolean;
-  /** Posição/tamanho/imagem do token; `null` quando privado do Mestre. */
+  /** Visibilidade ESPACIAL (6.6L.3.2) — só o Mestre altera. */
+  spatialVisibility: SpatialVisibility;
+  /**
+   * Posição/tamanho/imagem do token. `null` quando a presença espacial é
+   * `master-only` (o DTO do jogador não traz `?` nem token fantasma).
+   */
   spatial: CombatantSpatial | null;
   missing: boolean;
   rolled: boolean;

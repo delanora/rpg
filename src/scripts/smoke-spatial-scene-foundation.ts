@@ -247,6 +247,9 @@ export async function smokeSpatialScene(baseUrl: string, check: Check): Promise<
               kind: 'CREATURE',
               creatureId: ogre.id,
               name: ogre.name,
+              // 6.6L.3.2: a criatura DESTE cenário é oculta de propósito — a
+              // projeção espacial agora é por instância, não por tipo.
+              spatialVisibility: 'master-only',
               hpCurrent: 60,
               hpMax: 60,
               armorClass: 11,
@@ -669,15 +672,15 @@ export async function smokeSpatialScene(baseUrl: string, check: Check): Promise<
         spatialOf(masterView, ogreCombatant.id).effectiveSize === 'huge',
     );
     check(
-      '88.AK.1) PLAYER NÃO recebe posição/ocupação de criatura (null no servidor)',
+      '88.AK.1) PLAYER NÃO recebe posição/ocupação de criatura MASTER-ONLY (null no servidor)',
       playerOgre.spatial === null,
     );
     check(
-      '88.AL.1) PLAYER NÃO recebe imagem de token de criatura',
+      '88.AL.1) PLAYER NÃO recebe imagem de token de criatura MASTER-ONLY',
       playerOgre.imageUrl === null && playerOgre.spatial === null,
     );
     check(
-      '88.AM.1) PLAYER NÃO recebe tamanho nem occupiedSpace de criatura',
+      '88.AM.1) PLAYER NÃO recebe tamanho nem occupiedSpace de criatura MASTER-ONLY',
       playerOgre.spatial === null && playerOgre.statsHidden === true,
     );
     check(

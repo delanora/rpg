@@ -26,6 +26,7 @@ import {
   type SpatialDistanceReason,
 } from './spatial-distance.js';
 import { evaluateRange, type RangeEvaluation } from './spatial-range.js';
+import { isSpatiallyVisible } from './spatial-visibility.js';
 
 /**
  * FASE 6.6L.2 — DISTANCE + RANGE PROVIDER (SERVER-AUTHORITATIVE).
@@ -211,14 +212,17 @@ export function gridAreaSpatialProvider(index: CombatSpatialIndex | null): AreaS
 }
 
 /**
- * Quem pode ler a distância de um combatente?
+ * Quem pode ler a distância de um combatente? (6.6L.3.2)
  *
- * Criatura/NPC tem posição PRIVADA do Mestre (6.6L.1): para o jogador a resposta
- * é a mesma de "não colocado" — nunca um oráculo de existência/posição.
+ * A política é `spatialVisibility`, NÃO o tipo da entidade: um NPC/criatura
+ * público participa da consulta normalmente, e um combatente `master-only`
+ * (personagem inclusive) responde como "não visível" — nunca um oráculo de
+ * existência/posição. Nada de distância, faixa ou identidade oculta.
  */
 function canReadDistance(actor: CombatActor, combat: CombatSourced, combatantId: string): boolean {
   if (actor.role === 'MASTER') return true;
-  return combat.combatants.find((item) => item.id === combatantId)?.kind === 'CHARACTER';
+  const combatant = combat.combatants.find((item) => item.id === combatantId);
+  return combatant ? isSpatiallyVisible(combatant.spatialVisibility) : false;
 }
 
 export interface CombatDistanceReading {
