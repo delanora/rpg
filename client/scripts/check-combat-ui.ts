@@ -27,6 +27,18 @@ import { ReactionPanel } from '../src/combat/components/ReactionPanel';
 import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant } from '../src/combat/turnControl';
+import { CombatGrid } from '../src/combat/grid/CombatGrid';
+import { GridToken, type GridUnit } from '../src/combat/grid/GridToken';
+import { UnplacedCombatantsTray } from '../src/combat/grid/UnplacedCombatantsTray';
+import {
+  SIZE_FOOTPRINT_FEET,
+  feetToPx,
+  pixelToPlacementFeet,
+  scenePixels,
+  splitByPlacement,
+  tokenArtSize,
+} from '../src/combat/grid/gridMath';
+import type { CombatantSpatial, SpatialScene, SpatialSize } from '../src/types';
 import {
   COMBAT_STATE_VISUALS,
   CONDITION_VISUALS,
@@ -2620,6 +2632,242 @@ check(
   smokeRunner.includes('smokeSpatialScene(BASE_URL, check)') &&
     smokeSpatial.includes('SPATIAL_SCENE_RESIZE_CONFLICT') &&
     smokeSpatial.includes('SPATIAL_POSITION_OUT_OF_BOUNDS')
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.1 — Grid visual (rendering puro a partir do DTO espacial)              */
+/* -------------------------------------------------------------------------- */
+const gridSource = (file: string): string => source(`src/combat/grid/${file}`);
+const gridMathSource = gridSource('gridMath.ts');
+const gridTokenSource = gridSource('GridToken.tsx');
+const combatGridSource = gridSource('CombatGrid.tsx');
+const gridApiSource = gridSource('gridApi.ts');
+const gridCssSource = gridSource('grid.css');
+const gridSceneSource = gridSource('SpatialSceneControls.tsx');
+const gridTraySource = gridSource('UnplacedCombatantsTray.tsx');
+const combatTrackerSource = source('src/combat/CombatTracker.tsx');
+
+const sceneOf = (mode: 'assisted' | 'grid-2d'): SpatialScene => ({
+  mode,
+  widthFeet: 100,
+  heightFeet: 100,
+  cellSizeFeet: 5,
+});
+
+const unitOf = (
+  id: string,
+  size: SpatialSize,
+  options: { position?: { xFeet: number; yFeet: number } | null; image?: string | null } = {},
+): GridUnit => {
+  const position = options.position === undefined ? { xFeet: 0, yFeet: 0 } : options.position;
+  const footprint = SIZE_FOOTPRINT_FEET[size];
+  const spatial: CombatantSpatial = {
+    tokenImageRef: options.image ?? null,
+    baseSize: size,
+    effectiveSize: size,
+    position,
+    occupiedSpace: position
+      ? {
+          minXFeet: position.xFeet,
+          minYFeet: position.yFeet,
+          maxXFeet: position.xFeet + footprint.widthFeet,
+          maxYFeet: position.yFeet + footprint.heightFeet,
+          widthFeet: footprint.widthFeet,
+          heightFeet: footprint.heightFeet,
+        }
+      : null,
+  };
+  return { id, name: id, spatial };
+};
+
+const combatOf = (units: GridUnit[], mode: 'assisted' | 'grid-2d' = 'grid-2d') => ({
+  id: 'grid-combat',
+  version: 4,
+  status: 'ACTIVE' as const,
+  currentCombatantId: units[0]?.id ?? null,
+  spatial: sceneOf(mode),
+  combatants: units,
+});
+
+const tokenHtml = (unit: GridUnit): string =>
+  renderToStaticMarkup(
+    createElement(GridToken, {
+      combatant: unit,
+      cellSizeFeet: 5,
+      pixelsPerCell: 44,
+      interactive: false,
+    }),
+  );
+
+check(
+  'CB172) pés → pixels exatos e cena 100×100 em 20×20 células (somente rendering)',
+  feetToPx(10, 5, 44) === 88 &&
+    scenePixels(sceneOf('grid-2d'), 5, 44).width === 880 &&
+    scenePixels(sceneOf('grid-2d'), 5, 44).height === 880
+);
+check(
+  'CB173) footprint VISUAL por tamanho: Tiny 0,5 · Small/Medium 1 · Large 2 · Huge 3 · Gargantuan 4 células',
+  tokenHtml(unitOf('tiny', 'tiny')).includes('width:22px') &&
+    tokenHtml(unitOf('small', 'small')).includes('width:44px') &&
+    tokenHtml(unitOf('medium', 'medium')).includes('width:44px') &&
+    tokenHtml(unitOf('large', 'large')).includes('width:88px') &&
+    tokenHtml(unitOf('huge', 'huge')).includes('width:132px') &&
+    tokenHtml(unitOf('garg', 'gargantuan')).includes('width:176px')
+);
+check(
+  'CB174) Tiny NÃO é arredondado para uma célula (data-size + 0,5 célula)',
+  tokenHtml(unitOf('tiny', 'tiny')).includes('data-size="tiny"') &&
+    !tokenHtml(unitOf('tiny', 'tiny')).includes('width:44px') &&
+    tokenArtSize({ width: 22, height: 22 }) <= 22
+);
+check(
+  'CB175) imagem usa tokenImageRef; sem imagem → fallback `?` centralizado e escalável',
+  tokenHtml(unitOf('hero', 'medium', { image: '/uploads/characters/hero.png' })).includes(
+    '<img'
+  ) &&
+    !tokenHtml(unitOf('hero', 'medium', { image: '/uploads/characters/hero.png' })).includes('?') &&
+    tokenHtml(unitOf('vazio', 'large')).includes('?') &&
+    tokenHtml(unitOf('vazio', 'large')).includes('grid-token-fallback') &&
+    gridCssSource.includes('--grid-token-art') &&
+    gridCssSource.includes('place-items: center') &&
+    !gridTokenSource.includes('<svg') &&
+    !gridTokenSource.includes('.png')
+);
+check(
+  'CB176) position null não vira 0,0: token não rende e a unidade vai para a bandeja',
+  tokenHtml(unitOf('fora', 'medium', { position: null })) === '' &&
+    splitByPlacement([
+      unitOf('dentro', 'medium'),
+      unitOf('fora', 'large', { position: null }),
+    ]).unplaced.map((item) => item.id).join(',') === 'fora'
+);
+check(
+  'CB177) combatente privado (spatial null) NÃO é renderizado pelo grid',
+  !combatGridSource.includes('imageUrl') &&
+    !renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([unitOf('hero', 'medium', { image: '/a.png' })]),
+        isMaster: false,
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      })
+    ).includes('NPC escondido') &&
+    splitByPlacement([
+      unitOf('hero', 'medium'),
+      { id: 'oculto', name: 'NPC escondido', spatial: null },
+    ]).placed.length === 1
+);
+check(
+  'CB178) MASTER vê a bandeja e as instruções de placement; PLAYER é somente leitura',
+  renderToStaticMarkup(
+    createElement(CombatGrid, {
+      combat: combatOf([
+        unitOf('hero', 'medium'),
+        unitOf('fora', 'large', { position: null }),
+      ]),
+      isMaster: true,
+      onCombatChange: () => undefined,
+      onError: () => undefined,
+    })
+  ).includes('Selecione uma unidade') &&
+    renderToStaticMarkup(
+      createElement(UnplacedCombatantsTray, {
+        combatants: [unitOf('fora', 'large', { position: null })],
+        interactive: true,
+      })
+    ).includes('draggable="true"') &&
+    !renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([
+          unitOf('hero', 'medium'),
+          unitOf('fora', 'large', { position: null }),
+        ]),
+        isMaster: false,
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      })
+    ).includes('Fora do mapa')
+);
+check(
+  'CB179) assisted NÃO finge geometria: Master recebe “Ativar grid”, Player vê estado neutro',
+  renderToStaticMarkup(
+    createElement(CombatGrid, {
+      combat: combatOf([], 'assisted'),
+      isMaster: true,
+      onCombatChange: () => undefined,
+      onError: () => undefined,
+    })
+  ).includes('Ativar grid') &&
+    !renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([], 'assisted'),
+        isMaster: true,
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      })
+    ).includes('grid-plane') &&
+    renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([], 'assisted'),
+        isMaster: false,
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      })
+    ).includes('Cena assistida')
+);
+check(
+  'CB180) grid consome o DTO espacial real e NÃO cria segunda fonte de posição',
+  combatGridSource.includes('combat.spatial') &&
+    combatGridSource.includes('splitByPlacement(combat.combatants)') &&
+    gridTokenSource.includes('combatant.spatial.tokenImageRef') &&
+    !/localGridPositions|tokenPositionStore|useCombatGridStore/.test(
+      `${combatGridSource}${gridTokenSource}${gridMathSource}`
+    )
+);
+check(
+  'CB181) placement envia só position/expectedVersion/operationId (sem size/occupiedSpace)',
+  // Corpo SEM comentários: as chaves proibidas não podem existir no payload.
+  (() => {
+    const body = gridApiSource.replace(/\/\*[\s\S]*?\*\//g, '');
+    return (
+      body.includes('position, expectedVersion') &&
+      body.includes('createOperationId()') &&
+      !body.includes('occupiedSpace') &&
+      !body.includes('size')
+    );
+  })()
+);
+check(
+  'CB182) ainda NÃO há distância/alcance/movimento/Cover/LoS/AoE no grid',
+  !/distance|rangeFeet|movementCost|lineOfSight|cover|areaOfEffect/i.test(
+    `${combatGridSource}${gridMathSource}${gridTokenSource}${gridTraySource}${gridSceneSource}`
+  )
+);
+check(
+  'CB183) snap de placement existe e preserva passo de 2,5 pés para Tiny',
+  pixelToPlacementFeet(44, 5, 44, 'medium') === 5 &&
+    pixelToPlacementFeet(22, 5, 44, 'tiny') === 2.5
+);
+check(
+  'CB184) CSS do grid é ISOLADO (styles.css WIP não recebe o grid)',
+  gridCssSource.includes('.grid-plane') &&
+    !source('src/styles.css').includes('.grid-plane') &&
+    combatTrackerSource.includes("import './grid/grid.css'") &&
+    combatTrackerSource.includes('<CombatGrid')
+);
+check(
+  'CB185) espelho de footprints do client é idêntico ao domínio do servidor',
+  ['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan'].every((size) => {
+    const expected = (
+      gridMathSource.match(new RegExp(`${size}: \\{ widthFeet: ([0-9.]+)`)) ?? []
+    )[1];
+    const server = (
+      source('../src/modules/combat/spatial/spatial-size.ts').match(
+        new RegExp(`${size}: \\{ widthFeet: ([0-9.]+)`)
+      ) ?? []
+    )[1];
+    return expected !== undefined && expected === server;
+  })
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
