@@ -725,6 +725,81 @@
 }
 
 /* -------------------------------------------------------------------------- */
+/* MEASURE TO MOVE — ícone de deslocamento + keycap Space na label da régua  */
+/* -------------------------------------------------------------------------- */
+
+.grid-measure-move {
+  position: absolute;
+  transform: translate(-50%, 14px);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.12rem 0.42rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  color: var(--gold-bright, #f6d977);
+  background: rgba(8, 6, 4, 0.92);
+  border: 1px solid rgba(224, 184, 63, 0.4);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.grid-measure-move.is-ready {
+  border-color: rgba(246, 217, 119, 0.75);
+  box-shadow: 0 0 0 1px rgba(246, 217, 119, 0.18) inset;
+}
+
+.grid-measure-move.is-invalid {
+  color: var(--ink-soft, #c3ab86);
+  border-color: rgba(224, 184, 63, 0.24);
+}
+
+.grid-measure-move.is-loading,
+.grid-measure-move.is-executing {
+  color: var(--ink-soft, #c3ab86);
+}
+
+.grid-measure-move-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.grid-measure-move-icon {
+  color: var(--gold-bright, #f6d977);
+}
+
+.grid-measure-move-busy,
+.grid-measure-move-message {
+  font-style: italic;
+}
+
+.grid-measure-move-cost {
+  color: var(--ink-faint, #8d7859);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-keycap {
+  padding: 0.02rem 0.32rem;
+  font-family: inherit;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: var(--ink, #ecdcbd);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(224, 184, 63, 0.45);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+/* A peça desliza sobre a mesa: nada de transição CSS competindo com o rAF. */
+.grid-token.is-animating {
+  transition: none;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------------------- */
 /* TRAY, VAZIOS E AFINS                                                       */
 /* -------------------------------------------------------------------------- */
 

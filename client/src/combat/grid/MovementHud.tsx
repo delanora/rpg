@@ -42,6 +42,22 @@ const BLOCKER_LABELS: Record<string, string> = {
 };
 
 /**
+ * Motivo CURTO e sanitizado para um trajeto que o servidor não aceita.
+ *
+ * A mesma tradução serve ao HUD do gesto direto e à affordance do
+ * Measure-to-Move: o jogador nunca vê identidade de quem bloqueia.
+ */
+export function movementIssueLabel(movement: MovementPathReading): string {
+  if (!movement.legal) {
+    return movement.blocker
+      ? (BLOCKER_LABELS[movement.blocker.code] ?? 'O trajeto não é válido.')
+      : 'O trajeto não é válido.';
+  }
+  if (!movement.affordable) return 'Movimento insuficiente.';
+  return '';
+}
+
+/**
  * FASE 6.6M.3.1 — HUD de movimento (substitui o painel grande da 6.6M.3).
  *
  * Flutua sobre o palco (`position: absolute`), não empurra layout e NÃO duplica
@@ -84,9 +100,7 @@ export function MovementHud({
           : !movement || pathLength === 0
             ? 'Arraste o token do turno para montar o trajeto.'
             : !legal
-              ? movement.blocker
-                ? (BLOCKER_LABELS[movement.blocker.code] ?? 'O trajeto não é válido.')
-                : 'O trajeto não é válido.'
+              ? movementIssueLabel(movement)
               : !affordable
                 ? 'Movimento insuficiente para este trajeto.'
                 : 'Solte para mover.';

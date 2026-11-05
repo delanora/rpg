@@ -15,9 +15,14 @@ import { SpatialSceneControls } from './SpatialSceneControls';
 import { GridMovementOverlay } from './GridMovementOverlay';
 import { GridMovementTrace } from './GridMovementTrace';
 import { GridRuler } from './GridRuler';
-import { MovementHud, type MovementPreviewState } from './MovementHud';
+import { MovementHud, movementIssueLabel, type MovementPreviewState } from './MovementHud';
 import { commitMovement, previewMovement } from './movementApi';
-import { anchorStepFeet, appendAnchor, pointerAnchor } from './movementPath';
+import {
+  anchorStepFeet,
+  appendAnchor,
+  contiguousAnchors,
+  pointerAnchor,
+} from './movementPath';
 import {
   measureSpatial,
   setSpatialPosition,
@@ -43,6 +48,7 @@ import {
   BASE_CELL_SIZE_FEET,
   DEFAULT_PIXELS_PER_CELL,
   SIZE_FOOTPRINT_FEET,
+  feetToPx,
   occupiedSpacePixels,
   scenePixels,
   splitByPlacement,
@@ -117,6 +123,25 @@ interface RulerState {
   locked: boolean;
 }
 
+/**
+ * 6.6M.3.1.2 — MEASURE TO MOVE: régua FIXA que pode virar Movement.
+ *
+ * Não é um segundo Movement Engine: o intent é só um PRODUTOR de
+ * `combatantId + path` (o resto é o mesmo preview/commit do gesto direto). O
+ * `sourcePosition` é o snapshot da origem no momento em que a régua foi fixada
+ * — se o combatente andar depois, o trajeto é descartado em vez de reinterpretado.
+ */
+type MeasureMoveState = 'loading' | 'ready' | 'invalid' | 'executing';
+
+interface MeasureMoveIntent {
+  combatantId: string;
+  sourcePosition: SpatialPosition;
+  path: SpatialPosition[];
+  preview: MovementPreviewResponse | null;
+  state: MeasureMoveState;
+  message: string | null;
+}
+
 interface PanGesture {
   pointerId: number;
   startX: number;
@@ -135,6 +160,10 @@ const AUTO_PAN_EDGE_PX = 52;
 const AUTO_PAN_MAX_SPEED = 14;
 /** Passo do zoom dos botões (mesma câmera do Ctrl+wheel). */
 const ZOOM_STEP = 1.18;
+/** Animação da peça (apresentação): ~90 ms por anchor, com limites. */
+const ANIMATION_STEP_MS = 90;
+const ANIMATION_MIN_MS = 120;
+const ANIMATION_MAX_MS = 900;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : 'Falha ao posicionar a unidade.';
@@ -204,6 +233,31 @@ export function CombatGrid({
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
   const [movementBusy, setMovementBusy] = useState(false);
+  // --- 6.6M.3.1.2: Measure to Move (estado APENAS local) -------------------
+  const [measureMove, setMeasureMove] = useState<MeasureMoveIntent | null>(null);
+  const measureMoveRef = useRef<MeasureMoveIntent | null>(null);
+  const measureSequence = useRef(0);
+  /**
+   * Snapshot da posição AUTORITATIVA no instante em que a régua foi fixada.
+   * Se o combatente andar depois, o trajeto medido é desativado — nunca
+   * reinterpretado a partir do lugar novo.
+   */
+  const measureSnapshot = useRef<{ signature: string; position: SpatialPosition } | null>(null);
+  /** Execução em voo: novos Space são ignorados (nunca dois commits). */
+  const executing = useRef(false);
+  /** Space pode virar Movement; vira Pan se o ponteiro arrastar antes do keyup. */
+  const spaceCandidate = useRef(false);
+  const spacePanUsed = useRef(false);
+  /** Posição ANIMADA (apresentação): o DTO continua sendo a verdade. */
+  const [visualRect, setVisualRect] = useState<{
+    combatantId: string;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const animationFrame = useRef(0);
+  const animationVersion = useRef<number | null>(null);
   const previewSequence = useRef(0);
   const operationRef = useRef<string | null>(null);
   const dragMoved = useRef(false);
@@ -246,6 +300,34 @@ export function CombatGrid({
 
   const selectedUnit = mode === 'placement' ? (combat.combatants.find((item) => item.id === selectedId) ?? null) : null;
   const draftLast = draft && draft.path.length > 0 ? draft.path[draft.path.length - 1] : null;
+
+  /* ---------------------------------------------------------------------- */
+  /* MEASURE TO MOVE — derivação de ELEGIBILIDADE                            */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Régua FIXA que nasceu num combatente: essa é a única origem que pode virar
+   * Movement. O destino precisa ser um PONTO canônico — terminar sobre outro
+   * token não tem posição final inequívoca (nada de sobrepor footprints).
+   */
+  const measureSourceId =
+    ruler && ruler.locked && ruler.from.kind === 'combatant' ? ruler.from.combatantId : null;
+  const measureTarget =
+    ruler && ruler.locked && ruler.to?.kind === 'point' ? ruler.to.position : null;
+  const measureSourceUnit = measureSourceId
+    ? (placed.find((item) => item.id === measureSourceId) ?? null)
+    : null;
+  /**
+   * A AUTORIDADE é a MESMA do gesto direto (`movement.combatantId`): turno,
+   * controle, morte, deslocamento efetivo e saldo já foram derivados em
+   * `turnControl`. Aqui só se exige que a régua tenha nascido nesse combatente.
+   */
+  const measureMoveEligible = Boolean(
+    measureSourceId &&
+      measureTarget &&
+      measureSourceUnit?.spatial?.position &&
+      movableUnitId === measureSourceId,
+  );
 
   cameraRef.current = camera;
   draftRef.current = draft;
@@ -746,6 +828,128 @@ export function CombatGrid({
   }, [combat.version, combat.status, combat.currentCombatantId, combat.combatants, movement, draft]);
 
   /**
+   * MEASURE TO MOVE — preview SÓ depois de fixar a régua.
+   *
+   * Enquanto o cursor ainda está medindo (régua aberta) o cliente usa apenas
+   * `spatial/measure`; o Movement Preview começa no segundo clique, quando o
+   * trajeto já é uma intenção. `combat.version` revalida depois de Dash, reação
+   * ou ajuste do Mestre (a régua em si não é invalidada por versão).
+   */
+  const measureMoveSignature = measureMoveEligible ? `${rulerFromKey}|${rulerToKey}` : null;
+  useEffect(() => {
+    const signature = measureMoveSignature;
+    const unit = measureMoveEligible ? measureSourceUnit : null;
+    const target = measureMoveEligible ? measureTarget : null;
+    if (!signature || !unit?.spatial?.position || !target) {
+      measureSequence.current += 1;
+      measureSnapshot.current = null;
+      measureMoveRef.current = null;
+      setMeasureMove(null);
+      return;
+    }
+    const current = unit.spatial.position;
+    const snapshot = measureSnapshot.current;
+    if (!snapshot || snapshot.signature !== signature) {
+      measureSnapshot.current = { signature, position: current };
+    } else if (
+      snapshot.position.xFeet !== current.xFeet ||
+      snapshot.position.yFeet !== current.yFeet
+    ) {
+      // A origem saiu do lugar: a régua continua medindo, mas não oferece
+      // Movement para um trajeto que começava em outro ponto.
+      const moved: MeasureMoveIntent = {
+        combatantId: unit.id,
+        sourcePosition: snapshot.position,
+        path: [],
+        preview: null,
+        state: 'invalid',
+        message: 'A origem do movimento mudou: meça novamente.',
+      };
+      measureSequence.current += 1;
+      measureMoveRef.current = moved;
+      setMeasureMove(moved);
+      return;
+    }
+    // O path é INTERPOLADO pela mesma função do gesto direto, a partir da
+    // posição autoritativa (nunca `path[0] = origem`).
+    const startPosition = measureSnapshot.current?.position ?? current;
+    const path = contiguousAnchors(
+      startPosition,
+      target,
+      anchorStepFeet(unit.spatial.effectiveSize),
+    );
+    const last = path.length > 0 ? path[path.length - 1] : startPosition;
+    const aligned =
+      path.length > 0 && last.xFeet === target.xFeet && last.yFeet === target.yFeet;
+    if (!aligned) {
+      const intent: MeasureMoveIntent = {
+        combatantId: unit.id,
+        sourcePosition: startPosition,
+        path,
+        preview: null,
+        state: 'invalid',
+        message:
+          path.length === 0
+            ? 'O destino é a posição atual.'
+            : 'O destino não está alinhado ao grid.',
+      };
+      measureSequence.current += 1;
+      measureMoveRef.current = intent;
+      setMeasureMove(intent);
+      return;
+    }
+    measureSequence.current += 1;
+    const sequence = measureSequence.current;
+    const pending: MeasureMoveIntent = {
+      combatantId: unit.id,
+      sourcePosition: startPosition,
+      path,
+      preview: null,
+      state: 'loading',
+      message: null,
+    };
+    measureMoveRef.current = pending;
+    setMeasureMove(pending);
+    previewMovement(combat.id, { combatantId: unit.id, path })
+      .then((response) => {
+        // Resposta de uma régua anterior NUNCA atualiza a atual.
+        if (measureSequence.current !== sequence) return;
+        const ready = response.movement.legal && response.movement.affordable;
+        const next: MeasureMoveIntent = {
+          ...pending,
+          preview: response,
+          state: ready ? 'ready' : 'invalid',
+          message: ready ? null : movementIssueLabel(response.movement),
+        };
+        measureMoveRef.current = next;
+        setMeasureMove(next);
+      })
+      .catch((error: unknown) => {
+        if (measureSequence.current !== sequence) return;
+        const next: MeasureMoveIntent = {
+          ...pending,
+          state: 'invalid',
+          message: error instanceof Error ? error.message : 'Não foi possível avaliar o trajeto.',
+        };
+        measureMoveRef.current = next;
+        setMeasureMove(next);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combat.id, combat.version, measureMoveEligible, measureMoveSignature]);
+
+  /** REALTIME durante a animação: o estado autoritativo novo sempre vence. */
+  useEffect(() => {
+    setVisualRect((current) => {
+      if (!current) return current;
+      if (animationVersion.current === null || animationVersion.current === combat.version) {
+        return current;
+      }
+      window.cancelAnimationFrame(animationFrame.current);
+      return null;
+    });
+  }, [combat.version]);
+
+  /**
    * GESTO DO TOKEN: listeners no WINDOW enquanto existe gesto armado ou draft.
    *
    * Não dependemos do bubbling do plano (nem de o token continuar montado): o
@@ -867,6 +1071,173 @@ export function CombatGrid({
     }
   }
 
+  /**
+   * MEDIR + SPACE = PERCORRER o trajeto medido (nunca teleporte).
+   *
+   * O servidor revalida o caminho AGORA (o preview exibido não é autoridade) e
+   * só então há commit, com `expectedVersion` e um `operationId` por tentativa.
+   * Em falha a RÉGUA PERMANECE — a decisão continua analisável, diferente do
+   * gesto direto, em que o draft termina sozinho.
+   */
+  async function executeMeasureMove(): Promise<void> {
+    if (executing.current || movementBusy) return;
+    const intent = measureMoveRef.current;
+    if (!intent || intent.state !== 'ready' || intent.path.length === 0) return;
+    const unit = placed.find((item) => item.id === intent.combatantId);
+    const position = unit?.spatial?.position ?? null;
+    const sourceMoved =
+      !position ||
+      position.xFeet !== intent.sourcePosition.xFeet ||
+      position.yFeet !== intent.sourcePosition.yFeet ||
+      (movement ? movement.combatantId !== intent.combatantId : false);
+    if (sourceMoved) {
+      // Origem diferente do snapshot fixado: não reinterpretar o trajeto antigo.
+      const stale: MeasureMoveIntent = {
+        ...intent,
+        state: 'invalid',
+        message: 'A origem do movimento mudou: meça novamente.',
+      };
+      measureMoveRef.current = stale;
+      setMeasureMove(stale);
+      return;
+    }
+    executing.current = true;
+    setMovementBusy(true);
+    setSceneError(null);
+    const running: MeasureMoveIntent = { ...intent, state: 'executing', message: null };
+    measureMoveRef.current = running;
+    setMeasureMove(running);
+    try {
+      const fresh = await previewMovement(combat.id, {
+        combatantId: intent.combatantId,
+        path: intent.path,
+      });
+      if (!fresh.movement.legal || !fresh.movement.affordable) {
+        const blocked: MeasureMoveIntent = {
+          ...running,
+          preview: fresh,
+          state: 'invalid',
+          message: movementIssueLabel(fresh.movement),
+        };
+        measureMoveRef.current = blocked;
+        setMeasureMove(blocked);
+        return;
+      }
+      operationRef.current ??= createOperationId();
+      const result = await commitMovement(combat, {
+        combatantId: intent.combatantId,
+        path: intent.path,
+        operationId: operationRef.current,
+      });
+      operationRef.current = null;
+      onCombatChange(result.combat);
+      setDraftNotice(
+        result.pending
+          ? result.pending.awaitingMaster
+            ? 'Aguardando resolução do Mestre.'
+            : 'Movimento pausado por reação.'
+          : null,
+      );
+      // Só DEPOIS da resposta: a peça desliza pelos trechos que o servidor
+      // confirmou (com Reação pendente, para no checkpoint).
+      animationVersion.current = result.combat.version;
+      startMovementAnimation(intent.combatantId, intent.sourcePosition, intent.path, result.combat);
+      clearRuler();
+    } catch (error) {
+      setSceneError(messageOf(error));
+      onError(messageOf(error));
+      const failed: MeasureMoveIntent = {
+        ...running,
+        state: 'invalid',
+        message: messageOf(error),
+      };
+      measureMoveRef.current = failed;
+      setMeasureMove(failed);
+    } finally {
+      executing.current = false;
+      setMovementBusy(false);
+    }
+  }
+
+  /**
+   * ANIMAÇÃO = APRESENTAÇÃO PURA.
+   *
+   * A posição autoritativa já chegou no `CombatDto`: aqui só se interpola a
+   * CAIXA desenhada ao longo dos anchors confirmados — a sensação de peça
+   * deslizando sobre a mesa. `prefers-reduced-motion` desliga tudo; o passo
+   * mecânico continua discreto, e ao final a posição animada some (o token
+   * volta a renderizar o estado do servidor).
+   */
+  function startMovementAnimation(
+    combatantId: string,
+    startPosition: SpatialPosition,
+    path: readonly SpatialPosition[],
+    nextCombat: CombatDto,
+  ): void {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const unit = nextCombat.combatants.find((item) => item.id === combatantId);
+    const size = unit?.spatial?.effectiveSize;
+    const end = unit?.spatial?.position ?? null;
+    if (!size || !end) return;
+    const anchors: SpatialPosition[] = [startPosition, ...path];
+    // Para no anchor que o servidor confirma: com Reação pendente é o
+    // CHECKPOINT, nunca o destino pedido.
+    const stop = anchors.findIndex(
+      (item) => item.xFeet === end.xFeet && item.yFeet === end.yFeet,
+    );
+    const traversed = stop >= 0 ? anchors.slice(0, stop + 1) : [...anchors, end];
+    if (traversed.length < 2) return;
+    const footprint = SIZE_FOOTPRINT_FEET[size];
+    const points = traversed.map((anchor) => ({
+      left: feetToPx(anchor.xFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL),
+      top: feetToPx(anchor.yFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL),
+    }));
+    const lengths = points.slice(1).map((point, index) => {
+      const previous = points[index];
+      return Math.abs(point.left - previous.left) + Math.abs(point.top - previous.top);
+    });
+    const total = lengths.reduce((sum, value) => sum + value, 0);
+    if (total <= 0) return;
+    const steps = points.length - 1;
+    const duration = Math.min(
+      ANIMATION_MAX_MS,
+      Math.max(ANIMATION_MIN_MS, steps * ANIMATION_STEP_MS),
+    );
+    const width = feetToPx(footprint.widthFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL);
+    const height = feetToPx(footprint.heightFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL);
+    window.cancelAnimationFrame(animationFrame.current);
+    // A ancora na ORIGEM já entra no mesmo lote do `CombatDto` novo: sem isso o
+    // token apareceria no destino por um frame antes de voltar para deslizar.
+    setVisualRect({ combatantId, left: points[0].left, top: points[0].top, width, height });
+    const startedAt = window.performance.now();
+    function tick(now: number): void {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      let remaining = progress * total;
+      let index = 0;
+      while (index < lengths.length - 1 && remaining > lengths[index]) {
+        remaining -= lengths[index];
+        index += 1;
+      }
+      const ratio = lengths[index] === 0 ? 0 : Math.min(1, remaining / lengths[index]);
+      const from = points[index];
+      const to = points[index + 1];
+      setVisualRect({
+        combatantId,
+        left: from.left + (to.left - from.left) * ratio,
+        top: from.top + (to.top - from.top) * ratio,
+        width,
+        height,
+      });
+      if (progress < 1) {
+        animationFrame.current = window.requestAnimationFrame(tick);
+        return;
+      }
+      setVisualRect(null);
+    }
+    animationFrame.current = window.requestAnimationFrame(tick);
+  }
+
   /* ---------------------------------------------------------------------- */
   /* INTERAÇÕES DO PALCO                                                     */
   /* ---------------------------------------------------------------------- */
@@ -879,6 +1250,8 @@ export function CombatGrid({
     // arrastam a câmera (mesmo começando sobre um token).
     if (overToken && !spaceDown.current && event.button !== 1) return;
     if (event.button !== 0 && event.button !== 1) return;
+    // Space sendo usado para PAN não pode executar Movement no keyup.
+    if (spaceDown.current) spacePanUsed.current = true;
     panGesture.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -1016,6 +1389,15 @@ export function CombatGrid({
         spaceDown.current = true;
         setSpacePan(true);
         event.preventDefault();
+        // Space só vira Movement se houver régua fixa EXECUTÁVEL; o commit
+        // espera o keyup, para Space+drag continuar sendo PAN.
+        if (!event.repeat) {
+          const intent = measureMoveRef.current;
+          spaceCandidate.current = Boolean(
+            intent && intent.state === 'ready' && !executing.current,
+          );
+          spacePanUsed.current = false;
+        }
         return;
       }
       if ((event.key === 'f' || event.key === 'F') && !event.repeat) {
@@ -1028,6 +1410,11 @@ export function CombatGrid({
       if (event.key === ' ' || event.code === 'Space') {
         spaceDown.current = false;
         setSpacePan(false);
+        const candidate = spaceCandidate.current;
+        const panned = spacePanUsed.current;
+        spaceCandidate.current = false;
+        spacePanUsed.current = false;
+        if (candidate && !panned) void executeMeasureMove();
         return;
       }
       if (event.key === 'f' || event.key === 'F') {
@@ -1086,7 +1473,11 @@ export function CombatGrid({
 
   const hint = rulerActive
     ? ruler?.locked
-      ? 'Régua fixada. Clique para medir de novo; botão direito ou Esc limpa.'
+      ? measureMove?.state === 'ready'
+        ? 'Espaço percorre o trajeto medido · clique mede de novo · Esc limpa.'
+        : measureMove?.state === 'executing'
+          ? 'Percorrendo o trajeto medido…'
+          : 'Régua fixada. Clique para medir de novo; botão direito ou Esc limpa.'
       : ruler
         ? 'Mova o cursor e clique no destino para fixar a régua.'
         : quickRuler
@@ -1333,6 +1724,7 @@ export function CombatGrid({
                     (movementBusy && draft?.combatantId === combatant.id)
                   }
                   measureRole={rulerActive ? measureRoleOf(combatant.id) : null}
+                  visualRect={visualRect?.combatantId === combatant.id ? visualRect : null}
                   interactive={tokenInteractive(combatant)}
                   movable={!locked && !rulerActive && mode === 'none' && movableUnitId === combatant.id}
                   rulerActive={rulerActive}
@@ -1394,6 +1786,15 @@ export function CombatGrid({
               distance={distance}
               state={rulerState}
               locked={ruler?.locked ?? false}
+              move={
+                measureMove
+                  ? {
+                      state: measureMove.state,
+                      message: measureMove.message,
+                      costFeet: measureMove.preview?.movement.totalCostFeet ?? null,
+                    }
+                  : null
+              }
             />
           ) : null}
 
