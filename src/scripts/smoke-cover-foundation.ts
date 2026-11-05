@@ -11,7 +11,18 @@ import {
   knownCover,
   type CoverEvaluation,
 } from '../modules/combat/cover.js';
-import { assistedCoverProvider, coverFor } from '../modules/combat/cover.service.js';
+import {
+  assistedCoverProvider,
+  coverFor,
+  type CoverSpatialProvider,
+} from '../modules/combat/cover.service.js';
+import { loadEntity } from '../modules/mechanical/mechanical.service.js';
+import { onTurnStart } from '../modules/shared/action-economy.js';
+import { resolveAreaTargets } from '../modules/spells/execution/area-targeting.service.js';
+import { areaPlacementSchema } from '../modules/spells/execution/area-targeting.js';
+import type { AreaSpatialProvider } from '../modules/spells/execution/area-spatial.js';
+import { SYNTHETIC_AREA_DEFINITION } from '../modules/spells/execution/area-synthetic-definition.js';
+import type { AreaTargetingDefinition } from '../modules/spells/execution/area-targeting.js';
 import {
   grantCastingComponents,
   resetCastingSlots,
@@ -55,6 +66,7 @@ export async function smokeCoverFoundation(baseUrl: string, check: Check): Promi
   const creatureIds: string[] = [];
   const castIds: string[] = [];
   const pendingIds: string[] = [];
+  const combatIds: string[] = [];
 
   const unknown: CoverEvaluation = {
     status: 'not-assessed',
@@ -166,6 +178,12 @@ export async function smokeCoverFoundation(baseUrl: string, check: Check): Promi
       username: master.username,
       displayName: master.displayName,
       role: master.role,
+    });
+    const casterToken = signToken({
+      sub: casterUser.id,
+      username: casterUser.username,
+      displayName: casterUser.displayName,
+      role: casterUser.role,
     });
 
     const caster = await prisma.character.create({
@@ -320,6 +338,12 @@ export async function smokeCoverFoundation(baseUrl: string, check: Check): Promi
         halfRoll.bonus - baseRoll.bonus === 2,
       JSON.stringify({ base: baseRoll, half: halfRoll }),
     );
+    const halfFrozen = await prisma.pendingEffectSave.findUnique({ where: { id: withHalf.id } });
+    check(
+      '87.8.X) FREEZE no COMMIT: o cover da pendência é autoridade daquele save, mesmo depois de resolvido',
+      (halfFrozen?.cover as { level?: string } | null)?.level === 'half',
+      JSON.stringify(halfFrozen?.cover),
+    );
     check(
       '87.8.I) DEX save com Three-Quarters Cover: +5 (mesmo bônus de CA, sem somar fontes)',
       tqRoll.status < 300 && tqRoll.bonus - baseRoll.bonus === 5,
@@ -356,6 +380,319 @@ export async function smokeCoverFoundation(baseUrl: string, check: Check): Promi
       JSON.stringify({ status: sacred.status, cover: sacredPending?.cover }),
     );
     if (sacred.data.pendingId) await cancelPending(sacred.data.pendingId);
+
+    // ===================================================================
+    // O — ATAQUE DE ARMA: adjudicação do Mestre sem geometria (6.6J.5.1)
+    // ===================================================================
+    const { inventoryListSchema } = await import('../modules/characters/characters.schema.js');
+    const { characterDerivedAttacks } = await import('../modules/characters/characters.dto.js');
+    const inventoryBefore = await prisma.character.findUniqueOrThrow({
+      where: { id: caster.id },
+      select: { inventory: true },
+    });
+    await prisma.character.update({
+      where: { id: caster.id },
+      data: {
+        // PRESERVA o inventário (a bolsa de componentes continua valendo).
+        inventory: inventoryListSchema.parse([
+          ...(Array.isArray(inventoryBefore.inventory) ? inventoryBefore.inventory : []),
+          {
+            id: 'adaga-cover',
+            name: 'Adaga Cover',
+            slot: 'hand1',
+            category: 'Arma',
+            details: {
+              weaponType: 'melee',
+              weaponCategory: 'simple',
+              damageDie: 4,
+              damageType: 'Perfurante',
+              properties: ['light', 'finesse'],
+            },
+          },
+        ]) as never,
+      },
+    });
+    const armed = await prisma.character.findUniqueOrThrow({ where: { id: caster.id } });
+    const weaponAttack = characterDerivedAttacks(armed).find(
+      (item) => item.inventoryItemId === 'adaga-cover' && !item.id.startsWith('offhand:'),
+    );
+    const dummy = await prisma.creature.create({
+      data: { name: 'Alvo Arma Cover', kind: 'NPC', speed: 9, hpMax: 100, hpCurrent: 100, armorClass: 10 },
+    });
+    creatureIds.push(dummy.id);
+    const combat = await prisma.combat.create({
+      data: {
+        // O combate precisa estar ATIVO: `runCombatOperation` exige status.
+        status: 'ACTIVE',
+        combatants: {
+          create: [
+            {
+              kind: 'CHARACTER',
+              characterId: caster.id,
+              ownerUserId: casterUser.id,
+              name: armed.name,
+              initiative: 20,
+              dexterityMod: 0,
+            },
+            {
+              kind: 'CREATURE',
+              creatureId: dummy.id,
+              name: dummy.name,
+              hpCurrent: 100,
+              hpMax: 100,
+              armorClass: 10,
+            },
+          ],
+        },
+      },
+    });
+    combatIds.push(combat.id);
+    const combatants = await prisma.combatant.findMany({ where: { combatId: combat.id } });
+    const attackerCombatant = combatants.find((item) => item.characterId === caster.id)!;
+    const targetCombatant = combatants.find((item) => item.creatureId === dummy.id)!;
+    await fetch(`${baseUrl}/api/combat/initiative/${attackerCombatant.id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${masterToken}` },
+      body: JSON.stringify({}),
+    });
+
+    async function weaponStrike(
+      body: Record<string, unknown>,
+      token = masterToken,
+      operationId = randomUUID(),
+    ) {
+      // Cada prova é uma AÇÃO nova: o cenário é o mesmo, o orçamento é limpo
+      // (sem isso o segundo ataque responderia "Nenhuma Ação disponível").
+      await prisma.combatant.update({
+        where: { id: attackerCombatant.id },
+        data: { turnEconomy: onTurnStart(30) as never },
+      });
+      const current = await prisma.combat.findUniqueOrThrow({ where: { id: combat.id } });
+      const response = await fetch(`${baseUrl}/api/combat/attack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          combatId: combat.id,
+          expectedVersion: current.version,
+          operationId,
+          attackerCombatantId: attackerCombatant.id,
+          targetCombatantId: targetCombatant.id,
+          attackId: weaponAttack!.id,
+          ...body,
+        }),
+      });
+      return {
+        status: response.status,
+        data: (await response.json().catch(() => ({}))) as {
+          error?: string;
+          result?: { targetArmorClass?: number; cover?: { level?: string; acBonus?: number; provenance?: string } };
+        },
+        operationId,
+      };
+    }
+
+    const playerCover = await weaponStrike(
+      { coverConfirmation: { targetKey: `combatant:${targetCombatant.id}`, level: 'half' } },
+      casterToken,
+    );
+    check(
+      '87.8.O) PLAYER nunca declara cobertura em ataque de arma (403 antes de qualquer custo/rolagem)',
+      playerCover.status === 403 && playerCover.data.error === 'COVER_CONFIRMATION_FORBIDDEN',
+      JSON.stringify(playerCover.data),
+    );
+
+    const mismatch = await weaponStrike({
+      coverConfirmation: { targetKey: 'combatant:outro', level: 'half' },
+    });
+    check(
+      '87.8.P) decisão de cobertura é de UM alvo: chave de outro combatente é recusada',
+      mismatch.status === 400 && mismatch.data.error === 'COVER_TARGET_MISMATCH',
+      JSON.stringify(mismatch.data),
+    );
+
+    const noneStrike = await weaponStrike({});
+    const halfStrike = await weaponStrike({
+      coverConfirmation: { targetKey: `combatant:${targetCombatant.id}`, level: 'half' },
+    });
+    check(
+      '87.8.Q) Half Cover confirmada soma +2 na CA SITUACIONAL do ataque (sem gravar na ficha)',
+      noneStrike.status === 200 &&
+        halfStrike.status === 200 &&
+        halfStrike.data.result?.cover?.level === 'half' &&
+        halfStrike.data.result?.cover?.acBonus === 2 &&
+        halfStrike.data.result?.cover?.provenance === 'master-confirmed' &&
+        halfStrike.data.result?.targetArmorClass ===
+          (noneStrike.data.result?.targetArmorClass ?? 0) + 2,
+      JSON.stringify({
+        none: { status: noneStrike.status, data: noneStrike.data },
+        half: { status: halfStrike.status, data: halfStrike.data },
+      }),
+    );
+
+    const threeStrike = await weaponStrike({
+      coverConfirmation: { targetKey: `combatant:${targetCombatant.id}`, level: 'three-quarters' },
+    });
+    check(
+      '87.8.R) Three-Quarters Cover soma +5 na mesma conta situacional',
+      threeStrike.status === 200 &&
+        threeStrike.data.result?.cover?.acBonus === 5 &&
+        threeStrike.data.result?.targetArmorClass ===
+          (noneStrike.data.result?.targetArmorClass ?? 0) + 5,
+      JSON.stringify(threeStrike.data.result),
+    );
+
+    const hpBefore = (await prisma.combatant.findUniqueOrThrow({ where: { id: targetCombatant.id } })).hpCurrent;
+    const versionBefore = (await prisma.combat.findUniqueOrThrow({ where: { id: combat.id } })).version;
+    const totalStrike = await weaponStrike({
+      coverConfirmation: { targetKey: `combatant:${targetCombatant.id}`, level: 'total' },
+    });
+    const hpAfter = (await prisma.combatant.findUniqueOrThrow({ where: { id: targetCombatant.id } })).hpCurrent;
+    const versionAfter = (await prisma.combat.findUniqueOrThrow({ where: { id: combat.id } })).version;
+    check(
+      '87.8.S) Total Cover: ataque de arma recusado ANTES de Ação/munição/d20, sem HP e sem versão',
+      totalStrike.status === 409 &&
+        totalStrike.data.error === 'TARGET_TOTAL_COVER' &&
+        hpBefore === hpAfter &&
+        versionBefore === versionAfter,
+      JSON.stringify({ status: totalStrike.status, error: totalStrike.data.error }),
+    );
+
+    const retryOperation = randomUUID();
+    const firstRetry = await weaponStrike(
+      { coverConfirmation: { targetKey: `combatant:${targetCombatant.id}`, level: 'half' } },
+      masterToken,
+      retryOperation,
+    );
+    const reused = await weaponStrike(
+      { coverConfirmation: { targetKey: `combatant:${targetCombatant.id}`, level: 'three-quarters' } },
+      masterToken,
+      retryOperation,
+    );
+    check(
+      '87.8.T) coverConfirmation entra no fingerprint: mesmo operationId com outro nível é 409',
+      firstRetry.status === 200 &&
+        reused.status === 409 &&
+        reused.data.error === 'IDEMPOTENCY_KEY_REUSED',
+      JSON.stringify({
+        first: { status: firstRetry.status, data: firstRetry.data },
+        reused: { status: reused.status, data: reused.data },
+      }),
+    );
+
+    // ===================================================================
+    // P — ÁREA + PARTIAL COVER na ORIGEM RESOLVIDA (6.6J.5.1)
+    // ===================================================================
+    const areaCreatures = await Promise.all(
+      ['Area A', 'Area B', 'Area C', 'Area D', 'Area E'].map((name) =>
+        prisma.creature.create({
+          data: { name: `${name} ${suffix}`, kind: 'NPC', speed: 9, hpMax: 20, hpCurrent: 20, armorClass: 10 },
+        }),
+      ),
+    );
+    creatureIds.push(...areaCreatures.map((item) => item.id));
+    const [areaA, areaB, areaC, areaD, areaE] = areaCreatures;
+    // O banco só permite UM combate não encerrado: o combate da arma sai antes
+    // (a área tem o próprio cenário de candidatos).
+    await prisma.combatOperation.deleteMany({ where: { combatId: combat.id } });
+    await prisma.combatant.deleteMany({ where: { combatId: combat.id } });
+    await prisma.combat.delete({ where: { id: combat.id } });
+    combatIds.splice(combatIds.indexOf(combat.id), 1);
+    const areaCombat = await prisma.combat.create({
+      data: {
+        status: 'ACTIVE',
+        combatants: {
+          create: areaCreatures.map((creature, index) => ({
+            kind: 'CREATURE' as const,
+            creatureId: creature.id,
+            name: creature.name,
+            initiative: 20 - index,
+            dexterityMod: 0,
+            hpCurrent: 20,
+            hpMax: 20,
+            armorClass: 10,
+          })),
+        },
+      },
+    });
+    combatIds.push(areaCombat.id);
+    // Candidatos podem ser a INSTÂNCIA do combate: os stubs comparam sempre o
+    // id da CRIATURA por trás do combatente.
+    const areaCombatants = await prisma.combatant.findMany({ where: { combatId: areaCombat.id } });
+    const creatureOfTarget = new Map(
+      areaCombatants.map((item) => [item.id, item.creatureId ?? item.id]),
+    );
+    const creatureIdOf = (target: { id: string }) => creatureOfTarget.get(target.id) ?? target.id;
+    const areaProvider: AreaSpatialProvider = {
+      mode: 'authoritative',
+      resolveOrigin: ({ requested, caster: areaCaster }) => ({
+        requested,
+        resolved: requested.kind === 'entity' ? requested.entity : areaCaster,
+        result: 'pass',
+        obstruction: 'none',
+      }),
+      evaluateOriginRange: () => 'pass',
+      evaluateOriginSight: () => 'pass',
+      evaluateMembership: () => 'pass',
+      // E fica FORA da área (propagação impossível).
+      evaluatePropagation: (_origin, target) =>
+        creatureIdOf(target) === areaE!.id ? 'fail' : 'pass',
+    };
+    const areaCoverProvider: CoverSpatialProvider = {
+      mode: 'authoritative',
+      evaluate: ({ target }) => {
+        const creatureId = creatureIdOf(target);
+        if (creatureId === areaD!.id) return knownCover('total');
+        if (creatureId === areaB!.id) return knownCover('half');
+        if (creatureId === areaC!.id) return knownCover('three-quarters');
+        return knownCover('none');
+      },
+    };
+    const areaResolution = await resolveAreaTargets({
+      db: prisma,
+      targeting: SYNTHETIC_AREA_DEFINITION.targeting as AreaTargetingDefinition,
+      placement: areaPlacementSchema.parse({
+        requestedOrigin: { kind: 'entity', entity: casterEntity },
+      }),
+      caster: await loadEntity(casterEntity),
+      combatId: areaCombat.id,
+      castAtLevel: 3,
+      provider: areaProvider,
+      coverProvider: areaCoverProvider,
+    });
+    const affectedIds = new Set(areaResolution.affected.map((item) => item.entity.id));
+    const affectedCreatures = new Set(
+      areaResolution.affected.map((item) => creatureIdOf(item.entity)),
+    );
+    const propagationOf = (id: string) => {
+      const found = areaResolution.snapshot.candidates.find((item) => item.id === id);
+      return found?.propagation;
+    };
+    const propagationOfCreature = (id: string) => {
+      const found = areaResolution.snapshot.candidates.find(
+        (item) => creatureIdOf(item) === id,
+      );
+      return found?.propagation;
+    };
+    check(
+      '87.8.U) Área: cobertura PARCIAL não remove ninguém (A none, B half, C 3/4 afetados)',
+      affectedCreatures.has(areaA!.id) &&
+        affectedCreatures.has(areaB!.id) &&
+        affectedCreatures.has(areaC!.id),
+      JSON.stringify([...affectedCreatures]),
+    );
+    check(
+      '87.8.V) Área: TOTAL COVER na origem RESOLVIDA vira propagation FAIL e nenhum save é pedido',
+      !affectedCreatures.has(areaD!.id) && propagationOfCreature(areaD!.id) === 'fail',
+      JSON.stringify({
+        affected: [...affectedCreatures],
+        propagation: propagationOfCreature(areaD!.id),
+      }),
+    );
+    check(
+      '87.8.W) Área: alvo fora da forma continua fora (E), sem cobertura inventada',
+      !affectedCreatures.has(areaE!.id) && propagationOfCreature(areaE!.id) === 'fail',
+      JSON.stringify({ propagation: propagationOfCreature(areaE!.id) }),
+    );
 
     // ===================================================================
     // L — TOTAL COVER: recusa ANTES do commit, sem custo nenhum
@@ -415,6 +752,11 @@ export async function smokeCoverFoundation(baseUrl: string, check: Check): Promi
           ],
         },
       });
+      if (combatIds.length > 0) {
+        await prisma.combatOperation.deleteMany({ where: { combatId: { in: combatIds } } });
+        await prisma.combatant.deleteMany({ where: { combatId: { in: combatIds } } });
+        await prisma.combat.deleteMany({ where: { id: { in: combatIds } } });
+      }
       await prisma.characterOperation.deleteMany({ where: { characterId: { in: characterIds } } });
       await prisma.character.deleteMany({ where: { id: { in: characterIds } } });
       await prisma.creature.deleteMany({ where: { id: { in: creatureIds } } });

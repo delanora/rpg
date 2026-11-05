@@ -51,6 +51,7 @@ import type { AreaUnknownDecision } from './area-evaluation.js';
 import {
   assistedCoverProvider,
   assertCoverAllowsDirectTargeting,
+  assertCoverDecisionAllowed,
   coverFor,
   type CoverSpatialProvider,
 } from '../../combat/cover.service.js';
@@ -505,13 +506,14 @@ export async function validateSpellCast(
         ? ('attack' as const)
         : ('dexterity-save' as const);
     for (const target of targets) {
-      const evaluation = applyCoverConfirmation(
-        await coverFor(
-          { origin: caster.entity, target: target.entity, interaction: coverInteraction },
-          coverProvider,
-        ),
-        coverConfirmationFor(target.entity),
+      const confirmed = coverConfirmationFor(target.entity);
+      const providerEvaluation = await coverFor(
+        { origin: caster.entity, target: target.entity, interaction: coverInteraction },
+        coverProvider,
       );
+      // 6.6J.5.1: o Mestre só decide o que o servidor não avaliou.
+      assertCoverDecisionAllowed(providerEvaluation, confirmed);
+      const evaluation = applyCoverConfirmation(providerEvaluation, confirmed);
       assertCoverAllowsDirectTargeting(
         evaluation,
         'SPELL_TARGET_TOTAL_COVER',
@@ -852,14 +854,24 @@ async function saveCoverFor(
   // Só DESTREZA recebe o benefício; a magia pode ignorar (Chama Sagrada).
   if (resolution.ability !== 'dexterity') return null;
   if (resolution.kind === 'save-damage' && resolution.ignoreSaveCover) return null;
+  // 6.6J.5.1 — em ÁREA a origem da relação é a ORIGEM RESOLVIDA (o ponto
+  // efetivo da forma), nunca o caster fixo; em magia direta continua o caster.
+  const origin =
+    (context.area?.snapshot.origin.resolved as MechanicalEntity | null | undefined) ??
+    context.caster.entity;
+  const confirmed = context.coverConfirmations.find(
+    (item) => item.targetKey === `${target.kind}:${target.id}`,
+  )?.level;
   const evaluation = applyCoverConfirmation(
-    await coverFor(
-      { origin: context.caster.entity, target, interaction: 'dexterity-save' },
-      context.coverProvider,
-    ),
-    context.coverConfirmations.find(
-      (item) => item.targetKey === `${target.kind}:${target.id}`,
-    )?.level,
+    await (async () => {
+      const providerEvaluation = await coverFor(
+        { origin, target, interaction: 'dexterity-save' },
+        context.coverProvider,
+      );
+      assertCoverDecisionAllowed(providerEvaluation, confirmed);
+      return providerEvaluation;
+    })(),
+    confirmed,
   );
   const snapshot = coverSnapshotOf(evaluation);
   return snapshot.status === 'known'

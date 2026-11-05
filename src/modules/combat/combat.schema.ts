@@ -59,6 +59,20 @@ export const attackSchema = combatOperationSchema.extend({
    * terminado entre a renderização e o clique).
    */
   selectedEffectModifiers: z.array(z.string().min(1).max(160)).max(20).optional(),
+  /**
+   * 6.6J.5.1 — adjudicação de COBERTURA pelo Mestre (fluxo assistido).
+   *
+   * O cliente envia só o NÍVEL pedido para UM alvo; o servidor deriva bônus,
+   * CA situacional e proveniência. PLAYER é recusado no service (403) e um
+   * nível divergente de fato autoritativo vira 409 `COVER_DECISION_NOT_ALLOWED`.
+   */
+  coverConfirmation: z
+    .object({
+      targetKey: z.string().trim().min(1).max(200),
+      level: z.enum(['none', 'half', 'three-quarters', 'total']),
+    })
+    .strict()
+    .optional(),
 });
 
 /**

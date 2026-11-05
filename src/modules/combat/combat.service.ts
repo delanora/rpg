@@ -77,7 +77,9 @@ import {
 import {
   assistedCoverProvider,
   assertCoverAllowsDirectTargeting,
+  assertCoverDecisionAllowed,
   coverFor,
+  type CoverSpatialProvider,
 } from './cover.service.js';
 import { applyCoverConfirmation, coverSnapshotOf } from './cover.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
@@ -1288,6 +1290,8 @@ async function consumeAmmo(
 export async function resolveAttack(
   actor: CombatActor,
   input: AttackInput,
+  /** 6.6J.5.1: provider de cobertura injetável (testes); produção é assistido. */
+  options: { coverProvider?: CoverSpatialProvider } = {},
 ): Promise<{ combat: CombatDto; result: AttackResolvedPayload }> {
   const publications = new Set<string>();
   const rolls: DiceRolledPayload[] = [];
@@ -1340,16 +1344,34 @@ export async function resolveAttack(
     // 6.6J.5 — COVER: relação atacante ↔ alvo. Total Cover recusa ANTES de
     // gastar Ação/munição e antes do d20. Sem geometria o provider assistido
     // responde `not-assessed` (0 bônus), nunca "cobertura inexistente".
+    const coverConfirmation = input.coverConfirmation;
+    if (actor.role !== 'MASTER' && coverConfirmation) {
+      throw new HttpError(
+        'A confirmação de cobertura é exclusiva do Mestre.',
+        403,
+        'COVER_CONFIRMATION_FORBIDDEN',
+      );
+    }
+    // A decisão vale para UM alvo: nunca para "o combate" ou outro combatente.
+    if (coverConfirmation && coverConfirmation.targetKey !== `combatant:${target.id}`) {
+      throw new HttpError(
+        'A confirmação de cobertura não corresponde a este alvo.',
+        400,
+        'COVER_TARGET_MISMATCH',
+      );
+    }
+    const providerEvaluation = await coverFor(
+      {
+        origin: { kind: 'combatant', id: attacker.id },
+        target: { kind: 'combatant', id: target.id },
+        interaction: 'attack',
+      },
+      options.coverProvider ?? assistedCoverProvider,
+    );
+    assertCoverDecisionAllowed(providerEvaluation, coverConfirmation?.level);
     const coverEvaluation = applyCoverConfirmation(
-      await coverFor(
-        {
-          origin: { kind: 'combatant', id: attacker.id },
-          target: { kind: 'combatant', id: target.id },
-          interaction: 'attack',
-        },
-        assistedCoverProvider,
-      ),
-      undefined,
+      providerEvaluation,
+      coverConfirmation?.level,
     );
     assertCoverAllowsDirectTargeting(
       coverEvaluation,
@@ -1822,6 +1844,9 @@ export async function resolveAttack(
       targetHpCurrent: targetAfter?.hpCurrent ?? 0,
       targetHpMax: targetAfter?.hpMax ?? 0,
       targetStatsHidden: false,
+      // 6.6J.5.1 — auditoria da cobertura DESTA interação (sem CA base privada
+      // nem IDs de obstáculo): o snapshot sobrevive ao retry idempotente.
+      cover,
       at: new Date().toISOString(),
     };
 
