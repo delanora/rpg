@@ -19,6 +19,7 @@ import {
   type SpatialSceneConfig,
 } from './spatial.types.js';
 import { isGridAligned } from './spatial-distance.js';
+import { normalizeSideKey } from './spatial-movement.js';
 
 /**
  * FASE 6.6L.1 — CONFIGURAÇÃO DA CENA E PLACEMENT.
@@ -46,6 +47,11 @@ export interface SpatialOperationInput {
    */
   combatantId?: string;
   position?: SpatialPosition2D | null;
+  /**
+   * Lado do ENCONTRO (6.6L.3). Ausente nas operações de cena/posição e, por
+   * isso, fora do fingerprint delas (`JSON.stringify` descarta `undefined`).
+   */
+  sideKey?: string | null;
 }
 
 export interface SpatialConfigPatchInput extends SpatialOperationInput {
@@ -58,6 +64,12 @@ export interface SpatialPositionPatchInput {
   expectedVersion: number;
   operationId: string;
   position: SpatialPosition2D | null;
+}
+
+export interface CombatantSidePatchInput {
+  expectedVersion: number;
+  operationId: string;
+  sideKey: string | null;
 }
 
 function requireMaster(actor: CombatActor): void {
@@ -239,6 +251,42 @@ export async function setCombatantSpatialPosition(
             : Prisma.DbNull,
         },
       });
+      return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+    },
+  );
+}
+
+/**
+ * Define o LADO do encontro de UM combatente (6.6L.3). MASTER-only.
+ *
+ * Hostilidade é decisão EXPLÍCITA do Mestre: o motor de movimento nunca infere
+ * aliado/inimigo por tipo de entidade. `sideKey: null` volta para "relação
+ * desconhecida" — e aí atravessar outra criatura passa a ser recusado. O valor
+ * é normalizado pelo domínio (aparado, minúsculo, vazio → `null`) e vive só na
+ * instância do combate, com a mesma versão/operationId do resto do espaço.
+ */
+export async function setCombatantSideKey(
+  actor: CombatActor,
+  combatId: string,
+  combatantId: string,
+  input: CombatantSidePatchInput,
+): Promise<{ combat: CombatDto }> {
+  requireMaster(actor);
+  const sideKey = normalizeSideKey(input.sideKey);
+  return runSpatialOperation(
+    actor,
+    {
+      combatId,
+      expectedVersion: input.expectedVersion,
+      operationId: input.operationId,
+      combatantId,
+      sideKey,
+    },
+    'combatant-side',
+    async (db, combat) => {
+      const combatant = combat.combatants.find((item) => item.id === combatantId);
+      if (!combatant) throw new HttpError('Combatente não encontrado neste combate.', 404);
+      await db.combatant.update({ where: { id: combatant.id }, data: { sideKey } });
       return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
     },
   );

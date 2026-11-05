@@ -5,11 +5,17 @@ import {
   attackSchema, manualHpSchema, startCombatSchema, useItemSchema,
   combatOperationSchema, economyActionSchema, economyOverrideSchema, nextTurnSchema,
   spatialConfigPatchSchema, spatialPositionPatchSchema,
+  movementCommitSchema, movementPreviewSchema, combatantSidePatchSchema,
 } from './combat.schema.js';
 import {
+  setCombatantSideKey,
   setCombatantSpatialPosition,
   updateSpatialScene,
 } from './spatial/spatial-scene.service.js';
+import {
+  commitVoluntaryMovement,
+  previewVoluntaryMovement,
+} from './spatial/spatial-movement.service.js';
 import {
   readCombatDistance,
   readCombatRangePreview,
@@ -138,6 +144,83 @@ combatRouter.get('/:combatId/spatial/range-preview', authenticate, async (req, r
     ),
   );
 });
+
+/**
+ * POST /api/combat/:combatId/spatial/movement-preview — PREVIEW read-only do
+ * movimento voluntário.
+ *
+ * O corpo traz APENAS `combatantId` + `path` (posições passo a passo). O
+ * servidor deriva legalidade, custo, difficult terrain, crawling, passagem e
+ * movimento restante. Não grava, não gasta e não gera operação/versão. Mestre vê
+ * o diagnóstico completo; o jogador recebe o bloqueador SEM identidade.
+ */
+combatRouter.post('/:combatId/spatial/movement-preview', authenticate, async (req, res) => {
+  const parsed = movementPreviewSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json(
+    await previewVoluntaryMovement(
+      actorFrom(req),
+      String(req.params.combatId),
+      parsed.data.combatantId,
+      parsed.data.path,
+    ),
+  );
+});
+
+/**
+ * POST /api/combat/:combatId/spatial/movement — COMMIT server-authoritative.
+ *
+ * Revalida o caminho inteiro (o preview não é autoridade), consome
+ * `movementRemaining`, grava a posição e publica `combat:updated` na MESMA
+ * transação lógica. A rota NÃO é restrita por papel de propósito: quem barra o
+ * jogador é o Reaction Gate no serviço (Opportunity Attacks ainda não existem)
+ * — liberar movimento antes dele permitiria sair do alcance de inimigos.
+ */
+combatRouter.post('/:combatId/spatial/movement', authenticate, async (req, res) => {
+  const parsed = movementCommitSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json(
+    await commitVoluntaryMovement(actorFrom(req), {
+      combatId: String(req.params.combatId),
+      ...parsed.data,
+    }),
+  );
+});
+
+/**
+ * PATCH /api/combat/:combatId/combatants/:combatantId/side — MASTER define o
+ * LADO do combatente (hostilidade explícita do encontro).
+ *
+ * Só o Mestre escreve lado: o jogador nunca envia `hostile`/`team`. O valor vive
+ * na instância do combate (nem ficha nem template) e `null` significa relação
+ * desconhecida — o motor de movimento recusa atravessar sem essa decisão.
+ */
+combatRouter.patch(
+  '/:combatId/combatants/:combatantId/side',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const parsed = combatantSidePatchSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    res.json(
+      await setCombatantSideKey(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.combatantId),
+        parsed.data,
+      ),
+    );
+  },
+);
 
 /** GET /api/combat/active — estado do combate em andamento (ou null). */
 combatRouter.get('/active', authenticate, async (req, res) => {

@@ -1000,6 +1000,13 @@ model Combatant {
   /// ficha (raça) ou do cadastro da criatura, nunca daqui.
   spatialPosition Json?
 
+  ///
+  /// LADO do ENCONTRO (Fase 6.6L.3), definido pelo Mestre: base da relação
+  /// aliado/hostil do motor de movimento. `null` = relação DESCONHECIDA (nunca
+  /// inferida por tipo de entidade); combates legados ficam `null`. Vive só na
+  /// instância: a ficha e o template da criatura não recebem lado.
+  sideKey String?
+
   createdAt DateTime @default(now())
 
   @@index([combatId])

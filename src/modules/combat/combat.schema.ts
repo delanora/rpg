@@ -186,6 +186,52 @@ export const spatialPositionPatchSchema = z
 export type SpatialConfigPatch = z.infer<typeof spatialConfigPatchSchema>;
 export type SpatialPositionPatch = z.infer<typeof spatialPositionPatchSchema>;
 
+/* -------------------------------------------------------------------------- */
+/* 6.6L.3 — Movimento voluntário e lado do encontro                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Caminho pretendido: SÓ posições, passo a passo (o servidor não faz
+ * pathfinding nem aceita "de A para Z"). Custo, distância, difficult terrain e
+ * passagem NUNCA são aceitos do cliente. O limite é sanidade de payload, não
+ * regra de jogo (o custo real limita na avaliação).
+ */
+export const movementPathSchema = z.array(spatialPositionSchema).max(200);
+
+/** Preview read-only: sem `expectedVersion`/`operationId` porque não muta. */
+export const movementPreviewSchema = z
+  .object({
+    combatantId: z.string().min(1),
+    path: movementPathSchema,
+  })
+  .strict();
+
+/** Commit: o caminho vazio é aceito como NO-OP (sem operação/versão nova). */
+export const movementCommitSchema = z
+  .object({
+    combatantId: z.string().min(1),
+    path: movementPathSchema,
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict();
+
+/**
+ * Lado do encontro (hostilidade explícita). `null` = relação desconhecida.
+ * Normalizado no serviço (aparado, minúsculo, vazio → `null`).
+ */
+export const combatantSidePatchSchema = z
+  .object({
+    sideKey: z.string().trim().max(40).nullable(),
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict();
+
+export type MovementPreviewInput = z.infer<typeof movementPreviewSchema>;
+export type MovementCommitPayload = z.infer<typeof movementCommitSchema>;
+export type CombatantSidePatch = z.infer<typeof combatantSidePatchSchema>;
+
 export type CombatOperationInput = z.infer<typeof combatOperationSchema>;
 export type EconomyActionInput = z.infer<typeof economyActionSchema>;
 export type EconomyOverrideInput = z.infer<typeof economyOverrideSchema>;
