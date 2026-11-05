@@ -10,7 +10,10 @@ import {
   setCombatantSpatialPosition,
   updateSpatialScene,
 } from './spatial/spatial-scene.service.js';
-import { readCombatDistance } from './spatial/spatial-distance.service.js';
+import {
+  readCombatDistance,
+  readCombatRangePreview,
+} from './spatial/spatial-distance.service.js';
 import { resolutionRequestsForCombat } from './resolution-requests.js';
 import {
   executeEconomyAction,
@@ -111,6 +114,27 @@ combatRouter.get('/:combatId/spatial/distance', authenticate, async (req, res) =
       String(req.params.combatId),
       String(req.query.fromCombatantId ?? ''),
       String(req.query.toCombatantId ?? ''),
+    ),
+  );
+});
+
+/**
+ * GET /api/combat/:combatId/spatial/range-preview
+ *   ?fromCombatantId=&toCombatantId=&attackId=
+ *
+ * LEITURA de alcance para o feedback visual (6.6M.2). O cliente manda apenas o
+ * id estável da ação; o SERVIDOR resolve reach/normal/longo da arma/ataque e
+ * classifica `in-range | long-range | out-of-range | unknown`. Nada é gasto
+ * (leitura pura) e a política de privacidade é a MESMA da distância.
+ */
+combatRouter.get('/:combatId/spatial/range-preview', authenticate, async (req, res) => {
+  res.json(
+    await readCombatRangePreview(
+      actorFrom(req),
+      String(req.params.combatId),
+      String(req.query.fromCombatantId ?? ''),
+      String(req.query.toCombatantId ?? ''),
+      String(req.query.attackId ?? ''),
     ),
   );
 });

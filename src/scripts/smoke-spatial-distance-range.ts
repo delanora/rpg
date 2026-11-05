@@ -1024,6 +1024,154 @@ export async function smokeSpatialDistance(baseUrl: string, check: Check): Promi
         !('lineOfSight' in state) &&
         !('areaOfEffect' in state),
     );
+
+    // ===================================================================
+    // AV–BE — RANGE PREVIEW READ-ONLY (6.6M.2)
+    // ===================================================================
+    // A UI mede com `GET /spatial/distance` e pede a faixa de alcance a
+    // `GET /spatial/range-preview`, mandando só IDs. O servidor resolve a AÇÃO
+    // (ataque/arma), o reach e os alcances — e nada é gasto.
+    await (async () => {
+      const backToGrid = await request('PATCH', `/combat/${combat.id}/spatial-config`, {
+        mode: 'grid-2d',
+        widthFeet: 800,
+        heightFeet: 800,
+        ...operation(),
+      });
+      if (backToGrid.data.combat) state = backToGrid.data.combat;
+      await place(meleeCombatant.id, { xFeet: 0, yFeet: 0 });
+      await place(targetCombatant.id, { xFeet: 5, yFeet: 0 });
+      await place(farCombatant.id, { xFeet: 200, yFeet: 100 });
+      await place(hiddenCombatant.id, { xFeet: 10, yFeet: 0 });
+      await refresh();
+
+      const previewOf = (from: string, to: string, attackId: string, auth = masterToken) =>
+        request(
+          'GET',
+          `/combat/${combat.id}/spatial/range-preview?fromCombatantId=${from}&toCombatantId=${to}` +
+            `&attackId=${encodeURIComponent(attackId)}`,
+          undefined,
+          auth,
+        );
+
+      const inReach = await previewOf(meleeCombatant.id, targetCombatant.id, meleeAttackId);
+      check(
+        '89.AV.1) range-preview melee adjacente → in-range com reach do servidor e nome da ação',
+        inReach.status === 200 &&
+          inReach.data.range.status === 'in-range' &&
+          inReach.data.range.distanceFeet === 5 &&
+          inReach.data.range.reachFeet === 5 &&
+          typeof inReach.data.range.actionName === 'string' &&
+          inReach.data.range.actionName.length > 0,
+        JSON.stringify(inReach.data),
+      );
+      const outOfReach = await previewOf(meleeCombatant.id, farCombatant.id, meleeAttackId);
+      check(
+        '89.AW.1) melee fora do reach → out-of-range (mesma conta do ataque)',
+        outOfReach.data.range.status === 'out-of-range' &&
+          outOfReach.data.range.band === 'out' &&
+          outOfReach.data.range.distanceFeet === 200,
+        JSON.stringify(outOfReach.data),
+      );
+      const longRangePreview = await previewOf(archerCombatant.id, farCombatant.id, rangedAttackId);
+      check(
+        '89.AX.1) arco a 200 pés → long-range (normal 150 / longo 600 do dado estruturado)',
+        longRangePreview.data.range.status === 'long-range' &&
+          longRangePreview.data.range.band === 'long' &&
+          longRangePreview.data.range.normalRangeFeet === 150 &&
+          longRangePreview.data.range.longRangeFeet === 600,
+        JSON.stringify(longRangePreview.data),
+      );
+      await place(farCombatant.id, { xFeet: 700, yFeet: 100 });
+      await refresh();
+      const beyondPreview = await previewOf(archerCombatant.id, farCombatant.id, rangedAttackId);
+      check(
+        '89.AY.1) arco além do longo → out-of-range (nunca aparece como válido)',
+        beyondPreview.data.range.status === 'out-of-range' &&
+          beyondPreview.data.range.distanceFeet === 700,
+        JSON.stringify(beyondPreview.data),
+      );
+      await place(farCombatant.id, { xFeet: 200, yFeet: 100 });
+      await refresh();
+
+      const invalidAction = await previewOf(meleeCombatant.id, targetCombatant.id, 'weapon:nao-existe');
+      check(
+        '89.AZ.1) referência de ação inexistente → 404 ATTACK_NOT_FOUND (sem distância)',
+        invalidAction.status === 404 &&
+          invalidAction.data.error === 'ATTACK_NOT_FOUND' &&
+          invalidAction.data.range === undefined,
+        JSON.stringify({ status: invalidAction.status, data: invalidAction.data }),
+      );
+      const overrideAttempt = await request(
+        'GET',
+        `/combat/${combat.id}/spatial/range-preview?fromCombatantId=${meleeCombatant.id}` +
+          `&toCombatantId=${farCombatant.id}&attackId=${encodeURIComponent(meleeAttackId)}` +
+          '&normalRangeFeet=9999&longRangeFeet=9999&reachFeet=9999&distanceFeet=5&band=normal',
+      );
+      check(
+        '89.BA.1) números enviados pelo cliente são IGNORADOS (servidor resolve alcance/distância)',
+        overrideAttempt.data.range.status === 'out-of-range' &&
+          overrideAttempt.data.range.distanceFeet !== 5 &&
+          overrideAttempt.data.range.reachFeet === 5,
+        JSON.stringify(overrideAttempt.data),
+      );
+      const unarmedPreview = await previewOf(meleeCombatant.id, targetCombatant.id, 'unarmed');
+      check(
+        '89.BB.1) ação sem alcance estruturado → unknown/range-not-declared (não inventa 5 pés)',
+        unarmedPreview.data.range.status === 'unknown' &&
+          unarmedPreview.data.range.reason === 'range-not-declared' &&
+          unarmedPreview.data.range.reachFeet === null,
+        JSON.stringify(unarmedPreview.data),
+      );
+      const playerToCreature = await previewOf(
+        meleeCombatant.id,
+        hiddenCombatant.id,
+        meleeAttackId,
+        playerToken,
+      );
+      check(
+        '89.BC.1) PLAYER não descobre alvo oculto pelo range-preview (unknown/not-visible)',
+        playerToCreature.data.range.status === 'unknown' &&
+          playerToCreature.data.range.reason === 'not-visible' &&
+          playerToCreature.data.range.distanceFeet === null &&
+          playerToCreature.data.range.actionName === null &&
+          playerToCreature.data.range.normalRangeFeet === null &&
+          playerToCreature.data.range.longRangeFeet === null,
+        JSON.stringify(playerToCreature.data),
+      );
+      const playerToCharacter = await previewOf(
+        archerCombatant.id,
+        meleeCombatant.id,
+        rangedAttackId,
+        playerToken,
+      );
+      check(
+        '89.BD.1) PLAYER recebe a faixa correta entre PERSONAGENS (100 pés → in-range)',
+        playerToCharacter.data.range.status === 'in-range' &&
+          playerToCharacter.data.range.distanceFeet === 100 &&
+          playerToCharacter.data.range.band === 'normal',
+        JSON.stringify(playerToCharacter.data),
+      );
+
+      // Leitura PURA: nenhuma versão, Ação ou munição muda.
+      await refresh();
+      const versionBefore = state.version;
+      const ammoBeforePreview = await ammoCount();
+      const actionsBeforePreview = state.combatants.find(
+        (item: any) => item.id === archerCombatant.id,
+      ).turnEconomy.actionsUsed;
+      await previewOf(archerCombatant.id, farCombatant.id, rangedAttackId);
+      await previewOf(archerCombatant.id, farCombatant.id, rangedAttackId);
+      await refresh();
+      check(
+        '89.BE.1) range-preview é READ-ONLY: versão, Ação e munição intactas',
+        state.version === versionBefore &&
+          (await ammoCount()) === ammoBeforePreview &&
+          state.combatants.find((item: any) => item.id === archerCombatant.id).turnEconomy
+            .actionsUsed === actionsBeforePreview,
+        JSON.stringify({ before: versionBefore, after: state.version }),
+      );
+    })();
   } finally {
     if (combatIds.length) {
       await prisma.combatOperation

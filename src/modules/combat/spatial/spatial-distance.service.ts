@@ -9,7 +9,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
 import type { CombatActor } from '../combat.service.js';
 import { loadCombatById } from '../combat.service.js';
-import type { CombatSourced } from '../combat.dto.js';
+import { combatantAttacks, type CombatSourced } from '../combat.dto.js';
 import { parseStoredPosition } from './occupied-space.js';
 import {
   spatialSceneOf,
@@ -288,6 +288,95 @@ export function evaluateEntityRange(
     distance: evaluateEntityDistance(index, source, target),
     ...range,
   });
+}
+
+/**
+ * Leitura SANITIZADA de alcance para a UI (6.6M.2).
+ *
+ * `actionName` é o rótulo da ação que o SERVIDOR resolveu a partir do id
+ * estável — nunca o alcance enviado pelo cliente. Alvo não autorizado devolve a
+ * leitura inteira oculta (sem distância, faixa, nome ou referência de ação).
+ */
+export interface CombatRangeReading {
+  status: RangeEvaluation['status'];
+  distanceFeet: number | null;
+  band: RangeEvaluation['band'];
+  reachFeet: number | null;
+  normalRangeFeet: number | null;
+  longRangeFeet: number | null;
+  algorithm: string | null;
+  actionName: string | null;
+  reason: string | null;
+}
+
+const HIDDEN_RANGE_READING: CombatRangeReading = {
+  status: 'unknown',
+  distanceFeet: null,
+  band: null,
+  reachFeet: null,
+  normalRangeFeet: null,
+  longRangeFeet: null,
+  algorithm: null,
+  actionName: null,
+  reason: 'not-visible',
+};
+
+/**
+ * LEITURA de alcance (6.6M.2): a UI nunca decide `distância <= alcance`.
+ *
+ * O cliente manda só a referência ESTÁVEL da ação que ele já usa no ataque
+ * (`weapon:<itemId>`, `thrown:<itemId>`, `offhand:<itemId>`, `unarmed`, id de
+ * ataque legado da ficha/criatura). Reach/normal/longo saem do dado estruturado
+ * do SERVIDOR; distância, faixa e desvantagem vêm da MESMA `evaluateRange` da
+ * execução. Nada é gasto: é leitura pura (sem Ação, espaço, munição ou versão).
+ */
+export async function readCombatRangePreview(
+  actor: CombatActor,
+  combatId: string,
+  fromCombatantId: string,
+  toCombatantId: string,
+  attackId: string,
+): Promise<{ range: CombatRangeReading }> {
+  const combat = await loadCombatById(combatId).catch(() => null);
+  if (!combat) throw new HttpError('Combate não encontrado.', 404);
+  const from = combat.combatants.find((item) => item.id === fromCombatantId);
+  const to = combat.combatants.find((item) => item.id === toCombatantId);
+  if (!from || !to) throw new HttpError('Combatente não encontrado neste combate.', 404);
+  // MESMA política da distância: o que o jogador não pode ler fica oculto.
+  if (!canReadDistance(actor, combat, from.id) || !canReadDistance(actor, combat, to.id)) {
+    return { range: HIDDEN_RANGE_READING };
+  }
+  const attack = combatantAttacks(from).find((item) => item.id === attackId);
+  if (!attack) {
+    throw new HttpError(
+      'Ataque não encontrado nesta ficha ou criatura.',
+      404,
+      'ATTACK_NOT_FOUND',
+    );
+  }
+  const evaluation = evaluateEntityRange(
+    combatSpatialIndex(combat),
+    { kind: 'combatant', id: from.id },
+    { kind: 'combatant', id: to.id },
+    {
+      reachFeet: attack.reachFeet ?? null,
+      normalRangeFeet: attack.normalRangeFeet ?? null,
+      longRangeFeet: attack.longRangeFeet ?? null,
+    },
+  );
+  return {
+    range: {
+      status: evaluation.status,
+      distanceFeet: evaluation.distanceFeet,
+      band: evaluation.band,
+      reachFeet: evaluation.reachFeet,
+      normalRangeFeet: evaluation.normalRangeFeet,
+      longRangeFeet: evaluation.longRangeFeet,
+      algorithm: evaluation.algorithm,
+      actionName: attack.name,
+      reason: evaluation.reason,
+    },
+  };
 }
 
 /** Corpo de uma entidade (`null` quando não está no combate). */

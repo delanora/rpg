@@ -28,6 +28,8 @@ import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant } from '../src/combat/turnControl';
 import { CombatGrid } from '../src/combat/grid/CombatGrid';
+import { GridMeasureOverlay } from '../src/combat/grid/GridMeasurement';
+import { distanceLabel, formatFeet, rangeSummary } from '../src/combat/grid/distanceFormat';
 import { GridToken, type GridUnit } from '../src/combat/grid/GridToken';
 import { UnplacedCombatantsTray } from '../src/combat/grid/UnplacedCombatantsTray';
 import {
@@ -2838,8 +2840,8 @@ check(
   })()
 );
 check(
-  'CB182) ainda NÃO há distância/alcance/movimento/Cover/LoS/AoE no grid',
-  !/distance|rangeFeet|movementCost|lineOfSight|cover|areaOfEffect/i.test(
+  'CB182) grid continua SEM Movement/Cover/LoS/AoE (a distância vem do servidor)',
+  !/movementCost|movementRemaining|lineOfSight|coverLevel|areaOfEffect|difficultTerrain/i.test(
     `${combatGridSource}${gridMathSource}${gridTokenSource}${gridTraySource}${gridSceneSource}`
   )
 );
@@ -2965,6 +2967,204 @@ check(
   source('../src/modules/combat/spatial/spatial-scene.service.ts').includes(
     'SPATIAL_POSITION_NOT_GRID_ALIGNED'
   ) && distanceDomain.includes('isGridAligned')
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.2 — Distance + Range VISUAL FEEDBACK                                   */
+/* -------------------------------------------------------------------------- */
+const measureUiSource = gridSource('GridMeasurement.tsx');
+const distanceFormatSource = gridSource('distanceFormat.ts');
+const attackPanelSource = source('src/combat/components/CombatActionPanel.tsx');
+const realtimeEventsSource = source('../src/realtime/events.ts');
+const prismaSchemaSource = source('../prisma/schema.prisma');
+
+check(
+  'CB197) modo MEDIR é EXPLÍCITO e o clique de medição nunca posiciona',
+  combatGridSource.includes("type InteractionMode = 'placement' | 'measure'") &&
+    combatGridSource.includes('changeMode(\'measure\')') &&
+    combatGridSource.includes('Posicionar') &&
+    combatGridSource.includes("if (mode !== 'placement') return;") &&
+    combatGridSource.includes("if (mode !== 'placement' || !isMaster || locked) return;")
+);
+check(
+  'CB198) placement do Mestre preservado e PLAYER só mede (sem posicionar)',
+  combatGridSource.includes("const placementInteractive = isMaster && !locked && mode === 'placement';") &&
+    combatGridSource.includes('const measureInteractive = !locked;') &&
+    combatGridSource.includes('setSpatialPosition') &&
+    combatGridSource.includes('mode === \'measure\' ? measureInteractive : placementInteractive')
+);
+check(
+  'CB199) React NÃO calcula distância mecânica nem faixa de alcance',
+  !/Math\.(sqrt|hypot|cbrt)/.test(
+    `${combatGridSource}${gridMathSource}${measureUiSource}${distanceFormatSource}`
+  ) &&
+    !/normalRangeFeet|longRangeFeet|reachFeet/.test(
+      `${combatGridSource}${measureUiSource}${distanceFormatSource}`
+    )
+);
+check(
+  'CB200) medição manda só IDs (endpoint de distância + range-preview, zero número)',
+  gridApiSource.includes('/spatial/distance') &&
+    gridApiSource.includes('/spatial/range-preview') &&
+    /new URLSearchParams\(\{ fromCombatantId, toCombatantId/.test(gridApiSource) &&
+    !/distanceFeet|normalRangeFeet|longRangeFeet|reachFeet|rangeBand/.test(gridApiSource)
+);
+check(
+  'CB201) formatação preserva 2,5 pés (nunca arredonda) e locale PT-BR',
+  formatFeet(0) === '0 pés' &&
+    formatFeet(2.5) === '2,5 pés' &&
+    formatFeet(5) === '5 pés' &&
+    formatFeet(7.5) === '7,5 pés' &&
+    formatFeet(60) === '60 pés'
+);
+check(
+  'CB202) unknown/not-assessed mostram motivo e NUNCA um número inventado',
+  distanceLabel({
+    status: 'unknown',
+    distanceFeet: null,
+    provenance: null,
+    algorithm: null,
+    reason: 'target-unplaced',
+  }) === 'Fora do mapa' &&
+    distanceLabel({
+      status: 'not-assessed',
+      distanceFeet: null,
+      provenance: null,
+      algorithm: null,
+      reason: 'assisted-mode',
+    }) === 'Distância não avaliada' &&
+    distanceLabel({
+      status: 'unknown',
+      distanceFeet: null,
+      provenance: null,
+      algorithm: null,
+      reason: 'not-visible',
+    }) === 'Distância desconhecida' &&
+    distanceLabel({
+      status: 'known',
+      distanceFeet: 2.5,
+      provenance: 'grid-2d',
+      algorithm: 'phb-grid-footprint-v1',
+      reason: null,
+    }) === '2,5 pés'
+);
+check(
+  'CB203) faixa de alcance exibida a partir do estado do SERVIDOR (long → Desvantagem)',
+  rangeSummary({
+    status: 'long-range',
+    distanceFeet: 200,
+    band: 'long',
+    reachFeet: null,
+    normalRangeFeet: 150,
+    longRangeFeet: 600,
+    algorithm: 'phb-grid-footprint-v1',
+    actionName: 'Arco longo',
+    reason: null,
+  }) === 'Longo alcance — Desvantagem · 200 pés' &&
+    rangeSummary({
+      status: 'out-of-range',
+      distanceFeet: 65,
+      band: 'out',
+      reachFeet: null,
+      normalRangeFeet: 60,
+      longRangeFeet: null,
+      algorithm: 'phb-grid-footprint-v1',
+      actionName: 'Chama Sagrada',
+      reason: null,
+    }) === 'Fora do alcance · 65 pés' &&
+    rangeSummary({
+      status: 'in-range',
+      distanceFeet: 25,
+      band: 'normal',
+      reachFeet: 5,
+      normalRangeFeet: null,
+      longRangeFeet: null,
+      algorithm: 'phb-grid-footprint-v1',
+      actionName: 'Espada longa',
+      reason: null,
+    }) === 'Dentro do alcance · 25 pés' &&
+    rangeSummary({
+      status: 'unknown',
+      distanceFeet: null,
+      band: null,
+      reachFeet: null,
+      normalRangeFeet: null,
+      longRangeFeet: null,
+      algorithm: null,
+      actionName: null,
+      reason: 'not-visible',
+    }) === 'Alcance desconhecido'
+);
+check(
+  'CB204) range-preview resolve a AÇÃO no servidor e reutiliza a política de privacidade',
+  combatRoutesSource.includes('/spatial/range-preview') &&
+    distanceService.includes('readCombatRangePreview') &&
+    distanceService.includes('canReadDistance(actor, combat, from.id)') &&
+    distanceService.includes('combatantAttacks(from)') &&
+    distanceService.includes('ATTACK_NOT_FOUND') &&
+    !/normalRangeFeet|longRangeFeet|reachFeet|distanceFeet/.test(combatRoutesSource)
+);
+check(
+  'CB205) a linha de medição é DECORAÇÃO (SVG, aria-hidden, pointer-events none)',
+  measureUiSource.includes('grid-measure-layer') &&
+    measureUiSource.includes('aria-hidden="true"') &&
+    measureUiSource.includes('footprintCenter') &&
+    !/distanceFeet/.test(measureUiSource) &&
+    /\.grid-measure-layer[^}]*pointer-events: none/.test(gridCssSource)
+);
+check(
+  'CB206) medição é leitura PURA: sem operationId/versão, sem persistência, sem socket',
+  /export function getSpatialDistance\(\s*combatId: string,\s*fromCombatantId: string,\s*toCombatantId: string,?\s*\)/.test(
+    gridApiSource
+  ) &&
+    !/measurement|measure-preview/i.test(realtimeEventsSource) &&
+    !/measurement/i.test(prismaSchemaSource)
+);
+check(
+  'CB207) cena assistida não finge distância (aviso explícito, sem botão Medir)',
+  combatGridSource.includes('Distância não disponível sem grid ativo.') &&
+    combatGridSource.includes("if (mode === 'measure' && combat.spatial.mode !== 'grid-2d') setMode('placement');")
+);
+check(
+  'CB208) realtime invalida a medição (nunca valor velho como atual)',
+  /combat\.version/.test(combatGridSource) &&
+    combatGridSource.includes('measureSequence') &&
+    combatGridSource.includes('setDistance(null)') &&
+    combatGridSource.includes('setMeasureTargetId(null)')
+);
+check(
+  'CB209) estilos da medição ficam no grid.css (styles.css WIP intocado)',
+  gridCssSource.includes('.grid-measure-panel') &&
+    gridCssSource.includes('.grid-measure-line') &&
+    !source('src/styles.css').includes('.grid-measure')
+);
+
+const measureOverlayHtml = (target: GridUnit | null): string =>
+  renderToStaticMarkup(
+    createElement(GridMeasureOverlay, {
+      source: unitOf('origem', 'medium', { position: { xFeet: 0, yFeet: 0 } }),
+      target,
+      cellSizeFeet: 5,
+      pixelsPerCell: 44,
+    })
+  );
+const measureLine = measureOverlayHtml(
+  unitOf('alvo', 'medium', { position: { xFeet: 25, yFeet: 0 } })
+);
+check(
+  'CB210) a linha só aparece com origem+alvo COLOCADOS e usa o centro visual',
+  measureLine.includes('<line') &&
+    measureLine.includes('x1="22"') &&
+    measureLine.includes('x2="242"') &&
+    measureOverlayHtml(null) === '' &&
+    measureOverlayHtml(unitOf('fora', 'medium', { position: null })) === ''
+);
+check(
+  'CB211) painel de ataque reaproveita a seleção existente para o alcance (sem picker novo)',
+  attackPanelSource.includes('getSpatialRangePreview') &&
+    attackPanelSource.includes('rangeSummary(rangePreview)') &&
+    attackPanelSource.includes('Alcance desconhecido') &&
+    !/normalRangeFeet|longRangeFeet|reachFeet/.test(attackPanelSource)
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

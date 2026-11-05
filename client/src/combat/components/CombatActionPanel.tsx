@@ -12,12 +12,15 @@ import {
 import { WEAPON_TYPE_LABELS, damageExpression, formatModifier } from '../../dnd';
 import { fetchEffectOptions } from '../../dice/diceApi';
 import { combatantKindIcon } from '../combatVisuals';
+import { getSpatialRangePreview } from '../grid/gridApi';
+import { rangeSummary } from '../grid/distanceFormat';
 import type {
   Attack,
   CombatDto,
   CombatantDto,
   EffectOptionalModifierDto,
   InventoryItem,
+  SpatialRangeReading,
 } from '../../types';
 import { clampInt } from '../../utils';
 
@@ -168,8 +171,39 @@ export function CombatActionPanel({
   // este atacante; a UI só oferece a escolha (desmarcada por padrão).
   const [effectOptions, setEffectOptions] = useState<EffectOptionalModifierDto[]>([]);
   const [selectedEffects, setSelectedEffects] = useState<string[]>([]);
+  /**
+   * 6.6M.2 — ALCANCE da ação JÁ selecionada (ataque + alvo). Reaproveita a
+   * seleção existente, sem criar seletor novo: o servidor resolve reach/normal/
+   * longo a partir do `attackId` e devolve a faixa pronta.
+   */
+  const [rangePreview, setRangePreview] = useState<SpatialRangeReading | null>(null);
+  const [rangeState, setRangeState] = useState<'idle' | 'error'>('idle');
   const hasReady = Boolean(attacker?.turnEconomy.ready);
   useEffect(() => setPrepared(false), [attacker?.id, hasReady]);
+
+  useEffect(() => {
+    if (!attacker || !attackId || !targetId) {
+      setRangePreview(null);
+      setRangeState('idle');
+      return;
+    }
+    let live = true;
+    getSpatialRangePreview(combat.id, attacker.id, targetId, attackId)
+      .then((response) => {
+        if (!live) return;
+        setRangePreview(response.range);
+        setRangeState('idle');
+      })
+      .catch(() => {
+        if (!live) return;
+        // Sem leitura confiável: nada de faixa inventada.
+        setRangePreview(null);
+        setRangeState('error');
+      });
+    return () => {
+      live = false;
+    };
+  }, [combat.id, combat.version, attacker?.id, attackId, targetId]);
 
   useEffect(() => {
     setSelectedEffects([]);
@@ -466,6 +500,19 @@ export function CombatActionPanel({
                     </span>
                   )}
                 </span>
+              ) : null}
+              {/* 6.6M.2 — faixa DECIDIDA pelo servidor (long range já traz a
+                  desvantagem; o cliente não compara distância com alcance). */}
+              {rangePreview ? (
+                <span
+                  className={`attack-range is-${rangePreview.status}`}
+                  role="status"
+                  title={rangePreview.actionName ?? undefined}
+                >
+                  {rangeSummary(rangePreview)}
+                </span>
+              ) : rangeState === 'error' ? (
+                <span className="attack-range is-unknown">Alcance desconhecido</span>
               ) : null}
             </div>
 

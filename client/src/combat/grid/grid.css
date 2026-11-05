@@ -98,6 +98,157 @@
   color: var(--ink-faint, #8d7859);
 }
 
+.grid-toolbar-right {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.75rem;
+}
+
+/*
+ * FASE 6.6M.2 — modos EXPLÍCITOS do grid. O botão ativo é bronze/latão, no tom
+ * do tema; nada de neon. `aria-pressed` é a fonte do estado visual.
+ */
+.grid-modes {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.grid-modes .btn[aria-pressed='true'] {
+  color: var(--gold-bright, #f6d977);
+  border-color: var(--gold, #e0b83f);
+  box-shadow: inset 0 0 0 1px rgba(224, 184, 63, 0.45);
+}
+
+.grid-measure-panel {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line-strong, rgba(224, 184, 63, 0.32));
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.grid-measure-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.grid-measure-title {
+  font-family: var(--font-display, serif);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold, #e0b83f);
+}
+
+.grid-measure-route {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--ink-soft, #c3ab86);
+}
+
+.grid-measure-name {
+  color: var(--ink, #ecdcbd);
+}
+
+.grid-measure-value {
+  margin: 0;
+  font-family: var(--font-display, serif);
+  font-size: 0.92rem;
+  color: var(--gold-bright, #f6d977);
+}
+
+.grid-measure-hint,
+.grid-measure-unavailable {
+  margin: 0;
+  font-size: 0.68rem;
+  font-style: italic;
+  color: var(--ink-faint, #8d7859);
+}
+
+/*
+ * CAMADA da linha de medição: sobre o plano, SEM captura de ponteiro (os
+ * cliques continuam nos tokens). Ela é decoração — ver GridMeasurement.tsx.
+ */
+.grid-measure-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.grid-measure-line {
+  stroke: var(--gold-bright, #f6d977);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  opacity: 0.8;
+  stroke-linecap: round;
+}
+
+.grid-measure-end {
+  fill: var(--gold-bright, #f6d977);
+  opacity: 0.9;
+}
+
+.grid-plane.is-measuring {
+  cursor: crosshair;
+}
+
+.grid-token.is-measure-source {
+  border-color: #c9a227;
+  box-shadow:
+    0 0 0 1px #c9a227,
+    0 0 16px -4px rgba(201, 162, 39, 0.85);
+}
+
+.grid-token.is-measure-target {
+  border-color: var(--gold-bright, #f6d977);
+  border-style: dashed;
+  box-shadow: 0 0 0 1px rgba(246, 217, 119, 0.55);
+}
+
+/*
+ * HIT-AREA de toque: área interativa transparente maior que o desenho, SEM
+ * alterar o footprint mecânico (o retângulo/Tiny continua do mesmo tamanho).
+ */
+.grid-token[data-size='tiny']::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 6px;
+}
+
+/* 6.6M.2 — faixa de alcance no painel de ataque (resultado do servidor). */
+.attack-range {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft, #c3ab86);
+}
+
+.attack-range.is-in-range {
+  color: var(--gold, #e0b83f);
+}
+
+.attack-range.is-long-range {
+  color: #d98b3a;
+}
+
+.attack-range.is-out-of-range {
+  color: #d98a7a;
+}
+
+.attack-range.is-unknown {
+  color: var(--ink-faint, #8d7859);
+  font-style: italic;
+}
+
 .grid-zoom {
   display: inline-flex;
   align-items: center;
