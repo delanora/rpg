@@ -33,6 +33,12 @@ export async function smokeCombatResolutionCards(baseUrl: string, check: Check):
   const userIds: string[] = [];
   const characterIds: string[] = [];
   const combatIds: string[] = [];
+  // 6.6J.0: a fixture cria SpellCast/PendingEffectSave DIRETO no banco e a
+  // resolução pode criar Effect Group. Sem rastrear esses ids o cleanup deixava
+  // resíduo órfão (auditado: casts `rc-cast-*` + pendings `rc-initial-*`).
+  const castIds: string[] = [];
+  const pendingIds: string[] = [];
+  const effectGroupIds: string[] = [];
 
   const request = async (
     path: string,
@@ -154,6 +160,7 @@ export async function smokeCombatResolutionCards(baseUrl: string, check: Check):
         fingerprint: `rc-cast-${suffix}`,
       },
     });
+    castIds.push(castFixture.id);
     const initialPending = await prisma.pendingEffectSave.create({
       data: {
         definitionId: HOLD_PERSON_DEFINITION_ID,
@@ -173,6 +180,7 @@ export async function smokeCombatResolutionCards(baseUrl: string, check: Check):
         fingerprint: `rc-initial-${suffix}`,
       },
     });
+    pendingIds.push(initialPending.id);
 
     const asOwner = await cardsOf(tokenA);
     const spellCard = asOwner.data?.requests?.find((card: any) => card.kind === 'spell-saving-throw');
@@ -451,7 +459,38 @@ export async function smokeCombatResolutionCards(baseUrl: string, check: Check):
     );
     void fresh;
   } finally {
-    if (combatIds.length > 0) await prisma.combat.deleteMany({ where: { id: { in: combatIds } } });
+    // 6.6J.0 — HIGIENE: resolver o save pode criar Effect Group/Instance. O
+    // cleanup agora remove pendências, Effects e casts ANTES das fichas, sempre
+    // pelos ids que esta execução criou (nunca por status/label).
+    const trackedCasts = castIds.length > 0
+      ? await prisma.spellCast.findMany({
+          where: { id: { in: castIds } },
+          select: { id: true, effectGroupId: true },
+        })
+      : [];
+    const groups = [
+      ...effectGroupIds,
+      ...trackedCasts
+        .map((row) => row.effectGroupId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    ];
+    if (pendingIds.length > 0) {
+      await prisma.pendingEffectSave.deleteMany({ where: { id: { in: pendingIds } } });
+    }
+    if (castIds.length > 0) {
+      await prisma.pendingEffectSave.deleteMany({ where: { spellCastId: { in: castIds } } });
+    }
+    if (groups.length > 0) {
+      await prisma.effectInstance.deleteMany({ where: { groupId: { in: groups } } });
+    }
+    if (characterIds.length > 0) {
+      await prisma.effectInstance.deleteMany({ where: { targetEntityId: { in: characterIds } } });
+    }
+    if (castIds.length > 0) await prisma.spellCast.deleteMany({ where: { id: { in: castIds } } });
+    if (combatIds.length > 0) {
+      await prisma.combatOperation.deleteMany({ where: { combatId: { in: combatIds } } });
+      await prisma.combat.deleteMany({ where: { id: { in: combatIds } } });
+    }
     if (characterIds.length > 0) await prisma.character.deleteMany({ where: { id: { in: characterIds } } });
     if (userIds.length > 0) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   }

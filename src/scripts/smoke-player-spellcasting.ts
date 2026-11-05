@@ -591,6 +591,18 @@ export async function smokePlayerSpellcasting(baseUrl: string, check: Check): Pr
     await prisma.spellCast
       .deleteMany({ where: { casterEntityId: { in: castCasters } } })
       .catch(() => undefined);
+    // 6.6J.0: casts `immediate-effect` (Bless) criam EffectInstance. Apagar só
+    // o SpellCast deixava a instância órfã apontando para a ficha removida.
+    await prisma.effectInstance
+      .deleteMany({
+        where: {
+          OR: [
+            { targetEntityId: { in: [...characterIds, ...creatureIds] } },
+            { sourceEntityId: { in: [...characterIds, ...creatureIds] } },
+          ],
+        },
+      })
+      .catch(() => undefined);
     await prisma.combat.deleteMany({ where: { id: { in: [] } } }).catch(() => undefined);
     if (creatureIds.length > 0) {
       await prisma.creature.deleteMany({ where: { id: { in: creatureIds } } }).catch(() => undefined);
