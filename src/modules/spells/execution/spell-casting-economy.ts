@@ -141,14 +141,18 @@ export async function committedCastsOnTurn(
     select: { spellLevel: true, castingTimeKind: true },
   });
   return rows.flatMap((row) => {
-    if (
-      row.castingTimeKind !== 'action' &&
-      row.castingTimeKind !== 'bonus-action' &&
-      row.castingTimeKind !== 'reaction'
-    ) {
-      return [];
-    }
-    return [{ spellLevel: row.spellLevel ?? 0, castingTime: row.castingTimeKind }];
+    // O CATÁLOGO usa camelCase (`bonusAction`) e a Action Economy usa
+    // kebab-case (`bonus-action`). Sem normalizar, a magia de Ação Bônus some do
+    // histórico do turno e a policy PHB 2014 deixa passar uma segunda magia de
+    // nível. Aceitar as duas formas também cobre casts gravados antes do fix.
+    const castingTime =
+      row.castingTimeKind === 'bonusAction' || row.castingTimeKind === 'bonus-action'
+        ? 'bonus-action'
+        : row.castingTimeKind === 'action' || row.castingTimeKind === 'reaction'
+          ? row.castingTimeKind
+          : null;
+    if (!castingTime) return [];
+    return [{ spellLevel: row.spellLevel ?? 0, castingTime }];
   });
 }
 

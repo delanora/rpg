@@ -1,6 +1,10 @@
 import type { SpellCast } from '@prisma/client';
 import type { MechanicalEntity } from '../../shared/conditions.js';
 import { durationSummary, parseDurationSnapshot } from './spell-duration.js';
+import {
+  parseImmediateHealingSnapshot,
+  type ImmediateHealingSnapshot,
+} from './spell-resolution-snapshot.js';
 
 /**
  * DTO SEGURO de uma conjuração (Fase 6.6A).
@@ -93,6 +97,11 @@ export interface SpellCastDto {
    * (ex.: `duration-expired` na barreira inicial). `null` nos demais casos.
    */
   resolutionReason: string | null;
+  /**
+   * SNAPSHOT da resolução IMEDIATA (6.6I.3): rolagem, modificador, cura
+   * solicitada/efetiva e HP antes/depois. `null` em Effect/pendência.
+   */
+  resolution: ImmediateHealingSnapshot | null;
   createdAt: string;
   committedAt: string;
   resolvedAt: string | null;
@@ -228,6 +237,7 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
       };
     })(),
     resolutionReason: row.resolutionReason ?? null,
+    resolution: parseImmediateHealingSnapshot(row.resolutionSnapshot),
     createdAt: row.createdAt.toISOString(),
     committedAt: row.committedAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

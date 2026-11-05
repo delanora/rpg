@@ -1316,6 +1316,13 @@ model SpellCast {
   /// (ex.: `duration-expired` na barreira inicial). Não substitui `outcome`.
   resolutionReason String?
 
+  ///
+  /// SNAPSHOT IMUTÁVEL da resolução IMEDIATA (Fase 6.6I.3): o que foi rolado e
+  /// aplicado no COMMIT (hoje `immediate-healing`). Auditável e nunca
+  /// recalculado; retry devolve este mesmo registro em vez de rolar de novo.
+  /// Nullable nos casts de Effect/pendência e nos anteriores à migração.
+  resolutionSnapshot Json?
+
   /// `resolving` | `resolved` | `cancelled`.
   status String @default("resolving")
   /// `effect` | `no-effect` | `cancelled` (null enquanto resolving).

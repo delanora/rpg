@@ -14,6 +14,14 @@ import {
   SACRED_FLAME_SCALING,
   SACRED_FLAME_SPELL_ID,
 } from './sacred-flame.js';
+import {
+  HEALING_WORD_BASE_DICE,
+  HEALING_WORD_LABEL,
+  HEALING_WORD_NO_EFFECT_ON_TYPES,
+  HEALING_WORD_SLOT_SCALING,
+  HEALING_WORD_SPELL_ID,
+  assertHealingWordTargets,
+} from './healing-word.js';
 
 /**
  * FASE 6.6A — REGISTRY de magias EXECUTÁVEIS.
@@ -36,6 +44,9 @@ import {
  *  • Chama Sagrada — truque, 60 ft, UMA criatura que o conjurador veja, save de
  *    Destreza e 1d8 radiante (2d8/3d8/4d8 pelo nível TOTAL de personagem).
  *    Instantânea: sem Effect, sem Concentração, sem espaço e sem cobertura.
+ *  • Palavra Curativa — 1º nível, Ação Bônus, 60 ft, UMA criatura visível, V.
+ *    Cura imediata 1d4 + modificador da fonte, +1d4 por espaço acima do 1º.
+ *    Mortos-vivos/constructos são alvos válidos SEM efeito (não é filtro).
  *
  * A CD de magia continua fora daqui: vem do perfil de conjuração do caster.
  */
@@ -122,11 +133,44 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
       ignoreSaveCover: SACRED_FLAME_IGNORE_SAVE_COVER,
     },
   },
+  [HEALING_WORD_SPELL_ID]: {
+    spellId: HEALING_WORD_SPELL_ID,
+    // Instantânea e sem Concentração.
+    requiresConcentration: false,
+    // PHB 2014: 1 Ação Bônus, 18 m (60 pés), UMA criatura visível.
+    // O upcast NÃO adiciona alvos; allowSelf não é proibido pelo texto.
+    targeting: {
+      kind: 'creatures',
+      minTargets: 1,
+      targetCount: { base: 1, baseSlotLevel: 1, additionalPerSlotLevel: 0 },
+      range: { kind: 'distance', feet: 60 },
+      allowSelf: true,
+      requiresSight: true,
+      requiresClearPath: true,
+      // Mortos-vivos/constructos NÃO são filtrados: a magia acontece e resolve
+      // sem efeito. Quem decide isso é a RESOLUTION, não o targeting.
+      filters: [],
+      groupConstraints: [],
+    },
+    resolution: {
+      kind: 'immediate-healing',
+      healing: {
+        dice: HEALING_WORD_BASE_DICE,
+        abilityModifier: 'spellcasting',
+        slotScaling: HEALING_WORD_SLOT_SCALING,
+      },
+      noEffectOnCreatureTypes: HEALING_WORD_NO_EFFECT_ON_TYPES,
+    },
+    // Alvo morto é recusado ANTES do COMMIT, sem custo.
+    validateTargets: assertHealingWordTargets,
+  },
 };
 
 /** Nome exibível da magia executável (a apresentação nunca decide regra). */
 export function spellDisplayLabel(spellId: string): string | null {
-  return spellId === SACRED_FLAME_SPELL_ID ? SACRED_FLAME_LABEL : null;
+  if (spellId === SACRED_FLAME_SPELL_ID) return SACRED_FLAME_LABEL;
+  if (spellId === HEALING_WORD_SPELL_ID) return HEALING_WORD_LABEL;
+  return null;
 }
 
 /** Definição executável da magia (`null` = catálogo sem execução implementada). */

@@ -8,6 +8,7 @@ import type { SpellTargetingDefinition } from './spell-targeting.js';
 import type { TargetingSnapshot } from './spell-targeting.service.js';
 import type { SpellDurationDefinition } from './spell-duration.js';
 import type { LevelScalingDefinition } from '../../shared/spells/cantrip-scaling.js';
+import type { SlotDiceScalingDefinition } from '../../shared/spells/slot-scaling.js';
 
 /**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
@@ -19,7 +20,8 @@ import type { LevelScalingDefinition } from '../../shared/spells/cantrip-scaling
  * Padrões reais nesta fase:
  *  • `immediate-effect` — a conjuração produz o efeito na hora;
  *  • `save-effect` — o alvo faz uma salvaguarda e o efeito só entra na FALHA;
- *  • `save-damage` — salvaguarda e, na falha, dano INSTANTÂNEO (sem Effect).
+ *  • `save-damage` — salvaguarda e, na falha, dano INSTANTÂNEO (sem Effect);
+ *  • `immediate-healing` — cura INSTANTÂNEA rolada e aplicada no COMMIT.
  *
  * `spell-attack` fica para quando Spell Attack/DC estiverem formalizados.
  */
@@ -56,6 +58,23 @@ export type SpellResolutionDefinition =
        * ainda não soma cobertura, então nada muda hoje — a regra fica declarada.
        */
       ignoreSaveCover?: boolean;
+    }
+  | {
+      kind: 'immediate-healing';
+      healing: {
+        /** Dados BASE (o espaço/upcast não está incluído). */
+        dice: { count: number; sides: number };
+        /** `spellcasting` = modificador da fonte snapshotada no COMMIT. */
+        abilityModifier: 'spellcasting';
+        /** Escalonamento pelo NÍVEL DO ESPAÇO (nunca por nível de personagem). */
+        slotScaling: SlotDiceScalingDefinition;
+      };
+      /**
+       * Tipos de criatura que recebem a magia normalmente (alvo válido, custos
+       * pagos) mas SEM efeito de cura. Normalizados por `shared/creature-types`.
+       * NUNCA é uma defesa global do núcleo de cura.
+       */
+      noEffectOnCreatureTypes?: readonly string[];
     };
 
 /** Id mecânico canônico de uma magia (`spell.<spellId>`), sem Effect Definition. */
