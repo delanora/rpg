@@ -33,6 +33,8 @@ export function rollSelectedOptional(
   mods: EffectRollModifiers,
   selected: readonly string[] | undefined,
   autoFail = false,
+  /** Fonte de aleatoriedade injetável (testes determinísticos). */
+  roll: (sides: number) => number = (sides: number) => rollDie(sides),
 ): OptionalEffectRoll {
   if (autoFail || !selected || selected.length === 0) return { bonus: 0, dice: [] };
 
@@ -56,7 +58,7 @@ export function rollSelectedOptional(
     const sides = option.sides ?? 4;
     const sign = option.sign ?? 1;
     for (let index = 0; index < count; index += 1) {
-      dice.push({ sides, value: rollDie(sides), sign, label: option.label });
+      dice.push({ sides, value: roll(sides), sign, label: option.label });
     }
   }
   return { bonus, dice };

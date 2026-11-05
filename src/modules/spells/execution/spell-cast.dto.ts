@@ -2,7 +2,8 @@ import type { SpellCast } from '@prisma/client';
 import type { MechanicalEntity } from '../../shared/conditions.js';
 import { durationSummary, parseDurationSnapshot } from './spell-duration.js';
 import {
-  parseImmediateHealingSnapshot,
+  parseSpellResolutionSnapshot,
+  type AttackDamageSnapshot,
   type ImmediateHealingSnapshot,
 } from './spell-resolution-snapshot.js';
 
@@ -13,6 +14,18 @@ import {
  * `effectGroupId` é HISTÓRICO (não diz se o efeito está ativo — quem responde
  * isso é o Effect Engine).
  */
+/**
+ * DTO do ataque mágico (6.6I.4): igual ao snapshot persistido, exceto a CA do
+ * alvo, que só é exposta quando ele é um PERSONAGEM. Criatura/NPC segue a
+ * política atual de esconder CA/PV — o snapshot no banco continua auditável.
+ */
+export type AttackDamageResolutionDto = Omit<AttackDamageSnapshot, 'attack'> & {
+  attack: Omit<AttackDamageSnapshot['attack'], 'targetAc'> & { targetAc: number | null };
+};
+
+/** União exposta no DTO: resolução imediata de cura ou de ataque mágico. */
+export type SpellCastResolutionDto = ImmediateHealingSnapshot | AttackDamageResolutionDto;
+
 export interface SpellCastDto {
   id: string;
   spellId: string;
@@ -101,7 +114,7 @@ export interface SpellCastDto {
    * SNAPSHOT da resolução IMEDIATA (6.6I.3): rolagem, modificador, cura
    * solicitada/efetiva e HP antes/depois. `null` em Effect/pendência.
    */
-  resolution: ImmediateHealingSnapshot | null;
+  resolution: SpellCastResolutionDto | null;
   createdAt: string;
   committedAt: string;
   resolvedAt: string | null;
@@ -156,6 +169,25 @@ function targetingOf(value: unknown): SpellCastDto['targeting'] {
     requiresClearPath: item.requiresClearPath === true,
     constraints,
   };
+}
+
+/**
+ * Snapshot de resolução SEGURO para o cliente.
+ *
+ * `immediate-healing` passa inteiro. No `attack-damage` a CA do alvo só sai
+ * quando o alvo é um personagem: criatura/NPC é estado privado do Mestre.
+ */
+function resolutionOf(row: SpellCast): SpellCastResolutionDto | null {
+  const snapshot = parseSpellResolutionSnapshot(row.resolutionSnapshot);
+  if (!snapshot) return null;
+  if (snapshot.kind === 'immediate-healing') return snapshot;
+  const targets = Array.isArray(row.targets)
+    ? row.targets.map(entityOf).filter((entity): entity is MechanicalEntity => entity !== null)
+    : [];
+  const hidesArmorClass = targets.some((entity) => entity.kind !== 'character');
+  return hidesArmorClass
+    ? { ...snapshot, attack: { ...snapshot.attack, targetAc: null } }
+    : snapshot;
 }
 
 export function toSpellCastDto(row: SpellCast): SpellCastDto {
@@ -237,7 +269,7 @@ export function toSpellCastDto(row: SpellCast): SpellCastDto {
       };
     })(),
     resolutionReason: row.resolutionReason ?? null,
-    resolution: parseImmediateHealingSnapshot(row.resolutionSnapshot),
+    resolution: resolutionOf(row),
     createdAt: row.createdAt.toISOString(),
     committedAt: row.committedAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,

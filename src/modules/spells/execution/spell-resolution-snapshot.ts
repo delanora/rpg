@@ -9,8 +9,9 @@ import { parseJson } from '../../shared/json.js';
  * APLICADO no dia da conjuração — retry, refresh e mudanças posteriores de ficha
  * nunca recalculam nem rolam de novo.
  *
- * A união discriminada começa com `immediate-healing`; dano por ataque mágico
- * entrará como outro `kind` quando a 6.6I.4 existir. Nada de tabela por magia.
+ * A união discriminada tem duas variantes: `immediate-healing` (6.6I.3) e
+ * `attack-damage` (6.6I.4 — ataque mágico resolvido na hora). Nada de tabela por
+ * magia e nada de recálculo em retry/refresh.
  */
 
 export const immediateHealingSnapshotSchema = z.object({
@@ -43,6 +44,91 @@ export const immediateHealingSnapshotSchema = z.object({
 });
 
 export type ImmediateHealingSnapshot = z.infer<typeof immediateHealingSnapshotSchema>;
+
+/** Componente de dano já rolado e já defendido pelo núcleo compartilhado. */
+export const attackDamageComponentSnapshotSchema = z.object({
+  type: z.string().nullable(),
+  /** Dados rolados (o crítico dobra a quantidade, nunca o bônus). */
+  count: z.number().int().nonnegative(),
+  sides: z.number().int().nonnegative(),
+  rolls: z.array(z.number().int()),
+  bonus: z.number().int(),
+  raw: z.number().int().nonnegative(),
+  applied: z.number().int().nonnegative(),
+  modifier: z
+    .enum(['immunity', 'resistance', 'vulnerability', 'resistance-vulnerability'])
+    .nullable(),
+});
+
+/**
+ * FASE 6.6I.4 — SNAPSHOT DO ATAQUE MÁGICO.
+ *
+ * Guarda o d20 mantido, os dados rolados, o modo, o bônus SNAPSHOTADO no
+ * `SpellCast`, a CA do alvo NO MOMENTO da resolução e o dano por componente.
+ * Miss não inventa evento de dano: `damage: null`.
+ */
+export const attackDamageSnapshotSchema = z.object({
+  kind: z.literal('attack-damage'),
+  attack: z.object({
+    kind: z.enum(['melee', 'ranged']),
+    /** Índice do ataque dentro do cast (hoje sempre 0). */
+    index: z.number().int().nonnegative(),
+    /** Identidade do ataque (`spell-cast:<castId>:attack:<index>`). */
+    occurrenceId: z.string(),
+    naturalRoll: z.number().int(),
+    rolls: z.array(z.number().int()),
+    mode: z.enum(['normal', 'advantage', 'disadvantage']),
+    /** Bônus vindo do SNAPSHOT do cast (nunca recalculado). */
+    attackBonus: z.number().int(),
+    effectBonus: z.number().int(),
+    effectDice: z.array(
+      z.object({
+        sides: z.number().int(),
+        value: z.number().int(),
+        sign: z.number().int(),
+        label: z.string().nullable(),
+      }),
+    ),
+    /** Fontes visíveis que contribuíram (efeito privado = `null`). */
+    sources: z.array(z.string().nullable()),
+    total: z.number().int(),
+    targetAc: z.number().int(),
+    hit: z.boolean(),
+    critical: z.boolean(),
+    autoMiss: z.boolean(),
+    autoHit: z.boolean(),
+  }),
+  damage: z
+    .object({
+      /** `spell-cast:<castId>:attack:<index>:damage`. */
+      eventId: z.string(),
+      components: z.array(attackDamageComponentSnapshotSchema),
+      rawDamage: z.number().int().nonnegative(),
+      finalDamage: z.number().int().nonnegative(),
+      hpBefore: z.number().int().nullable(),
+      hpAfter: z.number().int().nullable(),
+      critical: z.boolean(),
+    })
+    .nullable(),
+  target: z.object({ kind: z.string(), id: z.string() }),
+  casterName: z.string(),
+  noEffectReason: z.enum(['attack-miss', 'zero-damage']).nullable(),
+  at: z.string(),
+});
+
+export type AttackDamageSnapshot = z.infer<typeof attackDamageSnapshotSchema>;
+
+/** União das resoluções imediatas persistidas em `SpellCast.resolutionSnapshot`. */
+export const spellResolutionSnapshotSchema = z.discriminatedUnion('kind', [
+  immediateHealingSnapshotSchema,
+  attackDamageSnapshotSchema,
+]);
+export type SpellResolutionSnapshot = z.infer<typeof spellResolutionSnapshotSchema>;
+
+/** Leitura FECHADA do snapshot de resolução (inválido/ausente = `null`). */
+export function parseSpellResolutionSnapshot(value: unknown): SpellResolutionSnapshot | null {
+  return parseJson(spellResolutionSnapshotSchema, value, null as never) ?? null;
+}
 
 /** Lê o snapshot persistido; JSON inválido/ausente vira `null` (nunca inventa). */
 export function parseImmediateHealingSnapshot(value: unknown): ImmediateHealingSnapshot | null {

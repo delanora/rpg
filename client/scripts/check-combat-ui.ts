@@ -1964,9 +1964,10 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/modules/combat/resolution-requests.ts').includes("kind: 'spell-saving-throw'")
   );
   check(
-    'CB132) NPC escala por campo explícito; Spell Attack continua ausente',
+    'CB132) NPC escala por campo explícito; nenhum spell attack REAL foi registrado',
     source('../src/modules/shared/creature-spellcasting.ts').includes('cantripScalingLevel') &&
-      !registrySource.includes("kind: 'spell-attack'")
+      !registrySource.includes("kind: 'spell-attack'") &&
+      !registrySource.includes("kind: 'attack-damage'")
   );
   check(
     'CB133) o smoke da Chama Sagrada integra o runner principal',
@@ -2035,6 +2036,96 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB140) o smoke da Palavra Curativa integra o runner principal',
     smokeRunner.includes('smokeHealingWord(BASE_URL, check)')
+  );
+
+  // 6.6I.4 — Fundação compartilhada de ataque mágico (d20 vs CA).
+  const attackResolver = source('../src/modules/combat/attack-resolution.ts');
+  const attackDamage = source('../src/modules/spells/execution/attack-damage-resolution.ts');
+  const executionDefinition = source(
+    '../src/modules/spells/execution/spell-execution-definition.ts'
+  );
+  const spellSnapshot = source('../src/modules/spells/execution/spell-resolution-snapshot.ts');
+  check(
+    'CB141) arma e magia usam o MESMO resolver d20 vs CA (nenhum segundo motor)',
+    attackResolver.includes('export function selectAttackRoll') &&
+      attackResolver.includes('export function resolveAttackOutcome') &&
+      combatServiceSource.includes("from './attack-resolution.js'") &&
+      combatServiceSource.includes('selectAttackRoll(') &&
+      combatServiceSource.includes('resolveAttackOutcome(') &&
+      attackDamage.includes('selectAttackRoll(') &&
+      attackDamage.includes('resolveAttackOutcome(') &&
+      !combatServiceSource.includes('attackRoll !== 1')
+  );
+  check(
+    'CB142) nat 1/nat 20/crítico moram numa regra ÚNICA e determinística (nada de "rolar até sair")',
+    attackResolver.includes('naturalRoll === 1') &&
+      attackResolver.includes('naturalRoll === 20') &&
+      attackResolver.includes('critThreshold') &&
+      !attackResolver.includes('Math.random') &&
+      !attackDamage.includes('rollD20(')
+  );
+  check(
+    'CB143) o crítico dobra TODOS os dados e nunca o bônus fixo (componentes múltiplos)',
+    attackResolver.includes('export function rollAttackDamageComponents') &&
+      attackResolver.includes('critical ? 2 : 1') &&
+      attackDamage.includes('rollAttackDamageComponents(') &&
+      attackResolver.includes('bonus: number') &&
+      attackResolver.includes('rawAmount: Math.max(0, diceTotal + bonus)')
+  );
+  check(
+    'CB144) bônus de ataque vem do SNAPSHOT do cast e a CA é o estado ATUAL do alvo',
+    attackDamage.includes('spellAttackBonus') &&
+      !attackDamage.includes('spellAttackBonusFrom(') &&
+      attackDamage.includes('targetArmorClassOf(') &&
+      attackResolver.includes('characterArmorClass(') &&
+      attackResolver.includes('npcEffectiveArmorClass(') &&
+      !attackDamage.includes('targetArmorClass =') &&
+      spellSnapshot.includes("kind: z.literal('attack-damage')")
+  );
+  check(
+    'CB145) dano do spell attack passa por `resolveDamage` (sem HP direto) e compõe morte/Concentração',
+    attackDamage.includes('resolveDamage(') &&
+      !attackDamage.includes('hpCurrent =') &&
+      !attackDamage.includes('applyHpMutation(') &&
+      !attackDamage.includes('resolveHealing(') &&
+      attackDamage.includes('applyDamageConsequences(') &&
+      attackDamage.includes('noteDamageConcentration(')
+  );
+  check(
+    'CB146) cliente NÃO envia bônus/CA/d20/hit/crítico e magia não cria Effect/Pending/Concentração',
+    !castSchema.includes('attackBonus') &&
+      !castSchema.includes('naturalRoll') &&
+      !castSchema.includes('targetArmorClass') &&
+      !castSchema.includes('critical') &&
+      !attackDamage.includes('effectInstance') &&
+      !attackDamage.includes('pendingEffectSave') &&
+      !attackDamage.includes('state.concentration =')
+  );
+  check(
+    'CB147) a definição sintética é de TESTE e o registry de produção continua sem spell attack',
+    source('../src/scripts/smoke-spell-attack-foundation.ts').includes('test.synthetic-spell-attack') &&
+      !registrySource.includes('test.synthetic-spell-attack') &&
+      executionDefinition.includes("kind: 'attack-damage'") &&
+      !registrySource.includes("kind: 'attack-damage'")
+  );
+  check(
+    'CB148) Fire Bolt, Eldritch Blast e Inflict Wounds NÃO foram implementados',
+    !registrySource.includes('fire-bolt') &&
+      !registrySource.includes('eldritch-blast') &&
+      !registrySource.includes('inflict-wounds') &&
+      !executionDefinition.includes('fire-bolt')
+  );
+  check(
+    'CB149) miss não inventa evento de dano e o ataque tem identidade determinística',
+    attackDamage.includes('attack-miss') &&
+      attackDamage.includes('spell-cast:${castId}:attack:${index}') &&
+      attackDamage.includes(':damage') &&
+      attackDamage.includes("damageSnapshot: AttackDamageSnapshot['damage'] = null") &&
+      spellSnapshot.includes('damage: z')
+  );
+  check(
+    'CB150) o smoke da fundação de spell attack integra o runner principal',
+    smokeRunner.includes('smokeSpellAttackFoundation(BASE_URL, check)')
   );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

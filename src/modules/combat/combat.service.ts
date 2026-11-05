@@ -49,6 +49,7 @@ import {
 } from '../../realtime/events.js';
 import { getBroadcaster } from '../../realtime/hub.js';
 import { characterArmorClass, characterCritThreshold } from '../characters/armor-class.js';
+import { resolveAttackOutcome, selectAttackRoll } from './attack-resolution.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import { characterClassAdjustments } from '../characters/characters.dto.js';
 import {
@@ -1395,16 +1396,12 @@ export async function resolveAttack(
         effectDisadvantages: attackerEffectMods.disadvantage,
       },
     );
-    // Com vantagem/desvantagem o d20 rola duas vezes e o mantido é o maior/menor.
-    const firstRoll = rollD20();
-    const secondRoll = advantage || disadvantage ? rollD20() : null;
-    const attackRoll =
-      secondRoll === null
-        ? firstRoll
-        : advantage
-          ? Math.max(firstRoll, secondRoll)
-          : Math.min(firstRoll, secondRoll);
-    const attackDice = secondRoll === null ? [attackRoll] : [firstRoll, secondRoll];
+    // 6.6I.4 — ROLAGEM DE ATAQUE pelo resolver COMPARTILHADO (o mesmo dos
+    // ataques mágicos): com vantagem/desvantagem o d20 rola duas vezes e o
+    // mantido é o maior/menor. O bônus e a CA continuam vindo da camada da arma.
+    const attackSelection = selectAttackRoll({ advantage, disadvantage });
+    const attackRoll = attackSelection.naturalRoll;
+    const attackDice = attackSelection.rolls;
     // Dados extras de EFEITOS: rolados AQUI (servidor), como pool independente.
     // Nunca somados ao bônus fixo: o breakdown mostra cada dado.
     const effectDice = [
@@ -1431,9 +1428,14 @@ export async function resolveAttack(
     // features: ficam no 20 natural.
     const critThreshold =
       attacker.character !== null ? characterCritThreshold(attacker.character) : 20;
-    const critical = attackRoll >= critThreshold;
-    // Crítico sempre acerta; 1 natural sempre erra.
-    const hit = critical || (attackRoll !== 1 && attackTotal >= targetArmorClass);
+    // Crítico sempre acerta; 1 natural sempre erra; 20 natural sempre acerta.
+    // Regra ÚNICA em `attack-resolution`, usada também pelos ataques mágicos.
+    const { hit, critical } = resolveAttackOutcome({
+      naturalRoll: attackRoll,
+      total: attackTotal,
+      targetAc: targetArmorClass,
+      critThreshold,
+    });
 
     rolls.push({
       kind: 'attack',
