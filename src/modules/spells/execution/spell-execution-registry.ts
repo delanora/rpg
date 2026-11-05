@@ -19,6 +19,10 @@ import {
   SYNTHETIC_SAVE_HALF_SPELL_ID,
 } from './save-half-test-definition.js';
 import {
+  SYNTHETIC_MULTI_SAVE_DEFINITION,
+  SYNTHETIC_MULTI_SAVE_SPELL_ID,
+} from './multi-save-test-definition.js';
+import {
   HEALING_WORD_BASE_DICE,
   HEALING_WORD_LABEL,
   HEALING_WORD_NO_EFFECT_ON_TYPES,
@@ -146,6 +150,8 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
   // vive só aqui no servidor (o smoke é outro processo): não está no catálogo,
   // no repertório, no cast-options, no compêndio nem em UI alguma.
   [SYNTHETIC_SAVE_HALF_SPELL_ID]: SYNTHETIC_SAVE_HALF_DEFINITION,
+  // 6.6J.2 — prova MULTI-ALVO (roll compartilhado). Também fora do catálogo.
+  [SYNTHETIC_MULTI_SAVE_SPELL_ID]: SYNTHETIC_MULTI_SAVE_DEFINITION,
   [HEALING_WORD_SPELL_ID]: {
     spellId: HEALING_WORD_SPELL_ID,
     // Instantânea e sem Concentração.

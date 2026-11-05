@@ -1926,6 +1926,11 @@ console.log('Check-combat-ui — refino da UI de combate');
   // 6.6I.2 — Chama Sagrada: save-damage declarativo, sem card/client dedicado.
   const sacredFlame = source('../src/modules/spells/execution/sacred-flame.ts');
   const saveDamage = source('../src/modules/spells/execution/save-damage-resolution.ts');
+  const finalizer = source('../src/modules/spells/execution/save-damage-finalizer.ts');
+  const syntheticMulti = source(
+    '../src/modules/spells/execution/multi-save-test-definition.ts'
+  );
+  const castSchemaSource = source('../src/modules/spells/execution/spell-cast.schema.ts');
   const castOptions = source('../src/modules/spells/execution/spell-cast-options.service.ts');
   check(
     'CB127) scaling de truque é genérico por nível TOTAL (não usa nível de classe nem ND)',
@@ -1937,18 +1942,24 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'CB128) defesas e HP da Chama Sagrada passam pelo núcleo compartilhado (sem mutação direta)',
-    saveDamage.includes("from '../../combat/damage-resolution.js'") &&
-      saveDamage.includes('resolveDamage(') &&
+    source('../src/modules/spells/execution/save-damage-finalizer.ts').includes(
+      "from '../../combat/damage-resolution.js'"
+    ) &&
+      source('../src/modules/spells/execution/save-damage-finalizer.ts').includes('resolveDamage(') &&
       !saveDamage.includes('hpCurrent =') &&
       !saveDamage.includes('UPDATE "characters"') &&
       !saveDamage.includes('UPDATE "combatants"')
   );
   check(
-    'CB129) dano/concentração usam eventId DETERMINÍSTICO e o snapshot vai para a pendência',
-    saveDamage.includes('spell-save:${pendingId}:damage') &&
+    'CB129) dano/concentração usam eventId DETERMINÍSTICO por ALVO e o roll compartilhado vive no cast',
+    source('../src/modules/spells/execution/save-damage-finalizer.ts').includes(
+      'spell-cast:${castId}:target:'
+    ) &&
+      source('../src/modules/spells/execution/save-damage-finalizer.ts').includes(
+        'noteDamageConcentration('
+      ) &&
       saveDamage.includes('resolutionSnapshot') &&
-      saveDamage.includes('noteDamageConcentration(') &&
-      saveDamage.includes('applyDamageConsequences(')
+      saveDamage.includes('finalizeSaveDamageCast(')
   );
   check(
     'CB130) cliente não ganha campos de dano/atributo/CD da Chama Sagrada',
@@ -1963,6 +1974,56 @@ console.log('Check-combat-ui — refino da UI de combate');
       !source('src/combat/components/ResolutionCard.tsx').includes('sacred') &&
       source('../src/modules/combat/resolution-requests.ts').includes("kind: 'spell-saving-throw'")
   );
+  check(
+    'CB161) barreira multi-alvo: lock do cast, `resolving` e espera por TODA pendência inicial',
+    finalizer.includes('pg_advisory_xact_lock') &&
+      finalizer.includes("status !== 'resolving'") &&
+      finalizer.includes("status === 'pending'") &&
+      finalizer.includes("phase: 'initial'")
+  );
+  check(
+    'CB162) roll COMPARTILHADO e evento de dano por ALVO têm identidades distintas',
+    finalizer.includes('damage-roll:${index}') &&
+      finalizer.includes('target:${target.kind}:${target.id}:damage') &&
+      !finalizer.includes('spell-save:')
+  );
+  check(
+    'CB163) a definição sintética multi-alvo é de TESTE e declara `damageRollScope: shared`',
+    syntheticMulti.includes("'test.synthetic-multi-save-damage'") &&
+      syntheticMulti.includes("damageRollScope: 'shared'") &&
+      !source('../src/modules/shared/spells/index.ts').includes('synthetic-multi-save-damage')
+  );
+  check(
+    'CB164) o cliente NÃO envia roll compartilhado, dano por alvo nem CD/atributo do save',
+    !castSchemaSource.includes('damage') &&
+      !castSchemaSource.includes('damageRoll') &&
+      !castSchemaSource.includes('saveDc') &&
+      !castSchemaSource.includes('ability')
+  );
+  check(
+    'CB165) a prova multi-alvo NÃO antecipa área/geometria (sem radius/cone/cube/line/origin)',
+    !syntheticMulti.includes('radius') &&
+      !syntheticMulti.includes('cone') &&
+      !syntheticMulti.includes('cube') &&
+      !syntheticMulti.includes('line') &&
+      !syntheticMulti.includes('origin') &&
+      !registrySource.includes('chain-lightning')
+  );
+  check(
+    'CB166) o bloqueio de turno por resolução inicial é distinto do trigger de fim de turno',
+    combatServiceSource.includes('SPELL_RESOLUTION_PENDING') &&
+      combatServiceSource.includes('TURN_END_TRIGGER_PENDING') &&
+      combatServiceSource.indexOf("'SPELL_RESOLUTION_PENDING'") <
+        combatServiceSource.indexOf("'TURN_END_TRIGGER_PENDING'") &&
+      source('src/combat/CombatTracker.tsx').includes('SPELL_RESOLUTION_PENDING')
+  );
+  check(
+    'CB167) nenhuma UI multi-alvo dedicada: os Resolution Cards genéricos bastam',
+    !source('../src/modules/combat/resolution-requests.ts').includes('MultiTarget') &&
+      !smokeRunner.includes('MultiTargetSaveModal') &&
+      smokeRunner.includes('smokeMultiTargetSaveDamage(BASE_URL, check)')
+  );
+
   check(
     'CB132) NPC escala por campo explícito; nenhum spell attack REAL foi registrado',
     source('../src/modules/shared/creature-spellcasting.ts').includes('cantripScalingLevel') &&
@@ -2150,10 +2211,10 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'CB153) a metade é aplicada POR COMPONENTE e ANTES das defesas',
-    saveDamage.includes('applySaveDamageOutcome(') &&
-      saveDamage.indexOf('applySaveDamageOutcome(') < saveDamage.indexOf('resolveDamage(') &&
-      saveDamage.includes('rawAmount: component.rawAmount') &&
-      saveDamage.includes('damageAfterSave')
+    finalizer.includes('applySaveDamageOutcome(') &&
+      finalizer.indexOf('applySaveDamageOutcome(') < finalizer.indexOf('resolveDamage(') &&
+      finalizer.includes('rawAmount: component.rawAmount') &&
+      finalizer.includes('damageAfterSave')
   );
   check(
     'CB154) arredondamento da metade usa floor e o helper é puro (sem resolveDamage)',
@@ -2191,11 +2252,12 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'CB159) dano da prova passa por `resolveDamage` e Concentração usa o dano FINAL',
-    saveDamage.includes('resolveDamage(') &&
-      !saveDamage.includes('applyHpMutation(') &&
-      saveDamage.includes('noteDamageConcentration(') &&
-      saveDamage.includes('finalDamage') &&
-      saveDamage.indexOf('applySaveDamageOutcome(') < saveDamage.indexOf('noteDamageConcentration(')
+    finalizer.includes('resolveDamage(') &&
+      !finalizer.includes('applyHpMutation(') &&
+      finalizer.includes('noteDamageConcentration(') &&
+      finalizer.includes('finalDamage') &&
+      finalizer.indexOf('applySaveDamageOutcome(') <
+        finalizer.indexOf('noteDamageConcentration(')
   );
   check(
     'CB160) o smoke de save-for-half integra o runner principal',

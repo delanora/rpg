@@ -1,18 +1,9 @@
-import { z } from 'zod';
 import type { PendingEffectSave, Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
 import { HttpError } from '../../../lib/http-error.js';
 import { rollDie } from '../../shared/dice.js';
-import { parseJson } from '../../shared/json.js';
 import type { MechanicalEntity } from '../../shared/conditions.js';
-import { loadEntity } from '../../mechanical/mechanical.service.js';
-import { resolveDamage } from '../../combat/damage-resolution.js';
-import { damageTargetOf } from '../../combat/damage-target.js';
-import {
-  applyDamageConsequences,
-  publishDeathUpdated,
-} from '../../death/death.service.js';
-import { noteDamageConcentration } from '../../concentration/concentration.service.js';
+import { publishDeathUpdated } from '../../death/death.service.js';
 import { publishCharacter } from '../../combat/combat.service.js';
 import { publishEffects } from '../../effects/effects.service.js';
 import {
@@ -20,93 +11,66 @@ import {
   toPendingEffectSaveDto,
   type PendingEffectSaveDto,
 } from '../../effects/pending-effect-saves.js';
-import { scaledDice } from '../../shared/spells/cantrip-scaling.js';
 import { spellExecutionDefinition } from './spell-execution-registry.js';
-import { cantripScalingLevelOf } from './cantrip-scaling.service.js';
 import {
-  applySaveDamageOutcome,
-  type SaveDamageShare,
-} from './save-damage-outcome.js';
+  parseSpellResolutionSnapshot,
+  type SaveDamageCastSnapshot,
+  type SaveDamageTargetResult,
+} from './spell-resolution-snapshot.js';
+import { buildSaveResultSnapshot } from './save-result-snapshot.js';
+import { finalizeSaveDamageCast } from './save-damage-finalizer.js';
 
 /**
- * FASE 6.6I.2 + 6.6J.1 — RESOLUÇÃO DE `save-damage`.
+ * FASE 6.6J.1 + 6.6J.2 — RESOLUÇÃO DE `save-damage` (1 ou N alvos).
  *
- * O save já foi rolado pelo pipeline de dados; aqui o SERVIDOR rola o dano
- * (nunca o cliente) e aplica a ORDEM do PHB 2014:
+ * Divisão de responsabilidades:
  *
- *   1. rola o dano BRUTO de cada componente (uma vez por resolução);
- *   2. aplica a consequência do desfecho do save — `none`/`half`/`full`,
- *      POR COMPONENTE e com `floor` na metade (6.6J.1);
- *   3. entrega os componentes já ajustados ao núcleo de dano, que aplica
- *      resistência/imunidade/vulnerabilidade por tipo;
- *   4. usa o dano FINAL para PV, morte e Concentração.
+ *  • ESTA função só resolve UMA pendência: grava o resultado do SEU save e
+ *    entrega o controle à barreira do cast. Nada de rolar dano por alvo.
+ *  • A BARREIRA (`save-damage-finalizer.ts`) espera TODAS as pendências iniciais
+ *    serem terminais e então rola o dano UMA vez (PHB 2014: efeito simultâneo),
+ *    aplica defenses/HP/Concentração/morte POR ALVO e fecha o `SpellCast`.
  *
- * O núcleo `resolveDamage` NUNCA conhece salvaguarda — ele recebe valores já
- * ajustados. Sucesso com meia-dano NÃO é "sem efeito": só vira `no-effect`
- * quando o dano final é zero (imunidade/resistência total).
+ * Com um alvo o comportamento observável é o de 6.6J.1: a barreira já está
+ * satisfeita no único save. `Sacred Flame` (sucesso = `none`) continua sem dano
+ * no sucesso, e a meia-dano por componente continua valendo.
  *
- * Invariantes preservadas:
- *  • o claim `pending → resolved` e o dano acontecem na MESMA transação;
- *  • `eventId` DETERMINÍSTICO (`spell-save:<pendingId>:damage`) — retry e
- *    Concentração usam a mesma identidade, nunca um UUID por tentativa;
- *  • retry devolve o snapshot salvo, sem rolar de novo nem reaplicar PV;
- *  • nenhum EffectInstance é criado: a magia é instantânea;
- *  • o SpellCast só fecha quando NENHUMA pendência dele segue aberta.
+ * Invariantes:
+ *  • o claim `pending → resolved` e a finalização acontecem na MESMA transação;
+ *  • lock por pendência (esta resolução) → lock do cast (barreira): ordem única;
+ *  • retry devolve o snapshot sem rerrolar dano nem reaplicar PV;
+ *  • identidades: roll compartilhado `spell-cast:<castId>:damage-roll:0`, evento
+ *    de dano por alvo `spell-cast:<castId>:target:<kind>:<id>:damage`.
  */
 
-const modifierSchema = z
-  .enum(['immunity', 'resistance', 'vulnerability', 'resistance-vulnerability'])
-  .nullable();
-
-const resolvedComponentSchema = z.object({
-  type: z.string().nullable(),
-  /** Quantidade de dados rolada no componente (auditoria). */
-  count: z.number().int().nonnegative().optional(),
-  sides: z.number().int().nonnegative().optional(),
-  rolls: z.array(z.number().int()).optional(),
-  /** Dano bruto do componente (depois do escalonamento, antes do save). */
-  raw: z.number().int().nonnegative(),
-  /** Dano DEPOIS do save e ANTES das defesas (6.6J.1). */
-  afterSave: z.number().int().nonnegative().optional(),
-  applied: z.number().int().nonnegative(),
-  modifier: modifierSchema.optional(),
-});
-
-const saveDamageSnapshotSchema = z.object({
-  kind: z.literal('save-damage'),
-  eventId: z.string(),
-  ability: z.string(),
-  dc: z.number().int(),
-  total: z.number().int(),
-  success: z.boolean(),
-  /** Consequência declarada pela magia (`none`/`half`/`full`). */
-  outcome: z
-    .object({
-      success: z.string(),
-      failure: z.string(),
-    })
-    .optional(),
-  damageType: z.string(),
-  scalingLevel: z.number().int(),
-  /** LEGADO (snapshot de uma única parcela): primeiro componente. */
-  dice: z
-    .object({
-      count: z.number().int().nonnegative(),
-      sides: z.number().int().nonnegative(),
-      rolls: z.array(z.number().int()),
-    })
-    .optional(),
-  rawDamage: z.number().int().nonnegative(),
-  /** Soma depois da consequência do save (antes das defesas). */
-  damageAfterSave: z.number().int().nonnegative().optional(),
-  finalDamage: z.number().int().nonnegative(),
-  components: z.array(resolvedComponentSchema).optional(),
-  target: z.object({ kind: z.string(), id: z.string() }),
-  casterName: z.string(),
-  at: z.string(),
-});
-
-export type SaveDamageSnapshot = z.infer<typeof saveDamageSnapshotSchema>;
+/**
+ * Visão do resultado DESTE alvo (usada pelo log e pela Concentração).
+ *
+ * Deriva do snapshot do CAST (fonte de verdade), nunca de uma cópia por
+ * pendência: o roll bruto é UM só e `rolls` mostra exatamente os dados rolados
+ * para ele.
+ */
+export interface SaveDamageSnapshotView {
+  damageType: string;
+  rawDamage: number;
+  damageAfterSave: number;
+  finalDamage: number;
+  /** Todos os dados do roll COMPARTILHADO (auditoria). */
+  rolls: number[];
+  /** Evento de dano DESTE alvo (nunca o id do roll compartilhado). */
+  eventId: string;
+  outcome: { success: string; failure: string };
+  components: {
+    type: string | null;
+    count: number;
+    sides: number;
+    rolls: number[];
+    raw: number;
+    afterSave: number;
+    applied: number;
+    modifier: string | null;
+  }[];
+}
 
 export interface SaveDamageResolution {
   pending: PendingEffectSaveDto;
@@ -116,8 +80,13 @@ export interface SaveDamageResolution {
   dc: number;
   target: MechanicalEntity;
   castId: string | null;
-  /** `null` em replay sem snapshot legível. */
-  snapshot: SaveDamageSnapshot | null;
+  /** `null` enquanto a barreira não foi satisfeita (sem dano ainda). */
+  snapshot: SaveDamageSnapshotView | null;
+  /** `true` quando a barreira foi satisfeita e o cast fechou. */
+  castCompleted: boolean;
+  /** Resultado de TODOS os alvos (ordem canônica do targeting). */
+  targets: SaveDamageTargetResult[];
+  castSnapshot: SaveDamageCastSnapshot | null;
   publications: string[];
   deathTargets: MechanicalEntity[];
   concentrationChanged: boolean;
@@ -129,29 +98,64 @@ export interface SaveDamageResolveOptions {
   roll?: (sides: number) => number;
 }
 
-function eventIdOf(pendingId: string): string {
-  return `spell-save:${pendingId}:damage`;
-}
-
 function entityOf(kind: string, id: string): MechanicalEntity {
   return { kind: kind as MechanicalEntity['kind'], id };
 }
 
-function snapshotOf(row: { resolutionSnapshot: unknown }): SaveDamageSnapshot | null {
-  return parseJson(saveDamageSnapshotSchema, row.resolutionSnapshot, null as never) ?? null;
+function sameTarget(
+  left: { kind: string; id: string },
+  right: MechanicalEntity,
+): boolean {
+  return left.kind === right.kind && left.id === right.id;
 }
 
-function replayedResolution(row: PendingEffectSave): SaveDamageResolution {
-  const snapshot = snapshotOf(row);
+function viewOf(
+  snapshot: SaveDamageCastSnapshot | null,
+  target: MechanicalEntity,
+): SaveDamageSnapshotView | null {
+  if (!snapshot) return null;
+  const found = snapshot.targets.find((item) => sameTarget(item.target, target));
+  if (!found) return null;
+  return {
+    damageType: snapshot.damageType,
+    rawDamage: found.rawDamage,
+    damageAfterSave: found.damageAfterSave,
+    finalDamage: found.finalDamage,
+    rolls: snapshot.damageRoll?.components.flatMap((component) => component.rolls) ?? [],
+    eventId: found.eventId,
+    outcome: snapshot.outcome,
+    components: found.components.map((component, index) => ({
+      type: component.type,
+      count: snapshot.damageRoll?.components[index]?.count ?? 0,
+      sides: snapshot.damageRoll?.components[index]?.sides ?? 0,
+      rolls: snapshot.damageRoll?.components[index]?.rolls ?? [],
+      raw: component.raw,
+      afterSave: component.afterSave,
+      applied: component.applied,
+      modifier: component.modifier,
+    })),
+  };
+}
+
+async function replayedResolution(row: PendingEffectSave): Promise<SaveDamageResolution> {
+  const cast = row.spellCastId
+    ? await prisma.spellCast.findUnique({ where: { id: row.spellCastId } })
+    : null;
+  const stored = cast ? parseSpellResolutionSnapshot(cast.resolutionSnapshot) : null;
+  const castSnapshot = stored?.kind === 'save-damage' ? stored : null;
+  const target = entityOf(row.targetEntityKind, row.targetEntityId);
   return {
     pending: toPendingEffectSaveDto(row),
     success: row.result === 'success',
     replayed: true,
-    label: '',
+    label: toPendingEffectSaveDto(row).label,
     dc: row.dc,
-    target: entityOf(row.targetEntityKind, row.targetEntityId),
+    target,
     castId: row.spellCastId ?? null,
-    snapshot,
+    snapshot: viewOf(castSnapshot, target),
+    castCompleted: cast ? cast.status !== 'resolving' : true,
+    targets: castSnapshot?.targets ?? [],
+    castSnapshot,
     publications: [],
     deathTargets: [],
     concentrationChanged: false,
@@ -163,8 +167,8 @@ function replayedResolution(row: PendingEffectSave): SaveDamageResolution {
  * Resolve a pendência com o TOTAL do save já rolado.
  *
  * `total` vem do pipeline de dados (server-authoritative); atributo e CD vêm da
- * própria pendência. A rolagem de dano acontece UMA vez, dentro do claim, e o
- * desfecho aplicado vem da DEFINIÇÃO (`outcome.success`/`outcome.failure`).
+ * própria pendência. Nenhum dano é rolado ou aplicado aqui: quem decide é a
+ * barreira, que só age quando não sobra nenhum save inicial obrigatório aberto.
  */
 export async function resolveSaveDamagePending(
   pendingId: string,
@@ -179,7 +183,7 @@ export async function resolveSaveDamagePending(
 
   return prisma.$transaction(async (db) => {
     // Serializa a resolução da MESMA pendência entre processos/abas: duas
-    // resoluções concorrentes não rolam dano nem aplicam PV duas vezes.
+    // resoluções concorrentes não gravam dois resultados.
     await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${pendingId}))`;
 
     const row = await db.pendingEffectSave.findUnique({ where: { id: pendingId } });
@@ -206,6 +210,13 @@ export async function resolveSaveDamagePending(
         status: 'resolved',
         result: success ? 'success' : 'failure',
         resolvedAt: new Date(),
+        // A pendência guarda SÓ o save. O dano pertence ao cast (roll único).
+        resolutionSnapshot: buildSaveResultSnapshot({
+          ability: row.ability,
+          dc: row.dc,
+          total,
+          success,
+        }) as unknown as Prisma.InputJsonValue,
       },
     });
     if (!claimed.count) {
@@ -213,170 +224,10 @@ export async function resolveSaveDamagePending(
       return replayedResolution(later);
     }
 
-    const caster = await loadEntity(
-      entityOf(row.casterEntityKind, row.casterEntityId),
-      db,
-    );
-    const target = await loadEntity(
-      entityOf(row.targetEntityKind, row.targetEntityId),
-      db,
-    );
-    const scaling = await cantripScalingLevelOf(caster, db);
-    const share: SaveDamageShare = success
-      ? resolution.outcome.success
-      : resolution.outcome.failure;
-
-    // 1) Dano bruto, UM componente por vez (o tipo nunca é agregado).
-    const rolled = resolution.damage.components.map((component) => {
-      const dice = scaledDice(component.dice, component.scaling, scaling.level);
-      const count = Math.max(0, dice.count);
-      const rolls = Array.from({ length: count }, () => roll(dice.sides));
-      const rawAmount = Math.max(0, rolls.reduce((sum, value) => sum + value, 0));
-      return { type: component.type, count, sides: dice.sides, rolls, rawAmount };
-    });
-    // 2) Consequência do save, por componente e com floor.
-    const adjusted = applySaveDamageOutcome(rolled, share);
-
-    const eventId = eventIdOf(pendingId);
-    const publications = new Set<string>();
-    const deathTargets: MechanicalEntity[] = [];
-    const affectedEffects: MechanicalEntity[] = [];
-    let concentrationChanged = false;
-
-    const rawDamage = rolled.reduce((sum, component) => sum + component.rawAmount, 0);
-    const damageAfterSave = adjusted.reduce((sum, component) => sum + component.rawAmount, 0);
-    let finalDamage = 0;
-    let components: NonNullable<SaveDamageSnapshot['components']> = adjusted.map(
-      (component, index) => ({
-        type: component.type,
-        count: component.count,
-        sides: component.sides,
-        rolls: component.rolls,
-        // `rolled` guarda o bruto (antes do save); `adjusted` guarda a metade.
-        raw: rolled[index]?.rawAmount ?? component.rawAmount,
-        afterSave: component.rawAmount,
-        applied: 0,
-        modifier: null,
-      }),
-    );
-
-    // 3) Defesas por tipo + PV, no núcleo compartilhado. Nenhum dano final
-    // significa nenhuma escrita de PV (imunidade/resistência total).
-    if (damageAfterSave > 0) {
-      const damage = await resolveDamage(db, {
-        eventId,
-        source: {
-          kind: 'spell',
-          spellCastId: cast.id,
-          label: execution.spellId,
-        },
-        target: await damageTargetOf(db, target.entity),
-        components: adjusted.map((component) => ({
-          type: component.type,
-          rawAmount: component.rawAmount,
-        })),
-        publications,
-      });
-      finalDamage = damage.finalDamage;
-      components = adjusted.map((component, index) => ({
-        type: component.type,
-        count: component.count,
-        sides: component.sides,
-        rolls: component.rolls,
-        raw: rolled[index]?.rawAmount ?? component.rawAmount,
-        afterSave: component.rawAmount,
-        applied: damage.components[index]?.applied ?? 0,
-        modifier: damage.components[index]?.modifier ?? null,
-      }));
-
-      if (finalDamage > 0 && damage.hpAfter !== null) {
-        // O ciclo de morte de CRIATURA pertence à INSTÂNCIA de combate (o
-        // bestiário não é alvo de morte). Criatura SOLTA recebe o dano no
-        // registro, mas não abre Testes contra a Morte — a regra existente
-        // continua sendo a única fonte de verdade e não é duplicada aqui.
-        if (target.entity.kind !== 'creature') {
-          const consequence = await applyDamageConsequences(
-            target.entity,
-            {
-              damage: finalDamage,
-              hpBefore: damage.hpBefore ?? 0,
-              hpTempBefore: damage.hpTempBefore,
-              critical: false,
-              sourceName: caster.name,
-            },
-            db,
-            caster.name,
-          );
-          if (consequence.changed) deathTargets.push(target.entity);
-        }
-
-        // PHB 2014: dano FINAL > 0 → UM teste de Constituição por EVENTO, com
-        // CD derivada do dano FINAL (depois do save e das defesas).
-        const concentration = await noteDamageConcentration(target.entity, finalDamage, db, {
-          eventId,
-          sourceName: caster.name,
-        });
-        concentrationChanged = concentration.changed;
-        affectedEffects.push(...concentration.endedEffectTargets);
-      }
-    }
-
-    const damageType = [...new Set(rolled.map((component) => component.type))].join(' + ');
-    const first = rolled[0];
-    const snapshot: SaveDamageSnapshot = {
-      kind: 'save-damage',
-      eventId,
-      ability: row.ability,
-      dc: row.dc,
-      total,
-      success,
-      outcome: {
-        success: resolution.outcome.success,
-        failure: resolution.outcome.failure,
-      },
-      damageType,
-      scalingLevel: scaling.level,
-      ...(first
-        ? {
-            dice: {
-              count: first.count,
-              sides: first.sides,
-              rolls: first.rolls,
-            },
-          }
-        : {}),
-      rawDamage,
-      damageAfterSave,
-      finalDamage,
-      components,
-      target: { kind: target.entity.kind, id: target.entity.id },
-      casterName: caster.name,
-      at: new Date().toISOString(),
-    };
-
-    const fresh = await db.pendingEffectSave.update({
-      where: { id: pendingId },
-      data: { resolutionSnapshot: snapshot as unknown as Prisma.InputJsonValue },
-    });
-
-    // Fecha o cast quando NENHUMA pendência dele continua aberta. O desfecho do
-    // cast vem do DANO FINAL realmente aplicado (6.6J.1): meia-dano no sucesso
-    // ainda é `effect`; imunidade total é `no-effect`.
-    const remaining = await db.pendingEffectSave.findMany({
-      where: { spellCastId: cast.id },
-      select: { status: true, resolutionSnapshot: true },
-    });
-    if (!remaining.some((other) => other.status === 'pending')) {
-      const dealt = remaining.some((other) => (snapshotOf(other)?.finalDamage ?? 0) > 0);
-      await db.spellCast.updateMany({
-        where: { id: cast.id, status: 'resolving' },
-        data: {
-          status: 'resolved',
-          outcome: dealt ? 'effect' : 'no-effect',
-          resolvedAt: new Date(),
-        },
-      });
-    }
+    // BARREIRA + roll COMPARTILHADO + aplicação por alvo, na MESMA transação.
+    const finalization = await finalizeSaveDamageCast(cast.id, db, { roll });
+    const fresh = await db.pendingEffectSave.findUniqueOrThrow({ where: { id: pendingId } });
+    const target = entityOf(row.targetEntityKind, row.targetEntityId);
 
     return {
       pending: toPendingEffectSaveDto(fresh),
@@ -384,20 +235,24 @@ export async function resolveSaveDamagePending(
       replayed: false,
       label: toPendingEffectSaveDto(fresh).label,
       dc: row.dc,
-      target: target.entity,
+      target,
       castId: cast.id,
-      snapshot,
-      publications: [...publications],
-      deathTargets,
-      concentrationChanged,
-      affectedEffects,
+      snapshot: viewOf(finalization.snapshot, target),
+      castCompleted: finalization.completed,
+      targets: finalization.targets,
+      castSnapshot: finalization.snapshot,
+      publications: finalization.publications,
+      deathTargets: finalization.deathTargets,
+      concentrationChanged: finalization.concentrationChanged,
+      affectedEffects: finalization.affectedEffects,
     } satisfies SaveDamageResolution;
   });
 }
 
 /**
- * Publica depois do commit: ficha, morte, Concentração, Effects e o card
- * (a pendência deixou de existir). Nenhuma publicação acontece na transação.
+ * Publica depois do commit: TODOS os alvos afetados pela finalização (ficha,
+ * morte, Effects e o card que deixou de estar pendente). Nenhuma publicação
+ * acontece dentro da transação.
  */
 export async function publishSaveDamageResult(
   result: SaveDamageResolution,
@@ -406,14 +261,19 @@ export async function publishSaveDamageResult(
     await publishPendingEffectSaves([result.target]);
     return;
   }
-  for (const id of result.publications) await publishCharacter(id);
+  const entities: MechanicalEntity[] = result.targets.map((item) =>
+    entityOf(item.target.kind, item.target.id),
+  );
+  const publications = new Set(result.publications);
+  for (const entity of entities) {
+    // A ficha do dono precisa refletir HP/Concentração derivados do evento.
+    if (entity.kind === 'character') publications.add(entity.id);
+  }
+  for (const id of publications) await publishCharacter(id);
   for (const entity of result.deathTargets) await publishDeathUpdated(entity);
-  if (result.concentrationChanged && result.target.kind === 'character') {
-    await publishCharacter(result.target.id);
+  if (entities.length > 0) {
+    await publishEffects([...entities, ...result.affectedEffects]);
   }
-  if (result.affectedEffects.length > 0) {
-    await publishEffects([result.target, ...result.affectedEffects]);
-  }
-  await publishPendingEffectSaves([result.target]);
-  void result.castId;
+  await publishPendingEffectSaves(entities.length > 0 ? entities : [result.target]);
+  void result.castCompleted;
 }

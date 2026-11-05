@@ -5,6 +5,7 @@ import {
   parseSpellResolutionSnapshot,
   type AttackDamageSnapshot,
   type ImmediateHealingSnapshot,
+  type SaveDamageCastSnapshot,
 } from './spell-resolution-snapshot.js';
 
 /**
@@ -24,7 +25,10 @@ export type AttackDamageResolutionDto = Omit<AttackDamageSnapshot, 'attack'> & {
 };
 
 /** União exposta no DTO: resolução imediata de cura ou de ataque mágico. */
-export type SpellCastResolutionDto = ImmediateHealingSnapshot | AttackDamageResolutionDto;
+export type SpellCastResolutionDto =
+  | ImmediateHealingSnapshot
+  | AttackDamageResolutionDto
+  | SaveDamageCastSnapshot;
 
 export interface SpellCastDto {
   id: string;
@@ -180,7 +184,10 @@ function targetingOf(value: unknown): SpellCastDto['targeting'] {
 function resolutionOf(row: SpellCast): SpellCastResolutionDto | null {
   const snapshot = parseSpellResolutionSnapshot(row.resolutionSnapshot);
   if (!snapshot) return null;
-  if (snapshot.kind === 'immediate-healing') return snapshot;
+  // 6.6J.2: o snapshot multi-alvo é público como o de cura — ele descreve dados
+  // já rolados, nunca estado privado de criatura. Só o `attack-damage` esconde
+  // a CA do alvo (estado privado do Mestre).
+  if (snapshot.kind !== 'attack-damage') return snapshot;
   const targets = Array.isArray(row.targets)
     ? row.targets.map(entityOf).filter((entity): entity is MechanicalEntity => entity !== null)
     : [];
