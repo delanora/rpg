@@ -44,6 +44,13 @@ export const turnEconomySchema = z.object({
    * `onTurnStart` recria a economia zerada, o flag cai sozinho no momento certo.
    */
   dodging: z.boolean().default(false),
+  /**
+   * Desengajar (Disengage) ativo até o início do PRÓPRIO próximo turno: o
+   * movimento DESTE combatente não provoca Opportunity Attack. Como
+   * `onTurnStart` recria a economia, o flag cai sozinho no momento certo — e
+   * ele NUNCA desliga as Reações dos inimigos para outros gatilhos.
+   */
+  disengaging: z.boolean().default(false),
 });
 export type TurnEconomy = z.infer<typeof turnEconomySchema>;
 

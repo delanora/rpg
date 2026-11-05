@@ -937,6 +937,9 @@ model Combat {
   endedAt    DateTime?
   combatants Combatant[]
   operations CombatOperation[]
+  /// 6.6L.3.1 — movimentos pausados esperando Reaction Opportunity.
+  movementIntents       MovementIntent[]
+  reactionOpportunities ReactionOpportunity[]
 
   @@index([status])
   @@map("combats")
@@ -1015,6 +1018,88 @@ model Combatant {
 }
 
 /// Retry de ações/ataques não pode gastar economia, munição ou PV novamente.
+/// MOVIMENTO PAUSADO (Fase 6.6L.3.1).
+///
+/// O commit de movimento deixa de ser sempre atômico: um passo que faria a
+/// criatura SAIR do alcance de um reactor abre uma janela de Reaction ANTES de
+/// acontecer. Este registro guarda o que JÁ foi pago (checkpoint) e o caminho que
+/// falta, para que restart/reconnect não liberem nem percam o movimento.
+model MovementIntent {
+  id        String @id @default(cuid())
+  combatId  String
+  combat    Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+  combatantId String
+
+  /// pending-reaction | committed | interrupted | cancelled
+  status    String   @default("pending-reaction")
+  /// Posição consolidada no momento da pausa (null = ainda na origem).
+  checkpoint Json?
+  /// Posições que AINDA faltam percorrer (a primeira é a que provocou a janela).
+  remainingPath Json  @default("[]")
+  /// Trecho já pago neste intent (auditoria; nunca recalculado por fora).
+  committedCostFeet     Float @default(0)
+  committedDistanceFeet Float @default(0)
+  /// Motivo terminal sanitizado (nunca nome de criatura oculta).
+  reason    String?
+
+  operationId String
+  fingerprint String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  opportunities ReactionOpportunity[]
+
+  @@unique([combatId, operationId])
+  @@index([combatId, status])
+  @@map("movement_intents")
+}
+
+/// JANELA DE REAÇÃO persistida (Fase 6.6L.3.1).
+///
+/// Primeiro gatilho espacial real (Opportunity Attack) e leitura de qualquer
+/// Reação futura: quem provoca, quem pode reagir, quais ataques valem NAQUELE
+/// boundary e quem já resolveu. Vive no BANCO (nunca só na memória do processo),
+/// para que refresh/restart não abram nem fechem janelas.
+model ReactionOpportunity {
+  id       String @id @default(cuid())
+  combatId String
+  combat   Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+
+  movementIntentId String?
+  movementIntent   MovementIntent? @relation(fields: [movementIntentId], references: [id], onDelete: Cascade)
+
+  moverCombatantId   String
+  reactorCombatantId String
+  /// Dono do reactor; `null` = criatura/NPC sob autoridade do Mestre.
+  reactorUserId      String?
+
+  /// opportunity-attack (as demais Reações entram aqui no futuro).
+  kind   String @default("opportunity-attack")
+  /// pending | resolved | declined | cancelled
+  status String @default("pending")
+
+  /// Índice do passo que provocou a janela dentro do caminho restante.
+  boundaryIndex Int   @default(0)
+  /// Alcance (pés) do ataque cujo boundary foi cruzado.
+  reachFeet     Float
+  /// Ataques válidos NAQUELE boundary: `{ id, attackId, label, description, reachFeet }`.
+  options       Json  @default("[]")
+
+  /// known-visible | known-not-visible | unknown (geometria ausente).
+  visibilityStatus      String  @default("known-visible")
+  visibilityConfirmedBy String?
+
+  /// Posição do reactor na ordem de iniciativa (desempate determinístico).
+  orderIndex Int @default(0)
+  resolution Json?
+  resolvedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([combatId, status])
+  @@index([combatId, movementIntentId])
+  @@map("reaction_opportunities")
+}
+
 model CombatOperation {
   id          String @id @default(cuid())
   combatId    String

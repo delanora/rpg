@@ -6,6 +6,7 @@ import {
   combatOperationSchema, economyActionSchema, economyOverrideSchema, nextTurnSchema,
   spatialConfigPatchSchema, spatialPositionPatchSchema,
   movementCommitSchema, movementPreviewSchema, combatantSidePatchSchema,
+  opportunityAttackPayloadSchema, opportunityDecisionSchema, opportunityVisibilitySchema,
 } from './combat.schema.js';
 import {
   setCombatantSideKey,
@@ -20,6 +21,12 @@ import {
   readCombatDistance,
   readCombatRangePreview,
 } from './spatial/spatial-distance.service.js';
+import {
+  confirmOpportunityVisibility,
+  declineOpportunity,
+  reactionOpportunitiesForCombat,
+  resolveOpportunityAttack,
+} from './spatial/opportunity-attack.service.js';
 import { resolutionRequestsForCombat } from './resolution-requests.js';
 import {
   executeEconomyAction,
@@ -216,6 +223,104 @@ combatRouter.patch(
         actorFrom(req),
         String(req.params.combatId),
         String(req.params.combatantId),
+        parsed.data,
+      ),
+    );
+  },
+);
+
+/**
+ * GET /api/combat/:combatId/reaction-opportunities — READ MODEL da janela de
+ * Reação (6.6L.3.1).
+ *
+ * O estado vive no BANCO: refresh, reconnect e restart reconstroem a janela por
+ * aqui. O SERVIDOR filtra por espectador — o jogador recebe só as oportunidades
+ * do próprio personagem (nunca as de NPC/criatura) e, quando o próprio movimento
+ * está pausado por um reactor oculto, só o aviso sanitizado de que aguarda o
+ * Mestre.
+ */
+combatRouter.get('/:combatId/reaction-opportunities', authenticate, async (req, res) => {
+  res.json(
+    await reactionOpportunitiesForCombat(actorFrom(req), String(req.params.combatId)),
+  );
+});
+
+/**
+ * POST /api/combat/:combatId/reaction-opportunities/:opportunityId/attack —
+ * resolve a janela com UM ataque corpo a corpo.
+ *
+ * Só o dono do reactor (ou o Mestre) resolve; a Reação é gasta na MESMA
+ * transação do ataque, o ataque resolve ANTES de o mover sair do alcance e o
+ * movimento continua (ou termina) na mesma operação.
+ */
+combatRouter.post(
+  '/:combatId/reaction-opportunities/:opportunityId/attack',
+  authenticate,
+  async (req, res) => {
+    const parsed = opportunityAttackPayloadSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    res.json(
+      await resolveOpportunityAttack(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.opportunityId),
+        {
+          expectedVersion: parsed.data.expectedVersion,
+          operationId: parsed.data.operationId,
+          attackId: parsed.data.attackId,
+        },
+      ),
+    );
+  },
+);
+
+/**
+ * POST /api/combat/:combatId/reaction-opportunities/:opportunityId/decline —
+ * "não reagir": fecha SÓ esta janela e NÃO gasta a Reação.
+ */
+combatRouter.post(
+  '/:combatId/reaction-opportunities/:opportunityId/decline',
+  authenticate,
+  async (req, res) => {
+    const parsed = opportunityDecisionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    res.json(
+      await declineOpportunity(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.opportunityId),
+        parsed.data,
+      ),
+    );
+  },
+);
+
+/**
+ * POST /api/combat/:combatId/reaction-opportunities/:opportunityId/visibility —
+ * MASTER adjudica a visão de uma janela `unknown`. Um fato `known-not-visible`
+ * NUNCA pode ser sobrescrito para visível.
+ */
+combatRouter.post(
+  '/:combatId/reaction-opportunities/:opportunityId/visibility',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const parsed = opportunityVisibilitySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    res.json(
+      await confirmOpportunityVisibility(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.opportunityId),
         parsed.data,
       ),
     );

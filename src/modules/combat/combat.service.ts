@@ -439,7 +439,7 @@ function validateOffhand(combatant: CombatantSourced, id: string | undefined, at
  * jogador descarta: coisas que denunciariam o lifecycle de morte de uma
  * criatura/NPC (estabilização ou override do Teste Contra a Morte).
  */
-async function appendEconomyLog(
+export async function appendEconomyLog(
   db: Prisma.TransactionClient,
   combat: CombatSourced,
   combatant: { name: string },
@@ -638,6 +638,10 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
         if (input.action === 'ready') economy.ready = { trigger: input.trigger!, intent: input.intent! };
         // Esquiva vale até o início do próprio próximo turno (ver `dodging`).
         if (input.action === 'dodge') economy.dodging = true;
+        // DESENGAJAR (PHB 2014): o movimento DESTE combatente não provoca
+        // Opportunity Attack até o início do próprio próximo turno. Só isso —
+        // não desliga as Reações dos inimigos para outros gatilhos.
+        if (input.action === 'disengage') economy.disengaging = true;
         const context = input.action === 'ready' ? `${input.trigger} → ${input.intent}` : input.description;
         const target = input.targetCombatantId ? combat.combatants.find((item) => item.id === input.targetCombatantId)?.name : null;
         await appendEconomyLog(db, combat, combatant, `${COMBAT_ACTIONS[input.action].name}${target ? ` → ${target}` : ''}${context ? `: ${context}` : ''}.`, input.action);
@@ -959,6 +963,18 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     }
   }
   if (pending?.status === 'ACTIVE') {
+    // 6.6L.3.1 — movimento pausado esperando Reação é BLOCKER do turno: avançar
+    // liberaria o mover para seguir andando sem pagar a janela aberta.
+    const awaitingReaction = await prisma.movementIntent.count({
+      where: { combatId: input.combatId, status: 'pending-reaction' },
+    });
+    if (awaitingReaction > 0) {
+      throw new HttpError(
+        'Há um movimento aguardando resolução de Reação: resolva ou recuse a oportunidade antes de avançar o turno.',
+        409,
+        'MOVEMENT_REACTION_PENDING',
+      );
+    }
     const triggers = await openEndOfTurnTriggers(input.combatId);
     if (triggers.blocked) {
       throw new HttpError(
@@ -1051,8 +1067,16 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     // Mestre removê-lo.
     const incomingDeath = combatantDeathState(incoming);
     const blocked = deathBlocksActions(incomingDeath);
+    // ATAQUE FURTIVO é "uma vez por TURNO" (PHB 2014) — de QUALQUER turno, não
+    // do próprio. A trava zera para TODOS na virada de turno: sem isso uma
+    // Opportunity Attack fora do turno do Ladino seria negada por um uso no
+    // turno dele, e um Ladino que não usou o Ataque Furtivo poderia usá-lo de
+    // novo no turno seguinte sem que a flag fosse limpa.
+    await db.combatant.updateMany({
+      where: { combatId: combat.id },
+      data: { sneakAttackUsedThisTurn: false },
+    });
     await db.combatant.update({ where: { id: incoming.id }, data: {
-      sneakAttackUsedThisTurn: false,
       turnEconomy: blocked ? blockedTurnEconomy() : onTurnStart(combatantSpeed(incoming)),
     } });
     // O Teste contra a Morte é liberado no INÍCIO do próprio turno (1 por turno).
@@ -1292,12 +1316,51 @@ async function consumeAmmo(
  * CADA parcela de dano do ataque (o principal + os extras, dobrados no crítico),
  * aplica a defesa do alvo por tipo e debita o total no HP.
  */
-export async function resolveAttack(
+export interface AttackResolutionHooks<TReaction> {
+  /**
+   * Validação ANTES de qualquer gasto/rolagem, DENTRO da transação (6.6L.3.1):
+   * é aqui que o Ataque de Oportunidade confere se a janela ainda está aberta,
+   * se a opção escolhida é válida e se o ator pode resolver por aquele reactor.
+   */
+  beforeAttack?: (input: {
+    db: Prisma.TransactionClient;
+    combat: CombatSourced;
+  }) => Promise<void>;
+  /**
+   * Consequência adicional DEPOIS do dano e ANTES de montar o DTO, na MESMA
+   * transação: a Reação é registrada e o movimento pausado continua (ou
+   * termina). Nunca existe estado em que a Reação foi gasta sem o ataque.
+   */
+  onResolved?: (input: {
+    db: Prisma.TransactionClient;
+    combat: CombatSourced;
+    attacker: CombatantSourced;
+    target: CombatantSourced;
+    hit: boolean;
+    critical: boolean;
+    damageRolled: number;
+  }) => Promise<TReaction>;
+}
+
+export interface AttackResolutionOptions<TReaction>
+  extends AttackResolutionHooks<TReaction> {
+  /** 6.6J.5.1: provider de cobertura injetável (testes); produção é assistido. */
+  coverProvider?: CoverSpatialProvider;
+  /** Tipo da operação registrada (default `attack`). */
+  operationType?: string;
+  /**
+   * 6.6L.3.1 — ATAQUE DE OPORTUNIDADE: consome a Reação e NUNCA Ação/Ação
+   * Bônus, não é Attack Action (Extra Attack não multiplica) e não exige o
+   * próprio turno. Autoridade INTERNA do domínio — jamais campo do cliente.
+   */
+  forcedReaction?: boolean;
+}
+
+export async function resolveAttack<TReaction = never>(
   actor: CombatActor,
   input: AttackInput,
-  /** 6.6J.5.1: provider de cobertura injetável (testes); produção é assistido. */
-  options: { coverProvider?: CoverSpatialProvider } = {},
-): Promise<{ combat: CombatDto; result: AttackResolvedPayload }> {
+  options: AttackResolutionOptions<TReaction> = {},
+): Promise<{ combat: CombatDto; result: AttackResolvedPayload; reaction?: TReaction }> {
   const publications = new Set<string>();
   const rolls: DiceRolledPayload[] = [];
   // Entidades cujo ciclo de morte mudou nesta transação: o evento `death:updated`
@@ -1308,7 +1371,14 @@ export async function resolveAttack(
   // Alvos cujo GRUPO de efeitos foi encerrado porque a concentração acabou no
   // dano (0 PV/Incapacitado). Publicado depois do commit.
   const effectTargets: MechanicalEntity[] = [];
-  const response = await runCombatOperation(actor, input, 'attack', async (db, combat) => {
+  const response = await runCombatOperation<{
+    combat: CombatDto;
+    result: AttackResolvedPayload;
+    reaction?: TReaction;
+  }>(actor, input, options.operationType ?? 'attack', async (db, combat) => {
+    // Validação da janela de Reação ANTES de gastar/rolar qualquer coisa.
+    if (options.beforeAttack) await options.beforeAttack({ db, combat });
+
     const attacker = input.attackerCombatantId
       ? combat.combatants.find((item) => item.id === input.attackerCombatantId)
       : combat.combatants.find(
@@ -1409,7 +1479,12 @@ export async function resolveAttack(
       );
     }
     const longRangeDisadvantage = rangeInfo.status === 'long-range';
-    if (input.prepared) {
+    if (options.forcedReaction) {
+      // 6.6L.3.1 — ATAQUE DE OPORTUNIDADE: UMA Reação, UM ataque corpo a corpo.
+      // Sem Ação/Ação Bônus, sem `recordAttack` (não é Attack Action, então
+      // Extra Attack NÃO multiplica) e sem exigir o próprio turno.
+      spendEconomy(economy, 'reaction');
+    } else if (input.prepared) {
       if (!economy.ready) throw new HttpError('Nenhuma ação preparada.', 409, 'CONFLICT');
       if (input.attackActionId || attack.id.startsWith('offhand:')) throw new HttpError('Ataque preparado não é continuação nem mão secundária.', 400);
       spendEconomy(economy, 'reaction');
@@ -1852,6 +1927,13 @@ export async function resolveAttack(
       }
     }
 
+    // 6.6L.3.1 — consequência da janela de Reação na MESMA transação do ataque:
+    // a Reação é registrada e o movimento pausado continua (ou termina). A
+    // posição consolidada já entra no DTO abaixo.
+    const reaction = options.onResolved
+      ? await options.onResolved({ db, combat, attacker, target, hit, critical, damageRolled })
+      : undefined;
+
     const dto = toCombatDto(await loadCombatById(combat.id, db), 'MASTER');
 
     const targetAfter = dto.combatants.find((item) => item.id === target.id);
@@ -1892,7 +1974,11 @@ export async function resolveAttack(
       at: new Date().toISOString(),
     };
 
-    return { combat: actor.role === 'MASTER' ? dto : hideMasterPrivateState(dto), result };
+    return {
+      combat: actor.role === 'MASTER' ? dto : hideMasterPrivateState(dto),
+      result,
+      ...(reaction === undefined ? {} : { reaction }),
+    };
   });
   if (!response.replayed) {
     for (const id of publications) await publishCharacter(id);
@@ -2255,9 +2341,26 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
 
   const combat = await requireActiveCombat();
 
-  await prisma.combat.update({
-    where: { id: combat.id },
-    data: { status: 'ENDED', endedAt: new Date(), version: { increment: 1 } },
+  await prisma.$transaction(async (db) => {
+    await db.combat.update({
+      where: { id: combat.id },
+      data: { status: 'ENDED', endedAt: new Date(), version: { increment: 1 } },
+    });
+    // 6.6L.3.1 — nenhuma janela de Reação sobrevive ao fim do combate: o
+    // movimento pausado é interrompido (nunca retomado sozinho depois) e as
+    // oportunidades abertas são canceladas com motivo auditável.
+    await db.movementIntent.updateMany({
+      where: { combatId: combat.id, status: 'pending-reaction' },
+      data: { status: 'cancelled', reason: 'combat-ended' },
+    });
+    await db.reactionOpportunity.updateMany({
+      where: { combatId: combat.id, status: 'pending' },
+      data: {
+        status: 'cancelled',
+        resolvedAt: new Date(),
+        resolution: { kind: 'cancelled', reason: 'combat-ended' },
+      },
+    });
   });
 
   emit(ServerEvents.COMBAT_ENDED, { combatId: combat.id });
