@@ -28,6 +28,11 @@ import {
 } from './spell-execution-definition.js';
 import { cantripScalingLevelOf } from './cantrip-scaling.service.js';
 import {
+  publishImmediateHealing,
+  resolveImmediateHealing,
+  type ImmediateHealingResult,
+} from './immediate-healing-resolution.js';
+import {
   validateTargeting,
   type TargetingSnapshot,
 } from './spell-targeting.service.js';
@@ -290,6 +295,17 @@ export async function validateSpellCast(
   );
   const profile = authorization.profile;
   const saveDc = profile.spellSaveDc;
+
+  // 6.6I.3: cura imediata precisa de um atributo de conjuração para o
+  // modificador. Statblock que só publica CD (sem `ability`) é recusado ANTES
+  // de qualquer custo — nunca inventamos SAB/INT por ND ou pelo maior valor.
+  if (execution.resolution.kind === 'immediate-healing' && profile.ability === null) {
+    throw new HttpError(
+      'Este conjurador não declara o atributo de conjuração exigido pela magia.',
+      409,
+      'SPELLCASTING_ABILITY_REQUIRED',
+    );
+  }
 
   // 6.6C: o ESPAÇO é resolvido no VALIDATE, também antes do commit. Recurso
   // inválido/vazio/estrangeiro rejeita o cast sem gastar nada e sem encerrar a
@@ -711,6 +727,8 @@ export async function executeCast(
   let outcome: CommittedOutcome;
   // Ficha cujo inventário mudou (material consumido) — publicado só após commit.
   let consumedCharacterId: string | null = null;
+  // Resultado de cura imediata (6.6I.3) — publica/loga só depois do commit.
+  let immediateHealing: ImmediateHealingResult | null = null;
   try {
     outcome = await prisma.$transaction(async (db) => {
       const prior = await db.spellCast.findUnique({
@@ -759,6 +777,26 @@ export async function executeCast(
         };
       }
 
+      // 6.6I.3: cura imediata resolve NA MESMA transação do COMMIT — rolagem,
+      // HP, morte e fechamento do cast. Nenhum Effect/pendência é criado.
+      if (context.execution.resolution.kind === 'immediate-healing') {
+        const healed = await resolveImmediateHealing(db, cast, {
+          caster: context.caster,
+          targets: context.targets,
+          actorUserId: actor.userId,
+        }, context.execution);
+        immediateHealing = healed;
+        return {
+          cast: toSpellCastDto(healed.cast),
+          replayed: false,
+          effectGroupId: null,
+          effects: [],
+          pending: null,
+          pendings: [],
+          endedTargets,
+        };
+      }
+
       const pendings = await beginPendingSaves(db, cast, context);
       return {
         cast: toSpellCastDto(cast),
@@ -797,6 +835,7 @@ export async function executeCast(
   // 6.6G: material consumido muda o INVENTÁRIO — a ficha é republicada pelo
   // canal de sempre, nunca por decremento otimista do cliente.
   if (consumedCharacterId) await publishCharacter(consumedCharacterId);
+  if (immediateHealing) await publishImmediateHealing(immediateHealing);
   if (outcome.pendings.length > 0) {
     await publishPendingEffectSaves(outcome.cast.targetEntities);
   }

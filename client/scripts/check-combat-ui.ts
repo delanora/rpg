@@ -1902,10 +1902,11 @@ console.log('Check-combat-ui — refino da UI de combate');
       !damageCore.includes('$transaction')
   );
   check(
-    'CB124) Sacred Flame entrou no registry SEM Effect Definition e Healing Word continua fora',
+    'CB124) Sacred Flame/Healing Word entram no registry SEM Effect Definition próprio',
     registrySource.includes("SACRED_FLAME_SPELL_ID") &&
       registrySource.includes("kind: 'save-damage'") &&
-      !registrySource.includes('healing-word') &&
+      registrySource.includes('HEALING_WORD_SPELL_ID') &&
+      registrySource.includes("kind: 'immediate-healing'") &&
       !source('../src/modules/spells/execution/spell-execution-registry.ts').includes(
         'effectDefinitionId: SACRED_FLAME',
       )
@@ -1963,14 +1964,77 @@ console.log('Check-combat-ui — refino da UI de combate');
       source('../src/modules/combat/resolution-requests.ts').includes("kind: 'spell-saving-throw'")
   );
   check(
-    'CB132) NPC escala por campo explícito e Healing Word/Spell Attack seguem ausentes',
+    'CB132) NPC escala por campo explícito; Spell Attack continua ausente',
     source('../src/modules/shared/creature-spellcasting.ts').includes('cantripScalingLevel') &&
-      !registrySource.includes('healing-word') &&
       !registrySource.includes("kind: 'spell-attack'")
   );
   check(
     'CB133) o smoke da Chama Sagrada integra o runner principal',
     smokeRunner.includes('smokeSacredFlame(BASE_URL, check)')
+  );
+
+  // 6.6I.3 — Palavra Curativa: cura imediata declarativa, server-side.
+  const healingWord = source('../src/modules/spells/execution/healing-word.ts');
+  const immediateHealing = source('../src/modules/spells/execution/immediate-healing-resolution.ts');
+  const healingSnapshot = source('../src/modules/spells/execution/spell-resolution-snapshot.ts');
+  const castSchema = source('../src/modules/spells/execution/spell-cast.schema.ts');
+  check(
+    'CB134) Palavra Curativa é `immediate-healing` declarativa: 1d4, scaling por espaço, sem Effect Definition',
+    registrySource.includes('HEALING_WORD_SPELL_ID') &&
+      registrySource.includes("kind: 'immediate-healing'") &&
+      healingWord.includes('HEALING_WORD_SLOT_SCALING') &&
+      healingWord.includes('baseSpellLevel') &&
+      healingWord.includes('dicePerLevelAboveBase') &&
+      !healingWord.includes('characterLevel') &&
+      !healingWord.includes('challengeRating') &&
+      !healingWord.includes('effectDefinitionId')
+  );
+  check(
+    'CB135) cura usa `resolveHealing` (nunca `resolveDamage`) e não escreve HP direto',
+    immediateHealing.includes('resolveHealing(') &&
+      !immediateHealing.includes('resolveDamage(') &&
+      !immediateHealing.includes('hpCurrent =') &&
+      !immediateHealing.includes('UPDATE "characters"') &&
+      !immediateHealing.includes('UPDATE "combatants"')
+  );
+  check(
+    'CB136) modificador vem do snapshot do cast, com eventId determinístico e snapshot persistido',
+    immediateHealing.includes('spellcastingAbilityModifier') &&
+      immediateHealing.includes('spell-cast:${castId}:healing') &&
+      immediateHealing.includes('resolutionSnapshot') &&
+      healingSnapshot.includes("kind: z.literal('immediate-healing')") &&
+      source('../src/modules/combat/damage-target.ts').includes('damageTargetOf') &&
+      !immediateHealing.includes('req.body')
+  );
+  check(
+    'CB137) cliente não envia cura/atributo e não há card dedicado de Healing Word',
+    !castSchema.includes('healingAmount') &&
+      !castSchema.includes('healingDice') &&
+      !castSchema.includes('abilityModifier') &&
+      !castSchema.includes('targetHp') &&
+      !source('src/combat/components/CombatLog.tsx').includes('Palavra Curativa') &&
+      !source('src/combat/components/ResolutionCard.tsx').includes('healing-word') &&
+      source('../src/modules/combat/resolution-requests.ts').includes("kind: 'death-saving-throw'")
+  );
+  check(
+    'CB138) morto é recusado antes do COMMIT e morto-vivo/constructo NÃO é filtro de targeting',
+    healingWord.includes('SPELL_TARGET_DEAD') &&
+      healingWord.includes('deathStateOf') &&
+      registrySource.includes('noEffectOnCreatureTypes') &&
+      !registrySource.includes("value: 'undead'") &&
+      !registrySource.includes("value: 'construct'")
+  );
+  check(
+    'CB139) Palavra Curativa não cria Effect/Pending/Concentração nem card interativo',
+    registrySource.includes('requiresConcentration: false') &&
+      immediateHealing.includes('create(') === false &&
+      !immediateHealing.includes('effectInstance') &&
+      !immediateHealing.includes('pendingEffectSave') &&
+      source('../src/modules/spells/execution/spell-cast.service.ts').includes('immediate-healing')
+  );
+  check(
+    'CB140) o smoke da Palavra Curativa integra o runner principal',
+    smokeRunner.includes('smokeHealingWord(BASE_URL, check)')
   );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

@@ -629,8 +629,11 @@ async function pendingCastResolutionKind(pending: {
     where: { id: pending.spellCastId },
     select: { spellId: true },
   });
-  return cast
-    ? (spellExecutionDefinition(cast.spellId)?.resolution.kind ?? null)
+  const kind = cast ? (spellExecutionDefinition(cast.spellId)?.resolution.kind ?? null) : null;
+  // Cura imediata (6.6I.3) nunca cria pendência: se uma aparecer por dado
+  // histórico, ela não ganha um caminho de resolução inventado aqui.
+  return kind === 'save-damage' || kind === 'save-effect' || kind === 'immediate-effect'
+    ? kind
     : null;
 }
 
