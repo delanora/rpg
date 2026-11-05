@@ -4,6 +4,13 @@ import { ABILITY_SCORE_MAX, ABILITY_SCORE_MIN } from '../shared/dnd5e.js';
 import { inventorySlotSchema } from '../characters/characters.schema.js';
 import { itemDetailsSchema } from '../shared/item-details.js';
 import { coinDeltaSchema } from '../shared/coins.js';
+import { CREATURE_SIZE_LABELS } from '../combat/spatial/spatial.types.js';
+
+/**
+ * Tamanho mecânico do PHB 2014 no cadastro do Mestre (6.6L.1). É a FONTE do
+ * espaço ocupado no combate — o placement nunca recebe tamanho.
+ */
+export const creatureSizeSchema = z.enum(CREATURE_SIZE_LABELS);
 import {
   creatureSpellcastingProfileSchema,
   creatureSpellcastingResourcesSchema,
@@ -69,6 +76,8 @@ const creatureFields = z.object({
   description: z.string().max(20000),
   /** Ícone/retrato da criatura/NPC (`/uploads/creatures/...`). */
   imageUrl: z.string().trim().max(500),
+  /** Tamanho mecânico (6.6L.1) — autoridade do Mestre. */
+  size: creatureSizeSchema,
 });
 
 /** Na criação só se informa o essencial; o resto vem dos padrões. */
@@ -79,6 +88,8 @@ export const createCreatureSchema = z.object({
   challengeRating: z.string().trim().max(20).optional(),
   hpMax: z.number().int().min(0).max(9999).optional(),
   armorClass: z.number().int().min(0).max(99).optional(),
+  /** Tamanho inicial; ausente = 'Medium' (nunca inferido pelo nome). */
+  size: creatureSizeSchema.optional(),
   localityIds: localityIdsSchema,
 });
 

@@ -12,6 +12,8 @@ import {
   type EffectModifierSet,
 } from '../effects/effect-modifiers.js';
 import { creatureInventory, npcAttacks, npcEffectiveArmorClass } from './npc-sheet.js';
+import { spatialSizeOfLabel } from '../combat/spatial/spatial-size.js';
+import type { CreatureSizeLabel, SpatialSize } from '../combat/spatial/spatial.types.js';
 import {
   creatureSpellcastingMaxOf,
   creatureSpellcastingProfileOf,
@@ -45,6 +47,10 @@ export interface CreatureDto {
   effectiveSpeed: number;
   armorClass: number;
   speed: number;
+  /** Tamanho mecânico persistido (6.6L.1) — autoridade do Mestre. */
+  size: CreatureSizeLabel;
+  /** Forma canônica do tamanho (usada pelo espaço ocupado no combate). */
+  spatialSize: SpatialSize;
 
   attacks: Attack[];
   /**
@@ -178,6 +184,8 @@ export function toCreatureDto(
     coins: normalizeCoins(creature.coins),
     derivedAttacks,
     speed: creature.speed,
+    size: (creature.size ?? 'Medium') as CreatureSizeLabel,
+    spatialSize: spatialSizeOfLabel(creature.size),
     attacks,
     spellcastingProfile: creatureSpellcastingProfileOf(creature.spellcastingProfile),
     spellcastingResources: creatureSpellcastingMaxOf(creature.spellcastingResources),

@@ -82,6 +82,7 @@ import {
   type CoverSpatialProvider,
 } from './cover.service.js';
 import { applyCoverConfirmation, coverSnapshotOf } from './cover.js';
+import { withSpatial } from './spatial/spatial-projection.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
 import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
@@ -174,7 +175,9 @@ async function withEffectModifiers(
 export async function loadCombatById(id: string, db: Prisma.TransactionClient = prisma): Promise<CombatSourced> {
   const combat = await findCombat({ id }, db);
   if (!combat) throw new HttpError('Combate não encontrado.', 404);
-  return withEffectModifiers(combat, db);
+  // Efeitos primeiro (CA/deslocamento derivados); a projeção espacial deriva o
+  // tamanho BASE de cada combatente da raça/cadastro — nunca da posição.
+  return withSpatial(await withEffectModifiers(combat, db), db);
 }
 
 async function requireActiveCombat(): Promise<CombatSourced> {
@@ -713,7 +716,7 @@ export async function refreshCombatForCreature(creatureId: string): Promise<void
 export async function getActiveCombat(viewer: Role): Promise<CombatDto | null> {
   const combat = await findCombat({ status: { in: ACTIVE_STATUSES } });
   if (!combat) return null;
-  return toCombatDto(await withEffectModifiers(combat), viewer);
+  return toCombatDto(await withSpatial(await withEffectModifiers(combat)), viewer);
 }
 
 /** --- Início ------------------------------------------------------------------ */

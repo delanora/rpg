@@ -20,6 +20,31 @@ import type { ArmorProficiencyState } from '../shared/armor-class.js';
 import { characterDerivedAttacks, characterMaxHp } from '../characters/characters.dto.js';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
 import { parseJson } from '../shared/json.js';
+import { occupiedSpaceOf, parseStoredPosition } from './spatial/occupied-space.js';
+import { effectiveSizeOf } from './spatial/spatial-size.js';
+import {
+  spatialSceneOf,
+  type OccupiedSpace,
+  type SpatialPosition2D,
+  type SpatialSceneConfig,
+  type SpatialSize,
+} from './spatial/spatial.types.js';
+
+/**
+ * Dados espaciais de UM combatente para o futuro Grid (6.6M.1).
+ *
+ * `tokenImageRef` reutiliza a imagem JÁ existente (retrato da ficha / imagem do
+ * NPC/criatura); `null` significa "sem imagem" e a UI desenha o fallback `?`.
+ * `occupiedSpace` é DERIVADO da posição + tamanho efetivo, nunca enviado pelo
+ * cliente. `spatial` é `null` quando o combatente é privado do Mestre.
+ */
+export interface CombatantSpatialDto {
+  tokenImageRef: string | null;
+  baseSize: SpatialSize;
+  effectiveSize: SpatialSize;
+  position: SpatialPosition2D | null;
+  occupiedSpace: OccupiedSpace | null;
+}
 
 /** Formato do combate enviado a jogadores e mestre. */
 export interface CombatDto {
@@ -40,6 +65,11 @@ export interface CombatDto {
   /** Localidade onde o combate acontece (informada na preparação). */
   localityId: string | null;
   localityName: string | null;
+  /**
+   * CONFIGURAÇÃO ESPACIAL da cena (Fase 6.6L.1). Combates existentes sempre
+   * recebem `assisted` com a cena padrão — nada muda para quem não usa grid.
+   */
+  spatial: SpatialSceneConfig;
   combatants: CombatantDto[];
   createdAt: string;
   endedAt: string | null;
@@ -87,6 +117,12 @@ export interface CombatantDto {
   armorNonProficiency: ArmorProficiencyState | null;
   /** Verdadeiro quando a vida/CA existem, mas estão ocultas para quem vê. */
   statsHidden: boolean;
+  /**
+   * Dados espaciais (posição/tamanho/imagem do token). `null` quando o
+   * combatente é privado do Mestre: o servidor NÃO envia posição, tamanho,
+   * imagem nem espaço ocupado a jogadores.
+   */
+  spatial: CombatantSpatialDto | null;
   /** Verdadeiro quando a ficha/criatura de origem foi removida. */
   missing: boolean;
   rolled: boolean;
@@ -106,6 +142,8 @@ export interface CombatSourced {
   createdAt: Date;
   endedAt: Date | null;
   locality: { id: string; name: string } | null;
+  /** Config espacial persistida (JSONB); ausente/inválida = cena assistida. */
+  spatialConfig?: unknown;
   combatants: CombatantSourced[];
 }
 
@@ -130,6 +168,12 @@ export interface CombatantSourced {
   armorClass: number | null;
   /** Trava do Ataque Furtivo: "uma vez por turno" (zerada em `nextTurn`). */
   sneakAttackUsedThisTurn: boolean;
+  /**
+   * Posição 2D em PÉS desta INSTÂNCIA (`null` = unplaced) e tamanho BASE
+   * derivado da raça/cadastro por `withSpatial`. Nunca vêm do cliente.
+   */
+  spatialPosition?: unknown;
+  baseSize?: SpatialSize;
   character: (Character & { user: { username: string } }) | null;
   creature: Creature | null;
   /**
@@ -217,6 +261,11 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
         effectArmorBonuses.reduce((sum, piece) => sum + piece.value, 0));
 
   const deathState = combatantDeathState(combatant);
+  // ESPAÇO: tamanho efetivo (hoje = base) e posição persistida. `null` é
+  // UNPLACED — nunca convertido em 0,0.
+  const baseSize = combatant.baseSize ?? 'medium';
+  const effectiveSize = effectiveSizeOf(baseSize);
+  const spatialPosition = parseStoredPosition(combatant.spatialPosition);
   return {
     turnEconomy: reconcileMovement(
       economyOf(combatant.turnEconomy),
@@ -248,6 +297,13 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     hpMax,
     armorClass,
     armorNonProficiency: armorClassDetail?.armorNonProficiency ?? null,
+    spatial: {
+      tokenImageRef: combatant.character?.avatarUrl || combatant.creature?.imageUrl || null,
+      baseSize,
+      effectiveSize,
+      position: spatialPosition,
+      occupiedSpace: occupiedSpaceOf(spatialPosition, effectiveSize),
+    },
     statsHidden: false,
     missing: source === null,
     rolled: combatant.initiative !== null,
@@ -289,6 +345,7 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     currentCombatantId: current?.id ?? null,
     localityId: combat.locality?.id ?? null,
     localityName: combat.locality?.name ?? null,
+    spatial: spatialSceneOf(combat.spatialConfig),
     combatants,
     createdAt: combat.createdAt.toISOString(),
     endedAt: combat.endedAt ? combat.endedAt.toISOString() : null,
@@ -359,6 +416,9 @@ function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
     hpCurrent: null,
     hpMax: null,
     armorClass: null,
+    // Imagem/token de criatura/NPC também é privada do Mestre (6.6L.1):
+    // ausência de imagem não pode denunciar a existência da criatura.
+    imageUrl: null,
     // Esquiva/Preparar de NPC/criatura são estado operacional do Mestre: o
     // jogador não recebe os flags (sem badge e sem inferir a tática secreta).
     turnEconomy: { ...combatant.turnEconomy, dodging: false, ready: null },
@@ -366,6 +426,9 @@ function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
     // contador, resultado nem a existência da rolagem.
     deathState: null,
     deathBlocksActions: false,
+    // Privacidade espacial (6.6L.1): posição, tamanho, imagem e espaço ocupado
+    // de criatura/NPC NÃO vão para o jogador. O servidor filtra — o CSS nunca.
+    spatial: null,
     statsHidden: true,
     mechanicalState: privateState,
     conditionEffects: deriveConditionEffects(privateState),

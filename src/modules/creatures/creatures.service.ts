@@ -57,6 +57,8 @@ const SCALAR_KEYS = [
   'speed',
   'description',
   'imageUrl',
+  // Tamanho mecânico (6.6L.1): fonte do espaço ocupado no combate.
+  'size',
 ] as const;
 
 /** Toda leitura inclui as localidades vinculadas (usadas no editor e nos cards). */
@@ -115,6 +117,8 @@ export async function createCreature(input: CreateCreatureInput): Promise<Creatu
       hpMax,
       hpCurrent: hpMax,
       armorClass: input.armorClass ?? 10,
+      // Tamanho inicial explícito do Mestre; sem ele, Medium (nunca inferido).
+      size: input.size ?? 'Medium',
       attacks: [] as Prisma.InputJsonValue,
       resistances: [] as Prisma.InputJsonValue,
       immunities: [] as Prisma.InputJsonValue,

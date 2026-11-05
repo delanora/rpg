@@ -2525,5 +2525,102 @@ console.log('Check-combat-ui — refino da UI de combate');
     smokeRunner.includes('smokeSaveHalfDamage(BASE_URL, check)')
   );
 
+/* -------------------------------------------------------------------------- */
+/* 6.6L.1 — Fundação espacial (invariantes de arquitetura)                     */
+/* -------------------------------------------------------------------------- */
+const spatialTypes = source('../src/modules/combat/spatial/spatial.types.ts');
+const spatialSize = source('../src/modules/combat/spatial/spatial-size.ts');
+const spatialOccupied = source('../src/modules/combat/spatial/occupied-space.ts');
+const spatialProjection = source('../src/modules/combat/spatial/spatial-projection.ts');
+const spatialService = source('../src/modules/combat/spatial/spatial-scene.service.ts');
+const spatialSchema = source('../src/modules/combat/combat.schema.ts');
+const combatRoutes = source('../src/modules/combat/combat.routes.ts');
+const combatDtoSource = source('../src/modules/combat/combat.dto.ts');
+const prismaSchema = source('../prisma/schema.prisma');
+const creatureSchemaSource = source('../src/modules/creatures/creatures.schema.ts');
+const creatureServiceSource = source('../src/modules/creatures/creatures.service.ts');
+const smokeSpatial = source('../src/scripts/smoke-spatial-scene-foundation.ts');
+const modelBlock = (name: string): string => {
+  const start = prismaSchema.indexOf(`model ${name} {`);
+  if (start < 0) return '';
+  // O bloco termina na linha que fecha o modelo (`\n}`), não no primeiro `}`:
+  // defaults JSONB contêm `}` no próprio texto.
+  const end = prismaSchema.indexOf('\n}', start);
+  return prismaSchema.slice(start, end < 0 ? undefined : end);
+};
+
+check(
+  'CB161) posição espacial pertence ao COMBATANTE (instância), não à ficha',
+  modelBlock('Combatant').includes('spatialPosition') &&
+    !modelBlock('Character').includes('spatialPosition')
+);
+check(
+  'CB162) o TEMPLATE de criatura não guarda posição de combate',
+  !modelBlock('Creature').includes('spatialPosition') &&
+    !modelBlock('Creature').includes('position')
+);
+check(
+  'CB163) tamanho do Character vem da RAÇA estruturada (catálogo/custom), sem hardcode de nome',
+  spatialProjection.includes('getRace(') &&
+    spatialProjection.includes('customRace.findMany') &&
+    !/race\.name|namePt\s*===\s*'Halfling'/.test(spatialProjection)
+);
+check(
+  'CB164) tamanho de NPC/Creature é persistido e Master-authoritative',
+  modelBlock('Creature').includes('size') &&
+    creatureSchemaSource.includes('creatureSizeSchema') &&
+    creatureServiceSource.includes("'size'")
+);
+check(
+  'CB165) placement NÃO aceita tamanho/occupiedSpace e deriva o espaço no servidor',
+  spatialSchema.includes('spatialPositionPatchSchema') &&
+    !/spatialPositionPatchSchema[\s\S]{0,400}size:/.test(spatialSchema) &&
+    spatialService.includes('occupiedSpaceOf(position, combatant.baseSize') &&
+    spatialService.includes('SPATIAL_POSITION_OUT_OF_BOUNDS')
+);
+check(
+  'CB166) Small e Medium continuam DISTINTOS; Tiny 2,5 e Large 10 pés',
+  /tiny:\s*\{\s*widthFeet:\s*2\.5/.test(spatialSize) &&
+    /small:\s*\{\s*widthFeet:\s*5/.test(spatialSize) &&
+    /medium:\s*\{\s*widthFeet:\s*5/.test(spatialSize) &&
+    /large:\s*\{\s*widthFeet:\s*10/.test(spatialSize) &&
+    spatialSize.includes('SPATIAL_SIZES') &&
+    spatialTypes.includes("'small'") &&
+    spatialTypes.includes("'medium'")
+);
+check(
+  'CB167) occupiedSpace é DERIVADO (nenhuma coluna min/max no banco)',
+  spatialOccupied.includes('export function occupiedSpaceOf') &&
+    !prismaSchema.includes('occupiedSpace') &&
+    !prismaSchema.includes('minXFeet')
+);
+check(
+  'CB168) token reutiliza retrato/imagem existentes e pode ser null (fallback `?` futuro)',
+  /tokenImageRef:\s*combatant\.character\?\.avatarUrl\s*\|\|\s*combatant\.creature\?\.imageUrl\s*\|\|\s*null/.test(
+    combatDtoSource
+  ) &&
+    combatDtoSource.includes('tokenImageRef: string | null') &&
+    !combatDtoSource.includes('tokenUpload')
+);
+check(
+  'CB169) PLAYER não é autoridade espacial (config/placement MASTER-only)',
+  (combatRoutes.match(/spatial-config'[\s\S]{0,120}requireRole\('MASTER'\)/g) ?? []).length === 1 &&
+    (combatRoutes.match(/spatial-position'[\s\S]{0,200}requireRole\('MASTER'\)/g) ?? []).length === 1 &&
+    spatialService.includes("role !== 'MASTER'")
+);
+check(
+  'CB170) ainda NÃO há distância/alcance/movimento/Cover/AoE geométricos',
+  !spatialTypes.includes('distanceFeet') &&
+    !spatialOccupied.includes('distance') &&
+    !spatialService.includes('cover') &&
+    !spatialService.includes('area')
+);
+check(
+  'CB171) o smoke espacial integra o runner principal',
+  smokeRunner.includes('smokeSpatialScene(BASE_URL, check)') &&
+    smokeSpatial.includes('SPATIAL_SCENE_RESIZE_CONFLICT') &&
+    smokeSpatial.includes('SPATIAL_POSITION_OUT_OF_BOUNDS')
+);
+
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);

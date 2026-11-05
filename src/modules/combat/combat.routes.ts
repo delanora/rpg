@@ -4,7 +4,12 @@ import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   attackSchema, manualHpSchema, startCombatSchema, useItemSchema,
   combatOperationSchema, economyActionSchema, economyOverrideSchema, nextTurnSchema,
+  spatialConfigPatchSchema, spatialPositionPatchSchema,
 } from './combat.schema.js';
+import {
+  setCombatantSpatialPosition,
+  updateSpatialScene,
+} from './spatial/spatial-scene.service.js';
 import { resolutionRequestsForCombat } from './resolution-requests.js';
 import {
   executeEconomyAction,
@@ -39,6 +44,56 @@ function actorFrom(req: { user?: { sub: string; username: string; role: Role } }
 combatRouter.get('/:combatId/resolution-requests', authenticate, async (req, res) => {
   res.json(await resolutionRequestsForCombat(actorFrom(req), String(req.params.combatId)));
 });
+
+/**
+ * PATCH /api/combat/:combatId/spatial-config — MASTER configura a cena.
+ *
+ * `assisted` → `grid-2d` é ação EXPLÍCITA do Mestre; voltar para `assisted`
+ * NÃO apaga posições (elas só deixam de ser fonte espacial autoritativa para
+ * os providers futuros). PLAYER é recusado no serviço.
+ */
+combatRouter.patch('/:combatId/spatial-config', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = spatialConfigPatchSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  const { expectedVersion, operationId, ...config } = parsed.data;
+  res.json(
+    await updateSpatialScene(actorFrom(req), {
+      combatId: String(req.params.combatId),
+      expectedVersion,
+      operationId,
+      ...config,
+    }),
+  );
+});
+
+/**
+ * PATCH /api/combat/:combatId/combatants/:combatantId/spatial-position —
+ * MASTER posiciona (ou remove a posição de) um combatente. É SETUP: não gasta
+ * Movimento/Ação, não dispara Reação e não altera a iniciativa.
+ */
+combatRouter.patch(
+  '/:combatId/combatants/:combatantId/spatial-position',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const parsed = spatialPositionPatchSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    res.json(
+      await setCombatantSpatialPosition(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.combatantId),
+        parsed.data,
+      ),
+    );
+  },
+);
 
 /** GET /api/combat/active — estado do combate em andamento (ou null). */
 combatRouter.get('/active', authenticate, async (req, res) => {
