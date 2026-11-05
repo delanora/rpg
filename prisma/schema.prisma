@@ -796,6 +796,13 @@ model Creature {
   imageUrl String @default("")
 
   ///
+  /// TAMANHO mecânico do PHB 2014 (Fase 6.6L.1): 'Tiny'|'Small'|'Medium'|
+  /// 'Large'|'Huge'|'Gargantuan', definido pelo MESTRE no cadastro. É a fonte
+  /// do espaço ocupado no combate — o placement nunca envia tamanho. Registros
+  /// legados recebem `Medium` (backfill explícito da migration).
+  size String @default("Medium")
+
+  ///
   /// INVENTÁRIO PERSISTENTE do NPC (mesmo formato de `Character.inventory`).
   /// Só o Mestre lê/escreve: a lista de itens, moedas e equipamento secreto
   /// nunca entra no DTO do jogador. Criaturas-TEMPLATE continuam usando apenas
@@ -918,6 +925,13 @@ model Combat {
   localityId String?
   locality   Locality? @relation(fields: [localityId], references: [id], onDelete: SetNull)
 
+  ///
+  /// CONFIGURAÇÃO ESPACIAL da cena (Fase 6.6L.1):
+  /// `{ mode: 'assisted'|'grid-2d', widthFeet, heightFeet, cellSizeFeet }`.
+  /// `null`/ausente = cena padrão ASSISTIDA (combates existentes continuam
+  /// funcionando exatamente como antes). Validada por Zod na leitura.
+  spatialConfig Json? 
+
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
   endedAt    DateTime?
@@ -978,6 +992,13 @@ model Combatant {
   /// vem do template (`Creature.spellcastingResources`); o gasto é da instância
   /// e nunca muta o statblock compartilhado.
   spellcastingUsed Json @default("{}")
+
+  ///
+  /// POSIÇÃO 2D NA CENA (Fase 6.6L.1), em PÉS — âncora do espaço ocupado
+  /// (canto mínimo: x cresce à direita, y para baixo). `null` = UNPLACED, que
+  /// NUNCA significa 0,0. Vive SÓ na instância do combate: o tamanho vem da
+  /// ficha (raça) ou do cadastro da criatura, nunca daqui.
+  spatialPosition Json?
 
   createdAt DateTime @default(now())
 

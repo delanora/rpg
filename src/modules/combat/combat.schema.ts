@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SPATIAL_MODES, spatialPositionSchema } from './spatial/spatial.types.js';
 
 /**
  * Entrada do botão "COMBATE": o mestre escolhe a localidade e quantas cópias
@@ -146,6 +147,45 @@ export const economyOverrideSchema = combatOperationSchema.extend({
 }).superRefine((input, ctx) => {
   if (input.adjustment === 'set-movement' && input.remaining === undefined) ctx.addIssue({ code: 'custom', message: 'Informe o Movimento restante.' });
 });
+/* -------------------------------------------------------------------------- */
+/* 6.6L.1 — Espaço da cena e placement                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Configuração da cena. Só o MASTER; `cellSizeFeet` é FIXO em 5 (grid base) e
+ * não é aceito do cliente. `grid-2d` exige as duas dimensões; `assisted` pode
+ * só trocar o modo (preserva as dimensões atuais).
+ */
+export const spatialConfigPatchSchema = z
+  .object({
+    mode: z.enum(SPATIAL_MODES),
+    widthFeet: z.number().finite().min(5).max(100_000).optional(),
+    heightFeet: z.number().finite().min(5).max(100_000).optional(),
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.mode === 'grid-2d' && (input.widthFeet === undefined || input.heightFeet === undefined)) {
+      ctx.addIssue({ code: 'custom', message: 'Informe largura e altura da cena em pés.' });
+    }
+  });
+
+/**
+ * Placement/unplace de UM combatente. `size`/`occupiedSpace`/distância NÃO são
+ * aceitos: o servidor deriva tudo do tamanho canônico e das dimensões da cena.
+ */
+export const spatialPositionPatchSchema = z
+  .object({
+    position: spatialPositionSchema.nullable(),
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict();
+
+export type SpatialConfigPatch = z.infer<typeof spatialConfigPatchSchema>;
+export type SpatialPositionPatch = z.infer<typeof spatialPositionPatchSchema>;
+
 export type CombatOperationInput = z.infer<typeof combatOperationSchema>;
 export type EconomyActionInput = z.infer<typeof economyActionSchema>;
 export type EconomyOverrideInput = z.infer<typeof economyOverrideSchema>;

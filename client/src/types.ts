@@ -2073,6 +2073,40 @@ export interface CombatUsableItem {
   targetable: boolean;
 }
 
+/** Tamanhos mecânicos do PHB 2014 (fundação espacial 6.6L.1). */
+export type SpatialSize = 'tiny' | 'small' | 'medium' | 'large' | 'huge' | 'gargantuan';
+
+/** Retângulo ocupado DERIVADO da posição + tamanho efetivo (nunca enviado). */
+export interface OccupiedSpace {
+  minXFeet: number;
+  minYFeet: number;
+  maxXFeet: number;
+  maxYFeet: number;
+  widthFeet: number;
+  heightFeet: number;
+}
+
+/**
+ * Dados espaciais de UM combatente para o Grid (6.6M.1). `tokenImageRef` reusa
+ * o retrato/imagem já existente; `null` = fallback `?` desenhado pela UI.
+ * `spatial` é `null` quando o combatente é privado do Mestre.
+ */
+export interface CombatantSpatial {
+  tokenImageRef: string | null;
+  baseSize: SpatialSize;
+  effectiveSize: SpatialSize;
+  position: { xFeet: number; yFeet: number } | null;
+  occupiedSpace: OccupiedSpace | null;
+}
+
+/** Configuração espacial da cena (combates legados = `assisted`). */
+export interface SpatialScene {
+  mode: 'assisted' | 'grid-2d';
+  widthFeet: number;
+  heightFeet: number;
+  cellSizeFeet: number;
+}
+
 export interface CombatantDto {
   mechanicalState: MechanicalState;
   conditionEffects: ConditionEffects;
@@ -2108,6 +2142,8 @@ export interface CombatantDto {
   armorNonProficiency: ArmorProficiencyState | null;
   /** Verdadeiro quando a vida/CA existem, mas ficam ocultas para quem vê. */
   statsHidden: boolean;
+  /** Posição/tamanho/imagem do token; `null` quando privado do Mestre. */
+  spatial: CombatantSpatial | null;
   missing: boolean;
   rolled: boolean;
 }
@@ -2122,6 +2158,8 @@ export interface CombatDto {
   currentCombatantId: string | null;
   localityId: string | null;
   localityName: string | null;
+  /** Modo/dimensões/célula da cena (fundação espacial 6.6L.1). */
+  spatial: SpatialScene;
   combatants: CombatantDto[];
   createdAt: string;
   endedAt: string | null;
