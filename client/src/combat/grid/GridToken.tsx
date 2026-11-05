@@ -1,16 +1,14 @@
 import type { CSSProperties, PointerEvent } from 'react';
 import type { CombatantDto } from '../../types';
-import {
-  SIZE_LABELS,
-  renderRect,
-  tokenArtSize,
-} from './gridMath';
+import { SIZE_LABELS, renderRect, tokenArtSize } from './gridMath';
 
 /** Dados mínimos de um combatente para o grid (subset do DTO real). */
 export type GridUnit = Pick<
   CombatantDto,
   'id' | 'name' | 'spatial' | 'spatialVisibility'
 > & {
+  /** Personagem × criatura/NPC: só muda o ARO do token (visual). */
+  kind?: string;
   missing?: boolean;
 };
 
@@ -23,24 +21,19 @@ export interface GridTokenProps {
   selected?: boolean;
   /** Placement em voo: preview até o servidor confirmar. */
   pending?: boolean;
-  /**
-   * Clique seleciona a unidade: no modo Posicionar (Mestre) ou no modo Medir
-   * (qualquer um com o grid ativo). PLAYER não posiciona.
-   */
+  /** Clique seleciona a unidade (posicionar, medir ou escolher extremo). */
   interactive?: boolean;
-  /**
-   * 6.6M.2 — papel na MEDIÇÃO. Só muda apresentação/`aria-label`: a linha e a
-   * distância continuam sendo do servidor.
-   */
+  /** Papel na MEDIÇÃO (apresentação/`aria-label`). */
   measureRole?: 'source' | 'target' | null;
-  /**
-   * 6.6M.3 — o token pertence ao combatente que PODE mover mecanicamente
-   * agora. Só muda apresentação/gesto: a autoridade continua no servidor.
-   */
+  /** O token pertence ao combatente que PODE mover mecanicamente agora. */
   movable?: boolean;
+  /** Régua ativa: o clique escolhe extremo, nunca inicia movimento. */
+  rulerActive?: boolean;
   onSelect?: (combatantId: string) => void;
   /** Início do draft de movimento (pointer down / ativação por teclado). */
   onMoveStart?: (combatantId: string, event: PointerEvent<HTMLButtonElement>) => void;
+  /** Duplo clique centraliza a CÂMERA no token (não inicia movimento). */
+  onCenter?: (combatantId: string) => void;
   /** Hover da medição (complemento do clique — nunca obrigatório). */
   onHover?: (combatantId: string | null) => void;
 }
@@ -49,13 +42,10 @@ export interface GridTokenProps {
  * TOKEN do grid: o FOOTPRINT (espaço ocupado, mecânico) com o retrato/imagem
  * dentro. O círculo é só representação — não define tamanho.
  *
- * Fonte da imagem: o `tokenImageRef` do DTO (retrato da ficha para Character;
- * imagem cadastrada para NPC/criatura). `null` = fallback `?`, desenhado em
- * texto/CSS (sem raster e sem depender de zoom/font-size fixo).
- *
- * 6.6L.3.2: `?` significa APENAS "sem imagem". Quem está `master-only` não
- * chega ao grid do jogador (o DTO vem com `spatial: null`); para o Mestre o
- * token continua desenhado, com a indicação discreta de oculto.
+ * FASE 6.6M.3.1: o retrato NUNCA é arrastável nativamente. O `draggable={false}`
+ * no `<img>` (e o `onDragStart` bloqueado) é a correção do bug real de Drag &
+ * Drop: o drag nativo do HTML5 cancelava `pointermove`/`pointerup`, então o
+ * gesto morria no meio e o commit nunca acontecia para tokens COM retrato.
  */
 export function GridToken({
   combatant,
@@ -67,8 +57,10 @@ export function GridToken({
   interactive = false,
   measureRole = null,
   movable = false,
+  rulerActive = false,
   onSelect,
   onMoveStart,
+  onCenter,
   onHover,
 }: GridTokenProps) {
   const rect = renderRect(combatant, cellSizeFeet, pixelsPerCell);
@@ -83,6 +75,7 @@ export function GridToken({
   if (pending) classes.push('is-pending');
   if (combatant.missing) classes.push('is-missing');
   if (movable) classes.push('is-movable');
+  if (rulerActive) classes.push('is-ruler-pick');
   if (measureRole === 'source') classes.push('is-measure-source');
   if (measureRole === 'target') classes.push('is-measure-target');
 
@@ -94,36 +87,63 @@ export function GridToken({
     '--grid-token-art': `${artSize}px`,
   };
 
+  const roleLabel =
+    measureRole === 'source'
+      ? ', origem da medição'
+      : measureRole === 'target'
+        ? ', alvo da medição'
+        : '';
+
   return (
     <button
       type="button"
       className={classes.join(' ')}
       style={style}
       title={`${combatant.name} · ${label}`}
-      aria-label={`${combatant.name}, ${label}${
-        measureRole === 'source'
-          ? ', origem da medição'
-          : measureRole === 'target'
-            ? ', alvo da medição'
-            : ''
-      }${movable ? ', pode ser movido' : ''}`}
+      aria-label={`${combatant.name}, ${label}${roleLabel}${
+        movable ? ', pode ser movido' : ''
+      }${rulerActive ? ', pode ser medido' : ''}`}
       aria-pressed={selected || measureRole !== null}
       aria-current={currentTurn ? 'true' : undefined}
       data-size={size}
+      data-kind={combatant.kind ?? 'character'}
       data-movable={movable ? 'true' : undefined}
       disabled={!interactive && !movable}
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
       onPointerDown={
-        movable && onMoveStart
+        movable && !rulerActive && onMoveStart
           ? (event) => onMoveStart(combatant.id, event)
           : undefined
       }
-      onClick={interactive && onSelect ? () => onSelect(combatant.id) : undefined}
+      onClick={
+        interactive && onSelect
+          ? (event) => {
+              event.stopPropagation();
+              onSelect(combatant.id);
+            }
+          : undefined
+      }
+      onDoubleClick={
+        onCenter
+          ? (event) => {
+              event.stopPropagation();
+              onCenter(combatant.id);
+            }
+          : undefined
+      }
       onMouseEnter={interactive && onHover ? () => onHover(combatant.id) : undefined}
       onMouseLeave={interactive && onHover ? () => onHover(null) : undefined}
     >
       <span className="grid-token-art">
         {combatant.spatial.tokenImageRef ? (
-          <img className="grid-token-img" src={combatant.spatial.tokenImageRef} alt="" loading="lazy" />
+          <img
+            className="grid-token-img"
+            src={combatant.spatial.tokenImageRef}
+            alt=""
+            loading="lazy"
+            draggable={false}
+          />
         ) : (
           <span className="grid-token-fallback" aria-hidden="true">
             ?

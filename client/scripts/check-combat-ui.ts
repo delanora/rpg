@@ -28,11 +28,25 @@ import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
 import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
-import { MovementPanel } from '../src/combat/grid/MovementPanel';
+import { MovementHud } from '../src/combat/grid/MovementHud';
+import { GridRuler } from '../src/combat/grid/GridRuler';
 import { anchorStepFeet, appendAnchor, pointerAnchor } from '../src/combat/grid/movementPath';
 import { CombatGrid } from '../src/combat/grid/CombatGrid';
-import { GridMeasureOverlay } from '../src/combat/grid/GridMeasurement';
-import { distanceLabel, formatFeet, rangeSummary } from '../src/combat/grid/distanceFormat';
+import {
+  IDENTITY_CAMERA,
+  centerCamera,
+  clampCamera,
+  feetToScenePixel,
+  fitCamera,
+  panBy,
+  sceneToScreen,
+  screenToFeet,
+  screenToScene,
+  zoomAt,
+  type GridCamera,
+} from '../src/combat/grid/gridCamera';
+import { rulerEndpointKey, rulerLabelText, rulerMidpoint } from '../src/combat/grid/gridRuler';
+import { distanceLabel, formatFeet, formatMeters, rangeSummary } from '../src/combat/grid/distanceFormat';
 import { GridToken, type GridUnit } from '../src/combat/grid/GridToken';
 import { UnplacedCombatantsTray } from '../src/combat/grid/UnplacedCombatantsTray';
 import {
@@ -2980,7 +2994,10 @@ check(
 /* -------------------------------------------------------------------------- */
 /* 6.6M.2 — Distance + Range VISUAL FEEDBACK                                   */
 /* -------------------------------------------------------------------------- */
-const measureUiSource = gridSource('GridMeasurement.tsx');
+const rulerUiSource = gridSource('GridRuler.tsx');
+const rulerGeometrySource = gridSource('gridRuler.ts');
+const cameraSource = gridSource('gridCamera.ts');
+const hudSource = gridSource('MovementHud.tsx');
 const distanceFormatSource = gridSource('distanceFormat.ts');
 const attackPanelSource = source('src/combat/components/CombatActionPanel.tsx');
 const realtimeEventsSource = source('../src/realtime/events.ts');
@@ -3001,17 +3018,16 @@ check(
     // 6.6M.3: o modo MOVER tem o próprio gate; os dois antigos seguem intactos.
     combatGridSource.includes('const movementInteractive = !locked && Boolean(movableUnitId);') &&
     combatGridSource.includes('setSpatialPosition') &&
-    combatGridSource.includes('? measureInteractive') &&
     combatGridSource.includes('? movementInteractive') &&
     combatGridSource.includes(': placementInteractive')
 );
 check(
   'CB199) React NÃO calcula distância mecânica nem faixa de alcance',
   !/Math\.(sqrt|hypot|cbrt)/.test(
-    `${combatGridSource}${gridMathSource}${measureUiSource}${distanceFormatSource}`
+    `${combatGridSource}${gridMathSource}${rulerUiSource}${rulerGeometrySource}${distanceFormatSource}`
   ) &&
     !/normalRangeFeet|longRangeFeet|reachFeet/.test(
-      `${combatGridSource}${measureUiSource}${distanceFormatSource}`
+      `${combatGridSource}${rulerUiSource}${rulerGeometrySource}${distanceFormatSource}`
     )
 );
 check(
@@ -3117,12 +3133,12 @@ check(
     !/normalRangeFeet|longRangeFeet|reachFeet|distanceFeet/.test(combatRoutesSource)
 );
 check(
-  'CB205) a linha de medição é DECORAÇÃO (SVG, aria-hidden, pointer-events none)',
-  measureUiSource.includes('grid-measure-layer') &&
-    measureUiSource.includes('aria-hidden="true"') &&
-    measureUiSource.includes('footprintCenter') &&
-    !/distanceFeet/.test(measureUiSource) &&
-    /\.grid-measure-layer[^}]*pointer-events: none/.test(gridCssSource)
+  'CB205) a linha da régua é DECORAÇÃO (SVG, aria-hidden, pointer-events none)',
+  rulerUiSource.includes('grid-ruler-layer') &&
+    rulerUiSource.includes('aria-hidden="true"') &&
+    rulerUiSource.includes('rulerMidpoint') &&
+    !/distanceFeet\s*[-+*]/ .test(rulerUiSource) &&
+    /\.grid-ruler-layer[^}]*pointer-events: none/.test(gridCssSource)
 );
 check(
   'CB206) medição é leitura PURA: sem operationId/versão, sem persistência, sem socket',
@@ -3140,36 +3156,52 @@ check(
 check(
   'CB208) realtime invalida a medição (nunca valor velho como atual)',
   /combat\.version/.test(combatGridSource) &&
-    combatGridSource.includes('measureSequence') &&
+    combatGridSource.includes('rulerSequence') &&
     combatGridSource.includes('setDistance(null)') &&
-    combatGridSource.includes('setMeasureTargetId(null)')
+    combatGridSource.includes('clearRuler')
 );
 check(
-  'CB209) estilos da medição ficam no grid.css (styles.css WIP intocado)',
-  gridCssSource.includes('.grid-measure-panel') &&
-    gridCssSource.includes('.grid-measure-line') &&
-    !source('src/styles.css').includes('.grid-measure')
+  'CB209) estilos da régua ficam no grid.css (styles.css WIP intocado)',
+  gridCssSource.includes('.grid-ruler-line') &&
+    gridCssSource.includes('.grid-ruler-label') &&
+    !source('src/styles.css').includes('.grid-ruler')
 );
 
-const measureOverlayHtml = (target: GridUnit | null): string =>
+const rulerHtml = (distanceFeet: number | null, state: 'loading' | 'success' = 'success'): string =>
   renderToStaticMarkup(
-    createElement(GridMeasureOverlay, {
-      source: unitOf('origem', 'medium', { position: { xFeet: 0, yFeet: 0 } }),
-      target,
-      cellSizeFeet: 5,
-      pixelsPerCell: 44,
+    createElement(GridRuler, {
+      from: { x: 0, y: 0 },
+      to: { x: 100, y: 50 },
+      fromLabel: 'Origem',
+      toLabel: 'Alvo',
+      distance:
+        distanceFeet === null
+          ? null
+          : {
+              status: 'known',
+              distanceFeet,
+              provenance: 'grid-2d',
+              algorithm: 'phb-grid-footprint-v1',
+              reason: null,
+            },
+      state,
+      locked: true,
     })
   );
-const measureLine = measureOverlayHtml(
-  unitOf('alvo', 'medium', { position: { xFeet: 25, yFeet: 0 } })
-);
+const rulerMarkup = rulerHtml(25);
 check(
-  'CB210) a linha só aparece com origem+alvo COLOCADOS e usa o centro visual',
-  measureLine.includes('<line') &&
-    measureLine.includes('x1="22"') &&
-    measureLine.includes('x2="242"') &&
-    measureOverlayHtml(null) === '' &&
-    measureOverlayHtml(unitOf('fora', 'medium', { position: null })) === ''
+  'CB210) régua desenha a linha e coloca a DISTÂNCIA NO MEIO, em metros, horizontal',
+  rulerMarkup.includes('<line') &&
+    rulerMarkup.includes('x1="0"') &&
+    rulerMarkup.includes('x2="100"') &&
+    rulerMarkup.includes('grid-ruler-label') &&
+    rulerMarkup.includes('left:50px') &&
+    rulerMarkup.includes('top:25px') &&
+    rulerMarkup.includes('7,5 m') &&
+    rulerHtml(null, 'loading').includes('Calculando…') &&
+    /transform:\s*translate\(-50%,\s*-50%\)/.test(
+      (gridCssSource.match(/\.grid-ruler-label\s*\{[^}]*\}/) ?? [''])[0]
+    )
 );
 check(
   'CB211) painel de ataque reaproveita a seleção existente para o alcance (sem picker novo)',
@@ -3454,7 +3486,7 @@ check(
 const movementGridSource = source('src/combat/grid/CombatGrid.tsx');
 const movementPathSource = source('src/combat/grid/movementPath.ts');
 const movementApiSource = source('src/combat/grid/movementApi.ts');
-const movementPanelSource = source('src/combat/grid/MovementPanel.tsx');
+const movementPanelSource = source('src/combat/grid/MovementHud.tsx');
 const movementOverlaySource = source('src/combat/grid/GridMovementOverlay.tsx');
 const movementCssSource = source('src/combat/grid/grid.css');
 const turnControlSource = source('src/combat/turnControl.ts');
@@ -3463,7 +3495,7 @@ const turnControlSource = source('src/combat/turnControl.ts');
 const stripComments = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, '');
 const movementApiBody = stripComments(movementApiSource);
 const movementClientCode = stripComments(
-  `${movementGridSource}${movementPathSource}${movementPanelSource}${movementOverlaySource}`,
+  `${movementPathSource}${movementPanelSource}${movementOverlaySource}${cameraSource}${rulerGeometrySource}`,
 );
 
 const viewerOf = (role: 'PLAYER' | 'MASTER', id: string): SessionUser =>
@@ -3530,8 +3562,9 @@ check(
     /\bMover\b/.test(movementGridSource) &&
     movementGridSource.includes('Posicionar') &&
     movementGridSource.includes('Medir') &&
-    // Sem modificador escondido: o gesto é pointer puro (comentário não conta).
-    !/Shift\+|shiftKey/.test(stripComments(movementGridSource))
+    // Sem modificador escondido no modo: clique/gesto é pointer puro. Shift só
+    // existe como PAN HORIZONTAL da roda (câmera), nunca como "Shift+Click".
+    !/Shift\+Click/.test(stripComments(movementGridSource))
 );
 check(
   'CB243) Placement, Movement e Measure são MUTUAMENTE exclusivos (o clique nunca é ambíguo)',
@@ -3539,7 +3572,7 @@ check(
     movementGridSource.indexOf("if (mode === 'movement')") <
       movementGridSource.indexOf("if (mode !== 'placement') return;") &&
     movementGridSource.indexOf("if (mode !== 'placement') return;") <
-      movementGridSource.indexOf('placeAt(selectedId') &&
+      movementGridSource.indexOf('void place(') &&
     // Placement não usa nada do motor de movimento (caminhos separados).
     !gridApiSource.includes('movement') &&
     movementApiSource.includes('movement-preview') &&
@@ -3693,14 +3726,15 @@ check(
   ) &&
     movementPanelSource.includes('movement.totalCostFeet') &&
     movementPanelSource.includes('movement.movementRemainingFeet') &&
-    movementPanelSource.includes('movement.totalDistanceFeet')
+    movementPanelSource.includes('movement.totalDistanceFeet') &&
+    movementPanelSource.includes('formatMeters')
 );
 check(
   'CB254) painel separa válido × insuficiente × bloqueado com os números do SERVIDOR (sem identidade oculta)',
   (() => {
     const render = (over: Partial<MovementPathReading>, pathLength = 2) =>
       renderToStaticMarkup(
-        createElement(MovementPanel, {
+        createElement(MovementHud, {
           combatantName: 'Hero',
           eligible: true,
           reason: null,
@@ -3725,7 +3759,7 @@ check(
       blocker: { code: 'MOVEMENT_PATH_BLOCKED', stepIndex: 1, combatantId: null, combatantName: null },
     });
     const idle = renderToStaticMarkup(
-      createElement(MovementPanel, {
+      createElement(MovementHud, {
         combatantName: null,
         eligible: false,
         reason: 'Seu token ainda não foi posicionado pelo Mestre.',
@@ -3745,7 +3779,8 @@ check(
       valid.includes('Trajeto válido.') &&
       valid.includes('Distância') &&
       valid.includes('Custo') &&
-      valid.includes('Restante após mover') &&
+      valid.includes('Restante previsto') &&
+      valid.includes('5 m') &&
       !valid.includes('disabled=""') &&
       insufficient.includes('Movimento insuficiente para este trajeto.') &&
       insufficient.includes('disabled=""') &&
@@ -3789,7 +3824,7 @@ check(
 check(
   'CB256) movimento não filtra por tipo nem visibilidade: NPC público continua no grid, master-only segue no DTO',
   !/spatialVisibility|\bkind\b/.test(
-    stripComments(`${movementPathSource}${movementApiSource}${movementPanelSource}${movementOverlaySource}`)
+    stripComments(`${movementPathSource}${movementApiSource}${movementOverlaySource}`)
   ) &&
     movementGridSource.includes('splitByPlacement(combat.combatants)') &&
     movementGridSource.includes('movableUnitId === combatant.id')
@@ -3804,9 +3839,179 @@ check(
 check(
   'CB258) estilos novos continuam em grid.css (styles.css WIP NÃO é tocado)',
   movementCssSource.includes('6.6M.3') &&
-    movementCssSource.includes('.grid-movement-panel') &&
+    movementCssSource.includes('.grid-movement-hud') &&
     movementCssSource.includes('.grid-movement-ghost') &&
+    !movementCssSource.includes('.grid-movement-panel') &&
     !source('src/styles.css').includes('.grid-movement-')
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1 — GRID CAMERA, RÉGUA E UX DO COMBATE                              */
+/* -------------------------------------------------------------------------- */
+check(
+  'CB259) câmera pura: screen↔scene é reversível e zoom mantém o ponto sob o cursor',
+  (() => {
+    const camera: GridCamera = { panX: 40, panY: -30, zoom: 1.5 };
+    const point = { x: 220, y: 140 };
+    const back = sceneToScreen(camera, screenToScene(camera, point));
+    const anchor = { x: 320, y: 200 };
+    const zoomed = zoomAt(camera, 1.6, anchor);
+    const before = screenToScene(camera, anchor);
+    const after = screenToScene(zoomed, anchor);
+    return (
+      Math.abs(back.x - point.x) < 1e-9 &&
+      Math.abs(back.y - point.y) < 1e-9 &&
+      Math.abs(before.x - after.x) < 1e-9 &&
+      Math.abs(before.y - after.y) < 1e-9 &&
+      zoomed.zoom > camera.zoom &&
+      panBy(IDENTITY_CAMERA, 10, -5).panX === 10
+    );
+  })()
+);
+check(
+  'CB260) Enquadrar mostra a cena inteira com margem, centralizada e sem ampliar >100%',
+  (() => {
+    const fitted = fitCamera({
+      scene: { width: 1000, height: 800 },
+      viewport: { width: 600, height: 400 },
+      margin: 20,
+    });
+    const small = fitCamera({
+      scene: { width: 100, height: 100 },
+      viewport: { width: 600, height: 400 },
+      margin: 20,
+    });
+    return (
+      fitted.zoom > 0 &&
+      fitted.zoom <= 1 &&
+      Math.abs(fitted.panX - (600 - 1000 * fitted.zoom) / 2) < 1e-6 &&
+      Math.abs(fitted.panY - (400 - 800 * fitted.zoom) / 2) < 1e-6 &&
+      small.zoom === 1 &&
+      centerCamera({ panX: 0, panY: 0, zoom: 1 }, { x: 100, y: 100 }, { width: 600, height: 400 })
+        .panX === 200
+    );
+  })()
+);
+check(
+  'CB261) pan bounds impedem PERDER a cena (mas permitem margem fora dela)',
+  (() => {
+    const clamped = clampCamera(
+      { panX: 5000, panY: -5000, zoom: 1 },
+      { width: 400, height: 400 },
+      { width: 600, height: 400 },
+      96,
+    );
+    return clamped.panX === 600 - 96 && clamped.panY === 96 - 400;
+  })()
+);
+check(
+  'CB262) MOVEMENT/PLACEMENT/RÉGUA usam a MESMA conversão com pan e zoom != 0',
+  (() => {
+    const camera: GridCamera = { panX: -120, panY: 60, zoom: 2 };
+    const geometry = { pixelsPerCell: 44, cellSizeFeet: 5 };
+    const scenePoint = feetToScenePixel({ xFeet: 30, yFeet: 15 }, geometry);
+    const feet = screenToFeet(camera, sceneToScreen(camera, scenePoint), geometry);
+    return Math.abs(feet.xFeet - 30) < 1e-9 && Math.abs(feet.yFeet - 15) < 1e-9;
+  })()
+);
+check(
+  'CB263) Ctrl+wheel dá ZOOM NO GRID com preventDefault (listener nativo, página intocada)',
+  movementGridSource.includes("addEventListener('wheel', onWheel, { passive: false })") &&
+    movementGridSource.includes('event.ctrlKey') &&
+    movementGridSource.includes('event.preventDefault()') &&
+    movementGridSource.includes('zoomAt(cameraRef.current, factor, point)') &&
+    movementGridSource.includes('event.shiftKey') &&
+    !movementGridSource.includes('onWheel={')
+);
+check(
+  'CB264) viewport com overflow hidden (sem scrollbars) e câmera aplicada por transform',
+  /\.grid-viewport\s*\{[^}]*overflow: hidden/.test(gridCssSource) &&
+    /\.grid-viewport\s*\{[^}]*height: min\(70vh/.test(gridCssSource) &&
+    gridCssSource.includes('.grid-camera') &&
+    movementGridSource.includes(
+      'translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})'
+    ) &&
+    movementGridSource.includes('if (fittedKey.current === key) return;')
+);
+check(
+  'CB265) HUD compacto FLUTUA no palco; painel grande removido e barra persistente segue fonte',
+  hudSource.includes('grid-movement-hud') &&
+    hudSource.includes('role="status"') &&
+    hudSource.includes('formatMeters') &&
+    /\.grid-movement-hud\s*\{[^}]*position: absolute/.test(gridCssSource) &&
+    !gridCssSource.includes('.grid-movement-panel') &&
+    combatTrackerSource.includes('<TurnResourceBar') &&
+    movementGridSource.includes('<MovementHud')
+);
+check(
+  'CB266) régua: F arma, clique fixa origem, 2º clique trava, direito/Esc limpam, uma por vez',
+  movementGridSource.includes("event.key === 'f' || event.key === 'F'") &&
+    movementGridSource.includes("kind: 'point'") &&
+    movementGridSource.includes('pickRulerEndpoint') &&
+    movementGridSource.includes('handleViewportContextMenu') &&
+    movementGridSource.includes('clearRuler()') &&
+    movementGridSource.includes("event.key === 'Escape'") &&
+    movementGridSource.includes('if (!ruler || ruler.locked)') &&
+    movementGridSource.includes('if (!rulerRef.current.from) setQuickRuler(false)')
+);
+check(
+  'CB267) régua é leitura PURA server-authoritative: ponto↔ponto sem cálculo no cliente',
+  combatRoutesSource.includes("'/:combatId/spatial/measure'") &&
+    distanceService.includes('readCombatMeasure') &&
+    distanceService.includes('pointMeasureDistanceFeet') &&
+    distanceService.includes('pointToBodyDistanceFeet') &&
+    distanceService.includes('canReadDistance(actor, combat, combatant.id)') &&
+    gridApiSource.includes('measureSpatial') &&
+    gridApiSource.includes('/spatial/measure') &&
+    !/distanceFeet\s*[-+*/]/.test(stripComments(`${rulerGeometrySource}${rulerUiSource}`))
+);
+check(
+  'CB268) Drag & Drop: retrato NÃO é arrastável nativamente e o gesto vive no window',
+  gridTokenSource.includes('draggable={false}') &&
+    gridTokenSource.includes('onDragStart={(event) => event.preventDefault()}') &&
+    movementGridSource.includes("window.addEventListener('pointermove', onMove)") &&
+    movementGridSource.includes("window.addEventListener('pointerup', onUp)") &&
+    movementGridSource.includes('setPointerCapture') &&
+    movementGridSource.includes('requestAnimationFrame(tick)') &&
+    movementGridSource.includes('cancelAnimationFrame(frame)')
+);
+check(
+  'CB269) tokens circulares com moldura metálica, halo de turno e seleção DISTINTA',
+  /\.grid-token-art\s*\{[^}]*border-radius: 50%/.test(gridCssSource) &&
+    gridCssSource.includes("data-kind='character'") &&
+    gridCssSource.includes('.grid-token.is-current .grid-token-art') &&
+    gridCssSource.includes('.grid-token.is-selected .grid-token-art') &&
+    gridCssSource.includes('.grid-hover-cell') &&
+    gridCssSource.includes('.grid-ruler-label')
+);
+check(
+  'CB270) metros na UI espacial (5 ft = 1,5 m, 2,5 ft = 0,75 m) sem mexer no domínio em pés',
+  formatMeters(2.5) === '0,75 m' &&
+    formatMeters(5) === '1,5 m' &&
+    formatMeters(10) === '3 m' &&
+    formatMeters(15) === '4,5 m' &&
+    formatMeters(20) === '6 m' &&
+    formatMeters(25) === '7,5 m' &&
+    formatMeters(30) === '9 m' &&
+    formatFeet(2.5) === '2,5 pés' &&
+    rulerLabelText(null, 'loading') === 'Calculando…' &&
+    rulerMidpoint({ x: 0, y: 0 }, { x: 100, y: 50 }).x === 50
+);
+check(
+  'CB271) câmera/régua não tocam o MUNDO: nada de walls/LoS/cover/AoE/minimap/pathfinding',
+  !/\bwalls?\b|lineOfSight|coverLevel|areaOfEffect|fogOfWar|minimap|pathfind|dijkstra/i.test(
+    stripComments(`${cameraSource}${rulerGeometrySource}${rulerUiSource}${hudSource}`)
+  ) &&
+    !/movementBudget|totalCostFeet\s*[-+*/]|difficultTerrain\s*\?/.test(
+      stripComments(`${rulerGeometrySource}${rulerUiSource}${cameraSource}`)
+    )
+);
+check(
+  'CB272) câmera é CLIENT-ONLY: nenhum campo de pan/zoom em DTO, schema ou Prisma',
+  !/panX|panY|\bzoom\b/.test(combatSchemaSource) &&
+    !/panX|panY|\bzoom\b/.test(prismaSchemaSource) &&
+    rulerEndpointKey({ kind: 'point', position: { xFeet: 5, yFeet: 5 } }) === 'point:5:5' &&
+    rulerEndpointKey({ kind: 'combatant', combatantId: 'a' }) === 'combatant:a'
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

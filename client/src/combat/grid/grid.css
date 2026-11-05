@@ -1,30 +1,108 @@
 /*
- * FASE 6.6M.1 — estilos ISOLADOS do grid de combate.
+ * GRID DE COMBATE — "mesa tática dark fantasy do Obsyrium".
  *
- * `client/src/styles.css` está em WIP e NÃO é tocado: este arquivo só usa os
- * tokens de tema existentes (--surface, --ink, --gold…) com fallbacks seguros.
- * Pixels aqui são RENDERING; nenhuma unidade mecânica depende deles.
+ * FASE 6.6M.1 → 6.6M.3.1 (6.6L.3.2 preservada: badge `.grid-token-hidden`).
+ * `client/src/styles.css` está em WIP e NÃO é tocado:
+ * este arquivo só usa os tokens de tema existentes (--surface, --ink, --gold…)
+ * com fallbacks seguros. Pixels aqui são RENDERING; nenhuma unidade mecânica
+ * depende deles — a câmera (pan/zoom) vive só neste arquivo e no React.
  */
 
 .combat-grid-panel {
+  --grid-brass: var(--gold, #e0b83f);
+  --grid-brass-soft: rgba(224, 184, 63, 0.28);
+  --grid-brass-faint: rgba(224, 184, 63, 0.14);
+  --grid-charcoal: #0a0806;
+  --grid-stone: #14100b;
+
   display: grid;
-  gap: 0.6rem;
-  margin-bottom: 0.9rem;
-  padding: 0.75rem;
-  border: 1px solid var(--line-strong, rgba(224, 184, 63, 0.32));
-  border-radius: var(--radius, 4px);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid var(--grid-brass-soft);
+  border-radius: 6px;
   background:
-    radial-gradient(120% 100% at 50% 0%, rgba(224, 184, 63, 0.06), transparent 60%),
-    linear-gradient(180deg, var(--surface-3, #1a130d), var(--surface-4, #120c08));
-  box-shadow: inset 0 1px 0 rgba(246, 217, 119, 0.08);
+    radial-gradient(120% 90% at 50% 0%, rgba(224, 184, 63, 0.05), transparent 62%),
+    linear-gradient(180deg, #17110b, #0c0906);
+  box-shadow:
+    inset 0 1px 0 rgba(246, 217, 119, 0.07),
+    0 10px 28px -18px rgba(0, 0, 0, 0.9);
 }
+
+/* -------------------------------------------------------------------------- */
+/* TOOLBAR (modos + câmera) — compacta, o palco é o protagonista               */
+/* -------------------------------------------------------------------------- */
+
+.grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+}
+
+.grid-toolbar-left {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
+.grid-modes {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.grid-modes .btn[aria-pressed='true'] {
+  color: var(--gold-bright, #f6d977);
+  border-color: var(--grid-brass);
+  box-shadow: inset 0 0 0 1px rgba(224, 184, 63, 0.45);
+}
+
+.grid-turn {
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint, #8d7859);
+}
+
+.grid-turn strong {
+  color: var(--gold-bright, #f6d977);
+  font-weight: 600;
+}
+
+.grid-camera-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--grid-brass-faint);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.grid-zoom-value {
+  min-width: 3.1rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft, #c3ab86);
+}
+
+.grid-camera-controls .btn.is-offscreen {
+  border-color: var(--grid-brass);
+  color: var(--gold-bright, #f6d977);
+}
+
+/* -------------------------------------------------------------------------- */
+/* CENA / CONTROLES ADMINISTRATIVOS                                            */
+/* -------------------------------------------------------------------------- */
 
 .grid-scene-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.9rem;
-  font-size: 0.78rem;
+  gap: 0.4rem 0.8rem;
+  font-size: 0.76rem;
   color: var(--ink-soft, #c3ab86);
 }
 
@@ -38,182 +116,383 @@
 .grid-scene-fields label {
   display: grid;
   gap: 0.2rem;
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-faint, #8d7859);
 }
 
 .grid-scene-fields input {
-  width: 6.5rem;
-  padding: 0.3rem 0.4rem;
+  width: 5.5rem;
+  padding: 0.28rem 0.4rem;
   font-family: var(--font-body, inherit);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--ink, #ecdcbd);
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--line, rgba(224, 184, 63, 0.2));
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--grid-brass-faint);
   border-radius: 3px;
 }
 
 .grid-scene-badge {
   font-family: var(--font-display, serif);
-  font-size: 0.74rem;
-  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
   color: var(--gold-bright, #f6d977);
 }
 
 .grid-scene-details summary {
   cursor: pointer;
+  font-size: 0.72rem;
   color: var(--gold, #e0b83f);
 }
 
 .grid-scene-hint,
-.grid-scene-readonly {
+.grid-scene-readonly,
+.grid-measure-unavailable {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-style: italic;
   color: var(--ink-faint, #8d7859);
 }
 
 .grid-scene-error {
   margin: 0;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.76rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.74rem;
   color: #f3b8a6;
   background: rgba(120, 32, 20, 0.28);
   border: 1px solid rgba(190, 84, 60, 0.5);
   border-radius: 3px;
 }
 
-/* 6.6L.3.2 — controle de visibilidade espacial (só Mestre, modo Posicionar). */
 .grid-visibility {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem 0.75rem;
-  padding: 0.35rem 0.55rem;
-  border: 1px solid var(--line-strong, rgba(224, 184, 63, 0.32));
+  gap: 0.35rem 0.75rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--grid-brass-faint);
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(0, 0, 0, 0.32);
 }
 
 .grid-visibility-label {
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: var(--ink-soft, #c3ab86);
 }
 
+/* -------------------------------------------------------------------------- */
+/* PALCO — viewport sem scrollbars: a navegação é PAN + ZOOM                   */
+/* -------------------------------------------------------------------------- */
+
+.grid-stage {
+  position: relative;
+}
+
+.grid-viewport {
+  position: relative;
+  overflow: hidden;
+  height: min(70vh, 720px);
+  min-height: 320px;
+  border: 1px solid rgba(224, 184, 63, 0.22);
+  border-radius: 5px;
+  background:
+    radial-gradient(90% 70% at 50% 40%, #171310 0%, #0b0908 65%, #070505 100%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 6px);
+  box-shadow:
+    inset 0 0 70px rgba(0, 0, 0, 0.9),
+    inset 0 0 0 1px rgba(246, 217, 119, 0.05);
+  overscroll-behavior: contain;
+  touch-action: none;
+  cursor: grab;
+}
+
+.grid-viewport.is-panning,
+.grid-viewport.is-space-pan {
+  cursor: grabbing;
+}
+
+.grid-viewport.is-ruler {
+  cursor: crosshair;
+}
+
+.grid-viewport.is-drafting {
+  cursor: grabbing;
+}
+
+/* A câmera transforma o MUNDO; o viewport nunca rola. */
+.grid-camera {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
 /*
- * Badge de OCULTO: discreto e no canto, para não competir com o turno atual.
- * Só o Mestre recebe o token de uma entidade master-only, então este selo nunca
- * aparece para o jogador.
+ * A SCENE parece uma superfície física: borda fina de latão envelhecido,
+ * sombra externa e sombra interna discreta.
  */
+.grid-plane {
+  position: relative;
+  background-color: #100c09;
+  background-image:
+    radial-gradient(120% 100% at 50% 0%, rgba(224, 184, 63, 0.045), transparent 60%),
+    repeating-linear-gradient(
+      to right,
+      rgba(198, 166, 110, 0.16) 0 1px,
+      transparent 1px var(--grid-cell, 44px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(198, 166, 110, 0.16) 0 1px,
+      transparent 1px var(--grid-cell, 44px)
+    );
+  background-size:
+    100% 100%,
+    var(--grid-cell, 44px) var(--grid-cell, 44px),
+    var(--grid-cell, 44px) var(--grid-cell, 44px);
+  border: 1px solid rgba(180, 146, 84, 0.5);
+  border-radius: 3px;
+  box-shadow:
+    0 22px 46px -18px rgba(0, 0, 0, 0.95),
+    0 0 0 1px rgba(224, 184, 63, 0.12),
+    inset 0 0 90px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  touch-action: none;
+  user-select: none;
+}
+
+.grid-plane.is-placing {
+  cursor: crosshair;
+}
+
+.grid-plane.is-moving {
+  cursor: default;
+}
+
+.grid-plane.is-drafting {
+  cursor: grabbing;
+}
+
+/* Célula sob o cursor: sutil, nunca verde/vermelho (isso seria fingir regra). */
+.grid-hover-cell {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(246, 217, 119, 0.08);
+  border: 1px solid rgba(246, 217, 119, 0.35);
+  border-radius: 2px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* TOKENS — circulares, moldura metálica, identidade dark fantasy             */
+/* -------------------------------------------------------------------------- */
+
+.grid-token {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 1px solid rgba(224, 184, 63, 0.16);
+  border-radius: 6px;
+  box-shadow: none;
+  cursor: default;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease;
+}
+
+.grid-token:not(:disabled) {
+  cursor: grab;
+}
+
+.grid-token:not(:disabled):hover {
+  border-color: rgba(224, 184, 63, 0.45);
+  background: rgba(224, 184, 63, 0.05);
+}
+
+.grid-token.is-movable {
+  cursor: grab;
+  border-color: rgba(224, 184, 63, 0.55);
+  background: rgba(224, 184, 63, 0.06);
+}
+
+.grid-token.is-movable .grid-token-art {
+  box-shadow:
+    0 0 0 2px rgba(224, 184, 63, 0.55),
+    0 6px 14px -6px rgba(0, 0, 0, 0.95);
+}
+
+.grid-token.is-ruler-pick:not(:disabled) {
+  cursor: crosshair;
+}
+
+.grid-token.is-pending {
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.grid-token.is-missing {
+  opacity: 0.45;
+}
+
+/* Turno atual: halo âmbar discreto (pulsa devagar, respeitando reduced-motion). */
+.grid-token.is-current .grid-token-art {
+  box-shadow:
+    0 0 0 2px rgba(246, 217, 119, 0.75),
+    0 0 22px -6px rgba(246, 217, 119, 0.85),
+    0 6px 14px -6px rgba(0, 0, 0, 0.95);
+}
+
+.grid-token.is-current::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1px solid rgba(246, 217, 119, 0.35);
+  pointer-events: none;
+  animation: grid-turn-halo 3.4s ease-in-out infinite;
+}
+
+@keyframes grid-turn-halo {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+/* Selecionado: distinto do turno — anel tracejado, sem confundir os dois. */
+.grid-token.is-selected {
+  background: rgba(246, 217, 119, 0.06);
+}
+
+.grid-token.is-selected .grid-token-art {
+  box-shadow:
+    0 0 0 2px rgba(246, 217, 119, 0.95),
+    0 0 0 5px rgba(0, 0, 0, 0.55),
+    0 6px 14px -6px rgba(0, 0, 0, 0.95);
+}
+
+.grid-token.is-selected::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px dashed rgba(246, 217, 119, 0.85);
+  pointer-events: none;
+}
+
+/*
+ * Círculo do token: o ART é sempre circular e proporcional ao MENOR lado do
+ * footprint — Large/Huge/Gargantua ganham área, não um retrato esticado.
+ */
+.grid-token-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--grid-token-art, 40px);
+  height: var(--grid-token-art, 40px);
+  overflow: hidden;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 26%, #2a1c11, #0b0705 72%);
+  border: 1px solid rgba(150, 118, 66, 0.85);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.85),
+    0 6px 14px -6px rgba(0, 0, 0, 0.95),
+    inset 0 0 12px rgba(0, 0, 0, 0.75);
+}
+
+/* Aro do PERSONAGEM um pouco mais claro que o de NPC/criatura. */
+.grid-token[data-kind='character'] .grid-token-art {
+  border-color: rgba(206, 172, 104, 0.95);
+}
+
+.grid-token[data-kind='creature'] .grid-token-art,
+.grid-token[data-kind='npc'] .grid-token-art,
+.grid-token[data-kind='NPC'] .grid-token-art {
+  border-color: rgba(108, 88, 58, 0.95);
+}
+
+.grid-token-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.grid-token-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display, serif);
+  font-size: calc(var(--grid-token-art, 40px) * 0.6);
+  line-height: 1;
+  color: var(--gold-bright, #f6d977);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  user-select: none;
+}
+
+.grid-token-label {
+  position: absolute;
+  left: 50%;
+  bottom: -1.05rem;
+  transform: translateX(-50%);
+  max-width: 160%;
+  padding: 0 0.15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft, #c3ab86);
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* Badge de OCULTO: discreto e no canto, nunca no caminho do turno. */
 .grid-token-hidden {
   position: absolute;
-  top: -0.55rem;
+  top: -0.6rem;
   left: 50%;
   transform: translateX(-50%);
   padding: 0 0.28rem;
-  font-size: 0.56rem;
+  font-size: 0.54rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-faint, #8d7859);
   background: #0b0806;
-  border: 1px solid var(--line, rgba(224, 184, 63, 0.22));
+  border: 1px solid rgba(224, 184, 63, 0.22);
   border-radius: 999px;
   pointer-events: none;
   white-space: nowrap;
 }
 
-.grid-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.45rem;
+/* HIT-AREA de toque: não altera o footprint mecânico. */
+.grid-token[data-size='tiny'] .grid-token-art::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
 }
 
-.grid-toolbar-hint {
-  font-size: 0.72rem;
-  color: var(--ink-faint, #8d7859);
-}
+/* -------------------------------------------------------------------------- */
+/* MOVIMENTO — trajeto, ghost e HUD compacto                                  */
+/* -------------------------------------------------------------------------- */
 
-.grid-toolbar-right {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem 0.75rem;
-}
-
-/*
- * FASE 6.6M.2 — modos EXPLÍCITOS do grid. O botão ativo é bronze/latão, no tom
- * do tema; nada de neon. `aria-pressed` é a fonte do estado visual.
- */
-.grid-modes {
-  display: inline-flex;
-  gap: 0.25rem;
-}
-
-.grid-modes .btn[aria-pressed='true'] {
-  color: var(--gold-bright, #f6d977);
-  border-color: var(--gold, #e0b83f);
-  box-shadow: inset 0 0 0 1px rgba(224, 184, 63, 0.45);
-}
-
-.grid-measure-panel {
-  display: grid;
-  gap: 0.3rem;
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--line-strong, rgba(224, 184, 63, 0.32));
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.28);
-}
-
-.grid-measure-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.grid-measure-title {
-  font-family: var(--font-display, serif);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--gold, #e0b83f);
-}
-
-.grid-measure-route {
-  margin: 0;
-  font-size: 0.76rem;
-  color: var(--ink-soft, #c3ab86);
-}
-
-.grid-measure-name {
-  color: var(--ink, #ecdcbd);
-}
-
-.grid-measure-value {
-  margin: 0;
-  font-family: var(--font-display, serif);
-  font-size: 0.92rem;
-  color: var(--gold-bright, #f6d977);
-}
-
-.grid-measure-hint,
-.grid-measure-unavailable {
-  margin: 0;
-  font-size: 0.68rem;
-  font-style: italic;
-  color: var(--ink-faint, #8d7859);
-}
-
-/*
- * CAMADA da linha de medição: sobre o plano, SEM captura de ponteiro (os
- * cliques continuam nos tokens). Ela é decoração — ver GridMeasurement.tsx.
- */
-.grid-measure-layer {
+.grid-movement-layer {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -222,50 +501,327 @@
   overflow: visible;
 }
 
-/* Projeção e medição convivem: opacidade menor durante o draft de movimento. */
-.grid-plane.is-drafting .grid-token {
-  opacity: 0.92;
-}
-
-.grid-measure-line {
-  stroke: var(--gold-bright, #f6d977);
-  stroke-width: 1.5;
-  stroke-dasharray: 6 4;
-  opacity: 0.8;
+.grid-movement-path {
+  fill: none;
+  stroke: rgba(224, 184, 63, 0.85);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  stroke-linejoin: round;
   stroke-linecap: round;
 }
 
-.grid-measure-end {
+.grid-movement-point {
   fill: var(--gold-bright, #f6d977);
+  opacity: 0.7;
+}
+
+.grid-plane.is-drafting .grid-token {
   opacity: 0.9;
 }
 
-.grid-plane.is-measuring {
-  cursor: crosshair;
+.grid-movement-ghost {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(224, 184, 63, 0.07);
+  opacity: 0.65;
+  pointer-events: none;
 }
 
-.grid-token.is-measure-source {
-  border-color: #c9a227;
-  box-shadow:
-    0 0 0 1px #c9a227,
-    0 0 16px -4px rgba(201, 162, 39, 0.85);
+.grid-movement-ghost-art {
+  display: grid;
+  place-items: center;
+  width: var(--grid-token-art, 32px);
+  height: var(--grid-token-art, 32px);
+  overflow: hidden;
+  border-radius: 50%;
+  border: 1px dashed rgba(246, 217, 119, 0.75);
+  background: #140d08;
+  font-family: var(--font-display, serif);
+  color: var(--gold-bright, #f6d977);
 }
 
-.grid-token.is-measure-target {
-  border-color: var(--gold-bright, #f6d977);
-  border-style: dashed;
-  box-shadow: 0 0 0 1px rgba(246, 217, 119, 0.55);
+.grid-movement-ghost-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /*
- * HIT-AREA de toque: área interativa transparente maior que o desenho, SEM
- * alterar o footprint mecânico (o retângulo/Tiny continua do mesmo tamanho).
+ * HUD de movimento: FLUTUA sobre o palco (não empurra layout, não duplica a
+ * barra persistente de recursos).
  */
-.grid-token[data-size='tiny']::after {
-  content: '';
+.grid-movement-hud {
   position: absolute;
-  inset: -8px;
-  border-radius: 6px;
+  left: 0.6rem;
+  bottom: 2.4rem;
+  z-index: 4;
+  display: grid;
+  gap: 0.2rem;
+  max-width: min(20rem, calc(100% - 1.2rem));
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgba(224, 184, 63, 0.35);
+  border-radius: 5px;
+  background: rgba(10, 8, 6, 0.9);
+  box-shadow: 0 12px 26px -14px rgba(0, 0, 0, 0.95);
+  font-size: 0.74rem;
+  cursor: default;
+}
+
+.grid-hud-title {
+  margin: 0;
+  font-family: var(--font-display, serif);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold, #e0b83f);
+}
+
+.grid-hud-steps {
+  color: var(--ink-faint, #8d7859);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.grid-hud-numbers {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--ink, #ecdcbd);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-hud-status {
+  margin: 0;
+  font-size: 0.74rem;
+}
+
+.grid-hud-status.is-neutral {
+  color: var(--ink-soft, #c3ab86);
+}
+
+.grid-hud-status.is-valid {
+  color: #a8cf9c;
+}
+
+.grid-hud-status.is-insufficient {
+  color: #d9a35a;
+}
+
+.grid-hud-status.is-invalid {
+  color: #e09a88;
+}
+
+.grid-hud-hint,
+.grid-hud-risk {
+  margin: 0;
+  font-size: 0.68rem;
+  font-style: italic;
+  color: var(--ink-faint, #8d7859);
+}
+
+.grid-hud-risk {
+  font-style: normal;
+  color: #d9a35a;
+}
+
+.grid-hud-actions {
+  display: inline-flex;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
+
+.grid-hud-notice {
+  position: absolute;
+  left: 50%;
+  top: 0.6rem;
+  transform: translateX(-50%);
+  z-index: 4;
+  margin: 0;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.72rem;
+  color: var(--ink, #ecdcbd);
+  background: rgba(10, 8, 6, 0.92);
+  border: 1px solid rgba(224, 184, 63, 0.28);
+  border-radius: 999px;
+}
+
+.grid-hint {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 0.4rem;
+  z-index: 3;
+  margin: 0;
+  max-width: calc(100% - 1.2rem);
+  font-size: 0.68rem;
+  color: var(--ink-faint, #8d7859);
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* -------------------------------------------------------------------------- */
+/* RÉGUA — linha tracejada, marcadores pequenos, label NO MEIO e horizontal   */
+/* -------------------------------------------------------------------------- */
+
+.grid-ruler {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.grid-ruler-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.grid-ruler-line {
+  stroke: rgba(246, 217, 119, 0.9);
+  stroke-width: 1.25;
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.grid-ruler.is-locked .grid-ruler-line {
+  stroke-dasharray: none;
+  opacity: 0.7;
+}
+
+.grid-ruler-end {
+  fill: #0b0806;
+  stroke: rgba(246, 217, 119, 0.95);
+  stroke-width: 1.5;
+}
+
+.grid-ruler-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0.12rem 0.42rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--gold-bright, #f6d977);
+  background: rgba(8, 6, 4, 0.9);
+  border: 1px solid rgba(224, 184, 63, 0.4);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.grid-ruler-label.is-loading {
+  color: var(--ink-soft, #c3ab86);
+}
+
+.grid-ruler-retry {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.4rem;
+  z-index: 4;
+}
+
+/* -------------------------------------------------------------------------- */
+/* TRAY, VAZIOS E AFINS                                                       */
+/* -------------------------------------------------------------------------- */
+
+.grid-empty {
+  margin: 0;
+  padding: 0.45rem;
+  text-align: center;
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--ink-faint, #8d7859);
+  border: 1px dashed rgba(224, 184, 63, 0.22);
+  border-radius: 4px;
+}
+
+.grid-tray {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.45rem;
+  border: 1px solid rgba(224, 184, 63, 0.18);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.grid-tray-title {
+  font-family: var(--font-display, serif);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold, #e0b83f);
+}
+
+.grid-tray-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grid-tray-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 12rem;
+  padding: 0.18rem 0.45rem 0.18rem 0.18rem;
+  font-size: 0.72rem;
+  color: var(--ink, #ecdcbd);
+  background: rgba(224, 184, 63, 0.05);
+  border: 1px solid rgba(224, 184, 63, 0.22);
+  border-radius: 999px;
+  cursor: grab;
+}
+
+.grid-tray-item.is-selected {
+  border-color: var(--gold-bright, #f6d977);
+  box-shadow: 0 0 12px -4px rgba(246, 217, 119, 0.7);
+}
+
+.grid-tray-item.is-pending {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.grid-tray-art {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #140d08;
+  border: 1px solid rgba(150, 118, 66, 0.8);
+  font-family: var(--font-display, serif);
+  font-size: 0.9rem;
+  color: var(--gold-bright, #f6d977);
+}
+
+.grid-tray-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.grid-tray-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-tray-size {
+  color: var(--ink-faint, #8d7859);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* 6.6M.2 — faixa de alcance no painel de ataque (resultado do servidor). */
@@ -294,440 +850,28 @@
   font-style: italic;
 }
 
-.grid-zoom {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.72rem;
-  color: var(--ink-soft, #c3ab86);
-}
-
-.grid-viewport {
-  overflow: auto;
-  max-width: 100%;
-  max-height: min(62vh, 640px);
-  border: 1px solid var(--line, rgba(224, 184, 63, 0.22));
-  border-radius: 4px;
-  background: #0b0806;
-  /* Pan estrutural simples: o conteúdo pode ser maior que o viewport. */
-  overscroll-behavior: contain;
-}
-
-/*
- * PLANO da cena: dimensões em px calculadas por `scenePixels` (pés → px).
- * As linhas são CSS puro (repeating-linear-gradient) — nenhum elemento por
- * célula e nenhuma dependência de asset.
- */
-.grid-plane {
-  position: relative;
-  background-color: #0b0806;
-  background-image:
-    repeating-linear-gradient(
-      to right,
-      var(--gold-hair, rgba(224, 184, 63, 0.38)) 0 1px,
-      transparent 1px var(--grid-cell, 44px)
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      var(--gold-hair, rgba(224, 184, 63, 0.38)) 0 1px,
-      transparent 1px var(--grid-cell, 44px)
-    );
-  background-size: var(--grid-cell, 44px) var(--grid-cell, 44px);
-  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.65);
-  touch-action: manipulation;
-}
-
-.grid-plane.is-placing {
-  cursor: crosshair;
-}
-
-/* TOKEN = footprint mecânico (não o círculo). */
-.grid-token {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  margin: 0;
-  background: rgba(224, 184, 63, 0.08);
-  border: 1px solid var(--gold-hair, rgba(224, 184, 63, 0.38));
-  border-radius: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
-  cursor: default;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    background 0.16s ease;
-}
-
-.grid-token:not(:disabled) {
-  cursor: grab;
-}
-
-.grid-token:not(:disabled):hover {
-  border-color: var(--gold, #e0b83f);
-  background: rgba(224, 184, 63, 0.16);
-}
-
-.grid-token.is-selected {
-  border-color: var(--gold-bright, #f6d977);
-  box-shadow:
-    0 0 0 1px var(--gold-bright, #f6d977),
-    0 0 18px -4px rgba(246, 217, 119, 0.65);
-}
-
-.grid-token.is-current {
-  border-color: #d98b3a;
-  box-shadow:
-    0 0 0 1px rgba(217, 139, 58, 0.85),
-    0 0 20px -5px rgba(217, 139, 58, 0.75);
-}
-
-.grid-token.is-pending {
-  border-style: dashed;
-  opacity: 0.72;
-}
-
-.grid-token.is-missing {
-  opacity: 0.45;
-}
-
-/* Círculo do token: só representação visual, dimensionado pelo footprint. */
-.grid-token-art {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--grid-token-art, 40px);
-  height: var(--grid-token-art, 40px);
-  overflow: hidden;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 28%, #2a1b10, #0d0805 70%);
-  border: 1px solid var(--gold-hair, rgba(224, 184, 63, 0.45));
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.7);
-}
-
-.grid-token-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  display: block;
-}
-
-/*
- * FALLBACK `?` (sem imagem): centralizado nos dois eixos, grande e
- * proporcional ao token — sem font-size fixo em px e sem overflow.
- */
-.grid-token-fallback {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display, serif);
-  font-size: calc(var(--grid-token-art, 40px) * 0.62);
-  line-height: 1;
-  color: var(--gold-bright, #f6d977);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-  user-select: none;
-}
-
-.grid-token-label {
-  position: absolute;
-  left: 50%;
-  bottom: -1.05rem;
-  transform: translateX(-50%);
-  max-width: 160%;
-  padding: 0 0.15rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.6rem;
-  letter-spacing: 0.02em;
-  color: var(--ink-soft, #c3ab86);
-  pointer-events: none;
-  text-shadow: 0 1px 2px #000;
-}
-
-.grid-empty {
-  margin: 0;
-  padding: 0.5rem;
-  text-align: center;
-  font-size: 0.76rem;
-  font-style: italic;
-  color: var(--ink-faint, #8d7859);
-  border: 1px dashed var(--line, rgba(224, 184, 63, 0.22));
-  border-radius: 4px;
-}
-
-.grid-tray {
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.5rem;
-  border: 1px solid var(--line, rgba(224, 184, 63, 0.22));
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.22);
-}
-
-.grid-tray-title {
-  font-family: var(--font-display, serif);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--gold, #e0b83f);
-}
-
-.grid-tray-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.grid-tray-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: 13rem;
-  padding: 0.2rem 0.45rem 0.2rem 0.2rem;
-  font-size: 0.72rem;
-  color: var(--ink, #ecdcbd);
-  background: rgba(224, 184, 63, 0.06);
-  border: 1px solid var(--line, rgba(224, 184, 63, 0.22));
-  border-radius: 999px;
-  cursor: grab;
-}
-
-.grid-tray-item.is-selected {
-  border-color: var(--gold-bright, #f6d977);
-  box-shadow: 0 0 12px -4px rgba(246, 217, 119, 0.7);
-}
-
-.grid-tray-item.is-pending {
-  opacity: 0.6;
-  border-style: dashed;
-}
-
-.grid-tray-art {
-  display: grid;
-  place-items: center;
-  width: 1.6rem;
-  height: 1.6rem;
-  flex: 0 0 auto;
-  overflow: hidden;
-  border-radius: 50%;
-  background: #140d08;
-  border: 1px solid var(--gold-hair, rgba(224, 184, 63, 0.4));
-  font-family: var(--font-display, serif);
-  font-size: 0.95rem;
-  color: var(--gold-bright, #f6d977);
-}
-
-.grid-tray-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.grid-tray-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.grid-tray-size {
-  color: var(--ink-faint, #8d7859);
-  font-size: 0.64rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/*
- * 6.6M.3 — MOVIMENTO VOLUNTÁRIO (draft local + overlay + ghost).
- *
- * A linha/ghost são apresentação: pixels aqui nunca viram regra. O token real
- * só anda quando o DTO autoritativo mudar (nada de posição otimista).
- */
-.grid-plane.is-moving {
-  cursor: grab;
-}
-
-/* Gesture de movimento em andamento: o toque não rola o viewport. */
-.grid-plane.is-drafting {
-  cursor: grabbing;
-  touch-action: none;
-}
-
-.grid-token.is-movable {
-  cursor: grab;
-  border-color: var(--gold, #e0b83f);
-}
-
-.grid-movement-layer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
-}
-
-.grid-movement-path {
-  fill: none;
-  stroke: var(--gold, #e0b83f);
-  stroke-width: 2;
-  stroke-dasharray: 5 4;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  opacity: 0.85;
-}
-
-.grid-movement-point {
-  fill: var(--gold-bright, #f6d977);
-  opacity: 0.85;
-}
-
-.grid-movement-ghost {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  border: 1px dashed var(--gold-bright, #f6d977);
-  border-radius: 3px;
-  background: rgba(224, 184, 63, 0.1);
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-.grid-movement-ghost-art {
-  display: grid;
-  place-items: center;
-  width: var(--grid-token-art, 32px);
-  height: var(--grid-token-art, 32px);
-  overflow: hidden;
-  border-radius: 50%;
-  border: 1px solid var(--gold-hair, rgba(224, 184, 63, 0.4));
-  background: #140d08;
-  font-family: var(--font-display, serif);
-  color: var(--gold-bright, #f6d977);
-}
-
-.grid-movement-ghost-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.grid-movement-panel {
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid var(--line-strong, rgba(224, 184, 63, 0.32));
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.24);
-}
-
-.grid-movement-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem;
-}
-
-.grid-movement-title {
-  font-family: var(--font-display, serif);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--gold, #e0b83f);
-}
-
-.grid-movement-actions {
-  display: inline-flex;
-  gap: 0.35rem;
-}
-
-.grid-movement-route {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--ink, #ecdcbd);
-}
-
-.grid-movement-steps {
-  color: var(--ink-faint, #8d7859);
-}
-
-.grid-movement-status {
-  margin: 0;
-  font-size: 0.78rem;
-}
-
-.grid-movement-status.is-neutral {
-  color: var(--ink-soft, #c3ab86);
-}
-
-.grid-movement-status.is-valid {
-  color: #8fc98f;
-}
-
-.grid-movement-status.is-insufficient {
-  color: #d98b3a;
-}
-
-.grid-movement-status.is-invalid {
-  color: #d98a7a;
-}
-
-.grid-movement-numbers {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.3rem 0.6rem;
-  margin: 0;
-}
-
-.grid-movement-numbers dt {
-  font-size: 0.62rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint, #8d7859);
-}
-
-.grid-movement-numbers dd {
-  margin: 0;
-  font-size: 0.84rem;
-  color: var(--ink, #ecdcbd);
-}
-
-.grid-movement-hint {
-  margin: 0;
-  font-size: 0.68rem;
-  font-style: italic;
-  color: var(--ink-faint, #8d7859);
-}
-
-.grid-movement-risk {
-  margin: 0;
-  font-size: 0.7rem;
-  color: #d98b3a;
-}
-
-.grid-movement-confirm {
-  justify-self: start;
+@media (prefers-reduced-motion: reduce) {
+  .grid-token.is-current::before {
+    animation: none;
+  }
 }
 
 @media (max-width: 720px) {
   .combat-grid-panel {
-    padding: 0.55rem;
+    padding: 0.45rem;
   }
 
   .grid-viewport {
-    max-height: 52vh;
+    height: 58vh;
+    min-height: 260px;
   }
 
   .grid-tray-item {
     max-width: 100%;
+  }
+
+  .grid-movement-hud {
+    max-width: calc(100% - 1.2rem);
+    bottom: 1.9rem;
   }
 }

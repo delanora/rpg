@@ -187,6 +187,24 @@ export const spatialPositionPatchSchema = z
 export type SpatialConfigPatch = z.infer<typeof spatialConfigPatchSchema>;
 export type SpatialPositionPatch = z.infer<typeof spatialPositionPatchSchema>;
 
+/**
+ * FASE 6.6M.3.1 — MEDIÇÃO point↔point (RÉGUA).
+ *
+ * Leitura PURA: o cliente manda apenas a INTENÇÃO dos dois extremos. Ponto é
+ * coordenada em pés já alinhada (só a UI pode arredondar); combatente é id
+ * estável. Nenhum custo, alcance ou distância viaja do cliente.
+ */
+export const spatialMeasureEndpointSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('point'), position: spatialPositionSchema }).strict(),
+  z.object({ kind: z.literal('combatant'), combatantId: z.string().min(1) }).strict(),
+]);
+
+export const spatialMeasureSchema = z
+  .object({ from: spatialMeasureEndpointSchema, to: spatialMeasureEndpointSchema })
+  .strict();
+
+export type SpatialMeasureInput = z.infer<typeof spatialMeasureSchema>;
+
 /* -------------------------------------------------------------------------- */
 /* 6.6L.3 — Movimento voluntário e lado do encontro                            */
 /* -------------------------------------------------------------------------- */

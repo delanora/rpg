@@ -16,6 +16,22 @@ export function formatFeet(feet: number): string {
 }
 
 /**
+ * FASE 6.6M.3.1 — UI ESPACIAL EM METROS.
+ *
+ * 5 pés = 1,5 m e 2,5 pés = 0,75 m, exatamente (0,3 m por pé). É só
+ * apresentação: o domínio, os DTOs e as regras continuam em PÉS (PHB 2014).
+ * O formatter é ÚNICO para régua, HUD de movimento e leituras espaciais.
+ */
+const METERS = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+
+export const METERS_PER_FOOT = 0.3;
+
+export function formatMeters(feet: number): string {
+  const meters = Math.round(feet * METERS_PER_FOOT * 100) / 100;
+  return `${METERS.format(meters)} m`;
+}
+
+/**
  * Motivo PÚBLICO do `unknown`. Nada de coordenada, distância ou nome de
  * entidade oculta: o servidor já sanitiza, e a UI só traduz o motivo.
  */
@@ -32,6 +48,8 @@ export function distanceReasonLabel(reason: string | null): string {
       return 'Fora do combate';
     case 'assisted-mode':
       return 'Distância não avaliada';
+    case 'point-not-canonical':
+      return 'Ponto fora da grade';
     default:
       return 'Distância desconhecida';
   }

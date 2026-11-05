@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   attackSchema, manualHpSchema, startCombatSchema, useItemSchema,
   combatOperationSchema, economyActionSchema, economyOverrideSchema, nextTurnSchema,
-  spatialConfigPatchSchema, spatialPositionPatchSchema,
+  spatialConfigPatchSchema, spatialPositionPatchSchema, spatialMeasureSchema,
   movementCommitSchema, movementPreviewSchema, combatantSidePatchSchema,
   opportunityAttackPayloadSchema, opportunityDecisionSchema, opportunityVisibilitySchema,
   combatantSpatialVisibilitySchema,
@@ -21,6 +21,7 @@ import {
 } from './spatial/spatial-movement.service.js';
 import {
   readCombatDistance,
+  readCombatMeasure,
   readCombatRangePreview,
 } from './spatial/spatial-distance.service.js';
 import {
@@ -129,6 +130,30 @@ combatRouter.get('/:combatId/spatial/distance', authenticate, async (req, res) =
       String(req.params.combatId),
       String(req.query.fromCombatantId ?? ''),
       String(req.query.toCombatantId ?? ''),
+    ),
+  );
+});
+
+/**
+ * POST /api/combat/:combatId/spatial/measure — RÉGUA (6.6M.3.1).
+ *
+ * Leitura PURA de ponto↔ponto / ponto↔combatente. O corpo traz só os dois
+ * extremos; o servidor aplica o MESMO algoritmo `max(|dx|,|dy|)` da 6.6L.2 e a
+ * MESMA política de privacidade (combatente oculto → leitura oculta). Não é
+ * POST de intenção mecânica: não gasta Ação, não grava, não versiona.
+ */
+combatRouter.post('/:combatId/spatial/measure', authenticate, async (req, res) => {
+  const parsed = spatialMeasureSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+    return;
+  }
+  res.json(
+    await readCombatMeasure(
+      actorFrom(req),
+      String(req.params.combatId),
+      parsed.data.from,
+      parsed.data.to,
     ),
   );
 });

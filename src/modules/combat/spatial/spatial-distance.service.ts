@@ -18,8 +18,12 @@ import {
   type SpatialSize,
 } from './spatial.types.js';
 import {
+  SPATIAL_DISTANCE_ALGORITHM,
   bodyDistanceFeet,
   evaluateSpatialDistance,
+  isMeasurePointCanonical,
+  pointMeasureDistanceFeet,
+  pointToBodyDistanceFeet,
   spatialDistanceSnapshot,
   type SpatialBody,
   type SpatialDistanceEvaluation,
@@ -230,7 +234,7 @@ export interface CombatDistanceReading {
   distanceFeet: number | null;
   provenance: 'grid-2d' | null;
   algorithm: string | null;
-  reason: SpatialDistanceReason | 'not-visible' | null;
+  reason: SpatialDistanceReason | 'not-visible' | 'point-not-canonical' | null;
 }
 
 const HIDDEN_READING: CombatDistanceReading = {
@@ -273,6 +277,103 @@ export async function readCombatDistance(
       provenance: snapshot.provenance,
       algorithm: snapshot.algorithm,
       reason: snapshot.reason as CombatDistanceReading['reason'],
+    },
+  };
+}
+
+/**
+ * FASE 6.6M.3.1 — LEITURA da RÉGUA (ponto ↔ ponto / ponto ↔ combatente).
+ *
+ * Substitui o fluxo token→token da 6.6M.2 sem criar segundo algoritmo: ponto é
+ * uma âncora de grid e o MESMO `max(|dx|,|dy|)` roda aqui. O que muda é a
+ * entrada (um ponto qualquer alinhado) e a distância contra FOOTPRINT, nunca
+ * contra "centro do token".
+ *
+ * Privacidade: um extremo em combatente oculto devolve a leitura inteira oculta
+ * (`not-visible`) — o jogador não consegue medir via id de `master-only` e
+ * portanto não existe oráculo de posição. Ponto→ponto é público por natureza.
+ */
+export type CombatMeasureEndpoint =
+  | { kind: 'point'; position: SpatialPosition2D }
+  | { kind: 'combatant'; combatantId: string };
+
+type ResolvedMeasureEndpoint =
+  | { kind: 'point'; position: SpatialPosition2D }
+  | { kind: 'body'; body: SpatialBody }
+  | { kind: 'hidden' };
+
+function unknownReading(
+  reason: CombatDistanceReading['reason'],
+): CombatDistanceReading {
+  return { status: 'unknown', distanceFeet: null, provenance: null, algorithm: null, reason };
+}
+
+function resolveMeasureEndpoint(
+  actor: CombatActor,
+  combat: CombatSourced,
+  endpoint: CombatMeasureEndpoint,
+): ResolvedMeasureEndpoint {
+  if (endpoint.kind === 'point') return { kind: 'point', position: endpoint.position };
+  const combatant = combat.combatants.find((item) => item.id === endpoint.combatantId);
+  if (!combatant) throw new HttpError('Combatente não encontrado neste combate.', 404);
+  if (!canReadDistance(actor, combat, combatant.id)) return { kind: 'hidden' };
+  return {
+    kind: 'body',
+    body: {
+      position: parseStoredPosition(combatant.spatialPosition),
+      size: (combatant.baseSize ?? 'medium') as SpatialSize,
+    },
+  };
+}
+
+export async function readCombatMeasure(
+  actor: CombatActor,
+  combatId: string,
+  from: CombatMeasureEndpoint,
+  to: CombatMeasureEndpoint,
+): Promise<{ distance: CombatDistanceReading }> {
+  const combat = await loadCombatById(combatId).catch(() => null);
+  if (!combat) throw new HttpError('Combate não encontrado.', 404);
+  const scene = spatialSceneOf(combat.spatialConfig);
+  if (scene.mode !== 'grid-2d') {
+    return { distance: { ...unknownReading('assisted-mode'), status: 'not-assessed' } };
+  }
+
+  const fromResolved = resolveMeasureEndpoint(actor, combat, from);
+  const toResolved = resolveMeasureEndpoint(actor, combat, to);
+  if (fromResolved.kind === 'hidden' || toResolved.kind === 'hidden') {
+    return { distance: { ...HIDDEN_READING } };
+  }
+
+  if (fromResolved.kind === 'point' && !isMeasurePointCanonical(fromResolved.position)) {
+    return { distance: unknownReading('point-not-canonical') };
+  }
+  if (toResolved.kind === 'point' && !isMeasurePointCanonical(toResolved.position)) {
+    return { distance: unknownReading('point-not-canonical') };
+  }
+
+  let feet: number | null = null;
+  if (fromResolved.kind === 'point' && toResolved.kind === 'point') {
+    feet = pointMeasureDistanceFeet(fromResolved.position, toResolved.position);
+  } else if (fromResolved.kind === 'point' && toResolved.kind === 'body') {
+    feet = pointToBodyDistanceFeet(fromResolved.position, toResolved.body);
+  } else if (fromResolved.kind === 'body' && toResolved.kind === 'point') {
+    feet = pointToBodyDistanceFeet(toResolved.position, fromResolved.body);
+  } else if (fromResolved.kind === 'body' && toResolved.kind === 'body') {
+    const evaluation = evaluateSpatialDistance(scene, fromResolved.body, toResolved.body);
+    return { distance: spatialDistanceSnapshot(evaluation) as CombatDistanceReading };
+  }
+
+  if (feet === null) {
+    return { distance: unknownReading(from.kind === 'point' ? 'target-unplaced' : 'source-unplaced') };
+  }
+  return {
+    distance: {
+      status: 'known',
+      distanceFeet: feet,
+      provenance: 'grid-2d',
+      algorithm: SPATIAL_DISTANCE_ALGORITHM,
+      reason: null,
     },
   };
 }
