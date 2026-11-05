@@ -21,7 +21,13 @@ import type { MechanicalEntity } from '../../shared/conditions.js';
 
 export type SpatialResult = 'pass' | 'fail' | 'unknown';
 
-export type SpatialRequirementKind = 'range' | 'clearPath' | 'sight' | 'groupDistance';
+export type SpatialRequirementKind =
+  | 'range'
+  | 'clearPath'
+  | 'sight'
+  | 'groupDistance'
+  /** 6.6J.3: colocação da ORIGEM de uma área (conexão/posição do ponto). */
+  | 'origin';
 
 /**
  * Confirmação do MESTRE sobre fatos que o servidor não consegue medir.
@@ -36,6 +42,8 @@ export const spatialConfirmationSchema = z
     clearPath: z.boolean().optional(),
     sight: z.boolean().optional(),
     groupDistance: z.boolean().optional(),
+    /** Área: o Mestre confirma uma origem que o servidor não consegue medir. */
+    origin: z.boolean().optional(),
   })
   .strict();
 export type SpatialConfirmation = z.infer<typeof spatialConfirmationSchema>;
@@ -89,6 +97,7 @@ export function confirmationKeyOf(kind: SpatialRequirementKind): keyof SpatialCo
   if (kind === 'range') return 'withinRange';
   if (kind === 'clearPath') return 'clearPath';
   if (kind === 'sight') return 'sight';
+  if (kind === 'origin') return 'origin';
   return 'groupDistance';
 }
 

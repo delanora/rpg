@@ -1,6 +1,7 @@
 import type { SpellCast } from '@prisma/client';
 import type { MechanicalEntity } from '../../shared/conditions.js';
 import { durationSummary, parseDurationSnapshot } from './spell-duration.js';
+import { parseAreaTargetingSnapshot } from './area-snapshot.js';
 import {
   parseSpellResolutionSnapshot,
   type AttackDamageSnapshot,
@@ -149,6 +150,20 @@ function entityOf(value: unknown): MechanicalEntity | null {
 
 function targetingOf(value: unknown): SpellCastDto['targeting'] {
   if (!value || typeof value !== 'object') return null;
+  // 6.6J.3: snapshot de ÁREA — o DTO reaproveita a forma do DTO de targeting,
+  // com a quantidade DERIVADA e a origem como "alcance".
+  const area = parseAreaTargetingSnapshot(value);
+  if (area) {
+    return {
+      maxTargets: null,
+      targetCount: area.affected.length,
+      rangeFeet: area.origin.definition.rangeFeet,
+      validationMode: area.spatialMode,
+      requiresSight: area.origin.definition.requiresSight,
+      requiresClearPath: false,
+      constraints: [],
+    };
+  }
   const item = value as Record<string, unknown>;
   const constraints = Array.isArray(item.constraints)
     ? item.constraints.flatMap((entry) => {

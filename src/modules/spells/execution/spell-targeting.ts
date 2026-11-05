@@ -14,6 +14,9 @@
  * apresentação — nunca da regra.
  */
 
+import type { AreaTargetingDefinition } from './area-targeting.js';
+import { areaTargetingSummary } from './area-targeting.js';
+
 export type SpellTargetKind = 'creatures';
 
 /** Filtro de alvo. Nesta fase só o tipo de criatura é executável. */
@@ -40,7 +43,7 @@ export interface SpellTargetCountDefinition {
   additionalPerSlotLevel: number;
 }
 
-export interface SpellTargetingDefinition {
+export interface ExplicitSpellTargetingDefinition {
   kind: SpellTargetKind;
   minTargets: number;
   targetCount: SpellTargetCountDefinition;
@@ -55,13 +58,35 @@ export interface SpellTargetingDefinition {
 }
 
 /**
+ * 6.6J.3: o TARGETING passa a ter duas famílias — alvos EXPLÍCITOS (Bless, Hold
+ * Person, Chama Sagrada...) e ÁREA (forma + origem + política de afetados).
+ * Quem consome a definição SEMPRE discrimina por `kind`; nenhum `if` por nome
+ * de magia.
+ */
+export type SpellTargetingDefinition =
+  | ExplicitSpellTargetingDefinition
+  | AreaTargetingDefinition;
+
+export function isAreaTargeting(
+  targeting: SpellTargetingDefinition,
+): targeting is AreaTargetingDefinition {
+  return targeting.kind === 'area';
+}
+
+export function isExplicitTargeting(
+  targeting: SpellTargetingDefinition,
+): targeting is ExplicitSpellTargetingDefinition {
+  return targeting.kind === 'creatures';
+}
+
+/**
  * Quantidade MÁXIMA de alvos — DERIVADA da definição + `castAtLevel`.
  *
  * O cliente nunca envia este número: ele é consequência do espaço escolhido no
  * COMMIT (6.6C). Ex.: Bless slot 2 → 4; Hold Person slot 3 → 2.
  */
 export function maximumTargets(
-  targeting: SpellTargetingDefinition,
+  targeting: ExplicitSpellTargetingDefinition,
   castAtLevel: number,
 ): number {
   const { base, baseSlotLevel, additionalPerSlotLevel } = targeting.targetCount;
@@ -71,7 +96,9 @@ export function maximumTargets(
 }
 
 /** Alcance em pés (`null` quando a definição não usa distância). */
-export function targetingRangeFeet(targeting: SpellTargetingDefinition): number | null {
+export function targetingRangeFeet(
+  targeting: ExplicitSpellTargetingDefinition,
+): number | null {
   return targeting.range.kind === 'distance' ? targeting.range.feet : null;
 }
 
@@ -81,7 +108,7 @@ export function targetingRangeFeet(targeting: SpellTargetingDefinition): number 
  * nenhum desses valores.
  */
 export function targetingSummary(
-  targeting: SpellTargetingDefinition,
+  targeting: ExplicitSpellTargetingDefinition,
   castAtLevel: number,
 ) {
   return {
@@ -99,4 +126,14 @@ export function targetingSummary(
       feet: constraint.feet,
     })),
   };
+}
+
+/** Resumo do targeting independente da família (explicit × area). */
+export function spellTargetingSummary(
+  targeting: SpellTargetingDefinition,
+  castAtLevel: number,
+) {
+  return isAreaTargeting(targeting)
+    ? areaTargetingSummary(targeting, castAtLevel)
+    : targetingSummary(targeting, castAtLevel);
 }

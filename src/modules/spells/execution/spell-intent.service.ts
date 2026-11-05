@@ -22,6 +22,12 @@ import { entitySchema } from '../../shared/conditions.js';
 import { spellcastingSourceRefSchema } from './spellcasting-source.js';
 import { castingResourceRefSchema } from './casting-resource.js';
 import { publishSpellIntent } from './spell-intent.broadcast.js';
+import { areaPlacementSchema, areaShapeSummary } from './area-targeting.js';
+import { isAreaTargeting } from './spell-targeting.js';
+import { parseAreaTargetingSnapshot } from './area-snapshot.js';
+import type { AreaUnknownDecision } from './area-evaluation.js';
+import type { AreaSpatialProvider } from './area-spatial.js';
+import { spellExecutionDefinition } from './spell-execution-registry.js';
 
 /**
  * FASE 6.6F — SPELL CAST INTENT (intenção de conjuração, PRÉ-COMMIT).
@@ -63,6 +69,20 @@ const requirementsSchema = z
   .array(z.enum(['range', 'sight', 'clearPath', 'groupDistance']))
   .max(4);
 
+export interface SpellCastIntentAreaDto {
+  placement: unknown;
+  shape: unknown;
+  origin: unknown;
+  includeOrigin: boolean | null;
+  spatialMode: string | null;
+  requiredDecisions: string[];
+  /**
+   * Avaliações por candidato: só o MESTRE recebe (pode conter criatura oculta
+   * ao conjurador). Para o jogador o campo é `null`.
+   */
+  candidates: { targetKey: string; affected: string }[] | null;
+}
+
 export interface SpellCastIntentDto {
   id: string;
   spellId: string;
@@ -70,6 +90,8 @@ export interface SpellCastIntentDto {
   status: SpellCastIntentStatus;
   caster: { kind: string; id: string; label: string | null };
   targets: IntentTarget[];
+  /** 6.6J.3: dados de ÁREA (nulo em magias de alvo explícito). */
+  area: SpellCastIntentAreaDto | null;
   /** Requisitos que o MESTRE precisa confirmar (`[]` = nenhum). */
   requiredConfirmations: SpatialRequirementKind[];
   createdAt: string;
@@ -91,7 +113,49 @@ function targetsOf(row: SpellCastIntent): IntentTarget[] {
   return parseJson(targetsSchema, row.targets, []);
 }
 
-export function toSpellCastIntentDto(row: SpellCastIntent): SpellCastIntentDto {
+/**
+ * Dados de ÁREA da intenção (6.6J.3).
+ *
+ * O PLAYER recebe a colocação e o que falta decidir, nunca a lista de
+ * candidatos: ela pode conter criatura que ele não percebe.
+ */
+function areaOf(
+  row: SpellCastIntent,
+  viewer: 'master' | 'player',
+): SpellCastIntentAreaDto | null {
+  const placement =
+    row.areaPlacement === null
+      ? null
+      : (areaPlacementSchema.safeParse(row.areaPlacement).data ?? null);
+  const snapshot = parseAreaTargetingSnapshot(row.areaSnapshot);
+  if (!placement && !snapshot) return null;
+  return {
+    placement,
+    shape: snapshot ? areaShapeSummary(snapshot.shape) : null,
+    origin: snapshot
+      ? {
+          requested: snapshot.origin.requested.kind,
+          result: snapshot.origin.result,
+          obstruction: snapshot.origin.obstruction,
+        }
+      : null,
+    includeOrigin: snapshot?.includeOrigin ?? null,
+    spatialMode: snapshot?.spatialMode ?? null,
+    requiredDecisions: snapshot?.requiredDecisions ?? [],
+    candidates:
+      viewer === 'master' && snapshot
+        ? snapshot.candidates.map((candidate) => ({
+            targetKey: candidate.targetKey,
+            affected: candidate.affected,
+          }))
+        : null,
+  };
+}
+
+export function toSpellCastIntentDto(
+  row: SpellCastIntent,
+  viewer: 'master' | 'player' = 'player',
+): SpellCastIntentDto {
   const spell = getSpell(row.spellId);
   return {
     id: row.id,
@@ -100,6 +164,7 @@ export function toSpellCastIntentDto(row: SpellCastIntent): SpellCastIntentDto {
     status: row.status as SpellCastIntentStatus,
     caster: { kind: row.casterEntityKind, id: row.casterEntityId, label: row.casterLabel },
     targets: targetsOf(row),
+    area: areaOf(row, viewer),
     requiredConfirmations: requirementListOf(row),
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -139,9 +204,15 @@ function intentInputOf(
       ? { kind: row.castingResourceKind, level: row.castingResourceLevel }
       : null;
 
+  const placement =
+    row.areaPlacement === null
+      ? null
+      : (areaPlacementSchema.safeParse(row.areaPlacement).data ?? null);
+
   return {
     operationId: row.castOperationId ?? `intent:${row.id}`,
     spellId: row.spellId,
+    ...(placement ? { areaPlacement: placement } : {}),
     caster: { kind: row.casterEntityKind, id: row.casterEntityId } as SpellCastProofInput['caster'],
     targets: targets as SpellCastProofInput['targets'],
     ...(source ? { spellcastingSource: spellcastingSourceRefSchema.parse(source) } : {}),
@@ -169,12 +240,14 @@ async function commitIntent(
   row: SpellCastIntent,
   approver: EffectActor,
   confirmation: SpatialConfirmation | undefined,
+  decisions: readonly AreaUnknownDecision[] = [],
 ): Promise<CastOutcome> {
   const input = intentInputOf(row, confirmation);
   try {
     const result = await executeCast(approver, input, {
       operationId: row.castOperationId ?? `intent:${row.id}`,
       fingerprint: row.fingerprint,
+      ...(decisions.length > 0 ? { areaDecisions: decisions } : {}),
     });
     await prisma.spellCastIntent.updateMany({
       where: { id: row.id, status: 'pending' },
@@ -217,6 +290,11 @@ async function invalidateIntent(id: string, reason: string): Promise<void> {
 export async function castSpell(
   actor: EffectActor,
   input: SpellCastProofInput,
+  options: {
+    /** 6.6J.3: provider/decisões injetados (smoke determinístico). */
+    areaProvider?: AreaSpatialProvider;
+    areaDecisions?: readonly AreaUnknownDecision[];
+  } = {},
 ): Promise<CastOutcome> {
   const existing = await prisma.spellCastIntent.findUnique({
     where: { operationId: input.operationId },
@@ -236,10 +314,20 @@ export async function castSpell(
     );
   }
 
-  if (actor.role === 'MASTER') {
+  // 6.6J.3: com ÁREA, o desconhecido exige decisão POR ALVO. Mesmo o Mestre
+  // passa pela intenção nesse caso — nunca um commit adivinhado. No caminho de
+  // prova injetada (provider/decisões), o commit é direto.
+  const execution = spellExecutionDefinition(input.spellId);
+  const areaSpell = execution !== null && isAreaTargeting(execution.targeting);
+  if (
+    actor.role === 'MASTER' &&
+    (!areaSpell || options.areaProvider !== undefined || options.areaDecisions !== undefined)
+  ) {
     const result = await executeCast(actor, input, {
       operationId: input.operationId,
       fingerprint: castFingerprint(actor, input),
+      ...(options.areaProvider !== undefined ? { areaProvider: options.areaProvider } : {}),
+      ...(options.areaDecisions !== undefined ? { areaDecisions: options.areaDecisions } : {}),
     });
     return { kind: 'cast', result };
   }
@@ -250,9 +338,13 @@ export async function castSpell(
   // mecânica (slot/Ação/repertório) também. Nunca pedimos aprovação para um
   // cast que não poderia acontecer.
   const precheck = await prisma.$transaction((db) =>
-    validateSpellCast(actor, input, db, { deferUnknown: true }),
+    validateSpellCast(actor, input, db, {
+      deferUnknown: true,
+      ...(options.areaProvider !== undefined ? { areaProvider: options.areaProvider } : {}),
+    }),
   );
   const requiredConfirmations = precheck.requiredConfirmations;
+  const requiredDecisions = precheck.area?.requiredDecisions ?? [];
 
   let row: SpellCastIntent;
   try {
@@ -274,6 +366,14 @@ export async function castSpell(
           id: target.entity.id,
           name: target.name,
         })) as unknown as Prisma.InputJsonValue,
+        // 6.6J.3: a colocação/a avaliação da área ficam na intenção; a lista de
+        // atingidos NÃO é persistida como autoridade antes da aprovação.
+        ...(precheck.areaPlacement
+          ? { areaPlacement: precheck.areaPlacement as unknown as Prisma.InputJsonValue }
+          : {}),
+        ...(precheck.area
+          ? { areaSnapshot: precheck.area.snapshot as unknown as Prisma.InputJsonValue }
+          : {}),
         requiredConfirmations: requiredConfirmations as unknown as Prisma.InputJsonValue,
         status: 'pending',
         // Chave do `SpellCast` derivada da INTENÇÃO: única e estável.
@@ -297,9 +397,10 @@ export async function castSpell(
     throw error;
   }
 
-  if (requiredConfirmations.length > 0) {
+  if (requiredConfirmations.length > 0 || requiredDecisions.length > 0) {
+    const viewer = actor.role === 'MASTER' ? 'master' : 'player';
     await publishSpellIntent(row);
-    return { kind: 'intent', intent: toSpellCastIntentDto(row) };
+    return { kind: 'intent', intent: toSpellCastIntentDto(row, viewer) };
   }
 
   // Sem dependência espacial: commit imediato pela MESMA raiz de request.
@@ -325,6 +426,7 @@ export async function approveSpellCastIntent(
   actor: EffectActor,
   id: string,
   confirmation: SpatialConfirmation | undefined,
+  decisions: readonly AreaUnknownDecision[] = [],
 ): Promise<CastOutcome> {
   const row = await findIntentOrThrow(id);
   if (row.status !== 'pending') return replayIntent(row);
@@ -340,7 +442,33 @@ export async function approveSpellCastIntent(
     );
   }
 
-  return commitIntent(row, actor, confirmation);
+  // 6.6J.3: o Mestre decide SÓ os `unknown` avaliados pelo SERVIDOR. Decisão
+  // para um alvo conhecido é recusada; `unknown` sem decisão não commita.
+  const areaSnapshot = parseAreaTargetingSnapshot(row.areaSnapshot);
+  if (areaSnapshot) {
+    const requiredKeys = new Set(areaSnapshot.requiredDecisions);
+    const invalid = decisions.filter((decision) => !requiredKeys.has(decision.targetKey));
+    if (invalid.length > 0) {
+      throw new HttpError(
+        'O Mestre só pode decidir alvos cuja área é desconhecida.',
+        409,
+        'AREA_DECISION_NOT_UNKNOWN',
+        { targetKeys: invalid.map((decision) => decision.targetKey) },
+      );
+    }
+    const decided = new Set(decisions.map((decision) => decision.targetKey));
+    const undecided = [...requiredKeys].filter((key) => !decided.has(key));
+    if (undecided.length > 0) {
+      throw new HttpError(
+        'Ainda há alvos com posição desconhecida aguardando decisão do Mestre.',
+        409,
+        'AREA_RESOLUTION_INCOMPLETE',
+        { targetKeys: undecided },
+      );
+    }
+  }
+
+  return commitIntent(row, actor, confirmation, decisions);
 }
 
 /** NEGAÇÃO do Mestre: terminal, ZERO custo e nenhum `SpellCast`. */
@@ -428,5 +556,6 @@ export async function listPendingSpellCastIntents(
     orderBy: { createdAt: 'asc' },
     take: 50,
   });
-  return rows.map(toSpellCastIntentDto);
+  const viewer = actor.role === 'MASTER' ? 'master' : 'player';
+  return rows.map((row) => toSpellCastIntentDto(row, viewer));
 }

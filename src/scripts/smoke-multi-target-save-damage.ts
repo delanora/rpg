@@ -158,8 +158,9 @@ export async function smokeMultiTargetSaveDamage(baseUrl: string, check: Check):
         resolution.damage.components[0]?.dice.count === 2 &&
         resolution.damage.components[1]?.type === 'Frio' &&
         resolution.damage.components[1]?.dice.count === 1 &&
-        synthetic?.targeting?.minTargets === SYNTHETIC_MULTI_SAVE_TARGETS &&
-        synthetic?.targeting?.targetCount.base === SYNTHETIC_MULTI_SAVE_TARGETS &&
+        synthetic?.targeting.kind === 'creatures' &&
+        synthetic.targeting.minTargets === SYNTHETIC_MULTI_SAVE_TARGETS &&
+        synthetic.targeting.targetCount.base === SYNTHETIC_MULTI_SAVE_TARGETS &&
         synthetic?.requiresConcentration === false &&
         synthetic?.duration === undefined,
       JSON.stringify(resolution),

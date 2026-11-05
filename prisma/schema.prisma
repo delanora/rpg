@@ -1425,8 +1425,19 @@ model SpellCastIntent {
   castingResourceKind    String?
   castingResourceLevel   Int?
 
-  /// Snapshot da INTENÇÃO: `[{ kind, id }]`. Não é estado mecânico.
+  /// Snapshot da INTENÇÃO: `[{ kind, id }]`. Não é estado mecânico. Em magias de
+  /// ÁREA fica VAZIO: os atingidos são derivados no COMMIT (6.6J.3).
   targets Json @default("[]")
+  ///
+  /// 6.6J.3 — COLOCAÇÃO de área PEDIDA (origem/direção/includeOrigin). Nullable
+  /// porque magias de alvo explícito não têm área. A origem/direção podem mudar
+  /// até o COMMIT (a aprovação revalida com o estado atual).
+  areaPlacement Json?
+  ///
+  /// 6.6J.3 — SNAPSHOT das avaliações da área no momento do pedido (candidatos,
+  /// `pass`/`fail`/`unknown`). Serve para o Mestre decidir os `unknown`; NÃO é a
+  /// lista final de atingidos.
+  areaSnapshot Json?
   ///
   /// Requisitos espaciais que o servidor NÃO sabe medir e o Mestre precisa
   /// confirmar (`range`, `clearPath`, `sight`, `groupDistance`). A lista é do

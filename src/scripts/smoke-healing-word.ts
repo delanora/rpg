@@ -120,18 +120,20 @@ export async function smokeHealingWord(baseUrl: string, check: Check): Promise<v
         !('effectDefinitionId' in (resolution ?? {})),
       JSON.stringify(definition),
     );
+    const healingTargeting =
+      definition?.targeting.kind === 'creatures' ? definition.targeting : null;
     check(
       '82.D) alvo: UMA criatura visível a 60 pés, permite self, sem filtro de tipo (undead não é erro)',
-      definition?.targeting.targetCount.base === 1 &&
-        definition.targeting.targetCount.additionalPerSlotLevel === 0 &&
-        definition.targeting.minTargets === 1 &&
-        definition.targeting.range.kind === 'distance' &&
-        definition.targeting.range.feet === 60 &&
-        definition.targeting.requiresSight &&
-        definition.targeting.requiresClearPath &&
-        definition.targeting.allowSelf &&
-        definition.targeting.filters.length === 0 &&
-        definition.targeting.groupConstraints.length === 0 &&
+      healingTargeting?.targetCount.base === 1 &&
+        healingTargeting.targetCount.additionalPerSlotLevel === 0 &&
+        healingTargeting.minTargets === 1 &&
+        healingTargeting.range.kind === 'distance' &&
+        healingTargeting.range.feet === 60 &&
+        healingTargeting.requiresSight &&
+        healingTargeting.requiresClearPath &&
+        healingTargeting.allowSelf &&
+        healingTargeting.filters.length === 0 &&
+        healingTargeting.groupConstraints.length === 0 &&
         JSON.stringify(resolution?.kind === 'immediate-healing'
           ? resolution.noEffectOnCreatureTypes
           : []) === JSON.stringify([...HEALING_WORD_NO_EFFECT_ON_TYPES]),

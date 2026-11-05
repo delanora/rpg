@@ -568,9 +568,9 @@ export async function smokeSpellComponents(baseUrl: string, check: Check): Promi
       masterToken,
     );
     check(
-      '77.AD) campos de componente enviados pelo cliente são IGNORADOS (o plano é do servidor)',
-      strippedClientFields.status === 201 &&
-        strippedClientFields.data?.cast?.components?.providerKind === 'component-pouch',
+      '77.AD) campos de componente do cliente são RECUSADOS — o plano é sempre do servidor',
+      strippedClientFields.status === 400 &&
+        strippedClientFields.data?.error === 'VALIDATION_ERROR',
       JSON.stringify({ status: strippedClientFields.status, data: strippedClientFields.data }),
     );
   } finally {

@@ -23,6 +23,10 @@ import {
   SYNTHETIC_MULTI_SAVE_SPELL_ID,
 } from './multi-save-test-definition.js';
 import {
+  SYNTHETIC_AREA_DEFINITION,
+  SYNTHETIC_AREA_SPELL_ID,
+} from './area-synthetic-definition.js';
+import {
   HEALING_WORD_BASE_DICE,
   HEALING_WORD_LABEL,
   HEALING_WORD_NO_EFFECT_ON_TYPES,
@@ -152,6 +156,9 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
   [SYNTHETIC_SAVE_HALF_SPELL_ID]: SYNTHETIC_SAVE_HALF_DEFINITION,
   // 6.6J.2 — prova MULTI-ALVO (roll compartilhado). Também fora do catálogo.
   [SYNTHETIC_MULTI_SAVE_SPELL_ID]: SYNTHETIC_MULTI_SAVE_DEFINITION,
+  // 6.6J.3 — prova de ÁREA (origem/forma → alvos derivados pelo servidor).
+  // Reutiliza o pipeline da 6.6J.2; fora do catálogo, do repertório e da UI.
+  [SYNTHETIC_AREA_SPELL_ID]: SYNTHETIC_AREA_DEFINITION,
   [HEALING_WORD_SPELL_ID]: {
     spellId: HEALING_WORD_SPELL_ID,
     // Instantânea e sem Concentração.

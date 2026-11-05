@@ -39,8 +39,15 @@ import {
 } from './attack-damage-resolution.js';
 import {
   validateTargeting,
-  type TargetingSnapshot,
+  type SpellTargetingSnapshot,
 } from './spell-targeting.service.js';
+import type { AreaPlacement } from './area-targeting.js';
+import { isAreaTargeting } from './spell-targeting.js';
+import { resolveAreaTargets } from './area-targeting.service.js';
+import type { AreaTargetingSnapshot } from './area-snapshot.js';
+import type { AreaSpatialProvider } from './area-spatial.js';
+import type { AreaUnknownDecision } from './area-evaluation.js';
+import { finalizeSaveDamageCast } from './save-damage-finalizer.js';
 import {
   assertCasterControl,
   resolveSpellAuthorization,
@@ -120,8 +127,12 @@ export interface SpellCastContext {
   economyCost: 'action' | 'bonus-action' | 'reaction';
   /** Contexto de turno em combate ATIVO (`null` = fora de combate). */
   turnContext: CastingTurnContext | null;
-  /** Snapshot da validação de alvos (6.6E) — gravado no COMMIT. */
-  targeting: TargetingSnapshot;
+  /** Snapshot da validação de alvos (6.6E/6.6J.3) — gravado no COMMIT. */
+  targeting: SpellTargetingSnapshot;
+  /** 6.6J.3: snapshot derivado da ÁREA (`null` em alvo explícito). */
+  area: { snapshot: AreaTargetingSnapshot; requiredDecisions: string[] } | null;
+  /** Colocação de área pedida (persistida na INTENÇÃO; `null` em explícito). */
+  areaPlacement: AreaPlacement | null;
   /** Plano de COMPONENTES V/S/M (6.6G), revalidado no COMMIT. */
   components: SpellComponentPlan;
   /** Requisitos espaciais ainda NÃO confirmados (6.6F: viram intenção). */
@@ -164,6 +175,9 @@ function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
         spellcastingSource: input.spellcastingSource ?? null,
         castingResource: input.castingResource ?? null,
         spatialConfirmation: input.spatialConfirmation ?? null,
+        // 6.6J.3: a COLOCAÇÃO faz parte da identidade do pedido de área
+        // (mesmo operationId com outra origem/direção é outro payload).
+        areaPlacement: input.areaPlacement ?? null,
       }),
     )
     .digest('hex');
@@ -239,7 +253,14 @@ export async function validateSpellCast(
   actor: EffectActor,
   input: SpellCastProofInput,
   db: Prisma.TransactionClient,
-  options: { deferUnknown?: boolean; operationId?: string } = {},
+  options: {
+    deferUnknown?: boolean;
+    operationId?: string;
+    /** 6.6J.3: provider espacial injetável (testes determinísticos). */
+    areaProvider?: AreaSpatialProvider;
+    /** 6.6J.3: decisões do Mestre para os candidatos `unknown`. */
+    areaDecisions?: readonly AreaUnknownDecision[];
+  } = {},
 ): Promise<SpellCastContext> {
   const spell = allSpells().find((item) => item.id === input.spellId);
   if (!spell) {
@@ -277,8 +298,7 @@ export async function validateSpellCast(
     }
   }
   const targets: LoadedEntity[] = [];
-  const seen = new Set<string>();
-  for (const reference of input.targets) {
+  const seen = new Set<string>();  for (const reference of input.targets) {
     const loaded = await loadEntity(reference, db);
     const key = `${loaded.entity.kind}:${loaded.entity.id}`;
     if (seen.has(key)) {
@@ -355,22 +375,11 @@ export async function validateSpellCast(
   });
   assertSpellComponents(components);
 
-  // 6.6E: TARGETING validado com o `castAtLevel` REAL — a quantidade máxima de
-  // alvos é derivada da definição + espaço escolhido, nunca do cliente. Falhar
-  // aqui não gasta espaço, Ação nem encerra a Concentração anterior.
-  const targeting = await validateTargeting({
-    db,
-    targeting: execution.targeting,
-    caster,
-    targets,
-    castAtLevel,
-    deferUnknown: options.deferUnknown === true,
-    ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
-  });
-
   // 6.6D: CASTING TIME vem do registry (ou do catálogo) — NUNCA do cliente. O
   // custo é traduzido para a Action Economy existente; tempos não executáveis
-  // (1 minuto/1 hora) falham aqui, antes de qualquer consumo.
+  // (1 minuto/1 hora) falham aqui, antes de qualquer consumo. Calculado ANTES
+  // do targeting porque a ÁREA (6.6J.3) precisa do combate ativo para enumerar
+  // candidatos — e nada disso grava.
   const castingTimeKind = execution.castingTime ?? spell.castingTimeKind;
   const economyCost = castingEconomyFor(castingTimeKind);
   const turnContext = await castingTurnContext(db, caster);
@@ -379,6 +388,68 @@ export async function validateSpellCast(
     spellLevel,
     castingTime: economyCost,
   });
+
+  let targeting: SpellTargetingSnapshot;
+  let area: SpellCastContext['area'] = null;
+  let areaPlacement: AreaPlacement | null = null;
+  let requiredConfirmations: SpatialRequirementKind[] = [];
+
+  if (isAreaTargeting(execution.targeting)) {
+    // 6.6J.3: o cliente NUNCA envia a lista de atingidos por uma área. Se
+    // mandar, é rejeitado em vez de ignorado silenciosamente.
+    if (input.targets.length > 0) {
+      throw new HttpError(
+        'Magias de área derivam os atingidos no servidor; não envie alvos.',
+        400,
+        'AREA_TARGETS_CLIENT_SUPPLIED',
+      );
+    }
+    if (!input.areaPlacement) {
+      throw new HttpError(
+        'Informe a colocação da área (origem e direção, quando exigida).',
+        400,
+        'AREA_PLACEMENT_REQUIRED',
+      );
+    }
+    areaPlacement = input.areaPlacement;
+    const resolved = await resolveAreaTargets({
+      db,
+      targeting: execution.targeting,
+      placement: areaPlacement,
+      caster,
+      combatId: turnContext?.combatId ?? null,
+      castAtLevel,
+      ...(options.areaProvider ? { provider: options.areaProvider } : {}),
+      ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
+      ...(options.areaDecisions ? { decisions: options.areaDecisions } : {}),
+      deferUnknown: options.deferUnknown === true,
+    });
+    targets.length = 0;
+    targets.push(...resolved.affected);
+    targeting = resolved.snapshot;
+    area = { snapshot: resolved.snapshot, requiredDecisions: resolved.requiredDecisions };
+    requiredConfirmations = resolved.requiredConfirmations;
+  } else {
+    if (input.areaPlacement) {
+      throw new HttpError(
+        'Esta magia não usa colocação de área.',
+        400,
+        'AREA_PLACEMENT_NOT_ALLOWED',
+      );
+    }
+    // 6.6E: TARGETING validado com o `castAtLevel` REAL — a quantidade máxima de
+    // alvos é derivada da definição + espaço escolhido, nunca do cliente.
+    targeting = await validateTargeting({
+      db,
+      targeting: execution.targeting,
+      caster,
+      targets,
+      castAtLevel,
+      deferUnknown: options.deferUnknown === true,
+      ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
+    });
+    requiredConfirmations = targeting.requiredConfirmations;
+  }
 
   const context: SpellValidationContext = {
     db,
@@ -410,8 +481,10 @@ export async function validateSpellCast(
     economyCost,
     turnContext,
     targeting,
+    area,
+    areaPlacement,
     components,
-    requiredConfirmations: targeting.requiredConfirmations,
+    requiredConfirmations,
     castOperationId: options.operationId ?? input.operationId,
     availabilityKind: authorization.availabilityKind,
   };
@@ -703,6 +776,34 @@ async function beginPendingSaves(
 }
 
 /**
+ * Fecha um cast cuja ÁREA não atingiu ninguém (6.6J.3).
+ *
+ * `save-damage` usa o MESMO finalizer da 6.6J.2 (zero pendências ⇒ barreira
+ * satisfeita ⇒ `resolved`/`no-effect`); as demais resoluções não têm o que
+ * aplicar e são fechadas com motivo auditável. Custos do COMMIT não voltam.
+ */
+async function closeCastWithoutTargets(
+  db: Prisma.TransactionClient,
+  cast: SpellCast,
+  context: SpellCastContext,
+): Promise<SpellCast> {
+  if (context.execution.resolution.kind === 'save-damage') {
+    await finalizeSaveDamageCast(cast.id, db);
+  } else {
+    await db.spellCast.updateMany({
+      where: { id: cast.id, status: 'resolving' },
+      data: {
+        status: 'resolved',
+        outcome: 'no-effect',
+        resolutionReason: 'no-affected-targets',
+        resolvedAt: new Date(),
+      },
+    });
+  }
+  return db.spellCast.findUniqueOrThrow({ where: { id: cast.id } });
+}
+
+/**
  * PIPELINE ÚNICO de conjuração de prova.
  *
  * Replay é verificado ANTES do lock (retry legítimo do mesmo `operationId` não
@@ -735,7 +836,14 @@ export function castFingerprint(actor: EffectActor, input: SpellCastProofInput):
 export async function executeCast(
   actor: EffectActor,
   input: SpellCastProofInput,
-  castKey: { operationId: string; fingerprint: string; deferUnknown?: boolean },
+  castKey: {
+    operationId: string;
+    fingerprint: string;
+    deferUnknown?: boolean;
+    /** 6.6J.3 — provider espacial injetável (teste) e decisões do Mestre. */
+    areaProvider?: AreaSpatialProvider;
+    areaDecisions?: readonly AreaUnknownDecision[];
+  },
 ): Promise<SpellCastResult> {
   const fingerprint = castKey.fingerprint;
 
@@ -844,6 +952,21 @@ export async function executeCast(
       }
 
       const pendings = await beginPendingSaves(db, cast, context);
+      // 6.6J.3: ÁREA sem ninguém dentro é CAST VÁLIDO (custos pagos, zero
+      // salvaguardas). O cast fecha na hora como `no-effect`, nunca "alvo
+      // inválido" e nunca eternamente `resolving`.
+      if (context.targets.length === 0) {
+        const closed = await closeCastWithoutTargets(db, cast, context);
+        return {
+          cast: toSpellCastDto(closed),
+          replayed: false,
+          effectGroupId: null,
+          effects: [],
+          pending: null,
+          pendings: [],
+          endedTargets,
+        };
+      }
       return {
         cast: toSpellCastDto(cast),
         replayed: false,

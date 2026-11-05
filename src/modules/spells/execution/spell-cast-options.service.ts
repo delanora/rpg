@@ -5,7 +5,7 @@ import type { EffectActor } from '../../effects/effects.service.js';
 import { evaluateSpellAvailability } from './spell-authorization.service.js';
 import { castingResourcesForEntity } from './casting-resource.service.js';
 import { spellExecutionDefinition } from './spell-execution-registry.js';
-import { targetingSummary } from './spell-targeting.js';
+import { spellTargetingSummary } from './spell-targeting.js';
 import {
   resolveSpellComponents,
   toComponentsSummary,
@@ -63,7 +63,7 @@ export interface CastOptionsDto {
   /** Espaços utilizáveis (`remaining > 0`); vazio para truques. */
   resources: CastResourceOption[];
   /** Resumo por NÍVEL de espaço — o máximo de alvos é derivado no servidor. */
-  targeting: ReturnType<typeof targetingSummary>[];
+  targeting: ReturnType<typeof spellTargetingSummary>[];
   /**
    * Componentes V/S/M da magia pela fonte oferecida (6.6G). `null` quando
    * nenhuma fonte autoriza — a UI não mostra requisito de uma magia impossível.
@@ -195,7 +195,7 @@ export async function castOptionsFor(
   for (const resource of resources) levels.add(resource.level);
   const targeting =
     castable && execution
-      ? [...levels].sort((a, b) => a - b).map((at) => targetingSummary(execution.targeting, at))
+      ? [...levels].sort((a, b) => a - b).map((at) => spellTargetingSummary(execution.targeting, at))
       : [];
 
   // Resumo dos componentes: derivado do inventário REAL e da fonte oferecida —

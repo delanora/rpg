@@ -7,9 +7,10 @@ import type { LoadedEntity } from '../../mechanical/mechanical.service.js';
 import {
   maximumTargets,
   targetingRangeFeet,
+  type ExplicitSpellTargetingDefinition,
   type SpellTargetFilter,
-  type SpellTargetingDefinition,
 } from './spell-targeting.js';
+import type { AreaTargetingSnapshot } from './area-snapshot.js';
 import {
   assistedSpatialProvider,
   isConfirmed,
@@ -46,7 +47,7 @@ export type TargetingValidationMode = 'automatic' | 'master-confirmed' | 'mixed'
 
 /** Snapshot gravado no SpellCast: mudanças futuras não reescrevem o passado. */
 export interface TargetingSnapshot {
-  targetKind: SpellTargetingDefinition['kind'];
+  targetKind: ExplicitSpellTargetingDefinition['kind'];
   rangeFeet: number | null;
   maxTargets: number;
   targetCount: number;
@@ -63,9 +64,15 @@ export interface TargetingSnapshot {
   requiredConfirmations: SpatialRequirementKind[];
 }
 
+/**
+ * Snapshot de targeting GRAVADO no cast: a validação de alvos explícitos (6.6E)
+ * ou o snapshot de ÁREA (6.6J.3), discriminado por `kind`.
+ */
+export type SpellTargetingSnapshot = TargetingSnapshot | AreaTargetingSnapshot;
+
 export interface ValidateTargetingInput {
   db: Prisma.TransactionClient;
-  targeting: SpellTargetingDefinition;
+  targeting: ExplicitSpellTargetingDefinition;
   caster: LoadedEntity;
   targets: readonly LoadedEntity[];
   castAtLevel: number;
