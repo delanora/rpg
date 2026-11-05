@@ -28,6 +28,8 @@ import { parseAreaTargetingSnapshot } from './area-snapshot.js';
 import type { AreaUnknownDecision } from './area-evaluation.js';
 import type { AreaSpatialProvider } from './area-spatial.js';
 import { spellExecutionDefinition } from './spell-execution-registry.js';
+import type { CoverSpatialProvider } from '../../combat/cover.service.js';
+import type { CoverConfirmation } from '../../combat/cover.js';
 
 /**
  * FASE 6.6F — SPELL CAST INTENT (intenção de conjuração, PRÉ-COMMIT).
@@ -193,6 +195,7 @@ function intentInProgress(): never {
 function intentInputOf(
   row: SpellCastIntent,
   confirmation: SpatialConfirmation | undefined,
+  coverConfirmation?: readonly CoverConfirmation[],
 ): SpellCastProofInput {
   const targets = targetsOf(row).map((target) => ({ kind: target.kind, id: target.id }));
   const source =
@@ -218,6 +221,10 @@ function intentInputOf(
     ...(source ? { spellcastingSource: spellcastingSourceRefSchema.parse(source) } : {}),
     ...(resource ? { castingResource: castingResourceRefSchema.parse(resource) } : {}),
     ...(confirmation ? { spatialConfirmation: confirmation } : {}),
+    // 6.6J.5: o nível de cobertura decidido na APROVAÇÃO entra na revalidação.
+    ...(coverConfirmation && coverConfirmation.length > 0
+      ? { coverConfirmation: [...coverConfirmation] }
+      : {}),
   };
 }
 
@@ -241,8 +248,9 @@ async function commitIntent(
   approver: EffectActor,
   confirmation: SpatialConfirmation | undefined,
   decisions: readonly AreaUnknownDecision[] = [],
+  coverConfirmation?: readonly CoverConfirmation[],
 ): Promise<CastOutcome> {
-  const input = intentInputOf(row, confirmation);
+  const input = intentInputOf(row, confirmation, coverConfirmation);
   try {
     const result = await executeCast(approver, input, {
       operationId: row.castOperationId ?? `intent:${row.id}`,
@@ -294,6 +302,8 @@ export async function castSpell(
     /** 6.6J.3: provider/decisões injetados (smoke determinístico). */
     areaProvider?: AreaSpatialProvider;
     areaDecisions?: readonly AreaUnknownDecision[];
+    /** 6.6J.5: provider de cobertura injetável (smoke determinístico). */
+    coverProvider?: CoverSpatialProvider;
   } = {},
 ): Promise<CastOutcome> {
   const existing = await prisma.spellCastIntent.findUnique({
@@ -313,6 +323,15 @@ export async function castSpell(
       'SPELL_SPATIAL_CONFIRMATION_FORBIDDEN',
     );
   }
+  // 6.6J.5: cobertura também é confirmação do MESTRE. O cliente informa só o
+  // nível pedido; o servidor deriva bônus/AC/save e nunca aceita o valor solto.
+  if (actor.role !== 'MASTER' && input.coverConfirmation) {
+    throw new HttpError(
+      'A confirmação de cobertura é exclusiva do Mestre.',
+      403,
+      'SPELL_COVER_CONFIRMATION_FORBIDDEN',
+    );
+  }
 
   // 6.6J.3: com ÁREA, o desconhecido exige decisão POR ALVO. Mesmo o Mestre
   // passa pela intenção nesse caso — nunca um commit adivinhado. No caminho de
@@ -328,6 +347,7 @@ export async function castSpell(
       fingerprint: castFingerprint(actor, input),
       ...(options.areaProvider !== undefined ? { areaProvider: options.areaProvider } : {}),
       ...(options.areaDecisions !== undefined ? { areaDecisions: options.areaDecisions } : {}),
+      ...(options.coverProvider !== undefined ? { coverProvider: options.coverProvider } : {}),
     });
     return { kind: 'cast', result };
   }
@@ -341,6 +361,7 @@ export async function castSpell(
     validateSpellCast(actor, input, db, {
       deferUnknown: true,
       ...(options.areaProvider !== undefined ? { areaProvider: options.areaProvider } : {}),
+      ...(options.coverProvider !== undefined ? { coverProvider: options.coverProvider } : {}),
     }),
   );
   const requiredConfirmations = precheck.requiredConfirmations;
@@ -427,6 +448,7 @@ export async function approveSpellCastIntent(
   id: string,
   confirmation: SpatialConfirmation | undefined,
   decisions: readonly AreaUnknownDecision[] = [],
+  coverConfirmation: readonly CoverConfirmation[] = [],
 ): Promise<CastOutcome> {
   const row = await findIntentOrThrow(id);
   if (row.status !== 'pending') return replayIntent(row);
@@ -468,7 +490,7 @@ export async function approveSpellCastIntent(
     }
   }
 
-  return commitIntent(row, actor, confirmation, decisions);
+  return commitIntent(row, actor, confirmation, decisions, coverConfirmation);
 }
 
 /** NEGAÇÃO do Mestre: terminal, ZERO custo e nenhum `SpellCast`. */

@@ -26,6 +26,16 @@ import { noteDamageConcentration } from '../../concentration/concentration.servi
 import { publishCharacter, refreshCombatForEffects } from '../../combat/combat.service.js';
 import { loadEntity, type LoadedEntity } from '../../mechanical/mechanical.service.js';
 import {
+  assertCoverAllowsDirectTargeting,
+  coverFor,
+  type CoverSpatialProvider,
+} from '../../combat/cover.service.js';
+import {
+  applyCoverConfirmation,
+  coverSnapshotOf,
+  type CoverConfirmation,
+} from '../../combat/cover.js';
+import {
   attackCountOf,
   type SpellExecutionDefinition,
 } from './spell-execution-definition.js';
@@ -89,6 +99,13 @@ export interface AttackDamageOptions {
    * rerrolar por acidente; cada jogada tem a própria escolha.
    */
   selectedEffectModifiersByAttack?: Record<number, readonly string[]>;
+  /**
+   * 6.6J.5 — provider de COBERTURA injetável (assistido por padrão). A cobertura
+   * é da RELAÇÃO caster ↔ alvo e é reavaliada em CADA jogada.
+   */
+  coverProvider?: CoverSpatialProvider;
+  /** Confirmações do Mestre por alvo (só preenchem `unknown`/`not-assessed`). */
+  coverConfirmations?: readonly CoverConfirmation[];
 }
 
 export interface AttackDamageResult {
@@ -201,6 +218,27 @@ export async function resolveAttackDamageSpell(
     const assignment = context.assignments[index]!;
     const currentCaster = await loadEntity(context.caster.entity, db);
     const currentTarget = await loadEntity(assignment.entity, db);
+    // COVER (6.6J.5): total cover recusa a jogada ANTES do d20 (nunca "+999 CA");
+    // parcial vira +2/+5 na CA situacional, nunca no valor gravado da ficha.
+    const coverEvaluation = applyCoverConfirmation(
+      await coverFor(
+        {
+          origin: currentCaster.entity,
+          target: currentTarget.entity,
+          interaction: 'attack',
+        },
+        options.coverProvider,
+      ),
+      options.coverConfirmations?.find(
+        (item) => item.targetKey === `${currentTarget.entity.kind}:${currentTarget.entity.id}`,
+      )?.level,
+    );
+    assertCoverAllowsDirectTargeting(
+      coverEvaluation,
+      'SPELL_TARGET_TOTAL_COVER',
+      'O alvo está em cobertura total e não pode ser escolhido diretamente.',
+    );
+    const cover = coverSnapshotOf(coverEvaluation);
 
     // Modificadores de Effect: consulta em lote, canonicalizando combatente de
     // personagem para a FICHA (mesma regra da 6.5A/6.5B). Refeita por ocorrência
@@ -263,7 +301,9 @@ export async function resolveAttackDamageSpell(
 
     // Bônus de ataque = SNAPSHOT do commit, igual em todas as jogadas.
     const total = selection.naturalRoll + attackBonus + effectBonus + effectDiceTotal;
-    const targetAc = await targetArmorClassOf(db, currentTarget.entity, armorBonuses);
+    const baseTargetAc = await targetArmorClassOf(db, currentTarget.entity, armorBonuses);
+    // COBERTURA situacional: só a interação deste ataque, nunca a ficha.
+    const targetAc = baseTargetAc + cover.acBonus;
     const outcome = resolveAttackOutcome({
       naturalRoll: selection.naturalRoll,
       total,
@@ -373,6 +413,7 @@ export async function resolveAttackDamageSpell(
       },
       damage: damageSnapshot,
       selectedModifiers: [...selected],
+      cover,
       noEffectReason: occurrenceReason,
     });
   }

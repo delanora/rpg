@@ -48,6 +48,17 @@ import { resolveAreaTargets } from './area-targeting.service.js';
 import type { AreaTargetingSnapshot } from './area-snapshot.js';
 import type { AreaSpatialProvider } from './area-spatial.js';
 import type { AreaUnknownDecision } from './area-evaluation.js';
+import {
+  assistedCoverProvider,
+  assertCoverAllowsDirectTargeting,
+  coverFor,
+  type CoverSpatialProvider,
+} from '../../combat/cover.service.js';
+import {
+  applyCoverConfirmation,
+  coverSnapshotOf,
+  type CoverConfirmation,
+} from '../../combat/cover.js';
 import { finalizeSaveDamageCast } from './save-damage-finalizer.js';
 import {
   assertCasterControl,
@@ -134,6 +145,9 @@ export interface SpellCastContext {
   area: { snapshot: AreaTargetingSnapshot; requiredDecisions: string[] } | null;
   /** Colocação de área pedida (persistida na INTENÇÃO; `null` em explícito). */
   areaPlacement: AreaPlacement | null;
+  /** 6.6J.5 — cobertura: provider (assistido por padrão) e confirmações do Mestre. */
+  coverProvider: CoverSpatialProvider;
+  coverConfirmations: readonly CoverConfirmation[];
   /** Plano de COMPONENTES V/S/M (6.6G), revalidado no COMMIT. */
   components: SpellComponentPlan;
   /** Requisitos espaciais ainda NÃO confirmados (6.6F: viram intenção). */
@@ -190,6 +204,8 @@ function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
         // 6.6J.3: a COLOCAÇÃO faz parte da identidade do pedido de área
         // (mesmo operationId com outra origem/direção é outro payload).
         areaPlacement: input.areaPlacement ?? null,
+        // 6.6J.5: a confirmação de cobertura faz parte da identidade do pedido.
+        coverConfirmation: input.coverConfirmation ?? null,
       }),
     )
     .digest('hex');
@@ -272,6 +288,9 @@ export async function validateSpellCast(
     areaProvider?: AreaSpatialProvider;
     /** 6.6J.3: decisões do Mestre para os candidatos `unknown`. */
     areaDecisions?: readonly AreaUnknownDecision[];
+    /** 6.6J.5: provider de cobertura injetável (testes) e confirmações. */
+    coverProvider?: CoverSpatialProvider;
+    coverConfirmations?: readonly CoverConfirmation[];
   } = {},
 ): Promise<SpellCastContext> {
   const spell = allSpells().find((item) => item.id === input.spellId);
@@ -288,6 +307,12 @@ export async function validateSpellCast(
     );
   }
   const caster = await loadEntity(input.caster, db);
+  // 6.6J.5 — COBERTURA: o provider padrão é ASSISTIDO (sem geometria, devolve
+  // `not-assessed`), então nenhuma jogada comum vira "aguardando o Mestre".
+  const coverProvider = options.coverProvider ?? assistedCoverProvider;
+  const coverConfirmations = input.coverConfirmation ?? options.coverConfirmations ?? [];
+  const coverConfirmationFor = (entity: MechanicalEntity) =>
+    coverConfirmations.find((item) => item.targetKey === `${entity.kind}:${entity.id}`)?.level;
 
   // FASE 6.6I.2: magias `save-damage` exigem um nível EXPLÍCITO de
   // escalonamento (personagem: nível total; NPC: statblock). Sem ele, falha
@@ -472,6 +497,28 @@ export async function validateSpellCast(
         'AREA_PLACEMENT_NOT_ALLOWED',
       );
     }
+    // 6.6J.5 — TOTAL COVER é falha de TARGETING: recusa aqui (read-only), antes
+    // de qualquer custo e de qualquer d20. Cobertura PARCIAL não bloqueia: vira
+    // +2/+5 na CA/save, aplicada na resolução.
+    const coverInteraction =
+      execution.resolution.kind === 'attack-damage'
+        ? ('attack' as const)
+        : ('dexterity-save' as const);
+    for (const target of targets) {
+      const evaluation = applyCoverConfirmation(
+        await coverFor(
+          { origin: caster.entity, target: target.entity, interaction: coverInteraction },
+          coverProvider,
+        ),
+        coverConfirmationFor(target.entity),
+      );
+      assertCoverAllowsDirectTargeting(
+        evaluation,
+        'SPELL_TARGET_TOTAL_COVER',
+        'O alvo está em cobertura total e não pode ser escolhido diretamente.',
+      );
+    }
+
     // 6.6E: TARGETING validado com o `castAtLevel` REAL — a quantidade máxima de
     // alvos é derivada da definição + espaço escolhido, nunca do cliente.
     targeting = await validateTargeting({
@@ -529,6 +576,8 @@ export async function validateSpellCast(
     targeting,
     area,
     areaPlacement,
+    coverProvider,
+    coverConfirmations,
     components,
     requiredConfirmations,
     castOperationId: options.operationId ?? input.operationId,
@@ -786,6 +835,38 @@ async function resolveImmediateEffect(
  * persistente. O Effect/Concentração só nascem na falha, quando o save é
  * resolvido pelo pipeline de dados.
  */
+/**
+ * 6.6J.5 — COBERTURA de UMA salvaguarda pendente.
+ *
+ * Só Destreza recebe +2/+5 (PHB 2014) e a magia pode IGNORAR o benefício
+ * (`ignoreSaveCover`, Chama Sagrada). Total Cover NÃO vira bônus: aqui a
+ * pendência guarda o nível CONHECIDO e o bônus; `unknown`/`not-assessed` fica
+ * de fora (nunca "meia cobertura" por suposição).
+ */
+async function saveCoverFor(
+  context: SpellCastContext,
+  target: MechanicalEntity,
+): Promise<{ level: string | null; bonus: number; provenance: string | null } | null> {
+  const resolution = context.execution.resolution;
+  if (resolution.kind !== 'save-effect' && resolution.kind !== 'save-damage') return null;
+  // Só DESTREZA recebe o benefício; a magia pode ignorar (Chama Sagrada).
+  if (resolution.ability !== 'dexterity') return null;
+  if (resolution.kind === 'save-damage' && resolution.ignoreSaveCover) return null;
+  const evaluation = applyCoverConfirmation(
+    await coverFor(
+      { origin: context.caster.entity, target, interaction: 'dexterity-save' },
+      context.coverProvider,
+    ),
+    context.coverConfirmations.find(
+      (item) => item.targetKey === `${target.kind}:${target.id}`,
+    )?.level,
+  );
+  const snapshot = coverSnapshotOf(evaluation);
+  return snapshot.status === 'known'
+    ? { level: snapshot.level, bonus: snapshot.saveBonus, provenance: snapshot.provenance }
+    : null;
+}
+
 async function beginPendingSaves(
   db: Prisma.TransactionClient,
   cast: SpellCast,
@@ -807,6 +888,7 @@ async function beginPendingSaves(
   // chave idempotente derivada do cast + identidade canônica do alvo.
   const created: PendingEffectSaveDto[] = [];
   for (const target of context.targets) {
+    const cover = await saveCoverFor(context, target.entity);
     const pending = await db.pendingEffectSave.create({
       data: {
         definitionId: pendingDefinitionId,
@@ -819,6 +901,7 @@ async function beginPendingSaves(
         targetEntityId: target.entity.id,
         ability: resolution.ability,
         dc: context.saveDc,
+        ...(cover ? { cover: cover as unknown as Prisma.InputJsonValue } : {}),
         visibility: 'public',
         status: 'pending',
         operationId: `${cast.id}:${target.entity.kind}:${target.entity.id}`,
@@ -899,6 +982,8 @@ export async function executeCast(
     /** 6.6J.3 — provider espacial injetável (teste) e decisões do Mestre. */
     areaProvider?: AreaSpatialProvider;
     areaDecisions?: readonly AreaUnknownDecision[];
+    /** 6.6J.5 — provider de cobertura injetável (teste). */
+    coverProvider?: CoverSpatialProvider;
   },
 ): Promise<SpellCastResult> {
   const fingerprint = castKey.fingerprint;
@@ -995,6 +1080,10 @@ export async function executeCast(
           // Assignments (ordem + repetição), nunca o conjunto deduplicado.
           { caster: context.caster, assignments: context.targets },
           context.execution,
+          {
+            coverConfirmations: context.coverConfirmations,
+            ...(castKey.coverProvider ? { coverProvider: castKey.coverProvider } : {}),
+          },
         );
         attackDamage = attack;
         return {

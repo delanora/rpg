@@ -32,6 +32,22 @@ export const spellCastProofSchema = z.object({
    */
   areaPlacement: areaPlacementSchema.optional(),
   /**
+   * 6.6J.5 — confirmação de COBERTURA pelo Mestre (mesmo fluxo assistido da
+   * confirmação espacial). O cliente NUNCA envia bônus/nível como autoridade:
+   * o nível só preenche o que o provider não sabe, e PLAYER não tem esse poder.
+   */
+  coverConfirmation: z
+    .array(
+      z
+        .object({
+          targetKey: z.string().trim().min(1).max(200),
+          level: z.enum(['none', 'half', 'three-quarters', 'total']),
+        })
+        .strict(),
+    )
+    .max(12)
+    .optional(),
+  /**
    * Fonte de conjuração escolhida. Obrigatória só quando o caster tem MAIS de
    * uma; o servidor revalida a posse e ignora qualquer número enviado.
    */
@@ -71,5 +87,17 @@ export const spellIntentApprovalSchema = z
   .object({
     spatialConfirmation: spatialConfirmationSchema.optional(),
     unknownTargetDecisions: z.array(areaUnknownDecisionSchema).max(64).optional(),
+    /** 6.6J.5: cobertura confirmada pelo Mestre (só o NÍVEL, nunca o bônus). */
+    coverConfirmation: z
+      .array(
+        z
+          .object({
+            targetKey: z.string().trim().min(1).max(200),
+            level: z.enum(['none', 'half', 'three-quarters', 'total']),
+          })
+          .strict(),
+      )
+      .max(12)
+      .optional(),
   })
   .strict();
