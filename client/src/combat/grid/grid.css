@@ -222,6 +222,11 @@
   overflow: visible;
 }
 
+/* Projeção e medição convivem: opacidade menor durante o draft de movimento. */
+.grid-plane.is-drafting .grid-token {
+  opacity: 0.92;
+}
+
 .grid-measure-line {
   stroke: var(--gold-bright, #f6d977);
   stroke-width: 1.5;
@@ -537,6 +542,180 @@
   font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/*
+ * 6.6M.3 — MOVIMENTO VOLUNTÁRIO (draft local + overlay + ghost).
+ *
+ * A linha/ghost são apresentação: pixels aqui nunca viram regra. O token real
+ * só anda quando o DTO autoritativo mudar (nada de posição otimista).
+ */
+.grid-plane.is-moving {
+  cursor: grab;
+}
+
+/* Gesture de movimento em andamento: o toque não rola o viewport. */
+.grid-plane.is-drafting {
+  cursor: grabbing;
+  touch-action: none;
+}
+
+.grid-token.is-movable {
+  cursor: grab;
+  border-color: var(--gold, #e0b83f);
+}
+
+.grid-movement-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.grid-movement-path {
+  fill: none;
+  stroke: var(--gold, #e0b83f);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.grid-movement-point {
+  fill: var(--gold-bright, #f6d977);
+  opacity: 0.85;
+}
+
+.grid-movement-ghost {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--gold-bright, #f6d977);
+  border-radius: 3px;
+  background: rgba(224, 184, 63, 0.1);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.grid-movement-ghost-art {
+  display: grid;
+  place-items: center;
+  width: var(--grid-token-art, 32px);
+  height: var(--grid-token-art, 32px);
+  overflow: hidden;
+  border-radius: 50%;
+  border: 1px solid var(--gold-hair, rgba(224, 184, 63, 0.4));
+  background: #140d08;
+  font-family: var(--font-display, serif);
+  color: var(--gold-bright, #f6d977);
+}
+
+.grid-movement-ghost-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.grid-movement-panel {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line-strong, rgba(224, 184, 63, 0.32));
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.grid-movement-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.grid-movement-title {
+  font-family: var(--font-display, serif);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold, #e0b83f);
+}
+
+.grid-movement-actions {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.grid-movement-route {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink, #ecdcbd);
+}
+
+.grid-movement-steps {
+  color: var(--ink-faint, #8d7859);
+}
+
+.grid-movement-status {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.grid-movement-status.is-neutral {
+  color: var(--ink-soft, #c3ab86);
+}
+
+.grid-movement-status.is-valid {
+  color: #8fc98f;
+}
+
+.grid-movement-status.is-insufficient {
+  color: #d98b3a;
+}
+
+.grid-movement-status.is-invalid {
+  color: #d98a7a;
+}
+
+.grid-movement-numbers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.3rem 0.6rem;
+  margin: 0;
+}
+
+.grid-movement-numbers dt {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #8d7859);
+}
+
+.grid-movement-numbers dd {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--ink, #ecdcbd);
+}
+
+.grid-movement-hint {
+  margin: 0;
+  font-size: 0.68rem;
+  font-style: italic;
+  color: var(--ink-faint, #8d7859);
+}
+
+.grid-movement-risk {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #d98b3a;
+}
+
+.grid-movement-confirm {
+  justify-self: start;
 }
 
 @media (max-width: 720px) {

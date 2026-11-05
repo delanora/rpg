@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, PointerEvent } from 'react';
 import type { CombatantDto } from '../../types';
 import {
   SIZE_LABELS,
@@ -33,7 +33,14 @@ export interface GridTokenProps {
    * distância continuam sendo do servidor.
    */
   measureRole?: 'source' | 'target' | null;
+  /**
+   * 6.6M.3 — o token pertence ao combatente que PODE mover mecanicamente
+   * agora. Só muda apresentação/gesto: a autoridade continua no servidor.
+   */
+  movable?: boolean;
   onSelect?: (combatantId: string) => void;
+  /** Início do draft de movimento (pointer down / ativação por teclado). */
+  onMoveStart?: (combatantId: string, event: PointerEvent<HTMLButtonElement>) => void;
   /** Hover da medição (complemento do clique — nunca obrigatório). */
   onHover?: (combatantId: string | null) => void;
 }
@@ -59,7 +66,9 @@ export function GridToken({
   pending = false,
   interactive = false,
   measureRole = null,
+  movable = false,
   onSelect,
+  onMoveStart,
   onHover,
 }: GridTokenProps) {
   const rect = renderRect(combatant, cellSizeFeet, pixelsPerCell);
@@ -73,6 +82,7 @@ export function GridToken({
   if (selected) classes.push('is-selected');
   if (pending) classes.push('is-pending');
   if (combatant.missing) classes.push('is-missing');
+  if (movable) classes.push('is-movable');
   if (measureRole === 'source') classes.push('is-measure-source');
   if (measureRole === 'target') classes.push('is-measure-target');
 
@@ -96,11 +106,17 @@ export function GridToken({
           : measureRole === 'target'
             ? ', alvo da medição'
             : ''
-      }`}
+      }${movable ? ', pode ser movido' : ''}`}
       aria-pressed={selected || measureRole !== null}
       aria-current={currentTurn ? 'true' : undefined}
       data-size={size}
-      disabled={!interactive}
+      data-movable={movable ? 'true' : undefined}
+      disabled={!interactive && !movable}
+      onPointerDown={
+        movable && onMoveStart
+          ? (event) => onMoveStart(combatant.id, event)
+          : undefined
+      }
       onClick={interactive && onSelect ? () => onSelect(combatant.id) : undefined}
       onMouseEnter={interactive && onHover ? () => onHover(combatant.id) : undefined}
       onMouseLeave={interactive && onHover ? () => onHover(null) : undefined}

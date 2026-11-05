@@ -1,4 +1,4 @@
-import type { CombatantDto, SessionUser } from '../types';
+import type { CombatantDto, CombatStatus, SessionUser } from '../types';
 
 /**
  * QUEM CONTROLA O COMBATENTE DO TURNO? — derivação ÚNICA do cliente.
@@ -21,6 +21,80 @@ export function currentUserControlsCombatant(
   if (!combatant) return false;
   if (user.role === 'MASTER') return combatant.kind !== 'CHARACTER';
   return combatant.ownerUserId === user.id;
+}
+
+/**
+ * 6.6M.3 — QUEM PODE MOVER MECANICAMENTE AGORA.
+ *
+ * Derivação ÚNICA para o modo Mover do grid. Ela só decide o que a UI oferece:
+ * o servidor continua validando turno, autoridade, morte, deslocamento e
+ * Reaction Gate (403/409). Regras aqui são de ELEGIBILIDADE VISUAL:
+ *
+ * • só em combate ACTIVE e com grid ativo;
+ * • só o combatente do turno;
+ * • só quem o controla (`currentUserControlsCombatant`);
+ * • precisa estar posicionado, vivo e com deslocamento/saldo.
+ *
+ * Placement administrativo NUNCA passa por aqui.
+ */
+export interface MovementAuthority {
+  /** Combatente que este usuário pode mover agora (`null` = ninguém). */
+  combatantId: string | null;
+  /** Motivo sanitizado para a UI (nunca vira regra de jogo). */
+  reason: string | null;
+}
+
+export interface MovementAuthorityInput {
+  status: CombatStatus;
+  currentCombatantId: string | null;
+  combatants: readonly CombatantDto[];
+  user: SessionUser;
+  gridActive: boolean;
+}
+
+export function movementAuthorityOf({
+  status,
+  currentCombatantId,
+  combatants,
+  user,
+  gridActive,
+}: MovementAuthorityInput): MovementAuthority {
+  if (!gridActive) {
+    return { combatantId: null, reason: 'Ative o grid para mover mecanicamente.' };
+  }
+  if (status !== 'ACTIVE') {
+    return {
+      combatantId: null,
+      reason: 'O movimento mecânico acontece durante o combate ativo.',
+    };
+  }
+  const current = combatants.find((item) => item.id === currentCombatantId) ?? null;
+  if (!current) {
+    return { combatantId: null, reason: 'Nenhum combatente no turno.' };
+  }
+  if (!currentUserControlsCombatant(current, user)) {
+    return { combatantId: null, reason: 'Só o combatente do turno pode se mover agora.' };
+  }
+  if (!current.spatial?.position) {
+    return {
+      combatantId: null,
+      reason:
+        user.role === 'MASTER'
+          ? 'Use Posicionar antes de mover esta unidade.'
+          : 'Seu token ainda não foi posicionado pelo Mestre.',
+    };
+  }
+  if (current.deathBlocksActions) {
+    return { combatantId: null, reason: 'Este combatente não pode se mover agora.' };
+  }
+  if (current.effectiveSpeed <= 0) {
+    return { combatantId: null, reason: 'Deslocamento efetivo zero: não é possível se mover.' };
+  }
+  const remaining = current.turnEconomy.movementBudget - current.turnEconomy.movementUsed;
+  if (remaining <= 0) {
+    return { combatantId: null, reason: 'Sem movimento restante neste turno.' };
+  }
+  return { combatantId: current.id, reason: null };
 }
 
 /**
