@@ -13,6 +13,7 @@ import { GridToken, type GridUnit } from './GridToken';
 import { UnplacedCombatantsTray, GRID_DRAG_MIME } from './UnplacedCombatantsTray';
 import { SpatialSceneControls } from './SpatialSceneControls';
 import { GridMovementOverlay } from './GridMovementOverlay';
+import { GridMovementTrace } from './GridMovementTrace';
 import { GridRuler } from './GridRuler';
 import { MovementHud, type MovementPreviewState } from './MovementHud';
 import { commitMovement, previewMovement } from './movementApi';
@@ -71,14 +72,16 @@ export interface CombatGridProps {
 }
 
 /**
- * Modo de interação do grid — estado SÓ de UI (nunca vai ao banco nem ao DTO).
+ * Ferramenta ATIVA do grid — estado SÓ de UI (nunca vai ao banco nem ao DTO).
  *
- * São TRÊS intenções explícitas e mutuamente exclusivas:
+ * MOVIMENTO NÃO É MODO. Arrastar um token com autoridade inicia o Movement
+ * direto; não existe botão "Mover" nem confirmação manual. As ferramentas
+ * explícitas são mutuamente exclusivas e `none` é a superfície livre:
+ * • `none`      = gesto direto (pan no fundo, arrasto do token, régua com F);
  * • `placement` = organização administrativa da cena (Mestre);
- * • `movement`  = ação mecânica do combatente do turno (Movement Engine);
  * • `measure`   = régua espacial.
  */
-type InteractionMode = 'placement' | 'measure' | 'movement';
+type InteractionMode = 'none' | 'placement' | 'measure';
 
 /** Trajeto pretendido LOCAL (nunca persistido, nunca fonte de posição). */
 interface MovementDraft {
@@ -89,6 +92,22 @@ interface MovementDraft {
   path: SpatialPosition[];
   /** Ponto de pega dentro do footprint (pés) para o token não "pular". */
   grab: SpatialPosition;
+}
+
+/**
+ * GESTO armado no token (pointerdown), antes de virar draft.
+ *
+ * Existe para separar CLIQUE de ARRASTO sem long press artificial: o draft só
+ * nasce quando o ponteiro ultrapassa `DRAG_THRESHOLD_PX`. Guarda a posição
+ * AUTORITATIVA do início, que é a base da contiguidade do path.
+ */
+interface TokenGesture {
+  pointerId: number;
+  combatantId: string;
+  startX: number;
+  startY: number;
+  grab: SpatialPosition;
+  position: SpatialPosition;
 }
 
 /** Régua: origem + destino opcionais (ponto no grid ou combatente). */
@@ -108,6 +127,8 @@ interface PanGesture {
 
 /** Limiar (px) entre clique e arrasto: pan nunca dispara ação acidental. */
 const PAN_THRESHOLD_PX = 4;
+/** Limiar (px) do GESTO do token: abaixo disso é clique, acima é Movement. */
+const DRAG_THRESHOLD_PX = 4;
 /** Zona de borda (px) que ativa o auto-pan durante o movimento. */
 const AUTO_PAN_EDGE_PX = 52;
 /** Velocidade máxima do auto-pan (px/frame). */
@@ -165,7 +186,7 @@ export function CombatGrid({
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [spacePan, setSpacePan] = useState(false);
   // --- modos e régua --------------------------------------------------------
-  const [mode, setMode] = useState<InteractionMode>('placement');
+  const [mode, setMode] = useState<InteractionMode>('none');
   const [ruler, setRuler] = useState<RulerState | null>(null);
   const [quickRuler, setQuickRuler] = useState(false);
   const [hoverTokenId, setHoverTokenId] = useState<string | null>(null);
@@ -187,6 +208,10 @@ export function CombatGrid({
   const operationRef = useRef<string | null>(null);
   const dragMoved = useRef(false);
   const suppressClick = useRef(false);
+  const gestureRef = useRef<TokenGesture | null>(null);
+  const [grabGesture, setGrabGesture] = useState<TokenGesture | null>(null);
+  /** O ponteiro já soltou: `lostpointercapture` tardio não pode cancelar. */
+  const released = useRef(false);
 
   const planeRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -341,6 +366,24 @@ export function CombatGrid({
       size,
       scene,
     });
+  }
+
+  /** Centro visual da ÂNCORA (px de TELA) — traço/label do movimento. */
+  function anchorScreen(anchor: SpatialPosition): Point2D | null {
+    const box = occupiedSpacePixels(
+      {
+        minXFeet: anchor.xFeet,
+        minYFeet: anchor.yFeet,
+        maxXFeet: anchor.xFeet,
+        maxYFeet: anchor.yFeet,
+        widthFeet: 0,
+        heightFeet: 0,
+      },
+      cellSizeFeet,
+      DEFAULT_PIXELS_PER_CELL,
+    );
+    const half = DEFAULT_PIXELS_PER_CELL / 2;
+    return sceneToScreen(camera, { x: box.left + half, y: box.top + half });
   }
 
   /** Centro do footprint (px de CENA) — só para desenho/centralização. */
@@ -539,13 +582,17 @@ export function CombatGrid({
   }
 
   /**
-   * Inicia o DRAFT de movimento. Nada é movido: o token real continua no DTO e
-   * só nasce o trajeto vazio. O `immediate` do gesto guarda o ponto de pega.
+   * ARMA o gesto do token no pointerdown — ainda NÃO cria draft.
+   *
+   * Clique curto continua selecionando (nenhum Movement, nenhum gasto); o
+   * draft nasce quando o ponteiro ultrapassa o limiar. Ferramentas explícitas
+   * (Posicionar/Medir), Space e o botão do meio têm PRECEDÊNCIA.
    */
-  function startDraft(combatantId: string, event?: PointerEvent<HTMLButtonElement>): void {
-    if (mode !== 'movement' || locked || rulerActive) return;
+  function armTokenGesture(combatantId: string, event: PointerEvent<HTMLButtonElement>): void {
+    if (event.button !== 0) return;
+    if (spaceDown.current || rulerActive || locked) return;
+    if (mode !== 'none') return;
     if (movableUnitId !== combatantId) return;
-    if (draft && draft.combatantId === combatantId) return;
     const unit = placed.find((item) => item.id === combatantId);
     const position = unit?.spatial?.position ?? null;
     if (!unit?.spatial || !position) return;
@@ -554,27 +601,51 @@ export function CombatGrid({
       xFeet: footprint.widthFeet / 2,
       yFeet: footprint.heightFeet / 2,
     };
-    if (event) {
-      // O gesto é do TOKEN: o pan do viewport não pode roubá-lo.
-      event.preventDefault();
-      event.stopPropagation();
-      const feet = feetAt(event.clientX, event.clientY);
-      if (feet) {
-        grab = {
-          xFeet: clampFeet(feet.xFeet - position.xFeet, footprint.widthFeet),
-          yFeet: clampFeet(feet.yFeet - position.yFeet, footprint.heightFeet),
-        };
-      }
-      lastPointer.current = { x: event.clientX, y: event.clientY };
-      event.currentTarget.setPointerCapture?.(event.pointerId);
+    const feet = feetAt(event.clientX, event.clientY);
+    if (feet) {
+      grab = {
+        xFeet: clampFeet(feet.xFeet - position.xFeet, footprint.widthFeet),
+        yFeet: clampFeet(feet.yFeet - position.yFeet, footprint.heightFeet),
+      };
     }
+    // O gesto é do TOKEN: o pan do fundo não pode roubá-lo. Sem preventDefault,
+    // o clique curto continua chegando para selecionar.
+    event.stopPropagation();
+    lastPointer.current = { x: event.clientX, y: event.clientY };
+    released.current = false;
+    const gesture: TokenGesture = {
+      pointerId: event.pointerId,
+      combatantId,
+      startX: event.clientX,
+      startY: event.clientY,
+      grab,
+      position,
+    };
+    gestureRef.current = gesture;
+    setGrabGesture(gesture);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  /**
+   * Cria o DRAFT (o token real NÃO sai do lugar): o trajeto nasce vazio e o
+   * primeiro anchor já é contíguo à posição autoritativa de `startPosition`.
+   */
+  function beginDraft(gesture: TokenGesture, clientX: number, clientY: number): void {
     operationRef.current = null;
     dragMoved.current = false;
     setDraftNotice(null);
     setPendingNotice(null);
     setPreview(null);
     setPreviewState('idle');
-    setDraft({ combatantId, startPosition: position, path: [], grab });
+    const next: MovementDraft = {
+      combatantId: gesture.combatantId,
+      startPosition: gesture.position,
+      path: [],
+      grab: gesture.grab,
+    };
+    draftRef.current = next;
+    setDraft(next);
+    appendDraftAt(clientX, clientY);
   }
 
   /** Acrescenta o anchor correspondente ao ponteiro atual (passo do tamanho). */
@@ -585,7 +656,13 @@ export function CombatGrid({
     if (!unit?.spatial) return;
     const anchor = anchorAt(clientX, clientY, unit.spatial.effectiveSize, current.grab);
     if (!anchor) return;
-    const nextPath = appendAnchor(current.path, anchor, anchorStepFeet(unit.spatial.effectiveSize));
+    // O path começa DEPOIS da posição autoritativa (que o servidor já conhece).
+    const nextPath = appendAnchor(
+      current.path,
+      anchor,
+      anchorStepFeet(unit.spatial.effectiveSize),
+      current.startPosition,
+    );
     if (nextPath === current.path) return;
     dragMoved.current = true;
     const next = { ...current, path: nextPath };
@@ -593,17 +670,22 @@ export function CombatGrid({
     setDraft(next);
   }
 
+  /** POINTERUP = CONFIRMAÇÃO: sem botão, sem passo extra. */
   function finishDraft(): void {
+    released.current = true;
+    gestureRef.current = null;
+    setGrabGesture(null);
     const current = draftRef.current;
     if (!current) return;
     const moved = dragMoved.current;
     dragMoved.current = false;
     if (current.path.length === 0) {
-      // tap: mantém o draft (fluxo por toque); arrasto sem trajeto: cancela.
-      if (moved) cancelDraft();
+      // Clique curto (ou arrasto que não saiu da célula): nenhum commit.
+      clearDraft();
+      if (moved) setDraftNotice('Arraste por uma casa inteira para mover.');
       return;
     }
-    // O clique sintético do fim do gesto não pode abrir outro draft.
+    // O clique sintético do fim do gesto não pode virar seleção.
     suppressClick.current = true;
     void confirmMovement(current.combatantId, current.path);
   }
@@ -664,33 +746,52 @@ export function CombatGrid({
   }, [combat.version, combat.status, combat.currentCombatantId, combat.combatants, movement, draft]);
 
   /**
-   * GEST O de movimento: listeners no WINDOW enquanto o draft existe.
+   * GESTO DO TOKEN: listeners no WINDOW enquanto existe gesto armado ou draft.
    *
    * Não dependemos do bubbling do plano (nem de o token continuar montado): o
-   * gesto sobrevive ao ponteiro sair do viewport e ao retrato ter foco. Foi o
-   * que faltava no Drag & Drop da 6.6M.3.
+   * gesto sobrevive ao ponteiro sair do viewport e ao retrato ter foco — foi o
+   * que faltava no Drag & Drop da 6.6M.3. O DRAFT só nasce depois do limiar,
+   * então clique curto continua sendo clique.
    */
   useEffect(() => {
-    if (!draft) return undefined;
+    if (!grabGesture && !draft) return undefined;
     function onMove(event: globalThis.PointerEvent): void {
       lastPointer.current = { x: event.clientX, y: event.clientY };
-      appendDraftAt(event.clientX, event.clientY);
+      const gesture = gestureRef.current;
+      if (gesture && !draftRef.current) {
+        const dx = event.clientX - gesture.startX;
+        const dy = event.clientY - gesture.startY;
+        if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+        beginDraft(gesture, event.clientX, event.clientY);
+        return;
+      }
+      if (draftRef.current) appendDraftAt(event.clientX, event.clientY);
     }
     function onUp(): void {
       lastPointer.current = null;
       finishDraft();
     }
+    /** Cancelamento NUNCA confirma: o token real continua onde o servidor diz. */
+    function onCancel(): void {
+      if (released.current) return;
+      released.current = true;
+      gestureRef.current = null;
+      setGrabGesture(null);
+      cancelDraft('Movimento cancelado.');
+    }
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('lostpointercapture', onCancel);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('lostpointercapture', onCancel);
     };
-    // Os handlers leem refs: o efeito roda só quando o draft NASCE/termina.
+    // Os handlers leem refs: o efeito roda só quando o gesto nasce/termina.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft !== null]);
+  }, [grabGesture !== null, draft !== null]);
 
   /** AUTO-PAN: aproximar o cursor da borda move a câmera e o trajeto continua. */
   useEffect(() => {
@@ -727,26 +828,19 @@ export function CombatGrid({
     if (movementBusy) return;
     const unit = placed.find((item) => item.id === combatantId);
     if (!unit?.spatial?.position) return;
-    if (preview && previewState === 'ready' && (!preview.movement.legal || !preview.movement.affordable)) {
-      setDraftNotice(
-        preview.movement.legal ? 'Movimento insuficiente para este trajeto.' : 'O trajeto não é válido.',
-      );
-      return;
-    }
     setMovementBusy(true);
     setSceneError(null);
     setDraftNotice(null);
     try {
-      if (!preview || previewState !== 'ready') {
-        const fresh = await previewMovement(combat.id, { combatantId, path });
-        if (!fresh.movement.legal || !fresh.movement.affordable) {
-          setPreview(fresh);
-          setPreviewState('ready');
-          setDraftNotice(
-            fresh.movement.legal ? 'Movimento insuficiente para este trajeto.' : 'O trajeto não é válido.',
-          );
-          return;
-        }
+      // O preview NUNCA é autoridade e o drop pode acontecer antes da resposta
+      // mais recente: o caminho final é SEMPRE revalidado pelo servidor.
+      const fresh = await previewMovement(combat.id, { combatantId, path });
+      if (!fresh.movement.legal || !fresh.movement.affordable) {
+        setDraftNotice(
+          fresh.movement.legal ? 'Movimento insuficiente para este trajeto.' : 'O trajeto não é válido.',
+        );
+        clearDraft();
+        return;
       }
       operationRef.current ??= createOperationId();
       const result = await commitMovement(combat, {
@@ -773,21 +867,17 @@ export function CombatGrid({
     }
   }
 
-  function clearPath(): void {
-    if (!draft) return;
-    operationRef.current = null;
-    setDraft({ ...draft, path: [] });
-    setDraftNotice(null);
-  }
-
   /* ---------------------------------------------------------------------- */
   /* INTERAÇÕES DO PALCO                                                     */
   /* ---------------------------------------------------------------------- */
 
   function handleViewportPointerDown(event: PointerEvent<HTMLDivElement>): void {
     const target = event.target as HTMLElement;
-    // Token e HUD têm gestos próprios; o pan é do FUNDO.
-    if (target.closest('.grid-token') || target.closest('.grid-movement-hud')) return;
+    if (target.closest('.grid-movement-hud')) return;
+    const overToken = Boolean(target.closest('.grid-token'));
+    // O gesto do token é do TOKEN — exceto Space e botão do meio, que sempre
+    // arrastam a câmera (mesmo começando sobre um token).
+    if (overToken && !spaceDown.current && event.button !== 1) return;
     if (event.button !== 0 && event.button !== 1) return;
     panGesture.current = {
       pointerId: event.pointerId,
@@ -846,19 +936,6 @@ export function CombatGrid({
       if (endpoint) pickRulerEndpoint(endpoint);
       return;
     }
-    if (mode === 'movement') {
-      // Fallback de toque/precisão: clique numa célula acrescenta/trunca o passo.
-      if (!draft || locked) return;
-      const unit = placed.find((item) => item.id === draft.combatantId);
-      if (!unit?.spatial) return;
-      const anchor = anchorAt(event.clientX, event.clientY, unit.spatial.effectiveSize, draft.grab);
-      if (!anchor) return;
-      setDraft({
-        ...draft,
-        path: appendAnchor(draft.path, anchor, anchorStepFeet(unit.spatial.effectiveSize)),
-      });
-      return;
-    }
     if (mode !== 'placement') return;
     if (!isMaster || !selectedId || locked) return;
     const unit = combat.combatants.find((item) => item.id === selectedId);
@@ -876,10 +953,19 @@ export function CombatGrid({
     );
   }
 
-  /** Régua ativa: o botão direito cancela/limpa (e não abre menu do browser). */
+  /**
+   * Botão direito cancela SEMPRE o gesto corrente (e não abre menu do browser):
+   * durante o movimento interrompe o draft sem commit; na régua limpa a linha.
+   */
   function handleViewportContextMenu(event: MouseEvent<HTMLDivElement>): void {
-    if (!rulerActive) return;
+    if (!rulerActive && !draft && !grabGesture) return;
     event.preventDefault();
+    if (grabGesture || draft) {
+      gestureRef.current = null;
+      setGrabGesture(null);
+      cancelDraft('Movimento cancelado.');
+      return;
+    }
     clearRuler();
   }
 
@@ -900,15 +986,15 @@ export function CombatGrid({
   }
 
   function selectUnit(combatantId: string): void {
+    if (suppressClick.current) {
+      // Clique sintético do fim de um arrasto: não seleciona por acidente.
+      suppressClick.current = false;
+      return;
+    }
     if (rulerActive) {
       const unit = placed.find((item) => item.id === combatantId);
       if (!unit?.spatial) return;
       pickRulerEndpoint({ kind: 'combatant', combatantId });
-      return;
-    }
-    if (mode === 'movement') {
-      if (suppressClick.current) return;
-      if (movableUnitId === combatantId) startDraft(combatantId);
       return;
     }
     if (mode === 'placement') setSelectedId(combatantId);
@@ -992,8 +1078,11 @@ export function CombatGrid({
   const placementInteractive = isMaster && !locked && mode === 'placement';
   /** MODO MEDIR: qualquer um com o grid ativo mede o que o servidor autoriza. */
   const measureInteractive = !locked;
-  /** MODO MOVER: só o combatente autorizado inicia gesto. */
+  /** Só o combatente autorizado do turno responde ao gesto de movimento. */
   const movementInteractive = !locked && Boolean(movableUnitId);
+  /** Token utilizável: régua > gesto de movimento do dono > placement do Mestre. */
+  const tokenInteractive = (combatant: GridUnit): boolean =>
+    rulerActive ? true : movementInteractive ? movableUnitId === combatant.id : placementInteractive;
 
   const hint = rulerActive
     ? ruler?.locked
@@ -1003,19 +1092,20 @@ export function CombatGrid({
         : quickRuler
           ? 'Clique na origem (token ou espaço vazio) para puxar a régua.'
           : 'Clique na origem da régua (token ou espaço vazio).'
-    : mode === 'movement'
-      ? movableUnit
-        ? 'Arraste o token do turno. Space/middle arrastam a câmera.'
-        : (movement?.reason ?? 'Nenhum combatente pode se mover agora.')
-      : isMaster
+    : mode === 'placement'
+      ? isMaster
         ? 'Selecione uma unidade e clique no mapa — ou arraste da bandeja.'
-        : 'Visualização da cena.';
+        : 'Visualização da cena.'
+      : movement && !movement.combatantId
+        ? (movement.reason ?? 'Nenhum combatente pode se mover agora.')
+        : isMaster
+          ? 'Arraste o token do turno para mover · Posicionar coloca unidades · F mede.'
+          : 'Arraste o seu token para mover · Space/botão do meio arrastam a câmera · F mede.';
 
   const planeClasses = [
     'grid-plane',
     placementInteractive && selectedId ? 'is-placing' : '',
     mode === 'measure' ? 'is-measuring' : '',
-    mode === 'movement' ? 'is-moving' : '',
     draft ? 'is-drafting' : '',
   ]
     .filter(Boolean)
@@ -1092,34 +1182,25 @@ export function CombatGrid({
     <section className="combat-grid-panel" aria-label="Cena de combate">
       <div className="grid-toolbar">
         <div className="grid-toolbar-left">
-          <div className="grid-modes" role="group" aria-label="Modo do grid">
+          <div className="grid-modes" role="group" aria-label="Ferramenta do grid">
             {isMaster ? (
               <button
                 type="button"
                 className="btn btn-small"
                 aria-pressed={mode === 'placement'}
                 disabled={locked}
-                onClick={() => changeMode('placement')}
+                onClick={() => changeMode(mode === 'placement' ? 'none' : 'placement')}
               >
                 Posicionar
               </button>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-small"
-              aria-pressed={mode === 'movement'}
-              disabled={locked}
-              title={movement?.reason ?? 'Mover o combatente do turno'}
-              onClick={() => changeMode('movement')}
-            >
-              Mover
-            </button>
+            {/* Sem botão "Mover": o movimento é o GESTO no token do turno. */}
             <button
               type="button"
               className="btn btn-small"
               aria-pressed={mode === 'measure'}
               title="Régua — medição de qualquer ponto a qualquer ponto"
-              onClick={() => changeMode('measure')}
+              onClick={() => changeMode(mode === 'measure' ? 'none' : 'measure')}
             >
               Medir
             </button>
@@ -1252,35 +1333,24 @@ export function CombatGrid({
                     (movementBusy && draft?.combatantId === combatant.id)
                   }
                   measureRole={rulerActive ? measureRoleOf(combatant.id) : null}
-                  interactive={
-                    rulerActive
-                      ? true
-                      : mode === 'movement'
-                        ? movementInteractive
-                        : placementInteractive
-                  }
-                  movable={mode === 'movement' && !locked && !rulerActive && movableUnitId === combatant.id}
+                  interactive={tokenInteractive(combatant)}
+                  movable={!locked && !rulerActive && mode === 'none' && movableUnitId === combatant.id}
                   rulerActive={rulerActive}
                   onSelect={selectUnit}
-                  onMoveStart={(combatantId, event) => startDraft(combatantId, event)}
+                  onMoveStart={armTokenGesture}
                   onCenter={centerOnCombatant}
                   onHover={rulerActive && measureInteractive ? setHoverTokenId : undefined}
                 />
               ))}
 
-              {/* TRAJETO pretendido + ghost (o token real não se move). */}
-              {mode === 'movement' && draft ? (
+              {/* GHOST do destino: o token real continua na origem. */}
+              {draft && draftLast && draftUnit?.spatial ? (
                 <GridMovementOverlay
-                  path={draft.path}
-                  ghost={
-                    draftLast && draftUnit?.spatial
-                      ? {
-                          position: draftLast,
-                          size: draftUnit.spatial.effectiveSize,
-                          imageRef: draftUnit.spatial.tokenImageRef,
-                        }
-                      : null
-                  }
+                  ghost={{
+                    position: draftLast,
+                    size: draftUnit.spatial.effectiveSize,
+                    imageRef: draftUnit.spatial.tokenImageRef,
+                  }}
                   cellSizeFeet={cellSizeFeet}
                   pixelsPerCell={DEFAULT_PIXELS_PER_CELL}
                 />
@@ -1301,6 +1371,18 @@ export function CombatGrid({
               ) : null}
             </div>
           </div>
+
+          {/* TRAÇO do movimento: MESMA linha tracejada da régua, em TELA. */}
+          {draft && draft.path.length > 0 ? (
+            <GridMovementTrace
+              points={[draft.startPosition, ...draft.path]
+                .map(anchorScreen)
+                .filter((point): point is Point2D => point !== null)}
+              distanceInFeet={preview?.movement.totalDistanceFeet ?? null}
+              costInFeet={preview?.movement.totalCostFeet ?? null}
+              state={previewState}
+            />
+          ) : null}
 
           {/* RÉGUA em coordenadas de TELA: label nítida e sempre horizontal. */}
           {rulerFromScreen && rulerToScreen ? (
@@ -1331,23 +1413,19 @@ export function CombatGrid({
             </p>
           ) : null}
 
-          {mode === 'movement' ? (
+          {draft ? (
             <MovementHud
-              combatantName={movableUnit?.name ?? draftUnit?.name ?? null}
+              combatantName={draftUnit?.name ?? movableUnit?.name ?? null}
               eligible={Boolean(movableUnitId)}
               reason={movement?.reason ?? null}
-              pathLength={draft?.path.length ?? 0}
+              pathLength={draft.path.length}
               movement={preview?.movement ?? null}
               reaction={preview?.reaction ?? null}
               state={previewState}
               error={previewError}
               pendingNotice={pendingNotice ?? draftNotice}
               busy={movementBusy}
-              onClear={clearPath}
               onCancel={() => cancelDraft('Movimento cancelado.')}
-              onConfirm={() => {
-                if (draft) void confirmMovement(draft.combatantId, draft.path);
-              }}
             />
           ) : null}
 

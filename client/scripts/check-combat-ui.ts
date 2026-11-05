@@ -28,6 +28,7 @@ import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
 import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
+import { GridMovementTrace } from '../src/combat/grid/GridMovementTrace';
 import { MovementHud } from '../src/combat/grid/MovementHud';
 import { GridRuler } from '../src/combat/grid/GridRuler';
 import { anchorStepFeet, appendAnchor, pointerAnchor } from '../src/combat/grid/movementPath';
@@ -2782,7 +2783,7 @@ check(
     ]).placed.length === 1
 );
 check(
-  'CB178) MASTER vê a bandeja e as instruções de placement; PLAYER é somente leitura',
+  'CB178) MASTER vê a bandeja e as instruções de posicionamento; PLAYER é somente leitura',
   renderToStaticMarkup(
     createElement(CombatGrid, {
       combat: combatOf([
@@ -2793,7 +2794,7 @@ check(
       onCombatChange: () => undefined,
       onError: () => undefined,
     })
-  ).includes('Selecione uma unidade') &&
+  ).includes('Posicionar coloca unidades') &&
     renderToStaticMarkup(
       createElement(UnplacedCombatantsTray, {
         combatants: [unitOf('fora', 'large', { position: null })],
@@ -3005,8 +3006,8 @@ const prismaSchemaSource = source('../prisma/schema.prisma');
 
 check(
   'CB197) modo MEDIR é EXPLÍCITO e o clique de medição nunca posiciona',
-  combatGridSource.includes("type InteractionMode = 'placement' | 'measure'") &&
-    combatGridSource.includes('changeMode(\'measure\')') &&
+  combatGridSource.includes("type InteractionMode = 'none' | 'placement' | 'measure'") &&
+    combatGridSource.includes("changeMode(mode === 'measure' ? 'none' : 'measure')") &&
     combatGridSource.includes('Posicionar') &&
     combatGridSource.includes("if (mode !== 'placement') return;") &&
     combatGridSource.includes("if (mode !== 'placement' || !isMaster || locked) return;")
@@ -3018,8 +3019,10 @@ check(
     // 6.6M.3: o modo MOVER tem o próprio gate; os dois antigos seguem intactos.
     combatGridSource.includes('const movementInteractive = !locked && Boolean(movableUnitId);') &&
     combatGridSource.includes('setSpatialPosition') &&
-    combatGridSource.includes('? movementInteractive') &&
-    combatGridSource.includes(': placementInteractive')
+    // Ferramenta ativa só reescolhe o alvo; o gesto continua restrito ao
+    // combatente com autoridade (nada de ownership ampliado pela UI).
+    combatGridSource.includes('interactive={tokenInteractive(combatant)}') &&
+    combatGridSource.includes('movableUnitId === combatant.id')
 );
 check(
   'CB199) React NÃO calcula distância mecânica nem faixa de alcance',
@@ -3488,6 +3491,7 @@ const movementPathSource = source('src/combat/grid/movementPath.ts');
 const movementApiSource = source('src/combat/grid/movementApi.ts');
 const movementPanelSource = source('src/combat/grid/MovementHud.tsx');
 const movementOverlaySource = source('src/combat/grid/GridMovementOverlay.tsx');
+const movementTraceSource = source('src/combat/grid/GridMovementTrace.tsx');
 const movementCssSource = source('src/combat/grid/grid.css');
 const turnControlSource = source('src/combat/turnControl.ts');
 
@@ -3556,20 +3560,20 @@ const movementReading = (over: Partial<MovementPathReading> = {}): MovementPathR
 });
 
 check(
-  'CB242) modo MOVER é explícito no grid, ao lado de Posicionar/Medir (aria-pressed, sem Shift)',
-  movementGridSource.includes("type InteractionMode = 'placement' | 'measure' | 'movement'") &&
-    movementGridSource.includes("aria-pressed={mode === 'movement'}") &&
-    /\bMover\b/.test(movementGridSource) &&
+  'CB242) MOVIMENTO NÃO É MODO: toolbar tem só Posicionar/Medir (sem botão Mover)',
+  movementGridSource.includes("type InteractionMode = 'none' | 'placement' | 'measure'") &&
+    !movementGridSource.includes("aria-pressed={mode === 'movement'}") &&
+    !/\bMover\b/.test(stripComments(movementGridSource)) &&
     movementGridSource.includes('Posicionar') &&
     movementGridSource.includes('Medir') &&
-    // Sem modificador escondido no modo: clique/gesto é pointer puro. Shift só
-    // existe como PAN HORIZONTAL da roda (câmera), nunca como "Shift+Click".
+    // Ferramentas são toggles: clicar na ativa volta para a superfície livre.
+    movementGridSource.includes("changeMode(mode === 'placement' ? 'none' : 'placement')") &&
     !/Shift\+Click/.test(stripComments(movementGridSource))
 );
 check(
-  'CB243) Placement, Movement e Measure são MUTUAMENTE exclusivos (o clique nunca é ambíguo)',
-  movementGridSource.indexOf("if (mode === 'movement')") > 0 &&
-    movementGridSource.indexOf("if (mode === 'movement')") <
+  'CB243) clique desambiguado (régua → placement → nada); o gesto do token é outro caminho',
+  movementGridSource.indexOf('if (rulerActive) {') > 0 &&
+    movementGridSource.indexOf('if (rulerActive) {') <
       movementGridSource.indexOf("if (mode !== 'placement') return;") &&
     movementGridSource.indexOf("if (mode !== 'placement') return;") <
       movementGridSource.indexOf('void place(') &&
@@ -3579,7 +3583,7 @@ check(
     movementApiSource.includes('spatial/movement`')
 );
 check(
-  'CB244) PLAYER recebe Mover+Medir e NUNCA Posicionar; MASTER recebe os três',
+  'CB244) PLAYER recebe só Medir; MASTER Posicionar+Medir; NINGUÉM recebe Mover/Confirmar',
   (() => {
     const player = renderToStaticMarkup(
       createElement(CombatGrid, {
@@ -3600,12 +3604,14 @@ check(
       }),
     );
     return (
-      /\bMover\b/.test(player) &&
+      !/\bMover\b/.test(player) &&
       /\bMedir\b/.test(player) &&
       !/\bPosicionar\b/.test(player) &&
       /\bPosicionar\b/.test(master) &&
-      /\bMover\b/.test(master) &&
-      /\bMedir\b/.test(master)
+      !/\bMover\b/.test(master) &&
+      /\bMedir\b/.test(master) &&
+      !/Confirmar/.test(player) &&
+      !/Confirmar/.test(master)
     );
   })()
 );
@@ -3669,31 +3675,69 @@ check(
     !movementGridSource.includes('spatialPosition') &&
     movementGridSource.includes('GridMovementOverlay') &&
     !gridTokenSource.includes('ghost') &&
-    movementGridSource.includes('if (preview && previewState === ')
+    // O drop SEMPRE revalida o caminho final (preview nunca é autoridade).
+    movementGridSource.includes('const fresh = await previewMovement(combat.id, { combatantId, path });')
 );
 check(
-  'CB250) trajeto: 5 pés (2,5 Tiny), diagonal, interpolação direta do ponteiro e backtrack por truncamento',
+  'CB250) trajeto: start IMPLÍCITO, passos contíguos, 5 pés (2,5 Tiny), fast pointer e backtrack',
   (() => {
     const step = anchorStepFeet('medium');
-    const small = appendAnchor([], { xFeet: 5, yFeet: 0 }, step);
-    const diagonal = appendAnchor(small, { xFeet: 10, yFeet: 5 }, step);
-    const backtrack = appendAnchor(diagonal, { xFeet: 5, yFeet: 0 }, step);
-    const start = [{ xFeet: 0, yFeet: 0 }];
-    const fast = appendAnchor(start, { xFeet: 20, yFeet: 0 }, step);
-    const tiny = appendAnchor(start, { xFeet: 5, yFeet: 0 }, anchorStepFeet('tiny'));
-    const repeat = appendAnchor(small, { xFeet: 5, yFeet: 0 }, step);
+    const start = { xFeet: 0, yFeet: 0 };
+    const one = appendAnchor([], { xFeet: 0, yFeet: 5 }, step, start);
+    const horizontal = appendAnchor(one, { xFeet: 15, yFeet: 5 }, step, start);
+    const vertical = appendAnchor([], { xFeet: 0, yFeet: 15 }, step, start);
+    const diagonal = appendAnchor([], { xFeet: 10, yFeet: 10 }, step, start);
+    const corner = appendAnchor(
+      appendAnchor([], { xFeet: 0, yFeet: 10 }, step, start),
+      { xFeet: 10, yFeet: 10 },
+      step,
+      start,
+    );
+    const fast = appendAnchor([], { xFeet: 20, yFeet: 0 }, step, start);
+    const backtrack = appendAnchor(fast, { xFeet: 5, yFeet: 0 }, step, start);
+    const backHome = appendAnchor(backtrack, start, step, start);
+    const tiny = appendAnchor([], { xFeet: 5, yFeet: 0 }, anchorStepFeet('tiny'), start);
+    const repeat = appendAnchor(backtrack, { xFeet: 5, yFeet: 0 }, step, start);    const contiguous = (
+      path: { xFeet: number; yFeet: number }[],
+      from: { xFeet: number; yFeet: number },
+      size: number,
+    ): boolean =>
+      path.every((point, index) => {
+        const previous = index === 0 ? from : path[index - 1];
+        const dx = Math.abs(point.xFeet - previous.xFeet);
+        const dy = Math.abs(point.yFeet - previous.yFeet);
+        return (
+          (dx === 0 || dx === size) && (dy === 0 || dy === size) && (dx !== 0 || dy !== 0)
+        );
+      });
     return (
       anchorStepFeet('tiny') === 2.5 &&
       step === 5 &&
-      small.length === 1 &&
+      // A posição atual NUNCA entra no path (o servidor já a conhece).
+      one.length === 1 &&
+      horizontal.length === 4 &&
+      horizontal[3].xFeet === 15 &&
+      vertical.length === 3 &&
       diagonal.length === 2 &&
+      corner.length === 4 &&
+      // Fast pointer: o ponteiro salta, o path continua contíguo.
+      fast.length === 4 &&
+      fast[3].xFeet === 20 &&
+      fast[3].yFeet === 0 &&
+      // Backtrack trunca; voltar à origem zera o trajeto.
       backtrack.length === 1 &&
-      fast.length === 5 &&
-      fast[4].xFeet === 20 &&
-      fast[4].yFeet === 0 &&
-      tiny.length === 3 &&
-      tiny[1].xFeet === 2.5 &&
-      repeat === small
+      backHome.length === 0 &&
+      // Tiny continua em passos de 2,5 pés.
+      tiny.length === 2 &&
+      tiny[1].xFeet === 5 &&
+      repeat === backtrack &&
+      contiguous(one, start, step) &&
+      contiguous(horizontal, start, step) &&
+      contiguous(vertical, start, step) &&
+      contiguous(diagonal, start, step) &&
+      contiguous(corner, start, step) &&
+      contiguous(fast, start, step) &&
+      contiguous(tiny, start, anchorStepFeet('tiny'))
     );
   })()
 );
@@ -3745,9 +3789,7 @@ check(
           error: null,
           pendingNotice: null,
           busy: false,
-          onClear: () => undefined,
           onCancel: () => undefined,
-          onConfirm: () => undefined,
         })
       );
     const valid = render({});
@@ -3770,20 +3812,20 @@ check(
         error: null,
         pendingNotice: null,
         busy: false,
-        onClear: () => undefined,
         onCancel: () => undefined,
-        onConfirm: () => undefined,
       })
     );
     return (
-      valid.includes('Trajeto válido.') &&
+      valid.includes('Solte para mover.') &&
       valid.includes('Distância') &&
       valid.includes('Custo') &&
       valid.includes('Restante previsto') &&
       valid.includes('5 m') &&
+      // SOLTAR é a confirmação: nenhum botão "Confirmar" no HUD.
+      !valid.includes('Confirmar') &&
       !valid.includes('disabled=""') &&
+      valid.includes('Cancelar') &&
       insufficient.includes('Movimento insuficiente para este trajeto.') &&
-      insufficient.includes('disabled=""') &&
       blocked.includes('Caminho bloqueado.') &&
       !blocked.includes('Ogro') &&
       idle.includes('Seu token ainda não foi posicionado pelo Mestre.')
@@ -3795,28 +3837,40 @@ check(
   (() => {
     const overlay = renderToStaticMarkup(
       createElement(GridMovementOverlay, {
-        path: [
-          { xFeet: 5, yFeet: 0 },
-          { xFeet: 10, yFeet: 0 },
-        ],
         ghost: { position: { xFeet: 10, yFeet: 0 }, size: 'medium', imageRef: '/a.png' },
         cellSizeFeet: 5,
         pixelsPerCell: 44,
       })
     );
+    const trace = renderToStaticMarkup(
+      createElement(GridMovementTrace, {
+        points: [
+          { x: 10, y: 10 },
+          { x: 54, y: 10 },
+          { x: 54, y: 54 },
+        ],
+        distanceInFeet: 15,
+        costInFeet: 20,
+        state: 'ready',
+      })
+    );
     return (
-      overlay.includes('grid-movement-path') &&
       overlay.includes('grid-movement-ghost') &&
       overlay.includes('<img') &&
       overlay.includes('aria-hidden="true"') &&
       renderToStaticMarkup(
         createElement(GridMovementOverlay, {
-          path: [],
           ghost: null,
           cellSizeFeet: 5,
           pixelsPerCell: 44,
         })
       ) === '' &&
+      // A LINHA do movimento reutiliza o traço da régua (nada de 2º visual).
+      trace.includes('grid-ruler-line') &&
+      trace.includes('grid-ruler-label') &&
+      trace.includes('4,5 m') &&
+      trace.includes('Custo: 6 m') &&
+      trace.includes('aria-hidden="true"') &&
       !tokenHtml(unitOf('hero', 'medium')).includes('ghost')
     );
   })()
@@ -3824,7 +3878,9 @@ check(
 check(
   'CB256) movimento não filtra por tipo nem visibilidade: NPC público continua no grid, master-only segue no DTO',
   !/spatialVisibility|\bkind\b/.test(
-    stripComments(`${movementPathSource}${movementApiSource}${movementOverlaySource}`)
+    stripComments(
+      `${movementPathSource}${movementApiSource}${movementOverlaySource}${movementTraceSource}`
+    )
   ) &&
     movementGridSource.includes('splitByPlacement(combat.combatants)') &&
     movementGridSource.includes('movableUnitId === combatant.id')
@@ -4012,6 +4068,115 @@ check(
     !/panX|panY|\bzoom\b/.test(prismaSchemaSource) &&
     rulerEndpointKey({ kind: 'point', position: { xFeet: 5, yFeet: 5 } }) === 'point:5:5' &&
     rulerEndpointKey({ kind: 'combatant', combatantId: 'a' }) === 'combatant:a'
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1.1 — MOVIMENTO DIRETO POR DRAG & DROP (sem modo, sem confirmar)     */
+/* -------------------------------------------------------------------------- */
+check(
+  'CB273) fluxo DIRETO: nenhum botão Mover nem Confirmar no grid (jogador e Mestre) e HUD sem confirmar',
+  (() => {
+    const player = renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([unitOf('hero', 'medium')]),
+        isMaster: false,
+        movement: { combatantId: 'hero', reason: null },
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      }),
+    );
+    const master = renderToStaticMarkup(
+      createElement(CombatGrid, {
+        combat: combatOf([unitOf('hero', 'medium')]),
+        isMaster: true,
+        movement: { combatantId: 'hero', reason: null },
+        onCombatChange: () => undefined,
+        onError: () => undefined,
+      }),
+    );
+    const hud = renderToStaticMarkup(
+      createElement(MovementHud, {
+        combatantName: 'Hero',
+        eligible: true,
+        reason: null,
+        pathLength: 1,
+        movement: movementReading(),
+        reaction: null,
+        state: 'ready',
+        error: null,
+        pendingNotice: null,
+        busy: false,
+        onCancel: () => undefined,
+      }),
+    );
+    return (
+      !/\bMover\b/.test(player) &&
+      !/Confirmar/.test(player) &&
+      !/\bMover\b/.test(master) &&
+      !/Confirmar/.test(master) &&
+      hud.includes('Cancelar') &&
+      !hud.includes('Confirmar') &&
+      !movementGridSource.includes('onConfirm')
+    );
+  })()
+);
+check(
+  'CB274) pointerdown ARMA o gesto e o draft só nasce após o limiar (clique curto não move)',
+  movementGridSource.includes(
+    'function armTokenGesture(combatantId: string, event: PointerEvent<HTMLButtonElement>): void {',
+  ) &&
+    movementGridSource.includes('const DRAG_THRESHOLD_PX = 4;') &&
+    movementGridSource.includes('if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;') &&
+    movementGridSource.includes('beginDraft(gesture, event.clientX, event.clientY);') &&
+    movementGridSource.includes('if (current.path.length === 0) {') &&
+    // Pointerdown/up sem cruzar o limiar não cria trajeto nenhum.
+    appendAnchor([], { xFeet: 0, yFeet: 0 }, 5, { xFeet: 0, yFeet: 0 }).length === 0
+);
+check(
+  'CB275) POINTERUP = confirmação: o drop revalida o caminho e faz commit sem passo extra',
+  movementGridSource.includes('void confirmMovement(current.combatantId, current.path);') &&
+    movementGridSource.includes("window.addEventListener('pointerup', onUp)") &&
+    movementGridSource.includes('if (!fresh.movement.legal || !fresh.movement.affordable) {') &&
+    !movementGridSource.includes('onConfirm') &&
+    !movementPanelSource.includes('onConfirm')
+);
+check(
+  'CB276) precedências do gesto: pan (Space/meio), régua (F/Medir) e Posicionar vêm antes do movimento',
+  movementGridSource.includes('if (overToken && !spaceDown.current && event.button !== 1) return;') &&
+    movementGridSource.includes('if (spaceDown.current || rulerActive || locked) return;') &&
+    movementGridSource.includes("if (mode !== 'none') return;") &&
+    movementGridSource.includes(
+      "movable={!locked && !rulerActive && mode === 'none' && movableUnitId === combatant.id}",
+    ) &&
+    movementGridSource.includes('if (movableUnitId !== combatantId) return;')
+);
+check(
+  'CB277) direito/Esc/pointercancel/lostpointercapture cancelam SEM commit acidental',
+  movementGridSource.includes('if (grabGesture || draft) {') &&
+    movementGridSource.includes("cancelDraft('Movimento cancelado.');") &&
+    movementGridSource.includes("window.addEventListener('pointercancel', onCancel)") &&
+    movementGridSource.includes("window.addEventListener('lostpointercapture', onCancel)") &&
+    movementGridSource.includes('if (released.current) return;') &&
+    movementGridSource.includes("if (event.key === 'Escape')")
+);
+check(
+  'CB278) ghost é APRESENTAÇÃO: overlay só desenha o fantasma e o token real fica na origem',
+  movementGridSource.includes('<GridMovementOverlay') &&
+    movementGridSource.includes('position: draftLast') &&
+    movementOverlaySource.includes('if (!ghost) return null;') &&
+    !movementOverlaySource.includes('polyline') &&
+    movementTraceSource.includes('grid-ruler-line') &&
+    movementTraceSource.includes("className=\"grid-ruler grid-movement-trace\"")
+);
+check(
+  'CB279) path do componente nasce da posição AUTORITATIVA (start implícito, passos contíguos)',
+  movementGridSource.includes('const nextPath = appendAnchor(') &&
+    movementGridSource.includes('current.startPosition,') &&
+    movementPathSource.includes('export function appendAnchor(') &&
+    movementPathSource.includes('contiguousAnchors') &&
+    movementPathSource.includes('if (samePosition(start, anchor)) return [];') &&
+    // A origem nunca é reintroduzida como primeiro passo.
+    appendAnchor([], { xFeet: 0, yFeet: 5 }, 5, { xFeet: 0, yFeet: 0 })[0].yFeet === 5
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

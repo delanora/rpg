@@ -18,9 +18,7 @@ export interface MovementHudProps {
   error: string | null;
   pendingNotice: string | null;
   busy: boolean;
-  onClear: () => void;
   onCancel: () => void;
-  onConfirm: () => void;
 }
 
 /**
@@ -51,6 +49,10 @@ const BLOCKER_LABELS: Record<string, string> = {
  * do preview, todos derivados de números do SERVIDOR. O saldo autoritativo
  * continua na barra de ações (`TurnResourceBar`).
  *
+ * NÃO existe botão "Confirmar": SOLTAR o token é a confirmação (o drop
+ * revalida o caminho e faz o commit). "Cancelar" sobrevive porque toque não tem
+ * Esc; erro nenhum exige apertá-lo — o draft termina sozinho.
+ *
  * "Restante previsto" é a subtração de dois valores do servidor (saldo − custo):
  * previsão de leitura, nunca um novo saldo gravado por aqui.
  */
@@ -65,14 +67,11 @@ export function MovementHud({
   error,
   pendingNotice,
   busy,
-  onClear,
   onCancel,
-  onConfirm,
 }: MovementHudProps) {
   const legal = Boolean(movement?.legal);
   const affordable = Boolean(movement?.affordable);
   const hasNumbers = Boolean(movement) && pathLength > 0;
-  const canConfirm = eligible && !busy && pathLength > 0 && state !== 'loading' && legal && affordable;
 
   const status = !eligible
     ? (reason ?? 'Este combatente não pode se mover agora.')
@@ -90,7 +89,7 @@ export function MovementHud({
                 : 'O trajeto não é válido.'
               : !affordable
                 ? 'Movimento insuficiente para este trajeto.'
-                : 'Trajeto válido.';
+                : 'Solte para mover.';
 
   const tone = !eligible
     ? 'is-neutral'
@@ -134,19 +133,8 @@ export function MovementHud({
         <p className="grid-hud-risk">Reação possível: o servidor pausa antes da saída de alcance.</p>
       ) : null}
       <div className="grid-hud-actions">
-        <button type="button" className="btn btn-small" disabled={busy || pathLength === 0} onClick={onClear}>
-          Limpar
-        </button>
         <button type="button" className="btn btn-small" disabled={busy} onClick={onCancel}>
           Cancelar
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary btn-small"
-          disabled={!canConfirm}
-          onClick={onConfirm}
-        >
-          Confirmar
         </button>
       </div>
     </div>
