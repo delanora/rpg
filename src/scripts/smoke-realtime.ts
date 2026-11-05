@@ -18,6 +18,7 @@ import { smokeDamageHealingCore } from './smoke-damage-healing-core.js';
 import { smokeSacredFlame } from './smoke-sacred-flame.js';
 import { smokeHealingWord } from './smoke-healing-word.js';
 import { smokeSpellAttackFoundation } from './smoke-spell-attack-foundation.js';
+import { smokeSaveHalfDamage } from './smoke-save-half-damage.js';
 import { smokeCombatItems } from './smoke-combat-items.js';
 import { smokeDeath } from './smoke-death.js';
 import { smokeExhaustionRule } from './smoke-exhaustion-rule.js';
@@ -21603,6 +21604,7 @@ async function main(): Promise<void> {
   await smokeSacredFlame(BASE_URL, check);
   await smokeHealingWord(BASE_URL, check);
   await smokeSpellAttackFoundation(BASE_URL, check);
+  await smokeSaveHalfDamage(BASE_URL, check);
 
   console.log(
     failures === 0

@@ -365,8 +365,12 @@ export async function journalSpellSaveOutcome(input: {
   phase: 'initial' | 'ongoing';
   privateRoll: boolean;
   actorName: string;
-  /** Dano instantâneo da resolução (save-damage) — resumido na MESMA linha. */
-  damage?: { type: string; raw: number; final: number; rolls: number[] };
+  /**
+   * Dano instantâneo da resolução (save-damage) — resumido na MESMA linha.
+   * `afterSave` é o valor DEPOIS da consequência do save e ANTES das defesas
+   * (6.6J.1): é o que distingue "metade pela salvaguarda" de "resistência".
+   */
+  damage?: { type: string; raw: number; afterSave?: number; final: number; rolls: number[] };
 }): Promise<void> {
   try {
     const combat = await prisma.combat.findFirst({
@@ -387,8 +391,8 @@ export async function journalSpellSaveOutcome(input: {
     // Sem linha extra de "internals": o desfecho mecânico entra na MESMA linha.
     const damageLine = input.damage
       ? ` Dano ${input.damage.type.toLowerCase()}: ${input.damage.final}` +
-        (input.damage.final !== input.damage.raw
-          ? ` (${input.damage.raw} antes das defesas)`
+        (input.damage.afterSave !== undefined && input.damage.afterSave !== input.damage.final
+          ? ` (${input.damage.afterSave} após a salvaguarda)`
           : '') +
         '.'
       : '';

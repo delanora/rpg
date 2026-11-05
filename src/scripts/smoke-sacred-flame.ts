@@ -91,9 +91,12 @@ export async function smokeSacredFlame(baseUrl: string, check: Check): Promise<v
       definition?.spellId === SACRED_FLAME_SPELL_ID &&
         resolution?.kind === 'save-damage' &&
         resolution.ability === 'dexterity' &&
-        resolution.onSuccess === 'none' &&
+        // 6.6J.1: a consequência virou declarativa (`outcome.success`).
+        resolution.outcome.success === 'none' &&
+        resolution.outcome.failure === 'full' &&
         !('effectDefinitionId' in (resolution ?? {})) &&
-        resolution.damage.type === SACRED_FLAME_DAMAGE_TYPE &&
+        resolution.damage.components.length === 1 &&
+        resolution.damage.components[0]?.type === SACRED_FLAME_DAMAGE_TYPE &&
         definition.requiresConcentration === false &&
         !definition.duration,
       JSON.stringify(definition),

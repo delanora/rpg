@@ -2128,5 +2128,79 @@ console.log('Check-combat-ui — refino da UI de combate');
     smokeRunner.includes('smokeSpellAttackFoundation(BASE_URL, check)')
   );
 
+  // 6.6J.1 — consequência genérica do save (`none`/`half`/`full`).
+  const saveOutcome = source('../src/modules/spells/execution/save-damage-outcome.ts');
+  const saveHalfSmoke = source('../src/scripts/smoke-save-half-damage.ts');
+  const saveHalfDefinition = source('../src/modules/spells/execution/save-half-test-definition.ts');
+  const spellCatalog = source('../src/modules/shared/spells/index.ts');
+  check(
+    'CB151) o desfecho do save é declarativo por componente: none | half | full',
+    saveOutcome.includes("'none' | 'half' | 'full'") &&
+      saveOutcome.includes('export function applySaveDamageShare') &&
+      saveOutcome.includes('export function applySaveDamageOutcome') &&
+      executionDefinition.includes('outcome: {') &&
+      executionDefinition.includes('success: SaveDamageShare') &&
+      executionDefinition.includes('failure: SaveDamageShare') &&
+      executionDefinition.includes('components: readonly {')
+  );
+  check(
+    'CB152) Chama Sagrada continua `success: none` (nunca meia-dano por engano)',
+    registrySource.includes("outcome: { success: 'none', failure: 'full' }") &&
+      !registrySource.includes("outcome: { success: 'none', failure: 'none' }")
+  );
+  check(
+    'CB153) a metade é aplicada POR COMPONENTE e ANTES das defesas',
+    saveDamage.includes('applySaveDamageOutcome(') &&
+      saveDamage.indexOf('applySaveDamageOutcome(') < saveDamage.indexOf('resolveDamage(') &&
+      saveDamage.includes('rawAmount: component.rawAmount') &&
+      saveDamage.includes('damageAfterSave')
+  );
+  check(
+    'CB154) arredondamento da metade usa floor e o helper é puro (sem resolveDamage)',
+    saveOutcome.includes('Math.floor(amount / 2)') &&
+      !saveOutcome.includes('resolveDamage(') &&
+      !saveOutcome.includes('prisma')
+  );
+  check(
+    'CB155) o núcleo de dano NÃO conhece salvaguarda nem consequência de save',
+    !damageCore.includes('saveOutcome') &&
+      !damageCore.includes('applySaveDamageOutcome') &&
+      !damageCore.includes('pendingEffectSave') &&
+      damageCore.includes('export async function resolveDamage')
+  );
+  check(
+    'CB156) cliente não envia desfecho/multiplicador de dano nem dados',
+    !castSchema.includes('saveOutcome') &&
+      !castSchema.includes('damageMultiplier') &&
+      !castSchema.includes('halfDamage') &&
+      !castSchema.includes('damageAfterSave')
+  );
+  check(
+    'CB157) a definição sintética NÃO está no catálogo e o smoke é o único dono dela',
+    saveHalfDefinition.includes("test.synthetic-save-half") &&
+      saveHalfSmoke.includes('test.synthetic-save-half') &&
+      !spellCatalog.includes('test.synthetic-save-half') &&
+      !castOptions.includes('test.synthetic-save-half')
+  );
+  check(
+    'CB158) Fireball, Burning Hands e Thunderwave continuam ausentes (área é etapa separada)',
+    !registrySource.includes('fireball') &&
+      !registrySource.includes('burning-hands') &&
+      !registrySource.includes('thunderwave') &&
+      !executionDefinition.includes('fireball')
+  );
+  check(
+    'CB159) dano da prova passa por `resolveDamage` e Concentração usa o dano FINAL',
+    saveDamage.includes('resolveDamage(') &&
+      !saveDamage.includes('applyHpMutation(') &&
+      saveDamage.includes('noteDamageConcentration(') &&
+      saveDamage.includes('finalDamage') &&
+      saveDamage.indexOf('applySaveDamageOutcome(') < saveDamage.indexOf('noteDamageConcentration(')
+  );
+  check(
+    'CB160) o smoke de save-for-half integra o runner principal',
+    smokeRunner.includes('smokeSaveHalfDamage(BASE_URL, check)')
+  );
+
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);

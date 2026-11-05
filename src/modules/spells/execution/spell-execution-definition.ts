@@ -9,6 +9,7 @@ import type { TargetingSnapshot } from './spell-targeting.service.js';
 import type { SpellDurationDefinition } from './spell-duration.js';
 import type { LevelScalingDefinition } from '../../shared/spells/cantrip-scaling.js';
 import type { SlotDiceScalingDefinition } from '../../shared/spells/slot-scaling.js';
+import type { SaveDamageShare } from './save-damage-outcome.js';
 
 /**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
@@ -43,18 +44,31 @@ export type SpellResolutionDefinition =
       kind: 'save-damage';
       ability: AbilityKey;
       /**
-       * Consequência no SUCESSO. Só `none` é executável hoje (Chama Sagrada).
-       * `half` existe no contrato para futuras magias, mas o VALIDATE recusa
-       * explicitamente — nada de meia-dano implementado por engano.
+       * CONSEQUÊNCIA do save, declarativa (6.6J.1). `none`/`half`/`full` por
+       * desfecho — Chama Sagrada é `none` no sucesso, uma magia de "save for
+       * half damage" é `half`. Nada no núcleo decide metade por nome de magia.
+       *
+       * ORDEM PHB 2014: dano bruto → consequência do save (floor POR
+       * COMPONENTE) → resistência/imunidade/vulnerabilidade → PV.
        */
-      onSuccess: 'none' | 'half';
+      outcome: {
+        success: SaveDamageShare;
+        failure: SaveDamageShare;
+      };
       damage: {
-        /** Tipo canônico do projeto (`Radiante`, `Fogo`...). */
-        type: string;
-        /** Dados BASE (sem o escalonamento de truque). */
-        dice: { count: number; sides: number };
-        /** Escalonamento por nível TOTAL de personagem (truques). */
-        scaling?: LevelScalingDefinition;
+        /**
+         * Componentes INDEPENDENTES: cada parcela mantém o tipo até as defesas
+         * do alvo. Agregar tudo antes perderia a identidade do tipo e mudaria o
+         * arredondamento da metade.
+         */
+        components: readonly {
+          /** Tipo canônico do projeto (`Radiante`, `Fogo`...). */
+          type: string;
+          /** Dados BASE (sem o escalonamento de truque). */
+          dice: { count: number; sides: number };
+          /** Escalonamento por nível TOTAL de personagem (truques). */
+          scaling?: LevelScalingDefinition;
+        }[];
       };
       /**
        * Metadado PHB: o alvo não se beneficia de cobertura neste save. A engine
