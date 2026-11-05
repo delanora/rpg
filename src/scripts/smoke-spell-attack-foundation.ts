@@ -320,7 +320,7 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
         return resolveAttackDamageSpell(
           tx,
           row,
-          { caster: loadedCaster, targets: [loadedTarget] },
+          { caster: loadedCaster, assignments: [loadedTarget] },
           execution,
           options,
         );
@@ -378,10 +378,10 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     });
     check(
       '83.H) bônus de ataque vem do SNAPSHOT do cast (+6) e NÃO de uma nova leitura da ficha (SAB 20 daria +8)',
-      snapshotRun.snapshot.attack.attackBonus === 6 &&
-        snapshotRun.snapshot.attack.total === 15 + 6 &&
-        snapshotRun.snapshot.attack.naturalRoll === 15,
-      JSON.stringify(snapshotRun.snapshot.attack),
+      snapshotRun.snapshot.attacks[0]!.attack.attackBonus === 6 &&
+        snapshotRun.snapshot.attacks[0]!.attack.total === 15 + 6 &&
+        snapshotRun.snapshot.attacks[0]!.attack.naturalRoll === 15,
+      JSON.stringify(snapshotRun.snapshot.attacks[0]!.attack),
     );
 
     const missCast = await makeCast({
@@ -396,13 +396,13 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     });
     check(
       '83.I) CA usada é o estado ATUAL do alvo (30 no momento da resolução) e o miss não rola dano',
-      missRun.snapshot.attack.targetAc === 30 &&
-        !missRun.snapshot.attack.hit &&
-        missRun.snapshot.damage === null &&
+      missRun.snapshot.attacks[0]!.attack.targetAc === 30 &&
+        !missRun.snapshot.attacks[0]!.attack.hit &&
+        missRun.snapshot.attacks[0]!.damage === null &&
         missRun.snapshot.noEffectReason === 'attack-miss' &&
         missRun.cast.status === 'resolved' &&
         missRun.cast.outcome === 'no-effect',
-      JSON.stringify({ attack: missRun.snapshot.attack, damage: missRun.snapshot.damage }),
+      JSON.stringify({ attack: missRun.snapshot.attacks[0]!.attack, damage: missRun.snapshot.attacks[0]!.damage }),
     );
     await prisma.character.update({ where: { id: target.id }, data: { armorClass: 15 } });
 
@@ -419,12 +419,12 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     const hpAfterHit = await hpOf(target.id);
     check(
       '83.J) acerto normal: 15+6=21 vs CA 15, dano rolado no servidor e HP via `resolveDamage`',
-      hitRun.snapshot.attack.hit &&
-        hitRun.snapshot.attack.total === 21 &&
-        (hitRun.snapshot.damage?.finalDamage ?? 0) > 0 &&
-        hpAfterHit === hpBeforeHit - (hitRun.snapshot.damage?.finalDamage ?? 0) &&
+      hitRun.snapshot.attacks[0]!.attack.hit &&
+        hitRun.snapshot.attacks[0]!.attack.total === 21 &&
+        (hitRun.snapshot.attacks[0]!.damage?.finalDamage ?? 0) > 0 &&
+        hpAfterHit === hpBeforeHit - (hitRun.snapshot.attacks[0]!.damage?.finalDamage ?? 0) &&
         hitRun.cast.outcome === 'effect',
-      JSON.stringify({ attack: hitRun.snapshot.attack, damage: hitRun.snapshot.damage, hpBeforeHit, hpAfterHit }),
+      JSON.stringify({ attack: hitRun.snapshot.attacks[0]!.attack, damage: hitRun.snapshot.attacks[0]!.damage, hpBeforeHit, hpAfterHit }),
     );
 
     // nat 1 com bônus enorme e nat 20 contra CA inalcançável (funcional).
@@ -450,15 +450,15 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.character.update({ where: { id: target.id }, data: { armorClass: 15 } });
     check(
       '83.K) funcional: nat 1 com +40 é miss e nat 20 com +1 contra CA 40 é hit + crítico',
-      !natOneRun.snapshot.attack.hit &&
-        natOneRun.snapshot.attack.autoMiss &&
-        natOneRun.snapshot.damage === null &&
-        natTwentyRun.snapshot.attack.hit &&
-        natTwentyRun.snapshot.attack.critical &&
-        natTwentyRun.snapshot.attack.autoHit,
+      !natOneRun.snapshot.attacks[0]!.attack.hit &&
+        natOneRun.snapshot.attacks[0]!.attack.autoMiss &&
+        natOneRun.snapshot.attacks[0]!.damage === null &&
+        natTwentyRun.snapshot.attacks[0]!.attack.hit &&
+        natTwentyRun.snapshot.attacks[0]!.attack.critical &&
+        natTwentyRun.snapshot.attacks[0]!.attack.autoHit,
       JSON.stringify({
-        nat1: natOneRun.snapshot.attack,
-        nat20: natTwentyRun.snapshot.attack,
+        nat1: natOneRun.snapshot.attacks[0]!.attack,
+        nat20: natTwentyRun.snapshot.attacks[0]!.attack,
       }),
     );
 
@@ -471,10 +471,10 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     const critRun = await runCast(critCast.id, casterEntity, targetEntity, SYNTHETIC_MULTI, {
       roll: sequence([20, 4, 4, 4, 4]),
     });
-    const critDamage = critRun.snapshot.damage;
+    const critDamage = critRun.snapshot.attacks[0]!.damage;
     check(
       '83.L) crítico funcional: 1d10+3 Força + 1d6 Radiante vira 2d10+3 + 2d6 (bônus NÃO dobrado)',
-      critRun.snapshot.attack.critical &&
+      critRun.snapshot.attacks[0]!.attack.critical &&
         critDamage?.critical === true &&
         critDamage.components.length === 2 &&
         critDamage.components[0]?.count === 2 &&
@@ -514,10 +514,10 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.effectInstance.update({ where: { id: advantageEffect.id }, data: { status: 'ended' } });
     check(
       '83.M) Effect `roll-advantage` no atacante: 2d20 e o ataque usa o MAIOR',
-      advantageRun.snapshot.attack.mode === 'advantage' &&
-        advantageRun.snapshot.attack.rolls.length === 2 &&
-        advantageRun.snapshot.attack.naturalRoll === 18,
-      JSON.stringify(advantageRun.snapshot.attack),
+      advantageRun.snapshot.attacks[0]!.attack.mode === 'advantage' &&
+        advantageRun.snapshot.attacks[0]!.attack.rolls.length === 2 &&
+        advantageRun.snapshot.attacks[0]!.attack.naturalRoll === 18,
+      JSON.stringify(advantageRun.snapshot.attacks[0]!.attack),
     );
 
     const disadvantageEffect = await makeEffect({
@@ -541,9 +541,9 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.effectInstance.update({ where: { id: disadvantageEffect.id }, data: { status: 'ended' } });
     check(
       '83.N) Effect `roll-disadvantage`: 2d20 e o ataque usa o MENOR',
-      disadvantageRun.snapshot.attack.mode === 'disadvantage' &&
-        disadvantageRun.snapshot.attack.naturalRoll === 3,
-      JSON.stringify(disadvantageRun.snapshot.attack),
+      disadvantageRun.snapshot.attacks[0]!.attack.mode === 'disadvantage' &&
+        disadvantageRun.snapshot.attacks[0]!.attack.naturalRoll === 3,
+      JSON.stringify(disadvantageRun.snapshot.attacks[0]!.attack),
     );
 
     const cancelAdv = await makeEffect({
@@ -571,10 +571,10 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     });
     check(
       '83.O) vantagem + desvantagem se CANCELAM (modo normal, um d20) — nunca somam stacks',
-      cancelRun.snapshot.attack.mode === 'normal' &&
-        cancelRun.snapshot.attack.rolls.length === 1 &&
-        cancelRun.snapshot.attack.naturalRoll === 9,
-      JSON.stringify(cancelRun.snapshot.attack),
+      cancelRun.snapshot.attacks[0]!.attack.mode === 'normal' &&
+        cancelRun.snapshot.attacks[0]!.attack.rolls.length === 1 &&
+        cancelRun.snapshot.attacks[0]!.attack.naturalRoll === 9,
+      JSON.stringify(cancelRun.snapshot.attacks[0]!.attack),
     );
 
     // Esquiva: combatente com `dodging` verdadeiro no turno.
@@ -629,9 +629,9 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     });
     check(
       '83.P) Esquiva do alvo (em combate, vendo o atacante, deslocamento > 0) impõe DESVANTAGEM',
-      dodgeRun.snapshot.attack.mode === 'disadvantage' &&
-        dodgeRun.snapshot.attack.naturalRoll === 2,
-      JSON.stringify(dodgeRun.snapshot.attack),
+      dodgeRun.snapshot.attacks[0]!.attack.mode === 'disadvantage' &&
+        dodgeRun.snapshot.attacks[0]!.attack.naturalRoll === 2,
+      JSON.stringify(dodgeRun.snapshot.attacks[0]!.attack),
     );
     await prisma.combat.delete({ where: { id: dodgeCombat.id } });
     combatIds.splice(combatIds.indexOf(dodgeCombat.id), 1);
@@ -677,11 +677,11 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.character.update({ where: { id: target.id }, data: { mechanicalState: {} } });
     check(
       '83.Q) Caído: ataque mágico À DISTÂNCIA tem desvantagem e CORPO A CORPO tem vantagem (mesma regra da arma)',
-      proneRangedRun.snapshot.attack.mode === 'disadvantage' &&
-        proneRangedRun.snapshot.attack.kind === 'ranged' &&
-        proneMeleeRun.snapshot.attack.mode === 'advantage' &&
-        proneMeleeRun.snapshot.attack.kind === 'melee',
-      JSON.stringify({ ranged: proneRangedRun.snapshot.attack, melee: proneMeleeRun.snapshot.attack }),
+      proneRangedRun.snapshot.attacks[0]!.attack.mode === 'disadvantage' &&
+        proneRangedRun.snapshot.attacks[0]!.attack.kind === 'ranged' &&
+        proneMeleeRun.snapshot.attacks[0]!.attack.mode === 'advantage' &&
+        proneMeleeRun.snapshot.attacks[0]!.attack.kind === 'melee',
+      JSON.stringify({ ranged: proneRangedRun.snapshot.attacks[0]!.attack, melee: proneMeleeRun.snapshot.attacks[0]!.attack }),
     );
 
     // Invisibilidade: relação de visão, nos dois sentidos, e cancelamento.
@@ -744,13 +744,13 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.character.update({ where: { id: target.id }, data: { mechanicalState: {} } });
     check(
       '83.R) Invisibilidade: atacante invisível = vantagem; alvo invisível = desvantagem; ambos = normal',
-      unseenAttackerRun.snapshot.attack.mode === 'advantage' &&
-        unseenTargetRun.snapshot.attack.mode === 'disadvantage' &&
-        bothUnseenRun.snapshot.attack.mode === 'normal',
+      unseenAttackerRun.snapshot.attacks[0]!.attack.mode === 'advantage' &&
+        unseenTargetRun.snapshot.attacks[0]!.attack.mode === 'disadvantage' &&
+        bothUnseenRun.snapshot.attacks[0]!.attack.mode === 'normal',
       JSON.stringify({
-        attacker: unseenAttackerRun.snapshot.attack.mode,
-        target: unseenTargetRun.snapshot.attack.mode,
-        both: bothUnseenRun.snapshot.attack.mode,
+        attacker: unseenAttackerRun.snapshot.attacks[0]!.attack.mode,
+        target: unseenTargetRun.snapshot.attacks[0]!.attack.mode,
+        both: bothUnseenRun.snapshot.attacks[0]!.attack.mode,
       }),
     );
 
@@ -775,8 +775,8 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.effectInstance.update({ where: { id: acEffect.id }, data: { status: 'ended' } });
     check(
       '83.S) Effect `ac-flat +2` no alvo entra na CA ATUAL usada pelo resolver (12 + 2 = 14)',
-      acEffectRun.snapshot.attack.targetAc === 14,
-      JSON.stringify(acEffectRun.snapshot.attack),
+      acEffectRun.snapshot.attacks[0]!.attack.targetAc === 14,
+      JSON.stringify(acEffectRun.snapshot.attacks[0]!.attack),
     );
 
     const flatEffect = await makeEffect({
@@ -796,10 +796,10 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.effectInstance.update({ where: { id: flatEffect.id }, data: { status: 'ended' } });
     check(
       '83.T) Effect `roll-flat +2` de ataque entra no total do ATAQUE MÁGICO (12+6+2)',
-      flatRun.snapshot.attack.effectBonus === 2 &&
-        flatRun.snapshot.attack.total === 20 &&
-        flatRun.snapshot.attack.sources.includes('Precisão de prova'),
-      JSON.stringify(flatRun.snapshot.attack),
+      flatRun.snapshot.attacks[0]!.attack.effectBonus === 2 &&
+        flatRun.snapshot.attacks[0]!.attack.total === 20 &&
+        flatRun.snapshot.attacks[0]!.attack.sources.includes('Precisão de prova'),
+      JSON.stringify(flatRun.snapshot.attacks[0]!.attack),
     );
 
     // Bless: o MESMO +1d4 opcional dos ataques de arma.
@@ -836,15 +836,15 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.effectInstance.update({ where: { id: blessEffect.id }, data: { status: 'ended' } });
     check(
       '83.U) Bless (+1d4 OPCIONAL) entra no ataque mágico só quando escolhido, rolado no SERVIDOR',
-      blessRun.snapshot.attack.effectDice.length === 1 &&
-        blessRun.snapshot.attack.effectDice[0]?.sides === 4 &&
-        blessRun.snapshot.attack.effectDice[0]?.value === 3 &&
-        blessRun.snapshot.attack.total === 10 + 6 + 3 &&
-        blessWithoutRun.snapshot.attack.effectDice.length === 0 &&
-        blessWithoutRun.snapshot.attack.total === 16,
+      blessRun.snapshot.attacks[0]!.attack.effectDice.length === 1 &&
+        blessRun.snapshot.attacks[0]!.attack.effectDice[0]?.sides === 4 &&
+        blessRun.snapshot.attacks[0]!.attack.effectDice[0]?.value === 3 &&
+        blessRun.snapshot.attacks[0]!.attack.total === 10 + 6 + 3 &&
+        blessWithoutRun.snapshot.attacks[0]!.attack.effectDice.length === 0 &&
+        blessWithoutRun.snapshot.attacks[0]!.attack.total === 16,
       JSON.stringify({
-        withBless: blessRun.snapshot.attack,
-        withoutBless: blessWithoutRun.snapshot.attack,
+        withBless: blessRun.snapshot.attacks[0]!.attack,
+        withoutBless: blessWithoutRun.snapshot.attacks[0]!.attack,
       }),
     );
 
@@ -866,10 +866,10 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     await prisma.effectInstance.update({ where: { id: privateEffect.id }, data: { status: 'ended' } });
     check(
       '83.V) Effect PRIVADO continua modificando o ataque (mecânica vale) sem vazar o nome no breakdown',
-      privateRun.snapshot.attack.effectBonus === 3 &&
-        privateRun.snapshot.attack.sources.every((label) => label === null) &&
+      privateRun.snapshot.attacks[0]!.attack.effectBonus === 3 &&
+        privateRun.snapshot.attacks[0]!.attack.sources.every((label) => label === null) &&
         !JSON.stringify(privateRun.snapshot).includes('Segredo do Mestre'),
-      JSON.stringify(privateRun.snapshot.attack),
+      JSON.stringify(privateRun.snapshot.attacks[0]!.attack),
     );
 
     // =====================================================================
@@ -888,14 +888,14 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
       SYNTHETIC_RANGED,
       { roll: sequence([10, 6]) },
     );
-    const resistedComponent = resistedRun.snapshot.damage?.components[0];
+    const resistedComponent = resistedRun.snapshot.attacks[0]!.damage?.components[0];
     check(
       '83.W) resistência ao tipo do ataque usa o núcleo compartilhado (dano pela metade)',
       resistedComponent?.modifier === 'resistance' &&
         resistedComponent.raw === 9 &&
         resistedComponent.applied === 4 &&
-        resistedRun.snapshot.damage?.finalDamage === 4,
-      JSON.stringify(resistedRun.snapshot.damage),
+        resistedRun.snapshot.attacks[0]!.damage?.finalDamage === 4,
+      JSON.stringify(resistedRun.snapshot.attacks[0]!.damage),
     );
 
     const immuneCast = await makeCast({
@@ -913,12 +913,12 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     );
     check(
       '83.X) imunidade zera o dano: nenhum evento de consequência e outcome `no-effect`',
-      immuneRun.snapshot.attack.hit &&
-        immuneRun.snapshot.damage?.finalDamage === 0 &&
+      immuneRun.snapshot.attacks[0]!.attack.hit &&
+        immuneRun.snapshot.attacks[0]!.damage?.finalDamage === 0 &&
         immuneRun.snapshot.noEffectReason === 'zero-damage' &&
         immuneRun.cast.outcome === 'no-effect' &&
         immuneRun.concentrationTarget === null,
-      JSON.stringify({ damage: immuneRun.snapshot.damage, cast: immuneRun.cast.outcome }),
+      JSON.stringify({ damage: immuneRun.snapshot.attacks[0]!.damage, cast: immuneRun.cast.outcome }),
     );
 
     const concCast = await makeCast({
@@ -939,12 +939,12 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     const concSave = concState.pendingConcentrationSaves[0];
     check(
       '83.Y) dano final > 0 gera UM teste de Concentração com CD max(10, floor(dano/2)) e o MESMO eventId',
-      concRun.snapshot.damage !== null &&
+      concRun.snapshot.attacks[0]!.damage !== null &&
         concSave !== undefined &&
-        concSave.dc === Math.max(10, Math.floor(concRun.snapshot.damage.finalDamage / 2)) &&
+        concSave.dc === Math.max(10, Math.floor(concRun.snapshot.attacks[0]!.damage.finalDamage / 2)) &&
         concSave.eventId === attackDamageEventIdOf(concCast.id) &&
         concState.concentration !== null,
-      JSON.stringify({ damage: concRun.snapshot.damage, saves: concState.pendingConcentrationSaves }),
+      JSON.stringify({ damage: concRun.snapshot.attacks[0]!.damage, saves: concState.pendingConcentrationSaves }),
     );
 
     const zeroCast = await makeCast({
@@ -964,7 +964,7 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     check(
       '83.Z) dano que leva a 0 PV usa o lifecycle de morte existente (HP 0 + Testes contra a Morte)',
       zeroRow.hpCurrent === 0 &&
-        zeroRun.snapshot.damage?.hpAfter === 0 &&
+        zeroRun.snapshot.attacks[0]!.damage?.hpAfter === 0 &&
         (zeroRow.deathState as { deathSaves?: boolean } | null)?.deathSaves === true,
       JSON.stringify({ hp: zeroRow.hpCurrent, death: zeroRow.deathState }),
     );
@@ -975,11 +975,11 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     const { row: storedCast, snapshot: storedSnapshot } = await snapshotOf(hitCast.id);
     check(
       '83.AA) identidades determinísticas: occurrenceId e eventId derivados do cast (ataque 0)',
-      storedSnapshot.attack.occurrenceId === `spell-cast:${hitCast.id}:attack:0` &&
-        storedSnapshot.attack.occurrenceId === attackOccurrenceIdOf(hitCast.id) &&
-        storedSnapshot.damage?.eventId === `spell-cast:${hitCast.id}:attack:0:damage` &&
-        storedSnapshot.damage?.eventId === attackDamageEventIdOf(hitCast.id),
-      JSON.stringify({ occurrenceId: storedSnapshot.attack.occurrenceId, eventId: storedSnapshot.damage?.eventId }),
+      storedSnapshot.attacks[0]!.occurrenceId === `spell-cast:${hitCast.id}:attack:0` &&
+        storedSnapshot.attacks[0]!.occurrenceId === attackOccurrenceIdOf(hitCast.id) &&
+        storedSnapshot.attacks[0]!.damage?.eventId === `spell-cast:${hitCast.id}:attack:0:damage` &&
+        storedSnapshot.attacks[0]!.damage?.eventId === attackDamageEventIdOf(hitCast.id),
+      JSON.stringify({ occurrenceId: storedSnapshot.attacks[0]!.occurrenceId, eventId: storedSnapshot.attacks[0]!.damage?.eventId }),
     );
     check(
       '83.AB) `resolutionSnapshot` persistido (`attack-damage`), cast `resolved` e sem Concentração do conjurador',
@@ -1000,10 +1000,10 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
       '83.AC) retry devolve o snapshot salvo (replayed) sem rolar d20 nem aplicar dano de novo',
       retryRun.replayed &&
         // A resolução original forçou 15; o retry pediu 20 e NÃO rolou de novo.
-        retryRun.snapshot.attack.naturalRoll === 15 &&
-        retryRun.snapshot.damage?.finalDamage === storedSnapshot.damage?.finalDamage &&
+        retryRun.snapshot.attacks[0]!.attack.naturalRoll === 15 &&
+        retryRun.snapshot.attacks[0]!.damage?.finalDamage === storedSnapshot.attacks[0]!.damage?.finalDamage &&
         hpAfterRetry === hpBeforeRetry,
-      JSON.stringify({ retry: retryRun.snapshot.attack, hpBeforeRetry, hpAfterRetry }),
+      JSON.stringify({ retry: retryRun.snapshot.attacks[0]!.attack, hpBeforeRetry, hpAfterRetry }),
     );
 
     const resistantDto = toSpellCastDto(
@@ -1015,9 +1015,9 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     check(
       '83.AD) DTO esconde a CA do alvo quando é criatura/NPC e mantém a do personagem; nada de bônus/d20 do cliente',
       characterDto.resolution?.kind === 'attack-damage' &&
-        characterDto.resolution.attack.targetAc === 15 &&
+        characterDto.resolution.attacks[0]?.attack.targetAc === 15 &&
         resistantDto.resolution?.kind === 'attack-damage' &&
-        resistantDto.resolution.attack.targetAc === null &&
+        resistantDto.resolution.attacks[0]?.attack.targetAc === null &&
         !sourceOf('../modules/spells/execution/spell-cast.schema.ts').includes('attackBonus') &&
         !sourceOf('../modules/spells/execution/spell-cast.schema.ts').includes('naturalRoll'),
       JSON.stringify({
@@ -1041,8 +1041,8 @@ export async function smokeSpellAttackFoundation(baseUrl: string, check: Check):
     );
     check(
       '83.AE) NPC usa o bônus EXPLÍCITO do statblock (+7), sem recalcular por ND',
-      npcRun.snapshot.attack.attackBonus === 7 && npcRun.snapshot.attack.total === 17,
-      JSON.stringify(npcRun.snapshot.attack),
+      npcRun.snapshot.attacks[0]!.attack.attackBonus === 7 && npcRun.snapshot.attacks[0]!.attack.total === 17,
+      JSON.stringify(npcRun.snapshot.attacks[0]!.attack),
     );
 
     const registrySource = sourceOf('../modules/spells/execution/spell-execution-registry.ts');

@@ -12,6 +12,16 @@ import type { SlotDiceScalingDefinition } from '../../shared/spells/slot-scaling
 import type { SaveDamageShare } from './save-damage-outcome.js';
 
 /**
+ * 6.6J.4 — QUANTIDADE de jogadas de ataque produzidas por UM `SpellCast`.
+ *
+ * `fixed` é a única forma EXECUTÁVEL hoje (Eldritch Blast/Scorching Ray ainda
+ * não estão registradas). O contrato é extensível para escalonamento por nível
+ * de personagem/espaço sem mudar o consumidor — a quantidade sempre vem daqui,
+ * nunca do cliente.
+ */
+export type AttackCountDefinition = { kind: 'fixed'; count: number };
+
+/**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
  *
  * Diz COMO uma magia resolve mecanicamente. NÃO copia nome/escola/nível/texto/
@@ -105,6 +115,14 @@ export type SpellResolutionDefinition =
   | {
       kind: 'attack-damage';
       /**
+       * 6.6J.4 — jogadas de ataque INDEPENDENTES. Ausente = 1 jogada
+       * (comportamento da 6.6I.4). Cada jogada tem d20, crítico, dano e evento
+       * de dano próprios; os alvos são atribuídos por ocorrência.
+       */
+      attacks?: {
+        count: AttackCountDefinition;
+      };
+      /**
        * Ataque mágico: `melee` ou `ranged` (nunca inferido do tipo de dano). O
        * modo alimenta Caído/Esquiva exatamente como nos ataques de arma.
        */
@@ -131,6 +149,22 @@ export type SpellResolutionDefinition =
 /** Id mecânico canônico de uma magia (`spell.<spellId>`), sem Effect Definition. */
 export function spellDefinitionId(spellId: string): string {
   return `spell.${spellId}`;
+}
+
+/**
+ * Jogadas de ataque do cast — DERIVADAS da definição.
+ *
+ * Ausente/ inválido = 1. O teto de 20 é barreira técnica (um cast não vira
+ * centenas de jogadas), nunca uma regra de magia.
+ */
+export function attackCountOf(execution: SpellExecutionDefinition): number {
+  const resolution = execution.resolution;
+  if (resolution.kind !== 'attack-damage') return 1;
+  const definition = resolution.attacks?.count;
+  if (definition && definition.kind === 'fixed') {
+    return Math.max(1, Math.min(20, Math.trunc(definition.count)));
+  }
+  return 1;
 }
 
 /** Contexto de validação (read-only) entregue ao hook da definição. */

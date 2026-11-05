@@ -49,6 +49,12 @@ export interface ExplicitSpellTargetingDefinition {
   targetCount: SpellTargetCountDefinition;
   range: SpellRangeDefinition;
   allowSelf: boolean;
+  /**
+   * 6.6J.4: a LISTA de alvos é de ASSIGNMENTS e o MESMO alvo pode repetir
+   * (duas jogadas de ataque no mesmo alvo). Desligado por padrão: Bless/Hold
+   * Person/etc. continuam recusando duplicata (`SPELL_TARGET_DUPLICATE`).
+   */
+  allowRepeatedTarget?: boolean;
   /** Exige que o conjurador VEJA o alvo (`canSee` mecânico + geometria). */
   requiresSight: boolean;
   /** Exige caminho livre (total cover bloqueia). */
@@ -118,6 +124,7 @@ export function targetingSummary(
     castAtLevel,
     rangeFeet: targetingRangeFeet(targeting),
     allowSelf: targeting.allowSelf,
+    allowRepeatedTarget: targeting.allowRepeatedTarget === true,
     requiresSight: targeting.requiresSight,
     requiresClearPath: targeting.requiresClearPath,
     filters: targeting.filters.map((filter) => `${filter.kind}:${filter.value}`),

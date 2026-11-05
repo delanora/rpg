@@ -22,6 +22,7 @@ import {
 } from '../../effects/pending-effect-saves.js';
 import { spellExecutionDefinition } from './spell-execution-registry.js';
 import {
+  attackCountOf,
   spellDefinitionId,
   type SpellExecutionDefinition,
   type SpellValidationContext,
@@ -42,7 +43,7 @@ import {
   type SpellTargetingSnapshot,
 } from './spell-targeting.service.js';
 import type { AreaPlacement } from './area-targeting.js';
-import { isAreaTargeting } from './spell-targeting.js';
+import { isAreaTargeting, isExplicitTargeting } from './spell-targeting.js';
 import { resolveAreaTargets } from './area-targeting.service.js';
 import type { AreaTargetingSnapshot } from './area-snapshot.js';
 import type { AreaSpatialProvider } from './area-spatial.js';
@@ -161,6 +162,19 @@ interface CommittedOutcome extends SpellCastResult {
   endedTargets: MechanicalEntity[];
 }
 
+/**
+ * Chaves de alvo do fingerprint.
+ *
+ * 6.6E: sem repetição o conjunto é canônico e a ORDEM não tem significado
+ * ([A,B] = [B,A]). 6.6J.4: quando há repetição a lista é de ASSIGNMENTS e a
+ * ordem É mecânica — "duas jogadas em A, uma em B" ([A,A,B]) não pode ser
+ * aceita como retry de "uma em A, duas em B" ([A,B,B]).
+ */
+function fingerprintTargets(targets: SpellCastProofInput['targets']): string[] {
+  const keys = targets.map((target) => `${target.kind}:${target.id}`);
+  return new Set(keys).size === keys.length ? [...keys].sort() : keys;
+}
+
 function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
   return createHash('sha256')
     .update(
@@ -169,9 +183,7 @@ function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
         actor: actor.userId,
         spellId: input.spellId,
         caster: input.caster,
-        // 6.6E: o CONJUNTO de alvos é canônico e a ORDEM não tem significado
-        // mecânico em Bless/Hold Person — [A,B] e [B,A] são o mesmo payload.
-        targets: input.targets.map((target) => `${target.kind}:${target.id}`).sort(),
+        targets: fingerprintTargets(input.targets),
         spellcastingSource: input.spellcastingSource ?? null,
         castingResource: input.castingResource ?? null,
         spatialConfirmation: input.spatialConfirmation ?? null,
@@ -297,13 +309,26 @@ export async function validateSpellCast(
       );
     }
   }
+  // 6.6J.4: a quantidade de jogadas vem da DEFINIÇÃO (nunca do cliente). Em
+  // magias de ataque com repetição permitida a LISTA é de ASSIGNMENTS: a ordem
+  // importa e o mesmo alvo pode aparecer várias vezes ([A, A, B]).
+  const attackCount =
+    execution.resolution.kind === 'attack-damage' ? attackCountOf(execution) : 1;
+  const repeatedTargetsAllowed =
+    attackCount > 1 &&
+    isExplicitTargeting(execution.targeting) &&
+    execution.targeting.allowRepeatedTarget === true;
+
   const targets: LoadedEntity[] = [];
-  const seen = new Set<string>();  for (const reference of input.targets) {
+  const seen = new Set<string>();
+  for (const reference of input.targets) {
     const loaded = await loadEntity(reference, db);
     const key = `${loaded.entity.kind}:${loaded.entity.id}`;
-    if (seen.has(key)) {
+    if (seen.has(key) && !repeatedTargetsAllowed) {
       // 6.6E: a chave vem do `loadEntity`, que já canonicaliza combatente→ficha;
       // escolher o personagem pela ficha E pelo combatente é o MESMO alvo.
+      // 6.6J.4: a recusa continua GLOBAL — só a definição que declara
+      // `allowRepeatedTarget` pode repetir, e apenas em ataque múltiplo.
       throw new HttpError(
         'O mesmo alvo não pode ser escolhido duas vezes na mesma conjuração.',
         400,
@@ -312,6 +337,16 @@ export async function validateSpellCast(
     }
     seen.add(key);
     targets.push(loaded);
+  }
+  // Divergência entre assignments e a quantidade da definição recusa ANTES de
+  // qualquer custo — nunca "executar o que der".
+  if (attackCount > 1 && targets.length !== attackCount) {
+    throw new HttpError(
+      `Esta conjuração exige exatamente ${attackCount} jogada(s) de ataque.`,
+      400,
+      'SPELL_ATTACK_COUNT_INVALID',
+      { expected: attackCount, received: targets.length },
+    );
   }
 
   // 6.6F: CONTROLE do conjurador (PLAYER só o próprio personagem; NPC é do
@@ -449,6 +484,17 @@ export async function validateSpellCast(
       ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
     });
     requiredConfirmations = targeting.requiredConfirmations;
+    // 6.6J.4: os ASSIGNMENTS (ordem + repetição) ficam no snapshot do TARGETING;
+    // o conjunto único sozinho não reconstrói "A recebeu duas jogadas".
+    if (attackCount > 1 && isExplicitTargeting(execution.targeting)) {
+      targeting = {
+        ...targeting,
+        attackAssignments: targets.map((target, index) => ({
+          index,
+          target: { kind: target.entity.kind, id: target.entity.id },
+        })),
+      };
+    }
   }
 
   const context: SpellValidationContext = {
@@ -496,6 +542,19 @@ export async function validateSpellCast(
  * Grava o `SpellCast` em `resolving` (a constraint parcial do banco garante UM
  * por caster, inclusive sob concorrência). NÃO cria Concentração nova aqui.
  */
+/** Conjunto canônico ÚNICO de alvos (ordem/repetição vive no snapshot). */
+function uniqueTargetRefs(targets: readonly LoadedEntity[]): { kind: string; id: string }[] {
+  const seen = new Set<string>();
+  const refs: { kind: string; id: string }[] = [];
+  for (const target of targets) {
+    const key = `${target.entity.kind}:${target.entity.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ kind: target.entity.kind, id: target.entity.id });
+  }
+  return refs;
+}
+
 async function commitSpellCast(
   db: Prisma.TransactionClient,
   context: SpellCastContext,
@@ -555,10 +614,7 @@ async function commitSpellCast(
       casterEntityKind: context.caster.entity.kind,
       casterEntityId: context.caster.entity.id,
       casterLabel: context.caster.name,
-      targets: context.targets.map((target) => ({
-        kind: target.entity.kind,
-        id: target.entity.id,
-      })) as unknown as Prisma.InputJsonValue,
+      targets: uniqueTargetRefs(context.targets) as unknown as Prisma.InputJsonValue,
       // Snapshot IMUTÁVEL do targeting (6.6E): mover alvo, mudar tipo ou ganhar
       // geometria depois NÃO reescreve como este cast foi validado.
       targetingSnapshot: context.targeting as unknown as Prisma.InputJsonValue,
@@ -936,7 +992,8 @@ export async function executeCast(
         const attack = await resolveAttackDamageSpell(
           db,
           cast,
-          { caster: context.caster, targets: context.targets },
+          // Assignments (ordem + repetição), nunca o conjunto deduplicado.
+          { caster: context.caster, assignments: context.targets },
           context.execution,
         );
         attackDamage = attack;

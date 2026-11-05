@@ -62,6 +62,11 @@ export interface TargetingSnapshot {
    * com o Mestre no fluxo, `unknown` sem confirmação já falha na hora.
    */
   requiredConfirmations: SpatialRequirementKind[];
+  /**
+   * 6.6J.4: ASSIGNMENTS de ataque múltiplo (índice → alvo), preservando ordem e
+   * repetição. Ausente em magias de alvo explícito comum e nos casts antigos.
+   */
+  attackAssignments?: { index: number; target: { kind: string; id: string } }[];
 }
 
 /**

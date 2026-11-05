@@ -9,9 +9,14 @@ import { parseJson } from '../../shared/json.js';
  * APLICADO no dia da conjuração — retry, refresh e mudanças posteriores de ficha
  * nunca recalculam nem rolam de novo.
  *
- * A união discriminada tem duas variantes: `immediate-healing` (6.6I.3) e
- * `attack-damage` (6.6I.4 — ataque mágico resolvido na hora). Nada de tabela por
- * magia e nada de recálculo em retry/refresh.
+ * A união discriminada tem três variantes: `immediate-healing` (6.6I.3),
+ * `attack-damage` (6.6I.4 — ataque mágico resolvido na hora) e `save-damage`
+ * (6.6J.2). Nada de tabela por magia e nada de recálculo em retry/refresh.
+ *
+ * 6.6J.4 — MÚLTIPLAS JOGADAS: `attack-damage` passou a guardar `attacks[]`
+ * (uma ocorrência por jogada, ordenada por índice). Snapshots ANTIGOS (uma única
+ * jogada) continuam legíveis: o parser normaliza o formato v1 para v2, sem
+ * migration e sem reescrever dados históricos.
  */
 
 export const immediateHealingSnapshotSchema = z.object({
@@ -60,63 +65,137 @@ export const attackDamageComponentSnapshotSchema = z.object({
     .nullable(),
 });
 
+/** Dados/resultado de UMA jogada de ataque (6.6I.4, generalizado na 6.6J.4). */
+export const spellAttackRollSnapshotSchema = z.object({
+  kind: z.enum(['melee', 'ranged']),
+  naturalRoll: z.number().int(),
+  rolls: z.array(z.number().int()),
+  mode: z.enum(['normal', 'advantage', 'disadvantage']),
+  /** Bônus vindo do SNAPSHOT do cast (nunca recalculado). */
+  attackBonus: z.number().int(),
+  effectBonus: z.number().int(),
+  effectDice: z.array(
+    z.object({
+      sides: z.number().int(),
+      value: z.number().int(),
+      sign: z.number().int(),
+      label: z.string().nullable(),
+    }),
+  ),
+  /** Fontes visíveis que contribuíram (efeito privado = `null`). */
+  sources: z.array(z.string().nullable()),
+  total: z.number().int(),
+  targetAc: z.number().int(),
+  hit: z.boolean(),
+  critical: z.boolean(),
+  autoMiss: z.boolean(),
+  autoHit: z.boolean(),
+});
+
+export const attackDamageEventSnapshotSchema = z.object({
+  /** `spell-cast:<castId>:attack:<index>:damage` — ÚNICO por ocorrência. */
+  eventId: z.string(),
+  components: z.array(attackDamageComponentSnapshotSchema),
+  rawDamage: z.number().int().nonnegative(),
+  finalDamage: z.number().int().nonnegative(),
+  hpBefore: z.number().int().nullable(),
+  hpAfter: z.number().int().nullable(),
+  critical: z.boolean(),
+});
+
 /**
- * FASE 6.6I.4 — SNAPSHOT DO ATAQUE MÁGICO.
+ * FASE 6.6J.4 — UMA OCORRÊNCIA de ataque dentro do `SpellCast`.
  *
- * Guarda o d20 mantido, os dados rolados, o modo, o bônus SNAPSHOTADO no
- * `SpellCast`, a CA do alvo NO MOMENTO da resolução e o dano por componente.
- * Miss não inventa evento de dano: `damage: null`.
+ * `index` é estável (0..N-1) e `occurrenceId` é determinístico. O alvo é POR
+ * OCORRÊNCIA: o mesmo alvo pode receber duas jogadas, e cada uma tem seu próprio
+ * evento de dano (HP/defesas/Concentração/morte independentes).
+ */
+export const spellAttackOccurrenceSnapshotSchema = z.object({
+  index: z.number().int().nonnegative(),
+  occurrenceId: z.string(),
+  target: z.object({ kind: z.string(), id: z.string() }),
+  attack: spellAttackRollSnapshotSchema,
+  /** `null` em miss e quando nenhum dano foi produzido. */
+  damage: attackDamageEventSnapshotSchema.nullable(),
+  /** IDs de modificadores OPCIONAIS usados nesta jogada (só identidades). */
+  selectedModifiers: z.array(z.string()),
+  noEffectReason: z.enum(['attack-miss', 'zero-damage']).nullable(),
+});
+
+export type SpellAttackOccurrenceSnapshot = z.infer<typeof spellAttackOccurrenceSnapshotSchema>;
+
+/**
+ * FASE 6.6J.4 — SNAPSHOT DO ATAQUE MÁGICO (N jogadas).
+ *
+ * `attacks` preserva TODAS as ocorrências, na ordem dos índices. `targets` é só
+ * o resumo do conjunto canônico único (nunca reconstrói as jogadas).
  */
 export const attackDamageSnapshotSchema = z.object({
   kind: z.literal('attack-damage'),
-  attack: z.object({
-    kind: z.enum(['melee', 'ranged']),
-    /** Índice do ataque dentro do cast (hoje sempre 0). */
-    index: z.number().int().nonnegative(),
-    /** Identidade do ataque (`spell-cast:<castId>:attack:<index>`). */
-    occurrenceId: z.string(),
-    naturalRoll: z.number().int(),
-    rolls: z.array(z.number().int()),
-    mode: z.enum(['normal', 'advantage', 'disadvantage']),
-    /** Bônus vindo do SNAPSHOT do cast (nunca recalculado). */
-    attackBonus: z.number().int(),
-    effectBonus: z.number().int(),
-    effectDice: z.array(
-      z.object({
-        sides: z.number().int(),
-        value: z.number().int(),
-        sign: z.number().int(),
-        label: z.string().nullable(),
-      }),
-    ),
-    /** Fontes visíveis que contribuíram (efeito privado = `null`). */
-    sources: z.array(z.string().nullable()),
-    total: z.number().int(),
-    targetAc: z.number().int(),
-    hit: z.boolean(),
-    critical: z.boolean(),
-    autoMiss: z.boolean(),
-    autoHit: z.boolean(),
-  }),
-  damage: z
-    .object({
-      /** `spell-cast:<castId>:attack:<index>:damage`. */
-      eventId: z.string(),
-      components: z.array(attackDamageComponentSnapshotSchema),
-      rawDamage: z.number().int().nonnegative(),
-      finalDamage: z.number().int().nonnegative(),
-      hpBefore: z.number().int().nullable(),
-      hpAfter: z.number().int().nullable(),
-      critical: z.boolean(),
-    })
-    .nullable(),
-  target: z.object({ kind: z.string(), id: z.string() }),
+  attacks: z.array(spellAttackOccurrenceSnapshotSchema).min(1),
+  targets: z.array(z.object({ kind: z.string(), id: z.string() })),
   casterName: z.string(),
   noEffectReason: z.enum(['attack-miss', 'zero-damage']).nullable(),
   at: z.string(),
 });
 
 export type AttackDamageSnapshot = z.infer<typeof attackDamageSnapshotSchema>;
+
+/**
+ * FORMATO LEGADO (6.6I.4) — UMA jogada, campos no nível do snapshot.
+ *
+ * Mantido para LEITURA de casts históricos. Nunca é escrito de novo.
+ */
+export const legacyAttackDamageSnapshotSchema = z.object({
+  kind: z.literal('attack-damage'),
+  attack: spellAttackRollSnapshotSchema.extend({
+    index: z.number().int().nonnegative(),
+    occurrenceId: z.string(),
+  }),
+  damage: attackDamageEventSnapshotSchema.nullable(),
+  target: z.object({ kind: z.string(), id: z.string() }),
+  casterName: z.string(),
+  noEffectReason: z.enum(['attack-miss', 'zero-damage']).nullable(),
+  at: z.string(),
+});
+
+export type LegacyAttackDamageSnapshot = z.infer<typeof legacyAttackDamageSnapshotSchema>;
+
+/** O snapshot é legado quando os campos estão no nível do registro. */
+export function isLegacyAttackDamageSnapshot(
+  value: AttackDamageSnapshot | LegacyAttackDamageSnapshot,
+): value is LegacyAttackDamageSnapshot {
+  return !('attacks' in value);
+}
+
+/**
+ * Normaliza v1 → v2. O histórico continua auditável com o MESMO parser; nada de
+ * migration de JSONB e nada de inventar dados (o `damage` é preservado como é).
+ */
+export function normalizeAttackDamageSnapshot(
+  value: AttackDamageSnapshot | LegacyAttackDamageSnapshot,
+): AttackDamageSnapshot {
+  if (!isLegacyAttackDamageSnapshot(value)) return value;
+  const { index, occurrenceId, ...attack } = value.attack;
+  return {
+    kind: 'attack-damage',
+    attacks: [
+      {
+        index,
+        occurrenceId,
+        target: value.target,
+        attack,
+        damage: value.damage,
+        selectedModifiers: [],
+        noEffectReason: value.noEffectReason,
+      },
+    ],
+    targets: [value.target],
+    casterName: value.casterName,
+    noEffectReason: value.noEffectReason,
+    at: value.at,
+  };
+}
 
 /**
  * FASE 6.6J.2 — SNAPSHOT DO `save-damage` NO PRÓPRIO CAST.
@@ -193,17 +272,30 @@ export const saveDamageCastSnapshotSchema = z.object({
 export type SaveDamageCastSnapshot = z.infer<typeof saveDamageCastSnapshotSchema>;
 export type SaveDamageTargetResult = z.infer<typeof saveDamageTargetResultSchema>;
 
-/** União das resoluções imediatas persistidas em `SpellCast.resolutionSnapshot`. */
-export const spellResolutionSnapshotSchema = z.discriminatedUnion('kind', [
+/**
+ * União das resoluções imediatas persistidas em `SpellCast.resolutionSnapshot`.
+ *
+ * O `attack-damage` legado entra na união (e não num `discriminatedUnion`) porque
+ * as duas versões compartilham o mesmo `kind`: o parser tenta o formato NOVO
+ * primeiro e cai no antigo, que é normalizado.
+ */
+export const spellResolutionSnapshotSchema = z.union([
   immediateHealingSnapshotSchema,
-  attackDamageSnapshotSchema,
   saveDamageCastSnapshotSchema,
+  attackDamageSnapshotSchema,
+  legacyAttackDamageSnapshotSchema,
 ]);
-export type SpellResolutionSnapshot = z.infer<typeof spellResolutionSnapshotSchema>;
+export type SpellResolutionSnapshot =
+  | ImmediateHealingSnapshot
+  | SaveDamageCastSnapshot
+  | AttackDamageSnapshot;
 
 /** Leitura FECHADA do snapshot de resolução (inválido/ausente = `null`). */
 export function parseSpellResolutionSnapshot(value: unknown): SpellResolutionSnapshot | null {
-  return parseJson(spellResolutionSnapshotSchema, value, null as never) ?? null;
+  const parsed = spellResolutionSnapshotSchema.safeParse(value);
+  if (!parsed.success) return null;
+  if (parsed.data.kind !== 'attack-damage') return parsed.data;
+  return normalizeAttackDamageSnapshot(parsed.data);
 }
 
 /** Lê o snapshot persistido; JSON inválido/ausente vira `null` (nunca inventa). */
