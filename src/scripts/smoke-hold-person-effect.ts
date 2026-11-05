@@ -407,17 +407,20 @@ export async function smokeHoldPersonEffect(baseUrl: string, check: Check): Prom
       { kind: 'character', id: casterTwo.id },
       1,
     );
+    const blessOperationId = randomUUID();
     const bless = await request(
       '/effects/bless',
       {
-        operationId: randomUUID(),
+        operationId: blessOperationId,
         caster: { kind: 'character', id: casterTwo.id },
         targets: [targetEntity],
         ...(blessResource ? { castingResource: blessResource } : {}),
       },
       masterToken,
     );
-    operationIds.push(bless.data.effects?.[0]?.id ?? '');
+    // 6.6J.0: antes empilhava o id do EFFECT no lugar da operação, então o
+    // SpellCast do Bless escapava do cleanup (resíduo auditado: `Caster Two`).
+    operationIds.push(blessOperationId);
     const blessEffect = (bless.data.effects ?? [])[0] as EffectDto;
     const blessOptions = await request(
       `/dice/options/character/${target.id}?roll=save&ability=wisdom`,
