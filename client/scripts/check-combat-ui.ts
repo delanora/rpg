@@ -31,7 +31,12 @@ import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
 import { GridMovementTrace } from '../src/combat/grid/GridMovementTrace';
 import { MovementHud } from '../src/combat/grid/MovementHud';
 import { GridRuler } from '../src/combat/grid/GridRuler';
-import { anchorStepFeet, appendAnchor, pointerAnchor } from '../src/combat/grid/movementPath';
+import {
+  anchorStepFeet,
+  appendAnchor,
+  contiguousAnchors,
+  pointerAnchor,
+} from '../src/combat/grid/movementPath';
 import { CombatGrid } from '../src/combat/grid/CombatGrid';
 import {
   IDENTITY_CAMERA,
@@ -4177,6 +4182,159 @@ check(
     movementPathSource.includes('if (samePosition(start, anchor)) return [];') &&
     // A origem nunca é reintroduzida como primeiro passo.
     appendAnchor([], { xFeet: 0, yFeet: 5 }, 5, { xFeet: 0, yFeet: 0 })[0].yFeet === 5
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1.2 — MEASURE TO MOVE (medir + Space, sem segundo engine)            */
+/* -------------------------------------------------------------------------- */
+const rulerMoveHtml = (move: Parameters<typeof GridRuler>[0]['move']) =>
+  renderToStaticMarkup(
+    createElement(GridRuler, {
+      from: { x: 20, y: 40 },
+      to: { x: 120, y: 40 },
+      fromLabel: 'Hero',
+      toLabel: 'Ponto',
+      distance: {
+        status: 'known',
+        distanceFeet: 25,
+        provenance: 'grid-2d',
+        algorithm: 'phb-grid-2d',
+        reason: null,
+      },
+      state: 'success',
+      locked: true,
+      move,
+    }),
+  );
+
+check(
+  'CB280) Measure-to-Move existe: régua FIXA num combatente autorizado vira intenção de Movement',
+  movementGridSource.includes("ruler.locked && ruler.from.kind === 'combatant'") &&
+    movementGridSource.includes('movableUnitId === measureSourceId') &&
+    movementGridSource.includes('measureMoveEligible') &&
+    movementGridSource.includes('async function executeMeasureMove(): Promise<void> {') &&
+    movementGridSource.includes('sourcePosition: SpatialPosition;') &&
+    // Elegibilidade reaproveita a autoridade do gesto direto (sem ownership novo).
+    !/ownerUserId|currentUserControlsCombatant/.test(movementGridSource)
+);
+check(
+  'CB281) origem obrigatoriamente COMBATENTE e destino PONTO canônico (ponto vazio, outro token, NPC)',    movementGridSource.includes("ruler.to?.kind === 'point' ? ruler.to.position : null") &&
+    movementGridSource.includes("ruler.locked && ruler.from.kind === 'combatant'") &&
+    movementGridSource.includes('path.length === 0') &&
+    movementGridSource.includes("'O destino é a posição atual.'")
+);
+check(
+  'CB282) affordance: ícone de movimento + keycap Space com aria-label; estados inválidos SÓ explicam',
+  (() => {
+    const ready = rulerMoveHtml({ state: 'ready', message: null, costFeet: null });
+    const blocked = rulerMoveHtml({
+      state: 'invalid',
+      message: 'Caminho bloqueado.',
+      costFeet: null,
+    });
+    const busy = rulerMoveHtml({ state: 'executing', message: null, costFeet: null });
+    return (
+      ready.includes('grid-measure-move-icon') &&
+      ready.includes('grid-keycap') &&
+      ready.includes('>Space<') &&
+      ready.includes('Pressione Espaço para mover até o destino medido.') &&
+      !ready.includes('grid-measure-move-message') &&
+      blocked.includes('Caminho bloqueado.') &&
+      !blocked.includes('grid-keycap') &&
+      busy.includes('Executando…') &&
+      !busy.includes('grid-keycap') &&
+      // O desenho da régua continua aria-hidden; o badge não.
+      !/<div class="grid-measure-move[^"]*"[^>]*aria-hidden/.test(ready)
+    );
+  })()
+);
+check(
+  'CB283) não existe botão "Executar Movimento": a indicação vive na label (sem toolbar nova)',
+  rulerMoveHtml({ state: 'ready', message: null, costFeet: null }).includes('<kbd') &&
+    !/Executar Movimento/.test(movementGridSource) &&
+    !movementGridSource.includes('onExecuteMovement') &&
+    !/<button[^>]*grid-measure-move/.test(rulerMoveHtml({ state: 'ready', message: null, costFeet: null }))
+);
+check(
+  'CB284) Space tap executa e Space+drag continua PAN (repeat e input focado não disparam)',
+  movementGridSource.includes('spaceCandidate.current = Boolean(') &&
+    movementGridSource.includes('if (candidate && !panned) void executeMeasureMove();') &&
+    movementGridSource.includes('if (spaceDown.current) spacePanUsed.current = true;') &&
+    movementGridSource.includes('if (!event.repeat) {') &&
+    movementGridSource.includes('if (isEditableTarget(event.target)) return;') &&
+    // Pan tem precedência sobre token (inclusive por cima do próprio token).
+    movementGridSource.includes('if (overToken && !spaceDown.current && event.button !== 1) return;')
+);
+check(
+  'CB285) path DIRETO interpolado pela MESMA função do gesto direto, com start implícito',
+  movementGridSource.includes('const path = contiguousAnchors(') &&
+    movementGridSource.includes('anchorStepFeet(unit.spatial.effectiveSize),') &&
+    (() => {
+      const path = contiguousAnchors(
+        { xFeet: 50, yFeet: 50 },
+        { xFeet: 50, yFeet: 65 },
+        anchorStepFeet('medium'),
+      );
+      const tiny = contiguousAnchors(
+        { xFeet: 0, yFeet: 0 },
+        { xFeet: 2.5, yFeet: 5 },
+        anchorStepFeet('tiny'),
+      );
+      return (
+        JSON.stringify(path) ===
+          JSON.stringify([
+            { xFeet: 50, yFeet: 55 },
+            { xFeet: 50, yFeet: 60 },
+            { xFeet: 50, yFeet: 65 },
+          ]) &&
+        tiny.length === 2 &&
+        tiny[1].yFeet === 5 &&
+        tiny[0].yFeet === 2.5 &&
+        path.every((step) => step.xFeet !== 50 || step.yFeet !== 50)
+      );
+    })()
+);
+check(
+  'CB286) mesmo pipeline: preview → commit existentes (sem fetch próprio, com versão e operação)',
+  movementGridSource.includes('previewMovement(combat.id, { combatantId: unit.id, path })') &&
+    movementGridSource.includes('const result = await commitMovement(combat, {') &&
+    movementGridSource.includes('operationId: operationRef.current,') &&
+    !/fetch\(/.test(movementGridSource) &&
+    !/totalDistanceFeet\s*[-+*/]|totalCostFeet\s*[-+*/]/.test(stripComments(movementGridSource)) &&
+    movementGridSource.includes('if (!fresh.movement.legal || !fresh.movement.affordable) {')
+);
+check(
+  'CB287) animação é APRESENTAÇÃO server-first: depois do commit, pelado path confirmado e com clamp',
+  movementGridSource.includes('await commitMovement(combat, {') &&
+    movementGridSource.includes('startMovementAnimation(intent.combatantId, intent.sourcePosition') &&
+    movementGridSource.includes("window.matchMedia('(prefers-reduced-motion: reduce)').matches") &&
+    movementGridSource.includes('ANIMATION_MAX_MS') &&
+    movementGridSource.includes('const stop = anchors.findIndex(') &&
+    movementGridSource.includes('const traversed = stop >= 0 ? anchors.slice(0, stop + 1) : [...anchors, end];') &&
+    gridTokenSource.includes('const box = visualRect ?? rect;') &&
+    movementGridSource.includes('setVisualRect(null);')
+);
+check(
+  'CB288) régua mostra DISTÂNCIA e o custo só como secundário quando o servidor difere',
+  rulerMoveHtml({ state: 'ready', message: null, costFeet: 30 }).includes('Custo: 9 m') &&
+    !rulerMoveHtml({ state: 'ready', message: null, costFeet: 25 }).includes('Custo:') &&
+    movementGridSource.includes('costFeet: measureMove.preview?.movement.totalCostFeet ?? null') &&
+    !/difficultTerrain\s*\?/.test(stripComments(movementGridSource))
+);
+check(
+  'CB289) invalidação: origem mudou/turno perdeu autoridade desativam o Space e o erro MANTÉM a régua',
+  movementGridSource.includes('position.xFeet !== intent.sourcePosition.xFeet') &&
+    movementGridSource.includes("message: 'A origem do movimento mudou: meça novamente.'") &&
+    movementGridSource.includes('(movement ? movement.combatantId !== intent.combatantId : false)') &&
+    movementGridSource.includes('if (animationVersion.current === null || animationVersion.current === combat.version) {') &&
+    // Falha NÃO limpa a régua: o jogador continua analisando a decisão.
+    (() => {
+      const finallyAt = movementGridSource.indexOf('} finally {\n      executing.current = false;');
+      if (finallyAt < 0) return false;
+      const catchAt = movementGridSource.lastIndexOf('} catch (error) {', finallyAt);
+      const failure = movementGridSource.slice(catchAt, finallyAt);
+      return catchAt >= 0 && failure.length > 0 && !failure.includes('clearRuler()');
+    })()
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

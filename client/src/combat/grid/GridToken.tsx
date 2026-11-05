@@ -25,6 +25,12 @@ export interface GridTokenProps {
   interactive?: boolean;
   /** Papel na MEDIÇÃO (apresentação/`aria-label`). */
   measureRole?: 'source' | 'target' | null;
+  /**
+   * Posição ANIMADA (pés→px) de Measure-to-Move: só apresentação. O DTO do
+   * servidor continua sendo a posição verdadeira; quando a animação termina
+   * este valor vira `null` e o token volta a renderizar o estado autoritativo.
+   */
+  visualRect?: { left: number; top: number; width: number; height: number } | null;
   /** O token pertence ao combatente que PODE mover mecanicamente agora. */
   movable?: boolean;
   /** Régua ativa: o clique escolhe extremo, nunca inicia movimento. */
@@ -56,6 +62,7 @@ export function GridToken({
   pending = false,
   interactive = false,
   measureRole = null,
+  visualRect = null,
   movable = false,
   rulerActive = false,
   onSelect,
@@ -66,8 +73,10 @@ export function GridToken({
   const rect = renderRect(combatant, cellSizeFeet, pixelsPerCell);
   if (!rect || !combatant.spatial) return null;
 
+  // A caixa desenhada pode ser a animada; o footprint mecânico não muda.
+  const box = visualRect ?? rect;
   const size = combatant.spatial.effectiveSize;
-  const artSize = tokenArtSize(rect);
+  const artSize = tokenArtSize(box);
   const label = SIZE_LABELS[size];
   const classes = ['grid-token'];
   if (currentTurn) classes.push('is-current');
@@ -75,15 +84,16 @@ export function GridToken({
   if (pending) classes.push('is-pending');
   if (combatant.missing) classes.push('is-missing');
   if (movable) classes.push('is-movable');
+  if (visualRect) classes.push('is-animating');
   if (rulerActive) classes.push('is-ruler-pick');
   if (measureRole === 'source') classes.push('is-measure-source');
   if (measureRole === 'target') classes.push('is-measure-target');
 
   const style: CSSProperties & Record<'--grid-token-art', string> = {
-    left: `${rect.left}px`,
-    top: `${rect.top}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
+    left: `${box.left}px`,
+    top: `${box.top}px`,
+    width: `${box.width}px`,
+    height: `${box.height}px`,
     '--grid-token-art': `${artSize}px`,
   };
 
