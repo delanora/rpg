@@ -698,11 +698,19 @@ export async function smokeSpatialScene(baseUrl: string, check: Check): Promise<
       attackId: 'bite',
     });
     state = attack.data.combat ?? state;
+    // PHB 2014: 1 natural SEMPRE erra, independentemente do bônus. A fixture
+    // não pode tratar esse caso legítimo como regressão (era um flake de 1/20):
+    // aqui exigimos dano aplicado OU o miss correto do 1 natural, nunca um
+    // acerto sem dano.
+    const attackResult = attack.data.result;
+    const naturalOne = attackResult?.attackRoll === 1;
     check(
-      '88.AO.1) ataque em combate com cena continua funcionando (dano aplicado)',
+      '88.AO.1) ataque em combate com cena continua funcionando (dano aplicado, salvo 1 natural)',
       attack.status === 200 &&
-        typeof attack.data.result?.targetHpCurrent === 'number' &&
-        attack.data.result.targetHpCurrent < 30,
+        typeof attackResult?.targetHpCurrent === 'number' &&
+        (naturalOne
+          ? attackResult.hit === false && attackResult.targetHpCurrent === 30
+          : attackResult.targetHpCurrent < 30),
       JSON.stringify({ status: attack.status, data: attack.data }),
     );
     check(

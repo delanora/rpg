@@ -25,6 +25,9 @@ import {
   useCombatItem,
 } from './combatApi';
 import { CombatIntro } from './CombatIntro';
+import { CombatGrid } from './grid/CombatGrid';
+// CSS ISOLADO do grid (styles.css é WIP alheio e não é tocado).
+import './grid/grid.css';
 import { BattleWaitingPanel } from './components/BattleWaitingPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
 import { CombatDashboard } from './components/CombatDashboard';
@@ -587,6 +590,15 @@ export function CombatTracker({
           </span>
         </header>
 
+        {/* 6.6M.1 — cena espacial também na preparação (placement é setup). */}
+        <CombatGrid
+          combat={combat}
+          isMaster={isMaster}
+          busy={busy}
+          onCombatChange={onCombatChange}
+          onError={onError}
+        />
+
         <CombatDashboard
           left={
             <InitiativeTimeline
@@ -704,6 +716,19 @@ export function CombatTracker({
           </div>
         ) : null}
       </header>
+
+      {/*
+        6.6M.1 — GRID VISUAL da cena. Lê APENAS o estado espacial do DTO
+        (`Combat.spatial` + `Combatant.spatial`), preservando o log à direita.
+        Placement aqui é administrativo (Mestre), não Movement.
+      */}
+      <CombatGrid
+        combat={combat}
+        isMaster={isMaster}
+        busy={busy}
+        onCombatChange={onCombatChange}
+        onError={onError}
+      />
 
       <CombatDashboard
         left={

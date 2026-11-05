@@ -2076,6 +2076,12 @@ export interface CombatUsableItem {
 /** Tamanhos mecânicos do PHB 2014 (fundação espacial 6.6L.1). */
 export type SpatialSize = 'tiny' | 'small' | 'medium' | 'large' | 'huge' | 'gargantuan';
 
+/** Âncora 2D em PÉS (canto mínimo do espaço ocupado). */
+export interface SpatialPosition {
+  xFeet: number;
+  yFeet: number;
+}
+
 /** Retângulo ocupado DERIVADO da posição + tamanho efetivo (nunca enviado). */
 export interface OccupiedSpace {
   minXFeet: number;
@@ -2095,7 +2101,7 @@ export interface CombatantSpatial {
   tokenImageRef: string | null;
   baseSize: SpatialSize;
   effectiveSize: SpatialSize;
-  position: { xFeet: number; yFeet: number } | null;
+  position: SpatialPosition | null;
   occupiedSpace: OccupiedSpace | null;
 }
 
