@@ -10,6 +10,7 @@ import {
   type AbilityKey,
 } from './dnd5e.js';
 import type { ItemDetails, WeaponCategory } from './item-details.js';
+import { weaponRangeOf } from './weapon-range.js';
 
 /**
  * ATAQUE DERIVADO DA ARMA EQUIPADA.
@@ -209,6 +210,9 @@ function makeWeaponAttack(options: {
   blocked?: string;
 }): CombatAttack {
   const properties = options.weapon.details.properties ?? [];
+  // 6.6L.2 — ALCANCE estruturado da arma (pés). Arremesso usa os alcances de
+  // arma à distância; o ataque corpo a corpo da MESMA arma usa o reach.
+  const range = weaponRangeOf(options.weapon.details, options.kind === 'melee' ? 'melee' : 'ranged');
   return {
     id: options.id,
     name: options.name,
@@ -237,6 +241,15 @@ function makeWeaponAttack(options: {
     abilityModifier: options.abilityModifier,
     ...(options.proficient === undefined ? {} : { proficient: options.proficient }),
     ...(options.blocked === undefined ? {} : { blocked: options.blocked }),
+    ...(range?.reachFeet !== null && range?.reachFeet !== undefined
+      ? { reachFeet: range.reachFeet }
+      : {}),
+    ...(range?.normalRangeFeet !== null && range?.normalRangeFeet !== undefined
+      ? { normalRangeFeet: range.normalRangeFeet }
+      : {}),
+    ...(range?.longRangeFeet !== null && range?.longRangeFeet !== undefined
+      ? { longRangeFeet: range.longRangeFeet }
+      : {}),
   };
 }
 

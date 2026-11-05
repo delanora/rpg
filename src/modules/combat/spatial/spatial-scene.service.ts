@@ -18,6 +18,7 @@ import {
   type SpatialPosition2D,
   type SpatialSceneConfig,
 } from './spatial.types.js';
+import { isGridAligned } from './spatial-distance.js';
 
 /**
  * FASE 6.6L.1 — CONFIGURAÇÃO DA CENA E PLACEMENT.
@@ -207,7 +208,20 @@ export async function setCombatantSpatialPosition(
       const position = canonicalPosition(input.position);
       if (position) {
         const scene = spatialSceneOf(combat.spatialConfig);
-        const space = occupiedSpaceOf(position, combatant.baseSize ?? 'medium');
+        const baseSize = combatant.baseSize ?? 'medium';
+        // 6.6L.2 — ALINHAMENTO CANÔNICO: numa cena grid-2d, Small+ só pode ser
+        // colocado em múltiplos de 5 pés e Tiny em múltiplos de 2,5 pés.
+        // Sem isso a distância PHB-grid não teria significado. Um placement
+        // NOVO desalinhado é recusado (posições legadas já gravadas não são
+        // movidas: o resolver as trata como `unknown`).
+        if (scene.mode === 'grid-2d' && !isGridAligned(position, baseSize)) {
+          throw new HttpError(
+            'A posição precisa estar alinhada ao grid: múltiplos de 5 pés (2,5 pés para Minúsculo).',
+            400,
+            'SPATIAL_POSITION_NOT_GRID_ALIGNED',
+          );
+        }
+        const space = occupiedSpaceOf(position, baseSize);
         if (!space || !spaceWithinScene(space, scene)) {
           throw new HttpError(
             'O espaço ocupado não cabe na cena: escolha outra posição.',

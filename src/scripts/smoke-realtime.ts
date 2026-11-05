@@ -12,6 +12,7 @@ import { smokeSpellActionEconomy } from './smoke-spell-action-economy.js';
 import { smokeSpellTargeting } from './smoke-spell-targeting.js';
 import { smokeCoverFoundation } from './smoke-cover-foundation.js';
 import { smokeSpatialScene } from './smoke-spatial-scene-foundation.js';
+import { smokeSpatialDistance } from './smoke-spatial-distance-range.js';
 import { smokePlayerSpellcasting } from './smoke-player-spellcasting.js';
 import { smokeSpellComponents } from './smoke-spell-components.js';
 import { smokeSpellDuration } from './smoke-spell-duration.js';
@@ -9076,7 +9077,12 @@ async function main(): Promise<void> {
     'arma sem a propriedade Munição NÃO consome nada',
     plainHit.status === 200 &&
       afterPlainHit.inventory.find((item: any) => item.id === 'plain-arrow')?.quantity === 5,
-    JSON.stringify(afterPlainHit.inventory.map((item: any) => ({ id: item.id, q: item.quantity }))),
+    JSON.stringify({
+      status: plainHit.status,
+      error: plainHit.data?.error,
+      message: plainHit.data?.message,
+      inventory: afterPlainHit.inventory.map((item: any) => ({ id: item.id, q: item.quantity })),
+    }),
   );
 
   // Munição mágica: o bônus soma ao ATAQUE e ao DANO.
@@ -21601,6 +21607,7 @@ async function main(): Promise<void> {
   await smokeSpellTargeting(BASE_URL, check);
   await smokeCoverFoundation(BASE_URL, check);
   await smokeSpatialScene(BASE_URL, check);
+  await smokeSpatialDistance(BASE_URL, check);
   await smokePlayerSpellcasting(BASE_URL, check);
   await smokeSpellComponents(BASE_URL, check);
   await smokeSpellDuration(BASE_URL, check);

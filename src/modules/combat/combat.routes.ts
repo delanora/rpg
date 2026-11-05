@@ -10,6 +10,7 @@ import {
   setCombatantSpatialPosition,
   updateSpatialScene,
 } from './spatial/spatial-scene.service.js';
+import { readCombatDistance } from './spatial/spatial-distance.service.js';
 import { resolutionRequestsForCombat } from './resolution-requests.js';
 import {
   executeEconomyAction,
@@ -94,6 +95,25 @@ combatRouter.patch(
     );
   },
 );
+
+/**
+ * GET /api/combat/:combatId/spatial/distance?fromCombatantId=&toCombatantId=
+ *
+ * LEITURA server-authoritative da distância PHB-grid entre dois combatentes
+ * (a 6.6M.2 consome isto em vez de recalcular no React). Não é autoridade de
+ * targeting: ataque/magia recalculam na execução. Criatura/NPC tem posição
+ * privada do Mestre — o jogador recebe `unknown/not-visible`, nunca um oráculo.
+ */
+combatRouter.get('/:combatId/spatial/distance', authenticate, async (req, res) => {
+  res.json(
+    await readCombatDistance(
+      actorFrom(req),
+      String(req.params.combatId),
+      String(req.query.fromCombatantId ?? ''),
+      String(req.query.toCombatantId ?? ''),
+    ),
+  );
+});
 
 /** GET /api/combat/active — estado do combate em andamento (ou null). */
 combatRouter.get('/active', authenticate, async (req, res) => {

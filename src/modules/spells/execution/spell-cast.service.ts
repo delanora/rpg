@@ -66,6 +66,14 @@ import {
   resolveSpellAuthorization,
 } from './spell-authorization.service.js';
 import type { SpatialRequirementKind } from './spatial-validation.js';
+import {
+  combatSpatialIndexById,
+  evaluateEntityDistance,
+  gridAreaSpatialProvider,
+  gridSpatialProvider,
+  type CombatSpatialIndex,
+} from '../../combat/spatial/spatial-distance.service.js';
+import { spatialDistanceSnapshot } from '../../combat/spatial/spatial-distance.js';
 import type { SpellcastingProfile } from './spellcasting-source.js';
 import {
   resolveCastingResource,
@@ -210,6 +218,25 @@ function fingerprintOf(actor: EffectActor, input: SpellCastProofInput): string {
       }),
     )
     .digest('hex');
+}
+
+/** Fatos de distância por alvo (sanitizados) para o snapshot do cast. */
+function distanceFactsFor(
+  index: CombatSpatialIndex,
+  caster: LoadedEntity,
+  targets: readonly LoadedEntity[],
+) {
+  return targets.map((target) => {
+    const evaluation = evaluateEntityDistance(index, caster.entity, target.entity);
+    const snapshot = spatialDistanceSnapshot(evaluation);
+    return {
+      targetKey: `${target.entity.kind}:${target.entity.id}`,
+      status: snapshot.status,
+      distanceFeet: snapshot.distanceFeet,
+      provenance: snapshot.provenance,
+      algorithm: snapshot.algorithm,
+    };
+  });
 }
 
 function idempotencyError(): never {
@@ -444,6 +471,10 @@ export async function validateSpellCast(
   const castingTimeKind = execution.castingTime ?? spell.castingTimeKind;
   const economyCost = castingEconomyFor(castingTimeKind);
   const turnContext = await castingTurnContext(db, caster);
+  // 6.6L.2 — DISTÂNCIA/ALCANCE do SERVIDOR. Com a cena em grid-2d e ambos os
+  // corpos colocados, o alcance é FATO; fora disso continua UNKNOWN e o fluxo
+  // assistido de sempre (Mestre/confirmação) é preservado.
+  const spatialIndex = await combatSpatialIndexById(db, turnContext?.combatId ?? null);
   const priorCasts = turnContext ? await committedCastsOnTurn(db, turnContext) : [];
   assertCastingEconomy(turnContext, economyCost, priorCasts, {
     spellLevel,
@@ -480,7 +511,7 @@ export async function validateSpellCast(
       caster,
       combatId: turnContext?.combatId ?? null,
       castAtLevel,
-      ...(options.areaProvider ? { provider: options.areaProvider } : {}),
+      provider: options.areaProvider ?? gridAreaSpatialProvider(spatialIndex),
       ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
       ...(options.areaDecisions ? { decisions: options.areaDecisions } : {}),
       deferUnknown: options.deferUnknown === true,
@@ -530,8 +561,14 @@ export async function validateSpellCast(
       targets,
       castAtLevel,
       deferUnknown: options.deferUnknown === true,
+      provider: gridSpatialProvider(spatialIndex),
       ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
     });
+    // 6.6L.2 — fatos de DISTÂNCIA entram no snapshot imutável do cast (sem
+    // coordenadas): reposicionar depois não reescreve como foi validado.
+    if (spatialIndex) {
+      targeting = { ...targeting, distances: distanceFactsFor(spatialIndex, caster, targets) };
+    }
     requiredConfirmations = targeting.requiredConfirmations;
     // 6.6J.4: os ASSIGNMENTS (ordem + repetição) ficam no snapshot do TARGETING;
     // o conjunto único sozinho não reconstrói "A recebeu duas jogadas".
