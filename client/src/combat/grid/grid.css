@@ -85,6 +85,46 @@
   border-radius: 3px;
 }
 
+/* 6.6L.3.2 — controle de visibilidade espacial (só Mestre, modo Posicionar). */
+.grid-visibility {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line-strong, rgba(224, 184, 63, 0.32));
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.grid-visibility-label {
+  font-size: 0.74rem;
+  color: var(--ink-soft, #c3ab86);
+}
+
+/*
+ * Badge de OCULTO: discreto e no canto, para não competir com o turno atual.
+ * Só o Mestre recebe o token de uma entidade master-only, então este selo nunca
+ * aparece para o jogador.
+ */
+.grid-token-hidden {
+  position: absolute;
+  top: -0.55rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 0.28rem;
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #8d7859);
+  background: #0b0806;
+  border: 1px solid var(--line, rgba(224, 184, 63, 0.22));
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .grid-toolbar {
   display: flex;
   flex-wrap: wrap;

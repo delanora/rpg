@@ -15,6 +15,7 @@ import { smokeSpatialScene } from './smoke-spatial-scene-foundation.js';
 import { smokeSpatialDistance } from './smoke-spatial-distance-range.js';
 import { smokeSpatialMovement } from './smoke-spatial-movement.js';
 import { smokeOpportunityAttacks } from './smoke-opportunity-attacks.js';
+import { smokeSpatialVisibility } from './smoke-spatial-visibility.js';
 import { smokePlayerSpellcasting } from './smoke-player-spellcasting.js';
 import { smokeSpellComponents } from './smoke-spell-components.js';
 import { smokeSpellDuration } from './smoke-spell-duration.js';
@@ -21612,6 +21613,7 @@ async function main(): Promise<void> {
   await smokeSpatialDistance(BASE_URL, check);
   await smokeSpatialMovement(BASE_URL, check);
   await smokeOpportunityAttacks(BASE_URL, check);
+  await smokeSpatialVisibility(BASE_URL, check);
   await smokePlayerSpellcasting(BASE_URL, check);
   await smokeSpellComponents(BASE_URL, check);
   await smokeSpellDuration(BASE_URL, check);

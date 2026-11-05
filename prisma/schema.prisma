@@ -1010,6 +1010,16 @@ model Combatant {
   /// instância: a ficha e o template da criatura não recebem lado.
   sideKey String?
 
+  ///
+  /// VISIBILIDADE ESPACIAL da INSTÂNCIA (Fase 6.6L.3.2): `public` (padrão)
+  /// projeta token/imagem/posição/tamanho no grid do PLAYER; `master-only`
+  /// omite a PRESENÇA ESPACIAL do PLAYER sem alterar a mecânica (o ocupante
+  /// continua bloqueando passagem). NÃO é Invisible, Hide, LoS nem Fog of War:
+  /// é política de PROJEÇÃO do Mestre, por combate — o mesmo Goblin pode estar
+  /// público em um encontro e oculto em outro, e nem a ficha nem o template da
+  /// criatura recebem este estado.
+  spatialVisibility String @default("public")
+
   createdAt DateTime @default(now())
 
   @@index([combatId])

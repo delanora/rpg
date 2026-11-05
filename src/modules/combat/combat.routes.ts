@@ -7,10 +7,12 @@ import {
   spatialConfigPatchSchema, spatialPositionPatchSchema,
   movementCommitSchema, movementPreviewSchema, combatantSidePatchSchema,
   opportunityAttackPayloadSchema, opportunityDecisionSchema, opportunityVisibilitySchema,
+  combatantSpatialVisibilitySchema,
 } from './combat.schema.js';
 import {
   setCombatantSideKey,
   setCombatantSpatialPosition,
+  setCombatantSpatialVisibility,
   updateSpatialScene,
 } from './spatial/spatial-scene.service.js';
 import {
@@ -220,6 +222,37 @@ combatRouter.patch(
     }
     res.json(
       await setCombatantSideKey(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.combatantId),
+        parsed.data,
+      ),
+    );
+  },
+);
+
+/**
+ * PATCH /api/combat/:combatId/combatants/:combatantId/spatial-visibility —
+ * MASTER oculta/revela a PRESENÇA ESPACIAL de UM combatente (6.6L.3.2).
+ *
+ * Não altera mecânica: um ocupante `master-only` continua bloqueando passagem,
+ * gerando difficult terrain e provocando Opportunity Attack. Também não altera
+ * autoridade/ownership — NPC público continua controlado pelo Mestre. O
+ * jogador é recusado no serviço (403) e não existe listagem de entidades
+ * ocultas para ele.
+ */
+combatRouter.patch(
+  '/:combatId/combatants/:combatantId/spatial-visibility',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const parsed = combatantSpatialVisibilitySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    res.json(
+      await setCombatantSpatialVisibility(
         actorFrom(req),
         String(req.params.combatId),
         String(req.params.combatantId),

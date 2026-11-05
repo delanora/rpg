@@ -496,6 +496,9 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
                 kind: 'NPC',
                 creatureId: hidden.id,
                 name: hidden.name,
+                // 6.6L.3.2: oculto ESPACIALMENTE por decisão do Mestre — a
+                // mecânica (ocupação) continua valendo neste cenário.
+                spatialVisibility: 'master-only',
                 hpCurrent: 20,
                 hpMax: 20,
                 armorClass: 12,

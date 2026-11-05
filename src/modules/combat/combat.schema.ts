@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SPATIAL_MODES, spatialPositionSchema } from './spatial/spatial.types.js';
+import { SPATIAL_VISIBILITIES } from './spatial/spatial-visibility.js';
 
 /**
  * Entrada do botão "COMBATE": o mestre escolhe a localidade e quantas cópias
@@ -227,6 +228,25 @@ export const combatantSidePatchSchema = z
     operationId: z.string().min(1).max(128),
   })
   .strict();
+
+/* -------------------------------------------------------------------------- */
+/* 6.6L.3.2 — Visibilidade espacial por instância                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Projeção ESPACIAL de UM combatente (`public` | `master-only`). MASTER-only no
+ * serviço; o valor é um enum FECHADO — nunca aceita texto livre e não carrega
+ * posição/tamanho/imagem junto.
+ */
+export const combatantSpatialVisibilitySchema = z
+  .object({
+    spatialVisibility: z.enum(SPATIAL_VISIBILITIES),
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict();
+
+export type CombatantSpatialVisibilityPatch = z.infer<typeof combatantSpatialVisibilitySchema>;
 
 /* -------------------------------------------------------------------------- */
 /* 6.6L.3.1 — Reaction Gate / Opportunity Attack                              */

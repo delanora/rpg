@@ -7,7 +7,10 @@ import {
 } from './gridMath';
 
 /** Dados mínimos de um combatente para o grid (subset do DTO real). */
-export type GridUnit = Pick<CombatantDto, 'id' | 'name' | 'spatial'> & {
+export type GridUnit = Pick<
+  CombatantDto,
+  'id' | 'name' | 'spatial' | 'spatialVisibility'
+> & {
   missing?: boolean;
 };
 
@@ -42,6 +45,10 @@ export interface GridTokenProps {
  * Fonte da imagem: o `tokenImageRef` do DTO (retrato da ficha para Character;
  * imagem cadastrada para NPC/criatura). `null` = fallback `?`, desenhado em
  * texto/CSS (sem raster e sem depender de zoom/font-size fixo).
+ *
+ * 6.6L.3.2: `?` significa APENAS "sem imagem". Quem está `master-only` não
+ * chega ao grid do jogador (o DTO vem com `spatial: null`); para o Mestre o
+ * token continua desenhado, com a indicação discreta de oculto.
  */
 export function GridToken({
   combatant,
@@ -108,6 +115,11 @@ export function GridToken({
         )}
       </span>
       <span className="grid-token-label">{combatant.name}</span>
+      {combatant.spatialVisibility === 'master-only' ? (
+        <span className="grid-token-hidden" title="Oculto dos jogadores">
+          Oculto
+        </span>
+      ) : null}
     </button>
   );
 }

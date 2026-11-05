@@ -103,7 +103,7 @@ import {
   combatantDeathState,
   combatantMechanicalState,
   hideMasterPrivateState,
-  isMasterOnlyCombatant,
+  hasPrivateMechanicalState,
   orderCombatants,
   toCombatDto,
   type CombatDto,
@@ -596,7 +596,7 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
         'stabilize',
         // Estabilizar um PERSONAGEM é público; estabilizar criatura/NPC revela
         // que ela estava a 0 PV — só o Mestre lê essa linha.
-        { private: isMasterOnlyCombatant(targetCombatant.kind) },
+        { private: hasPrivateMechanicalState(targetCombatant.kind) },
       );
       // Rolagem PÚBLICA: entra na bandeja de dados existente (nada privado aqui).
       const diceRoll: DiceRollDto = {
@@ -1021,7 +1021,7 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         'death-override',
         // O override de uma criatura/NPC denuncia que ela estava no fluxo de
         // morte: linha privada do Mestre.
-        { private: isMasterOnlyCombatant(outgoing.kind) },
+        { private: hasPrivateMechanicalState(outgoing.kind) },
       );
     }
 
@@ -1090,7 +1090,7 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         incoming,
         `Turno(s) sem ação pulado(s) automaticamente: ${names}.`,
         'turn-skip',
-        { private: skipped.some((item) => isMasterOnlyCombatant(item.kind)) },
+        { private: skipped.some((item) => hasPrivateMechanicalState(item.kind)) },
       );
     }
     // 6.6H: expirações devidas NESTA nova posição do clock são processadas
@@ -1991,14 +1991,14 @@ export async function resolveAttack<TReaction = never>(
     const result = response.result;
     // O resultado do ataque em criatura/NPC também esconde CA/PV (vale para
     // NPC: é estado privado do Mestre).
-    const targetIsCreature = isMasterOnlyCombatant(
+    const targetIsCreature = hasPrivateMechanicalState(
       response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind ?? 'CHARACTER',
     );
     const broadcaster = getBroadcaster();
     broadcaster.toMasters(ServerEvents.ATTACK_RESOLVED, result);
     broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, targetIsCreature ? hideTargetStats(result) : result);
   }
-  return { ...response, result: actor.role !== 'MASTER' && response.result.targetStatsHidden === false && isMasterOnlyCombatant(response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind ?? 'CHARACTER') ? hideTargetStats(response.result) : response.result };
+  return { ...response, result: actor.role !== 'MASTER' && response.result.targetStatsHidden === false && hasPrivateMechanicalState(response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind ?? 'CHARACTER') ? hideTargetStats(response.result) : response.result };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2228,7 +2228,7 @@ export async function useCombatItem(
       `${combatant.name} usou ${item.name}${targetPart}.${outcome}`,
       'use-item',
       // Inventário de NPC é privado do Mestre: a linha não vai para jogadores.
-      { private: isMasterOnlyCombatant(combatant.kind) || isMasterOnlyCombatant(target.kind) },
+      { private: hasPrivateMechanicalState(combatant.kind) || hasPrivateMechanicalState(target.kind) },
     );
 
     return {

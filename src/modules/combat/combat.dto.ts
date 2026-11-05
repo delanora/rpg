@@ -22,6 +22,7 @@ import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.
 import { parseJson } from '../shared/json.js';
 import { occupiedSpaceOf, parseStoredPosition } from './spatial/occupied-space.js';
 import { effectiveSizeOf } from './spatial/spatial-size.js';
+import { spatialVisibilityOf, type SpatialVisibility } from './spatial/spatial-visibility.js';
 import {
   spatialSceneOf,
   type OccupiedSpace,
@@ -118,8 +119,15 @@ export interface CombatantDto {
   /** Verdadeiro quando a vida/CA existem, mas estão ocultas para quem vê. */
   statsHidden: boolean;
   /**
-   * Dados espaciais (posição/tamanho/imagem do token). `null` quando o
-   * combatente é privado do Mestre: o servidor NÃO envia posição, tamanho,
+   * VISIBILIDADE ESPACIAL da INSTÂNCIA (6.6L.3.2) — política de PROJEÇÃO, não
+   * de mecânica. `public`: token/imagem/posição/tamanho vão para o jogador (o
+   * estado mecânico continua privado para criatura/NPC). `master-only`: a
+   * presença espacial some do DTO do jogador.
+   */
+  spatialVisibility: SpatialVisibility;
+  /**
+   * Dados espaciais (posição/tamanho/imagem do token). `null` quando a
+   * presença espacial é `master-only`: o servidor NÃO envia posição, tamanho,
    * imagem nem espaço ocupado a jogadores.
    */
   spatial: CombatantSpatialDto | null;
@@ -181,6 +189,11 @@ export interface CombatantSourced {
   baseSize?: SpatialSize;
   /** Lado do ENCONTRO (`null` = relação desconhecida, nunca inferida). */
   sideKey?: string | null;
+  /**
+   * Visibilidade ESPACIAL da instância (`public` | `master-only`). Ausente em
+   * combates gravados antes da 6.6L.3.2 → `public` (nunca oculto por omissão).
+   */
+  spatialVisibility?: string | null;
   character: (Character & { user: { username: string } }) | null;
   creature: Creature | null;
   /**
@@ -273,6 +286,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const baseSize = combatant.baseSize ?? 'medium';
   const effectiveSize = effectiveSizeOf(baseSize);
   const spatialPosition = parseStoredPosition(combatant.spatialPosition);
+  const spatialVisibility = spatialVisibilityOf(combatant.spatialVisibility);
   return {
     turnEconomy: reconcileMovement(
       economyOf(combatant.turnEconomy),
@@ -304,6 +318,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     hpMax,
     armorClass,
     armorNonProficiency: armorClassDetail?.armorNonProficiency ?? null,
+    spatialVisibility,
     spatial: {
       tokenImageRef: combatant.character?.avatarUrl || combatant.creature?.imageUrl || null,
       baseSize,
@@ -362,8 +377,13 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
   return viewer === 'MASTER' ? dto : hideMasterPrivateState(dto);
 }
 
-/** Criaturas e NPCs são controlados pelo Mestre e têm estado de vida privado. */
-export function isMasterOnlyCombatant(kind: CombatantKind): boolean {
+/**
+ * Criaturas e NPCs são controlados pelo Mestre e têm ESTADO MECÂNICO privado
+ * (PV, CA, morte, economia). NÃO diz nada sobre presença espacial: um NPC é
+ * público no grid por padrão e só sai da projeção do jogador quando o Mestre
+ * marca `spatialVisibility = 'master-only'` (6.6L.3.2).
+ */
+export function hasPrivateMechanicalState(kind: CombatantKind): boolean {
   return kind !== 'CHARACTER';
 }
 
@@ -387,17 +407,42 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
     ...dto,
     economyLog: dto.economyLog.filter((entry) => entry.private !== true),
     combatants: dto.combatants.map((combatant) => {
-      const visible = isMasterOnlyCombatant(combatant.kind)
-        ? hideCombatantPrivateState(combatant)
+      // DUAS políticas INDEPENDENTES (6.6L.3.2): estado mecânico (por tipo: NPC
+      // tem stats privados) e PRESENÇA ESPACIAL (por instância: `master-only`).
+      // Um NPC público aparece no grid com a imagem real e SEM HP/CA.
+      const visible = hasPrivateMechanicalState(combatant.kind)
+        ? hideCombatantMechanicalState(combatant)
         : combatant;
+      const projected = projectCombatantSpatialState(visible);
       // Lado é estado do ENCONTRO administrado pelo Mestre: o jogador não
       // recebe o mapa de times (nem o dos personagens) nesta fase.
-      return { ...visible, sideKey: null };
+      return { ...projected, sideKey: null };
     }),
   };
 }
 
-function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
+/**
+ * PRESENÇA ESPACIAL (6.6L.3.2) — `master-only` não projeta token, imagem nem
+ * geometria ao jogador. É a ÚNICA porta que esconde espaço: nada aqui consulta
+ * `kind`, então NPC público continua visível e um personagem oculto some.
+ */
+export function projectCombatantSpatialState(combatant: CombatantDto): CombatantDto {
+  if (combatant.spatialVisibility !== 'master-only') return combatant;
+  return {
+    ...combatant,
+    // Imagem/token também é presença: a ausência do retrato nunca pode
+    // denunciar que existe (ou deixou de existir) algo oculto na cena.
+    imageUrl: null,
+    spatial: null,
+  };
+}
+
+/**
+ * ESTADO MECÂNICO privado de criatura/NPC. Depois da 6.6L.3.2 NÃO toca mais em
+ * `spatial`/`imageUrl`: essas são responsabilidade de
+ * `projectCombatantSpatialState`, aplicada a TODOS os combatentes.
+ */
+export function hideCombatantMechanicalState(combatant: CombatantDto): CombatantDto {
   // A 0 PV o lifecycle aplica Inconsciente (fonte `hp-zero`) e a Queda
   // derivada. Acima de 0 PV nada é filtrado: Caído por um empurrão, por
   // exemplo, continua sendo informação pública.
@@ -427,9 +472,6 @@ function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
     hpCurrent: null,
     hpMax: null,
     armorClass: null,
-    // Imagem/token de criatura/NPC também é privada do Mestre (6.6L.1):
-    // ausência de imagem não pode denunciar a existência da criatura.
-    imageUrl: null,
     // Esquiva/Preparar de NPC/criatura são estado operacional do Mestre: o
     // jogador não recebe os flags (sem badge e sem inferir a tática secreta).
     turnEconomy: { ...combatant.turnEconomy, dodging: false, ready: null },
@@ -437,9 +479,6 @@ function hideCombatantPrivateState(combatant: CombatantDto): CombatantDto {
     // contador, resultado nem a existência da rolagem.
     deathState: null,
     deathBlocksActions: false,
-    // Privacidade espacial (6.6L.1): posição, tamanho, imagem e espaço ocupado
-    // de criatura/NPC NÃO vão para o jogador. O servidor filtra — o CSS nunca.
-    spatial: null,
     statsHidden: true,
     mechanicalState: privateState,
     conditionEffects: deriveConditionEffects(privateState),
