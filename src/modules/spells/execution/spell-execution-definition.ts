@@ -7,6 +7,7 @@ import type { CastingResource } from './casting-resource.js';
 import type { SpellTargetingDefinition } from './spell-targeting.js';
 import type { TargetingSnapshot } from './spell-targeting.service.js';
 import type { SpellDurationDefinition } from './spell-duration.js';
+import type { LevelScalingDefinition } from '../../shared/spells/cantrip-scaling.js';
 
 /**
  * FASE 6.6A — SPELL EXECUTION DEFINITION.
@@ -15,9 +16,10 @@ import type { SpellDurationDefinition } from './spell-duration.js';
  * componentes do catálogo descritivo e NÃO descreve o estado durável — isso é
  * responsabilidade da Effect Definition referenciada por id.
  *
- * Dois padrões reais nesta fase (os mesmos já provados por Bless e Hold Person):
+ * Padrões reais nesta fase:
  *  • `immediate-effect` — a conjuração produz o efeito na hora;
- *  • `save-effect` — o alvo faz uma salvaguarda e o efeito só entra na FALHA.
+ *  • `save-effect` — o alvo faz uma salvaguarda e o efeito só entra na FALHA;
+ *  • `save-damage` — salvaguarda e, na falha, dano INSTANTÂNEO (sem Effect).
  *
  * `spell-attack` fica para quando Spell Attack/DC estiverem formalizados.
  */
@@ -31,7 +33,35 @@ export type SpellResolutionDefinition =
       ability: AbilityKey;
       effectDefinitionId: string;
       applyOn: 'failure';
+    }
+  | {
+      kind: 'save-damage';
+      ability: AbilityKey;
+      /**
+       * Consequência no SUCESSO. Só `none` é executável hoje (Chama Sagrada).
+       * `half` existe no contrato para futuras magias, mas o VALIDATE recusa
+       * explicitamente — nada de meia-dano implementado por engano.
+       */
+      onSuccess: 'none' | 'half';
+      damage: {
+        /** Tipo canônico do projeto (`Radiante`, `Fogo`...). */
+        type: string;
+        /** Dados BASE (sem o escalonamento de truque). */
+        dice: { count: number; sides: number };
+        /** Escalonamento por nível TOTAL de personagem (truques). */
+        scaling?: LevelScalingDefinition;
+      };
+      /**
+       * Metadado PHB: o alvo não se beneficia de cobertura neste save. A engine
+       * ainda não soma cobertura, então nada muda hoje — a regra fica declarada.
+       */
+      ignoreSaveCover?: boolean;
     };
+
+/** Id mecânico canônico de uma magia (`spell.<spellId>`), sem Effect Definition. */
+export function spellDefinitionId(spellId: string): string {
+  return `spell.${spellId}`;
+}
 
 /** Contexto de validação (read-only) entregue ao hook da definição. */
 export interface SpellValidationContext {

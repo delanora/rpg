@@ -1233,6 +1233,13 @@ model PendingEffectSave {
   /// `success` | `failure` (null enquanto pendente ou declinada).
   result String?
 
+  ///
+  /// FASE 6.6I.2 — SNAPSHOT TIPADO da resolução de `save-damage` (Chama Sagrada):
+  /// save (total/CD/resultado), dados rolados, dano cru/final, defesas e
+  /// `eventId` determinístico. Validado por Zod na leitura; retry devolve este
+  /// snapshot em vez de rolar de novo. Nullable para efeitos contínuos/legados.
+  resolutionSnapshot Json?
+
   /// Idempotência da APLICAÇÃO: retry devolve a MESMA pendência.
   operationId String @unique
   fingerprint String

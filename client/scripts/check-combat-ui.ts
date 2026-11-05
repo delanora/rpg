@@ -1902,10 +1902,13 @@ console.log('Check-combat-ui — refino da UI de combate');
       !damageCore.includes('$transaction')
   );
   check(
-    'CB124) Sacred Flame e Healing Word continuam NÃO implementadas nesta fase',
-    !registrySource.includes('sacred-flame') &&
+    'CB124) Sacred Flame entrou no registry SEM Effect Definition e Healing Word continua fora',
+    registrySource.includes("SACRED_FLAME_SPELL_ID") &&
+      registrySource.includes("kind: 'save-damage'") &&
       !registrySource.includes('healing-word') &&
-      !registrySource.includes("spellId: 'sacred-flame'")
+      !source('../src/modules/spells/execution/spell-execution-registry.ts').includes(
+        'effectDefinitionId: SACRED_FLAME',
+      )
   );
   check(
     'CB125) os smokes dos cards e do núcleo integram o runner principal',
@@ -1917,6 +1920,57 @@ console.log('Check-combat-ui — refino da UI de combate');
     source('../src/scripts/smoke-combat-resolution-cards.ts').includes('/resolution-requests') &&
       source('../src/scripts/smoke-combat-resolution-cards.ts').includes('pendingEffectSave') &&
       !source('../src/scripts/smoke-combat-resolution-cards.ts').includes('resolutionCard.create')
+  );
+
+  // 6.6I.2 — Chama Sagrada: save-damage declarativo, sem card/client dedicado.
+  const sacredFlame = source('../src/modules/spells/execution/sacred-flame.ts');
+  const saveDamage = source('../src/modules/spells/execution/save-damage-resolution.ts');
+  const castOptions = source('../src/modules/spells/execution/spell-cast-options.service.ts');
+  check(
+    'CB127) scaling de truque é genérico por nível TOTAL (não usa nível de classe nem ND)',
+    source('../src/modules/shared/spells/cantrip-scaling.ts').includes('character-level') &&
+      sacredFlame.includes('SACRED_FLAME_SCALING') &&
+      !sacredFlame.includes('classLevel') &&
+      !sacredFlame.includes('challengeRating') &&
+      source('../src/modules/spells/execution/cantrip-scaling.service.ts').includes('characterLevelOf(')
+  );
+  check(
+    'CB128) defesas e HP da Chama Sagrada passam pelo núcleo compartilhado (sem mutação direta)',
+    saveDamage.includes("from '../../combat/damage-resolution.js'") &&
+      saveDamage.includes('resolveDamage(') &&
+      !saveDamage.includes('hpCurrent =') &&
+      !saveDamage.includes('UPDATE "characters"') &&
+      !saveDamage.includes('UPDATE "combatants"')
+  );
+  check(
+    'CB129) dano/concentração usam eventId DETERMINÍSTICO e o snapshot vai para a pendência',
+    saveDamage.includes('spell-save:${pendingId}:damage') &&
+      saveDamage.includes('resolutionSnapshot') &&
+      saveDamage.includes('noteDamageConcentration(') &&
+      saveDamage.includes('applyDamageConsequences(')
+  );
+  check(
+    'CB130) cliente não ganha campos de dano/atributo/CD da Chama Sagrada',
+    !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('damage') &&
+      !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('saveDc') &&
+      !source('../src/modules/spells/execution/spell-cast.schema.ts').includes('ability') &&
+      !castOptions.includes('sacredFlameDamage')
+  );
+  check(
+    'CB131) o card continua GENÉRICO: nenhum componente/título dedicado à Chama Sagrada',
+    !source('src/combat/components/CombatLog.tsx').includes('Chama Sagrada') &&
+      !source('src/combat/components/ResolutionCard.tsx').includes('sacred') &&
+      source('../src/modules/combat/resolution-requests.ts').includes("kind: 'spell-saving-throw'")
+  );
+  check(
+    'CB132) NPC escala por campo explícito e Healing Word/Spell Attack seguem ausentes',
+    source('../src/modules/shared/creature-spellcasting.ts').includes('cantripScalingLevel') &&
+      !registrySource.includes('healing-word') &&
+      !registrySource.includes("kind: 'spell-attack'")
+  );
+  check(
+    'CB133) o smoke da Chama Sagrada integra o runner principal',
+    smokeRunner.includes('smokeSacredFlame(BASE_URL, check)')
   );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

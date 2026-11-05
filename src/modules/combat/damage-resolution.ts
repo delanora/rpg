@@ -281,6 +281,35 @@ export async function applyHpMutation(
   // Criatura/NPC: o HP é o snapshot da instância do combate (cópias independentes).
   const hpMax = target.hpMax ?? target.creature?.hpMax ?? 0;
   const ceiling = effectiveMaxHp(hpMax, target.mechanicalState as never);
+
+  // 6.6I.2 — CRIATURA FORA DE COMBATE: o alvo é o REGISTRO do bestiário, não
+  // uma instância. Mesmo núcleo, mesma atomicidade. O discriminador é a
+  // EXISTÊNCIA da instância, nunca só o `kind`: combatentes de criatura também
+  // chegam aqui como `CREATURE` e DEVEM escrever no combatente.
+  const instance = target.kind === 'CREATURE'
+    ? await db.combatant.findUnique({ where: { id: target.id }, select: { id: true } })
+    : null;
+  if (target.kind === 'CREATURE' && !instance) {
+    const beforeCreature = await db.creature.findUnique({
+      where: { id: target.id },
+      select: { hpCurrent: true },
+    });
+    if (!beforeCreature) return null;
+    const affected = await db.$executeRaw`
+      UPDATE "creatures"
+      SET "hpCurrent" = GREATEST(0, LEAST(${ceiling}, COALESCE("hpCurrent", 0) + ${delta}))
+      WHERE "id" = ${target.id}
+    `;
+    if (affected === 0) return null;
+    const storedCreature = await db.creature.findUniqueOrThrow({ where: { id: target.id } });
+    return {
+      hpCurrent: storedCreature.hpCurrent,
+      hpMax: ceiling,
+      hpBefore: beforeCreature.hpCurrent,
+      hpTempBefore: 0,
+    };
+  }
+
   const before = await db.combatant.findUnique({
     where: { id: target.id },
     select: { hpCurrent: true },
