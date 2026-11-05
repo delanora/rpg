@@ -118,10 +118,86 @@ export const attackDamageSnapshotSchema = z.object({
 
 export type AttackDamageSnapshot = z.infer<typeof attackDamageSnapshotSchema>;
 
+/**
+ * FASE 6.6J.2 — SNAPSHOT DO `save-damage` NO PRÓPRIO CAST.
+ *
+ * O DANO pertence a UM roll compartilhado (`spell-cast:<castId>:damage-roll:0`),
+ * enquanto cada alvo tem seu PRÓPRIO evento (`spell-cast:<castId>:target:...:damage`)
+ * usado por HP, morte e Concentração. A pendência guarda só o resultado do SAVE.
+ */
+export const saveDamageShareSnapshotSchema = z.enum(['none', 'half', 'full']);
+
+export const sharedDamageRollComponentSchema = z.object({
+  type: z.string().nullable(),
+  count: z.number().int().nonnegative(),
+  sides: z.number().int().nonnegative(),
+  rolls: z.array(z.number().int()),
+  raw: z.number().int().nonnegative(),
+});
+
+export const saveDamageTargetResultSchema = z.object({
+  target: z.object({ kind: z.string(), id: z.string() }),
+  pendingSaveId: z.string().nullable(),
+  save: z
+    .object({
+      success: z.boolean(),
+      total: z.number().int(),
+      dc: z.number().int(),
+    })
+    .nullable(),
+  status: z.enum(['applied', 'no-damage', 'unavailable']),
+  components: z.array(
+    z.object({
+      type: z.string().nullable(),
+      raw: z.number().int().nonnegative(),
+      afterSave: z.number().int().nonnegative(),
+      applied: z.number().int().nonnegative(),
+      modifier: z
+        .enum(['immunity', 'resistance', 'vulnerability', 'resistance-vulnerability'])
+        .nullable(),
+    }),
+  ),
+  rawDamage: z.number().int().nonnegative(),
+  damageAfterSave: z.number().int().nonnegative(),
+  finalDamage: z.number().int().nonnegative(),
+  eventId: z.string(),
+  hpBefore: z.number().int().nullable(),
+  hpAfter: z.number().int().nullable(),
+  concentration: z.boolean(),
+});
+
+export const saveDamageCastSnapshotSchema = z.object({
+  kind: z.literal('save-damage'),
+  castId: z.string(),
+  /** Id do ROLL compartilhado. */
+  eventId: z.string(),
+  outcome: z.object({
+    success: saveDamageShareSnapshotSchema,
+    failure: saveDamageShareSnapshotSchema,
+  }),
+  damageType: z.string(),
+  damageRoll: z
+    .object({
+      id: z.string(),
+      index: z.number().int().nonnegative(),
+      components: z.array(sharedDamageRollComponentSchema),
+      rawDamage: z.number().int().nonnegative(),
+    })
+    .nullable(),
+  /** Resultados na ORDEM CANÔNICA do targeting snapshot. */
+  targets: z.array(saveDamageTargetResultSchema),
+  noEffectReason: z.enum(['no-damage', 'no-valid-target']).nullable(),
+  at: z.string(),
+});
+
+export type SaveDamageCastSnapshot = z.infer<typeof saveDamageCastSnapshotSchema>;
+export type SaveDamageTargetResult = z.infer<typeof saveDamageTargetResultSchema>;
+
 /** União das resoluções imediatas persistidas em `SpellCast.resolutionSnapshot`. */
 export const spellResolutionSnapshotSchema = z.discriminatedUnion('kind', [
   immediateHealingSnapshotSchema,
   attackDamageSnapshotSchema,
+  saveDamageCastSnapshotSchema,
 ]);
 export type SpellResolutionSnapshot = z.infer<typeof spellResolutionSnapshotSchema>;
 

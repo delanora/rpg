@@ -913,6 +913,38 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
   // 6.6H: o FIM do turno atual abre as salvaguardas repetidas dos efeitos que
   // atingem quem está encerrando. Enquanto alguma continuar pendente o turno
   // NÃO avança — `turnSequence` e `round` permanecem iguais até rolar/recusar.
+  // 6.6J.2: a salvaguarda INICIAL pertence à resolução imediata da magia. Com
+  // qualquer pendência inicial obrigatória aberta, o turno NÃO avança (nem
+  // `round`/`currentIndex`/`turnSequence`) — um efeito simultâneo não pode ter
+  // metade dos saves resolvida e o combate seguindo. É um bloqueio DIFERENTE de
+  // `TURN_END_TRIGGER_PENDING` (save repetido de efeito contínuo, abaixo).
+  if (pending?.status === 'ACTIVE') {
+    const resolvingCasts = await prisma.spellCast.findMany({
+      where: { combatId: input.combatId, status: 'resolving' },
+      select: { id: true, durationSnapshot: true },
+    });
+    // Conjurações COM DURAÇÃO são governadas pelo Duration Engine (6.6H), que
+    // expira/cancela no início do turno do anchor — inclusive um cast ainda
+    // `resolving`. Bloquear aqui congelaria a expiração, então o bloqueio vale
+    // para as resoluções INSTANTÂNEAS (`save-effect`/`save-damage`).
+    const instantCasts = resolvingCasts.filter((row) => row.durationSnapshot == null);
+    if (instantCasts.length > 0) {
+      const unresolved = await prisma.pendingEffectSave.count({
+        where: {
+          spellCastId: { in: instantCasts.map((row) => row.id) },
+          phase: 'initial',
+          status: 'pending',
+        },
+      });
+      if (unresolved > 0) {
+        throw new HttpError(
+          'Resolva as salvaguardas iniciais da conjuração antes de avançar o turno.',
+          409,
+          'SPELL_RESOLUTION_PENDING',
+        );
+      }
+    }
+  }
   if (pending?.status === 'ACTIVE') {
     const triggers = await openEndOfTurnTriggers(input.combatId);
     if (triggers.blocked) {

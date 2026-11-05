@@ -47,6 +47,8 @@ export const SYNTHETIC_SAVE_HALF_DEFINITION: SpellExecutionDefinition = {
     kind: 'save-damage',
     ability: SYNTHETIC_SAVE_HALF_SAVE_ABILITY,
     outcome: { success: 'half', failure: 'full' },
+    // Um único alvo nesta prova; o escopo fica explícito para a 6.6J.2.
+    damageRollScope: 'shared',
     damage: {
       components: [{ type: SYNTHETIC_SAVE_HALF_DAMAGE_TYPE, dice: SYNTHETIC_SAVE_HALF_DICE }],
     },

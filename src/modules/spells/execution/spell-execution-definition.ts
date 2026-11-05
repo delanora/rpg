@@ -55,6 +55,15 @@ export type SpellResolutionDefinition =
         success: SaveDamageShare;
         failure: SaveDamageShare;
       };
+      /**
+       * ESCOPO do dano quando o cast tem VÁRIOS alvos (6.6J.2).
+       *
+       * `shared` (default) = PHB 2014: o dano de um efeito simultâneo é rolado
+       * UMA vez e todos os alvos partem do mesmo bruto. `per-target` está no
+       * contrato para efeitos futuros que realmente rolem por alvo, mas NÃO é
+       * executável hoje (o VALIDATE recusa em vez de inventar).
+       */
+      damageRollScope?: 'shared' | 'per-target';
       damage: {
         /**
          * Componentes INDEPENDENTES: cada parcela mantém o tipo até as defesas

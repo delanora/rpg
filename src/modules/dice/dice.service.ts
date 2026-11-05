@@ -722,10 +722,9 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
           raw: outcome.snapshot.rawDamage,
           afterSave: outcome.snapshot.damageAfterSave ?? outcome.snapshot.rawDamage,
           final: outcome.snapshot.finalDamage,
-          rolls:
-            outcome.snapshot.components?.flatMap((component) => component.rolls ?? []) ??
-            outcome.snapshot.dice?.rolls ??
-            [],
+          // 6.6J.2: o resumo vem do DANO COMPARTILHADO do cast (mesmo com N
+          // alvos), então o log nunca sugere um roll por alvo.
+          rolls: outcome.snapshot.rolls,
         }
       : null;
   } else {

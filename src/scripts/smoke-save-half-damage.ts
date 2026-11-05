@@ -442,8 +442,9 @@ export async function smokeSaveHalfDamage(baseUrl: string, check: Check): Promis
     });
     const storedSnapshot = evenResult.snapshot!;
     check(
-      '84.T) eventId DETERMINÍSTICO (`spell-save:<pendingId>:damage`), snapshot raw/afterSave/final persistido e cast resolvido',
-      storedSnapshot.eventId === `spell-save:${evenCast.pending.id}:damage` &&
+      '84.T) eventId DETERMINÍSTICO por ALVO (`spell-cast:<castId>:target:<kind>:<id>:damage`), dano persistido e cast resolvido',
+      storedSnapshot.eventId ===
+        `spell-cast:${storedEven.spellCastId}:target:${storedEven.targetEntityKind}:${storedEven.targetEntityId}:damage` &&
         JSON.stringify(storedEven.resolutionSnapshot ?? {}).includes('"damageAfterSave":5') &&
         (await prisma.spellCast.findUniqueOrThrow({ where: { id: evenCast.cast.id } })).status ===
           'resolved',
@@ -686,7 +687,7 @@ export async function smokeSaveHalfDamage(baseUrl: string, check: Check): Promis
         concentrationSaves.length === 1 &&
         concentrationSaves[0]?.dc === Math.max(10, Math.floor(7 / 2)) &&
         concentrationSaves[0]?.eventId ===
-          `spell-save:${concentrationCast.pending.id}:damage`,
+          `spell-cast:${concentrationCast.cast.id}:target:character:${concentrationTarget.id}:damage`,
       JSON.stringify(concentrationSaves),
     );
 

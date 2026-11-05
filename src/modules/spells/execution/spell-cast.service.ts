@@ -265,6 +265,16 @@ export async function validateSpellCast(
     // O nível de escalonamento, porém, continua exigido ANTES de qualquer custo
     // (truque: nível total; NPC: `cantripScalingLevel` do statblock).
     await cantripScalingLevelOf(caster, db);
+    // 6.6J.2: o dano de um efeito simultâneo é COMPARTILHADO (PHB 2014). O
+    // contrato já aceita `per-target` para efeitos futuros, mas executá-lo hoje
+    // seria inventar regra — recusar ANTES de qualquer custo.
+    if (execution.resolution.damageRollScope === 'per-target') {
+      throw new HttpError(
+        'Dano rolado por alvo ainda não é executável nesta fase.',
+        409,
+        'SPELL_EXECUTION_NOT_IMPLEMENTED',
+      );
+    }
   }
   const targets: LoadedEntity[] = [];
   const seen = new Set<string>();

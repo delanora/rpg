@@ -429,21 +429,30 @@ export async function smokeSacredFlame(baseUrl: string, check: Check): Promise<v
         failSnapshot?.components[0]?.applied === failSnapshot?.rawDamage,
       JSON.stringify(failSnapshot?.components),
     );
+    // 6.6J.2: os dados rolados vivem UMA única vez no snapshot do CAST; a
+    // pendência guarda o resultado derivado e a referência ao roll.
+    const failCastSnapshot = failPending?.spellCastId
+      ? ((await prisma.spellCast.findUniqueOrThrow({ where: { id: failPending.spellCastId } }))
+          .resolutionSnapshot as any)
+      : null;
     check(
-      '81.M2) nível 5 escala para 2d8 no servidor (dados e rolagens persistidos)',
+      '81.M2) nível 5 escala para 2d8 no servidor (dados rolados UMA vez no snapshot do cast)',
       failSnapshot?.scalingLevel === 5 &&
         failSnapshot?.dice?.count === 2 &&
         failSnapshot?.dice?.sides === 8 &&
-        failSnapshot?.dice?.rolls?.length === 2 &&
-        failSnapshot?.rawDamage === failSnapshot.dice.rolls.reduce((a: number, b: number) => a + b, 0),
-      JSON.stringify(failSnapshot?.dice),
+        failSnapshot?.damageRollId === failCastSnapshot?.damageRoll?.id &&
+        failCastSnapshot?.damageRoll?.components?.[0]?.rolls?.length === 2 &&
+        failSnapshot?.rawDamage ===
+          failCastSnapshot.damageRoll.components[0].rolls.reduce((a: number, b: number) => a + b, 0),
+      JSON.stringify({ dice: failSnapshot?.dice, roll: failCastSnapshot?.damageRoll }),
     );
     const concentrationPending = (await readMechanical('character', targetLow.id))
       ?.state?.pendingConcentrationSaves ?? [];
     check(
       '81.Q) dano final > 0 → UM teste de Concentração com o MESMO eventId determinístico do dano',
       concentrationPending.length === 1 &&
-        concentrationPending[0].eventId === `spell-save:${failPendingId}:damage` &&
+        concentrationPending[0].eventId ===
+          `spell-cast:${failPending?.spellCastId}:target:character:${targetLow.id}:damage` &&
         concentrationPending[0].dc === Math.max(10, Math.floor(failSnapshot.finalDamage / 2)),
       JSON.stringify(concentrationPending),
     );
@@ -590,10 +599,15 @@ export async function smokeSacredFlame(baseUrl: string, check: Check): Promise<v
       ? ((await prisma.pendingEffectSave.findUniqueOrThrow({ where: { id: multiPending } }))
           .resolutionSnapshot as any)
       : null;
+    const multiCastSnapshot = multiCast.data?.cast?.id
+      ? ((await prisma.spellCast.findUniqueOrThrow({ where: { id: multiCast.data.cast.id } }))
+          .resolutionSnapshot as any)
+      : null;
     check(
       '81.N2) Clérigo 1 / Guerreiro 4 conjura a Chama Sagrada com 2d8 (sem nível de classe)',
       multiCast.status === 201 && multiSnapshot?.scalingLevel === 5 &&
-        multiSnapshot?.dice?.count === 2 && multiSnapshot?.dice?.rolls?.length === 2,
+        multiSnapshot?.dice?.count === 2 &&
+        multiCastSnapshot?.damageRoll?.components?.[0]?.rolls?.length === 2,
       JSON.stringify({ cast: multiCast.status, snapshot: multiSnapshot?.dice }),
     );
 
