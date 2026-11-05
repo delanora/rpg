@@ -30,6 +30,8 @@ import {
   type AreaSpatialProvider,
 } from './area-spatial.js';
 import type { AreaTargetingSnapshot } from './area-snapshot.js';
+import type { CoverSpatialProvider } from '../../combat/cover.service.js';
+import { coverFor } from '../../combat/cover.service.js';
 
 /**
  * FASE 6.6J.3 — RESOLVEDOR DE ÁREA.
@@ -64,6 +66,12 @@ export interface ResolveAreaInput {
   combatId: string | null;
   castAtLevel: number;
   provider?: AreaSpatialProvider;
+  /**
+   * 6.6J.5 — COBERTURA na propagação. Total Cover conhecida tira o candidato da
+   * área (ele não é afetado), em vez de criar `Dex save +999`. Parcial NÃO
+   * muda membership: vira bônus no save, no pipeline de salvaguarda.
+   */
+  coverProvider?: CoverSpatialProvider;
   confirmation?: SpatialConfirmation;
   decisions?: readonly AreaUnknownDecision[];
   /**
@@ -71,6 +79,20 @@ export interface ResolveAreaInput {
    * Mestre (fluxo de INTENÇÃO). `fail` autoritativo continua rejeitando sempre.
    */
   deferUnknown?: boolean;
+}
+
+/**
+ * 6.6J.5 — `fail` de propagação quando o provider CONFIA que existe Total
+ * Cover entre a ORIGEM RESOLVIDA da área e o candidato. Sem geometria, devolve
+ * `null` (a propagação normal decide) — nunca inventa cobertura.
+ */
+async function totalCoverPropagation(
+  coverProvider: CoverSpatialProvider | undefined,
+  origin: LoadedEntity['entity'],
+  target: LoadedEntity['entity'],
+): Promise<'fail' | null> {
+  const evaluation = await coverFor({ origin, target, interaction: 'area-propagation' }, coverProvider);
+  return evaluation.status === 'known' && evaluation.level === 'total' ? 'fail' : null;
 }
 
 function fail(message: string, code: string, details?: Record<string, unknown>): never {
@@ -235,6 +257,14 @@ export async function resolveAreaTargets(input: ResolveAreaInput): Promise<AreaR
     policy === 'included' ? true : policy === 'excluded' ? false : placement.includeOrigin === true;
 
   const candidates = await areaCandidatesFor(db, input.combatId);
+  // 6.6J.5 — cobertura por CANDIDATO: só Total Cover muda membership.
+  const totalCoverKeys = new Set<string>();
+  for (const candidate of candidates) {
+    const cover = await totalCoverPropagation(input.coverProvider, caster.entity, candidate.entity);
+    if (cover === 'fail') {
+      totalCoverKeys.add(canonicalTargetKey(candidate.entity.kind, candidate.entity.id));
+    }
+  }
   const evaluations: AreaCandidateEvaluation[] = sortAreaCandidates(
     candidates.map((candidate) => {
       const target = candidate.entity;
@@ -246,9 +276,13 @@ export async function resolveAreaTargets(input: ResolveAreaInput): Promise<AreaR
             includeOrigin,
           })
         : 'unknown';
-      const propagation = resolvedOrigin.resolved
-        ? provider.evaluatePropagation(resolvedOrigin.resolved, target)
-        : 'unknown';
+      // 6.6J.5 — TOTAL COVER conhecida tira o candidato da propagação (não é
+      // afetado). Cobertura PARCIAL não muda membership: o bônus entra no save.
+      const propagation = totalCoverKeys.has(canonicalTargetKey(target.kind, target.id))
+        ? 'fail'
+        : resolvedOrigin.resolved
+          ? provider.evaluatePropagation(resolvedOrigin.resolved, target)
+          : 'unknown';
       return areaCandidateEvaluation({
         targetKey: canonicalTargetKey(target.kind, target.id),
         kind: target.kind,

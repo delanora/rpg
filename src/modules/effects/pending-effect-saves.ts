@@ -52,6 +52,11 @@ export interface PendingEffectSaveDto {
   declinedAt: string | null;
   /** Conjuração que originou a pendência (6.6A; null em fluxos antigos). */
   spellCastId: string | null;
+  /**
+   * 6.6J.5 — cobertura CONHECIDA para esta salvaguarda (só Destreza e só sem
+   * `ignoreSaveCover`). `null` = sem benefício; nunca "meia cobertura" inferida.
+   */
+  cover: { level: string; bonus: number; provenance: string | null } | null;
   createdAt: string;
   resolvedAt: string | null;
 }
@@ -75,6 +80,21 @@ export function definitionLabel(definitionId: string): string {
 
 function entityOf(kind: string, id: string): MechanicalEntity {
   return { kind: kind as MechanicalEntity['kind'], id };
+}
+
+/**
+ * 6.6J.5 — leitura DEFENSIVA do cover gravado: JSON inválido vira `null` (nunca
+ * "ganha" bônus por dado corrompido).
+ */
+function coverOf(value: Prisma.JsonValue | null): PendingEffectSaveDto['cover'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as { level?: unknown; bonus?: unknown; provenance?: unknown };
+  if (typeof record.level !== 'string' || typeof record.bonus !== 'number') return null;
+  return {
+    level: record.level,
+    bonus: Math.max(0, Math.min(5, Math.trunc(record.bonus))),
+    provenance: typeof record.provenance === 'string' ? record.provenance : null,
+  };
 }
 
 /** DTO seguro: nada de fingerprint/operationId, nada de dado de rolagem. */
@@ -106,6 +126,7 @@ export function toPendingEffectSaveDto(row: PendingEffectSave): PendingEffectSav
     triggerKey: row.triggerKey ?? null,
     declinedAt: row.declinedAt ? row.declinedAt.toISOString() : null,
     spellCastId: row.spellCastId ?? null,
+    cover: coverOf(row.cover),
     createdAt: row.createdAt.toISOString(),
     resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
   };

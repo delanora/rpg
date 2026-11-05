@@ -65,6 +65,18 @@ export const attackDamageComponentSnapshotSchema = z.object({
     .nullable(),
 });
 
+/**
+ * 6.6J.5 — COBERTURA registrada por ocorrência/ataque. `not-assessed` NÃO é
+ * "sem cobertura": é ausência de geometria, com bônus 0 e rastro auditável.
+ */
+export const coverSnapshotSchema = z.object({
+  status: z.enum(['known', 'unknown', 'not-assessed']),
+  level: z.enum(['none', 'half', 'three-quarters', 'total']).nullable(),
+  acBonus: z.number().int().nonnegative(),
+  saveBonus: z.number().int().nonnegative(),
+  provenance: z.enum(['authoritative', 'master-confirmed']).nullable(),
+});
+
 /** Dados/resultado de UMA jogada de ataque (6.6I.4, generalizado na 6.6J.4). */
 export const spellAttackRollSnapshotSchema = z.object({
   kind: z.enum(['melee', 'ranged']),
@@ -119,6 +131,8 @@ export const spellAttackOccurrenceSnapshotSchema = z.object({
   damage: attackDamageEventSnapshotSchema.nullable(),
   /** IDs de modificadores OPCIONAIS usados nesta jogada (só identidades). */
   selectedModifiers: z.array(z.string()),
+  /** 6.6J.5: cobertura RELATIVA à origem desta jogada (ausente em casts antigos). */
+  cover: coverSnapshotSchema.optional(),
   noEffectReason: z.enum(['attack-miss', 'zero-damage']).nullable(),
 });
 

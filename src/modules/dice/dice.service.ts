@@ -672,7 +672,15 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
 
   const baseBonus = await savingThrowBonus(targetEntity, ability);
   const effectBonus = mode.autoFail ? 0 : effectMods.bonus + optionalEffects.bonus;
-  const bonus = baseBonus + effectBonus;
+  // 6.6J.5 — COBERTURA: bônus CONHECIDO no COMMIT (só Destreza, e a magia pode
+  // ignorar o benefício — filtro feito ao criar a pendência). Cover NÃO dá
+  // vantagem/desvantagem e NÃO contorna falha automática: apenas soma ao total.
+  const coverRecord = pending.cover as { bonus?: unknown } | null;
+  const coverBonus =
+    ability === 'dexterity' && typeof coverRecord?.bonus === 'number'
+      ? Math.max(0, Math.min(5, Math.trunc(coverRecord.bonus)))
+      : 0;
+  const bonus = baseBonus + effectBonus + coverBonus;
   const effectDice = mode.autoFail
     ? []
     : [

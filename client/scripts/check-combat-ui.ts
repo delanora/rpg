@@ -2182,6 +2182,64 @@ console.log('Check-combat-ui — refino da UI de combate');
     multiRunner.includes('smokeMultipleSpellAttacks(BASE_URL, check)')
   );
 
+  const coverRulesSource = source('../src/modules/combat/cover.ts');
+  const coverServiceSource = source('../src/modules/combat/cover.service.ts');
+  const coverCombatSource = source('../src/modules/combat/combat.service.ts');
+  const coverAttackSource = source('../src/modules/spells/execution/attack-damage-resolution.ts');
+  const coverCastSource = source('../src/modules/spells/execution/spell-cast.service.ts');
+  const coverSnapshotSource = source('../src/modules/spells/execution/spell-resolution-snapshot.ts');
+  const coverDiceSource = source('../src/modules/dice/dice.service.ts');
+  const coverRunnerSource = source('../src/scripts/smoke-realtime.ts');
+  check(
+    'CB184) Cover é um módulo PURO e relacional — sem banco, Condition, Effect ou bônus permanente de CA',
+    coverRulesSource.includes('CoverEvaluationInput') &&
+      coverRulesSource.includes('interaction: CoverInteraction') &&
+      !coverRulesSource.includes('prisma') &&
+      !coverRulesSource.includes('mechanicalState') &&
+      !coverRulesSource.includes('character.ac +=')
+  );
+  check(
+    'CB185) sem geometria o provider padrão é ASSISTIDO (`not-assessed`) — nunca `known:none`',
+    coverServiceSource.includes("status: 'not-assessed'") &&
+      coverServiceSource.includes('assistedCoverProvider') &&
+      coverRulesSource.includes("'not-assessed'") &&
+      coverRulesSource.includes("'unknown'")
+  );
+  check(
+    'CB186) PHB 2014: +2/+5 em CA e APENAS em salvaguarda de Destreza',
+    coverRulesSource.includes("if (ability !== 'dexterity') return 0") &&
+      coverRulesSource.includes("if (level === 'half') return 2") &&
+      coverRulesSource.includes("if (level === 'three-quarters') return 5")
+  );
+  check(
+    'CB187) Total Cover é falha de TARGETING recusada antes do d20 (arma e magia), nunca +999 CA',
+    coverCombatSource.includes('TARGET_TOTAL_COVER') &&
+      coverAttackSource.includes('SPELL_TARGET_TOTAL_COVER') &&
+      !coverRulesSource.includes('acBonus: 999') &&
+      !coverRulesSource.includes('saveBonus: 999')
+  );
+  check(
+    'CB188) CA situacional por interação: bônus somado na resolução, nunca gravado na ficha',
+    coverCombatSource.includes('cover.acBonus') &&
+      coverAttackSource.includes('baseTargetAc + cover.acBonus') &&
+      !coverCombatSource.includes('armorClass: cover')
+  );
+  check(
+    'CB189) snapshot de ataque registra cover por ocorrência (campo opcional, casts antigos válidos)',
+    coverSnapshotSource.includes('cover: coverSnapshotSchema.optional()') &&
+      coverSnapshotSource.includes('coverSnapshotSchema')
+  );
+  check(
+    'CB190) Chama Sagrada conecta `ignoreSaveCover` ao pipeline genérico de salvaguarda',
+    coverCastSource.includes('ignoreSaveCover') &&
+      coverDiceSource.includes('coverBonus') &&
+      !coverCastSource.includes("spellId === 'sacred-flame'")
+  );
+  check(
+    'CB191) o smoke de cover integra o runner principal',
+    coverRunnerSource.includes('smokeCoverFoundation(BASE_URL, check)')
+  );
+
   check(
     'CB167) nenhuma UI multi-alvo dedicada: os Resolution Cards genéricos bastam',
     !source('../src/modules/combat/resolution-requests.ts').includes('MultiTarget') &&

@@ -74,6 +74,12 @@ import {
   requiredAmmoType,
   type InventoryLike,
 } from '../shared/ammo.js';
+import {
+  assistedCoverProvider,
+  assertCoverAllowsDirectTargeting,
+  coverFor,
+} from './cover.service.js';
+import { applyCoverConfirmation, coverSnapshotOf } from './cover.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
 import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
@@ -1331,6 +1337,26 @@ export async function resolveAttack(
     const targetIdentities = [`combatant:${target.id}`, ...(target.characterId ? [`character:${target.characterId}`] : []), ...(target.creature?.kind === 'NPC' && combat.combatants.filter(item => item.creatureId === target.creatureId).length === 1 ? [`creature:${target.creatureId}`] : [])];
     if (effects.charmers.some(source => targetIdentities.includes(`${source.kind}:${source.id}`))) throw new HttpError('Enfeitiçado: você não pode atacar quem o enfeitiçou.', 409, 'CONFLICT');
     const economy = economyOf(attacker.turnEconomy);
+    // 6.6J.5 — COVER: relação atacante ↔ alvo. Total Cover recusa ANTES de
+    // gastar Ação/munição e antes do d20. Sem geometria o provider assistido
+    // responde `not-assessed` (0 bônus), nunca "cobertura inexistente".
+    const coverEvaluation = applyCoverConfirmation(
+      await coverFor(
+        {
+          origin: { kind: 'combatant', id: attacker.id },
+          target: { kind: 'combatant', id: target.id },
+          interaction: 'attack',
+        },
+        assistedCoverProvider,
+      ),
+      undefined,
+    );
+    assertCoverAllowsDirectTargeting(
+      coverEvaluation,
+      'TARGET_TOTAL_COVER',
+      'O alvo está em cobertura total e não pode ser atacado diretamente.',
+    );
+    const cover = coverSnapshotOf(coverEvaluation);
     if (input.prepared) {
       if (!economy.ready) throw new HttpError('Nenhuma ação preparada.', 409, 'CONFLICT');
       if (input.attackActionId || attack.id.startsWith('offhand:')) throw new HttpError('Ataque preparado não é continuação nem mão secundária.', 400);
@@ -1394,13 +1420,15 @@ export async function resolveAttack(
     // Personagem não tem CA gravada: ela é calculada da ficha (atributos +
     // equipamento + override do mestre), igual à que aparece no tabuleiro.
     // O bônus de CA de EFEITOS entra nessa MESMA conta (nunca é gravado).
+    // COBERTURA situacional (6.6J.5): entra SÓ na CA desta interação — nunca
+    // no valor gravado da ficha/combatente.
     const targetArmorClass =
-      target.character !== null
+      (target.character !== null
         ? characterArmorClass(target.character, targetEffectArmor).value
         : target.creature?.kind === 'NPC'
           ? npcEffectiveArmorClass(target.creature, targetEffectArmor)
           : (target.armorClass ?? target.creature?.armorClass ?? 10) +
-            targetEffectArmor.reduce((sum, piece) => sum + piece.value, 0);
+            targetEffectArmor.reduce((sum, piece) => sum + piece.value, 0)) + cover.acBonus;
 
     // Vantagem e desvantagem são mutuamente exclusivas (se vierem as duas, nenhuma
     // vale) — mesmo critério da janela de dados.

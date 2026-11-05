@@ -233,6 +233,7 @@ spellsRouter.post('/intents/:id/approve', requireRole('MASTER'), async (req, res
       String(req.params.id),
       parsed.data.spatialConfirmation,
       parsed.data.unknownTargetDecisions ?? [],
+      parsed.data.coverConfirmation ?? [],
     ),
   );
 });

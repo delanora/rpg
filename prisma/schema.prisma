@@ -1259,6 +1259,9 @@ model PendingEffectSave {
   @@index([effectInstanceId, status])
   @@index([phase, status])
   @@map("pending_effect_saves")
+
+  /// 6.6J.5 — cobertura aplicável a ESTA salvaguarda (`{ level, bonus }`).
+  cover Json?
 }
 
 /// EVENTO DE CONJURAÇÃO (Fase 6.6A — Casting Foundation).
