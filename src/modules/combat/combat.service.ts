@@ -83,6 +83,8 @@ import {
 } from './cover.service.js';
 import { applyCoverConfirmation, coverSnapshotOf } from './cover.js';
 import { withSpatial } from './spatial/spatial-projection.js';
+import { combatSpatialIndex, evaluateEntityDistance } from './spatial/spatial-distance.service.js';
+import { evaluateRange } from './spatial/spatial-range.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
 import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, type AbilityKey } from '../shared/dnd5e.js';
 import { parseJson } from '../shared/json.js';
@@ -1382,6 +1384,31 @@ export async function resolveAttack(
       'O alvo está em cobertura total e não pode ser atacado diretamente.',
     );
     const cover = coverSnapshotOf(coverEvaluation);
+    // 6.6L.2 — ALCANCE: com a cena em grid-2d e ambos os corpos colocados, um
+    // alvo fora do reach/alcance longo é recusado ANTES de Ação, munição e d20.
+    // Corpo a corpo usa `reach`; à distância usa normal/longo, e long range vira
+    // DESVANTAGEM no resolver central (nunca um segundo resolver).
+    const rangeInfo = evaluateRange({
+      distance: evaluateEntityDistance(
+        combatSpatialIndex(combat),
+        { kind: 'combatant', id: attacker.id },
+        { kind: 'combatant', id: target.id },
+      ),
+      reachFeet: attack.reachFeet ?? null,
+      normalRangeFeet: attack.normalRangeFeet ?? null,
+      longRangeFeet: attack.longRangeFeet ?? null,
+    });
+    if (rangeInfo.status === 'out-of-range') {
+      throw new HttpError(
+        attack.ranged
+          ? 'O alvo está além do alcance longo desta arma.'
+          : 'O alvo está fora do alcance desta arma.',
+        409,
+        attack.ranged ? 'TARGET_OUT_OF_RANGE' : 'TARGET_OUT_OF_REACH',
+        { distanceFeet: rangeInfo.distanceFeet, band: rangeInfo.band },
+      );
+    }
+    const longRangeDisadvantage = rangeInfo.status === 'long-range';
     if (input.prepared) {
       if (!economy.ready) throw new HttpError('Nenhuma ação preparada.', 409, 'CONFLICT');
       if (input.attackActionId || attack.id.startsWith('offhand:')) throw new HttpError('Ataque preparado não é continuação nem mão secundária.', 400);
@@ -1461,7 +1488,9 @@ export async function resolveAttack(
       combatantMechanicalState(attacker),
       combatantMechanicalState(target),
       Boolean(input.advantage),
-      Boolean(input.disadvantage),
+      // Long range (6.6L.2) é desvantagem e compõe com a engine central: se o
+      // atacante também tiver vantagem, os dois lados se CANCELAM.
+      Boolean(input.disadvantage) || longRangeDisadvantage,
       // A Esquiva do alvo só vale se ele CONSEGUIR ver o atacante (ver `canSeeAttacker`)
       // E se o benefício estiver ativo: Incapacitado ou deslocamento efetivo 0
       // suspendem a Esquiva sem apagar o estado (PHB 2014).
@@ -1850,6 +1879,16 @@ export async function resolveAttack(
       // 6.6J.5.1 — auditoria da cobertura DESTA interação (sem CA base privada
       // nem IDs de obstáculo): o snapshot sobrevive ao retry idempotente.
       cover,
+      // 6.6L.2 — alcance da interação (sanitizado: pés e faixa, sem coordenadas).
+      range: {
+        status: rangeInfo.status,
+        distanceFeet: rangeInfo.distanceFeet,
+        band: rangeInfo.band,
+        reachFeet: rangeInfo.reachFeet,
+        normalRangeFeet: rangeInfo.normalRangeFeet,
+        longRangeFeet: rangeInfo.longRangeFeet,
+        algorithm: rangeInfo.algorithm,
+      },
       at: new Date().toISOString(),
     };
 

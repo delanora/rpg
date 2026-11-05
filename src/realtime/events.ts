@@ -533,6 +533,20 @@ export interface AttackResolvedPayload {
   targetHpMax: number | null;
   /** Verdadeiro quando CA/vida do alvo existem mas ficam ocultas para quem vê. */
   targetStatsHidden: boolean;
+  /**
+   * FASE 6.6L.2 — alcance da INTERAÇÃO (auditoria sanitizada): distância em pés
+   * e faixa usada. NUNCA coordenadas — posição de criatura/NPC continua privada
+   * do Mestre.
+   */
+  range?: {
+    status: 'in-range' | 'long-range' | 'out-of-range' | 'unknown';
+    distanceFeet: number | null;
+    band: 'normal' | 'long' | 'out' | null;
+    reachFeet: number | null;
+    normalRangeFeet: number | null;
+    longRangeFeet: number | null;
+    algorithm: string | null;
+  };
   at: string;
 }
 

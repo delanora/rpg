@@ -163,6 +163,16 @@ export interface CombatAttack extends Attack {
   ability?: AbilityKey;
   /** Quanto do `damage.bonus` vem do atributo (o resto é mágico/bônus fixo). */
   abilityModifier?: number;
+  /**
+   * FASE 6.6L.2 — ALCANCE derivado da arma (nunca do nome), em PÉS:
+   * `reachFeet` para corpo a corpo; `normalRangeFeet`/`longRangeFeet` para
+   * à distância e arremesso. Ataques gravados à mão e statblocks não têm esses
+   * campos: sem dado estruturado o alcance é UNKNOWN (assistido), jamais
+   * inventado a partir do texto. Não são persistidos — `parseJson` os descarta.
+   */
+  reachFeet?: number;
+  normalRangeFeet?: number;
+  longRangeFeet?: number;
 }
 
 /**

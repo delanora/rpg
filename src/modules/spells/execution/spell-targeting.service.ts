@@ -63,6 +63,17 @@ export interface TargetingSnapshot {
    */
   requiredConfirmations: SpatialRequirementKind[];
   /**
+   * 6.6L.2 — distância usada por alvo, SANITIZADA (pés/faixa, nunca
+   * coordenadas). Ausente quando o cast não roda com estado espacial conhecido.
+   */
+  distances?: {
+    targetKey: string;
+    status: 'known' | 'unknown' | 'not-assessed';
+    distanceFeet: number | null;
+    provenance: 'grid-2d' | null;
+    algorithm: string | null;
+  }[];
+  /**
    * 6.6J.4: ASSIGNMENTS de ataque múltiplo (índice → alvo), preservando ordem e
    * repetição. Ausente em magias de alvo explícito comum e nos casts antigos.
    */

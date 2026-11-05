@@ -2870,5 +2870,102 @@ check(
   })
 );
 
+/* -------------------------------------------------------------------------- */
+/* 6.6L.2 — DISTÂNCIA/ALCANCE: a matemática NÃO mora no cliente               */
+/* -------------------------------------------------------------------------- */
+const distanceDomain = source('../src/modules/combat/spatial/spatial-distance.ts');
+const rangeDomain = source('../src/modules/combat/spatial/spatial-range.ts');
+const weaponRangeDomain = source('../src/modules/shared/weapon-range.ts');
+const distanceService = source(
+  '../src/modules/combat/spatial/spatial-distance.service.ts'
+);
+const spatialCombatSource = source('../src/modules/combat/combat.service.ts');
+const spellCastSource = source('../src/modules/spells/execution/spell-cast.service.ts');
+const combatRoutesSource = source('../src/modules/combat/combat.routes.ts');
+
+check(
+  'CB186) distância/alcance vivem no DOMÍNIO do servidor (nada disso no grid do cliente)',
+  distanceDomain.includes('evaluateSpatialDistance') &&
+    rangeDomain.includes('evaluateRange') &&
+    weaponRangeDomain.includes('weaponRangeOf') &&
+    !/evaluateSpatialDistance|evaluateRange|weaponRangeOf/.test(
+      `${combatGridSource}${gridMathSource}${gridTokenSource}${gridTraySource}${gridSceneSource}`
+    )
+);
+check(
+  'CB187) o cliente NÃO envia distância/alcance: nenhum `distanceFeet`/`rangeBand` no grid',
+  !/distanceFeet|rangeBand|isInRange|effectiveReach/.test(
+    `${combatGridSource}${gridMathSource}${gridApiSource}${gridTokenSource}`
+  ) &&
+    !gridApiSource.includes('distanceFeet')
+);
+check(
+  'CB188) read endpoint de distância existe para a 6.6M.2 (UI não recalcula)',
+  combatRoutesSource.includes('/spatial/distance') &&
+    combatRoutesSource.includes('readCombatDistance') &&
+    distanceService.includes('readCombatDistance')
+);
+check(
+  'CB189) diagonal PHB usa max(|dx|,|dy|) e NUNCA Math.hypot/sqrt',
+  distanceDomain.includes('anchorDistanceFeet') &&
+    distanceDomain.includes('Math.max(Math.abs(a.xFeet - b.xFeet), Math.abs(a.yFeet - b.yFeet))') &&
+    !/Math\.hypot|Math\.sqrt/.test(distanceDomain)
+);
+check(
+  'CB190) Tiny preserva 2,5 pés (passo próprio) e Small+ alinha em 5',
+  distanceDomain.includes('TINY_GRID_STEP_FEET = 2.5') &&
+    distanceDomain.includes("size === 'tiny' ? TINY_GRID_STEP_FEET : GRID_CELL_SIZE_FEET") &&
+    gridMathSource.includes("size === 'tiny' ? 2.5 : BASE_CELL_SIZE_FEET")
+);
+check(
+  'CB191) distância usa ESPAÇO OCUPADO (âncoras por quadrado), não centro/top-left',
+  distanceDomain.includes('squareAnchorsOf') &&
+    distanceDomain.includes('occupiedSpacesOverlap') &&
+    distanceService.includes('occupiedSpace') === false &&
+    distanceService.includes('spatialBodyOf')
+);
+check(
+  'CB192) ataque valida alcance ANTES de Ação/munição/d20 e long range vira desvantagem',
+  spatialCombatSource.includes('TARGET_OUT_OF_REACH') &&
+    spatialCombatSource.includes('TARGET_OUT_OF_RANGE') &&
+    spatialCombatSource.includes('longRangeDisadvantage') &&
+    spatialCombatSource.indexOf('rangeInfo = evaluateRange') <
+      spatialCombatSource.indexOf('consumeAmmo(attacker.character.id')
+);
+check(
+  'CB193) magia valida alcance pelo provider do grid (antes do COMMIT)',
+  spellCastSource.includes('gridSpatialProvider') &&
+    spellCastSource.includes('gridAreaSpatialProvider') &&
+    spellCastSource.includes('combatSpatialIndexById') &&
+    spellCastSource.indexOf('gridSpatialProvider(spatialIndex)') <
+      spellCastSource.indexOf('commitSpellCast(db, context')
+);
+// Código SEM comentários: as palavras proibidas só podem existir na prosa.
+const codeOnly = (text: string): string =>
+  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+const distanceCode = codeOnly(distanceDomain);
+const rangeCode = codeOnly(rangeDomain);
+const distanceServiceCode = codeOnly(distanceService);
+
+check(
+  'CB194) Cover, LoS e AoE continuam separados do alcance',
+  distanceServiceCode.includes('evaluateSightGeometry') &&
+    distanceServiceCode.includes("return 'unknown'") &&
+    !/cover|lineOfSight|membership/i.test(distanceCode) &&
+    !/coverLevel|evaluateMembership/i.test(distanceServiceCode)
+);
+check(
+  'CB195) Movement/pathfinding NÃO entram nesta fase',
+  !/movementRemaining|pathfinding|movementCost|difficultTerrain/i.test(
+    `${distanceCode}${rangeCode}${distanceServiceCode}`
+  )
+);
+check(
+  'CB196) placement novo exige alinhamento canônico (erro dedicado no servidor)',
+  source('../src/modules/combat/spatial/spatial-scene.service.ts').includes(
+    'SPATIAL_POSITION_NOT_GRID_ALIGNED'
+  ) && distanceDomain.includes('isGridAligned')
+);
+
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);
