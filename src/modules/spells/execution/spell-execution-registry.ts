@@ -15,6 +15,10 @@ import {
   SACRED_FLAME_SPELL_ID,
 } from './sacred-flame.js';
 import {
+  SYNTHETIC_SAVE_HALF_DEFINITION,
+  SYNTHETIC_SAVE_HALF_SPELL_ID,
+} from './save-half-test-definition.js';
+import {
   HEALING_WORD_BASE_DICE,
   HEALING_WORD_LABEL,
   HEALING_WORD_NO_EFFECT_ON_TYPES,
@@ -124,15 +128,24 @@ export const SPELL_EXECUTION_DEFINITIONS: Record<string, SpellExecutionDefinitio
     resolution: {
       kind: 'save-damage',
       ability: SACRED_FLAME_SAVE_ABILITY,
-      onSuccess: 'none',
+      // PHB 2014: Chama Sagrada não é meia-dano — sucesso = NENHUM dano.
+      outcome: { success: 'none', failure: 'full' },
       damage: {
-        type: SACRED_FLAME_DAMAGE_TYPE,
-        dice: SACRED_FLAME_BASE_DICE,
-        scaling: SACRED_FLAME_SCALING,
+        components: [
+          {
+            type: SACRED_FLAME_DAMAGE_TYPE,
+            dice: SACRED_FLAME_BASE_DICE,
+            scaling: SACRED_FLAME_SCALING,
+          },
+        ],
       },
       ignoreSaveCover: SACRED_FLAME_IGNORE_SAVE_COVER,
     },
   },
+  // 6.6J.1 — PROVA da consequência genérica do save. A definição é SINTÉTICA e
+  // vive só aqui no servidor (o smoke é outro processo): não está no catálogo,
+  // no repertório, no cast-options, no compêndio nem em UI alguma.
+  [SYNTHETIC_SAVE_HALF_SPELL_ID]: SYNTHETIC_SAVE_HALF_DEFINITION,
   [HEALING_WORD_SPELL_ID]: {
     spellId: HEALING_WORD_SPELL_ID,
     // Instantânea e sem Concentração.

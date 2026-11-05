@@ -260,13 +260,10 @@ export async function validateSpellCast(
   // escalonamento (personagem: nível total; NPC: statblock). Sem ele, falha
   // ANTES de qualquer custo. `half` ainda não é executável.
   if (execution.resolution.kind === 'save-damage') {
-    if (execution.resolution.onSuccess !== 'none') {
-      throw new HttpError(
-        'A consequência de sucesso desta magia ainda não foi implementada.',
-        409,
-        'SPELL_EXECUTION_NOT_IMPLEMENTED',
-      );
-    }
+    // A consequência do save é declarativa (`none`/`half`/`full`) e só age na
+    // RESOLUÇÃO da pendência — o COMMIT não precisa de nenhum `if` por magia.
+    // O nível de escalonamento, porém, continua exigido ANTES de qualquer custo
+    // (truque: nível total; NPC: `cantripScalingLevel` do statblock).
     await cantripScalingLevelOf(caster, db);
   }
   const targets: LoadedEntity[] = [];

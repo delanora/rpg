@@ -650,10 +650,18 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
   // Salvaguarda de criatura/NPC: visibilidade escolhida pelo Mestre AO ROLAR.
   const privateRoll = actor.role === 'MASTER' && input.visibility === 'private';
 
-  const effectMods = rollModifiersFor(await effectModifierSetFor(targetEntity), 'save', ability);
+  const effectSet = await effectModifierSetFor(targetEntity);
+  const effectMods = rollModifiersFor(effectSet, 'save', ability);
+  // 6.6J.1: a ESQUIVA vale para salvaguardas de DESTREZA também quando a
+  // pendência veio de uma magia (`save-damage`) — mesma regra do save comum,
+  // com o mesmo deslocamento EFETIVO e sem hardcode por spell.
+  const dodge = ability === 'dexterity'
+    ? await dodgeBenefitForSave(targetEntity, effectSet.speedBonus ?? 0)
+    : false;
   // Vantagem/desvantagem: só fontes server-side (Condições + Effects). O
   // `advantage`/`disadvantage` do corpo é escolha de rolagem livre, não vale aqui.
   const mode = deriveSaveEffects(loaded.state, ability, [], [], {
+    dodge,
     effects: { advantage: effectMods.advantage, disadvantage: effectMods.disadvantage },
   });
   const optionalEffects = rollSelectedOptional(
@@ -694,17 +702,30 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
   // magia declara qual é o dela; nada aqui conhece o nome da spell.
   const resolutionKind = await pendingCastResolutionKind(pending);
   let success = false;
-  let damageSummary: { type: string; raw: number; final: number; rolls: number[] } | null = null;
+  let damageSummary: {
+    type: string;
+    raw: number;
+    afterSave: number;
+    final: number;
+    rolls: number[];
+  } | null = null;
   if (resolutionKind === 'save-damage') {
     const outcome = await resolveSaveDamagePending(pending.id, total, actor.username);
     success = outcome.success;
     await publishSaveDamageResult(outcome);
-    damageSummary = outcome.snapshot && !outcome.success
+    // 6.6J.1: SUCESSO também pode causar dano (meia-dano). O resumo do registro
+    // vem do snapshot, então o log mostra o valor DEPOIS do save e o valor
+    // final — sem o cliente recalcular nada.
+    damageSummary = outcome.snapshot && outcome.snapshot.finalDamage > 0
       ? {
           type: outcome.snapshot.damageType,
           raw: outcome.snapshot.rawDamage,
+          afterSave: outcome.snapshot.damageAfterSave ?? outcome.snapshot.rawDamage,
           final: outcome.snapshot.finalDamage,
-          rolls: outcome.snapshot.dice.rolls,
+          rolls:
+            outcome.snapshot.components?.flatMap((component) => component.rolls ?? []) ??
+            outcome.snapshot.dice?.rolls ??
+            [],
         }
       : null;
   } else {
