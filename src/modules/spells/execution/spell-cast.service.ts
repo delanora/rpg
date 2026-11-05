@@ -33,6 +33,11 @@ import {
   type ImmediateHealingResult,
 } from './immediate-healing-resolution.js';
 import {
+  publishAttackDamageResult,
+  resolveAttackDamageSpell,
+  type AttackDamageResult,
+} from './attack-damage-resolution.js';
+import {
   validateTargeting,
   type TargetingSnapshot,
 } from './spell-targeting.service.js';
@@ -304,6 +309,17 @@ export async function validateSpellCast(
       'Este conjurador não declara o atributo de conjuração exigido pela magia.',
       409,
       'SPELLCASTING_ABILITY_REQUIRED',
+    );
+  }
+
+  // 6.6I.4: o ATAQUE MÁGICO usa o bônus do PERFIL. Statblock que só publica a CD
+  // não tem ataque mágico — recusar antes do COMMIT evita gastar espaço/Ação
+  // para descobrir isso só na resolução.
+  if (execution.resolution.kind === 'attack-damage' && profile.spellAttackBonus === null) {
+    throw new HttpError(
+      'Este conjurador não declara bônus de ataque mágico.',
+      409,
+      'SPELLCASTING_ATTACK_BONUS_REQUIRED',
     );
   }
 
@@ -729,6 +745,8 @@ export async function executeCast(
   let consumedCharacterId: string | null = null;
   // Resultado de cura imediata (6.6I.3) — publica/loga só depois do commit.
   let immediateHealing: ImmediateHealingResult | null = null;
+  // Resultado de ataque mágico (6.6I.4) — idem: publica só depois do commit.
+  let attackDamage: AttackDamageResult | null = null;
   try {
     outcome = await prisma.$transaction(async (db) => {
       const prior = await db.spellCast.findUnique({
@@ -797,6 +815,27 @@ export async function executeCast(
         };
       }
 
+      // 6.6I.4: ataque mágico resolve imediatamente, na MESMA transação do
+      // COMMIT, com o resolver de ataque compartilhado e o núcleo de dano.
+      if (context.execution.resolution.kind === 'attack-damage') {
+        const attack = await resolveAttackDamageSpell(
+          db,
+          cast,
+          { caster: context.caster, targets: context.targets },
+          context.execution,
+        );
+        attackDamage = attack;
+        return {
+          cast: toSpellCastDto(attack.cast),
+          replayed: false,
+          effectGroupId: null,
+          effects: [],
+          pending: null,
+          pendings: [],
+          endedTargets,
+        };
+      }
+
       const pendings = await beginPendingSaves(db, cast, context);
       return {
         cast: toSpellCastDto(cast),
@@ -836,6 +875,7 @@ export async function executeCast(
   // canal de sempre, nunca por decremento otimista do cliente.
   if (consumedCharacterId) await publishCharacter(consumedCharacterId);
   if (immediateHealing) await publishImmediateHealing(immediateHealing);
+  if (attackDamage) await publishAttackDamageResult(attackDamage);
   if (outcome.pendings.length > 0) {
     await publishPendingEffectSaves(outcome.cast.targetEntities);
   }

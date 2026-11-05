@@ -21,9 +21,12 @@ import type { SlotDiceScalingDefinition } from '../../shared/spells/slot-scaling
  *  • `immediate-effect` — a conjuração produz o efeito na hora;
  *  • `save-effect` — o alvo faz uma salvaguarda e o efeito só entra na FALHA;
  *  • `save-damage` — salvaguarda e, na falha, dano INSTANTÂNEO (sem Effect);
- *  • `immediate-healing` — cura INSTANTÂNEA rolada e aplicada no COMMIT.
+ *  • `immediate-healing` — cura INSTANTÂNEA rolada e aplicada no COMMIT;
+ *  • `attack-damage` — ataque mágico (d20 vs CA) e dano INSTANTÂNEO.
  *
- * `spell-attack` fica para quando Spell Attack/DC estiverem formalizados.
+ * Desde a 6.6I.4 o ATAQUE MÁGICO usa o MESMO resolver de ataque das armas
+ * (`combat/attack-resolution.ts`) e o MESMO núcleo de dano (6.6I.1). O ataque
+ * NÃO decide alcance/componentes: isso continua no targeting/execução.
  */
 export type SpellResolutionDefinition =
   | {
@@ -75,6 +78,31 @@ export type SpellResolutionDefinition =
        * NUNCA é uma defesa global do núcleo de cura.
        */
       noEffectOnCreatureTypes?: readonly string[];
+    }
+  | {
+      kind: 'attack-damage';
+      /**
+       * Ataque mágico: `melee` ou `ranged` (nunca inferido do tipo de dano). O
+       * modo alimenta Caído/Esquiva exatamente como nos ataques de arma.
+       */
+      attack: {
+        kind: 'melee' | 'ranged';
+        /**
+         * Limiar de crítico. Default 20 (PHB): Crítico Aprimorado do Campeão é
+         * de ATAQUE DE ARMA e não se aplica a magias.
+         */
+        critThreshold?: number;
+      };
+      damage: {
+        /** Componentes independentes; o crítico dobra os dados de CADA um. */
+        components: readonly {
+          /** Tipo canônico do projeto (`Força`, `Radiante`...). */
+          type: string;
+          dice?: { count: number; sides: number };
+          /** Bônus fixo do componente: entra UMA vez, nunca dobrado. */
+          bonus?: number;
+        }[];
+      };
     };
 
 /** Id mecânico canônico de uma magia (`spell.<spellId>`), sem Effect Definition. */
