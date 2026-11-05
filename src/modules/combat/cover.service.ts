@@ -44,6 +44,27 @@ export async function coverFor(
  * Total Cover é decisão de TARGETING, nunca "+999 CA": recusa o alvo DIRETO
  * antes de qualquer rolagem/custo. Quem chama escolhe o código do domínio.
  */
+/**
+ * 6.6J.5.1 — adjudicação do MESTRE não sobrescreve fato AUTORITATIVO.
+ *
+ * Se o provider já sabe o nível (geometria real), confirmar outro nível é erro
+ * de domínio — nunca um "deixa passar". `none` também é um fato: um ataque
+ * sem cobertura só pode ser declarado pelo provider, não pelo Mestre.
+ */
+export function assertCoverDecisionAllowed(
+  evaluation: CoverEvaluation,
+  confirmed: string | undefined,
+): void {
+  if (!confirmed) return;
+  if (evaluation.status !== 'known') return;
+  if (evaluation.level === confirmed) return;
+  throw new HttpError(
+    'O Mestre só decide cobertura que o servidor não conseguiu avaliar.',
+    409,
+    'COVER_DECISION_NOT_ALLOWED',
+  );
+}
+
 export function assertCoverAllowsDirectTargeting(
   evaluation: CoverEvaluation,
   code: string,

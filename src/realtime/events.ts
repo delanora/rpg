@@ -510,6 +510,17 @@ export interface AttackResolvedPayload {
   critical: boolean;
   damageRolled: number;
   damageType: string;
+  /**
+   * 6.6J.5.1 — cobertura da INTERAÇÃO (auditoria). Ausente em ataques antigos;
+   * nunca expõe CA base privada, obstáculos nem anotações do Mestre.
+   */
+  cover?: {
+    status: 'known' | 'unknown' | 'not-assessed';
+    level: 'none' | 'half' | 'three-quarters' | 'total' | null;
+    acBonus: number;
+    saveBonus: number;
+    provenance: 'authoritative' | 'master-confirmed' | null;
+  };
   /** Cada parcela do ataque, com o efeito da defesa do alvo (vazio se errou). */
   components: DamageComponentPayload[];
   /**

@@ -88,10 +88,12 @@ export interface ResolveAreaInput {
  */
 async function totalCoverPropagation(
   coverProvider: CoverSpatialProvider | undefined,
-  origin: LoadedEntity['entity'],
+  origin: LoadedEntity['entity'] | null,
   target: LoadedEntity['entity'],
 ): Promise<'fail' | null> {
-  const evaluation = await coverFor({ origin, target, interaction: 'area-propagation' }, coverProvider);
+  // Sem origem resolvida não existe RELAÇÃO para avaliar: nada é inventado.
+  if (!origin) return null;
+  const evaluation = await coverFor({ origin, target, interaction: 'dexterity-save' }, coverProvider);
   return evaluation.status === 'known' && evaluation.level === 'total' ? 'fail' : null;
 }
 
@@ -260,7 +262,13 @@ export async function resolveAreaTargets(input: ResolveAreaInput): Promise<AreaR
   // 6.6J.5 — cobertura por CANDIDATO: só Total Cover muda membership.
   const totalCoverKeys = new Set<string>();
   for (const candidate of candidates) {
-    const cover = await totalCoverPropagation(input.coverProvider, caster.entity, candidate.entity);
+    // 6.6J.5.1 — a origem da cobertura é a ORIGEM RESOLVIDA da área (nunca o
+    // caster fixo): um cubo/cone deslocado muda a relação origem ↔ alvo.
+    const cover = await totalCoverPropagation(
+      input.coverProvider,
+      resolvedOrigin.resolved,
+      candidate.entity,
+    );
     if (cover === 'fail') {
       totalCoverKeys.add(canonicalTargetKey(candidate.entity.kind, candidate.entity.id));
     }

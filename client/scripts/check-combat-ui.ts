@@ -2240,6 +2240,44 @@ console.log('Check-combat-ui — refino da UI de combate');
     coverRunnerSource.includes('smokeCoverFoundation(BASE_URL, check)')
   );
 
+  const coverAttackSchema = source('../src/modules/combat/combat.schema.ts');
+  const coverAreaSource = source('../src/modules/spells/execution/area-targeting.service.ts');
+  const coverSmokeSource = source('../src/scripts/smoke-cover-foundation.ts');
+  check(
+    'CB192) ataque de arma aceita SÓ `coverConfirmation` (nível por alvo), nunca bônus/AC',
+    coverAttackSchema.includes('coverConfirmation') &&
+      coverAttackSchema.includes("'three-quarters'") &&
+      !coverAttackSchema.includes('coverBonus') &&
+      !coverAttackSchema.includes('effectiveAc')
+  );
+  check(
+    'CB193) PLAYER recusado e decisão do Mestre limitada ao que o provider NÃO sabe',
+    coverCombatSource.includes('COVER_CONFIRMATION_FORBIDDEN') &&
+      coverCombatSource.includes('COVER_TARGET_MISMATCH') &&
+      coverCombatSource.includes('assertCoverDecisionAllowed') &&
+      coverServiceSource.includes('COVER_DECISION_NOT_ALLOWED')
+  );
+  check(
+    'CB194) Total Cover em arma é recusado antes de economia/rolagem e o retry preserva a decisão',
+    coverCombatSource.indexOf('TARGET_TOTAL_COVER') <
+      coverCombatSource.indexOf("spendEconomy(economy, 'bonus-action')") &&
+      coverCombatSource.includes('cover,') &&
+      !coverCombatSource.includes('armorClass: cover')
+  );
+  check(
+    'CB195) área avalia cobertura na ORIGEM RESOLVIDA (nunca no caster fixo)',
+    coverAreaSource.includes('resolvedOrigin.resolved,') &&
+      coverAreaSource.includes("interaction: 'dexterity-save'") &&
+      !coverAreaSource.includes("interaction: 'area-propagation'")
+  );
+  check(
+    'CB196) o smoke prova adjudicação de arma, área com origem resolvida e freeze no COMMIT',
+    coverSmokeSource.includes('COVER_CONFIRMATION_FORBIDDEN') &&
+      coverSmokeSource.includes('TARGET_TOTAL_COVER') &&
+      coverSmokeSource.includes('resolveAreaTargets') &&
+      coverSmokeSource.includes('FREEZE')
+  );
+
   check(
     'CB167) nenhuma UI multi-alvo dedicada: os Resolution Cards genéricos bastam',
     !source('../src/modules/combat/resolution-requests.ts').includes('MultiTarget') &&
