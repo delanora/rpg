@@ -1,4 +1,5 @@
 import type { SpatialPosition, SpatialSize } from '../../types';
+import type { Point2D } from './gridCamera';
 import { SIZE_FOOTPRINT_FEET, snapFeet, snapStepFeet } from './gridMath';
 
 /**
@@ -10,9 +11,16 @@ import { SIZE_FOOTPRINT_FEET, snapFeet, snapStepFeet } from './gridMath';
  * ocupação, saldo ou risco de Reação — quem decide é o servidor.
  *
  * O preenchimento entre duas amostras do ponteiro é RASTERIZAÇÃO DE GRID
- * determinística (interpolação linear alinhada ao passo): serve apenas para
- * reconstruir as células atravessadas pelo gesto. Não existe A*, Dijkstra,
- * rota alternativa, desvio de criatura nem "menor caminho".
+ * determinística (passos contíguos alinhados): serve apenas para reconstruir as
+ * células atravessadas pelo gesto. Não existe A*, Dijkstra, rota alternativa,
+ * desvio de criatura nem "menor caminho".
+ *
+ * 6.6M.3.1.1 — A POSIÇÃO ATUAL É IMPLÍCITA: o servidor percorre o `path` a
+ * partir da posição autoritativa do combatente (`cursor = mover.position`).
+ * Por isso `path[0]` NUNCA repete a origem e cada passo seguinte avança no
+ * máximo UM passo por eixo. Era essa a causa do preview "Distância 0 m / Custo
+ * 0 m / trajeto inválido": o primeiro anchor do ponteiro entrava direto em
+ * `path[0]`, caracterizando teleporte (`MOVEMENT_STEP_NOT_CONTIGUOUS`).
  */
 
 /** Passo do anchor: 2,5 pés (Tiny) ou 5 pés (Small+). Apenas input visual. */
@@ -49,62 +57,99 @@ function clampAxis(value: number, step: number, sceneFeet: number, footprintFeet
   return Math.min(Math.max(0, value), max);
 }
 
-function roundStep(value: number, step: number): number {
-  return Math.round(Math.round(value / step) * step * 100) / 100;
+/** Coordenada canônica em pés, sem ruído de ponto flutuante (49.9999 → 50). */
+function roundFeet(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function samePosition(a: SpatialPosition, b: SpatialPosition): boolean {
+  return a.xFeet === b.xFeet && a.yFeet === b.yFeet;
 }
 
 /**
- * Âncoras intermediárias entre dois anchors ao longo do SEGMENTO DIRETO.
+ * Âncoras CONTÍGUAS entre dois anchors (passo por passo, no máximo 1 por eixo).
  *
- * Rasterização de grid: `max(|dx|,|dy|) / passo` amostras, cada uma alinhada ao
- * passo. Não consulta obstáculos e não escolhe rota — se o caminho direto
- * atravessa uma criatura, é o SERVIDOR quem recusa.
+ * Rasterização inteira: converte o deslocamento em unidades de passo e usa a
+ * interpolação de Bresenham, que produz exatamente `max(|sx|,|sy|)` passos —
+ * cada um avançando 0 ou 1 passo em cada eixo, nunca teleporte, nunca
+ * duplicata e sempre terminando no anchor apontado. Não consulta obstáculos e
+ * não escolhe rota: se o caminho direto atravessa uma criatura, é o SERVIDOR
+ * quem recusa.
  */
-export function interpolateAnchors(
+export function contiguousAnchors(
   from: SpatialPosition,
   to: SpatialPosition,
   step: number,
 ): SpatialPosition[] {
-  const dx = to.xFeet - from.xFeet;
-  const dy = to.yFeet - from.yFeet;
-  const steps = Math.max(
-    Math.abs(Math.round(dx / step)),
-    Math.abs(Math.round(dy / step)),
-  );
-  if (steps <= 1) return [{ xFeet: to.xFeet, yFeet: to.yFeet }];
+  if (step <= 0) return [];
+  const stepsX = Math.round((to.xFeet - from.xFeet) / step);
+  const stepsY = Math.round((to.yFeet - from.yFeet) / step);
+  const count = Math.max(Math.abs(stepsX), Math.abs(stepsY));
   const out: SpatialPosition[] = [];
-  for (let index = 1; index <= steps; index += 1) {
+  for (let index = 1; index <= count; index += 1) {
     out.push({
-      xFeet: roundStep(from.xFeet + (dx * index) / steps, step),
-      yFeet: roundStep(from.yFeet + (dy * index) / steps, step),
+      xFeet: roundFeet(from.xFeet + Math.round((stepsX * index) / count) * step),
+      yFeet: roundFeet(from.yFeet + Math.round((stepsY * index) / count) * step),
     });
   }
-  // O último anchor é EXATAMENTE o apontado (sem ruído de ponto flutuante).
-  out[out.length - 1] = { xFeet: to.xFeet, yFeet: to.yFeet };
   return out;
 }
 
 /**
  * Acrescenta um anchor ao trajeto pretendido.
  *
- * • volta para um anchor já presente → TRUNCA o trajeto até ele (desfazer
- *   natural do gesto, sem "cobrar ida e volta");
+ * • `start` é a posição AUTORITATIVA do combatente e NÃO entra no path: o
+ *   primeiro anchor é preenchido a partir dela (contiguidade desde a origem);
  * • mesma posição do último → devolve o MESMO array (nenhum re-render);
- * • salto do ponteiro → preenche o segmento direto (contiguidade visual).
+ * • volta para um anchor já presente → TRUNCA o trajeto até ele (desfazer
+ *   natural do gesto, sem "cobrar ida e volta"); voltar à origem zera o path;
+ * • salto do ponteiro (fast pointer) → preenche o segmento com passos
+ *   contíguos.
  */
 export function appendAnchor(
   path: readonly SpatialPosition[],
   anchor: SpatialPosition,
   step: number,
+  start: SpatialPosition,
 ): SpatialPosition[] {
-  const last = path[path.length - 1] ?? null;
-  if (last && last.xFeet === anchor.xFeet && last.yFeet === anchor.yFeet) {
-    return path as SpatialPosition[];
-  }
-  const revisited = path.findIndex(
-    (item) => item.xFeet === anchor.xFeet && item.yFeet === anchor.yFeet,
-  );
+  const last = path.length > 0 ? path[path.length - 1] : start;
+  if (samePosition(last, anchor)) return path as SpatialPosition[];
+  const revisited = path.findIndex((item) => samePosition(item, anchor));
   if (revisited >= 0) return path.slice(0, revisited + 1);
-  const appended = last ? interpolateAnchors(last, anchor, step) : [{ xFeet: anchor.xFeet, yFeet: anchor.yFeet }];
-  return [...path, ...appended];
+  // Voltou para a origem: o trajeto pendente deixa de existir.
+  if (samePosition(start, anchor)) return [];
+  return [...path, ...contiguousAnchors(last, anchor, step)];
+}
+
+/**
+ * Meio do COMPRIMENTO da polyline (não a média dos endpoints): numa curva a
+ * label fica sobre o traço. Geometria de TELA, sem significado mecânico.
+ */
+export function polylineMidpoint(points: readonly Point2D[]): Point2D {
+  if (points.length === 0) return { x: 0, y: 0 };
+  if (points.length === 1) return { x: points[0].x, y: points[0].y };
+  const lengths: number[] = [];
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const length = Math.hypot(
+      points[index].x - points[index - 1].x,
+      points[index].y - points[index - 1].y,
+    );
+    lengths.push(length);
+    total += length;
+  }
+  if (total === 0) return { x: points[0].x, y: points[0].y };
+  let remaining = total / 2;
+  for (let index = 0; index < lengths.length; index += 1) {
+    if (remaining <= lengths[index]) {
+      const ratio = lengths[index] === 0 ? 0 : remaining / lengths[index];
+      return {
+        x: points[index].x + (points[index + 1].x - points[index].x) * ratio,
+        y: points[index].y + (points[index + 1].y - points[index].y) * ratio,
+      };
+    }
+    remaining -= lengths[index];
+  }
+  const last = points[points.length - 1];
+  return { x: last.x, y: last.y };
 }
