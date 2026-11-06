@@ -109,7 +109,6 @@ export function GridToken({
       type="button"
       className={classes.join(' ')}
       style={style}
-      title={`${combatant.name} · ${label}`}
       aria-label={`${combatant.name}, ${label}${roleLabel}${
         movable ? ', pode ser movido' : ''
       }${rulerActive ? ', pode ser medido' : ''}`}

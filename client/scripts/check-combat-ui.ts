@@ -5097,9 +5097,13 @@ check(
       'pointer centrado': movementGridSource.includes(
         'const pointer = centeredFootprintFeet(feet, size, scene);',
       ),
+      // 6.6M.4.1.3: o destino nasce do ponteiro CRU — recuar meia footprint
+      // antes do floor jogava o destino para a célula de cima.
       'destino da célula': movementGridSource.includes(
-        'const destination = containingCellFeet(pointer, size, scene);',
-      ),
+        'const destination = containingCellFeet(feet, size, scene);',
+      ) &&
+        movementGridSource.indexOf('const destination = containingCellFeet(feet, size, scene);') <
+          movementGridSource.indexOf('const pointer = centeredFootprintFeet(feet, size, scene);'),
       'sem grab em uso': !movementGridSource.includes('current.grab'),
       'sem grab no draft': !movementGridSource.includes('grab: gesture.grab'),
       'ghost usa o pointer': movementGridSource.includes('position: draft.pointer,'),
@@ -5792,6 +5796,179 @@ check(
         !emitted.includes('obstacle')
       );
     })(),
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.4.1.3 — PONTEIRO→CÉLULA CANÔNICO, RÉGUA E TOKEN SEM MOLDURA            */
+/* -------------------------------------------------------------------------- */
+{
+  const gridCss = source('src/combat/grid/grid.css');
+  const gridSource = source('src/combat/grid/CombatGrid.tsx');
+  const tokenSource = source('src/combat/grid/GridToken.tsx');
+  const scene = { widthFeet: 100, heightFeet: 100 };
+  const geometry = { pixelsPerCell: 44, cellSizeFeet: 5 };
+  const key = (cell: { xFeet: number; yFeet: number } | null): string =>
+    cell ? `${cell.xFeet}:${cell.yFeet}` : 'null';
+  const cellAt = (xFeet: number, yFeet: number, size: SpatialSize = 'medium'): string =>
+    key(containingCellFeet({ xFeet, yFeet }, size, scene));
+  /** Corpo de UMA regra CSS (até a primeira `}`), para inspecionar o bloco real. */
+  const block = (selector: string): string => {
+    const at = gridCss.indexOf(`${selector} {`);
+    if (at < 0) return '';
+    return gridCss.slice(at, gridCss.indexOf('}', at) + 1);
+  };
+
+  check(
+    'SC41) destino do gesto lê o ponteiro CRU: 7 pés em Medium fica na célula 5–10 (regressão 0–5)',
+    cellAt(7, 7) === '5:5' &&
+      // O caminho antigo (recuar meia footprint ANTES do floor) caía na 0–5.
+      key(
+        containingCellFeet(
+          centeredFootprintFeet({ xFeet: 7, yFeet: 7 }, 'medium', scene),
+          'medium',
+          scene,
+        ),
+      ) === '0:0' &&
+      gridSource.includes('const destination = containingCellFeet(feet, size, scene);') &&
+      !/feet\.(x|y)Feet\s*-\s*\(?grab/.test(gridSource) &&
+      !gridSource.includes('grab?: SpatialPosition'),
+    JSON.stringify({ destino: cellAt(7, 7), antigo: cellAt(4.5, 4.5) }),
+  );
+
+  check(
+    'SC42) fronteiras exatas: 0–5 é a célula 0 até 4,99; 5,00 já é a 5; 10,00 já é a 10',
+    cellAt(0.1, 0.1) === '0:0' &&
+      cellAt(2.5, 2.5) === '0:0' &&
+      cellAt(4.99, 4.99) === '0:0' &&
+      cellAt(5, 5) === '5:5' &&
+      cellAt(7, 7) === '5:5' &&
+      cellAt(9.99, 9.99) === '5:5' &&
+      cellAt(10, 10) === '10:10' &&
+      // Medium cruza a borda UMA vez (nunca desloca por meia footprint).
+      cellAt(4.99, 10) === '0:10' &&
+      cellAt(5.01, 9.99) === '5:5',
+    JSON.stringify({ a: cellAt(4.99, 4.99), b: cellAt(5, 5), c: cellAt(10, 10) }),
+  );
+
+  check(
+    'SC43) footprints preservados: Tiny 2,5 pés e Large/Huge/Gargantuan sem caber fora da cena',
+    SIZE_FOOTPRINT_FEET.tiny.widthFeet === 2.5 &&
+      SIZE_FOOTPRINT_FEET.medium.widthFeet === 5 &&
+      SIZE_FOOTPRINT_FEET.large.widthFeet === 10 &&
+      SIZE_FOOTPRINT_FEET.huge.widthFeet === 15 &&
+      SIZE_FOOTPRINT_FEET.gargantuan.widthFeet === 20 &&
+      cellAt(2.4, 2.4, 'tiny') === '0:0' &&
+      cellAt(2.6, 2.6, 'tiny') === '2.5:2.5' &&
+      cellAt(90, 90, 'large') === '90:90' &&
+      // 95 + footprint de 10 passaria da cena: NADA (sem clamp para a última).
+      cellAt(96, 96, 'large') === 'null' &&
+      cellAt(80, 80, 'gargantuan') === '80:80' &&
+      cellAt(85, 85, 'gargantuan') === 'null',
+    JSON.stringify({ tiny: cellAt(2.6, 2.6, 'tiny'), largeFora: cellAt(96, 96, 'large') }),
+  );
+
+  check(
+    'SC44) invariância a zoom e pan: o centro da célula volta para a MESMA célula (35%–300%)',
+    (() => {
+      const cameras: GridCamera[] = [
+        { panX: 0, panY: 0, zoom: 1 },
+        { panX: -137, panY: 89, zoom: 1 },
+        { panX: 64, panY: -42, zoom: 0.35 },
+        { panX: -512, panY: -310, zoom: 0.5 },
+        { panX: -900, panY: 240, zoom: 2 },
+        { panX: 320, panY: -640, zoom: 3 },
+      ];
+      const cells = [
+        { xFeet: 0, yFeet: 0 },
+        { xFeet: 5, yFeet: 5 },
+        { xFeet: 45, yFeet: 80 },
+        { xFeet: 95, yFeet: 95 },
+      ];
+      return cameras.every((camera) =>
+        cells.every((cell) => {
+          const scenePoint = {
+            x: feetToPx(cell.xFeet + 2.5, geometry.cellSizeFeet, geometry.pixelsPerCell),
+            y: feetToPx(cell.yFeet + 2.5, geometry.cellSizeFeet, geometry.pixelsPerCell),
+          };
+          const screen = sceneToScreen(camera, scenePoint);
+          const feet = screenToFeet(camera, screen, geometry);
+          return cellAt(feet.xFeet, feet.yFeet) === `${cell.xFeet}:${cell.yFeet}`;
+        }),
+      );
+    })(),
+  );
+
+  check(
+    'SC45) régua, hover e destino leem a MESMA célula (canto, centro, bordas e limite da cena)',
+    cellAt(0, 0) === '0:0' &&
+      cellAt(50, 50) === '50:50' &&
+      cellAt(99.9, 50) === '95:50' &&
+      cellAt(50, 99.9) === '50:95' &&
+      // Régua usa `'small'` (1 célula) e é a MESMA função do destino:
+      cellAt(7, 7, 'small') === '5:5' &&
+      cellAt(7, 7, 'medium') === '5:5' &&
+      cellAt(99.9, 99.9, 'small') === '95:95' &&
+      cellAt(100, 100) === 'null' &&
+      gridSource.includes('return containingCellFeet(feet, size, scene);') &&
+      // SÓ DOIS pontos decidem célula: a régua/hover (`'small'`) e o destino.
+      (gridSource.match(/containingCellFeet\(/g) ?? []).length === 2 &&
+      gridSource.includes("const anchor = cellAnchorAt(event.clientX, event.clientY, 'small');") &&
+      gridSource.includes('const position = cellAnchorAt(clientX, clientY, \'small\');'),
+    JSON.stringify({ canto: cellAt(0, 0), borda: cellAt(99.9, 99.9, 'small') }),
+  );
+
+  check(
+    'SC46) highlight da célula e do destino cobrem EXATAMENTE a célula (borda não cresce)',
+    feetToPx(5, 5, 44) === 44 &&
+      feetToPx(10, 5, 44) === 88 &&
+      feetToPx(15, 5, 44) === 132 &&
+      block('.grid-hover-cell').includes('box-sizing: border-box;') &&
+      block('.grid-destination-cell').includes('box-sizing: border-box;') &&
+      // Nada de remendo de 1 px: o border-box resolve na raiz.
+      !/margin:\s*-1px/.test(gridCss) &&
+      !/calc\([^)]*-\s*1px\)/.test(gridCss) &&
+      gridSource.includes('const destination = containingCellFeet(feet, size, scene);') &&
+      gridSource.includes("className=\"grid-hover-cell\"") &&
+      gridSource.includes('className="grid-destination-cell"'),
+  );
+
+  check(
+    'SC47) token mantém o footprint mecânico, mas sem moldura quadrada; nome só em hover/foco',
+    // Geometria do wrapper = occupiedSpace (Medium em {10,15} -> 88/132, 44×44).
+    feetToPx(10, 5, 44) === 88 &&
+      feetToPx(15, 5, 44) === 132 &&
+      feetToPx(SIZE_FOOTPRINT_FEET.medium.widthFeet, 5, 44) === 44 &&
+      // Retrato circular sempre DENTRO da caixa do footprint (sem estourar a célula).
+      tokenArtSize({ width: 44, height: 44 }) <= 44 &&
+      tokenArtSize({ width: 44, height: 44 }) > 0 &&
+      tokenArtSize({ width: 88, height: 88 }) > tokenArtSize({ width: 44, height: 44 }) &&
+      // Wrapper transparente em TODOS os estados.
+      block('.grid-token').includes('background: transparent;') &&
+      block('.grid-token').includes('border: 0;') &&
+      block('.grid-token').includes('border-radius: 0;') &&
+      !block('.grid-token.is-movable').includes('background') &&
+      !block('.grid-token.is-selected').includes('background') &&
+      !block('.grid-token.is-pending').includes('border-style') &&
+      !block('.grid-token').includes('border: 1px solid') &&
+      // O aro circular continua sendo o dono do estado visual.
+      gridCss.includes('.grid-token.is-pending .grid-token-art {') &&
+      gridCss.includes('.grid-token:hover .grid-token-art {') &&
+      block('.grid-token-label').includes('opacity: 0;') &&
+      block('.grid-token-label').includes('visibility: hidden;') &&
+      block('.grid-token-label').includes('pointer-events: none;') &&
+      gridCss.includes('.grid-token:hover .grid-token-label,') &&
+      gridCss.includes('.grid-token:focus-visible .grid-token-label {'),
+  );
+
+  check(
+    'SC48) fonte: nome não duplica tooltip nativa e o hover não depende de modo/estado do token',
+    tokenSource.includes('aria-label={') &&
+      !/title=\{`\$\{combatant\.name\}/.test(tokenSource) &&
+      gridSource.includes('return containingCellFeet(feet, size, scene);') &&
+      gridCss.includes('.grid-token:hover .grid-token-label,') &&
+      !/\.grid-token\.is-(movable|current|selected)[^{]*:hover[^}]*\.grid-token-label/.test(gridCss) &&
+      !/grid-token-label[^{]*\{[^}]*background: rgba/.test(gridCss),
   );
 }
 

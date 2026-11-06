@@ -128,7 +128,6 @@ interface TokenGesture {
   combatantId: string;
   startX: number;
   startY: number;
-  grab: SpatialPosition;
   position: SpatialPosition;
 }
 
@@ -179,10 +178,6 @@ const ZOOM_STEP = 1.18;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : 'Falha ao posicionar a unidade.';
-}
-
-function clampFeet(value: number, max: number): number {
-  return Math.min(Math.max(0, value), Math.max(0, max));
 }
 
 /** Campo de texto/editor: atalhos do grid NÃO disparam ali. */
@@ -628,25 +623,22 @@ export function CombatGrid({
    *
    * Única interpretação de "qual casa está sob o mouse": `floor` (nunca a
    * interseção mais próxima), footprint-aware e `null` fora da cena — régua,
-   * placement e destino do gesto leem o ponteiro por aqui. O zoom/pan já foram
-   * removidos em `feetAt`.
+   * placement, hover e destino do gesto leem o ponteiro por aqui. O zoom/pan já
+   * foram removidos em `feetAt`.
+   *
+   * O ponteiro entra CRU: nenhum deslocamento por meia footprint é aplicado
+   * antes de decidir a célula. Recuar o ponto primeiro fazia um Medium com o
+   * mouse a 7 pés (célula 5–10) cair na célula 0–5 — o destino trocava de casa
+   * sem o ponteiro cruzar a linha.
    */
   function cellAnchorAt(
     clientX: number,
     clientY: number,
     size: SpatialSize,
-    grab: SpatialPosition | null = null,
   ): SpatialPosition | null {
     const feet = feetAt(clientX, clientY);
     if (!feet) return null;
-    return containingCellFeet(
-      {
-        xFeet: feet.xFeet - (grab?.xFeet ?? 0),
-        yFeet: feet.yFeet - (grab?.yFeet ?? 0),
-      },
-      size,
-      scene,
-    );
+    return containingCellFeet(feet, size, scene);
   }
 
   /** Centro visual da ÂNCORA (px de TELA) — traço/label do movimento. */
@@ -883,18 +875,6 @@ export function CombatGrid({
     const unit = placed.find((item) => item.id === combatantId);
     const position = unit?.spatial?.position ?? null;
     if (!unit?.spatial || !position) return;
-    const footprint = SIZE_FOOTPRINT_FEET[unit.spatial.effectiveSize];
-    let grab: SpatialPosition = {
-      xFeet: footprint.widthFeet / 2,
-      yFeet: footprint.heightFeet / 2,
-    };
-    const feet = feetAt(event.clientX, event.clientY);
-    if (feet) {
-      grab = {
-        xFeet: clampFeet(feet.xFeet - position.xFeet, footprint.widthFeet),
-        yFeet: clampFeet(feet.yFeet - position.yFeet, footprint.heightFeet),
-      };
-    }
     // O gesto é do TOKEN: o pan do fundo não pode roubá-lo. Sem preventDefault,
     // o clique curto continua chegando para selecionar.
     event.stopPropagation();
@@ -905,7 +885,6 @@ export function CombatGrid({
       combatantId,
       startX: event.clientX,
       startY: event.clientY,
-      grab,
       position,
     };
     gestureRef.current = gesture;
@@ -952,13 +931,15 @@ export function CombatGrid({
     const size = unit.spatial.effectiveSize;
     const feet = feetAt(clientX, clientY);
     if (!feet) return;
+    // A CÉLULA MECÂNICA nasce do ponteiro CRU (regra canônica de `cellAnchorAt`):
+    // usar aqui a âncora já recuada do ghost fazia o destino pular para a célula
+    // de cima enquanto o mouse ainda estava na de baixo.
+    const destination = containingCellFeet(feet, size, scene);
     // GHOST = CURSOR: o centro do footprint fica sob o ponteiro (o ponto de
-    // pega do clique não vale durante o draft). O DESTINO mecânico continua
-    // sendo a célula que contém essa âncora, então o highlight pode ficar
-    // ligeiramente à frente do centro do ghost dentro da célula — correto:
-    // ghost é o mouse, highlight é a regra.
+    // pega do clique não vale durante o draft). Ghost e destino são conceitos
+    // diferentes de propósito: o ghost acompanha o mouse, o destino já está
+    // snapado na célula que o mouse aponta.
     const pointer = centeredFootprintFeet(feet, size, scene);
-    const destination = containingCellFeet(pointer, size, scene);
     const sameDestination =
       current.destination === null
         ? destination === null

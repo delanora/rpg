@@ -360,6 +360,12 @@
 .grid-hover-cell {
   position: absolute;
   pointer-events: none;
+  /*
+   * 6.6M.4.1.3: a borda entra DENTRO dos `DEFAULT_PIXELS_PER_CELL`, então o
+   * retângulo cobre exatamente os bounds da célula. Sem `border-box` o border
+   * somava 2 px e o highlight vazava para a célula vizinha.
+   */
+  box-sizing: border-box;
   background: rgba(246, 217, 119, 0.08);
   border: 1px solid rgba(246, 217, 119, 0.35);
   border-radius: 2px;
@@ -372,6 +378,8 @@
 .grid-destination-cell {
   position: absolute;
   pointer-events: none;
+  /* Mesma regra do hover: o tracejado não aumenta o footprint (6.6M.4.1.3). */
+  box-sizing: border-box;
   background: rgba(246, 217, 119, 0.06);
   border: 1px dashed rgba(246, 217, 119, 0.55);
   border-radius: 3px;
@@ -381,6 +389,15 @@
 /* TOKENS — circulares, moldura metálica, identidade dark fantasy             */
 /* -------------------------------------------------------------------------- */
 
+/*
+ * WRAPPER MECÂNICO — invisível de propósito (6.6M.4.1.3).
+ *
+ * Este retângulo É o `occupiedSpace` do servidor e continua mandando em
+ * posição, hit area, seleção, arrasto e cálculo de centro. O que ele não faz
+ * mais é APARECER: moldura quadrada aqui nunca coincide com a grade e briga com
+ * o retrato circular. Toda indicação de estado mora no `.grid-token-art`
+ * (aro/halo circular).
+ */
 .grid-token {
   position: absolute;
   display: flex;
@@ -389,29 +406,27 @@
   padding: 0;
   margin: 0;
   background: transparent;
-  border: 1px solid rgba(224, 184, 63, 0.16);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
   cursor: default;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease,
-    background 0.16s ease;
 }
 
 .grid-token:not(:disabled) {
   cursor: grab;
 }
 
-.grid-token:not(:disabled):hover {
-  border-color: rgba(224, 184, 63, 0.45);
-  background: rgba(224, 184, 63, 0.05);
+/* Hover (inclusive de observador): aro no retrato, nunca uma caixa. */
+.grid-token:hover .grid-token-art {
+  border-color: rgba(246, 217, 119, 0.78);
 }
 
+/*
+ * MOVÍVEL: só a afordância do cursor e o aro do retrato (abaixo). Nenhum
+ * estado do token reintroduz border/background quadrado.
+ */
 .grid-token.is-movable {
   cursor: grab;
-  border-color: rgba(224, 184, 63, 0.55);
-  background: rgba(224, 184, 63, 0.06);
 }
 
 .grid-token.is-movable .grid-token-art {
@@ -425,8 +440,11 @@
 }
 
 .grid-token.is-pending {
-  border-style: dashed;
   opacity: 0.72;
+}
+
+.grid-token.is-pending .grid-token-art {
+  border-style: dashed;
 }
 
 .grid-token.is-missing {
@@ -462,10 +480,6 @@
 }
 
 /* Selecionado: distinto do turno — anel tracejado, sem confundir os dois. */
-.grid-token.is-selected {
-  background: rgba(246, 217, 119, 0.06);
-}
-
 .grid-token.is-selected .grid-token-art {
   box-shadow:
     0 0 0 2px rgba(246, 217, 119, 0.95),
@@ -544,6 +558,13 @@
   user-select: none;
 }
 
+/*
+ * NOME — só em HOVER/FOCUS-VISIBLE (6.6M.4.1.3).
+ *
+ * O token parado mostra o retrato; a etiqueta é informação sob demanda. O label
+ * vive FORA do centro (`bottom` negativo), então aparecer não desloca o token, e
+ * `pointer-events: none` garante que ele nunca rouba o alvo do gesto.
+ */
 .grid-token-label {
   position: absolute;
   left: 50%;
@@ -559,6 +580,20 @@
   color: var(--ink-soft, #c3ab86);
   pointer-events: none;
   text-shadow: 0 1px 2px #000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+}
+
+/*
+ * Hover vale em QUALQUER modo (observando, régua, placement, turno de outro):
+ * ver o nome é apresentação, não permissão. Teclado recebe o mesmo nome por
+ * `:focus-visible`.
+ */
+.grid-token:hover .grid-token-label,
+.grid-token:focus-visible .grid-token-label {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* Badge de OCULTO: discreto e no canto, nunca no caminho do turno. */
