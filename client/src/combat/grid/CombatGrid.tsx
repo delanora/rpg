@@ -28,6 +28,7 @@ import {
 import {
   CAMERA_FIT_MARGIN_PX,
   centerCamera,
+  cameraIsUsable,
   clampCamera,
   edgePanSpeed,
   fitCamera,
@@ -40,6 +41,7 @@ import {
   type Point2D,
 } from './gridCamera';
 import { rulerEndpointKey, rulerSameEndpoint, type RulerRequestState } from './gridRuler';
+import { gridPhaseOf, type GridPhase } from './gridLifecycle';
 import {
   BASE_CELL_SIZE_FEET,
   DEFAULT_PIXELS_PER_CELL,
@@ -218,6 +220,12 @@ export function CombatGrid({
   // --- 6.6M.3.1: câmera (estado APENAS local) -------------------------------
   const [camera, setCamera] = useState<GridCamera>({ panX: 0, panY: 0, zoom: 1 });
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  /**
+   * Câmera ENQUADRADA de fato (fit aplicado, ou escolha do usuário com viewport
+   * válido). Só vira `true` depois de medir e aplicar o transform: é o que
+   * separa `initializing` de `ready` no lifecycle de ativação.
+   */
+  const [cameraReady, setCameraReady] = useState(false);
   const [spacePan, setSpacePan] = useState(false);
   // --- modos e régua --------------------------------------------------------
   const [mode, setMode] = useState<InteractionMode>('none');
@@ -289,8 +297,19 @@ export function CombatGrid({
   const cameraTouched = useRef(false);
   /** Cena atual (combate + dimensões): trocar reabre o enquadramento. */
   const sceneKeyRef = useRef('');
+  /** A câmera já foi enquadrada com viewport real (nunca em 0×0). */
+  const cameraInitialized = useRef(false);
 
   const scene = combat.spatial;
+  /**
+   * GRID ATIVO — o efeito colateral que importa.
+   *
+   * A cena assistida não monta viewport nenhum, mas o componente CONTINUA
+   * montado (é ele quem oferece "Ativar grid"). Por isso o bootstrap é
+   * REENTRANTE: medição, câmera, wheel e atalhos dependem deste booleano e são
+   * instalados de novo a cada `false → true` — nada de exigir F5.
+   */
+  const active = scene.mode === 'grid-2d';
   const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;
   const geometry = { pixelsPerCell: DEFAULT_PIXELS_PER_CELL, cellSizeFeet };
   const { placed, unplaced } = useMemo(() => splitByPlacement(combat.combatants), [combat.combatants]);
@@ -298,6 +317,16 @@ export function CombatGrid({
     () => scenePixels(scene, cellSizeFeet, DEFAULT_PIXELS_PER_CELL),
     [scene, cellSizeFeet],
   );
+  /**
+   * LIFECYCLE do grid (estado EXCLUSIVAMENTE local — nada vai ao servidor):
+   * `inactive` → `initializing` → `ready`. Ver `gridLifecycle.ts`.
+   */
+  const gridPhase: GridPhase = gridPhaseOf({
+    active,
+    viewport,
+    scene: dimensions,
+    cameraReady,
+  });
   const locked = busy || sceneBusy || movementBusy;
   /**
    * Contexto do listener do barramento de movimento (evita reassinar o evento a
@@ -368,18 +397,59 @@ export function CombatGrid({
    *  • depois disso, `combat:updated` NUNCA mexe na câmera (nada de recentralizar
    *    por cima da escolha de quem está jogando);
    *  • trocar a cena (dimensões reais) reabre o enquadramento, porque os bounds
-   *    mudaram de verdade.
+   *    mudaram de verdade;
+   *  • 6.6M.3.1.4.1: ATIVAR o grid reexecuta o enquadramento (o viewport só
+   *    existe depois da ativação) e a câmera do usuário é PRESERVADA se ainda
+   *    for utilizável (`cameraIsUsable`) — nunca herda NaN/zoom inválido.
    */
   useLayoutEffect(() => {
+    if (!active) return;
+    // Viewport 0×0 (recém-ativado, painel ainda assentando) NÃO enquadra e NÃO
+    // marca a câmera como pronta: o ResizeObserver avisa quando houver medida.
     if (viewport.width <= 0 || viewport.height <= 0) return;
+    if (dimensions.width <= 0 || dimensions.height <= 0) return;
     const sceneKey = `${combat.id}:${dimensions.width.toFixed(1)}x${dimensions.height.toFixed(1)}`;
     if (sceneKeyRef.current !== sceneKey) {
       sceneKeyRef.current = sceneKey;
       cameraTouched.current = false;
+      cameraInitialized.current = false;
     }
-    if (cameraTouched.current) return;
-    setCamera(fitCamera({ scene: dimensions, viewport, margin: CAMERA_FIT_MARGIN_PX }));
-  }, [combat.id, dimensions, viewport]);
+    // Câmera do usuário só é mantida se ainda descreve esta cena: trocar de
+    // combate/dimensões (ou herdar estado corrompido) volta para o fit.
+    const preserved = cameraRef.current;
+    const keepCamera =
+      cameraTouched.current && cameraInitialized.current && cameraIsUsable(preserved);
+    setCamera(
+      keepCamera
+        ? clampCamera(preserved, dimensions, viewport)
+        : fitCamera({ scene: dimensions, viewport, margin: CAMERA_FIT_MARGIN_PX }),
+    );
+    cameraInitialized.current = true;
+    setCameraReady(true);
+  }, [active, combat.id, dimensions, viewport]);
+
+  /**
+   * INACTIVE ← viewport/estado de interação.
+   *
+   * Desligar o grid tira o viewport do DOM, então a medição e a prontidão são
+   * zeradas e a próxima ativação mede o viewport novo. A CÂMERA é preservada
+   * (mesmo combate, mesma cena): quem decide reenquadrar é o fit pendente, não
+   * o desligamento. Nenhuma interação pendente sobrevive à desativação.
+   */
+  useLayoutEffect(() => {
+    if (active) return;
+    setViewport((current) =>
+      current.width === 0 && current.height === 0 ? current : { width: 0, height: 0 },
+    );
+    setCameraReady(false);
+    clearRuler();
+    clearDraft();
+    setDraftNotice(null);
+    setPendingNotice(null);
+    setMode('none');
+    // `clearRuler`/`clearDraft` só tocam estado local.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   /**
    * ResizeObserver: a fonte da medição do viewport.
@@ -388,7 +458,11 @@ export function CombatGrid({
    * assentar). Aqui a primeira leitura já é sincronizada com o layout e cada
    * mudança real de tamanho chega por callback — sem `setTimeout` arbitrário.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // INACTIVE: sem grid montado não existe viewport para observar. Este efeito
+    // roda DE NOVO na ativação (`active` é dependência) — era o `[]` que deixava
+    // a primeira ativação sem medição, sem câmera e sem wheel, obrigando a F5.
+    if (!active) return undefined;
     const node = viewportRef.current;
     if (!node) return undefined;
     const measure = (width: number, height: number): void => {
@@ -405,7 +479,7 @@ export function CombatGrid({
     });
     observer.observe(node);
     return () => observer.disconnect();
-  }, []);
+  }, [active]);
 
   function applyCamera(next: GridCamera): void {
     // Pan/zoom/fit do usuário encerram o enquadramento automático: a câmera
@@ -444,6 +518,9 @@ export function CombatGrid({
    * handler de wheel do React não permite `preventDefault`.
    */
   useEffect(() => {
+    // O listener nativo vive no viewport da INSTÂNCIA ativa: sem grid não há
+    // nó para receber roda e Ctrl+roda.
+    if (!active) return undefined;
     const node = viewportRef.current;
     if (!node) return undefined;
     function onWheel(event: WheelEvent): void {
@@ -463,7 +540,7 @@ export function CombatGrid({
     return () => node.removeEventListener('wheel', onWheel);
     // `applyCamera`/`bounded` só tocam a câmera local.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dimensions.width, dimensions.height, viewport.width, viewport.height]);
+  }, [active, dimensions.width, dimensions.height, viewport.width, viewport.height]);
 
   /* ---------------------------------------------------------------------- */
   /* CONVERSÕES (toda ferramenta passa por aqui)                             */
@@ -1433,6 +1510,9 @@ export function CombatGrid({
   /* ATALHOS (F = régua rápida, Esc, Space = pan)                            */
   /* ---------------------------------------------------------------------- */
   useEffect(() => {
+    // INACTIVE: F/Space/Esc são atalhos DO GRID — sem viewport montado não
+    // existe régua, pan nem movimento para eles acionarem.
+    if (!active) return undefined;
     function onKeyDown(event: KeyboardEvent): void {
       if (isEditableTarget(event.target)) return;
       if (event.key === 'Escape') {
@@ -1486,7 +1566,7 @@ export function CombatGrid({
     };
     // `clearRuler`/`cancelDraft` só tocam estado local.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ruler, quickRuler, draft, combat.spatial.mode, rulerActive]);
+  }, [active, ruler, quickRuler, draft, combat.spatial.mode, rulerActive]);
 
   /* ---------------------------------------------------------------------- */
   /* RENDER                                                                  */
@@ -1560,6 +1640,7 @@ export function CombatGrid({
 
   const viewportClasses = [
     'grid-viewport',
+    gridPhase !== 'ready' ? 'is-initializing' : '',
     panGesture.current?.moved ? 'is-panning' : '',
     spacePan ? 'is-space-pan' : '',
     rulerCursorActive ? 'is-ruler-cursor' : '',
@@ -1630,7 +1711,11 @@ export function CombatGrid({
     })();
 
   return (
-    <section className="combat-grid-panel" aria-label="Cena de combate">
+    <section
+      className="combat-grid-panel"
+      aria-label="Cena de combate"
+      data-grid-phase={gridPhase}
+    >
       <div className="grid-toolbar">
         <div className="grid-toolbar-left">
           {/*
@@ -1663,6 +1748,7 @@ export function CombatGrid({
             type="button"
             className="btn btn-small"
             aria-label="Reduzir zoom"
+            disabled={gridPhase !== 'ready'}
             onClick={() => zoomStep(1 / ZOOM_STEP)}
           >
             −
@@ -1674,18 +1760,25 @@ export function CombatGrid({
             type="button"
             className="btn btn-small"
             aria-label="Aumentar zoom"
+            disabled={gridPhase !== 'ready'}
             onClick={() => zoomStep(ZOOM_STEP)}
           >
             +
           </button>
-          <button type="button" className="btn btn-small" aria-label="Enquadrar cena" onClick={fitScene}>
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label="Enquadrar cena"
+            disabled={gridPhase !== 'ready'}
+            onClick={fitScene}
+          >
             Enquadrar
           </button>
           <button
             type="button"
             className={currentOffscreen ? 'btn btn-small is-offscreen' : 'btn btn-small'}
             aria-label="Centralizar no turno"
-            disabled={!currentUnit}
+            disabled={!currentUnit || gridPhase !== 'ready'}
             onClick={() => {
               if (currentUnit) centerOnCombatant(currentUnit.id);
             }}

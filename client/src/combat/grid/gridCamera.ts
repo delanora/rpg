@@ -46,6 +46,23 @@ export function clampZoom(zoom: number): number {
   return Math.min(MAX_CAMERA_ZOOM, Math.max(MIN_CAMERA_ZOOM, zoom));
 }
 
+/**
+ * Câmera PRESERVADA ainda utilizável.
+ *
+ * Depois de desligar e religar o grid a câmera local é mantida (mesmo combate,
+ * mesma cena), mas estado corrompido — `NaN`, zoom fora dos limites, zero —
+ * NUNCA é herdado: quem chama decide reenquadrar em vez de desenhar lixo.
+ */
+export function cameraIsUsable(camera: GridCamera): boolean {
+  return (
+    Number.isFinite(camera.panX) &&
+    Number.isFinite(camera.panY) &&
+    Number.isFinite(camera.zoom) &&
+    camera.zoom >= MIN_CAMERA_ZOOM &&
+    camera.zoom <= MAX_CAMERA_ZOOM
+  );
+}
+
 /** Coordenada de TELA (relativa ao viewport) → coordenada de CENA (px). */
 export function screenToScene(camera: GridCamera, point: Point2D): Point2D {
   return {
