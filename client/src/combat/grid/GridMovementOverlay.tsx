@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { SpatialPosition, SpatialSize } from '../../types';
-import { SIZE_FOOTPRINT_FEET, feetToPx } from './gridMath';
+import { SIZE_FOOTPRINT_FEET, spatialRectToScenePixels, tokenArtSize } from './gridMath';
 
 /**
  * FASE 6.6M.3 — GHOST do movimento.
@@ -33,12 +33,17 @@ function boxOf(
   pixelsPerCell: number,
 ): { left: number; top: number; width: number; height: number } {
   const footprint = SIZE_FOOTPRINT_FEET[size];
-  return {
-    left: feetToPx(position.xFeet, cellSizeFeet, pixelsPerCell),
-    top: feetToPx(position.yFeet, cellSizeFeet, pixelsPerCell),
-    width: feetToPx(footprint.widthFeet, cellSizeFeet, pixelsPerCell),
-    height: feetToPx(footprint.heightFeet, cellSizeFeet, pixelsPerCell),
-  };
+  // MESMA projeção do token real: o ghost é livre, mas o tamanho é o footprint.
+  return spatialRectToScenePixels(
+    {
+      xFeet: position.xFeet,
+      yFeet: position.yFeet,
+      widthFeet: footprint.widthFeet,
+      heightFeet: footprint.heightFeet,
+    },
+    cellSizeFeet,
+    pixelsPerCell,
+  );
 }
 
 export function GridMovementOverlay({
@@ -59,7 +64,8 @@ export function GridMovementOverlay({
           top: `${box.top}px`,
           width: `${box.width}px`,
           height: `${box.height}px`,
-          '--grid-token-art': `${Math.max(10, Math.min(box.width, box.height) - 6)}px`,
+          // Mesmo círculo inscrito do token real: nada de inset só no ghost.
+          '--grid-token-art': `${tokenArtSize(box)}px`,
         } as CSSProperties
       }
     >

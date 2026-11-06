@@ -178,18 +178,52 @@ export function scenePixels(
   };
 }
 
+/** Retângulo em PIXELS DE CENA (mesma origem 0,0 do plano, mesma escala). */
+export interface SceneRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * 6.6M.4.1.4 — PROJEÇÃO CANÔNICA pés → pixels de cena.
+ *
+ * É a ÚNICA conversão usada pelos elementos espaciais (token, hover, destino,
+ * ghost): mesma origem (canto 0,0 da cena) e mesma escala (`cellSizeFeet` e
+ * `pixelsPerCell`). Nenhum elemento espacial faz a conta à mão em outro lugar —
+ * projeções paralelas eram o que deixava highlight e footprint com 1–2 px de
+ * diferença. Puro: nada aqui decide regra, footprint ou posição.
+ */
+export function spatialRectToScenePixels(
+  rect: { xFeet: number; yFeet: number; widthFeet: number; heightFeet: number },
+  cellSizeFeet: number,
+  pixelsPerCell: number,
+): SceneRect {
+  return {
+    left: feetToPx(rect.xFeet, cellSizeFeet, pixelsPerCell),
+    top: feetToPx(rect.yFeet, cellSizeFeet, pixelsPerCell),
+    width: feetToPx(rect.widthFeet, cellSizeFeet, pixelsPerCell),
+    height: feetToPx(rect.heightFeet, cellSizeFeet, pixelsPerCell),
+  };
+}
+
 /** Tamanho visual (px) de um espaço ocupado — sem arredondar Tiny para 1 célula. */
 export function occupiedSpacePixels(
   space: OccupiedSpace,
   cellSizeFeet: number,
   pixelsPerCell: number,
-): { left: number; top: number; width: number; height: number } {
-  return {
-    left: feetToPx(space.minXFeet, cellSizeFeet, pixelsPerCell),
-    top: feetToPx(space.minYFeet, cellSizeFeet, pixelsPerCell),
-    width: feetToPx(space.widthFeet, cellSizeFeet, pixelsPerCell),
-    height: feetToPx(space.heightFeet, cellSizeFeet, pixelsPerCell),
-  };
+): SceneRect {
+  return spatialRectToScenePixels(
+    {
+      xFeet: space.minXFeet,
+      yFeet: space.minYFeet,
+      widthFeet: space.widthFeet,
+      heightFeet: space.heightFeet,
+    },
+    cellSizeFeet,
+    pixelsPerCell,
+  );
 }
 
 /**
@@ -207,10 +241,18 @@ export function renderRect(
   return occupiedSpacePixels(space, cellSizeFeet, pixelsPerCell);
 }
 
-/** Corpo do token (círculo) dentro do footprint, com respiro mínimo. */
+/**
+ * CÍRCULO INSCRITO no footprint (6.6M.4.1.4): diâmetro = menor lado do espaço
+ * ocupado, sem inset.
+ *
+ * O "respiro" antigo (`min - até 8 px`) encolhia o token dentro da célula
+ * (44 px → 36 px) e o retrato deixava de representar o footprint. A borda do
+ * `.grid-token-art` usa `box-sizing: border-box`, então o aro cabe DENTRO deste
+ * diâmetro e nenhum pixel é somado por fora.
+ */
 export function tokenArtSize(box: { width: number; height: number }): number {
   const min = Math.min(box.width, box.height);
-  return Math.max(10, min - Math.min(8, min * 0.12));
+  return Number.isFinite(min) && min > 0 ? min : 0;
 }
 
 /**
