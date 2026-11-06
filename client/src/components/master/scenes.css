@@ -1,0 +1,260 @@
+/*
+ * FASE 6.6M.4.1 — CENAS DENTRO DA LOCALIDADE.
+ *
+ * Arquivo próprio de propósito: `client/src/styles.css` está em WIP de outro
+ * trabalho. Aqui só se usam os tokens do tema (--surface, --line, --gold…),
+ * como `grid.css` já faz — nada de cor ou medida nova inventada.
+ */
+
+.scene-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem;
+}
+
+.scene-card {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.16s ease, box-shadow 0.2s ease, transform 0.12s ease;
+}
+
+.scene-card:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 16px -6px var(--glow);
+  transform: translateY(-1px);
+}
+
+.scene-thumb {
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  overflow: hidden;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
+  color: var(--gold-deep);
+}
+
+.scene-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scene-info {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+/* --- Editor ---------------------------------------------------------------- */
+
+.scene-editor {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.scene-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 0.8rem;
+}
+
+.scene-editor-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .scene-editor-title {
+  color: var(--gold-bright);
+}
+
+.scene-editor-meta {
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+}
+
+.scene-fields label,
+.scene-mode {
+  display: grid;
+  gap: 0.25rem;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.scene-fields input,
+.scene-fields select,
+.scene-mode select {
+  padding: 0.3rem 0.45rem;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.scene-fields input:disabled,
+.scene-fields select:disabled,
+.scene-mode select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.scene-hint {
+  margin: 0;
+  font-size: var(--text-micro);
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
+/* --- Imagem de fundo ------------------------------------------------------- */
+
+.scene-background-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.scene-background-empty {
+  margin: 0;
+  padding: 0.6rem;
+  text-align: center;
+  font-size: var(--text-micro);
+  font-style: italic;
+  color: var(--ink-faint);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+}
+
+/* --- Preview estrutural ---------------------------------------------------- */
+
+/*
+ * Só proporção, imagem e grid: NÃO é editor de paredes. A grade é desenhada em
+ * percentuais do próprio quadro, então acompanha qualquer dimensão sem precisar
+ * de matemática em pixels.
+ */
+.scene-preview-frame {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: center;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.scene-preview {
+  position: relative;
+  width: 100%;
+  max-width: 32rem;
+  max-height: 20rem;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background-color: var(--surface-3);
+  background-image:
+    linear-gradient(to right, var(--line-strong) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--line-strong) 1px, transparent 1px);
+  background-size: var(--scene-cell-x, 5%) var(--scene-cell-y, 5%);
+  background-position: 0 0;
+}
+
+.scene-preview-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scene-preview-caption {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Lock, confirmação e mensagens ---------------------------------------- */
+
+.scene-lock {
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.78rem;
+  color: #d9a35a;
+  background: rgba(120, 74, 20, 0.16);
+  border: 1px solid rgba(190, 140, 60, 0.45);
+  border-radius: var(--radius);
+}
+
+.scene-confirm {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(190, 84, 60, 0.5);
+  border-radius: var(--radius);
+  background: rgba(120, 32, 20, 0.12);
+}
+
+.scene-confirm p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.scene-notice {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--gold-deep);
+}
+
+[data-theme='dark'] .scene-notice {
+  color: var(--gold-bright);
+}
+
+.scene-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .scene-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-preview {
+    max-height: 14rem;
+  }
+}

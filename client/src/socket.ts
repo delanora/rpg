@@ -36,6 +36,9 @@ import type {
   RegionDeletedPayload,
   LongRestRequestUpdatedPayload,
   RegionUpdatedPayload,
+  SceneCreatedPayload,
+  SceneDeletedPayload,
+  SceneUpdatedPayload,
   ShortRestCompletedPayload,
   ShortRestRequestUpdatedPayload,
   TableRollActivePayload,
@@ -58,6 +61,10 @@ export interface ServerToClientEvents {
   'locality:created': (payload: LocalityCreatedPayload) => void;
   'locality:updated': (payload: LocalityUpdatedPayload) => void;
   'locality:deleted': (payload: LocalityDeletedPayload) => void;
+  /** Cenas da localidade (6.6L.4.1.1) — só a sala dos Mestres recebe. */
+  'scene:created': (payload: SceneCreatedPayload) => void;
+  'scene:updated': (payload: SceneUpdatedPayload) => void;
+  'scene:deleted': (payload: SceneDeletedPayload) => void;
   'item:created': (payload: ItemCreatedPayload) => void;
   'item:updated': (payload: ItemUpdatedPayload) => void;
   'item:deleted': (payload: ItemDeletedPayload) => void;

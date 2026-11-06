@@ -15,6 +15,9 @@ import type {
   RegionDeletedPayload,
   RegionUpdatedPayload,
   Role,
+  SceneCreatedPayload,
+  SceneDeletedPayload,
+  SceneUpdatedPayload,
   SheetUpdatedPayload,
   SpellIntentUpdatedPayload,
 } from './types';
@@ -35,6 +38,9 @@ export type {
   RegionCreatedPayload,
   RegionDeletedPayload,
   RegionUpdatedPayload,
+  SceneCreatedPayload,
+  SceneDeletedPayload,
+  SceneUpdatedPayload,
   SheetUpdatedPayload,
   SpellIntentUpdatedPayload,
 };

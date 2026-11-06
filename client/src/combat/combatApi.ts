@@ -16,6 +16,11 @@ export interface CombatCreatureEntry {
 /** Inicia o combate na localidade escolhida, com N cópias de cada criatura. */
 export function startCombat(input: {
   localityId?: string;
+  /**
+   * Cena da localidade escolhida (6.6L.4.1.1): a cena passa a ser a fonte
+   * estrutural do combate. Sem cena, o combate usa o estado legado assistido.
+   */
+  sceneId?: string;
   entries: CombatCreatureEntry[];
 }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat', {

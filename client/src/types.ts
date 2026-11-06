@@ -2300,6 +2300,68 @@ export interface SpatialScene {
   cellSizeFeet: number;
 }
 
+/**
+ * Parede de uma cena (6.6L.4.1.1). Geometria em PÉS; o cliente só apresenta.
+ * A UI desta fase NÃO cria nem edita parede — o tipo existe para exibir a
+ * contagem e o preview estrutural.
+ */
+export interface SpatialObstacle {
+  id: string;
+  kind: 'wall';
+  start: SpatialPosition;
+  end: SpatialPosition;
+  lengthFeet: number;
+  blocksMovement: boolean;
+  blocksSight: boolean;
+}
+
+/**
+ * CENA ESPACIAL de uma LOCALIDADE (`Locality 1→N Scene`).
+ *
+ * A cena é a dona da configuração estrutural (PÉS) e das paredes; o combate só
+ * a referencia (`Combat.sceneId`). `backgroundImageUrl` é arte OPCIONAL — a cena
+ * sem imagem é totalmente válida e nunca depende dela para funcionar.
+ */
+export interface Scene {
+  id: string;
+  localityId: string;
+  name: string;
+  spatialConfig: SpatialScene;
+  backgroundImageUrl: string | null;
+  obstacles: SpatialObstacle[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Configuração espacial aceita no PATCH — dimensões em PÉS, sempre. */
+export interface SceneSpatialPatch {
+  mode: SpatialScene['mode'];
+  widthFeet?: number;
+  heightFeet?: number;
+}
+
+export interface ScenePatch {
+  name?: string;
+  spatialConfig?: SceneSpatialPatch;
+  /** `null` limpa a imagem de fundo. */
+  backgroundImageUrl?: string | null;
+}
+
+export interface SceneCreatedPayload {
+  localityId: string;
+  scene: Scene;
+}
+
+export interface SceneUpdatedPayload {
+  scene: Scene;
+}
+
+export interface SceneDeletedPayload {
+  localityId: string;
+  sceneId: string;
+}
+
 export interface CombatantDto {
   mechanicalState: MechanicalState;
   conditionEffects: ConditionEffects;

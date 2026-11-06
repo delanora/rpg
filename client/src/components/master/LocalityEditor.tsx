@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { fileToImagePayload, uploadImage } from '../../api';
 import type { Creature, Locality, LocalityPatch } from '../../types';
 import { ImageGallery } from './ImageGallery';
+import { LocalityScenes } from './LocalityScenes';
 import { InlineField } from '../InlineField';
 import { Portrait } from '../Portrait';
 import { Section } from '../Section';
@@ -86,6 +87,10 @@ export function LocalityEditor({ locality, creatures, onPatch, onDelete }: Local
           onRemove={removeImage}
         />
       </Section>
+
+      {/* Cenas do ambiente: a cena pertence à LOCALIDADE e é a dona do grid e
+          das paredes (6.6L.4.1.1). Fica aqui, e não numa aba do painel. */}
+      <LocalityScenes localityId={locality.id} localityName={locality.name} />
 
       <Section
         title="Criaturas e NPCs"

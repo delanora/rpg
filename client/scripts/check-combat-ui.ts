@@ -58,6 +58,7 @@ import { gridPhaseOf } from '../src/combat/grid/gridLifecycle';
 import { rulerEndpointKey, rulerLabelText, rulerMidpoint } from '../src/combat/grid/gridRuler';
 import { distanceLabel, formatFeet, formatMeters, rangeSummary } from '../src/combat/grid/distanceFormat';
 import { GridToken, type GridUnit } from '../src/combat/grid/GridToken';
+import { formatSceneMeters, feetToMeters, metersToFeet } from '../src/sceneUnits';
 import { Icon } from '../src/components/Icon';
 import { UnplacedCombatantsTray } from '../src/combat/grid/UnplacedCombatantsTray';
 import {
@@ -5200,6 +5201,202 @@ check(
     return bad.length === 0;
   })(),
 );
+
+/* ========================================================================== */
+/* 6.6M.4.1 — EDITOR DE CENAS DENTRO DA LOCALIDADE                            */
+/* ========================================================================== */
+/*
+ * A cena é UI nova: tipos, API, editor, realtime e Start Combat. As checagens
+ * abaixo cobrem contrato (endpoints/versão/idempotência), unidades (metros na
+ * tela, pés no payload), reuso de upload e as regras que esta fase NÃO pode
+ * atravessar (lock, nada de parede desenhada, nada de segunda representação).
+ */
+{
+  const apiSource = source('src/scenesApi.ts');
+  const unitsSource = source('src/sceneUnits.ts');
+  const editorSource = source('src/components/master/SceneEditor.tsx');
+  const localityScenesSource = source('src/components/master/LocalityScenes.tsx');
+  const localityEditorSource = source('src/components/master/LocalityEditor.tsx');
+  const startDialogSource = source('src/combat/CombatStartDialog.tsx');
+  const combatApiSource = source('src/combat/combatApi.ts');
+  const realtimeSource = source('src/useRealtime.ts');
+  const socketSource = source('src/socket.ts');
+  const typesSource = source('src/types.ts');
+
+  check(
+    'SC1) tipo `Scene` espelha o DTO do servidor (localidade, config em pés, imagem opcional, paredes, versão)',
+    typesSource.includes('export interface Scene {') &&
+      typesSource.includes('localityId: string;') &&
+      typesSource.includes('spatialConfig: SpatialScene;') &&
+      typesSource.includes('backgroundImageUrl: string | null;') &&
+      typesSource.includes('obstacles: SpatialObstacle[];') &&
+      typesSource.includes('version: number;') &&
+      typesSource.includes('export interface SpatialObstacle {'),
+  );
+
+  check(
+    'SC2) API de cena usa os endpoints REAIS da 6.6L.4.1.1 (lista por localidade + detalhe por cena)',
+    apiSource.includes('`/api/localities/${localityId}/scenes`') &&
+      apiSource.includes('`/api/scenes/${sceneId}`') &&
+      apiSource.includes("method: 'POST'") &&
+      apiSource.includes("method: 'PATCH'") &&
+      apiSource.includes("method: 'DELETE'"),
+  );
+
+  check(
+    'SC3) toda mutação manda `expectedVersion` + `operationId` (sem merge de versões no cliente)',
+    apiSource.includes('export interface UpdateSceneInput extends ScenePatch') &&
+      apiSource.includes('expectedVersion: number;') &&
+      apiSource.includes('operationId: string;') &&
+      apiSource.includes('body: { expectedVersion, operationId: newId() }') &&
+      !apiSource.includes('version =') &&
+      !apiSource.includes('.version++'),
+  );
+
+  check(
+    'SC4) intenção incerta reusa o MESMO operationId; escrita nova gera outro (o servidor decide pelo fingerprint)',
+    editorSource.includes('pending.current.key === key ? pending.current.id : newId()') &&
+      editorSource.includes('pending.current = { key, id: operationId };') &&
+      editorSource.includes('pending.current = null;'),
+  );
+
+  check(
+    'SC5) escrita VELHA (409 CONFLICT) adota o snapshot autoritativo em vez de sobrescrever',
+    editorSource.includes("value.code === 'CONFLICT'") &&
+      editorSource.includes('await onReload()') &&
+      editorSource.includes('Carregamos a versão mais recente') &&
+      localityScenesSource.includes('const fresh = await fetchScene(selected.id);'),
+  );
+
+  check(
+    'SC6) `SCENE_IN_USE` vira estado de tela: dados visíveis, edição estrutural travada',
+    editorSource.includes("'SCENE_IN_USE'") &&
+      editorSource.includes('const editable = !locked && !busy && !uploading;') &&
+      editorSource.includes('disabled={!editable}') &&
+      editorSource.includes('não pode ser editada agora') &&
+      // O cliente NUNCA contorna o lock: nenhum override nem revision branching.
+      !/force:\s*true/.test(editorSource) &&
+      !/sceneRevision|revisionId/.test(editorSource),
+  );
+
+  check(
+    'SC7) conversão FEET ↔ METERS canônica e centralizada (0,75 / 1,5 / 9 m)',
+    unitsSource.includes("import { METERS_PER_FOOT } from './combat/grid/distanceFormat'") &&
+      feetToMeters(2.5) === 0.75 &&
+      feetToMeters(5) === 1.5 &&
+      feetToMeters(20) === 6 &&
+      feetToMeters(30) === 9 &&
+      metersToFeet(0.75) === 2.5 &&
+      metersToFeet(1.5) === 5 &&
+      metersToFeet(6) === 20 &&
+      metersToFeet(9) === 30 &&
+      formatSceneMeters(90) === '27 m' &&
+      // Nenhum componente reintroduz fator mágico de conversão.
+      !/3\.28084/.test(editorSource) &&
+      !/3\.28084/.test(localityScenesSource),
+  );
+
+  check(
+    'SC8) a UI fala metros e o PAYLOAD continua em PÉS (engine/DB inalterados)',
+    editorSource.includes('Largura (m)') &&
+      editorSource.includes('{ spatialConfig: { mode, widthFeet, heightFeet } }') &&
+      editorSource.includes('formatSceneFeet(') &&
+      !/widthMeters\s*:/.test(apiSource) &&
+      !/heightMeters\s*:/.test(apiSource) &&
+      apiSource.includes('PÉS') &&
+      // O banco/engine não são reescritos: nada de migration nesta microfase.
+      !/migrat/i.test(apiSource),
+  );
+
+  check(
+    'SC9) imagem de fundo reutiliza o pipeline EXISTENTE de upload (sem storage/endpoint novo, sem base64 na cena)',
+    editorSource.includes('const payload = await fileToImagePayload(file);') &&
+      editorSource.includes("uploadImage(payload.dataUrl, payload.name, 'localities')") &&
+      editorSource.includes('{ backgroundImageUrl: stored.url }') &&
+      editorSource.includes('{ backgroundImageUrl: null }') &&
+      !/backgroundImageUrl:\s*payload\.dataUrl/.test(editorSource) &&
+      !/base64/.test(editorSource) &&
+      !/api\/uploads/.test(apiSource),
+  );
+
+  check(
+    'SC10) cena sem imagem é caso normal e imagem quebrada não derruba o editor',
+    editorSource.includes('Nenhuma imagem de fundo.') &&
+      editorSource.includes('setImageFailed(true)') &&
+      editorSource.includes('A imagem atual não carregou') &&
+      editorSource.includes('independem dela'),
+  );
+
+  check(
+    'SC11) exclusão pede confirmação explícita e avisa do cascade das paredes',
+    editorSource.includes('confirmingDelete') &&
+      editorSource.includes('excluir cena e paredes') &&
+      editorSource.includes('cascade do servidor') &&
+      editorSource.includes('await onDelete(scene.version)'),
+  );
+
+  check(
+    'SC12) NENHUMA parede é criada/editada pela UI nesta fase',
+    !/spatial\/obstacles/.test(apiSource) &&
+      !/spatial\/obstacles/.test(editorSource) &&
+      !/spatial\/obstacles/.test(localityScenesSource) &&
+      !/createSpatialObstacle|updateSpatialObstacle|deleteSpatialObstacle/.test(editorSource),
+  );
+
+  check(
+    'SC13) preview é superfície mínima: nada do CombatGrid (câmera/tokens/iniciativa) é acoplado',
+    editorSource.includes('function ScenePreview(') &&
+      editorSource.includes('CombatGrid') && // mencionado como justificativa documentada
+      !/from '\.\.\/\.\.\/combat\//.test(editorSource) &&
+      !/useCombatState|CombatTracker/.test(editorSource) &&
+      /\.scene-preview\b/.test(source('src/components/master/scenes.css')) &&
+      source('src/components/master/scenes.css').includes('--scene-cell-x'),
+  );
+
+  check(
+    'SC14) Cena vive DENTRO da Localidade (lista + seleção + editor), não numa aba do painel',
+    localityEditorSource.includes('<LocalityScenes localityId={locality.id}') &&
+      localityScenesSource.includes('Cada cena tem grid, paredes e imagem próprios.') &&
+      localityScenesSource.includes('createScene(localityId, { name: nextSceneName(scenes) })') &&
+      localityScenesSource.includes('const selected = useMemo(') &&
+      localityScenesSource.includes('<SceneEditor') &&
+      // Localidade trocada/excluída não deixa seleção órfã.
+      localityScenesSource.includes('setSelectedId(null);') &&
+      !/tab === 'scenes'|'scenes'/.test(localityEditorSource),
+  );
+
+  check(
+    'SC15) isolamento entre localidades: eventos e listagem filtram pelo `localityId` do contexto',
+    localityScenesSource.includes('if (event.scene.localityId !== localityId) return scenes;') &&
+      localityScenesSource.includes('subscribeSceneEvents(') &&
+      localityScenesSource.includes('event.scene.version < scenes[index].version') &&
+      localityScenesSource.includes('fetchScenes(localityId)'),
+  );
+
+  check(
+    'SC16) realtime de cena usa o MESMO socket (sem polling e sem segunda conexão)',
+    socketSource.includes("'scene:created'") &&
+      socketSource.includes("'scene:updated'") &&
+      socketSource.includes("'scene:deleted'") &&
+      realtimeSource.includes("socket.on('scene:created'") &&
+      realtimeSource.includes("socket.on('scene:updated'") &&
+      realtimeSource.includes("socket.on('scene:deleted'") &&
+      realtimeSource.includes('publishSceneEvent({ type: \'updated\', scene: payload.scene })') &&
+      !/setInterval/.test(localityScenesSource) &&
+      !/new WebSocket|io\(/.test(apiSource),
+  );
+
+  check(
+    'SC17) Start Combat oferece a cena DA LOCALIDADE escolhida e envia `sceneId` (opcional no legado)',
+    startDialogSource.includes('const [scenes, setScenes] = useState<Scene[]>([]);') &&
+      startDialogSource.includes('fetchScenes(localityId)') &&
+      startDialogSource.includes('const [sceneId, setSceneId] = useState') &&
+      startDialogSource.includes("setSceneId('')"),
+      startDialogSource.includes('sem cena — cena assistida padrão') &&
+      startDialogSource.includes('...(localityId && sceneId ? { sceneId } : {})') &&
+      combatApiSource.includes('sceneId?: string;'),
+  );
+}
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);
