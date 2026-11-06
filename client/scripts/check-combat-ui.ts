@@ -45,7 +45,9 @@ import {
   clampCamera,
   feetToScenePixel,
   fitCamera,
+  autoPanCameraDelta,
   panBy,
+  revealIntentAt,
   sceneToScreen,
   screenToFeet,
   screenToScene,
@@ -4792,6 +4794,197 @@ check(
     // Activate SEM remount: o listener do gesto resolve pelo ref do viewport.
     movementGridSource.includes('viewportPoint(clientX: number, clientY: number): Point2D | null') &&
     movementGridSource.includes('const node = viewportRef.current;')
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1.4.2 — AUTO-PAN: DIREÇÃO DE REVELAÇÃO                              */
+/* -------------------------------------------------------------------------- */
+
+// Mesma zona e velocidade de produção: esta task corrige DIREÇÃO, não tuning.
+const AUTO_PAN_EDGE = 52;
+const AUTO_PAN_SPEED = 14;
+const AUTO_PAN_BOUNDS = { left: 0, top: 0, right: 1200, bottom: 700 };
+
+/** Ponteiro de borda → intenção → delta de câmera → ponto de cena sob ele. */
+function autoPanFrom(
+  pointer: { x: number; y: number },
+  camera: GridCamera,
+): { camera: GridCamera; before: { x: number; y: number }; after: { x: number; y: number } } {
+  const delta = autoPanCameraDelta(
+    revealIntentAt(pointer, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE),
+    AUTO_PAN_SPEED,
+  );
+  return {
+    camera: panBy(camera, delta.dx, delta.dy),
+    before: screenToScene(camera, pointer),
+    after: screenToScene(panBy(camera, delta.dx, delta.dy), pointer),
+  };
+}
+
+check(
+  'CB318) auto-pan declara INTENÇÃO DE REVELAÇÃO (0..1 por lado), nunca delta cru de câmera',
+  (() => {
+    const right = revealIntentAt({ x: 1190, y: 350 }, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE);
+    const left = revealIntentAt({ x: 6, y: 350 }, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE);
+    const up = revealIntentAt({ x: 600, y: 3 }, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE);
+    const down = revealIntentAt({ x: 600, y: 694 }, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE);
+    const center = revealIntentAt({ x: 600, y: 350 }, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE);
+    return (
+      right.right > 0 &&
+      right.left === 0 &&
+      right.up === 0 &&
+      right.down === 0 &&
+      left.left > 0 &&
+      left.right === 0 &&
+      up.up > 0 &&
+      up.down === 0 &&
+      down.down > 0 &&
+      down.up === 0 &&
+      // Centro: intenção nenhuma (auto-pan só existe na borda).
+      center.left === 0 &&
+      center.right === 0 &&
+      center.up === 0 &&
+      center.down === 0 &&
+      // Profundidade normalizada: no limite chega a 1, nunca passa.
+      revealIntentAt({ x: 0, y: 0 }, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE).left === 1 &&
+      // Zona desligada não inventa intenção.
+      revealIntentAt({ x: 1190, y: 350 }, AUTO_PAN_BOUNDS, 0).right === 0
+    );
+  })(),
+);
+check(
+  'CB319) borda DIREITA revela MAIS cena à direita (pan manual já diferente de zero)',
+  (() => {
+    const camera: GridCamera = { panX: 340, panY: -210, zoom: 1 };
+    const { camera: moved, before, after } = autoPanFrom({ x: 1190, y: 350 }, camera);
+    // A cena sob o ponteiro AVANÇA para a direita; a câmera recua em panX.
+    return moved.panX < camera.panX && after.x > before.x && Math.abs(after.y - before.y) < 1e-9;
+  })(),
+);
+check(
+  'CB320) borda ESQUERDA revela MAIS cena à esquerda (o lado oposto, nunca o mesmo)',
+  (() => {
+    const camera: GridCamera = { panX: 340, panY: -210, zoom: 1 };
+    const { camera: moved, before, after } = autoPanFrom({ x: 8, y: 350 }, camera);
+    return moved.panX > camera.panX && after.x < before.x && Math.abs(after.y - before.y) < 1e-9;
+  })(),
+);
+check(
+  'CB321) borda SUPERIOR revela ACIMA e INFERIOR revela ABAIXO',
+  (() => {
+    const camera: GridCamera = { panX: 12, panY: -44, zoom: 1 };
+    const top = autoPanFrom({ x: 600, y: 5 }, camera);
+    const bottom = autoPanFrom({ x: 600, y: 695 }, camera);
+    return (
+      top.camera.panY > camera.panY &&
+      top.after.y < top.before.y &&
+      bottom.camera.panY < camera.panY &&
+      bottom.after.y > bottom.before.y &&
+      Math.abs(top.after.x - top.before.x) < 1e-9 &&
+      Math.abs(bottom.after.x - bottom.before.x) < 1e-9
+    );
+  })(),
+);
+check(
+  'CB322) CANTOS combinam os dois eixos (diagonal revela no sentido do ponteiro)',
+  (() => {
+    const camera: GridCamera = { panX: -60, panY: 90, zoom: 1.5 };
+    const tl = autoPanFrom({ x: 4, y: 4 }, camera);
+    const tr = autoPanFrom({ x: 1196, y: 4 }, camera);
+    const bl = autoPanFrom({ x: 4, y: 696 }, camera);
+    const br = autoPanFrom({ x: 1196, y: 696 }, camera);
+    return (
+      tl.after.x < tl.before.x &&
+      tl.after.y < tl.before.y &&
+      tr.after.x > tr.before.x &&
+      tr.after.y < tr.before.y &&
+      bl.after.x < bl.before.x &&
+      bl.after.y > bl.before.y &&
+      br.after.x > br.before.x &&
+      br.after.y > br.before.y
+    );
+  })(),
+);
+check(
+  'CB323) a DIREÇÃO não depende do zoom (0,75× / 1× / 1,5× / 2× revelam o mesmo lado)',
+  [0.75, 1, 1.5, 2].every((zoom) => {
+    const camera: GridCamera = { panX: -120, panY: 60, zoom };
+    const right = autoPanFrom({ x: 1190, y: 350 }, camera);
+    const left = autoPanFrom({ x: 10, y: 350 }, camera);
+    return right.after.x > right.before.x && left.after.x < left.before.x;
+  }),
+);
+check(
+  'CB324) no limite da cena o auto-pan para: clamp devolve a MESMA câmera (sem oscilar)',
+  (() => {
+    const scene = { width: 880, height: 880 };
+    const viewport = { width: 1200, height: 700 };
+    // Câmera já no extremo direito da cena (só `keep` px visíveis).
+    const pinned = clampCamera({ panX: -1e6, panY: 0, zoom: 1 }, scene, viewport);
+    const { camera: moved } = autoPanFrom({ x: 1190, y: 350 }, pinned);
+    const clamped = clampCamera(moved, scene, viewport);
+    return pinned.panX === 96 - 880 && clamped.panX === pinned.panX && clamped.panY === pinned.panY;
+  })(),
+);
+check(
+  'CB325) PONTEIRO PARADO: reprojeção muda a célula de destino e o path segue origem→destino',
+  (() => {
+    const geometry = { pixelsPerCell: 44, cellSizeFeet: 5 };
+    const sceneFeet = { widthFeet: 200, heightFeet: 200 };
+    const pointer = { x: 1190, y: 350 };
+    // Cena maior que o viewport, usuário já panned (pan ≠ 0).
+    let camera: GridCamera = { panX: -280, panY: -530, zoom: 1 };
+    const cells = new Set<string>();
+    for (let frame = 0; frame < 40; frame += 1) {
+      const delta = autoPanCameraDelta(
+        revealIntentAt(pointer, AUTO_PAN_BOUNDS, AUTO_PAN_EDGE),
+        AUTO_PAN_SPEED,
+      );
+      camera = panBy(camera, delta.dx, delta.dy);
+      const cell = containingCellFeet(screenToFeet(camera, pointer, geometry), 'medium', sceneFeet);
+      if (cell) cells.add(`${cell.xFeet}:${cell.yFeet}`);
+    }
+    // O MESMO destino gera o MESMO trajeto: nenhum histórico de câmera no path.
+    const destination = { xFeet: 30, yFeet: 20 };
+    const fromDrag = contiguousAnchors({ xFeet: 0, yFeet: 0 }, destination, 5);
+    const fromRuler = contiguousAnchors({ xFeet: 0, yFeet: 0 }, destination, 5);
+    return (
+      camera.panX < -280 &&
+      cells.size >= 3 &&
+      fromDrag.length === fromRuler.length &&
+      fromDrag.every(
+        (step, index) =>
+          step.xFeet === fromRuler[index].xFeet && step.yFeet === fromRuler[index].yFeet,
+      ) &&
+      fromDrag[fromDrag.length - 1].xFeet === destination.xFeet
+    );
+  })(),
+);
+check(
+  'CB326) câmera NÃO entra no custo de Movement (nenhum pan/zoom chega à API)',
+  !movementApiSource.includes('panX') &&
+    !movementApiSource.includes('panY') &&
+    !movementApiSource.includes('zoom') &&
+    !movementPathSource.includes('panX') &&
+    !movementPathSource.includes('zoom'),
+);
+check(
+  'CB327) tick usa reveal→delta→clamp, reprojeta o ponteiro parado e NÃO inverte o pan manual',
+  movementGridSource.includes('revealIntentAt(') &&
+    movementGridSource.includes('AUTO_PAN_EDGE_PX,') &&
+    movementGridSource.includes('autoPanCameraDelta(intent, AUTO_PAN_MAX_SPEED)') &&
+    movementGridSource.includes('bounded(panBy(cameraRef.current, delta.dx, delta.dy))') &&
+    movementGridSource.includes('updateDraftAt(pointer.x, pointer.y);') &&
+    // Só com gesto ativo: sem draft nenhum loop de auto-pan existe.
+    movementGridSource.includes('if (!draft) return undefined;') &&
+    // Pan manual (Space/botão do meio/fundo) preservado, sinal aprovado.
+    movementGridSource.includes('const next = bounded(panBy(gesture.camera, dx, dy));') &&
+    // Path continua DERIVADO do destino, não do rastro do ponteiro.
+    movementGridSource.includes('contiguousAnchors(current.startPosition, destination, anchorStepFeet(size))') &&
+    // Um único loop, com cancelamento no cleanup (pointerup/cancel/Esc).
+    (movementGridSource.match(/requestAnimationFrame\(tick\)/g) ?? []).length === 2 &&
+    movementGridSource.includes('cancelAnimationFrame(frame)') &&
+    !movementGridSource.includes('edgePanSpeed')
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

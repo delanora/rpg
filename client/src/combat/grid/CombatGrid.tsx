@@ -29,10 +29,11 @@ import {
   CAMERA_FIT_MARGIN_PX,
   centerCamera,
   cameraIsUsable,
+  autoPanCameraDelta,
   clampCamera,
-  edgePanSpeed,
   fitCamera,
   panBy,
+  revealIntentAt,
   sceneToScreen,
   screenToFeet,
   zoomAt,
@@ -1219,17 +1220,27 @@ export function CombatGrid({
     let frame = 0;
     function tick(): void {
       const pointer = lastPointer.current;
-      const node = viewportRef.current;
-      if (pointer && node) {
-        const rect = node.getBoundingClientRect();
-        const dx = edgePanSpeed(pointer.x, rect.left, rect.right, AUTO_PAN_EDGE_PX, AUTO_PAN_MAX_SPEED);
-        const dy = edgePanSpeed(pointer.y, rect.top, rect.bottom, AUTO_PAN_EDGE_PX, AUTO_PAN_MAX_SPEED);
-        if (dx !== 0 || dy !== 0) {
-          // Sinal invertido: empurrar a câmera "para dentro" revela a borda.
-          const next = bounded(panBy(cameraRef.current, -dx, -dy));
-          cameraRef.current = next;
-          setCamera(next);
-          updateDraftAt(pointer.x, pointer.y);
+      const point = pointer ? viewportPoint(pointer.x, pointer.y) : null;
+      if (pointer && point) {
+        // Três sistemas separados: borda em px de TELA (viewport), intenção de
+        // REVELAR e só então delta de câmera — a borda direita revela a direita.
+        const intent = revealIntentAt(
+          point,
+          { left: 0, top: 0, right: viewport.width, bottom: viewport.height },
+          AUTO_PAN_EDGE_PX,
+        );
+        const delta = autoPanCameraDelta(intent, AUTO_PAN_MAX_SPEED);
+        if (delta.dx !== 0 || delta.dy !== 0) {
+          const next = bounded(panBy(cameraRef.current, delta.dx, delta.dy));
+          // Na borda real da cena o clamp devolve a MESMA câmera: parar de
+          // escrever evita re-render inútil e oscilação no limite.
+          if (next.panX !== cameraRef.current.panX || next.panY !== cameraRef.current.panY) {
+            cameraRef.current = next;
+            setCamera(next);
+            // O ponteiro NÃO se moveu, mas a câmera sim: reprojetar é o que faz
+            // o destino mecânico (e o path origem→destino) avançar de célula.
+            updateDraftAt(pointer.x, pointer.y);
+          }
         }
       }
       frame = requestAnimationFrame(tick);
