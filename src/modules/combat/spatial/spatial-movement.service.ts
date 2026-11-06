@@ -33,6 +33,7 @@ import {
   type MovementDifficultSource,
   type MovementParticipant,
   type MovementPathEvaluation,
+  formatMetersPtBr,
 } from './spatial-movement.js';
 import { walkingMovementTerrain } from './movement-terrain.js';
 import {
@@ -385,7 +386,10 @@ export async function applyMovementEvaluation(
       db,
       combat,
       combatant,
-      `Moveu ${evaluation.totalDistanceFeet} pés (custo ${evaluation.totalCostFeet} pés) — restam ${remainingAfter} pés.`,
+      // 6.6M.3.1.4.3 — INTERNO em PÉS (PHB 2014), APRESENTAÇÃO em METROS.
+      `Moveu ${formatMetersPtBr(evaluation.totalDistanceFeet)} (custo ${formatMetersPtBr(
+        evaluation.totalCostFeet,
+      )}) — restam ${formatMetersPtBr(remainingAfter)}.`,
     );
   }
   return { remainingBefore, remainingAfter, destination };
@@ -614,7 +618,9 @@ export async function commitVoluntaryMovement(
         }
         if (!evaluation.affordable) {
           throw new HttpError(
-            `Movimento insuficiente: o trajeto custa ${evaluation.totalCostFeet} pés e restam ${evaluation.movementRemainingFeet} pés.`,
+            `Movimento insuficiente: o trajeto custa ${formatMetersPtBr(
+              evaluation.totalCostFeet,
+            )} e restam ${formatMetersPtBr(evaluation.movementRemainingFeet)}.`,
             409,
             'MOVEMENT_INSUFFICIENT_REMAINING',
           );
@@ -687,7 +693,9 @@ export async function commitVoluntaryMovement(
             db,
             combat,
             combatant,
-            `Moveu ${totals.distanceFeet} pés (custo ${totals.costFeet} pés) — restam ${remainingAfter} pés. Movimento interrompido: aguardando Reação.`,
+            `Moveu ${formatMetersPtBr(totals.distanceFeet)} (custo ${formatMetersPtBr(
+              totals.costFeet,
+            )}) — restam ${formatMetersPtBr(remainingAfter)}. Movimento interrompido: aguardando Reação.`,
           );
         }
 

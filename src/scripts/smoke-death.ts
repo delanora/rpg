@@ -1498,8 +1498,27 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
         { entries: [{ creatureId: npc.id, quantity: 1 }, { creatureId: creature.id, quantity: 2 }] },
         masterToken,
       );
-      const hotfixCombat = started.data.combat as CombatDto;
-      hotfixCombatId = hotfixCombat.id;
+      hotfixCombatId = (started.data.combat as CombatDto).id;
+      /**
+       * 6.6M.3.1.4.3 — ISOLAMENTO DE FIXTURE (nunca ficha real como alvo).
+       *
+       * `POST /combat` coloca TODOS os personagens da mesa no combate (regra de
+       * produto: a mesa é única e fixa). O smoke NÃO pode usar ficha real como
+       * alvo mecânico, então remove da cópia de teste os combatentes que não são
+       * fixtures desta execução. Nada é escrito na ficha para isso.
+       */
+      const fixtureCharacterIds = new Set(
+        [heroA, heroB, heroC, heroD, heroE, heroF].map((hero) => hero.character.id),
+      );
+      await prisma.combatant.deleteMany({
+        where: {
+          combatId: hotfixCombatId,
+          kind: 'CHARACTER',
+          characterId: { notIn: [...fixtureCharacterIds] },
+        },
+      });
+      const hotfixCombat = (await request('/combat/active', undefined, masterToken)).data
+        .combat as CombatDto;
       const npcCombatant = hotfixCombat.combatants.find((item) => item.creatureId === npc.id)!;
       const goblins = hotfixCombat.combatants
         .filter((item) => item.creatureId === creature.id)
@@ -1754,7 +1773,21 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
         successes: 0, failures: 0, stabilized: false, dead: true,
         deathSaves: false, pending: null, relentless: null, saveTurnKey: null, log: [],
       };
-      for (const item of (await activeMaster()).combatants) {
+      // CAUSA RAIZ da ficha real terminando morta (6.6M.3.1.4.3): este laço
+      // iterava TODOS os combatentes do combate — inclusive as fichas reais que
+      // `POST /combat` traz — e gravava `hpCurrent: 0` + `dead: true` na FICHA.
+      // Agora só as fixtures desta execução entram no fallback.
+      const fallbackCombatants = (await activeMaster()).combatants;
+      const foreignCombatants = fallbackCombatants.filter(
+        (item) => item.characterId && !fixtureCharacterIds.has(item.characterId),
+      );
+      check(
+        '65.isolamento) o combate de teste NÃO contém ficha real de jogador',
+        foreignCombatants.length === 0,
+        JSON.stringify(foreignCombatants.map((item) => item.name)),
+      );
+      for (const item of fallbackCombatants) {
+        if (item.characterId && !fixtureCharacterIds.has(item.characterId)) continue;
         if (item.characterId) {
           await prisma.character.update({
             where: { id: item.characterId },

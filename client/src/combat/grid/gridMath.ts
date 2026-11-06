@@ -97,6 +97,31 @@ export function containingCellFeet(
   return { xFeet, yFeet };
 }
 
+/**
+ * 6.6M.3.1.4.3 — ÂNCORA do ghost a partir do HOTSPOT do ponteiro.
+ *
+ * O CENTRO do footprint fica exatamente sob o cursor: o ponto de pega do
+ * clique (`grab`) NÃO sobrevive ao gesto, senão o ghost aparece deslocado do
+ * mouse. A âncora continua sendo o canto mínimo (mesma convenção de
+ * `position`), apenas recuada meia largura/altura — validada e clampada para
+ * nunca sair da cena. Puro: nenhuma regra espacial é decidida aqui.
+ */
+export function centeredFootprintFeet(
+  feet: SpatialPosition,
+  size: SpatialSize,
+  scene: { widthFeet: number; heightFeet: number },
+): SpatialPosition {
+  const footprint = SIZE_FOOTPRINT_FEET[size];
+  const center = (value: number, span: number, max: number): number => {
+    const anchored = value - span / 2;
+    return Math.min(Math.max(0, anchored), Math.max(0, max - span));
+  };
+  return {
+    xFeet: center(feet.xFeet, footprint.widthFeet, scene.widthFeet),
+    yFeet: center(feet.yFeet, footprint.heightFeet, scene.heightFeet),
+  };
+}
+
 /** Pés → pixels (somente rendering). */
 export function feetToPx(feet: number, cellSizeFeet: number, pixelsPerCell: number): number {
   if (cellSizeFeet <= 0) return 0;

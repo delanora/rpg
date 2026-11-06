@@ -4,6 +4,7 @@ import { signToken } from '../lib/jwt.js';
 import { onTurnStart } from '../modules/shared/action-economy.js';
 import {
   evaluateMovementPath,
+  formatMetersPtBr,
   hostilePassageAllowed,
   movementRelationOf,
   normalizeSideKey,
@@ -46,6 +47,31 @@ interface HttpResult {
  */
 export async function smokeSpatialMovement(baseUrl: string, check: Check): Promise<void> {
   console.log('\n90) Fase 6.6L.3 — Movement + Occupancy Foundation');
+
+  // 6.6M.3.1.4.3 — METROS SÓ NA APRESENTAÇÃO: a engine, os DTOs e o registro
+  // continuam em PÉS (PHB 2014); o texto ao jogador usa metro com vírgula.
+  check(
+    '90.MT) apresentação em metros: 2,5/5/10/15/20/25/30 pés → 0,75/1,5/3/4,5/6/7,5/9 m',
+    (
+      [
+        [2.5, '0,75 m'],
+        [5, '1,5 m'],
+        [10, '3 m'],
+        [15, '4,5 m'],
+        [20, '6 m'],
+        [25, '7,5 m'],
+        [30, '9 m'],
+      ] as [number, string][]
+    ).every(([feet, expected]) => formatMetersPtBr(feet) === expected),
+    JSON.stringify([2.5, 5, 10, 15, 20, 25, 30].map((feet) => formatMetersPtBr(feet))),
+  );
+  check(
+    '90.MT2) o formatter NÃO arredonda para metro inteiro nem devolve ponto decimal',
+    formatMetersPtBr(2.5) === '0,75 m' &&
+      formatMetersPtBr(12.5) === '3,75 m' &&
+      !formatMetersPtBr(12.5).includes('.'),
+    formatMetersPtBr(12.5),
+  );
 
   // =====================================================================
   // A–H — ENGINE PURA (passos, custo, difficult terrain, crawling, lado)

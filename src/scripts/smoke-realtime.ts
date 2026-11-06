@@ -35,6 +35,12 @@ import { smokeActionEconomy } from './smoke-action-economy.js';
 import { io, type Socket } from 'socket.io-client';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
+import {
+  diffProtectedGameState,
+  restoreProtectedGameState,
+  snapshotProtectedGameState,
+  type ProtectedGameState,
+} from './support/protected-state.js';
 import { signToken } from '../lib/jwt.js';
 import { deleteUploadedImage } from '../lib/uploads.js';
 import { DAMAGE_TYPES, damageExpression } from '../modules/shared/attacks.js';
@@ -497,6 +503,11 @@ async function setCharacterClasses(
  * interrompido no meio deixava a mutação para trás de forma silenciosa.
  */
 let preexistingUsers: { id: string; username: string; role: string }[] = [];
+/**
+ * 6.6M.3.1.4.3 — fotografia das FICHAS e dos NPCs persistentes antes de
+ * qualquer escrita do smoke. É a barreira defensiva da integridade real.
+ */
+let protectedState: ProtectedGameState | null = null;
 
 /**
  * Papel com que cada fixture NASCEU (PLAYER/MASTER). O guard final confere que
@@ -671,6 +682,11 @@ async function main(): Promise<void> {
   // existia antes de o smoke criar qualquer fixture). O `cleanup` compara e
   // falha se alguma tiver mudado de papel, nome ou desaparecido — teste nunca é
   // desculpa para mexer em dado de verdade.
+  // 6.6M.3.1.4.3 — ANTES de qualquer escrita: fotografia das entidades de jogo
+  // reais (fichas e NPCs). O smoke nunca as usa como fixture; esta fotografia
+  // prova, no fim, que continuaram exatamente iguais.
+  protectedState = await snapshotProtectedGameState();
+
   preexistingUsers = await prisma.user.findMany({
     select: { id: true, username: true, role: true },
     orderBy: { username: 'asc' },
@@ -21877,6 +21893,40 @@ async function cleanup(): Promise<void> {
     touchedRealUsers.length === 0,
     JSON.stringify(touchedRealUsers),
   );
+
+  // INTEGRIDADE DAS ENTIDADES DE JOGO: fichas e NPCs reais têm que voltar ao
+  // MESMO estado (HP, condições, deathState, morte, recursos, inventário...).
+  // Se algo divergiu, o smoke falha E restaura o valor anterior (exato), nunca
+  // um default como "todos vivos" ou "PV máximo".
+  if (protectedState) {
+    const stateDiff = await diffProtectedGameState(protectedState);
+    if (stateDiff.total > 0) {
+      console.error(`\n[smoke] ESTADO REAL ALTERADO — ${stateDiff.description}\n`);
+      const restore = await restoreProtectedGameState(protectedState, stateDiff);
+      console.error(
+        `[smoke] restauração defensiva: ${restore.restored} registro(s) restaurado(s), ` +
+          `${restore.refused.length} recusado(s) (escrita concorrente).\n`,
+      );
+    }
+    check(
+      'integridade) personagens reais permanecem idênticos',
+      stateDiff.characters.length === 0,
+      stateDiff.characters.length === 0
+        ? undefined
+        : stateDiff.characters
+            .map((row) => `${row.label} (${row.id}): ${row.fields.join(', ')}`)
+            .join(' | '),
+    );
+    check(
+      'integridade) NPCs reais permanecem idênticos',
+      stateDiff.creatures.length === 0,
+      stateDiff.creatures.length === 0
+        ? undefined
+        : stateDiff.creatures
+            .map((row) => `${row.label} (${row.id}): ${row.fields.join(', ')}`)
+            .join(' | '),
+    );
+  }
 
   await prisma.$disconnect();
 }
