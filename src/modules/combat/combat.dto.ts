@@ -30,6 +30,11 @@ import {
   type SpatialSceneConfig,
   type SpatialSize,
 } from './spatial/spatial.types.js';
+import {
+  obstacleDtoOf,
+  type SpatialObstacleDto,
+  type SpatialObstacleSource,
+} from './spatial/spatial-obstacle.js';
 
 /**
  * Dados espaciais de UM combatente para o futuro Grid (6.6M.1).
@@ -71,6 +76,16 @@ export interface CombatDto {
    * recebem `assisted` com a cena padrão — nada muda para quem não usa grid.
    */
   spatial: SpatialSceneConfig;
+  /**
+   * PAREDES da cena (6.6L.4.1), no MESMO read model (e no mesmo
+   * `combat:updated`) — não existe endpoint paralelo de cena.
+   *
+   * Fica FORA de `spatial` de propósito: `spatial` é a CONFIGURAÇÃO validada
+   * por `spatialSceneConfigSchema` (`.strict()`), que recusa campos extras.
+   * Misturar conteúdo de cena ali quebraria `spatialSceneOf(dto.spatial)`.
+   * Nesta fase toda parede é normal/visível: nada a filtrar por papel.
+   */
+  obstacles: SpatialObstacleDto[];
   combatants: CombatantDto[];
   createdAt: string;
   endedAt: string | null;
@@ -157,6 +172,8 @@ export interface CombatSourced {
   locality: { id: string; name: string } | null;
   /** Config espacial persistida (JSONB); ausente/inválida = cena assistida. */
   spatialConfig?: unknown;
+  /** Paredes da cena (6.6L.4.1); ausente = cena sem obstáculos. */
+  obstacles?: SpatialObstacleSource[];
   combatants: CombatantSourced[];
 }
 
@@ -369,6 +386,7 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     localityId: combat.locality?.id ?? null,
     localityName: combat.locality?.name ?? null,
     spatial: spatialSceneOf(combat.spatialConfig),
+    obstacles: (combat.obstacles ?? []).map(obstacleDtoOf),
     combatants,
     createdAt: combat.createdAt.toISOString(),
     endedAt: combat.endedAt ? combat.endedAt.toISOString() : null,

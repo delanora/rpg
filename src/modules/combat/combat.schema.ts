@@ -206,6 +206,69 @@ export const spatialMeasureSchema = z
 export type SpatialMeasureInput = z.infer<typeof spatialMeasureSchema>;
 
 /* -------------------------------------------------------------------------- */
+/* 6.6L.4.1 — Obstáculos espaciais (paredes)                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Parede: segmento de espessura zero com endpoints em PÉS.
+ *
+ * `start`/`end` reutilizam `spatialPositionSchema` (finito, não negativo, sem
+ * campo extra): `NaN`/`Infinity`/texto são 400 já aqui. O servidor valida os
+ * LIMITES DA CENA, o comprimento zero e o owner — geometria nunca é corrigida
+ * silenciosamente. `kind` é o código canônico do primitive (só `wall` hoje),
+ * nunca um rótulo traduzido.
+ */
+export const spatialObstacleCreateSchema = z
+  .object({
+    kind: z.literal('wall').optional(),
+    start: spatialPositionSchema,
+    end: spatialPositionSchema,
+    blocksMovement: z.boolean().optional(),
+    blocksSight: z.boolean().optional(),
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict();
+
+/**
+ * Atualização PARCIAL: endpoints e flags, no mínimo um campo. A geometria
+ * mesclada é revalidada por inteiro no serviço (mover só um endpoint também
+ * pode levar a parede para fora da cena ou a comprimento zero).
+ */
+export const spatialObstaclePatchSchema = z
+  .object({
+    start: spatialPositionSchema.optional(),
+    end: spatialPositionSchema.optional(),
+    blocksMovement: z.boolean().optional(),
+    blocksSight: z.boolean().optional(),
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    const hasChange =
+      input.start !== undefined ||
+      input.end !== undefined ||
+      input.blocksMovement !== undefined ||
+      input.blocksSight !== undefined;
+    if (!hasChange) {
+      ctx.addIssue({ code: 'custom', message: 'Informe ao menos um campo da parede.' });
+    }
+  });
+
+/** Remoção de UMA parede (idempotente pelo `operationId`). */
+export const spatialObstacleDeleteSchema = z
+  .object({
+    expectedVersion: z.number().int().nonnegative(),
+    operationId: z.string().min(1).max(128),
+  })
+  .strict();
+
+export type SpatialObstacleCreatePayload = z.infer<typeof spatialObstacleCreateSchema>;
+export type SpatialObstaclePatchPayload = z.infer<typeof spatialObstaclePatchSchema>;
+export type SpatialObstacleDeletePayload = z.infer<typeof spatialObstacleDeleteSchema>;
+
+/* -------------------------------------------------------------------------- */
 /* 6.6L.3 — Movimento voluntário e lado do encontro                            */
 /* -------------------------------------------------------------------------- */
 

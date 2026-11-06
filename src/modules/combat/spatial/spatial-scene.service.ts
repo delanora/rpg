@@ -24,6 +24,11 @@ import {
   spatialVisibilityOf,
   type SpatialVisibility,
 } from './spatial-visibility.js';
+import {
+  obstacleSegmentOf,
+  obstacleWithinScene,
+  type SpatialObstacleShape,
+} from './spatial-obstacle.js';
 
 /**
  * FASE 6.6L.1 — CONFIGURAÇÃO DA CENA E PLACEMENT.
@@ -61,6 +66,17 @@ export interface SpatialOperationInput {
    * mesma `operationId` com outro valor é reutilização de chave (409).
    */
   spatialVisibility?: SpatialVisibility;
+  /**
+   * OBSTÁCULO alvo (6.6L.4.1). Entra no fingerprint: a mesma `operationId`
+   * apontando para outra parede — ou com outra geometria — é reutilização de
+   * chave (409), nunca replay silencioso da parede antiga.
+   */
+  obstacleId?: string | null;
+  /**
+   * Geometria/flags pedidas para a parede. Só os campos ENVIADOS entram no
+   * fingerprint (`JSON.stringify` descarta `undefined`).
+   */
+  obstacle?: Partial<SpatialObstacleShape> | null;
 }
 
 export interface SpatialConfigPatchInput extends SpatialOperationInput {
@@ -99,7 +115,7 @@ function requireMaster(actor: CombatActor): void {
  * commit. Combate em preparação (PENDING_INITIATIVE) já aceita placement — o
  * Mestre monta a cena antes de rolar iniciativa.
  */
-async function runSpatialOperation<T extends { combat: CombatDto }>(
+export async function runSpatialOperation<T extends { combat: CombatDto }>(
   actor: CombatActor,
   input: SpatialOperationInput,
   type: string,
@@ -137,6 +153,13 @@ async function runSpatialOperation<T extends { combat: CombatDto }>(
         data: { version: { increment: 1 } },
       });
       if (changed.count !== 1) {
+        // Combate inexistente é 404 (nunca geometria órfã); combate existente
+        // que mudou/terminou continua 409 — a versão do cliente está velha.
+        const exists = await db.combat.findUnique({
+          where: { id: input.combatId },
+          select: { id: true },
+        });
+        if (!exists) throw new HttpError('Combate não encontrado.', 404);
         throw new HttpError('Combate mudou ou não está ativo. Atualize e tente novamente.', 409, 'CONFLICT');
       }
       const combat = await loadCombatById(input.combatId, db);
@@ -190,6 +213,20 @@ export async function updateSpatialScene(
     if (conflicting) {
       throw new HttpError(
         `${conflicting.name} ficaria fora da cena com essas dimensões. Reposicione antes de redimensionar.`,
+        409,
+        'SPATIAL_SCENE_RESIZE_CONFLICT',
+      );
+    }
+
+    // PAREDES (6.6L.4.1): a mesma regra vale para a geometria da cena. Uma
+    // parede fora dos novos limites deixaria o espaço autoritativo inconsistente
+    // — a redução é recusada inteira, sem mover nem apagar nada.
+    const orphanWall = (combat.obstacles ?? []).find(
+      (obstacle) => !obstacleWithinScene(obstacleSegmentOf(obstacle), next),
+    );
+    if (orphanWall) {
+      throw new HttpError(
+        'Uma parede ficaria fora da cena com essas dimensões. Ajuste ou remova a parede antes de redimensionar.',
         409,
         'SPATIAL_SCENE_RESIZE_CONFLICT',
       );
