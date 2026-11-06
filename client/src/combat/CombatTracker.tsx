@@ -26,11 +26,12 @@ import {
 } from './combatApi';
 import { CombatIntro } from './CombatIntro';
 import { CombatGrid } from './grid/CombatGrid';
-// CSS ISOLADO do grid (styles.css é WIP alheio e não é tocado).
+// CSS ISOLADO do grid/workspace (styles.css é WIP alheio e não é tocado).
 import './grid/grid.css';
+import './workspace.css';
 import { BattleWaitingPanel } from './components/BattleWaitingPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
-import { CombatDashboard } from './components/CombatDashboard';
+import { CombatWorkspace } from './components/CombatWorkspace';
 import { CombatLog } from './components/CombatLog';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
@@ -671,26 +672,27 @@ export function CombatTracker({
       <section className="combat-panel">
         <CombatIntro combatId={combat.id} />
 
-        <header className="combat-head">
-          <h2>
-            <Icon name="sword" size={20} /> Combate — iniciativa
-          </h2>
-          <span className="combat-round">
-            {rolledCount}/{combat.combatants.length} rolaram
-          </span>
-        </header>
-
-        {/* 6.6M.1 — cena espacial também na preparação (placement é setup). */}        <CombatGrid
-          combat={combat}
-          isMaster={isMaster}
-          busy={busy}
-          movement={movementAuthority}
-          onCombatChange={onCombatChange}
-          onError={onError}
-        />
-
-        <CombatDashboard
-          left={
+        <CombatWorkspace
+          header={
+            <>
+              <div className="combat-workspace-title">
+                <h2>
+                  <Icon name="sword" size={18} /> Combate — iniciativa
+                </h2>
+              </div>
+              <span className="combat-round">
+                {rolledCount}/{combat.combatants.length} rolaram
+              </span>
+              <CombatTurnPanel
+                variant="compact"
+                combatant={null}
+                round={combat.round}
+                isMyTurn={false}
+                empty={<span className="empty-hint">A ordem nasce quando todos rolarem.</span>}
+              />
+            </>
+          }
+          initiative={
             <InitiativeTimeline
               combat={combat}
               isMaster={isMaster}
@@ -698,41 +700,18 @@ export function CombatTracker({
               onRollFor={(combatantId) => void run(() => rollInitiativeFor(combatantId))}
             />
           }
-          center={
-            <CombatTurnPanel combatant={null}
-              round={combat.round}
-              isMyTurn={false}
-              empty={
-                !isMaster && myCombatant && !myCombatant.rolled ? (
-                  <div className="initiative-prompt">
-                    <p>
-                      <Icon name="bolt" size={16} /> Role sua iniciativa:{' '}
-                      <strong>1d20 {formatModifier(myCombatant.dexterityMod)}</strong>
-                    </p>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={busy}
-                      onClick={() => void run(rollMyInitiative)}
-                    >
-                      <Icon name="die" size={15} /> Rolar iniciativa
-                    </button>
-                  </div>
-                ) : !isMaster && myCombatant?.rolled ? (
-                  <p className="empty-hint">
-                    Você rolou {myCombatant.initiative} de iniciativa. Aguardando os demais...
-                  </p>
-                ) : !isMaster && !myCombatant ? (
-                  <p className="empty-hint">Você não participa deste combate.</p>
-                ) : (
-                  <p className="empty-hint">
-                    A ordem é montada automaticamente assim que todos tiverem rolado.
-                  </p>
-                )
-              }
+          scene={
+            /* 6.6M.1 — cena espacial também na preparação (placement é setup). */
+            <CombatGrid
+              combat={combat}
+              isMaster={isMaster}
+              busy={busy}
+              movement={movementAuthority}
+              onCombatChange={onCombatChange}
+              onError={onError}
             />
           }
-          right={
+          log={
             <CombatLog
               log={log}
               economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
@@ -745,15 +724,46 @@ export function CombatTracker({
               onRollDeathSave={(card) => void rollDeathSaveCard(card)}
             />
           }
-          bottom={<TurnResourceBar active={false} isMaster={isMaster} />}
+          action={
+            !isMaster && myCombatant && !myCombatant.rolled ? (
+              <div className="combat-block">
+                <div className="initiative-prompt">
+                  <p>
+                    <Icon name="bolt" size={16} /> Role sua iniciativa:{' '}
+                    <strong>1d20 {formatModifier(myCombatant.dexterityMod)}</strong>
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={busy}
+                    onClick={() => void run(rollMyInitiative)}
+                  >
+                    <Icon name="die" size={15} /> Rolar iniciativa
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="combat-block">
+                <p className="empty-hint">
+                  {!isMaster && myCombatant?.rolled
+                    ? `Você rolou ${myCombatant.initiative} de iniciativa. Aguardando os demais...`
+                    : !isMaster && !myCombatant
+                      ? 'Você não participa deste combate.'
+                      : 'A ordem é montada automaticamente assim que todos tiverem rolado.'}
+                </p>
+              </div>
+            )
+          }
+          tools={
+            isMaster ? (
+              <p className="section-note">
+                Role pelas criaturas e por quem estiver ausente. A ordem é montada
+                automaticamente assim que todos tiverem rolado.
+              </p>
+            ) : undefined
+          }
+          resourceBar={<TurnResourceBar active={false} isMaster={isMaster} />}
         />
-
-        {isMaster ? (
-          <p className="section-note">
-            Role pelas criaturas e por quem estiver ausente. A ordem é montada
-            automaticamente assim que todos tiverem rolado.
-          </p>
-        ) : null}
       </section>
     );
   }
@@ -766,62 +776,60 @@ export function CombatTracker({
       {/* Toast central (2 s, sem clique, sem bloquear a interface). */}
       <TurnToast alert={turnAlert} />
 
-      <header className="combat-head">
-        <h2>
-          <Icon name="sword" size={20} /> Combate
-        </h2>
-        <span className="combat-round">Rodada {combat.round}</span>
 
-        {isMaster ? (
-          <div className="combat-actions">
-            <button
-              type="button"
-              className="btn btn-primary btn-small"
-              disabled={busy}
-              onClick={() => void endTurn()}
-            >
-              Próximo turno →
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger btn-small"
-              disabled={busy}
-              onClick={() => {
-                void (async () => {
-                  setBusy(true);
-                  try {
-                    await endCombat();
-                    onCombatEnd();
-                  } catch (error) {
-                    onError(error instanceof Error ? error.message : 'Falha ao encerrar.');
-                  } finally {
-                    setBusy(false);
-                  }
-                })();
-              }}
-            >
-              encerrar combate
-            </button>
-          </div>
-        ) : null}
-      </header>
+      <CombatWorkspace
+        header={
+          <>
+            <div className="combat-workspace-title">
+              <h2>
+                <Icon name="sword" size={18} /> Combate
+              </h2>
+              <span className="combat-round">Rodada {combat.round}</span>
+            </div>
 
-      {/*
-        6.6M.1 — GRID VISUAL da cena. Lê APENAS o estado espacial do DTO
-        (`Combat.spatial` + `Combatant.spatial`), preservando o log à direita.
-        Placement aqui é administrativo (Mestre), não Movement.
-      */}
-      <CombatGrid
-        combat={combat}
-        isMaster={isMaster}
-        busy={busy}
-        movement={movementAuthority}
-        onCombatChange={onCombatChange}
-        onError={onError}
-      />
+            {/* Contexto do turno em UMA linha, no cabeçalho do workspace. */}
+            <CombatTurnPanel
+              variant="compact"
+              combatant={current}
+              round={combat.round}
+              isMyTurn={isMyTurn}
+            />
 
-      <CombatDashboard
-        left={
+            {isMaster ? (
+              <div className="combat-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-small"
+                  disabled={busy}
+                  onClick={() => void endTurn()}
+                >
+                  Próximo turno →
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-small"
+                  disabled={busy}
+                  onClick={() => {
+                    void (async () => {
+                      setBusy(true);
+                      try {
+                        await endCombat();
+                        onCombatEnd();
+                      } catch (error) {
+                        onError(error instanceof Error ? error.message : 'Falha ao encerrar.');
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  encerrar combate
+                </button>
+              </div>
+            ) : null}
+          </>
+        }
+        initiative={
           <InitiativeTimeline
             combat={combat}
             isMaster={isMaster}
@@ -829,9 +837,19 @@ export function CombatTracker({
             onRollFor={(combatantId) => void run(() => rollInitiativeFor(combatantId))}
           />
         }
-        center={
-          <>
-            <CombatTurnPanel combatant={current} round={combat.round} isMyTurn={isMyTurn} />
+        scene={
+          <CombatGrid
+            combat={combat}
+            isMaster={isMaster}
+            busy={busy}
+            movement={movementAuthority}
+            onCombatChange={onCombatChange}
+            onError={onError}
+          />
+        }
+        context={
+          (concentrationEntity && concentrationSaves.length > 0) || reactionOpportunity ? (
+            <>
 
             {/* CONCENTRAÇÃO (PHB 2014): dano em quem está concentrando abre este
                 teste. O jogador rola pela bandeja; o Mestre escolhe público ×
@@ -880,7 +898,11 @@ export function CombatTracker({
                 }}
               />
             ) : null}
-
+            </>
+          ) : undefined
+        }
+        action={
+          <>
             {/* Turno em Testes contra a Morte: o fluxo normal do combatente do
                 turno dá lugar ao painel dramático (nada de ataque/alvo/ações).
                 Para criatura/NPC o ciclo é privado: o DTO do jogador não traz
@@ -969,15 +991,23 @@ export function CombatTracker({
                 ) : null}
               </>
             )}
-
-            {/* Administração do Mestre: sempre disponível, sem virar a interface
-                operacional do jogador do turno. */}
+          </>
+        }
+        tools={
+          <>
+            {/* Dano/cura manual do Mestre: recolhido, sem ocupar o centro do
+                combate, mas a UM clique de distância. */}
             {isMaster ? (
-              <ManualHpPanel
-                combatants={combat.combatants}
-                busy={busy}
-                onApply={(input) => void run(() => applyManualHp(input))}
-              />
+              <details className="combat-tools">
+                <summary>
+                  <Icon name="heart" size={13} /> Ferramentas do Mestre — dano e cura
+                </summary>
+                <ManualHpPanel
+                  combatants={combat.combatants}
+                  busy={busy}
+                  onApply={(input) => void run(() => applyManualHp(input))}
+                />
+              </details>
             ) : null}
 
             {/*
@@ -1058,7 +1088,7 @@ export function CombatTracker({
             ) : null}
           </>
         }
-        right={
+        log={
           <CombatLog
             log={log}
             economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
@@ -1071,7 +1101,7 @@ export function CombatTracker({
             onRollDeathSave={(card) => void rollDeathSaveCard(card)}
           />
         }
-        bottom={
+        resourceBar={
           // A barra persistente NÃO é renderizada para quem não controla o
           // turno (nem para o Mestre observando o personagem de um jogador).
           showOperational && actingCombatant ? (

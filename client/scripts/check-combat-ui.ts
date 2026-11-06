@@ -27,6 +27,7 @@ import { ReactionPanel } from '../src/combat/components/ReactionPanel';
 import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
+import { actionPips } from '../src/combat/resourcePips';
 import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
 import { GridMovementTrace } from '../src/combat/grid/GridMovementTrace';
 import { MovementHud } from '../src/combat/grid/MovementHud';
@@ -521,7 +522,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'WH) turno alheio não renderiza a barra normal nem o Encerrar Turno',
     tracker.includes('showOperational && actingCombatant ? (') &&
-      tracker.includes('bottom={') &&
+      tracker.includes('resourceBar={') &&
       !tracker.includes('onDismissTurnAlert'),
   );
 
@@ -6126,6 +6127,123 @@ check(
         gridSource.indexOf('className="grid-hover-cell"') &&
       gridSource.indexOf('<SpatialGridOverlay') <
         gridSource.indexOf('className="grid-destination-cell"'),
+  );
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.5 — composição do workspace ao redor do grid.                      */
+  /* ---------------------------------------------------------------------- */
+  const workspaceLayout = source('src/combat/components/CombatWorkspace.tsx');
+  const workspaceCss = source('src/combat/workspace.css');
+  const workspaceActive = workspaceCss.replace(/\/\*[\s\S]*?\*\//g, '');
+  /** Regra de LINHA INTEIRA (topo do arquivo, sem as variantes de media query). */
+  const workspaceRule = (selector: string): string => {
+    const at = workspaceActive.indexOf(`\n${selector} {`);
+    if (at < 0) return '';
+    const end = workspaceActive.indexOf('}', at);
+    return end < 0 ? '' : workspaceActive.slice(at, end + 1);
+  };
+
+  check(
+    'SC56) CombatWorkspace é SÓ layout (sem estado/efeito) e a ordem é iniciativa · cena · registro · ação · barra',
+    !/useState|useEffect|useReducer|useRef/.test(workspaceLayout) &&
+      workspaceLayout.includes('combat-workspace-initiative">{initiative}') &&
+      workspaceLayout.includes('combat-workspace-scene">{scene}') &&
+      workspaceLayout.indexOf('{initiative}') < workspaceLayout.indexOf('{scene}') &&
+      workspaceLayout.indexOf('{scene}') < workspaceLayout.indexOf('{log}') &&
+      workspaceLayout.indexOf('{log}') < workspaceLayout.indexOf('{action}') &&
+      workspaceLayout.indexOf('{action}') < workspaceLayout.indexOf('{resourceBar}'),
+  );
+
+  check(
+    'SC57) iniciativa: cards com altura NATURAL (sem stretch nem 1fr por item) e rolagem INTERNA',
+    workspaceRule('.combat-workspace .combatant-list').includes('display: flex;') &&
+      workspaceRule('.combat-workspace .combatant-list').includes('flex-direction: column;') &&
+      workspaceRule('.combat-workspace .combatant-list').includes('overflow-y: auto;') &&
+      workspaceRule('.combat-workspace .combatant-list > li').includes('flex: 0 0 auto;') &&
+      workspaceRule('.combat-workspace .combatant-list .combatant-card').includes('height: auto;') &&
+      !workspaceActive.includes('grid-auto-rows: 1fr'),
+  );
+
+  const timelineSource = source('src/combat/components/InitiativeTimeline.tsx');
+  const trackerSource = source('src/combat/CombatTracker.tsx');
+
+  check(
+    'SC58) a ordem da iniciativa continua vindo do BACKEND (map + índice, sem sort local)',
+    timelineSource.includes('combat.combatants.map(') &&
+      timelineSource.includes('combat.combatants.findIndex(') &&
+      !timelineSource.includes('.sort(') &&
+      !/combat\.combatants[\s\S]{0,40}\.sort\(/.test(trackerSource),
+  );
+
+  check(
+    'SC59) o grid ocupa o centro flexível (minmax(0, 1fr)) com a cadeia de min-height: 0',
+    workspaceRule('.combat-workspace-body').includes(
+      'grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(19rem, 24rem);',
+    ) &&
+      workspaceRule('.combat-workspace-body').includes('overflow: hidden;') &&
+      workspaceRule('.combat-workspace-body').includes('min-height: 0;') &&
+      workspaceRule('.combat-workspace-col').includes('min-height: 0;') &&
+      workspaceRule('.combat-workspace .combat-grid-panel').includes('height: 100%;'),
+  );
+
+  const logPanelSource = source('src/combat/components/CombatLog.tsx');
+
+  check(
+    'SC60) registro rola DENTRO da lateral e os Resolution Cards ficam no topo, sempre acessíveis',
+    workspaceRule('.combat-rail-log .combat-log').includes('overflow-y: auto;') &&
+      workspaceRule('.combat-rail-log .combat-log').includes('max-height: none;') &&
+      workspaceRule('.combat-rail-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
+      logPanelSource.indexOf('className="combat-resolution-list"') <
+        logPanelSource.indexOf('<ol className="combat-log">'),
+  );
+
+  const actionPanelSource = source('src/combat/components/CombatActionPanel.tsx');
+
+  check(
+    'SC61) painel de ataque continua o MESMO (cards/botões clicáveis, sem select de ataque/alvo)',
+    actionPanelSource.includes('attack-card selected') &&
+      actionPanelSource.includes('target-card selected') &&
+      actionPanelSource.includes('roll-mode-btn active') &&
+      actionPanelSource.includes('getSpatialRangePreview(') &&
+      actionPanelSource.includes('fetchEffectOptions(') &&
+      actionPanelSource.includes('onSelectAttacker') &&
+      trackerSource.includes('resolveAttack(combat, input)') &&
+      !/attack-options[\s\S]{0,240}<select/.test(actionPanelSource) &&
+      !/target-options[\s\S]{0,240}<select/.test(actionPanelSource),
+  );
+
+  const barSource = source('src/combat/components/TurnResourceBar.tsx');
+
+  check(
+    'SC62) gemas: 1 Ação → ◆/◇ · 2 Ações → ◆◆/◇◆/◇◇ (Ação nunca vira booleano)',
+    JSON.stringify(actionPips(1, 0)) === '[true]' &&
+      JSON.stringify(actionPips(1, 1)) === '[false]' &&
+      JSON.stringify(actionPips(2, 0)) === '[true,true]' &&
+      JSON.stringify(actionPips(2, 1)) === '[false,true]' &&
+      JSON.stringify(actionPips(2, 2)) === '[false,false]' &&
+      JSON.stringify(actionPips(0, 0)) === '[]' &&
+      barSource.includes('actionPips(economy.actionsGranted, economy.actionsUsed)') &&
+      barSource.includes('turn-gem is-action') &&
+      barSource.includes('turn-gem is-bonus') &&
+      barSource.includes('turn-gem is-reaction') &&
+      barSource.includes('economy.bonusActionUsed ?') &&
+      barSource.includes('economy.reactionAvailable ?') &&
+      barSource.includes('movementBudget} m'),
+  );
+
+  check(
+    'SC63) autoridade preservada no novo layout: ataque só para quem controla (ou override) e Teste contra a Morte antes dele',
+    trackerSource.includes('const showOperational = controlsCurrent || masterOverrideActive;') &&
+      trackerSource.includes('showOperational && actingCombatant ? (') &&
+      trackerSource.includes('<BattleWaitingPanel') &&
+      trackerSource.indexOf('<DeathSavePanel') < trackerSource.indexOf('<CombatActionPanel'),
+  );
+
+  check(
+    'SC64) workspace ocupa a altura útil da tela e o grid é dimensionado pelo container',
+    /height: clamp\([^;]*100dvh/.test(workspaceActive) &&
+      workspaceRule('.combat-workspace .grid-viewport').includes('height: 100%;') &&
+      workspaceRule('.combat-workspace .grid-stage').includes('flex: 1 1 auto;') &&
+      !/width: \d+px/.test(workspaceRule('.combat-workspace-body')),
   );
 }
 

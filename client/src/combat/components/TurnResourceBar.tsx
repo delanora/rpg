@@ -4,6 +4,7 @@ import { Icon } from '../../components/Icon';
 import type { TurnEconomy } from '../../types';
 import type { EconomyAction } from '../combatApi';
 import { RESOURCE_INFO } from '../combatVisuals';
+import { actionPips } from '../resourcePips';
 import { ActionMenu } from './ActionMenu';
 
 interface TurnResourceBarProps {
@@ -176,8 +177,37 @@ export function TurnResourceBar({
           busy={busy}
         />
         <FieldInfo>{RESOURCE_INFO.action}</FieldInfo>
-        <span className="turn-resource-value">
-          {active && economy ? `${actionsLeft} / ${economy.actionsGranted}` : 'em espera'}
+        {/*
+          AÇÃO em GEMAS: uma gema por Ação CONCEDIDA pelo servidor. Gastar não
+          transforma o indicador em booleano — Action Surge (2 Ações no mesmo
+          turno) continua visível como duas gemas, consumidas da esquerda para
+          a direita. O número ao lado é o mesmo resumo de antes.
+        */}
+        <span className="turn-resource-value turn-resource-gems">
+          {active && economy ? (
+            <>
+              <span
+                className="turn-gems"
+                role="img"
+                aria-label={`${actionsLeft} de ${economy.actionsGranted} Ações disponíveis`}
+              >
+                {actionPips(economy.actionsGranted, economy.actionsUsed).map(
+                  (available, index) => (
+                    <span
+                      key={index}
+                      className={`turn-gem is-action ${available ? 'is-ready' : 'is-spent'}`}
+                      aria-hidden="true"
+                    />
+                  ),
+                )}
+              </span>
+              <span className="turn-gems-count">
+                {actionsLeft}/{economy.actionsGranted}
+              </span>
+            </>
+          ) : (
+            'em espera'
+          )}
         </span>
       </div>
 
@@ -186,8 +216,33 @@ export function TurnResourceBar({
         <span className="turn-resource-label">
           Ação bônus <FieldInfo>{RESOURCE_INFO.bonus}</FieldInfo>
         </span>
-        <span className="turn-resource-value">
-          {active && economy ? (economy.bonusActionUsed ? 'utilizada' : 'disponível*') : 'em espera'}
+        {/* A gema cheia diz só que o uso NÃO foi consumido — não que exista uma
+            Ação Bônus executável agora (PHB 2014 exige feature/magia). O `*` do
+            rótulo continua sendo essa ressalva. */}
+        <span className="turn-resource-value turn-resource-gems">
+          {active && economy ? (
+            <>
+              <span
+                className="turn-gems"
+                role="img"
+                aria-label={
+                  economy.bonusActionUsed
+                    ? 'Ação bônus já utilizada neste turno'
+                    : 'Uso de Ação bônus ainda não consumido'
+                }
+              >
+                <span
+                  className={`turn-gem is-bonus ${economy.bonusActionUsed ? 'is-spent' : 'is-ready'}`}
+                  aria-hidden="true"
+                />
+              </span>
+              <span className="turn-gems-count">
+                {economy.bonusActionUsed ? 'utilizada' : 'disponível*'}
+              </span>
+            </>
+          ) : (
+            'em espera'
+          )}
         </span>
       </div>
 
@@ -196,8 +251,30 @@ export function TurnResourceBar({
         <span className="turn-resource-label">
           Reação <FieldInfo>{RESOURCE_INFO.reaction}</FieldInfo>
         </span>
-        <span className="turn-resource-value">
-          {active && economy ? (economy.reactionAvailable ? 'disponível' : 'utilizada') : 'em espera'}
+        <span className="turn-resource-value turn-resource-gems">
+          {active && economy ? (
+            <>
+              <span
+                className="turn-gems"
+                role="img"
+                aria-label={
+                  economy.reactionAvailable
+                    ? 'Reação do turno ainda não utilizada'
+                    : 'Reação já utilizada'
+                }
+              >
+                <span
+                  className={`turn-gem is-reaction ${economy.reactionAvailable ? 'is-ready' : 'is-spent'}`}
+                  aria-hidden="true"
+                />
+              </span>
+              <span className="turn-gems-count">
+                {economy.reactionAvailable ? 'disponível' : 'utilizada'}
+              </span>
+            </>
+          ) : (
+            'em espera'
+          )}
         </span>
       </div>
 
