@@ -117,15 +117,8 @@ export function MovementHud({
 
   return (
     <div className="grid-movement-hud" aria-label="Movimento do turno">
-      <p className="grid-hud-title">
-        {combatantName ?? 'Combatente'}
-        {pathLength > 0 ? (
-          <span className="grid-hud-steps">
-            {' · '}
-            {pathLength} {pathLength === 1 ? 'passo' : 'passos'}
-          </span>
-        ) : null}
-      </p>
+      {/* Sem contagem de "passos": o gesto escolhe DESTINO, não rastro. */}
+      <p className="grid-hud-title">{combatantName ?? 'Combatente'}</p>
       {hasNumbers && movement ? (
         <p className="grid-hud-numbers">
           Distância: <strong>{formatMeters(movement.totalDistanceFeet)}</strong>

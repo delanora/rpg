@@ -55,7 +55,8 @@ export type IconName =
   | 'pause'
   | 'skip-back'
   | 'skip-forward'
-  | 'repeat';
+  | 'repeat'
+  | 'ruler';
 
 const ICONS: Record<IconName, ReactNode> = {
   sword: (
@@ -370,6 +371,15 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M15.8 1.6 19.6 4.5l-3.8 2.9" />
       <path d="M19.5 14a5.5 5.5 0 0 1-5.5 5.5H5" />
       <path d="M8.2 22.4 4.4 19.5l3.8-2.9" />
+    </>
+  ),
+  /* Régua de medição da mesa: corpo inclinado com marcações de passo. */
+  ruler: (
+    <>
+      <path d="M3.4 15.1 15.1 3.4l5.5 5.5L8.9 20.6z" />
+      <path d="M7.1 11.4l2.2 2.2" />
+      <path d="M10.1 8.4l2.2 2.2" />
+      <path d="M13.1 5.4l2.2 2.2" />
     </>
   ),
   coin: (
