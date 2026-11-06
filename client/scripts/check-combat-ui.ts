@@ -58,7 +58,22 @@ import { gridPhaseOf } from '../src/combat/grid/gridLifecycle';
 import { rulerEndpointKey, rulerLabelText, rulerMidpoint } from '../src/combat/grid/gridRuler';
 import { distanceLabel, formatFeet, formatMeters, rangeSummary } from '../src/combat/grid/distanceFormat';
 import { GridToken, type GridUnit } from '../src/combat/grid/GridToken';
-import { formatSceneMeters, feetToMeters, metersToFeet } from '../src/sceneUnits';
+import {
+  formatSceneMeters,
+  feetToMeters,
+  gridSquaresLabel,
+  metersToFeet,
+  squaresInFeet,
+  squaresInMeters,
+} from '../src/sceneUnits';
+import { SpatialGridOverlay } from '../src/components/spatial/SpatialGridOverlay';
+import {
+  GRID_LINE_COLOR,
+  averageLuminanceOfSamples,
+  gridLineColor,
+  gridToneForLuminance,
+  luminanceOfRgb,
+} from '../src/components/spatial/gridTone';
 import { Icon } from '../src/components/Icon';
 import { UnplacedCombatantsTray } from '../src/combat/grid/UnplacedCombatantsTray';
 import {
@@ -5356,7 +5371,10 @@ check(
       !/from '\.\.\/\.\.\/combat\//.test(editorSource) &&
       !/useCombatState|CombatTracker/.test(editorSource) &&
       /\.scene-preview\b/.test(source('src/components/master/scenes.css')) &&
-      source('src/components/master/scenes.css').includes('--scene-cell-x'),
+      // 6.6M.4.1.2: a grade do preview e o MESMO overlay SVG do combate.
+      editorSource.includes('<SpatialGridOverlay') &&
+      editorSource.includes('cellSizeFeet={SCENE_CELL_FEET}') &&
+      !editorSource.includes('--scene-cell-x'),
   );
 
   check(
@@ -5470,21 +5488,26 @@ check(
   );
 
   check(
-    'SC22) imagem atrás de grade e tokens e sem capturar ponteiro',
-    gridCss.includes('.grid-scene-lines {') &&
-      /\.grid-scene-background\s*\{[^}]*pointer-events:\s*none;/.test(gridCss) &&
-      /\.grid-scene-lines\s*\{[^}]*pointer-events:\s*none;/.test(gridCss) &&
-      // Ordem REAL no DOM: fundo → linhas → tokens.
-      gridSource.indexOf('grid-scene-background') < gridSource.indexOf('grid-scene-lines') &&
-      gridSource.indexOf('grid-scene-lines') < gridSource.indexOf('<GridToken'),
+    'SC22) imagem atras de grade e tokens e sem capturar ponteiro',
+    gridCss.includes('.grid-scene-background {') &&
+      gridCss.includes('pointer-events: none;') &&
+      source('src/components/spatial/spatial.css').includes('.spatial-grid-overlay') &&
+      source('src/components/spatial/spatial.css').includes('pointer-events: none;') &&
+      // Ordem REAL no DOM: fundo, depois grade (SVG), depois tokens.
+      gridSource.indexOf('grid-scene-background') < gridSource.indexOf('<SpatialGridOverlay') &&
+      gridSource.indexOf('<SpatialGridOverlay') < gridSource.indexOf('<GridToken'),
   );
 
   check(
-    'SC23) grade continua visível SOBRE a imagem (mesma célula, contraste mínimo)',
-    /\.grid-scene-lines\s*\{[\s\S]*?repeating-linear-gradient/.test(gridCss) &&
-      /\.grid-scene-lines\s*\{[\s\S]*?var\(--grid-cell, 44px\)/.test(gridCss) &&
-      // Sem tema/opacidade configurável nesta fase.
-      !/opacity-control|blend-mode|gridColor/.test(gridCss),
+    'SC23) grade sobre a imagem com UM unico renderer (SVG) e sem tema manual',
+    gridCss.includes('SpatialGridOverlay') &&
+      // O gradiente antigo era o gerador do segundo grid visual: saiu do arquivo.
+      !gridCss.includes('--grid-cell') &&
+      !gridSource.includes('grid-scene-lines') &&
+      !editorSource.includes('grid-scene-lines') &&
+      !gridCss.includes('opacity-control') &&
+      !gridCss.includes('mix-blend-mode') &&
+      !gridCss.includes('gridColor'),
   );
 
   check(
@@ -5579,11 +5602,194 @@ check(
         withImage.includes('src="/uploads/mapa-da-cena.png"') &&
         // Camada inferior: aparece DEPOIS do plano e ANTES de grade/tokens.
         withImage.indexOf('grid-plane') < withImage.indexOf('grid-scene-background') &&
-        withImage.indexOf('grid-scene-background') < withImage.indexOf('grid-scene-lines') &&
-        withImage.indexOf('grid-scene-lines') < withImage.indexOf('grid-token') &&
+        withImage.indexOf('grid-scene-background') < withImage.indexOf('spatial-grid-overlay') &&
+        withImage.indexOf('spatial-grid-overlay') < withImage.indexOf('grid-token') &&
+        // A grade é UM SVG só — nada de segunda camada de linhas.
+        (withImage.match(/spatial-grid-overlay/g) ?? []).length === 1 &&
         // Sem imagem a superfície padrão continua, sem placeholder.
         !withoutImage.includes('grid-scene-background') &&
-        withoutImage.includes('grid-scene-lines')
+        withoutImage.includes('spatial-grid-overlay')
+      );
+    })(),
+  );
+}
+
+/* ========================================================================== */
+/* ========================================================================== */
+/* 6.6M.4.1.2 - GRADE VISUAL UNICA, PREVIEW E CONTAGEM DE QUADRADOS          */
+/* ========================================================================== */
+/*
+ * A regressao visual existia porque a grade era um `repeating-linear-gradient`
+ * com DUAS linhas por borda, rasterizado em pixel e escalado pela camera. As
+ * checagens abaixo prendem a correcao: UM renderer vetorial em PES (compartilhado
+ * com o preview), contraste so de apresentacao e contagem de quadrados derivada
+ * das conversoes canonicas - nunca de pixel.
+ */
+{
+  const overlaySource = source('src/components/spatial/SpatialGridOverlay.tsx');
+  const overlayCss = source('src/components/spatial/spatial.css');
+  const toneHookSource = source('src/components/spatial/useSceneGridTone.ts');
+  const gridSource = source('src/combat/grid/CombatGrid.tsx');
+  const gridCss = source('src/combat/grid/grid.css');
+  const cameraSource = source('src/combat/grid/gridCamera.ts');
+  const gridMathSource = source('src/combat/grid/gridMath.ts');
+  const movementApiSource = source('src/combat/grid/movementApi.ts');
+  const editorSource = source('src/components/master/SceneEditor.tsx');
+  const previewCss = source('src/components/master/scenes.css');
+  const sceneUnitsSource = source('src/sceneUnits.ts');
+  const serverMovement = serverSource('src/modules/combat/spatial/spatial-movement.ts');
+  const pool = (text: string): string => text.toLowerCase();
+
+  check(
+    'SC33) contagem de quadrados usa as conversoes canonicas (5 pes -> 1, 20 -> 4, 100 -> 20)',
+    squaresInFeet(5) === 1 &&
+      squaresInFeet(20) === 4 &&
+      squaresInFeet(100) === 20 &&
+      squaresInFeet(0) === 0 &&
+      squaresInMeters(1.5) === 1 &&
+      squaresInMeters(6) === 4 &&
+      squaresInMeters(30) === 20 &&
+      // 30 m x 18 m -> 20 x 12 quadrados (preview nunca forcado a quadrado).
+      squaresInMeters(30) * squaresInMeters(18) === 240 &&
+      metersToFeet(1.5) === 5 &&
+      metersToFeet(6) === 20 &&
+      metersToFeet(30) === 100 &&
+      gridSquaresLabel(100) === '20 quadrados de 1,5 m' &&
+      gridSquaresLabel(5) === '1 quadrado de 1,5 m',
+    JSON.stringify({ quadrados: squaresInMeters(30), label: gridSquaresLabel(100) }),
+  );
+
+  check(
+    'SC34) UMA so representacao de grade: overlay SVG compartilhado por combate e preview',
+    gridSource.split('<SpatialGridOverlay').length - 1 === 1 &&
+      !gridSource.includes('grid-scene-lines') &&
+      !editorSource.includes('grid-scene-lines') &&
+      editorSource.split('<SpatialGridOverlay').length - 1 === 1 &&
+      overlaySource.includes('export function SpatialGridOverlay(') &&
+      editorSource.includes('cellSizeFeet={SCENE_CELL_FEET}') &&
+      gridSource.includes('cellSizeFeet={cellSizeFeet}') &&
+      !gridCss.includes('--grid-cell') &&
+      !previewCss.includes('--scene-cell-x') &&
+      !previewCss.includes('--scene-cell-y'),
+  );
+
+  check(
+    'SC35) overlay e vetorial, em PES e recebe a geometria do engine (sem segunda engine)',
+    overlaySource.includes('viewBox={`0 0 ${width} ${height}`}') &&
+      overlaySource.includes('preserveAspectRatio="none"') &&
+      overlaySource.includes('patternUnits="userSpaceOnUse"') &&
+      overlaySource.includes('width={cell} height={cell}') &&
+      // UM tile = UMA linha por borda (o par claro+escuro era o double grid).
+      overlaySource.split('<path').length - 1 === 2 &&
+      !overlaySource.includes('fetch(') &&
+      !overlaySource.includes('gridApi') &&
+      !overlaySource.includes('movementApi') &&
+      !overlaySource.includes('spatial/measure') &&
+      !overlaySource.includes('scenePixels') &&
+      !overlaySource.includes('feetToPx') &&
+      !overlaySource.includes('containingCellFeet') &&
+      overlaySource.includes('data-cell-size-feet={cell}'),
+  );
+
+  check(
+    'SC36) contraste adaptativo e APENAS visual: fundo escuro -> linha clara, claro -> escura',
+    gridToneForLuminance(20) === 'light' &&
+      gridToneForLuminance(235) === 'dark' &&
+      // Sem amostra (imagem quebrada/tainted) cai no fallback claro.
+      gridToneForLuminance(null) === 'light' &&
+      gridToneForLuminance(Number.NaN) === 'light' &&
+      Math.round(luminanceOfRgb(20, 20, 20)) === 20 &&
+      Math.round(luminanceOfRgb(235, 235, 235)) === 235 &&
+      Math.round(averageLuminanceOfSamples([20, 20, 20, 255, 20, 20, 20, 255]) ?? -1) === 20 &&
+      averageLuminanceOfSamples([0, 0, 0, 0]) === null &&
+      gridLineColor('light') === GRID_LINE_COLOR.light &&
+      GRID_LINE_COLOR.light !== GRID_LINE_COLOR.dark &&
+      // Paleta Obsyrium: sem branco/preto puros e sem cor neon.
+      !pool(GRID_LINE_COLOR.light + GRID_LINE_COLOR.dark).includes('#fff') &&
+      !pool(GRID_LINE_COLOR.light + GRID_LINE_COLOR.dark).includes('#000') &&
+      !pool(GRID_LINE_COLOR.light + GRID_LINE_COLOR.dark).includes('blue') &&
+      !pool(GRID_LINE_COLOR.light + GRID_LINE_COLOR.dark).includes('lime') &&
+      !pool(GRID_LINE_COLOR.light + GRID_LINE_COLOR.dark).includes('cyan'),
+    GRID_LINE_COLOR.light,
+  );
+
+  check(
+    'SC37) luminancia fica no CLIENTE e nunca volta para a mecanica',
+    toneHookSource.includes('canvas') &&
+      toneHookSource.includes('getImageData') &&
+      toneHookSource.includes('./gridTone') &&
+      // 32 x 32: nunca a imagem inteira em resolucao original.
+      toneHookSource.includes('SAMPLE_SIZE = 32') &&
+      toneHookSource.includes('catch') &&
+      // Nenhum modulo mecanico conhece luminancia/tom.
+      !pool(gridMathSource).includes('luminance') &&
+      !pool(cameraSource).includes('luminance') &&
+      !pool(movementApiSource).includes('luminance') &&
+      !pool(serverMovement).includes('luminance') &&
+      !pool(sceneUnitsSource).includes('luminance') &&
+      overlaySource.includes('gridLineColor(tone)') &&
+      overlayCss.includes('pointer-events: none;'),
+  );
+
+  check(
+    'SC38) zoom/pan nao tocam a geometria: a camera transforma, a celula continua 5 pes',
+    gridSource.includes('const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;') &&
+      gridSource.includes('cellSizeFeet={cellSizeFeet}') &&
+      // O overlay nao tem camera nem roda do proprio: ele so desenha o plano.
+      !overlaySource.includes('onWheel') &&
+      !overlaySource.includes('camera.') &&
+      !cameraSource.includes('spatial-grid-overlay') &&
+      gridMathSource.includes('DEFAULT_PIXELS_PER_CELL') &&
+      // A engine do servidor continua em PES: nenhum pixel no calculo espacial.
+      !pool(serverMovement).includes('pixel'),
+  );
+
+  check(
+    'SC39) contagem visivel nos campos e preview derivado do que e DIGITADO (nao do salvo)',
+    editorSource.includes('className="scene-squares"') &&
+      editorSource.split('gridSquaresLabel(dimensionFeet(').length - 1 === 2 &&
+      editorSource.includes('dimensionFeet(widthMeters, config.widthFeet)') &&
+      editorSource.includes('dimensionFeet(heightMeters, config.heightFeet)') &&
+      editorSource.includes('aspectRatio: `${safeWidth} / ${safeHeight}`') &&
+      previewCss.includes('.scene-squares {'),
+  );
+
+  check(
+    'SC40) render real do overlay: viewBox em pes, tom aplicado e nada de placeholder',
+    (() => {
+      const light = renderToStaticMarkup(
+        createElement(SpatialGridOverlay, {
+          widthFeet: 100,
+          heightFeet: 60,
+          cellSizeFeet: 5,
+          tone: 'light',
+        }),
+      );
+      const dark = renderToStaticMarkup(
+        createElement(SpatialGridOverlay, {
+          widthFeet: 100,
+          heightFeet: 60,
+          cellSizeFeet: 5,
+          tone: 'dark',
+        }),
+      );
+      const empty = renderToStaticMarkup(
+        createElement(SpatialGridOverlay, { widthFeet: 0, heightFeet: 0, cellSizeFeet: 5 }),
+      );
+      const emitted = pool(light);
+      return (
+        light.includes('viewBox="0 0 100 60"') &&
+        light.includes('preserveAspectRatio="none"') &&
+        light.includes('width="5" height="5"') &&
+        light.includes('data-grid-tone="light"') &&
+        light.includes(GRID_LINE_COLOR.light) &&
+        dark.includes(GRID_LINE_COLOR.dark) &&
+        // Sem cena nao existe grade inventada.
+        empty === '' &&
+        // Nenhuma parede: a 6.6M.4.2 continua futura.
+        !emitted.includes('wall') &&
+        !emitted.includes('parede') &&
+        !emitted.includes('obstacle')
       );
     })(),
   );

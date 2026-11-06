@@ -16,6 +16,7 @@ export const SCENE_METERS_PER_FOOT = METERS_PER_FOOT;
 /** Célula do grid (PÉS). Fixa nesta fase — o servidor também fixa 5. */
 export const SCENE_CELL_FEET = 5;
 
+
 /** Passo de arredondamento aceito pelo engine: 2,5 pés (Tiny) e 5 pés. */
 const SNAP_FEET = 2.5;
 
@@ -47,4 +48,30 @@ export function formatSceneMeters(feet: number): string {
 /** "100 pés" — leitura secundária, para o Mestre conferir o valor persistido. */
 export function formatSceneFeet(feet: number): string {
   return `${METERS_FORMAT.format(feet)} pés`;
+}
+
+const SQUARES_FORMAT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+
+/**
+ * Quadrados de `SCENE_CELL_FEET` contidos em uma dimensão em PÉS.
+ *
+ * Derivado SEMPRE da dimensão já snapada do engine (5 pés → 1, 20 → 4,
+ * 100 → 20), nunca de pixels: a contagem da UI tem que ser a mesma que o
+ * servidor usa em Movement, alcance e paredes.
+ */
+export function squaresInFeet(feet: number): number {
+  if (!Number.isFinite(feet) || feet <= 0) return 0;
+  return feet / SCENE_CELL_FEET;
+}
+
+/** Quadrados a partir do valor DIGITADO em metros (passa pelo snap canônico). */
+export function squaresInMeters(meters: number): number {
+  return squaresInFeet(metersToFeet(meters));
+}
+
+/** "20 quadrados de 1,5 m" — informação derivada, nunca input. */
+export function gridSquaresLabel(feet: number): string {
+  const squares = squaresInFeet(feet);
+  const noun = squares === 1 ? 'quadrado' : 'quadrados';
+  return `${SQUARES_FORMAT.format(squares)} ${noun} de ${formatSceneMeters(SCENE_CELL_FEET)}`;
 }

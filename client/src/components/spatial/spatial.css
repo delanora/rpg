@@ -1,0 +1,17 @@
+/*
+ * 6.6M.4.1.2 — GRADE VISUAL da Scene (SVG).
+ *
+ * O overlay ocupa EXATAMENTE o plano que recebe (bounds mecânicos em pés já
+ * convertidos para pixel/quota pela fonte), então pan e zoom da câmera movem
+ * imagem, grade e tokens como uma superfície só. Ele nunca captura ponteiro:
+ * soltar, arrastar e medir continuam indo para o plano/token de baixo.
+ */
+.spatial-grid-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+  overflow: visible;
+}

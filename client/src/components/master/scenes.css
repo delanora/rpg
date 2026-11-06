@@ -1,3 +1,5 @@
+@import '../spatial/spatial.css';
+
 /*
  * FASE 6.6M.4.1 — CENAS DENTRO DA LOCALIDADE.
  *
@@ -159,9 +161,9 @@
 /* --- Preview estrutural ---------------------------------------------------- */
 
 /*
- * Só proporção, imagem e grid: NÃO é editor de paredes. A grade é desenhada em
- * percentuais do próprio quadro, então acompanha qualquer dimensão sem precisar
- * de matemática em pixels.
+ * Só proporção, imagem e grid: NÃO é editor de paredes. A grade vem de
+ * `SpatialGridOverlay` (o MESMO componente do combate) com o `viewBox` em pés,
+ * então a contagem de células do preview nunca discorda da Scene.
  */
 .scene-preview-frame {
   display: grid;
@@ -182,11 +184,15 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background-color: var(--surface-3);
-  background-image:
-    linear-gradient(to right, var(--line-strong) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--line-strong) 1px, transparent 1px);
-  background-size: var(--scene-cell-x, 5%) var(--scene-cell-y, 5%);
-  background-position: 0 0;
+}
+
+/* Contagem derivada sob cada input: "20 quadrados de 1,5 m". */
+.scene-squares {
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--ink-soft);
 }
 
 .scene-preview-img {
