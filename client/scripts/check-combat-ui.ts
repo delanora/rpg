@@ -62,6 +62,7 @@ import { Icon } from '../src/components/Icon';
 import { UnplacedCombatantsTray } from '../src/combat/grid/UnplacedCombatantsTray';
 import {
   SIZE_FOOTPRINT_FEET,
+  centeredFootprintFeet,
   containingCellFeet,
   feetToPx,
   pixelToPlacementFeet,
@@ -4380,7 +4381,9 @@ check(
     movementGridSource.includes('movementVisual.syncVersion(combat.version);') &&
     // Falha NÃO limpa a régua: o jogador continua analisando a decisão.
     (() => {
-      const finallyAt = movementGridSource.indexOf('} finally {\n      executing.current = false;');
+      const finallyAt = movementGridSource.indexOf(
+        '} finally {\n      committingRef.current = null;\n      executing.current = false;',
+      );
       if (finallyAt < 0) return false;
       const catchAt = movementGridSource.lastIndexOf('} catch (error) {', finallyAt);
       const failure = movementGridSource.slice(catchAt, finallyAt);
@@ -4470,7 +4473,7 @@ check(
   movementGridSource.includes('position: draft.pointer') &&
     movementGridSource.includes('className="grid-destination-cell"') &&
     (movementGridSource.match(/<GridMovementOverlay/g) ?? []).length === 1 &&
-    movementGridSource.includes('const footprint = SIZE_FOOTPRINT_FEET[size];') &&
+    movementGridSource.includes('const pointer = centeredFootprintFeet(feet, size, scene);') &&
     gridCssSource.includes('.grid-destination-cell {')
 );
 check(
@@ -4985,6 +4988,188 @@ check(
     (movementGridSource.match(/requestAnimationFrame\(tick\)/g) ?? []).length === 2 &&
     movementGridSource.includes('cancelAnimationFrame(frame)') &&
     !movementGridSource.includes('edgePanSpeed')
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1.4.3 — GHOST = CURSOR · COMMIT PRÓPRIO · LOG EM METROS              */
+/* -------------------------------------------------------------------------- */
+
+/** Leitura de um arquivo do BACKEND (a raiz do repo está dois níveis acima). */
+const serverSource = (relative: string): string =>
+  readFileSync(resolve(here, '..', '..', relative), 'utf8');
+const movementLogServiceSource = serverSource('src/modules/combat/spatial/spatial-movement.service.ts');
+const movementLogDomainSource = serverSource('src/modules/combat/spatial/spatial-movement.ts');
+const protectedStateSource = serverSource('src/scripts/support/protected-state.ts');
+const smokeRealtimeSource = serverSource('src/scripts/smoke-realtime.ts');
+
+/**
+ * Centro VISUAL do ghost em px de TELA: a caixa é desenhada em px de CENA
+ * dentro do container que recebe o transform da câmera (uma única vez).
+ */
+function ghostCenterScreen(
+  camera: GridCamera,
+  pointer: { x: number; y: number },
+  size: SpatialSize,
+  scene: { widthFeet: number; heightFeet: number },
+): { x: number; y: number } {
+  const geometry = { pixelsPerCell: 44, cellSizeFeet: 5 };
+  const feet = screenToFeet(camera, pointer, geometry);
+  const anchor = centeredFootprintFeet(feet, size, scene);
+  const box = {
+    left: feetToPx(anchor.xFeet, geometry.cellSizeFeet, geometry.pixelsPerCell),
+    top: feetToPx(anchor.yFeet, geometry.cellSizeFeet, geometry.pixelsPerCell),
+    width: feetToPx(SIZE_FOOTPRINT_FEET[size].widthFeet, geometry.cellSizeFeet, geometry.pixelsPerCell),
+    height: feetToPx(SIZE_FOOTPRINT_FEET[size].heightFeet, geometry.cellSizeFeet, geometry.pixelsPerCell),
+  };
+  return sceneToScreen(camera, {
+    x: box.left + box.width / 2,
+    y: box.top + box.height / 2,
+  });
+}
+
+check(
+  'CB328) GHOST = CURSOR: o centro do footprint cai no ponteiro (pan, zoom, canto e Large)',
+  (() => {
+    const scene = { widthFeet: 200, heightFeet: 200 };
+    const near = (a: number, b: number): boolean => Math.abs(a - b) < 0.01;
+    // Pans negativos = cena rolada para a direita/baixo (o caso real do gesto).
+    const cameras: GridCamera[] = [
+      { panX: 0, panY: 0, zoom: 1 },
+      { panX: -340, panY: -210, zoom: 1 },
+      { panX: -88, panY: -512, zoom: 0.75 },
+      { panX: -120, panY: -60, zoom: 1.5 },
+      { panX: -800, panY: -400, zoom: 2 },
+    ];
+    const pointers = [
+      { x: 500, y: 300 },
+      { x: 137, y: 612 },
+      { x: 980, y: 74 },
+    ];
+    return cameras.every((camera) =>
+      pointers.every((pointer) =>
+        (['tiny', 'medium', 'large', 'huge'] as SpatialSize[]).every((size) => {
+          const center = ghostCenterScreen(camera, pointer, size, scene);
+          return near(center.x, pointer.x) && near(center.y, pointer.y);
+        }),
+      ),
+    );
+  })(),
+);
+check(
+  'CB329) ghost em px de CENA (sem duplicar o transform) e sem `grab` do clique',
+  (() => {
+    const parts: Record<string, boolean> = {
+      'pointer centrado': movementGridSource.includes(
+        'const pointer = centeredFootprintFeet(feet, size, scene);',
+      ),
+      'destino da célula': movementGridSource.includes(
+        'const destination = containingCellFeet(pointer, size, scene);',
+      ),
+      'sem grab em uso': !movementGridSource.includes('current.grab'),
+      'sem grab no draft': !movementGridSource.includes('grab: gesture.grab'),
+      'ghost usa o pointer': movementGridSource.includes('position: draft.pointer,'),
+      'overlay em px de cena': movementOverlaySource.includes(
+        'feetToPx(position.xFeet, cellSizeFeet, pixelsPerCell)',
+      ),
+      'overlay sem transform': !/translate\([^)]*pointer/i.test(movementOverlaySource),
+    };
+    const bad = Object.entries(parts).filter(([, ok]) => !ok).map(([name]) => name);
+    if (bad.length > 0) console.log(`    ↳ CB329 falhou em: ${bad.join(', ')}`);
+    return bad.length === 0;
+  })(),
+);
+check(
+  'CB330) commit PRÓPRIO não cancela (toast falso) e invalidação EXTERNA continua',
+  movementGridSource.includes('if (committingRef.current === draft.combatantId) return;') &&
+    movementGridSource.includes('committingRef.current = combatantId;') &&
+    movementGridSource.includes('committingRef.current = intent.combatantId;') &&
+    movementGridSource.includes('committingRef.current = null;') &&
+    // A invalidação não foi removida: mudança externa antes do drop ainda vale.
+    movementGridSource.includes("combat.status !== 'ACTIVE' ||") &&
+    movementGridSource.includes('combat.currentCombatantId !== draft.combatantId') &&
+    movementGridSource.includes('position.xFeet !== draft.startPosition.xFeet') &&
+    movementGridSource.includes('O movimento foi cancelado: o estado do combate mudou.') &&
+    // Falha REAL (409/ilegal) mantém feedback: o catch não é silencioso.
+    movementGridSource.includes('setDraftNotice(messageOf(error));')
+);
+check(
+  'CB331) Registro de combate em METROS, engine e campos internos continuam em PÉS',
+  (() => {
+    const parts: Record<string, boolean> = {
+      'distância em m': movementLogServiceSource.includes(
+        'formatMetersPtBr(evaluation.totalDistanceFeet)',
+      ),
+      'custo em m': /formatMetersPtBr\(\s*evaluation\.totalCostFeet\s*,?\s*\)/.test(
+        movementLogServiceSource,
+      ),
+      'restante em m': movementLogServiceSource.includes('formatMetersPtBr(remainingAfter)'),
+      'trecho em m': movementLogServiceSource.includes('formatMetersPtBr(totals.distanceFeet)'),
+      'sem log em pés': !/Moveu \$\{[^}]*\} pés/.test(movementLogServiceSource),
+      'sem restante em pés': !/restam \$\{[^}]*\} pés/.test(movementLogServiceSource),
+      'formatter exportado': movementLogDomainSource.includes(
+        'export function formatMetersPtBr(feet: number): string',
+      ),
+      'conversão reutilizada': movementLogDomainSource.includes('feetToMeters(feet)'),
+      'engine em pés':
+        movementLogDomainSource.includes('totalDistanceFeet') &&
+        movementLogDomainSource.includes('totalCostFeet'),
+      // Só existem nomes de CAMPO em pés: nenhuma grandeza mecânica virou metro.
+      'nenhum campo em metros': !/\b(totalDistance|totalCost|movementRemaining)Meters\b/.test(
+        movementLogDomainSource,
+      ),
+    };
+    const bad = Object.entries(parts).filter(([, ok]) => !ok).map(([name]) => name);
+    if (bad.length > 0) console.log(`    ↳ CB331 falhou em: ${bad.join(', ')}`);
+    return bad.length === 0;
+  })(),
+);
+check(
+  'CB332) ISOLAMENTO de fixtures: fotografia de fichas/NPCs reais + diff + restore exato',
+  protectedStateSource.includes('export async function snapshotProtectedGameState') &&
+    protectedStateSource.includes('export async function diffProtectedGameState') &&
+    protectedStateSource.includes('export async function restoreProtectedGameState') &&
+    // Comparação de LINHA INTEIRA (não uma lista de campos "conhecidos").
+    protectedStateSource.includes('Object.keys(snapshot.data)') &&
+    // Restore exato: devolve o valor anterior, nunca default de vida.
+    protectedStateSource.includes('data[field] = snapshot.data[field];') &&
+    !/hpCurrent:\s*\w+\.hpMax/.test(protectedStateSource) &&
+    !/deathState:\s*\{\s*\}/.test(protectedStateSource) &&
+    // Compare-and-set por `version`: escrita humana concorrente nunca é sobrescrita.
+    protectedStateSource.includes('updateMany({ where: { id: row.id, ...guard }, data })') &&
+    smokeRealtimeSource.includes('protectedState = await snapshotProtectedGameState();') &&
+    smokeRealtimeSource.includes('integridade) personagens reais permanecem idênticos') &&
+    smokeRealtimeSource.includes('integridade) NPCs reais permanecem idênticos') &&
+    // A limpeza continua por ID criado pela execução.
+    smokeRealtimeSource.includes('createdCreatureIds') &&
+    smokeRealtimeSource.includes('createdCombatIds')
+);
+check(
+  'CB333) `POST /combat` traz a mesa inteira, mas o teste REMOVE as fichas que não são fixtures',
+  (() => {
+    const deathSource = serverSource('src/scripts/smoke-death.ts');
+    const parts: Record<string, boolean> = {
+      'fixa as fixtures': deathSource.includes(
+        'const fixtureCharacterIds = new Set(',
+      ),
+      'remove ficha real do combate': /combatant\.deleteMany\(\{\s*where: \{\s*combatId: hotfixCombatId,\s*kind: 'CHARACTER',\s*characterId: \{ notIn: \[\.\.\.fixtureCharacterIds\] \}/.test(
+        deathSource,
+      ),
+      'fallback só em fixture': deathSource.includes(
+        'if (item.characterId && !fixtureCharacterIds.has(item.characterId)) continue;',
+      ),
+      'guard de isolamento': deathSource.includes(
+        '65.isolamento) o combate de teste NÃO contém ficha real de jogador',
+      ),
+      // O restore não substitui isolamento: nenhum "cura todos"/"ressuscita todos".
+      'sem heal global': !/UPDATE characters SET/i.test(protectedStateSource),
+      'sem heal/alive global no harness': !/updateMany\(\{\s*where: \{\s*\},\s*data: \{[^}]*(hpCurrent|deathState)/.test(
+        deathSource,
+      ),
+    };
+    const bad = Object.entries(parts).filter(([, ok]) => !ok).map(([name]) => name);
+    if (bad.length > 0) console.log(`    ↳ CB333 falhou em: ${bad.join(', ')}`);
+    return bad.length === 0;
+  })(),
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

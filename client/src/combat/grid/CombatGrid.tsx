@@ -47,6 +47,7 @@ import {
   BASE_CELL_SIZE_FEET,
   DEFAULT_PIXELS_PER_CELL,
   SIZE_FOOTPRINT_FEET,
+  centeredFootprintFeet,
   containingCellFeet,
   feetToPx,
   occupiedSpacePixels,
@@ -104,12 +105,13 @@ interface MovementDraft {
   startPosition: SpatialPosition;
   /** Destino MECÂNICO atual (âncora canônica); `null` = ponteiro fora da cena. */
   destination: SpatialPosition | null;
-  /** Ponto LIVRE do ponteiro (pés, já sem o grab) — só apresentação. */
+  /**
+   * Âncora do GHOST: canto mínimo do footprint posicionado para o CENTRO cair
+   * exatamente sob o ponteiro (pés). Só apresentação.
+   */
   pointer: SpatialPosition;
   /** Path direto origem→destino (vazio = sem destino / de volta à origem). */
   path: SpatialPosition[];
-  /** Ponto de pega dentro do footprint (pés) para o token não "pular". */
-  grab: SpatialPosition;
 }
 
 /**
@@ -287,6 +289,12 @@ export function CombatGrid({
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const cameraRef = useRef(camera);
   const draftRef = useRef<MovementDraft | null>(draft);
+  /**
+   * Combatente com commit de Movement EM VOO (6.6M.3.1.4.3). Enquanto houver
+   * valor aqui, o eco de realtime daquele combatente é o NOSSO movimento e não
+   * pode cancelar draft nem régua.
+   */
+  const committingRef = useRef<string | null>(null);
   const rulerRef = useRef<{ from: SpatialMeasureEndpoint | null; to: SpatialMeasureEndpoint | null }>({
     from: null,
     to: null,
@@ -901,7 +909,6 @@ export function CombatGrid({
       destination: null,
       pointer: gesture.position,
       path: [],
-      grab: gesture.grab,
     };
     draftRef.current = next;
     setDraft(next);
@@ -924,12 +931,12 @@ export function CombatGrid({
     const size = unit.spatial.effectiveSize;
     const feet = feetAt(clientX, clientY);
     if (!feet) return;
-    const footprint = SIZE_FOOTPRINT_FEET[size];
-    // Ghost livre: o token não "pula" para a célula, mas nunca sai da cena.
-    const pointer: SpatialPosition = {
-      xFeet: clampFeet(feet.xFeet - current.grab.xFeet, scene.widthFeet - footprint.widthFeet),
-      yFeet: clampFeet(feet.yFeet - current.grab.yFeet, scene.heightFeet - footprint.heightFeet),
-    };
+    // GHOST = CURSOR: o centro do footprint fica sob o ponteiro (o ponto de
+    // pega do clique não vale durante o draft). O DESTINO mecânico continua
+    // sendo a célula que contém essa âncora, então o highlight pode ficar
+    // ligeiramente à frente do centro do ghost dentro da célula — correto:
+    // ghost é o mouse, highlight é a regra.
+    const pointer = centeredFootprintFeet(feet, size, scene);
     const destination = containingCellFeet(pointer, size, scene);
     const sameDestination =
       current.destination === null
@@ -1013,9 +1020,17 @@ export function CombatGrid({
    * REALTIME durante o draft: versão, turno, posição do source, status do
    * combate, projeção (ficou master-only) ou perda de autoridade invalidam o
    * trajeto local. O fantasma nunca fica órfão.
+   *
+   * 6.6M.3.1.4.3 — COMMIT PRÓPRIO não invalida o próprio draft: entre o
+   * `pointerup` e a resposta HTTP, o `combat:updated`/`combat:movement-visual`
+   * do NOSSO movimento chega pelo socket e muda a posição autoritativa. Quem
+   * arbitra esse intervalo é o SERVIDOR (`expectedVersion` + `operationId`);
+   * anunciar cancelamento aqui era falso positivo. Mudança EXTERNA enquanto o
+   * usuário ainda arrasta continua cancelando normalmente.
    */
   useEffect(() => {
     if (!draft) return;
+    if (committingRef.current === draft.combatantId) return;
     const unit = combat.combatants.find((item) => item.id === draft.combatantId);
     const position = unit?.spatial?.position ?? null;
     const invalid =
@@ -1274,6 +1289,9 @@ export function CombatGrid({
         return;
       }
       operationRef.current ??= createOperationId();
+      // Daqui até a resposta, o draft está em COMMIT: qualquer eco do socket
+      // sobre ESTE combatente é o nosso movimento, não uma invalidação.
+      committingRef.current = combatantId;
       const result = await commitMovement(combat, {
         combatantId,
         path,
@@ -1294,6 +1312,7 @@ export function CombatGrid({
       onError(messageOf(error));
       clearDraft();
     } finally {
+      committingRef.current = null;
       setMovementBusy(false);
     }
   }
@@ -1351,6 +1370,9 @@ export function CombatGrid({
         return;
       }
       operationRef.current ??= createOperationId();
+      // Mesmo contrato do gesto direto: o eco do NOSSO commit não invalida a
+      // régua que acabou de ser percorrida.
+      committingRef.current = intent.combatantId;
       const result = await commitMovement(combat, {
         combatantId: intent.combatantId,
         path: intent.path,
@@ -1381,6 +1403,7 @@ export function CombatGrid({
       measureMoveRef.current = failed;
       setMeasureMove(failed);
     } finally {
+      committingRef.current = null;
       executing.current = false;
       setMovementBusy(false);
     }
