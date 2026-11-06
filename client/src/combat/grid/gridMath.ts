@@ -1,4 +1,10 @@
-import type { CombatantSpatial, OccupiedSpace, SpatialPosition, SpatialSize } from '../../types';
+import type {
+  CombatantSpatial,
+  CreatureSizeLabel,
+  OccupiedSpace,
+  SpatialPosition,
+  SpatialSize,
+} from '../../types';
 
 /**
  * FASE 6.6M.1 — MATEMÁTICA DE RENDERIZAÇÃO DO GRID.
@@ -21,6 +27,31 @@ export const SIZE_FOOTPRINT_FEET: Readonly<
   large: { widthFeet: 10, heightFeet: 10 },
   huge: { widthFeet: 15, heightFeet: 15 },
   gargantuan: { widthFeet: 20, heightFeet: 20 },
+};
+
+/**
+ * Ordem canônica do PHB 2014 (menor → maior), usada nos seletores de cadastro.
+ */
+export const SPATIAL_SIZE_ORDER: readonly SpatialSize[] = [
+  'tiny',
+  'small',
+  'medium',
+  'large',
+  'huge',
+  'gargantuan',
+];
+
+/**
+ * Tamanho canônico → RÓTULO persistido no cadastro de Creature (6.6L.1).
+ * O seletor mostra PT-BR, mas envia este rótulo — o servidor valida o enum.
+ */
+export const CREATURE_SIZE_LABEL_BY_SPATIAL: Readonly<Record<SpatialSize, CreatureSizeLabel>> = {
+  tiny: 'Tiny',
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+  huge: 'Huge',
+  gargantuan: 'Gargantuan',
 };
 
 /** Rótulos de exibição (tooltip/legenda), em PT-BR. */

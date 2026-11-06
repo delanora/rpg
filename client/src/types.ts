@@ -1726,6 +1726,10 @@ export interface Creature {
   hpCurrent: number;
   hpMax: number;
   armorClass: number;
+  /** Tamanho mecânico persistido do statblock (6.6L.1). */
+  size: CreatureSizeLabel;
+  /** Forma canônica do tamanho — é dela que o combate deriva o espaço ocupado. */
+  spatialSize: SpatialSize;
   /** CA EFETIVA do NPC (armadura/escudo/bônus equipados); igual à base em criaturas. */
   effectiveArmorClass: number;
   /** Inventário persistente do NPC (vazio em criaturas-template). */
@@ -1792,6 +1796,8 @@ export interface CreaturePatch {
   hpMax?: number;
   armorClass?: number;
   speed?: number;
+  /** Tamanho do cadastro (rótulo canônico); o servidor valida o enum. */
+  size?: CreatureSizeLabel;
 
   attacks?: Attack[];
   resistances?: string[];
@@ -2075,6 +2081,13 @@ export interface CombatUsableItem {
 
 /** Tamanhos mecânicos do PHB 2014 (fundação espacial 6.6L.1). */
 export type SpatialSize = 'tiny' | 'small' | 'medium' | 'large' | 'huge' | 'gargantuan';
+
+/**
+ * Rótulo CANÔNICO de tamanho persistido no cadastro de Creature (6.6L.1) —
+ * espelho do enum `CREATURE_SIZE_LABELS` do servidor. A UI mostra PT-BR, mas o
+ * que trafega/grava é este rótulo: o servidor valida e é a autoridade.
+ */
+export type CreatureSizeLabel = 'Tiny' | 'Small' | 'Medium' | 'Large' | 'Huge' | 'Gargantuan';
 
 /**
  * 6.6L.3.2 — visibilidade ESPACIAL da instância do combatente.

@@ -2634,6 +2634,19 @@ check(
     spatialTypes.includes("'medium'")
 );
 check(
+  'CB167.1) cadastro de Creature oferece TAMANHO (select PT-BR) e envia o rótulo canônico',
+  source('src/components/master/CreatureEditor.tsx').includes('aria-label="Tamanho da criatura"') &&
+    source('src/components/master/CreatureEditor.tsx').includes(
+      'onPatch({\n                size: CREATURE_SIZE_LABEL_BY_SPATIAL[event.target.value as SpatialSize],'
+    ) &&
+    source('src/components/master/CreatureEditor.tsx').includes('SPATIAL_SIZE_ORDER.map') &&
+    source('src/combat/grid/gridMath.ts').includes('CREATURE_SIZE_LABEL_BY_SPATIAL') &&
+    source('src/combat/grid/gridMath.ts').includes("gargantuan: 'Gargantuan'") &&
+    source('src/types.ts').includes("'Gargantuan'") &&
+    // Nenhuma string traduzida é enviada ao servidor: o valor é o rótulo do enum.
+    !/size:\s*event\.target\.value/.test(source('src/components/master/CreatureEditor.tsx'))
+);
+check(
   'CB167) occupiedSpace é DERIVADO (nenhuma coluna min/max no banco)',
   spatialOccupied.includes('export function occupiedSpaceOf') &&
     !prismaSchema.includes('occupiedSpace') &&

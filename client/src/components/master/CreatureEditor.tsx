@@ -8,7 +8,14 @@ import {
   formatModifier,
   speedInSquares,
 } from '../../dnd';
-import type { Creature, CreaturePatch, Item, Locality, Region } from '../../types';
+import type { Creature, CreaturePatch, Item, Locality, Region, SpatialSize } from '../../types';
+import { formatMeters } from '../../combat/grid/distanceFormat';
+import {
+  CREATURE_SIZE_LABEL_BY_SPATIAL,
+  SIZE_FOOTPRINT_FEET,
+  SIZE_LABELS,
+  SPATIAL_SIZE_ORDER,
+} from '../../combat/grid/gridMath';
 import { clampInt } from '../../utils';
 import { AttacksTable } from '../AttacksTable';
 import { Icon } from '../Icon';
@@ -105,6 +112,10 @@ export function CreatureEditor({
     creature.derived.modifiers.strength,
     creature.derived.modifiers.dexterity,
   );
+
+  // Footprint do tamanho CANÔNICO que o servidor devolve (`spatialSize`); a UI
+  // só apresenta em metros, sem criar tabela/conversão paralela.
+  const footprint = SIZE_FOOTPRINT_FEET[creature.spatialSize];
 
   // Mesmo destaque da ficha: a cor é do valor crítico, não do card.
   const hpRatio = creature.effectiveMaxHp > 0 ? creature.hpCurrent / creature.effectiveMaxHp : 0;
@@ -520,6 +531,30 @@ export function CreatureEditor({
             </span>
           </div>
         </div>
+        {/* Tamanho mecânico (6.6M.3.1.4.4): authoring do espaço ocupado no grid. */}
+        <label className="field field-inline">
+          <span>Tamanho</span>
+          <select
+            value={creature.spatialSize}
+            aria-label="Tamanho da criatura"
+            onChange={(event) =>
+              onPatch({
+                size: CREATURE_SIZE_LABEL_BY_SPATIAL[event.target.value as SpatialSize],
+              })
+            }
+          >
+            {SPATIAL_SIZE_ORDER.map((size) => (
+              <option key={size} value={size}>
+                {SIZE_LABELS[size]}
+              </option>
+            ))}
+          </select>
+          <span className="muted">
+            Espaço no grid: {formatMeters(footprint.widthFeet)} ×{' '}
+            {formatMeters(footprint.heightFeet)}
+          </span>
+        </label>
+
         {creature.kind === 'NPC' ? (
           <p className="section-note">
             CA efetiva com o equipamento: <strong>{creature.effectiveArmorClass}</strong>.
