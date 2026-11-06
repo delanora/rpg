@@ -142,6 +142,20 @@ export const ServerEvents = {
   /** Localidade removida pelo mestre. */
   LOCALITY_DELETED: 'locality:deleted',
 
+  // Cenas espaciais da localidade (entrega apenas à sala dos mestres)
+  /*
+   * Cena é conteúdo de PREPARAÇÃO (dono da configuração estrutural e das
+   * paredes). Durante combate ativo ela é congelada (`SCENE_IN_USE`), então não
+   * existe hot-reload estrutural para jogador nesta fase: o combate republica a
+   * projeção quando o próprio combate muda.
+   */
+  /** Cena criada dentro de uma localidade. */
+  SCENE_CREATED: 'scene:created',
+  /** Cena alterada (nome, configuração espacial, imagem ou paredes). */
+  SCENE_UPDATED: 'scene:updated',
+  /** Cena removida da localidade. */
+  SCENE_DELETED: 'scene:deleted',
+
   // Catálogo de itens (entrega para toda a mesa: jogadores consultam na ficha)
   /** Item cadastrado no catálogo pelo mestre. */
   ITEM_CREATED: 'item:created',

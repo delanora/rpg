@@ -23,7 +23,7 @@ import {
 } from '../combat.dto.js';
 import { parseStoredPosition } from './occupied-space.js';
 import { effectiveSizeOf } from './spatial-size.js';
-import { spatialSceneOf, type SpatialPosition2D, type SpatialSize } from './spatial.types.js';
+import { effectiveSceneConfigOf, type SpatialPosition2D, type SpatialSize } from './spatial.types.js';
 import {
   evaluateMovementPath,
   feetToMeters,
@@ -249,7 +249,7 @@ export function evaluateMovementForState(
     } satisfies MovementParticipant);
   const economy = movementEconomyOf(combatant);
   return evaluateMovementPath({
-    scene: spatialSceneOf(combat.spatialConfig),
+    scene: effectiveSceneConfigOf(combat),
     mover,
     others: participants.filter((item) => item.combatantId !== combatant.id),
     path,

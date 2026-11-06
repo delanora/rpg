@@ -727,10 +727,63 @@ model Locality {
 
   creatures Creature[]
   combats   Combat[]
+  /// Cenas espaciais da localidade (Fase 6.6L.4.1.1). Excluir a localidade
+  /// apaga as cenas dela — mesmo cascade já usado no conteúdo estrutural.
+  scenes    Scene[]
 
   @@index([name])
   @@index([regionId])
   @@map("localities")
+}
+
+/// FASE 6.6L.4.1.1 — CENA ESPACIAL persistente e reutilizável.
+///
+/// Owner: a LOCALIDADE (é a representação espacial jogável daquele lugar, não o
+/// runtime do encontro). Uma localidade tem N cenas (portão, pátio, salão...) e
+/// a mesma cena pode ser usada por vários combates ao longo do tempo.
+///
+/// `spatialConfig` em PÉS (`{ mode, widthFeet, heightFeet, cellSizeFeet }`).
+/// `backgroundImageUrl` é OPCIONAL: a imagem é apresentação e NUNCA fonte
+/// mecânica — cena sem imagem continua válida para grid/movimento/LoS.
+model Scene {
+  id         String   @id @default(cuid())
+  localityId String
+  locality   Locality @relation(fields: [localityId], references: [id], onDelete: Cascade)
+  name       String
+
+  /// Configuração espacial estrutural (PÉS). NULL = cena padrão assistida.
+  spatialConfig Json?
+
+  /// Imagem de fundo opcional (`/uploads/...`). Upload fica em fase futura.
+  backgroundImageUrl String?
+
+  /// Relógio de concorrência da cena (expectedVersion).
+  version Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Paredes/obstáculos lineares da cena (geometria em PÉS).
+  obstacles  SpatialObstacle[]
+  combats    Combat[]
+  operations SceneOperation[]
+
+  @@index([localityId])
+  @@map("scenes")
+}
+
+/// Idempotência das mutações de cena (mesmo padrão de `CombatOperation`).
+model SceneOperation {
+  id          String   @id @default(cuid())
+  sceneId     String
+  scene       Scene    @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  operationId String
+  fingerprint String
+  snapshot    Json
+  createdAt   DateTime @default(now())
+
+  @@unique([sceneId, operationId])
+  @@map("scene_operations")
 }
 
 model Creature {
@@ -926,24 +979,32 @@ model Combat {
   locality   Locality? @relation(fields: [localityId], references: [id], onDelete: SetNull)
 
   ///
-  /// CONFIGURAÇÃO ESPACIAL da cena (Fase 6.6L.1):
-  /// `{ mode: 'assisted'|'grid-2d', widthFeet, heightFeet, cellSizeFeet }`.
-  /// `null`/ausente = cena padrão ASSISTIDA (combates existentes continuam
-  /// funcionando exatamente como antes). Validada por Zod na leitura.
+  /// CONFIGURAÇÃO ESPACIAL do combate (Fase 6.6L.1) — hoje **LEGADO/FALLBACK**.
+  ///
+  /// Só vale para combates SEM `sceneId` (combates antigos e o modo assistido
+  /// avulso). Quando `sceneId` existe, `Scene.spatialConfig` é a ÚNICA fonte
+  /// estrutural e esta coluna é ignorada (o PATCH de config responde 409).
+  /// `null`/ausente = cena padrão ASSISTIDA. Validada por Zod na leitura.
   spatialConfig Json? 
+
+  ///
+  /// CENA ESPACIAL usada por este combate (Fase 6.6L.4.1.1). Opcional: combates
+  /// legados continuam funcionando com `spatialConfig`. `SetNull` garante que
+  /// apagar a cena nunca deixe o combate apontando para o vazio.
+  sceneId String?
+  scene   Scene?  @relation(fields: [sceneId], references: [id], onDelete: SetNull)
 
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
   endedAt    DateTime?
   combatants Combatant[]
-  /// Paredes/obstáculos lineares da cena (Fase 6.6L.4.1) — geometria em PÉS.
-  obstacles  SpatialObstacle[]
   operations CombatOperation[]
   /// 6.6L.3.1 — movimentos pausados esperando Reaction Opportunity.
   movementIntents       MovementIntent[]
   reactionOpportunities ReactionOpportunity[]
 
   @@index([status])
+  @@index([sceneId])
   @@map("combats")
 }
 
@@ -1138,9 +1199,10 @@ model CombatOperation {
 /// invisível, cortina estrutural). Portas/janelas/paredes secretas não existem
 /// nesta fase: o primitive é só o segmento.
 model SpatialObstacle {
-  id       String @id @default(cuid())
-  combatId String
-  combat   Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+  id      String @id @default(cuid())
+  /// Owner ESTRUTURAL: a cena (6.6L.4.1.1). Geometria NÃO pertence ao combate.
+  sceneId String
+  scene   Scene  @relation(fields: [sceneId], references: [id], onDelete: Cascade)
 
   /// Código canônico do primitive (`wall`); nunca rótulo traduzido.
   kind String @default("wall")
@@ -1156,7 +1218,7 @@ model SpatialObstacle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([combatId])
+  @@index([sceneId])
   @@map("spatial_obstacles")
 }
 

@@ -12,7 +12,7 @@ import { loadCombatById } from '../combat.service.js';
 import { combatantAttacks, type CombatSourced } from '../combat.dto.js';
 import { parseStoredPosition } from './occupied-space.js';
 import {
-  spatialSceneOf,
+  effectiveSceneConfigOf,
   type SpatialPosition2D,
   type SpatialSceneConfig,
   type SpatialSize,
@@ -89,7 +89,7 @@ export function combatSpatialIndex(combat: CombatSourced): CombatSpatialIndex {
       bodies.set(entityKey('creature', combatant.creatureId), body);
     }
   }
-  return { combatId: combat.id, scene: spatialSceneOf(combat.spatialConfig), bodies };
+  return { combatId: combat.id, scene: effectiveSceneConfigOf(combat), bodies };
 }
 
 /**
@@ -334,7 +334,7 @@ export async function readCombatMeasure(
 ): Promise<{ distance: CombatDistanceReading }> {
   const combat = await loadCombatById(combatId).catch(() => null);
   if (!combat) throw new HttpError('Combate não encontrado.', 404);
-  const scene = spatialSceneOf(combat.spatialConfig);
+  const scene = effectiveSceneConfigOf(combat);
   if (scene.mode !== 'grid-2d') {
     return { distance: { ...unknownReading('assisted-mode'), status: 'not-assessed' } };
   }

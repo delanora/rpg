@@ -13,8 +13,8 @@ import {
   spaceWithinScene,
 } from './occupied-space.js';
 import {
+  effectiveSceneConfigOf,
   GRID_CELL_SIZE_FEET,
-  spatialSceneOf,
   type SpatialPosition2D,
   type SpatialSceneConfig,
 } from './spatial.types.js';
@@ -24,11 +24,7 @@ import {
   spatialVisibilityOf,
   type SpatialVisibility,
 } from './spatial-visibility.js';
-import {
-  obstacleSegmentOf,
-  obstacleWithinScene,
-  type SpatialObstacleShape,
-} from './spatial-obstacle.js';
+import type { SpatialObstacleShape } from './spatial-obstacle.js';
 
 /**
  * FASE 6.6L.1 — CONFIGURAÇÃO DA CENA E PLACEMENT.
@@ -195,7 +191,17 @@ export async function updateSpatialScene(
 ): Promise<{ combat: CombatDto }> {
   requireMaster(actor);
   return runSpatialOperation(actor, input, 'spatial-config', async (db, combat) => {
-    const current = spatialSceneOf(combat.spatialConfig);
+    // FONTE ESTRUTURAL ÚNICA (6.6L.4.1.1): quando o combate usa uma CENA, a
+    // configuração pertence a ela. Aceitar as duas fontes deixaria o combate
+    // divergente da cena — 409 até remover a cena do combate.
+    if (combat.scene) {
+      throw new HttpError(
+        'A configuração espacial deste combate vem da cena. Edite a cena para alterar modo ou dimensões.',
+        409,
+        'SPATIAL_SCENE_MANAGED_BY_SCENE',
+      );
+    }
+    const current = effectiveSceneConfigOf(combat);
     const next: SpatialSceneConfig = {
       mode: input.mode,
       widthFeet: input.widthFeet ?? current.widthFeet,
@@ -213,20 +219,6 @@ export async function updateSpatialScene(
     if (conflicting) {
       throw new HttpError(
         `${conflicting.name} ficaria fora da cena com essas dimensões. Reposicione antes de redimensionar.`,
-        409,
-        'SPATIAL_SCENE_RESIZE_CONFLICT',
-      );
-    }
-
-    // PAREDES (6.6L.4.1): a mesma regra vale para a geometria da cena. Uma
-    // parede fora dos novos limites deixaria o espaço autoritativo inconsistente
-    // — a redução é recusada inteira, sem mover nem apagar nada.
-    const orphanWall = (combat.obstacles ?? []).find(
-      (obstacle) => !obstacleWithinScene(obstacleSegmentOf(obstacle), next),
-    );
-    if (orphanWall) {
-      throw new HttpError(
-        'Uma parede ficaria fora da cena com essas dimensões. Ajuste ou remova a parede antes de redimensionar.',
         409,
         'SPATIAL_SCENE_RESIZE_CONFLICT',
       );
@@ -271,7 +263,7 @@ export async function setCombatantSpatialPosition(
 
       const position = canonicalPosition(input.position);
       if (position) {
-        const scene = spatialSceneOf(combat.spatialConfig);
+        const scene = effectiveSceneConfigOf(combat);
         const baseSize = combatant.baseSize ?? 'medium';
         // 6.6L.2 — ALINHAMENTO CANÔNICO: numa cena grid-2d, Small+ só pode ser
         // colocado em múltiplos de 5 pés e Tiny em múltiplos de 2,5 pés.
