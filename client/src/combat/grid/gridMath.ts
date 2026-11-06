@@ -95,7 +95,14 @@ export function floorFeet(feet: number, size: SpatialSize): number {
 }
 
 /**
- * FASE 6.6M.3.1.3 — CÉLULA QUE CONTÉM o ponto (nunca a interseção mais próxima).
+ * FASE 6.6M.3.1.3 / 6.6M.4.1.3 — CÉLULA QUE CONTÉM o ponto (nunca a interseção
+ * mais próxima), recebendo o ponteiro CRU.
+ *
+ * É a ÚNICA interpretação de "qual casa está sob o mouse": régua, hover,
+ * placement e destino do Direct Drag chamam esta função com as coordenadas do
+ * ponteiro já convertidas para pés. Nenhum chamador pode recuar/dosar o ponto
+ * antes (meia footprint, offset de pega): decidir a célula a partir de um ponto
+ * deslocado fazia o destino trocar de casa sem o ponteiro cruzar a linha.
  *
  * `Math.round` escolheria a célula vizinha antes de o ponteiro cruzar a borda;
  * aqui a âncora é o canto MÍNIMO da célula que contém o ponto (`floor`), o que
