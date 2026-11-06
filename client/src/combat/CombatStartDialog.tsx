@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
-import type { Creature, Locality, Region } from '../types';
+import { fetchScenes } from '../scenesApi';
+import { formatSceneMeters } from '../sceneUnits';
+import type { Creature, Locality, Region, Scene } from '../types';
 import type { CombatCreatureEntry } from './combatApi';
 
 interface CombatStartDialogProps {
@@ -13,6 +15,8 @@ interface CombatStartDialogProps {
   onCancel: () => void;
   onStart: (input: {
     localityId?: string;
+    /** Cena da localidade escolhida (opcional) — o servidor valida o vínculo. */
+    sceneId?: string;
     entries: CombatCreatureEntry[];
   }) => Promise<void>;
 }
@@ -49,6 +53,8 @@ export function CombatStartDialog({
 }: CombatStartDialogProps) {
   const [localityQuery, setLocalityQuery] = useState('');
   const [localityId, setLocalityId] = useState('');
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [sceneId, setSceneId] = useState('');
   const [kindFilter, setKindFilter] = useState<KindFilter>('ALL');
   const [nameQuery, setNameQuery] = useState('');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -56,6 +62,30 @@ export function CombatStartDialog({
   const [error, setError] = useState<string | null>(null);
 
   const selected = localities.find((locality) => locality.id === localityId) ?? null;
+  const selectedScene = scenes.find((scene) => scene.id === sceneId) ?? null;
+
+  /**
+   * AS cenas vêm da LOCALIDADE escolhida — nunca da mesa inteira. Sem localidade
+   * não há seletor; o combate legado continua começando sem cena.
+   */
+  useEffect(() => {
+    if (!localityId) {
+      setScenes([]);
+      setSceneId('');
+      return;
+    }
+    let active = true;
+    fetchScenes(localityId)
+      .then((list) => {
+        if (active) setScenes(list);
+      })
+      .catch(() => {
+        if (active) setScenes([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [localityId]);
   const regionName = (locality: Locality): string =>
     regions.find((region) => region.id === locality.regionId)?.name ?? '';
 
@@ -91,11 +121,13 @@ export function CombatStartDialog({
   function chooseLocality(locality: Locality): void {
     setLocalityId(locality.id);
     setLocalityQuery(locality.name);
+    setSceneId('');
   }
 
   function clearLocality(): void {
     setLocalityId('');
     setLocalityQuery('');
+    setSceneId('');
   }
 
   function setQuantity(creature: Creature, value: number): void {
@@ -117,7 +149,11 @@ export function CombatStartDialog({
         }))
         .filter((entry) => entry.quantity > 0);
 
-      await onStart({ ...(localityId ? { localityId } : {}), entries });
+      await onStart({
+        ...(localityId ? { localityId } : {}),
+        ...(localityId && sceneId ? { sceneId } : {}),
+        entries,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível iniciar o combate.');
       setBusy(false);
@@ -201,6 +237,39 @@ export function CombatStartDialog({
             Sem localidade selecionada, a busca procura entre todas as criaturas e NPCs.
           </p>
         )}
+
+        {/* CENA da localidade — só as cenas DESTA localidade aparecem. */}
+        {selected ? (
+          <label className="field">
+            <span>Cena (opcional)</span>
+            <select
+              className="inline-input"
+              value={sceneId}
+              onChange={(event) => setSceneId(event.target.value)}
+            >
+              <option value="">sem cena — cena assistida padrão</option>
+              {scenes.map((scene) => (
+                <option key={scene.id} value={scene.id}>
+                  {scene.name} — {formatSceneMeters(scene.spatialConfig.widthFeet)} ×{' '}
+                  {formatSceneMeters(scene.spatialConfig.heightFeet)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {selected && scenes.length === 0 ? (
+          <p className="section-note">
+            Esta localidade ainda não tem cenas — o combate começa no modo assistido, sem grid.
+          </p>
+        ) : null}
+
+        {selectedScene ? (
+          <p className="section-note">
+            A cena <strong>{selectedScene.name}</strong> será a fonte do grid e das paredes; ela
+            fica travada para edição enquanto o combate estiver ativo.
+          </p>
+        ) : null}
 
         {/* BUSCA POR NOME — parcial e sem diferenciar maiúsculas. */}
         <label className="field">

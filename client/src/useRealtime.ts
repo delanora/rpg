@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { publishSceneEvent } from './scenesApi';
 import { createSocket } from './socket';
 import { publishSpellIntent } from './spellcastingApi';
 import type {
@@ -32,6 +33,9 @@ import type {
   RegionCreatedPayload,
   RegionDeletedPayload,
   RegionUpdatedPayload,
+  SceneCreatedPayload,
+  SceneDeletedPayload,
+  SceneUpdatedPayload,
   SheetUpdatedPayload,
   SpellIntentUpdatedPayload,
   ShortRestCompletedPayload,
@@ -55,6 +59,10 @@ export interface RealtimeHandlers {
   onLocalityCreated?: (payload: LocalityCreatedPayload) => void;
   onLocalityUpdated?: (payload: LocalityUpdatedPayload) => void;
   onLocalityDeleted?: (payload: LocalityDeletedPayload) => void;
+  /** Cena criada/renomeada/excluída em outra aba do Mestre (6.6M.4.1). */
+  onSceneCreated?: (payload: SceneCreatedPayload) => void;
+  onSceneUpdated?: (payload: SceneUpdatedPayload) => void;
+  onSceneDeleted?: (payload: SceneDeletedPayload) => void;
   onItemCreated?: (payload: ItemCreatedPayload) => void;
   onItemUpdated?: (payload: ItemUpdatedPayload) => void;
   onItemDeleted?: (payload: ItemDeletedPayload) => void;
@@ -150,6 +158,25 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('locality:created', (payload) => handlersRef.current.onLocalityCreated?.(payload));
     socket.on('locality:updated', (payload) => handlersRef.current.onLocalityUpdated?.(payload));
     socket.on('locality:deleted', (payload) => handlersRef.current.onLocalityDeleted?.(payload));
+
+    // Cenas (6.6M.4.1): além dos handlers opcionais, o evento alimenta o
+    // barramento de módulo — a cena é editada três níveis abaixo do painel.
+    socket.on('scene:created', (payload) => {
+      publishSceneEvent({ type: 'created', scene: payload.scene });
+      handlersRef.current.onSceneCreated?.(payload);
+    });
+    socket.on('scene:updated', (payload) => {
+      publishSceneEvent({ type: 'updated', scene: payload.scene });
+      handlersRef.current.onSceneUpdated?.(payload);
+    });
+    socket.on('scene:deleted', (payload) => {
+      publishSceneEvent({
+        type: 'deleted',
+        sceneId: payload.sceneId,
+        localityId: payload.localityId,
+      });
+      handlersRef.current.onSceneDeleted?.(payload);
+    });
 
     socket.on('item:created', (payload) => handlersRef.current.onItemCreated?.(payload));
     socket.on('item:updated', (payload) => handlersRef.current.onItemUpdated?.(payload));

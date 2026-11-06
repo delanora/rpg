@@ -751,6 +751,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
   async function handleStartCombat(input: {
     localityId?: string;
+    sceneId?: string;
     entries: CombatCreatureEntry[];
   }): Promise<void> {
     const started = await startCombat(input);
