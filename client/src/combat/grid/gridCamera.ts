@@ -193,22 +193,74 @@ export function cameraPercent(zoom: number): number {
   return Math.round(clampZoom(zoom) * 100);
 }
 
-/** Velocidade do auto-pan (px/frame) conforme a distância até a borda. */
-export function edgePanSpeed(
-  pointer: number,
-  start: number,
-  end: number,
+/**
+ * AUTO-PAN — DIREÇÃO DE REVELAÇÃO (6.6M.3.1.4.2).
+ *
+ * O gesto declara o que o usuário QUER VER. A detecção de borda acontece em
+ * coordenadas de TELA/VIEWPORT (`left`/`right`/`top`/`bottom` em px) e o
+ * resultado é uma intenção de 0..1 por lado — NUNCA um delta de câmera. A
+ * conversão fica em `autoPanCameraDelta`, o único lugar que conhece a
+ * convenção `translate(panX, panY) scale(zoom)`.
+ *
+ * A separação existe porque o sinal é contra-intuitivo: AUMENTAR `panX` empurra
+ * a cena para a DIREITA na tela e, portanto, REVELA o lado ESQUERDO da cena
+ * (ver `screenToScene`). Misturar intenção com delta foi exatamente o que
+ * inverteu o auto-pan: a borda direita acabava revelando o lado esquerdo.
+ */
+export interface RevealIntent {
+  left: number;
+  right: number;
+  up: number;
+  down: number;
+}
+
+export const NO_REVEAL: RevealIntent = { left: 0, right: 0, up: 0, down: 0 };
+
+/** Retângulo de referência da detecção (px de VIEWPORT, não de cena). */
+export interface ScreenBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Intenção de revelação 0..1 por lado, conforme a profundidade na borda. */
+export function revealIntentAt(
+  pointer: Point2D,
+  bounds: ScreenBounds,
   edge: number,
+): RevealIntent {
+  if (!(edge > 0)) return NO_REVEAL;
+  const depth = (value: number): number => Math.min(1, Math.max(0, value));
+  return {
+    left: pointer.x < bounds.left + edge ? depth((bounds.left + edge - pointer.x) / edge) : 0,
+    right: pointer.x > bounds.right - edge ? depth((pointer.x - (bounds.right - edge)) / edge) : 0,
+    up: pointer.y < bounds.top + edge ? depth((bounds.top + edge - pointer.y) / edge) : 0,
+    down: pointer.y > bounds.bottom - edge ? depth((pointer.y - (bounds.bottom - edge)) / edge) : 0,
+  };
+}
+
+/**
+ * INTENÇÃO DE REVELAÇÃO → DELTA DE CÂMERA (px/frame).
+ *
+ * Convenção real (`translate(panX, panY) scale(zoom)`: o conteúdo anda junto
+ * com `panX`/`panY`):
+ *
+ *   - revelar a DIREITA  ⇒ conteúdo anda para a ESQUERDA ⇒ `panX` DIMINUI;
+ *   - revelar a ESQUERDA ⇒ `panX` AUMENTA;
+ *   - revelar ABAIXO     ⇒ `panY` DIMINUI;
+ *   - revelar ACIMA      ⇒ `panY` AUMENTA.
+ *
+ * Cantos somam os dois eixos (diagonal). Não mexe em zoom, não arredonda e não
+ * faz clamp: quem chama aplica o resultado e depois passa por `clampCamera`.
+ */
+export function autoPanCameraDelta(
+  intent: RevealIntent,
   maxSpeed: number,
-): number {
-  if (edge <= 0) return 0;
-  if (pointer < start + edge) {
-    const depth = Math.min(1, Math.max(0, (start + edge - pointer) / edge));
-    return maxSpeed * depth;
-  }
-  if (pointer > end - edge) {
-    const depth = Math.min(1, Math.max(0, (pointer - (end - edge)) / edge));
-    return -maxSpeed * depth;
-  }
-  return 0;
+): { dx: number; dy: number } {
+  if (!(maxSpeed > 0)) return { dx: 0, dy: 0 };
+  return {
+    dx: (intent.left - intent.right) * maxSpeed,
+    dy: (intent.up - intent.down) * maxSpeed,
+  };
 }
