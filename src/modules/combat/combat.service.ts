@@ -138,9 +138,12 @@ function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }, db:
     where,
     include: {
       locality: { select: { id: true, name: true } },
-      // Paredes da cena (6.6L.4.1): vêm na MESMA consulta do combate — a leitura
-      // autoritativa da cena não precisa de endpoint/consulta paralela.
-      obstacles: { orderBy: { createdAt: 'asc' } },
+      // CENA ESPACIAL (6.6L.4.1.1): configuração estrutural e paredes vêm da
+      // MESMA consulta do combate — o cliente não precisa inventar join, e a
+      // cena é a única fonte estrutural quando `sceneId` existe.
+      scene: {
+        include: { obstacles: { orderBy: { createdAt: 'asc' } } },
+      },
       combatants: {
         include: {
           character: { include: { user: { select: { username: true } } } },
@@ -817,12 +820,35 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
     }));
   });
 
+  // CENA (6.6L.4.1.1): opcional nesta fase. Quando informada, precisa existir e
+  // pertencer à MESMA localidade do combate — o cliente nunca escolhe a cena de
+  // outro lugar. Sem localidade informada, a da cena é adotada.
+  let localityId = input.localityId ?? null;
+  let sceneId: string | null = null;
+  if (input.sceneId) {
+    const scene = await prisma.scene.findUnique({
+      where: { id: input.sceneId },
+      select: { id: true, localityId: true },
+    });
+    if (!scene) throw new HttpError('A cena escolhida não existe.', 404, 'NOT_FOUND');
+    if (localityId && scene.localityId !== localityId) {
+      throw new HttpError(
+        'A cena escolhida não pertence à localidade deste combate.',
+        409,
+        'SCENE_LOCALITY_MISMATCH',
+      );
+    }
+    localityId = scene.localityId;
+    sceneId = scene.id;
+  }
+
   let created;
   try {
     created = await prisma.combat.create({
       data: {
         status: 'PENDING_INITIATIVE',
-        ...(input.localityId ? { localityId: input.localityId } : {}),
+        ...(localityId ? { localityId } : {}),
+        ...(sceneId ? { sceneId } : {}),
         combatants: {
           create: [
             ...characters

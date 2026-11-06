@@ -16,6 +16,7 @@ import { localitiesRouter, uploadsRouter } from '../../modules/localities/locali
 import { musicRouter } from '../../modules/music/music.routes.js';
 import { presentationRouter } from '../../modules/presentation/presentation.routes.js';
 import { regionsRouter } from '../../modules/regions/regions.routes.js';
+import { localityScenesRouter, scenesRouter } from '../../modules/scenes/scenes.routes.js';
 import { longRestRouter } from '../../modules/rest/long-rest.routes.js';
 import { restRouter } from '../../modules/rest/rest.routes.js';
 import { usersRouter } from '../../modules/users/users.routes.js';
@@ -35,6 +36,10 @@ apiRouter.use('/creatures', creaturesRouter);
 apiRouter.use('/custom-races', customRacesRouter);
 apiRouter.use('/regions', regionsRouter);
 apiRouter.use('/localities', localitiesRouter);
+// Cenas espaciais da localidade (6.6L.4.1.1) — o CRUD aninhado usa o MESMO
+// router de localidades? Não: rotas MASTER-only próprias, montadas aqui.
+apiRouter.use('/localities', localityScenesRouter);
+apiRouter.use('/scenes', scenesRouter);
 apiRouter.use('/items', itemsRouter);
 apiRouter.use('/game', gameConfigRouter);
 apiRouter.use('/compendium', compendiumRouter);

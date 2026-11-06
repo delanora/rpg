@@ -114,3 +114,23 @@ export function spatialSceneOf(raw: unknown): SpatialSceneConfig {
   const parsed = spatialSceneConfigSchema.safeParse(raw);
   return parsed.success ? parsed.data : defaultSpatialScene();
 }
+
+/**
+ * FASE 6.6L.4.1.1 — FONTE ESTRUTURAL ÚNICA do combate.
+ *
+ * Quando o combate REFERENCIA uma cena (`sceneId`), a configuração espacial
+ * autoritativa é `Scene.spatialConfig`; `Combat.spatialConfig` continua sendo
+ * o FALLBACK legado apenas para combates sem cena (combates antigos e o modo
+ * assistido avulso). Nunca há merge das duas fontes: a cena vence por inteiro.
+ *
+ * Recebe a forma estrutural (e não o registro Prisma) para que o domínio puro
+ * continue sem depender do client gerado.
+ */
+export function effectiveSceneConfigOf(combat: {
+  spatialConfig?: unknown;
+  scene?: { spatialConfig?: unknown } | null;
+}): SpatialSceneConfig {
+  return combat.scene
+    ? spatialSceneOf(combat.scene.spatialConfig)
+    : spatialSceneOf(combat.spatialConfig);
+}

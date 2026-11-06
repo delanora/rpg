@@ -24,7 +24,7 @@ import { occupiedSpaceOf, parseStoredPosition } from './spatial/occupied-space.j
 import { effectiveSizeOf } from './spatial/spatial-size.js';
 import { spatialVisibilityOf, type SpatialVisibility } from './spatial/spatial-visibility.js';
 import {
-  spatialSceneOf,
+  effectiveSceneConfigOf,
   type OccupiedSpace,
   type SpatialPosition2D,
   type SpatialSceneConfig,
@@ -72,13 +72,25 @@ export interface CombatDto {
   localityId: string | null;
   localityName: string | null;
   /**
-   * CONFIGURAÇÃO ESPACIAL da cena (Fase 6.6L.1). Combates existentes sempre
-   * recebem `assisted` com a cena padrão — nada muda para quem não usa grid.
+   * CENA ESPACIAL usada pelo combate (6.6L.4.1.1). `null` em combates legados,
+   * que continuam valendo pela configuração própria.
+   */
+  sceneId: string | null;
+  sceneName: string | null;
+  /**
+   * CONFIGURAÇÃO ESPACIAL EFETIVA (Fase 6.6L.1 + 6.6L.4.1.1): vem de
+   * `Scene.spatialConfig` quando o combate tem `sceneId`; combate legado (sem
+   * cena) usa `Combat.spatialConfig`. Existe UMA fonte estrutural por combate.
+   * Combates antigos sempre recebem `assisted` com a cena padrão — nada muda
+   * para quem não usa grid.
    */
   spatial: SpatialSceneConfig;
   /**
-   * PAREDES da cena (6.6L.4.1), no MESMO read model (e no mesmo
-   * `combat:updated`) — não existe endpoint paralelo de cena.
+   * PAREDES da cena (6.6L.4.1 / 6.6L.4.1.1), no MESMO read model (e no mesmo
+   * `combat:updated`) — não existe endpoint paralelo de cena no combate.
+   *
+   * Vêm da CENA referenciada; combate legado (sem `sceneId`) entrega lista
+   * VAZIA, exatamente como antes das cenas existirem.
    *
    * Fica FORA de `spatial` de propósito: `spatial` é a CONFIGURAÇÃO validada
    * por `spatialSceneConfigSchema` (`.strict()`), que recusa campos extras.
@@ -170,10 +182,18 @@ export interface CombatSourced {
   createdAt: Date;
   endedAt: Date | null;
   locality: { id: string; name: string } | null;
-  /** Config espacial persistida (JSONB); ausente/inválida = cena assistida. */
+  /** Config espacial LEGADA (JSONB); só vale para combate SEM `scene`. */
   spatialConfig?: unknown;
-  /** Paredes da cena (6.6L.4.1); ausente = cena sem obstáculos. */
-  obstacles?: SpatialObstacleSource[];
+  /**
+   * CENA da localidade (6.6L.4.1.1). Quando presente, `spatialConfig` e
+   * `obstacles` DELA são a fonte estrutural autoritativa do combate.
+   */
+  scene?: {
+    id: string;
+    name: string;
+    spatialConfig?: unknown;
+    obstacles?: SpatialObstacleSource[];
+  } | null;
   combatants: CombatantSourced[];
 }
 
@@ -385,8 +405,11 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     currentCombatantId: current?.id ?? null,
     localityId: combat.locality?.id ?? null,
     localityName: combat.locality?.name ?? null,
-    spatial: spatialSceneOf(combat.spatialConfig),
-    obstacles: (combat.obstacles ?? []).map(obstacleDtoOf),
+    sceneId: combat.scene?.id ?? null,
+    sceneName: combat.scene?.name ?? null,
+    // FONTE ESTRUTURAL ÚNICA: cena quando há `sceneId`, senão o legado.
+    spatial: effectiveSceneConfigOf(combat),
+    obstacles: (combat.scene?.obstacles ?? []).map(obstacleDtoOf),
     combatants,
     createdAt: combat.createdAt.toISOString(),
     endedAt: combat.endedAt ? combat.endedAt.toISOString() : null,

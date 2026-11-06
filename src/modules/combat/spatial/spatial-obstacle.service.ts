@@ -1,6 +1,10 @@
 import { HttpError } from '../../../lib/http-error.js';
-import { loadCombatById, type CombatActor } from '../combat.service.js';
-import { toCombatDto, type CombatDto } from '../combat.dto.js';
+import {
+  loadSceneById,
+  runSceneOperation,
+  type SceneActor,
+} from '../../scenes/scenes.service.js';
+import { toSceneDto, type SceneDto } from '../../scenes/scenes.dto.js';
 import {
   obstacleDtoOf,
   obstacleWithinScene,
@@ -8,16 +12,19 @@ import {
   type SpatialObstacleShape,
 } from './spatial-obstacle.js';
 import { SPATIAL_GEOMETRY_EPSILON_FEET, segmentLengthFeet } from './spatial-geometry.js';
-import { runSpatialOperation } from './spatial-scene.service.js';
 import { spatialSceneOf, type SpatialPosition2D } from './spatial.types.js';
 
 /**
  * FASE 6.6L.4.1 — CRUD DE OBSTÁCULOS ESPACIAIS (paredes). MASTER-only.
  *
- * Owner: o COMBATE (cena persistente). As paredes vivem junto de
- * `Combat.spatialConfig`, na mesma escala (PÉS), na mesma versão e no mesmo
- * `CombatOperation` — não existe segundo sistema de cena nem segundo controle
- * de concorrência.
+ * OWNER (6.6L.4.1.1): a CENA da localidade, não o combate. A geometria criada
+ * na 6.6L.4.1 permanece intacta (kind, endpoints em PÉS, flags independentes,
+ * bounds e classificação de segmentos); o que mudou foi só o dono estrutural e
+ * a rota. A versão/idempotência são as da CENA (`SceneOperation`) — um combate
+ * que usa a cena apenas PROJETA essa geometria.
+ *
+ * Cena em uso por combate não terminado é congelada: qualquer escrita responde
+ * 409 `SCENE_IN_USE` (o lock mora em `runSceneOperation`).
  *
  * O que esta camada NÃO faz (intencional): não bloqueia movimento, não bloqueia
  * visão, não calcula Cover e não escolhe alvo de magia. Ela só guarda a
@@ -43,14 +50,8 @@ export interface SpatialObstacleDeleteInput {
   operationId: string;
 }
 
-function requireMaster(actor: CombatActor): void {
-  if (actor.role !== 'MASTER') {
-    throw new HttpError('Apenas o mestre pode alterar as paredes da cena.', 403);
-  }
-}
-
 /**
- * Validação geométrica AUTORITATIVA de uma parede contra a cena do combate.
+ * Validação geométrica AUTORITATIVA de uma parede contra a cena dona.
  *
  * Nunca corrige nem arredonda coordenada: dados inválidos são RECUSADOS (o
  * cliente não tem permissão para inventar uma parede diferente da pedida).
@@ -74,39 +75,37 @@ function assertValidWall(shape: SpatialObstacleShape, scene: ReturnType<typeof s
 }
 
 /**
- * Cria UMA parede na cena do combate.
+ * Cria UMA parede na cena.
  *
- * Reutiliza `runSpatialOperation`: `expectedVersion` + `operationId`, snapshot
- * por operação, versão do combate incrementada e `combat:updated` publicado
- * SOMENTE depois do commit. Retry idêntico devolve o MESMO snapshot (e a mesma
- * parede); a mesma `operationId` com outra geometria responde 409.
+ * Retry idêntico devolve o MESMO snapshot (e a mesma parede); a mesma
+ * `operationId` com outra geometria responde 409. O evento `scene:updated`
+ * (sala dos mestres) sai somente depois do commit.
  */
 export async function createSpatialObstacle(
-  actor: CombatActor,
-  combatId: string,
+  actor: SceneActor,
+  sceneId: string,
   input: SpatialObstacleCreateInput,
-): Promise<{ combat: CombatDto; obstacle: SpatialObstacleDto }> {
-  requireMaster(actor);
+): Promise<{ scene: SceneDto; obstacle: SpatialObstacleDto }> {
   const shape: SpatialObstacleShape = {
     start: input.start,
     end: input.end,
     blocksMovement: input.blocksMovement,
     blocksSight: input.blocksSight,
   };
-  return runSpatialOperation(
+  return runSceneOperation(
     actor,
     {
-      combatId,
+      sceneId,
       expectedVersion: input.expectedVersion,
       operationId: input.operationId,
       obstacle: shape,
     },
     'spatial-obstacle-create',
-    async (db, combat) => {
-      assertValidWall(shape, spatialSceneOf(combat.spatialConfig));
+    async (db, scene) => {
+      assertValidWall(shape, spatialSceneOf(scene.spatialConfig));
       const created = await db.spatialObstacle.create({
         data: {
-          combatId: combat.id,
+          sceneId: scene.id,
           kind: 'wall',
           startXFeet: shape.start.xFeet,
           startYFeet: shape.start.yFeet,
@@ -117,7 +116,7 @@ export async function createSpatialObstacle(
         },
       });
       return {
-        combat: toCombatDto(await loadCombatById(combat.id, db), actor.role),
+        scene: toSceneDto(await loadSceneById(scene.id, db)),
         obstacle: obstacleDtoOf(created),
       };
     },
@@ -132,16 +131,15 @@ export async function createSpatialObstacle(
  * `blocksMovement` e `blocksSight` são INDEPENDENTES.
  */
 export async function updateSpatialObstacle(
-  actor: CombatActor,
-  combatId: string,
+  actor: SceneActor,
+  sceneId: string,
   obstacleId: string,
   input: SpatialObstaclePatchInput,
-): Promise<{ combat: CombatDto; obstacle: SpatialObstacleDto }> {
-  requireMaster(actor);
-  return runSpatialOperation(
+): Promise<{ scene: SceneDto; obstacle: SpatialObstacleDto }> {
+  return runSceneOperation(
     actor,
     {
-      combatId,
+      sceneId,
       expectedVersion: input.expectedVersion,
       operationId: input.operationId,
       obstacleId,
@@ -154,18 +152,18 @@ export async function updateSpatialObstacle(
       },
     },
     'spatial-obstacle-update',
-    async (db, combat) => {
+    async (db, scene) => {
       const existing = await db.spatialObstacle.findFirst({
-        where: { id: obstacleId, combatId: combat.id },
+        where: { id: obstacleId, sceneId: scene.id },
       });
-      if (!existing) throw new HttpError('Parede não encontrada neste combate.', 404);
+      if (!existing) throw new HttpError('Parede não encontrada nesta cena.', 404);
       const merged: SpatialObstacleShape = {
         start: input.start ?? { xFeet: existing.startXFeet, yFeet: existing.startYFeet },
         end: input.end ?? { xFeet: existing.endXFeet, yFeet: existing.endYFeet },
         blocksMovement: input.blocksMovement ?? existing.blocksMovement,
         blocksSight: input.blocksSight ?? existing.blocksSight,
       };
-      assertValidWall(merged, spatialSceneOf(combat.spatialConfig));
+      assertValidWall(merged, spatialSceneOf(scene.spatialConfig));
       const updated = await db.spatialObstacle.update({
         where: { id: existing.id },
         data: {
@@ -178,7 +176,7 @@ export async function updateSpatialObstacle(
         },
       });
       return {
-        combat: toCombatDto(await loadCombatById(combat.id, db), actor.role),
+        scene: toSceneDto(await loadSceneById(scene.id, db)),
         obstacle: obstacleDtoOf(updated),
       };
     },
@@ -191,27 +189,26 @@ export async function updateSpatialObstacle(
  * removida responde 404 — nunca um sucesso silencioso de algo que não existe.
  */
 export async function deleteSpatialObstacle(
-  actor: CombatActor,
-  combatId: string,
+  actor: SceneActor,
+  sceneId: string,
   obstacleId: string,
   input: SpatialObstacleDeleteInput,
-): Promise<{ combat: CombatDto }> {
-  requireMaster(actor);
-  return runSpatialOperation(
+): Promise<{ scene: SceneDto }> {
+  return runSceneOperation(
     actor,
     {
-      combatId,
+      sceneId,
       expectedVersion: input.expectedVersion,
       operationId: input.operationId,
       obstacleId,
     },
     'spatial-obstacle-delete',
-    async (db, combat) => {
+    async (db, scene) => {
       const removed = await db.spatialObstacle.deleteMany({
-        where: { id: obstacleId, combatId: combat.id },
+        where: { id: obstacleId, sceneId: scene.id },
       });
-      if (removed.count !== 1) throw new HttpError('Parede não encontrada neste combate.', 404);
-      return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+      if (removed.count !== 1) throw new HttpError('Parede não encontrada nesta cena.', 404);
+      return { scene: toSceneDto(await loadSceneById(scene.id, db)) };
     },
   );
 }
