@@ -875,6 +875,46 @@ export async function smokeOpportunityAttacks(
       JSON.stringify(both.map((item) => item.status)),
     );
 
+    // 6.6M.3.1.4.3.1 — CHECKPOINT antes da Reação: trajeto de 2 passos em que
+    // o provocador é o SEGUNDO (o prefixo consumiu 5 pés) e a RETOMADA depois
+    // da Reação. Lê o Registro PERSISTIDO, não o formatter isolado.
+    const persistedMoveLogs = async (): Promise<string[]> => {
+      const row = await prisma.combat.findUniqueOrThrow({
+        where: { id: combatId },
+        select: { economyLog: true },
+      });
+      const entries = (row.economyLog ?? []) as { action?: string; message: string }[];
+      return entries
+        .filter((entry) => entry.action === 'move')
+        .map((entry) => entry.message);
+    };
+    const feetText = /p[ée]s?\b|\bfeet\b|\bft\b/i;
+    await scenario();
+    const interrupted = await move(steps([195, 105], [190, 105]));
+    await readModel(reactorToken);
+    const checkpointMessages = await persistedMoveLogs();
+    check(
+      '98.E) checkpoint antes da Reação grava METROS no Registro (pés só no domínio)',
+      interrupted.status === 200 &&
+        interrupted.data.pending !== null &&
+        // Orçamento do cenário = 30 m; o prefixo consumiu 5 pés (1,5 m).
+        checkpointMessages.at(-1) ===
+          'Moveu 1,5 m (custo 1,5 m) — restam 28,5 m. Movimento interrompido: aguardando Reação.' &&
+        checkpointMessages.every((message) => !feetText.test(message)),
+      JSON.stringify({ status: interrupted.status, logs: checkpointMessages.slice(-2) }),
+    );
+    const resumeWindow = opportunityOf((await readModel(reactorToken)).data, reactorCombatantId);
+    const declinedForResume = resumeWindow ? await declineReaction(resumeWindow.id) : null;
+    const resumedMessages = await persistedMoveLogs();
+    check(
+      '98.F) a RETOMADA depois da Reação também grava metros (nenhum pés/ft no Registro)',
+      declinedForResume?.status === 200 &&
+        resumedMessages.length > checkpointMessages.length &&
+        resumedMessages.every((message) => !feetText.test(message)) &&
+        /restam \d+(,\d+)? m\./.test(resumedMessages.at(-1) ?? ''),
+      JSON.stringify({ status: declinedForResume?.status, logs: resumedMessages.slice(-2) }),
+    );
+
     // =====================================================================
     // 99) PERSISTÊNCIA, RECONNECT E ADJUDICAÇÃO DE VISÃO
     // =====================================================================

@@ -5117,6 +5117,22 @@ check(
       'nenhum campo em metros': !/\b(totalDistance|totalCost|movementRemaining)Meters\b/.test(
         movementLogDomainSource,
       ),
+      // 6.6M.3.1.4.3.1 — TODO template de Moveu passa pelo formatter (sem
+      // segundo caminho de string) e o card mostra a mensagem do SERVIDOR.
+      'um formatter para todo Moveu':
+        (movementLogServiceSource.match(/Moveu /g) ?? []).length === 2 &&
+        (movementLogServiceSource.match(/Moveu \$\{formatMetersPtBr\(/g) ?? []).length === 2,
+      'erro de insuficiência em metros': movementLogServiceSource.includes(
+        'Movimento insuficiente: o trajeto custa ${formatMetersPtBr(',
+      ),
+      'card renderiza a mensagem crua': (() => {
+        const log = source('src/combat/components/CombatLog.tsx');
+        return (
+          log.includes('entry.message') &&
+          !/\.replace\(\s*['"`]\(?p[ée]s/i.test(log) &&
+          !/formatFeet\(/.test(log)
+        );
+      })(),
     };
     const bad = Object.entries(parts).filter(([, ok]) => !ok).map(([name]) => name);
     if (bad.length > 0) console.log(`    ↳ CB331 falhou em: ${bad.join(', ')}`);

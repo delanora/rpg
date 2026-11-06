@@ -679,6 +679,21 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
       const movementOf = (response: HttpResult) => response.data.movement;
       const blockerOf = (response: HttpResult) => response.data.movement?.blocker;
 
+      /**
+       * 6.6M.3.1.4.3.1 — lê o REGISTRO REAL que o commit gravou.
+       *
+       * Antes o smoke só provava o formatter isolado; aqui a prova é
+       * "movimento real → commit → linha do Registro entregue ao cliente".
+       */
+      const movementLogOf = (response: HttpResult): string[] =>
+        ((response.data.combat?.economyLog ?? []) as { action?: string; message: string }[])
+          .filter((entry) => entry.action === 'move')
+          .map((entry) => entry.message);
+      const lastMovementLog = (response: HttpResult) => movementLogOf(response).at(-1);
+      const FEET_TEXT = /p[ée]s?\b|\bfeet\b|\bft\b/i;
+      const noFeetText = (message: string | undefined): boolean =>
+        typeof message === 'string' && message.length > 0 && !FEET_TEXT.test(message);
+
       // =====================================================================
       // 119 — SIDES (hostilidade explícita do encontro)
       // =====================================================================
@@ -760,6 +775,16 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
           combatantOf(heroCombatant.id).spatial.position.xFeet === 5,
         JSON.stringify(movementOf(stepFive)),
       );
+      // O LOG REAL do commit (não o formatter): 5 pés → 1,5 m em distância,
+      // custo e restante, com vírgula decimal e sem nenhuma unidade em pés.
+      const stepFiveLog = lastMovementLog(stepFive);
+      check(
+        '90.X1) o commit de 5 pés grava "Moveu 1,5 m (custo 1,5 m) — restam 7,5 m." no Registro',
+        stepFiveLog === 'Moveu 1,5 m (custo 1,5 m) — restam 7,5 m.' &&
+          noFeetText(stepFiveLog) &&
+          movementLogOf(stepFive).every(noFeetText),
+        JSON.stringify(stepFiveLog),
+      );
       const diagonal = await move(heroCombatant.id, path([10, 125]));
       check(
         '90.Y) passo diagonal custa 5 (nunca Euclidiana) e o realtime recebe a nova posição',
@@ -781,6 +806,20 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
         JSON.stringify(movementOf(twoSteps)),
       );
 
+      // --- Movimento que consome TODO o restante: zero é "0 m" --------------
+      // Orçamento FIXTURE de 1,5 m (5 pés) para o passo zerar o restante.
+      await resetHero(0, 120, { meters: 1.5 });
+      const exhausted = await move(heroCombatant.id, path([5, 120]));
+      const exhaustedLog = lastMovementLog(exhausted);
+      check(
+        '90.Z1) consumir todo o movimento: restam 0 pés → "restam 0 m" (nunca "0 pés")',
+        exhausted.status === 200 &&
+          movementOf(exhausted).movementRemainingAfterFeet === 0 &&
+          exhaustedLog === 'Moveu 1,5 m (custo 1,5 m) — restam 0 m.' &&
+          noFeetText(exhaustedLog),
+        JSON.stringify({ log: exhaustedLog, remaining: movementOf(exhausted)?.movementRemainingAfterFeet }),
+      );
+
       // =====================================================================
       // 123 — ALIADO (nonhostile)
       // =====================================================================
@@ -795,6 +834,13 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
           movementOf(throughAllyHttp).totalCostFeet === 20 &&
           movementOf(throughAllyHttp).movementRemainingAfterFeet === 10,
         JSON.stringify(movementOf(throughAllyHttp)),
+      );
+      // Distância ≠ custo (passo difícil): cada grandeza é convertida por si.
+      const throughAllyLog = lastMovementLog(throughAllyHttp);
+      check(
+        '90.AA1) custo ≠ distância no Registro: "Moveu 4,5 m (custo 6 m) — restam 3 m."',
+        throughAllyLog === 'Moveu 4,5 m (custo 6 m) — restam 3 m.' && noFeetText(throughAllyLog),
+        JSON.stringify(throughAllyLog),
       );
       await resetHero(15, 120);
       const finishOnAlly = await move(heroCombatant.id, path([20, 120]));
