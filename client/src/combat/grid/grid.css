@@ -214,6 +214,16 @@
 }
 
 /*
+ * INITIALIZING (6.6M.3.1.4.1) — o viewport JÁ existe, mas ainda não há dimensão
+ * válida nem enquadramento aplicado. A cena fica invisível e SEM interação: o
+ * grid nunca aparece no canto para "se consertar" no frame seguinte. Ao fit
+ * válido a classe sai e a cena é revelada já centralizada.
+ */
+.grid-viewport.is-initializing {
+  pointer-events: none;
+}
+
+/*
  * Régua: o cursor nativo some e o ícone de régua do projeto acompanha o
  * ponteiro (nada de crosshair). Vale enquanto o usuário está APONTANDO.
  */
@@ -261,6 +271,11 @@
 .grid-viewport.is-space-pan .grid-camera,
 .grid-viewport.is-drafting .grid-camera {
   will-change: transform;
+}
+
+/* Antes do fit válido a cena não aparece (nada de nascer no canto). */
+.grid-viewport.is-initializing .grid-camera {
+  opacity: 0;
 }
 
 /*

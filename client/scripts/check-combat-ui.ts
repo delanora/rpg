@@ -40,6 +40,7 @@ import {
 } from '../src/combat/grid/movementVisual';
 import {
   IDENTITY_CAMERA,
+  cameraIsUsable,
   centerCamera,
   clampCamera,
   feetToScenePixel,
@@ -51,6 +52,7 @@ import {
   zoomAt,
   type GridCamera,
 } from '../src/combat/grid/gridCamera';
+import { gridPhaseOf } from '../src/combat/grid/gridLifecycle';
 import { rulerEndpointKey, rulerLabelText, rulerMidpoint } from '../src/combat/grid/gridRuler';
 import { distanceLabel, formatFeet, formatMeters, rangeSummary } from '../src/combat/grid/distanceFormat';
 import { GridToken, type GridUnit } from '../src/combat/grid/GridToken';
@@ -4027,7 +4029,9 @@ check(
     // Câmera inicializada só com viewport REAL e reenquadrada até o usuário
     // escolher a câmera dele (sem F5, sem setTimeout arbitrário).
     movementGridSource.includes('if (viewport.width <= 0 || viewport.height <= 0) return;') &&
-    movementGridSource.includes('if (cameraTouched.current) return;') &&
+    // Câmera do usuário preservada (6.6M.3.1.4.1 trocou o early-return por
+    // "manter a câmera preservada" — mesma intenção, agora com fit reentrante).
+    movementGridSource.includes('cameraTouched.current && cameraInitialized.current && cameraIsUsable(preserved)') &&
     movementGridSource.includes('new ResizeObserver(') &&
     movementGridSource.includes('useLayoutEffect(') &&
     // Nenhum `setTimeout` de consolo na inicialização da câmera.
@@ -4576,7 +4580,7 @@ check(
   'CB305) câmera inicial espera viewport válido e realtime não dá reset',
   movementGridSource.includes('if (viewport.width <= 0 || viewport.height <= 0) return;') &&
     movementGridSource.includes('const sceneKeyRef = useRef(\'\');') &&
-    movementGridSource.includes('}, [combat.id, dimensions, viewport]);') &&
+    movementGridSource.includes('}, [active, combat.id, dimensions, viewport]);') &&
     // `combat:updated` não entra nas dependências do enquadramento.
     !/\[combat\.version[^\]]*\]/.test(
       movementGridSource.slice(
@@ -4663,6 +4667,131 @@ check(
         still === null,
     );
   })()
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1.4.1 — LIFECYCLE DE ATIVAÇÃO DO GRID (inactive → initializing → ready) */
+/* -------------------------------------------------------------------------- */
+const sizeOf = (width: number, height: number): { width: number; height: number } => ({
+  width,
+  height,
+});
+/** Bloco da CÂMERA/ativação: é onde `setTimeout` cego seria proibido. */
+const activationBlock = movementGridSource.slice(
+  movementGridSource.indexOf('ENQUADRAMENTO INICIAL'),
+  movementGridSource.indexOf('function applyCamera'),
+);
+
+check(
+  'CB310) fase do grid é explícita e puramente derivada: inactive → initializing → ready',
+  gridPhaseOf({ active: false, viewport: sizeOf(1200, 700), scene: sizeOf(880, 880), cameraReady: true }) ===
+    'inactive' &&
+    // Ativado com viewport 0×0 (antes de o ResizeObserver medir): NUNCA ready.
+    gridPhaseOf({ active: true, viewport: sizeOf(0, 0), scene: sizeOf(880, 880), cameraReady: false }) ===
+      'initializing' &&
+    // Viewport válido, mas sem enquadramento aplicado: ainda não é interativo.
+    gridPhaseOf({ active: true, viewport: sizeOf(1200, 700), scene: sizeOf(880, 880), cameraReady: false }) ===
+      'initializing' &&
+    // Cena sem dimensão mecânica também não libera interação.
+    gridPhaseOf({ active: true, viewport: sizeOf(1200, 700), scene: sizeOf(0, 0), cameraReady: true }) ===
+      'initializing' &&
+    gridPhaseOf({ active: true, viewport: sizeOf(1200, 700), scene: sizeOf(880, 880), cameraReady: true }) ===
+      'ready' &&
+    // A fase é DERIVADA do estado observável, nunca marcada à mão no JSX.
+    movementGridSource.includes('const gridPhase: GridPhase = gridPhaseOf({') &&
+    movementGridSource.includes('data-grid-phase={gridPhase}')
+);
+check(
+  'CB311) ativar o grid REINSTALA o bootstrap (observer/wheel/atalhos dependem de `active`)',
+  movementGridSource.includes("const active = scene.mode === 'grid-2d';") &&
+    // O observer agora é de LAYOUT e reexecuta na ativação (era `[]` — a causa).
+    (movementGridSource.match(/if \(!active\) return undefined;/g) ?? []).length >= 3 &&
+    movementGridSource.includes('  }, [active]);\n') &&
+    movementGridSource.includes('const observer = new ResizeObserver((entries) => {') &&
+    // Desativar zera a medição: a próxima ativação mede o viewport NOVO.
+    movementGridSource.includes('setViewport((current) =>') &&
+    movementGridSource.includes(
+      'current.width === 0 && current.height === 0 ? current : { width: 0, height: 0 },',
+    ) &&
+    movementGridSource.includes('function attachRulerCursor(') &&
+    // A viewport é remontada pela cena ativa: o ref continua sendo a fonte.
+    movementGridSource.includes('ref={viewportRef}')
+);
+check(
+  'CB312) câmera só nasce PRONTA com viewport e cena válidos (nada de fit em 0×0)',
+  movementGridSource.includes('if (viewport.width <= 0 || viewport.height <= 0) return;') &&
+    movementGridSource.includes('if (dimensions.width <= 0 || dimensions.height <= 0) return;') &&
+    movementGridSource.includes('cameraInitialized.current = true;') &&
+    // A prontidão só é marcada DEPOIS do fit e da marca de inicialização.
+    movementGridSource.indexOf('cameraInitialized.current = true;') >
+      movementGridSource.indexOf('fitCamera({ scene: dimensions, viewport, margin: CAMERA_FIT_MARGIN_PX })') &&
+    movementGridSource.indexOf('setCameraReady(true);') >
+      movementGridSource.indexOf('cameraInitialized.current = true;') &&
+    // Fit inicial e botão "Enquadrar" chamam a MESMA função pura.
+    movementGridSource.includes('function fitScene(): void {') &&
+    movementGridSource.includes(
+      'applyCamera(fitCamera({ scene: dimensions, viewport, margin: CAMERA_FIT_MARGIN_PX }));',
+    ) &&
+    // Dimensões da cena vêm do estado MECÂNICO, não de medir o DOM da cena.
+    movementGridSource.includes('scenePixels(scene, cellSizeFeet, DEFAULT_PIXELS_PER_CELL)')
+);
+check(
+  'CB313) atalhos, wheel e régua só valem com grid ATIVO (listeners não vazam para INACTIVE)',
+  movementGridSource.includes("node.addEventListener('wheel', onWheel, { passive: false });") &&
+    movementGridSource.includes(
+      '}, [active, dimensions.width, dimensions.height, viewport.width, viewport.height]);',
+    ) &&
+    movementGridSource.includes('}, [active, ruler, quickRuler, draft, combat.spatial.mode, rulerActive]);') &&
+    movementGridSource.includes("if ((event.key === 'f' || event.key === 'F') && !event.repeat) {") &&
+    movementGridSource.includes("window.addEventListener('keydown', onKeyDown);") &&
+    movementGridSource.includes("window.addEventListener('keyup', onKeyUp);") &&
+    // F depois de ativar não depende de clique/foco/reload: o atalho é JANELA.
+    movementGridSource.includes('setQuickRuler(true);')
+);
+check(
+  'CB314) cada listener tem setup + cleanup próprios (ON→OFF→ON não duplica)',
+  movementGridSource.includes('return () => observer.disconnect();') &&
+    movementGridSource.includes("return () => node.removeEventListener('wheel', onWheel);") &&
+    movementGridSource.includes("window.removeEventListener('keydown', onKeyDown);") &&
+    movementGridSource.includes("window.removeEventListener('keyup', onKeyUp);") &&
+    movementGridSource.includes("window.removeEventListener('pointermove', onMove);") &&
+    (movementGridSource.match(/window\.addEventListener\('keydown'/g) ?? []).length === 1 &&
+    (movementGridSource.match(/window\.addEventListener\('keyup'/g) ?? []).length === 1 &&
+    (movementGridSource.match(/window\.addEventListener\('pointermove'/g) ?? []).length === 1 &&
+    (movementGridSource.match(/node\.addEventListener\('wheel'/g) ?? []).length === 1 &&
+    (movementGridSource.match(/new ResizeObserver\(/g) ?? []).length === 1
+);
+check(
+  'CB315) ativação sem setTimeout cego e sem remount arbitrário por key',
+  !/setTimeout\(/.test(activationBlock) &&
+    !/requestAnimationFrame/.test(activationBlock) &&
+    !/key=\{[^}]*Date\.now/.test(movementGridSource) &&
+    // Nada de "remontar a cada update": o componente fica montado e o
+    // bootstrap é reentrante por `active`.
+    !/key=\{combat\.version/.test(movementGridSource) &&
+    movementGridSource.includes('function beginDraft(')
+);
+check(
+  'CB316) reativar PRESERVA a câmera do usuário; estado corrompido reenquadra',
+  movementGridSource.includes('const keepCamera =') &&
+    movementGridSource.includes('cameraTouched.current && cameraInitialized.current && cameraIsUsable(preserved)') &&
+    movementGridSource.includes('clampCamera(preserved, dimensions, viewport)') &&
+    movementGridSource.includes('cameraInitialized.current = false;') &&
+    cameraIsUsable({ panX: 40, panY: 20, zoom: 1.5 }) &&
+    !cameraIsUsable({ panX: Number.NaN, panY: 0, zoom: 1 }) &&
+    !cameraIsUsable({ panX: 0, panY: 0, zoom: 0 }) &&
+    // `combat:updated` continua fora: só cena/dimensões reabrem o enquadramento.
+    !/\[combat\.version[^\]]*\]/.test(activationBlock)
+);
+check(
+  'CB317) durante INITIALIZING a cena fica oculta e sem interação (revela no fit)',
+  /\.grid-viewport\.is-initializing\s*\{[^}]*pointer-events: none;/.test(gridCssSource) &&
+    /\.grid-viewport\.is-initializing \.grid-camera\s*\{[^}]*opacity: 0;/.test(gridCssSource) &&
+    movementGridSource.includes("gridPhase !== 'ready' ? 'is-initializing' : ''") &&
+    movementGridSource.includes("disabled={gridPhase !== 'ready'}") &&
+    // Activate SEM remount: o listener do gesto resolve pelo ref do viewport.
+    movementGridSource.includes('viewportPoint(clientX: number, clientY: number): Point2D | null') &&
+    movementGridSource.includes('const node = viewportRef.current;')
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
