@@ -293,6 +293,14 @@
  */
 .grid-plane {
   position: relative;
+  /*
+   * BOUNDS MATEMÁTICOS (6.6M.4.1.4): a superfície 0..widthFeet × 0..heightFeet
+   * é o CONTENT BOX, sem border/padding. O `border: 1px` antigo somava 2 px na
+   * caixa externa e descolava a grade SVG (que ocupa o padding box) da
+   * dimensão derivada de `scenePixels`; a moldura da Scene virou `outline` +
+   * anel do `box-shadow`, que pintam FORA dos bounds sem alterá-los.
+   */
+  box-sizing: border-box;
   background-color: #100c09;
   background-image: radial-gradient(
     120% 100% at 50% 0%,
@@ -300,7 +308,8 @@
     transparent 60%
   );
   background-size: 100% 100%;
-  border: 1px solid rgba(180, 146, 84, 0.5);
+  outline: 1px solid rgba(180, 146, 84, 0.5);
+  outline-offset: 0;
   border-radius: 3px;
   box-shadow:
     0 22px 46px -18px rgba(0, 0, 0, 0.95),
@@ -343,6 +352,7 @@
  * par em duas grades visíveis no zoom in; no zoom out, os tiles em pixel eram
  * rasterizados de forma irregular. Nenhum gradiente de grade sobrou neste
  * arquivo.
+ */
 
 .grid-plane.is-placing {
   cursor: crosshair;
@@ -366,9 +376,12 @@
    * somava 2 px e o highlight vazava para a célula vizinha.
    */
   box-sizing: border-box;
+  /* Abaixo dos tokens: highlight nunca cobre retrato (6.6M.4.1.4). */
+  z-index: 1;
   background: rgba(246, 217, 119, 0.08);
   border: 1px solid rgba(246, 217, 119, 0.35);
-  border-radius: 2px;
+  /* Sem raio: o highlight precisa encaixar entre as quatro linhas da grade. */
+  border-radius: 0;
 }
 
 /*
@@ -380,9 +393,11 @@
   pointer-events: none;
   /* Mesma regra do hover: o tracejado não aumenta o footprint (6.6M.4.1.3). */
   box-sizing: border-box;
+  z-index: 1;
   background: rgba(246, 217, 119, 0.06);
   border: 1px dashed rgba(246, 217, 119, 0.55);
-  border-radius: 3px;
+  /* Mesmo critério do hover: cantos retos = bounds exatos do footprint. */
+  border-radius: 0;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -409,6 +424,8 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  /* Acima do highlight/grade: o retrato é o último a ser pintado no plano. */
+  z-index: 2;
   cursor: default;
 }
 
@@ -497,11 +514,16 @@
 }
 
 /*
- * Círculo do token: o ART é sempre circular e proporcional ao MENOR lado do
- * footprint — Large/Huge/Gargantua ganham área, não um retrato esticado.
+ * Círculo do token: CÍRCULO INSCRITO no footprint (6.6M.4.1.4).
+ *
+ * Medium/Small = 1 célula, Large = 2×2, Huge = 3×3, Gargantua = 4×4. O tamanho
+ * vem de `tokenArtSize` (`min(largura, altura)` do espaço ocupado) e o
+ * `border-box` garante que o aro de 1 px caiba DENTRO desse diâmetro — sem ele
+ * a borda somava 2 px e o token crescia para fora da célula.
  */
 .grid-token-art {
   display: flex;
+  box-sizing: border-box;
   align-items: center;
   justify-content: center;
   width: var(--grid-token-art, 40px);
@@ -655,6 +677,8 @@
 
 .grid-movement-ghost {
   position: absolute;
+  /* O ghost pode ficar ENTRE células, mas o tamanho é o footprint exato. */
+  box-sizing: border-box;
   display: grid;
   place-items: center;
   border-radius: 6px;
@@ -665,6 +689,8 @@
 
 .grid-movement-ghost-art {
   display: grid;
+  /* Mesmo sizing visual do token real: círculo inscrito + aro DENTRO do box. */
+  box-sizing: border-box;
   place-items: center;
   width: var(--grid-token-art, 32px);
   height: var(--grid-token-art, 32px);

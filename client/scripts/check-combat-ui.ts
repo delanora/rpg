@@ -83,6 +83,7 @@ import {
   feetToPx,
   pixelToPlacementFeet,
   scenePixels,
+  spatialRectToScenePixels,
   splitByPlacement,
   tokenArtSize,
 } from '../src/combat/grid/gridMath';
@@ -4464,7 +4465,8 @@ check(
   'CB292) hover fora da cena é NADA (sem clamp para a última célula) e sem validade mecânica local',
   movementGridSource.includes('const anchor = cellAnchorAt(event.clientX, event.clientY, \'small\');') &&
     movementGridSource.includes('setHoverAnchor(anchor);') &&
-    movementGridSource.includes('{hoverAnchor && rulerActive ? (') &&
+    movementGridSource.includes('const hoverBox = hoverAnchor') &&
+    movementGridSource.includes('{hoverBox && rulerActive ? (') &&
     gridCssSource.includes('grid-hover-cell') &&
     // Highlight é neutro: nada de verde/vermelho decidindo regra no cliente.
     !/\.grid-hover-cell\s*\{[^}]*green/.test(gridCssSource) &&
@@ -5107,9 +5109,10 @@ check(
       'sem grab em uso': !movementGridSource.includes('current.grab'),
       'sem grab no draft': !movementGridSource.includes('grab: gesture.grab'),
       'ghost usa o pointer': movementGridSource.includes('position: draft.pointer,'),
-      'overlay em px de cena': movementOverlaySource.includes(
-        'feetToPx(position.xFeet, cellSizeFeet, pixelsPerCell)',
-      ),
+      // 6.6M.4.1.4: o ghost usa a MESMA projeção canônica do token e do hover.
+      'overlay em px de cena': movementOverlaySource.includes('spatialRectToScenePixels(') &&
+        movementOverlaySource.includes('xFeet: position.xFeet,') &&
+        !movementOverlaySource.includes('feetToPx(position.xFeet'),
       'overlay sem transform': !/translate\([^)]*pointer/i.test(movementOverlaySource),
     };
     const bad = Object.entries(parts).filter(([, ok]) => !ok).map(([name]) => name);
@@ -5969,6 +5972,160 @@ check(
       gridCss.includes('.grid-token:hover .grid-token-label,') &&
       !/\.grid-token\.is-(movable|current|selected)[^{]*:hover[^}]*\.grid-token-label/.test(gridCss) &&
       !/grid-token-label[^{]*\{[^}]*background: rgba/.test(gridCss),
+  );
+
+  /**
+   * 6.6M.4.1.4 — REGRESSÃO DE CSS INVÁLIDO.
+   *
+   * Um comentário aberto e nunca fechado antes de `.grid-plane.is-placing`
+   * engolia
+   * `.grid-plane.is-placing/.is-moving/.is-drafting` e o COMEÇO do
+   * `.grid-hover-cell`: o highlight perdia `position: absolute` e virava bloco
+   * estático — deslocado e maior que a célula. O teste lê o CSS SEM comentários
+   * (o que o navegador realmente aplica), não strings soltas do arquivo bruto.
+   */
+  const openComments = (gridCss.match(/\/\*/g) ?? []).length;
+  const closeComments = (gridCss.match(/\*\//g) ?? []).length;
+  const activeCss = stripComments(gridCss);
+  const activeBlock = (selector: string): string => {
+    const at = activeCss.indexOf(`${selector} {`);
+    if (at < 0) return '';
+    const end = activeCss.indexOf('}', at);
+    return end < 0 ? '' : activeCss.slice(at, end + 1);
+  };
+  const hoverRule = activeBlock('.grid-hover-cell');
+  /** Regra de LINHA INTEIRA (`.x {`), sem casar o `.x {` de `.y .x {`. */
+  const ruleOf = (selector: string): string =>
+    (
+      gridCss.match(
+        new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{[^}]*\\}`),
+      ) ?? ['']
+    )[0];
+
+  check(
+    'SC49) grid.css fecha TODO comentário e o hover cell volta a ser regra ATIVA',
+    openComments === closeComments &&
+      hoverRule.includes('position: absolute;') &&
+      hoverRule.includes('box-sizing: border-box;') &&
+      hoverRule.includes('border: 1px solid') &&
+      activeCss.includes('.grid-plane.is-placing {') &&
+      activeCss.includes('.grid-plane.is-moving {') &&
+      activeCss.includes('.grid-plane.is-drafting {') &&
+      activeCss.includes('.grid-destination-cell {'),
+    JSON.stringify({ comentarios: `${openComments}/${closeComments}`, hover: hoverRule.slice(0, 48) }),
+  );
+
+  check(
+    'SC50) .grid-plane é a superfície 0..widthFeet × 0..heightFeet sem border/padding',
+    !block('.grid-plane').includes('border: 1px solid') &&
+      block('.grid-plane').includes('outline: 1px solid') &&
+      block('.grid-plane').includes('outline-offset: 0;') &&
+      block('.grid-plane').includes('box-sizing: border-box;') &&
+      !block('.grid-plane').includes('padding:'),
+  );
+
+  const mediumRect = spatialRectToScenePixels(
+    { xFeet: 10, yFeet: 15, widthFeet: 5, heightFeet: 5 },
+    geometry.cellSizeFeet,
+    geometry.pixelsPerCell,
+  );
+  const largeRect = spatialRectToScenePixels(
+    { xFeet: 10, yFeet: 10, widthFeet: 10, heightFeet: 10 },
+    geometry.cellSizeFeet,
+    geometry.pixelsPerCell,
+  );
+  const hugeRect = spatialRectToScenePixels(
+    { xFeet: 0, yFeet: 0, widthFeet: 15, heightFeet: 15 },
+    geometry.cellSizeFeet,
+    geometry.pixelsPerCell,
+  );
+  const gargantuanRect = spatialRectToScenePixels(
+    { xFeet: 0, yFeet: 0, widthFeet: 20, heightFeet: 20 },
+    geometry.cellSizeFeet,
+    geometry.pixelsPerCell,
+  );
+  const tinyRect = spatialRectToScenePixels(
+    { xFeet: 0, yFeet: 0, widthFeet: 2.5, heightFeet: 2.5 },
+    geometry.cellSizeFeet,
+    geometry.pixelsPerCell,
+  );
+  const onGridLine = (rect: { left: number; top: number; width: number; height: number }): boolean =>
+    [rect.left, rect.top, rect.left + rect.width, rect.top + rect.height].every(
+      (value) => Math.abs(value / geometry.pixelsPerCell - Math.round(value / geometry.pixelsPerCell)) < 1e-9,
+    );
+
+  check(
+    'SC51) projeção canônica: Medium 10,15 → 88/132 44×44 · Large 10,10 → 88/88 88×88',
+    mediumRect.left === 88 &&
+      mediumRect.top === 132 &&
+      mediumRect.width === 44 &&
+      mediumRect.height === 44 &&
+      largeRect.left === 88 &&
+      largeRect.top === 88 &&
+      largeRect.width === 88 &&
+      largeRect.height === 88 &&
+      hugeRect.width === 132 &&
+      hugeRect.height === 132 &&
+      gargantuanRect.width === 176 &&
+      gargantuanRect.height === 176 &&
+      tinyRect.width === 22 &&
+      tinyRect.height === 22,
+    JSON.stringify({ medium: mediumRect, large: largeRect }),
+  );
+
+  check(
+    'SC52) token art é o CÍRCULO INSCRITO (diâmetro = footprint) e todo canto cai nas linhas do grid',
+    tokenArtSize(mediumRect) === 44 &&
+      tokenArtSize(largeRect) === 88 &&
+      tokenArtSize(hugeRect) === 132 &&
+      tokenArtSize(gargantuanRect) === 176 &&
+      tokenArtSize(tinyRect) === 22 &&
+      tokenArtSize({ width: 44, height: 88 }) === 44 &&
+      tokenArtSize({ width: 0, height: 44 }) === 0 &&
+      onGridLine(mediumRect) &&
+      onGridLine(largeRect) &&
+      onGridLine(hugeRect) &&
+      onGridLine(gargantuanRect) &&
+      // Tiny continua 2,5 pés: metade da célula, nunca uma célula inteira.
+      tinyRect.left + tinyRect.width === geometry.pixelsPerCell / 2 &&
+      !onGridLine(tinyRect),
+  );
+
+  const ghostSource = source('src/combat/grid/GridMovementOverlay.tsx');
+
+  check(
+    'SC53) hover, destino e ghost usam a MESMA projeção do token (nada de conta inline)',
+    !gridSource.includes('hoverAnchor.xFeet / cellSizeFeet') &&
+      !gridSource.includes('feetToPx(draftDestination') &&
+      gridSource.includes('const destinationBox =') &&
+      gridSource.includes('const hoverBox =') &&
+      gridSource.includes('left: `${destinationBox.left}px`') &&
+      gridSource.includes('left: `${hoverBox.left}px`') &&
+      ghostSource.includes('spatialRectToScenePixels(') &&
+      ghostSource.includes('tokenArtSize(box)') &&
+      !ghostSource.includes('Math.min(box.width, box.height) - 6'),
+  );
+
+  check(
+    'SC54) border-box no art/ghost e highlight sem raio: o border nunca aumenta o box externo',
+    ruleOf('.grid-token-art').includes('box-sizing: border-box;') &&
+      ruleOf('.grid-token-art').includes('border: 1px solid') &&
+      ruleOf('.grid-movement-ghost').includes('box-sizing: border-box;') &&
+      ruleOf('.grid-movement-ghost-art').includes('box-sizing: border-box;') &&
+      ruleOf('.grid-hover-cell').includes('border-radius: 0;') &&
+      ruleOf('.grid-destination-cell').includes('border-radius: 0;'),
+  );
+
+  check(
+    'SC55) z-order: fundo → grade → highlight → tokens, todos no MESMO plano',
+    gridSource.indexOf('grid-scene-background') < gridSource.indexOf('<SpatialGridOverlay') &&
+      ruleOf('.grid-hover-cell').includes('z-index: 1;') &&
+      ruleOf('.grid-destination-cell').includes('z-index: 1;') &&
+      ruleOf('.grid-token').includes('z-index: 2;') &&
+      gridSource.indexOf('<SpatialGridOverlay') <
+        gridSource.indexOf('className="grid-hover-cell"') &&
+      gridSource.indexOf('<SpatialGridOverlay') <
+        gridSource.indexOf('className="grid-destination-cell"'),
   );
 }
 

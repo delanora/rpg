@@ -51,9 +51,9 @@ import {
   SIZE_FOOTPRINT_FEET,
   centeredFootprintFeet,
   containingCellFeet,
-  feetToPx,
   occupiedSpacePixels,
   scenePixels,
+  spatialRectToScenePixels,
   splitByPlacement,
 } from './gridMath';
 import { Icon } from '../../components/Icon';
@@ -1685,6 +1685,38 @@ export function CombatGrid({
     .filter(Boolean)
     .join(' ');
 
+  /**
+   * CAIXAS VISUAIS (6.6M.4.1.4) — hover e destino passam pela MESMA projeção
+   * do token (`spatialRectToScenePixels`), não por conta inline própria.
+   * A decisão de célula continua sendo a da 6.6M.4.1.3: aqui só se desenha o
+   * retângulo do footprint que já foi escolhido.
+   */
+  const destinationBox =
+    draftDestination && draftUnit?.spatial
+      ? spatialRectToScenePixels(
+          {
+            xFeet: draftDestination.xFeet,
+            yFeet: draftDestination.yFeet,
+            widthFeet: SIZE_FOOTPRINT_FEET[draftUnit.spatial.effectiveSize].widthFeet,
+            heightFeet: SIZE_FOOTPRINT_FEET[draftUnit.spatial.effectiveSize].heightFeet,
+          },
+          cellSizeFeet,
+          DEFAULT_PIXELS_PER_CELL,
+        )
+      : null;
+  const hoverBox = hoverAnchor
+    ? spatialRectToScenePixels(
+        {
+          xFeet: hoverAnchor.xFeet,
+          yFeet: hoverAnchor.yFeet,
+          widthFeet: cellSizeFeet,
+          heightFeet: cellSizeFeet,
+        },
+        cellSizeFeet,
+        DEFAULT_PIXELS_PER_CELL,
+      )
+    : null;
+
   const draftOriginScene = draft && draftUnit ? footprintCenterPx(draftUnit) : null;
   const draftTraceFrom = draftOriginScene ? sceneToScreen(camera, draftOriginScene) : null;
   const draftTraceTo = draft && draftDestination ? anchorScreen(draftDestination) : null;
@@ -1970,38 +2002,30 @@ export function CombatGrid({
               ) : null}
 
               {/* Destino MECÂNICO snapado: um ÚNICO ghost + o footprint do destino. */}
-              {draft && draftDestination && draft.path.length > 0 && draftUnit?.spatial ? (
+              {draft && draft.path.length > 0 && destinationBox ? (
                 <div
                   className="grid-destination-cell"
                   aria-hidden="true"
                   data-destination="true"
                   style={{
-                    left: `${feetToPx(draftDestination.xFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL)}px`,
-                    top: `${feetToPx(draftDestination.yFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL)}px`,
-                    width: `${feetToPx(
-                      SIZE_FOOTPRINT_FEET[draftUnit.spatial.effectiveSize].widthFeet,
-                      cellSizeFeet,
-                      DEFAULT_PIXELS_PER_CELL,
-                    )}px`,
-                    height: `${feetToPx(
-                      SIZE_FOOTPRINT_FEET[draftUnit.spatial.effectiveSize].heightFeet,
-                      cellSizeFeet,
-                      DEFAULT_PIXELS_PER_CELL,
-                    )}px`,
+                    left: `${destinationBox.left}px`,
+                    top: `${destinationBox.top}px`,
+                    width: `${destinationBox.width}px`,
+                    height: `${destinationBox.height}px`,
                   }}
                 />
               ) : null}
 
               {/* Célula sob o cursor — highlight sutil, sem fingir validade. */}
-              {hoverAnchor && rulerActive ? (
+              {hoverBox && rulerActive ? (
                 <div
                   className="grid-hover-cell"
                   aria-hidden="true"
                   style={{
-                    left: `${(hoverAnchor.xFeet / cellSizeFeet) * DEFAULT_PIXELS_PER_CELL}px`,
-                    top: `${(hoverAnchor.yFeet / cellSizeFeet) * DEFAULT_PIXELS_PER_CELL}px`,
-                    width: `${DEFAULT_PIXELS_PER_CELL}px`,
-                    height: `${DEFAULT_PIXELS_PER_CELL}px`,
+                    left: `${hoverBox.left}px`,
+                    top: `${hoverBox.top}px`,
+                    width: `${hoverBox.width}px`,
+                    height: `${hoverBox.height}px`,
                   }}
                 />
               ) : null}
