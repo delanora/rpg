@@ -42,6 +42,7 @@ import { recordHealingRoll } from '../dice/dice.service.js';
 import {
   ServerEvents,
   type AttackResolvedPayload,
+  type CombatMovementVisualPayload,
   type DamageBreakdownPayload,
   type DamageComponentPayload,
   type DamagePartPayload,
@@ -230,6 +231,29 @@ export function emitCombat(
     broadcaster.toPlayers(event, { combat: hideMasterPrivateState(dto) });
   } catch (error) {
     console.error('[combat] falha ao publicar o combate em tempo real:', error);
+  }
+}
+
+/**
+ * Publica o TRECHO VISUAL de um movimento já confirmado (6.6M.3.1.4).
+ *
+ * Apresentação, não estado: `combat:updated` continua sendo a verdade e este
+ * evento nunca é persistido nem reenviado a quem reconecta. Entidades
+ * `master-only` ficam restritas à sala dos Mestres — a animação não pode virar
+ * um oráculo de posição de criatura escondida.
+ */
+export function emitMovementVisual(
+  payload: CombatMovementVisualPayload,
+  spatialVisibility: string,
+): void {
+  try {
+    const broadcaster = getBroadcaster();
+    broadcaster.toMasters(ServerEvents.COMBAT_MOVEMENT_VISUAL, payload);
+    if (spatialVisibility !== 'master-only') {
+      broadcaster.toPlayers(ServerEvents.COMBAT_MOVEMENT_VISUAL, payload);
+    }
+  } catch (error) {
+    console.error('[combat] falha ao publicar o movimento visual:', error);
   }
 }
 

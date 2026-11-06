@@ -176,6 +176,16 @@ export const ServerEvents = {
   COMBAT_STARTED: 'combat:started',
   /** Estado completo do combate mudou (HP, rolagens, ordem...). */
   COMBAT_UPDATED: 'combat:updated',
+  /**
+   * TRECHO de movimento JÁ CONFIRMADO, enviado só para APRESENTAÇÃO (6.6M.3.1.4).
+   *
+   * NÃO é fonte de verdade: `combat:updated` continua sendo o estado. Serve para
+   * todos os espectadores autorizados verem a peça DESLIZANDO em vez de
+   * teleportar. Efêmero: não persiste, não é reenviado a quem reconecta, e é
+   * emitido somente DEPOIS da transação. Quem não pode ver o combatente
+   * (master-only) não recebe nada — o filtro é do servidor.
+   */
+  COMBAT_MOVEMENT_VISUAL: 'combat:movement-visual',
   MECHANICAL_UPDATED: 'mechanical:updated',
   /**
    * INTENÇÃO de conjuração (Fase 6.6F) mudou de estado — criada, aprovada,
@@ -367,6 +377,30 @@ export interface CombatTurnPayload {
 
 export interface CombatEndedPayload {
   combatId: string;
+}
+
+/**
+ * Trecho autorizado de um movimento mecânico, só para apresentação.
+ *
+ * Com Reação pendente o trecho TERMINA no checkpoint: o caminho restante NUNCA
+ * viaja aqui (senão os espectadores veriam o token atravessar a Opportunity
+ * Attack). `path` são as âncoras realmente aplicadas, começando pelo primeiro
+ * passo a partir de `from`.
+ */
+export interface CombatMovementVisualPayload {
+  combatId: string;
+  combatantId: string;
+  /** Identidade da tentativa: deduplica HTTP do operador + evento do socket. */
+  operationId: string;
+  from: { xFeet: number; yFeet: number };
+  /** Âncoras percorridas (subconjunto AUTORIZADO do caminho pedido). */
+  path: { xFeet: number; yFeet: number }[];
+  to: { xFeet: number; yFeet: number };
+  /** Versão do combate logo após este commit. */
+  version: number;
+  /** Verdadeiro quando o trecho para no checkpoint por Reação pendente. */
+  checkpoint: boolean;
+  at: string;
 }
 
 /** Rolagem de dado divulgada para todos — dispara o efeito sonoro. */

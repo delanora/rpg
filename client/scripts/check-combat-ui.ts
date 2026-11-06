@@ -34,6 +34,11 @@ import { GridRuler } from '../src/combat/grid/GridRuler';
 import { anchorStepFeet, contiguousAnchors } from '../src/combat/grid/movementPath';
 import { CombatGrid } from '../src/combat/grid/CombatGrid';
 import {
+  MOVEMENT_STEP_MS,
+  movementPointAt,
+  planMovementVisual,
+} from '../src/combat/grid/movementVisual';
+import {
   IDENTITY_CAMERA,
   centerCamera,
   clampCamera,
@@ -2666,6 +2671,8 @@ const gridTokenSource = gridSource('GridToken.tsx');
 const combatGridSource = gridSource('CombatGrid.tsx');
 const gridApiSource = gridSource('gridApi.ts');
 const gridCssSource = gridSource('grid.css');
+/** Primitive ÚNICA de animação de movimento (6.6M.3.1.4). */
+const movementVisualSource = gridSource('movementVisual.ts');
 const gridSceneSource = gridSource('SpatialSceneControls.tsx');
 const gridTraySource = gridSource('UnplacedCombatantsTray.tsx');
 const combatTrackerSource = source('src/combat/CombatTracker.tsx');
@@ -3007,9 +3014,10 @@ const realtimeEventsSource = source('../src/realtime/events.ts');
 const prismaSchemaSource = source('../prisma/schema.prisma');
 
 check(
-  'CB197) modo MEDIR é EXPLÍCITO e o clique de medição nunca posiciona',
-  combatGridSource.includes("type InteractionMode = 'none' | 'placement' | 'measure'") &&
-    combatGridSource.includes("changeMode(mode === 'measure' ? 'none' : 'measure')") &&
+  'CB197) régua é EXPLÍCITA (tecla F, sem modo) e o clique de medição nunca posiciona',
+  combatGridSource.includes("type InteractionMode = 'none' | 'placement'") &&
+    !combatGridSource.includes("mode === 'measure'") &&
+    combatGridSource.includes("event.key === 'f' || event.key === 'F'") &&
     combatGridSource.includes('Posicionar') &&
     combatGridSource.includes("if (mode !== 'placement') return;") &&
     combatGridSource.includes("if (mode !== 'placement' || !isMaster || locked) return;")
@@ -3154,9 +3162,9 @@ check(
     !/measurement/i.test(prismaSchemaSource)
 );
 check(
-  'CB207) cena assistida não finge distância (aviso explícito, sem botão Medir)',
+  'CB207) cena assistida não finge distância (aviso explícito, régua só por F)',
   combatGridSource.includes('Distância não disponível sem grid ativo.') &&
-    combatGridSource.includes("if (mode === 'measure' && combat.spatial.mode !== 'grid-2d') setMode('placement');")
+    combatGridSource.includes('const rulerActive = quickRuler || ruler !== null;')
 );
 check(
   'CB208) realtime invalida a medição (nunca valor velho como atual)',
@@ -3562,12 +3570,14 @@ const movementReading = (over: Partial<MovementPathReading> = {}): MovementPathR
 });
 
 check(
-  'CB242) MOVIMENTO NÃO É MODO: toolbar tem só Posicionar/Medir (sem botão Mover)',
-  movementGridSource.includes("type InteractionMode = 'none' | 'placement' | 'measure'") &&
+  'CB242) MOVIMENTO NÃO É MODO: toolbar tem só Posicionar (sem Mover, sem Medir)',
+  movementGridSource.includes("type InteractionMode = 'none' | 'placement'") &&
     !movementGridSource.includes("aria-pressed={mode === 'movement'}") &&
     !/\bMover\b/.test(stripComments(movementGridSource)) &&
     movementGridSource.includes('Posicionar') &&
-    movementGridSource.includes('Medir') &&
+    // Botão Medir removido: a régua virou a tecla F (nada de placeholder).
+    !/>\s*Medir\s*</.test(stripComments(movementGridSource)) &&
+    !/aria-pressed=\{mode === 'measure'\}/.test(stripComments(movementGridSource)) &&
     // Ferramentas são toggles: clicar na ativa volta para a superfície livre.
     movementGridSource.includes("changeMode(mode === 'placement' ? 'none' : 'placement')") &&
     !/Shift\+Click/.test(stripComments(movementGridSource))
@@ -3606,12 +3616,15 @@ check(
       }),
     );
     return (
+      // PLAYER: só controles de câmera — sem Posicionar, Mover ou Medir.
       !/\bMover\b/.test(player) &&
-      /\bMedir\b/.test(player) &&
+      !/>\s*Medir\s*</.test(player) &&
       !/\bPosicionar\b/.test(player) &&
+      /Enquadrar/.test(player) &&
+      // MASTER: Posicionar + câmera; também sem Mover/Medir.
       /\bPosicionar\b/.test(master) &&
       !/\bMover\b/.test(master) &&
-      /\bMedir\b/.test(master) &&
+      !/>\s*Medir\s*</.test(master) &&
       !/Confirmar/.test(player) &&
       !/Confirmar/.test(master)
     );
@@ -4011,7 +4024,14 @@ check(
     movementGridSource.includes(
       'translate(${camera.panX}px, ${camera.panY}px) scale(${camera.zoom})'
     ) &&
-    movementGridSource.includes('if (fittedKey.current === key) return;')
+    // Câmera inicializada só com viewport REAL e reenquadrada até o usuário
+    // escolher a câmera dele (sem F5, sem setTimeout arbitrário).
+    movementGridSource.includes('if (viewport.width <= 0 || viewport.height <= 0) return;') &&
+    movementGridSource.includes('if (cameraTouched.current) return;') &&
+    movementGridSource.includes('new ResizeObserver(') &&
+    movementGridSource.includes('useLayoutEffect(') &&
+    // Nenhum `setTimeout` de consolo na inicialização da câmera.
+    !/setTimeout\([^)]*fitCamera/.test(stripComments(movementGridSource))
 );
 check(
   'CB265) HUD compacto FLUTUA no palco; painel grande removido e barra persistente segue fonte',
@@ -4326,15 +4346,18 @@ check(
     movementGridSource.includes('if (!fresh.movement.legal || !fresh.movement.affordable) {')
 );
 check(
-  'CB287) animação é APRESENTAÇÃO server-first: depois do commit, pelado path confirmado e com clamp',
+  'CB287) animação é APRESENTAÇÃO server-first, numa primitive ÚNICA (Direct Drag + Measure-to-Move)',
   movementGridSource.includes('await commitMovement(combat, {') &&
-    movementGridSource.includes('startMovementAnimation(intent.combatantId, intent.sourcePosition') &&
-    movementGridSource.includes("window.matchMedia('(prefers-reduced-motion: reduce)').matches") &&
-    movementGridSource.includes('ANIMATION_MAX_MS') &&
-    movementGridSource.includes('const stop = anchors.findIndex(') &&
-    movementGridSource.includes('const traversed = stop >= 0 ? anchors.slice(0, stop + 1) : [...anchors, end];') &&
-    gridTokenSource.includes('const box = visualRect ?? rect;') &&
-    movementGridSource.includes('setVisualRect(null);')
+    // O operador NÃO anima pela resposta HTTP: quem anima é o evento.
+    !movementGridSource.includes('startMovementAnimation(') &&
+    movementVisualSource.includes('export function planMovementVisual(') &&
+    movementVisualSource.includes('export function useMovementVisual(') &&
+    movementVisualSource.includes('export function movementMotionAllowed(') &&
+    movementVisualSource.includes("window.matchMedia('(prefers-reduced-motion: reduce)')") &&
+    movementVisualSource.includes('MOVEMENT_MAX_MS') &&
+    movementVisualSource.includes('const endIndex = anchors.findIndex(') &&
+    movementVisualSource.includes('setVisualRect(null)') &&
+    gridTokenSource.includes('const box = visualRect ?? rect;')
 );
 check(
   'CB288) régua mostra DISTÂNCIA e o custo só como secundário quando o servidor difere',
@@ -4348,7 +4371,7 @@ check(
   movementGridSource.includes('position.xFeet !== intent.sourcePosition.xFeet') &&
     movementGridSource.includes("message: 'A origem do movimento mudou: meça novamente.'") &&
     movementGridSource.includes('(movement ? movement.combatantId !== intent.combatantId : false)') &&
-    movementGridSource.includes('if (animationVersion.current === null || animationVersion.current === combat.version) {') &&
+    movementGridSource.includes('movementVisual.syncVersion(combat.version);') &&
     // Falha NÃO limpa a régua: o jogador continua analisando a decisão.
     (() => {
       const finallyAt = movementGridSource.indexOf('} finally {\n      executing.current = false;');
@@ -4368,7 +4391,7 @@ const rulerIconHtml = renderToStaticMarkup(createElement(Icon, { name: 'ruler', 
 
 check(
   'CB290) cursor da RÉGUA: ícone real do projeto acompanhando o ponteiro, sem crosshair',
-  movementGridSource.includes('const rulerCursorActive = ruler ? !ruler.locked : quickRuler || mode === \'measure\';') &&
+  movementGridSource.includes('const rulerCursorActive = ruler ? !ruler.locked : quickRuler;') &&
     movementGridSource.includes('<Icon name="ruler" size={16} />') &&
     movementGridSource.includes('className="grid-ruler-cursor"') &&
     movementGridSource.includes('node.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;') &&
@@ -4466,6 +4489,180 @@ check(
     !/cost|remaining|difficult|occupied|reach/i.test(movementApiBody) &&
     movementGridSource.includes('if (!fresh.movement.legal || !fresh.movement.affordable) {') &&
     movementGridSource.includes('await previewMovement(combat.id, { combatantId, path });')
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1.4 — RUNTIME DO GRID + INTEGRIDADE DE PAPEL                        */
+/* -------------------------------------------------------------------------- */
+
+const authSource = source('src/auth.tsx');
+const useRealtimeSource = source('src/useRealtime.ts');
+const socketSource = source('src/socket.ts');
+const useCombatStateSource = source('src/combat/useCombatState.ts');
+const authMiddlewareSource = source('../src/modules/auth/auth.middleware.ts');
+const smokeSource = source('../src/scripts/smoke-realtime.ts');
+const spatialMovementSource = source('../src/modules/combat/spatial/spatial-movement.service.ts');
+const opportunitySource = source('../src/modules/combat/spatial/opportunity-attack.service.ts');
+const combatServiceFullSource = source('../src/modules/combat/combat.service.ts');
+
+check(
+  'CB299) "Medir" saiu da toolbar (sem placeholder) e F continua sendo a régua',
+  !/>\s*Medir\s*</.test(
+    stripComments(
+      renderToStaticMarkup(
+        createElement(CombatGrid, {
+          combat: combatOf([unitOf('hero', 'medium')]),
+          isMaster: false,
+          movement: { combatantId: 'hero', reason: null },
+          onCombatChange: () => undefined,
+          onError: () => undefined,
+        }),
+      ),
+    ),
+  ) &&
+    !/aria-pressed=\{mode === 'measure'\}/.test(stripComments(movementGridSource)) &&
+    movementGridSource.includes("event.key === 'f' || event.key === 'F'") &&
+    movementGridSource.includes('setQuickRuler')
+);
+check(
+  'CB300) UMA primitive de animação: Direct Drag e Measure-to-Move desembocam no MESMO caminho',
+  movementVisualSource.includes('export function useMovementVisual(') &&
+    movementVisualSource.includes('const plan = planMovementVisual({') &&
+    movementGridSource.includes('const movementVisual = useMovementVisual();') &&
+    movementGridSource.includes('subscribeMovementVisual((payload) =>') &&
+    // Nenhum dos dois fluxos anima localmente: os dois terminam em commit.
+    (stripComments(movementGridSource).match(/startMovementAnimation|setVisualRect\(/g) ?? []).length === 0 &&
+    movementGridSource.includes('playMovementVisual.current(payload, size, context.geometry);') &&
+    useCombatStateSource.includes('publishMovementVisual(payload);')
+);
+check(
+  'CB301) ESPECTADOR: evento realtime tipado move a peça em qualquer cliente',
+  realtimeEventsSource.includes("COMBAT_MOVEMENT_VISUAL: 'combat:movement-visual'") &&
+    realtimeEventsSource.includes('export interface CombatMovementVisualPayload {') &&
+    socketSource.includes("'combat:movement-visual': (payload: CombatMovementVisualPayload) => void;") &&
+    useRealtimeSource.includes("socket.on('combat:movement-visual', (payload) =>") &&
+    useRealtimeSource.includes('onCombatMovementVisual?: (payload: CombatMovementVisualPayload) => void;')
+);
+check(
+  'CB302) evento só DEPOIS do commit e só com o TRECHO autorizado (checkpoint em OA)',
+  spatialMovementSource.indexOf('await prisma.$transaction(') <
+    spatialMovementSource.indexOf('emitMovementVisualSegment(') &&
+    spatialMovementSource.includes('result.pending !== null,') &&
+    spatialMovementSource.includes('checkpoint,') &&
+    // Retomada após a Reação emite um evento NOVO, nunca o caminho restante.
+    opportunitySource.includes('publishContinuationVisual(') &&
+    opportunitySource.includes('checkpoint: true,') &&
+    !/remainingPath/.test(
+      combatServiceFullSource.slice(
+        combatServiceFullSource.indexOf('export function emitMovementVisual('),
+        combatServiceFullSource.indexOf('export function emitMovementVisual(') + 900,
+      ),
+    )
+);
+check(
+  'CB303) movimento master-only NÃO vaza para jogadores (filtro no servidor)',
+  combatServiceFullSource.includes('if (spatialVisibility !== \'master-only\') {') &&
+    combatServiceFullSource.includes('broadcaster.toPlayers(ServerEvents.COMBAT_MOVEMENT_VISUAL, payload);') &&
+    spatialMovementSource.includes("combatant.spatialVisibility ?? 'public'") &&
+    opportunitySource.includes("combatant.spatialVisibility ?? 'public'")
+);
+check(
+  'CB304) dedupe do movimento visual por operationId (operador não anima duas vezes)',
+  movementVisualSource.includes('const playedOperations = useRef<Set<string>>(new Set());') &&
+    movementVisualSource.includes('const key = `${payload.operationId}:') &&
+    movementVisualSource.includes('if (playedOperations.current.has(key)) return;')
+);
+check(
+  'CB305) câmera inicial espera viewport válido e realtime não dá reset',
+  movementGridSource.includes('if (viewport.width <= 0 || viewport.height <= 0) return;') &&
+    movementGridSource.includes('const sceneKeyRef = useRef(\'\');') &&
+    movementGridSource.includes('}, [combat.id, dimensions, viewport]);') &&
+    // `combat:updated` não entra nas dependências do enquadramento.
+    !/\[combat\.version[^\]]*\]/.test(
+      movementGridSource.slice(
+        movementGridSource.indexOf('useLayoutEffect(() => {'),
+        movementGridSource.indexOf('useLayoutEffect(() => {') + 900,
+      ),
+    )
+);
+check(
+  'CB306) token usa a imagem ORIGINAL e nada de "pixelated" como conserto',
+  combatDtoSource.includes('tokenImageRef: combatant.character?.avatarUrl || combatant.creature?.imageUrl || null,') &&
+    /\.grid-token-img\s*\{[^}]*image-rendering: auto/.test(gridCssSource) &&
+    !/image-rendering:\s*(pixelated|crisp-edges)/.test(gridCssSource) &&
+    // A camada da câmera NÃO é promovida permanentemente: escalar uma textura
+    // já rasterizada era o que borrava o retrato no zoom.
+    (() => {
+      const block = gridCssSource.slice(
+        gridCssSource.indexOf('.grid-camera {'),
+        gridCssSource.indexOf('.grid-camera {') + 220,
+      );
+      return block.includes('transform-origin: 0 0;') && !block.includes('will-change');
+    })() &&
+    gridCssSource.includes('object-fit: cover;')
+);
+check(
+  'CB307) papel vem do SERVIDOR: a UI relê a sessão e nunca o inventa',
+  authMiddlewareSource.includes('prisma.user.findUnique({') &&
+    authMiddlewareSource.includes('role: user.role,') &&
+    authSource.includes('fetchCurrentUser()') &&
+    authSource.includes("document.addEventListener('visibilitychange', onVisible);") &&
+    !/localStorage.*role|sessionStorage.*role/.test(authSource)
+);
+check(
+  'CB308) smoke NUNCA altera conta real (sem promoção/cleanup por username)',
+  !smokeSource.includes('demoteForeignOnlinePlayers') &&
+    !smokeSource.includes('foreignDemotedUsernames') &&
+    smokeSource.includes('function requireNoForeignOnlinePlayers(') &&
+    !/updateMany\(\{\s*where: \{ username: \{ in: foreign/.test(smokeSource) &&
+    smokeSource.includes('preexistingUsers = await prisma.user.findMany({') &&
+    smokeSource.includes('integridade) contas reais mantêm id, username e role depois do smoke') &&
+    smokeSource.includes('guard) fixture PLAYER continua PLAYER e fixture MASTER continua MASTER')
+);
+
+check(
+  'CB309) plano da animação: anchors autorizados, duração por passo e fim na caixa do destino',
+  (() => {
+    const geometry = { cellSizeFeet: 5, pixelsPerCell: 40 };
+    const full = planMovementVisual({
+      combatantId: 'hero',
+      from: { xFeet: 0, yFeet: 0 },
+      path: [
+        { xFeet: 5, yFeet: 0 },
+        { xFeet: 10, yFeet: 0 },
+      ],
+      to: { xFeet: 10, yFeet: 0 },
+      size: 'medium',
+      ...geometry,
+    });
+    // Checkpoint de Reação: só o trecho aplicado é animado.
+    const checkpoint = planMovementVisual({
+      combatantId: 'hero',
+      from: { xFeet: 0, yFeet: 0 },
+      path: [{ xFeet: 5, yFeet: 0 }],
+      to: { xFeet: 5, yFeet: 0 },
+      size: 'medium',
+      ...geometry,
+    });
+    const still = planMovementVisual({
+      combatantId: 'hero',
+      from: { xFeet: 0, yFeet: 0 },
+      path: [],
+      to: { xFeet: 0, yFeet: 0 },
+      size: 'medium',
+      ...geometry,
+    });
+    return Boolean(
+      full &&
+        checkpoint &&
+        full.points.length === 3 &&
+        checkpoint.points.length === 2 &&
+        full.width === 40 &&
+        full.durationMs === 2 * MOVEMENT_STEP_MS &&
+        movementPointAt(full, 1).left === full.points[2].left &&
+        still === null,
+    );
+  })()
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

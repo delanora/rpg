@@ -8,6 +8,7 @@ import type {
   DiceRolledPayload,
 } from '../types';
 import type { RealtimeHandlers } from '../useRealtime';
+import { publishMovementVisual } from './grid/movementVisual';
 
 /**
  * Tipos de evento do log. Hoje o sistema emite rolagens (`dice:rolled`),
@@ -164,6 +165,11 @@ export function useCombatState(userId: string, role: 'PLAYER' | 'MASTER') {
       },
       onCombatUpdated: (payload) => {
         setCombat(payload.combat);
+      },
+      // Apresentação do movimento: vai por barramento de módulo até o grid.
+      // O estado autoritativo continua vindo de `combat:updated`.
+      onCombatMovementVisual: (payload) => {
+        publishMovementVisual(payload);
       },
       onCombatEnded: () => {
         setCombat(null);

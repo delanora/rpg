@@ -11,6 +11,7 @@ import type { CombatActor } from '../combat.service.js';
 import {
   appendEconomyLog,
   emitCombat,
+  emitMovementVisual,
   loadCombatById,
   resolveAttack,
 } from '../combat.service.js';
@@ -384,10 +385,26 @@ function pathOf(raw: unknown): SpatialPosition2D[] {
  *  • com novo boundary → aplica o trecho até ele e abre as novas janelas;
  *  • mover incapaz / caminho inválido → interrompe, sem inventar posição.
  */
+/**
+ * Trecho de movimento aplicado pela RETOMADA (após as Reações fecharem).
+ *
+ * Serve só para a apresentação (6.6M.3.1.4): quem estava esperando vê a peça
+ * retomar do checkpoint, e o trecho termina no próximo checkpoint quando outra
+ * janela abre.
+ */
+export interface ContinuationSegment {
+  combatantId: string;
+  from: SpatialPosition2D;
+  path: SpatialPosition2D[];
+  to: SpatialPosition2D;
+  checkpoint: boolean;
+}
+
 async function continueOrPause(
   db: Prisma.TransactionClient,
   combat: CombatSourced,
   intentId: string,
+  onSegment?: (segment: ContinuationSegment) => void,
 ): Promise<{ pending: MovementPauseDto | null; defeated: boolean }> {
   const intent = await db.movementIntent.findUnique({ where: { id: intentId } });
   if (!intent || intent.status !== 'pending-reaction') {
@@ -469,6 +486,13 @@ async function continueOrPause(
 
   if (!next) {
     await applyMovementEvaluation(db, combat, mover, evaluation);
+    onSegment?.({
+      combatantId: mover.id,
+      from: position ?? { xFeet: 0, yFeet: 0 },
+      path: evaluation.steps.map((step) => step.position),
+      to: evaluation.destination ?? position ?? { xFeet: 0, yFeet: 0 },
+      checkpoint: false,
+    });
     await db.movementIntent.update({
       where: { id: intentId },
       data: {
@@ -519,9 +543,37 @@ async function continueOrPause(
         where: { id: intentId },
         data: { status: 'committed', remainingPath: [] as unknown as Prisma.InputJsonValue },
       });
+      // Prefixo + restante são contíguos e o caminho inteiro foi autorizado:
+      // um ÚNICO trecho visual, sem parar no meio.
+      onSegment?.({
+        combatantId: mover.id,
+        from: position ?? { xFeet: 0, yFeet: 0 },
+        path: [
+          ...prefix.steps.map((step) => step.position),
+          ...restEvaluation.steps.map((step) => step.position),
+        ],
+        to: restEvaluation.destination ?? checkpoint ?? { xFeet: 0, yFeet: 0 },
+        checkpoint: false,
+      });
+      return { pending: null, defeated: false };
     }
+    onSegment?.({
+      combatantId: mover.id,
+      from: position ?? { xFeet: 0, yFeet: 0 },
+      path: prefix.steps.map((step) => step.position),
+      to: checkpoint ?? { xFeet: 0, yFeet: 0 },
+      checkpoint: false,
+    });
     return { pending: null, defeated: false };
   }
+
+  onSegment?.({
+    combatantId: mover.id,
+    from: position ?? { xFeet: 0, yFeet: 0 },
+    path: prefix.steps.map((step) => step.position),
+    to: checkpoint ?? { xFeet: 0, yFeet: 0 },
+    checkpoint: true,
+  });
 
   return {
     pending: pauseDtoOf(combat, { combatantId: mover.id, remainingPath: nextPath }, {
@@ -657,6 +709,8 @@ export async function resolveOpportunityAttack(
     throw new HttpError('Oportunidade de Reação não encontrada.', 404);
   }
 
+  /** Trecho aplicado pela retomada — publicado só DEPOIS do commit. */
+  let continuation: ContinuationSegment | null = null;
   const response = await resolveAttack<OpportunitySettlement>(
     actor,
     {
@@ -707,7 +761,9 @@ export async function resolveOpportunityAttack(
           );
         }
         const outcome = row.movementIntentId
-          ? await continueOrPause(db, latest, row.movementIntentId)
+          ? await continueOrPause(db, latest, row.movementIntentId, (segment) => {
+              continuation = segment;
+            })
           : { pending: null, defeated: false };
         return {
           opportunityId,
@@ -723,6 +779,9 @@ export async function resolveOpportunityAttack(
     },
   );
 
+  if (continuation) {
+    await publishContinuationVisual(combatId, continuation, input.operationId);
+  }
   return {
     combat: response.combat,
     result: response.result,
@@ -770,8 +829,11 @@ async function runOpportunityOperation(
   apply: (
     db: Prisma.TransactionClient,
     combat: CombatSourced,
+    /** Recebe o trecho aplicado pela retomada (apresentação, pós-commit). */
+    onSegment: (segment: ContinuationSegment) => void,
   ) => Promise<Omit<OpportunityDeclineResult, 'replayed'>>,
 ): Promise<OpportunityDeclineResult> {
+  let continuation: ContinuationSegment | null = null;
   const fingerprint = createHash('sha256')
     .update(JSON.stringify({ type: `opportunity-${input.kind}`, actor: actor.userId, input }))
     .digest('hex');
@@ -810,7 +872,9 @@ async function runOpportunityOperation(
           );
         }
         const combat = await loadCombatById(input.combatId, db);
-        const response = await apply(db, combat);
+        const response = await apply(db, combat, (segment) => {
+          continuation = segment;
+        });
         await db.combatOperation.create({
           data: {
             combatId: combat.id,
@@ -830,11 +894,44 @@ async function runOpportunityOperation(
   }
 
   if (result.replayed) return result;
+  if (continuation) {
+    await publishContinuationVisual(input.combatId, continuation, input.operationId);
+  }
   emitCombat(
     ServerEvents.COMBAT_UPDATED,
     toCombatDto(await loadCombatById(input.combatId), 'MASTER'),
   );
   return result;
+}
+
+/**
+ * Publica o trecho aplicado pela RETOMADA do movimento (depois da transação).
+ *
+ * Entidade `master-only` continua restrita à sala dos Mestres: a animação nunca
+ * vira oráculo de posição de criatura escondida.
+ */
+async function publishContinuationVisual(
+  combatId: string,
+  segment: ContinuationSegment,
+  operationId: string,
+): Promise<void> {
+  const combat = await loadCombatById(combatId);
+  const combatant = combat.combatants.find((item) => item.id === segment.combatantId);
+  if (!combatant) return;
+  emitMovementVisual(
+    {
+      combatId,
+      combatantId: segment.combatantId,
+      operationId,
+      from: segment.from,
+      path: segment.path,
+      to: segment.to,
+      version: combat.version,
+      checkpoint: segment.checkpoint,
+      at: new Date().toISOString(),
+    },
+    combatant.spatialVisibility ?? 'public',
+  );
 }
 
 /**
@@ -851,7 +948,7 @@ export async function declineOpportunity(
   return runOpportunityOperation(
     actor,
     { combatId, opportunityId, kind: 'decline', ...input },
-    async (db, combat) => {
+    async (db, combat, onSegment) => {
       const row = await db.reactionOpportunity.findUnique({ where: { id: opportunityId } });
       if (!row || row.combatId !== combatId) {
         throw new HttpError('Oportunidade de Reação não encontrada.', 404);
@@ -897,7 +994,7 @@ export async function declineOpportunity(
         );
       }
       const outcome = row.movementIntentId
-        ? await continueOrPause(db, combat, row.movementIntentId)
+        ? await continueOrPause(db, combat, row.movementIntentId, onSegment)
         : { pending: null, defeated: false };
       return {
         combat: toCombatDto(await loadCombatById(combat.id, db), actor.role),
@@ -926,7 +1023,7 @@ export async function confirmOpportunityVisibility(
   return runOpportunityOperation(
     actor,
     { ...input, combatId, opportunityId, kind: 'visibility' },
-    async (db, combat) => {
+    async (db, combat, onSegment) => {
       const row = await db.reactionOpportunity.findUnique({ where: { id: opportunityId } });
       if (!row || row.combatId !== combatId) {
         throw new HttpError('Oportunidade de Reação não encontrada.', 404);
@@ -990,7 +1087,7 @@ export async function confirmOpportunityVisibility(
         );
       }
       const outcome = row.movementIntentId
-        ? await continueOrPause(db, combat, row.movementIntentId)
+        ? await continueOrPause(db, combat, row.movementIntentId, onSegment)
         : { pending: null, defeated: false };
       return {
         combat: toCombatDto(await loadCombatById(combat.id, db), actor.role),

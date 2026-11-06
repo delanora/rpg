@@ -5,6 +5,7 @@ import type {
   AttackResolvedPayload,
   CharacterDeletedPayload,
   CombatEndedPayload,
+  CombatMovementVisualPayload,
   CombatStartedPayload,
   CombatTurnPayload,
   CombatUpdatedPayload,
@@ -72,6 +73,12 @@ export interface RealtimeHandlers {
    */
   onDeathUpdated?: (payload: DeathUpdatedPayload) => void;
   onCombatUpdated?: (payload: CombatUpdatedPayload) => void;
+  /**
+   * Trecho autorizado de um movimento, só para APRESENTAÇÃO (6.6M.3.1.4).
+   * Chega a todos que podem ver o combatente — o servidor já filtrou
+   * `master-only` — e nunca substitui `combat:updated`.
+   */
+  onCombatMovementVisual?: (payload: CombatMovementVisualPayload) => void;
   onCombatTurn?: (payload: CombatTurnPayload) => void;
   onCombatEnded?: (payload: CombatEndedPayload) => void;
   onDiceRolled?: (payload: DiceRolledPayload) => void;
@@ -162,6 +169,9 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('effects:updated', (payload) => handlersRef.current.onEffectsUpdated?.(payload));
     socket.on('death:updated', (payload) => handlersRef.current.onDeathUpdated?.(payload));
     socket.on('combat:updated', (payload) => handlersRef.current.onCombatUpdated?.(payload));
+    socket.on('combat:movement-visual', (payload) =>
+      handlersRef.current.onCombatMovementVisual?.(payload),
+    );
     socket.on('combat:turn', (payload) => handlersRef.current.onCombatTurn?.(payload));
     socket.on('combat:ended', (payload) => handlersRef.current.onCombatEnded?.(payload));
     socket.on('dice:rolled', (payload) => handlersRef.current.onDiceRolled?.(payload));

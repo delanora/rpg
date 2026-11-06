@@ -241,12 +241,25 @@
   cursor: grabbing;
 }
 
-/* A câmera transforma o MUNDO; o viewport nunca rola. */
+/*
+ * A câmera transforma o MUNDO; o viewport nunca rola.
+ *
+ * NADA de `will-change: transform` fixo aqui (6.6M.3.1.4): promovida a camada,
+ * o navegador rasteriza a cena UMA vez e depois só ESCALA a textura — era o que
+ * deixava o retrato do token borrado no zoom (nítido em 100%, pixelado em
+ * 200%). Sem a promoção permanente, mudar o `scale` força repintura na nova
+ * resolução. Durante o ARRASTO a promoção volta (aí sim ajuda o pan fluido).
+ */
 .grid-camera {
   position: absolute;
   top: 0;
   left: 0;
   transform-origin: 0 0;
+}
+
+.grid-viewport.is-panning .grid-camera,
+.grid-viewport.is-space-pan .grid-camera,
+.grid-viewport.is-drafting .grid-camera {
   will-change: transform;
 }
 
@@ -453,6 +466,12 @@
   border-color: rgba(108, 88, 58, 0.95);
 }
 
+/*
+ * Imagem do token: a fonte é a ORIGINAL do upload (retrato da ficha / imagem da
+ * criatura), não uma miniatura. `image-rendering: auto` é deliberado — nada de
+ * `pixelated`/`crisp-edges` para "resolver" nitidez: o zoom é suave por escala,
+ * e a imagem é reamostrada na resolução real.
+ */
 .grid-token-img {
   width: 100%;
   height: 100%;
@@ -460,6 +479,7 @@
   object-position: center;
   display: block;
   pointer-events: none;
+  image-rendering: auto;
   -webkit-user-drag: none;
   user-select: none;
 }
