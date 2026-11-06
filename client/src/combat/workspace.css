@@ -1,0 +1,414 @@
+/* ==========================================================================
+   WORKSPACE DE COMBATE (6.6M.5) — a tela se organiza AO REDOR do grid.
+
+   Por que um arquivo separado: `styles.css` está com WIP de outra tarefa e não
+   é tocado neste fluxo (mesmo motivo de `grid/grid.css`). O tema continua sendo
+   o de `:root`/`[data-theme]`: aqui só há composição, tamanho de container e
+   rolagem INTERNA. Nenhuma regra cria cor, ícone ou componente novo.
+   ========================================================================== */
+
+.combat-workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 0.7rem;
+  min-width: 0;
+  /* Teto de tela: cabeçalho + corpo + ferramentas + barra ≈ viewport. */
+  height: clamp(32rem, calc(100dvh - 12rem), 62rem);
+}
+
+.combat-workspace-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.combat-workspace-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  white-space: nowrap;
+}
+
+.combat-workspace-title h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  letter-spacing: 0.02em;
+}
+
+.combat-workspace-title h2 .icon {
+  color: var(--gold);
+}
+
+/* Corpo: a única região com rolagem própria por bloco. */
+.combat-workspace-body {
+  display: grid;
+  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(19rem, 24rem);
+  gap: 0.85rem;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.combat-workspace-col {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   INICIATIVA (esquerda) — cards com ALTURA NATURAL.
+   A lista nunca estica os cards para preencher a coluna: o espaço livre fica
+   vazio embaixo, e só a própria lista rola quando há muitos combatentes.
+   -------------------------------------------------------------------------- */
+.combat-workspace .combat-timeline {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.combat-workspace .combatant-list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
+}
+
+/* Nada de `flex: 1`/`height: 100%` por item: cada placa usa o próprio conteúdo. */
+.combat-workspace .combatant-list > li {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.combat-workspace .combatant-list .combatant-card {
+  height: auto;
+}
+
+/* --------------------------------------------------------------------------
+   CENA (centro) — só dimensionamento do container. Pan, zoom, régua, tokens e
+   footprints continuam exatamente como estão em `grid/grid.css`.
+   -------------------------------------------------------------------------- */
+.combat-workspace .combat-grid-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  height: 100%;
+}
+
+.combat-workspace .grid-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.combat-workspace .grid-viewport {
+  height: 100%;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   LATERAL DIREITA — registro em cima, ação do turno embaixo. As duas regiões
+   rolam DENTRO de si mesmas; a página não cresce por causa delas.
+   -------------------------------------------------------------------------- */
+.combat-workspace-rail {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.combat-rail-context {
+  display: grid;
+  gap: 0.5rem;
+  min-height: 0;
+  max-height: 42%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.combat-rail-log {
+  display: grid;
+  min-height: 0;
+}
+
+.combat-rail-log .combat-log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+ * DECISÕES PENDENTES primeiro e sem rolar para longe: os Resolution Cards
+ * ficam presos no topo do registro, com rolagem própria só se forem muitos.
+ */
+.combat-rail-log .combat-resolution-list {
+  flex: 0 0 auto;
+  max-height: 55%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.combat-rail-log .combat-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Ação do turno: o MESMO painel de antes, com rolagem própria. */
+.combat-rail-action {
+  display: grid;
+  min-height: 0;
+  max-height: 24rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.combat-rail-action > * {
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
+   FERRAMENTAS — o que é administrativo/ocasional não ocupa o centro do
+   combate; fica recolhido numa faixa fina abaixo do corpo.
+   -------------------------------------------------------------------------- */
+.combat-workspace-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.combat-workspace-tools > * {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.combat-tools {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.55rem;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.combat-tools > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.combat-tools > summary .icon {
+  color: var(--gold);
+}
+
+.combat-tools[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+.combat-workspace-resource {
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+   CONTEXTO DO TURNO compacto — a MESMA informação (quem joga, rodada, HP, CA,
+   SEU TURNO) em uma linha, no cabeçalho, em vez de uma coluna central alta.
+   -------------------------------------------------------------------------- */
+.combat-turn-panel.compact {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  padding: 0.28rem 0.6rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.combat-turn-panel.compact.mine {
+  border-color: var(--gold);
+  border-left-color: var(--gold);
+  box-shadow:
+    var(--shadow-deep),
+    inset 0 0 0 1px var(--gold-hair);
+}
+
+.combat-turn-panel.compact .combat-turn-id {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.combat-turn-panel.compact .combat-turn-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.combat-turn-panel.compact .combat-turn-kind {
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
+
+.combat-turn-compact-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.76rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.combat-turn-panel.compact .combat-turn-badge {
+  font-size: 0.66rem;
+}
+
+.combat-turn-panel.compact .combat-turn-hidden {
+  font-size: 0.7rem;
+}
+
+/* --------------------------------------------------------------------------
+   GEMAS DA BARRA PERSISTENTE (Ação · Ação Bônus · Reação).
+   O estado NÃO depende só da cor: a gema disponível é PREENCHIDA com núcleo
+   luminoso, a gasta é só CONTORNO — e cada recurso tem uma FORMA própria
+   (losango / círculo / estrela de quatro pontas).
+   -------------------------------------------------------------------------- */
+.turn-resource-gems {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.turn-gems {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+}
+
+.turn-gem {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.turn-gem.is-action {
+  transform: rotate(45deg);
+  border-radius: 1px;
+}
+
+.turn-gem.is-bonus {
+  border-radius: 50%;
+}
+
+.turn-gem.is-reaction {
+  clip-path: polygon(50% 0%, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0% 50%, 38% 38%);
+}
+
+.turn-gem.is-ready {
+  background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold-deep));
+  border: 1px solid var(--gold-deep);
+  box-shadow: 0 0 6px -2px var(--glow);
+}
+
+.turn-gem.is-spent {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.turn-gems-count {
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   RESPONSIVIDADE — desktop é a prioridade de tela única; o resto degrada para
+   duas colunas e, por fim, para o fluxo vertical de sempre.
+   -------------------------------------------------------------------------- */
+@media (max-width: 1360px) {
+  .combat-workspace-body {
+    grid-template-columns: minmax(12rem, 14rem) minmax(0, 1fr) minmax(17rem, 20rem);
+  }
+}
+
+@media (max-width: 1180px) {
+  /* Sem altura fixa: a tela volta a crescer, com painéis alternáveis. */
+  .combat-workspace {
+    height: auto;
+  }
+
+  .combat-workspace-body {
+    grid-template-columns: minmax(0, 1fr) minmax(17rem, 21rem);
+    grid-template-rows: auto minmax(24rem, 1fr);
+    overflow: visible;
+  }
+
+  .combat-workspace-initiative {
+    grid-column: 1 / -1;
+  }
+
+  .combat-workspace .combatant-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+
+  .combat-workspace .combatant-list > li {
+    flex: 1 1 14rem;
+  }
+
+  .combat-rail-action {
+    max-height: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .combat-workspace-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  .combat-workspace-initiative {
+    grid-column: auto;
+  }
+
+  .combat-workspace-scene {
+    min-height: 26rem;
+  }
+
+  .combat-workspace-rail {
+    grid-template-rows: auto auto auto;
+  }
+
+  .combat-rail-context {
+    max-height: none;
+  }
+
+  .combat-rail-log .combat-log {
+    max-height: 26rem;
+  }
+}

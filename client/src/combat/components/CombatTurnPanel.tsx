@@ -12,6 +12,11 @@ interface CombatTurnPanelProps {
   isMyTurn: boolean;
   /** Conteúdo alternativo quando ninguém está com o turno (ex.: iniciativa). */
   empty?: ReactNode;
+  /**
+   * `full` = a página do grimório; `compact` = a MESMA informação em uma linha,
+   * para o cabeçalho do workspace (rodada · quem joga · HP · CA · SEU TURNO).
+   */
+  variant?: 'full' | 'compact';
 }
 
 /**
@@ -19,7 +24,73 @@ interface CombatTurnPanelProps {
  * moldura dourada, ornamento, brilho discreto e o marcador AGORA. Reúne retrato,
  * nome, tipo, vida/CA e efeitos já existentes (não proficiência de armadura).
  */
-export function CombatTurnPanel({ combatant, round, isMyTurn, empty }: CombatTurnPanelProps) {
+export function CombatTurnPanel({
+  combatant,
+  round,
+  isMyTurn,
+  empty,
+  variant = 'full',
+}: CombatTurnPanelProps) {
+  // Variante COMPACTA: não perde contexto (quem joga, vida, CA, SEU TURNO) e
+  // não vira um segundo sistema — é o mesmo componente, só sem a moldura alta.
+  if (variant === 'compact') {
+    return (
+      <section
+        className={['combat-turn-panel', 'compact', isMyTurn ? 'mine' : ''].filter(Boolean).join(' ')}
+        aria-label={combatant ? `Turno atual: ${combatant.name}` : 'Turno atual'}
+      >
+        {combatant ? (
+          <>
+            <Portrait
+              src={combatant.imageUrl ?? ''}
+              alt=""
+              size="sm"
+              icon={combatantKindIcon(combatant.kind)}
+            />
+
+            <span className="combat-turn-id">
+              <span className="combat-turn-name">{combatant.name}</span>
+              <span className="combat-turn-kind">{combatantKindLabel(combatant.kind)}</span>
+              {combatant.missing ? <em className="tag">removido</em> : null}
+            </span>
+
+            {combatant.statsHidden ? (
+              <span className="combat-turn-hidden">
+                <Icon name="eye" size={13} /> vida e CA ocultas
+              </span>
+            ) : (
+              <span className="combat-turn-compact-stats">
+                <span>
+                  HP {combatant.hpCurrent ?? 0}/{combatant.hpMax ?? 0}
+                </span>
+                <span>CA {combatant.armorClass}</span>
+              </span>
+            )}
+
+            {isMyTurn ? (
+              <span className="combat-turn-badge">
+                <Icon name="sparkle" size={12} /> SEU TURNO
+              </span>
+            ) : null}
+
+            {combatant.armorNonProficiency?.armor || combatant.armorNonProficiency?.shield ? (
+              <span className="turn-effect">
+                <Icon name="shield" size={12} /> sem proficiência com armadura
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <span className="combat-turn-eyebrow">
+              <Icon name="sword" size={13} /> Turno atual
+            </span>
+            {empty ?? <span className="empty-hint">Aguardando o início dos turnos.</span>}
+          </>
+        )}
+      </section>
+    );
+  }
+
   if (!combatant) {
     return (
       <section className="combat-turn-panel empty">
