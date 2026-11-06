@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, fileToImagePayload, uploadImage } from '../../api';
 import {
   feetToMeters,
   formatSceneFeet,
   formatSceneMeters,
+  gridSquaresLabel,
   metersToFeet,
   SCENE_CELL_FEET,
 } from '../../sceneUnits';
@@ -12,6 +13,8 @@ import { newId } from '../../utils';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
+import { SpatialGridOverlay } from '../spatial/SpatialGridOverlay';
+import { useSceneGridTone } from '../spatial/useSceneGridTone';
 import './scenes.css';
 
 interface SceneEditorProps {
@@ -251,6 +254,14 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
               disabled={!editable}
               onChange={(event) => setWidthMeters(event.target.value)}
             />
+            {/*
+              Contagem DERIVADA (6.6M.4.1.2): sai do valor digitado, pelo snap
+              canônico de `metersToFeet` — 30 m → 100 pés → 20 quadrados. Não é
+              input nem autoridade: o servidor continua validando a base.
+            */}
+            <span className="scene-squares">
+              {gridSquaresLabel(dimensionFeet(widthMeters, config.widthFeet))}
+            </span>
           </label>
           <label>
             Altura (m)
@@ -263,6 +274,9 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
               disabled={!editable}
               onChange={(event) => setHeightMeters(event.target.value)}
             />
+            <span className="scene-squares">
+              {gridSquaresLabel(dimensionFeet(heightMeters, config.heightFeet))}
+            </span>
           </label>
           <button
             type="button"
@@ -409,11 +423,11 @@ function dimensionFeet(value: string, fallbackFeet: number): number {
 /**
  * PREVIEW estrutural da cena.
  *
- * O grid de combate (`CombatGrid`) NÃO é reutilizado aqui: ele depende de
- * câmera, tokens, iniciativa e do runtime do encontro — montá-lo sem combate
- * exigiria um modo "vazio" dentro de um componente mecânico. A superfície
- * mínima abaixo desenha só proporção/imagem/grade em percentuais, sem regra
- * nenhuma e sem nenhuma interação.
+ * O grid de combate (`CombatGrid`) NÃO é montado aqui: ele depende de câmera,
+ * tokens, iniciativa e do runtime do encontro. O que é COMPARTILHADO é a
+ * representação visual da grade — `SpatialGridOverlay`, o mesmo SVG do combate
+ * — para preview e tabuleiro nunca discordarem da contagem de células.
+ * Proporção vem de `spatialConfig`; nada de interação nem de paredes.
  */
 function ScenePreview({
   scene,
@@ -427,20 +441,14 @@ function ScenePreview({
   const { widthFeet, heightFeet } = scene.spatialConfig;
   const safeWidth = widthFeet > 0 ? widthFeet : 1;
   const safeHeight = heightFeet > 0 ? heightFeet : 1;
-  const cellX = `${(SCENE_CELL_FEET / safeWidth) * 100}%`;
-  const cellY = `${(SCENE_CELL_FEET / safeHeight) * 100}%`;
+  /** Contraste pela MESMA análise local do combate (apresentação, nunca regra). */
+  const tone = useSceneGridTone(scene.backgroundImageUrl);
 
   return (
     <div className="scene-preview-frame">
       <div
         className="scene-preview"
-        style={
-          {
-            aspectRatio: `${safeWidth} / ${safeHeight}`,
-            '--scene-cell-x': cellX,
-            '--scene-cell-y': cellY,
-          } as CSSProperties
-        }
+        style={{ aspectRatio: `${safeWidth} / ${safeHeight}` }}
         role="img"
         aria-label={`Prévia da cena ${scene.name}: ${formatSceneMeters(widthFeet)} por ${formatSceneMeters(heightFeet)}`}
       >
@@ -452,6 +460,13 @@ function ScenePreview({
             onError={onImageError}
           />
         ) : null}
+        {/* A MESMA grade do combate: uma célula = `SCENE_CELL_FEET` pés. */}
+        <SpatialGridOverlay
+          widthFeet={safeWidth}
+          heightFeet={safeHeight}
+          cellSizeFeet={SCENE_CELL_FEET}
+          tone={tone}
+        />
       </div>
       <p className="scene-preview-caption">
         {formatSceneMeters(widthFeet)} × {formatSceneMeters(heightFeet)} ·{' '}

@@ -15,6 +15,8 @@ import { SpatialSceneControls } from './SpatialSceneControls';
 import { GridMovementOverlay } from './GridMovementOverlay';
 import { GridMovementTrace } from './GridMovementTrace';
 import { GridRuler } from './GridRuler';
+import { SpatialGridOverlay } from '../../components/spatial/SpatialGridOverlay';
+import { useSceneGridTone } from '../../components/spatial/useSceneGridTone';
 import { MovementHud, movementIssueLabel, type MovementPreviewState } from './MovementHud';
 import { commitMovement, previewMovement } from './movementApi';
 import { subscribeMovementVisual, useMovementVisual } from './movementVisual';
@@ -332,6 +334,19 @@ export function CombatGrid({
     () => scenePixels(scene, cellSizeFeet, DEFAULT_PIXELS_PER_CELL),
     [scene, cellSizeFeet],
   );
+  /**
+   * FUNDO da cena: apresentação da MESMA superfície mecânica. Ausente quando
+   * não há cena/imagem (`null`) ou quando a imagem falhou.
+   */
+  const sceneBackground =
+    combat.sceneBackgroundImageUrl && failedBackground !== combat.sceneBackgroundImageUrl
+      ? combat.sceneBackgroundImageUrl
+      : null;
+  /**
+   * Contraste da grade (6.6M.4.1.2): análise LOCAL da imagem, só apresentação.
+   * Nenhuma regra lê este valor — Movement, alcance e paredes seguem em pés.
+   */
+  const gridTone = useSceneGridTone(sceneBackground);
   /**
    * LIFECYCLE do grid (estado EXCLUSIVAMENTE local — nada vai ao servidor):
    * `inactive` → `initializing` → `ready`. Ver `gridLifecycle.ts`.
@@ -1669,15 +1684,6 @@ export function CombatGrid({
           ? 'Arraste o token do turno para mover · Posicionar coloca unidades · F mede.'
           : 'Arraste o seu token para mover · Space/botão do meio arrastam a câmera · F mede.';
 
-  /**
-   * FUNDO da cena: apresentação da MESMA superfície mecânica. Ausente quando
-   * não há cena/imagem (`null`) ou quando a imagem falhou.
-   */
-  const sceneBackground =
-    combat.sceneBackgroundImageUrl && failedBackground !== combat.sceneBackgroundImageUrl
-      ? combat.sceneBackgroundImageUrl
-      : null;
-
   const planeClasses = [
     'grid-plane',
     placementInteractive && selectedId ? 'is-placing' : '',
@@ -1903,7 +1909,6 @@ export function CombatGrid({
                 {
                   width: `${dimensions.width}px`,
                   height: `${dimensions.height}px`,
-                  '--grid-cell': `${DEFAULT_PIXELS_PER_CELL}px`,
                 } as CSSProperties
               }
               data-scene-mode={scene.mode}
@@ -1928,10 +1933,18 @@ export function CombatGrid({
               ) : null}
 
               {/*
-                LINHAS da grade numa camada própria, ACIMA do fundo e ABAIXO dos
-                tokens: sem elas a imagem cobriria as linhas do plano.
+                GRADE ÚNICA (6.6M.4.1.2) — overlay SVG presentacional, ACIMA do
+                fundo e ABAIXO dos tokens. O mesmo componente monta a grade do
+                preview da cena, então não existe segundo renderer: o `viewBox`
+                está em PÉS e as linhas se repetem em coordenadas, não em
+                pixels, o que mantém o espaçamento exato em qualquer zoom.
               */}
-              <div className="grid-scene-lines" aria-hidden="true" />
+              <SpatialGridOverlay
+                widthFeet={scene.widthFeet}
+                heightFeet={scene.heightFeet}
+                cellSizeFeet={cellSizeFeet}
+                tone={gridTone}
+              />
 
               {placed.map((combatant) => (
                 <GridToken
