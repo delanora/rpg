@@ -1,4 +1,4 @@
-import type { CombatantSpatial, OccupiedSpace, SpatialSize } from '../../types';
+import type { CombatantSpatial, OccupiedSpace, SpatialPosition, SpatialSize } from '../../types';
 
 /**
  * FASE 6.6M.1 — MATEMÁTICA DE RENDERIZAÇÃO DO GRID.
@@ -61,6 +61,40 @@ export function snapFeet(feet: number, size: SpatialSize): number {
 export function floorFeet(feet: number, size: SpatialSize): number {
   const step = snapStepFeet(size);
   return Math.max(0, Math.round(Math.floor(feet / step) * step * 100) / 100);
+}
+
+/**
+ * FASE 6.6M.3.1.3 — CÉLULA QUE CONTÉM o ponto (nunca a interseção mais próxima).
+ *
+ * `Math.round` escolheria a célula vizinha antes de o ponteiro cruzar a borda;
+ * aqui a âncora é o canto MÍNIMO da célula que contém o ponto (`floor`), o que
+ * faz o destaque trocar exatamente na borda. Política de borda determinística:
+ * o intervalo de uma célula é fechado à esquerda e aberto à direita, então o
+ * ponto na borda direita/inferior já pertence à célula seguinte; um ponto
+ * exatamente FORA da cena não seleciona célula nenhuma (nada de clamp visual).
+ *
+ * A célula também precisa caber o footprint: um token Grande não pode ser
+ * ancorado na última coluna de 5 pés. Nesse caso devolve `null` — o chamador
+ * mantém o destino anterior em vez de "empurrar" para a célula válida vizinha.
+ *
+ * Só apresentação/interação: nenhuma legalidade mecânica é decidida aqui.
+ */
+export function containingCellFeet(
+  feet: SpatialPosition,
+  size: SpatialSize,
+  scene: { widthFeet: number; heightFeet: number },
+): SpatialPosition | null {
+  const step = snapStepFeet(size);
+  if (!Number.isFinite(feet.xFeet) || !Number.isFinite(feet.yFeet)) return null;
+  if (feet.xFeet < 0 || feet.yFeet < 0) return null;
+  if (feet.xFeet >= scene.widthFeet || feet.yFeet >= scene.heightFeet) return null;
+  const xFeet = floorFeet(feet.xFeet, size);
+  const yFeet = floorFeet(feet.yFeet, size);
+  const footprint = SIZE_FOOTPRINT_FEET[size];
+  const maxX = Math.max(0, Math.round((scene.widthFeet - footprint.widthFeet) / step) * step);
+  const maxY = Math.max(0, Math.round((scene.heightFeet - footprint.heightFeet) / step) * step);
+  if (xFeet > maxX || yFeet > maxY) return null;
+  return { xFeet, yFeet };
 }
 
 /** Pés → pixels (somente rendering). */

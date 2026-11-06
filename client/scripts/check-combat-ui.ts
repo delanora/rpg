@@ -31,12 +31,7 @@ import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
 import { GridMovementTrace } from '../src/combat/grid/GridMovementTrace';
 import { MovementHud } from '../src/combat/grid/MovementHud';
 import { GridRuler } from '../src/combat/grid/GridRuler';
-import {
-  anchorStepFeet,
-  appendAnchor,
-  contiguousAnchors,
-  pointerAnchor,
-} from '../src/combat/grid/movementPath';
+import { anchorStepFeet, contiguousAnchors } from '../src/combat/grid/movementPath';
 import { CombatGrid } from '../src/combat/grid/CombatGrid';
 import {
   IDENTITY_CAMERA,
@@ -54,9 +49,11 @@ import {
 import { rulerEndpointKey, rulerLabelText, rulerMidpoint } from '../src/combat/grid/gridRuler';
 import { distanceLabel, formatFeet, formatMeters, rangeSummary } from '../src/combat/grid/distanceFormat';
 import { GridToken, type GridUnit } from '../src/combat/grid/GridToken';
+import { Icon } from '../src/components/Icon';
 import { UnplacedCombatantsTray } from '../src/combat/grid/UnplacedCombatantsTray';
 import {
   SIZE_FOOTPRINT_FEET,
+  containingCellFeet,
   feetToPx,
   pixelToPlacementFeet,
   scenePixels,
@@ -3662,7 +3659,9 @@ check(
     movementApiBody.includes('operationId: input.operationId') &&
     !/cost|remaining|speed|difficult|reach|occupiedSpace|\bsize\b/i.test(movementApiBody) &&
     movementGridSource.includes('createOperationId()') &&
-    !movementApiSource.includes('createOperationId')
+    !movementApiSource.includes('createOperationId') &&
+    // O path enviado é DERIVADO do destino (nada de rastro do mouse).
+    movementPathSource.includes('export function contiguousAnchors(')
 );
 check(
   'CB248) preview é SERVER-AUTHORITATIVE: debounce por mudança de trajeto + sequência (stale ignorado)',
@@ -3670,7 +3669,7 @@ check(
     movementGridSource.includes('previewSequence.current !== sequence') &&
     movementGridSource.includes("setPreviewState('loading')") &&
     movementGridSource.includes('window.setTimeout') &&
-    movementPathSource.includes('appendAnchor')
+    movementPathSource.includes('contiguousAnchors')
 );
 check(
   'CB249) commit adota o DTO do servidor; token real NÃO anda durante o draft (sem posição otimista)',
@@ -3684,25 +3683,22 @@ check(
     movementGridSource.includes('const fresh = await previewMovement(combat.id, { combatantId, path });')
 );
 check(
-  'CB250) trajeto: start IMPLÍCITO, passos contíguos, 5 pés (2,5 Tiny), fast pointer e backtrack',
+  'CB250) trajeto DIRETO: origem→destino, contíguo, 5 pés (2,5 Tiny), diagonal PHB e 3×2 em 3 steps',
   (() => {
     const step = anchorStepFeet('medium');
-    const start = { xFeet: 0, yFeet: 0 };
-    const one = appendAnchor([], { xFeet: 0, yFeet: 5 }, step, start);
-    const horizontal = appendAnchor(one, { xFeet: 15, yFeet: 5 }, step, start);
-    const vertical = appendAnchor([], { xFeet: 0, yFeet: 15 }, step, start);
-    const diagonal = appendAnchor([], { xFeet: 10, yFeet: 10 }, step, start);
-    const corner = appendAnchor(
-      appendAnchor([], { xFeet: 0, yFeet: 10 }, step, start),
-      { xFeet: 10, yFeet: 10 },
-      step,
-      start,
-    );
-    const fast = appendAnchor([], { xFeet: 20, yFeet: 0 }, step, start);
-    const backtrack = appendAnchor(fast, { xFeet: 5, yFeet: 0 }, step, start);
-    const backHome = appendAnchor(backtrack, start, step, start);
-    const tiny = appendAnchor([], { xFeet: 5, yFeet: 0 }, anchorStepFeet('tiny'), start);
-    const repeat = appendAnchor(backtrack, { xFeet: 5, yFeet: 0 }, step, start);    const contiguous = (
+    const start = { xFeet: 50, yFeet: 50 };
+    const to = (xFeet: number, yFeet: number) => contiguousAnchors(start, { xFeet, yFeet }, step);
+    const horizontal = to(65, 50);
+    const vertical = to(50, 65);
+    const diagonal = to(65, 65);
+    const threeByTwo = to(65, 60);
+    const fast = to(70, 50);
+    const backHome = to(50, 50);
+    const tiny = contiguousAnchors({
+      xFeet: 0,
+      yFeet: 0,
+    }, { xFeet: 5, yFeet: 2.5 }, anchorStepFeet('tiny'));
+    const contiguous = (
       path: { xFeet: number; yFeet: number }[],
       from: { xFeet: number; yFeet: number },
       size: number,
@@ -3719,46 +3715,69 @@ check(
       anchorStepFeet('tiny') === 2.5 &&
       step === 5 &&
       // A posição atual NUNCA entra no path (o servidor já a conhece).
-      one.length === 1 &&
-      horizontal.length === 4 &&
-      horizontal[3].xFeet === 15 &&
+      horizontal.length === 3 &&
+      horizontal[0].xFeet === 55 &&
+      horizontal[2].xFeet === 65 &&
+      horizontal[2].yFeet === 50 &&
       vertical.length === 3 &&
-      diagonal.length === 2 &&
-      corner.length === 4 &&
-      // Fast pointer: o ponteiro salta, o path continua contíguo.
+      vertical[2].yFeet === 65 &&
+      // Diagonal continua PHB-grid: um passo por eixo, sem custo extra.
+      diagonal.length === 3 &&
+      diagonal[0].xFeet === 55 &&
+      diagonal[0].yFeet === 55 &&
+      diagonal[2].xFeet === 65 &&
+      diagonal[2].yFeet === 65 &&
+      // 3 casas × 2 casas = 3 steps (nunca 5).
+      threeByTwo.length === 3 &&
+      threeByTwo[2].xFeet === 65 &&
+      threeByTwo[2].yFeet === 60 &&
+      // Salto do ponteiro não encurta nem duplica o path.
       fast.length === 4 &&
-      fast[3].xFeet === 20 &&
-      fast[3].yFeet === 0 &&
-      // Backtrack trunca; voltar à origem zera o trajeto.
-      backtrack.length === 1 &&
+      fast[3].xFeet === 70 &&
+      // Destino na origem = nenhum trajeto.
       backHome.length === 0 &&
       // Tiny continua em passos de 2,5 pés.
       tiny.length === 2 &&
       tiny[1].xFeet === 5 &&
-      repeat === backtrack &&
-      contiguous(one, start, step) &&
+      tiny[1].yFeet === 2.5 &&
       contiguous(horizontal, start, step) &&
       contiguous(vertical, start, step) &&
       contiguous(diagonal, start, step) &&
-      contiguous(corner, start, step) &&
+      contiguous(threeByTwo, start, step) &&
       contiguous(fast, start, step) &&
-      contiguous(tiny, start, anchorStepFeet('tiny'))
+      contiguous(tiny, { xFeet: 0, yFeet: 0 }, anchorStepFeet('tiny'))
     );
   })()
 );
 check(
-  'CB251) âncora do ponteiro alinha ao passo, respeita o footprint e não sai da cena (Tiny 2,5)',
+  'CB251) célula sob o cursor: floor CONTÉM o ponto (borda troca exata), footprint-aware e null fora da cena',
   (() => {
-    const medium = pointerAnchor({ xFeet: 47, yFeet: 12, size: 'medium', scene: { widthFeet: 100, heightFeet: 100 } });
-    const tiny = pointerAnchor({ xFeet: 47, yFeet: 12, size: 'tiny', scene: { widthFeet: 100, heightFeet: 100 } });
-    const clamped = pointerAnchor({ xFeet: 400, yFeet: -5, size: 'large', scene: { widthFeet: 100, heightFeet: 100 } });
+    const scene = { widthFeet: 100, heightFeet: 100 };
+    const medium = containingCellFeet({ xFeet: 47, yFeet: 12 }, 'medium', scene);
+    const tiny = containingCellFeet({ xFeet: 47.6, yFeet: 12.6 }, 'tiny', scene);
+    const beforeBorder = containingCellFeet({ xFeet: 14.99, yFeet: 10 }, 'medium', scene);
+    const afterBorder = containingCellFeet({ xFeet: 15, yFeet: 10 }, 'medium', scene);
+    const lastCell = containingCellFeet({ xFeet: 95, yFeet: 95 }, 'medium', scene);
+    const outside = containingCellFeet({ xFeet: 100, yFeet: 12 }, 'medium', scene);
+    const beyond = containingCellFeet({ xFeet: 400, yFeet: 12 }, 'medium', scene);
+    const negative = containingCellFeet({ xFeet: -1, yFeet: 12 }, 'medium', scene);
+    const largeOnLastColumn = containingCellFeet({ xFeet: 95, yFeet: 10 }, 'large', scene);
     return (
-      medium.xFeet === 45 &&
-      medium.yFeet === 10 &&
-      tiny.xFeet === 47.5 &&
-      tiny.yFeet === 12.5 &&
-      clamped.xFeet === 90 &&
-      clamped.yFeet === 0
+      // Nunca a interseção mais próxima (47 → 45, não 45/50 por round).
+      medium?.xFeet === 45 &&
+      medium?.yFeet === 10 &&
+      tiny?.xFeet === 47.5 &&
+      tiny?.yFeet === 12.5 &&
+      beforeBorder?.xFeet === 10 &&
+      afterBorder?.xFeet === 15 &&
+      lastCell?.xFeet === 95 &&
+      lastCell?.yFeet === 95 &&
+      // Fora da cena NÃO seleciona nada (nada de clamp para a última célula).
+      outside === null &&
+      beyond === null &&
+      negative === null &&
+      // Footprint Grande não cabe na última coluna: null, sem "empurrar".
+      largeOnLastColumn === null
     );
   })()
 );
@@ -4135,7 +4154,7 @@ check(
     movementGridSource.includes('beginDraft(gesture, event.clientX, event.clientY);') &&
     movementGridSource.includes('if (current.path.length === 0) {') &&
     // Pointerdown/up sem cruzar o limiar não cria trajeto nenhum.
-    appendAnchor([], { xFeet: 0, yFeet: 0 }, 5, { xFeet: 0, yFeet: 0 }).length === 0
+    contiguousAnchors({ xFeet: 0, yFeet: 0 }, { xFeet: 0, yFeet: 0 }, 5).length === 0
 );
 check(
   'CB275) POINTERUP = confirmação: o drop revalida o caminho e faz commit sem passo extra',
@@ -4167,21 +4186,24 @@ check(
 check(
   'CB278) ghost é APRESENTAÇÃO: overlay só desenha o fantasma e o token real fica na origem',
   movementGridSource.includes('<GridMovementOverlay') &&
-    movementGridSource.includes('position: draftLast') &&
+    movementGridSource.includes('position: draft.pointer') &&
     movementOverlaySource.includes('if (!ghost) return null;') &&
     !movementOverlaySource.includes('polyline') &&
     movementTraceSource.includes('grid-ruler-line') &&
     movementTraceSource.includes("className=\"grid-ruler grid-movement-trace\"")
 );
 check(
-  'CB279) path do componente nasce da posição AUTORITATIVA (start implícito, passos contíguos)',
-  movementGridSource.includes('const nextPath = appendAnchor(') &&
-    movementGridSource.includes('current.startPosition,') &&
-    movementPathSource.includes('export function appendAnchor(') &&
-    movementPathSource.includes('contiguousAnchors') &&
-    movementPathSource.includes('if (samePosition(start, anchor)) return [];') &&
-    // A origem nunca é reintroduzida como primeiro passo.
-    appendAnchor([], { xFeet: 0, yFeet: 5 }, 5, { xFeet: 0, yFeet: 0 })[0].yFeet === 5
+  'CB279) path do componente nasce da ORIGEM AUTORITATIVA + DESTINO (nunca do rastro do ponteiro)',
+  movementGridSource.includes(
+    '? contiguousAnchors(current.startPosition, destination, anchorStepFeet(size))',
+  ) &&
+    movementPathSource.includes('export function contiguousAnchors(') &&
+    // Nada de acumular âncoras por pointermove.
+    !movementGridSource.includes('appendAnchor') &&
+    !movementGridSource.includes('nextPath =') &&
+    // A origem nunca é reintroduzida como primeiro passo; voltar à origem zera.
+    contiguousAnchors({ xFeet: 0, yFeet: 0 }, { xFeet: 0, yFeet: 5 }, 5)[0].yFeet === 5 &&
+    contiguousAnchors({ xFeet: 0, yFeet: 0 }, { xFeet: 0, yFeet: 0 }, 5).length === 0
 );
 
 /* -------------------------------------------------------------------------- */
@@ -4335,6 +4357,115 @@ check(
       const failure = movementGridSource.slice(catchAt, finallyAt);
       return catchAt >= 0 && failure.length > 0 && !failure.includes('clearRuler()');
     })()
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.3.1.3 — DESTINO ORIENTADO + CURSOR DE RÉGUA + CÉLULA EXATA            */
+/* -------------------------------------------------------------------------- */
+
+/** Ícone da régua é SVG do projeto (nunca emoji/crosshair de texto). */
+const rulerIconHtml = renderToStaticMarkup(createElement(Icon, { name: 'ruler', size: 16 }));
+
+check(
+  'CB290) cursor da RÉGUA: ícone real do projeto acompanhando o ponteiro, sem crosshair',
+  movementGridSource.includes('const rulerCursorActive = ruler ? !ruler.locked : quickRuler || mode === \'measure\';') &&
+    movementGridSource.includes('<Icon name="ruler" size={16} />') &&
+    movementGridSource.includes('className="grid-ruler-cursor"') &&
+    movementGridSource.includes('node.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;') &&
+    gridCssSource.includes('.grid-viewport.is-ruler-cursor {\n  cursor: none;\n}') &&
+    gridCssSource.includes('.grid-token.is-ruler-pick:not(:disabled) {\n  cursor: none;\n}') &&
+    // Crosshair não pertence mais à régua (só ao Posicionar, que é placement).
+    !/\.grid-viewport\.is-ruler\s*\{[^}]*crosshair/.test(gridCssSource) &&
+    rulerIconHtml.startsWith('<svg') &&
+    rulerIconHtml.includes('ruler') === false &&
+    !/📏/.test(movementGridSource)
+);
+check(
+  'CB291) UMA interpretação de célula: floor contém o ponteiro e régua/placement/destino leem por ela',
+  gridMathSource.includes('export function containingCellFeet(') &&
+    gridMathSource.includes('const xFeet = floorFeet(feet.xFeet, size);') &&
+    // `Math.round(pointer / célula)` escolheria a interseção mais próxima.
+    !/Math\.round\(\s*feet\.(x|y)Feet\s*\/\s*cellSizeFeet/.test(gridMathSource) &&
+    movementGridSource.includes('function cellAnchorAt(') &&
+    movementGridSource.includes('return containingCellFeet(') &&
+    movementGridSource.includes('const position = cellAnchorAt(clientX, clientY, \'small\');') &&
+    // Nenhum caminho alternativo de leitura do ponteiro sobrou.
+    !movementGridSource.includes('pointerAnchor') &&
+    movementGridSource.includes('cellAnchorAt(event.clientX, event.clientY, unit.spatial.effectiveSize)')
+);
+check(
+  'CB292) hover fora da cena é NADA (sem clamp para a última célula) e sem validade mecânica local',
+  movementGridSource.includes('const anchor = cellAnchorAt(event.clientX, event.clientY, \'small\');') &&
+    movementGridSource.includes('setHoverAnchor(anchor);') &&
+    movementGridSource.includes('{hoverAnchor && rulerActive ? (') &&
+    gridCssSource.includes('grid-hover-cell') &&
+    // Highlight é neutro: nada de verde/vermelho decidindo regra no cliente.
+    !/\.grid-hover-cell\s*\{[^}]*green/.test(gridCssSource) &&
+    !/\.grid-destination-cell\s*\{[^}]*green/.test(gridCssSource)
+);
+check(
+  'CB293) DIRECT DRAG orientado a destino: destino + path derivado, sem acumular rastro do mouse',
+  movementGridSource.includes('destination: SpatialPosition | null;') &&
+    movementGridSource.includes('function updateDraftAt(clientX: number, clientY: number): void {') &&
+    movementGridSource.includes('const sameDestination =') &&
+    movementGridSource.includes('? contiguousAnchors(current.startPosition, destination, anchorStepFeet(size))') &&
+    // Mesmo destino depois de zigue-zague ⇒ mesmo path (função só dos extremos).
+    JSON.stringify(
+      contiguousAnchors({ xFeet: 50, yFeet: 50 }, { xFeet: 65, yFeet: 60 }, 5),
+    ) ===
+      JSON.stringify(contiguousAnchors({ xFeet: 50, yFeet: 50 }, { xFeet: 65, yFeet: 60 }, 5)) &&
+    !movementGridSource.includes('path.push') &&
+    !movementPathSource.includes('export function appendAnchor(') &&
+    !movementGridSource.includes('appendAnchor')
+);
+check(
+  'CB294) preview só quando o DESTINO muda (mesma célula não gera passo nem requisição)',
+  movementGridSource.includes('if (sameDestination) {') &&
+    movementGridSource.includes('if (pointer.xFeet === current.pointer.xFeet && pointer.yFeet === current.pointer.yFeet) return;') &&
+    movementGridSource.includes('const next = { ...current, pointer };') &&
+    // O preview continua chaveado pelo PATH (identidade preservada na mesma célula).
+    movementGridSource.includes('}, [combat.id, draftCombatantId, draftPath]);')
+);
+check(
+  'CB295) linha do gesto é RETA e fala a linguagem da régua (tracejado, label no meio, metros)',
+  movementGridSource.includes('points={[draftTraceFrom, draftTraceTo]}') &&
+    movementGridSource.includes('const draftTraceTo = draft && draftDestination ? anchorScreen(draftDestination) : null;') &&
+    !movementGridSource.includes('draft.path.map(anchorScreen)') &&
+    movementTraceSource.includes('grid-ruler-line') &&
+    movementTraceSource.includes('grid-ruler-label') &&
+    movementTraceSource.includes('polylineMidpoint') &&
+    movementTraceSource.includes('formatMeters')
+);
+check(
+  'CB296) UM ghost suave + célula de destino snapada (nunca duas peças concorrentes)',
+  movementGridSource.includes('position: draft.pointer') &&
+    movementGridSource.includes('className="grid-destination-cell"') &&
+    (movementGridSource.match(/<GridMovementOverlay/g) ?? []).length === 1 &&
+    movementGridSource.includes('const footprint = SIZE_FOOTPRINT_FEET[size];') &&
+    gridCssSource.includes('.grid-destination-cell {')
+);
+check(
+  'CB297) Direct Drag e Measure-to-Move produzem o MESMO path para a mesma origem/destino',
+  (() => {
+    const origin = { xFeet: 50, yFeet: 50 };
+    const destination = { xFeet: 65, yFeet: 60 };
+    const direct = contiguousAnchors(origin, destination, anchorStepFeet('medium'));
+    const measured = contiguousAnchors(origin, destination, anchorStepFeet('medium'));
+    return (
+      JSON.stringify(direct) === JSON.stringify(measured) &&
+      (movementGridSource.match(/contiguousAnchors\(/g) ?? []).length >= 2 &&
+      movementGridSource.includes('const path = contiguousAnchors(') &&
+      movementGridSource.includes('? contiguousAnchors(current.startPosition, destination')
+    );
+  })()
+);
+check(
+  'CB298) servidor segue dono do custo/validade: cliente só manda combatantId+path',
+  movementApiBody.includes('combatantId: input.combatantId') &&
+    movementApiBody.includes('path: input.path') &&
+    !/cost|remaining|difficult|occupied|reach/i.test(movementApiBody) &&
+    movementGridSource.includes('if (!fresh.movement.legal || !fresh.movement.affordable) {') &&
+    movementGridSource.includes('await previewMovement(combat.id, { combatantId, path });')
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

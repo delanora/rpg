@@ -213,8 +213,28 @@
   cursor: grabbing;
 }
 
-.grid-viewport.is-ruler {
-  cursor: crosshair;
+/*
+ * Régua: o cursor nativo some e o ícone de régua do projeto acompanha o
+ * ponteiro (nada de crosshair). Vale enquanto o usuário está APONTANDO.
+ */
+.grid-viewport.is-ruler-cursor {
+  cursor: none;
+}
+
+.grid-ruler-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--gold-bright, #f6d977);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+  /* Deslocado do hotspot para o usuário ver a célula apontada. */
+  margin: 7px 0 0 9px;
+  will-change: transform;
 }
 
 .grid-viewport.is-drafting {
@@ -285,6 +305,18 @@
   border-radius: 2px;
 }
 
+/*
+ * Destino MECÂNICO do gesto direto: o footprint snapado que o servidor vai
+ * avaliar. É a mesma célula do ghost suave, não uma segunda peça concorrente.
+ */
+.grid-destination-cell {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(246, 217, 119, 0.06);
+  border: 1px dashed rgba(246, 217, 119, 0.55);
+  border-radius: 3px;
+}
+
 /* -------------------------------------------------------------------------- */
 /* TOKENS — circulares, moldura metálica, identidade dark fantasy             */
 /* -------------------------------------------------------------------------- */
@@ -329,7 +361,7 @@
 }
 
 .grid-token.is-ruler-pick:not(:disabled) {
-  cursor: crosshair;
+  cursor: none;
 }
 
 .grid-token.is-pending {
@@ -577,12 +609,6 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--gold, #e0b83f);
-}
-
-.grid-hud-steps {
-  color: var(--ink-faint, #8d7859);
-  letter-spacing: 0.02em;
-  text-transform: none;
 }
 
 .grid-hud-numbers {

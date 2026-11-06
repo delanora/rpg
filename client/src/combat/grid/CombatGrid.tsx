@@ -17,12 +17,7 @@ import { GridMovementTrace } from './GridMovementTrace';
 import { GridRuler } from './GridRuler';
 import { MovementHud, movementIssueLabel, type MovementPreviewState } from './MovementHud';
 import { commitMovement, previewMovement } from './movementApi';
-import {
-  anchorStepFeet,
-  appendAnchor,
-  contiguousAnchors,
-  pointerAnchor,
-} from './movementPath';
+import { anchorStepFeet, contiguousAnchors } from './movementPath';
 import {
   measureSpatial,
   setSpatialPosition,
@@ -48,11 +43,13 @@ import {
   BASE_CELL_SIZE_FEET,
   DEFAULT_PIXELS_PER_CELL,
   SIZE_FOOTPRINT_FEET,
+  containingCellFeet,
   feetToPx,
   occupiedSpacePixels,
   scenePixels,
   splitByPlacement,
 } from './gridMath';
+import { Icon } from '../../components/Icon';
 import type { MovementAuthority } from '../turnControl';
 
 export interface CombatGridProps {
@@ -89,12 +86,23 @@ export interface CombatGridProps {
  */
 type InteractionMode = 'none' | 'placement' | 'measure';
 
-/** Trajeto pretendido LOCAL (nunca persistido, nunca fonte de posição). */
+/**
+ * Trajeto pretendido LOCAL (nunca persistido, nunca fonte de posição).
+ *
+ * 6.6M.3.1.3 — DIRECIONADO A DESTINO: existem só a origem autoritativa, o
+ * DESTINO mecânico (célula sob o ponteiro) e o path canônico derivado dele. O
+ * `pointer` livre serve exclusivamente ao ghost suave; nenhum rastro do mouse
+ * entra no `path`.
+ */
 interface MovementDraft {
   combatantId: string;
   /** Âncora autoritativa no início do draft — base da invalidação por realtime. */
   startPosition: SpatialPosition;
-  /** Âncoras pretendidas, passo a passo (vazio = draft recém-iniciado). */
+  /** Destino MECÂNICO atual (âncora canônica); `null` = ponteiro fora da cena. */
+  destination: SpatialPosition | null;
+  /** Ponto LIVRE do ponteiro (pés, já sem o grab) — só apresentação. */
+  pointer: SpatialPosition;
+  /** Path direto origem→destino (vazio = sem destino / de volta à origem). */
   path: SpatialPosition[];
   /** Ponto de pega dentro do footprint (pés) para o token não "pular". */
   grab: SpatialPosition;
@@ -264,6 +272,10 @@ export function CombatGrid({
   const suppressClick = useRef(false);
   const gestureRef = useRef<TokenGesture | null>(null);
   const [grabGesture, setGrabGesture] = useState<TokenGesture | null>(null);
+  // --- 6.6M.3.1.3: cursor da régua (ícone real, sem crosshair) --------------
+  const rulerCursorRef = useRef<HTMLDivElement | null>(null);
+  /** Última posição do ponteiro no VIEWPORT (px) — inicializa o cursor ícone. */
+  const pointerInViewport = useRef<Point2D | null>(null);
   /** O ponteiro já soltou: `lostpointercapture` tardio não pode cancelar. */
   const released = useRef(false);
 
@@ -299,7 +311,7 @@ export function CombatGrid({
       : null;
 
   const selectedUnit = mode === 'placement' ? (combat.combatants.find((item) => item.id === selectedId) ?? null) : null;
-  const draftLast = draft && draft.path.length > 0 ? draft.path[draft.path.length - 1] : null;
+  const draftDestination = draft?.destination ?? null;
 
   /* ---------------------------------------------------------------------- */
   /* MEASURE TO MOVE — derivação de ELEGIBILIDADE                            */
@@ -426,6 +438,38 @@ export function CombatGrid({
     return { x: clientX - rect.left, y: clientY - rect.top };
   }
 
+  /**
+   * Ícone do cursor da régua acompanha o ponteiro.
+   *
+   * A posição e a visibilidade vão por `style` (sem estado React por pixel):
+   * a cena não re-renderiza a cada movimento e o ícone nunca fica desalinhado.
+   */
+  function trackRulerCursor(clientX: number, clientY: number): void {
+    const point = viewportPoint(clientX, clientY);
+    if (!point) return;
+    pointerInViewport.current = point;
+    const node = rulerCursorRef.current;
+    if (!node) return;
+    node.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
+    node.style.opacity = '1';
+  }
+
+  /** Montagem do ícone: nasce no último ponto conhecido (sem salto para 0,0). */
+  function attachRulerCursor(node: HTMLDivElement | null): void {
+    rulerCursorRef.current = node;
+    if (!node) return;
+    const point = pointerInViewport.current;
+    node.style.opacity = point ? '1' : '0';
+    if (point) node.style.transform = `translate3d(${point.x}px, ${point.y}px, 0)`;
+  }
+
+  /** Saiu do grid: cursor de régua escondido (o nativo volta fora daqui). */
+  function handleViewportPointerLeave(): void {
+    pointerInViewport.current = null;
+    if (rulerCursorRef.current) rulerCursorRef.current.style.opacity = '0';
+    setHoverAnchor(null);
+  }
+
   /** Ponteiro (cliente) → PÉS na cena, com pan/zoom aplicados. */
   function feetAt(clientX: number, clientY: number): SpatialPosition | null {
     const point = viewportPoint(clientX, clientY);
@@ -433,21 +477,30 @@ export function CombatGrid({
     return screenToFeet(cameraRef.current, point, geometry);
   }
 
-  /** Âncora (canto mínimo do footprint) a partir do ponteiro. */
-  function anchorAt(
+  /**
+   * Âncora canônica da CÉLULA QUE CONTÉM o ponteiro.
+   *
+   * Única interpretação de "qual casa está sob o mouse": `floor` (nunca a
+   * interseção mais próxima), footprint-aware e `null` fora da cena — régua,
+   * placement e destino do gesto leem o ponteiro por aqui. O zoom/pan já foram
+   * removidos em `feetAt`.
+   */
+  function cellAnchorAt(
     clientX: number,
     clientY: number,
     size: SpatialSize,
-    grab: SpatialPosition,
+    grab: SpatialPosition | null = null,
   ): SpatialPosition | null {
     const feet = feetAt(clientX, clientY);
     if (!feet) return null;
-    return pointerAnchor({
-      xFeet: feet.xFeet - grab.xFeet,
-      yFeet: feet.yFeet - grab.yFeet,
+    return containingCellFeet(
+      {
+        xFeet: feet.xFeet - (grab?.xFeet ?? 0),
+        yFeet: feet.yFeet - (grab?.yFeet ?? 0),
+      },
       size,
       scene,
-    });
+    );
   }
 
   /** Centro visual da ÂNCORA (px de TELA) — traço/label do movimento. */
@@ -487,6 +540,12 @@ export function CombatGrid({
   /* ---------------------------------------------------------------------- */
 
   const rulerActive = mode === 'measure' || quickRuler || ruler !== null;
+  /**
+   * CURSOR DE RÉGUA: enquanto o usuário está APONTANDO (F armado, Medir, ou
+   * régua aberta), o ponteiro vira um ícone de régua e o cursor nativo some. Ao
+   * fixar o segundo ponto (ou cancelar) volta ao normal.
+   */
+  const rulerCursorActive = ruler ? !ruler.locked : quickRuler || mode === 'measure';
 
   const hoveredUnit = hoverTokenId ? (placed.find((item) => item.id === hoverTokenId) ?? null) : null;
   const hoverTarget: SpatialMeasureEndpoint | null =
@@ -525,13 +584,16 @@ export function CombatGrid({
     setRuler({ from: ruler.from, to: endpoint, locked: true });
   }
 
+  /**
+   * Ponto da régua = a CÉLULA sob o ponteiro (não a interseção mais próxima).
+   * A âncora enviada ao servidor continua canônica (canto mínimo da célula) e o
+   * marcador é desenhado no CENTRO dessa célula — o traço visual e o trajeto
+   * medido são a mesma reta, só deslocada meio passo.
+   */
   function pointEndpointAt(clientX: number, clientY: number): SpatialMeasureEndpoint | null {
-    const feet = feetAt(clientX, clientY);
-    if (!feet) return null;
-    return {
-      kind: 'point',
-      position: pointerAnchor({ xFeet: feet.xFeet, yFeet: feet.yFeet, size: 'small', scene }),
-    };
+    const position = cellAnchorAt(clientX, clientY, 'small');
+    if (!position) return null;
+    return { kind: 'point', position };
   }
 
   /**
@@ -709,12 +771,12 @@ export function CombatGrid({
   }
 
   /**
-   * Cria o DRAFT (o token real NÃO sai do lugar): o trajeto nasce vazio e o
-   * primeiro anchor já é contíguo à posição autoritativa de `startPosition`.
+   * Cria o DRAFT (o token real NÃO sai do lugar): origem autoritativa + destino
+   * mecânico atual. O trajeto é sempre DERIVADO, nunca acumulado do ponteiro.
    */
   function beginDraft(gesture: TokenGesture, clientX: number, clientY: number): void {
     operationRef.current = null;
-    dragMoved.current = false;
+    dragMoved.current = true;
     setDraftNotice(null);
     setPendingNotice(null);
     setPreview(null);
@@ -722,32 +784,61 @@ export function CombatGrid({
     const next: MovementDraft = {
       combatantId: gesture.combatantId,
       startPosition: gesture.position,
+      destination: null,
+      pointer: gesture.position,
       path: [],
       grab: gesture.grab,
     };
     draftRef.current = next;
     setDraft(next);
-    appendDraftAt(clientX, clientY);
+    updateDraftAt(clientX, clientY);
   }
 
-  /** Acrescenta o anchor correspondente ao ponteiro atual (passo do tamanho). */
-  function appendDraftAt(clientX: number, clientY: number): void {
+  /**
+   * Atualiza o DESTINO mecânico a partir do ponteiro.
+   *
+   * Só quando a célula apontada muda o path é RECONSTRUÍDO (origem→destino) e o
+   * preview é refeito: zigue-zague dentro da mesma célula não gera passos, não
+   * gasta Movement e não cria requisição. O ghost, que é apresentação, continua
+   * livre e suave entre uma célula e outra.
+   */
+  function updateDraftAt(clientX: number, clientY: number): void {
     const current = draftRef.current;
     if (!current) return;
     const unit = placed.find((item) => item.id === current.combatantId);
     if (!unit?.spatial) return;
-    const anchor = anchorAt(clientX, clientY, unit.spatial.effectiveSize, current.grab);
-    if (!anchor) return;
-    // O path começa DEPOIS da posição autoritativa (que o servidor já conhece).
-    const nextPath = appendAnchor(
-      current.path,
-      anchor,
-      anchorStepFeet(unit.spatial.effectiveSize),
-      current.startPosition,
-    );
-    if (nextPath === current.path) return;
-    dragMoved.current = true;
-    const next = { ...current, path: nextPath };
+    const size = unit.spatial.effectiveSize;
+    const feet = feetAt(clientX, clientY);
+    if (!feet) return;
+    const footprint = SIZE_FOOTPRINT_FEET[size];
+    // Ghost livre: o token não "pula" para a célula, mas nunca sai da cena.
+    const pointer: SpatialPosition = {
+      xFeet: clampFeet(feet.xFeet - current.grab.xFeet, scene.widthFeet - footprint.widthFeet),
+      yFeet: clampFeet(feet.yFeet - current.grab.yFeet, scene.heightFeet - footprint.heightFeet),
+    };
+    const destination = containingCellFeet(pointer, size, scene);
+    const sameDestination =
+      current.destination === null
+        ? destination === null
+        : destination !== null &&
+          destination.xFeet === current.destination.xFeet &&
+          destination.yFeet === current.destination.yFeet;
+    if (sameDestination) {
+      if (pointer.xFeet === current.pointer.xFeet && pointer.yFeet === current.pointer.yFeet) return;
+      const next = { ...current, pointer };
+      draftRef.current = next;
+      setDraft(next);
+      return;
+    }
+    const backHome =
+      destination !== null &&
+      destination.xFeet === current.startPosition.xFeet &&
+      destination.yFeet === current.startPosition.yFeet;
+    const path =
+      destination && !backHome
+        ? contiguousAnchors(current.startPosition, destination, anchorStepFeet(size))
+        : [];
+    const next: MovementDraft = { ...current, pointer, destination, path };
     draftRef.current = next;
     setDraft(next);
   }
@@ -969,7 +1060,7 @@ export function CombatGrid({
         beginDraft(gesture, event.clientX, event.clientY);
         return;
       }
-      if (draftRef.current) appendDraftAt(event.clientX, event.clientY);
+      if (draftRef.current) updateDraftAt(event.clientX, event.clientY);
     }
     function onUp(): void {
       lastPointer.current = null;
@@ -1013,7 +1104,7 @@ export function CombatGrid({
           const next = bounded(panBy(cameraRef.current, -dx, -dy));
           cameraRef.current = next;
           setCamera(next);
-          appendDraftAt(pointer.x, pointer.y);
+          updateDraftAt(pointer.x, pointer.y);
         }
       }
       frame = requestAnimationFrame(tick);
@@ -1265,6 +1356,9 @@ export function CombatGrid({
   }
 
   function handleViewportPointerMove(event: PointerEvent<HTMLDivElement>): void {
+    // O ícone do cursor da régua acompanha o ponteiro; a posição vai por style
+    // (sem estado React por pixel) para não re-renderizar a cena a cada move.
+    trackRulerCursor(event.clientX, event.clientY);
     const gesture = panGesture.current;
     if (gesture) {
       const dx = event.clientX - gesture.startX;
@@ -1281,13 +1375,16 @@ export function CombatGrid({
       if (hoverAnchor) setHoverAnchor(null);
       return;
     }
-    // Célula sob o cursor: só apresentação (nunca validação local).
-    const feet = feetAt(event.clientX, event.clientY);
-    if (!feet) return;
-    const anchor = pointerAnchor({ xFeet: feet.xFeet, yFeet: feet.yFeet, size: 'small', scene });
-    if (!hoverAnchor || hoverAnchor.xFeet !== anchor.xFeet || hoverAnchor.yFeet !== anchor.yFeet) {
-      setHoverAnchor(anchor);
+    // Célula sob o cursor: só apresentação (nunca validação local). `null` =
+    // ponteiro fora da cena, então nada é destacado.
+    const anchor = cellAnchorAt(event.clientX, event.clientY, 'small');
+    if (
+      (!hoverAnchor && !anchor) ||
+      (hoverAnchor && anchor && hoverAnchor.xFeet === anchor.xFeet && hoverAnchor.yFeet === anchor.yFeet)
+    ) {
+      return;
     }
+    setHoverAnchor(anchor);
   }
 
   function handleViewportPointerUp(event: PointerEvent<HTMLDivElement>): void {
@@ -1313,17 +1410,10 @@ export function CombatGrid({
     if (!isMaster || !selectedId || locked) return;
     const unit = combat.combatants.find((item) => item.id === selectedId);
     if (!unit?.spatial) return;
-    const feet = feetAt(event.clientX, event.clientY);
-    if (!feet) return;
-    void place(
-      selectedId,
-      pointerAnchor({
-        xFeet: feet.xFeet,
-        yFeet: feet.yFeet,
-        size: unit.spatial.effectiveSize,
-        scene,
-      }),
-    );
+    // A célula que CONTÉM o ponteiro é a célula do placement.
+    const anchor = cellAnchorAt(event.clientX, event.clientY, unit.spatial.effectiveSize);
+    if (!anchor) return;
+    void place(selectedId, anchor);
   }
 
   /**
@@ -1350,12 +1440,9 @@ export function CombatGrid({
     if (!combatantId) return;
     const unit = combat.combatants.find((item) => item.id === combatantId);
     if (!unit?.spatial) return;
-    const feet = feetAt(event.clientX, event.clientY);
-    if (!feet) return;
-    void place(
-      combatantId,
-      pointerAnchor({ xFeet: feet.xFeet, yFeet: feet.yFeet, size: unit.spatial.effectiveSize, scene }),
-    );
+    const anchor = cellAnchorAt(event.clientX, event.clientY, unit.spatial.effectiveSize);
+    if (!anchor) return;
+    void place(combatantId, anchor);
   }
 
   function selectUnit(combatantId: string): void {
@@ -1506,11 +1593,15 @@ export function CombatGrid({
     'grid-viewport',
     panGesture.current?.moved ? 'is-panning' : '',
     spacePan ? 'is-space-pan' : '',
-    rulerActive ? 'is-ruler' : '',
+    rulerCursorActive ? 'is-ruler-cursor' : '',
     draft ? 'is-drafting' : '',
   ]
     .filter(Boolean)
     .join(' ');
+
+  const draftOriginScene = draft && draftUnit ? footprintCenterPx(draftUnit) : null;
+  const draftTraceFrom = draftOriginScene ? sceneToScreen(camera, draftOriginScene) : null;
+  const draftTraceTo = draft && draftDestination ? anchorScreen(draftDestination) : null;
 
   const rulerFromScreen = ruler
     ? endpointScreenPoint(ruler.from, camera)
@@ -1683,6 +1774,7 @@ export function CombatGrid({
           className={viewportClasses}
           onPointerDown={handleViewportPointerDown}
           onPointerMove={handleViewportPointerMove}
+          onPointerLeave={handleViewportPointerLeave}
           onPointerUp={handleViewportPointerUp}
           onPointerCancel={handleViewportPointerUp}
           onClick={handleViewportClick}
@@ -1735,16 +1827,39 @@ export function CombatGrid({
                 />
               ))}
 
-              {/* GHOST do destino: o token real continua na origem. */}
-              {draft && draftLast && draftUnit?.spatial ? (
+              {/* GHOST livre: acompanha o ponteiro; o token real fica na origem. */}
+              {draft && draftUnit?.spatial ? (
                 <GridMovementOverlay
                   ghost={{
-                    position: draftLast,
+                    position: draft.pointer,
                     size: draftUnit.spatial.effectiveSize,
                     imageRef: draftUnit.spatial.tokenImageRef,
                   }}
                   cellSizeFeet={cellSizeFeet}
                   pixelsPerCell={DEFAULT_PIXELS_PER_CELL}
+                />
+              ) : null}
+
+              {/* Destino MECÂNICO snapado: um ÚNICO ghost + o footprint do destino. */}
+              {draft && draftDestination && draft.path.length > 0 && draftUnit?.spatial ? (
+                <div
+                  className="grid-destination-cell"
+                  aria-hidden="true"
+                  data-destination="true"
+                  style={{
+                    left: `${feetToPx(draftDestination.xFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL)}px`,
+                    top: `${feetToPx(draftDestination.yFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL)}px`,
+                    width: `${feetToPx(
+                      SIZE_FOOTPRINT_FEET[draftUnit.spatial.effectiveSize].widthFeet,
+                      cellSizeFeet,
+                      DEFAULT_PIXELS_PER_CELL,
+                    )}px`,
+                    height: `${feetToPx(
+                      SIZE_FOOTPRINT_FEET[draftUnit.spatial.effectiveSize].heightFeet,
+                      cellSizeFeet,
+                      DEFAULT_PIXELS_PER_CELL,
+                    )}px`,
+                  }}
                 />
               ) : null}
 
@@ -1764,12 +1879,10 @@ export function CombatGrid({
             </div>
           </div>
 
-          {/* TRAÇO do movimento: MESMA linha tracejada da régua, em TELA. */}
-          {draft && draft.path.length > 0 ? (
+          {/* TRAÇO do movimento: reta tracejada origem→destino, em TELA. */}
+          {draft && draft.path.length > 0 && draftTraceFrom && draftTraceTo ? (
             <GridMovementTrace
-              points={[draft.startPosition, ...draft.path]
-                .map(anchorScreen)
-                .filter((point): point is Point2D => point !== null)}
+              points={[draftTraceFrom, draftTraceTo]}
               distanceInFeet={preview?.movement.totalDistanceFeet ?? null}
               costInFeet={preview?.movement.totalCostFeet ?? null}
               state={previewState}
@@ -1812,6 +1925,13 @@ export function CombatGrid({
             <p className="grid-hud-notice" role="status" aria-live="polite">
               {draftNotice}
             </p>
+          ) : null}
+
+          {/* CURSOR da régua: ícone real do projeto, sem crosshair nativo. */}
+          {rulerCursorActive ? (
+            <div ref={attachRulerCursor} className="grid-ruler-cursor" aria-hidden="true">
+              <Icon name="ruler" size={16} />
+            </div>
           ) : null}
 
           {draft ? (
