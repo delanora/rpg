@@ -78,6 +78,15 @@ export interface CombatDto {
   sceneId: string | null;
   sceneName: string | null;
   /**
+   * IMAGEM DE FUNDO da cena usada neste combate (6.6M.4.1.1).
+   *
+   * É APRESENTAÇÃO e por isso fica FORA de `spatial`: nenhuma regra pode ler
+   * pixels (distância, movimento, alcance, cobertura continuam em PÉS). `null`
+   * em combate legado (sem cena) e em cena sem arte própria — nunca há fallback
+   * para a galeria da localidade, porque a CENA é a dona do fundo espacial.
+   */
+  sceneBackgroundImageUrl: string | null;
+  /**
    * CONFIGURAÇÃO ESPACIAL EFETIVA (Fase 6.6L.1 + 6.6L.4.1.1): vem de
    * `Scene.spatialConfig` quando o combate tem `sceneId`; combate legado (sem
    * cena) usa `Combat.spatialConfig`. Existe UMA fonte estrutural por combate.
@@ -192,6 +201,8 @@ export interface CombatSourced {
     id: string;
     name: string;
     spatialConfig?: unknown;
+    /** Arte da cena (opcional): só apresentação, projetada fora de `spatial`. */
+    backgroundImageUrl?: string | null;
     obstacles?: SpatialObstacleSource[];
   } | null;
   combatants: CombatantSourced[];
@@ -407,6 +418,9 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     localityName: combat.locality?.name ?? null,
     sceneId: combat.scene?.id ?? null,
     sceneName: combat.scene?.name ?? null,
+    // A imagem segue a MESMA fonte estrutural (a cena viva): sem cena ou sem
+    // arte, `null`. Nada de snapshot em `Combat` nesta fase.
+    sceneBackgroundImageUrl: combat.scene?.backgroundImageUrl ?? null,
     // FONTE ESTRUTURAL ÚNICA: cena quando há `sceneId`, senão o legado.
     spatial: effectiveSceneConfigOf(combat),
     obstacles: (combat.scene?.obstacles ?? []).map(obstacleDtoOf),

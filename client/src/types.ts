@@ -2418,6 +2418,13 @@ export interface CombatDto {
   currentCombatantId: string | null;
   localityId: string | null;
   localityName: string | null;
+  /**
+   * Imagem de FUNDO da cena usada no combate (6.6M.4.1.1).
+   *
+   * Apresentação pura: fica FORA de `spatial` de propósito. `null` em combate
+   * legado (sem cena) e em cena sem imagem — o grid volta à superfície padrão.
+   */
+  sceneBackgroundImageUrl: string | null;
   /** Modo/dimensões/célula da cena (fundação espacial 6.6L.1). */
   spatial: SpatialScene;
   combatants: CombatantDto[];

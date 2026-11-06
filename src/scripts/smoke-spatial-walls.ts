@@ -630,6 +630,21 @@ export async function smokeSpatialWalls(baseUrl: string, check: Check): Promise<
     // ===================================================================
     // AK–AP — COMBATE: referência, read model, LOCK e legado
     // ===================================================================
+    // FUNDO (6.6M.4.1.1): a imagem é APRESENTAÇÃO da cena, mas precisa chegar
+    // ao read model do combate — é a única origem permitida (sem fallback).
+    const backgroundSet = await request('PATCH', `/scenes/${sceneA.id}`, {
+      backgroundImageUrl: '/uploads/smoke-scene-background.png',
+      ...op(sceneA.version),
+    });
+    sceneA = backgroundSet.data.scene as Record<string, any>;
+    check(
+      '89W.AK.0) PATCH grava a imagem de fundo na cena (apresentação, fora da config espacial)',
+      backgroundSet.status === 200 &&
+        sceneA.backgroundImageUrl === '/uploads/smoke-scene-background.png' &&
+        sceneA.spatialConfig.mode === 'grid-2d',
+      JSON.stringify({ status: backgroundSet.status, image: sceneA.backgroundImageUrl }),
+    );
+
     const started = await request('POST', '/combat', {
       localityId: localityA.id,
       sceneId: sceneA.id,
@@ -646,7 +661,9 @@ export async function smokeSpatialWalls(baseUrl: string, check: Check): Promise<
         combat.spatial.mode === 'grid-2d' &&
         combat.spatial.widthFeet === 120 &&
         combat.spatial.heightFeet === 80 &&
-        combat.obstacles.length === sceneA.obstacles.length,
+        combat.obstacles.length === sceneA.obstacles.length &&
+        // A cadeia que faltava: a imagem da CENA chega ao DTO do combate.
+        combat.sceneBackgroundImageUrl === '/uploads/smoke-scene-background.png',
       JSON.stringify({ status: started.status, sceneId: combat?.sceneId, walls: combat?.obstacles?.length }),
     );
     const combatView = (await request('GET', '/combat/active')).data.combat as Record<string, any>;
@@ -656,6 +673,12 @@ export async function smokeSpatialWalls(baseUrl: string, check: Check): Promise<
         JSON.stringify(sceneA.obstacles.map((wall: any) => wall.id).sort()) &&
         combatView.obstacles.every((wall: any) => typeof wall.start.xFeet === 'number'),
       JSON.stringify({ combat: combatView.obstacles.length, scene: sceneA.obstacles.length }),
+    );
+    check(
+      '89W.AL.1) GET /combat/active preserva a imagem da cena (mesmo read model, sem snapshot)',
+      combatView.sceneId === sceneA.id &&
+        combatView.sceneBackgroundImageUrl === '/uploads/smoke-scene-background.png',
+      JSON.stringify({ image: combatView.sceneBackgroundImageUrl }),
     );
 
     const lockPatchScene = await request('PATCH', `/scenes/${sceneA.id}`, {
@@ -741,6 +764,7 @@ export async function smokeSpatialWalls(baseUrl: string, check: Check): Promise<
       '89W.AP) LEGACY: combate sem cena mantém `spatialConfig`, lista vazia de paredes e aceita PATCH de config',
       legacy.status === 201 &&
         legacyCombat.sceneId === null &&
+        legacyCombat.sceneBackgroundImageUrl === null &&
         Array.isArray(legacyCombat.obstacles) &&
         legacyCombat.obstacles.length === 0 &&
         legacyConfig.status === 200 &&
@@ -750,6 +774,25 @@ export async function smokeSpatialWalls(baseUrl: string, check: Check): Promise<
     );
 
     await request('POST', '/combat/end');
+    // Cena SEM imagem: o combate recebe `null` — a imagem é opcional e a cena
+    // não herda arte de lugar nenhum.
+    const noImageCombat = await request('POST', '/combat', {
+      localityId: localityA.id,
+      sceneId: salao.id,
+      entries: [],
+    });
+    const noImageDto = noImageCombat.data.combat as Record<string, any>;
+    if (noImageDto?.id) combatId = noImageDto.id;
+    await request('POST', '/combat/end');
+    check(
+      '89W.AP.1) cena SEM imagem → `sceneBackgroundImageUrl` null (combate segue válido)',
+      noImageCombat.status === 201 &&
+        noImageDto.sceneId === salao.id &&
+        noImageDto.sceneBackgroundImageUrl === null &&
+        noImageDto.spatial.mode === 'assisted',
+      JSON.stringify({ status: noImageCombat.status, image: noImageDto?.sceneBackgroundImageUrl }),
+    );
+
     const mismatch = await request('POST', '/combat', {
       localityId: localityB.id,
       sceneId: sceneA.id,

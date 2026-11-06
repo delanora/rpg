@@ -48,6 +48,14 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
   const [locked, setLocked] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  /**
+   * URL JÁ ENVIADA e ainda NÃO persistida na cena.
+   *
+   * O upload físico não é transacional: se o PATCH cair na rede, a mesma
+   * intenção é repetida com esta URL (mesmo `operationId`, sem segundo arquivo
+   * órfão). Uma tentativa nova/troca de imagem sobrescreve o valor.
+   */
+  const [stagedImage, setStagedImage] = useState<string | null>(null);
 
   /**
    * Retry de uma escrita cujo resultado ficou INCERTO reenvia o mesmo
@@ -109,6 +117,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
     try {
       await onUpdate(patch, scene.version, operationId);
       pending.current = null;
+      setStagedImage(null);
       setNotice(success);
     } catch (value) {
       await handleFailure(value);
@@ -128,9 +137,12 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
       // storage novo.
       const payload = await fileToImagePayload(file);
       const stored = await uploadImage(payload.dataUrl, payload.name, 'localities');
-      await onUpdate({ backgroundImageUrl: stored.url }, scene.version, newId());
       setImageFailed(false);
-      setNotice('Imagem de fundo atualizada.');
+      // O PATCH passa pelo MESMO caminho idempotente das outras mutações — não
+      // existe atalho com `newId()` que fure a política de retry. A URL fica
+      // guardada para ser reaproveitada se a escrita ficar incerta.
+      setStagedImage(stored.url);
+      await runUpdate({ backgroundImageUrl: stored.url }, 'Imagem de fundo atualizada.');
     } catch (value) {
       await handleFailure(value);
     } finally {
@@ -317,6 +329,24 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
           Usa o mesmo envio de imagem das localidades. A imagem NÃO é fonte mecânica: grid,
           dimensões e paredes independem dela.
         </p>
+        {stagedImage && editable ? (
+          <p className="scene-hint">
+            A imagem foi enviada, mas ainda não foi salva na cena.{' '}
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={busy}
+              onClick={() =>
+                void runUpdate(
+                  { backgroundImageUrl: stagedImage },
+                  'Imagem de fundo atualizada.',
+                )
+              }
+            >
+              salvar imagem enviada
+            </button>
+          </p>
+        ) : null}
       </Section>
 
       <Section title="Preview" icon="scroll" subtitle="Proporção, grade e imagem — sem edição de paredes">

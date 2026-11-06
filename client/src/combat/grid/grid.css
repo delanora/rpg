@@ -281,26 +281,20 @@
 /*
  * A SCENE parece uma superfície física: borda fina de latão envelhecido,
  * sombra externa e sombra interna discreta.
+ *
+ * As LINHAS da grade não moram mais no `background-image` do plano: elas
+ * subiram para `.grid-scene-lines`, uma camada própria, porque a imagem de fundo
+ * da cena (`<img>`) é pintada ACIMA do background do plano e cobriria a grade.
  */
 .grid-plane {
   position: relative;
   background-color: #100c09;
-  background-image:
-    radial-gradient(120% 100% at 50% 0%, rgba(224, 184, 63, 0.045), transparent 60%),
-    repeating-linear-gradient(
-      to right,
-      rgba(198, 166, 110, 0.16) 0 1px,
-      transparent 1px var(--grid-cell, 44px)
-    ),
-    repeating-linear-gradient(
-      to bottom,
-      rgba(198, 166, 110, 0.16) 0 1px,
-      transparent 1px var(--grid-cell, 44px)
-    );
-  background-size:
-    100% 100%,
-    var(--grid-cell, 44px) var(--grid-cell, 44px),
-    var(--grid-cell, 44px) var(--grid-cell, 44px);
+  background-image: radial-gradient(
+    120% 100% at 50% 0%,
+    rgba(224, 184, 63, 0.045),
+    transparent 60%
+  );
+  background-size: 100% 100%;
   border: 1px solid rgba(180, 146, 84, 0.5);
   border-radius: 3px;
   box-shadow:
@@ -310,6 +304,64 @@
     inset 0 0 0 1px rgba(0, 0, 0, 0.55);
   touch-action: none;
   user-select: none;
+}
+
+/*
+ * FUNDO DA SCENE (6.6M.4.1.1) — camada de APRESENTAÇÃO.
+ *
+ * `inset: 0` + `100%` casam com os bounds mecânicos do plano (largura/altura
+ * derivadas de `spatial`), então a imagem acompanha o MESMO plano da câmera:
+ * pan e zoom movem imagem, grade e tokens juntos.
+ *
+ * `object-fit: fill` é intencional: a arte representa a cena inteira e o VTT
+ * precisa de `pixel do mapa ↔ posição mecânica`. `cover` cortaria features e
+ * `contain` criaria barras — ambos desalinhariam a correspondência.
+ * Nunca captura ponteiro e nunca é lida por regra nenhuma.
+ */
+.grid-scene-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+  border-radius: 2px;
+}
+
+/*
+ * LINHAS DA GRADE — camada entre o fundo da cena e os tokens.
+ *
+ * Mesma geometria de célula do plano (`--grid-cell`, definido inline pelo
+ * `CombatGrid`). O par "linha quente + linha escura" é o ajuste mínimo de
+ * contraste para a grade continuar legível tanto sobre mapas claros quanto
+ * escuros, sem tema/opacidade configurável (refinamento de outra fase).
+ */
+.grid-scene-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      rgba(198, 166, 110, 0.3) 0 1px,
+      transparent 1px var(--grid-cell, 44px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(198, 166, 110, 0.3) 0 1px,
+      transparent 1px var(--grid-cell, 44px)
+    ),
+    repeating-linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.3) 1px 2px,
+      transparent 2px var(--grid-cell, 44px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.3) 1px 2px,
+      transparent 2px var(--grid-cell, 44px)
+    );
 }
 
 .grid-plane.is-placing {
