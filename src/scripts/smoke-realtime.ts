@@ -362,6 +362,83 @@ function connect(token: string): Socket {
 }
 
 /**
+ * Aborta ANTES de qualquer escrita quando há JOGADOR REAL conectado.
+ *
+ * Os Descansos coletivos convidam todos os jogadores online com ficha: um
+ * cliente real de prontidão entra na lista congelada e trava as seções.
+ * O smoke NUNCA contorna isso mexendo no papel de ninguém (era o que deixava
+ * usuário real como MASTER quando a execução era interrompida) — ele avisa e
+ * sai. A sonda usa uma conta PRÓPRIA de MASTER, criada e removida pelo smoke.
+ */
+async function assertNoForeignPlayersOnline(): Promise<void> {
+  const createProbe = async (tag: string) => {
+    const username = `sonda_${tag}_${suffix}`;
+    const user = await prisma.user.create({
+      data: {
+        username,
+        displayName: `Sonda ${tag}`,
+        passwordHash: 'fixture',
+        role: 'MASTER',
+      },
+    });
+    createdUsernames.push(username);
+    fixtureRoles[username] = user.role;
+    return {
+      id: user.id,
+      socket: connect(
+        signToken({
+          sub: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          role: user.role,
+        }),
+      ),
+    };
+  };
+
+  // A presença só é DIVULGADA quando alguém entra na mesa. A primeira sonda
+  // escuta; a segunda é quem dispara o `presence:update` (sem depender de
+  // corrida entre handshake e listener).
+  const first = await createProbe('a');
+  await waitFor<any>(first.socket, 'connection:ready').catch(() => null);
+
+  // A presença é DIVULGADA quando alguém entra na mesa: a primeira sonda só
+  // escuta, a segunda é quem dispara o `presence:update`. O listener bufferiza
+  // desde já (nada de promise rejeitando sem `await` → o processo não cai e o
+  // `finally` sempre roda).
+  const seenPresence: any[] = [];
+  first.socket.on('presence:update', (payload: any) => seenPresence.push(payload));
+
+  const second = await createProbe('b');
+  try {
+    await waitFor<any>(second.socket, 'connection:ready').catch(() => null);
+    const deadline = Date.now() + 4000;
+    while (seenPresence.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const presence = seenPresence.at(-1) ?? null;
+    if (!presence) throw new Error('[smoke] não foi possível ler a presença da mesa');
+    const foreign = (presence.online ?? []).filter(
+      (user: any) => user.role === 'PLAYER' && !createdUsernames.includes(user.username),
+    );
+    if (foreign.length > 0) {
+      throw new Error(
+        `[smoke] há jogador(es) real(is) conectado(s) na mesa ` +
+          `(${foreign.map((user: any) => user.username).join(', ')}). ` +
+          'O smoke não altera usuários reais; feche as sessões reais no navegador ' +
+          'e rode novamente.',
+      );
+    }
+  } finally {
+    first.socket.close();
+    second.socket.close();
+    // As sondas cumpriram o papel: fora do banco, para não aparecerem em nenhuma
+    // contagem de contas durante o resto do smoke.
+    await prisma.user.deleteMany({ where: { id: { in: [first.id, second.id] } } });
+  }
+}
+
+/**
  * WAV PCM 8-bit mono em silêncio — um arquivo de áudio REAL para o upload.
  *
  * A música da mesa aceita o arquivo como data URL (sem multipart), então o
@@ -414,34 +491,51 @@ async function setCharacterClasses(
 }
 
 /**
- * Jogadores de fora do smoke que foram temporariamente tirados da elegibilidade.
- * Restaurados no `cleanup`.
+ * Dados de TODO usuário que existia antes do smoke (id, username, role).
+ * O `cleanup` compara com o estado final: uma execução de teste NUNCA pode
+ * alterar conta real — nem o papel, nem existência. Sem isso, um smoke
+ * interrompido no meio deixava a mutação para trás de forma silenciosa.
  */
-const foreignDemotedUsernames: string[] = [];
+let preexistingUsers: { id: string; username: string; role: string }[] = [];
+
+/**
+ * Papel com que cada fixture NASCEU (PLAYER/MASTER). O guard final confere que
+ * nenhuma seção promoveu/rebaixou conta do próprio teste — o smoke precisa
+ * testar a autoridade de verdade, não uma promoção acidental.
+ * Uma fixture APAGADA no meio (exclusão de conta do teste) sai da conferência.
+ */
+const fixtureRoles: Record<string, string> = {};
 
 /**
  * Jogadores ONLINE que o smoke NÃO controla atrapalhariam a lista congelada de
- * um Descanso Curto coletivo: o servidor convida TODOS os jogadores conectados
- * com ficha, e o servidor pode ter um cliente real de prontidão (mesa global).
- * Para o teste não depender de quem mais está online, o smoke os torna
- * temporariamente inelegíveis (papel MASTER, que o filtro de elegibilidade já
- * ignora) e restaura no `cleanup`. NÃO impersona ninguém.
+ * um Descanso coletivo: o servidor convida TODOS os jogadores conectados com
+ * ficha, e pode haver um cliente real de prontidão (mesa global).
+ *
+ * Antes, o smoke os promovia a MASTER no banco para tirá-los da elegibilidade e
+ * restaurava no `cleanup`. Isso é PROIBIDO: qualquer interrupção (crash, kill,
+ * Ctrl+C) deixava um usuário real como MASTER permanentemente — foi exatamente
+ * o que aconteceu com um PLAYER da mesa. Agora o smoke apenas recusa rodar as
+ * seções coletivas enquanto houver cliente real conectado, sem tocar em dado
+ * nenhum. NÃO impersona ninguém.
  */
-async function demoteForeignOnlinePlayers(
+function requireNoForeignOnlinePlayers(
   online: { userId: string; username: string; role: string }[],
   controlledUserIds: Set<string>,
-): Promise<string[]> {
+  section: string,
+): void {
+  // Só PLAYER entra na elegibilidade do descanso coletivo; um MASTER real
+  // online não interfere e não impede o teste.
   const foreign = online.filter(
     (user) => user.role === 'PLAYER' && !controlledUserIds.has(user.userId),
   );
-  if (foreign.length === 0) return [];
+  if (foreign.length === 0) return;
 
-  await prisma.user.updateMany({
-    where: { id: { in: foreign.map((user) => user.userId) } },
-    data: { role: 'MASTER' },
-  });
-  for (const user of foreign) foreignDemotedUsernames.push(user.username);
-  return foreign.map((user) => user.username);
+  throw new Error(
+    `[smoke] ${section}: há cliente(s) real(is) conectado(s) na mesa ` +
+      `(${foreign.map((user) => user.username).join(', ')}). ` +
+      'O smoke não altera usuários reais; feche as sessões reais no navegador e ' +
+      'rode novamente.',
+  );
 }
 
 /**
@@ -573,6 +667,21 @@ async function setExhaustionRule(enabled: boolean): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // PRIMEIRA coisa da execução: fotografia das contas REAIS (tudo o que já
+  // existia antes de o smoke criar qualquer fixture). O `cleanup` compara e
+  // falha se alguma tiver mudado de papel, nome ou desaparecido — teste nunca é
+  // desculpa para mexer em dado de verdade.
+  preexistingUsers = await prisma.user.findMany({
+    select: { id: true, username: true, role: true },
+    orderBy: { username: 'asc' },
+  });
+
+  // Um cliente real conectado travaria a lista congelada dos Descansos
+  // coletivos. O smoke NÃO mexe no papel de ninguém para contornar isso (era o
+  // que deixava um usuário real como MASTER quando a execução era interrompida):
+  // ele avisa e encerra antes de qualquer escrita.
+  await assertNoForeignPlayersOnline();
+
   // As fixtures de criação começam no nível 1; preservar a escolha real da mesa.
   const config = await prisma.gameConfig.findUnique({ where: { id: 'main' } });
   originalStartingLevel = config?.startingLevel ?? 1;
@@ -599,6 +708,7 @@ async function main(): Promise<void> {
   });
   check('jogador cadastrado (201)', playerReg.status === 201, JSON.stringify(playerReg.data));
   check('jogador recebeu papel PLAYER', playerReg.data?.user?.role === 'PLAYER');
+  if (playerReg.data?.user?.role) fixtureRoles[playerUsername] = playerReg.data.user.role;
 
   const masterReg = await api('/api/auth/register', {
     method: 'POST',
@@ -611,6 +721,7 @@ async function main(): Promise<void> {
   });
   check('mestre cadastrado (201)', masterReg.status === 201, JSON.stringify(masterReg.data));
   check('mestre recebeu papel MASTER', masterReg.data?.user?.role === 'MASTER');
+  if (masterReg.data?.user?.role) fixtureRoles[masterUsername] = masterReg.data.user.role;
 
   const badCode = await api('/api/auth/register', {
     method: 'POST',
@@ -13768,12 +13879,13 @@ async function main(): Promise<void> {
     const collectiveSocketA = connect(collectiveTokenA);
     const collectivePresence = waitForPresence(collectiveSocketA, () => true).catch(() => null);
     await waitFor<any>(collectiveSocketA, 'connection:ready').catch(() => null);
-    // Quem o smoke não controla (um cliente real conectado na mesa global) sai
-    // temporariamente da elegibilidade; é restaurado no cleanup.
+    // Um cliente real conectado entraria na lista congelada e travaria a coleta;
+    // o smoke recusa rodar a seção em vez de mexer no papel de usuário real.
     const collectiveOnlineList: any[] = (await collectivePresence)?.online ?? [];
-    await demoteForeignOnlinePlayers(
+    requireNoForeignOnlinePlayers(
       collectiveOnlineList,
       new Set([collectiveUserIdA, collectiveUserIdB, collectiveUserIdD]),
+      'Descanso Curto coletivo',
     );
     const collectiveMasterSocket = connect(masterToken);
     await waitFor<any>(collectiveMasterSocket, 'connection:ready').catch(() => null);
@@ -14377,9 +14489,10 @@ async function main(): Promise<void> {
     const colPresence = waitForPresence(colSocketA, () => true).catch(() => null);
     await waitFor<any>(colSocketA, 'connection:ready').catch(() => null);
     const colOnlineList: any[] = (await colPresence)?.online ?? [];
-    await demoteForeignOnlinePlayers(
+    requireNoForeignOnlinePlayers(
       colOnlineList,
       new Set([colUserA, colB.id, colC.id, colD.id]),
+      'Descanso Curto coletivo (respostas)',
     );
     const colMasterSocket = connect(masterToken);
     await waitFor<any>(colMasterSocket, 'connection:ready').catch(() => null);
@@ -15147,9 +15260,10 @@ async function main(): Promise<void> {
     const lrPresence = waitForPresence(lrSocketA, () => true).catch(() => null);
     await waitFor<any>(lrSocketA, 'connection:ready').catch(() => null);
     const lrOnlineList: any[] = (await lrPresence)?.online ?? [];
-    await demoteForeignOnlinePlayers(
+    requireNoForeignOnlinePlayers(
       lrOnlineList,
       new Set([lrUserIdA, lrUserIdB, lrUserIdD]),
+      'Descanso Longo coletivo',
     );
     const lrMasterSocket = connect(masterToken);
     await waitFor<any>(lrMasterSocket, 'connection:ready').catch(() => null);
@@ -15802,7 +15916,11 @@ async function main(): Promise<void> {
       const csSocketA = connect(csTokenA);
       const csPresence = waitForPresence(csSocketA, () => true).catch(() => null);
       await waitFor<any>(csSocketA, 'connection:ready').catch(() => null);
-      await demoteForeignOnlinePlayers((await csPresence)?.online ?? [], new Set([csUserIdA, csB.id, csC.id, csD.id]));
+      requireNoForeignOnlinePlayers(
+        (await csPresence)?.online ?? [],
+        new Set([csUserIdA, csB.id, csC.id, csD.id]),
+        'Descanso Longo — suprimentos',
+      );
       const csMasterSocket = connect(masterToken);
       await waitFor<any>(csMasterSocket, 'connection:ready').catch(() => null);
       const csSocketB = connect(csTokenB);
@@ -16297,9 +16415,10 @@ async function main(): Promise<void> {
       const lcSocketA = connect(lcTokenA);
       const lcPresence = waitForPresence(lcSocketA, () => true).catch(() => null);
       await waitFor<any>(lcSocketA, 'connection:ready').catch(() => null);
-      await demoteForeignOnlinePlayers(
+      requireNoForeignOnlinePlayers(
         (await lcPresence)?.online ?? [],
         new Set([lcUserIdA, lcB.id, lcC.id, lcD.id]),
+        'Descanso Longo coletivo (concorrência)',
       );
       const lcMasterSocket = connect(masterToken);
       await waitFor<any>(lcMasterSocket, 'connection:ready').catch(() => null);
@@ -17482,7 +17601,11 @@ async function main(): Promise<void> {
       const rsSocketA = connect(rsTokenA);
       const rsPresence = waitForPresence(rsSocketA, () => true).catch(() => null);
       await waitFor<any>(rsSocketA, 'connection:ready').catch(() => null);
-      await demoteForeignOnlinePlayers((await rsPresence)?.online ?? [], new Set([rsUserIdA, rsB.id]));
+      requireNoForeignOnlinePlayers(
+        (await rsPresence)?.online ?? [],
+        new Set([rsUserIdA, rsB.id]),
+        'Descanso Longo — reservas',
+      );
       const rsSocketB = connect(rsTokenB);
       await waitFor<any>(rsSocketB, 'connection:ready').catch(() => null);
       await waitForPresence(rsSocketA, (online) =>
@@ -17945,9 +18068,10 @@ async function main(): Promise<void> {
       const pmPresence = waitForPresence(pmSocketA, () => true).catch(() => null);
       await waitFor<any>(pmSocketA, 'connection:ready').catch(() => null);
       const pmOnlineList: any[] = (await pmPresence)?.online ?? [];
-      await demoteForeignOnlinePlayers(
+      requireNoForeignOnlinePlayers(
         pmOnlineList,
         new Set([pmUserIdA, pmB.id, pmC.id, pmD.id]),
+        'Descanso Longo — pré-marcação',
       );
       const pmSocketB = connect(pmTokenB);
       const pmSocketC = connect(pmTokenC);
@@ -21629,6 +21753,25 @@ async function main(): Promise<void> {
   await smokeAreaTargetingFoundation(BASE_URL, check);
   await smokeMultipleSpellAttacks(BASE_URL, check);
 
+  // Guard de papel: as fixtures nascem PLAYER/MASTER e precisam seguir assim
+  // enquanto existirem — se alguma seção promovesse uma delas, o smoke começaria
+  // a testar a autoridade errada sem ninguém notar.
+  const aliveFixtures = await prisma.user.findMany({
+    where: { username: { in: Object.keys(fixtureRoles) } },
+    select: { username: true, role: true },
+  });
+  const changedFixtures = aliveFixtures.filter(
+    (user) => fixtureRoles[user.username] !== user.role,
+  );
+  const missingMaster = !aliveFixtures.some(
+    (user) => fixtureRoles[user.username] === 'MASTER' && user.role === 'MASTER',
+  );
+  check(
+    'guard) fixture PLAYER continua PLAYER e fixture MASTER continua MASTER',
+    changedFixtures.length === 0 && !missingMaster,
+    JSON.stringify({ changedFixtures, aliveFixtures }),
+  );
+
   console.log(
     failures === 0
       ? '\n✅ Todos os testes passaram.\n'
@@ -21692,15 +21835,6 @@ async function cleanup(): Promise<void> {
     await prisma.customRace.deleteMany({ where: { id: { in: createdCustomRaceIds } } });
   }
 
-  // Devolve o papel dos jogadores reais que o smoke tornou temporariamente
-  // inelegíveis para o descanso coletivo (ver `demoteForeignOnlinePlayers`).
-  if (foreignDemotedUsernames.length > 0) {
-    await prisma.user.updateMany({
-      where: { username: { in: foreignDemotedUsernames } },
-      data: { role: 'PLAYER' },
-    });
-  }
-
   // Operações idempotentes da solicitação coletiva de Descanso Curto. A tabela é
   // global (sem FK para usuário), então a limpeza é explícita — todas as chaves do
   // teste carregam o sufixo da execução.
@@ -21725,6 +21859,25 @@ async function cleanup(): Promise<void> {
   }
 
   if (originalStartingLevel !== undefined) await prisma.gameConfig.update({ where: { id: 'main' }, data: { startingLevel: originalStartingLevel } });
+
+  // PROVA DE INTEGRIDADE (roda depois de toda mutação do smoke): nenhuma conta
+  // preexistente pode ter mudado de papel/nome nem sumido. Falha o teste em vez
+  // de "consertar" o banco silenciosamente — a causa é código, não um UPDATE.
+  const afterUsers = await prisma.user.findMany({
+    where: { id: { in: preexistingUsers.map((user) => user.id) } },
+    select: { id: true, username: true, role: true },
+  });
+  const afterById = new Map(afterUsers.map((user) => [user.id, user]));
+  const touchedRealUsers = preexistingUsers.filter((before) => {
+    const after = afterById.get(before.id);
+    return !after || after.role !== before.role || after.username !== before.username;
+  });
+  check(
+    'integridade) contas reais mantêm id, username e role depois do smoke',
+    touchedRealUsers.length === 0,
+    JSON.stringify(touchedRealUsers),
+  );
+
   await prisma.$disconnect();
 }
 

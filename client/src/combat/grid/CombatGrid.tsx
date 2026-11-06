@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent } from 'react';
 import type {
   CombatDto,
@@ -17,6 +17,7 @@ import { GridMovementTrace } from './GridMovementTrace';
 import { GridRuler } from './GridRuler';
 import { MovementHud, movementIssueLabel, type MovementPreviewState } from './MovementHud';
 import { commitMovement, previewMovement } from './movementApi';
+import { subscribeMovementVisual, useMovementVisual } from './movementVisual';
 import { anchorStepFeet, contiguousAnchors } from './movementPath';
 import {
   measureSpatial,
@@ -84,7 +85,7 @@ export interface CombatGridProps {
  * • `placement` = organização administrativa da cena (Mestre);
  * • `measure`   = régua espacial.
  */
-type InteractionMode = 'none' | 'placement' | 'measure';
+type InteractionMode = 'none' | 'placement';
 
 /**
  * Trajeto pretendido LOCAL (nunca persistido, nunca fonte de posição).
@@ -168,10 +169,6 @@ const AUTO_PAN_EDGE_PX = 52;
 const AUTO_PAN_MAX_SPEED = 14;
 /** Passo do zoom dos botões (mesma câmera do Ctrl+wheel). */
 const ZOOM_STEP = 1.18;
-/** Animação da peça (apresentação): ~90 ms por anchor, com limites. */
-const ANIMATION_STEP_MS = 90;
-const ANIMATION_MIN_MS = 120;
-const ANIMATION_MAX_MS = 900;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : 'Falha ao posicionar a unidade.';
@@ -193,7 +190,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
  * GRID DE COMBATE — superfície tática do Obsyrium.
  *
  * FASE 6.6M.1 — desenho da cena a partir do estado espacial autoritativo.
- * FASE 6.6M.2 — modo Medir (leitura do servidor, linha decorativa).
+ * FASE 6.6M.2 — régua (leitura do servidor, linha decorativa).
  * FASE 6.6L.3.2 — o grid NÃO decide quem aparece (DTO filtra `master-only`).
  * FASE 6.6M.3 — movimento voluntário server-authoritative (preview + commit).
  * FASE 6.6M.3.1 — CÂMERA (pan/zoom/fit/center), RÉGUA (ponto↔ponto em metros),
@@ -256,16 +253,14 @@ export function CombatGrid({
   /** Space pode virar Movement; vira Pan se o ponteiro arrastar antes do keyup. */
   const spaceCandidate = useRef(false);
   const spacePanUsed = useRef(false);
-  /** Posição ANIMADA (apresentação): o DTO continua sendo a verdade. */
-  const [visualRect, setVisualRect] = useState<{
-    combatantId: string;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const animationFrame = useRef(0);
-  const animationVersion = useRef<number | null>(null);
+  /**
+   * Posição ANIMADA (apresentação): UMA primitive para Direct Drag E
+   * Measure-to-Move, alimentada pelo evento `combat:movement-visual`. O DTO
+   * continua sendo a verdade; a animação só desenha o trecho autorizado.
+   */
+  const movementVisual = useMovementVisual();
+  const playMovementVisual = useRef(movementVisual.play);
+  playMovementVisual.current = movementVisual.play;
   const previewSequence = useRef(0);
   const operationRef = useRef<string | null>(null);
   const dragMoved = useRef(false);
@@ -290,7 +285,10 @@ export function CombatGrid({
   const lastPointer = useRef<Point2D | null>(null);
   const panGesture = useRef<PanGesture | null>(null);
   const spaceDown = useRef(false);
-  const fittedKey = useRef<string | null>(null);
+  /** Câmera já foi escolhida pelo usuário (não reenquadrar sozinha). */
+  const cameraTouched = useRef(false);
+  /** Cena atual (combate + dimensões): trocar reabre o enquadramento. */
+  const sceneKeyRef = useRef('');
 
   const scene = combat.spatial;
   const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;
@@ -301,6 +299,12 @@ export function CombatGrid({
     [scene, cellSizeFeet],
   );
   const locked = busy || sceneBusy || movementBusy;
+  /**
+   * Contexto do listener do barramento de movimento (evita reassinar o evento a
+   * cada render): combate, unidades visíveis e geometria do momento.
+   */
+  const visualContextRef = useRef({ combatId: combat.id, units: placed, geometry });
+  visualContextRef.current = { combatId: combat.id, units: placed, geometry };
 
   const movableUnitId = movement?.combatantId ?? null;
   const movableUnit = placed.find((item) => item.id === movableUnitId) ?? null;
@@ -348,30 +352,65 @@ export function CombatGrid({
   /* CÂMERA                                                                  */
   /* ---------------------------------------------------------------------- */
 
-  /** Enquadramento inicial: a cena NUNCA nasce colada no canto. */
-  useEffect(() => {
-    if (!viewport.width || !viewport.height) return;
-    const key = `${combat.id}:${dimensions.width.toFixed(1)}x${dimensions.height.toFixed(1)}`;
-    if (fittedKey.current === key) return;
-    fittedKey.current = key;
+  /**
+   * ENQUADRAMENTO INICIAL — não depende de F5 (FASE 6.6M.3.1.4).
+   *
+   * Bug real: o fit rodava com a PRIMEIRA medição do viewport (que pode ser
+   * anterior ao layout final — painel abrindo, aba trocando, fontes carregando)
+   * e a flag "inicializado" ficava marcada para sempre. Numa tela maior depois,
+   * a cena aparecia deslocada para o canto e só o F5 concertava.
+   *
+   * Regras:
+   *  • `useLayoutEffect` mede ANTES da primeira pintura;
+   *  • viewport sem dimensão válida NÃO marca a câmera como inicializada;
+   *  • enquanto o usuário não escolheu câmera (pan/zoom), cada medição válida
+   *    REENQUADRA — a cena nasce centralizada sem reload;
+   *  • depois disso, `combat:updated` NUNCA mexe na câmera (nada de recentralizar
+   *    por cima da escolha de quem está jogando);
+   *  • trocar a cena (dimensões reais) reabre o enquadramento, porque os bounds
+   *    mudaram de verdade.
+   */
+  useLayoutEffect(() => {
+    if (viewport.width <= 0 || viewport.height <= 0) return;
+    const sceneKey = `${combat.id}:${dimensions.width.toFixed(1)}x${dimensions.height.toFixed(1)}`;
+    if (sceneKeyRef.current !== sceneKey) {
+      sceneKeyRef.current = sceneKey;
+      cameraTouched.current = false;
+    }
+    if (cameraTouched.current) return;
     setCamera(fitCamera({ scene: dimensions, viewport, margin: CAMERA_FIT_MARGIN_PX }));
   }, [combat.id, dimensions, viewport]);
 
-  /** ResizeObserver: pan/zoom continuam válidos em qualquer largura. */
+  /**
+   * ResizeObserver: a fonte da medição do viewport.
+   *
+   * Medir uma vez no mount não basta (o grid pode montar antes do layout
+   * assentar). Aqui a primeira leitura já é sincronizada com o layout e cada
+   * mudança real de tamanho chega por callback — sem `setTimeout` arbitrário.
+   */
   useEffect(() => {
     const node = viewportRef.current;
-    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    if (!node) return undefined;
+    const measure = (width: number, height: number): void => {
+      setViewport((current) =>
+        current.width === width && current.height === height ? current : { width, height },
+      );
+    };
+    measure(node.clientWidth, node.clientHeight);
+    if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (!rect) return;
-      setViewport({ width: rect.width, height: rect.height });
+      measure(rect.width, rect.height);
     });
     observer.observe(node);
-    setViewport({ width: node.clientWidth, height: node.clientHeight });
     return () => observer.disconnect();
   }, []);
 
   function applyCamera(next: GridCamera): void {
+    // Pan/zoom/fit do usuário encerram o enquadramento automático: a câmera
+    // passa a ser dele e nenhum resize fica recentralizando por cima.
+    cameraTouched.current = true;
     cameraRef.current = next;
     setCamera(next);
   }
@@ -539,13 +578,15 @@ export function CombatGrid({
   /* MEDIÇÃO / RÉGUA                                                         */
   /* ---------------------------------------------------------------------- */
 
-  const rulerActive = mode === 'measure' || quickRuler || ruler !== null;
+  // A régua tem UMA entrada: a tecla F ("Medir" saiu da toolbar na 6.6M.3.1.4).
+  // Touch/mobile ainda não tem equivalente — limitação de UX registrada.
+  const rulerActive = quickRuler || ruler !== null;
   /**
-   * CURSOR DE RÉGUA: enquanto o usuário está APONTANDO (F armado, Medir, ou
-   * régua aberta), o ponteiro vira um ícone de régua e o cursor nativo some. Ao
-   * fixar o segundo ponto (ou cancelar) volta ao normal.
+   * CURSOR DE RÉGUA: enquanto o usuário está APONTANDO (F armado ou régua
+   * aberta), o ponteiro vira um ícone de régua e o cursor nativo some. Ao fixar
+   * o segundo ponto (ou cancelar) volta ao normal.
    */
-  const rulerCursorActive = ruler ? !ruler.locked : quickRuler || mode === 'measure';
+  const rulerCursorActive = ruler ? !ruler.locked : quickRuler;
 
   const hoveredUnit = hoverTokenId ? (placed.find((item) => item.id === hoverTokenId) ?? null) : null;
   const hoverTarget: SpatialMeasureEndpoint | null =
@@ -624,11 +665,6 @@ export function CombatGrid({
         setRulerState('error');
       });
   }, [combat.id, combat.version, rulerFromKey, rulerToKey, rulerRetry]);
-
-  /** Troca de modo limpa a régua e o draft; sair de grid-2d limpa a medição. */
-  useEffect(() => {
-    if (mode === 'measure' && combat.spatial.mode !== 'grid-2d') setMode('placement');
-  }, [combat.spatial.mode, mode]);
 
   /** REALTIME: extremo que sai do DTO (ficou privado) limpa a régua. */
   useEffect(() => {
@@ -730,7 +766,7 @@ export function CombatGrid({
    *
    * Clique curto continua selecionando (nenhum Movement, nenhum gasto); o
    * draft nasce quando o ponteiro ultrapassa o limiar. Ferramentas explícitas
-   * (Posicionar/Medir), Space e o botão do meio têm PRECEDÊNCIA.
+   * (Posicionar/régua), Space e o botão do meio têm PRECEDÊNCIA.
    */
   function armTokenGesture(combatantId: string, event: PointerEvent<HTMLButtonElement>): void {
     if (event.button !== 0) return;
@@ -1028,17 +1064,29 @@ export function CombatGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [combat.id, combat.version, measureMoveEligible, measureMoveSignature]);
 
-  /** REALTIME durante a animação: o estado autoritativo novo sempre vence. */
+  /** REALTIME durante a animação: o estado autoritativo de OUTRA versão vence. */
   useEffect(() => {
-    setVisualRect((current) => {
-      if (!current) return current;
-      if (animationVersion.current === null || animationVersion.current === combat.version) {
-        return current;
-      }
-      window.cancelAnimationFrame(animationFrame.current);
-      return null;
-    });
+    movementVisual.syncVersion(combat.version);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [combat.version]);
+
+  /**
+   * ESPECTADOR: o mesmo evento que o operador recebe é o que anima aqui.
+   * Nenhum caminho alternativo (HTTP do operador, estado local, localStorage).
+   */
+  useEffect(
+    () =>
+      subscribeMovementVisual((payload) => {
+        const context = visualContextRef.current;
+        if (payload.combatId !== context.combatId) return;
+        const unit = context.units.find((item) => item.id === payload.combatantId);
+        const size = unit?.spatial?.effectiveSize;
+        // Combatente fora da projeção autorizada (master-only/removido): nada.
+        if (!size) return;
+        playMovementVisual.current(payload, size, context.geometry);
+      }),
+    [],
+  );
 
   /**
    * GESTO DO TOKEN: listeners no WINDOW enquanto existe gesto armado ou draft.
@@ -1229,10 +1277,10 @@ export function CombatGrid({
             : 'Movimento pausado por reação.'
           : null,
       );
-      // Só DEPOIS da resposta: a peça desliza pelos trechos que o servidor
-      // confirmou (com Reação pendente, para no checkpoint).
-      animationVersion.current = result.combat.version;
-      startMovementAnimation(intent.combatantId, intent.sourcePosition, intent.path, result.combat);
+      // A peça desliza pelo trecho que o SERVIDOR confirmou — e quem anima é o
+      // evento `combat:movement-visual`, a MESMA primitive do Direct Drag e dos
+      // espectadores (com Reação pendente, para no checkpoint).
+      onCombatChange(result.combat);
       clearRuler();
     } catch (error) {
       setSceneError(messageOf(error));
@@ -1248,85 +1296,6 @@ export function CombatGrid({
       executing.current = false;
       setMovementBusy(false);
     }
-  }
-
-  /**
-   * ANIMAÇÃO = APRESENTAÇÃO PURA.
-   *
-   * A posição autoritativa já chegou no `CombatDto`: aqui só se interpola a
-   * CAIXA desenhada ao longo dos anchors confirmados — a sensação de peça
-   * deslizando sobre a mesa. `prefers-reduced-motion` desliga tudo; o passo
-   * mecânico continua discreto, e ao final a posição animada some (o token
-   * volta a renderizar o estado do servidor).
-   */
-  function startMovementAnimation(
-    combatantId: string,
-    startPosition: SpatialPosition,
-    path: readonly SpatialPosition[],
-    nextCombat: CombatDto,
-  ): void {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const unit = nextCombat.combatants.find((item) => item.id === combatantId);
-    const size = unit?.spatial?.effectiveSize;
-    const end = unit?.spatial?.position ?? null;
-    if (!size || !end) return;
-    const anchors: SpatialPosition[] = [startPosition, ...path];
-    // Para no anchor que o servidor confirma: com Reação pendente é o
-    // CHECKPOINT, nunca o destino pedido.
-    const stop = anchors.findIndex(
-      (item) => item.xFeet === end.xFeet && item.yFeet === end.yFeet,
-    );
-    const traversed = stop >= 0 ? anchors.slice(0, stop + 1) : [...anchors, end];
-    if (traversed.length < 2) return;
-    const footprint = SIZE_FOOTPRINT_FEET[size];
-    const points = traversed.map((anchor) => ({
-      left: feetToPx(anchor.xFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL),
-      top: feetToPx(anchor.yFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL),
-    }));
-    const lengths = points.slice(1).map((point, index) => {
-      const previous = points[index];
-      return Math.abs(point.left - previous.left) + Math.abs(point.top - previous.top);
-    });
-    const total = lengths.reduce((sum, value) => sum + value, 0);
-    if (total <= 0) return;
-    const steps = points.length - 1;
-    const duration = Math.min(
-      ANIMATION_MAX_MS,
-      Math.max(ANIMATION_MIN_MS, steps * ANIMATION_STEP_MS),
-    );
-    const width = feetToPx(footprint.widthFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL);
-    const height = feetToPx(footprint.heightFeet, cellSizeFeet, DEFAULT_PIXELS_PER_CELL);
-    window.cancelAnimationFrame(animationFrame.current);
-    // A ancora na ORIGEM já entra no mesmo lote do `CombatDto` novo: sem isso o
-    // token apareceria no destino por um frame antes de voltar para deslizar.
-    setVisualRect({ combatantId, left: points[0].left, top: points[0].top, width, height });
-    const startedAt = window.performance.now();
-    function tick(now: number): void {
-      const progress = Math.min(1, (now - startedAt) / duration);
-      let remaining = progress * total;
-      let index = 0;
-      while (index < lengths.length - 1 && remaining > lengths[index]) {
-        remaining -= lengths[index];
-        index += 1;
-      }
-      const ratio = lengths[index] === 0 ? 0 : Math.min(1, remaining / lengths[index]);
-      const from = points[index];
-      const to = points[index + 1];
-      setVisualRect({
-        combatantId,
-        left: from.left + (to.left - from.left) * ratio,
-        top: from.top + (to.top - from.top) * ratio,
-        width,
-        height,
-      });
-      if (progress < 1) {
-        animationFrame.current = window.requestAnimationFrame(tick);
-        return;
-      }
-      setVisualRect(null);
-    }
-    animationFrame.current = window.requestAnimationFrame(tick);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1583,7 +1552,7 @@ export function CombatGrid({
   const planeClasses = [
     'grid-plane',
     placementInteractive && selectedId ? 'is-placing' : '',
-    mode === 'measure' ? 'is-measuring' : '',
+    rulerActive ? 'is-measuring' : '',
     draft ? 'is-drafting' : '',
   ]
     .filter(Boolean)
@@ -1664,8 +1633,14 @@ export function CombatGrid({
     <section className="combat-grid-panel" aria-label="Cena de combate">
       <div className="grid-toolbar">
         <div className="grid-toolbar-left">
-          <div className="grid-modes" role="group" aria-label="Ferramenta do grid">
-            {isMaster ? (
+          {/*
+            MASTER: Posicionar. PLAYER: nada — só os controles de câmera.
+            Não existe botão "Mover" (o movimento é o GESTO no token do turno)
+            nem botão "Medir" (a régua é a tecla F), e nada de placeholder
+            vazio onde eles ficavam.
+          */}
+          {isMaster ? (
+            <div className="grid-modes" role="group" aria-label="Ferramenta do grid">
               <button
                 type="button"
                 className="btn btn-small"
@@ -1675,18 +1650,8 @@ export function CombatGrid({
               >
                 Posicionar
               </button>
-            ) : null}
-            {/* Sem botão "Mover": o movimento é o GESTO no token do turno. */}
-            <button
-              type="button"
-              className="btn btn-small"
-              aria-pressed={mode === 'measure'}
-              title="Régua — medição de qualquer ponto a qualquer ponto"
-              onClick={() => changeMode(mode === 'measure' ? 'none' : 'measure')}
-            >
-              Medir
-            </button>
-          </div>
+            </div>
+          ) : null}
           {currentUnit ? (
             <span className="grid-turn">
               Turno de <strong>{currentUnit.name}</strong>
@@ -1815,8 +1780,11 @@ export function CombatGrid({
                     pendingId === combatant.id ||
                     (movementBusy && draft?.combatantId === combatant.id)
                   }
-                  measureRole={rulerActive ? measureRoleOf(combatant.id) : null}
-                  visualRect={visualRect?.combatantId === combatant.id ? visualRect : null}
+                  measureRole={rulerActive ? measureRoleOf(combatant.id) : null}                    visualRect={
+                      movementVisual.visualRect?.combatantId === combatant.id
+                        ? movementVisual.visualRect
+                        : null
+                    }
                   interactive={tokenInteractive(combatant)}
                   movable={!locked && !rulerActive && mode === 'none' && movableUnitId === combatant.id}
                   rulerActive={rulerActive}

@@ -32,6 +32,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * Relê a sessão do SERVIDOR (`/api/auth/me`).
+   *
+   * O `role` não pode ficar preso ao que estava na tela: ele é do banco, e o
+   * backend o revalida em cada requisição. Aqui só evitamos perpetuar um papel
+   * antigo na UI sem precisar de F5.
+   */
+  const revalidate = useCallback(async () => {
+    if (!getToken()) return;
+    try {
+      setUser(await fetchCurrentUser());
+    } catch {
+      setToken(null);
+      setUser(null);
+    }
+  }, []);
+
   // Ao abrir o app, valida o token guardado e recupera o usuário.
   useEffect(() => {
     let active = true;
@@ -56,6 +73,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, []);
+
+  /**
+   * Revalidação ao VOLTAR para a aba: um papel alterado no servidor (Mestre
+   * promovendo/rebaixando alguém) deixa de aparecer errado na UI. Autorização
+   * continua sendo do backend — isto é só apresentação coerente.
+   */
+  useEffect(() => {
+    function onFocus(): void {
+      void revalidate();
+    }
+    function onVisible(): void {
+      if (document.visibilityState === 'visible') void revalidate();
+    }
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [revalidate]);
 
   const login = useCallback(async (username: string, password: string) => {
     const { token, user: logged } = await apiLogin(username, password);

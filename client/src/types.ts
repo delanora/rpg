@@ -2390,6 +2390,24 @@ export interface CombatUpdatedPayload {
   combat: CombatDto;
 }
 
+/**
+ * Trecho JÁ CONFIRMADO de um movimento mecânico, só para APRESENTAÇÃO.
+ *
+ * Efêmero: não é estado, não persiste e não é reenviado a quem reconecta. Com
+ * Reação pendente o trecho termina no checkpoint (nunca o caminho restante).
+ */
+export interface CombatMovementVisualPayload {
+  combatId: string;
+  combatantId: string;
+  operationId: string;
+  from: SpatialPosition;
+  path: SpatialPosition[];
+  to: SpatialPosition;
+  version: number;
+  checkpoint: boolean;
+  at: string;
+}
+
 export interface CombatTurnPayload {
   combatId: string;
   combatantId: string;

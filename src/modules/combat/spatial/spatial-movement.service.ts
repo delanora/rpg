@@ -11,7 +11,7 @@ import {
 } from '../../shared/conditions.js';
 import { deathBlocksActions } from '../../shared/death.js';
 import type { CombatActor } from '../combat.service.js';
-import { emitCombat, loadCombatById } from '../combat.service.js';
+import { emitCombat, emitMovementVisual, loadCombatById } from '../combat.service.js';
 import {
   combatantDeathState,
   combatantMechanicalState,
@@ -793,11 +793,55 @@ export async function commitVoluntaryMovement(
     return { ...result, replayed: true };
   }
   // Publicação SÓ depois do commit (posição + movimento restante + janelas).
-  emitCombat(
-    ServerEvents.COMBAT_UPDATED,
-    toCombatDto(await loadCombatById(input.combatId), 'MASTER'),
+  const committed = await loadCombatById(input.combatId);
+  // Apresentação ANTES do estado: espectadores começam a animação na origem e
+  // o `combat:updated` que chega em seguida não "teleporta" a peça. A UI tolera
+  // as duas ordens.
+  emitMovementVisualSegment(
+    committed,
+    input.combatantId,
+    input.operationId,
+    result.movement,
+    result.pending !== null,
   );
+  emitCombat(ServerEvents.COMBAT_UPDATED, toCombatDto(committed, 'MASTER'));
   return { combat: result.combat, movement: result.movement, pending: result.pending, replayed: false };
+}
+
+/**
+ * Publica o TRECHO VISUAL do movimento confirmado.
+ *
+ * O trecho vem da AUDITORIA (o que o servidor realmente aplicou): com Reação
+ * pendente é o prefixo até o checkpoint, nunca o caminho restante. Entidade
+ * `master-only` não gera evento para jogadores.
+ */
+function emitMovementVisualSegment(
+  combat: CombatSourced,
+  combatantId: string,
+  operationId: string,
+  audit: MovementAudit,
+  checkpoint: boolean,
+): void {
+  const combatant = combat.combatants.find((item) => item.id === combatantId);
+  if (!combatant || !audit.from || !audit.to) return;
+  const path = audit.steps.map((step) => ({
+    xFeet: step.position.xFeet,
+    yFeet: step.position.yFeet,
+  }));
+  emitMovementVisual(
+    {
+      combatId: combat.id,
+      combatantId,
+      operationId,
+      from: { xFeet: audit.from.xFeet, yFeet: audit.from.yFeet },
+      path,
+      to: { xFeet: audit.to.xFeet, yFeet: audit.to.yFeet },
+      version: combat.version,
+      checkpoint,
+      at: new Date().toISOString(),
+    },
+    combatant.spatialVisibility ?? 'public',
+  );
 }
 
 /** Trecho de uma avaliação já feita (prefixo até um boundary de reach). */

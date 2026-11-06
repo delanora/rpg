@@ -18,6 +18,7 @@ import type {
   AttackResolvedPayload,
   CharacterDeletedPayload,
   CombatEndedPayload,
+  CombatMovementVisualPayload,
   CombatStartedPayload,
   CombatTurnPayload,
   CombatUpdatedPayload,
@@ -72,6 +73,8 @@ export interface ServerToClientEvents {
   /** Ciclo de morte (6.3): dono do personagem e sala dos mestres. */
   'death:updated': (payload: DeathUpdatedPayload) => void;
   'combat:updated': (payload: CombatUpdatedPayload) => void;
+  /** Trecho de movimento confirmado (só apresentação; filtrado no servidor). */
+  'combat:movement-visual': (payload: CombatMovementVisualPayload) => void;
   'combat:turn': (payload: CombatTurnPayload) => void;
   'combat:ended': (payload: CombatEndedPayload) => void;
   'dice:rolled': (payload: DiceRolledPayload) => void;
