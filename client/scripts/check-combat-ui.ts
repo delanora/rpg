@@ -2733,12 +2733,18 @@ const unitOf = (
   return { id, name: id, spatial, spatialVisibility: options.visibility ?? 'public' };
 };
 
-const combatOf = (units: GridUnit[], mode: 'assisted' | 'grid-2d' = 'grid-2d') => ({
+const combatOf = (
+  units: GridUnit[],
+  mode: 'assisted' | 'grid-2d' = 'grid-2d',
+  /** Imagem de fundo da cena (6.6M.4.1.1): `null` = sem arte, como no legado. */
+  background: string | null = null,
+) => ({
   id: 'grid-combat',
   version: 4,
   status: 'ACTIVE' as const,
   currentCombatantId: units[0]?.id ?? null,
   spatial: sceneOf(mode),
+  sceneBackgroundImageUrl: background,
   combatants: units,
 });
 
@@ -5391,10 +5397,195 @@ check(
     startDialogSource.includes('const [scenes, setScenes] = useState<Scene[]>([]);') &&
       startDialogSource.includes('fetchScenes(localityId)') &&
       startDialogSource.includes('const [sceneId, setSceneId] = useState') &&
-      startDialogSource.includes("setSceneId('')"),
+      startDialogSource.includes("setSceneId('')") &&
       startDialogSource.includes('sem cena — cena assistida padrão') &&
       startDialogSource.includes('...(localityId && sceneId ? { sceneId } : {})') &&
       combatApiSource.includes('sceneId?: string;'),
+  );
+}
+
+/* ========================================================================== */
+/* 6.6M.4.1.1 — BACKGROUND DA CENA NO COMBATE                                 */
+/* ========================================================================== */
+/*
+ * A imagem de fundo NÃO aparecia no grid porque o read model do combate não a
+ * projetava. As checagens abaixo prendem a cadeia inteira (Scene → CombatDto →
+ * CombatGrid) e, principalmente, os invariantes que a correção não pode
+ * quebrar: apresentação fora de `spatial`, nada de segunda fonte de imagem,
+ * nenhuma regra lendo pixels e política idempotente compartilhada no PATCH.
+ */
+{
+  const dtoSource = serverSource('src/modules/combat/combat.dto.ts');
+  const spatialTypesSource = serverSource('src/modules/combat/spatial/spatial.types.ts');
+  const gridSource = source('src/combat/grid/CombatGrid.tsx');
+  const gridCss = source('src/combat/grid/grid.css');
+  const gridMathSource = source('src/combat/grid/gridMath.ts');
+  const cameraSource = source('src/combat/grid/gridCamera.ts');
+  const movementApiSource = source('src/combat/grid/movementApi.ts');
+  const editorSource = source('src/components/master/SceneEditor.tsx');
+  const typesSource = source('src/types.ts');
+  const smokeWallsSource = serverSource('src/scripts/smoke-spatial-walls.ts');
+
+  check(
+    'SC18) `CombatDto` projeta a imagem da cena — campo próprio, fora de `spatial`',
+    dtoSource.includes('sceneBackgroundImageUrl: string | null;') &&
+      dtoSource.includes('sceneBackgroundImageUrl: combat.scene?.backgroundImageUrl ?? null,') &&
+      dtoSource.includes('backgroundImageUrl?: string | null;') &&
+      // A config estrutural continua sendo SÓ espacial: o visual não invade.
+      dtoSource.includes('spatial: effectiveSceneConfigOf(combat),') &&
+      !/spatial\s*:\s*\{[^}]*backgroundImageUrl/.test(dtoSource) &&
+      !/backgroundImageUrl/.test(spatialTypesSource),
+  );
+
+  check(
+    'SC19) sem cena, cena sem imagem e imagem removida → `null` (nenhum fallback artificial)',
+    dtoSource.includes('?? null') &&
+      // A única origem da URL é a cena referenciada: nada de galeria/localidade.
+      !/locality[\s\S]{0,80}backgroundImageUrl/.test(dtoSource) &&
+      !/images\.|gallery/i.test(dtoSource) &&
+      // Nenhum snapshot em `Combat`: a fonte segue viva na cena.
+      !/sceneBackgroundSnapshot|backgroundSnapshot/.test(dtoSource),
+  );
+
+  check(
+    'SC20) tipo do cliente recebe o campo e o grid o lê (nada de `any`/cast para calar o TS)',
+    typesSource.includes('sceneBackgroundImageUrl: string | null;') &&
+      gridSource.includes("'sceneBackgroundImageUrl'") &&
+      gridSource.includes('combat.sceneBackgroundImageUrl') &&
+      // O `Pick` do grid inclui o campo: nada de cast para calar o TS.
+      /Pick<\s*CombatDto,\s*[\s\S]*?'sceneBackgroundImageUrl'/.test(gridSource),
+  );
+
+  check(
+    'SC21) camada `<img>` real, nos bounds da MESMA superfície espacial',
+    gridSource.includes('className="grid-scene-background"') &&
+      gridSource.includes('src={sceneBackground}') &&
+      /width: `\$\{dimensions\.width\}px`/.test(gridSource) &&
+      /height: `\$\{dimensions\.height\}px`/.test(gridSource) &&
+      // A imagem não inventa tamanho próprio: herda o plano da câmera.
+      gridCss.includes('.grid-scene-background {') &&
+      /\.grid-scene-background\s*\{[^}]*inset:\s*0;/.test(gridCss) &&
+      /\.grid-scene-background\s*\{[^}]*object-fit:\s*fill;/.test(gridCss) &&
+      !/100vw|100vh/.test(gridCss),
+  );
+
+  check(
+    'SC22) imagem atrás de grade e tokens e sem capturar ponteiro',
+    gridCss.includes('.grid-scene-lines {') &&
+      /\.grid-scene-background\s*\{[^}]*pointer-events:\s*none;/.test(gridCss) &&
+      /\.grid-scene-lines\s*\{[^}]*pointer-events:\s*none;/.test(gridCss) &&
+      // Ordem REAL no DOM: fundo → linhas → tokens.
+      gridSource.indexOf('grid-scene-background') < gridSource.indexOf('grid-scene-lines') &&
+      gridSource.indexOf('grid-scene-lines') < gridSource.indexOf('<GridToken'),
+  );
+
+  check(
+    'SC23) grade continua visível SOBRE a imagem (mesma célula, contraste mínimo)',
+    /\.grid-scene-lines\s*\{[\s\S]*?repeating-linear-gradient/.test(gridCss) &&
+      /\.grid-scene-lines\s*\{[\s\S]*?var\(--grid-cell, 44px\)/.test(gridCss) &&
+      // Sem tema/opacidade configurável nesta fase.
+      !/opacity-control|blend-mode|gridColor/.test(gridCss),
+  );
+
+  check(
+    'SC24) imagem quebrada não derruba nada: falha esconde a camada e a superfície volta',
+    gridSource.includes('const [failedBackground, setFailedBackground] = useState<string | null>(null);') &&
+      gridSource.includes('onError={() => setFailedBackground(sceneBackground)}') &&
+      gridSource.includes('failedBackground !== combat.sceneBackgroundImageUrl'),
+  );
+
+  check(
+    'SC25) sem imagem, nenhum `<img>` é montado (superfície escura + grade como antes)',
+    gridSource.includes('{sceneBackground ? (') &&
+      // Nada de placeholder/ícone de livro no grid quando não há arte.
+      !/scene-background-empty|placeholder.*background/i.test(gridSource),
+  );
+
+  check(
+    'SC26) NENHUMA mecânica lê a imagem: gridMath/câmera/movimento intactos',
+    !/sceneBackgroundImageUrl|backgroundImageUrl/.test(gridMathSource) &&
+      !/sceneBackgroundImageUrl|backgroundImageUrl/.test(cameraSource) &&
+      !/sceneBackgroundImageUrl|backgroundImageUrl/.test(movementApiSource) &&
+      !/sceneBackgroundImageUrl/.test(serverSource('src/modules/combat/spatial/spatial-distance.ts')) &&
+      !/sceneBackgroundImageUrl/.test(serverSource('src/modules/combat/spatial/spatial-movement.ts')) &&
+      // ScenePixels continua a ÚNICA fonte de tamanho visual.
+      gridSource.includes('dimensions') &&
+      /scenePixels\(scene, cellSizeFeet, DEFAULT_PIXELS_PER_CELL\)/.test(gridSource),
+  );
+
+  check(
+    'SC27) 6.6M.4.2 NÃO antecipada: nenhuma parede é desenhada/renderizada no grid',
+    !/spatial\/obstacles/.test(gridSource) &&
+      !/wall-|wallDrawing|drawWall/i.test(gridSource) &&
+      !/spatial\/obstacles/.test(editorSource),
+  );
+
+  check(
+    'SC28) PATCH do background usa a MESMA política idempotente (sem atalho `newId()` no upload)',
+    editorSource.includes('runUpdate({ backgroundImageUrl: stored.url }') &&
+      !/onUpdate\(\s*\{\s*backgroundImageUrl: stored\.url\s*\},\s*scene\.version,\s*newId\(\)\s*\)/.test(
+        editorSource,
+      ) &&
+      // Remover a imagem continua pelo caminho compartilhado.
+      editorSource.includes('runUpdate({ backgroundImageUrl: null }') &&
+      editorSource.includes('pending.current.key === key ? pending.current.id : newId()'),
+  );
+
+  check(
+    'SC29) retry da imagem reaproveita a URL enviada (sem arquivo órfão e com o mesmo operationId)',
+    editorSource.includes('const [stagedImage, setStagedImage] = useState<string | null>(null);') &&
+      editorSource.includes('setStagedImage(stored.url);') &&
+      editorSource.includes('{ backgroundImageUrl: stagedImage }') &&
+      editorSource.includes('setStagedImage(null);') &&
+      // O retry não sobe de novo nem gera novo id para a MESMA intenção.
+      !/uploadImage[\s\S]{0,80}stagedImage/.test(editorSource),
+  );
+
+  check(
+    'SC30) stale write e `SCENE_IN_USE` continuam valendo para o background',
+    editorSource.includes("value.code === 'SCENE_IN_USE'") &&
+      editorSource.includes("value.code === 'CONFLICT'") &&
+      editorSource.includes('const editable = !locked && !busy && !uploading;') &&
+      // Trocar a imagem exige cena editável: combate ativo trava a arte também.
+      /disabled=\{!editable\}[\s\S]{0,120}handleFile/.test(editorSource),
+  );
+
+  check(
+    'SC31) smoke cobre Scene→Combat: background, cena sem imagem, legado e reload',
+    smokeWallsSource.includes('smoke-scene-background.png') &&
+      smokeWallsSource.includes('combat.sceneBackgroundImageUrl ===') &&
+      smokeWallsSource.includes('noImageDto.sceneBackgroundImageUrl === null') &&
+      smokeWallsSource.includes('legacyCombat.sceneBackgroundImageUrl === null') &&
+      smokeWallsSource.includes('combatView.sceneBackgroundImageUrl ==='),
+  );
+
+  check(
+    'SC32) render real: com imagem a camada aparece antes dos tokens; sem imagem não há `<img>`',
+    (() => {
+      const render = (background: string | null): string =>
+        renderToStaticMarkup(
+          createElement(CombatGrid, {
+            combat: combatOf([unitOf('hero', 'medium')], 'grid-2d', background),
+            isMaster: true,
+            movement: { combatantId: 'hero', reason: null },
+            onCombatChange: () => undefined,
+            onError: () => undefined,
+          }),
+        );
+      const withImage = render('/uploads/mapa-da-cena.png');
+      const withoutImage = render(null);
+      return (
+        withImage.includes('class="grid-scene-background"') &&
+        withImage.includes('src="/uploads/mapa-da-cena.png"') &&
+        // Camada inferior: aparece DEPOIS do plano e ANTES de grade/tokens.
+        withImage.indexOf('grid-plane') < withImage.indexOf('grid-scene-background') &&
+        withImage.indexOf('grid-scene-background') < withImage.indexOf('grid-scene-lines') &&
+        withImage.indexOf('grid-scene-lines') < withImage.indexOf('grid-token') &&
+        // Sem imagem a superfície padrão continua, sem placeholder.
+        !withoutImage.includes('grid-scene-background') &&
+        withoutImage.includes('grid-scene-lines')
+      );
+    })(),
   );
 }
 

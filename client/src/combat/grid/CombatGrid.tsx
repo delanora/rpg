@@ -65,7 +65,7 @@ export interface CombatGridProps {
    */
   combat: Pick<
     CombatDto,
-    'id' | 'version' | 'status' | 'currentCombatantId' | 'spatial'
+    'id' | 'version' | 'status' | 'currentCombatantId' | 'spatial' | 'sceneBackgroundImageUrl'
   > & { combatants: GridUnit[] };
   isMaster: boolean;
   busy?: boolean;
@@ -220,6 +220,12 @@ export function CombatGrid({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
+  /**
+   * URL cuja imagem de fundo NÃO carregou. Guarda a própria URL (não um
+   * booleano) para que uma troca de cena/imagem volte a tentar naturalmente.
+   * Falha de imagem é apresentação: o grid, os tokens e o movimento seguem.
+   */
+  const [failedBackground, setFailedBackground] = useState<string | null>(null);
   // --- 6.6M.3.1: câmera (estado APENAS local) -------------------------------
   const [camera, setCamera] = useState<GridCamera>({ panX: 0, panY: 0, zoom: 1 });
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
@@ -1663,6 +1669,15 @@ export function CombatGrid({
           ? 'Arraste o token do turno para mover · Posicionar coloca unidades · F mede.'
           : 'Arraste o seu token para mover · Space/botão do meio arrastam a câmera · F mede.';
 
+  /**
+   * FUNDO da cena: apresentação da MESMA superfície mecânica. Ausente quando
+   * não há cena/imagem (`null`) ou quando a imagem falhou.
+   */
+  const sceneBackground =
+    combat.sceneBackgroundImageUrl && failedBackground !== combat.sceneBackgroundImageUrl
+      ? combat.sceneBackgroundImageUrl
+      : null;
+
   const planeClasses = [
     'grid-plane',
     placementInteractive && selectedId ? 'is-placing' : '',
@@ -1893,6 +1908,31 @@ export function CombatGrid({
               }
               data-scene-mode={scene.mode}
             >
+              {/*
+                FUNDO DA SCENE (6.6M.4.1.1) — primeira camada do plano: ocupa
+                exatamente os bounds mecânicos (`dimensions`, derivado de
+                `spatial`), então pan/zoom movem imagem, grade e tokens juntos.
+                `object-fit: fill` de propósito: a arte representa a CENA
+                inteira; `cover`/`contain` deslocariam a correspondência entre
+                pixel do mapa e coordenada em pés.
+              */}
+              {sceneBackground ? (
+                <img
+                  className="grid-scene-background"
+                  src={sceneBackground}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  onError={() => setFailedBackground(sceneBackground)}
+                />
+              ) : null}
+
+              {/*
+                LINHAS da grade numa camada própria, ACIMA do fundo e ABAIXO dos
+                tokens: sem elas a imagem cobriria as linhas do plano.
+              */}
+              <div className="grid-scene-lines" aria-hidden="true" />
+
               {placed.map((combatant) => (
                 <GridToken
                   key={combatant.id}
