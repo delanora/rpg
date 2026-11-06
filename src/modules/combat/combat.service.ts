@@ -138,6 +138,9 @@ function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }, db:
     where,
     include: {
       locality: { select: { id: true, name: true } },
+      // Paredes da cena (6.6L.4.1): vêm na MESMA consulta do combate — a leitura
+      // autoritativa da cena não precisa de endpoint/consulta paralela.
+      obstacles: { orderBy: { createdAt: 'asc' } },
       combatants: {
         include: {
           character: { include: { user: { select: { username: true } } } },

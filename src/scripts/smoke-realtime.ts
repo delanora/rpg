@@ -12,6 +12,7 @@ import { smokeSpellActionEconomy } from './smoke-spell-action-economy.js';
 import { smokeSpellTargeting } from './smoke-spell-targeting.js';
 import { smokeCoverFoundation } from './smoke-cover-foundation.js';
 import { smokeSpatialScene } from './smoke-spatial-scene-foundation.js';
+import { smokeSpatialWalls } from './smoke-spatial-walls.js';
 import { smokeSpatialDistance } from './smoke-spatial-distance-range.js';
 import { smokeSpatialMovement } from './smoke-spatial-movement.js';
 import { smokeOpportunityAttacks } from './smoke-opportunity-attacks.js';
@@ -21750,6 +21751,7 @@ async function main(): Promise<void> {
   await smokeSpellTargeting(BASE_URL, check);
   await smokeCoverFoundation(BASE_URL, check);
   await smokeSpatialScene(BASE_URL, check);
+  await smokeSpatialWalls(BASE_URL, check);
   await smokeSpatialDistance(BASE_URL, check);
   await smokeSpatialMovement(BASE_URL, check);
   await smokeOpportunityAttacks(BASE_URL, check);

@@ -8,6 +8,7 @@ import {
   movementCommitSchema, movementPreviewSchema, combatantSidePatchSchema,
   opportunityAttackPayloadSchema, opportunityDecisionSchema, opportunityVisibilitySchema,
   combatantSpatialVisibilitySchema,
+  spatialObstacleCreateSchema, spatialObstaclePatchSchema, spatialObstacleDeleteSchema,
 } from './combat.schema.js';
 import {
   setCombatantSideKey,
@@ -15,6 +16,11 @@ import {
   setCombatantSpatialVisibility,
   updateSpatialScene,
 } from './spatial/spatial-scene.service.js';
+import {
+  createSpatialObstacle,
+  deleteSpatialObstacle,
+  updateSpatialObstacle,
+} from './spatial/spatial-obstacle.service.js';
 import {
   commitVoluntaryMovement,
   previewVoluntaryMovement,
@@ -88,6 +94,93 @@ combatRouter.patch('/:combatId/spatial-config', authenticate, requireRole('MASTE
     }),
   );
 });
+
+/**
+ * POST /api/combat/:combatId/spatial/obstacles — MASTER cria uma PAREDE
+ * (6.6L.4.1).
+ *
+ * Só o Mestre escreve geometria; o jogador a RECEBE pelo read model da cena
+ * (`combat.spatial.obstacles`). Endpoints em PÉS, diagonais permitidas,
+ * `blocksMovement`/`blocksSight` independentes. Reutiliza a versão/idempotência
+ * do combate — sem controle de concorrência paralelo.
+ */
+combatRouter.post(
+  '/:combatId/spatial/obstacles',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const parsed = spatialObstacleCreateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const { expectedVersion, operationId, start, end, blocksMovement, blocksSight } = parsed.data;
+    res.json(
+      await createSpatialObstacle(actorFrom(req), String(req.params.combatId), {
+        expectedVersion,
+        operationId,
+        start,
+        end,
+        // Parede sólida por padrão; flags são independentes.
+        blocksMovement: blocksMovement ?? true,
+        blocksSight: blocksSight ?? true,
+      }),
+    );
+  },
+);
+
+/**
+ * PATCH /api/combat/:combatId/spatial/obstacles/:obstacleId — MASTER altera
+ * endpoints e/ou flags de UMA parede.
+ */
+combatRouter.patch(
+  '/:combatId/spatial/obstacles/:obstacleId',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const parsed = spatialObstaclePatchSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    const { expectedVersion, operationId, ...changes } = parsed.data;
+    res.json(
+      await updateSpatialObstacle(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.obstacleId),
+        { expectedVersion, operationId, ...changes },
+      ),
+    );
+  },
+);
+
+/**
+ * DELETE /api/combat/:combatId/spatial/obstacles/:obstacleId — MASTER remove
+ * UMA parede. O corpo leva `expectedVersion`/`operationId`, então o retry da
+ * MESMA operação é replay (200) e uma operação nova numa parede inexistente
+ * responde 404.
+ */
+combatRouter.delete(
+  '/:combatId/spatial/obstacles/:obstacleId',
+  authenticate,
+  requireRole('MASTER'),
+  async (req, res) => {
+    const parsed = spatialObstacleDeleteSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors });
+      return;
+    }
+    res.json(
+      await deleteSpatialObstacle(
+        actorFrom(req),
+        String(req.params.combatId),
+        String(req.params.obstacleId),
+        parsed.data,
+      ),
+    );
+  },
+);
 
 /**
  * PATCH /api/combat/:combatId/combatants/:combatantId/spatial-position —

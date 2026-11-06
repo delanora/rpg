@@ -936,6 +936,8 @@ model Combat {
   updatedAt  DateTime     @updatedAt
   endedAt    DateTime?
   combatants Combatant[]
+  /// Paredes/obstáculos lineares da cena (Fase 6.6L.4.1) — geometria em PÉS.
+  obstacles  SpatialObstacle[]
   operations CombatOperation[]
   /// 6.6L.3.1 — movimentos pausados esperando Reaction Opportunity.
   movementIntents       MovementIntent[]
@@ -1121,6 +1123,41 @@ model CombatOperation {
 
   @@unique([combatId, operationId])
   @@map("combat_operations")
+}
+
+/// FASE 6.6L.4.1 — OBSTÁCULO ESPACIAL da cena (parede).
+///
+/// Owner: o COMBATE, porque é ele que guarda `spatialConfig` e sobrevive a
+/// reload/reconexão/restart — não existe entidade `Scene` separada no projeto.
+///
+/// Geometria = segmento 2D de espessura ZERO, endpoints em PÉS (nunca pixels,
+/// metros, SVG ou coordenadas de câmera). Admite diagonais e a malha de 2,5 pés
+/// do caso Minúsculo — não é arredondada para múltiplos de 5.
+///
+/// `blocksMovement` e `blocksSight` são INDEPENDENTES (parede sólida, barreira
+/// invisível, cortina estrutural). Portas/janelas/paredes secretas não existem
+/// nesta fase: o primitive é só o segmento.
+model SpatialObstacle {
+  id       String @id @default(cuid())
+  combatId String
+  combat   Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+
+  /// Código canônico do primitive (`wall`); nunca rótulo traduzido.
+  kind String @default("wall")
+
+  startXFeet Float
+  startYFeet Float
+  endXFeet   Float
+  endYFeet   Float
+
+  blocksMovement Boolean @default(true)
+  blocksSight    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([combatId])
+  @@map("spatial_obstacles")
 }
 
 // -----------------------------------------------------------------------------
