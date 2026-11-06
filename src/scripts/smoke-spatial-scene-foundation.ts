@@ -105,6 +105,8 @@ export async function smokeSpatialScene(baseUrl: string, check: Check): Promise<
   const userIds: string[] = [];
   const characterIds: string[] = [];
   const creatureIds: string[] = [];
+  const regionIds: string[] = [];
+  const localityIds: string[] = [];
   let customRaceId: string | null = null;
   let combatId: string | null = null;
   const socket = io(baseUrl, { autoConnect: false, transports: ['websocket'] });
@@ -518,6 +520,130 @@ export async function smokeSpatialScene(baseUrl: string, check: Check): Promise<
     );
 
     // ===================================================================
+    // W2–W8 — AUTHORING DE TAMANHO (6.6M.3.1.4.4)
+    // O cadastro do Mestre alimenta `Creature.size`; a instância de combate
+    // herda o tamanho e o espaço ocupado continua DERIVADO (sem coluna nova).
+    // ===================================================================
+    const sizeRegion = await prisma.region.create({
+      data: { name: `Região Tamanho ${suffix}` },
+    });
+    regionIds.push(sizeRegion.id);
+    const sizeLocality = await prisma.locality.create({
+      data: { name: `Local Tamanho ${suffix}`, regionId: sizeRegion.id },
+    });
+    localityIds.push(sizeLocality.id);
+    const createSized = (size?: string) =>
+      request('POST', '/creatures', {
+        name: `Tamanho ${size ?? 'padrão'} ${suffix}`,
+        ...(size === undefined ? {} : { size }),
+        localityIds: [sizeLocality.id],
+      });
+    const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'] as const;
+    const sizedRows = await Promise.all(SIZES.map((size) => createSized(size)));
+    const defaultSizedRow = await createSized();
+    for (const row of [...sizedRows, defaultSizedRow]) {
+      if (row.data?.creature?.id) creatureIds.push(row.data.creature.id);
+    }
+    const createdOk = (row: { status: number }): boolean => [200, 201].includes(row.status);
+    check(
+      '88.W.2) CREATE grava os SEIS tamanhos e devolve o rótulo canônico + spatialSize',
+      sizedRows.every(
+        (row, index) =>
+          createdOk(row) &&
+          row.data.creature.size === SIZES[index] &&
+          row.data.creature.spatialSize === SIZES[index].toLowerCase(),
+      ),
+      JSON.stringify(sizedRows.map((row) => [row.status, row.data?.creature?.size])),
+    );
+    check(
+      '88.W.3) CREATE sem tamanho mantém o default canônico MEDIUM',
+      createdOk(defaultSizedRow) &&
+        defaultSizedRow.data.creature.size === 'Medium' &&
+        defaultSizedRow.data.creature.spatialSize === 'medium',
+      JSON.stringify({ status: defaultSizedRow.status, data: defaultSizedRow.data }),
+    );
+    const invalidCreate = await createSized('Colossal');
+    check(
+      '88.W.4) tamanho fora do enum é recusado já no CREATE (400 VALIDATION_ERROR)',
+      invalidCreate.status === 400 && invalidCreate.data.error === 'VALIDATION_ERROR',
+      JSON.stringify({ status: invalidCreate.status, data: invalidCreate.data }),
+    );
+    const mediumId = sizedRows[2].data.creature.id;
+    const patchedToHuge = await request('PATCH', `/creatures/${mediumId}`, { size: 'Huge' });
+    check(
+      '88.W.5) EDIT Medium → Huge persiste e a leitura devolve Huge',
+      patchedToHuge.status === 200 &&
+        patchedToHuge.data.creature.size === 'Huge' &&
+        patchedToHuge.data.creature.spatialSize === 'huge' &&
+        (await request('GET', `/creatures/${mediumId}`)).data.creature.size === 'Huge',
+    );
+    // Instâncias de combate: cada tamanho vira um combatente da criatura recém-
+    // cadastrada; a PROJEÇÃO espacial deriva tudo do cadastro. A criatura do
+    // EDIT acima fica de fora — ela prova a edição, não o footprint.
+    const sizeInstances = await Promise.all(
+      [
+        sizedRows[0],
+        sizedRows[1],
+        defaultSizedRow,
+        sizedRows[3],
+        sizedRows[4],
+        sizedRows[5],
+      ].map(
+        (row, index) =>
+          prisma.combatant.create({
+            data: {
+              combatId: combatId!,
+              kind: 'CREATURE',
+              creatureId: row.data.creature.id,
+              name: `Instância Tamanho ${index}`,
+              spatialPosition: { xFeet: 0, yFeet: index * 10 },
+              hpCurrent: 1,
+              hpMax: 1,
+              armorClass: 10,
+              initiative: index,
+              dexterityMod: 0,
+              turnEconomy: onTurnStart(30) as never,
+            },
+          }),
+      ),
+    );
+    state = (await request('GET', '/combat/active')).data.combat;
+    const expectedFootprint = [2.5, 5, 5, 10, 15, 20];
+    check(
+      '88.W.6) no COMBATE o combatente herda baseSize = effectiveSize do cadastro',
+      sizeInstances.every((instance, index) => {
+        const spatial = spatialOf(state, instance.id);
+        const expected = SIZES[index].toLowerCase();
+        return spatial.baseSize === expected && spatial.effectiveSize === expected;
+      }),
+      JSON.stringify(
+        sizeInstances.map((instance) => [
+          spatialOf(state, instance.id).baseSize,
+          spatialOf(state, instance.id).effectiveSize,
+        ]),
+      ),
+    );
+    check(
+      '88.W.7) footprint por tamanho: Tiny 2,5 · Small/Medium 5 · Large 10 · Huge 15 · Gargantuan 20',
+      sizeInstances.every((instance, index) => {
+        const space = spatialOf(state, instance.id).occupiedSpace;
+        return (
+          space.widthFeet === expectedFootprint[index] &&
+          space.heightFeet === expectedFootprint[index]
+        );
+      }),
+      JSON.stringify(
+        sizeInstances.map((instance) => spatialOf(state, instance.id).occupiedSpace?.widthFeet),
+      ),
+    );
+    check(
+      '88.W.8) o TAMANHO do cadastro é a única fonte: LARGE antigo continua 10×10 após reload',
+      spatialOf(state, sizeInstances[3].id).baseSize === 'large' &&
+        spatialOf(state, sizeInstances[3].id).occupiedSpace.widthFeet === 10 &&
+        spatialOf(state, sizeInstances[3].id).position !== null,
+    );
+
+    // ===================================================================
     // X–AC — IMAGEM DO TOKEN: retrato/imagem existentes, null = fallback
     // ===================================================================
     check(
@@ -762,6 +888,13 @@ export async function smokeSpatialScene(baseUrl: string, check: Check): Promise<
     }
     if (creatureIds.length) {
       await prisma.creature.deleteMany({ where: { id: { in: creatureIds } } }).catch(() => undefined);
+    }
+    // Localidades/regiões do authoring de tamanho — só as criadas aqui.
+    if (localityIds.length) {
+      await prisma.locality.deleteMany({ where: { id: { in: localityIds } } }).catch(() => undefined);
+    }
+    if (regionIds.length) {
+      await prisma.region.deleteMany({ where: { id: { in: regionIds } } }).catch(() => undefined);
     }
     if (userIds.length) {
       await prisma.user.deleteMany({ where: { id: { in: userIds } } }).catch(() => undefined);
