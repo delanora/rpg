@@ -947,6 +947,14 @@ export function CombatTracker({
               }
             : null
         }
+        // LÁPIS do editor da Hotbar junto do retrato (6.6M.6.3.1). Só o
+        // jogador com configuração fornecida vê o gesto — o Mestre não.
+        onPersonalizeHotbar={
+          characterHotbar !== undefined ? startHotbarEdit : undefined
+        }
+        personalizeDisabled={
+          busy || awaitingInitiative || dockWaiting || hotbarEditing
+        }
         hotbarFilter={hotbarFilter}
         onToggleHotbarFilter={toggleHotbarFilter}
         // O MENU DE AÇÃO de sempre: Disparada, Esquivar, Preparar, Levantar e
@@ -987,9 +995,8 @@ export function CombatTracker({
               onSelect={(entry) =>
                 setHotbarPick((prev) => toggleHotbarPick(prev, entry.sourceId))
               }
-              // EDITOR (6.6M.6.3.1): só existe quando o pai fornece a
-              // configuração — a visão do Mestre segue sem esta superfície.
-              onEdit={characterHotbar !== undefined ? startHotbarEdit : undefined}
+              // EDITOR (6.6M.6.3.1): o gesto de abrir vive na dock, ao lado do
+              // retrato; aqui só existe o editor já aberto.
               editing={hotbarEditing}
               draftSlots={hotbarDraftSlots}
               choices={hotbarEntries}

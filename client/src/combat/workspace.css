@@ -2599,7 +2599,7 @@
   max-width: 18rem;
 }
 
-.hotbar-edit-toggle,
+/* Salvar/Cancelar existem só enquanto o editor está aberto (linha do topo). */
 .hotbar-edit-save,
 .hotbar-edit-cancel {
   padding: 0.1rem 0.3rem;
@@ -2614,12 +2614,44 @@
   cursor: pointer;
 }
 
-.hotbar-edit-toggle {
-  opacity: 0.68;
+/* LÁPIS do editor (6.6M.6.3.1): gesto discreto AO LADO DO RETRATO, fora da
+   Hotbar. Círculo pequeno no canto do retrato — sem texto, sem linha nova e
+   sem empurrar a grade de 48 slots. */
+.dock-portrait-cell .dock-personalize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 1px solid rgba(196, 155, 61, 0.55);
+  border-radius: 50%;
+  background: rgba(20, 13, 8, 0.78);
+  color: #e4c17a;
+  opacity: 0.55;
+  cursor: pointer;
+  transition:
+    opacity 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease;
 }
 
-.hotbar-edit-toggle:hover,
-.hotbar-edit-toggle:focus-visible,
+.dock-portrait-cell .dock-personalize:hover,
+.dock-portrait-cell .dock-personalize:focus-visible {
+  opacity: 1;
+  border-color: #f1c85c;
+  color: #ffe49a;
+  outline: none;
+}
+
+.dock-portrait-cell .dock-personalize:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
 .hotbar-edit-save:hover,
 .hotbar-edit-save:focus-visible,
 .hotbar-edit-cancel:hover,
@@ -2631,8 +2663,7 @@
 }
 
 .hotbar-edit-save:disabled,
-.hotbar-edit-cancel:disabled,
-.hotbar-edit-toggle:disabled {
+.hotbar-edit-cancel:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }

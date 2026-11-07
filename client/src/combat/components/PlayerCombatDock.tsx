@@ -54,6 +54,15 @@ interface PlayerCombatDockProps {
     busy?: boolean;
     onRoll: () => void;
   } | null;
+  /**
+   * PERSONALIZAÇÃO DA HOTBAR (6.6M.6.3.1): gesto que ABRE o editor, ao lado do
+   * retrato — um lápis pequeno, sem texto e sem linha nova. A dock só encaminha:
+   * quem guarda o rascunho e salva é o orquestrador. Ausente = sem editor (é o
+   * caso da visão do Mestre).
+   */
+  onPersonalizeHotbar?: () => void;
+  /** Durante espera/pré-iniciativa/edição em curso o lápis fica indisponível. */
+  personalizeDisabled?: boolean;
   /** Filtro ativo da Hotbar (navegação pelos três glifos). */
   hotbarFilter?: HotbarFilter | null;
   onToggleHotbarFilter?: (filter: HotbarFilter) => void;
@@ -141,6 +150,8 @@ export function PlayerCombatDock({
   hotbar,
   waiting = false,
   awaitingInitiative = null,
+  onPersonalizeHotbar,
+  personalizeDisabled = false,
   hotbarFilter = null,
   onToggleHotbarFilter,
   utilities,
@@ -271,6 +282,23 @@ export function PlayerCombatDock({
         <span className="dock-portrait-name" aria-hidden="true">
           {name}
         </span>
+
+        {/* LÁPIS DO EDITOR DA HOTBAR (6.6M.6.3.1): discreto, no canto do
+            retrato. Não é ação de combate — organizar a Hotbar não consome
+            Ação/Bônus/Reação e não depende do turno, mas o gesto fica fora de
+            cena enquanto a dock está bloqueada. */}
+        {onPersonalizeHotbar ? (
+          <button
+            type="button"
+            className="dock-personalize"
+            aria-label="Personalizar a Hotbar"
+            title="Personalizar a Hotbar"
+            disabled={personalizeDisabled}
+            onClick={onPersonalizeHotbar}
+          >
+            <Icon name="quill" size={11} />
+          </button>
+        ) : null}
 
         {/* PAINEL DE ESTADO DO PERSONAGEM (6.6M.6.1.4) — diálogo NÃO modal: o
             resto da interface continua interativo, então nada aqui se declara

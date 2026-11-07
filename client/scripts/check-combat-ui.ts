@@ -7822,6 +7822,16 @@ check(
       createElement(PlayerCombatDock, { ...dockProbeProps, awaitingInitiative: null }),
     ),
   );
+  /** Dock com o LÁPIS do editor (6.6M.6.3.1) — gesto junto ao retrato. */
+  const personalizeDockMarkup = stampDock(
+    renderToStaticMarkup(
+      createElement(PlayerCombatDock, {
+        ...dockProbeProps,
+        awaitingInitiative: null,
+        onPersonalizeHotbar: () => {},
+      }),
+    ),
+  );
 
   check(
     'SC142) pré-iniciativa usa a MESMA dock: o card solto de rolagem saiu do corpo',
@@ -8034,7 +8044,6 @@ check(
       slots: placedSlots,
       busy: false,
       onSelect: () => {},
-      onEdit: () => {},
     }),
   );
   const editingMarkup = renderToStaticMarkup(
@@ -8062,10 +8071,18 @@ check(
       (editingMarkup.match(/hotbar-slot-remove/g) ?? []).length === hotbarSample.length &&
       (editingMarkup.match(/is-editable/g) ?? []).length === HOTBAR_SLOTS &&
       !editingMarkup.includes('hotbar-picker') &&
-      personalizeMarkup.includes('Personalizar a Hotbar') &&
+      // O GESTO saiu da Hotbar: nenhuma linha nova, nenhum botão a mais na
+      // grade (os slots continuam sendo os únicos botões do fluxo).
+      !personalizeMarkup.includes('Personalizar a Hotbar') &&
       !personalizeMarkup.includes('hotbar-edit-save') &&
-      // Fora do editor os slots continuam botões do fluxo existente.
-      (personalizeMarkup.match(/<button/g) ?? []).length === hotbarSample.length + 1,
+      (personalizeMarkup.match(/<button/g) ?? []).length === hotbarSample.length &&
+      // …e o lápis vive junto do RETRATO, antes da Hotbar na árvore da dock.
+      personalizeDockMarkup.includes('class="dock-personalize"') &&
+      personalizeDockMarkup.includes('aria-label="Personalizar a Hotbar"') &&
+      personalizeDockMarkup.indexOf('dock-personalize') <
+        personalizeDockMarkup.indexOf('dock-hotbar') &&
+      workspaceActive.includes('.dock-portrait-cell .dock-personalize') &&
+      workspaceRule('.dock-portrait-cell .dock-personalize').includes('position: absolute;'),
   );
 
   check(
@@ -8106,7 +8123,10 @@ check(
         'replaySnapshot<HotbarSaveSnapshot>',
       ) &&
       trackerSource.includes('saveHotbarLayout(slots, characterVersion ?? 1)') &&
-      trackerSource.includes('onEdit={characterHotbar !== undefined ? startHotbarEdit : undefined}') &&
+      trackerSource.includes('onPersonalizeHotbar={') &&
+      trackerSource.includes('characterHotbar !== undefined ? startHotbarEdit : undefined') &&
+      dockSource.includes('className="dock-personalize"') &&
+      !hotbarComponentSource.includes('onEdit') &&
       sheetPageSource.includes('characterHotbar={character?.hotbar?.slots ?? null}') &&
       source('src/hotbarApi.ts').includes("'/api/characters/me/hotbar'") &&
       !source('src/hotbarApi.ts').includes('/api/combat') &&

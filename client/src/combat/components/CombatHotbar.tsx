@@ -30,9 +30,10 @@ interface CombatHotbarProps {
   onSelect: (entry: CombatHotbarEntry) => void;
 
   // ---------------------------------------------------------------------
-  // Personalização (6.6M.6.3.1) — sem `onEdit` a Hotbar é somente consulta.
+  // Personalização (6.6M.6.3.1) — o GESTO de abrir o editor vive na dock, ao
+  // lado do retrato (`dock-personalize`); aqui só existe o editor já aberto.
+  // Sem `editing` a Hotbar é somente consulta.
   // ---------------------------------------------------------------------
-  onEdit?: () => void;
   editing?: boolean;
   /** Rascunho do editor (configuração COMPLETA, sem máscara de filtro). */
   draftSlots?: HotbarSlotView[];
@@ -74,7 +75,6 @@ export function CombatHotbar({
   filter = null,
   onClearFilter,
   onSelect,
-  onEdit,
   editing = false,
   draftSlots,
   choices = [],
@@ -170,20 +170,6 @@ export function CombatHotbar({
             {filter ? (
               <button type="button" className="hotbar-clear-filter" onClick={onClearFilter}>
                 Ver todas
-              </button>
-            ) : null}
-            {onEdit ? (
-              <button
-                type="button"
-                className="hotbar-edit-toggle"
-                // Pré-iniciativa/espera: o miolo está bloqueado, então o gesto
-                // também fica — organizar a Hotbar não é ação de turno.
-                disabled={busy}
-                aria-label="Personalizar a Hotbar"
-                title="Arrastar, trocar e salvar a organização dos seus atalhos"
-                onClick={onEdit}
-              >
-                Personalizar
               </button>
             ) : null}
           </>
