@@ -2594,13 +2594,14 @@
 /* LÁPIS do editor (6.6M.6.3.1): gesto discreto AO LADO DO RETRATO, fora da
    Hotbar. Círculo pequeno no canto do retrato — sem texto, sem linha nova e
    sem empurrar a grade de 48 slots. */
-/* LÁPIS DO EDITOR DA HOTBAR: ancorado no canto SUPERIOR ESQUERDO da dock, na
-   diagonal acima do retrato. Cresceu para 1.5rem (alvo de clique confortável)
-   sem disputar espaço com o retrato — é o único elemento que mora na margem. */
+/* LÁPIS DO EDITOR DA HOTBAR: na quina INFERIOR ESQUERDA da dock — diagonal
+   abaixo do retrato —, o mais perto da borda que o padding permite (0.25rem,
+   sem atropelar o aro de latão) e sem encostar na foto. 1.5rem de alvo de
+   clique, fora do grid. */
 .dock-personalize {
   position: absolute;
-  top: 0.2rem;
-  left: 0.2rem;
+  bottom: 0.25rem;
+  left: 0.25rem;
   z-index: 3;
   display: grid;
   place-items: center;

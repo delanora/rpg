@@ -8096,14 +8096,16 @@ check(
       !personalizeMarkup.includes('Personalizar a Hotbar') &&
       !personalizeMarkup.includes('hotbar-edit-save') &&
       (personalizeMarkup.match(/<button/g) ?? []).length === hotbarSample.length &&
-      // …e o lápis vive na BORDA da dock — canto superior esquerdo, na diagonal
-      // acima do retrato — e continua antes da Hotbar na árvore.
+      // …e o lápis vive na BORDA da dock — quina INFERIOR esquerda, na diagonal
+      // abaixo do retrato — e continua antes da Hotbar na árvore.
       personalizeDockMarkup.includes('class="dock-personalize"') &&
       personalizeDockMarkup.includes('aria-label="Personalizar a Hotbar"') &&
       personalizeDockMarkup.indexOf('dock-personalize') <
         personalizeDockMarkup.indexOf('dock-hotbar') &&
       workspaceRule('.dock-personalize').includes('position: absolute;') &&
-      workspaceRule('.dock-personalize').includes('left: 0.2rem;') &&
+      workspaceRule('.dock-personalize').includes('bottom: 0.25rem;') &&
+      workspaceRule('.dock-personalize').includes('left: 0.25rem;') &&
+      !workspaceRule('.dock-personalize').includes('top:') &&
       workspaceRule('.dock-personalize').includes('width: 1.5rem;') &&
       // Não voltou para dentro da célula do retrato.
       !workspaceActive.includes('.dock-portrait-cell .dock-personalize'),
