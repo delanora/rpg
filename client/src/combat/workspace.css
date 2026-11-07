@@ -815,6 +815,38 @@
 }
 
 /* --------------------------------------------------------------------------
+   JOGADOR EM COMBATE — O COMBATE É A PRIMEIRA DOBRA (6.6M.5.2-J).
+
+   Combate e ficha são DUAS superfícies: a primeira precisa caber sozinha na
+   viewport, e a ficha começa depois. Por isso aqui (e só aqui) entra um piso de
+   viewport: não é o `calc` de altura do workspace — esse continua vindo da
+   cadeia flex —, é a FRONTEIRA da dobra. O desconto é a moldura fixa acima do
+   painel (header sticky ~4rem + padding do main ~1.25rem) com uma folga curta,
+   então a ficha nunca aparece cortada no pé da tela.
+
+   O seletor exige `.sheet` na MESMA página: a tela do Mestre, que também tem um
+   `:has(> .combat-panel)` (largura) mas não a ficha abaixo, fica como estava.
+   -------------------------------------------------------------------------- */
+.app-main:has(> .combat-panel):has(> .sheet) > .combat-panel {
+  min-height: calc(100dvh - 5.5rem);
+  /* Respiro entre as duas superfícies, maior que o gap interno do combate. */
+  margin-bottom: 1.6rem;
+}
+
+/*
+ * A ficha volta a ter container próprio: 1420px centrados, independentes da
+ * largura total que o combate usa. Sem isso o card da ficha encostava na borda
+ * da tela e o retrato — que transborda meia foto para a esquerda, sempre
+ * limitado por `--portrait-shift` (calculado sobre os 1420px de container)
+ * — era cortado fora da viewport.
+ */
+.app-main:has(> .combat-panel):has(> .sheet) > .sheet {
+  width: 100%;
+  max-width: 1420px;
+  margin-inline: auto;
+}
+
+/* --------------------------------------------------------------------------
    RESPONSIVIDADE — desktop é a prioridade de tela única; o resto degrada para
    duas colunas e, por fim, para o fluxo vertical de sempre. Nunca três
    colunas espremidas.
