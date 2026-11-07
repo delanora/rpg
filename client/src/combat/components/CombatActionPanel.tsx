@@ -133,6 +133,14 @@ interface CombatActionPanelProps {
    * mesmos; nada de segundo `attackId`/`targetId`.
    */
   variant?: 'default' | 'tactical-tray';
+  /**
+   * HOTBAR (6.6M.6): pedido de pré-seleção vindo de um slot. NÃO é um segundo
+   * `attackId`: o estado do ataque continua sendo o daqui e o pedido só chama o
+   * MESMO `setAttackId`, abrindo o passo de alvo do fluxo existente.
+   */
+  preset?: { attackId: string; nonce: number } | null;
+  /** Fecha o mini fluxo e devolve a faixa de ataque para a hotbar. */
+  onClose?: () => void;
   busy: boolean;
   onAttack: (input: {
     prepared?: boolean;
@@ -165,6 +173,8 @@ export function CombatActionPanel({
   sneakAttackFor,
   inventory,
   variant = 'default',
+  preset = null,
+  onClose,
   busy,
   onAttack,
 }: CombatActionPanelProps) {
@@ -192,6 +202,19 @@ export function CombatActionPanel({
   const [openStep, setOpenStep] = useState<'attack' | 'target' | null>(null);
   const hasReady = Boolean(attacker?.turnEconomy.ready);
   useEffect(() => setPrepared(false), [attacker?.id, hasReady]);
+
+  /**
+   * HOTBAR — o slot escolhido cai no MESMO estado deste painel (nada duplicado).
+   * O `nonce` existe só para reabrir o fluxo quando o mesmo slot é clicado de
+   * novo; trocar de arma invalida a confirmação de aliado adjacente, como no
+   * cartão de ataque.
+   */
+  useEffect(() => {
+    if (!preset) return;
+    setAttackId(preset.attackId);
+    setAdjacentAlly(false);
+    setOpenStep('target');
+  }, [preset]);
 
   useEffect(() => {
     if (!attacker || !attackId || !targetId) {
@@ -294,6 +317,23 @@ export function CombatActionPanel({
           <Icon name="sword" size={15} /> Atacar
         </h3>
       )}
+
+      {/* Mini fluxo aberto por um slot: identifica a ação e devolve o espaço. */}
+      {onClose ? (
+        <div className="attack-tray-head">
+          <span className="attack-tray-title">
+            <Icon name="sword" size={13} /> {selectedAttack?.name ?? 'Ação escolhida'}
+          </span>
+          <button
+            type="button"
+            className="btn btn-small attack-tray-close"
+            aria-label="Fechar a ação"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
 
       {attackerChoices ? (
         <label className="field">
