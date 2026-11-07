@@ -902,7 +902,7 @@ export function CombatTracker({
                       title={shortcut.label}
                       onClick={() => onOpenSection(shortcut.key)}
                     >
-                      <Icon name={shortcut.icon} size={13} />
+                      <Icon name={shortcut.icon} size={14} />
                       <span className="dock-utility-label">{shortcut.label}</span>
                     </button>
                   );
@@ -915,7 +915,7 @@ export function CombatTracker({
                 title="Ficha completa"
                 onClick={onOpenSheet}
               >
-                <Icon name="quill" size={13} />
+                <Icon name="quill" size={14} />
                 <span className="dock-utility-label">Ficha</span>
               </button>
             ) : null}

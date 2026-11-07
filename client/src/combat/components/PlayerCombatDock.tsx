@@ -54,6 +54,11 @@ function Gems({ total, used, kind }: { total: number; used: number; kind: string
   );
 }
 
+/** Metro com vírgula decimal: é a leitura do protótipo ("7,5 / 9 m"). */
+function meters(value: number): string {
+  return String(value).replace('.', ',');
+}
+
 /**
  * DOCK DE COMBATE DO JOGADOR (6.6M.6.1 / geometria do HTML v4 — 6.6M.6.1.2).
  *
@@ -120,6 +125,23 @@ export function PlayerCombatDock({
     movement.budget > 0
       ? Math.max(0, Math.min(100, (movement.remaining / movement.budget) * 100))
       : 0;
+  // Texto COMPLETO de cada recurso: vai no `aria-label`/`title` e no balão de
+  // hover/foco. O glifo nunca é a única fonte de informação.
+  const actionsLabel = economy
+    ? `Ação — ${actionsLeft} de ${economy.actionsGranted} ${
+        economy.actionsGranted === 1 ? 'disponível' : 'disponíveis'
+      }`
+    : 'Ação — em espera';
+  const bonusLabel = economy
+    ? economy.bonusActionUsed
+      ? 'Ação bônus — utilizada'
+      : 'Ação bônus — disponível* (uso não consumido não concede uma Ação Bônus por si, PHB 2014)'
+    : 'Ação bônus — em espera';
+  const reactionLabel = economy
+    ? economy.reactionAvailable
+      ? 'Reação — disponível'
+      : 'Reação — utilizada'
+    : 'Reação — em espera';
 
   return (
     <section
@@ -149,6 +171,11 @@ export function PlayerCombatDock({
             <span style={{ width: `${hpPercent}%` }} />
           </span>
         </button>
+
+        {/* Legenda do nome: no protótipo é uma legenda abaixo do círculo. */}
+        <span className="dock-portrait-name" aria-hidden="true">
+          {name}
+        </span>
 
         {contextOpen ? (
           <div className="dock-context" role="dialog" aria-label={`Estado de ${name}`}>
@@ -188,9 +215,9 @@ export function PlayerCombatDock({
       </div>
 
       {/* RECURSOS — coluna vertical de símbolos, na ordem do PHB 2014:
-          Ação (losango) · Ação Bônus (hexágono) · Reação (estrela). O rótulo
-          textual continua no DOM (leitura por leitor de tela e `title`), mas
-          não ocupa a coluna: quem informa é o glifo + a contagem. */}
+          Ação (losango) · Ação Bônus (hexágono) · Reação (estrela). SEM texto
+          permanente na coluna: o estado completo fica no balão de hover/foco e
+          no `aria-label`, e o glifo carrega a leitura visual. */}
       <div className="dock-resources" aria-label="Recursos do turno">
         {deathBlocked ? (
           <p className="dock-death" title="Sem economia de turno — Testes contra a Morte">
@@ -201,22 +228,18 @@ export function PlayerCombatDock({
           <>
             <div
               className="dock-resource is-action"
-              title={
-                economy
-                  ? `Ação — ${actionsLeft} de ${economy.actionsGranted} disponível(is)`
-                  : 'Ação — em espera'
-              }
+              tabIndex={0}
+              title={actionsLabel}
+              aria-label={actionsLabel}
             >
               <span className="dock-resource-label">Ação</span>
-              <span className="dock-resource-row">
-                <Gems
-                  total={economy?.actionsGranted ?? 0}
-                  used={economy?.actionsUsed ?? 0}
-                  kind="action"
-                />
-                <span className="dock-resource-count">
-                  {economy ? `${actionsLeft}/${economy.actionsGranted}` : '—'}
-                </span>
+              <Gems
+                total={economy?.actionsGranted ?? 0}
+                used={economy?.actionsUsed ?? 0}
+                kind="action"
+              />
+              <span className="dock-resource-tip" aria-hidden="true">
+                {actionsLabel}
               </span>
               {/* O MESMO menu de Ação (Disparada, Esquivar, Preparar, Levantar,
                   Estabilizar): acesso compacto junto ao losango. */}
@@ -227,49 +250,37 @@ export function PlayerCombatDock({
                 uma Ação Bônus automaticamente executável (PHB 2014). */}
             <div
               className="dock-resource"
-              title={
-                economy
-                  ? economy.bonusActionUsed
-                    ? 'Ação bônus — utilizada'
-                    : 'Ação bônus — disponível*'
-                  : 'Ação bônus — em espera'
-              }
+              tabIndex={0}
+              title={bonusLabel}
+              aria-label={bonusLabel}
             >
               <span className="dock-resource-label">Ação bônus</span>
-              <span className="dock-resource-row">
-                <span
-                  className={`dock-pip is-bonus ${
-                    economy && economy.bonusActionUsed ? 'is-spent' : 'is-ready'
-                  }`}
-                  aria-hidden="true"
-                />
-                <span className="dock-resource-count">
-                  {economy ? (economy.bonusActionUsed ? 'usada' : 'livre*') : '—'}
-                </span>
+              <span
+                className={`dock-pip is-bonus ${
+                  economy && economy.bonusActionUsed ? 'is-spent' : 'is-ready'
+                }`}
+                aria-hidden="true"
+              />
+              <span className="dock-resource-tip" aria-hidden="true">
+                {bonusLabel}
               </span>
             </div>
 
             <div
               className="dock-resource"
-              title={
-                economy
-                  ? economy.reactionAvailable
-                    ? 'Reação — disponível'
-                    : 'Reação — utilizada'
-                  : 'Reação — em espera'
-              }
+              tabIndex={0}
+              title={reactionLabel}
+              aria-label={reactionLabel}
             >
               <span className="dock-resource-label">Reação</span>
-              <span className="dock-resource-row">
-                <span
-                  className={`dock-pip is-reaction ${
-                    economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'
-                  }`}
-                  aria-hidden="true"
-                />
-                <span className="dock-resource-count">
-                  {economy ? (economy.reactionAvailable ? 'livre' : 'usada') : '—'}
-                </span>
+              <span
+                className={`dock-pip is-reaction ${
+                  economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'
+                }`}
+                aria-hidden="true"
+              />
+              <span className="dock-resource-tip" aria-hidden="true">
+                {reactionLabel}
               </span>
             </div>
           </>
@@ -286,21 +297,24 @@ export function PlayerCombatDock({
           recursos e Hotbar, terminando antes dos utilitários. */}
       <div className="dock-movement-row">
         <span className="dock-movement-label">
-          <Icon name="wind" size={12} /> Deslocamento
+          <Icon name="wind" size={12} />
+          <span className="dock-movement-word">Deslocamento</span>
+        </span>
+        <span className="dock-movement-value">
+          {meters(movement.remaining)} / {meters(movement.budget)} m
         </span>
         <div
           className="dock-movement-track"
           role="img"
-          aria-label={`${movement.remaining} de ${movement.budget} metros restantes`}
+          aria-label={`${meters(movement.remaining)} de ${meters(
+            movement.budget,
+          )} metros restantes`}
         >
           <span
             className="dock-movement-fill"
             style={{ width: `${movementFill}%` }}
           />
         </div>
-        <span className="dock-movement-value">
-          {movement.remaining} / {movement.budget} m
-        </span>
         {movementControl}
       </div>
     </section>

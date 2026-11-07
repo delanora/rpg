@@ -858,59 +858,76 @@
    não empurra nada e não participa do layout. Por isso a faixa não tem
    `overflow`: nada de recortar o tooltip.
    -------------------------------------------------------------------------- */
-/* A tela do JOGADOR (dock presente) reserva a faixa dos botões flutuantes
-   fixos — Inventário/Dados à esquerda, Anotações à direita — para a dock não
-   ficar embaixo deles. A classe só existe quando a dock é montada: a tela do
-   Mestre não a recebe e o grid dele continua idêntico. */
+/* A tela do JOGADOR (dock presente) abre CALHAS LATERAIS — a solução do HTML
+   v4 — para os botões flutuantes fixos do jogador (Inventário/Dados à   esquerda, Anotações à direita) ficarem NA MARGEM, sem cobrir a dock. A
+   largura sai do botão mais largo medido no CSS real (`.inv-fab`: 0.95rem de
+   padding em cada lado + ícone de 18px + o rótulo "Inventário" ≈ 8.2rem),
+   mais o deslocamento de 1.25rem: 9.75rem de calha. A classe só existe quando
+   a dock é montada, então a tela do Mestre continua idêntica. */
 .combat-workspace.has-player-dock {
-  padding-bottom: calc(var(--fab-base) + 2 * var(--fab-step) + 0.6rem);
+  padding-inline: 9.75rem;
 }
+
 
 .combat-workspace-dock {
   min-width: 0;
 }
 
 /* --------------------------------------------------------------------------
-   DOCK DO JOGADOR (6.6M.6.1 / paridade visual 6.6M.6.1.1).
+   DOCK DO JOGADOR (6.6M.6.1 / fidelidade ao HTML v4 — 6.6M.6.1.2).
 
-   Composição aprovada, da esquerda para a direita: identidade (retrato +
-   recursos compactos) · HOTBAR como coluna dominante · utilitários agrupados
-   à direita, com o Encerrar turno no extremo do bloco. A faixa de deslocamento
-   é o rodapé da dock: começa sob o retrato, corre sob os slots e TERMINA antes
-   do bloco direito — nunca uma segunda faixa de largura total.
+   MEDIDAS DO PROTÓTIPO, ponto a ponto: quatro colunas de 90 / 45 / 1fr / 180px,
+   duas linhas de 81px e 29px, gap e padding de 8 e 10px. Da esquerda para a
+   direita: retrato circular (atravessa as duas linhas) · coluna vertical de
+   recursos · Hotbar com a largura central · utilitários nas duas linhas, com o
+   Encerrar turno na base. O deslocamento começa à direita do retrato e TERMINA
+   antes do bloco direito.
+
+   A paleta marrom escura do protótipo vale SÓ nesta dock (os dois temas do app
+   continuam iguais): por isso as cores aqui são explícitas em vez de tokens, e
+   o texto claro garante contraste também no tema pergaminho.
 
    Só apresentação: as responsabilidades mecânicas continuam nos mesmos
    controles (ActionMenu, MovementSpendButton, end-turn).
    -------------------------------------------------------------------------- */
 .combat-dock {
   display: grid;
-  /* QUATRO colunas na geometria do HTML v4: retrato (≈90px) · recursos A/B/R
-     (≈45px) · Hotbar com toda a largura central · utilitários (≈190px). O
-     retrato e o bloco de utilitários atravessam as DUAS linhas. */
-  grid-template-columns: auto 3.2rem minmax(0, 1fr) 11.75rem;
+  grid-template-columns: 5.625rem 2.8125rem minmax(0, 1fr) 11.25rem;
+  grid-template-rows: 5.0625rem 1.8125rem;
   grid-template-areas:
     'portrait resources hotbar utilities'
     'portrait movement movement utilities';
-  align-items: center;
-  column-gap: 0.55rem;
-  row-gap: 0.3rem;
+  align-items: stretch;
+  gap: 0.5rem;
   min-width: 0;
-  min-height: 8.4rem;
-  padding: 0.45rem 0.55rem 0.4rem;
-  border: 1px solid var(--gold-hair);
-  border-radius: 6px;
-  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
-  box-shadow: inset 0 1px 4px rgba(43, 33, 21, 0.16);
+  padding: 0.625rem;
+  /* Paleta do v4, restrita à dock. */
+  --dock-edge: #a17a32;
+  --dock-edge-soft: #6a501f;
+  --dock-gold: #d5ac49;
+  --dock-gold-hi: #ffe49a;
+  --dock-cream: #e9d3a3;
+  --dock-sub: #a59271;
+  --dock-dim: #796748;
+  --dock-panel: #20150f;
+  --dock-panel-2: #110d08;
+  border: 1px solid var(--dock-edge);
+  border-radius: 7px;
+  background: linear-gradient(180deg, #312014 0%, #21150e 55%, #1b110a 100%);
+  box-shadow:
+    inset 0 1px rgba(214, 173, 80, 0.2),
+    0 -10px 20px rgba(0, 0, 0, 0.33);
 }
 
-/* RETRATO — coluna própria, atravessando as duas linhas da dock. */
+/* RETRATO — coluna própria, atravessando as duas linhas da dock. Fica no TOPO
+   da faixa (como no v4) para a legenda do nome caber abaixo dele. */
 .dock-portrait-cell {
   grid-area: portrait;
   position: relative;
-  align-self: center;
+  align-self: start;
   justify-self: start;
   display: grid;
-  place-items: center;
+  place-items: start center;
   width: 5.5rem;
   height: 5.5rem;
 }
@@ -924,15 +941,24 @@
   height: 100%;
   padding: 0;
   overflow: hidden;
-  border: 2px solid var(--gold);
+  /* Moldura de 3px e aros do v4. */
+  border: 3px solid #c49b3d;
   border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--ink-soft);
+  background: radial-gradient(
+    circle at 50% 28%,
+    #a6b4b7 0 13%,
+    #626b71 16% 24%,
+    #38424d 27% 37%,
+    #1b1513 39% 49%,
+    #89602a 52% 55%,
+    #1e140e 58%
+  );
+  color: var(--dock-cream);
   cursor: pointer;
   box-shadow:
-    0 0 0 1px rgba(43, 33, 21, 0.6),
-    0 0 0 3px var(--gold-hair),
-    inset 0 0 10px rgba(0, 0, 0, 0.35);
+    inset 0 0 25px rgba(5, 5, 5, 0.48),
+    0 2px 0 2px #070604,
+    0 0 0 1px rgba(241, 214, 141, 0.33);
   transition:
     border-color 0.14s ease,
     box-shadow 0.14s ease;
@@ -940,9 +966,30 @@
 
 .dock-portrait:hover,
 .dock-portrait:focus-visible {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 1px var(--gold-hair);
+  border-color: var(--dock-gold-hi);
+  box-shadow:
+    inset 0 0 25px rgba(5, 5, 5, 0.48),
+    0 2px 0 2px #070604,
+    0 0 0 3px rgba(241, 214, 141, 0.28);
   outline: none;
+}
+
+/* Legenda do nome: 6px abaixo do círculo, como no protótipo. */
+.dock-portrait-name {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 6.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 0.5625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e7c982;
+  pointer-events: none;
 }
 
 .dock-portrait img {
@@ -959,11 +1006,13 @@
   height: 100%;
 }
 
+/* Desvio consciente e mínimo do v4: a faixa de PV continua no retrato (a dock
+   não tem cabeçalho de HP), mas discreta, sem competir com a moldura. */
 .dock-portrait-hp {
   position: absolute;
   inset: auto 0 0 0;
-  height: 0.32rem;
-  background: rgba(0, 0, 0, 0.45);
+  height: 0.2rem;
+  background: rgba(0, 0, 0, 0.55);
 }
 
 .dock-portrait-hp > span {
@@ -976,16 +1025,17 @@
 .dock-context {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 0.4rem);
+  bottom: calc(100% + 0.6rem);
   z-index: 50;
   display: grid;
-  gap: 0.35rem;
+  gap: 0.4rem;
   width: 17rem;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--gold-hair);
-  border-radius: 5px;
-  background: linear-gradient(180deg, var(--surface), var(--surface-2));
-  box-shadow: var(--shadow);
+  padding: 0.7rem 0.75rem;
+  border: 1px solid #bd8e31;
+  border-radius: 7px;
+  background: linear-gradient(160deg, #302013, #100c09);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  color: var(--dock-cream);
 }
 
 .dock-context-head {
@@ -1030,27 +1080,36 @@
   color: var(--ink-faint);
 }
 
-/* RECURSOS — COLUNA vertical de símbolos, na ordem Ação · Bônus · Reação. */
+/* RECURSOS — COLUNA de 45px com os três glifos verticalmente distribuídos
+   (`space-around`), exatamente como no protótipo. Sem divisória: a única
+   separação da dock é a do bloco de utilitários. */
 .dock-resources {
   grid-area: resources;
-  display: grid;
-  grid-template-rows: repeat(3, minmax(0, 1fr));
-  align-content: center;
-  justify-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-items: center;
   align-self: stretch;
-  gap: 0.15rem;
   min-width: 0;
-  padding-right: 0.1rem;
-  border-right: 1px solid var(--line);
+  padding: 1px;
 }
 
+/* Célula de 28×24 (medida do v4) que só desenha o glifo. */
 .dock-resource {
   position: relative;
   display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 0.04rem;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.5rem;
   min-width: 0;
+  border-radius: 5px;
+  transition: transform 0.16s ease;
+}
+
+.dock-resource:hover,
+.dock-resource:focus-visible {
+  transform: scale(1.1);
+  outline: none;
 }
 
 /* Rótulo textual: fica no DOM (leitor de tela) e o `title` da célula mostra o
@@ -1064,65 +1123,85 @@
   white-space: nowrap;
 }
 
-.dock-resource-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.18rem;
-  min-width: 0;
-}
-
+/* GEMAS: uma por recurso CONCEDIDO. Duas Ações (Action Surge) continuam sendo
+   duas gemas na mesma célula, sem virar booleano. */
 .dock-pips {
   display: flex;
   align-items: center;
-  gap: 0.12rem;
+  justify-content: center;
+  gap: 2px;
 }
 
-/* Glifos do v4: losango = Ação, hexágono = Ação Bônus, estrela = Reação. A
-   FORMA identifica o recurso e `is-spent` apaga sem esconder o símbolo. */
+/* Glifos do v4, com as cores e as LUZES do protótipo: losango girado de latão
+   (Ação), hexágono ponta-para-cima (Ação Bônus) e estrela de oito pontas
+   (Reação). A FORMA identifica o recurso; `is-spent` apaga sem esconder. */
 .dock-pip {
-  width: 0.95rem;
-  height: 0.95rem;
-  background: currentColor;
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+  transition: filter 0.16s ease;
 }
 
 .dock-pip.is-action {
-  color: var(--gold-bright);
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  background: linear-gradient(135deg, #ffe394, #9c6721);
+  border: 2px solid #f2ca5d;
+  transform: rotate(45deg) scale(0.75);
+  box-shadow: 0 0 5px rgba(232, 187, 74, 0.31);
 }
 
 .dock-pip.is-bonus {
-  color: #d9853f;
-  clip-path: polygon(25% 2%, 75% 2%, 100% 50%, 75% 98%, 25% 98%, 0 50%);
+  background: linear-gradient(135deg, #ffc07a, #9d4522);
+  border: 2px solid #ff985c;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
 }
 
 .dock-pip.is-reaction {
-  color: #c0503f;
-  clip-path: polygon(
-    50% 0%,
-    61% 35%,
-    98% 35%,
-    68% 57%,
-    79% 91%,
-    50% 70%,
-    21% 91%,
-    32% 57%,
-    2% 35%,
-    39% 35%
-  );
+  background: #efab92;
+  clip-path: polygon(50% 0, 60% 37%, 100% 50%, 60% 63%, 50% 100%, 40% 63%, 0 50%, 40% 37%);
+  filter: drop-shadow(0 0 4px #e56a40);
 }
 
+.dock-resource:hover .dock-pip,
+.dock-resource:focus-visible .dock-pip {
+  filter: drop-shadow(0 0 5px #ffd46c);
+}
+
+.dock-resource:hover .dock-pip.is-action,
+.dock-resource:focus-visible .dock-pip.is-action {
+  transform: rotate(45deg) scale(0.83);
+}
+
+/* Gasto: apaga e tira a cor, sem esconder a forma. */
 .dock-pip.is-spent {
-  opacity: 0.28;
+  opacity: 0.22;
+  filter: grayscale(1);
 }
 
-.dock-resource-count {
-  font-size: 0.46rem;
-  line-height: 1.1;
-  letter-spacing: 0.02em;
-  color: var(--ink-faint);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+/* Estado completo em balão: aparece no hover E no foco da célula. O mesmo
+   texto está no `aria-label`, então leitor de tela não depende do balão. */
+.dock-resource-tip {
+  position: absolute;
+  left: calc(100% + 0.15rem);
+  top: 50%;
+  z-index: 46;
+  display: none;
+  transform: translateY(-50%);
+  width: max-content;
+  max-width: 12rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid #6e4b22;
+  border-radius: 4px;
+  background: #19100c;
+  color: #e7c982;
+  font-size: 0.5625rem;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.dock-resource:hover .dock-resource-tip,
+.dock-resource:focus-within .dock-resource-tip,
+.dock-resource:focus-visible .dock-resource-tip {
+  display: block;
 }
 
 /* Acesso compacto ao MESMO menu de Ação: um gatilho de ícone ancorado no canto
@@ -1140,17 +1219,17 @@
   width: 0.9rem;
   height: 0.9rem;
   padding: 0;
-  border: 1px solid var(--gold-deep);
+  border: 1px solid #6e4b22;
   border-radius: 3px;
-  background-image: linear-gradient(180deg, var(--surface), var(--surface-2));
-  color: var(--ink-soft);
+  background-image: linear-gradient(180deg, #20150f, #110d08);
+  color: #cbb178;
   font-size: 0;
 }
 
 .dock-resource.is-action .action-menu-trigger.is-compact:hover,
 .dock-resource.is-action .action-menu-trigger.is-compact:focus-visible {
-  border-color: var(--gold);
-  color: var(--gold);
+  border-color: #f1c85c;
+  color: #ffe49a;
   outline: none;
 }
 
@@ -1159,10 +1238,10 @@
   justify-items: center;
   gap: 0.15rem;
   margin: 0;
-  font-size: 0.46rem;
+  font-size: 0.5rem;
   line-height: 1.1;
   text-align: center;
-  color: var(--ink-soft);
+  color: var(--dock-sub);
 }
 
 .dock-death-label {
@@ -1170,17 +1249,13 @@
   letter-spacing: 0.04em;
 }
 
-/* HOTBAR dentro da dock: os slots de sempre, sem moldura duplicada. */
+/* HOTBAR dentro da dock: sem poço próprio (o v4 não tem moldura interna), o
+   cabeçalho em linha própria e os slots alinhados à esquerda. */
 .dock-hotbar {
   grid-area: hotbar;
+  align-self: stretch;
+  display: grid;
   min-width: 0;
-  /* O "poço" dos slots: dá chão próprio à Hotbar para ela ser o centro visual
-     da dock sem acrescentar um segundo painel — o componente é o de sempre. */
-  padding: 0.2rem 0.35rem;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--surface-2);
-  box-shadow: inset 0 1px 3px rgba(43, 33, 21, 0.18);
 }
 
 .dock-hotbar .combat-hotbar {
@@ -1196,41 +1271,46 @@
   color: var(--ink-faint);
 }
 
-/* UTILITÁRIOS — bloco delimitado à direita: SEIS botões em 3×2 e o Encerrar
-   turno em uma linha inteira abaixo. */
+/* UTILITÁRIOS — à direita, separados por um FIO à esquerda (não por uma caixa):
+   SEIS botões em 3×2 e o Encerrar turno em uma linha de 30px na base. */
 .dock-utilities {
   grid-area: utilities;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, auto);
-  gap: 0.22rem;
-  align-content: center;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) 1.875rem;
+  column-gap: 0.25rem;
+  row-gap: 0.25rem;
+  align-content: stretch;
   align-self: stretch;
   width: 100%;
   min-width: 0;
-  padding: 0.28rem;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--surface-2);
+  padding: 0 0 0 0.5rem;
+  border: 0;
+  border-left: 1px solid #5d421e;
+  background: none;
 }
 
-/* Ícone ACIMA do rótulo: cabe em ~42px de coluna sem virar lista de texto. */
+/* Ícone ACIMA do rótulo: cabe em ~55px de coluna sem virar lista de texto. */
 .dock-utility {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.1rem;
+  gap: 2px;
   min-width: 0;
-  padding: 0.3rem 0.15rem;
-  border: 1px solid var(--line);
+  padding: 3px 0;
+  border: 1px solid #60451e;
   border-radius: 4px;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
-  color: var(--ink-soft);
-  font-size: 0.52rem;
+  background: #20150f;
+  color: #cfb078;
+  font-size: 0.5625rem;
   line-height: 1.15;
   text-align: center;
   cursor: pointer;
+}
+
+.dock-utility svg {
+  color: #e4bf63;
 }
 
 /* Rótulo elidível: o grupo nunca estoura a largura da coluna por causa de
@@ -1245,14 +1325,19 @@
 
 .dock-utility:hover,
 .dock-utility:focus-visible {
-  border-color: var(--gold-hair);
-  color: var(--gold);
+  border-color: #8b682b;
+  color: #ffe9ab;
   outline: none;
 }
 
+.dock-utility:hover svg,
+.dock-utility:focus-visible svg {
+  color: #ffe9ab;
+}
+
 .dock-utility.active {
-  border-color: var(--gold);
-  color: var(--gold);
+  border-color: #e5b845;
+  color: #ffe9ab;
 }
 
 .dock-end-turn {
@@ -1262,19 +1347,42 @@
   justify-content: center;
   gap: 0.35rem;
   margin-left: 0;
+  height: 1.875rem;
+  padding: 0 0.5rem;
+  border: 1px solid #c29335;
+  border-radius: 4px;
+  background-image: linear-gradient(90deg, #573a12, #9c6f23, #493011);
+  background-color: #573a12;
+  color: #ffe3a3;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.045em;
 }
 
-/* DESLOCAMENTO — a barra longa, do retrato até antes dos utilitários. */
+.dock-end-turn:disabled {
+  opacity: 0.45;
+}
+
+.dock-end-turn .end-turn-arrow {
+  color: #ffe3a3;
+}
+
+.dock-end-turn .end-turn-arrow svg {
+  width: 0.8rem;
+}
+
+/* DESLOCAMENTO — barra ENCAIXADA (caixa escura de 29px), do retrato até antes
+   dos utilitários: rótulo · valor · trilha segmentada · controle de gasto. */
 .dock-movement-row {
   grid-area: movement;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6875rem;
   min-width: 0;
-  /* Fio de ligação com os slots: a faixa é o rodapé da dock, não uma linha
-     solta abaixo dela. */
-  padding-top: 0.3rem;
-  border-top: 1px solid var(--line);
+  padding: 4px 8px;
+  border: 1px solid #6a501f;
+  border-radius: 4px;
+  background: #110d08;
 }
 
 .dock-movement-label {
@@ -1282,35 +1390,75 @@
   align-items: center;
   gap: 0.25rem;
   flex: 0 0 auto;
-  font-size: 0.56rem;
+  font-size: 0.625rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  color: #d2b26c;
 }
 
 .dock-movement-track {
+  position: relative;
   flex: 1 1 auto;
   min-width: 5rem;
-  height: 0.55rem;
+  height: 0.5rem;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-2);
+  border: 1px solid #7b5e30;
+  border-radius: 5px;
+  background: #483524;
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* Marcas de 1,5 m sobre o preenchimento: a leitura do gasto é por segmento. */
+.dock-movement-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(16.66% - 1px),
+    rgba(22, 14, 11, 0.73) calc(16.66% - 1px) 16.66%
+  );
 }
 
 .dock-movement-fill {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+  background: linear-gradient(90deg, #806425, #dfb44d 60%, #f4d77c);
+  box-shadow: 0 0 9px rgba(228, 173, 59, 0.45);
   transition: width 0.2s ease;
 }
 
 .dock-movement-value {
   flex: 0 0 auto;
-  font-size: 0.68rem;
-  color: var(--ink-soft);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #f6d984;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* O controle de gasto é o MESMO `MovementSpendButton`, reduzido à altura da
+   faixa: texto curto, sem moldura própria. */
+.dock-movement-row .move-spend {
+  flex: 0 0 auto;
+  padding: 0 0.2rem;
+  border: 0;
+  background: none;
+  color: #a0834a;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+}
+
+.dock-movement-row .move-spend:hover,
+.dock-movement-row .move-spend:focus-visible {
+  color: #ffe49a;
+  outline: none;
+}
+
+.dock-movement-row .move-spend:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* O popover do gasto de deslocamento precisa de âncora própria. */
@@ -1319,80 +1467,92 @@
   display: inline-flex;
 }
 
+/* Cabeçalho em LINHA PRÓPRIA (como o v4) e a trilha de slots abaixo, ocupando
+   a largura inteira da coluna central. */
 .combat-hotbar {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title . tail'
+    'slots slots slots';
+  row-gap: 0.3125rem;
+  align-content: start;
   min-width: 0;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--gold-hair);
-  border-radius: 5px;
-  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
-  box-shadow: inset 0 1px 4px rgba(43, 33, 21, 0.16);
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
 }
 
 .hotbar-title {
+  grid-area: title;
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   flex: 0 0 auto;
   font-family: var(--font-display);
-  font-size: 0.62rem;
+  font-size: 0.625rem;
   text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: var(--ink-faint);
+  letter-spacing: 0.12em;
+  color: #cba85e;
 }
 
 .hotbar-slots {
+  grid-area: slots;
   display: flex;
   align-items: center;
-  /* OITO posições com espaçamento uniforme dentro do poço: os slots ocupam a
-     largura central em vez de virar um grupo minúsculo no meio dela. */
-  justify-content: space-between;
-  gap: clamp(0.3rem, 0.55vw, 0.5rem);
-  flex: 1 1 auto;
+  /* Slots alinhados à ESQUERDA (o v4 não centraliza nem estica): o grupo começa
+     no início da coluna central. */
+  justify-content: flex-start;
+  gap: 0.375rem;
+  flex: 0 0 auto;
   min-width: 0;
-  max-width: 36rem;
-  margin-inline: auto;
+  height: 3.6875rem;
+  padding: 2px 1px;
+  /* Sem `overflow` aqui: a prévia do slot sobe acima dele e seria recortada.
+     Só no empilhamento estreito a faixa passa a rolar de lado. */
 }
 
-/* Slot: quadrado de ~55px (referência do HTML v4), moldura de latão. O número
-   é indicação, nunca atalho. */
+/* Slot: QUADRADO de 55px FIXOS (medida do v4, sem clamp), moldura de latão e
+   brilho interno. O número é indicação, nunca atalho. */
 .hotbar-slot {
   position: relative;
-  flex: 0 0 auto;
+  flex: 0 0 3.4375rem;
   display: grid;
   place-items: center;
-  width: clamp(2.85rem, 3.1vw, 3.45rem);
-  height: auto;
-  aspect-ratio: 1;
+  width: 3.4375rem;
+  height: 3.4375rem;
   padding: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
-  color: var(--ink-soft);
+  border: 1px solid #785923;
+  border-radius: 5px;
+  background: linear-gradient(145deg, #312013, #160f0b);
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 0, 0, 0.4),
+    inset 0 1px rgba(198, 154, 61, 0.13);
+  color: #ffdc84;
   cursor: pointer;
   transition:
     border-color 0.14s ease,
-    color 0.14s ease,
     box-shadow 0.14s ease;
 }
 
 .hotbar-slot:hover,
 .hotbar-slot:focus-visible {
-  border-color: var(--gold);
-  color: var(--gold-bright);
+  border-color: #f1c85c;
+  color: #ffe9ab;
   box-shadow:
-    0 0 0 1px var(--gold-hair),
-    0 8px 16px -12px rgba(0, 0, 0, 0.85);
+    inset 0 0 0 2px rgba(224, 176, 75, 0.19),
+    0 0 14px rgba(200, 140, 43, 0.4);
   outline: none;
 }
 
 .hotbar-slot[aria-pressed='true'] {
-  border-color: var(--gold-bright);
-  color: var(--gold-bright);
-  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
-  box-shadow: inset 0 0 0 1px var(--gold-hair);
+  border-color: #f1c85c;
+  color: #ffe9ab;
+  background: linear-gradient(145deg, #3c2717, #1b120d);
+  box-shadow:
+    inset 0 0 0 2px rgba(224, 176, 75, 0.24),
+    0 0 14px rgba(200, 140, 43, 0.4);
 }
 
 .hotbar-slot:disabled {
@@ -1402,46 +1562,47 @@
 
 .hotbar-slot-key {
   position: absolute;
-  top: 0.05rem;
-  left: 0.25rem;
-  font-size: 0.52rem;
-  color: var(--ink-faint);
+  top: 2px;
+  left: 4px;
+  font-size: 0.5625rem;
+  color: #a99266;
   font-variant-numeric: tabular-nums;
 }
 
 /* Custo TÍPICO (A/B/R): informação visual; o servidor continua cobrando. */
 .hotbar-cost {
   position: absolute;
-  right: 0.16rem;
-  bottom: 0.1rem;
-  min-width: 0.72rem;
-  padding: 0 0.1rem;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--surface);
+  right: 3px;
+  bottom: 2px;
+  min-width: 0.75rem;
+  padding: 1px 2px;
+  border: 1px solid #6e4b22;
+  border-radius: 3px;
+  background: #19100c;
   font-size: 0.5rem;
   line-height: 1.1;
   letter-spacing: 0.03em;
-  color: var(--ink-faint);
+  color: #cfb078;
 }
 
 .hotbar-cost.is-action,
 .hotbar-cost.is-bonus-action {
-  color: var(--gold);
-  border-color: var(--gold-hair);
+  color: #ffe49a;
+  border-color: #8b682b;
 }
 
 .hotbar-slot.is-empty {
   border-style: dashed;
-  border-color: var(--line);
+  border-color: #59401f;
   background: transparent;
-  color: var(--ink-faint);
-  opacity: 0.55;
+  box-shadow: none;
+  color: #6b5431;
+  opacity: 1;
   cursor: default;
-  font-size: 0.78rem;
+  font-size: 1.5625rem;
 }
 
-/* PREVIEW — acima do slot, fora do fluxo. */
+/* PREVIEW — acima do slot, fora do fluxo, no cartão escuro do v4. */
 .hotbar-preview {
   position: absolute;
   bottom: calc(100% + 0.45rem);
@@ -1451,13 +1612,13 @@
   display: none;
   width: max-content;
   max-width: 17rem;
-  padding: 0.45rem 0.55rem;
+  padding: 0.55rem 0.65rem;
   text-align: left;
   pointer-events: none;
-  border: 1px solid var(--gold-hair);
-  border-radius: 5px;
-  background: linear-gradient(180deg, var(--surface), var(--surface-2));
-  box-shadow: var(--shadow);
+  border: 1px solid #b38a37;
+  border-radius: 6px;
+  background: linear-gradient(160deg, #2d1e12, #110c08);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.55);
 }
 
 .hotbar-slot:hover .hotbar-preview,
@@ -1469,45 +1630,48 @@
 .hotbar-preview-name {
   font-family: var(--font-display);
   font-size: 0.8rem;
-  color: var(--ink);
+  color: #f9da86;
 }
 
 .hotbar-preview-detail {
   font-size: 0.72rem;
-  color: var(--ink-soft);
+  color: #e2cda1;
   font-variant-numeric: tabular-nums;
 }
 
 .hotbar-preview-desc {
   font-size: 0.7rem;
-  color: var(--ink-soft);
+  color: #b9a37e;
   font-style: italic;
 }
 
 .hotbar-preview-cost {
   font-size: 0.62rem;
-  color: var(--ink-faint);
+  color: #a98f62;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
-/* "Ver todas": lista flutuante — não aumenta a altura permanente da faixa. */
+/* "Ver todas": lista flutuante — não aumenta a altura permanente da faixa. O
+   gatilho fica no cabeçalho, à direita, como o "Todas as ações" do v4. */
 .hotbar-all {
+  grid-area: tail;
+  justify-self: end;
   position: relative;
   flex: 0 0 auto;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .hotbar-all > summary {
   list-style: none;
   cursor: pointer;
-  padding: 0.15rem 0.4rem;
-  border: 1px solid var(--line);
+  padding: 0.1rem 0.3rem;
+  border: 1px solid #6e4b22;
   border-radius: 4px;
-  font-size: 0.64rem;
+  font-size: 0.5625rem;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--ink-faint);
+  color: #ad996e;
 }
 
 .hotbar-all > summary::-webkit-details-marker {
@@ -1515,8 +1679,8 @@
 }
 
 .hotbar-all[open] > summary {
-  border-color: var(--gold-hair);
-  color: var(--gold);
+  border-color: #f1c85c;
+  color: #ffe49a;
 }
 
 .hotbar-all-list {
@@ -1530,10 +1694,10 @@
   max-height: 40vh;
   overflow-y: auto;
   padding: 0.35rem;
-  border: 1px solid var(--gold-hair);
-  border-radius: 5px;
-  background: linear-gradient(180deg, var(--surface), var(--surface-2));
-  box-shadow: var(--shadow);
+  border: 1px solid #b38a37;
+  border-radius: 6px;
+  background: linear-gradient(160deg, #2d1e12, #110c08);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.55);
 }
 
 .hotbar-all-item {
@@ -1545,39 +1709,42 @@
   border-radius: 4px;
   background: none;
   text-align: left;
-  color: var(--ink);
+  color: #e5cd98;
   cursor: pointer;
 }
 
 .hotbar-all-item:hover,
 .hotbar-all-item:focus-visible {
-  background: var(--surface-3);
-  outline: 1px solid var(--gold-hair);
+  background: #2a1a10;
+  outline: 1px solid #8b682b;
 }
 
 .hotbar-all-index {
   grid-row: span 2;
   font-size: 0.62rem;
-  color: var(--ink-faint);
+  color: #a98f62;
   font-variant-numeric: tabular-nums;
 }
 
 .hotbar-all-name {
   font-family: var(--font-display);
   font-size: 0.76rem;
+  color: #f3d68a;
 }
 
 .hotbar-all-detail {
   grid-column: 2;
   font-size: 0.68rem;
-  color: var(--ink-soft);
+  color: #c8b28a;
 }
 
 .hotbar-all-count {
+  grid-area: tail;
+  justify-self: end;
   flex: 0 0 auto;
-  margin-left: auto;
-  font-size: 0.62rem;
-  color: var(--ink-faint);
+  margin-left: 0;
+  font-size: 0.5625rem;
+  color: #a28a59;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1673,72 +1840,125 @@
   }
 }
 
-/* Dock: abaixo de 1400px as proporções do v4 encolhem juntas, sem tirar a
-   Hotbar do centro nem empurrar o bloco direito para fora. */
-@media (max-width: 1400px) {
+/* BREAKPOINTS DO v4 — 1330 / 1020 / 720. A dock encolhe as MESMAS medidas do
+   protótipo (76/39/164 → 64/35/135 → 3 colunas) e a Hotbar continua no centro;
+   não existe mais a reorganização intermediária de 1180px. */
+@media (max-width: 1330px) {
   .combat-dock {
-    grid-template-columns: auto 3rem minmax(0, 1fr) 10.5rem;
-    column-gap: 0.45rem;
+    grid-template-columns: 4.75rem 2.4375rem minmax(0, 1fr) 10.25rem;
+    gap: 0.3125rem;
   }
 
   .dock-portrait-cell {
-    width: 4.8rem;
-    height: 4.8rem;
+    width: 4.6875rem;
+    height: 4.6875rem;
+  }
+
+  .hotbar-slot {
+    width: 3.0625rem;
+    height: 3.0625rem;
+    flex-basis: 3.0625rem;
+  }
+
+  .dock-utility {
+    font-size: 0.5rem;
   }
 }
 
-/* Duas faixas: retrato · recursos · utilitários em cima; a Hotbar com a largura
-   toda logo abaixo e o deslocamento no rodapé. */
+/* Abaixo disso a calha comeria o grid tático: a proteção volta a ser vertical
+   (a dock sobe e os FABs ficam abaixo dela), como já era. */
 @media (max-width: 1180px) {
-  .combat-dock {
-    grid-template-columns: auto 3rem minmax(0, 1fr);
-    grid-template-areas:
-      'portrait resources utilities'
-      'hotbar hotbar hotbar'
-      'movement movement movement';
-  }
-
-  .dock-utilities {
-    width: min(13rem, 42vw);
-    margin-left: auto;
+  .combat-workspace.has-player-dock {
+    padding-inline: 0;
+    padding-bottom: calc(var(--fab-base) + 2 * var(--fab-step) + 0.6rem);
   }
 }
 
-/* Uma coluna: a dock empilha na ordem de leitura, sem cortar nada. */
-@media (max-width: 760px) {
+@media (max-width: 1020px) {
   .combat-dock {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      'portrait resources'
-      'hotbar hotbar'
-      'utilities utilities'
-      'movement movement';
+    grid-template-columns: 4rem 2.1875rem minmax(0, 1fr) 8.4375rem;
   }
 
-  .dock-resources {
-    grid-template-rows: none;
-    grid-auto-flow: column;
-    align-self: center;
-    padding-right: 0;
-    padding-left: 0.4rem;
-    border-right: 0;
-    border-left: 1px solid var(--line);
-  }
-
-  .dock-death {
-    grid-auto-flow: column;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .dock-utilities {
-    width: 100%;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .dock-portrait-cell {
+    width: 3.875rem;
+    height: 3.875rem;
   }
 
   .hotbar-slots {
-    flex-wrap: wrap;
-    justify-content: center;
+    height: 3.4375rem;
+  }
+
+  .hotbar-slot {
+    width: 2.8125rem;
+    height: 2.8125rem;
+    flex-basis: 2.8125rem;
+  }
+
+  .dock-utilities {
+    column-gap: 2px;
+  }
+}
+
+/* Três colunas do v4: retrato · recursos · Hotbar em cima; o deslocamento sob
+   recursos e Hotbar; os utilitários em FAIXA inferior (seis botões numa linha
+   e o Encerrar turno em 120px). */
+@media (max-width: 720px) {
+  .combat-dock {
+    grid-template-columns: 3.875rem 2.0625rem minmax(0, 1fr);
+    grid-template-rows: 5.1875rem 1.875rem 3.75rem;
+    grid-template-areas:
+      'portrait resources hotbar'
+      'portrait movement movement'
+      'utilities utilities utilities';
+    gap: 0.3125rem;
+  }
+
+  .dock-portrait-cell {
+    width: 3.875rem;
+    height: 3.875rem;
+  }
+
+  .dock-resources {
+    padding: 0;
+  }
+
+  .dock-death {
+    font-size: 0.44rem;
+  }
+
+  .dock-utilities {
+    grid-template-columns: repeat(6, minmax(0, 1fr)) 7.5rem;
+    grid-template-rows: minmax(0, 1fr);
+    column-gap: 4px;
+    padding: 5px 0 0;
+    border-left: 0;
+    border-top: 1px solid #56401d;
+  }
+
+  .dock-utility {
+    grid-row: 1;
+    padding: 2px 0;
+  }
+
+  .dock-end-turn {
+    grid-column: 7;
+    grid-row: 1;
+    height: auto;
+    font-size: 0.5625rem;
+  }
+
+  .hotbar-slots {
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #7d5d23 #1f150d;
+  }
+
+  .dock-movement-row {
+    gap: 0.4rem;
+  }
+
+  .dock-movement-label .dock-movement-word {
+    display: none;
   }
 }
 

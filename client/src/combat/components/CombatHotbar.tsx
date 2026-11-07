@@ -47,7 +47,7 @@ export function CombatHotbar({ entries, busy, selectedId = null, onSelect }: Com
   return (
     <section className="combat-hotbar" aria-label="Ações rápidas do turno">
       <span className="hotbar-title">
-        <Icon name="sword" size={12} /> Ações
+        <Icon name="sword" size={13} /> Hotbar
       </span>
 
       <div className="hotbar-slots" role="toolbar" aria-label="Hotbar de combate">
@@ -64,7 +64,7 @@ export function CombatHotbar({ entries, busy, selectedId = null, onSelect }: Com
             <span className="hotbar-slot-key" aria-hidden="true">
               {index + 1}
             </span>
-            <Icon name={entry.icon} size={20} />
+            <Icon name={entry.icon} size={24} />
             {COST_SIGN[entry.cost] ? (
               <span className={`hotbar-cost is-${entry.cost}`} aria-hidden="true">
                 {COST_SIGN[entry.cost]}
