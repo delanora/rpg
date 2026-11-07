@@ -250,6 +250,23 @@ export function PlayerCombatDock({
       aria-label="Dock de combate do jogador"
       aria-busy={busy || undefined}
     >
+      {/* LÁPIS DO EDITOR DA HOTBAR: canto SUPERIOR ESQUERDO da dock — na
+          diagonal acima do retrato —, maior e com alvo de clique confortável.
+          Não é ação de combate: organizar a Hotbar não consome
+          Ação/Bônus/Reação. Some/desabilita quando a dock está bloqueada. */}
+      {onPersonalizeHotbar ? (
+        <button
+          type="button"
+          className="dock-personalize"
+          aria-label="Personalizar a Hotbar"
+          title="Personalizar a Hotbar"
+          disabled={personalizeDisabled}
+          onClick={onPersonalizeHotbar}
+        >
+          <Icon name="quill" size={15} />
+        </button>
+      ) : null}
+
       {/* AVISO OPERACIONAL fora do retrato (6.6M.6.1.4): decisão urgente não
           fica atrás de um clique. Flutua ACIMA da dock, fora do grid (a
           geometria aprovada não muda) e some sozinho quando não há pendência. */}
@@ -282,23 +299,6 @@ export function PlayerCombatDock({
         <span className="dock-portrait-name" aria-hidden="true">
           {name}
         </span>
-
-        {/* LÁPIS DO EDITOR DA HOTBAR (6.6M.6.3.1): discreto, no canto do
-            retrato. Não é ação de combate — organizar a Hotbar não consome
-            Ação/Bônus/Reação e não depende do turno, mas o gesto fica fora de
-            cena enquanto a dock está bloqueada. */}
-        {onPersonalizeHotbar ? (
-          <button
-            type="button"
-            className="dock-personalize"
-            aria-label="Personalizar a Hotbar"
-            title="Personalizar a Hotbar"
-            disabled={personalizeDisabled}
-            onClick={onPersonalizeHotbar}
-          >
-            <Icon name="quill" size={11} />
-          </button>
-        ) : null}
 
         {/* PAINEL DE ESTADO DO PERSONAGEM (6.6M.6.1.4) — diálogo NÃO modal: o
             resto da interface continua interativo, então nada aqui se declara
