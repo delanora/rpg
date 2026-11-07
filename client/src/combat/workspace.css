@@ -2628,13 +2628,13 @@
   cursor: not-allowed;
 }
 
-/* CONFIRMAR: check verde, um pouco menor que o lápis — a legenda do nome do
-   personagem fica logo acima e não deve ficar coberta. */
+/* CONFIRMAR: check verde, visivelmente menor que o lápis — a legenda do nome do
+   personagem fica logo acima e não pode ser coberta. */
 .dock-personalize-save {
   display: grid;
   place-items: center;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1rem;
+  height: 1rem;
   padding: 0;
   border: 1px solid rgba(103, 178, 112, 0.6);
   border-radius: 50%;

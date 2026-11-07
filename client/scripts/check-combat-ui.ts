@@ -8150,7 +8150,9 @@ check(
       workspaceRule('.dock-personalize-tools').includes('left: 0.25rem;') &&
       !workspaceRule('.dock-personalize').includes('position: absolute;') &&
       workspaceRule('.dock-personalize').includes('width: 1.5rem;') &&
-      workspaceRule('.dock-personalize-save').includes('width: 1.25rem;') &&
+      workspaceRule('.dock-personalize-save').includes('width: 1rem;') &&
+      // O lápis continua maior: o check é só confirmar.
+      workspaceRule('.dock-personalize').includes('width: 1.5rem;') &&
       workspaceRule('.dock-personalize-save').includes('color: #8fd694;') &&
       // Não voltou para dentro da célula do retrato.
       !workspaceActive.includes('.dock-portrait-cell .dock-personalize'),
