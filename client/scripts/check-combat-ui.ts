@@ -6761,9 +6761,87 @@ check(
 
   check(
     'SC99) FABs (Dados/Inventário/Anotações) fora da dock: calhas laterais SÓ na superfície do jogador',
-    workspaceRule('.combat-workspace.has-player-dock').includes('padding-inline: 9.75rem;') &&
+    workspaceRule('.combat-workspace.has-player-dock').includes('9.75rem') &&
+      // A calha desconta a margem do container da ficha: nada de vazio sobrando
+      // dentro do card quando a página já afasta os FABs.
+      workspaceRule('.combat-workspace.has-player-dock').includes('100vw - 1420px') &&
       workspaceLayout.includes("dock ? 'combat-workspace has-player-dock' : 'combat-workspace'") &&
       !workspaceRule('.combat-workspace').includes('padding-inline'),
+  );
+
+  check(
+    'SC100) o card do jogador divide o container da ficha (1420px): a moldura encolhe, a dock não',
+    workspaceRule('.app-main:has(> .combat-panel):has(> .sheet)').includes('max-width: 1420px;') &&
+      workspaceRule('.app-main:has(> .combat-panel):has(> .sheet)').includes('margin-inline: auto;') &&
+      // O combate continua em largura total no MESTRE (sem ficha abaixo).
+      workspaceRule('.app-main:has(> .combat-panel)').includes('max-width: none;') &&
+      // Reduzir o container não mexe na geometria da dock (nem escala nada).
+      workspaceRule('.combat-dock').includes(
+        'grid-template-columns: 5.625rem 2.8125rem minmax(0, 1fr) 11.25rem;',
+      ) &&
+      !workspaceRule('.combat-workspace.has-player-dock').includes('transform:'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.1.3 — balão dos recursos e FABs compactos em combate.             */
+  /* ---------------------------------------------------------------------- */
+
+  const resourceTip = workspaceRule('.dock-resource-tip');
+  const resourceBase = workspaceRule('.dock-resource');
+  // A promoção da célula é uma regra de seletor múltiplo: recortamos do seletor
+  // que contém `:focus-within` até o fechamento da regra.
+  const resourceFocusAt = workspaceActive.indexOf('.dock-resource:focus-within');
+  const resourcePromote =
+    resourceFocusAt < 0
+      ? ''
+      : workspaceActive.slice(resourceFocusAt, workspaceActive.indexOf('}', resourceFocusAt) + 1);
+
+  check(
+    'SC101) balão dos recursos abre ACIMA da dock e a célula é promovida acima da Hotbar',
+    // O `transform` do hover cria stacking context: sem promoção, o balão fica
+    // preso dentro da célula e a Hotbar (posterior no DOM) pinta por cima.
+    resourcePromote.includes('z-index: 60;') &&
+      resourceTip.includes('bottom: calc(100% + 0.4rem);') &&
+      resourceTip.includes('left: 50%;') &&
+      resourceTip.includes('transform: translateX(-50%);') &&
+      !resourceTip.includes('left: calc(100%') &&
+      resourceTip.includes('position: absolute;') &&
+      resourceBase.includes('position: relative;') &&
+      // Nada na cadeia da dock recorta o balão.
+      !workspaceRule('.combat-dock').includes('overflow') &&
+      !workspaceRule('.combat-workspace-dock').includes('overflow') &&
+      !workspaceRule('.combat-workspace.has-player-dock').includes('overflow'),
+  );
+
+  const fabSource = source('src/dice/DiceDock.tsx') + source('src/components/InventoryDock.tsx');
+  const fabScope = '.app-shell.combat-active:has(> .app-main > .sheet)';
+  const fabAt = workspaceActive.indexOf(fabScope);
+  const fabCss = fabAt < 0 ? '' : workspaceActive.slice(fabAt, fabAt + 3200);
+
+  check(
+    'SC102) FABs em combate ficam só com o ícone e revelam o rótulo no hover/foco, sem tocar no Mestre',
+    // Escopo: página do jogador em combate. Nenhuma regra global de FAB.
+    fabCss.includes(':is(.inv-fab, .dice-fab:not(.is-master), .notes-fab:not(.master-notes-fab))') &&
+      fabCss.includes('gap: 0;') &&
+      fabCss.includes('padding: 0.6rem;') &&
+      // Rótulo colapsado por caixa (continua no DOM => nome acessível).
+      fabCss.includes(':is(.inv-fab-label, .dice-fab-label, .notes-fab-label, .inv-fab-count)') &&
+      fabCss.includes('max-width: 0;') &&
+      fabCss.includes('opacity: 0;') &&
+      // Hover/foco expande e revela.
+      fabCss.includes(':hover,') &&
+      fabCss.includes(':focus-visible') &&
+      fabCss.includes('max-width: 8rem;') &&
+      fabCss.includes('gap: 0.5rem;') &&
+      // As variantes do Mestre e o log não entram no modo compacto.
+      fabCss.includes('.dice-fab:not(.is-master)') &&
+      !fabCss.includes('.dice-fab.is-master') &&
+      !workspaceActive.includes('\n.inv-fab {') &&
+      !workspaceActive.includes('\n.dice-fab {') &&
+      !workspaceActive.includes('\n.notes-fab {') &&
+      // Mesmos componentes/handlers: só CSS.
+      fabSource.includes('<Icon name="bag" size={18} />') &&
+      fabSource.includes('<Icon name="die" size={18} />'),
   );
 
   check(

@@ -723,7 +723,9 @@
    O combate não é um card no meio da página: a moldura continua (borda, radius,
    fundo), mas acompanha a área útil inteira. Tudo é escopado em `:has()`, então
    as outras abas do Mestre — que também convivem com um combate ativo — ficam
-   exatamente como eram.
+   exatamente como eram. No JOGADOR a largura total foi revista na 6.6M.6.1.3
+   (ver o bloco "MESMO CONTAINER DA FICHA" mais abaixo): lá o combate divide o
+   container da ficha.
    -------------------------------------------------------------------------- */
 .app-main:has(> .combat-panel) {
   max-width: none;
@@ -834,11 +836,27 @@
 }
 
 /*
- * A ficha volta a ter container próprio: 1420px centrados, independentes da
- * largura total que o combate usa. Sem isso o card da ficha encostava na borda
- * da tela e o retrato — que transborda meia foto para a esquerda, sempre
- * limitado por `--portrait-shift` (calculado sobre os 1420px de container)
- * — era cortado fora da viewport.
+ * MESMO CONTAINER DA FICHA (6.6M.6.1.3).
+ * Combate e ficha são duas superfícies EMPILHADAS: a primeira em largura total
+ * chegava às bordas da tela enquanto o card da ficha logo abaixo ficava com
+ * 1420px centrados — a diferença virava espaço vazio nas laterais do combate.
+ * Aqui a PÁGINA do jogador adota o container da ficha, e o combate só deixa de
+ * esticar: nenhuma medida da dock (retrato, recursos, Hotbar, utilitários) é
+ * alterada, nada é escalado e a altura continua vindo da cadeia flex.
+ *
+ * Escopado em `.sheet` na MESMA página: a tela do Mestre não tem ficha abaixo e
+ * permanece em largura total, exatamente como era.
+ */
+.app-main:has(> .combat-panel):has(> .sheet) {
+  max-width: 1420px;
+  margin-inline: auto;
+}
+
+/*
+ * A ficha mantém o container próprio (1420px centrados): é ele que limita o
+ * transbordo do retrato — meia foto para a esquerda, sempre presa por
+ * `--portrait-shift` (calculado sobre os 1420px de container) —, então a foto
+ * nunca é cortada fora da viewport.
  */
 .app-main:has(> .combat-panel):has(> .sheet) > .sheet {
   width: 100%;
@@ -865,7 +883,12 @@
    mais o deslocamento de 1.25rem: 9.75rem de calha. A classe só existe quando
    a dock é montada, então a tela do Mestre continua idêntica. */
 .combat-workspace.has-player-dock {
-  padding-inline: 9.75rem;
+  /* A calha desconta a margem que a PÁGINA já tem: como o card do jogador usa o
+     container da ficha (1420px centrados), essa margem externa afasta o FAB por
+     conta própria. Em tela larga a calha chega a zero e nada sobra de vazio
+     dentro do card; em tela estreita (sem margem) ela vale os 9.75rem de
+     sempre. Nenhuma medida da dock muda — só o vazio em volta dela. */
+  padding-inline: max(0px, calc(9.75rem - max(0px, (100vw - 1420px) / 2)));
 }
 
 
@@ -1112,6 +1135,17 @@
   outline: none;
 }
 
+/* O `transform` acima cria um CONTEXTO de empilhamento — e isso é a causa do
+   balão aparecer por baixo da Hotbar: o `z-index` do balão passa a valer só
+   DENTRO da célula, que continua no nível do fluxo, e os slots da Hotbar (que
+   vêm depois no DOM e são posicionados) pintam por cima. Promover a célula
+   inteira em hover/foco resolve sem tirar o `scale` nem tocar na Hotbar. */
+.dock-resource:hover,
+.dock-resource:focus-within,
+.dock-resource:focus-visible {
+  z-index: 60;
+}
+
 /* Rótulo textual: fica no DOM (leitor de tela) e o `title` da célula mostra o
    estado no hover; a coluna de ~45px pertence ao glifo, não ao texto. */
 .dock-resource-label {
@@ -1178,14 +1212,17 @@
 }
 
 /* Estado completo em balão: aparece no hover E no foco da célula. O mesmo
-   texto está no `aria-label`, então leitor de tela não depende do balão. */
+   texto está no `aria-label`, então leitor de tela não depende do balão.
+   Abre ACIMA da célula — a mesma direção da prévia da Hotbar: fora do fluxo,
+   sem empurrar layout, sem cruzar a Hotbar e sem ser recortado (nenhum
+   ancestral da dock tem `overflow`, por isso a promoção de z-index basta). */
 .dock-resource-tip {
   position: absolute;
-  left: calc(100% + 0.15rem);
-  top: 50%;
-  z-index: 46;
+  left: 50%;
+  bottom: calc(100% + 0.4rem);
+  z-index: 1;
   display: none;
-  transform: translateY(-50%);
+  transform: translateX(-50%);
   width: max-content;
   max-width: 12rem;
   padding: 0.2rem 0.35rem;
@@ -1985,4 +2022,78 @@
   .combat-tactical-action .attack-panel > .attack-step {
     flex: 1 1 100%;
   }
+}
+
+/* --------------------------------------------------------------------------
+   FABs EM COMBATE — SÓ O ÍCONE (6.6M.6.1.3).
+
+   Em combate a base da tela do jogador já tem a dock: três botões com rótulo
+   permanente ao lado dela ficam pesados e competem com a dock. Aqui eles viram
+   ÍCONE, e o rótulo só aparece no hover/foco com uma expansão lateral curta
+   (esquerda cresce para a direita, dentro da calha já reservada; Anotações
+   cresce para a esquerda). Nenhum handler muda: é o MESMO botão.
+
+   ESCOPO: `combat-active` + ficha na MESMA página = só o jogador em combate.
+   A tela do Mestre não tem `.sheet` abaixo do combate e os botões dela
+   (`.dice-fab.is-master`, `.notes-fab.master-notes-fab`, `.roll-log-fab`)
+   continuam exatamente como eram; fora de combate também.
+   -------------------------------------------------------------------------- */
+.app-shell.combat-active:has(> .app-main > .sheet)
+  :is(.inv-fab, .dice-fab:not(.is-master), .notes-fab:not(.master-notes-fab)) {
+  gap: 0;
+  padding: 0.6rem;
+  transition:
+    gap 0.16s ease,
+    padding 0.16s ease,
+    transform 0.15s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+/* Rótulo e contador colapsam por `max-width`/`opacity`: continuam no DOM (o nome
+   acessível do botão não some) e a animação é só de caixa, nunca `display`.
+   A área clicável segue confortável: 18px de ícone + 0.6rem de padding. */
+.app-shell.combat-active:has(> .app-main > .sheet)
+  :is(.inv-fab-label, .dice-fab-label, .notes-fab-label, .inv-fab-count) {
+  display: inline-block;
+  max-width: 0;
+  margin-left: 0;
+  padding-inline: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    max-width 0.16s ease,
+    opacity 0.12s ease,
+    margin 0.16s ease,
+    padding 0.16s ease;
+}
+
+/* Hover/foco devolve o respiro e o rótulo. */
+.app-shell.combat-active:has(> .app-main > .sheet)
+  :is(.inv-fab, .dice-fab:not(.is-master), .notes-fab:not(.master-notes-fab)):is(
+    :hover,
+    :focus-visible
+  ) {
+  gap: 0.5rem;
+  padding: 0.6rem 0.95rem;
+}
+
+.app-shell.combat-active:has(> .app-main > .sheet)
+  :is(.inv-fab, .dice-fab:not(.is-master), .notes-fab:not(.master-notes-fab)):is(
+    :hover,
+    :focus-visible
+  )
+  :is(.inv-fab-label, .dice-fab-label, .notes-fab-label) {
+  max-width: 8rem;
+  opacity: 1;
+}
+
+/* Quantos itens o inventário tem agora: volta com o respiro de pill. */
+.app-shell.combat-active:has(> .app-main > .sheet)
+  .inv-fab:is(:hover, :focus-visible) .inv-fab-count {
+  max-width: 4rem;
+  margin-left: 0.1rem;
+  padding-inline: 0.35rem;
+  opacity: 1;
 }
