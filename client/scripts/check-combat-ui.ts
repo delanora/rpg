@@ -8325,6 +8325,15 @@ check(
       workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
         'max-width: min(20rem, calc(100vw - 1rem));',
       ) &&
+      // Nada de inline exibido no hover (era a piscada de rolagem horizontal)
+      // e o TÍTULO do popup na cor da condição.
+      workspaceRule('.info-tip > .info-tip-text.condition-tip').includes(
+        'display: none !important;',
+      ) &&
+      workspaceRule('.info-tip-text.condition-tip.condition-tip-floating strong').includes(
+        'color: var(--condition-accent);',
+      ) &&
+      !source('src/combat/components/ConditionBadges.tsx').includes('style={tip.open') &&
       source('src/combat/components/ConditionBadges.tsx').includes('data-condition={condition}') &&
       source('src/combat/components/ConditionBadges.tsx').includes('condition="more"') &&
       source('src/combat/workspace.css').includes(

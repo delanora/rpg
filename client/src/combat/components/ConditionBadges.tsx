@@ -155,11 +155,11 @@ function ConditionChip({ condition, label, count, suspended, sources, onOpenHist
         {count > 1 ? ` ×${count}` : ''}
         {suspended ? ' (suspenso)' : ''}
       </span>
-      {/* Cópia inline: só para SSR/impressão — com o popup aberto ela some. */}
+      {/* Cópia inline: markup de SSR apenas — o CSS a mantém oculta; quem
+          mostra a descrição é o portal (por isso não há piscada de rolagem). */}
       <span
         className="info-tip-text condition-tip"
         role="tooltip"
-        style={tip.open ? { display: 'none' } : undefined}
       >
         {content}
       </span>
@@ -196,7 +196,6 @@ function MoreConditionsChip({ labels }: { labels: string[] }) {
       <span
         className="info-tip-text condition-tip"
         role="tooltip"
-        style={tip.open ? { display: 'none' } : undefined}
       >
         {content}
       </span>

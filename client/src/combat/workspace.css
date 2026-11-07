@@ -153,6 +153,18 @@
 }
 
 /* A borda assume a cor da CONDIÇÃO — a mesma paleta das etiquetas. */
+/* O TÍTULO do popup também usa a cor da condição (o padrão seria dourado). */
+.info-tip-text.condition-tip.condition-tip-floating strong {
+  color: var(--condition-accent);
+}
+
+/* O popup INLINE não é mais a descrição exibida — quem mostra é o portal.
+   Sem isto, o `:hover` do CSS o exibe por um frame e ele alarga a área rolável
+   do painel da iniciativa: era a PISCADA de barra horizontal ao passar o mouse. */
+.info-tip > .info-tip-text.condition-tip {
+  display: none !important;
+}
+
 .info-tip-text.condition-tip.condition-tip-floating[data-condition='blinded'] {
   --condition-accent: var(--condition-blinded);
 }
