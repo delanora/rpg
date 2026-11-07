@@ -6536,6 +6536,84 @@ check(
       sheetPageSource.indexOf('<CombatTracker') < sheetPageSource.indexOf('<SheetView'),
   );
 
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6 — Hotbar de combate (protótipo).                                 */
+  /* ---------------------------------------------------------------------- */
+
+  const hotbarAdapterSource = source('src/combat/hotbar.ts');
+  const hotbarComponentSource = source('src/combat/components/CombatHotbar.tsx');
+
+  check(
+    'SC84) CombatHotbar é uma faixa do workspace: abaixo do corpo e acima da barra de recursos',
+    workspaceLayout.includes('hotbar?: ReactNode;') &&
+      workspaceLayout.indexOf('{hotbar}') > workspaceLayout.indexOf('combat-workspace-body') &&
+      workspaceLayout.indexOf('{hotbar}') < workspaceLayout.indexOf('{resourceBar}') &&
+      workspaceLayout.includes('<div className="combat-workspace-hotbar">') &&
+      workspaceRule('.combat-hotbar').includes('display: flex;'),
+  );
+
+  check(
+    'SC85) 8 slots visíveis, ordem determinística por categoria e sem entradas repetidas',
+    hotbarAdapterSource.includes('export const HOTBAR_SLOTS = 8;') &&
+      hotbarComponentSource.includes('entries.slice(0, HOTBAR_SLOTS)') &&
+      hotbarComponentSource.includes('const emptySlots = Math.max(0, HOTBAR_SLOTS - visible.length);') &&
+      hotbarAdapterSource.includes("['attack', 'feature', 'spell', 'item']") &&
+      hotbarAdapterSource.includes('KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind)') &&
+      hotbarAdapterSource.includes('seen.has(attack.id)'),
+  );
+
+  check(
+    'SC86) ataques vêm da MESMA fonte e o ataque não tem segundo estado: a hotbar só pede a pré-seleção',
+    trackerSource.includes('buildCombatHotbarEntries({') &&
+      trackerSource.includes('attacks: characterAttacks') &&
+      hotbarAdapterSource.includes("from '../ammo'") &&
+      hotbarAdapterSource.includes('availableAttacks(attacks, inventory)') &&
+      // Nada de engine/resolver no adapter ou no componente.
+      !hotbarComponentSource.includes('useState') &&
+      !hotbarComponentSource.includes('onAttack') &&
+      !hotbarAdapterSource.includes('resolveAttack') &&
+      // O dono do `attackId` continua sendo o painel de ataque.
+      actionPanelSource.includes('setAttackId(preset.attackId)') &&
+      trackerSource.includes('preset={hotbarPick}'),
+  );
+
+  check(
+    'SC87) preview no hover E no focus: acima do slot, sem empurrar o layout',
+    workspaceActive.includes('.hotbar-slot:hover .hotbar-preview') &&
+      workspaceActive.includes('.hotbar-slot:focus-visible .hotbar-preview') &&
+      workspaceRule('.hotbar-preview').includes('position: absolute;') &&
+      workspaceRule('.hotbar-preview').includes('bottom: calc(100% + 0.45rem);') &&
+      hotbarComponentSource.includes('role="tooltip"') &&
+      hotbarComponentSource.includes('<span className="hotbar-preview-cost">'),
+  );
+
+  check(
+    'SC88) autoridade: hotbar só no turno operacional do jogador, fora do Teste contra a Morte, sem chamar o servidor',
+    trackerSource.includes(
+      '!isMaster && showOperational && !showDeathTurn && hotbarEntries.length > 0',
+    ) &&
+      trackerSource.includes('<CombatHotbar') &&
+      // Escolher um slot não resolve nada: nenhum endpoint no componente.
+      !/\b(resolveAttack|fetch)\w*\(/.test(hotbarComponentSource) &&
+      workspaceLayout.includes('{resourceBar}') &&
+      // A barra de recursos continua montada pelo tracker, independente da hotbar.
+      trackerSource.includes('resourceBar={'),
+  );
+
+  check(
+    'SC89) nenhuma engine nova e nenhum internal do grid tocado',
+    !hotbarAdapterSource.includes('grid/') &&
+      !hotbarComponentSource.includes('grid/') &&
+      !workspaceLayout.includes('grid/') &&
+      // O protótipo só produz ataques: feature/magia/item não são inventados.
+      hotbarAdapterSource.includes("kind: 'attack'") &&
+      !hotbarAdapterSource.includes("kind: 'feature'") &&
+      !hotbarAdapterSource.includes("kind: 'spell'") &&
+      !hotbarAdapterSource.includes("kind: 'item'") &&
+      workspaceRule('.hotbar-slot').includes('width: 2.5rem;') &&
+      workspaceRule('.hotbar-slot').includes('height: 2.5rem;'),
+  );
+
   check(
     'SC83) separação das superfícies não esconde nada: a página continua rolando até a ficha',
     // Nada de overflow/altura fixa no main do jogador — a rolagem é da página.

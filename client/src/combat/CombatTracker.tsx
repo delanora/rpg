@@ -32,7 +32,9 @@ import './workspace.css';
 import { BattleWaitingPanel } from './components/BattleWaitingPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
 import { CombatWorkspace } from './components/CombatWorkspace';
+import { CombatHotbar } from './components/CombatHotbar';
 import { CombatLog } from './components/CombatLog';
+import { buildCombatHotbarEntries } from './hotbar';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
 import { DeathSavePanel } from './components/DeathSavePanel';
@@ -181,6 +183,14 @@ export function CombatTracker({
   // Janelas de Reação já RECUSADAS/resolvidas (fecham localmente; o servidor
   // continua dono de qualquer efeito mecânico futuro).
   const [closedReactions, setClosedReactions] = useState<string[]>([]);
+  /**
+   * HOTBAR (6.6M.6): qual slot foi escolhido. É um PEDIDO para o painel de
+   * ataque (dono do `attackId`), não um segundo estado de ataque: nada de
+   * resolver ataque a partir daqui.
+   */
+  const [hotbarPick, setHotbarPick] = useState<{ attackId: string; nonce: number } | null>(
+    null,
+  );
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
@@ -196,6 +206,17 @@ export function CombatTracker({
     ((masterAttackerId !== currentId && masterAttackerId !== '') ||
       (masterAssumed !== null && masterAssumed === currentId));
   const showOperational = controlsCurrent || masterOverrideActive;
+
+  /**
+   * Entradas da Hotbar: MESMA fonte do painel de ataque (`characterAttacks`,
+   * filtrada por arma equipada dentro do adapter). Hoje só ataques — nenhuma
+   * feature/magia/item do jogador tem execução liberada, então não são
+   * inventados slots.
+   */
+  const hotbarEntries = buildCombatHotbarEntries({
+    attacks: characterAttacks,
+    inventory: characterInventory,
+  });
 
   // Combatente que a interface representa (atacante do Mestre / próprio personagem).
   const actingCombatant = actingCombatantFor(
@@ -381,6 +402,12 @@ export function CombatTracker({
   // `saveTurnKey`; com ela o cliente sabe, sem adivinhar, se o Teste deste turno
   // já aconteceu (a fonte de verdade continua no SERVIDOR).
   const currentTurnKey = `${combat.id}:${combat.round}:${combat.currentIndex}`;
+
+  // Troca de turno (ou de rodada): a Hotbar recomeça vazia — nenhuma ação do
+  // combatente anterior sobrevive ao próximo turno.
+  useEffect(() => {
+    setHotbarPick(null);
+  }, [currentTurnKey]);
   const turnDeathState = current?.deathState ?? null;
   const deathSavePending = Boolean(
     turnDeathState &&
@@ -931,16 +958,24 @@ export function CombatTracker({
                 ) : null}
 
                 {!isMaster && myCombatant ? (
-                  <CombatActionPanel
-                    variant="tactical-tray"
-                    combat={combat}
-                    attacker={myCombatant}
-                    attacks={characterAttacks}
-                    inventory={characterInventory}
-                    sneakAttack={sneakAttackExpression}
-                    busy={busy}
-                    onAttack={attack}
-                  />
+                  hotbarPick ? (
+                    <CombatActionPanel
+                      variant="tactical-tray"
+                      combat={combat}
+                      attacker={myCombatant}
+                      attacks={characterAttacks}
+                      inventory={characterInventory}
+                      sneakAttack={sneakAttackExpression}
+                      preset={hotbarPick}
+                      onClose={() => setHotbarPick(null)}
+                      busy={busy}
+                      onAttack={attack}
+                    />
+                  ) : hotbarEntries.length > 0 ? (
+                    // Sem slot escolhido não há painel permanente: a hotbar é a
+                    // única superfície de ação do jogador.
+                    <p className="hotbar-hint">Escolha uma ação na hotbar.</p>
+                  ) : null
                 ) : null}
               </>
             ) : (
@@ -1111,6 +1146,24 @@ export function CombatTracker({
             onDeclineSpellSave={(card) => void declineResolution(card)}
             onRollDeathSave={(card) => void rollDeathSaveCard(card)}
           />
+        }
+        hotbar={
+          // Hotbar: só no próprio turno operacional do jogador. Fora do turno,
+          // em Teste contra a Morte ou para o Mestre, a faixa não é montada (o
+          // grid recupera o espaço). A barra de recursos continua independente.
+          !isMaster && showOperational && !showDeathTurn && hotbarEntries.length > 0 ? (
+            <CombatHotbar
+              entries={hotbarEntries}
+              busy={busy}
+              selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
+              onSelect={(entry) =>
+                setHotbarPick((prev) => ({
+                  attackId: entry.sourceId,
+                  nonce: (prev?.nonce ?? 0) + 1,
+                }))
+              }
+            />
+          ) : undefined
         }
         resourceBar={
           // A barra persistente NÃO é renderizada para quem não controla o

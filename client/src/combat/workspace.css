@@ -847,6 +847,314 @@
 }
 
 /* --------------------------------------------------------------------------
+   HOTBAR DE COMBATE — PROTÓTIPO (6.6M.6).
+
+   Uma faixa de slots QUADRADOS entre o corpo (grid) e a barra de recursos. Ela
+   não é um painel novo de regras: é o acesso às ações que o personagem já tem.
+   No jogador ela SUBSTITUI o painel de ataque permanente — o mini fluxo só
+   nasce do clique num slot, então o grid recupera a altura de antes.
+
+   A preview é `position: absolute` acima do slot: aparece no hover E no foco,
+   não empurra nada e não participa do layout. Por isso a faixa não tem
+   `overflow`: nada de recortar o tooltip.
+   -------------------------------------------------------------------------- */
+.combat-workspace-hotbar {
+  min-width: 0;
+}
+
+.combat-hotbar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
+  box-shadow: inset 0 1px 4px rgba(43, 33, 21, 0.16);
+}
+
+.hotbar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+}
+
+.hotbar-slots {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* Slot: quadrado, moldura de latão. O número é indicação, nunca atalho. */
+.hotbar-slot {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.hotbar-slot:hover,
+.hotbar-slot:focus-visible {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  box-shadow:
+    0 0 0 1px var(--gold-hair),
+    0 8px 16px -12px rgba(0, 0, 0, 0.85);
+  outline: none;
+}
+
+.hotbar-slot[aria-pressed='true'] {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+}
+
+.hotbar-slot:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hotbar-slot-key {
+  position: absolute;
+  top: 0.05rem;
+  left: 0.25rem;
+  font-size: 0.52rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custo TÍPICO (A/B/R): informação visual; o servidor continua cobrando. */
+.hotbar-cost {
+  position: absolute;
+  right: 0.16rem;
+  bottom: 0.1rem;
+  min-width: 0.72rem;
+  padding: 0 0.1rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface);
+  font-size: 0.5rem;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint);
+}
+
+.hotbar-cost.is-action,
+.hotbar-cost.is-bonus-action {
+  color: var(--gold);
+  border-color: var(--gold-hair);
+}
+
+.hotbar-slot.is-empty {
+  border-style: dashed;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--ink-faint);
+  opacity: 0.55;
+  cursor: default;
+  font-size: 0.78rem;
+}
+
+/* PREVIEW — acima do slot, fora do fluxo. */
+.hotbar-preview {
+  position: absolute;
+  bottom: calc(100% + 0.45rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: none;
+  width: max-content;
+  max-width: 17rem;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  pointer-events: none;
+  border: 1px solid var(--gold-hair);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow);
+}
+
+.hotbar-slot:hover .hotbar-preview,
+.hotbar-slot:focus-visible .hotbar-preview {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.hotbar-preview-name {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.hotbar-preview-detail {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.hotbar-preview-desc {
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.hotbar-preview-cost {
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* "Ver todas": lista flutuante — não aumenta a altura permanente da faixa. */
+.hotbar-all {
+  position: relative;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.hotbar-all > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-faint);
+}
+
+.hotbar-all > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hotbar-all[open] > summary {
+  border-color: var(--gold-hair);
+  color: var(--gold);
+}
+
+.hotbar-all-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.4rem);
+  z-index: 45;
+  display: grid;
+  gap: 0.1rem;
+  width: 22rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0.35rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow);
+}
+
+.hotbar-all-item {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 0.1rem 0.4rem;
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.hotbar-all-item:hover,
+.hotbar-all-item:focus-visible {
+  background: var(--surface-3);
+  outline: 1px solid var(--gold-hair);
+}
+
+.hotbar-all-index {
+  grid-row: span 2;
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.hotbar-all-name {
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+}
+
+.hotbar-all-detail {
+  grid-column: 2;
+  font-size: 0.68rem;
+  color: var(--ink-soft);
+}
+
+.hotbar-all-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Faixa sem painel de ataque: um aviso curto, nunca uma área vazia alta. */
+.hotbar-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+.attack-tray-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.attack-tray-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attack-tray-close {
+  margin-left: auto;
+  padding: 0 0.45rem;
+  line-height: 1;
+}
+
+/* O fluxo vazio não deixa gap fantasma na coluna do centro. */
+.combat-tactical-flow:empty {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
    RESPONSIVIDADE — desktop é a prioridade de tela única; o resto degrada para
    duas colunas e, por fim, para o fluxo vertical de sempre. Nunca três
    colunas espremidas.
