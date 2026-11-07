@@ -661,7 +661,9 @@ export function CombatTracker({
         .filter(
           (item) =>
             item.hpCurrent === 0 &&
-            item.deathState !== null &&
+            // `!= null` cobre `null` E `undefined`: um estado de morte ausente
+            // derrubava a renderização em vez de só sair da lista de alvos.
+            item.deathState != null &&
             !item.deathState.dead &&
             !item.deathState.stabilized &&
             !item.deathState.pending,

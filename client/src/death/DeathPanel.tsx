@@ -45,7 +45,11 @@ export function DeathPanel({ character, refreshKey, onRollDeathSave }: DeathPane
     refresh();
   }, [refresh, refreshKey, character.version]);
 
-  const state = death?.death ?? character.deathState;
+  // O ciclo só desenha com ESTADO de morte em mãos. Antes, um `deathState`
+  // ausente (DTO antigo/incompleto) estourava em `state.dead` e derrubava a
+  // árvore inteira do React — a tela ficava vazia até recarregar.
+  const state = death?.death ?? character.deathState ?? null;
+  if (!state) return null;
   const relevant =
     state.dead ||
     state.pending !== null ||
@@ -156,12 +160,12 @@ export function DeathPanel({ character, refreshKey, onRollDeathSave }: DeathPane
           <button
             type="button"
             className="death-button"
-            disabled={!death?.deathSave.available || !onRollDeathSave}
+            disabled={!death?.deathSave?.available || !onRollDeathSave}
             onClick={() => onRollDeathSave?.(entity)}
           >
             Rolar Teste contra a Morte
           </button>
-          {!death?.deathSave.available && death?.deathSave.reason ? (
+          {!death?.deathSave?.available && death?.deathSave?.reason ? (
             <span className="death-hint">{death.deathSave.reason}</span>
           ) : null}
         </div>

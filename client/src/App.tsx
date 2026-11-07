@@ -1,5 +1,6 @@
 import { AuthProvider, useAuth } from './auth';
 import { AuthPage } from './components/AuthPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { LightboxProvider } from './components/Lightbox';
 import { MasterPanel } from './pages/MasterPanel';
 import { SheetPage } from './pages/SheetPage';
@@ -15,11 +16,16 @@ function Shell() {
 }
 
 export function App() {
+  // A barreira fica na RAIZ: qualquer falha de renderização/efeito deixa de
+  // esvaziar o `#root` (tela vazia no fundo do tema) e passa a ser mostrada na
+  // própria página, com o detalhe técnico e um caminho de volta sem reload.
   return (
-    <AuthProvider>
-      <LightboxProvider>
-        <Shell />
-      </LightboxProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <LightboxProvider>
+          <Shell />
+        </LightboxProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
