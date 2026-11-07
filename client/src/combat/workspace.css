@@ -1301,10 +1301,13 @@
   transition: transform 0.16s ease;
 }
 
+/* A célula NÃO é focável — quem recebe foco é o botão dentro dela. Usar
+   `:focus-within` aqui fazia o balão continuar aberto depois do clique, porque
+   o botão clicado segue com foco (6.6M.6.2.2). O foco que importa é o VISÍVEL
+   do gatilho: teclado sim, clique de mouse não. */
 .dock-resource:hover,
-.dock-resource:focus-visible {
+.dock-resource:has(.dock-resource-trigger:focus-visible) {
   transform: scale(1.1);
-  outline: none;
 }
 
 /* O `transform` acima cria um CONTEXTO de empilhamento — e isso é a causa do
@@ -1313,8 +1316,7 @@
    vêm depois no DOM e são posicionados) pintam por cima. Promover a célula
    inteira em hover/foco resolve sem tirar o `scale` nem tocar na Hotbar. */
 .dock-resource:hover,
-.dock-resource:focus-within,
-.dock-resource:focus-visible {
+.dock-resource:has(.dock-resource-trigger:focus-visible) {
   z-index: 60;
 }
 
@@ -1368,12 +1370,12 @@
 }
 
 .dock-resource:hover .dock-pip,
-.dock-resource:focus-visible .dock-pip {
+.dock-resource:has(.dock-resource-trigger:focus-visible) .dock-pip {
   filter: drop-shadow(0 0 5px #ffd46c);
 }
 
 .dock-resource:hover .dock-pip.is-action,
-.dock-resource:focus-visible .dock-pip.is-action {
+.dock-resource:has(.dock-resource-trigger:focus-visible) .dock-pip.is-action {
   transform: rotate(45deg) scale(0.83);
 }
 
@@ -1435,10 +1437,20 @@
   display: none;
 }
 
+/* MOUSE abre no hover; TECLADO abre pelo foco VISÍVEL do gatilho. Nada de
+   `:focus-within` — clicar (ou tirar o ponteiro) não prende mais o balão, e
+   Tab/Shift+Tab continuam mostrando o mesmo texto. */
 .dock-resource:hover .dock-resource-tip,
-.dock-resource:focus-within .dock-resource-tip,
-.dock-resource:focus-visible .dock-resource-tip {
+.dock-resource-trigger:focus-visible ~ .dock-resource-tip {
   display: block;
+}
+
+/* Anel de foco do GATILHO: a célula só desenha o glifo, então o teclado
+   precisa de uma marca própria para saber onde está navegando. */
+.dock-resource-trigger:focus-visible {
+  outline: 2px solid #f1c85c;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Acesso compacto ao MESMO menu de Ação: um gatilho de ícone ancorado no canto
@@ -2126,13 +2138,6 @@
   font-size: 0.5625rem;
   color: #a28a59;
   font-variant-numeric: tabular-nums;
-}
-
-/* Faixa sem painel de ataque: um aviso curto, nunca uma área vazia alta. */
-.hotbar-hint {
-  margin: 0;
-  font-size: 0.72rem;
-  color: var(--ink-faint);
 }
 
 .attack-tray-head {

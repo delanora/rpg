@@ -1,4 +1,31 @@
-import type { ReactNode } from 'react';
+import { Fragment, isValidElement, type ReactNode } from 'react';
+
+/**
+ * Algum conteúdo REALMENTE desenha neste nó? (6.6M.6.2.2)
+ *
+ * A tray operacional é sempre passada pelo orquestrador (um fragmento com
+ * condicionais dentro), então `node != null` não distingue "tem painel" de
+ * "todo mundo devolveu null". Sem essa distinção a linha `auto` do centro
+ * tático continuava existindo — com o `gap` do grid — mesmo sem nada dentro.
+ *
+ * A checagem é ESTRUTURAL e não olha regra nenhuma: nulos/booleanos/vazios não
+ * desenham; fragmentos são abertos para inspecionar os filhos (é o formato que
+ * o `CombatTracker` usa). Um elemento conta como conteúdo — ele é montado e
+ * quem decide desenhar ou não é ele mesmo.
+ */
+export function hasRenderableContent(node: ReactNode): boolean {
+  if (node === null || node === undefined || typeof node === 'boolean') return false;
+  if (typeof node === 'string') return node.trim().length > 0;
+  if (typeof node === 'number') return true;
+  if (Array.isArray(node)) return node.some(hasRenderableContent);
+  if (isValidElement(node)) {
+    if (node.type === Fragment) {
+      return hasRenderableContent((node.props as { children?: ReactNode }).children);
+    }
+    return true;
+  }
+  return true;
+}
 
 interface CombatWorkspaceProps {
   /** Linha superior: título, rodada, contexto do turno e controles do Mestre. */
@@ -70,10 +97,19 @@ export function CombatWorkspace({
         <div className="combat-tactical-center">
           {/* Cena PRIMEIRO: o grid domina a altura; a operação é a tray abaixo. */}
           <div className="combat-tactical-scene">{scene}</div>
-          <div className="combat-tactical-action">
-            {context ? <div className="combat-tactical-context">{context}</div> : null}
-            <div className="combat-tactical-flow">{action}</div>
-          </div>
+          {/* A tray só existe com conteúdo operacional de verdade (ataque
+              escolhido, Reação, Concentração, Teste contra a Morte…). Sem
+              conteúdo, a linha `auto` e o `gap` do centro NÃO são reservados e
+              a cena herda a altura — nada de faixa vazia sob o mapa. Quando
+              existe, o MESMO `action`/`context` de sempre é montado. */}
+          {hasRenderableContent(action) || hasRenderableContent(context) ? (
+            <div className="combat-tactical-action">
+              {hasRenderableContent(context) ? (
+                <div className="combat-tactical-context">{context}</div>
+              ) : null}
+              <div className="combat-tactical-flow">{action}</div>
+            </div>
+          ) : null}
         </div>
 
         <aside className="combat-workspace-log" aria-label="Registro do combate">

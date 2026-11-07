@@ -39,6 +39,7 @@ import {
   buildCombatHotbarEntries,
   filterHotbarEntries,
   selectionSurvivesFilter,
+  toggleHotbarPick,
   type HotbarFilter,
 } from './hotbar';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
@@ -952,11 +953,11 @@ export function CombatTracker({
               filter={hotbarFilter}
               selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
               onClearFilter={() => setHotbarFilter(null)}
+              // Clique TOGGLE (6.6M.6.2.2): o mesmo slot que abre o painel o
+              // fecha — sem segundo estado de seleção e sem tocar em nada já
+              // enviado ao servidor (a identidade é o `sourceId` do fluxo).
               onSelect={(entry) =>
-                setHotbarPick((prev) => ({
-                  attackId: entry.sourceId,
-                  nonce: (prev?.nonce ?? 0) + 1,
-                }))
+                setHotbarPick((prev) => toggleHotbarPick(prev, entry.sourceId))
               }
             />
           ) : (
@@ -1280,13 +1281,10 @@ export function CombatTracker({
                       busy={busy}
                       onAttack={attack}
                     />
-                  ) : hotbarVisible.length > 0 ? (
-                    // Sem slot escolhido não há painel permanente: a hotbar é a
-                    // única superfície de ação do jogador. A dica acompanha a
-                    // lista VISÍVEL — com o filtro esvaziando a faixa não se
-                    // pede para escolher algo que não está lá.
-                    <p className="hotbar-hint">Escolha uma ação na hotbar.</p>
                   ) : null
+                  // Sem slot escolhido não há painel nem aviso: a hotbar é a
+                  // única superfície de ação do jogador e a região operacional
+                  // sai inteira (o grid recupera a altura).
                 ) : null}
               </>
             ) : (

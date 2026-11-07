@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createElement } from 'react';
+import { Fragment, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ConditionBadges } from '../src/combat/components/ConditionBadges';
 import { CombatStateBadges } from '../src/combat/components/CombatStateBadges';
@@ -32,8 +32,10 @@ import {
   filterHotbarEntries,
   hotbarFilterLabel,
   selectionSurvivesFilter,
+  toggleHotbarPick,
   type CombatHotbarEntry,
 } from '../src/combat/hotbar';
+import { hasRenderableContent } from '../src/combat/components/CombatWorkspace';
 import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
 import { GridMovementTrace } from '../src/combat/grid/GridMovementTrace';
 import { MovementHud } from '../src/combat/grid/MovementHud';
@@ -6798,19 +6800,23 @@ check(
 
   const resourceTip = workspaceRule('.dock-resource-tip');
   const resourceBase = workspaceRule('.dock-resource');
-  // A promoção da célula é uma regra de seletor múltiplo: recortamos do seletor
-  // que contém `:focus-within` até o fechamento da regra.
-  const resourceFocusAt = workspaceActive.indexOf('.dock-resource:focus-within');
+  // A promoção da célula é a regra que declara `z-index: 60;`: recortamos uma
+  // janela em volta dela para conferir os seletores que a disparam.
+  const resourcePromoteAt = workspaceActive.indexOf('z-index: 60;');
   const resourcePromote =
-    resourceFocusAt < 0
+    resourcePromoteAt < 0
       ? ''
-      : workspaceActive.slice(resourceFocusAt, workspaceActive.indexOf('}', resourceFocusAt) + 1);
+      : workspaceActive.slice(resourcePromoteAt - 400, resourcePromoteAt + 16);
 
   check(
     'SC101) balão dos recursos abre ACIMA da dock e a célula é promovida acima da Hotbar',
     // O `transform` do hover cria stacking context: sem promoção, o balão fica
     // preso dentro da célula e a Hotbar (posterior no DOM) pinta por cima.
     resourcePromote.includes('z-index: 60;') &&
+      // 6.6M.6.2.2: hover (mouse) e foco VISÍVEL do gatilho (teclado) — nunca
+      // `:focus-within`, que mantinha o balão depois do clique.
+      resourcePromote.includes('.dock-resource:hover') &&
+      resourcePromote.includes('.dock-resource:has(.dock-resource-trigger:focus-visible)') &&
       resourceTip.includes('bottom: calc(100% + 0.5rem);') &&
       resourceTip.includes('left: 50%;') &&
       resourceTip.includes('transform: translateX(-50%);') &&
@@ -7412,14 +7418,16 @@ check(
   );
 
   check(
-    'SC132) categoria vazia NÃO cai no aviso legado e a dica do painel segue a lista visível',
+    'SC132) categoria vazia NÃO cai no aviso legado (a Hotbar é montada pelo filtro)',
     // A Hotbar é montada quando há filtro, mesmo sem NENHUMA entrada base…
     trackerSource.includes('hotbarEntries.length > 0 || hotbarFilter ? (') &&
       // …e o aviso legado sobrevive só no caso realmente vazio (sem filtro).
       trackerSource.includes('className="dock-empty"') &&
       trackerSource.includes('Nenhum ataque disponível — equipe uma arma na mochila.') &&
-      // A dica "escolha uma ação" acompanha a lista VISÍVEL (não a base).
-      trackerSource.includes('hotbarVisible.length > 0 ? (') &&
+      // A dica permanente abaixo do grid saiu de cena (6.6M.6.2.2): o recorte
+      // vazio agora é respondido SÓ pela Hotbar.
+      !trackerSource.includes('hotbar-hint') &&
+      !workspaceActive.includes('.hotbar-hint') &&
       // A faixa continua montada com os oito slots: nada colapsa.
       hotbarComponentSource.includes('if (entries.length === 0 && !filter) return null;') &&
       hotbarComponentSource.includes('Math.max(0, HOTBAR_SLOTS - visible.length)') &&
@@ -7479,6 +7487,112 @@ check(
       workspaceRule('.combat-dock').includes("'portrait resources hotbar utilities'") &&
       // Nenhum `position: fixed` novo na dock inteira (sem overlay de tela cheia).
       !workspaceRule('.combat-dock').includes('position: fixed'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.2.2 — tooltip por foco visível, tray recolhida e toggle do slot.  */
+  /* ---------------------------------------------------------------------- */
+
+  const workspaceSource = source('src/combat/components/CombatWorkspace.tsx');
+  const triggerSource = source('src/combat/components/PlayerCombatDock.tsx');
+
+  check(
+    'SC135) balão dos recursos abre por mouse/foco VISÍVEL e não fica preso após o clique',
+    // A célula não é focável: `:focus-within` (o antigo gatilho) não existe mais.
+    !workspaceActive.includes('.dock-resource:focus-within') &&
+      !workspaceActive.includes('.dock-resource:focus-visible') &&
+      // Mouse entra/sai: hover. Teclado: foco visível do BOTÃO abre o balão.
+      workspaceRule(
+        '.dock-resource:hover .dock-resource-tip,\n.dock-resource-trigger:focus-visible ~ .dock-resource-tip',
+      ).includes('display: block;') &&
+      // Anel de foco próprio: o teclado continua vendo onde está.
+      workspaceRule('.dock-resource-trigger:focus-visible').includes('outline: 2px solid #f1c85c;') &&
+      workspaceRule('.dock-resource-trigger:focus-visible').includes('outline-offset: 2px;') &&
+      // Mesmo hover/foco promovem a célula acima da Hotbar (balão não some).
+      workspaceActive.includes(
+        '.dock-resource:hover,\n.dock-resource:has(.dock-resource-trigger:focus-visible) {\n  z-index: 60;\n}',
+      ) &&
+      // Menu de Ação aberto continua escondendo o balão (nada sobreposto).
+      workspaceRule('.dock-resource:has(.action-menu-trigger.active) .dock-resource-tip').includes(
+        'display: none;',
+      ) &&
+      // Sem `title` nativo (o balão é o "unico" tooltip) e sem blur artificial.
+      !triggerSource.includes('title={actionsLabel}') &&
+      !triggerSource.includes('title={bonusLabel}') &&
+      !triggerSource.includes('title={reactionLabel}') &&
+      !triggerSource.includes('.blur()') &&
+      !triggerSource.includes('tabIndex={0}') &&
+      // Acessibilidade do balão preservada: descrição + role.
+      triggerSource.includes('aria-describedby="dock-action-tip"') &&
+      triggerSource.includes('aria-describedby="dock-bonus-tip"') &&
+      triggerSource.includes('aria-describedby="dock-reaction-tip"') &&
+      (triggerSource.match(/role="tooltip"/g) ?? []).length >= 3,
+  );
+
+  check(
+    'SC136) sem aviso redundante: a tray operacional só existe com conteúdo e o grid herda a altura',
+    // O texto e a regra que só ele usava sumiram (nada de faixa vazia).
+    !trackerSource.includes('Escolha uma ação na hotbar.') &&
+      !workspaceActive.includes('.hotbar-hint') &&
+      // A região operacional é CONDICIONAL ao conteúdo real.
+      workspaceSource.includes('export function hasRenderableContent') &&
+      workspaceSource.includes('{hasRenderableContent(action) || hasRenderableContent(context) ? (') &&
+      workspaceSource.includes('{hasRenderableContent(context) ? (') &&
+      // Comportamento real do predicado: nada desenhável NÃO reserva altura.
+      hasRenderableContent(null) === false &&
+      hasRenderableContent(undefined) === false &&
+      hasRenderableContent(false) === false &&
+      hasRenderableContent([]) === false &&
+      hasRenderableContent(['']) === false &&
+      hasRenderableContent('') === false &&
+      hasRenderableContent('   ') === false &&
+      // O fragmento é o formato real do tracker: só conta se algum filho desenha.
+      hasRenderableContent(createElement(Fragment, null, null, false)) === false &&
+      hasRenderableContent(createElement(Fragment, null, 'Escolha')) === true &&
+      hasRenderableContent(createElement('div')) === true &&
+      // A linha `auto` e o `gap` continuam existindo — só não são reservados
+      // quando a tray não é montada (nenhum `min-height` fantasma).
+      workspaceRule('.combat-tactical-center').includes(
+        'grid-template-rows: minmax(0, 1fr) auto;',
+      ) &&
+      !workspaceRule('.combat-tactical-action').includes('min-height: 9.5rem') &&
+      // Painéis urgentes e do Mestre continuam montáveis: eles viajam em
+      // `context`/`action` e são conteúdo real para o predicado.
+      trackerSource.includes('<ReactionPanel') &&
+      trackerSource.includes('<ConcentrationSavePanel') &&
+      trackerSource.includes('<PendingEffectSavePanel') &&
+      trackerSource.includes('<DeathSavePanel name={current.name} death={turnDeath} />') &&
+      trackerSource.includes('<ManualHpPanel') &&
+      trackerSource.includes('<MasterEconomyPanel'),
+  );
+
+  check(
+    'SC137) clicar de novo no slot escolhido DESMARCA sem enviar nada ao servidor',
+    // Comportamento real da função pura usada pelo tracker.
+    JSON.stringify(toggleHotbarPick(null, 'a1')) ===
+      JSON.stringify({ attackId: 'a1', nonce: 1 }) &&
+      toggleHotbarPick({ attackId: 'a1', nonce: 1 }, 'a1') === null &&
+      // Outra arma TROCA a seleção e reinicia o painel (nonce avança).
+      JSON.stringify(toggleHotbarPick({ attackId: 'a1', nonce: 1 }, 'offhand:a2')) ===
+        JSON.stringify({ attackId: 'offhand:a2', nonce: 2 }) &&
+      // A convenção `offhand:` é a identidade do fluxo (não o índice do slot).
+      toggleHotbarPick(null, 'offhand:a2')?.attackId === 'offhand:a2' &&
+      toggleHotbarPick({ attackId: 'offhand:a2', nonce: 7 }, 'offhand:a2') === null &&
+      // A mesma sequência do clique: seleciona → nenhuma seleção.
+      (() => {
+        const first = toggleHotbarPick(null, 'a3');
+        return first !== null && toggleHotbarPick(first, 'a3') === null;
+      })() &&
+      // O tracker usa a função e preserva o painel e o fechamento existentes.
+      trackerSource.includes('setHotbarPick((prev) => toggleHotbarPick(prev, entry.sourceId))') &&
+      trackerSource.includes('preset={hotbarPick}') &&
+      trackerSource.includes('onClose={() => setHotbarPick(null)}') &&
+      trackerSource.includes('selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}') &&
+      // Um único estado de seleção e nenhuma chamada nova de rede/ataca no
+      // caminho de desmarcar (o envio continua no painel/servidor).
+      (trackerSource.match(/const \[hotbarPick, setHotbarPick\] = useState/g) ?? []).length === 1 &&
+      !hotbarAdapterSource.includes('fetch(') &&
+      !hotbarAdapterSource.match(/resolveAttack\w*\(/),
   );
 
   check(

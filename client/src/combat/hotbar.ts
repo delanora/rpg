@@ -146,6 +146,24 @@ export function filterHotbarEntries(
 }
 
 /**
+ * Clique no slot é TOGGLE (6.6M.6.2.2).
+ *
+ * O MESMO botão que abre a pré-seleção a fecha: clicar na entrada já escolhida
+ * devolve `null` (o painel tático desmonta e o destaque sai) e clicar em outra
+ * troca a seleção, avançando o `nonce` para o painel reiniciar do zero. A
+ * identidade é a do FLUXO (`sourceId`, inclusive `offhand:`), nunca o índice do
+ * slot nem o nome. Puro e sem rede: desmarcar não envia nada ao servidor nem
+ * consome Ação, Ação Bônus ou Reação.
+ */
+export function toggleHotbarPick(
+  previous: { attackId: string; nonce: number } | null,
+  sourceId: string,
+): { attackId: string; nonce: number } | null {
+  if (previous?.attackId === sourceId) return null;
+  return { attackId: sourceId, nonce: (previous?.nonce ?? 0) + 1 };
+}
+
+/**
  * A SELEÇÃO continua na lista visível com este filtro? (6.6M.6.2.1)
  *
  * A pré-seleção da Hotbar aponta para uma ENTRADA, e a entrada pode não
