@@ -8507,7 +8507,8 @@ check(
       'targetableCombatantIds(combat.combatants, myCombatant?.id ?? null)',
     ) &&
     targetingTrackerSource.includes('targeting={') &&
-    targetingTrackerSource.includes('onPickTarget: (combatantId) => setTargetCombatantId(combatantId)') &&
+    targetingTrackerSource.includes('onPickTarget: (combatantId) => {') &&
+    targetingTrackerSource.includes('setTargetCombatantId(combatantId);') &&
     targetingTrackerSource.includes('targetCombatantId={gridTargetId}') &&
     targetingTrackerSource.includes('onTargetChange={setTargetCombatantId}') &&
     // Trocar de turno e desmarcar/trocar o atalho limpam o alvo (estado de UI).
@@ -8660,9 +8661,9 @@ check(
       targetingTokenSource.includes('const rollModeClass = gridRollModeClass(rollMode);') &&
       targetingTrackerSource.includes('rollMode: gridRollMode,') &&
       // Menu some assim que o modo está escolhido.
-      targetingGridSource.includes('if (targeting.rollMode) return null;') &&
+      targetingGridSource.includes('if (!targeting.rollMenuOpen) return null;') &&
       // Escolher o modo NÃO envia requisição nem pede confirmação ao painel.
-      chooseBlock.includes('setAttackRoll({ targetId: combatantId, mode });') &&
+      chooseBlock.includes('setAttackRoll({ targetId: combatantId, mode, menuOpen: false });') &&
       !chooseBlock.includes('setAttackConfirm') &&
       // A escolha pertence ao ALVO: trocar de mira reabre o menu.
       targetingTrackerSource.includes('const gridRollMode =') &&
@@ -8674,6 +8675,39 @@ check(
       cursorRule.includes('M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z') &&
       cursorRule.includes('4 4,') &&
       cursorRule.includes('crosshair;')
+    );
+  })(),
+);
+
+check(
+  'SC168) novo clique no alvo reabre o menu para TROCAR o modo (o escolhido continua valendo)',
+  (() => {
+    const picker = source('src/combat/grid/GridRollModePicker.tsx');
+    const pickBlock = targetingTrackerSource.slice(
+      targetingTrackerSource.indexOf('onPickTarget: (combatantId) => {'),
+      targetingTrackerSource.indexOf('onClearTarget: () => {'),
+    );
+    return (
+      // Clique (não duplo) reabre o menu; nada é confirmado nem apagado.
+      pickBlock.includes('menuOpen: true') &&
+      pickBlock.includes('previous.targetId === combatantId ? previous.mode : null') &&
+      !pickBlock.includes('setAttackConfirm') &&
+      // O menu visível é DERIVADO do alvo selecionado, nunca um segundo alvo.
+      targetingTrackerSource.includes('const gridRollMenuOpen = Boolean(') &&
+      targetingTrackerSource.includes('attackRoll.menuOpen') &&
+      targetingTrackerSource.includes('rollMenuOpen: gridRollMenuOpen,') &&
+      targetingGridSource.includes('if (!targeting.rollMenuOpen) return null;') &&
+      // Confirmar fecha o menu SEM perder o modo escolhido.
+      targetingTrackerSource.includes('? { ...previous, menuOpen: false }') &&
+      targetingTrackerSource.includes('...(chosen ? { mode: chosen } : {}),') &&
+      targetingTrackerSource.includes(
+        'setAttackRoll({ targetId: combatantId, mode, menuOpen: false });',
+      ) &&
+      // O menu reaberto mostra qual modo está valendo agora.
+      targetingGridSource.includes('selected={targeting?.rollMode ?? null}') &&
+      picker.includes('aria-pressed={selected === mode.key}') &&
+      picker.includes("'grid-roll-menu-btn is-active'") &&
+      gridCssSource.includes('.grid-roll-menu-btn.is-active {')
     );
   })(),
 );

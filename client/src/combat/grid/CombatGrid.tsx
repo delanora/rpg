@@ -89,10 +89,16 @@ export interface GridTargeting {
    */
   onChooseRollMode?: (combatantId: string, mode: CombatRollMode) => void;
   /**
-   * Modo JÁ escolhido para o alvo selecionado (`null` = menu ainda aberto). Com
-   * modo escolhido o menu some e o cursor de espada ganha o glifo do modo.
+   * Modo JÁ escolhido para o alvo selecionado (`null` = nenhum ainda). A espada
+   * ganha o glifo dele e ele continua valendo no duplo clique.
    */
   rollMode?: CombatRollMode | null;
+  /**
+   * 6.6M.6.4.5 — o menu do token deve estar VISÍVEL agora. Um novo clique no
+   * alvo que já tem modo escolhido reabre o menu para TROCAR a rolagem, sem
+   * descartar a escolha anterior.
+   */
+  rollMenuOpen?: boolean;
   /** Prontidão de execução (vem do painel) — só habilita/desabilita o menu. */
   executeReady?: boolean;
   /** Esc: encerra TODO o fluxo — limpa o alvo e a ação escolhida na Hotbar. */
@@ -1762,9 +1768,11 @@ export function CombatGrid({
         : 'Visualização da cena.'
       : targetingActive
         ? targeting?.selectedTargetId
-          ? targeting?.rollMode
-            ? `Modo ${ROLL_MODE_LABELS[targeting.rollMode]} · duplo clique no alvo confirma · Esc cancela.`
-            : 'Escolha o modo de rolagem no menu do alvo · duplo clique confirma · Esc cancela.'
+          ? targeting?.rollMenuOpen
+            ? 'Escolha o modo de rolagem no menu do alvo · duplo clique confirma · Esc cancela.'
+            : targeting?.rollMode
+              ? `Modo ${ROLL_MODE_LABELS[targeting.rollMode]} · clique no alvo troca o modo · duplo clique confirma · Esc cancela.`
+              : 'Escolha o modo de rolagem no menu do alvo · duplo clique confirma · Esc cancela.'
           : 'Selecione um alvo no grid · duplo clique rola o ataque.'
       : movement && !movement.combatantId
         ? (movement.reason ?? 'Nenhum combatente pode se mover agora.')
@@ -1878,9 +1886,9 @@ export function CombatGrid({
    */
   const rollMenuAnchor = (() => {
     if (!targetingActive || !targeting?.selectedTargetId) return null;
-    // Modo já escolhido: o menu CUMPRIU o papel e some. A escolha passa a viver
-    // no cursor (glifo colado na espada) e o duplo clique é quem confirma.
-    if (targeting.rollMode) return null;
+    // O menu só aparece quando o fluxo pede: no primeiro clique e em TODO novo
+    // clique no alvo, para o jogador trocar o modo (6.6M.6.4.5).
+    if (!targeting.rollMenuOpen) return null;
     const unit = placed.find((item) => item.id === targeting.selectedTargetId);
     const space = unit?.spatial?.occupiedSpace;
     const box = space ? occupiedSpacePixels(space, cellSizeFeet, DEFAULT_PIXELS_PER_CELL) : null;
@@ -2231,6 +2239,7 @@ export function CombatGrid({
               top={rollMenuAnchor.top}
               ready={Boolean(targeting?.executeReady)}
               busy={busy}
+              selected={targeting?.rollMode ?? null}
               onChoose={(mode) => {
                 const target = targetingRef.current?.selectedTargetId;
                 if (target) targetingRef.current?.onChooseRollMode?.(target, mode);

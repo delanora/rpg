@@ -34,6 +34,7 @@ export function GridRollModePicker({
   top,
   ready,
   busy,
+  selected = null,
   onChoose,
 }: {
   /** Centro do menu, em px de tela (já ajustado às bordas pelo grid). */
@@ -42,6 +43,8 @@ export function GridRollModePicker({
   /** A execução está liberada agora? Falso só desabilita — nada é inferido. */
   ready: boolean;
   busy: boolean;
+  /** Modo JÁ escolhido: reabrir o menu serve para TROCAR (destaque no atual). */
+  selected?: CombatRollMode | null;
   onChoose: (mode: CombatRollMode) => void;
 }) {
   return (
@@ -62,8 +65,11 @@ export function GridRollModePicker({
           <button
             key={mode.key}
             type="button"
-            className="grid-roll-menu-btn"
+            className={
+              selected === mode.key ? 'grid-roll-menu-btn is-active' : 'grid-roll-menu-btn'
+            }
             title={mode.title}
+            aria-pressed={selected === mode.key}
             disabled={busy || !ready}
             onClick={() => onChoose(mode.key)}
           >

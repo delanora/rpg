@@ -263,7 +263,10 @@ export function CombatTracker({
    */
   const [attackRoll, setAttackRoll] = useState<{
     targetId: string;
-    mode: CombatRollMode;
+    /** `null` = menu aberto e nenhum modo escolhido ainda. */
+    mode: CombatRollMode | null;
+    /** O menu do token está aberto agora (novo clique REABRE para trocar). */
+    menuOpen: boolean;
   } | null>(null);
   /** Prontidão de execução reportada pelo painel (habilita o menu do token). */
   const [attackExecuteReady, setAttackExecuteReady] = useState(false);
@@ -947,6 +950,14 @@ export function CombatTracker({
   /** Modo já escolhido para ESTE alvo (o menu só reabre para outro alvo). */
   const gridRollMode =
     attackRoll && attackRoll.targetId === gridTargetId ? attackRoll.mode : null;
+  /**
+   * MENU DO TOKEN VISÍVEL (6.6M.6.4.5) — além do primeiro clique, um clique no
+   * alvo que JÁ tem modo escolhido reabre o menu para TROCAR a rolagem; o modo
+   * guardado continua valendo no duplo clique enquanto o menu está aberto.
+   */
+  const gridRollMenuOpen = Boolean(
+    attackRoll && attackRoll.targetId === gridTargetId && attackRoll.menuOpen,
+  );
   const gridTargetingActive = targetingEligible({
     isMaster,
     ownTurn: isMyTurn,
@@ -1433,7 +1444,18 @@ export function CombatTracker({
                     active: true,
                     targetableIds: gridTargetIds,
                     selectedTargetId: gridTargetId,
-                    onPickTarget: (combatantId) => setTargetCombatantId(combatantId),
+                    // Clique no token: escolhe o alvo e ABRE o menu. No alvo que
+                    // já tem modo escolhido o clique REABRE para trocar — o modo
+                    // guardado só cai quando a mira muda de alvo.
+                    onPickTarget: (combatantId) => {
+                      setTargetCombatantId(combatantId);
+                      setAttackRoll((previous) => ({
+                        targetId: combatantId,
+                        mode:
+                          previous && previous.targetId === combatantId ? previous.mode : null,
+                        menuOpen: true,
+                      }));
+                    },
                     onClearTarget: () => {
                       setTargetCombatantId(null);
                       setAttackRoll(null);
@@ -1446,6 +1468,13 @@ export function CombatTracker({
                         attackRoll && attackRoll.targetId === combatantId
                           ? attackRoll.mode
                           : null;
+                      // Confirmou: o menu fecha e o modo escolhido continua
+                      // guardado para o próximo ataque neste alvo.
+                      setAttackRoll((previous) =>
+                        previous && previous.targetId === combatantId
+                          ? { ...previous, menuOpen: false }
+                          : previous,
+                      );
                       setAttackConfirm((previous) => ({
                         nonce: (previous?.nonce ?? 0) + 1,
                         ...(chosen ? { mode: chosen } : {}),
@@ -1456,9 +1485,10 @@ export function CombatTracker({
                     // no token do alvo é quem confirma o ataque.
                     onChooseRollMode: (combatantId: string, mode: CombatRollMode) => {
                       setTargetCombatantId(combatantId);
-                      setAttackRoll({ targetId: combatantId, mode });
+                      setAttackRoll({ targetId: combatantId, mode, menuOpen: false });
                     },
                     rollMode: gridRollMode,
+                    rollMenuOpen: gridRollMenuOpen,
                     executeReady: attackExecuteReady,
                     // Esc encerra o fluxo inteiro: sem alvo e sem ação escolhida.
                     onCancelFlow: () => {

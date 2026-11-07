@@ -729,6 +729,16 @@
   color: #fff;
 }
 
+/*
+ * Modo ATUAL do alvo (6.6M.6.4.5): reabrir o menu é para TROCAR a rolagem, então
+ * a opção que está valendo agora fica marcada em latão — sem esconder as outras.
+ */
+.grid-roll-menu-btn.is-active {
+  border-color: var(--gold);
+  background: rgba(224, 184, 63, 0.18);
+  color: #fff;
+}
+
 .grid-roll-menu-btn:disabled {
   opacity: 0.45;
   cursor: default;
