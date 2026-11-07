@@ -6143,14 +6143,18 @@ check(
   };
 
   check(
-    'SC56) CombatWorkspace é SÓ layout (sem estado/efeito) e a ordem é iniciativa · cena · registro · ação · barra',
+    'SC56) CombatWorkspace é SÓ layout (sem estado/efeito): iniciativa · centro tático (ação acima da cena) · registro · ferramentas · barra',
     !/useState|useEffect|useReducer|useRef/.test(workspaceLayout) &&
       workspaceLayout.includes('combat-workspace-initiative">{initiative}') &&
-      workspaceLayout.includes('combat-workspace-scene">{scene}') &&
-      workspaceLayout.indexOf('{initiative}') < workspaceLayout.indexOf('{scene}') &&
+      workspaceLayout.includes('combat-tactical-action') &&
+      workspaceLayout.includes('combat-tactical-scene">{scene}') &&
+      workspaceLayout.includes('combat-workspace-log') &&
+      workspaceLayout.indexOf('{initiative}') < workspaceLayout.indexOf('{action}') &&
+      workspaceLayout.indexOf('{action}') < workspaceLayout.indexOf('{scene}') &&
       workspaceLayout.indexOf('{scene}') < workspaceLayout.indexOf('{log}') &&
-      workspaceLayout.indexOf('{log}') < workspaceLayout.indexOf('{action}') &&
-      workspaceLayout.indexOf('{action}') < workspaceLayout.indexOf('{resourceBar}'),
+      workspaceLayout.indexOf('{log}') < workspaceLayout.indexOf('{masterTools}') &&
+      workspaceLayout.indexOf('{masterTools}') < workspaceLayout.indexOf('{tools}') &&
+      workspaceLayout.indexOf('{tools}') < workspaceLayout.indexOf('{resourceBar}'),
   );
 
   check(
@@ -6177,7 +6181,7 @@ check(
   check(
     'SC59) o grid ocupa o centro flexível (minmax(0, 1fr)) com a cadeia de min-height: 0',
     workspaceRule('.combat-workspace-body').includes(
-      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(19rem, 25rem);',
+      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(16rem, 19rem);',
     ) &&
       workspaceRule('.combat-workspace-body').includes('overflow: hidden;') &&
       workspaceRule('.combat-workspace-body').includes('min-height: 0;') &&
@@ -6188,10 +6192,10 @@ check(
   const logPanelSource = source('src/combat/components/CombatLog.tsx');
 
   check(
-    'SC60) registro rola DENTRO da lateral e os Resolution Cards ficam no topo, sempre acessíveis',
-    workspaceRule('.combat-rail-log .combat-log').includes('overflow-y: auto;') &&
-      workspaceRule('.combat-rail-log .combat-log').includes('max-height: none;') &&
-      workspaceRule('.combat-rail-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
+    'SC60) registro rola DENTRO da própria coluna e os Resolution Cards ficam no topo, sempre acessíveis',
+    workspaceRule('.combat-workspace-log .combat-log').includes('overflow-y: auto;') &&
+      workspaceRule('.combat-workspace-log .combat-log').includes('max-height: none;') &&
+      workspaceRule('.combat-workspace-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
       logPanelSource.indexOf('className="combat-resolution-list"') <
         logPanelSource.indexOf('<ol className="combat-log">'),
   );
@@ -6251,26 +6255,25 @@ check(
   /* ---------------------------------------------------------------------- */
 
   check(
-    'SC65) lateral direita balanceada: registro ~58% e ação ~42%, sem teto fixo no painel de ataque',
-    workspaceRule('.combat-workspace-rail').includes(
-      'grid-template-rows: auto minmax(0, 1.4fr) minmax(0, 1fr);',
-    ) &&
-      workspaceRule('.combat-rail-action').includes('max-height: none;') &&
-      workspaceRule('.combat-rail-action').includes('overflow-y: auto;') &&
-      !workspaceRule('.combat-rail-action').includes('max-height: 24rem;') &&
-      // As duas regiões continuam rolando DENTRO de si: a página não cresce.
-      workspaceRule('.combat-rail-log .combat-log').includes('overflow-y: auto;') &&
-      workspaceRule('.combat-workspace-body').includes('overflow: hidden;'),
+    'SC65) centro tático: ação/contexto ACIMA da cena, com teto e rolagem própria para não engolir o mapa',
+    workspaceRule('.combat-tactical-center').includes('grid-template-rows: auto minmax(0, 1fr);') &&
+      workspaceRule('.combat-tactical-center').includes('min-height: 0;') &&
+      workspaceRule('.combat-tactical-action').includes('max-height: 9.5rem;') &&
+      workspaceRule('.combat-tactical-action').includes('overflow-y: auto;') &&
+      workspaceRule('.combat-tactical-scene').includes('min-height: 0;') &&
+      workspaceRule('.combat-workspace-body').includes('overflow: hidden;') &&
+      workspaceLayout.indexOf('combat-tactical-action') <
+        workspaceLayout.indexOf('combat-tactical-scene'),
   );
 
   check(
     'SC66) registro mais denso sem perder os Resolution Cards no topo e sem tocar em outros pontos da ficha',
-    workspaceRule('.combat-rail-log .combat-log').includes('gap: 0.28rem;') &&
-      workspaceRule('.combat-rail-log .log-card-summary').includes('padding: 0.34rem 0.5rem;') &&
-      workspaceRule('.combat-rail-log .log-entry').includes('padding: 0.34rem 0.5rem;') &&
-      workspaceRule('.combat-rail-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
-      // Densidade é escopada à lateral (attack-card existe no painel também).
-      workspaceActive.includes('.combat-rail-log .log-card-summary {') &&
+    workspaceRule('.combat-workspace-log .combat-log').includes('gap: 0.28rem;') &&
+      workspaceRule('.combat-workspace-log .log-card-summary').includes('padding: 0.34rem 0.5rem;') &&
+      workspaceRule('.combat-workspace-log .log-entry').includes('padding: 0.34rem 0.5rem;') &&
+      workspaceRule('.combat-workspace-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
+      // Densidade é escopada ao registro (attack-card existe no painel também).
+      workspaceActive.includes('.combat-workspace-log .log-card-summary {') &&
       !workspaceActive.includes('\n.log-card-summary {'),
   );
 
@@ -6306,6 +6309,113 @@ check(
       barSource.includes('actionPips(economy.actionsGranted, economy.actionsUsed)') &&
       barSource.includes('economy.bonusActionUsed ?') &&
       barSource.includes('economy.reactionAvailable ?'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.5.2 — centro tático: operação acima da cena, registro à direita.   */
+  /* ---------------------------------------------------------------------- */
+
+  const mediaWide = workspaceActive.slice(
+    workspaceActive.indexOf('@media (max-width: 1360px)'),
+    workspaceActive.indexOf('@media (max-width: 1180px)'),
+  );
+  const mediaMedium = workspaceActive.slice(
+    workspaceActive.indexOf('@media (max-width: 1180px)'),
+    workspaceActive.indexOf('@media (max-width: 760px)'),
+  );
+  const mediaNarrow = workspaceActive.slice(workspaceActive.indexOf('@media (max-width: 760px)'));
+  /** Bloco das ferramentas administrativas (do prop até o próximo prop). */
+  const masterToolsAt = trackerSource.indexOf('masterTools={isMaster ? (');
+  const toolsAt = trackerSource.indexOf('\n        tools={');
+  const toolsBlock =
+    toolsAt > 0 && masterToolsAt > 0 && masterToolsAt < toolsAt
+      ? trackerSource.slice(toolsAt, trackerSource.indexOf('\n        log={', toolsAt))
+      : '';
+
+  check(
+    'SC69) registro em coluna PRÓPRIA e mais estreita: a largura recuperada vai para o centro tático',
+    workspaceRule('.combat-workspace-body').includes(
+      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(16rem, 19rem);',
+    ) &&
+      !workspaceActive.includes('minmax(19rem, 25rem)') &&
+      workspaceRule('.combat-workspace-log').includes('min-height: 0;') &&
+      workspaceLayout.indexOf('combat-workspace-log') < workspaceLayout.indexOf('{log}') &&
+      mediaWide.includes('minmax(13rem, 16rem) minmax(0, 1fr) minmax(15rem, 18rem)'),
+  );
+
+  check(
+    'SC70) ferramentas administrativas SÓ para o Mestre, e sem linha vazia para o jogador',
+    masterToolsAt > 0 &&
+      /masterTools=\{isMaster \? \([\s\S]*?ManualHpPanel[\s\S]*?MasterEconomyPanel[\s\S]*?\) : undefined\}/.test(
+        trackerSource,
+      ) &&
+      !toolsBlock.includes('ManualHpPanel') &&
+      !toolsBlock.includes('MasterEconomyPanel') &&
+      workspaceLayout.includes('{masterTools ? <div className="combat-workspace-master-tools">') &&
+      workspaceRule('.combat-workspace').includes('grid-template-rows: auto minmax(0, 1fr);') &&
+      // Trilhas implícitas: região ausente não deixa gap/track sobrando.
+      workspaceRule('.combat-workspace').includes('grid-auto-rows: auto;'),
+  );
+
+  check(
+    'SC71) painel de ataque REUTILIZADO na horizontal, com os mesmos três passos e cards',
+    (trackerSource.match(/<CombatActionPanel/g) ?? []).length >= 3 &&
+      actionPanelSource.includes('className="attack-step-title"') &&
+      actionPanelSource.includes('Escolha o ataque') &&
+      actionPanelSource.includes('Escolha o alvo') &&
+      actionPanelSource.includes('Modo de rolagem') &&
+      workspaceRule('.combat-tactical-action .attack-panel').includes('display: flex;') &&
+      workspaceRule('.combat-tactical-action .attack-panel').includes('flex-wrap: wrap;') &&
+      workspaceRule('.combat-tactical-action .attack-panel > .attack-step').includes(
+        'flex: 1 1 11rem;',
+      ) &&
+      // A horizontal é SÓ composição: nenhuma variante nova no componente.
+      !actionPanelSource.includes('workspace-horizontal'),
+  );
+
+  check(
+    'SC72) estado de ataque não é duplicado: seleção/prévia vivem só no CombatActionPanel',
+    !/useState|useEffect|useReducer/.test(workspaceLayout) &&
+      !/attackId|targetId|rollMode|ammoId|selectedEffects|rangePreview/.test(workspaceLayout) &&
+      actionPanelSource.includes("const [attackId, setAttackId] = useState('');") &&
+      actionPanelSource.includes("const [targetId, setTargetId] = useState('');") &&
+      actionPanelSource.includes("const [rollMode, setRollMode] = useState<RollMode>('normal');") &&
+      actionPanelSource.includes('getSpatialRangePreview(') &&
+      actionPanelSource.includes('rangeSummary(') &&
+      actionPanelSource.includes('onSelectAttacker'),
+  );
+
+  check(
+    'SC73) registro e cena continuam os MESMOS componentes e o workspace não conhece nenhum deles',
+    trackerSource.includes('<CombatLog') &&
+      trackerSource.includes('<CombatGrid') &&
+      logPanelSource.includes('className="combat-resolution-list"') &&
+      !workspaceLayout.includes("from '../") &&
+      !workspaceLayout.includes("from './") &&
+      !workspaceLayout.includes('CombatLog') &&
+      workspaceLayout.includes('{scene}'),
+  );
+
+  check(
+    'SC74) matriz de autoridade preservada: Mestre assume, jogador só o próprio turno, espera sem controles',
+    trackerSource.includes('const showOperational = controlsCurrent || masterOverrideActive;') &&
+      trackerSource.includes('showOperational && actingCombatant ? (') &&
+      trackerSource.includes('!isMaster && myCombatant ? (') &&
+      trackerSource.includes('<BattleWaitingPanel') &&
+      trackerSource.includes('<ConcentrationSavePanel') &&
+      trackerSource.includes('<ReactionPanel') &&
+      /resourceBar=\{[\s\S]{0,500}?showOperational && actingCombatant \?/.test(trackerSource),
+  );
+
+  check(
+    'SC75) responsividade: 3 colunas no desktop, 2 no médio e 1 no estreito (nunca 3 espremidas)',
+    mediaMedium.includes('grid-template-columns: minmax(0, 1fr) minmax(17rem, 21rem);') &&
+      mediaMedium.includes('.combat-tactical-center {') &&
+      mediaMedium.includes('.combat-workspace-log {') &&
+      mediaMedium.includes('max-height: none;') &&
+      mediaNarrow.includes('grid-template-columns: minmax(0, 1fr);') &&
+      mediaNarrow.includes('.combat-workspace-initiative,') &&
+      !mediaNarrow.includes('minmax(0, 1fr) minmax(0, 1fr)'),
   );
 }
 

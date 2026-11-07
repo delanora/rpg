@@ -5,11 +5,20 @@
    é tocado neste fluxo (mesmo motivo de `grid/grid.css`). O tema continua sendo
    o de `:root`/`[data-theme]`: aqui só há composição, tamanho de container e
    rolagem INTERNA. Nenhuma regra cria cor, ícone ou componente novo.
+
+   6.6M.5.2 — a OPERAÇÃO entrou no centro tático: o painel de ataque fica logo
+   acima da cena, e o registro ganhou uma coluna própria, mais estreita. O
+   ataque pertence ao grid; o registro informa; a iniciativa orienta.
    ========================================================================== */
 
 .combat-workspace {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  /* Cabeçalho e corpo são as únicas trilhas fixas; as faixas de baixo
+     (ferramentas do Mestre, atalhos, barra) são IMPLÍCITAS e só existem quando
+     o React as monta — jogador sem ferramenta administrativa não herda espaço
+     vazio nem gap de trilha ausente. */
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-auto-rows: auto;
   gap: 0.7rem;
   min-width: 0;
   /* Teto de tela: cabeçalho + corpo + ferramentas + barra ≈ viewport. */
@@ -45,12 +54,12 @@
 }
 
 /* Corpo: a única região com rolagem própria por bloco.
-   +1,5 rem na iniciativa (INIC, nome e metadados param de se espremer) e
-   +1 rem na lateral operacional. O centro continua sendo o `1fr` — o grid
-   segue a maior superfície, não uma coluna de largura fixa. */
+   INICIATIVA | CENTRO TÁTICO | REGISTRO — o registro encolheu (19rem em vez de
+   25rem) porque a ação saiu dele: a largura recuperada vai toda para o centro,
+   que continua sendo o `1fr`. */
 .combat-workspace-body {
   display: grid;
-  grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(19rem, 25rem);
+  grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(16rem, 19rem);
   gap: 0.85rem;
   min-width: 0;
   min-height: 0;
@@ -123,6 +132,56 @@
 }
 
 /* --------------------------------------------------------------------------
+   CENTRO TÁTICO — operação EM CIMA, cena embaixo, no MESMO bloco.
+   A trilha `auto` é do painel de ataque/contexto (com teto e rolagem própria
+   para não engolir o mapa); a `1fr` é do grid, que segue a maior superfície.
+   -------------------------------------------------------------------------- */
+.combat-tactical-center {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.55rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.combat-tactical-action {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+  min-height: 0;
+  /* Teto para o painel de ataque: com muitas armas/alvos ele rola DENTRO de
+     si em vez de esmagar o mapa. ~9,5rem cabe o caso comum (1 arma, poucos
+     alvos, 3 modos e o botão) sem barra de rolagem. */
+  max-height: 9.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.1rem;
+}
+
+.combat-tactical-context {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.combat-tactical-flow {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.combat-tactical-flow > * {
+  min-width: 0;
+}
+
+.combat-tactical-scene {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------------------
    CENA (centro) — só dimensionamento do container. Pan, zoom, régua, tokens e
    footprints continuam exatamente como estão em `grid/grid.css`.
    -------------------------------------------------------------------------- */
@@ -145,37 +204,130 @@
 }
 
 /* --------------------------------------------------------------------------
-   LATERAL DIREITA — registro em cima, ação do turno embaixo. As duas regiões
-   rolam DENTRO de si mesmas; a página não cresce por causa delas.
+   PAINEL DE ATAQUE NA HORIZONTAL — o MESMO componente, sem variante nova.
+   Os três passos viram colunas lado a lado e a prévia ocupa a linha de baixo
+   com o botão ATACAR na ponta. Cards, botões e textos são os de sempre.
    -------------------------------------------------------------------------- */
-.combat-workspace-rail {
+.combat-tactical-action .attack-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
+}
+
+.combat-tactical-action .attack-panel > h3 {
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+/* Passo 1 · 2 · 3 lado a lado (quebram juntos quando a largura não dá). */
+.combat-tactical-action .attack-panel > .attack-step {
+  flex: 1 1 11rem;
+  min-width: 0;
+  gap: 0.22rem;
+}
+
+.combat-tactical-action .attack-step-title {
+  font-size: 0.66rem;
+  gap: 0.3rem;
+}
+
+.combat-tactical-action .attack-step-num {
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.6rem;
+}
+
+/* Seletor do atacante (Mestre) e "ataque preparado" não competem com os passos. */
+.combat-tactical-action .attack-panel > .field {
+  flex: 0 1 11rem;
+  min-width: 0;
+}
+
+.combat-tactical-action .attack-panel > .dice-toggle {
+  flex: 1 1 100%;
+  font-size: 0.72rem;
+}
+
+.combat-tactical-action .attack-options,
+.combat-tactical-action .target-options {
+  gap: 0.3rem;
+}
+
+.combat-tactical-action .attack-card,
+.combat-tactical-action .target-card {
+  padding: 0.3rem 0.4rem;
+  font-size: 0.72rem;
+}
+
+.combat-tactical-action .attack-card-damage-line {
+  font-size: 0.7rem;
+}
+
+/* Efeitos opcionais, Furtivo e munição ocupam a faixa inteira, em linha. */
+.combat-tactical-action .attack-effect {
+  flex: 1 1 100%;
+  font-size: 0.72rem;
+  gap: 0.25rem;
+}
+
+.combat-tactical-action .attack-effect-head {
+  font-size: 0.68rem;
+}
+
+/* Prévia + ATACAR fecham o painel na ponta direita. */
+.combat-tactical-action .attack-preview {
+  flex: 1 1 100%;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.combat-tactical-action .attack-preview-label {
+  font-size: 0.62rem;
+}
+
+.combat-tactical-action .attack-preview-name {
+  font-size: 0.84rem;
+}
+
+.combat-tactical-action .attack-preview-stats {
+  gap: 0.4rem;
+  font-size: 0.7rem;
+}
+
+.combat-tactical-action .attack-roll {
+  flex: 0 0 auto;
+  padding: 0.32rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+/* Espera, Teste contra a Morte e afins aparecem na mesma faixa, sem cartão
+   extra: o painel contextual já traz o próprio enquadramento. */
+.combat-tactical-flow .combat-block {
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   REGISTRO (direita) — coluna própria. Resolution Cards primeiro e presos no
+   topo; o histórico rola abaixo deles.
+   -------------------------------------------------------------------------- */
+.combat-workspace-log {
   display: grid;
-  /* Registro ≈58% e ação ≈42% da altura: o painel de ataque deixa de ser o
-     resto que sobrava do log. Ambas as trilhas rolam dentro de si mesmas. */
-  grid-template-rows: auto minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 0.7rem;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
 }
 
-.combat-rail-context {
-  display: grid;
-  gap: 0.5rem;
-  min-height: 0;
-  max-height: 42%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.combat-rail-log {
-  display: grid;
-  min-height: 0;
-}
-
-.combat-rail-log .combat-log-panel {
+.combat-workspace-log .combat-log-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.5rem;
   min-height: 0;
   overflow: hidden;
 }
@@ -184,14 +336,14 @@
  * DECISÕES PENDENTES primeiro e sem rolar para longe: os Resolution Cards
  * ficam presos no topo do registro, com rolagem própria só se forem muitos.
  */
-.combat-rail-log .combat-resolution-list {
+.combat-workspace-log .combat-resolution-list {
   flex: 0 0 auto;
   max-height: 55%;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.combat-rail-log .combat-log {
+.combat-workspace-log .combat-log {
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
@@ -202,51 +354,50 @@
 }
 
 /* Densidade do histórico: card mais baixo com a MESMA hierarquia visual
-   (autor · resultado · detalhe) — os seletores são escopados à lateral porque
-   `attack-card`/`log-entry` também existem em outros pontos da ficha. */
-.combat-rail-log .log-card-summary {
+   (autor · resultado · detalhe) — os seletores são escopados ao registro
+   porque `attack-card`/`log-entry` também existem em outros pontos da ficha. */
+.combat-workspace-log .log-card-summary {
   padding: 0.34rem 0.5rem;
   gap: 0.06rem;
 }
 
-.combat-rail-log .log-card-actor,
-.combat-rail-log .log-card-primary {
+.combat-workspace-log .log-card-actor,
+.combat-workspace-log .log-card-primary {
   font-size: 0.8rem;
 }
 
-.combat-rail-log .log-card-secondary,
-.combat-rail-log .log-card-title {
+.combat-workspace-log .log-card-secondary,
+.combat-workspace-log .log-card-title {
   font-size: 0.7rem;
 }
 
-.combat-rail-log .log-entry {
+.combat-workspace-log .log-entry {
   padding: 0.34rem 0.5rem;
   font-size: 0.86rem;
 }
 
-.combat-rail-log .log-card-detail {
+.combat-workspace-log .log-card-detail {
   padding: 0.34rem 0.5rem 0.4rem;
 }
 
-/* Ação do turno: o MESMO painel de antes, com rolagem própria. */
-.combat-rail-action {
-  display: grid;
-  min-height: 0;
-  /* Sem teto fixo: no desktop a altura vem da trilha `1fr` da lateral (~42%),
-     então telas altas aproveitam o espaço em vez de parar em 24rem. */
-  max-height: none;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.combat-rail-action > * {
-  min-height: 0;
-}
-
 /* --------------------------------------------------------------------------
-   FERRAMENTAS — o que é administrativo/ocasional não ocupa o centro do
-   combate; fica recolhido numa faixa fina abaixo do corpo.
+   FERRAMENTAS — duas faixas separadas por PAPEL, nunca por CSS escondido:
+   `master-tools` só existe quando o React monta para o Mestre; `tools` é a
+   faixa de atalhos e do estado legítimo do jogador.
    -------------------------------------------------------------------------- */
+.combat-workspace-master-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.combat-workspace-master-tools > * {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
 .combat-workspace-tools {
   display: flex;
   flex-wrap: wrap;
@@ -256,8 +407,13 @@
 }
 
 .combat-workspace-tools > * {
-  flex: 1 1 16rem;
+  flex: 0 1 auto;
   min-width: 0;
+}
+
+/* Atalhos da ficha: faixa fina e alinhada; o estado ocupa o resto da linha. */
+.combat-workspace-tools > .combat-status {
+  flex: 1 1 18rem;
 }
 
 .combat-tools {
@@ -277,8 +433,7 @@
   color: var(--ink-soft);
 }
 
-/* Atalhos da ficha: faixa mais baixa, mesma área clicável confortável. Ela
-   também aparecia alta logo acima da barra de recursos e competia com ela. */
+/* Atalhos da ficha: faixa mais baixa, mesma área clicável confortável. */
 .combat-workspace .combat-shortcuts-inline {
   gap: 0.3rem;
   align-items: center;
@@ -440,11 +595,12 @@
 
 /* --------------------------------------------------------------------------
    RESPONSIVIDADE — desktop é a prioridade de tela única; o resto degrada para
-   duas colunas e, por fim, para o fluxo vertical de sempre.
+   duas colunas e, por fim, para o fluxo vertical de sempre. Nunca três
+   colunas espremidas.
    -------------------------------------------------------------------------- */
 @media (max-width: 1360px) {
   .combat-workspace-body {
-    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(17.5rem, 21rem);
+    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(15rem, 18rem);
   }
 }
 
@@ -464,6 +620,14 @@
     grid-column: 1 / -1;
   }
 
+  .combat-tactical-center {
+    grid-column: 1;
+  }
+
+  .combat-workspace-log {
+    grid-column: 2;
+  }
+
   .combat-workspace .combatant-list {
     flex-direction: row;
     flex-wrap: wrap;
@@ -475,7 +639,8 @@
     flex: 1 1 14rem;
   }
 
-  .combat-rail-action {
+  /* Duas colunas já dão largura: o painel de ataque pode respirar inteiro. */
+  .combat-tactical-action {
     max-height: none;
   }
 }
@@ -486,23 +651,21 @@
     grid-template-rows: none;
   }
 
-  .combat-workspace-initiative {
+  .combat-workspace-initiative,
+  .combat-tactical-center,
+  .combat-workspace-log {
     grid-column: auto;
   }
 
-  .combat-workspace-scene {
+  .combat-tactical-scene {
     min-height: 26rem;
   }
 
-  .combat-workspace-rail {
-    grid-template-rows: auto auto auto;
-  }
-
-  .combat-rail-context {
-    max-height: none;
-  }
-
-  .combat-rail-log .combat-log {
+  .combat-workspace-log .combat-log {
     max-height: 26rem;
+  }
+
+  .combat-tactical-action .attack-panel > .attack-step {
+    flex: 1 1 100%;
   }
 }
