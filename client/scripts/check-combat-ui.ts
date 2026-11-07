@@ -8550,5 +8550,22 @@ check(
     !targetingGridSource.includes('/api/combat'),
 );
 
+check(
+  'SC164) cursor de alvo é a ESPADINHA do grimório (crosshair só como fallback)',
+  (() => {
+    const rule = gridCssSource.slice(
+      gridCssSource.indexOf('.grid-token.is-targetable {'),
+      gridCssSource.indexOf('.grid-token.is-targetable .grid-token-art'),
+    );
+    return (
+      rule.includes('url("data:image/svg+xml,') &&
+      rule.includes('M14.5 17.5 3 6V3h3l11.5 11.5') &&
+      // Hotspot na ponta da lâmina e fallback declarado.
+      rule.includes('4 4,') &&
+      rule.includes('crosshair;')
+    );
+  })(),
+);
+
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);
