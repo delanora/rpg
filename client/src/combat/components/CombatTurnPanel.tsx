@@ -49,6 +49,9 @@ export function CombatTurnPanel({
             />
 
             <span className="combat-turn-id">
+              {/* Rótulo curto: no micro-header a informação precisa se declarar
+                  sozinha, sem o antigo card alto do turno. */}
+              <span className="combat-turn-label">Turno de</span>
               <span className="combat-turn-name">{combatant.name}</span>
               <span className="combat-turn-kind">{combatantKindLabel(combatant.kind)}</span>
               {combatant.missing ? <em className="tag">removido</em> : null}
