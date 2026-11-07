@@ -4,7 +4,7 @@ import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import type { CombatantDto } from '../../types';
 import { combatantKindIcon, combatantKindLabel } from '../combatVisuals';
-import { combatDisplayName } from '../combatName';
+import { combatantDisplayName } from '../combatName';
 
 interface CombatTurnPanelProps {
   combatant: CombatantDto | null;
@@ -38,7 +38,7 @@ export function CombatTurnPanel({
     return (
       <section
         className={['combat-turn-panel', 'compact', isMyTurn ? 'mine' : ''].filter(Boolean).join(' ')}
-        aria-label={combatant ? `Turno atual: ${combatDisplayName(combatant.name)}` : 'Turno atual'}
+        aria-label={combatant ? `Turno atual: ${combatantDisplayName(combatant)}` : 'Turno atual'}
       >
         {combatant ? (
           <>
@@ -53,7 +53,7 @@ export function CombatTurnPanel({
               {/* Rótulo curto: no micro-header a informação precisa se declarar
                   sozinha, sem o antigo card alto do turno. */}
               <span className="combat-turn-label">Turno de</span>
-              <span className="combat-turn-name">{combatDisplayName(combatant.name)}</span>
+              <span className="combat-turn-name">{combatantDisplayName(combatant)}</span>
               <span className="combat-turn-kind">{combatantKindLabel(combatant.kind)}</span>
               {combatant.missing ? <em className="tag">removido</em> : null}
             </span>
@@ -128,7 +128,7 @@ export function CombatTurnPanel({
         />
 
         <div className="combat-turn-id">
-          <span className="combat-turn-name">{combatDisplayName(combatant.name)}</span>
+          <span className="combat-turn-name">{combatantDisplayName(combatant)}</span>
           <span className="combat-turn-kind">{combatantKindLabel(combatant.kind)}</span>
           {combatant.missing ? <em className="tag">removido</em> : null}
         </div>
@@ -149,7 +149,7 @@ export function CombatTurnPanel({
           <HpBar
             current={combatant.hpCurrent ?? 0}
             max={combatant.hpMax ?? 0}
-            label={combatDisplayName(combatant.name)}
+            label={combatantDisplayName(combatant)}
             className="combat-turn-hp"
           />
           <span className="combat-turn-ac">CA {combatant.armorClass}</span>

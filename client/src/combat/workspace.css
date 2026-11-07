@@ -975,8 +975,9 @@
   height: 100%;
   padding: 0;
   overflow: hidden;
-  /* SEM moldura: o círculo é definido pela própria imagem. A antiga borda de
-     latão de 3px desenhava um contorno marrom em volta do retrato. */
+  /* Moldura de latão: o retrato da DOCK mantém o aro (só o card da iniciativa
+     ficou sem contorno). */
+  border: 3px solid #c49b3d;
   border-radius: 50%;
   background: radial-gradient(
     circle at 50% 28%,
@@ -989,16 +990,22 @@
   );
   color: var(--dock-cream);
   cursor: pointer;
-  /* SÓ o vinheta interna: nenhum anel externo em volta da foto. */
-  box-shadow: inset 0 0 25px rgba(5, 5, 5, 0.48);
-  transition: box-shadow 0.14s ease;
+  box-shadow:
+    inset 0 0 25px rgba(5, 5, 5, 0.48),
+    0 2px 0 2px #070604,
+    0 0 0 1px rgba(241, 214, 141, 0.33);
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
 }
 
 .dock-portrait:hover,
 .dock-portrait:focus-visible {
+  border-color: var(--dock-gold-hi);
   box-shadow:
     inset 0 0 25px rgba(5, 5, 5, 0.48),
-    0 0 10px rgba(241, 214, 141, 0.35);
+    0 2px 0 2px #070604,
+    0 0 0 3px rgba(241, 214, 141, 0.28);
   outline: none;
 }
 

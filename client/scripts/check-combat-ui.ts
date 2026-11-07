@@ -6751,12 +6751,8 @@ check(
     workspaceRule('.dock-portrait').includes('border-radius: 50%;') &&
       // 6.6M.6.3.1.9: retrato sem moldura — nem na dock, nem no card da
       // iniciativa (a borda de latão engordava o contorno da imagem).
-      !workspaceRule('.dock-portrait').includes('border:') &&
-      // Nem anel por box-shadow: o retrato é só a foto (vinheta interna).
-      !workspaceRule('.dock-portrait').includes('0 0 0 ') &&
-      workspaceRule('.dock-portrait').includes(
-        'box-shadow: inset 0 0 25px rgba(5, 5, 5, 0.48);',
-      ) &&
+      // A dock MANTÉM a moldura de latão; só o card da iniciativa perdeu o aro.
+      workspaceRule('.dock-portrait').includes('border: 3px solid #c49b3d;') &&
       workspaceRule('.combat-workspace .combatant-card .portrait').includes('border: 0;') &&
       workspaceRule('.combat-workspace .combatant-card .portrait').includes(
         'box-shadow: none;',
@@ -8267,19 +8263,34 @@ check(
   );
 
   check(
-    'SC154) iniciativa mostra só o PRIMEIRO nome do combatente',
-    // A coluna da iniciativa é estreita: o nome exibido ali é o primeiro nome.
-    // É formatação de tela — o servidor e os logs seguem com o nome completo.
-    source('src/combat/components/CombatantCard.tsx').includes(
-      "import { combatDisplayName } from '../combatName'",
+    'SC154) iniciativa abrevia só o PERSONAGEM (criatura/NPC ficam completos)',
+    // Só o PERSONAGEM é abreviado na coluna estreita da iniciativa. Criaturas e
+    // NPCs mantêm o nome COMPLETO em todo campo (identidade deles na mesa).
+    source('src/combat/combatName.ts').includes(
+      "return combatant.kind === 'CHARACTER' ? combatDisplayName(combatant.name) : combatant.name;",
     ) &&
       source('src/combat/components/CombatantCard.tsx').includes(
+        "import { combatantDisplayName } from '../combatName'",
+      ) &&
+      source('src/combat/components/CombatantCard.tsx').includes(
+        'combatantDisplayName(combatant)',
+      ) &&
+      !source('src/combat/components/CombatantCard.tsx').includes(
+        'combatDisplayName(combatant.name)',
+      ),
+  );
+  check(
+    'SC155) criaturas e NPCs nunca são abreviados na iniciativa e no turno',
+    source('src/combat/components/CombatTurnPanel.tsx').includes(
+      "import { combatantDisplayName } from '../combatName'",
+    ) &&
+      source('src/combat/components/CombatTurnPanel.tsx').includes(
+        'combatantDisplayName(combatant)',
+      ) &&
+      !source('src/combat/components/CombatantCard.tsx').includes(
         'combatDisplayName(combatant.name)',
       ) &&
-      source('src/combat/components/CombatTurnPanel.tsx').includes(
-        "import { combatDisplayName } from '../combatName'",
-      ) &&
-      source('src/combat/components/CombatTurnPanel.tsx').includes(
+      !source('src/combat/components/CombatTurnPanel.tsx').includes(
         'combatDisplayName(combatant.name)',
       ) &&
       !/\{combatant\.name\}/.test(source('src/combat/components/CombatantCard.tsx')) &&
