@@ -1789,7 +1789,9 @@
     'note tail'
     'slots slots';
   grid-template-rows: auto minmax(0, 1fr);
-  row-gap: 0.125rem;
+  /* Sem gap de linha: quando não há aviso/filtro a linha de cima mede 0 e os
+     dois pisos de slots ficam com os 81px inteiros. */
+  row-gap: 0;
   align-content: stretch;
   height: 100%;
   min-width: 0;
@@ -1960,26 +1962,57 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Custo TÍPICO (A/B/R): informação visual; o servidor continua cobrando. */
+/* Custo TÍPICO no canto do slot: o mesmo GLIFO do recurso na dock (losango =
+   Ação, hexágono = Ação Bônus, estrela = Reação), sem letra. A forma identifica
+   o recurso e a leitura fica coesa com a coluna de recursos. O servidor
+   continua sendo quem cobra. */
 .hotbar-cost {
   position: absolute;
-  right: 3px;
+  right: 2px;
   bottom: 2px;
-  min-width: 0.75rem;
-  padding: 1px 2px;
-  border: 1px solid #6e4b22;
-  border-radius: 3px;
-  background: #19100c;
-  font-size: 0.5rem;
-  line-height: 1.1;
-  letter-spacing: 0.03em;
-  color: #cfb078;
+  display: grid;
+  place-items: center;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 0;
+  background: none;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.85));
 }
 
-.hotbar-cost.is-action,
-.hotbar-cost.is-bonus-action {
-  color: #ffe49a;
-  border-color: #8b682b;
+.hotbar-cost-mark {
+  display: block;
+  width: 0.375rem;
+  height: 0.375rem;
+}
+
+/* Losango girado de latão — o MESMO desenho do glifo de Ação da dock. */
+.hotbar-cost.is-action .hotbar-cost-mark {
+  background: linear-gradient(135deg, #ffe394, #b98228);
+  border: 1px solid #f2ca5d;
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.9);
+}
+
+/* Hexágono ponta-para-cima — Ação Bônus. */
+.hotbar-cost.is-bonus-action .hotbar-cost-mark {
+  background: linear-gradient(135deg, #ffc07a, #b0562a);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+
+/* Estrela de oito pontas — Reação. */
+.hotbar-cost.is-reaction .hotbar-cost-mark {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  background: #efab92;
+  clip-path: polygon(50% 0, 60% 37%, 100% 50%, 60% 63%, 50% 100%, 40% 63%, 0 50%, 40% 37%);
+}
+
+/* A linha discreta do topo (aviso de categoria vazia / limpar / ver todas) só
+   aparece com conteúdo; aqui ela ganha o respiro que o `row-gap: 0` tirou. */
+.hotbar-note,
+.hotbar-clear-filter,
+.hotbar-all {
+  margin-block-end: 0.125rem;
 }
 
 .hotbar-slot.is-empty {
@@ -2126,16 +2159,6 @@
   grid-column: 2;
   font-size: 0.68rem;
   color: #c8b28a;
-}
-
-.hotbar-all-count {
-  grid-area: tail;
-  justify-self: end;
-  flex: 0 0 auto;
-  margin-left: 0;
-  font-size: 0.5625rem;
-  color: #a28a59;
-  font-variant-numeric: tabular-nums;
 }
 
 .attack-tray-head {

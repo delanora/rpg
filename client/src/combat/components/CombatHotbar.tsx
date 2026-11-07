@@ -8,14 +8,7 @@ import {
   type HotbarFilter,
 } from '../hotbar';
 
-/** Letra do custo no canto do slot: A = Ação, B = Ação Bônus, R = Reação. */
-const COST_SIGN: Record<HotbarCost, string> = {
-  action: 'A',
-  'bonus-action': 'B',
-  reaction: 'R',
-  other: '',
-};
-
+/** Letra do custo no rótulo acessível e na prévia (A = Ação, B = Bônus, R = Reação). */
 const COST_LABEL: Record<HotbarCost, string> = {
   action: 'Ação',
   'bonus-action': 'Ação Bônus',
@@ -51,8 +44,11 @@ interface CombatHotbarProps {
  * ocupa as primeiras posições e o resto fica visivelmente vazio. Nada é
  * inventado para preencher slot, e o excedente continua em "ver todas".
  *
- * Sem cabeçalho de título: o número discreto do rodapé (preenchidos/32) é a
- * única indicação de contexto, e os slots são os protagonistas.
+ * Sem cabeçalho, sem título e SEM contador: as duas linhas dividem a altura
+ * inteira da célula que a dock reserva. O custo típico de cada ação aparece no
+ * canto do slot com o MESMO glifo do recurso na dock (losango = Ação, hexágono
+ * = Ação Bônus, estrela = Reação) — forma em vez de letra, coesa com a coluna de
+ * recursos. Nada disso cobra nada: quem cobra Ação/Bônus/Reação é o servidor.
  */
 export function CombatHotbar({
   entries,
@@ -69,7 +65,6 @@ export function CombatHotbar({
   if (entries.length === 0 && !filter) return null;
 
   const slots = buildHotbarSlots(entries);
-  const filled = slots.filter((slot) => slot.entry !== null).length;
   const emptyNote =
     filter && entries.length === 0
       ? `Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`
@@ -115,9 +110,11 @@ export function CombatHotbar({
                 {slot.index}
               </span>
               <Icon name={entry.icon} size={18} />
-              {COST_SIGN[entry.cost] ? (
+              {/* Custo TÍPICO: o glifo do RECURSO (o mesmo da coluna da dock),
+                  no canto do slot — sem letra "A/B/R". */}
+              {entry.cost !== 'other' ? (
                 <span className={`hotbar-cost is-${entry.cost}`} aria-hidden="true">
-                  {COST_SIGN[entry.cost]}
+                  <span className="hotbar-cost-mark" />
                 </span>
               ) : null}
 
@@ -162,11 +159,9 @@ export function CombatHotbar({
           </div>
         </details>
       ) : (
-        // Contador discreto: quantas posições da grade estão PREENCHIDAS. Nunca
-        // um botão que não faz nada.
-        <span className="hotbar-all-count">
-          {filled}/{HOTBAR_SLOTS}
-        </span>
+        // Acima de 32 entradas a lista completa abre daqui; fora isso NADA é
+        // desenhado na linha do topo — os slots ficam com a altura inteira.
+        null
       )}
     </section>
   );

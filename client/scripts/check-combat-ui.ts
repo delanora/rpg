@@ -7624,6 +7624,7 @@ check(
     workspaceRule('.combat-hotbar').includes("'note tail'") &&
       workspaceRule('.combat-hotbar').includes("'slots slots'") &&
       workspaceRule('.combat-hotbar').includes('grid-template-rows: auto minmax(0, 1fr);') &&
+      workspaceRule('.combat-hotbar').includes('row-gap: 0;') &&
       workspaceRule('.combat-hotbar').includes('height: 100%;') &&
       workspaceRule('.hotbar-slots').includes('display: grid;') &&
       workspaceRule('.hotbar-slots').includes(
@@ -7658,16 +7659,30 @@ check(
       !hotbarComponentSource.includes('>Hotbar<') &&
       !hotbarComponentSource.includes('>HOTBAR<') &&
       !hotbarComponentSource.includes("name=\"sword\" size={13}") &&
-      // Indicador leve permitido: contador de posições PREENCHIDAS.
-      hotbarComponentSource.includes(
-        'const filled = slots.filter((slot) => slot.entry !== null).length;',
-      ) &&
-      hotbarComponentSource.includes('{filled}/{HOTBAR_SLOTS}') &&
+      // Nem contador: a linha do topo fica vazia quando não há aviso/filtro, e
+      // os dois pisos de slots ganham a altura inteira da célula.
+      !hotbarComponentSource.includes('hotbar-all-count') &&
+      !hotbarComponentSource.includes('{filled}/{HOTBAR_SLOTS}') &&
+      !workspaceActive.includes('.hotbar-all-count') &&
+      workspaceRule('.combat-hotbar').includes('row-gap: 0;') &&
       // As duas superfícies da linha discreta continuam existindo.
       hotbarComponentSource.includes('className="hotbar-note"') &&
       hotbarComponentSource.includes('className="hotbar-clear-filter"') &&
       workspaceRule('.hotbar-note').includes('grid-area: note;') &&
-      workspaceRule('.hotbar-all-count').includes('grid-area: tail;') &&
+      // Custo no canto = GLIFO do recurso (forma), nunca a letra A/B/R.
+      hotbarComponentSource.includes('className="hotbar-cost-mark"') &&
+      !hotbarComponentSource.includes('COST_SIGN') &&
+      !hotbarComponentSource.includes("action: 'A'") &&
+      !hotbarComponentSource.includes(">A<") &&
+      workspaceRule('.hotbar-cost.is-action .hotbar-cost-mark').includes(
+        'transform: rotate(45deg) scale(0.9);',
+      ) &&
+      workspaceRule('.hotbar-cost.is-bonus-action .hotbar-cost-mark').includes(
+        'clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);',
+      ) &&
+      workspaceRule('.hotbar-cost.is-reaction .hotbar-cost-mark').includes(
+        'clip-path: polygon(50% 0, 60% 37%, 100% 50%, 60% 63%, 50% 100%, 40% 63%, 0 50%, 40% 37%);',
+      ) &&
       // Slot vazio é uma POSIÇÃO da grade, nunca conteúdo inventado.
       hotbarComponentSource.includes('className="hotbar-slot is-empty"') &&
       !hotbarComponentSource.includes('is-unavailable') &&
@@ -7695,7 +7710,7 @@ check(
       trackerSource.includes('toggleHotbarPick(prev, entry.sourceId)') &&
       hotbarComponentSource.includes('aria-pressed={selectedId === entry.id}') &&
       hotbarComponentSource.includes('onClick={() => onSelect(entry)}') &&
-      hotbarComponentSource.includes('const COST_SIGN: Record<HotbarCost, string> = {') &&
+      hotbarComponentSource.includes('const COST_LABEL: Record<HotbarCost, string> = {') &&
       // UMA Hotbar, UMA dock, UM painel de ataque: nada de fluxo paralelo.
       (trackerSource.match(/<CombatHotbar/g) ?? []).length === 1 &&
       (trackerSource.match(/<PlayerCombatDock/g) ?? []).length === 1 &&
@@ -7736,8 +7751,11 @@ check(
       (hotbarMarkup.match(/aria-pressed="false"/g) ?? []).length === 3 &&
       !hotbarMarkup.includes('hotbar-title') &&
       !hotbarMarkup.includes('>Hotbar<') &&
-      // O contador discreto substitui o título: preenchidos/32.
-      hotbarMarkup.includes('3/32') &&
+      // Nenhum contador e nenhuma letra de custo: glifo no canto do slot.
+      !/\d+\/32/.test(hotbarMarkup) &&
+      (hotbarMarkup.match(/hotbar-cost-mark/g) ?? []).length === 2 &&
+      !hotbarMarkup.includes('>A<') &&
+      !hotbarMarkup.includes('>B<') &&
       // Índice 1-based aparece no rótulo acessível do primeiro slot.
       hotbarMarkup.includes('aria-label="1. ') &&
       hotbarMarkup.includes('aria-label="3. ') &&
