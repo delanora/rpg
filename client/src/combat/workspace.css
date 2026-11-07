@@ -1219,20 +1219,48 @@
 .dock-resource-tip {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 0.4rem);
+  bottom: calc(100% + 0.5rem);
   z-index: 1;
   display: none;
   transform: translateX(-50%);
   width: max-content;
-  max-width: 12rem;
-  padding: 0.2rem 0.35rem;
-  border: 1px solid #6e4b22;
-  border-radius: 4px;
-  background: #19100c;
-  color: #e7c982;
-  font-size: 0.5625rem;
-  line-height: 1.3;
+  /* MEDIDA do balão, não do glifo: o texto da Ação Bônus é longo e, com 12rem,
+     virava uma coluna estreita de 6–7 linhas. 17rem cabe o aviso em 2–3 linhas
+     e nunca passa da viewport em tela estreita. */
+  max-width: min(17rem, 72vw);
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #b38a37;
+  border-radius: 6px;
+  background: linear-gradient(160deg, #2d1e12, #110c08);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.5);
+  color: #f0d9a4;
+  /* 10px com entrelinha 1.35: o aviso continua legível no tema claro do app
+     (o fundo do balão é escuro, como o da prévia da Hotbar). */
+  font-size: 0.625rem;
+  line-height: 1.35;
+  text-align: left;
   pointer-events: none;
+}
+
+/* Ponteiro para o glifo: diz de QUAL recurso é o balão sem precisar de título. */
+.dock-resource-tip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 0.5rem;
+  height: 0.5rem;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-right: 1px solid #b38a37;
+  border-bottom: 1px solid #b38a37;
+  background: #110c08;
+}
+
+/* Com o MENU DE AÇÃO aberto o balão de estado sai da frente: os dois abrem no
+   mesmo canto (acima da dock) e o balão cobriria os primeiros itens do menu.
+   O gatilho ganha `.active` enquanto o menu está aberto. */
+.dock-resource:has(.action-menu-trigger.active) .dock-resource-tip {
+  display: none;
 }
 
 .dock-resource:hover .dock-resource-tip,
@@ -2096,4 +2124,15 @@
   margin-left: 0.1rem;
   padding-inline: 0.35rem;
   opacity: 1;
+}
+
+/* Quem pediu menos movimento recebe a MESMA revelação, sem animação: o rótulo
+   aparece no hover/foco de uma vez, sem transição de caixa. */
+@media (prefers-reduced-motion: reduce) {
+  .app-shell.combat-active:has(> .app-main > .sheet)
+    :is(.inv-fab, .dice-fab:not(.is-master), .notes-fab:not(.master-notes-fab)),
+  .app-shell.combat-active:has(> .app-main > .sheet)
+    :is(.inv-fab-label, .dice-fab-label, .notes-fab-label, .inv-fab-count) {
+    transition: none;
+  }
 }

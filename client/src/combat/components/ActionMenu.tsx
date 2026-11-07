@@ -121,8 +121,10 @@ export function ActionMenu({
         }
         aria-haspopup="menu"
         aria-expanded={open}
+        // SEM `title`: o gatilho compacto vive DENTRO da célula que já tem o
+        // balão da dock. Com o atributo, o navegador abria um segundo balão por
+        // cima do nosso. O nome acessível basta e os comandos estão no menu.
         aria-label={compact ? 'Ações gerais' : undefined}
-        title={compact ? 'Ações gerais (Disparada, Esquivar, Preparar, Levantar-se, Estabilizar)' : undefined}
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
       >
@@ -163,10 +165,6 @@ export function ActionMenu({
               role="menuitem"
               className="action-menu-item context"
               disabled={busy || !canActuallyStand}
-              title={
-                standUp?.reason ??
-                'Levantar-se custa metade do deslocamento efetivo e não gasta a Ação.'
-              }
               onClick={() => {
                 onStandUp?.();
                 setOpen(false);
@@ -188,7 +186,6 @@ export function ActionMenu({
               role="menuitem"
               className="action-menu-item context"
               disabled={busy || actionsDisabled}
-              title="O alvo precisa estar ao alcance físico do personagem. O Mestre resolve posicionamento quando necessário."
               onClick={chooseStabilize}
             >
               <span className="action-menu-item-head">

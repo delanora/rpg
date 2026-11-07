@@ -258,10 +258,10 @@ export function VitalsSection({
               <Icon name="shield" size={13} />
               <span className="vital-label-text">Classe de Armadura</span>
               {armorClass.armorNonProficiency.armor || armorClass.armorNonProficiency.shield ? (
-                <span
-                  className="vital-warn"
-                  title="Equipamento sem proficiência — penalidades de não proficiência ativas"
-                >
+                // O aviso NÃO tem `title`: o card já abre o próprio balão no
+                // hover/foco, e o texto dele está no `.vital-tip` abaixo. Dois
+                // balões no mesmo ponteiro eram o defeito.
+                <span className="vital-warn" aria-hidden="true">
                   ⚠
                 </span>
               ) : null}
@@ -277,7 +277,6 @@ export function VitalsSection({
                   min={0}
                   max={99}
                   ariaLabel="Classe de armadura"
-                  title="CA manual do mestre (igual à automática ou 0 volta ao cálculo)"
                   onCommit={(value) => {
                     const next = clampInt(
                       value,
@@ -301,6 +300,18 @@ export function VitalsSection({
               {describeArmorClass(armorClass).map((part) => (
                 <span key={part}>{part}</span>
               ))}
+              {armorClass.armorNonProficiency.armor ||
+              armorClass.armorNonProficiency.shield ? (
+                <span>
+                  Equipamento sem proficiência: as penalidades de não proficiência estão ativas.
+                </span>
+              ) : null}
+              {masterView && !readOnly ? (
+                <span>
+                  No painel do Mestre o valor pode ser fixado à mão; igual à automática ou 0 volta
+                  ao cálculo.
+                </span>
+              ) : null}
             </span>
           </div>
 

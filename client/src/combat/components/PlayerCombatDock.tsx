@@ -125,8 +125,10 @@ export function PlayerCombatDock({
     movement.budget > 0
       ? Math.max(0, Math.min(100, (movement.remaining / movement.budget) * 100))
       : 0;
-  // Texto COMPLETO de cada recurso: vai no `aria-label`/`title` e no balão de
-  // hover/foco. O glifo nunca é a única fonte de informação.
+  // Texto COMPLETO de cada recurso: vai no BALÃO de hover/foco e é a descrição
+  // acessível (`aria-describedby`). Nada de `title`: com ele o navegador abria
+  // um segundo balão, com o mesmo texto, por cima do nosso. O glifo nunca é a
+  // única fonte de informação.
   const actionsLabel = economy
     ? `Ação — ${actionsLeft} de ${economy.actionsGranted} ${
         economy.actionsGranted === 1 ? 'disponível' : 'disponíveis'
@@ -216,8 +218,9 @@ export function PlayerCombatDock({
 
       {/* RECURSOS — coluna vertical de símbolos, na ordem do PHB 2014:
           Ação (losango) · Ação Bônus (hexágono) · Reação (estrela). SEM texto
-          permanente na coluna: o estado completo fica no balão de hover/foco e
-          no `aria-label`, e o glifo carrega a leitura visual. */}
+          permanente na coluna: o estado completo fica no balão de hover/foco,
+          que também é a descrição acessível da célula, e o glifo carrega a
+          leitura visual. */}
       <div className="dock-resources" aria-label="Recursos do turno">
         {deathBlocked ? (
           <p className="dock-death" title="Sem economia de turno — Testes contra a Morte">
@@ -229,8 +232,8 @@ export function PlayerCombatDock({
             <div
               className="dock-resource is-action"
               tabIndex={0}
-              title={actionsLabel}
-              aria-label={actionsLabel}
+              aria-label="Ação"
+              aria-describedby="dock-action-tip"
             >
               <span className="dock-resource-label">Ação</span>
               <Gems
@@ -238,7 +241,11 @@ export function PlayerCombatDock({
                 used={economy?.actionsUsed ?? 0}
                 kind="action"
               />
-              <span className="dock-resource-tip" aria-hidden="true">
+              <span
+                className="dock-resource-tip"
+                id="dock-action-tip"
+                role="tooltip"
+              >
                 {actionsLabel}
               </span>
               {/* O MESMO menu de Ação (Disparada, Esquivar, Preparar, Levantar,
@@ -251,8 +258,8 @@ export function PlayerCombatDock({
             <div
               className="dock-resource"
               tabIndex={0}
-              title={bonusLabel}
-              aria-label={bonusLabel}
+              aria-label="Ação bônus"
+              aria-describedby="dock-bonus-tip"
             >
               <span className="dock-resource-label">Ação bônus</span>
               <span
@@ -261,7 +268,11 @@ export function PlayerCombatDock({
                 }`}
                 aria-hidden="true"
               />
-              <span className="dock-resource-tip" aria-hidden="true">
+              <span
+                className="dock-resource-tip"
+                id="dock-bonus-tip"
+                role="tooltip"
+              >
                 {bonusLabel}
               </span>
             </div>
@@ -269,8 +280,8 @@ export function PlayerCombatDock({
             <div
               className="dock-resource"
               tabIndex={0}
-              title={reactionLabel}
-              aria-label={reactionLabel}
+              aria-label="Reação"
+              aria-describedby="dock-reaction-tip"
             >
               <span className="dock-resource-label">Reação</span>
               <span
@@ -279,7 +290,11 @@ export function PlayerCombatDock({
                 }`}
                 aria-hidden="true"
               />
-              <span className="dock-resource-tip" aria-hidden="true">
+              <span
+                className="dock-resource-tip"
+                id="dock-reaction-tip"
+                role="tooltip"
+              >
                 {reactionLabel}
               </span>
             </div>

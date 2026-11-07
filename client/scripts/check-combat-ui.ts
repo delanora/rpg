@@ -6801,11 +6801,19 @@ check(
     // O `transform` do hover cria stacking context: sem promoção, o balão fica
     // preso dentro da célula e a Hotbar (posterior no DOM) pinta por cima.
     resourcePromote.includes('z-index: 60;') &&
-      resourceTip.includes('bottom: calc(100% + 0.4rem);') &&
+      resourceTip.includes('bottom: calc(100% + 0.5rem);') &&
       resourceTip.includes('left: 50%;') &&
       resourceTip.includes('transform: translateX(-50%);') &&
       !resourceTip.includes('left: calc(100%') &&
       resourceTip.includes('position: absolute;') &&
+      // Largura é MEDIDA do texto (o aviso da Ação Bônus é longo) e nunca passa
+      // da viewport; o texto não é centralizado dentro do balão.
+      resourceTip.includes('width: max-content;') &&
+      resourceTip.includes('max-width: min(17rem, 72vw);') &&
+      resourceTip.includes('font-size: 0.625rem;') &&
+      resourceTip.includes('line-height: 1.35;') &&
+      resourceTip.includes('text-align: left;') &&
+      workspaceRule('.dock-resource-tip::after').includes('content: \'\';') &&
       resourceBase.includes('position: relative;') &&
       // Nada na cadeia da dock recorta o balão.
       !workspaceRule('.combat-dock').includes('overflow') &&
@@ -6842,6 +6850,100 @@ check(
       // Mesmos componentes/handlers: só CSS.
       fabSource.includes('<Icon name="bag" size={18} />') &&
       fabSource.includes('<Icon name="die" size={18} />'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Auditoria de tooltips duplicados (complemento da 6.6M.6.1.3).           */
+  /* ---------------------------------------------------------------------- */
+
+  const actionMenuSource = source('src/combat/components/ActionMenu.tsx');
+  const vitalsSource = source('src/components/sections/VitalsSection.tsx');
+
+  check(
+    'SC103) recursos da dock expõem UM tooltip (o balão) e nenhum `title` nativo redundante',
+    // O mesmo texto estava no `title` E no balão: o navegador abria os dois.
+    !dockSource.includes('title={actionsLabel}') &&
+      !dockSource.includes('title={bonusLabel}') &&
+      !dockSource.includes('title={reactionLabel}') &&
+      !dockSource.includes('className="dock-resource-tip" aria-hidden') &&
+      ['dock-action-tip', 'dock-bonus-tip', 'dock-reaction-tip'].every((id) =>
+        dockSource.includes(`id="${id}"`),
+      ) &&
+      dockSource.includes('aria-describedby="dock-action-tip"') &&
+      dockSource.includes('aria-describedby="dock-bonus-tip"') &&
+      dockSource.includes('aria-describedby="dock-reaction-tip"') &&
+      // Nome curto (rótulo visível) + descrição (estado) — o texto completo
+      // continua chegando ao leitor de tela por `aria-describedby`.
+      dockSource.includes('aria-label="Ação"') &&
+      dockSource.includes('aria-label="Ação bônus"') &&
+      dockSource.includes('aria-label="Reação"') &&
+      (dockSource.match(/role="tooltip"/g) ?? []).length >= 3 &&
+      // Hover e foco continuam abrindo o balão (gatilho focável).
+      workspaceRule('.dock-resource').includes('position: relative;') &&
+      (dockSource.match(/tabIndex=\{0\}/g) ?? []).length >= 3,
+  );
+
+  check(
+    'SC104) ActionMenu dentro do balão não abre um segundo tooltip e mantém os mesmos comandos',
+    // O gatilho compacto vive DENTRO da célula que já tem balão; os `title` dele
+    // e dos itens repetiam o que está escrito no próprio menu.
+    !actionMenuSource.includes('title=') &&
+      actionMenuSource.includes("aria-label={compact ? 'Ações gerais' : undefined}") &&
+      // As explicações continuam VISÍVEIS (nada foi perdido com a remoção).
+      actionMenuSource.includes('Custo: metade do deslocamento') &&
+      actionMenuSource.includes('Custo: 1 Ação — Sabedoria (Medicina) CD 10.') &&
+      actionMenuSource.includes('{standUp?.reason ??') &&
+      // Mesmos handlers/estado: só apresentação mudou.
+      actionMenuSource.includes('onSelect(item.id);') &&
+      actionMenuSource.includes('onStabilize?.(target.id);') &&
+      actionMenuSource.includes("event.key === 'Escape'"),
+  );
+
+  const tipWithMenuOpen = workspaceRule(
+    '.dock-resource:has(.action-menu-trigger.active) .dock-resource-tip',
+  );
+  const reduceAt = workspaceActive.indexOf('@media (prefers-reduced-motion: reduce)');
+  const reduceCss = reduceAt < 0 ? '' : workspaceActive.slice(reduceAt, reduceAt + 900);
+
+  check(
+    'SC105) o balão sai da frente do menu aberto e os FABs respeitam prefers-reduced-motion',
+    tipWithMenuOpen.includes('display: none;') &&
+      reduceCss.includes(
+        ':is(.inv-fab, .dice-fab:not(.is-master), .notes-fab:not(.master-notes-fab))',
+      ) &&
+      reduceCss.includes('transition: none;') &&
+      // Fora de combate NENHUMA dessas regras vale (escopo preservado).
+      reduceCss.includes('.app-shell.combat-active:has(> .app-main > .sheet)'),
+  );
+
+  const sharedTips =
+    source('src/components/FieldInfo.tsx') +
+    source('src/components/ExpertiseLaurel.tsx') +
+    source('src/combat/components/CombatStateBadges.tsx') +
+    source('src/combat/components/ConditionBadges.tsx');
+
+  check(
+    'SC106) componentes compartilhados de tooltip não geram `title` nativo junto do balão',
+    // A convenção: quem já desenha tooltip próprio NÃO põe `title` no gatilho.
+    !sharedTips.includes('title=') &&
+      (sharedTips.match(/role="tooltip"/g) ?? []).length >= 5 &&
+      source('src/components/FieldInfo.tsx').includes('tabIndex={0}') &&
+      // Vida e Defesa: o aviso de proficiência foi para o MESMO balão do card.
+      !vitalsSource.includes('title="Equipamento sem proficiência') &&
+      vitalsSource.includes('Equipamento sem proficiência: as penalidades') &&
+      !vitalsSource.includes('title="CA manual do mestre'),
+  );
+
+  check(
+    'SC107) tooltips nativos legítimos (sem alternativa personalizada) foram preservados',
+    source('src/components/AppHeader.tsx').includes("title={theme === 'dark' ? 'Modo pergaminho'") &&
+      source('src/combat/components/CombatantCard.tsx').includes(
+        'title="Vida e CA visíveis apenas para o mestre"',
+      ) &&
+      source('src/combat/grid/GridToken.tsx').includes('title="Oculto dos jogadores"') &&
+      source('src/components/InventoryDock.tsx').includes("title={open ? 'Fechar o inventário'") &&
+      source('src/components/sections/IdentitySection.tsx').includes('title={raceInfo ||') &&
+      dockSource.includes('title="Sem economia de turno — Testes contra a Morte"'),
   );
 
   check(
