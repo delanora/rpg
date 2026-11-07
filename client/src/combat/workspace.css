@@ -1892,7 +1892,9 @@
   grid-template-columns: repeat(16, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 0.1875rem;
-  justify-items: center;
+  /* As 16 colunas dividem TODA a largura útil: nenhum vão sobrando entre os
+     slots (antes havia um teto de largura que abria folga em cada coluna). */
+  justify-items: stretch;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -1901,15 +1903,14 @@
      Só no empilhamento estreito a faixa passa a rolar de lado. */
 }
 
-/* Slot: menor que o protótipo de 8, ainda clicável e legível. A largura vem da
-   coluna (com teto para não virar faixa) e a altura da linha — o desenho é
-   uniforme nas duas linhas. O número é indicação, nunca atalho. */
+/* Slot: menor que o protótipo de 8, ainda clicável e legível. A largura é a da
+   COLUNA (sem teto: preenche o espaço disponível) e a altura é a da linha — o
+   desenho é uniforme nas duas linhas. O número é indicação, nunca atalho. */
 .hotbar-slot {
   position: relative;
   display: grid;
   place-items: center;
   width: 100%;
-  max-width: 2.5rem;
   height: 100%;
   min-height: 0;
   padding: 0;

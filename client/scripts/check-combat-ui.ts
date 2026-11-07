@@ -6738,7 +6738,9 @@ check(
     workspaceRule('.dock-portrait').includes('border-radius: 50%;') &&
       workspaceRule('.dock-portrait').includes('border: 3px solid #c49b3d;') &&
       workspaceRule('.dock-portrait-cell').includes('width: 5.5rem;') &&
-      workspaceRule('.hotbar-slot').includes('max-width: 2.5rem;') &&
+      // Sem teto de largura: o slot preenche a coluna inteira.
+      !workspaceRule('.hotbar-slot').includes('max-width:') &&
+      workspaceRule('.hotbar-slot').includes('width: 100%;') &&
       workspaceRule('.hotbar-slots').includes(
         'grid-template-columns: repeat(16, minmax(0, 1fr));',
       ) &&
@@ -7629,9 +7631,11 @@ check(
       ) &&
       workspaceRule('.hotbar-slots').includes('grid-template-rows: repeat(2, minmax(0, 1fr));') &&
       workspaceRule('.hotbar-slots').includes('min-height: 0;') &&
-      // O slot acompanha a célula, com teto de largura: 32 caixas uniformes.
+      // O slot acompanha a célula SEM teto de largura: 32 caixas uniformes que
+      // ocupam toda a largura útil (nenhum vão sobrando entre elas).
+      workspaceRule('.hotbar-slots').includes('justify-items: stretch;') &&
       workspaceRule('.hotbar-slot').includes('width: 100%;') &&
-      workspaceRule('.hotbar-slot').includes('max-width: 2.5rem;') &&
+      !workspaceRule('.hotbar-slot').includes('max-width:') &&
       workspaceRule('.hotbar-slot').includes('height: 100%;') &&
       !workspaceRule('.hotbar-slot').includes('3.4375rem') &&
       !workspaceRule('.hotbar-slots').includes('height: 3.6875rem;') &&
