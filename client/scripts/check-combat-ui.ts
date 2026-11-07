@@ -6749,7 +6749,13 @@ check(
   check(
     'SC95) retrato circular de latão (~90px) e slots da grade 2×24, com UMA montagem',
     workspaceRule('.dock-portrait').includes('border-radius: 50%;') &&
-      workspaceRule('.dock-portrait').includes('border: 3px solid #c49b3d;') &&
+      // 6.6M.6.3.1.9: retrato sem moldura — nem na dock, nem no card da
+      // iniciativa (a borda de latão engordava o contorno da imagem).
+      !workspaceRule('.dock-portrait').includes('border:') &&
+      workspaceRule('.combat-workspace .combatant-card .portrait').includes('border: 0;') &&
+      workspaceRule('.combat-workspace .combatant-card .portrait').includes(
+        'box-shadow: none;',
+      ) &&
       workspaceRule('.dock-portrait-cell').includes('width: 5.5rem;') &&
       // Sem teto de largura: o slot preenche a coluna inteira.
       !workspaceRule('.hotbar-slot').includes('max-width:') &&

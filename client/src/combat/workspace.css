@@ -129,6 +129,14 @@
   gap: 0.4rem;
 }
 
+/* Retrato do card da iniciativa SEM moldura: `.portrait` tem borda e aro de
+   tinta que, sobre a placa do card, viravam um contorno marrom em volta da
+   imagem. Aqui fica só a foto — o aro padrão do resto do app não muda. */
+.combat-workspace .combatant-card .portrait {
+  border: 0;
+  box-shadow: none;
+}
+
 .combat-workspace .combatant-card-rank {
   width: 1.55rem;
   height: 1.55rem;
@@ -967,8 +975,8 @@
   height: 100%;
   padding: 0;
   overflow: hidden;
-  /* Moldura de 3px e aros do v4. */
-  border: 3px solid #c49b3d;
+  /* SEM moldura: o círculo é definido pela própria imagem. A antiga borda de
+     latão de 3px desenhava um contorno marrom em volta do retrato. */
   border-radius: 50%;
   background: radial-gradient(
     circle at 50% 28%,
@@ -992,7 +1000,6 @@
 
 .dock-portrait:hover,
 .dock-portrait:focus-visible {
-  border-color: var(--dock-gold-hi);
   box-shadow:
     inset 0 0 25px rgba(5, 5, 5, 0.48),
     0 2px 0 2px #070604,
