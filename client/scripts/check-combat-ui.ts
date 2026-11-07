@@ -8256,6 +8256,26 @@ check(
   );
 
   check(
+    'SC154) iniciativa mostra só o PRIMEIRO nome do combatente',
+    // A coluna da iniciativa é estreita: o nome exibido ali é o primeiro nome.
+    // É formatação de tela — o servidor e os logs seguem com o nome completo.
+    source('src/combat/components/CombatantCard.tsx').includes(
+      "import { combatDisplayName } from '../combatName'",
+    ) &&
+      source('src/combat/components/CombatantCard.tsx').includes(
+        'combatDisplayName(combatant.name)',
+      ) &&
+      source('src/combat/components/CombatTurnPanel.tsx').includes(
+        "import { combatDisplayName } from '../combatName'",
+      ) &&
+      source('src/combat/components/CombatTurnPanel.tsx').includes(
+        'combatDisplayName(combatant.name)',
+      ) &&
+      !/\{combatant\.name\}/.test(source('src/combat/components/CombatantCard.tsx')) &&
+      !/\{combatant\.name\}/.test(source('src/combat/components/CombatTurnPanel.tsx')),
+  );
+
+  check(
     'SC151) persistência autorizada: 48 posições no servidor, versão + idempotência',
     repoFile('prisma/schema.prisma').includes('hotbar           Json?') &&
       repoFile('src/modules/characters/characters.schema.ts').includes(

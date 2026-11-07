@@ -7,6 +7,7 @@ import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import type { CombatantDto, DeathState } from '../../types';
 import { combatantKindIcon, combatantKindLabel } from '../combatVisuals';
+import { combatDisplayName } from '../combatName';
 
 /** O ciclo de morte está ativo? (contadores, estabilização, pending, Death Saves). */
 function hasDeathLifecycle(death: DeathState): boolean {
@@ -95,7 +96,7 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
           <span className="combatant-card-id">
             <span className="combatant-card-name-row">
               <span className="combatant-card-name">
-                {combatant.name}
+                {combatDisplayName(combatant.name)}
                 {combatant.missing ? <em className="tag">removido</em> : null}
               </span>
               {current ? (
@@ -132,7 +133,7 @@ export function CombatantCard({ combatant, rank, current, next, trailing }: Comb
             <HpBar
               current={combatant.hpCurrent ?? 0}
               max={combatant.hpMax ?? 0}
-              label={combatant.name}
+              label={combatDisplayName(combatant.name)}
               className="combatant-card-hp"
             />
             <span className="combatant-card-ac">CA {combatant.armorClass}</span>
