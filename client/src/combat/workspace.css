@@ -1751,6 +1751,47 @@
   pointer-events: none;
 }
 
+/* CICLO DE MORTE (6.6M.8) — a MESMA estética de indisponibilidade da
+   pré-iniciativa aplicada à Hotbar de 48 slots: os slots continuam desenhados e
+   a identificação do estado fica centrada por cima. Sem CTA e sem animação de
+   "outro turno" — o personagem está no PRÓPRIO turno, apenas bloqueado. */
+.dock-hotbar.is-death-blocked .dock-hotbar-track {
+  filter: blur(1.6px) saturate(0.45) brightness(0.62);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+.dock-hotbar.is-death-blocked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  background: linear-gradient(180deg, rgba(12, 8, 5, 0.52), rgba(12, 8, 5, 0.78));
+  box-shadow: inset 0 0 0 1px rgba(161, 122, 50, 0.28);
+  pointer-events: none;
+}
+
+.dock-death-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--ink);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
 /* CTA FLUTUANTE — ancorado na área da Hotbar e CENTRADO nos dois eixos. O
    overlay não tem painel próprio (o véu sustenta o contraste): a única coisa
    por cima da Hotbar desfocada é o botão. `absolute` mantém os 81px da célula. */

@@ -77,6 +77,7 @@ import {
   type ServerReactionOpportunity,
 } from '../reactionOpportunitiesApi';
 import { actingCombatantFor, currentUserControlsCombatant, movementAuthorityOf } from './turnControl';
+import { deathDockLabel, deathLifecycleOf } from './deathDock';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
 /**
@@ -518,8 +519,8 @@ export function CombatTracker({
   const rolledCount = combat.combatants.filter((item) => item.rolled).length;
 
   // Ciclo de morte do combatente DO TURNO (o único que pode rolar Teste agora).
-  const deathLifecycle = (state: DeathState | null): boolean =>
-    Boolean(state && (state.dead || state.pending || state.stabilized || state.deathSaves || state.successes > 0 || state.failures > 0));
+  // A regra é a de `deathDock.ts` — tracker, dock e testes leem a MESMA.
+  const deathLifecycle = (state: DeathState | null): boolean => deathLifecycleOf(state);
   // A entidade do ciclo de morte é a INSTÂNCIA de combate: o NPC/criatura tem
   // Death Saves próprios por cópia (nunca no template do bestiário) e o
   // personagem é resolvido para a ficha pelo próprio servidor.
@@ -611,6 +612,7 @@ export function CombatTracker({
     setAttackConfirm(null);
     setAttackExecuteReady(false);
   }, [hotbarPick]);
+
   const turnDeathState = current?.deathState ?? null;
   const deathSavePending = Boolean(
     turnDeathState &&
@@ -931,25 +933,42 @@ export function CombatTracker({
    *
    * Retrato, estado mecânico, utilitários e decisões urgentes não podem
    * desaparecer só porque outro combatente está agindo. A autoridade continua
-   * derivada do turno (`ownTurn` → `dockAccess`) e validada pelo SERVIDOR; o
-   * ciclo de morte do PRÓPRIO personagem é a única exceção, porque ali a barra
-   * persistente e o painel de Teste Contra a Morte são a superfície correta.
+   * derivada do turno (`ownTurn` → `dockAccess`) e validada pelo SERVIDOR.
+   *
+   * 6.6M.8 — O CICLO DE MORTE TAMBÉM NÃO DESMONTA A DOCK. Antes, o turno de
+   * Teste contra a Morte do próprio personagem zerava `dockCombatant` e a tela
+   * voltava para a composição antiga (barra persistente + atalhos soltos). Agora
+   * a dock continua montada e o que muda é a DISPONIBILIDADE: `dockDeathLabel`
+   * diz o estado e a Hotbar fica visível, porém inerte.
    */
-  const myDeathTurn = showDeathTurn && isMyTurn;
-  const dockCombatant = !isMaster && myCombatant && !myDeathTurn ? myCombatant : null;
+  const dockCombatant = !isMaster && myCombatant ? myCombatant : null;
+  const dockDeathLabel = deathDockLabel(dockCombatant?.deathState ?? null);
+  const dockDeathBlocked = dockDeathLabel !== null;
+  // ENTRAR NO CICLO DE MORTE encerra o fluxo de ataque: ficar Inconsciente a
+  // 0 PV não convive com alvo/modo/painel de ataque em aberto. É estado de UI —
+  // nenhuma rota é chamada e nenhum ataque em voo é cancelado.
+  useEffect(() => {
+    if (!dockDeathBlocked) return;
+    setTargetCombatantId(null);
+    setAttackRoll(null);
+    setHotbarPick(null);
+  }, [dockDeathBlocked]);
   /**
    * Espera: a dock existe, mas o turno é de outro combatente. Na
    * PRÉ-INICIATIVA a espera NÃO entra — ali o estado próprio é o miolo
    * bloqueado com o CTA de rolagem por cima.
    */
-  const dockWaiting = Boolean(dockCombatant) && !ownTurn && !awaitingInitiative;
+  const dockWaiting =
+    Boolean(dockCombatant) && !ownTurn && !awaitingInitiative && !dockDeathBlocked;
   const dockAccess = dockCombatant
     ? turnResourceAccess({
         active: true,
         hasActionHandler: true,
         economy: dockCombatant.turnEconomy,
-        canAct: dockCombatant.conditionEffects.canAct,
-        ownTurn,
+        // Ciclo de morte: a economia está bloqueada NO SERVIDOR e a dock não
+        // oferece Ação/Bônus/Movimento — sem desmontar a interface.
+        canAct: dockCombatant.conditionEffects.canAct && !dockDeathBlocked,
+        ownTurn: ownTurn && !dockDeathBlocked,
         effectiveSpeed: dockCombatant.effectiveSpeed,
         hasContext: Boolean(standUpContext) || stabilizeTargets.length > 0,
       })
@@ -1039,7 +1058,9 @@ export function CombatTracker({
         conditionEffects={dockCombatant.conditionEffects}
         economy={dockEconomy}
         concentration={dockCombatant.mechanicalState.concentration ?? null}
-        deathBlocked={deathLifecycle(dockCombatant.deathState)}
+        deathBlocked={dockDeathBlocked}
+        // Identificação discreta sobre a Hotbar: a dock não desmonta no ciclo.
+        deathLabel={dockDeathLabel}
         deathSavePending={deathSavePending}
         busy={busy}
         // ESPERA (6.6M.6.2): a Hotbar dá lugar à animação da bandeja tática e
@@ -1097,10 +1118,10 @@ export function CombatTracker({
               slots={hotbarSlots}
               // Antes da iniciativa os slots são APRESENTAÇÃO: `busy` os desabilita
               // (o miolo ainda recebe véu/desfoque e fica `inert` na dock).
-              busy={busy || awaitingInitiative}
+              busy={busy || awaitingInitiative || dockDeathBlocked}
               // Economia do PRÓPRIO turno (vem do servidor): só escurece o que já
               // gastou Ação/Bônus/Reação. Nenhuma cobrança acontece aqui.
-              economy={ownTurn ? dockEconomy : null}
+              economy={ownTurn && !dockDeathBlocked ? dockEconomy : null}
               filter={hotbarFilter}
               selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
               // Clique TOGGLE (6.6M.6.2.2): o mesmo slot que abre o painel o
@@ -1179,7 +1200,7 @@ export function CombatTracker({
             <button
               type="button"
               className="end-turn dock-end-turn"
-              disabled={!isMyTurn || busy || deathSavePending}
+              disabled={!isMyTurn || busy || deathSavePending || dockDeathBlocked}
               onClick={() => void endTurn()}
               aria-label={
                 isMyTurn ? 'Encerrar turno' : 'Encerrar turno — aguardando o seu turno'
@@ -1758,11 +1779,10 @@ export function CombatTracker({
         }
         dock={dockNode}
         resourceBar={
-          // A barra persistente NÃO é renderizada para quem não controla o
-          // turno (nem para o Mestre observando o personagem de um jogador).
-          // Para o JOGADOR ela dá lugar à dock; só sobrevive no ciclo de morte
-          // (onde a dock não é montada) — nunca as duas juntas.
-          showOperational && actingCombatant && (isMaster || showDeathTurn) ? (
+          // A barra persistente legada é do MESTRE. Para o JOGADOR ela dá lugar
+          // à dock em TODOS os estados — inclusive no ciclo de morte (6.6M.8):
+          // nunca as duas juntas.
+          showOperational && actingCombatant && isMaster ? (
             <TurnResourceBar
               active
               isMaster={isMaster}

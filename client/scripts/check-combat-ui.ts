@@ -28,6 +28,7 @@ import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel'
 import { ReactionPanel } from '../src/combat/components/ReactionPanel';
 import { TurnToast } from '../src/combat/components/TurnToast';
 import type { TurnEconomy } from '../src/types';
+import { deathDockLabel, deathLifecycleOf } from '../src/combat/deathDock';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
 import { actionPips } from '../src/combat/resourcePips';
@@ -551,7 +552,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   // WH. Barra persistente some no turno alheio.
   check(
     'WH) turno alheio não renderiza a barra normal nem o Encerrar Turno',
-    tracker.includes('showOperational && actingCombatant && (isMaster || showDeathTurn) ? (') &&
+    tracker.includes('showOperational && actingCombatant && isMaster ? (') &&
       tracker.includes('resourceBar={') &&
       !tracker.includes('onDismissTurnAlert'),
   );
@@ -6279,7 +6280,7 @@ check(
     trackerSource.includes('const showOperational = controlsCurrent || masterOverrideActive;') &&
       // A barra persistente só aparece para quem controla o turno (o Mestre ou
       // o ciclo de morte) — a dock do jogador cobre o resto.
-      trackerSource.includes('showOperational && actingCombatant && (isMaster || showDeathTurn) ? (') &&
+      trackerSource.includes('showOperational && actingCombatant && isMaster ? (') &&
       trackerSource.includes('<BattleWaitingPanel') &&
       trackerSource.indexOf('<DeathSavePanel') < trackerSource.indexOf('<CombatActionPanel'),
   );
@@ -6453,12 +6454,12 @@ check(
   check(
     'SC74) matriz de autoridade preservada: Mestre assume, jogador só o próprio turno, espera sem controles',
     trackerSource.includes('const showOperational = controlsCurrent || masterOverrideActive;') &&
-      trackerSource.includes('showOperational && actingCombatant && (isMaster || showDeathTurn) ? (') &&
+      trackerSource.includes('showOperational && actingCombatant && isMaster ? (') &&
       trackerSource.includes('!isMaster && myCombatant ? (') &&
       trackerSource.includes('<BattleWaitingPanel') &&
       trackerSource.includes('<ConcentrationSavePanel') &&
       trackerSource.includes('<ReactionPanel') &&
-      /resourceBar=\{[\s\S]{0,600}?showOperational && actingCombatant && \(isMaster \|\| showDeathTurn\) \?/.test(
+      /resourceBar=\{[\s\S]{0,600}?showOperational && actingCombatant && isMaster \?/.test(
         trackerSource,
       ),
   );
@@ -6648,9 +6649,9 @@ check(
     // 6.6M.6.2: a dock passa a existir também na ESPERA, mas continua fora do
     // Mestre e fora do ciclo de morte do próprio personagem (onde a barra
     // persistente e o painel de morte assumem).
-    trackerSource.includes('!isMaster && myCombatant && !myDeathTurn') &&
+    trackerSource.includes('!isMaster && myCombatant ? myCombatant : null') &&
       trackerSource.includes(
-        'const dockWaiting = Boolean(dockCombatant) && !ownTurn && !awaitingInitiative;',
+        'Boolean(dockCombatant) && !ownTurn && !awaitingInitiative && !dockDeathBlocked;',
       ) &&
       trackerSource.includes('<PlayerCombatDock') &&
       // Escolher um slot não resolve nada: nenhum endpoint no componente.
@@ -6720,7 +6721,7 @@ check(
     'SC92) uma única superfície de recursos: a dock substitui a barra persistente do jogador',
     trackerSource.includes('const dockCombatant =') &&
       // A barra persistente só sobrevive para o Mestre ou no ciclo de morte.
-      trackerSource.includes('showOperational && actingCombatant && (isMaster || showDeathTurn)') &&
+      trackerSource.includes('showOperational && actingCombatant && isMaster ? (') &&
       // No combate ativo a dock vem ANTES da barra na composição (a tela de
       // iniciativa também tem uma barra inativa, mais acima no arquivo).
       /dock=\{dockNode\}[\s\S]{0,200}?resourceBar=\{/.test(trackerSource) &&
@@ -6734,9 +6735,9 @@ check(
 
   check(
     'SC93) dock não abre segunda autoridade: turno, recursos e morte continuam gateados no tracker',
-    trackerSource.includes('deathBlocked={deathLifecycle(dockCombatant.deathState)}') &&
-      trackerSource.includes('canAct: dockCombatant.conditionEffects.canAct') &&
-      trackerSource.includes('ownTurn,') &&
+    trackerSource.includes('deathBlocked={dockDeathBlocked}') &&
+      trackerSource.includes('canAct: dockCombatant.conditionEffects.canAct && !dockDeathBlocked,') &&
+      trackerSource.includes('ownTurn: ownTurn && !dockDeathBlocked,') &&
       // Atalhos do jogador saem de "tools" (uma superfície só) sem sumir.
       trackerSource.includes('{onOpenSection && (isMaster || !dockCombatant) ? (') &&
       dockSource.includes('Sem economia de turno'),
@@ -7423,7 +7424,7 @@ check(
   check(
     'SC129) dock em ESPERA fora do turno: animação compartilhada, sem ataque/movimento/encerrar',
     trackerSource.includes(
-      'const dockCombatant = !isMaster && myCombatant && !myDeathTurn ? myCombatant : null;',
+      'const dockCombatant = !isMaster && myCombatant ? myCombatant : null;',
     ) &&
       trackerSource.includes('waiting={dockWaiting || awaitingInitiative}') &&
       trackerSource.includes("<BattleWaitingInline name={current?.name ?? ''} />") &&
@@ -7435,7 +7436,7 @@ check(
       // A bandeja tática não repete o painel de espera do jogador.
       trackerSource.includes('{current && (isMaster || !dockCombatant) ? (') &&
       // Encerrar turno indisponível na espera (e sem handler novo).
-      trackerSource.includes('disabled={!isMyTurn || busy || deathSavePending}') &&
+      trackerSource.includes('disabled={!isMyTurn || busy || deathSavePending || dockDeathBlocked}') &&
       (trackerSource.match(/async function endTurn/g) ?? []).length === 1 &&
       // A espera ocupa SÓ a região da Hotbar: sem overlay de tela inteira.
       workspaceRule('.hotbar-waiting').includes('display: flex;') &&
@@ -7925,13 +7926,13 @@ check(
 
   check(
     'SC144) antes de rolar os slots ficam bloqueados e o CTA é a única ação',
-    trackerSource.includes('busy={busy || awaitingInitiative}') &&
+    trackerSource.includes('busy={busy || awaitingInitiative || dockDeathBlocked}') &&
       trackerSource.includes(
-        'const dockWaiting = Boolean(dockCombatant) && !ownTurn && !awaitingInitiative;',
+        'Boolean(dockCombatant) && !ownTurn && !awaitingInitiative && !dockDeathBlocked;',
       ) &&
       // Recursos não sugerem uso: os glifos entram no mesmo estado neutro.
       trackerSource.includes('waiting={dockWaiting || awaitingInitiative}') &&
-      dockSource.includes('inert={Boolean(awaitingInitiative)}') &&
+      dockSource.includes('inert={Boolean(awaitingInitiative) || Boolean(deathLabel)}') &&
       dockSource.includes('disabled={awaitingInitiative.busy}') &&
       // Rolagem sugerida e modificador moram DENTRO do único botão.
       dockSource.includes('1d20 {formatModifier(awaitingInitiative.modifier)}') &&
@@ -8277,7 +8278,7 @@ check(
       spentMarkup.includes('recurso do turno já usado') &&
       !continuationMarkup.includes('is-spent') &&
       // A dock passa a economia do turno PRÓPRIO (nunca a do Mestre).
-      trackerSource.includes('economy={ownTurn ? dockEconomy : null}'),
+      trackerSource.includes('economy={ownTurn && !dockDeathBlocked ? dockEconomy : null}'),
   );
 
   check(
@@ -8739,6 +8740,180 @@ check(
       !/resolveAttack\s*\([^)]*endAttackFlow/.test(targetingTrackerSource)
     );
   })(),
+);
+
+/* -------------------------------------------------------------------------- */
+/* 6.6M.8 — CICLO DE MORTE: A DOCK MODERNA NÃO DESMONTA                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Fixtures ISOLADAS (nada toca banco nem contas reais): o estado de morte é um
+ * valor puro e a dock é renderizada server-side com ele. É o que transforma
+ * "o usuário viu a tela antiga" em verificação executável.
+ */
+const deathFixture = (overrides: Partial<DeathState> = {}): DeathState => ({
+  successes: 0,
+  failures: 0,
+  stabilized: false,
+  dead: false,
+  deathSaves: false,
+  pending: null,
+  relentless: null,
+  saveTurnKey: null,
+  log: [],
+  ...overrides,
+});
+
+const deathPending = (extra: Partial<DeathState> = {}): DeathState =>
+  deathFixture({
+    deathSaves: true,
+    failures: 3,
+    pending: { id: 'fixture-pending' } as DeathState['pending'],
+    ...extra,
+  });
+
+/** Dock do jogador com o MÍNIMO que ela recebe do tracker (apresentação pura). */
+function renderDockFixture(overrides: Record<string, unknown> = {}): string {
+  return renderToStaticMarkup(
+    createElement(PlayerCombatDock, {
+      name: 'Fixtures — Ciclo de Morte',
+      imageUrl: null,
+      hpCurrent: 0,
+      hpMax: 24,
+      armorClass: 14,
+      mechanicalState: {
+        conditions: [],
+        log: [],
+        concentration: null,
+        pendingConcentrationSaves: [],
+        exhaustionLevel: 0,
+        seesInvisible: false,
+      } as never,
+      conditionEffects: { prone: true, canAct: false } as never,
+      economy: {
+        actionsGranted: 1,
+        actionsUsed: 0,
+        bonusActionUsed: false,
+        reactionAvailable: true,
+        movementBudget: 9,
+        movementUsed: 0,
+      } as TurnEconomy,
+      actionMenu: createElement('span', { className: 'fixture-action-menu' }),
+      hotbar: createElement('span', { className: 'fixture-hotbar-slots' }, '48 slots'),
+      utilities: null,
+      movement: { remaining: 0, budget: 9 },
+      movementControl: null,
+      ...overrides,
+    } as never),
+  );
+}
+
+const deathTrackerSource = source('src/combat/CombatTracker.tsx');
+const deathDockSource = source('src/combat/components/PlayerCombatDock.tsx');
+const deathCssSource = source('src/combat/workspace.css');
+
+check(
+  'SC170) ciclo de morte NÃO desmonta a dock: `dockCombatant` independe do turno de morte',
+  !deathTrackerSource.includes('myDeathTurn') &&
+    deathTrackerSource.includes(
+      'const dockCombatant = !isMaster && myCombatant ? myCombatant : null;',
+    ) &&
+    // A barra persistente legada é do Mestre; o jogador nunca a recebe.
+    deathTrackerSource.includes('showOperational && actingCombatant && isMaster ? (') &&
+    // A composição antiga (barra legada no ciclo de morte) NÃO pode voltar.
+    !deathTrackerSource.includes(
+      'showOperational && actingCombatant && (isMaster || showDeathTurn)',
+    ),
+);
+
+check(
+  'SC171) rótulo discreto do estado de morte (morto/decisão/implacável/estabilizado/testes)',
+  deathDockLabel(deathFixture({ deathSaves: true })) === 'Teste contra a Morte' &&
+    deathDockLabel(deathPending()) === 'Aguardando decisão do Mestre' &&
+    deathDockLabel(
+      deathFixture({
+        deathSaves: true,
+        relentless: { name: 'Resistência Implacável', resourceId: 'fixtures' },
+      } as unknown as Partial<DeathState>),
+    ) === 'Resistência Implacável' &&
+    deathDockLabel(deathFixture({ deathSaves: true, stabilized: true, successes: 3 })) ===
+      'Estabilizado' &&
+    deathDockLabel(deathFixture({ dead: true })) === 'Morto' &&
+    // Sem ciclo de morte a dock é OPERACIONAL.
+    deathDockLabel(deathFixture()) === null &&
+    deathDockLabel(null) === null &&
+    deathLifecycleOf(null) === false &&
+    deathLifecycleOf(deathFixture()) === false &&
+    deathLifecycleOf(deathFixture({ deathSaves: true })) === true,
+  {
+    testes: deathDockLabel(deathFixture({ deathSaves: true })),
+    pendente: deathDockLabel(deathPending()),
+    morto: deathDockLabel(deathFixture({ dead: true })),
+  },
+);
+
+check(
+  'SC172) Hotbar de 48 slots continua montada, porém INERTE, no ciclo de morte',
+  (() => {
+    const markup = renderDockFixture({
+      deathBlocked: true,
+      deathLabel: 'Teste contra a Morte',
+    });
+    return (
+      // A grade de slots continua na árvore (não há composição antiga).
+      markup.includes('fixture-hotbar-slots') &&
+      markup.includes('dock-hotbar is-death-blocked') &&
+      markup.includes('dock-death-overlay') &&
+      markup.includes('Teste contra a Morte') &&
+      // inerte: nenhum clique/ataque alcança os slots.
+      markup.includes('inert') &&
+      // NEM CTA de iniciativa NEM animação de "outro turno".
+      !markup.includes('dock-initiative-overlay') &&
+      !markup.includes('hotbar-waiting') &&
+      // Estados de morte NÃO são turno operacional: Encerrar turno indisponível
+      // e os glifos de Ação dão lugar ao "Sem turno".
+      markup.includes('dock-death')
+    );
+  })(),
+  { render: renderDockFixture({ deathBlocked: true, deathLabel: 'Teste contra a Morte' }) },
+);
+
+check(
+  'SC173) dock OPERACIONAL não recebe véu de morte (recuperação após cura)',
+  (() => {
+    const markup = renderDockFixture({ deathBlocked: false, deathLabel: null });
+    return (
+      !markup.includes('is-death-blocked') &&
+      !markup.includes('dock-death-overlay') &&
+      !markup.includes('dock-death') &&
+      markup.includes('fixture-hotbar-slots')
+    );
+  })(),
+);
+
+check(
+  'SC174) a dock recebe o rótulo e a Hotbar é desabilitada pelo ciclo de morte',
+  deathTrackerSource.includes('deathLabel={dockDeathLabel}') &&
+    deathTrackerSource.includes('deathBlocked={dockDeathBlocked}') &&
+    deathTrackerSource.includes('busy={busy || awaitingInitiative || dockDeathBlocked}') &&
+    deathTrackerSource.includes('economy={ownTurn && !dockDeathBlocked ? dockEconomy : null}') &&
+    deathTrackerSource.includes('canAct: dockCombatant.conditionEffects.canAct && !dockDeathBlocked,') &&
+    deathTrackerSource.includes('ownTurn: ownTurn && !dockDeathBlocked,') &&
+    // Espera genérica de "outro turno" não aparece no próprio turno de morte.
+    deathTrackerSource.includes('!awaitingInitiative && !dockDeathBlocked') &&
+    // Entrar no ciclo encerra o fluxo de ataque (sem rota, sem gasto).
+    deathTrackerSource.includes('if (!dockDeathBlocked) return;') &&
+    deathTrackerSource.includes(
+      'disabled={!isMyTurn || busy || deathSavePending || dockDeathBlocked}',
+    ),
+);
+
+check(
+  'SC175) CSS do ciclo de morte é o ISOLADO do workspace (styles.css é WIP alheio)',
+  deathCssSource.includes('.dock-hotbar.is-death-blocked .dock-hotbar-track') &&
+    deathCssSource.includes('.dock-hotbar.is-death-blocked::after') &&
+    deathCssSource.includes('.dock-death-overlay') &&
+    deathDockSource.includes('inert={Boolean(awaitingInitiative) || Boolean(deathLabel)}'),
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

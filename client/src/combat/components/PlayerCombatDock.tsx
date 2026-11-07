@@ -22,6 +22,15 @@ interface PlayerCombatDockProps {
   concentration?: { label: string } | null;
   /** Ciclo de morte: a economia normal fica bloqueada (mas a dock permanece). */
   deathBlocked?: boolean;
+  /**
+   * CICLO DE MORTE (6.6M.8): identificação discreta do estado exibida sobre a
+   * Hotbar — "Teste contra a Morte", "Aguardando decisão do Mestre",
+   * "Resistência Implacável", "Estabilizado", "Morto". `null` = operacional.
+   *
+   * A Hotbar de 48 slots CONTINUA visível e recebe véu/desfoque (mesma estética
+   * da pré-iniciativa), sem animação de "outro turno" e sem ataque possível.
+   */
+  deathLabel?: string | null;
   deathSavePending?: boolean;
   busy?: boolean;
   /**
@@ -157,6 +166,7 @@ export function PlayerCombatDock({
   economy,
   concentration = null,
   deathBlocked = false,
+  deathLabel = null,
   deathSavePending = false,
   busy = false,
   actionMenu,
@@ -583,13 +593,30 @@ export function PlayerCombatDock({
           célula — ancorado na Hotbar, sem empurrar layout e sem cortar tooltip
           de slot (que só existe quando os slots estão interativos). */}
       <div
-        className={
-          awaitingInitiative ? 'dock-hotbar is-awaiting-initiative' : 'dock-hotbar'
-        }
+        className={[
+          'dock-hotbar',
+          awaitingInitiative ? 'is-awaiting-initiative' : '',
+          deathLabel ? 'is-death-blocked' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
       >
-        <div className="dock-hotbar-track" inert={Boolean(awaitingInitiative)}>
+        <div
+          className="dock-hotbar-track"
+          inert={Boolean(awaitingInitiative) || Boolean(deathLabel)}
+        >
           {hotbar}
         </div>
+
+        {/* CICLO DE MORTE (6.6M.8): o estado é dito de forma discreta, no lugar
+            do CTA de iniciativa (que só existe antes de rolar). A rolagem do
+            Teste continua no Registro — aqui não há segundo comando. */}
+        {deathLabel ? (
+          <p className="dock-death-overlay" role="status">
+            <Icon name="skull" size={13} />
+            <span>{deathLabel}</span>
+          </p>
+        ) : null}
 
         {awaitingInitiative ? (
           /* Sobre a Hotbar desfocada fica SÓ o botão, centrado nos dois eixos
