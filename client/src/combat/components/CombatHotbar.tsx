@@ -28,7 +28,6 @@ interface CombatHotbarProps {
   selectedId?: string | null;
   /** Filtro ativo (navegação A/B/R). Só máscara de visualização. */
   filter?: HotbarFilter | null;
-  onClearFilter?: () => void;
   onSelect: (entry: CombatHotbarEntry) => void;
 
   // ---------------------------------------------------------------------
@@ -82,7 +81,6 @@ export function CombatHotbar({
   busy,
   selectedId = null,
   filter = null,
-  onClearFilter,
   onSelect,
   editing = false,
   draftSlots,
@@ -175,15 +173,7 @@ export function CombatHotbar({
               Cancelar
             </button>
           </>
-        ) : (
-          <>
-            {filter ? (
-              <button type="button" className="hotbar-clear-filter" onClick={onClearFilter}>
-                Ver todas
-              </button>
-            ) : null}
-          </>
-        )}
+        ) : null}
       </div>
 
       <div

@@ -1916,28 +1916,6 @@
   color: #c6a878;
 }
 
-/* Limpar o filtro: mesmo peso visual do contador que ele substitui. */
-.hotbar-clear-filter {
-  grid-area: tail;
-  justify-self: end;
-  padding: 0.1rem 0.3rem;
-  border: 1px solid #8b682b;
-  border-radius: 4px;
-  background: #1b110b;
-  color: #e4c17a;
-  font-size: 0.5625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  cursor: pointer;
-}
-
-.hotbar-clear-filter:hover,
-.hotbar-clear-filter:focus-visible {
-  border-color: #f1c85c;
-  color: #ffe49a;
-  outline: none;
-}
-
 /* ESPERA na região funcional da Hotbar (6.6M.6.2): a MESMA animação de espada ×
    escudo da bandeja tática, reduzida para a faixa. Nada de overlay — só a
    coluna central muda, e iniciativa, registro e FABs seguem intocados. */
@@ -2110,7 +2088,6 @@
 /* A linha discreta do topo (aviso de categoria vazia / limpar / ver todas) só
    aparece com conteúdo; aqui ela ganha o respiro que o `row-gap: 0` tirou. */
 .hotbar-note,
-.hotbar-clear-filter,
 .hotbar-all {
   margin-block-end: 0.125rem;
 }

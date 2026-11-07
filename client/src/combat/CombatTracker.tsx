@@ -992,7 +992,6 @@ export function CombatTracker({
               economy={ownTurn ? dockEconomy : null}
               filter={hotbarFilter}
               selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
-              onClearFilter={() => setHotbarFilter(null)}
               // Clique TOGGLE (6.6M.6.2.2): o mesmo slot que abre o painel o
               // fecha — sem segundo estado de seleção e sem tocar em nada já
               // enviado ao servidor (a identidade é o `sourceId` do fluxo).

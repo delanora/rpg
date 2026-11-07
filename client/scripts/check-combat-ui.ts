@@ -7382,12 +7382,14 @@ check(
       hotbarComponentSource.includes(
         '`Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`',
       ) &&
-      hotbarComponentSource.includes('className="hotbar-clear-filter"') &&
-      hotbarComponentSource.includes('onClearFilter') &&
+      // 6.6M.6.3.1.3: o botao de texto saiu — desmarcar o MESMO glifo do
+      // recurso ja devolve a Hotbar completa, sem superficie extra.
+      !hotbarComponentSource.includes('hotbar-clear-filter') &&
+      !hotbarComponentSource.includes('onClearFilter') &&
       // A grade não depende do filtro: continua com as 32 posições.
       hotbarComponentSource.includes('if (!editing && slots.length === 0 && !filter) return null;') &&
       workspaceRule('.hotbar-note').includes('grid-area: note;') &&
-      workspaceRule('.hotbar-clear-filter').includes('grid-area: tail;') &&
+      !workspaceActive.includes('.hotbar-clear-filter') &&
       // O componente continua sem estado e sem rede.
       !hotbarComponentSource.includes('useEffect') &&
       !/\b(resolveAttack|fetch)\w*\(/.test(hotbarComponentSource),
@@ -7687,7 +7689,7 @@ check(
       workspaceRule('.combat-hotbar').includes('row-gap: 0;') &&
       // As duas superfícies da linha discreta continuam existindo.
       hotbarComponentSource.includes('className="hotbar-note"') &&
-      hotbarComponentSource.includes('className="hotbar-clear-filter"') &&
+      !hotbarComponentSource.includes('hotbar-clear-filter') &&
       workspaceRule('.hotbar-note').includes('grid-area: note;') &&
       // Custo no canto = GLIFO do recurso (forma), nunca a letra A/B/R.
       hotbarComponentSource.includes('className="hotbar-cost-mark"') &&
