@@ -123,7 +123,8 @@ export function PlayerCombatDock({
       aria-label="Dock de combate do jogador"
       aria-busy={busy || undefined}
     >
-      <div className="combat-dock-main">
+      {/* IDENTIDADE — retrato e recursos compactos, ancorados à esquerda. */}
+      <div className="dock-identity">
         {/* RETRATO — o clique abre o contexto do próprio personagem. */}
         <div className="dock-portrait-cell" ref={portraitRef}>
           <button
@@ -249,13 +250,13 @@ export function PlayerCombatDock({
             </>
           )}
         </div>
-
-        {/* HOTBAR — os slots de sempre. */}
-        <div className="dock-hotbar">{hotbar}</div>
-
-        {/* UTILITÁRIOS — atalhos da ficha e Encerrar turno. */}
-        <div className="dock-utilities">{utilities}</div>
       </div>
+
+      {/* HOTBAR — o centro funcional da dock: maior área, slots com presença. */}
+      <div className="dock-hotbar">{hotbar}</div>
+
+      {/* UTILITÁRIOS — grupo próprio à direita, fora do fluxo dos slots. */}
+      <div className="dock-utilities">{utilities}</div>
 
       {/* DESLOCAMENTO — do retrato até antes dos utilitários. */}
       <div className="dock-movement-row">

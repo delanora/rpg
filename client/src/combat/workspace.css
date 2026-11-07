@@ -863,23 +863,36 @@
 }
 
 /* --------------------------------------------------------------------------
-   DOCK DO JOGADOR (6.6M.6.1) — retrato · recursos · Hotbar · utilitários,
-   com a barra de deslocamento embaixo. Ela SUBSTITUI a apresentação da Hotbar
-   e da Resource Bar na tela do jogador; as responsabilidades mecânicas
-   continuam nos mesmos controles (ActionMenu, MovementSpendButton, end-turn).
+   DOCK DO JOGADOR (6.6M.6.1 / paridade visual 6.6M.6.1.1).
+
+   Composição aprovada, da esquerda para a direita: identidade (retrato +
+   recursos compactos) · HOTBAR como coluna dominante · utilitários agrupados
+   à direita, com o Encerrar turno no extremo do bloco. A faixa de deslocamento
+   é o rodapé da dock: começa sob o retrato, corre sob os slots e TERMINA antes
+   do bloco direito — nunca uma segunda faixa de largura total.
+
+   Só apresentação: as responsabilidades mecânicas continuam nos mesmos
+   controles (ActionMenu, MovementSpendButton, end-turn).
    -------------------------------------------------------------------------- */
 .combat-dock {
   display: grid;
-  gap: 0.4rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'identity hotbar utilities'
+    'movement movement utilities';
+  align-items: center;
+  column-gap: clamp(0.6rem, 1.1vw, 1.1rem);
+  row-gap: 0.3rem;
   min-width: 0;
-  padding: 0.4rem 0.5rem 0.35rem;
+  padding: 0.45rem 0.55rem 0.4rem;
   border: 1px solid var(--gold-hair);
   border-radius: 6px;
   background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
   box-shadow: inset 0 1px 4px rgba(43, 33, 21, 0.16);
 }
 
-.combat-dock-main {
+.dock-identity {
+  grid-area: identity;
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -897,8 +910,8 @@
 .dock-portrait {
   position: relative;
   display: block;
-  width: 3rem;
-  height: 3rem;
+  width: 3.6rem;
+  height: 3.6rem;
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--line-strong);
@@ -935,7 +948,7 @@
 .dock-portrait-hp {
   position: absolute;
   inset: auto 0 0 0;
-  height: 3px;
+  height: 4px;
   background: rgba(0, 0, 0, 0.45);
 }
 
@@ -1007,45 +1020,46 @@
 .dock-resources {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
   flex: 0 0 auto;
   min-width: 0;
 }
 
 .dock-resource {
   display: grid;
-  gap: 0.12rem;
-  padding-right: 0.5rem;
-  border-right: 1px solid var(--line);
+  gap: 0.08rem;
+  min-width: 0;
 }
 
-.dock-resource:last-child {
-  padding-right: 0;
-  border-right: 0;
+/* Separador fino ENTRE os três recursos: o bloco fica compacto e legível sem
+   virar uma faixa de texto com moldura em cada célula. */
+.dock-resource + .dock-resource {
+  padding-left: 0.45rem;
+  border-left: 1px solid var(--line);
 }
 
 .dock-resource-label {
-  font-size: 0.55rem;
+  font-size: 0.52rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--ink-faint);
 }
 
 .dock-resource-row {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.25rem;
   min-width: 0;
 }
 
 .dock-pips {
   display: flex;
-  gap: 0.14rem;
+  gap: 0.12rem;
 }
 
 .dock-pip {
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 0.44rem;
+  height: 0.44rem;
   border: 1px solid var(--line-strong);
   border-radius: 50%;
   background: transparent;
@@ -1061,7 +1075,7 @@
 }
 
 .dock-resource-count {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1078,8 +1092,15 @@
 
 /* HOTBAR dentro da dock: os slots de sempre, sem moldura duplicada. */
 .dock-hotbar {
-  flex: 1 1 auto;
+  grid-area: hotbar;
   min-width: 0;
+  /* O "poço" dos slots: dá chão próprio à Hotbar para ela ser o centro visual
+     da dock sem acrescentar um segundo painel — o componente é o de sempre. */
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+  box-shadow: inset 0 1px 3px rgba(43, 33, 21, 0.18);
 }
 
 .dock-hotbar .combat-hotbar {
@@ -1096,25 +1117,42 @@
 }
 
 /* UTILITÁRIOS — atalhos da ficha e Encerrar turno. */
+/* GRUPO lateral: uma grade compacta própria, não uma continuação dos slots. */
 .dock-utilities {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex: 0 0 auto;
-  margin-left: auto;
+  grid-area: utilities;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.22rem;
+  align-content: center;
+  align-self: stretch;
+  width: 100%;
+  max-width: 21rem;
+  min-width: 0;
 }
 
 .dock-utility {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.18rem 0.4rem;
+  min-width: 0;
+  padding: 0.18rem 0.28rem;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--surface-2);
   color: var(--ink-soft);
-  font-size: 0.66rem;
+  font-size: 0.6rem;
+  line-height: 1.2;
+  text-align: left;
   cursor: pointer;
+}
+
+/* Rótulo elidível: o grupo nunca estoura a largura da coluna por causa de
+   "Características" em viewport apertada. */
+.dock-utility-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dock-utility:hover,
@@ -1130,15 +1168,23 @@
 }
 
 .dock-end-turn {
-  margin-left: 0.2rem;
+  /* Encerrar turno ocupa o extremo do bloco direito: existe, é óbvio e não
+     disputa espaço com os slots da Hotbar. */
+  grid-column: span 2;
+  margin-left: 0;
 }
 
 /* DESLOCAMENTO — a barra longa, do retrato até antes dos utilitários. */
 .dock-movement-row {
+  grid-area: movement;
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
   min-width: 0;
+  /* Fio de ligação com os slots: a faixa é o rodapé da dock, não uma linha
+     solta abaixo dela. */
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--line);
 }
 
 .dock-movement-label {
@@ -1154,8 +1200,8 @@
 
 .dock-movement-track {
   flex: 1 1 auto;
-  min-width: 4rem;
-  height: 0.5rem;
+  min-width: 5rem;
+  height: 0.55rem;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -1171,9 +1217,10 @@
 
 .dock-movement-value {
   flex: 0 0 auto;
-  font-size: 0.66rem;
+  font-size: 0.68rem;
   color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* O popover do gasto de deslocamento precisa de âncora própria. */
@@ -1209,18 +1256,25 @@
 .hotbar-slots {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 /* Slot: quadrado, moldura de latão. O número é indicação, nunca atalho. */
 .hotbar-slot {
   position: relative;
-  flex: 0 0 auto;
+  /* Slot quadrado que cresce até um TETO: confortável em 1366 e sem "espichar"
+     em 1920 — a sobra vira espaço em volta, nunca um slot gigante. */
+  flex: 1 1 0;
   display: grid;
   place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: auto;
+  height: auto;
+  min-width: 2.7rem;
+  max-width: 3.3rem;
+  aspect-ratio: 1;
   padding: 0;
   border: 1px solid var(--line-strong);
   border-radius: 4px;
@@ -1528,20 +1582,60 @@
   }
 }
 
-/* Dock: abaixo de 1360px os utilitários descem, sem apertar a Hotbar. */
-@media (max-width: 1360px) {
-  .combat-dock-main {
-    flex-wrap: wrap;
+/* Dock: abaixo de 1400px a faixa aperta proporcionalmente, sem tirar a Hotbar
+   do centro nem empurrar o bloco direito para fora. */
+@media (max-width: 1400px) {
+  .combat-dock {
+    column-gap: 0.7rem;
   }
 
-  .dock-hotbar {
-    order: 3;
-    flex-basis: 100%;
+  .dock-portrait {
+    width: 3.2rem;
+    height: 3.2rem;
   }
 
   .dock-utilities {
-    order: 4;
-    margin-left: 0;
+    max-width: 19rem;
+  }
+}
+
+/* Duas colunas: identidade e utilitários em cima, Hotbar com a largura toda e
+   o deslocamento no rodapé. */
+@media (max-width: 1180px) {
+  .combat-dock {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity utilities'
+      'hotbar hotbar'
+      'movement movement';
+  }
+
+  .dock-utilities {
+    max-width: none;
+  }
+}
+
+/* Uma coluna: a dock empilha na ordem de leitura, sem cortar nada. */
+@media (max-width: 760px) {
+  .combat-dock {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'identity'
+      'hotbar'
+      'utilities'
+      'movement';
+  }
+
+  .dock-utilities {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dock-end-turn {
+    grid-column: span 2;
+  }
+
+  .hotbar-slots {
+    flex-wrap: wrap;
   }
 }
 

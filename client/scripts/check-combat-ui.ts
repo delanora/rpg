@@ -6612,8 +6612,10 @@ check(
       !hotbarAdapterSource.includes("kind: 'feature'") &&
       !hotbarAdapterSource.includes("kind: 'spell'") &&
       !hotbarAdapterSource.includes("kind: 'item'") &&
-      workspaceRule('.hotbar-slot').includes('width: 2.5rem;') &&
-      workspaceRule('.hotbar-slot').includes('height: 2.5rem;'),
+      // Slot segue quadrado, agora com teto de tamanho (protagonismo na dock).
+      workspaceRule('.hotbar-slot').includes('aspect-ratio: 1;') &&
+      workspaceRule('.hotbar-slot').includes('min-width: 2.7rem;') &&
+      workspaceRule('.hotbar-slot').includes('max-width: 3.3rem;'),
   );
 
   /* ---------------------------------------------------------------------- */
@@ -6680,6 +6682,53 @@ check(
       // Atalhos do jogador saem de "tools" (uma superfície só) sem sumir.
       trackerSource.includes('{onOpenSection && (isMaster || !dockCombatant) ? (') &&
       dockSource.includes('Sem economia de turno'),
+  );
+
+  check(
+    'SC94) composição aprovada: identidade · Hotbar · utilitários, com o deslocamento sob as duas primeiras colunas',
+    workspaceRule('.combat-dock').includes("'identity hotbar utilities'") &&
+      workspaceRule('.combat-dock').includes("'movement movement utilities'") &&
+      workspaceRule('.dock-identity').includes('grid-area: identity;') &&
+      workspaceRule('.dock-hotbar').includes('grid-area: hotbar;') &&
+      workspaceRule('.dock-utilities').includes('grid-area: utilities;') &&
+      workspaceRule('.dock-movement-row').includes('grid-area: movement;') &&
+      // A barra começa no retrato e para antes do bloco direito — nunca uma
+      // segunda faixa de largura total desconectada da dock.
+      dockSource.indexOf('dock-identity') < dockSource.indexOf('dock-hotbar') &&
+      dockSource.indexOf('dock-hotbar') < dockSource.indexOf('dock-utilities') &&
+      dockSource.indexOf('dock-utilities') < dockSource.indexOf('dock-movement-row'),
+  );
+
+  check(
+    'SC95) a Hotbar é o centro visual: área própria, slots com teto e UMA montagem',
+    workspaceRule('.dock-hotbar').includes('background: var(--surface-2);') &&
+      workspaceRule('.hotbar-slots').includes('justify-content: center;') &&
+      workspaceRule('.hotbar-slots').includes('flex: 1 1 auto;') &&
+      (trackerSource.match(/<CombatHotbar/g) ?? []).length === 1 &&
+      (trackerSource.match(/<PlayerCombatDock/g) ?? []).length === 1 &&
+      dockSource.includes('{hotbar}'),
+  );
+
+  check(
+    'SC96) utilitários formam um grupo à direita e continuam chamando os MESMOS fluxos',
+    workspaceRule('.dock-utilities').includes('display: grid;') &&
+      workspaceRule('.dock-utilities').includes('grid-template-columns: repeat(3, minmax(0, 1fr));') &&
+      workspaceRule('.dock-end-turn').includes('grid-column: span 2;') &&
+      workspaceRule('.dock-end-turn').includes('margin-left: 0;') &&
+      trackerSource.includes('onClick={() => onOpenSection(shortcut.key)}') &&
+      trackerSource.includes('onClick={onOpenSheet}') &&
+      trackerSource.includes('onClick={() => void endTurn()}') &&
+      trackerSource.includes('dock-utility-label'),
+  );
+
+  check(
+    'SC97) paridade visual não cria superfície nova: sem overflow na dock e sem segundo controle de gasto',
+    !workspaceRule('.combat-dock').includes('overflow') &&
+      !workspaceRule('.dock-portrait-cell').includes('overflow') &&
+      workspaceRule('.dock-context').includes('position: absolute;') &&
+      dockSource.includes('{movementControl}') &&
+      !dockSource.includes('<TurnResourceBar') &&
+      !dockSource.includes('<MovementSpendButton'),
   );
 
   check(

@@ -900,14 +900,16 @@ export function CombatTracker({
                       aria-expanded={isOpen}
                       onClick={() => onOpenSection(shortcut.key)}
                     >
-                      <Icon name={shortcut.icon} size={13} /> {shortcut.label}
+                      <Icon name={shortcut.icon} size={13} />
+                      <span className="dock-utility-label">{shortcut.label}</span>
                     </button>
                   );
                 })
               : null}
             {onOpenSheet ? (
               <button type="button" className="dock-utility" onClick={onOpenSheet}>
-                <Icon name="quill" size={13} /> Ficha
+                <Icon name="quill" size={13} />
+                <span className="dock-utility-label">Ficha</span>
               </button>
             ) : null}
             {isMyTurn ? (

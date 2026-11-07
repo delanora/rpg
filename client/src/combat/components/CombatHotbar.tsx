@@ -64,7 +64,7 @@ export function CombatHotbar({ entries, busy, selectedId = null, onSelect }: Com
             <span className="hotbar-slot-key" aria-hidden="true">
               {index + 1}
             </span>
-            <Icon name={entry.icon} size={18} />
+            <Icon name={entry.icon} size={20} />
             {COST_SIGN[entry.cost] ? (
               <span className={`hotbar-cost is-${entry.cost}`} aria-hidden="true">
                 {COST_SIGN[entry.cost]}
