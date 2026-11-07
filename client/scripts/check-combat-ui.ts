@@ -7027,6 +7027,166 @@ check(
       mechSource.includes("isMaster && variant === 'sheet'"),
   );
 
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.1.5 — câmera flutuante DENTRO do grid.                          */
+  /* ---------------------------------------------------------------------- */
+
+  /** Regra de LINHA INTEIRA do `grid/grid.css` (sem comentários). */
+  const gridRule = (selector: string): string => {
+    const css = gridCssSource.replace(/\/\*[\s\S]*?\*\//g, '');
+    const at = css.indexOf(`\n${selector} {`);
+    if (at < 0) return '';
+    const end = css.indexOf('}', at);
+    return end < 0 ? '' : css.slice(at, end + 1);
+  };
+
+  const stageAt = gridSource.indexOf('<div className="grid-stage">');
+  const viewportAt = gridSource.indexOf('ref={viewportRef}');
+  const hintAt = gridSource.indexOf('<p className="grid-hint">{hint}</p>');
+  const cameraAt = gridSource.indexOf("'grid-camera-overlay is-lifted'");
+  const cameraBlock = cameraAt < 0 ? '' : gridSource.slice(cameraAt, cameraAt + 1500);
+
+  check(
+    'SC114) câmera é overlay IRMÃO do viewport, dentro de .grid-stage',
+    stageAt > -1 &&
+      viewportAt > stageAt &&
+      hintAt > viewportAt &&
+      cameraAt > hintAt &&
+      // Irmão e não filho: o menu aparece DEPOIS do viewport fechar.
+      cameraBlock.length > 0 &&
+      !cameraBlock.includes('grid-camera"') &&
+      // Fora da camada transformada: nenhum transform no bloco.
+      !cameraBlock.includes('transform:') &&
+      gridRule('.grid-camera-overlay').includes('position: absolute;') &&
+      gridRule('.grid-camera-overlay').includes('right: 0.75rem;') &&
+      gridRule('.grid-camera-overlay').includes('bottom: 0.75rem;'),
+  );
+
+  check(
+    'SC115) jogador sem barra de câmera nem linha de cena acima do mapa',
+    // A classe antiga não existe mais em lugar nenhum (só o overlay).
+    (gridSource.match(/grid-camera-controls/g) ?? []).length === 0 &&
+      (gridCssSource.match(/grid-camera-controls/g) ?? []).length === 0 &&
+      // A toolbar (única linha acima do palco) é MASTER-only — o jogador não
+      // monta o elemento, então nada de faixa vazia escondida por CSS.
+      (gridSource.match(/<div className="grid-toolbar">/g) ?? []).length === 1 &&
+      gridSource.includes('{isMaster ? (\n        <div className="grid-toolbar">') &&
+      // Leitura da cena do jogador: o MESMO componente, sobreposto.
+      gridSource.includes('className="grid-inset-info"') &&
+      gridSource
+        .slice(gridSource.indexOf('className="grid-inset-info"'))
+        .includes('<SpatialSceneControls') &&
+      gridSceneSource.includes('Cena em grade — ${widthFeet} × ${heightFeet} pés') &&
+      gridRule('.grid-inset-info').includes('position: absolute;') &&
+      gridRule('.grid-inset-info').includes('pointer-events: none;') &&
+      // Nada substitui a área removida por padding/margin.
+      !gridRule('.grid-stage').includes('padding') &&
+      !gridRule('.grid-stage').includes('margin'),
+  );
+
+  check(
+    'SC116) mesmos handlers de zoom/enquadrar/centralizar e os MESMOS disabled',
+    gridSource.includes('onClick={() => zoomStep(1 / ZOOM_STEP)}') &&
+      gridSource.includes('onClick={() => zoomStep(ZOOM_STEP)}') &&
+      gridSource.includes('onClick={fitScene}') &&
+      gridSource.includes('if (currentUnit) centerOnCombatant(currentUnit.id);') &&
+      gridSource.includes('{cameraPercent(camera.zoom)}%') &&
+      gridSource.includes(
+        "className={currentOffscreen ? 'btn btn-small is-offscreen' : 'btn btn-small'}",
+      ) &&
+      gridSource.includes('aria-label="Reduzir zoom"') &&
+      gridSource.includes('aria-label="Enquadrar cena"') &&
+      gridSource.includes('aria-label="Centralizar no turno"') &&
+      // Cada um dos 5 controles continua gateado pela fase do grid.
+      (gridSource.match(/gridPhase !== 'ready'/g) ?? []).length === 5 &&
+      // Nenhum estado de zoom novo: a câmera continua única e em memória.
+      (gridSource.match(/useState<GridCamera>/g) ?? []).length === 1 &&
+      // A câmera não ganhou persistência nenhuma (nem local, nem no servidor).
+      !cameraBlock.includes('localStorage') &&
+      !cameraBlock.includes('sessionStorage') &&
+      // Contratos do módulo de câmera intactos.
+      source('src/combat/grid/gridCamera.ts').includes('export function zoomAt') &&
+      source('src/combat/grid/gridCamera.ts').includes('export function panBy') &&
+      source('src/combat/grid/gridCamera.ts').includes('export function fitCamera') &&
+      source('src/combat/grid/gridCamera.ts').includes('export function centerCamera'),
+  );
+
+  check(
+    'SC117) cliques na câmera não selecionam célula, não arrastam e não iniciam pan',
+    cameraBlock.length > 0 &&
+      !cameraBlock.includes('onPointerDown') &&
+      // Só os `onClick` dos 4 botões: nenhum handler de gesto.
+      (cameraBlock.match(/onClick=/g) ?? []).length === 4 &&
+      // A superfície de gesto continua sendo o viewport, inteira.
+      (gridSource.match(/onPointerDown={handleViewportPointerDown}/g) ?? []).length === 1 &&
+      gridSource.includes('onPointerMove={handleViewportPointerMove}') &&
+      gridSource.includes('onDrop={isMaster ? handleDrop : undefined}') &&
+      !cameraBlock.includes('moveTo') &&
+      !cameraBlock.includes('positionCombatant'),
+  );
+
+  check(
+    'SC118) o palco recebe a altura liberada (flex real, sem padding artificial)',
+    workspaceRule('.combat-workspace .grid-stage').includes('flex: 1 1 auto;') &&
+      workspaceRule('.combat-workspace .grid-stage').includes('min-height: 0;') &&
+      workspaceRule('.combat-workspace .grid-viewport').includes('height: 100%;') &&
+      workspaceRule('.combat-workspace .grid-viewport').includes('min-height: 0;') &&
+      workspaceRule('.combat-workspace .combat-grid-panel').includes('flex-direction: column;') &&
+      // Nada de altura fixa nova: o viewport acompanha o palco.
+      !workspaceRule('.combat-workspace .grid-viewport').includes('vh'),
+  );
+
+  check(
+    'SC119) viewport estreito: a câmera encolhe/quebra e não extrapola o grid',
+    gridCssSource.includes('@media (max-width: 720px)') &&
+      /@media \(max-width: 720px\)[\s\S]*?\.grid-camera-overlay \{[\s\S]*?max-width: calc\(100% - 1rem\);/.test(
+        gridCssSource,
+      ) &&
+      /@media \(max-width: 720px\)[\s\S]*?\.grid-camera-overlay \.btn \{/.test(gridCssSource) &&
+      gridRule('.grid-camera-overlay').includes('flex-wrap: wrap;') &&
+      gridRule('.grid-camera-overlay').includes('max-width: min(16rem, calc(100% - 1.5rem));'),
+  );
+
+  check(
+    'SC120) sem conflito com HUD, régua e avisos (o menu sobe em vez de cobrir)',
+    gridRule('.grid-camera-overlay').includes('z-index: 5;') &&
+      gridRule('.grid-camera-overlay.is-lifted').includes('bottom: 2.9rem;') &&
+      gridSource.includes("rulerState === 'error' ? 'grid-camera-overlay is-lifted'") &&
+      gridRule('.grid-ruler-retry').includes('z-index: 4;') &&
+      gridRule('.grid-hint').includes('pointer-events: none;') &&
+      /\.grid-movement-hud \{[\s\S]*?bottom: 4\.6rem;/.test(gridCssSource) &&
+      // Nada de z-index exagerado: o menu fica abaixo de qualquer modal.
+      !/\.grid-camera-overlay \{[\s\S]*?z-index: \d{3,};/.test(gridCssSource),
+  );
+
+  check(
+    'SC121) interface do Mestre preservada (posicionamento, cena, visibilidade, tray)',
+    gridSource.includes('aria-label="Ferramenta do grid"') &&
+      gridSource.includes(
+        "onClick={() => changeMode(mode === 'placement' ? 'none' : 'placement')}",
+      ) &&
+      gridSource.includes('onResize={(widthFeet, heightFeet) => void changeScene({ mode: \'grid-2d\', widthFeet, heightFeet })}') &&
+      gridSource.includes("onAssisted={() => void changeScene({ mode: 'assisted' })}") &&
+      gridSource.includes('className="grid-visibility"') &&
+      gridSource.includes('<UnplacedCombatantsTray') &&
+      // Erro de cena do Mestre continua no fluxo; o do jogador, sobreposto.
+      gridSource.includes('{isMaster && sceneError ? (') &&
+      (gridSource.match(/<p className="grid-scene-error" role="status">/g) ?? []).length === 2,
+  );
+
+  check(
+    'SC122) dados espaciais intactos: a câmera é só apresentação',
+    cameraBlock.length > 0 &&
+      !cameraBlock.includes('fetch(') &&
+      !gridSource.includes('api/combat/spatial') &&
+      gridSource.includes('armTokenGesture') &&
+      gridSource.includes('selectUnit') &&
+      // A API espacial continua mandando `expectedVersion` (nada mudou nela).
+      gridApiSource.includes('expectedVersion') &&
+      !cameraBlock.includes('sceneToFeet') &&
+      source('src/combat/grid/gridCamera.ts').includes('feetToScenePixel'),
+  );
+
   check(
     'SC83) separação das superfícies não esconde nada: a página continua rolando até a ficha',
     // Nada de overflow/altura fixa no main do jogador — a rolagem é da página.

@@ -1784,15 +1784,18 @@ export function CombatGrid({
       aria-label="Cena de combate"
       data-grid-phase={gridPhase}
     >
-      <div className="grid-toolbar">
-        <div className="grid-toolbar-left">
-          {/*
-            MASTER: Posicionar. PLAYER: nada — só os controles de câmera.
-            Não existe botão "Mover" (o movimento é o GESTO no token do turno)
-            nem botão "Medir" (a régua é a tecla F), e nada de placeholder
-            vazio onde eles ficavam.
-          */}
-          {isMaster ? (
+      {/*
+        TOOLBAR — SÓ ADMINISTRAÇÃO (6.6M.6.1.5). A câmera saiu daqui: virou
+        overlay DENTRO do palco. Esta linha existe apenas para o Mestre
+        (ferramenta de posicionamento); na visão do jogador ela NÃO é montada,
+        então a altura acima do mapa é zero em vez de "escondida por CSS".
+
+        Não existe botão "Mover" (o movimento é o GESTO no token do turno) nem
+        botão "Medir" (a régua é a tecla F), e nada de placeholder vazio.
+      */}
+      {isMaster ? (
+        <div className="grid-toolbar">
+          <div className="grid-toolbar-left">
             <div className="grid-modes" role="group" aria-label="Ferramenta do grid">
               <button
                 type="button"
@@ -1804,68 +1807,29 @@ export function CombatGrid({
                 Posicionar
               </button>
             </div>
-          ) : null}
-          {currentUnit ? (
-            <span className="grid-turn">
-              Turno de <strong>{currentUnit.name}</strong>
-            </span>
-          ) : null}
+            {currentUnit ? (
+              <span className="grid-turn">
+                Turno de <strong>{currentUnit.name}</strong>
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="grid-camera-controls" role="group" aria-label="Câmera">
-          <button
-            type="button"
-            className="btn btn-small"
-            aria-label="Reduzir zoom"
-            disabled={gridPhase !== 'ready'}
-            onClick={() => zoomStep(1 / ZOOM_STEP)}
-          >
-            −
-          </button>
-          <span className="grid-zoom-value" aria-label="Zoom atual">
-            {cameraPercent(camera.zoom)}%
-          </span>
-          <button
-            type="button"
-            className="btn btn-small"
-            aria-label="Aumentar zoom"
-            disabled={gridPhase !== 'ready'}
-            onClick={() => zoomStep(ZOOM_STEP)}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            aria-label="Enquadrar cena"
-            disabled={gridPhase !== 'ready'}
-            onClick={fitScene}
-          >
-            Enquadrar
-          </button>
-          <button
-            type="button"
-            className={currentOffscreen ? 'btn btn-small is-offscreen' : 'btn btn-small'}
-            aria-label="Centralizar no turno"
-            disabled={!currentUnit || gridPhase !== 'ready'}
-            onClick={() => {
-              if (currentUnit) centerOnCombatant(currentUnit.id);
-            }}
-          >
-            Centralizar
-          </button>
-        </div>
-      </div>
+      ) : null}
 
-      <SpatialSceneControls
-        mode={scene.mode}
-        widthFeet={scene.widthFeet}
-        heightFeet={scene.heightFeet}
-        isMaster={isMaster}
-        busy={locked}
-        onActivate={() => undefined}
-        onResize={(widthFeet, heightFeet) => void changeScene({ mode: 'grid-2d', widthFeet, heightFeet })}
-        onAssisted={() => void changeScene({ mode: 'assisted' })}
-      />
+      {/* Administração da cena (ativação, dimensões, modo assistido): o MESMO
+          componente de sempre, no fluxo, exclusivo do Mestre. */}
+      {isMaster ? (
+        <SpatialSceneControls
+          mode={scene.mode}
+          widthFeet={scene.widthFeet}
+          heightFeet={scene.heightFeet}
+          isMaster={isMaster}
+          busy={locked}
+          onActivate={() => undefined}
+          onResize={(widthFeet, heightFeet) => void changeScene({ mode: 'grid-2d', widthFeet, heightFeet })}
+          onAssisted={() => void changeScene({ mode: 'assisted' })}
+        />
+      ) : null}
 
       {isMaster && mode === 'placement' && selectedUnit ? (
         <div className="grid-visibility">
@@ -1888,13 +1852,46 @@ export function CombatGrid({
         </div>
       ) : null}
 
-      {sceneError ? (
+      {/* Erro da cena do MESTRE fica no fluxo (contexto administrativo). O do
+          jogador aparece sobreposto, logo abaixo — nada empurra o palco. */}
+      {isMaster && sceneError ? (
         <p className="grid-scene-error" role="status">
           {sceneError}
         </p>
       ) : null}
 
       <div className="grid-stage">
+        {/*
+          JOGADOR: leitura da cena SOBREPOSTA (6.6M.6.1.5). É o MESMO
+          `SpatialSceneControls` (fonte única do texto), montado num chip no
+          canto superior esquerdo: a informação continua acessível e não
+          reserva um único pixel de altura.
+        */}
+        {!isMaster ? (
+          <div className="grid-inset-info">
+            {currentUnit ? (
+              <span className="grid-turn">
+                Turno de <strong>{currentUnit.name}</strong>
+              </span>
+            ) : null}
+            <SpatialSceneControls
+              mode={scene.mode}
+              widthFeet={scene.widthFeet}
+              heightFeet={scene.heightFeet}
+              isMaster={false}
+              busy={locked}
+              onActivate={() => undefined}
+              onResize={() => undefined}
+              onAssisted={() => undefined}
+            />
+            {sceneError ? (
+              <p className="grid-scene-error" role="status">
+                {sceneError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div
           ref={viewportRef}
           className={viewportClasses}
@@ -2104,6 +2101,63 @@ export function CombatGrid({
           ) : null}
 
           <p className="grid-hint">{hint}</p>
+        </div>
+
+        {/*
+          CÂMERA FLUTUANTE (6.6M.6.1.5) — IRMÃ do `.grid-viewport`, nunca
+          filha: os botões ficam FORA da camada transformada por pan/zoom e
+          fora da superfície que interpreta gestos, então clicar aqui não
+          seleciona célula, não inicia arrasto e não movimenta ninguém.
+
+          Handlers, rótulos, nomes acessíveis e estados `disabled` são os
+          MESMOS de antes; mudou só a posição (canto inferior direito do palco).
+        */}
+        <div
+          className={rulerState === 'error' ? 'grid-camera-overlay is-lifted' : 'grid-camera-overlay'}
+          role="group"
+          aria-label="Câmera"
+        >
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label="Reduzir zoom"
+            disabled={gridPhase !== 'ready'}
+            onClick={() => zoomStep(1 / ZOOM_STEP)}
+          >
+            −
+          </button>
+          <span className="grid-zoom-value" aria-label="Zoom atual">
+            {cameraPercent(camera.zoom)}%
+          </span>
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label="Aumentar zoom"
+            disabled={gridPhase !== 'ready'}
+            onClick={() => zoomStep(ZOOM_STEP)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label="Enquadrar cena"
+            disabled={gridPhase !== 'ready'}
+            onClick={fitScene}
+          >
+            Enquadrar
+          </button>
+          <button
+            type="button"
+            className={currentOffscreen ? 'btn btn-small is-offscreen' : 'btn btn-small'}
+            aria-label="Centralizar no turno"
+            disabled={!currentUnit || gridPhase !== 'ready'}
+            onClick={() => {
+              if (currentUnit) centerOnCombatant(currentUnit.id);
+            }}
+          >
+            Centralizar
+          </button>
         </div>
       </div>
 
