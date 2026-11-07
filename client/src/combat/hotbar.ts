@@ -12,8 +12,17 @@ import type { Attack, InventoryItem } from '../types';
  * continua inteiro no servidor. Existe para provar a UX antes da Hotbar final.
  */
 
-/** Slots visíveis do protótipo. Mais que isso fica no "ver todas". */
-export const HOTBAR_SLOTS = 8;
+/**
+ * GRADE DA HOTBAR (6.6M.6.3): 32 posições INDEXADAS em 2 linhas de 16.
+ *
+ * A Hotbar deixou de ser "até 8 slots fixos": a grade é explícita (colunas ×
+ * linhas) e cada posição tem índice 1-based, para a personalização de slots
+ * apenas REMANEJAR entradas sobre uma grade que já existe. O que passa de 32
+ * continua na lista "ver todas" (nada é escondido sem aviso).
+ */
+export const HOTBAR_COLUMNS = 16;
+export const HOTBAR_ROWS = 2;
+export const HOTBAR_SLOTS = HOTBAR_COLUMNS * HOTBAR_ROWS;
 
 /**
  * Ordem determinística das categorias. Nada de algoritmo de relevância nesta
@@ -143,6 +152,33 @@ export function filterHotbarEntries(
 ): CombatHotbarEntry[] {
   if (!filter) return [...entries];
   return entries.filter((entry) => entry.cost === filter);
+}
+
+/**
+ * Uma posição da grade: `entry` preenchida ou `null` (slot vazio reservado).
+ *
+ * Distinguir "preenchido" de "vazio" é ESTRUTURA, não estilo: a futura
+ * personalização guarda o `sourceId` de cada índice e o vazio é a ausência de
+ * entrada — nunca um placeholder fictício.
+ */
+export interface HotbarSlot {
+  /** Posição na grade, 1-based (o número desenhado no slot). */
+  index: number;
+  entry: CombatHotbarEntry | null;
+}
+
+/**
+ * Abre as entradas na grade fixa de 32 posições (ordem preservada).
+ *
+ * Função PURA de apresentação: não consulta recurso, turno, alvo nem servidor —
+ * só distribui o que o chamador já filtrou. As sobras viram `null` (slots
+ * vazios) e o excedente fica fora da grade ("ver todas").
+ */
+export function buildHotbarSlots(entries: readonly CombatHotbarEntry[]): HotbarSlot[] {
+  return Array.from({ length: HOTBAR_SLOTS }, (_, offset) => ({
+    index: offset + 1,
+    entry: entries[offset] ?? null,
+  }));
 }
 
 /**

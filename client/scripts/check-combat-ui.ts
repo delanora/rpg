@@ -20,6 +20,7 @@ import { Fragment, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ConditionBadges } from '../src/combat/components/ConditionBadges';
 import { CombatStateBadges } from '../src/combat/components/CombatStateBadges';
+import { CombatHotbar } from '../src/combat/components/CombatHotbar';
 import { DeathCounter } from '../src/death/DeathCounter';
 import { DeathSavePanel } from '../src/combat/components/DeathSavePanel';
 import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel';
@@ -29,6 +30,10 @@ import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src
 import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
 import { actionPips } from '../src/combat/resourcePips';
 import {
+  HOTBAR_COLUMNS,
+  HOTBAR_ROWS,
+  HOTBAR_SLOTS,
+  buildHotbarSlots,
   filterHotbarEntries,
   hotbarFilterLabel,
   selectionSurvivesFilter,
@@ -6565,10 +6570,20 @@ check(
   );
 
   check(
-    'SC85) 8 slots visíveis, ordem determinística por categoria e sem entradas repetidas',
-    hotbarAdapterSource.includes('export const HOTBAR_SLOTS = 8;') &&
-      hotbarComponentSource.includes('entries.slice(0, HOTBAR_SLOTS)') &&
-      hotbarComponentSource.includes('const emptySlots = Math.max(0, HOTBAR_SLOTS - visible.length);') &&
+    'SC85) grade de 32 posições (2×16), ordem determinística por categoria e sem entradas repetidas',
+    hotbarAdapterSource.includes('export const HOTBAR_COLUMNS = 16;') &&
+      hotbarAdapterSource.includes('export const HOTBAR_ROWS = 2;') &&
+      hotbarAdapterSource.includes('export const HOTBAR_SLOTS = HOTBAR_COLUMNS * HOTBAR_ROWS;') &&
+      hotbarAdapterSource.includes('export function buildHotbarSlots') &&
+      hotbarComponentSource.includes('const slots = buildHotbarSlots(entries);') &&
+      // Comportamento real do modelo: 32 posições INDEXADAS, sobras vazias.
+      HOTBAR_SLOTS === 32 &&
+      HOTBAR_COLUMNS === 16 &&
+      HOTBAR_ROWS === 2 &&
+      buildHotbarSlots([]).length === 32 &&
+      buildHotbarSlots([]).every((slot) => slot.entry === null) &&
+      buildHotbarSlots([]).map((slot) => slot.index).join(',') ===
+        Array.from({ length: 32 }, (_, i) => i + 1).join(',') &&
       hotbarAdapterSource.includes("['attack', 'feature', 'spell', 'item']") &&
       hotbarAdapterSource.includes('KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind)') &&
       hotbarAdapterSource.includes('seen.has(attack.id)'),
@@ -6624,9 +6639,10 @@ check(
       !hotbarAdapterSource.includes("kind: 'feature'") &&
       !hotbarAdapterSource.includes("kind: 'spell'") &&
       !hotbarAdapterSource.includes("kind: 'item'") &&
-      // Slot quadrado de 55px FIXOS (medida do HTML v4, sem clamp).
-      workspaceRule('.hotbar-slot').includes('width: 3.4375rem;') &&
-      workspaceRule('.hotbar-slot').includes('height: 3.4375rem;'),
+      // Slot dimensionado pela GRADE (16 colunas × 2 linhas), não mais 55px
+      // fixos: a largura vem da coluna e a altura da linha.
+      workspaceRule('.hotbar-slot').includes('width: 100%;') &&
+      workspaceRule('.hotbar-slot').includes('height: 100%;'),
   );
 
   /* ---------------------------------------------------------------------- */
@@ -6718,13 +6734,15 @@ check(
   );
 
   check(
-    'SC95) retrato circular de latão (~90px) e Hotbar de ~55px, com UMA montagem',
+    'SC95) retrato circular de latão (~90px) e slots da grade 2×16, com UMA montagem',
     workspaceRule('.dock-portrait').includes('border-radius: 50%;') &&
       workspaceRule('.dock-portrait').includes('border: 3px solid #c49b3d;') &&
       workspaceRule('.dock-portrait-cell').includes('width: 5.5rem;') &&
-      workspaceRule('.hotbar-slot').includes('width: 3.4375rem;') &&
-      workspaceRule('.hotbar-slot').includes('height: 3.4375rem;') &&
-      workspaceRule('.hotbar-slots').includes('justify-content: flex-start;') &&
+      workspaceRule('.hotbar-slot').includes('max-width: 2.5rem;') &&
+      workspaceRule('.hotbar-slots').includes(
+        'grid-template-columns: repeat(16, minmax(0, 1fr));',
+      ) &&
+      workspaceRule('.hotbar-slots').includes('grid-template-rows: repeat(2, minmax(0, 1fr));') &&
       (trackerSource.match(/<CombatHotbar/g) ?? []).length === 1 &&
       (trackerSource.match(/<PlayerCombatDock/g) ?? []).length === 1 &&
       dockSource.includes('{hotbar}'),
@@ -7339,17 +7357,15 @@ check(
   );
 
   check(
-    'SC128) categoria vazia mantém os OITO slots, frase curta e limpar o filtro (sem slot fictício)',
+    'SC128) categoria vazia mantém a grade de 32, frase curta e limpar o filtro (sem slot fictício)',
     hotbarComponentSource.includes('if (entries.length === 0 && !filter) return null;') &&
       hotbarComponentSource.includes(
         '`Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`',
       ) &&
       hotbarComponentSource.includes('className="hotbar-clear-filter"') &&
       hotbarComponentSource.includes('onClearFilter') &&
-      // A contagem de slots não depende do filtro: continua HOTBAR_SLOTS.
-      hotbarComponentSource.includes(
-        'const emptySlots = Math.max(0, HOTBAR_SLOTS - visible.length);',
-      ) &&
+      // A grade não depende do filtro: continua com as 32 posições.
+      hotbarComponentSource.includes('const slots = buildHotbarSlots(entries);') &&
       workspaceRule('.hotbar-note').includes('grid-area: note;') &&
       workspaceRule('.hotbar-clear-filter').includes('grid-area: tail;') &&
       // O componente continua sem estado e sem rede.
@@ -7412,7 +7428,8 @@ check(
       // Geometria aprovada intacta e filtro sem aumentar a dock.
       workspaceRule('.combat-dock').includes("'portrait resources hotbar utilities'") &&
       workspaceRule('.dock-resource').includes('width: 1.75rem;') &&
-      workspaceRule('.hotbar-slot').includes('width: 3.4375rem;') &&
+      // A dock NÃO cresce: as duas linhas de slots usam a célula de 81px.
+      workspaceRule('.combat-dock').includes('grid-template-rows: 5.0625rem 1.8125rem;') &&
       workspaceRule('.dock-resource.is-filtering').includes('box-shadow:') &&
       workspaceRule('.hotbar-waiting .battle-waiting-anim').includes('transform: scale(0.72);'),
   );
@@ -7428,9 +7445,9 @@ check(
       // vazio agora é respondido SÓ pela Hotbar.
       !trackerSource.includes('hotbar-hint') &&
       !workspaceActive.includes('.hotbar-hint') &&
-      // A faixa continua montada com os oito slots: nada colapsa.
+      // A faixa continua montada com a grade inteira: nada colapsa.
       hotbarComponentSource.includes('if (entries.length === 0 && !filter) return null;') &&
-      hotbarComponentSource.includes('Math.max(0, HOTBAR_SLOTS - visible.length)') &&
+      hotbarComponentSource.includes('buildHotbarSlots(entries)') &&
       // Comportamento real do recorte: vazio é LISTA vazia, nunca `null`.
       filterHotbarEntries(hotbarSample, 'reaction').length === 0 &&
       Array.isArray(filterHotbarEntries(hotbarSample, 'reaction')) &&
@@ -7593,6 +7610,139 @@ check(
       (trackerSource.match(/const \[hotbarPick, setHotbarPick\] = useState/g) ?? []).length === 1 &&
       !hotbarAdapterSource.includes('fetch(') &&
       !hotbarAdapterSource.match(/resolveAttack\w*\(/),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.3 — Hotbar expandida: grade 2×16, sem cabeçalho, base pronta.     */
+  /* ---------------------------------------------------------------------- */
+
+  check(
+    'SC138) grade 2×16 cabe no bloco central (16 colunas, 2 linhas, slot menor) sem crescer a dock',
+    // A linha discreta do topo não é um título: é aviso/contador/filtro.
+    workspaceRule('.combat-hotbar').includes("'note tail'") &&
+      workspaceRule('.combat-hotbar').includes("'slots slots'") &&
+      workspaceRule('.combat-hotbar').includes('grid-template-rows: auto minmax(0, 1fr);') &&
+      workspaceRule('.combat-hotbar').includes('height: 100%;') &&
+      workspaceRule('.hotbar-slots').includes('display: grid;') &&
+      workspaceRule('.hotbar-slots').includes(
+        'grid-template-columns: repeat(16, minmax(0, 1fr));',
+      ) &&
+      workspaceRule('.hotbar-slots').includes('grid-template-rows: repeat(2, minmax(0, 1fr));') &&
+      workspaceRule('.hotbar-slots').includes('min-height: 0;') &&
+      // O slot acompanha a célula, com teto de largura: 32 caixas uniformes.
+      workspaceRule('.hotbar-slot').includes('width: 100%;') &&
+      workspaceRule('.hotbar-slot').includes('max-width: 2.5rem;') &&
+      workspaceRule('.hotbar-slot').includes('height: 100%;') &&
+      !workspaceRule('.hotbar-slot').includes('3.4375rem') &&
+      !workspaceRule('.hotbar-slots').includes('height: 3.6875rem;') &&
+      // A geometria aprovada da DOCK não muda (81px): o grid não perde área.
+      workspaceRule('.combat-dock').includes('grid-template-rows: 5.0625rem 1.8125rem;') &&
+      workspaceRule('.combat-dock').includes("'portrait resources hotbar utilities'") &&
+      // Nenhuma altura mágica nova na faixa.
+      !workspaceRule('.combat-hotbar').includes('min-height: 6rem') &&
+      // 1366/1920: a composição continua 2×16 nos breakpoints; só o
+      // empilhamento estreito fixa a coluna para rolar de lado.
+      workspaceActive.includes('grid-template-columns: repeat(16, 2.25rem);') &&
+      !workspaceActive.includes('.hotbar-slots {\n  display: flex;'),
+  );
+
+  check(
+    'SC139) cabeçalho "espada + HOTBAR" removido: os slots são os protagonistas',
+    !hotbarComponentSource.includes('hotbar-title') &&
+      !workspaceActive.includes('.hotbar-title') &&
+      // Nenhum rótulo substituto: nem "Hotbar" escrito como título.
+      !hotbarComponentSource.includes('>Hotbar<') &&
+      !hotbarComponentSource.includes('>HOTBAR<') &&
+      !hotbarComponentSource.includes("name=\"sword\" size={13}") &&
+      // Indicador leve permitido: contador de posições PREENCHIDAS.
+      hotbarComponentSource.includes(
+        'const filled = slots.filter((slot) => slot.entry !== null).length;',
+      ) &&
+      hotbarComponentSource.includes('{filled}/{HOTBAR_SLOTS}') &&
+      // As duas superfícies da linha discreta continuam existindo.
+      hotbarComponentSource.includes('className="hotbar-note"') &&
+      hotbarComponentSource.includes('className="hotbar-clear-filter"') &&
+      workspaceRule('.hotbar-note').includes('grid-area: note;') &&
+      workspaceRule('.hotbar-all-count').includes('grid-area: tail;') &&
+      // Slot vazio é uma POSIÇÃO da grade, nunca conteúdo inventado.
+      hotbarComponentSource.includes('className="hotbar-slot is-empty"') &&
+      !hotbarComponentSource.includes('is-unavailable') &&
+      // Comportamento real: preenchidos primeiro, sobras vazias, índice 1-based.
+      buildHotbarSlots(hotbarSample)
+        .slice(0, hotbarSample.length)
+        .every((slot, offset) => slot.entry === hotbarSample[offset] && slot.index === offset + 1) &&
+      buildHotbarSlots(hotbarSample)
+        .slice(hotbarSample.length)
+        .every((slot) => slot.entry === null) &&
+      buildHotbarSlots(hotbarSample).length === 32 &&
+      buildHotbarSlots(
+        Array.from({ length: 40 }, (_, offset) => ({
+          ...hotbarSample[0],
+          id: `attack:extra-${offset}`,
+          sourceId: `extra-${offset}`,
+        })),
+      ).length === 32,
+  );
+
+  check(
+    'SC140) grade expandida preserva seleção, toggle e handlers, sem segunda engine',
+    // Mesma seleção do tracker, mesmo toggle puro da 6.6M.6.2.2.
+    trackerSource.includes('selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}') &&
+      trackerSource.includes('toggleHotbarPick(prev, entry.sourceId)') &&
+      hotbarComponentSource.includes('aria-pressed={selectedId === entry.id}') &&
+      hotbarComponentSource.includes('onClick={() => onSelect(entry)}') &&
+      hotbarComponentSource.includes('const COST_SIGN: Record<HotbarCost, string> = {') &&
+      // UMA Hotbar, UMA dock, UM painel de ataque: nada de fluxo paralelo.
+      (trackerSource.match(/<CombatHotbar/g) ?? []).length === 1 &&
+      (trackerSource.match(/<PlayerCombatDock/g) ?? []).length === 1 &&
+      trackerSource.includes('preset={hotbarPick}') &&
+      trackerSource.includes('onClose={() => setHotbarPick(null)}') &&
+      // Sem estado, rede, economia ou resolver no componente/adapter.
+      !hotbarComponentSource.includes('useState') &&
+      !/\b(fetch|resolveAttack|spendEconomy)\w*\(/.test(hotbarComponentSource) &&
+      !hotbarAdapterSource.includes('fetch(') &&
+      !/\b(resolveAttack|spendEconomy)\w*\(/.test(hotbarAdapterSource) &&
+      // O Mestre continua com a MESMA interface: a Hotbar só existe na dock
+      // do jogador e a dock não a reimplementa.
+      !dockSource.includes('<CombatHotbar') &&
+      !dockSource.includes("from './CombatHotbar'") &&
+      !dockSource.includes('className="hotbar-slot') &&
+      trackerSource.includes('hotbar={'),
+  );
+
+  // Renderização REAL (SSR) da versão expandida: o markup é a prova de que a
+  // grade materializa 32 posições, que os slots vazios existem e que o cabeçalho
+  // saiu — sem navegador e sem snapshot frágil de estilo.
+  const hotbarMarkup = renderToStaticMarkup(
+    createElement(CombatHotbar, { entries: hotbarSample, busy: false, onSelect: () => {} }),
+  );
+  const hotbarSelectedMarkup = renderToStaticMarkup(
+    createElement(CombatHotbar, {
+      entries: hotbarSample,
+      busy: false,
+      selectedId: 'attack:a1',
+      onSelect: () => {},
+    }),
+  );
+
+  check(
+    'SC141) Hotbar renderizada: 32 slots (3 preenchidos + 29 vazios), sem título e com seleção marcada',
+    (hotbarMarkup.match(/data-slot=/g) ?? []).length === 32 &&
+      (hotbarMarkup.match(/hotbar-slot is-empty/g) ?? []).length === 29 &&
+      (hotbarMarkup.match(/aria-pressed="false"/g) ?? []).length === 3 &&
+      !hotbarMarkup.includes('hotbar-title') &&
+      !hotbarMarkup.includes('>Hotbar<') &&
+      // O contador discreto substitui o título: preenchidos/32.
+      hotbarMarkup.includes('3/32') &&
+      // Índice 1-based aparece no rótulo acessível do primeiro slot.
+      hotbarMarkup.includes('aria-label="1. ') &&
+      hotbarMarkup.includes('aria-label="3. ') &&
+      // Sem seleção nada está pressionado; com seleção, UM só slot.
+      !hotbarMarkup.includes('aria-pressed="true"') &&
+      (hotbarSelectedMarkup.match(/aria-pressed="true"/g) ?? []).length === 1 &&
+      hotbarSelectedMarkup.includes('data-slot="1" aria-pressed="true"') &&
+      // Os handlers continuam os mesmos: nenhum botão novo, nenhum sem ação.
+      (hotbarMarkup.match(/<button/g) ?? []).length === 3,
   );
 
   check(

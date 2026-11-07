@@ -1,6 +1,7 @@
 import { Icon } from '../../components/Icon';
 import {
   HOTBAR_SLOTS,
+  buildHotbarSlots,
   hotbarFilterLabel,
   type CombatHotbarEntry,
   type HotbarCost,
@@ -39,14 +40,19 @@ interface CombatHotbarProps {
 }
 
 /**
- * HOTBAR DE COMBATE — PROTÓTIPO FUNCIONAL (6.6M.6).
+ * HOTBAR DE COMBATE — GRADE DE 32 SLOTS (2×16).
  *
  * Esta é uma SUPERFÍCIE DE ACESSO: mostra o que o personagem já possui e
  * encaminha o clique para o fluxo existente (painel de ataque, alvo, modo de
  * rolagem, munição, modificadores, envio ao servidor). O componente não tem
  * estado, não calcula regra, não cobra economia e não resolve nada sozinho.
  *
- * Números 1–8 são indicação visual: não há atalho global nesta fase.
+ * A grade é FIXA em 32 posições indexadas (`buildHotbarSlots`): o que existe
+ * ocupa as primeiras posições e o resto fica visivelmente vazio. Nada é
+ * inventado para preencher slot, e o excedente continua em "ver todas".
+ *
+ * Sem cabeçalho de título: o número discreto do rodapé (preenchidos/32) é a
+ * única indicação de contexto, e os slots são os protagonistas.
  */
 export function CombatHotbar({
   entries,
@@ -62,8 +68,8 @@ export function CombatHotbar({
   // continua a um clique.
   if (entries.length === 0 && !filter) return null;
 
-  const visible = entries.slice(0, HOTBAR_SLOTS);
-  const emptySlots = Math.max(0, HOTBAR_SLOTS - visible.length);
+  const slots = buildHotbarSlots(entries);
+  const filled = slots.filter((slot) => slot.entry !== null).length;
   const emptyNote =
     filter && entries.length === 0
       ? `Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`
@@ -71,12 +77,8 @@ export function CombatHotbar({
 
   return (
     <section className="combat-hotbar" aria-label="Ações rápidas do turno">
-      <span className="hotbar-title">
-        <Icon name="sword" size={13} /> Hotbar
-      </span>
-
-      {/* Categoria sem entradas: frase curta no cabeçalho, oito slots vazios e
-          "Ver todas". Nenhum slot fictício é criado para preencher. */}
+      {/* Categoria sem entradas: frase curta na linha discreta do topo, a grade
+          completa de slots vazios e "Ver todas". Nenhum slot fictício. */}
       {emptyNote ? (
         <span className="hotbar-note" role="status">
           {emptyNote}
@@ -84,46 +86,54 @@ export function CombatHotbar({
       ) : null}
 
       <div className="hotbar-slots" role="toolbar" aria-label="Hotbar de combate">
-        {visible.map((entry, index) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={entry.kind === 'attack' ? 'hotbar-slot is-attack' : 'hotbar-slot'}
-            aria-pressed={selectedId === entry.id}
-            aria-label={`${index + 1}. ${entry.label} — ${entry.detail} (${COST_LABEL[entry.cost]})`}
-            disabled={busy}
-            onClick={() => onSelect(entry)}
-          >
-            <span className="hotbar-slot-key" aria-hidden="true">
-              {index + 1}
-            </span>
-            <Icon name={entry.icon} size={24} />
-            {COST_SIGN[entry.cost] ? (
-              <span className={`hotbar-cost is-${entry.cost}`} aria-hidden="true">
-                {COST_SIGN[entry.cost]}
+        {slots.map((slot) => {
+          const entry = slot.entry;
+          // SLOT VAZIO: posição reservada da grade, sem conteúdo inventado.
+          if (!entry) {
+            return (
+              <span
+                key={`hotbar-empty-${slot.index}`}
+                className="hotbar-slot is-empty"
+                data-slot={slot.index}
+                aria-hidden="true"
+              />
+            );
+          }
+
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              className={entry.kind === 'attack' ? 'hotbar-slot is-attack' : 'hotbar-slot'}
+              data-slot={slot.index}
+              aria-pressed={selectedId === entry.id}
+              aria-label={`${slot.index}. ${entry.label} — ${entry.detail} (${COST_LABEL[entry.cost]})`}
+              disabled={busy}
+              onClick={() => onSelect(entry)}
+            >
+              <span className="hotbar-slot-key" aria-hidden="true">
+                {slot.index}
               </span>
-            ) : null}
-
-            {/* PREVIEW: aparece ACIMA do slot no hover e no foco, sem empurrar
-                nada (posição absoluta) e sem estado extra no React. */}
-            <span className="hotbar-preview" role="tooltip">
-              <span className="hotbar-preview-name">{entry.label}</span>
-              <span className="hotbar-preview-detail">{entry.detail}</span>
-              {entry.description ? (
-                <span className="hotbar-preview-desc">{entry.description}</span>
+              <Icon name={entry.icon} size={18} />
+              {COST_SIGN[entry.cost] ? (
+                <span className={`hotbar-cost is-${entry.cost}`} aria-hidden="true">
+                  {COST_SIGN[entry.cost]}
+                </span>
               ) : null}
-              <span className="hotbar-preview-cost">custo: {COST_LABEL[entry.cost]}</span>
-            </span>
-          </button>
-        ))}
 
-        {/* Slots vazios: o protótipo não permite edição manual, então eles são
-            apenas a reserva visual da faixa de 8. */}
-        {Array.from({ length: emptySlots }).map((_, index) => (
-          <span key={`hotbar-vazio-${index}`} className="hotbar-slot is-empty" aria-hidden="true">
-            +
-          </span>
-        ))}
+              {/* PREVIEW: aparece ACIMA do slot no hover e no foco, sem empurrar
+                  nada (posição absoluta) e sem estado extra no React. */}
+              <span className="hotbar-preview" role="tooltip">
+                <span className="hotbar-preview-name">{entry.label}</span>
+                <span className="hotbar-preview-detail">{entry.detail}</span>
+                {entry.description ? (
+                  <span className="hotbar-preview-desc">{entry.description}</span>
+                ) : null}
+                <span className="hotbar-preview-cost">custo: {COST_LABEL[entry.cost]}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {filter ? (
@@ -152,10 +162,10 @@ export function CombatHotbar({
           </div>
         </details>
       ) : (
-        // Com 8 ou menos não há nada escondido: um contador, nunca um botão que
-        // não faz nada.
+        // Contador discreto: quantas posições da grade estão PREENCHIDAS. Nunca
+        // um botão que não faz nada.
         <span className="hotbar-all-count">
-          {visible.length}/{HOTBAR_SLOTS}
+          {filled}/{HOTBAR_SLOTS}
         </span>
       )}
     </section>
