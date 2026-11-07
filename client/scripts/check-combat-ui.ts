@@ -6244,7 +6244,11 @@ check(
 
   check(
     'SC64) workspace ocupa a altura útil da tela e o grid é dimensionado pelo container',
-    /height: clamp\([^;]*100dvh/.test(workspaceActive) &&
+    // Altura vem da CADEIA da página (shell flex → main → painel → workspace),
+    // não de um `calc(100dvh - N)` chutado.
+    workspaceRule('.combat-workspace').includes('height: 100%;') &&
+      workspaceRule('.combat-workspace').includes('min-height: 26rem;') &&
+      !/height: clamp\([^;]*100dvh/.test(workspaceActive) &&
       workspaceRule('.combat-workspace .grid-viewport').includes('height: 100%;') &&
       workspaceRule('.combat-workspace .grid-stage').includes('flex: 1 1 auto;') &&
       !/width: \d+px/.test(workspaceRule('.combat-workspace-body')),
@@ -6438,6 +6442,68 @@ check(
       workspaceRule('.tray-chip').includes('cursor: pointer;') &&
       workspaceRule('.attack-panel.is-tray .tray-menu').includes('max-height:') &&
       workspaceRule('.attack-tray-exec').includes('justify-content: flex-end;'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* DELTA 6.6M.5.2 — densidade e ocupação da viewport.                      */
+  /* ---------------------------------------------------------------------- */
+
+  const turnPanelSource = source('src/combat/components/CombatTurnPanel.tsx');
+  const compactBlock = turnPanelSource.slice(
+    turnPanelSource.indexOf("if (variant === 'compact') {"),
+    turnPanelSource.indexOf('if (!combatant) {'),
+  );
+
+  check(
+    'SC77) micro-header: uma linha sem card de turno, com os controles do Mestre à direita',
+    workspaceRule('.combat-workspace-header').includes('border-bottom: 1px solid var(--line);') &&
+      workspaceRule('.combat-workspace-header').includes('row-gap: 0.2rem;') &&
+      workspaceRule('.combat-workspace-title h2').includes('font-size: 0.88rem;') &&
+      workspaceRule('.combat-workspace-header .combat-turn-panel.compact').includes('padding: 0;') &&
+      workspaceRule('.combat-workspace-header .combat-turn-panel.compact').includes('border: 0;') &&
+      workspaceRule('.combat-workspace-header .combat-turn-panel.compact').includes(
+        'background: none;',
+      ) &&
+      workspaceRule('.combat-workspace-header .combat-turn-panel.compact').includes(
+        'box-shadow: none;',
+      ) &&
+      workspaceRule('.combat-workspace-header .combat-actions').includes('margin-left: auto;'),
+  );
+
+  check(
+    'SC78) página de combate ocupa a viewport: sem max-width de card e altura vinda do container',
+    workspaceRule('.app-main:has(> .combat-panel)').includes('max-width: none;') &&
+      workspaceRule('.app-main:has(> .combat-panel)').includes('padding: 0.55rem 0.7rem 0.7rem;') &&
+      workspaceRule('.app-main:has(> .combat-panel)').includes('min-height: 0;') &&
+      workspaceRule('.app-main:has(> .combat-panel) > .combat-panel').includes('width: 100%;') &&
+      workspaceRule('.app-main:has(> .combat-panel) > .combat-panel').includes('margin-left: 0;') &&
+      workspaceRule('.app-main:has(> .combat-panel) .combat-workspace').includes(
+        'flex: 1 1 auto;',
+      ) &&
+      // O alargamento é SÓ da página de combate: as outras abas do Mestre ficam
+      // exatamente como eram, mesmo com um combate ativo.
+      workspaceActive.includes(':has(> .combat-panel)') &&
+      !workspaceActive.includes('.app-shell.combat-active .app-main {'),
+  );
+
+  check(
+    'SC79) sem duplicação de turno: o micro-header não repete rodada/barra e a Resource Bar fica no rodapé',
+    compactBlock.includes('combat-turn-label">Turno de') &&
+      compactBlock.includes('combat-turn-compact-stats') &&
+      !compactBlock.includes('<HpBar') &&
+      !compactBlock.includes('Rodada') &&
+      compactBlock.indexOf('combat-turn-id') < compactBlock.indexOf('combat-turn-compact-stats') &&
+      workspaceLayout.includes('resourceBar ? <div className="combat-workspace-resource">') &&
+      workspaceLayout.indexOf('{tools}') < workspaceLayout.indexOf('{resourceBar}'),
+  );
+
+  check(
+    'SC80) o espaço recuperado vai para o grid: centro segue 1fr e nenhum arquivo de grid/ no layout',
+    workspaceRule('.combat-workspace-body').includes('minmax(0, 1fr)') &&
+      !workspaceLayout.includes('grid/') &&
+      !workspaceLayout.includes('CombatGrid') &&
+      mediaMedium.includes('.combat-tactical-center {') &&
+      mediaNarrow.includes('grid-template-columns: minmax(0, 1fr);'),
   );
 }
 
