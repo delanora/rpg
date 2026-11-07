@@ -13,14 +13,19 @@ import type { Attack, InventoryItem } from '../types';
  */
 
 /**
- * GRADE DA HOTBAR (6.6M.6.3): 32 posições INDEXADAS em 2 linhas de 16.
+ * GRADE DA HOTBAR (6.6M.6.3): 48 posições INDEXADAS em 2 linhas de 24.
  *
  * A Hotbar deixou de ser "até 8 slots fixos": a grade é explícita (colunas ×
  * linhas) e cada posição tem índice 1-based, para a personalização de slots
- * apenas REMANEJAR entradas sobre uma grade que já existe. O que passa de 32
+ * apenas REMANEJAR entradas sobre uma grade que já existe. O que passa de 48
  * continua na lista "ver todas" (nada é escondido sem aviso).
+ *
+ * 24 colunas × 2 linhas é o número que deixa o slot PRÓXIMO DO QUADRADO no
+ * bloco central da dock: a largura de cada coluna (largura útil ÷ 24) fica na
+ * mesma ordem da altura da linha (altura da faixa ÷ 2). Com 16 colunas sobrava
+ * largura e o slot virava um retângulo deitado.
  */
-export const HOTBAR_COLUMNS = 16;
+export const HOTBAR_COLUMNS = 24;
 export const HOTBAR_ROWS = 2;
 export const HOTBAR_SLOTS = HOTBAR_COLUMNS * HOTBAR_ROWS;
 
@@ -168,7 +173,7 @@ export interface HotbarSlot {
 }
 
 /**
- * Abre as entradas na grade fixa de 32 posições (ordem preservada).
+ * Abre as entradas na grade fixa de 48 posições (ordem preservada).
  *
  * Função PURA de apresentação: não consulta recurso, turno, alvo nem servidor —
  * só distribui o que o chamador já filtrou. As sobras viram `null` (slots

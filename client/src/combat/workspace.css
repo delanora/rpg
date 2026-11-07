@@ -1778,7 +1778,7 @@
 
 /* Cabeçalho em LINHA PRÓPRIA (como o v4) e a trilha de slots abaixo, ocupando
    a largura inteira da coluna central. */
-/* GRADE 2×16 (6.6M.6.3): a Hotbar ocupa o bloco central inteiro. Sem cabeçalho
+/* GRADE 2×24 (6.6M.6.3): a Hotbar ocupa o bloco central inteiro. Sem cabeçalho
    de título — só a linha discreta (aviso de categoria vazia / contador /
    limpar filtro) e as DUAS linhas de 16 slots, dimensionadas pela célula que a
    dock já reservava (81px), para a dock NÃO crescer. */
@@ -1887,14 +1887,16 @@
 
 /* A grade em si: SEMPRE 16 colunas × 2 linhas, preenchendo a célula. As
    colunas são `1fr` (nunca estouram a largura útil) e as linhas dividem a
-   altura disponível, então os 32 slots cabem sem a dock crescer. */
+   altura disponível, então os 48 slots cabem sem a dock crescer. 24 colunas é
+   o que deixa o slot próximo do QUADRADO: a coluna (largura útil ÷ 24) fica na
+   mesma ordem da altura da linha (faixa ÷ 2). */
 .hotbar-slots {
   grid-area: slots;
   display: grid;
-  grid-template-columns: repeat(16, minmax(0, 1fr));
+  grid-template-columns: repeat(24, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 0.1875rem;
-  /* As 16 colunas dividem TODA a largura útil: nenhum vão sobrando entre os
+  /* As 24 colunas dividem TODA a largura útil: nenhum vão sobrando entre os
      slots (antes havia um teto de largura que abria folga em cada coluna). */
   justify-items: stretch;
   min-width: 0;
@@ -2337,10 +2339,10 @@
     font-size: 0.5625rem;
   }
 
-  /* Empilhamento estreito: a composição continua 2×16, rolando de lado (não
+  /* Empilhamento estreito: a composição continua 2×24, rolando de lado (não
      vira lista vertical nem perde a grade). */
   .hotbar-slots {
-    grid-template-columns: repeat(16, 2.25rem);
+    grid-template-columns: repeat(24, 2.25rem);
     overflow-x: auto;
     scrollbar-width: thin;
     scrollbar-color: #7d5d23 #1f150d;

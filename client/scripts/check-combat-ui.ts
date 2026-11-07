@@ -6570,20 +6570,20 @@ check(
   );
 
   check(
-    'SC85) grade de 32 posições (2×16), ordem determinística por categoria e sem entradas repetidas',
-    hotbarAdapterSource.includes('export const HOTBAR_COLUMNS = 16;') &&
+    'SC85) grade de 48 posições (2×24), ordem determinística por categoria e sem entradas repetidas',
+    hotbarAdapterSource.includes('export const HOTBAR_COLUMNS = 24;') &&
       hotbarAdapterSource.includes('export const HOTBAR_ROWS = 2;') &&
       hotbarAdapterSource.includes('export const HOTBAR_SLOTS = HOTBAR_COLUMNS * HOTBAR_ROWS;') &&
       hotbarAdapterSource.includes('export function buildHotbarSlots') &&
       hotbarComponentSource.includes('const slots = buildHotbarSlots(entries);') &&
-      // Comportamento real do modelo: 32 posições INDEXADAS, sobras vazias.
-      HOTBAR_SLOTS === 32 &&
-      HOTBAR_COLUMNS === 16 &&
+      // Comportamento real do modelo: 48 posições INDEXADAS, sobras vazias.
+      HOTBAR_SLOTS === 48 &&
+      HOTBAR_COLUMNS === 24 &&
       HOTBAR_ROWS === 2 &&
-      buildHotbarSlots([]).length === 32 &&
+      buildHotbarSlots([]).length === 48 &&
       buildHotbarSlots([]).every((slot) => slot.entry === null) &&
       buildHotbarSlots([]).map((slot) => slot.index).join(',') ===
-        Array.from({ length: 32 }, (_, i) => i + 1).join(',') &&
+        Array.from({ length: 48 }, (_, i) => i + 1).join(',') &&
       hotbarAdapterSource.includes("['attack', 'feature', 'spell', 'item']") &&
       hotbarAdapterSource.includes('KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind)') &&
       hotbarAdapterSource.includes('seen.has(attack.id)'),
@@ -6734,7 +6734,7 @@ check(
   );
 
   check(
-    'SC95) retrato circular de latão (~90px) e slots da grade 2×16, com UMA montagem',
+    'SC95) retrato circular de latão (~90px) e slots da grade 2×24, com UMA montagem',
     workspaceRule('.dock-portrait').includes('border-radius: 50%;') &&
       workspaceRule('.dock-portrait').includes('border: 3px solid #c49b3d;') &&
       workspaceRule('.dock-portrait-cell').includes('width: 5.5rem;') &&
@@ -6742,7 +6742,7 @@ check(
       !workspaceRule('.hotbar-slot').includes('max-width:') &&
       workspaceRule('.hotbar-slot').includes('width: 100%;') &&
       workspaceRule('.hotbar-slots').includes(
-        'grid-template-columns: repeat(16, minmax(0, 1fr));',
+        'grid-template-columns: repeat(24, minmax(0, 1fr));',
       ) &&
       workspaceRule('.hotbar-slots').includes('grid-template-rows: repeat(2, minmax(0, 1fr));') &&
       (trackerSource.match(/<CombatHotbar/g) ?? []).length === 1 &&
@@ -7619,7 +7619,7 @@ check(
   /* ---------------------------------------------------------------------- */
 
   check(
-    'SC138) grade 2×16 cabe no bloco central (16 colunas, 2 linhas, slot menor) sem crescer a dock',
+    'SC138) grade 2×24 cabe no bloco central (24 colunas, 2 linhas, slot quase quadrado)',
     // A linha discreta do topo não é um título: é aviso/contador/filtro.
     workspaceRule('.combat-hotbar').includes("'note tail'") &&
       workspaceRule('.combat-hotbar').includes("'slots slots'") &&
@@ -7628,11 +7628,11 @@ check(
       workspaceRule('.combat-hotbar').includes('height: 100%;') &&
       workspaceRule('.hotbar-slots').includes('display: grid;') &&
       workspaceRule('.hotbar-slots').includes(
-        'grid-template-columns: repeat(16, minmax(0, 1fr));',
+        'grid-template-columns: repeat(24, minmax(0, 1fr));',
       ) &&
       workspaceRule('.hotbar-slots').includes('grid-template-rows: repeat(2, minmax(0, 1fr));') &&
       workspaceRule('.hotbar-slots').includes('min-height: 0;') &&
-      // O slot acompanha a célula SEM teto de largura: 32 caixas uniformes que
+      // O slot acompanha a célula SEM teto de largura: 48 caixas uniformes que
       // ocupam toda a largura útil (nenhum vão sobrando entre elas).
       workspaceRule('.hotbar-slots').includes('justify-items: stretch;') &&
       workspaceRule('.hotbar-slot').includes('width: 100%;') &&
@@ -7645,9 +7645,9 @@ check(
       workspaceRule('.combat-dock').includes("'portrait resources hotbar utilities'") &&
       // Nenhuma altura mágica nova na faixa.
       !workspaceRule('.combat-hotbar').includes('min-height: 6rem') &&
-      // 1366/1920: a composição continua 2×16 nos breakpoints; só o
+      // 1366/1920: a composição continua 2×24 nos breakpoints; só o
       // empilhamento estreito fixa a coluna para rolar de lado.
-      workspaceActive.includes('grid-template-columns: repeat(16, 2.25rem);') &&
+      workspaceActive.includes('grid-template-columns: repeat(24, 2.25rem);') &&
       !workspaceActive.includes('.hotbar-slots {\n  display: flex;'),
   );
 
@@ -7693,14 +7693,14 @@ check(
       buildHotbarSlots(hotbarSample)
         .slice(hotbarSample.length)
         .every((slot) => slot.entry === null) &&
-      buildHotbarSlots(hotbarSample).length === 32 &&
+      buildHotbarSlots(hotbarSample).length === 48 &&
       buildHotbarSlots(
-        Array.from({ length: 40 }, (_, offset) => ({
+        Array.from({ length: 56 }, (_, offset) => ({
           ...hotbarSample[0],
           id: `attack:extra-${offset}`,
           sourceId: `extra-${offset}`,
         })),
-      ).length === 32,
+      ).length === 48,
   );
 
   check(
@@ -7745,14 +7745,14 @@ check(
   );
 
   check(
-    'SC141) Hotbar renderizada: 32 slots (3 preenchidos + 29 vazios), sem título e com seleção marcada',
-    (hotbarMarkup.match(/data-slot=/g) ?? []).length === 32 &&
-      (hotbarMarkup.match(/hotbar-slot is-empty/g) ?? []).length === 29 &&
+    'SC141) Hotbar renderizada: 48 slots (3 preenchidos + 45 vazios), sem título e com seleção marcada',
+    (hotbarMarkup.match(/data-slot=/g) ?? []).length === 48 &&
+      (hotbarMarkup.match(/hotbar-slot is-empty/g) ?? []).length === 45 &&
       (hotbarMarkup.match(/aria-pressed="false"/g) ?? []).length === 3 &&
       !hotbarMarkup.includes('hotbar-title') &&
       !hotbarMarkup.includes('>Hotbar<') &&
       // Nenhum contador e nenhuma letra de custo: glifo no canto do slot.
-      !/\d+\/32/.test(hotbarMarkup) &&
+      !/\d+\/48/.test(hotbarMarkup) &&
       (hotbarMarkup.match(/hotbar-cost-mark/g) ?? []).length === 2 &&
       !hotbarMarkup.includes('>A<') &&
       !hotbarMarkup.includes('>B<') &&

@@ -33,14 +33,14 @@ interface CombatHotbarProps {
 }
 
 /**
- * HOTBAR DE COMBATE — GRADE DE 32 SLOTS (2×16).
+ * HOTBAR DE COMBATE — GRADE DE 48 SLOTS (2×24).
  *
  * Esta é uma SUPERFÍCIE DE ACESSO: mostra o que o personagem já possui e
  * encaminha o clique para o fluxo existente (painel de ataque, alvo, modo de
  * rolagem, munição, modificadores, envio ao servidor). O componente não tem
  * estado, não calcula regra, não cobra economia e não resolve nada sozinho.
  *
- * A grade é FIXA em 32 posições indexadas (`buildHotbarSlots`): o que existe
+ * A grade é FIXA em 48 posições indexadas (`buildHotbarSlots`): o que existe
  * ocupa as primeiras posições e o resto fica visivelmente vazio. Nada é
  * inventado para preencher slot, e o excedente continua em "ver todas".
  *
@@ -159,7 +159,7 @@ export function CombatHotbar({
           </div>
         </details>
       ) : (
-        // Acima de 32 entradas a lista completa abre daqui; fora isso NADA é
+        // Acima de 48 entradas a lista completa abre daqui; fora isso NADA é
         // desenhado na linha do topo — os slots ficam com a altura inteira.
         null
       )}
