@@ -6177,7 +6177,7 @@ check(
   check(
     'SC59) o grid ocupa o centro flexível (minmax(0, 1fr)) com a cadeia de min-height: 0',
     workspaceRule('.combat-workspace-body').includes(
-      'grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(19rem, 24rem);',
+      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(19rem, 25rem);',
     ) &&
       workspaceRule('.combat-workspace-body').includes('overflow: hidden;') &&
       workspaceRule('.combat-workspace-body').includes('min-height: 0;') &&
@@ -6244,6 +6244,68 @@ check(
       workspaceRule('.combat-workspace .grid-viewport').includes('height: 100%;') &&
       workspaceRule('.combat-workspace .grid-stage').includes('flex: 1 1 auto;') &&
       !/width: \d+px/.test(workspaceRule('.combat-workspace-body')),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.5.1 — balanço visual: proporção, densidade e legibilidade.         */
+  /* ---------------------------------------------------------------------- */
+
+  check(
+    'SC65) lateral direita balanceada: registro ~58% e ação ~42%, sem teto fixo no painel de ataque',
+    workspaceRule('.combat-workspace-rail').includes(
+      'grid-template-rows: auto minmax(0, 1.4fr) minmax(0, 1fr);',
+    ) &&
+      workspaceRule('.combat-rail-action').includes('max-height: none;') &&
+      workspaceRule('.combat-rail-action').includes('overflow-y: auto;') &&
+      !workspaceRule('.combat-rail-action').includes('max-height: 24rem;') &&
+      // As duas regiões continuam rolando DENTRO de si: a página não cresce.
+      workspaceRule('.combat-rail-log .combat-log').includes('overflow-y: auto;') &&
+      workspaceRule('.combat-workspace-body').includes('overflow: hidden;'),
+  );
+
+  check(
+    'SC66) registro mais denso sem perder os Resolution Cards no topo e sem tocar em outros pontos da ficha',
+    workspaceRule('.combat-rail-log .combat-log').includes('gap: 0.28rem;') &&
+      workspaceRule('.combat-rail-log .log-card-summary').includes('padding: 0.34rem 0.5rem;') &&
+      workspaceRule('.combat-rail-log .log-entry').includes('padding: 0.34rem 0.5rem;') &&
+      workspaceRule('.combat-rail-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
+      // Densidade é escopada à lateral (attack-card existe no painel também).
+      workspaceActive.includes('.combat-rail-log .log-card-summary {') &&
+      !workspaceActive.includes('\n.log-card-summary {'),
+  );
+
+  check(
+    'SC67) iniciativa mais densa e faixa de ferramentas compacta, com as MESMAS funções',
+    workspaceRule('.combat-workspace .combatant-list .combatant-card').includes('height: auto;') &&
+      workspaceRule('.combat-workspace .combatant-list .combatant-card').includes(
+        'padding: 0.42rem 0.5rem;',
+      ) &&
+      workspaceRule('.combat-workspace .combatant-card.current').includes(
+        'padding-left: 0.6rem;',
+      ) &&
+      workspaceRule('.combat-tools').includes('padding: 0.2rem 0.45rem;') &&
+      workspaceRule('.combat-workspace .combat-shortcuts-inline .btn').includes(
+        'flex: 0 1 auto;',
+      ) &&
+      trackerSource.includes('COMBAT_SHORTCUTS.map(') &&
+      trackerSource.includes('onClick={() => onOpenSection(shortcut.key)}') &&
+      !workspaceActive.includes('.combat-shortcuts-inline select'),
+  );
+
+  check(
+    'SC68) barra: gema maior que o contador, formas distintas e leitura sem depender de cor',
+    workspaceRule('.turn-gem').includes('width: 0.95rem;') &&
+      workspaceRule('.turn-gem').includes('height: 0.95rem;') &&
+      workspaceRule('.turn-gems-count').includes('font-size: 0.6rem;') &&
+      workspaceRule('.turn-gem.is-ready').includes('radial-gradient(') &&
+      workspaceRule('.turn-gem.is-spent').includes('background: transparent;') &&
+      workspaceRule('.turn-gem.is-spent').includes('border: 1px dashed') &&
+      workspaceRule('.turn-gem.is-action').includes('transform: rotate(45deg);') &&
+      workspaceRule('.turn-gem.is-bonus').includes('border-radius: 50%;') &&
+      workspaceRule('.turn-gem.is-reaction').includes('clip-path: polygon(') &&
+      barSource.includes('actionPips(economy.actionsGranted, economy.actionsUsed)') &&
+      barSource.includes('economy.bonusActionUsed ?') &&
+      barSource.includes('economy.reactionAvailable ?'),
   );
 }
 

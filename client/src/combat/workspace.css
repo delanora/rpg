@@ -44,10 +44,13 @@
   color: var(--gold);
 }
 
-/* Corpo: a única região com rolagem própria por bloco. */
+/* Corpo: a única região com rolagem própria por bloco.
+   +1,5 rem na iniciativa (INIC, nome e metadados param de se espremer) e
+   +1 rem na lateral operacional. O centro continua sendo o `1fr` — o grid
+   segue a maior superfície, não uma coluna de largura fixa. */
 .combat-workspace-body {
   display: grid;
-  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(19rem, 24rem);
+  grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(19rem, 25rem);
   gap: 0.85rem;
   min-width: 0;
   min-height: 0;
@@ -77,7 +80,7 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.4rem;
+  gap: 0.32rem;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -90,8 +93,33 @@
   min-height: 0;
 }
 
+/* Densidade das placas: só padding/gaps/medalhão encolhem — o nome e o INIC
+   continuam com o mesmo tipo de leitura, agora com largura de sobra. */
 .combat-workspace .combatant-list .combatant-card {
   height: auto;
+  padding: 0.42rem 0.5rem;
+}
+
+.combat-workspace .combatant-card.current {
+  padding-left: 0.6rem;
+}
+
+.combat-workspace .combatant-card-main {
+  gap: 0.28rem;
+}
+
+.combat-workspace .combatant-card-head {
+  gap: 0.4rem;
+}
+
+.combat-workspace .combatant-card-rank {
+  width: 1.55rem;
+  height: 1.55rem;
+  font-size: 0.68rem;
+}
+
+.combat-workspace .combatant-card-name {
+  font-size: 0.92rem;
 }
 
 /* --------------------------------------------------------------------------
@@ -122,7 +150,9 @@
    -------------------------------------------------------------------------- */
 .combat-workspace-rail {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* Registro ≈58% e ação ≈42% da altura: o painel de ataque deixa de ser o
+     resto que sobrava do log. Ambas as trilhas rolam dentro de si mesmas. */
+  grid-template-rows: auto minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 0.7rem;
   min-width: 0;
   min-height: 0;
@@ -165,15 +195,46 @@
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
+  gap: 0.28rem;
+  padding-right: 0.1rem;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* Densidade do histórico: card mais baixo com a MESMA hierarquia visual
+   (autor · resultado · detalhe) — os seletores são escopados à lateral porque
+   `attack-card`/`log-entry` também existem em outros pontos da ficha. */
+.combat-rail-log .log-card-summary {
+  padding: 0.34rem 0.5rem;
+  gap: 0.06rem;
+}
+
+.combat-rail-log .log-card-actor,
+.combat-rail-log .log-card-primary {
+  font-size: 0.8rem;
+}
+
+.combat-rail-log .log-card-secondary,
+.combat-rail-log .log-card-title {
+  font-size: 0.7rem;
+}
+
+.combat-rail-log .log-entry {
+  padding: 0.34rem 0.5rem;
+  font-size: 0.86rem;
+}
+
+.combat-rail-log .log-card-detail {
+  padding: 0.34rem 0.5rem 0.4rem;
 }
 
 /* Ação do turno: o MESMO painel de antes, com rolagem própria. */
 .combat-rail-action {
   display: grid;
   min-height: 0;
-  max-height: 24rem;
+  /* Sem teto fixo: no desktop a altura vem da trilha `1fr` da lateral (~42%),
+     então telas altas aproveitam o espaço em vez de parar em 24rem. */
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -190,19 +251,19 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 0.55rem;
+  gap: 0.4rem;
   min-width: 0;
 }
 
 .combat-workspace-tools > * {
-  flex: 1 1 20rem;
+  flex: 1 1 16rem;
   min-width: 0;
 }
 
 .combat-tools {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0.4rem 0.55rem;
+  padding: 0.2rem 0.45rem;
   background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
 }
 
@@ -212,8 +273,32 @@
   gap: 0.4rem;
   cursor: pointer;
   font-family: var(--font-display);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--ink-soft);
+}
+
+/* Atalhos da ficha: faixa mais baixa, mesma área clicável confortável. Ela
+   também aparecia alta logo acima da barra de recursos e competia com ela. */
+.combat-workspace .combat-shortcuts-inline {
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.combat-workspace .combat-shortcuts-inline .btn {
+  flex: 0 1 auto;
+  gap: 0.3rem;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.72rem;
+  line-height: 1.15;
+}
+
+.combat-workspace .combat-shortcuts-inline .btn .icon svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.combat-workspace .combat-status-summary {
+  font-size: 0.76rem;
 }
 
 .combat-tools > summary .icon {
@@ -297,20 +382,22 @@
 .turn-resource-gems {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
 
 .turn-gems {
   display: inline-flex;
   align-items: center;
-  gap: 0.22rem;
+  gap: 0.28rem;
 }
 
 .turn-gem {
   display: inline-block;
+  flex: none;
   box-sizing: border-box;
-  width: 0.72rem;
-  height: 0.72rem;
+  /* A gema é a leitura primária do recurso: ~13px, acima do contador. */
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .turn-gem.is-action {
@@ -328,19 +415,26 @@
 
 .turn-gem.is-ready {
   background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold-deep));
-  border: 1px solid var(--gold-deep);
-  box-shadow: 0 0 6px -2px var(--glow);
+  border: 1px solid var(--gold-bright);
+  box-shadow:
+    0 0 7px -1px var(--glow),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
+/* Gasta: núcleo VAZIO com contorno tracejado. A leitura é forma + preenchimento
+   + contorno, nunca só a cor (acessibilidade). */
 .turn-gem.is-spent {
   background: transparent;
-  border: 1px solid var(--line-strong);
+  border: 1px dashed var(--ink-faint);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
 }
 
+/* Contador numérico: apoio discreto do que a gema já mostra. */
 .turn-gems-count {
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   color: var(--ink-faint);
+  opacity: 0.72;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -350,7 +444,7 @@
    -------------------------------------------------------------------------- */
 @media (max-width: 1360px) {
   .combat-workspace-body {
-    grid-template-columns: minmax(12rem, 14rem) minmax(0, 1fr) minmax(17rem, 20rem);
+    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(17.5rem, 21rem);
   }
 }
 
