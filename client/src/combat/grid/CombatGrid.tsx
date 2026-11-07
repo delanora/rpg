@@ -76,6 +76,12 @@ export interface GridTargeting {
   selectedTargetId: string | null;
   onPickTarget: (combatantId: string) => void;
   onClearTarget: () => void;
+  /**
+   * 6.6M.6.4.2 — DUPLO CLIQUE no alvo elegível executa o ataque pelo MESMO
+   * pedido do botão "Rolar ataque". O grid só avisa; nada é rolado aqui e
+   * nenhuma regra é decidida no cliente.
+   */
+  onExecuteTarget?: (combatantId: string) => void;
 }
 
 export interface CombatGridProps {
@@ -1552,6 +1558,21 @@ export function CombatGrid({
     void place(combatantId, anchor);
   }
 
+  /**
+   * DUPLO CLIQUE no token: com targeting ativo e alvo elegível ele EXECUTA o
+   * ataque (mesmo envio do botão); caso contrário continua centralizando a
+   * câmera, como antes. O gesto nunca rola dado no cliente.
+   */
+  function handleTokenDoubleClick(combatantId: string): void {
+    const live = targetingRef.current;
+    if (live?.active && live.targetableIds.includes(combatantId) && live.onExecuteTarget) {
+      live.onPickTarget(combatantId);
+      live.onExecuteTarget(combatantId);
+      return;
+    }
+    centerOnCombatant(combatantId);
+  }
+
   function selectUnit(combatantId: string): void {
     if (suppressClick.current) {
       // Clique sintético do fim de um arrasto: não seleciona por acidente.
@@ -1720,7 +1741,7 @@ export function CombatGrid({
       : targetingActive
         ? targeting?.selectedTargetId
           ? 'Alvo escolhido · confirme em Rolar ataque · Esc limpa.'
-          : 'Selecione um alvo no grid · o clique só escolhe, não ataca.'
+          : 'Selecione um alvo no grid · duplo clique rola o ataque.'
       : movement && !movement.combatantId
         ? (movement.reason ?? 'Nenhum combatente pode se mover agora.')
         : isMaster
@@ -2026,7 +2047,7 @@ export function CombatGrid({
                   targetPicked={targeting?.selectedTargetId === combatant.id}
                   onSelect={selectUnit}
                   onMoveStart={armTokenGesture}
-                  onCenter={centerOnCombatant}
+                  onCenter={handleTokenDoubleClick}
                   onHover={rulerActive && measureInteractive ? setHoverTokenId : undefined}
                 />
               ))}

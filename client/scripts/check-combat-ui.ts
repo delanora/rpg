@@ -8567,5 +8567,33 @@ check(
   })(),
 );
 
+check(
+  'SC165) duplo clique no alvo CONFIRMA pelo MESMO envio do botão (um gesto, um ataque)',
+  targetingPanelSource.includes('function submitAttack(): void {') &&
+    targetingPanelSource.includes('onClick={submitAttack}') &&
+    targetingPanelSource.includes('const handledConfirm = useRef(0);') &&
+    targetingPanelSource.includes('if (!confirmNonce || handledConfirm.current === confirmNonce) return;') &&
+    // O envio do gesto NÃO duplica o payload: ele chama a mesma função.
+    (targetingPanelSource.match(/onAttack\(\{/g) ?? []).length === 1 &&
+    targetingTrackerSource.includes(
+      'const [confirmAttackNonce, setConfirmAttackNonce] = useState(0);',
+    ) &&
+    targetingTrackerSource.includes('setConfirmAttackNonce((previous) => previous + 1);') &&
+    targetingTrackerSource.includes('confirmNonce={confirmAttackNonce}') &&
+    targetingTrackerSource.includes('onExecuteTarget: (combatantId) => {') &&
+    // `onConfirm*` continua reservado ao MOVIMENTO (CB275): aqui o gesto EXECUTA.
+    targetingGridSource.includes('onExecuteTarget?: (combatantId: string) => void;') &&
+    !targetingGridSource.includes('onConfirm') &&
+    targetingGridSource.includes('function handleTokenDoubleClick(combatantId: string): void {') &&
+    targetingGridSource.includes('live.onPickTarget(combatantId);') &&
+    targetingGridSource.includes('live.onExecuteTarget(combatantId);') &&
+    targetingGridSource.includes('onCenter={handleTokenDoubleClick}') &&
+    // Sem targeting o duplo clique continua centralizando a câmera.
+    targetingGridSource.includes('centerOnCombatant(combatantId);') &&
+    targetingGridSource.includes('duplo clique rola o ataque') &&
+    // O token continua sem rolar nada por conta própria.
+    !/onAttack|resolveAttack\s*\(/.test(targetingTokenSource),
+);
+
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);

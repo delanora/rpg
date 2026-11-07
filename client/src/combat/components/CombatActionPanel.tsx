@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components/Icon';
 import { Portrait } from '../../components/Portrait';
 import {
@@ -147,6 +147,12 @@ interface CombatActionPanelProps {
   targetCombatantId?: string | null;
   /** Devolve a escolha ao dono — inclusive quando vem do cartão do painel. */
   onTargetChange?: (combatantId: string) => void;
+  /**
+   * 6.6M.6.4.2 — CONFIRMAR pelo grid (duplo clique no alvo). É um `nonce`, não
+   * um booleano: cada gesto pede UM envio, e o envio é o mesmo `submitAttack`
+   * do botão "Rolar ataque" — não existe segundo caminho de execução.
+   */
+  confirmNonce?: number;
   /** Fecha o mini fluxo e devolve a faixa de ataque para a hotbar. */
   onClose?: () => void;
   busy: boolean;
@@ -184,6 +190,7 @@ export function CombatActionPanel({
   preset = null,
   targetCombatantId,
   onTargetChange,
+  confirmNonce = 0,
   onClose,
   busy,
   onAttack,
@@ -317,6 +324,43 @@ export function CombatActionPanel({
     ? Boolean(economy?.ready && economy.reactionAvailable && !offhand)
     : combat.currentCombatantId === attacker?.id && Boolean(economy && (offhand ? !economy.bonusActionUsed : continuation || economy.actionsUsed < economy.actionsGranted));
   const ready = Boolean(attacker && attackId && targetId) && !ammoMissing && available && Boolean(attacker?.conditionEffects.canAct);
+
+  /**
+   * ENVIO ÚNICO do ataque. O botão "Rolar ataque" e o CONFIRMAR do grid (duplo
+   * clique no token) chamam ESTA função: o gesto não altera payload, rolagem,
+   * munição nem custo — só aperta o mesmo botão. `ready`/`busy` continuam sendo
+   * o portão; quem valida alcance, cobertura e economia é o servidor.
+   */
+  function submitAttack(): void {
+    if (!ready || busy) return;
+    onAttack({
+      attackId,
+      ...(executingPrepared ? { prepared: true } : !offhand && continuation ? { attackActionId: continuation } : {}),
+      targetCombatantId: targetId,
+      advantage,
+      disadvantage,
+      ...(adjacentAlly && sneakEligible ? { adjacentAlly: true } : {}),
+      ...(attackerChoices && attacker ? { attackerCombatantId: attacker.id } : {}),
+      ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
+      ...(selectedEffects.length > 0
+        ? { selectedEffectModifiers: selectedEffects }
+        : {}),
+    });
+  }
+
+  /**
+   * CONFIRMAR pelo GRID (duplo clique no alvo): o `nonce` é a única coisa que o
+   * grid manda. O ref garante UM envio por gesto — a invocação dupla de efeito
+   * (StrictMode) não pode rolar dois ataques.
+   */
+  const handledConfirm = useRef(0);
+  useEffect(() => {
+    if (!confirmNonce || handledConfirm.current === confirmNonce) return;
+    handledConfirm.current = confirmNonce;
+    submitAttack();
+    // `submitAttack` já lê o estado deste render; só o nonce deve disparar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmNonce]);
 
   const tray = variant === 'tactical-tray';
   // Resumo dos modificadores: só o que existe aparece como legenda do bloco.
@@ -687,21 +731,7 @@ export function CombatActionPanel({
               className="btn btn-primary attack-roll"
               disabled={busy || !ready}
               title={ammoMissing ? 'Sem munição para esta arma.' : undefined}
-              onClick={() => {
-                onAttack({
-                  attackId,
-                  ...(executingPrepared ? { prepared: true } : !offhand && continuation ? { attackActionId: continuation } : {}),
-                  targetCombatantId: targetId,
-                  advantage,
-                  disadvantage,
-                  ...(adjacentAlly && sneakEligible ? { adjacentAlly: true } : {}),
-                  ...(attackerChoices ? { attackerCombatantId: attacker.id } : {}),
-                  ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
-                  ...(selectedEffects.length > 0
-                    ? { selectedEffectModifiers: selectedEffects }
-                    : {}),
-                });
-              }}
+              onClick={submitAttack}
             >
               <Icon name="die" size={16} /> Rolar ataque
             </button>

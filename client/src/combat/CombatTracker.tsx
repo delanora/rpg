@@ -243,6 +243,12 @@ export function CombatTracker({
    */
   const [targetCombatantId, setTargetCombatantId] = useState<string | null>(null);
   /**
+   * CONFIRMAR PELO GRID (6.6M.6.4.2) — cada duplo clique no alvo incrementa o
+   * `nonce` e o painel aperta o MESMO "Rolar ataque". O ataque escolhido, o alvo
+   * e a economia continuam vindo do painel/servidor; aqui não há payload.
+   */
+  const [confirmAttackNonce, setConfirmAttackNonce] = useState(0);
+  /**
    * FILTRO DA HOTBAR (6.6M.6.2) — navegação pelos três glifos da dock. O estado
    * vive aqui (a dock só apresenta a seleção e a Hotbar só desenha a lista
    * podada); virar de turno limpa o filtro, como já acontecia com a seleção.
@@ -1403,6 +1409,11 @@ export function CombatTracker({
                     selectedTargetId: gridTargetId,
                     onPickTarget: (combatantId) => setTargetCombatantId(combatantId),
                     onClearTarget: () => setTargetCombatantId(null),
+                    // Duplo clique: escolhe o alvo e pede UM envio ao painel.
+                    onExecuteTarget: (combatantId) => {
+                      setTargetCombatantId(combatantId);
+                      setConfirmAttackNonce((previous) => previous + 1);
+                    },
                   }
                 : null
             }
@@ -1507,6 +1518,7 @@ export function CombatTracker({
                       // painel escrevem no MESMO estado do tracker.
                       targetCombatantId={gridTargetId}
                       onTargetChange={setTargetCombatantId}
+                      confirmNonce={confirmAttackNonce}
                       onClose={() => setHotbarPick(null)}
                       busy={busy}
                       onAttack={attack}
