@@ -2576,15 +2576,9 @@
   max-width: 18rem;
 }
 
-/* LÁPIS do editor (6.6M.6.3.1): gesto discreto AO LADO DO RETRATO, fora da
-   Hotbar. Círculo pequeno no canto do retrato — sem texto, sem linha nova e
-   sem empurrar a grade de 48 slots. */
-/* LÁPIS DO EDITOR DA HOTBAR: na quina INFERIOR ESQUERDA da dock — diagonal
-   abaixo do retrato —, o mais perto da borda que o padding permite (0.25rem,
-   sem atropelar o aro de latão) e sem encostar na foto. 1.5rem de alvo de
-   clique, fora do grid. */
-/* Os DOIS gestos do editor (lápis = abrir/cancelar, check verde = salvar) moram
-   juntos na quina inferior esquerda da dock, fora do grid. */
+/* Os DOIS gestos do editor moram juntos na quina INFERIOR ESQUERDA da dock,
+   fora do grid: lápis = abrir/cancelar (1.5rem) e check verde = salvar
+   (1.25rem, menor para não cobrir a legenda do nome do personagem). */
 .dock-personalize-tools {
   position: absolute;
   bottom: 0.25rem;
@@ -2634,12 +2628,13 @@
   cursor: not-allowed;
 }
 
-/* CONFIRMAR: check verde, mesmo diâmetro do lápis — pequeno e reconhecível. */
+/* CONFIRMAR: check verde, um pouco menor que o lápis — a legenda do nome do
+   personagem fica logo acima e não deve ficar coberta. */
 .dock-personalize-save {
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
   padding: 0;
   border: 1px solid rgba(103, 178, 112, 0.6);
   border-radius: 50%;

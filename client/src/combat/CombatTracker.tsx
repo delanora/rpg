@@ -1006,9 +1006,6 @@ export function CombatTracker({
               editing={hotbarEditing}
               draftSlots={hotbarDraftSlots}
               choices={hotbarEntries}
-              dirty={hotbarDirty}
-              saving={hotbarSaving}
-              error={hotbarError}
               // ATENÇÃO ao índice: a Hotbar mostra posições de 1 a 48, mas o
               // rascunho é um array — a conversão (posição − 1) acontece AQUI,
               // num único lugar. Sem ela, remover a posição 3 apagaria a 4.
@@ -1027,6 +1024,8 @@ export function CombatTracker({
                   draft ? clearHotbarRef(draft, position - 1) : draft,
                 )
               }
+              saving={hotbarSaving}
+              error={hotbarError}
               extraEntries={hotbarExtraEntries}
             />
           ) : (

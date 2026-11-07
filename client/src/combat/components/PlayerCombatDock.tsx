@@ -298,7 +298,7 @@ export function PlayerCombatDock({
               disabled={saveDisabled}
               onClick={onSaveHotbar}
             >
-              <Icon name="check" size={15} />
+              <Icon name="check" size={13} />
             </button>
           ) : null}
         </div>

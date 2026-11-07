@@ -8087,7 +8087,6 @@ check(
       editing: true,
       draftSlots: placedSlots,
       choices: hotbarSample,
-      dirty: true,
       onAssign: () => {},
       onMove: () => {},
       onRemove: () => {},
@@ -8122,6 +8121,16 @@ check(
         savingDockMarkup.indexOf('dock-personalize-save') &&
       // Fora da edição não existe check: a dock de consulta só tem o lápis.
       !personalizeDockMarkup.includes('dock-personalize-save') &&
+      // 6.6M.6.3.1.7: a faixa não escreve NADA em edição (nem "não salvo", nem
+      // explicação) — a linha do topo mede o mesmo e a grade não muda.
+      editingMarkup.includes('class="hotbar-note" role="status"></span>') &&
+      !editingMarkup.includes('Arraste ou clique') &&
+      !editingMarkup.includes('Alterações não salvas') &&
+      !editingMarkup.includes('escolha o destino') &&
+      // O CSS de edição só desenha o contorno: nada de altura/padding na grade.
+      !workspaceRule('.combat-hotbar.is-editing .hotbar-slots').includes('height') &&
+      !workspaceRule('.combat-hotbar.is-editing .hotbar-slots').includes('padding') &&
+      workspaceRule('.combat-hotbar.is-editing .hotbar-slots').includes('outline-offset: 2px;') &&
       (editingMarkup.match(/hotbar-slot-remove/g) ?? []).length === hotbarSample.length &&
       (editingMarkup.match(/is-editable/g) ?? []).length === HOTBAR_SLOTS &&
       !editingMarkup.includes('hotbar-picker') &&
@@ -8141,7 +8150,7 @@ check(
       workspaceRule('.dock-personalize-tools').includes('left: 0.25rem;') &&
       !workspaceRule('.dock-personalize').includes('position: absolute;') &&
       workspaceRule('.dock-personalize').includes('width: 1.5rem;') &&
-      workspaceRule('.dock-personalize-save').includes('width: 1.5rem;') &&
+      workspaceRule('.dock-personalize-save').includes('width: 1.25rem;') &&
       workspaceRule('.dock-personalize-save').includes('color: #8fd694;') &&
       // Não voltou para dentro da célula do retrato.
       !workspaceActive.includes('.dock-portrait-cell .dock-personalize'),

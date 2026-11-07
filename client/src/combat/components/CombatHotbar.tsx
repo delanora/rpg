@@ -40,9 +40,9 @@ interface CombatHotbarProps {
   draftSlots?: HotbarSlotView[];
   /** Atalhos disponíveis para adicionar a uma posição vazia. */
   choices?: CombatHotbarEntry[];
-  dirty?: boolean;
-  saving?: boolean;
   error?: string | null;
+  /** Envio em curso: a grade não aceita novos cliques. */
+  saving?: boolean;
   onAssign?: (index: number, ref: HotbarSlotRef) => void;
   onMove?: (from: number, to: number) => void;
   onRemove?: (index: number) => void;
@@ -65,8 +65,9 @@ interface CombatHotbarProps {
  *
  * 6.6M.6.3.1: as posições passaram a ser PERSISTIDAS. O editor abre pelo lápis
  * junto ao retrato, trabalha sobre um RASCUNHO local (adicionar, mover, trocar,
- * remover) e só o "Salvar" envia algo ao servidor; "Cancelar" descarta e volta
- * à última configuração confirmada.
+ * remover); o check verde ao lado do lápis envia ao servidor e o próprio lápis
+ * descarta o rascunho. A faixa do topo não explica o modo: ela fica vazia em
+ * edição para a grade não mudar de tamanho.
  *
  * 6.6M.6.3.1.1: o filtro A/B/R NÃO encolhe a grade. A categoria escolhida vem
  * para o começo da Hotbar e os demais atalhos continuam ali, esmaecidos — só
@@ -83,9 +84,8 @@ export function CombatHotbar({
   editing = false,
   draftSlots,
   choices = [],
-  dirty = false,
-  saving = false,
   error = null,
+  saving = false,
   onAssign,
   onMove,
   onRemove,
@@ -143,15 +143,11 @@ export function CombatHotbar({
       {/* Linha discreta do topo: aviso de categoria vazia e controles do editor.
           Não há cabeçalho, título nem contador permanente. */}
       <div className="hotbar-tail">
+        {/* A faixa NÃO explica o modo de edição nem avisa "não salvo": em
+            edição ela não escreve nada, então a linha do topo mede o MESMO que
+            fora da edição e a grade não muda de tamanho. Só o erro aparece. */}
         <span className="hotbar-note" role="status">
-          {emptyFilter ??
-            (editing
-              ? movingFrom !== null
-                ? `Posição ${movingFrom} escolhida — escolha o destino`
-                : saving
-                  ? 'Salvando…'
-                  : (error ?? (dirty ? 'Alterações não salvas' : 'Arraste ou clique para organizar — o lápis cancela'))
-              : null)}
+          {emptyFilter ?? error}
         </span>
 
         {/* A linha do topo NÃO tem botão: Salvar e Cancelar vivem na dock, ao
