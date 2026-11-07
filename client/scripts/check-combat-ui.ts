@@ -8298,6 +8298,26 @@ check(
   );
 
   check(
+    'SC156) tooltip de condição flutua acima de tudo (portal) em vez de alargar o painel',
+    // `position: absolute` dentro do painel da iniciativa gerava rolagem
+    // horizontal. O popup agora é portado para o body, em `fixed`, e só existe
+    // enquanto o ponteiro/foco está na etiqueta.
+    source('src/combat/components/ConditionBadges.tsx').includes("from 'react-dom'") &&
+      source('src/combat/components/ConditionBadges.tsx').includes('createPortal(') &&
+      source('src/combat/components/ConditionBadges.tsx').includes('condition-tip-floating') &&
+      source('src/combat/components/ConditionBadges.tsx').includes('onPointerLeave={tip.hide}') &&
+      source('src/combat/components/ConditionBadges.tsx').includes(
+        "window.addEventListener('scroll', onMove, true)",
+      ) &&
+      workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
+        'position: fixed;',
+      ) &&
+      workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
+        'pointer-events: none;',
+      ),
+  );
+
+  check(
     'SC151) persistência autorizada: 48 posições no servidor, versão + idempotência',
     repoFile('prisma/schema.prisma').includes('hotbar           Json?') &&
       repoFile('src/modules/characters/characters.schema.ts').includes(

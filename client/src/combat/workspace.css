@@ -129,6 +129,20 @@
   gap: 0.4rem;
 }
 
+/* TOOLTIP DE CONDIÇÃO FLUTUANTE (portal no body): o popup vivia dentro do
+   painel da iniciativa, era recortado e alargava a área de rolagem — abria uma
+   barra HORIZONTAL. Fixo e fora do fluxo, ele fica acima de tudo e some quando
+   o ponteiro/foco sai da etiqueta. */
+.info-tip-text.condition-tip.condition-tip-floating {
+  position: fixed;
+  z-index: 120;
+  display: grid;
+  width: min(27rem, calc(100vw - 1rem));
+  max-height: 60vh;
+  overflow-y: auto;
+  pointer-events: none;
+}
+
 /* Retrato do card da iniciativa SEM moldura: `.portrait` tem borda e aro de
    tinta que, sobre a placa do card, viravam um contorno marrom em volta da
    imagem. Aqui fica só a foto — o aro padrão do resto do app não muda. */

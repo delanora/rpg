@@ -1,8 +1,80 @@
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { conditionDamageFamily, conditionDescription } from '../combatVisuals';
 import type { ConditionEffects, MechanicalState } from '../../types';
 
 /** Quantas etiquetas cabem no card antes de resumir o resto em "+N". */
 const MAX_VISIBLE_CONDITIONS = 4;
+
+type TipPosition = { top: number; left: number; above: boolean };
+
+/**
+ * TOOLTIP DE CONDIÇÃO FORA DO PAINEL.
+ *
+ * A descrição era `position: absolute` DENTRO da etiqueta: no painel da
+ * iniciativa (que rola), ela era recortada e, pior, alargava a área de rolagem
+ * — aparecia uma barra HORIZONTAL só para caber o texto.
+ *
+ * Aqui o popup é PORTADO para o `body` e posicionado em `fixed` a partir do
+ * retângulo da etiqueta: fica por cima de tudo, não participa do layout de
+ * nenhum ancestral e existe só enquanto o ponteiro/foco está na etiqueta.
+ */
+function useFloatingConditionTip() {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<TipPosition | null>(null);
+
+  const place = useCallback(() => {
+    const anchor = ref.current;
+    if (!anchor || typeof window === 'undefined') return;
+    const rect = anchor.getBoundingClientRect();
+    // Mesma largura máxima do `.info-tip-text`, presa à viewport.
+    const width = Math.min(432, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const above = rect.bottom + 200 > window.innerHeight;
+    setPos({ top: above ? rect.top - 6 : rect.bottom + 6, left, above });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onMove = (): void => place();
+    // `capture` pega a rolagem de qualquer ancestral (o painel da iniciativa).
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open, place]);
+
+  return {
+    ref,
+    open,
+    pos,
+    show: (): void => setOpen(true),
+    hide: (): void => setOpen(false),
+  };
+}
+
+/** O popup flutuante em si: portal no `body`, fixo, sem capturar o ponteiro. */
+function FloatingConditionTip({ pos, children }: { pos: TipPosition | null; children: ReactNode }) {
+  if (!pos) return null;
+  return createPortal(
+    <span
+      className="info-tip-text condition-tip condition-tip-floating"
+      role="tooltip"
+      style={{
+        top: `${pos.top}px`,
+        left: `${pos.left}px`,
+        transform: pos.above ? 'translateY(-100%)' : undefined,
+      }}
+    >
+      {children}
+    </span>,
+    document.body,
+  );
+}
 
 /**
  * Uma etiqueta de condição INTERATIVA: o hover/focus na própria etiqueta abre a
@@ -20,8 +92,20 @@ function ConditionChip({ condition, label, count, suspended, sources, onOpenHist
   onOpenHistory?: (condition: string) => void;
 }) {
   const family = conditionDamageFamily(condition);
+  const tip = useFloatingConditionTip();
+  const content = (
+    <>
+      <strong>{label}</strong>
+      {conditionDescription(condition)}
+      {sources.length > 0 ? (
+        <span className="condition-tip-sources">Fontes: {sources.join(' · ')}</span>
+      ) : null}
+    </>
+  );
+
   return (
     <span
+      ref={tip.ref}
       className={onOpenHistory ? 'condition-chip info-tip is-clickable' : 'condition-chip info-tip'}
       data-condition={condition}
       data-damage-family={family ?? undefined}
@@ -39,19 +123,58 @@ function ConditionChip({ condition, label, count, suspended, sources, onOpenHist
             }
           : undefined
       }
+      onPointerEnter={tip.show}
+      onPointerLeave={tip.hide}
+      onFocus={tip.show}
+      onBlur={tip.hide}
     >
       <span className="condition-chip-label">
         {label}
         {count > 1 ? ` ×${count}` : ''}
         {suspended ? ' (suspenso)' : ''}
       </span>
-      <span className="info-tip-text condition-tip" role="tooltip">
-        <strong>{label}</strong>
-        {conditionDescription(condition)}
-        {sources.length > 0 ? (
-          <span className="condition-tip-sources">Fontes: {sources.join(' · ')}</span>
-        ) : null}
+      {/* Cópia inline: só para SSR/impressão — com o popup aberto ela some. */}
+      <span
+        className="info-tip-text condition-tip"
+        role="tooltip"
+        style={tip.open ? { display: 'none' } : undefined}
+      >
+        {content}
       </span>
+      {tip.open ? <FloatingConditionTip pos={tip.pos}>{content}</FloatingConditionTip> : null}
+    </span>
+  );
+}
+
+/** Etiqueta "+N": mesma mecânica de popup flutuante das condições visíveis. */
+function MoreConditionsChip({ labels }: { labels: string[] }) {
+  const tip = useFloatingConditionTip();
+  const content = (
+    <>
+      <strong>Outras condições</strong>
+      {labels.join(' · ')}
+    </>
+  );
+  return (
+    <span
+      ref={tip.ref}
+      className="condition-chip more info-tip"
+      tabIndex={0}
+      role="note"
+      onPointerEnter={tip.show}
+      onPointerLeave={tip.hide}
+      onFocus={tip.show}
+      onBlur={tip.hide}
+    >
+      +{labels.length}
+      <span
+        className="info-tip-text condition-tip"
+        role="tooltip"
+        style={tip.open ? { display: 'none' } : undefined}
+      >
+        {content}
+      </span>
+      {tip.open ? <FloatingConditionTip pos={tip.pos}>{content}</FloatingConditionTip> : null}
     </span>
   );
 }
@@ -96,13 +219,7 @@ export function ConditionBadges({ state, effects, exhaustionEnabled = effects.ex
         );
       })}
       {hidden.length > 0 ? (
-        <span className="condition-chip more info-tip" tabIndex={0} role="note">
-          +{hidden.length}
-          <span className="info-tip-text condition-tip" role="tooltip">
-            <strong>Outras condições</strong>
-            {hidden.map((condition) => effects.labels[condition] ?? condition).join(' · ')}
-          </span>
-        </span>
+        <MoreConditionsChip labels={hidden.map((condition) => effects.labels[condition] ?? condition)} />
       ) : null}
       {exhaustionEnabled ? (
         <span className="condition-chip exhaustion" data-condition="exhaustion">
