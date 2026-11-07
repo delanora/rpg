@@ -144,3 +144,21 @@ export function filterHotbarEntries(
   if (!filter) return [...entries];
   return entries.filter((entry) => entry.cost === filter);
 }
+
+/**
+ * A SELEÇÃO continua na lista visível com este filtro? (6.6M.6.2.1)
+ *
+ * A pré-seleção da Hotbar aponta para uma ENTRADA, e a entrada pode não
+ * pertencer ao recorte novo: trocar de Ação para Ação Bônus não pode deixar o
+ * painel tático com um ataque de outro custo "preso". Sem entrada escolhida a
+ * resposta é `true` (não há nada a descartar) e ampliar o filtro nunca invalida
+ * nada — só o recorte menor pode. Puro: não olha recurso, turno nem servidor.
+ */
+export function selectionSurvivesFilter(
+  entries: readonly CombatHotbarEntry[],
+  filter: HotbarFilter | null,
+  sourceId: string | null | undefined,
+): boolean {
+  if (!sourceId) return true;
+  return filterHotbarEntries(entries, filter).some((entry) => entry.sourceId === sourceId);
+}

@@ -28,6 +28,12 @@ import { TurnToast } from '../src/combat/components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
 import { actionPips } from '../src/combat/resourcePips';
+import {
+  filterHotbarEntries,
+  hotbarFilterLabel,
+  selectionSurvivesFilter,
+  type CombatHotbarEntry,
+} from '../src/combat/hotbar';
 import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
 import { GridMovementTrace } from '../src/combat/grid/GridMovementTrace';
 import { MovementHud } from '../src/combat/grid/MovementHud';
@@ -7268,6 +7274,37 @@ check(
 
   const waitingPanelSource = source('src/combat/components/BattleWaitingPanel.tsx');
 
+  /** Entradas SINTÉTICAS do adapter: só custo e identidade importam aqui. */
+  const hotbarSample: CombatHotbarEntry[] = [
+    {
+      id: 'attack:a1',
+      kind: 'attack',
+      label: 'Espada longa',
+      detail: 'marcial',
+      icon: 'sword',
+      cost: 'action',
+      sourceId: 'a1',
+    },
+    {
+      id: 'attack:offhand:a2',
+      kind: 'attack',
+      label: 'Adaga (mão secundária)',
+      detail: 'leve',
+      icon: 'sword',
+      cost: 'bonus-action',
+      sourceId: 'offhand:a2',
+    },
+    {
+      id: 'attack:a3',
+      kind: 'attack',
+      label: 'Ataque sem custo declarado',
+      detail: 'outro',
+      icon: 'ammo',
+      cost: 'other',
+      sourceId: 'a3',
+    },
+  ];
+
   check(
     'SC127) os glifos filtram por CUSTO TÍPICO e `other` não entra em nenhuma categoria',
     // Adapter: igualdade de custo, `null` = lista completa.
@@ -7372,6 +7409,76 @@ check(
       workspaceRule('.hotbar-slot').includes('width: 3.4375rem;') &&
       workspaceRule('.dock-resource.is-filtering').includes('box-shadow:') &&
       workspaceRule('.hotbar-waiting .battle-waiting-anim').includes('transform: scale(0.72);'),
+  );
+
+  check(
+    'SC132) categoria vazia NÃO cai no aviso legado e a dica do painel segue a lista visível',
+    // A Hotbar é montada quando há filtro, mesmo sem NENHUMA entrada base…
+    trackerSource.includes('hotbarEntries.length > 0 || hotbarFilter ? (') &&
+      // …e o aviso legado sobrevive só no caso realmente vazio (sem filtro).
+      trackerSource.includes('className="dock-empty"') &&
+      trackerSource.includes('Nenhum ataque disponível — equipe uma arma na mochila.') &&
+      // A dica "escolha uma ação" acompanha a lista VISÍVEL (não a base).
+      trackerSource.includes('hotbarVisible.length > 0 ? (') &&
+      // A faixa continua montada com os oito slots: nada colapsa.
+      hotbarComponentSource.includes('if (entries.length === 0 && !filter) return null;') &&
+      hotbarComponentSource.includes('Math.max(0, HOTBAR_SLOTS - visible.length)') &&
+      // Comportamento real do recorte: vazio é LISTA vazia, nunca `null`.
+      filterHotbarEntries(hotbarSample, 'reaction').length === 0 &&
+      Array.isArray(filterHotbarEntries(hotbarSample, 'reaction')) &&
+      filterHotbarEntries(hotbarSample, null).length === hotbarSample.length &&
+      filterHotbarEntries(hotbarSample, 'action').length === 1 &&
+      filterHotbarEntries(hotbarSample, 'bonus-action').length === 1 &&
+      // `other` não vira categoria: só sobrevive na lista completa.
+      !filterHotbarEntries(hotbarSample, 'action').some((entry) => entry.cost === 'other') &&
+      hotbarFilterLabel('reaction') === 'Reação',
+  );
+
+  check(
+    'SC133) trocar de filtro limpa só a seleção que deixa de pertencer à lista visível',
+    hotbarAdapterSource.includes('export function selectionSurvivesFilter') &&
+      // O predicado é PURO: não lê recurso, turno nem rede.
+      !hotbarAdapterSource.includes('actionsUsed') &&
+      !hotbarAdapterSource.includes('fetch(') &&
+      // O tracker usa o MESMO predicado no toggle (sem segundo `setHotbarPick`).
+      trackerSource.includes('const toggleHotbarFilter = (filter: HotbarFilter): void => {') &&
+      trackerSource.includes('const next = hotbarFilter === filter ? null : filter;') &&
+      trackerSource.includes('selectionSurvivesFilter(hotbarEntries, next, previous.attackId)') &&
+      trackerSource.includes('onToggleHotbarFilter={toggleHotbarFilter}') &&
+      // Seleção válida permanece, seleção de outro custo é descartada.
+      selectionSurvivesFilter(hotbarSample, null, 'offhand:a2') === true &&
+      selectionSurvivesFilter(hotbarSample, 'bonus-action', 'offhand:a2') === true &&
+      selectionSurvivesFilter(hotbarSample, 'action', 'offhand:a2') === false &&
+      selectionSurvivesFilter(hotbarSample, 'reaction', 'a1') === false &&
+      // Sem seleção não há o que descartar.
+      selectionSurvivesFilter(hotbarSample, 'reaction', null) === true &&
+      // O fluxo de ataque continua ÚNICO (painel existente, um `endTurn`).
+      trackerSource.includes('preset={hotbarPick}') &&
+      (trackerSource.match(/async function endTurn/g) ?? []).length === 1 &&
+      // O fluxo de ataque continua ÚNICO: um handler e uma chamada ao resolver.
+      (trackerSource.match(/function attack\(/g) ?? []).length === 1 &&
+      (trackerSource.match(/await resolveAttack\(/g) ?? []).length === 1,
+  );
+
+  check(
+    'SC134) estado de espera CENTRALIZADO na área da Hotbar, sem encostar nos glifos',
+    workspaceRule('.hotbar-waiting').includes('justify-content: center;') &&
+      workspaceRule('.hotbar-waiting').includes('align-items: center;') &&
+      workspaceRule('.hotbar-waiting').includes('width: 100%;') &&
+      workspaceRule('.hotbar-waiting').includes('height: 100%;') &&
+      workspaceRule('.hotbar-waiting').includes('padding: 0 0.5rem;') &&
+      workspaceRule('.hotbar-waiting').includes('text-align: center;') &&
+      // Continua DENTRO da faixa: nem overlay, nem fuga da coluna central.
+      !workspaceRule('.hotbar-waiting').includes('position: absolute') &&
+      !workspaceRule('.hotbar-waiting').includes('position: fixed') &&
+      // Composição única: a animação e a frase no MESMO bloco de espera.
+      waitingPanelSource.includes('<div className="hotbar-waiting" role="status">') &&
+      waitingPanelSource.includes('<p className="hotbar-waiting-text">') &&
+      // Geometria aprovada da dock intacta.
+      workspaceRule('.dock-hotbar').includes('grid-area: hotbar;') &&
+      workspaceRule('.combat-dock').includes("'portrait resources hotbar utilities'") &&
+      // Nenhum `position: fixed` novo na dock inteira (sem overlay de tela cheia).
+      !workspaceRule('.combat-dock').includes('position: fixed'),
   );
 
   check(

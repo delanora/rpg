@@ -35,7 +35,12 @@ import { CombatWorkspace } from './components/CombatWorkspace';
 import { ActionMenu } from './components/ActionMenu';
 import { CombatHotbar } from './components/CombatHotbar';
 import { CombatLog } from './components/CombatLog';
-import { buildCombatHotbarEntries, filterHotbarEntries, type HotbarFilter } from './hotbar';
+import {
+  buildCombatHotbarEntries,
+  filterHotbarEntries,
+  selectionSurvivesFilter,
+  type HotbarFilter,
+} from './hotbar';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
 import { DeathSavePanel } from './components/DeathSavePanel';
@@ -234,6 +239,25 @@ export function CombatTracker({
   });
   /** Entradas exibidas: a MESMA lista, recortada pelo custo do filtro ativo. */
   const hotbarVisible = filterHotbarEntries(hotbarEntries, hotbarFilter);
+
+  /**
+   * TROCA DE FILTRO (6.6M.6.2.1) — a seleção pertence à lista VISÍVEL.
+   *
+   * Se a entrada escolhida não pertence ao recorte novo, a pré-seleção é
+   * descartada e o painel tático volta a pedir uma ação; se ela continua na
+   * categoria, nada muda. Só isso: nenhum ataque já enviado é tocado (o pedido
+   * já saiu daqui e quem resolve é o painel + servidor) e não existe segundo
+   * estado de seleção.
+   */
+  const toggleHotbarFilter = (filter: HotbarFilter): void => {
+    const next = hotbarFilter === filter ? null : filter;
+    setHotbarFilter(next);
+    setHotbarPick((previous) =>
+      previous && !selectionSurvivesFilter(hotbarEntries, next, previous.attackId)
+        ? null
+        : previous,
+    );
+  };
 
   // Combatente que a interface representa (atacante do Mestre / próprio personagem).
   const actingCombatant = actingCombatantFor(
@@ -897,9 +921,7 @@ export function CombatTracker({
         // os glifos passam a consulta — sem ação executável fora do turno.
         waiting={dockWaiting}
         hotbarFilter={hotbarFilter}
-        onToggleHotbarFilter={(filter) =>
-          setHotbarFilter((current) => (current === filter ? null : filter))
-        }
+        onToggleHotbarFilter={toggleHotbarFilter}
         // O MENU DE AÇÃO de sempre: Disparada, Esquivar, Preparar, Levantar e
         // Estabilizar continuam existindo (nada foi removido da dock).
         actionMenu={
@@ -920,7 +942,10 @@ export function CombatTracker({
         hotbar={
           dockWaiting ? (
             <BattleWaitingInline name={current?.name ?? ''} />
-          ) : hotbarEntries.length > 0 ? (
+          ) : hotbarEntries.length > 0 || hotbarFilter ? (
+            // COM FILTRO a Hotbar é montada mesmo sem NENHUMA entrada base: a
+            // categoria vazia é resposta honesta (oito slots + frase curta +
+            // "ver todas"), nunca o aviso legado de "sem ataques".
             <CombatHotbar
               entries={hotbarVisible}
               busy={busy}
@@ -1255,9 +1280,11 @@ export function CombatTracker({
                       busy={busy}
                       onAttack={attack}
                     />
-                  ) : hotbarEntries.length > 0 ? (
+                  ) : hotbarVisible.length > 0 ? (
                     // Sem slot escolhido não há painel permanente: a hotbar é a
-                    // única superfície de ação do jogador.
+                    // única superfície de ação do jogador. A dica acompanha a
+                    // lista VISÍVEL — com o filtro esvaziando a faixa não se
+                    // pede para escolher algo que não está lá.
                     <p className="hotbar-hint">Escolha uma ação na hotbar.</p>
                   ) : null
                 ) : null}
