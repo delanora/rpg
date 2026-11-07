@@ -120,8 +120,8 @@ function meters(value: number): string {
  * Hotbar reduzida à animação de espera, sem oferecer ação executável.
  *
  * 6.6M.7: a MESMA dock atende o estado PRÉ-INICIATIVA. Antes de rolar, ela fica
- * montada com o miolo bloqueado (slots visíveis, desfocados e inertes) e o CTA
- * de rolagem por cima da Hotbar — uma composição só, nem tela herdada nem
+ * montada com o miolo bloqueado (slots visíveis, desfocados e inertes) e UM
+ * botão centrado por cima da Hotbar — uma composição só, nem tela herdada nem
  * terceira variação visual.
  */
 export function PlayerCombatDock({
@@ -524,25 +524,25 @@ export function PlayerCombatDock({
         </div>
 
         {awaitingInitiative ? (
+          /* Sobre a Hotbar desfocada fica SÓ o botão, centrado nos dois eixos
+             e com pulsação sutil: o véu já diz o que está indisponível, então
+             nada mais compete com o CTA. A rolagem sugerida vive dentro dele. */
           <div
             className="dock-initiative-overlay"
             role="group"
             aria-label="Rolar iniciativa"
           >
-            <span className="dock-initiative-copy">
-              <span className="dock-initiative-eyebrow">Aguardando a iniciativa</span>
-              <span className="dock-initiative-text">
-                Role para entrar na ordem —{' '}
-                <strong>1d20 {formatModifier(awaitingInitiative.modifier)}</strong>
-              </span>
-            </span>
             <button
               type="button"
               className="btn btn-primary dock-initiative-roll"
               disabled={awaitingInitiative.busy}
+              title="Role a iniciativa para entrar na ordem de combate"
               onClick={awaitingInitiative.onRoll}
             >
               <Icon name="die" size={15} /> Rolar iniciativa
+              <span className="dock-initiative-roll-mod">
+                1d20 {formatModifier(awaitingInitiative.modifier)}
+              </span>
             </button>
           </div>
         ) : null}

@@ -7839,8 +7839,13 @@ check(
       // Miolo visivelmente indisponível: desfoque + dessaturação + véu.
       workspaceRule('.dock-hotbar-track').includes('height: 100%;') &&
       workspaceRule('.dock-hotbar.is-awaiting-initiative .dock-hotbar-track').includes(
-        'filter: blur(1.5px) saturate(0.45) brightness(0.6);',
+        'filter: blur(2.2px) saturate(0.4) brightness(0.55);',
       ) &&
+      // O CTA é UM elemento CENTRADO nos dois eixos, sem painel próprio.
+      workspaceRule('.dock-initiative-overlay').includes('display: grid;') &&
+      workspaceRule('.dock-initiative-overlay').includes('place-items: center;') &&
+      !workspaceRule('.dock-initiative-overlay').includes('justify-content: space-between') &&
+      workspaceRule('.dock-initiative-overlay').includes('background: none;') &&
       workspaceRule('.dock-hotbar.is-awaiting-initiative::after').includes(
         'background: linear-gradient(',
       ),
@@ -7856,9 +7861,18 @@ check(
       trackerSource.includes('waiting={dockWaiting || awaitingInitiative}') &&
       dockSource.includes('inert={Boolean(awaitingInitiative)}') &&
       dockSource.includes('disabled={awaitingInitiative.busy}') &&
-      // Texto curto + rolagem sugerida, com o modificador do personagem.
+      // Rolagem sugerida e modificador moram DENTRO do único botão.
       dockSource.includes('1d20 {formatModifier(awaitingInitiative.modifier)}') &&
-      dockSource.includes('Role para entrar na ordem —') &&
+      dockSource.includes('className="dock-initiative-roll-mod"') &&
+      (dockSource.match(/dock-initiative-roll-mod/g) ?? []).length === 1 &&
+      !dockSource.includes('dock-initiative-copy') &&
+      !dockSource.includes('dock-initiative-eyebrow') &&
+      // Pulsação sutil no botão, desligada para quem pediu menos movimento.
+      workspaceRule('.dock-initiative-roll').includes(
+        'animation: dock-initiative-pulse 2.6s ease-in-out infinite;',
+      ) &&
+      workspaceActive.includes('@keyframes dock-initiative-pulse {') &&
+      /\.dock-initiative-roll \{[\s\S]{0,120}animation: none;/.test(workspaceActive) &&
       // Encerrar turno não compete com o CTA.
       workspaceRule('.combat-dock.is-awaiting-initiative .dock-end-turn:disabled').includes(
         'opacity: 0.35;',
