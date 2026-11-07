@@ -6752,6 +6752,11 @@ check(
       // 6.6M.6.3.1.9: retrato sem moldura — nem na dock, nem no card da
       // iniciativa (a borda de latão engordava o contorno da imagem).
       !workspaceRule('.dock-portrait').includes('border:') &&
+      // Nem anel por box-shadow: o retrato é só a foto (vinheta interna).
+      !workspaceRule('.dock-portrait').includes('0 0 0 ') &&
+      workspaceRule('.dock-portrait').includes(
+        'box-shadow: inset 0 0 25px rgba(5, 5, 5, 0.48);',
+      ) &&
       workspaceRule('.combat-workspace .combatant-card .portrait').includes('border: 0;') &&
       workspaceRule('.combat-workspace .combatant-card .portrait').includes(
         'box-shadow: none;',
