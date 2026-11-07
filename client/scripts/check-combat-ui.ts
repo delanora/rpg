@@ -6592,8 +6592,12 @@ check(
   );
 
   check(
-    'SC88) autoridade: hotbar só no turno operacional do jogador, fora do Teste contra a Morte, sem chamar o servidor',
-    trackerSource.includes('!isMaster && showOperational && !showDeathTurn') &&
+    'SC88) autoridade: dock só para o personagem do jogador, fora do Teste contra a Morte DELE, sem chamar o servidor',
+    // 6.6M.6.2: a dock passa a existir também na ESPERA, mas continua fora do
+    // Mestre e fora do ciclo de morte do próprio personagem (onde a barra
+    // persistente e o painel de morte assumem).
+    trackerSource.includes('!isMaster && myCombatant && !myDeathTurn') &&
+      trackerSource.includes('const dockWaiting = Boolean(dockCombatant) && !ownTurn;') &&
       trackerSource.includes('<PlayerCombatDock') &&
       // Escolher um slot não resolve nada: nenhum endpoint no componente.
       !/\b(resolveAttack|fetch)\w*\(/.test(hotbarComponentSource) &&
@@ -6860,7 +6864,7 @@ check(
   const vitalsSource = source('src/components/sections/VitalsSection.tsx');
 
   check(
-    'SC103) recursos da dock expõem UM tooltip (o balão) e nenhum `title` nativo redundante',
+    'SC103) recursos da dock expõem UM tooltip (o balão) e o glifo é botão com nome acessível',
     // O mesmo texto estava no `title` E no balão: o navegador abria os dois.
     !dockSource.includes('title={actionsLabel}') &&
       !dockSource.includes('title={bonusLabel}') &&
@@ -6872,15 +6876,18 @@ check(
       dockSource.includes('aria-describedby="dock-action-tip"') &&
       dockSource.includes('aria-describedby="dock-bonus-tip"') &&
       dockSource.includes('aria-describedby="dock-reaction-tip"') &&
-      // Nome curto (rótulo visível) + descrição (estado) — o texto completo
-      // continua chegando ao leitor de tela por `aria-describedby`.
-      dockSource.includes('aria-label="Ação"') &&
-      dockSource.includes('aria-label="Ação bônus"') &&
-      dockSource.includes('aria-label="Reação"') &&
+      // 6.6M.6.2: o glifo virou BOTÃO de filtro — o nome acessível diz a AÇÃO
+      // do controle e o estado continua chegando pela descrição.
+      dockSource.includes('aria-label="Filtrar a Hotbar por Ação"') &&
+      dockSource.includes('aria-label="Filtrar a Hotbar por Ação bônus"') &&
+      dockSource.includes('aria-label="Filtrar a Hotbar por Reação"') &&
       (dockSource.match(/role="tooltip"/g) ?? []).length >= 3 &&
+      // `<button>` é focável por natureza: a célula não carrega mais `tabIndex`.
+      (dockSource.match(/<button/g) ?? []).length >= 3 &&
+      !dockSource.includes('tabIndex={0}') &&
       // Hover e foco continuam abrindo o balão (gatilho focável).
       workspaceRule('.dock-resource').includes('position: relative;') &&
-      (dockSource.match(/tabIndex=\{0\}/g) ?? []).length >= 3,
+      workspaceRule('.dock-resource-trigger').includes('width: 100%;'),
   );
 
   check(
@@ -7253,6 +7260,118 @@ check(
       gridApiSource.includes('expectedVersion') &&
       !cameraBlock.includes('sceneToFeet') &&
       source('src/combat/grid/gridCamera.ts').includes('feetToScenePixel'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.2 — filtros da Hotbar e dock em espera.                          */
+  /* ---------------------------------------------------------------------- */
+
+  const waitingPanelSource = source('src/combat/components/BattleWaitingPanel.tsx');
+
+  check(
+    'SC127) os glifos filtram por CUSTO TÍPICO e `other` não entra em nenhuma categoria',
+    // Adapter: igualdade de custo, `null` = lista completa.
+    hotbarAdapterSource.includes(
+      "export type HotbarFilter = 'action' | 'bonus-action' | 'reaction';",
+    ) &&
+      hotbarAdapterSource.includes('export function filterHotbarEntries') &&
+      hotbarAdapterSource.includes('if (!filter) return [...entries];') &&
+      hotbarAdapterSource.includes('entries.filter((entry) => entry.cost === filter)') &&
+      hotbarAdapterSource.includes('export function hotbarFilterLabel') &&
+      // A dock só apresenta o filtro; o ESTADO fica no orquestrador.
+      dockSource.includes('onToggleHotbarFilter?.(') &&
+      dockSource.includes("aria-pressed={filterOn('action')}") &&
+      dockSource.includes("aria-pressed={filterOn('bonus-action')}") &&
+      dockSource.includes("aria-pressed={filterOn('reaction')}") &&
+      // A dock NÃO guarda o filtro (só `contextOpen`/histórico do retrato).
+      !dockSource.includes('useState<HotbarFilter') &&
+      trackerSource.includes(
+        'const [hotbarFilter, setHotbarFilter] = useState<HotbarFilter | null>(null);',
+      ) &&
+      trackerSource.includes('const hotbarVisible = filterHotbarEntries(hotbarEntries, hotbarFilter);') &&
+      trackerSource.includes('entries={hotbarVisible}') &&
+      // O filtro é NAVEGAÇÃO: nada de gasto/reserva/recurso no caminho.
+      !hotbarAdapterSource.includes('actionsUsed') &&
+      !hotbarAdapterSource.includes('spendEconomy'),
+  );
+
+  check(
+    'SC128) categoria vazia mantém os OITO slots, frase curta e limpar o filtro (sem slot fictício)',
+    hotbarComponentSource.includes('if (entries.length === 0 && !filter) return null;') &&
+      hotbarComponentSource.includes(
+        '`Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`',
+      ) &&
+      hotbarComponentSource.includes('className="hotbar-clear-filter"') &&
+      hotbarComponentSource.includes('onClearFilter') &&
+      // A contagem de slots não depende do filtro: continua HOTBAR_SLOTS.
+      hotbarComponentSource.includes(
+        'const emptySlots = Math.max(0, HOTBAR_SLOTS - visible.length);',
+      ) &&
+      workspaceRule('.hotbar-note').includes('grid-area: note;') &&
+      workspaceRule('.hotbar-clear-filter').includes('grid-area: tail;') &&
+      // O componente continua sem estado e sem rede.
+      !hotbarComponentSource.includes('useState') &&
+      !/\b(resolveAttack|fetch)\w*\(/.test(hotbarComponentSource),
+  );
+
+  check(
+    'SC129) dock em ESPERA fora do turno: animação compartilhada, sem ataque/movimento/encerrar',
+    trackerSource.includes(
+      'const dockCombatant = !isMaster && myCombatant && !myDeathTurn ? myCombatant : null;',
+    ) &&
+      trackerSource.includes('waiting={dockWaiting}') &&
+      trackerSource.includes("<BattleWaitingInline name={current?.name ?? ''} />") &&
+      // UMA implementação da animação: a mesma usada pela bandeja tática.
+      (waitingPanelSource.match(/className="battle-waiting-anim"/g) ?? []).length === 1 &&
+      waitingPanelSource.includes('export function BattleWaitingAnim') &&
+      waitingPanelSource.includes('export function BattleWaitingInline') &&
+      waitingPanelSource.includes('<BattleWaitingAnim />') &&
+      // A bandeja tática não repete o painel de espera do jogador.
+      trackerSource.includes('{current && (isMaster || !dockCombatant) ? (') &&
+      // Encerrar turno indisponível na espera (e sem handler novo).
+      trackerSource.includes('disabled={!isMyTurn || busy || deathSavePending}') &&
+      (trackerSource.match(/async function endTurn/g) ?? []).length === 1 &&
+      // A espera ocupa SÓ a região da Hotbar: sem overlay de tela inteira.
+      workspaceRule('.hotbar-waiting').includes('display: flex;') &&
+      !workspaceRule('.hotbar-waiting').includes('position: fixed') &&
+      !workspaceRule('.hotbar-waiting').includes('inset: 0'),
+  );
+
+  check(
+    'SC130) espera não concede autoridade e não esconde Reação, salvaguarda nem Death Saves',
+    // Movimento e menu continuam derivados de turnResourceAccess (ownTurn).      trackerSource.includes('canMove={!busy && dockAccess.canMove}') &&
+      // O menu de Ação é composto pelo tracker e continua gateado pela MESMA
+      // derivação (`canOpenMenu` exige `ownTurn`), então fica desabilitado na espera.
+      trackerSource.includes('disabled={busy || !dockAccess.canOpenMenu}') &&
+      dockSource.includes('{actionMenu}') &&
+      trackerSource.includes('onSpend={(distance) => dockEconomyAction({ action: \'move\', distance })}') &&
+      // Painéis urgentes vivem FORA da Hotbar; nenhum deles é gateado pela dock.
+      trackerSource.includes('<ReactionPanel') &&
+      trackerSource.includes('<PendingEffectSavePanel') &&
+      trackerSource.includes('urgent={') &&
+      trackerSource.includes('<DeathSavePanel name={current.name} death={turnDeath} />') &&
+      // Reação real preservada no glifo: não é sobrescrita na espera.
+      dockSource.includes("economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'") &&
+      dockSource.includes('{reactionLabel}') &&
+      // A espera NÃO falsifica saldo: Ação/Bônus mostram glifo neutro.
+      dockSource.includes('dock-pip is-action is-idle') &&
+      dockSource.includes("'is-idle'") &&
+      workspaceRule('.dock-pip.is-idle').includes('opacity: 0.42;'),
+  );
+
+  check(
+    'SC131) virar de turno limpa o filtro e a dock volta ao estado real sem reload',
+    trackerSource.includes('setHotbarFilter(null);') &&
+      trackerSource.includes('}, [currentTurnKey]);') &&
+      // A transição é só re-render do DTO: nenhum estado de economia local.
+      !dockSource.includes('setTurnEconomy') &&
+      !dockSource.includes('movementBudget') &&
+      // Geometria aprovada intacta e filtro sem aumentar a dock.
+      workspaceRule('.combat-dock').includes("'portrait resources hotbar utilities'") &&
+      workspaceRule('.dock-resource').includes('width: 1.75rem;') &&
+      workspaceRule('.hotbar-slot').includes('width: 3.4375rem;') &&
+      workspaceRule('.dock-resource.is-filtering').includes('box-shadow:') &&
+      workspaceRule('.hotbar-waiting .battle-waiting-anim').includes('transform: scale(0.72);'),
   );
 
   check(

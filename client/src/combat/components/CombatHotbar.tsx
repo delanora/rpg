@@ -1,5 +1,11 @@
 import { Icon } from '../../components/Icon';
-import { HOTBAR_SLOTS, type CombatHotbarEntry, type HotbarCost } from '../hotbar';
+import {
+  HOTBAR_SLOTS,
+  hotbarFilterLabel,
+  type CombatHotbarEntry,
+  type HotbarCost,
+  type HotbarFilter,
+} from '../hotbar';
 
 /** Letra do custo no canto do slot: A = Ação, B = Ação Bônus, R = Reação. */
 const COST_SIGN: Record<HotbarCost, string> = {
@@ -17,10 +23,18 @@ const COST_LABEL: Record<HotbarCost, string> = {
 };
 
 interface CombatHotbarProps {
+  /** Entradas JÁ filtradas pelo chamador (`filterHotbarEntries`). */
   entries: CombatHotbarEntry[];
   busy: boolean;
   /** Entrada escolhida (marca o slot). Só visual: quem envia é o fluxo existente. */
   selectedId?: string | null;
+  /**
+   * Filtro ativo (navegação pelos glifos da dock). Só serve para o estado vazio
+   * e para o rótulo: a lista chega pronta, e nada aqui decide custo ou regra.
+   */
+  filter?: HotbarFilter | null;
+  /** Volta à lista completa (mesmo gesto de clicar de novo no glifo). */
+  onClearFilter?: () => void;
   onSelect: (entry: CombatHotbarEntry) => void;
 }
 
@@ -34,21 +48,40 @@ interface CombatHotbarProps {
  *
  * Números 1–8 são indicação visual: não há atalho global nesta fase.
  */
-export function CombatHotbar({ entries, busy, selectedId = null, onSelect }: CombatHotbarProps) {
-  if (entries.length === 0) {
-    // Sem opção real, a faixa inteira não é montada: recuperar espaço é a razão
-    // de existir da Hotbar.
-    return null;
-  }
+export function CombatHotbar({
+  entries,
+  busy,
+  selectedId = null,
+  filter = null,
+  onClearFilter,
+  onSelect,
+}: CombatHotbarProps) {
+  // Sem filtro e sem opção real, a faixa inteira não é montada: recuperar
+  // espaço é a razão de existir da Hotbar. COM filtro ela permanece montada —
+  // "esta categoria está vazia" é resposta honesta, e trocar/limpar o filtro
+  // continua a um clique.
+  if (entries.length === 0 && !filter) return null;
 
   const visible = entries.slice(0, HOTBAR_SLOTS);
   const emptySlots = Math.max(0, HOTBAR_SLOTS - visible.length);
+  const emptyNote =
+    filter && entries.length === 0
+      ? `Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`
+      : null;
 
   return (
     <section className="combat-hotbar" aria-label="Ações rápidas do turno">
       <span className="hotbar-title">
         <Icon name="sword" size={13} /> Hotbar
       </span>
+
+      {/* Categoria sem entradas: frase curta no cabeçalho, oito slots vazios e
+          "Ver todas". Nenhum slot fictício é criado para preencher. */}
+      {emptyNote ? (
+        <span className="hotbar-note" role="status">
+          {emptyNote}
+        </span>
+      ) : null}
 
       <div className="hotbar-slots" role="toolbar" aria-label="Hotbar de combate">
         {visible.map((entry, index) => (
@@ -93,7 +126,13 @@ export function CombatHotbar({ entries, busy, selectedId = null, onSelect }: Com
         ))}
       </div>
 
-      {entries.length > HOTBAR_SLOTS ? (
+      {filter ? (
+        // Com filtro ativo o contador dá lugar ao gesto de limpar (o mesmo do
+        // glifo da dock): o usuário nunca fica preso numa categoria vazia.
+        <button type="button" className="hotbar-clear-filter" onClick={onClearFilter}>
+          Ver todas
+        </button>
+      ) : entries.length > HOTBAR_SLOTS ? (
         <details className="hotbar-all">
           <summary>ver todas ({entries.length})</summary>
           <div className="hotbar-all-list">

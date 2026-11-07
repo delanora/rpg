@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from '../../components/Icon';
 import { ConditionHistoryModal } from '../../components/ConditionHistoryModal';
 import type { ConditionEffects, MechanicalState, TurnEconomy } from '../../types';
+import type { HotbarFilter } from '../hotbar';
 import { CombatStateBadges } from './CombatStateBadges';
 import { ConditionBadges } from './ConditionBadges';
 
@@ -27,8 +28,19 @@ interface PlayerCombatDockProps {
    * disso — só reserva o lugar onde ele sempre esteve.
    */
   actionMenu: ReactNode;
-  /** Slots da Hotbar existente (`CombatHotbar`). */
+  /** Slots da Hotbar existente (`CombatHotbar`) ou a espera compacta. */
   hotbar: ReactNode;
+  /**
+   * ESTADO DE ESPERA (6.6M.6.2): o personagem participa do combate, mas o turno
+   * é de outro combatente. A dock continua visível (retrato, estado, utilitários
+   * e decisões urgentes) e só a Hotbar vira apresentação de espera. Nada aqui
+   * concede autoridade: a execução segue derivada do turno e validada pelo
+   * servidor.
+   */
+  waiting?: boolean;
+  /** Filtro ativo da Hotbar (navegação pelos três glifos). */
+  hotbarFilter?: HotbarFilter | null;
+  onToggleHotbarFilter?: (filter: HotbarFilter) => void;
   /** Atalhos da ficha + Encerrar turno (fluxo já existente). */
   utilities: ReactNode;
   /**
@@ -85,6 +97,11 @@ function meters(value: number): string {
  * do combate, e os controles (menu de Ação, gasto de deslocamento, avanço de
  * turno) são os componentes de sempre, recebidos prontos. Por isso esta dock não
  * concede autoridade nenhuma.
+ *
+ * 6.6M.6.2: os três glifos viraram BOTÕES DE FILTRO da Hotbar (navegação por
+ * custo, com `aria-pressed`) e a dock ganhou o estado de ESPERA — mesmo fora do
+ * turno ela continua montada, com os recursos reais (Reação inclusive) e a
+ * Hotbar reduzida à animação de espera, sem oferecer ação executável.
  */
 export function PlayerCombatDock({
   name,
@@ -101,6 +118,9 @@ export function PlayerCombatDock({
   busy = false,
   actionMenu,
   hotbar,
+  waiting = false,
+  hotbarFilter = null,
+  onToggleHotbarFilter,
   utilities,
   movement,
   movementControl,
@@ -182,6 +202,12 @@ export function PlayerCombatDock({
       ? 'Reação — disponível'
       : 'Reação — utilizada'
     : 'Reação — em espera';
+  // Na ESPERA o glifo de Ação/Ação Bônus NÃO afirma saldo — nada de "0 de 1"
+  // inventado fora do turno. A Reação continua com o valor REAL, porque ela é
+  // relevante também fora do próprio turno.
+  const actionTip = waiting ? 'Ação — aguardando o seu turno' : actionsLabel;
+  const bonusTip = waiting ? 'Ação bônus — aguardando o seu turno' : bonusLabel;
+  const filterOn = (kind: HotbarFilter): boolean => hotbarFilter === kind;
 
   return (
     <section
@@ -349,24 +375,39 @@ export function PlayerCombatDock({
           </p>
         ) : (
           <>
+            {/* AÇÃO — o glifo é o BOTÃO DO FILTRO (6.6M.6.2): mostra só as
+                entradas de custo Ação; clicar de novo volta à lista completa.
+                O menu de Ação continua um gatilho IRMÃO (nunca aninhado), então
+                abrir o menu não troca o filtro por acidente. */}
             <div
-              className="dock-resource is-action"
-              tabIndex={0}
-              aria-label="Ação"
-              aria-describedby="dock-action-tip"
+              className={`dock-resource is-action${filterOn('action') ? ' is-filtering' : ''}`}
             >
+              <button
+                type="button"
+                className="dock-resource-trigger"
+                aria-pressed={filterOn('action')}
+                aria-label="Filtrar a Hotbar por Ação"
+                aria-describedby="dock-action-tip"
+                disabled={waiting}
+                onClick={() => onToggleHotbarFilter?.('action')}
+              >
+                {waiting ? (
+                  <span className="dock-pip is-action is-idle" aria-hidden="true" />
+                ) : (
+                  <Gems
+                    total={economy?.actionsGranted ?? 0}
+                    used={economy?.actionsUsed ?? 0}
+                    kind="action"
+                  />
+                )}
+              </button>
               <span className="dock-resource-label">Ação</span>
-              <Gems
-                total={economy?.actionsGranted ?? 0}
-                used={economy?.actionsUsed ?? 0}
-                kind="action"
-              />
               <span
                 className="dock-resource-tip"
                 id="dock-action-tip"
                 role="tooltip"
               >
-                {actionsLabel}
+                {actionTip}
               </span>
               {/* O MESMO menu de Ação (Disparada, Esquivar, Preparar, Levantar,
                   Estabilizar): acesso compacto junto ao losango. */}
@@ -376,40 +417,62 @@ export function PlayerCombatDock({
             {/* O `*` continua no título: gema cheia = uso NÃO consumido, não
                 uma Ação Bônus automaticamente executável (PHB 2014). */}
             <div
-              className="dock-resource"
-              tabIndex={0}
-              aria-label="Ação bônus"
-              aria-describedby="dock-bonus-tip"
+              className={`dock-resource is-bonus-cell${
+                filterOn('bonus-action') ? ' is-filtering' : ''
+              }`}
             >
+              <button
+                type="button"
+                className="dock-resource-trigger"
+                aria-pressed={filterOn('bonus-action')}
+                aria-label="Filtrar a Hotbar por Ação bônus"
+                aria-describedby="dock-bonus-tip"
+                disabled={waiting}
+                onClick={() => onToggleHotbarFilter?.('bonus-action')}
+              >
+                <span
+                  className={`dock-pip is-bonus ${
+                    waiting
+                      ? 'is-idle'
+                      : economy && economy.bonusActionUsed
+                        ? 'is-spent'
+                        : 'is-ready'
+                  }`}
+                  aria-hidden="true"
+                />
+              </button>
               <span className="dock-resource-label">Ação bônus</span>
-              <span
-                className={`dock-pip is-bonus ${
-                  economy && economy.bonusActionUsed ? 'is-spent' : 'is-ready'
-                }`}
-                aria-hidden="true"
-              />
               <span
                 className="dock-resource-tip"
                 id="dock-bonus-tip"
                 role="tooltip"
               >
-                {bonusLabel}
+                {bonusTip}
               </span>
             </div>
 
             <div
-              className="dock-resource"
-              tabIndex={0}
-              aria-label="Reação"
-              aria-describedby="dock-reaction-tip"
+              className={`dock-resource is-reaction-cell${
+                filterOn('reaction') ? ' is-filtering' : ''
+              }`}
             >
+              <button
+                type="button"
+                className="dock-resource-trigger"
+                aria-pressed={filterOn('reaction')}
+                aria-label="Filtrar a Hotbar por Reação"
+                aria-describedby="dock-reaction-tip"
+                disabled={waiting}
+                onClick={() => onToggleHotbarFilter?.('reaction')}
+              >
+                <span
+                  className={`dock-pip is-reaction ${
+                    economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'
+                  }`}
+                  aria-hidden="true"
+                />
+              </button>
               <span className="dock-resource-label">Reação</span>
-              <span
-                className={`dock-pip is-reaction ${
-                  economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'
-                }`}
-                aria-hidden="true"
-              />
               <span
                 className="dock-resource-tip"
                 id="dock-reaction-tip"

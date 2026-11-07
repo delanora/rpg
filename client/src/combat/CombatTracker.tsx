@@ -29,13 +29,13 @@ import { CombatGrid } from './grid/CombatGrid';
 // CSS ISOLADO do grid/workspace (styles.css é WIP alheio e não é tocado).
 import './grid/grid.css';
 import './workspace.css';
-import { BattleWaitingPanel } from './components/BattleWaitingPanel';
+import { BattleWaitingInline, BattleWaitingPanel } from './components/BattleWaitingPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
 import { CombatWorkspace } from './components/CombatWorkspace';
 import { ActionMenu } from './components/ActionMenu';
 import { CombatHotbar } from './components/CombatHotbar';
 import { CombatLog } from './components/CombatLog';
-import { buildCombatHotbarEntries } from './hotbar';
+import { buildCombatHotbarEntries, filterHotbarEntries, type HotbarFilter } from './hotbar';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
 import { DeathSavePanel } from './components/DeathSavePanel';
@@ -200,6 +200,12 @@ export function CombatTracker({
   const [hotbarPick, setHotbarPick] = useState<{ attackId: string; nonce: number } | null>(
     null,
   );
+  /**
+   * FILTRO DA HOTBAR (6.6M.6.2) — navegação pelos três glifos da dock. O estado
+   * vive aqui (a dock só apresenta a seleção e a Hotbar só desenha a lista
+   * podada); virar de turno limpa o filtro, como já acontecia com a seleção.
+   */
+  const [hotbarFilter, setHotbarFilter] = useState<HotbarFilter | null>(null);
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
@@ -226,6 +232,8 @@ export function CombatTracker({
     attacks: characterAttacks,
     inventory: characterInventory,
   });
+  /** Entradas exibidas: a MESMA lista, recortada pelo custo do filtro ativo. */
+  const hotbarVisible = filterHotbarEntries(hotbarEntries, hotbarFilter);
 
   // Combatente que a interface representa (atacante do Mestre / próprio personagem).
   const actingCombatant = actingCombatantFor(
@@ -412,10 +420,11 @@ export function CombatTracker({
   // já aconteceu (a fonte de verdade continua no SERVIDOR).
   const currentTurnKey = `${combat.id}:${combat.round}:${combat.currentIndex}`;
 
-  // Troca de turno (ou de rodada): a Hotbar recomeça vazia — nenhuma ação do
-  // combatente anterior sobrevive ao próximo turno.
+  // Troca de turno (ou de rodada): a Hotbar recomeça vazia — nenhuma ação nem
+  // filtro do combatente anterior sobrevive ao próximo turno.
   useEffect(() => {
     setHotbarPick(null);
+    setHotbarFilter(null);
   }, [currentTurnKey]);
   const turnDeathState = current?.deathState ?? null;
   const deathSavePending = Boolean(
@@ -805,13 +814,19 @@ export function CombatTracker({
   }
 
   /**
-   * DOCK DO JOGADOR (6.6M.6.1) — montada só no turno operacional do próprio
-   * jogador. Fora do turno, em Teste contra a Morte ou para o Mestre nada é
-   * desenhado: aí a barra persistente (ou o painel de morte) continua no lugar
-   * de sempre, e nunca existem DUAS superfícies de recurso concorrentes.
+   * DOCK DO JOGADOR (6.6M.6.2) — montada enquanto o personagem participa do
+   * combate ativo, inclusive FORA do próprio turno (estado de espera).
+   *
+   * Retrato, estado mecânico, utilitários e decisões urgentes não podem
+   * desaparecer só porque outro combatente está agindo. A autoridade continua
+   * derivada do turno (`ownTurn` → `dockAccess`) e validada pelo SERVIDOR; o
+   * ciclo de morte do PRÓPRIO personagem é a única exceção, porque ali a barra
+   * persistente e o painel de Teste Contra a Morte são a superfície correta.
    */
-  const dockCombatant =
-    !isMaster && showOperational && !showDeathTurn ? myCombatant : null;
+  const myDeathTurn = showDeathTurn && isMyTurn;
+  const dockCombatant = !isMaster && myCombatant && !myDeathTurn ? myCombatant : null;
+  /** Espera: a dock existe, mas o turno é de outro combatente. */
+  const dockWaiting = Boolean(dockCombatant) && !ownTurn;
   const dockAccess = dockCombatant
     ? turnResourceAccess({
         active: true,
@@ -827,9 +842,10 @@ export function CombatTracker({
   /**
    * PAINEL DE ESTADO (6.6M.6.1.4) — UMA montagem do `MechanicalPanel`.
    *
-   * Com a dock montada ele vive no painel do retrato (variante `dock`); sem dock
-   * — Mestre, Teste contra a Morte, jogador fora do turno — continua na faixa
-   * "Estado e ajustes", exatamente como antes. A variante `dock` não repete
+   * Com a dock montada ele vive no painel do retrato (variante `dock`), dentro e
+   * fora do turno do jogador; sem dock — Mestre e Teste contra a Morte do
+   * próprio personagem — continua na faixa "Estado e ajustes", como antes. A
+   * variante `dock` não repete
    * Conditions (etiquetas do painel), Levantar-se (ActionMenu) nem a pendência
    * de salvaguarda (que é montada FORA do retrato): nunca existem dois painéis
    * concorrentes para a mesma entidade.
@@ -877,6 +893,13 @@ export function CombatTracker({
         deathBlocked={deathLifecycle(dockCombatant.deathState)}
         deathSavePending={deathSavePending}
         busy={busy}
+        // ESPERA (6.6M.6.2): a Hotbar dá lugar à animação da bandeja tática e
+        // os glifos passam a consulta — sem ação executável fora do turno.
+        waiting={dockWaiting}
+        hotbarFilter={hotbarFilter}
+        onToggleHotbarFilter={(filter) =>
+          setHotbarFilter((current) => (current === filter ? null : filter))
+        }
         // O MENU DE AÇÃO de sempre: Disparada, Esquivar, Preparar, Levantar e
         // Estabilizar continuam existindo (nada foi removido da dock).
         actionMenu={
@@ -895,11 +918,15 @@ export function CombatTracker({
           />
         }
         hotbar={
-          hotbarEntries.length > 0 ? (
+          dockWaiting ? (
+            <BattleWaitingInline name={current?.name ?? ''} />
+          ) : hotbarEntries.length > 0 ? (
             <CombatHotbar
-              entries={hotbarEntries}
+              entries={hotbarVisible}
               busy={busy}
+              filter={hotbarFilter}
               selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
+              onClearFilter={() => setHotbarFilter(null)}
               onSelect={(entry) =>
                 setHotbarPick((prev) => ({
                   attackId: entry.sourceId,
@@ -944,28 +971,31 @@ export function CombatTracker({
                 <span className="dock-utility-label">Ficha</span>
               </button>
             ) : null}
-            {isMyTurn ? (
-              <button
-                type="button"
-                className="end-turn dock-end-turn"
-                disabled={busy || deathSavePending}
-                onClick={() => void endTurn()}
-                aria-label="Encerrar turno"
-                title={
-                  deathSavePending
-                    ? 'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.'
-                    : undefined
-                }
-              >
-                <span className="end-turn-text">Encerrar turno</span>
-                <span className="end-turn-arrow" aria-hidden="true">
-                  <svg viewBox="0 0 20 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 6h13" />
-                    <path d="M9.5 1.5 15 6l-5.5 4.5" />
-                  </svg>
-                </span>
-              </button>
-            ) : null}
+            {/* O botão continua no lugar (geometria do v4) e fica DESABILITADO
+                na espera: fora do turno o jogador não encerra turno nenhum e o
+                servidor recusaria de qualquer forma. */}
+            <button
+              type="button"
+              className="end-turn dock-end-turn"
+              disabled={!isMyTurn || busy || deathSavePending}
+              onClick={() => void endTurn()}
+              aria-label={
+                isMyTurn ? 'Encerrar turno' : 'Encerrar turno — aguardando o seu turno'
+              }
+              title={
+                deathSavePending
+                  ? 'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.'
+                  : undefined
+              }
+            >
+              <span className="end-turn-text">Encerrar turno</span>
+              <span className="end-turn-arrow" aria-hidden="true">
+                <svg viewBox="0 0 20 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 6h13" />
+                  <path d="M9.5 1.5 15 6l-5.5 4.5" />
+                </svg>
+              </span>
+            </button>
           </>
         }
         movement={{
@@ -1236,7 +1266,10 @@ export function CombatTracker({
               <>
                 {/* Quem NÃO controla o turno: apresentação neutra, sem ataques,
                     bônus, economia, alvos ou Encerrar Turno. */}
-                {current ? (
+                {/* Com a dock em espera a MESMA animação já está na Hotbar:
+                    um único painel de espera para o jogador (o Mestre segue
+                    com o dele) e nada de duas superfícies concorrentes. */}
+                {current && (isMaster || !dockCombatant) ? (
                   <BattleWaitingPanel
                     name={current.name}
                     kind={current.kind}

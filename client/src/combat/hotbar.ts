@@ -112,3 +112,35 @@ export function buildCombatHotbarEntries({
 
   return entries.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind));
 }
+
+/**
+ * FILTRO DE NAVEGAÇÃO DA HOTBAR (6.6M.6.2).
+ *
+ * Os três glifos da dock (Ação ◆, Ação Bônus ⬢, Reação ★) filtram a Hotbar pelo
+ * CUSTO TÍPICO da entrada. É navegação — não gasta, não reserva, não autoriza e
+ * não altera recurso nenhum: quem cobra e valida continua sendo o servidor.
+ *
+ * `other` NÃO tem filtro de propósito: sem contrato real de classificação, a
+ * entrada permanece apenas na visão completa (nunca é jogada numa das três).
+ */
+export type HotbarFilter = 'action' | 'bonus-action' | 'reaction';
+
+/** Nome do filtro para o estado vazio e para o rótulo acessível do glifo. */
+export function hotbarFilterLabel(filter: HotbarFilter): string {
+  if (filter === 'action') return 'Ação';
+  if (filter === 'bonus-action') return 'Ação Bônus';
+  return 'Reação';
+}
+
+/**
+ * Recorte da Hotbar pelo filtro escolhido. Sem filtro devolve a listagem
+ * completa (inclusive `other`); com filtro, só o custo pedido. Como o filtro é
+ * igualdade de `cost`, `other` nunca é classificado silenciosamente.
+ */
+export function filterHotbarEntries(
+  entries: readonly CombatHotbarEntry[],
+  filter: HotbarFilter | null,
+): CombatHotbarEntry[] {
+  if (!filter) return [...entries];
+  return entries.filter((entry) => entry.cost === filter);
+}

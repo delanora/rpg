@@ -1470,6 +1470,66 @@
   outline: none;
 }
 
+/* GATILHO DO GLIFO (6.6M.6.2) — o símbolo Ação/Bônus/Reação virou BOTÃO DE
+   FILTRO da Hotbar. O botão preenche a célula de 28×24 já aprovada (a geometria
+   da dock não muda), desenha só o glifo e mantém o balão de estado no
+   hover/foco. Nunca um botão aninhado em outro: o `ActionMenu` é irmão. */
+.dock-resource-trigger {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.dock-resource-trigger:focus-visible {
+  outline: 1px solid #f1c85c;
+  outline-offset: 1px;
+}
+
+.dock-resource-trigger:disabled {
+  cursor: default;
+}
+
+/* FILTRO ATIVO: latão aceso na cor do PRÓPRIO recurso, sem aumentar a dock e
+   sem transformar o glifo em "permissão" (a autoridade continua no servidor). */
+.dock-resource.is-filtering {
+  box-shadow: inset 0 0 0 1px rgba(241, 200, 92, 0.55);
+}
+
+.dock-resource.is-filtering.is-action {
+  background: rgba(242, 202, 93, 0.14);
+  box-shadow:
+    inset 0 0 0 1px rgba(242, 202, 93, 0.7),
+    0 0 10px rgba(232, 187, 74, 0.45);
+}
+
+.dock-resource.is-filtering.is-bonus-cell {
+  background: rgba(255, 152, 92, 0.14);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 152, 92, 0.7),
+    0 0 10px rgba(255, 152, 92, 0.4);
+}
+
+.dock-resource.is-filtering.is-reaction-cell {
+  background: rgba(239, 171, 146, 0.14);
+  box-shadow:
+    inset 0 0 0 1px rgba(239, 171, 146, 0.7),
+    0 0 10px rgba(229, 106, 64, 0.4);
+}
+
+/* ESPERA: o glifo continua identificando o recurso, mas apagado e SEM afirmar
+   saldo nenhum (não existe "0 de 1" inventado fora do turno). A Reação não usa
+   esta classe: ela segue mostrando o valor REAL. */
+.dock-pip.is-idle {
+  opacity: 0.42;
+  filter: grayscale(0.65);
+}
+
 .dock-death {
   display: grid;
   justify-items: center;
@@ -1710,7 +1770,7 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    'title . tail'
+    'title note tail'
     'slots slots slots';
   row-gap: 0.3125rem;
   align-content: start;
@@ -1719,6 +1779,80 @@
   border: 0;
   background: none;
   box-shadow: none;
+}
+
+/* ESTADO VAZIO DO FILTRO (6.6M.6.2): a faixa continua com os OITO slots, uma
+   frase curta no cabeçalho e o gesto de limpar. Nenhum slot fictício é criado
+   para "preencher" uma categoria que não tem nada. */
+.hotbar-note {
+  grid-area: note;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.5625rem;
+  letter-spacing: 0.04em;
+  color: #c6a878;
+}
+
+/* Limpar o filtro: mesmo peso visual do contador que ele substitui. */
+.hotbar-clear-filter {
+  grid-area: tail;
+  justify-self: end;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid #8b682b;
+  border-radius: 4px;
+  background: #1b110b;
+  color: #e4c17a;
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+}
+
+.hotbar-clear-filter:hover,
+.hotbar-clear-filter:focus-visible {
+  border-color: #f1c85c;
+  color: #ffe49a;
+  outline: none;
+}
+
+/* ESPERA na região funcional da Hotbar (6.6M.6.2): a MESMA animação de espada ×
+   escudo da bandeja tática, reduzida para a faixa. Nada de overlay — só a
+   coluna central muda, e iniciativa, registro e FABs seguem intocados. */
+.hotbar-waiting {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  height: 100%;
+}
+
+.hotbar-waiting .battle-waiting-anim {
+  flex: 0 0 auto;
+  width: 3.8rem;
+  height: 2.2rem;
+  gap: 0.6rem;
+  transform: scale(0.72);
+  transform-origin: center;
+  color: #d5ac49;
+}
+
+.hotbar-waiting-text {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: #c9b184;
+}
+
+.hotbar-waiting-text strong {
+  color: #ffe3a0;
 }
 
 .hotbar-title {
