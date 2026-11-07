@@ -1862,34 +1862,16 @@ export function CombatGrid({
 
       <div className="grid-stage">
         {/*
-          JOGADOR: leitura da cena SOBREPOSTA (6.6M.6.1.5). É o MESMO
-          `SpatialSceneControls` (fonte única do texto), montado num chip no
-          canto superior esquerdo: a informação continua acessível e não
-          reserva um único pixel de altura.
+          JOGADOR: o palco NÃO exibe turno nem dimensões (6.6M.6.1.5.1). O
+          Obsyrium já informa o turno fora do mapa e as dimensões são
+          administrativas: nenhum chip permanente ocupa a superfície de
+          combate. Só o ERRO REAL da cena aparece aqui — e só quando acontece
+          (sem aviso permanente, sem região vazia reservada).
         */}
-        {!isMaster ? (
-          <div className="grid-inset-info">
-            {currentUnit ? (
-              <span className="grid-turn">
-                Turno de <strong>{currentUnit.name}</strong>
-              </span>
-            ) : null}
-            <SpatialSceneControls
-              mode={scene.mode}
-              widthFeet={scene.widthFeet}
-              heightFeet={scene.heightFeet}
-              isMaster={false}
-              busy={locked}
-              onActivate={() => undefined}
-              onResize={() => undefined}
-              onAssisted={() => undefined}
-            />
-            {sceneError ? (
-              <p className="grid-scene-error" role="status">
-                {sceneError}
-              </p>
-            ) : null}
-          </div>
+        {!isMaster && sceneError ? (
+          <p className="grid-scene-error grid-scene-error-inset" role="status">
+            {sceneError}
+          </p>
         ) : null}
 
         <div
@@ -2104,13 +2086,14 @@ export function CombatGrid({
         </div>
 
         {/*
-          CÂMERA FLUTUANTE (6.6M.6.1.5) — IRMÃ do `.grid-viewport`, nunca
+          CÂMERA FLUTUANTE (6.6M.6.1.5.1) — IRMÃ do `.grid-viewport`, nunca
           filha: os botões ficam FORA da camada transformada por pan/zoom e
           fora da superfície que interpreta gestos, então clicar aqui não
           seleciona célula, não inicia arrasto e não movimenta ninguém.
 
           Handlers, rótulos, nomes acessíveis e estados `disabled` são os
-          MESMOS de antes; mudou só a posição (canto inferior direito do palco).
+          MESMOS de antes. A barra é UMA linha só (`− 153% + Enquadrar
+          Centralizar`), fina, no canto inferior direito do palco.
         */}
         <div
           className={rulerState === 'error' ? 'grid-camera-overlay is-lifted' : 'grid-camera-overlay'}

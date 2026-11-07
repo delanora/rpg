@@ -7063,7 +7063,7 @@ check(
   );
 
   check(
-    'SC115) jogador sem barra de câmera nem linha de cena acima do mapa',
+    'SC115) jogador sem barra de câmera nem chip de turno/cena sobre o mapa',
     // A classe antiga não existe mais em lugar nenhum (só o overlay).
     (gridSource.match(/grid-camera-controls/g) ?? []).length === 0 &&
       (gridCssSource.match(/grid-camera-controls/g) ?? []).length === 0 &&
@@ -7071,14 +7071,13 @@ check(
       // monta o elemento, então nada de faixa vazia escondida por CSS.
       (gridSource.match(/<div className="grid-toolbar">/g) ?? []).length === 1 &&
       gridSource.includes('{isMaster ? (\n        <div className="grid-toolbar">') &&
-      // Leitura da cena do jogador: o MESMO componente, sobreposto.
-      gridSource.includes('className="grid-inset-info"') &&
-      gridSource
-        .slice(gridSource.indexOf('className="grid-inset-info"'))
-        .includes('<SpatialSceneControls') &&
-      gridSceneSource.includes('Cena em grade — ${widthFeet} × ${heightFeet} pés') &&
-      gridRule('.grid-inset-info').includes('position: absolute;') &&
-      gridRule('.grid-inset-info').includes('pointer-events: none;') &&
+      // Nada sobreposto no palco do jogador: os chips de turno e de dimensões
+      // foram REMOVIDOS do JSX e do CSS (não escondidos com display: none).
+      !gridSource.includes('grid-inset-info') &&
+      !gridCssSource.includes('grid-inset-info') &&
+      !gridSource.includes('isMaster={false}') &&
+      // `SpatialSceneControls` só existe ANTES do palco (administração).
+      gridSource.lastIndexOf('<SpatialSceneControls') < stageAt &&
       // Nada substitui a área removida por padding/margin.
       !gridRule('.grid-stage').includes('padding') &&
       !gridRule('.grid-stage').includes('margin'),
@@ -7137,24 +7136,29 @@ check(
   );
 
   check(
-    'SC119) viewport estreito: a câmera encolhe/quebra e não extrapola o grid',
+    'SC119) viewport estreito: a barra encolhe, CONTINUA numa linha e não extrapola',
     gridCssSource.includes('@media (max-width: 720px)') &&
       /@media \(max-width: 720px\)[\s\S]*?\.grid-camera-overlay \{[\s\S]*?max-width: calc\(100% - 1rem\);/.test(
         gridCssSource,
       ) &&
       /@media \(max-width: 720px\)[\s\S]*?\.grid-camera-overlay \.btn \{/.test(gridCssSource) &&
-      gridRule('.grid-camera-overlay').includes('flex-wrap: wrap;') &&
-      gridRule('.grid-camera-overlay').includes('max-width: min(16rem, calc(100% - 1.5rem));'),
+      // Nenhuma variante (base ou media query) reintroduz quebra de linha.
+      !/\.grid-camera-overlay[^{]*\{[^}]*flex-wrap: wrap;/.test(gridCssSource) &&
+      gridRule('.grid-camera-overlay').includes('flex-wrap: nowrap;') &&
+      gridRule('.grid-camera-overlay').includes('white-space: nowrap;') &&
+      gridRule('.grid-camera-overlay').includes('max-width: calc(100% - 1.5rem);'),
   );
 
   check(
     'SC120) sem conflito com HUD, régua e avisos (o menu sobe em vez de cobrir)',
     gridRule('.grid-camera-overlay').includes('z-index: 5;') &&
-      gridRule('.grid-camera-overlay.is-lifted').includes('bottom: 2.9rem;') &&
+      // Barra fina: a folga do `is-lifted` acompanha a nova altura.
+      gridRule('.grid-camera-overlay.is-lifted').includes('bottom: 2.6rem;') &&
       gridSource.includes("rulerState === 'error' ? 'grid-camera-overlay is-lifted'") &&
       gridRule('.grid-ruler-retry').includes('z-index: 4;') &&
       gridRule('.grid-hint').includes('pointer-events: none;') &&
-      /\.grid-movement-hud \{[\s\S]*?bottom: 4\.6rem;/.test(gridCssSource) &&
+      // O HUD sobe só a folga necessária (antes eram 4,6 rem reservados).
+      /\.grid-movement-hud \{[\s\S]*?bottom: 3\.2rem;/.test(gridCssSource) &&
       // Nada de z-index exagerado: o menu fica abaixo de qualquer modal.
       !/\.grid-camera-overlay \{[\s\S]*?z-index: \d{3,};/.test(gridCssSource),
   );
@@ -7169,9 +7173,73 @@ check(
       gridSource.includes("onAssisted={() => void changeScene({ mode: 'assisted' })}") &&
       gridSource.includes('className="grid-visibility"') &&
       gridSource.includes('<UnplacedCombatantsTray') &&
-      // Erro de cena do Mestre continua no fluxo; o do jogador, sobreposto.
+      // Erro da cena do MESTRE continua no fluxo administrativo.
       gridSource.includes('{isMaster && sceneError ? (') &&
-      (gridSource.match(/<p className="grid-scene-error" role="status">/g) ?? []).length === 2,
+      (gridSource.match(/<p className="grid-scene-error" role="status">/g) ?? []).length === 1,
+  );
+
+  check(
+    'SC123) erro real da cena continua visível para o jogador (e só quando há erro)',
+    // Condicional de verdade: sem erro o elemento não é montado.
+    gridSource.includes('{!isMaster && sceneError ? (') &&
+      gridSource.includes('className="grid-scene-error grid-scene-error-inset"') &&
+      // Fora do fluxo: o aviso não empurra o palco em momento nenhum.
+      gridRule('.grid-scene-error-inset').includes('position: absolute;') &&
+      gridRule('.grid-scene-error-inset').includes('pointer-events: none;') &&
+      // O texto vem do estado real da cena, não de uma cópia fixa.
+      gridSource.includes('{sceneError}') &&
+      // Nenhuma região fixa reservada para aviso (sem chip permanente).
+      !gridCssSource.includes('grid-inset-info'),
+  );
+
+  check(
+    'SC124) barra de câmera em UMA linha: altura vem de height/line-height, não da fonte',
+    gridRule('.grid-camera-overlay').includes('display: flex;') &&
+      gridRule('.grid-camera-overlay').includes('flex-wrap: nowrap;') &&
+      gridRule('.grid-camera-overlay').includes('gap: 0.15rem;') &&
+      // Cada botão tem altura própria e não herda o padding do `.btn` global.
+      gridRule('.grid-camera-overlay .btn').includes('height: 1.4rem;') &&
+      gridRule('.grid-camera-overlay .btn').includes('min-height: 0;') &&
+      gridRule('.grid-camera-overlay .btn').includes('line-height: 1;') &&
+      gridRule('.grid-camera-overlay .btn').includes('padding: 0 0.42rem;') &&
+      gridRule('.grid-camera-overlay .btn').includes('flex: 0 0 auto;') &&
+      // O percentual mantém a mesma altura de linha dos botões.
+      gridRule('.grid-zoom-value').includes('line-height: 1.4rem;') &&
+      gridRule('.grid-zoom-value').includes('min-width: 2.7rem;') &&
+      // `.btn`/`.btn-small` globais não foram redefinidos: a compactação é
+      // local, só dentro da barra de câmera.
+      !/\n\.btn(-small)? \{/.test(gridCssSource),
+  );
+
+  check(
+    'SC125) a barra não intercepta gestos fora da própria área clicável',
+    // Só os botões são interativos: o contêiner não cobre o palco inteiro.
+    !gridRule('.grid-camera-overlay').includes('inset: 0') &&
+      !gridRule('.grid-camera-overlay').includes('width: 100%') &&
+      !gridRule('.grid-camera-overlay').includes('height: 100%') &&
+      !gridRule('.grid-camera-overlay').includes('pointer-events: all') &&
+      // Ancorada por right/bottom (caixa do tamanho do conteúdo).
+      gridRule('.grid-camera-overlay').includes('right: 0.75rem;') &&
+      gridRule('.grid-camera-overlay').includes('bottom: 0.75rem;') &&
+      // Sem tooltip nativo redundante: os nomes acessíveis continuam no aria.
+      !cameraBlock.includes('title=') &&
+      !cameraBlock.includes('onPointerDown'),
+  );
+
+  check(
+    'SC126) sem perda funcional: cena do Mestre e leitura do jogador seguem no DTO',
+    // Administração da cena intacta para o Mestre (ativação/dimensões/assistido).
+    gridSceneSource.includes('onResize(') &&
+      gridSceneSource.includes('Largura (pés)') &&
+      gridSceneSource.includes('Altura (pés)') &&
+      // O texto de leitura continua existindo (usado no modo assistido).
+      gridSceneSource.includes('Cena em grade — ${widthFeet} × ${heightFeet} pés') &&
+      // Turno e dimensões continuam no estado/DTO — só não são desenhados no grid.
+      gridSource.includes('combat.currentCombatantId === combatant.id') &&
+      gridSource.includes('widthFeet={scene.widthFeet}') &&
+      // Câmera: nenhum caminho de escrita nasceu aqui.
+      !cameraBlock.includes('api/') &&
+      !cameraBlock.includes('fetch('),
   );
 
   check(
