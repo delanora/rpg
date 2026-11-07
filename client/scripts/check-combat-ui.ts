@@ -7463,7 +7463,7 @@ check(
       // A dock NÃO cresce: as duas linhas de slots usam a célula de 81px.
       workspaceRule('.combat-dock').includes('grid-template-rows: 5.0625rem 1.8125rem;') &&
       workspaceRule('.dock-resource.is-filtering').includes('box-shadow:') &&
-      workspaceRule('.hotbar-waiting .battle-waiting-anim').includes('transform: scale(0.72);'),
+      workspaceRule('.hotbar-waiting .battle-waiting-anim').includes('transform: scale(0.92);'),
   );
 
   check(
