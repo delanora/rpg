@@ -8314,6 +8314,21 @@ check(
       ) &&
       workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
         'pointer-events: none;',
+      ) &&
+      // Borda com a cor da condição e tamanho relativo ao texto.
+      workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
+        'border-color: var(--condition-accent);',
+      ) &&
+      workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
+        'width: max-content;',
+      ) &&
+      workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
+        'max-width: min(20rem, calc(100vw - 1rem));',
+      ) &&
+      source('src/combat/components/ConditionBadges.tsx').includes('data-condition={condition}') &&
+      source('src/combat/components/ConditionBadges.tsx').includes('condition="more"') &&
+      source('src/combat/workspace.css').includes(
+        "[data-condition='poisoned'] {\n  --condition-accent: var(--damage-poison);",
       ),
   );
 

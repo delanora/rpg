@@ -134,13 +134,69 @@
    barra HORIZONTAL. Fixo e fora do fluxo, ele fica acima de tudo e some quando
    o ponteiro/foco sai da etiqueta. */
 .info-tip-text.condition-tip.condition-tip-floating {
+  /* Padrão = dourado; cada condição sobrescreve o acento abaixo. */
+  --condition-accent: var(--gold-deep);
   position: fixed;
   z-index: 120;
   display: grid;
-  width: min(27rem, calc(100vw - 1rem));
+  /* Tamanho RELATIVO AO CONTEÚDO: cresce só o necessário. O limite entra
+     apenas quando a descrição é longa — aí ela quebra linha em vez de alargar. */
+  width: max-content;
+  max-width: min(20rem, calc(100vw - 1rem));
   max-height: 60vh;
   overflow-y: auto;
   pointer-events: none;
+  border-color: var(--condition-accent);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px color-mix(in srgb, var(--condition-accent) 38%, transparent);
+}
+
+/* A borda assume a cor da CONDIÇÃO — a mesma paleta das etiquetas. */
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='blinded'] {
+  --condition-accent: var(--condition-blinded);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='charmed'] {
+  --condition-accent: var(--condition-charmed);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='deafened'] {
+  --condition-accent: var(--condition-deafened);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='frightened'] {
+  --condition-accent: var(--condition-frightened);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='grappled'] {
+  --condition-accent: var(--condition-grappled);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='incapacitated'] {
+  --condition-accent: var(--condition-incapacitated);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='invisible'] {
+  --condition-accent: var(--condition-invisible);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='paralyzed'] {
+  --condition-accent: var(--condition-paralyzed);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='petrified'] {
+  --condition-accent: var(--condition-petrified);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='prone'] {
+  --condition-accent: var(--condition-prone);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='restrained'] {
+  --condition-accent: var(--condition-restrained);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='stunned'] {
+  --condition-accent: var(--condition-stunned);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='unconscious'] {
+  --condition-accent: var(--condition-unconscious);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='poisoned'] {
+  --condition-accent: var(--damage-poison);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-condition='more'] {
+  --condition-accent: var(--gold-deep);
 }
 
 /* Retrato do card da iniciativa SEM moldura: `.portrait` tem borda e aro de

@@ -28,9 +28,9 @@ function useFloatingConditionTip() {
     const anchor = ref.current;
     if (!anchor || typeof window === 'undefined') return;
     const rect = anchor.getBoundingClientRect();
-    // Mesma largura máxima do `.info-tip-text`, presa à viewport.
-    const width = Math.min(432, window.innerWidth - 16);
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    // Alinhado à esquerda da etiqueta; o ajuste de borda direita depende da
+    // largura REAL do popup e é feito depois de montar (ver FloatingConditionTip).
+    const left = Math.max(8, rect.left);
     const above = rect.bottom + 200 > window.innerHeight;
     setPos({ top: above ? rect.top - 6 : rect.bottom + 6, left, above });
   }, []);
@@ -57,16 +57,38 @@ function useFloatingConditionTip() {
   };
 }
 
-/** O popup flutuante em si: portal no `body`, fixo, sem capturar o ponteiro. */
-function FloatingConditionTip({ pos, children }: { pos: TipPosition | null; children: ReactNode }) {
+/**
+ * O popup flutuante em si: portal no `body`, fixo, sem capturar o ponteiro.
+ *
+ * `data-condition` viaja junto porque o popup sai da etiqueta: é o que permite
+ * o CSS pintar a borda com a MESMA cor da condição (a paleta `--condition-*`).
+ */
+function FloatingConditionTip({ pos, condition, children }: {
+  pos: TipPosition | null;
+  condition: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [left, setLeft] = useState<number | null>(null);
+
+  // A largura acompanha o CONTEÚDO, então só dá para saber se ele cabe à
+  // direita depois de montar: aqui o popup é preso à viewport, sem cortar.
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || !pos || typeof window === 'undefined') return;
+    setLeft(Math.max(8, Math.min(pos.left, window.innerWidth - element.offsetWidth - 8)));
+  }, [pos, children]);
+
   if (!pos) return null;
   return createPortal(
     <span
+      ref={ref}
       className="info-tip-text condition-tip condition-tip-floating"
       role="tooltip"
+      data-condition={condition}
       style={{
         top: `${pos.top}px`,
-        left: `${pos.left}px`,
+        left: `${left ?? pos.left}px`,
         transform: pos.above ? 'translateY(-100%)' : undefined,
       }}
     >
@@ -141,7 +163,11 @@ function ConditionChip({ condition, label, count, suspended, sources, onOpenHist
       >
         {content}
       </span>
-      {tip.open ? <FloatingConditionTip pos={tip.pos}>{content}</FloatingConditionTip> : null}
+      {tip.open ? (
+        <FloatingConditionTip pos={tip.pos} condition={condition}>
+          {content}
+        </FloatingConditionTip>
+      ) : null}
     </span>
   );
 }
@@ -174,7 +200,11 @@ function MoreConditionsChip({ labels }: { labels: string[] }) {
       >
         {content}
       </span>
-      {tip.open ? <FloatingConditionTip pos={tip.pos}>{content}</FloatingConditionTip> : null}
+      {tip.open ? (
+        <FloatingConditionTip pos={tip.pos} condition="more">
+          {content}
+        </FloatingConditionTip>
+      ) : null}
     </span>
   );
 }
