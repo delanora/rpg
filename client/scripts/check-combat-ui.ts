@@ -8121,6 +8121,11 @@ check(
         savingDockMarkup.indexOf('dock-personalize-save') &&
       // Fora da edição não existe check: a dock de consulta só tem o lápis.
       !personalizeDockMarkup.includes('dock-personalize-save') &&
+      // 6.6M.6.3.1.8: em combate o nome exibido é só o PRIMEIRO nome.
+      dockSource.includes("import { combatDisplayName } from '../combatName'") &&
+      dockSource.includes('const shortName = combatDisplayName(name);') &&
+      source('src/combat/combatName.ts').includes('export function combatDisplayName') &&
+      !/\{name\}/.test(dockSource) &&
       // 6.6M.6.3.1.7: a faixa não escreve NADA em edição (nem "não salvo", nem
       // explicação) — a linha do topo mede o mesmo e a grade não muda.
       editingMarkup.includes('class="hotbar-note" role="status"></span>') &&

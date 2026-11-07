@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon';
 import { ConditionHistoryModal } from '../../components/ConditionHistoryModal';
 import { formatModifier } from '../../dnd';
 import type { ConditionEffects, MechanicalState, TurnEconomy } from '../../types';
+import { combatDisplayName } from '../combatName';
 import type { HotbarFilter } from '../hotbar';
 import { CombatStateBadges } from './CombatStateBadges';
 import { ConditionBadges } from './ConditionBadges';
@@ -175,6 +176,8 @@ export function PlayerCombatDock({
   statusPanel,
   urgent,
 }: PlayerCombatDockProps) {
+  /** No combate o nome exibido é só o primeiro — a ficha mostra o completo. */
+  const shortName = combatDisplayName(name);
   const [contextOpen, setContextOpen] = useState(false);
   /** Condição clicada no painel: abre a MESMA janela de histórico da ficha. */
   const [history, setHistory] = useState<string | null>(null);
@@ -317,7 +320,7 @@ export function PlayerCombatDock({
           className={hasContext ? 'dock-portrait has-context' : 'dock-portrait'}
           aria-expanded={contextOpen}
           aria-haspopup="dialog"
-          aria-label={`Estado de ${name}`}
+          aria-label={`Estado de ${shortName}`}
           onClick={() => setContextOpen((open) => !open)}
         >
           {imageUrl ? (
@@ -334,7 +337,7 @@ export function PlayerCombatDock({
 
         {/* Legenda do nome: no protótipo é uma legenda abaixo do círculo. */}
         <span className="dock-portrait-name" aria-hidden="true">
-          {name}
+          {shortName}
         </span>
 
         {/* PAINEL DE ESTADO DO PERSONAGEM (6.6M.6.1.4) — diálogo NÃO modal: o
@@ -350,7 +353,7 @@ export function PlayerCombatDock({
             <div className="dock-context-header">
               <span className="dock-context-eyebrow">Estado do personagem</span>
               <span className="dock-context-head" id="dock-context-name">
-                {name}
+                {shortName}
               </span>
               <button
                 type="button"
