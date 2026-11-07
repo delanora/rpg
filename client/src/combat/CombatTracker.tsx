@@ -998,14 +998,23 @@ export function CombatTracker({
               error={hotbarError}
               onSave={commitHotbarEdit}
               onCancel={cancelHotbarEdit}
-              onAssign={(index, ref) =>
-                setHotbarDraft((draft) => (draft ? assignHotbarRef(draft, index, ref) : draft))
+              // ATENÇÃO ao índice: a Hotbar mostra posições de 1 a 48, mas o
+              // rascunho é um array — a conversão (posição − 1) acontece AQUI,
+              // num único lugar. Sem ela, remover a posição 3 apagaria a 4.
+              onAssign={(position, ref) =>
+                setHotbarDraft((draft) =>
+                  draft ? assignHotbarRef(draft, position - 1, ref) : draft,
+                )
               }
               onMove={(from, to) =>
-                setHotbarDraft((draft) => (draft ? moveHotbarRef(draft, from, to) : draft))
+                setHotbarDraft((draft) =>
+                  draft ? moveHotbarRef(draft, from - 1, to - 1) : draft,
+                )
               }
-              onRemove={(index) =>
-                setHotbarDraft((draft) => (draft ? clearHotbarRef(draft, index) : draft))
+              onRemove={(position) =>
+                setHotbarDraft((draft) =>
+                  draft ? clearHotbarRef(draft, position - 1) : draft,
+                )
               }
               extraEntries={hotbarExtraEntries}
             />

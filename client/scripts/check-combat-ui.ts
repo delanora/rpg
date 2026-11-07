@@ -7958,6 +7958,8 @@ check(
     layout: layoutSample,
   });
   const maskedSlots = maskHotbarSlots(placedSlots, 'bonus-action');
+  /** O × da terceira posição da TELA (índice 2 do array) esvazia só ela. */
+  const clearedByPosition = clearHotbarRef(layoutSample, placedSlots[2].index - 1);
   const bonusIndex = hotbarSample.findIndex((entry) => entry.cost === 'bonus-action');
   const actionIndex = hotbarSample.findIndex((entry) => entry.cost === 'action');
 
@@ -8064,6 +8066,22 @@ check(
       !personalizeMarkup.includes('hotbar-edit-save') &&
       // Fora do editor os slots continuam botões do fluxo existente.
       (personalizeMarkup.match(/<button/g) ?? []).length === hotbarSample.length + 1,
+  );
+
+  check(
+    'SC152) remover/mover usam a POSIÇÃO da tela (1-based) convertida para índice do array',
+    // O × da posição 3 da tela tem de apagar o TERCEIRO slot, nunca o quarto:
+    // a conversão vive no tracker (posição − 1) e é única para as três ações.
+    clearedByPosition[2] === null &&
+      clearedByPosition[3]?.sourceId === layoutSample[3]?.sourceId &&
+      trackerSource.includes('assignHotbarRef(draft, position - 1, ref)') &&
+      trackerSource.includes('moveHotbarRef(draft, from - 1, to - 1)') &&
+      trackerSource.includes('clearHotbarRef(draft, position - 1)') &&
+      // O rótulo acessível continua falando a posição da tela.
+      hotbarComponentSource.includes('Remover o atalho da posição ${slot.index}') &&
+      hotbarComponentSource.includes('onRemove?.(slot.index)') &&
+      hotbarComponentSource.includes('onAssign?.(slot.index, {') &&
+      hotbarComponentSource.includes('onMove?.(from, slot.index)'),
   );
 
   check(
