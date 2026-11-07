@@ -8916,5 +8916,51 @@ check(
     deathDockSource.includes('inert={Boolean(awaitingInitiative) || Boolean(deathLabel)}'),
 );
 
+/* -------------------------------------------------------------------------- */
+/* 6.6M.8.1 — ORDEM DOS HOOKS (React #300/#310)                               */
+/* -------------------------------------------------------------------------- */
+
+const deathGridSource = source('src/combat/grid/CombatGrid.tsx');
+
+check(
+  'SC176) grid: `targetingRef` (useRef) fica ANTES do return da cena assistida',
+  (() => {
+    const assistedReturn = deathGridSource.indexOf("if (scene.mode !== 'grid-2d') {");
+    const targetingRef = deathGridSource.indexOf(
+      'const targetingRef = useRef<GridTargeting | null>(targeting);',
+    );
+    // Trecho de RENDER depois do return condicional: nenhum hook pode morar
+    // ali, porque alternar grid <-> cena assistida mudaria a contagem de hooks
+    // (React #300/#310 derrubava a tela no ciclo de morte).
+    const renderSection = deathGridSource.slice(
+      assistedReturn,
+      deathGridSource.indexOf('const placementInteractive'),
+    );
+    return (
+      assistedReturn > 0 &&
+      targetingRef > 0 &&
+      targetingRef < assistedReturn &&
+      !/\buse[A-Z][A-Za-z]*\s*[<(]/.test(renderSection)
+    );
+  })(),
+);
+
+check(
+  'SC177) ordem dos hooks auditada: ficha e painel mecânico retornam DEPOIS dos hooks',
+  (() => {
+    const noHookAfter = (file: string, mark: string): boolean => {
+      const text = source(file);
+      const at = text.indexOf(mark);
+      if (at < 0) return false;
+      return !/\buse[A-Z][A-Za-z]*\s*[<(]/.test(text.slice(at));
+    };
+    return (
+      noHookAfter('src/death/DeathPanel.tsx', 'if (!state) return null;') &&
+      noHookAfter('src/death/DeathPanel.tsx', 'if (!relevant) return null;') &&
+      noHookAfter('src/components/MechanicalPanel.tsx', 'if (!current) return')
+    );
+  })(),
+);
+
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);

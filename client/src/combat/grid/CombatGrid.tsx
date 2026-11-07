@@ -335,6 +335,17 @@ export function CombatGrid({
   const [grabGesture, setGrabGesture] = useState<TokenGesture | null>(null);
   // --- 6.6M.3.1.3: cursor da régua (ícone real, sem crosshair) --------------
   const rulerCursorRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Intenção de alvo para os listeners/gestos já registrados (6.6M.6.4).
+   *
+   * PRECISA ficar junto dos outros refs, ANTES de qualquer `return` do corpo:
+   * o render da cena assistida retorna cedo e, quando este `useRef` vivia
+   * depois desse retorno (6.6M.8.1), alternar grid ↔ cena assistida mudava a
+   * quantidade de hooks do componente — React #300/#310 derrubavam a tela
+   * depois de uma rolagem do ciclo de morte.
+   */
+  const targetingRef = useRef<GridTargeting | null>(targeting);
+  targetingRef.current = targeting;
   /** Última posição do ponteiro no VIEWPORT (px) — inicializa o cursor ícone. */
   const pointerInViewport = useRef<Point2D | null>(null);
   /** O ponteiro já soltou: `lostpointercapture` tardio não pode cancelar. */
@@ -1738,12 +1749,8 @@ export function CombatGrid({
    * clique. Quem decide se o ataque vale continua sendo o servidor.
    */
   const targetingActive = Boolean(targeting?.active);
-  /**
-   * O handler de teclado (Escape) é registrado UMA vez por ativação: a intenção
-   * de alvo entra por ref para não reinstalar os listeners a cada render do grid.
-   */
-  const targetingRef = useRef<GridTargeting | null>(targeting);
-  targetingRef.current = targeting;
+  // `targetingRef` (useRef) é declarado no TOPO do componente (junto dos
+  // outros refs): hooks não podem viver depois do return da cena assistida.
   const isTargetable = (combatantId: string): boolean =>
     targetingActive && Boolean(targeting?.targetableIds.includes(combatantId));
   /** Token utilizável: régua > gesto de movimento do dono > placement do Mestre. */
