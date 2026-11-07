@@ -16,10 +16,11 @@ interface CombatWorkspaceProps {
   /** Direita: o registro do combate, em coluna própria. */
   log: ReactNode;
   /**
-   * Hotbar (6.6M.6): faixa compacta de ações rápidas, logo abaixo do corpo.
-   * É só uma região de layout — a Hotbar não conhece regra nenhuma.
+   * Dock do jogador (6.6M.6.1): retrato, recursos, Hotbar, utilitários e
+   * deslocamento, logo abaixo do corpo e ACIMA da barra persistente. É só uma
+   * região de layout — a dock não conhece regra nenhuma.
    */
-  hotbar?: ReactNode;
+  dock?: ReactNode;
   /** Painéis contextuais (Concentração, Reação). Ausente = nada é desenhado. */
   context?: ReactNode;
   /** Atalhos e estado mecânico — valem para QUALQUER papel (sem admin). */
@@ -48,7 +49,7 @@ export function CombatWorkspace({
   action,
   scene,
   log,
-  hotbar,
+  dock,
   context,
   tools,
   masterTools,
@@ -75,7 +76,7 @@ export function CombatWorkspace({
         </aside>
       </div>
 
-      {hotbar ? <div className="combat-workspace-hotbar">{hotbar}</div> : null}
+      {dock ? <div className="combat-workspace-dock">{dock}</div> : null}
       {masterTools ? <div className="combat-workspace-master-tools">{masterTools}</div> : null}
       {tools ? <div className="combat-workspace-tools">{tools}</div> : null}
       {resourceBar ? <div className="combat-workspace-resource">{resourceBar}</div> : null}

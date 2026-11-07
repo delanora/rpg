@@ -1,5 +1,5 @@
 import { MechanicalPanel } from '../components/MechanicalPanel';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../api';
 import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
@@ -32,6 +32,7 @@ import './workspace.css';
 import { BattleWaitingPanel } from './components/BattleWaitingPanel';
 import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
 import { CombatWorkspace } from './components/CombatWorkspace';
+import { ActionMenu } from './components/ActionMenu';
 import { CombatHotbar } from './components/CombatHotbar';
 import { CombatLog } from './components/CombatLog';
 import { buildCombatHotbarEntries } from './hotbar';
@@ -42,7 +43,8 @@ import { DeathSaveSkipDialog } from './components/DeathSaveSkipDialog';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
 import { MasterEconomyPanel } from './components/MasterEconomyPanel';
 import { ReactionPanel } from './components/ReactionPanel';
-import { TurnResourceBar } from './components/TurnResourceBar';
+import { PlayerCombatDock } from './components/PlayerCombatDock';
+import { MovementSpendButton, TurnResourceBar, turnResourceAccess } from './components/TurnResourceBar';
 import { TurnToast } from './components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from './reactions';
 import {
@@ -99,6 +101,11 @@ interface CombatTrackerProps {
   onError: (message: string) => void;
   /** Atalhos para as seções da ficha. Sem isso, os botões não aparecem. */
   onOpenSection?: (target: SheetShortcut) => void;
+  /**
+   * Jogador: rola até a FICHA completa (abaixo do workspace). Ação puramente
+   * de navegação — a ficha continua no container próprio dela.
+   */
+  onOpenSheet?: () => void;
   /** Atalho aberto no momento (só para marcar o botão correspondente). */
   openSection?: SheetShortcut | null;
   /**
@@ -151,6 +158,7 @@ export function CombatTracker({
   onError,
   onOpenSection,
   openSection = null,
+  onOpenSheet,
   onRollDeathSave,
   onRollConcentrationSave,
   npcInventory,
@@ -795,6 +803,152 @@ export function CombatTracker({
     );
   }
 
+  /**
+   * DOCK DO JOGADOR (6.6M.6.1) — montada só no turno operacional do próprio
+   * jogador. Fora do turno, em Teste contra a Morte ou para o Mestre nada é
+   * desenhado: aí a barra persistente (ou o painel de morte) continua no lugar
+   * de sempre, e nunca existem DUAS superfícies de recurso concorrentes.
+   */
+  const dockCombatant =
+    !isMaster && showOperational && !showDeathTurn ? myCombatant : null;
+  const dockAccess = dockCombatant
+    ? turnResourceAccess({
+        active: true,
+        hasActionHandler: true,
+        economy: dockCombatant.turnEconomy,
+        canAct: dockCombatant.conditionEffects.canAct,
+        ownTurn,
+        effectiveSpeed: dockCombatant.effectiveSpeed,
+        hasContext: Boolean(standUpContext) || stabilizeTargets.length > 0,
+      })
+    : null;
+
+  let dockNode: ReactNode = undefined;
+  if (dockCombatant && dockAccess) {
+    const dockEconomy = dockCombatant.turnEconomy;
+    const dockEconomyAction = (input: {
+      action: Parameters<typeof executeEconomyAction>[1]['action'];
+      description?: string;
+      trigger?: string;
+      intent?: string;
+      distance?: number;
+    }): void => {
+      void run(() =>
+        executeEconomyAction(combat, { combatantId: dockCombatant.id, ...input }),
+      );
+    };
+
+    dockNode = (
+      <PlayerCombatDock
+        name={dockCombatant.name}
+        imageUrl={dockCombatant.imageUrl}
+        hpCurrent={dockCombatant.hpCurrent}
+        hpMax={dockCombatant.hpMax}
+        armorClass={dockCombatant.armorClass}
+        mechanicalState={dockCombatant.mechanicalState}
+        conditionEffects={dockCombatant.conditionEffects}
+        economy={dockEconomy}
+        concentration={dockCombatant.mechanicalState.concentration ?? null}
+        deathBlocked={deathLifecycle(dockCombatant.deathState)}
+        deathSavePending={deathSavePending}
+        busy={busy}
+        // O MENU DE AÇÃO de sempre: Disparada, Esquivar, Preparar, Levantar e
+        // Estabilizar continuam existindo (nada foi removido da dock).
+        actionMenu={
+          <ActionMenu
+            disabled={busy || !dockAccess.canOpenMenu}
+            actionsDisabled={busy || !dockAccess.canUseAction}
+            onSelect={(action, extra) => dockEconomyAction({ action, ...extra })}
+            standUp={standUpContext}
+            onStandUp={standUp}
+            stabilizeTargets={stabilizeTargets}
+            onStabilize={(targetCombatantId) =>
+              dockEconomyAction({ action: 'stabilize', ...{ targetCombatantId } })
+            }
+            busy={busy}
+          />
+        }
+        hotbar={
+          hotbarEntries.length > 0 ? (
+            <CombatHotbar
+              entries={hotbarEntries}
+              busy={busy}
+              selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
+              onSelect={(entry) =>
+                setHotbarPick((prev) => ({
+                  attackId: entry.sourceId,
+                  nonce: (prev?.nonce ?? 0) + 1,
+                }))
+              }
+            />
+          ) : (
+            <p className="dock-empty">
+              Nenhum ataque disponível — equipe uma arma na mochila.
+            </p>
+          )
+        }
+        utilities={
+          <>
+            {onOpenSection
+              ? COMBAT_SHORTCUTS.map((shortcut) => {
+                  const isOpen = shortcut.key === openSection;
+                  return (
+                    <button
+                      key={shortcut.key}
+                      type="button"
+                      className={isOpen ? 'dock-utility active' : 'dock-utility'}
+                      aria-expanded={isOpen}
+                      onClick={() => onOpenSection(shortcut.key)}
+                    >
+                      <Icon name={shortcut.icon} size={13} /> {shortcut.label}
+                    </button>
+                  );
+                })
+              : null}
+            {onOpenSheet ? (
+              <button type="button" className="dock-utility" onClick={onOpenSheet}>
+                <Icon name="quill" size={13} /> Ficha
+              </button>
+            ) : null}
+            {isMyTurn ? (
+              <button
+                type="button"
+                className="end-turn dock-end-turn"
+                disabled={busy || deathSavePending}
+                onClick={() => void endTurn()}
+                aria-label="Encerrar turno"
+                title={
+                  deathSavePending
+                    ? 'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.'
+                    : undefined
+                }
+              >
+                <span className="end-turn-text">Encerrar turno</span>
+                <span className="end-turn-arrow" aria-hidden="true">
+                  <svg viewBox="0 0 20 12" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 6h13" />
+                    <path d="M9.5 1.5 15 6l-5.5 4.5" />
+                  </svg>
+                </span>
+              </button>
+            ) : null}
+          </>
+        }
+        movement={{
+          remaining: dockAccess.remaining,
+          budget: dockEconomy.movementBudget,
+        }}
+        // O GASTO de deslocamento é o MESMO controle da barra persistente.
+        movementControl={
+          <MovementSpendButton
+            canMove={!busy && dockAccess.canMove}
+            onSpend={(distance) => dockEconomyAction({ action: 'move', distance })}
+          />
+        }
+      />
+    );
+  }
+
   // --- Combate ativo ----------------------------------------------------------
   return (
     <section className="combat-panel">
@@ -1092,7 +1246,9 @@ export function CombatTracker({
             {/* Atalhos da ficha: linha compacta, sem competir com o ataque.
                 Estes NÃO são ferramentas administrativas: continuam aqui para
                 os dois papéis, conforme a autoridade de cada um. */}
-            {onOpenSection ? (
+            {/* Para o jogador os atalhos vivem na DOCK (uma superfície só);
+                aqui eles continuam para o Mestre e para os casos sem dock. */}
+            {onOpenSection && (isMaster || !dockCombatant) ? (
               <div className="combat-shortcuts combat-shortcuts-inline">
                 {COMBAT_SHORTCUTS.map((shortcut) => {
                   const isOpen = shortcut.key === openSection;
@@ -1147,28 +1303,13 @@ export function CombatTracker({
             onRollDeathSave={(card) => void rollDeathSaveCard(card)}
           />
         }
-        hotbar={
-          // Hotbar: só no próprio turno operacional do jogador. Fora do turno,
-          // em Teste contra a Morte ou para o Mestre, a faixa não é montada (o
-          // grid recupera o espaço). A barra de recursos continua independente.
-          !isMaster && showOperational && !showDeathTurn && hotbarEntries.length > 0 ? (
-            <CombatHotbar
-              entries={hotbarEntries}
-              busy={busy}
-              selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
-              onSelect={(entry) =>
-                setHotbarPick((prev) => ({
-                  attackId: entry.sourceId,
-                  nonce: (prev?.nonce ?? 0) + 1,
-                }))
-              }
-            />
-          ) : undefined
-        }
+        dock={dockNode}
         resourceBar={
           // A barra persistente NÃO é renderizada para quem não controla o
           // turno (nem para o Mestre observando o personagem de um jogador).
-          showOperational && actingCombatant ? (
+          // Para o JOGADOR ela dá lugar à dock; só sobrevive no ciclo de morte
+          // (onde a dock não é montada) — nunca as duas juntas.
+          showOperational && actingCombatant && (isMaster || showDeathTurn) ? (
             <TurnResourceBar
               active
               isMaster={isMaster}

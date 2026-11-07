@@ -858,8 +858,328 @@
    não empurra nada e não participa do layout. Por isso a faixa não tem
    `overflow`: nada de recortar o tooltip.
    -------------------------------------------------------------------------- */
-.combat-workspace-hotbar {
+.combat-workspace-dock {
   min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+   DOCK DO JOGADOR (6.6M.6.1) — retrato · recursos · Hotbar · utilitários,
+   com a barra de deslocamento embaixo. Ela SUBSTITUI a apresentação da Hotbar
+   e da Resource Bar na tela do jogador; as responsabilidades mecânicas
+   continuam nos mesmos controles (ActionMenu, MovementSpendButton, end-turn).
+   -------------------------------------------------------------------------- */
+.combat-dock {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.4rem 0.5rem 0.35rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-4));
+  box-shadow: inset 0 1px 4px rgba(43, 33, 21, 0.16);
+}
+
+.combat-dock-main {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+/* RETRATO — a imagem nunca é recortada (sem corte no topo/rosto). */
+.dock-portrait-cell {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+.dock-portrait {
+  position: relative;
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.dock-portrait:hover,
+.dock-portrait:focus-visible {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold-hair);
+  outline: none;
+}
+
+.dock-portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dock-portrait-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.dock-portrait-hp {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dock-portrait-hp > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+}
+
+/* CONTEXTO do retrato — sobe sobre o grid, sem empurrar a dock. */
+.dock-context {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.4rem);
+  z-index: 50;
+  display: grid;
+  gap: 0.35rem;
+  width: 17rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--shadow);
+}
+
+.dock-context-head {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+
+.dock-context-stats {
+  display: flex;
+  gap: 0.9rem;
+  margin: 0;
+}
+
+.dock-context-stats > div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.dock-context-stats dt {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-faint);
+}
+
+.dock-context-stats dd {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dock-context-note {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+}
+
+/* RECURSOS — Ação (com o menu geral), Ação bônus e Reação. */
+.dock-resources {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.dock-resource {
+  display: grid;
+  gap: 0.12rem;
+  padding-right: 0.5rem;
+  border-right: 1px solid var(--line);
+}
+
+.dock-resource:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.dock-resource-label {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.dock-resource-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.dock-pips {
+  display: flex;
+  gap: 0.14rem;
+}
+
+.dock-pip {
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: transparent;
+}
+
+.dock-pip.is-ready {
+  border-color: var(--gold-bright);
+  background: var(--gold);
+}
+
+.dock-pip.is-spent {
+  opacity: 0.45;
+}
+
+.dock-resource-count {
+  font-size: 0.62rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dock-death {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+}
+
+/* HOTBAR dentro da dock: os slots de sempre, sem moldura duplicada. */
+.dock-hotbar {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dock-hotbar .combat-hotbar {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.dock-empty {
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
+
+/* UTILITÁRIOS — atalhos da ficha e Encerrar turno. */
+.dock-utilities {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.dock-utility {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.18rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: 0.66rem;
+  cursor: pointer;
+}
+
+.dock-utility:hover,
+.dock-utility:focus-visible {
+  border-color: var(--gold-hair);
+  color: var(--gold);
+  outline: none;
+}
+
+.dock-utility.active {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.dock-end-turn {
+  margin-left: 0.2rem;
+}
+
+/* DESLOCAMENTO — a barra longa, do retrato até antes dos utilitários. */
+.dock-movement-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.dock-movement-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  font-size: 0.56rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.dock-movement-track {
+  flex: 1 1 auto;
+  min-width: 4rem;
+  height: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.dock-movement-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+  transition: width 0.2s ease;
+}
+
+.dock-movement-value {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* O popover do gasto de deslocamento precisa de âncora própria. */
+.move-spend-anchor {
+  position: relative;
+  display: inline-flex;
 }
 
 .combat-hotbar {
@@ -1205,6 +1525,23 @@
   /* Duas colunas já dão largura: o painel de ataque pode respirar inteiro. */
   .combat-tactical-action {
     max-height: none;
+  }
+}
+
+/* Dock: abaixo de 1360px os utilitários descem, sem apertar a Hotbar. */
+@media (max-width: 1360px) {
+  .combat-dock-main {
+    flex-wrap: wrap;
+  }
+
+  .dock-hotbar {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .dock-utilities {
+    order: 4;
+    margin-left: 0;
   }
 }
 

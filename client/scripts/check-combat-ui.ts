@@ -521,7 +521,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   // WH. Barra persistente some no turno alheio.
   check(
     'WH) turno alheio não renderiza a barra normal nem o Encerrar Turno',
-    tracker.includes('showOperational && actingCombatant ? (') &&
+    tracker.includes('showOperational && actingCombatant && (isMaster || showDeathTurn) ? (') &&
       tracker.includes('resourceBar={') &&
       !tracker.includes('onDismissTurnAlert'),
   );
@@ -6237,7 +6237,9 @@ check(
   check(
     'SC63) autoridade preservada no novo layout: ataque só para quem controla (ou override) e Teste contra a Morte antes dele',
     trackerSource.includes('const showOperational = controlsCurrent || masterOverrideActive;') &&
-      trackerSource.includes('showOperational && actingCombatant ? (') &&
+      // A barra persistente só aparece para quem controla o turno (o Mestre ou
+      // o ciclo de morte) — a dock do jogador cobre o resto.
+      trackerSource.includes('showOperational && actingCombatant && (isMaster || showDeathTurn) ? (') &&
       trackerSource.includes('<BattleWaitingPanel') &&
       trackerSource.indexOf('<DeathSavePanel') < trackerSource.indexOf('<CombatActionPanel'),
   );
@@ -6409,12 +6411,14 @@ check(
   check(
     'SC74) matriz de autoridade preservada: Mestre assume, jogador só o próprio turno, espera sem controles',
     trackerSource.includes('const showOperational = controlsCurrent || masterOverrideActive;') &&
-      trackerSource.includes('showOperational && actingCombatant ? (') &&
+      trackerSource.includes('showOperational && actingCombatant && (isMaster || showDeathTurn) ? (') &&
       trackerSource.includes('!isMaster && myCombatant ? (') &&
       trackerSource.includes('<BattleWaitingPanel') &&
       trackerSource.includes('<ConcentrationSavePanel') &&
       trackerSource.includes('<ReactionPanel') &&
-      /resourceBar=\{[\s\S]{0,500}?showOperational && actingCombatant \?/.test(trackerSource),
+      /resourceBar=\{[\s\S]{0,600}?showOperational && actingCombatant && \(isMaster \|\| showDeathTurn\) \?/.test(
+        trackerSource,
+      ),
   );
 
   check(
@@ -6544,12 +6548,12 @@ check(
   const hotbarComponentSource = source('src/combat/components/CombatHotbar.tsx');
 
   check(
-    'SC84) CombatHotbar é uma faixa do workspace: abaixo do corpo e acima da barra de recursos',
-    workspaceLayout.includes('hotbar?: ReactNode;') &&
-      workspaceLayout.indexOf('{hotbar}') > workspaceLayout.indexOf('combat-workspace-body') &&
-      workspaceLayout.indexOf('{hotbar}') < workspaceLayout.indexOf('{resourceBar}') &&
-      workspaceLayout.includes('<div className="combat-workspace-hotbar">') &&
-      workspaceRule('.combat-hotbar').includes('display: flex;'),
+    'SC84) a dock do jogador é uma faixa do workspace: abaixo do corpo e acima da barra de recursos',
+    workspaceLayout.includes('dock?: ReactNode;') &&
+      workspaceLayout.indexOf('{dock}') > workspaceLayout.indexOf('combat-workspace-body') &&
+      workspaceLayout.indexOf('{dock}') < workspaceLayout.indexOf('{resourceBar}') &&
+      workspaceLayout.includes('<div className="combat-workspace-dock">') &&
+      workspaceRule('.combat-dock').includes('display: grid;'),
   );
 
   check(
@@ -6589,10 +6593,8 @@ check(
 
   check(
     'SC88) autoridade: hotbar só no turno operacional do jogador, fora do Teste contra a Morte, sem chamar o servidor',
-    trackerSource.includes(
-      '!isMaster && showOperational && !showDeathTurn && hotbarEntries.length > 0',
-    ) &&
-      trackerSource.includes('<CombatHotbar') &&
+    trackerSource.includes('!isMaster && showOperational && !showDeathTurn') &&
+      trackerSource.includes('<PlayerCombatDock') &&
       // Escolher um slot não resolve nada: nenhum endpoint no componente.
       !/\b(resolveAttack|fetch)\w*\(/.test(hotbarComponentSource) &&
       workspaceLayout.includes('{resourceBar}') &&
@@ -6612,6 +6614,72 @@ check(
       !hotbarAdapterSource.includes("kind: 'item'") &&
       workspaceRule('.hotbar-slot').includes('width: 2.5rem;') &&
       workspaceRule('.hotbar-slot').includes('height: 2.5rem;'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.1 — Dock do jogador (visual + recursos + deslocamento).          */
+  /* ---------------------------------------------------------------------- */
+
+  const dockSource = source('src/combat/components/PlayerCombatDock.tsx');
+  const turnResourceSource = source('src/combat/components/TurnResourceBar.tsx');
+
+  check(
+    'SC90) a dock compõe retrato, recursos, Hotbar e utilitários, com o deslocamento em barra própria',
+    dockSource.includes('dock-portrait') &&
+      dockSource.includes('dock-resources') &&
+      dockSource.includes('{hotbar}') &&
+      dockSource.includes('{utilities}') &&
+      dockSource.includes('{actionMenu}') &&
+      dockSource.includes('dock-movement-track') &&
+      dockSource.includes('dock-movement-fill') &&
+      dockSource.includes('role="dialog"') &&
+      // A dock não desenha regra: nenhuma chamada de rede/resolução aqui.
+      !dockSource.includes('fetch(') &&
+      !dockSource.includes('resolveAttack') &&
+      !dockSource.includes('executeEconomyAction') &&
+      !dockSource.includes('grid/'),
+  );
+
+  check(
+    'SC91) deslocamento e "posso agir" vêm de UMA derivação, e o gasto tem UMA implementação',
+    turnResourceSource.includes('export function turnResourceAccess') &&
+      turnResourceSource.includes('export function MovementSpendButton') &&
+      // A barra persistente passou a usar a derivação exportada.
+      turnResourceSource.includes('turnResourceAccess({') &&
+      turnResourceSource.includes('<MovementSpendButton canMove={canMove} onSpend={onSpend} />') &&
+      // O tracker lê a MESMA função; a dock não recalcula orçamento.
+      trackerSource.includes('turnResourceAccess({') &&
+      trackerSource.includes('<MovementSpendButton') &&
+      dockSource.includes('movement.remaining') &&
+      dockSource.includes('movement.budget') &&
+      !dockSource.includes('movementUsed') &&
+      !dockSource.includes('action: \'move\''),
+  );
+
+  check(
+    'SC92) uma única superfície de recursos: a dock substitui a barra persistente do jogador',
+    trackerSource.includes('const dockCombatant =') &&
+      // A barra persistente só sobrevive para o Mestre ou no ciclo de morte.
+      trackerSource.includes('showOperational && actingCombatant && (isMaster || showDeathTurn)') &&
+      // No combate ativo a dock vem ANTES da barra na composição (a tela de
+      // iniciativa também tem uma barra inativa, mais acima no arquivo).
+      /dock=\{dockNode\}[\s\S]{0,200}?resourceBar=\{/.test(trackerSource) &&
+      // Duas montagens de propósito: a tela de iniciativa (inativa) e o ciclo
+      // de morte. Nunca uma TERCEIRA concorrendo com a dock.
+      (trackerSource.match(/<TurnResourceBar/g) ?? []).length === 2 &&
+      // O menu de ações gerais não foi removido: a dock recebe o ActionMenu.
+      trackerSource.includes('<ActionMenu') &&
+      dockSource.includes('{actionMenu}'),
+  );
+
+  check(
+    'SC93) dock não abre segunda autoridade: turno, recursos e morte continuam gateados no tracker',
+    trackerSource.includes('deathBlocked={deathLifecycle(dockCombatant.deathState)}') &&
+      trackerSource.includes('canAct: dockCombatant.conditionEffects.canAct') &&
+      trackerSource.includes('ownTurn,') &&
+      // Atalhos do jogador saem de "tools" (uma superfície só) sem sumir.
+      trackerSource.includes('{onOpenSection && (isMaster || !dockCombatant) ? (') &&
+      dockSource.includes('Sem economia de turno'),
   );
 
   check(

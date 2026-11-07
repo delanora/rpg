@@ -512,6 +512,13 @@ export function SheetPage({ user }: { user: SessionUser }) {
                 onError={setError}
                 onOpenSection={openSheetSection}
                 openSection={combatView}
+                // "Ficha" na dock: rola até o container próprio da ficha, que
+                // continua abaixo do workspace (nada é duplicado).
+                onOpenSheet={() =>
+                  document
+                    .querySelector('.sheet')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
                 onRollDeathSave={(entity) =>
                   dice.openSkillRoll({
                     kind: 'death-save',

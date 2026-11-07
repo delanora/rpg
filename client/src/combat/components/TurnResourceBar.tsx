@@ -61,6 +61,61 @@ interface TurnResourceBarProps {
 }
 
 /**
+ * Quem pode agir/mover neste turno. Fonte ÚNICA: a barra persistente e a dock
+ * do jogador leem daqui, então nunca existe "a dock acha que pode, a barra acha
+ * que não". Continua sendo só pré-condição de UI — o servidor valida de novo.
+ */
+export interface TurnResourceAccess {
+  actionsLeft: number;
+  remaining: number;
+  canUseAction: boolean;
+  canOpenMenu: boolean;
+  canMove: boolean;
+}
+
+export function turnResourceAccess({
+  active,
+  hasActionHandler,
+  economy,
+  canAct,
+  ownTurn,
+  effectiveSpeed,
+  hasContext,
+}: {
+  active: boolean;
+  hasActionHandler: boolean;
+  economy?: TurnEconomy;
+  canAct: boolean;
+  ownTurn: boolean;
+  effectiveSpeed?: number;
+  hasContext: boolean;
+}): TurnResourceAccess {
+  const actionsLeft = economy ? economy.actionsGranted - economy.actionsUsed : 0;
+  const remaining = economy
+    ? Number((economy.movementBudget - economy.movementUsed).toFixed(2))
+    : 0;
+  return {
+    actionsLeft,
+    remaining,
+    canUseAction: Boolean(
+      active && hasActionHandler && economy && canAct && ownTurn && actionsLeft > 0,
+    ),
+    canOpenMenu: Boolean(
+      active && hasActionHandler && canAct && ownTurn && (actionsLeft > 0 || hasContext),
+    ),
+    canMove: Boolean(
+      active &&
+        hasActionHandler &&
+        economy &&
+        canAct &&
+        ownTurn &&
+        (effectiveSpeed ?? 0) > 0 &&
+        remaining > 0,
+    ),
+  };
+}
+
+/**
  * A BARRA PERSISTENTE é o ponto único de Ação / Ação Bônus / Reação /
  * Deslocamento / Encerrar turno. O menu de AÇÃO abre ANCORADO aqui para CIMA; o
  * deslocamento é gasto inline, sem painel separado. Tudo apenas aciona a
@@ -87,23 +142,23 @@ export function TurnResourceBar({
   // O mestre encerra a qualquer momento; o jogador, só no próprio turno.
   const canEndTurn = Boolean(active && onEndTurn && (isMaster || isMyTurn));
 
-  const actionsLeft = economy ? economy.actionsGranted - economy.actionsUsed : 0;
-  const remaining = economy ? Number((economy.movementBudget - economy.movementUsed).toFixed(2)) : 0;
-  const canUseAction = Boolean(
-    active && onEconomyAction && economy && canAct && ownTurn && actionsLeft > 0,
-  );
   // O menu pode abrir por CONTEXTO mesmo sem Ação livre (Levantar-se não gasta
   // Ação) — mas só quando há algo realmente executável.
   // Consumíveis NÃO entram aqui: o inventário é o ponto de uso (duplo clique).
   const hasContext = Boolean(
     (standUp && onStandUp) || (stabilizeTargets.length > 0 && onStabilize),
   );
-  const canOpenMenu = Boolean(
-    active && onEconomyAction && canAct && ownTurn && (actionsLeft > 0 || hasContext),
-  );
-  const canMove = Boolean(
-    active && onEconomyAction && economy && canAct && ownTurn && (effectiveSpeed ?? 0) > 0 && remaining > 0,
-  );
+  // Derivação única, compartilhada com o DOCK do jogador (6.6M.6.1): se a dock
+  // calculasse "posso agir/mover" por conta própria, teríamos duas respostas.
+  const { actionsLeft, canUseAction, canOpenMenu, canMove } = turnResourceAccess({
+    active,
+    hasActionHandler: Boolean(onEconomyAction),
+    economy,
+    canAct,
+    ownTurn,
+    effectiveSpeed,
+    hasContext,
+  });
 
   // Em ciclo de morte a barra continua visível, mas inativa e explícita.
   if (active && deathBlocked) {
@@ -337,6 +392,33 @@ function MovementCell({ active, economy, canMove, onSpend }: {
   canMove: boolean;
   onSpend: (distance: number) => void;
 }) {
+  const remaining = economy ? Number((economy.movementBudget - economy.movementUsed).toFixed(2)) : 0;
+
+  return (
+    <div className="turn-resource move-cell">
+      <span className="turn-resource-label">
+        Deslocamento <FieldInfo>{RESOURCE_INFO.movement}</FieldInfo>
+      </span>
+      <span className="turn-resource-value">
+        {active && economy ? `${remaining} / ${economy.movementBudget} m` : 'em espera'}
+      </span>
+      {active ? <MovementSpendButton canMove={canMove} onSpend={onSpend} /> : null}
+    </div>
+  );
+}
+
+/**
+ * GASTO de deslocamento (unidade mínima extraída da barra, 6.6M.6.1): o popover
+ * com stepper em metros que confirma `move` pela MESMA economia. A dock do
+ * jogador reusa este controle em vez de ter um segundo jeito de gastar.
+ */
+export function MovementSpendButton({
+  canMove,
+  onSpend,
+}: {
+  canMove: boolean;
+  onSpend: (distance: number) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [meters, setMeters] = useState('1.5');
   const anchor = useRef<HTMLDivElement>(null);
@@ -357,7 +439,6 @@ function MovementCell({ active, economy, canMove, onSpend }: {
     };
   }, [open]);
 
-  const remaining = economy ? Number((economy.movementBudget - economy.movementUsed).toFixed(2)) : 0;
   const value = Number(meters);
   const valid = Number.isFinite(value) && value > 0;
 
@@ -368,24 +449,16 @@ function MovementCell({ active, economy, canMove, onSpend }: {
   });
 
   return (
-    <div className="turn-resource move-cell" ref={anchor}>
-      <span className="turn-resource-label">
-        Deslocamento <FieldInfo>{RESOURCE_INFO.movement}</FieldInfo>
-      </span>
-      <span className="turn-resource-value">
-        {active && economy ? `${remaining} / ${economy.movementBudget} m` : 'em espera'}
-      </span>
-      {active ? (
-        <button
-          type="button"
-          className="move-spend"
-          disabled={!canMove}
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          Gastar
-        </button>
-      ) : null}
+    <div className="move-spend-anchor" ref={anchor}>
+      <button
+        type="button"
+        className="move-spend"
+        disabled={!canMove}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        Gastar
+      </button>
 
       {open ? (
         <div className="move-popover">
