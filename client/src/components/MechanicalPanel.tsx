@@ -17,10 +17,12 @@ import type { EffectDto, MechanicalDto, MechanicalEntity } from '../types';
  * Uma interface para personagem, cadastro e instância; sem segunda conexão WS.
  *
  * `variant` escolhe a linguagem visual: `sheet` é a faixa compacta DENTRO de
- * "Vida e Defesa" (sem card nem cabeçalho próprios) e `combat` é o bloco do
- * painel de combate. Em nenhum dos dois o bloco repete "deslocamento efetivo" ou "PV
- * máximo efetivo": esses valores vivem nos campos principais da ficha e já são
- * calculados com as condições/exaustão.
+ * "Vida e Defesa" (sem card nem cabeçalho próprios), `combat` é o bloco do
+ * painel de combate e `dock` é o painel do retrato da dock do jogador
+ * (6.6M.6.1.4). No painel do retrato aConditions/Levantar/pendência NÃO são
+ * repetidos: eles já têm um lugar único fora dele. Em nenhuma variante o bloco
+ * repete "deslocamento efetivo" ou "PV máximo efetivo": esses valores vivem nos
+ * campos principais da ficha e já são calculados com as condições/exaustão.
  */
 export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, sourceChoices = [], exhaustionEnabled, variant = 'combat' }: {
   entity: MechanicalEntity; refreshVersion: number;
@@ -29,7 +31,13 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
   sourceChoices?: { entity: MechanicalEntity; name: string }[];
   /** Regra de Exaustão ligada na mesa (vem da configuração, em tempo real). */
   exhaustionEnabled?: boolean;
-  variant?: 'combat' | 'sheet';
+  /**
+   * `dock` = painel do retrato (6.6M.6.1.4). Mesma fonte de dados, mesma
+   * autoridade: muda só o que é APRESENTADO, porque Conditions continuam nas
+   * etiquetas do painel, Levantar-se continua no ActionMenu e a salvaguarda
+   * pendente é montada FORA do retrato (uma instância só).
+   */
+  variant?: 'combat' | 'sheet' | 'dock';
 }) {
   const { user } = useAuth();
   const { readOnly } = useSheetAccess();
@@ -107,7 +115,9 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
 
   // No combate as condições vivem no CARD da iniciativa; aqui o bloco é apenas
   // "estado e ajustes" (notas, Levantar, administração do Mestre, histórico).
-  const showBadges = variant !== 'combat';
+  // No painel do retrato as etiquetas também NÃO se repetem: quem as desenha é a
+  // dock (com o histórico no mesmo lugar).
+  const showBadges = variant === 'sheet';
   // Exaustão tem controles PRÓPRIOS (não entra no seletor de Conditions) e é
   // compartilhada pelas duas variantes — só quando a mesa usa a regra.
   const exhaustionControls = exhaustOn ? <div className="hp-controls">
@@ -187,6 +197,23 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
      * Na ficha é uma linha simples (o jogador só recebe os públicos); no combate
      * o Mestre ganha a lista completa com encerrar + criação manual.
      */}
+    {variant === 'dock' ? (
+      effectList.length > 0 ? (
+        <ul className="dock-effect-list">
+          {effectList.map((effect) => (
+            <li key={effect.id}>
+              <strong>{effect.label}</strong>
+              {effect.modifiers.length > 0
+                ? ` (${describeEffectModifiers(effect.modifiers)})`
+                : ''}
+              {effect.duration?.label ? ` · ${effect.duration.label}` : ''}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="field-hint">Nenhum efeito ativo.</p>
+      )
+    ) : null}
     {variant === 'sheet' && effectList.length > 0 ? (
       <p className="field-hint effects-line" data-effects-line>
         <strong>Efeitos:</strong>{' '}
@@ -208,17 +235,21 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
      * alvo (jogador) e ao Mestre, sempre derivada do servidor. Nenhuma
      * Condition/Effect existe antes do resultado.
      */}
-    <PendingEffectSavePanel
-      entity={entity}
-      refreshKey={refreshVersion + effectsRefresh}
-      isMaster={isMaster}
-      busy={busy}
-      onChanged={async () => {
-        await refresh().catch(() => {});
-        await reloadEffects();
-      }}
-    />
-    {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
+    {variant === 'dock' ? null : (
+      <PendingEffectSavePanel
+        entity={entity}
+        refreshKey={refreshVersion + effectsRefresh}
+        isMaster={isMaster}
+        busy={busy}
+        onChanged={async () => {
+          await refresh().catch(() => {});
+          await reloadEffects();
+        }}
+      />
+    )}
+    {/* No painel do retrato o Levantar-se continua com UMA entrada (o
+        ActionMenu da dock, que mostra custo e motivo): nada de segunda regra. */}
+    {variant !== 'dock' && current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
     {/* COMBATE: ferramenta compacta de Conditions do Mestre (mesmo domínio). */}
     {isMaster && variant === 'combat' ? <>
       {/* 6.6F: fila de confirmação espacial da conjuração do jogador. */}

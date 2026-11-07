@@ -914,6 +914,9 @@
    controles (ActionMenu, MovementSpendButton, end-turn).
    -------------------------------------------------------------------------- */
 .combat-dock {
+  /* Âncora do AVISO de salvaguarda pendente, que flutua acima sem empurrar o
+     grid (mesma solução do protótipo v5). */
+  position: relative;
   display: grid;
   grid-template-columns: 5.625rem 2.8125rem minmax(0, 1fr) 11.25rem;
   grid-template-rows: 5.0625rem 1.8125rem;
@@ -1044,63 +1047,232 @@
   background: linear-gradient(90deg, var(--gold), var(--gold-bright));
 }
 
-/* CONTEXTO do retrato — sobe sobre o grid, sem empurrar a dock. */
+/* PAINEL DE ESTADO DO RETRATO (6.6M.6.1.4) — sobe sobre o grid, sem empurrar a
+   dock. O CABEÇALHO fica fixo e só o CONTEÚDO rola: muitos efeitos não estouram
+   a viewport e o botão de fechar nunca sai da tela. As cores são explícitas
+   porque o fundo aqui é o marrom da dock nos DOIS temas do app. */
 .dock-context {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 0.6rem);
+  bottom: calc(100% + 0.5rem);
   z-index: 50;
-  display: grid;
-  gap: 0.4rem;
-  width: 17rem;
-  padding: 0.7rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  width: min(21.5rem, calc(100vw - 1.5rem));
+  max-height: min(30rem, 66vh);
+  padding: 0;
   border: 1px solid #bd8e31;
   border-radius: 7px;
   background: linear-gradient(160deg, #302013, #100c09);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  box-shadow:
+    0 16px 42px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 218, 112, 0.18);
   color: var(--dock-cream);
+}
+
+.dock-context-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.5rem;
+  flex: none;
+  padding: 0.5rem 0.6rem 0.45rem 0.75rem;
+  border-bottom: 1px solid #755525;
+  border-radius: 7px 7px 0 0;
+  background: linear-gradient(180deg, #382517, #25180f);
+}
+
+.dock-context-eyebrow {
+  font-size: 0.5rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #bda06a;
 }
 
 .dock-context-head {
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-display);
-  font-size: 0.86rem;
-  color: var(--ink);
+  font-size: 0.82rem;
+  letter-spacing: 0.045em;
+  color: #ffe3a0;
 }
 
+.dock-context-close {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid #775522;
+  border-radius: 5px;
+  background: #1b110b;
+  color: #e4c17a;
+  cursor: pointer;
+}
+
+.dock-context-close:hover,
+.dock-context-close:focus-visible {
+  border-color: #e5b845;
+  color: #ffe49a;
+  outline: none;
+}
+
+.dock-context-content {
+  display: grid;
+  gap: 0.55rem;
+  min-height: 0;
+  padding: 0.6rem 0.7rem 0.7rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #775524 #1c130e;
+}
+
+/* Números do SERVIDOR em três cartões, como no protótipo v5. */
 .dock-context-stats {
-  display: flex;
-  gap: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
   margin: 0;
 }
 
 .dock-context-stats > div {
-  display: flex;
-  align-items: baseline;
-  gap: 0.3rem;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.4rem 0.45rem;
+  border: 1px solid #554021;
+  border-radius: 5px;
+  background: #120d08;
 }
 
 .dock-context-stats dt {
-  font-size: 0.6rem;
+  font-size: 0.5rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--ink-faint);
+  color: #aa9061;
 }
 
 .dock-context-stats dd {
   margin: 0;
-  font-size: 0.8rem;
-  color: var(--ink);
+  font-size: 0.82rem;
+  color: #f5db9d;
   font-variant-numeric: tabular-nums;
 }
 
-.dock-context-note {
+.dock-context-stat-minor {
+  font-size: 0.62rem;
+  color: #dbba7b;
+}
+
+.dock-context-section {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #654c27;
+}
+
+.dock-context-section-title {
   margin: 0;
+  font-size: 0.56rem;
+  letter-spacing: 0.095em;
+  text-transform: uppercase;
+  color: #e2bb6e;
+}
+
+/* Efeitos: lista compacta com os modificadores que o servidor já calcula. */
+.dock-effect-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding-left: 0.9rem;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: #d5bf93;
+}
+
+.dock-effect-list strong {
+  color: #f4d783;
+}
+
+/* Histórico: recolhido (não ocupa altura fixa) e com o registro REAL. */
+.dock-context-details {
+  padding-top: 0.5rem;
+  border-top: 1px solid #654c27;
+}
+
+.dock-context-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.dock-context-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dock-context-details[open] > summary {
+  margin-bottom: 0.4rem;
+}
+
+.dock-context-log {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0 0 0.3rem;
+  padding-left: 1rem;
+  font-size: 0.6rem;
+  line-height: 1.4;
+  color: #d5bf93;
+}
+
+/* Textos de apoio: fundo escuro fixo, então a cor não vem dos tokens do tema. */
+.dock-context-note {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  font-size: 0.68rem;
-  color: var(--ink-faint);
+  margin: 0;
+  font-size: 0.6rem;
+  line-height: 1.4;
+  color: #a59271;
+}
+
+.dock-context .field-hint {
+  margin: 0;
+  font-size: 0.6rem;
+  line-height: 1.4;
+  color: #bfa87f;
+}
+
+/* Indicador de CONTEXTO ATIVO no retrato (condição/concentração/morte): o
+   painel deixa de ser descoberto por acaso. */
+.dock-portrait.has-context::after {
+  content: '';
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #ecc05c;
+  border: 2px solid #171009;
+  box-shadow: 0 0 9px rgba(240, 191, 84, 0.7);
+}
+
+/* AVISO OPERACIONAL acima da dock (salvaguarda pendente): FORA do retrato, para
+   o jogador resolver sem abrir o painel. Vazio = não ocupa pixel nenhum. */
+.combat-dock-urgent {
+  position: absolute;
+  right: 11.25rem;
+  bottom: calc(100% + 0.5rem);
+  z-index: 45;
+  width: min(24rem, calc(100% - 12rem));
+}
+
+.combat-dock-urgent:empty {
+  display: none;
 }
 
 /* RECURSOS — COLUNA de 45px com os três glifos verticalmente distribuídos

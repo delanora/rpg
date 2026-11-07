@@ -44,6 +44,7 @@ import { InitiativeTimeline } from './components/InitiativeTimeline';
 import { MasterEconomyPanel } from './components/MasterEconomyPanel';
 import { ReactionPanel } from './components/ReactionPanel';
 import { PlayerCombatDock } from './components/PlayerCombatDock';
+import { PendingEffectSavePanel } from './components/PendingEffectSavePanel';
 import { MovementSpendButton, TurnResourceBar, turnResourceAccess } from './components/TurnResourceBar';
 import { TurnToast } from './components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from './reactions';
@@ -823,6 +824,30 @@ export function CombatTracker({
       })
     : null;
 
+  /**
+   * PAINEL DE ESTADO (6.6M.6.1.4) — UMA montagem do `MechanicalPanel`.
+   *
+   * Com a dock montada ele vive no painel do retrato (variante `dock`); sem dock
+   * — Mestre, Teste contra a Morte, jogador fora do turno — continua na faixa
+   * "Estado e ajustes", exatamente como antes. A variante `dock` não repete
+   * Conditions (etiquetas do painel), Levantar-se (ActionMenu) nem a pendência
+   * de salvaguarda (que é montada FORA do retrato): nunca existem dois painéis
+   * concorrentes para a mesma entidade.
+   */
+  const statusPanelCombatant = dockCombatant ?? actingCombatant;
+  const statusPanel = statusPanelCombatant ? (
+    <MechanicalPanel
+      entity={{ kind: 'combatant', id: statusPanelCombatant.id }}
+      refreshVersion={combat.version}
+      effectsRefresh={effectsRefresh}
+      variant={dockCombatant ? 'dock' : 'combat'}
+      sourceChoices={combat.combatants.map((item) => ({
+        entity: { kind: 'combatant' as const, id: item.id },
+        name: item.name,
+      }))}
+    />
+  ) : null;
+
   let dockNode: ReactNode = undefined;
   if (dockCombatant && dockAccess) {
     const dockEconomy = dockCombatant.turnEconomy;
@@ -947,6 +972,23 @@ export function CombatTracker({
           remaining: dockAccess.remaining,
           budget: dockEconomy.movementBudget,
         }}
+        // ESTADO DO PERSONAGEM no retrato (6.6M.6.1.4): o MESMO MechanicalPanel,
+        // sem buscar nada de novo — a dock só apresenta.
+        statusPanel={statusPanel}
+        // SALVAGUARDA PENDENTE (6.5H/6.6H) FORA do retrato: o jogador resolve
+        // sem abrir o painel e existe UMA instância do formulário.
+        urgent={
+          <PendingEffectSavePanel
+            entity={{ kind: 'combatant', id: dockCombatant.id }}
+            refreshKey={combat.version + effectsRefresh}
+            isMaster={false}
+            busy={busy}
+            onChanged={async () => {
+              const fresh = await fetchActiveCombat().catch(() => null);
+              if (fresh) onCombatChange(fresh);
+            }}
+          />
+        }
         // O GASTO de deslocamento é o MESMO controle da barra persistente.
         movementControl={
           <MovementSpendButton
@@ -957,6 +999,55 @@ export function CombatTracker({
       />
     );
   }
+
+  /**
+   * FAIXA DE FERRAMENTAS — atalhos da ficha + "Estado e ajustes".
+   *
+   * 6.6M.6.1.4: com a dock montada ela NÃO entra no fluxo (nem vazia): o estado
+   * do personagem foi para o retrato e os atalhos já estão nos utilitários da
+   * dock. Para o Mestre e para o jogador sem dock nada muda.
+   */
+  const toolsNode = dockCombatant ? undefined : (
+    <>
+      {/* Atalhos da ficha: linha compacta, sem competir com o ataque.
+          Estes NÃO são ferramentas administrativas: continuam aqui para
+          os dois papéis, conforme a autoridade de cada um. */}
+      {/* Para o jogador os atalhos vivem na DOCK (uma superfície só);
+          aqui eles continuam para o Mestre e para os casos sem dock. */}
+      {onOpenSection && (isMaster || !dockCombatant) ? (
+        <div className="combat-shortcuts combat-shortcuts-inline">
+          {COMBAT_SHORTCUTS.map((shortcut) => {
+            const isOpen = shortcut.key === openSection;
+            return (
+              <button
+                key={shortcut.key}
+                type="button"
+                className={isOpen ? 'btn btn-small active' : 'btn btn-small'}
+                aria-expanded={isOpen}
+                onClick={() => onOpenSection(shortcut.key)}
+              >
+                <Icon name={shortcut.icon} size={14} /> {shortcut.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {/*
+        Estado e ajustes (drawer recolhido): notas derivadas, Levantar e a
+        administração do Mestre. As ETIQUETAS de condição NÃO vivem aqui —
+        elas ficam no card da iniciativa. Fica fora do fluxo de ataque.
+      */}
+      {actingCombatant ? (
+        <details className="combat-status">
+          <summary className="combat-status-summary">
+            <Icon name="info" size={14} /> Estado e ajustes — {actingCombatant.name}
+          </summary>
+          {statusPanel}
+        </details>
+      ) : null}
+    </>
+  );
 
   // --- Combate ativo ----------------------------------------------------------
   return (
@@ -1250,55 +1341,7 @@ export function CombatTracker({
             ) : null}
           </>
         ) : undefined}
-        tools={
-          <>
-            {/* Atalhos da ficha: linha compacta, sem competir com o ataque.
-                Estes NÃO são ferramentas administrativas: continuam aqui para
-                os dois papéis, conforme a autoridade de cada um. */}
-            {/* Para o jogador os atalhos vivem na DOCK (uma superfície só);
-                aqui eles continuam para o Mestre e para os casos sem dock. */}
-            {onOpenSection && (isMaster || !dockCombatant) ? (
-              <div className="combat-shortcuts combat-shortcuts-inline">
-                {COMBAT_SHORTCUTS.map((shortcut) => {
-                  const isOpen = shortcut.key === openSection;
-                  return (
-                    <button
-                      key={shortcut.key}
-                      type="button"
-                      className={isOpen ? 'btn btn-small active' : 'btn btn-small'}
-                      aria-expanded={isOpen}
-                      onClick={() => onOpenSection(shortcut.key)}
-                    >
-                      <Icon name={shortcut.icon} size={14} /> {shortcut.label}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {/*
-              Estado e ajustes (drawer recolhido): notas derivadas, Levantar e a
-              administração do Mestre. As ETIQUETAS de condição NÃO vivem aqui —
-              elas ficam no card da iniciativa. Fica fora do fluxo de ataque.
-            */}
-            {actingCombatant ? (
-              <details className="combat-status">
-                <summary className="combat-status-summary">
-                  <Icon name="info" size={14} /> Estado e ajustes — {actingCombatant.name}
-                </summary>
-                <MechanicalPanel
-                  entity={{ kind: 'combatant', id: actingCombatant.id }}
-                  refreshVersion={combat.version}
-                  effectsRefresh={effectsRefresh}
-                  sourceChoices={combat.combatants.map((item) => ({
-                    entity: { kind: 'combatant' as const, id: item.id },
-                    name: item.name,
-                  }))}
-                />
-              </details>
-            ) : null}
-          </>
-        }
+        tools={toolsNode}
         log={
           <CombatLog
             log={log}

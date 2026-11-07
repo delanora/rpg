@@ -6946,6 +6946,87 @@ check(
       dockSource.includes('title="Sem economia de turno — Testes contra a Morte"'),
   );
 
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.1.4 — estado do personagem no retrato.                           */
+  /* ---------------------------------------------------------------------- */
+
+  const mechSource = source('src/components/MechanicalPanel.tsx');
+  const pendingSource = source('src/combat/components/PendingEffectSavePanel.tsx');
+
+  check(
+    'SC108) a faixa "Estado e ajustes" sai do fluxo quando a dock do jogador está montada',
+    // Um único painel de estado, decidido pelo tracker: com dock ele vai para o
+    // retrato; sem dock (Mestre, morte, fora do turno) fica na faixa de sempre.
+    trackerSource.includes('const statusPanelCombatant = dockCombatant ?? actingCombatant;') &&
+      trackerSource.includes("variant={dockCombatant ? 'dock' : 'combat'}") &&
+      trackerSource.includes('const toolsNode = dockCombatant ? undefined : (') &&
+      trackerSource.includes('tools={toolsNode}') &&
+      // Nada de faixa vazia: a região inteira some, não só o `details`.
+      !trackerSource.includes('tools={\n          <>') &&
+      trackerSource.includes('Estado e ajustes — {actingCombatant.name}'),
+  );
+
+  check(
+    'SC109) UMA montagem do MechanicalPanel, reaproveitada no painel do retrato',
+    (trackerSource.match(/<MechanicalPanel/g) ?? []).length === 1 &&
+      trackerSource.includes('statusPanel={statusPanel}') &&
+      mechSource.includes("variant?: 'combat' | 'sheet' | 'dock';") &&
+      // A variante não repete as etiquetas de condição (a dock as desenha).
+      mechSource.includes("const showBadges = variant === 'sheet';"),
+  );
+
+  check(
+    'SC110) painel do retrato reúne PV/CA/deslocamento, condições, efeitos, concentração e histórico',
+    dockSource.includes('className="dock-context"') &&
+      dockSource.includes('aria-modal={false}') &&
+      dockSource.includes('dock-context-stats') &&
+      dockSource.includes('<ConditionBadges') &&
+      dockSource.includes('{statusPanel ??') &&
+      dockSource.includes('dock-context-details') &&
+      // Histórico = o MESMO registro do servidor, na janela que a ficha usa.
+      dockSource.includes('<ConditionHistoryModal') &&
+      dockSource.includes('mechanicalState.log') &&
+      // A dock continua sem busca e sem cálculo: só apresenta o DTO.
+      !dockSource.includes('fetch(') &&
+      !dockSource.includes('computeArmorClass') &&
+      !dockSource.includes('effectiveSpeed'),
+  );
+
+  check(
+    'SC111) salvaguarda pendente FORA do retrato, com UMA instância do formulário',
+    dockSource.includes('className="combat-dock-urgent"') &&
+      trackerSource.includes('urgent={\n          <PendingEffectSavePanel') &&
+      (trackerSource.match(/<PendingEffectSavePanel/g) ?? []).length === 1 &&
+      // O painel do retrato não monta uma segunda cópia do formulário.
+      mechSource.includes('{variant === \'dock\' ? null : (') &&
+      pendingSource.includes('rollPendingEffectSave') &&
+      // Vazio não ocupa espaço; aberto, flutua acima sem mexer na geometria.
+      workspaceRule('.combat-dock-urgent:empty').includes('display: none;') &&
+      workspaceRule('.combat-dock-urgent').includes('position: absolute;') &&
+      workspaceRule('.combat-dock').includes('position: relative;'),
+  );
+
+  check(
+    'SC112) conteúdo extenso rola dentro do painel e o fechar não perde foco',
+    workspaceRule('.dock-context').includes('position: absolute;') &&
+      workspaceRule('.dock-context').includes('max-height: min(30rem, 66vh);') &&
+      workspaceRule('.dock-context-content').includes('overflow-y: auto;') &&
+      dockSource.includes('portraitButtonRef.current?.focus()') &&
+      dockSource.includes("event.key !== 'Escape' || history") &&
+      workspaceRule('.dock-portrait.has-context::after').includes('border-radius: 50%;'),
+  );
+
+  check(
+    'SC113) Levantar-se e concentração não ganham segundo fluxo no painel do retrato',
+    mechSource.includes("variant !== 'dock' && current.effects.prone") &&
+      trackerSource.includes('onStandUp={standUp}') &&
+      trackerSource.includes('const standUpContext =') &&
+      (mechSource.match(/'concentrate-end'/g) ?? []).length === 1 &&
+      // Administração continua exclusiva do Mestre nas variantes de sempre.
+      mechSource.includes("isMaster && variant === 'combat'") &&
+      mechSource.includes("isMaster && variant === 'sheet'"),
+  );
+
   check(
     'SC83) separação das superfícies não esconde nada: a página continua rolando até a ficha',
     // Nada de overflow/altura fixa no main do jogador — a rolagem é da página.
