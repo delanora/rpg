@@ -28,6 +28,11 @@ interface ActionMenuProps {
   stabilizeTargets?: StabilizeTarget[];
   onStabilize?: (targetCombatantId: string) => void;
   busy?: boolean;
+  /**
+   * Acesso compacto (só o ícone) para viver junto do losango de Ação na dock do
+   * jogador. O MENU é o mesmo, com os mesmos comandos — muda só o gatilho.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -50,6 +55,7 @@ export function ActionMenu({
   stabilizeTargets = [],
   onStabilize,
   busy = false,
+  compact = false,
 }: ActionMenuProps) {
   const [open, setOpen] = useState(false);
   // Formulário inline para as ações que exigem texto/escolha.
@@ -108,13 +114,20 @@ export function ActionMenu({
     <div className="action-menu-anchor" ref={anchor}>
       <button
         type="button"
-        className={open ? 'action-menu-trigger active' : 'action-menu-trigger'}
+        className={
+          open
+            ? `action-menu-trigger${compact ? ' is-compact' : ''} active`
+            : `action-menu-trigger${compact ? ' is-compact' : ''}`
+        }
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label={compact ? 'Ações gerais' : undefined}
+        title={compact ? 'Ações gerais (Disparada, Esquivar, Preparar, Levantar-se, Estabilizar)' : undefined}
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
       >
-        <Icon name="sword" size={13} /> Ação
+        <Icon name="sword" size={compact ? 11 : 13} />
+        {compact ? null : ' Ação'}
       </button>
 
       {open ? (

@@ -858,6 +858,14 @@
    não empurra nada e não participa do layout. Por isso a faixa não tem
    `overflow`: nada de recortar o tooltip.
    -------------------------------------------------------------------------- */
+/* A tela do JOGADOR (dock presente) reserva a faixa dos botões flutuantes
+   fixos — Inventário/Dados à esquerda, Anotações à direita — para a dock não
+   ficar embaixo deles. A classe só existe quando a dock é montada: a tela do
+   Mestre não a recebe e o grid dele continua idêntico. */
+.combat-workspace.has-player-dock {
+  padding-bottom: calc(var(--fab-base) + 2 * var(--fab-step) + 0.6rem);
+}
+
 .combat-workspace-dock {
   min-width: 0;
 }
@@ -876,14 +884,18 @@
    -------------------------------------------------------------------------- */
 .combat-dock {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* QUATRO colunas na geometria do HTML v4: retrato (≈90px) · recursos A/B/R
+     (≈45px) · Hotbar com toda a largura central · utilitários (≈190px). O
+     retrato e o bloco de utilitários atravessam as DUAS linhas. */
+  grid-template-columns: auto 3.2rem minmax(0, 1fr) 11.75rem;
   grid-template-areas:
-    'identity hotbar utilities'
-    'movement movement utilities';
+    'portrait resources hotbar utilities'
+    'portrait movement movement utilities';
   align-items: center;
-  column-gap: clamp(0.6rem, 1.1vw, 1.1rem);
+  column-gap: 0.55rem;
   row-gap: 0.3rem;
   min-width: 0;
+  min-height: 8.4rem;
   padding: 0.45rem 0.55rem 0.4rem;
   border: 1px solid var(--gold-hair);
   border-radius: 6px;
@@ -891,34 +903,36 @@
   box-shadow: inset 0 1px 4px rgba(43, 33, 21, 0.16);
 }
 
-.dock-identity {
-  grid-area: identity;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
-}
-
-/* RETRATO — a imagem nunca é recortada (sem corte no topo/rosto). */
+/* RETRATO — coluna própria, atravessando as duas linhas da dock. */
 .dock-portrait-cell {
+  grid-area: portrait;
   position: relative;
-  flex: 0 0 auto;
+  align-self: center;
+  justify-self: start;
   display: grid;
   place-items: center;
+  width: 5.5rem;
+  height: 5.5rem;
 }
 
+/* CIRCULAR, com moldura de latão — a referência do HTML v4. Nada é recortado
+   no rosto: o círculo usa `object-fit: cover` com o centro do retrato. */
 .dock-portrait {
   position: relative;
   display: block;
-  width: 3.6rem;
-  height: 3.6rem;
+  width: 100%;
+  height: 100%;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border: 2px solid var(--gold);
+  border-radius: 50%;
   background: var(--surface-2);
   color: var(--ink-soft);
   cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(43, 33, 21, 0.6),
+    0 0 0 3px var(--gold-hair),
+    inset 0 0 10px rgba(0, 0, 0, 0.35);
   transition:
     border-color 0.14s ease,
     box-shadow 0.14s ease;
@@ -948,7 +962,7 @@
 .dock-portrait-hp {
   position: absolute;
   inset: auto 0 0 0;
-  height: 4px;
+  height: 0.32rem;
   background: rgba(0, 0, 0, 0.45);
 }
 
@@ -1016,78 +1030,144 @@
   color: var(--ink-faint);
 }
 
-/* RECURSOS — Ação (com o menu geral), Ação bônus e Reação. */
+/* RECURSOS — COLUNA vertical de símbolos, na ordem Ação · Bônus · Reação. */
 .dock-resources {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  flex: 0 0 auto;
+  grid-area: resources;
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  align-content: center;
+  justify-items: center;
+  align-self: stretch;
+  gap: 0.15rem;
   min-width: 0;
+  padding-right: 0.1rem;
+  border-right: 1px solid var(--line);
 }
 
 .dock-resource {
+  position: relative;
   display: grid;
-  gap: 0.08rem;
+  align-content: center;
+  justify-items: center;
+  gap: 0.04rem;
   min-width: 0;
 }
 
-/* Separador fino ENTRE os três recursos: o bloco fica compacto e legível sem
-   virar uma faixa de texto com moldura em cada célula. */
-.dock-resource + .dock-resource {
-  padding-left: 0.45rem;
-  border-left: 1px solid var(--line);
-}
-
+/* Rótulo textual: fica no DOM (leitor de tela) e o `title` da célula mostra o
+   estado no hover; a coluna de ~45px pertence ao glifo, não ao texto. */
 .dock-resource-label {
-  font-size: 0.52rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-faint);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .dock-resource-row {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: center;
+  gap: 0.18rem;
   min-width: 0;
 }
 
 .dock-pips {
   display: flex;
+  align-items: center;
   gap: 0.12rem;
 }
 
+/* Glifos do v4: losango = Ação, hexágono = Ação Bônus, estrela = Reação. A
+   FORMA identifica o recurso e `is-spent` apaga sem esconder o símbolo. */
 .dock-pip {
-  width: 0.44rem;
-  height: 0.44rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 50%;
-  background: transparent;
+  width: 0.95rem;
+  height: 0.95rem;
+  background: currentColor;
 }
 
-.dock-pip.is-ready {
-  border-color: var(--gold-bright);
-  background: var(--gold);
+.dock-pip.is-action {
+  color: var(--gold-bright);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.dock-pip.is-bonus {
+  color: #d9853f;
+  clip-path: polygon(25% 2%, 75% 2%, 100% 50%, 75% 98%, 25% 98%, 0 50%);
+}
+
+.dock-pip.is-reaction {
+  color: #c0503f;
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 57%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 57%,
+    2% 35%,
+    39% 35%
+  );
 }
 
 .dock-pip.is-spent {
-  opacity: 0.45;
+  opacity: 0.28;
 }
 
 .dock-resource-count {
-  font-size: 0.6rem;
-  color: var(--ink-soft);
+  font-size: 0.46rem;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.dock-death {
-  display: flex;
+/* Acesso compacto ao MESMO menu de Ação: um gatilho de ícone ancorado no canto
+   do losango, sem tirar nenhum comando do menu. */
+.dock-resource.is-action .action-menu-anchor {
+  position: absolute;
+  right: -0.2rem;
+  bottom: -0.15rem;
+}
+
+.dock-resource.is-action .action-menu-trigger.is-compact {
+  display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  margin: 0;
-  font-size: 0.7rem;
+  justify-content: center;
+  width: 0.9rem;
+  height: 0.9rem;
+  padding: 0;
+  border: 1px solid var(--gold-deep);
+  border-radius: 3px;
+  background-image: linear-gradient(180deg, var(--surface), var(--surface-2));
   color: var(--ink-soft);
+  font-size: 0;
+}
+
+.dock-resource.is-action .action-menu-trigger.is-compact:hover,
+.dock-resource.is-action .action-menu-trigger.is-compact:focus-visible {
+  border-color: var(--gold);
+  color: var(--gold);
+  outline: none;
+}
+
+.dock-death {
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  font-size: 0.46rem;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.dock-death-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* HOTBAR dentro da dock: os slots de sempre, sem moldura duplicada. */
@@ -1116,33 +1196,40 @@
   color: var(--ink-faint);
 }
 
-/* UTILITÁRIOS — atalhos da ficha e Encerrar turno. */
-/* GRUPO lateral: uma grade compacta própria, não uma continuação dos slots. */
+/* UTILITÁRIOS — bloco delimitado à direita: SEIS botões em 3×2 e o Encerrar
+   turno em uma linha inteira abaixo. */
 .dock-utilities {
   grid-area: utilities;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, auto);
   gap: 0.22rem;
   align-content: center;
   align-self: stretch;
   width: 100%;
-  max-width: 21rem;
   min-width: 0;
+  padding: 0.28rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
 }
 
+/* Ícone ACIMA do rótulo: cabe em ~42px de coluna sem virar lista de texto. */
 .dock-utility {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: center;
+  gap: 0.1rem;
   min-width: 0;
-  padding: 0.18rem 0.28rem;
+  padding: 0.3rem 0.15rem;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: var(--surface-2);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-3));
   color: var(--ink-soft);
-  font-size: 0.6rem;
-  line-height: 1.2;
-  text-align: left;
+  font-size: 0.52rem;
+  line-height: 1.15;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -1150,6 +1237,7 @@
    "Características" em viewport apertada. */
 .dock-utility-label {
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1168,9 +1256,11 @@
 }
 
 .dock-end-turn {
-  /* Encerrar turno ocupa o extremo do bloco direito: existe, é óbvio e não
-     disputa espaço com os slots da Hotbar. */
-  grid-column: span 2;
+  /* Encerrar turno ocupa uma LINHA INTEIRA abaixo dos seis botões. */
+  grid-column: 1 / -1;
+  flex-direction: row;
+  justify-content: center;
+  gap: 0.35rem;
   margin-left: 0;
 }
 
@@ -1256,24 +1346,25 @@
 .hotbar-slots {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
+  /* OITO posições com espaçamento uniforme dentro do poço: os slots ocupam a
+     largura central em vez de virar um grupo minúsculo no meio dela. */
+  justify-content: space-between;
+  gap: clamp(0.3rem, 0.55vw, 0.5rem);
   flex: 1 1 auto;
   min-width: 0;
+  max-width: 36rem;
+  margin-inline: auto;
 }
 
-/* Slot: quadrado, moldura de latão. O número é indicação, nunca atalho. */
+/* Slot: quadrado de ~55px (referência do HTML v4), moldura de latão. O número
+   é indicação, nunca atalho. */
 .hotbar-slot {
   position: relative;
-  /* Slot quadrado que cresce até um TETO: confortável em 1366 e sem "espichar"
-     em 1920 — a sobra vira espaço em volta, nunca um slot gigante. */
-  flex: 1 1 0;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: auto;
+  width: clamp(2.85rem, 3.1vw, 3.45rem);
   height: auto;
-  min-width: 2.7rem;
-  max-width: 3.3rem;
   aspect-ratio: 1;
   padding: 0;
   border: 1px solid var(--line-strong);
@@ -1582,60 +1673,72 @@
   }
 }
 
-/* Dock: abaixo de 1400px a faixa aperta proporcionalmente, sem tirar a Hotbar
-   do centro nem empurrar o bloco direito para fora. */
+/* Dock: abaixo de 1400px as proporções do v4 encolhem juntas, sem tirar a
+   Hotbar do centro nem empurrar o bloco direito para fora. */
 @media (max-width: 1400px) {
   .combat-dock {
-    column-gap: 0.7rem;
+    grid-template-columns: auto 3rem minmax(0, 1fr) 10.5rem;
+    column-gap: 0.45rem;
   }
 
-  .dock-portrait {
-    width: 3.2rem;
-    height: 3.2rem;
-  }
-
-  .dock-utilities {
-    max-width: 19rem;
+  .dock-portrait-cell {
+    width: 4.8rem;
+    height: 4.8rem;
   }
 }
 
-/* Duas colunas: identidade e utilitários em cima, Hotbar com a largura toda e
-   o deslocamento no rodapé. */
+/* Duas faixas: retrato · recursos · utilitários em cima; a Hotbar com a largura
+   toda logo abaixo e o deslocamento no rodapé. */
 @media (max-width: 1180px) {
   .combat-dock {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto 3rem minmax(0, 1fr);
     grid-template-areas:
-      'identity utilities'
-      'hotbar hotbar'
-      'movement movement';
+      'portrait resources utilities'
+      'hotbar hotbar hotbar'
+      'movement movement movement';
   }
 
   .dock-utilities {
-    max-width: none;
+    width: min(13rem, 42vw);
+    margin-left: auto;
   }
 }
 
 /* Uma coluna: a dock empilha na ordem de leitura, sem cortar nada. */
 @media (max-width: 760px) {
   .combat-dock {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
-      'identity'
-      'hotbar'
-      'utilities'
-      'movement';
+      'portrait resources'
+      'hotbar hotbar'
+      'utilities utilities'
+      'movement movement';
+  }
+
+  .dock-resources {
+    grid-template-rows: none;
+    grid-auto-flow: column;
+    align-self: center;
+    padding-right: 0;
+    padding-left: 0.4rem;
+    border-right: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .dock-death {
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 0.25rem;
   }
 
   .dock-utilities {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .dock-end-turn {
-    grid-column: span 2;
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .hotbar-slots {
     flex-wrap: wrap;
+    justify-content: center;
   }
 }
 

@@ -56,7 +56,12 @@ export function CombatWorkspace({
   resourceBar,
 }: CombatWorkspaceProps) {
   return (
-    <section className="combat-workspace" aria-label="Mesa de combate">
+    <section
+      // A dock só existe para o jogador: a classe marca a superfície para ela
+      // reservar a faixa dos botões flutuantes sem tocar na tela do Mestre.
+      className={dock ? 'combat-workspace has-player-dock' : 'combat-workspace'}
+      aria-label="Mesa de combate"
+    >
       <header className="combat-workspace-header">{header}</header>
 
       <div className="combat-workspace-body">

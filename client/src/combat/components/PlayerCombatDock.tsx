@@ -55,14 +55,18 @@ function Gems({ total, used, kind }: { total: number; used: number; kind: string
 }
 
 /**
- * DOCK DE COMBATE DO JOGADOR (6.6M.6.1).
+ * DOCK DE COMBATE DO JOGADOR (6.6M.6.1 / geometria do HTML v4 — 6.6M.6.1.2).
  *
- * É composição e apresentação, nada além disso: retrato (contexto de estado),
- * indicadores de recurso, a Hotbar já existente, atalhos da ficha, Encerrar
- * turno e a barra de deslocamento. Nenhum valor é recalculado — tudo vem da
- * economia/server-authoritative do DTO do combate, e os controles (menu de
- * Ação, gasto de deslocamento, avanço de turno) são os componentes de sempre,
- * recebidos prontos. Por isso esta dock não concede autoridade nenhuma.
+ * É composição e apresentação, nada além disso. A geometria tem quatro colunas
+ * e duas linhas: retrato circular (atravessa as duas linhas) · coluna vertical
+ * de recursos (Ação ◆, Ação Bônus ⬢, Reação ★) · Hotbar com a largura central ·
+ * utilitários à direita, com o Encerrar turno em linha inteira. O deslocamento
+ * começa à direita do retrato e atravessa o espaço sob recursos e Hotbar.
+ *
+ * Nenhum valor é recalculado — tudo vem da economia/server-authoritative do DTO
+ * do combate, e os controles (menu de Ação, gasto de deslocamento, avanço de
+ * turno) são os componentes de sempre, recebidos prontos. Por isso esta dock não
+ * concede autoridade nenhuma.
  */
 export function PlayerCombatDock({
   name,
@@ -123,142 +127,163 @@ export function PlayerCombatDock({
       aria-label="Dock de combate do jogador"
       aria-busy={busy || undefined}
     >
-      {/* IDENTIDADE — retrato e recursos compactos, ancorados à esquerda. */}
-      <div className="dock-identity">
-        {/* RETRATO — o clique abre o contexto do próprio personagem. */}
-        <div className="dock-portrait-cell" ref={portraitRef}>
-          <button
-            type="button"
-            className="dock-portrait"
-            aria-expanded={contextOpen}
-            aria-haspopup="dialog"
-            aria-label={`Estado de ${name}`}
-            onClick={() => setContextOpen((open) => !open)}
-          >
-            {imageUrl ? (
-              <img src={imageUrl} alt="" />
-            ) : (
-              <span className="dock-portrait-fallback" aria-hidden="true">
-                <Icon name="users" size={20} />
-              </span>
-            )}
-            <span className="dock-portrait-hp" aria-hidden="true">
-              <span style={{ width: `${hpPercent}%` }} />
-            </span>
-          </button>
-
-          {contextOpen ? (
-            <div className="dock-context" role="dialog" aria-label={`Estado de ${name}`}>
-              <p className="dock-context-head">{name}</p>
-
-              <dl className="dock-context-stats">
-                <div>
-                  <dt>PV</dt>
-                  <dd>
-                    {hpCurrent ?? '—'} / {hpMax ?? '—'}
-                  </dd>
-                </div>
-                <div>
-                  <dt>CA</dt>
-                  <dd>{armorClass ?? '—'}</dd>
-                </div>
-              </dl>
-
-              {/* Estados (Esquiva/Preparada/Concentração) e condições vêm do
-                  MESMO estado derivado da ficha/combate — nada é inventado. */}
-              <CombatStateBadges turnEconomy={economy} concentration={concentration} />
-              <ConditionBadges state={mechanicalState} effects={conditionEffects} />
-
-              {deathBlocked ? (
-                <p className="dock-context-note">
-                  <Icon name="skull" size={12} /> Ciclo de morte — a economia de turno
-                  está bloqueada pelo servidor.
-                </p>
-              ) : null}
-              {deathSavePending ? (
-                <p className="dock-context-note">
-                  Role o Teste Contra a Morte antes de encerrar o turno.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        {/* RECURSOS — leitura da economia do turno. */}
-        <div className="dock-resources" aria-label="Recursos do turno">
-          {deathBlocked ? (
-            <p className="dock-death">
-              <Icon name="skull" size={13} /> Sem economia de turno — Testes contra a
-              Morte
-            </p>
+      {/* RETRATO — circular, na moldura de latão, atravessando as DUAS linhas
+          da dock. O clique abre o MESMO contexto de estado de sempre. */}
+      <div className="dock-portrait-cell" ref={portraitRef}>
+        <button
+          type="button"
+          className="dock-portrait"
+          aria-expanded={contextOpen}
+          aria-haspopup="dialog"
+          aria-label={`Estado de ${name}`}
+          onClick={() => setContextOpen((open) => !open)}
+        >
+          {imageUrl ? (
+            <img src={imageUrl} alt="" />
           ) : (
-            <>
-              <div className="dock-resource">
-                <span className="dock-resource-label">Ação</span>
-                <span className="dock-resource-row">
-                  {actionMenu}
-                  <Gems
-                    total={economy?.actionsGranted ?? 0}
-                    used={economy?.actionsUsed ?? 0}
-                    kind="action"
-                  />
-                  <span className="dock-resource-count">
-                    {economy ? `${actionsLeft}/${economy.actionsGranted}` : 'em espera'}
-                  </span>
-                </span>
-              </div>
-
-              {/* O `*` continua: gema cheia = uso NÃO consumido, não uma Ação
-                  Bônus automaticamente executável (PHB 2014). */}
-              <div className="dock-resource">
-                <span className="dock-resource-label">Ação bônus</span>
-                <span className="dock-resource-row">
-                  <span
-                    className={`dock-pip is-bonus ${
-                      economy && economy.bonusActionUsed ? 'is-spent' : 'is-ready'
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <span className="dock-resource-count">
-                    {economy
-                      ? economy.bonusActionUsed
-                        ? 'utilizada'
-                        : 'disponível*'
-                      : 'em espera'}
-                  </span>
-                </span>
-              </div>
-
-              <div className="dock-resource">
-                <span className="dock-resource-label">Reação</span>
-                <span className="dock-resource-row">
-                  <span
-                    className={`dock-pip is-reaction ${
-                      economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <span className="dock-resource-count">
-                    {economy
-                      ? economy.reactionAvailable
-                        ? 'disponível'
-                        : 'utilizada'
-                      : 'em espera'}
-                  </span>
-                </span>
-              </div>
-            </>
+            <span className="dock-portrait-fallback" aria-hidden="true">
+              <Icon name="users" size={22} />
+            </span>
           )}
-        </div>
+          <span className="dock-portrait-hp" aria-hidden="true">
+            <span style={{ width: `${hpPercent}%` }} />
+          </span>
+        </button>
+
+        {contextOpen ? (
+          <div className="dock-context" role="dialog" aria-label={`Estado de ${name}`}>
+            <p className="dock-context-head">{name}</p>
+
+            <dl className="dock-context-stats">
+              <div>
+                <dt>PV</dt>
+                <dd>
+                  {hpCurrent ?? '—'} / {hpMax ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt>CA</dt>
+                <dd>{armorClass ?? '—'}</dd>
+              </div>
+            </dl>
+
+            {/* Estados (Esquiva/Preparada/Concentração) e condições vêm do
+                MESMO estado derivado da ficha/combate — nada é inventado. */}
+            <CombatStateBadges turnEconomy={economy} concentration={concentration} />
+            <ConditionBadges state={mechanicalState} effects={conditionEffects} />
+
+            {deathBlocked ? (
+              <p className="dock-context-note">
+                <Icon name="skull" size={12} /> Ciclo de morte — a economia de turno
+                está bloqueada pelo servidor.
+              </p>
+            ) : null}
+            {deathSavePending ? (
+              <p className="dock-context-note">
+                Role o Teste Contra a Morte antes de encerrar o turno.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {/* HOTBAR — o centro funcional da dock: maior área, slots com presença. */}
+      {/* RECURSOS — coluna vertical de símbolos, na ordem do PHB 2014:
+          Ação (losango) · Ação Bônus (hexágono) · Reação (estrela). O rótulo
+          textual continua no DOM (leitura por leitor de tela e `title`), mas
+          não ocupa a coluna: quem informa é o glifo + a contagem. */}
+      <div className="dock-resources" aria-label="Recursos do turno">
+        {deathBlocked ? (
+          <p className="dock-death" title="Sem economia de turno — Testes contra a Morte">
+            <Icon name="skull" size={13} />
+            <span className="dock-death-label">Sem turno</span>
+          </p>
+        ) : (
+          <>
+            <div
+              className="dock-resource is-action"
+              title={
+                economy
+                  ? `Ação — ${actionsLeft} de ${economy.actionsGranted} disponível(is)`
+                  : 'Ação — em espera'
+              }
+            >
+              <span className="dock-resource-label">Ação</span>
+              <span className="dock-resource-row">
+                <Gems
+                  total={economy?.actionsGranted ?? 0}
+                  used={economy?.actionsUsed ?? 0}
+                  kind="action"
+                />
+                <span className="dock-resource-count">
+                  {economy ? `${actionsLeft}/${economy.actionsGranted}` : '—'}
+                </span>
+              </span>
+              {/* O MESMO menu de Ação (Disparada, Esquivar, Preparar, Levantar,
+                  Estabilizar): acesso compacto junto ao losango. */}
+              {actionMenu}
+            </div>
+
+            {/* O `*` continua no título: gema cheia = uso NÃO consumido, não
+                uma Ação Bônus automaticamente executável (PHB 2014). */}
+            <div
+              className="dock-resource"
+              title={
+                economy
+                  ? economy.bonusActionUsed
+                    ? 'Ação bônus — utilizada'
+                    : 'Ação bônus — disponível*'
+                  : 'Ação bônus — em espera'
+              }
+            >
+              <span className="dock-resource-label">Ação bônus</span>
+              <span className="dock-resource-row">
+                <span
+                  className={`dock-pip is-bonus ${
+                    economy && economy.bonusActionUsed ? 'is-spent' : 'is-ready'
+                  }`}
+                  aria-hidden="true"
+                />
+                <span className="dock-resource-count">
+                  {economy ? (economy.bonusActionUsed ? 'usada' : 'livre*') : '—'}
+                </span>
+              </span>
+            </div>
+
+            <div
+              className="dock-resource"
+              title={
+                economy
+                  ? economy.reactionAvailable
+                    ? 'Reação — disponível'
+                    : 'Reação — utilizada'
+                  : 'Reação — em espera'
+              }
+            >
+              <span className="dock-resource-label">Reação</span>
+              <span className="dock-resource-row">
+                <span
+                  className={`dock-pip is-reaction ${
+                    economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'
+                  }`}
+                  aria-hidden="true"
+                />
+                <span className="dock-resource-count">
+                  {economy ? (economy.reactionAvailable ? 'livre' : 'usada') : '—'}
+                </span>
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* HOTBAR — o centro funcional e visual: poço próprio, slots de ~55px. */}
       <div className="dock-hotbar">{hotbar}</div>
 
-      {/* UTILITÁRIOS — grupo próprio à direita, fora do fluxo dos slots. */}
+      {/* UTILITÁRIOS — bloco delimitado à direita: 3×2 e Encerrar turno embaixo. */}
       <div className="dock-utilities">{utilities}</div>
 
-      {/* DESLOCAMENTO — do retrato até antes dos utilitários. */}
+      {/* DESLOCAMENTO — começa à direita do retrato e atravessa o espaço sob
+          recursos e Hotbar, terminando antes dos utilitários. */}
       <div className="dock-movement-row">
         <span className="dock-movement-label">
           <Icon name="wind" size={12} /> Deslocamento

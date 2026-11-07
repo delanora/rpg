@@ -856,6 +856,7 @@ export function CombatTracker({
         // Estabilizar continuam existindo (nada foi removido da dock).
         actionMenu={
           <ActionMenu
+            compact
             disabled={busy || !dockAccess.canOpenMenu}
             actionsDisabled={busy || !dockAccess.canUseAction}
             onSelect={(action, extra) => dockEconomyAction({ action, ...extra })}
@@ -898,6 +899,7 @@ export function CombatTracker({
                       type="button"
                       className={isOpen ? 'dock-utility active' : 'dock-utility'}
                       aria-expanded={isOpen}
+                      title={shortcut.label}
                       onClick={() => onOpenSection(shortcut.key)}
                     >
                       <Icon name={shortcut.icon} size={13} />
@@ -907,7 +909,12 @@ export function CombatTracker({
                 })
               : null}
             {onOpenSheet ? (
-              <button type="button" className="dock-utility" onClick={onOpenSheet}>
+              <button
+                type="button"
+                className="dock-utility"
+                title="Ficha completa"
+                onClick={onOpenSheet}
+              >
                 <Icon name="quill" size={13} />
                 <span className="dock-utility-label">Ficha</span>
               </button>
