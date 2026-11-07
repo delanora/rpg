@@ -6222,6 +6222,13 @@ check(
     'SC60) registro rola DENTRO da própria coluna e os Resolution Cards ficam no topo, sempre acessíveis',
     workspaceRule('.combat-workspace-log .combat-log').includes('overflow-y: auto;') &&
       workspaceRule('.combat-workspace-log .combat-log').includes('max-height: none;') &&
+      // Os eventos PREENCHEM a coluna: a linha da grade divide a altura e o
+      // cartão visível estica junto, sem vão de pergaminho embaixo.
+      workspaceRule('.combat-workspace-log .combat-log').includes(
+        'grid-auto-rows: minmax(min-content, 1fr);',
+      ) &&
+      workspaceRule('.combat-workspace-log .log-card-summary').includes('flex: 1 1 auto;') &&
+      workspaceRule('.combat-workspace-log .combat-log > li').includes('display: flex;') &&
       workspaceRule('.combat-workspace-log .combat-resolution-list').includes('flex: 0 0 auto;') &&
       logPanelSource.indexOf('className="combat-resolution-list"') <
         logPanelSource.indexOf('<ol className="combat-log">'),
