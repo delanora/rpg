@@ -8621,7 +8621,7 @@ check(
       gridCssSource.includes('.grid-roll-menu-btn {') &&
       // Esc encerra TODO o fluxo: alvo + ação escolhida na Hotbar.
       targetingGridSource.includes('if (liveTargeting?.active) liveTargeting.onCancelFlow?.();') &&
-      targetingTrackerSource.includes('onCancelFlow: () => {') &&
+      targetingTrackerSource.includes('onCancelFlow: endAttackFlow,') &&
       targetingTrackerSource.includes('setHotbarPick(null);') &&
       // O modo escolhido no token entra no MESMO envio (adv/dis) e é aplicado
       // ao estado do painel; a prontidão vem do painel, nunca do grid.
@@ -8708,6 +8708,35 @@ check(
       picker.includes('aria-pressed={selected === mode.key}') &&
       picker.includes("'grid-roll-menu-btn is-active'") &&
       gridCssSource.includes('.grid-roll-menu-btn.is-active {')
+    );
+  })(),
+);
+
+check(
+  'SC169) ataque EXECUTADO encerra o fluxo pelo mesmo caminho do Esc',
+  (() => {
+    const attackBlock = targetingTrackerSource.slice(
+      targetingTrackerSource.indexOf(
+        'function attack(input: Parameters<typeof resolveAttack>[1]): void {',
+      ),
+      targetingTrackerSource.indexOf('* PRÉ-INICIATIVA (6.6M.7)'),
+    );
+    return (
+      // Um ÚNICO encerramento: alvo + modo + ação escolhida na Hotbar.
+      targetingTrackerSource.includes('function endAttackFlow(): void {') &&
+      targetingTrackerSource.includes('onCancelFlow: endAttackFlow,') &&
+      // Encerra só DEPOIS da resposta do servidor, e só no caminho de sucesso.
+      attackBlock.includes('const { combat: updated } = await resolveAttack(combat, input);') &&
+      attackBlock.includes('onCombatChange(updated);') &&
+      attackBlock.includes('if (hotbarPick) endAttackFlow();') &&
+      attackBlock.indexOf('if (hotbarPick) endAttackFlow();') >
+        attackBlock.indexOf('onCombatChange(updated);') &&
+      attackBlock.indexOf('if (hotbarPick) endAttackFlow();') <
+        attackBlock.indexOf('} catch (error) {') &&
+      // Confirmação antiga não remonta o painel dando um segundo ataque.
+      targetingTrackerSource.includes('setAttackConfirm(null);') &&
+      // O encerramento é estado de UI: nenhuma rota, nenhum dado rolado aqui.
+      !/resolveAttack\s*\([^)]*endAttackFlow/.test(targetingTrackerSource)
     );
   })(),
 );

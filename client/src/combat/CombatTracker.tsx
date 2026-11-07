@@ -606,6 +606,9 @@ export function CombatTracker({
   useEffect(() => {
     setTargetCombatantId(null);
     setAttackRoll(null);
+    // Pedido de confirmação antigo não sobrevive à troca/remoção do atalho: o
+    // painel remontaria com o último `nonce` e rolaria um ataque fantasma.
+    setAttackConfirm(null);
     setAttackExecuteReady(false);
   }, [hotbarPick]);
   const turnDeathState = current?.deathState ?? null;
@@ -879,12 +882,28 @@ export function CombatTracker({
     }
   }
 
+  /**
+   * FIM DO FLUXO DE ATAQUE (6.6M.6.4.6) — o MESMO encerramento do Esc: alvo,
+   * modo de rolagem e ação escolhida na Hotbar saem juntos (o painel desmonta e
+   * o grid deixa de oferecer alvos). Nada aqui cancela ataque em voo: o pedido
+   * já enviado continua sendo aplicado quando a resposta chega.
+   */
+  function endAttackFlow(): void {
+    setTargetCombatantId(null);
+    setAttackRoll(null);
+    setHotbarPick(null);
+  }
+
   function attack(input: Parameters<typeof resolveAttack>[1]): void {
     void (async () => {
       setBusy(true);
       try {
         const { combat: updated } = await resolveAttack(combat, input);
         onCombatChange(updated);
+        // Ataque EXECUTADO: o fluxo termina aqui, como no Esc. Recusa ou falha
+        // do servidor NÃO encerram nada (o `catch` abaixo), então alvo, modo e
+        // painel continuam montados para o jogador tentar de novo.
+        if (hotbarPick) endAttackFlow();
       } catch (error) {
         onError(error instanceof Error ? error.message : 'Falha na rolagem.');
       } finally {
@@ -1490,12 +1509,9 @@ export function CombatTracker({
                     rollMode: gridRollMode,
                     rollMenuOpen: gridRollMenuOpen,
                     executeReady: attackExecuteReady,
-                    // Esc encerra o fluxo inteiro: sem alvo e sem ação escolhida.
-                    onCancelFlow: () => {
-                      setTargetCombatantId(null);
-                      setAttackRoll(null);
-                      setHotbarPick(null);
-                    },
+                    // Esc encerra o fluxo inteiro pelo MESMO caminho de um
+                    // ataque executado (um único encerramento, dois gatilhos).
+                    onCancelFlow: endAttackFlow,
                   }
                 : null
             }
