@@ -505,6 +505,16 @@ export function SheetPage({ user }: { user: SessionUser }) {
                   ...(character?.derivedAttacks ?? []),
                 ]}
                 characterInventory={character?.inventory ?? []}
+                // PERSONALIZAÇÃO DA HOTBAR (6.6M.6.3.1): a configuração vem do
+                // servidor junto da ficha; salvar devolve hotbar + versão novas
+                // para o próximo salvamento não conflitar.
+                characterHotbar={character?.hotbar?.slots ?? null}
+                characterVersion={character?.version ?? null}
+                onHotbarSaved={(hotbar, version) =>
+                  setCharacter((previous) =>
+                    previous ? { ...previous, hotbar, version } : previous,
+                  )
+                }
                 movementMeters={character?.speed ?? null}
                 sneakAttackExpression={character?.derived.sneakAttack?.expression ?? null}
                 onCombatChange={combatState.setCombat}

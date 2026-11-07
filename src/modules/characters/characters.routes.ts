@@ -10,6 +10,7 @@ import {
   levelUpSchema,
   moveInventoryItemSchema,
   recoverSlotsSchema,
+  saveHotbarSchema,
   shortRestSessionActionSchema,
   spellbookSchema,
   spendCoinsSchema,
@@ -36,6 +37,7 @@ import {
   completeShortRest,
   moveInventoryItem,
   recoverSlots,
+  saveHotbar,
   setClassSpellbook,
   spendCoins,
   spendHitDie,
@@ -525,6 +527,30 @@ charactersRouter.post('/me/coins/transfer', authenticate, async (req, res) => {
     parsed.data.amount,
   );
   res.json({ character });
+});
+
+/**
+ * PUT /api/characters/me/hotbar — personalização das 48 posições da Hotbar.
+ *
+ * É PREFERÊNCIA DE INTERFACE: guarda só `{ kind, sourceId }` por posição, nunca
+ * rótulo/custo/dano. O personagem vem SEMPRE do token (jamais do corpo), então é
+ * impossível reescrever a Hotbar de outra pessoa. `expectedVersion` impede que
+ * duas abas se sobrescrevam (409 sem gravar) e `operationId` faz o reenvio
+ * devolver o mesmo resultado. Salvar organização NÃO executa ação nenhuma.
+ */
+charactersRouter.put('/me/hotbar', authenticate, async (req, res) => {
+  const parsed = saveHotbarSchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      issues: parsed.error.flatten().fieldErrors,
+    });
+    return;
+  }
+
+  const result = await saveHotbar(actorFrom(req), parsed.data);
+  res.json(result);
 });
 
 /**

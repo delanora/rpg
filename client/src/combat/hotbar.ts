@@ -221,3 +221,192 @@ export function selectionSurvivesFilter(
   if (!sourceId) return true;
   return filterHotbarEntries(entries, filter).some((entry) => entry.sourceId === sourceId);
 }
+
+/* ------------------------------------------------------------------------- */
+/* PERSONALIZAÇÃO DOS 48 SLOTS (6.6M.6.3.1)                                   */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Referência PERSISTIDA de uma posição (mesmo formato do DTO do servidor).
+ * Só a identidade da ação: rótulo, custo, bônus e dano continuam derivados da
+ * fonte real a cada leitura — nada disso é salvo na Hotbar.
+ */
+export interface HotbarSlotRef {
+  kind: 'attack';
+  sourceId: string;
+}
+
+/** Configuração salva (48 posições). `null` = nunca personalizada. */
+export type HotbarLayout = readonly (HotbarSlotRef | null)[];
+
+/**
+ * Estado de uma posição na grade:
+ * - `empty`: não há atalho (vazia de propósito, quando há layout salvo);
+ * - `ready`: a atalho existe e está utilizável agora;
+ * - `unavailable`: o atalho existe na ficha, mas está temporariamente
+ *   indisponível (ex.: arma desequipada) — a POSIÇÃO é preservada;
+ * - `missing`: a referência aponta para algo que não existe mais (ataque
+ *   removido) — só pode ser removida ou substituída, nunca executada.
+ */
+export type HotbarSlotState = 'empty' | 'ready' | 'unavailable' | 'missing';
+
+export interface HotbarSlotView {
+  index: number;
+  entry: CombatHotbarEntry | null;
+  ref: HotbarSlotRef | null;
+  state: HotbarSlotState;
+  /** Nome conhecido quando não há `entry` (indisponível/ausente). */
+  label?: string;
+  /**
+   * OCULTA pela máscara do filtro (A/B/R). A posição continua sendo a mesma:
+   * o slot desenhado no mesmo índice garante que nada "salte" de lugar quando
+   * o filtro muda. Máscara é visualização, nunca escrita.
+   */
+  masked?: boolean;
+}
+
+/** Configuração vazia (48 posições nulas) — usada só no modo de edição. */
+export function emptyHotbarLayout(): (HotbarSlotRef | null)[] {
+  return Array.from({ length: HOTBAR_SLOTS }, () => null);
+}
+
+/**
+ * Grade de 48 posições resolvida contra a ficha atual.
+ *
+ * SEM layout salvo (`null`) o preenchimento automático continua igual ao de
+ * sempre: os ataques disponíveis ocupam as primeiras posições e o resto é vazio
+ * — é o ponto de partida da PRIMEIRA personalização.
+ *
+ * COM layout salvo a configuração manda: cada índice recebe a referência dele e
+ * nada é remanejado. Atalho cuja arma foi desequipada continua na posição como
+ * `unavailable`, e referência que não existe mais vira `missing` — em nenhum dos
+ * dois casos o slot é executado por confiar no que está salvo.
+ */
+export function resolveHotbarSlots({
+  entries,
+  attacks,
+  layout,
+}: {
+  /** Entradas DISPONÍVEIS agora (mesma lista do painel de ataque). */
+  entries: readonly CombatHotbarEntry[];
+  /** Todos os ataques da ficha (inclui o que está fora de alcance de equipar). */
+  attacks: readonly Attack[];
+  layout: HotbarLayout | null;
+}): HotbarSlotView[] {
+  if (!layout) {
+    return Array.from({ length: HOTBAR_SLOTS }, (_, offset) => {
+      const entry = entries[offset] ?? null;
+      return {
+        index: offset + 1,
+        entry,
+        ref: entry ? { kind: 'attack' as const, sourceId: entry.sourceId } : null,
+        state: entry ? ('ready' as const) : ('empty' as const),
+      };
+    });
+  }
+
+  const bySource = new Map(entries.map((entry) => [entry.sourceId, entry]));
+  const attackNames = new Map(attacks.map((attack) => [attack.id, attack.name]));
+
+  return Array.from({ length: HOTBAR_SLOTS }, (_, offset) => {
+    const ref = layout[offset] ?? null;
+    if (!ref) return { index: offset + 1, entry: null, ref: null, state: 'empty' as const };
+
+    const entry = bySource.get(ref.sourceId) ?? null;
+    if (entry) return { index: offset + 1, entry, ref, state: 'ready' as const };
+
+    const name = attackNames.get(ref.sourceId);
+    if (name) {
+      return { index: offset + 1, entry: null, ref, state: 'unavailable' as const, label: name };
+    }
+    return { index: offset + 1, entry: null, ref, state: 'missing' as const };
+  });
+}
+
+/**
+ * MÁSCARA do filtro A/B/R: esconde o que não é da categoria SEM mudar de
+ * índice. Antes o filtro recortava a lista e os slots andavam; com posições
+ * personalizadas o slot 2 tem de continuar no 2 mesmo filtrando por Ação Bônus.
+ */
+export function maskHotbarSlots(
+  slots: readonly HotbarSlotView[],
+  filter: HotbarFilter | null,
+): HotbarSlotView[] {
+  if (!filter) return [...slots];
+  return slots.map((slot) =>
+    slot.entry && slot.entry.cost !== filter ? { ...slot, masked: true } : { ...slot, masked: false },
+  );
+}
+
+/** Configuração (48 refs) a partir de uma grade resolvida. */
+export function layoutOfSlots(slots: readonly HotbarSlotView[]): (HotbarSlotRef | null)[] {
+  return slots.map((slot) => slot.ref ?? null);
+}
+
+/**
+ * Atribui um atalho a um slot. REGRA DA FASE: uma posição por identidade — se o
+ * atalho já estava em outro slot, ele SAI de lá (mover, não duplicar); se o
+ * destino estava ocupado, os dois trocam de lugar. Puro: não salva nada.
+ */
+export function assignHotbarRef(
+  layout: HotbarLayout,
+  index: number,
+  ref: HotbarSlotRef,
+): (HotbarSlotRef | null)[] {
+  const next = Array.from({ length: HOTBAR_SLOTS }, (_, i) => layout[i] ?? null);
+  const from = next.findIndex((item) => item && item.kind === ref.kind && item.sourceId === ref.sourceId);
+  const previous = next[index] ?? null;
+  if (from >= 0) next[from] = previous;
+  next[index] = { kind: ref.kind, sourceId: ref.sourceId };
+  return next;
+}
+
+/** Move/troca: destino ocupado recebe o atalho e o origem recebe o que estava lá. */
+export function moveHotbarRef(
+  layout: HotbarLayout,
+  from: number,
+  to: number,
+): (HotbarSlotRef | null)[] {
+  const next = Array.from({ length: HOTBAR_SLOTS }, (_, i) => layout[i] ?? null);
+  if (from === to || from < 0 || to < 0 || from >= HOTBAR_SLOTS || to >= HOTBAR_SLOTS) return next;
+  const moving = next[from] ?? null;
+  next[from] = next[to] ?? null;
+  next[to] = moving;
+  return next;
+}
+
+/** Esvazia uma posição (o ataque e o item continuam na ficha). */
+export function clearHotbarRef(
+  layout: HotbarLayout,
+  index: number,
+): (HotbarSlotRef | null)[] {
+  const next = Array.from({ length: HOTBAR_SLOTS }, (_, i) => layout[i] ?? null);
+  next[index] = null;
+  return next;
+}
+
+/** Duas configurações são iguais posição a posição (habilita Salvar). */
+export function sameHotbarLayout(a: HotbarLayout | null, b: HotbarLayout | null): boolean {
+  if (!a || !b) return a === b;
+  for (let index = 0; index < HOTBAR_SLOTS; index += 1) {
+    const left = a[index] ?? null;
+    const right = b[index] ?? null;
+    if ((left?.sourceId ?? null) !== (right?.sourceId ?? null)) return false;
+    if ((left?.kind ?? null) !== (right?.kind ?? null)) return false;
+  }
+  return true;
+}
+
+/** Entradas disponíveis que NÃO estão na grade (vão para o "ver todas"). */
+export function entriesOutsideLayout(
+  entries: readonly CombatHotbarEntry[],
+  layout: HotbarLayout | null,
+): CombatHotbarEntry[] {
+  if (!layout) return [];
+  const placed = new Set(
+    layout
+      .filter((ref): ref is HotbarSlotRef => Boolean(ref))
+      .map((ref) => ref.sourceId),
+  );
+  return entries.filter((entry) => !placed.has(entry.sourceId));
+}

@@ -4,6 +4,7 @@ import {
   type EffectModifierSet,
 } from '../effects/effect-modifiers.js';
 import { deathBlocksActions, deathStateOf, type DeathState } from '../shared/death.js';
+import { normalizeHotbarSlots, type HotbarSlotRef } from '../shared/hotbar.js';
 import type { Character } from '@prisma/client';
 import { z } from 'zod';
 import { attackSchema, type Attack, type CombatAttack } from '../shared/attacks.js';
@@ -406,6 +407,14 @@ export interface CharacterDto {
    * `derived: true` e, quando a arma não pode ser empunhada, com `blocked`.
    */
   derivedAttacks: CombatAttack[];
+  /**
+   * PERSONALIZAÇÃO DA HOTBAR (6.6M.6.3.1): 48 posições persistentes da
+   * preferência de interface. `null` = o personagem NUNCA personalizou (o
+   * cliente preenche automaticamente com os ataques disponíveis); objeto com
+   * 48 posições = configuração intencional, que não é mais repovoada.
+   * Nenhuma regra de combate depende disto.
+   */
+  hotbar: { slots: (HotbarSlotRef | null)[] } | null;
   features: FeatureDto[];
   /**
    * Carteira de moedas { pp, gp, ep, sp, cp }, sempre com as cinco
@@ -962,6 +971,12 @@ export function toCharacterDto(
     spells: spellsForDisplay,
     attacks,
     derivedAttacks,
+    // Personalização da Hotbar: só REFERÊNCIAS. Rótulo, custo, bônus e dano
+    // continuam derivados da fonte a cada leitura (nada é congelado no JSON).
+    hotbar: (() => {
+      const slots = normalizeHotbarSlots(character.hotbar);
+      return slots ? { slots } : null;
+    })(),
     features,
     coins,
     notes: character.notes,

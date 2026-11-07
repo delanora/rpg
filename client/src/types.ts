@@ -869,6 +869,15 @@ export interface DeathUpdatedPayload {
 }
 
 /** Ficha completa devolvida pela API. */
+/**
+ * Referência PERSISTIDA de um atalho da Hotbar (6.6M.6.3.1): só a identidade
+ * da ação. Rótulo, custo, bônus e dano continuam derivados da fonte real.
+ */
+export interface HotbarSlotRef {
+  kind: 'attack';
+  sourceId: string;
+}
+
 export interface Character {
   mechanicalState: MechanicalState;
   conditionEffects: ConditionEffects;
@@ -988,6 +997,12 @@ export interface Character {
   attacks: Attack[];
   /** Ataques calculados das armas equipadas (e o golpe desarmado). */
   derivedAttacks: Attack[];
+  /**
+   * PERSONALIZAÇÃO DA HOTBAR (6.6M.6.3.1): 48 posições persistidas no servidor.
+   * `null` = nunca personalizada (a Hotbar preenche automaticamente com os
+   * ataques disponíveis). Nenhuma regra de combate depende disto.
+   */
+  hotbar: { slots: (HotbarSlotRef | null)[] } | null;
   features: Feature[];
   /** Carteira de moedas: sempre com as cinco denominações. */
   coins: CoinPurse;

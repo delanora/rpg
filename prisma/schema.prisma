@@ -165,6 +165,14 @@ model Character {
   /// shared/attacks.ts). Somados às resistências de classe no combate.
   raceResistances String[] @default([])
   ///
+  /// PERSONALIZAÇÃO DA HOTBAR (6.6M.6.3.1) — preferência de INTERFACE, nunca
+  /// regra de combate: 48 posições indexadas com `{ kind, sourceId }` ou nulo.
+  /// `NULL` = nunca personalizada (o cliente preenche automaticamente com os
+  /// ataques disponíveis); array de 48 (mesmo todo nulo) = configuração
+  /// INTENCIONAL, que o preenchimento automático não repovoa.
+  /// Ver src/modules/shared/hotbar.ts.
+  hotbar           Json?
+  ///
   /// Classes do personagem (multiclasse): [{ classKey, subclass, level }].
   /// O nível de cada entrada é o nível NAQUELA classe; o nível total do
   /// personagem é a soma deles. Vazio = ficha sem classe ainda.

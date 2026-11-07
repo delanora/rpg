@@ -18,6 +18,7 @@ import { smokeSpatialMovement } from './smoke-spatial-movement.js';
 import { smokeOpportunityAttacks } from './smoke-opportunity-attacks.js';
 import { smokeSpatialVisibility } from './smoke-spatial-visibility.js';
 import { smokePlayerSpellcasting } from './smoke-player-spellcasting.js';
+import { smokeHotbar } from './smoke-hotbar.js';
 import { smokeSpellComponents } from './smoke-spell-components.js';
 import { smokeSpellDuration } from './smoke-spell-duration.js';
 import { smokeCombatResolutionCards } from './smoke-combat-resolution-cards.js';
@@ -21757,6 +21758,7 @@ async function main(): Promise<void> {
   await smokeOpportunityAttacks(BASE_URL, check);
   await smokeSpatialVisibility(BASE_URL, check);
   await smokePlayerSpellcasting(BASE_URL, check);
+  await smokeHotbar(BASE_URL, check);
   await smokeSpellComponents(BASE_URL, check);
   await smokeSpellDuration(BASE_URL, check);
   await smokeDeath(BASE_URL, check);

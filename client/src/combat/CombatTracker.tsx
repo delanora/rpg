@@ -35,12 +35,22 @@ import { ActionMenu } from './components/ActionMenu';
 import { CombatHotbar } from './components/CombatHotbar';
 import { CombatLog } from './components/CombatLog';
 import {
+  assignHotbarRef,
   buildCombatHotbarEntries,
-  filterHotbarEntries,
+  clearHotbarRef,
+  entriesOutsideLayout,
+  layoutOfSlots,
+  maskHotbarSlots,
+  moveHotbarRef,
+  resolveHotbarSlots,
+  sameHotbarLayout,
   selectionSurvivesFilter,
   toggleHotbarPick,
   type HotbarFilter,
+  type HotbarLayout,
+  type HotbarSlotRef,
 } from './hotbar';
+import { saveHotbarLayout } from '../hotbarApi';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
 import { DeathSavePanel } from './components/DeathSavePanel';
@@ -86,6 +96,16 @@ interface CombatTrackerProps {
   effectsRefresh?: number;
   /** Ataques do próprio personagem (fluxo do jogador). */
   characterAttacks?: Attack[];
+  /**
+   * PERSONALIZAÇÃO DA HOTBAR (6.6M.6.3.1) — configuração salva do personagem
+   * (`null` = nunca personalizada). Sem esta prop o editor NEM APARECE, que é
+   * como a visão do Mestre continua intocada.
+   */
+  characterHotbar?: HotbarLayout | null;
+  /** Versão da ficha em mãos (controle de concorrência do salvamento). */
+  characterVersion?: number | null;
+  /** Confirmação do servidor: o pai atualiza a ficha (hotbar + versão). */
+  onHotbarSaved?: (hotbar: { slots: (HotbarSlotRef | null)[] }, version: number) => void;
   /** Dados de Ataque Furtivo do próprio personagem (ex.: "2d6"). */
   sneakAttackExpression?: string | null;
   /** Mestre: dados de Ataque Furtivo do atacante escolhido (pode ser um Ladino). */
@@ -154,6 +174,9 @@ export function CombatTracker({
   turnAlert,
   effectsRefresh = 0,
   characterAttacks = [],
+  characterHotbar,
+  characterVersion = null,
+  onHotbarSaved,
   sneakAttackExpression = null,
   sneakAttackFor,
   characterInventory,
@@ -211,6 +234,15 @@ export function CombatTracker({
    * podada); virar de turno limpa o filtro, como já acontecia com a seleção.
    */
   const [hotbarFilter, setHotbarFilter] = useState<HotbarFilter | null>(null);
+  /**
+   * EDITOR DA HOTBAR (6.6M.6.3.1) — o RASCUNHO vive aqui e só vai ao servidor
+   * no "Salvar". `hotbarDraft` é a configuração COMPLETA (48 posições), porque
+   * no editor o filtro A/B/R não esconde nada (evita troca acidental).
+   */
+  const [hotbarEditing, setHotbarEditing] = useState(false);
+  const [hotbarDraft, setHotbarDraft] = useState<(HotbarSlotRef | null)[] | null>(null);
+  const [hotbarSaving, setHotbarSaving] = useState(false);
+  const [hotbarError, setHotbarError] = useState<string | null>(null);
 
   const myCombatant = combat.combatants.find((item) => item.ownerUserId === user.id) ?? null;
   const current = combat.combatants.find((item) => item.id === combat.currentCombatantId) ?? null;
@@ -237,8 +269,37 @@ export function CombatTracker({
     attacks: characterAttacks,
     inventory: characterInventory,
   });
-  /** Entradas exibidas: a MESMA lista, recortada pelo custo do filtro ativo. */
-  const hotbarVisible = filterHotbarEntries(hotbarEntries, hotbarFilter);
+  /**
+   * PERSONALIZAÇÃO (6.6M.6.3.1): a configuração salva define a POSIÇÃO de cada
+   * atalho; sem ela o preenchimento automático continua idêntico ao de antes.
+   * O filtro A/B/R virou MÁSCARA — esconde o conteúdo e PRESERVA o índice, então
+   * o ataque da posição 2 nunca "salta" para a 1 quando a categoria muda.
+   */
+  const hotbarLayout: HotbarLayout | null = characterHotbar ?? null;
+  const hotbarSlots = maskHotbarSlots(
+    resolveHotbarSlots({
+      entries: hotbarEntries,
+      attacks: characterAttacks,
+      layout: hotbarLayout,
+    }),
+    hotbarFilter,
+  );
+  /** Atalhos disponíveis que ficaram FORA da grade (lista "ver todas"). */
+  const hotbarExtraEntries = entriesOutsideLayout(hotbarEntries, hotbarLayout);
+  /** Grade AUTOMÁTICA — ponto de partida da primeira personalização. */
+  const hotbarAutoLayout = layoutOfSlots(
+    resolveHotbarSlots({ entries: hotbarEntries, attacks: characterAttacks, layout: null }),
+  );
+  const hotbarDraftSlots = hotbarDraft
+    ? resolveHotbarSlots({
+        entries: hotbarEntries,
+        attacks: characterAttacks,
+        layout: hotbarDraft,
+      })
+    : [];
+  const hotbarDirty = hotbarDraft
+    ? !sameHotbarLayout(hotbarDraft, hotbarLayout ?? hotbarAutoLayout)
+    : false;
 
   /**
    * TROCA DE FILTRO (6.6M.6.2.1) — a seleção pertence à lista VISÍVEL.
@@ -257,6 +318,48 @@ export function CombatTracker({
         ? null
         : previous,
     );
+  };
+
+  /**
+   * EDITOR DA HOTBAR (6.6M.6.3.1) — abrir, editar, salvar e cancelar.
+   *
+   * O rascunho nasce da configuração CONFIRMADA (ou da grade automática, na
+   * primeira personalização). Salvar usa o endpoint autorizado com
+   * `expectedVersion`; conflito de versão NÃO sobrescreve — o erro aparece na
+   * linha do topo e o rascunho continua intacto para nova tentativa.
+   */
+  const startHotbarEdit = (): void => {
+    setHotbarDraft(hotbarLayout ? [...hotbarLayout] : [...hotbarAutoLayout]);
+    setHotbarError(null);
+    setHotbarEditing(true);
+    setHotbarPick(null);
+  };
+
+  const cancelHotbarEdit = (): void => {
+    setHotbarEditing(false);
+    setHotbarDraft(null);
+    setHotbarError(null);
+  };
+
+  const commitHotbarEdit = (): void => {
+    if (!hotbarDraft) return;
+    const slots = hotbarDraft;
+    setHotbarSaving(true);
+    setHotbarError(null);
+    void (async () => {
+      try {
+        const result = await saveHotbarLayout(slots, characterVersion ?? 1);
+        onHotbarSaved?.(result.hotbar, result.version);
+        setHotbarEditing(false);
+        setHotbarDraft(null);
+      } catch (error) {
+        setHotbarError(
+          error instanceof Error ? error.message : 'Não foi possível salvar a Hotbar.',
+        );
+      } finally {
+        setHotbarSaving(false);
+      }
+    })();
   };
 
   // Combatente que a interface representa (atacante do Mestre / próprio personagem).
@@ -866,12 +969,12 @@ export function CombatTracker({
         hotbar={
           dockWaiting ? (
             <BattleWaitingInline name={current?.name ?? ''} />
-          ) : hotbarEntries.length > 0 || hotbarFilter ? (
+          ) : hotbarEntries.length > 0 || hotbarFilter || hotbarLayout || hotbarEditing ? (
             // COM FILTRO a Hotbar é montada mesmo sem NENHUMA entrada base: a
             // categoria vazia é resposta honesta (oito slots + frase curta +
             // "ver todas"), nunca o aviso legado de "sem ataques".
             <CombatHotbar
-              entries={hotbarVisible}
+              slots={hotbarSlots}
               // Antes da iniciativa os slots são APRESENTAÇÃO: `busy` os desabilita
               // (o miolo ainda recebe véu/desfoque e fica `inert` na dock).
               busy={busy || awaitingInitiative}
@@ -884,6 +987,27 @@ export function CombatTracker({
               onSelect={(entry) =>
                 setHotbarPick((prev) => toggleHotbarPick(prev, entry.sourceId))
               }
+              // EDITOR (6.6M.6.3.1): só existe quando o pai fornece a
+              // configuração — a visão do Mestre segue sem esta superfície.
+              onEdit={characterHotbar !== undefined ? startHotbarEdit : undefined}
+              editing={hotbarEditing}
+              draftSlots={hotbarDraftSlots}
+              choices={hotbarEntries}
+              dirty={hotbarDirty}
+              saving={hotbarSaving}
+              error={hotbarError}
+              onSave={commitHotbarEdit}
+              onCancel={cancelHotbarEdit}
+              onAssign={(index, ref) =>
+                setHotbarDraft((draft) => (draft ? assignHotbarRef(draft, index, ref) : draft))
+              }
+              onMove={(from, to) =>
+                setHotbarDraft((draft) => (draft ? moveHotbarRef(draft, from, to) : draft))
+              }
+              onRemove={(index) =>
+                setHotbarDraft((draft) => (draft ? clearHotbarRef(draft, index) : draft))
+              }
+              extraEntries={hotbarExtraEntries}
             />
           ) : (
             <p className="dock-empty">

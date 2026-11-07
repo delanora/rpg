@@ -58,6 +58,7 @@ import type {
   LevelUpInput,
   MoveInventoryItemInput,
   RecoverSlotsInput,
+  SaveHotbarInput,
   ShortRestSessionActionInput,
   SpendHitDieInput,
   StartShortRestInput,
@@ -78,6 +79,11 @@ import {
   type HitDiceDerivation,
 } from '../shared/hit-dice.js';
 import { parseJson } from '../shared/json.js';
+import {
+  dedupeHotbarSlots,
+  hotbarFingerprint,
+  type HotbarSlotRef,
+} from '../shared/hotbar.js';
 import {
   raceChoicesSchema,
   spellSlotsUsedFrom,
@@ -4287,4 +4293,139 @@ export async function listCharacters(): Promise<CharacterDto[]> {
   return characters.map((character) =>
     toCharacterDto(character, character.user.username, catalog),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Personalização da Hotbar (6.6M.6.3.1) — PREFERÊNCIA DE INTERFACE
+// ---------------------------------------------------------------------------
+
+/** Tipo LÓGICO do salvamento da Hotbar (`CharacterOperation.type`). */
+const HOTBAR_SAVE_TYPE = 'HOTBAR_SAVE';
+
+/** Snapshot IMUTÁVEL do salvamento (guardado em `result`). */
+interface HotbarSaveSnapshot {
+  hotbar: { slots: (HotbarSlotRef | null)[] };
+  version: number;
+}
+
+/** Resposta de `PUT /me/hotbar`. */
+export interface SaveHotbarResult extends HotbarSaveSnapshot {
+  character: CharacterDto;
+  replayed: boolean;
+}
+
+/**
+ * Salva a organização das 48 posições da Hotbar do PRÓPRIO personagem.
+ *
+ * Só guarda REFERÊNCIAS (`kind` + `sourceId`): rótulo, custo, bônus, dano e
+ * alcance continuam derivados da ficha/do catálogo a cada leitura, e nenhum
+ * endpoint de ataque é chamado aqui — organizar a Hotbar nunca executa ação.
+ *
+ * O personagem vem SEMPRE do token (`actor.userId`), nunca do corpo: é o que
+ * impede um jogador de reescrever a Hotbar de outro. `expectedVersion` protege
+ * duas abas que salvam ao mesmo tempo (409 sem sobrescrever) e `operationId`
+ * devolve o MESMO resultado num reenvio, sem aplicar de novo.
+ */
+export async function saveHotbar(
+  actor: Actor,
+  input: SaveHotbarInput,
+): Promise<SaveHotbarResult> {
+  const character = await prisma.character.findUnique({ where: { userId: actor.userId } });
+  if (!character) throw new HttpError('Esta ficha ainda não foi criada.', 404);
+
+  // Uma posição por identidade: repetição no payload vira slot vazio (o cliente
+  // move/troca; isto é só a garantia do servidor contra payload ambíguo).
+  const slots = dedupeHotbarSlots(input.slots);
+  const fingerprint = hotbarFingerprint(slots);
+
+  const previous = await findOperation(character.id, input.operationId);
+  if (previous) {
+    const snapshot = replaySnapshot<HotbarSaveSnapshot>(previous, HOTBAR_SAVE_TYPE, fingerprint);
+    // O retry devolve a versão ATUAL (o salvamento já aconteceu), para a próxima
+    // gravação do cliente não 409 por causa de um reenvio.
+    return {
+      hotbar: snapshot.hotbar,
+      version: character.version,
+      character: await toSheetDto(character, actor.username),
+      replayed: true,
+    };
+  }
+
+  if (character.version !== input.expectedVersion) {
+    throw new HttpError(
+      'A ficha mudou desde que a Hotbar foi carregada; recarregue antes de salvar.',
+      409,
+    );
+  }
+
+  let committed!: { updated: Character; snapshot: HotbarSaveSnapshot };
+  try {
+    committed = await prisma.$transaction(async (tx) => {
+      await tx.characterOperation.create({
+        data: {
+          characterId: character.id,
+          operationId: input.operationId,
+          type: HOTBAR_SAVE_TYPE,
+          requestFingerprint: fingerprint,
+          result: {},
+        },
+      });
+
+      const written = await tx.character.updateMany({
+        where: { id: character.id, version: input.expectedVersion },
+        data: {
+          hotbar: slots as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      if (written.count === 0) {
+        throw new HttpError('A ficha mudou durante o salvamento; tente novamente.', 409);
+      }
+
+      const updated = await tx.character.findUniqueOrThrow({ where: { id: character.id } });
+      const snapshot: HotbarSaveSnapshot = {
+        hotbar: { slots },
+        version: input.expectedVersion + 1,
+      };
+      await tx.characterOperation.update({
+        where: {
+          characterId_operationId: {
+            characterId: character.id,
+            operationId: input.operationId,
+          },
+        },
+        data: { result: snapshot as unknown as Prisma.InputJsonValue },
+      });
+
+      return { updated, snapshot };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const raced = await findOperation(character.id, input.operationId);
+      if (raced) {
+        const snapshot = replaySnapshot<HotbarSaveSnapshot>(
+          raced,
+          HOTBAR_SAVE_TYPE,
+          fingerprint,
+        );
+        const current = await prisma.character.findUniqueOrThrow({ where: { id: character.id } });
+        return {
+          ...snapshot,
+          version: current.version,
+          character: await toSheetDto(current, actor.username),
+          replayed: true,
+        };
+      }
+    }
+    throw error;
+  }
+
+  // Publica só depois do commit: as outras abas releem a MESMA ficha.
+  await publishChange(actor, committed.updated, { hotbar: committed.snapshot.hotbar });
+
+  return {
+    ...committed.snapshot,
+    character: await toSheetDto(committed.updated, actor.username),
+    replayed: false,
+  };
 }

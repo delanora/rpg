@@ -34,8 +34,16 @@ import {
   HOTBAR_COLUMNS,
   HOTBAR_ROWS,
   HOTBAR_SLOTS,
+  assignHotbarRef,
   buildHotbarSlots,
+  clearHotbarRef,
+  entriesOutsideLayout,
   filterHotbarEntries,
+  layoutOfSlots,
+  maskHotbarSlots,
+  moveHotbarRef,
+  resolveHotbarSlots,
+  sameHotbarLayout,
   hotbarFilterLabel,
   selectionSurvivesFilter,
   toggleHotbarPick,
@@ -6576,7 +6584,7 @@ check(
       hotbarAdapterSource.includes('export const HOTBAR_ROWS = 2;') &&
       hotbarAdapterSource.includes('export const HOTBAR_SLOTS = HOTBAR_COLUMNS * HOTBAR_ROWS;') &&
       hotbarAdapterSource.includes('export function buildHotbarSlots') &&
-      hotbarComponentSource.includes('const slots = buildHotbarSlots(entries);') &&
+      hotbarComponentSource.includes('if (!editing && slots.length === 0 && !filter) return null;') &&
       // Comportamento real do modelo: 48 posições INDEXADAS, sobras vazias.
       HOTBAR_SLOTS === 48 &&
       HOTBAR_COLUMNS === 24 &&
@@ -6597,7 +6605,7 @@ check(
       hotbarAdapterSource.includes("from '../ammo'") &&
       hotbarAdapterSource.includes('availableAttacks(attacks, inventory)') &&
       // Nada de engine/resolver no adapter ou no componente.
-      !hotbarComponentSource.includes('useState') &&
+      !hotbarComponentSource.includes('useEffect') &&
       !hotbarComponentSource.includes('onAttack') &&
       !hotbarAdapterSource.includes('resolveAttack') &&
       // O dono do `attackId` continua sendo o painel de ataque.
@@ -7354,8 +7362,11 @@ check(
       trackerSource.includes(
         'const [hotbarFilter, setHotbarFilter] = useState<HotbarFilter | null>(null);',
       ) &&
-      trackerSource.includes('const hotbarVisible = filterHotbarEntries(hotbarEntries, hotbarFilter);') &&
-      trackerSource.includes('entries={hotbarVisible}') &&
+      // 6.6M.6.3.1: o recorte deixou de ser LISTA — virou MÁSCARA de posições
+      // (o índice do slot é preservado quando a categoria muda).
+      trackerSource.includes('const hotbarLayout: HotbarLayout | null = characterHotbar ?? null;') &&
+      trackerSource.includes('maskHotbarSlots(') &&
+      trackerSource.includes('slots={hotbarSlots}') &&
       // O filtro é NAVEGAÇÃO: nada de gasto/reserva/recurso no caminho.
       !hotbarAdapterSource.includes('actionsUsed') &&
       !hotbarAdapterSource.includes('spendEconomy'),
@@ -7363,18 +7374,18 @@ check(
 
   check(
     'SC128) categoria vazia mantém a grade de 32, frase curta e limpar o filtro (sem slot fictício)',
-    hotbarComponentSource.includes('if (entries.length === 0 && !filter) return null;') &&
+    hotbarComponentSource.includes('const views = editing ? (draftSlots ?? []) : slots;') &&
       hotbarComponentSource.includes(
         '`Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`',
       ) &&
       hotbarComponentSource.includes('className="hotbar-clear-filter"') &&
       hotbarComponentSource.includes('onClearFilter') &&
       // A grade não depende do filtro: continua com as 32 posições.
-      hotbarComponentSource.includes('const slots = buildHotbarSlots(entries);') &&
+      hotbarComponentSource.includes('if (!editing && slots.length === 0 && !filter) return null;') &&
       workspaceRule('.hotbar-note').includes('grid-area: note;') &&
       workspaceRule('.hotbar-clear-filter').includes('grid-area: tail;') &&
       // O componente continua sem estado e sem rede.
-      !hotbarComponentSource.includes('useState') &&
+      !hotbarComponentSource.includes('useEffect') &&
       !/\b(resolveAttack|fetch)\w*\(/.test(hotbarComponentSource),
   );
 
@@ -7442,7 +7453,9 @@ check(
   check(
     'SC132) categoria vazia NÃO cai no aviso legado (a Hotbar é montada pelo filtro)',
     // A Hotbar é montada quando há filtro, mesmo sem NENHUMA entrada base…
-    trackerSource.includes('hotbarEntries.length > 0 || hotbarFilter ? (') &&
+    trackerSource.includes(
+      'hotbarEntries.length > 0 || hotbarFilter || hotbarLayout || hotbarEditing ? (',
+    ) &&
       // …e o aviso legado sobrevive só no caso realmente vazio (sem filtro).
       trackerSource.includes('className="dock-empty"') &&
       trackerSource.includes('Nenhum ataque disponível — equipe uma arma na mochila.') &&
@@ -7451,8 +7464,8 @@ check(
       !trackerSource.includes('hotbar-hint') &&
       !workspaceActive.includes('.hotbar-hint') &&
       // A faixa continua montada com a grade inteira: nada colapsa.
-      hotbarComponentSource.includes('if (entries.length === 0 && !filter) return null;') &&
-      hotbarComponentSource.includes('buildHotbarSlots(entries)') &&
+      hotbarComponentSource.includes('const views = editing ? (draftSlots ?? []) : slots;') &&
+      hotbarComponentSource.includes('slot.masked') &&
       // Comportamento real do recorte: vazio é LISTA vazia, nunca `null`.
       filterHotbarEntries(hotbarSample, 'reaction').length === 0 &&
       Array.isArray(filterHotbarEntries(hotbarSample, 'reaction')) &&
@@ -7688,7 +7701,8 @@ check(
       ) &&
       // Slot vazio é uma POSIÇÃO da grade, nunca conteúdo inventado.
       hotbarComponentSource.includes('className="hotbar-slot is-empty"') &&
-      !hotbarComponentSource.includes('is-unavailable') &&
+      // Slot vazio é ausência de atalho: nada de conteúdo fictício.
+      !hotbarComponentSource.includes('placeholder-atalho') &&
       // Comportamento real: preenchidos primeiro, sobras vazias, índice 1-based.
       buildHotbarSlots(hotbarSample)
         .slice(0, hotbarSample.length)
@@ -7719,8 +7733,11 @@ check(
       (trackerSource.match(/<PlayerCombatDock/g) ?? []).length === 1 &&
       trackerSource.includes('preset={hotbarPick}') &&
       trackerSource.includes('onClose={() => setHotbarPick(null)}') &&
-      // Sem estado, rede, economia ou resolver no componente/adapter.
-      !hotbarComponentSource.includes('useState') &&
+      // Estado SÓ de interface no componente (picker/seleção de movimento) e
+      // nenhuma rede/economia/resolver.
+      hotbarComponentSource.includes('const [pickerFor, setPickerFor] = useState<number | null>(null)') &&
+      hotbarComponentSource.includes('const [movingFrom, setMovingFrom] = useState<number | null>(null)') &&
+      !hotbarComponentSource.includes('fetch(') &&
       !/\b(fetch|resolveAttack|spendEconomy)\w*\(/.test(hotbarComponentSource) &&
       !hotbarAdapterSource.includes('fetch(') &&
       !/\b(resolveAttack|spendEconomy)\w*\(/.test(hotbarAdapterSource) &&
@@ -7735,12 +7752,13 @@ check(
   // Renderização REAL (SSR) da versão expandida: o markup é a prova de que a
   // grade materializa 32 posições, que os slots vazios existem e que o cabeçalho
   // saiu — sem navegador e sem snapshot frágil de estilo.
+  const hotbarAutoSlots = resolveHotbarSlots({ entries: hotbarSample, attacks: [], layout: null });
   const hotbarMarkup = renderToStaticMarkup(
-    createElement(CombatHotbar, { entries: hotbarSample, busy: false, onSelect: () => {} }),
+    createElement(CombatHotbar, { slots: hotbarAutoSlots, busy: false, onSelect: () => {} }),
   );
   const hotbarSelectedMarkup = renderToStaticMarkup(
     createElement(CombatHotbar, {
-      entries: hotbarSample,
+      slots: hotbarAutoSlots,
       busy: false,
       selectedId: 'attack:a1',
       onSelect: () => {},
@@ -7925,6 +7943,156 @@ check(
       // O atalho de seção do combate fica ENTRE combate e ficha, no fluxo.
       sheetPageSource.indexOf('<section className="combat-view"') <
         sheetPageSource.indexOf('<SheetView'),
+  );
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.3.1 — personalização persistente dos 48 slots.                    */
+  /* ---------------------------------------------------------------------- */
+
+  const repoFile = (relative: string): string => readFileSync(resolve(here, '..', '..', relative), 'utf8');
+  const hotbarAttacks = [] as Parameters<typeof resolveHotbarSlots>[0]['attacks'];
+  const autoSlots = resolveHotbarSlots({ entries: hotbarSample, attacks: hotbarAttacks, layout: null });
+  const layoutSample = layoutOfSlots(autoSlots);
+  const placedSlots = resolveHotbarSlots({
+    entries: hotbarSample,
+    attacks: hotbarAttacks,
+    layout: layoutSample,
+  });
+  const maskedSlots = maskHotbarSlots(placedSlots, 'bonus-action');
+  const bonusIndex = hotbarSample.findIndex((entry) => entry.cost === 'bonus-action');
+  const actionIndex = hotbarSample.findIndex((entry) => entry.cost === 'action');
+
+  check(
+    'SC147) 48 posições: layout salvo manda e o filtro é MÁSCARA que preserva o índice',
+    autoSlots.length === HOTBAR_SLOTS &&
+      autoSlots
+        .slice(0, hotbarSample.length)
+        .every((slot, index) => slot.ref?.sourceId === hotbarSample[index].sourceId) &&
+      autoSlots.slice(hotbarSample.length).every((slot) => slot.state === 'empty') &&
+      placedSlots[1].ref?.sourceId === layoutSample[1]?.sourceId &&
+      placedSlots[1].index === 2 &&
+      maskedSlots.length === HOTBAR_SLOTS &&
+      // O ataque de Ação não aparece sob o filtro de Ação Bônus, mas continua no
+      // índice 1 — nada "salta" para a posição do vizinho.
+      maskedSlots[actionIndex].masked === true &&
+      maskedSlots[actionIndex].index === actionIndex + 1 &&
+      maskedSlots[bonusIndex].masked === false &&
+      maskedSlots[bonusIndex].index === bonusIndex + 1,
+  );
+
+  check(
+    'SC148) edição pura: mover troca, atribuir move (sem duplicar) e remover esvazia',
+    moveHotbarRef(layoutSample, 0, 1)[0]?.sourceId === layoutSample[1]?.sourceId &&
+      moveHotbarRef(layoutSample, 0, 1)[1]?.sourceId === layoutSample[0]?.sourceId &&
+      sameHotbarLayout(layoutSample, [...layoutSample]) &&
+      !sameHotbarLayout(layoutSample, moveHotbarRef(layoutSample, 0, 1)) &&
+      assignHotbarRef(layoutSample, 10, {
+        kind: 'attack',
+        sourceId: hotbarSample[0].sourceId,
+      }).filter((ref) => ref?.sourceId === hotbarSample[0].sourceId).length === 1 &&
+      assignHotbarRef(layoutSample, 10, {
+        kind: 'attack',
+        sourceId: hotbarSample[0].sourceId,
+      })[0] === null &&
+      clearHotbarRef(layoutSample, 0)[0] === null,
+  );
+
+  const missingSlots = resolveHotbarSlots({
+    entries: hotbarSample,
+    attacks: hotbarAttacks,
+    layout: Array.from({ length: HOTBAR_SLOTS }, (_, index) =>
+      index === 40 ? { kind: 'attack' as const, sourceId: 'ataque-removido' } : null,
+    ),
+  });
+  const unequippedSlots = resolveHotbarSlots({
+    entries: hotbarSample,
+    attacks: [{ id: 'offhand:guardada', name: 'Espada guardada' }] as unknown as Parameters<
+      typeof resolveHotbarSlots
+    >[0]['attacks'],
+    layout: Array.from({ length: HOTBAR_SLOTS }, (_, index) =>
+      index === 30 ? { kind: 'attack' as const, sourceId: 'offhand:guardada' } : null,
+    ),
+  });
+
+  check(
+    'SC149) atalho indisponível ou ausente preserva a posição sem executar nada',
+    unequippedSlots[30].state === 'unavailable' &&
+      unequippedSlots[30].entry === null &&
+      unequippedSlots[30].label === 'Espada guardada' &&
+      missingSlots[40].state === 'missing' &&
+      missingSlots[40].entry === null &&
+      entriesOutsideLayout(hotbarSample, layoutSample).length === 0 &&
+      entriesOutsideLayout(
+        hotbarSample,
+        Array.from({ length: HOTBAR_SLOTS }, () => null),
+      ).length === hotbarSample.length,
+  );
+
+  const personalizeMarkup = renderToStaticMarkup(
+    createElement(CombatHotbar, {
+      slots: placedSlots,
+      busy: false,
+      onSelect: () => {},
+      onEdit: () => {},
+    }),
+  );
+  const editingMarkup = renderToStaticMarkup(
+    createElement(CombatHotbar, {
+      slots: placedSlots,
+      busy: false,
+      onSelect: () => {},
+      editing: true,
+      draftSlots: placedSlots,
+      choices: hotbarSample,
+      dirty: true,
+      onSave: () => {},
+      onCancel: () => {},
+      onAssign: () => {},
+      onMove: () => {},
+      onRemove: () => {},
+    }),
+  );
+
+  check(
+    'SC150) editor renderizado: 48 posições, Salvar/Cancelar e gesto de personalizar',
+    (editingMarkup.match(/data-slot=/g) ?? []).length === HOTBAR_SLOTS &&
+      editingMarkup.includes('hotbar-edit-save') &&
+      editingMarkup.includes('hotbar-edit-cancel') &&
+      (editingMarkup.match(/hotbar-slot-remove/g) ?? []).length === hotbarSample.length &&
+      (editingMarkup.match(/is-editable/g) ?? []).length === HOTBAR_SLOTS &&
+      !editingMarkup.includes('hotbar-picker') &&
+      personalizeMarkup.includes('Personalizar a Hotbar') &&
+      !personalizeMarkup.includes('hotbar-edit-save') &&
+      // Fora do editor os slots continuam botões do fluxo existente.
+      (personalizeMarkup.match(/<button/g) ?? []).length === hotbarSample.length + 1,
+  );
+
+  check(
+    'SC151) persistência autorizada: 48 posições no servidor, versão + idempotência',
+    repoFile('prisma/schema.prisma').includes('hotbar           Json?') &&
+      repoFile('src/modules/characters/characters.schema.ts').includes(
+        'z.array(hotbarSlotRefSchema.nullable()).length(HOTBAR_SLOT_COUNT)',
+      ) &&
+      repoFile('src/modules/characters/characters.routes.ts').includes(
+        "charactersRouter.put('/me/hotbar', authenticate",
+      ) &&
+      repoFile('src/modules/characters/characters.routes.ts').includes(
+        'saveHotbar(actorFrom(req), parsed.data)',
+      ) &&
+      repoFile('src/modules/characters/characters.service.ts').includes(
+        "const HOTBAR_SAVE_TYPE = 'HOTBAR_SAVE';",
+      ) &&
+      repoFile('src/modules/characters/characters.service.ts').includes(
+        'where: { id: character.id, version: input.expectedVersion }',
+      ) &&
+      repoFile('src/modules/characters/characters.service.ts').includes(
+        'replaySnapshot<HotbarSaveSnapshot>',
+      ) &&
+      trackerSource.includes('saveHotbarLayout(slots, characterVersion ?? 1)') &&
+      trackerSource.includes('onEdit={characterHotbar !== undefined ? startHotbarEdit : undefined}') &&
+      sheetPageSource.includes('characterHotbar={character?.hotbar?.slots ?? null}') &&
+      source('src/hotbarApi.ts').includes("'/api/characters/me/hotbar'") &&
+      !source('src/hotbarApi.ts').includes('/api/combat') &&
+      !hotbarComponentSource.includes('resolveAttack'),
   );
 }
 
