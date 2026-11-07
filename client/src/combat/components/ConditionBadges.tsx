@@ -1,102 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { conditionDamageFamily, conditionDescription } from '../combatVisuals';
+import { FloatingTip, useFloatingTip } from './FloatingTip';
 import type { ConditionEffects, MechanicalState } from '../../types';
 
 /** Quantas etiquetas cabem no card antes de resumir o resto em "+N". */
 const MAX_VISIBLE_CONDITIONS = 4;
-
-type TipPosition = { top: number; left: number; above: boolean };
-
-/**
- * TOOLTIP DE CONDIÇÃO FORA DO PAINEL.
- *
- * A descrição era `position: absolute` DENTRO da etiqueta: no painel da
- * iniciativa (que rola), ela era recortada e, pior, alargava a área de rolagem
- * — aparecia uma barra HORIZONTAL só para caber o texto.
- *
- * Aqui o popup é PORTADO para o `body` e posicionado em `fixed` a partir do
- * retângulo da etiqueta: fica por cima de tudo, não participa do layout de
- * nenhum ancestral e existe só enquanto o ponteiro/foco está na etiqueta.
- */
-function useFloatingConditionTip() {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<TipPosition | null>(null);
-
-  const place = useCallback(() => {
-    const anchor = ref.current;
-    if (!anchor || typeof window === 'undefined') return;
-    const rect = anchor.getBoundingClientRect();
-    // Alinhado à esquerda da etiqueta; o ajuste de borda direita depende da
-    // largura REAL do popup e é feito depois de montar (ver FloatingConditionTip).
-    const left = Math.max(8, rect.left);
-    const above = rect.bottom + 200 > window.innerHeight;
-    setPos({ top: above ? rect.top - 6 : rect.bottom + 6, left, above });
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    place();
-    const onMove = (): void => place();
-    // `capture` pega a rolagem de qualquer ancestral (o painel da iniciativa).
-    window.addEventListener('scroll', onMove, true);
-    window.addEventListener('resize', onMove);
-    return () => {
-      window.removeEventListener('scroll', onMove, true);
-      window.removeEventListener('resize', onMove);
-    };
-  }, [open, place]);
-
-  return {
-    ref,
-    open,
-    pos,
-    show: (): void => setOpen(true),
-    hide: (): void => setOpen(false),
-  };
-}
-
-/**
- * O popup flutuante em si: portal no `body`, fixo, sem capturar o ponteiro.
- *
- * `data-condition` viaja junto porque o popup sai da etiqueta: é o que permite
- * o CSS pintar a borda com a MESMA cor da condição (a paleta `--condition-*`).
- */
-function FloatingConditionTip({ pos, condition, children }: {
-  pos: TipPosition | null;
-  condition: string;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [left, setLeft] = useState<number | null>(null);
-
-  // A largura acompanha o CONTEÚDO, então só dá para saber se ele cabe à
-  // direita depois de montar: aqui o popup é preso à viewport, sem cortar.
-  useEffect(() => {
-    const element = ref.current;
-    if (!element || !pos || typeof window === 'undefined') return;
-    setLeft(Math.max(8, Math.min(pos.left, window.innerWidth - element.offsetWidth - 8)));
-  }, [pos, children]);
-
-  if (!pos) return null;
-  return createPortal(
-    <span
-      ref={ref}
-      className="info-tip-text condition-tip condition-tip-floating"
-      role="tooltip"
-      data-condition={condition}
-      style={{
-        top: `${pos.top}px`,
-        left: `${left ?? pos.left}px`,
-        transform: pos.above ? 'translateY(-100%)' : undefined,
-      }}
-    >
-      {children}
-    </span>,
-    document.body,
-  );
-}
 
 /**
  * Uma etiqueta de condição INTERATIVA: o hover/focus na própria etiqueta abre a
@@ -114,7 +21,7 @@ function ConditionChip({ condition, label, count, suspended, sources, onOpenHist
   onOpenHistory?: (condition: string) => void;
 }) {
   const family = conditionDamageFamily(condition);
-  const tip = useFloatingConditionTip();
+  const tip = useFloatingTip();
   const content = (
     <>
       <strong>{label}</strong>
@@ -164,9 +71,13 @@ function ConditionChip({ condition, label, count, suspended, sources, onOpenHist
         {content}
       </span>
       {tip.open ? (
-        <FloatingConditionTip pos={tip.pos} condition={condition}>
+        <FloatingTip
+          pos={tip.pos}
+          className="info-tip-text condition-tip condition-tip-floating"
+          data={{ 'data-condition': condition }}
+        >
           {content}
-        </FloatingConditionTip>
+        </FloatingTip>
       ) : null}
     </span>
   );
@@ -174,7 +85,7 @@ function ConditionChip({ condition, label, count, suspended, sources, onOpenHist
 
 /** Etiqueta "+N": mesma mecânica de popup flutuante das condições visíveis. */
 function MoreConditionsChip({ labels }: { labels: string[] }) {
-  const tip = useFloatingConditionTip();
+  const tip = useFloatingTip();
   const content = (
     <>
       <strong>Outras condições</strong>
@@ -200,9 +111,13 @@ function MoreConditionsChip({ labels }: { labels: string[] }) {
         {content}
       </span>
       {tip.open ? (
-        <FloatingConditionTip pos={tip.pos} condition="more">
+        <FloatingTip
+          pos={tip.pos}
+          className="info-tip-text condition-tip condition-tip-floating"
+          data={{ 'data-condition': 'more' }}
+        >
           {content}
-        </FloatingConditionTip>
+        </FloatingTip>
       ) : null}
     </span>
   );

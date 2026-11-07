@@ -970,7 +970,10 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB30) etiqueta CONCENTRANDO deriva do estado real, com nome no tooltip',
     combatVisuals.includes("if (concentrating) states.push('concentrating');") &&
-      combatStateBadges.includes('Concentrando em: {concentration.label}') &&
+      combatStateBadges.includes('Concentrando em: {concentrationLabel}') &&
+      combatStateBadges.includes(
+        "concentrationLabel={state === 'concentrating' ? concentration?.label ?? null : null}",
+      ) &&
       combatStateBadges.includes('Concentrando em: ') &&
       combatTrackerCode.includes('concentration={combatant.mechanicalState.concentration}') === false &&
       source('../client/src/combat/components/CombatantCard.tsx').includes('concentration={combatant.mechanicalState.concentration}'),
@@ -8302,13 +8305,31 @@ check(
     // `position: absolute` dentro do painel da iniciativa gerava rolagem
     // horizontal. O popup agora é portado para o body, em `fixed`, e só existe
     // enquanto o ponteiro/foco está na etiqueta.
-    source('src/combat/components/ConditionBadges.tsx').includes("from 'react-dom'") &&
-      source('src/combat/components/ConditionBadges.tsx').includes('createPortal(') &&
-      source('src/combat/components/ConditionBadges.tsx').includes('condition-tip-floating') &&
-      source('src/combat/components/ConditionBadges.tsx').includes('onPointerLeave={tip.hide}') &&
-      source('src/combat/components/ConditionBadges.tsx').includes(
+    source('src/combat/components/FloatingTip.tsx').includes("from 'react-dom'") &&
+      source('src/combat/components/FloatingTip.tsx').includes('createPortal(') &&
+      source('src/combat/components/FloatingTip.tsx').includes(
         "window.addEventListener('scroll', onMove, true)",
       ) &&
+      source('src/combat/components/ConditionBadges.tsx').includes(
+        "import { FloatingTip, useFloatingTip } from './FloatingTip'",
+      ) &&
+      source('src/combat/components/ConditionBadges.tsx').includes(
+        'condition-tip-floating',
+      ) &&
+      source('src/combat/components/ConditionBadges.tsx').includes('onPointerLeave={tip.hide}') &&
+      // ESTADOS DE TURNO no mesmo portal, com o próprio tom.
+      source('src/combat/components/CombatStateBadges.tsx').includes(
+        "from './FloatingTip'",
+      ) &&
+      source('src/combat/components/CombatStateBadges.tsx').includes(
+        "data={{ 'data-combat-state': visual.tone }}",
+      ) &&
+      source('src/combat/components/CombatStateBadges.tsx').includes(
+        'onPointerLeave={tip.hide}',
+      ) &&
+      workspaceRule(
+        ".info-tip-text.condition-tip.condition-tip-floating[data-combat-state='dodging']",
+      ).includes('--condition-accent: var(--combat-state-dodging);') &&
       workspaceRule('.info-tip-text.condition-tip.condition-tip-floating').includes(
         'position: fixed;',
       ) &&
@@ -8334,8 +8355,12 @@ check(
         'color: var(--condition-accent);',
       ) &&
       !source('src/combat/components/ConditionBadges.tsx').includes('style={tip.open') &&
-      source('src/combat/components/ConditionBadges.tsx').includes('data-condition={condition}') &&
-      source('src/combat/components/ConditionBadges.tsx').includes('condition="more"') &&
+      source('src/combat/components/ConditionBadges.tsx').includes(
+        "data={{ 'data-condition': condition }}",
+      ) &&
+      source('src/combat/components/ConditionBadges.tsx').includes(
+        "data={{ 'data-condition': 'more' }}",
+      ) &&
       source('src/combat/workspace.css').includes(
         "[data-condition='poisoned'] {\n  --condition-accent: var(--damage-poison);",
       ),

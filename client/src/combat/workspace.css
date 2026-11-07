@@ -211,6 +211,21 @@
   --condition-accent: var(--gold-deep);
 }
 
+/* ESTADOS DE TURNO (Esquiva/Preparar/Concentrando) usam o MESMO popup: o tom
+   deles entra pela paleta `--combat-state-*`. */
+.info-tip-text.condition-tip.condition-tip-floating[data-combat-state='hidden'] {
+  --condition-accent: var(--combat-state-hidden);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-combat-state='dodging'] {
+  --condition-accent: var(--combat-state-dodging);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-combat-state='ready'] {
+  --condition-accent: var(--combat-state-ready);
+}
+.info-tip-text.condition-tip.condition-tip-floating[data-combat-state='concentrating'] {
+  --condition-accent: var(--combat-state-concentration);
+}
+
 /* Retrato do card da iniciativa SEM moldura: `.portrait` tem borda e aro de
    tinta que, sobre a placa do card, viravam um contorno marrom em volta da
    imagem. Aqui fica só a foto — o aro padrão do resto do app não muda. */
