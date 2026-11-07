@@ -627,6 +627,37 @@
     0 6px 14px -6px rgba(0, 0, 0, 0.95);
 }
 
+/*
+ * 6.6M.6.4.4 — MODO DE ROLAGEM COLADO NO CURSOR.
+ *
+ * Escolher o modo no menu não rola nada: o menu some e a MESMA espada do
+ * ponteiro ganha o glifo do modo no canto superior direito (onde a lâmina não
+ * passa), para o gesto de confirmação — duplo clique no token — carregar a
+ * informação junto do cursor. Os glifos são os do painel de ataque (dado =
+ * Normal, sol = Vantagem, lua = Desvantagem), desenhados em `%3Cg transform%3E`
+ * encolhido: nenhuma imagem nova e a paleta é a mesma do resto da cena.
+ */
+.grid-token.is-targetable.is-roll-normal {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%231b120a' stroke-width='4.4'%3E%3Cpath d='M14.5 17.5 3 6V3h3l11.5 11.5'/%3E%3Cpath d='M13 19l6-6'/%3E%3Cpath d='M16 16l4 4'/%3E%3Cpath d='M19 21l2-2'/%3E%3C/g%3E%3Cg stroke='%23f6d977' stroke-width='2'%3E%3Cpath d='M14.5 17.5 3 6V3h3l11.5 11.5'/%3E%3Cpath d='M13 19l6-6'/%3E%3Cpath d='M16 16l4 4'/%3E%3Cpath d='M19 21l2-2'/%3E%3C/g%3E%3Cg transform='translate(14.1 0.3) scale(0.32)' stroke='%231b120a' stroke-width='6'%3E%3Crect x='3' y='3' width='18' height='18' rx='4.5'/%3E%3C/g%3E%3Cg transform='translate(14.1 0.3) scale(0.32)' stroke='%23f6d977' stroke-width='3'%3E%3Crect x='3' y='3' width='18' height='18' rx='4.5'/%3E%3Ccircle cx='8.5' cy='8.5' r='3.4' fill='%23f6d977' stroke='none'/%3E%3Ccircle cx='15.5' cy='15.5' r='3.4' fill='%23f6d977' stroke='none'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")
+      4 4,
+    crosshair;
+}
+
+.grid-token.is-targetable.is-roll-advantage {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%231b120a' stroke-width='4.4'%3E%3Cpath d='M14.5 17.5 3 6V3h3l11.5 11.5'/%3E%3Cpath d='M13 19l6-6'/%3E%3Cpath d='M16 16l4 4'/%3E%3Cpath d='M19 21l2-2'/%3E%3C/g%3E%3Cg stroke='%23f6d977' stroke-width='2'%3E%3Cpath d='M14.5 17.5 3 6V3h3l11.5 11.5'/%3E%3Cpath d='M13 19l6-6'/%3E%3Cpath d='M16 16l4 4'/%3E%3Cpath d='M19 21l2-2'/%3E%3C/g%3E%3Cg transform='translate(14.3 0.3) scale(0.34)' stroke='%231b120a' stroke-width='6'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'/%3E%3C/g%3E%3Cg transform='translate(14.3 0.3) scale(0.34)' stroke='%23f6d977' stroke-width='3'%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cpath d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")
+      4 4,
+    crosshair;
+}
+
+.grid-token.is-targetable.is-roll-disadvantage {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%231b120a' stroke-width='4.4'%3E%3Cpath d='M14.5 17.5 3 6V3h3l11.5 11.5'/%3E%3Cpath d='M13 19l6-6'/%3E%3Cpath d='M16 16l4 4'/%3E%3Cpath d='M19 21l2-2'/%3E%3C/g%3E%3Cg stroke='%23f6d977' stroke-width='2'%3E%3Cpath d='M14.5 17.5 3 6V3h3l11.5 11.5'/%3E%3Cpath d='M13 19l6-6'/%3E%3Cpath d='M16 16l4 4'/%3E%3Cpath d='M19 21l2-2'/%3E%3C/g%3E%3Cg transform='translate(13.5 0.6) scale(0.4)' stroke='%231b120a' stroke-width='5.4'%3E%3Cpath d='M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z'/%3E%3C/g%3E%3Cg transform='translate(13.5 0.6) scale(0.4)' stroke='%23f6d977' stroke-width='2.6'%3E%3Cpath d='M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")
+      4 4,
+    crosshair;
+}
+
 .grid-token.is-target-picked .grid-token-art {
   box-shadow:
     0 0 0 2px rgba(246, 217, 119, 0.95),

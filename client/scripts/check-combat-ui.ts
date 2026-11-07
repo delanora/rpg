@@ -8427,6 +8427,7 @@ const targetingTrackerSource = source('src/combat/CombatTracker.tsx');
 const targetingGridSource = source('src/combat/grid/CombatGrid.tsx');
 const targetingTokenSource = source('src/combat/grid/GridToken.tsx');
 const targetingPanelSource = source('src/combat/components/CombatActionPanel.tsx');
+const targetingRulesSource = source('src/combat/gridTargeting.ts');
 
 type TargetCandidates = Parameters<typeof targetableCombatantIds>[0];
 
@@ -8530,7 +8531,7 @@ check(
 check(
   'SC163) clique no token vira ALVO (sem executar ataque) e Esc desfaz a escolha',
   targetingGridSource.includes(
-    "import { gridTargetPick, type CombatRollMode } from '../gridTargeting';",
+    "import { ROLL_MODE_LABELS, gridTargetPick, type CombatRollMode } from '../gridTargeting';",
   ) &&
     targetingGridSource.includes('const picked = gridTargetPick({') &&
     targetingGridSource.includes('targeting?.onPickTarget(picked)') &&
@@ -8576,9 +8577,8 @@ check(
     // O envio do gesto NÃO duplica o payload: ele chama a mesma função.
     (targetingPanelSource.match(/onAttack\(\{/g) ?? []).length === 1 &&
     targetingTrackerSource.includes('const [attackConfirm, setAttackConfirm] = useState<') &&
-    targetingTrackerSource.includes(
-      'setAttackConfirm((previous) => ({ nonce: (previous?.nonce ?? 0) + 1 }))',
-    ) &&
+    targetingTrackerSource.includes('setAttackConfirm((previous) => ({') &&
+    targetingTrackerSource.includes('...(chosen ? { mode: chosen } : {}),') &&
     targetingTrackerSource.includes('confirm={attackConfirm}') &&
     targetingTrackerSource.includes('onExecuteTarget: (combatantId) => {') &&
     // `onConfirm*` continua reservado ao MOVIMENTO (CB275): aqui o gesto EXECUTA.
@@ -8596,7 +8596,7 @@ check(
 );
 
 check(
-  'SC166) clinque no alvo abre o MENU de modo no token; escolher o modo executa; Esc encerra o fluxo',
+  'SC166) clique no alvo abre o MENU de modo no token; Esc encerra o fluxo inteiro',
   (() => {
     const picker = source('src/combat/grid/GridRollModePicker.tsx');
     return (
@@ -8634,6 +8634,46 @@ check(
       targetingGridSource.includes('ready={Boolean(targeting?.executeReady)}') &&
       // Escolher modo não gasta nada no grid; quem cobra é o servidor.
       !/resolveAttack\s*\(/.test(picker)
+    );
+  })(),
+);
+
+check(
+  'SC167) modo escolhido FECHA o menu, marca a ESPADA e só o duplo clique confirma',
+  (() => {
+    const chooseBlock = targetingTrackerSource.slice(
+      targetingTrackerSource.indexOf(
+        'onChooseRollMode: (combatantId: string, mode: CombatRollMode) => {',
+      ),
+      targetingTrackerSource.indexOf('rollMode: gridRollMode,'),
+    );
+    const cursorRule = gridCssSource.slice(
+      gridCssSource.indexOf('.grid-token.is-targetable.is-roll-advantage {'),
+      gridCssSource.indexOf('.grid-token.is-target-picked .grid-token-art {'),
+    );
+    return (
+      // Regra pura: o modo vira classe de cursor (nada de etiqueta flutuante).
+      targetingRulesSource.includes('export function gridRollModeClass(') &&
+      targetingRulesSource.includes("return 'is-roll-advantage';") &&
+      targetingRulesSource.includes("return 'is-roll-disadvantage';") &&
+      targetingRulesSource.includes("return 'is-roll-normal';") &&
+      targetingTokenSource.includes('const rollModeClass = gridRollModeClass(rollMode);') &&
+      targetingTrackerSource.includes('rollMode: gridRollMode,') &&
+      // Menu some assim que o modo está escolhido.
+      targetingGridSource.includes('if (targeting.rollMode) return null;') &&
+      // Escolher o modo NÃO envia requisição nem pede confirmação ao painel.
+      chooseBlock.includes('setAttackRoll({ targetId: combatantId, mode });') &&
+      !chooseBlock.includes('setAttackConfirm') &&
+      // A escolha pertence ao ALVO: trocar de mira reabre o menu.
+      targetingTrackerSource.includes('const gridRollMode =') &&
+      targetingTrackerSource.includes('attackRoll && attackRoll.targetId === gridTargetId') &&
+      // Glifos do modo colados na espada (dado = Normal, sol = Vantagem, lua = Desvantagem).
+      gridCssSource.includes('.grid-token.is-targetable.is-roll-normal {') &&
+      cursorRule.includes('M14.5 17.5 3 6V3h3l11.5 11.5') &&
+      cursorRule.includes('M12 2v2M12 20v2M4.9 4.9l1.4 1.4') &&
+      cursorRule.includes('M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z') &&
+      cursorRule.includes('4 4,') &&
+      cursorRule.includes('crosshair;')
     );
   })(),
 );

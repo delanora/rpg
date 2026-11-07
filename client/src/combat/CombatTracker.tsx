@@ -244,14 +244,26 @@ export function CombatTracker({
    */
   const [targetCombatantId, setTargetCombatantId] = useState<string | null>(null);
   /**
-   * CONFIRMAR PELO GRID (6.6M.6.4.2/.3) — cada gesto (duplo clique ou modo
-   * escolhido no menu do token) incrementa o `nonce` e o painel aperta o MESMO
-   * "Rolar ataque", com o modo pedido quando existe. O ataque, o alvo e a
-   * economia continuam vindo do painel/servidor; aqui não há payload.
+   * CONFIRMAR PELO GRID (6.6M.6.4.2/.4) — o DUPLO CLIQUE no alvo incrementa o
+   * `nonce` e o painel aperta o MESMO "Rolar ataque", com o modo já escolhido no
+   * menu do token quando existe. O ataque, o alvo e a economia continuam vindo
+   * do painel/servidor; aqui não há payload.
    */
   const [attackConfirm, setAttackConfirm] = useState<{
     nonce: number;
     mode?: CombatRollMode;
+  } | null>(null);
+  /**
+   * MODO DE ROLAGEM ESCOLHIDO NO TOKEN (6.6M.6.4.4) — escolher no menu NÃO rola
+   * nada: só guarda a escolha, o menu some e o cursor de espada ganha o glifo.
+   * O ataque só sai no DUPLO CLIQUE no token do alvo.
+   *
+   * O alvo viaja junto do modo porque a escolha pertence ÀQUELE alvo: trocar de
+   * mira reabre o menu em vez de herdar vantagem/desvantagem de outra seleção.
+   */
+  const [attackRoll, setAttackRoll] = useState<{
+    targetId: string;
+    mode: CombatRollMode;
   } | null>(null);
   /** Prontidão de execução reportada pelo painel (habilita o menu do token). */
   const [attackExecuteReady, setAttackExecuteReady] = useState(false);
@@ -582,6 +594,7 @@ export function CombatTracker({
     setHotbarFilter(null);
     // A escolha de alvo pertence à ação do turno: virar o turno a descarta.
     setTargetCombatantId(null);
+    setAttackRoll(null);
     setAttackExecuteReady(false);
   }, [currentTurnKey]);
 
@@ -589,6 +602,7 @@ export function CombatTracker({
   // É estado de UI — nada é enviado, nada é gasto e nenhum ataque em voo muda.
   useEffect(() => {
     setTargetCombatantId(null);
+    setAttackRoll(null);
     setAttackExecuteReady(false);
   }, [hotbarPick]);
   const turnDeathState = current?.deathState ?? null;
@@ -930,6 +944,9 @@ export function CombatTracker({
   const gridTargetId = targetStillValid(targetCombatantId, gridTargetIds)
     ? targetCombatantId
     : null;
+  /** Modo já escolhido para ESTE alvo (o menu só reabre para outro alvo). */
+  const gridRollMode =
+    attackRoll && attackRoll.targetId === gridTargetId ? attackRoll.mode : null;
   const gridTargetingActive = targetingEligible({
     isMaster,
     ownTurn: isMyTurn,
@@ -1417,25 +1434,36 @@ export function CombatTracker({
                     targetableIds: gridTargetIds,
                     selectedTargetId: gridTargetId,
                     onPickTarget: (combatantId) => setTargetCombatantId(combatantId),
-                    onClearTarget: () => setTargetCombatantId(null),
+                    onClearTarget: () => {
+                      setTargetCombatantId(null);
+                      setAttackRoll(null);
+                    },
                     // Duplo clique: escolhe o alvo e pede UM envio ao painel,
-                    // mantendo o modo de rolagem que já está escolhido.
+                    // com o modo que foi escolhido no menu (se houve).
                     onExecuteTarget: (combatantId) => {
                       setTargetCombatantId(combatantId);
-                      setAttackConfirm((previous) => ({ nonce: (previous?.nonce ?? 0) + 1 }));
-                    },
-                    // Menu do token: escolhe o alvo, aplica o modo e executa.
-                    onChooseRollMode: (combatantId: string, mode: CombatRollMode) => {
-                      setTargetCombatantId(combatantId);
+                      const chosen =
+                        attackRoll && attackRoll.targetId === combatantId
+                          ? attackRoll.mode
+                          : null;
                       setAttackConfirm((previous) => ({
                         nonce: (previous?.nonce ?? 0) + 1,
-                        mode,
+                        ...(chosen ? { mode: chosen } : {}),
                       }));
                     },
+                    // Menu do token: só GUARDA o modo escolhido. Nada é enviado
+                    // — o menu some, a espada ganha o glifo e o duplo clique
+                    // no token do alvo é quem confirma o ataque.
+                    onChooseRollMode: (combatantId: string, mode: CombatRollMode) => {
+                      setTargetCombatantId(combatantId);
+                      setAttackRoll({ targetId: combatantId, mode });
+                    },
+                    rollMode: gridRollMode,
                     executeReady: attackExecuteReady,
                     // Esc encerra o fluxo inteiro: sem alvo e sem ação escolhida.
                     onCancelFlow: () => {
                       setTargetCombatantId(null);
+                      setAttackRoll(null);
                       setHotbarPick(null);
                     },
                   }

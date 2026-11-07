@@ -1,5 +1,6 @@
 import type { CSSProperties, PointerEvent } from 'react';
 import type { CombatantDto } from '../../types';
+import { ROLL_MODE_LABELS, gridRollModeClass, type CombatRollMode } from '../gridTargeting';
 import { SIZE_LABELS, renderRect, tokenArtSize } from './gridMath';
 
 /** Dados mínimos de um combatente para o grid (subset do DTO real). */
@@ -42,6 +43,11 @@ export interface GridTokenProps {
   targetable?: boolean;
   /** O token é o alvo JÁ escolhido (destaque de latão, só apresentação). */
   targetPicked?: boolean;
+  /**
+   * 6.6M.6.4.4 — MODO de rolagem já escolhido no menu do token. O cursor de
+   * espada ganha o glifo do modo; confirmar continua sendo o duplo clique.
+   */
+  rollMode?: CombatRollMode | null;
   onSelect?: (combatantId: string) => void;
   /** Início do draft de movimento (pointer down / ativação por teclado). */
   onMoveStart?: (combatantId: string, event: PointerEvent<HTMLButtonElement>) => void;
@@ -74,6 +80,7 @@ export function GridToken({
   rulerActive = false,
   targetable = false,
   targetPicked = false,
+  rollMode = null,
   onSelect,
   onMoveStart,
   onCenter,
@@ -97,6 +104,8 @@ export function GridToken({
   if (rulerActive) classes.push('is-ruler-pick');
   if (targetable) classes.push('is-targetable');
   if (targetPicked) classes.push('is-target-picked');
+  const rollModeClass = gridRollModeClass(rollMode);
+  if (rollModeClass) classes.push(rollModeClass);
   if (measureRole === 'source') classes.push('is-measure-source');
   if (measureRole === 'target') classes.push('is-measure-target');
 
@@ -124,7 +133,9 @@ export function GridToken({
         movable ? ', pode ser movido' : ''
       }${rulerActive ? ', pode ser medido' : ''}${
         targetable ? ', pode ser escolhido como alvo' : ''
-      }${targetPicked ? ', alvo escolhido' : ''}`}
+      }${targetPicked ? ', alvo escolhido' : ''}${
+        rollMode ? `, modo de rolagem ${ROLL_MODE_LABELS[rollMode].toLowerCase()}` : ''
+      }`}
       aria-pressed={selected || measureRole !== null || targetPicked}
       aria-current={currentTurn ? 'true' : undefined}
       data-size={size}

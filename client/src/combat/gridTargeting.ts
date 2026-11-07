@@ -16,6 +16,34 @@ import type { CombatantDto } from '../types';
  */
 export type CombatRollMode = 'normal' | 'advantage' | 'disadvantage';
 
+/** Rótulos do modo de rolagem — a MESMA linguagem do painel de ataque. */
+export const ROLL_MODE_LABELS: Record<CombatRollMode, string> = {
+  normal: 'Normal',
+  advantage: 'Vantagem',
+  disadvantage: 'Desvantagem',
+};
+
+/**
+ * Classe do CURSOR para o modo já escolhido no token (6.6M.6.4.4).
+ *
+ * O modo escolhido no menu do alvo aparece COLADO na espada do ponteiro, não
+ * numa etiqueta flutuante: o gesto seguinte (duplo clique no token) continua
+ * sendo o mesmo, então a informação precisa acompanhar o cursor que o executa.
+ * Sem modo escolhido (`null`) nenhuma classe entra e a espada segue lisa.
+ */
+export function gridRollModeClass(mode: CombatRollMode | null | undefined): string | null {
+  switch (mode) {
+    case 'normal':
+      return 'is-roll-normal';
+    case 'advantage':
+      return 'is-roll-advantage';
+    case 'disadvantage':
+      return 'is-roll-disadvantage';
+    default:
+      return null;
+  }
+}
+
 /** O mínimo que o grid precisa saber de um combatente para oferecê-lo como alvo. */
 export type TargetCandidate = Pick<CombatantDto, 'id' | 'spatial'> & { missing?: boolean };
 

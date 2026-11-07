@@ -58,7 +58,7 @@ import {
 } from './gridMath';
 import { Icon } from '../../components/Icon';
 import type { MovementAuthority } from '../turnControl';
-import { gridTargetPick, type CombatRollMode } from '../gridTargeting';
+import { ROLL_MODE_LABELS, gridTargetPick, type CombatRollMode } from '../gridTargeting';
 import { GridRollModePicker } from './GridRollModePicker';
 
 /**
@@ -84,10 +84,15 @@ export interface GridTargeting {
    */
   onExecuteTarget?: (combatantId: string) => void;
   /**
-   * 6.6M.6.4.3 — MODO escolhido no menu do token: escolhe o alvo E executa com
-   * esse modo, pelo mesmo envio do botão. O grid não aplica vantagem sozinho.
+   * 6.6M.6.4.4 — MODO escolhido no menu do token: só GUARDA a escolha (alvo +
+   * modo). Nada é enviado aqui — quem confirma o ataque é o duplo clique.
    */
   onChooseRollMode?: (combatantId: string, mode: CombatRollMode) => void;
+  /**
+   * Modo JÁ escolhido para o alvo selecionado (`null` = menu ainda aberto). Com
+   * modo escolhido o menu some e o cursor de espada ganha o glifo do modo.
+   */
+  rollMode?: CombatRollMode | null;
   /** Prontidão de execução (vem do painel) — só habilita/desabilita o menu. */
   executeReady?: boolean;
   /** Esc: encerra TODO o fluxo — limpa o alvo e a ação escolhida na Hotbar. */
@@ -1757,7 +1762,9 @@ export function CombatGrid({
         : 'Visualização da cena.'
       : targetingActive
         ? targeting?.selectedTargetId
-          ? 'Escolha o modo de rolagem · duplo clique rola direto · Esc cancela.'
+          ? targeting?.rollMode
+            ? `Modo ${ROLL_MODE_LABELS[targeting.rollMode]} · duplo clique no alvo confirma · Esc cancela.`
+            : 'Escolha o modo de rolagem no menu do alvo · duplo clique confirma · Esc cancela.'
           : 'Selecione um alvo no grid · duplo clique rola o ataque.'
       : movement && !movement.combatantId
         ? (movement.reason ?? 'Nenhum combatente pode se mover agora.')
@@ -1871,6 +1878,9 @@ export function CombatGrid({
    */
   const rollMenuAnchor = (() => {
     if (!targetingActive || !targeting?.selectedTargetId) return null;
+    // Modo já escolhido: o menu CUMPRIU o papel e some. A escolha passa a viver
+    // no cursor (glifo colado na espada) e o duplo clique é quem confirma.
+    if (targeting.rollMode) return null;
     const unit = placed.find((item) => item.id === targeting.selectedTargetId);
     const space = unit?.spatial?.occupiedSpace;
     const box = space ? occupiedSpacePixels(space, cellSizeFeet, DEFAULT_PIXELS_PER_CELL) : null;
@@ -2087,6 +2097,11 @@ export function CombatGrid({
                   rulerActive={rulerActive}
                   targetable={isTargetable(combatant.id)}
                   targetPicked={targeting?.selectedTargetId === combatant.id}
+                  rollMode={
+                    targeting?.selectedTargetId === combatant.id
+                      ? (targeting?.rollMode ?? null)
+                      : null
+                  }
                   onSelect={selectUnit}
                   onMoveStart={armTokenGesture}
                   onCenter={handleTokenDoubleClick}
