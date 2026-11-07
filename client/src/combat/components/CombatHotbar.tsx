@@ -43,7 +43,6 @@ interface CombatHotbarProps {
   dirty?: boolean;
   saving?: boolean;
   error?: string | null;
-  onSave?: () => void;
   onAssign?: (index: number, ref: HotbarSlotRef) => void;
   onMove?: (from: number, to: number) => void;
   onRemove?: (index: number) => void;
@@ -87,7 +86,6 @@ export function CombatHotbar({
   dirty = false,
   saving = false,
   error = null,
-  onSave,
   onAssign,
   onMove,
   onRemove,
@@ -122,6 +120,16 @@ export function CombatHotbar({
     setMovingFrom(null);
   };
 
+  // Sair da edição (Salvar ou o lápis) descarta a seleção interna: reabrir o
+  // editor nunca herda "posição escolhida" nem picker aberto. O reset acontece
+  // no próprio render (antes de pintar), sem hook de efeito.
+  const [editingBefore, setEditingBefore] = useState(editing);
+  if (editingBefore !== editing) {
+    setEditingBefore(editing);
+    setPickerFor(null);
+    setMovingFrom(null);
+  }
+
   const emptyFilter =
     !editing && filter && slots.every((slot) => slot.state !== 'ready')
       ? `Nenhuma opção de ${hotbarFilterLabel(filter)} nesta Hotbar`
@@ -146,21 +154,8 @@ export function CombatHotbar({
               : null)}
         </span>
 
-        {/* Cancelar NÃO é botão: o mesmo lápis da dock fecha o editor e
-            descarta o rascunho. Aqui só resta confirmar. */}
-        {editing ? (
-          <button
-            type="button"
-            className="hotbar-edit-save"
-            disabled={!dirty || saving}
-            onClick={() => {
-              stopEditing();
-              onSave?.();
-            }}
-          >
-            Salvar
-          </button>
-        ) : null}
+        {/* A linha do topo NÃO tem botão: Salvar e Cancelar vivem na dock, ao
+            lado do retrato. Aqui só fica o aviso curto de estado. */}
       </div>
 
       <div

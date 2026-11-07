@@ -31,6 +31,7 @@ export type IconName =
   | 'plus'
   | 'minus'
   | 'x'
+  | 'check'
   | 'sparkle'
   | 'flame'
   | 'dragon'
@@ -125,6 +126,7 @@ const ICONS: Record<IconName, ReactNode> = {
       <path d="M12 6.2v15" />
     </>
   ),
+  check: <path d="M4.5 12.5 9.5 17.5 19.5 6.5" />,
   quill: (
     <>
       <path d="M20 3.5c-6 1-11 5.5-13 12L5.5 20.5 9 19c6.5-2 11-7 11-15.5Z" />

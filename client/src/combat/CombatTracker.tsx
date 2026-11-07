@@ -956,6 +956,8 @@ export function CombatTracker({
           characterHotbar !== undefined ? (hotbarEditing ? cancelHotbarEdit : startHotbarEdit) : undefined
         }
         personalizeActive={hotbarEditing}
+        onSaveHotbar={commitHotbarEdit}
+        saveDisabled={!hotbarDirty || hotbarSaving}
         personalizeDisabled={busy || hotbarSaving || awaitingInitiative || dockWaiting}
         hotbarFilter={hotbarFilter}
         onToggleHotbarFilter={toggleHotbarFilter}
@@ -1007,7 +1009,6 @@ export function CombatTracker({
               dirty={hotbarDirty}
               saving={hotbarSaving}
               error={hotbarError}
-              onSave={commitHotbarEdit}
               // ATENÇÃO ao índice: a Hotbar mostra posições de 1 a 48, mas o
               // rascunho é um array — a conversão (posição − 1) acontece AQUI,
               // num único lugar. Sem ela, remover a posição 3 apagaria a 4.

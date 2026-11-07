@@ -7838,6 +7838,19 @@ check(
       }),
     ),
   );
+  /** Dock com o editor ABERTO: lápis ativo e o check verde de salvar. */
+  const savingDockMarkup = stampDock(
+    renderToStaticMarkup(
+      createElement(PlayerCombatDock, {
+        ...dockProbeProps,
+        awaitingInitiative: null,
+        onPersonalizeHotbar: () => {},
+        personalizeActive: true,
+        onSaveHotbar: () => {},
+        saveDisabled: false,
+      }),
+    ),
+  );
 
   check(
     'SC142) pré-iniciativa usa a MESMA dock: o card solto de rolagem saiu do corpo',
@@ -8075,7 +8088,6 @@ check(
       draftSlots: placedSlots,
       choices: hotbarSample,
       dirty: true,
-      onSave: () => {},
       onAssign: () => {},
       onMove: () => {},
       onRemove: () => {},
@@ -8085,17 +8097,31 @@ check(
   check(
     'SC150) editor renderizado: 48 posições, Salvar e o lápis como cancelar',
     (editingMarkup.match(/data-slot=/g) ?? []).length === HOTBAR_SLOTS &&
-      editingMarkup.includes('hotbar-edit-save') &&
-      // 6.6M.6.3.1.5: sem botão de Cancelar — o lápis alterna.
+      // 6.6M.6.3.1.6: a faixa acima da grade NÃO tem botão. Salvar virou um
+      // check verde ao lado do lápis; Cancelar continua sendo o próprio lápis.
+      !editingMarkup.includes('hotbar-edit-save') &&
       !editingMarkup.includes('hotbar-edit-cancel') &&
       !hotbarComponentSource.includes('onCancel') &&
+      !hotbarComponentSource.includes('onSave') &&
       // Clicar no lápis de novo cancela; salvando/em espera ele se desabilita.
       trackerSource.includes('(hotbarEditing ? cancelHotbarEdit : startHotbarEdit)') &&
       trackerSource.includes('personalizeActive={hotbarEditing}') &&
+      trackerSource.includes('onSaveHotbar={commitHotbarEdit}') &&
+      trackerSource.includes('saveDisabled={!hotbarDirty || hotbarSaving}') &&
       !dockSource.includes('hotbar-edit-cancel') &&
       dockSource.includes('aria-pressed={personalizeActive}') &&
       workspaceRule('.dock-personalize.is-active').includes('border-color: #f1c85c;') &&
       !workspaceActive.includes('.hotbar-edit-cancel') &&
+      !workspaceActive.includes('.hotbar-edit-save') &&
+      // Em edição: os dois gestos no canto, lápis ANTES do check verde.
+      savingDockMarkup.includes('class="dock-personalize-tools"') &&
+      savingDockMarkup.includes('class="dock-personalize is-active"') &&
+      savingDockMarkup.includes('class="dock-personalize-save"') &&
+      savingDockMarkup.includes('aria-label="Salvar a personalização da Hotbar"') &&
+      savingDockMarkup.indexOf('dock-personalize-tools') <
+        savingDockMarkup.indexOf('dock-personalize-save') &&
+      // Fora da edição não existe check: a dock de consulta só tem o lápis.
+      !personalizeDockMarkup.includes('dock-personalize-save') &&
       (editingMarkup.match(/hotbar-slot-remove/g) ?? []).length === hotbarSample.length &&
       (editingMarkup.match(/is-editable/g) ?? []).length === HOTBAR_SLOTS &&
       !editingMarkup.includes('hotbar-picker') &&
@@ -8110,11 +8136,13 @@ check(
       personalizeDockMarkup.includes('aria-label="Personalizar a Hotbar"') &&
       personalizeDockMarkup.indexOf('dock-personalize') <
         personalizeDockMarkup.indexOf('dock-hotbar') &&
-      workspaceRule('.dock-personalize').includes('position: absolute;') &&
-      workspaceRule('.dock-personalize').includes('bottom: 0.25rem;') &&
-      workspaceRule('.dock-personalize').includes('left: 0.25rem;') &&
-      !workspaceRule('.dock-personalize').includes('top:') &&
+      workspaceRule('.dock-personalize-tools').includes('position: absolute;') &&
+      workspaceRule('.dock-personalize-tools').includes('bottom: 0.25rem;') &&
+      workspaceRule('.dock-personalize-tools').includes('left: 0.25rem;') &&
+      !workspaceRule('.dock-personalize').includes('position: absolute;') &&
       workspaceRule('.dock-personalize').includes('width: 1.5rem;') &&
+      workspaceRule('.dock-personalize-save').includes('width: 1.5rem;') &&
+      workspaceRule('.dock-personalize-save').includes('color: #8fd694;') &&
       // Não voltou para dentro da célula do retrato.
       !workspaceActive.includes('.dock-portrait-cell .dock-personalize'),
   );

@@ -68,6 +68,13 @@ interface PlayerCombatDockProps {
   personalizeActive?: boolean;
   /** Espera/pré-iniciativa/salvamento em curso: o lápis fica indisponível. */
   personalizeDisabled?: boolean;
+  /**
+   * CONFIRMAR a personalização: um check verde ao lado do lápis, visível só com
+   * o editor aberto. A faixa acima da grade não tem mais botão nenhum.
+   */
+  onSaveHotbar?: () => void;
+  /** Sem alterações no rascunho ou com o envio em curso não há o que salvar. */
+  saveDisabled?: boolean;
   /** Filtro ativo da Hotbar (navegação pelos três glifos). */
   hotbarFilter?: HotbarFilter | null;
   onToggleHotbarFilter?: (filter: HotbarFilter) => void;
@@ -158,6 +165,8 @@ export function PlayerCombatDock({
   onPersonalizeHotbar,
   personalizeActive = false,
   personalizeDisabled = false,
+  onSaveHotbar,
+  saveDisabled = false,
   hotbarFilter = null,
   onToggleHotbarFilter,
   utilities,
@@ -261,23 +270,38 @@ export function PlayerCombatDock({
           Não é ação de combate: organizar a Hotbar não consome
           Ação/Bônus/Reação. Some/desabilita quando a dock está bloqueada. */}
       {onPersonalizeHotbar ? (
-        <button
-          type="button"
-          className={personalizeActive ? 'dock-personalize is-active' : 'dock-personalize'}
-          aria-pressed={personalizeActive}
-          aria-label={
-            personalizeActive ? 'Cancelar a personalização da Hotbar' : 'Personalizar a Hotbar'
-          }
-          title={
-            personalizeActive
-              ? 'Cancelar a personalização (descarta as alterações)'
-              : 'Personalizar a Hotbar'
-          }
-          disabled={personalizeDisabled}
-          onClick={onPersonalizeHotbar}
-        >
-          <Icon name="quill" size={15} />
-        </button>
+        <div className="dock-personalize-tools">
+          <button
+            type="button"
+            className={personalizeActive ? 'dock-personalize is-active' : 'dock-personalize'}
+            aria-pressed={personalizeActive}
+            aria-label={
+              personalizeActive ? 'Cancelar a personalização da Hotbar' : 'Personalizar a Hotbar'
+            }
+            title={
+              personalizeActive
+                ? 'Cancelar a personalização (descarta as alterações)'
+                : 'Personalizar a Hotbar'
+            }
+            disabled={personalizeDisabled}
+            onClick={onPersonalizeHotbar}
+          >
+            <Icon name="quill" size={15} />
+          </button>
+          {/* Confirmar: check verde pequeno, ao lado do lápis, só em edição. */}
+          {personalizeActive ? (
+            <button
+              type="button"
+              className="dock-personalize-save"
+              aria-label="Salvar a personalização da Hotbar"
+              title="Salvar a personalização"
+              disabled={saveDisabled}
+              onClick={onSaveHotbar}
+            >
+              <Icon name="check" size={15} />
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {/* AVISO OPERACIONAL fora do retrato (6.6M.6.1.4): decisão urgente não

@@ -2576,21 +2576,6 @@
   max-width: 18rem;
 }
 
-/* Salvar existe só enquanto o editor está aberto (linha do topo); cancelar é
-   o próprio lápis da dock. */
-.hotbar-edit-save {
-  padding: 0.1rem 0.3rem;
-  border: 1px solid #8b682b;
-  border-radius: 4px;
-  background: #1b110b;
-  color: #e4c17a;
-  font-size: 0.5625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
 /* LÁPIS do editor (6.6M.6.3.1): gesto discreto AO LADO DO RETRATO, fora da
    Hotbar. Círculo pequeno no canto do retrato — sem texto, sem linha nova e
    sem empurrar a grade de 48 slots. */
@@ -2598,11 +2583,19 @@
    abaixo do retrato —, o mais perto da borda que o padding permite (0.25rem,
    sem atropelar o aro de latão) e sem encostar na foto. 1.5rem de alvo de
    clique, fora do grid. */
-.dock-personalize {
+/* Os DOIS gestos do editor (lápis = abrir/cancelar, check verde = salvar) moram
+   juntos na quina inferior esquerda da dock, fora do grid. */
+.dock-personalize-tools {
   position: absolute;
   bottom: 0.25rem;
   left: 0.25rem;
   z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.dock-personalize {
   display: grid;
   place-items: center;
   width: 1.5rem;
@@ -2641,16 +2634,37 @@
   cursor: not-allowed;
 }
 
-.hotbar-edit-save:hover,
-.hotbar-edit-save:focus-visible {
+/* CONFIRMAR: check verde, mesmo diâmetro do lápis — pequeno e reconhecível. */
+.dock-personalize-save {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid rgba(103, 178, 112, 0.6);
+  border-radius: 50%;
+  background: rgba(14, 32, 17, 0.86);
+  color: #8fd694;
+  opacity: 0.85;
+  cursor: pointer;
+  transition:
+    opacity 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    background 0.14s ease;
+}
+
+.dock-personalize-save:hover,
+.dock-personalize-save:focus-visible {
   opacity: 1;
-  border-color: #f1c85c;
-  color: #ffe49a;
+  border-color: #b6e9b9;
+  background: rgba(24, 56, 30, 0.92);
+  color: #d2f7d3;
   outline: none;
 }
 
-.hotbar-edit-save:disabled {
-  opacity: 0.35;
+.dock-personalize-save:disabled {
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
