@@ -2683,6 +2683,13 @@
   pointer-events: none;
 }
 
+/* RECURSO DO TURNO ESGOTADO (6.6M.6.3.1.2): o atalho continua visível (a posição
+   é dele), só que levemente escurecido — "fora de uso" sem sumir da grade. */
+.hotbar-slot.is-spent {
+  opacity: 0.45;
+  filter: saturate(0.35) brightness(0.8);
+}
+
 .hotbar-slot.is-editable {
   cursor: grab;
 }

@@ -987,6 +987,9 @@ export function CombatTracker({
               // Antes da iniciativa os slots são APRESENTAÇÃO: `busy` os desabilita
               // (o miolo ainda recebe véu/desfoque e fica `inert` na dock).
               busy={busy || awaitingInitiative}
+              // Economia do PRÓPRIO turno (vem do servidor): só escurece o que já
+              // gastou Ação/Bônus/Reação. Nenhuma cobrança acontece aqui.
+              economy={ownTurn ? dockEconomy : null}
               filter={hotbarFilter}
               selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
               onClearFilter={() => setHotbarFilter(null)}

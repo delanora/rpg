@@ -27,6 +27,7 @@ import { DeathSavePanel } from '../src/combat/components/DeathSavePanel';
 import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel';
 import { ReactionPanel } from '../src/combat/components/ReactionPanel';
 import { TurnToast } from '../src/combat/components/TurnToast';
+import type { TurnEconomy } from '../src/types';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from '../src/combat/reactions';
 import { currentUserControlsCombatant, movementAuthorityOf } from '../src/combat/turnControl';
 import { actionPips } from '../src/combat/resourcePips';
@@ -45,6 +46,7 @@ import {
   resolveHotbarSlots,
   sameHotbarLayout,
   hotbarFilterLabel,
+  hotbarSlotSpent,
   selectionSurvivesFilter,
   toggleHotbarPick,
   type CombatHotbarEntry,
@@ -7367,9 +7369,11 @@ check(
       trackerSource.includes('const hotbarLayout: HotbarLayout | null = characterHotbar ?? null;') &&
       trackerSource.includes('filterHotbarView(') &&
       trackerSource.includes('slots={hotbarSlots}') &&
-      // O filtro é NAVEGAÇÃO: nada de gasto/reserva/recurso no caminho.
-      !hotbarAdapterSource.includes('actionsUsed') &&
-      !hotbarAdapterSource.includes('spendEconomy'),
+      // O filtro é NAVEGAÇÃO: nada de gasto/reserva no caminho. A economia só
+      // é LIDA para escurecer o que já foi gasto (6.6M.6.3.1.2).
+      hotbarAdapterSource.includes('export function hotbarSlotSpent') &&
+      !hotbarAdapterSource.includes('spendEconomy') &&
+      !hotbarAdapterSource.includes('fetch('),
   );
 
   check(
@@ -7480,8 +7484,8 @@ check(
   check(
     'SC133) trocar de filtro limpa só a seleção que deixa de pertencer à lista visível',
     hotbarAdapterSource.includes('export function selectionSurvivesFilter') &&
-      // O predicado é PURO: não lê recurso, turno nem rede.
-      !hotbarAdapterSource.includes('actionsUsed') &&
+      // O predicado é PURO: não gasta recurso, não escreve e não vai à rede.
+      !hotbarAdapterSource.includes('spendEconomy') &&
       !hotbarAdapterSource.includes('fetch(') &&
       // O tracker usa o MESMO predicado no toggle (sem segundo `setHotbarPick`).
       trackerSource.includes('const toggleHotbarFilter = (filter: HotbarFilter): void => {') &&
@@ -8113,6 +8117,82 @@ check(
       hotbarComponentSource.includes('onRemove?.(slot.index)') &&
       hotbarComponentSource.includes('onAssign?.(slot.index, {') &&
       hotbarComponentSource.includes('onMove?.(from, slot.index)'),
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.6.3.1.2 — atalhos com o recurso do turno já gasto.                  */
+  /* ---------------------------------------------------------------------- */
+
+  const baseBudget = {
+    actionsGranted: 1,
+    actionsUsed: 1,
+    bonusActionUsed: false,
+    reactionAvailable: true,
+    attackAction: null,
+  } as {
+    actionsGranted: number;
+    actionsUsed: number;
+    bonusActionUsed: boolean;
+    reactionAvailable: boolean;
+    attackAction: { attacksMade: number; attacksAllowed: number } | null;
+  };
+  const actionSlot = placedSlots[actionIndex];
+  const bonusSlot = placedSlots[bonusIndex];
+  const otherIndex = hotbarSample.findIndex((entry) => entry.cost === 'other');
+
+  const spentMarkup = renderToStaticMarkup(
+    createElement(CombatHotbar, {
+      slots: placedSlots,
+      busy: false,
+      onSelect: () => {},
+      economy: baseBudget as unknown as TurnEconomy,
+    }),
+  );
+  const continuationMarkup = renderToStaticMarkup(
+    createElement(CombatHotbar, {
+      slots: placedSlots,
+      busy: false,
+      onSelect: () => {},
+      economy: {
+        ...baseBudget,
+        attackAction: { attacksMade: 1, attacksAllowed: 2 },
+      } as unknown as TurnEconomy,
+    }),
+  );
+
+  check(
+    'SC153) recurso gasto escurece o atalho, salvo quando ainda cabe ataque (Extra Attack)',
+    // Ação gasta e sem continuação → fora de uso.
+    hotbarSlotSpent(actionSlot, baseBudget) === true &&
+      hotbarSlotSpent(actionSlot, { ...baseBudget, actionsUsed: 0 }) === false &&
+      // Continuação da Attack Action: sem Ação NOVA, mas ainda cabe golpe.
+      hotbarSlotSpent(actionSlot, {
+        ...baseBudget,
+        attackAction: { attacksMade: 1, attacksAllowed: 2 },
+      }) === false &&
+      hotbarSlotSpent(actionSlot, {
+        ...baseBudget,
+        attackAction: { attacksMade: 2, attacksAllowed: 2 },
+      }) === true &&
+      // Ação Bônus e Reação seguem o próprio estado da economia.
+      hotbarSlotSpent(bonusSlot, { ...baseBudget, bonusActionUsed: true }) === true &&
+      hotbarSlotSpent(bonusSlot, baseBudget) === false &&
+      hotbarSlotSpent(
+        { ...bonusSlot, entry: { ...hotbarSample[bonusIndex], cost: 'reaction' } },
+        { ...baseBudget, reactionAvailable: false },
+      ) === true &&
+      // Custo sem contrato (`other`) e slot vazio nunca são marcados.
+      (otherIndex < 0 || hotbarSlotSpent(placedSlots[otherIndex], baseBudget) === false) &&
+      hotbarSlotSpent(placedSlots[HOTBAR_SLOTS - 1], baseBudget) === false &&
+      // Fora do próprio turno não há economia: nada escurece.
+      hotbarSlotSpent(actionSlot, null) === false &&
+      // Renderização: classe + botão desabilitado; com continuação, normal.
+      spentMarkup.includes('is-spent') &&
+      spentMarkup.includes('disabled=""') &&
+      spentMarkup.includes('recurso do turno já usado') &&
+      !continuationMarkup.includes('is-spent') &&
+      // A dock passa a economia do turno PRÓPRIO (nunca a do Mestre).
+      trackerSource.includes('economy={ownTurn ? dockEconomy : null}'),
   );
 
   check(

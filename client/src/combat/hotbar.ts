@@ -251,6 +251,7 @@ export type HotbarLayout = readonly (HotbarSlotRef | null)[];
 export type HotbarSlotState = 'empty' | 'ready' | 'unavailable' | 'missing';
 
 export interface HotbarSlotView {
+  /** Posição DESENHADA da grade (1-based). */
   index: number;
   entry: CombatHotbarEntry | null;
   ref: HotbarSlotRef | null;
@@ -263,6 +264,12 @@ export interface HotbarSlotView {
    * visualização, nunca escrita — a configuração salva não muda.
    */
   masked?: boolean;
+  /**
+   * RECURSO DO TURNO ESGOTADO (6.6M.6.3.1.2) — o atalho existe, mas a Ação, a
+   * Ação Bônus ou a Reação que ele cobra já foi gasta. Só apresentação: quem
+   * cobra e recusa continua sendo o servidor.
+   */
+  spent?: boolean;
 }
 
 /** Configuração vazia (48 posições nulas) — usada só no modo de edição. */
@@ -355,6 +362,63 @@ export function filterHotbarView(
     index: offset + 1,
     masked: Boolean(slot.entry && slot.entry.cost !== filter),
   }));
+}
+
+/**
+ * RECURSO DO TURNO ESGOTADO (6.6M.6.3.1.2) — representação VISUAL de "já foi
+ * usado". Lê só o `turnEconomy` que o servidor manda; não calcula economia,
+ * não consome nada e não decide se a ação vale.
+ *
+ * A regra de EXCEÇÃO é a das classes marciais com ataques múltiplos: enquanto a
+ * Attack Action ainda tem ataque sobrando (`attacksMade < attacksAllowed`), o
+ * atalho continua normal mesmo sem Ação nova — o próximo golpe é CONTINUAÇÃO
+ * da ação já gasta, não uma segunda Ação.
+ */
+export interface HotbarTurnBudget {
+  actionsGranted: number;
+  actionsUsed: number;
+  bonusActionUsed: boolean;
+  reactionAvailable: boolean;
+  attackAction: { attacksMade: number; attacksAllowed: number } | null;
+}
+
+/** Há Ação disponível ou continuação da Attack Action em andamento? */
+export function hotbarActionAvailable(economy: HotbarTurnBudget): boolean {
+  if (economy.actionsGranted - economy.actionsUsed > 0) return true;
+  const attack = economy.attackAction;
+  return Boolean(attack && attack.attacksMade < attack.attacksAllowed);
+}
+
+/**
+ * O atalho está FORA DE USO agora pelo custo típico dele? Sem economia (fora do
+ * próprio turno) nada é marcado: a dock já está em modo de espera.
+ */
+export function hotbarSlotSpent(
+  slot: HotbarSlotView,
+  economy: HotbarTurnBudget | null,
+): boolean {
+  if (!economy || !slot.entry) return false;
+
+  switch (slot.entry.cost) {
+    case 'action':
+      return !hotbarActionAvailable(economy);
+    case 'bonus-action':
+      return economy.bonusActionUsed;
+    case 'reaction':
+      return !economy.reactionAvailable;
+    default:
+      // Custo definido pelo servidor: sem contrato de economia, nada é afirmado.
+      return false;
+  }
+}
+
+/** Marca cada posição com o estado de uso do turno (função pura). */
+export function markHotbarSpentSlots(
+  slots: readonly HotbarSlotView[],
+  economy: HotbarTurnBudget | null,
+): HotbarSlotView[] {
+  if (!economy) return slots.map((slot) => ({ ...slot, spent: false }));
+  return slots.map((slot) => ({ ...slot, spent: hotbarSlotSpent(slot, economy) }));
 }
 
 /** Configuração (48 refs) a partir de uma grade resolvida. */

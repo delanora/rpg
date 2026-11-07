@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Icon } from '../../components/Icon';
+import type { TurnEconomy } from '../../types';
 import {
   HOTBAR_SLOTS,
   hotbarFilterLabel,
+  hotbarSlotSpent,
   type CombatHotbarEntry,
   type HotbarCost,
   type HotbarFilter,
@@ -49,6 +51,11 @@ interface CombatHotbarProps {
   onRemove?: (index: number) => void;
   /** Entradas disponíveis que ficaram FORA da grade (lista "ver todas"). */
   extraEntries?: CombatHotbarEntry[];
+  /**
+   * Economia do turno do PRÓPRIO personagem (vem do servidor). Só serve para
+   * ESCURECER o que já gastou o recurso (6.6M.6.3.1.2) — nada é cobrado aqui.
+   */
+  economy?: TurnEconomy | null;
 }
 
 /**
@@ -89,6 +96,7 @@ export function CombatHotbar({
   onMove,
   onRemove,
   extraEntries = [],
+  economy = null,
 }: CombatHotbarProps) {
   /** Slot vazio esperando a escolha de um atalho (picker aberto). */
   const [pickerFor, setPickerFor] = useState<number | null>(null);
@@ -368,15 +376,28 @@ export function CombatHotbar({
             );
           }
 
+          // RECURSO ESGOTADO (6.6M.6.3.1.2): fica visível porém escurecido,
+          // indicando "fora de uso". Continua NORMAL quando ainda há Ação — ou
+          // quando a Attack Action em andamento ainda permite o próximo golpe.
+          const spent = hotbarSlotSpent(slot, economy);
+
           return (
             <button
               key={`hotbar-slot-${slot.index}`}
               type="button"
-              className={entry.kind === 'attack' ? 'hotbar-slot is-attack' : 'hotbar-slot'}
+              className={[
+                entry.kind === 'attack' ? 'hotbar-slot is-attack' : 'hotbar-slot',
+                spent ? 'is-spent' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               data-slot={slot.index}
               aria-pressed={selectedId === entry.id}
-              aria-label={`${slot.index}. ${entry.label} — ${entry.detail} (${COST_LABEL[entry.cost]})`}
-              disabled={busy}
+              aria-label={`${slot.index}. ${entry.label} — ${entry.detail} (${COST_LABEL[entry.cost]})${
+                spent ? ' — recurso do turno já usado' : ''
+              }`}
+              title={spent ? `Sem ${COST_LABEL[entry.cost]} disponível neste turno` : undefined}
+              disabled={busy || spent}
               onClick={() => onSelect(entry)}
             >
               <span className="hotbar-slot-key" aria-hidden="true">
