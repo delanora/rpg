@@ -915,6 +915,7 @@ export function CombatTracker({
                     (criatura/NPC do turno ou override explícito). */}
                 {isMaster && attacksFor && masterAttackerCombatant ? (
                   <CombatActionPanel
+                    variant="tactical-tray"
                     combat={combat}
                     attacker={masterAttackerCombatant}
                     attacks={[]}
@@ -931,6 +932,7 @@ export function CombatTracker({
 
                 {!isMaster && myCombatant ? (
                   <CombatActionPanel
+                    variant="tactical-tray"
                     combat={combat}
                     attacker={myCombatant}
                     attacks={characterAttacks}
@@ -979,6 +981,7 @@ export function CombatTracker({
                       Você tem uma ação preparada. Resolvê-la consome a sua Reação.
                     </p>
                     <CombatActionPanel
+                      variant="tactical-tray"
                       combat={combat}
                       attacker={myCombatant}
                       attacks={characterAttacks}

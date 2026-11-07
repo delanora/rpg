@@ -6143,15 +6143,15 @@ check(
   };
 
   check(
-    'SC56) CombatWorkspace é SÓ layout (sem estado/efeito): iniciativa · centro tático (ação acima da cena) · registro · ferramentas · barra',
+    'SC56) CombatWorkspace é SÓ layout (sem estado/efeito): iniciativa · centro tático (cena acima da TRAY) · registro · ferramentas · barra',
     !/useState|useEffect|useReducer|useRef/.test(workspaceLayout) &&
       workspaceLayout.includes('combat-workspace-initiative">{initiative}') &&
       workspaceLayout.includes('combat-tactical-action') &&
       workspaceLayout.includes('combat-tactical-scene">{scene}') &&
       workspaceLayout.includes('combat-workspace-log') &&
-      workspaceLayout.indexOf('{initiative}') < workspaceLayout.indexOf('{action}') &&
-      workspaceLayout.indexOf('{action}') < workspaceLayout.indexOf('{scene}') &&
-      workspaceLayout.indexOf('{scene}') < workspaceLayout.indexOf('{log}') &&
+      workspaceLayout.indexOf('{initiative}') < workspaceLayout.indexOf('{scene}') &&
+      workspaceLayout.indexOf('{scene}') < workspaceLayout.indexOf('{action}') &&
+      workspaceLayout.indexOf('{action}') < workspaceLayout.indexOf('{log}') &&
       workspaceLayout.indexOf('{log}') < workspaceLayout.indexOf('{masterTools}') &&
       workspaceLayout.indexOf('{masterTools}') < workspaceLayout.indexOf('{tools}') &&
       workspaceLayout.indexOf('{tools}') < workspaceLayout.indexOf('{resourceBar}'),
@@ -6181,7 +6181,7 @@ check(
   check(
     'SC59) o grid ocupa o centro flexível (minmax(0, 1fr)) com a cadeia de min-height: 0',
     workspaceRule('.combat-workspace-body').includes(
-      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(16rem, 19rem);',
+      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(15rem, 18rem);',
     ) &&
       workspaceRule('.combat-workspace-body').includes('overflow: hidden;') &&
       workspaceRule('.combat-workspace-body').includes('min-height: 0;') &&
@@ -6255,15 +6255,15 @@ check(
   /* ---------------------------------------------------------------------- */
 
   check(
-    'SC65) centro tático: ação/contexto ACIMA da cena, com teto e rolagem própria para não engolir o mapa',
-    workspaceRule('.combat-tactical-center').includes('grid-template-rows: auto minmax(0, 1fr);') &&
+    'SC65) centro tático: a TRAY (ação/contexto) fica ABAIXO da cena, com teto e rolagem própria para não esvaziar o mapa',
+    workspaceRule('.combat-tactical-center').includes('grid-template-rows: minmax(0, 1fr) auto;') &&
       workspaceRule('.combat-tactical-center').includes('min-height: 0;') &&
       workspaceRule('.combat-tactical-action').includes('max-height: 9.5rem;') &&
       workspaceRule('.combat-tactical-action').includes('overflow-y: auto;') &&
       workspaceRule('.combat-tactical-scene').includes('min-height: 0;') &&
       workspaceRule('.combat-workspace-body').includes('overflow: hidden;') &&
-      workspaceLayout.indexOf('combat-tactical-action') <
-        workspaceLayout.indexOf('combat-tactical-scene'),
+      workspaceLayout.indexOf('combat-tactical-scene') <
+        workspaceLayout.indexOf('combat-tactical-action'),
   );
 
   check(
@@ -6312,7 +6312,7 @@ check(
   );
 
   /* ---------------------------------------------------------------------- */
-  /* 6.6M.5.2 — centro tático: operação acima da cena, registro à direita.   */
+  /* 6.6M.5.2 — centro tático: cena acima e TRAY de operação abaixo.        */
   /* ---------------------------------------------------------------------- */
 
   const mediaWide = workspaceActive.slice(
@@ -6335,12 +6335,12 @@ check(
   check(
     'SC69) registro em coluna PRÓPRIA e mais estreita: a largura recuperada vai para o centro tático',
     workspaceRule('.combat-workspace-body').includes(
-      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(16rem, 19rem);',
+      'grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(15rem, 18rem);',
     ) &&
       !workspaceActive.includes('minmax(19rem, 25rem)') &&
       workspaceRule('.combat-workspace-log').includes('min-height: 0;') &&
       workspaceLayout.indexOf('combat-workspace-log') < workspaceLayout.indexOf('{log}') &&
-      mediaWide.includes('minmax(13rem, 16rem) minmax(0, 1fr) minmax(15rem, 18rem)'),
+      mediaWide.includes('minmax(13rem, 16rem) minmax(0, 1fr) minmax(14rem, 17rem)'),
   );
 
   check(
@@ -6358,8 +6358,13 @@ check(
   );
 
   check(
-    'SC71) painel de ataque REUTILIZADO na horizontal, com os mesmos três passos e cards',
+    'SC71) TRAY reutiliza o MESMO CombatActionPanel: três passos, mesmos cards e mesmo estado',
     (trackerSource.match(/<CombatActionPanel/g) ?? []).length >= 3 &&
+      (trackerSource.match(/variant="tactical-tray"/g) ?? []).length >= 3 &&
+      actionPanelSource.includes("variant?: 'default' | 'tactical-tray';") &&
+      actionPanelSource.includes(
+        "className={tray ? 'combat-block attack-panel is-tray' : 'combat-block attack-panel'}",
+      ) &&
       actionPanelSource.includes('className="attack-step-title"') &&
       actionPanelSource.includes('Escolha o ataque') &&
       actionPanelSource.includes('Escolha o alvo') &&
@@ -6369,8 +6374,9 @@ check(
       workspaceRule('.combat-tactical-action .attack-panel > .attack-step').includes(
         'flex: 1 1 11rem;',
       ) &&
-      // A horizontal é SÓ composição: nenhuma variante nova no componente.
-      !actionPanelSource.includes('workspace-horizontal'),
+      // A variante é só de apresentação: sem engine/estado paralelo.
+      !actionPanelSource.includes('workspace-horizontal') &&
+      !actionPanelSource.includes('CompactAttackEngine'),
   );
 
   check(
@@ -6416,6 +6422,22 @@ check(
       mediaNarrow.includes('grid-template-columns: minmax(0, 1fr);') &&
       mediaNarrow.includes('.combat-workspace-initiative,') &&
       !mediaNarrow.includes('minmax(0, 1fr) minmax(0, 1fr)'),
+  );
+
+  check(
+    'SC76) tray compacta: ataque/alvo viram resumos clicáveis que desdobram os MESMOS cards, com modificadores recolhidos',
+    actionPanelSource.includes('className="tray-chip"') &&
+      actionPanelSource.includes("aria-expanded={openStep === 'attack'}") &&
+      actionPanelSource.includes("aria-expanded={openStep === 'target'}") &&
+      actionPanelSource.includes("tray ? 'attack-options tray-menu' : 'attack-options'") &&
+      actionPanelSource.includes("tray ? 'target-options tray-menu' : 'target-options'") &&
+      actionPanelSource.includes('<details className="attack-extras"') &&
+      actionPanelSource.includes("className={tray ? 'attack-tray-exec' : 'attack-preview'}") &&
+      // Cards continuam botões: nenhum <select> para ataque/alvo.
+      !/setAttackId\([\s\S]{0,200}<select/.test(actionPanelSource) &&
+      workspaceRule('.tray-chip').includes('cursor: pointer;') &&
+      workspaceRule('.attack-panel.is-tray .tray-menu').includes('max-height:') &&
+      workspaceRule('.attack-tray-exec').includes('justify-content: flex-end;'),
   );
 }
 

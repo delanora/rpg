@@ -54,12 +54,12 @@
 }
 
 /* Corpo: a única região com rolagem própria por bloco.
-   INICIATIVA | CENTRO TÁTICO | REGISTRO — o registro encolheu (19rem em vez de
-   25rem) porque a ação saiu dele: a largura recuperada vai toda para o centro,
-   que continua sendo o `1fr`. */
+   INICIATIVA | CENTRO TÁTICO | REGISTRO — o registro fica no mínimo legível
+   (15–18rem) porque a ação saiu dele: o centro, que é o `1fr`, fica com tudo
+   o que sobra — o mapa é a superfície dominante. */
 .combat-workspace-body {
   display: grid;
-  grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(16rem, 19rem);
+  grid-template-columns: minmax(14rem, 17.5rem) minmax(0, 1fr) minmax(15rem, 18rem);
   gap: 0.85rem;
   min-width: 0;
   min-height: 0;
@@ -132,13 +132,13 @@
 }
 
 /* --------------------------------------------------------------------------
-   CENTRO TÁTICO — operação EM CIMA, cena embaixo, no MESMO bloco.
-   A trilha `auto` é do painel de ataque/contexto (com teto e rolagem própria
-   para não engolir o mapa); a `1fr` é do grid, que segue a maior superfície.
+   CENTRO TÁTICO — cena EM CIMA, tray embaixo, no MESMO bloco.
+   A trilha `1fr` é do grid (a maior superfície da tela); a `auto` é da TRAY de
+   operação, que tem teto e rolagem própria para nunca esvaziar o mapa.
    -------------------------------------------------------------------------- */
 .combat-tactical-center {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 0.55rem;
   min-width: 0;
   min-height: 0;
@@ -149,9 +149,9 @@
   gap: 0.45rem;
   min-width: 0;
   min-height: 0;
-  /* Teto para o painel de ataque: com muitas armas/alvos ele rola DENTRO de
-     si em vez de esmagar o mapa. ~9,5rem cabe o caso comum (1 arma, poucos
-     alvos, 3 modos e o botão) sem barra de rolagem. */
+  /* Teto da TRAY: como ela fica ABAIXO do grid, crescer sem limite tiraria
+     altura do mapa. Com muitas armas/alvos (ou uma lista desdobrada) ela rola
+     DENTRO de si; ~9,5rem cabe o caso comum sem barra de rolagem. */
   max-height: 9.5rem;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -305,6 +305,123 @@
   flex: 0 0 auto;
   padding: 0.32rem 0.8rem;
   font-size: 0.8rem;
+}
+
+/* --------------------------------------------------------------------------
+   TACTICAL TRAY (6.6M.5.2) — resumo compacto ABAIXO do grid.
+   Cada passo mostra o que está ESCOLHIDO (arma com bônus/dano/alcance, alvo com
+   status) e desdobra a lista com os MESMOS cards. Nada de seleção nova: o
+   único estado é qual lista está aberta.
+   -------------------------------------------------------------------------- */
+.attack-panel.is-tray {
+  align-items: stretch;
+  gap: 0.3rem 0.55rem;
+}
+
+.attack-panel.is-tray > .attack-step {
+  flex: 1 1 10rem;
+}
+
+.tray-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tray-chip:hover,
+.tray-chip:focus-visible {
+  border-color: var(--gold);
+}
+
+.tray-chip[aria-expanded='true'] {
+  border-color: var(--gold);
+  box-shadow: inset 0 0 0 1px var(--gold-hair);
+}
+
+.tray-chip-label {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tray-chip-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Lista desdobrada: os cards de sempre, com rolagem curta própria. */
+.attack-panel.is-tray .tray-menu {
+  margin-top: 0.2rem;
+  max-height: 6.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Modificadores: fora da tray ficam abertos; nela, recolhidos sob o resumo. */
+.attack-extras {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding-top: 0.15rem;
+  border-top: 1px dashed var(--line);
+  font-size: 0.72rem;
+}
+
+.attack-extras-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.68rem;
+  color: var(--ink-soft);
+}
+
+.attack-extras-summary::-webkit-details-marker {
+  display: none;
+}
+
+.attack-extras-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* Execução: faixa de alcance (servidor) + botão, alinhados à direita. */
+.attack-tray-exec {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.attack-tray-exec .attack-preview-side {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.attack-tray-exec .attack-preview-side:empty {
+  display: none;
 }
 
 /* Espera, Teste contra a Morte e afins aparecem na mesma faixa, sem cartão
@@ -600,7 +717,7 @@
    -------------------------------------------------------------------------- */
 @media (max-width: 1360px) {
   .combat-workspace-body {
-    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(15rem, 18rem);
+    grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr) minmax(14rem, 17rem);
   }
 }
 

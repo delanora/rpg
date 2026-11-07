@@ -127,6 +127,12 @@ interface CombatActionPanelProps {
   sneakAttackFor?: (combatantId: string) => string | null;
   /** Inventário do próprio personagem (para munição e vínculo de arma). */
   inventory?: InventoryItem[];
+  /**
+   * `tactical-tray` (6.6M.5.2) — faixa compacta ABAIXO do grid. É só
+   * APRESENTAÇÃO: os cartões, o estado e o envio continuam exatamente os
+   * mesmos; nada de segundo `attackId`/`targetId`.
+   */
+  variant?: 'default' | 'tactical-tray';
   busy: boolean;
   onAttack: (input: {
     prepared?: boolean;
@@ -158,6 +164,7 @@ export function CombatActionPanel({
   sneakAttack,
   sneakAttackFor,
   inventory,
+  variant = 'default',
   busy,
   onAttack,
 }: CombatActionPanelProps) {
@@ -178,6 +185,11 @@ export function CombatActionPanel({
    */
   const [rangePreview, setRangePreview] = useState<SpatialRangeReading | null>(null);
   const [rangeState, setRangeState] = useState<'idle' | 'error'>('idle');
+  /**
+   * TRAY — qual lista está desdobrada. É o ÚNICO estado novo: escolher uma
+   * arma/alvo cai nos mesmos `setAttackId`/`setTargetId` de sempre.
+   */
+  const [openStep, setOpenStep] = useState<'attack' | 'target' | null>(null);
   const hasReady = Boolean(attacker?.turnEconomy.ready);
   useEffect(() => setPrepared(false), [attacker?.id, hasReady]);
 
@@ -261,11 +273,27 @@ export function CombatActionPanel({
     : combat.currentCombatantId === attacker?.id && Boolean(economy && (offhand ? !economy.bonusActionUsed : continuation || economy.actionsUsed < economy.actionsGranted));
   const ready = Boolean(attacker && attackId && targetId) && !ammoMissing && available && Boolean(attacker?.conditionEffects.canAct);
 
+  const tray = variant === 'tactical-tray';
+  // Resumo dos modificadores: só o que existe aparece como legenda do bloco.
+  const extrasSummary = [
+    effectOptions.length > 0 ? `${selectedEffects.length}/${effectOptions.length} efeitos` : null,
+    ammoType ? (ammoMissing ? 'sem munição' : `munição ${ammoTotal}`) : null,
+    sneakEligible ? `furtivo +${sneakExpression}` : null,
+  ]
+    .filter((item): item is string => item !== null)
+    .join(' · ');
+  const hasExtras = effectOptions.length > 0 || Boolean(ammoType) || sneakEligible;
+
   return (
-    <section className="combat-block attack-panel">
-      <h3>
-        <Icon name="sword" size={15} /> Atacar
-      </h3>
+    <section
+      className={tray ? 'combat-block attack-panel is-tray' : 'combat-block attack-panel'}
+      aria-label={tray ? 'Atacar' : undefined}
+    >
+      {tray ? null : (
+        <h3>
+          <Icon name="sword" size={15} /> Atacar
+        </h3>
+      )}
 
       {attackerChoices ? (
         <label className="field">
@@ -299,41 +327,94 @@ export function CombatActionPanel({
         <p className="empty-hint">Nenhum ataque cadastrado para {attacker.name}.</p>
       ) : (
         <>
-          {/* Passo 1 — cartões de ataque. */}
+          {/* Passo 1 — ataques. Na tray o passo mostra um RESUMO clicável e os
+              MESMOS cartões abrem abaixo (`AttackOption` sem alteração). */}
           <div className="attack-step">
             <p className="attack-step-title">
               <span className="attack-step-num">1</span> Escolha o ataque
             </p>
-            <div className="attack-options">
-              {availableAttacks.map((attack) => (
-                <AttackOption
-                  key={attack.id}
-                  attack={attack}
-                  inventory={inventory}
-                  selected={attack.id === attackId}
-                  onSelect={() => {
-                    setAttackId(attack.id);
-                    // Trocar de arma invalida a confirmação de aliado adjacente.
-                    setAdjacentAlly(false);
-                  }}
-                />
-              ))}
-            </div>
+            {tray ? (
+              <button
+                type="button"
+                className="tray-chip"
+                aria-expanded={openStep === 'attack'}
+                onClick={() => setOpenStep((prev) => (prev === 'attack' ? null : 'attack'))}
+              >
+                <span className="tray-chip-label">
+                  {selectedAttack?.name ?? 'escolha o ataque'}
+                </span>
+                {selectedAttack ? (
+                  <span className="tray-chip-meta">
+                    <span>{formatModifier(selectedAttack.attackBonus)}</span>
+                    <span>
+                      {damageExpression(selectedAttack.damage)}
+                      {selectedAttack.damage.type ? ` ${selectedAttack.damage.type}` : ''}
+                    </span>
+                    {rangeLabel(inventory ? selectedWeapon : null) ? (
+                      <span>{rangeLabel(inventory ? selectedWeapon : null)}</span>
+                    ) : null}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
+            {tray && openStep !== 'attack' ? null : (
+              <div className={tray ? 'attack-options tray-menu' : 'attack-options'}>
+                {availableAttacks.map((attack) => (
+                  <AttackOption
+                    key={attack.id}
+                    attack={attack}
+                    inventory={inventory}
+                    selected={attack.id === attackId}
+                    onSelect={() => {
+                      setAttackId(attack.id);
+                      // Trocar de arma invalida a confirmação de aliado adjacente.
+                      setAdjacentAlly(false);
+                      if (tray) setOpenStep(null);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Passo 2 — cartões de alvo. */}
+          {/* Passo 2 — alvos. Mesmo princípio: resumo clicável na tray, com a
+              lista de cartões existente logo abaixo (CA/vida seguem ocultas
+              quando o alvo ainda não as revelou). */}
           <div className="attack-step">
             <p className="attack-step-title">
               <span className="attack-step-num">2</span> Escolha o alvo
             </p>
-            <div className="target-options">
-              {targets.map((item) => (
+            {tray ? (
+              <button
+                type="button"
+                className="tray-chip"
+                aria-expanded={openStep === 'target'}
+                onClick={() => setOpenStep((prev) => (prev === 'target' ? null : 'target'))}
+              >
+                <span className="tray-chip-label">
+                  {selectedTarget?.name ?? 'escolha o alvo'}
+                </span>
+                {selectedTarget ? (
+                  <span className="tray-chip-meta">
+                    {selectedTarget.statsHidden
+                      ? 'vida e CA ocultas'
+                      : `CA ${selectedTarget.armorClass} · HP ${selectedTarget.hpCurrent}/${selectedTarget.hpMax}`}
+                  </span>
+                ) : null}
+              </button>
+            ) : null}
+            {tray && openStep !== 'target' ? null : (
+              <div className={tray ? 'target-options tray-menu' : 'target-options'}>
+                {targets.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   className={item.id === targetId ? 'target-card selected' : 'target-card'}
                   aria-pressed={item.id === targetId}
-                  onClick={() => setTargetId(item.id)}
+                  onClick={() => {
+                    setTargetId(item.id);
+                    if (tray) setOpenStep(null);
+                  }}
                 >
                   <Portrait
                     src={item.imageUrl ?? ''}
@@ -358,8 +439,9 @@ export function CombatActionPanel({
                     )}
                   </span>
                 </button>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Passo 3 — modo de rolagem (mutuamente exclusivo). */}
@@ -384,6 +466,15 @@ export function CombatActionPanel({
             </div>
           </div>
 
+          {/* MODIFICADORES — fora da tray ficam abertos; nela viram um resumo
+              recolhível (efeitos, munição, Furtivo). O conteúdo é o MESMO:
+              checkboxes, pilha de munição e aviso continuam a um clique. */}
+          {hasExtras ? (
+            <details className="attack-extras" open={tray ? undefined : true}>
+              <summary className="attack-extras-summary">
+                <Icon name="sparkle" size={12} /> {extrasSummary}
+              </summary>
+              <div className="attack-extras-body">
           {/* Modificadores OPCIONAIS reais (6.5G): ex.: Bless +1d4. Só aparecem
               quando o servidor oferece algo; a escolha é do ator. */}
           {effectOptions.length > 0 ? (
@@ -463,44 +554,57 @@ export function CombatActionPanel({
               )}
             </div>
           ) : null}
+              </div>
+            </details>
+          ) : null}
 
-          {/* Prévia do ataque + botão principal. */}
-          <div className="attack-preview">
-            <div className="attack-preview-side">
-              <span className="attack-preview-label">Ataque selecionado</span>
-              <span className="attack-preview-name">{selectedAttack?.name ?? '—'}</span>
-              {selectedAttack ? (
-                <span className="attack-preview-stats">
-                  <span>{formatModifier(selectedAttack.attackBonus)}</span>
-                  <span>
-                    {damageExpression(selectedAttack.damage)}
-                    {selectedAttack.damage.type ? ` ${selectedAttack.damage.type}` : ''}
-                  </span>
-                  {rangeLabel(inventory ? selectedWeapon : null) ? (
-                    <span>alcance {rangeLabel(inventory ? selectedWeapon : null)}</span>
-                  ) : null}
-                  {sneakEligible ? <span>furtivo +{sneakExpression}</span> : null}
-                </span>
-              ) : null}
-            </div>
-
-            <span className="attack-preview-vs">VS</span>
-
-            <div className="attack-preview-side">
-              <span className="attack-preview-label">Alvo</span>
-              <span className="attack-preview-name">{selectedTarget?.name ?? '—'}</span>
-              {selectedTarget ? (
-                <span className="attack-preview-stats">
-                  {selectedTarget.statsHidden ? (
-                    <span>vida e CA ocultas</span>
-                  ) : (
-                    <span>
-                      CA {selectedTarget.armorClass} · HP {selectedTarget.hpCurrent}/
-                      {selectedTarget.hpMax}
+          {/* Prévia + botão principal. Na tray o resumo de ataque/alvo já está
+              nos chips: aqui ficam só a faixa de ALCANCE (decidida pelo
+              servidor) e o botão da execução. */}
+          <div className={tray ? 'attack-tray-exec' : 'attack-preview'}>
+            {tray ? null : (
+              <>
+                <div className="attack-preview-side">
+                  <span className="attack-preview-label">Ataque selecionado</span>
+                  <span className="attack-preview-name">{selectedAttack?.name ?? '—'}</span>
+                  {selectedAttack ? (
+                    <span className="attack-preview-stats">
+                      <span>{formatModifier(selectedAttack.attackBonus)}</span>
+                      <span>
+                        {damageExpression(selectedAttack.damage)}
+                        {selectedAttack.damage.type ? ` ${selectedAttack.damage.type}` : ''}
+                      </span>
+                      {rangeLabel(inventory ? selectedWeapon : null) ? (
+                        <span>alcance {rangeLabel(inventory ? selectedWeapon : null)}</span>
+                      ) : null}
+                      {sneakEligible ? <span>furtivo +{sneakExpression}</span> : null}
                     </span>
-                  )}
-                </span>
-              ) : null}
+                  ) : null}
+                </div>
+
+                <span className="attack-preview-vs">VS</span>
+              </>
+            )}
+
+            <div className="attack-preview-side">
+              {tray ? null : (
+                <>
+                  <span className="attack-preview-label">Alvo</span>
+                  <span className="attack-preview-name">{selectedTarget?.name ?? '—'}</span>
+                  {selectedTarget ? (
+                    <span className="attack-preview-stats">
+                      {selectedTarget.statsHidden ? (
+                        <span>vida e CA ocultas</span>
+                      ) : (
+                        <span>
+                          CA {selectedTarget.armorClass} · HP {selectedTarget.hpCurrent}/
+                          {selectedTarget.hpMax}
+                        </span>
+                      )}
+                    </span>
+                  ) : null}
+                </>
+              )}
               {/* 6.6M.2 — faixa DECIDIDA pelo servidor (long range já traz a
                   desvantagem; o cliente não compara distância com alcance). */}
               {rangePreview ? (
