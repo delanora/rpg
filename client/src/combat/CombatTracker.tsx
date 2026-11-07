@@ -29,6 +29,7 @@ import {
   targetStillValid,
   targetableCombatantIds,
   targetingEligible,
+  type CombatRollMode,
 } from './gridTargeting';
 // CSS ISOLADO do grid/workspace (styles.css é WIP alheio e não é tocado).
 import './grid/grid.css';
@@ -243,11 +244,17 @@ export function CombatTracker({
    */
   const [targetCombatantId, setTargetCombatantId] = useState<string | null>(null);
   /**
-   * CONFIRMAR PELO GRID (6.6M.6.4.2) — cada duplo clique no alvo incrementa o
-   * `nonce` e o painel aperta o MESMO "Rolar ataque". O ataque escolhido, o alvo
-   * e a economia continuam vindo do painel/servidor; aqui não há payload.
+   * CONFIRMAR PELO GRID (6.6M.6.4.2/.3) — cada gesto (duplo clique ou modo
+   * escolhido no menu do token) incrementa o `nonce` e o painel aperta o MESMO
+   * "Rolar ataque", com o modo pedido quando existe. O ataque, o alvo e a
+   * economia continuam vindo do painel/servidor; aqui não há payload.
    */
-  const [confirmAttackNonce, setConfirmAttackNonce] = useState(0);
+  const [attackConfirm, setAttackConfirm] = useState<{
+    nonce: number;
+    mode?: CombatRollMode;
+  } | null>(null);
+  /** Prontidão de execução reportada pelo painel (habilita o menu do token). */
+  const [attackExecuteReady, setAttackExecuteReady] = useState(false);
   /**
    * FILTRO DA HOTBAR (6.6M.6.2) — navegação pelos três glifos da dock. O estado
    * vive aqui (a dock só apresenta a seleção e a Hotbar só desenha a lista
@@ -575,12 +582,14 @@ export function CombatTracker({
     setHotbarFilter(null);
     // A escolha de alvo pertence à ação do turno: virar o turno a descarta.
     setTargetCombatantId(null);
+    setAttackExecuteReady(false);
   }, [currentTurnKey]);
 
   // DESMARCAR/TROCAR O ATALHO limpa o alvo: a seleção pertence à AÇÃO escolhida.
   // É estado de UI — nada é enviado, nada é gasto e nenhum ataque em voo muda.
   useEffect(() => {
     setTargetCombatantId(null);
+    setAttackExecuteReady(false);
   }, [hotbarPick]);
   const turnDeathState = current?.deathState ?? null;
   const deathSavePending = Boolean(
@@ -1409,10 +1418,25 @@ export function CombatTracker({
                     selectedTargetId: gridTargetId,
                     onPickTarget: (combatantId) => setTargetCombatantId(combatantId),
                     onClearTarget: () => setTargetCombatantId(null),
-                    // Duplo clique: escolhe o alvo e pede UM envio ao painel.
+                    // Duplo clique: escolhe o alvo e pede UM envio ao painel,
+                    // mantendo o modo de rolagem que já está escolhido.
                     onExecuteTarget: (combatantId) => {
                       setTargetCombatantId(combatantId);
-                      setConfirmAttackNonce((previous) => previous + 1);
+                      setAttackConfirm((previous) => ({ nonce: (previous?.nonce ?? 0) + 1 }));
+                    },
+                    // Menu do token: escolhe o alvo, aplica o modo e executa.
+                    onChooseRollMode: (combatantId: string, mode: CombatRollMode) => {
+                      setTargetCombatantId(combatantId);
+                      setAttackConfirm((previous) => ({
+                        nonce: (previous?.nonce ?? 0) + 1,
+                        mode,
+                      }));
+                    },
+                    executeReady: attackExecuteReady,
+                    // Esc encerra o fluxo inteiro: sem alvo e sem ação escolhida.
+                    onCancelFlow: () => {
+                      setTargetCombatantId(null);
+                      setHotbarPick(null);
                     },
                   }
                 : null
@@ -1518,7 +1542,8 @@ export function CombatTracker({
                       // painel escrevem no MESMO estado do tracker.
                       targetCombatantId={gridTargetId}
                       onTargetChange={setTargetCombatantId}
-                      confirmNonce={confirmAttackNonce}
+                      confirm={attackConfirm}
+                      onReadyChange={setAttackExecuteReady}
                       onClose={() => setHotbarPick(null)}
                       busy={busy}
                       onAttack={attack}

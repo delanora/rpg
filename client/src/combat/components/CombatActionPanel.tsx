@@ -12,6 +12,7 @@ import {
 import { WEAPON_TYPE_LABELS, damageExpression, formatModifier } from '../../dnd';
 import { fetchEffectOptions } from '../../dice/diceApi';
 import { combatantKindIcon } from '../combatVisuals';
+import type { CombatRollMode } from '../gridTargeting';
 import { getSpatialRangePreview } from '../grid/gridApi';
 import { rangeSummary } from '../grid/distanceFormat';
 import type {
@@ -148,11 +149,14 @@ interface CombatActionPanelProps {
   /** Devolve a escolha ao dono — inclusive quando vem do cartão do painel. */
   onTargetChange?: (combatantId: string) => void;
   /**
-   * 6.6M.6.4.2 — CONFIRMAR pelo grid (duplo clique no alvo). É um `nonce`, não
-   * um booleano: cada gesto pede UM envio, e o envio é o mesmo `submitAttack`
-   * do botão "Rolar ataque" — não existe segundo caminho de execução.
+   * 6.6M.6.4.2/.3 — CONFIRMAR pelo grid (duplo clique no alvo ou modo escolhido
+   * no menu do token). É um `nonce`, não um booleano: cada gesto pede UM envio,
+   * e o envio é o mesmo `submitAttack` do botão "Rolar ataque". `mode` ausente
+   * preserva o modo que já está escolhido no painel.
    */
-  confirmNonce?: number;
+  confirm?: { nonce: number; mode?: CombatRollMode } | null;
+  /** Prontidão de execução sobe para o grid habilitar/desabilitar o menu. */
+  onReadyChange?: (ready: boolean) => void;
   /** Fecha o mini fluxo e devolve a faixa de ataque para a hotbar. */
   onClose?: () => void;
   busy: boolean;
@@ -190,7 +194,8 @@ export function CombatActionPanel({
   preset = null,
   targetCombatantId,
   onTargetChange,
-  confirmNonce = 0,
+  confirm = null,
+  onReadyChange,
   onClose,
   busy,
   onAttack,
@@ -314,8 +319,6 @@ export function CombatActionPanel({
   const selectedAmmo = stacks.find((item) => item.id === ammoId) ?? null;
   const ammoMissing = Boolean(ammoType) && ammoTotal === 0;
 
-  const advantage = rollMode === 'advantage';
-  const disadvantage = rollMode === 'disadvantage';
   const economy = attacker?.turnEconomy;
   const continuation = economy?.attackAction && economy.attackAction.attacksMade < economy.attackAction.attacksAllowed ? economy.attackAction.attackActionId : undefined;
   const offhand = attackId.startsWith('offhand:');
@@ -331,14 +334,14 @@ export function CombatActionPanel({
    * munição nem custo — só aperta o mesmo botão. `ready`/`busy` continuam sendo
    * o portão; quem valida alcance, cobertura e economia é o servidor.
    */
-  function submitAttack(): void {
+  function submitAttack(mode: RollMode = rollMode): void {
     if (!ready || busy) return;
     onAttack({
       attackId,
       ...(executingPrepared ? { prepared: true } : !offhand && continuation ? { attackActionId: continuation } : {}),
       targetCombatantId: targetId,
-      advantage,
-      disadvantage,
+      advantage: mode === 'advantage',
+      disadvantage: mode === 'disadvantage',
       ...(adjacentAlly && sneakEligible ? { adjacentAlly: true } : {}),
       ...(attackerChoices && attacker ? { attackerCombatantId: attacker.id } : {}),
       ...(selectedAmmo ? { ammoInventoryId: selectedAmmo.id } : {}),
@@ -355,12 +358,19 @@ export function CombatActionPanel({
    */
   const handledConfirm = useRef(0);
   useEffect(() => {
-    if (!confirmNonce || handledConfirm.current === confirmNonce) return;
-    handledConfirm.current = confirmNonce;
-    submitAttack();
-    // `submitAttack` já lê o estado deste render; só o nonce deve disparar.
+    if (!confirm || handledConfirm.current === confirm.nonce) return;
+    handledConfirm.current = confirm.nonce;
+    // O modo do gesto vale para ESTE envio (e fica escolhido no painel).
+    if (confirm.mode) setRollMode(confirm.mode);
+    submitAttack(confirm.mode ?? rollMode);
+    // `submitAttack` já lê o estado deste render; só o pedido deve disparar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmNonce]);
+  }, [confirm]);
+
+  /** Prontidão sobe para o grid: o menu de modo não executa o que está barrado. */
+  useEffect(() => {
+    onReadyChange?.(ready);
+  }, [ready, onReadyChange]);
 
   const tray = variant === 'tactical-tray';
   // Resumo dos modificadores: só o que existe aparece como legenda do bloco.
@@ -731,7 +741,7 @@ export function CombatActionPanel({
               className="btn btn-primary attack-roll"
               disabled={busy || !ready}
               title={ammoMissing ? 'Sem munição para esta arma.' : undefined}
-              onClick={submitAttack}
+              onClick={() => submitAttack()}
             >
               <Icon name="die" size={16} /> Rolar ataque
             </button>

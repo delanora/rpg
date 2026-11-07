@@ -10,6 +10,12 @@ import type { CombatantDto } from '../types';
  * INTENÇÃO de alvo para o fluxo de ataque que já existe.
  */
 
+/**
+ * Modo de rolagem do ataque escolhido no menu do token (6.6M.6.4.3). É a mesma
+ * união do painel: o gesto não inventa modo nenhum, só escolhe um destes.
+ */
+export type CombatRollMode = 'normal' | 'advantage' | 'disadvantage';
+
 /** O mínimo que o grid precisa saber de um combatente para oferecê-lo como alvo. */
 export type TargetCandidate = Pick<CombatantDto, 'id' | 'spatial'> & { missing?: boolean };
 

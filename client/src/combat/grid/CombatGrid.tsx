@@ -58,7 +58,8 @@ import {
 } from './gridMath';
 import { Icon } from '../../components/Icon';
 import type { MovementAuthority } from '../turnControl';
-import { gridTargetPick } from '../gridTargeting';
+import { gridTargetPick, type CombatRollMode } from '../gridTargeting';
+import { GridRollModePicker } from './GridRollModePicker';
 
 /**
  * TARGETING DIRETO A PARTIR DA HOTBAR (6.6M.6.4) — o grid NÃO executa ataque.
@@ -82,6 +83,15 @@ export interface GridTargeting {
    * nenhuma regra é decidida no cliente.
    */
   onExecuteTarget?: (combatantId: string) => void;
+  /**
+   * 6.6M.6.4.3 — MODO escolhido no menu do token: escolhe o alvo E executa com
+   * esse modo, pelo mesmo envio do botão. O grid não aplica vantagem sozinho.
+   */
+  onChooseRollMode?: (combatantId: string, mode: CombatRollMode) => void;
+  /** Prontidão de execução (vem do painel) — só habilita/desabilita o menu. */
+  executeReady?: boolean;
+  /** Esc: encerra TODO o fluxo — limpa o alvo e a ação escolhida na Hotbar. */
+  onCancelFlow?: () => void;
 }
 
 export interface CombatGridProps {
@@ -1519,6 +1529,13 @@ export function CombatGrid({
       if (endpoint) pickRulerEndpoint(endpoint);
       return;
     }
+    // TARGETING: clique no FUNDO fecha o menu de modo e limpa o alvo escolhido
+    // (não escolhe combatente nem executa nada). O clique DENTRO do menu para
+    // a propagação, então escolher um modo nunca cai aqui.
+    if (targetingActive) {
+      targeting?.onClearTarget();
+      return;
+    }
     if (mode !== 'placement') return;
     if (!isMaster || !selectedId || locked) return;
     const unit = combat.combatants.find((item) => item.id === selectedId);
@@ -1614,11 +1631,11 @@ export function CombatGrid({
       if (event.key === 'Escape') {
         if (ruler || quickRuler) clearRuler();
         if (draft) cancelDraft('Movimento cancelado.');
-        // 6.6M.6.4 — Esc também desfaz a ESCOLHA DE ALVO. É estado de UI: nada
-        // é enviado ao servidor, nenhum recurso é devolvido e o ataque já
-        // confirmado continua sendo do servidor.
+        // 6.6M.6.4.3 — Esc encerra o FLUXO INTEIRO: fecha o menu de modo, limpa
+        // o alvo e desmarca a ação escolhida na Hotbar (o painel desmonta).
+        // Continua sendo estado de UI: nenhum ataque em voo é afetado.
         const liveTargeting = targetingRef.current;
-        if (liveTargeting?.active && liveTargeting.selectedTargetId) liveTargeting.onClearTarget();
+        if (liveTargeting?.active) liveTargeting.onCancelFlow?.();
         return;
       }
       if (event.key === ' ' || event.code === 'Space') {
@@ -1740,7 +1757,7 @@ export function CombatGrid({
         : 'Visualização da cena.'
       : targetingActive
         ? targeting?.selectedTargetId
-          ? 'Alvo escolhido · confirme em Rolar ataque · Esc limpa.'
+          ? 'Escolha o modo de rolagem · duplo clique rola direto · Esc cancela.'
           : 'Selecione um alvo no grid · duplo clique rola o ataque.'
       : movement && !movement.combatantId
         ? (movement.reason ?? 'Nenhum combatente pode se mover agora.')
@@ -1846,6 +1863,31 @@ export function CombatGrid({
     if (rulerTo?.kind === 'combatant' && rulerTo.combatantId === combatantId) return 'target';
     return null;
   };
+
+  /**
+   * MENU DE MODO (6.6M.6.4.3) — âncora na BORDA INFERIOR do footprint do alvo,
+   * projetada em px de TELA. Fica acima do token quando não cabe embaixo e
+   * nunca vaza nas laterais; nada aqui depende de zoom, então o menu não escala.
+   */
+  const rollMenuAnchor = (() => {
+    if (!targetingActive || !targeting?.selectedTargetId) return null;
+    const unit = placed.find((item) => item.id === targeting.selectedTargetId);
+    const space = unit?.spatial?.occupiedSpace;
+    const box = space ? occupiedSpacePixels(space, cellSizeFeet, DEFAULT_PIXELS_PER_CELL) : null;
+    if (!box) return null;
+    const centerX = sceneToScreen(camera, { x: box.left + box.width / 2, y: box.top }).x;
+    const bottom = sceneToScreen(camera, { x: 0, y: box.top + box.height }).y;
+    const top = sceneToScreen(camera, { x: 0, y: box.top }).y;
+    // Medidas do menu em px (mesmas do CSS): só para o clamp de borda.
+    const halfWidth = 88;
+    const height = 62;
+    const left = Math.min(
+      Math.max(centerX, halfWidth + 6),
+      Math.max(viewport.width - halfWidth - 6, halfWidth + 6),
+    );
+    const fitsBelow = bottom + 8 + height <= viewport.height;
+    return { left, top: fitsBelow ? bottom + 8 : Math.max(top - height - 8, 6) };
+  })();
 
   const currentOffscreen =
     currentUnit !== null &&
@@ -2164,6 +2206,20 @@ export function CombatGrid({
               pendingNotice={pendingNotice ?? draftNotice}
               busy={movementBusy}
               onCancel={() => cancelDraft('Movimento cancelado.')}
+            />
+          ) : null}
+
+          {/* MENU DE MODO DE ROLAGEM: acompanha o alvo escolhido no token. */}
+          {rollMenuAnchor ? (
+            <GridRollModePicker
+              left={rollMenuAnchor.left}
+              top={rollMenuAnchor.top}
+              ready={Boolean(targeting?.executeReady)}
+              busy={busy}
+              onChoose={(mode) => {
+                const target = targetingRef.current?.selectedTargetId;
+                if (target) targetingRef.current?.onChooseRollMode?.(target, mode);
+              }}
             />
           ) : null}
 

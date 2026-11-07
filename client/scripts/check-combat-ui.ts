@@ -8529,13 +8529,13 @@ check(
 
 check(
   'SC163) clique no token vira ALVO (sem executar ataque) e Esc desfaz a escolha',
-  targetingGridSource.includes("import { gridTargetPick } from '../gridTargeting';") &&
+  targetingGridSource.includes(
+    "import { gridTargetPick, type CombatRollMode } from '../gridTargeting';",
+  ) &&
     targetingGridSource.includes('const picked = gridTargetPick({') &&
     targetingGridSource.includes('targeting?.onPickTarget(picked)') &&
     targetingGridSource.includes('const liveTargeting = targetingRef.current;') &&
-    targetingGridSource.includes(
-      'if (liveTargeting?.active && liveTargeting.selectedTargetId) liveTargeting.onClearTarget();',
-    ) &&
+    targetingGridSource.includes('if (liveTargeting?.active) liveTargeting.onCancelFlow?.();') &&
     targetingGridSource.includes('targetable={isTargetable(combatant.id)}') &&
     targetingGridSource.includes('targetPicked={targeting?.selectedTargetId === combatant.id}') &&
     targetingGridSource.includes('Selecione um alvo no grid') &&
@@ -8569,17 +8569,17 @@ check(
 
 check(
   'SC165) duplo clique no alvo CONFIRMA pelo MESMO envio do botão (um gesto, um ataque)',
-  targetingPanelSource.includes('function submitAttack(): void {') &&
-    targetingPanelSource.includes('onClick={submitAttack}') &&
+  targetingPanelSource.includes('function submitAttack(mode: RollMode = rollMode): void {') &&
+    targetingPanelSource.includes('onClick={() => submitAttack()}') &&
     targetingPanelSource.includes('const handledConfirm = useRef(0);') &&
-    targetingPanelSource.includes('if (!confirmNonce || handledConfirm.current === confirmNonce) return;') &&
+    targetingPanelSource.includes('if (!confirm || handledConfirm.current === confirm.nonce) return;') &&
     // O envio do gesto NÃO duplica o payload: ele chama a mesma função.
     (targetingPanelSource.match(/onAttack\(\{/g) ?? []).length === 1 &&
+    targetingTrackerSource.includes('const [attackConfirm, setAttackConfirm] = useState<') &&
     targetingTrackerSource.includes(
-      'const [confirmAttackNonce, setConfirmAttackNonce] = useState(0);',
+      'setAttackConfirm((previous) => ({ nonce: (previous?.nonce ?? 0) + 1 }))',
     ) &&
-    targetingTrackerSource.includes('setConfirmAttackNonce((previous) => previous + 1);') &&
-    targetingTrackerSource.includes('confirmNonce={confirmAttackNonce}') &&
+    targetingTrackerSource.includes('confirm={attackConfirm}') &&
     targetingTrackerSource.includes('onExecuteTarget: (combatantId) => {') &&
     // `onConfirm*` continua reservado ao MOVIMENTO (CB275): aqui o gesto EXECUTA.
     targetingGridSource.includes('onExecuteTarget?: (combatantId: string) => void;') &&
@@ -8593,6 +8593,49 @@ check(
     targetingGridSource.includes('duplo clique rola o ataque') &&
     // O token continua sem rolar nada por conta própria.
     !/onAttack|resolveAttack\s*\(/.test(targetingTokenSource),
+);
+
+check(
+  'SC166) clinque no alvo abre o MENU de modo no token; escolher o modo executa; Esc encerra o fluxo',
+  (() => {
+    const picker = source('src/combat/grid/GridRollModePicker.tsx');
+    return (
+      // Três modos do painel, com os mesmos rótulos/ícones (uma só linguagem).
+      picker.includes("key: 'normal'") &&
+      picker.includes("key: 'advantage'") &&
+      picker.includes("key: 'disadvantage'") &&
+      picker.includes("icon: 'sun'") &&
+      picker.includes("icon: 'moon'") &&
+      // Clique no menu não é gesto do mapa (não troca célula, não fecha no fundo).
+      picker.includes('onPointerDown={(event) => event.stopPropagation()}') &&
+      picker.includes('onClick={(event) => event.stopPropagation()}') &&
+      picker.includes('disabled={busy || !ready}') &&
+      // O grid ancora o menu no ALVO escolhido, não em coordenada inventada.
+      targetingGridSource.includes("import { GridRollModePicker } from './GridRollModePicker';") &&
+      targetingGridSource.includes('if (!targetingActive || !targeting?.selectedTargetId) return null;') &&
+      targetingGridSource.includes('occupiedSpacePixels(space, cellSizeFeet, DEFAULT_PIXELS_PER_CELL)') &&
+      targetingGridSource.includes('<GridRollModePicker') &&
+      targetingGridSource.includes('onChooseRollMode?.(target, mode)') &&
+      gridCssSource.includes('.grid-roll-menu {') &&
+      gridCssSource.includes('.grid-roll-menu-btn {') &&
+      // Esc encerra TODO o fluxo: alvo + ação escolhida na Hotbar.
+      targetingGridSource.includes('if (liveTargeting?.active) liveTargeting.onCancelFlow?.();') &&
+      targetingTrackerSource.includes('onCancelFlow: () => {') &&
+      targetingTrackerSource.includes('setHotbarPick(null);') &&
+      // O modo escolhido no token entra no MESMO envio (adv/dis) e é aplicado
+      // ao estado do painel; a prontidão vem do painel, nunca do grid.
+      targetingTrackerSource.includes(
+        'onChooseRollMode: (combatantId: string, mode: CombatRollMode) => {',
+      ) &&
+      targetingPanelSource.includes('if (confirm.mode) setRollMode(confirm.mode);') &&
+      targetingPanelSource.includes('submitAttack(confirm.mode ?? rollMode);') &&
+      targetingPanelSource.includes('advantage: mode === \'advantage\',') &&
+      targetingPanelSource.includes('onReadyChange?.(ready);') &&
+      targetingGridSource.includes('ready={Boolean(targeting?.executeReady)}') &&
+      // Escolher modo não gasta nada no grid; quem cobra é o servidor.
+      !/resolveAttack\s*\(/.test(picker)
+    );
+  })(),
 );
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);

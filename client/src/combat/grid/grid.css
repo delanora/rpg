@@ -644,6 +644,70 @@
 }
 
 /*
+ * MENU DE MODO DE ROLAGEM (6.6M.6.4.3) — pequeno, logo abaixo do token do alvo.
+ * Vive FORA da camada de pan/zoom (posição em px de tela), então não escala com
+ * o zoom e não fica sob o token: o grid só ajusta a âncora às bordas.
+ */
+.grid-roll-menu {
+  position: absolute;
+  z-index: 8;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 0.3rem;
+  min-width: 10.5rem;
+  padding: 0.4rem 0.45rem 0.45rem;
+  border: 1px solid var(--gold-hair);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #2a1c12, #170f09);
+  box-shadow:
+    0 12px 26px -14px rgba(0, 0, 0, 0.9),
+    inset 0 0 0 1px rgba(246, 217, 119, 0.12);
+  color: #f2e3c4;
+}
+
+.grid-roll-menu-title {
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #c6a878;
+}
+
+.grid-roll-menu-options {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.grid-roll-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.22rem 0.4rem;
+  border: 1px solid #4a3826;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #ecdcbd;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.grid-roll-menu-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(224, 184, 63, 0.14);
+  color: #fff;
+}
+
+.grid-roll-menu-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.grid-roll-menu-btn .icon {
+  color: var(--gold);
+}
+
+/*
  * Círculo do token: CÍRCULO INSCRITO no footprint (6.6M.4.1.4).
  *
  * Medium/Small = 1 célula, Large = 2×2, Huge = 3×3, Gargantua = 4×4. O tamanho
