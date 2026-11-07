@@ -993,21 +993,32 @@ export function CombatTracker({
             )}
           </>
         }
-        tools={
+        masterTools={isMaster ? (
           <>
             {/* Dano/cura manual do Mestre: recolhido, sem ocupar o centro do
-                combate, mas a UM clique de distância. */}
-            {isMaster ? (
-              <details className="combat-tools">
-                <summary>
-                  <Icon name="heart" size={13} /> Ferramentas do Mestre — dano e cura
-                </summary>
-                <ManualHpPanel
-                  combatants={combat.combatants}
-                  busy={busy}
-                  onApply={(input) => void run(() => applyManualHp(input))}
-                />
-              </details>
+                combate, mas a UM clique de distância. A região INTEIRA só é
+                montada para o Mestre — para o jogador ela não existe (nada de
+                faixa vazia escondida por CSS). */}
+            <details className="combat-tools">
+              <summary>
+                <Icon name="heart" size={13} /> Ferramentas do Mestre — dano e cura
+              </summary>
+              <ManualHpPanel
+                combatants={combat.combatants}
+                busy={busy}
+                onApply={(input) => void run(() => applyManualHp(input))}
+              />
+            </details>
+
+            {/* Ajuste explícito da economia: EXCEÇÃO administrativa, com motivo
+                registrado. O fluxo normal continua na barra persistente. */}
+            {actingCombatant ? (
+              <MasterEconomyPanel
+                combat={combat}
+                combatant={actingCombatant}
+                busy={busy}
+                onRun={(action) => void run(action)}
+              />
             ) : null}
 
             {/*
@@ -1036,8 +1047,13 @@ export function CombatTracker({
                 }
               />
             ) : null}
-
-            {/* Atalhos da ficha: linha compacta, sem competir com o ataque. */}
+          </>
+        ) : undefined}
+        tools={
+          <>
+            {/* Atalhos da ficha: linha compacta, sem competir com o ataque.
+                Estes NÃO são ferramentas administrativas: continuam aqui para
+                os dois papéis, conforme a autoridade de cada um. */}
             {onOpenSection ? (
               <div className="combat-shortcuts combat-shortcuts-inline">
                 {COMBAT_SHORTCUTS.map((shortcut) => {
@@ -1076,14 +1092,6 @@ export function CombatTracker({
                     name: item.name,
                   }))}
                 />
-                {isMaster ? (
-                  <MasterEconomyPanel
-                    combat={combat}
-                    combatant={actingCombatant}
-                    busy={busy}
-                    onRun={(action) => void run(action)}
-                  />
-                ) : null}
               </details>
             ) : null}
           </>
