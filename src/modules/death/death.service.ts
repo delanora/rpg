@@ -7,6 +7,7 @@ import { ServerEvents, type SheetUpdatedPayload } from '../../realtime/events.js
 import { characterMaxHp, characterRacialAdjustments } from '../characters/characters.dto.js';
 import { toSheetDto } from '../characters/characters.service.js';
 import { hideMasterPrivateState, orderCombatants, toCombatDto, type CombatSourced } from '../combat/combat.dto.js';
+import { findCombatForDto } from '../combat/combat-load.js';
 import { appendCombatJournal } from '../combat/combat-journal.js';
 import { mechanicalStateOf, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
 import {
@@ -127,20 +128,14 @@ export interface DeathDto {
 /* Carregamento                                                                */
 /* -------------------------------------------------------------------------- */
 
-/** Combate completo (mesmas relações do combate em `combat.service`). */
+/**
+ * Combate completo — MESMO carregador canônico do `/api/combat/active`
+ * (6.6M.8.2). Este módulo já publicou `combat:updated` sem `scene` e derrubou
+ * uma cena `grid-2d` para `assisted` depois de um Teste contra a Morte; agora
+ * não existe include paralelo: quem projeta o combate lê a mesma fonte.
+ */
 function findCombatFull(id: string, db: Prisma.TransactionClient = prisma) {
-  return db.combat.findUnique({
-    where: { id },
-    include: {
-      locality: { select: { id: true, name: true } },
-      combatants: {
-        include: {
-          character: { include: { user: { select: { username: true } } } },
-          creature: true,
-        },
-      },
-    },
-  });
+  return findCombatForDto(id, db);
 }
 
 /** Combatente ATIVO (não encerrado) de um personagem. */

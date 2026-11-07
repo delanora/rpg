@@ -1,5 +1,5 @@
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
-import { effectModifierSetsFor, publishEffects } from '../effects/effects.service.js';
+import { publishEffects } from '../effects/effects.service.js';
 import { rollSelectedOptional } from '../dice/effect-optional.js';
 import {
   effectArmorClassBonuses,
@@ -84,6 +84,7 @@ import {
 } from './cover.service.js';
 import { applyCoverConfirmation, coverSnapshotOf } from './cover.js';
 import { withSpatial } from './spatial/spatial-projection.js';
+import { combatInclude, loadCombatById, withEffectModifiers } from './combat-load.js';
 import { combatSpatialIndex, evaluateEntityDistance } from './spatial/spatial-distance.service.js';
 import { evaluateRange } from './spatial/spatial-range.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
@@ -136,58 +137,15 @@ const ACTIVE_STATUSES: CombatStatus[] = ['PENDING_INITIATIVE', 'ACTIVE'];
 function findCombat(where: { id?: string; status?: { in: CombatStatus[] } }, db: Prisma.TransactionClient = prisma) {
   return db.combat.findFirst({
     where,
-    include: {
-      locality: { select: { id: true, name: true } },
-      // CENA ESPACIAL (6.6L.4.1.1): configuração estrutural e paredes vêm da
-      // MESMA consulta do combate — o cliente não precisa inventar join, e a
-      // cena é a única fonte estrutural quando `sceneId` existe.
-      scene: {
-        include: { obstacles: { orderBy: { createdAt: 'asc' } } },
-      },
-      combatants: {
-        include: {
-          character: { include: { user: { select: { username: true } } } },
-          creature: true,
-        },
-      },
-    },
+    // Relações do DTO vêm do carregador canônico (6.6M.8.2): um `include` só
+    // garante que quem publica `combat:updated` projete a MESMA cena do F5.
+    include: combatInclude,
   });
 }
 
-/**
- * Anexa a cada combatente o resumo dos EFEITOS ativos (Fase 6.5B) numa ÚNICA
- * consulta em lote. Combatente de personagem usa a chave da FICHA, então o
- * mesmo efeito alimenta ficha e combate sem cópia. Sem isso, CA/deslocamento
- * do DTO ficariam sem os modificadores.
- */
-async function withEffectModifiers(
-  combat: CombatSourced,
-  db: Prisma.TransactionClient = prisma,
-): Promise<CombatSourced> {
-  const entities = combat.combatants.map((combatant) =>
-    combatant.characterId
-      ? { kind: 'character' as const, id: combatant.characterId }
-      : { kind: 'combatant' as const, id: combatant.id },
-  );
-  const sets = await effectModifierSetsFor(entities, db);
-  return {
-    ...combat,
-    combatants: combat.combatants.map((combatant) => ({
-      ...combatant,
-      effectModifiers: sets.get(
-        combatant.characterId ? `character:${combatant.characterId}` : `combatant:${combatant.id}`,
-      ),
-    })),
-  };
-}
-
-export async function loadCombatById(id: string, db: Prisma.TransactionClient = prisma): Promise<CombatSourced> {
-  const combat = await findCombat({ id }, db);
-  if (!combat) throw new HttpError('Combate não encontrado.', 404);
-  // Efeitos primeiro (CA/deslocamento derivados); a projeção espacial deriva o
-  // tamanho BASE de cada combatente da raça/cadastro — nunca da posição.
-  return withSpatial(await withEffectModifiers(combat, db), db);
-}
+// `loadCombatById`/`withEffectModifiers`/`combatInclude` vivem no carregador
+// canônico (`combat-load.ts`) e são reexportados aqui para os demais módulos.
+export { loadCombatById };
 
 async function requireActiveCombat(): Promise<CombatSourced> {
   const combat = await findCombat({ status: { in: ACTIVE_STATUSES } });
