@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from '../../components/Icon';
 import { ConditionHistoryModal } from '../../components/ConditionHistoryModal';
+import { formatModifier } from '../../dnd';
 import type { ConditionEffects, MechanicalState, TurnEconomy } from '../../types';
 import type { HotbarFilter } from '../hotbar';
 import { CombatStateBadges } from './CombatStateBadges';
@@ -38,6 +39,21 @@ interface PlayerCombatDockProps {
    * servidor.
    */
   waiting?: boolean;
+  /**
+   * PRÉ-INICIATIVA (6.6M.7): o personagem está no combate e ainda NÃO rolou.
+   *
+   * A dock é a MESMA — o que muda é o miolo dela: os slots continuam visíveis
+   * porém temporariamente indisponíveis (véu + desfoque) e o CTA de rolagem
+   * flutua ancorado na área da Hotbar, nunca como card solto no corpo da tela.
+   * Sem este objeto a dock é a de sempre. Nada aqui rola nada: `onRoll` só abre
+   * o pedido que já existe e o servidor continua dono da iniciativa.
+   */
+  awaitingInitiative?: {
+    /** Modificador de Destreza — exibição do `1d20 + mod` sugerido. */
+    modifier: number;
+    busy?: boolean;
+    onRoll: () => void;
+  } | null;
   /** Filtro ativo da Hotbar (navegação pelos três glifos). */
   hotbarFilter?: HotbarFilter | null;
   onToggleHotbarFilter?: (filter: HotbarFilter) => void;
@@ -102,6 +118,11 @@ function meters(value: number): string {
  * custo, com `aria-pressed`) e a dock ganhou o estado de ESPERA — mesmo fora do
  * turno ela continua montada, com os recursos reais (Reação inclusive) e a
  * Hotbar reduzida à animação de espera, sem oferecer ação executável.
+ *
+ * 6.6M.7: a MESMA dock atende o estado PRÉ-INICIATIVA. Antes de rolar, ela fica
+ * montada com o miolo bloqueado (slots visíveis, desfocados e inertes) e o CTA
+ * de rolagem por cima da Hotbar — uma composição só, nem tela herdada nem
+ * terceira variação visual.
  */
 export function PlayerCombatDock({
   name,
@@ -119,6 +140,7 @@ export function PlayerCombatDock({
   actionMenu,
   hotbar,
   waiting = false,
+  awaitingInitiative = null,
   hotbarFilter = null,
   onToggleHotbarFilter,
   utilities,
@@ -211,7 +233,9 @@ export function PlayerCombatDock({
 
   return (
     <section
-      className="combat-dock"
+      className={
+        awaitingInitiative ? 'combat-dock is-awaiting-initiative' : 'combat-dock'
+      }
       aria-label="Dock de combate do jogador"
       aria-busy={busy || undefined}
     >
@@ -485,8 +509,44 @@ export function PlayerCombatDock({
         )}
       </div>
 
-      {/* HOTBAR — o centro funcional e visual: poço próprio, slots de ~55px. */}
-      <div className="dock-hotbar">{hotbar}</div>
+      {/* HOTBAR — o centro funcional e visual: poço próprio, slots de ~55px.
+          PRÉ-INICIATIVA (6.6M.7): os slots continuam ali (o miolo recebe véu e
+          desfoque, e fica `inert`) e o CTA de rolagem flutua DENTRO desta
+          célula — ancorado na Hotbar, sem empurrar layout e sem cortar tooltip
+          de slot (que só existe quando os slots estão interativos). */}
+      <div
+        className={
+          awaitingInitiative ? 'dock-hotbar is-awaiting-initiative' : 'dock-hotbar'
+        }
+      >
+        <div className="dock-hotbar-track" inert={Boolean(awaitingInitiative)}>
+          {hotbar}
+        </div>
+
+        {awaitingInitiative ? (
+          <div
+            className="dock-initiative-overlay"
+            role="group"
+            aria-label="Rolar iniciativa"
+          >
+            <span className="dock-initiative-copy">
+              <span className="dock-initiative-eyebrow">Aguardando a iniciativa</span>
+              <span className="dock-initiative-text">
+                Role para entrar na ordem —{' '}
+                <strong>1d20 {formatModifier(awaitingInitiative.modifier)}</strong>
+              </span>
+            </span>
+            <button
+              type="button"
+              className="btn btn-primary dock-initiative-roll"
+              disabled={awaitingInitiative.busy}
+              onClick={awaitingInitiative.onRoll}
+            >
+              <Icon name="die" size={15} /> Rolar iniciativa
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       {/* UTILITÁRIOS — bloco delimitado à direita: 3×2 e Encerrar turno embaixo. */}
       <div className="dock-utilities">{utilities}</div>

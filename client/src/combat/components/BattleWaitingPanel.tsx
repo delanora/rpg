@@ -67,13 +67,23 @@ export function BattleWaitingPanel({ name, kind, isMaster }: BattleWaitingPanelP
  * enquanto o turno é de outro combatente. Não é overlay, não bloqueia retrato,
  * utilitários, painel de Reação, salvaguardas pendentes nem Testes Contra a
  * Morte: ocupa só a coluna central (o lugar dos slots).
+ *
+ * Sem `name` (6.6M.7) não existe turno para citar: é o caso de quem JÁ rolou a
+ * iniciativa e espera os demais. A frase muda, a composição não — a animação
+ * continua a mesma e igualmente centrada.
  */
 export function BattleWaitingInline({ name }: { name: string }) {
   return (
     <div className="hotbar-waiting" role="status">
       <BattleWaitingAnim />
       <p className="hotbar-waiting-text">
-        Aguardando <strong>{name}</strong> agir…
+        {name ? (
+          <>
+            Aguardando <strong>{name}</strong> agir…
+          </>
+        ) : (
+          'Aguardando a ordem de iniciativa…'
+        )}
       </p>
     </div>
   );

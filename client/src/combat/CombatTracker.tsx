@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError } from '../api';
 import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
-import { formatModifier } from '../dnd';
 import { fetchDeath, rollNpcDeathSave } from '../deathApi';
 import type { Attack, CombatDto, CombatResolutionCardDto, ConcentrationSave, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser } from '../types';
 import {
@@ -736,108 +735,17 @@ export function CombatTracker({
     })();
   }
 
-  // --- Aguardando iniciativas ------------------------------------------------
-  if (combat.status === 'PENDING_INITIATIVE') {
-    return (
-      <section className="combat-panel">
-        <CombatIntro combatId={combat.id} />
-
-        <CombatWorkspace
-          header={
-            <>
-              <div className="combat-workspace-title">
-                <h2>
-                  <Icon name="sword" size={18} /> Combate — iniciativa
-                </h2>
-              </div>
-              <span className="combat-round">
-                {rolledCount}/{combat.combatants.length} rolaram
-              </span>
-              <CombatTurnPanel
-                variant="compact"
-                combatant={null}
-                round={combat.round}
-                isMyTurn={false}
-                empty={<span className="empty-hint">A ordem nasce quando todos rolarem.</span>}
-              />
-            </>
-          }
-          initiative={
-            <InitiativeTimeline
-              combat={combat}
-              isMaster={isMaster}
-              busy={busy}
-              onRollFor={(combatantId) => void run(() => rollInitiativeFor(combatantId))}
-            />
-          }
-          scene={
-            /* 6.6M.1 — cena espacial também na preparação (placement é setup). */
-            <CombatGrid
-              combat={combat}
-              isMaster={isMaster}
-              busy={busy}
-              movement={movementAuthority}
-              onCombatChange={onCombatChange}
-              onError={onError}
-            />
-          }
-          log={
-            <CombatLog
-              log={log}
-              economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
-              requests={resolutionRequests}
-              resolutionBusyId={resolutionBusyId}
-              onRollSpellSave={(card, selected, visibility) =>
-                void rollSpellSave(card, selected, visibility)
-              }
-              onDeclineSpellSave={(card) => void declineResolution(card)}
-              onRollDeathSave={(card) => void rollDeathSaveCard(card)}
-            />
-          }
-          action={
-            !isMaster && myCombatant && !myCombatant.rolled ? (
-              <div className="combat-block">
-                <div className="initiative-prompt">
-                  <p>
-                    <Icon name="bolt" size={16} /> Role sua iniciativa:{' '}
-                    <strong>1d20 {formatModifier(myCombatant.dexterityMod)}</strong>
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    disabled={busy}
-                    onClick={() => void run(rollMyInitiative)}
-                  >
-                    <Icon name="die" size={15} /> Rolar iniciativa
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="combat-block">
-                <p className="empty-hint">
-                  {!isMaster && myCombatant?.rolled
-                    ? `Você rolou ${myCombatant.initiative} de iniciativa. Aguardando os demais...`
-                    : !isMaster && !myCombatant
-                      ? 'Você não participa deste combate.'
-                      : 'A ordem é montada automaticamente assim que todos tiverem rolado.'}
-                </p>
-              </div>
-            )
-          }
-          tools={
-            isMaster ? (
-              <p className="section-note">
-                Role pelas criaturas e por quem estiver ausente. A ordem é montada
-                automaticamente assim que todos tiverem rolado.
-              </p>
-            ) : undefined
-          }
-          resourceBar={<TurnResourceBar active={false} isMaster={isMaster} />}
-        />
-      </section>
-    );
-  }
-
+  /**
+   * PRÉ-INICIATIVA (6.6M.7) — o personagem participa do combate e ainda NÃO
+   * rolou: a dock fica montada com o miolo temporariamente indisponível e o
+   * CTA flutua sobre a Hotbar. É apresentação pura: rolar continua sendo o
+   * MESMO pedido (`rollMyInitiative`) e o servidor segue dono da ordem.
+   */
+  const preInitiativeRoll =
+    !isMaster && combat.status === 'PENDING_INITIATIVE' && myCombatant && !myCombatant.rolled
+      ? myCombatant
+      : null;
+  const awaitingInitiative = preInitiativeRoll !== null;
   /**
    * DOCK DO JOGADOR (6.6M.6.2) — montada enquanto o personagem participa do
    * combate ativo, inclusive FORA do próprio turno (estado de espera).
@@ -850,8 +758,12 @@ export function CombatTracker({
    */
   const myDeathTurn = showDeathTurn && isMyTurn;
   const dockCombatant = !isMaster && myCombatant && !myDeathTurn ? myCombatant : null;
-  /** Espera: a dock existe, mas o turno é de outro combatente. */
-  const dockWaiting = Boolean(dockCombatant) && !ownTurn;
+  /**
+   * Espera: a dock existe, mas o turno é de outro combatente. Na
+   * PRÉ-INICIATIVA a espera NÃO entra — ali o estado próprio é o miolo
+   * bloqueado com o CTA de rolagem por cima.
+   */
+  const dockWaiting = Boolean(dockCombatant) && !ownTurn && !awaitingInitiative;
   const dockAccess = dockCombatant
     ? turnResourceAccess({
         active: true,
@@ -920,7 +832,18 @@ export function CombatTracker({
         busy={busy}
         // ESPERA (6.6M.6.2): a Hotbar dá lugar à animação da bandeja tática e
         // os glifos passam a consulta — sem ação executável fora do turno.
-        waiting={dockWaiting}
+        waiting={dockWaiting || awaitingInitiative}
+        // PRÉ-INICIATIVA (6.6M.7): o MESMO pedido de rolagem de sempre, agora
+        // ancorado na Hotbar — sem segundo fluxo de iniciativa.
+        awaitingInitiative={
+          preInitiativeRoll
+            ? {
+                modifier: preInitiativeRoll.dexterityMod,
+                busy,
+                onRoll: () => void run(rollMyInitiative),
+              }
+            : null
+        }
         hotbarFilter={hotbarFilter}
         onToggleHotbarFilter={toggleHotbarFilter}
         // O MENU DE AÇÃO de sempre: Disparada, Esquivar, Preparar, Levantar e
@@ -949,7 +872,9 @@ export function CombatTracker({
             // "ver todas"), nunca o aviso legado de "sem ataques".
             <CombatHotbar
               entries={hotbarVisible}
-              busy={busy}
+              // Antes da iniciativa os slots são APRESENTAÇÃO: `busy` os desabilita
+              // (o miolo ainda recebe véu/desfoque e fica `inert` na dock).
+              busy={busy || awaitingInitiative}
               filter={hotbarFilter}
               selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}
               onClearFilter={() => setHotbarFilter(null)}
@@ -1104,6 +1029,109 @@ export function CombatTracker({
       ) : null}
     </>
   );
+
+  // --- Aguardando iniciativas ------------------------------------------------
+  /**
+   * PRÉ-INICIATIVA (6.6M.7) — a MESMA dock, a MESMA geometria.
+   *
+   * O jogador que ainda não rolou deixa de ver a composição herdada: iniciativa,
+   * grid, registro e a dock nova convivem desde o primeiro frame. A única
+   * diferença é o MIOLO da dock — os slots ficam visivelmente indisponíveis e o
+   * CTA de rolagem flutua sobre a Hotbar (nunca como card solto no corpo).
+   *
+   * Quem já rolou e espera os demais cai na espera normal, sem overlay; o Mestre
+   * continua exatamente como estava (a dock e o overlay são só do jogador).
+   */
+  if (combat.status === 'PENDING_INITIATIVE') {
+    return (
+      <section className="combat-panel">
+        <CombatIntro combatId={combat.id} />
+
+        <CombatWorkspace
+          header={
+            <>
+              <div className="combat-workspace-title">
+                <h2>
+                  <Icon name="sword" size={18} /> Combate — iniciativa
+                </h2>
+              </div>
+              <span className="combat-round">
+                {rolledCount}/{combat.combatants.length} rolaram
+              </span>
+              <CombatTurnPanel
+                variant="compact"
+                combatant={null}
+                round={combat.round}
+                isMyTurn={false}
+                empty={<span className="empty-hint">A ordem nasce quando todos rolarem.</span>}
+              />
+            </>
+          }
+          initiative={
+            <InitiativeTimeline
+              combat={combat}
+              isMaster={isMaster}
+              busy={busy}
+              onRollFor={(combatantId) => void run(() => rollInitiativeFor(combatantId))}
+            />
+          }
+          scene={
+            /* 6.6M.1 — cena espacial também na preparação (placement é setup). */
+            <CombatGrid
+              combat={combat}
+              isMaster={isMaster}
+              busy={busy}
+              movement={movementAuthority}
+              onCombatChange={onCombatChange}
+              onError={onError}
+            />
+          }
+          log={
+            <CombatLog
+              log={log}
+              economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
+              requests={resolutionRequests}
+              resolutionBusyId={resolutionBusyId}
+              onRollSpellSave={(card, selected, visibility) =>
+                void rollSpellSave(card, selected, visibility)
+              }
+              onDeclineSpellSave={(card) => void declineResolution(card)}
+              onRollDeathSave={(card) => void rollDeathSaveCard(card)}
+            />
+          }
+          action={
+            /* O CTA do jogador saiu do corpo da tela: ele flutua sobre a Hotbar
+               da dock. Sem ele aqui a tray nem é montada e o grid herda a altura. */
+            !isMaster && awaitingInitiative ? null : (
+              <div className="combat-block">
+                <p className="empty-hint">
+                  {!isMaster && myCombatant?.rolled
+                    ? `Você rolou ${myCombatant.initiative} de iniciativa. Aguardando os demais...`
+                    : !isMaster && !myCombatant
+                      ? 'Você não participa deste combate.'
+                      : 'A ordem é montada automaticamente assim que todos tiverem rolado.'}
+                </p>
+              </div>
+            )
+          }
+          tools={
+            isMaster ? (
+              <p className="section-note">
+                Role pelas criaturas e por quem estiver ausente. A ordem é montada
+                automaticamente assim que todos tiverem rolado.
+              </p>
+            ) : undefined
+          }
+          dock={dockNode}
+          resourceBar={
+            /* Com a dock montada ela é a superfície do jogador nesta fase; a
+               barra persistente continua só para o Mestre. */
+            dockCombatant ? undefined : <TurnResourceBar active={false} isMaster={isMaster} />
+          }
+        />
+      </section>
+    );
+  }
 
   // --- Combate ativo ----------------------------------------------------------
   return (

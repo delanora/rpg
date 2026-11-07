@@ -21,6 +21,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ConditionBadges } from '../src/combat/components/ConditionBadges';
 import { CombatStateBadges } from '../src/combat/components/CombatStateBadges';
 import { CombatHotbar } from '../src/combat/components/CombatHotbar';
+import { PlayerCombatDock } from '../src/combat/components/PlayerCombatDock';
 import { DeathCounter } from '../src/death/DeathCounter';
 import { DeathSavePanel } from '../src/combat/components/DeathSavePanel';
 import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel';
@@ -6620,7 +6621,9 @@ check(
     // Mestre e fora do ciclo de morte do próprio personagem (onde a barra
     // persistente e o painel de morte assumem).
     trackerSource.includes('!isMaster && myCombatant && !myDeathTurn') &&
-      trackerSource.includes('const dockWaiting = Boolean(dockCombatant) && !ownTurn;') &&
+      trackerSource.includes(
+        'const dockWaiting = Boolean(dockCombatant) && !ownTurn && !awaitingInitiative;',
+      ) &&
       trackerSource.includes('<PlayerCombatDock') &&
       // Escolher um slot não resolve nada: nenhum endpoint no componente.
       !/\b(resolveAttack|fetch)\w*\(/.test(hotbarComponentSource) &&
@@ -7380,7 +7383,7 @@ check(
     trackerSource.includes(
       'const dockCombatant = !isMaster && myCombatant && !myDeathTurn ? myCombatant : null;',
     ) &&
-      trackerSource.includes('waiting={dockWaiting}') &&
+      trackerSource.includes('waiting={dockWaiting || awaitingInitiative}') &&
       trackerSource.includes("<BattleWaitingInline name={current?.name ?? ''} />") &&
       // UMA implementação da animação: a mesma usada pela bandeja tática.
       (waitingPanelSource.match(/className="battle-waiting-anim"/g) ?? []).length === 1 &&
@@ -7765,6 +7768,136 @@ check(
       hotbarSelectedMarkup.includes('data-slot="1" aria-pressed="true"') &&
       // Os handlers continuam os mesmos: nenhum botão novo, nenhum sem ação.
       (hotbarMarkup.match(/<button/g) ?? []).length === 3,
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.7 — dock unificada no estado PRÉ-INICIATIVA.                       */
+  /* ---------------------------------------------------------------------- */
+
+  // Renderização REAL da MESMA dock nos dois estados: é o markup que prova que
+  // o overlay só existe antes da rolagem e que a Hotbar continua por baixo.
+  const dockProbeProps = {
+    name: 'Aria',
+    hpCurrent: 12,
+    hpMax: 20,
+    armorClass: 15,
+    mechanicalState: { conditions: [], exhaustionLevel: 0, log: [] },
+    conditionEffects: { exhaustionEnabled: false, labels: {} } as never,
+    actionMenu: null,
+    hotbar: createElement('div', { className: 'hotbar-slots-probe' }),
+    utilities: null,
+    movement: { remaining: 0, budget: 0 },
+    movementControl: null,
+  };
+  /** SSR separa textos vizinhos com comentários: a comparação limpa a marca. */
+  const stampDock = (markup: string): string => markup.replace(/<!-- -->/g, '');
+  const preRollDockMarkup = stampDock(
+    renderToStaticMarkup(
+      createElement(PlayerCombatDock, {
+        ...dockProbeProps,
+        awaitingInitiative: { modifier: 3, onRoll: () => {} },
+      }),
+    ),
+  );
+  const readyDockMarkup = stampDock(
+    renderToStaticMarkup(
+      createElement(PlayerCombatDock, { ...dockProbeProps, awaitingInitiative: null }),
+    ),
+  );
+
+  check(
+    'SC142) pré-iniciativa usa a MESMA dock: o card solto de rolagem saiu do corpo',
+    // O CTA herdado (card no centro) não existe mais…
+    !trackerSource.includes('initiative-prompt') &&
+      !trackerSource.includes('Role sua iniciativa:') &&
+      // …e a fase pré-iniciativa monta a dock do jogador, com UMA barra só.
+      trackerSource.includes('dock={dockNode}') &&
+      trackerSource.includes(
+        'dockCombatant ? undefined : <TurnResourceBar active={false} isMaster={isMaster} />',
+      ) &&
+      // UMA dock e UM pedido de rolagem: nenhum segundo fluxo de iniciativa.
+      (trackerSource.match(/<PlayerCombatDock/g) ?? []).length === 1 &&
+      (trackerSource.match(/run\(rollMyInitiative\)/g) ?? []).length === 1 &&
+      // O Mestre NÃO herda o estado: a dock continua restrita ao jogador.
+      trackerSource.includes(
+        "!isMaster && combat.status === 'PENDING_INITIATIVE' && myCombatant && !myCombatant.rolled",
+      ),
+  );
+
+  check(
+    'SC143) CTA de iniciativa flutua ANCORADO na Hotbar, dentro da célula de 81px',
+    workspaceRule('.dock-hotbar').includes('position: relative;') &&
+      workspaceRule('.dock-initiative-overlay').includes('position: absolute;') &&
+      workspaceRule('.dock-initiative-overlay').includes('inset: 0;') &&
+      workspaceRule('.dock-initiative-overlay').includes('z-index: 2;') &&
+      // Nada de overlay de tela inteira na dock.
+      !workspaceRule('.dock-initiative-overlay').includes('position: fixed') &&
+      !workspaceRule('.combat-dock').includes('position: fixed') &&
+      // Geometria aprovada intacta: a dock NÃO cresce para caber o CTA.
+      workspaceRule('.combat-dock').includes('grid-template-rows: 5.0625rem 1.8125rem;') &&
+      workspaceRule('.combat-dock').includes("'portrait resources hotbar utilities'") &&
+      // Miolo visivelmente indisponível: desfoque + dessaturação + véu.
+      workspaceRule('.dock-hotbar-track').includes('height: 100%;') &&
+      workspaceRule('.dock-hotbar.is-awaiting-initiative .dock-hotbar-track').includes(
+        'filter: blur(1.5px) saturate(0.45) brightness(0.6);',
+      ) &&
+      workspaceRule('.dock-hotbar.is-awaiting-initiative::after').includes(
+        'background: linear-gradient(',
+      ),
+  );
+
+  check(
+    'SC144) antes de rolar os slots ficam bloqueados e o CTA é a única ação',
+    trackerSource.includes('busy={busy || awaitingInitiative}') &&
+      trackerSource.includes(
+        'const dockWaiting = Boolean(dockCombatant) && !ownTurn && !awaitingInitiative;',
+      ) &&
+      // Recursos não sugerem uso: os glifos entram no mesmo estado neutro.
+      trackerSource.includes('waiting={dockWaiting || awaitingInitiative}') &&
+      dockSource.includes('inert={Boolean(awaitingInitiative)}') &&
+      dockSource.includes('disabled={awaitingInitiative.busy}') &&
+      // Texto curto + rolagem sugerida, com o modificador do personagem.
+      dockSource.includes('1d20 {formatModifier(awaitingInitiative.modifier)}') &&
+      dockSource.includes('Role para entrar na ordem —') &&
+      // Encerrar turno não compete com o CTA.
+      workspaceRule('.combat-dock.is-awaiting-initiative .dock-end-turn:disabled').includes(
+        'opacity: 0.35;',
+      ),
+  );
+
+  check(
+    'SC145) depois de rolar o overlay some e a espera volta CENTRALIZADA',
+    dockSource.includes('{awaitingInitiative ? (') &&
+      dockSource.includes(') : null}') &&
+      trackerSource.includes('preInitiativeRoll') &&
+      // Já rolou + combate se formando: espera normal, sem overlay de rolagem.
+      waitingPanelSource.includes("'Aguardando a ordem de iniciativa…'") &&
+      waitingPanelSource.includes('Aguardando <strong>{name}</strong> agir…') &&
+      // A animação de espera continua centrada na área reservada.
+      workspaceRule('.hotbar-waiting').includes('justify-content: center;') &&
+      workspaceRule('.hotbar-waiting').includes('align-items: center;') &&
+      !workspaceRule('.hotbar-waiting').includes('position: absolute') &&
+      // UMA animação para a espera (dock e bandeja tática usam a mesma).
+      (waitingPanelSource.match(/className="battle-waiting-anim"/g) ?? []).length === 1,
+  );
+
+  check(
+    'SC146) dock renderizada: overlay de rolagem só na pré-iniciativa, com 1d20 +3',
+    preRollDockMarkup.includes('combat-dock is-awaiting-initiative') &&
+      preRollDockMarkup.includes('dock-hotbar is-awaiting-initiative') &&
+      preRollDockMarkup.includes('dock-initiative-overlay') &&
+      preRollDockMarkup.includes('Rolar iniciativa') &&
+      preRollDockMarkup.includes('1d20 +3') &&
+      // Os slots continuam na árvore (visíveis por baixo do véu), porém inertes.
+      preRollDockMarkup.includes('hotbar-slots-probe') &&
+      preRollDockMarkup.includes('inert=""') &&
+      // A espera NÃO ocupa a pré-iniciativa: ali quem fala são os slots.
+      !preRollDockMarkup.includes('hotbar-waiting') &&
+      // Rolada a iniciativa: sem overlay, sem véu, sem bloqueio.
+      !readyDockMarkup.includes('dock-initiative-overlay') &&
+      !readyDockMarkup.includes('is-awaiting-initiative') &&
+      readyDockMarkup.includes('hotbar-slots-probe') &&
+      !readyDockMarkup.includes('inert='),
   );
 
   check(

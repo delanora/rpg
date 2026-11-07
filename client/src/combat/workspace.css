@@ -1565,6 +1565,10 @@
   align-self: stretch;
   display: grid;
   min-width: 0;
+  /* Âncora do CTA de PRÉ-INICIATIVA (6.6M.7): o overlay é `absolute` DENTRO
+     desta célula — nunca um card solto no corpo nem um overlay de tela inteira,
+     e a altura da dock continua a mesma (81px). */
+  position: relative;
 }
 
 .dock-hotbar .combat-hotbar {
@@ -1572,6 +1576,107 @@
   border: 0;
   background: none;
   box-shadow: none;
+}
+
+/* PRÉ-INICIATIVA (6.6M.7) — o miolo da dock fica TEMPORARIAMENTE indisponível.
+   A camada interna existe só para receber o filtro: os slots seguem desenhados
+   (o jogador vê a mesma Hotbar de sempre) e o desfoque/dessaturação dizem, sem
+   texto extra, que ainda não dá para usar. O `pointer-events` é reforço: os
+   botões já chegam `disabled` do React, e o `inert` do markup tira o foco. */
+.dock-hotbar-track {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  transition:
+    filter 160ms ease,
+    opacity 160ms ease;
+}
+
+.dock-hotbar.is-awaiting-initiative .dock-hotbar-track {
+  filter: blur(1.5px) saturate(0.45) brightness(0.6);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* VÉU entre os slots e o CTA: tira o contraste do que está indisponível sem
+   apagar a Hotbar e sem clarear o bastante para competir com o botão. */
+.dock-hotbar.is-awaiting-initiative::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  background: linear-gradient(180deg, rgba(12, 8, 5, 0.5), rgba(12, 8, 5, 0.82));
+  box-shadow: inset 0 0 0 1px rgba(161, 122, 50, 0.32);
+  pointer-events: none;
+}
+
+/* CTA FLUTUANTE — ancorado na área da Hotbar, com a MESMA paleta da dock. Fica
+   acima do véu (`z-index`) e cabe na célula de 81px: nada é empurrado. */
+.dock-initiative-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--dock-edge);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(49, 32, 20, 0.94), rgba(24, 15, 9, 0.94));
+  box-shadow:
+    inset 0 1px rgba(214, 173, 80, 0.22),
+    0 6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.dock-initiative-copy {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.dock-initiative-eyebrow {
+  font-size: 0.5rem;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #c6a878;
+}
+
+.dock-initiative-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  color: var(--dock-cream);
+}
+
+.dock-initiative-text strong {
+  color: var(--dock-gold-hi);
+  white-space: nowrap;
+}
+
+/* O botão não encolhe: é o foco do estado e a única ação oferecida. */
+.dock-initiative-roll {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+/* Encerrar turno não compete com a rolagem: antes do primeiro turno ele só
+   ocupa o lugar dele na geometria. */
+.combat-dock.is-awaiting-initiative .dock-end-turn:disabled {
+  opacity: 0.35;
 }
 
 .dock-empty {
