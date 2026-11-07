@@ -6,11 +6,12 @@ interface CombatWorkspaceProps {
   /** Esquerda: a ordem de iniciativa do servidor. */
   initiative: ReactNode;
   /**
-   * Centro tático, faixa de CIMA: a operação do turno (ataque, espera, Teste
-   * contra a Morte). Fica logo acima da cena porque o ataque pertence ao grid.
+   * Centro tático, faixa de BAIXO: a TRAY com a operação do turno (ataque,
+   * espera, Teste contra a Morte). Fica abaixo do mapa para que o grid ocupe
+   * o topo e a maior superfície da tela.
    */
   action: ReactNode;
-  /** Centro tático, faixa de baixo: a cena (maior superfície do workspace). */
+  /** Centro tático, faixa de CIMA: a cena (maior superfície do workspace). */
   scene: ReactNode;
   /** Direita: o registro do combate, em coluna própria. */
   log: ReactNode;
@@ -55,11 +56,12 @@ export function CombatWorkspace({
         <div className="combat-workspace-col combat-workspace-initiative">{initiative}</div>
 
         <div className="combat-tactical-center">
+          {/* Cena PRIMEIRO: o grid domina a altura; a operação é a tray abaixo. */}
+          <div className="combat-tactical-scene">{scene}</div>
           <div className="combat-tactical-action">
             {context ? <div className="combat-tactical-context">{context}</div> : null}
             <div className="combat-tactical-flow">{action}</div>
           </div>
-          <div className="combat-tactical-scene">{scene}</div>
         </div>
 
         <aside className="combat-workspace-log" aria-label="Registro do combate">
