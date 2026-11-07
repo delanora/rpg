@@ -40,7 +40,7 @@ import {
   entriesOutsideLayout,
   filterHotbarEntries,
   layoutOfSlots,
-  maskHotbarSlots,
+  filterHotbarView,
   moveHotbarRef,
   resolveHotbarSlots,
   sameHotbarLayout,
@@ -7365,7 +7365,7 @@ check(
       // 6.6M.6.3.1: o recorte deixou de ser LISTA — virou MÁSCARA de posições
       // (o índice do slot é preservado quando a categoria muda).
       trackerSource.includes('const hotbarLayout: HotbarLayout | null = characterHotbar ?? null;') &&
-      trackerSource.includes('maskHotbarSlots(') &&
+      trackerSource.includes('filterHotbarView(') &&
       trackerSource.includes('slots={hotbarSlots}') &&
       // O filtro é NAVEGAÇÃO: nada de gasto/reserva/recurso no caminho.
       !hotbarAdapterSource.includes('actionsUsed') &&
@@ -7967,28 +7967,42 @@ check(
     attacks: hotbarAttacks,
     layout: layoutSample,
   });
-  const maskedSlots = maskHotbarSlots(placedSlots, 'bonus-action');
+  const maskedSlots = filterHotbarView(placedSlots, 'bonus-action');
+  const filledCount = placedSlots.filter((slot) => Boolean(slot.entry)).length;
+  const matchedCount = placedSlots.filter((slot) => slot.entry?.cost === 'bonus-action').length;
   /** O × da terceira posição da TELA (índice 2 do array) esvazia só ela. */
   const clearedByPosition = clearHotbarRef(layoutSample, placedSlots[2].index - 1);
   const bonusIndex = hotbarSample.findIndex((entry) => entry.cost === 'bonus-action');
   const actionIndex = hotbarSample.findIndex((entry) => entry.cost === 'action');
 
   check(
-    'SC147) 48 posições: layout salvo manda e o filtro é MÁSCARA que preserva o índice',
+    'SC147) filtro empacota a categoria no começo e mantém a grade completa',
     autoSlots.length === HOTBAR_SLOTS &&
       autoSlots
         .slice(0, hotbarSample.length)
         .every((slot, index) => slot.ref?.sourceId === hotbarSample[index].sourceId) &&
       autoSlots.slice(hotbarSample.length).every((slot) => slot.state === 'empty') &&
+      // Sem filtro o layout salvo manda: cada atalho na posição configurada.
       placedSlots[1].ref?.sourceId === layoutSample[1]?.sourceId &&
       placedSlots[1].index === 2 &&
+      // GRADE COMPLETA: filtrar não apaga nenhum atalho da Hotbar.
       maskedSlots.length === HOTBAR_SLOTS &&
-      // O ataque de Ação não aparece sob o filtro de Ação Bônus, mas continua no
-      // índice 1 — nada "salta" para a posição do vizinho.
-      maskedSlots[actionIndex].masked === true &&
-      maskedSlots[actionIndex].index === actionIndex + 1 &&
-      maskedSlots[bonusIndex].masked === false &&
-      maskedSlots[bonusIndex].index === bonusIndex + 1,
+      maskedSlots.filter((slot) => Boolean(slot.entry)).length === filledCount &&
+      // A categoria escolhida começa na POSIÇÃO 1…
+      matchedCount > 0 &&
+      maskedSlots[0].entry?.cost === 'bonus-action' &&
+      maskedSlots[0].masked === false &&
+      maskedSlots[0].index === 1 &&
+      // …e as outras categorias continuam ali, esmaecidas, logo depois.
+      maskedSlots[0].entry?.sourceId === hotbarSample[bonusIndex].sourceId &&
+      // Os primeiros são todos da categoria; os seguintes continuam na grade,
+      // porém esmaecidos (nada é apagado).
+      maskedSlots.slice(0, matchedCount).every((slot) => slot.masked === false) &&
+      maskedSlots.slice(matchedCount, filledCount).every((slot) => slot.masked === true) &&
+      maskedSlots
+        .slice(matchedCount, filledCount)
+        .some((slot) => slot.entry?.sourceId === hotbarSample[actionIndex].sourceId) &&
+      maskedSlots.slice(filledCount).every((slot) => slot.entry === null),
   );
 
   check(

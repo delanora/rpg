@@ -258,9 +258,9 @@ export interface HotbarSlotView {
   /** Nome conhecido quando não há `entry` (indisponível/ausente). */
   label?: string;
   /**
-   * OCULTA pela máscara do filtro (A/B/R). A posição continua sendo a mesma:
-   * o slot desenhado no mesmo índice garante que nada "salte" de lugar quando
-   * o filtro muda. Máscara é visualização, nunca escrita.
+   * FORA da categoria filtrada: continua DESENHADO na grade (esmaecido e sem
+   * clique), só que depois dos atalhos da categoria escolhida. Máscara é
+   * visualização, nunca escrita — a configuração salva não muda.
    */
   masked?: boolean;
 }
@@ -324,18 +324,37 @@ export function resolveHotbarSlots({
 }
 
 /**
- * MÁSCARA do filtro A/B/R: esconde o que não é da categoria SEM mudar de
- * índice. Antes o filtro recortava a lista e os slots andavam; com posições
- * personalizadas o slot 2 tem de continuar no 2 mesmo filtrando por Ação Bônus.
+ * FILTRO A/B/R NA GRADE (6.6M.6.3.1.1) — a grade NUNCA encolhe.
+ *
+ * A categoria escolhida vem para o INÍCIO da grade, na ordem em que já estava,
+ * e os demais atalhos continuam desenhados logo depois — esmaecidos e sem
+ * clique, mas VISÍVEIS. Nada some da Hotbar, nada é apagado e nada é salvo: o
+ * filtro é navegação, então a configuração persistida não muda de posição.
+ *
+ * Slots vazios completam o resto da grade, que segue com as 48 posições.
  */
-export function maskHotbarSlots(
+export function filterHotbarView(
   slots: readonly HotbarSlotView[],
   filter: HotbarFilter | null,
 ): HotbarSlotView[] {
-  if (!filter) return [...slots];
-  return slots.map((slot) =>
-    slot.entry && slot.entry.cost !== filter ? { ...slot, masked: true } : { ...slot, masked: false },
-  );
+  if (!filter) return slots.map((slot) => ({ ...slot, masked: false }));
+
+  const matched: HotbarSlotView[] = [];
+  const others: HotbarSlotView[] = [];
+  const empty: HotbarSlotView[] = [];
+
+  for (const slot of slots) {
+    if (slot.entry) (slot.entry.cost === filter ? matched : others).push(slot);
+    else empty.push(slot);
+  }
+
+  // O índice devolvido é a POSIÇÃO DESENHADA da grade (1-based). A referência
+  // salva (`ref`) viaja junto: a configuração nunca é reescrita pelo filtro.
+  return [...matched, ...others, ...empty].map((slot, offset) => ({
+    ...slot,
+    index: offset + 1,
+    masked: Boolean(slot.entry && slot.entry.cost !== filter),
+  }));
 }
 
 /** Configuração (48 refs) a partir de uma grade resolvida. */

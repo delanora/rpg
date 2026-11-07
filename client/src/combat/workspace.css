@@ -2675,9 +2675,12 @@
   outline-offset: 2px;
 }
 
-/* MÁSCARA do filtro: a posição fica, o conteúdo sai. */
+/* FORA da categoria filtrada: a posição CONTINUA na grade (nada some), só que
+   esmaecida e sem clique — a categoria escolhida é a que vem para o começo. */
 .hotbar-slot.is-masked {
-  visibility: hidden;
+  opacity: 0.3;
+  filter: grayscale(0.75);
+  pointer-events: none;
 }
 
 .hotbar-slot.is-editable {

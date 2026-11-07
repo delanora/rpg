@@ -39,8 +39,8 @@ import {
   buildCombatHotbarEntries,
   clearHotbarRef,
   entriesOutsideLayout,
+  filterHotbarView,
   layoutOfSlots,
-  maskHotbarSlots,
   moveHotbarRef,
   resolveHotbarSlots,
   sameHotbarLayout,
@@ -272,11 +272,12 @@ export function CombatTracker({
   /**
    * PERSONALIZAÇÃO (6.6M.6.3.1): a configuração salva define a POSIÇÃO de cada
    * atalho; sem ela o preenchimento automático continua idêntico ao de antes.
-   * O filtro A/B/R virou MÁSCARA — esconde o conteúdo e PRESERVA o índice, então
-   * o ataque da posição 2 nunca "salta" para a 1 quando a categoria muda.
+   * O filtro A/B/R (6.6M.6.3.1.1) NÃO encolhe a grade: a categoria escolhida
+   * vem para o começo e os demais atalhos continuam ali, esmaecidos. É só
+   * apresentação — a configuração persistida não é reescrita pelo filtro.
    */
   const hotbarLayout: HotbarLayout | null = characterHotbar ?? null;
-  const hotbarSlots = maskHotbarSlots(
+  const hotbarSlots = filterHotbarView(
     resolveHotbarSlots({
       entries: hotbarEntries,
       attacks: characterAttacks,

@@ -59,12 +59,14 @@ interface CombatHotbarProps {
  * rolagem, munição, modificadores, envio ao servidor). O componente não calcula
  * regra, não cobra economia e não resolve nada sozinho.
  *
- * 6.6M.6.3.1: as posições passaram a ser PERSISTIDAS. Fora do editor, o filtro
- * A/B/R é MÁSCARA — o slot escondido continua no MESMO índice (nada de o ataque
- * da posição 2 pular para a 1). O editor abre num gesto discreto no canto da
- * Hotbar, trabalha sobre um RASCUNHO local (adicionar, mover, trocar, remover)
- * e só o "Salvar" envia algo ao servidor; "Cancelar" descarta e volta à última
- * configuração confirmada.
+ * 6.6M.6.3.1: as posições passaram a ser PERSISTIDAS. O editor abre pelo lápis
+ * junto ao retrato, trabalha sobre um RASCUNHO local (adicionar, mover, trocar,
+ * remover) e só o "Salvar" envia algo ao servidor; "Cancelar" descarta e volta
+ * à última configuração confirmada.
+ *
+ * 6.6M.6.3.1.1: o filtro A/B/R NÃO encolhe a grade. A categoria escolhida vem
+ * para o começo da Hotbar e os demais atalhos continuam ali, esmaecidos — só
+ * que a posição DESENHADA é do filtro, nunca da configuração salva.
  *
  * Nada aqui executa ação: salvar organização é preferência de interface.
  */
@@ -185,7 +187,8 @@ export function CombatHotbar({
           const entry = slot.entry;
 
           // ---------------------------------------------------------------
-          // MÁSCARA DO FILTRO: posição preservada, conteúdo escondido.
+          // FORA DA CATEGORIA FILTRADA: continua desenhado (grade completa),
+          // só que esmaecido e sem clique. Nada some da Hotbar ao filtrar.
           // ---------------------------------------------------------------
           if (slot.masked) {
             return (
@@ -194,7 +197,10 @@ export function CombatHotbar({
                 className="hotbar-slot is-masked"
                 data-slot={slot.index}
                 aria-hidden="true"
-              />
+              >
+                <span className="hotbar-slot-key">{slot.index}</span>
+                {entry ? <Icon name={entry.icon} size={18} /> : null}
+              </span>
             );
           }
 
