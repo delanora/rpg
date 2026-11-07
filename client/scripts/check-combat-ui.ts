@@ -6505,6 +6505,49 @@ check(
       mediaMedium.includes('.combat-tactical-center {') &&
       mediaNarrow.includes('grid-template-columns: minmax(0, 1fr);'),
   );
+
+  /* ---------------------------------------------------------------------- */
+  /* 6.6M.5.2-J — o jogador vê o combate na primeira dobra e a ficha abaixo.  */
+  /* ---------------------------------------------------------------------- */
+
+  const playerPanel = workspaceRule(
+    '.app-main:has(> .combat-panel):has(> .sheet) > .combat-panel',
+  );
+  const playerSheet = workspaceRule('.app-main:has(> .combat-panel):has(> .sheet) > .sheet');
+  const sheetPageSource = source('src/pages/SheetPage.tsx');
+
+  check(
+    'SC81) jogador em combate: o workspace ocupa a PRIMEIRA dobra da viewport',
+    playerPanel.includes('min-height: calc(100dvh - 5.5rem);') &&
+      // O piso de dobra é do jogador; o painel do Mestre não recebe a mesma regra.
+      !workspaceRule('.app-main:has(> .combat-panel) > .combat-panel').includes(
+        'min-height: calc',
+      ) &&
+      // A altura INTERNA continua vindo da cadeia flex, nunca do `calc`.
+      !workspaceRule('.combat-workspace').includes('100dvh'),
+  );
+
+  check(
+    'SC82) a ficha tem container PRÓPRIO (1420px centrados) e começa depois do combate',
+    playerSheet.includes('max-width: 1420px;') &&
+      playerSheet.includes('margin-inline: auto;') &&
+      playerSheet.includes('width: 100%;') &&
+      playerPanel.includes('margin-bottom: 1.6rem;') &&
+      sheetPageSource.indexOf('<CombatTracker') < sheetPageSource.indexOf('<SheetView'),
+  );
+
+  check(
+    'SC83) separação das superfícies não esconde nada: a página continua rolando até a ficha',
+    // Nada de overflow/altura fixa no main do jogador — a rolagem é da página.
+    !workspaceRule('.app-main:has(> .combat-panel)').includes('overflow') &&
+      !workspaceRule('.app-main:has(> .combat-panel)').includes('height: 100dvh') &&
+      // Retrato: o transbordo continua medido sobre os 1420px do container.
+      playerSheet.includes('max-width: 1420px;') &&
+      !/--portrait-room[^;]*none/.test(workspaceActive) &&
+      // O atalho de seção do combate fica ENTRE combate e ficha, no fluxo.
+      sheetPageSource.indexOf('<section className="combat-view"') <
+        sheetPageSource.indexOf('<SheetView'),
+  );
 }
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
