@@ -595,6 +595,45 @@
 }
 
 /*
+ * 6.6M.6.4 — TARGETING A PARTIR DA HOTBAR.
+ * Afordância de alvo possível (aro discreto + cursor), alvo ESCOLHIDO (aro de
+ * latão cheio) e nada além disso: o destaque não promete acerto, alcance nem
+ * ausência de cobertura — isso é decisão do servidor.
+ */
+.grid-token.is-targetable {
+  cursor: crosshair;
+}
+
+.grid-token.is-targetable .grid-token-art {
+  box-shadow:
+    0 0 0 2px rgba(224, 184, 63, 0.3),
+    0 6px 14px -6px rgba(0, 0, 0, 0.95);
+}
+
+.grid-token.is-targetable:hover .grid-token-art {
+  box-shadow:
+    0 0 0 2px rgba(224, 184, 63, 0.72),
+    0 0 18px -6px rgba(246, 217, 119, 0.5),
+    0 6px 14px -6px rgba(0, 0, 0, 0.95);
+}
+
+.grid-token.is-target-picked .grid-token-art {
+  box-shadow:
+    0 0 0 2px rgba(246, 217, 119, 0.95),
+    0 0 20px -4px rgba(246, 217, 119, 0.55),
+    0 6px 14px -6px rgba(0, 0, 0, 0.95);
+}
+
+.grid-token.is-target-picked::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px solid rgba(224, 184, 63, 0.9);
+  pointer-events: none;
+}
+
+/*
  * Círculo do token: CÍRCULO INSCRITO no footprint (6.6M.4.1.4).
  *
  * Medium/Small = 1 célula, Large = 2×2, Huge = 3×3, Gargantua = 4×4. O tamanho

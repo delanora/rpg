@@ -139,6 +139,14 @@ interface CombatActionPanelProps {
    * MESMO `setAttackId`, abrindo o passo de alvo do fluxo existente.
    */
   preset?: { attackId: string; nonce: number } | null;
+  /**
+   * 6.6M.6.4 — ALVO CONTROLADO pelo `CombatTracker` (clique no token do grid).
+   * `undefined` = estado LOCAL (fluxos do Mestre e da ação preparada); `null` =
+   * controlado e sem alvo. Assim nunca existem duas seleções efetivas.
+   */
+  targetCombatantId?: string | null;
+  /** Devolve a escolha ao dono — inclusive quando vem do cartão do painel. */
+  onTargetChange?: (combatantId: string) => void;
   /** Fecha o mini fluxo e devolve a faixa de ataque para a hotbar. */
   onClose?: () => void;
   busy: boolean;
@@ -174,12 +182,26 @@ export function CombatActionPanel({
   inventory,
   variant = 'default',
   preset = null,
+  targetCombatantId,
+  onTargetChange,
   onClose,
   busy,
   onAttack,
 }: CombatActionPanelProps) {
   const [attackId, setAttackId] = useState('');
-  const [targetId, setTargetId] = useState('');
+  /**
+   * 6.6M.6.4 — o alvo pode ser CONTROLADO de fora (grid). Sem a prop ele segue
+   * local, exatamente como antes: uma única seleção efetiva, sem estado paralelo
+   * que possa divergir entre o painel e o grid.
+   */
+  const [localTargetId, setLocalTargetId] = useState('');
+  const controlledTarget = targetCombatantId !== undefined;
+  const targetId = controlledTarget ? (targetCombatantId ?? '') : localTargetId;
+  /** Toda escolha de alvo (cartão do painel) passa por aqui. */
+  const chooseTarget = (combatantId: string): void => {
+    setLocalTargetId(combatantId);
+    onTargetChange?.(combatantId);
+  };
   const [ammoId, setAmmoId] = useState('');
   const [rollMode, setRollMode] = useState<RollMode>('normal');
   const [adjacentAlly, setAdjacentAlly] = useState(false);
@@ -452,7 +474,7 @@ export function CombatActionPanel({
                   className={item.id === targetId ? 'target-card selected' : 'target-card'}
                   aria-pressed={item.id === targetId}
                   onClick={() => {
-                    setTargetId(item.id);
+                    chooseTarget(item.id);
                     if (tray) setOpenStep(null);
                   }}
                 >

@@ -58,6 +58,25 @@ import {
 } from './gridMath';
 import { Icon } from '../../components/Icon';
 import type { MovementAuthority } from '../turnControl';
+import { gridTargetPick } from '../gridTargeting';
+
+/**
+ * TARGETING DIRETO A PARTIR DA HOTBAR (6.6M.6.4) — o grid NÃO executa ataque.
+ *
+ * Ele só encaminha a INTENÇÃO de alvo para o fluxo que já existe (painel de
+ * ataque → `resolveAttack` → servidor). Distâncias, alcance, cobertura total,
+ * condições e economia continuam sendo julgados lá.
+ */
+export interface GridTargeting {
+  /** O clique curto em token elegível vira alvo (estado de UI). */
+  active: boolean;
+  /** Ids elegíveis agora (DTO visível + posicionados). */
+  targetableIds: readonly string[];
+  /** Alvo já escolhido — destaque no token e menção no hint. */
+  selectedTargetId: string | null;
+  onPickTarget: (combatantId: string) => void;
+  onClearTarget: () => void;
+}
 
 export interface CombatGridProps {
   /**
@@ -77,6 +96,11 @@ export interface CombatGridProps {
    * motivo; nenhum gesto inicia draft.
    */
   movement?: MovementAuthority;
+  /**
+   * AUSENTE/`null` = grid sem targeting (comportamento anterior intacto: clique
+   * em token continua sendo placement ou extremo da régua).
+   */
+  targeting?: GridTargeting | null;
   onCombatChange: (combat: CombatDto) => void;
   onError: (message: string) => void;
 }
@@ -210,6 +234,7 @@ export function CombatGrid({
   isMaster,
   busy = false,
   movement,
+  targeting = null,
   onCombatChange,
   onError,
 }: CombatGridProps) {
@@ -1539,7 +1564,21 @@ export function CombatGrid({
       pickRulerEndpoint({ kind: 'combatant', combatantId });
       return;
     }
-    if (mode === 'placement') setSelectedId(combatantId);
+    if (mode === 'placement') {
+      setSelectedId(combatantId);
+      return;
+    }
+    // TARGETING (6.6M.6.4) — por último de propósito: régua e placement já
+    // retornaram acima, então o clique de alvo nunca sequestra esses gestos.
+    // O clique sintético do fim do arrasto foi descartado no topo.
+    const picked = gridTargetPick({
+      targetingActive,
+      targetableIds: targeting?.targetableIds ?? [],
+      combatantId,
+      rulerActive,
+      placementActive: false,
+    });
+    if (picked) targeting?.onPickTarget(picked);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1554,6 +1593,11 @@ export function CombatGrid({
       if (event.key === 'Escape') {
         if (ruler || quickRuler) clearRuler();
         if (draft) cancelDraft('Movimento cancelado.');
+        // 6.6M.6.4 — Esc também desfaz a ESCOLHA DE ALVO. É estado de UI: nada
+        // é enviado ao servidor, nenhum recurso é devolvido e o ataque já
+        // confirmado continua sendo do servidor.
+        const liveTargeting = targetingRef.current;
+        if (liveTargeting?.active && liveTargeting.selectedTargetId) liveTargeting.onClearTarget();
         return;
       }
       if (event.key === ' ' || event.code === 'Space') {
@@ -1639,6 +1683,20 @@ export function CombatGrid({
   const measureInteractive = !locked;
   /** Só o combatente autorizado do turno responde ao gesto de movimento. */
   const movementInteractive = !locked && Boolean(movableUnitId);
+  /**
+   * 6.6M.6.4 — TARGETING (só apresentação/encaminhamento): com uma ação escolhida
+   * na Hotbar, tokens elegíveis deixam de ser "só cenário" e passam a receber
+   * clique. Quem decide se o ataque vale continua sendo o servidor.
+   */
+  const targetingActive = Boolean(targeting?.active);
+  /**
+   * O handler de teclado (Escape) é registrado UMA vez por ativação: a intenção
+   * de alvo entra por ref para não reinstalar os listeners a cada render do grid.
+   */
+  const targetingRef = useRef<GridTargeting | null>(targeting);
+  targetingRef.current = targeting;
+  const isTargetable = (combatantId: string): boolean =>
+    targetingActive && Boolean(targeting?.targetableIds.includes(combatantId));
   /** Token utilizável: régua > gesto de movimento do dono > placement do Mestre. */
   const tokenInteractive = (combatant: GridUnit): boolean =>
     rulerActive ? true : movementInteractive ? movableUnitId === combatant.id : placementInteractive;
@@ -1659,6 +1717,10 @@ export function CombatGrid({
       ? isMaster
         ? 'Selecione uma unidade e clique no mapa — ou arraste da bandeja.'
         : 'Visualização da cena.'
+      : targetingActive
+        ? targeting?.selectedTargetId
+          ? 'Alvo escolhido · confirme em Rolar ataque · Esc limpa.'
+          : 'Selecione um alvo no grid · o clique só escolhe, não ataca.'
       : movement && !movement.combatantId
         ? (movement.reason ?? 'Nenhum combatente pode se mover agora.')
         : isMaster
@@ -1960,6 +2022,8 @@ export function CombatGrid({
                   interactive={tokenInteractive(combatant)}
                   movable={!locked && !rulerActive && mode === 'none' && movableUnitId === combatant.id}
                   rulerActive={rulerActive}
+                  targetable={isTargetable(combatant.id)}
+                  targetPicked={targeting?.selectedTargetId === combatant.id}
                   onSelect={selectUnit}
                   onMoveStart={armTokenGesture}
                   onCenter={centerOnCombatant}

@@ -51,6 +51,12 @@ import {
   toggleHotbarPick,
   type CombatHotbarEntry,
 } from '../src/combat/hotbar';
+import {
+  gridTargetPick,
+  targetStillValid,
+  targetableCombatantIds,
+  targetingEligible,
+} from '../src/combat/gridTargeting';
 import { hasRenderableContent } from '../src/combat/components/CombatWorkspace';
 import { GridMovementOverlay } from '../src/combat/grid/GridMovementOverlay';
 import { GridMovementTrace } from '../src/combat/grid/GridMovementTrace';
@@ -6424,7 +6430,9 @@ check(
     !/useState|useEffect|useReducer/.test(workspaceLayout) &&
       !/attackId|targetId|rollMode|ammoId|selectedEffects|rangePreview/.test(workspaceLayout) &&
       actionPanelSource.includes("const [attackId, setAttackId] = useState('');") &&
-      actionPanelSource.includes("const [targetId, setTargetId] = useState('');") &&
+      // 6.6M.6.4: o alvo pode ser CONTROLADO de fora, então o estado local tem
+      // nome próprio (`localTargetId`) — continua existindo UM dono do estado.
+      actionPanelSource.includes("const [localTargetId, setLocalTargetId] = useState('');") &&
       actionPanelSource.includes("const [rollMode, setRollMode] = useState<RollMode>('normal');") &&
       actionPanelSource.includes('getSpatialRangePreview(') &&
       actionPanelSource.includes('rangeSummary(') &&
@@ -8410,6 +8418,137 @@ check(
       !hotbarComponentSource.includes('resolveAttack'),
   );
 }
+
+/* ---------------------------------------------------------------------- */
+/* 6.6M.6.4 — TARGETING DIRETO A PARTIR DA HOTBAR                          */
+/* ---------------------------------------------------------------------- */
+
+const targetingTrackerSource = source('src/combat/CombatTracker.tsx');
+const targetingGridSource = source('src/combat/grid/CombatGrid.tsx');
+const targetingTokenSource = source('src/combat/grid/GridToken.tsx');
+const targetingPanelSource = source('src/combat/components/CombatActionPanel.tsx');
+
+type TargetCandidates = Parameters<typeof targetableCombatantIds>[0];
+
+check(
+  'SC157) alvos do grid: DTO visível, posicionado, sem o próprio atacante e sem removidos',
+  (() => {
+    const candidates = [
+      { id: 'me', spatial: { xFeet: 0, yFeet: 0 } },
+      { id: 'foe', spatial: { xFeet: 5, yFeet: 0 } },
+      { id: 'ally', spatial: { xFeet: 0, yFeet: 5 } },
+      { id: 'gone', spatial: { xFeet: 10, yFeet: 0 }, missing: true },
+      { id: 'tray', spatial: null },
+    ] as unknown as TargetCandidates;
+    const ids = targetableCombatantIds(candidates, 'me');
+    return (
+      ids.join(',') === 'foe,ally' &&
+      // Sem atacante identificado não existe alvo nenhum (nada de lista órfã).
+      targetableCombatantIds(candidates, null).length === 0
+    );
+  })(),
+);
+
+check(
+  'SC158) targeting só liga no turno próprio, com ação escolhida e sem bloqueio operacional',
+  (() => {
+    const base = {
+      isMaster: false,
+      ownTurn: true,
+      attackSelected: true,
+      awaitingInitiative: false,
+      hotbarEditing: false,
+      deathSavePending: false,
+    };
+    return (
+      targetingEligible(base) &&
+      !targetingEligible({ ...base, ownTurn: false }) &&
+      !targetingEligible({ ...base, attackSelected: false }) &&
+      !targetingEligible({ ...base, awaitingInitiative: true }) &&
+      !targetingEligible({ ...base, hotbarEditing: true }) &&
+      !targetingEligible({ ...base, deathSavePending: true }) &&
+      // O Mestre tem a superfície de ataques dele: o grid não vira targeting.
+      !targetingEligible({ ...base, isMaster: true })
+    );
+  })(),
+);
+
+check(
+  'SC159) precedência dos gestos: régua, placement, arrasto e clique sintético nunca viram alvo',
+  (() => {
+    const base = { targetingActive: true, targetableIds: ['foe'], combatantId: 'foe' };
+    return (
+      gridTargetPick(base) === 'foe' &&
+      gridTargetPick({ ...base, combatantId: 'me' }) === null &&
+      gridTargetPick({ ...base, rulerActive: true }) === null &&
+      gridTargetPick({ ...base, placementActive: true }) === null &&
+      gridTargetPick({ ...base, suppressClick: true }) === null &&
+      gridTargetPick({ ...base, targetingActive: false }) === null
+    );
+  })(),
+);
+
+check(
+  'SC160) alvo fora do DTO (removido/ocultado/trocou de combate) deixa de valer sem operação',
+  targetStillValid('foe', ['foe', 'ally']) &&
+    !targetStillValid('gone', ['foe']) &&
+    !targetStillValid(null, ['foe']) &&
+    !targetStillValid('foe', []) &&
+    targetingTrackerSource.includes('targetStillValid(targetCombatantId, gridTargetIds)'),
+);
+
+check(
+  'SC161) UMA seleção de alvo: o tracker compartilha o mesmo estado com grid e painel',
+  targetingTrackerSource.includes(
+    'const [targetCombatantId, setTargetCombatantId] = useState<string | null>(null);',
+  ) &&
+    targetingTrackerSource.includes(
+      'targetableCombatantIds(combat.combatants, myCombatant?.id ?? null)',
+    ) &&
+    targetingTrackerSource.includes('targeting={') &&
+    targetingTrackerSource.includes('onPickTarget: (combatantId) => setTargetCombatantId(combatantId)') &&
+    targetingTrackerSource.includes('targetCombatantId={gridTargetId}') &&
+    targetingTrackerSource.includes('onTargetChange={setTargetCombatantId}') &&
+    // Trocar de turno e desmarcar/trocar o atalho limpam o alvo (estado de UI).
+    (targetingTrackerSource.match(/setTargetCombatantId\(null\)/g) ?? []).length >= 3,
+);
+
+check(
+  'SC162) painel aceita alvo CONTROLADO e o cartão de alvo continua funcionando',
+  targetingPanelSource.includes('const controlledTarget = targetCombatantId !== undefined;') &&
+    targetingPanelSource.includes(
+      "const targetId = controlledTarget ? (targetCombatantId ?? '') : localTargetId;",
+    ) &&
+    targetingPanelSource.includes('onTargetChange?.(combatantId)') &&
+    targetingPanelSource.includes('chooseTarget(item.id)') &&
+    !targetingPanelSource.includes('setTargetId(') &&
+    // O envio continua sendo SÓ o botão do fluxo existente.
+    targetingPanelSource.includes('targetCombatantId: targetId,') &&
+    targetingPanelSource.includes('Rolar ataque'),
+);
+
+check(
+  'SC163) clique no token vira ALVO (sem executar ataque) e Esc desfaz a escolha',
+  targetingGridSource.includes("import { gridTargetPick } from '../gridTargeting';") &&
+    targetingGridSource.includes('const picked = gridTargetPick({') &&
+    targetingGridSource.includes('targeting?.onPickTarget(picked)') &&
+    targetingGridSource.includes('const liveTargeting = targetingRef.current;') &&
+    targetingGridSource.includes(
+      'if (liveTargeting?.active && liveTargeting.selectedTargetId) liveTargeting.onClearTarget();',
+    ) &&
+    targetingGridSource.includes('targetable={isTargetable(combatant.id)}') &&
+    targetingGridSource.includes('targetPicked={targeting?.selectedTargetId === combatant.id}') &&
+    targetingGridSource.includes('Selecione um alvo no grid') &&
+    targetingTokenSource.includes("if (targetable) classes.push('is-targetable');") &&
+    targetingTokenSource.includes("if (targetPicked) classes.push('is-target-picked');") &&
+    targetingTokenSource.includes('disabled={!interactive && !movable && !targetable}') &&
+    gridCssSource.includes('.grid-token.is-targetable {') &&
+    gridCssSource.includes('.grid-token.is-target-picked::after {') &&
+    // O grid nunca resolve ataque nem fala com o servidor por conta própria
+    // (o nome `resolveAttack` só aparece na documentação do módulo).
+    !/resolveAttack\s*\(/.test(targetingGridSource) &&
+    !targetingGridSource.includes('/api/combat'),
+);
 
 console.log(failures === 0 ? '\nOK — todos os itens passaram.' : `\nFALHOU — ${failures} item(ns).`);
 if (failures > 0) process.exit(1);

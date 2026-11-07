@@ -35,6 +35,13 @@ export interface GridTokenProps {
   movable?: boolean;
   /** Régua ativa: o clique escolhe extremo, nunca inicia movimento. */
   rulerActive?: boolean;
+  /**
+   * 6.6M.6.4 — TOKEN ELEGÍVEL como alvo do ataque escolhido na Hotbar. O clique
+   * só ESCOLHE o alvo no fluxo existente; não rola nem gasta nada.
+   */
+  targetable?: boolean;
+  /** O token é o alvo JÁ escolhido (destaque de latão, só apresentação). */
+  targetPicked?: boolean;
   onSelect?: (combatantId: string) => void;
   /** Início do draft de movimento (pointer down / ativação por teclado). */
   onMoveStart?: (combatantId: string, event: PointerEvent<HTMLButtonElement>) => void;
@@ -65,6 +72,8 @@ export function GridToken({
   visualRect = null,
   movable = false,
   rulerActive = false,
+  targetable = false,
+  targetPicked = false,
   onSelect,
   onMoveStart,
   onCenter,
@@ -86,6 +95,8 @@ export function GridToken({
   if (movable) classes.push('is-movable');
   if (visualRect) classes.push('is-animating');
   if (rulerActive) classes.push('is-ruler-pick');
+  if (targetable) classes.push('is-targetable');
+  if (targetPicked) classes.push('is-target-picked');
   if (measureRole === 'source') classes.push('is-measure-source');
   if (measureRole === 'target') classes.push('is-measure-target');
 
@@ -111,13 +122,15 @@ export function GridToken({
       style={style}
       aria-label={`${combatant.name}, ${label}${roleLabel}${
         movable ? ', pode ser movido' : ''
-      }${rulerActive ? ', pode ser medido' : ''}`}
-      aria-pressed={selected || measureRole !== null}
+      }${rulerActive ? ', pode ser medido' : ''}${
+        targetable ? ', pode ser escolhido como alvo' : ''
+      }${targetPicked ? ', alvo escolhido' : ''}`}
+      aria-pressed={selected || measureRole !== null || targetPicked}
       aria-current={currentTurn ? 'true' : undefined}
       data-size={size}
       data-kind={combatant.kind ?? 'character'}
       data-movable={movable ? 'true' : undefined}
-      disabled={!interactive && !movable}
+      disabled={!interactive && !movable && !targetable}
       draggable={false}
       onDragStart={(event) => event.preventDefault()}
       onPointerDown={
@@ -126,7 +139,7 @@ export function GridToken({
           : undefined
       }
       onClick={
-        interactive && onSelect
+        (interactive || targetable) && onSelect
           ? (event) => {
               event.stopPropagation();
               onSelect(combatant.id);

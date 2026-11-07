@@ -25,6 +25,11 @@ import {
 } from './combatApi';
 import { CombatIntro } from './CombatIntro';
 import { CombatGrid } from './grid/CombatGrid';
+import {
+  targetStillValid,
+  targetableCombatantIds,
+  targetingEligible,
+} from './gridTargeting';
 // CSS ISOLADO do grid/workspace (styles.css é WIP alheio e não é tocado).
 import './grid/grid.css';
 import './workspace.css';
@@ -228,6 +233,15 @@ export function CombatTracker({
   const [hotbarPick, setHotbarPick] = useState<{ attackId: string; nonce: number } | null>(
     null,
   );
+  /**
+   * ALVO DO ATAQUE (6.6M.6.4) — UMA seleção para o grid e o painel.
+   *
+   * O estado vive AQUI: o `CombatActionPanel` recebe o valor por prop e devolve a
+   * escolha pelo mesmo setter, então clicar no token ou no cartão do painel
+   * escreve no mesmo lugar. `combatantId` é a identidade — nunca nome, índice da
+   * Hotbar ou posição na cena.
+   */
+  const [targetCombatantId, setTargetCombatantId] = useState<string | null>(null);
   /**
    * FILTRO DA HOTBAR (6.6M.6.2) — navegação pelos três glifos da dock. O estado
    * vive aqui (a dock só apresenta a seleção e a Hotbar só desenha a lista
@@ -553,7 +567,15 @@ export function CombatTracker({
   useEffect(() => {
     setHotbarPick(null);
     setHotbarFilter(null);
+    // A escolha de alvo pertence à ação do turno: virar o turno a descarta.
+    setTargetCombatantId(null);
   }, [currentTurnKey]);
+
+  // DESMARCAR/TROCAR O ATALHO limpa o alvo: a seleção pertence à AÇÃO escolhida.
+  // É estado de UI — nada é enviado, nada é gasto e nenhum ataque em voo muda.
+  useEffect(() => {
+    setTargetCombatantId(null);
+  }, [hotbarPick]);
   const turnDeathState = current?.deathState ?? null;
   const deathSavePending = Boolean(
     turnDeathState &&
@@ -879,6 +901,28 @@ export function CombatTracker({
         hasContext: Boolean(standUpContext) || stabilizeTargets.length > 0,
       })
     : null;
+
+  /**
+   * TARGETING DIRETO DO GRID (6.6M.6.4) — DERIVADO, nunca um segundo estado.
+   *
+   * A lista de elegíveis vem do DTO visível e o alvo só vale enquanto continuar
+   * nela: realtime pode remover o combatente, escondê-lo do jogador ou trocar de
+   * combate, e a seleção cai sem gerar operação. Sem ataque escolhido, fora do
+   * turno próprio, com a Hotbar em edição ou em Teste Contra a Morte o grid
+   * continua exatamente como antes e os cartões do painel seguem valendo.
+   */
+  const gridTargetIds = targetableCombatantIds(combat.combatants, myCombatant?.id ?? null);
+  const gridTargetId = targetStillValid(targetCombatantId, gridTargetIds)
+    ? targetCombatantId
+    : null;
+  const gridTargetingActive = targetingEligible({
+    isMaster,
+    ownTurn: isMyTurn,
+    attackSelected: Boolean(hotbarPick),
+    awaitingInitiative,
+    hotbarEditing,
+    deathSavePending,
+  });
 
   /**
    * PAINEL DE ESTADO (6.6M.6.1.4) — UMA montagem do `MechanicalPanel`.
@@ -1351,6 +1395,17 @@ export function CombatTracker({
             isMaster={isMaster}
             busy={busy}
             movement={movementAuthority}
+            targeting={
+              gridTargetingActive
+                ? {
+                    active: true,
+                    targetableIds: gridTargetIds,
+                    selectedTargetId: gridTargetId,
+                    onPickTarget: (combatantId) => setTargetCombatantId(combatantId),
+                    onClearTarget: () => setTargetCombatantId(null),
+                  }
+                : null
+            }
             onCombatChange={onCombatChange}
             onError={onError}
           />
@@ -1448,6 +1503,10 @@ export function CombatTracker({
                       inventory={characterInventory}
                       sneakAttack={sneakAttackExpression}
                       preset={hotbarPick}
+                      // ALVO COMPARTILHADO: o clique no token e o cartão do
+                      // painel escrevem no MESMO estado do tracker.
+                      targetCombatantId={gridTargetId}
+                      onTargetChange={setTargetCombatantId}
                       onClose={() => setHotbarPick(null)}
                       busy={busy}
                       onAttack={attack}
