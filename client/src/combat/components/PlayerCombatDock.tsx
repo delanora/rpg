@@ -61,7 +61,12 @@ interface PlayerCombatDockProps {
    * caso da visão do Mestre).
    */
   onPersonalizeHotbar?: () => void;
-  /** Durante espera/pré-iniciativa/edição em curso o lápis fica indisponível. */
+  /**
+   * Editor ABERTO: o mesmo lápis passa a CANCELAR (descarta o rascunho), então
+   * ele continua clicável — não existe botão de "Cancelar" na Hotbar.
+   */
+  personalizeActive?: boolean;
+  /** Espera/pré-iniciativa/salvamento em curso: o lápis fica indisponível. */
   personalizeDisabled?: boolean;
   /** Filtro ativo da Hotbar (navegação pelos três glifos). */
   hotbarFilter?: HotbarFilter | null;
@@ -151,6 +156,7 @@ export function PlayerCombatDock({
   waiting = false,
   awaitingInitiative = null,
   onPersonalizeHotbar,
+  personalizeActive = false,
   personalizeDisabled = false,
   hotbarFilter = null,
   onToggleHotbarFilter,
@@ -257,9 +263,16 @@ export function PlayerCombatDock({
       {onPersonalizeHotbar ? (
         <button
           type="button"
-          className="dock-personalize"
-          aria-label="Personalizar a Hotbar"
-          title="Personalizar a Hotbar"
+          className={personalizeActive ? 'dock-personalize is-active' : 'dock-personalize'}
+          aria-pressed={personalizeActive}
+          aria-label={
+            personalizeActive ? 'Cancelar a personalização da Hotbar' : 'Personalizar a Hotbar'
+          }
+          title={
+            personalizeActive
+              ? 'Cancelar a personalização (descarta as alterações)'
+              : 'Personalizar a Hotbar'
+          }
           disabled={personalizeDisabled}
           onClick={onPersonalizeHotbar}
         >

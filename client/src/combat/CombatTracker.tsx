@@ -950,12 +950,13 @@ export function CombatTracker({
         }
         // LÁPIS do editor da Hotbar junto do retrato (6.6M.6.3.1). Só o
         // jogador com configuração fornecida vê o gesto — o Mestre não.
+        // O MESMO gesto fecha o editor: clicar no lápis em edição equivale a
+        // cancelar (o rascunho é descartado, nada é enviado).
         onPersonalizeHotbar={
-          characterHotbar !== undefined ? startHotbarEdit : undefined
+          characterHotbar !== undefined ? (hotbarEditing ? cancelHotbarEdit : startHotbarEdit) : undefined
         }
-        personalizeDisabled={
-          busy || awaitingInitiative || dockWaiting || hotbarEditing
-        }
+        personalizeActive={hotbarEditing}
+        personalizeDisabled={busy || hotbarSaving || awaitingInitiative || dockWaiting}
         hotbarFilter={hotbarFilter}
         onToggleHotbarFilter={toggleHotbarFilter}
         // O MENU DE AÇÃO de sempre: Disparada, Esquivar, Preparar, Levantar e
@@ -1007,7 +1008,6 @@ export function CombatTracker({
               saving={hotbarSaving}
               error={hotbarError}
               onSave={commitHotbarEdit}
-              onCancel={cancelHotbarEdit}
               // ATENÇÃO ao índice: a Hotbar mostra posições de 1 a 48, mas o
               // rascunho é um array — a conversão (posição − 1) acontece AQUI,
               // num único lugar. Sem ela, remover a posição 3 apagaria a 4.

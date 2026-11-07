@@ -8076,7 +8076,6 @@ check(
       choices: hotbarSample,
       dirty: true,
       onSave: () => {},
-      onCancel: () => {},
       onAssign: () => {},
       onMove: () => {},
       onRemove: () => {},
@@ -8084,10 +8083,19 @@ check(
   );
 
   check(
-    'SC150) editor renderizado: 48 posições, Salvar/Cancelar e gesto de personalizar',
+    'SC150) editor renderizado: 48 posições, Salvar e o lápis como cancelar',
     (editingMarkup.match(/data-slot=/g) ?? []).length === HOTBAR_SLOTS &&
       editingMarkup.includes('hotbar-edit-save') &&
-      editingMarkup.includes('hotbar-edit-cancel') &&
+      // 6.6M.6.3.1.5: sem botão de Cancelar — o lápis alterna.
+      !editingMarkup.includes('hotbar-edit-cancel') &&
+      !hotbarComponentSource.includes('onCancel') &&
+      // Clicar no lápis de novo cancela; salvando/em espera ele se desabilita.
+      trackerSource.includes('(hotbarEditing ? cancelHotbarEdit : startHotbarEdit)') &&
+      trackerSource.includes('personalizeActive={hotbarEditing}') &&
+      !dockSource.includes('hotbar-edit-cancel') &&
+      dockSource.includes('aria-pressed={personalizeActive}') &&
+      workspaceRule('.dock-personalize.is-active').includes('border-color: #f1c85c;') &&
+      !workspaceActive.includes('.hotbar-edit-cancel') &&
       (editingMarkup.match(/hotbar-slot-remove/g) ?? []).length === hotbarSample.length &&
       (editingMarkup.match(/is-editable/g) ?? []).length === HOTBAR_SLOTS &&
       !editingMarkup.includes('hotbar-picker') &&
@@ -8226,8 +8234,13 @@ check(
       ) &&
       trackerSource.includes('saveHotbarLayout(slots, characterVersion ?? 1)') &&
       trackerSource.includes('onPersonalizeHotbar={') &&
-      trackerSource.includes('characterHotbar !== undefined ? startHotbarEdit : undefined') &&
-      dockSource.includes('className="dock-personalize"') &&
+      // O lápis alterna: abre quando o editor está fechado e CANCELA quando
+      // já está aberto (não existe botão de Cancelar na Hotbar).
+      trackerSource.includes('(hotbarEditing ? cancelHotbarEdit : startHotbarEdit)') &&
+      trackerSource.includes('personalizeActive={hotbarEditing}') &&
+      dockSource.includes("'dock-personalize is-active'") &&
+      dockSource.includes("'dock-personalize'") &&
+      dockSource.includes('className={personalizeActive') &&
       !hotbarComponentSource.includes('onEdit') &&
       sheetPageSource.includes('characterHotbar={character?.hotbar?.slots ?? null}') &&
       source('src/hotbarApi.ts').includes("'/api/characters/me/hotbar'") &&

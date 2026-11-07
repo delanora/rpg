@@ -2576,9 +2576,9 @@
   max-width: 18rem;
 }
 
-/* Salvar/Cancelar existem só enquanto o editor está aberto (linha do topo). */
-.hotbar-edit-save,
-.hotbar-edit-cancel {
+/* Salvar existe só enquanto o editor está aberto (linha do topo); cancelar é
+   o próprio lápis da dock. */
+.hotbar-edit-save {
   padding: 0.1rem 0.3rem;
   border: 1px solid #8b682b;
   border-radius: 4px;
@@ -2628,23 +2628,28 @@
   outline: none;
 }
 
+/* Editor ABERTO: o lápis aparece "pressionado" — ele é o cancelar. */
+.dock-personalize.is-active {
+  opacity: 1;
+  border-color: #f1c85c;
+  background: rgba(241, 200, 92, 0.22);
+  color: #ffe49a;
+}
+
 .dock-personalize:disabled {
   opacity: 0.25;
   cursor: not-allowed;
 }
 
 .hotbar-edit-save:hover,
-.hotbar-edit-save:focus-visible,
-.hotbar-edit-cancel:hover,
-.hotbar-edit-cancel:focus-visible {
+.hotbar-edit-save:focus-visible {
   opacity: 1;
   border-color: #f1c85c;
   color: #ffe49a;
   outline: none;
 }
 
-.hotbar-edit-save:disabled,
-.hotbar-edit-cancel:disabled {
+.hotbar-edit-save:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }

@@ -44,7 +44,6 @@ interface CombatHotbarProps {
   saving?: boolean;
   error?: string | null;
   onSave?: () => void;
-  onCancel?: () => void;
   onAssign?: (index: number, ref: HotbarSlotRef) => void;
   onMove?: (from: number, to: number) => void;
   onRemove?: (index: number) => void;
@@ -89,7 +88,6 @@ export function CombatHotbar({
   saving = false,
   error = null,
   onSave,
-  onCancel,
   onAssign,
   onMove,
   onRemove,
@@ -144,35 +142,24 @@ export function CombatHotbar({
                 ? `Posição ${movingFrom} escolhida — escolha o destino`
                 : saving
                   ? 'Salvando…'
-                  : (error ?? (dirty ? 'Alterações não salvas' : 'Arraste ou clique para organizar'))
+                  : (error ?? (dirty ? 'Alterações não salvas' : 'Arraste ou clique para organizar — o lápis cancela'))
               : null)}
         </span>
 
+        {/* Cancelar NÃO é botão: o mesmo lápis da dock fecha o editor e
+            descarta o rascunho. Aqui só resta confirmar. */}
         {editing ? (
-          <>
-            <button
-              type="button"
-              className="hotbar-edit-save"
-              disabled={!dirty || saving}
-              onClick={() => {
-                stopEditing();
-                onSave?.();
-              }}
-            >
-              Salvar
-            </button>
-            <button
-              type="button"
-              className="hotbar-edit-cancel"
-              disabled={saving}
-              onClick={() => {
-                stopEditing();
-                onCancel?.();
-              }}
-            >
-              Cancelar
-            </button>
-          </>
+          <button
+            type="button"
+            className="hotbar-edit-save"
+            disabled={!dirty || saving}
+            onClick={() => {
+              stopEditing();
+              onSave?.();
+            }}
+          >
+            Salvar
+          </button>
         ) : null}
       </div>
 
