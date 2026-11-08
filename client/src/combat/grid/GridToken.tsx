@@ -11,6 +11,7 @@ export type GridUnit = Pick<
   /** Personagem × criatura/NPC: só muda o ARO do token (visual). */
   kind?: string;
   missing?: boolean;
+  relation?: CombatantDto['relation'];
 };
 
 export interface GridTokenProps {
@@ -96,6 +97,8 @@ export function GridToken({
   const size = combatant.spatial.effectiveSize;
   const artSize = tokenArtSize(box);
   const label = SIZE_LABELS[size];
+  const relation = combatant.relation ?? 'unknown';
+  const relationLabel = {hostile:'hostil',allied:'aliado',neutral:'neutro',unknown:'relação não definida'}[relation];
   const classes = ['grid-token'];
   if (currentTurn) classes.push('is-current');
   if (selected) classes.push('is-selected');
@@ -131,7 +134,7 @@ export function GridToken({
       type="button"
       className={classes.join(' ')}
       style={style}
-      aria-label={`${combatant.name}, ${label}${roleLabel}${
+      aria-label={`${combatant.name}, ${label}, ${relationLabel}${roleLabel}${
         movable ? ', pode ser movido' : ''
       }${rulerActive ? ', pode ser medido' : ''}${
         targetable ? ', pode ser escolhido como alvo' : ''
@@ -141,6 +144,7 @@ export function GridToken({
       aria-pressed={selected || measureRole !== null || targetPicked}
       aria-current={currentTurn ? 'true' : undefined}
       data-size={size}
+      data-relation={relation}
       data-kind={combatant.kind ?? 'character'}
       data-movable={movable ? 'true' : undefined}
       disabled={!interactive && !movable && !targetable && !onInspect}
@@ -182,6 +186,7 @@ export function GridToken({
       onMouseEnter={interactive && onHover ? () => onHover(combatant.id) : undefined}
       onMouseLeave={interactive && onHover ? () => onHover(null) : undefined}
     >
+      {relation !== 'unknown' ? <span className="grid-token-relation-ring" aria-hidden="true" /> : null}
       <span className="grid-token-art">
         {combatant.spatial.tokenImageRef ? (
           <img

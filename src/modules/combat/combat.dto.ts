@@ -172,6 +172,8 @@ export interface CombatantDto {
    * a UI não precisa dele hoje e o servidor não amplia superfície à toa.
    */
   sideKey: string | null;
+  /** Relação visual com o grupo; não expõe a identidade interna dos times. */
+  relation: 'allied' | 'hostile' | 'neutral' | 'unknown';
   /** Verdadeiro quando a ficha/criatura de origem foi removida. */
   missing: boolean;
   rolled: boolean;
@@ -318,6 +320,7 @@ export function combatantMovementEconomy(combatant: CombatantSourced): TurnEcono
 
 function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const source = combatant.character ?? combatant.creature;
+  const relationSide = combatant.sideKey?.trim().toLowerCase() ?? null;
   // Modificadores de EFEITOS ativos: CRU do resumo em lote, sem segunda conta.
   const effectModifiers = combatant.effectModifiers ?? emptyEffectModifierSet();
   const effectArmorBonuses = effectArmorClassBonuses(effectModifiers);
@@ -385,6 +388,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
       occupiedSpace: occupiedSpaceOf(spatialPosition, effectiveSize),
     },
     sideKey: combatant.sideKey ?? null,
+    relation: !relationSide ? 'unknown' : relationSide === 'neutral' ? 'neutral' : relationSide === 'players' ? 'allied' : 'hostile',
     statsHidden: false,
     missing: source === null,
     rolled: combatant.initiative !== null,
@@ -480,8 +484,8 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
         : combatant;
       const projected = projectCombatantSpatialState(visible);
       // Lado é estado do ENCONTRO administrado pelo Mestre: o jogador não
-      // recebe o mapa de times (nem o dos personagens) nesta fase.
-      return { ...projected, sideKey: null };
+      // recebe o mapa de times. Só a relação visual com o grupo é pública.
+      return { ...projected, sideKey: null, relation: projected.spatial ? projected.relation : 'unknown' };
     }),
   };
 }

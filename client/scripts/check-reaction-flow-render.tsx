@@ -10,6 +10,9 @@ const {createElement:h,act}=await import('react');
 const {createRoot}=await import('react-dom/client');
 const {MovementRiskDialog}=await import('../src/combat/components/MovementRiskDialog');
 const {ReactionPanel}=await import('../src/combat/components/ReactionPanel');
+const {AttacksTable}=await import('../src/components/AttacksTable');
+const {GridToken}=await import('../src/combat/grid/GridToken');
+const {deriveWeaponAttacks}=await import('../../src/modules/shared/weapon-attacks');
 const {GridThreatAreas}=await import('../src/combat/grid/GridThreatAreas');
 const {CombatHotbar}=await import('../src/combat/components/CombatHotbar');
 const {buildCombatHotbarEntries,opportunityHotbarShortcut,buildHotbarSlots}=await import('../src/combat/hotbar');
@@ -20,6 +23,19 @@ const check=(label:string,value:unknown)=>{assert.ok(value,label);checks++;conso
 const click=async(text:string)=>{const button=[...document.querySelectorAll('button')].find(item=>item.textContent?.includes(text));assert.ok(button,text);await act(async()=>button.click())};
 const attack:Attack={id:'weapon:fixture',name:'Espada',damage:{count:1,sides:8,bonus:0,type:'Cortante'},extraDamages:[],attackBonus:2,notes:'',ranged:false,finesse:false,legacy:false,reachFeet:5};
 try {
+ const archer=deriveWeaponAttacks({abilities:{strength:10,dexterity:14,constitution:10,intelligence:10,wisdom:10,charisma:10},level:1,weaponProficiencies:[],inventory:[{id:'bow',name:'Arco',category:'Arma',slot:'hand1',details:{weaponType:'ranged',rangeNormal:45,rangeLong:180,properties:['two-handed']}}]});
+ check('personagem com arco do vídeo recebe oportunidade pelo golpe desarmado real',!!opportunityHotbarShortcut(buildCombatHotbarEntries({attacks:archer}),archer,false));
+ let savedReach:number|undefined;
+ await act(async()=>root.render(h(AttacksTable,{attacks:[{...attack,name:'Garra fixture'}],onChange:rows=>{savedReach=rows[0].reachFeet}})));
+ check('cadastro mostra coluna própria de alcance', [...host.querySelectorAll('th')].some(th=>th.textContent==='Alcance (m)'));
+ await act(async()=>host.querySelector<HTMLButtonElement>('[aria-label="Alcance corpo a corpo de Garra fixture em metros"]')!.click());
+ const reachInput=host.querySelector<HTMLInputElement>('input[aria-label="Alcance corpo a corpo de Garra fixture em metros"]')!;
+ await act(async()=>{
+   Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype,'value')!.set!.call(reachInput,'3');
+   reachInput.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+ });
+ await act(async()=>reachInput.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,key:'Enter'})));
+ check('editar 3 m grava 10 pés no contrato, sem parse de observações', savedReach===10);
  const entries=buildCombatHotbarEntries({attacks:[attack]});
  const waiting=opportunityHotbarShortcut(entries,[attack],false)!;
  check('arma corpo a corpo com alcance gera atalho de reação',waiting.cost==='reaction'&&waiting.label==='Ataque de oportunidade');
@@ -53,5 +69,10 @@ try {
  check('aura projeta todo footprint e alcance, sem raio pelo centro',area.style.left==='132px'&&area.style.width==='396px');
  await act(async()=>root.render(h(GridThreatAreas,{areas:[],cellSizeFeet:5,pixelsPerCell:44})));
  check('sem ameaça pública não existe aura',!document.querySelector('.grid-threat-area'));
+ for(const relation of ['hostile','allied','neutral','unknown'] as const) {
+   await act(async()=>root.render(h(GridToken,{combatant:{id:'token',name:'Alvo',relation,spatialVisibility:'public',spatial:{baseSize:'medium',effectiveSize:'medium',position:{xFeet:5,yFeet:5},tokenImageRef:null,occupiedSpace:{minXFeet:5,minYFeet:5,maxXFeet:10,maxYFeet:10,widthFeet:5,heightFeet:5}}},cellSizeFeet:5,pixelsPerCell:44})));
+   check(`contorno ${relation} acompanha o estado do servidor`, document.querySelector('button')?.getAttribute('data-relation')===relation && Boolean(document.querySelector('.grid-token-relation-ring')) === (relation !== 'unknown'));
+ }
+
 } finally {await act(async()=>root.unmount());dom.window.close()}
 console.log(`${checks} verificações de reação aprovadas.`);

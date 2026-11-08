@@ -10,7 +10,7 @@ import {
   type AbilityKey,
 } from './dnd5e.js';
 import type { ItemDetails, WeaponCategory } from './item-details.js';
-import { weaponRangeOf } from './weapon-range.js';
+import { BASELINE_MELEE_REACH_FEET, weaponRangeOf } from './weapon-range.js';
 
 /**
  * ATAQUE DERIVADO DA ARMA EQUIPADA.
@@ -258,6 +258,7 @@ function unarmedAttack(strengthMod: number, proficiency: number): CombatAttack {
   return {
     id: 'unarmed',
     name: 'Golpe desarmado',
+    reachFeet: BASELINE_MELEE_REACH_FEET,
     damage: { count: 0, sides: 0, bonus: 1 + strengthMod, type: 'Concussão' },
     extraDamages: [],
     attackBonus: clampAttackBonus(strengthMod + proficiency),

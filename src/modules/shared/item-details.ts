@@ -192,6 +192,7 @@ export const itemDetailsSchema = z
      */
     canonicalWeaponId: z.string().trim().max(60).optional(),
     /** Alcance normal em metros (à distância ou arremessável). */
+    meleeReachFeet: z.number().finite().positive().max(1000).optional(),
     rangeNormal: z.number().int().min(0).max(1000).optional(),
     /** Alcance longo em metros (à distância ou arremessável). */
     rangeLong: z.number().int().min(0).max(1000).optional(),
@@ -385,6 +386,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
     'ammoType',
     'versatileDie',
     'canonicalWeaponId',
+    'meleeReachFeet',
     'rangeNormal',
     'rangeLong',
   ],
@@ -401,6 +403,7 @@ const DETAIL_KEYS: Record<ItemCategory, (keyof ItemDetails)[]> = {
     'ammoType',
     'versatileDie',
     'canonicalWeaponId',
+    'meleeReachFeet',
     'rangeNormal',
     'rangeLong',
     'spellcastingFocus',

@@ -3298,7 +3298,7 @@ check(
     !prismaModel('Character').includes('sideKey') &&
     !prismaModel('Creature').includes('sideKey') &&
     movementCombatDtoSource.includes('sideKey: combatant.sideKey ?? null') &&
-    movementCombatDtoSource.includes('return { ...projected, sideKey: null };') &&
+    movementCombatDtoSource.includes('return { ...projected, sideKey: null, relation:') &&
     combatRoutesSource.includes('setCombatantSideKey') &&
     spatialSceneSource.includes("'combatant-side'")
 );

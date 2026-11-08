@@ -80,6 +80,8 @@ export type SavesState = Record<AbilityKey, boolean>;
 
 /** Atributos de item por categoria (espelha src/modules/shared/item-details.ts). */
 export interface ItemDetails {
+  /** Alcance corpo a corpo explícito em pés; separado do arremesso em metros. */
+  meleeReachFeet?: number;
   /** Dano PRINCIPAL da arma (quantidade de dados, dado e tipo). */
   damageCount?: number;
   damageDie?: number;
@@ -2386,6 +2388,8 @@ export interface SceneDeletedPayload {
 }
 
 export interface CombatantDto {
+  /** Relação pública com o grupo, projetada pelo servidor sem expor times. */
+  relation?: 'allied' | 'hostile' | 'neutral' | 'unknown';
   sideKey?: string | null;
   mechanicalState: MechanicalState;
   conditionEffects: ConditionEffects;

@@ -40,6 +40,12 @@ async function main() {
     assert.equal(actor.sideKey,'players');assert.equal(foe.sideKey,'enemies');assert.equal(neutral.sideKey,'neutral');
     assert.equal(opportunityAttackProfilesOf(foe)[0]?.reachFeet,15,'Alcance manual deve sobreviver ao schema de ataques');
     console.log('✔ Preparação real define grupo, hostil escolhido e NPC neutro; alcance manual é executável');
+    const publicCombat=(await http('/combat/active',undefined,player)).data.combat;
+    assert.equal(publicCombat.combatants.find((c:any)=>c.id===actor.id).relation,'allied');
+    assert.equal(publicCombat.combatants.find((c:any)=>c.id===foe.id).relation,'hostile');
+    assert.equal(publicCombat.combatants.find((c:any)=>c.id===neutral.id).relation,'neutral');
+    assert.ok(publicCombat.combatants.every((c:any)=>c.sideKey===null));
+
     for(const [unit,initiative,position] of [[actor,30,{xFeet:15,yFeet:10}],[spectator,25,{xFeet:80,yFeet:80}],[foe,20,{xFeet:30,yFeet:10}],[neutral,10,{xFeet:80,yFeet:60}]] as const)
       await prisma.combatant.update({where:{id:unit.id},data:{initiative,spatialPosition:position,turnEconomy:onTurnStart(9)}});
     await prisma.combat.update({where:{id:combatId},data:{status:'ACTIVE',round:1,turnSequence:1,currentIndex:0}});
@@ -51,6 +57,9 @@ async function main() {
     assert.deepEqual(Object.keys(read.data.reaction.threatAreas[0]).sort(),['heightFeet','minXFeet','minYFeet','reachFeet','widthFeet'].sort());
     await prisma.combatant.update({where:{id:foe.id},data:{spatialVisibility:'master-only'}});
     read=await preview();assert.equal(read.data.reaction.threatAreas.length,0);
+    const hidden=(await http('/combat/active',undefined,player)).data.combat.combatants.find((c:any)=>c.id===foe.id);
+    assert.equal(hidden.relation,'unknown');assert.equal(hidden.spatial,null);
+
     await prisma.combatant.update({where:{id:foe.id},data:{spatialVisibility:'public'}});
     const sideInput={sideKey:'neutral',expectedVersion:await version(),operationId:randomUUID()};
     assert.equal((await http(`/combat/${combatId}/combatants/${foe.id}/side`,sideInput,player,'PATCH')).status,403);
@@ -91,6 +100,21 @@ async function main() {
     assert.equal((await preview()).data.reaction.threatAreas.length,0,'Parede que impede o ataque não deve desenhar ameaça executável');
     assert.notEqual((await preview()).data.reaction.risk,'possible');
     console.log('✔ Confirmar visão libera a escolha; barreira completa de ataque suprime oportunidade impossível');
+    // Reproduz o vídeo: arco equipado, oportunidade válida pelo golpe desarmado.
+    await prisma.spatialObstacle.deleteMany({where:{sceneId:scene.id}});
+    await prisma.character.update({where:{id:hero.id},data:{inventory:inventoryListSchema.parse([{id:'bow',name:'Arco fixture',category:'Arma',slot:'hand1',details:{weaponType:'ranged',rangeNormal:45,rangeLong:180,properties:['two-handed']}}])}});
+    await prisma.combatant.update({where:{id:actor.id},data:{spatialPosition:{xFeet:15,yFeet:10},turnEconomy:onTurnStart(9)}});
+    await prisma.combatant.update({where:{id:foe.id},data:{spatialPosition:{xFeet:20,yFeet:10},turnEconomy:onTurnStart(9)}});
+    await prisma.combat.update({where:{id:combatId},data:{currentIndex:2,turnSequence:2}});
+    const leaving=await http(`/combat/${combatId}/spatial/movement`,{combatantId:foe.id,path:[{xFeet:25,yFeet:10}],expectedVersion:await version(),operationId:randomUUID()});
+    assert.equal(leaving.status,200,JSON.stringify(leaving));assert.ok(leaving.data.pending);
+    const playerWindow=(await http(`/combat/${combatId}/reaction-opportunities`,undefined,player)).data.opportunities[0];
+    assert.equal(playerWindow.reactorCombatantId,actor.id);assert.deepEqual(playerWindow.options.map((o:any)=>o.attackId),['unarmed']);
+    const unarmed=await http(`/combat/${combatId}/reaction-opportunities/${playerWindow.id}/attack`,{combatId,attackId:'unarmed',expectedVersion:await version(),operationId:randomUUID()},player);
+    assert.equal(unarmed.status,200,JSON.stringify(unarmed));
+    assert.equal(((await prisma.combatant.findUniqueOrThrow({where:{id:actor.id}})).turnEconomy as any).reactionAvailable,false);
+    console.log('✔ Arquearia mantém oportunidade desarmada real para o jogador; relações públicas não expõem times nem tokens ocultos');
+
 
   } finally {
     if(combatId)await prisma.combat.delete({where:{id:combatId}});

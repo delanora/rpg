@@ -51,13 +51,11 @@ export function weaponRangeOf(
     if (!(long >= normal)) return null;
     return { kind: 'ranged', reachFeet: null, normalRangeFeet: normal, longRangeFeet: long };
   }
-  const declared =
-    typeof details?.rangeNormal === 'number' && details.rangeNormal > 0
-      ? metersToFeet(details.rangeNormal)
-      : null;
-  const reach =
-    declared !== null
-      ? Math.max(declared, BASELINE_MELEE_REACH_FEET)
-      : BASELINE_MELEE_REACH_FEET + (properties.includes('reach') ? REACH_PROPERTY_BONUS_FEET : 0);
+  // Alcance de arremesso nunca amplia o alcance corpo a corpo.
+  const legacyReach = !properties.includes('thrown') && typeof details?.rangeNormal === 'number' && details.rangeNormal > 0
+    ? metersToFeet(details.rangeNormal) : null;
+  const reach = details?.meleeReachFeet ?? (legacyReach !== null
+    ? Math.max(legacyReach, BASELINE_MELEE_REACH_FEET)
+    : BASELINE_MELEE_REACH_FEET + (properties.includes('reach') ? REACH_PROPERTY_BONUS_FEET : 0));
   return { kind: 'melee', reachFeet: reach, normalRangeFeet: null, longRangeFeet: null };
 }

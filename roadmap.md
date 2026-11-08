@@ -133,7 +133,7 @@ A **sequência abaixo é direcional**, não autorização para antecipar fases. 
 
 | Entrega | Estado | Resumo |
 |---|---|---|
-| **Gatilho, hotbar e área de ameaça** | ✅ implementada e testada | Relações escolhidas na preparação, alcance manual, contorno na prévia, confirmação de movimento e janela de reação fora do turno. Mestre também arrasta tokens de jogadores ao assumir aquele turno. NPCs começam neutros. |
+| **Gatilho, hotbar e área de ameaça** | ✅ implementada e testada | Relações escolhidas na preparação, alcance manual, contorno na prévia, confirmação de movimento e janela de reação fora do turno. Mestre também arrasta tokens de jogadores ao assumir aquele turno. Golpe desarmado corrigido, alcances explícitos no cadastro e aros discretos por relação. NPCs começam neutros. |
 | **Hostilidade e duelo** | ⬜ próxima | Ao atacar um NPC neutro, o Mestre decide se há hostilidade e seleciona os envolvidos. Duelo exige aceite entre jogadores; aliados não provocam oportunidade. |
 | **Conjurador de Guerra** | ⬜ seguinte | Substituir o ataque por uma magia elegível na mesma janela de reação, conforme PHB 2014. |
 

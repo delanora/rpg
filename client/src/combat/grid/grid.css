@@ -1413,3 +1413,17 @@
 
 /* HUD compacto: detalhamento permanece na economia e na prévia do servidor. */
 .grid-movement-hud { max-width: min(17rem, calc(100% - 1.2rem)); padding: 0.35rem 0.5rem; gap: 0.1rem; font-size: 0.7rem; }
+
+/* Relação pública: aro fino independente do turno e da área de alcance. */
+.grid-token[data-relation='hostile'] { --token-relation-color: #dc6666; }
+.grid-token[data-relation='allied'] { --token-relation-color: #66b886; }
+.grid-token[data-relation='neutral'] { --token-relation-color: #d8bb60; }
+.grid-token-relation-ring {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: calc(var(--grid-token-art) + 4px); height: calc(var(--grid-token-art) + 4px);
+  box-sizing: border-box; pointer-events: none; border-radius: 50%;
+  border: 1px solid var(--token-relation-color); z-index: 2;
+  animation: token-relation-pulse 2.8s ease-in-out infinite;
+}
+@keyframes token-relation-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+@media (prefers-reduced-motion: reduce) { .grid-token-relation-ring { animation: none; opacity: 0.7; } }

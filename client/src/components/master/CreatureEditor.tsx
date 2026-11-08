@@ -573,6 +573,7 @@ export function CreatureEditor({
       </Section>
 
       <Section title="Ataques" icon="sword">
+        <p className="section-note">Informe o alcance corpo a corpo de cada ataque para habilitar sua área de ameaça e os ataques de oportunidade.</p>
         <AttacksTable
           attacks={creature.attacks}
           defaultBonus={attackBonus}

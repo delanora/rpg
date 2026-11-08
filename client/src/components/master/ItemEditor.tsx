@@ -210,6 +210,7 @@ function CategoryFields({
       const nextProperties = [...weapon.properties];
       onPatchDetails({
         canonicalWeaponId: weapon.id,
+        meleeReachFeet: undefined,
         weaponType: weapon.type,
         weaponCategory: weapon.category,
         properties: nextProperties,
@@ -472,6 +473,19 @@ function CategoryFields({
               />
             </label>
           ) : null}
+
+          {weaponType === 'melee' ? <label className="field">
+            <span>Alcance corpo a corpo (m)</span>
+            <InlineField value={details.meleeReachFeet === undefined ? '' : String(Math.round(details.meleeReachFeet * 30) / 100)}
+              placeholder={properties.includes('reach') ? 'Padrão: 3 m' : 'Padrão: 1,5 m'}
+              ariaLabel="Alcance corpo a corpo da arma em metros"
+              onCommit={text => {
+                const meters=Number(text.replace(',', '.'));
+                if(!text.trim()) onPatchDetails({meleeReachFeet:undefined});
+                else if(Number.isFinite(meters) && meters > 0 && meters <= 300)
+                  onPatchDetails({meleeReachFeet:Math.round(meters / 0.3 * 100) / 100});
+              }} />
+          </label> : null}
 
           {showRange ? (
             <>

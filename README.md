@@ -47,7 +47,10 @@ O menu do token permite ajustar a relação durante o encontro, inclusive em
 combates anteriores sem lados definidos. Neutros e aliados não provocam oportunidade.
 
 Ataques manuais precisam de **Alcance (m)** informado no cadastro de ataques.
-Armas equipadas reutilizam o alcance derivado do servidor. Ataques antigos sem
+Armas equipadas reutilizam o alcance derivado do servidor; o item permite
+definir **Alcance corpo a corpo (m)** separadamente do arremesso. Sem override,
+vale o alcance padrão da arma. O golpe desarmado tem alcance de 1,5 m e
+continua disponível para oportunidade mesmo com arco equipado. Ataques antigos sem
 alcance continuam assistidos; o sistema não deduz esse valor pelas observações.
 
 Ao prever uma saída de alcance hostil, o grid destaca o contorno de ameaça dos
@@ -61,6 +64,10 @@ Desengajar, reação já usada e incapacidade de agir continuam impedindo o gati
 Paredes opacas mantêm a visão assistida, confirmada pelo Mestre; uma barreira
 completa que bloqueia ataques impede uma oportunidade impossível. O contorno é
 uma indicação de alcance, sem cálculo automático de visão ou cobertura parcial.
+
+Um aro fino pulsa em vermelho nos hostis, verde nos aliados e amarelo nos
+neutros. A relação vem do servidor; tokens ocultos não revelam sua relação.
+A opção do sistema para reduzir animações mantém o aro estático.
 
 Confirmação de hostilidade após ataques, seleção individual de envolvidos,
 duelo consentido e Conjurador de Guerra são as próximas entregas desta frente.

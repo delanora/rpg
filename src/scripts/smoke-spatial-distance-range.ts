@@ -356,7 +356,7 @@ export async function smokeSpatialDistance(baseUrl: string, check: Check): Promi
             properties: [],
           }),
         ] as never,
-        attacks: [],
+        attacks: [{id:'manual-unmeasured',name:'Ataque manual sem alcance'}],
       },
     });
     const archer = await prisma.character.create({
@@ -1119,12 +1119,17 @@ export async function smokeSpatialDistance(baseUrl: string, check: Check): Promi
         JSON.stringify(overrideAttempt.data),
       );
       const unarmedPreview = await previewOf(meleeCombatant.id, targetCombatant.id, 'unarmed');
+      check('89.BB.0) golpe desarmado tem alcance estruturado de 5 pés',
+        unarmedPreview.data.range.status === 'in-range' && unarmedPreview.data.range.reachFeet === 5,
+        JSON.stringify(unarmedPreview.data));
+      const manualPreview = await previewOf(meleeCombatant.id, targetCombatant.id, 'manual-unmeasured');
+
       check(
         '89.BB.1) ação sem alcance estruturado → unknown/range-not-declared (não inventa 5 pés)',
-        unarmedPreview.data.range.status === 'unknown' &&
-          unarmedPreview.data.range.reason === 'range-not-declared' &&
-          unarmedPreview.data.range.reachFeet === null,
-        JSON.stringify(unarmedPreview.data),
+        manualPreview.data.range.status === 'unknown' &&
+          manualPreview.data.range.reason === 'range-not-declared' &&
+          manualPreview.data.range.reachFeet === null,
+        JSON.stringify(manualPreview.data),
       );
       const playerToCreature = await previewOf(
         meleeCombatant.id,

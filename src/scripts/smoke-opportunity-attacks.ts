@@ -452,7 +452,7 @@ export async function smokeOpportunityAttacks(
       previewMaster.data.reaction.boundaries.length === 1 &&
         previewMaster.data.reaction.boundaries[0].reactorCombatantId === reactorCombatantId &&
         previewMaster.data.reaction.boundaries[0].options.map((item: any) => item.attackId).join(',') ===
-          'weapon:oa-sword',
+          'weapon:oa-sword,unarmed',
       JSON.stringify(previewMaster.data.reaction.boundaries),
     );
 
@@ -481,8 +481,9 @@ export async function smokeOpportunityAttacks(
         reactorOpportunity.actionable === true &&
         reactorOpportunity.status === 'pending' &&
         reactorOpportunity.visibilityStatus === 'known-visible' &&
-        reactorOpportunity.options.length === 1 &&
+        reactorOpportunity.options.length === 2 &&
         reactorOpportunity.options[0].attackId === 'weapon:oa-sword' &&
+        reactorOpportunity.options[1].attackId === 'unarmed' &&
         typeof reactorOpportunity.trigger === 'string' &&
         reactorOpportunity.trigger.length > 0,
       JSON.stringify(reactorOpportunity),
