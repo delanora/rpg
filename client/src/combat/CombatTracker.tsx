@@ -77,7 +77,7 @@ import {
   type ServerReactionOpportunity,
 } from '../reactionOpportunitiesApi';
 import { actingCombatantFor, currentUserControlsCombatant, movementAuthorityOf } from './turnControl';
-import { deathDockLabel, deathLifecycleOf } from './deathDock';
+import { deathDockLabel, deathLifecycleOf, deathSavePendingFor, endTurnAvailability } from './deathDock';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
 /**
@@ -614,15 +614,14 @@ export function CombatTracker({
   }, [hotbarPick]);
 
   const turnDeathState = current?.deathState ?? null;
-  const deathSavePending = Boolean(
-    turnDeathState &&
-      turnDeathState.deathSaves &&
-      !turnDeathState.dead &&
-      !turnDeathState.stabilized &&
-      !turnDeathState.pending &&
-      !turnDeathState.relentless &&
-      turnDeathState.saveTurnKey !== currentTurnKey,
-  );
+  // Só o Teste OBRIGATÓRIO deste turno bloqueia o encerramento. O ciclo de morte
+  // (Estabilizado, morto, decisão do Mestre) NÃO bloqueia pedir o fim do turno:
+  // quem autoriza é o SERVIDOR (`next-turn`), e a decisão do Mestre continua
+  // dele — encerrar o turno não a resolve nem a substitui.
+  const deathSavePending = deathSavePendingFor(turnDeathState, currentTurnKey);
+  // Pedido de encerrar turno: mesma derivação pura usada pelos testes. O
+  // SERVIDOR continua validando tudo (turno, Teste obrigatório, pendências).
+  const endTurnGate = endTurnAvailability({ isMyTurn, busy, deathSavePending });
 
   // LEVANTAR-SE (PHB 2014): só aparece quando o combatente que age está CAÍDO
   // e pode agir. O custo exibido é informativo — o SERVIDOR recalcula metade do
@@ -1200,16 +1199,14 @@ export function CombatTracker({
             <button
               type="button"
               className="end-turn dock-end-turn"
-              disabled={!isMyTurn || busy || deathSavePending || dockDeathBlocked}
+              // `dockDeathBlocked` (Hotbar inerte no ciclo de morte) NÃO entra
+              // aqui: bloquear Ação/Ataque/Movimento é uma coisa, encerrar o
+              // próprio turno é outra — o servidor valida (`DEATH_SAVE_PENDING`,
+              // `TURN_END_TRIGGER_PENDING`, ...).
+              disabled={endTurnGate.disabled}
               onClick={() => void endTurn()}
-              aria-label={
-                isMyTurn ? 'Encerrar turno' : 'Encerrar turno — aguardando o seu turno'
-              }
-              title={
-                deathSavePending
-                  ? 'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.'
-                  : undefined
-              }
+              aria-label={endTurnGate.reason ?? 'Encerrar turno'}
+              title={endTurnGate.reason ?? undefined}
             >
               <span className="end-turn-text">Encerrar turno</span>
               <span className="end-turn-arrow" aria-hidden="true">

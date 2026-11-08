@@ -47,3 +47,53 @@ export function deathDockLabel(state: DeathState | null | undefined): string | n
   if (state.stabilized) return 'Estabilizado';
   return 'Teste contra a Morte';
 }
+
+/**
+ * O Teste Contra a Morte OBRIGATÓRIO deste turno ainda está por rolar?
+ *
+ * Regra PURA espelhada do servidor (`deathSaveRequiredThisTurn`): 0 PV, dentro
+ * do fluxo, vivo, sem decisão/oferta pendente e sem `saveTurnKey` DESTE turno.
+ * Estabilizado não rola mais. `currentTurnKey` usa a MESMA fórmula do servidor
+ * (`id:rodada:índice`).
+ */
+export function deathSavePendingFor(
+  state: DeathState | null | undefined,
+  currentTurnKey: string,
+): boolean {
+  if (!state) return false;
+  return Boolean(
+    state.deathSaves &&
+      !state.dead &&
+      !state.stabilized &&
+      !state.pending &&
+      !state.relentless &&
+      state.saveTurnKey !== currentTurnKey,
+  );
+}
+
+/**
+ * "ENCERRAR TURNO" no ciclo de morte — derivação PURA, uma só para a UI e para
+ * os testes.
+ *
+ * Só duas coisas desabilitam o pedido: não ser o turno do jogador e o Teste
+ * Contra a Morte OBRIGATÓRIO deste turno ainda estar por rolar. O ciclo de
+ * morte (Estabilizado, morto, decisão do Mestre, oferta da Resistência
+ * Implacável) NÃO desabilita: negar Ação/Ataque/Movimento é uma permissão,
+ * encerrar o próprio turno é outra — e o SERVIDOR é quem decide se o turno
+ * avança (`DEATH_SAVE_PENDING`, `TURN_END_TRIGGER_PENDING`, pendências, 403).
+ */
+export function endTurnAvailability(input: {
+  isMyTurn: boolean;
+  busy: boolean;
+  deathSavePending: boolean;
+}): { disabled: boolean; reason: string | null } {
+  if (!input.isMyTurn) return { disabled: true, reason: 'Encerrar turno — aguardando o seu turno' };
+  if (input.deathSavePending) {
+    return {
+      disabled: true,
+      reason: 'Você precisa realizar seu Teste Contra a Morte antes de encerrar o turno.',
+    };
+  }
+  if (input.busy) return { disabled: true, reason: null };
+  return { disabled: false, reason: null };
+}

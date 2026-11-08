@@ -477,6 +477,51 @@ const gridProps = (mode: 'assisted' | 'grid-2d') => ({
 }
 
 /* -------------------------------------------------------------------------- */
+/* 5. ENCERRAR TURNO × CICLO DE MORTE (6.6M.8.3)                              */
+/* -------------------------------------------------------------------------- */
+
+{
+  const { deathSavePendingFor, endTurnAvailability } = await import('../src/combat/deathDock');
+  const turnKey = 'fixture-combat:1:0';
+  const gate = (state: DeathState | null, isMyTurn = true, busy = false) =>
+    endTurnAvailability({ isMyTurn, busy, deathSavePending: deathSavePendingFor(state, turnKey) });
+  check(
+    'SC211) o Teste OBRIGATÓRIO deste turno desabilita Encerrar turno só ATÉ ser rolado',
+    gate(deathState({ deathSaves: true })).disabled &&
+      gate(deathState({ deathSaves: true, saveTurnKey: 'outro-turno' })).disabled &&
+      !gate(deathState({ deathSaves: true, saveTurnKey: turnKey })).disabled &&
+      // Estabilizado, morto e decisão do Mestre NÃO bloqueiam o pedido: quem
+      // decide se o turno avança é o SERVIDOR (o turno continua do jogador).
+      !gate(deathState({ deathSaves: true, successes: 3, stabilized: true })).disabled &&
+      !gate(deathState({ dead: true })).disabled &&
+      !gate(deathState({ deathSaves: true, failures: 3, pending: pendingDeath().pending })).disabled &&
+      // Fora do turno e com pedido em voo continua desabilitado.
+      gate(deathState({ deathSaves: true, saveTurnKey: turnKey }), false).disabled &&
+      gate(deathState({ deathSaves: true, saveTurnKey: turnKey }), true, true).disabled,
+    JSON.stringify({
+      before: gate(deathState({ deathSaves: true })),
+      after: gate(deathState({ deathSaves: true, saveTurnKey: turnKey })),
+    }),
+  );
+
+  const view = await mount(
+    h(PlayerCombatDock, { ...dockProps('Estabilizado'), deathSavePending: false } as never),
+  );
+  const dockText = text(view.container);
+  check(
+    'SC212) dock Estabilizado: nega as AÇÕES (48 slots inertes) sem dizer que o turno não é seu',
+    view.error === null &&
+      Boolean(view.container.querySelector('.dock-death')) &&
+      dockText.includes('Sem ações disponíveis') &&
+      !dockText.includes('Sem turno') &&
+      view.container.querySelectorAll('.fixture-hotbar-slots > span').length === 48 &&
+      view.container.querySelector('.dock-hotbar-track')?.hasAttribute('inert') !== false,
+    view.error ?? dockText.slice(0, 160),
+  );
+  await view.unmount();
+}
+
+/* -------------------------------------------------------------------------- */
 /* 5. NENHUMA VIOLAÇÃO DE HOOKS EM NENHUMA ETAPA                              */
 /* -------------------------------------------------------------------------- */
 

@@ -6740,7 +6740,7 @@ check(
       trackerSource.includes('ownTurn: ownTurn && !dockDeathBlocked,') &&
       // Atalhos do jogador saem de "tools" (uma superfície só) sem sumir.
       trackerSource.includes('{onOpenSection && (isMaster || !dockCombatant) ? (') &&
-      dockSource.includes('Sem economia de turno'),
+      dockSource.includes('Ações, Ação Bônus, Reação e Movimento indisponíveis no ciclo de morte'),
   );
 
   check(
@@ -7021,7 +7021,7 @@ check(
       source('src/combat/grid/GridToken.tsx').includes('title="Oculto dos jogadores"') &&
       source('src/components/InventoryDock.tsx').includes("title={open ? 'Fechar o inventário'") &&
       source('src/components/sections/IdentitySection.tsx').includes('title={raceInfo ||') &&
-      dockSource.includes('title="Sem economia de turno — Testes contra a Morte"'),
+      dockSource.includes('Ações, Ação Bônus, Reação e Movimento indisponíveis no ciclo de morte — o turno continua sendo seu.'),
   );
 
   /* ---------------------------------------------------------------------- */
@@ -7435,8 +7435,12 @@ check(
       waitingPanelSource.includes('<BattleWaitingAnim />') &&
       // A bandeja tática não repete o painel de espera do jogador.
       trackerSource.includes('{current && (isMaster || !dockCombatant) ? (') &&
-      // Encerrar turno indisponível na espera (e sem handler novo).
-      trackerSource.includes('disabled={!isMyTurn || busy || deathSavePending || dockDeathBlocked}') &&
+      // Encerrar turno indisponível na espera (e sem handler novo). O gate é uma
+      // derivação PURA (turno + Teste obrigatório), nunca `dockDeathBlocked`.
+      trackerSource.includes('const endTurnGate = endTurnAvailability({ isMyTurn, busy, deathSavePending });') &&
+      trackerSource.includes('disabled={endTurnGate.disabled}') &&
+      !trackerSource.includes('deathSavePending || dockDeathBlocked') &&
+      trackerSource.includes('deathSavePendingFor(turnDeathState, currentTurnKey)') &&
       (trackerSource.match(/async function endTurn/g) ?? []).length === 1 &&
       // A espera ocupa SÓ a região da Hotbar: sem overlay de tela inteira.
       workspaceRule('.hotbar-waiting').includes('display: flex;') &&
@@ -8903,9 +8907,19 @@ check(
     deathTrackerSource.includes('!awaitingInitiative && !dockDeathBlocked') &&
     // Entrar no ciclo encerra o fluxo de ataque (sem rota, sem gasto).
     deathTrackerSource.includes('if (!dockDeathBlocked) return;') &&
-    deathTrackerSource.includes(
-      'disabled={!isMyTurn || busy || deathSavePending || dockDeathBlocked}',
-    ),
+    // Encerrar turno NÃO é bloqueado por `dockDeathBlocked` (Hotbar inerte): o
+    // SERVIDOR decide e o Teste obrigatório é o único bloqueio de morte.
+    deathTrackerSource.includes('const endTurnGate = endTurnAvailability({ isMyTurn, busy, deathSavePending });') &&
+    deathTrackerSource.includes('disabled={endTurnGate.disabled}') &&
+    deathTrackerSource.includes('deathSavePendingFor(turnDeathState, currentTurnKey)') &&
+    // A tela relê o estado autoritativo depois do Teste (sem segunda rolagem).
+    source('src/pages/SheetPage.tsx').includes('onDeathSaveApplied: reconcileAfterDeathSave') &&
+    source('src/dice/useDiceRoller.ts').includes(
+      "if (context?.kind === 'death-save') deathSaveHook.current?.(roll);",
+    ) &&
+    // Mensagem honesta no ciclo: nega as AÇÕES, não o turno.
+    source('src/combat/components/PlayerCombatDock.tsx').includes('Sem ações disponíveis') &&
+    !source('src/combat/components/PlayerCombatDock.tsx').includes('>Sem turno<'),
 );
 
 check(

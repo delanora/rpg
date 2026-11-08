@@ -93,8 +93,28 @@ export function SheetPage({ user }: { user: SessionUser }) {
           .map((entry) => ({ id: entry.id, name: entry.name }))
       : [];
 
+  /**
+   * RECONCILIAÇÃO depois do Teste contra a Morte (6.6M.8.3).
+   *
+   * O SERVIDOR já aplicou o resultado; esta leitura só adota o estado
+   * autoritativo (combate + ficha) para a tela não depender da ordem de
+   * chegada dos eventos. Nenhuma rolagem é refeita, nenhum efeito é duplicado
+   * e o valor local dos dados continua sendo apresentação — quem decide
+   * continua sendo o servidor.
+   */
+  const reconcileAfterDeathSave = useCallback(() => {
+    void Promise.all([
+      fetchActiveCombat().catch(() => null),
+      api<{ character: Character | null }>('/api/characters/me').catch(() => null),
+    ]).then(([freshCombat, freshSheet]) => {
+      if (freshCombat) combatState.setCombat(freshCombat);
+      const fresh = freshSheet?.character;
+      if (fresh) setCharacter((prev) => (!prev || fresh.version >= prev.version ? fresh : prev));
+    });
+  }, [combatState.setCombat]);
+
   // Janela de dados (botão flutuante + avisos + rolagens de perícia).
-  const dice = useDiceRoller(user);
+  const dice = useDiceRoller(user, { onDeathSaveApplied: reconcileAfterDeathSave });
 
   // Música ambiente: o jogador SÓ ESCUTA. O hook segue o estado da mesa e
   // toca num `<audio>` fora do DOM — nenhuma interface é renderizada.

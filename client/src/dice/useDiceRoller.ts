@@ -85,7 +85,17 @@ const TOAST_MS = 3000;
  */
 const DEATH_SAVE_AUTO_CLOSE_MS = 3000;
 
-export function useDiceRoller(user: SessionUser) {
+/**
+ * Ganchos OPCIONAIS da tela. `onDeathSaveApplied` roda depois de uma rolagem de
+ * Teste Contra a Morte CONFIRMADA pelo servidor: a tela relê o estado
+ * autoritativo (`/api/combat/active`, ficha) e adota o que for mais novo. Não
+ * rola de novo, não aplica efeito e não usa o resultado local como autoridade.
+ */
+export interface DiceRollerOptions {
+  onDeathSaveApplied?: (roll: DiceRollDto) => void;
+}
+
+export function useDiceRoller(user: SessionUser, options: DiceRollerOptions = {}) {
   const isMaster = user.role === 'MASTER';
 
   const [open, setOpen] = useState(false);
@@ -123,6 +133,10 @@ export function useDiceRoller(user: SessionUser) {
   // Dono do tabuleiro que está na tela (para casar a rolagem com ele sem
   // depender do estado, que muda a cada evento).
   const remoteUserId = useRef<string | null>(null);
+  // Gancho de reconciliação sempre atualizado (o pai pode passar um closure
+  // novo a cada render sem recriar `submit` nem reexecutar efeitos).
+  const deathSaveHook = useRef(options.onDeathSaveApplied);
+  deathSaveHook.current = options.onDeathSaveApplied;
 
   // O mestre carrega o histórico já acumulado ao abrir o painel.
   useEffect(() => {
@@ -489,6 +503,10 @@ export function useDiceRoller(user: SessionUser) {
       });
 
       setResult(roll);
+      // Teste Contra a Morte aplicado pelo SERVIDOR: a tela relê o estado
+      // autoritativo em vez de esperar o próximo evento. Nada é recalculado
+      // aqui — o resultado dos dados continua sendo só apresentação.
+      if (context?.kind === 'death-save') deathSaveHook.current?.(roll);
       playDice();
       if (roll.crit) playCrit();
 

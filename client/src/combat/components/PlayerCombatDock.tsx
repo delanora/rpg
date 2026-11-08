@@ -471,9 +471,12 @@ export function PlayerCombatDock({
           leitura visual. */}
       <div className="dock-resources" aria-label="Recursos do turno">
         {deathBlocked ? (
-          <p className="dock-death" title="Sem economia de turno — Testes contra a Morte">
+          <p
+            className="dock-death"
+            title="Ações, Ação Bônus, Reação e Movimento indisponíveis no ciclo de morte — o turno continua sendo seu."
+          >
             <Icon name="skull" size={13} />
-            <span className="dock-death-label">Sem turno</span>
+            <span className="dock-death-label">Sem ações disponíveis</span>
           </p>
         ) : (
           <>
