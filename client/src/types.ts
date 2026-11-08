@@ -342,6 +342,8 @@ export interface Damage {
 }
 
 export interface Attack {
+  /** Alcance corpo a corpo explícito, em pés; apresentação em metros. */
+  reachFeet?: number;
   id: string;
   name: string;
   /** Dano PRINCIPAL do ataque (o combate resolve este por enquanto). */
@@ -2260,7 +2262,7 @@ export interface MovementPathReading {
 
 /**
  * Risco de Reação agregado. Para o jogador `boundaries` vem VAZIO (o servidor
- * não entrega reactor/arma/alcance); o Mestre recebe o diagnóstico completo.
+ * não entrega identidade/arma); contornos públicos usam apenas geometria.
  */
 export interface MovementReactionReading {
   risk: string;
@@ -2272,6 +2274,8 @@ export interface MovementReactionReading {
   }[];
   relationUnknown: boolean;
   masterAdjudication: boolean;
+  /** Contornos dos reactors públicos, sem nome de ataque nem estatísticas. */
+  threatAreas?: { minXFeet: number; minYFeet: number; widthFeet: number; heightFeet: number; reachFeet: number }[];
 }
 
 export interface MovementPreviewResponse {
@@ -2382,6 +2386,7 @@ export interface SceneDeletedPayload {
 }
 
 export interface CombatantDto {
+  sideKey?: string | null;
   mechanicalState: MechanicalState;
   conditionEffects: ConditionEffects;
   /**

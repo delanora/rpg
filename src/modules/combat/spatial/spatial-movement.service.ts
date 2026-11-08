@@ -19,7 +19,8 @@ import {
   type CombatSourced,
   type CombatantSourced,
 } from '../combat.dto.js';
-import { parseStoredPosition } from './occupied-space.js';
+import { isSpatiallyVisible } from './spatial-visibility.js';
+import { occupiedSpaceOf, parseStoredPosition } from './occupied-space.js';
 import { obstacleDtoOf } from './spatial-obstacle.js';
 import { effectiveSizeOf } from './spatial-size.js';
 import { effectiveSceneConfigOf, type SpatialPosition2D, type SpatialSize } from './spatial.types.js';
@@ -139,6 +140,7 @@ export interface MovementPreviewResult {
     risk: MovementReactionRisk;
     /** Vazio para jogador: identidade de reactor nunca vai para o tabuleiro. */
     boundaries: MovementBoundaryDiagnostic[];
+    threatAreas: { minXFeet: number; minYFeet: number; widthFeet: number; heightFeet: number; reachFeet: number }[];
     relationUnknown: boolean;
     masterAdjudication: boolean;
   };
@@ -420,7 +422,7 @@ export async function previewVoluntaryMovement(
   const revealBlockers = actor.role === 'MASTER';
   const movement = evaluateMovementForState(combat, combatant, path, revealBlockers);
   // Risco de Reação: a geometria é a MESMA do commit, mas a resposta do jogador
-  // não cita reactor/arma/alcance — só o risco agregado.
+  // não cita identidade/arma; contornos públicos trazem só geometria.
   const position = parseStoredPosition(combatant.spatialPosition);
   const scan = scanReactionThreats(combat, combatant, movementEconomyOf(combatant));
   const boundaries = position
@@ -436,11 +438,22 @@ export async function previewVoluntaryMovement(
       risk: movementReactionRiskOf({
         possible: boundaries.length > 0,
         relationUnknown: scan.relationUnknown,
-        awaitingMaster: scan.masterAdjudication,
+        awaitingMaster: boundaries.some(boundary => boundary.visibility === 'unknown'),
       }),
       boundaries: revealBlockers ? boundaryDiagnostics(boundaries) : [],
+      threatAreas: boundaries.flatMap(boundary => {
+        const reactor = combat.combatants.find(unit => unit.id === boundary.reactorCombatantId);
+        if (!reactor || (!revealBlockers && !isSpatiallyVisible(reactor.spatialVisibility))) return [];
+        const position = parseStoredPosition(reactor.spatialPosition);
+        const space = position && occupiedSpaceOf(position, effectiveSizeOf((reactor.baseSize ?? 'medium') as SpatialSize));
+        if (!space) return [];
+        return [...new Set(boundary.options.map(option => option.reachFeet))].map(reachFeet => ({
+          minXFeet: space.minXFeet, minYFeet: space.minYFeet,
+          widthFeet: space.widthFeet, heightFeet: space.heightFeet, reachFeet,
+        }));
+      }).filter((area, index, all) => all.findIndex(other => other.minXFeet === area.minXFeet && other.minYFeet === area.minYFeet && other.widthFeet === area.widthFeet && other.heightFeet === area.heightFeet && other.reachFeet === area.reachFeet) === index),
       relationUnknown: scan.relationUnknown,
-      masterAdjudication: scan.masterAdjudication,
+      masterAdjudication: boundaries.some(boundary => boundary.visibility === 'unknown'),
     },
   };
 }

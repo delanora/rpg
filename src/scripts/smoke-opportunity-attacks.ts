@@ -440,7 +440,7 @@ export async function smokeOpportunityAttacks(
       masterToken,
     );
     check(
-      '92.A) preview do jogador avisa que há risco de Reação SEM citar reactor/arma/alcance',
+      '92.A) preview do jogador avisa risco e contornos SEM citar identidade/arma/estatísticas do reactor',
       previewPlayer.status === 200 &&
         previewPlayer.data.reaction.risk === 'possible' &&
         previewPlayer.data.reaction.boundaries.length === 0 &&

@@ -19,6 +19,7 @@ export const startCombatSchema = z.object({
       z.object({
         creatureId: z.string().min(1),
         quantity: z.number().int().min(1).max(30),
+        disposition: z.enum(['hostile', 'neutral', 'allied']).optional(),
       }),
     )
     .max(100)

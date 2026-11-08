@@ -57,6 +57,7 @@ export function CombatStartDialog({
   const [sceneId, setSceneId] = useState('');
   const [kindFilter, setKindFilter] = useState<KindFilter>('ALL');
   const [nameQuery, setNameQuery] = useState('');
+  const [dispositions, setDispositions] = useState<Record<string, 'hostile' | 'neutral' | 'allied'>>({});
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +145,7 @@ export function CombatStartDialog({
       const entries = creatures
         .map((creature) => ({
           creatureId: creature.id,
+          disposition: dispositions[creature.id] ?? (creature.kind === 'NPC' ? 'neutral' as const : 'hostile' as const),
           // O servidor também normaliza/recusa; aqui já mandamos a regra certa.
           quantity: creature.kind === 'NPC' ? Math.min(1, quantities[creature.id] ?? 0) : quantities[creature.id] ?? 0,
         }))
@@ -317,6 +319,11 @@ export function CombatStartDialog({
                         {creature.challengeRating ? ` · ND ${creature.challengeRating}` : ''}
                       </span>
                     </span>
+                    <select aria-label={`Relação de ${creature.name} com os jogadores`} disabled={busy}
+                      value={dispositions[creature.id] ?? (isNpc ? 'neutral' : 'hostile')}
+                      onChange={event => setDispositions(previous => ({...previous, [creature.id]: event.target.value as 'hostile' | 'neutral' | 'allied'}))}>
+                      <option value="hostile">Hostil</option><option value="neutral">Neutro</option><option value="allied">Aliado</option>
+                    </select>
                     {isNpc ? (
                       <button
                         type="button"

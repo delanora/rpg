@@ -1150,10 +1150,24 @@ async function main(): Promise<void> {
         expectedVersion: combat.version, operationId: randomUUID() },
     });
     if (movimentoNpc.data.combat) combat = movimentoNpc.data.combat as CombatDto;
+    // Com lados definidos na preparação, sair do alcance abre reação real.
+    // Recusar cada janela conclui o trajeto antes de conferir o orçamento total.
+    for (let janela = 0; janela < 8; janela++) {
+      const leitura = await http(`/api/combat/${combat.id}/reaction-opportunities`, {token: masterToken});
+      const oportunidade = leitura.data.opportunities?.find((item: {actionable: boolean}) => item.actionable);
+      if (!oportunidade) break;
+      const recusa = await http(`/api/combat/${combat.id}/reaction-opportunities/${oportunidade.id}/decline`, {
+        token: masterToken, body:{combatId:combat.id,expectedVersion:combat.version,operationId:randomUUID()},
+      });
+      if (recusa.status !== 200) throw new Error('Falha ao recusar oportunidade no trajeto do NPC');
+      combat = recusa.data.combat as CombatDto;
+    }
     const economiaNpc = combat.combatants.find((item) => item.id === npcId)!.turnEconomy;
     check('GP34.N) NPC de 9 m compartilha conversão e orçamento: 30 − 10 = 20 pés',
-      movimentoNpc.status === 200 && movimentoNpc.data.movement?.movementRemainingAfterFeet === 20 &&
-      economiaNpc.movementBudget === 9 && economiaNpc.movementUsed === 3,
+      movimentoNpc.status === 200 && movimentoNpc.data.movement?.movementRemainingBeforeFeet === 30 &&
+      remainingMovementFeet(economiaNpc.movementBudget, economiaNpc.movementUsed) === 20 &&
+      economiaNpc.movementBudget === 9 && economiaNpc.movementUsed === 3 &&
+      combat.combatants.find(item => item.id === npcId)?.spatial?.position?.xFeet === 20,
       JSON.stringify({ economiaNpc, movimento: movimentoNpc.data.movement }));
 
     // =====================================================================

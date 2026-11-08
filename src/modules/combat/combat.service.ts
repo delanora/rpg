@@ -774,6 +774,8 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
     return Array.from({ length: quantity }, (_, index) => ({
       kind: creature.kind === 'NPC' ? ('NPC' as const) : ('CREATURE' as const),
       creatureId: creature.id,
+      sideKey: entry.disposition === 'allied' ? 'players' :
+        (entry.disposition ?? (creature.kind === 'NPC' ? 'neutral' : 'hostile')) === 'hostile' ? 'enemies' : 'neutral',
       // Cópias da mesma criatura recebem um sufixo para se distinguirem.
       name: quantity > 1 ? `${creature.name} ${index + 1}` : creature.name,
       dexterityMod: abilityModifier(creature.dexterity),
@@ -820,6 +822,7 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
               .filter((character) => character.user.role === 'PLAYER')
               .map((character) => ({
                 kind: 'CHARACTER' as const,
+                sideKey: 'players',
                 characterId: character.id,
                 name: character.name,
                 ownerUserId: character.userId,

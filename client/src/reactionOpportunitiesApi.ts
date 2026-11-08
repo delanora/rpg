@@ -98,3 +98,10 @@ export function declineOpportunityReaction(
     { method: 'POST', body: { combatId, expectedVersion, operationId: newOperationId() } },
   );
 }
+
+/** Confirma apenas visão desconhecida, sem sobrepor fatos mecânicos. */
+export function adjudicateOpportunityVisibility(combatId: string, opportunityId: string, visible: boolean, expectedVersion: number): Promise<ReactionResolutionResponse> {
+  return api<ReactionResolutionResponse>(`/api/combat/${combatId}/reaction-opportunities/${opportunityId}/visibility`, {
+    method:'POST', body:{combatId,visible,expectedVersion,operationId:newOperationId()},
+  });
+}

@@ -392,6 +392,16 @@ export function AttacksTable({
                       </span>
                     </td>
                     <td>
+                      {!attack.ranged ? <label className="attack-reach-field">Alcance (m)
+                        <InlineField value={attack.reachFeet === undefined ? '' : String(Math.round(attack.reachFeet * 30) / 100)}
+                          placeholder="não definido" ariaLabel={`Alcance corpo a corpo de ${attack.name} em metros`}
+                          onCommit={text => {
+                            const meters = Number(text.replace(',', '.'));
+                            if (text.trim() === '') patchAttack(attack.id, { reachFeet: undefined });
+                            else if (Number.isFinite(meters) && meters > 0 && meters <= 300)
+                              patchAttack(attack.id, { reachFeet: Math.round(meters / 0.3 * 100) / 100 });
+                          }} />
+                      </label> : null}
                       <InlineField
                         value={attack.notes}
                         placeholder="observações"

@@ -125,6 +125,8 @@ export const attackSchema = z.object({
   finesse: z.boolean().default(false),
   /** Arma à distância: habilita o Ataque Furtivo do ladino. */
   ranged: z.boolean().default(false),
+  /** Alcance corpo a corpo explícito do statblock, em pés; ausência permanece assistida. */
+  reachFeet: z.number().finite().positive().max(1000).optional(),
   /**
    * Texto de dano original, preservado só quando a migração não conseguiu
    * converter a expressão antiga com segurança (ver `legacy`).
@@ -166,9 +168,8 @@ export interface CombatAttack extends Attack {
   /**
    * FASE 6.6L.2 — ALCANCE derivado da arma (nunca do nome), em PÉS:
    * `reachFeet` para corpo a corpo; `normalRangeFeet`/`longRangeFeet` para
-   * à distância e arremesso. Ataques gravados à mão e statblocks não têm esses
-   * campos: sem dado estruturado o alcance é UNKNOWN (assistido), jamais
-   * inventado a partir do texto. Não são persistidos — `parseJson` os descarta.
+   * à distância e arremesso. Ataques manuais podem persistir reachFeet explícito.
+   * Sem esse dado, o alcance permanece UNKNOWN; nunca é inferido do nome ou do tamanho.
    */
   reachFeet?: number;
   normalRangeFeet?: number;

@@ -53,6 +53,7 @@ export interface CombatHotbarEntry {
   description?: string;
   icon: 'sword' | 'ammo';
   cost: HotbarCost;
+  disabledReason?: string;
   /** Id no fluxo EXISTENTE: o clique só encaminha para ele. */
   sourceId: string;
 }
@@ -492,4 +493,15 @@ export function entriesOutsideLayout(
       .map((ref) => ref.sourceId),
   );
   return entries.filter((entry) => !placed.has(entry.sourceId));
+}
+
+/** Atalho contextual: não altera preferências salvas nem concede execução sem gatilho. */
+export function opportunityHotbarShortcut(entries: readonly CombatHotbarEntry[], attacks: readonly Attack[], pending: boolean): CombatHotbarEntry | null {
+  const melee = entries.some(entry => attacks.some(attack => attack.id === entry.sourceId &&
+    !attack.ranged && !attack.blocked && !attack.id.startsWith('offhand:') && (attack.reachFeet ?? 0) > 0));
+  if (!melee && !pending) return null;
+  return { id:'context:opportunity', kind:'attack', sourceId:'context:opportunity', label:'Ataque de oportunidade',
+    detail: pending ? 'Reação disponível — escolha na janela' : 'Aguardando saída de alcance hostil',
+    description:'Uma reação, um ataque corpo a corpo. O servidor abre a janela quando houver um gatilho válido.',
+    icon:'sword', cost:'reaction', ...(pending ? {} : {disabledReason:'Aguardando gatilho de ataque de oportunidade'}) };
 }

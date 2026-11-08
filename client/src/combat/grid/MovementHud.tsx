@@ -138,7 +138,7 @@ export function MovementHud({
         <p className="grid-hud-hint">Custo de arrastar-se (Caído) aplicado pelo servidor.</p>
       ) : null}
       {reaction && reaction.risk !== 'none' ? (
-        <p className="grid-hud-risk">Reação possível: o servidor pausa antes da saída de alcance.</p>
+        <p className="grid-hud-risk">{reaction.risk === 'relation-unknown' ? 'Relação não definida: o Mestre precisa ajustar os lados.' : 'Pode provocar ataque de oportunidade.'}</p>
       ) : null}
       <div className="grid-hud-actions">
         <button type="button" className="btn btn-small" disabled={busy} onClick={onCancel}>

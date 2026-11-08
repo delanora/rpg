@@ -45,6 +45,7 @@ import { CombatLog } from './components/CombatLog';
 import {
   assignHotbarRef,
   buildCombatHotbarEntries,
+  opportunityHotbarShortcut,
   clearHotbarRef,
   entriesOutsideLayout,
   filterHotbarView,
@@ -71,6 +72,7 @@ import { TurnToast } from './components/TurnToast';
 import { reactionOpportunitiesForViewer, type ReactionOpportunity } from './reactions';
 import {
   declineOpportunityReaction,
+  adjudicateOpportunityVisibility,
   fetchReactionOpportunities,
   resolveOpportunityAttack,
   type ReactionOpportunitiesReadModel,
@@ -326,7 +328,7 @@ export function CombatTracker({
    * apresentação — a configuração persistida não é reescrita pelo filtro.
    */
   const hotbarLayout: HotbarLayout | null = characterHotbar ?? null;
-  const hotbarSlots = filterHotbarView(
+  let hotbarSlots = filterHotbarView(
     resolveHotbarSlots({
       entries: hotbarEntries,
       attacks: characterAttacks,
@@ -489,6 +491,12 @@ export function CombatTracker({
     user.id,
   ).filter((opportunity) => !closedReactions.includes(opportunity.id));
   const reactionOpportunity = myReactionOpportunities[0] ?? null;
+  const opportunityShortcut = opportunityHotbarShortcut(hotbarEntries, characterAttacks, Boolean(reactionOpportunity));
+  if (hotbarFilter === 'reaction' && !hotbarEditing && opportunityShortcut) {
+    hotbarSlots = [{ index:1, entry:opportunityShortcut, ref:null, state:'ready' as const }, ...hotbarSlots.slice(0, -1)]
+      .map((slot, index) => ({...slot, index:index + 1}));
+  }
+
   const closeReaction = (opportunityId: string): void =>
     setClosedReactions((previous) => [...previous, opportunityId]);
   const serverOpportunityOf = (opportunityId: string): ServerReactionOpportunity | undefined =>
@@ -1125,9 +1133,10 @@ export function CombatTracker({
               // Clique TOGGLE (6.6M.6.2.2): o mesmo slot que abre o painel o
               // fecha — sem segundo estado de seleção e sem tocar em nada já
               // enviado ao servidor (a identidade é o `sourceId` do fluxo).
-              onSelect={(entry) =>
-                setHotbarPick((prev) => toggleHotbarPick(prev, entry.sourceId))
-              }
+              onSelect={(entry) => {
+                if (entry.sourceId === 'context:opportunity') { document.querySelector<HTMLElement>('.reaction-panel')?.focus(); return; }
+                setHotbarPick((prev) => toggleHotbarPick(prev, entry.sourceId));
+              }}
               // EDITOR (6.6M.6.3.1): o gesto de abrir vive na dock, ao lado do
               // retrato; aqui só existe o editor já aberto.
               editing={hotbarEditing}
@@ -1595,6 +1604,14 @@ export function CombatTracker({
             {reactionOpportunity ? (
               <ReactionPanel
                 opportunity={reactionOpportunity}
+                reactorName={combat.combatants.find(unit => unit.id === reactionOpportunity.reactorCombatantId)?.name}
+                needsVisibility={serverOpportunityOf(reactionOpportunity.id)?.visibilityStatus === 'unknown'}
+                onVisibility={visible => {
+                  setReactionBusy(true);
+                  void adjudicateOpportunityVisibility(combat.id, reactionOpportunity.id, visible, combat.version)
+                    .then(result => { onCombatChange(result.combat); if(!visible) closeReaction(reactionOpportunity.id); })
+                    .catch(error => onError(error instanceof Error ? error.message : 'Não foi possível confirmar a visão.')).finally(() => setReactionBusy(false));
+                }}
                 busy={busy || reactionBusy}
                 onChoose={(optionId) => {
                   const entry = serverOpportunityOf(reactionOpportunity.id);

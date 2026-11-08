@@ -9,6 +9,7 @@ export function fetchActiveCombat(): Promise<CombatDto | null> {
 }
 
 export interface CombatCreatureEntry {
+  disposition?: 'hostile' | 'neutral' | 'allied';
   creatureId: string;
   quantity: number;
 }
@@ -171,4 +172,11 @@ export function overrideEconomy(combat: CombatDto, input: {
   combatantId: string; adjustment: EconomyAdjustment; reason?: string; remaining?: number;
 }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/economy/override', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
+}
+
+/** Ajuste explícito do lado do encontro, com versão e idempotência existentes. */
+export function setCombatantSide(combat: CombatDto, combatantId: string, sideKey: string | null): Promise<CombatDto> {
+  return api<{combat: CombatDto}>(`/api/combat/${combat.id}/combatants/${combatantId}/side`, {
+    method: 'PATCH', body: { ...operationFor(combat), sideKey },
+  }).then(result => result.combat);
 }

@@ -17925,3 +17925,12 @@ input[type='checkbox']:focus-visible,
   font-size: var(--text-micro);
   color: var(--muted, inherit);
 }
+
+/* Alcance explícito de ataques manuais: metros na interface, pés no contrato. */
+.attack-reach-field { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--ink-faint); margin-bottom: 0.3rem; }
+.combat-reaction-overlay { position: fixed; inset: 0; z-index: 2300; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 40%); }
+.combat-reaction-overlay .reaction-panel, .combat-risk-dialog { width: min(28rem, 100%); max-height: calc(100dvh - 2rem); overflow-y: auto; border: 1px solid var(--gold-deep); border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: 0 16px 48px rgb(0 0 0 / 45%); padding: 1rem; }
+.combat-reaction-overlay h3 { color: var(--gold); margin: 0 0 0.5rem; }
+.combat-risk-dialog p, .reaction-visibility p { margin: 0.4rem 0 0.8rem; font-size: 0.85rem; }
+.combat-risk-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
+.grid-threat-area { position: absolute; pointer-events: none; z-index: 2; box-sizing: border-box; border: 2px dashed var(--danger); background: color-mix(in srgb, var(--danger) 9%, transparent); border-radius: 4px; }

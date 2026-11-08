@@ -1,3 +1,6 @@
+import { effectiveSceneConfigOf, type SpatialPosition2D } from './spatial.types.js';
+import { evaluateWallPath } from './targeting-walls.js';
+import { obstacleDtoOf } from './spatial-obstacle.js';
 import type { Prisma } from '@prisma/client';
 import type { CombatSourced, CombatantSourced } from '../combat.dto.js';
 import {
@@ -41,6 +44,8 @@ import {
 export interface ReactionThreatScan {
   /** Threats elegíveis, na ordem de iniciativa. */
   threats: ReachThreat[];
+  visibilityByReactor?: Map<string, OpportunityVisibilityStatus>;
+  clearPathAt?: (reactorId: string, position: SpatialPosition2D, size: SpatialSize) => boolean;
   /** Ordem de iniciativa (índice canônico de `orderCombatants`). */
   orderIndex: Map<string, number>;
   /** Existe alguma criatura com lado desconhecido e ataque corpo a corpo? */
@@ -107,11 +112,12 @@ export function scanReactionThreats(
   const moverSide = normalizeSideKey(mover.sideKey ?? null);
   const moverState = combatantMechanicalState(mover);
   const threats: ReachThreat[] = [];
+  const visibilityByReactor = new Map<string, OpportunityVisibilityStatus>();
   let relationUnknown = false;
   let masterAdjudication = false;
 
   if (!moverPosition) {
-    return { threats, orderIndex, relationUnknown, masterAdjudication };
+    return { threats, orderIndex, relationUnknown, masterAdjudication, visibilityByReactor };
   }
 
   for (const candidate of combat.combatants) {
@@ -132,9 +138,8 @@ export function scanReactionThreats(
     const reactorEffects = deriveConditionEffects(combatantMechanicalState(candidate));
     const visibility: OpportunityVisibilityStatus = opportunityVisibilityOf({
       canSeeMover: canSee(combatantMechanicalState(candidate), moverState),
-      // Nesta fase a cena NÃO tem paredes nem linha de visão: nada pode obstruir.
-      // Quando existirem occluders, isto vira `unknown` (Mestre adjudica).
-      occludersExist: false,
+      // Visão geométrica ainda assistida: paredes opacas pedem decisão do Mestre.
+      occludersExist: combat.scene?.obstacles?.some(wall => wall.blocksSight) ?? false,
     });
     const eligibility = opportunityEligibility({
       relation,
@@ -144,12 +149,10 @@ export function scanReactionThreats(
       visibility,
       hasMeleeOption: profiles.length > 0,
     });
-    if (!eligibility.eligible) {
-      if (visibility === 'unknown') masterAdjudication = true;
-      continue;
-    }
+    if (!eligibility.eligible) continue;
     if (visibility === 'unknown') masterAdjudication = true;
 
+    visibilityByReactor.set(candidate.id, visibility);
     threats.push({
       reactorCombatantId: candidate.id,
       reactorName: candidate.name,
@@ -158,7 +161,13 @@ export function scanReactionThreats(
     });
   }
 
-  return { threats, orderIndex, relationUnknown, masterAdjudication };
+  return { threats, orderIndex, relationUnknown, masterAdjudication, visibilityByReactor,
+    clearPathAt: (reactorId, position, size) => {
+      const reactor = threats.find(threat => threat.reactorCombatantId === reactorId);
+      return evaluateWallPath(effectiveSceneConfigOf(combat), reactor?.body ?? null, {position, size},
+        combat.scene?.obstacles?.map(obstacleDtoOf) ?? []).result !== 'fail';
+    },
+  };
 }
 
 /** Boundary já com as opções e a ordem determinística do reactor. */
@@ -180,10 +189,12 @@ export function scanReactionBoundaries(
     threats: scan.threats,
   });
   return boundaries
+    .filter(boundary => scan.clearPathAt?.(boundary.reactorCombatantId,
+      boundary.stepIndex === 0 ? mover.position : path[boundary.stepIndex - 1]!, mover.size) !== false)
     .map((boundary) => ({
       ...boundary,
       orderIndex: scan.orderIndex.get(boundary.reactorCombatantId) ?? Number.MAX_SAFE_INTEGER,
-      visibility: 'known-visible' as OpportunityVisibilityStatus,
+      visibility: scan.visibilityByReactor?.get(boundary.reactorCombatantId) ?? 'known-visible' as OpportunityVisibilityStatus,
       options: opportunityOptionsOf(boundary),
     }))
     .sort((a, b) => a.stepIndex - b.stepIndex || a.orderIndex - b.orderIndex);

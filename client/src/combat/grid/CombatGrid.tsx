@@ -14,6 +14,8 @@ import { createOperationId } from '../../utils';
 import { GridToken, type GridUnit } from './GridToken';
 import { UnplacedCombatantsTray, GRID_DRAG_MIME } from './UnplacedCombatantsTray';
 import { SpatialSceneControls } from './SpatialSceneControls';
+import { MovementRiskDialog } from '../components/MovementRiskDialog';
+import { GridThreatAreas } from './GridThreatAreas';
 import { GridMovementOverlay } from './GridMovementOverlay';
 import { GridMovementTrace } from './GridMovementTrace';
 import { GridRuler } from './GridRuler';
@@ -138,8 +140,8 @@ export interface CombatGridProps {
 /**
  * Ferramenta ATIVA do grid — estado SÓ de UI (nunca vai ao banco nem ao DTO).
  *
- * MOVIMENTO NÃO É MODO. Arrastar um token com autoridade inicia o Movement
- * direto; não existe botão "Mover" nem confirmação manual. As ferramentas
+ * MOVIMENTO NÃO É MODO. Arrastar um token com autoridade inicia o movimento
+ * direto; somente saídas de alcance com risco pedem confirmação adicional. As ferramentas
  * explícitas são mutuamente exclusivas e `none` é a superfície livre:
  * • `none`      = gesto direto (pan no fundo, arrasto do token, régua com F);
  * • `placement` = organização administrativa da cena (Mestre);
@@ -239,7 +241,7 @@ function messageOf(error: unknown): string {
 /** Campo de texto/editor: atalhos do grid NÃO disparam ali. */
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
+  if (target.isContentEditable || target.closest('[role="dialog"], [role="alertdialog"]')) return true;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
@@ -310,6 +312,22 @@ export function CombatGrid({
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
   const [movementBusy, setMovementBusy] = useState(false);
+  const [riskPrompt, setRiskPrompt] = useState(false);
+  const riskAnswer = useRef<((answer: boolean) => void) | null>(null);
+  function answerRisk(answer: boolean): void {
+    const resolve = riskAnswer.current; riskAnswer.current = null;
+    setRiskPrompt(false); resolve?.(answer);
+  }
+  async function acceptReactionRisk(reading: MovementPreviewResponse): Promise<boolean> {
+    if (reading.reaction.risk !== 'possible') return true;
+    setRiskPrompt(true);
+    return new Promise(resolve => { riskAnswer.current = resolve; });
+  }
+  useEffect(() => {
+    setRiskPrompt(false);
+    return () => { riskAnswer.current?.(false); riskAnswer.current = null; };
+  }, [combat.id, combat.version]);
+
   // --- 6.6M.3.1.2: Measure to Move (estado APENAS local) -------------------
   const [measureMove, setMeasureMove] = useState<MeasureMoveIntent | null>(null);
   const measureMoveRef = useRef<MeasureMoveIntent | null>(null);
@@ -1035,6 +1053,7 @@ export function CombatGrid({
 
   /** POINTERUP = CONFIRMAÇÃO: sem botão, sem passo extra. */
   function finishDraft(): void {
+    if (released.current) return;
     released.current = true;
     gestureRef.current = null;
     setGrabGesture(null);
@@ -1261,6 +1280,7 @@ export function CombatGrid({
   useEffect(() => {
     if (!grabGesture && !draft) return undefined;
     function onMove(event: globalThis.PointerEvent): void {
+      if (released.current) return;
       lastPointer.current = { x: event.clientX, y: event.clientY };
       const gesture = gestureRef.current;
       if (gesture && !draftRef.current) {
@@ -1357,6 +1377,8 @@ export function CombatGrid({
         clearDraft();
         return;
       }
+      setPreview(fresh);
+      if (!await acceptReactionRisk(fresh)) { clearDraft(); return; }
       operationRef.current ??= createOperationId();
       // Daqui até a resposta, o draft está em COMMIT: qualquer eco do socket
       // sobre ESTE combatente é o nosso movimento, não uma invalidação.
@@ -1437,6 +1459,11 @@ export function CombatGrid({
         measureMoveRef.current = blocked;
         setMeasureMove(blocked);
         return;
+      }
+      setMeasureMove({ ...running, preview: fresh });
+      if (!await acceptReactionRisk(fresh)) {
+        const revised: MeasureMoveIntent = { ...running, preview: fresh, state: 'ready' };
+        measureMoveRef.current = revised; setMeasureMove(revised); return;
       }
       operationRef.current ??= createOperationId();
       // Mesmo contrato do gesto direto: o eco do NOSSO commit não invalida a
@@ -2054,6 +2081,7 @@ export function CombatGrid({
         </p>
       ) : null}
 
+      {riskPrompt ? <MovementRiskDialog onAnswer={answerRisk} /> : null}
       <div className="grid-stage">
         {/*
           JOGADOR: o palco NÃO exibe turno nem dimensões (6.6M.6.1.5.1). O
@@ -2170,6 +2198,8 @@ export function CombatGrid({
                 />
               ))}
 
+              <GridThreatAreas areas={(draft ? preview : measureMove?.preview)?.reaction.threatAreas}
+                cellSizeFeet={cellSizeFeet} pixelsPerCell={DEFAULT_PIXELS_PER_CELL} />
               {/* GHOST livre: acompanha o ponteiro; o token real fica na origem. */}
               {draft && draftUnit?.spatial ? (
                 <GridMovementOverlay

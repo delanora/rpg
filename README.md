@@ -39,6 +39,32 @@ Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada joga
 
 ---
 
+## Ataques de oportunidade no grid
+
+Na preparação do combate, o Mestre escolhe **Hostil**, **Neutro** ou **Aliado**
+para cada criatura. NPCs começam neutros; criaturas têm Hostil pré-selecionado.
+O menu do token permite ajustar a relação durante o encontro, inclusive em
+combates anteriores sem lados definidos. Neutros e aliados não provocam oportunidade.
+
+Ataques manuais precisam de **Alcance (m)** informado no cadastro de ataques.
+Armas equipadas reutilizam o alcance derivado do servidor. Ataques antigos sem
+alcance continuam assistidos; o sistema não deduz esse valor pelas observações.
+
+Ao prever uma saída de alcance hostil, o grid destaca o contorno de ameaça dos
+tokens públicos e pede confirmação antes do movimento. O servidor pausa antes
+da saída; uma janela permite atacar ou recusar, inclusive fora do próprio turno.
+Criaturas/NPCs são controlados pelo Mestre e personagens pelo seu jogador.
+O filtro **Reações** da hotbar mostra um ícone contextual, aguardando um gatilho;
+nenhum clique permite gastar uma reação livre. A personalização salva é preservada.
+
+Desengajar, reação já usada e incapacidade de agir continuam impedindo o gatilho.
+Paredes opacas mantêm a visão assistida, confirmada pelo Mestre; uma barreira
+completa que bloqueia ataques impede uma oportunidade impossível. O contorno é
+uma indicação de alcance, sem cálculo automático de visão ou cobertura parcial.
+
+Confirmação de hostilidade após ataques, seleção individual de envolvidos,
+duelo consentido e Conjurador de Guerra são as próximas entregas desta frente.
+
 ## 🗺️ Editor de paredes da cena
 
 No painel do Mestre, abra **Regiões → Localidade → Cenas → Mapa e paredes**.

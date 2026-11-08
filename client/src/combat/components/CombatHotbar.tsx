@@ -364,8 +364,8 @@ export function CombatHotbar({
               aria-label={`${slot.index}. ${entry.label} — ${entry.detail} (${COST_LABEL[entry.cost]})${
                 spent ? ' — recurso do turno já usado' : ''
               }`}
-              title={spent ? `Sem ${COST_LABEL[entry.cost]} disponível neste turno` : undefined}
-              disabled={busy || spent}
+              title={entry.disabledReason ?? (spent ? `Sem ${COST_LABEL[entry.cost]} disponível neste turno` : undefined)}
+              disabled={busy || spent || Boolean(entry.disabledReason)}
               onClick={() => onSelect(entry)}
             >
               <span className="hotbar-slot-key" aria-hidden="true">

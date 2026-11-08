@@ -23,7 +23,7 @@
 - **UI de combate:** workspace com grid central, iniciativa, registro e **dock do jogador com Hotbar personalizável 2 × 24 (48 slots)**; fluxo de pré-iniciativa, espera, targeting em tokens e Death Saves consolidado.
 - **6.6M.9–9.2:** Golden Path de sessão jogável e consistência de deslocamento foram marcados como ✅ no Roadmap compartilhado; há teste integrado `src/scripts/smoke-combat-playable.ts`.
 - **Trabalho recente:** paredes com bloqueios independentes de movimento e ataques/magias; caminho livre validado nos casos claros, além do editor, ping e menus dos tokens.
-- **Próxima frente de produto:** consolidar **linha de visão, caminho livre para ataques/magias e cobertura** com as paredes existentes, antes de ampliar áreas e conteúdo executável.
+- **Próxima frente de produto:** refinar reações: gatilho, hotbar e aura entregues; seguem hostilidade escolhida pelo Mestre, duelo e Conjurador de Guerra. Depois retomar visão e cobertura.
 - **Não concluir que “PHB completo” está pronto:** existem lacunas de magias especiais, características, reações avançadas, passagem do tempo fora de combate e ferramentas do Mestre.
 
 ## 3. Regras de arquitetura que nenhuma etapa deve violar
@@ -128,6 +128,14 @@
 ## 6. Próximas etapas e prioridades
 
 A **sequência abaixo é direcional**, não autorização para antecipar fases. Escolha **uma única microfase** por implementação, verificando antes os contratos reais no GitHub e atualizando o Roadmap compartilhado.
+
+### Prioridade atual — Refinar ataques de oportunidade
+
+| Entrega | Estado | Resumo |
+|---|---|---|
+| **Gatilho, hotbar e área de ameaça** | ✅ implementada e testada | Relações escolhidas na preparação, alcance manual, contorno na prévia, confirmação de movimento e janela de reação fora do turno. NPCs começam neutros. |
+| **Hostilidade e duelo** | ⬜ próxima | Ao atacar um NPC neutro, o Mestre decide se há hostilidade e seleciona os envolvidos. Duelo exige aceite entre jogadores; aliados não provocam oportunidade. |
+| **Conjurador de Guerra** | ⬜ seguinte | Substituir o ataque por uma magia elegível na mesma janela de reação, conforme PHB 2014. |
 
 ### Prioridade 1 — Consolidar linha de visão e cobertura espacial
 
