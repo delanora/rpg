@@ -37,7 +37,7 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
    * etiquetas do painel, Levantar-se continua no ActionMenu e a salvaguarda
    * pendente é montada FORA do retrato (uma instância só).
    */
-  variant?: 'combat' | 'sheet' | 'dock';
+  variant?: 'combat' | 'sheet' | 'dock' | 'token';
 }) {
   const { user } = useAuth();
   const { readOnly } = useSheetAccess();
@@ -106,7 +106,7 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
     catch (err) { setError(err instanceof Error ? err.message : 'Falha ao atualizar estado mecânico.'); await refresh().catch(() => {}); }
     finally { busyRef.current = false; setBusy(false); }
   }
-  if (!current) return error ? <p className="error">{error}</p> : null;
+  if (!current) return error ? <p className="error">{error}</p> : variant === 'token' ? <p role="status">Carregando estado do alvo…</p> : null;
 
   // A ficha ouve `game:config`: o valor da prop vence o do DTO para o status
   // sumir/voltar na hora, sem recarregar. No combate, o DTO republicado manda.
@@ -251,9 +251,9 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
         ActionMenu da dock, que mostra custo e motivo): nada de segunda regra. */}
     {variant !== 'dock' && current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
     {/* COMBATE: ferramenta compacta de Conditions do Mestre (mesmo domínio). */}
-    {isMaster && variant === 'combat' ? <>
+    {isMaster && (variant === 'combat' || variant === 'token') ? <>
       {/* 6.6F: fila de confirmação espacial da conjuração do jogador. */}
-      <MasterSpellIntentsPanel />
+      {variant === 'combat' ? <MasterSpellIntentsPanel /> : null}
       <MasterEffectsPanel
         entity={entity}
         targetName={current.name}

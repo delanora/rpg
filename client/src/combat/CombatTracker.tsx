@@ -1,3 +1,6 @@
+import { CombatTokenMenu } from './components/CombatTokenMenu';
+import { CombatTokenAdjustments } from './components/CombatTokenAdjustments';
+import { MasterSpellIntentsPanel } from '../components/MasterSpellIntentsPanel';
 import { MechanicalPanel } from '../components/MechanicalPanel';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../api';
@@ -12,7 +15,6 @@ import {
 } from './resolutionApi';
 import { InventoryDock } from '../components/InventoryDock';
 import {
-  applyManualHp,
   endCombat,
   executeEconomyAction,
   fetchActiveCombat,
@@ -35,7 +37,7 @@ import {
 import './grid/grid.css';
 import './workspace.css';
 import { BattleWaitingInline, BattleWaitingPanel } from './components/BattleWaitingPanel';
-import { CombatActionPanel, ManualHpPanel } from './components/CombatActionPanel';
+import { CombatActionPanel } from './components/CombatActionPanel';
 import { CombatWorkspace } from './components/CombatWorkspace';
 import { ActionMenu } from './components/ActionMenu';
 import { CombatHotbar } from './components/CombatHotbar';
@@ -62,7 +64,6 @@ import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
 import { DeathSavePanel } from './components/DeathSavePanel';
 import { DeathSaveSkipDialog } from './components/DeathSaveSkipDialog';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
-import { MasterEconomyPanel } from './components/MasterEconomyPanel';
 import { ReactionPanel } from './components/ReactionPanel';
 import { PlayerCombatDock } from './components/PlayerCombatDock';
 import { PendingEffectSavePanel } from './components/PendingEffectSavePanel';
@@ -200,6 +201,12 @@ export function CombatTracker({
   npcInventory,
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
+  const [inspectedToken, setInspectedToken] = useState<{ id: string; point: { x: number; y: number } } | null>(null);
+  const closeTokenMenu = useCallback(() => setInspectedToken(null), []);
+  const inspectToken = useCallback((id: string, point: { x: number; y: number }) => {
+    setInspectedToken({ id, point });
+  }, []);
+
 
   const [busy, setBusy] = useState(false);
   /**
@@ -1006,19 +1013,10 @@ export function CombatTracker({
     deathSavePending,
   });
 
-  /**
-   * PAINEL DE ESTADO (6.6M.6.1.4) — UMA montagem do `MechanicalPanel`.
-   *
-   * Com a dock montada ele vive no painel do retrato (variante `dock`), dentro e
-   * fora do turno do jogador; sem dock — Mestre e Teste contra a Morte do
-   * próprio personagem — continua na faixa "Estado e ajustes", como antes. A
-   * variante `dock` não repete
-   * Conditions (etiquetas do painel), Levantar-se (ActionMenu) nem a pendência
-   * de salvaguarda (que é montada FORA do retrato): nunca existem dois painéis
-   * concorrentes para a mesma entidade.
-   */
+  /** Painel do jogador: reaproveitado no retrato. A administração do Mestre
+   * fica exclusivamente no menu contextual do token inspecionado. */
   const statusPanelCombatant = dockCombatant ?? actingCombatant;
-  const statusPanel = statusPanelCombatant ? (
+  const statusPanel = !isMaster && statusPanelCombatant ? (
     <MechanicalPanel
       entity={{ kind: 'combatant', id: statusPanelCombatant.id }}
       refreshVersion={combat.version}
@@ -1288,7 +1286,7 @@ export function CombatTracker({
         administração do Mestre. As ETIQUETAS de condição NÃO vivem aqui —
         elas ficam no card da iniciativa. Fica fora do fluxo de ataque.
       */}
-      {actingCombatant ? (
+      {!isMaster && actingCombatant ? (
         <details className="combat-status">
           <summary className="combat-status-summary">
             <Icon name="info" size={14} /> Estado e ajustes — {actingCombatant.name}
@@ -1311,6 +1309,18 @@ export function CombatTracker({
    * Quem já rolou e espera os demais cai na espera normal, sem overlay; o Mestre
    * continua exatamente como estava (a dock e o overlay são só do jogador).
    */
+  const inspectedCombatant = isMaster && inspectedToken
+    ? combat.combatants.find(item => item.id === inspectedToken.id && !item.missing)
+    : null;
+  const tokenMenu = inspectedToken && inspectedCombatant ? (
+    <CombatTokenMenu key={inspectedCombatant.id} name={inspectedCombatant.name}
+      kind={inspectedCombatant.kind === 'CHARACTER' ? 'Personagem' : inspectedCombatant.kind === 'NPC' ? 'NPC' : 'Criatura'}
+      point={inspectedToken.point} onClose={closeTokenMenu}>
+      <CombatTokenAdjustments combat={combat} combatant={inspectedCombatant} busy={busy}
+        effectsRefresh={effectsRefresh} onRun={action => void run(action)} />
+    </CombatTokenMenu>
+  ) : null;
+
   // Disponível desde a preparação; a autorização continua no servidor.
   const endCombatControl = isMaster ? (
     <button
@@ -1339,6 +1349,7 @@ export function CombatTracker({
     return (
       <section className="combat-panel">
         <CombatIntro combatId={combat.id} />
+        {tokenMenu}
 
         <CombatWorkspace
           isMaster={isMaster}
@@ -1375,6 +1386,7 @@ export function CombatTracker({
             /* 6.6M.1 — cena espacial também na preparação (placement é setup). */
             <CombatGrid
               combat={combat}
+              onInspectToken={isMaster ? inspectToken : undefined}
               isMaster={isMaster}
               busy={busy}
               movement={movementAuthority}
@@ -1410,6 +1422,8 @@ export function CombatTracker({
               </div>
             )
           }
+          masterTools={isMaster ? <MasterSpellIntentsPanel /> : undefined}
+          masterToolsLabel="Conjurações"
           tools={
             isMaster ? (
               <p className="section-note">
@@ -1433,6 +1447,7 @@ export function CombatTracker({
   return (
     <section className="combat-panel">
       <CombatIntro combatId={combat.id} />
+        {tokenMenu}
 
       {/* Toast central (2 s, sem clique, sem bloquear a interface). */}
       <TurnToast alert={turnAlert} />
@@ -1484,6 +1499,7 @@ export function CombatTracker({
         scene={
           <CombatGrid
             combat={combat}
+            onInspectToken={isMaster ? inspectToken : undefined}
             isMaster={isMaster}
             busy={busy}
             movement={movementAuthority}
@@ -1714,36 +1730,8 @@ export function CombatTracker({
             )}
           </>
         }
-        masterTools={isMaster ? (
-          <>
-            {/* Dano/cura manual do Mestre: recolhido, sem ocupar o centro do
-                combate, mas a UM clique de distância. A região INTEIRA só é
-                montada para o Mestre — para o jogador ela não existe (nada de
-                faixa vazia escondida por CSS). */}
-            <details className="combat-tools">
-              <summary>
-                <Icon name="heart" size={13} /> Ferramentas do Mestre — dano e cura
-              </summary>
-              <ManualHpPanel
-                combatants={combat.combatants}
-                busy={busy}
-                onApply={(input) => void run(() => applyManualHp(input))}
-              />
-            </details>
-
-            {/* Ajuste explícito da economia: EXCEÇÃO administrativa, com motivo
-                registrado. O fluxo normal continua na barra persistente. */}
-            {actingCombatant ? (
-              <MasterEconomyPanel
-                combat={combat}
-                combatant={actingCombatant}
-                busy={busy}
-                onRun={(action) => void run(action)}
-              />
-            ) : null}
-
-          </>
-        ) : undefined}
+        masterTools={isMaster ? <MasterSpellIntentsPanel /> : undefined}
+        masterToolsLabel="Conjurações"
         masterInventory={
           <>
             {/*

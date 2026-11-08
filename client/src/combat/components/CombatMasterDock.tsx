@@ -4,7 +4,8 @@ import { Icon } from '../../components/Icon';
 type Panel = 'actions' | 'adjustments';
 
 /** Apresentação do Mestre; preserva os mesmos formulários, callbacks e permissões. */
-export function CombatMasterDock({ action, masterTools, tools, resourceBar, inventory, turnKey }: {
+export function CombatMasterDock({ action, masterTools, tools, resourceBar, inventory, turnKey, adjustmentsLabel = 'Ajustes' }: {
+  adjustmentsLabel?: string;
   action: ReactNode; masterTools?: ReactNode; tools?: ReactNode;
   resourceBar?: ReactNode; inventory?: ReactNode; turnKey?: string;
 }) {
@@ -56,15 +57,15 @@ export function CombatMasterDock({ action, masterTools, tools, resourceBar, inve
       <button ref={adjustmentsButton} type="button" className="btn btn-small"
         aria-expanded={panel === 'adjustments'} aria-controls={`${id}-adjustments`}
         onClick={() => setPanel(current => current === 'adjustments' ? null : 'adjustments')}>
-        <Icon name="gear" size={14} /> Ajustes
+        <Icon name="gear" size={14} /> {adjustmentsLabel}
       </button>
       {inventory ? <div className="combat-master-inventory">{inventory}</div> : null}
-      <span className="combat-master-hint">Alt + clique para sinalizar no mapa</span>
+      <span className="combat-master-hint">Botão direito no token: ajustes · Alt + clique: ping</span>
     </div>
     {/* Mantidos montados: fechar a superfície não perde escolhas nem interrompe requisições. */}
     <div ref={surface} className="combat-master-panel" hidden={!panel}>
       <div className="combat-master-panel-heading">
-        <strong>{panel === 'actions' ? 'Ações do turno' : 'Ajustes do Mestre'}</strong>
+        <strong>{panel === 'actions' ? 'Ações do turno' : adjustmentsLabel}</strong>
         <button className="btn btn-small combat-master-panel-close" type="button"
           aria-label="Fechar painel do Mestre" onClick={() => close(true)}>Fechar ×</button>
       </div>

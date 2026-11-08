@@ -877,7 +877,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   const mechanicalService = source('../src/modules/mechanical/mechanical.service.ts');
   check(
     'CB18) a ferramenta de Conditions é do Mestre e vive na variante de combate',
-    mechanicalPanel.includes("isMaster && variant === 'combat'") &&
+    mechanicalPanel.includes("isMaster && (variant === 'combat' || variant === 'token')") &&
       mechanicalPanel.includes('<MasterConditionsPanel') &&
       mechanicalPanel.includes('onApply={(condition, source) =>') &&
       mechanicalPanel.includes("onRemove={(instanceId) => void execute({ action: 'remove'") &&
@@ -6364,7 +6364,7 @@ check(
   );
   const mediaNarrow = workspaceActive.slice(workspaceActive.indexOf('@media (max-width: 760px)'));
   /** Bloco das ferramentas administrativas (do prop até o próximo prop). */
-  const masterToolsAt = trackerSource.indexOf('masterTools={isMaster ? (');
+  const masterToolsAt = trackerSource.indexOf('masterTools={isMaster ?');
   const toolsAt = trackerSource.indexOf('\n        tools={');
   const toolsBlock =
     toolsAt > 0 && masterToolsAt > 0 && masterToolsAt < toolsAt
@@ -6385,9 +6385,9 @@ check(
   check(
     'SC70) ferramentas administrativas SÓ para o Mestre, e sem linha vazia para o jogador',
     masterToolsAt > 0 &&
-      /masterTools=\{isMaster \? \([\s\S]*?ManualHpPanel[\s\S]*?MasterEconomyPanel[\s\S]*?\) : undefined\}/.test(
-        trackerSource,
-      ) &&
+      trackerSource.includes('masterTools={isMaster ? <MasterSpellIntentsPanel /> : undefined}') &&
+      trackerSource.includes('const inspectedCombatant = isMaster && inspectedToken') &&
+      trackerSource.includes('<CombatTokenAdjustments') &&
       !toolsBlock.includes('ManualHpPanel') &&
       !toolsBlock.includes('MasterEconomyPanel') &&
       workspaceLayout.includes('{masterTools ? <div className="combat-workspace-master-tools">') &&
@@ -7040,7 +7040,7 @@ check(
     'SC109) UMA montagem do MechanicalPanel, reaproveitada no painel do retrato',
     (trackerSource.match(/<MechanicalPanel/g) ?? []).length === 1 &&
       trackerSource.includes('statusPanel={statusPanel}') &&
-      mechSource.includes("variant?: 'combat' | 'sheet' | 'dock';") &&
+      mechSource.includes("variant?: 'combat' | 'sheet' | 'dock' | 'token';") &&
       // A variante não repete as etiquetas de condição (a dock as desenha).
       mechSource.includes("const showBadges = variant === 'sheet';"),
   );
@@ -7093,7 +7093,7 @@ check(
       trackerSource.includes('const standUpContext =') &&
       (mechSource.match(/'concentrate-end'/g) ?? []).length === 1 &&
       // Administração continua exclusiva do Mestre nas variantes de sempre.
-      mechSource.includes("isMaster && variant === 'combat'") &&
+      mechSource.includes("isMaster && (variant === 'combat' || variant === 'token')") &&
       mechSource.includes("isMaster && variant === 'sheet'"),
   );
 
@@ -7625,8 +7625,8 @@ check(
       trackerSource.includes('<ConcentrationSavePanel') &&
       trackerSource.includes('<PendingEffectSavePanel') &&
       trackerSource.includes('<DeathSavePanel name={current.name} death={turnDeath} />') &&
-      trackerSource.includes('<ManualHpPanel') &&
-      trackerSource.includes('<MasterEconomyPanel'),
+      source('src/combat/components/CombatTokenAdjustments.tsx').includes('applyManualHp({ combatantId: combatant.id') &&
+      source('src/combat/components/CombatTokenAdjustments.tsx').includes('<MasterEconomyPanel'),
   );
 
   check(
@@ -8540,7 +8540,7 @@ check(
     targetingGridSource.includes('Selecione um alvo no grid') &&
     targetingTokenSource.includes("if (targetable) classes.push('is-targetable');") &&
     targetingTokenSource.includes("if (targetPicked) classes.push('is-target-picked');") &&
-    targetingTokenSource.includes('disabled={!interactive && !movable && !targetable}') &&
+    targetingTokenSource.includes('disabled={!interactive && !movable && !targetable && !onInspect}') &&
     gridCssSource.includes('.grid-token.is-targetable {') &&
     gridCssSource.includes('.grid-token.is-target-picked::after {') &&
     // O grid nunca resolve ataque nem fala com o servidor por conta própria

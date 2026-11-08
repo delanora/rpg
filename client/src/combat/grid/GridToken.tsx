@@ -48,6 +48,7 @@ export interface GridTokenProps {
    * espada ganha o glifo do modo; confirmar continua sendo o duplo clique.
    */
   rollMode?: CombatRollMode | null;
+  onInspect?: (combatantId: string, point: { x: number; y: number }) => void;
   onSelect?: (combatantId: string) => void;
   /** Início do draft de movimento (pointer down / ativação por teclado). */
   onMoveStart?: (combatantId: string, event: PointerEvent<HTMLButtonElement>) => void;
@@ -81,6 +82,7 @@ export function GridToken({
   targetable = false,
   targetPicked = false,
   rollMode = null,
+  onInspect,
   onSelect,
   onMoveStart,
   onCenter,
@@ -141,7 +143,19 @@ export function GridToken({
       data-size={size}
       data-kind={combatant.kind ?? 'character'}
       data-movable={movable ? 'true' : undefined}
-      disabled={!interactive && !movable && !targetable}
+      disabled={!interactive && !movable && !targetable && !onInspect}
+      aria-haspopup={onInspect ? 'dialog' : undefined}
+      onContextMenu={onInspect ? event => {
+        event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
+        const rect = event.currentTarget.getBoundingClientRect();
+        onInspect(combatant.id, { x: event.clientX || rect.left, y: event.clientY || rect.bottom });
+      } : undefined}
+      onKeyDown={onInspect ? event => {
+        if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+        event.preventDefault(); event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        onInspect(combatant.id, { x: rect.left, y: rect.bottom });
+      } : undefined}
       draggable={false}
       onDragStart={(event) => event.preventDefault()}
       onPointerDown={
@@ -175,7 +189,19 @@ export function GridToken({
             src={combatant.spatial.tokenImageRef}
             alt=""
             loading="lazy"
-            draggable={false}
+            aria-haspopup={onInspect ? 'dialog' : undefined}
+      onContextMenu={onInspect ? event => {
+        event.preventDefault(); event.stopPropagation(); event.currentTarget.focus();
+        const rect = event.currentTarget.getBoundingClientRect();
+        onInspect(combatant.id, { x: event.clientX || rect.left, y: event.clientY || rect.bottom });
+      } : undefined}
+      onKeyDown={onInspect ? event => {
+        if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+        event.preventDefault(); event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        onInspect(combatant.id, { x: rect.left, y: rect.bottom });
+      } : undefined}
+      draggable={false}
           />
         ) : (
           <span className="grid-token-fallback" aria-hidden="true">

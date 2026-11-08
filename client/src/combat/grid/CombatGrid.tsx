@@ -118,6 +118,7 @@ export interface CombatGridProps {
     'id' | 'version' | 'status' | 'currentCombatantId' | 'spatial' | 'sceneBackgroundImageUrl'
   > & { combatants: GridUnit[] };
   isMaster: boolean;
+  onInspectToken?: (combatantId: string, point: { x: number; y: number }) => void;
   busy?: boolean;
   /**
    * 6.6M.3 — quem pode mover MECANICAMENTE agora (derivação única em
@@ -263,6 +264,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function CombatGrid({
   combat,
   isMaster,
+  onInspectToken,
   busy = false,
   movement,
   targeting = null,
@@ -1769,6 +1771,17 @@ export function CombatGrid({
   // outros refs): hooks não podem viver depois do return da cena assistida.
   const isTargetable = (combatantId: string): boolean =>
     targetingActive && Boolean(targeting?.targetableIds.includes(combatantId));
+  function inspectToken(combatantId: string, point: { x: number; y: number }): void {
+    if (!isMaster || !onInspectToken) return;
+    // Abrir ajustes encerra apenas o gesto local; um commit já enviado segue autoritativo.
+    gestureRef.current = null;
+    setGrabGesture(null);
+    panGesture.current = null;
+    spaceCandidate.current = false;
+    if (draftRef.current && !committingRef.current) cancelDraft();
+    onInspectToken(combatantId, point);
+  }
+
   /** Token utilizável: régua > gesto de movimento do dono > placement do Mestre. */
   const tokenInteractive = (combatant: GridUnit): boolean =>
     rulerActive ? true : movementInteractive ? movableUnitId === combatant.id : placementInteractive;
@@ -2149,6 +2162,7 @@ export function CombatGrid({
                       ? (targeting?.rollMode ?? null)
                       : null
                   }
+                  onInspect={isMaster && onInspectToken && !combatant.missing ? inspectToken : undefined}
                   onSelect={selectUnit}
                   onMoveStart={armTokenGesture}
                   onCenter={handleTokenDoubleClick}

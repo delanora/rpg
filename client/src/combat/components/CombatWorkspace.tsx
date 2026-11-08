@@ -32,6 +32,7 @@ interface CombatWorkspaceProps {
   isMaster?: boolean;
   turnKey?: string;
   masterInventory?: ReactNode;
+  masterToolsLabel?: string;
   /** Linha superior: título, rodada, contexto do turno e controles do Mestre. */
   header: ReactNode;
   /** Esquerda: a ordem de iniciativa do servidor. */
@@ -78,6 +79,7 @@ export function CombatWorkspace({
   isMaster = false,
   turnKey,
   masterInventory,
+  masterToolsLabel,
   header,
   initiative,
   action,
@@ -127,7 +129,7 @@ export function CombatWorkspace({
 
       {isMaster ? (
         <CombatMasterDock action={action} masterTools={masterTools} tools={tools}
-          resourceBar={resourceBar} inventory={masterInventory} turnKey={turnKey} />
+          adjustmentsLabel={masterToolsLabel} resourceBar={resourceBar} inventory={masterInventory} turnKey={turnKey} />
       ) : (
         <>
           {dock ? <div className="combat-workspace-dock">{dock}</div> : null}

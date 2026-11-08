@@ -17,10 +17,11 @@ const ADJUSTMENTS: { id: EconomyAdjustment; label: string }[] = [
  * a exceção que o Mestre registra com motivo. Mesma rota de sempre
  * (`/economy/override`); nenhuma regra nova.
  */
-export function MasterEconomyPanel({ combat, combatant, busy, onRun }: {
+export function MasterEconomyPanel({ combat, combatant, busy, onRun, expanded = false }: {
   combat: CombatDto;
   combatant: CombatantDto;
   busy: boolean;
+  expanded?: boolean;
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
   const [adjustment, setAdjustment] = useState<EconomyAdjustment>('grant-action');
@@ -28,7 +29,7 @@ export function MasterEconomyPanel({ combat, combatant, busy, onRun }: {
   const [remaining, setRemaining] = useState('0');
 
   return (
-    <details className="combat-subpanel">
+    <details className="combat-subpanel" open={expanded || undefined}>
       <summary>
         <Icon name="gear" size={13} /> Ajuste explícito do Mestre
       </summary>
