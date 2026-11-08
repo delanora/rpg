@@ -117,7 +117,7 @@
 | **6.6M.6.2–6.2.2 — Estados/filtros** | ✅ | Filtros Ação/Bônus/Reação, espera, tooltip, seleção/desseleção de atalhos. |
 | **6.6M.6.3–6.3.1 — Hotbar 48 slots** | ✅ | Grade 2×24, edição, troca/remoção, salvamento e persistência por personagem. |
 | **6.6M.6.4 — Targeting por token** | ✅ | Escolha de alvo no grid, modo de rolagem e execução pelo fluxo autoritativo existente. |
-| **Preparação e encontros salvos** | ✅ | Aba Combate com encontros salvos, criação e início no cabeçalho. Wizard com seleção dos jogadores, cena e posições; batalha em aba temporária Combate em andamento. |
+| **Preparação e encontros salvos** | ✅ | Aba Combate com encontros salvos, criação e início no cabeçalho. Wizard ampliado com zoom no mapa, jogadores e NPCs únicos por botão; batalha em aba temporária Combate em andamento. |
 | **Participantes durante o combate** | ✅ | Incluir criaturas/NPCs pelo grid e remover pelo token, preservando cadastros e turno. Iniciativa do jogador com rolagem interna. |
 | **6.6M.7 — Pré-iniciativa** | ✅ | Mesma dock, CTA de iniciativa sobre Hotbar indisponível e transição para espera/turno. |
 | **6.6M.8–8.3 — Death UI/realtime** | ✅ | Hooks React, dock no estado de morte, Scene preservada, contadores sem F5 e End Turn correto. |

@@ -595,7 +595,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'WS) NPC é selecionado uma vez; criatura aceita quantidade',
     dialog.includes("Math.min(creature.kind === 'NPC' ? 1 : 30") &&
-      dialog.includes("max={c.kind === 'NPC' ? 1 : 30}"),
+      dialog.includes("quantity(c, entry ? 0 : 1)") && dialog.includes('Incluir no combate') && dialog.includes('Remover do combate') && dialog.includes('max={30}'),
   );
 
   // WT–WV. Crossbones (não caveira simples) e sem quadrado.

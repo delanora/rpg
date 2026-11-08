@@ -252,11 +252,69 @@ export function CombatStartDialog({
       setBusy(false);
     }
   }
+  const scenePicker = (
+    <>
+      <h3>Escolha a cena</h3>
+      {!locality ? (
+        <p>
+          Escolha uma localidade na etapa Local para usar uma cena cadastrada.
+        </p>
+      ) : null}
+      {sceneLoading ? <p role="status">Carregando cenas…</p> : null}
+      <div className="preparation-cards">
+        <button
+          className="preparation-card"
+          aria-pressed={!preparation.sceneId}
+          onClick={() =>
+            update({
+              sceneId: undefined,
+              characterPositions: [],
+              entries: preparation.entries.map((e) => ({
+                ...e,
+                positions: undefined,
+              })),
+            })
+          }
+        >
+          <strong>Sem grid</strong>
+          <small>Combate assistido.</small>
+        </button>
+        {scenes.map((s) => (
+          <button
+            key={s.id}
+            className="preparation-card"
+            aria-pressed={s.id === preparation.sceneId}
+            onClick={() => {
+              if (s.id !== preparation.sceneId)
+                update({
+                  sceneId: s.id,
+                  characterPositions: [],
+                  entries: preparation.entries.map((e) => ({
+                    ...e,
+                    positions: undefined,
+                  })),
+                });
+            }}
+          >
+            {s.backgroundImageUrl ? (
+              <img src={s.backgroundImageUrl} alt="" />
+            ) : (
+              <Icon name="table" />
+            )}
+            <strong>{s.name}</strong>
+          </button>
+        ))}
+      </div>
+    </>
+  );
   return (
     <div className="modal-backdrop">
       <section
         ref={root}
         className="modal preparation-wizard"
+        data-positioning={
+          (step === 3 && scene?.spatialConfig.mode === 'grid-2d') || undefined
+        }
         onKeyDown={(event) => {
           if (event.key === 'Escape' && !busy) {
             event.preventDefault();
@@ -479,9 +537,27 @@ export function CombatStartDialog({
                 ))}
               </div>
               <h3>Criaturas e NPCs</h3>
-              {preparation.entries.filter(entry => !creatures.some(c => c.id === entry.creatureId)).map(entry =>
-                <p key={entry.creatureId}>Cadastro indisponível ({entry.quantity} unidade(s)). <button className="btn btn-small" onClick={() => update({ entries: preparation.entries.filter(e => e.creatureId !== entry.creatureId) })}>Retirar da seleção</button></p>
-              )}
+              {preparation.entries
+                .filter(
+                  (entry) => !creatures.some((c) => c.id === entry.creatureId),
+                )
+                .map((entry) => (
+                  <p key={entry.creatureId}>
+                    Cadastro indisponível ({entry.quantity} unidade(s)).{' '}
+                    <button
+                      className="btn btn-small"
+                      onClick={() =>
+                        update({
+                          entries: preparation.entries.filter(
+                            (e) => e.creatureId !== entry.creatureId,
+                          ),
+                        })
+                      }
+                    >
+                      Retirar da seleção
+                    </button>
+                  </p>
+                ))}
               <div className="preparation-inline">
                 <input
                   aria-label="Buscar criatura ou NPC"
@@ -539,20 +615,40 @@ export function CombatStartDialog({
                             : `Criatura · ND ${c.challengeRating}`}{' '}
                           · {SIZE_LABELS[c.size.toLowerCase() as SpatialSize]}
                         </small>
-                        <small>{c.localities.map(l => l.name).join(', ') || 'Sem localidade'}</small>
-                        <label>
-                          Quantidade
-                          <input
-                            aria-label={`Quantidade de ${c.name}`}
-                            type="number"
-                            min={0}
-                            max={c.kind === 'NPC' ? 1 : 30}
-                            value={entry?.quantity ?? 0}
-                            onChange={(e) =>
-                              quantity(c, Number(e.target.value))
+                        <small>
+                          {c.localities.map((l) => l.name).join(', ') ||
+                            'Sem localidade'}
+                        </small>
+                        {c.kind === 'NPC' ? (
+                          <button
+                            type="button"
+                            className={
+                              entry
+                                ? 'btn btn-small'
+                                : 'btn btn-primary btn-small'
                             }
-                          />
-                        </label>
+                            aria-pressed={Boolean(entry)}
+                            onClick={() => quantity(c, entry ? 0 : 1)}
+                          >
+                            {entry
+                              ? 'Remover do combate'
+                              : 'Incluir no combate'}
+                          </button>
+                        ) : (
+                          <label>
+                            Quantidade
+                            <input
+                              aria-label={`Quantidade de ${c.name}`}
+                              type="number"
+                              min={0}
+                              max={30}
+                              value={entry?.quantity ?? 0}
+                              onChange={(e) =>
+                                quantity(c, Number(e.target.value))
+                              }
+                            />
+                          </label>
+                        )}
                         {entry ? (
                           <label>
                             Relação
@@ -587,67 +683,24 @@ export function CombatStartDialog({
             </>
           ) : null}
           {step === 3 ? (
-            <>
-              <h3>Escolha a cena</h3>
-              {!locality ? (
-                <p>
-                  Escolha uma localidade na etapa Local para usar uma cena
-                  cadastrada.
-                </p>
-              ) : null}
-              {sceneLoading ? <p role="status">Carregando cenas…</p> : null}
-              <div className="preparation-cards">
-                <button
-                  className="preparation-card"
-                  aria-pressed={!preparation.sceneId}
-                  onClick={() =>
-                    update({
-                      sceneId: undefined,
-                      characterPositions: [],
-                      entries: preparation.entries.map((e) => ({
-                        ...e,
-                        positions: undefined,
-                      })),
-                    })
-                  }
-                >
-                  <strong>Sem grid</strong>
-                  <small>Combate assistido.</small>
-                </button>
-                {scenes.map((s) => (
-                  <button
-                    key={s.id}
-                    className="preparation-card"
-                    aria-pressed={s.id === preparation.sceneId}
-                    onClick={() => {
-                      if (s.id !== preparation.sceneId)
-                        update({
-                          sceneId: s.id,
-                          characterPositions: [],
-                          entries: preparation.entries.map((e) => ({
-                            ...e,
-                            positions: undefined,
-                          })),
-                        });
-                    }}
-                  >
-                    {s.backgroundImageUrl ? (
-                      <img src={s.backgroundImageUrl} alt="" />
-                    ) : (
-                      <Icon name="table" />
-                    )}
-                    <strong>{s.name}</strong>
-                  </button>
-                ))}
-              </div>
-              {scene ? (
-                <PreparationBoard
-                  scene={scene}
-                  tokens={tokens}
-                  onPlace={place}
-                />
-              ) : null}
-            </>
+            scene?.spatialConfig.mode === 'grid-2d' ? (
+              <PreparationBoard
+                key={scene.id}
+                scene={scene}
+                tokens={tokens}
+                onPlace={place}
+                scenePicker={scenePicker}
+              />
+            ) : (
+              <>
+                {scenePicker}
+                {scene ? (
+                  <p className="section-note">
+                    Cena assistida: não exige posições no grid.
+                  </p>
+                ) : null}
+              </>
+            )
           ) : null}
           {step === 4 ? (
             <>

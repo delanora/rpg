@@ -43,7 +43,9 @@ globals.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { CombatStartDialog } = await import('../src/combat/CombatStartDialog');
-const { PreparedEncountersTab } = await import('../src/combat/PreparedEncountersTab');
+const { PreparedEncountersTab } = await import(
+  '../src/combat/PreparedEncountersTab'
+);
 const { CombatTokenAdjustments } = await import(
   '../src/combat/components/CombatTokenAdjustments'
 );
@@ -226,6 +228,24 @@ try {
     b.textContent?.includes('Borin'),
   )!;
   await act(async () => borin.click());
+  check(
+    'NPC não oferece campo de quantidade',
+    !document.querySelector('input[aria-label="Quantidade de Guarda"]'),
+  );
+  await click('Incluir no combate');
+  check(
+    'NPC incluído oferece remoção no mesmo botão',
+    [...document.querySelectorAll('button')].some(
+      (b) => b.textContent === 'Remover do combate',
+    ),
+  );
+  await click('Remover do combate');
+  check(
+    'NPC removido volta a oferecer inclusão',
+    [...document.querySelectorAll('button')].some(
+      (b) => b.textContent === 'Incluir no combate',
+    ),
+  );
   await change('input[aria-label="Quantidade de Dragão"]', '1');
   await click('Continuar');
   const sceneButton = [...document.querySelectorAll('button')].find(
@@ -238,6 +258,92 @@ try {
       document
         .querySelector('.preparation-token-tray')
         ?.textContent?.includes('Dragão'),
+  );
+  const map = document.querySelector<SVGSVGElement>('.preparation-map')!;
+  const viewport = document.querySelector<HTMLDivElement>(
+    '.preparation-map-viewport',
+  )!;
+  const baseWidth = Number(map.getAttribute('width'));
+  for (let i = 0; i < 4; i++)
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="Aumentar zoom do mapa"]',
+        )!
+        .click(),
+    );
+  check(
+    'zoom amplia a superfície do mapa',
+    Number(map.getAttribute('width')) === baseWidth * 2 &&
+      document.querySelector('output[aria-label="Zoom do mapa"]')
+        ?.textContent === '200%',
+  );
+  check(
+    'cena e tokens ficam na lateral do mapa',
+    !!document.querySelector(
+      '.preparation-board-sidebar .preparation-scene-picker',
+    ) &&
+      !!document.querySelector(
+        '.preparation-board-sidebar .preparation-token-tray',
+      ),
+  );
+  viewport.scrollLeft = 90;
+  viewport.scrollTop = 130;
+  const svgGeometry = map as unknown as {
+    createSVGPoint: () => unknown;
+    getScreenCTM: () => unknown;
+  };
+  svgGeometry.createSVGPoint = () => ({
+    x: 0,
+    y: 0,
+    matrixTransform(
+      this: { x: number; y: number },
+      m: { a: number; d: number; e: number; f: number },
+    ) {
+      return { x: this.x * m.a + m.e, y: this.y * m.d + m.f };
+    },
+  });
+  svgGeometry.getScreenCTM = () => {
+    const scale = Number(map.getAttribute('width')) / 60;
+    return {
+      inverse: () => ({
+        a: 1 / scale,
+        d: 1 / scale,
+        e: -(50 - viewport.scrollLeft) / scale,
+        f: -(80 - viewport.scrollTop) / scale,
+      }),
+    };
+  };
+  const dragonToken = [
+    ...document.querySelectorAll<HTMLButtonElement>(
+      '.preparation-token-tray button',
+    ),
+  ].find((b) => b.textContent?.includes('Dragão'))!;
+  await act(async () => dragonToken.click());
+  const pixelScale = Number(map.getAttribute('width')) / 60;
+  await act(async () =>
+    map.dispatchEvent(
+      new dom.window.MouseEvent('click', {
+        bubbles: true,
+        clientX: 50 - viewport.scrollLeft + 12 * pixelScale,
+        clientY: 80 - viewport.scrollTop + 12 * pixelScale,
+      }),
+    ),
+  );
+  check(
+    'posicionamento com zoom e rolagem mantém coordenadas em pés',
+    map.querySelector('g rect')?.getAttribute('x') === '10' &&
+      map.querySelector('g rect')?.getAttribute('y') === '10' &&
+      map.querySelector('g rect')?.getAttribute('width') === '15',
+  );
+  await click('Enquadrar');
+  check(
+    'enquadrar restaura visão completa sem mudar posição',
+    document.querySelector('output[aria-label="Zoom do mapa"]')?.textContent ===
+      '100%' &&
+      viewport.scrollLeft === 0 &&
+      viewport.scrollTop === 0 &&
+      map.querySelector('g rect')?.getAttribute('x') === '10',
   );
   await click('Continuar');
   await click('Voltar');
@@ -319,17 +425,61 @@ try {
       added.body.entries[0].positions[0].xFeet === 10,
   );
   let openedStart = 0;
-  await act(async () => root.render(h(PreparedEncountersTab, {...props, onOpenStart: () => { openedStart++; }})));
-  check('aba permanente tem título Combate', document.querySelector('.prepared-encounters h2')?.textContent === 'Combate');
-  check('criar e iniciar ficam juntos no cabeçalho', document.querySelector('.preparation-header-actions')?.textContent?.includes('Criar encontro') && document.querySelector('.preparation-header-actions')?.textContent?.includes('Iniciar combate'));
+  await act(async () =>
+    root.render(
+      h(PreparedEncountersTab, {
+        ...props,
+        onOpenStart: () => {
+          openedStart++;
+        },
+      }),
+    ),
+  );
+  check(
+    'aba permanente tem título Combate',
+    document.querySelector('.prepared-encounters h2')?.textContent ===
+      'Combate',
+  );
+  check(
+    'criar e iniciar ficam juntos no cabeçalho',
+    document
+      .querySelector('.preparation-header-actions')
+      ?.textContent?.includes('Criar encontro') &&
+      document
+        .querySelector('.preparation-header-actions')
+        ?.textContent?.includes('Iniciar combate'),
+  );
   await click('Iniciar combate');
   check('botão do cabeçalho abre o início existente', openedStart === 1);
   await click('Criar encontro');
-  check('criar encontro abre a montagem sem iniciar batalha', document.querySelector('[role="dialog"] h2')?.textContent?.includes('Preparar encontro'));
+  check(
+    'criar encontro abre a montagem sem iniciar batalha',
+    document
+      .querySelector('[role="dialog"] h2')
+      ?.textContent?.includes('Preparar encontro'),
+  );
   await click('×');
-  await act(async () => root.render(h(PreparedEncountersTab, {...props, combatActive: true, onOpenStart: () => { openedStart++; }})));
-  const startButton = document.querySelector<HTMLButtonElement>('.preparation-header-actions .btn-primary');
-  check('combate ativo impede outro início e mantém criação de encontros', startButton?.disabled && !document.querySelector<HTMLButtonElement>('.preparation-header-actions .btn:not(.btn-primary)')?.disabled);
+  await act(async () =>
+    root.render(
+      h(PreparedEncountersTab, {
+        ...props,
+        combatActive: true,
+        onOpenStart: () => {
+          openedStart++;
+        },
+      }),
+    ),
+  );
+  const startButton = document.querySelector<HTMLButtonElement>(
+    '.preparation-header-actions .btn-primary',
+  );
+  check(
+    'combate ativo impede outro início e mantém criação de encontros',
+    startButton?.disabled &&
+      !document.querySelector<HTMLButtonElement>(
+        '.preparation-header-actions .btn:not(.btn-primary)',
+      )?.disabled,
+  );
   let action: (() => Promise<CombatDto>) | undefined;
   await act(async () =>
     root.render(

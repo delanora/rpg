@@ -45,7 +45,7 @@ A aba permanente **Combate** reúne os botões **Criar encontro** e **Iniciar co
 
 A aba temporária **Combate em andamento** aparece desde o início da preparação de iniciativa até o encerramento da batalha. Ela mantém o tabuleiro separado da biblioteca de encontros; ao encerrar, o Mestre retorna à aba **Combate** se estiver vendo a batalha. Outras abas abertas são preservadas.
 
-O wizard tem cinco etapas: **Encontro → Local → Participantes → Cena e posições → Revisão**. Um encontro salvo abre diretamente a revisão. A montagem também pode ser salva sem iniciar combate. Posições são opcionais; quem estiver sem posição aparece na bandeja de posicionamento do combate.
+O wizard tem cinco etapas: **Encontro → Local → Participantes → Cena e posições → Revisão**. Um encontro salvo abre diretamente a revisão. A montagem também pode ser salva sem iniciar combate. Posições são opcionais; quem estiver sem posição aparece na bandeja de posicionamento do combate. O wizard ocupa quase toda a tela. No posicionamento, cenas e tokens ficam na lateral, com mapa ampliado, zoom e botão **Enquadrar**. Com zoom, as barras de rolagem permitem navegar pelo mapa. NPCs usam um botão **Incluir no combate / Remover do combate**; o campo de quantidade fica apenas nas criaturas.
 
 No combate, o **botão direito numa casa vazia** abre a inclusão de uma criatura ou NPC naquela posição. O cabeçalho também permite adicionar sem posição. NPCs permanecem únicos; criaturas geram instâncias independentes. Na luta ativa, o servidor rola a iniciativa do reforço e preserva o turno atual: se a posição dele na ordem já passou, ele joga na próxima rodada. Resolva reações pendentes antes de incluir reforços.
 
