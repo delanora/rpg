@@ -76,6 +76,7 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
   const [source, setSource] = useState('');
   const [sourceLabel, setSourceLabel] = useState('');
   const [level, setLevel] = useState('0');
+  useEffect(() => setLevel(String(current?.state.exhaustionLevel ?? 0)), [current?.state.exhaustionLevel, targetKey]);
   // HISTÓRICO: aberto ao clicar numa etiqueta de condição (não há mais o
   // bloco recolhido "Histórico mecânico" ocupando espaço na ficha).
   const [history, setHistory] = useState<string | null>(null);
@@ -189,6 +190,41 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
       </p>
     </div>
   ) : null;
+  const conditionControls = isMaster ? (
+      <MasterConditionsPanel
+        name={current.name}
+        state={current.state}
+        effects={current.effects}
+        protectedInstanceIds={current.protectedInstanceIds ?? []}
+        sources={choices}
+        busy={busy}
+        onApply={(condition, source) => void execute({ action: 'apply', condition, ...(source ? { sourceEntity: source.entity } : {}) })}
+        onRemove={(instanceId) => void execute({ action: 'remove', instanceId })}
+      />
+  ) : null;
+  const effectControls = isMaster ? (
+      <MasterEffectsPanel
+        entity={entity}
+        targetName={current.name}
+        effects={effectList}
+        conditionLabels={current.effects.labels}
+        choices={choices}
+        busy={busy}
+        onChanged={reloadEffects}
+      />
+  ) : null;
+  const pendingControls = variant !== 'dock' ? (
+      <PendingEffectSavePanel
+        entity={entity}
+        refreshKey={refreshVersion + effectsRefresh}
+        isMaster={isMaster}
+        busy={busy}
+        onChanged={async () => {
+          await refresh().catch(() => {});
+          await reloadEffects();
+        }}
+      />
+  ) : null;
   const body = <>
     {/* Clique numa etiqueta abre a janela do HISTÓRICO mecânico (na ficha). */}
     {showBadges ? <ConditionBadges state={current.state} effects={current.effects} exhaustionEnabled={exhaustOn} onOpenHistory={setHistory} /> : null}
@@ -235,18 +271,7 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
      * alvo (jogador) e ao Mestre, sempre derivada do servidor. Nenhuma
      * Condition/Effect existe antes do resultado.
      */}
-    {variant === 'dock' ? null : (
-      <PendingEffectSavePanel
-        entity={entity}
-        refreshKey={refreshVersion + effectsRefresh}
-        isMaster={isMaster}
-        busy={busy}
-        onChanged={async () => {
-          await refresh().catch(() => {});
-          await reloadEffects();
-        }}
-      />
-    )}
+    {pendingControls}
     {/* No painel do retrato o Levantar-se continua com UMA entrada (o
         ActionMenu da dock, que mostra custo e motivo): nada de segunda regra. */}
     {variant !== 'dock' && current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0} onClick={() => void execute({ action: 'stand' })}>Levantar (Movimento; fora de combate sem orçamento)</button> : null}
@@ -254,25 +279,8 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
     {isMaster && (variant === 'combat' || variant === 'token') ? <>
       {/* 6.6F: fila de confirmação espacial da conjuração do jogador. */}
       {variant === 'combat' ? <MasterSpellIntentsPanel /> : null}
-      <MasterEffectsPanel
-        entity={entity}
-        targetName={current.name}
-        effects={effectList}
-        conditionLabels={current.effects.labels}
-        choices={choices}
-        busy={busy}
-        onChanged={reloadEffects}
-      />
-      <MasterConditionsPanel
-        name={current.name}
-        state={current.state}
-        effects={current.effects}
-        protectedInstanceIds={current.protectedInstanceIds ?? []}
-        sources={choices}
-        busy={busy}
-        onApply={(condition, source) => void execute({ action: 'apply', condition, ...(source ? { sourceEntity: source.entity } : {}) })}
-        onRemove={(instanceId) => void execute({ action: 'remove', instanceId })}
-      />
+      {effectControls}
+      {conditionControls}
       {exhaustionControls}
     </> : null}
     {isMaster && variant === 'sheet' ? <details className="conditions-admin">
@@ -303,6 +311,27 @@ export function MechanicalPanel({ entity, refreshVersion, effectsRefresh = 0, so
   </>;
 
   // Sem condições e com a regra de Exaustão desligada, o bloco some por inteiro.
+  if (variant === 'token') {
+    if (!isMaster) return null;
+    return <div className="mechanical-body token-mechanical-body">
+      {error ? <p className="error" role="alert">{error}</p> : null}
+      {conditionControls}
+      {pendingControls}
+      {current.effects.prone ? <button className="btn btn-small" disabled={busy || current.effectiveSpeed <= 0}
+        onClick={() => void execute({ action: 'stand' })}>Levantar-se</button> : null}
+      {current.effects.assistedNotes.map(text => <p key={text} className="field-hint">{text}</p>)}
+      <details className="token-adjustment-section" open={Boolean(concentration)}>
+        <summary>Concentração{concentration ? ` · ${concentration.label}` : ''}</summary>
+        {concentrationControls}
+      </details>
+      {exhaustOn ? <details className="token-adjustment-section">
+        <summary>Exaustão · nível {current.state.exhaustionLevel}</summary>
+        {exhaustionControls}
+      </details> : null}
+      {effectControls}
+    </div>;
+  }
+
   if (variant === 'sheet') {
     // O Mestre precisa do bloco para INICIAR concentração fora de combate;
     // o jogador só o vê quando há algo para mostrar (condição, Exaustão ou

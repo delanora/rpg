@@ -432,10 +432,12 @@ export function MasterEffectsPanel({
         </ul>
       )}
 
+      <details className="token-effect-editor">
+        <summary>Novo efeito manual</summary>
       <div className="hp-controls">
         <input
           aria-label="Nome do efeito manual"
-          placeholder="Efeito de teste"
+          placeholder="Nome do efeito"
           maxLength={80}
           value={label}
           onChange={(event) => setLabel(event.target.value)}
@@ -604,10 +606,10 @@ export function MasterEffectsPanel({
           <Icon name="plus" size={13} /> Adicionar efeito manual
         </button>
       </div>
-      <p className="field-hint">
-        Fixtures de engine: bônus/dado em rolagem, CA e deslocamento entram nos pipelines do
-        servidor. Nenhuma magia, duração ou Condition é criada aqui.
-      </p>
+      <p className="field-hint">Configure os modificadores e as condições deste efeito.</p>
+      </details>
+      <details className="token-effect-editor">
+        <summary>Magias e recursos</summary>
       <div className="hp-controls" data-spellcasting-source>
         <span className="field-hint">Fonte de conjuração</span>
         {sources.length > 1 ? (
@@ -638,7 +640,7 @@ export function MasterEffectsPanel({
 
       <details className="conditions-admin" data-bless-proof>
         <summary>
-          Bless — prova da engine (6.5G) ({blessTargets.length}/{blessMax})
+          Bênção ({blessTargets.length}/{blessMax})
         </summary>
         <p className="field-hint">
           Ferramenta TEMPORÁRIA do Mestre: cria o grupo de efeitos e a Concentração do
@@ -760,7 +762,7 @@ export function MasterEffectsPanel({
       </details>
 
       <details className="conditions-admin" data-hold-person-proof>
-        <summary>Imobilizar Pessoa — prova da engine (6.5H)</summary>
+        <summary>Imobilizar Pessoa</summary>
         <p className="field-hint">
           Ferramenta TEMPORÁRIA do Mestre: cria UMA salvaguarda de Sabedoria por alvo. Se o
           espaço for superior ao 2º, cada nível acima permite um humanoide adicional. Nenhum
@@ -887,6 +889,7 @@ export function MasterEffectsPanel({
       </details>
 
       {error ? <p className="error">{error}</p> : null}
+      </details>
     </div>
   );
 }

@@ -7068,7 +7068,7 @@ check(
       trackerSource.includes('urgent={\n          <PendingEffectSavePanel') &&
       (trackerSource.match(/<PendingEffectSavePanel/g) ?? []).length === 1 &&
       // O painel do retrato não monta uma segunda cópia do formulário.
-      mechSource.includes('{variant === \'dock\' ? null : (') &&
+      mechSource.includes("const pendingControls = variant !== 'dock'") &&
       pendingSource.includes('rollPendingEffectSave') &&
       // Vazio não ocupa espaço; aberto, flutua acima sem mexer na geometria.
       workspaceRule('.combat-dock-urgent:empty').includes('display: none;') &&

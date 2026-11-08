@@ -150,7 +150,7 @@ export const economyOverrideSchema = combatOperationSchema.extend({
   combatantId: z.string().min(1),
   adjustment: z.enum(['grant-action', 'restore-action', 'restore-bonus', 'restore-reaction', 'set-movement']),
   remaining: z.number().nonnegative().max(9999).optional(),
-  reason: z.string().trim().min(1).max(500),
+  reason: z.string().trim().max(500).default(''),
 }).superRefine((input, ctx) => {
   if (input.adjustment === 'set-movement' && input.remaining === undefined) ctx.addIssue({ code: 'custom', message: 'Informe o Movimento restante.' });
 });

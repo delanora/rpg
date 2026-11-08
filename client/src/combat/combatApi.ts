@@ -168,7 +168,7 @@ export function executeEconomyAction(combat: CombatDto, input: {
   return api<{ combat: CombatDto }>('/api/combat/action', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }
 export function overrideEconomy(combat: CombatDto, input: {
-  combatantId: string; adjustment: EconomyAdjustment; reason: string; remaining?: number;
+  combatantId: string; adjustment: EconomyAdjustment; reason?: string; remaining?: number;
 }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/economy/override', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }

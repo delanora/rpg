@@ -789,6 +789,8 @@ As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a 
 
 ## ⚔️ Etapa 4 — Combate em tempo real
 
+A justificativa dos ajustes de economia do mestre é **opcional**. Sem texto, o recurso é alterado sem criar uma entrada no registro; com justificativa, o ajuste e o texto aparecem no registro. Os menus do token agrupam condições, concentração, exaustão e efeitos, com campos padronizados e controles avançados recolhidos.
+
 No painel do mestre, **Combate** é uma aba da navegação superior. Abrir outra aba mostra apenas aquela área e mantém o combate sincronizado; ao voltar, a mesa usa o estado atualizado. O salão oferece **Voltar ao combate** quando já existe uma batalha em andamento.
 
 O arraste preserva o ponto de pega do token em qualquer tamanho e zoom. Mover uma casa custa 1,5 m em terreno normal, independentemente da área ocupada pela criatura.

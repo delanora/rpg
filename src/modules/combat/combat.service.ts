@@ -673,7 +673,10 @@ export async function overrideEconomy(actor: CombatActor, input: EconomyOverride
       economy.movementOverrideBudget = economy.movementUsed + input.remaining!;
     }
     await db.combatant.update({ where: { id: combatant.id }, data: { turnEconomy: economy } });
-    await appendEconomyLog(db, combat, combatant, `Mestre ${actor.username} ${messages[input.adjustment]} para ${combatant.name}: ${input.reason}.`, `override:${input.adjustment}`);
+    const reason = input.reason.trim();
+    if (reason) {
+      await appendEconomyLog(db, combat, combatant, `Mestre ${actor.username} ${messages[input.adjustment]} para ${combatant.name}: ${reason}.`, `override:${input.adjustment}`);
+    }
     return { combat: toCombatDto(await loadCombatById(combat.id, db), 'MASTER') };
   });
 }

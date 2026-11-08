@@ -3137,7 +3137,7 @@
 .combat-token-menu {
   position: fixed;
   z-index: 55;
-  width: min(27rem, calc(100vw - 1rem));
+  width: min(30rem, calc(100vw - 1rem));
   max-height: calc(100dvh - 1rem);
   display: flex;
   flex-direction: column;
@@ -3157,7 +3157,7 @@
 .combat-token-menu-tabs button.active { border-color: var(--gold-hair); color: var(--gold); background: var(--surface-2); }
 .combat-token-menu-body { overflow-y: auto; overscroll-behavior: contain; padding: 0.8rem; min-height: 0; }
 .combat-token-menu .mechanical-body { display: flex; flex-direction: column; gap: 0.65rem; }
-.combat-token-menu .master-conditions { order: -1; padding: 0.65rem; border: 1px solid var(--gold-hair); border-radius: 7px; background: var(--surface-2); }
+.combat-token-menu .master-conditions { padding: 0.65rem; border: 1px solid var(--gold-hair); border-radius: 7px; background: var(--surface-2); }
 .combat-token-menu .master-conditions-head { flex-wrap: wrap; gap: 0.5rem; }
 .combat-token-menu .hp-controls { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .combat-token-menu .hp-controls > * { min-width: 0; max-width: 100%; }
@@ -3167,3 +3167,53 @@
 .combat-token-vitals { font-size: 1rem; margin-bottom: 0.85rem; }
 .combat-token-vitals strong { color: var(--gold); font-size: 1.6rem; }
 .combat-token-hp-actions { display: flex; gap: 0.5rem; margin: 0.7rem 0; }
+
+/* Campos do portal recebem o tema explicitamente, sem o visual nativo ou degradês da ficha. */
+.combat-token-menu { font-size: 0.85rem; line-height: 1.45; }
+.combat-token-menu[role='dialog'] .combat-token-menu-body input:not([type='checkbox']),
+.combat-token-menu[role='dialog'] .combat-token-menu-body select,
+.combat-token-menu[role='dialog'] .combat-token-menu-body textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: none;
+}
+.combat-token-menu[role='dialog'] .combat-token-menu-body textarea { resize: vertical; min-height: 4.5rem; }
+.combat-token-menu[role='dialog'] .combat-token-menu-body select { appearance: auto; }
+.combat-token-menu input::placeholder, .combat-token-menu textarea::placeholder { color: var(--ink-faint); opacity: 0.85; }
+.combat-token-menu :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.combat-token-menu .combat-token-menu-tabs button { font: inherit; font-size: 0.8rem; min-height: 2.5rem; }
+.combat-token-menu .combat-token-menu-tabs button.active { background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--gold); }
+.combat-token-menu .combat-token-menu-body { padding: 0.85rem; }
+.combat-token-menu .hp-controls { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+.combat-token-menu .master-conditions { padding: 0.8rem; margin: 0; }
+.combat-token-menu .master-conditions-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
+.combat-token-menu .master-conditions-title { font-size: 0.8rem; line-height: 1.4; }
+.combat-token-menu .master-conditions-title + button { justify-self: start; }
+.combat-token-menu .master-condition-origin { overflow-wrap: anywhere; }
+.combat-token-menu .field-hint, .combat-token-menu .section-note { font-size: 0.75rem; line-height: 1.5; margin: 0.4rem 0; }
+.combat-token-menu .token-adjustment-section { border: 1px solid var(--line); border-radius: 7px; padding: 0.7rem 0.8rem; background: var(--surface-2); }
+.combat-token-menu .token-adjustment-section > summary, .combat-token-menu .token-effect-editor > summary { color: var(--gold); cursor: pointer; font-size: 0.8rem; }
+.combat-token-menu .token-adjustment-section[open] > summary, .combat-token-menu .token-effect-editor[open] > summary { margin-bottom: 0.7rem; }
+.combat-token-menu .token-effect-editor { margin-top: 0.65rem; padding-top: 0.65rem; border-top: 1px solid var(--line); }
+.combat-token-menu .combat-economy-panel { border: 0; padding: 0; background: transparent; }
+.combat-token-menu .combat-economy-panel > summary { display: none; }
+.combat-economy-fields { display: grid; gap: 0.8rem; padding-top: 0.7rem; }
+.combat-economy-fields .field > span { font-size: 0.75rem; letter-spacing: 0.03em; text-transform: none; }
+.combat-economy-fields .field small { color: var(--ink-faint); font-weight: normal; }
+.combat-token-menu .combat-token-hp { display: grid; gap: 0.7rem; }
+.combat-token-menu .combat-token-vitals { margin: 0; padding: 0.75rem; border: 1px solid var(--gold-hair); border-radius: 7px; background: var(--surface-2); }
+.combat-token-menu .combat-token-hp-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; margin: 0; }
+.combat-token-menu .combat-token-hp-actions button { justify-content: center; min-height: 2.5rem; }
+[data-theme='dark'] .combat-token-menu { color-scheme: dark; }
+[data-theme='light'] .combat-token-menu { color-scheme: light; }
+.combat-token-menu .field-hint, .combat-token-menu .section-note { color: var(--ink-soft); }
+.combat-token-menu .combat-token-hp-actions .btn-danger { background: var(--wine); border-color: var(--wine-bright); color: #fff5e5; }
+.combat-token-menu .combat-economy-fields > button { width: 100%; min-height: 2.5rem; justify-content: center; }

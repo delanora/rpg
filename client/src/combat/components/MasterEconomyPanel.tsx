@@ -11,12 +11,7 @@ const ADJUSTMENTS: { id: EconomyAdjustment; label: string }[] = [
   { id: 'set-movement', label: 'Ajustar Movimento restante' },
 ];
 
-/**
- * Ajuste explícito do Mestre (override da economia). Fica no drawer recolhido
- * "Estado e ajustes" — a barra persistente é o lugar do fluxo normal; aqui é só
- * a exceção que o Mestre registra com motivo. Mesma rota de sempre
- * (`/economy/override`); nenhuma regra nova.
- */
+/** Ajuste administrativo: a justificativa opcional decide se haverá linha no registro. */
 export function MasterEconomyPanel({ combat, combatant, busy, onRun, expanded = false }: {
   combat: CombatDto;
   combatant: CombatantDto;
@@ -28,54 +23,35 @@ export function MasterEconomyPanel({ combat, combatant, busy, onRun, expanded = 
   const [reason, setReason] = useState('');
   const [remaining, setRemaining] = useState('0');
 
+  const movementValid = adjustment !== 'set-movement' || (remaining.trim() !== '' &&
+    Number.isFinite(Number(remaining)) && Number(remaining) >= 0 && Number(remaining) <= 9999);
+
   return (
-    <details className="combat-subpanel" open={expanded || undefined}>
-      <summary>
-        <Icon name="gear" size={13} /> Ajuste explícito do Mestre
-      </summary>
-      <div className="hp-controls">
-        <select
-          aria-label="Ajuste de economia"
-          value={adjustment}
-          onChange={(event) => setAdjustment(event.target.value as EconomyAdjustment)}
-        >
-          {ADJUSTMENTS.map((item) => (
-            <option key={item.id} value={item.id}>{item.label}</option>
-          ))}
-        </select>
-        {adjustment === 'set-movement' ? (
-          <input
-            type="number"
-            min="0"
-            step="0.5"
-            aria-label="Movimento restante em metros"
-            value={remaining}
-            onChange={(event) => setRemaining(event.target.value)}
-          />
-        ) : null}
-        <input
-          placeholder="Motivo do ajuste"
-          aria-label="Motivo do ajuste"
-          value={reason}
-          maxLength={500}
-          onChange={(event) => setReason(event.target.value)}
-        />
-        <button
-          type="button"
-          className="btn btn-small"
-          disabled={busy || !reason.trim()}
-          onClick={() =>
-            onRun(() =>
-              overrideEconomy(combat, {
-                combatantId: combatant.id,
-                adjustment,
-                reason,
-                ...(adjustment === 'set-movement' ? { remaining: Number(remaining) } : {}),
-              }),
-            )
-          }
-        >
-          Aplicar e registrar
+    <details className="combat-subpanel combat-economy-panel" open={expanded || undefined}>
+      <summary><Icon name="gear" size={13} /> Economia de ações</summary>
+      <div className="combat-economy-fields">
+        <label className="field"><span>Ajuste</span>
+          <select aria-label="Ajuste de economia" value={adjustment} disabled={busy}
+            onChange={event => setAdjustment(event.target.value as EconomyAdjustment)}>
+            {ADJUSTMENTS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        {adjustment === 'set-movement' ? <label className="field"><span>Movimento restante (m)</span>
+          <input type="number" min={0} max={9999} step="0.5" aria-label="Movimento restante em metros"
+            value={remaining} disabled={busy} onChange={event => setRemaining(event.target.value)} />
+        </label> : null}
+        <label className="field"><span>Justificativa <small>(opcional)</small></span>
+          <textarea placeholder="Explique o ajuste, se quiser registrá-lo" aria-label="Motivo do ajuste"
+            value={reason} maxLength={500} rows={2} disabled={busy} onChange={event => setReason(event.target.value)} />
+        </label>
+        <p className="field-hint">Sem justificativa, o ajuste não aparece no registro.</p>
+        <button type="button" className="btn btn-small" disabled={busy || !movementValid}
+          onClick={() => onRun(() => overrideEconomy(combat, {
+            combatantId: combatant.id, adjustment,
+            ...(reason.trim() ? { reason: reason.trim() } : {}),
+            ...(adjustment === 'set-movement' ? { remaining: Number(remaining) } : {}),
+          }))}>
+          {reason.trim() ? 'Aplicar e registrar' : 'Aplicar ajuste'}
         </button>
       </div>
     </details>

@@ -66,6 +66,8 @@ await act(async()=>root.render(h(AuthProvider,null,h(CombatTokenMenu,{name:'Alvo
  h(CombatTokenAdjustments,{combat,combatant:target,busy:false,effectsRefresh:0,onRun:action=>{void action()}})))));
 check('menu identifica o alvo e recebe foco',!!document.querySelector('[aria-label="Ajustes de Alvo fora do turno"]')&&document.activeElement?.getAttribute('aria-label')==='Fechar ajustes do token');
 const menu=document.querySelector<HTMLElement>('.combat-token-menu')!;
+check('condições aparecem antes dos controles avançados', document.querySelector('.token-mechanical-body')?.firstElementChild?.classList.contains('master-conditions'));
+check('formulários avançados de efeitos começam recolhidos', Array.from(document.querySelectorAll<HTMLDetailsElement>('.token-effect-editor')).every(node => !node.open));
 check('menu ajusta a posição aos limites da janela',parseFloat(menu.style.left)<window.innerWidth&&parseFloat(menu.style.top)<window.innerHeight);
 await click(button('Adicionar condição'));
 await click(Array.from(document.querySelectorAll('.condition-picker button')).find(node=>node.textContent!.includes('Envenenado'))!);
@@ -76,7 +78,16 @@ await click(button('Curar'));
 check('cura mantém o alvo inspecionado',calls.some(call=>call.url==='/api/combat/hp'&&call.body.combatantId==='target'&&call.body.mode==='heal'));
 await click(button('Economia'));
 check('economia reutiliza o ajuste explícito existente',!!document.querySelector('[aria-label="Motivo do ajuste"]'));
-const field=document.querySelector<HTMLInputElement>('[aria-label="Motivo do ajuste"]')!;
+const field=document.querySelector<HTMLTextAreaElement>('[aria-label="Motivo do ajuste"]')!;
+check('aplicar ajuste não exige justificativa', !button('Aplicar ajuste').disabled);
+await click(button('Aplicar ajuste'));
+check('justificativa vazia é omitida do comando', calls.some(call => call.url.endsWith('/economy/override') && !('reason' in call.body)));
+await act(async () => {
+ Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(field, '  Ajuste combinado  ');
+ field.dispatchEvent(new Event('input', { bubbles: true }));
+});
+await click(button('Aplicar e registrar'));
+check('justificativa preenchida é enviada sem espaços extras', calls.some(call => call.url.endsWith('/economy/override') && call.body.reason === 'Ajuste combinado'));
 field.focus();await act(async()=>field.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
 check('Escape fecha o painel',closed===1);
 await act(async()=>document.body.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true})));
