@@ -39,6 +39,23 @@ Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada joga
 
 ---
 
+## 🗺️ Editor de paredes da cena
+
+No painel do Mestre, abra **Regiões → Localidade → Cenas → Mapa e paredes**.
+Salve a cena como **grade 2D** para habilitar a edição.
+
+- **Desenhar parede:** clique no início e no fim, confira o rascunho e salve.
+- **Selecionar:** escolha pela lista ou pelo mapa; arraste a linha ou os extremos.
+- **Nova por coordenadas:** ajuste os extremos por formulário, em metros.
+- **Cancelar edição** ou **Esc** descarta o rascunho. Excluir exige confirmação.
+- A edição respeita versão, permissões do Mestre e bloqueio de cena em uso.
+
+As opções de bloqueio de movimento e visão são independentes e ficam salvas
+na parede. A aplicação automática desses bloqueios aos trajetos e à visão ainda
+pertence às próximas etapas de integração espacial.
+
+---
+
 ## 🛠️ Stack tecnológica
 
 | Camada | Escolha | Por quê |

@@ -2318,8 +2318,8 @@ export interface SpatialScene {
 
 /**
  * Parede de uma cena (6.6L.4.1.1). Geometria em PÉS; o cliente só apresenta.
- * A UI desta fase NÃO cria nem edita parede — o tipo existe para exibir a
- * contagem e o preview estrutural.
+ * O editor da cena envia intenções de criação/edição; a geometria válida
+ * e o bloqueio de cena em uso continuam sob autoridade do servidor.
  */
 export interface SpatialObstacle {
   id: string;

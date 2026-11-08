@@ -5399,11 +5399,12 @@ check(
   );
 
   check(
-    'SC12) NENHUMA parede é criada/editada pela UI nesta fase',
-    !/spatial\/obstacles/.test(apiSource) &&
-      !/spatial\/obstacles/.test(editorSource) &&
-      !/spatial\/obstacles/.test(localityScenesSource) &&
-      !/createSpatialObstacle|updateSpatialObstacle|deleteSpatialObstacle/.test(editorSource),
+    'SC12) editor de paredes reutiliza a API da cena sem acoplar o motor de combate',
+    source('src/sceneWallsApi.ts').includes('`/api/scenes/${sceneId}/spatial/obstacles`') &&
+      source('src/sceneWallsApi.ts').includes('expectedVersion, operationId') &&
+      editorSource.includes('<SceneWallsEditor') &&
+      localityScenesSource.includes('mutateSceneWall(selected.id, mutation, expectedVersion, operationId)') &&
+      !/useCombatState|CombatTracker/.test(source('src/components/master/SceneWallsEditor.tsx')),
   );
 
   check(

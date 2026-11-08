@@ -161,7 +161,7 @@
 /* --- Preview estrutural ---------------------------------------------------- */
 
 /*
- * Só proporção, imagem e grid: NÃO é editor de paredes. A grade vem de
+ * Proporção, imagem e grid compartilhados com o editor de paredes. A grade vem de
  * `SpatialGridOverlay` (o MESMO componente do combate) com o `viewBox` em pés,
  * então a contagem de células do preview nunca discorda da Scene.
  */
@@ -264,3 +264,40 @@
     max-height: 14rem;
   }
 }
+
+
+/* --- 6.6M.4.2: desenho estrutural de paredes -------------------------------- */
+.scene-walls-editor { display: grid; gap: 0.65rem; min-width: 0; }
+.scene-wall-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+.scene-wall-toolbar [aria-pressed="true"], .scene-wall-item[aria-pressed="true"] {
+  border-color: var(--gold); background: var(--surface-3); color: var(--gold-bright);
+}
+.scene-wall-check { display: flex; align-items: center; gap: 0.35rem; font-size: var(--text-micro); color: var(--ink-soft); }
+.scene-wall-zoom { display: flex; gap: 0.35rem; align-items: center; font-size: var(--text-micro); color: var(--ink-soft); }
+.scene-wall-zoom select { color: var(--ink); background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 0.3rem; }
+.scene-wall-viewport { width: 100%; max-height: 30rem; overflow: auto; overscroll-behavior: contain; }
+.scene-preview.scene-preview--editable { max-width: none; max-height: none; border-radius: 0; }
+.scene-walls-overlay { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; }
+.scene-walls-overlay--draw { cursor: crosshair; }
+.scene-wall-line { stroke: var(--ink); stroke-width: 4; pointer-events: none; }
+.scene-wall-line--passable { stroke-dasharray: 7 5; }
+.scene-wall--selected .scene-wall-line { stroke: var(--gold-bright); stroke-width: 5; }
+.scene-wall-hit { stroke: transparent; stroke-width: 22; cursor: move; }
+.scene-wall-draft { stroke: var(--gold-bright); stroke-width: 4; stroke-dasharray: 7 5; pointer-events: none; }
+.scene-wall-handle { fill: var(--gold-bright); stroke: var(--surface-4); stroke-width: 3; cursor: grab; }
+.scene-wall-handle:hover { stroke: var(--ink); }
+.scene-wall-details { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(0, 3fr); gap: 0.65rem; }
+.scene-wall-list { display: flex; flex-direction: column; gap: 0.3rem; max-height: 14rem; overflow: auto; }
+.scene-wall-item { padding: 0.45rem; text-align: left; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; font: inherit; font-size: var(--text-micro); }
+.scene-wall-inspector { display: grid; gap: 0.5rem; min-width: 0; padding: 0.65rem; border: 1px solid var(--line); border-radius: var(--radius); }
+.scene-wall-inspector legend { color: var(--ink-soft); font-size: var(--text-micro); }
+.scene-walls-editor button:focus-visible, .scene-walls-overlay:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .scene-wall-details { grid-template-columns: 1fr; }
+  .scene-wall-list { max-height: 8rem; }
+}
+
+/* Mesmo enquadramento do mapa no combate; não recortar a imagem sob paredes. */
+.scene-preview--editable .scene-preview-img { object-fit: fill; }
+
+.scene-wall-handle-hit { fill: transparent; stroke: transparent; stroke-width: 22; pointer-events: all; cursor: grab; }

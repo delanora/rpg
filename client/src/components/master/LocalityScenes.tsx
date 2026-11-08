@@ -8,6 +8,7 @@ import {
   updateScene,
   type SceneEvent,
 } from '../../scenesApi';
+import { mutateSceneWall } from '../../sceneWallsApi';
 import { formatSceneMeters, SCENE_CELL_FEET } from '../../sceneUnits';
 import type { Scene, ScenePatch } from '../../types';
 import { Icon } from '../Icon';
@@ -141,7 +142,13 @@ export function LocalityScenes({ localityId, localityName }: LocalityScenesProps
           {error ? <p className="form-error">{error}</p> : null}
 
           <SceneEditor
+            key={selected.id}
             scene={selected}
+            onWallMutation={async (mutation, expectedVersion, operationId) => {
+              const updated = await mutateSceneWall(selected.id, mutation, expectedVersion, operationId);
+              upsertScene(updated);
+              return updated;
+            }}
             onUpdate={async (patch: ScenePatch, expectedVersion, operationId) => {
               const updated = await updateScene(selected.id, {
                 ...patch,

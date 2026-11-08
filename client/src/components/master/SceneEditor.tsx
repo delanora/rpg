@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, fileToImagePayload, uploadImage } from '../../api';
 import {
   feetToMeters,
@@ -10,6 +10,8 @@ import {
 } from '../../sceneUnits';
 import type { Scene, ScenePatch, SpatialScene } from '../../types';
 import { newId } from '../../utils';
+import type { SceneWallMutation } from '../../sceneWallsApi';
+import { SceneWallsEditor } from './SceneWallsEditor';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
@@ -25,6 +27,7 @@ interface SceneEditorProps {
   onDelete: (expectedVersion: number) => Promise<void>;
   /** Relê o snapshot autoritativo (usado em escrita velha). */
   onReload: () => Promise<Scene>;
+  onWallMutation: (mutation: SceneWallMutation, expectedVersion: number, operationId: string) => Promise<Scene>;
 }
 
 /**
@@ -32,13 +35,13 @@ interface SceneEditorProps {
  *
  * Administra só as propriedades ESTRUTURAIS da cena: nome, base espacial
  * (modo + dimensões), imagem de fundo opcional e um preview de proporção.
- * Desenho/edição de paredes é a 6.6M.4.2 e NÃO aparece aqui.
+ * A 6.6M.4.2 acrescenta desenho e edição das paredes pelas rotas da cena.
  *
  * Quem decide versão, lock e pertencimento é o SERVIDOR: o editor apenas manda
  * `expectedVersion` + `operationId`, adota a resposta como nova verdade e
  * traduz os 409 de domínio (`SCENE_IN_USE`, escrita velha) em estado de tela.
  */
-export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditorProps) {
+export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutation }: SceneEditorProps) {
   const config = scene.spatialConfig;
   const [mode, setMode] = useState<SpatialScene['mode']>(config.mode);
   const [widthMeters, setWidthMeters] = useState(String(metersLabel(config.widthFeet)));
@@ -77,6 +80,8 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só o SNAPSHOT novo reseta os campos
   }, [scene.id, scene.version]);
 
+  const writing = useRef(false);
+
   const editable = !locked && !busy && !uploading;
 
   function messageOf(value: unknown): string {
@@ -109,7 +114,8 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
   }
 
   async function runUpdate(patch: ScenePatch, success: string): Promise<void> {
-    if (locked || busy) return;
+    if (locked || busy || writing.current) return;
+    writing.current = true;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -125,8 +131,17 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
     } catch (value) {
       await handleFailure(value);
     } finally {
+      writing.current = false;
       setBusy(false);
     }
+  }
+
+  async function mutateWall(mutation: SceneWallMutation, expectedVersion: number, operationId: string): Promise<Scene> {
+    if (locked || writing.current) throw new ApiError('Aguarde a operação atual ou recarregue a cena.', 409, 'CONFLICT');
+    writing.current = true; setBusy(true); setError(null); setNotice(null);
+    try { return await onWallMutation(mutation, expectedVersion, operationId); }
+    catch (value) { await handleFailure(value); throw value; }
+    finally { writing.current = false; setBusy(false); }
   }
 
   async function handleFile(file: File | undefined): Promise<void> {
@@ -154,6 +169,8 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
   }
 
   async function handleDelete(): Promise<void> {
+    if (writing.current) return;
+    writing.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -163,6 +180,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
       await handleFailure(value);
       setConfirmingDelete(false);
     } finally {
+      writing.current = false;
       setBusy(false);
     }
   }
@@ -363,8 +381,11 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload }: SceneEditor
         ) : null}
       </Section>
 
-      <Section title="Preview" icon="scroll" subtitle="Proporção, grade e imagem — sem edição de paredes">
-        <ScenePreview scene={scene} imageFailed={imageFailed} onImageError={() => setImageFailed(true)} />
+      <Section title="Mapa e paredes" icon="scroll" subtitle="Prepare as barreiras antes de iniciar o combate">
+        <SceneWallsEditor scene={scene} disabled={!editable} onMutate={mutateWall}
+          onReload={async () => { const fresh = await onReload(); setLocked(false); setError(null); return fresh; }}
+          renderCanvas={(overlay, zoom) => <ScenePreview scene={scene} imageFailed={imageFailed}
+            onImageError={() => setImageFailed(true)} overlay={overlay} zoom={zoom} />} />
       </Section>
 
       <Section title="Excluir cena" icon="trash" subtitle="Ação explícita">
@@ -427,16 +448,20 @@ function dimensionFeet(value: string, fallbackFeet: number): number {
  * tokens, iniciativa e do runtime do encontro. O que é COMPARTILHADO é a
  * representação visual da grade — `SpatialGridOverlay`, o mesmo SVG do combate
  * — para preview e tabuleiro nunca discordarem da contagem de células.
- * Proporção vem de `spatialConfig`; nada de interação nem de paredes.
+ * Proporção vem de `spatialConfig`; a edição de paredes é um overlay separado.
  */
 function ScenePreview({
   scene,
   imageFailed,
   onImageError,
+  overlay,
+  zoom = 1,
 }: {
   scene: Scene;
   imageFailed: boolean;
   onImageError: () => void;
+  overlay?: ReactNode;
+  zoom?: number;
 }) {
   const { widthFeet, heightFeet } = scene.spatialConfig;
   const safeWidth = widthFeet > 0 ? widthFeet : 1;
@@ -446,10 +471,11 @@ function ScenePreview({
 
   return (
     <div className="scene-preview-frame">
+      <div className="scene-wall-viewport">
       <div
-        className="scene-preview"
-        style={{ aspectRatio: `${safeWidth} / ${safeHeight}` }}
-        role="img"
+        className="scene-preview scene-preview--editable"
+        style={{ aspectRatio: `${safeWidth} / ${safeHeight}`, width: `${zoom * 100}%` }}
+        role={overlay ? 'group' : 'img'}
         aria-label={`Prévia da cena ${scene.name}: ${formatSceneMeters(widthFeet)} por ${formatSceneMeters(heightFeet)}`}
       >
         {scene.backgroundImageUrl && !imageFailed ? (
@@ -467,6 +493,8 @@ function ScenePreview({
           cellSizeFeet={SCENE_CELL_FEET}
           tone={tone}
         />
+        {overlay}
+      </div>
       </div>
       <p className="scene-preview-caption">
         {formatSceneMeters(widthFeet)} × {formatSceneMeters(heightFeet)} ·{' '}
