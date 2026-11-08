@@ -302,12 +302,14 @@ export function CombatTracker({
   // Quem controla o turno AGORA (derivação única — ver `turnControl.ts`).
   const controlsCurrent = currentUserControlsCombatant(current, user);
   const currentId = current?.id ?? '';
+  // Identidade compartilhada com o ciclo de morte; não persiste para a próxima rodada.
+  const currentTurnKey = `${combat.id}:${combat.round}:${combat.currentIndex}`;
   const masterAttackerId =
     masterPick && masterPick.turnId === currentId ? masterPick.combatantId : currentId;
   const masterOverrideActive =
     isMaster &&
     ((masterAttackerId !== currentId && masterAttackerId !== '') ||
-      (masterAssumed !== null && masterAssumed === currentId));
+      (masterAssumed !== null && masterAssumed === currentTurnKey));
   const showOperational = controlsCurrent || masterOverrideActive;
 
   /**
@@ -435,6 +437,7 @@ export function CombatTracker({
     combatants: combat.combatants,
     user,
     gridActive: combat.spatial.mode === 'grid-2d',
+    assumedCombatantId: isMaster && masterAssumed === currentTurnKey ? currentId : null,
   });
 
   // Inventário do NPC do turno (Mestre): lido do cadastro já carregado no
@@ -599,11 +602,6 @@ export function CombatTracker({
   // só complementa a ELEGIBILIDADE da rolagem.
   const turnDeath = current?.deathState ?? currentDeath?.death ?? null;
   const showDeathTurn = Boolean(current && turnDeath && (turnDeath.dead || turnDeath.pending || turnDeath.stabilized || turnDeath.deathSaves));
-
-  // CHAVE DO TURNO atual — mesma fórmula do servidor. O DTO do combate carrega
-  // `saveTurnKey`; com ela o cliente sabe, sem adivinhar, se o Teste deste turno
-  // já aconteceu (a fonte de verdade continua no SERVIDOR).
-  const currentTurnKey = `${combat.id}:${combat.round}:${combat.currentIndex}`;
 
   // Troca de turno (ou de rodada): a Hotbar recomeça vazia — nenhuma ação nem
   // filtro do combatente anterior sobrevive ao próximo turno.
@@ -1689,7 +1687,7 @@ export function CombatTracker({
                     className="btn btn-small combat-assume-turn"
                     disabled={busy}
                     onClick={() => {
-                      setMasterAssumed(currentId);
+                      setMasterAssumed(currentTurnKey);
                       setMasterPick({ turnId: currentId, combatantId: currentId });
                     }}
                   >

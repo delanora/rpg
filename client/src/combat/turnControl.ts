@@ -32,7 +32,7 @@ export function currentUserControlsCombatant(
  *
  * • só em combate ACTIVE e com grid ativo;
  * • só o combatente do turno;
- * • só quem o controla (`currentUserControlsCombatant`);
+ * • quem o controla ou o Mestre que assumiu explicitamente aquele turno;
  * • precisa estar posicionado, vivo e com deslocamento/saldo.
  *
  * Placement administrativo NUNCA passa por aqui.
@@ -50,6 +50,8 @@ export interface MovementAuthorityInput {
   combatants: readonly CombatantDto[];
   user: SessionUser;
   gridActive: boolean;
+  /** Assunção explícita do Mestre, válida apenas para o turno atual. */
+  assumedCombatantId?: string | null;
 }
 
 export function movementAuthorityOf({
@@ -58,6 +60,7 @@ export function movementAuthorityOf({
   combatants,
   user,
   gridActive,
+  assumedCombatantId = null,
 }: MovementAuthorityInput): MovementAuthority {
   if (!gridActive) {
     return { combatantId: null, reason: 'Ative o grid para mover mecanicamente.' };
@@ -72,7 +75,8 @@ export function movementAuthorityOf({
   if (!current) {
     return { combatantId: null, reason: 'Nenhum combatente no turno.' };
   }
-  if (!currentUserControlsCombatant(current, user)) {
+  const assumedByMaster = user.role === 'MASTER' && assumedCombatantId === current.id;
+  if (!currentUserControlsCombatant(current, user) && !assumedByMaster) {
     return { combatantId: null, reason: 'Só o combatente do turno pode se mover agora.' };
   }
   if (!current.spatial?.position) {

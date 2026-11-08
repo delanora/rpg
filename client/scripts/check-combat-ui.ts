@@ -3577,6 +3577,7 @@ const movementAuthority = (
     combatants?: CombatantDto[];
     user?: SessionUser;
     gridActive?: boolean;
+    assumedCombatantId?: string | null;
   } = {},
 ) =>
   movementAuthorityOf({
@@ -3684,6 +3685,25 @@ check(
     // Só em combate ACTIVE e com grid ativo.
     movementAuthority({ status: 'PENDING_INITIATIVE' }).combatantId === null &&
     movementAuthority({ gridActive: false }).combatantId === null
+);
+check(
+  'CB245.1) Mestre que assume o turno move o jogador; seleção alheia e flag de jogador não concedem controle',
+  (() => {
+    const master = viewerOf('MASTER', 'u-master');
+    const assumed = {user: master, assumedCombatantId:'hero'};
+    const authority = movementAuthority(assumed);
+    const rendered = renderToStaticMarkup(createElement(CombatGrid, {
+      combat:combatOf([unitOf('hero', 'medium')]), isMaster:true, movement:authority,
+      onCombatChange:()=>undefined, onError:()=>undefined,
+    }));
+    return authority.combatantId === 'hero' && rendered.includes('data-movable="true"') &&
+      movementAuthority({user:master,assumedCombatantId:'outro'}).combatantId === null &&
+      movementAuthority({user:viewerOf('PLAYER','outro'),assumedCombatantId:'hero'}).combatantId === null &&
+      movementAuthority({...assumed,combatants:[moverOf({deathBlocksActions:true})]}).combatantId === null &&
+      movementAuthority({...assumed,combatants:[moverOf({turnEconomy:{movementBudget:9,movementUsed:9}})]}).combatantId === null &&
+      movementAuthority({...assumed,currentCombatantId:'outro',combatants:[moverOf({id:'outro'})]}).combatantId === null &&
+      combatTrackerSource.includes('assumedCombatantId: isMaster && masterAssumed === currentTurnKey ? currentId : null');
+  })(),
 );
 check(
   'CB246) unplaced/morto/deslocamento zero/sem saldo não iniciam movimento (mensagem discreta)',
