@@ -82,6 +82,7 @@ export const spatialObstacleCreateSchema = z
     end: spatialPositionSchema,
     blocksMovement: z.boolean().optional(),
     blocksSight: z.boolean().optional(),
+    blocksTargeting: z.boolean().optional(),
     expectedVersion: z.number().int().nonnegative(),
     operationId: z.string().min(1).max(128),
   })
@@ -93,6 +94,7 @@ export const spatialObstaclePatchSchema = z
     end: spatialPositionSchema.optional(),
     blocksMovement: z.boolean().optional(),
     blocksSight: z.boolean().optional(),
+    blocksTargeting: z.boolean().optional(),
     expectedVersion: z.number().int().nonnegative(),
     operationId: z.string().min(1).max(128),
   })
@@ -102,7 +104,7 @@ export const spatialObstaclePatchSchema = z
       input.start !== undefined ||
       input.end !== undefined ||
       input.blocksMovement !== undefined ||
-      input.blocksSight !== undefined;
+      input.blocksSight !== undefined || input.blocksTargeting !== undefined;
     if (!hasChange) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Nada para alterar.' });
     }
@@ -127,7 +129,7 @@ export type SpatialObstacleDeletePayload = z.infer<typeof spatialObstacleDeleteS
 export const spatialObstacleBatchSchema = z.object({
   walls: z.array(z.object({
     start: spatialPositionSchema, end: spatialPositionSchema,
-    blocksMovement: z.boolean().default(true), blocksSight: z.boolean().default(true),
+    blocksMovement: z.boolean().default(true), blocksSight: z.boolean().default(true), blocksTargeting: z.boolean().optional(),
   }).strict()).min(1).max(200),
   expectedVersion: z.number().int().nonnegative(),
   operationId: z.string().min(1).max(128),

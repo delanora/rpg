@@ -10,10 +10,11 @@ import type { SpatialPosition2D, SpatialSceneConfig } from './spatial.types.js';
  * FASE 6.6L.4.1 — OBSTÁCULOS ESPACIAIS (paredes).
  *
  * PRIMITIVE da cena: um segmento 2D de espessura zero, com endpoints em PÉS e
- * DUAS flags INDEPENDENTES:
+ * TRÊS flags INDEPENDENTES:
  *
  *  • `blocksMovement` — superfície sólida (parede, barreira invisível);
- *  • `blocksSight`    — obstrui a visão (parede, cortina estrutural futura).
+ *  • `blocksSight`    — obstrui a visão (parede, cortina estrutural futura);
+ *  • `blocksTargeting` — impede caminho livre de ataques e magias.
  *
  * Não existe `kind` além de `wall` nesta fase: portas, janelas, paredes
  * secretas e one-way walls ficam para depois, reutilizando ESTA fundação.
@@ -40,6 +41,7 @@ export interface SpatialObstacleSource {
   endYFeet: number;
   blocksMovement: boolean;
   blocksSight: boolean;
+  blocksTargeting?: boolean;
 }
 
 /**
@@ -58,6 +60,7 @@ export interface SpatialObstacleDto {
   lengthFeet: number;
   blocksMovement: boolean;
   blocksSight: boolean;
+  blocksTargeting?: boolean;
 }
 
 /** Entrada já validada de uma parede (o que o serviço grava/valida). */
@@ -66,6 +69,7 @@ export interface SpatialObstacleShape {
   end: SpatialPosition2D;
   blocksMovement: boolean;
   blocksSight: boolean;
+  blocksTargeting?: boolean;
 }
 
 /** Arredonda ruído de ponto flutuante sem mudar a escala (2,5 pés estável). */
@@ -94,6 +98,7 @@ export function obstacleDtoOf(source: SpatialObstacleSource): SpatialObstacleDto
     lengthFeet: precise(segmentLengthFeet(segment)),
     blocksMovement: source.blocksMovement,
     blocksSight: source.blocksSight,
+    blocksTargeting: source.blocksTargeting ?? source.blocksMovement,
   };
 }
 

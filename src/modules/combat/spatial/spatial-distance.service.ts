@@ -1,3 +1,5 @@
+import { evaluateWallPath } from './targeting-walls.js';
+import { obstacleDtoOf, type SpatialObstacleShape } from './spatial-obstacle.js';
 import { HttpError } from '../../../lib/http-error.js';
 import type { MechanicalEntity } from '../../shared/conditions.js';
 import type { SpatialProvider } from '../../spells/execution/spatial-validation.js';
@@ -51,6 +53,7 @@ export interface CombatSpatialIndex {
   combatId: string;
   scene: SpatialSceneConfig;
   bodies: Map<string, SpatialBody>;
+  obstacles?: readonly SpatialObstacleShape[] | null;
 }
 
 function entityKey(kind: string, id: string): string {
@@ -89,7 +92,8 @@ export function combatSpatialIndex(combat: CombatSourced): CombatSpatialIndex {
       bodies.set(entityKey('creature', combatant.creatureId), body);
     }
   }
-  return { combatId: combat.id, scene: effectiveSceneConfigOf(combat), bodies };
+  return { combatId: combat.id, scene: effectiveSceneConfigOf(combat), bodies,
+    obstacles: combat.scene ? combat.scene.obstacles?.map(obstacleDtoOf) ?? null : [] };
 }
 
 /**
@@ -158,9 +162,9 @@ export function bodiesDistanceFeet(
 /**
  * Provider de alcance do TARGETING de magia (6.6E), alimentado pelo índice.
  *
- * `clearPath`/`sight` geométricos continuam `unknown`: a 6.6L.2 NÃO implementa
- * linha de visão nem obstáculos. Alcance conhecido NÃO implica `canSee` nem
- * ausência de cobertura (Cover segue separado, na 6.6J.5).
+ * Caminho livre considera as paredes carregadas nos casos claros. Visão e
+ * obstruções parciais continuam assistidas. Alcance conhecido não implica
+ * visão nem ausência de meia cobertura ou três quartos.
  */
 export function gridSpatialProvider(index: CombatSpatialIndex | null): SpatialProvider {
   return {
@@ -171,8 +175,9 @@ export function gridSpatialProvider(index: CombatSpatialIndex | null): SpatialPr
       if (distance.status !== 'known') return 'unknown';
       return distance.distanceFeet <= rangeFeet ? 'pass' : 'fail';
     },
-    evaluateClearPath() {
-      return 'unknown';
+    evaluateClearPath(caster, target) {
+      if (!index) return 'unknown';
+      return evaluateWallPath(index.scene, spatialBodyOf(index, caster), spatialBodyOf(index, target), index.obstacles).result;
     },
     evaluateSightGeometry() {
       return 'unknown';

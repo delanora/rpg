@@ -50,11 +50,21 @@ Salve a cena como **grade 2D** para habilitar a edição.
 - **Cancelar edição** ou **Esc** descarta o rascunho. Excluir exige confirmação.
 - A edição respeita versão, permissões do Mestre e bloqueio de cena em uso.
 
-As opções de bloqueio de movimento e visão são independentes. Paredes com
+As opções **Bloqueia movimento**, **Bloqueia ataques e magias** e
+**Bloqueia visão** são independentes. Paredes com
 **Bloqueia movimento** impedem atravessar no modo **Mover**, considerando todo
 o espaço do token, inclusive criaturas grandes e passos diagonais. Encostar
 ou andar paralelo é permitido. O modo **Posicionar** do Mestre continua sendo
 um ajuste administrativo livre. O bloqueio automático de visão continua futuro.
+
+**Ataques e magias:** no grid, uma barreira contínua que separa inteiramente os
+espaços dos dois tokens impede o ataque ou a magia que exige caminho livre,
+antes de consumir recursos. A confirmação de caminho livre do Mestre não
+sobrepõe esse bloqueio conhecido. Paredes curtas, frestas e cantos continuam
+no fluxo assistido existente; não são classificados como cobertura total.
+A adjudicação usa as paredes cadastradas no plano 2D, sem interpretar a imagem,
+altura ou cobertura parcial. Nas paredes anteriores à opção, a migração copia
+uma única vez o bloqueio de movimento; editar uma opção depois não altera outra.
 
 Um traçado usa `POST /api/scenes/:sceneId/spatial/obstacles/batch`, com `walls`,
 `expectedVersion` e `operationId`: todos os segmentos são validados e salvos na

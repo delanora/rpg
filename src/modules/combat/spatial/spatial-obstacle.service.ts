@@ -41,6 +41,7 @@ export interface SpatialObstaclePatchInput {
   end?: SpatialPosition2D;
   blocksMovement?: boolean;
   blocksSight?: boolean;
+  blocksTargeting?: boolean;
   expectedVersion: number;
   operationId: string;
 }
@@ -91,6 +92,7 @@ export async function createSpatialObstacle(
     end: input.end,
     blocksMovement: input.blocksMovement,
     blocksSight: input.blocksSight,
+    ...(input.blocksTargeting === undefined ? {} : { blocksTargeting: input.blocksTargeting }),
   };
   return runSceneOperation(
     actor,
@@ -113,6 +115,7 @@ export async function createSpatialObstacle(
           endYFeet: shape.end.yFeet,
           blocksMovement: shape.blocksMovement,
           blocksSight: shape.blocksSight,
+          blocksTargeting: shape.blocksTargeting ?? true,
         },
       });
       return {
@@ -149,6 +152,7 @@ export async function updateSpatialObstacle(
         end: input.end,
         blocksMovement: input.blocksMovement,
         blocksSight: input.blocksSight,
+        ...(input.blocksTargeting === undefined ? {} : { blocksTargeting: input.blocksTargeting }),
       },
     },
     'spatial-obstacle-update',
@@ -162,6 +166,7 @@ export async function updateSpatialObstacle(
         end: input.end ?? { xFeet: existing.endXFeet, yFeet: existing.endYFeet },
         blocksMovement: input.blocksMovement ?? existing.blocksMovement,
         blocksSight: input.blocksSight ?? existing.blocksSight,
+        blocksTargeting: input.blocksTargeting ?? existing.blocksTargeting,
       };
       assertValidWall(merged, spatialSceneOf(scene.spatialConfig));
       const updated = await db.spatialObstacle.update({
@@ -173,6 +178,7 @@ export async function updateSpatialObstacle(
           endYFeet: merged.end.yFeet,
           blocksMovement: merged.blocksMovement,
           blocksSight: merged.blocksSight,
+          blocksTargeting: merged.blocksTargeting,
         },
       });
       return {
@@ -227,7 +233,7 @@ export async function createSpatialObstacles(
     await db.spatialObstacle.createMany({ data: input.walls.map(wall => ({
       sceneId, kind: 'wall', startXFeet: wall.start.xFeet, startYFeet: wall.start.yFeet,
       endXFeet: wall.end.xFeet, endYFeet: wall.end.yFeet,
-      blocksMovement: wall.blocksMovement, blocksSight: wall.blocksSight,
+      blocksMovement: wall.blocksMovement, blocksSight: wall.blocksSight, blocksTargeting: wall.blocksTargeting ?? true,
     })) });
     return { scene: toSceneDto(await loadSceneById(sceneId, db)) };
   });

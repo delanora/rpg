@@ -87,10 +87,16 @@ try {
   await pointer(canvas(), 'pointerdown', 250, 150);
   check('Desenhar só altera rascunho; duas coordenadas não fazem escrita', calls.length === 0);
   check('Rascunho usa coordenadas do mapa, com ajuste à grade', container.querySelector('.scene-wall-draft')?.getAttribute('x2') === '25');
+  const flag = (label: string) => [...container.querySelectorAll('label')].find(item => item.textContent?.includes(label))!.querySelector('input')!;
+  check('Parede nova inicia com bloqueio de ataques e magias habilitado', flag('Bloqueia ataques e magias').checked);
+  await act(async () => flag('Bloqueia ataques e magias').click());
+  await act(async () => flag('Bloqueia movimento').click());
+  check('Movimento não religa o bloqueio independente de ataques e magias', !flag('Bloqueia ataques e magias').checked);
   await act(async () => { button('Salvar parede').click(); button('Salvar parede').click(); });
   check('Salvar com clique duplo cria uma única intenção', calls.length === 1 && calls[0].mutation.kind === 'create');
   check('Payload conserva pés, versão e operationId', calls[0].version === 1 && calls[0].operationId.length > 0 &&
     calls[0].mutation.kind === 'create' && calls[0].mutation.wall.start.xFeet === 5 && calls[0].mutation.wall.end.yFeet === 15);
+  check('Salvar preserva a opção independente desativada', calls[0].mutation.kind === 'create' && calls[0].mutation.wall.blocksTargeting === false);
   check('Resposta do servidor atualiza a lista imediatamente', latest.obstacles.length === 1 && container.querySelectorAll('.scene-wall-item').length === 1);
 
   await act(async () => (container.querySelector('.scene-wall-item') as HTMLButtonElement).click());
@@ -160,7 +166,7 @@ try {
   await click('Salvar parede');
   const directDrag = calls.at(-1)?.mutation;
   check('Selecionar e arrastar pela linha não envia metadados do DTO como geometria',
-    directDrag?.kind === 'update' && Object.keys(directDrag.wall).sort().join(',') === 'blocksMovement,blocksSight,end,start');
+    directDrag?.kind === 'update' && Object.keys(directDrag.wall).sort().join(',') === 'blocksMovement,blocksSight,blocksTargeting,end,start');
 
   const beforeTrace = calls.length;
   await click('Desenhar parede');
@@ -190,7 +196,8 @@ try {
   check('API reutiliza POST/PATCH/DELETE reais com versão e intenção explícitas',
     httpCalls.slice(0, 3).map(c => c.method).join(',') === 'POST,PATCH,DELETE' && httpCalls[0].path === '/api/scenes/cena-fixture/spatial/obstacles' &&
     httpCalls[2].path.endsWith('/parede-fixture') && httpCalls[1].body.expectedVersion === 8 && httpCalls[2].body.operationId === 'operacao-apagar' &&
-    Object.keys(httpCalls[1].body).sort().join(',') === 'blocksMovement,blocksSight,end,expectedVersion,operationId,start');
+    Object.keys(httpCalls[1].body).sort().join(',') === 'blocksMovement,blocksSight,blocksTargeting,end,expectedVersion,operationId,start');
+  check('API inicializa parede legada pelo bloqueio de movimento', httpCalls[0].body.blocksTargeting === wall.blocksMovement);
   check('Traçado usa endpoint de lote com uma versão e uma chave para todos os segmentos',
     httpCalls[3].path.endsWith('/obstacles/batch') && httpCalls[3].body.expectedVersion === 10 &&
     Array.isArray(httpCalls[3].body.walls) && httpCalls[3].body.walls.length === 2);

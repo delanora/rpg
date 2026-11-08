@@ -2330,6 +2330,8 @@ export interface SpatialObstacle {
   lengthFeet: number;
   blocksMovement: boolean;
   blocksSight: boolean;
+  /** Ausente apenas em snapshots de operações anteriores à opção independente. */
+  blocksTargeting?: boolean;
 }
 
 /**

@@ -427,7 +427,7 @@ export async function smokeSpatialWalls(baseUrl: string, check: Check): Promise<
     check(
       '89W.Y) projeção da parede tem EXATAMENTE os campos previstos (sem vazar auditoria)',
       JSON.stringify(Object.keys(firstWall).sort()) ===
-        JSON.stringify(['blocksMovement', 'blocksSight', 'end', 'id', 'kind', 'lengthFeet', 'start'].sort()),
+        JSON.stringify(['blocksMovement', 'blocksSight', 'blocksTargeting', 'end', 'id', 'kind', 'lengthFeet', 'start'].sort()),
       JSON.stringify(firstWall),
     );
 

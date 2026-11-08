@@ -1220,8 +1220,9 @@ model SpatialObstacle {
   endXFeet   Float
   endYFeet   Float
 
-  blocksMovement Boolean @default(true)
-  blocksSight    Boolean @default(true)
+  blocksMovement  Boolean @default(true)
+  blocksSight     Boolean @default(true)
+  blocksTargeting Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -85,7 +85,7 @@ import {
 import { applyCoverConfirmation, coverSnapshotOf } from './cover.js';
 import { withSpatial } from './spatial/spatial-projection.js';
 import { combatInclude, loadCombatById, withEffectModifiers } from './combat-load.js';
-import { combatSpatialIndex, evaluateEntityDistance } from './spatial/spatial-distance.service.js';
+import { combatSpatialIndex, evaluateEntityDistance, gridSpatialProvider } from './spatial/spatial-distance.service.js';
 import { evaluateRange } from './spatial/spatial-range.js';
 import { attackDamages, damageExpression, damageIsEmpty } from '../shared/attacks.js';
 import { ABILITY_LABELS, abilityModifier, normalizeSkills, proficiencyBonus, type AbilityKey } from '../shared/dnd5e.js';
@@ -1452,6 +1452,11 @@ export async function resolveAttack<TReaction = never>(
         400,
         'COVER_TARGET_MISMATCH',
       );
+    }
+    if (gridSpatialProvider(combatSpatialIndex(combat)).evaluateClearPath(
+      { kind: 'combatant', id: attacker.id }, { kind: 'combatant', id: target.id },
+    ) === 'fail') {
+      throw new HttpError('Uma parede bloqueia o caminho até o alvo.', 409, 'TARGET_TOTAL_COVER');
     }
     const providerEvaluation = await coverFor(
       {

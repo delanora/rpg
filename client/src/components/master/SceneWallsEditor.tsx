@@ -17,8 +17,8 @@ interface Draft { wallId: string | null; wall: SceneWallShape; version: number }
 interface Intention { mutation: SceneWallMutation; version: number; operationId: string }
 interface Drag { part: 'start' | 'end' | 'wall'; origin: SpatialPosition; draft: Draft; pointerId: number }
 
-const shapeOf = ({ start, end, blocksMovement, blocksSight }: SceneWallShape): SceneWallShape =>
-  ({ start, end, blocksMovement, blocksSight });
+const shapeOf = ({ start, end, blocksMovement, blocksSight, blocksTargeting }: SceneWallShape): SceneWallShape =>
+  ({ start, end, blocksMovement, blocksSight, blocksTargeting: blocksTargeting ?? blocksMovement });
 
 /** Rascunhos são locais. Só salvar/excluir chama o contrato HTTP da cena. */
 export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas }: Props) {
@@ -71,7 +71,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     if (!placing || !draft) {
       setSegments([]);
       setDraft({ wallId: null, version: scene.version, wall: { start: position, end: position,
-        blocksMovement: true, blocksSight: true } }); setPlacing(true);
+        blocksMovement: true, blocksSight: true, blocksTargeting: true } }); setPlacing(true);
     } else {
       if (position.xFeet === draft.wall.start.xFeet && position.yFeet === draft.wall.start.yFeet) return;
       if (segments.length >= 200) { setError('Salve este traçado antes de desenhar mais segmentos.'); return; }
@@ -85,7 +85,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     setSegments(previous => previous.slice(0, -1));
     setDraft({ ...draft, wall: { ...last, end: last.start } }); setPlacing(true);
   }
-  function changeFlag(flag: 'blocksMovement' | 'blocksSight', value: boolean) {
+  function changeFlag(flag: 'blocksMovement' | 'blocksSight' | 'blocksTargeting', value: boolean) {
     if (!draft || !editable || stale) return;
     setDraft({ ...draft, wall: { ...draft.wall, [flag]: value } });
     setSegments(previous => previous.map(wall => ({ ...wall, [flag]: value })));
@@ -193,7 +193,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
       <button type="button" className="btn btn-small" disabled={!editable} onClick={() => {
         cancel(); setTool('select'); setDraft({ wallId: null, version: scene.version, wall: {
           start: { xFeet: 0, yFeet: 0 }, end: { xFeet: Math.min(5, config.widthFeet), yFeet: 0 },
-          blocksMovement: true, blocksSight: true,
+          blocksMovement: true, blocksSight: true, blocksTargeting: true,
         } });
       }}>Nova por coordenadas</button>
       <button type="button" className="btn btn-small" disabled={!editable || stale || segments.length === 0}
@@ -237,6 +237,8 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
           </label>))}</div>}
         <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksMovement}
           onChange={(event) => changeFlag('blocksMovement', event.target.checked)} /> Bloqueia movimento</label>
+        <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksTargeting ?? draft.wall.blocksMovement}
+          onChange={(event) => changeFlag('blocksTargeting', event.target.checked)} /> Bloqueia ataques e magias</label>
         <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksSight}
           onChange={(event) => changeFlag('blocksSight', event.target.checked)} /> Bloqueia visão</label>
         {invalid ? <p className="form-error">{invalid}</p> : null}
