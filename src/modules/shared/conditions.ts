@@ -141,7 +141,10 @@ export type ConditionEffects = ReturnType<typeof deriveConditionEffects>;
 export function effectiveSpeed(base: number, value: unknown, effectSpeedBonus = 0): number {
   const effects = deriveConditionEffects(value);
   if (effects.speedZero) return 0;
-  return Math.max(0, Math.floor((base + effectSpeedBonus) * effects.speedMultiplier));
+  // Velocidades em metros podem ser fracionárias (7,5 m = 25 pés).
+  // Sem multiplicador, truncar aqui retirava deslocamento legítimo da ficha.
+  const speed = (base + effectSpeedBonus) * effects.speedMultiplier;
+  return Math.max(0, effects.speedMultiplier === 1 ? speed : Math.floor(speed));
 }
 export function effectiveMaxHp(base: number, value: unknown): number {
   return Math.max(0, Math.floor(base * deriveConditionEffects(value).hpMaxMultiplier));

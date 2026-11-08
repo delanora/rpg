@@ -5,6 +5,7 @@ import { signToken } from '../lib/jwt.js';
 import { hashPassword } from '../lib/password.js';
 import { inventoryListSchema } from '../modules/characters/characters.schema.js';
 import { characterDerivedAttacks } from '../modules/characters/characters.dto.js';
+import { remainingMovementFeet } from '../modules/combat/spatial/spatial-movement.js';
 import type { CombatDto } from '../modules/combat/combat.dto.js';
 import {
   diffProtectedGameState,
@@ -33,7 +34,7 @@ import {
  *     conferido DEPOIS (`support/protected-state.ts`).
  *
  * SEGURANÇA (obrigatória antes de qualquer escrita):
- *   • `DATABASE_URL` explícito, com `schema=` e ele NÃO pode ser `public`;
+ *   • `DATABASE_URL` explícito, com schema iniciado por `smoke_`;
  *   • o schema precisa estar VAZIO de fichas/combates (nada de dado real);
  *   • fixture SENTINELA: a conta criada por Prisma é autenticada por HTTP; se o
  *     login não devolver a MESMA conta, o servidor HTTP aponta para outro banco
@@ -41,7 +42,7 @@ import {
  *   • `PLAYABLE_BASE_URL` aponta para o servidor de teste.
  *
  * Uso:
- *   DATABASE_URL='postgresql://user:pass@host:5432/db?schema=playable_smoke' \
+ *   DATABASE_URL='postgresql://user:pass@host:5432/db?schema=smoke_playable' \
  *   PLAYABLE_BASE_URL='http://localhost:3101' \
  *   npx tsx src/scripts/smoke-combat-playable.ts
  */
@@ -89,8 +90,8 @@ function requireSmokeDatabase(): string {
     );
     process.exit(2);
   }
-  if (schema === 'public' || schema.startsWith('public_')) {
-    console.error(`ABORTADO: o schema "${schema}" é de dados reais. Use um schema descartável.`);
+  if (!/^smoke_[a-z0-9_]+$/.test(schema)) {
+    console.error(`ABORTADO: o schema "${schema}" não identifica um ambiente de smoke. Use smoke_<nome>.`);
     process.exit(2);
   }
   if (!BASE_URL) {
@@ -326,7 +327,7 @@ async function main(): Promise<void> {
         classes: [{ classKey: 'fighter', level: 1, subclass: '' }],
         hpMax: 40,
         hpCurrent: 40,
-        speed: 30,
+        speed: 9,
         dexterity: 14,
         strength: 16,
         raceId: 'human',
@@ -341,7 +342,7 @@ async function main(): Promise<void> {
         classes: [{ classKey: 'fighter', level: 1, subclass: '' }],
         hpMax: 40,
         hpCurrent: 40,
-        speed: 30,
+        speed: 7.5,
         dexterity: 12,
         strength: 16,
         raceId: 'human',
@@ -566,7 +567,7 @@ async function main(): Promise<void> {
       'GP11) turno do Herói Um ativo com economia inicializada (1 Ação, 30 pés, Reação)',
       combat.currentCombatantId === p1Id &&
         combat.combatants.find((item) => item.id === p1Id)?.turnEconomy.actionsUsed === 0 &&
-        combat.combatants.find((item) => item.id === p1Id)?.turnEconomy.movementBudget === 30,
+        combat.combatants.find((item) => item.id === p1Id)?.turnEconomy.movementBudget === 9,
     );
 
     const rangePreview = await http(
@@ -624,7 +625,7 @@ async function main(): Promise<void> {
         ? true
         : natural === 1
           ? false
-          : attackResult.attackTotal >= attackResult.targetArmorClass;
+          : attackResult.attackTotal >= (targetBefore.armorClass ?? 0);
     const targetAfter = masterAfterAttack.combatants.find((item) => item.id === npcId)!;
     const attackTotalOk =
       attackResult.attackTotal === natural + Number(attackResult.attackBonus);
@@ -772,29 +773,34 @@ async function main(): Promise<void> {
         eventos: eventLog.slice(-6),
       }),
     );
-    /**
-     * P0 CONHECIDO (6.6M.9) — UNIDADE DO MOVIMENTO.
-     *
-     * `onTurnStart` grava `movementBudget` em PÉS (deslocamento do PHB) e a
-     * Ação `move` da 6.1 confere o `distance` contra esse orçamento em pés. O
-     * commit espacial, porém, grava `movementUsed` com `feetToMeters()` e lê o
-     * restante com `remainingMovementFeet(budget, used)` como se AMBOS fossem
-     * metros: 10 pés gastos viram 3 "pés" e restam 90 pés em vez de 20.
-     *
-     * A asserção abaixo é a REGRA (10 pés ⇒ 20 pés restantes). Se ela falhar,
-     * o Golden Path está reportando o defeito — não um erro de teste.
-     */
+    // A ficha/economia legadas persistem METROS; o caminho e seu DTO usam PÉS.
+    // Antes, speed: 30 representava 30 m, não os 30 pés presumidos pelo teste.
     check(
-      'GP19.P0) Movimento consumido/restante em PÉS (10 pés gastos ⇒ 20 pés restantes)',
+      'GP19.U) orçamento 9 m − custo 3 m = 6 m (30 pés − 10 pés = 20 pés)',
       moved.totalCostFeet === 10 &&
         moved.movementRemainingAfterFeet === 20 &&
-        p1AfterMove.turnEconomy.movementUsed === 10,
+        p1AfterMove.turnEconomy.movementBudget === 9 &&
+        p1AfterMove.turnEconomy.movementUsed === 3,
       JSON.stringify({
         custoFeet: moved.totalCostFeet,
         restanteFeet: moved.movementRemainingAfterFeet,
         economia: p1AfterMove.turnEconomy,
       }),
     );
+
+    const caminhoExcedente = [15, 20, 25, 30, 35].map((xFeet) => ({ xFeet, yFeet: 10 }));
+    const excedente = await http(`/api/combat/${combat.id}/spatial/movement`, {
+      token: p1Token,
+      body: { combatantId: p1Id, path: caminhoExcedente,
+        expectedVersion: combat.version, operationId: randomUUID() },
+    });
+    const aposExcedente = (await http('/api/combat/active', { token: masterToken })).data.combat;
+    check('GP19.S) caminho de 25 pés excede saldo de 20: servidor recusa sem mudar estado',
+      excedente.status === 409 && excedente.data.error === 'MOVEMENT_INSUFFICIENT_REMAINING' &&
+      aposExcedente.version === combat.version &&
+      same(aposExcedente.combatants.find((item: any) => item.id === p1Id)?.turnEconomy, p1AfterMove.turnEconomy) &&
+      same(aposExcedente.combatants.find((item: any) => item.id === p1Id)?.spatial, p1AfterMove.spatial),
+      JSON.stringify(excedente.data));
 
     const invalidPath = [{ xFeet: 20, yFeet: 10 }];
     const invalidPreview = await http(`/api/combat/${combat.id}/spatial/movement-preview`, {
@@ -888,6 +894,30 @@ async function main(): Promise<void> {
         p2Economy?.reactionAvailable === true,
       JSON.stringify(p2Economy),
     );
+
+    // O segundo personagem preserva 7,5 m (25 pés), inclusive ao misturar APIs.
+    const segundoMovimento = await http('/api/combat/action', {
+      token: p2Token,
+      body: { combatId: combat.id, combatantId: p2Id, action: 'move', distance: 3,
+        expectedVersion: combat.version, operationId: randomUUID() },
+    });
+    if (segundoMovimento.data.combat) combat = segundoMovimento.data.combat as CombatDto;
+    const economiaSegundo = combat.combatants.find((item) => item.id === p2Id)!.turnEconomy;
+    check('GP24.U) personagem de 7,5 m: mover 3 m pela Action Economy deixa 15 pés',
+      segundoMovimento.status === 200 && economiaSegundo.movementBudget === 7.5 &&
+      economiaSegundo.movementUsed === 3 && remainingMovementFeet(7.5, economiaSegundo.movementUsed) === 15,
+      JSON.stringify(economiaSegundo));
+
+    const segundoEspacial = await http(`/api/combat/${combat.id}/spatial/movement`, {
+      token: p2Token,
+      body: { combatantId: p2Id, path: [{ xFeet: 25, yFeet: 30 }, { xFeet: 25, yFeet: 35 }],
+        expectedVersion: combat.version, operationId: randomUUID() },
+    });
+    if (segundoEspacial.data.combat) combat = segundoEspacial.data.combat as CombatDto;
+    check('GP24.E) API de economia e motor espacial compartilham saldo: 25 − 10 − 10 = 5 pés',
+      segundoEspacial.status === 200 && segundoEspacial.data.movement?.movementRemainingAfterFeet === 5 &&
+      combat.combatants.find((item) => item.id === p2Id)?.turnEconomy.movementUsed === 6,
+      JSON.stringify(segundoEspacial.data.movement));
 
     // =====================================================================
     // 7) RECONEXÃO em ponto intermediário — sem segundo store no cliente
@@ -1100,6 +1130,28 @@ async function main(): Promise<void> {
     );
     combat = (endAfterSave.data.combat ?? combat) as CombatDto;
 
+    // NPC usa o mesmo contrato: 9 m de base, 10 pés percorridos, 20 restantes.
+    guard = 0;
+    while (combat.currentCombatantId !== npcId && guard++ < 4) {
+      const avancar = await http('/api/combat/next-turn', {
+        token: masterToken,
+        body: { combatId: combat.id, expectedVersion: combat.version, operationId: randomUUID() },
+      });
+      if (!avancar.data.combat) throw new Error('Não foi possível chegar ao turno do NPC');
+      combat = avancar.data.combat as CombatDto;
+    }
+    const movimentoNpc = await http(`/api/combat/${combat.id}/spatial/movement`, {
+      token: masterToken,
+      body: { combatantId: npcId, path: [{ xFeet: 15, yFeet: 5 }, { xFeet: 20, yFeet: 5 }],
+        expectedVersion: combat.version, operationId: randomUUID() },
+    });
+    if (movimentoNpc.data.combat) combat = movimentoNpc.data.combat as CombatDto;
+    const economiaNpc = combat.combatants.find((item) => item.id === npcId)!.turnEconomy;
+    check('GP34.N) NPC de 9 m compartilha conversão e orçamento: 30 − 10 = 20 pés',
+      movimentoNpc.status === 200 && movimentoNpc.data.movement?.movementRemainingAfterFeet === 20 &&
+      economiaNpc.movementBudget === 9 && economiaNpc.movementUsed === 3,
+      JSON.stringify({ economiaNpc, movimento: movimentoNpc.data.movement }));
+
     // =====================================================================
     // 9) ENCERRAMENTO DO COMBATE
     // =====================================================================
@@ -1144,7 +1196,7 @@ async function main(): Promise<void> {
     const p1SheetAfter = await http('/api/characters/me', { token: p1Token });
     check(
       'GP37) fichas mantêm só as consequências reais (sem cura/descanso automáticos)',
-      sheetAfter.data.character?.hpCurrent === 0 &&
+      sheetAfter.data.character?.hpCurrent === (rolled === 20 ? 1 : 0) &&
         p1SheetAfter.data.character?.hpCurrent === 40 &&
         p1SheetAfter.data.character?.id === characterOne.id,
       JSON.stringify({

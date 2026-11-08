@@ -69,8 +69,8 @@ export function feetToMeters(feet: number): number {
  * 6.6M.3.1.4.3 — APRESENTAÇÃO em metros (PT-BR, vírgula decimal).
  *
  * O Obsyrium mostra distância em METROS; a regra (PHB 2014) e todos os campos
- * persistidos/DTO continuam em PÉS. Este formatter usa a MESMA conversão de
- * `feetToMeters` (0,3 m por pé) — nada de segunda tabela — e só existe para o
+ * espaciais persistidos/DTO continuam em PÉS; a economia legada usa METROS.
+ * Este formatter usa a MESMA conversão de `feetToMeters` (0,3 m por pé) — nada de segunda tabela — e só existe para o
  * texto do Registro de combate e das mensagens de deslocamento.
  */
 export function formatMetersPtBr(feet: number): string {
