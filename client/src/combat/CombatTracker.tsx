@@ -1311,6 +1311,30 @@ export function CombatTracker({
    * Quem já rolou e espera os demais cai na espera normal, sem overlay; o Mestre
    * continua exatamente como estava (a dock e o overlay são só do jogador).
    */
+  // Disponível desde a preparação; a autorização continua no servidor.
+  const endCombatControl = isMaster ? (
+    <button
+      type="button"
+      className="btn btn-small combat-end-button"
+      disabled={busy}
+      onClick={() => {
+        void (async () => {
+          setBusy(true);
+          try {
+            await endCombat();
+            onCombatEnd();
+          } catch (error) {
+            onError(error instanceof Error ? error.message : 'Falha ao encerrar.');
+          } finally {
+            setBusy(false);
+          }
+        })();
+      }}
+    >
+      <Icon name="sword" size={13} /> Encerrar combate
+    </button>
+  ) : null;
+
   if (combat.status === 'PENDING_INITIATIVE') {
     return (
       <section className="combat-panel">
@@ -1336,6 +1360,7 @@ export function CombatTracker({
                 isMyTurn={false}
                 empty={<span className="empty-hint">A ordem nasce quando todos rolarem.</span>}
               />
+              {isMaster ? <div className="combat-actions">{endCombatControl}</div> : null}
             </>
           }
           initiative={
@@ -1437,12 +1462,13 @@ export function CombatTracker({
               <div className="combat-actions">
                 <button
                   type="button"
-                  className="btn btn-primary btn-small"
+                  className="btn btn-primary btn-small combat-next-turn"
                   disabled={busy}
                   onClick={() => void endTurn()}
                 >
                   Próximo turno →
                 </button>
+                {endCombatControl}
               </div>
             ) : null}
           </>
@@ -1716,29 +1742,6 @@ export function CombatTracker({
               />
             ) : null}
 
-            <details className="combat-tools">
-              <summary><Icon name="gear" size={13} /> Gerenciar combate</summary>
-              <button
-                type="button"
-                className="btn btn-danger btn-small"
-                disabled={busy}
-                onClick={() => {
-                  void (async () => {
-                    setBusy(true);
-                    try {
-                      await endCombat();
-                      onCombatEnd();
-                    } catch (error) {
-                      onError(error instanceof Error ? error.message : 'Falha ao encerrar.');
-                    } finally {
-                      setBusy(false);
-                    }
-                  })();
-                }}
-              >
-                encerrar combate
-              </button>
-            </details>
           </>
         ) : undefined}
         masterInventory={

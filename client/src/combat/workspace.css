@@ -3090,7 +3090,7 @@
   font-size: 0.75rem;
 }
 /* O mesmo botão de avanço já existe na barra quando o Mestre controla o turno. */
-.combat-workspace[data-master='true']:has(.combat-master-resources .turn-resource-bar.active) .combat-actions > button:first-child { display: none; }
+.combat-workspace[data-master='true']:has(.combat-master-resources .turn-resource-bar.active) .combat-actions > .combat-next-turn { display: none; }
 @media (max-width: 760px) {
   .combat-master-hint { display: none; }
   .combat-master-panel { width: 100%; max-height: 65dvh; }
@@ -3115,4 +3115,20 @@
     height: 100%;
     min-height: 0;
   }
+}
+
+/* Encerramento sempre acessível no cabeçalho, inclusive antes da iniciativa. */
+.combat-workspace-header .combat-end-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ink-faint);
+  background: transparent;
+  border-color: var(--line);
+  white-space: nowrap;
+}
+.combat-workspace-header .combat-end-button:hover:not(:disabled),
+.combat-workspace-header .combat-end-button:focus-visible {
+  color: var(--danger);
+  border-color: var(--danger);
 }

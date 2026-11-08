@@ -793,7 +793,7 @@ No painel do mestre, **Combate** é uma aba da navegação superior. Abrir outra
 
 O arraste preserva o ponto de pega do token em qualquer tamanho e zoom. Mover uma casa custa 1,5 m em terreno normal, independentemente da área ocupada pela criatura.
 
-Na visão do mestre, a barra inferior reúne **Ações do turno**, **Ajustes** e o inventário do NPC. Os painéis abrem sobre o mapa e preservam as escolhas ao fechar. Dano/cura, economia, estado e encerramento do combate ficam em Ajustes; **Cena e posicionamento** reúne a administração do tabuleiro. Reações e resoluções pendentes continuam visíveis no combate.
+Na visão do mestre, a barra inferior reúne **Ações do turno**, **Ajustes** e o inventário do NPC. Os painéis abrem sobre o mapa e preservam as escolhas ao fechar. Dano/cura, economia e estado ficam em Ajustes; **Cena e posicionamento** reúne a administração do tabuleiro. Reações e resoluções pendentes continuam visíveis no combate. **Encerrar combate** fica visível no cabeçalho desde a preparação da iniciativa, mesmo sem nenhuma rolagem.
 
 No combate com grid, **segure Alt e clique no mapa** para sinalizar um ponto. O cursor vira uma bandeirinha; mestre e jogadores veem a marca com nome e cor do autor por três segundos. O gesto também funciona sobre tokens e preserva ação, movimento e seleção.
 
