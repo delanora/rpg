@@ -22,6 +22,7 @@
     "migrate:attack-damage": "tsx src/scripts/migrate-attack-damage.ts",
     "migrate:item-weapons": "tsx src/scripts/migrate-item-weapons.ts",
     "migrate:spell-slots": "tsx src/scripts/migrate-spell-slots.ts",
+    "seed:phb-items": "tsx src/scripts/seed-phb-items.ts",
     "smoke": "tsx src/scripts/smoke-realtime.ts",
     "test:operation-id": "tsx client/scripts/check-operation-id.ts",
     "test:combat-ui": "tsx --tsconfig client/tsconfig.json client/scripts/check-combat-ui.ts",
