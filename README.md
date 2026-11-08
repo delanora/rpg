@@ -44,7 +44,8 @@ Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada joga
 Na preparação do combate, o Mestre escolhe **Hostil**, **Neutro** ou **Aliado**
 para cada criatura. NPCs começam neutros; criaturas têm Hostil pré-selecionado.
 O menu do token permite ajustar a relação durante o encontro, inclusive em
-combates anteriores sem lados definidos. Neutros e aliados não provocam oportunidade.
+combates anteriores sem lados definidos. Neutros não provocam contra o grupo
+ou seus aliados; neutros e hostis provocam oportunidade entre si nos dois sentidos.
 
 Ataques manuais precisam de **Alcance (m)** informado no cadastro de ataques.
 Armas equipadas reutilizam o alcance derivado do servidor; o item permite
@@ -57,6 +58,9 @@ Ao prever uma saída de alcance hostil, o grid destaca o contorno de ameaça dos
 tokens públicos e pede confirmação antes do movimento. O servidor pausa antes
 da saída; uma janela permite atacar ou recusar, inclusive fora do próprio turno.
 Criaturas/NPCs são controlados pelo Mestre e personagens pelo seu jogador.
+A pergunta de reação aparece somente para quem decide. O Mestre acompanha as
+janelas dos jogadores e, quando necessário, confirma apenas a visão; a escolha
+de reagir permanece com o jogador.
 
 Na aba **Economia** do menu do token, **Ajustar Movimento restante** permite
 definir um saldo manual ou **Recuperar Movimento** em um clique. A recuperação

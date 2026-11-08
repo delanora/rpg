@@ -33,7 +33,7 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
           {combatant.sideKey && !['players','neutral','enemies'].includes(combatant.sideKey)
             ? <option value={combatant.sideKey}>{combatant.sideKey}</option> : null}
         </select></label>
-        <p className="section-note">Ajusta somente este combatente. Neutros não provocam ataques de oportunidade.</p>
+        <p className="section-note">Ajusta somente este combatente. Neutros não provocam contra o grupo; reagem contra hostis e vice-versa.</p>
       </section> : null}
       {tab === 'hp' ? <section className="combat-token-hp">
         <p className="combat-token-vitals"><strong>{combatant.hpCurrent ?? '—'}</strong> / {combatant.hpMax ?? '—'} PV</p>

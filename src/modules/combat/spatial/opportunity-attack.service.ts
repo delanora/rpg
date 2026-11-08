@@ -102,6 +102,8 @@ export interface ReactionOpportunityDto {
   options: OpportunityOption[];
   /** Só a PRIMEIRA janela pendente do boundary pode ser resolvida. */
   actionable: boolean;
+  /** Quem recebe uma pergunta; leitura administrativa não implica pedir reação. */
+  responseKind: 'reaction' | 'visibility' | null;
   resolution: unknown;
   createdAt: string;
 }
@@ -153,6 +155,7 @@ function dtoOf(
   },
   names: { moverName: string; reactorName: string },
   actionable: boolean,
+  responseKind: ReactionOpportunityDto['responseKind'],
 ): ReactionOpportunityDto {
   return {
     id: row.id,
@@ -172,6 +175,7 @@ function dtoOf(
     orderIndex: row.orderIndex,
     options: optionsOf(row.options),
     actionable,
+    responseKind,
     resolution: row.resolution ?? null,
     createdAt: row.createdAt.toISOString(),
   };
@@ -269,6 +273,14 @@ export async function reactionOpportunitiesForCombat(
             row.visibilityStatus === 'known-visible',
         );
   const actionable = actionableIdOf(pendingByReactor);
+  const responseFor = (row: typeof rows[number]): ReactionOpportunityDto['responseKind'] => {
+    if (row.id !== actionable) return null;
+    if (actor.role !== 'MASTER') return 'reaction';
+    if (row.visibilityStatus === 'unknown') return 'visibility';
+    const reactor = combat.combatants.find(unit => unit.id === row.reactorCombatantId);
+    return reactor && reactor.kind !== 'CHARACTER' ? 'reaction' : null;
+  };
+
 
   // Movimento pausado: o Mestre vê todos; o jogador só o do próprio personagem,
   // e o motivo "aguardando o Mestre" nunca cita reactor/arma/posição (item 75).
@@ -306,6 +318,7 @@ export async function reactionOpportunitiesForCombat(
           reactorName: nameOf(combat, row.reactorCombatantId),
         },
         row.id === actionable,
+        responseFor(row),
       ),
     ),
     movement,

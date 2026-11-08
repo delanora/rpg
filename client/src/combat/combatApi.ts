@@ -176,7 +176,8 @@ export function overrideEconomy(combat: CombatDto, input: {
 
 /** Ajuste explícito do lado do encontro, com versão e idempotência existentes. */
 export function setCombatantSide(combat: CombatDto, combatantId: string, sideKey: string | null): Promise<CombatDto> {
+  const {expectedVersion, operationId} = operationFor(combat);
   return api<{combat: CombatDto}>(`/api/combat/${combat.id}/combatants/${combatantId}/side`, {
-    method: 'PATCH', body: { ...operationFor(combat), sideKey },
+    method: 'PATCH', body: { expectedVersion, operationId, sideKey },
   }).then(result => result.combat);
 }

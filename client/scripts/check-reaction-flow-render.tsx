@@ -10,6 +10,7 @@ const {createElement:h,act}=await import('react');
 const {createRoot}=await import('react-dom/client');
 const {MovementRiskDialog}=await import('../src/combat/components/MovementRiskDialog');
 const {ReactionPanel}=await import('../src/combat/components/ReactionPanel');
+const {reactionQuestionsForViewer}=await import('../src/reactionOpportunitiesApi');
 const {AttacksTable}=await import('../src/components/AttacksTable');
 const {GridToken}=await import('../src/combat/grid/GridToken');
 const {deriveWeaponAttacks}=await import('../../src/modules/shared/weapon-attacks');
@@ -23,6 +24,12 @@ const check=(label:string,value:unknown)=>{assert.ok(value,label);checks++;conso
 const click=async(text:string)=>{const button=[...document.querySelectorAll('button')].find(item=>item.textContent?.includes(text));assert.ok(button,text);await act(async()=>button.click())};
 const attack:Attack={id:'weapon:fixture',name:'Espada',damage:{count:1,sides:8,bonus:0,type:'Cortante'},extraDamages:[],attackBonus:2,notes:'',ranged:false,finesse:false,legacy:false,reachFeet:5};
 try {
+ const questions=[{id:'owner',status:'pending',actionable:true,responseKind:'reaction'},
+  {id:'admin-only',status:'pending',actionable:true,responseKind:null},
+  {id:'vision',status:'pending',actionable:true,responseKind:'visibility'},
+  {id:'queue',status:'pending',actionable:false,responseKind:'reaction'},
+  {id:'closed',status:'resolved',actionable:true,responseKind:'reaction'}] as never;
+ check('popup usa só perguntas destinadas ao espectador, preservando fila e encerramento', reactionQuestionsForViewer(questions).map(q=>q.id).join(',')==='owner,vision');
  const archer=deriveWeaponAttacks({abilities:{strength:10,dexterity:14,constitution:10,intelligence:10,wisdom:10,charisma:10},level:1,weaponProficiencies:[],inventory:[{id:'bow',name:'Arco',category:'Arma',slot:'hand1',details:{weaponType:'ranged',rangeNormal:45,rangeLong:180,properties:['two-handed']}}]});
  check('personagem com arco do vídeo recebe oportunidade pelo golpe desarmado real',!!opportunityHotbarShortcut(buildCombatHotbarEntries({attacks:archer}),archer,false));
  let savedReach:number|undefined;
@@ -61,6 +68,7 @@ try {
  await act(async()=>root.render(h(ReactionPanel,{opportunity,reactorName:'Dragão',needsVisibility:true,onVisibility:value=>{visible=value},onChoose:()=>chosen++,onDecline:()=>declined++})));
  check('janela identifica o reactor e aparece fora do turno/container',document.querySelector('.reaction-panel h3')?.textContent==='Dragão'&&!host.querySelector('.reaction-panel'));
  check('visão desconhecida impede rolagem antes da adjudicação',document.querySelector<HTMLButtonElement>('.reaction-option')?.disabled);
+ check('adjudicação de visão não oferece recusar a reação no lugar do jogador', !document.querySelector('.reaction-decline') && document.querySelector('.reaction-panel-eyebrow')?.textContent?.includes('Confirmar visão'));
  await click('Consegue ver');check('Mestre confirma visão pelo callback próprio',visible===true);
  await act(async()=>root.render(h(ReactionPanel,{opportunity,reactorName:'Dragão',onChoose:()=>chosen++,onDecline:()=>declined++})));
  await click('Mordida');await click('Não reagir');check('escolher ou recusar usa os fluxos da reação',chosen===1&&declined===1);

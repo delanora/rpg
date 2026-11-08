@@ -115,8 +115,10 @@ export function movementRelationOf(
   moverSide: string | null,
   occupantSide: string | null,
 ): MovementRelation {
-  // Neutro é não hostil para qualquer lado; null continua sem decisão.
-  if (moverSide === 'neutral' || occupantSide === 'neutral') return 'same';
+  // Neutros não são hostis ao grupo, mas enfrentam o lado hostil nos dois sentidos.
+  if (moverSide === 'neutral' || occupantSide === 'neutral') {
+    return moverSide === 'enemies' || occupantSide === 'enemies' ? 'hostile' : 'same';
+  }
   if (!moverSide || !occupantSide) return 'unknown';
   return moverSide === occupantSide ? 'same' : 'hostile';
 }

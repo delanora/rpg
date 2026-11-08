@@ -38,6 +38,7 @@ globals.fetch = async (url: string, options: any = {}) => {
     state=mechanicalStateOf({...state,conditions:[{id:'condition-fixture',condition:body.condition,sourceType:'manual',appliedAt:new Date().toISOString()}]});
     result={mechanical:dto()};
   } else if(url==='/api/combat/hp') result={combat};
+  else if(url.endsWith('/side')) result={combat};
   else if(url.endsWith('/economy/override')) result={combat};
   else return {ok:false,status:404,text:async()=>JSON.stringify({message:'Leitura auxiliar indisponível na fixture.'})};
   return {ok:true,status:200,text:async()=>JSON.stringify(result)};
@@ -76,6 +77,14 @@ await click(button('Vida'));await click(button('Aplicar dano'));
 check('dano é enviado apenas para o alvo inspecionado',calls.some(call=>call.url==='/api/combat/hp'&&call.body.combatantId==='target'&&call.body.mode==='damage'&&call.body.amount===5));
 await click(button('Curar'));
 check('cura mantém o alvo inspecionado',calls.some(call=>call.url==='/api/combat/hp'&&call.body.combatantId==='target'&&call.body.mode==='heal'));
+await click(button('Relação'));
+const relationSelect=document.querySelector<HTMLSelectElement>('.combat-token-menu-body select')!;
+const {combatantSidePatchSchema}=await import('../../src/modules/combat/combat.schema');
+for(const side of ['enemies','players','neutral','']) {
+ await act(async()=>{relationSelect.value=side;relationSelect.dispatchEvent(new Event('change',{bubbles:true}));});
+ const call=calls.at(-1)!;
+ check(`relação ${side || 'não definida'} usa payload aceito pelo servidor`,call.url==='/api/combat/combat/combatants/target/side'&&combatantSidePatchSchema.safeParse(call.body).success&&call.body.sideKey===(side||null)&&!('combatId' in call.body));
+}
 await click(button('Economia'));
 check('economia do token aparece fora do turno com ação extra e recursos gastos',
  (combat as unknown as {currentCombatantId:string}).currentCombatantId !== 'target' && document.querySelectorAll('.token-economy-state .is-action.is-ready').length===1 &&

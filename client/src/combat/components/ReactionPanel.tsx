@@ -32,7 +32,7 @@ export function ReactionPanel({ opportunity, busy = false, onChoose, onDecline, 
   }, [opportunity.id, needsVisibility]);
   const panel = <div className="combat-reaction-overlay">
 
-    <section ref={root} tabIndex={-1} className="reaction-panel" aria-label="Reação disponível" role="alertdialog" aria-modal="true"
+    <section ref={root} tabIndex={-1} className="reaction-panel" aria-label={needsVisibility ? 'Confirmar visão da reação' : 'Reação disponível'} role="alertdialog" aria-modal="true"
       onKeyDown={event => {
         if(event.key === 'Tab') {
           const buttons=[...root.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
@@ -42,7 +42,7 @@ export function ReactionPanel({ opportunity, busy = false, onChoose, onDecline, 
         }
       }}>
       <p className="reaction-panel-eyebrow">
-        <Icon name="bolt" size={13} /> Reação disponível
+        <Icon name="bolt" size={13} /> {needsVisibility ? 'Confirmar visão' : 'Reação disponível'}
       </p>
       {reactorName ? <h3>{reactorName}</h3> : null}
       <p className="reaction-panel-trigger">{opportunity.trigger}</p>
@@ -69,9 +69,9 @@ export function ReactionPanel({ opportunity, busy = false, onChoose, onDecline, 
         ))}
       </div>
 
-      <button type="button" className="btn btn-small reaction-decline" disabled={busy} onClick={onDecline}>
+      {!needsVisibility ? <button type="button" className="btn btn-small reaction-decline" disabled={busy} onClick={onDecline}>
         Não reagir
-      </button>
+      </button> : null}
     </section>
   </div>;
   return typeof document === 'undefined' ? panel : createPortal(panel, document.body);

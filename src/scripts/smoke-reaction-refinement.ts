@@ -70,7 +70,7 @@ async function main() {
     const move=await http(`/combat/${combatId}/spatial/movement`,{combatantId:actor.id,path,expectedVersion:await version(),operationId:randomUUID()},player);
     assert.equal(move.status,200,JSON.stringify(move));assert.ok(move.data.pending);
     assert.deepEqual((await prisma.combatant.findUniqueOrThrow({where:{id:actor.id}})).spatialPosition,{xFeet:15,yFeet:10});
-    const windows=await http(`/combat/${combatId}/reaction-opportunities`);const window=windows.data.opportunities[0];assert.ok(window.actionable);assert.equal(window.reactorCombatantId,foe.id);
+    const windows=await http(`/combat/${combatId}/reaction-opportunities`);const window=windows.data.opportunities[0];assert.ok(window.actionable);assert.equal(window.reactorCombatantId,foe.id);assert.equal(window.responseKind,'reaction');
     assert.equal((await http(`/combat/${combatId}/reaction-opportunities`,undefined,player)).data.opportunities.length,0);
     const reaction={combatId,expectedVersion:await version(),operationId:randomUUID(),attackId:'bite'};
     const resolved=await http(`/combat/${combatId}/reaction-opportunities/${window.id}/attack`,reaction);assert.equal(resolved.status,200,JSON.stringify(resolved));
@@ -85,7 +85,7 @@ async function main() {
     await prisma.spatialObstacle.create({data:{sceneId:scene.id,kind:'wall',startXFeet:90,startYFeet:0,endXFeet:90,endYFeet:100,blocksMovement:false,blocksTargeting:false,blocksSight:true}});
     assert.equal((await preview()).data.reaction.masterAdjudication,true);
     const paused=await http(`/combat/${combatId}/spatial/movement`,{combatantId:actor.id,path,expectedVersion:await version(),operationId:randomUUID()},player);assert.ok(paused.data.pending);
-    const uncertain=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];assert.equal(uncertain.visibilityStatus,'unknown');
+    const uncertain=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];assert.equal(uncertain.visibilityStatus,'unknown');assert.equal(uncertain.responseKind,'visibility');
     const adjudicated=await http(`/combat/${combatId}/reaction-opportunities/${uncertain.id}/visibility`,{combatId,visible:false,expectedVersion:await version(),operationId:randomUUID()});assert.equal(adjudicated.status,200,JSON.stringify(adjudicated));
     assert.equal((await prisma.combatant.findUniqueOrThrow({where:{id:foe.id}})).turnEconomy && ((await prisma.combatant.findUniqueOrThrow({where:{id:foe.id}})).turnEconomy as any).reactionAvailable,true);
     console.log('✔ Paredes de visão pedem adjudicação; recusar visão retoma movimento sem gastar reação');
@@ -109,11 +109,52 @@ async function main() {
     const leaving=await http(`/combat/${combatId}/spatial/movement`,{combatantId:foe.id,path:[{xFeet:25,yFeet:10}],expectedVersion:await version(),operationId:randomUUID()});
     assert.equal(leaving.status,200,JSON.stringify(leaving));assert.ok(leaving.data.pending);
     const playerWindow=(await http(`/combat/${combatId}/reaction-opportunities`,undefined,player)).data.opportunities[0];
+    assert.equal(playerWindow.responseKind,'reaction');
+    assert.equal((await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0].responseKind,null);
     assert.equal(playerWindow.reactorCombatantId,actor.id);assert.deepEqual(playerWindow.options.map((o:any)=>o.attackId),['unarmed']);
     const unarmed=await http(`/combat/${combatId}/reaction-opportunities/${playerWindow.id}/attack`,{combatId,attackId:'unarmed',expectedVersion:await version(),operationId:randomUUID()},player);
     assert.equal(unarmed.status,200,JSON.stringify(unarmed));
     assert.equal(((await prisma.combatant.findUniqueOrThrow({where:{id:actor.id}})).turnEconomy as any).reactionAvailable,false);
     console.log('✔ Arquearia mantém oportunidade desarmada real para o jogador; relações públicas não expõem times nem tokens ocultos');
+    // Quando a reação é do jogador, o Mestre só adjudica visão desconhecida.
+    await prisma.combatant.update({where:{id:actor.id},data:{spatialPosition:{xFeet:15,yFeet:10},turnEconomy:onTurnStart(9)}});
+    await prisma.combatant.update({where:{id:foe.id},data:{spatialPosition:{xFeet:20,yFeet:10},turnEconomy:onTurnStart(9)}});
+    await prisma.spatialObstacle.create({data:{sceneId:scene.id,kind:'wall',startXFeet:90,startYFeet:0,endXFeet:90,endYFeet:100,blocksMovement:false,blocksTargeting:false,blocksSight:true}});
+    await http(`/combat/${combatId}/spatial/movement`,{combatantId:foe.id,path:[{xFeet:25,yFeet:10}],expectedVersion:await version(),operationId:randomUUID()});
+    const vision=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];assert.equal(vision.responseKind,'visibility');
+    assert.equal((await http(`/combat/${combatId}/reaction-opportunities`,undefined,player)).data.opportunities.length,0);
+    assert.equal((await http(`/combat/${combatId}/reaction-opportunities/${vision.id}/visibility`,{combatId,visible:true,expectedVersion:await version(),operationId:randomUUID()})).status,200);
+    assert.equal((await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0].responseKind,null);
+    const confirmedPlayer=(await http(`/combat/${combatId}/reaction-opportunities`,undefined,player)).data.opportunities[0];assert.equal(confirmedPlayer.responseKind,'reaction');
+    assert.equal((await http(`/combat/${combatId}/reaction-opportunities/${confirmedPlayer.id}/decline`,{combatId,expectedVersion:await version(),operationId:randomUUID()},player)).status,200);
+    await prisma.spatialObstacle.deleteMany({where:{sceneId:scene.id}});
+    console.log('✔ Mestre acompanha reação do jogador sem pergunta duplicada; confirmação de visão devolve a decisão ao dono');
+
+    for(const kind of ['NPC','CREATURE'] as const) {
+      await prisma.creature.update({where:{id:npc.id},data:{kind,attacks:[{id:'neutral-claw',name:'Garra neutra',reachFeet:5,ranged:false,damage:{count:0,sides:0,bonus:0,type:null}}]}});
+      await prisma.combatant.update({where:{id:neutral.id},data:{kind,sideKey:'neutral',spatialPosition:{xFeet:40,yFeet:10},turnEconomy:onTurnStart(9)}});
+      await prisma.combatant.update({where:{id:actor.id},data:{spatialPosition:{xFeet:80,yFeet:80},turnEconomy:onTurnStart(9)}});
+      await prisma.combatant.update({where:{id:foe.id},data:{sideKey:'enemies',spatialPosition:{xFeet:45,yFeet:10},turnEconomy:onTurnStart(9)}});
+      await prisma.combat.update({where:{id:combatId},data:{currentIndex:2,turnSequence:{increment:1}}});
+      const moveHostile=await http(`/combat/${combatId}/spatial/movement`,{combatantId:foe.id,path:[{xFeet:50,yFeet:10}],expectedVersion:await version(),operationId:randomUUID()});
+      assert.equal(moveHostile.status,200,JSON.stringify(moveHostile));assert.ok(moveHostile.data.pending);
+      const neutralReaction=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];
+      assert.equal(neutralReaction.reactorCombatantId,neutral.id);assert.equal(neutralReaction.responseKind,'reaction');
+      assert.equal((await http(`/combat/${combatId}/reaction-opportunities/${neutralReaction.id}/decline`,{combatId,expectedVersion:await version(),operationId:randomUUID()})).status,200);
+      await prisma.combatant.update({where:{id:foe.id},data:{spatialPosition:{xFeet:45,yFeet:10},turnEconomy:onTurnStart(9)}});
+      await prisma.combatant.update({where:{id:neutral.id},data:{spatialPosition:{xFeet:30,yFeet:10},turnEconomy:onTurnStart(9)}});
+      await prisma.combat.update({where:{id:combatId},data:{currentIndex:3,turnSequence:{increment:1}}});
+      const leave=[{xFeet:25,yFeet:10}];
+      const threat=await http(`/combat/${combatId}/spatial/movement-preview`,{combatantId:neutral.id,path:leave});
+      assert.equal(threat.data.reaction.risk,'possible');assert.ok(threat.data.reaction.threatAreas.length);
+      const moveNeutral=await http(`/combat/${combatId}/spatial/movement`,{combatantId:neutral.id,path:leave,expectedVersion:await version(),operationId:randomUUID()});
+      assert.equal(moveNeutral.status,200,JSON.stringify(moveNeutral));assert.ok(moveNeutral.data.pending);
+      const hostileReaction=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];
+      assert.equal(hostileReaction.reactorCombatantId,foe.id);
+      assert.equal((await http(`/combat/${combatId}/reaction-opportunities/${hostileReaction.id}/decline`,{combatId,expectedVersion:await version(),operationId:randomUUID()})).status,200);
+      console.log('✔ '+kind+' neutro e criatura hostil provocam oportunidade nos dois sentidos, com aura e decisão do Mestre');
+    }
+
 
 
   } finally {

@@ -35,6 +35,7 @@ export interface ServerReactionOpportunity {
   options: ReactionOpportunityOption[];
   /** Só a PRIMEIRA janela pendente do boundary pode ser resolvida. */
   actionable: boolean;
+  responseKind: 'reaction' | 'visibility' | null;
 }
 
 /** Movimento pausado esperando Reação (sanitizado: sem identidade de reactor). */
@@ -104,4 +105,9 @@ export function adjudicateOpportunityVisibility(combatId: string, opportunityId:
   return api<ReactionResolutionResponse>(`/api/combat/${combatId}/reaction-opportunities/${opportunityId}/visibility`, {
     method:'POST', body:{combatId,visible,expectedVersion,operationId:newOperationId()},
   });
+}
+
+/** O servidor distingue perguntas do usuário de janelas disponíveis só para acompanhamento. */
+export function reactionQuestionsForViewer(opportunities: readonly ServerReactionOpportunity[]): ServerReactionOpportunity[] {
+  return opportunities.filter(entry => entry.status === 'pending' && entry.actionable && Boolean(entry.responseKind));
 }

@@ -73,6 +73,7 @@ import { reactionOpportunitiesForViewer, type ReactionOpportunity } from './reac
 import {
   declineOpportunityReaction,
   adjudicateOpportunityVisibility,
+  reactionQuestionsForViewer,
   fetchReactionOpportunities,
   resolveOpportunityAttack,
   type ReactionOpportunitiesReadModel,
@@ -467,8 +468,7 @@ export function CombatTracker({
   }, [combat.id, combat.version]);
 
   /** Traduz o read model do servidor para o contrato já existente do painel. */
-  const remoteOpportunities: ReactionOpportunity[] = (remoteReactions?.opportunities ?? [])
-    .filter((entry) => entry.status === 'pending' && entry.actionable)
+  const remoteOpportunities: ReactionOpportunity[] = reactionQuestionsForViewer(remoteReactions?.opportunities ?? [])
     .map((entry) => ({
       id: entry.id,
       // O SERVIDOR já filtrou por autoridade: quem recebe pode reagir.
