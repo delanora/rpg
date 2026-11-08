@@ -1,3 +1,5 @@
+import { PreparedEncountersTab } from '../combat/PreparedEncountersTab';
+import type { CombatPreparation } from '../combat/combatApi';
 import { useCallback, useEffect, useState } from 'react';
 import { useMasterNavigation } from '../combat/useMasterNavigation';
 import { api } from '../api';
@@ -21,7 +23,7 @@ import {
 import { fetchDeath, fetchPendingDeaths } from '../deathApi';
 import { CombatStartDialog } from '../combat/CombatStartDialog';
 import { CombatTracker } from '../combat/CombatTracker';
-import { fetchActiveCombat, startCombat, type CombatCreatureEntry } from '../combat/combatApi';
+import { fetchActiveCombat, startCombat } from '../combat/combatApi';
 import { useCombatState } from '../combat/useCombatState';
 import { DiceDock } from '../dice/DiceDock';
 import { useDiceRoller } from '../dice/useDiceRoller';
@@ -747,11 +749,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     [combat, characters],
   );
 
-  async function handleStartCombat(input: {
-    localityId?: string;
-    sceneId?: string;
-    entries: CombatCreatureEntry[];
-  }): Promise<void> {
+  async function handleStartCombat(input: CombatPreparation): Promise<void> {
     const started = await startCombat(input);
     combatState.setCombat(started);
     setShowStartDialog(false);
@@ -862,6 +860,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         <Icon name="music" size={16} /> Soundpad
       </button>
 
+      <button type="button" className={tab === 'preparation' ? 'tab active' : 'tab'} onClick={() => setTab('preparation')}>
+        <Icon name="table" size={16} /> Preparação
+      </button>
       <button
         type="button"
         className={tab === 'combat' ? 'tab active' : 'tab'}
@@ -958,6 +959,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
               />
             ) : null}
 
+            {tab === 'preparation' ? <PreparedEncountersTab characters={characters} creatures={creatures} localities={localities} regions={regions} onStart={handleStartCombat} /> : null}
             {tab === 'combat' ? (
               !combat ? (
                 <section className="empty-state" aria-label="Combate">
@@ -1046,7 +1048,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
               />
             ) : tab === 'soundpad' ? (
               <SoundpadTab music={music} />
-            ) : (
+            ) : tab === 'creatures' || tab === 'npcs' ? (
               <CreaturesTab
                 kind={tab === 'npcs' ? 'NPC' : 'CREATURE'}
                 creatures={tab === 'npcs' ? npcs : monsters}
@@ -1063,7 +1065,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
                 }
                 onError={setError}
               />
-            )}
+            ) : null}
           </>
         )}
       </main>
@@ -1073,6 +1075,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           localities={localities}
           regions={regions}
           creatures={creatures}
+          characters={characters}
           onCancel={() => setShowStartDialog(false)}
           onStart={handleStartCombat}
         />

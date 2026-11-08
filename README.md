@@ -27,7 +27,7 @@ O visual do sistema segue um tema de **fantasia medieval / pergaminho antigo**, 
 
 ## ⚔️ Sistema de combate
 
-1. O mestre aciona o botão **"COMBATE"**, iniciando o modo de combate para todos os conectados.
+1. O Mestre abre **Iniciar combate**, escolhe um encontro salvo ou monta local, participantes, cena e posições em etapas. Somente os personagens selecionados entram na iniciativa.
 2. Cada jogador rola a própria iniciativa (1d20 + modificador de Destreza, calculado automaticamente).
 3. O mestre rola iniciativa para as criaturas/NPCs adicionadas ao combate.
 4. O sistema monta a **ordem dos turnos automaticamente**, do maior para o menor resultado.
@@ -36,6 +36,20 @@ O visual do sistema segue um tema de **fantasia medieval / pergaminho antigo**, 
 7. O mestre pode ajustar HP manualmente a qualquer momento e encerrar o combate quando quiser.
 
 Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada jogador.
+
+---
+
+## Preparação de encontros e participantes
+
+A aba **Preparação** guarda encontros privados do Mestre: nome, localidade, cena, jogadores, criaturas/NPCs, quantidades, relações e posições. É possível editar, duplicar ou excluir o modelo sem alterar um combate em andamento. O mapa e as paredes continuam vindo da cena cadastrada; PV e recursos dos personagens não são restaurados ao carregar um encontro.
+
+O wizard tem cinco etapas: **Encontro → Local → Participantes → Cena e posições → Revisão**. Um encontro salvo abre diretamente a revisão. A montagem também pode ser salva sem iniciar combate. Posições são opcionais; quem estiver sem posição aparece na bandeja de posicionamento do combate.
+
+No combate, o **botão direito numa casa vazia** abre a inclusão de uma criatura ou NPC naquela posição. O cabeçalho também permite adicionar sem posição. NPCs permanecem únicos; criaturas geram instâncias independentes. Na luta ativa, o servidor rola a iniciativa do reforço e preserva o turno atual: se a posição dele na ordem já passou, ele joga na próxima rodada. Resolva reações pendentes antes de incluir reforços.
+
+No menu de uma criatura/NPC, **Remover do combate** pede confirmação e retira apenas aquela instância, preservando o cadastro. Movimentos e reações pendentes são cancelados; efeitos ligados à instância passam pelo lifecycle existente. Remover o participante do turno abre o próximo turno elegível. O último participante deve sair pelo botão **Encerrar combate**. A iniciativa do jogador tem rolagem interna, sem aumentar o container conforme novos cards entram.
+
+Objetos de cenário continuam fora deste escopo.
 
 ---
 

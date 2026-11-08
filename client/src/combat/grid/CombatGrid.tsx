@@ -121,6 +121,7 @@ export interface CombatGridProps {
   > & { combatants: GridUnit[] };
   isMaster: boolean;
   onInspectToken?: (combatantId: string, point: { x: number; y: number }) => void;
+  onEmptyContext?: (position: SpatialPosition, point: { x: number; y: number }) => void;
   busy?: boolean;
   /**
    * 6.6M.3 — quem pode mover MECANICAMENTE agora (derivação única em
@@ -267,6 +268,7 @@ export function CombatGrid({
   combat,
   isMaster,
   onInspectToken,
+  onEmptyContext,
   busy = false,
   movement,
   targeting = null,
@@ -1604,7 +1606,14 @@ export function CombatGrid({
    * durante o movimento interrompe o draft sem commit; na régua limpa a linha.
    */
   function handleViewportContextMenu(event: MouseEvent<HTMLDivElement>): void {
-    if (!rulerActive && !draft && !grabGesture) return;
+    if (!rulerActive && !draft && !grabGesture) {
+      if (!isMaster || !onEmptyContext || locked || (event.target instanceof Element && event.target.closest('button'))) return;
+      const position = cellAnchorAt(event.clientX, event.clientY, 'small');
+      if (!position) return;
+      event.preventDefault();
+      onEmptyContext(position, { x: event.clientX, y: event.clientY });
+      return;
+    }
     event.preventDefault();
     if (grabGesture || draft) {
       gestureRef.current = null;

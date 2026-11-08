@@ -58,6 +58,9 @@ try{
  check('antes de assumir, não existe painel do personagem no contexto',!document.querySelector('.assumed-character-pendings'));
  await click('.combat-assume-turn');
  check('assumir mostra concentração e salvaguarda no contexto',!!document.querySelector('.assumed-character-pendings .concentration-panel')&&!!document.querySelector('.assumed-character-pendings [data-resolution-card="spell"]'));
+ serverCombat={...serverCombat,currentIndex:1,version:serverCombat.version+1};
+ await act(async()=>setCombat(serverCombat));
+ check('reindexação por reforços preserva o controle do mesmo personagem',document.querySelector('.combat-assume-turn')?.getAttribute('aria-pressed')==='true'&&!!document.querySelector('.assumed-character-pendings'));
  check('card assumido não fica duplicado no registro',document.querySelectorAll('[data-resolution-card="spell"]').length===1);
  check('rolagens do personagem assumido não oferecem audiência privada',![...document.querySelectorAll('.assumed-character-pendings button')].some(button=>button.textContent?.includes('privado')));
  await click('.combat-assume-turn');

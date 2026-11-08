@@ -1,3 +1,5 @@
+import { addParticipantsSchema, removeParticipantSchema } from './combat.schema.js';
+import { addCombatParticipants, removeCombatParticipant } from './combat.service.js';
 import { rateLimit } from 'express-rate-limit';
 import { combatPingSchema } from './combat.schema.js';
 import { sendCombatPing } from './spatial/spatial-ping.service.js';
@@ -511,4 +513,15 @@ combatRouter.post('/economy/override', authenticate, requireRole('MASTER'), asyn
     return;
   }
   res.json(await overrideEconomy(actorFrom(req), parsed.data));
+});
+
+combatRouter.post('/participants/add', authenticate, requireRole('MASTER'), async (req, res) => {
+ const parsed = addParticipantsSchema.safeParse(req.body);
+ if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten() }); return; }
+ res.json(await addCombatParticipants(actorFrom(req), parsed.data));
+});
+combatRouter.post('/participants/remove', authenticate, requireRole('MASTER'), async (req, res) => {
+ const parsed = removeParticipantSchema.safeParse(req.body);
+ if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten() }); return; }
+ res.json(await removeCombatParticipant(actorFrom(req), parsed.data));
 });

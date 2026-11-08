@@ -1,3 +1,4 @@
+import { validateParticipantPositions } from './participants-position.js';
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
 import { publishEffects } from '../effects/effects.service.js';
 import { rollSelectedOptional } from '../dice/effect-optional.js';
@@ -19,6 +20,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { COMBAT_ACTIONS, deriveAttackActionLimit, economyOf, moveDistance, onTurnEnd, onTurnStart, recordAttack, spendEconomy } from '../shared/action-economy.js';
 import type {
   CombatOperationInput,
+  AddParticipantsInput,
+  RemoveParticipantInput,
   EconomyActionInput,
   EconomyOverrideInput,
   NextTurnInput,
@@ -724,28 +727,21 @@ export async function getActiveCombat(viewer: Role): Promise<CombatDto | null> {
 
 /** --- Início ------------------------------------------------------------------ */
 
-export async function startCombat(actor: CombatActor, input: StartCombatInput): Promise<CombatDto> {
-  const existing = await findCombat({ status: { in: ACTIVE_STATUSES } });
-  if (existing) {
-    throw new HttpError('Já existe um combate em andamento.', 409);
-  }
-
-  // Entram todos os personagens de jogador (a mesa é única e fixa) e as
-  // criaturas escolhidas pelo mestre, com a quantidade de cópias de cada uma.
-  const characters = await prisma.character.findMany({
-    include: { user: { select: { role: true } } },
-    orderBy: { name: 'asc' },
-  });
-
+export async function creatureEntriesFor(
+  input: Pick<StartCombatInput, 'entries'>,
+  db: typeof prisma | Prisma.TransactionClient = prisma,
+) {
   const entries = input.entries.filter((entry) => entry.quantity > 0);
   const creatureIds = [...new Set(entries.map((entry) => entry.creatureId))];
   // NPCs e criaturas usam o mesmo combatente e a mesma economia quando escolhidos.
   const creatures = creatureIds.length
-    ? await prisma.creature.findMany({
+    ? await db.creature.findMany({
         where: { id: { in: creatureIds } },
       })
     : [];
-  const creatureById = new Map(creatures.map((creature) => [creature.id, creature]));
+  const creatureById = new Map(
+    creatures.map((creature) => [creature.id, creature]),
+  );
 
   /**
    * Cópia de combate a partir do cadastro persistente. Criatura-template pode
@@ -754,9 +750,14 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
    * criatura-template.
    */
   const npcSeen = new Set<string>();
-  const creatureCombatants = entries.flatMap((entry) => {
+  return entries.flatMap((entry) => {
     const creature = creatureById.get(entry.creatureId);
-    if (!creature) return [];
+    if (!creature)
+      throw new HttpError(
+        'Criatura ou NPC não encontrado. Atualize a seleção.',
+        404,
+        'NOT_FOUND',
+      );
 
     if (creature.kind === 'NPC') {
       if (entry.quantity !== 1) {
@@ -767,7 +768,11 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
         );
       }
       if (npcSeen.has(creature.id)) {
-        throw new HttpError(`${creature.name} já está neste combate.`, 409, 'CONFLICT');
+        throw new HttpError(
+          `${creature.name} já está neste combate.`,
+          409,
+          'CONFLICT',
+        );
       }
       npcSeen.add(creature.id);
     }
@@ -776,8 +781,16 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
     return Array.from({ length: quantity }, (_, index) => ({
       kind: creature.kind === 'NPC' ? ('NPC' as const) : ('CREATURE' as const),
       creatureId: creature.id,
-      sideKey: entry.disposition === 'allied' ? 'players' :
-        (entry.disposition ?? (creature.kind === 'NPC' ? 'neutral' : 'hostile')) === 'hostile' ? 'enemies' : 'neutral',
+      ...(entry.positions?.[index]
+        ? { spatialPosition: entry.positions[index]! }
+        : {}),
+      sideKey:
+        entry.disposition === 'allied'
+          ? 'players'
+          : (entry.disposition ??
+                (creature.kind === 'NPC' ? 'neutral' : 'hostile')) === 'hostile'
+            ? 'enemies'
+            : 'neutral',
       // Cópias da mesma criatura recebem um sufixo para se distinguirem.
       name: quantity > 1 ? `${creature.name} ${index + 1}` : creature.name,
       dexterityMod: abilityModifier(creature.dexterity),
@@ -785,10 +798,50 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
       hpCurrent: creature.hpCurrent,
       hpMax: creature.hpMax,
       armorClass: creature.armorClass,
-      mechanicalState: { ...mechanicalStateOf(creature.mechanicalState), conditions: mechanicalStateOf(creature.mechanicalState).conditions.map(instance => ({ ...instance, id: randomUUID() })), log: [] } as unknown as Prisma.InputJsonValue,
+      mechanicalState: {
+        ...mechanicalStateOf(creature.mechanicalState),
+        conditions: mechanicalStateOf(creature.mechanicalState).conditions.map(
+          (instance) => ({ ...instance, id: randomUUID() }),
+        ),
+        log: [],
+      } as unknown as Prisma.InputJsonValue,
     }));
   });
+}
 
+export async function startCombat(
+  actor: CombatActor,
+  input: StartCombatInput,
+): Promise<CombatDto> {
+  requireMaster(actor);
+  const existing = await findCombat({ status: { in: ACTIVE_STATUSES } });
+  if (existing) {
+    throw new HttpError('Já existe um combate em andamento.', 409);
+  }
+
+  // Omitir characterIds mantém compatibilidade com clientes antigos: todos os personagens de jogador (a mesa é única e fixa) e as
+  // criaturas escolhidas pelo mestre, com a quantidade de cópias de cada uma.
+  const characters = await prisma.character.findMany({
+    include: { user: { select: { role: true } } },
+    ...(input.characterIds
+      ? { where: { id: { in: input.characterIds } } }
+      : {}),
+    orderBy: { name: 'asc' },
+  });
+  if (
+    input.characterIds &&
+    (new Set(input.characterIds).size !== input.characterIds.length ||
+      characters.length !== input.characterIds.length ||
+      characters.some((c) => c.user.role !== 'PLAYER'))
+  )
+    throw new HttpError('Seleção de jogadores inválida.', 400);
+  if (
+    !characters.some((c) => c.user.role === 'PLAYER') &&
+    !input.entries.length
+  )
+    throw new HttpError('Selecione pelo menos um participante.', 400);
+
+  const creatureCombatants = await creatureEntriesFor(input);
   // CENA (6.6L.4.1.1): opcional nesta fase. Quando informada, precisa existir e
   // pertencer à MESMA localidade do combate — o cliente nunca escolhe a cena de
   // outro lugar. Sem localidade informada, a da cena é adotada.
@@ -799,7 +852,8 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
       where: { id: input.sceneId },
       select: { id: true, localityId: true },
     });
-    if (!scene) throw new HttpError('A cena escolhida não existe.', 404, 'NOT_FOUND');
+    if (!scene)
+      throw new HttpError('A cena escolhida não existe.', 404, 'NOT_FOUND');
     if (localityId && scene.localityId !== localityId) {
       throw new HttpError(
         'A cena escolhida não pertence à localidade deste combate.',
@@ -811,29 +865,57 @@ export async function startCombat(actor: CombatActor, input: StartCombatInput): 
     sceneId = scene.id;
   }
 
+  if (
+    input.characterPositions.some(
+      (p) => !characters.some((c) => c.id === p.characterId),
+    )
+  )
+    throw new HttpError(
+      'Posição informada para personagem não selecionado.',
+      400,
+    );
+  if (
+    localityId &&
+    !(await prisma.locality.findUnique({ where: { id: localityId } }))
+  )
+    throw new HttpError('Localidade não encontrada.', 404);
+
   let created;
   try {
-    created = await prisma.combat.create({
-      data: {
-        status: 'PENDING_INITIATIVE',
-        ...(localityId ? { localityId } : {}),
-        ...(sceneId ? { sceneId } : {}),
-        combatants: {
-          create: [
-            ...characters
-              .filter((character) => character.user.role === 'PLAYER')
-              .map((character) => ({
-                kind: 'CHARACTER' as const,
-                sideKey: 'players',
-                characterId: character.id,
-                name: character.name,
-                ownerUserId: character.userId,
-                dexterityMod: abilityModifier(character.dexterity),
-              })),
-            ...creatureCombatants,
-          ],
+    created = await prisma.$transaction(async (db) => {
+      const row = await db.combat.create({
+        data: {
+          status: 'PENDING_INITIATIVE',
+          ...(localityId ? { localityId } : {}),
+          ...(sceneId ? { sceneId } : {}),
+          combatants: {
+            create: [
+              ...characters
+                .filter((character) => character.user.role === 'PLAYER')
+                .map((character) => ({
+                  kind: 'CHARACTER' as const,
+                  sideKey: 'players',
+                  characterId: character.id,
+                  ...(input.characterPositions.find(
+                    (p) => p.characterId === character.id,
+                  )
+                    ? {
+                        spatialPosition: input.characterPositions.find(
+                          (p) => p.characterId === character.id,
+                        )!.position,
+                      }
+                    : {}),
+                  name: character.name,
+                  ownerUserId: character.userId,
+                  dexterityMod: abilityModifier(character.dexterity),
+                })),
+              ...creatureCombatants,
+            ],
+          },
         },
-      },
+      });
+      await validateParticipantPositions(await loadCombatById(row.id, db));
+      return row;
     });
   } catch (error) {
     // O índice único PARCIAL `combats_one_active_key` garante no banco que só
@@ -912,6 +994,12 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
  * jogador). Com `combatantId`, só o mestre — serve para rolar pelas criaturas
  * e por jogadores ausentes.
  */
+/** Um único rolador de iniciativa atende preparação e reforços. */
+function initiativeDice(disadvantage: boolean) {
+  const first = rollD20(), second = disadvantage ? rollD20() : null;
+  return { first, second, roll: second === null ? first : Math.min(first, second) };
+}
+
 export async function rollInitiative(actor: CombatActor, combatantId?: string): Promise<CombatDto> {
   const selectedCombat = await requireActiveCombat();
   const payload = await prisma.$transaction(async db => {
@@ -925,8 +1013,8 @@ export async function rollInitiative(actor: CombatActor, combatantId?: string): 
     if (actor.role !== 'MASTER' && combatant.ownerUserId !== actor.userId) throw new HttpError('Você só pode rolar a sua própria iniciativa.', 403);
     if (combatant.initiative !== null) throw new HttpError(`${combatant.name} já rolou a iniciativa.`, 409);
     const disadvantage = deriveConditionEffects(combatantMechanicalState(combatant)).checkDisadvantage;
-    const first = rollD20(), second = disadvantage ? rollD20() : null;
-    const roll = second === null ? first : Math.min(first, second), total = roll + combatant.dexterityMod;
+    const { first, second, roll } = initiativeDice(disadvantage);
+    const total = roll + combatant.dexterityMod;
     await db.combatant.update({ where: { id: combatant.id }, data: { initiative: total, initiativeRoll: roll } });
     return { kind: 'initiative' as const, actorName: combatant.name, expression: disadvantage ? '1d20 (desvantagem)' : '1d20', rolls: second === null ? [roll] : [first, second], sides: 20, modifier: combatant.dexterityMod, total, crit: roll === 20, at: new Date().toISOString() };
   });
@@ -2394,4 +2482,282 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
   emit(ServerEvents.COMBAT_ENDED, { combatId: combat.id });
 
   return { combatId: combat.id };
+}
+
+/** Reindexar a iniciativa preserva o teste de morte já realizado no turno atual. */
+async function preserveCurrentDeathKey(
+  db: Prisma.TransactionClient,
+  combat: CombatSourced,
+  current: CombatantSourced,
+  index: number,
+  updatedCharacters: string[],
+) {
+  if (index === combat.currentIndex) return;
+  const death = combatantDeathState(current);
+  if (
+    death.saveTurnKey !== turnKey(combat.id, combat.round, combat.currentIndex)
+  )
+    return;
+  const state = {
+    ...death,
+    saveTurnKey: turnKey(combat.id, combat.round, index),
+  } as unknown as Prisma.InputJsonValue;
+  const changed = current.characterId
+    ? await db.character.updateMany({
+        where: { id: current.characterId, version: current.character!.version },
+        data: { deathState: state, version: { increment: 1 } },
+      })
+    : await db.combatant.updateMany({
+        where: { id: current.id, mechanicalVersion: current.mechanicalVersion },
+        data: { deathState: state, mechanicalVersion: { increment: 1 } },
+      });
+  if (!changed.count) throw new HttpError('O estado de morte mudou. Atualize antes de alterar participantes.', 409, 'CONFLICT');
+  if (current.characterId) updatedCharacters.push(current.characterId);
+}
+
+/** Entrada administrativa: iniciativa nova não reinicia o turno nem restaura os demais. */
+export async function addCombatParticipants(
+  actor: CombatActor,
+  input: AddParticipantsInput,
+) {
+  requireMaster(actor);
+  const { runSpatialOperation } = await import(
+    './spatial/spatial-scene.service.js'
+  );
+  const updatedCharacters: string[] = [];
+  const result = await runSpatialOperation(
+    actor,
+    input,
+    'add-participants',
+    async (db, combat) => {
+      if (!input.entries.length)
+        throw new HttpError('Selecione uma criatura ou NPC.', 400);
+      if (
+        await db.movementIntent.count({
+          where: { combatId: combat.id, status: 'pending-reaction' },
+        })
+      )
+        throw new HttpError(
+          'Resolva a reação pendente antes de adicionar participantes.',
+          409,
+          'MOVEMENT_REACTION_PENDING',
+        );
+      const entries = await creatureEntriesFor(input, db);
+      const current = orderCombatants(combat.combatants)[combat.currentIndex];
+      for (const entry of entries) {
+        if (
+          entry.kind === 'NPC' &&
+          combat.combatants.some((c) => c.creatureId === entry.creatureId)
+        )
+          throw new HttpError(
+            'Este NPC já participa do combate.',
+            409,
+            'CONFLICT',
+          );
+        const peers = await db.combatant.findMany({
+          where: { combatId: combat.id, creatureId: entry.creatureId }, select: { name: true },
+        });
+        let name = entry.name, suffix = peers.length + 1;
+        while (peers.some(peer => peer.name === name)) name = `${entry.name} · reforço ${suffix++}`;
+        const roll = combat.status === 'ACTIVE' ? initiativeDice(deriveConditionEffects(mechanicalStateOf(entry.mechanicalState)).checkDisadvantage).roll : null;
+        await db.combatant.create({
+          data: {
+            ...entry,
+            combatId: combat.id,
+            name,
+            initiativeRoll: roll,
+            initiative: roll === null ? null : roll + entry.dexterityMod,
+          },
+        });
+      }
+      const loaded = await loadCombatById(combat.id, db);
+      const newIds = loaded.combatants
+        .filter((c) => !combat.combatants.some((old) => old.id === c.id))
+        .map((c) => c.id);
+      await validateParticipantPositions(loaded, newIds);
+      if (combat.status === 'ACTIVE' && current) {
+        const index = orderCombatants(loaded.combatants).findIndex(
+          (c) => c.id === current.id,
+        );
+        await preserveCurrentDeathKey(
+          db,
+          combat,
+          current,
+          index,
+          updatedCharacters,
+        );
+        await db.combat.update({
+          where: { id: combat.id },
+          data: { currentIndex: index },
+        });
+        for (const unit of loaded.combatants.filter((c) =>
+          newIds.includes(c.id),
+        )) {
+          await db.combatant.update({
+            where: { id: unit.id },
+            data: { turnEconomy: onTurnStart(combatantSpeed(unit)) },
+          });
+        }
+      }
+      await appendEconomyLog(
+        db,
+        combat,
+        { name: actor.username },
+        'Mestre adicionou participantes ao encontro.',
+        'participants-added',
+      );
+      return {
+        combat: toCombatDto(await loadCombatById(combat.id, db), 'MASTER'),
+      };
+    },
+  );
+  for (const id of updatedCharacters) await publishCharacter(id);
+  return result;
+}
+
+/** Remove a instância, sem apagar o cadastro e sem afetar outras cópias. */
+export async function removeCombatParticipant(
+  actor: CombatActor,
+  input: RemoveParticipantInput,
+) {
+  requireMaster(actor);
+  const { runSpatialOperation } = await import(
+    './spatial/spatial-scene.service.js'
+  );
+  const { endEffectsTargetingEntity, endEffectsSourcedByEntity } = await import(
+    '../effects/effect-lifecycle.js'
+  );
+  const affected: Array<Parameters<typeof publishEffects>[0][number]> = [];
+  const updatedCharacters: string[] = [];
+  let advanced = false;
+  const result = await runSpatialOperation(
+    actor,
+    input,
+    'remove-participant',
+    async (db, combat) => {
+      const unit = combat.combatants.find((c) => c.id === input.combatantId);
+      if (!unit || unit.kind === 'CHARACTER')
+        throw new HttpError(
+          'Selecione uma criatura ou NPC deste combate.',
+          400,
+        );
+      if (combat.combatants.length <= 1)
+        throw new HttpError(
+          'Este é o último participante. Encerre o combate pelo cabeçalho.',
+          409,
+          'CONFLICT',
+        );
+      const ordered = orderCombatants(combat.combatants);
+      const current = ordered[combat.currentIndex];
+      const removingCurrent =
+        combat.status === 'ACTIVE' && current?.id === unit.id;
+      const plan = removingCurrent
+        ? planNextTurn(
+            ordered.length,
+            combat.currentIndex,
+            (index) =>
+              ordered[index].id !== unit.id && receivesTurn(ordered[index]),
+          )
+        : null;
+      if (removingCurrent && !plan)
+        throw new HttpError(
+          'Não há outro participante apto. Encerre o combate.',
+          409,
+          'NO_ELIGIBLE_COMBATANT',
+        );
+      // Interrompe movimentos pausados: nenhuma reação pode retomar um trajeto antigo.
+      await db.movementIntent.updateMany({
+        where: { combatId: combat.id, status: 'pending-reaction' },
+        data: { status: 'cancelled', reason: 'participant-removed' },
+      });
+      await db.reactionOpportunity.updateMany({
+        where: { combatId: combat.id, status: 'pending' },
+        data: {
+          status: 'cancelled',
+          resolvedAt: new Date(),
+          resolution: { kind: 'cancelled', reason: 'participant-removed' },
+        },
+      });
+      affected.push(
+        ...(await endEffectsTargetingEntity(
+          { kind: 'combatant', id: unit.id },
+          db,
+        )),
+        ...(await endEffectsSourcedByEntity(
+          { kind: 'combatant', id: unit.id },
+          db,
+        )),
+      );
+      await db.combatant.delete({ where: { id: unit.id } });
+      if (combat.status === 'ACTIVE') {
+        const remaining = ordered.filter((c) => c.id !== unit.id);
+        const incoming = plan ? ordered[plan.index] : current;
+        const index = remaining.findIndex((c) => c.id === incoming.id);
+        if (plan) {
+          advanced = true;
+          await db.combat.update({
+            where: { id: combat.id },
+            data: {
+              currentIndex: index,
+              round: combat.round + plan.rounds,
+              turnSequence: { increment: 1 },
+            },
+          });
+          await db.combatant.updateMany({
+            where: { combatId: combat.id },
+            data: { sneakAttackUsedThisTurn: false },
+          });
+          await db.combatant.update({
+            where: { id: incoming.id },
+            data: {
+              turnEconomy: deathBlocksActions(combatantDeathState(incoming))
+                ? blockedTurnEconomy()
+                : onTurnStart(combatantSpeed(incoming)),
+            },
+          });
+          for (const skipped of plan.skipped
+            .map((i) => ordered[i])
+            .filter((c) => c.id !== unit.id && autoSkippedAtZero(c)))
+            await onTurnStartDeath(deathEntityOf(skipped), db);
+          await onTurnStartDeath(deathEntityOf(incoming), db);
+          affected.push(
+            ...(await processDurationExpirations(db, combat.id)).targets,
+          );
+        } else {
+          await preserveCurrentDeathKey(
+            db,
+            combat,
+            current,
+            index,
+            updatedCharacters,
+          );
+          await db.combat.update({
+            where: { id: combat.id },
+            data: { currentIndex: index },
+          });
+        }
+      }
+      await appendEconomyLog(
+        db,
+        combat,
+        { name: actor.username },
+        'Mestre removeu um participante do encontro.',
+        'participant-removed',
+      );
+      return {
+        combat: toCombatDto(await loadCombatById(combat.id, db), 'MASTER'),
+      };
+    },
+  );
+  if (affected.length)
+    await publishEffects(
+      affected.filter(
+        (t) => !(t.kind === 'combatant' && t.id === input.combatantId),
+      ),
+    );
+  for (const id of updatedCharacters) await publishCharacter(id);
+  if (advanced) emitTurn(result.combat);
+  if (result.combat.status === 'PENDING_INITIATIVE')
+    return { combat: await finalizeInitiative(input.combatId, 'MASTER') };
+  return result;
 }

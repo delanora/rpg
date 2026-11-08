@@ -7,6 +7,8 @@ import { SPATIAL_VISIBILITIES } from './spatial/spatial-visibility.js';
  * de cada criatura entram na luta. Cada unidade vira um combatente próprio.
  */
 export const startCombatSchema = z.object({
+  characterIds: z.array(z.string().min(1)).max(30).optional(),
+  characterPositions: z.array(z.object({ characterId: z.string().min(1), position: spatialPositionSchema })).max(30).default([]),
   localityId: z.string().min(1).optional(),
   /**
    * CENA ESPACIAL da localidade (6.6L.4.1.1). Opcional: combate sem cena usa o
@@ -20,6 +22,7 @@ export const startCombatSchema = z.object({
         creatureId: z.string().min(1),
         quantity: z.number().int().min(1).max(30),
         disposition: z.enum(['hostile', 'neutral', 'allied']).optional(),
+        positions: z.array(spatialPositionSchema.nullable()).max(30).optional(),
       }),
     )
     .max(100)
@@ -314,3 +317,13 @@ export type EconomyActionInput = z.infer<typeof economyActionSchema>;
 export type EconomyOverrideInput = z.infer<typeof economyOverrideSchema>;
 
 export const combatPingSchema = z.object({ position: spatialPositionSchema }).strict();
+
+export const addParticipantsSchema = combatOperationSchema.extend({
+  entries: startCombatSchema.shape.entries,
+}).strict();
+export const removeParticipantSchema = combatOperationSchema.extend({
+  combatantId: z.string().min(1),
+}).strict();
+
+export type AddParticipantsInput = z.infer<typeof addParticipantsSchema>;
+export type RemoveParticipantInput = z.infer<typeof removeParticipantSchema>;

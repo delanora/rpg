@@ -726,7 +726,19 @@ export async function applyDeathSave(
     death.saveTurnKey = currentKey;
     // Guard de versão: se outra escrita venceu a corrida, relê e reavalia — a
     // chave do turno já gravada devolve 409 (nunca dois resultados).
-    if (!(await writeTarget(prisma, target, patch))) continue;
+    // Inclusão/remoção de participantes pode reindexar o turno. O mesmo lock
+    // do combate serializa a escrita da chave, sem reiniciar sua identidade.
+    const applied = await prisma.$transaction(async db => {
+      if (target.combat) {
+        const locked = await db.$queryRaw<Array<{ id: string }>>`
+          SELECT "id" FROM "combats"
+          WHERE "id" = ${target.combat.id} AND "version" = ${target.combat.version}
+          AND "status" = 'ACTIVE' FOR UPDATE`;
+        if (!locked.length) return false;
+      }
+      return writeTarget(db, target, patch);
+    }, { timeout: 15000 });
+    if (!applied) continue;
 
     // REGISTRO lateral do combate: o Teste de PERSONAGEM é público (mesa e
     // Mestre). O de NPC/criatura NUNCA entra aqui — o registro é público.

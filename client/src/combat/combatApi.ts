@@ -12,18 +12,18 @@ export interface CombatCreatureEntry {
   disposition?: 'hostile' | 'neutral' | 'allied';
   creatureId: string;
   quantity: number;
+  positions?: ({ xFeet: number; yFeet: number } | null)[];
 }
 
 /** Inicia o combate na localidade escolhida, com N cópias de cada criatura. */
-export function startCombat(input: {
+export interface CombatPreparation {
+  characterIds?: string[];
+  characterPositions?: { characterId: string; position: { xFeet: number; yFeet: number } }[];
   localityId?: string;
-  /**
-   * Cena da localidade escolhida (6.6L.4.1.1): a cena passa a ser a fonte
-   * estrutural do combate. Sem cena, o combate usa o estado legado assistido.
-   */
   sceneId?: string;
   entries: CombatCreatureEntry[];
-}): Promise<CombatDto> {
+}
+export function startCombat(input: CombatPreparation): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat', {
     method: 'POST',
     body: input,
@@ -180,4 +180,11 @@ export function setCombatantSide(combat: CombatDto, combatantId: string, sideKey
   return api<{combat: CombatDto}>(`/api/combat/${combat.id}/combatants/${combatantId}/side`, {
     method: 'PATCH', body: { expectedVersion, operationId, sideKey },
   }).then(result => result.combat);
+}
+
+export function addCombatParticipants(combat: CombatDto, entries: CombatCreatureEntry[]): Promise<CombatDto> {
+ return api<{combat: CombatDto}>('/api/combat/participants/add', {method:'POST', body:{...operationFor(combat),entries}}).then(r=>r.combat);
+}
+export function removeCombatParticipant(combat: CombatDto, combatantId: string): Promise<CombatDto> {
+ return api<{combat: CombatDto}>('/api/combat/participants/remove', {method:'POST', body:{...operationFor(combat),combatantId}}).then(r=>r.combat);
 }

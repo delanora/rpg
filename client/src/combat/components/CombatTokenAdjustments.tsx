@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { MechanicalPanel } from '../../components/MechanicalPanel';
 import type { CombatDto, CombatantDto } from '../../types';
-import { applyManualHp, setCombatantSide } from '../combatApi';
+import { applyManualHp, setCombatantSide, removeCombatParticipant } from '../combatApi';
 import { MasterEconomyPanel } from './MasterEconomyPanel';
 
 /** Todos os comandos recebem o token inspecionado, sem assumir ou trocar seu turno. */
@@ -10,6 +10,7 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
   onRun: (action: () => Promise<CombatDto>) => void;
 }) {
   const [tab, setTab] = useState<'conditions' | 'hp' | 'economy' | 'relation'>('conditions');
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [amount, setAmount] = useState('5');
   const value = Number(amount);
   const valid = Number.isInteger(value) && value >= 1 && value <= 9999;
@@ -49,5 +50,8 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
       </section> : null}
       {tab === 'economy' ? <MasterEconomyPanel expanded combat={combat} combatant={combatant} busy={busy} onRun={onRun} /> : null}
     </div>
+    {combatant.kind !== 'CHARACTER' ? <div className="combat-token-remove">
+      {confirmRemove ? <><p>Remover {combatant.name} deste combate? O cadastro será preservado.</p><button className="btn btn-danger btn-small" disabled={busy} onClick={() => onRun(() => removeCombatParticipant(combat, combatant.id))}>Confirmar remoção</button> <button className="btn btn-small" disabled={busy} onClick={() => setConfirmRemove(false)}>Cancelar</button></> : <button className="btn btn-small" disabled={busy} onClick={() => setConfirmRemove(true)}>Remover do combate</button>}
+    </div> : null}
   </>;
 }

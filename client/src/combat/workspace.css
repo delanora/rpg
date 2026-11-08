@@ -3229,3 +3229,15 @@
 .assumed-character-pendings { display: grid; gap: 0.6rem; max-height: 17rem; overflow-y: auto; padding: 0.1rem; }
 .assumed-character-heading { margin: 0; font-size: 0.8rem; color: var(--ink-faint); }
 .assumed-character-heading strong { color: var(--gold); }
+
+/* O número de iniciativas não define a altura do combate do jogador. */
+@media (min-width: 1181px) {
+  .app-main > .combat-panel:has(.combat-workspace:not([data-master='true'])) {
+    height: max(36rem, calc(100dvh - 7rem));
+    flex: 0 0 auto;
+  }
+}
+.combat-workspace-initiative .combatant-list { scrollbar-width: thin; scrollbar-gutter: stable; }
+@media (max-width: 1180px) {
+  .combat-workspace-initiative .combat-timeline { max-height: 24rem; }
+}

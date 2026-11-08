@@ -528,7 +528,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'WJ) entrada da iniciativa PERMANECE (nada é removido do combate ao morrer)',
-    !service.includes('combatant.delete') &&
+    !service.slice(0, service.indexOf('export async function removeCombatParticipant')).includes('combatant.delete') &&
       dto.includes('combatants: dto.combatants.map') &&
       tracker.includes('combat.combatants.map'),
   );
@@ -582,22 +582,20 @@ console.log('Check-combat-ui — refino da UI de combate');
   // WQ–WS. Busca + tipo + localidade cumulativos.
   check(
     'WQ) filtros TIPO + LOCALIDADE + NOME são cumulativos',
-    dialog.includes("kindFilter !== 'ALL'") &&
-      dialog.includes('creature.localities.some') &&
-      dialog.includes('nameQuery') &&
-      dialog.includes('toLowerCase().includes(term)'),
+    dialog.includes("kind === 'ALL' || c.kind === kind") &&
+      dialog.includes('c.localities.some') &&
+      dialog.includes('onlyLocal') &&
+      dialog.includes('c.name.toLowerCase().includes(query.toLowerCase())'),
   );
   check(
     'WR) sem localidade a busca é global e cada resultado mostra nome/tipo/localidade',
-    dialog.includes('Sem localidade selecionada, a busca procura entre todas') &&
-      dialog.includes("{isNpc ? 'NPC' : 'Criatura'}") &&
-      dialog.includes("join(', ')"),
+    dialog.includes('!onlyLocal ||') && dialog.includes('!locality ||') &&
+      dialog.includes("c.kind === 'NPC'") && dialog.includes("join(', ')"),
   );
   check(
     'WS) NPC é selecionado uma vez; criatura aceita quantidade',
-    dialog.includes("creature.kind === 'NPC' ? 1 : MAX_QUANTITY") &&
-      dialog.includes("creature.kind === 'NPC' ? Math.min(1") &&
-      dialog.includes('MAX_QUANTITY = 30'),
+    dialog.includes("Math.min(creature.kind === 'NPC' ? 1 : 30") &&
+      dialog.includes("max={c.kind === 'NPC' ? 1 : 30}"),
   );
 
   // WT–WV. Crossbones (não caveira simples) e sem quadrado.
@@ -3702,7 +3700,7 @@ check(
       movementAuthority({...assumed,combatants:[moverOf({deathBlocksActions:true})]}).combatantId === null &&
       movementAuthority({...assumed,combatants:[moverOf({turnEconomy:{movementBudget:9,movementUsed:9}})]}).combatantId === null &&
       movementAuthority({...assumed,currentCombatantId:'outro',combatants:[moverOf({id:'outro'})]}).combatantId === null &&
-      combatTrackerSource.includes('assumedCombatantId: isMaster && masterAssumed === currentTurnKey ? currentId : null');
+      combatTrackerSource.includes('assumedCombatantId: isMaster && masterAssumed === currentControlKey ? currentId : null');
   })(),
 );
 check(
@@ -5425,11 +5423,10 @@ check(
   check(
     'SC17) Start Combat oferece a cena DA LOCALIDADE escolhida e envia `sceneId` (opcional no legado)',
     startDialogSource.includes('const [scenes, setScenes] = useState<Scene[]>([]);') &&
-      startDialogSource.includes('fetchScenes(localityId)') &&
-      startDialogSource.includes('const [sceneId, setSceneId] = useState') &&
-      startDialogSource.includes("setSceneId('')") &&
-      startDialogSource.includes('sem cena — cena assistida padrão') &&
-      startDialogSource.includes('...(localityId && sceneId ? { sceneId } : {})') &&
+      startDialogSource.includes('fetchScenes(preparation.localityId)') &&
+      startDialogSource.includes('sceneId: undefined') &&
+      startDialogSource.includes('sceneId: s.id') &&
+      startDialogSource.includes('await onStart(preparation)') &&
       combatApiSource.includes('sceneId?: string;'),
   );
 }
@@ -7452,7 +7449,7 @@ check(
   check(
     'SC131) virar de turno limpa o filtro e a dock volta ao estado real sem reload',
     trackerSource.includes('setHotbarFilter(null);') &&
-      trackerSource.includes('}, [currentTurnKey]);') &&
+      trackerSource.includes('}, [currentControlKey]);') &&
       // A transição é só re-render do DTO: nenhum estado de economia local.
       !dockSource.includes('setTurnEconomy') &&
       !dockSource.includes('movementBudget') &&

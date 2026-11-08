@@ -215,6 +215,7 @@ O schema está em `prisma/schema.prisma`. Models principais:
 | `Character` | a ficha (ver abaixo) |
 | `CharacterOperation` | **idempotência** das operações de ficha (`unique(characterId, operationId)`) |
 | `Combat` / `Combatant` | combate persistido (sobrevive a reload/reconexão) |
+| `PreparedEncounter` | encontro privado do Mestre: composição, jogadores, cena e posições, com versão e operações idempotentes |
 | `Creature` | bestiário do mestre (preso a uma `Locality`) |
 | `Region` / `Locality` | mundo do mestre (localidades sempre dentro de uma região) |
 | `Item` | catálogo de itens (espelhado no inventário dos personagens) |

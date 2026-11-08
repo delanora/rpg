@@ -1,3 +1,4 @@
+import { CombatReinforcements } from './components/CombatReinforcements';
 import { AssumedCharacterPendings, pendingsForCharacter } from './components/AssumedCharacterPendings';
 import { CombatTokenMenu } from './components/CombatTokenMenu';
 import { CombatTokenAdjustments } from './components/CombatTokenAdjustments';
@@ -8,7 +9,7 @@ import { ApiError } from '../api';
 import { standUp as standUpRequest } from '../mechanicalApi';
 import { Icon, type IconName } from '../components/Icon';
 import { fetchDeath, rollNpcDeathSave } from '../deathApi';
-import type { Attack, CombatDto, CombatResolutionCardDto, ConcentrationSave, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser } from '../types';
+import type { Attack, CombatDto, CombatResolutionCardDto, ConcentrationSave, Creature, DeathDto, DeathState, InventoryItem, Item, MechanicalEntity, SessionUser, SpatialPosition } from '../types';
 import {
   declineSpellSaveCard,
   fetchResolutionRequests,
@@ -205,8 +206,15 @@ export function CombatTracker({
 }: CombatTrackerProps) {
   const isMaster = user.role === 'MASTER';
   const [inspectedToken, setInspectedToken] = useState<{ id: string; point: { x: number; y: number } } | null>(null);
+  const [addingAt, setAddingAt] = useState<{ position: SpatialPosition | null; point: { x: number; y: number } } | null>(null);
+  const closeAddMenu = useCallback(() => setAddingAt(null), []);
+  const openAddMenu = (position: SpatialPosition, point: { x: number; y: number }) => {
+    setInspectedToken(null);
+    setAddingAt({ position, point });
+  };
   const closeTokenMenu = useCallback(() => setInspectedToken(null), []);
   const inspectToken = useCallback((id: string, point: { x: number; y: number }) => {
+    setAddingAt(null);
     setInspectedToken({ id, point });
   }, []);
 
@@ -306,13 +314,15 @@ export function CombatTracker({
   const currentId = current?.id ?? '';
   // Identidade compartilhada com o ciclo de morte; não persiste para a próxima rodada.
   const currentTurnKey = `${combat.id}:${combat.round}:${combat.currentIndex}`;
-  const assumedCharacter = assumedCharacterFor(current, user, masterAssumed, currentTurnKey);
+  // Reforços podem mudar o índice sem trocar quem está jogando.
+  const currentControlKey = `${combat.id}:${combat.round}:${currentId}`;
+  const assumedCharacter = assumedCharacterFor(current, user, masterAssumed, currentControlKey);
   const masterAttackerId =
     masterPick && masterPick.turnId === currentId ? masterPick.combatantId : currentId;
   const masterOverrideActive =
     isMaster &&
     ((masterAttackerId !== currentId && masterAttackerId !== '') ||
-      (masterAssumed !== null && masterAssumed === currentTurnKey));
+      (masterAssumed !== null && masterAssumed === currentControlKey));
   const showOperational = controlsCurrent || masterOverrideActive;
 
   /**
@@ -440,7 +450,7 @@ export function CombatTracker({
     combatants: combat.combatants,
     user,
     gridActive: combat.spatial.mode === 'grid-2d',
-    assumedCombatantId: isMaster && masterAssumed === currentTurnKey ? currentId : null,
+    assumedCombatantId: isMaster && masterAssumed === currentControlKey ? currentId : null,
   });
 
   // Inventário do NPC do turno (Mestre): lido do cadastro já carregado no
@@ -617,7 +627,7 @@ export function CombatTracker({
     setTargetCombatantId(null);
     setAttackRoll(null);
     setAttackExecuteReady(false);
-  }, [currentTurnKey]);
+  }, [currentControlKey]);
 
   // DESMARCAR/TROCAR O ATALHO limpa o alvo: a seleção pertence à AÇÃO escolhida.
   // É estado de UI — nada é enviado, nada é gasto e nenhum ataque em voo muda.
@@ -1333,7 +1343,11 @@ export function CombatTracker({
   const inspectedCombatant = isMaster && inspectedToken
     ? combat.combatants.find(item => item.id === inspectedToken.id && !item.missing)
     : null;
-  const tokenMenu = inspectedToken && inspectedCombatant ? (
+  const tokenMenu = addingAt && isMaster ? (
+    <CombatTokenMenu name="Adicionar participante" kind="Encontro" subtitle="Reforços para o combate" point={addingAt.point} onClose={closeAddMenu}>
+      <CombatReinforcements combat={combat} position={addingAt.position} onError={onError} onAdded={updated => { onCombatChange(updated); setAddingAt(null); }} />
+    </CombatTokenMenu>
+  ) : inspectedToken && inspectedCombatant ? (
     <CombatTokenMenu key={inspectedCombatant.id} name={inspectedCombatant.name}
       kind={inspectedCombatant.kind === 'CHARACTER' ? 'Personagem' : inspectedCombatant.kind === 'NPC' ? 'NPC' : 'Criatura'}
       point={inspectedToken.point} onClose={closeTokenMenu}>
@@ -1344,6 +1358,8 @@ export function CombatTracker({
 
   // Disponível desde a preparação; a autorização continua no servidor.
   const endCombatControl = isMaster ? (
+    <>
+    <button type="button" className="btn btn-small" disabled={busy} onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setAddingAt({ position: null, point: {x:rect.left,y:rect.bottom} }); }}>Adicionar participante</button>
     <button
       type="button"
       className="btn btn-small combat-end-button"
@@ -1364,6 +1380,7 @@ export function CombatTracker({
     >
       <Icon name="sword" size={13} /> Encerrar combate
     </button>
+    </>
   ) : null;
 
   if (combat.status === 'PENDING_INITIATIVE') {
@@ -1408,6 +1425,7 @@ export function CombatTracker({
             <CombatGrid
               combat={combat}
               onInspectToken={isMaster ? inspectToken : undefined}
+              onEmptyContext={isMaster ? openAddMenu : undefined}
               isMaster={isMaster}
               busy={busy}
               movement={movementAuthority}
@@ -1499,7 +1517,7 @@ export function CombatTracker({
                 {current?.kind === 'CHARACTER' ? <button type="button" className="btn btn-small combat-assume-turn"
                   disabled={busy} aria-pressed={Boolean(assumedCharacter)}
                   onClick={() => {
-                    setMasterAssumed(assumedCharacter ? null : currentTurnKey);
+                    setMasterAssumed(assumedCharacter ? null : currentControlKey);
                     setMasterPick({turnId: currentId, combatantId: currentId});
                   }}><Icon name="crown" size={13} /> {assumedCharacter ? `Encerrar controle de ${current.name}` : `Assumir o turno de ${current.name}`}</button> : null}
                 <button
@@ -1527,6 +1545,7 @@ export function CombatTracker({
           <CombatGrid
             combat={combat}
             onInspectToken={isMaster ? inspectToken : undefined}
+            onEmptyContext={isMaster ? openAddMenu : undefined}
             isMaster={isMaster}
             busy={busy}
             movement={movementAuthority}

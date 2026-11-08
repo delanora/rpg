@@ -1721,3 +1721,27 @@ model EffectOperation {
 
   @@map("effect_operations")
 }
+
+/// Modelo privado do Mestre: composição e posições, nunca estado gasto de combate.
+model PreparedEncounter {
+  id String @id
+  name String
+  preparation Json
+  version Int @default(0)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  operations PreparedEncounterOperation[]
+  @@map("prepared_encounters")
+}
+
+model PreparedEncounterOperation {
+  id String @id @default(cuid())
+  encounterId String
+  encounter PreparedEncounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  operationId String
+  fingerprint String
+  snapshot Json
+  @@unique([encounterId, operationId])
+  @@map("prepared_encounter_operations")
+}

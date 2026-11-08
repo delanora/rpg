@@ -1,3 +1,4 @@
+import { encountersRouter } from '../../modules/encounters/encounters.routes.js';
 import { mechanicalRouter } from '../../modules/mechanical/mechanical.routes.js';
 import { Router } from 'express';
 import { authRouter } from '../../modules/auth/auth.routes.js';
@@ -55,3 +56,5 @@ apiRouter.use('/mechanical', mechanicalRouter);
 apiRouter.use('/death', deathRouter);
 apiRouter.use('/effects', effectsRouter);
 apiRouter.use('/spells', spellsRouter);
+
+apiRouter.use('/encounters', encountersRouter);

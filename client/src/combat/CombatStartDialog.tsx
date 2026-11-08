@@ -1,378 +1,758 @@
-import { useEffect, useMemo, useState } from 'react';
+import { SIZE_LABELS } from './grid/gridMath';
+import { EncounterThumbnail } from './EncounterThumbnail';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Portrait } from '../components/Portrait';
 import { fetchScenes } from '../scenesApi';
-import { formatSceneMeters } from '../sceneUnits';
-import type { Creature, Locality, Region, Scene } from '../types';
-import type { CombatCreatureEntry } from './combatApi';
+import { createOperationId } from '../utils';
+import type {
+  Character,
+  Creature,
+  Locality,
+  Region,
+  Scene,
+  SpatialSize,
+} from '../types';
+import type { CombatPreparation } from './combatApi';
+import {
+  fetchEncounters,
+  saveEncounter,
+  type PreparedEncounter,
+} from './encountersApi';
+import { PreparationBoard, type PreparationToken } from './PreparationBoard';
+import './preparation.css';
 
-interface CombatStartDialogProps {
+export interface CombatStartDialogProps {
   localities: Locality[];
-  /** Regiões, para mostrar a qual delas cada localidade pertence. */
   regions: Region[];
-  /** Criaturas-template E NPCs persistentes (o `kind` separa os dois). */
   creatures: Creature[];
+  characters: Character[];
   onCancel: () => void;
-  onStart: (input: {
-    localityId?: string;
-    /** Cena da localidade escolhida (opcional) — o servidor valida o vínculo. */
-    sceneId?: string;
-    entries: CombatCreatureEntry[];
-  }) => Promise<void>;
+  onStart: (input: CombatPreparation) => Promise<void>;
+  saveOnly?: boolean;
+  initialEncounter?: PreparedEncounter;
+  onSaved?: () => void;
 }
-
-const MAX_QUANTITY = 30;
-
-type KindFilter = 'ALL' | 'CREATURE' | 'NPC';
-
-const KIND_FILTERS: { key: KindFilter; label: string }[] = [
-  { key: 'ALL', label: 'Todos' },
-  { key: 'CREATURE', label: 'Criaturas' },
-  { key: 'NPC', label: 'NPCs' },
+const steps = [
+  'Encontro',
+  'Local',
+  'Participantes',
+  'Cena e posições',
+  'Revisão',
 ];
-
-/**
- * Preparação do combate.
- *
- * TRÊS filtros CUMULATIVOS:
- * • TIPO (Todos / Criaturas / NPCs);
- * • LOCALIDADE (o seletor de antes continua; sem localidade a busca é global);
- * • NOME (busca parcial, sem diferenciar maiúsculas).
- *
- * Regra de quantidade:
- * • criatura-template gera N cópias independentes (Goblin 1, Goblin 2...);
- * • NPC persistente entra UMA única vez — a interface só permite selecionar,
- *   e o SERVIDOR recusa duplicata/quantidade > 1 (409 com mensagem clara).
- */
 export function CombatStartDialog({
   localities,
   regions,
   creatures,
+  characters,
   onCancel,
   onStart,
+  saveOnly = false,
+  initialEncounter,
+  onSaved,
 }: CombatStartDialogProps) {
-  const [localityQuery, setLocalityQuery] = useState('');
-  const [localityId, setLocalityId] = useState('');
-  const [scenes, setScenes] = useState<Scene[]>([]);
-  const [sceneId, setSceneId] = useState('');
-  const [kindFilter, setKindFilter] = useState<KindFilter>('ALL');
-  const [nameQuery, setNameQuery] = useState('');
-  const [dispositions, setDispositions] = useState<Record<string, 'hostile' | 'neutral' | 'allied'>>({});
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const selected = localities.find((locality) => locality.id === localityId) ?? null;
-  const selectedScene = scenes.find((scene) => scene.id === sceneId) ?? null;
-
-  /**
-   * AS cenas vêm da LOCALIDADE escolhida — nunca da mesa inteira. Sem localidade
-   * não há seletor; o combate legado continua começando sem cena.
-   */
+  const root = useRef<HTMLElement>(null);
+  const draftId = useRef(initialEncounter?.id || createOperationId());
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
   useEffect(() => {
-    if (!localityId) {
-      setScenes([]);
-      setSceneId('');
-      return;
-    }
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    root.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    return () => previous?.focus();
+  }, []);
+  const [step, setStep] = useState(initialEncounter || saveOnly ? 1 : 0);
+  const [preparation, setPreparation] = useState<CombatPreparation>(
+    initialEncounter?.preparation ?? {
+      characterIds: characters.map((c) => c.id),
+      entries: [],
+    },
+  );
+  const [encounter, setEncounter] = useState(initialEncounter);
+  const [name, setName] = useState(initialEncounter?.name ?? 'Novo encontro');
+  const [saved, setSaved] = useState<PreparedEncounter[]>([]);
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [sceneLoading, setSceneLoading] = useState(false);
+  const [region, setRegion] = useState('');
+  const [query, setQuery] = useState('');
+  const [kind, setKind] = useState('ALL');
+  const [onlyLocal, setOnlyLocal] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const locality = localities.find((l) => l.id === preparation.localityId);
+  const scene = scenes.find((s) => s.id === preparation.sceneId);
+  useEffect(() => {
     let active = true;
-    fetchScenes(localityId)
-      .then((list) => {
-        if (active) setScenes(list);
+    fetchEncounters()
+      .then((rows) => {
+        if (active) setSaved(rows);
       })
-      .catch(() => {
-        if (active) setScenes([]);
+      .catch((e) => {
+        if (active) setError(e.message);
       });
     return () => {
       active = false;
     };
-  }, [localityId]);
-  const regionName = (locality: Locality): string =>
-    regions.find((region) => region.id === locality.regionId)?.name ?? '';
-
-  const suggestions = useMemo(() => {
-    const term = localityQuery.trim().toLowerCase();
-    const pool = term
-      ? localities.filter((locality) => locality.name.toLowerCase().includes(term))
-      : localities;
-    return pool.slice(0, 8);
-  }, [localityQuery, localities]);
-
-  /**
-   * BUSCA + FILTROS. O dataset já vem inteiro no painel do Mestre (é pequeno),
-   * então filtrar no cliente é adequado — nada de endpoint novo.
-   */
-  const available = useMemo(() => {
-    const term = nameQuery.trim().toLowerCase();
-    return creatures.filter((creature) => {
-      if (kindFilter !== 'ALL' && creature.kind !== kindFilter) return false;
-      if (term && !creature.name.toLowerCase().includes(term)) return false;
-      if (selected && !creature.localities.some((locality) => locality.id === selected.id)) {
-        return false;
-      }
-      return true;
-    });
-  }, [creatures, kindFilter, nameQuery, selected]);
-
-  const total = creatures.reduce((sum, creature) => sum + (quantities[creature.id] ?? 0), 0);
-  const selectedNpcs = creatures.filter(
-    (creature) => creature.kind === 'NPC' && (quantities[creature.id] ?? 0) > 0,
-  ).length;
-
-  function chooseLocality(locality: Locality): void {
-    setLocalityId(locality.id);
-    setLocalityQuery(locality.name);
-    setSceneId('');
-  }
-
-  function clearLocality(): void {
-    setLocalityId('');
-    setLocalityQuery('');
-    setSceneId('');
-  }
-
-  function setQuantity(creature: Creature, value: number): void {
-    // NPC: sempre 0 ou 1 — nunca uma segunda cópia.
-    const cap = creature.kind === 'NPC' ? 1 : MAX_QUANTITY;
-    const safe = Number.isFinite(value) ? Math.max(0, Math.min(cap, Math.trunc(value))) : 0;
-    setQuantities((previous) => ({ ...previous, [creature.id]: safe }));
-  }
-
-  async function handleStart(): Promise<void> {
-    setBusy(true);
-    setError(null);
-    try {
-      const entries = creatures
-        .map((creature) => ({
-          creatureId: creature.id,
-          disposition: dispositions[creature.id] ?? (creature.kind === 'NPC' ? 'neutral' as const : 'hostile' as const),
-          // O servidor também normaliza/recusa; aqui já mandamos a regra certa.
-          quantity: creature.kind === 'NPC' ? Math.min(1, quantities[creature.id] ?? 0) : quantities[creature.id] ?? 0,
-        }))
-        .filter((entry) => entry.quantity > 0);
-
-      await onStart({
-        ...(localityId ? { localityId } : {}),
-        ...(localityId && sceneId ? { sceneId } : {}),
-        entries,
+  }, []);
+  useEffect(() => {
+    let active = true;
+    setScenes([]);
+    if (!preparation.localityId) return;
+    setSceneLoading(true);
+    fetchScenes(preparation.localityId)
+      .then((rows) => {
+        if (active) setScenes(rows);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) setSceneLoading(false);
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível iniciar o combate.');
+    return () => {
+      active = false;
+    };
+  }, [preparation.localityId]);
+  function update(patch: Partial<CombatPreparation>) {
+    setPreparation((p) => ({ ...p, ...patch }));
+    setNotice('');
+  }
+  function chooseLocality(id?: string) {
+    update({
+      localityId: id,
+      sceneId: undefined,
+      characterPositions: [],
+      entries: preparation.entries.map((e) => ({ ...e, positions: undefined })),
+    });
+  }
+  function quantity(creature: Creature, value: number) {
+    const q = Math.max(
+      0,
+      Math.min(creature.kind === 'NPC' ? 1 : 30, Math.trunc(value) || 0),
+    );
+    const old = preparation.entries.find((e) => e.creatureId === creature.id);
+    update({
+      entries: [
+        ...preparation.entries.filter((e) => e.creatureId !== creature.id),
+        ...(q
+          ? [
+              {
+                creatureId: creature.id,
+                quantity: q,
+                disposition:
+                  old?.disposition ??
+                  (creature.kind === 'NPC'
+                    ? ('neutral' as const)
+                    : ('hostile' as const)),
+                positions: old?.positions?.slice(0, q),
+              },
+            ]
+          : []),
+      ],
+    });
+  }
+  const selectedPlayers = characters.filter((c) =>
+    preparation.characterIds?.includes(c.id),
+  );
+  const tokens: PreparationToken[] = [
+    ...selectedPlayers.map((c) => ({
+      key: `character:${c.id}`,
+      name: c.name,
+      image: c.avatarUrl ?? '',
+      size: 'medium' as const,
+      position:
+        preparation.characterPositions?.find((p) => p.characterId === c.id)
+          ?.position ?? null,
+    })),
+    ...preparation.entries.flatMap((e) => {
+      const c = creatures.find((c) => c.id === e.creatureId);
+      return c
+        ? Array.from({ length: e.quantity }, (_, i) => ({
+            key: `${c.id}:${i}`,
+            name: e.quantity > 1 ? `${c.name} ${i + 1}` : c.name,
+            image: c.imageUrl ?? '',
+            size: c.size.toLowerCase() as SpatialSize,
+            position: e.positions?.[i] ?? null,
+          }))
+        : [];
+    }),
+  ];
+  function place(key: string, position: PreparationToken['position']) {
+    if (key.startsWith('character:')) {
+      const id = key.slice(10);
+      update({
+        characterPositions: [
+          ...(preparation.characterPositions ?? []).filter(
+            (p) => p.characterId !== id,
+          ),
+          ...(position ? [{ characterId: id, position }] : []),
+        ],
+      });
+    } else {
+      const split = key.lastIndexOf(':');
+      const id = key.slice(0, split),
+        index = Number(key.slice(split + 1));
+      update({
+        entries: preparation.entries.map((e) =>
+          e.creatureId !== id
+            ? e
+            : {
+                ...e,
+                positions: Array.from({ length: e.quantity }, (_, i) =>
+                  i === index ? position : (e.positions?.[i] ?? null),
+                ),
+              },
+        ),
+      });
+    }
+  }
+  const total =
+    (preparation.characterIds?.length ?? 0) +
+    preparation.entries.reduce((n, e) => n + e.quantity, 0);
+  const unavailable =
+    Boolean(preparation.localityId && !locality) ||
+    Boolean(preparation.sceneId && !sceneLoading && !scene) ||
+    preparation.entries.some(
+      (e) => !creatures.some((c) => c.id === e.creatureId),
+    ) ||
+    (preparation.characterIds ?? []).some(
+      (id) => !characters.some((c) => c.id === id),
+    );
+  async function persist() {
+    setBusy(true);
+    setError('');
+    try {
+      const row = await saveEncounter({
+        id: encounter?.id || draftId.current,
+        version: encounter?.version ?? 0,
+        name,
+        preparation,
+      });
+      setEncounter(row);
+      setNotice('Encontro salvo.');
+      onSaved?.();
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+      return false;
+    } finally {
       setBusy(false);
     }
   }
-
+  async function start() {
+    setBusy(true);
+    setError('');
+    try {
+      await onStart(preparation);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível iniciar.');
+      setBusy(false);
+    }
+  }
   return (
     <div className="modal-backdrop">
-      <div className="modal modal-wide">
-        <h2>
-          <Icon name="sword" size={20} /> Preparar combate
-        </h2>
-        <p className="section-subtitle">
-          Escolha onde a batalha acontece e quem entra. Os personagens de jogador entram
-          automaticamente.
-        </p>
-
-        {/* Filtro por TIPO. */}
-        <div className="combat-pick-filters" role="group" aria-label="Filtrar por tipo">
-          {KIND_FILTERS.map((filter) => (
+      <section
+        ref={root}
+        className="modal preparation-wizard"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !busy) {
+            event.preventDefault();
+            cancelRef.current();
+          }
+          if (event.key === 'Tab') {
+            const list = root.current?.querySelectorAll<HTMLElement>(
+              'button:not(:disabled),input:not(:disabled),select:not(:disabled)',
+            );
+            if (!list?.length) return;
+            const first = list[0],
+              last = list[list.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preparation-title"
+      >
+        <header className="preparation-header">
+          <div>
+            <h2 id="preparation-title">
+              <Icon name="sword" />{' '}
+              {saveOnly ? 'Preparar encontro' : 'Iniciar combate'}
+            </h2>
+            <p className="section-subtitle">
+              Monte a cena no seu ritmo. O combate só começa ao confirmar.
+            </p>
+          </div>
+          <button
+            className="btn btn-small"
+            disabled={busy}
+            aria-label="Fechar preparação"
+            onClick={onCancel}
+          >
+            ×
+          </button>
+        </header>
+        <nav className="preparation-steps" aria-label="Etapas de preparação">
+          {steps.map((label, i) => (
             <button
-              key={filter.key}
-              type="button"
-              className={kindFilter === filter.key ? 'btn btn-small active' : 'btn btn-small'}
-              aria-pressed={kindFilter === filter.key}
-              onClick={() => setKindFilter(filter.key)}
+              key={label}
+              disabled={busy || (saveOnly && i === 0)}
+              aria-current={step === i ? 'step' : undefined}
+              onClick={() => setStep(i)}
             >
-              {filter.label}
+              <span>{i + 1}</span>
+              {label}
             </button>
           ))}
-        </div>
-
-        {/* LOCALIDADE — continua existindo e nunca é substituída pela busca. */}
-        <label className="field">
-          <span>Localidade</span>
-          <input
-            type="search"
-            className="inline-input"
-            value={localityQuery}
-            placeholder="digite para buscar a localidade..."
-            onChange={(event) => {
-              setLocalityQuery(event.target.value);
-              setLocalityId('');
-            }}
-          />
-        </label>
-
-        {selected ? (
-          <p className="section-note">
-            Local escolhido: <strong>{selected.name}</strong>
-            {regionName(selected) ? ` · ${regionName(selected)}` : ''}{' '}
-            <button type="button" className="btn btn-small" onClick={clearLocality}>
-              todas as localidades
-            </button>
+        </nav>
+        {error ? (
+          <p className="error" role="alert">
+            {error}
           </p>
-        ) : localityQuery.trim() ? (
-          suggestions.length === 0 ? (
-            <p className="empty-hint">Nenhuma localidade encontrada.</p>
-          ) : (
-            <ul className="suggestion-list">
-              {suggestions.map((locality) => (
-                <li key={locality.id}>
+        ) : null}
+        {notice ? <p role="status">{notice}</p> : null}
+        <div className="preparation-content">
+          {step === 0 ? (
+            <>
+              <h3>Como você quer começar?</h3>
+              <div className="preparation-cards">
+                <button
+                  className="preparation-card"
+                  onClick={() => {
+                    setEncounter(undefined);
+                    draftId.current = createOperationId();
+                    setName('Novo encontro');
+                    setPreparation({
+                      characterIds: characters.map((c) => c.id),
+                      entries: [],
+                    });
+                    setStep(1);
+                  }}
+                >
+                  <Icon name="sparkle" />
+                  <strong>Criar agora</strong>
+                  <small>Escolha o local, os participantes e a cena.</small>
+                </button>
+                {saved.map((e) => (
                   <button
-                    type="button"
-                    className="suggestion"
-                    onClick={() => chooseLocality(locality)}
+                    className="preparation-card"
+                    key={e.id}
+                    onClick={() => {
+                      setEncounter(e);
+                      setName(e.name);
+                      setPreparation(e.preparation);
+                      setStep(4);
+                    }}
                   >
-                    <Icon name="scroll" size={14} />
-                    <span className="suggestion-name">{locality.name}</span>
-                    <span className="muted">
-                      {regionName(locality) ? `${regionName(locality)} · ` : ''}
-                      {locality.creatureCount} criatura(s)/NPC(s)
-                    </span>
+                    <EncounterThumbnail sceneId={e.preparation.sceneId} />
+                    <strong>{e.name}</strong>
+                    <small>
+                      {localities.find((l) => l.id === e.preparation.localityId)
+                        ?.name ?? 'Sem localidade'}{' '}
+                      ·{' '}
+                      {e.preparation.entries.reduce(
+                        (n, c) => n + c.quantity,
+                        0,
+                      )}{' '}
+                      criaturas/NPCs
+                    </small>
                   </button>
-                </li>
-              ))}
-            </ul>
-          )
-        ) : (
-          <p className="section-note">
-            Sem localidade selecionada, a busca procura entre todas as criaturas e NPCs.
-          </p>
-        )}
-
-        {/* CENA da localidade — só as cenas DESTA localidade aparecem. */}
-        {selected ? (
-          <label className="field">
-            <span>Cena (opcional)</span>
-            <select
-              className="inline-input"
-              value={sceneId}
-              onChange={(event) => setSceneId(event.target.value)}
-            >
-              <option value="">sem cena — cena assistida padrão</option>
-              {scenes.map((scene) => (
-                <option key={scene.id} value={scene.id}>
-                  {scene.name} — {formatSceneMeters(scene.spatialConfig.widthFeet)} ×{' '}
-                  {formatSceneMeters(scene.spatialConfig.heightFeet)}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-
-        {selected && scenes.length === 0 ? (
-          <p className="section-note">
-            Esta localidade ainda não tem cenas — o combate começa no modo assistido, sem grid.
-          </p>
-        ) : null}
-
-        {selectedScene ? (
-          <p className="section-note">
-            A cena <strong>{selectedScene.name}</strong> será a fonte do grid e das paredes; ela
-            fica travada para edição enquanto o combate estiver ativo.
-          </p>
-        ) : null}
-
-        {/* BUSCA POR NOME — parcial e sem diferenciar maiúsculas. */}
-        <label className="field">
-          <span>Buscar por nome</span>
-          <input
-            type="search"
-            className="inline-input"
-            value={nameQuery}
-            placeholder="ex.: gob, bart..."
-            onChange={(event) => setNameQuery(event.target.value)}
-          />
-        </label>
-
-        {available.length === 0 ? (
-          <p className="empty-hint">
-            Nenhuma criatura ou NPC corresponde aos filtros. Ajuste o tipo, a localidade
-            ou o nome.
-          </p>
-        ) : (
-          <ul className="modal-list combat-pick-list">
-            {available.map((creature) => {
-              const quantity = quantities[creature.id] ?? 0;
-              const isNpc = creature.kind === 'NPC';
-              return (
-                <li key={creature.id}>
-                  <div className="check-row quantity-row">
-                    <span className="check-name">
-                      <Portrait
-                        src={creature.imageUrl}
-                        alt=""
-                        size="sm"
-                        icon={isNpc ? 'scroll' : 'flame'}
-                      />
-                      <span className="name-text">{creature.name}</span>
-                    </span>
-                    <span className="combat-pick-meta">
-                      <span className={isNpc ? 'tag npc' : 'tag'}>{isNpc ? 'NPC' : 'Criatura'}</span>
-                      <span className="muted">
-                        {creature.localities.length > 0
-                          ? creature.localities.map((locality) => locality.name).join(', ')
-                          : 'sem localidade'}
-                      </span>
-                      <span className="muted">
-                        HP {creature.hpMax} · CA {creature.effectiveArmorClass ?? creature.armorClass}
-                        {creature.challengeRating ? ` · ND ${creature.challengeRating}` : ''}
-                      </span>
-                    </span>
-                    <select aria-label={`Relação de ${creature.name} com os jogadores`} disabled={busy}
-                      value={dispositions[creature.id] ?? (isNpc ? 'neutral' : 'hostile')}
-                      onChange={event => setDispositions(previous => ({...previous, [creature.id]: event.target.value as 'hostile' | 'neutral' | 'allied'}))}>
-                      <option value="hostile">Hostil</option><option value="neutral">Neutro</option><option value="allied">Aliado</option>
-                    </select>
-                    {isNpc ? (
-                      <button
-                        type="button"
-                        className={quantity > 0 ? 'btn btn-small active' : 'btn btn-small'}
-                        aria-pressed={quantity > 0}
-                        onClick={() => setQuantity(creature, quantity > 0 ? 0 : 1)}
+                ))}
+              </div>
+            </>
+          ) : null}
+          {step === 1 ? (
+            <>
+              <h3>Onde acontece o encontro?</h3>
+              <div className="preparation-cards compact">
+                {regions.map((r) => (
+                  <button
+                    className="preparation-card"
+                    key={r.id}
+                    aria-pressed={region === r.id}
+                    onClick={() => setRegion(region === r.id ? '' : r.id)}
+                  >
+                    <strong>{r.name}</strong>
+                    <small>{r.localityCount} localidades</small>
+                  </button>
+                ))}
+              </div>
+              <label>
+                Buscar localidade
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Nome da localidade"
+                />
+              </label>
+              <div className="preparation-cards">
+                <button
+                  className="preparation-card"
+                  aria-pressed={!preparation.localityId}
+                  onClick={() => chooseLocality()}
+                >
+                  <strong>Sem localidade</strong>
+                  <small>Encontro improvisado, sem cena cadastrada.</small>
+                </button>
+                {localities
+                  .filter(
+                    (l) =>
+                      (!region || l.regionId === region) &&
+                      l.name.toLowerCase().includes(query.toLowerCase()),
+                  )
+                  .map((l) => (
+                    <button
+                      key={l.id}
+                      className="preparation-card"
+                      aria-pressed={preparation.localityId === l.id}
+                      onClick={() => chooseLocality(l.id)}
+                    >
+                      <strong>{l.name}</strong>
+                      <small>
+                        {regions.find((r) => r.id === l.regionId)?.name}
+                      </small>
+                    </button>
+                  ))}
+              </div>
+            </>
+          ) : null}
+          {step === 2 ? (
+            <>
+              <h3>Personagens dos jogadores</h3>
+              <div className="preparation-inline">
+                <button
+                  className="btn btn-small"
+                  onClick={() =>
+                    update({ characterIds: characters.map((c) => c.id) })
+                  }
+                >
+                  Selecionar todos
+                </button>
+                <button
+                  className="btn btn-small"
+                  onClick={() =>
+                    update({ characterIds: [], characterPositions: [] })
+                  }
+                >
+                  Limpar seleção
+                </button>
+              </div>
+              <div className="preparation-cards">
+                {characters.map((c) => (
+                  <button
+                    className="preparation-card preparation-person"
+                    key={c.id}
+                    aria-pressed={
+                      preparation.characterIds?.includes(c.id) ?? false
+                    }
+                    onClick={() => {
+                      const has = preparation.characterIds?.includes(c.id);
+                      update({
+                        characterIds: has
+                          ? preparation.characterIds!.filter(
+                              (id) => id !== c.id,
+                            )
+                          : [...(preparation.characterIds ?? []), c.id],
+                        characterPositions: (
+                          preparation.characterPositions ?? []
+                        ).filter((p) => p.characterId !== c.id),
+                      });
+                    }}
+                  >
+                    <Portrait src={c.avatarUrl ?? ''} zoomable={false} />
+                    <strong>{c.name}</strong>
+                    <small>
+                      {preparation.characterIds?.includes(c.id)
+                        ? 'Selecionado'
+                        : 'Não participa'}
+                    </small>
+                  </button>
+                ))}
+              </div>
+              <h3>Criaturas e NPCs</h3>
+              {preparation.entries.filter(entry => !creatures.some(c => c.id === entry.creatureId)).map(entry =>
+                <p key={entry.creatureId}>Cadastro indisponível ({entry.quantity} unidade(s)). <button className="btn btn-small" onClick={() => update({ entries: preparation.entries.filter(e => e.creatureId !== entry.creatureId) })}>Retirar da seleção</button></p>
+              )}
+              <div className="preparation-inline">
+                <input
+                  aria-label="Buscar criatura ou NPC"
+                  placeholder="Buscar criatura ou NPC"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+                <select
+                  aria-label="Tipo de participante"
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value)}
+                >
+                  <option value="ALL">Todos</option>
+                  <option value="CREATURE">Criaturas</option>
+                  <option value="NPC">NPCs</option>
+                </select>
+                {locality ? (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={onlyLocal}
+                      onChange={(e) => setOnlyLocal(e.target.checked)}
+                    />{' '}
+                    Só desta localidade
+                  </label>
+                ) : null}
+              </div>
+              <div className="preparation-cards">
+                {creatures
+                  .filter(
+                    (c) =>
+                      (kind === 'ALL' || c.kind === kind) &&
+                      c.name.toLowerCase().includes(query.toLowerCase()) &&
+                      (!onlyLocal ||
+                        !locality ||
+                        c.localities.some((l) => l.id === locality.id)),
+                  )
+                  .map((c) => {
+                    const entry = preparation.entries.find(
+                      (e) => e.creatureId === c.id,
+                    );
+                    return (
+                      <div
+                        key={c.id}
+                        className="preparation-card"
+                        data-selected={Boolean(entry)}
                       >
-                        {quantity > 0 ? 'no combate' : 'adicionar'}
-                      </button>
+                        <div className="preparation-inline">
+                          <Portrait src={c.imageUrl ?? ''} zoomable={false} />
+                          <strong>{c.name}</strong>
+                        </div>
+                        <small>
+                          {c.kind === 'NPC'
+                            ? 'NPC'
+                            : `Criatura · ND ${c.challengeRating}`}{' '}
+                          · {SIZE_LABELS[c.size.toLowerCase() as SpatialSize]}
+                        </small>
+                        <small>{c.localities.map(l => l.name).join(', ') || 'Sem localidade'}</small>
+                        <label>
+                          Quantidade
+                          <input
+                            aria-label={`Quantidade de ${c.name}`}
+                            type="number"
+                            min={0}
+                            max={c.kind === 'NPC' ? 1 : 30}
+                            value={entry?.quantity ?? 0}
+                            onChange={(e) =>
+                              quantity(c, Number(e.target.value))
+                            }
+                          />
+                        </label>
+                        {entry ? (
+                          <label>
+                            Relação
+                            <select
+                              value={entry.disposition}
+                              onChange={(e) =>
+                                update({
+                                  entries: preparation.entries.map((x) =>
+                                    x.creatureId === c.id
+                                      ? {
+                                          ...x,
+                                          disposition: e.target.value as
+                                            | 'hostile'
+                                            | 'neutral'
+                                            | 'allied',
+                                        }
+                                      : x,
+                                  ),
+                                })
+                              }
+                            >
+                              <option value="hostile">Hostil</option>
+                              <option value="neutral">Neutro</option>
+                              <option value="allied">Aliado</option>
+                            </select>
+                          </label>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          ) : null}
+          {step === 3 ? (
+            <>
+              <h3>Escolha a cena</h3>
+              {!locality ? (
+                <p>
+                  Escolha uma localidade na etapa Local para usar uma cena
+                  cadastrada.
+                </p>
+              ) : null}
+              {sceneLoading ? <p role="status">Carregando cenas…</p> : null}
+              <div className="preparation-cards">
+                <button
+                  className="preparation-card"
+                  aria-pressed={!preparation.sceneId}
+                  onClick={() =>
+                    update({
+                      sceneId: undefined,
+                      characterPositions: [],
+                      entries: preparation.entries.map((e) => ({
+                        ...e,
+                        positions: undefined,
+                      })),
+                    })
+                  }
+                >
+                  <strong>Sem grid</strong>
+                  <small>Combate assistido.</small>
+                </button>
+                {scenes.map((s) => (
+                  <button
+                    key={s.id}
+                    className="preparation-card"
+                    aria-pressed={s.id === preparation.sceneId}
+                    onClick={() => {
+                      if (s.id !== preparation.sceneId)
+                        update({
+                          sceneId: s.id,
+                          characterPositions: [],
+                          entries: preparation.entries.map((e) => ({
+                            ...e,
+                            positions: undefined,
+                          })),
+                        });
+                    }}
+                  >
+                    {s.backgroundImageUrl ? (
+                      <img src={s.backgroundImageUrl} alt="" />
                     ) : (
-                      <input
-                        type="number"
-                        min={0}
-                        max={MAX_QUANTITY}
-                        value={quantity}
-                        aria-label={`Quantidade de ${creature.name}`}
-                        onChange={(event) => setQuantity(creature, Number(event.target.value))}
-                      />
+                      <Icon name="table" />
                     )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        {selectedNpcs > 0 ? (
-          <p className="section-note">
-            Cada NPC entra uma única vez no combate; criaturas-template podem ter várias
-            cópias.
-          </p>
-        ) : null}
-
-        {error ? <p className="form-error">{error}</p> : null}
-
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
-            cancelar
+                    <strong>{s.name}</strong>
+                  </button>
+                ))}
+              </div>
+              {scene ? (
+                <PreparationBoard
+                  scene={scene}
+                  tokens={tokens}
+                  onPlace={place}
+                />
+              ) : null}
+            </>
+          ) : null}
+          {step === 4 ? (
+            <>
+              <h3>Pronto para começar?</h3>
+              <label>
+                Nome do encontro
+                <input
+                  value={name}
+                  maxLength={120}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </label>
+              <dl className="preparation-summary">
+                <dt>Local</dt>
+                <dd>{locality?.name ?? 'Sem localidade'}</dd>
+                <dt>Cena</dt>
+                <dd>
+                  {scene?.name ??
+                    (preparation.sceneId ? 'Cena indisponível' : 'Sem grid')}
+                </dd>
+                <dt>Jogadores</dt>
+                <dd>
+                  {selectedPlayers.map((c) => c.name).join(', ') || 'Nenhum'}
+                </dd>
+                <dt>Criaturas e NPCs</dt>
+                <dd>
+                  {preparation.entries
+                    .map(
+                      (e) =>
+                        `${e.quantity} × ${creatures.find((c) => c.id === e.creatureId)?.name ?? 'Cadastro removido'}`,
+                    )
+                    .join(', ') || 'Nenhum'}
+                </dd>
+                <dt>Posições</dt>
+                <dd>
+                  {tokens.filter((t) => t.position).length} de {tokens.length}{' '}
+                  definidas
+                </dd>
+              </dl>
+              <p className="section-note">
+                Após confirmar, os participantes rolam iniciativa. PV e recursos
+                dos personagens permanecem como estão.
+              </p>
+              {unavailable ? (
+                <p role="alert">
+                  Há participantes removidos do cadastro. Atualize a seleção
+                  antes de iniciar.
+                </p>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+        <footer className="preparation-footer">
+          <span>{total} participantes</span>
+          <button
+            className="btn btn-small"
+            disabled={busy || step <= (saveOnly ? 1 : 0)}
+            onClick={() => {
+              setQuery('');
+              setStep(step - 1);
+            }}
+          >
+            Voltar
           </button>
           <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => void handleStart()}
-            disabled={busy}
+            className="btn btn-small"
+            disabled={busy || !name.trim()}
+            onClick={() => void persist()}
           >
-            {busy ? 'iniciando...' : `iniciar combate (${total} combatente(s))`}
+            Salvar encontro
           </button>
-        </div>
-      </div>
+          {step < 4 ? (
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => {
+                setQuery('');
+                setStep(step + 1);
+              }}
+            >
+              Continuar
+            </button>
+          ) : saveOnly ? (
+            <button
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() =>
+                void persist().then((ok) => {
+                  if (ok) onCancel();
+                })
+              }
+            >
+              Salvar e concluir
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              disabled={busy || !total || unavailable || sceneLoading}
+              onClick={() => void start()}
+            >
+              {busy ? 'Iniciando…' : 'Iniciar combate'}
+            </button>
+          )}
+        </footer>
+      </section>
     </div>
   );
 }

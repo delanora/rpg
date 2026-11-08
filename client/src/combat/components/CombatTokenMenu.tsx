@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { Icon } from '../../components/Icon';
 
 /** Painel não modal: permanece junto ao ponto clicado e deixa o mapa acessível. */
-export function CombatTokenMenu({ name, kind, point, onClose, children }: {
-  name: string; kind: string; point: { x: number; y: number };
+export function CombatTokenMenu({ name, kind, point, onClose, children, subtitle = 'Ajustes de combate' }: {
+  name: string; kind: string; subtitle?: string; point: { x: number; y: number };
   onClose: () => void; children: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -52,7 +52,7 @@ export function CombatTokenMenu({ name, kind, point, onClose, children }: {
     onContextMenu={event => event.preventDefault()}>
     <header className="combat-token-menu-head">
       <div><span className="combat-token-menu-kind"><Icon name="crown" size={12} /> {kind}</span>
-        <h3>{name}</h3><p>Ajustes de combate</p></div>
+        <h3>{name}</h3><p>{subtitle}</p></div>
       <button ref={closeButton} className="btn btn-small" type="button" aria-label="Fechar ajustes do token" onClick={onClose}>×</button>
     </header>
     {children}
