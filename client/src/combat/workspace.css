@@ -3096,3 +3096,14 @@
   .combat-master-panel { width: 100%; max-height: 65dvh; }
   .combat-master-toolbar { gap: 0.3rem; }
 }
+
+/* No desktop, o combate do Mestre ocupa a primeira dobra; as abas ficam abaixo.
+   A cadeia flex entrega a altura adicional ao grid, com iniciativa e registro roláveis. */
+@media (min-width: 1181px) {
+  .app-main:has(> .combat-panel) > .combat-panel:has(> .combat-workspace[data-master='true']) {
+    flex: 0 0 auto;
+    height: calc(100vh - 5.5rem - var(--music-bar-h, 0px));
+    height: calc(100dvh - 5.5rem - var(--music-bar-h, 0px));
+    min-height: 30rem;
+  }
+}
