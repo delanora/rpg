@@ -199,6 +199,7 @@ export const ServerEvents = {
    * emitido somente DEPOIS da transação. Quem não pode ver o combatente
    * (master-only) não recebe nada — o filtro é do servidor.
    */
+  COMBAT_PING: 'combat:ping',
   COMBAT_MOVEMENT_VISUAL: 'combat:movement-visual',
   MECHANICAL_UPDATED: 'mechanical:updated',
   /**
@@ -654,4 +655,15 @@ export interface DeathUpdatedPayload { death: DeathDto; }
  */
 export interface SpellIntentUpdatedPayload {
   intent: import('../modules/spells/execution/spell-intent.service.js').SpellCastIntentDto;
+}
+
+/** Marcação pública e efêmera; nunca altera o estado mecânico do combate. */
+export interface CombatPingPayload {
+  id: string;
+  combatId: string;
+  position: { xFeet: number; yFeet: number };
+  authorId: string;
+  authorName: string;
+  color: string;
+  durationMs: 3000;
 }

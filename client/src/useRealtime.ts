@@ -1,3 +1,5 @@
+import { COMBAT_PING_EVENT } from './events';
+import { publishGridPing } from './combat/grid/gridPing';
 import { useEffect, useRef, useState } from 'react';
 import { publishSceneEvent } from './scenesApi';
 import { createSocket } from './socket';
@@ -191,6 +193,7 @@ export function useRealtime(handlers: RealtimeHandlers) {
     socket.on('music:state', (payload) => handlersRef.current.onMusicState?.(payload));
     socket.on('music:tracks', (payload) => handlersRef.current.onMusicTracks?.(payload));
 
+    socket.on(COMBAT_PING_EVENT, publishGridPing);
     socket.on('combat:started', (payload) => handlersRef.current.onCombatStarted?.(payload));
     socket.on('mechanical:updated', (payload) => handlersRef.current.onMechanicalUpdated?.(payload));
     socket.on('effects:updated', (payload) => handlersRef.current.onEffectsUpdated?.(payload));

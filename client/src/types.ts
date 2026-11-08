@@ -3351,3 +3351,14 @@ export interface ResolutionRequestsPayload {
   requests: CombatResolutionCardDto[];
   at: string;
 }
+
+/** Ping efêmero carimbado pelo servidor. */
+export interface CombatPingPayload {
+  id: string;
+  combatId: string;
+  position: SpatialPosition;
+  authorId: string;
+  authorName: string;
+  color: string;
+  durationMs: 3000;
+}

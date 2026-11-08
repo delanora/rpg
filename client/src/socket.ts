@@ -1,3 +1,4 @@
+import type { CombatPingPayload } from './types';
 import { io, type Socket } from 'socket.io-client';
 import { getToken } from './api';
 import type {
@@ -73,6 +74,7 @@ export interface ServerToClientEvents {
   'game:config': (payload: GameConfigPayload) => void;
   'music:state': (payload: MusicStatePayload) => void;
   'music:tracks': (payload: MusicTracksPayload) => void;
+  'combat:ping': (payload: CombatPingPayload) => void;
   'combat:started': (payload: CombatStartedPayload) => void;
   'mechanical:updated': (payload: MechanicalUpdatedPayload) => void;
   /** Efeitos ativos de um alvo (6.5A): já filtrados por papel no servidor. */

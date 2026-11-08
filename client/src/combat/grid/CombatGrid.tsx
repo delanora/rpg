@@ -1,3 +1,5 @@
+import { useGridPing } from './gridPing';
+import { GridPings } from './GridPings';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent } from 'react';
 import type {
@@ -1650,6 +1652,7 @@ export function CombatGrid({
     if (!active) return undefined;
     function onKeyDown(event: KeyboardEvent): void {
       if (isEditableTarget(event.target)) return;
+      if (event.altKey) return;
       if (event.key === 'Escape') {
         if (ruler || quickRuler) clearRuler();
         if (draft) cancelDraft('Movimento cancelado.');
@@ -1686,7 +1689,7 @@ export function CombatGrid({
       if (event.key === ' ' || event.code === 'Space') {
         spaceDown.current = false;
         setSpacePan(false);
-        const candidate = spaceCandidate.current;
+        const candidate = spaceCandidate.current && !event.altKey;
         const panned = spacePanUsed.current;
         spaceCandidate.current = false;
         spacePanUsed.current = false;
@@ -1707,6 +1710,19 @@ export function CombatGrid({
     // `clearRuler`/`cancelDraft` só tocam estado local.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, ruler, quickRuler, draft, combat.spatial.mode, rulerActive]);
+
+  const ping = useGridPing({
+    combatId: combat.id, enabled: active && combat.status !== 'ENDED',
+    positionAt: feetAt, widthFeet: scene.widthFeet, heightFeet: scene.heightFeet,
+    onError,
+    onStart: () => {
+      spaceCandidate.current = false;
+      panGesture.current = null;
+      gestureRef.current = null;
+      setGrabGesture(null);
+      if (!committingRef.current && !executing.current && draftRef.current) cancelDraft();
+    },
+  });
 
   /* ---------------------------------------------------------------------- */
   /* RENDER                                                                  */
@@ -1798,6 +1814,7 @@ export function CombatGrid({
 
   const viewportClasses = [
     'grid-viewport',
+    ping.holdingAlt ? 'is-pinging' : '',
     gridPhase !== 'ready' ? 'is-initializing' : '',
     panGesture.current?.moved ? 'is-panning' : '',
     spacePan ? 'is-space-pan' : '',
@@ -2027,6 +2044,7 @@ export function CombatGrid({
         <div
           ref={viewportRef}
           className={viewportClasses}
+          {...ping.capture}
           onPointerDown={handleViewportPointerDown}
           onPointerMove={handleViewportPointerMove}
           onPointerLeave={handleViewportPointerLeave}
@@ -2167,6 +2185,9 @@ export function CombatGrid({
               ) : null}
             </div>
           </div>
+
+          <GridPings pings={ping.pings} camera={camera} geometry={geometry} />
+          <span className="grid-ping-hint">Alt + clique: sinalizar ponto</span>
 
           {/* TRAÇO do movimento: reta tracejada origem→destino, em TELA. */}
           {draft && draft.path.length > 0 && draftTraceFrom && draftTraceTo ? (

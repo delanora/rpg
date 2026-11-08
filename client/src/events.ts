@@ -54,3 +54,5 @@ export interface ConnectionReadyPayload {
     role: Role;
   };
 }
+
+export const COMBAT_PING_EVENT = 'combat:ping' as const;

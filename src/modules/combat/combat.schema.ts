@@ -311,3 +311,5 @@ export type CombatantSidePatch = z.infer<typeof combatantSidePatchSchema>;
 export type CombatOperationInput = z.infer<typeof combatOperationSchema>;
 export type EconomyActionInput = z.infer<typeof economyActionSchema>;
 export type EconomyOverrideInput = z.infer<typeof economyOverrideSchema>;
+
+export const combatPingSchema = z.object({ position: spatialPositionSchema }).strict();

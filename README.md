@@ -789,6 +789,10 @@ As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a 
 
 ## ⚔️ Etapa 4 — Combate em tempo real
 
+No combate com grid, **segure Alt e clique no mapa** para sinalizar um ponto. O cursor vira uma bandeirinha; mestre e jogadores veem a marca com nome e cor do autor por três segundos. O gesto também funciona sobre tokens e preserva ação, movimento e seleção.
+
+`POST /api/combat/:combatId/spatial/ping` recebe `{ position: { xFeet, yFeet } }` de qualquer participante autenticado. O servidor valida o mapa e publica `combat:ping` para a mesa, sem persistência ou replay na reconexão.
+
 ### O fluxo, passo a passo
 
 1. **O mestre inicia o combate.** O botão **"⚔ COMBATE"** abre um modal com a lista de criaturas cadastradas; as marcadas entram na luta. O sistema adiciona automaticamente **todos os personagens de jogador**, cada criatura escolhida, e avisa a mesa inteira (`combat:started`). Só existe um combate por vez: iniciar outro devolve **409**.

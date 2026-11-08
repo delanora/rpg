@@ -1,3 +1,6 @@
+import { rateLimit } from 'express-rate-limit';
+import { combatPingSchema } from './combat.schema.js';
+import { sendCombatPing } from './spatial/spatial-ping.service.js';
 import type { Role } from '@prisma/client';
 import { Router } from 'express';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
@@ -47,6 +50,16 @@ import {
 } from './combat.service.js';
 
 export const combatRouter = Router();
+
+const pingLimiter = rateLimit({ windowMs: 5000, limit: 12,
+  keyGenerator: (req) => req.user!.sub,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Aguarde um instante antes de marcar outro ponto.' } });
+
+combatRouter.post('/:combatId/spatial/ping', authenticate, pingLimiter, async (req, res) => {
+  const parsed = combatPingSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten() }); return; }
+  res.json(await sendCombatPing(String(req.params.combatId), parsed.data.position, req.user!));
+});
 
 /** O autor vem sempre do token, nunca do corpo da requisição. */
 function actorFrom(req: { user?: { sub: string; username: string; role: Role } }): CombatActor {
