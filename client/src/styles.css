@@ -14887,10 +14887,113 @@ input[type='checkbox']:focus-visible,
   color: var(--ink-soft);
 }
 
-.items-count {
+.list-range {
   margin: 0;
   font-size: var(--text-micro);
   color: var(--ink-faint);
+}
+
+/* Rodapé das listas do painel (Itens, Fichas, Criaturas, NPCs e Regiões): uma
+   faixa discreta com a contagem e o paginador CENTRADOS — a paginação é o
+   elemento de navegação e fica no meio, alinhada à lista. */
+.list-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding-top: 0.55rem;
+  text-align: center;
+}
+
+.list-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  row-gap: 0.35rem;
+}
+
+/* Botão de página: pastilha de pergaminho com borda fina; a página atual vira
+   dourado sólido, então a posição se lê de relance. */
+.list-page-btn {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 2px);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  color: var(--ink-soft);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.list-page-btn:hover:not(:disabled) {
+  color: var(--gold-deep);
+  border-color: var(--gold);
+  box-shadow: 0 0 12px -6px var(--glow);
+  transform: translateY(-1px);
+}
+
+[data-theme='dark'] .list-page-btn:hover:not(:disabled) {
+  color: var(--gold-bright);
+}
+
+.list-page-btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.list-page-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.list-page-btn.is-step {
+  font-size: 1.05rem;
+  padding-bottom: 0.1rem;
+}
+
+.list-page-btn[aria-current='page'] {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, var(--gold), var(--gold-deep));
+  color: #fff8e6;
+  font-weight: 600;
+  box-shadow: 0 0 14px -6px var(--glow);
+}
+
+[data-theme='dark'] .list-page-btn[aria-current='page'] {
+  color: var(--leather-deep);
+  border-color: var(--gold-bright);
+}
+
+.list-page-gap {
+  min-width: 1.1rem;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Em telas estreitas o paginador pode quebrar em duas linhas — continua
+   centralizado, só ganha espaço para respirar. */
+@media (max-width: 640px) {
+  .list-pager {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
 }
 
 /* Modal do item: barra de ações no TOPO (editar / excluir / fechar). */
@@ -15327,6 +15430,92 @@ input[type='checkbox']:focus-visible,
    Economia + Sprite lado a lado. Menos caixas aninhadas: os subblocos internos
    usam divisor e título, não uma nova borda.
    ========================================================================== */
+
+/* ==========================================================================
+   Lista em cards ocupando a largura toda (Fichas, Criaturas, NPCs, Regiões)
+   --------------------------------------------------------------------------
+   Mesmo desenho do catálogo de itens: busca no topo, grade de cards e rodapé
+   paginado. O detalhe abre numa janela flutuante (`.detail-modal`), então a
+   lista não divide mais a tela com uma coluna lateral.
+   ========================================================================== */
+
+.master-catalog {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+/* --- Janela de detalhe: barra de ações + cabeçalho + corpo rolável --------- */
+.detail-modal {
+  width: 100%;
+  max-width: min(1180px, calc(100vw - 2rem));
+  max-height: min(90vh, 100%);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.15rem 1.15rem;
+  overflow: hidden;
+}
+
+.detail-modal-head {
+  padding: 0.15rem 0 0.55rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-modal-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1.2;
+  color: var(--wine);
+}
+
+[data-theme='dark'] .detail-modal-title {
+  color: var(--gold-bright);
+}
+
+.detail-modal-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-micro);
+  color: var(--ink-faint);
+}
+
+/*
+ * A FICHA do jogador aberta pelo mestre ocupa 85% da tela nos dois eixos: é
+ * muito conteúdo (identidade, vida, recursos, atributos e abas) e a janela
+ * pequena obrigava a rolar demais. `dvh` acompanha a barra do navegador no
+ * celular; `vh` fica como fallback.
+ */
+.detail-modal.is-sheet {
+  width: 85vw;
+  max-width: 85vw;
+  height: 85vh;
+  max-height: 85vh;
+  height: 85dvh;
+  max-height: 85dvh;
+}
+
+/*
+ * O retrato do personagem "salta" meia imagem para fora do card contando com a
+ * margem da PÁGINA (`--portrait-room` olha a viewport). Dentro da janela o card
+ * encosta na borda do corpo rolável, então esse transbordo era cortado — e,
+ * para cima/esquerda, nenhuma rolagem o alcança. Sem sala medida pela página, o
+ * retrato encosta no canto do card e aparece INTEIRO.
+ */
+.detail-modal.is-sheet .sheet-identity {
+  --portrait-room: 0px;
+}
+
+/* A altura reservada vira área de leitura: o corpo rola DENTRO da janela. */
+.detail-modal.is-sheet .detail-modal-body {
+  flex: 1 1 auto;
+}
+
+/* O corpo rola DENTRO da janela: a barra de ações e o título ficam à vista. */
+.detail-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 0.15rem 0.2rem;
+}
 
 /* --- O modal alarga na edição: é o espaço que reduz a altura total --------- */
 .items-modal.is-edit {
@@ -17624,6 +17813,7 @@ input[type='checkbox']:focus-visible,
   opacity: 0.5;
   cursor: default;
 }
+
 /* ------------------------------------------------------------------------- */
 /* 6.6I — CARDS DE RESOLUÇÃO no registro lateral do combate                  */
 /* ------------------------------------------------------------------------- */

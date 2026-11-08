@@ -74,6 +74,11 @@ interface CreatureEditorProps {
   onCreatureChange?: (creature: Creature) => void;
   /** Mensagens de erro do painel (inventário do NPC). */
   onError?: (message: string) => void;
+  /**
+   * Montado dentro da janela flutuante do painel: o cabeçalho com o nome e o
+   * botão de excluir mora no modal, então some daqui para não duplicar.
+   */
+  embedded?: boolean;
 }
 
 export function CreatureEditor({
@@ -85,6 +90,7 @@ export function CreatureEditor({
   items = [],
   onCreatureChange,
   onError,
+  embedded = false,
 }: CreatureEditorProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -135,14 +141,16 @@ export function CreatureEditor({
   return (
     <div className="creature-editor">
       <MechanicalPanel entity={{ kind: 'creature', id: creature.id }} refreshVersion={creature.version} />
-      <div className="detail-head">
-        <h2>
-          <Icon name="flame" size={22} /> {creature.name}
-        </h2>
-        <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
-          remover {creature.kind === 'NPC' ? 'NPC' : 'criatura'}
-        </button>
-      </div>
+      {embedded ? null : (
+        <div className="detail-head">
+          <h2>
+            <Icon name="flame" size={22} /> {creature.name}
+          </h2>
+          <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
+            remover {creature.kind === 'NPC' ? 'NPC' : 'criatura'}
+          </button>
+        </div>
+      )}
 
       <Section title="Ícone" icon="star" subtitle="PNG, JPEG, WEBP ou GIF · até 5 MB">
         <div className="item-sprite-row">

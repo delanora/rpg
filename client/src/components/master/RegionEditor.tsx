@@ -20,6 +20,11 @@ interface RegionEditorProps {
   onCreateLocality: () => Promise<Locality>;
   onPatchLocality: (id: string, patch: LocalityPatch) => void;
   onDeleteLocality: (id: string) => void;
+  /**
+   * Montado dentro da janela flutuante do painel: o cabeçalho com o nome e o
+   * botão de excluir mora no modal, então some daqui para não duplicar.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -36,6 +41,7 @@ export function RegionEditor({
   onCreateLocality,
   onPatchLocality,
   onDeleteLocality,
+  embedded = false,
 }: RegionEditorProps) {
   const [tab, setTab] = useState<RegionTab>('overview');
   const [selectedLocalityId, setSelectedLocalityId] = useState<string | null>(null);
@@ -76,14 +82,16 @@ export function RegionEditor({
 
   return (
     <div className="creature-editor">
-      <div className="detail-head">
-        <h2>
-          <Icon name="scroll" size={22} /> {region.name}
-        </h2>
-        <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
-          remover região
-        </button>
-      </div>
+      {embedded ? null : (
+        <div className="detail-head">
+          <h2>
+            <Icon name="scroll" size={22} /> {region.name}
+          </h2>
+          <button type="button" className="btn btn-danger btn-small" onClick={onDelete}>
+            remover região
+          </button>
+        </div>
+      )}
 
       <nav className="tabs tabs-inline subtabs" aria-label="Seções da região">
         <button

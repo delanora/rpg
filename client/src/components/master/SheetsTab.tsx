@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Character, CharacterPatch, LevelDownRequest, LevelDownResult } from '../../types';
 import { Icon } from '../Icon';
 import { Portrait } from '../Portrait';
 import { SheetView } from '../SheetView';
 import { DeleteCharacterDialog } from './DeleteCharacterDialog';
 import { LevelDownDialog } from './LevelDownDialog';
+import { MasterDetailModal } from './MasterDetailModal';
+import { Paginator, paginate, usePager } from './Paginator';
 import { SearchField } from './SearchField';
 import { matchesSearch } from './search';
 
@@ -38,11 +40,15 @@ interface SheetsTabProps {
 }
 
 /**
- * Aba de fichas dos jogadores. O mestre abre qualquer ficha em **somente
- * leitura** e pode entrar em modo de edição — aí a mesma ficha do jogador
- * (com todos os controles) fica disponível, e cada alteração salva na hora.
- * Também é daqui que ele **exclui um personagem** (com a conta do jogador),
- * sempre passando pela confirmação.
+ * Aba de fichas dos jogadores.
+ *
+ * A lista ocupa a largura toda em **cards** (mesma linguagem do catálogo de
+ * itens), paginada de 25 em 25, com busca no topo. Clicar num card abre a ficha
+ * completa numa **janela flutuante**, em somente leitura, com o botão de editar
+ * no cabeçalho — aí a mesma ficha do jogador (com todos os controles) fica
+ * disponível e cada alteração salva na hora. Também é daqui que o mestre
+ * **exclui um personagem** (com a conta do jogador) e reduz nível, sempre
+ * passando por confirmação.
  */
 export function SheetsTab({
   characters,
@@ -62,14 +68,24 @@ export function SheetsTab({
   const [levelingDown, setLevelingDown] = useState(false);
   // Derivado da lista: uma atualização em tempo real já reflete no detalhe.
   const selected = characters.find((character) => character.id === selectedId) ?? null;
-  // Busca local: filtra a lista ao lado sem fechar a ficha aberta.
+  // Busca local: filtra os cards sem fechar a ficha aberta na janela.
   const visible = characters.filter((character) =>
     matchesSearch(query, character.name, character.ownerUsername, character.className),
   );
+  // 25 fichas por página; a busca reinicia a paginação (ver `usePager`).
+  const pager = usePager(visible.length, query);
+  const page = useMemo(() => paginate(visible, pager.page), [visible, pager.page]);
 
-  function selectCharacter(id: string): void {
+  function openCharacter(id: string): void {
     setSelectedId(id);
-    // Trocar de ficha volta ao modo leitura, para não editar a pessoa errada.
+    // Abrir outra ficha volta ao modo leitura, para não editar a pessoa errada.
+    setEditing(false);
+    setConfirmingDelete(false);
+    setLevelingDown(false);
+  }
+
+  function closeCharacter(): void {
+    setSelectedId(null);
     setEditing(false);
     setConfirmingDelete(false);
     setLevelingDown(false);
@@ -80,155 +96,181 @@ export function SheetsTab({
   }
 
   return (
-    <div className="master-layout">
-      <aside className="master-list">
-        <div className="toolbar toolbar-wrap">
+    <div className="master-catalog">
+      <header className="items-head">
+        <div className="items-toolbar">
           <SearchField
             value={query}
             onChange={setQuery}
             placeholder="Buscar por nome, jogador ou classe"
             label="Buscar fichas"
-            className="search-grow"
           />
         </div>
+      </header>
 
+      <div className="items-grid">
         {visible.length === 0 ? (
           <p className="empty-hint">Nenhuma ficha corresponde à busca.</p>
         ) : (
-          <ul className="character-cards">
-            {visible.map((character) => (
+          <ul className="items-cards">
+            {page.items.map((character) => (
               <li key={character.id}>
                 <button
                   type="button"
-                  className={
-                    selected?.id === character.id ? 'character-card active' : 'character-card'
-                  }
-                  onClick={() => selectCharacter(character.id)}
+                  className="items-card"
+                  aria-label={`Abrir a ficha de ${character.name}`}
+                  onClick={() => openCharacter(character.id)}
                 >
-                  <span className="card-head">
-                    <Portrait src={character.avatarUrl} alt={character.name} icon="users" />
-                    <span className="card-name">{character.name}</span>
-                  </span>
-                  <span className="card-owner">{character.ownerUsername ?? '—'}</span>
-                  <span className="card-line">
-                    {character.className || 'sem classe'} · Nv {character.level} · CA{' '}
-                    {character.armorClass}
-                  </span>
-                  <span className="card-hp">
-                    HP {character.hpCurrent}/{character.derived.hpMax}
-                    {character.hpTemp > 0 ? ` (+${character.hpTemp})` : ''}
+                  <Portrait
+                    src={character.avatarUrl}
+                    alt={character.name}
+                    size="lg"
+                    icon="users"
+                    zoomable={false}
+                  />
+                  <span className="items-card-body">
+                    <span className="items-card-name">{character.name}</span>
+                    <span className="items-card-tags">
+                      <span className="items-card-tag">{character.className || 'sem classe'}</span>
+                      <span className="items-card-tag">Nv {character.level}</span>
+                      {character.creationFinalized ? null : (
+                        <span className="items-card-tag">criação em andamento</span>
+                      )}
+                    </span>
+                    <span className="items-card-meta">
+                      {character.ownerUsername ?? '—'} · CA {character.armorClass}
+                    </span>
+                    <span className="items-card-summary">
+                      HP {character.hpCurrent}/{character.derived.hpMax}
+                      {character.hpTemp > 0 ? ` (+${character.hpTemp})` : ''}
+                    </span>
                   </span>
                 </button>
               </li>
             ))}
           </ul>
         )}
-      </aside>
+      </div>
 
-      <section className="master-detail">
-        {selected ? (
-          <>
-            <div className="detail-head">
-              <h2>{selected.name}</h2>
+      {visible.length > 0 ? (
+        <Paginator
+          page={page.page}
+          pageCount={page.pageCount}
+          total={page.total}
+          start={page.start}
+          end={page.end}
+          onPage={pager.setPage}
+          one="ficha"
+          many="fichas"
+          label="Paginação das fichas"
+          detail={query ? `${visible.length} de ${characters.length} com a busca atual` : undefined}
+        />
+      ) : null}
 
-              <div className="detail-head-actions">
-                <span className="detail-meta">
-                  jogador: {selected.ownerUsername} · atualizado às{' '}
-                  {new Date(selected.updatedAt).toLocaleTimeString('pt-BR')} ·{' '}
-                  {editing ? 'editando' : 'somente leitura'} ·{' '}
-                  {selected.creationFinalized ? 'criação finalizada' : 'criação em andamento'}
-                </span>
+      {selected ? (
+        <MasterDetailModal
+          kind="Ficha"
+          title={selected.name}
+          subtitle={
+            <>
+              jogador: {selected.ownerUsername} · atualizado às{' '}
+              {new Date(selected.updatedAt).toLocaleTimeString('pt-BR')} ·{' '}
+              {editing ? 'editando' : 'somente leitura'} ·{' '}
+              {selected.creationFinalized ? 'criação finalizada' : 'criação em andamento'}
+            </>
+          }
+          suspended={confirmingDelete || levelingDown}
+          size="sheet"
+          onClose={closeCharacter}
+          actions={
+            <>
+              <button
+                type="button"
+                className={editing ? 'btn btn-primary btn-small' : 'btn btn-small'}
+                onClick={() => setEditing((value) => !value)}
+                title={
+                  editing
+                    ? 'Voltar a visualizar a ficha sem editar'
+                    : 'Editar a ficha deste jogador'
+                }
+              >
+                <Icon name={editing ? 'eye' : 'quill'} size={14} />
+                {editing ? 'concluir edição' : 'editar ficha'}
+              </button>
 
-                <button
-                  type="button"
-                  className={editing ? 'btn btn-primary btn-small' : 'btn btn-small'}
-                  onClick={() => setEditing((value) => !value)}
-                  title={
-                    editing
-                      ? 'Voltar a visualizar a ficha sem editar'
-                      : 'Editar a ficha deste jogador'
-                  }
-                >
-                  <Icon name={editing ? 'eye' : 'quill'} size={14} />
-                  {editing ? 'concluir edição' : 'editar ficha'}
-                </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                disabled={reopening || !selected.creationFinalized}
+                title={
+                  selected.creationFinalized
+                    ? 'Devolver a ficha ao assistente de criação: o jogador refaz a montagem no próximo acesso'
+                    : 'Esta ficha já está em criação'
+                }
+                onClick={() => {
+                  setReopening(true);
+                  void onReopenCreation(selected.id).finally(() => setReopening(false));
+                }}
+              >
+                <Icon name="scroll" size={14} />{' '}
+                {reopening ? 'reabrindo...' : 'reabrir criação'}
+              </button>
 
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  disabled={reopening || !selected.creationFinalized}
-                  title={
-                    selected.creationFinalized
-                      ? 'Devolver a ficha ao assistente de criação: o jogador refaz a montagem no próximo acesso'
-                      : 'Esta ficha já está em criação'
-                  }
-                  onClick={() => {
-                    setReopening(true);
-                    void onReopenCreation(selected.id).finally(() => setReopening(false));
-                  }}
-                >
-                  <Icon name="scroll" size={14} />{' '}
-                  {reopening ? 'reabrindo...' : 'reabrir criação'}
-                </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                disabled={selected.classes.length === 0}
+                title="Reduzir UM nível do personagem e reverter o que aquele nível concedeu"
+                onClick={() => setLevelingDown(true)}
+              >
+                <Icon name="scroll" size={14} /> reduzir nível
+              </button>
 
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  disabled={selected.classes.length === 0}
-                  title="Reduzir UM nível do personagem e reverter o que aquele nível concedeu"
-                  onClick={() => setLevelingDown(true)}
-                >
-                  <Icon name="scroll" size={14} /> reduzir nível
-                </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-small"
+                onClick={() => setConfirmingDelete(true)}
+                title="Excluir o personagem e a conta do jogador (não pode ser desfeito)"
+              >
+                <Icon name="trash" size={14} /> excluir personagem
+              </button>
+            </>
+          }
+        >
+          {editing ? (
+            <p className="empty-hint">
+              As alterações vão direto para a ficha de {selected.name} — o jogador vê tudo na tela
+              dele na hora.
+            </p>
+          ) : null}
 
-                <button
-                  type="button"
-                  className="btn btn-danger btn-small"
-                  onClick={() => setConfirmingDelete(true)}
-                  title="Excluir o personagem e a conta do jogador (não pode ser desfeito)"
-                >
-                  <Icon name="trash" size={14} /> excluir personagem
-                </button>
-              </div>
-            </div>
+          <SheetView
+            character={selected}
+            update={(patch) => onUpdate(selected.id, patch)}
+            extraCoins={extraCoins}
+            exhaustionEnabled={exhaustionEnabled}
+            onCoinsChange={onCoinsChange}
+            readOnly={!editing}
+            masterView
+          />
 
-            {editing ? (
-              <p className="empty-hint">
-                As alterações vão direto para a ficha de {selected.name} — o jogador vê tudo na
-                tela dele na hora.
-              </p>
-            ) : null}
-
-            <SheetView
+          {levelingDown ? (
+            <LevelDownDialog
               character={selected}
-              update={(patch) => onUpdate(selected.id, patch)}
-              extraCoins={extraCoins}
-              exhaustionEnabled={exhaustionEnabled}
-              onCoinsChange={onCoinsChange}
-              readOnly={!editing}
-              masterView
+              onClose={() => setLevelingDown(false)}
+              apply={(request) => onLevelDown(selected.id, request)}
             />
+          ) : null}
 
-            {levelingDown ? (
-              <LevelDownDialog
-                character={selected}
-                onClose={() => setLevelingDown(false)}
-                apply={(request) => onLevelDown(selected.id, request)}
-              />
-            ) : null}
-
-            {confirmingDelete ? (
-              <DeleteCharacterDialog
-                character={selected}
-                onCancel={() => setConfirmingDelete(false)}
-                onConfirm={() => onDelete(selected.id)}
-              />
-            ) : null}
-          </>
-        ) : (
-          <p className="empty-hint">Selecione uma ficha para ver todos os detalhes.</p>
-        )}
-      </section>
+          {confirmingDelete ? (
+            <DeleteCharacterDialog
+              character={selected}
+              onCancel={() => setConfirmingDelete(false)}
+              onConfirm={() => onDelete(selected.id)}
+            />
+          ) : null}
+        </MasterDetailModal>
+      ) : null}
     </div>
   );
 }

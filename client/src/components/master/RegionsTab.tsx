@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Creature, Locality, LocalityPatch, Region, RegionPatch } from '../../types';
 import { Icon } from '../Icon';
+import { Portrait } from '../Portrait';
+import { MasterDetailModal } from './MasterDetailModal';
+import { Paginator, paginate, usePager } from './Paginator';
 import { RegionEditor } from './RegionEditor';
 import { SearchField } from './SearchField';
 import { matchesSearch } from './search';
@@ -22,6 +25,10 @@ interface RegionsTabProps {
 /**
  * Aba **Regiões**: as localidades (e, dentro delas, criaturas e NPCs) vivem
  * dentro de uma região, que tem descrição, anotações e imagens próprias.
+ *
+ * A lista ocupa a largura toda em **cards** paginados de 25 em 25, com busca no
+ * topo. Clicar num card abre o editor da região numa **janela flutuante**, com
+ * as sub-abas de Visão geral e Localidades.
  */
 export function RegionsTab({
   regions,
@@ -40,10 +47,13 @@ export function RegionsTab({
 
   // Derivado da lista: atualizações em tempo real refletem no editor aberto.
   const selected = regions.find((region) => region.id === selectedId) ?? null;
-  // Busca local: filtra a lista lateral sem mexer no editor aberto ao lado.
+  // Busca local: filtra os cards sem mexer no editor aberto na janela.
   const visible = regions.filter((region) =>
     matchesSearch(query, region.name, region.description),
   );
+  // 25 regiões por página; a busca reinicia a paginação.
+  const pager = usePager(visible.length, query);
+  const page = useMemo(() => paginate(visible, pager.page), [visible, pager.page]);
 
   async function handleCreate(): Promise<void> {
     setCreating(true);
@@ -56,15 +66,14 @@ export function RegionsTab({
   }
 
   return (
-    <div className="master-layout">
-      <aside className="master-list">
-        <div className="toolbar toolbar-wrap">
+    <div className="master-catalog">
+      <header className="items-head">
+        <div className="items-toolbar">
           <SearchField
             value={query}
             onChange={setQuery}
             placeholder="Buscar por nome ou descrição"
             label="Buscar regiões"
-            className="search-grow"
           />
           <button
             type="button"
@@ -75,34 +84,39 @@ export function RegionsTab({
             {creating ? 'criando...' : '+ nova região'}
           </button>
         </div>
+      </header>
 
+      <div className="items-grid">
         {regions.length === 0 ? (
           <p className="empty-hint">Nenhuma região cadastrada ainda.</p>
         ) : visible.length === 0 ? (
           <p className="empty-hint">Nenhuma região corresponde à busca.</p>
         ) : (
-          <ul className="locality-cards">
-            {visible.map((region) => (
+          <ul className="items-cards">
+            {page.items.map((region) => (
               <li key={region.id}>
                 <button
                   type="button"
-                  className={selected?.id === region.id ? 'locality-card active' : 'locality-card'}
+                  className="items-card"
+                  aria-label={`Abrir a região ${region.name}`}
                   onClick={() => setSelectedId(region.id)}
                 >
-                  <span className="locality-thumb">
-                    {region.images[0] ? (
-                      <img src={region.images[0].url} alt="" loading="lazy" />
-                    ) : (
-                      <Icon name="book" size={18} />
-                    )}
-                  </span>
-                  <span className="locality-info">
-                    <span className="card-name">{region.name}</span>
-                    <span className="card-line">
-                      {region.localityCount} localidade(s)
+                  <Portrait
+                    src={region.images[0]?.url}
+                    alt={region.name}
+                    size="lg"
+                    icon="book"
+                    zoomable={false}
+                  />
+                  <span className="items-card-body">
+                    <span className="items-card-name">{region.name}</span>
+                    <span className="items-card-tags">
+                      <span className="items-card-tag">
+                        {region.localityCount} localidade{region.localityCount === 1 ? '' : 's'}
+                      </span>
                     </span>
                     {region.description ? (
-                      <span className="locality-desc">{region.description}</span>
+                      <span className="items-card-summary">{region.description}</span>
                     ) : null}
                   </span>
                 </button>
@@ -110,11 +124,51 @@ export function RegionsTab({
             ))}
           </ul>
         )}
-      </aside>
+      </div>
 
-      <section className="master-detail">
-        {selected ? (
+      {visible.length > 0 ? (
+        <Paginator
+          page={page.page}
+          pageCount={page.pageCount}
+          total={page.total}
+          start={page.start}
+          end={page.end}
+          onPage={pager.setPage}
+          one="região"
+          many="regiões"
+          label="Paginação das regiões"
+          detail={query ? `${visible.length} de ${regions.length} com a busca atual` : undefined}
+        />
+      ) : null}
+
+      {selected ? (
+        <MasterDetailModal
+          kind="Região"
+          title={selected.name}
+          subtitle={
+            <>
+              {selected.localityCount} localidade{selected.localityCount === 1 ? '' : 's'}
+              {selected.images.length > 0
+                ? ` · ${selected.images.length} imagem${selected.images.length === 1 ? '' : 's'}`
+                : ''}
+            </>
+          }
+          onClose={() => setSelectedId(null)}
+          actions={
+            <button
+              type="button"
+              className="btn btn-danger btn-small"
+              onClick={() => {
+                onDelete(selected.id);
+                setSelectedId(null);
+              }}
+            >
+              <Icon name="trash" size={14} /> remover região
+            </button>
+          }
+        >
           <RegionEditor
+            embedded
             region={selected}
             localities={localities.filter((locality) => locality.regionId === selected.id)}
             creatures={creatures}
@@ -127,13 +181,8 @@ export function RegionsTab({
             onPatchLocality={onPatchLocality}
             onDeleteLocality={onDeleteLocality}
           />
-        ) : (
-          <p className="empty-hint">
-            Selecione uma região para editar a descrição, as anotações e as imagens — ou crie uma
-            nova. As localidades e quem vive nelas ficam na sub-aba dela.
-          </p>
-        )}
-      </section>
+        </MasterDetailModal>
+      ) : null}
     </div>
   );
 }

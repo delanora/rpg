@@ -18,6 +18,7 @@ import {
   rarityFilterOptions,
   type ItemFilters,
 } from './itemCatalog';
+import { Paginator, paginate, usePager } from './Paginator';
 
 interface ItemsTabProps {
   items: Item[];
@@ -43,6 +44,10 @@ interface ItemsTabProps {
  * altura limitada e rolagem interna. Clicar num card abre o **modal do item**,
  * que começa em visualização e alterna para edição sem trocar de tela; excluir
  * passa por uma confirmação própria.
+ *
+ * O catálogo cresce com o PHB inteiro, então o grid é **paginado** (25 por
+ * página) com o controle no rodapé. A paginação é só de APRESENTAÇÃO: a lista
+ * filtrada continua inteira na memória e nenhuma rota precisa mudar.
  */
 export function ItemsTab({
   items,
@@ -86,6 +91,13 @@ export function ItemsTab({
   const hasActiveFilters = Boolean(
     filters.query || filters.category || filters.rarity || filters.damageType,
   );
+
+  // A paginação recomeça em cada recorte de busca/filtro (ver `usePager`).
+  const pager = usePager(
+    visible.length,
+    `${filters.query}|${filters.category}|${filters.rarity}|${filters.damageType}`,
+  );
+  const pagination = useMemo(() => paginate(visible, pager.page), [visible, pager.page]);
 
   const selected = items.find((item) => item.id === selectedId) ?? null;
   const usedBy = selected ? itemUsage(selected, characters) : [];
@@ -229,7 +241,7 @@ export function ItemsTab({
             <p className="empty-hint">Nenhum item encontrado com os filtros atuais.</p>
           ) : (
             <ul className="items-cards">
-              {visible.map((item) => {
+              {pagination.items.map((item) => {
                 const color = rarityColor(item.rarity);
                 const accent = rarityTint(item.rarity, '99');
                 const summary = itemSummary(item);
@@ -288,11 +300,23 @@ export function ItemsTab({
           )}
         </div>
 
-        {items.length > 0 ? (
-          <p className="items-count">
-            {visible.length} de {items.length} ite{items.length === 1 ? 'm' : 'ns'}
-            {hasActiveFilters ? ' com os filtros atuais' : ''}
-          </p>
+        {items.length > 0 && visible.length > 0 ? (
+          <Paginator
+            page={pagination.page}
+            pageCount={pagination.pageCount}
+            total={pagination.total}
+            start={pagination.start}
+            end={pagination.end}
+            onPage={pager.setPage}
+            one="item"
+            many="itens"
+            label="Paginação do catálogo de itens"
+            detail={
+              hasActiveFilters
+                ? `${visible.length} de ${items.length} com os filtros atuais`
+                : undefined
+            }
+          />
         ) : null}
       </section>
 
