@@ -33,6 +33,8 @@ const ABILITY_LABELS: Record<AbilityKey, string> = {
 interface ResolutionCardProps {
   card: CombatResolutionCardDto;
   busy: boolean;
+  /** Personagem assumido mantém a audiência pública do jogador. */
+  publicOnly?: boolean;
   /** Rola a salvaguarda da magia (o servidor calcula tudo). */
   onRollSpell: (
     card: CombatResolutionCardDto,
@@ -51,6 +53,7 @@ export function ResolutionCard({
   onRollSpell,
   onDecline,
   onRollDeath,
+  publicOnly = false,
 }: ResolutionCardProps) {
   const [options, setOptions] = useState<EffectOptionalModifierDto[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -85,7 +88,7 @@ export function ResolutionCard({
     };
   }, [isSpell, entity?.kind, entity?.id, ability, card.id]);
 
-  const rollActions = card.actions.filter((action) => action.kind === 'roll');
+  const rollActions = card.actions.filter((action) => action.kind === 'roll' && (!publicOnly || action.visibility !== 'private'));
   const canDecline = card.actions.some((action) => action.kind === 'decline');
   const ongoing = card.phase === 'ongoing';
 

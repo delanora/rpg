@@ -134,6 +134,7 @@ A **sequência abaixo é direcional**, não autorização para antecipar fases. 
 | Entrega | Estado | Resumo |
 |---|---|---|
 | **Gatilho, hotbar e área de ameaça** | ✅ implementada e testada | Relações na preparação e no token, alcances, aura e confirmação de movimento. Pergunta de reação direcionada ao dono; neutros e hostis se ameaçam nos dois sentidos. Aros por relação e ajustes do token disponíveis. |
+| **Pendências do personagem assumido** | ✅ implementada e testada | Mestre responde testes de morte, concentração e salvaguardas no contexto do turno. Rolagens públicas, sem cards duplicados nem resolução simultânea repetida. |
 | **Hostilidade e duelo** | ⬜ próxima | Ao atacar um NPC neutro, o Mestre decide se há hostilidade e seleciona os envolvidos. Duelo exige aceite entre jogadores; aliados não provocam oportunidade. |
 | **Conjurador de Guerra** | ⬜ seguinte | Substituir o ataque por uma magia elegível na mesma janela de reação, conforme PHB 2014. |
 

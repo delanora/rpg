@@ -719,6 +719,8 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
   } | null = null;
   if (resolutionKind === 'save-damage') {
     const outcome = await resolveSaveDamagePending(pending.id, total, actor.username);
+    // Uma resposta concorrente já resolveu: não publicar outro dado ou registro.
+    if (outcome.replayed) throw new HttpError('Esta salvaguarda já foi resolvida. Atualize as pendências.', 409, 'CONFLICT');
     success = outcome.success;
     await publishSaveDamageResult(outcome);
     // 6.6J.1: SUCESSO também pode causar dano (meia-dano). O resumo do registro
@@ -737,6 +739,8 @@ async function rollPendingEffectSave(actor: DiceActor, input: TableRollInput): P
       : null;
   } else {
     const outcome = await resolvePendingEffectSave(pending.id, total, actor.displayName);
+    // Uma resposta concorrente já resolveu: não publicar outro dado ou registro.
+    if (outcome.replayed) throw new HttpError('Esta salvaguarda já foi resolvida. Atualize as pendências.', 409, 'CONFLICT');
     success = outcome.success;
     // Pendência resolvida + Paralyzed/Effect/Concentração publicados pelo
     // lifecycle existente quando houve falha.

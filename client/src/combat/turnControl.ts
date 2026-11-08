@@ -118,3 +118,10 @@ export function actingCombatantFor(
   }
   return combatants.find((item) => item.id === masterAttackerId) ?? current;
 }
+
+/** Escopo visual de pendências: somente o personagem cujo turno foi assumido. */
+export function assumedCharacterFor(current: CombatantDto | null, user: SessionUser,
+  assumedTurnKey: string | null, currentTurnKey: string): CombatantDto | null {
+  return user.role === 'MASTER' && current?.kind === 'CHARACTER' && assumedTurnKey === currentTurnKey
+    ? current : null;
+}

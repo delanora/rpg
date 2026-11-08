@@ -1,3 +1,4 @@
+import { AssumedCharacterPendings, pendingsForCharacter } from './components/AssumedCharacterPendings';
 import { CombatTokenMenu } from './components/CombatTokenMenu';
 import { CombatTokenAdjustments } from './components/CombatTokenAdjustments';
 import { MasterSpellIntentsPanel } from '../components/MasterSpellIntentsPanel';
@@ -79,7 +80,7 @@ import {
   type ReactionOpportunitiesReadModel,
   type ServerReactionOpportunity,
 } from '../reactionOpportunitiesApi';
-import { actingCombatantFor, currentUserControlsCombatant, movementAuthorityOf } from './turnControl';
+import { actingCombatantFor, assumedCharacterFor, currentUserControlsCombatant, movementAuthorityOf } from './turnControl';
 import { deathDockLabel, deathLifecycleOf, deathSavePendingFor, endTurnAvailability } from './deathDock';
 import type { CombatLogEntry, TurnAlert } from './useCombatState';
 
@@ -305,6 +306,7 @@ export function CombatTracker({
   const currentId = current?.id ?? '';
   // Identidade compartilhada com o ciclo de morte; não persiste para a próxima rodada.
   const currentTurnKey = `${combat.id}:${combat.round}:${combat.currentIndex}`;
+  const assumedCharacter = assumedCharacterFor(current, user, masterAssumed, currentTurnKey);
   const masterAttackerId =
     masterPick && masterPick.turnId === currentId ? masterPick.combatantId : currentId;
   const masterOverrideActive =
@@ -533,6 +535,9 @@ export function CombatTracker({
       .finally(() => setReactionBusy(false));
   };
 
+  const assumedRequests = pendingsForCharacter(resolutionRequests, assumedCharacter);
+  const assumedRequestIds = new Set(assumedRequests.map(card => card.id));
+  const logRequests = resolutionRequests.filter(card => !assumedRequestIds.has(card.id));
   const rolledCount = combat.combatants.filter((item) => item.rolled).length;
 
   // Ciclo de morte do combatente DO TURNO (o único que pode rolar Teste agora).
@@ -703,6 +708,8 @@ export function CombatTracker({
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Falha ao resolver a salvaguarda.');
       await refreshResolutions();
+      const updated = await fetchActiveCombat().catch(() => null);
+      if (updated) onCombatChange(updated);
     } finally {
       setResolutionBusyId(null);
     }
@@ -749,6 +756,8 @@ export function CombatTracker({
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Falha ao rolar o Teste contra a Morte.');
       await refreshResolutions();
+      const updated = await fetchActiveCombat().catch(() => null);
+      if (updated) onCombatChange(updated);
     } finally {
       setResolutionBusyId(null);
     }
@@ -861,12 +870,14 @@ export function CombatTracker({
    * Entidade CANÔNICA do estado mecânico: personagem usa a ficha, criatura usa
    * a própria instância do combate. É onde a pendência de concentração mora.
    */
-  const concentrationEntity: MechanicalEntity | null = actingCombatant
-    ? actingCombatant.characterId
-      ? { kind: 'character', id: actingCombatant.characterId }
-      : { kind: 'combatant', id: actingCombatant.id }
+  const pendingCombatant = assumedCharacter ?? (isMaster && actingCombatant?.kind === 'CHARACTER' ? null : actingCombatant);
+  const concentrationEntity: MechanicalEntity | null = pendingCombatant
+    ? pendingCombatant.characterId
+      ? { kind: 'character', id: pendingCombatant.characterId }
+      : { kind: 'combatant', id: pendingCombatant.id }
     : null;
-  const concentrationSaves = actingCombatant?.mechanicalState.pendingConcentrationSaves ?? [];
+  const concentrationSaves = pendingCombatant?.mechanicalState.pendingConcentrationSaves ?? [];
+  const hasAssumedPendings = Boolean(assumedCharacter && (assumedRequests.length || concentrationSaves.length));
   const canRollOwnConcentration = Boolean(
     !isMaster && actingCombatant && myCombatant && actingCombatant.id === myCombatant.id,
   );
@@ -892,6 +903,8 @@ export function CombatTracker({
       if (updated) onCombatChange(updated);
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Falha no teste de concentração.');
+      const updated = await fetchActiveCombat().catch(() => null);
+      if (updated) onCombatChange(updated);
     } finally {
       setBusy(false);
     }
@@ -1406,7 +1419,7 @@ export function CombatTracker({
             <CombatLog
               log={log}
               economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
-              requests={resolutionRequests}
+              requests={logRequests}
               resolutionBusyId={resolutionBusyId}
               onRollSpellSave={(card, selected, visibility) =>
                 void rollSpellSave(card, selected, visibility)
@@ -1483,6 +1496,12 @@ export function CombatTracker({
 
             {isMaster ? (
               <div className="combat-actions">
+                {current?.kind === 'CHARACTER' ? <button type="button" className="btn btn-small combat-assume-turn"
+                  disabled={busy} aria-pressed={Boolean(assumedCharacter)}
+                  onClick={() => {
+                    setMasterAssumed(assumedCharacter ? null : currentTurnKey);
+                    setMasterPick({turnId: currentId, combatantId: currentId});
+                  }}><Icon name="crown" size={13} /> {assumedCharacter ? `Encerrar controle de ${current.name}` : `Assumir o turno de ${current.name}`}</button> : null}
                 <button
                   type="button"
                   className="btn btn-primary btn-small combat-next-turn"
@@ -1574,15 +1593,21 @@ export function CombatTracker({
           />
         }
         context={
-          (concentrationEntity && concentrationSaves.length > 0) || reactionOpportunity ? (
+          hasAssumedPendings || (concentrationEntity && concentrationSaves.length > 0) || reactionOpportunity ? (
             <>
 
             {/* CONCENTRAÇÃO (PHB 2014): dano em quem está concentrando abre este
                 teste. O jogador rola pela bandeja; o Mestre escolhe público ×
                 privado por teste de criatura/NPC. */}
-            {concentrationEntity && concentrationSaves.length > 0 ? (
+            {hasAssumedPendings && assumedCharacter ? <AssumedCharacterPendings character={assumedCharacter}
+              cards={assumedRequests} busy={busy || Boolean(resolutionBusyId)}
+              onRollDeath={card => void rollDeathSaveCard(card)}
+              onRollSpell={(card, selected, visibility) => void rollSpellSave(card, selected, visibility)}
+              onDecline={card => void declineResolution(card)}
+              onRollConcentration={save => void rollConcentrationForMaster(save, 'public')} /> : null}
+            {!assumedCharacter && concentrationEntity && concentrationSaves.length > 0 ? (
               <ConcentrationSavePanel
-                name={actingCombatant?.name ?? ''}
+                name={pendingCombatant?.name ?? ''}
                 saves={concentrationSaves}
                 isMaster={isMaster}
                 canRoll={canRollOwnConcentration}
@@ -1637,9 +1662,9 @@ export function CombatTracker({
         }
         action={
           <>
-            {/* Turno em Testes contra a Morte: o centro fica VAZIO. Estado,
-                contadores e rolagem já vivem no Registro lateral — repetir o
-                painel aqui duplicava a mesma informação na mesma tela. O gate
+            {/* Turno em Testes contra a Morte mantém ataques bloqueados. Os
+                cards ficam no registro ou no contexto do personagem assumido,
+                sempre em uma única superfície para o Mestre. O gate
                 permanece para o fluxo de ataque não reaparecer num turno que
                 não permite atacar. Para criatura/NPC o ciclo é privado: o DTO
                 do jogador não traz `deathState`. */}
@@ -1677,22 +1702,6 @@ export function CombatTracker({
                     kind={current.kind}
                     isMaster={isMaster}
                   />
-                ) : null}
-
-                {/* Autoridade do Mestre preservada de forma EXPLÍCITA: ele
-                    pode assumir o turno de um personagem (jogador ausente). */}
-                {isMaster && current ? (
-                  <button
-                    type="button"
-                    className="btn btn-small combat-assume-turn"
-                    disabled={busy}
-                    onClick={() => {
-                      setMasterAssumed(currentTurnKey);
-                      setMasterPick({ turnId: currentId, combatantId: currentId });
-                    }}
-                  >
-                    <Icon name="crown" size={13} /> Assumir o turno de {current.name}
-                  </button>
                 ) : null}
 
                 {/* EXCEÇÃO — REAÇÃO já suportada pelo motor: uma ação preparada
@@ -1757,7 +1766,7 @@ export function CombatTracker({
           <CombatLog
             log={log}
             economyLog={[...combat.economyLog, ...combat.combatants.flatMap(item => item.mechanicalState.log)]}
-            requests={resolutionRequests}
+            requests={logRequests}
             resolutionBusyId={resolutionBusyId}
             onRollSpellSave={(card, selected, visibility) =>
               void rollSpellSave(card, selected, visibility)

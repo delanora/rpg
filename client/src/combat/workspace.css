@@ -3224,3 +3224,8 @@
 
 .combat-economy-movement { display: grid; gap: 0.5rem; }
 .combat-economy-movement > button { justify-self: start; }
+
+/* Pendências do personagem assumido usam os cards existentes e preservam o mapa. */
+.assumed-character-pendings { display: grid; gap: 0.6rem; max-height: 17rem; overflow-y: auto; padding: 0.1rem; }
+.assumed-character-heading { margin: 0; font-size: 0.8rem; color: var(--ink-faint); }
+.assumed-character-heading strong { color: var(--gold); }

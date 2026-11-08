@@ -1919,7 +1919,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB120) o log lateral recebe os cards e o tracker não os monta sozinho',
     trackerSource.includes('fetchResolutionRequests') &&
-      trackerSource.includes('requests={resolutionRequests}') &&
+      trackerSource.includes('requests={logRequests}') && trackerSource.includes('pendingsForCharacter(resolutionRequests, assumedCharacter)') &&
       source('src/combat/components/CombatLog.tsx').includes('<ResolutionCard')
   );
   check(
