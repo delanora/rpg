@@ -42,7 +42,7 @@ globals.fetch = async (url: string, options: any = {}) => {
   else return {ok:false,status:404,text:async()=>JSON.stringify({message:'Leitura auxiliar indisponível na fixture.'})};
   return {ok:true,status:200,text:async()=>JSON.stringify(result)};
 };
-const target={id:'target',name:'Alvo fora do turno',kind:'CREATURE',hpCurrent:30,hpMax:30,mechanicalVersion:3,
+const target={turnEconomy:{actionsGranted:2,actionsUsed:1,bonusActionUsed:true,reactionAvailable:false},id:'target',name:'Alvo fora do turno',kind:'CREATURE',hpCurrent:30,hpMax:30,mechanicalVersion:3,
   spatialVisibility:'public',spatial:{baseSize:'large',effectiveSize:'large',position:{xFeet:10,yFeet:10},
     occupiedSpace:{minXFeet:10,minYFeet:10,maxXFeet:20,maxYFeet:20,widthFeet:10,heightFeet:10}}} as never;
 const combat={id:'combat',version:7,status:'ACTIVE',currentCombatantId:'other',combatants:[target]} as never;
@@ -77,6 +77,11 @@ check('dano é enviado apenas para o alvo inspecionado',calls.some(call=>call.ur
 await click(button('Curar'));
 check('cura mantém o alvo inspecionado',calls.some(call=>call.url==='/api/combat/hp'&&call.body.combatantId==='target'&&call.body.mode==='heal'));
 await click(button('Economia'));
+check('economia do token aparece fora do turno com ação extra e recursos gastos',
+ (combat as unknown as {currentCombatantId:string}).currentCombatantId !== 'target' && document.querySelectorAll('.token-economy-state .is-action.is-ready').length===1 &&
+ document.querySelectorAll('.token-economy-state .is-action.is-spent').length===1 &&
+ !!document.querySelector('.token-economy-state .is-bonus.is-spent') && !!document.querySelector('.token-economy-state .is-reaction.is-spent'));
+
 check('economia reutiliza o ajuste explícito existente',!!document.querySelector('[aria-label="Motivo do ajuste"]'));
 const field=document.querySelector<HTMLTextAreaElement>('[aria-label="Motivo do ajuste"]')!;
 check('aplicar ajuste não exige justificativa', !button('Aplicar ajuste').disabled);
@@ -93,6 +98,9 @@ check('Escape fecha o painel',closed===1);
 await act(async()=>document.body.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true})));
 check('clique fora fecha o painel',closed===2);
 check('nenhum comando assume ou avança turno',!calls.some(call=>/next-turn|attack|initiative/.test(call.url)));
+const { MasterEconomyPanel } = await import('../src/combat/components/MasterEconomyPanel');
+await act(async()=>root.render(h(MasterEconomyPanel,{combat,combatant:{...(target as object),turnEconomy:{actionsGranted:2,actionsUsed:0,bonusActionUsed:false,reactionAvailable:true}} as never,busy:false,expanded:true,onRun:()=>{}})));
+check('economia atualizada preenche os mesmos ícones sem trocar o turno', document.querySelectorAll('.token-economy-state .is-ready').length===4 && !document.querySelector('.token-economy-state .is-spent'));
 const { CombatGrid } = await import('../src/combat/grid/CombatGrid');
 let inspections=0;
 for(const master of [true,false]) {

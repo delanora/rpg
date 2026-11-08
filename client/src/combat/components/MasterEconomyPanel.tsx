@@ -22,6 +22,8 @@ export function MasterEconomyPanel({ combat, combatant, busy, onRun, expanded = 
   const [adjustment, setAdjustment] = useState<EconomyAdjustment>('grant-action');
   const [reason, setReason] = useState('');
   const [remaining, setRemaining] = useState('0');
+  const economy = combatant.turnEconomy;
+  const actionsLeft = Math.max(0, economy.actionsGranted - economy.actionsUsed);
 
   const movementValid = adjustment !== 'set-movement' || (remaining.trim() !== '' &&
     Number.isFinite(Number(remaining)) && Number(remaining) >= 0 && Number(remaining) <= 9999);
@@ -30,6 +32,24 @@ export function MasterEconomyPanel({ combat, combatant, busy, onRun, expanded = 
     <details className="combat-subpanel combat-economy-panel" open={expanded || undefined}>
       <summary><Icon name="gear" size={13} /> Economia de ações</summary>
       <div className="combat-economy-fields">
+        <div className="token-economy-state" role="group" aria-label={`Economia de ${combatant.name}`}>
+          <span role="img" aria-label={`Ação: ${actionsLeft} de ${economy.actionsGranted} disponíveis`}
+            title={`Ação: ${actionsLeft} de ${economy.actionsGranted} disponíveis`}>
+            <span className="dock-pips" aria-hidden="true">
+              {Array.from({length: Math.max(1, economy.actionsGranted)}, (_, index) =>
+                <span key={index} className={`dock-pip is-action ${index < actionsLeft ? 'is-ready' : 'is-spent'}`} />)}
+            </span>
+          </span>
+          <span role="img" aria-label={`Ação bônus: ${economy.bonusActionUsed ? 'utilizada' : 'disponível'}`}
+            title={`Ação bônus: ${economy.bonusActionUsed ? 'utilizada' : 'disponível'}`}>
+            <span className={`dock-pip is-bonus ${economy.bonusActionUsed ? 'is-spent' : 'is-ready'}`} aria-hidden="true" />
+          </span>
+          <span role="img" aria-label={`Reação: ${economy.reactionAvailable ? 'disponível' : 'utilizada'}`}
+            title={`Reação: ${economy.reactionAvailable ? 'disponível' : 'utilizada'}`}>
+            <span className={`dock-pip is-reaction ${economy.reactionAvailable ? 'is-ready' : 'is-spent'}`} aria-hidden="true" />
+          </span>
+        </div>
+
         <label className="field"><span>Ajuste</span>
           <select aria-label="Ajuste de economia" value={adjustment} disabled={busy}
             onChange={event => setAdjustment(event.target.value as EconomyAdjustment)}>

@@ -3217,3 +3217,7 @@
 .combat-token-menu .field-hint, .combat-token-menu .section-note { color: var(--ink-soft); }
 .combat-token-menu .combat-token-hp-actions .btn-danger { background: var(--wine); border-color: var(--wine-bright); color: #fff5e5; }
 .combat-token-menu .combat-economy-fields > button { width: 100%; min-height: 2.5rem; justify-content: center; }
+
+/* Leitura da economia do token inspecionado, independente de quem está no turno. */
+.token-economy-state { display: flex; align-items: center; gap: 1.25rem; padding: 0.2rem 0.15rem 0.7rem; border-bottom: 1px solid var(--line); margin-bottom: 0.2rem; }
+.token-economy-state > span { display: inline-flex; align-items: center; }
