@@ -6520,12 +6520,12 @@ check(
   );
 
   check(
-    'SC78) página de combate ocupa a viewport: sem max-width de card e altura vinda do container',
+    'SC78) combate ocupa 80% da página, centralizado e com altura vinda do container',
     workspaceRule('.app-main:has(> .combat-panel)').includes('max-width: none;') &&
       workspaceRule('.app-main:has(> .combat-panel)').includes('padding: 0.55rem 0.7rem 0.7rem;') &&
       workspaceRule('.app-main:has(> .combat-panel)').includes('min-height: 0;') &&
-      workspaceRule('.app-main:has(> .combat-panel) > .combat-panel').includes('width: 100%;') &&
-      workspaceRule('.app-main:has(> .combat-panel) > .combat-panel').includes('margin-left: 0;') &&
+      workspaceRule('.app-main:has(> .combat-panel) > .combat-panel').includes('width: 80vw;') &&
+      workspaceRule('.app-main:has(> .combat-panel) > .combat-panel').includes('margin-inline: calc((100% - 80vw) / 2);') &&
       workspaceRule('.app-main:has(> .combat-panel) .combat-workspace').includes(
         'flex: 1 1 auto;',
       ) &&

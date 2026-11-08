@@ -874,10 +874,11 @@
   min-height: 0;
 }
 
+/* Centraliza o combate em 80% da página, inclusive acima do container da ficha. */
 .app-main:has(> .combat-panel) > .combat-panel {
   flex: 1 1 auto;
-  width: 100%;
-  margin-left: 0;
+  width: 80vw;
+  margin-inline: calc((100% - 80vw) / 2);
   margin-bottom: 0;
   padding: 0.6rem;
   gap: 0.5rem;
@@ -3018,4 +3019,12 @@
   color: #a99266;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+}
+
+/* Em telas pequenas, preserva a área útil do tabuleiro e dos controles. */
+@media (max-width: 760px) {
+  .app-main:has(> .combat-panel) > .combat-panel {
+    width: 100%;
+    margin-inline: 0;
+  }
 }
