@@ -22,9 +22,9 @@ import type {
  * aparecem quando o pré-requisito é atendido (o servidor também recusa).
  *
  * ARCANUM MÍSTICO: uma magia de 6º/7º/8º/9º nos níveis 11/13/15/17, utilizável
- * 1x por descanso longo sem gastar espaço. O CATÁLOGO DE MAGIAS ainda não existe
- * (ver REVISAO-CODIGO.md), então ficam como TEXTO — sem `choice`, para não exigir
- * uma escolha sem opções.
+ * 1x por descanso longo sem gastar espaço. Ainda NÃO está vinculado ao catálogo
+ * de magias: fica como TEXTO — sem `choice`, para não exigir uma escolha sem
+ * opções.
  */
 
 // ---------------------------------------------------------------------------

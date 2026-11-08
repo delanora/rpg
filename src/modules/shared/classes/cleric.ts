@@ -17,8 +17,8 @@ import type {
  * no 18º, recuperados num descanso curto ou longo.
  *
  * MAGIAS DE DOMÍNIO: ficam SEMPRE preparadas e NÃO contam no limite de magias
- * preparadas. O catálogo de magias ainda não existe (ver REVISAO-CODIGO.md), então
- * entram como TEXTO na ficha, na faixa de nível em que cada par é liberado — a
+ * preparadas. Ainda NÃO estão vinculadas ao catálogo de magias: entram como TEXTO
+ * na ficha, na faixa de nível em que cada par é liberado — a
  * mesma decisão das Magias de Juramento do paladino e das magias inatas de raça.
  */
 
