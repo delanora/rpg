@@ -8,13 +8,18 @@ Requires=postgresql.service
 
 [Service]
 Type=simple
-WorkingDirectory=/var/www/rpg
+# Caminho REAL do projeto nesta máquina (o unit antigo apontava para /var/www/rpg).
+WorkingDirectory=/opt/rpg
 # As variaveis ficam no .env do projeto (DATABASE_URL, PORT, JWT_SECRET, ...).
-EnvironmentFile=/var/www/rpg/.env
+EnvironmentFile=/opt/rpg/.env
 # IMPORTANTE: o .env NAO deve definir NODE_ENV, senao o EnvironmentFile vence
 # esta linha (neste systemd, EnvironmentFile sobrepoe Environment). Sem a variavel
 # no .env, o `npm run dev` assume development e o serviço assume production.
 Environment=NODE_ENV=production
+# Roda com o dono do projeto: uploads/ e demais arquivos gravados em runtime não
+# viram propriedade do root.
+User=rpg
+Group=rpg
 ExecStart=/usr/bin/node dist/index.js
 # O app trata SIGTERM e fecha HTTP, WebSocket e o banco com calma.
 KillSignal=SIGTERM
