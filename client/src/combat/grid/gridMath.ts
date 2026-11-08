@@ -98,11 +98,9 @@ export function floorFeet(feet: number, size: SpatialSize): number {
  * FASE 6.6M.3.1.3 / 6.6M.4.1.3 — CÉLULA QUE CONTÉM o ponto (nunca a interseção
  * mais próxima), recebendo o ponteiro CRU.
  *
- * É a ÚNICA interpretação de "qual casa está sob o mouse": régua, hover,
- * placement e destino do Direct Drag chamam esta função com as coordenadas do
- * ponteiro já convertidas para pés. Nenhum chamador pode recuar/dosar o ponto
- * antes (meia footprint, offset de pega): decidir a célula a partir de um ponto
- * deslocado fazia o destino trocar de casa sem o ponteiro cruzar a linha.
+ * Usada para apontar casas na régua, hover e posicionamento. O arraste de
+ * tokens tem outra entrada: `dragFootprintAt` preserva o ponto de pega antes
+ * de alinhar a âncora, independentemente do tamanho da criatura.
  *
  * `Math.round` escolheria a célula vizinha antes de o ponteiro cruzar a borda;
  * aqui a âncora é o canto MÍNIMO da célula que contém o ponto (`floor`), o que
@@ -283,4 +281,26 @@ export function pixelToPlacementFeet(
   if (pixelsPerCell <= 0) return 0;
   const feet = (offsetPx / pixelsPerCell) * cellSizeFeet;
   return floorFeet(feet, size);
+}
+
+/** Arraste em pés: conserva a pega e alinha o canto do token à grade mais próxima. */
+export function dragFootprintAt(
+  feet: SpatialPosition,
+  grab: SpatialPosition,
+  size: SpatialSize,
+  scene: { widthFeet: number; heightFeet: number },
+): { pointer: SpatialPosition; destination: SpatialPosition | null } {
+  const anchor = { xFeet: feet.xFeet - grab.xFeet, yFeet: feet.yFeet - grab.yFeet };
+  const step = snapStepFeet(size);
+  const snapped = {
+    xFeet: Math.round(anchor.xFeet / step) * step,
+    yFeet: Math.round(anchor.yFeet / step) * step,
+  };
+  const footprint = SIZE_FOOTPRINT_FEET[size];
+  // Só o desenho é contido na cena; destino inválido nunca vira movimento válido por clamp.
+  const pointer = {
+    xFeet: Math.max(0, Math.min(anchor.xFeet, scene.widthFeet - footprint.widthFeet)),
+    yFeet: Math.max(0, Math.min(anchor.yFeet, scene.heightFeet - footprint.heightFeet)),
+  };
+  return { pointer, destination: containingCellFeet(snapped, size, scene) };
 }

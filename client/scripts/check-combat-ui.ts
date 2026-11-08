@@ -4546,7 +4546,7 @@ check(
   movementGridSource.includes('position: draft.pointer') &&
     movementGridSource.includes('className="grid-destination-cell"') &&
     (movementGridSource.match(/<GridMovementOverlay/g) ?? []).length === 1 &&
-    movementGridSource.includes('const pointer = centeredFootprintFeet(feet, size, scene);') &&
+    movementGridSource.includes('const { pointer, destination } = dragFootprintAt(feet, current.grab, size, scene);') &&
     gridCssSource.includes('.grid-destination-cell {')
 );
 check(
@@ -5129,21 +5129,11 @@ check(
   })(),
 );
 check(
-  'CB329) ghost em px de CENA (sem duplicar o transform) e sem `grab` do clique',
+  'CB329) ghost em px de CENA preserva a pega do arraste sem duplicar o transform',
   (() => {
     const parts: Record<string, boolean> = {
-      'pointer centrado': movementGridSource.includes(
-        'const pointer = centeredFootprintFeet(feet, size, scene);',
-      ),
-      // 6.6M.4.1.3: o destino nasce do ponteiro CRU — recuar meia footprint
-      // antes do floor jogava o destino para a célula de cima.
-      'destino da célula': movementGridSource.includes(
-        'const destination = containingCellFeet(feet, size, scene);',
-      ) &&
-        movementGridSource.indexOf('const destination = containingCellFeet(feet, size, scene);') <
-          movementGridSource.indexOf('const pointer = centeredFootprintFeet(feet, size, scene);'),
-      'sem grab em uso': !movementGridSource.includes('current.grab'),
-      'sem grab no draft': !movementGridSource.includes('grab: gesture.grab'),
+      'pega usada no destino': movementGridSource.includes('dragFootprintAt(feet, current.grab, size, scene)'),
+      'pega preservada no draft': movementGridSource.includes('grab: gesture.grab'),
       'ghost usa o pointer': movementGridSource.includes('position: draft.pointer,'),
       // 6.6M.4.1.4: o ghost usa a MESMA projeção canônica do token e do hover.
       'overlay em px de cena': movementOverlaySource.includes('spatialRectToScenePixels(') &&
@@ -5860,7 +5850,7 @@ check(
   };
 
   check(
-    'SC41) destino do gesto lê o ponteiro CRU: 7 pés em Medium fica na célula 5–10 (regressão 0–5)',
+    'SC41) seleção de casas usa o ponteiro cru; arraste preserva o ponto de pega',
     cellAt(7, 7) === '5:5' &&
       // O caminho antigo (recuar meia footprint ANTES do floor) caía na 0–5.
       key(
@@ -5870,9 +5860,8 @@ check(
           scene,
         ),
       ) === '0:0' &&
-      gridSource.includes('const destination = containingCellFeet(feet, size, scene);') &&
-      !/feet\.(x|y)Feet\s*-\s*\(?grab/.test(gridSource) &&
-      !gridSource.includes('grab?: SpatialPosition'),
+      gridSource.includes('return containingCellFeet(feet, size, scene);') &&
+      gridSource.includes('dragFootprintAt(feet, current.grab, size, scene)'),
     JSON.stringify({ destino: cellAt(7, 7), antigo: cellAt(4.5, 4.5) }),
   );
 
@@ -5940,19 +5929,20 @@ check(
   );
 
   check(
-    'SC45) régua, hover e destino leem a MESMA célula (canto, centro, bordas e limite da cena)',
+    'SC45) régua e hover compartilham a célula; o arraste alinha a âncora preservando a pega',
     cellAt(0, 0) === '0:0' &&
       cellAt(50, 50) === '50:50' &&
       cellAt(99.9, 50) === '95:50' &&
       cellAt(50, 99.9) === '50:95' &&
-      // Régua usa `'small'` (1 célula) e é a MESMA função do destino:
+      // Régua e hover usam a casa apontada, sem deslocamento de pega:
       cellAt(7, 7, 'small') === '5:5' &&
       cellAt(7, 7, 'medium') === '5:5' &&
       cellAt(99.9, 99.9, 'small') === '95:95' &&
       cellAt(100, 100) === 'null' &&
       gridSource.includes('return containingCellFeet(feet, size, scene);') &&
-      // SÓ DOIS pontos decidem célula: a régua/hover (`'small'`) e o destino.
-      (gridSource.match(/containingCellFeet\(/g) ?? []).length === 2 &&
+      // A seleção de casas é centralizada; o arraste usa a âncora do token.
+      (gridSource.match(/containingCellFeet\(/g) ?? []).length === 1 &&
+      gridSource.includes('dragFootprintAt(feet, current.grab, size, scene)') &&
       gridSource.includes("const anchor = cellAnchorAt(event.clientX, event.clientY, 'small');") &&
       gridSource.includes('const position = cellAnchorAt(clientX, clientY, \'small\');'),
     JSON.stringify({ canto: cellAt(0, 0), borda: cellAt(99.9, 99.9, 'small') }),
@@ -5968,7 +5958,7 @@ check(
       // Nada de remendo de 1 px: o border-box resolve na raiz.
       !/margin:\s*-1px/.test(gridCss) &&
       !/calc\([^)]*-\s*1px\)/.test(gridCss) &&
-      gridSource.includes('const destination = containingCellFeet(feet, size, scene);') &&
+      gridSource.includes('const { pointer, destination } = dragFootprintAt(feet, current.grab, size, scene);') &&
       gridSource.includes("className=\"grid-hover-cell\"") &&
       gridSource.includes('className="grid-destination-cell"'),
   );

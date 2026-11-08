@@ -51,7 +51,7 @@ import {
   BASE_CELL_SIZE_FEET,
   DEFAULT_PIXELS_PER_CELL,
   SIZE_FOOTPRINT_FEET,
-  centeredFootprintFeet,
+  dragFootprintAt,
   containingCellFeet,
   occupiedSpacePixels,
   scenePixels,
@@ -150,7 +150,7 @@ type InteractionMode = 'none' | 'placement';
  * Trajeto pretendido LOCAL (nunca persistido, nunca fonte de posição).
  *
  * 6.6M.3.1.3 — DIRECIONADO A DESTINO: existem só a origem autoritativa, o
- * DESTINO mecânico (célula sob o ponteiro) e o path canônico derivado dele. O
+ * DESTINO mecânico (âncora alinhada do token) e o path canônico derivado dele. O
  * `pointer` livre serve exclusivamente ao ghost suave; nenhum rastro do mouse
  * entra no `path`.
  */
@@ -158,11 +158,12 @@ interface MovementDraft {
   combatantId: string;
   /** Âncora autoritativa no início do draft — base da invalidação por realtime. */
   startPosition: SpatialPosition;
+  /** Ponto de pega relativo ao canto do token, em pés de cena. */
+  grab: SpatialPosition;
   /** Destino MECÂNICO atual (âncora canônica); `null` = ponteiro fora da cena. */
   destination: SpatialPosition | null;
   /**
-   * Âncora do GHOST: canto mínimo do footprint posicionado para o CENTRO cair
-   * exatamente sob o ponteiro (pés). Só apresentação.
+   * Âncora suave do ghost, preservando o ponto de pega. Só apresentação.
    */
   pointer: SpatialPosition;
   /** Path direto origem→destino (vazio = sem destino / de volta à origem). */
@@ -181,6 +182,7 @@ interface TokenGesture {
   combatantId: string;
   startX: number;
   startY: number;
+  grab: SpatialPosition;
   position: SpatialPosition;
 }
 
@@ -940,6 +942,8 @@ export function CombatGrid({
     const unit = placed.find((item) => item.id === combatantId);
     const position = unit?.spatial?.position ?? null;
     if (!unit?.spatial || !position) return;
+    const grabbedAt = feetAt(event.clientX, event.clientY);
+    if (!grabbedAt) return;
     // O gesto é do TOKEN: o pan do fundo não pode roubá-lo. Sem preventDefault,
     // o clique curto continua chegando para selecionar.
     event.stopPropagation();
@@ -950,6 +954,7 @@ export function CombatGrid({
       combatantId,
       startX: event.clientX,
       startY: event.clientY,
+      grab: { xFeet: grabbedAt.xFeet - position.xFeet, yFeet: grabbedAt.yFeet - position.yFeet },
       position,
     };
     gestureRef.current = gesture;
@@ -971,6 +976,7 @@ export function CombatGrid({
     const next: MovementDraft = {
       combatantId: gesture.combatantId,
       startPosition: gesture.position,
+      grab: gesture.grab,
       destination: null,
       pointer: gesture.position,
       path: [],
@@ -996,15 +1002,9 @@ export function CombatGrid({
     const size = unit.spatial.effectiveSize;
     const feet = feetAt(clientX, clientY);
     if (!feet) return;
-    // A CÉLULA MECÂNICA nasce do ponteiro CRU (regra canônica de `cellAnchorAt`):
-    // usar aqui a âncora já recuada do ghost fazia o destino pular para a célula
-    // de cima enquanto o mouse ainda estava na de baixo.
-    const destination = containingCellFeet(feet, size, scene);
-    // GHOST = CURSOR: o centro do footprint fica sob o ponteiro (o ponto de
-    // pega do clique não vale durante o draft). Ghost e destino são conceitos
-    // diferentes de propósito: o ghost acompanha o mouse, o destino já está
-    // snapado na célula que o mouse aponta.
-    const pointer = centeredFootprintFeet(feet, size, scene);
+    // O ponteiro representa o mesmo ponto do token durante todo o gesto.
+    // A pega está em pés: pan e zoom não alteram o deslocamento escolhido.
+    const { pointer, destination } = dragFootprintAt(feet, current.grab, size, scene);
     const sameDestination =
       current.destination === null
         ? destination === null
