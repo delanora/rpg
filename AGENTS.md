@@ -1296,6 +1296,29 @@ Exigir schema/banco descartável com identidades exclusivas,
 sentinela que comprove o servidor de teste, cleanup apenas dos
 IDs criados pela execução e verificação **ANTES = DEPOIS**.
 
+### Acesso ao banco desta máquina (leitura)
+
+Não existe credencial fixa `postgres/postgres`: o usuário é o do
+`DATABASE_URL` (`rpg_app`) e autenticação por peer como `postgres` falha. O
+`psql` também não aceita a query string do Prisma (`?schema=...`), então use a
+URL sem ela:
+
+```bash
+cd /opt/rpg && set -a && . ./.env && set +a
+psql "${DATABASE_URL%%\?*}" -c "SELECT count(*) FROM items;"
+```
+
+Para leituras que dependem do client tipado, use o próprio Prisma:
+
+```bash
+cd /opt/rpg && node --input-type=module -e "import 'dotenv/config';
+import { PrismaClient } from '@prisma/client';
+const p = new PrismaClient(); console.log(await p.item.count()); await p.\$disconnect();"
+```
+
+Nunca imprima o valor de `DATABASE_URL`/`JWT_SECRET` nem copie credenciais para
+documentação, logs ou commits.
+
 ---
 
 ## 14. Resumo rápido para a IA

@@ -3,10 +3,11 @@ import { z } from 'zod';
 /**
  * FASE 6.6L.1 — FUNDAÇÃO ESPACIAL (D&D 5e PHB 2014).
  *
- * Esta é a PRIMEIRA verdade espacial persistente do projeto. Ela responde
- * "onde este combatente está e qual espaço ocupa" — e NADA além disso:
- * distância, alcance, movimento, colisão, linha de visão, cobertura geométrica
- * e área geométrica continuam UNKNOWN/assistidos (6.6L.2/L.3).
+ * Era a PRIMEIRA verdade espacial persistente do projeto e responde "onde este
+ * combatente está e qual espaço ocupa". Hoje a fundação já cobre distância,
+ * alcance e bloqueio de movimento por paredes (6.6L.2–L.4.1); linha de visão,
+ * cobertura e membership de área seguem assistidos — ver
+ * `spatial-distance.service.ts` para o que cada provider mede hoje.
  *
  * Unidade canônica: PÉS. O domínio nunca conhece pixels, zoom ou tamanho de
  * célula de renderização — a futura UI converte pés → pixels (6.6M.1).

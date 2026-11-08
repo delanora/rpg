@@ -12,9 +12,9 @@ import { deriveConditionEffects } from './conditions.js';
  *   • o OBSERVADO Invisível só é visto se o observador tiver um meio CONFIÁVEL
  *     de enxergá-lo (`MechanicalState.seesInvisible`, preenchido por efeitos
  *     como "Ver o Invisível" ou percepção especial quando existirem);
- *   • caso contrário, assume-se visível — o projeto não modela posição/visão,
- *     então seguir esse comportamento assistido é o padrão, sem inventar
- *     geometria.
+ *   • caso contrário, assume-se visível — esta camada é só de ESTADO mecânico;
+ *     bloqueio por parede mora em `combat/spatial/spatial-obstacle.ts`
+ *     (`sightSegmentBlocked`) e ainda não é chamado daqui.
  *
  * NUNCA derivar vantagem/desvantagem apenas de "o alvo/atacante tem Invisible":
  * a regra do PHB 2014 depende da RELAÇÃO de visão, então quem pergunta precisa

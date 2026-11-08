@@ -9,11 +9,12 @@ import type {
  * FASE 6.6J.3 — ADAPTADOR ESPACIAL DA ÁREA (boundary arquitetural).
  *
  * O resolvedor de área NÃO calcula geometria: ele pergunta a este provider.
- * Em produção o provider é ASSISTIDO — o projeto não tem coordenadas, então o
- * que não pode ser provado volta `unknown` e o Mestre decide. Testes injetam um
- * provider DETERMINÍSTICO, sem endpoint de cheat.
+ * Em produção o provider é ASSISTIDO: o adaptador de grade cobre apenas o
+ * ALCANCE até a origem, e o que não pode ser provado volta `unknown` para o
+ * Mestre decidir. Testes injetam um provider DETERMINÍSTICO, sem endpoint de
+ * cheat.
  *
- * Fatos que o provider assistido PODE provar sem grid:
+ * Fatos que o provider assistido PODE provar sem geometria:
  *  • a origem `self` é o próprio conjurador (distância 0);
  *  • a entidade-âncora da origem está dentro da própria área quando a forma
  *    inclui o ponto de origem (e fora quando a colocação a exclui);

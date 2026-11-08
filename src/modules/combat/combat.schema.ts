@@ -56,7 +56,7 @@ export const attackSchema = combatOperationSchema.extend({
    */
   disadvantage: z.boolean().optional(),
   /**
-   * Confirmação explícita do jogador (não há grid/posição no sistema): há um
+   * Confirmação explícita do jogador (a adjacência não é derivada da grade): há um
    * aliado adjacente ao alvo. Substitui a condição de vantagem no Ataque
    * Furtivo. Só é considerada para personagens com a feature.
    */

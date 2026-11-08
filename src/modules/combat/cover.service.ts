@@ -4,8 +4,10 @@ import type { CoverEvaluation, CoverEvaluationInput } from './cover.js';
 /**
  * FASE 6.6J.5 — PROVIDER DE COBERTURA.
  *
- * O projeto NÃO tem coordenadas, volumes ocupados, paredes nem eixo vertical
- * (6.6J.3). Inventar cobertura seria pior do que admitir ignorância, então:
+ * O projeto tem coordenadas, footprints e paredes (6.6L.1–L.4.1), mas não tem
+ * eixo vertical nem um provider geométrico de cobertura: os obstáculos ainda
+ * não são consultados para decidir meia/três quartos/total (6.6J.5). Inventar
+ * cobertura seria pior do que admitir ignorância, então:
  *
  *  • o provider PADRÃO (`assistedCoverProvider`) responde `not-assessed`;
  *  • `not-assessed` NÃO é `known:none`: o snapshot guarda a diferença;

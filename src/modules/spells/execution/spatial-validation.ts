@@ -4,16 +4,19 @@ import type { MechanicalEntity } from '../../shared/conditions.js';
 /**
  * FASE 6.6E — VALIDAÇÃO ESPACIAL ASSISTIDA (tri-state).
  *
- * O projeto NÃO tem grid, coordenadas, paredes nem pathfinding. Inventar uma
- * distância seria pior do que admitir ignorância, então todo check espacial
- * responde:
+ * O projeto TEM grid, coordenadas e paredes (6.6L.1–L.4.1): o
+ * `gridSpatialProvider` já mede ALCANCE e distância entre alvos. Linha de visão
+ * e caminho livre geométricos ainda não consultam os obstáculos, e inventar
+ * uma distância seria pior do que admitir ignorância — então todo check
+ * espacial responde:
  *
  *   • `pass`    — o sistema SABE que o requisito está satisfeito;
  *   • `fail`    — o sistema SABE que não está (autoritativo, MASTER não fura);
  *   • `unknown` — não há geometria confiável; o Mestre confirma o requisito.
  *
- * Só `unknown` aceita confirmação manual. Quando existir geometry engine, ela
- * substitui o provider e as definições de magia NÃO mudam.
+ * Só `unknown` aceita confirmação manual. Quando um requisito passa a ser
+ * medido pelo provider, ele deixa de cair na confirmação — e as definições de
+ * magia NÃO mudam.
  *
  * O que NÃO é espacial mora fora daqui: `canSee` mecânico (Invisible/Cego) é
  * regra de estado, não geometria — ele pode produzir `fail` antes desta camada.

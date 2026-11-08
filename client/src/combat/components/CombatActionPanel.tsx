@@ -622,7 +622,7 @@ export function CombatActionPanel({
               </span>
               <label
                 className="dice-toggle"
-                title="O sistema não tem grid: confirme marcando se houver um aliado seu adjacente ao alvo. Com isso o Ataque Furtivo se aplica mesmo sem vantagem."
+                title="A adjacência ainda não é medida automaticamente: marque se houver um aliado seu adjacente ao alvo. Com isso o Ataque Furtivo se aplica mesmo sem vantagem."
               >
                 <input
                   type="checkbox"
