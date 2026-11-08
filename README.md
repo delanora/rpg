@@ -789,6 +789,8 @@ As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a 
 
 ## ⚔️ Etapa 4 — Combate em tempo real
 
+No painel do mestre, **Combate** é uma aba da navegação superior. Abrir outra aba mostra apenas aquela área e mantém o combate sincronizado; ao voltar, a mesa usa o estado atualizado. O salão oferece **Voltar ao combate** quando já existe uma batalha em andamento.
+
 O arraste preserva o ponto de pega do token em qualquer tamanho e zoom. Mover uma casa custa 1,5 m em terreno normal, independentemente da área ocupada pela criatura.
 
 Na visão do mestre, a barra inferior reúne **Ações do turno**, **Ajustes** e o inventário do NPC. Os painéis abrem sobre o mapa e preservam as escolhas ao fechar. Dano/cura, economia, estado e encerramento do combate ficam em Ajustes; **Cena e posicionamento** reúne a administração do tabuleiro. Reações e resoluções pendentes continuam visíveis no combate.

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useMasterNavigation } from '../combat/useMasterNavigation';
 import { api } from '../api';
 import { availableAttacks } from '../ammo';
 import { AppHeader } from '../components/AppHeader';
@@ -6,7 +7,7 @@ import { Icon } from '../components/Icon';
 import { PresentationOverlay } from '../components/PresentationOverlay';
 import { ConfigTab } from '../components/master/ConfigTab';
 import { CreaturesTab } from '../components/master/CreaturesTab';
-import { MasterHome, type MasterTab } from '../components/master/MasterHome';
+import { MasterHome } from '../components/master/MasterHome';
 import { MasterSearch } from '../components/master/MasterSearch';
 import { MasterNotes } from '../components/master/MasterNotes';
 import { RollLogPanel } from '../components/master/RollLogPanel';
@@ -63,13 +64,9 @@ import { ShortRestModal } from '../rest/ShortRestModal';
 import { useShortRest } from '../rest/useShortRest';
 import { useRealtime } from '../useRealtime';
 
-type Tab = MasterTab;
-
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
 export function MasterPanel({ user }: { user: SessionUser }) {
-  // O mestre entra pela home (a central); o padrão antes era cair nas fichas.
-  const [tab, setTab] = useState<Tab>('home');
   const [characters, setCharacters] = useState<Character[]>([]);
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [localities, setLocalities] = useState<Locality[]>([]);
@@ -104,6 +101,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
   const combatState = useCombatState(user.id, user.role);
   const { combat, log, turnAlert } = combatState;
+  const { tab, setTab } = useMasterNavigation(combat?.id ?? null);
 
   // RECONNECT: as decisões em aberto são relidas do servidor ao montar o painel
   // (o evento `death:updated` não sobrevive a um refresh). A primeira pendência
@@ -802,15 +800,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  /*
-   * Navegação das abas do mestre. Em combate ela precisa aparecer ABAIXO do
-   * quadro de batalha, então o markup vive aqui e é renderizado no lugar
-   * certo de cada contexto (acima do conteúdo ou dentro de <main>).
-   */
+  // A navegação permanece acima do conteúdo, inclusive durante o combate.
   const tabsBar = (
-    <nav className={combat ? 'tabs tabs-inline tabs-under-combat' : 'tabs tabs-inline'}>
-      {/* Com o combate aberto a barra aparece mesmo na home, então "Início"
-          também pode ser o estado atual. */}
+    <nav className="tabs tabs-inline master-navigation" aria-label="Áreas do Mestre">
       <button
         type="button"
         className={tab === 'home' ? 'tab active' : 'tab'}
@@ -870,6 +862,16 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         <Icon name="music" size={16} /> Soundpad
       </button>
 
+      <button
+        type="button"
+        className={tab === 'combat' ? 'tab active' : 'tab'}
+        aria-current={tab === 'combat' ? 'page' : undefined}
+        onClick={() => setTab('combat')}
+      >
+        <Icon name="sword" size={16} /> Combate
+        {combat ? <span className="master-combat-indicator" aria-label="Em andamento">●</span> : null}
+      </button>
+
       {/* Cada clique libera UM Level Up por jogador: não há mais bloquear. */}
       <button
         type="button"
@@ -880,14 +882,6 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         <Icon name="sparkle" size={16} /> LIBERAR LEVEL UP
         {gameConfig ? <span className="config-count">{gameConfig.levelUpRelease}</span> : null}
       </button>
-
-      <button
-        type="button"
-        className="btn btn-primary btn-combat"
-        onClick={() => setShowStartDialog(true)}
-      >
-        <Icon name="sword" size={16} /> COMBATE
-      </button>
     </nav>
   );
 
@@ -896,7 +890,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       className={[
         'app-shell',
         'theme-master',
-        combat ? 'combat-active' : '',
+        combat && tab === 'combat' ? 'combat-active master-combat-view' : '',
         // A barra de música é fixa no rodapé: a classe avisa o CSS para subir
         // os botões flutuantes e nada ficar escondido atrás dela.
         'has-music-bar',
@@ -915,9 +909,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       {/* Decisões de morte em aberto (6.3): visíveis em qualquer aba. */}
       <DeathPendingBanner entries={deathEntries} onOpen={setDeathModal} />
 
-      {/* Fora de combate a navegação fica acima do conteúdo; em combate
-          ela desce para logo abaixo do quadro de batalha (ver <main>). */}
-      {combat || tab === 'home' ? null : tabsBar}
+      {tabsBar}
 
       {error ? (
         <div className="banner banner-error">
@@ -930,7 +922,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
       <main
         className={
-          !combat && tab === 'home'
+          tab === 'home'
             ? 'app-main app-main-wide app-main-home'
             : 'app-main app-main-wide'
         }
@@ -939,8 +931,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           <p className="splash">Carregando o painel...</p>
         ) : (
           <>
-            {/* Combate SEMPRE no topo; a aba escolhida abre abaixo dele. */}
-            {combat ? (
+            {/* A mesa segue sincronizada nas outras abas; só sua superfície desmonta. */}
+            {tab === 'combat' && combat ? (
               <CombatTracker
                 combat={combat}
                 log={log}
@@ -966,9 +958,17 @@ export function MasterPanel({ user }: { user: SessionUser }) {
               />
             ) : null}
 
-            {combat ? tabsBar : null}
-
-            {tab === 'home' ? (
+            {tab === 'combat' ? (
+              !combat ? (
+                <section className="empty-state" aria-label="Combate">
+                  <h2>Nenhum combate em andamento</h2>
+                  <p>Prepare a cena e escolha os participantes para começar.</p>
+                  <button type="button" className="btn btn-primary" onClick={() => setShowStartDialog(true)}>
+                    <Icon name="sword" size={16} /> Iniciar combate
+                  </button>
+                </section>
+              ) : null
+            ) : tab === 'home' ? (
               <MasterHome
                 userName={user.displayName}
                 sheets={characters.length}
@@ -982,7 +982,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
                 startingLevel={gameConfig?.startingLevel ?? 1}
                 extraCoins={gameConfig?.extraCoins ?? false}
                 onOpenTab={setTab}
-                onStartCombat={() => setShowStartDialog(true)}
+                combatActive={Boolean(combat)}
+                onStartCombat={() => combat ? setTab('combat') : setShowStartDialog(true)}
                 onReleaseLevelUp={() => void releaseLevelUpForTable()}
                 search={
                   <MasterSearch

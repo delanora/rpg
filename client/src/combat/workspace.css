@@ -3097,13 +3097,22 @@
   .combat-master-toolbar { gap: 0.3rem; }
 }
 
-/* No desktop, o combate do Mestre ocupa a primeira dobra; as abas ficam abaixo.
-   A cadeia flex entrega a altura adicional ao grid, com iniciativa e registro roláveis. */
+/* A altura disponível desconta a navegação real, inclusive quando as abas quebram linha. */
+.master-navigation { flex-wrap: wrap; }
+.master-combat-indicator { color: var(--ok); font-size: 0.55rem; margin-left: 0.3rem; }
 @media (min-width: 1181px) {
-  .app-main:has(> .combat-panel) > .combat-panel:has(> .combat-workspace[data-master='true']) {
-    flex: 0 0 auto;
-    height: calc(100vh - 5.5rem - var(--music-bar-h, 0px));
-    height: calc(100dvh - 5.5rem - var(--music-bar-h, 0px));
-    min-height: 30rem;
+  .app-shell.master-combat-view {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 40rem;
+  }
+  .master-combat-view > .app-header,
+  .master-combat-view > .master-navigation { flex-shrink: 0; }
+  .master-combat-view > .master-navigation { margin-bottom: 0.35rem; }
+  .master-combat-view > .app-main { flex: 1 1 0; min-height: 0; }
+  .master-combat-view > .app-main > .combat-panel:has(> .combat-workspace[data-master='true']) {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
   }
 }

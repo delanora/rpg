@@ -37,6 +37,7 @@ interface MasterHomeProps {
   extraCoins: boolean;
   /** Abre a aba escolhida (a home sai de cena). */
   onOpenTab: (tab: MasterTab) => void;
+  combatActive?: boolean;
   onStartCombat: () => void;
   onReleaseLevelUp: () => void;
   /**
@@ -67,6 +68,7 @@ export function MasterHome({
   startingLevel,
   extraCoins,
   onOpenTab,
+  combatActive = false,
   onStartCombat,
   onReleaseLevelUp,
   search,
@@ -172,7 +174,7 @@ export function MasterHome({
 
         <div className="home-actions">
           <button type="button" className="btn btn-primary" onClick={onStartCombat}>
-            <Icon name="sword" size={16} /> Iniciar combate
+            <Icon name="sword" size={16} /> {combatActive ? 'Voltar ao combate' : 'Iniciar combate'}
           </button>
           <button
             type="button"
