@@ -117,10 +117,9 @@ export function obstacleWithinScene(segment: Segment2D, scene: SpatialSceneConfi
  * classificação de segmentos (cross/touch/overlap contam: encostar já bloqueia).
  * Trecho de comprimento zero nunca é bloqueado — não houve deslocamento.
  *
- * DELIBERADAMENTE NÃO INTEGRADO ao Movement Engine nesta fase: a colisão por
- * footprint arrastado (Large/Huge ocupam várias células, com regras de canto)
- * ainda não tem semântica fechada. Bloquear pelo centro do token seria pior do
- * que não bloquear — ver o relatório da 6.6L.4.1.
+ * Este helper avalia um SEGMENTO, não o espaço de um token. O Movement Engine
+ * usa `movement-walls.ts` para testar o footprint varrido; nunca este atalho
+ * pelo centro. Tocar a borda do footprint pode ser permitido sem atravessá-la.
  */
 export function movementSegmentBlocked(
   from: SpatialPosition2D,

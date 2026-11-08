@@ -3,6 +3,7 @@ import { HttpError } from '../../lib/http-error.js';
 import { authenticate, requireRole } from '../auth/auth.middleware.js';
 import {
   createSpatialObstacle,
+  createSpatialObstacles,
   deleteSpatialObstacle,
   updateSpatialObstacle,
 } from '../combat/spatial/spatial-obstacle.service.js';
@@ -10,6 +11,7 @@ import {
   createSceneSchema,
   deleteSceneSchema,
   spatialObstacleCreateSchema,
+  spatialObstacleBatchSchema,
   spatialObstacleDeleteSchema,
   spatialObstaclePatchSchema,
   updateSceneSchema,
@@ -166,4 +168,12 @@ scenesRouter.delete('/:sceneId/spatial/obstacles/:obstacleId', async (req, res) 
       parsed.data,
     ),
   );
+});
+
+
+/** Salva um traçado completo; autorização, lock e idempotência são os da cena. */
+scenesRouter.post('/:sceneId/spatial/obstacles/batch', async (req, res) => {
+  const parsed = spatialObstacleBatchSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { rejectInvalid(res, parsed.error); return; }
+  res.json(await createSpatialObstacles(actorFrom(req), String(req.params.sceneId), parsed.data));
 });

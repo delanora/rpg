@@ -3376,8 +3376,9 @@ check(
     !movementServiceSource.includes("actor.role === 'MASTER' ? administrativeMovementGate")
 );
 check(
-  'CB219) sem walls/squeezing/voo/movimento forçado/pathfinding nesta fase',
-  !/pathfind|dijkstra|squeez|flying|swim|climb|forced|walls?|obstacle/i.test(
+  'CB219) paredes entram na colisão; sem squeezing/voo/movimento forçado/pathfinding',
+  movementDomainSource.includes('movementBlockedByWalls(cursor, position, mover.size') &&
+  !/pathfind|dijkstra|squeez|flying|swim|climb|forced/i.test(
     `${movementCode}${movementServiceCode}${codeOnly(movementTerrainSource)}`
   )
 );

@@ -36,6 +36,7 @@ const BLOCKER_LABELS: Record<string, string> = {
   MOVEMENT_STEP_NOT_CONTIGUOUS: 'O trajeto precisa ser contínuo.',
   MOVEMENT_RELATION_UNKNOWN: 'Relação desconhecida: o Mestre decide.',
   MOVEMENT_PATH_BLOCKED: 'Caminho bloqueado.',
+  MOVEMENT_WALL_BLOCKED: 'Uma parede bloqueia o trajeto.',
   MOVEMENT_DESTINATION_OCCUPIED: 'Destino ocupado.',
   MOVEMENT_INSUFFICIENT_REMAINING: 'Movimento insuficiente.',
   MOVEMENT_SPEED_ZERO: 'Deslocamento efetivo zero.',

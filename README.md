@@ -44,15 +44,21 @@ Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada joga
 No painel do Mestre, abra **Regiões → Localidade → Cenas → Mapa e paredes**.
 Salve a cena como **grade 2D** para habilitar a edição.
 
-- **Desenhar parede:** clique no início e no fim, confira o rascunho e salve.
+- **Desenhar parede:** clique nos cantos para continuar o traçado; use **Desfazer último ponto** para corrigir e salve tudo de uma vez.
 - **Selecionar:** escolha pela lista ou pelo mapa; arraste a linha ou os extremos.
 - **Nova por coordenadas:** ajuste os extremos por formulário, em metros.
 - **Cancelar edição** ou **Esc** descarta o rascunho. Excluir exige confirmação.
 - A edição respeita versão, permissões do Mestre e bloqueio de cena em uso.
 
-As opções de bloqueio de movimento e visão são independentes e ficam salvas
-na parede. A aplicação automática desses bloqueios aos trajetos e à visão ainda
-pertence às próximas etapas de integração espacial.
+As opções de bloqueio de movimento e visão são independentes. Paredes com
+**Bloqueia movimento** impedem atravessar no modo **Mover**, considerando todo
+o espaço do token, inclusive criaturas grandes e passos diagonais. Encostar
+ou andar paralelo é permitido. O modo **Posicionar** do Mestre continua sendo
+um ajuste administrativo livre. O bloqueio automático de visão continua futuro.
+
+Um traçado usa `POST /api/scenes/:sceneId/spatial/obstacles/batch`, com `walls`,
+`expectedVersion` e `operationId`: todos os segmentos são validados e salvos na
+mesma transação, com uma única versão e sem duplicação no retry.
 
 ---
 

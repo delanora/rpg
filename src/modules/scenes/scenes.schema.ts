@@ -121,3 +121,14 @@ export type DeleteScenePayload = z.infer<typeof deleteSceneSchema>;
 export type SpatialObstacleCreatePayload = z.infer<typeof spatialObstacleCreateSchema>;
 export type SpatialObstaclePatchPayload = z.infer<typeof spatialObstaclePatchSchema>;
 export type SpatialObstacleDeletePayload = z.infer<typeof spatialObstacleDeleteSchema>;
+
+
+/** Um traçado é salvo em uma transação; nenhum segmento fica pela metade. */
+export const spatialObstacleBatchSchema = z.object({
+  walls: z.array(z.object({
+    start: spatialPositionSchema, end: spatialPositionSchema,
+    blocksMovement: z.boolean().default(true), blocksSight: z.boolean().default(true),
+  }).strict()).min(1).max(200),
+  expectedVersion: z.number().int().nonnegative(),
+  operationId: z.string().min(1).max(128),
+}).strict();

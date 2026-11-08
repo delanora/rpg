@@ -1,3 +1,5 @@
+import { movementBlockedByWalls } from './movement-walls.js';
+import type { SpatialObstacleShape } from './spatial-obstacle.js';
 import { metersToFeet } from '../../shared/weapon-range.js';
 import { occupiedSpaceOf, occupiedSpacesOverlap, spaceWithinScene } from './occupied-space.js';
 import { alignmentStepFeet, anchorDistanceFeet, isGridAligned } from './spatial-distance.js';
@@ -47,12 +49,12 @@ import type {
  *
  * FORA DESTE MÓDULO (fases futuras): pathfinding (o servidor valida o caminho
  * recebido, não procura um), Opportunity Attack/Reaction, terreno ambiental
- * desenhado, paredes/obstáculos, squeezing geométrico, voo/natação/escalada e
+ * desenhado, squeezing geométrico, voo/natação/escalada e
  * movimento forçado (empurrão, Shove, teleporte, arrastar agarrão).
  */
 
 /** Identidade auditável do algoritmo (mudar a regra muda isto). */
-export const SPATIAL_MOVEMENT_ALGORITHM = 'phb-grid-movement-v1';
+export const SPATIAL_MOVEMENT_ALGORITHM = 'phb-grid-movement-walls-v2';
 
 /**
  * PHB 2014: 1,5 m = 5 pés. O motor de movimento trabalha em PÉS (unidade
@@ -145,6 +147,7 @@ export type MovementBlockerCode =
   | 'MOVEMENT_STEP_NOT_CONTIGUOUS'
   | 'MOVEMENT_RELATION_UNKNOWN'
   | 'MOVEMENT_PATH_BLOCKED'
+  | 'MOVEMENT_WALL_BLOCKED'
   | 'MOVEMENT_DESTINATION_OCCUPIED'
   | 'MOVEMENT_INSUFFICIENT_REMAINING'
   | 'MOVEMENT_SPEED_ZERO';
@@ -205,6 +208,8 @@ export interface MovementEvaluationInput {
   /** Deslocamento EFETIVO zero (Agarrado/Contido/Exaustão 5+...). */
   speedZero?: boolean;
   terrain: MovementTerrainProvider;
+  /** Geometria autoritativa da cena; ausência só existe em cenas legadas. */
+  obstacles?: readonly SpatialObstacleShape[];
   /** `true` só para o Mestre: identidade do bloqueador no diagnóstico. */
   revealBlockers: boolean;
 }
@@ -360,6 +365,11 @@ export function evaluateMovementPath(
     const space = occupiedSpaceOf(position, mover.size);
     if (!space || !spaceWithinScene(space, scene)) {
       return fail('MOVEMENT_OUT_OF_BOUNDS');
+    }
+
+    // Colisão no espaço varrido, não no centro nem apenas na posição final.
+    if (movementBlockedByWalls(cursor, position, mover.size, input.obstacles ?? [])) {
+      return fail('MOVEMENT_WALL_BLOCKED');
     }
 
     // 5. Quem é interceptado neste passo (overlap real de espaços ocupados).

@@ -53,6 +53,7 @@ export interface SceneOperationInput {
   backgroundImageUrl?: string | null;
   obstacleId?: string;
   obstacle?: Partial<SpatialObstacleShape>;
+  obstacles?: SpatialObstacleShape[];
 }
 
 const withObstacles = { obstacles: { orderBy: { createdAt: 'asc' } } } as const;

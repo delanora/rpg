@@ -24,6 +24,7 @@ const shapeOf = ({ start, end, blocksMovement, blocksSight }: SceneWallShape): S
 export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas }: Props) {
   const [tool, setTool] = useState<'select' | 'draw'>('select');
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [segments, setSegments] = useState<SceneWallShape[]>([]);
   const [placing, setPlacing] = useState(false);
   const [snap, setSnap] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -39,15 +40,17 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
   const config = scene.spatialConfig;
   const stale = Boolean(draft && draft.version !== scene.version);
   const editable = !disabled && !busy && !uncertain && config.mode === 'grid-2d';
-  const invalid = draft ? wallDraftError(draft.wall, config) : null;
+  const invalid = segments.length > 0
+    ? segments.map(wall => wallDraftError(wall, config)).find(Boolean) ?? null
+    : draft ? wallDraftError(draft.wall, config) : null;
 
   function cancel() {
     if (writing.current || uncertain) return;
-    drag.current = null; setDraft(null); setPlacing(false); setConfirmDelete(false); setError(null);
+    drag.current = null; setSegments([]); setDraft(null); setPlacing(false); setConfirmDelete(false); setError(null);
   }
   function select(wall: SpatialObstacle) {
     if (!editable) return;
-    setTool('select'); setPlacing(false); setConfirmDelete(false); setError(null); setMessage(null);
+    setSegments([]); setTool('select'); setPlacing(false); setConfirmDelete(false); setError(null); setMessage(null);
     setDraft({ wallId: wall.id, wall: shapeOf(wall), version: scene.version });
   }
   function point(event: PointerEvent<SVGElement>) {
@@ -66,10 +69,28 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     const position = point(event); if (!position) return;
     event.preventDefault(); svg.current?.focus(); setError(null); setMessage(null);
     if (!placing || !draft) {
+      setSegments([]);
       setDraft({ wallId: null, version: scene.version, wall: { start: position, end: position,
         blocksMovement: true, blocksSight: true } }); setPlacing(true);
-    } else { setDraft({ ...draft, wall: { ...draft.wall, end: position } }); setPlacing(false); }
+    } else {
+      if (position.xFeet === draft.wall.start.xFeet && position.yFeet === draft.wall.start.yFeet) return;
+      if (segments.length >= 200) { setError('Salve este traçado antes de desenhar mais segmentos.'); return; }
+      setSegments(previous => [...previous, { ...draft.wall, end: position }]);
+      setDraft({ ...draft, wall: { ...draft.wall, start: position, end: position } });
+    }
   }
+  function undoPoint() {
+    if (!editable || stale || segments.length === 0 || !draft) return;
+    const last = segments[segments.length - 1];
+    setSegments(previous => previous.slice(0, -1));
+    setDraft({ ...draft, wall: { ...last, end: last.start } }); setPlacing(true);
+  }
+  function changeFlag(flag: 'blocksMovement' | 'blocksSight', value: boolean) {
+    if (!draft || !editable || stale) return;
+    setDraft({ ...draft, wall: { ...draft.wall, [flag]: value } });
+    setSegments(previous => previous.map(wall => ({ ...wall, [flag]: value })));
+  }
+
   function move(event: PointerEvent<SVGSVGElement>) {
     if (!editable || stale) return;
     const position = point(event); if (!position) return;
@@ -91,8 +112,9 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     setBusy(true); setError(null); setMessage(null);
     try {
       await onMutate(pending.mutation, pending.version, pending.operationId);
-      intention.current = null; setUncertain(false); setDraft(null); setPlacing(false); setConfirmDelete(false);
-      setMessage(pending.mutation.kind === 'delete' ? 'Parede excluída.' : 'Parede salva.');
+      intention.current = null; setUncertain(false); setSegments([]); setDraft(null); setPlacing(false); setConfirmDelete(false);
+      setMessage(pending.mutation.kind === 'delete' ? 'Parede excluída.' :
+        pending.mutation.kind === 'create-many' ? 'Traçado salvo.' : 'Parede salva.');
     } catch (cause) {
       // 4xx é recusa confirmada. Rede/5xx pode ter ocorrido DEPOIS do commit:
       // congelar payload, versão e id impede duplicar a parede num retry.
@@ -106,7 +128,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     if (writing.current || busy || uncertain) return;
     writing.current = true; setBusy(true);
     try {
-      await onReload(); intention.current = null; setUncertain(false); setDraft(null); setPlacing(false);
+      await onReload(); intention.current = null; setUncertain(false); setSegments([]); setDraft(null); setPlacing(false);
       setConfirmDelete(false); setError(null); setMessage('Cena recarregada.');
     } catch { setError('Não foi possível recarregar a cena. Tente novamente.'); }
     finally { writing.current = false; setBusy(false); }
@@ -146,9 +168,11 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
             }} />
         </g>;
       })}
+      {segments.map((wall, index) => <line key={`segment-${index}`} className="scene-wall-draft" vectorEffect="non-scaling-stroke"
+        x1={wall.start.xFeet} y1={wall.start.yFeet} x2={wall.end.xFeet} y2={wall.end.yFeet} />)}
       {draft && !draft.wallId ? <line className="scene-wall-draft" vectorEffect="non-scaling-stroke"
         x1={draft.wall.start.xFeet} y1={draft.wall.start.yFeet} x2={draft.wall.end.xFeet} y2={draft.wall.end.yFeet} /> : null}
-      {draft && !placing ? (['start', 'end'] as const).map((part) => <g key={part}>
+      {draft && !placing && segments.length === 0 ? (['start', 'end'] as const).map((part) => <g key={part}>
         <circle className="scene-wall-handle" cx={draft.wall[part].xFeet} cy={draft.wall[part].yFeet} r={0.4}
           vectorEffect="non-scaling-stroke" />
         <circle className="scene-wall-handle-hit" cx={draft.wall[part].xFeet} cy={draft.wall[part].yFeet} r={0.4}
@@ -172,6 +196,8 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
           blocksMovement: true, blocksSight: true,
         } });
       }}>Nova por coordenadas</button>
+      <button type="button" className="btn btn-small" disabled={!editable || stale || segments.length === 0}
+        onClick={undoPoint}>Desfazer último ponto</button>
       <label className="scene-wall-check"><input type="checkbox" checked={snap} disabled={!editable}
         onChange={(event) => setSnap(event.target.checked)} /> Alinhar à grade</label>
       <label className="scene-wall-zoom">Zoom <select aria-label="Zoom do editor de paredes" value={zoom}
@@ -182,7 +208,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
         onClick={() => void reload()}>Recarregar cena</button>
     </div>
     <p className="scene-hint">{config.mode !== 'grid-2d' ? 'Salve a base como grade 2D para editar paredes.' :
-      tool === 'draw' ? 'Clique no início e depois no fim. Confira o traçado e salve. Esc cancela.' :
+      tool === 'draw' ? 'Clique para adicionar pontos e cantos. Salve o traçado inteiro ao terminar. Esc cancela.' :
       'Selecione uma parede na lista ou no mapa. Arraste a linha ou os extremos e salve.'}</p>
     {renderCanvas(overlay, zoom)}
     {stale && !uncertain ? <p className="scene-lock" role="status">A cena mudou. Cancele o rascunho e selecione a parede novamente.</p> : null}
@@ -203,22 +229,25 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
       </div>
       {draft ? <fieldset className="scene-wall-inspector" disabled={!editable || stale}>
         <legend>{draft.wallId ? 'Editar parede' : 'Nova parede'}</legend>
+        {segments.length > 0 ? <p className="scene-hint">{segments.length} segmento(s) no traçado. Clique no primeiro ponto para fechar o contorno.</p> :
         <div className="scene-fields">{(['start', 'end'] as const).flatMap((part) => (['xFeet', 'yFeet'] as const).map((axis) =>
           <label key={`${part}-${axis}`}>{part === 'start' ? 'Início' : 'Fim'} {axis === 'xFeet' ? 'X' : 'Y'} (m)
             <input type="number" min={0} step="any" value={feetToMeters(draft.wall[part][axis])}
               onChange={(event) => coordinate(part, axis, event.target.value)} />
-          </label>))}</div>
+          </label>))}</div>}
         <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksMovement}
-          onChange={(event) => setDraft({ ...draft, wall: { ...draft.wall, blocksMovement: event.target.checked } })} /> Bloqueia movimento</label>
+          onChange={(event) => changeFlag('blocksMovement', event.target.checked)} /> Bloqueia movimento</label>
         <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksSight}
-          onChange={(event) => setDraft({ ...draft, wall: { ...draft.wall, blocksSight: event.target.checked } })} /> Bloqueia visão</label>
+          onChange={(event) => changeFlag('blocksSight', event.target.checked)} /> Bloqueia visão</label>
         {invalid ? <p className="form-error">{invalid}</p> : null}
       </fieldset> : null}
     </div>
     {draft ? <div className="scene-wall-toolbar">
-      <button type="button" className="btn btn-primary btn-small" disabled={!editable || stale || placing || Boolean(invalid)}
+      <button type="button" className="btn btn-primary btn-small" disabled={!editable || stale || (placing && segments.length === 0) || Boolean(invalid)}
         onClick={() => void submit(draft.wallId ? { kind: 'update', wallId: draft.wallId, wall: draft.wall } :
-          { kind: 'create', wall: draft.wall })}>{busy ? 'Salvando...' : 'Salvar parede'}</button>
+          segments.length > 1 ? { kind: 'create-many', walls: segments } :
+          { kind: 'create', wall: segments[0] ?? draft.wall })}>{busy ? 'Salvando...' :
+            segments.length > 1 ? `Salvar traçado (${segments.length})` : 'Salvar parede'}</button>
       <button type="button" className="btn btn-small" disabled={busy || uncertain} onClick={cancel}>Cancelar edição</button>
       {draft.wallId ? <button type="button" className="btn btn-danger btn-small" disabled={!editable || stale}
         onClick={() => setConfirmDelete(true)}>Excluir parede</button> : null}
@@ -229,6 +258,6 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
         onClick={() => void submit({ kind: 'delete', wallId: draft.wallId! })}>Confirmar exclusão</button>
       <button type="button" className="btn btn-small" disabled={busy} onClick={() => setConfirmDelete(false)}>Manter parede</button></div>
     </div> : null}
-    <p className="scene-hint">As marcas de bloqueio ficam salvas para as próximas integrações. Nesta etapa, paredes ainda não impedem trajetos ou visão automaticamente.</p>
+    <p className="scene-hint">Paredes com bloqueio de movimento impedem atravessar no modo Mover. “Posicionar”, do Mestre, é um ajuste livre. O bloqueio automático de visão ainda não está disponível.</p>
   </div>;
 }

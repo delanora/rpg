@@ -788,7 +788,11 @@ async function main(): Promise<void> {
       }),
     );
 
-    const caminhoExcedente = [15, 20, 25, 30, 35].map((xFeet) => ({ xFeet, yFeet: 10 }));
+    // Caminho livre de paredes/ocupantes: a recusa aqui precisa ser pelo saldo.
+    const caminhoExcedente = [
+      { xFeet: 15, yFeet: 10 }, { xFeet: 20, yFeet: 10 }, { xFeet: 25, yFeet: 10 },
+      { xFeet: 25, yFeet: 15 }, { xFeet: 25, yFeet: 20 },
+    ];
     const excedente = await http(`/api/combat/${combat.id}/spatial/movement`, {
       token: p1Token,
       body: { combatantId: p1Id, path: caminhoExcedente,

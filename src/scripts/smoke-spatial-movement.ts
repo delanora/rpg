@@ -1431,10 +1431,10 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
       // 132 — FORA DE ESCOPO (ausências verificadas)
       // =====================================================================
       check(
-        '90.BD) paredes existem só no READ MODEL (config intacta) e o MOVIMENTO não consome obstáculo/terreno',
+        '90.BD) paredes ficam fora da config e não são duplicadas no registro do movimento',
         // 6.6L.4.1: `spatial` continua sendo a CONFIGURAÇÃO (nada de parede
         // dentro dela); as paredes vêm em `combat.obstacles` e o motor de
-        // movimento ainda NÃO as consulta — sem bloqueio incompleto.
+        // movimento as consulta no serviço, sem duplicar a geometria no registro.
         Object.keys(state.spatial).sort().join(',') ===
           'cellSizeFeet,heightFeet,mode,widthFeet' &&
           !('walls' in state.spatial) &&

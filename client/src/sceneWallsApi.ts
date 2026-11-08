@@ -5,6 +5,7 @@ import type { Scene, SpatialObstacle } from './types';
 export type SceneWallShape = Pick<SpatialObstacle, 'start' | 'end' | 'blocksMovement' | 'blocksSight'>;
 export type SceneWallMutation =
   | { kind: 'create'; wall: SceneWallShape }
+  | { kind: 'create-many'; walls: SceneWallShape[] }
   | { kind: 'update'; wallId: string; wall: SceneWallShape }
   | { kind: 'delete'; wallId: string };
 
@@ -13,18 +14,17 @@ export async function mutateSceneWall(
   sceneId: string, mutation: SceneWallMutation, expectedVersion: number, operationId: string,
 ): Promise<Scene> {
   const base = `/api/scenes/${sceneId}/spatial/obstacles`;
-  const { scene } = await api<{ scene: Scene }>(
-    mutation.kind === 'create' ? base : `${base}/${mutation.wallId}`,
-    {
-      method: mutation.kind === 'create' ? 'POST' : mutation.kind === 'update' ? 'PATCH' : 'DELETE',
-      body: {
-        expectedVersion, operationId,
-        ...(mutation.kind === 'delete' ? {} : {
-          start: mutation.wall.start, end: mutation.wall.end,
-          blocksMovement: mutation.wall.blocksMovement, blocksSight: mutation.wall.blocksSight,
-        }),
-      },
+  const shape = ({ start, end, blocksMovement, blocksSight }: SceneWallShape) =>
+    ({ start, end, blocksMovement, blocksSight });
+  const path = mutation.kind === 'create-many' ? `${base}/batch` :
+    mutation.kind === 'create' ? base : `${base}/${mutation.wallId}`;
+  const { scene } = await api<{ scene: Scene }>(path, {
+    method: mutation.kind === 'create' || mutation.kind === 'create-many' ? 'POST' :
+      mutation.kind === 'update' ? 'PATCH' : 'DELETE',
+    body: { expectedVersion, operationId,
+      ...(mutation.kind === 'create-many' ? { walls: mutation.walls.map(shape) } :
+        mutation.kind === 'delete' ? {} : shape(mutation.wall)),
     },
-  );
+  });
   return scene;
 }

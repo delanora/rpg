@@ -212,3 +212,23 @@ export async function deleteSpatialObstacle(
     },
   );
 }
+
+
+/** Cria todos os segmentos de um traçado com UMA versão e UMA chave de operação. */
+export async function createSpatialObstacles(
+  actor: SceneActor, sceneId: string,
+  input: { walls: SpatialObstacleShape[]; expectedVersion: number; operationId: string },
+): Promise<{ scene: SceneDto }> {
+  return runSceneOperation(actor, {
+    sceneId, expectedVersion: input.expectedVersion, operationId: input.operationId, obstacles: input.walls,
+  }, 'spatial-obstacle-batch-create', async (db, scene) => {
+    const config = spatialSceneOf(scene.spatialConfig);
+    for (const wall of input.walls) assertValidWall(wall, config);
+    await db.spatialObstacle.createMany({ data: input.walls.map(wall => ({
+      sceneId, kind: 'wall', startXFeet: wall.start.xFeet, startYFeet: wall.start.yFeet,
+      endXFeet: wall.end.xFeet, endYFeet: wall.end.yFeet,
+      blocksMovement: wall.blocksMovement, blocksSight: wall.blocksSight,
+    })) });
+    return { scene: toSceneDto(await loadSceneById(sceneId, db)) };
+  });
+}

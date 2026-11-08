@@ -46,9 +46,11 @@ function Harness() {
       if (behavior === 'locked') throw new ApiError('Cena em uso por combate.', 409, 'SCENE_IN_USE');
       if (replayScene) { update(replayScene); const result = replayScene; replayScene = null; return result; }
       const obstacles = [...latest.obstacles];
-      if (mutation.kind === 'create') obstacles.push({ id: `parede-${operationId}`, kind: 'wall',
-        ...mutation.wall, lengthFeet: Math.hypot(mutation.wall.end.xFeet - mutation.wall.start.xFeet,
-          mutation.wall.end.yFeet - mutation.wall.start.yFeet) });
+      if (mutation.kind === 'create' || mutation.kind === 'create-many') {
+        const walls = mutation.kind === 'create' ? [mutation.wall] : mutation.walls;
+        walls.forEach((wall, index) => obstacles.push({ id: `parede-${operationId}-${index}`, kind: 'wall',
+          ...wall, lengthFeet: Math.hypot(wall.end.xFeet - wall.start.xFeet, wall.end.yFeet - wall.start.yFeet) }));
+      }
       if (mutation.kind === 'update') {
         const i = obstacles.findIndex(wall => wall.id === mutation.wallId);
         obstacles[i] = { ...obstacles[i], ...mutation.wall };
@@ -160,6 +162,22 @@ try {
   check('Selecionar e arrastar pela linha não envia metadados do DTO como geometria',
     directDrag?.kind === 'update' && Object.keys(directDrag.wall).sort().join(',') === 'blocksMovement,blocksSight,end,start');
 
+  const beforeTrace = calls.length;
+  await click('Desenhar parede');
+  for (const [x, y] of [[50, 50], [150, 50], [150, 150], [250, 150]]) {
+    await pointer(canvas(), 'pointerdown', x, y);
+  }
+  check('Cliques sucessivos criam vários cantos sem salvar a cada reta', calls.length === beforeTrace && Boolean(button('Salvar traçado (3)')));
+  await click('Desfazer último ponto');
+  check('Desfazer remove só o último segmento do rascunho', Boolean(button('Salvar traçado (2)')) && calls.length === beforeTrace);
+  await pointer(canvas(), 'pointerdown', 250, 150);
+  await pointer(canvas(), 'pointerdown', 50, 50);
+  await act(async () => { button('Salvar traçado (4)').click(); button('Salvar traçado (4)').click(); });
+  const trace = calls.at(-1)?.mutation;
+  check('Contorno completo é enviado em uma única intenção atômica',
+    calls.length === beforeTrace + 1 && trace?.kind === 'create-many' && trace.walls.length === 4 &&
+    trace.walls[3].end.xFeet === trace.walls[0].start.xFeet && trace.walls[3].end.yFeet === trace.walls[0].start.yFeet);
+
   const httpCalls: { path: string; method: string; body: Record<string, unknown> }[] = [];
   globals.fetch = async (input: string, options: RequestInit) => {
     httpCalls.push({ path: input, method: String(options.method), body: JSON.parse(String(options.body)) });
@@ -168,9 +186,13 @@ try {
   await mutateSceneWall(latest.id, { kind: 'create', wall }, 7, 'operacao-criar');
   await mutateSceneWall(latest.id, { kind: 'update', wallId: 'parede-fixture', wall }, 8, 'operacao-editar');
   await mutateSceneWall(latest.id, { kind: 'delete', wallId: 'parede-fixture' }, 9, 'operacao-apagar');
+  await mutateSceneWall(latest.id, { kind: 'create-many', walls: [wall, wall] }, 10, 'operacao-tracado');
   check('API reutiliza POST/PATCH/DELETE reais com versão e intenção explícitas',
-    httpCalls.map(c => c.method).join(',') === 'POST,PATCH,DELETE' && httpCalls[0].path === '/api/scenes/cena-fixture/spatial/obstacles' &&
+    httpCalls.slice(0, 3).map(c => c.method).join(',') === 'POST,PATCH,DELETE' && httpCalls[0].path === '/api/scenes/cena-fixture/spatial/obstacles' &&
     httpCalls[2].path.endsWith('/parede-fixture') && httpCalls[1].body.expectedVersion === 8 && httpCalls[2].body.operationId === 'operacao-apagar' &&
     Object.keys(httpCalls[1].body).sort().join(',') === 'blocksMovement,blocksSight,end,expectedVersion,operationId,start');
+  check('Traçado usa endpoint de lote com uma versão e uma chave para todos os segmentos',
+    httpCalls[3].path.endsWith('/obstacles/batch') && httpCalls[3].body.expectedVersion === 10 &&
+    Array.isArray(httpCalls[3].body.walls) && httpCalls[3].body.walls.length === 2);
 } finally { await act(async () => root.unmount()); dom.window.close(); }
 console.log(`\n${checks} verificações comportamentais aprovadas.`);

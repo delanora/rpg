@@ -20,6 +20,7 @@ import {
   type CombatantSourced,
 } from '../combat.dto.js';
 import { parseStoredPosition } from './occupied-space.js';
+import { obstacleDtoOf } from './spatial-obstacle.js';
 import { effectiveSizeOf } from './spatial-size.js';
 import { effectiveSceneConfigOf, type SpatialPosition2D, type SpatialSize } from './spatial.types.js';
 import {
@@ -175,6 +176,10 @@ const MOVEMENT_ERRORS: Record<
     message: 'O trajeto cruza outra criatura e a relação entre os lados é desconhecida: o Mestre precisa defini-la.',
     status: 409,
   },
+  MOVEMENT_WALL_BLOCKED: {
+    message: 'Uma parede bloqueia o trajeto do combatente.',
+    status: 409,
+  },
   MOVEMENT_PATH_BLOCKED: {
     message: 'O trajeto cruza uma criatura que não pode ser atravessada.',
     status: 409,
@@ -242,6 +247,7 @@ export function evaluateMovementForState(
     ),
     speedZero: effectiveSpeedOf(combatant) <= 0,
     terrain: walkingMovementTerrain,
+    obstacles: (combat.scene?.obstacles ?? []).map(obstacleDtoOf),
     revealBlockers,
   });
 }
