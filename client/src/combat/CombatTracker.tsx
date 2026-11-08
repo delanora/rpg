@@ -61,7 +61,6 @@ import {
 import { saveHotbarLayout } from '../hotbarApi';
 import { CombatTurnPanel } from './components/CombatTurnPanel';
 import { ConcentrationSavePanel } from './components/ConcentrationSavePanel';
-import { DeathSavePanel } from './components/DeathSavePanel';
 import { DeathSaveSkipDialog } from './components/DeathSaveSkipDialog';
 import { InitiativeTimeline } from './components/InitiativeTimeline';
 import { ReactionPanel } from './components/ReactionPanel';
@@ -894,9 +893,11 @@ export function CombatTracker({
 
   /**
    * FIM DO FLUXO DE ATAQUE (6.6M.6.4.6) — o MESMO encerramento do Esc: alvo,
-   * modo de rolagem e ação escolhida na Hotbar saem juntos (o painel desmonta e
-   * o grid deixa de oferecer alvos). Nada aqui cancela ataque em voo: o pedido
-   * já enviado continua sendo aplicado quando a resposta chega.
+   * modo de rolagem e ação escolhida na Hotbar saem juntos (o grid deixa de
+   * oferecer alvos). Sem faixa abaixo do grid, os gestos de saída são o Esc, o
+   * duplo clique que executa e o clique de novo no slot escolhido. Nada aqui
+   * cancela ataque em voo: o pedido já enviado continua sendo aplicado quando
+   * a resposta chega.
    */
   function endAttackFlow(): void {
     setTargetCombatantId(null);
@@ -1621,13 +1622,13 @@ export function CombatTracker({
         }
         action={
           <>
-            {/* Turno em Testes contra a Morte: o fluxo normal do combatente do
-                turno dá lugar ao painel dramático (nada de ataque/alvo/ações).
-                Para criatura/NPC o ciclo é privado: o DTO do jogador não traz
-                `deathState`, então este painel nem aparece para ele. */}
-            {showDeathTurn && current && turnDeath ? (
-              <DeathSavePanel name={current.name} death={turnDeath} />
-            ) : showOperational ? (
+            {/* Turno em Testes contra a Morte: o centro fica VAZIO. Estado,
+                contadores e rolagem já vivem no Registro lateral — repetir o
+                painel aqui duplicava a mesma informação na mesma tela. O gate
+                permanece para o fluxo de ataque não reaparecer num turno que
+                não permite atacar. Para criatura/NPC o ciclo é privado: o DTO
+                do jogador não traz `deathState`. */}
+            {showDeathTurn ? null : showOperational ? (
               <>
                 {/* Mestre: painel de ataques do combatente que ele controla
                     (criatura/NPC do turno ou override explícito). */}
@@ -1646,32 +1647,6 @@ export function CombatTracker({
                     busy={busy}
                     onAttack={attack}
                   />
-                ) : null}
-
-                {!isMaster && myCombatant ? (
-                  hotbarPick ? (
-                    <CombatActionPanel
-                      variant="tactical-tray"
-                      combat={combat}
-                      attacker={myCombatant}
-                      attacks={characterAttacks}
-                      inventory={characterInventory}
-                      sneakAttack={sneakAttackExpression}
-                      preset={hotbarPick}
-                      // ALVO COMPARTILHADO: o clique no token e o cartão do
-                      // painel escrevem no MESMO estado do tracker.
-                      targetCombatantId={gridTargetId}
-                      onTargetChange={setTargetCombatantId}
-                      confirm={attackConfirm}
-                      onReadyChange={setAttackExecuteReady}
-                      onClose={() => setHotbarPick(null)}
-                      busy={busy}
-                      onAttack={attack}
-                    />
-                  ) : null
-                  // Sem slot escolhido não há painel nem aviso: a hotbar é a
-                  // única superfície de ação do jogador e a região operacional
-                  // sai inteira (o grid recupera a altura).
                 ) : null}
               </>
             ) : (
@@ -1815,6 +1790,37 @@ export function CombatTracker({
           ) : undefined
         }
       />
+
+      {/*
+        MOTOR DO FLUXO DE ATAQUE DO JOGADOR (`headless`) — o GRID é a
+        superfície: alvo no token, modo de rolagem no menu do token e execução
+        no duplo clique. A faixa de ataque abaixo do mapa não existe mais.
+
+        O painel continua MONTADO (e de propósito FORA do workspace: montado
+        aqui ele não ocupa a faixa operacional) porque ele é o dono do
+        `attackId` vindo da Hotbar, do `confirm` do token e do envio —
+        `onReadyChange` e o payload continuam exatamente os mesmos. Com ele
+        `null` o grid não teria o que executar.
+      */}
+      {!isMaster && myCombatant && hotbarPick ? (
+        <CombatActionPanel
+          variant="headless"
+          combat={combat}
+          attacker={myCombatant}
+          attacks={characterAttacks}
+          inventory={characterInventory}
+          sneakAttack={sneakAttackExpression}
+          preset={hotbarPick}
+          // ALVO COMPARTILHADO: o clique no token escreve no MESMO estado do
+          // tracker (nunca um segundo alvo).
+          targetCombatantId={gridTargetId}
+          onTargetChange={setTargetCombatantId}
+          confirm={attackConfirm}
+          onReadyChange={setAttackExecuteReady}
+          busy={busy}
+          onAttack={attack}
+        />
+      ) : null}
 
       {skipDeathConfirm ? (
         <DeathSaveSkipDialog

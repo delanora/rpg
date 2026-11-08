@@ -72,7 +72,6 @@ const { createRoot } = await import('react-dom/client');
 const { createElement: h, act } = React;
 const { SheetAccessProvider } = await import('../src/readonly');
 const { PlayerCombatDock } = await import('../src/combat/components/PlayerCombatDock');
-const { DeathSavePanel } = await import('../src/combat/components/DeathSavePanel');
 const { DeathCounter } = await import('../src/death/DeathCounter');
 const { DeathPanel } = await import('../src/death/DeathPanel');
 const { CombatGrid } = await import('../src/combat/grid/CombatGrid');
@@ -342,9 +341,10 @@ const gridProps = (mode: 'assisted' | 'grid-2d') => ({
 /* -------------------------------------------------------------------------- */
 
 {
-  const view = await mount(
-    h(DeathSavePanel, { name: 'Ficha de Fixture', death: deathState({ deathSaves: true }) }),
-  );
+  // O painel central do Teste contra a Morte saiu da UI: o Registro e a dock já
+  // mostram o mesmo estado, e repetir o container duplicava a informação. O
+  // contador que ele continha continua verificado aqui.
+  const view = await mount(h(DeathCounter, { successes: 0, failures: 0, showNumbers: true }));
   const counters: string[] = [];
   // Sequência REAL do servidor: 0 PV → 1/2 sucessos → 1/2/3 falhas (a 3ª vira
   // decisão do Mestre) → estabilizado → morto → volta a 0 PV.
@@ -361,13 +361,18 @@ const gridProps = (mode: 'assisted' | 'grid-2d') => ({
     deathState({ deathSaves: true }),
   ];
   for (const state of flow) {
-    await view.rerender(h(DeathSavePanel, { name: 'Ficha de Fixture', death: state }));
+    await view.rerender(
+      h(DeathCounter, {
+        successes: state.successes,
+        failures: state.failures,
+        showNumbers: true,
+      }),
+    );
     const filled = view.container.querySelectorAll('.death-pip.filled').length;
-    const pending = Boolean(view.container.querySelector('.death-turn-note.pending'));
-    counters.push(`${state.successes}/${state.failures}${pending ? ' pendente' : ''} (${filled} pips)`);
+    counters.push(`${state.successes}/${state.failures} (${filled} pips)`);
   }
   check(
-    'SC205) Teste contra a Morte: sucesso, falha, 3ª falha pendente, estabilizado e morto',
+    'SC205) Teste contra a Morte: sucesso, falha, 3ª falha, estabilizado e morte preenchem o contador',
     view.error === null &&
       counters[0] === '0/0 (0 pips)' &&
       counters[1] === '1/0 (1 pips)' &&
@@ -375,7 +380,7 @@ const gridProps = (mode: 'assisted' | 'grid-2d') => ({
       counters[3] === '0/1 (1 pips)' &&
       counters[4] === '0/2 (2 pips)' &&
       counters[5] === '0/3 (3 pips)' &&
-      counters[6] === '0/3 pendente (3 pips)' &&
+      counters[6] === '0/3 (3 pips)' &&
       counters[7] === '3/0 (3 pips)' &&
       counters[8] === '0/0 (0 pips)' &&
       Boolean(view.container),

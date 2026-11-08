@@ -23,7 +23,6 @@ import { CombatStateBadges } from '../src/combat/components/CombatStateBadges';
 import { CombatHotbar } from '../src/combat/components/CombatHotbar';
 import { PlayerCombatDock } from '../src/combat/components/PlayerCombatDock';
 import { DeathCounter } from '../src/death/DeathCounter';
-import { DeathSavePanel } from '../src/combat/components/DeathSavePanel';
 import { BattleWaitingPanel } from '../src/combat/components/BattleWaitingPanel';
 import { ReactionPanel } from '../src/combat/components/ReactionPanel';
 import { TurnToast } from '../src/combat/components/TurnToast';
@@ -136,22 +135,6 @@ import type {
   MovementPathReading,
   SessionUser,
 } from '../src/types';
-
-/** Fixture do ciclo de morte usada nas verificações de UI. */
-function deathOf(patch: Partial<DeathState> = {}): DeathState {
-  return {
-    successes: 0,
-    failures: 0,
-    stabilized: false,
-    dead: false,
-    deathSaves: false,
-    pending: null,
-    relentless: null,
-    saveTurnKey: null,
-    log: [],
-    ...patch,
-  };
-}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = (relative: string): string =>
@@ -393,40 +376,16 @@ console.log('Check-combat-ui — refino da UI de combate');
   const card = source('src/combat/components/CombatantCard.tsx');
   check('AC) card da iniciativa renderiza o contador/estado de morte', card.includes("from '../../death/DeathCounter'") && card.includes('<DeathCounter') && card.includes('death-status'));
 
-  // AD. O painel central substitui o fluxo normal no turno.
+  // AD. O ciclo de morte NÃO ganha container no centro: o Registro lateral é a
+  // superfície única (estado + rolagem) e o turno de morte só veda o ataque.
   const tracker = source('src/combat/CombatTracker.tsx');
-  const savesPanel = renderToStaticMarkup(
-    createElement(DeathSavePanel, {
-      name: 'TESTE-DRACONATO',
-      death: deathOf({ deathSaves: true, successes: 1 }),
-    }),
-  );
+  const deathResolutionService = source('../src/modules/combat/resolution-requests.ts');
   check(
-    'AD) painel central de morte substitui o fluxo de ataque e NÃO tem botão de rolagem',
-    tracker.includes('<DeathSavePanel') &&
-      !savesPanel.includes('Escolha o ataque') &&
-      savesPanel.includes('Teste contra a Morte') &&
-      !savesPanel.includes('<button'),
+    'AD) turno de morte não desenha painel no centro; a rolagem vive só no Registro',
+    tracker.includes('showDeathTurn ? null : showOperational ? (') &&
+      !tracker.includes('DeathSavePanel') &&
+      deathResolutionService.includes("kind: 'death-saving-throw'"),
   );
-
-  // AE. Pending mostra a mensagem apropriada (sem botões de decisão).
-  const pending = renderToStaticMarkup(
-    createElement(DeathSavePanel, {
-      name: 'Umbrae',
-      death: deathOf({ pending: { id: 'p', kind: 'failures', reason: '', createdAt: '', cause: null } }),
-    }),
-  );
-  check('AE) pendente mostra "mãos do Mestre" e não oferece rolagem', pending.includes('mãos do Mestre') && !pending.includes('Rolar Teste contra a Morte'));
-
-  // AF. Estabilizado mostra o estado; AG. Morto mostra o estado.
-  const stabilized = renderToStaticMarkup(
-    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ stabilized: true, successes: 3 }) }),
-  );
-  const dead = renderToStaticMarkup(
-    createElement(DeathSavePanel, { name: 'Razzil', death: deathOf({ dead: true, failures: 3 }) }),
-  );
-  check('AF) estabilizado é mostrado', stabilized.includes('ESTABILIZADO') && !stabilized.includes('death-turn-roll'));
-  check('AG) morto é mostrado', dead.includes('MORTO'));
 
   // AH. Economia bloqueada no ciclo de morte.
   check('AH) barra persistente fica bloqueada em death state', source('src/combat/components/TurnResourceBar.tsx').includes('death-blocked') && tracker.includes('deathBlocked'));
@@ -1904,18 +1863,17 @@ console.log('Check-combat-ui — refino da UI de combate');
   // ---------------------------------------------------------------------
   // 6.6I — RESOLUTION CARDS (registro lateral) e limpeza do centro
   // ---------------------------------------------------------------------
-  const deathSavePanelSource = source('src/combat/components/DeathSavePanel.tsx');
   const resolutionService = source('../src/modules/combat/resolution-requests.ts');
   const resolutionCard = source('src/combat/components/ResolutionCard.tsx');
   const resolutionApiSource = source('src/combat/resolutionApi.ts');
   const trackerSource = source('src/combat/CombatTracker.tsx');
 
   check(
-    'CB113) o Teste contra a Morte saiu do centro: sem botão, contador continua lá',
-    !deathSavePanelSource.includes('<button') &&
-      !deathSavePanelSource.includes('death-turn-roll') &&
-      deathSavePanelSource.includes('DeathCounter') &&
-      deathSavePanelSource.includes('A rolagem fica no Registro')
+    'CB113) o Teste contra a Morte saiu do centro: nenhum container duplicado',
+    !trackerSource.includes('<DeathSavePanel') &&
+      !trackerSource.includes('death-turn-panel') &&
+      // O turno de morte continua reconhecido — só não desenha nada no centro.
+      trackerSource.includes('showDeathTurn ? null : showOperational ? (')
   );
   check(
     'CB114) o Teste contra a Morte vira card DERIVADO do turno real (sem persistência paralela)',
@@ -6274,7 +6232,9 @@ check(
       // o ciclo de morte) — a dock do jogador cobre o resto.
       trackerSource.includes('showOperational && actingCombatant && isMaster ? (') &&
       trackerSource.includes('<BattleWaitingPanel') &&
-      trackerSource.indexOf('<DeathSavePanel') < trackerSource.indexOf('<CombatActionPanel'),
+      // Turno de morte: o centro fica vazio e o fluxo de ataque NÃO reaparece
+      // (o gate continua ANTES do painel, agora sem desenhar container).
+      trackerSource.includes('showDeathTurn ? null : showOperational ? ('),
   );
 
   check(
@@ -6399,8 +6359,13 @@ check(
   check(
     'SC71) TRAY reutiliza o MESMO CombatActionPanel: três passos, mesmos cards e mesmo estado',
     (trackerSource.match(/<CombatActionPanel/g) ?? []).length >= 3 &&
-      (trackerSource.match(/variant="tactical-tray"/g) ?? []).length >= 3 &&
-      actionPanelSource.includes("variant?: 'default' | 'tactical-tray';") &&
+      // 6.6M.9: o fluxo do JOGADOR não desenha mais faixa abaixo do grid — o
+      // grid escolhe alvo/modo e executa. Restam as trays do Mestre e da ação
+      // preparada, que não têm token de grid.
+      (trackerSource.match(/variant="tactical-tray"/g) ?? []).length >= 2 &&
+      trackerSource.includes('variant="headless"') &&
+      actionPanelSource.includes("if (variant === 'headless') return null;") &&
+      actionPanelSource.includes("variant?: 'default' | 'tactical-tray' | 'headless';") &&
       actionPanelSource.includes(
         "className={tray ? 'combat-block attack-panel is-tray' : 'combat-block attack-panel'}",
       ) &&
@@ -6447,7 +6412,9 @@ check(
     'SC74) matriz de autoridade preservada: Mestre assume, jogador só o próprio turno, espera sem controles',
     trackerSource.includes('const showOperational = controlsCurrent || masterOverrideActive;') &&
       trackerSource.includes('showOperational && actingCombatant && isMaster ? (') &&
-      trackerSource.includes('!isMaster && myCombatant ? (') &&
+      // 6.6M.9: o jogador não tem mais faixa de ataque abaixo do grid; a
+      // montagem dele é o motor `headless` do fluxo escolhido na Hotbar.
+      trackerSource.includes('!isMaster && myCombatant && hotbarPick ? (') &&
       trackerSource.includes('<BattleWaitingPanel') &&
       trackerSource.includes('<ConcentrationSavePanel') &&
       trackerSource.includes('<ReactionPanel') &&
@@ -7452,7 +7419,7 @@ check(
       trackerSource.includes('<ReactionPanel') &&
       trackerSource.includes('<PendingEffectSavePanel') &&
       trackerSource.includes('urgent={') &&
-      trackerSource.includes('<DeathSavePanel name={current.name} death={turnDeath} />') &&
+      trackerSource.includes('const showDeathTurn = Boolean(') &&
       // Reação real preservada no glifo: não é sobrescrita na espera.
       dockSource.includes("economy && !economy.reactionAvailable ? 'is-spent' : 'is-ready'") &&
       dockSource.includes('{reactionLabel}') &&
@@ -7624,7 +7591,7 @@ check(
       trackerSource.includes('<ReactionPanel') &&
       trackerSource.includes('<ConcentrationSavePanel') &&
       trackerSource.includes('<PendingEffectSavePanel') &&
-      trackerSource.includes('<DeathSavePanel name={current.name} death={turnDeath} />') &&
+      trackerSource.includes('const showDeathTurn = Boolean(') &&
       source('src/combat/components/CombatTokenAdjustments.tsx').includes('applyManualHp({ combatantId: combatant.id') &&
       source('src/combat/components/CombatTokenAdjustments.tsx').includes('<MasterEconomyPanel'),
   );
@@ -7649,7 +7616,10 @@ check(
       // O tracker usa a função e preserva o painel e o fechamento existentes.
       trackerSource.includes('setHotbarPick((prev) => toggleHotbarPick(prev, entry.sourceId))') &&
       trackerSource.includes('preset={hotbarPick}') &&
-      trackerSource.includes('onClose={() => setHotbarPick(null)}') &&
+      // Sem faixa abaixo do grid, o painel do fluxo é montado FORA do
+      // workspace e não desenha: o Esc e o clique de novo no slot continuam
+      // sendo as saídas (nada muda no servidor).
+      trackerSource.includes('variant="headless"') &&
       trackerSource.includes('selectedId={hotbarPick ? `attack:${hotbarPick.attackId}` : null}') &&
       // Um único estado de seleção e nenhuma chamada nova de rede/ataca no
       // caminho de desmarcar (o envio continua no painel/servidor).
@@ -7760,7 +7730,7 @@ check(
       (trackerSource.match(/<CombatHotbar/g) ?? []).length === 1 &&
       (trackerSource.match(/<PlayerCombatDock/g) ?? []).length === 1 &&
       trackerSource.includes('preset={hotbarPick}') &&
-      trackerSource.includes('onClose={() => setHotbarPick(null)}') &&
+      trackerSource.includes('variant="headless"') &&
       // Estado SÓ de interface no componente (picker/seleção de movimento) e
       // nenhuma rede/economia/resolver.
       hotbarComponentSource.includes('const [pickerFor, setPickerFor] = useState<number | null>(null)') &&

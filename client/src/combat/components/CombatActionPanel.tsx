@@ -132,8 +132,13 @@ interface CombatActionPanelProps {
    * `tactical-tray` (6.6M.5.2) — faixa compacta ABAIXO do grid. É só
    * APRESENTAÇÃO: os cartões, o estado e o envio continuam exatamente os
    * mesmos; nada de segundo `attackId`/`targetId`.
+   *
+   * `headless` — o GRID virou a superfície (alvo no token, modo no menu do
+   * token, execução no duplo clique), então o fluxo do jogador não desenha
+   * nada abaixo do grid. O componente continua MONTADO porque ele é o dono do
+   * `attackId`/pré-seleção e do envio (`confirm`); nenhum payload mudou.
    */
-  variant?: 'default' | 'tactical-tray';
+  variant?: 'default' | 'tactical-tray' | 'headless';
   /**
    * HOTBAR (6.6M.6): pedido de pré-seleção vindo de um slot. NÃO é um segundo
    * `attackId`: o estado do ataque continua sendo o daqui e o pedido só chama o
@@ -157,8 +162,6 @@ interface CombatActionPanelProps {
   confirm?: { nonce: number; mode?: CombatRollMode } | null;
   /** Prontidão de execução sobe para o grid habilitar/desabilitar o menu. */
   onReadyChange?: (ready: boolean) => void;
-  /** Fecha o mini fluxo e devolve a faixa de ataque para a hotbar. */
-  onClose?: () => void;
   busy: boolean;
   onAttack: (input: {
     prepared?: boolean;
@@ -196,7 +199,6 @@ export function CombatActionPanel({
   onTargetChange,
   confirm = null,
   onReadyChange,
-  onClose,
   busy,
   onAttack,
 }: CombatActionPanelProps) {
@@ -372,6 +374,14 @@ export function CombatActionPanel({
     onReadyChange?.(ready);
   }, [ready, onReadyChange]);
 
+  /**
+   * GRID É A SUPERFÍCIE — a faixa abaixo do grid deixou de existir para o
+   * jogador. Retornar `null` mantém TODOS os hooks acima rodando: o `confirm`
+   * do token continua chamando `submitAttack` e `onReadyChange` continua
+   * habilitando o menu do token. Nenhum DOM, nenhuma regra nova.
+   */
+  if (variant === 'headless') return null;
+
   const tray = variant === 'tactical-tray';
   // Resumo dos modificadores: só o que existe aparece como legenda do bloco.
   const extrasSummary = [
@@ -393,23 +403,6 @@ export function CombatActionPanel({
           <Icon name="sword" size={15} /> Atacar
         </h3>
       )}
-
-      {/* Mini fluxo aberto por um slot: identifica a ação e devolve o espaço. */}
-      {onClose ? (
-        <div className="attack-tray-head">
-          <span className="attack-tray-title">
-            <Icon name="sword" size={13} /> {selectedAttack?.name ?? 'Ação escolhida'}
-          </span>
-          <button
-            type="button"
-            className="btn btn-small attack-tray-close"
-            aria-label="Fechar a ação"
-            onClick={onClose}
-          >
-            ×
-          </button>
-        </div>
-      ) : null}
 
       {attackerChoices ? (
         <label className="field">
