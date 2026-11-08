@@ -860,18 +860,15 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         <Icon name="music" size={16} /> Soundpad
       </button>
 
-      <button type="button" className={tab === 'preparation' ? 'tab active' : 'tab'} onClick={() => setTab('preparation')}>
-        <Icon name="table" size={16} /> Preparação
-      </button>
-      <button
-        type="button"
-        className={tab === 'combat' ? 'tab active' : 'tab'}
-        aria-current={tab === 'combat' ? 'page' : undefined}
-        onClick={() => setTab('combat')}
-      >
+      <button type="button" className={tab === 'combat' ? 'tab active' : 'tab'}
+        aria-current={tab === 'combat' ? 'page' : undefined} onClick={() => setTab('combat')}>
         <Icon name="sword" size={16} /> Combate
-        {combat ? <span className="master-combat-indicator" aria-label="Em andamento">●</span> : null}
       </button>
+      {combat ? <button type="button" className={tab === 'active-combat' ? 'tab active' : 'tab'}
+        aria-current={tab === 'active-combat' ? 'page' : undefined} onClick={() => setTab('active-combat')}>
+        <Icon name="sword" size={16} /> Combate em andamento
+        <span className="master-combat-indicator" aria-label="Em andamento">●</span>
+      </button> : null}
 
       {/* Cada clique libera UM Level Up por jogador: não há mais bloquear. */}
       <button
@@ -891,7 +888,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       className={[
         'app-shell',
         'theme-master',
-        combat && tab === 'combat' ? 'combat-active master-combat-view' : '',
+        combat && tab === 'active-combat' ? 'combat-active master-combat-view' : '',
         // A barra de música é fixa no rodapé: a classe avisa o CSS para subir
         // os botões flutuantes e nada ficar escondido atrás dela.
         'has-music-bar',
@@ -933,7 +930,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         ) : (
           <>
             {/* A mesa segue sincronizada nas outras abas; só sua superfície desmonta. */}
-            {tab === 'combat' && combat ? (
+            {tab === 'active-combat' && combat ? (
               <CombatTracker
                 combat={combat}
                 log={log}
@@ -959,18 +956,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
               />
             ) : null}
 
-            {tab === 'preparation' ? <PreparedEncountersTab characters={characters} creatures={creatures} localities={localities} regions={regions} onStart={handleStartCombat} /> : null}
-            {tab === 'combat' ? (
-              !combat ? (
-                <section className="empty-state" aria-label="Combate">
-                  <h2>Nenhum combate em andamento</h2>
-                  <p>Prepare a cena e escolha os participantes para começar.</p>
-                  <button type="button" className="btn btn-primary" onClick={() => setShowStartDialog(true)}>
-                    <Icon name="sword" size={16} /> Iniciar combate
-                  </button>
-                </section>
-              ) : null
-            ) : tab === 'home' ? (
+            {tab === 'combat' ? <PreparedEncountersTab characters={characters} creatures={creatures} localities={localities} regions={regions}
+              onStart={handleStartCombat} onOpenStart={() => setShowStartDialog(true)} combatActive={Boolean(combat)} /> : null}
+            {tab === 'combat' || tab === 'active-combat' ? null : tab === 'home' ? (
               <MasterHome
                 userName={user.displayName}
                 sheets={characters.length}
@@ -985,7 +973,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
                 extraCoins={gameConfig?.extraCoins ?? false}
                 onOpenTab={setTab}
                 combatActive={Boolean(combat)}
-                onStartCombat={() => combat ? setTab('combat') : setShowStartDialog(true)}
+                onStartCombat={() => combat ? setTab('active-combat') : setShowStartDialog(true)}
                 onReleaseLevelUp={() => void releaseLevelUpForTable()}
                 search={
                   <MasterSearch

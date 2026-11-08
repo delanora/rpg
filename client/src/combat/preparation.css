@@ -231,3 +231,6 @@ button.preparation-card {
     font-size: 0.75rem;
   }
 }
+
+/* Ações da aba permanente ficam juntas no canto direito do cabeçalho. */
+.preparation-header-actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-left: auto; justify-content: flex-end; }

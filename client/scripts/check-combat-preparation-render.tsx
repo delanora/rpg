@@ -43,6 +43,7 @@ globals.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { CombatStartDialog } = await import('../src/combat/CombatStartDialog');
+const { PreparedEncountersTab } = await import('../src/combat/PreparedEncountersTab');
 const { CombatTokenAdjustments } = await import(
   '../src/combat/components/CombatTokenAdjustments'
 );
@@ -317,6 +318,18 @@ try {
       added.body.expectedVersion === 1 &&
       added.body.entries[0].positions[0].xFeet === 10,
   );
+  let openedStart = 0;
+  await act(async () => root.render(h(PreparedEncountersTab, {...props, onOpenStart: () => { openedStart++; }})));
+  check('aba permanente tem título Combate', document.querySelector('.prepared-encounters h2')?.textContent === 'Combate');
+  check('criar e iniciar ficam juntos no cabeçalho', document.querySelector('.preparation-header-actions')?.textContent?.includes('Criar encontro') && document.querySelector('.preparation-header-actions')?.textContent?.includes('Iniciar combate'));
+  await click('Iniciar combate');
+  check('botão do cabeçalho abre o início existente', openedStart === 1);
+  await click('Criar encontro');
+  check('criar encontro abre a montagem sem iniciar batalha', document.querySelector('[role="dialog"] h2')?.textContent?.includes('Preparar encontro'));
+  await click('×');
+  await act(async () => root.render(h(PreparedEncountersTab, {...props, combatActive: true, onOpenStart: () => { openedStart++; }})));
+  const startButton = document.querySelector<HTMLButtonElement>('.preparation-header-actions .btn-primary');
+  check('combate ativo impede outro início e mantém criação de encontros', startButton?.disabled && !document.querySelector<HTMLButtonElement>('.preparation-header-actions .btn:not(.btn-primary)')?.disabled);
   let action: (() => Promise<CombatDto>) | undefined;
   await act(async () =>
     root.render(

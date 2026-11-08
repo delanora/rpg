@@ -14,7 +14,7 @@ export function PreparedEncountersTab(
   props: Omit<
     CombatStartDialogProps,
     'onCancel' | 'saveOnly' | 'initialEncounter' | 'onSaved'
-  >,
+  > & { onOpenStart: () => void; combatActive?: boolean },
 ) {
   const [rows, setRows] = useState<PreparedEncounter[]>([]),
     [editing, setEditing] = useState<PreparedEncounter | null | undefined>(
@@ -33,14 +33,18 @@ export function PreparedEncountersTab(
     <section className="prepared-encounters">
       <header className="preparation-header">
         <div>
-          <h2>Preparação</h2>
+          <h2>Combate</h2>
           <p className="section-subtitle">
-            Encontros privados, prontos para a próxima sessão.
+            Prepare seus encontros e escolha quando iniciar o combate.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing(null)}>
-          Novo encontro
-        </button>
+        <div className="preparation-header-actions">
+          <button type="button" className="btn" onClick={() => setEditing(null)}>Criar encontro</button>
+          <button type="button" className="btn btn-primary" onClick={props.onOpenStart}
+            disabled={props.combatActive} title={props.combatActive ? 'Encerre o combate em andamento antes de iniciar outro.' : undefined}>
+            Iniciar combate
+          </button>
+        </div>
       </header>
       {error ? (
         <p role="alert" className="error">

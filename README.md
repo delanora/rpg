@@ -41,7 +41,9 @@ Efeitos sonoros acompanham as rolagens de dado e o início do turno de cada joga
 
 ## Preparação de encontros e participantes
 
-A aba **Preparação** guarda encontros privados do Mestre: nome, localidade, cena, jogadores, criaturas/NPCs, quantidades, relações e posições. É possível editar, duplicar ou excluir o modelo sem alterar um combate em andamento. O mapa e as paredes continuam vindo da cena cadastrada; PV e recursos dos personagens não são restaurados ao carregar um encontro.
+A aba permanente **Combate** reúne os botões **Criar encontro** e **Iniciar combate** no canto superior direito e guarda encontros privados do Mestre: nome, localidade, cena, jogadores, criaturas/NPCs, quantidades, relações e posições. É possível editar, duplicar ou excluir o modelo sem alterar um combate em andamento. O mapa e as paredes continuam vindo da cena cadastrada; PV e recursos dos personagens não são restaurados ao carregar um encontro.
+
+A aba temporária **Combate em andamento** aparece desde o início da preparação de iniciativa até o encerramento da batalha. Ela mantém o tabuleiro separado da biblioteca de encontros; ao encerrar, o Mestre retorna à aba **Combate** se estiver vendo a batalha. Outras abas abertas são preservadas.
 
 O wizard tem cinco etapas: **Encontro → Local → Participantes → Cena e posições → Revisão**. Um encontro salvo abre diretamente a revisão. A montagem também pode ser salva sem iniciar combate. Posições são opcionais; quem estiver sem posição aparece na bandeja de posicionamento do combate.
 
