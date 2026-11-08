@@ -2067,6 +2067,7 @@ export interface TurnEconomy {
   reactionAvailable: boolean;
   movementBudget: number;
   movementUsed: number;
+  movementDashCount?: number;
   movementOverrideBudget: number | null;
   attackAction: { attackActionId: string; attacksMade: number; attacksAllowed: number } | null;
   lightWeaponsAttacked: string[];

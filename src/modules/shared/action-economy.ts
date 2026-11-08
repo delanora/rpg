@@ -33,6 +33,8 @@ export const turnEconomySchema = z.object({
   reactionAvailable: z.boolean().default(true),
   movementBudget: z.number().nonnegative().default(0),
   movementUsed: z.number().nonnegative().default(0),
+  /** Disparadas do turno; permite projetar bônus mesmo com velocidade base zero. */
+  movementDashCount: z.number().int().nonnegative().default(0),
   /** Ajuste administrativo em distância real; não é ampliado ao remover condições. */
   movementOverrideBudget: z.number().nonnegative().nullable().default(null),
   attackAction: attackActionSchema.nullable().default(null),

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AbilityKey } from './dnd5e.js';
 import { concentrationSaveSchema, concentrationStateSchema } from './concentration.js';
 import type { TurnEconomy } from './action-economy.js';
+import { metersToFeet } from './weapon-range.js';
 import { exhaustionRuleEnabled } from './exhaustion-flag.js';
 import { canSee, canSeeAttacker } from './vision.js';
 
@@ -141,19 +142,31 @@ export type ConditionEffects = ReturnType<typeof deriveConditionEffects>;
 export function effectiveSpeed(base: number, value: unknown, effectSpeedBonus = 0): number {
   const effects = deriveConditionEffects(value);
   if (effects.speedZero) return 0;
-  // Velocidades em metros podem ser fracionárias (7,5 m = 25 pés).
-  // Sem multiplicador, truncar aqui retirava deslocamento legítimo da ficha.
-  const speed = (base + effectSpeedBonus) * effects.speedMultiplier;
-  return Math.max(0, effects.speedMultiplier === 1 ? speed : Math.floor(speed));
+  const speed = base + effectSpeedBonus;
+  // PHB 2014: divisões arredondam para baixo em PÉS, antes de apresentar metros.
+  // 30 / 2 = 15 pés (4,5 m); 25 / 2 = 12 pés (3,6 m). Sem redução,
+  // preservamos a velocidade fracionária legada sem converter a persistência.
+  if (effects.speedMultiplier === 1) return Math.max(0, speed);
+  const feet = Math.floor(metersToFeet(speed) * effects.speedMultiplier + 1e-8);
+  return Math.max(0, Math.round(feet * 0.3 * 100) / 100);
 }
 export function effectiveMaxHp(base: number, value: unknown): number {
   return Math.max(0, Math.floor(base * deriveConditionEffects(value).hpMaxMultiplier));
 }
 
-/** Mantém orçamento nominal e gasto real; remover condição não cria movimento novo. */
+/** Projeta o saldo utilizável sem alterar orçamento nominal, gasto ou override. */
 export function reconcileMovement(state: TurnEconomy, baseSpeed: number, speed: number): TurnEconomy {
-  const ratio = baseSpeed > 0 ? Math.min(1, speed / baseSpeed) : 0;
-  return { ...state, movementBudget: Math.max(state.movementUsed, speed <= 0 ? state.movementUsed : (state.movementOverrideBudget ?? state.movementBudget * ratio)) };
+  // O orçamento nominal contém o movimento inicial e as Disparadas em metros
+  // BASE. Bônus e reduções entram somente na leitura, inclusive depois de Dash.
+  // Não limitar a razão a 1: efeitos positivos também aumentam deslocamento.
+  const budget = baseSpeed > 0
+    ? state.movementBudget * speed / baseSpeed
+    : state.actionsGranted > 0 ? speed * (1 + state.movementDashCount) : 0;
+  return {
+    ...state,
+    movementBudget: Math.max(state.movementUsed,
+      speed <= 0 ? state.movementUsed : (state.movementOverrideBudget ?? budget)),
+  };
 }
 
 /**

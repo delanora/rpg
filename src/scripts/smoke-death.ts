@@ -1408,6 +1408,21 @@ export async function smokeDeath(baseUrl: string, check: Check): Promise<void> {
       JSON.stringify(revivalEconomy),
     );
 
+    // 6.6M.9.2 — recuperar o turno não grava velocidade já reduzida.
+    await prisma.character.update({ where: { id: heroF.character.id }, data: {
+      mechanicalState: { conditions: [], exhaustionLevel: 2, log: [] } as never,
+    } });
+    await restoreTurnEconomyAfterRevival(characterEntity(heroF));
+    const revividoExausto = (await request('/combat/active', undefined, masterToken)).data.combat as CombatDto;
+    const economiaExausta = revividoExausto.combatants.find(item => item.id === combatantF)!.turnEconomy;
+    const nominalExausto = await prisma.combatant.findUniqueOrThrow({ where: { id: combatantF } });
+    check('64.U) recuperar turno com Exaustão aplica redução uma vez: nominal 9 m, efetivo 4,5 m',
+      economiaExausta.movementBudget === 4.5 && economiaExausta.movementUsed === 0 &&
+      (nominalExausto.turnEconomy as any).movementBudget === 9, JSON.stringify(economiaExausta));
+    await prisma.character.update({ where: { id: heroF.character.id }, data: {
+      mechanicalState: { conditions: [], exhaustionLevel: 0, log: [] } as never,
+    } });
+
     // --- 46) Reconexão de verdade: sockets novos leem o mesmo estado -------
     for (const socket of sockets) socket.disconnect();
     const reconnected = await connect(masterToken);

@@ -1,4 +1,4 @@
-import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, reconcileMovement, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
+import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
 import { publishEffects } from '../effects/effects.service.js';
 import { rollSelectedOptional } from '../dice/effect-optional.js';
 import {
@@ -104,6 +104,8 @@ import {
   combatantAttacks,
   combatantDeathState,
   combatantMechanicalState,
+  combatantEffectiveSpeed,
+  combatantMovementEconomy,
   hideMasterPrivateState,
   hasPrivateMechanicalState,
   orderCombatants,
@@ -338,12 +340,13 @@ export async function restoreTurnEconomyAfterRevival(entity: MechanicalEntity): 
   });
   if (!participant) return;
   const baseSpeed = participant.character?.speed ?? participant.creature?.speed ?? 0;
-  const state = participant.character?.mechanicalState ?? participant.mechanicalState;
   await prisma.$transaction([
     prisma.combatant.update({
       where: { id: participant.id },
       data: {
-        turnEconomy: onTurnStart(effectiveSpeed(baseSpeed, state)) as unknown as Prisma.InputJsonValue,
+        // A projeção do DTO aplica Exaustão/efeitos; gravar speed efetivo aqui
+        // reduziria novamente o orçamento de quem acaba de reviver.
+        turnEconomy: onTurnStart(baseSpeed) as unknown as Prisma.InputJsonValue,
       },
     }),
     prisma.combat.update({
@@ -613,15 +616,16 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
     } else {
       requireOwnTurn(combat, combatant);
       if (input.action === 'move') {
-        const available = reconcileMovement(economy, combatantSpeed(combatant), effectiveSpeed(combatantSpeed(combatant), combatantMechanicalState(combatant)));
+        const available = combatantMovementEconomy(combatant);
         moveDistance(available, input.distance! * effects.movementCostMultiplier);
         economy.movementUsed = available.movementUsed;
       }
       else {
         spendEconomy(economy, COMBAT_ACTIONS[input.action].economy);
-        if (input.action === 'dash' && !effects.speedZero) {
-          if (economy.movementOverrideBudget !== null) economy.movementOverrideBudget += effectiveSpeed(combatantSpeed(combatant), combatantMechanicalState(combatant));
+        if (input.action === 'dash') {
+          if (economy.movementOverrideBudget !== null) economy.movementOverrideBudget += combatantEffectiveSpeed(combatant);
           else economy.movementBudget += combatantSpeed(combatant);
+          economy.movementDashCount += 1;
         }
         if (input.action === 'ready') economy.ready = { trigger: input.trigger!, intent: input.intent! };
         // Esquiva vale até o início do próprio próximo turno (ver `dodging`).
@@ -664,7 +668,7 @@ export async function overrideEconomy(actor: CombatActor, input: EconomyOverride
     if (input.adjustment === 'restore-bonus') economy.bonusActionUsed = false;
     if (input.adjustment === 'restore-reaction') economy.reactionAvailable = true;
     if (input.adjustment === 'set-movement') {
-      const base = combatantSpeed(combatant), speed = effectiveSpeed(base, combatantMechanicalState(combatant));
+      const speed = combatantEffectiveSpeed(combatant);
       if (speed <= 0 && input.remaining! > 0) throw new HttpError('Deslocamento efetivo zero; remova a condição explicitamente antes de conceder movimento.', 409, 'CONFLICT');
       economy.movementOverrideBudget = economy.movementUsed + input.remaining!;
     }

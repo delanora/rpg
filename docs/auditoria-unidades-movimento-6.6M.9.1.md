@@ -102,3 +102,36 @@ para uma fase própria: arredondamento sob Exaustão e alinhamento da derivaçã
 bônus de velocidade entre todas as superfícies (a API de economia não recebe
 explicitamente `speedBonus`, enquanto o serviço espacial recebe). Não se afirma
 cobertura de Direct Drag por interação real de navegador.
+
+
+## 6.6M.9.2 — Consistência do deslocamento
+
+As pendências de arredondamento por Exaustão e de aplicação uniforme de
+`speedBonus` acima foram tratadas nesta entrega. A redução arredonda em pés
+antes de converter para metros: 30 pés / 2 = 15 pés (4,5 m), e 25 pés / 2 =
+12 pés (3,6 m). As velocidades persistidas continuam em metros.
+
+DTO, ação de mover, movimento espacial, Disparada e levantar usam a mesma
+velocidade efetiva. O orçamento nominal não recebe modificadores; apenas o gasto
+real é persistido após trechos espaciais e checkpoints de OA. Isso impede que
+cada movimento reaplique a redução ou o bônus. A recuperação do turno após
+reviver também inicializa o orçamento nominal, sem aplicar Exaustão duas vezes.
+Overrides do Mestre continuam absolutos, e deslocamento zero prevalece.
+
+`movementDashCount` é estado de uso aditivo no JSONB, com padrão zero para
+registros antigos; permite Disparada quando a velocidade base é zero e um efeito
+concede velocidade. Nenhuma migration ou reinterpretação de unidades foi feita.
+Orçamentos antigos já reduzidos por uma execução anterior não são reconstruídos
+por heurística: o próximo início de turno recompõe o orçamento normalmente.
+
+A reprodução anterior apresentou 14 falhas nas 15 novas verificações iniciais.
+Após a correção e ampliação: Golden Path 47/47; seis smokes relacionados 499/499,
+incluindo NPCs, bônus/redução, Disparada/retry, override, Exaustão, dois checkpoints
+de OA e recuperação de turno. Typechecks/builds backend e client, combat-ui e
+operation-id aprovados. Schema descartável `smoke_movement_6692`, servidor 3121;
+todas as tabelas de public idênticas antes/depois. Processo e schema removidos.
+Sem validação independente em navegador ou reinício do serviço da mesa.
+
+Referências PHB 2014: [arredondamento em divisões](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/introduction),
+[Disparada e modificadores de velocidade](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/combat)
+e [Exaustão](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/appendix-a-conditions).

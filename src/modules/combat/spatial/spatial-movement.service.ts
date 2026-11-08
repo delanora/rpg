@@ -3,17 +3,15 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
 import { HttpError } from '../../../lib/http-error.js';
 import { ServerEvents } from '../../../realtime/events.js';
-import { economyOf, moveDistance, type TurnEconomy } from '../../shared/action-economy.js';
-import {
-  deriveConditionEffects,
-  effectiveSpeed,
-  reconcileMovement,
-} from '../../shared/conditions.js';
+import { economyOf, moveDistance } from '../../shared/action-economy.js';
+import { deriveConditionEffects } from '../../shared/conditions.js';
 import { deathBlocksActions } from '../../shared/death.js';
 import type { CombatActor } from '../combat.service.js';
 import { emitCombat, emitMovementVisual, loadCombatById } from '../combat.service.js';
 import {
   combatantDeathState,
+  combatantEffectiveSpeed,
+  combatantMovementEconomy,
   combatantMechanicalState,
   orderCombatants,
   toCombatDto,
@@ -195,18 +193,8 @@ const MOVEMENT_ERRORS: Record<
   },
 };
 
-function baseSpeedOf(combatant: CombatantSourced): number {
-  return Math.max(0, combatant.character?.speed ?? combatant.creature?.speed ?? 0);
-}
-
-/** Deslocamento EFETIVO central — nunca recalculado localmente. */
-export function effectiveSpeedOf(combatant: CombatantSourced): number {
-  return effectiveSpeed(
-    baseSpeedOf(combatant),
-    combatantMechanicalState(combatant),
-    combatant.effectModifiers?.speedBonus ?? 0,
-  );
-}
+/** Atalho mantido para os consumidores do serviço espacial. */
+export const effectiveSpeedOf = combatantEffectiveSpeed;
 
 function participantsOf(combat: CombatSourced): MovementParticipant[] {
   return combat.combatants.map((combatant) => ({
@@ -219,13 +207,7 @@ function participantsOf(combat: CombatSourced): MovementParticipant[] {
 }
 
 /** Economia do turno já reconciliada com o deslocamento efetivo. */
-export function movementEconomyOf(combatant: CombatantSourced): TurnEconomy {
-  return reconcileMovement(
-    economyOf(combatant.turnEconomy),
-    baseSpeedOf(combatant),
-    effectiveSpeedOf(combatant),
-  );
-}
+export const movementEconomyOf = combatantMovementEconomy;
 
 /**
  * Avaliação derivada do estado persistido (sem escrita, sem cache). Exportada
@@ -378,7 +360,9 @@ export async function applyMovementEvaluation(
     where: { id: combatant.id },
     data: {
       spatialPosition: destination as unknown as Prisma.InputJsonValue,
-      turnEconomy: economy as unknown as Prisma.InputJsonValue,
+      // Só o gasto volta ao estado nominal; persistir a projeção reaplicaria
+      // Exaustão/bônus na próxima leitura e em cada retomada de OA.
+      turnEconomy: { ...economyOf(combatant.turnEconomy), movementUsed: economy.movementUsed } as unknown as Prisma.InputJsonValue,
     },
   });
   if (options.log !== false && evaluation.steps.length > 0) {
@@ -685,7 +669,7 @@ export async function commitVoluntaryMovement(
           where: { id: combatant.id },
           data: {
             spatialPosition: checkpoint as unknown as Prisma.InputJsonValue,
-            turnEconomy: economy as unknown as Prisma.InputJsonValue,
+            turnEconomy: { ...economyOf(combatant.turnEconomy), movementUsed: economy.movementUsed } as unknown as Prisma.InputJsonValue,
           },
         });
         if (prefix.length > 0) {

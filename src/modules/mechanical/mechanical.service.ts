@@ -7,11 +7,11 @@ import { ServerEvents } from '../../realtime/events.js';
 import { characterBaseMaxHp } from '../characters/characters.dto.js';
 import { toCreatureDto } from '../creatures/creatures.dto.js';
 import { emitCombat, loadCombatById, publishCharacter, type CombatActor } from '../combat/combat.service.js';
-import { orderCombatants, toCombatDto } from '../combat/combat.dto.js';
+import { combatantMovementEconomy, orderCombatants, toCombatDto } from '../combat/combat.dto.js';
 import { economyOf, moveDistance } from '../shared/action-economy.js';
 import { registerFatalExhaustion } from '../death/death.service.js';
 import { HP_ZERO_SOURCE } from '../shared/death.js';
-import { CONDITION_LABELS, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, reconcileMovement, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
+import { CONDITION_LABELS, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, mechanicalStateOf, type MechanicalEntity, type MechanicalState } from '../shared/conditions.js';
 import { endEffectsForConcentration, effectModifierSetFor, publishEffects } from '../effects/effects.service.js';
 import {
   applyConditionInstances,
@@ -227,7 +227,8 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
         state.concentration = null;
         state.pendingConcentrationSaves = [];
       } else if (input.action === 'stand') {
-        const effects = deriveConditionEffects(state), speed = effectiveSpeed(loaded.baseSpeed, state);
+        const effects = deriveConditionEffects(state);
+        const speed = effectiveSpeed(loaded.baseSpeed, state, (await effectModifierSetFor(loaded.entity, db)).speedBonus);
         if (!effects.prone) throw new HttpError('A criatura não está caída.', 409, 'CONFLICT');
         if (speed <= 0) {
           throw new HttpError(
@@ -241,7 +242,7 @@ export async function mutateMechanicalState(actor: CombatActor, input: Mechanica
           const combat = await loadCombatById(loaded.combat.id, db);
           if (orderCombatants(combat.combatants)[combat.currentIndex]?.id !== loaded.combat.combatantId) throw new HttpError('Levantar exige o próprio turno.', 403);
           const participant = combat.combatants.find(item => item.id === loaded.combat!.combatantId)!;
-          const budget = economyOf(participant.turnEconomy), available = reconcileMovement(budget, loaded.baseSpeed, speed);
+          const budget = economyOf(participant.turnEconomy), available = combatantMovementEconomy(participant);
           const cost = speed / 2;
           if (available.movementBudget - available.movementUsed + 1e-8 < cost) {
             throw new HttpError(

@@ -538,6 +538,29 @@ export async function smokeOpportunityAttacks(
       )).data.distance.distanceFeet === 10,
     );
 
+    // 6.6M.9.2 — checkpoint e retomada nunca persistem orçamento reduzido.
+    await scenario();
+    await prisma.character.update({ where: { id: mover.id }, data: {
+      speed: 9, mechanicalState: { conditions: [], exhaustionLevel: 2, log: [] },
+    } });
+    await prisma.combatant.update({ where: { id: moverCombatantId }, data: { turnEconomy: onTurnStart(9) } });
+    const pausadoExausto = await move(steps([190, 100], [185, 100]));
+    const janelaExaustaA = opportunityOf((await readModel(reactorToken)).data, reactorCombatantId);
+    if (!janelaExaustaA) throw new Error('Janela de OA ausente na fixture com Exaustão');
+    await declineReaction(janelaExaustaA.id);
+    const janelaExaustaB = opportunityOf((await readModel(reactorToken)).data, reactorCombatantId);
+    if (!janelaExaustaB) throw new Error('Segunda janela de OA ausente na fixture com Exaustão');
+    const retomadoExausto = await declineReaction(janelaExaustaB.id);
+    const exaustoAtual = (await request('/combat/active', undefined, masterToken)).data.combat
+      .combatants.find((item: any) => item.id === moverCombatantId);
+    const exaustoNominal = await economyOfCombatant(moverCombatantId);
+    check('92.U) Exaustão em dois checkpoints de OA: 4,5 m − 3 m = 1,5 m, nominal 9 m',
+      pausadoExausto.status === 200 && retomadoExausto.status === 200 &&
+      exaustoAtual.turnEconomy.movementBudget === 4.5 && exaustoAtual.turnEconomy.movementUsed === 3 &&
+      exaustoNominal.movementBudget === 9 && (await positionOf(moverCombatantId))?.xFeet === 185,
+      JSON.stringify({ projetado: exaustoAtual.turnEconomy, nominal: exaustoNominal }));
+    await prisma.character.update({ where: { id: mover.id }, data: { speed: 30 } });
+
     // =====================================================================
     // 93) EXECUTAR: um ataque, UMA Reação, MESMO resolver, movimento segue
     // =====================================================================

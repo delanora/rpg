@@ -298,6 +298,24 @@ export function combatantDeathState(combatant: CombatantSourced): DeathState {
   return combatant.character ? deathStateOf(combatant.character.deathState) : deathStateOf(combatant.deathState);
 }
 
+/** Mesma fonte de velocidade para DTO, ações, Disparada e movimento espacial. */
+export function combatantEffectiveSpeed(combatant: CombatantSourced): number {
+  return effectiveSpeed(
+    combatant.character?.speed ?? combatant.creature?.speed ?? 0,
+    combatantMechanicalState(combatant),
+    combatant.effectModifiers?.speedBonus ?? 0,
+  );
+}
+
+/** Orçamento nominal persistido → economia efetiva para validar/mostrar. */
+export function combatantMovementEconomy(combatant: CombatantSourced): TurnEconomy {
+  return reconcileMovement(
+    economyOf(combatant.turnEconomy),
+    combatant.character?.speed ?? combatant.creature?.speed ?? 0,
+    combatantEffectiveSpeed(combatant),
+  );
+}
+
 function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const source = combatant.character ?? combatant.creature;
   // Modificadores de EFEITOS ativos: CRU do resumo em lote, sem segunda conta.
@@ -336,21 +354,13 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const spatialPosition = parseStoredPosition(combatant.spatialPosition);
   const spatialVisibility = spatialVisibilityOf(combatant.spatialVisibility);
   return {
-    turnEconomy: reconcileMovement(
-      economyOf(combatant.turnEconomy),
-      source?.speed ?? 0,
-      effectiveSpeed(source?.speed ?? 0, combatantMechanicalState(combatant), effectModifiers.speedBonus),
-    ),
+    turnEconomy: combatantMovementEconomy(combatant),
     mechanicalState: mechanicalStateOf(combatantMechanicalState(combatant)),
     deathState,
     deathBlocksActions: deathBlocksActions(deathState),
     conditionEffects: deriveConditionEffects(combatantMechanicalState(combatant)),
     mechanicalVersion: combatant.character?.version ?? combatant.mechanicalVersion,
-    effectiveSpeed: effectiveSpeed(
-      source?.speed ?? 0,
-      combatantMechanicalState(combatant),
-      effectModifiers.speedBonus,
-    ),
+    effectiveSpeed: combatantEffectiveSpeed(combatant),
     id: combatant.id,
     kind: combatant.kind,
     characterId: combatant.characterId,

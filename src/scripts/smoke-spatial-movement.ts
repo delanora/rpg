@@ -1033,11 +1033,11 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
       const exhaustedShort = await preview(heroCombatant.id, path([5, 120]));
       const exhaustedLong = await preview(
         heroCombatant.id,
-        path([5, 120], [5, 125], [5, 130]),
+        path([5, 120], [5, 125], [5, 130], [5, 135]),
       );
       check(
-        '90.AO) Exaustão 2 reduz o deslocamento efetivo (9 m → 4 m → 13,33 pés)',
-        exhaustedPreview.data.movement.movementRemainingFeet === 13.33 &&
+        '90.AO) Exaustão 2 reduz o deslocamento efetivo (9 m → 4,5 m → 15 pés)',
+        exhaustedPreview.data.movement.movementRemainingFeet === 15 &&
           exhaustedPreview.data.movement.affordable === true &&
           exhaustedLong.data.movement.affordable === false &&
           exhaustedShort.data.movement.totalCostFeet === 5,
@@ -1096,6 +1096,160 @@ export async function smokeSpatialMovement(baseUrl: string, check: Check): Promi
           combatantOf(heroCombatant.id).spatial.position.xFeet === 30,
         JSON.stringify({ afterAction, economyEnd }),
       );
+
+      // 6.6M.9.2 — orçamento nominal persiste; saldo efetivo é só uma projeção.
+      await (async () => {
+        const efeitos: string[] = [];
+        const operacoes: string[] = [];
+        const economia = () => combatantOf(heroCombatant.id).turnEconomy;
+        const saldo = () => economia().movementBudget - economia().movementUsed;
+        const perto = (a: number, b: number) => Math.abs(a - b) < 1e-7;
+        async function acao(action: string, extra: Record<string, unknown> = {}) {
+          const res = await request('POST', '/combat/action', {
+            combatId: combat.id, combatantId: heroCombatant.id, action, ...operation(), ...extra,
+          }, playerToken);
+          if (res.data.combat) state = res.data.combat;
+          return res;
+        }
+        async function efeito(value: number, target = { kind: 'character', id: hero.id }) {
+          const operationId = randomUUID(); operacoes.push(operationId);
+          const res = await request('POST', '/effects', {
+            operationId, target, label: 'Deslocamento de teste', sourceType: 'manual',
+            visibility: 'private', modifiers: [{ kind: 'speed-flat', value }],
+          });
+          if (!res.data.effect) throw new Error(`Falha ao criar efeito: ${JSON.stringify(res.data)}`);
+          efeitos.push(res.data.effect.id); await refresh();
+          return res.data.effect.id as string;
+        }
+        async function encerrar(id: string) {
+          const operationId = randomUUID(); operacoes.push(operationId);
+          const res = await request('POST', `/effects/${id}/end`, { operationId });
+          if (res.status !== 200) throw new Error(`Falha ao encerrar efeito: ${JSON.stringify(res.data)}`);
+          await refresh();
+        }
+        async function preparar(speed: number, exhaustionLevel = 0, conditions: string[] = []) {
+          await prisma.character.update({ where: { id: hero.id }, data: { speed } });
+          await resetHero(0, 120, { meters: speed, exhaustionLevel, conditions });
+        }
+        try {
+          await preparar(9, 2);
+          check('90.U1) Exaustão: 30 pés / 2 = 15 pés (4,5 m), sem truncar metros',
+            perto(combatantOf(heroCombatant.id).effectiveSpeed, 4.5) && perto(saldo(), 4.5));
+          const primeiro = await move(heroCombatant.id, path([5, 120]), playerToken);
+          const segundo = await acao('move', { distance: 1.5 });
+          const terceiro = await move(heroCombatant.id, path([10, 120]), playerToken);
+          const nominal = await prisma.combatant.findUniqueOrThrow({ where: { id: heroCombatant.id } });
+          check('90.U2) Exaustão: mover no grid → API → grid não reduz orçamento novamente',
+            primeiro.status === 200 && segundo.status === 200 && terceiro.status === 200 &&
+            perto(economia().movementUsed, 4.5) && perto(saldo(), 0) &&
+            (nominal.turnEconomy as any).movementBudget === 9,
+            JSON.stringify({ primeiro: primeiro.status, segundo: segundo.status, terceiro: terceiro.status, economia: economia(), nominal: nominal.turnEconomy }));
+          const esgotado = await move(heroCombatant.id, path([15, 120]), playerToken);
+          check('90.U3) Exaustão: excedente é recusado depois do saldo exato', esgotado.status === 409);
+
+          await preparar(7.5, 2);
+          check('90.U4) Exaustão: 25 pés / 2 arredonda para 12 pés (3,6 m)',
+            perto(combatantOf(heroCombatant.id).effectiveSpeed, 3.6) && perto(saldo(), 3.6));
+          const imparA = await move(heroCombatant.id, path([5, 120]), playerToken);
+          const imparB = await move(heroCombatant.id, path([10, 120]), playerToken);
+          check('90.U5) velocidade ímpar preserva saldo de 2 pés após dois passos de 5',
+            imparA.status === 200 && imparB.status === 200 && perto(saldo(), 0.6), JSON.stringify(economia()));
+
+          await preparar(9);
+          const bonus = await efeito(3);
+          check('90.U6) bônus privado +3 m aumenta deslocamento e orçamento para 12 m',
+            perto(combatantOf(heroCombatant.id).effectiveSpeed, 12) && perto(saldo(), 12));
+          const moverApi = await acao('move', { distance: 3 });
+          const moverGrid = await move(heroCombatant.id, path([5, 120]), playerToken);
+          const dashBody = { combatId: combat.id, combatantId: heroCombatant.id, action: 'dash', ...operation() };
+          const dash = await request('POST', '/combat/action', dashBody, playerToken);
+          if (dash.data.combat) state = dash.data.combat;
+          const dashReplay = await request('POST', '/combat/action', dashBody, playerToken);
+          check('90.U7) Disparada usa speed efetivo: 24 m totais, 4,5 m gastos; retry não soma',
+            moverApi.status === 200 && moverGrid.status === 200 && dash.status === 200 &&
+            perto(saldo(), 19.5) && dashReplay.data.replayed === true,
+            JSON.stringify({ economia: economia(), dash: dash.status }));
+          await encerrar(bonus);
+          check('90.U8) encerrar bônus após Disparada conserva gasto e recalcula saldo: 18 − 4,5',
+            perto(saldo(), 13.5) && perto(economia().movementUsed, 4.5), JSON.stringify(economia()));
+
+          await preparar(9, 2);
+          const metadeBonus = await efeito(3);
+          const dashMetade = await acao('dash');
+          const segmentoA = await move(heroCombatant.id, path([5, 120]), playerToken);
+          const segmentoB = await move(heroCombatant.id, path([10, 120]), playerToken);
+          check('90.U9) bônus e Exaustão: speed 6 m, Disparada 12 m, dois passos deixam 9 m',
+            dashMetade.status === 200 && segmentoA.status === 200 && segmentoB.status === 200 && perto(saldo(), 9), JSON.stringify(economia()));
+          await encerrar(metadeBonus);
+          check('90.U10) remover bônus com Exaustão não restaura gasto: 9 − 3 = 6 m', perto(saldo(), 6));
+
+          await preparar(9, 0, ['prone']);
+          const bonusLevantar = await efeito(3);
+          const versao = (await prisma.character.findUniqueOrThrow({ where: { id: hero.id } })).version;
+          const levantar = await request('POST', '/mechanical/mutate', {
+            entity: { kind: 'character', id: hero.id }, action: 'stand', expectedVersion: versao,
+            expectedCombatVersion: state.version, operationId: randomUUID(),
+          }, playerToken);
+          await refresh();
+          check('90.U11) levantar usa bônus de efeito: custa 6 m e deixa 6 m, sem gastar Ação',
+            levantar.status === 200 && perto(economia().movementUsed, 6) && perto(saldo(), 6) && economia().actionsUsed === 0,
+            JSON.stringify({ status: levantar.status, economia: economia() }));
+          const ajuste = await request('POST', '/combat/economy/override', {
+            combatId: combat.id, combatantId: heroCombatant.id, adjustment: 'set-movement', remaining: 3,
+            reason: 'Saldo absoluto da fixture', ...operation(),
+          });
+          await refresh(); await encerrar(bonusLevantar);
+          check('90.U12) ajuste do Mestre permanece absoluto depois de remover bônus',
+            ajuste.status === 200 && perto(saldo(), 3) && perto(economia().movementUsed, 6));
+
+          await preparar(9);
+          const zero = await efeito(-9);
+          check('90.U13) speed-flat que zera deslocamento bloqueia a ação de mover',
+            (await acao('move', { distance: 0.3 })).status === 409 && perto(saldo(), 0));
+          const ajustarZero = await request('POST', '/combat/economy/override', {
+            combatId: combat.id, combatantId: heroCombatant.id, adjustment: 'set-movement', remaining: 3,
+            reason: 'Não pode ultrapassar deslocamento zero', ...operation(),
+          });
+          check('90.U14) override não concede movimento contra speed efetivo zero por efeito', ajustarZero.status === 409);
+          await encerrar(zero);
+
+          await preparar(0);
+          const baseZero = await efeito(3);
+          const dashZero = await acao('dash');
+          check('90.U15) base zero com bônus +3 m: Disparada projeta 6 m',
+            dashZero.status === 200 && perto(saldo(), 6), JSON.stringify(economia()));
+          await encerrar(baseZero);
+
+          await preparar(9);
+          const reducao = await efeito(-3);
+          const reduzidoA = await move(heroCombatant.id, path([5, 120]), playerToken);
+          const reduzidoB = await move(heroCombatant.id, path([10, 120]), playerToken);
+          check('90.U16) redução de −3 m não reaplica a cada trecho: 6 − 3 = 3 m',
+            reduzidoA.status === 200 && reduzidoB.status === 200 && perto(saldo(), 3));
+          await encerrar(reducao);
+          check('90.U17) remover redução recupera apenas o saldo: 9 − 3 = 6 m', perto(saldo(), 6));
+          check('90.U18) turno do NPC disponível para a mesma economia', await advanceTo(gruntCombatant.id));
+          const bonusNpc = await efeito(3, { kind: 'combatant', id: gruntCombatant.id });
+          const moverNpc = await request('POST', '/combat/action', {
+            combatId: combat.id, combatantId: gruntCombatant.id, action: 'move', distance: 3, ...operation(),
+          });
+          if (moverNpc.data.combat) state = moverNpc.data.combat;
+          const dashNpc = await request('POST', '/combat/action', {
+            combatId: combat.id, combatantId: gruntCombatant.id, action: 'dash', ...operation(),
+          });
+          if (dashNpc.data.combat) state = dashNpc.data.combat;
+          const economiaNpc = combatantOf(gruntCombatant.id).turnEconomy;
+          check('90.U19) NPC usa bônus em mover e Disparada: 24 − 3 = 21 m',
+            moverNpc.status === 200 && dashNpc.status === 200 &&
+            perto(economiaNpc.movementBudget - economiaNpc.movementUsed, 21), JSON.stringify(economiaNpc));
+          await encerrar(bonusNpc);
+          await advanceTo(heroCombatant.id);
+        } finally {
+          await prisma.effectOperation.deleteMany({ where: { operationId: { in: operacoes } } });
+          await prisma.effectInstance.deleteMany({ where: { id: { in: efeitos } } });
+          await preparar(9);
+        }
+      })();
 
       // =====================================================================
       // 128 — IDEMPOTÊNCIA / VERSÃO / NO-OP
