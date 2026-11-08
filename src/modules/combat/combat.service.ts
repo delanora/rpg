@@ -661,12 +661,14 @@ export async function overrideEconomy(actor: CombatActor, input: EconomyOverride
     const messages = {
       'grant-action': 'concedeu +1 Ação', 'restore-action': 'recuperou as Ações',
       'restore-bonus': 'recuperou a Ação Bônus', 'restore-reaction': 'recuperou a Reação',
+      'restore-movement': 'recuperou o Movimento',
       'set-movement': `ajustou Movimento restante para ${input.remaining} m`,
     };
     if (input.adjustment === 'grant-action') economy.actionsGranted += 1;
     if (input.adjustment === 'restore-action') economy.actionsUsed = 0;
     if (input.adjustment === 'restore-bonus') economy.bonusActionUsed = false;
     if (input.adjustment === 'restore-reaction') economy.reactionAvailable = true;
+    if (input.adjustment === 'restore-movement') economy.movementUsed = 0;
     if (input.adjustment === 'set-movement') {
       const speed = combatantEffectiveSpeed(combatant);
       if (speed <= 0 && input.remaining! > 0) throw new HttpError('Deslocamento efetivo zero; remova a condição explicitamente antes de conceder movimento.', 409, 'CONFLICT');

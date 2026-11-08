@@ -149,7 +149,7 @@ export type NextTurnInput = z.infer<typeof nextTurnSchema>;
 
 export const economyOverrideSchema = combatOperationSchema.extend({
   combatantId: z.string().min(1),
-  adjustment: z.enum(['grant-action', 'restore-action', 'restore-bonus', 'restore-reaction', 'set-movement']),
+  adjustment: z.enum(['grant-action', 'restore-action', 'restore-bonus', 'restore-reaction', 'restore-movement', 'set-movement']),
   remaining: z.number().nonnegative().max(9999).optional(),
   reason: z.string().trim().max(500).default(''),
 }).superRefine((input, ctx) => {

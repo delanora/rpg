@@ -24,6 +24,11 @@ export function MasterEconomyPanel({ combat, combatant, busy, onRun, expanded = 
   const [remaining, setRemaining] = useState('0');
   const economy = combatant.turnEconomy;
   const actionsLeft = Math.max(0, economy.actionsGranted - economy.actionsUsed);
+  const applyAdjustment = (kind: EconomyAdjustment) => onRun(() => overrideEconomy(combat, {
+    combatantId: combatant.id, adjustment: kind,
+    ...(reason.trim() ? {reason: reason.trim()} : {}),
+    ...(kind === 'set-movement' ? {remaining: Number(remaining)} : {}),
+  }));
 
   const movementValid = adjustment !== 'set-movement' || (remaining.trim() !== '' &&
     Number.isFinite(Number(remaining)) && Number(remaining) >= 0 && Number(remaining) <= 9999);
@@ -56,21 +61,22 @@ export function MasterEconomyPanel({ combat, combatant, busy, onRun, expanded = 
             {ADJUSTMENTS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
         </label>
-        {adjustment === 'set-movement' ? <label className="field"><span>Movimento restante (m)</span>
-          <input type="number" min={0} max={9999} step="0.5" aria-label="Movimento restante em metros"
-            value={remaining} disabled={busy} onChange={event => setRemaining(event.target.value)} />
-        </label> : null}
+        {adjustment === 'set-movement' ? <div className="combat-economy-movement">
+          <label className="field"><span>Movimento restante (m)</span>
+            <input type="number" min={0} max={9999} step="0.5" aria-label="Movimento restante em metros"
+              value={remaining} disabled={busy} onChange={event => setRemaining(event.target.value)} />
+          </label>
+          <button type="button" className="btn btn-small" disabled={busy}
+            title="Recuperar todo o deslocamento concedido neste turno"
+            onClick={() => applyAdjustment('restore-movement')}>Recuperar Movimento</button>
+        </div> : null}
         <label className="field"><span>Justificativa <small>(opcional)</small></span>
           <textarea placeholder="Explique o ajuste, se quiser registrá-lo" aria-label="Motivo do ajuste"
             value={reason} maxLength={500} rows={2} disabled={busy} onChange={event => setReason(event.target.value)} />
         </label>
         <p className="field-hint">Sem justificativa, o ajuste não aparece no registro.</p>
         <button type="button" className="btn btn-small" disabled={busy || !movementValid}
-          onClick={() => onRun(() => overrideEconomy(combat, {
-            combatantId: combatant.id, adjustment,
-            ...(reason.trim() ? { reason: reason.trim() } : {}),
-            ...(adjustment === 'set-movement' ? { remaining: Number(remaining) } : {}),
-          }))}>
+          onClick={() => applyAdjustment(adjustment)}>
           {reason.trim() ? 'Aplicar e registrar' : 'Aplicar ajuste'}
         </button>
       </div>

@@ -160,7 +160,7 @@ export type EconomyAction =
   | 'move'
   /** Sabedoria (Medicina) CD 10 para estabilizar outra criatura a 0 PV. */
   | 'stabilize';
-export type EconomyAdjustment = 'grant-action' | 'restore-action' | 'restore-bonus' | 'restore-reaction' | 'set-movement';
+export type EconomyAdjustment = 'grant-action' | 'restore-action' | 'restore-bonus' | 'restore-reaction' | 'restore-movement' | 'set-movement';
 export function executeEconomyAction(combat: CombatDto, input: {
   combatantId: string; action: EconomyAction; description?: string; trigger?: string; intent?: string; distance?: number;
   /** ESTABILIZAR: quem está a 0 PV (o servidor valida elegibilidade). */

@@ -3221,3 +3221,6 @@
 /* Leitura da economia do token inspecionado, independente de quem está no turno. */
 .token-economy-state { display: flex; align-items: center; gap: 1.25rem; padding: 0.2rem 0.15rem 0.7rem; border-bottom: 1px solid var(--line); margin-bottom: 0.2rem; }
 .token-economy-state > span { display: inline-flex; align-items: center; }
+
+.combat-economy-movement { display: grid; gap: 0.5rem; }
+.combat-economy-movement > button { justify-self: start; }

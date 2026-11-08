@@ -57,6 +57,12 @@ Ao prever uma saída de alcance hostil, o grid destaca o contorno de ameaça dos
 tokens públicos e pede confirmação antes do movimento. O servidor pausa antes
 da saída; uma janela permite atacar ou recusar, inclusive fora do próprio turno.
 Criaturas/NPCs são controlados pelo Mestre e personagens pelo seu jogador.
+
+Na aba **Economia** do menu do token, **Ajustar Movimento restante** permite
+definir um saldo manual ou **Recuperar Movimento** em um clique. A recuperação
+repõe o total concedido naquele turno, preservando bônus, ajustes e restrições,
+sem recuperar Ação, Bônus ou Reação.
+
 O filtro **Reações** da hotbar mostra um ícone contextual, aguardando um gatilho;
 nenhum clique permite gastar uma reação livre. A personalização salva é preservada.
 

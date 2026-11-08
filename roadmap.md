@@ -112,7 +112,7 @@
 
 | Etapa | Estado | Descrição breve |
 |---|---|---|
-| **6.6M.5–5.2 — Workspace** | ✅ | Combate em aba própria, grid central, iniciativa/log e menus do Mestre no token, com economia visível mesmo fora do turno. |
+| **6.6M.5–5.2 — Workspace** | ✅ | Combate em aba própria, grid central, iniciativa/log e menus do Mestre no token, com economia visível fora do turno e recuperação automática de movimento. |
 | **6.6M.6–6.1.5.1 — Dock do jogador** | ✅ | Retrato, recursos, Hotbar, deslocamento, câmera e utilitários. |
 | **6.6M.6.2–6.2.2 — Estados/filtros** | ✅ | Filtros Ação/Bônus/Reação, espera, tooltip, seleção/desseleção de atalhos. |
 | **6.6M.6.3–6.3.1 — Hotbar 48 slots** | ✅ | Grade 2×24, edição, troca/remoção, salvamento e persistência por personagem. |

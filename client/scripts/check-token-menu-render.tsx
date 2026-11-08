@@ -83,6 +83,12 @@ check('economia do token aparece fora do turno com ação extra e recursos gasto
  !!document.querySelector('.token-economy-state .is-bonus.is-spent') && !!document.querySelector('.token-economy-state .is-reaction.is-spent'));
 
 check('economia reutiliza o ajuste explícito existente',!!document.querySelector('[aria-label="Motivo do ajuste"]'));
+const adjustmentSelect=document.querySelector<HTMLSelectElement>('[aria-label="Ajuste de economia"]')!;
+await act(async()=>{adjustmentSelect.value='set-movement';adjustmentSelect.dispatchEvent(new Event('change',{bubbles:true}));});
+check('ajuste manual de movimento também oferece recuperação automática',!!document.querySelector('[aria-label="Movimento restante em metros"]')&&!button('Recuperar Movimento').disabled);
+await click(button('Recuperar Movimento'));
+check('recuperação pede ao servidor o saldo total sem enviar valor manual',calls.some(call=>call.url.endsWith('/economy/override')&&call.body.adjustment==='restore-movement'&&call.body.combatantId==='target'&&!('remaining' in call.body)));
+await act(async()=>{adjustmentSelect.value='grant-action';adjustmentSelect.dispatchEvent(new Event('change',{bubbles:true}));});
 const field=document.querySelector<HTMLTextAreaElement>('[aria-label="Motivo do ajuste"]')!;
 check('aplicar ajuste não exige justificativa', !button('Aplicar ajuste').disabled);
 await click(button('Aplicar ajuste'));
