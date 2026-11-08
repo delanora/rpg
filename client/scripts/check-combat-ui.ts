@@ -6448,7 +6448,7 @@ check(
       trackerSource.includes('<CombatGrid') &&
       logPanelSource.includes('className="combat-resolution-list"') &&
       !workspaceLayout.includes("from '../") &&
-      !workspaceLayout.includes("from './") &&
+      workspaceLayout.includes("from './CombatMasterDock'") &&
       !workspaceLayout.includes('CombatLog') &&
       workspaceLayout.includes('{scene}'),
   );
@@ -6596,7 +6596,7 @@ check(
     'SC84) a dock do jogador é uma faixa do workspace: abaixo do corpo e acima da barra de recursos',
     workspaceLayout.includes('dock?: ReactNode;') &&
       workspaceLayout.indexOf('{dock}') > workspaceLayout.indexOf('combat-workspace-body') &&
-      workspaceLayout.indexOf('{dock}') < workspaceLayout.indexOf('{resourceBar}') &&
+      workspaceLayout.indexOf('{dock}') < workspaceLayout.lastIndexOf('{resourceBar}') &&
       workspaceLayout.includes('<div className="combat-workspace-dock">') &&
       workspaceRule('.combat-dock').includes('display: grid;'),
   );
@@ -7609,7 +7609,7 @@ check(
       !workspaceActive.includes('.hotbar-hint') &&
       // A região operacional é CONDICIONAL ao conteúdo real.
       workspaceSource.includes('export function hasRenderableContent') &&
-      workspaceSource.includes('{hasRenderableContent(action) || hasRenderableContent(context) ? (') &&
+      workspaceSource.includes('{(!isMaster && hasRenderableContent(action)) || hasRenderableContent(context) ? (') &&
       workspaceSource.includes('{hasRenderableContent(context) ? (') &&
       // Comportamento real do predicado: nada desenhável NÃO reserva altura.
       hasRenderableContent(null) === false &&

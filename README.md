@@ -789,6 +789,8 @@ As criaturas já têm o que a Etapa 4 precisa: `id` estável, atributos (para a 
 
 ## ⚔️ Etapa 4 — Combate em tempo real
 
+Na visão do mestre, a barra inferior reúne **Ações do turno**, **Ajustes** e o inventário do NPC. Os painéis abrem sobre o mapa e preservam as escolhas ao fechar. Dano/cura, economia, estado e encerramento do combate ficam em Ajustes; **Cena e posicionamento** reúne a administração do tabuleiro. Reações e resoluções pendentes continuam visíveis no combate.
+
 No combate com grid, **segure Alt e clique no mapa** para sinalizar um ponto. O cursor vira uma bandeirinha; mestre e jogadores veem a marca com nome e cor do autor por três segundos. O gesto também funciona sobre tokens e preserva ação, movimento e seleção.
 
 `POST /api/combat/:combatId/spatial/ping` recebe `{ position: { xFeet, yFeet } }` de qualquer participante autenticado. O servidor valida o mapa e publica `combat:ping` para a mesa, sem persistência ou replay na reconexão.

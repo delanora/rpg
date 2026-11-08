@@ -1317,6 +1317,8 @@ export function CombatTracker({
         <CombatIntro combatId={combat.id} />
 
         <CombatWorkspace
+          isMaster={isMaster}
+          turnKey={`${combat.id}:${combat.round}:${currentId}`}
           header={
             <>
               <div className="combat-workspace-title">
@@ -1412,6 +1414,8 @@ export function CombatTracker({
 
 
       <CombatWorkspace
+        isMaster={isMaster}
+        turnKey={`${combat.id}:${combat.round}:${currentId}`}
         header={
           <>
             <div className="combat-workspace-title">
@@ -1438,26 +1442,6 @@ export function CombatTracker({
                   onClick={() => void endTurn()}
                 >
                   Próximo turno →
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-small"
-                  disabled={busy}
-                  onClick={() => {
-                    void (async () => {
-                      setBusy(true);
-                      try {
-                        await endCombat();
-                        onCombatEnd();
-                      } catch (error) {
-                        onError(error instanceof Error ? error.message : 'Falha ao encerrar.');
-                      } finally {
-                        setBusy(false);
-                      }
-                    })();
-                  }}
-                >
-                  encerrar combate
                 </button>
               </div>
             ) : null}
@@ -1732,12 +1716,39 @@ export function CombatTracker({
               />
             ) : null}
 
+            <details className="combat-tools">
+              <summary><Icon name="gear" size={13} /> Gerenciar combate</summary>
+              <button
+                type="button"
+                className="btn btn-danger btn-small"
+                disabled={busy}
+                onClick={() => {
+                  void (async () => {
+                    setBusy(true);
+                    try {
+                      await endCombat();
+                      onCombatEnd();
+                    } catch (error) {
+                      onError(error instanceof Error ? error.message : 'Falha ao encerrar.');
+                    } finally {
+                      setBusy(false);
+                    }
+                  })();
+                }}
+              >
+                encerrar combate
+              </button>
+            </details>
+          </>
+        ) : undefined}
+        masterInventory={
+          <>
             {/*
               INVENTÁRIO DO NPC — MESMO painel flutuante da ficha do jogador.
               O Mestre abre o inventário do NPC do turno e usa por duplo clique
               ou "Usar em..."; o servidor continua validando turno/Ação.
             */}
-            {showOperational && npcInventory && npcInventoryCreature?.kind === 'NPC' ? (
+            {isMaster && showOperational && npcInventory && npcInventoryCreature?.kind === 'NPC' ? (
               <InventoryDock
                 npc={{
                   creature: npcInventoryCreature,
@@ -1759,7 +1770,7 @@ export function CombatTracker({
               />
             ) : null}
           </>
-        ) : undefined}
+        }
         tools={toolsNode}
         log={
           <CombatLog

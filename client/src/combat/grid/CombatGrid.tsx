@@ -1951,6 +1951,16 @@ export function CombatGrid({
       aria-label="Cena de combate"
       data-grid-phase={gridPhase}
     >
+      {isMaster ? (
+        <details className="grid-master-settings" onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault(); event.stopPropagation();
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector('summary')?.focus();
+          }
+        }}>
+          <summary><Icon name="gear" size={14} /> Cena e posicionamento{mode === 'placement' ? ' · Posicionando' : ''}</summary>
+          <div className="grid-master-settings-content">
       {/*
         TOOLBAR — SÓ ADMINISTRAÇÃO (6.6M.6.1.5). A câmera saiu daqui: virou
         overlay DENTRO do palco. Esta linha existe apenas para o Mestre
@@ -2017,6 +2027,10 @@ export function CombatGrid({
               : 'Ocultar dos jogadores'}
           </button>
         </div>
+      ) : null}
+
+          </div>
+        </details>
       ) : null}
 
       {/* Erro da cena do MESTRE fica no fluxo (contexto administrativo). O do

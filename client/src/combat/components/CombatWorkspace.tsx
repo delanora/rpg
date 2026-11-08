@@ -1,3 +1,4 @@
+import { CombatMasterDock } from './CombatMasterDock';
 import { Fragment, isValidElement, type ReactNode } from 'react';
 
 /**
@@ -28,6 +29,9 @@ export function hasRenderableContent(node: ReactNode): boolean {
 }
 
 interface CombatWorkspaceProps {
+  isMaster?: boolean;
+  turnKey?: string;
+  masterInventory?: ReactNode;
   /** Linha superior: título, rodada, contexto do turno e controles do Mestre. */
   header: ReactNode;
   /** Esquerda: a ordem de iniciativa do servidor. */
@@ -71,6 +75,9 @@ interface CombatWorkspaceProps {
  * não concede autoridade nenhuma a ninguém.
  */
 export function CombatWorkspace({
+  isMaster = false,
+  turnKey,
+  masterInventory,
   header,
   initiative,
   action,
@@ -87,6 +94,7 @@ export function CombatWorkspace({
       // A dock só existe para o jogador: a classe marca a superfície para ela
       // reservar a faixa dos botões flutuantes sem tocar na tela do Mestre.
       className={dock ? 'combat-workspace has-player-dock' : 'combat-workspace'}
+      data-master={isMaster || undefined}
       aria-label="Mesa de combate"
     >
       <header className="combat-workspace-header">{header}</header>
@@ -102,12 +110,12 @@ export function CombatWorkspace({
               conteúdo, a linha `auto` e o `gap` do centro NÃO são reservados e
               a cena herda a altura — nada de faixa vazia sob o mapa. Quando
               existe, o MESMO `action`/`context` de sempre é montado. */}
-          {hasRenderableContent(action) || hasRenderableContent(context) ? (
+          {(!isMaster && hasRenderableContent(action)) || hasRenderableContent(context) ? (
             <div className="combat-tactical-action">
               {hasRenderableContent(context) ? (
                 <div className="combat-tactical-context">{context}</div>
               ) : null}
-              <div className="combat-tactical-flow">{action}</div>
+              {!isMaster ? <div className="combat-tactical-flow">{action}</div> : null}
             </div>
           ) : null}
         </div>
@@ -117,10 +125,17 @@ export function CombatWorkspace({
         </aside>
       </div>
 
-      {dock ? <div className="combat-workspace-dock">{dock}</div> : null}
-      {masterTools ? <div className="combat-workspace-master-tools">{masterTools}</div> : null}
-      {tools ? <div className="combat-workspace-tools">{tools}</div> : null}
-      {resourceBar ? <div className="combat-workspace-resource">{resourceBar}</div> : null}
+      {isMaster ? (
+        <CombatMasterDock action={action} masterTools={masterTools} tools={tools}
+          resourceBar={resourceBar} inventory={masterInventory} turnKey={turnKey} />
+      ) : (
+        <>
+          {dock ? <div className="combat-workspace-dock">{dock}</div> : null}
+          {masterTools ? <div className="combat-workspace-master-tools">{masterTools}</div> : null}
+          {tools ? <div className="combat-workspace-tools">{tools}</div> : null}
+          {resourceBar ? <div className="combat-workspace-resource">{resourceBar}</div> : null}
+        </>
+      )}
     </section>
   );
 }
