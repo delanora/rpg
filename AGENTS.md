@@ -1,15 +1,54 @@
 # AGENTS.md — Guia do projeto para agentes de IA
 
 > **Leia isto antes de editar qualquer coisa.** Este arquivo é o mapa técnico do
-> **Grimório Digital** (nome interno do repo: `grimorio-digital`), um sistema web
-> multiusuário para mesas de **D&D 5ª Edição (PHB 2014)**. O `README.md` na raiz
-> é a documentação *funcional* (o que cada recurso faz, endpoint por endpoint);
-> este arquivo é a documentação *para quem vai mexer no código*: arquitetura,
-> convenções, comandos, fluxo de trabalho e armadilhas.
+> **Obsyrium RPG** (com nomes internos legados como `Grimório Digital`), um
+> sistema web multiusuário de **D&D 5e — PHB 2014**. O `README.md` documenta
+> os recursos e contratos funcionais; o `roadmap.md` descreve o histórico,
+> os estados e as próximas frentes. Este arquivo reúne as regras e convenções
+> para **agentes que vão modificar o código**. A `main` do GitHub é a fonte
+> de verdade sobre o que está implementado.
 >
 > **Responda e escreva código/comentários/commits em PT-BR.** O projeto é todo em
 > português: comentários, mensagens de erro, nomes de commit e até nomes de
 > variáveis de domínio (ex.: `corrente`, `usos`, `descanso`) quando faz sentido.
+
+---
+
+## Antes de trabalhar — protocolo obrigatório
+
+1. **Leia `AGENTS.md`, `roadmap.md` e o código atual.** Confira `HEAD`, `origin/main`,
+   `git status`, `git diff` e o escopo da tarefa. O Roadmap compartilhado no
+   Google Drive (aba **Roadmap** do *Codex do Aventureiro*) é a referência de
+   planejamento; o GitHub diz o que realmente existe. Não confie em SHAs,
+   status ou descrições históricas desta página sem verificar.
+2. **Mecânica:** PHB D&D 5e **2014** é a referência principal. Não misture
+   D&D 2024, opções do DMG, regras caseiras ou convenções de VTTs. Quando faltar
+   detalhe para um VTT, explique regra, lacuna, opções e adjudicação explícita
+   do Obsyrium; o Mestre continua decidindo.
+3. **Autoridade:** servidor decide ações, custos, movimento, targeting, dano,
+   salvaguardas, recursos, efeitos e turnos. Cliente solicita, prevê e anima.
+   Reutilize Action Economy, Movement, Spells, Effects, Reactions, Damage/Healing,
+   Concentration, Resolution Cards, realtime, `version` e `operationId`; não
+   construa uma segunda regra na Hotbar, Tomo ou HUD.
+4. **Unidades:** geometria/mecânica espacial em **FEET**, UI espacial em
+   **METERS**: 2,5 ft = 0,75 m; 5 ft = 1,5 m; 10 ft = 3 m; 30 ft = 9 m.
+   **O banco legado guarda `Character.speed`/`Creature.speed` e parte da
+   `TurnEconomy` em metros.** Não reinterpretar nem converter dados persistidos
+   sem migração específica e testes; ver `roadmap.md` e a auditoria em `docs/`.
+   Grid quadrado, diagonal = ortogonal, distância por footprints,
+   `baseSize` separado de `effectiveSize`; pan da câmera não é movimento.
+5. **Isolamento absoluto:** testes/smokes jamais alteram usuários,
+   personagens, NPCs, combates ou outros dados reais. Exigir schema/banco
+   descartável, fixtures próprias, cleanup seletivo e **ANTES = DEPOIS**
+   dos dados reais. Snapshot/restore é defesa, não método de teste.
+6. **Fluxo:** analisar → implementar o mínimo → testar → revisar diff/staging →
+   **um commit isolado → push sem force → confirmar remoto → relatório**.
+   Preservar WIPs alheios. Se push rejeitado por divergência, **parar**:
+   não fazer merge/rebase/overwrite automaticamente.
+7. **Validação:** distinguir testes de código, typecheck, build, smokes,
+   renderização jsdom, navegador e validação manual. Nunca afirmar uso do
+   navegador quando ele não ocorreu. Uma falha nova não vira “flake conhecida”
+   sem investigação.
 
 ---
 
@@ -121,7 +160,7 @@ src/
 ├── middlewares/          # tratamento central de erros
 ├── modules/<domínio>/    # um diretório por área (ver padrão na seção 5)
 ├── realtime/             # Socket.io: hub, rooms, presence, broadcast, events, auth
-├── scripts/              # CLIs e o smoke test (ver seção 9)
+├── scripts/              # CLIs e smokes dedicados (ver seção 8)
 ├── types/                # augmentation de tipos do Express/Socket.io
 └── (o domínio de regras puras fica em src/modules/shared/ — ver seção 4)
 ```
@@ -346,51 +385,66 @@ Scripts do `package.json` raiz:
 | `npm run prisma:migrate` | cria/aplica migration em dev (`prisma migrate dev`) |
 | `npm run prisma:deploy` | aplica migrations em produção |
 | `npm run db:push` | sincroniza o schema sem migration (evite em produção) |
-| `npm run smoke` | smoke test ponta a ponta (**exige servidor rodando**) |
+| `npm run smoke` | smoke legado monolítico — **não executar sobre a campanha real** |
+| `npm run test:combat-ui` | verificações estruturais e comportamentais da UI de combate |
+| `npm run test:operation-id` | invariantes de operação/idempotência |
 | `npm run setup` | instala deps do backend e do frontend |
 | `npm run dev:client` / `build:client` / `typecheck:client` | frontend |
 | `npm run create-master -- ...` | cria/promove a conta de mestre |
 
-### Smoke test — a verificação do projeto
+### Testes automatizados — isolamento antes de qualquer execução
 
-**Regra de fixtures:** smokes NUNCA devem usar, normalizar ou apagar personagens,
-contas, criaturas ou combates reais da campanha. Cada seção cria as PRÓPRIAS
-fixtures (usuários/personagens com sufixo aleatório) e o `finally` remove apenas
-os IDs que ela criou — nunca "delete all test-looking rows".
+**Regra crítica:** nenhum smoke/teste automatizado pode modificar contas,
+personagens, NPCs, criaturas, combates, cenas, inventário, mortes, recursos,
+descansos ou outras entidades de uma campanha real. Não selecionar dados reais
+com `findFirst()` para usá-los como fixture. Cada execução cria seus próprios
+IDs e remove **somente esses IDs**. Verificar **ANTES = DEPOIS** no banco real.
 
-**Não há testes unitários.** A verificação é `src/scripts/smoke-realtime.ts`
-(~21k linhas): sobe contas próprias, exercita HTTP + WebSocket de ponta a ponta e
-limpa tudo no fim. Ele cobre dezenas de seções (fichas, regras, combate, level
-up/down, compêndio, itens, moedas, descansos, recursos raciais...).
+**Nunca use o comando `DELETE FROM combats` (nem qualquer limpeza global)**
+para “preparar” o ambiente. Não curar todos, restaurar defaults nem fazer
+snapshot/restore da mesa como estratégia principal: **não tocar na mesa**.
 
-Boa prática de execução (preserva o status real apesar do `tee`):
+O repositório possui uma **família de testes**, não apenas um smoke:
+
+- `npm run test:combat-ui` e `npm run test:operation-id`;
+- `client/scripts/check-*.tsx` e testes reais de render com React/jsdom;
+- `src/scripts/smoke-combat-playable.ts` — Golden Path de sessão contínua;
+- smokes dedicados de movimento, Action Economy, morte/realtime, concentração,
+  magias, efeitos, paredes, reações etc. Escolha o **menor conjunto relevante**
+  à mudança, e amplie conforme o risco.
+- `src/scripts/smoke-realtime.ts` (`npm run smoke`) é um smoke **legado,
+  extenso e com dependências históricas de dados compartilhados**. **Não é
+  baseline segura na campanha nem deve ser executado contra produção.**
+  Somente em ambiente isolado após auditar seus efeitos e fixtures.
+
+**Guarda para smokes com escrita:** exigir `DATABASE_URL` para schema de teste
+explicitamente descartável (nunca `public`); conferir se a aplicação HTTP/WS
+de teste está ligada **ao mesmo banco/schema** por sentinela verificável;
+recusar schemas com dados reais e qualquer ambiente ambíguo. Conexões ao
+servidor da campanha não são aceitas. O fato de haver zero combates ativos
+**não comprova isolamento**. Cleanup restrito e verificação pós-teste.
+
+Checklist de verificações sem escrita (ajustar às alterações):
 
 ```bash
-set -o pipefail
-npm run smoke 2>&1 | tee /tmp/smoke.log | tail -60
-echo "SMOKE=${PIPESTATUS[0]}"
+npm run typecheck
+npm run typecheck:client
+npm run build
+npm run build:client
+npm run test:combat-ui
+npm run test:operation-id
 ```
 
-- O servidor **precisa estar rodando** e, de preferência, com combates limpos:
-  `PGPASSWORD=postgres psql -h localhost -U postgres -d grimorio -c "DELETE FROM combats;"`
-- **Rate limiter do login** (`authLimiter` em `src/modules/auth/auth.routes.ts`):
-  100 tentativas/15 min em dev, **30 em produção**, por IP. O smoke cria/reaproveita
-  contas e as seções novas **reutilizam fichas** para não estourar o limite.
-  **Reinicie o serviço entre execuções** (`sudo systemctl restart grimorio`),
-  porque o limite é em memória.
+Os smokes de integração devem ser invocados **separadamente, em ambiente
+descartável**, com o servidor de teste apontando para o mesmo schema.
+Testes que dependem de aleatoriedade devem comprovar invariantes, não
+acertos/erros específicos de um dado; flakes anteriores não justificam ignorar
+falhas novas. Registre testes não executados, motivos e limites.
 
-Checklist de validação antes de encerrar uma tarefa:
-
-```bash
-set -o pipefail
-npm run typecheck 2>&1 | tail -5;        echo "T=${PIPESTATUS[0]}"
-npm run typecheck:client 2>&1 | tail -5; echo "TC=${PIPESTATUS[0]}"
-npm run build 2>&1 | tail -5;            echo "B=${PIPESTATUS[0]}"
-npm run build:client 2>&1 | tail -5;     echo "BC=${PIPESTATUS[0]}"
-```
-
-Só depois reinicie o serviço e rode o smoke. **Sem navegador/Chrome neste ambiente**
-— não há validação visual real; declare essa limitação em vez de fingir que validou.
+**Deploy não é teste:** recompilar o backend não reinicia automaticamente
+`node dist/index.js`; publicar/reciclar o serviço ativo e executar migrations
+em produção são operações distintas, somente quando autorizadas. Distinguir
+validação estrutural, smoke, browser e aceite manual.
 
 ---
 
@@ -410,32 +464,25 @@ Só depois reinicie o serviço e rode o smoke. **Sem navegador/Chrome neste ambi
 
 ---
 
-## 10. Estado atual do projeto (roadmap)
+## 10. Histórico técnico da Fase 6 (não é o roadmap vigente)
 
-Referência do handoff oficial: `HEAD = origin/main = 91d537d` antes desta
-atualização documental. As Fases 0–4 estão concluídas no escopo base/original;
-a **Fase 5 está funcionalmente concluída**.
+Esta seção contém **notas históricas detalhadas** dos motores de regras e
+da conjuração. **Não use suas datas, SHAs ou frases de progresso como o
+estado atual.** Para status atualizado consulte `roadmap.md`, o Roadmap
+compartilhado no Google Drive e, por último, confira o GitHub.
 
-### Roadmap oficial
+Até a revisão deste guia, o Roadmap registra **6.6M.8 (Death Lifecycle),
+6.6M.9 (Golden Path), 6.6M.9.1–9.2 (consistência de movimento)** concluídas
+no escopo testado. Também existem editor de paredes, ping sincronizado
+no grid, controle de combate do Mestre em abas e targeting a partir da
+Hotbar. Áreas especiais, linha de visão/cobertura espacial completa,
+magias especiais, reações avançadas e mais conteúdo PHB permanecem
+em expansão. **Não antecipar fases sem pedido explícito.**
 
-| Fase | Tema |
-|------|------|
-| 0 | Estabilidade |
-| 1 | Regras fundamentais |
-| 2 | Personagem/raças/backgrounds |
-| 3 | Itens/inventário/economia |
-| 4 | Catálogo de classes/feats/spells |
-| 5 | Descansos/recursos/lifecycle |
-| 6 | Engine mecânica |
-| 7 | Combate |
-| 8 | Compêndio/ferramentas do Mestre |
-| 9 | Legacy/qualidade dos dados |
-| 10 | Segurança/escala/qualidade |
+As notas abaixo descrevem decisões e contratos da época em que cada
+motor foi implementado. Confirme-os antes de reutilizar ou modificar.
 
-A existência de funcionalidades atuais de combate e ferramentas do Mestre não
-significa que as respectivas fases futuras estejam concluídas.
-
-**Fase 6 — engine mecânica em andamento:**
+**Fase 6 — engine mecânica em andamento:****Fase 6 — engine mecânica em andamento:**
 
 - 6.1 Action Economy — fundação implementada (PHB 2014)
 - 6.2 Conditions + Exhaustion — implementada (PHB 2014)
@@ -513,11 +560,9 @@ significa que as respectivas fases futuras estejam concluídas.
   **6.6H**: duração ESTRUTURADA, relógio de ROUNDS em combate, triggers de fim
   de turno, salvaguarda repetida e expiração no lifecycle — ver a seção própria
   abaixo.
-- 6.6 Basic Spell Execution
-- 6.7 Duration / Effects
-- 6.8 Components / Materials
-- 6.9 Special Spell Handlers
-- 6.10 Class/Racial Feature Integration
+- **Status de 6.6–6.12 e Fases 7–11:** ver `roadmap.md`. A existência de
+  um catálogo não comprova que uma magia/característica seja executável;
+  conferir os handlers e os testes do código atual.
 
 A 6.1 usa `Combatant.turnEconomy`, `Combat.version` e `CombatOperation`:
 consumo, ataque, munição e dano são atômicos; retries devolvem snapshot sem
@@ -533,11 +578,11 @@ Reação, sem detectar gatilho ou executar magia. Ações improvisadas e ajustes
 explícitos do Mestre são logados. A disponibilidade de Ação Bônus não concede
 uma ação genérica. Fora de combate não há orçamento de turno na ficha.
 
-Lâmina Sedenta aguarda vínculo confiável de arma do pacto. Action Surge, Haste,
-Protection, Great Weapon Fighting e execução avançada de características
-permanecem pendentes. Não iniciar Fases 6.3+ sem especificação posterior e
-decisões explícitas com o usuário. Decisões ambíguas devem ser reportadas antes
-de implementar.
+O histórico de Lâmina Sedenta, Action Surge, Haste, Protection e outros
+handlers é contextual: **rever o código atual** antes de classificar qualquer
+um como implementado ou pendente. Não antecipar fases futuras desnecessariamente.
+Quando houver lacuna decisória relevante do PHB/VTT, documentar opções e
+preservar a arbitragem do Mestre.
 
 ### Condições e Exaustão (6.2)
 
@@ -1162,7 +1207,7 @@ Longo (Long Rest):
 **Não existe conversão global automática de once/day para Long Rest.** Para
 qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
-> Migrations: **60** (são 60 diretórios em `prisma/migrations`; a 6.6H criou
+> Histórico de migrations até a 6.6H (a contagem **não é atual**): a 6.6H criou
 > `20261104170000_add_spell_duration_lifecycle` com `durationSnapshot`/
 > `resolutionReason` no `SpellCast`, `durationSnapshot`/`turnTriggers` no
 > `EffectInstance` e `phase`/`effectInstanceId`/`triggerKey`/
@@ -1179,8 +1224,9 @@ qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 - Fundação de **ações/reações em combate** implementada na Fase 6.1; integração
   do catálogo ainda é futura. Referências antigas no código a
   `TODO (Fase 5 — motor de ações)` usam a numeração anterior.
-- Execução real de magias/efeitos e integração de características de classe/raça
-  pertencem à Fase 6; o catálogo estruturado não equivale à execução mecânica.
+- Há execução real de várias magias e efeitos no Spell/Effect Engine, mas
+  **nem toda entrada do catálogo é executável**; ampliar padrões e características
+  de classe/raça conforme os handlers e a cobertura atuais.
 - Companheiro animal do Senhor das Feras como ficha própria permanece futuro.
 - Raças **personalizadas** do mestre (`custom_races`) **não** modelam recursos.
 
@@ -1188,62 +1234,67 @@ qualquer novo caso, parar e perguntar ao usuário antes de implementar.
 
 ## 11. Armadilhas e regras de convivência (leia antes de editar)
 
-1. **O smoke é enorme.** Adicionar uma seção grande pode estourar
-   `TS2563: The containing function or module body is too large for control flow
-   analysis`. Envolva blocos novos em **IIFE assíncrono**
-   (`await (async () => { ... })();`) — às vezes sub-IIFEs aninhados.
-2. **Flakies conhecidas do smoke (não "consertar"):**
-   - a seção de **Short Rest coletivo concorrente** pode devolver
-     `{"statuses":[200,409],"a":1}` (corrida esperada — um ganha, o outro recebe 409);
-   - um teste de **crítico 2d10** aleatório pode oscilar no log de ataque derivado.
-   Se aparecerem, apenas registre; não são regressão.
-3. **Rate limiter em memória:** reinicie o serviço antes de cada smoke; sem isso
-   execuções repetidas dão `TOO_MANY_REQUESTS`.
-4. **`NODE_ENV` fora do `.env`** (ver seção 2) para não quebrar o serviço.
-5. **Backend exige rebuild + restart**; só o client é estático.
-6. **Nunca versione arquivos temporários `tmp-*`** nem `uploads/`, `dist/`,
-   `node_modules/`, `.env`.
-7. **Estado do working tree nesta máquina (ao escrever este arquivo):** há um WIP
-   não commitado de longa data em
-   `client/src/components/sections/InventorySection.tsx` e no hunk `.inv-hover`
-   de `client/src/styles.css`. **Não os inclua em commits** de outras tarefas —
-   confira `git status`/`git diff --cached` antes de commitar (cheque que as
-   mudanças preparadas são só as suas).
-8. **Não commite `tmp-*`** e sempre confira o que está staged quando o usuário
-   pedir um commit.
+1. **`smoke-realtime.ts` é monolítico.** Evite adicionar grandes blocos;
+   prefira smokes isolados. Em caso de `TS2563`, reestruture
+   conscientemente, sem mascarar cenários.
+2. **Flakes registradas não são autorização para ignorar falhas novas.**
+   Há histórico de disputa em Short Rest concorrente e de assert ligado à
+   aleatoriedade de dano; verifique se o resultado é esperado **no cenário
+   concreto** e registre evidências. Uma mudança de comportamento exige
+   investigação.
+3. **Rate limiter e backend de produção:** não reinicie serviço real só para
+   tornar um smoke possível. Use servidor de teste/schema descartável.
+4. **`NODE_ENV` e systemd:** confira as regras da seção 2 antes do deploy.
+5. **Backend exige build + reinício autorizado;** cliente usa build estático.
+6. **Não versionar** `tmp-*`, `uploads/`, `dist/`, `node_modules/`,
+   `.env` ou qualquer segredo.
+7. **WIPs são dinâmicos.** Identifique `git status`, `git diff` e
+   `git diff --cached` a cada tarefa. Alterações em painéis do Mestre,
+   `styles.css`, scripts de seed ou outros arquivos podem pertencer a
+   colaboradores: preserve tudo fora do escopo, inclusive hunks
+   separados no mesmo arquivo.
+8. **Navegador não pode ser presumido.** Distinguir teste jsdom de screenshot,
+   browser validation e aceite do usuário.
 
 ---
 
 ## 12. Convenções de git e fluxo de trabalho
 
-- **Commit em PT-BR**, focado no **porquê** (não no "o quê"), com rodapé:
-
-  ```
-  <mensagem concisa>
-
-  🤖 Generated with Codebuff
-  Co-Authored-By: Codebuff <noreply@codebuff.com>
-  ```
-
-- Antes de commitar, faça os guards óbvios: `git status --short`,
-  `git diff --cached --name-only` e confirme que não entrou WIP alheio.
-- **Push só quando o usuário autorizar** (`git push origin main`).
-- Prefira **editar arquivos existentes** a criar novos; faça a menor mudança que
-  resolve o pedido, seguindo o padrão do módulo vizinho.
-- Comentários e mensagens de erro em **PT-BR**, explicando a *decisão* (o código já
-  diz o "o quê").
-- Imports relativos no backend ESM terminam em **`.js`** (ex.:
-  `import { x } from './y.js'`), mesmo o arquivo-fonte sendo `.ts`.
+- **Commits em PT-BR**, concisos e focados em uma única tarefa.
+  Não impor assinatura/Co-Authored-By de uma ferramenta específica a
+  todos os agentes: usar atribuição verdadeira, quando aplicável.
+- Em toda implementação aprovada: **analisar → implementar → testar →
+  revisar diff/staging → um commit isolado → push → confirmar remoto →
+  relatório final**. Não deixar a tarefa apenas local.
+- Conferir `HEAD`, `origin/main`, `git status --short`,
+  `git diff`, `git diff --cached` e a lista de arquivos staged.
+  **Não incluir WIP de terceiros nem trabalho fora do escopo**.
+- **Nunca `git push --force`** sem autorização explícita. Se o push for
+  rejeitado por divergência, **parar e reportar**; não rebasear, mergear
+  ou sobrescrever silenciosamente. Não fazer deploy/restart em produção
+  sem autorização para essa operação.
+- Prefira alterações incrementais e reutilização dos módulos existentes.
+  Comentários e mensagens de erro em PT-BR, explicando a decisão.
+  Imports relativos no backend ESM terminam em **`.js`**, mesmo quando
+  o fonte é `.ts`.
+- Ao finalizar, relatar HEAD inicial e final, arquivos, testes e limitações
+  (inclusive ausência de navegador), integridade dos dados, SHA, branch,
+  push/remote sync, pendências, checklist manual e próxima etapa.
+  Atualize `roadmap.md` / Roadmap do Drive **só nas partes afetadas**
+  quando a tarefa incluir atualização de planejamento/status.
 
 ---
 
-## 13. Contas e dados de teste (ambiente local desta máquina)
+## 13. Contas e dados de teste
 
-O banco `grimorio` (PostgreSQL 17, `postgres`/`postgres` em `localhost:5432`) pode
-conter contas reais de teste, por exemplo um `MASTER` (`mestre_mun1khyj`) e
-jogadores (`razzil`, `umbrae`). **Trate-as como dados de verdade:** não as apague
-nem seus personagens fora de um teste que você mesmo criou. O smoke cria e limpa
-as **próprias** contas — não reaproveite contas reais sem necessidade.
+Qualquer banco acessível pode conter **dados reais da campanha**.
+Não listar, publicar ou reutilizar contas reais, nomes, senhas ou IDs
+para fixtures. Nunca usá-los para dano, condições, Death Saves,
+movimento, magias, descansos, inventário ou testes de permissão.
+Um banco com zero combates ativos **não é necessariamente seguro**.
+Exigir schema/banco descartável com identidades exclusivas,
+sentinela que comprove o servidor de teste, cleanup apenas dos
+IDs criados pela execução e verificação **ANTES = DEPOIS**.
 
 ---
 
@@ -1255,8 +1306,13 @@ as **próprias** contas — não reaproveite contas reais sem necessidade.
 3. Regras de D&D puras em `src/modules/shared/`; ficha grava só **estado de uso**,
    o resto é derivado; `version` protege concorrência; `operationId` dá idempotência.
 4. WebSocket só **notifica**; escrita é HTTP.
-5. Validar com `typecheck` (backend+client), `build` (backend+client) e `smoke`
-   (servidor rodando, restarte entre execuções).
-6. Regras de ouro: não commite WIP alheio nem `tmp-*`; não edite migrations prontas;
-   não invente lib/estado global; siga o padrão do módulo vizinho.
-7. Sem navegador aqui: declare a limitação em vez de alegar validação visual.
+5. Validar com `typecheck` e `build` de backend/client, testes específicos
+   e smokes **somente em schema e servidor descartáveis**; nunca usar
+   `npm run smoke` legado na campanha.
+6. Regras de ouro: não commite WIP alheio nem `tmp-*`; não edite migrations
+   prontas; não duplique motores ou regras; use os contratos do módulo vizinho.
+7. Browser e teste jsdom são coisas distintas: declare o que executou.
+8. Cada implementação aprovada precisa de commit isolado, push, confirmação
+   de remoto e relatório. Se o push divergir, pare sem rebase/merge automático.
+9. Para status atual consulte `roadmap.md` e o Roadmap compartilhado; a
+   seção 10 deste arquivo contém **histórico técnico**, não o plano vigente.
