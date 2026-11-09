@@ -1,5 +1,5 @@
 import { effectiveSceneConfigOf, type SpatialPosition2D } from './spatial.types.js';
-import { evaluateWallPath } from './targeting-walls.js';
+import { evaluateWallPath, evaluateWallSight } from './targeting-walls.js';
 import { obstacleDtoOf } from './spatial-obstacle.js';
 import type { Prisma } from '@prisma/client';
 import type { CombatSourced, CombatantSourced } from '../combat.dto.js';
@@ -46,6 +46,7 @@ export interface ReactionThreatScan {
   /** Threats elegíveis, na ordem de iniciativa. */
   threats: ReachThreat[];
   visibilityByReactor?: Map<string, OpportunityVisibilityStatus>;
+  visibilityAt?: (reactorId: string, position: SpatialPosition2D, size: SpatialSize) => OpportunityVisibilityStatus;
   clearPathAt?: (reactorId: string, position: SpatialPosition2D, size: SpatialSize) => boolean;
   /** Ordem de iniciativa (índice canônico de `orderCombatants`). */
   orderIndex: Map<string, number>;
@@ -89,13 +90,24 @@ function spatialBodyOf(
   };
 }
 
+/** Visão no ponto real do boundary, antes do passo que sairia do alcance. */
+export function reactionVisibilityAt(combat: CombatSourced, reactor: CombatantSourced,
+  mover: CombatantSourced, position: SpatialPosition2D, size: SpatialSize): OpportunityVisibilityStatus {
+  return opportunityVisibilityOf({
+    canSeeMover: canSee(combatantMechanicalState(reactor), combatantMechanicalState(mover)),
+    occludersExist: false,
+    geometry: evaluateWallSight(effectiveSceneConfigOf(combat), spatialBodyOf(reactor), {position, size},
+      combat.scene ? combat.scene.obstacles?.map(obstacleDtoOf) ?? null : []).result,
+  });
+}
+
 /**
  * Varre os possíveis reactors do movimento.
  *
  * `mover` precisa estar colocado. Cada candidato passa por:
  *  1. lado (hostil conhecido — `same` e `unknown` ficam de fora);
  *  2. Reação disponível e capacidade de agir (Incapacitado/0 PV/morte);
- *  3. visão autoritativa (`canSee` mecânico + ausência de occluders);
+ *  3. visão mecânica; a geometria é reavaliada em cada boundary;
  *  4. pelo menos UM ataque corpo a corpo com reach estruturado.
  *
  * `disengaging` do MOVER suprime a janela: o movimento dele não provoca OA
@@ -136,17 +148,17 @@ export function scanReactionThreats(
 
     const reactorEconomy = economyOf(candidate.turnEconomy);
     const reactorEffects = deriveConditionEffects(combatantMechanicalState(candidate));
-    const visibility: OpportunityVisibilityStatus = opportunityVisibilityOf({
-      canSeeMover: canSee(combatantMechanicalState(candidate), moverState),
-      // Visão geométrica ainda assistida: paredes opacas pedem decisão do Mestre.
-      occludersExist: combat.scene?.obstacles?.some(wall => wall.blocksSight) ?? false,
-    });
+    const mechanicalSight = canSee(combatantMechanicalState(candidate), moverState);
+    const visibility = reactionVisibilityAt(combat, candidate, mover, moverPosition,
+      effectiveSizeOf((mover.baseSize ?? 'medium') as SpatialSize));
     const eligibility = opportunityEligibility({
       relation,
       reactionAvailable: reactorEconomy.reactionAvailable,
       canAct: reactorEffects.canAct,
       disengaging: moverEconomy.disengaging,
-      visibility,
+      // A geometria depende do ponto ao longo do trajeto: um alvo pode sair
+      // de trás da parede antes de deixar o alcance. Só o estado mecânico é fixo.
+      visibility: mechanicalSight ? 'known-visible' : 'known-not-visible',
       hasMeleeOption: profiles.length > 0,
     });
     if (!eligibility.eligible) continue;
@@ -162,6 +174,10 @@ export function scanReactionThreats(
   }
 
   return { threats, orderIndex, relationUnknown, masterAdjudication, visibilityByReactor,
+    visibilityAt: (reactorId, position, size) => {
+      const reactor = combat.combatants.find(unit => unit.id === reactorId);
+      return reactor ? reactionVisibilityAt(combat, reactor, mover, position, size) : 'known-not-visible';
+    },
     clearPathAt: (reactorId, position, size) => {
       const reactor = threats.find(threat => threat.reactorCombatantId === reactorId);
       return evaluateWallPath(effectiveSceneConfigOf(combat), reactor?.body ?? null, {position, size},
@@ -194,9 +210,10 @@ export function scanReactionBoundaries(
     .map((boundary) => ({
       ...boundary,
       orderIndex: scan.orderIndex.get(boundary.reactorCombatantId) ?? Number.MAX_SAFE_INTEGER,
-      visibility: scan.visibilityByReactor?.get(boundary.reactorCombatantId) ?? 'known-visible' as OpportunityVisibilityStatus,
+      visibility: scan.visibilityAt?.(boundary.reactorCombatantId, boundary.stepIndex === 0 ? mover.position : path[boundary.stepIndex - 1]!, mover.size) ?? scan.visibilityByReactor?.get(boundary.reactorCombatantId) ?? 'known-visible' as OpportunityVisibilityStatus,
       options: opportunityOptionsOf(boundary),
     }))
+    .filter(boundary => boundary.visibility !== 'known-not-visible')
     .sort((a, b) => a.stepIndex - b.stepIndex || a.orderIndex - b.orderIndex);
 }
 

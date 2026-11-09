@@ -566,7 +566,10 @@ export async function validateSpellCast(
       // A janela de oportunidade já confirmou a visão (ou recebeu adjudicação).
       // canSee mecânico continua revalidado; alcance e caminho mantêm o provider.
       provider: options.reactionAuthorized
-        ? {...gridSpatialProvider(spatialIndex), evaluateSightGeometry: () => 'pass' as const}
+        ? {...gridSpatialProvider(spatialIndex), evaluateSightGeometry: (caster, target) => {
+            const measured = gridSpatialProvider(spatialIndex).evaluateSightGeometry(caster, target);
+            return measured === 'unknown' ? 'pass' : measured;
+          }}
         : gridSpatialProvider(spatialIndex),
       ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
     });

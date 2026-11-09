@@ -107,9 +107,10 @@ O filtro **Reações** da hotbar mostra um ícone contextual, aguardando um gati
 nenhum clique permite gastar uma reação livre. A personalização salva é preservada.
 
 Desengajar, reação já usada e incapacidade de agir continuam impedindo o gatilho.
-Paredes opacas mantêm a visão assistida, confirmada pelo Mestre; uma barreira
-completa que bloqueia ataques impede uma oportunidade impossível. O contorno é
-uma indicação de alcance, sem cálculo automático de visão ou cobertura parcial.
+A visão por paredes é automática nos casos claros, avaliada antes do passo
+que sairia do alcance. Só casos indeterminados pedem confirmação do Mestre.
+Uma barreira completa de visão ou de ataques impede a oportunidade. O contorno
+indica alcance; meia cobertura e três quartos ainda não são inferidos.
 
 Um aro fino pulsa em vermelho nos hostis, verde nos aliados e amarelo nos
 neutros. A relação vem do servidor; tokens ocultos não revelam sua relação.
@@ -143,7 +144,15 @@ Salvaguardas mantêm o movimento pausado até a resolução. Dano, morte ou Para
 
 Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas/NPCs, cadastre uma habilidade **Passiva → Conjurador de Guerra (PHB 2014)** no bestiário, além do repertório e perfil de conjuração. O nome livre da habilidade não concede a regra. O talento também concede vantagem nos testes de concentração por dano e permite gestos somáticos com arma/escudo na mão; não dispensa componentes materiais nem supera bloqueios de componentes.
 
-**Próxima etapa:** consolidar linha de visão e cobertura espacial.
+**Próxima etapa:** cobertura geométrica e ampliação da visão para iluminação e sentidos especiais.
+
+### Linha de visão por paredes — casos claros
+
+A simples presença de uma parede no mapa não abre mais uma pergunta de visão. O servidor considera os espaços inteiros dos dois tokens: paredes opacas fora desse corredor não interferem; uma barreira opaca completa impede a visão; cantos, frestas, obstruções parciais ou dados espaciais indisponíveis ficam para o Mestre. Os bloqueios de **visão**, **movimento** e **ataques/magias** permanecem independentes.
+
+O ataque de oportunidade exige ver a criatura que está saindo do alcance ([regras de combate de 2014](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/combat)). A geometria é avaliada imediatamente antes desse passo, inclusive em trajetos com vários pontos. Um alvo pode sair de trás de uma parede e depois provocar a oportunidade; perder a visão antes de sair impede o gatilho. A pergunta **usar ou não a Reação** continua com seu dono. Pendências antigas marcadas como desconhecidas podem ser lidas e executadas diretamente quando a geometria atual comprova visão livre, sem escrita pelo GET.
+
+Magias que exigem visão reutilizam a mesma avaliação. Cegueira e Invisibilidade continuam autoritativas e não são superadas por confirmação manual. Esta é uma adjudicação conservadora de paredes em 2D, não um algoritmo de iluminação ou uma regra de cobertura parcial. A arte do mapa não define altura, escuridão, neblina, sentidos especiais ou aberturas não cadastradas; esses casos permanecem para expansões próprias.
 
 ## 🗺️ Editor de paredes da cena
 
@@ -161,7 +170,7 @@ As opções **Bloqueia movimento**, **Bloqueia ataques e magias** e
 **Bloqueia movimento** impedem atravessar no modo **Mover**, considerando todo
 o espaço do token, inclusive criaturas grandes e passos diagonais. Encostar
 ou andar paralelo é permitido. O modo **Posicionar** do Mestre continua sendo
-um ajuste administrativo livre. O bloqueio automático de visão continua futuro.
+um ajuste administrativo livre. A visão usa a flag independente, conforme descrito abaixo.
 
 **Ataques e magias:** no grid, uma barreira contínua que separa inteiramente os
 espaços dos dois tokens impede o ataque ou a magia que exige caminho livre,

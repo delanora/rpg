@@ -726,7 +726,9 @@ export async function commitVoluntaryMovement(
         const opened = await openOpportunitiesAtBoundary(db, {
           combat,
           intentId: intent.id,
-          mover: combatant,
+          // O prefixo já foi consolidado: visão/alcance usam a posição antes
+          // do passo provocador, não a origem anterior ao trajeto inteiro.
+          mover: { ...combatant, spatialPosition: checkpoint },
           moverEconomy: economy,
           remainingPath: input.path.slice(boundaryIndex),
         });

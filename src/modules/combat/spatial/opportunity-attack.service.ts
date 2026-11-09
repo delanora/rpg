@@ -38,6 +38,7 @@ import {
 } from './spatial-movement.service.js';
 import {
   openOpportunitiesAtBoundary,
+  reactionVisibilityAt,
   opportunityAttackProfilesOf,
   scanReactionBoundaries,
   scanReactionThreats,
@@ -246,7 +247,7 @@ export async function reactionOpportunitiesForCombat(
   const combat = await loadCombatById(combatId).catch(() => null);
   if (!combat) throw new HttpError('Combate não encontrado.', 404);
 
-  const [rows, intents] = await Promise.all([
+  const [storedRows, intents] = await Promise.all([
     prisma.reactionOpportunity.findMany({
       where: { combatId, status: 'pending' },
       orderBy: [{ createdAt: 'asc' }],
@@ -258,6 +259,18 @@ export async function reactionOpportunitiesForCombat(
       take: 20,
     }),
   ]);
+
+  // Pendências antigas podiam ser unknown só porque havia uma parede distante.
+  // A leitura refina apenas fatos livres comprovados; não escreve pelo GET.
+  const rows = storedRows.map(row => {
+    if (row.visibilityStatus === 'known-not-visible' || row.visibilityConfirmedBy) return row;
+    const reactor = combat.combatants.find(unit => unit.id === row.reactorCombatantId);
+    const mover = combat.combatants.find(unit => unit.id === row.moverCombatantId);
+    const position = mover ? parseStoredPosition(mover.spatialPosition) : null;
+    const measured = reactor && mover && position ? reactionVisibilityAt(combat, reactor, mover, position,
+      effectiveSizeOf((mover.baseSize ?? 'medium') as SpatialSize)) : 'unknown';
+    return measured === 'known-not-visible' ? row : {...row, visibilityStatus: measured};
+  });
 
   const pendingByReactor = rows.map((row) => ({
     id: row.id,
@@ -667,7 +680,11 @@ export async function assertOpportunityActionable(
   }
   requireReactionAuthority(actor, reactor);
   if (!combatantsAreHostile(reactor, mover)) throw new HttpError('A relação mudou: esta criatura não é mais hostil ao alvo.', 409, 'OPPORTUNITY_RELATION_CHANGED');
-  if (row.visibilityStatus === 'unknown') {
+  const position = parseStoredPosition(mover.spatialPosition);
+  const visibilityNow = position ? reactionVisibilityAt(combat, reactor, mover, position,
+    effectiveSizeOf((mover.baseSize ?? 'medium') as SpatialSize)) : 'unknown';
+  if (visibilityNow === 'known-not-visible') throw new HttpError('A criatura não consegue mais ver o alvo.', 409, 'OPPORTUNITY_NOT_VISIBLE');
+  if ((row.visibilityStatus === 'unknown' && visibilityNow !== 'known-visible') || (visibilityNow === 'unknown' && !row.visibilityConfirmedBy)) {
     throw new HttpError(
       'O Mestre precisa adjudicar a visão antes desta Reação.',
       409,
@@ -1065,14 +1082,20 @@ export async function confirmOpportunityVisibility(
           'OPPORTUNITY_NOT_PENDING',
         );
       }
-      if (!canConfirmOpportunityVisibility(visibilityOf(row.visibilityStatus))) {
+      const reactor = combat.combatants.find((item) => item.id === row.reactorCombatantId);
+      const mover = combat.combatants.find(item => item.id === row.moverCombatantId);
+      const position = mover ? parseStoredPosition(mover.spatialPosition) : null;
+      const currentVisibility = reactor && mover && position ? reactionVisibilityAt(combat, reactor, mover, position,
+        effectiveSizeOf((mover.baseSize ?? 'medium') as SpatialSize)) : 'unknown';
+      if (input.visible && currentVisibility === 'known-not-visible')
+        throw new HttpError('Um bloqueio autoritativo impede ver o alvo.', 409, 'OPPORTUNITY_NOT_VISIBLE');
+      if (!canConfirmOpportunityVisibility(visibilityOf(row.visibilityStatus)) && !(row.visibilityStatus === 'known-visible' && !row.visibilityConfirmedBy && currentVisibility === 'unknown')) {
         throw new HttpError(
           'A visão desta janela já é um fato autoritativo: não pode ser sobrescrita.',
           409,
           'OPPORTUNITY_VISIBILITY_FINAL',
         );
       }
-      const reactor = combat.combatants.find((item) => item.id === row.reactorCombatantId);
       if (input.visible) {
         await db.reactionOpportunity.update({
           where: { id: opportunityId },

@@ -207,8 +207,11 @@ export function opportunityVisibilityOf(input: {
   canSeeMover: boolean;
   /** `true` quando a cena passa a ter obstáculos/LoS que o servidor não mede. */
   occludersExist: boolean;
+  geometry?: 'pass' | 'fail' | 'unknown';
 }): OpportunityVisibilityStatus {
-  if (!input.canSeeMover) return 'known-not-visible';
+  if (!input.canSeeMover || input.geometry === 'fail') return 'known-not-visible';
+  if (input.geometry === 'pass') return 'known-visible';
+  if (input.geometry === 'unknown') return 'unknown';
   return input.occludersExist ? 'unknown' : 'known-visible';
 }
 

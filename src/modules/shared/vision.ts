@@ -13,8 +13,8 @@ import { deriveConditionEffects } from './conditions.js';
  *     de enxergá-lo (`MechanicalState.seesInvisible`, preenchido por efeitos
  *     como "Ver o Invisível" ou percepção especial quando existirem);
  *   • caso contrário, assume-se visível — esta camada é só de ESTADO mecânico;
- *     bloqueio por parede mora em `combat/spatial/spatial-obstacle.ts`
- *     (`sightSegmentBlocked`) e ainda não é chamado daqui.
+ *     bloqueio por parede é composto pelos consumidores com
+ *     `combat/spatial/targeting-walls.ts` (`evaluateWallSight`).
  *
  * NUNCA derivar vantagem/desvantagem apenas de "o alvo/atacante tem Invisible":
  * a regra do PHB 2014 depende da RELAÇÃO de visão, então quem pergunta precisa

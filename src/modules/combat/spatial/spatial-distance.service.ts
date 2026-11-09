@@ -1,4 +1,4 @@
-import { evaluateWallPath } from './targeting-walls.js';
+import { evaluateWallPath, evaluateWallSight } from './targeting-walls.js';
 import { obstacleDtoOf, type SpatialObstacleShape } from './spatial-obstacle.js';
 import { HttpError } from '../../../lib/http-error.js';
 import type { MechanicalEntity } from '../../shared/conditions.js';
@@ -162,8 +162,8 @@ export function bodiesDistanceFeet(
 /**
  * Provider de alcance do TARGETING de magia (6.6E), alimentado pelo índice.
  *
- * Caminho livre considera as paredes carregadas nos casos claros. Visão e
- * obstruções parciais continuam assistidas. Alcance conhecido não implica
+ * Caminho livre e visão consideram suas flags independentes nas paredes
+ * carregadas. Obstruções parciais continuam assistidas. Alcance conhecido não implica
  * visão nem ausência de meia cobertura ou três quartos.
  */
 export function gridSpatialProvider(index: CombatSpatialIndex | null): SpatialProvider {
@@ -179,8 +179,10 @@ export function gridSpatialProvider(index: CombatSpatialIndex | null): SpatialPr
       if (!index) return 'unknown';
       return evaluateWallPath(index.scene, spatialBodyOf(index, caster), spatialBodyOf(index, target), index.obstacles).result;
     },
-    evaluateSightGeometry() {
-      return 'unknown';
+    evaluateSightGeometry(caster, target) {
+      if (caster.kind === target.kind && caster.id === target.id) return 'pass';
+      if (!index) return 'unknown';
+      return evaluateWallSight(index.scene, spatialBodyOf(index, caster), spatialBodyOf(index, target), index.obstacles).result;
     },
     evaluateGroupDistance(_caster, targets, feet) {
       if (targets.length <= 1) return 'pass';

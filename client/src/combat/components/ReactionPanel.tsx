@@ -48,7 +48,7 @@ export function ReactionPanel({ opportunity, busy = false, onChoose, onDecline, 
       <p className="reaction-panel-trigger">{opportunity.trigger}</p>
 
       {needsVisibility ? <div className="reaction-visibility">
-        <p>Há paredes que bloqueiam visão. O Mestre confirma se a criatura consegue ver quem se move.</p>
+        <p>A linha de visão ficou indeterminada. O Mestre confirma se a criatura consegue ver o alvo.</p>
         <div className="combat-risk-actions">
           <button className="btn btn-small" disabled={busy} onClick={() => onVisibility?.(false)}>Não consegue ver</button>
           <button className="btn btn-small" disabled={busy} onClick={() => onVisibility?.(true)}>Consegue ver</button>

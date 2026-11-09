@@ -58,7 +58,7 @@ async function main() {
     await prisma.combatant.update({where:{id:foe.id},data:{spatialVisibility:'master-only'}});
     read=await preview();assert.equal(read.data.reaction.threatAreas.length,0);
     const hidden=(await http('/combat/active',undefined,player)).data.combat.combatants.find((c:any)=>c.id===foe.id);
-    assert.equal(hidden.relation,'unknown');assert.equal(hidden.spatial,null);
+    assert.equal(hidden,undefined,'Criatura oculta não é entregue ao jogador, inclusive na iniciativa');
 
     await prisma.combatant.update({where:{id:foe.id},data:{spatialVisibility:'public'}});
     const sideInput={sideKey:'neutral',expectedVersion:await version(),operationId:randomUUID()};
@@ -83,12 +83,14 @@ async function main() {
     await prisma.combatant.update({where:{id:actor.id},data:{spatialPosition:{xFeet:15,yFeet:10},turnEconomy:onTurnStart(9)}});
     await prisma.combatant.update({where:{id:foe.id},data:{turnEconomy:onTurnStart(9)}});
     await prisma.spatialObstacle.create({data:{sceneId:scene.id,kind:'wall',startXFeet:90,startYFeet:0,endXFeet:90,endYFeet:100,blocksMovement:false,blocksTargeting:false,blocksSight:true}});
+    assert.equal((await preview()).data.reaction.masterAdjudication,false,'Parede distante não pede visão');
+    await prisma.spatialObstacle.create({data:{sceneId:scene.id,kind:'wall',startXFeet:25,startYFeet:15,endXFeet:25,endYFeet:100,blocksMovement:false,blocksTargeting:false,blocksSight:true}});
     assert.equal((await preview()).data.reaction.masterAdjudication,true);
     const paused=await http(`/combat/${combatId}/spatial/movement`,{combatantId:actor.id,path,expectedVersion:await version(),operationId:randomUUID()},player);assert.ok(paused.data.pending);
     const uncertain=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];assert.equal(uncertain.visibilityStatus,'unknown');assert.equal(uncertain.responseKind,'visibility');
     const adjudicated=await http(`/combat/${combatId}/reaction-opportunities/${uncertain.id}/visibility`,{combatId,visible:false,expectedVersion:await version(),operationId:randomUUID()});assert.equal(adjudicated.status,200,JSON.stringify(adjudicated));
     assert.equal((await prisma.combatant.findUniqueOrThrow({where:{id:foe.id}})).turnEconomy && ((await prisma.combatant.findUniqueOrThrow({where:{id:foe.id}})).turnEconomy as any).reactionAvailable,true);
-    console.log('✔ Paredes de visão pedem adjudicação; recusar visão retoma movimento sem gastar reação');
+    console.log('✔ Obstruções parciais de visão pedem adjudicação; recusar visão retoma movimento sem gastar reação');
     await prisma.combatant.update({where:{id:actor.id},data:{spatialPosition:{xFeet:15,yFeet:10},turnEconomy:onTurnStart(9)}});
     await http(`/combat/${combatId}/spatial/movement`,{combatantId:actor.id,path,expectedVersion:await version(),operationId:randomUUID()},player);
     const confirmable=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];
@@ -119,7 +121,7 @@ async function main() {
     // Quando a reação é do jogador, o Mestre só adjudica visão desconhecida.
     await prisma.combatant.update({where:{id:actor.id},data:{spatialPosition:{xFeet:15,yFeet:10},turnEconomy:onTurnStart(9)}});
     await prisma.combatant.update({where:{id:foe.id},data:{spatialPosition:{xFeet:20,yFeet:10},turnEconomy:onTurnStart(9)}});
-    await prisma.spatialObstacle.create({data:{sceneId:scene.id,kind:'wall',startXFeet:90,startYFeet:0,endXFeet:90,endYFeet:100,blocksMovement:false,blocksTargeting:false,blocksSight:true}});
+    await prisma.spatialObstacle.create({data:{sceneId:scene.id,kind:'wall',startXFeet:20,startYFeet:12.5,endXFeet:20,endYFeet:100,blocksMovement:false,blocksTargeting:false,blocksSight:true}});
     await http(`/combat/${combatId}/spatial/movement`,{combatantId:foe.id,path:[{xFeet:25,yFeet:10}],expectedVersion:await version(),operationId:randomUUID()});
     const vision=(await http(`/combat/${combatId}/reaction-opportunities`)).data.opportunities[0];assert.equal(vision.responseKind,'visibility');
     assert.equal((await http(`/combat/${combatId}/reaction-opportunities`,undefined,player)).data.opportunities.length,0);

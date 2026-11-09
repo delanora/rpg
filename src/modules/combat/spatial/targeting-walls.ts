@@ -127,3 +127,11 @@ export function evaluateWallPath(scene: SpatialSceneConfig, source: SpatialBody 
   }
   return partial ? { result: 'unknown', reason: 'partial-or-corner' } : { result: 'pass', reason: 'clear' };
 }
+
+/** Visão usa a MESMA geometria de footprints, mas só as paredes opacas.
+ * Os bloqueios de movimento e ataques/magias continuam independentes. */
+export function evaluateWallSight(scene: SpatialSceneConfig, source: SpatialBody | null,
+  target: SpatialBody | null, walls: readonly SpatialObstacleShape[] | null | undefined): WallPathEvaluation {
+  return evaluateWallPath(scene, source, target, walls?.filter(wall => wall.blocksSight)
+    .map(wall => ({...wall, blocksTargeting: true})) ?? walls);
+}
