@@ -1,3 +1,4 @@
+import { obstacleCoverProvider } from '../../combat/spatial/obstacle-cover.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma, type EffectInstance, type SpellCast } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
@@ -49,7 +50,6 @@ import type { AreaTargetingSnapshot } from './area-snapshot.js';
 import type { AreaSpatialProvider } from './area-spatial.js';
 import type { AreaUnknownDecision } from './area-evaluation.js';
 import {
-  assistedCoverProvider,
   assertCoverAllowsDirectTargeting,
   assertCoverDecisionAllowed,
   coverFor,
@@ -337,9 +337,7 @@ export async function validateSpellCast(
     );
   }
   const caster = await loadEntity(input.caster, db);
-  // 6.6J.5 — COBERTURA: o provider padrão é ASSISTIDO (sem geometria, devolve
-  // `not-assessed`), então nenhuma jogada comum vira "aguardando o Mestre".
-  const coverProvider = options.coverProvider ?? assistedCoverProvider;
+  // A confirmação só preenche cobertura que o provider espacial não conhece.
   const coverConfirmations = input.coverConfirmation ?? options.coverConfirmations ?? [];
   const coverConfirmationFor = (entity: MechanicalEntity) =>
     coverConfirmations.find((item) => item.targetKey === `${entity.kind}:${entity.id}`)?.level;
@@ -477,6 +475,7 @@ export async function validateSpellCast(
   // corpos colocados, o alcance é FATO; fora disso continua UNKNOWN e o fluxo
   // assistido de sempre (Mestre/confirmação) é preservado.
   const spatialIndex = await combatSpatialIndexById(db, turnContext?.combatId ?? null);
+  const coverProvider = options.coverProvider ?? obstacleCoverProvider(spatialIndex);
   const priorCasts = turnContext ? await committedCastsOnTurn(db, turnContext) : [];
   assertCastingEconomy(turnContext, economyCost, priorCasts, {
     spellLevel,
@@ -514,6 +513,7 @@ export async function validateSpellCast(
       combatId: turnContext?.combatId ?? null,
       castAtLevel,
       provider: options.areaProvider ?? gridAreaSpatialProvider(spatialIndex),
+      coverProvider,
       ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
       ...(options.areaDecisions ? { decisions: options.areaDecisions } : {}),
       deferUnknown: options.deferUnknown === true,
@@ -1148,7 +1148,7 @@ export async function executeCast(
             context.execution,
             {
               coverConfirmations: context.coverConfirmations,
-              ...(castKey.coverProvider ? { coverProvider: castKey.coverProvider } : {}),
+              coverProvider: context.coverProvider,
             },
           );
           attackDamage = attack;

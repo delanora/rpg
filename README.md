@@ -110,7 +110,7 @@ Desengajar, reação já usada e incapacidade de agir continuam impedindo o gati
 A visão por paredes é automática nos casos claros, avaliada antes do passo
 que sairia do alcance. Só casos indeterminados pedem confirmação do Mestre.
 Uma barreira completa de visão ou de ataques impede a oportunidade. O contorno
-indica alcance; meia cobertura e três quartos ainda não são inferidos.
+indica alcance; o grau de cobertura vem do cadastro do obstáculo, conforme descrito abaixo.
 
 Um aro fino pulsa em vermelho nos hostis, verde nos aliados e amarelo nos
 neutros. A relação vem do servidor; tokens ocultos não revelam sua relação.
@@ -144,7 +144,7 @@ Salvaguardas mantêm o movimento pausado até a resolução. Dano, morte ou Para
 
 Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas/NPCs, cadastre uma habilidade **Passiva → Conjurador de Guerra (PHB 2014)** no bestiário, além do repertório e perfil de conjuração. O nome livre da habilidade não concede a regra. O talento também concede vantagem nos testes de concentração por dano e permite gestos somáticos com arma/escudo na mão; não dispensa componentes materiais nem supera bloqueios de componentes.
 
-**Próxima etapa:** cobertura geométrica e ampliação da visão para iluminação e sentidos especiais.
+**Próxima etapa:** áreas no grid; iluminação e sentidos especiais permanecem como expansões próprias.
 
 ### Linha de visão por paredes — casos claros
 
@@ -178,8 +178,32 @@ antes de consumir recursos. A confirmação de caminho livre do Mestre não
 sobrepõe esse bloqueio conhecido. Paredes curtas, frestas e cantos continuam
 no fluxo assistido existente; não são classificados como cobertura total.
 A adjudicação usa as paredes cadastradas no plano 2D, sem interpretar a imagem,
-altura ou cobertura parcial. Nas paredes anteriores à opção, a migração copia
-uma única vez o bloqueio de movimento; editar uma opção depois não altera outra.
+altura. Nas paredes anteriores à opção de bloqueio de ataques, a migração copiou
+uma única vez o bloqueio de movimento.
+
+**Cobertura por obstáculos:** no editor de paredes, o Mestre escolhe **Sem cobertura**,
+**Meia (+2)**, **Três quartos (+5)** ou **Total**. O grau substitui a opção de
+bloqueio de ataques/magias; movimento e visão continuam independentes. Paredes
+existentes mantêm o comportamento: bloqueio de ataques vira Total; as demais,
+Sem cobertura. Clientes antigos que enviam apenas `blocksTargeting` continuam
+compatíveis.
+
+O servidor aplica o grau quando uma barreira contínua se interpõe entre os
+espaços inteiros da origem e do alvo. Meia e três quartos concedem +2/+5 de CA
+e de salvaguarda de Destreza; múltiplas fontes usam o maior grau, sem somar.
+Cobertura total impede alvo direto antes dos custos. A política própria da magia
+é preservada, incluindo Chama Sagrada ignorar o bônus na salvaguarda. O resultado
+é congelado nos snapshots existentes de ataque/salvaguarda e preservado no retry.
+
+Esta é uma adjudicação do Obsyrium autorizada pelo Mestre: o grau cadastrado vale
+para todos os tamanhos e nas duas direções. Não calculamos a fração do corpo pela
+imagem nem deduzimos altura do token. Cantos, frestas, graus maiores parcialmente
+interpostos, origens sem posição e cenas assistidas permanecem indeterminados,
+sem bônus automático por suposição; a confirmação explícita existente do Mestre
+pode completar a avaliação pela API assistida. Não há uma nova pergunta automática
+de cobertura nesta entrega. Cobertura por outros corpos, iluminação e geometria
+vertical ficam para expansão. Áreas só usam a origem resolvida pelo motor existente;
+esta entrega não torna novas magias ou formas de área executáveis.
 
 Um traçado usa `POST /api/scenes/:sceneId/spatial/obstacles/batch`, com `walls`,
 `expectedVersion` e `operationId`: todos os segmentos são validados e salvos na

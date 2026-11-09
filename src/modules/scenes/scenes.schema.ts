@@ -83,6 +83,7 @@ export const spatialObstacleCreateSchema = z
     blocksMovement: z.boolean().optional(),
     blocksSight: z.boolean().optional(),
     blocksTargeting: z.boolean().optional(),
+    coverLevel: z.enum(['none', 'half', 'three-quarters', 'total']).optional(),
     expectedVersion: z.number().int().nonnegative(),
     operationId: z.string().min(1).max(128),
   })
@@ -95,6 +96,7 @@ export const spatialObstaclePatchSchema = z
     blocksMovement: z.boolean().optional(),
     blocksSight: z.boolean().optional(),
     blocksTargeting: z.boolean().optional(),
+    coverLevel: z.enum(['none', 'half', 'three-quarters', 'total']).optional(),
     expectedVersion: z.number().int().nonnegative(),
     operationId: z.string().min(1).max(128),
   })
@@ -104,7 +106,7 @@ export const spatialObstaclePatchSchema = z
       input.start !== undefined ||
       input.end !== undefined ||
       input.blocksMovement !== undefined ||
-      input.blocksSight !== undefined || input.blocksTargeting !== undefined;
+      input.blocksSight !== undefined || input.blocksTargeting !== undefined || input.coverLevel !== undefined;
     if (!hasChange) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Nada para alterar.' });
     }
@@ -130,6 +132,7 @@ export const spatialObstacleBatchSchema = z.object({
   walls: z.array(z.object({
     start: spatialPositionSchema, end: spatialPositionSchema,
     blocksMovement: z.boolean().default(true), blocksSight: z.boolean().default(true), blocksTargeting: z.boolean().optional(),
+    coverLevel: z.enum(['none', 'half', 'three-quarters', 'total']).optional(),
   }).strict()).min(1).max(200),
   expectedVersion: z.number().int().nonnegative(),
   operationId: z.string().min(1).max(128),

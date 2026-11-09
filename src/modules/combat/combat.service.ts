@@ -1,3 +1,4 @@
+import { obstacleCoverProvider } from './spatial/obstacle-cover.js';
 import { queueAttackHostility, clearSpecificHostility } from './hostility.js';
 import { creatureAbilitiesOf, creatureAbilityUsesOf } from '../shared/creature-abilities.js';
 import { creatureAbilityUseSchema, hostilityDecisionSchema, duelRequestSchema, duelDecisionSchema } from './combat.schema.js';
@@ -83,7 +84,6 @@ import {
   type InventoryLike,
 } from '../shared/ammo.js';
 import {
-  assistedCoverProvider,
   assertCoverAllowsDirectTargeting,
   assertCoverDecisionAllowed,
   coverFor,
@@ -1605,7 +1605,7 @@ export async function resolveAttack<TReaction = never>(
         target: { kind: 'combatant', id: target.id },
         interaction: 'attack',
       },
-      options.coverProvider ?? assistedCoverProvider,
+      options.coverProvider ?? obstacleCoverProvider(combatSpatialIndex(combat)),
     );
     assertCoverDecisionAllowed(providerEvaluation, coverConfirmation?.level);
     const coverEvaluation = applyCoverConfirmation(

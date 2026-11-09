@@ -301,3 +301,7 @@
 .scene-preview--editable .scene-preview-img { object-fit: fill; }
 
 .scene-wall-handle-hit { fill: transparent; stroke: transparent; stroke-width: 22; pointer-events: all; cursor: grab; }
+
+/* O grau é configurado junto dos bloqueios independentes da parede. */
+.scene-wall-cover { display: grid; gap: 0.35rem; min-width: 0; font-size: var(--text-micro); color: var(--ink-soft); }
+.scene-wall-cover select { width: 100%; min-width: 0; }

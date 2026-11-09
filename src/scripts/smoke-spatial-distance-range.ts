@@ -692,8 +692,8 @@ export async function smokeSpatialDistance(baseUrl: string, check: Check): Promi
       JSON.stringify({ status: meleeHit.status, range: meleeHit.data.result?.range }),
     );
     check(
-      '89.AM.1) alcance PASS NÃO infere cobertura: Cover continua `not-assessed`',
-      meleeHit.data.result?.cover?.status === 'not-assessed',
+      '89.AM.1) grid válido sem obstáculos tem cobertura conhecida none (sem bônus)',
+      meleeHit.data.result?.cover?.status === 'known' && meleeHit.data.result?.cover?.level === 'none' && meleeHit.data.result?.cover?.acBonus === 0,
     );
     const actionsAfterMelee = state.combatants.find((item: any) => item.id === meleeCombatant.id)
       .turnEconomy.actionsUsed;

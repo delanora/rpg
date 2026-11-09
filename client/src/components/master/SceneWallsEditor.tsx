@@ -17,8 +17,8 @@ interface Draft { wallId: string | null; wall: SceneWallShape; version: number }
 interface Intention { mutation: SceneWallMutation; version: number; operationId: string }
 interface Drag { part: 'start' | 'end' | 'wall'; origin: SpatialPosition; draft: Draft; pointerId: number }
 
-const shapeOf = ({ start, end, blocksMovement, blocksSight, blocksTargeting }: SceneWallShape): SceneWallShape =>
-  ({ start, end, blocksMovement, blocksSight, blocksTargeting: blocksTargeting ?? blocksMovement });
+const shapeOf = ({ start, end, blocksMovement, blocksSight, blocksTargeting, coverLevel }: SceneWallShape): SceneWallShape =>
+  ({ start, end, blocksMovement, blocksSight, coverLevel: coverLevel ?? ((blocksTargeting ?? blocksMovement) ? 'total' : 'none'), blocksTargeting: coverLevel ? coverLevel === 'total' : blocksTargeting ?? blocksMovement });
 
 /** Rascunhos são locais. Só salvar/excluir chama o contrato HTTP da cena. */
 export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas }: Props) {
@@ -237,8 +237,16 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
           </label>))}</div>}
         <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksMovement}
           onChange={(event) => changeFlag('blocksMovement', event.target.checked)} /> Bloqueia movimento</label>
-        <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksTargeting ?? draft.wall.blocksMovement}
-          onChange={(event) => changeFlag('blocksTargeting', event.target.checked)} /> Bloqueia ataques e magias</label>
+        <label className="scene-wall-cover">Cobertura do obstáculo
+          <select value={draft.wall.coverLevel ?? ((draft.wall.blocksTargeting ?? draft.wall.blocksMovement) ? 'total' : 'none')}
+            onChange={(event) => { const coverLevel = event.target.value as NonNullable<SceneWallShape['coverLevel']>;
+              setDraft({ ...draft, wall: { ...draft.wall, coverLevel, blocksTargeting: coverLevel === 'total' } });
+              setSegments(previous => previous.map(wall => ({ ...wall, coverLevel, blocksTargeting: coverLevel === 'total' }))); }}>
+            <option value="none">Sem cobertura</option><option value="half">Meia cobertura (+2)</option>
+            <option value="three-quarters">Três quartos (+5)</option><option value="total">Total (impede ataques e magias diretos)</option>
+          </select>
+        </label>
+        <p className="scene-hint">Defina quanto o obstáculo protege o alvo. Cantos e frestas continuam sujeitos à decisão do Mestre.</p>
         <label className="scene-wall-check"><input type="checkbox" checked={draft.wall.blocksSight}
           onChange={(event) => changeFlag('blocksSight', event.target.checked)} /> Bloqueia visão</label>
         {invalid ? <p className="form-error">{invalid}</p> : null}
@@ -260,6 +268,6 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
         onClick={() => void submit({ kind: 'delete', wallId: draft.wallId! })}>Confirmar exclusão</button>
       <button type="button" className="btn btn-small" disabled={busy} onClick={() => setConfirmDelete(false)}>Manter parede</button></div>
     </div> : null}
-    <p className="scene-hint">Paredes com bloqueio de movimento impedem atravessar no modo Mover. “Posicionar”, do Mestre, é um ajuste livre. O bloqueio automático de visão ainda não está disponível.</p>
+    <p className="scene-hint">Paredes com bloqueio de movimento impedem atravessar no modo Mover. “Posicionar”, do Mestre, é um ajuste livre. Visão e cobertura são automáticas nos casos claros; cantos e frestas continuam assistidos.</p>
   </div>;
 }

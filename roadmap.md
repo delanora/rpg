@@ -23,7 +23,7 @@
 - **UI de combate:** workspace com grid central, iniciativa, registro e **dock do jogador com Hotbar personalizável 2 × 24 (48 slots)**; fluxo de pré-iniciativa, espera, targeting em tokens e Death Saves consolidado.
 - **6.6M.9–9.2:** Golden Path de sessão jogável e consistência de deslocamento foram marcados como ✅ no Roadmap compartilhado; há teste integrado `src/scripts/smoke-combat-playable.ts`.
 - **Trabalho recente:** paredes com bloqueios independentes de movimento e ataques/magias; caminho livre validado nos casos claros, além do editor, ping e menus dos tokens.
-- **Próxima frente de produto:** cobertura geométrica. Visão por paredes automatizada nos casos claros para oportunidades e magias; cantos e frestas seguem assistidos. Iluminação e sentidos especiais permanecem em expansão.
+- **Próxima frente de produto:** áreas no grid. Visão e cobertura por obstáculos automatizadas nos casos claros; cantos e frestas seguem assistidos. Iluminação e sentidos especiais permanecem em expansão.
 - **Não concluir que “PHB completo” está pronto:** existem lacunas de magias especiais, características, reações avançadas, passagem do tempo fora de combate e ferramentas do Mestre.
 
 ## 3. Regras de arquitetura que nenhuma etapa deve violar
@@ -91,7 +91,7 @@
 | **6.6J.2 — Múltiplos alvos** | ✅ | Saves e resultados separados por alvo na mesma conjuração. |
 | **6.6J.3 — Áreas** | ✅ fundação | Seleção de área com assistência/confirmação quando o motor ainda não cobre geometria integral. |
 | **6.6J.4 — Múltiplos ataques/raios** | ✅ | Magias com várias rolagens de ataque. |
-| **6.6J.5 — Cobertura** | ✅ fundação | Modificadores de cobertura; detecção geométrica/linha de visão ainda em expansão. |
+| **6.6J.5 — Cobertura** | ✅ casos claros | Grau definido no obstáculo, aplicado pelo servidor a ataques e salvaguardas de Destreza; cantos e frestas seguem assistidos. |
 | **6.6K — Resultados especiais** | ⬜ | Encadear dano, cura, condições, PV temporários e resultados incomuns. |
 
 ### 5.3 Regras espaciais, grid e cenas
@@ -148,7 +148,7 @@ A **sequência abaixo é direcional**, não autorização para antecipar fases. 
 | Frente | Estado | Próxima entrega desejada |
 |---|---|---|
 | **6.6L — Linha de visão / caminho livre** | ✅ casos claros; 🟡 expansão | Flags independentes, footprints completos e visão no ponto de saída do alcance. Paredes distantes não pedem confirmação; barreiras opacas completas impedem a oportunidade e magias que exigem visão. Cantos, frestas, iluminação e sentidos especiais seguem assistidos ou planejados. |
-| **6.6J.5 / 6.6L — Cobertura geométrica** | 🟡 fundação → ⬜ expansão | Integrar paredes/obstáculos à avaliação PHB 2014 de meia cobertura, três quartos e cobertura total; manter arbitragem quando geometria não bastar. |
+| **6.6J.5 / 6.6L — Cobertura geométrica** | ✅ casos claros; 🟡 expansão | Mestre define nenhuma, meia, três quartos ou total no obstáculo. Servidor aplica o maior grau interposto, sem somar; movimento e visão independentes. Cantos, frestas e altura seguem assistidos. |
 | **6.6J.3 — Áreas no grid** | 🟡 fundação → ⬜ expansão | Visualizar/selecionar áreas e alvos com confirmação e validação do servidor; sem motor geométrico paralelo. |
 | **Unidades FEET/METERS — normalização interna** | ⬜ dívida arquitetural | Auditoria e migração/versionamento explícitos para campos legados em metros, especialmente `TurnEconomy`/JSONB de combates ativos; não fazer conversão oportunista. |
 

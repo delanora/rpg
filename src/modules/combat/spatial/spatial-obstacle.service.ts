@@ -1,3 +1,4 @@
+import type { CoverLevel } from '../cover.js';
 import { HttpError } from '../../../lib/http-error.js';
 import {
   loadSceneById,
@@ -6,6 +7,7 @@ import {
 } from '../../scenes/scenes.service.js';
 import { toSceneDto, type SceneDto } from '../../scenes/scenes.dto.js';
 import {
+  coverLevelOf,
   obstacleDtoOf,
   obstacleWithinScene,
   type SpatialObstacleDto,
@@ -27,7 +29,7 @@ import { spatialSceneOf, type SpatialPosition2D } from './spatial.types.js';
  * 409 `SCENE_IN_USE` (o lock mora em `runSceneOperation`).
  *
  * O que esta camada NÃO faz (intencional): não bloqueia movimento, não bloqueia
- * visão, não calcula Cover e não escolhe alvo de magia. Ela só guarda a
+ * visão, não resolve ataques e não escolhe alvo de magia. Ela só guarda a
  * geometria autoritativa para que essas engines a consumam depois.
  */
 
@@ -42,6 +44,7 @@ export interface SpatialObstaclePatchInput {
   blocksMovement?: boolean;
   blocksSight?: boolean;
   blocksTargeting?: boolean;
+  coverLevel?: CoverLevel;
   expectedVersion: number;
   operationId: string;
 }
@@ -49,6 +52,14 @@ export interface SpatialObstaclePatchInput {
 export interface SpatialObstacleDeleteInput {
   expectedVersion: number;
   operationId: string;
+}
+
+/** Evita duas instruções contraditórias na mesma intenção de edição. */
+function assertCoverSettings(input: { coverLevel?: CoverLevel; blocksTargeting?: boolean }): void {
+  if (input.coverLevel !== undefined && input.blocksTargeting !== undefined &&
+      input.blocksTargeting !== (input.coverLevel === 'total')) {
+    throw new HttpError('O bloqueio de ataques deve corresponder à cobertura total.', 400, 'VALIDATION_ERROR');
+  }
 }
 
 /**
@@ -87,12 +98,14 @@ export async function createSpatialObstacle(
   sceneId: string,
   input: SpatialObstacleCreateInput,
 ): Promise<{ scene: SceneDto; obstacle: SpatialObstacleDto }> {
+  assertCoverSettings(input);
   const shape: SpatialObstacleShape = {
     start: input.start,
     end: input.end,
     blocksMovement: input.blocksMovement,
     blocksSight: input.blocksSight,
     ...(input.blocksTargeting === undefined ? {} : { blocksTargeting: input.blocksTargeting }),
+    ...(input.coverLevel === undefined ? {} : { coverLevel: input.coverLevel }),
   };
   return runSceneOperation(
     actor,
@@ -115,7 +128,8 @@ export async function createSpatialObstacle(
           endYFeet: shape.end.yFeet,
           blocksMovement: shape.blocksMovement,
           blocksSight: shape.blocksSight,
-          blocksTargeting: shape.blocksTargeting ?? true,
+          blocksTargeting: coverLevelOf({ ...shape, blocksTargeting: shape.blocksTargeting ?? true }) === 'total',
+          coverLevel: coverLevelOf({ ...shape, blocksTargeting: shape.blocksTargeting ?? true }),
         },
       });
       return {
@@ -139,6 +153,7 @@ export async function updateSpatialObstacle(
   obstacleId: string,
   input: SpatialObstaclePatchInput,
 ): Promise<{ scene: SceneDto; obstacle: SpatialObstacleDto }> {
+  assertCoverSettings(input);
   return runSceneOperation(
     actor,
     {
@@ -153,6 +168,7 @@ export async function updateSpatialObstacle(
         blocksMovement: input.blocksMovement,
         blocksSight: input.blocksSight,
         ...(input.blocksTargeting === undefined ? {} : { blocksTargeting: input.blocksTargeting }),
+        ...(input.coverLevel === undefined ? {} : { coverLevel: input.coverLevel }),
       },
     },
     'spatial-obstacle-update',
@@ -167,6 +183,7 @@ export async function updateSpatialObstacle(
         blocksMovement: input.blocksMovement ?? existing.blocksMovement,
         blocksSight: input.blocksSight ?? existing.blocksSight,
         blocksTargeting: input.blocksTargeting ?? existing.blocksTargeting,
+        coverLevel: input.coverLevel ?? (input.blocksTargeting === undefined ? coverLevelOf(existing) : input.blocksTargeting ? 'total' : 'none'),
       };
       assertValidWall(merged, spatialSceneOf(scene.spatialConfig));
       const updated = await db.spatialObstacle.update({
@@ -178,7 +195,8 @@ export async function updateSpatialObstacle(
           endYFeet: merged.end.yFeet,
           blocksMovement: merged.blocksMovement,
           blocksSight: merged.blocksSight,
-          blocksTargeting: merged.blocksTargeting,
+          blocksTargeting: coverLevelOf(merged) === 'total',
+          coverLevel: coverLevelOf(merged),
         },
       });
       return {
@@ -229,11 +247,12 @@ export async function createSpatialObstacles(
     sceneId, expectedVersion: input.expectedVersion, operationId: input.operationId, obstacles: input.walls,
   }, 'spatial-obstacle-batch-create', async (db, scene) => {
     const config = spatialSceneOf(scene.spatialConfig);
-    for (const wall of input.walls) assertValidWall(wall, config);
+    for (const wall of input.walls) { assertCoverSettings(wall); assertValidWall(wall, config); }
     await db.spatialObstacle.createMany({ data: input.walls.map(wall => ({
       sceneId, kind: 'wall', startXFeet: wall.start.xFeet, startYFeet: wall.start.yFeet,
       endXFeet: wall.end.xFeet, endYFeet: wall.end.yFeet,
-      blocksMovement: wall.blocksMovement, blocksSight: wall.blocksSight, blocksTargeting: wall.blocksTargeting ?? true,
+      blocksMovement: wall.blocksMovement, blocksSight: wall.blocksSight, blocksTargeting: coverLevelOf({ ...wall, blocksTargeting: wall.blocksTargeting ?? true }) === 'total',
+      coverLevel: coverLevelOf({ ...wall, blocksTargeting: wall.blocksTargeting ?? true }),
     })) });
     return { scene: toSceneDto(await loadSceneById(sceneId, db)) };
   });

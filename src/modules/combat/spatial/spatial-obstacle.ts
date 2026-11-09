@@ -1,3 +1,4 @@
+import { isCoverLevel, type CoverLevel } from '../cover.js';
 import {
   classifySegmentIntersection,
   segmentLengthFeet,
@@ -10,11 +11,12 @@ import type { SpatialPosition2D, SpatialSceneConfig } from './spatial.types.js';
  * FASE 6.6L.4.1 — OBSTÁCULOS ESPACIAIS (paredes).
  *
  * PRIMITIVE da cena: um segmento 2D de espessura zero, com endpoints em PÉS e
- * TRÊS flags INDEPENDENTES:
+ * Movimento, visão e cobertura são configurados separadamente:
  *
  *  • `blocksMovement` — superfície sólida (parede, barreira invisível);
  *  • `blocksSight`    — obstrui a visão (parede, cortina estrutural futura);
- *  • `blocksTargeting` — impede caminho livre de ataques e magias.
+ *  • `coverLevel` — grau adjudicado pelo Mestre; `blocksTargeting` representa
+ *    somente cobertura total e mantém compatibilidade com clientes anteriores.
  *
  * Não existe `kind` além de `wall` nesta fase: portas, janelas, paredes
  * secretas e one-way walls ficam para depois, reutilizando ESTA fundação.
@@ -42,6 +44,7 @@ export interface SpatialObstacleSource {
   blocksMovement: boolean;
   blocksSight: boolean;
   blocksTargeting?: boolean;
+  coverLevel?: string | null;
 }
 
 /**
@@ -61,6 +64,7 @@ export interface SpatialObstacleDto {
   blocksMovement: boolean;
   blocksSight: boolean;
   blocksTargeting?: boolean;
+  coverLevel?: CoverLevel;
 }
 
 /** Entrada já validada de uma parede (o que o serviço grava/valida). */
@@ -70,6 +74,7 @@ export interface SpatialObstacleShape {
   blocksMovement: boolean;
   blocksSight: boolean;
   blocksTargeting?: boolean;
+  coverLevel?: CoverLevel;
 }
 
 /** Arredonda ruído de ponto flutuante sem mudar a escala (2,5 pés estável). */
@@ -98,7 +103,8 @@ export function obstacleDtoOf(source: SpatialObstacleSource): SpatialObstacleDto
     lengthFeet: precise(segmentLengthFeet(segment)),
     blocksMovement: source.blocksMovement,
     blocksSight: source.blocksSight,
-    blocksTargeting: source.blocksTargeting ?? source.blocksMovement,
+    blocksTargeting: coverLevelOf(source) === 'total',
+    coverLevel: coverLevelOf(source),
   };
 }
 
@@ -158,4 +164,9 @@ function segmentBlockedByFlag(
     (obstacle) =>
       obstacle[flag] && classifySegmentIntersection(segment, obstacleSegmentOf(obstacle)) !== 'none',
   );
+}
+
+/** Compatibilidade: clientes antigos ainda enviam apenas o bloqueio total. */
+export function coverLevelOf(wall: { coverLevel?: string | null; blocksTargeting?: boolean; blocksMovement: boolean }): CoverLevel {
+  return isCoverLevel(wall.coverLevel) ? wall.coverLevel : (wall.blocksTargeting ?? wall.blocksMovement) ? 'total' : 'none';
 }

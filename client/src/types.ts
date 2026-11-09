@@ -2349,6 +2349,7 @@ export interface SpatialObstacle {
   blocksSight: boolean;
   /** Ausente apenas em snapshots de operações anteriores à opção independente. */
   blocksTargeting?: boolean;
+  coverLevel?: 'none' | 'half' | 'three-quarters' | 'total';
 }
 
 /**

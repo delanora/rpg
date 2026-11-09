@@ -14,11 +14,9 @@ import type { MechanicalEntity } from '../shared/conditions.js';
  *  • Total Cover: não pode ser escolhido como alvo DIRETO de um ataque/magia
  *    através da cobertura (é decisão de TARGETING, não "+999 CA").
  *
- * O projeto JÁ possui grid, footprints e paredes (6.6L.1–L.4.1), mas as
- * paredes ainda NÃO entram no cálculo de cobertura: sem fato espacial a
- * avaliação é `not-assessed`/`unknown`, que é DIFERENTE de `known:none`. Nada
- * aqui inventa geometria; quem sabe (provider autoritativo ou confirmação do
- * Mestre) informa.
+ * O provider de obstáculos usa o grau cadastrado e a interposição no grid;
+ * onde a geometria não basta, conserva unknown/not-assessed e a confirmação
+ * explícita do Mestre, sem inventar uma fração do corpo a partir do token.
  *
  * Este módulo é PURO: nada de banco, nada de dado, nada de nome de magia.
  */

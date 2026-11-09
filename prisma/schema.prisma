@@ -1240,6 +1240,8 @@ model SpatialObstacle {
   blocksMovement  Boolean @default(true)
   blocksSight     Boolean @default(true)
   blocksTargeting Boolean @default(true)
+  /// Nulo preserva a interpretação de registros legados sem grau explícito.
+  coverLevel String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

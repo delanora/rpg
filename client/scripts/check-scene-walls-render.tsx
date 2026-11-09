@@ -88,15 +88,16 @@ try {
   check('Desenhar só altera rascunho; duas coordenadas não fazem escrita', calls.length === 0);
   check('Rascunho usa coordenadas do mapa, com ajuste à grade', container.querySelector('.scene-wall-draft')?.getAttribute('x2') === '25');
   const flag = (label: string) => [...container.querySelectorAll('label')].find(item => item.textContent?.includes(label))!.querySelector('input')!;
-  check('Parede nova inicia com bloqueio de ataques e magias habilitado', flag('Bloqueia ataques e magias').checked);
-  await act(async () => flag('Bloqueia ataques e magias').click());
+  const cover = () => container.querySelector('fieldset select') as HTMLSelectElement;
+  check('Parede nova inicia com cobertura total', cover().value === 'total');
+  await act(async () => { cover().value = 'half'; cover().dispatchEvent(new dom.window.Event('change', {bubbles:true})); });
   await act(async () => flag('Bloqueia movimento').click());
-  check('Movimento não religa o bloqueio independente de ataques e magias', !flag('Bloqueia ataques e magias').checked);
+  check('Movimento não altera a cobertura independente', cover().value === 'half');
   await act(async () => { button('Salvar parede').click(); button('Salvar parede').click(); });
   check('Salvar com clique duplo cria uma única intenção', calls.length === 1 && calls[0].mutation.kind === 'create');
   check('Payload conserva pés, versão e operationId', calls[0].version === 1 && calls[0].operationId.length > 0 &&
     calls[0].mutation.kind === 'create' && calls[0].mutation.wall.start.xFeet === 5 && calls[0].mutation.wall.end.yFeet === 15);
-  check('Salvar preserva a opção independente desativada', calls[0].mutation.kind === 'create' && calls[0].mutation.wall.blocksTargeting === false);
+  check('Salvar conserva meia cobertura sem bloqueio total', calls[0].mutation.kind === 'create' && calls[0].mutation.wall.blocksTargeting === false && calls[0].mutation.wall.coverLevel === 'half');
   check('Resposta do servidor atualiza a lista imediatamente', latest.obstacles.length === 1 && container.querySelectorAll('.scene-wall-item').length === 1);
 
   await act(async () => (container.querySelector('.scene-wall-item') as HTMLButtonElement).click());
@@ -166,7 +167,7 @@ try {
   await click('Salvar parede');
   const directDrag = calls.at(-1)?.mutation;
   check('Selecionar e arrastar pela linha não envia metadados do DTO como geometria',
-    directDrag?.kind === 'update' && Object.keys(directDrag.wall).sort().join(',') === 'blocksMovement,blocksSight,blocksTargeting,end,start');
+    directDrag?.kind === 'update' && Object.keys(directDrag.wall).sort().join(',') === 'blocksMovement,blocksSight,blocksTargeting,coverLevel,end,start');
 
   const beforeTrace = calls.length;
   await click('Desenhar parede');
@@ -178,11 +179,13 @@ try {
   check('Desfazer remove só o último segmento do rascunho', Boolean(button('Salvar traçado (2)')) && calls.length === beforeTrace);
   await pointer(canvas(), 'pointerdown', 250, 150);
   await pointer(canvas(), 'pointerdown', 50, 50);
+  await act(async () => { cover().value = 'three-quarters'; cover().dispatchEvent(new dom.window.Event('change', {bubbles:true})); });
   await act(async () => { button('Salvar traçado (4)').click(); button('Salvar traçado (4)').click(); });
   const trace = calls.at(-1)?.mutation;
   check('Contorno completo é enviado em uma única intenção atômica',
     calls.length === beforeTrace + 1 && trace?.kind === 'create-many' && trace.walls.length === 4 &&
     trace.walls[3].end.xFeet === trace.walls[0].start.xFeet && trace.walls[3].end.yFeet === trace.walls[0].start.yFeet);
+  check('Grau escolhido se aplica ao traçado inteiro', trace?.kind === 'create-many' && trace.walls.every(wall => wall.coverLevel === 'three-quarters' && wall.blocksTargeting === false));
 
   const httpCalls: { path: string; method: string; body: Record<string, unknown> }[] = [];
   globals.fetch = async (input: string, options: RequestInit) => {
@@ -196,7 +199,7 @@ try {
   check('API reutiliza POST/PATCH/DELETE reais com versão e intenção explícitas',
     httpCalls.slice(0, 3).map(c => c.method).join(',') === 'POST,PATCH,DELETE' && httpCalls[0].path === '/api/scenes/cena-fixture/spatial/obstacles' &&
     httpCalls[2].path.endsWith('/parede-fixture') && httpCalls[1].body.expectedVersion === 8 && httpCalls[2].body.operationId === 'operacao-apagar' &&
-    Object.keys(httpCalls[1].body).sort().join(',') === 'blocksMovement,blocksSight,blocksTargeting,end,expectedVersion,operationId,start');
+    Object.keys(httpCalls[1].body).sort().join(',') === 'blocksMovement,blocksSight,blocksTargeting,coverLevel,end,expectedVersion,operationId,start');
   check('API inicializa parede legada pelo bloqueio de movimento', httpCalls[0].body.blocksTargeting === wall.blocksMovement);
   check('Traçado usa endpoint de lote com uma versão e uma chave para todos os segmentos',
     httpCalls[3].path.endsWith('/obstacles/batch') && httpCalls[3].body.expectedVersion === 10 &&

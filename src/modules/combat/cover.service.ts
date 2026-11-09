@@ -1,23 +1,9 @@
 import { HttpError } from '../../lib/http-error.js';
 import type { CoverEvaluation, CoverEvaluationInput } from './cover.js';
 
-/**
- * FASE 6.6J.5 — PROVIDER DE COBERTURA.
- *
- * O projeto tem coordenadas, footprints e paredes (6.6L.1–L.4.1), mas não tem
- * eixo vertical nem um provider geométrico de cobertura: os obstáculos ainda
- * não são consultados para decidir meia/três quartos/total (6.6J.5). Inventar
- * cobertura seria pior do que admitir ignorância, então:
- *
- *  • o provider PADRÃO (`assistedCoverProvider`) responde `not-assessed`;
- *  • `not-assessed` NÃO é `known:none`: o snapshot guarda a diferença;
- *  • o bônus mecânico de uma avaliação não conhecida é 0 (o jogo continua
- *    praticável — nenhuma jogada vira "aguardando o Mestre");
- *  • quem sabe (provider autoritativo ou confirmação do Mestre no fluxo
- *    assistido) informa o nível, e só então +2/+5/Total valem.
- *
- * O provider NÃO conhece nome de magia/arma: recebe origem, alvo e a interação.
- */
+/** O provider assistido é o fallback fora de uma cena utilizável. O provider
+ * de obstáculos consulta o grau definido pelo Mestre e a interposição 2D;
+ * casos indeterminados continuam aceitando adjudicação explícita. */
 
 export interface CoverSpatialProvider {
   readonly mode: 'assisted' | 'authoritative';
@@ -29,7 +15,7 @@ export const assistedCoverProvider: CoverSpatialProvider = {
   evaluate() {
     return {
       status: 'not-assessed',
-      reason: 'o modelo espacial atual não representa obstáculos/cobertura',
+      reason: 'sem provider espacial para avaliar cobertura',
     };
   },
 };

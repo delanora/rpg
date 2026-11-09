@@ -121,7 +121,7 @@ scenesRouter.post('/:sceneId/spatial/obstacles', async (req, res) => {
     rejectInvalid(res, parsed.error);
     return;
   }
-  const { expectedVersion, operationId, start, end, blocksMovement, blocksSight, blocksTargeting } = parsed.data;
+  const { expectedVersion, operationId, start, end, blocksMovement, blocksSight, blocksTargeting, coverLevel } = parsed.data;
   res.json(
     await createSpatialObstacle(actorFrom(req), String(req.params.sceneId), {
       expectedVersion,
@@ -132,6 +132,7 @@ scenesRouter.post('/:sceneId/spatial/obstacles', async (req, res) => {
       blocksMovement: blocksMovement ?? true,
       blocksSight: blocksSight ?? true,
       ...(blocksTargeting === undefined ? {} : { blocksTargeting }),
+      ...(coverLevel === undefined ? {} : { coverLevel }),
     }),
   );
 });
