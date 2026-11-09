@@ -128,7 +128,7 @@ Contrato: `POST /api/combat/hostility/decision`, exclusivo do Mestre, com `comba
 
 ### Duelo consentido entre jogadores
 
-Durante o combate ativo, o botão **Duelos** permite solicitar um confronto a outro jogador. O convite aparece automaticamente para o destinatário e persiste na reconexão. Somente ele pode aceitar ou recusar; quem enviou pode cancelar. Qualquer envolvido pode encerrar o duelo, e o Mestre pode cancelar convites ou encerrar confrontos, sem aceitar pelos jogadores — inclusive ao assumir um turno.
+Durante o combate ativo, o botão **Duelos** permite solicitar um confronto a outro jogador. O atalho fica retraído em ícone e expande ao passar o mouse ou receber foco pelo teclado, tanto para o jogador quanto para o Mestre. O convite aparece automaticamente para o destinatário e persiste na reconexão. Somente ele pode aceitar ou recusar; quem enviou pode cancelar. Qualquer envolvido pode encerrar o duelo, e o Mestre pode cancelar convites ou encerrar confrontos, sem aceitar pelos jogadores — inclusive ao assumir um turno.
 
 O duelo é uma convenção de consentimento do Obsyrium: habilita hostilidade mútua, ameaças, passagem hostil e ataques de oportunidade **somente entre os dois**. Ataques manuais entre personagens continuam disponíveis sem duelo e causam dano pelas regras existentes. O aceite e o encerramento não curam, não gastam ou recuperam economia e não alteram os lados ou relações com NPCs. Encerrar não depende do turno, cancela oportunidades pendentes desse par e revalida o movimento pausado pelo motor existente, sem gastar Reação. Sair ou encerrar o combate elimina o consentimento; um novo duelo exige outro aceite.
 
