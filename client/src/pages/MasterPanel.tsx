@@ -884,7 +884,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       </button> : null}
 
       {/* Cada clique libera UM Level Up por jogador: não há mais bloquear. */}
-      <button
+      {!combat ? <button
         type="button"
         className="btn btn-levelup"
         onClick={() => void releaseLevelUpForTable()}
@@ -892,7 +892,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       >
         <Icon name="sparkle" size={16} /> LIBERAR LEVEL UP
         {gameConfig ? <span className="config-count">{gameConfig.levelUpRelease}</span> : null}
-      </button>
+      </button> : null}
     </nav>
   );
 
