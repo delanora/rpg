@@ -49,6 +49,7 @@ const { PreparedEncountersTab } = await import(
 const { CombatTokenAdjustments } = await import(
   '../src/combat/components/CombatTokenAdjustments'
 );
+const { InitiativeTimeline } = await import('../src/combat/components/InitiativeTimeline');
 const { CombatReinforcements } = await import(
   '../src/combat/components/CombatReinforcements'
 );
@@ -130,6 +131,7 @@ globalThis.fetch = async (input, init) => {
         preparation: body.preparation,
       },
     };
+  else if (path === '/api/characters') value = { characters: players };
   else if (path === '/api/creatures') value = { creatures };
   else if (path === '/api/combat/participants/add')
     value = { combat: { id: 'combat', version: 2 } };
@@ -424,6 +426,29 @@ try {
       added.body.expectedVersion === 1 &&
       added.body.entries[0].positions[0].xFeet === 10,
   );
+  await click('Jogadores');
+  check('jogadores disponíveis aparecem no reforço', document.querySelector('.combat-reinforcement-list')!.textContent!.includes(players[0].name));
+  check('jogador não recebe controles de relação ou ocultação', !document.querySelector('.combat-reinforcement select') && !document.querySelector('.combat-reinforcement input[type="checkbox"]'));
+  await act(async () => (document.querySelector('.combat-reinforcement-list button') as HTMLButtonElement).click());
+  await click('Adicionar ao combate');
+  const playerAdd = requests.filter(r => r.path === '/api/combat/participants/add').at(-1)!;
+  check('reforço de jogador envia seleção e posição sem criatura', playerAdd.body.characterIds[0] === players[0].id && playerAdd.body.entries.length === 0 && playerAdd.body.characterPositions[0].position.xFeet === 10);
+  await act(async () => root.render(h(CombatReinforcements, {combat: {...combat, combatants: [{characterId: players[0].id}]} as CombatDto, position: null, onAdded: () => {}, onError: message => {throw Error(message);}})));
+  check('jogador já participante sai da seleção', !document.querySelector('.combat-reinforcement-list')!.textContent!.includes(players[0].name) && document.querySelector('.combat-reinforcement-list')!.textContent!.includes(players[1].name));
+  const unit = (id: string, rolled: boolean, initiative: number | null) => ({id, name: id, kind: 'CHARACTER', rolled, initiative, hpCurrent: 20, hpMax: 20, armorClass: 12, mechanicalState: {conditions: [], exhaustionLevel: 0, log: []}, conditionEffects: {active: [], suspended: []}});
+  const initiativeFixture = {...combat, currentCombatantId: 'Atual', nextCombatantId: 'Depois', combatants: [{...unit('Reforço', true, 30), firstTurnPending: true}, unit('Atual', true, 20), unit('Depois', true, 10), unit('Pendente', false, null)]} as unknown as CombatDto;
+  let anticipated = '', rolledFor = '';
+  await act(async () => root.render(h(InitiativeTimeline, {combat: initiativeFixture, isMaster: true, busy: false, onRollFor: id => {rolledFor = id;}, onAnticipate: id => {anticipated = id;}})));
+  const cards = [...document.querySelectorAll('.combatant-list > li')];
+  check('iniciativa pendente aparece no topo sem número de ordem', cards[0].textContent!.includes('Pendente') && !cards[0].querySelector('.combatant-card-rank'));
+  check('destaques atual e próximo preservam ordem do servidor', document.querySelector('.combatant-card.current')!.textContent!.includes('Atual') && document.querySelector('.combatant-card.next')!.textContent!.includes('Depois'));
+  await click('rolar');
+  await click('Antecipar turno');
+  check('mestre pode rolar pendente e antecipar reforço anterior', rolledFor === 'Pendente' && anticipated === 'Reforço');
+  await act(async () => root.render(h(InitiativeTimeline, {combat: initiativeFixture, isMaster: false, busy: false, ownCombatantId: 'Pendente', onRollFor: id => {rolledFor = id;}})));
+  check('jogador rola sua iniciativa mesmo no combate ativo', [...document.querySelectorAll('button')].some(b => b.textContent === 'rolar') && !document.querySelector('.combat-initiative-anticipate'));
+  await act(async () => root.render(h(InitiativeTimeline, {combat: initiativeFixture, isMaster: false, busy: false, ownCombatantId: 'Atual', onRollFor: () => {}})));
+  check('jogador não rola iniciativa alheia', !document.querySelector('.combatant-list button'));
   let openedStart = 0;
   await act(async () =>
     root.render(

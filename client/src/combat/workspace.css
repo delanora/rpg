@@ -3241,3 +3241,6 @@
 @media (max-width: 1180px) {
   .combat-workspace-initiative .combat-timeline { max-height: 24rem; }
 }
+
+/* O ajuste de entrada fica abaixo do card, preservando o espaço da iniciativa. */
+.combat-initiative-anticipate { width: 100%; margin-top: .25rem; }

@@ -119,7 +119,7 @@
 | **6.6M.6.4 — Targeting por token** | ✅ | Escolha de alvo no grid, modo de rolagem e execução pelo fluxo autoritativo existente. |
 | **Habilidades do bestiário** | ✅ fundação | Cadastro de ações, bônus, reações assistidas e passivas; usos por cópia e execução na economia existente. Nome e descrição do uso no registro público; saldos privados. Ataques Múltiplos, áreas, recarga e ações lendárias seguem pendentes. |
 | **Bestiário e tokens** | ✅ | Cadastro em etapas com rolagem interna, campos sem cortes e atributos em bandeirinhas; ataques por cards e galeria com imagens por cópia e números só nas criaturas repetidas. Olho clicável para ocultar/revelar. Ocultação no grid/iniciativa e sinal de inconsciência; mortos e incapazes não geram oportunidade. |
-| **Preparação e encontros salvos** | ✅ | Aba Combate com encontros salvos, criação e início no cabeçalho. Wizard ampliado com zoom no mapa, jogadores e NPCs únicos por botão; batalha em aba temporária Combate em andamento. |
+| **Preparação e encontros salvos** | ✅ | Aba Combate com encontros salvos, criação e início no cabeçalho. Wizard ampliado com zoom no mapa, jogadores e NPCs únicos por botão; batalha em aba temporária Combate em andamento. Reforços incluem jogadores, aguardam iniciativa no topo e permitem antecipação explícita do Mestre. |
 | **Participantes durante o combate** | ✅ | Incluir criaturas/NPCs pelo grid e remover pelo token, preservando cadastros e turno. Iniciativa do jogador com rolagem interna. |
 | **6.6M.7 — Pré-iniciativa** | ✅ | Mesma dock, CTA de iniciativa sobre Hotbar indisponível e transição para espera/turno. |
 | **6.6M.8–8.3 — Death UI/realtime** | ✅ | Hooks React, dock no estado de morte, Scene preservada, contadores sem F5 e End Turn correto. |

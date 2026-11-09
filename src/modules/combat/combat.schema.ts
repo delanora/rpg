@@ -148,6 +148,7 @@ export const economyActionSchema = combatOperationSchema.extend({
  */
 export const nextTurnSchema = combatOperationSchema.extend({
   skipDeathSave: z.boolean().optional(),
+  extraCombatantId: z.string().min(1).optional(),
 });
 export type NextTurnInput = z.infer<typeof nextTurnSchema>;
 
@@ -320,6 +321,8 @@ export type EconomyOverrideInput = z.infer<typeof economyOverrideSchema>;
 export const combatPingSchema = z.object({ position: spatialPositionSchema }).strict();
 
 export const addParticipantsSchema = combatOperationSchema.extend({
+  characterIds: startCombatSchema.shape.characterIds.default([]),
+  characterPositions: startCombatSchema.shape.characterPositions,
   entries: startCombatSchema.shape.entries,
 }).strict();
 export const removeParticipantSchema = combatOperationSchema.extend({

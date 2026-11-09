@@ -109,6 +109,7 @@ import {
 import { planNextTurn } from './turn-order.js';
 import {
   combatantAttacks,
+  combatantReceivesTurn,
   combatantDeathState,
   combatantMechanicalState,
   combatantEffectiveSpeed,
@@ -377,21 +378,6 @@ function combatantHp(combatant: CombatantSourced): number {
   return combatant.character
     ? combatant.character.hpCurrent
     : (combatant.hpCurrent ?? combatant.creature?.hpCurrent ?? 0);
-}
-
-/**
- * RECEBE turno? (regra única usada por `nextTurn` e `finalizeInitiative`)
- *
- * • `dead` nunca recebe — o turno não pára nele;
- * • 0 PV + `stabilized` (sem pendência) também não: o início do turno processa
- *   os hooks, mas como não pode agir o restante é pulado automaticamente;
- * • 0 PV com Testes contra a Morte ATIVOS RECEBE (é nele que se rola);
- * • pendência do Mestre recebe o turno (ele precisa resolver).
- */
-function receivesTurn(combatant: CombatantSourced): boolean {
-  const death = combatantDeathState(combatant);
-  if (death.dead) return false;
-  return !(autoSkippedAtZero(combatant));
 }
 
 /** Estabilizado a 0 PV sem pendência: turno processado e pulado na hora. */
@@ -995,7 +981,7 @@ async function finalizeInitiative(combatId: string, viewer: Role): Promise<Comba
   const startPlan = planNextTurn(
     ordered.length,
     ordered.length - 1,
-    (position) => receivesTurn(ordered[position]),
+    (position) => combatantReceivesTurn(ordered[position]),
   );
   const startIndex = startPlan?.index ?? 0;
 
@@ -1042,11 +1028,12 @@ function initiativeDice(disadvantage: boolean) {
 
 export async function rollInitiative(actor: CombatActor, combatantId?: string): Promise<CombatDto> {
   const selectedCombat = await requireActiveCombat();
+  const updatedCharacters: string[] = [];
   const payload = await prisma.$transaction(async db => {
     // A rolagem existente não recebe expectedVersion; o lock do combate ordena
     // participantes diferentes e impede usar condições de um snapshot antigo.
-    const locked = await db.combat.updateMany({ where: { id: selectedCombat.id, status: 'PENDING_INITIATIVE' }, data: { version: { increment: 1 } } });
-    if (!locked.count) throw new HttpError('A ordem de iniciativa já foi montada.', 409);
+    const locked = await db.combat.updateMany({ where: { id: selectedCombat.id, status: { in: ACTIVE_STATUSES } }, data: { version: { increment: 1 } } });
+    if (!locked.count) throw new HttpError('O combate já foi encerrado.', 409);
     const combat = await loadCombatById(selectedCombat.id, db);
     const combatant = combatantId ? combat.combatants.find(item => item.id === combatantId) : combat.combatants.find(item => item.ownerUserId === actor.userId);
     if (!combatant) throw new HttpError('Combatente não encontrado.', combatantId ? 404 : 403);
@@ -1056,8 +1043,16 @@ export async function rollInitiative(actor: CombatActor, combatantId?: string): 
     const { first, second, roll } = initiativeDice(disadvantage);
     const total = roll + combatant.dexterityMod;
     await db.combatant.update({ where: { id: combatant.id }, data: { initiative: total, initiativeRoll: roll } });
+    if (combat.status === 'ACTIVE') {
+      const current = orderCombatants(combat.combatants)[combat.currentIndex];
+      const reloaded = await loadCombatById(combat.id, db);
+      const index = orderCombatants(reloaded.combatants).findIndex(c => c.id === current.id);
+      await preserveCurrentDeathKey(db, combat, current, index, updatedCharacters);
+      await db.combat.update({ where: { id: combat.id }, data: { currentIndex: index } });
+    }
     return { kind: 'initiative' as const, actorName: combatant.name, expression: disadvantage ? '1d20 (desvantagem)' : '1d20', rolls: second === null ? [roll] : [first, second], sides: 20, modifier: combatant.dexterityMod, total, crit: roll === 20, at: new Date().toISOString() };
   });
+  for (const id of updatedCharacters) await publishCharacter(id);
   const initiativeCombat = await loadCombatById(selectedCombat.id);
   const rolledUnit = combatantId ? initiativeCombat.combatants.find(c=>c.id===combatantId) : initiativeCombat.combatants.find(c=>c.ownerUserId===actor.userId);
   if (rolledUnit?.kind !== 'CHARACTER' && rolledUnit?.spatialVisibility === 'master-only') {
@@ -1080,6 +1075,7 @@ import { openEndOfTurnTriggers } from '../effects/turn-trigger.service.js';
 import { processDurationExpirations } from '../spells/execution/effect-duration.service.js';
 
 export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promise<CombatDto> {
+  if (input.extraCombatantId) requireMaster(actor);
   const pending = await prisma.combat.findUnique({ where: { id: input.combatId }, select: { status: true } });
   if (pending?.status === 'PENDING_INITIATIVE' && actor.role !== 'MASTER') throw new HttpError('Só o mestre ou o dono do turno atual pode encerrar o turno.', 403);
   // 6.6H: o FIM do turno atual abre as salvaguardas repetidas dos efeitos que
@@ -1185,11 +1181,15 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     // A regra pura vive em `turn-order.ts`; aqui só aplicamos os hooks.
     // Sempre no MÁXIMO uma volta — `null` = fallback reportável.
     // ------------------------------------------------------------------
-    const plan = planNextTurn(
-      ordered.length,
-      combat.currentIndex,
-      (position) => receivesTurn(ordered[position]),
-    );
+    const resumeIndex = combat.extraTurnResumeAfterId
+      ? ordered.findIndex(c => c.id === combat.extraTurnResumeAfterId) : -1;
+    const extraIndex = input.extraCombatantId ? ordered.findIndex(c => c.id === input.extraCombatantId) : -1;
+    if (input.extraCombatantId && (actor.role !== 'MASTER' || combat.extraTurnResumeAfterId || extraIndex < 0 || extraIndex >= combat.currentIndex || !ordered[extraIndex].firstTurnPending || !combatantReceivesTurn(ordered[extraIndex])))
+      throw new HttpError('Só o Mestre pode antecipar um reforço que aguarda seu primeiro turno na próxima rodada.', 409, 'CONFLICT');
+    const plan = input.extraCombatantId
+      ? { index: extraIndex, rounds: 0, skipped: [] as number[] }
+      : planNextTurn(ordered.length, resumeIndex >= 0 ? resumeIndex : combat.currentIndex,
+          (position) => combatantReceivesTurn(ordered[position]));
     if (!plan) {
       // Fallback SEGURO e reportável: nada é alterado no combate (a transação
       // volta atrás). O Mestre encerra o combate ou corrige o estado.
@@ -1201,11 +1201,11 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     }
     const index = plan.index;
     const round = combat.round + plan.rounds;
-    const skipped = plan.skipped.map((position) => ordered[position]);
+    const skipped = plan.skipped.map((position) => ordered[position]).filter(c => c.initiative !== null);
     // Hooks de início de turno dos pulados: estabilizado a 0 processa o início
     // (sem Death Save) e o restante do turno é descartado; morto não roda nada.
     for (const candidate of skipped) {
-      if (autoSkippedAtZero(candidate)) {
+      if (candidate.initiative !== null && autoSkippedAtZero(candidate)) {
         await onTurnStartDeath(deathEntityOf(candidate), db);
       }
     }
@@ -1215,7 +1215,7 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
     // 6.6D: cada ativação REAL de turno incrementa a identidade UMA vez.
     await db.combat.update({
       where: { id: combat.id },
-      data: { currentIndex: index, round, turnSequence: { increment: 1 } },
+      data: { currentIndex: index, round, turnSequence: { increment: 1 }, extraTurnResumeAfterId: input.extraCombatantId ? outgoing.id : null },
     });
     // O turno de quem está morto (ou com morte pendente) NÃO concede Ação,
     // Ação Bônus, Reação nem Movimento — o registro segue no combate até o
@@ -1232,6 +1232,7 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
       data: { sneakAttackUsedThisTurn: false },
     });
     await db.combatant.update({ where: { id: incoming.id }, data: {
+      firstTurnPending: false,
       turnEconomy: blocked ? blockedTurnEconomy() : onTurnStart(combatantSpeed(incoming)),
     } });
     // O Teste contra a Morte é liberado no INÍCIO do próprio turno (1 por turno).
@@ -1247,6 +1248,9 @@ export async function nextTurn(actor: CombatActor, input: NextTurnInput): Promis
         'turn-skip',
         { private: skipped.some((item) => hasPrivateMechanicalState(item.kind)) },
       );
+    }
+    if (input.extraCombatantId) {
+      await appendEconomyLog(db, combat, incoming, 'Mestre antecipou o primeiro turno deste reforço; a ordem normal será retomada em seguida.', 'turn-extra', {private: incoming.kind !== 'CHARACTER' && incoming.spatialVisibility === 'master-only'});
     }
     // 6.6H: expirações devidas NESTA nova posição do clock são processadas
     // antes de publicar o turno — um Bless expirado já não concede bônus.
@@ -2580,8 +2584,8 @@ export async function addCombatParticipants(
     input,
     'add-participants',
     async (db, combat) => {
-      if (!input.entries.length)
-        throw new HttpError('Selecione uma criatura ou NPC.', 400);
+      if (!input.entries.length && !input.characterIds.length)
+        throw new HttpError('Selecione pelo menos um participante.', 400);
       if (
         await db.movementIntent.count({
           where: { combatId: combat.id, status: 'pending-reaction' },
@@ -2633,23 +2637,36 @@ export async function addCombatParticipants(
           select: { name: true },
         });
         const name = number ? `${template.name} ${number}` : entry.name;
-        const roll =
-          combat.status === 'ACTIVE'
-            ? initiativeDice(
-                deriveConditionEffects(mechanicalStateOf(entry.mechanicalState))
-                  .checkDisadvantage,
-              ).roll
-            : null;
         await db.combatant.create({
           data: {
             ...entry,
+            firstTurnPending: combat.status === 'ACTIVE',
             tokenNumber: number,
             combatId: combat.id,
             name,
-            initiativeRoll: roll,
-            initiative: roll === null ? null : roll + entry.dexterityMod,
+            initiativeRoll: null,
+            initiative: null,
           },
         });
+      }
+      const characters = await db.character.findMany({
+        where: { id: { in: input.characterIds }, user: { role: 'PLAYER' } },
+      });
+      if (new Set(input.characterIds).size !== input.characterIds.length || characters.length !== input.characterIds.length)
+        throw new HttpError('Seleção de jogadores inválida.', 400);
+      if (input.characterPositions.some(p => !input.characterIds.includes(p.characterId)) || new Set(input.characterPositions.map(p => p.characterId)).size !== input.characterPositions.length)
+        throw new HttpError('Posição de jogador inválida.', 400);
+      for (const character of characters) {
+        if (combat.combatants.some(c => c.characterId === character.id))
+          throw new HttpError('Este personagem já participa do combate.', 409, 'CONFLICT');
+        await db.combatant.create({ data: {
+          combatId: combat.id, kind: 'CHARACTER', sideKey: 'players',
+          firstTurnPending: combat.status === 'ACTIVE',
+          characterId: character.id, ownerUserId: character.userId,
+          name: character.name, dexterityMod: abilityModifier(character.dexterity),
+          ...(input.characterPositions.find(p => p.characterId === character.id)
+            ? { spatialPosition: input.characterPositions.find(p => p.characterId === character.id)!.position } : {}),
+        } });
       }
       const loaded = await loadCombatById(combat.id, db);
       const newIds = loaded.combatants
@@ -2735,9 +2752,10 @@ export async function removeCombatParticipant(
       const plan = removingCurrent
         ? planNextTurn(
             ordered.length,
-            combat.currentIndex,
+            combat.extraTurnResumeAfterId && ordered.some(c => c.id === combat.extraTurnResumeAfterId)
+              ? ordered.findIndex(c => c.id === combat.extraTurnResumeAfterId) : combat.currentIndex,
             (index) =>
-              ordered[index].id !== unit.id && receivesTurn(ordered[index]),
+              ordered[index].id !== unit.id && combatantReceivesTurn(ordered[index]),
           )
         : null;
       if (removingCurrent && !plan)
@@ -2770,6 +2788,10 @@ export async function removeCombatParticipant(
         )),
       );
       await clearSpecificHostility(db, combat, unit.id);
+      if (!removingCurrent && combat.extraTurnResumeAfterId === unit.id) {
+        const predecessor = ordered[(ordered.indexOf(unit) - 1 + ordered.length) % ordered.length];
+        await db.combat.update({where: {id: combat.id}, data: {extraTurnResumeAfterId: predecessor.id}});
+      }
       await db.combatant.delete({ where: { id: unit.id } });
       if (combat.status === 'ACTIVE') {
         const remaining = ordered.filter((c) => c.id !== unit.id);
@@ -2781,6 +2803,7 @@ export async function removeCombatParticipant(
             where: { id: combat.id },
             data: {
               currentIndex: index,
+              extraTurnResumeAfterId: null,
               round: combat.round + plan.rounds,
               turnSequence: { increment: 1 },
             },
@@ -2792,6 +2815,7 @@ export async function removeCombatParticipant(
           await db.combatant.update({
             where: { id: incoming.id },
             data: {
+              firstTurnPending: false,
               turnEconomy: deathBlocksActions(combatantDeathState(incoming))
                 ? blockedTurnEconomy()
                 : onTurnStart(combatantSpeed(incoming)),
@@ -2799,7 +2823,7 @@ export async function removeCombatParticipant(
           });
           for (const skipped of plan.skipped
             .map((i) => ordered[i])
-            .filter((c) => c.id !== unit.id && autoSkippedAtZero(c)))
+            .filter((c) => c.id !== unit.id && c.initiative !== null && autoSkippedAtZero(c)))
             await onTurnStartDeath(deathEntityOf(skipped), db);
           await onTurnStartDeath(deathEntityOf(incoming), db);
           affected.push(

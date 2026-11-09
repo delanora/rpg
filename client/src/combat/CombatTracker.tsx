@@ -960,7 +960,7 @@ export function CombatTracker({
    * MESMO pedido (`rollMyInitiative`) e o servidor segue dono da ordem.
    */
   const preInitiativeRoll =
-    !isMaster && combat.status === 'PENDING_INITIATIVE' && myCombatant && !myCombatant.rolled
+    !isMaster && myCombatant && !myCombatant.rolled
       ? myCombatant
       : null;
   const awaitingInitiative = preInitiativeRoll !== null;
@@ -1418,7 +1418,15 @@ export function CombatTracker({
               combat={combat}
               isMaster={isMaster}
               busy={busy}
-              onRollFor={(combatantId) => void run(() => rollInitiativeFor(combatantId))}
+              ownCombatantId={myCombatant?.id}
+              onRollFor={(combatantId) => void run(() =>
+                isMaster ? rollInitiativeFor(combatantId) : rollMyInitiative(),
+              )}
+              onAnticipate={isMaster ? (combatantId) => {
+                if (window.confirm('Encerrar o turno atual e conceder um turno extra a este reforço?')) {
+                  void run(() => nextTurn(combat, { extraCombatantId: combatantId }));
+                }
+              } : undefined}
             />
           }
           scene={
@@ -1540,7 +1548,15 @@ export function CombatTracker({
             combat={combat}
             isMaster={isMaster}
             busy={busy}
-            onRollFor={(combatantId) => void run(() => rollInitiativeFor(combatantId))}
+            ownCombatantId={myCombatant?.id}
+              onRollFor={(combatantId) => void run(() =>
+                isMaster ? rollInitiativeFor(combatantId) : rollMyInitiative(),
+              )}
+              onAnticipate={isMaster ? (combatantId) => {
+                if (window.confirm('Encerrar o turno atual e conceder um turno extra a este reforço?')) {
+                  void run(() => nextTurn(combat, { extraCombatantId: combatantId }));
+                }
+              } : undefined}
           />
         }
         scene={

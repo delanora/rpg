@@ -1,3 +1,4 @@
+import { planNextTurn } from './turn-order.js';
 import type { CombatDuelDto } from '../shared/duels.js';
 import type { HostilityPromptDto } from '../shared/hostility.js';
 import { creatureAbilitiesOf, creatureAbilityUsesOf, type CreatureAbility } from '../shared/creature-abilities.js';
@@ -73,6 +74,7 @@ export interface CombatDto {
   currentIndex: number;
   /** Combatente do turno atual (apenas quando o combate está ativo). */
   currentCombatantId: string | null;
+  nextCombatantId?: string | null;
   /** Localidade onde o combate acontece (informada na preparação). */
   localityId: string | null;
   localityName: string | null;
@@ -187,6 +189,7 @@ export interface CombatantDto {
   relation: 'allied' | 'hostile' | 'neutral' | 'unknown';
   /** Verdadeiro quando a ficha/criatura de origem foi removida. */
   missing: boolean;
+  firstTurnPending?: boolean;
   rolled: boolean;
 }
 
@@ -195,6 +198,7 @@ export interface CombatantDto {
  * Evita depender dos genéricos do Prisma em toda a aplicação.
  */
 export interface CombatSourced {
+  extraTurnResumeAfterId?: string | null;
   duels?: { id: string; requesterId: string; challengedId: string; status: string }[];
   hostilityPrompts?: HostilityPromptDto[];
   version: number;
@@ -224,6 +228,7 @@ export interface CombatSourced {
 }
 
 export interface CombatantSourced {
+  firstTurnPending?: boolean;
   /** Derivado dos duelos ativos; nunca gravado em hostileToIds. */
   duelOpponentIds?: string[];
   hostileToIds?: string[];
@@ -310,17 +315,25 @@ export function combatantMechanicalState(combatant: CombatantSourced) {
   return combatant.character?.mechanicalState ?? combatant.mechanicalState;
 }
 
-/**
- * Ciclo de morte do combatente: personagens usam o estado da FICHA (canônico);
- * criaturas usam o estado PRÓPRIO da instância (Goblin 1 ≠ Goblin 2), nunca o
- * template do bestiário.
- */
+/** Elegibilidade única para o avanço de turno e o indicador de próximo. */
+export function combatantReceivesTurn(combatant: CombatantSourced): boolean {
+  if (combatant.initiative === null) return false;
+  const death = combatantDeathState(combatant);
+  const hp = combatant.character?.hpCurrent ?? combatant.hpCurrent ?? combatant.creature?.hpCurrent ?? 0;
+  return !death.dead && !(hp <= 0 && death.stabilized && !death.pending);
+}
+
 /** A mesma elegibilidade serve a previews e à resolução real da Reação. */
 export function combatantCanReact(combatant: CombatantSourced): boolean {
   const hp = combatant.character?.hpCurrent ?? combatant.hpCurrent ?? combatant.creature?.hpCurrent ?? 0;
   return hp > 0 && !deathBlocksActions(combatantDeathState(combatant)) && deriveConditionEffects(combatantMechanicalState(combatant)).canReact;
 }
 
+/**
+ * Ciclo de morte do combatente: personagens usam o estado da FICHA (canônico);
+ * criaturas usam o estado PRÓPRIO da instância (Goblin 1 ≠ Goblin 2), nunca o
+ * template do bestiário.
+ */
 export function combatantDeathState(combatant: CombatantSourced): DeathState {
   return combatant.character ? deathStateOf(combatant.character.deathState) : deathStateOf(combatant.deathState);
 }
@@ -421,6 +434,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     relation: combatant.kind === 'CHARACTER' ? 'allied' : !relationSide ? 'unknown' : relationSide === 'neutral' ? 'neutral' : relationSide === 'players' ? 'allied' : 'hostile',
     statsHidden: false,
     missing: source === null,
+    firstTurnPending: combatant.firstTurnPending,
     rolled: combatant.initiative !== null,
   };
 }
@@ -439,6 +453,8 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
   const current =
     combat.status === 'ACTIVE' ? (combatants[combat.currentIndex] ?? null) : null;
 
+  const resumeIndex = combat.extraTurnResumeAfterId ? ordered.findIndex(c => c.id === combat.extraTurnResumeAfterId) : -1;
+  const nextPlan = combat.status === 'ACTIVE' ? planNextTurn(ordered.length, resumeIndex >= 0 ? resumeIndex : combat.currentIndex, i => combatantReceivesTurn(ordered[i])) : null;
   const liveIds = new Set(combatants.filter(unit => !unit.missing).map(unit => unit.id));
   const dto: CombatDto = {
     duels: (combat.duels ?? []).filter(duel => liveIds.has(duel.requesterId) && liveIds.has(duel.challengedId)).map(duel => ({ id: duel.id, requesterId: duel.requesterId, challengedId: duel.challengedId, status: duel.status === 'active' ? 'active' : 'pending' })),
@@ -461,6 +477,7 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
     round: combat.round,
     currentIndex: combat.currentIndex,
     currentCombatantId: current?.id ?? null,
+    nextCombatantId: nextPlan ? ordered[nextPlan.index].id : null,
     localityId: combat.locality?.id ?? null,
     localityName: combat.locality?.name ?? null,
     sceneId: combat.scene?.id ?? null,
@@ -511,6 +528,7 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
     ...dto,
     duels: (dto.duels ?? []).filter(duel => duel.status === 'active'),
     hostilityPrompts: [],
+    nextCombatantId: dto.nextCombatantId && !hiddenIds.has(dto.nextCombatantId) ? dto.nextCombatantId : null,
     currentCombatantId: dto.currentCombatantId && !hiddenIds.has(dto.currentCombatantId) ? dto.currentCombatantId : null,
     economyLog: dto.economyLog.filter((entry) => entry.private !== true && !hidden.some(c=>entry.actorName===c.name || entry.message.includes(c.name))),
     combatants: dto.combatants.filter(c=>!hiddenIds.has(c.id)).map((combatant) => {

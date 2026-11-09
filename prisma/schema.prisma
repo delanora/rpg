@@ -983,6 +983,8 @@ model Combat {
   turnSequence Int          @default(0)
   /// Posição na ordem calculada (ordenada por iniciativa).
   currentIndex Int          @default(0)
+  /// Retomada da ordem após antecipação administrativa de um reforço.
+  extraTurnResumeAfterId String?
 
   /// Localidade onde o combate acontece (opcional, informada na preparação).
   localityId String?
@@ -1021,6 +1023,8 @@ model Combat {
 }
 
 model Combatant {
+  /// Reforço que ainda não recebeu seu primeiro turno.
+  firstTurnPending Boolean @default(false)
   requestedDuels CombatDuel[] @relation("DuelRequester")
   receivedDuels CombatDuel[] @relation("DuelChallenged")
   mechanicalVersion Int @default(0)

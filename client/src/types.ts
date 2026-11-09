@@ -2449,6 +2449,7 @@ export interface CombatantDto {
    */
   spatial: CombatantSpatial | null;
   missing: boolean;
+  firstTurnPending?: boolean;
   rolled: boolean;
 }
 
@@ -2462,6 +2463,7 @@ export interface CombatDto {
   round: number;
   currentIndex: number;
   currentCombatantId: string | null;
+  nextCombatantId?: string | null;
   localityId: string | null;
   localityName: string | null;
   /**

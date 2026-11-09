@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { Portrait } from '../../components/Portrait';
-import type { CombatDto, Creature, SpatialPosition } from '../../types';
+import type {
+  Character,
+  CombatDto,
+  Creature,
+  SpatialPosition,
+} from '../../types';
 import { addCombatParticipants } from '../combatApi';
 import '../preparation.css';
 export function CombatReinforcements({
@@ -23,14 +28,21 @@ export function CombatReinforcements({
       'hostile',
     ),
     [busy, setBusy] = useState(false);
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [hidden, setHidden] = useState(false);
   const [loading, setLoading] = useState(true),
     [error, setError] = useState('');
   useEffect(() => {
     let active = true;
-    api<{ creatures: Creature[] }>('/api/creatures')
-      .then((r) => {
-        if (active) setRows(r.creatures);
+    Promise.all([
+      api<{ creatures: Creature[] }>('/api/creatures'),
+      api<{ characters: Character[] }>('/api/characters'),
+    ])
+      .then(([r, players]) => {
+        if (active) {
+          setRows(r.creatures);
+          setCharacters(players.characters);
+        }
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -42,28 +54,45 @@ export function CombatReinforcements({
       active = false;
     };
   }, []);
-  const available = rows.filter(
-    (c) =>
-      c.kind === kind &&
-      c.name.toLowerCase().includes(query.toLowerCase()) &&
-      !(
-        c.kind === 'NPC' && combat.combatants.some((p) => p.creatureId === c.id)
-      ),
-  );
+  const available =
+    kind === 'CHARACTER'
+      ? characters.filter(
+          (c) =>
+            c.name.toLowerCase().includes(query.toLowerCase()) &&
+            !combat.combatants.some((p) => p.characterId === c.id),
+        )
+      : rows.filter(
+          (c) =>
+            c.kind === kind &&
+            c.name.toLowerCase().includes(query.toLowerCase()) &&
+            !(
+              c.kind === 'NPC' &&
+              combat.combatants.some((p) => p.creatureId === c.id)
+            ),
+        );
   async function add() {
     setBusy(true);
     setError('');
     try {
       onAdded(
-        await addCombatParticipants(combat, [
-          {
-            creatureId: selected,
-            quantity: 1,
-            spatialVisibilities: [hidden ? 'master-only' : 'public'],
-            disposition: relation,
-            ...(position ? { positions: [position] } : {}),
-          },
-        ]),
+        await addCombatParticipants(
+          combat,
+          kind === 'CHARACTER'
+            ? []
+            : [
+                {
+                  creatureId: selected,
+                  quantity: 1,
+                  spatialVisibilities: [hidden ? 'master-only' : 'public'],
+                  disposition: relation,
+                  ...(position ? { positions: [position] } : {}),
+                },
+              ],
+          kind === 'CHARACTER' ? [selected] : [],
+          kind === 'CHARACTER' && position
+            ? [{ characterId: selected, position }]
+            : [],
+        ),
       );
     } catch (e) {
       const message =
@@ -77,6 +106,16 @@ export function CombatReinforcements({
   return (
     <div className="combat-reinforcement">
       <div className="preparation-inline">
+        <button
+          className="btn btn-small"
+          aria-pressed={kind === 'CHARACTER'}
+          onClick={() => {
+            setKind('CHARACTER');
+            setSelected('');
+          }}
+        >
+          Jogadores
+        </button>
         <button
           className="btn btn-small"
           aria-pressed={kind === 'CREATURE'}
@@ -118,7 +157,11 @@ export function CombatReinforcements({
             aria-pressed={selected === c.id}
             onClick={() => setSelected(c.id)}
           >
-            <Portrait src={c.imageUrl ?? ''} size="sm" zoomable={false} />
+            <Portrait
+              src={('imageUrl' in c ? c.imageUrl : c.avatarUrl) ?? ''}
+              size="sm"
+              zoomable={false}
+            />
             {c.name}
           </button>
         ))}
@@ -128,34 +171,37 @@ export function CombatReinforcements({
           Nenhum participante disponível para este filtro.
         </p>
       ) : null}
-      <label>
-        Relação
-        <select
-          value={relation}
-          disabled={busy}
-          onChange={(e) => setRelation(e.target.value as typeof relation)}
-        >
-          <option value="hostile">Hostil</option>
-          <option value="neutral">Neutro</option>
-          <option value="allied">Aliado</option>
-        </select>
-      </label>
-      <label className="creature-checkbox">
-        <input
-          type="checkbox"
-          checked={hidden}
-          disabled={busy}
-          onChange={(e) => setHidden(e.target.checked)}
-        />
-        Entrar oculto dos jogadores
-      </label>
+      {kind !== 'CHARACTER' ? (
+        <>
+          <label>
+            Relação
+            <select
+              value={relation}
+              disabled={busy}
+              onChange={(e) => setRelation(e.target.value as typeof relation)}
+            >
+              <option value="hostile">Hostil</option>
+              <option value="neutral">Neutro</option>
+              <option value="allied">Aliado</option>
+            </select>
+          </label>
+          <label className="creature-checkbox">
+            <input
+              type="checkbox"
+              checked={hidden}
+              disabled={busy}
+              onChange={(e) => setHidden(e.target.checked)}
+            />
+            Entrar oculto dos jogadores
+          </label>
+        </>
+      ) : null}
       <p className="section-note">
         {position
           ? 'Será colocado na casa clicada.'
           : 'Será adicionado sem posição no mapa.'}{' '}
-        {combat.status === 'ACTIVE'
-          ? 'A iniciativa será rolada sem interromper o turno atual.'
-          : 'A iniciativa será rolada na preparação.'}
+        Entrará aguardando iniciativa no topo da lista, sem interromper o turno
+        atual.
       </p>
       <button
         className="btn btn-primary"

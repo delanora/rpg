@@ -545,7 +545,7 @@ console.log('Check-combat-ui — refino da UI de combate');
     turnOrder.includes('step < total') &&
       turnOrder.includes('return null;') &&
       service.includes('planNextTurn(') &&
-      service.includes('receivesTurn(ordered[position])') &&
+      service.includes('combatantReceivesTurn(ordered[position])') &&
       service.includes('autoSkippedAtZero(candidate)') &&
       service.includes("'NO_ELIGIBLE_COMBATANT'") &&
       service.includes('onTurnStartDeath(deathEntityOf(candidate), db)'),
@@ -6173,7 +6173,7 @@ check(
 
   check(
     'SC58) a ordem da iniciativa continua vindo do BACKEND (map + índice, sem sort local)',
-    timelineSource.includes('combat.combatants.map(') &&
+    timelineSource.includes('[...pending, ...ordered].map(') &&
       timelineSource.includes('combat.combatants.findIndex(') &&
       !timelineSource.includes('.sort(') &&
       !/combat\.combatants[\s\S]{0,40}\.sort\(/.test(trackerSource),
@@ -7876,7 +7876,7 @@ check(
       (trackerSource.match(/run\(rollMyInitiative\)/g) ?? []).length === 1 &&
       // O Mestre NÃO herda o estado: a dock continua restrita ao jogador.
       trackerSource.includes(
-        "!isMaster && combat.status === 'PENDING_INITIATIVE' && myCombatant && !myCombatant.rolled",
+        "!isMaster && myCombatant && !myCombatant.rolled",
       ),
   );
 

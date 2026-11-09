@@ -339,6 +339,14 @@ async function main() {
       death.saveTurnKey,
       turnKey(combat.id, combat.round, combat.currentIndex),
     );
+    const fresh = combat.combatants.find((c: any) => !c.rolled);
+    assert.ok(fresh, 'Reforço entra sem iniciativa automática');
+    await prisma.combatant.update({where: {id: fresh.id}, data: {dexterityMod: 200}});
+    const rolling = await Promise.all([request('/combat/initiative/' + fresh.id, {}), request('/combat/initiative/' + fresh.id, {})]);
+    assert.deepEqual(rolling.map(r => r.status).sort(), [200, 409], 'Uma única rolagem vence');
+    combat = rolling.find(r => r.status === 200)!.data.combat;
+    assert.equal(combat.currentCombatantId, hero.id);
+    assert.equal((await prisma.character.findUniqueOrThrow({where: {id: characters[0]}})).deathState && ((await prisma.character.findUniqueOrThrow({where: {id: characters[0]}})).deathState as any).saveTurnKey, turnKey(combat.id, combat.round, combat.currentIndex), 'Rolagem reindexa o teste de morte já realizado');
     assert.equal(
       (
         await request('/dice/roll', {
@@ -517,6 +525,75 @@ async function main() {
     console.log(
       '✔ Remoção preserva cadastros, cancela reações e avança só quando retira o turno corrente',
     );
+    // Entrada tardia: jogador escolhe sua iniciativa; nenhum turno já iniciado reinicia.
+    const join = {...op(), entries: [], characterIds: [characters[1]], characterPositions: [{characterId: characters[1], position: {xFeet: 10, yFeet: 0}}]};
+    const joined = await request('/combat/participants/add', join);
+    assert.equal(joined.status, 200, JSON.stringify(joined));
+    combat = joined.data.combat;
+    const player = combat.combatants.find((c: any) => c.characterId === characters[1]);
+    assert.equal(player.rolled, false);
+    assert.equal((await request('/combat/participants/add', join)).status, 200, 'Retry não duplica jogador');
+    assert.equal((await request('/combat/participants/add', {...op(), entries: [], characterIds: [characters[1]]})).status, 409);
+    assert.equal((await request('/combat/initiative/' + player.id, {}, owner)).status, 403);
+    // Ordem determinística apenas nas fixtures, dados continuam rolados no servidor.
+    const remaining = combat.combatants.filter((c: any) => c.id !== hero.id && c.id !== player.id);
+    await prisma.combatant.updateMany({where: {id: {in: remaining.map((c: any) => c.id)}}, data: {initiative: 30}});
+    await prisma.combatant.update({where: {id: hero.id}, data: {initiative: 10}});
+    await prisma.combatant.update({where: {id: player.id}, data: {dexterityMod: 100}});
+    combat = (await request('/combat/active')).data.combat;
+    const heroIndex = combat.combatants.findIndex((c: any) => c.id === hero.id);
+    await prisma.combat.update({where: {id: combatId}, data: {currentIndex: heroIndex}});
+    const oldRound = combat.round;
+    const oldSequence = (await prisma.combat.findUniqueOrThrow({where: {id: combatId}})).turnSequence;
+    const rolled = await request('/combat/initiative', {}, outsider);
+    assert.equal(rolled.status, 200, JSON.stringify(rolled));
+    combat = rolled.data.combat;
+    assert.equal(combat.currentCombatantId, hero.id);
+    assert.equal(combat.round, oldRound);
+    assert.equal((await prisma.combat.findUniqueOrThrow({where: {id: combatId}})).turnSequence, oldSequence);
+    assert.equal((await request('/combat/initiative', {}, outsider)).status, 409, 'Não rola novamente');
+    const pendingAdd = await request('/combat/participants/add', {...op(), entries: [{creatureId: creatures[0], quantity: 1}]});
+    assert.equal(pendingAdd.status, 200);
+    combat = pendingAdd.data.combat;
+    const pendingUnit = combat.combatants.find((c: any) => !c.rolled);
+    assert.ok(pendingUnit);
+    const beforeOverride = op();
+    assert.equal((await request('/combat/next-turn', {...beforeOverride, extraCombatantId: player.id}, owner)).status, 403, 'Jogador não antecipa reforço');
+    const extra = await request('/combat/next-turn', {...beforeOverride, extraCombatantId: player.id});
+    assert.equal(extra.status, 200, JSON.stringify(extra));
+    combat = extra.data.combat;
+    assert.equal(combat.currentCombatantId, player.id);
+    assert.equal(combat.round, oldRound);
+    assert.equal(combat.combatants.find((c: any) => c.id === player.id).firstTurnPending, false);
+    assert.equal((await request('/combat/next-turn', {...beforeOverride, extraCombatantId: player.id})).status, 200, 'Retry não repete turno extra');
+    const resumed = await request('/combat/next-turn', op());
+    assert.equal(resumed.status, 200, JSON.stringify(resumed));
+    combat = resumed.data.combat;
+    assert.equal(combat.currentCombatantId, player.id, 'Retoma após o último da rodada: reforço começa normalmente a próxima');
+    assert.equal(combat.round, oldRound + 1);
+    assert.notEqual(combat.currentCombatantId, pendingUnit.id, 'Sem iniciativa não recebe turno');
+    // Sem override, uma iniciativa anterior ao atual espera a próxima rodada.
+    await prisma.combatant.update({where: {id: hero.id}, data: {initiative: 50}});
+    await prisma.combatant.update({where: {id: pendingUnit.id}, data: {dexterityMod: 200}});
+    combat = (await request('/combat/active')).data.combat;
+    await prisma.combat.update({where: {id: combatId}, data: {currentIndex: combat.combatants.findIndex((c: any) => c.id === hero.id)}});
+    const rollPending = await request('/combat/initiative/' + pendingUnit.id, {});
+    assert.equal(rollPending.status, 200, JSON.stringify(rollPending));
+    combat = rollPending.data.combat;
+    const naturalRound = combat.round;
+    const natural = await request('/combat/next-turn', op());
+    assert.equal(natural.status, 200, JSON.stringify(natural));
+    combat = natural.data.combat;
+    assert.equal(combat.round, naturalRound);
+    assert.notEqual(combat.currentCombatantId, pendingUnit.id, 'Posição anterior não interrompe a rodada');
+    for (let i = 0; i < combat.combatants.length && combat.round === naturalRound; i++) {
+      const advanced = await request('/combat/next-turn', op());
+      assert.equal(advanced.status, 200, JSON.stringify(advanced));
+      combat = advanced.data.combat;
+    }
+    assert.equal(combat.round, naturalRound + 1);
+    assert.equal(combat.currentCombatantId, pendingUnit.id, 'Recebe o turno ao chegar sua posição na rodada seguinte');
+    console.log('✔ Jogador tardio, permissões, retry, iniciativa manual e antecipação com retomada sem repetir turnos');
   } finally {
     await prisma.effectInstance.deleteMany({ where: { id: { in: effects } } });
     if (combatId) await prisma.combat.deleteMany({ where: { id: combatId } });

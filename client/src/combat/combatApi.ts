@@ -1,6 +1,6 @@
 import { api } from '../api';
 import { createOperationId } from '../utils';
-import type { AttackResolvedPayload, CombatDto, CombatUsableItem, DiceRollDto } from '../types';
+import type { SpatialPosition, AttackResolvedPayload, CombatDto, CombatUsableItem, DiceRollDto } from '../types';
 
 /** Ações de combate — todas devolvem o estado atualizado do combate. */
 
@@ -51,11 +51,11 @@ export function rollInitiativeFor(combatantId: string): Promise<CombatDto> {
  */
 export function nextTurn(
   combat: CombatDto,
-  options: { skipDeathSave?: boolean } = {},
+  options: { skipDeathSave?: boolean; extraCombatantId?: string } = {},
 ): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/next-turn', {
     method: 'POST',
-    body: { ...operationFor(combat), ...(options.skipDeathSave ? { skipDeathSave: true } : {}) },
+    body: { ...operationFor(combat), ...options },
   }).then((result) => result.combat);
 }
 
@@ -183,8 +183,8 @@ export function setCombatantSide(combat: CombatDto, combatantId: string, sideKey
   }).then(result => result.combat);
 }
 
-export function addCombatParticipants(combat: CombatDto, entries: CombatCreatureEntry[]): Promise<CombatDto> {
- return api<{combat: CombatDto}>('/api/combat/participants/add', {method:'POST', body:{...operationFor(combat),entries}}).then(r=>r.combat);
+export function addCombatParticipants(combat: CombatDto, entries: CombatCreatureEntry[], characterIds: string[] = [], characterPositions: {characterId: string; position: SpatialPosition}[] = []): Promise<CombatDto> {
+ return api<{combat: CombatDto}>('/api/combat/participants/add', {method:'POST', body:{...operationFor(combat),entries,characterIds,characterPositions}}).then(r=>r.combat);
 }
 export function removeCombatParticipant(combat: CombatDto, combatantId: string): Promise<CombatDto> {
  return api<{combat: CombatDto}>('/api/combat/participants/remove', {method:'POST', body:{...operationFor(combat),combatantId}}).then(r=>r.combat);
