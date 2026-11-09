@@ -1,3 +1,4 @@
+import { Icon } from '../../components/Icon';
 import type { CSSProperties } from 'react';
 import type { CombatPingPayload } from '../../types';
 import { feetToScenePixel, sceneToScreen, type GridCamera } from './gridCamera';
@@ -13,7 +14,7 @@ export function GridPings({ pings, camera, geometry }: {
       return <div key={ping.id} className="grid-ping" style={{ left: point.x, top: point.y,
         '--ping-color': ping.color } as CSSProperties}>
         <span className="grid-ping-ring" aria-hidden="true" />
-        <span className="grid-ping-flag" aria-hidden="true">⚑</span>
+        <span className="grid-ping-flag" aria-hidden="true"><Icon name="flag" size={30} /></span>
         <span className="grid-ping-author">{ping.authorName}</span>
       </div>;
     })}

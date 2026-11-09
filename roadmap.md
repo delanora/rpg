@@ -106,7 +106,7 @@
 | **6.6M.3.1.4.4 — Tamanhos** | ✅ | Base/effective size e ocupação dos tokens. |
 | **6.6M.4.1–4.1.4 — Editor e alinhamento** | ✅ | Cenas, imagem, grid SVG, preview, snapping, geometria e arraste consistente. |
 | **6.6M.4.2 — Editor de paredes** | ✅ | Traçados com múltiplos cantos, desfazer, persistência e barreiras de movimento. |
-| **6.6M — Ping no grid** | ✅ | Alt+clique, sinalização transitória sincronizada, sem consumir economia. |
+| **6.6M — Ping no grid** | ✅ | Alt+clique, bandeira SVG temática e sinalização transitória sincronizada, sem consumir economia. |
 
 ### 5.4 Interface, Hotbar e estabilidade
 

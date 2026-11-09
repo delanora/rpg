@@ -6,6 +6,7 @@ import type { CSSProperties, ReactNode } from 'react';
  * contexto — dourado, vinho, couro etc. — e escalam sem perder nitidez.
  */
 export type IconName =
+  | 'flag'
   | 'sword'
   | 'shield'
   | 'heart'
@@ -61,6 +62,7 @@ export type IconName =
   | 'ruler';
 
 const ICONS: Record<IconName, ReactNode> = {
+  flag: <><path d="M6 21V3" /><path d="M6 4c4-3 8 3 13 0v10c-5 3-9-3-13 0Z" /></>,
   sword: (
     <>
       <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
