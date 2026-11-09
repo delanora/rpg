@@ -117,6 +117,9 @@ export function MasterPanel({ user }: { user: SessionUser }) {
     } finally { setHostilityBusy(false); }
   }
   const { tab, setTab } = useMasterNavigation(combat?.id ?? null);
+  // Aba Regiões → bestiário: o card de habitante aponta a criatura a abrir;
+  // a seleção de fato continua morando na aba de destino.
+  const [focusCreatureId, setFocusCreatureId] = useState<string | null>(null);
 
   // RECONNECT: as decisões em aberto são relidas do servidor ao montar o painel
   // (o evento `death:updated` não sobrevive a um refresh). A primeira pendência
@@ -390,6 +393,31 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       return creature;
     },
     [tab],
+  );
+
+  /**
+   * Card de habitante do assistente de regiões → ficha no bestiário/NPCs.
+   * Não existe segundo editor de criatura dentro da aba Regiões.
+   */
+  const openCreatureFromRegion = useCallback(
+    (creature: Creature) => {
+      setFocusCreatureId(creature.id);
+      setTab(creature.kind === 'NPC' ? 'npcs' : 'creatures');
+    },
+    [setTab],
+  );
+
+  const clearFocusCreature = useCallback(() => setFocusCreatureId(null), []);
+
+  /** Cria já vinculado à localidade e abre a ficha nova do habitante. */
+  const createCreatureFromRegion = useCallback(
+    async (localityId: string, kind: CreatureKind): Promise<Creature> => {
+      const creature = await createCreature({ localityIds: [localityId], kind });
+      setFocusCreatureId(creature.id);
+      setTab(kind === 'NPC' ? 'npcs' : 'creatures');
+      return creature;
+    },
+    [createCreature, setTab],
   );
 
   const patchCreature = useCallback(async (id: string, patch: CreaturePatch) => {
@@ -1026,6 +1054,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
                 onCreateLocality={createLocality}
                 onPatchLocality={patchLocality}
                 onDeleteLocality={deleteLocality}
+                onOpenCreature={openCreatureFromRegion}
+                onCreateCreature={createCreatureFromRegion}
               />
             ) : tab === 'config' ? (
               <ConfigTab
@@ -1061,6 +1091,8 @@ export function MasterPanel({ user }: { user: SessionUser }) {
                 onCreate={createCreature}
                 onPatch={patchCreature}
                 onDelete={deleteCreature}
+                focusId={focusCreatureId}
+                onFocusConsumed={clearFocusCreature}
                 items={items}
                 onCreatureChange={(updated) =>
                   setCreatures((prev) =>

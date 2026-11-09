@@ -1,0 +1,167 @@
+/* ---------------------------------------------------------------------------
+   ASSISTENTE DA REGIÃO (aba Regiões) — etapas numeradas
+   Reaproveita a trilha do assistente de criação (`wizard-track` /
+   `wizard-step-chip` / `wizard-step-number`): aqui só a grade de 4 passos, o
+   rodapé, e os cards de localidade e de habitante são novos.
+--------------------------------------------------------------------------- */
+.wizard-track.wizard-track-region {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex-shrink: 0;
+}
+
+/* O chip do assistente de criação é um item de lista; aqui ele é um botão. */
+.wizard-track-region .wizard-step-chip {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.wizard-track-region .wizard-step-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wizard-track-region .wizard-step-chip .wizard-step-label {
+  color: inherit;
+}
+
+.wizard-actions.region-wizard-footer {
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.region-wizard-context {
+  font-size: var(--text-aux);
+  color: var(--ink-soft);
+}
+
+.wizard-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Etapa 2 — localidades como cards em grade, com retrato maior. */
+.locality-cards-grid {
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+
+.locality-card.locality-card-lg {
+  grid-template-columns: 4rem 1fr;
+  padding: 0.6rem;
+}
+
+.locality-card-lg .locality-thumb {
+  width: 4rem;
+  height: 4rem;
+}
+
+/* Etapa 4 — habitantes: retrato + resumo + números que o mestre consulta. */
+.creature-locality-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.6rem;
+}
+
+.creature-locality-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  height: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+}
+
+.creature-locality-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.creature-locality-title {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.creature-locality-title h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.creature-locality-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+}
+
+.creature-locality-tag {
+  padding: 0.05rem 0.32rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.creature-locality-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.creature-locality-stats {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.creature-locality-stats div {
+  display: flex;
+  align-items: baseline;
+  gap: 0.22rem;
+}
+
+.creature-locality-stats dt {
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+}
+
+.creature-locality-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.creature-locality-open {
+  justify-self: start;
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+@media (max-width: 760px) {
+  .wizard-track.wizard-track-region {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -2,7 +2,7 @@ import { creatureDraft, creaturePayload } from './creatureDraft';
 import { ABILITY_KEYS } from '../../dnd';
 import { abilityModifier } from '../../../../src/modules/shared/dnd5e';
 import './creatures.css';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   Creature,
   CreatureKind,
@@ -36,6 +36,12 @@ interface CreaturesTabProps {
   /** Substitui o NPC após escritas de inventário/moedas. */
   onCreatureChange?: (creature: Creature) => void;
   onError?: (message: string) => void;
+  /**
+   * Pedido vindo de outra aba (assistente de regiões): abre a ficha desta
+   * criatura. Sem limpar o pedido, a seleção voltaria a cada remontagem.
+   */
+  focusId?: string | null;
+  onFocusConsumed?: () => void;
 }
 
 const LABELS: Record<
@@ -75,6 +81,8 @@ export function CreaturesTab({
   items = [],
   onCreatureChange,
   onError,
+  focusId = null,
+  onFocusConsumed,
 }: CreaturesTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Creature | null>(null);
@@ -82,6 +90,14 @@ export function CreaturesTab({
   const [filterLocality, setFilterLocality] = useState('');
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
+
+  // Pedido vindo do assistente de regiões: abre a ficha uma vez e devolve
+  // o pedido ao painel, para não reabrir a cada render.
+  useEffect(() => {
+    if (!focusId) return;
+    setSelectedId(focusId);
+    onFocusConsumed?.();
+  }, [focusId, onFocusConsumed]);
 
   const labels = LABELS[kind];
   // Derivado da lista: atualizações em tempo real refletem no editor aberto.

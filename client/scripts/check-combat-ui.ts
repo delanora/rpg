@@ -5247,6 +5247,9 @@ check(
   const editorSource = source('src/components/master/SceneEditor.tsx');
   const localityScenesSource = source('src/components/master/LocalityScenes.tsx');
   const localityEditorSource = source('src/components/master/LocalityEditor.tsx');
+  // A etapa de cenas passou a viver no assistente da região; o editor da
+  // localidade ficou só com a identidade do lugar.
+  const regionEditorSource = source('src/components/master/RegionEditor.tsx');
   const startDialogSource = source('src/combat/CombatStartDialog.tsx');
   const combatApiSource = source('src/combat/combatApi.ts');
   const realtimeSource = source('src/useRealtime.ts');
@@ -5389,7 +5392,8 @@ check(
 
   check(
     'SC14) Cena vive DENTRO da Localidade (lista + seleção + editor), não numa aba do painel',
-    localityEditorSource.includes('<LocalityScenes localityId={locality.id}') &&
+    regionEditorSource.includes('<LocalityScenes') &&
+      regionEditorSource.includes('localityId={selectedLocality.id}') &&
       localityScenesSource.includes('Cada cena tem grid, paredes e imagem próprios.') &&
       localityScenesSource.includes('createScene(localityId, { name: nextSceneName(scenes) })') &&
       localityScenesSource.includes('const selected = useMemo(') &&

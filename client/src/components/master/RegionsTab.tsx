@@ -1,5 +1,12 @@
 import { useMemo, useState } from 'react';
-import type { Creature, Locality, LocalityPatch, Region, RegionPatch } from '../../types';
+import type {
+  Creature,
+  CreatureKind,
+  Locality,
+  LocalityPatch,
+  Region,
+  RegionPatch,
+} from '../../types';
 import { Icon } from '../Icon';
 import { Portrait } from '../Portrait';
 import { MasterDetailModal } from './MasterDetailModal';
@@ -20,6 +27,10 @@ interface RegionsTabProps {
   onCreateLocality: (regionId: string) => Promise<Locality>;
   onPatchLocality: (id: string, patch: LocalityPatch) => void;
   onDeleteLocality: (id: string) => void;
+  /** Abre a ficha da criatura no bestiário (troca de aba do painel). */
+  onOpenCreature: (creature: Creature) => void;
+  /** Cria criatura/NPC já vinculado à localidade e abre a ficha dele. */
+  onCreateCreature: (localityId: string, kind: CreatureKind) => Promise<Creature>;
 }
 
 /**
@@ -27,8 +38,8 @@ interface RegionsTabProps {
  * dentro de uma região, que tem descrição, anotações e imagens próprias.
  *
  * A lista ocupa a largura toda em **cards** paginados de 25 em 25, com busca no
- * topo. Clicar num card abre o editor da região numa **janela flutuante**, com
- * as sub-abas de Visão geral e Localidades.
+ * topo. Clicar num card abre o editor da região numa **janela flutuante** com o
+ * assistente numerado (Região → Localidade → Cenas → Habitantes).
  */
 export function RegionsTab({
   regions,
@@ -40,6 +51,8 @@ export function RegionsTab({
   onCreateLocality,
   onPatchLocality,
   onDeleteLocality,
+  onOpenCreature,
+  onCreateCreature,
 }: RegionsTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -180,6 +193,8 @@ export function RegionsTab({
             onCreateLocality={() => onCreateLocality(selected.id)}
             onPatchLocality={onPatchLocality}
             onDeleteLocality={onDeleteLocality}
+            onOpenCreature={onOpenCreature}
+            onCreateCreature={onCreateCreature}
           />
         </MasterDetailModal>
       ) : null}
