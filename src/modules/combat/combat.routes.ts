@@ -1,3 +1,5 @@
+import { duelRequestSchema, duelDecisionSchema } from './combat.schema.js';
+import { requestCombatDuel, decideCombatDuel, combatDuelsFor } from './combat.service.js';
 import { hostilityDecisionSchema } from './combat.schema.js';
 import { decideAttackHostility } from './combat.service.js';
 import { creatureAbilityUseSchema } from './combat.schema.js';
@@ -540,4 +542,16 @@ combatRouter.post('/hostility/decision', authenticate, requireRole('MASTER'), as
   const parsed = hostilityDecisionSchema.safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors }); return; }
   res.json(await decideAttackHostility(actorFrom(req), parsed.data));
+});
+
+combatRouter.get('/:combatId/duels', authenticate, async (req, res) => { res.json(await combatDuelsFor(actorFrom(req), String(req.params.combatId))); });
+combatRouter.post('/duels/request', authenticate, async (req, res) => {
+  const parsed = duelRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors }); return; }
+  res.json(await requestCombatDuel(actorFrom(req), parsed.data));
+});
+combatRouter.post('/duels/decision', authenticate, async (req, res) => {
+  const parsed = duelDecisionSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors }); return; }
+  res.json(await decideCombatDuel(actorFrom(req), parsed.data));
 });

@@ -14,6 +14,8 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
   const [tab, setTab] = useState<'conditions' | 'hp' | 'economy' | 'relation' | 'abilities'>('conditions');
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [amount, setAmount] = useState('5');
+  const specificHostileIds = (combatant.hostileToIds ?? []).filter(id => !(combatant.kind === 'CHARACTER' && combat.combatants.find(unit => unit.id === id)?.kind === 'CHARACTER'));
+  const activeDuels = (combat.duels ?? []).filter(duel => duel.status === 'active' && [duel.requesterId, duel.challengedId].includes(combatant.id));
   const value = Number(amount);
   const valid = Number.isInteger(value) && value >= 1 && value <= 9999;
   return <>
@@ -37,7 +39,8 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
           {combatant.sideKey && !['players','neutral','enemies'].includes(combatant.sideKey)
             ? <option value={combatant.sideKey}>{combatant.sideKey}</option> : null}
         </select></label>
-        {combatant.hostileToIds?.length ? <div className="section-note"><p>Hostilidade específica com: {combat.combatants.filter(unit => combatant.hostileToIds?.includes(unit.id)).map(unit => unit.name).join(', ')}.</p><button type="button" className="btn btn-small" disabled={busy} onClick={() => onRun(() => setCombatantSide(combat, combatant.id, combatant.sideKey ?? null))}>Limpar hostilidades específicas</button></div> : null}
+        {specificHostileIds.length ? <div className="section-note"><p>Hostilidade específica com: {combat.combatants.filter(unit => specificHostileIds.includes(unit.id)).map(unit => unit.name).join(', ')}.</p><button type="button" className="btn btn-small" disabled={busy} onClick={() => onRun(() => setCombatantSide(combat, combatant.id, combatant.sideKey ?? null))}>Limpar hostilidades específicas</button></div> : null}
+        {activeDuels.length ? <p className="section-note">Este personagem está em duelo. Use a janela Duelos para encerrá-lo; trocar o lado não substitui o consentimento.</p> : null}
         <p className="section-note">Trocar o lado também limpa as hostilidades específicas deste token. Ajusta somente este combatente. Neutros não provocam contra o grupo; reagem contra hostis e vice-versa.</p>
       </section> : null}
       {tab === 'hp' ? <section className="combat-token-hp">

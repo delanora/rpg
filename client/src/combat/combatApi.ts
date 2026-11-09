@@ -197,3 +197,13 @@ export function useCreatureAbility(combat: CombatDto, input: { combatantId: stri
 export function decideAttackHostility(combat: CombatDto, input: { promptId: string; hostile: boolean; selectedIds: string[] }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/hostility/decision', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }
+
+export function fetchCombatDuels(combatId: string): Promise<import('../types').CombatDuelDto[]> {
+  return api<{ duels: import('../types').CombatDuelDto[] }>(`/api/combat/${encodeURIComponent(combatId)}/duels`).then(result => result.duels);
+}
+export function requestCombatDuel(combat: CombatDto, requesterId: string, challengedId: string): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/duels/request', { method: 'POST', body: { ...operationFor(combat), requesterId, challengedId } }).then(result => result.combat);
+}
+export function decideCombatDuel(combat: CombatDto, duelId: string, decision: 'accept' | 'decline' | 'cancel' | 'end'): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/duels/decision', { method: 'POST', body: { ...operationFor(combat), duelId, decision } }).then(result => result.combat);
+}

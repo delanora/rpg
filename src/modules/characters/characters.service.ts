@@ -4221,6 +4221,13 @@ export async function deleteCharacter(
   const name = character.name;
 
   const affected = await prisma.$transaction(async (tx) => {
+    // Consentimento sai junto dos participantes, serializado com aceitar/encerrar.
+    const units = await tx.combatant.findMany({ where: { OR: [{ ownerUserId: userId }, { characterId }] }, select: { id: true, combatId: true } });
+    const combatIds = [...new Set(units.map(unit => unit.combatId))].sort();
+    for (const id of combatIds) await tx.combat.updateMany({ where: { id, status: 'ACTIVE' }, data: { version: { increment: 1 } } });
+    const unitIds = units.map(unit => unit.id);
+    const duels = await tx.combatDuel.findMany({ where: { status: 'active', OR: [{ requesterId: { in: unitIds } }, { challengedId: { in: unitIds } }] } });
+
     // LIFECYCLE (6.5D): a ficha VAI SUMIR do banco. Encerra os efeitos que a
     // tinham como alvo e os que ela originava ANTES do delete, na mesma
     // transação — assim nenhuma instância `active` fica órfã. Morrer não é
@@ -4235,6 +4242,11 @@ export async function deleteCharacter(
     await tx.combatant.deleteMany({
       where: { OR: [{ ownerUserId: userId }, { characterId }] },
     });
+
+    if (duels.length) {
+      const { cancelDuelOpportunities } = await import('../combat/spatial/opportunity-attack.service.js');
+      for (const duel of duels) await cancelDuelOpportunities(tx, duel.combatId, duel.requesterId, duel.challengedId);
+    }
 
     // A ficha sai junto (onDelete: Cascade na relação User -> Character).
     await tx.user.delete({ where: { id: userId } });

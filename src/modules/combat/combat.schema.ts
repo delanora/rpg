@@ -346,3 +346,12 @@ export const hostilityDecisionSchema = combatOperationSchema.extend({
   if (new Set(input.selectedIds).size !== input.selectedIds.length) ctx.addIssue({ code: 'custom', message: 'Não repita participantes.' });
   if (!input.hostile && input.selectedIds.length) ctx.addIssue({ code: 'custom', message: 'Manter relação não recebe envolvidos.' });
 });
+
+export const duelRequestSchema = combatOperationSchema.extend({
+  requesterId: z.string().min(1),
+  challengedId: z.string().min(1),
+});
+export const duelDecisionSchema = combatOperationSchema.extend({
+  duelId: z.string().min(1),
+  decision: z.enum(['accept', 'decline', 'cancel', 'end']),
+});

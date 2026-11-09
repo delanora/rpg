@@ -1,3 +1,4 @@
+import { CombatDuelsPanel } from '../combat/components/CombatDuelsPanel';
 import { HostilityDecisionPanel } from '../combat/components/HostilityDecisionPanel';
 import { PreparedEncountersTab } from '../combat/PreparedEncountersTab';
 import type { CombatPreparation } from '../combat/combatApi';
@@ -941,6 +942,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           <p className="splash">Carregando o painel...</p>
         ) : (
           <>
+            {combat ? <CombatDuelsPanel key={`duels:${combat.id}`} combat={combat} user={user} onCombatChange={combatState.setCombat} onError={setError} /> : null}
             {combat ? <HostilityDecisionPanel key={combat.id} combat={combat} busy={hostilityBusy} onRun={action => void runHostilityDecision(action)} /> : null}
             {/* A mesa segue sincronizada nas outras abas; só sua superfície desmonta. */}
             {tab === 'active-combat' && combat ? (

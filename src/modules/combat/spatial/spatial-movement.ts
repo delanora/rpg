@@ -125,6 +125,13 @@ export function movementRelationOf(
   return moverSide === occupantSide ? 'same' : 'hostile';
 }
 
+/** Entre personagens de jogadores, somente consentimento ativo habilita hostilidade. */
+export function combatantRelationOf(a: { id: string; kind?: string; sideKey?: string | null; hostileToIds?: readonly string[]; duelOpponentIds?: readonly string[] }, b: { id: string; kind?: string; sideKey?: string | null; hostileToIds?: readonly string[]; duelOpponentIds?: readonly string[] }): MovementRelation {
+  if (a.kind === 'CHARACTER' && b.kind === 'CHARACTER')
+    return a.duelOpponentIds?.includes(b.id) || b.duelOpponentIds?.includes(a.id) ? 'hostile' : 'same';
+  return movementRelationOf(normalizeSideKey(a.sideKey), normalizeSideKey(b.sideKey), a.hostileToIds?.includes(b.id) || b.hostileToIds?.includes(a.id));
+}
+
 /** Normalização do lado: aparado, minúsculo e vazio = `null`. */
 export function normalizeSideKey(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -142,6 +149,8 @@ export interface MovementParticipant {
   /** Lado do ENCONTRO (`Combatant.sideKey`), já normalizado. */
   sideKey: string | null;
   hostileToIds?: readonly string[];
+  kind?: string;
+  duelOpponentIds?: readonly string[];
 }
 
 /** Motivos de recusa. O código é a identidade estável (a mensagem é exibição). */
@@ -397,7 +406,7 @@ export function evaluateMovementPath(
     // 7. Passagem intermediária: não hostil passa; hostil exige ≥ 2 tamanhos;
     //    relação desconhecida recusa (nunca assume aliado nem inimigo).
     for (const occupant of overlapping) {
-      const relation = movementRelationOf(mover.sideKey, occupant.sideKey, mover.hostileToIds?.includes(occupant.combatantId) || occupant.hostileToIds?.includes(mover.combatantId));
+      const relation = combatantRelationOf({ ...mover, id: mover.combatantId }, { ...occupant, id: occupant.combatantId });
       if (relation === 'unknown') {
         return fail('MOVEMENT_RELATION_UNKNOWN', occupant);
       }

@@ -61,10 +61,13 @@ export async function withSpatial(
       : [];
   const customSizeById = new Map(customRaces.map((race) => [race.id, race.size]));
 
+  const liveCharacters = new Set(combat.combatants.filter(unit => unit.kind === 'CHARACTER' && unit.character).map(unit => unit.id));
+  const activeDuels = (combat.duels ?? []).filter(duel => duel.status === 'active' && liveCharacters.has(duel.requesterId) && liveCharacters.has(duel.challengedId));
   return {
     ...combat,
     combatants: combat.combatants.map((combatant) => ({
       ...combatant,
+      duelOpponentIds: activeDuels.flatMap(duel => duel.requesterId === combatant.id ? [duel.challengedId] : duel.challengedId === combatant.id ? [duel.requesterId] : []),
       baseSize: combatantSizeOf(combatant, customSizeById),
     })),
   };

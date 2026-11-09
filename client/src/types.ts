@@ -1,3 +1,5 @@
+import type { CombatDuelDto } from '../../src/modules/shared/duels';
+export type { CombatDuelDto } from '../../src/modules/shared/duels';
 import type { HostilityPromptDto } from '../../src/modules/shared/hostility';
 import type { CreatureAbility } from '../../src/modules/shared/creature-abilities';
 export type { CreatureAbility } from '../../src/modules/shared/creature-abilities';
@@ -2451,6 +2453,7 @@ export interface CombatantDto {
 }
 
 export interface CombatDto {
+  duels?: CombatDuelDto[];
   hostilityPrompts?: HostilityPromptDto[];
   version: number;
   economyLog: { id: string; actorName: string; message: string; at: string; action?: string }[];

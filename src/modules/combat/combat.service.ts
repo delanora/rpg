@@ -1,6 +1,6 @@
 import { queueAttackHostility, clearSpecificHostility } from './hostility.js';
 import { creatureAbilitiesOf, creatureAbilityUsesOf, CREATURE_ABILITY_COST_LABELS } from '../shared/creature-abilities.js';
-import { creatureAbilityUseSchema, hostilityDecisionSchema } from './combat.schema.js';
+import { creatureAbilityUseSchema, hostilityDecisionSchema, duelRequestSchema, duelDecisionSchema } from './combat.schema.js';
 import type { z } from 'zod';
 import { validateParticipantPositions } from './participants-position.js';
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
@@ -2510,6 +2510,7 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
       where: { id: combat.id },
       data: { status: 'ENDED', endedAt: new Date(), version: { increment: 1 } },
     });
+    await db.combatDuel.updateMany({ where: { combatId: combat.id, status: { in: ['pending', 'active'] } }, data: { status: 'ended' } });
     await db.combatHostilityPrompt.updateMany({ where: { combatId: combat.id, status: 'pending' }, data: { status: 'cancelled' } });
     // 6.6L.3.1 — nenhuma janela de Reação sobrevive ao fim do combate: o
     // movimento pausado é interrompido (nunca retomado sozinho depois) e as
@@ -2909,4 +2910,67 @@ export async function decideAttackHostility(actor: CombatActor, input: z.infer<t
       : 'Mestre manteve a relação após o ataque.', 'hostility-decision', { private: true });
     return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
   });
+}
+
+/** Solicitação pelo próprio jogador; o Mestre nunca fornece o consentimento. */
+export async function requestCombatDuel(actor: CombatActor, input: z.infer<typeof duelRequestSchema>) {
+  if (actor.role !== 'PLAYER') throw new HttpError('Somente o jogador pode solicitar um duelo.', 403);
+  return runCombatOperation(actor, input, 'duel-request', async (db, combat) => {
+    const from = combat.combatants.find(unit => unit.id === input.requesterId);
+    const to = combat.combatants.find(unit => unit.id === input.challengedId);
+    if (!from?.character || from.kind !== 'CHARACTER' || from.character.userId !== actor.userId) throw new HttpError('Solicite com seu próprio personagem.', 403);
+    if (!to?.character || to.kind !== 'CHARACTER' || to.id === from.id || to.character.userId === actor.userId) throw new HttpError('Escolha outro personagem de jogador neste combate.', 400);
+    const owner = await db.user.findUnique({ where: { id: to.character.userId }, select: { role: true } });
+    if (owner?.role !== 'PLAYER') throw new HttpError('O alvo precisa pertencer a outro jogador.', 400);
+    const pairKey = [from.id, to.id].sort().join(':');
+    if (await db.combatDuel.count({ where: { combatId: combat.id, pairKey, status: { in: ['pending', 'active'] } } })) throw new HttpError('Já existe uma solicitação ou duelo aberto entre vocês.', 409, 'DUEL_ALREADY_OPEN');
+    await db.combatDuel.create({ data: { combatId: combat.id, requesterId: from.id, challengedId: to.id, pairKey } });
+    await appendEconomyLog(db, combat, from, `Solicitou duelo com ${to.name}.`, 'duel-request', { private: true });
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+  });
+}
+
+export async function decideCombatDuel(actor: CombatActor, input: z.infer<typeof duelDecisionSchema>) {
+  return runCombatOperation(actor, input, 'duel-decision', async (db, combat) => {
+    const duel = await db.combatDuel.findFirst({ where: { id: input.duelId, combatId: combat.id, status: { in: ['pending', 'active'] } } });
+    if (!duel) throw new HttpError('Este convite ou duelo já foi encerrado.', 409, 'CONFLICT');
+    const from = combat.combatants.find(unit => unit.id === duel.requesterId);
+    const to = combat.combatants.find(unit => unit.id === duel.challengedId);
+    if (!from?.character || !to?.character) throw new HttpError('Um dos personagens saiu do combate.', 409, 'CONFLICT');
+    const requester = actor.role === 'PLAYER' && from.character.userId === actor.userId;
+    const challenged = actor.role === 'PLAYER' && to.character.userId === actor.userId;
+    const master = actor.role === 'MASTER';
+    let status: string;
+    if (input.decision === 'accept' || input.decision === 'decline') {
+      if (!challenged) throw new HttpError('Somente o jogador desafiado pode responder.', 403);
+      if (duel.status !== 'pending') throw new HttpError('O convite já foi respondido.', 409, 'CONFLICT');
+      status = input.decision === 'accept' ? 'active' : 'declined';
+    } else if (input.decision === 'cancel') {
+      if (!requester && !master) throw new HttpError('Somente quem solicitou ou o Mestre pode cancelar.', 403);
+      if (duel.status !== 'pending') throw new HttpError('Use encerrar para um duelo aceito.', 409, 'CONFLICT');
+      status = 'cancelled';
+    } else {
+      if (!requester && !challenged && !master) throw new HttpError('Somente os envolvidos ou o Mestre podem encerrar.', 403);
+      if (duel.status !== 'active') throw new HttpError('Este duelo ainda não começou.', 409, 'CONFLICT');
+      status = 'ended';
+    }
+    await db.combatDuel.update({ where: { id: duel.id }, data: { status } });
+    if (status === 'ended') {
+      const { cancelDuelOpportunities } = await import('./spatial/opportunity-attack.service.js');
+      await cancelDuelOpportunities(db, combat.id, from.id, to.id);
+    }
+    await appendEconomyLog(db, await loadCombatById(combat.id, db), { name: actor.username }, status === 'active'
+      ? `Duelo aceito entre ${from.name} e ${to.name}.`
+      : status === 'ended' ? `Duelo encerrado entre ${from.name} e ${to.name}.` : `Convite de duelo ${status === 'declined' ? 'recusado' : 'cancelado'}.`, 'duel-decision', { private: status !== 'active' && status !== 'ended' });
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+  });
+}
+
+/** Convites são privados dos envolvidos; duelos ativos podem ser vistos pela mesa. */
+export async function combatDuelsFor(actor: CombatActor, combatId: string) {
+  const combat = await loadCombatById(combatId);
+  const own = new Set(combat.combatants.filter(unit => unit.character?.userId === actor.userId).map(unit => unit.id));
+  if (actor.role !== 'MASTER' && !own.size) throw new HttpError('Você não participa deste combate.', 403);
+  const duels = toCombatDto(combat, 'MASTER').duels ?? [];
+  return { duels: duels.filter(duel => actor.role === 'MASTER' || own.has(duel.requesterId) || own.has(duel.challengedId)) };
 }

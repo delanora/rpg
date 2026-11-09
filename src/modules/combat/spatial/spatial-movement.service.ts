@@ -211,6 +211,8 @@ function participantsOf(combat: CombatSourced): MovementParticipant[] {
     size: effectiveSizeOf((combatant.baseSize ?? 'medium') as SpatialSize),
     sideKey: normalizeSideKey(combatant.sideKey ?? null),
     hostileToIds: combatant.hostileToIds,
+    kind: combatant.kind,
+    duelOpponentIds: combatant.duelOpponentIds,
   }));
 }
 

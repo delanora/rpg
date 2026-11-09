@@ -23,6 +23,7 @@ import type { CombatSourced } from './combat.dto.js';
  * deve recortar DEPOIS de carregar, nunca montar um `include` paralelo.
  */
 export const combatInclude = {
+  duels: { where: { status: { in: ['pending', 'active'] } }, orderBy: { createdAt: 'asc' } },
   hostilityPrompts: { where: { status: 'pending' }, orderBy: { createdAt: 'asc' } },
   locality: { select: { id: true, name: true } },
   // CENA ESPACIAL (6.6L.4.1.1): configuração estrutural e paredes vêm da MESMA

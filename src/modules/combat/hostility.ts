@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 import type { CombatSourced, CombatantSourced } from './combat.dto.js';
 import type { MechanicalEntity } from '../shared/conditions.js';
 import {
-  movementRelationOf,
+  combatantRelationOf,
   normalizeSideKey,
 } from './spatial/spatial-movement.js';
 
@@ -10,13 +10,7 @@ export function combatantsAreHostile(
   a: CombatantSourced,
   b: CombatantSourced,
 ): boolean {
-  return (
-    movementRelationOf(
-      normalizeSideKey(a.sideKey),
-      normalizeSideKey(b.sideKey),
-      a.hostileToIds?.includes(b.id) || b.hostileToIds?.includes(a.id),
-    ) === 'hostile'
-  );
+  return combatantRelationOf(a, b) === 'hostile';
 }
 
 /** Pergunta ao Mestre após ataque válido, independentemente de acerto. */

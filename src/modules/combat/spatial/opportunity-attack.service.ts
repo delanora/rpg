@@ -1116,3 +1116,15 @@ export async function confirmOpportunityVisibility(
   );
 }
 
+
+/** Encerrar consentimento invalida só as oportunidades desse par e retoma pelo motor existente. */
+export async function cancelDuelOpportunities(db: Prisma.TransactionClient, combatId: string, a: string, b: string): Promise<void> {
+  const rows = await db.reactionOpportunity.findMany({ where: { combatId, status: 'pending', OR: [
+    { reactorCombatantId: a, moverCombatantId: b }, { reactorCombatantId: b, moverCombatantId: a },
+  ] } });
+  if (!rows.length) return;
+  await db.reactionOpportunity.updateMany({ where: { id: { in: rows.map(row => row.id) }, status: 'pending' }, data: { status: 'cancelled', resolvedAt: new Date(), resolution: { kind: 'cancelled', reason: 'duel-ended' } } });
+  for (const intentId of new Set(rows.map(row => row.movementIntentId).filter((id): id is string => !!id))) {
+    await continueOrPause(db, await loadCombatById(combatId, db), intentId);
+  }
+}

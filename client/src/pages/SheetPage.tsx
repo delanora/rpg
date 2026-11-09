@@ -1,3 +1,4 @@
+import { CombatDuelsPanel } from '../combat/components/CombatDuelsPanel';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -508,6 +509,7 @@ export function SheetPage({ user }: { user: SessionUser }) {
         onOpen={() => setLongRestOpen(true)}
       />
 
+      {combat ? <CombatDuelsPanel key={combat.id} combat={combat} user={user} onCombatChange={combatState.setCombat} onError={setError} /> : null}
       <main className="app-main app-main-wide">
         {loading ? (
           <p className="splash">Carregando a ficha...</p>

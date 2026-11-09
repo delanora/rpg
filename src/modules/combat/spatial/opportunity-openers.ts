@@ -14,7 +14,7 @@ import { deriveConditionEffects } from '../../shared/conditions.js';
 import { canSee } from '../../shared/vision.js';
 import { parseStoredPosition } from './occupied-space.js';
 import { effectiveSizeOf } from './spatial-size.js';
-import { movementRelationOf, normalizeSideKey } from './spatial-movement.js';
+import { combatantRelationOf } from './spatial-movement.js';
 import type { SpatialSize } from './spatial.types.js';
 import {
   detectReachBoundaries,
@@ -110,7 +110,6 @@ export function scanReactionThreats(
   const ordered = orderCombatants(combat.combatants);
   const orderIndex = new Map(ordered.map((item, index) => [item.id, index]));
   const moverPosition = parseStoredPosition(mover.spatialPosition);
-  const moverSide = normalizeSideKey(mover.sideKey ?? null);
   const moverState = combatantMechanicalState(mover);
   const threats: ReachThreat[] = [];
   const visibilityByReactor = new Map<string, OpportunityVisibilityStatus>();
@@ -128,7 +127,7 @@ export function scanReactionThreats(
     const profiles = opportunityAttackProfilesOf(candidate);
     if (profiles.length === 0) continue;
 
-    const relation = movementRelationOf(moverSide, normalizeSideKey(candidate.sideKey ?? null), mover.hostileToIds?.includes(candidate.id) || candidate.hostileToIds?.includes(mover.id));
+    const relation = combatantRelationOf(mover, candidate);
     if (relation === 'unknown') {
       // Não afirma hostilidade nem aliança: só reporta que falta decisão.
       relationUnknown = true;

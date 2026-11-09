@@ -1,3 +1,4 @@
+import { movementRelationOf } from '../modules/combat/spatial/spatial-movement.js';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../config/prisma.js';
 import { signToken } from '../lib/jwt.js';
@@ -335,6 +336,8 @@ export async function smokeOpportunityAttacks(
       combatId = combat.id;
       moverCombatantId = combat.combatants.find((item) => item.characterId === mover.id)!.id;
       reactorCombatantId = combat.combatants.find((item) => item.characterId === reactor.id)!.id;
+      // As duas fichas desta fixture só são adversárias após consentimento explícito.
+      if (movementRelationOf(moverSide, reactorSide) === 'hostile') await prisma.combatDuel.create({ data: { combatId, requesterId: moverCombatantId, challengedId: reactorCombatantId, pairKey: [moverCombatantId, reactorCombatantId].sort().join(':'), status: 'active' } });
       npcCombatantId = '';
       if (options.npcAt) {
         if (!npcCreatureId) {
@@ -618,7 +621,7 @@ export async function smokeOpportunityAttacks(
     );
 
     // =====================================================================
-    // 94) SEM JANELA: Reação gasta, mesmo lado, lado desconhecido, condições
+    // 94) SEM JANELA: Reação gasta, aliados, personagens sem duelo, condições
     // =====================================================================
     console.log('\n94) Quando NÃO existe Opportunity Attack');
     await scenario({ reactorReaction: false });
@@ -645,9 +648,9 @@ export async function smokeOpportunityAttacks(
     );
     const unknownSide = await move(steps([190, 100]));
     check(
-      '94.C) lado desconhecido NUNCA vira janela e o preview declara o risco (nunca "seguro")',
+      '94.C) personagens sem duelo não provocam entre si, mesmo com lado desconhecido',
       unknownSide.data.pending === null &&
-        unknownSidePreview.data.reaction.risk === 'relation-unknown' &&
+        unknownSidePreview.data.reaction.risk === 'none' &&
         (await countOpportunities()) === 0,
       JSON.stringify(unknownSidePreview.data.reaction),
     );

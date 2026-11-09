@@ -1,3 +1,4 @@
+import type { CombatDuelDto } from '../shared/duels.js';
 import type { HostilityPromptDto } from '../shared/hostility.js';
 import { creatureAbilitiesOf, creatureAbilityUsesOf, type CreatureAbility } from '../shared/creature-abilities.js';
 import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, reconcileMovement } from '../shared/conditions.js';
@@ -56,6 +57,7 @@ export interface CombatantSpatialDto {
 
 /** Formato do combate enviado a jogadores e mestre. */
 export interface CombatDto {
+  duels?: CombatDuelDto[];
   hostilityPrompts?: HostilityPromptDto[];
   version: number;
   /**
@@ -193,6 +195,7 @@ export interface CombatantDto {
  * Evita depender dos genéricos do Prisma em toda a aplicação.
  */
 export interface CombatSourced {
+  duels?: { id: string; requesterId: string; challengedId: string; status: string }[];
   hostilityPrompts?: HostilityPromptDto[];
   version: number;
   economyLog: unknown;
@@ -221,6 +224,8 @@ export interface CombatSourced {
 }
 
 export interface CombatantSourced {
+  /** Derivado dos duelos ativos; nunca gravado em hostileToIds. */
+  duelOpponentIds?: string[];
   hostileToIds?: string[];
   tokenImageUrl?: string | null;
   tokenNumber?: number | null;
@@ -377,7 +382,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const spatialPosition = parseStoredPosition(combatant.spatialPosition);
   const spatialVisibility = spatialVisibilityOf(combatant.spatialVisibility);
   return {
-    hostileToIds: combatant.hostileToIds ?? [],
+    hostileToIds: [...new Set([...(combatant.hostileToIds ?? []), ...(combatant.duelOpponentIds ?? [])])],
     abilities: creatureAbilitiesOf(combatant.creature?.abilities),
     abilityUses: creatureAbilityUsesOf(combatant.abilityUses),
     tokenDimmed: deathState.dead || hpCurrent <= 0 || deriveConditionEffects(combatantMechanicalState(combatant)).active.includes('unconscious'),
@@ -413,7 +418,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
       occupiedSpace: occupiedSpaceOf(spatialPosition, effectiveSize),
     },
     sideKey: combatant.sideKey ?? null,
-    relation: !relationSide ? 'unknown' : relationSide === 'neutral' ? 'neutral' : relationSide === 'players' ? 'allied' : 'hostile',
+    relation: combatant.kind === 'CHARACTER' ? 'allied' : !relationSide ? 'unknown' : relationSide === 'neutral' ? 'neutral' : relationSide === 'players' ? 'allied' : 'hostile',
     statsHidden: false,
     missing: source === null,
     rolled: combatant.initiative !== null,
@@ -436,6 +441,7 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
 
   const liveIds = new Set(combatants.filter(unit => !unit.missing).map(unit => unit.id));
   const dto: CombatDto = {
+    duels: (combat.duels ?? []).filter(duel => liveIds.has(duel.requesterId) && liveIds.has(duel.challengedId)).map(duel => ({ id: duel.id, requesterId: duel.requesterId, challengedId: duel.challengedId, status: duel.status === 'active' ? 'active' : 'pending' })),
     hostilityPrompts: (combat.hostilityPrompts ?? []).filter(prompt => liveIds.has(prompt.npcId) && liveIds.has(prompt.attackerId) && liveIds.has(prompt.targetId)).map(({ id, attackerId, targetId, npcId, attackName }) => ({ id, attackerId, targetId, npcId, attackName })),
     version: combat.version,
     economyLog: z
@@ -503,6 +509,7 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
   const hiddenIds = new Set(hidden.map(c=>c.id));
   return {
     ...dto,
+    duels: (dto.duels ?? []).filter(duel => duel.status === 'active'),
     hostilityPrompts: [],
     currentCombatantId: dto.currentCombatantId && !hiddenIds.has(dto.currentCombatantId) ? dto.currentCombatantId : null,
     economyLog: dto.economyLog.filter((entry) => entry.private !== true && !hidden.some(c=>entry.actorName===c.name || entry.message.includes(c.name))),

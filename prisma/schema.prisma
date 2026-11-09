@@ -1010,6 +1010,7 @@ model Combat {
   combatants Combatant[]
   operations CombatOperation[]
   hostilityPrompts CombatHostilityPrompt[]
+  duels CombatDuel[]
   /// 6.6L.3.1 — movimentos pausados esperando Reaction Opportunity.
   movementIntents       MovementIntent[]
   reactionOpportunities ReactionOpportunity[]
@@ -1020,6 +1021,8 @@ model Combat {
 }
 
 model Combatant {
+  requestedDuels CombatDuel[] @relation("DuelRequester")
+  receivedDuels CombatDuel[] @relation("DuelChallenged")
   mechanicalVersion Int @default(0)
   /// Estado mecânico próprio: instâncias de condições, exaustão e log; nunca economia de turno.
   mechanicalState Json @default("{\"conditions\":[],\"exhaustionLevel\":0,\"log\":[]}")
@@ -1770,4 +1773,20 @@ model CombatHostilityPrompt {
   @@unique([combatId, eventId, npcId])
   @@index([combatId, status])
   @@map("combat_hostility_prompts")
+}
+
+/// Consentimento entre os donos dos personagens; histórico isolado por combate.
+model CombatDuel {
+  id String @id @default(cuid())
+  combatId String
+  combat Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+  requesterId String
+  requester Combatant @relation("DuelRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  challengedId String
+  challenged Combatant @relation("DuelChallenged", fields: [challengedId], references: [id], onDelete: Cascade)
+  pairKey String
+  status String @default("pending")
+  createdAt DateTime @default(now())
+  @@index([combatId, status])
+  @@map("combat_duels")
 }

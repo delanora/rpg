@@ -71,6 +71,10 @@ Uma mesa de RPG fixa (4–6 jogadores + 1 mestre) com:
 - **Tempo real** via Socket.io: ficha (`sheet:updated`), combate, dados, presença,
   regiões/localidades, itens, música ambiente e apresentação de imagens.
 
+### Consentimento de duelo
+
+Duelos entre personagens são consentimento do aplicativo: apenas o jogador desafiado aceita, nunca o Mestre ou quem assume o turno. Ataques manuais seguem disponíveis sem duelo. O consentimento ativo é derivado de `CombatDuel` na projeção espacial (`duelOpponentIds`), sem persistir em `hostileToIds` nem trocar os lados. Entre personagens, lados diferentes não bastam para provocar oportunidade. Encerrar reutiliza a retomada do movimento e cancela apenas as oportunidades daquele par, sem consumir Reação. Convites ficam no endpoint privado; o DTO público só expõe duelos ativos.
+
 ### Regras de escopo
 
 - **Uma única mesa fixa** — não há múltiplas campanhas/salas. Não introduza
