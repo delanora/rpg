@@ -328,3 +328,11 @@ export const removeParticipantSchema = combatOperationSchema.extend({
 
 export type AddParticipantsInput = z.infer<typeof addParticipantsSchema>;
 export type RemoveParticipantInput = z.infer<typeof removeParticipantSchema>;
+
+/** Habilidade cadastrada: custo e efeito nunca vêm do pedido. */
+export const creatureAbilityUseSchema = combatOperationSchema.extend({
+  combatantId: z.string().min(1),
+  abilityId: z.string().min(1),
+  mode: z.enum(['use', 'restore']).default('use'),
+  confirmed: z.boolean().default(false),
+});

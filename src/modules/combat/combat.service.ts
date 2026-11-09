@@ -1,3 +1,6 @@
+import { creatureAbilitiesOf, creatureAbilityUsesOf, CREATURE_ABILITY_COST_LABELS } from '../shared/creature-abilities.js';
+import { creatureAbilityUseSchema } from './combat.schema.js';
+import type { z } from 'zod';
 import { validateParticipantPositions } from './participants-position.js';
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
 import { publishEffects } from '../effects/effects.service.js';
@@ -527,6 +530,17 @@ async function runCombatOperation<T extends { combat: CombatDto }>(
   return { ...result, replayed: false };
 }
 
+/** Mesmos efeitos para a ação comum e a permissão específica da criatura. */
+function applyTacticalAction(economy: ReturnType<typeof economyOf>, action: string, unit: CombatantSourced): void {
+  if (action === 'disengage') economy.disengaging = true;
+  if (action === 'dodge') economy.dodging = true;
+  if (action === 'dash') {
+    if (economy.movementOverrideBudget !== null) economy.movementOverrideBudget += combatantEffectiveSpeed(unit);
+    else economy.movementBudget += combatantSpeed(unit);
+    economy.movementDashCount += 1;
+  }
+}
+
 export async function executeEconomyAction(actor: CombatActor, input: EconomyActionInput) {
   const result = await runCombatOperation<{
     combat: CombatDto;
@@ -628,18 +642,8 @@ export async function executeEconomyAction(actor: CombatActor, input: EconomyAct
       }
       else {
         spendEconomy(economy, COMBAT_ACTIONS[input.action].economy);
-        if (input.action === 'dash') {
-          if (economy.movementOverrideBudget !== null) economy.movementOverrideBudget += combatantEffectiveSpeed(combatant);
-          else economy.movementBudget += combatantSpeed(combatant);
-          economy.movementDashCount += 1;
-        }
+        applyTacticalAction(economy, input.action, combatant);
         if (input.action === 'ready') economy.ready = { trigger: input.trigger!, intent: input.intent! };
-        // Esquiva vale até o início do próprio próximo turno (ver `dodging`).
-        if (input.action === 'dodge') economy.dodging = true;
-        // DESENGAJAR (PHB 2014): o movimento DESTE combatente não provoca
-        // Opportunity Attack até o início do próprio próximo turno. Só isso —
-        // não desliga as Reações dos inimigos para outros gatilhos.
-        if (input.action === 'disengage') economy.disengaging = true;
         const context = input.action === 'ready' ? `${input.trigger} → ${input.intent}` : input.description;
         const target = input.targetCombatantId ? combat.combatants.find((item) => item.id === input.targetCombatantId)?.name : null;
         await appendEconomyLog(db, combat, combatant, `${COMBAT_ACTIONS[input.action].name}${target ? ` → ${target}` : ''}${context ? `: ${context}` : ''}.`, input.action);
@@ -2833,4 +2837,42 @@ export async function removeCombatParticipant(
   if (result.combat.status === 'PENDING_INITIATIVE')
     return { combat: await finalizeInitiative(input.combatId, 'MASTER') };
   return result;
+}
+
+/** Operação assistida explícita do Mestre, pela mesma economia e journal. */
+export async function useCreatureAbility(actor: CombatActor, input: z.infer<typeof creatureAbilityUseSchema>) {
+  requireMaster(actor);
+  return runCombatOperation(actor, input, 'creature-ability', async (db, combat) => {
+    const unit = actingCombatant(combat, actor, input.combatantId);
+    if (!unit.creature || unit.character) throw new HttpError('Escolha uma criatura ou NPC do bestiário.', 400);
+    const ability = creatureAbilitiesOf(unit.creature.abilities).find(item => item.id === input.abilityId);
+    if (!ability) throw new HttpError('Habilidade não encontrada no cadastro.', 404);
+    if (ability.cost === 'passive') throw new HttpError('Característica passiva é apenas consultiva.', 400);
+    const uses = creatureAbilityUsesOf(unit.abilityUses);
+    if (input.mode === 'restore') {
+      if (ability.maxUses === null) throw new HttpError('Esta habilidade não possui usos limitados.', 400);
+      uses[ability.id] = 0;
+      await db.combatant.update({ where: { id: unit.id }, data: { abilityUses: uses } });
+      await appendEconomyLog(db, combat, unit, `Mestre restaurou os usos de ${ability.name}.`, 'creature-ability', { private: true });
+    } else {
+      if (!combat.combatants.length || combat.combatants.some(item => item.initiative === null))
+        throw new HttpError('Aguarde o início dos turnos.', 409, 'CONFLICT');
+      const effects = deriveConditionEffects(combatantMechanicalState(unit));
+      if (combatantHp(unit) <= 0 || deathBlocksActions(combatantDeathState(unit)) || !effects.canAct || (ability.cost === 'reaction' && !effects.canReact))
+        throw new HttpError('Este combatente não pode usar a habilidade.', 409, 'CONFLICT');
+      if (ability.cost !== 'reaction') requireOwnTurn(combat, unit);
+      if ((ability.execution === 'assisted' || ability.cost === 'reaction') && !input.confirmed)
+        throw new HttpError('Confirme a resolução assistida e o gatilho, quando houver.', 400);
+      if (ability.maxUses !== null && (uses[ability.id] ?? 0) >= ability.maxUses)
+        throw new HttpError('Usos da habilidade esgotados.', 409, 'CONFLICT');
+      const economy = economyOf(unit.turnEconomy);
+      spendEconomy(economy, ability.cost);
+      applyTacticalAction(economy, ability.execution, unit);
+      if (ability.maxUses !== null) uses[ability.id] = (uses[ability.id] ?? 0) + 1;
+      await db.combatant.update({ where: { id: unit.id }, data: { turnEconomy: economy, abilityUses: uses } });
+      // Habilidades de NPC/criatura são administrativas; não revelar táticas ou descrições.
+      await appendEconomyLog(db, combat, unit, `${ability.name} (${CREATURE_ABILITY_COST_LABELS[ability.cost]})${ability.execution === 'assisted' ? ' — resolução assistida confirmada pelo Mestre' : ''}.`, 'creature-ability', { private: true });
+    }
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+  });
 }

@@ -1,3 +1,5 @@
+import { creatureAbilityUseSchema } from './combat.schema.js';
+import { useCreatureAbility } from './combat.service.js';
 import { addParticipantsSchema, removeParticipantSchema } from './combat.schema.js';
 import { addCombatParticipants, removeCombatParticipant } from './combat.service.js';
 import { rateLimit } from 'express-rate-limit';
@@ -524,4 +526,10 @@ combatRouter.post('/participants/remove', authenticate, requireRole('MASTER'), a
  const parsed = removeParticipantSchema.safeParse(req.body);
  if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten() }); return; }
  res.json(await removeCombatParticipant(actorFrom(req), parsed.data));
+});
+
+combatRouter.post('/creature-ability', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = creatureAbilityUseSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors }); return; }
+  res.json(await useCreatureAbility(actorFrom(req), parsed.data));
 });

@@ -1,3 +1,4 @@
+import { CreatureAbilitiesPanel } from './components/CreatureAbilitiesPanel';
 import { CombatReinforcements } from './components/CombatReinforcements';
 import { AssumedCharacterPendings, pendingsForCharacter } from './components/AssumedCharacterPendings';
 import { CombatTokenMenu } from './components/CombatTokenMenu';
@@ -1692,6 +1693,7 @@ export function CombatTracker({
                 {/* Mestre: painel de ataques do combatente que ele controla
                     (criatura/NPC do turno ou override explícito). */}
                 {isMaster && attacksFor && masterAttackerCombatant ? (
+                  <>
                   <CombatActionPanel
                     variant="tactical-tray"
                     combat={combat}
@@ -1706,6 +1708,11 @@ export function CombatTracker({
                     busy={busy}
                     onAttack={attack}
                   />
+                  {masterAttackerCombatant.abilities?.length ? <details className="combat-creature-ability-tray" key={masterAttackerCombatant.id}>
+                    <summary>Habilidades especiais ({masterAttackerCombatant.abilities.length})</summary>
+                    <CreatureAbilitiesPanel combat={combat} combatant={masterAttackerCombatant} busy={busy} onRun={action => void run(action)} />
+                  </details> : null}
+                  </>
                 ) : null}
               </>
             ) : (

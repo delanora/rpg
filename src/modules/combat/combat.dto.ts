@@ -1,3 +1,4 @@
+import { creatureAbilitiesOf, creatureAbilityUsesOf, type CreatureAbility } from '../shared/creature-abilities.js';
 import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, reconcileMovement } from '../shared/conditions.js';
 import {
   deathBlocksActions,
@@ -117,6 +118,8 @@ export interface CombatantDto {
   tokenDimmed?: boolean;
   tokenNumber?: number | null;
   turnEconomy: TurnEconomy;
+  abilities?: CreatureAbility[];
+  abilityUses?: Record<string, number>;
   mechanicalState: ReturnType<typeof mechanicalStateOf>;
   conditionEffects: ReturnType<typeof deriveConditionEffects>;
   mechanicalVersion: number;
@@ -217,6 +220,7 @@ export interface CombatantSourced {
   tokenImageUrl?: string | null;
   tokenNumber?: number | null;
   turnEconomy: unknown;
+  abilityUses?: unknown;
   mechanicalState: unknown;
   /** Ciclo de morte da INSTÂNCIA (criaturas); personagens usam o da ficha. */
   deathState: unknown;
@@ -368,6 +372,8 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const spatialPosition = parseStoredPosition(combatant.spatialPosition);
   const spatialVisibility = spatialVisibilityOf(combatant.spatialVisibility);
   return {
+    abilities: creatureAbilitiesOf(combatant.creature?.abilities),
+    abilityUses: creatureAbilityUsesOf(combatant.abilityUses),
     tokenDimmed: deathState.dead || hpCurrent <= 0 || deriveConditionEffects(combatantMechanicalState(combatant)).active.includes('unconscious'),
     tokenNumber: combatant.kind === 'CREATURE' ? (combatant.tokenNumber ?? (Number(combatant.name.match(/ (\d+)$/)?.[1]) || null)) : null,
     turnEconomy: combatantMovementEconomy(combatant),
@@ -554,6 +560,8 @@ export function hideCombatantMechanicalState(combatant: CombatantDto): Combatant
 
   return {
     ...combatant,
+    abilities: [],
+    abilityUses: {},
     hpCurrent: null,
     hpMax: null,
     armorClass: null,

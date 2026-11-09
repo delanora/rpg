@@ -118,6 +118,14 @@ async function main() {
       speed: 9,
       tokenImages: images,
       imageUrl: images[0],
+      abilities: [
+        { id: 'escape', name: 'Escape ágil', cost: 'bonus-action', execution: 'disengage', description: 'Desengajar como bônus', maxUses: 1 },
+        { id: 'hide', name: 'Esconder-se', cost: 'bonus-action', execution: 'assisted', description: 'Teste assistido', maxUses: null },
+        { id: 'guard', name: 'Guarda', cost: 'reaction', execution: 'assisted', trigger: 'Mestre confirma o gatilho', maxUses: 2 },
+        { id: 'dash', name: 'Corrida', cost: 'action', execution: 'dash', maxUses: null },
+        { id: 'dodge', name: 'Esquiva', cost: 'action', execution: 'dodge', maxUses: null },
+        { id: 'senses', name: 'Sentidos', cost: 'passive', execution: 'assisted', maxUses: null },
+      ],
       attacks: [
         {
           id: 'spear',
@@ -138,6 +146,7 @@ async function main() {
       description: 'Fixture do wizard',
     };
     assert.equal((await request('/creatures', input, owner)).status, 403);
+    assert.equal((await request('/creatures', { ...input, abilities: [input.abilities[0], input.abilities[0]] })).status, 400);
     const created = await request('/creatures', input);
     assert.equal(created.status, 201, JSON.stringify(created));
     const creature = created.data.creature;
@@ -267,6 +276,54 @@ async function main() {
         .currentCombatantId,
       null,
     );
+    // Operações de habilidade usam somente as próprias cópias desta fixture.
+    assert.equal(combat.combatants.find((c: any) => c.id === hidden.id).abilities.length, 6);
+    const publicSkills = (await request('/combat/active', undefined, owner)).data.combat;
+    assert.deepEqual(publicSkills.combatants.find((c: any) => c.id === copies[1].id).abilities, []);
+    const abilityRequest = (abilityId: string, extra: Record<string, unknown> = {}) => ({
+      combatId, expectedVersion: combat.version, operationId: randomUUID(), combatantId: hidden.id, abilityId, ...extra,
+    });
+    assert.equal((await request('/combat/creature-ability', abilityRequest('escape'), owner)).status, 403);
+    assert.equal((await request('/combat/creature-ability', abilityRequest('senses'))).status, 400);
+    assert.equal((await request('/combat/creature-ability', abilityRequest('hide'))).status, 400);
+    const useInput = abilityRequest('escape');
+    const use = await request('/combat/creature-ability', useInput);
+    assert.equal(use.status, 200, JSON.stringify(use));
+    combat = use.data.combat;
+    let activeAbilityUnit = combat.combatants.find((c: any) => c.id === hidden.id);
+    assert.equal(activeAbilityUnit.turnEconomy.bonusActionUsed, true);
+    assert.equal(activeAbilityUnit.turnEconomy.disengaging, true);
+    assert.equal(activeAbilityUnit.abilityUses.escape, 1);
+    assert.equal(combat.combatants.find((c: any) => c.id === copies[1].id).abilityUses.escape, undefined);
+    assert.equal((await request('/combat/creature-ability', useInput)).data.replayed, true);
+    assert.equal((await request('/combat/creature-ability', { ...useInput, abilityId: 'hide' })).status, 409);
+    assert.equal((await request('/combat/creature-ability', abilityRequest('escape'))).status, 409);
+    assert.equal((await request('/combat/creature-ability', abilityRequest('hide', { confirmed: true }))).status, 409);
+    // Zerar somente a economia desta fixture comprova limite independente da Ação Bônus.
+    await prisma.combatant.update({ where: { id: hidden.id }, data: { turnEconomy: onTurnStart(9) } });
+    assert.equal((await request('/combat/creature-ability', abilityRequest('escape'))).status, 409);
+    const restored = await request('/combat/creature-ability', abilityRequest('escape', { mode: 'restore' }));
+    assert.equal(restored.status, 200); combat = restored.data.combat;
+    assert.equal(combat.combatants.find((c: any) => c.id === hidden.id).abilityUses.escape, 0);
+    const hideUse = await request('/combat/creature-ability', abilityRequest('hide', { confirmed: true }));
+    assert.equal(hideUse.status, 200); combat = hideUse.data.combat;
+    const dashUse = await request('/combat/creature-ability', abilityRequest('dash'));
+    assert.equal(dashUse.status, 200); combat = dashUse.data.combat;
+    assert.equal(combat.combatants.find((c: any) => c.id === hidden.id).turnEconomy.movementBudget, 18);
+    assert.equal(combat.combatants.find((c: any) => c.id === hidden.id).turnEconomy.actionsUsed, 1);
+    await prisma.combatant.update({ where: { id: hidden.id }, data: { turnEconomy: onTurnStart(9) } });
+    const dodgeUse = await request('/combat/creature-ability', abilityRequest('dodge'));
+    assert.equal(dodgeUse.status, 200); combat = dodgeUse.data.combat;
+    assert.equal(combat.combatants.find((c: any) => c.id === hidden.id).turnEconomy.dodging, true);
+    // Habilidade assistida não cria invisibilidade, condição ou ocultação.
+    assert.equal(combat.combatants.find((c: any) => c.id === copies[1].id).spatialVisibility, 'public');
+    const reaction = await request('/combat/creature-ability', abilityRequest('guard', { combatantId: copies[1].id, confirmed: true }));
+    assert.equal(reaction.status, 200, JSON.stringify(reaction)); combat = reaction.data.combat;
+    assert.equal(combat.combatants.find((c: any) => c.id === copies[1].id).turnEconomy.reactionAvailable, false);
+    assert.equal((await request('/combat/creature-ability', abilityRequest('guard', { combatantId: copies[1].id, confirmed: true }))).status, 409);
+    assert.equal((await request('/combat/creature-ability', abilityRequest('escape', { combatantId: copies[1].id }))).status, 403);
+    assert.ok(!(await request('/combat/active', undefined, owner)).data.combat.economyLog.some((entry: any) => entry.action === 'creature-ability'));
+    console.log('✔ habilidades: custo, usos por cópia, privacidade, assistência, reação fora do turno, restore e retry');
     const nextAgain = await request('/combat/next-turn', {
       combatId,
       expectedVersion: combat.version,
@@ -398,6 +455,10 @@ async function main() {
           turnEconomy: onTurnStart(9),
         },
       });
+      if (!eligible) {
+        const fresh = (await request('/combat/active')).data.combat;
+        assert.equal((await request('/combat/creature-ability', { combatId, expectedVersion: fresh.version, operationId: randomUUID(), combatantId: hidden.id, abilityId: 'guard', confirmed: true })).status, 409);
+      }
       const loaded = await loadCombatById(combatId!);
       const target = loaded.combatants.find((c) => c.id === hidden.id)!,
         mover = loaded.combatants.find((c) => c.id === heroUnit.id)!;

@@ -178,6 +178,24 @@ try {
         '.creature-wizard-footer .btn-primary',
       )?.disabled,
   );
+  await click('Adicionar habilidade');
+  check('edição da habilidade bloqueia a navegação', document.querySelector<HTMLButtonElement>('.creature-wizard-footer .btn-primary')?.disabled);
+  await change('[aria-label="Nome da habilidade"]', 'Escape ágil');
+  const choose = async (label: string, value: string) => act(async () => {
+    const select = document.querySelector<HTMLSelectElement>(`[aria-label="${label}"]`)!;
+    select.value = value; select.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  });
+  await choose('Custo da habilidade', 'bonus-action');
+  await choose('Execução da habilidade', 'disengage');
+  await change('[aria-label="Usos da habilidade"]', '2');
+  await click('Salvar habilidade');
+  check('habilidade apresenta custo, execução e limite', document.body.textContent?.includes('Ação bônus · Automática · 2 usos por combate'));
+  await click('Adicionar habilidade');
+  await choose('Custo da habilidade', 'reaction');
+  await change('[aria-label="Nome da habilidade"]', 'Guarda');
+  await click('Salvar habilidade');
+  check('reação sem gatilho mantém formulário e mostra erro', document.querySelector('[role="alert"]')?.textContent?.includes('gatilho'));
+  await click('Cancelar habilidade');
   await click('Continuar');
   await click('Continuar');
   check(
@@ -205,6 +223,7 @@ try {
     saved.attacks?.[0].reachFeet === 10 &&
       saved.attacks[0].extraDamages.length === 1,
   );
+  check('habilidade acompanha o cadastro completo', saved.abilities?.[0].execution === 'disengage' && saved.abilities[0].cost === 'bonus-action' && saved.abilities[0].maxUses === 2);
   check('nenhuma escrita intermediária saiu para a API', requests.length === 0);
   const spatial = {
     tokenImageRef: '/fixture.png',
@@ -270,6 +289,24 @@ try {
     visible.includes('Revelado aos jogadores') &&
       !visible.includes('is-inactive'),
   );
+  const { CreatureAbilitiesPanel } = await import('../src/combat/components/CreatureAbilitiesPanel');
+  const reactionUnit = { id: 'reaction-copy', creatureId: 'catalog', hpCurrent: 20, deathBlocksActions: false,
+    conditionEffects: { canAct: true }, turnEconomy: { reactionAvailable: true }, abilityUses: {},
+    abilities: [{ id: 'guard', name: 'Guarda', description: 'Efeito assistido', cost: 'reaction', execution: 'assisted', trigger: 'Ataque percebido', maxUses: 2 }] };
+  let commands = 0;
+  const renderAbility = async (unit = reactionUnit) => act(async () => root.render(h(CreatureAbilitiesPanel, {
+    combat: { status: 'ACTIVE', currentCombatantId: 'other-copy' } as any, combatant: unit as any, busy: false, onRun: () => { commands++; },
+  })));
+  await renderAbility();
+  check('reação cadastrada fica acessível fora do turno', ![...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Usar habilidade')?.disabled);
+  await click('Usar habilidade');
+  check('reação assistida pede confirmação do gatilho', document.querySelector('.combat-ability-confirm')?.textContent?.includes('ocorrência do gatilho'));
+  await click('Cancelar');
+  check('cancelar a confirmação não envia comando', commands === 0);
+  await click('Usar habilidade'); await click('Confirmar');
+  check('confirmar encaminha uma operação ao controlador', commands === 1);
+  await renderAbility({ ...reactionUnit, hpCurrent: 0 });
+  check('token a zero PV não oferece uso da habilidade', [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Usar habilidade')?.disabled);
   console.log(`${checks} verificações do bestiário aprovadas.`);
 } finally {
   await act(async () => root.unmount());

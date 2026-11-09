@@ -121,6 +121,7 @@ export async function createCreature(input: CreateCreatureInput): Promise<Creatu
       // Tamanho inicial explícito do Mestre; sem ele, Medium (nunca inferido).
       size: input.size ?? 'Medium',
       ...Object.fromEntries(SCALAR_KEYS.filter(key => input[key] !== undefined).map(key => [key, input[key]])),
+      abilities: (input.abilities ?? []) as Prisma.InputJsonValue,
       attacks: (input.attacks ?? []) as Prisma.InputJsonValue,
       spellcastingProfile: input.spellcastingProfile as Prisma.InputJsonValue | undefined,
       spellcastingResources: input.spellcastingResources as Prisma.InputJsonValue | undefined,
@@ -146,6 +147,7 @@ export async function updateCreature(
 
   const data: Record<string, unknown> = { version: { increment: 1 } };
 
+  if (patch.abilities !== undefined) data.abilities = patch.abilities;
   for (const key of SCALAR_KEYS) {
     const value = patch[key];
     if (value !== undefined) data[key] = value;

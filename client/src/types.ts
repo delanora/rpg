@@ -1,3 +1,5 @@
+import type { CreatureAbility } from '../../src/modules/shared/creature-abilities';
+export type { CreatureAbility } from '../../src/modules/shared/creature-abilities';
 /** Espelho dos tipos expostos pela API (ver src/modules/characters/characters.dto.ts). */
 
 export type Role = 'PLAYER' | 'MASTER';
@@ -1786,6 +1788,7 @@ export interface Creature {
   /** URL pública do ícone/retrato ('' = sem imagem). */
   imageUrl: string;
   tokenImages: string[];
+  abilities?: CreatureAbility[];
 
   version: number;
   createdAt: string;
@@ -1827,6 +1830,7 @@ export interface CreaturePatch {
   description?: string;
   imageUrl?: string;
   tokenImages?: string[];
+  abilities?: CreatureAbility[];
   spellRepertoire?: Creature['spellRepertoire'];
 }
 
@@ -2408,6 +2412,8 @@ export interface CombatantDto {
   mechanicalVersion: number;
   effectiveSpeed: number;
   turnEconomy: TurnEconomy;
+  abilities?: CreatureAbility[];
+  abilityUses?: Record<string, number>;
   id: string;
   kind: CombatantKind;
   characterId: string | null;

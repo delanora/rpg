@@ -822,6 +822,7 @@ model Creature {
   speed      Int @default(9)
 
   // Coleções (JSONB) — ver src/modules/shared/attacks.ts
+  abilities Json @default("[]")
   attacks     Json @default("[]") // [{ id, name, damage: { count, sides, bonus, type }, attackBonus, notes, finesse, ranged, legacy? }]
   resistances Json @default("[]") // tipos de dano resistidos (dano pela metade)
   immunities  Json @default("[]") // tipos de dano imunes (dano zerado)
@@ -1069,6 +1070,7 @@ model Combatant {
   /// Espaços de magia JÁ GASTOS por ESTA cópia da criatura (Fase 6.6C). O máximo
   /// vem do template (`Creature.spellcastingResources`); o gasto é da instância
   /// e nunca muta o statblock compartilhado.
+  abilityUses Json @default("{}")
   spellcastingUsed Json @default("{}")
 
   ///

@@ -1,3 +1,4 @@
+import { creatureAbilitiesOf, type CreatureAbility } from '../shared/creature-abilities.js';
 import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed } from '../shared/conditions.js';
 import type { Creature, CreatureKind } from '@prisma/client';
 import { z } from 'zod';
@@ -97,6 +98,7 @@ export interface CreatureDto {
   /** URL pública do ícone/retrato ('' = sem imagem). */
   imageUrl: string;
   tokenImages: string[];
+  abilities: CreatureAbility[];
 
   description: string;
   version: number;
@@ -197,6 +199,7 @@ export function toCreatureDto(
     localities: (creature.localities ?? []).map(toLocalitySummary),
     imageUrl: creature.imageUrl,
     tokenImages: creature.tokenImages,
+    abilities: creatureAbilitiesOf(creature.abilities),
     description: creature.description,
     version: creature.version,
     createdAt: creature.createdAt.toISOString(),

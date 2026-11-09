@@ -1,3 +1,4 @@
+import { creatureAbilitiesSchema } from '../shared/creature-abilities.js';
 import { z } from 'zod';
 import { attackSchema, damageTypeListSchema } from '../shared/attacks.js';
 import { ABILITY_SCORE_MAX, ABILITY_SCORE_MIN } from '../shared/dnd5e.js';
@@ -52,6 +53,7 @@ const creatureFields = z.object({
   speed: z.number().int().min(0).max(999),
 
   attacks: z.array(attackSchema).max(100),
+  abilities: creatureAbilitiesSchema,
   /**
    * PERFIL DE CONJURAÇÃO do statblock (6.6B): `{ ability?, saveDc?, attackBonus? }`.
    * Valores explícitos são a autoridade da criatura — a CD NÃO é recalculada por

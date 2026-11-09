@@ -1,3 +1,4 @@
+import { CreatureAbilitiesEditor } from './CreatureAbilitiesEditor';
 import { MechanicalPanel } from '../MechanicalPanel';
 import { useState } from 'react';
 import { CreatureField as InlineField } from './CreatureField';
@@ -113,18 +114,19 @@ export function CreatureEditor({
 }: CreatureEditorProps) {
   const [step, setStep] = useState(0);
   const [attackEditing, setAttackEditing] = useState(false);
+  const [abilityEditing, setAbilityEditing] = useState(false);
   const [spellQuery, setSpellQuery] = useState('');
   const steps = [
     'Identidade e imagens',
     'Estatísticas',
-    'Ataques',
+    'Ações e habilidades',
     'Magias',
     'Revisão',
   ];
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const blocked = uploading || saving || attackEditing;
+  const blocked = uploading || saving || attackEditing || abilityEditing;
 
   /** Envia (ou troca) o ícone/retrato da criatura/NPC. */
   async function handleFile(files: FileList | null): Promise<void> {
@@ -744,6 +746,10 @@ export function CreatureEditor({
           </Section>
         ) : null}
 
+        {step === 2 ? <Section title="Habilidades especiais" icon="sparkle">
+          <CreatureAbilitiesEditor abilities={creature.abilities ?? []} onChange={abilities => onPatch({ abilities })} onEditingChange={setAbilityEditing} />
+        </Section> : null}
+
         {step === 4 && !creating && creature.kind === 'NPC' ? (
           <NpcInventorySection
             creature={creature}
@@ -853,6 +859,7 @@ export function CreatureEditor({
               Ataques:{' '}
               {creature.attacks.map((a) => a.name).join(', ') || 'Nenhum'}
             </p>
+            <p>Habilidades: {creature.abilities?.map(item => item.name).join(', ') || 'Nenhuma'}</p>
             {!creating ? (
               <details>
                 <summary>Condições e estado atual</summary>
@@ -875,8 +882,8 @@ export function CreatureEditor({
         <span>
           Etapa {step + 1} de {steps.length}
         </span>
-        {attackEditing ? (
-          <small>Salve ou cancele o ataque antes de continuar.</small>
+        {attackEditing || abilityEditing ? (
+          <small>Salve ou cancele a edição antes de continuar.</small>
         ) : null}
         <button
           type="button"

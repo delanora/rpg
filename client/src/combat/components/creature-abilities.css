@@ -1,0 +1,65 @@
+.combat-creature-abilities {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.75rem;
+}
+.combat-creature-abilities article {
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: var(--surface-2);
+}
+.combat-creature-abilities article header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+.combat-creature-abilities article strong {
+  color: var(--gold);
+}
+.combat-creature-abilities article p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.6rem 0;
+}
+.combat-creature-abilities article small,
+.combat-creature-abilities article header span {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+.combat-ability-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+.combat-ability-confirm {
+  border-top: 1px solid var(--line);
+  margin-top: 0.8rem;
+  padding-top: 0.5rem;
+}
+.combat-ability-confirm .btn + .btn {
+  margin-left: 0.4rem;
+}
+
+.combat-token-menu-tabs {
+  flex-wrap: wrap;
+}
+.combat-token-menu-tabs button {
+  flex-basis: 5rem;
+}
+
+.combat-creature-ability-tray {
+  border-top: 1px solid var(--line);
+  padding: 0.75rem;
+}
+.combat-creature-ability-tray summary {
+  color: var(--gold);
+  cursor: pointer;
+}
+.combat-creature-ability-tray .combat-creature-abilities {
+  max-height: 50dvh;
+  overflow-y: auto;
+}

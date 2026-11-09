@@ -189,3 +189,7 @@ export function addCombatParticipants(combat: CombatDto, entries: CombatCreature
 export function removeCombatParticipant(combat: CombatDto, combatantId: string): Promise<CombatDto> {
  return api<{combat: CombatDto}>('/api/combat/participants/remove', {method:'POST', body:{...operationFor(combat),combatantId}}).then(r=>r.combat);
 }
+
+export function useCreatureAbility(combat: CombatDto, input: { combatantId: string; abilityId: string; mode?: 'use' | 'restore'; confirmed?: boolean }): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/creature-ability', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
+}
