@@ -1,9 +1,45 @@
 .combat-duels-launcher {
   position: fixed;
-  right: 1rem;
-  bottom: 4rem;
-  z-index: 235;
-  background: var(--surface);
+  right: 1.25rem;
+  bottom: calc(var(--fab-base) + var(--fab-step) + var(--fab-lift));
+  z-index: 56;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.5rem;
+  padding: .6rem .95rem;
+  border: 1px solid var(--gold-deep);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--leather-2), var(--leather));
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: .82rem;
+  letter-spacing: .05em;
+  cursor: pointer;
+  box-shadow: var(--shadow-deep);
+  transition: transform .15s ease, box-shadow .18s ease;
+}
+.combat-duels-launcher.is-master {
+  left: 1.25rem;
+  right: auto;
+  bottom: calc(var(--fab-base) + 3 * var(--fab-step) + var(--fab-lift));
+}
+.combat-duels-launcher:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-deep), 0 0 18px -4px var(--glow);
+}
+.combat-duels-launcher:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+.combat-duels-launcher.active {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  border-color: var(--gold);
+  color: #3a2410;
+}
+/* O portal está fora de app-shell: acompanha explicitamente a barra de música. */
+body:has(.app-shell.has-music-bar) .combat-duels-launcher {
+  --fab-lift: calc(var(--music-bar-h) - 0.4rem);
 }
 .combat-duels-panel {
   position: fixed;

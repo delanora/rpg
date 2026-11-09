@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Icon } from '../../components/Icon';
 import type { CombatDto, CombatDuelDto, SessionUser } from '../../types';
 import {
   decideCombatDuel,
@@ -115,11 +116,12 @@ export function CombatDuelsPanel({
     <>
       <button
         type="button"
-        className="btn combat-duels-launcher"
+        className={`combat-duels-launcher${master ? ' is-master' : ''}${open ? ' active' : ''}`}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        Duelos{duels.length ? ` (${duels.length})` : ''}
+        <Icon name="sword" size={17} />
+        <span>Duelos{duels.length ? ` (${duels.length})` : ''}</span>
       </button>
       {open ? (
         <aside
