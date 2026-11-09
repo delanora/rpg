@@ -120,6 +120,7 @@ export interface CombatGridProps {
     'id' | 'version' | 'status' | 'currentCombatantId' | 'spatial' | 'sceneBackgroundImageUrl'
   > & { combatants: GridUnit[] };
   isMaster: boolean;
+  relationReferenceId?: string | null;
   onInspectToken?: (combatantId: string, point: { x: number; y: number }) => void;
   onEmptyContext?: (position: SpatialPosition, point: { x: number; y: number }) => void;
   busy?: boolean;
@@ -267,6 +268,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function CombatGrid({
   combat,
   isMaster,
+  relationReferenceId,
   onInspectToken,
   onEmptyContext,
   busy = false,
@@ -2174,7 +2176,7 @@ export function CombatGrid({
                 <GridToken
                   isMaster={isMaster}
                   key={combatant.id}
-                  combatant={combatant}
+                  combatant={relationReferenceId && combatant.hostileToIds?.includes(relationReferenceId) ? { ...combatant, relation: 'hostile' } : combatant}
                   cellSizeFeet={cellSizeFeet}
                   pixelsPerCell={DEFAULT_PIXELS_PER_CELL}
                   currentTurn={

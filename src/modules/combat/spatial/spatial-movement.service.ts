@@ -210,6 +210,7 @@ function participantsOf(combat: CombatSourced): MovementParticipant[] {
     position: parseStoredPosition(combatant.spatialPosition),
     size: effectiveSizeOf((combatant.baseSize ?? 'medium') as SpatialSize),
     sideKey: normalizeSideKey(combatant.sideKey ?? null),
+    hostileToIds: combatant.hostileToIds,
   }));
 }
 

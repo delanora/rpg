@@ -193,3 +193,7 @@ export function removeCombatParticipant(combat: CombatDto, combatantId: string):
 export function useCreatureAbility(combat: CombatDto, input: { combatantId: string; abilityId: string; mode?: 'use' | 'restore'; confirmed?: boolean }): Promise<CombatDto> {
   return api<{ combat: CombatDto }>('/api/combat/creature-ability', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
 }
+
+export function decideAttackHostility(combat: CombatDto, input: { promptId: string; hostile: boolean; selectedIds: string[] }): Promise<CombatDto> {
+  return api<{ combat: CombatDto }>('/api/combat/hostility/decision', { method: 'POST', body: { ...operationFor(combat), ...input } }).then(result => result.combat);
+}

@@ -11,6 +11,7 @@ export type GridUnit = Pick<
 > & {
   /** Personagem × criatura/NPC: só muda o ARO do token (visual). */
   kind?: string;
+  hostileToIds?: string[];
   tokenNumber?: number | null;
   tokenDimmed?: boolean;
   missing?: boolean;

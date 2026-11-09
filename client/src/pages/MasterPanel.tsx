@@ -1,3 +1,4 @@
+import { HostilityDecisionPanel } from '../combat/components/HostilityDecisionPanel';
 import { PreparedEncountersTab } from '../combat/PreparedEncountersTab';
 import type { CombatPreparation } from '../combat/combatApi';
 import { useCallback, useEffect, useState } from 'react';
@@ -43,6 +44,7 @@ import type {
   Attack,
   Character,
   CharacterPatch,
+  CombatDto,
   Compendium,
   Creature,
   DeathDto,
@@ -103,6 +105,16 @@ export function MasterPanel({ user }: { user: SessionUser }) {
 
   const combatState = useCombatState(user.id, user.role);
   const { combat, log, turnAlert } = combatState;
+  const [hostilityBusy, setHostilityBusy] = useState(false);
+  async function runHostilityDecision(action: () => Promise<CombatDto>): Promise<void> {
+    setHostilityBusy(true);
+    try { combatState.setCombat(await action()); }
+    catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao decidir a hostilidade.');
+      // Outra aba pode ter decidido ou avançado o combate; releitura sem retry cego.
+      try { combatState.setCombat(await fetchActiveCombat()); } catch { /* Mantém o erro original. */ }
+    } finally { setHostilityBusy(false); }
+  }
   const { tab, setTab } = useMasterNavigation(combat?.id ?? null);
 
   // RECONNECT: as decisões em aberto são relidas do servidor ao montar o painel
@@ -929,6 +941,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
           <p className="splash">Carregando o painel...</p>
         ) : (
           <>
+            {combat ? <HostilityDecisionPanel key={combat.id} combat={combat} busy={hostilityBusy} onRun={action => void runHostilityDecision(action)} /> : null}
             {/* A mesa segue sincronizada nas outras abas; só sua superfície desmonta. */}
             {tab === 'active-combat' && combat ? (
               <CombatTracker

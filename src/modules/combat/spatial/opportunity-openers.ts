@@ -128,7 +128,7 @@ export function scanReactionThreats(
     const profiles = opportunityAttackProfilesOf(candidate);
     if (profiles.length === 0) continue;
 
-    const relation = movementRelationOf(moverSide, normalizeSideKey(candidate.sideKey ?? null));
+    const relation = movementRelationOf(moverSide, normalizeSideKey(candidate.sideKey ?? null), mover.hostileToIds?.includes(candidate.id) || candidate.hostileToIds?.includes(mover.id));
     if (relation === 'unknown') {
       // Não afirma hostilidade nem aliança: só reporta que falta decisão.
       relationUnknown = true;

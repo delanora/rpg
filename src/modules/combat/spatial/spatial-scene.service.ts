@@ -1,3 +1,4 @@
+import { clearSpecificHostility } from '../hostility.js';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
@@ -330,6 +331,7 @@ export async function setCombatantSideKey(
     async (db, combat) => {
       const combatant = combat.combatants.find((item) => item.id === combatantId);
       if (!combatant) throw new HttpError('Combatente não encontrado neste combate.', 404);
+      await clearSpecificHostility(db, combat, combatant.id);
       await db.combatant.update({ where: { id: combatant.id }, data: { sideKey } });
       return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
     },

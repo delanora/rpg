@@ -1,3 +1,4 @@
+import type { HostilityPromptDto } from '../shared/hostility.js';
 import { creatureAbilitiesOf, creatureAbilityUsesOf, type CreatureAbility } from '../shared/creature-abilities.js';
 import { mechanicalStateOf, deriveConditionEffects, effectiveMaxHp, effectiveSpeed, reconcileMovement } from '../shared/conditions.js';
 import {
@@ -55,6 +56,7 @@ export interface CombatantSpatialDto {
 
 /** Formato do combate enviado a jogadores e mestre. */
 export interface CombatDto {
+  hostilityPrompts?: HostilityPromptDto[];
   version: number;
   /**
    * Eventos estruturais do combate. `private` marca o que só o Mestre pode ler
@@ -114,6 +116,7 @@ export interface CombatDto {
 }
 
 export interface CombatantDto {
+  hostileToIds?: string[];
   /** Sinal visual público; não expõe PV, morte ou contadores privados. */
   tokenDimmed?: boolean;
   tokenNumber?: number | null;
@@ -190,6 +193,7 @@ export interface CombatantDto {
  * Evita depender dos genéricos do Prisma em toda a aplicação.
  */
 export interface CombatSourced {
+  hostilityPrompts?: HostilityPromptDto[];
   version: number;
   economyLog: unknown;
   id: string;
@@ -217,6 +221,7 @@ export interface CombatSourced {
 }
 
 export interface CombatantSourced {
+  hostileToIds?: string[];
   tokenImageUrl?: string | null;
   tokenNumber?: number | null;
   turnEconomy: unknown;
@@ -372,6 +377,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const spatialPosition = parseStoredPosition(combatant.spatialPosition);
   const spatialVisibility = spatialVisibilityOf(combatant.spatialVisibility);
   return {
+    hostileToIds: combatant.hostileToIds ?? [],
     abilities: creatureAbilitiesOf(combatant.creature?.abilities),
     abilityUses: creatureAbilityUsesOf(combatant.abilityUses),
     tokenDimmed: deathState.dead || hpCurrent <= 0 || deriveConditionEffects(combatantMechanicalState(combatant)).active.includes('unconscious'),
@@ -428,7 +434,9 @@ export function toCombatDto(combat: CombatSourced, viewer: Role): CombatDto {
   const current =
     combat.status === 'ACTIVE' ? (combatants[combat.currentIndex] ?? null) : null;
 
+  const liveIds = new Set(combatants.filter(unit => !unit.missing).map(unit => unit.id));
   const dto: CombatDto = {
+    hostilityPrompts: (combat.hostilityPrompts ?? []).filter(prompt => liveIds.has(prompt.npcId) && liveIds.has(prompt.attackerId) && liveIds.has(prompt.targetId)).map(({ id, attackerId, targetId, npcId, attackName }) => ({ id, attackerId, targetId, npcId, attackName })),
     version: combat.version,
     economyLog: z
       .array(
@@ -495,6 +503,7 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
   const hiddenIds = new Set(hidden.map(c=>c.id));
   return {
     ...dto,
+    hostilityPrompts: [],
     currentCombatantId: dto.currentCombatantId && !hiddenIds.has(dto.currentCombatantId) ? dto.currentCombatantId : null,
     economyLog: dto.economyLog.filter((entry) => entry.private !== true && !hidden.some(c=>entry.actorName===c.name || entry.message.includes(c.name))),
     combatants: dto.combatants.filter(c=>!hiddenIds.has(c.id)).map((combatant) => {
@@ -506,8 +515,8 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
         : combatant;
       const projected = projectCombatantSpatialState(visible);
       // Lado é estado do ENCONTRO administrado pelo Mestre: o jogador não
-      // recebe o mapa de times. Só a relação visual com o grupo é pública.
-      return { ...projected, sideKey: null, relation: projected.spatial ? projected.relation : 'unknown', tokenDimmed: projected.spatial ? projected.tokenDimmed : false, tokenNumber: projected.spatial ? projected.tokenNumber : null };
+      // recebe o mapa de times. Hostilidades particulares só citam participantes visíveis.
+      return { ...projected, sideKey: null, relation: projected.spatial ? projected.relation : 'unknown', hostileToIds: (projected.hostileToIds ?? []).filter(id => !hiddenIds.has(id) && dto.combatants.some(unit => unit.id === id)), tokenDimmed: projected.spatial ? projected.tokenDimmed : false, tokenNumber: projected.spatial ? projected.tokenNumber : null };
     }),
   };
 }

@@ -1,3 +1,4 @@
+import type { HostilityPromptDto } from '../../src/modules/shared/hostility';
 import type { CreatureAbility } from '../../src/modules/shared/creature-abilities';
 export type { CreatureAbility } from '../../src/modules/shared/creature-abilities';
 /** Espelho dos tipos expostos pela API (ver src/modules/characters/characters.dto.ts). */
@@ -2396,6 +2397,7 @@ export interface SceneDeletedPayload {
 }
 
 export interface CombatantDto {
+  hostileToIds?: string[];
   tokenDimmed?: boolean;
   tokenNumber?: number | null;
   /** Relação pública com o grupo, projetada pelo servidor sem expor times. */
@@ -2449,6 +2451,7 @@ export interface CombatantDto {
 }
 
 export interface CombatDto {
+  hostilityPrompts?: HostilityPromptDto[];
   version: number;
   economyLog: { id: string; actorName: string; message: string; at: string; action?: string }[];
   id: string;

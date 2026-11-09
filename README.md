@@ -81,7 +81,7 @@ Na preparação do combate, o Mestre escolhe **Hostil**, **Neutro** ou **Aliado*
 para cada criatura. NPCs começam neutros; criaturas têm Hostil pré-selecionado.
 O menu do token permite ajustar a relação durante o encontro, inclusive em
 combates anteriores sem lados definidos. Neutros não provocam contra o grupo
-ou seus aliados; neutros e hostis provocam oportunidade entre si nos dois sentidos.
+ou seus aliados, salvo hostilidade específica definida pelo Mestre; neutros e hostis provocam oportunidade entre si nos dois sentidos.
 
 Ataques manuais precisam de **Alcance (m)** informado no cadastro de ataques.
 Armas equipadas reutilizam o alcance derivado do servidor; o item permite
@@ -115,8 +115,17 @@ Um aro fino pulsa em vermelho nos hostis, verde nos aliados e amarelo nos
 neutros. A relação vem do servidor; tokens ocultos não revelam sua relação.
 A opção do sistema para reduzir animações mantém o aro estático.
 
-Confirmação de hostilidade após ataques, seleção individual de envolvidos,
-duelo consentido e Conjurador de Guerra são as próximas entregas desta frente.
+### Hostilidade após ataques
+
+Ataques válidos com armas ou rolagens de ataque mágico envolvendo **NPC neutro** abrem uma pergunta privada para o Mestre, inclusive quando erram. Ele pode **Manter relação**, escolher **Só os envolvidos**, selecionar o **Grupo de jogadores** ou marcar participantes individualmente. A hostilidade é mútua apenas entre o NPC e os selecionados; não muda o grupo inteiro nem concede uma reação retroativa. Magias sem rolagem de ataque e ações assistidas não inferem intenção pelo texto.
+
+A pergunta aparece em qualquer aba do Mestre. **Depois** mantém um lembrete, e a fila persiste na reconexão. Ataques repetidos contra o mesmo par não duplicam uma pergunta pendente; após manter a relação, um novo ataque pode perguntar novamente. Perguntas, decisões e registros administrativos não são enviados aos jogadores. Relações públicas só citam tokens visíveis; a cor do token considera a hostilidade específica com o personagem do jogador ou o combatente do turno na visão do Mestre.
+
+A escolha passa a valer para ameaças, oportunidades e passagem pelo espaço de outra criatura. No menu **Relação** do token é possível consultar e limpar hostilidades específicas. Trocar o lado também limpa essas relações particulares e cancela as perguntas envolvendo o token. Remover participantes ou encerrar o combate cancela as decisões correspondentes. Criaturas sem cadastro não mantêm perguntas acionáveis.
+
+Contrato: `POST /api/combat/hostility/decision`, exclusivo do Mestre, com `combatId`, `promptId`, `hostile`, `selectedIds`, `expectedVersion` e `operationId`. A decisão usa o mesmo controle de versão e journal do combate; não gasta economia, não permite seleção de outro combate e não cria hostilidade entre personagens de jogadores.
+
+**Próximas entregas:** duelo consentido e Conjurador de Guerra.
 
 ## 🗺️ Editor de paredes da cena
 

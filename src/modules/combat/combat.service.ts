@@ -1,5 +1,6 @@
+import { queueAttackHostility, clearSpecificHostility } from './hostility.js';
 import { creatureAbilitiesOf, creatureAbilityUsesOf, CREATURE_ABILITY_COST_LABELS } from '../shared/creature-abilities.js';
-import { creatureAbilityUseSchema } from './combat.schema.js';
+import { creatureAbilityUseSchema, hostilityDecisionSchema } from './combat.schema.js';
 import type { z } from 'zod';
 import { validateParticipantPositions } from './participants-position.js';
 import { deriveConditionEffects, effectiveSpeed, effectiveMaxHp, conditionAttackMode, mechanicalStateOf } from '../shared/conditions.js';
@@ -2093,6 +2094,7 @@ export async function resolveAttack<TReaction = never>(
       ? await options.onResolved({ db, combat, attacker, target, hit, critical, damageRolled })
       : undefined;
 
+    await queueAttackHostility(db, combat, attacker, target, attack.name, input.operationId);
     const dto = toCombatDto(await loadCombatById(combat.id, db), 'MASTER');
 
     const targetAfter = dto.combatants.find((item) => item.id === target.id);
@@ -2508,6 +2510,7 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
       where: { id: combat.id },
       data: { status: 'ENDED', endedAt: new Date(), version: { increment: 1 } },
     });
+    await db.combatHostilityPrompt.updateMany({ where: { combatId: combat.id, status: 'pending' }, data: { status: 'cancelled' } });
     // 6.6L.3.1 — nenhuma janela de Reação sobrevive ao fim do combate: o
     // movimento pausado é interrompido (nunca retomado sozinho depois) e as
     // oportunidades abertas são canceladas com motivo auditável.
@@ -2765,6 +2768,7 @@ export async function removeCombatParticipant(
           db,
         )),
       );
+      await clearSpecificHostility(db, combat, unit.id);
       await db.combatant.delete({ where: { id: unit.id } });
       if (combat.status === 'ACTIVE') {
         const remaining = ordered.filter((c) => c.id !== unit.id);
@@ -2873,6 +2877,36 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
       // Habilidades de NPC/criatura são administrativas; não revelar táticas ou descrições.
       await appendEconomyLog(db, combat, unit, `${ability.name} (${CREATURE_ABILITY_COST_LABELS[ability.cost]})${ability.execution === 'assisted' ? ' — resolução assistida confirmada pelo Mestre' : ''}.`, 'creature-ability', { private: true });
     }
+    return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
+  });
+}
+
+/** Decisão privada, persistida e idempotente; não muda os lados dos grupos. */
+export async function decideAttackHostility(actor: CombatActor, input: z.infer<typeof hostilityDecisionSchema>) {
+  requireMaster(actor);
+  return runCombatOperation(actor, input, 'hostility-decision', async (db, combat) => {
+    const prompt = await db.combatHostilityPrompt.findFirst({ where: { id: input.promptId, combatId: combat.id, status: 'pending' } });
+    if (!prompt) throw new HttpError('Esta decisão já foi resolvida ou não está disponível.', 409, 'CONFLICT');
+    const npc = combat.combatants.find(unit => unit.id === prompt.npcId);
+    if (!npc || !npc.creature || npc.kind !== 'NPC' || npc.sideKey !== 'neutral') throw new HttpError('A relação do NPC mudou. Atualize o combate.', 409, 'CONFLICT');
+    const selected = input.selectedIds.map(id => {
+      const peer = combat.combatants.find(unit => unit.id === id && id !== npc.id);
+      if (!peer || (!peer.character && !peer.creature)) throw new HttpError('Selecione somente participantes presentes neste combate.', 400);
+      return peer;
+    });
+    if (input.hostile) {
+      await db.combatant.update({ where: { id: npc.id }, data: { hostileToIds: [...new Set([...(npc.hostileToIds ?? []), ...selected.map(unit => unit.id)])] } });
+      for (const peer of selected) await db.combatant.update({ where: { id: peer.id }, data: { hostileToIds: [...new Set([...(peer.hostileToIds ?? []), npc.id])] } });
+    }
+    await db.combatHostilityPrompt.update({ where: { id: prompt.id }, data: { status: input.hostile ? 'hostile' : 'neutral', selectedIds: input.selectedIds } });
+    // Outra janela para um par agora hostil já não precisa perguntar de novo.
+    if (input.hostile) await db.combatHostilityPrompt.updateMany({ where: { combatId: combat.id, status: 'pending',
+      OR: [{ npcId: npc.id, attackerId: { in: input.selectedIds } }, { npcId: npc.id, targetId: { in: input.selectedIds } },
+        ...selected.filter(unit => unit.kind === 'NPC').flatMap(unit => [{ npcId: unit.id, attackerId: npc.id }, { npcId: unit.id, targetId: npc.id }])],
+    }, data: { status: 'cancelled' } });
+    await appendEconomyLog(db, combat, npc, input.hostile
+      ? `Mestre definiu hostilidade com: ${selected.map(unit => unit.name).join(', ')}.`
+      : 'Mestre manteve a relação após o ataque.', 'hostility-decision', { private: true });
     return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
   });
 }

@@ -114,7 +114,9 @@ export type MovementRelation = 'same' | 'hostile' | 'unknown';
 export function movementRelationOf(
   moverSide: string | null,
   occupantSide: string | null,
+  explicitHostility = false,
 ): MovementRelation {
+  if (explicitHostility) return 'hostile';
   // Neutros não são hostis ao grupo, mas enfrentam o lado hostil nos dois sentidos.
   if (moverSide === 'neutral' || occupantSide === 'neutral') {
     return moverSide === 'enemies' || occupantSide === 'enemies' ? 'hostile' : 'same';
@@ -139,6 +141,7 @@ export interface MovementParticipant {
   size: SpatialSize;
   /** Lado do ENCONTRO (`Combatant.sideKey`), já normalizado. */
   sideKey: string | null;
+  hostileToIds?: readonly string[];
 }
 
 /** Motivos de recusa. O código é a identidade estável (a mensagem é exibição). */
@@ -394,7 +397,7 @@ export function evaluateMovementPath(
     // 7. Passagem intermediária: não hostil passa; hostil exige ≥ 2 tamanhos;
     //    relação desconhecida recusa (nunca assume aliado nem inimigo).
     for (const occupant of overlapping) {
-      const relation = movementRelationOf(mover.sideKey, occupant.sideKey);
+      const relation = movementRelationOf(mover.sideKey, occupant.sideKey, mover.hostileToIds?.includes(occupant.combatantId) || occupant.hostileToIds?.includes(mover.combatantId));
       if (relation === 'unknown') {
         return fail('MOVEMENT_RELATION_UNKNOWN', occupant);
       }

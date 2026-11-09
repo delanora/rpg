@@ -30,14 +30,15 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
         sourceChoices={combat.combatants.filter(item => !item.missing).map(item => ({
           entity: { kind: 'combatant' as const, id: item.id }, name: item.name }))} /> : null}
       {tab === 'relation' ? <section className="combat-token-hp">
-        <label>Relação no encontro<select disabled={busy} value={combatant.sideKey ?? ''}
+        <label>Relação com o grupo<select disabled={busy} value={combatant.sideKey ?? ''}
           onChange={event => onRun(() => setCombatantSide(combat, combatant.id, event.target.value || null))}>
           <option value="">Não definida</option><option value="players">Grupo dos jogadores</option>
           <option value="neutral">Neutro</option><option value="enemies">Hostil ao grupo</option>
           {combatant.sideKey && !['players','neutral','enemies'].includes(combatant.sideKey)
             ? <option value={combatant.sideKey}>{combatant.sideKey}</option> : null}
         </select></label>
-        <p className="section-note">Ajusta somente este combatente. Neutros não provocam contra o grupo; reagem contra hostis e vice-versa.</p>
+        {combatant.hostileToIds?.length ? <div className="section-note"><p>Hostilidade específica com: {combat.combatants.filter(unit => combatant.hostileToIds?.includes(unit.id)).map(unit => unit.name).join(', ')}.</p><button type="button" className="btn btn-small" disabled={busy} onClick={() => onRun(() => setCombatantSide(combat, combatant.id, combatant.sideKey ?? null))}>Limpar hostilidades específicas</button></div> : null}
+        <p className="section-note">Trocar o lado também limpa as hostilidades específicas deste token. Ajusta somente este combatente. Neutros não provocam contra o grupo; reagem contra hostis e vice-versa.</p>
       </section> : null}
       {tab === 'hp' ? <section className="combat-token-hp">
         <p className="combat-token-vitals"><strong>{combatant.hpCurrent ?? '—'}</strong> / {combatant.hpMax ?? '—'} PV</p>

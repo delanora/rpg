@@ -1009,6 +1009,7 @@ model Combat {
   endedAt    DateTime?
   combatants Combatant[]
   operations CombatOperation[]
+  hostilityPrompts CombatHostilityPrompt[]
   /// 6.6L.3.1 — movimentos pausados esperando Reaction Opportunity.
   movementIntents       MovementIntent[]
   reactionOpportunities ReactionOpportunity[]
@@ -1070,6 +1071,7 @@ model Combatant {
   /// Espaços de magia JÁ GASTOS por ESTA cópia da criatura (Fase 6.6C). O máximo
   /// vem do template (`Creature.spellcastingResources`); o gasto é da instância
   /// e nunca muta o statblock compartilhado.
+  hostileToIds String[] @default([])
   abilityUses Json @default("{}")
   spellcastingUsed Json @default("{}")
 
@@ -1750,4 +1752,22 @@ model PreparedEncounterOperation {
   snapshot Json
   @@unique([encounterId, operationId])
   @@map("prepared_encounter_operations")
+}
+
+/// Decisão privada do Mestre após um ataque envolvendo NPC neutro.
+model CombatHostilityPrompt {
+  id String @id @default(cuid())
+  combatId String
+  combat Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+  attackerId String
+  targetId String
+  npcId String
+  attackName String
+  eventId String
+  status String @default("pending")
+  selectedIds String[] @default([])
+  createdAt DateTime @default(now())
+  @@unique([combatId, eventId, npcId])
+  @@index([combatId, status])
+  @@map("combat_hostility_prompts")
 }

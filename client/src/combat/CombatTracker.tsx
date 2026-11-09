@@ -1429,6 +1429,7 @@ export function CombatTracker({
               onEmptyContext={isMaster ? openAddMenu : undefined}
               isMaster={isMaster}
               busy={busy}
+              relationReferenceId={isMaster ? currentId : myCombatant?.id}
               movement={movementAuthority}
               onCombatChange={onCombatChange}
               onError={onError}
@@ -1549,6 +1550,7 @@ export function CombatTracker({
             onEmptyContext={isMaster ? openAddMenu : undefined}
             isMaster={isMaster}
             busy={busy}
+            relationReferenceId={isMaster ? currentId : myCombatant?.id}
             movement={movementAuthority}
             targeting={
               gridTargetingActive

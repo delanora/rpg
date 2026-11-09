@@ -1,7 +1,7 @@
 # Roadmap de desenvolvimento — Obsyrium RPG
 
 > **Guia de contexto para agentes que trabalham no repositório `delanora/rpg`.**
-> Estado consolidado em **08/11/2026**, com base no código da `main` até `41ce682` e na aba **Roadmap** do documento *Codex do Aventureiro*.
+> Estado consolidado em **09/11/2026**, com base no código da `main` e na aba **Roadmap** do documento *Codex do Aventureiro*.
 > Este arquivo resume **o que existe, o que está parcial e o que vem depois**. Não substitui a inspeção do código.
 
 ## 1. Leitura obrigatória e fontes de verdade
@@ -23,7 +23,7 @@
 - **UI de combate:** workspace com grid central, iniciativa, registro e **dock do jogador com Hotbar personalizável 2 × 24 (48 slots)**; fluxo de pré-iniciativa, espera, targeting em tokens e Death Saves consolidado.
 - **6.6M.9–9.2:** Golden Path de sessão jogável e consistência de deslocamento foram marcados como ✅ no Roadmap compartilhado; há teste integrado `src/scripts/smoke-combat-playable.ts`.
 - **Trabalho recente:** paredes com bloqueios independentes de movimento e ataques/magias; caminho livre validado nos casos claros, além do editor, ping e menus dos tokens.
-- **Próxima frente de produto:** refinar reações: gatilho, hotbar e aura entregues; seguem hostilidade escolhida pelo Mestre, duelo e Conjurador de Guerra. Depois retomar visão e cobertura.
+- **Próxima frente de produto:** refinar reações: gatilho, hotbar, aura e hostilidade após ataques entregues; seguem duelo consentido e Conjurador de Guerra. Depois retomar visão e cobertura.
 - **Não concluir que “PHB completo” está pronto:** existem lacunas de magias especiais, características, reações avançadas, passagem do tempo fora de combate e ferramentas do Mestre.
 
 ## 3. Regras de arquitetura que nenhuma etapa deve violar
@@ -139,7 +139,8 @@ A **sequência abaixo é direcional**, não autorização para antecipar fases. 
 |---|---|---|
 | **Gatilho, hotbar e área de ameaça** | ✅ implementada e testada | Relações na preparação e no token, alcances, aura e confirmação de movimento. Pergunta de reação direcionada ao dono; neutros e hostis se ameaçam nos dois sentidos. Aros por relação e ajustes do token disponíveis. |
 | **Pendências do personagem assumido** | ✅ implementada e testada | Mestre responde testes de morte, concentração e salvaguardas no contexto do turno. Rolagens públicas, sem cards duplicados nem resolução simultânea repetida. |
-| **Hostilidade e duelo** | ⬜ próxima | Ao atacar um NPC neutro, o Mestre decide se há hostilidade e seleciona os envolvidos. Duelo exige aceite entre jogadores; aliados não provocam oportunidade. |
+| **Hostilidade após ataques** | ✅ implementada e testada | Ataques de arma e ataques mágicos envolvendo NPC neutro abrem decisão privada do Mestre, com seleção dos envolvidos e relação mútua por participante. Fila persistente, inclusive fora da aba de combate. |
+| **Duelo entre jogadores** | ⬜ próxima | Solicitação e aceite para permitir confronto e oportunidades entre personagens, sem tornar o grupo hostil automaticamente. |
 | **Conjurador de Guerra** | ⬜ seguinte | Substituir o ataque por uma magia elegível na mesma janela de reação, conforme PHB 2014. |
 
 ### Prioridade 1 — Consolidar linha de visão e cobertura espacial

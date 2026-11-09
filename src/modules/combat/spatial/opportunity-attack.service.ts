@@ -1,3 +1,4 @@
+import { combatantsAreHostile } from '../hostility.js';
 import { combatantCanReact } from '../combat.dto.js';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
@@ -657,6 +658,7 @@ async function assertOpportunityActionable(
     );
   }
   requireReactionAuthority(actor, reactor);
+  if (!combatantsAreHostile(reactor, mover)) throw new HttpError('A relação mudou: esta criatura não é mais hostil ao alvo.', 409, 'OPPORTUNITY_RELATION_CHANGED');
   if (row.visibilityStatus === 'unknown') {
     throw new HttpError(
       'O Mestre precisa adjudicar a visão antes desta Reação.',

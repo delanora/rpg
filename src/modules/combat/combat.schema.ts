@@ -336,3 +336,13 @@ export const creatureAbilityUseSchema = combatOperationSchema.extend({
   mode: z.enum(['use', 'restore']).default('use'),
   confirmed: z.boolean().default(false),
 });
+
+export const hostilityDecisionSchema = combatOperationSchema.extend({
+  promptId: z.string().min(1),
+  hostile: z.boolean(),
+  selectedIds: z.array(z.string().min(1)).max(500).default([]),
+}).superRefine((input, ctx) => {
+  if (input.hostile && input.selectedIds.length === 0) ctx.addIssue({ code: 'custom', message: 'Selecione os envolvidos.' });
+  if (new Set(input.selectedIds).size !== input.selectedIds.length) ctx.addIssue({ code: 'custom', message: 'Não repita participantes.' });
+  if (!input.hostile && input.selectedIds.length) ctx.addIssue({ code: 'custom', message: 'Manter relação não recebe envolvidos.' });
+});

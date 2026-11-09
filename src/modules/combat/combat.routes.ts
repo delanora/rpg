@@ -1,3 +1,5 @@
+import { hostilityDecisionSchema } from './combat.schema.js';
+import { decideAttackHostility } from './combat.service.js';
 import { creatureAbilityUseSchema } from './combat.schema.js';
 import { useCreatureAbility } from './combat.service.js';
 import { addParticipantsSchema, removeParticipantSchema } from './combat.schema.js';
@@ -532,4 +534,10 @@ combatRouter.post('/creature-ability', authenticate, requireRole('MASTER'), asyn
   const parsed = creatureAbilityUseSchema.safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors }); return; }
   res.json(await useCreatureAbility(actorFrom(req), parsed.data));
+});
+
+combatRouter.post('/hostility/decision', authenticate, requireRole('MASTER'), async (req, res) => {
+  const parsed = hostilityDecisionSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors }); return; }
+  res.json(await decideAttackHostility(actorFrom(req), parsed.data));
 });

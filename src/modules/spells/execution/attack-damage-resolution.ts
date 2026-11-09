@@ -1,3 +1,4 @@
+import { queueSpellAttackHostility } from '../../combat/hostility.js';
 import type { Prisma, SpellCast } from '@prisma/client';
 import { HttpError } from '../../../lib/http-error.js';
 import { rollDie } from '../../shared/dice.js';
@@ -311,6 +312,7 @@ export async function resolveAttackDamageSpell(
       critThreshold: resolution.attack.critThreshold ?? 20,
     });
 
+    await queueSpellAttackHostility(db, fresh.combatId, currentCaster.entity, currentTarget.entity, execution.spellId, attackOccurrenceIdOf(fresh.id, index));
     const occurrenceId = attackOccurrenceIdOf(fresh.id, index);
     const eventId = attackDamageEventIdOf(fresh.id, index);
     let damageSnapshot: SpellAttackOccurrenceSnapshot['damage'] = null;
