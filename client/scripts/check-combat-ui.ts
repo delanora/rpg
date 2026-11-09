@@ -7150,8 +7150,8 @@ check(
       gridSource.includes('aria-label="Reduzir zoom"') &&
       gridSource.includes('aria-label="Enquadrar cena"') &&
       gridSource.includes('aria-label="Centralizar no turno"') &&
-      // Cada um dos 5 controles continua gateado pela fase do grid.
-      (gridSource.match(/gridPhase !== 'ready'/g) ?? []).length === 5 &&
+      // Os quatro controles da câmera continuam gateados pela fase do grid.
+      (gridSource.slice(cameraAt).match(/gridPhase !== 'ready'/g) ?? []).length === 4 &&
       // Nenhum estado de zoom novo: a câmera continua única e em memória.
       (gridSource.match(/useState<GridCamera>/g) ?? []).length === 1 &&
       // A câmera não ganhou persistência nenhuma (nem local, nem no servidor).

@@ -146,6 +146,22 @@ Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas
 
 **Próxima etapa:** áreas no grid; iluminação e sentidos especiais permanecem como expansões próprias.
 
+### Prévia circular no grid
+
+O botão **Área circular**, no canto superior esquerdo do mapa, abre um modelo
+visual para Mestre e jogadores. Escolha o **raio** em metros, clique no centro
+desejado e use **Confirmar** para fixá-lo; novos cliques ajustam a posição antes
+de confirmar. **Esc**, **Cancelar** ou botão direito descartam a edição.
+O botão da área permite reposicionar ou mudar o raio; **×** remove o modelo.
+Pan e zoom preservam a posição e a escala da área.
+
+A prévia é local e temporária: não é enviada aos outros participantes nem
+persistida após sair da tela. Não seleciona atingidos, verifica cobertura,
+conjura, causa dano ou consome recursos. O círculo é uma indicação visual,
+não um cálculo de pertencimento à área pelas regras do grid. Durante ataque,
+movimento, régua ou posicionamento, a edição fica indisponível; um modelo já
+confirmado permanece apenas visual. Alt continua disponível para ping.
+
 ### Linha de visão por paredes — casos claros
 
 A simples presença de uma parede no mapa não abre mais uma pergunta de visão. O servidor considera os espaços inteiros dos dois tokens: paredes opacas fora desse corredor não interferem; uma barreira opaca completa impede a visão; cantos, frestas, obstruções parciais ou dados espaciais indisponíveis ficam para o Mestre. Os bloqueios de **visão**, **movimento** e **ataques/magias** permanecem independentes.

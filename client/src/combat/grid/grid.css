@@ -1457,3 +1457,15 @@ button.grid-token-visibility:focus-visible { outline: 2px solid var(--gold); out
 button.grid-token-visibility:disabled { cursor: wait; opacity: .6; }
 
 .grid-token.has-number .grid-token-label { bottom: -1.35rem; }
+
+/* Modelo circular local: mesma câmera do mapa; sem validação de atingidos. */
+.grid-area-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: hidden; color: var(--gold-bright); }
+.grid-area-shape circle { fill: color-mix(in srgb, var(--gold-bright) 14%, transparent); stroke: currentColor; stroke-width: 2; }
+.grid-area-shape circle.is-draft { stroke-dasharray: 6 4; }
+.grid-area-shape path { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.grid-area-capture { position: absolute; inset: 0; z-index: 4; cursor: crosshair; touch-action: none; }
+.grid-area-capture.is-pan { cursor: grabbing; }
+.grid-area-controls { position: absolute; top: .5rem; left: .5rem; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; max-width: calc(100% - 1rem); padding: .3rem; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: 0 3px 10px #0005; }
+.grid-area-controls label { display: flex; align-items: center; gap: .3rem; font-size: var(--text-micro); }
+.grid-area-controls select { width: auto; min-width: 4rem; margin: 0; padding: .2rem; font: inherit; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.grid-area-instruction { flex-basis: 100%; font-size: var(--text-micro); color: var(--ink-soft); }

@@ -1,3 +1,4 @@
+import { GridAreaPreview } from './GridAreaPreview';
 import { useGridPing } from './gridPing';
 import { GridPings } from './GridPings';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -642,6 +643,7 @@ export function CombatGrid({
     const node = viewportRef.current;
     if (!node) return undefined;
     function onWheel(event: WheelEvent): void {
+      if (event.target instanceof Element && event.target.closest('.grid-area-controls')) return;
       event.preventDefault();
       const rect = node!.getBoundingClientRect();
       const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -2264,6 +2266,13 @@ export function CombatGrid({
             </div>
           </div>
 
+          <GridAreaPreview
+            key={`${combat.id}:${combat.sceneBackgroundImageUrl ?? ''}:${scene.widthFeet}:${scene.heightFeet}`}
+            camera={camera} geometry={geometry} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet}
+            positionAt={feetAt} panning={spacePan} pinging={ping.holdingAlt}
+            disabled={locked || gridPhase !== 'ready' || mode === 'placement' || rulerActive ||
+              targetingActive || movementBusy || !!draft || !!grabGesture || combat.status === 'ENDED'}
+          />
           <GridPings pings={ping.pings} camera={camera} geometry={geometry} />
           <span className="grid-ping-hint">Alt + clique: sinalizar ponto</span>
 
