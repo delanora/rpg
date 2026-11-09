@@ -121,7 +121,7 @@ async function main() {
       abilities: [
         { id: 'escape', name: 'Escape ágil', cost: 'bonus-action', execution: 'disengage', description: 'Desengajar como bônus', maxUses: 1 },
         { id: 'hide', name: 'Esconder-se', cost: 'bonus-action', execution: 'assisted', description: 'Teste assistido', maxUses: null },
-        { id: 'guard', name: 'Guarda', cost: 'reaction', execution: 'assisted', trigger: 'Mestre confirma o gatilho', maxUses: 2 },
+        { id: 'guard', name: 'Guarda', description: 'Protege um aliado próximo.', cost: 'reaction', execution: 'assisted', trigger: 'Mestre confirma o gatilho', maxUses: 2 },
         { id: 'dash', name: 'Corrida', cost: 'action', execution: 'dash', maxUses: null },
         { id: 'dodge', name: 'Esquiva', cost: 'action', execution: 'dodge', maxUses: null },
         { id: 'senses', name: 'Sentidos', cost: 'passive', execution: 'assisted', maxUses: null },
@@ -317,12 +317,22 @@ async function main() {
     assert.equal(combat.combatants.find((c: any) => c.id === hidden.id).turnEconomy.dodging, true);
     // Habilidade assistida não cria invisibilidade, condição ou ocultação.
     assert.equal(combat.combatants.find((c: any) => c.id === copies[1].id).spatialVisibility, 'public');
-    const reaction = await request('/combat/creature-ability', abilityRequest('guard', { combatantId: copies[1].id, confirmed: true }));
+    const reactionInput = abilityRequest('guard', { combatantId: copies[1].id, confirmed: true });
+    const reaction = await request('/combat/creature-ability', reactionInput);
     assert.equal(reaction.status, 200, JSON.stringify(reaction)); combat = reaction.data.combat;
     assert.equal(combat.combatants.find((c: any) => c.id === copies[1].id).turnEconomy.reactionAvailable, false);
     assert.equal((await request('/combat/creature-ability', abilityRequest('guard', { combatantId: copies[1].id, confirmed: true }))).status, 409);
     assert.equal((await request('/combat/creature-ability', abilityRequest('escape', { combatantId: copies[1].id }))).status, 403);
-    assert.ok(!(await request('/combat/active', undefined, owner)).data.combat.economyLog.some((entry: any) => entry.action === 'creature-ability'));
+    const publicAbilities = (await request('/combat/active', undefined, owner)).data.combat.economyLog.filter((entry: any) => entry.action === 'creature-ability');
+    assert.equal(publicAbilities.length, 1, 'Somente a habilidade da criatura revelada aparece');
+    assert.equal(publicAbilities[0].message, 'Guarda: Protege um aliado próximo.');
+    assert.equal(publicAbilities[0].actorName, copies[1].name);
+    assert.ok(!publicAbilities[0].message.includes('reaction') && !publicAbilities[0].message.includes('Mestre confirma'));
+    assert.equal((await request('/combat/creature-ability', reactionInput)).data.replayed, true);
+    assert.equal((await request('/combat/active', undefined, owner)).data.combat.economyLog.filter((entry: any) => entry.action === 'creature-ability').length, 1, 'Retry não duplica o registro');
+    const visibleRestore = await request('/combat/creature-ability', abilityRequest('guard', { combatantId: copies[1].id, mode: 'restore' }));
+    assert.equal(visibleRestore.status, 200); combat = visibleRestore.data.combat;
+    assert.equal((await request('/combat/active', undefined, owner)).data.combat.economyLog.filter((entry: any) => entry.action === 'creature-ability').length, 1, 'Restaurar usos continua privado');
     console.log('✔ habilidades: custo, usos por cópia, privacidade, assistência, reação fora do turno, restore e retry');
     const nextAgain = await request('/combat/next-turn', {
       combatId,
@@ -598,6 +608,13 @@ async function main() {
         await request('/combat/active', undefined, owner)
       ).data.combat.combatants.some((c: any) => c.id === newCopy.id),
     );
+    const latestForReveal = (await request('/combat/active')).data.combat;
+    const reveal = await request(`/combat/${combatId}/combatants/${hidden.id}/spatial-visibility`, {
+      expectedVersion: latestForReveal.version, operationId: randomUUID(), spatialVisibility: 'public',
+    }, master, 'PATCH');
+    assert.equal(reveal.status, 200, JSON.stringify(reveal));
+    const afterReveal = (await request('/combat/active', undefined, owner)).data.combat.economyLog.filter((entry: any) => entry.action === 'creature-ability');
+    assert.deepEqual(afterReveal.map((entry: any) => entry.message), ['Guarda: Protege um aliado próximo.'], 'Revelar não publica ações realizadas enquanto oculto nem restaurações');
     console.log(
       '✔ Reforços preservam a numeração, usam a galeria atual e podem entrar ocultos',
     );

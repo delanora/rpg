@@ -117,7 +117,7 @@
 | **6.6M.6.2–6.2.2 — Estados/filtros** | ✅ | Filtros Ação/Bônus/Reação, espera, tooltip, seleção/desseleção de atalhos. |
 | **6.6M.6.3–6.3.1 — Hotbar 48 slots** | ✅ | Grade 2×24, edição, troca/remoção, salvamento e persistência por personagem. |
 | **6.6M.6.4 — Targeting por token** | ✅ | Escolha de alvo no grid, modo de rolagem e execução pelo fluxo autoritativo existente. |
-| **Habilidades do bestiário** | ✅ fundação | Cadastro de ações, bônus, reações assistidas e passivas; usos por cópia e execução na economia existente. Ataques Múltiplos, áreas, recarga e ações lendárias seguem pendentes. |
+| **Habilidades do bestiário** | ✅ fundação | Cadastro de ações, bônus, reações assistidas e passivas; usos por cópia e execução na economia existente. Nome e descrição do uso no registro público; saldos privados. Ataques Múltiplos, áreas, recarga e ações lendárias seguem pendentes. |
 | **Bestiário e tokens** | ✅ | Cadastro em etapas com rolagem interna, campos sem cortes e atributos em bandeirinhas; ataques por cards e galeria com imagens por cópia e números só nas criaturas repetidas. Olho clicável para ocultar/revelar. Ocultação no grid/iniciativa e sinal de inconsciência; mortos e incapazes não geram oportunidade. |
 | **Preparação e encontros salvos** | ✅ | Aba Combate com encontros salvos, criação e início no cabeçalho. Wizard ampliado com zoom no mapa, jogadores e NPCs únicos por botão; batalha em aba temporária Combate em andamento. |
 | **Participantes durante o combate** | ✅ | Incluir criaturas/NPCs pelo grid e remover pelo token, preservando cadastros e turno. Iniciativa do jogador com rolagem interna. |

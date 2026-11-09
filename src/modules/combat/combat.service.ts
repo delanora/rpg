@@ -1,5 +1,5 @@
 import { queueAttackHostility, clearSpecificHostility } from './hostility.js';
-import { creatureAbilitiesOf, creatureAbilityUsesOf, CREATURE_ABILITY_COST_LABELS } from '../shared/creature-abilities.js';
+import { creatureAbilitiesOf, creatureAbilityUsesOf } from '../shared/creature-abilities.js';
 import { creatureAbilityUseSchema, hostilityDecisionSchema, duelRequestSchema, duelDecisionSchema } from './combat.schema.js';
 import type { z } from 'zod';
 import { validateParticipantPositions } from './participants-position.js';
@@ -2875,8 +2875,10 @@ export async function useCreatureAbility(actor: CombatActor, input: z.infer<type
       applyTacticalAction(economy, ability.execution, unit);
       if (ability.maxUses !== null) uses[ability.id] = (uses[ability.id] ?? 0) + 1;
       await db.combatant.update({ where: { id: unit.id }, data: { turnEconomy: economy, abilityUses: uses } });
-      // Habilidades de NPC/criatura são administrativas; não revelar táticas ou descrições.
-      await appendEconomyLog(db, combat, unit, `${ability.name} (${CREATURE_ABILITY_COST_LABELS[ability.cost]})${ability.execution === 'assisted' ? ' — resolução assistida confirmada pelo Mestre' : ''}.`, 'creature-ability', { private: true });
+      // Publica só o nome e a descrição do uso, sem custos, gatilho ou saldo.
+      // A privacidade é fixada no uso: revelar depois não divulga ações ocultas anteriores.
+      await appendEconomyLog(db, combat, unit, ability.description ? `${ability.name}: ${ability.description}` : ability.name,
+        'creature-ability', { private: unit.spatialVisibility === 'master-only' });
     }
     return { combat: toCombatDto(await loadCombatById(combat.id, db), actor.role) };
   });
