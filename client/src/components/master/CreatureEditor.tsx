@@ -1,6 +1,7 @@
 import { MechanicalPanel } from '../MechanicalPanel';
 import { useState } from 'react';
 import { CreatureField as InlineField } from './CreatureField';
+import { InlineField as AttributeField } from '../InlineField';
 import { CreatureTokenGallery } from './CreatureTokenGallery';
 import { CreatureAttackCards } from './CreatureAttackCards';
 import { SPELLS } from '../../../../src/modules/shared/spells';
@@ -390,7 +391,7 @@ export function CreatureEditor({
                   <span className="ability-label">
                     {ABILITY_LABELS[ability]}
                   </span>
-                  <InlineField
+                  <AttributeField
                     className="ability-score"
                     value={creature[ability]}
                     mode="number"

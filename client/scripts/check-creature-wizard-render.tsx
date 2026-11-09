@@ -144,6 +144,7 @@ try {
   );
   await click('Continuar');
   await change('[aria-label="Pontos de vida máximos"]', '30', true);
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Força"]')!.click());
   await change('[aria-label="Força"]', '18', true);
   await click('Continuar');
   await click('Adicionar ataque');

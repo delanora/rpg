@@ -1,6 +1,6 @@
 /* Cadastro em etapas, com espaço para ler o statblock e editar um ataque por vez. */
 .modal.detail-modal:has(.creature-editor) {
-  width: min(94vw, 96rem);
+  width: min(94vw, 76rem);
   max-width: calc(100vw - 2rem);
   height: calc(100dvh - 3rem);
   max-height: calc(100dvh - 3rem);
@@ -12,7 +12,7 @@
   display: flex;
   flex-direction: column;
 }
-.creature-editor {
+.detail-modal .creature-editor {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
@@ -50,10 +50,9 @@
   overflow: auto;
   min-height: 0;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding-right: 0.5rem;
+  display: block;
+  padding: 0.2rem 0.65rem 0.7rem 0;
+  scrollbar-gutter: stable;
 }
 .creature-wizard-footer,
 .creature-card-actions,
@@ -240,4 +239,93 @@
 }
 .creature-slot-editor .creature-form-grid {
   grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+}
+
+/* O conteúdo mantém sua altura natural: somente esta área rola. */
+.creature-wizard-content > * + * {
+  margin-top: 1rem;
+}
+.creature-wizard-content > .sheet-section {
+  min-width: 0;
+  overflow: visible;
+}
+.creature-wizard-content .section-header {
+  border-radius: 4px 4px 0 0;
+}
+.creature-editor > .section-note {
+  margin: 0;
+  flex: none;
+}
+.creature-wizard-steps {
+  align-items: flex-start;
+}
+.creature-wizard-steps button {
+  flex: 0 0 auto;
+  min-height: 2.5rem;
+  height: auto;
+}
+.creature-editor .grid-abilities {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.creature-editor .ability-card .inline-input {
+  width: 5rem;
+  max-width: 100%;
+  padding: 0.2rem;
+  text-align: center;
+  font-size: 1.6rem;
+}
+.creature-editor .ability-card .inline-display {
+  font-size: 2.4rem;
+}
+.creature-editor .field-inline {
+  align-items: flex-start;
+  margin-top: 1rem;
+}
+.creature-editor .field-inline > select {
+  max-width: 26rem;
+}
+.creature-editor .field,
+.creature-editor .creature-form-grid > label {
+  min-width: 0;
+  text-align: left;
+  align-items: stretch;
+}
+.creature-editor .creature-spell-picks > div {
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  max-height: none;
+  overflow: visible;
+}
+.creature-editor label.creature-checkbox {
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.3rem;
+  color: var(--ink);
+  align-items: flex-start;
+}
+.creature-checkbox input {
+  flex: none;
+  margin-top: 0.2rem;
+}
+.creature-review {
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: var(--surface-2);
+}
+@media (max-width: 760px) {
+  .creature-editor .grid-abilities {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .creature-editor .grid-3,
+  .creature-editor .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 440px) {
+  .creature-editor .grid-3,
+  .creature-editor .grid-4,
+  .creature-damage-row {
+    grid-template-columns: 1fr;
+  }
 }

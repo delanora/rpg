@@ -117,7 +117,7 @@
 | **6.6M.6.2–6.2.2 — Estados/filtros** | ✅ | Filtros Ação/Bônus/Reação, espera, tooltip, seleção/desseleção de atalhos. |
 | **6.6M.6.3–6.3.1 — Hotbar 48 slots** | ✅ | Grade 2×24, edição, troca/remoção, salvamento e persistência por personagem. |
 | **6.6M.6.4 — Targeting por token** | ✅ | Escolha de alvo no grid, modo de rolagem e execução pelo fluxo autoritativo existente. |
-| **Bestiário e tokens** | ✅ | Cadastro em etapas, ataques por cards e galeria com imagens e números por cópia. Ocultação no grid/iniciativa e sinal de inconsciência; mortos e incapazes não geram oportunidade. |
+| **Bestiário e tokens** | ✅ | Cadastro em etapas com rolagem interna, campos sem cortes e atributos em bandeirinhas; ataques por cards e galeria com imagens e números por cópia. Ocultação no grid/iniciativa e sinal de inconsciência; mortos e incapazes não geram oportunidade. |
 | **Preparação e encontros salvos** | ✅ | Aba Combate com encontros salvos, criação e início no cabeçalho. Wizard ampliado com zoom no mapa, jogadores e NPCs únicos por botão; batalha em aba temporária Combate em andamento. |
 | **Participantes durante o combate** | ✅ | Incluir criaturas/NPCs pelo grid e remover pelo token, preservando cadastros e turno. Iniciativa do jogador com rolagem interna. |
 | **6.6M.7 — Pré-iniciativa** | ✅ | Mesma dock, CTA de iniciativa sobre Hotbar indisponível e transição para espera/turno. |
