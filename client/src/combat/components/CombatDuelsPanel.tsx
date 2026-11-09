@@ -117,11 +117,12 @@ export function CombatDuelsPanel({
       <button
         type="button"
         className={`combat-duels-launcher${master ? ' is-master' : ''}${open ? ' active' : ''}`}
+        title={open ? 'Fechar duelos' : 'Abrir duelos'}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <Icon name="sword" size={17} />
-        <span>Duelos{duels.length ? ` (${duels.length})` : ''}</span>
+        <span className="combat-duels-label">Duelos{duels.length ? ` (${duels.length})` : ''}</span>
       </button>
       {open ? (
         <aside

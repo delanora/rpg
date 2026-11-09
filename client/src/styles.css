@@ -17933,3 +17933,49 @@ input[type='checkbox']:focus-visible,
 .combat-risk-dialog p, .reaction-visibility p { margin: 0.4rem 0 0.8rem; font-size: 0.85rem; }
 .combat-risk-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
 .grid-threat-area { position: absolute; pointer-events: none; z-index: 2; box-sizing: border-box; border: 2px dashed var(--danger); background: color-mix(in srgb, var(--danger) 9%, transparent); border-radius: 4px; }
+
+/* Atalhos do Mestre durante toda a batalha, inclusive ao navegar em outras abas.
+   :has inclui o botão de Duelos, renderizado em portal fora de app-shell. */
+body:has(.app-shell.has-ongoing-combat)
+  :is(.dice-fab.is-master, .notes-fab.master-notes-fab, .roll-log-fab, .combat-duels-launcher.is-master) {
+  gap: 0;
+  padding: 0.6rem;
+  transition: gap 0.16s ease, padding 0.16s ease, transform 0.15s ease, box-shadow 0.18s ease;
+}
+body:has(.app-shell.has-ongoing-combat)
+  :is(.dice-fab.is-master, .notes-fab.master-notes-fab, .roll-log-fab, .combat-duels-launcher.is-master)
+  :is(.dice-fab-label, .notes-fab-label, .roll-log-fab-label, .roll-log-count, .combat-duels-label) {
+  display: inline-block;
+  max-width: 0;
+  margin-left: 0;
+  padding-inline: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.16s ease, opacity 0.12s ease, margin 0.16s ease, padding 0.16s ease;
+}
+body:has(.app-shell.has-ongoing-combat)
+  :is(.dice-fab.is-master, .notes-fab.master-notes-fab, .roll-log-fab, .combat-duels-launcher.is-master):is(:hover, :focus-visible) {
+  gap: 0.5rem;
+  padding: 0.6rem 0.95rem;
+}
+body:has(.app-shell.has-ongoing-combat)
+  :is(.dice-fab.is-master, .notes-fab.master-notes-fab, .roll-log-fab, .combat-duels-launcher.is-master):is(:hover, :focus-visible)
+  :is(.dice-fab-label, .notes-fab-label, .roll-log-fab-label, .combat-duels-label) {
+  max-width: 8rem;
+  opacity: 1;
+}
+body:has(.app-shell.has-ongoing-combat) .roll-log-fab:is(:hover, :focus-visible) .roll-log-count {
+  max-width: 4rem;
+  margin-left: 0.1rem;
+  padding-inline: 0.35rem;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  body:has(.app-shell.has-ongoing-combat)
+    :is(.dice-fab.is-master, .notes-fab.master-notes-fab, .roll-log-fab, .combat-duels-launcher.is-master),
+  body:has(.app-shell.has-ongoing-combat)
+    :is(.dice-fab-label, .notes-fab-label, .roll-log-fab-label, .roll-log-count, .combat-duels-label) {
+    transition: none;
+  }
+}

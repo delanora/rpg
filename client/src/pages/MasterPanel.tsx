@@ -901,6 +901,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
       className={[
         'app-shell',
         'theme-master',
+        combat ? 'has-ongoing-combat' : '',
         combat && tab === 'active-combat' ? 'combat-active master-combat-view' : '',
         // A barra de música é fixa no rodapé: a classe avisa o CSS para subir
         // os botões flutuantes e nada ficar escondido atrás dela.
