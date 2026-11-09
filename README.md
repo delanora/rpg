@@ -146,21 +146,35 @@ Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas
 
 **Próxima etapa:** áreas no grid; iluminação e sentidos especiais permanecem como expansões próprias.
 
-### Prévia circular no grid
+### Prévias de áreas e menu radial
 
-O botão **Área circular**, no canto superior esquerdo do mapa, abre um modelo
-visual para Mestre e jogadores. Escolha o **raio** em metros, clique no centro
-desejado e use **Confirmar** para fixá-lo; novos cliques ajustam a posição antes
-de confirmar. **Esc**, **Cancelar** ou botão direito descartam a edição.
-O botão da área permite reposicionar ou mudar o raio; **×** remove o modelo.
-Pan e zoom preservam a posição e a escala da área.
+O botão **Áreas**, no canto superior esquerdo do mapa, oferece **Esfera**, **Cone**,
+**Linha**, **Cubo** e **Cilindro**. As dimensões são exibidas em metros: raio,
+comprimento, aresta, largura da linha e altura do cilindro. Esfera e cilindro
+mostram sua projeção circular no mapa; a altura do cilindro é informativa.
 
-A prévia é local e temporária: não é enviada aos outros participantes nem
-persistida após sair da tela. Não seleciona atingidos, verifica cobertura,
-conjura, causa dano ou consome recursos. O círculo é uma indicação visual,
-não um cálculo de pertencimento à área pelas regras do grid. Durante ataque,
-movimento, régua ou posicionamento, a edição fica indisponível; um modelo já
-confirmado permanece apenas visual. Alt continua disponível para ping.
+Clique para definir a origem. Cone, linha e cubo pedem um segundo clique para
+fixar a direção; antes disso, acompanham o ponteiro. **Confirmar** fixa o modelo;
+o botão da área reabre sua edição e **×** remove. **Esc**, **Cancelar** ou botão
+direito descartam a edição, preservando um modelo anteriormente confirmado.
+Pan e zoom preservam a origem, a direção e as dimensões.
+
+O cone tem largura igual ao comprimento na base, conforme as
+[regras de conjuração de 2014](https://www.dndbeyond.com/sources/dnd/basic-rules-2014/spellcasting).
+Para desenhar o cubo, o aplicativo usa o meio de uma face como origem e permite
+girar essa face no plano; isso é uma conveniência visual, sem definir atingidos.
+
+**Botão direito no grid vazio** abre um menu radial. **Áreas** permite escolher
+uma forma já com a origem no ponto clicado. Para o Mestre, **Encontro** abre o
+fluxo existente de adicionar jogadores, criaturas ou NPCs, mantendo a posição
+do grid para os reforços. O menu se ajusta às bordas da tela, fecha com Esc ou
+clique fora e permite navegar pelas setas. O menu dos tokens permanece separado.
+
+Os modelos são locais e temporários, um por vez: não são compartilhados nem
+persistidos após sair da tela. Não selecionam atingidos, verificam cobertura,
+conjuram, causam dano ou consomem recursos. Durante ataque, movimento, régua ou
+posicionamento, a edição fica indisponível; o modelo confirmado continua visual.
+Objetos, obstáculos e itens no chão não foram adicionados ao menu nesta entrega.
 
 ### Linha de visão por paredes — casos claros
 

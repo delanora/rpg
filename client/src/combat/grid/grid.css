@@ -1460,8 +1460,8 @@ button.grid-token-visibility:disabled { cursor: wait; opacity: .6; }
 
 /* Modelo circular local: mesma câmera do mapa; sem validação de atingidos. */
 .grid-area-shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: hidden; color: var(--gold-bright); }
-.grid-area-shape circle { fill: color-mix(in srgb, var(--gold-bright) 14%, transparent); stroke: currentColor; stroke-width: 2; }
-.grid-area-shape circle.is-draft { stroke-dasharray: 6 4; }
+.grid-area-shape circle, .grid-area-shape polygon { fill: color-mix(in srgb, var(--gold-bright) 14%, transparent); stroke: currentColor; stroke-width: 2; }
+.grid-area-shape .is-draft { stroke-dasharray: 6 4; }
 .grid-area-shape path { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .grid-area-capture { position: absolute; inset: 0; z-index: 4; cursor: crosshair; touch-action: none; }
 .grid-area-capture.is-pan { cursor: grabbing; }
@@ -1469,3 +1469,18 @@ button.grid-token-visibility:disabled { cursor: wait; opacity: .6; }
 .grid-area-controls label { display: flex; align-items: center; gap: .3rem; font-size: var(--text-micro); }
 .grid-area-controls select { width: auto; min-width: 4rem; margin: 0; padding: .2rem; font: inherit; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--radius); }
 .grid-area-instruction { flex-basis: 100%; font-size: var(--text-micro); color: var(--ink-soft); }
+
+/* Navegação radial local; ações administrativas preservam os contratos existentes. */
+.grid-radial-menu { position: fixed; z-index: 55; isolation: isolate; border-radius: 50%; color: var(--ink); filter: drop-shadow(0 10px 18px #0009); }
+.grid-radial-ring { position: absolute; inset: 4%; border-radius: 50%; border: 1px solid var(--gold); background: var(--surface); opacity: .97; box-shadow: inset 0 0 24px #0003; }
+.grid-radial-item, .grid-radial-center { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface-2); color: var(--ink); cursor: pointer; font: inherit; font-size: .72rem; line-height: 1.2; }
+.grid-radial-item { width: 4.5rem; height: 4.5rem; }
+.grid-radial-item span { font-size: 1.45rem; color: var(--gold); line-height: 1; }
+.grid-radial-center { left: 50%; top: 50%; width: 3.5rem; height: 3.5rem; }
+.grid-radial-item:hover, .grid-radial-center:hover { border-color: var(--gold); background: var(--surface-3); }
+.grid-radial-item:focus-visible, .grid-radial-center:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.grid-radial-item:disabled { opacity: .45; cursor: default; }
+@media (max-height: 340px), (max-width: 340px) {
+  .grid-radial-item { width: 3.6rem; height: 3.6rem; font-size: .65rem; }
+  .grid-radial-center { width: 3rem; height: 3rem; font-size: .65rem; }
+}

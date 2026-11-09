@@ -1,3 +1,5 @@
+import { GridRadialMenu } from './GridRadialMenu';
+import type { AreaPreviewRequest } from './areaPreviewGeometry';
 import { GridAreaPreview } from './GridAreaPreview';
 import { useGridPing } from './gridPing';
 import { GridPings } from './GridPings';
@@ -302,6 +304,9 @@ export function CombatGrid({
   const [spacePan, setSpacePan] = useState(false);
   // --- modos e régua --------------------------------------------------------
   const [mode, setMode] = useState<InteractionMode>('none');
+  const [radial, setRadial] = useState<{ origin: SpatialPosition; position: SpatialPosition; point: Point2D } | null>(null);
+  const [areaRequest, setAreaRequest] = useState<(AreaPreviewRequest & { scope: string }) | null>(null);
+  const areaRequestId = useRef(0);
   const [ruler, setRuler] = useState<RulerState | null>(null);
   const [quickRuler, setQuickRuler] = useState(false);
   const [hoverTokenId, setHoverTokenId] = useState<string | null>(null);
@@ -416,6 +421,7 @@ export function CombatGrid({
    * instalados de novo a cada `false → true` — nada de exigir F5.
    */
   const active = scene.mode === 'grid-2d';
+  const areaSceneKey = `${combat.id}:${combat.sceneBackgroundImageUrl ?? ''}:${scene.widthFeet}:${scene.heightFeet}`;
   const cellSizeFeet = scene.cellSizeFeet || BASE_CELL_SIZE_FEET;
   const geometry = { pixelsPerCell: DEFAULT_PIXELS_PER_CELL, cellSizeFeet };
   const { placed, unplaced } = useMemo(() => splitByPlacement(combat.combatants), [combat.combatants]);
@@ -1616,11 +1622,12 @@ export function CombatGrid({
    */
   function handleViewportContextMenu(event: MouseEvent<HTMLDivElement>): void {
     if (!rulerActive && !draft && !grabGesture) {
-      if (!isMaster || !onEmptyContext || locked || (event.target instanceof Element && event.target.closest('button'))) return;
+      if (locked || (event.target instanceof Element && event.target.closest('button, .grid-token, .grid-area-controls'))) return;
       const position = cellAnchorAt(event.clientX, event.clientY, 'small');
-      if (!position) return;
+      const origin = feetAt(event.clientX, event.clientY);
+      if (!position || !origin) return;
       event.preventDefault();
-      onEmptyContext(position, { x: event.clientX, y: event.clientY });
+      setRadial({ origin, position, point: { x: event.clientX, y: event.clientY } });
       return;
     }
     event.preventDefault();
@@ -1758,11 +1765,14 @@ export function CombatGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, ruler, quickRuler, draft, combat.spatial.mode, rulerActive]);
 
+  useEffect(() => { setRadial(null); }, [active, combat.id, camera.panX, camera.panY, camera.zoom, locked, areaSceneKey, rulerActive, mode, targeting?.active]);
+
   const ping = useGridPing({
     combatId: combat.id, enabled: active && combat.status !== 'ENDED',
     positionAt: feetAt, widthFeet: scene.widthFeet, heightFeet: scene.heightFeet,
     onError,
     onStart: () => {
+      setRadial(null);
       spaceCandidate.current = false;
       panGesture.current = null;
       gestureRef.current = null;
@@ -2267,12 +2277,19 @@ export function CombatGrid({
           </div>
 
           <GridAreaPreview
-            key={`${combat.id}:${combat.sceneBackgroundImageUrl ?? ''}:${scene.widthFeet}:${scene.heightFeet}`}
+            key={areaSceneKey}
             camera={camera} geometry={geometry} widthFeet={scene.widthFeet} heightFeet={scene.heightFeet}
+            request={areaRequest?.scope === areaSceneKey ? areaRequest : null}
             positionAt={feetAt} panning={spacePan} pinging={ping.holdingAlt}
             disabled={locked || gridPhase !== 'ready' || mode === 'placement' || rulerActive ||
               targetingActive || movementBusy || !!draft || !!grabGesture || combat.status === 'ENDED'}
           />
+          {radial && !locked ? <GridRadialMenu point={radial.point} canAdd={isMaster && !!onEmptyContext}
+            areaDisabled={gridPhase !== 'ready' || mode === 'placement' || targetingActive || movementBusy || !!draft || !!grabGesture || rulerActive}
+            onClose={() => setRadial(null)}
+            onAdd={() => { onEmptyContext?.(radial.position, radial.point); setRadial(null); }}
+            onArea={shape => { setAreaRequest({ id: ++areaRequestId.current, shape, origin: radial.origin, scope: areaSceneKey }); setRadial(null); }}
+          /> : null}
           <GridPings pings={ping.pings} camera={camera} geometry={geometry} />
           <span className="grid-ping-hint">Alt + clique: sinalizar ponto</span>
 
