@@ -820,7 +820,7 @@ export function MasterPanel({ user }: { user: SessionUser }) {
         className={tab === 'creatures' ? 'tab active' : 'tab'}
         onClick={() => setTab('creatures')}
       >
-        <Icon name="flame" size={16} /> Criaturas
+        <Icon name="flame" size={16} /> Bestiário
       </button>
       <button
         type="button"
