@@ -51,8 +51,11 @@ export async function smokeCombatPing(base: string) {
       check(`mestre/jogador ${i} pode marcar sem exigir turno`, response.status === 200);
       await new Promise(resolve => setTimeout(resolve, 70));
       check(`todos recebem a mesma marca de ${i}`, received.every(events => JSON.stringify(events.at(-1)) === JSON.stringify(response.data)));
-      check(`autor ${i} vem da conta atual e duração é de três segundos`, response.data.authorName === actors[i]!.displayName && response.data.authorId === actors[i]!.id && response.data.durationMs === 3000 && /^#[0-9a-f]{6}$/i.test(response.data.color));
+      check(`autor ${i} usa Mestre, nome atual da ficha ou Jogador sem ficha`, response.data.authorName === ['Mestre', hero.name, 'Jogador'][i] && response.data.authorId === actors[i]!.id && response.data.durationMs === 3000 && /^#[0-9a-f]{6}$/i.test(response.data.color));
     }
+    await prisma.character.update({ where: { id: hero.id }, data: { name: 'Sentinela Renomeada' } });
+    check('Renomear ficha atualiza o próximo ping sem renovar token', (await http(path, body, tokens[1])).data.authorName === 'Sentinela Renomeada');
+    await new Promise(resolve => setTimeout(resolve, 70));
     check('ping preserva posição, PV, economia e versão', before === JSON.stringify(await prisma.combat.findUnique({ where: { id: combatId }, include: { combatants: true } })));
     const count = received[0]!.length;
     check('não autenticado é recusado', (await http(path, body, '')).status === 401);

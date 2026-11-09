@@ -9,7 +9,7 @@ const COLORS = ['#eab308', '#22d3ee', '#f472b6', '#a78bfa', '#4ade80', '#fb923c'
 
 /** O ping é apresentação: não persiste, não gasta recursos e não muda versões. */
 export async function sendCombatPing(combatId: string, position: SpatialPosition2D,
-  author: { sub: string; displayName: string }): Promise<CombatPingPayload> {
+  author: { sub: string }): Promise<CombatPingPayload> {
   const combat = await prisma.combat.findUnique({ where: { id: combatId },
     select: { status: true, spatialConfig: true, scene: { select: { spatialConfig: true } } } });
   if (!combat) throw new HttpError('Combate não encontrado.', 404, 'NOT_FOUND');
@@ -20,8 +20,13 @@ export async function sendCombatPing(combatId: string, position: SpatialPosition
   if (position.xFeet > scene.widthFeet || position.yFeet > scene.heightFeet) {
     throw new HttpError('Marque um ponto dentro do tabuleiro.', 400, 'COMBAT_PING_OUTSIDE_SCENE');
   }
+  // Identidade atual da ficha, nunca o nome enviado pelo cliente ou gravado no token.
+  const account = await prisma.user.findUnique({ where: { id: author.sub },
+    select: { role: true, character: { select: { name: true } } } });
+  if (!account) throw new HttpError('Conta não encontrada.', 403, 'FORBIDDEN');
+  const authorName = account.role === 'MASTER' ? 'Mestre' : account.character?.name.trim() || 'Jogador';
   const payload: CombatPingPayload = { id: randomUUID(), combatId, position,
-    authorId: author.sub, authorName: author.displayName,
+    authorId: author.sub, authorName,
     color: COLORS[createHash('sha256').update(author.sub).digest().readUInt32BE(0) % COLORS.length]!,
     durationMs: 3000 };
   getBroadcaster().toTable(ServerEvents.COMBAT_PING, payload);

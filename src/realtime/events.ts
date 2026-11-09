@@ -663,6 +663,7 @@ export interface CombatPingPayload {
   combatId: string;
   position: { xFeet: number; yFeet: number };
   authorId: string;
+  /** Nome atual do personagem; Mestre para MASTER e Jogador quando não há ficha. */
   authorName: string;
   color: string;
   durationMs: 3000;
