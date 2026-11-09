@@ -184,7 +184,7 @@ export function CreatureAbilitiesEditor({
               <select
                 aria-label="Execução da habilidade"
                 value={draft.execution}
-                disabled={draft.cost === 'passive' || draft.cost === 'reaction'}
+                disabled={draft.cost === 'reaction'}
                 onChange={(e) =>
                   setDraft({
                     ...draft,
@@ -197,9 +197,12 @@ export function CreatureAbilitiesEditor({
                     ? 'Consulta — sem efeito automático'
                     : 'Assistida pelo Mestre'}
                 </option>
+                {draft.cost === 'passive' ? <option value="war-caster">Conjurador de Guerra (PHB 2014)</option> : null}
+                {draft.cost !== 'passive' ? <>
                 <option value="disengage">Desengajar</option>
                 <option value="dash">Disparada</option>
                 <option value="dodge">Esquivar</option>
+                </> : null}
               </select>
             </label>
             {draft.cost !== 'passive' ? (

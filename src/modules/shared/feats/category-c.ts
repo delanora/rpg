@@ -46,7 +46,7 @@ export const CATEGORY_C_FEATS: readonly Feat[] = [
     id: 'war-caster',
     name: 'Conjurador de Guerra',
     description:
-      'Você tem vantagem em salvaguardas de Constituição para manter concentração, pode conjurar com as mãos ocupadas e pode fazer gestos somáticos mesmo com armas e escudo. // TODO (Fase 5 — motor de ações): a concentração e a conjuração com as mãos ocupadas dependem do motor de conjuração.',
+      'Você tem vantagem em salvaguardas de Constituição para manter concentração ao sofrer dano e pode realizar componentes somáticos com armas ou escudo nas mãos. Quando o movimento de uma criatura hostil provoca um ataque de oportunidade, pode usar sua Reação para conjurar uma magia de 1 Ação que tenha somente essa criatura como alvo.',
     effects: [{ type: 'other' }],
   },
   {

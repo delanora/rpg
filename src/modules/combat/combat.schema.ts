@@ -1,3 +1,5 @@
+import { spellcastingSourceRefSchema } from '../spells/execution/spellcasting-source.js';
+import { castingResourceRefSchema } from '../spells/execution/casting-resource.js';
 import { z } from 'zod';
 import { SPATIAL_MODES, spatialPositionSchema } from './spatial/spatial.types.js';
 import { SPATIAL_VISIBILITIES } from './spatial/spatial-visibility.js';
@@ -358,3 +360,7 @@ export const duelDecisionSchema = combatOperationSchema.extend({
   duelId: z.string().min(1),
   decision: z.enum(['accept', 'decline', 'cancel', 'end']),
 });
+
+export const opportunitySpellSchema = combatOperationSchema.extend({
+  spell: z.object({spellId: z.string().min(1).max(64), spellcastingSource: spellcastingSourceRefSchema, castingResource: castingResourceRefSchema.optional()}).strict(),
+}).strict();

@@ -146,6 +146,7 @@ export interface SpellCastContext {
   castingTimeKind: SpellCastingTimeKind;
   /** Custo de Action Economy derivado do casting time. */
   economyCost: 'action' | 'bonus-action' | 'reaction';
+  reactionAuthorized?: boolean;
   /** Contexto de turno em combate ATIVO (`null` = fora de combate). */
   turnContext: CastingTurnContext | null;
   /** Snapshot da validação de alvos (6.6E/6.6J.3) — gravado no COMMIT. */
@@ -310,6 +311,7 @@ export async function validateSpellCast(
   input: SpellCastProofInput,
   db: Prisma.TransactionClient,
   options: {
+    reactionAuthorized?: boolean;
     deferUnknown?: boolean;
     operationId?: string;
     /** 6.6J.3: provider espacial injetável (testes determinísticos). */
@@ -468,7 +470,7 @@ export async function validateSpellCast(
   // (1 minuto/1 hora) falham aqui, antes de qualquer consumo. Calculado ANTES
   // do targeting porque a ÁREA (6.6J.3) precisa do combate ativo para enumerar
   // candidatos — e nada disso grava.
-  const castingTimeKind = execution.castingTime ?? spell.castingTimeKind;
+  const castingTimeKind = options.reactionAuthorized ? 'reaction' : execution.castingTime ?? spell.castingTimeKind;
   const economyCost = castingEconomyFor(castingTimeKind);
   const turnContext = await castingTurnContext(db, caster);
   // 6.6L.2 — DISTÂNCIA/ALCANCE do SERVIDOR. Com a cena em grid-2d e ambos os
@@ -479,7 +481,7 @@ export async function validateSpellCast(
   assertCastingEconomy(turnContext, economyCost, priorCasts, {
     spellLevel,
     castingTime: economyCost,
-  });
+  }, options.reactionAuthorized);
 
   let targeting: SpellTargetingSnapshot;
   let area: SpellCastContext['area'] = null;
@@ -561,7 +563,11 @@ export async function validateSpellCast(
       targets,
       castAtLevel,
       deferUnknown: options.deferUnknown === true,
-      provider: gridSpatialProvider(spatialIndex),
+      // A janela de oportunidade já confirmou a visão (ou recebeu adjudicação).
+      // canSee mecânico continua revalidado; alcance e caminho mantêm o provider.
+      provider: options.reactionAuthorized
+        ? {...gridSpatialProvider(spatialIndex), evaluateSightGeometry: () => 'pass' as const}
+        : gridSpatialProvider(spatialIndex),
       ...(input.spatialConfirmation ? { confirmation: input.spatialConfirmation } : {}),
     });
     // 6.6L.2 — fatos de DISTÂNCIA entram no snapshot imutável do cast (sem
@@ -610,6 +616,7 @@ export async function validateSpellCast(
     castAtLevel,
     resource,
     castingTimeKind,
+    reactionAuthorized: options.reactionAuthorized,
     economyCost,
     turnContext,
     targeting,
@@ -652,7 +659,7 @@ async function commitSpellCast(
   // ANTES do espaço. Falha de qualquer etapa desfaz tudo — nunca fica slot sem
   // Ação nem Ação sem SpellCast.
   const economy = context.turnContext
-    ? await commitCastingEconomy(db, context.turnContext, context.economyCost)
+    ? await commitCastingEconomy(db, context.turnContext, context.economyCost, context.reactionAuthorized)
     : null;
 
   // O espaço é gasto ANTES da resolução, na MESMA transação do cast committed:
@@ -1027,6 +1034,10 @@ export async function executeCast(
   castKey: {
     operationId: string;
     fingerprint: string;
+    /** Extensão interna: só o Reaction Gate autoriza conjuração fora do turno. */
+    reactionAuthorized?: boolean;
+    beforeValidate?: (db: Prisma.TransactionClient) => Promise<void>;
+    afterResolution?: (db: Prisma.TransactionClient, cast: SpellCastDto) => Promise<void>;
     deferUnknown?: boolean;
     /** 6.6J.3 — provider espacial injetável (teste) e decisões do Mestre. */
     areaProvider?: AreaSpatialProvider;
@@ -1035,6 +1046,7 @@ export async function executeCast(
     coverProvider?: CoverSpatialProvider;
   },
 ): Promise<SpellCastResult> {
+  if (castKey.reactionAuthorized && (!castKey.beforeValidate || !castKey.afterResolution)) throw new HttpError('Conjuração de Reação exige o lifecycle de oportunidade.', 409, 'SPELL_REACTION_NOT_AVAILABLE');
   const fingerprint = castKey.fingerprint;
 
   const existing = await prisma.spellCast.findUnique({
@@ -1062,6 +1074,7 @@ export async function executeCast(
         return { ...(await replayResult(prior, db)), endedTargets: [] };
       }
 
+      if (castKey.beforeValidate) await castKey.beforeValidate(db);
       // VALIDATE (read-only) — falha aqui NÃO encerra concentração anterior.
       const context = await validateSpellCast(actor, input, db, castKey);
       if (context.components.consumptions.length > 0) {
@@ -1086,92 +1099,97 @@ export async function executeCast(
         ? await releasePreviousConcentration(db, context)
         : [];
 
-      // RESOLUTION
-      if (context.execution.resolution.kind === 'immediate-effect') {
-        const resolved = await resolveImmediateEffect(db, cast, context);
-        return {
-          cast: toSpellCastDto(resolved.cast),
-          replayed: false,
-          effectGroupId: resolved.cast.effectGroupId ?? null,
-          effects: resolved.effects.map((row) => toEffectDto(row)),
-          pending: null,
-          pendings: [],
-          endedTargets: [...endedTargets, ...resolved.affected],
-        };
-      }
+      const resolve = async (): Promise<CommittedOutcome> => {
+        // RESOLUTION
+        if (context.execution.resolution.kind === 'immediate-effect') {
+          const resolved = await resolveImmediateEffect(db, cast, context);
+          return {
+            cast: toSpellCastDto(resolved.cast),
+            replayed: false,
+            effectGroupId: resolved.cast.effectGroupId ?? null,
+            effects: resolved.effects.map((row) => toEffectDto(row)),
+            pending: null,
+            pendings: [],
+            endedTargets: [...endedTargets, ...resolved.affected],
+          };
+        }
 
-      // 6.6I.3: cura imediata resolve NA MESMA transação do COMMIT — rolagem,
-      // HP, morte e fechamento do cast. Nenhum Effect/pendência é criado.
-      if (context.execution.resolution.kind === 'immediate-healing') {
-        const healed = await resolveImmediateHealing(db, cast, {
-          caster: context.caster,
-          targets: context.targets,
-          actorUserId: actor.userId,
-        }, context.execution);
-        immediateHealing = healed;
+        // 6.6I.3: cura imediata resolve NA MESMA transação do COMMIT — rolagem,
+        // HP, morte e fechamento do cast. Nenhum Effect/pendência é criado.
+        if (context.execution.resolution.kind === 'immediate-healing') {
+          const healed = await resolveImmediateHealing(db, cast, {
+            caster: context.caster,
+            targets: context.targets,
+            actorUserId: actor.userId,
+          }, context.execution);
+          immediateHealing = healed;
+          return {
+            cast: toSpellCastDto(healed.cast),
+            replayed: false,
+            effectGroupId: null,
+            effects: [],
+            pending: null,
+            pendings: [],
+            endedTargets,
+          };
+        }
+
+        // 6.6I.4: ataque mágico resolve imediatamente, na MESMA transação do
+        // COMMIT, com o resolver de ataque compartilhado e o núcleo de dano.
+        if (context.execution.resolution.kind === 'attack-damage') {
+          const attack = await resolveAttackDamageSpell(
+            db,
+            cast,
+            // Assignments (ordem + repetição), nunca o conjunto deduplicado.
+            { caster: context.caster, assignments: context.targets },
+            context.execution,
+            {
+              coverConfirmations: context.coverConfirmations,
+              ...(castKey.coverProvider ? { coverProvider: castKey.coverProvider } : {}),
+            },
+          );
+          attackDamage = attack;
+          return {
+            cast: toSpellCastDto(attack.cast),
+            replayed: false,
+            effectGroupId: null,
+            effects: [],
+            pending: null,
+            pendings: [],
+            endedTargets,
+          };
+        }
+
+        const pendings = await beginPendingSaves(db, cast, context);
+        // 6.6J.3: ÁREA sem ninguém dentro é CAST VÁLIDO (custos pagos, zero
+        // salvaguardas). O cast fecha na hora como `no-effect`, nunca "alvo
+        // inválido" e nunca eternamente `resolving`.
+        if (context.targets.length === 0) {
+          const closed = await closeCastWithoutTargets(db, cast, context);
+          return {
+            cast: toSpellCastDto(closed),
+            replayed: false,
+            effectGroupId: null,
+            effects: [],
+            pending: null,
+            pendings: [],
+            endedTargets,
+          };
+        }
         return {
-          cast: toSpellCastDto(healed.cast),
+          cast: toSpellCastDto(cast),
           replayed: false,
           effectGroupId: null,
           effects: [],
-          pending: null,
-          pendings: [],
+          pending: pendings[0] ?? null,
+          pendings,
           endedTargets,
         };
-      }
-
-      // 6.6I.4: ataque mágico resolve imediatamente, na MESMA transação do
-      // COMMIT, com o resolver de ataque compartilhado e o núcleo de dano.
-      if (context.execution.resolution.kind === 'attack-damage') {
-        const attack = await resolveAttackDamageSpell(
-          db,
-          cast,
-          // Assignments (ordem + repetição), nunca o conjunto deduplicado.
-          { caster: context.caster, assignments: context.targets },
-          context.execution,
-          {
-            coverConfirmations: context.coverConfirmations,
-            ...(castKey.coverProvider ? { coverProvider: castKey.coverProvider } : {}),
-          },
-        );
-        attackDamage = attack;
-        return {
-          cast: toSpellCastDto(attack.cast),
-          replayed: false,
-          effectGroupId: null,
-          effects: [],
-          pending: null,
-          pendings: [],
-          endedTargets,
-        };
-      }
-
-      const pendings = await beginPendingSaves(db, cast, context);
-      // 6.6J.3: ÁREA sem ninguém dentro é CAST VÁLIDO (custos pagos, zero
-      // salvaguardas). O cast fecha na hora como `no-effect`, nunca "alvo
-      // inválido" e nunca eternamente `resolving`.
-      if (context.targets.length === 0) {
-        const closed = await closeCastWithoutTargets(db, cast, context);
-        return {
-          cast: toSpellCastDto(closed),
-          replayed: false,
-          effectGroupId: null,
-          effects: [],
-          pending: null,
-          pendings: [],
-          endedTargets,
-        };
-      }
-      return {
-        cast: toSpellCastDto(cast),
-        replayed: false,
-        effectGroupId: null,
-        effects: [],
-        pending: pendings[0] ?? null,
-        pendings,
-        endedTargets,
       };
-    });
+      const resolved = await resolve();
+      if (castKey.afterResolution) await castKey.afterResolution(db, resolved.cast);
+      return resolved;
+    }, {timeout: castKey.reactionAuthorized ? 20000 : 5000});
   } catch (error) {
     // Corrida de retry: o perdedor devolve o snapshot da MESMA conjuração.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -1241,8 +1259,11 @@ export async function cancelSpellCastForPending(
   db: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<void> {
   if (!spellCastId) return;
+  if (db === prisma) return prisma.$transaction(tx => cancelSpellCastForPending(spellCastId, tx));
   await db.spellCast.updateMany({
     where: { id: spellCastId, status: 'resolving' },
     data: { status: 'cancelled', outcome: 'cancelled', resolvedAt: new Date() },
   });
+  const { settleOpportunitySpell } = await import('../../combat/spatial/opportunity-attack.service.js');
+  await settleOpportunitySpell(db, spellCastId);
 }

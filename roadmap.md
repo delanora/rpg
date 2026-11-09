@@ -23,7 +23,7 @@
 - **UI de combate:** workspace com grid central, iniciativa, registro e **dock do jogador com Hotbar personalizável 2 × 24 (48 slots)**; fluxo de pré-iniciativa, espera, targeting em tokens e Death Saves consolidado.
 - **6.6M.9–9.2:** Golden Path de sessão jogável e consistência de deslocamento foram marcados como ✅ no Roadmap compartilhado; há teste integrado `src/scripts/smoke-combat-playable.ts`.
 - **Trabalho recente:** paredes com bloqueios independentes de movimento e ataques/magias; caminho livre validado nos casos claros, além do editor, ping e menus dos tokens.
-- **Próxima frente de produto:** refinar reações: gatilho, hotbar, aura e hostilidade após ataques e duelo consentido entregues; segue Conjurador de Guerra. Depois retomar visão e cobertura.
+- **Próxima frente de produto:** retomar visão e cobertura espacial. Gatilho, hotbar, aura, hostilidade, duelo e Conjurador de Guerra estão entregues no escopo executável.
 - **Não concluir que “PHB completo” está pronto:** existem lacunas de magias especiais, características, reações avançadas, passagem do tempo fora de combate e ferramentas do Mestre.
 
 ## 3. Regras de arquitetura que nenhuma etapa deve violar
@@ -141,7 +141,7 @@ A **sequência abaixo é direcional**, não autorização para antecipar fases. 
 | **Pendências do personagem assumido** | ✅ implementada e testada | Mestre responde testes de morte, concentração e salvaguardas no contexto do turno. Rolagens públicas, sem cards duplicados nem resolução simultânea repetida. |
 | **Hostilidade após ataques** | ✅ implementada e testada | Ataques de arma e ataques mágicos envolvendo NPC neutro abrem decisão privada do Mestre, com seleção dos envolvidos e relação mútua por participante. Fila persistente, inclusive fora da aba de combate. |
 | **Duelo entre jogadores** | ✅ implementada e testada | Convite privado com aceite do destinatário, hostilidade somente entre os dois e encerramento por envolvidos ou Mestre. Ataques manuais continuam disponíveis; oportunidades pendentes são encerradas sem gastar Reação. |
-| **Conjurador de Guerra** | ⬜ próxima | Substituir o ataque por uma magia elegível na mesma janela de reação, conforme PHB 2014. |
+| **Conjurador de Guerra** | ✅ implementado e testado | Magia elegível na janela de oportunidade, usando Reação; salvaguardas pausam o movimento. Talento da ficha ou passiva explícita no bestiário, vantagem na concentração e gestos com arma/escudo. Limitado às magias executáveis. |
 
 ### Prioridade 1 — Consolidar linha de visão e cobertura espacial
 

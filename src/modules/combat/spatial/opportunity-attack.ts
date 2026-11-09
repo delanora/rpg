@@ -229,6 +229,7 @@ export function opportunityOptionLabel(attackName: string): string {
 
 /** Opção exposta ao reactor: o id do ataque é a ÚNICA entrada aceita depois. */
 export interface OpportunityOption {
+  spell?: {spellId: string; spellcastingSource: import('../../spells/execution/spellcasting-source.js').SpellcastingSourceRef; castingResource?: {kind: 'spell-slot' | 'pact-slot'; level: number}};
   id: string;
   attackId: string;
   label: string;

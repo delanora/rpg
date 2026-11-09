@@ -2531,6 +2531,8 @@ export async function endCombat(actor: CombatActor): Promise<{ combatId: string 
         resolution: { kind: 'cancelled', reason: 'combat-ended' },
       },
     });
+    const {cancelCommittedOpportunitySpells} = await import('./spatial/opportunity-attack.service.js');
+    await cancelCommittedOpportunitySpells(db, combat.id);
   });
 
   emit(ServerEvents.COMBAT_ENDED, { combatId: combat.id });
@@ -2793,6 +2795,8 @@ export async function removeCombatParticipant(
         await db.combat.update({where: {id: combat.id}, data: {extraTurnResumeAfterId: predecessor.id}});
       }
       await db.combatant.delete({ where: { id: unit.id } });
+      const {cancelCommittedOpportunitySpells} = await import('./spatial/opportunity-attack.service.js');
+      await cancelCommittedOpportunitySpells(db, combat.id, [unit.id]);
       if (combat.status === 'ACTIVE') {
         const remaining = ordered.filter((c) => c.id !== unit.id);
         const incoming = plan ? ordered[plan.index] : current;

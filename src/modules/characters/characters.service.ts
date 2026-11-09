@@ -4243,6 +4243,9 @@ export async function deleteCharacter(
       where: { OR: [{ ownerUserId: userId }, { characterId }] },
     });
 
+    const {cancelCommittedOpportunitySpells} = await import('../combat/spatial/opportunity-attack.service.js');
+    for (const id of combatIds) await cancelCommittedOpportunitySpells(tx, id, unitIds);
+
     if (duels.length) {
       const { cancelDuelOpportunities } = await import('../combat/spatial/opportunity-attack.service.js');
       for (const duel of duels) await cancelDuelOpportunities(tx, duel.combatId, duel.requesterId, duel.challengedId);

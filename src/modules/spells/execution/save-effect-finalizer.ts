@@ -86,6 +86,8 @@ async function closeCast(
       resolvedAt: new Date(),
     },
   });
+  const { settleOpportunitySpell } = await import('../../combat/spatial/opportunity-attack.service.js');
+  await settleOpportunitySpell(db, spellCastId);
 }
 
 async function existingFinalization(

@@ -1,3 +1,4 @@
+import { entityHasWarCaster } from '../mechanical/war-caster.service.js';
 import {
   deriveConditionEffects,
   deriveSaveEffects,
@@ -478,8 +479,7 @@ async function publishConcentrationChange(
  * `advantage`/`disadvantage` do corpo da requisição são IGNORADOS: eles são a
  * escolha do cliente para rolagens livres, não uma fonte mecânica. Confiar
  * neles deixaria qualquer cliente adulterado pedir vantagem num teste de
- * Constituição. As fontes abaixo são só server-side (hoje nenhuma feature
- * concede vantagem em Concentração; War Caster, quando existir, entra AQUI).
+ * Constituição. As fontes abaixo são só server-side (incluindo Conjurador de Guerra em testes provocados por dano).
  */
 async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): Promise<DiceRollDto> {
   const entity = input.entity;
@@ -513,7 +513,7 @@ async function rollConcentrationSave(actor: DiceActor, input: TableRollInput): P
     'save',
     'constitution',
   );
-  const mode = deriveSaveEffects(target.state, 'constitution', [], [], {
+  const mode = deriveSaveEffects(target.state, 'constitution', pending.damage > 0 && await entityHasWarCaster(entity) ? ['war-caster'] : [], [], {
     effects: { advantage: effectMods.advantage, disadvantage: effectMods.disadvantage },
   });
   // OPCIONAIS escolhidos (6.5G): revalidados AQUI e rolados pelo servidor. Um

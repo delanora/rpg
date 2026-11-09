@@ -276,7 +276,7 @@ export async function reactionOpportunitiesForCombat(
         );
   const actionable = actionableIdOf(pendingByReactor);
   const responseFor = (row: typeof rows[number]): ReactionOpportunityDto['responseKind'] => {
-    if (row.id !== actionable) return null;
+    if (row.id !== actionable || row.spellCastId) return null;
     if (actor.role !== 'MASTER') return 'reaction';
     if (row.visibilityStatus === 'unknown') return 'visibility';
     const reactor = combat.combatants.find(unit => unit.id === row.reactorCombatantId);
@@ -312,8 +312,8 @@ export async function reactionOpportunitiesForCombat(
   return {
     combatId,
     combatVersion: combat.version,
-    opportunities: visibleRows.map((row) =>
-      dtoOf(
+    opportunities: await Promise.all(visibleRows.map(async (row) => {
+      const dto = dtoOf(
         row,
         {
           moverName: nameOf(combat, row.moverCombatantId),
@@ -321,8 +321,15 @@ export async function reactionOpportunitiesForCombat(
         },
         row.id === actionable,
         responseFor(row),
-      ),
-    ),
+      );
+      if (responseFor(row) === 'reaction') {
+        const { warCasterOptions } = await import('./war-caster.service.js');
+        const spells = await warCasterOptions(actor, combat, row.reactorCombatantId, row.moverCombatantId);
+        dto.options.push(...spells);
+        if (spells.length) dto.trigger = `${dto.moverName} está saindo do seu alcance. Reagir com ataque ou magia?`;
+      }
+      return dto;
+    })),
     movement,
   };
 }
@@ -630,17 +637,18 @@ export interface OpportunityResolutionResult {
  * Validação AUTORITATIVA da janela, dentro da transação do ataque e ANTES de
  * gastar Reação/rolar dados.
  */
-async function assertOpportunityActionable(
+export async function assertOpportunityActionable(
   db: Prisma.TransactionClient,
   combat: CombatSourced,
   actor: CombatActor,
   opportunityId: string,
-  attackId: string,
+  attackId?: string,
 ): Promise<{ mover: CombatantSourced; reactor: CombatantSourced }> {
   const row = await db.reactionOpportunity.findUnique({ where: { id: opportunityId } });
   if (!row || row.combatId !== combat.id) {
     throw new HttpError('Oportunidade de Reação não encontrada.', 404);
   }
+  if (row.spellCastId) throw new HttpError('A magia desta Reação está em resolução.', 409, 'OPPORTUNITY_SPELL_RESOLVING');
   if (row.status !== 'pending') {
     throw new HttpError(
       'Esta Oportunidade já foi resolvida.',
@@ -681,6 +689,9 @@ async function assertOpportunityActionable(
       'OPPORTUNITY_NOT_ACTIONABLE',
     );
   }
+  if (attackId === undefined && !optionsOf(row.options).some(option => opportunityAttackProfilesOf(reactor).some(profile => profile.attackId === option.attackId && profile.reachFeet === row.reachFeet)))
+    throw new HttpError('Nenhum ataque corpo a corpo mantém esta oportunidade.', 409, 'OPPORTUNITY_OPTION_INVALID');
+  if (attackId !== undefined) {
   const options = optionsOf(row.options);
   if (!options.some((option) => option.attackId === attackId)) {
     throw new HttpError(
@@ -699,6 +710,7 @@ async function assertOpportunityActionable(
       409,
       'OPPORTUNITY_OPTION_INVALID',
     );
+  }
   }
   if (!economyOf(reactor.turnEconomy).reactionAvailable) {
     throw new HttpError('Reação já utilizada.', 409, 'REACTION_UNAVAILABLE');
@@ -888,6 +900,8 @@ async function runOpportunityOperation(
           );
         }
         const combat = await loadCombatById(input.combatId, db);
+        const window = await db.reactionOpportunity.findUnique({where: {id: input.opportunityId}});
+        if (window?.spellCastId) throw new HttpError('Resolva a magia antes de encerrar esta Reação.', 409, 'OPPORTUNITY_SPELL_RESOLVING');
         const response = await apply(db, combat, (segment) => {
           continuation = segment;
         });
@@ -1119,12 +1133,47 @@ export async function confirmOpportunityVisibility(
 
 /** Encerrar consentimento invalida só as oportunidades desse par e retoma pelo motor existente. */
 export async function cancelDuelOpportunities(db: Prisma.TransactionClient, combatId: string, a: string, b: string): Promise<void> {
-  const rows = await db.reactionOpportunity.findMany({ where: { combatId, status: 'pending', OR: [
+  const pairRows = await db.reactionOpportunity.findMany({ where: { combatId, status: 'pending', OR: [
     { reactorCombatantId: a, moverCombatantId: b }, { reactorCombatantId: b, moverCombatantId: a },
   ] } });
+  const combat = await loadCombatById(combatId, db);
+  const live = new Set(combat.combatants.map(c => c.id));
+  // Consentimento encerrado não desfaz uma magia que já consumiu recursos.
+  const rows = pairRows.filter(row => !row.spellCastId || !live.has(row.reactorCombatantId) || !live.has(row.moverCombatantId));
   if (!rows.length) return;
   await db.reactionOpportunity.updateMany({ where: { id: { in: rows.map(row => row.id) }, status: 'pending' }, data: { status: 'cancelled', resolvedAt: new Date(), resolution: { kind: 'cancelled', reason: 'duel-ended' } } });
   for (const intentId of new Set(rows.map(row => row.movementIntentId).filter((id): id is string => !!id))) {
     await continueOrPause(db, await loadCombatById(combatId, db), intentId);
+  }
+}
+
+/** Finalizers de magia chamam este lifecycle na MESMA transação dos efeitos/dano. */
+export async function settleOpportunitySpell(db: Prisma.TransactionClient, castId: string): Promise<void> {
+  const row = await db.reactionOpportunity.findUnique({where: {spellCastId: castId}});
+  if (!row || row.status !== 'pending') return;
+  const cast = await db.spellCast.findUnique({where: {id: castId}});
+  if (!cast || cast.status === 'resolving') return;
+  await db.combat.update({where: {id: row.combatId}, data: {version: {increment: 1}}});
+  const latest = await loadCombatById(row.combatId, db);
+  await db.reactionOpportunity.update({where: {id: row.id}, data: {
+    status: cast.status === 'cancelled' ? 'cancelled' : 'resolved', resolvedAt: new Date(),
+    resolution: {kind: 'spell', spellId: cast.spellId, spellCastId: cast.id},
+  }});
+  if (latest.status === 'ACTIVE' && row.movementIntentId) await continueOrPause(db, latest, row.movementIntentId);
+}
+
+/** Remoção estrutural/fim do combate cancela a resolução, sem devolver custos. */
+export async function cancelCommittedOpportunitySpells(db: Prisma.TransactionClient, combatId: string, participantIds?: string[]): Promise<void> {
+  const rows = await db.reactionOpportunity.findMany({where: {combatId, spellCastId: {not: null},
+    ...(participantIds ? {OR: [{reactorCombatantId: {in: participantIds}}, {moverCombatantId: {in: participantIds}}]} : {}),
+  }});
+  for (const row of rows) {
+    const cast = await db.spellCast.findUnique({where: {id: row.spellCastId!}});
+    if (!cast || cast.status !== 'resolving') continue;
+    await db.pendingEffectSave.updateMany({where: {spellCastId: cast.id, status: 'pending'}, data: {status: 'cancelled', resolvedAt: new Date()}});
+    await db.spellCast.update({where: {id: cast.id}, data: {status: 'cancelled', outcome: 'cancelled', resolvedAt: new Date()}});
+    await db.reactionOpportunity.update({where: {id: row.id}, data: {status: 'cancelled', resolvedAt: new Date(), resolution: {kind: 'cancelled', reason: 'participant-or-combat-removed', spellCastId: cast.id}}});
+    const combat = await loadCombatById(combatId, db);
+    if (combat.status === 'ACTIVE' && row.movementIntentId) await continueOrPause(db, combat, row.movementIntentId);
   }
 }

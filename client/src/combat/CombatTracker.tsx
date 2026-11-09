@@ -79,6 +79,7 @@ import {
   reactionQuestionsForViewer,
   fetchReactionOpportunities,
   resolveOpportunityAttack,
+  resolveOpportunitySpell,
   type ReactionOpportunitiesReadModel,
   type ServerReactionOpportunity,
 } from '../reactionOpportunitiesApi';
@@ -519,9 +520,9 @@ export function CombatTracker({
     remoteReactions?.opportunities.find((entry) => entry.id === opportunityId);
 
   /** Atacar: o SERVIDOR gasta a Reação e rola o ataque na mesma transação. */
-  const resolveServerReaction = (opportunityId: string, attackId: string): void => {
+  const resolveServerReaction = (opportunityId: string, attackId: string, spell?: import('../reactionOpportunitiesApi').ReactionOpportunityOption['spell']): void => {
     setReactionBusy(true);
-    resolveOpportunityAttack(combat.id, opportunityId, attackId, combat.version)
+    (spell ? resolveOpportunitySpell(combat.id, opportunityId, spell, combat.version) : resolveOpportunityAttack(combat.id, opportunityId, attackId, combat.version))
       .then((response) => {
         closeReaction(opportunityId);
         onCombatChange(response.combat);
@@ -1683,7 +1684,7 @@ export function CombatTracker({
                     onError('Esta janela de Reação não está mais disponível.');
                     return;
                   }
-                  resolveServerReaction(entry.id, option.attackId);
+                  resolveServerReaction(entry.id, option.attackId, option.spell);
                 }}
                 onDecline={() => {
                   const entry = serverOpportunityOf(reactionOpportunity.id);

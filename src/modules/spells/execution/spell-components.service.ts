@@ -1,3 +1,4 @@
+import { entityHasWarCaster } from '../../mechanical/war-caster.service.js';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../../config/prisma.js';
 import { HttpError } from '../../../lib/http-error.js';
@@ -71,7 +72,7 @@ export interface SpellComponentError {
 export interface SpellComponentPlan {
   requirement: SpellComponentRequirement;
   verbal: ComponentStatus;
-  somatic: ComponentStatus & { hand: 'free' | 'material' | null };
+  somatic: ComponentStatus & { hand: 'free' | 'material' | 'war-caster' | null };
   material: MaterialComponentStatus;
   /** Número de mãos livres (0..2) depois do equipamento atual. */
   freeHands: number;
@@ -380,6 +381,7 @@ export async function resolveSpellComponents(input: {
 
   const handItems = gear.items.filter(isHeld);
   const freeHands = Math.max(0, 2 - handItems.length);
+  const warCasterHands = freeHands === 0 && handItems.some(item => ['Arma', 'Cajado', 'Escudo'].includes(item.category)) && await entityHasWarCaster(entity, db);
 
   const verbal: ComponentStatus = {
     required: requirement.verbal,
@@ -433,6 +435,8 @@ export async function resolveSpellComponents(input: {
   if (requirement.somatic) {
     if (somaticBlocked) {
       somatic = { required: true, available: false, hand: null };
+    } else if (warCasterHands) {
+      somatic = {required: true, available: true, hand: 'war-caster'};
     } else if (freeHands > 0) {
       somatic = { required: true, available: true, hand: 'free' };
     } else if (requirement.material && material.available && materialHand === 'device') {
@@ -554,7 +558,7 @@ export async function consumeSpellComponents(
 export interface SpellComponentsSnapshot {
   verbal: boolean;
   somatic: boolean;
-  somaticHand: 'free' | 'material' | null;
+  somaticHand: 'free' | 'material' | 'war-caster' | null;
   material: boolean;
   providerKind: ComponentProviderKind;
   providerLabel: string | null;

@@ -923,7 +923,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'CB29) o teste usa o MESMO pipeline de salvaguarda (Constituição) e a bandeja existente',
     diceService.includes("kind === 'concentration'") &&
-      diceService.includes("deriveSaveEffects(target.state, 'constitution', [], [], {") &&
+      diceService.includes("deriveSaveEffects(target.state, 'constitution',") && diceService.includes('entityHasWarCaster(entity)') &&
       diceService.includes('await concentrationSaveBonus(entity)') &&
       // O bônus de efeito entra como fonte SERVER-SIDE, nunca do payload.
       diceService.includes("rollModifiersFor(\n    await effectModifierSetFor(entity),\n    'save',\n    'constitution',") &&
@@ -1510,9 +1510,9 @@ console.log('Check-combat-ui — refino da UI de combate');
   );
   check(
     'CB73) Ação/Ação Bônus consumidas no COMMIT, depois da revalidação e antes do espaço, com guarda de versão',
-    spellCastService.indexOf('commitCastingEconomy(db, context.turnContext, context.economyCost)') >
+    spellCastService.indexOf('commitCastingEconomy(db, context.turnContext, context.economyCost, context.reactionAuthorized)') >
       0 &&
-      spellCastService.indexOf('commitCastingEconomy(db, context.turnContext, context.economyCost)') <
+      spellCastService.indexOf('commitCastingEconomy(db, context.turnContext, context.economyCost, context.reactionAuthorized)') <
         spellCastService.indexOf('spendCastingResource(context.caster.entity, context.resource, db)') &&
       castingEconomy.includes('spendEconomy(economy, cost)') &&
       castingEconomy.includes('mechanicalVersion: combatant.mechanicalVersion') &&
@@ -3425,8 +3425,8 @@ check(
     combatServiceSource.includes('reactionOpportunity.updateMany')
 );
 check(
-  'CB231) sem Sentinel/Polearm Master/War Caster/magia como OA/LoS/cobertura nesta fase',
-  !/sentinel|polearm|war ?caster|counterspell|shield|lineOfSight|cover/i.test(
+  'CB231) Conjurador de Guerra usa a janela existente sem antecipar Sentinel/Polearm Master/Counterspell',
+  !/sentinel|polearm|counterspell|shield|lineOfSight|cover/i.test(
     opportunityDomainCode + opportunityServiceCode + opportunityOpenersCode
   )
 );

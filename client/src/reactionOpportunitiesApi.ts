@@ -14,6 +14,7 @@ import type { CombatDto } from './types';
  */
 
 export interface ReactionOpportunityOption {
+  spell?: import('../../src/modules/combat/spatial/opportunity-attack').OpportunityOption['spell'];
   id: string;
   attackId: string;
   label: string;
@@ -110,4 +111,11 @@ export function adjudicateOpportunityVisibility(combatId: string, opportunityId:
 /** O servidor distingue perguntas do usuário de janelas disponíveis só para acompanhamento. */
 export function reactionQuestionsForViewer(opportunities: readonly ServerReactionOpportunity[]): ServerReactionOpportunity[] {
   return opportunities.filter(entry => entry.status === 'pending' && entry.actionable && Boolean(entry.responseKind));
+}
+
+/** Conjurador de Guerra usa a janela existente; caster e alvo são derivados pelo servidor. */
+export function resolveOpportunitySpell(combatId: string, opportunityId: string, spell: NonNullable<ReactionOpportunityOption['spell']>, expectedVersion: number): Promise<ReactionResolutionResponse> {
+  return api<ReactionResolutionResponse>(`/api/combat/${combatId}/reaction-opportunities/${opportunityId}/spell`, {
+    method: 'POST', body: {combatId, spell, expectedVersion, operationId: newOperationId()},
+  });
 }

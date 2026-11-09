@@ -159,14 +159,15 @@ export async function committedCastsOnTurn(
 /**
  * VALIDATE (read-only): pode conjurar agora?
  *
- * Reaction exige Reaction Opportunity server-authoritative — que ainda NÃO
- * existe nesta fase; por isso é recusada em vez de inventada.
+ * Reação exige autorização interna de uma oportunidade server-authoritative.
+ * Conjuração comum não pode se promover a Reação nem ignorar o turno.
  */
 export function assertCastingEconomy(
   context: CastingTurnContext | null,
   cost: EconomyKind,
   prior: readonly PriorSpellCast[],
   candidate: PriorSpellCast,
+  reactionAuthorized = false,
 ): void {
   if (cost === 'reaction' && !context) {
     throw new HttpError(
@@ -177,10 +178,16 @@ export function assertCastingEconomy(
   }
   if (!context) return;
 
+  if (cost === 'reaction' && reactionAuthorized) {
+    if (!context.reactionAvailable) throw new HttpError('Reação já utilizada.', 409, 'REACTION_UNAVAILABLE');
+    const violation = bonusActionSpellViolation(prior, candidate);
+    if (violation) throw new HttpError('Uma magia de Ação Bônus impede esta conjuração no mesmo turno.', 409, violation);
+    return;
+  }
   if (cost === 'reaction') {
-    // Sem engine de Reaction Opportunity integrada ao cast: nunca liberar.
+    // A rota comum não recebe autorização de oportunidade: nunca liberar.
     throw new HttpError(
-      'Magias de Reação exigem uma oportunidade de Reação ainda não disponível.',
+      'Esta conjuração não possui uma oportunidade de Reação autorizada.',
       409,
       'SPELL_REACTION_NOT_AVAILABLE',
     );
@@ -224,7 +231,9 @@ export async function commitCastingEconomy(
   db: Prisma.TransactionClient,
   context: CastingTurnContext,
   cost: EconomyKind,
+  reactionAuthorized = false,
 ): Promise<EconomySnapshot> {
+  const unavailableCode = cost === 'reaction' ? 'REACTION_UNAVAILABLE' : cost === 'action' ? 'SPELL_ACTION_UNAVAILABLE' : 'SPELL_BONUS_ACTION_UNAVAILABLE';
   const combatant = await db.combatant.findUnique({
     where: { id: context.combatantId },
     include: { combat: { include: { combatants: true } } },
@@ -237,7 +246,7 @@ export async function commitCastingEconomy(
   const active = ordered[combatant.combat.currentIndex] ?? null;
   if (
     combatant.combat.turnSequence !== context.turnSequence ||
-    active?.id !== combatant.id
+    (!(reactionAuthorized && cost === 'reaction') && active?.id !== combatant.id)
   ) {
     throw new HttpError('O turno mudou durante a conjuração.', 409, 'SPELL_CAST_OUT_OF_TURN');
   }
@@ -245,7 +254,7 @@ export async function commitCastingEconomy(
   try {
     spendEconomy(economy, cost);
   } catch {
-    const code = cost === 'action' ? 'SPELL_ACTION_UNAVAILABLE' : 'SPELL_BONUS_ACTION_UNAVAILABLE';
+    const code = unavailableCode;
     throw new HttpError('A economia de turno não está mais disponível.', 409, code);
   }
 
@@ -260,7 +269,7 @@ export async function commitCastingEconomy(
     throw new HttpError(
       'O estado do turno mudou durante a conjuração; nada foi consumido.',
       409,
-      cost === 'action' ? 'SPELL_ACTION_UNAVAILABLE' : 'SPELL_BONUS_ACTION_UNAVAILABLE',
+      unavailableCode,
     );
   }
   await db.combat.update({

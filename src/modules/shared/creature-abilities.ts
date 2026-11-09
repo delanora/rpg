@@ -15,7 +15,7 @@ export const creatureAbilitySchema = z
     description: z.string().trim().max(3000).default(''),
     cost: z.enum(['action', 'bonus-action', 'reaction', 'passive']),
     execution: z
-      .enum(['assisted', 'disengage', 'dash', 'dodge'])
+      .enum(['assisted', 'disengage', 'dash', 'dodge', 'war-caster'])
       .default('assisted'),
     trigger: z.string().trim().max(500).default(''),
     maxUses: z.number().int().min(1).max(100).nullable().default(null),
@@ -24,12 +24,13 @@ export const creatureAbilitySchema = z
   .superRefine((value, ctx) => {
     if (
       value.cost === 'passive' &&
-      (value.execution !== 'assisted' || value.maxUses !== null)
+      (!['assisted', 'war-caster'].includes(value.execution) || value.maxUses !== null)
     )
       ctx.addIssue({
         code: 'custom',
-        message: 'Passivas são consultivas, sem consumo de usos.',
+        message: 'Passivas não consomem usos; selecione uma execução passiva suportada.',
       });
+    if (value.execution === 'war-caster' && value.cost !== 'passive') ctx.addIssue({code: 'custom', message: 'Conjurador de Guerra exige uma habilidade passiva.'});
     if (
       value.cost === 'reaction' &&
       (!value.trigger || value.execution !== 'assisted')

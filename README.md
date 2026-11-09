@@ -133,7 +133,17 @@ O duelo é uma convenção de consentimento do Obsyrium: habilita hostilidade m�
 
 Convites são privados dos envolvidos e do Mestre, consultados por `GET /api/combat/:combatId/duels`; a notificação usa a versão já publicada do combate. Duelos ativos são públicos. `POST /api/combat/duels/request` recebe `requesterId` e `challengedId`; `POST /api/combat/duels/decision` recebe `duelId` e `decision: accept|decline|cancel|end`. Ambas as escritas usam `combatId`, `expectedVersion` e `operationId`, autoridade dos donos no servidor e uma única transação. Existe no máximo um convite/duelo aberto por par. A projeção espacial deriva os adversários ativos, sem gravá-los em `Combatant.hostileToIds`.
 
-**Próxima entrega:** Conjurador de Guerra.
+### Conjurador de Guerra (PHB 2014)
+
+Na janela de oportunidade, quem possui o talento pode escolher uma magia executável de **1 Ação**, dirigida **somente à criatura que provocou a janela**, em lugar do ataque. A conjuração consome **Reação** e o espaço escolhido; Ação e Ação Bônus permanecem intactas. O alcance da ameaça continua sendo o do ataque corpo a corpo, e o alcance da magia também é validado. A exceção ao tempo normal de conjuração consta do [Sage Advice Compendium de 2014](https://www.dndbeyond.com/sources/dnd/sac/sage-advice-compendium).
+
+Repertório, fonte, componentes, espaços, condições e restrição de magia de Ação Bônus no mesmo turno passam pelo motor existente. Atualmente entram **Bênção**, **Imobilizar Pessoa** e **Chama Sagrada**, quando elegíveis; uma única criatura recebe todos os efeitos. Palavra Curativa não entra por ser Ação Bônus. Áreas e magias sem execução implementada não são oferecidas. A visão confirmada pela oportunidade é reutilizada, sem superar Cegueira/Invisibilidade; caminhos bloqueados ou ainda indeterminados impedem a opção.
+
+Salvaguardas mantêm o movimento pausado até a resolução. Dano, morte ou Paralisia são aplicados antes de tentar retomar o trajeto. Cancelar a magia não devolve custos; remoção estrutural e fim de combate encerram suas pendências. Encerrar um duelo não desfaz uma magia já comprometida.
+
+Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas/NPCs, cadastre uma habilidade **Passiva → Conjurador de Guerra (PHB 2014)** no bestiário, além do repertório e perfil de conjuração. O nome livre da habilidade não concede a regra. O talento também concede vantagem nos testes de concentração por dano e permite gestos somáticos com arma/escudo na mão; não dispensa componentes materiais nem supera bloqueios de componentes.
+
+**Próxima etapa:** consolidar linha de visão e cobertura espacial.
 
 ## 🗺️ Editor de paredes da cena
 

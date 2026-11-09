@@ -449,6 +449,9 @@ export async function finalizeSaveDamageCast(
     },
   });
 
+  const { settleOpportunitySpell } = await import('../../combat/spatial/opportunity-attack.service.js');
+  await settleOpportunitySpell(db, castId);
+
   return {
     completed: true,
     replayed: false,

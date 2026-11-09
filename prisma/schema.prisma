@@ -1157,6 +1157,8 @@ model MovementIntent {
 /// boundary e quem já resolveu. Vive no BANCO (nunca só na memória do processo),
 /// para que refresh/restart não abram nem fechem janelas.
 model ReactionOpportunity {
+  /// Conjuração comprometida nesta janela; mantém o movimento pausado até concluir.
+  spellCastId String? @unique
   id       String @id @default(cuid())
   combatId String
   combat   Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)

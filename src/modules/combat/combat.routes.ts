@@ -1,3 +1,6 @@
+import { HttpError } from '../../lib/http-error.js';
+import { opportunitySpellSchema } from './combat.schema.js';
+import { castOpportunitySpell } from './spatial/war-caster.service.js';
 import { duelRequestSchema, duelDecisionSchema } from './combat.schema.js';
 import { requestCombatDuel, decideCombatDuel, combatDuelsFor } from './combat.service.js';
 import { hostilityDecisionSchema } from './combat.schema.js';
@@ -554,4 +557,11 @@ combatRouter.post('/duels/decision', authenticate, async (req, res) => {
   const parsed = duelDecisionSchema.safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors }); return; }
   res.json(await decideCombatDuel(actorFrom(req), parsed.data));
+});
+
+combatRouter.post('/:combatId/reaction-opportunities/:opportunityId/spell', authenticate, async (req, res) => {
+  const parsed = opportunitySpellSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {res.status(400).json({error: 'VALIDATION_ERROR', issues: parsed.error.flatten().fieldErrors}); return;}
+  if (parsed.data.combatId !== String(req.params.combatId)) throw new HttpError('Combate divergente.', 400, 'VALIDATION_ERROR');
+  res.json(await castOpportunitySpell(actorFrom(req), String(req.params.combatId), String(req.params.opportunityId), parsed.data));
 });
