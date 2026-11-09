@@ -24,8 +24,13 @@ try {
  const move=async(x:number,y:number)=>act(async()=>document.querySelector('.grid-radial-menu')!.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:x,clientY:y})));
  await move(500,400);check('Ponteiro parado na abertura não ativa fatia',!document.querySelector('.is-pointer-active'));
  await move(504,400);check('Movimento real habilita hover',!!document.querySelector('.is-pointer-active'));
+ check('Centro abre com rótulo neutro',document.querySelector('.grid-radial-title')?.textContent==='Mesa');
+ await act(async()=>button('Áreas').dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:504,clientY:400})));
+ check('Nome da opção apontada aparece no centro',document.querySelector('.grid-radial-title')?.textContent==='Áreas');
+ check('Fatias exibem ícones vetoriais em anel',document.querySelectorAll('.grid-radial-symbol svg').length===2&&document.querySelector('.grid-radial-face')?.getAttribute('style')?.includes('polygon('));
 
- check('Radial reduzido a 100px com fatias clicáveis', document.querySelector<HTMLElement>('.grid-radial-menu')?.style.width==='100px' && [...document.querySelectorAll<HTMLElement>('.grid-radial-item')].every(item=>item.style.clipPath.startsWith('polygon(')));
+
+ check('Radial de 115px com fatias clicáveis', document.querySelector<HTMLElement>('.grid-radial-menu')?.style.width==='115px' && [...document.querySelectorAll<HTMLElement>('.grid-radial-item')].every(item=>item.style.clipPath.startsWith('polygon(')));
  check('Divisórias acompanham as duas opções',document.querySelectorAll('.grid-radial-dividers line').length===2);
  check('Não há opções futuras de objetos ou itens',!document.body.textContent?.includes('Objetos')&&!document.body.textContent?.includes('Itens'));
  await click('Encontro');check('Encontro encaminha ao fluxo existente sem propagar clique no mapa',added===1&&parentClicks===0);
@@ -51,6 +56,7 @@ try {
  const first=document.activeElement;
  await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
  check('Setas navegam entre as opções',document.activeElement!==first);
+ check('Teclado também atualiza o rótulo central',document.querySelector('.grid-radial-title')?.textContent==='Esfera');
  await act(async()=>document.activeElement!.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'End',bubbles:true})));
  check('End chega ao botão de voltar',document.activeElement===button('Voltar'));
  // Integração com o grid real: o callback administrativo só roda após escolha.
