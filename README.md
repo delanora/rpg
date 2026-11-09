@@ -170,7 +170,11 @@ fluxo existente de adicionar jogadores, criaturas ou NPCs, mantendo a posição
 do grid para os reforços. O radial de 100 px mantém tamanho fixo na tela durante o zoom do mapa, usa
 fatias clicáveis com divisórias douradas e ajusta-se às
 bordas da tela, fecha com Esc ou clique fora e permite navegar pelas setas.
-Não há botão Áreas permanente: os controles surgem apenas durante uma prévia. O menu dos tokens permanece separado.
+Não há botão Áreas permanente: os controles surgem apenas durante uma prévia.
+O menu e seus submenus abrem neutros. Ao mover o mouse, apenas a face da fatia
+apontada sobe suavemente, sem alterar a área de clique nem receber fundo
+amarelo. O teclado mantém um indicador próprio; a preferência de redução de
+movimento desativa a elevação. O menu dos tokens permanece separado.
 
 Os modelos são locais e temporários, um por vez: não são compartilhados nem
 persistidos após sair da tela. Não selecionam atingidos, verificam cobertura,

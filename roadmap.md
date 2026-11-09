@@ -149,7 +149,7 @@ A **sequência abaixo é direcional**, não autorização para antecipar fases. 
 |---|---|---|
 | **6.6L — Linha de visão / caminho livre** | ✅ casos claros; 🟡 expansão | Flags independentes, footprints completos e visão no ponto de saída do alcance. Paredes distantes não pedem confirmação; barreiras opacas completas impedem a oportunidade e magias que exigem visão. Cantos, frestas, iluminação e sentidos especiais seguem assistidos ou planejados. |
 | **6.6J.5 / 6.6L — Cobertura geométrica** | ✅ casos claros; 🟡 expansão | Mestre define nenhuma, meia, três quartos ou total no obstáculo. Servidor aplica o maior grau interposto, sem somar; movimento e visão independentes. Cantos, frestas e altura seguem assistidos. |
-| **6.6J.3 — Áreas no grid** | ✅ prévias e radial; 🟡 expansão | Esfera, cone, linha, cubo e cilindro com dimensões em metros, posição/direção e confirmação. Radial compacto em fatias, independente do zoom, reúne Áreas e Encontro para o Mestre, sem botão fixo no mapa. Próximo: seleção de atingidos pelo servidor; prévias continuam locais e visuais. |
+| **6.6J.3 — Áreas no grid** | ✅ prévias e radial; 🟡 expansão | Esfera, cone, linha, cubo e cilindro com dimensões em metros, posição/direção e confirmação. Radial compacto em fatias abre neutro e realça por elevação, com tamanho fixo no zoom; reúne Áreas e Encontro para o Mestre. Próximo: seleção de atingidos pelo servidor; prévias continuam locais e visuais. |
 | **Unidades FEET/METERS — normalização interna** | ⬜ dívida arquitetural | Auditoria e migração/versionamento explícitos para campos legados em metros, especialmente `TurnEconomy`/JSONB de combates ativos; não fazer conversão oportunista. |
 
 ### Prioridade 2 — Ampliar conteúdo PHB executável

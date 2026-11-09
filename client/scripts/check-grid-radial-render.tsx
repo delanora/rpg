@@ -20,11 +20,17 @@ const click=async(label:string)=>act(async()=>button(label).click());
 try {
  await render();
  check('Mestre tem Encontro e Áreas no menu radial',!!button('Encontro')&&!!button('Áreas'));
+ check('Abertura foca o menu sem pré-selecionar uma opção',document.activeElement===document.querySelector('.grid-radial-menu'));
+ const move=async(x:number,y:number)=>act(async()=>document.querySelector('.grid-radial-menu')!.dispatchEvent(new dom.window.MouseEvent('pointermove',{bubbles:true,clientX:x,clientY:y})));
+ await move(500,400);check('Ponteiro parado na abertura não ativa fatia',!document.querySelector('.is-pointer-active'));
+ await move(504,400);check('Movimento real habilita hover',!!document.querySelector('.is-pointer-active'));
+
  check('Radial reduzido a 100px com fatias clicáveis', document.querySelector<HTMLElement>('.grid-radial-menu')?.style.width==='100px' && [...document.querySelectorAll<HTMLElement>('.grid-radial-item')].every(item=>item.style.clipPath.startsWith('polygon(')));
  check('Divisórias acompanham as duas opções',document.querySelectorAll('.grid-radial-dividers line').length===2);
  check('Não há opções futuras de objetos ou itens',!document.body.textContent?.includes('Objetos')&&!document.body.textContent?.includes('Itens'));
  await click('Encontro');check('Encontro encaminha ao fluxo existente sem propagar clique no mapa',added===1&&parentClicks===0);
  await click('Áreas');
+ check('Submenu também abre neutro, sem herdar hover nem foco da primeira forma',!document.querySelector('.is-pointer-active')&&document.activeElement===document.querySelector('.grid-radial-menu'));
  check('Submenu oferece as cinco formas de 2014',document.querySelectorAll('[role="menuitem"]').length===6);
  check('Submenu tem cinco fatias delimitadas',document.querySelectorAll('.grid-radial-dividers line').length===5);
  for(const [label,kind] of [['Esfera','sphere'],['Cone','cone'],['Linha','line'],['Cubo','cube'],['Cilindro','cylinder']]) {

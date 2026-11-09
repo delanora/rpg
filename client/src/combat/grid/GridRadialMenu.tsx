@@ -20,6 +20,8 @@ export function GridRadialMenu({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [areas, setAreas] = useState(false);
+  const [pointerReady, setPointerReady] = useState(false);
+  const pointerOrigin = useRef(point);
   const [size, setSize] = useState({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -69,15 +71,20 @@ export function GridRadialMenu({
         ].includes(event.key)
       ) {
         event.preventDefault();
+        setPointerReady(false);
         const next =
           event.key === 'Home'
             ? 0
             : event.key === 'End'
               ? buttons.length - 1
-              : (current +
-                  (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1) +
-                  buttons.length) %
-                buttons.length;
+              : current < 0
+                ? ['ArrowLeft', 'ArrowUp'].includes(event.key)
+                  ? buttons.length - 1
+                  : 0
+                : (current +
+                    (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1) +
+                    buttons.length) %
+                  buttons.length;
         buttons[next]?.focus();
       }
     };
@@ -93,9 +100,9 @@ export function GridRadialMenu({
     };
   }, [onClose]);
   useEffect(() => {
-    root.current
-      ?.querySelector<HTMLButtonElement>('button:not(:disabled)')
-      ?.focus();
+    // O menu recebe foco, sem destacar uma opção antes da escolha.
+    root.current?.focus({ preventScroll: true });
+    setPointerReady(false);
   }, [areas]);
   const items = areas
     ? PREVIEW_SHAPES.map((shape) => ({
@@ -118,13 +125,29 @@ export function GridRadialMenu({
   return createPortal(
     <div
       ref={root}
-      className="grid-radial-menu"
+      className={`grid-radial-menu${pointerReady ? ' is-pointer-active' : ''}`}
+      tabIndex={-1}
       role="menu"
       aria-label={areas ? 'Formas de área' : 'Menu do tabuleiro'}
       style={{ left, top, width: diameter, height: diameter }}
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
+      onPointerMove={(event) => {
+        if (event.pointerType === 'touch') return;
+        if (
+          Math.hypot(
+            event.clientX - pointerOrigin.current.x,
+            event.clientY - pointerOrigin.current.y,
+          ) > 2
+        )
+          setPointerReady(true);
+      }}
+      onPointerLeave={() => setPointerReady(false)}
+      onClick={(event) => {
+        event.stopPropagation();
+        pointerOrigin.current = { x: event.clientX, y: event.clientY };
+        setPointerReady(false);
+      }}
       onDoubleClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -145,39 +168,56 @@ export function GridRadialMenu({
           });
         const polygon = [...arc(49), ...arc(11, true)].join(',');
         return (
-          <button
-            key={item.label}
-            type="button"
-            role="menuitem"
-            disabled={item.disabled}
-            className="grid-radial-item"
-            style={{
-              clipPath: `polygon(${polygon})`,
-            }}
-            onClick={item.action}
-          >
+          <div key={item.label} className="grid-radial-sector">
             <span
-              className="grid-radial-caption"
-              style={{
-                left: half + Math.cos(angle) * diameter * 0.32,
-                top: half + Math.sin(angle) * diameter * 0.32,
-              }}
+              className="grid-radial-face"
+              style={{ clipPath: `polygon(${polygon})` }}
+              aria-hidden="true"
             >
-              <span className="grid-radial-symbol" aria-hidden="true">
-                {item.symbol}
+              <span
+                className="grid-radial-caption"
+                style={{
+                  left: half + Math.cos(angle) * diameter * 0.32,
+                  top: half + Math.sin(angle) * diameter * 0.32,
+                }}
+              >
+                <span className="grid-radial-symbol">{item.symbol}</span>
+                <span>{item.label}</span>
               </span>
-              <span>{item.label}</span>
             </span>
-          </button>
+            <button
+              type="button"
+              role="menuitem"
+              aria-label={item.label}
+              disabled={item.disabled}
+              className="grid-radial-item"
+              style={{ clipPath: `polygon(${polygon})` }}
+              onClick={item.action}
+            />
+          </div>
         );
       })}
-      {items.length > 1 ? <svg className="grid-radial-dividers" viewBox="0 0 100 100" aria-hidden="true">
-        {items.map((item, index) => {
-          const angle = -Math.PI / 2 + (index - .5) * 2 * Math.PI / items.length;
-          return <line key={item.label} x1={50 + Math.cos(angle) * 12} y1={50 + Math.sin(angle) * 12}
-            x2={50 + Math.cos(angle) * 48.5} y2={50 + Math.sin(angle) * 48.5} />;
-        })}
-      </svg> : null}
+      {items.length > 1 ? (
+        <svg
+          className="grid-radial-dividers"
+          viewBox="0 0 100 100"
+          aria-hidden="true"
+        >
+          {items.map((item, index) => {
+            const angle =
+              -Math.PI / 2 + ((index - 0.5) * 2 * Math.PI) / items.length;
+            return (
+              <line
+                key={item.label}
+                x1={50 + Math.cos(angle) * 12}
+                y1={50 + Math.sin(angle) * 12}
+                x2={50 + Math.cos(angle) * 48.5}
+                y2={50 + Math.sin(angle) * 48.5}
+              />
+            );
+          })}
+        </svg>
+      ) : null}
       <button
         className="grid-radial-center"
         type="button"
