@@ -15,15 +15,18 @@ const check=(label:string,ok:unknown)=>{assert.ok(ok,label);checks++;};
 const render=async(canAdd=true,areaDisabled=false,point={x:500,y:400})=>act(async()=>root.render(h('div',{onClick:()=>parentClicks++},h(GridRadialMenu,{
  key:++key,point,canAdd,areaDisabled,onClose:()=>closed++,onAdd:()=>added++,onArea:value=>{shape=value;},
 }))));
-const button=(label:string)=>[...document.querySelectorAll<HTMLButtonElement>('.grid-radial-menu button')].find(b=>b.textContent?.includes(label))!;
+const button=(label:string)=>[...document.querySelectorAll<HTMLButtonElement>('.grid-radial-menu button')].find(b=>b.textContent?.includes(label)||b.getAttribute('aria-label')?.includes(label))!;
 const click=async(label:string)=>act(async()=>button(label).click());
 try {
  await render();
  check('Mestre tem Encontro e Áreas no menu radial',!!button('Encontro')&&!!button('Áreas'));
+ check('Radial reduzido a 200px com fatias clicáveis', document.querySelector<HTMLElement>('.grid-radial-menu')?.style.width==='200px' && [...document.querySelectorAll<HTMLElement>('.grid-radial-item')].every(item=>item.style.clipPath.startsWith('polygon(')));
+ check('Divisórias acompanham as duas opções',document.querySelectorAll('.grid-radial-dividers line').length===2);
  check('Não há opções futuras de objetos ou itens',!document.body.textContent?.includes('Objetos')&&!document.body.textContent?.includes('Itens'));
  await click('Encontro');check('Encontro encaminha ao fluxo existente sem propagar clique no mapa',added===1&&parentClicks===0);
  await click('Áreas');
  check('Submenu oferece as cinco formas de 2014',document.querySelectorAll('[role="menuitem"]').length===6);
+ check('Submenu tem cinco fatias delimitadas',document.querySelectorAll('.grid-radial-dividers line').length===5);
  for(const [label,kind] of [['Esfera','sphere'],['Cone','cone'],['Linha','line'],['Cubo','cube'],['Cilindro','cylinder']]) {
   await click(label);check(`${label} encaminha a forma correta`,shape===kind);
  }
@@ -59,6 +62,7 @@ try {
  await gridRender();
  const open=async()=>act(async()=>document.querySelector('.grid-plane')!.dispatchEvent(new dom.window.MouseEvent('contextmenu',{bubbles:true,clientX:450,clientY:350})));
  await open();
+ check('Sem botão Áreas permanente no grid',!document.querySelector('.grid-area-controls'));
  check('Grid vazio abre radial sem adicionar imediatamente',!!document.querySelector('.grid-radial-menu')&&addPosition===null);
  await click('Encontro');check('Encontro usa o callback com posição do grid',addPosition!==null&&!document.querySelector('.grid-radial-menu'));
  await open();await click('Áreas');await click('Cone');

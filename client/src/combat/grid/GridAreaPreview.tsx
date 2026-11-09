@@ -145,6 +145,9 @@ export function GridAreaPreview({
     ? sceneToScreen(camera, feetToScenePixel(marker.center, geometry))
     : null;
 
+  // O acesso inicial fica no radial; controles só existem com uma prévia.
+  if (!saved && (!editing || disabled)) return null;
+
   return (
     <>
       {projected && marker ? (

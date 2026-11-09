@@ -24,7 +24,7 @@ export function GridRadialMenu({
     width: window.innerWidth,
     height: window.innerHeight,
   });
-  const diameter = Math.min(284, size.width - 16, size.height - 16);
+  const diameter = Math.min(200, size.width - 16, size.height - 16);
   const half = diameter / 2;
   const left = Math.max(8, Math.min(point.x - half, size.width - diameter - 8));
   const top = Math.max(8, Math.min(point.y - half, size.height - diameter - 8));
@@ -45,7 +45,11 @@ export function GridRadialMenu({
         previous?.focus();
         return;
       }
-      if (!(event.target instanceof Node) || !root.current?.contains(event.target)) return;
+      if (
+        !(event.target instanceof Node) ||
+        !root.current?.contains(event.target)
+      )
+        return;
       const buttons = [
         ...root.current.querySelectorAll<HTMLButtonElement>(
           'button:not(:disabled)',
@@ -131,6 +135,15 @@ export function GridRadialMenu({
       <div className="grid-radial-ring" aria-hidden="true" />
       {items.map((item, index) => {
         const angle = -Math.PI / 2 + (index * 2 * Math.PI) / items.length;
+        const sweep = (2 * Math.PI) / items.length;
+        // Fatias reais: toda a superfície entre os raios recebe o clique.
+        const arc = (radius: number, reverse = false) =>
+          Array.from({ length: 33 }, (_, step) => {
+            const phase = reverse ? 1 - step / 32 : step / 32;
+            const a = angle - sweep / 2 + sweep * phase;
+            return `${50 + Math.cos(a) * radius}% ${50 + Math.sin(a) * radius}%`;
+          });
+        const polygon = [...arc(49), ...arc(11, true)].join(',');
         return (
           <button
             key={item.label}
@@ -139,16 +152,32 @@ export function GridRadialMenu({
             disabled={item.disabled}
             className="grid-radial-item"
             style={{
-              left: half + Math.cos(angle) * diameter * 0.32,
-              top: half + Math.sin(angle) * diameter * 0.32,
+              clipPath: `polygon(${polygon})`,
             }}
             onClick={item.action}
           >
-            <span aria-hidden="true">{item.symbol}</span>
-            {item.label}
+            <span
+              className="grid-radial-caption"
+              style={{
+                left: half + Math.cos(angle) * diameter * 0.32,
+                top: half + Math.sin(angle) * diameter * 0.32,
+              }}
+            >
+              <span className="grid-radial-symbol" aria-hidden="true">
+                {item.symbol}
+              </span>
+              <span>{item.label}</span>
+            </span>
           </button>
         );
       })}
+      {items.length > 1 ? <svg className="grid-radial-dividers" viewBox="0 0 100 100" aria-hidden="true">
+        {items.map((item, index) => {
+          const angle = -Math.PI / 2 + (index - .5) * 2 * Math.PI / items.length;
+          return <line key={item.label} x1={50 + Math.cos(angle) * 12} y1={50 + Math.sin(angle) * 12}
+            x2={50 + Math.cos(angle) * 48.5} y2={50 + Math.sin(angle) * 48.5} />;
+        })}
+      </svg> : null}
       <button
         className="grid-radial-center"
         type="button"
@@ -156,9 +185,10 @@ export function GridRadialMenu({
         aria-label={
           areas ? 'Voltar ao menu do tabuleiro' : 'Fechar menu do tabuleiro'
         }
+        title={areas ? 'Voltar' : 'Fechar'}
         onClick={() => (areas ? setAreas(false) : onClose())}
       >
-        {areas ? 'Voltar' : 'Fechar'}
+        <span aria-hidden="true">{areas ? '‹' : '×'}</span>
       </button>
     </div>,
     document.body,

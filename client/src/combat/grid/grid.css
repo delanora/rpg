@@ -1470,17 +1470,18 @@ button.grid-token-visibility:disabled { cursor: wait; opacity: .6; }
 .grid-area-controls select { width: auto; min-width: 4rem; margin: 0; padding: .2rem; font: inherit; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--radius); }
 .grid-area-instruction { flex-basis: 100%; font-size: var(--text-micro); color: var(--ink-soft); }
 
-/* Navegação radial local; ações administrativas preservam os contratos existentes. */
-.grid-radial-menu { position: fixed; z-index: 55; isolation: isolate; border-radius: 50%; color: var(--ink); filter: drop-shadow(0 10px 18px #0009); }
-.grid-radial-ring { position: absolute; inset: 4%; border-radius: 50%; border: 1px solid var(--gold); background: var(--surface); opacity: .97; box-shadow: inset 0 0 24px #0003; }
-.grid-radial-item, .grid-radial-center { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .15rem; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface-2); color: var(--ink); cursor: pointer; font: inherit; font-size: .72rem; line-height: 1.2; }
-.grid-radial-item { width: 4.5rem; height: 4.5rem; }
-.grid-radial-item span { font-size: 1.45rem; color: var(--gold); line-height: 1; }
-.grid-radial-center { left: 50%; top: 50%; width: 3.5rem; height: 3.5rem; }
-.grid-radial-item:hover, .grid-radial-center:hover { border-color: var(--gold); background: var(--surface-3); }
-.grid-radial-item:focus-visible, .grid-radial-center:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
-.grid-radial-item:disabled { opacity: .45; cursor: default; }
-@media (max-height: 340px), (max-width: 340px) {
-  .grid-radial-item { width: 3.6rem; height: 3.6rem; font-size: .65rem; }
-  .grid-radial-center { width: 3rem; height: 3rem; font-size: .65rem; }
-}
+/* Fatias contínuas, sem botões circulares internos. O hub preserva fechar/voltar. */
+.grid-radial-menu { position: fixed; z-index: 55; isolation: isolate; border-radius: 50%; color: var(--ink); filter: drop-shadow(0 6px 12px #0009); }
+.grid-radial-ring { position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--gold); background: radial-gradient(circle, var(--surface-3), var(--surface)); box-shadow: inset 0 0 0 3px var(--surface), inset 0 0 0 4px var(--line-strong), 0 0 0 3px #0002; pointer-events: none; }
+.grid-radial-item { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: linear-gradient(135deg, var(--surface-3), var(--surface)); color: var(--ink); cursor: pointer; font: inherit; transition: filter .15s, background .15s; }
+.grid-radial-caption { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: .2rem; width: 3.8rem; font-size: .75rem; line-height: 1.15; text-align: center; pointer-events: none; }
+.grid-radial-symbol { font-size: 1.25rem; line-height: 1; color: var(--gold); text-shadow: 0 1px 3px #0003; }
+.grid-radial-item:hover, .grid-radial-item:focus-visible { outline: none; background: linear-gradient(135deg, var(--gold-deep), var(--surface-3)); filter: brightness(1.15); }
+.grid-radial-item:focus-visible .grid-radial-caption { text-decoration: underline; text-underline-offset: .2rem; }
+.grid-radial-item:disabled { opacity: .45; cursor: default; filter: none; }
+.grid-radial-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; place-items: center; width: 2.2rem; height: 2.2rem; padding: 0; border: 1px solid var(--gold); border-radius: 50%; background: var(--surface); color: var(--gold); cursor: pointer; font: inherit; font-size: 1.25rem; box-shadow: 0 0 0 3px var(--surface), 0 2px 6px #0006; }
+.grid-radial-center:hover, .grid-radial-center:focus-visible { background: var(--surface-3); outline: 1px solid var(--gold); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .grid-radial-item { transition: none; } }
+
+.grid-radial-dividers { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.grid-radial-dividers line { stroke: var(--gold); stroke-width: .5; opacity: .6; }

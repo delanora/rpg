@@ -148,7 +148,7 @@ Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas
 
 ### Prévias de áreas e menu radial
 
-O botão **Áreas**, no canto superior esquerdo do mapa, oferece **Esfera**, **Cone**,
+O menu radial do grid oferece **Esfera**, **Cone**,
 **Linha**, **Cubo** e **Cilindro**. As dimensões são exibidas em metros: raio,
 comprimento, aresta, largura da linha e altura do cilindro. Esfera e cilindro
 mostram sua projeção circular no mapa; a altura do cilindro é informativa.
@@ -167,8 +167,9 @@ girar essa face no plano; isso é uma conveniência visual, sem definir atingido
 **Botão direito no grid vazio** abre um menu radial. **Áreas** permite escolher
 uma forma já com a origem no ponto clicado. Para o Mestre, **Encontro** abre o
 fluxo existente de adicionar jogadores, criaturas ou NPCs, mantendo a posição
-do grid para os reforços. O menu se ajusta às bordas da tela, fecha com Esc ou
-clique fora e permite navegar pelas setas. O menu dos tokens permanece separado.
+do grid para os reforços. O radial compacto usa fatias clicáveis com divisórias douradas, ajusta-se às
+bordas da tela, fecha com Esc ou clique fora e permite navegar pelas setas.
+Não há botão Áreas permanente: os controles surgem apenas durante uma prévia. O menu dos tokens permanece separado.
 
 Os modelos são locais e temporários, um por vez: não são compartilhados nem
 persistidos após sair da tela. Não selecionam atingidos, verificam cobertura,
