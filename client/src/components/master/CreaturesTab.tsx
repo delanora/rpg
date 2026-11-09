@@ -1,5 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { Creature, CreatureKind, CreaturePatch, Item, Locality, Region } from '../../types';
+import { creatureDraft, creaturePayload } from './creatureDraft';
+import { ABILITY_KEYS } from '../../dnd';
+import { abilityModifier } from '../../../../src/modules/shared/dnd5e';
+import './creatures.css';
+import { useMemo, useState } from 'react';
+import type {
+  Creature,
+  CreatureKind,
+  CreaturePatch,
+  Item,
+  Locality,
+  Region,
+} from '../../types';
 import { Icon } from '../Icon';
 import { Portrait } from '../Portrait';
 import { CreatureEditor } from './CreatureEditor';
@@ -15,7 +26,9 @@ interface CreaturesTabProps {
   localities: Locality[];
   /** Regiões, para agrupar/identificar as localidades no seletor. */
   regions: Region[];
-  onCreate: (localityId: string) => Promise<Creature>;
+  onCreate: (
+    input: CreaturePatch & { localityIds: string[] },
+  ) => Promise<Creature>;
   onPatch: (id: string, patch: CreaturePatch) => void;
   onDelete: (id: string) => void;
   /** Catálogo de itens do Mestre (inventário do NPC). */
@@ -25,7 +38,10 @@ interface CreaturesTabProps {
   onError?: (message: string) => void;
 }
 
-const LABELS: Record<CreatureKind, { singular: string; plural: string; novo: string; vazio: string }> = {
+const LABELS: Record<
+  CreatureKind,
+  { singular: string; plural: string; novo: string; vazio: string }
+> = {
   CREATURE: {
     singular: 'criatura',
     plural: 'criaturas',
@@ -61,39 +77,50 @@ export function CreaturesTab({
   onError,
 }: CreaturesTabProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Creature | null>(null);
+  const [creationError, setCreationError] = useState('');
+  const [filterLocality, setFilterLocality] = useState('');
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
-  const [localityId, setLocalityId] = useState('');
-
-  // Nova entidade nasce na primeira localidade; o mestre pode trocar depois.
-  useEffect(() => {
-    if (!localityId && localities.length > 0) setLocalityId(localities[0].id);
-  }, [localities, localityId]);
 
   const labels = LABELS[kind];
   // Derivado da lista: atualizações em tempo real refletem no editor aberto.
-  const selected = creatures.find((creature) => creature.id === selectedId) ?? null;
+  const selected =
+    creatures.find((creature) => creature.id === selectedId) ?? null;
   // Busca local: filtra os cards sem fechar o editor aberto na janela.
-  const visible = creatures.filter((creature) =>
-    matchesSearch(
-      query,
-      creature.name,
-      creature.type,
-      creature.challengeRating,
-      ...creature.localities.map((locality) => locality.name),
-    ),
+  const visible = creatures.filter(
+    (creature) =>
+      (!filterLocality ||
+        creature.localities.some((l) => l.id === filterLocality)) &&
+      matchesSearch(
+        query,
+        creature.name,
+        creature.type,
+        creature.challengeRating,
+        ...creature.localities.map((locality) => locality.name),
+      ),
   );
   // 25 por página; trocar de aba (Criaturas ↔ NPCs) ou buscar reinicia a
   // paginação — são recortes diferentes da mesma lista.
-  const pager = usePager(visible.length, `${kind}|${query}`);
-  const page = useMemo(() => paginate(visible, pager.page), [visible, pager.page]);
+  const pager = usePager(visible.length, `${kind}|${query}|${filterLocality}`);
+  const page = useMemo(
+    () => paginate(visible, pager.page),
+    [visible, pager.page],
+  );
 
   async function handleCreate(): Promise<void> {
-    if (!localityId) return;
     setCreating(true);
     try {
-      const created = await onCreate(localityId);
-      setSelectedId(created.id);
+      if (!draft) return;
+      await onCreate(creaturePayload(draft));
+      setDraft(null);
+      setCreationError('');
+    } catch (error) {
+      setCreationError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível criar o cadastro.',
+      );
     } finally {
       setCreating(false);
     }
@@ -101,6 +128,15 @@ export function CreaturesTab({
 
   return (
     <div className="master-catalog">
+      <header className="creature-catalog-heading">
+        <div>
+          <h2>{kind === 'NPC' ? 'Personagens do Mestre' : 'Bestiário'}</h2>
+          <p className="section-subtitle">
+            {creatures.length} {labels.plural} · organize os cadastros, ataques
+            e imagens de token.
+          </p>
+        </div>
+      </header>
       <header className="items-head">
         <div className="items-toolbar">
           <SearchField
@@ -110,32 +146,38 @@ export function CreaturesTab({
             label={kind === 'NPC' ? 'Buscar NPCs' : 'Buscar criaturas'}
           />
 
-          {localities.length === 0 ? (
-            <span className="muted">Cadastre uma localidade antes de criar {labels.singular}s.</span>
-          ) : (
-            <label className="field field-inline">
-              <span>Localidade</span>
-              <select value={localityId} onChange={(event) => setLocalityId(event.target.value)}>
-                {localities.map((locality) => {
-                  // Com mais de uma região, o nome dela ajuda a achar o lugar.
-                  const region = regions.find((item) => item.id === locality.regionId);
-                  const prefix = regions.length > 1 && region ? `${region.name} · ` : '';
-
-                  return (
-                    <option key={locality.id} value={locality.id}>
-                      {prefix}
-                      {locality.name}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-          )}
+          <label className="field field-inline">
+            <span>Filtrar por localidade</span>
+            <select
+              value={filterLocality}
+              onChange={(e) => setFilterLocality(e.target.value)}
+            >
+              <option value="">Todas as localidades</option>
+              {localities.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!localities.length ? (
+            <span className="muted">
+              Cadastre uma localidade para criar {labels.plural}.
+            </span>
+          ) : null}
 
           <button
             type="button"
             className="btn btn-primary btn-small"
-            onClick={() => void handleCreate()}
+            onClick={() => {
+              const local =
+                localities.find((l) => l.id === filterLocality) ??
+                localities[0];
+              if (local) {
+                setCreationError('');
+                setDraft(creatureDraft(kind, local));
+              }
+            }}
             disabled={creating || localities.length === 0}
           >
             {creating ? 'criando...' : labels.novo}
@@ -168,9 +210,13 @@ export function CreaturesTab({
                   <span className="items-card-body">
                     <span className="items-card-name">{creature.name}</span>
                     <span className="items-card-tags">
-                      <span className="items-card-tag">{creature.type || 'sem tipo'}</span>
+                      <span className="items-card-tag">
+                        {creature.type || 'sem tipo'}
+                      </span>
                       {creature.challengeRating ? (
-                        <span className="items-card-tag">ND {creature.challengeRating}</span>
+                        <span className="items-card-tag">
+                          ND {creature.challengeRating}
+                        </span>
                       ) : null}
                     </span>
                     <span className="items-card-meta">
@@ -180,7 +226,11 @@ export function CreaturesTab({
                         : ''}
                     </span>
                     <span className="items-card-summary">
-                      HP {creature.hpCurrent}/{creature.hpMax}
+                      PV {creature.hpCurrent}/{creature.hpMax} ·{' '}
+                      {creature.attacks.length} ataques ·{' '}
+                      {creature.tokenImages?.length ||
+                        (creature.imageUrl ? 1 : 0)}{' '}
+                      tokens
                     </span>
                   </span>
                 </button>
@@ -200,11 +250,74 @@ export function CreaturesTab({
           onPage={pager.setPage}
           one={kind === 'NPC' ? 'NPC' : 'criatura'}
           many={labels.plural}
-          label={kind === 'NPC' ? 'Paginação dos NPCs' : 'Paginação das criaturas'}
-          detail={query ? `${visible.length} de ${creatures.length} com a busca atual` : undefined}
+          label={
+            kind === 'NPC' ? 'Paginação dos NPCs' : 'Paginação das criaturas'
+          }
+          detail={
+            query
+              ? `${visible.length} de ${creatures.length} com a busca atual`
+              : undefined
+          }
         />
       ) : null}
 
+      {draft ? (
+        <MasterDetailModal
+          kind={kind === 'NPC' ? 'Novo NPC' : 'Nova criatura'}
+          title={draft.name || 'Novo cadastro'}
+          subtitle="Preencha as etapas e revise antes de criar."
+          onClose={() => {
+            if (!creating) setDraft(null);
+          }}
+        >
+          {creationError ? (
+            <p className="form-error" role="alert">
+              {creationError}
+            </p>
+          ) : null}
+          <CreatureEditor
+            key="novo"
+            embedded
+            creating
+            saving={creating}
+            creature={draft}
+            localities={localities}
+            regions={regions}
+            onPatch={(patch) =>
+              setDraft((current) => {
+                if (!current) return current;
+                const next = {
+                  ...current,
+                  ...patch,
+                  ...(patch.hpMax !== undefined &&
+                  current.hpCurrent === current.hpMax
+                    ? { hpCurrent: patch.hpMax }
+                    : {}),
+                };
+                return {
+                  ...next,
+                  localities: patch.localityIds
+                    ? localities
+                        .filter((l) => patch.localityIds!.includes(l.id))
+                        .map((l) => ({ id: l.id, name: l.name }))
+                    : current.localities,
+                  effectiveMaxHp: next.hpMax,
+                  effectiveSpeed: next.speed,
+                  spatialSize:
+                    next.size.toLowerCase() as Creature['spatialSize'],
+                  derived: {
+                    modifiers: Object.fromEntries(
+                      ABILITY_KEYS.map((a) => [a, abilityModifier(next[a])]),
+                    ) as Creature['derived']['modifiers'],
+                  },
+                };
+              })
+            }
+            onDelete={() => setDraft(null)}
+            onFinish={() => void handleCreate()}
+          />
+        </MasterDetailModal>
+      ) : null}
       {selected ? (
         <MasterDetailModal
           kind={kind === 'NPC' ? 'NPC' : 'Criatura'}
@@ -212,7 +325,9 @@ export function CreaturesTab({
           subtitle={
             <>
               {selected.type || 'sem tipo'}
-              {selected.challengeRating ? ` · ND ${selected.challengeRating}` : ''}
+              {selected.challengeRating
+                ? ` · ND ${selected.challengeRating}`
+                : ''}
               {selected.localities.length > 0
                 ? ` · ${selected.localities.map((locality) => locality.name).join(' · ')}`
                 : ''}
@@ -234,6 +349,7 @@ export function CreaturesTab({
         >
           <CreatureEditor
             embedded
+            onFinish={() => setSelectedId(null)}
             creature={selected}
             localities={localities}
             regions={regions}

@@ -2172,6 +2172,7 @@ export function CombatGrid({
 
               {placed.map((combatant) => (
                 <GridToken
+                  isMaster={isMaster}
                   key={combatant.id}
                   combatant={combatant}
                   cellSizeFeet={cellSizeFeet}

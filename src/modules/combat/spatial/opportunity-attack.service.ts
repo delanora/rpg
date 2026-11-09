@@ -1,3 +1,4 @@
+import { combatantCanReact } from '../combat.dto.js';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -700,7 +701,7 @@ async function assertOpportunityActionable(
   if (!economyOf(reactor.turnEconomy).reactionAvailable) {
     throw new HttpError('Reação já utilizada.', 409, 'REACTION_UNAVAILABLE');
   }
-  if (!deriveConditionEffects(combatantMechanicalState(reactor)).canAct) {
+  if (!combatantCanReact(reactor)) {
     throw new HttpError(
       'Condição impede realizar Reações.',
       409,

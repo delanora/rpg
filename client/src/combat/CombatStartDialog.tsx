@@ -148,6 +148,7 @@ export function CombatStartDialog({
                     ? ('neutral' as const)
                     : ('hostile' as const)),
                 positions: old?.positions?.slice(0, q),
+                spatialVisibilities: old?.spatialVisibilities?.slice(0,q),
               },
             ]
           : []),
@@ -176,6 +177,7 @@ export function CombatStartDialog({
             image: c.imageUrl ?? '',
             size: c.size.toLowerCase() as SpatialSize,
             position: e.positions?.[i] ?? null,
+            hidden: e.spatialVisibilities?.[i] === 'master-only',
           }))
         : [];
     }),
@@ -689,7 +691,7 @@ export function CombatStartDialog({
                 scene={scene}
                 tokens={tokens}
                 onPlace={place}
-                scenePicker={scenePicker}
+                scenePicker={scenePicker} onVisibility={key=>{const split=key.lastIndexOf(':');const id=key.slice(0,split),index=Number(key.slice(split+1));update({entries:preparation.entries.map(e=>e.creatureId!==id?e:{...e,spatialVisibilities:Array.from({length:e.quantity},(_,i)=>i===index?(e.spatialVisibilities?.[i]==='master-only'?'public':'master-only'):e.spatialVisibilities?.[i]??'public')})})}}
               />
             ) : (
               <>

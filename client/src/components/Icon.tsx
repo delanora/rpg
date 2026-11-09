@@ -25,6 +25,7 @@ export type IconName =
   | 'mute'
   | 'users'
   | 'eye'
+  | 'eye-off'
   | 'bolt'
   | 'wind'
   | 'weight'
@@ -191,6 +192,7 @@ const ICONS: Record<IconName, ReactNode> = {
       <circle cx="12" cy="12" r="3" />
     </>
   ),
+  'eye-off': (<><path d="M3 3l18 18M9.9 5.2A12 12 0 0 1 12 5c4 0 7.5 1.8 10 7a17 17 0 0 1-3 4M6.2 6.2A17 17 0 0 0 2 12c2.5 5.2 6 7 10 7a12 12 0 0 0 5.8-1.8"/><path d="M10 10a3 3 0 0 0 4 4"/></>),
   bolt: <path d="M13 2 4 14h7l-1 8 9-12h-7Z" />,
   wind: (
     <>

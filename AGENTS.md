@@ -226,6 +226,8 @@ O schema está em `prisma/schema.prisma`. Models principais:
 | `GameConfig` | linha única de config da mesa (level up release, nível inicial, notas do mestre) |
 | `MusicTrack` / `MusicState` | música ambiente |
 
+`Creature.tokenImages` guarda as alternativas de arte; `Combatant.tokenImageUrl` e `tokenNumber` fixam a aparência e a numeração da instância. Não sortear no cliente nem apagar imagens ainda referenciadas por um combate. `tokenDimmed` é apenas um sinal visual público: os contadores e o estado de morte de NPCs continuam privados. A pedido do usuário, `master-only` também omite criaturas/NPCs da iniciativa dos jogadores e dos avisos públicos de turno/iniciativa.
+
 ### `Character`: híbrido colunas + JSONB
 
 Padrão de modelagem: **campos simples e muito consultados em colunas**;

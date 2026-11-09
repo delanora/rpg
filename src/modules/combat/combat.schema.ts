@@ -23,6 +23,7 @@ export const startCombatSchema = z.object({
         quantity: z.number().int().min(1).max(30),
         disposition: z.enum(['hostile', 'neutral', 'allied']).optional(),
         positions: z.array(spatialPositionSchema.nullable()).max(30).optional(),
+        spatialVisibilities: z.array(z.enum(['public', 'master-only'])).max(30).optional(),
       }),
     )
     .max(100)

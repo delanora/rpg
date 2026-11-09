@@ -7,10 +7,12 @@ import {
   type MouseEvent,
   type DragEvent,
 } from 'react';
+import { Icon } from '../components/Icon';
 import type { Scene, SpatialSize } from '../types';
 import { SIZE_FOOTPRINT_FEET } from './grid/gridMath';
 export interface PreparationToken {
   key: string;
+  hidden?: boolean;
   name: string;
   image: string;
   size: SpatialSize;
@@ -22,8 +24,10 @@ export function PreparationBoard({
   tokens,
   onPlace,
   scenePicker,
+  onVisibility,
 }: {
   scenePicker?: ReactNode;
+  onVisibility?: (key:string)=>void;
   scene: Scene;
   tokens: PreparationToken[];
   onPlace: (
@@ -141,7 +145,8 @@ export function PreparationBoard({
                 {t.name}
                 <small>{t.position ? 'Posicionado' : 'Sem posição'}</small>
               </button>
-              {t.position ? (
+              {onVisibility && !t.key.startsWith('character:') ? <button type="button" aria-label={`${t.hidden?'Revelar':'Ocultar'} ${t.name}`} onClick={()=>onVisibility(t.key)}><Icon name={t.hidden?'eye-off':'eye'} size={14}/></button> : null}
+            {t.position ? (
                 <button
                   type="button"
                   aria-label={`Retirar posição de ${t.name}`}
@@ -308,7 +313,8 @@ export function PreparationBoard({
                           {t.name.slice(0, 2)}
                         </text>
                       )}
-                      <title>{t.name}</title>
+                      {onVisibility && !t.key.startsWith('character:') ? <svg x={p.xFeet} y={p.yFeet} width={Math.min(size*.35,3)} height={Math.min(size*.35,3)} viewBox="0 0 24 24" aria-label={t.hidden?'Oculto dos jogadores':'Revelado aos jogadores'}><rect width="24" height="24" rx="12" fill="var(--surface)"/><path d="M2 12C4 7 8 5 12 5s8 2 10 7c-2 5-6 7-10 7S4 17 2 12Z" fill="none" stroke="var(--gold)" strokeWidth="2"/>{t.hidden?<path d="M3 3l18 18" stroke="var(--gold)" strokeWidth="2"/>:<circle cx="12" cy="12" r="3" fill="var(--gold)"/>}</svg> : null}
+                  <title>{t.name}{t.hidden ? ' · Oculto dos jogadores' : ''}</title>
                     </g>
                   );
                 })}

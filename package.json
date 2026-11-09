@@ -25,6 +25,7 @@
     "seed:phb-items": "tsx src/scripts/seed-phb-items.ts",
     "smoke": "tsx src/scripts/smoke-realtime.ts",
     "test:operation-id": "tsx client/scripts/check-operation-id.ts",
+    "test:creature-ui": "tsx --tsconfig client/tsconfig.json client/scripts/check-creature-wizard-render.tsx",
     "test:combat-preparation": "tsx --tsconfig client/tsconfig.json client/scripts/check-combat-preparation-render.tsx",
     "test:combat-ui": "tsx --tsconfig client/tsconfig.json client/scripts/check-combat-ui.ts",
     "setup": "npm install && npm --prefix client install",

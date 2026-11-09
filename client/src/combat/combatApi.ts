@@ -12,6 +12,7 @@ export interface CombatCreatureEntry {
   disposition?: 'hostile' | 'neutral' | 'allied';
   creatureId: string;
   quantity: number;
+  spatialVisibilities?: ('public' | 'master-only')[];
   positions?: ({ xFeet: number; yFeet: number } | null)[];
 }
 

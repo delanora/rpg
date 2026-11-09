@@ -4,6 +4,7 @@ import { obstacleDtoOf } from './spatial-obstacle.js';
 import type { Prisma } from '@prisma/client';
 import type { CombatSourced, CombatantSourced } from '../combat.dto.js';
 import {
+  combatantCanReact,
   combatantAttacks,
   combatantMechanicalState,
   orderCombatants,
@@ -121,7 +122,7 @@ export function scanReactionThreats(
   }
 
   for (const candidate of combat.combatants) {
-    if (candidate.id === mover.id) continue;
+    if (candidate.id === mover.id || !combatantCanReact(candidate)) continue;
     const body = spatialBodyOf(candidate);
     if (!body) continue;
     const profiles = opportunityAttackProfilesOf(candidate);

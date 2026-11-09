@@ -23,6 +23,7 @@ export function CombatReinforcements({
       'hostile',
     ),
     [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const [loading, setLoading] = useState(true),
     [error, setError] = useState('');
   useEffect(() => {
@@ -58,6 +59,7 @@ export function CombatReinforcements({
           {
             creatureId: selected,
             quantity: 1,
+            spatialVisibilities: [hidden ? 'master-only' : 'public'],
             disposition: relation,
             ...(position ? { positions: [position] } : {}),
           },
@@ -137,6 +139,15 @@ export function CombatReinforcements({
           <option value="neutral">Neutro</option>
           <option value="allied">Aliado</option>
         </select>
+      </label>
+      <label className="creature-checkbox">
+        <input
+          type="checkbox"
+          checked={hidden}
+          disabled={busy}
+          onChange={(e) => setHidden(e.target.checked)}
+        />
+        Entrar oculto dos jogadores
       </label>
       <p className="section-note">
         {position

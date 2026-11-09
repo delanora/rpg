@@ -1,3 +1,4 @@
+import { setSpatialVisibility } from '../grid/gridApi';
 import { useState } from 'react';
 import { MechanicalPanel } from '../../components/MechanicalPanel';
 import type { CombatDto, CombatantDto } from '../../types';
@@ -51,6 +52,7 @@ export function CombatTokenAdjustments({ combat, combatant, busy, effectsRefresh
       {tab === 'economy' ? <MasterEconomyPanel expanded combat={combat} combatant={combatant} busy={busy} onRun={onRun} /> : null}
     </div>
     {combatant.kind !== 'CHARACTER' ? <div className="combat-token-remove">
+      <button type="button" className="btn btn-small" disabled={busy} onClick={()=>onRun(()=>setSpatialVisibility(combat,combatant.id,combatant.spatialVisibility==='master-only'?'public':'master-only'))}>{combatant.spatialVisibility==='master-only'?'Revelar aos jogadores':'Ocultar dos jogadores'}</button>
       {confirmRemove ? <><p>Remover {combatant.name} deste combate? O cadastro será preservado.</p><button className="btn btn-danger btn-small" disabled={busy} onClick={() => onRun(() => removeCombatParticipant(combat, combatant.id))}>Confirmar remoção</button> <button className="btn btn-small" disabled={busy} onClick={() => setConfirmRemove(false)}>Cancelar</button></> : <button className="btn btn-small" disabled={busy} onClick={() => setConfirmRemove(true)}>Remover do combate</button>}
     </div> : null}
   </>;

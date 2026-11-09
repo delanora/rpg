@@ -76,22 +76,13 @@ const creatureFields = z.object({
   description: z.string().max(20000),
   /** Ícone/retrato da criatura/NPC (`/uploads/creatures/...`). */
   imageUrl: z.string().trim().max(500),
+  tokenImages: z.array(z.string().trim().min(1).max(500)).max(20),
   /** Tamanho mecânico (6.6L.1) — autoridade do Mestre. */
   size: creatureSizeSchema,
 });
 
 /** Na criação só se informa o essencial; o resto vem dos padrões. */
-export const createCreatureSchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  kind: creatureKindSchema.optional(),
-  type: z.string().trim().max(60).optional(),
-  challengeRating: z.string().trim().max(20).optional(),
-  hpMax: z.number().int().min(0).max(9999).optional(),
-  armorClass: z.number().int().min(0).max(99).optional(),
-  /** Tamanho inicial; ausente = 'Medium' (nunca inferido pelo nome). */
-  size: creatureSizeSchema.optional(),
-  localityIds: localityIdsSchema,
-});
+export const createCreatureSchema = creatureFields.partial().extend({ localityIds: localityIdsSchema });
 
 /** Edição inline: aceita qualquer subconjunto de campos. */
 export const updateCreatureSchema = creatureFields.partial().extend({

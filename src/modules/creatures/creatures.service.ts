@@ -57,6 +57,7 @@ const SCALAR_KEYS = [
   'speed',
   'description',
   'imageUrl',
+  'tokenImages',
   // Tamanho mecânico (6.6L.1): fonte do espaço ocupado no combate.
   'size',
 ] as const;
@@ -119,10 +120,14 @@ export async function createCreature(input: CreateCreatureInput): Promise<Creatu
       armorClass: input.armorClass ?? 10,
       // Tamanho inicial explícito do Mestre; sem ele, Medium (nunca inferido).
       size: input.size ?? 'Medium',
-      attacks: [] as Prisma.InputJsonValue,
-      resistances: [] as Prisma.InputJsonValue,
-      immunities: [] as Prisma.InputJsonValue,
-      vulnerabilities: [] as Prisma.InputJsonValue,
+      ...Object.fromEntries(SCALAR_KEYS.filter(key => input[key] !== undefined).map(key => [key, input[key]])),
+      attacks: (input.attacks ?? []) as Prisma.InputJsonValue,
+      spellcastingProfile: input.spellcastingProfile as Prisma.InputJsonValue | undefined,
+      spellcastingResources: input.spellcastingResources as Prisma.InputJsonValue | undefined,
+      spellRepertoire: input.spellRepertoire as Prisma.InputJsonValue | undefined,
+      resistances: (input.resistances ?? []) as Prisma.InputJsonValue,
+      immunities: (input.immunities ?? []) as Prisma.InputJsonValue,
+      vulnerabilities: (input.vulnerabilities ?? []) as Prisma.InputJsonValue,
       localities: { connect: input.localityIds.map((id) => ({ id })) },
     },
     include: withLocalities,
@@ -187,11 +192,8 @@ export async function updateCreature(
   }
 
 
-  // Ícone trocado sai do disco (o antigo não é mais referenciado).
-  if (patch.imageUrl !== undefined && patch.imageUrl !== current.imageUrl && current.imageUrl) {
-    await deleteUploadedImage(current.imageUrl);
-  }
-
+  // Imagens anteriores podem estar fixadas em instâncias de combate.
+  // Não apagar arquivos referenciados por essas instâncias ao editar a galeria.
   const dto = await creatureDto(creature);
   broadcast(ServerEvents.CREATURE_UPDATED, { creature: dto, changes: patch });
   return dto;
@@ -211,7 +213,9 @@ export async function deleteCreature(id: string): Promise<void> {
     await db.creature.delete({ where: { id } });
     return targets;
   });
-  if (current.imageUrl) await deleteUploadedImage(current.imageUrl);
+  for (const url of new Set([current.imageUrl, ...current.tokenImages])) {
+    if (url && !await prisma.combatant.count({where:{tokenImageUrl:url}}) && !await prisma.creature.count({where:{OR:[{imageUrl:url},{tokenImages:{has:url}}]}})) await deleteUploadedImage(url);
+  }
   broadcast(ServerEvents.CREATURE_DELETED, { creatureId: id });
   // Publica o estado derivado de quem recebeu/sofreu os efeitos encerrados; a
   // própria criatura não existe mais. Falha de realtime não desfaz a remoção.

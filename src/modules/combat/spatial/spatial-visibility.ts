@@ -9,6 +9,8 @@
  *  • PRESENÇA ESPACIAL PÚBLICA — token, imagem, posição, tamanho e espaço
  *    ocupado. É o que este módulo decide, por INSTÂNCIA do combate.
  *
+ * Criaturas/NPCs master-only também saem da iniciativa pública em combat.dto.
+ *
  * `master-only` NÃO é "não existe mecanicamente": o ocupante continua ocupando
  * espaço, bloqueando passagem e gerando difficult terrain. Também NÃO é
  * Invisible/Hide/LoS/Fog of War — essas políticas são futuras e NÃO devem ser

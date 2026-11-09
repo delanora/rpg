@@ -365,11 +365,11 @@ export function MasterPanel({ user }: { user: SessionUser }) {
   }, []);
 
   const createCreature = useCallback(
-    async (localityId: string): Promise<Creature> => {
-      const kind: CreatureKind = tab === 'npcs' ? 'NPC' : 'CREATURE';
+    async (input: CreaturePatch & {localityIds:string[]}): Promise<Creature> => {
+      const kind: CreatureKind = input.kind ?? (tab === 'npcs' ? 'NPC' : 'CREATURE');
       const { creature } = await api<{ creature: Creature }>('/api/creatures', {
         method: 'POST',
-        body: { kind, localityIds: [localityId] },
+        body: { ...input, kind },
       });
       setCreatures((prev) =>
         prev.some((item) => item.id === creature.id) ? prev : [...prev, creature].sort(byName),

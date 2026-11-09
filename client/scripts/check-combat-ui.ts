@@ -529,7 +529,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'WJ) entrada da iniciativa PERMANECE (nada é removido do combate ao morrer)',
     !service.slice(0, service.indexOf('export async function removeCombatParticipant')).includes('combatant.delete') &&
-      dto.includes('combatants: dto.combatants.map') &&
+      dto.includes('!hiddenIds.has(c.id)') &&
       tracker.includes('combat.combatants.map'),
   );
   check(
@@ -570,7 +570,7 @@ console.log('Check-combat-ui — refino da UI de combate');
   check(
     'WP) criatura-template mantém múltiplas cópias independentes',
     service.includes("kind: creature.kind === 'NPC' ? ('NPC' as const) : ('CREATURE' as const)") &&
-      service.includes('`${creature.name} ${index + 1}`'),
+      service.includes('`${creature.name} ${numbers.get(creature.id)}`'),
   );
   check(
     'WP2) NPC usa a MESMA engine (HP da instância, iniciativa e ciclo de morte)',
@@ -2645,7 +2645,7 @@ check(
   'CB167.1) cadastro de Creature oferece TAMANHO (select PT-BR) e envia o rótulo canônico',
   source('src/components/master/CreatureEditor.tsx').includes('aria-label="Tamanho da criatura"') &&
     source('src/components/master/CreatureEditor.tsx').includes(
-      'onPatch({\n                size: CREATURE_SIZE_LABEL_BY_SPATIAL[event.target.value as SpatialSize],'
+      'size: CREATURE_SIZE_LABEL_BY_SPATIAL['
     ) &&
     source('src/components/master/CreatureEditor.tsx').includes('SPATIAL_SIZE_ORDER.map') &&
     source('src/combat/grid/gridMath.ts').includes('CREATURE_SIZE_LABEL_BY_SPATIAL') &&
@@ -2662,7 +2662,7 @@ check(
 );
 check(
   'CB168) token reutiliza retrato/imagem existentes e pode ser null (fallback `?` futuro)',
-  /tokenImageRef:\s*combatant\.character\?\.avatarUrl\s*\|\|\s*combatant\.creature\?\.imageUrl\s*\|\|\s*null/.test(
+  /tokenImageRef:\s*combatant\.character\?\.avatarUrl\s*\|\|\s*combatant\.tokenImageUrl\s*\|\|\s*combatant\.creature\?\.imageUrl\s*\|\|\s*null/.test(
     combatDtoSource
   ) &&
     combatDtoSource.includes('tokenImageRef: string | null') &&
@@ -4645,7 +4645,7 @@ check(
 );
 check(
   'CB306) token usa a imagem ORIGINAL e nada de "pixelated" como conserto',
-  combatDtoSource.includes('tokenImageRef: combatant.character?.avatarUrl || combatant.creature?.imageUrl || null,') &&
+  combatDtoSource.includes('tokenImageRef: combatant.character?.avatarUrl || combatant.tokenImageUrl || combatant.creature?.imageUrl || null,') &&
     /\.grid-token-img\s*\{[^}]*image-rendering: auto/.test(gridCssSource) &&
     !/image-rendering:\s*(pixelated|crisp-edges)/.test(gridCssSource) &&
     // A camada da câmera NÃO é promovida permanentemente: escalar uma textura
@@ -6994,7 +6994,7 @@ check(
       source('src/combat/components/CombatantCard.tsx').includes(
         'title="Vida e CA visíveis apenas para o mestre"',
       ) &&
-      source('src/combat/grid/GridToken.tsx').includes('title="Oculto dos jogadores"') &&
+      source('src/combat/grid/GridToken.tsx').includes("'Oculto dos jogadores'") &&
       source('src/components/InventoryDock.tsx').includes("title={open ? 'Fechar o inventário'") &&
       source('src/components/sections/IdentitySection.tsx').includes('title={raceInfo ||') &&
       dockSource.includes('Ações, Ação Bônus, Reação e Movimento indisponíveis no ciclo de morte — o turno continua sendo seu.'),

@@ -96,6 +96,7 @@ export interface CreatureDto {
 
   /** URL pública do ícone/retrato ('' = sem imagem). */
   imageUrl: string;
+  tokenImages: string[];
 
   description: string;
   version: number;
@@ -195,6 +196,7 @@ export function toCreatureDto(
     vulnerabilities,
     localities: (creature.localities ?? []).map(toLocalitySummary),
     imageUrl: creature.imageUrl,
+    tokenImages: creature.tokenImages,
     description: creature.description,
     version: creature.version,
     createdAt: creature.createdAt.toISOString(),

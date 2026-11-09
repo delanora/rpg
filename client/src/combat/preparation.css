@@ -116,7 +116,7 @@ button.preparation-card {
 }
 .preparation-wizard input:not([type='checkbox']),
 .preparation-wizard select,
-.combat-reinforcement input,
+.combat-reinforcement input:not([type='checkbox']),
 .combat-reinforcement select {
   width: 100%;
   min-width: 0;
@@ -342,3 +342,5 @@ button.preparation-card {
     height: max(24rem, 55dvh);
   }
 }
+
+.combat-reinforcement .creature-checkbox { display: flex; flex-direction: row; align-items: center; gap: .5rem; }

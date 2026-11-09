@@ -16,7 +16,7 @@ import {
   publishDeathUpdated,
 } from '../death/death.service.js';
 import { medicineBonus, stabilizationSucceeds, STABILIZE_DC } from '../shared/medicine.js';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, randomInt } from 'node:crypto';
 import { COMBAT_ACTIONS, deriveAttackActionLimit, economyOf, moveDistance, onTurnEnd, onTurnStart, recordAttack, spendEconomy } from '../shared/action-economy.js';
 import type {
   CombatOperationInput,
@@ -243,7 +243,7 @@ function emitTurn(dto: CombatDto): void {
   const current = dto.combatants[dto.currentIndex];
   if (!current) return;
 
-  emit(ServerEvents.COMBAT_TURN, {
+  const payload = {
     combatId: dto.id,
     combatantId: current.id,
     combatantName: current.name,
@@ -251,7 +251,10 @@ function emitTurn(dto: CombatDto): void {
     kind: current.kind,
     round: dto.round,
     index: dto.currentIndex,
-  });
+  };
+  if (current.kind !== 'CHARACTER' && current.spatialVisibility === 'master-only') {
+    try { getBroadcaster().toMasters(ServerEvents.COMBAT_TURN, payload); } catch(error) { console.error('[combat] falha ao publicar turno oculto:',error); }
+  } else emit(ServerEvents.COMBAT_TURN, payload);
 }
 
 function announceRoll(payload: DiceRolledPayload): void {
@@ -750,6 +753,8 @@ export async function creatureEntriesFor(
    * criatura-template.
    */
   const npcSeen = new Set<string>();
+  const numbers = new Map<string, number>();
+  const imageBags = new Map<string, string[]>();
   return entries.flatMap((entry) => {
     const creature = creatureById.get(entry.creatureId);
     if (!creature)
@@ -781,6 +786,31 @@ export async function creatureEntriesFor(
     return Array.from({ length: quantity }, (_, index) => ({
       kind: creature.kind === 'NPC' ? ('NPC' as const) : ('CREATURE' as const),
       creatureId: creature.id,
+      spatialVisibility: entry.spatialVisibilities?.[index] ?? 'public',
+      tokenImageUrl: (() => {
+        const images = [
+          ...new Set(
+            creature.tokenImages.length
+              ? creature.tokenImages
+              : [creature.imageUrl],
+          ),
+        ].filter(Boolean);
+        let bag = imageBags.get(creature.id) ?? [];
+        if (!bag.length) bag = [...images];
+        const picked = bag.length
+          ? bag.splice(randomInt(bag.length), 1)[0]
+          : null;
+        imageBags.set(creature.id, bag);
+        return picked;
+      })(),
+      tokenNumber:
+        creature.kind === 'CREATURE'
+          ? (() => {
+              const number = (numbers.get(creature.id) ?? 0) + 1;
+              numbers.set(creature.id, number);
+              return number;
+            })()
+          : null,
       ...(entry.positions?.[index]
         ? { spatialPosition: entry.positions[index]! }
         : {}),
@@ -792,7 +822,12 @@ export async function creatureEntriesFor(
             ? 'enemies'
             : 'neutral',
       // Cópias da mesma criatura recebem um sufixo para se distinguirem.
-      name: quantity > 1 ? `${creature.name} ${index + 1}` : creature.name,
+      name:
+        entries
+          .filter((e) => e.creatureId === creature.id)
+          .reduce((sum, e) => sum + e.quantity, 0) > 1
+          ? `${creature.name} ${numbers.get(creature.id)}`
+          : creature.name,
       dexterityMod: abilityModifier(creature.dexterity),
       // Snapshot de vitais: cada cópia rastreia a própria vida.
       hpCurrent: creature.hpCurrent,
@@ -1018,7 +1053,11 @@ export async function rollInitiative(actor: CombatActor, combatantId?: string): 
     await db.combatant.update({ where: { id: combatant.id }, data: { initiative: total, initiativeRoll: roll } });
     return { kind: 'initiative' as const, actorName: combatant.name, expression: disadvantage ? '1d20 (desvantagem)' : '1d20', rolls: second === null ? [roll] : [first, second], sides: 20, modifier: combatant.dexterityMod, total, crit: roll === 20, at: new Date().toISOString() };
   });
-  announceRoll(payload);
+  const initiativeCombat = await loadCombatById(selectedCombat.id);
+  const rolledUnit = combatantId ? initiativeCombat.combatants.find(c=>c.id===combatantId) : initiativeCombat.combatants.find(c=>c.ownerUserId===actor.userId);
+  if (rolledUnit?.kind !== 'CHARACTER' && rolledUnit?.spatialVisibility === 'master-only') {
+    try { getBroadcaster().toMasters(ServerEvents.DICE_ROLLED, payload); } catch(error) { console.error('[combat] falha ao publicar iniciativa oculta:',error); }
+  } else announceRoll(payload);
   return finalizeInitiative(selectedCombat.id, actor.role);
 }
 
@@ -2021,10 +2060,10 @@ export async function resolveAttack<TReaction = never>(
               hpBefore: damage.hpBefore ?? 0,
               hpTempBefore: damage.hpTempBefore,
               critical,
-              sourceName: attacker.name,
+              sourceName: attacker.kind !== 'CHARACTER' && attacker.spatialVisibility === 'master-only' ? 'Fonte oculta' : attacker.name,
             },
             db,
-            attacker.name,
+            attacker.kind !== 'CHARACTER' && attacker.spatialVisibility === 'master-only' ? 'Fonte oculta' : attacker.name,
           );
           if (death.changed) deathTargets.push(entity);
           // CONCENTRAÇÃO (PHB 2014): UM teste por evento de dano, com o dano
@@ -2035,7 +2074,7 @@ export async function resolveAttack<TReaction = never>(
           // retry idempotente devolve o snapshot sem gerar outro teste.
           const concentration = await noteDamageConcentration(entity, total, db, {
             eventId: input.operationId,
-            sourceName: attacker.name,
+            sourceName: attacker.kind !== 'CHARACTER' && attacker.spatialVisibility === 'master-only' ? 'Fonte oculta' : attacker.name,
           });
           if (concentration.changed) concentrationTargets.push(entity);
           effectTargets.push(...concentration.endedEffectTargets);
@@ -2103,7 +2142,10 @@ export async function resolveAttack<TReaction = never>(
       if (entity.kind === 'character') await publishCharacter(entity.id);
     }
     if (effectTargets.length > 0) await publishEffects(effectTargets);
-    for (const roll of rolls) announceRoll(roll);
+    const concealed = response.combat.combatants.some(unit=>unit.kind !== 'CHARACTER' && unit.spatialVisibility === 'master-only' && (unit.name===response.result.attackerName || unit.name===response.result.targetName));
+    for (const roll of rolls) {
+      if (concealed) getBroadcaster().toMasters(ServerEvents.DICE_ROLLED,roll); else announceRoll(roll);
+    }
     const result = response.result;
     // O resultado do ataque em criatura/NPC também esconde CA/PV (vale para
     // NPC: é estado privado do Mestre).
@@ -2112,7 +2154,7 @@ export async function resolveAttack<TReaction = never>(
     );
     const broadcaster = getBroadcaster();
     broadcaster.toMasters(ServerEvents.ATTACK_RESOLVED, result);
-    broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, targetIsCreature ? hideTargetStats(result) : result);
+    if (!concealed) broadcaster.toPlayers(ServerEvents.ATTACK_RESOLVED, targetIsCreature ? hideTargetStats(result) : result);
   }
   return { ...response, result: actor.role !== 'MASTER' && response.result.targetStatsHidden === false && hasPrivateMechanicalState(response.combat.combatants.find((item) => item.id === input.targetCombatantId)?.kind ?? 'CHARACTER') ? hideTargetStats(response.result) : response.result };
 }
@@ -2555,14 +2597,45 @@ export async function addCombatParticipants(
             'CONFLICT',
           );
         const peers = await db.combatant.findMany({
-          where: { combatId: combat.id, creatureId: entry.creatureId }, select: { name: true },
+          where: { combatId: combat.id, creatureId: entry.creatureId },
+          select: { id: true, name: true, tokenNumber: true },
         });
-        let name = entry.name, suffix = peers.length + 1;
-        while (peers.some(peer => peer.name === name)) name = `${entry.name} · reforço ${suffix++}`;
-        const roll = combat.status === 'ACTIVE' ? initiativeDice(deriveConditionEffects(mechanicalStateOf(entry.mechanicalState)).checkDisadvantage).roll : null;
+        if (entry.kind === 'CREATURE') {
+          for (const peer of peers.filter(p=>p.tokenNumber===null)) {
+            const taken = new Set(peers.filter(p=>p.id!==peer.id).map(p=>p.tokenNumber ?? Number(p.name.match(/ (\d+)$/)?.[1])).filter(Boolean));
+            let value = Number(peer.name.match(/ (\d+)$/)?.[1]) || 1;
+            while (taken.has(value)) value++;
+            await db.combatant.update({where:{id:peer.id},data:{tokenNumber:value}});
+            peer.tokenNumber=value;
+          }
+        }
+        const number =
+          entry.kind === 'CREATURE'
+            ? Math.max(
+                0,
+                ...peers.map(
+                  (p) =>
+                    p.tokenNumber ??
+                    (Number(p.name.match(/ (\d+)$/)?.[1]) || 1),
+                ),
+              ) + 1
+            : null;
+        const template = await db.creature.findUniqueOrThrow({
+          where: { id: entry.creatureId },
+          select: { name: true },
+        });
+        const name = number ? `${template.name} ${number}` : entry.name;
+        const roll =
+          combat.status === 'ACTIVE'
+            ? initiativeDice(
+                deriveConditionEffects(mechanicalStateOf(entry.mechanicalState))
+                  .checkDisadvantage,
+              ).roll
+            : null;
         await db.combatant.create({
           data: {
             ...entry,
+            tokenNumber: number,
             combatId: combat.id,
             name,
             initiativeRoll: roll,

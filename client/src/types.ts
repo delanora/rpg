@@ -1771,6 +1771,7 @@ export interface Creature {
    * ESPAÇOS DE MAGIA do statblock (6.6C) — só o MÁXIMO. O uso é estado de quem
    * conjura (template ou instância) e não é editável na ficha.
    */
+  spellRepertoire: {spellIds:string[]};
   spellcastingResources: {
     spellSlots: { level: number; max: number }[];
     pactSlot: { level: number; max: number } | null;
@@ -1784,6 +1785,7 @@ export interface Creature {
   description: string;
   /** URL pública do ícone/retrato ('' = sem imagem). */
   imageUrl: string;
+  tokenImages: string[];
 
   version: number;
   createdAt: string;
@@ -1824,6 +1826,8 @@ export interface CreaturePatch {
   vulnerabilities?: string[];
   description?: string;
   imageUrl?: string;
+  tokenImages?: string[];
+  spellRepertoire?: Creature['spellRepertoire'];
 }
 
 /**
@@ -2388,6 +2392,8 @@ export interface SceneDeletedPayload {
 }
 
 export interface CombatantDto {
+  tokenDimmed?: boolean;
+  tokenNumber?: number | null;
   /** Relação pública com o grupo, projetada pelo servidor sem expor times. */
   relation?: 'allied' | 'hostile' | 'neutral' | 'unknown';
   sideKey?: string | null;

@@ -1427,3 +1427,12 @@
 }
 @keyframes token-relation-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
 @media (prefers-reduced-motion: reduce) { .grid-token-relation-ring { animation: none; opacity: 0.7; } }
+
+/* Estado visual público, sem revelar PV ou contadores privados. Caído não escurece. */
+.grid-token.is-inactive .grid-token-art { filter: brightness(.55) saturate(.65); }
+.grid-token.is-inactive .grid-token-relation-ring { animation: none; opacity: .35; }
+.grid-token-number { position: absolute; top: 2%; right: 2%; z-index: 3; width: 1.15rem; height: 1.15rem; display: grid; place-items: center; border: 1px solid var(--gold-deep); border-radius: 50%; background: var(--surface); color: var(--gold); font-size: .65rem; line-height: 1; font-weight: 700; pointer-events: none; box-shadow: 0 1px 3px #0008; }
+.grid-token-visibility { position: absolute; top: 2%; left: 2%; z-index: 3; width: 1.15rem; height: 1.15rem; display: grid; place-items: center; border: 1px solid var(--gold-deep); border-radius: 50%; background: var(--surface); color: var(--gold); pointer-events: none; }
+.grid-token-number, .grid-token-visibility { width: clamp(.65rem, calc(var(--grid-token-art) * .25), 1.05rem); height: clamp(.65rem, calc(var(--grid-token-art) * .25), 1.05rem); }
+.grid-token-number { font-size: clamp(.5rem, calc(var(--grid-token-art) * .16), .65rem); }
+.grid-token-visibility .icon { width: 72%; height: 72%; }

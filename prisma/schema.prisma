@@ -855,6 +855,7 @@ model Creature {
 
   /// URL pública do ícone/retrato da criatura/NPC (`uploads/creatures/...`).
   imageUrl String @default("")
+  tokenImages String[] @default([])
 
   ///
   /// TAMANHO mecânico do PHB 2014 (Fase 6.6L.1): 'Tiny'|'Small'|'Medium'|
@@ -1041,6 +1042,9 @@ model Combatant {
 
   /// Nome no momento da entrada em combate (a criatura pode ser renomeada depois).
   /// Várias cópias da mesma criatura entram como "Goblin 1", "Goblin 2"...
+  /// Arte e numeração da instância: sobrevivem ao reload e à edição do cadastro.
+  tokenImageUrl String?
+  tokenNumber Int?
   name         String
   ownerUserId  String?
   /// Modificador de Destreza fixado na entrada, usado na iniciativa e no desempate.

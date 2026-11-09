@@ -113,6 +113,9 @@ export interface CombatDto {
 }
 
 export interface CombatantDto {
+  /** Sinal visual público; não expõe PV, morte ou contadores privados. */
+  tokenDimmed?: boolean;
+  tokenNumber?: number | null;
   turnEconomy: TurnEconomy;
   mechanicalState: ReturnType<typeof mechanicalStateOf>;
   conditionEffects: ReturnType<typeof deriveConditionEffects>;
@@ -211,6 +214,8 @@ export interface CombatSourced {
 }
 
 export interface CombatantSourced {
+  tokenImageUrl?: string | null;
+  tokenNumber?: number | null;
   turnEconomy: unknown;
   mechanicalState: unknown;
   /** Ciclo de morte da INSTÂNCIA (criaturas); personagens usam o da ficha. */
@@ -296,6 +301,12 @@ export function combatantMechanicalState(combatant: CombatantSourced) {
  * criaturas usam o estado PRÓPRIO da instância (Goblin 1 ≠ Goblin 2), nunca o
  * template do bestiário.
  */
+/** A mesma elegibilidade serve a previews e à resolução real da Reação. */
+export function combatantCanReact(combatant: CombatantSourced): boolean {
+  const hp = combatant.character?.hpCurrent ?? combatant.hpCurrent ?? combatant.creature?.hpCurrent ?? 0;
+  return hp > 0 && !deathBlocksActions(combatantDeathState(combatant)) && deriveConditionEffects(combatantMechanicalState(combatant)).canReact;
+}
+
 export function combatantDeathState(combatant: CombatantSourced): DeathState {
   return combatant.character ? deathStateOf(combatant.character.deathState) : deathStateOf(combatant.deathState);
 }
@@ -357,6 +368,8 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
   const spatialPosition = parseStoredPosition(combatant.spatialPosition);
   const spatialVisibility = spatialVisibilityOf(combatant.spatialVisibility);
   return {
+    tokenDimmed: deathState.dead || hpCurrent <= 0 || deriveConditionEffects(combatantMechanicalState(combatant)).active.includes('unconscious'),
+    tokenNumber: combatant.kind === 'CREATURE' ? (combatant.tokenNumber ?? (Number(combatant.name.match(/ (\d+)$/)?.[1]) || null)) : null,
     turnEconomy: combatantMovementEconomy(combatant),
     mechanicalState: mechanicalStateOf(combatantMechanicalState(combatant)),
     deathState,
@@ -371,7 +384,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     name: combatant.name,
     ownerUserId: combatant.ownerUserId,
     ownerUsername: combatant.character?.user.username ?? null,
-    imageUrl: combatant.character?.avatarUrl || combatant.creature?.imageUrl || null,
+    imageUrl: combatant.character?.avatarUrl || combatant.tokenImageUrl || combatant.creature?.imageUrl || null,
     dexterityMod: combatant.dexterityMod,
     initiative: combatant.initiative,
     initiativeRoll: combatant.initiativeRoll,
@@ -381,7 +394,7 @@ function toCombatantDto(combatant: CombatantSourced): CombatantDto {
     armorNonProficiency: armorClassDetail?.armorNonProficiency ?? null,
     spatialVisibility,
     spatial: {
-      tokenImageRef: combatant.character?.avatarUrl || combatant.creature?.imageUrl || null,
+      tokenImageRef: combatant.character?.avatarUrl || combatant.tokenImageUrl || combatant.creature?.imageUrl || null,
       baseSize,
       effectiveSize,
       position: spatialPosition,
@@ -472,10 +485,13 @@ export function hasPrivateMechanicalState(kind: CombatantKind): boolean {
  * públicas: o foco é o lifecycle de 0 PV/morte.
  */
 export function hideMasterPrivateState(dto: CombatDto): CombatDto {
+  const hidden = dto.combatants.filter(c=>c.kind !== 'CHARACTER' && c.spatialVisibility === 'master-only');
+  const hiddenIds = new Set(hidden.map(c=>c.id));
   return {
     ...dto,
-    economyLog: dto.economyLog.filter((entry) => entry.private !== true),
-    combatants: dto.combatants.map((combatant) => {
+    currentCombatantId: dto.currentCombatantId && !hiddenIds.has(dto.currentCombatantId) ? dto.currentCombatantId : null,
+    economyLog: dto.economyLog.filter((entry) => entry.private !== true && !hidden.some(c=>entry.actorName===c.name || entry.message.includes(c.name))),
+    combatants: dto.combatants.filter(c=>!hiddenIds.has(c.id)).map((combatant) => {
       // DUAS políticas INDEPENDENTES (6.6L.3.2): estado mecânico (por tipo: NPC
       // tem stats privados) e PRESENÇA ESPACIAL (por instância: `master-only`).
       // Um NPC público aparece no grid com a imagem real e SEM HP/CA.
@@ -485,7 +501,7 @@ export function hideMasterPrivateState(dto: CombatDto): CombatDto {
       const projected = projectCombatantSpatialState(visible);
       // Lado é estado do ENCONTRO administrado pelo Mestre: o jogador não
       // recebe o mapa de times. Só a relação visual com o grupo é pública.
-      return { ...projected, sideKey: null, relation: projected.spatial ? projected.relation : 'unknown' };
+      return { ...projected, sideKey: null, relation: projected.spatial ? projected.relation : 'unknown', tokenDimmed: projected.spatial ? projected.tokenDimmed : false, tokenNumber: projected.spatial ? projected.tokenNumber : null };
     }),
   };
 }

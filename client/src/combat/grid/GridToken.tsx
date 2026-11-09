@@ -1,3 +1,4 @@
+import { Icon } from '../../components/Icon';
 import type { CSSProperties, PointerEvent } from 'react';
 import type { CombatantDto } from '../../types';
 import { ROLL_MODE_LABELS, gridRollModeClass, type CombatRollMode } from '../gridTargeting';
@@ -10,6 +11,8 @@ export type GridUnit = Pick<
 > & {
   /** Personagem × criatura/NPC: só muda o ARO do token (visual). */
   kind?: string;
+  tokenNumber?: number | null;
+  tokenDimmed?: boolean;
   missing?: boolean;
   relation?: CombatantDto['relation'];
 };
@@ -20,6 +23,7 @@ export interface GridTokenProps {
   pixelsPerCell: number;
   /** Turno atual — indicação discreta, sem alterar a iniciativa. */
   currentTurn?: boolean;
+  isMaster?: boolean;
   selected?: boolean;
   /** Placement em voo: preview até o servidor confirmar. */
   pending?: boolean;
@@ -73,6 +77,7 @@ export function GridToken({
   cellSizeFeet,
   pixelsPerCell,
   currentTurn = false,
+  isMaster = false,
   selected = false,
   pending = false,
   interactive = false,
@@ -100,6 +105,7 @@ export function GridToken({
   const relation = combatant.relation ?? 'unknown';
   const relationLabel = {hostile:'hostil',allied:'aliado',neutral:'neutro',unknown:'relação não definida'}[relation];
   const classes = ['grid-token'];
+  if (combatant.tokenDimmed) classes.push('is-inactive');
   if (currentTurn) classes.push('is-current');
   if (selected) classes.push('is-selected');
   if (pending) classes.push('is-pending');
@@ -214,12 +220,9 @@ export function GridToken({
           </span>
         )}
       </span>
+      {combatant.tokenNumber ? <span className="grid-token-number" aria-label={`Unidade ${combatant.tokenNumber}`}>{combatant.tokenNumber}</span> : null}
       <span className="grid-token-label">{combatant.name}</span>
-      {combatant.spatialVisibility === 'master-only' ? (
-        <span className="grid-token-hidden" title="Oculto dos jogadores">
-          Oculto
-        </span>
-      ) : null}
+      {isMaster && combatant.kind !== 'CHARACTER' ? <span className="grid-token-visibility" title={combatant.spatialVisibility==='master-only'?'Oculto dos jogadores':'Revelado aos jogadores'}><Icon name={combatant.spatialVisibility==='master-only'?'eye-off':'eye'} size={12}/></span> : null}
     </button>
   );
 }
