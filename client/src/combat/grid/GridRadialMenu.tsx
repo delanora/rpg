@@ -24,7 +24,7 @@ export function GridRadialMenu({
     width: window.innerWidth,
     height: window.innerHeight,
   });
-  const diameter = Math.min(200, size.width - 16, size.height - 16);
+  const diameter = Math.min(100, size.width - 16, size.height - 16);
   const half = diameter / 2;
   const left = Math.max(8, Math.min(point.x - half, size.width - diameter - 8));
   const top = Math.max(8, Math.min(point.y - half, size.height - diameter - 8));

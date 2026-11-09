@@ -20,7 +20,7 @@ const click=async(label:string)=>act(async()=>button(label).click());
 try {
  await render();
  check('Mestre tem Encontro e Áreas no menu radial',!!button('Encontro')&&!!button('Áreas'));
- check('Radial reduzido a 200px com fatias clicáveis', document.querySelector<HTMLElement>('.grid-radial-menu')?.style.width==='200px' && [...document.querySelectorAll<HTMLElement>('.grid-radial-item')].every(item=>item.style.clipPath.startsWith('polygon(')));
+ check('Radial reduzido a 100px com fatias clicáveis', document.querySelector<HTMLElement>('.grid-radial-menu')?.style.width==='100px' && [...document.querySelectorAll<HTMLElement>('.grid-radial-item')].every(item=>item.style.clipPath.startsWith('polygon(')));
  check('Divisórias acompanham as duas opções',document.querySelectorAll('.grid-radial-dividers line').length===2);
  check('Não há opções futuras de objetos ou itens',!document.body.textContent?.includes('Objetos')&&!document.body.textContent?.includes('Itens'));
  await click('Encontro');check('Encontro encaminha ao fluxo existente sem propagar clique no mapa',added===1&&parentClicks===0);

@@ -167,7 +167,8 @@ girar essa face no plano; isso é uma conveniência visual, sem definir atingido
 **Botão direito no grid vazio** abre um menu radial. **Áreas** permite escolher
 uma forma já com a origem no ponto clicado. Para o Mestre, **Encontro** abre o
 fluxo existente de adicionar jogadores, criaturas ou NPCs, mantendo a posição
-do grid para os reforços. O radial compacto usa fatias clicáveis com divisórias douradas, ajusta-se às
+do grid para os reforços. O radial de 100 px mantém tamanho fixo na tela durante o zoom do mapa, usa
+fatias clicáveis com divisórias douradas e ajusta-se às
 bordas da tela, fecha com Esc ou clique fora e permite navegar pelas setas.
 Não há botão Áreas permanente: os controles surgem apenas durante uma prévia. O menu dos tokens permanece separado.
 
