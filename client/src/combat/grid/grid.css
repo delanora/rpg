@@ -1439,8 +1439,8 @@
 
 /* Selos assentados na borda circular, independentes do tamanho do footprint. */
 .grid-token-number {
-  top: calc(50% - var(--grid-token-art) * .32);
-  left: calc(50% + var(--grid-token-art) * .32);
+  top: calc(50% + var(--grid-token-art) / 2);
+  left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
 }
@@ -1455,3 +1455,5 @@ button.grid-token-visibility {
 button.grid-token-visibility:hover:not(:disabled) { border-color: var(--gold); background: var(--surface-2); }
 button.grid-token-visibility:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 button.grid-token-visibility:disabled { cursor: wait; opacity: .6; }
+
+.grid-token.has-number .grid-token-label { bottom: -1.35rem; }

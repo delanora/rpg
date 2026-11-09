@@ -328,8 +328,9 @@ try {
   check('pedido em andamento bloqueia novo clique', visibilityCalls === 1);
   await renderToken(false, true, true);
   check('estado revelado oferece ocultar', document.querySelector('.grid-token-visibility')?.getAttribute('aria-label')?.startsWith('Ocultar'));
-  await renderToken(false, false);
+  await renderToken(false, false, true);
   check('jogador não recebe o controle de visibilidade', !document.querySelector('.grid-token-visibility'));
+  check('jogador vê o número de criaturas repetidas e reveladas', document.querySelector('.grid-token-number')?.textContent === '2');
   console.log(`${checks} verificações do bestiário aprovadas.`);
 } finally {
   await act(async () => root.unmount());

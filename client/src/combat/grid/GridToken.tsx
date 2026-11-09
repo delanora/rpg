@@ -113,6 +113,7 @@ export function GridToken({
   const relation = combatant.relation ?? 'unknown';
   const relationLabel = {hostile:'hostil',allied:'aliado',neutral:'neutro',unknown:'relação não definida'}[relation];
   const classes = ['grid-token'];
+  if (showNumber && combatant.tokenNumber) classes.push('has-number');
   if (combatant.tokenDimmed) classes.push('is-inactive');
   if (currentTurn) classes.push('is-current');
   if (selected) classes.push('is-selected');
@@ -234,7 +235,7 @@ export function GridToken({
     </button>
     {isMaster && (combatant.kind === 'CREATURE' || combatant.kind === 'NPC') ? <button
       type="button" className="grid-token-visibility"
-      style={{ left: `${box.left + box.width / 2 - artSize * .32}px`, top: `${box.top + box.height / 2 - artSize * .32}px`, '--grid-token-art': `${artSize}px` } as CSSProperties}
+      style={{ left: `${box.left + box.width / 2}px`, top: `${box.top + (box.height - artSize) / 2}px`, '--grid-token-art': `${artSize}px` } as CSSProperties}
       disabled={visibilityDisabled || !onToggleVisibility}
       aria-label={`${combatant.spatialVisibility === 'master-only' ? 'Revelar' : 'Ocultar'} ${combatant.name} ${combatant.spatialVisibility === 'master-only' ? 'aos' : 'dos'} jogadores`}
       title={combatant.spatialVisibility === 'master-only' ? 'Oculto dos jogadores — clique para revelar' : 'Revelado aos jogadores — clique para ocultar'}
