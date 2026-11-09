@@ -44,7 +44,7 @@ const { createRoot } = await import('react-dom/client');
 const { useState } = await import('react');
 const { renderToStaticMarkup } = await import('react-dom/server');
 const { CreaturesTab } = await import('../src/components/master/CreaturesTab');
-const { GridToken } = await import('../src/combat/grid/GridToken');
+const { GridToken, repeatedCreatureIds } = await import('../src/combat/grid/GridToken');
 import type { Creature, CreaturePatch, Locality, Region } from '../src/types';
 const locality = {
   id: 'local',
@@ -253,6 +253,7 @@ try {
     h(GridToken, {
       combatant: token,
       isMaster: true,
+      showNumber: true,
       pixelsPerCell: 40,
       cellSizeFeet: 5,
     }),
@@ -307,6 +308,28 @@ try {
   check('confirmar encaminha uma operação ao controlador', commands === 1);
   await renderAbility({ ...reactionUnit, hpCurrent: 0 });
   check('token a zero PV não oferece uso da habilidade', [...document.querySelectorAll<HTMLButtonElement>('button')].find(b => b.textContent === 'Usar habilidade')?.disabled);
+  const copies = repeatedCreatureIds([{ kind: 'CREATURE', creatureId: 'dragon' }, { kind: 'CREATURE', creatureId: 'goblin' }, { kind: 'CREATURE', creatureId: 'goblin' }, { kind: 'NPC', creatureId: 'dragon' }]);
+  check('somente cópias do mesmo cadastro recebem numeração', copies.has('goblin') && !copies.has('dragon'));
+  check('lista pública com uma só cópia não denuncia outras ocultas', !repeatedCreatureIds([{ kind: 'CREATURE', creatureId: 'goblin' }]).size);
+  const single = renderToStaticMarkup(h(GridToken, { combatant: token, isMaster: true, pixelsPerCell: 40, cellSizeFeet: 5 }));
+  check('token único não exibe o selo numérico', !single.includes('grid-token-number'));
+  let visibilityCalls = 0, selectCalls = 0, dragCalls = 0, centerCalls = 0, backgroundCalls = 0;
+  const renderToken = async (disabled = false, isMaster = true, revealed = false) => act(async () => root.render(h('div', { onClick: () => backgroundCalls++, onPointerDown: () => backgroundCalls++ }, h(GridToken, {
+    combatant: { ...token, spatialVisibility: revealed ? 'public' : 'master-only' }, isMaster, showNumber: true, pixelsPerCell: 40, cellSizeFeet: 5, interactive: true, movable: true,
+    visibilityDisabled: disabled, onToggleVisibility: id => { assert.equal(id, token.id); visibilityCalls++; }, onSelect: () => selectCalls++, onMoveStart: () => dragCalls++, onCenter: () => centerCalls++,
+  }))));
+  await renderToken();
+  const eye = document.querySelector<HTMLButtonElement>('.grid-token-visibility')!;
+  check('olho é um botão independente, sem botão aninhado', eye.tagName === 'BUTTON' && !eye.parentElement?.closest('button'));
+  await act(async () => { eye.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true })); eye.click(); eye.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true })); });
+  check('clicar no olho só solicita visibilidade, sem mover, atacar, centralizar ou acionar o fundo', visibilityCalls === 1 && selectCalls === 0 && dragCalls === 0 && centerCalls === 0 && backgroundCalls === 0);
+  check('olho aguarda estado confirmado para mudar', eye.getAttribute('aria-label')?.startsWith('Revelar'));
+  await renderToken(true); await act(async () => document.querySelector<HTMLButtonElement>('.grid-token-visibility')!.click());
+  check('pedido em andamento bloqueia novo clique', visibilityCalls === 1);
+  await renderToken(false, true, true);
+  check('estado revelado oferece ocultar', document.querySelector('.grid-token-visibility')?.getAttribute('aria-label')?.startsWith('Ocultar'));
+  await renderToken(false, false);
+  check('jogador não recebe o controle de visibilidade', !document.querySelector('.grid-token-visibility'));
   console.log(`${checks} verificações do bestiário aprovadas.`);
 } finally {
   await act(async () => root.unmount());

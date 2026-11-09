@@ -1436,3 +1436,22 @@
 .grid-token-number, .grid-token-visibility { width: clamp(.65rem, calc(var(--grid-token-art) * .25), 1.05rem); height: clamp(.65rem, calc(var(--grid-token-art) * .25), 1.05rem); }
 .grid-token-number { font-size: clamp(.5rem, calc(var(--grid-token-art) * .16), .65rem); }
 .grid-token-visibility .icon { width: 72%; height: 72%; }
+
+/* Selos assentados na borda circular, independentes do tamanho do footprint. */
+.grid-token-number {
+  top: calc(50% - var(--grid-token-art) * .32);
+  left: calc(50% + var(--grid-token-art) * .32);
+  right: auto;
+  transform: translate(-50%, -50%);
+}
+button.grid-token-visibility {
+  padding: 0;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 1px 3px #0008;
+}
+button.grid-token-visibility:hover:not(:disabled) { border-color: var(--gold); background: var(--surface-2); }
+button.grid-token-visibility:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+button.grid-token-visibility:disabled { cursor: wait; opacity: .6; }

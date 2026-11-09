@@ -6994,7 +6994,7 @@ check(
       source('src/combat/components/CombatantCard.tsx').includes(
         'title="Vida e CA visíveis apenas para o mestre"',
       ) &&
-      source('src/combat/grid/GridToken.tsx').includes("'Oculto dos jogadores'") &&
+      source('src/combat/grid/GridToken.tsx').includes("'Oculto dos jogadores — clique para revelar'") &&
       source('src/components/InventoryDock.tsx').includes("title={open ? 'Fechar o inventário'") &&
       source('src/components/sections/IdentitySection.tsx').includes('title={raceInfo ||') &&
       dockSource.includes('Ações, Ação Bônus, Reação e Movimento indisponíveis no ciclo de morte — o turno continua sendo seu.'),

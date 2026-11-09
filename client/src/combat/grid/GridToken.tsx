@@ -11,6 +11,7 @@ export type GridUnit = Pick<
 > & {
   /** Personagem × criatura/NPC: só muda o ARO do token (visual). */
   kind?: string;
+  creatureId?: string | null;
   hostileToIds?: string[];
   tokenNumber?: number | null;
   tokenDimmed?: boolean;
@@ -25,6 +26,9 @@ export interface GridTokenProps {
   /** Turno atual — indicação discreta, sem alterar a iniciativa. */
   currentTurn?: boolean;
   isMaster?: boolean;
+  showNumber?: boolean;
+  visibilityDisabled?: boolean;
+  onToggleVisibility?: (combatantId: string) => void;
   selected?: boolean;
   /** Placement em voo: preview até o servidor confirmar. */
   pending?: boolean;
@@ -79,6 +83,9 @@ export function GridToken({
   pixelsPerCell,
   currentTurn = false,
   isMaster = false,
+  showNumber = false,
+  visibilityDisabled = false,
+  onToggleVisibility,
   selected = false,
   pending = false,
   interactive = false,
@@ -137,6 +144,7 @@ export function GridToken({
         : '';
 
   return (
+    <>
     <button
       type="button"
       className={classes.join(' ')}
@@ -221,9 +229,30 @@ export function GridToken({
           </span>
         )}
       </span>
-      {combatant.tokenNumber ? <span className="grid-token-number" aria-label={`Unidade ${combatant.tokenNumber}`}>{combatant.tokenNumber}</span> : null}
+      {showNumber && combatant.tokenNumber ? <span className="grid-token-number" aria-label={`Unidade ${combatant.tokenNumber}`}>{combatant.tokenNumber}</span> : null}
       <span className="grid-token-label">{combatant.name}</span>
-      {isMaster && combatant.kind !== 'CHARACTER' ? <span className="grid-token-visibility" title={combatant.spatialVisibility==='master-only'?'Oculto dos jogadores':'Revelado aos jogadores'}><Icon name={combatant.spatialVisibility==='master-only'?'eye-off':'eye'} size={12}/></span> : null}
     </button>
+    {isMaster && (combatant.kind === 'CREATURE' || combatant.kind === 'NPC') ? <button
+      type="button" className="grid-token-visibility"
+      style={{ left: `${box.left + box.width / 2 - artSize * .32}px`, top: `${box.top + box.height / 2 - artSize * .32}px`, '--grid-token-art': `${artSize}px` } as CSSProperties}
+      disabled={visibilityDisabled || !onToggleVisibility}
+      aria-label={`${combatant.spatialVisibility === 'master-only' ? 'Revelar' : 'Ocultar'} ${combatant.name} ${combatant.spatialVisibility === 'master-only' ? 'aos' : 'dos'} jogadores`}
+      title={combatant.spatialVisibility === 'master-only' ? 'Oculto dos jogadores — clique para revelar' : 'Revelado aos jogadores — clique para ocultar'}
+      onPointerDown={event => event.stopPropagation()}
+      onPointerUp={event => event.stopPropagation()}
+      onKeyDown={event => event.stopPropagation()}
+      onDoubleClick={event => event.stopPropagation()}
+      onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}
+      onClick={event => { event.stopPropagation(); onToggleVisibility?.(combatant.id); }}
+    ><Icon name={combatant.spatialVisibility === 'master-only' ? 'eye-off' : 'eye'} size={12} /></button> : null}
+    </>
   );
+}
+
+/** Numeração é apresentação por cadastro, considerando só a lista já autorizada do observador. */
+export function repeatedCreatureIds(units: readonly Pick<GridUnit, 'kind' | 'creatureId'>[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const unit of units) if (unit.kind === 'CREATURE' && unit.creatureId)
+    counts.set(unit.creatureId, (counts.get(unit.creatureId) ?? 0) + 1);
+  return new Set([...counts].filter(([, count]) => count > 1).map(([id]) => id));
 }

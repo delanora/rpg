@@ -11,7 +11,7 @@ import type {
   SpatialSize,
 } from '../../types';
 import { createOperationId } from '../../utils';
-import { GridToken, type GridUnit } from './GridToken';
+import { GridToken, repeatedCreatureIds, type GridUnit } from './GridToken';
 import { UnplacedCombatantsTray, GRID_DRAG_MIME } from './UnplacedCombatantsTray';
 import { SpatialSceneControls } from './SpatialSceneControls';
 import { MovementRiskDialog } from '../components/MovementRiskDialog';
@@ -279,6 +279,8 @@ export function CombatGrid({
 }: CombatGridProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const visibilityBusyRef = useRef(false);
+  const numberedCreatures = useMemo(() => repeatedCreatureIds(combat.combatants), [combat.combatants]);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [sceneError, setSceneError] = useState<string | null>(null);
   /**
@@ -914,8 +916,10 @@ export function CombatGrid({
   }
 
   async function toggleVisibility(combatantId: string) {
+    if (!isMaster || locked || visibilityBusyRef.current) return;
     const unit = combat.combatants.find((item) => item.id === combatantId);
     if (!unit) return;
+    visibilityBusyRef.current = true;
     setPendingId(combatantId);
     setSceneError(null);
     try {
@@ -930,6 +934,7 @@ export function CombatGrid({
       setSceneError(messageOf(error));
       onError(messageOf(error));
     } finally {
+      visibilityBusyRef.current = false;
       setPendingId(null);
     }
   }
@@ -2175,6 +2180,9 @@ export function CombatGrid({
               {placed.map((combatant) => (
                 <GridToken
                   isMaster={isMaster}
+                  showNumber={!!combatant.creatureId && numberedCreatures.has(combatant.creatureId)}
+                  onToggleVisibility={isMaster ? id => void toggleVisibility(id) : undefined}
+                  visibilityDisabled={locked || pendingId !== null || !!combatant.missing}
                   key={combatant.id}
                   combatant={relationReferenceId && combatant.hostileToIds?.includes(relationReferenceId) ? { ...combatant, relation: 'hostile' } : combatant}
                   cellSizeFeet={cellSizeFeet}
