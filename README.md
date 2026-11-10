@@ -148,7 +148,7 @@ Nos personagens, a identidade vem do talento cadastrado na ficha. Para criaturas
 
 ### Elevações e desníveis
 
-No editor da cena, o **pincel de elevação** pinta quadrados e abre uma caixa para informar a altura em metros. Valores negativos criam fossos; zero ou Apagar restaura o chão. A superfície é persistida em pés, com versão/idempotência da cena, e aparece no grid do combate. A cena em uso continua bloqueada para edição.
+O editor da cena reúne **paredes e elevações no mesmo mapa**, com ícones de seleção, parede e pincel na barra interna, zoom compartilhado e ajustes de parede na engrenagem. As duas camadas permanecem visíveis ao alternar ferramentas; rascunhos precisam ser salvos ou cancelados antes da troca. O **pincel de elevação** pinta quadrados e abre uma caixa para informar a altura em metros. Valores negativos criam fossos; zero ou Apagar restaura o chão. A superfície é persistida em pés, com versão/idempotência da cena, e aparece no grid do combate. A cena em uso continua bloqueada para edição.
 
 O menu do token oferece **Altura**, com elevação da base e altura corporal independentes do tamanho do token. Sem elevação explícita, a base acompanha a superfície; sem altura corporal, a avaliação vertical permanece assistida. Há uma superfície por quadrado; pontes sobrepostas não são representadas nesta fundação.
 

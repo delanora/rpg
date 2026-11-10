@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { ApiError } from '../../api';
 import { feetToMeters, formatSceneMeters, SCENE_CELL_FEET, SCENE_METERS_PER_FOOT } from '../../sceneUnits';
 import type { SceneWallMutation, SceneWallShape } from '../../sceneWallsApi';
@@ -7,11 +7,16 @@ import { newId } from '../../utils';
 import { translateWall, wallDraftError, wallPointerPosition } from './sceneWallGeometry';
 
 interface Props {
+  embedded?: boolean;
+  activeTool?: 'select' | 'draw';
+  onToolChange?: (tool: 'select' | 'draw') => void;
+  sharedZoom?: number;
+  onSessionChange?: (locked: boolean) => void;
   scene: Scene;
   disabled: boolean;
   onMutate: (mutation: SceneWallMutation, expectedVersion: number, operationId: string) => Promise<Scene>;
   onReload: () => Promise<Scene>;
-  renderCanvas: (overlay: ReactNode, zoom: number) => ReactNode;
+  renderCanvas: (overlay: ReactNode, zoom: number, options?: ReactNode) => ReactNode;
 }
 interface Draft { wallId: string | null; wall: SceneWallShape; version: number }
 interface Intention { mutation: SceneWallMutation; version: number; operationId: string }
@@ -21,8 +26,10 @@ const shapeOf = ({ start, end, blocksMovement, blocksSight, blocksTargeting, cov
   ({ start, end, blocksMovement, blocksSight, coverLevel: coverLevel ?? ((blocksTargeting ?? blocksMovement) ? 'total' : 'none'), blocksTargeting: coverLevel ? coverLevel === 'total' : blocksTargeting ?? blocksMovement });
 
 /** Rascunhos são locais. Só salvar/excluir chama o contrato HTTP da cena. */
-export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas }: Props) {
-  const [tool, setTool] = useState<'select' | 'draw'>('select');
+export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas, embedded = false, activeTool, onToolChange, sharedZoom, onSessionChange }: Props) {
+  const [localTool, setLocalTool] = useState<'select' | 'draw'>('select');
+  const tool = activeTool ?? localTool;
+  const setTool = (next: 'select' | 'draw') => {setLocalTool(next); onToolChange?.(next);};
   const [draft, setDraft] = useState<Draft | null>(null);
   const [segments, setSegments] = useState<SceneWallShape[]>([]);
   const [placing, setPlacing] = useState(false);
@@ -43,6 +50,8 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
   const invalid = segments.length > 0
     ? segments.map(wall => wallDraftError(wall, config)).find(Boolean) ?? null
     : draft ? wallDraftError(draft.wall, config) : null;
+
+  useEffect(() => {onSessionChange?.(Boolean(draft) || busy || uncertain);}, [draft, busy, uncertain, onSessionChange]);
 
   function cancel() {
     if (writing.current || uncertain) return;
@@ -182,14 +191,14 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     </svg>
   );
 
-  return <div className="scene-walls-editor" onKeyDown={(event) => {
-    if (event.key === 'Escape') { event.preventDefault(); cancel(); }
-  }}>
+  const toolbar = (
     <div className="scene-wall-toolbar" role="group" aria-label="Ferramentas de paredes">
+      {!embedded ? <>
       <button type="button" className="btn btn-small" aria-pressed={tool === 'select'} disabled={!editable}
         onClick={() => { cancel(); setTool('select'); }}>Selecionar</button>
       <button type="button" className="btn btn-small" aria-pressed={tool === 'draw'} disabled={!editable}
         onClick={() => { cancel(); setTool('draw'); }}>Desenhar parede</button>
+      </> : null}
       <button type="button" className="btn btn-small" disabled={!editable} onClick={() => {
         cancel(); setTool('select'); setDraft({ wallId: null, version: scene.version, wall: {
           start: { xFeet: 0, yFeet: 0 }, end: { xFeet: Math.min(5, config.widthFeet), yFeet: 0 },
@@ -200,17 +209,23 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
         onClick={undoPoint}>Desfazer último ponto</button>
       <label className="scene-wall-check"><input type="checkbox" checked={snap} disabled={!editable}
         onChange={(event) => setSnap(event.target.checked)} /> Alinhar à grade</label>
-      <label className="scene-wall-zoom">Zoom <select aria-label="Zoom do editor de paredes" value={zoom}
+      {!embedded ? <label className="scene-wall-zoom">Zoom <select aria-label="Zoom do editor de paredes" value={zoom}
         onChange={(event) => setZoom(Number(event.target.value))}>
         {[0.5, 1, 1.5, 2, 3].map((value) => <option key={value} value={value}>{value * 100}%</option>)}
-      </select></label>
+      </select></label> : null}
       <button type="button" className="btn btn-small" disabled={busy || uncertain || disabled && !error}
         onClick={() => void reload()}>Recarregar cena</button>
     </div>
+  );
+
+  return <div className="scene-walls-editor" onKeyDown={(event) => {
+    if (event.key === 'Escape') { event.preventDefault(); cancel(); }
+  }}>
+    {!embedded ? toolbar : null}
     <p className="scene-hint">{config.mode !== 'grid-2d' ? 'Salve a base como grade 2D para editar paredes.' :
       tool === 'draw' ? 'Clique para adicionar pontos e cantos. Salve o traçado inteiro ao terminar. Esc cancela.' :
       'Selecione uma parede na lista ou no mapa. Arraste a linha ou os extremos e salve.'}</p>
-    {renderCanvas(overlay, zoom)}
+    {renderCanvas(overlay, sharedZoom ?? zoom, embedded ? toolbar : undefined)}
     {stale && !uncertain ? <p className="scene-lock" role="status">A cena mudou. Cancele o rascunho e selecione a parede novamente.</p> : null}
     {error ? <p className="form-error" role="alert">{error}</p> : null}
     {message ? <p className="scene-notice" role="status">{message}</p> : null}

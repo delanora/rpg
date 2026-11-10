@@ -5372,7 +5372,9 @@ check(
     'SC12) editor de paredes reutiliza a API da cena sem acoplar o motor de combate',
     source('src/sceneWallsApi.ts').includes('`/api/scenes/${sceneId}/spatial/obstacles`') &&
       source('src/sceneWallsApi.ts').includes('expectedVersion, operationId') &&
-      editorSource.includes('<SceneWallsEditor') &&
+      editorSource.includes('<SceneMapEditor') &&
+      source('src/components/master/SceneMapEditor.tsx').includes('<SceneWallsEditor') &&
+      source('src/components/master/SceneMapEditor.tsx').includes('onMutate={onWallMutation}') &&
       localityScenesSource.includes('mutateSceneWall(selected.id, mutation, expectedVersion, operationId)') &&
       !/useCombatState|CombatTracker/.test(source('src/components/master/SceneWallsEditor.tsx')),
   );

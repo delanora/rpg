@@ -1,10 +1,13 @@
-import { useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { ApiError } from '../../api';
 import type { ElevationCell, Scene, ScenePatch } from '../../types';
 import { newId } from '../../utils';
 import { feetToMeters, metersToElevationFeet } from '../../sceneUnits';
 
 interface Props {
+  embedded?: boolean;
+  sharedZoom?: number;
+  onSessionChange?: (locked: boolean) => void;
   scene: Scene;
   disabled: boolean;
   onSave: (
@@ -21,6 +24,9 @@ export function SceneElevationEditor({
   disabled,
   onSave,
   renderCanvas,
+  embedded = false,
+  sharedZoom,
+  onSessionChange,
 }: Props) {
   const [selection, setSelection] = useState<
     Map<string, { xFeet: number; yFeet: number }>
@@ -48,6 +54,8 @@ export function SceneElevationEditor({
   const stale = selection.size > 0 && draftVersion.current !== scene.version;
   const editable =
     !disabled && !busy && !uncertain && config.mode === 'grid-2d';
+
+  useEffect(() => {onSessionChange?.(selection.size > 0 || busy || uncertain);}, [selection.size, busy, uncertain, onSessionChange]);
 
   function point(event: PointerEvent<SVGSVGElement>) {
     const rect = svg.current?.getBoundingClientRect();
@@ -100,7 +108,7 @@ export function SceneElevationEditor({
     setError(null);
   }
   async function save(erase = false) {
-    if (writing.current || disabled || stale) return;
+    if (writing.current || disabled || (stale && !pending.current)) return;
     const value = Number(height.replace(',', '.'));
     if (
       !erase &&
@@ -215,9 +223,7 @@ export function SceneElevationEditor({
         }
       }}
     >
-      {cells.map((cell) => (
-        <ElevationSquare key={`${cell.xFeet}:${cell.yFeet}`} cell={cell} />
-      ))}
+      <SceneElevationCells cells={cells} />
       {[...selection.entries()].map(([key, cell]) => (
         <rect
           key={key}
@@ -240,7 +246,7 @@ export function SceneElevationEditor({
         }
       }}
     >
-      <div className="scene-background-actions">
+      {!embedded ? <div className="scene-background-actions">
         <span>Pinte o grid e solte para definir a elevação.</span>
         <button
           className="btn btn-small"
@@ -259,9 +265,9 @@ export function SceneElevationEditor({
         >
           +
         </button>
-      </div>
+      </div> : null}
       <div className="scene-elevation-map">
-        {renderCanvas(overlay, zoom)}
+        {renderCanvas(overlay, sharedZoom ?? zoom)}
         {editing && selection.size > 0 ? (
           <form
             className="scene-elevation-popover"
@@ -289,7 +295,7 @@ export function SceneElevationEditor({
             <div className="scene-background-actions">
               <button
                 className="btn btn-primary btn-small"
-                disabled={disabled || busy || stale}
+                disabled={disabled || busy || (stale && !uncertain)}
               >
                 {uncertain ? 'Repetir envio' : 'Confirmar'}
               </button>
@@ -323,6 +329,9 @@ export function SceneElevationEditor({
       </p>
     </div>
   );
+}
+export function SceneElevationCells({cells}: {cells: ElevationCell[]}) {
+  return <>{cells.map(cell => <ElevationSquare key={`${cell.xFeet}:${cell.yFeet}`} cell={cell} />)}</>;
 }
 function ElevationSquare({ cell }: { cell: ElevationCell }) {
   return (

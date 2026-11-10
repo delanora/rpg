@@ -7,6 +7,9 @@ import type { CSSProperties, ReactNode } from 'react';
  */
 export type IconName =
   | 'flag'
+  | 'cursor'
+  | 'wall'
+  | 'brush'
   | 'sword'
   | 'shield'
   | 'heart'
@@ -62,6 +65,10 @@ export type IconName =
   | 'ruler';
 
 const ICONS: Record<IconName, ReactNode> = {
+  cursor: <path d="m5 3 14 10-6.5 1.4L9 21Z" />,
+  wall: <><rect x="3" y="5" width="18" height="15" rx="1" /><path d="M3 10h18M3 15h18M9 5v5m6 0v5m-6 0v5" /></>,
+  brush: <><path d="m13 5 3-2a2 2 0 0 1 3 3l-7 9-4-4Z" /><path d="M8 12c-4-1-3 5-5 7 4 1 9-1 8-5" /></>,
+
   flag: <><path d="M6 21V3" /><path d="M6 4c4-3 8 3 13 0v10c-5 3-9-3-13 0Z" /></>,
   sword: (
     <>

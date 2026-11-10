@@ -1,4 +1,4 @@
-import { SceneElevationEditor } from './SceneElevationEditor';
+import { SceneMapEditor } from './SceneMapEditor';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, fileToImagePayload, uploadImage } from '../../api';
 import {
@@ -12,7 +12,6 @@ import {
 import type { Scene, ScenePatch, SpatialScene } from '../../types';
 import { newId } from '../../utils';
 import type { SceneWallMutation } from '../../sceneWallsApi';
-import { SceneWallsEditor } from './SceneWallsEditor';
 import { Icon } from '../Icon';
 import { InlineField } from '../InlineField';
 import { Section } from '../Section';
@@ -382,16 +381,10 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
         ) : null}
       </Section>
 
-      <Section title="Mapa e paredes" icon="scroll" subtitle="Prepare as barreiras antes de iniciar o combate">
-        <SceneWallsEditor scene={scene} disabled={!editable} onMutate={mutateWall}
+      <Section title="Editor da cena" icon="scroll" subtitle="Paredes e elevações no mesmo mapa">
+        <SceneMapEditor key={scene.id} scene={scene} disabled={!editable} onWallMutation={mutateWall}
           onReload={async () => { const fresh = await onReload(); setLocked(false); setError(null); return fresh; }}
-          renderCanvas={(overlay, zoom) => <ScenePreview scene={scene} imageFailed={imageFailed}
-            onImageError={() => setImageFailed(true)} overlay={overlay} zoom={zoom} />} />
-      </Section>
-
-      <Section title="Elevações do terreno" icon="scroll" subtitle="Pinte plataformas e fossos em metros">
-        <SceneElevationEditor key={scene.id} scene={scene} disabled={!editable}
-          onSave={async (patch, version, operationId) => {
+          onSaveElevation={async (patch, version, operationId) => {
             if (locked || writing.current) throw new ApiError('Aguarde a operação atual.', 409, 'CONFLICT');
             writing.current = true; setBusy(true); setError(null);
             try { return await onUpdate(patch, version, operationId); }

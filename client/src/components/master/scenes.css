@@ -317,3 +317,38 @@
 .scene-elevation-popover input { width: 100%; }
 .scene-elevation-popover input { box-sizing: border-box; padding: .55rem .65rem; border: 1px solid var(--line); border-radius: .35rem; background: var(--surface-2); color: var(--ink); font: inherit; }
 .scene-elevation-popover input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* Barra fixa no viewport: ícones não aumentam nem saem do editor com o zoom. */
+.scene-map-canvas { position: relative; }
+.scene-map-saved-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.scene-map-tools { position: absolute; z-index: 4; top: .8rem; left: .8rem; display: flex; align-items: center; gap: .2rem; padding: .35rem; max-width: calc(100% - 1.6rem); border: 1px solid var(--line-strong); border-radius: .65rem; background: var(--surface); color: var(--ink); box-shadow: 0 5px 16px #0005; }
+.scene-map-tools-heading { font-family: var(--font-display); font-size: .65rem; color: var(--ink-soft); padding: 0 .4rem; }
+.scene-map-tools button { display: grid; place-items: center; width: 2.1rem; height: 2.1rem; padding: .3rem; border: 1px solid transparent; border-radius: .4rem; background: transparent; color: var(--ink-soft); cursor: pointer; transition: background .15s, border-color .15s; }
+.scene-map-tools button:hover:not(:disabled), .scene-map-tools button[aria-pressed="true"] { color: var(--gold); border-color: var(--gold-hair); background: var(--surface-3); }
+.scene-map-tools button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.scene-map-tools button:disabled { opacity: .4; cursor: default; }
+.scene-map-tools .scene-map-zoom-value { width: 3.1rem; font-size: .75rem; font-variant-numeric: tabular-nums; }
+.scene-map-tools-divider { height: 1.4rem; width: 1px; margin: 0 .2rem; background: var(--line); }
+.scene-map-tool-name { position: absolute; z-index: 2; right: .8rem; bottom: 3rem; border: 1px solid var(--line); border-radius: 999px; padding: .2rem .6rem; background: var(--surface); color: var(--ink-soft); font-size: .7rem; pointer-events: none; }
+.scene-map-editor .scene-elevation-map { margin-top: 0; }
+.scene-map-editing-hint { color: var(--ink-soft); font-size: .8rem; margin-top: .4rem; }
+@media (max-width: 520px) {
+  .scene-map-tools { left: .45rem; top: .45rem; max-width: calc(100% - .9rem); gap: .1rem; padding: .25rem; }
+  .scene-map-tools-heading { display: none; }
+  .scene-map-tools button { width: 1.85rem; height: 1.85rem; }
+  .scene-map-tools .scene-map-zoom-value { width: 2.8rem; }
+}
+@media (prefers-reduced-motion: reduce) { .scene-map-tools button { transition: none; } }
+/* O cabeçalho pertence ao editor, mas não encobre as primeiras casas do mapa. */
+.scene-map-canvas { padding-top: 3.8rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: .7rem; }
+.scene-map-canvas .scene-preview-frame { border: 0; margin: 0; }
+.scene-map-editor .scene-wall-viewport { max-height: min(65vh, 44rem); }
+.scene-map-options { position: static; }
+.scene-map-options summary { list-style: none; display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border: 1px solid transparent; border-radius: .4rem; color: var(--ink-soft); cursor: pointer; }
+.scene-map-options summary::-webkit-details-marker { display: none; }
+.scene-map-options[open] summary { border-color: var(--gold-hair); color: var(--gold); background: var(--surface-3); }
+.scene-map-options summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.scene-map-options-body { position: absolute; left: 0; top: calc(100% + .7rem); width: min(18rem, 75vw); padding: .8rem; border: 1px solid var(--line-strong); border-radius: .6rem; background: var(--surface); box-shadow: 0 8px 20px #0006; }
+.scene-map-options-body .scene-wall-toolbar { display: grid; gap: .65rem; }
+.scene-map-options-body .scene-wall-toolbar button { width: 100%; height: auto; min-height: 2.1rem; border-color: var(--line); font-size: .75rem; }
+@media (max-width: 520px) { .scene-map-options summary { width: 1.85rem; height: 1.85rem; } .scene-map-canvas { padding-top: 3.2rem; } }
