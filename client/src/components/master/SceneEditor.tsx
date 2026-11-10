@@ -1,3 +1,4 @@
+import { SceneMapScreen } from './SceneMapScreen';
 import { SceneMapEditor } from './SceneMapEditor';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, fileToImagePayload, uploadImage } from '../../api';
@@ -42,6 +43,8 @@ interface SceneEditorProps {
  * traduz os 409 de domínio (`SCENE_IN_USE`, escrita velha) em estado de tela.
  */
 export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutation }: SceneEditorProps) {
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapLocked, setMapLocked] = useState(false);
   const config = scene.spatialConfig;
   const [mode, setMode] = useState<SpatialScene['mode']>(config.mode);
   const [widthMeters, setWidthMeters] = useState(String(metersLabel(config.widthFeet)));
@@ -318,7 +321,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
         subtitle="Opcional — a cena funciona sem ela"
       >
         {scene.backgroundImageUrl && !imageFailed ? (
-          <p className="scene-hint">Imagem atual aplicada no preview abaixo.</p>
+          <p className="scene-hint">Imagem atual aplicada no editor do mapa.</p>
         ) : scene.backgroundImageUrl ? (
           <p className="scene-hint">
             A imagem atual não carregou. Você pode trocar ou remover — a base espacial continua
@@ -381,8 +384,14 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
         ) : null}
       </Section>
 
-      <Section title="Editor da cena" icon="scroll" subtitle="Paredes e elevações no mesmo mapa">
-        <SceneMapEditor key={scene.id} scene={scene} disabled={!editable} onWallMutation={mutateWall}
+      <Section title="Editor da cena" icon="scroll" subtitle="Abra o mapa em uma tela dedicada, sem rolar as configurações">
+        <div className="scene-map-launcher">
+          <div><strong>Paredes e elevações</strong><p className="scene-hint">Mapa ampliado, câmera WASD, pincel de altura e ferramentas radiais.</p></div>
+          <button type="button" className="btn btn-primary" disabled={busy || uploading} onClick={() => setMapOpen(true)}><Icon name="table" size={17} /> Editar mapa em tela inteira</button>
+        </div>
+      </Section>
+      {mapOpen ? <SceneMapScreen scene={scene} locked={mapLocked || busy || uploading} onClose={() => setMapOpen(false)}>
+        <SceneMapEditor fullScreen onSessionChange={setMapLocked} key={scene.id} scene={scene} disabled={!editable} onWallMutation={mutateWall}
           onReload={async () => { const fresh = await onReload(); setLocked(false); setError(null); return fresh; }}
           onSaveElevation={async (patch, version, operationId) => {
             if (locked || writing.current) throw new ApiError('Aguarde a operação atual.', 409, 'CONFLICT');
@@ -393,7 +402,7 @@ export function SceneEditor({ scene, onUpdate, onDelete, onReload, onWallMutatio
           }}
           renderCanvas={(overlay, zoom) => <ScenePreview scene={scene} imageFailed={imageFailed}
             onImageError={() => setImageFailed(true)} overlay={overlay} zoom={zoom} />} />
-      </Section>
+      </SceneMapScreen> : null}
 
       <Section title="Excluir cena" icon="trash" subtitle="Ação explícita">
         {confirmingDelete ? (

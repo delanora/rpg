@@ -1,10 +1,22 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { Icon } from '../Icon';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+  type CSSProperties,
+} from 'react';
 import { ApiError } from '../../api';
 import type { ElevationCell, Scene, ScenePatch } from '../../types';
 import { newId } from '../../utils';
 import { feetToMeters, metersToElevationFeet } from '../../sceneUnits';
 
 interface Props {
+  cursorPalette?: boolean;
+  initialPointer?: { x: number; y: number };
+  heightValue?: string;
+  onHeightChange?: (value: string) => void;
   embedded?: boolean;
   sharedZoom?: number;
   onSessionChange?: (locked: boolean) => void;
@@ -27,11 +39,23 @@ export function SceneElevationEditor({
   embedded = false,
   sharedZoom,
   onSessionChange,
+  cursorPalette = false,
+  initialPointer,
+  heightValue,
+  onHeightChange,
 }: Props) {
   const [selection, setSelection] = useState<
     Map<string, { xFeet: number; yFeet: number }>
   >(new Map());
-  const [height, setHeight] = useState('0');
+  const [localHeight, setLocalHeight] = useState('0');
+  const height = heightValue ?? localHeight;
+  const setHeight = (value: string) => {
+    setLocalHeight(value);
+    onHeightChange?.(value);
+  };
+  const [cursorPoint, setCursorPoint] = useState(
+    initialPointer ?? { x: 160, y: 130 },
+  );
   const [editing, setEditing] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -55,7 +79,9 @@ export function SceneElevationEditor({
   const editable =
     !disabled && !busy && !uncertain && config.mode === 'grid-2d';
 
-  useEffect(() => {onSessionChange?.(selection.size > 0 || busy || uncertain);}, [selection.size, busy, uncertain, onSessionChange]);
+  useEffect(() => {
+    onSessionChange?.(selection.size > 0 || busy || uncertain);
+  }, [selection.size, busy, uncertain, onSessionChange]);
 
   function point(event: PointerEvent<SVGSVGElement>) {
     const rect = svg.current?.getBoundingClientRect();
@@ -108,7 +134,13 @@ export function SceneElevationEditor({
     setError(null);
   }
   async function save(erase = false) {
-    if (writing.current || disabled || (stale && !pending.current)) return;
+    if (
+      writing.current ||
+      disabled ||
+      (stale && !pending.current) ||
+      (selection.size === 0 && !pending.current)
+    )
+      return;
     const value = Number(height.replace(',', '.'));
     if (
       !erase &&
@@ -173,6 +205,88 @@ export function SceneElevationEditor({
     }
   }
   const cells = config.elevationCells ?? [];
+  const cursorForm = cursorPalette ? (
+    <form
+      className="scene-height-cursor"
+      aria-label="Definir elevação"
+      style={
+        {
+          left: Math.max(
+            8,
+            Math.min(cursorPoint.x - 62, window.innerWidth - 280),
+          ),
+          top: Math.max(
+            8,
+            Math.min(
+              cursorPoint.y + 18,
+              window.innerHeight - (error ? 112 : 64),
+            ),
+          ),
+        } as CSSProperties
+      }
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <label>
+        <span>Altura</span>
+        <input
+          autoFocus
+          data-scene-save-on-space
+          aria-label="Elevação do terreno em metros"
+          type="text"
+          inputMode="decimal"
+          value={height}
+          disabled={disabled || busy || uncertain || stale}
+          onChange={(event) => setHeight(event.target.value)}
+        />
+      </label>
+      <span className="scene-height-unit">m</span>
+      {selection.size > 0 ? (
+        <>
+          <button
+            type="submit"
+            data-scene-save-draft
+            aria-label={uncertain ? 'Repetir envio' : 'Confirmar'}
+            title={uncertain ? 'Tentar novamente' : 'Salvar altura (Espaço)'}
+            disabled={disabled || busy || (stale && !uncertain)}
+          >
+            <Icon name="check" size={15} />
+          </button>
+          <button
+            type="button"
+            aria-label="Apagar"
+            title="Restaurar chão nos quadrados pintados"
+            disabled={!editable || stale}
+            onClick={() => void save(true)}
+          >
+            <Icon name="trash" size={14} />
+          </button>
+          <button
+            type="button"
+            data-scene-cancel-draft
+            aria-label="Cancelar"
+            title="Cancelar pintura (Esc)"
+            disabled={busy || uncertain}
+            onClick={cancel}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </>
+      ) : null}
+      {error ? (
+        <span className="scene-height-error" role="alert">
+          {error}
+        </span>
+      ) : null}
+      {stale && !uncertain ? (
+        <span className="scene-height-error" role="alert">
+          A cena mudou. Cancele e pinte novamente.
+        </span>
+      ) : null}
+    </form>
+  ) : null;
   const overlay = (
     <svg
       ref={svg}
@@ -188,6 +302,8 @@ export function SceneElevationEditor({
       onPointerDown={(event) => {
         if (!editable || editing || event.button !== 0) return;
         event.preventDefault();
+        if (cursorPalette)
+          setCursorPoint({ x: event.clientX, y: event.clientY });
         draftVersion.current = scene.version;
         stroke.current = {
           pointerId: event.pointerId,
@@ -200,17 +316,26 @@ export function SceneElevationEditor({
         paint(event);
       }}
       onPointerMove={(event) => {
-        if (stroke.current?.pointerId === event.pointerId) paint(event);
+        if (stroke.current?.pointerId === event.pointerId) {
+          if (cursorPalette)
+            setCursorPoint({ x: event.clientX, y: event.clientY });
+          paint(event);
+        }
       }}
       onPointerUp={(event) => {
         if (stroke.current?.pointerId !== event.pointerId) return;
         stroke.current = null;
+        if (cursorPalette)
+          setCursorPoint({ x: event.clientX, y: event.clientY });
         svg.current?.releasePointerCapture?.(event.pointerId);
         setEditing(true);
         const p = point(event);
         const existing =
           p && cells.find((c) => c.xFeet === p.xFeet && c.yFeet === p.yFeet);
-        setHeight(String(feetToMeters(existing ? existing.elevationFeet : 0)));
+        if (!cursorPalette)
+          setHeight(
+            String(feetToMeters(existing ? existing.elevationFeet : 0)),
+          );
       }}
       onPointerCancel={() => {
         stroke.current = null;
@@ -246,29 +371,32 @@ export function SceneElevationEditor({
         }
       }}
     >
-      {!embedded ? <div className="scene-background-actions">
-        <span>Pinte o grid e solte para definir a elevação.</span>
-        <button
-          className="btn btn-small"
-          disabled={busy}
-          onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
-          aria-label="Diminuir zoom da elevação"
-        >
-          −
-        </button>
-        <span>{Math.round(zoom * 100)}%</span>
-        <button
-          className="btn btn-small"
-          disabled={busy}
-          onClick={() => setZoom((z) => Math.min(4, z + 0.5))}
-          aria-label="Aumentar zoom da elevação"
-        >
-          +
-        </button>
-      </div> : null}
+      {!embedded ? (
+        <div className="scene-background-actions">
+          <span>Pinte o grid e solte para definir a elevação.</span>
+          <button
+            className="btn btn-small"
+            disabled={busy}
+            onClick={() => setZoom((z) => Math.max(1, z - 0.5))}
+            aria-label="Diminuir zoom da elevação"
+          >
+            −
+          </button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button
+            className="btn btn-small"
+            disabled={busy}
+            onClick={() => setZoom((z) => Math.min(4, z + 0.5))}
+            aria-label="Aumentar zoom da elevação"
+          >
+            +
+          </button>
+        </div>
+      ) : null}
       <div className="scene-elevation-map">
         {renderCanvas(overlay, sharedZoom ?? zoom)}
-        {editing && selection.size > 0 ? (
+        {cursorForm}
+        {!cursorPalette && editing && selection.size > 0 ? (
           <form
             className="scene-elevation-popover"
             aria-label="Definir elevação"
@@ -322,10 +450,10 @@ export function SceneElevationEditor({
           </form>
         ) : null}
       </div>
-      {stale ? (
+      {stale && !cursorPalette ? (
         <p role="alert">A cena mudou. Cancele a seleção e pinte novamente.</p>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error && !cursorPalette ? <p role="alert">{error}</p> : null}
       <p className="scene-hint">
         Use valores negativos para fossos. Zero restaura o chão. O pincel define
         superfícies; subir e descer depende da decisão do Mestre no combate.
@@ -333,8 +461,14 @@ export function SceneElevationEditor({
     </div>
   );
 }
-export function SceneElevationCells({cells}: {cells: ElevationCell[]}) {
-  return <>{cells.map(cell => <ElevationSquare key={`${cell.xFeet}:${cell.yFeet}`} cell={cell} />)}</>;
+export function SceneElevationCells({ cells }: { cells: ElevationCell[] }) {
+  return (
+    <>
+      {cells.map((cell) => (
+        <ElevationSquare key={`${cell.xFeet}:${cell.yFeet}`} cell={cell} />
+      ))}
+    </>
+  );
 }
 function ElevationSquare({ cell }: { cell: ElevationCell }) {
   return (

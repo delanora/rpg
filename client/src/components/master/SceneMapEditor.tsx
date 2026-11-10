@@ -23,6 +23,8 @@ import {
 
 type Tool = 'select' | 'wall' | 'elevation';
 interface Props {
+  fullScreen?: boolean;
+  onSessionChange?: (locked: boolean) => void;
   scene: Scene;
   disabled: boolean;
   onWallMutation: (
@@ -52,8 +54,14 @@ export function SceneMapEditor({
   onSaveElevation,
   onReload,
   renderCanvas,
+  fullScreen = false,
+  onSessionChange,
 }: Props) {
   const [tool, setTool] = useState<Tool>('select');
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const cursor = useRef<{ x: number; y: number }>({ x: 160, y: 130 });
+  const [heightAnchor, setHeightAnchor] = useState(cursor.current);
+  const [heightValue, setHeightValue] = useState('0');
   const root = useRef<HTMLDivElement>(null);
   const [radial, setRadial] = useState<{
     point: { x: number; y: number };
@@ -69,8 +77,11 @@ export function SceneMapEditor({
   const closeRadial = useCallback(() => setRadial(null), []);
   const [sessionLocked, setSessionLocked] = useState(false);
   const reportSession = useCallback(
-    (locked: boolean) => setSessionLocked(locked),
-    [],
+    (locked: boolean) => {
+      setSessionLocked(locked);
+      onSessionChange?.(locked);
+    },
+    [onSessionChange],
   );
   const config = scene.spatialConfig;
   const editingAllowed = !disabled && config.mode === 'grid-2d';
@@ -92,6 +103,11 @@ export function SceneMapEditor({
       ?.querySelectorAll('details[open]')
       .forEach((node) => node.removeAttribute('open'));
     setRadial({ point, phase });
+  };
+  const selectHeight = () => {
+    setHeightAnchor(cursor.current);
+    setTool('elevation');
+    closeRadial();
   };
   const wallMenu = (point: { x: number; y: number }) => openMenu(point, 'wall');
   const radialOptions: SceneRadialOption[] =
@@ -199,8 +215,7 @@ export function SceneMapEditor({
               icon: 'brush',
               disabled: sessionLocked,
               action: () => {
-                setTool('elevation');
-                closeRadial();
+                selectHeight();
               },
             },
             {
@@ -356,8 +371,11 @@ export function SceneMapEditor({
                     y: rect.bottom + 108,
                   });
                 } else {
-                  setTool(item.id);
-                  closeRadial();
+                  if (item.id === 'elevation') selectHeight();
+                  else {
+                    setTool(item.id);
+                    closeRadial();
+                  }
                 }
               }}
             >
@@ -374,6 +392,17 @@ export function SceneMapEditor({
               </summary>
               <div className="scene-map-options-body">{options}</div>
             </details>
+          ) : null}
+          {fullScreen && tool !== 'elevation' ? (
+            <button
+              type="button"
+              className="scene-map-inspector-toggle"
+              aria-label="Mostrar detalhes das paredes"
+              aria-expanded={inspectorOpen}
+              onClick={() => setInspectorOpen((value) => !value)}
+            >
+              <Icon name="list" size={18} />
+            </button>
           ) : null}
           <span className="scene-map-tools-divider" />
           <button
@@ -414,7 +443,12 @@ export function SceneMapEditor({
   return (
     <div
       ref={root}
-      className="scene-map-editor"
+      className={`scene-map-editor${fullScreen ? ' scene-map-editor--fullscreen' : ''}`}
+      data-inspector-open={inspectorOpen}
+      onPointerMoveCapture={(event) => {
+        if (event.pointerType !== 'touch')
+          cursor.current = { x: event.clientX, y: event.clientY };
+      }}
       tabIndex={-1}
       onFocusCapture={(event) => {
         if (sceneInputTarget(event.target)) camera.stop();
@@ -473,6 +507,10 @@ export function SceneMapEditor({
       {tool === 'elevation' ? (
         <SceneElevationEditor
           embedded
+          cursorPalette
+          initialPointer={heightAnchor}
+          heightValue={heightValue}
+          onHeightChange={setHeightValue}
           scene={scene}
           disabled={disabled}
           sharedZoom={zoom}
@@ -485,6 +523,7 @@ export function SceneMapEditor({
           embedded
           scene={scene}
           disabled={disabled}
+          workspace={fullScreen}
           wallSettings={wallSettings}
           activeTool={tool === 'wall' ? 'draw' : 'select'}
           onToolChange={(next) => setTool(next === 'draw' ? 'wall' : 'select')}

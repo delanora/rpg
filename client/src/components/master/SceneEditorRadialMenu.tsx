@@ -132,6 +132,7 @@ export function SceneEditorRadialMenu({
     `${50 + Math.cos(angle) * radius}% ${50 + Math.sin(angle) * radius}%`;
   return createPortal(
     <div
+      key={menuId}
       ref={root}
       role="menu"
       aria-label={title}
@@ -176,7 +177,6 @@ export function SceneEditorRadialMenu({
         for (let step = count; step >= 0; step--)
           points.push(polar(22, angle - sweep / 2 + (step / count) * sweep));
         const style = {
-          clipPath: `polygon(${points.join(',')})`,
           '--sector-x': `${Math.cos(angle) * 3}px`,
           '--sector-y': `${Math.sin(angle) * 3}px`,
         } as CSSProperties;
@@ -186,20 +186,25 @@ export function SceneEditorRadialMenu({
             className={`scene-editor-radial-sector${highlight === option.id ? ' is-highlighted' : ''}${option.checked ? ' is-checked' : ''}${option.disabled ? ' is-disabled' : ''}`}
             style={style}
           >
-            <span className="scene-editor-radial-face" aria-hidden="true" />
             <span
-              className="scene-editor-radial-caption"
+              className="scene-editor-radial-face"
+              style={{ clipPath: `polygon(${points.join(',')})` }}
               aria-hidden="true"
-              style={{
-                left: `${50 + Math.cos(angle) * 35}%`,
-                top: `${50 + Math.sin(angle) * 35}%`,
-              }}
             >
-              <Icon name={option.icon} size={19} />
-              <small>{option.caption}</small>
-              {option.checked ? (
-                <span className="scene-editor-radial-tick">✓</span>
-              ) : null}
+              <span
+                className="scene-editor-radial-caption"
+                aria-hidden="true"
+                style={{
+                  left: `${50 + Math.cos(angle) * 35}%`,
+                  top: `${50 + Math.sin(angle) * 35}%`,
+                }}
+              >
+                <Icon name={option.icon} size={19} />
+                <small>{option.caption}</small>
+                {option.checked ? (
+                  <span className="scene-editor-radial-tick">✓</span>
+                ) : null}
+              </span>
             </span>
             <button
               type="button"
@@ -210,6 +215,7 @@ export function SceneEditorRadialMenu({
               aria-checked={option.checked}
               disabled={option.disabled}
               data-option-id={option.id}
+              style={{ clipPath: `polygon(${points.join(',')})` }}
               onPointerMove={(event) => {
                 if (
                   !option.disabled &&

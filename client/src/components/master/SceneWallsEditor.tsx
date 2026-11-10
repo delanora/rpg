@@ -9,6 +9,7 @@ import { translateWall, wallDraftError, wallPointerPosition } from './sceneWallG
 export type SceneWallSettings = Pick<SceneWallShape, 'blocksMovement' | 'blocksSight' | 'blocksTargeting' | 'coverLevel'>;
 
 interface Props {
+  workspace?: boolean;
   wallSettings?: SceneWallSettings;
   embedded?: boolean;
   activeTool?: 'select' | 'draw';
@@ -29,7 +30,7 @@ const shapeOf = ({ start, end, blocksMovement, blocksSight, blocksTargeting, cov
   ({ start, end, blocksMovement, blocksSight, coverLevel: coverLevel ?? ((blocksTargeting ?? blocksMovement) ? 'total' : 'none'), blocksTargeting: coverLevel ? coverLevel === 'total' : blocksTargeting ?? blocksMovement });
 
 /** Rascunhos são locais. Só salvar/excluir chama o contrato HTTP da cena. */
-export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas, embedded = false, activeTool, onToolChange, sharedZoom, onSessionChange, wallSettings }: Props) {
+export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCanvas, embedded = false, activeTool, onToolChange, sharedZoom, onSessionChange, wallSettings, workspace = false }: Props) {
   const [localTool, setLocalTool] = useState<'select' | 'draw'>('select');
   const tool = activeTool ?? localTool;
   const setTool = (next: 'select' | 'draw') => {setLocalTool(next); onToolChange?.(next);};
@@ -221,14 +222,7 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
     </div>
   );
 
-  return <div className="scene-walls-editor" onKeyDown={(event) => {
-    if (event.key === 'Escape') { event.preventDefault(); cancel(); }
-  }}>
-    {!embedded ? toolbar : null}
-    <p className="scene-hint">{config.mode !== 'grid-2d' ? 'Salve a base como grade 2D para editar paredes.' :
-      tool === 'draw' ? 'Clique para adicionar pontos e cantos. Salve o traçado inteiro ao terminar. Esc cancela.' :
-      'Selecione uma parede na lista ou no mapa. Arraste a linha ou os extremos e salve.'}</p>
-    {renderCanvas(overlay, sharedZoom ?? zoom, embedded ? toolbar : undefined)}
+  const inspector = <>
     {stale && !uncertain ? <p className="scene-lock" role="status">A cena mudou. Cancele o rascunho e selecione a parede novamente.</p> : null}
     {error ? <p className="form-error" role="alert">{error}</p> : null}
     {message ? <p className="scene-notice" role="status">{message}</p> : null}
@@ -287,5 +281,16 @@ export function SceneWallsEditor({ scene, disabled, onMutate, onReload, renderCa
       <button type="button" className="btn btn-small" disabled={busy} onClick={() => setConfirmDelete(false)}>Manter parede</button></div>
     </div> : null}
     <p className="scene-hint">Paredes com bloqueio de movimento impedem atravessar no modo Mover. “Posicionar”, do Mestre, é um ajuste livre. Visão e cobertura são automáticas nos casos claros; cantos e frestas continuam assistidos.</p>
+  </>;
+
+  return <div className={`scene-walls-editor${workspace ? ' scene-walls-editor--workspace' : ''}`} onKeyDown={(event) => {
+    if (event.key === 'Escape') { event.preventDefault(); cancel(); }
+  }}>
+    {!embedded ? toolbar : null}
+    <p className="scene-hint">{config.mode !== 'grid-2d' ? 'Salve a base como grade 2D para editar paredes.' :
+      tool === 'draw' ? 'Clique para adicionar pontos e cantos. Salve o traçado inteiro ao terminar. Esc cancela.' :
+      'Selecione uma parede na lista ou no mapa. Arraste a linha ou os extremos e salve.'}</p>
+    {renderCanvas(overlay, sharedZoom ?? zoom, embedded ? toolbar : undefined)}
+    {workspace ? <aside className="scene-map-inspector" aria-label="Detalhes das paredes">{inspector}</aside> : inspector}
   </div>;
 }
