@@ -1,4 +1,5 @@
 import { useLightbox } from './Lightbox';
+import './portrait.css';
 import { Icon, type IconName } from './Icon';
 
 interface PortraitProps {

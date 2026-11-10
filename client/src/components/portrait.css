@@ -1,0 +1,23 @@
+/* ---------------------------------------------------------------------------
+   RETRATO COM IMAGEM — sem moldura, redondo como o PNG
+
+   O `.portrait` base (styles.css) é uma moldura de pergaminho: borda, aro de
+   tinta (`inset box-shadow`), placa em gradiente e recorte de 6 px. Quando o
+   retrato tem FOTO, isso virava um quadrado em volta de uma imagem redonda —
+   o PNG já É o token. Aqui a foto perde a placa e ganha recorte circular.
+
+   O placeholder SEM imagem continua exatamente como era: moldura temática com
+   o ícone do tema.
+--------------------------------------------------------------------------- */
+
+.portrait.portrait:has(> img) {
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  box-shadow: none;
+}
+
+.portrait.portrait:has(> img) > img {
+  border-radius: 50%;
+}
