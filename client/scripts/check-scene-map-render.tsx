@@ -258,15 +258,12 @@ try {
     host.querySelectorAll('.fixture-map').length === 1 &&
       host.querySelectorAll('.scene-map-saved-layer line').length === 1,
   );
-  const slider = host.querySelector<HTMLInputElement>(
+  const heightInput = host.querySelector<HTMLInputElement>(
     '[aria-label="Elevação do terreno em metros"]',
   )!;
   check(
-    'Barra começa em zero no centro entre −100 e +100 metros',
-    slider.type === 'range' &&
-      slider.min === '-100' &&
-      slider.max === '100' &&
-      slider.value === '0',
+    'Altura inicia em zero num campo de escrita decimal',
+    heightInput.type === 'text' && heightInput.inputMode === 'decimal' && heightInput.value === '0',
   );
   await pointer('pointerdown', 60, 60);
   check(
@@ -286,7 +283,7 @@ try {
     'Rascunho impede alternar e perder a seleção',
     button('Desenhar parede').disabled,
   );
-  await input('-1.5');
+  await input('-1,5');
   await pressSpace(host.querySelector('[data-scene-save-on-space]')!);
   check(
     'Confirma metros negativos em pés pelo mesmo contrato',

@@ -152,9 +152,9 @@ export function SceneElevationEditor({
     const value = Number(height.replace(',', '.'));
     if (
       !erase &&
-      (!height.trim() || !Number.isFinite(value) || Math.abs(value) > 3000)
+      (!height.trim() || !Number.isFinite(value) || Math.abs(value) > (cursorPalette ? 100 : 3000))
     ) {
-      setError('Informe uma elevação entre −3000 e 3000 metros.');
+      setError(cursorPalette ? 'Informe uma altura entre −100 e +100 metros.' : 'Informe uma elevação entre −3000 e 3000 metros.');
       return;
     }
     const cells = new Map(
@@ -253,32 +253,15 @@ export function SceneElevationEditor({
         </p>
       ) : (
         <label>
-          <span className="scene-height-heading">
-            Altura{' '}
-            <output>
-              {Number(height.replace(',', '.')).toLocaleString('pt-BR')} m
-            </output>
-          </span>
-          <span className="scene-height-range">
-            <input
-              autoFocus
-              data-scene-save-on-space
-              aria-label="Elevação do terreno em metros"
-              type="range"
-              min={-100}
-              max={100}
-              step={0.25}
-              aria-valuetext={`${Number(height.replace(',', '.')).toLocaleString('pt-BR')} metros`}
-              value={height}
+          <span className="scene-height-heading">Altura em metros</span>
+          <span className="scene-height-manual">
+            <input autoFocus data-scene-save-on-space aria-label="Elevação do terreno em metros"
+              type="text" inputMode="decimal" value={height}
               disabled={disabled || busy || uncertain || stale}
-              onChange={(event) => setHeight(event.target.value)}
-            />
+              onChange={(event) => setHeight(event.target.value)} />
+            <span aria-hidden="true">m</span>
           </span>
-          <span className="scene-height-scale" aria-hidden="true">
-            <span>−100 m</span>
-            <span>0</span>
-            <span>+100 m</span>
-          </span>
+          <span className="scene-height-help">−100 a +100 m · negativo para fossos</span>
         </label>
       )}
       {selection.size > 0 ? (
