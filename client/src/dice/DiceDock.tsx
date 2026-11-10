@@ -5,6 +5,7 @@ import { Portrait } from '../components/Portrait';
 import { Die3D } from './Die3D';
 import { announcement, resultBreakdown } from './format';
 import { RemoteRollBoard } from './RemoteRollBoard';
+import './death-save.css';
 import { RollLogList } from './RollLogList';
 import { DICE_TYPES, type DiceRollerState } from './useDiceRoller';
 
@@ -85,6 +86,10 @@ export function DiceDock({ roller }: DiceDockProps) {
   const rolling = phase === 'tumbling';
   const settled = phase === 'settled' && result !== null;
   const hasRemovable = pool.some((die) => !die.locked);
+  // TESTE CONTRA A MORTE: a rolagem é UM d20 fixo (pool travado pelo motor) —
+  // o jogador não escolhe dados, nem liga vantagem/desvantagem. A bandeja
+  // fica só com o botão de rolar.
+  const deathSave = context?.kind === 'death-save';
 
   return (
     <>
@@ -148,9 +153,14 @@ export function DiceDock({ roller }: DiceDockProps) {
 
       {open
         ? createPortal(
-            <div className="dice-overlay" role="dialog" aria-modal="true" onClick={close}>
+            <div
+              className={`dice-overlay${deathSave ? ' is-death-save' : ''}`}
+              role="dialog"
+              aria-modal="true"
+              onClick={close}
+            >
               <div
-                className="dice-stage"
+                className={`dice-stage${deathSave ? ' is-death-save' : ''}`}
                 onClick={(event) => event.stopPropagation()}
                 // Teste contra a Morte: interagir nos 3 s cancela o fechamento
                 // automático (hover, clique, foco ou tecla) — leitura em paz.
@@ -161,10 +171,15 @@ export function DiceDock({ roller }: DiceDockProps) {
               >
                 <header className="dice-head">
                   <h2>
-                    <Icon name="die" size={18} />
-                    {context ? `Teste de ${context.label}` : 'Rolagem livre'}
+                    <Icon name={deathSave ? 'skull' : 'die'} size={18} />
+                    {context
+                      ? deathSave
+                        ? context.label
+                        : `Teste de ${context.label}`
+                      : 'Rolagem livre'}
                   </h2>
-                  {context ? (
+                  {/* No Teste contra a Morte não existe bônus: só o dado decide. */}
+                  {context && !deathSave ? (
                     <span className="dice-head-bonus">
                       bônus {context.bonus >= 0 ? `+${context.bonus}` : context.bonus}
                     </span>
@@ -243,7 +258,11 @@ export function DiceDock({ roller }: DiceDockProps) {
                     </div>
                   ) : (
                     <p className="dice-readout-hint">
-                      {rolling ? 'Rolando os dados...' : 'Monte o pool e role'}
+                      {rolling
+                        ? 'Rolando os dados...'
+                        : deathSave
+                          ? 'Role o d20 do Teste contra a Morte'
+                          : 'Monte o pool e role'}
                       {!rolling && (advantage || disadvantage) ? (
                         <span className="dice-readout-note">
                           {advantage ? 'vantagem' : 'desvantagem'}: cada d20 rola duas vezes
@@ -269,20 +288,22 @@ export function DiceDock({ roller }: DiceDockProps) {
                   ) : null}
                 </div>
 
-                <div className="dice-picker" role="group" aria-label="Tipos de dado">
-                  {DICE_TYPES.map((sides) => (
-                    <button
-                      key={sides}
-                      type="button"
-                      className="dice-pick"
-                      data-sides={sides}
-                      onClick={() => addDie(sides)}
-                      aria-label={`Adicionar d${sides}`}
-                    >
-                      d{sides}
-                    </button>
-                  ))}
-                </div>
+                {deathSave ? null : (
+                  <div className="dice-picker" role="group" aria-label="Tipos de dado">
+                    {DICE_TYPES.map((sides) => (
+                      <button
+                        key={sides}
+                        type="button"
+                        className="dice-pick"
+                        data-sides={sides}
+                        onClick={() => addDie(sides)}
+                        aria-label={`Adicionar d${sides}`}
+                      >
+                        d{sides}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Modificadores OPCIONAIS reais (6.5G): só aparecem quando o
                     servidor oferece algo para ESTA rolagem. Nascem
@@ -308,7 +329,7 @@ export function DiceDock({ roller }: DiceDockProps) {
                 <div className="dice-controls">
                   {/* No teste de concentração o modo é do SERVIDOR (Constituição
                       + condições/exaustão): os toggles não teriam efeito. */}
-                  {context?.kind === 'concentration' ? null : (
+                  {context?.kind === 'concentration' || deathSave ? null : (
                     <>
                       <label className="dice-toggle">
                         <input

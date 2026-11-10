@@ -1,0 +1,189 @@
+/* ---------------------------------------------------------------------------
+   BANDEJA DO TESTE CONTRA A MORTE — pele temática
+   A rolagem de vida ou morte não usa o latão polido das outras rolagens: é
+   ferro velho com latão enferrujado, brasa apagada e um brilho de sangue que
+   pulsa devagar no anel. Tudo escopado em `.is-death-save`, então perícia,
+   salvaguarda, ataque e rolagem livre continuam exatamente como eram.
+--------------------------------------------------------------------------- */
+
+.dice-overlay.is-death-save {
+  background: radial-gradient(circle at 50% 40%, rgba(46, 12, 8, 0.82), rgba(4, 2, 2, 0.97));
+  backdrop-filter: blur(7px) saturate(0.6);
+}
+
+.dice-stage.is-death-save {
+  --ds-bone: #e8dcc2;
+  --ds-bone-dim: #a9987a;
+  --ds-rust: #8c4a26;
+  --ds-rust-light: #c07a3c;
+  --ds-rust-deep: #4a2414;
+  --ds-blood: #7d1c1c;
+  --ds-blood-light: #b23a2c;
+
+  border: 2px solid #6b3a20;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 245, 214, 0.014) 0 2px, transparent 2px 7px),
+    radial-gradient(120% 90% at 50% 0%, #2b211b 0%, #17100d 55%, #0b0807 100%);
+  box-shadow:
+    0 26px 60px -20px #000,
+    inset 0 0 0 1px rgba(192, 122, 60, 0.26),
+    inset 0 0 64px -18px rgba(125, 28, 28, 0.5),
+    0 0 70px -26px rgba(178, 58, 44, 0.45);
+}
+
+/* Rebites enferrujados nos quatro cantos da moldura. */
+.dice-stage.is-death-save::before {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: 5px;
+  border: 1px solid rgba(140, 74, 38, 0.4);
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgba(214, 150, 88, 0.8) 0 1.6px, transparent 2.4px),
+    radial-gradient(circle, rgba(214, 150, 88, 0.8) 0 1.6px, transparent 2.4px),
+    radial-gradient(circle, rgba(214, 150, 88, 0.8) 0 1.6px, transparent 2.4px),
+    radial-gradient(circle, rgba(214, 150, 88, 0.8) 0 1.6px, transparent 2.4px);
+  background-repeat: no-repeat;
+  background-size: 8px 8px;
+  background-position: 2px 2px, calc(100% - 2px) 2px, 2px calc(100% - 2px), calc(100% - 2px) calc(100% - 2px);
+}
+
+.dice-stage.is-death-save .dice-head {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(140, 74, 38, 0.4);
+}
+
+.dice-stage.is-death-save .dice-head h2 {
+  color: var(--ds-bone);
+  font-size: 1.02rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 #000, 0 0 18px rgba(178, 58, 44, 0.35);
+}
+
+.dice-stage.is-death-save .dice-head h2 svg {
+  color: var(--ds-rust-light);
+  filter: drop-shadow(0 0 6px rgba(178, 58, 44, 0.45));
+}
+
+.dice-stage.is-death-save .dice-head-close {
+  border-color: rgba(140, 74, 38, 0.6);
+  background: linear-gradient(180deg, #2a1d17, #17100d);
+  color: var(--ds-bone-dim);
+}
+
+.dice-stage.is-death-save .dice-head-close:hover {
+  border-color: var(--ds-blood-light);
+  color: var(--ds-bone);
+  box-shadow: 0 0 14px -3px rgba(178, 58, 44, 0.7);
+}
+
+/* O anel deixa de ser ouro polido: latão oxidado, ferro velho e um brilho de
+   brasa que respira devagar. */
+.dice-stage.is-death-save .dice-ring {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(232, 220, 194, 0.1), transparent 45%),
+    conic-gradient(from 210deg, #2a1a12, #7a4222, #33201a, #8c4a26, #241812, #5e3018, #2a1a12);
+  animation: ds-dread 6s ease-in-out infinite;
+}
+
+@keyframes ds-dread {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8), 0 0 32px -16px rgba(178, 58, 44, 0.35),
+      inset 0 0 26px -8px rgba(0, 0, 0, 0.92);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8), 0 0 54px -10px rgba(178, 58, 44, 0.62),
+      inset 0 0 26px -8px rgba(0, 0, 0, 0.92);
+  }
+}
+
+.dice-stage.is-death-save .dice-ring::after {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.75),
+    inset 0 0 0 3px rgba(192, 122, 60, 0.14),
+    inset 0 0 46px -10px rgba(125, 28, 28, 0.55);
+}
+
+/* A arena onde o d20 cai: breu avermelhado, sem brilho de salão. */
+.dice-stage.is-death-save .dice-ring-floor {
+  background: radial-gradient(circle at 50% 42%, rgba(58, 15, 12, 0.92), #0a0605 72%);
+}
+
+.dice-stage.is-death-save .dice-readout-hint {
+  color: var(--ds-bone-dim);
+  font-style: italic;
+  letter-spacing: 0.04em;
+}
+
+.dice-stage.is-death-save .dice-total-value {
+  color: var(--ds-bone);
+  text-shadow: 0 0 22px rgba(178, 58, 44, 0.5);
+}
+
+.dice-stage.is-death-save .dice-total.is-crit .dice-total-value {
+  color: var(--ds-blood-light);
+}
+
+/* O único controle desta rolagem: a mão que entrega o dado à morte. */
+.dice-stage.is-death-save .dice-controls .btn-primary {
+  border-color: var(--ds-blood);
+  background: linear-gradient(180deg, #8e2620, #5c1414);
+  color: #f3e7cd;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 12px 26px -14px rgba(178, 58, 44, 0.85);
+}
+
+.dice-stage.is-death-save .dice-controls .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #a83026, #6d1919);
+  border-color: var(--ds-blood-light);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 14px 32px -14px rgba(214, 78, 60, 0.95);
+}
+
+.dice-stage.is-death-save .dice-controls .btn-primary:disabled {
+  opacity: 0.55;
+}
+
+/* AURA VERMELHA em volta do container: a moldura enferrujada "acende" devagar,
+   como brasa sob cinza. O halo é `box-shadow` (não é cortado pelo
+   `overflow-y: auto` da bandeja) e repete a sombra estática para nada pular. */
+@keyframes ds-aura {
+  0%,
+  100% {
+    border-color: #6b3a20;
+    box-shadow:
+      0 26px 60px -20px #000,
+      inset 0 0 0 1px rgba(192, 122, 60, 0.26),
+      inset 0 0 64px -18px rgba(125, 28, 28, 0.5),
+      0 0 0 1px rgba(125, 28, 28, 0.22),
+      0 0 34px -8px rgba(178, 58, 44, 0.3);
+  }
+  50% {
+    border-color: #8a2b22;
+    box-shadow:
+      0 26px 60px -20px #000,
+      inset 0 0 0 1px rgba(206, 138, 74, 0.34),
+      inset 0 0 74px -16px rgba(150, 34, 26, 0.62),
+      0 0 0 1px rgba(178, 58, 44, 0.5),
+      0 0 68px 4px rgba(178, 58, 44, 0.58);
+  }
+}
+
+.dice-stage.is-death-save {
+  animation: ds-aura 4.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dice-stage.is-death-save,
+  .dice-stage.is-death-save .dice-ring {
+    animation: none;
+  }
+}
