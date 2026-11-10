@@ -398,7 +398,7 @@ export function SceneElevationEditor({
           y={cell.yFeet}
           width={5}
           height={5}
-          className="scene-elevation-selected"
+          className={`scene-elevation-selected${terrainMode ? ' scene-terrain-selected' : ''}`}
         />
       ))}
     </svg>

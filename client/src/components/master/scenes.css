@@ -464,6 +464,8 @@
 
 .scene-overlay--erase .scene-elevation-selected { fill: color-mix(in srgb,var(--danger) 25%,transparent); stroke: var(--danger); }
 
-.scene-terrain-cell rect { fill: #b87b292e; stroke: #d7a75580; stroke-width: .05; }
-.scene-terrain-cell path { fill: none; stroke: #e9c87b; stroke-width: .18; opacity: .7; }
+.scene-terrain-cell rect { fill: #f59e0b55; stroke: #f59e0bcc; stroke-width: .1; }
+.scene-terrain-cell path { fill: none; stroke: #ffb347; stroke-width: .22; opacity: 1; }
 .scene-erased-wall { stroke: var(--danger); stroke-width: 5; pointer-events: none; }
+
+.scene-terrain-selected { fill: #f59e0b66; stroke: #f59e0b; }
